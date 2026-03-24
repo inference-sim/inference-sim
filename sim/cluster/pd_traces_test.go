@@ -244,6 +244,12 @@ func TestPDTrace_DisaggMode_DisaggDecisionRecorded(t *testing.T) {
 // fails (decode instance KV OOM), no KVTransferRecord or DecodeRoutingRecord is emitted
 // for the dropped request. DisaggregationRecord and PrefillRoutingRecord are still present.
 // This exercises the "placement after AllocateTransferredKV" invariant for trace records.
+//
+// Note: drop scenario case 1 (no routable prefill pool instances) is not tested here because
+// the static simulator cannot make the prefill pool empty at runtime — ValidatePoolTopology
+// requires PrefillInstances > 0 and instance pool membership is immutable during simulation.
+// The PrefillRoutingEvent.Execute guard for empty filteredSnapshots is a defensive code path
+// for future dynamic pool membership. Cases 2 and 3 (decode-side KV drops) are tested here.
 func TestPDTrace_DroppedAtDecodeKV_NoOrphanRecords(t *testing.T) {
 	// GIVEN tight KV capacity on the decode instance (same setup as TestDisaggregation_DroppedAtDecodeKV)
 	// 2 prefill, 1 decode instance with only 3 blocks (48 tokens).
@@ -259,8 +265,8 @@ func TestPDTrace_DroppedAtDecodeKV_NoOrphanRecords(t *testing.T) {
 	mustRun(t, cs)
 
 	// THEN at least one request was dropped at decode KV allocation
-	if cs.droppedAtDecodeKV == 0 {
-		t.Fatal("expected droppedAtDecodeKV > 0 with 3-block decode KV capacity and 4 requests, but no drops occurred — check test setup")
+	if cs.AggregatedMetrics().DroppedUnservable == 0 {
+		t.Fatal("expected DroppedUnservable > 0 with 3-block decode KV capacity and 4 requests, but no drops occurred — check test setup")
 	}
 
 	tr := cs.Trace()
@@ -328,6 +334,10 @@ func TestPDTrace_NeverDecider_WithPools_OnlyDisaggRecords(t *testing.T) {
 	if len(tr.DecodeRoutings) != 0 {
 		t.Errorf("expected 0 DecodeRoutings with NeverDisaggregate, got %d", len(tr.DecodeRoutings))
 	}
+	// Standard routing still fires for every request (BC-TRACE-COMPAT)
+	if len(tr.Routings) != numRequests {
+		t.Errorf("expected %d standard routing records with NeverDisaggregate, got %d", numRequests, len(tr.Routings))
+	}
 }
 
 // TestPDTrace_NormalMode_NoDroppedUnservable verifies R1 invariant:
@@ -361,3 +371,4 @@ func TestPDTrace_NormalMode_NoDroppedUnservable(t *testing.T) {
 		t.Errorf("expected 5 KV transfer records under ample capacity, got %d", len(tr.KVTransfers))
 	}
 }
+
