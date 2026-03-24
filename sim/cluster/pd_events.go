@@ -221,7 +221,7 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 
 			// Record KV transfer and decode routing after successful KV allocation (BC-PD-17, BC-PD-19).
 			// Placement after AllocateTransferredKV ensures no KVTransferRecord or DecodeRoutingRecord
-			// is written for a request that will not complete the decode phase.
+			// is written for a request that will not begin the decode phase.
 			// KVTransferRecord is recorded here so DecodeInstanceID is fully populated.
 			if cs.trace != nil {
 				// INV-PD-4: transfer_start ≤ transfer_complete by timestamp sequencing.

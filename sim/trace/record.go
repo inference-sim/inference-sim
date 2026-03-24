@@ -43,8 +43,9 @@ type RoutingRecord struct {
 //  3. AllocateTransferredKV fails on the decode instance (droppedAtDecodeKV++):
 //     same as case 2.
 //
-// Check droppedAtDecodeKV in AggregatedMetrics or the absence of KVTransferRecord
-// to detect cases 2 and 3.
+// To detect case 1: check routingRejections in AggregatedMetrics or the absence of
+// PrefillRoutingRecord for a given RequestID. To detect cases 2 and 3: check
+// droppedAtDecodeKV in AggregatedMetrics or the absence of KVTransferRecord.
 type DisaggregationRecord struct {
 	RequestID    string
 	Clock        int64

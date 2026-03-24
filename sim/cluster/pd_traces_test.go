@@ -260,7 +260,7 @@ func TestPDTrace_DroppedAtDecodeKV_NoOrphanRecords(t *testing.T) {
 
 	// THEN at least one request was dropped at decode KV allocation
 	if cs.droppedAtDecodeKV == 0 {
-		t.Skip("no drops occurred — test precondition not met (timing-dependent)")
+		t.Fatal("expected droppedAtDecodeKV > 0 with 3-block decode KV capacity and 4 requests, but no drops occurred — check test setup")
 	}
 
 	tr := cs.Trace()
@@ -276,7 +276,10 @@ func TestPDTrace_DroppedAtDecodeKV_NoOrphanRecords(t *testing.T) {
 	if len(tr.KVTransfers) >= len(tr.Disaggregations) {
 		t.Errorf("KVTransfers=%d >= Disaggregations=%d under drops (drops must reduce KV record count)", len(tr.KVTransfers), len(tr.Disaggregations))
 	}
-	// PrefillRoutings == Disaggregations (prefill routing succeeds before the drop)
+	// For decode-side drops (cases 2/3), PrefillRoutings == Disaggregations because
+	// prefill routing succeeds before the drop. This equality does NOT hold for case 1
+	// (no routable prefill instances), where PrefillRoutings < Disaggregations.
+	// This test exercises cases 2/3 exclusively (decode KV OOM via AllocateTransferredKV).
 	if len(tr.PrefillRoutings) != len(tr.Disaggregations) {
 		t.Errorf("PrefillRoutings=%d != Disaggregations=%d (prefill routing unaffected by decode KV drop)", len(tr.PrefillRoutings), len(tr.Disaggregations))
 	}
@@ -332,8 +335,9 @@ func TestPDTrace_NeverDecider_WithPools_OnlyDisaggRecords(t *testing.T) {
 // dropped due to KV OOM. Dropped decode KV allocations are folded into
 // DroppedUnservable in the aggregated metrics.
 func TestPDTrace_NormalMode_NoDroppedUnservable(t *testing.T) {
-	// GIVEN disaggregated simulation with ample KV capacity (100 blocks)
+	// GIVEN disaggregated simulation with ample KV capacity (100 blocks) and trace enabled
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.TraceLevel = "decisions"
 	requests := newTestRequests(5)
 	cs := NewClusterSimulator(config, requests, nil)
 
@@ -343,5 +347,17 @@ func TestPDTrace_NormalMode_NoDroppedUnservable(t *testing.T) {
 	// THEN no requests were dropped due to KV OOM (R1: counter not silently hidden)
 	if cs.AggregatedMetrics().DroppedUnservable != 0 {
 		t.Errorf("expected 0 DroppedUnservable under ample capacity, got %d", cs.AggregatedMetrics().DroppedUnservable)
+	}
+
+	// THEN trace machinery fired: all 5 requests have disaggregation + all downstream records
+	tr := cs.Trace()
+	if tr == nil {
+		t.Fatal("expected non-nil trace with trace-level decisions")
+	}
+	if len(tr.Disaggregations) != 5 {
+		t.Errorf("expected 5 disaggregation records, got %d", len(tr.Disaggregations))
+	}
+	if len(tr.KVTransfers) != 5 {
+		t.Errorf("expected 5 KV transfer records under ample capacity, got %d", len(tr.KVTransfers))
 	}
 }
