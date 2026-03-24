@@ -1,0 +1,53 @@
+# Smooth arrival workload template — Poisson (CV=1)
+# __RATE__ is substituted by run.sh with the actual rate (e.g., 50.0, 150.0, 300.0)
+#
+# Control: identical to bursty_template.yaml in every respect EXCEPT arrival process.
+# Token distributions, client mix, prefix structure, num_requests are all identical.
+
+version: "1"
+category: language
+aggregate_rate: __RATE__
+num_requests: 2000
+
+clients:
+  # 70% of traffic: prefixed requests (chat/assistant use case, shared system prompt)
+  # prefix_length=256 tokens: all requests share this prefix → high KV cache hit rate
+  - id: "chat-prefixed"
+    slo_class: "standard"
+    rate_fraction: 0.70
+    streaming: false
+    arrival:
+      process: poisson           # Smooth: CV=1, memoryless exponential IAT
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 512
+        std_dev: 128
+        min: 64
+        max: 1024
+    output_distribution:
+      type: exponential
+      params:
+        mean: 256
+    prefix_group: "system-prompt"
+    prefix_length: 256
+
+  # 30% of traffic: unprefixed requests (API/direct use case, no shared context)
+  # No prefix_group → always cache miss for prefix portion → ~30% miss rate overall
+  - id: "api-unprefixed"
+    slo_class: "standard"
+    rate_fraction: 0.30
+    streaming: false
+    arrival:
+      process: poisson           # Smooth: CV=1, memoryless exponential IAT
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 512
+        std_dev: 128
+        min: 64
+        max: 1024
+    output_distribution:
+      type: exponential
+      params:
+        mean: 256
