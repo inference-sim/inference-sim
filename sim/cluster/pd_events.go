@@ -8,6 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/trace"
 )
 
 // PrefillRoutingEvent routes a prefill sub-request to a prefill pool instance.
@@ -42,6 +43,23 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 	e.request.AssignedInstance = decision.TargetInstance
 	e.parentReq.PrefillInstanceID = InstanceID(decision.TargetInstance)
 	e.parentReq.PrefillEnqueueTime = e.time
+
+	// Record prefill routing decision if tracing is enabled (BC-PD-17, BC-PD-19)
+	if cs.trace != nil {
+		record := trace.PrefillRoutingRecord{
+			ParentRequestID: e.parentReq.ID,
+			Clock:           cs.clock,
+			ChosenInstance:  decision.TargetInstance,
+			Scores:          copyScores(decision.Scores),
+		}
+		if cs.trace.Config.CounterfactualK > 0 {
+			record.Candidates, record.Regret = computeCounterfactual(
+				decision.TargetInstance, decision.Scores,
+				filteredSnapshots, cs.trace.Config.CounterfactualK,
+			)
+		}
+		cs.trace.RecordPrefillRouting(record)
+	}
 
 	// Register as pending prefill completion for detection in event loop
 	cs.pendingPrefillCompletions[e.request.ID] = e.parentReq.ID
@@ -200,6 +218,42 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 			// INV-PD-1 structural guarantee: DecodeEnqueueTime >= TransferCompleteTime.
 			// KVTransferCompletedEvent (priority 6) schedules DecodeRoutingEvent (priority 7)
 			// at the same timestamp (e.time), so both fields are equal by construction.
+
+			// Record KV transfer and decode routing after successful KV allocation (BC-PD-17, BC-PD-19)
+			// Placement after AllocateTransferredKV ensures records only exist for requests that
+			// complete the decode phase (R1: no orphan records for dropped requests).
+			// KVTransferRecord is recorded here so DecodeInstanceID is fully populated.
+			if cs.trace != nil {
+				// INV-PD-4: transfer_start ≤ transfer_complete by timestamp sequencing.
+				// Defensive clamp: warn and record 0 if violated.
+				transferDuration := e.parentReq.TransferCompleteTime - e.parentReq.TransferStartTime
+				if transferDuration < 0 {
+					logrus.Warnf("[cluster] INV-PD-4 violated: TransferCompleteTime (%d) < TransferStartTime (%d) for req %s; recording 0",
+						e.parentReq.TransferCompleteTime, e.parentReq.TransferStartTime, e.parentReq.ID)
+					transferDuration = 0
+				}
+				cs.trace.RecordKVTransfer(trace.KVTransferRecord{
+					ParentRequestID:   e.parentReq.ID,
+					TransferStartTime: e.parentReq.TransferStartTime,
+					TransferDuration:  transferDuration,
+					NumKVBlocks:       e.parentReq.NumKVBlocks,
+					PrefillInstanceID: string(e.parentReq.PrefillInstanceID),
+					DecodeInstanceID:  string(e.parentReq.DecodeInstanceID),
+				})
+				decodeRecord := trace.DecodeRoutingRecord{
+					ParentRequestID: e.parentReq.ID,
+					Clock:           cs.clock,
+					ChosenInstance:  decision.TargetInstance,
+					Scores:          copyScores(decision.Scores),
+				}
+				if cs.trace.Config.CounterfactualK > 0 {
+					decodeRecord.Candidates, decodeRecord.Regret = computeCounterfactual(
+						decision.TargetInstance, decision.Scores,
+						filteredSnapshots, cs.trace.Config.CounterfactualK,
+					)
+				}
+				cs.trace.RecordDecodeRouting(decodeRecord)
+			}
 
 			cs.inFlightRequests[decision.TargetInstance]++
 			// INV-PD-4: register decode sub-request for CompletionTime detection.

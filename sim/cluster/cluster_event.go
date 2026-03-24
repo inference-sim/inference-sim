@@ -256,6 +256,15 @@ func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 	decision := cs.disaggregationDecider.Decide(e.request)
 	logrus.Debugf("[cluster] req %s: disaggregate=%v", e.request.ID, decision.Disaggregate)
 
+	// Record disaggregation decision if tracing is enabled (BC-PD-17)
+	if cs.trace != nil {
+		cs.trace.RecordDisaggregation(trace.DisaggregationRecord{
+			RequestID:    e.request.ID,
+			Clock:        cs.clock,
+			Disaggregate: decision.Disaggregate,
+		})
+	}
+
 	if !decision.Disaggregate {
 		// Local path: standard routing (unchanged)
 		heap.Push(&cs.clusterEvents, clusterEventEntry{
