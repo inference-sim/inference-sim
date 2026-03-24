@@ -315,12 +315,20 @@ func TestPrefixThresholdDecider_CacheAware_SubRequestIDMismatch(t *testing.T) {
 	parentReq := &Request{ID: "req-parent", InputTokens: prefix}
 	decider.Decide(parentReq)
 
-	// Step 2: ObserveRouting is called with a sub-request (different ID, same InputTokens).
-	// This simulates the disaggregated path where the prefill sub-request ID differs.
+	// Step 2: Overwrite cachedHashes with a stale unrelated request so that ObserveRouting
+	// MUST recompute when it sees the mismatched sub-request ID. Without this step, the
+	// original test cannot detect an inversion of the != check: parentReq and subReq share
+	// the same token content, so stale hashes from parentReq would produce the same result.
+	staleReq := &Request{ID: "req-stale", InputTokens: []int{99999, 99998}} // < blockSize, 0 hashes
+	decider.Decide(staleReq) // overwrites cachedHashes (empty) and cachedReqID = "req-stale"
+
+	// Step 3: ObserveRouting is called with a sub-request (different ID from stale, same
+	// InputTokens as prefix). ID mismatch must trigger recompute — without it the empty stale
+	// hashes would be recorded and the follow-up request would incorrectly disaggregate.
 	subReq := &Request{ID: "req-parent_prefill", InputTokens: prefix}
 	decider.ObserveRouting(subReq, "prefill_0") // ID mismatch → must recompute + record
 
-	// Step 3: New request with same prefix + 200 unique tokens = 840 total.
+	// Step 4: New request with same prefix + 200 unique tokens = 840 total.
 	// Cached: 40 blocks * 16 = 640 tokens. Non-cached: 200 <= 512 → should NOT disaggregate.
 	extended := make([]int, len(prefix)+200)
 	copy(extended, prefix)

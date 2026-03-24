@@ -70,8 +70,8 @@ func NewDisaggregationDecider(name string) DisaggregationDecider {
 // so the decider tracks the global set of recently-seen prefixes.
 // Using a single virtual key repurposes the per-instance PrefixCacheIndex structure to
 // maintain one aggregate view of cluster-wide prefix state without modifying its interface.
-// Collision with real instance IDs is not a risk: instance IDs are pool-prefixed (e.g.,
-// "prefill_0"), whereas this sentinel uses the "__" prefix convention.
+// Collision with real instance IDs is not a risk: instance IDs use a numeric index (e.g.,
+// "instance_0"), whereas this sentinel uses the "__" prefix convention.
 const globalVirtualInstance = "__global__"
 
 // DisaggregationObserver is an optional interface for stateful DisaggregationDeciders that need
