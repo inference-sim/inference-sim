@@ -366,6 +366,7 @@ func TestCollectPDMetrics_Invariant_LoadImbalanceGeq1(t *testing.T) {
 
 		pd := CollectPDMetrics(parents, agg, poolMembership, metricsByID)
 		if pd == nil {
+			t.Errorf("expected non-nil PDMetrics for prefill=%d decode=%d", tc.prefillCompletions, tc.decodeCompletions)
 			continue
 		}
 		if pd.LoadImbalanceRatio != math.MaxFloat64 && pd.LoadImbalanceRatio < 1.0 {
@@ -400,5 +401,47 @@ func TestCollectPDMetrics_LoadImbalanceRatio_BothZeroGuard(t *testing.T) {
 	}
 	if math.Abs(pd.LoadImbalanceRatio-1.0) > 1e-9 {
 		t.Errorf("expected LoadImbalanceRatio=1.0 (both idle sentinel), got %.4f", pd.LoadImbalanceRatio)
+	}
+}
+
+// GAP-3: collectPoolThroughput returns defaults when simEndedTime <= 0.
+// Guards against +Inf throughput from division by zero.
+func TestCollectPoolThroughput_ZeroSimEndedTime(t *testing.T) {
+	poolMembership := map[string]PoolRole{
+		"instance_0": PoolRolePrefill,
+		"instance_1": PoolRoleDecode,
+	}
+	m0 := sim.NewMetrics()
+	m0.CompletedRequests = 10
+	m1 := sim.NewMetrics()
+	m1.CompletedRequests = 5
+	metricsByID := map[string]*sim.Metrics{"instance_0": m0, "instance_1": m1}
+
+	prefill, decode, imbalance := collectPoolThroughput(poolMembership, metricsByID, 0)
+	if prefill != 0.0 || decode != 0.0 || math.Abs(imbalance-1.0) > 1e-9 {
+		t.Errorf("expected defaults (0.0, 0.0, 1.0) for simEndedTime=0, got (%.4f, %.4f, %.4f)",
+			prefill, decode, imbalance)
+	}
+}
+
+// GAP-4: TransferDuration excludes entries where TransferStartTime > TransferCompleteTime
+// (inverted timestamps are excluded; only well-formed intervals contribute to the distribution).
+func TestCollectPDMetrics_TransferDuration_InvertedTimestampExcluded(t *testing.T) {
+	parents := []*ParentRequest{
+		buildParentRequest("req-1", "req-1_prefill", 1000, 1500), // valid: duration = 500
+		buildParentRequest("req-2", "req-2_prefill", 2000, 1800), // invalid: start > complete
+		buildParentRequest("req-3", "req-3_prefill", 0, 500),     // invalid: start == 0
+	}
+	agg := buildAggregatedWithTTFTs(nil, 1_000_000)
+
+	pd := CollectPDMetrics(parents, agg, nil, nil)
+	if pd == nil {
+		t.Fatal("expected non-nil PDMetrics")
+	}
+	if pd.TransferDuration.Count != 1 {
+		t.Errorf("expected TransferDuration.Count=1 (only valid interval counted), got %d", pd.TransferDuration.Count)
+	}
+	if math.Abs(pd.TransferDuration.Mean-500.0) > 1e-9 {
+		t.Errorf("expected TransferDuration.Mean=500.0, got %.1f", pd.TransferDuration.Mean)
 	}
 }
