@@ -256,7 +256,7 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 			}
 
 			cs.inFlightRequests[decision.TargetInstance]++
-			// INV-PD-4: register decode sub-request for CompletionTime detection.
+			// Register decode sub-request so detectDecodeCompletions can stamp ParentRequest.CompletionTime.
 			cs.pendingDecodeCompletions[e.decodeSubReq.ID] = e.parentReq.ID
 			inst.InjectDecodeOnline(e.decodeSubReq)
 			return

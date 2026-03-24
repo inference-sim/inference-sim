@@ -121,6 +121,28 @@ func TestPDTrace_DisaggMode_AllRecordTypesPresent(t *testing.T) {
 			t.Errorf("DecodeRoutings[%d]: ParentRequestID empty", i)
 		}
 	}
+
+	// Verify cross-record ID linkage: every downstream ParentRequestID must appear
+	// in Disaggregations[*].RequestID (the contract stated in DisaggregationRecord doc).
+	disaggIDs := make(map[string]struct{}, len(tr.Disaggregations))
+	for _, d := range tr.Disaggregations {
+		disaggIDs[d.RequestID] = struct{}{}
+	}
+	for i, r := range tr.PrefillRoutings {
+		if _, ok := disaggIDs[r.ParentRequestID]; !ok {
+			t.Errorf("PrefillRoutings[%d]: ParentRequestID %q not found in Disaggregations", i, r.ParentRequestID)
+		}
+	}
+	for i, kv := range tr.KVTransfers {
+		if _, ok := disaggIDs[kv.ParentRequestID]; !ok {
+			t.Errorf("KVTransfers[%d]: ParentRequestID %q not found in Disaggregations", i, kv.ParentRequestID)
+		}
+	}
+	for i, r := range tr.DecodeRoutings {
+		if _, ok := disaggIDs[r.ParentRequestID]; !ok {
+			t.Errorf("DecodeRoutings[%d]: ParentRequestID %q not found in Disaggregations", i, r.ParentRequestID)
+		}
+	}
 }
 
 // TestPDTrace_DisaggMode_Counterfactual verifies BC-PD-19:
@@ -246,10 +268,11 @@ func TestPDTrace_DisaggMode_DisaggDecisionRecorded(t *testing.T) {
 // This exercises the "placement after AllocateTransferredKV" invariant for trace records.
 //
 // Note: drop scenario case 1 (no routable prefill pool instances) is not tested here because
-// the static simulator cannot make the prefill pool empty at runtime — ValidatePoolTopology
-// requires PrefillInstances > 0 and instance pool membership is immutable during simulation.
-// The PrefillRoutingEvent.Execute guard for empty filteredSnapshots is a defensive code path
-// for future dynamic pool membership. Cases 2 and 3 (decode-side KV drops) are tested here.
+// ValidatePoolTopology requires PrefillInstances > 0, and in this test all prefill instances
+// remain Active throughout the run. The PrefillRoutingEvent.Execute guard for empty
+// filteredSnapshots is a live defensive path: buildPoolFilteredSnapshots filters by IsRoutable(),
+// so all-Draining or all-Terminated prefill pool instances would trigger it. Cases 2 and 3
+// (decode-side KV drops via AllocateTransferredKV) are exercised here.
 func TestPDTrace_DroppedAtDecodeKV_NoOrphanRecords(t *testing.T) {
 	// GIVEN tight KV capacity on the decode instance (same setup as TestDisaggregation_DroppedAtDecodeKV)
 	// 2 prefill, 1 decode instance with only 3 blocks (48 tokens).

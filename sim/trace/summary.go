@@ -62,7 +62,7 @@ func Summarize(st *SimulationTrace) *TraceSummary {
 	summary.KVTransferCount = len(st.KVTransfers)
 	if len(st.KVTransfers) > 0 {
 		// Accumulate in float64 to avoid int64 overflow for large simulations with many
-		// long-duration transfers (int64 max ~9.22×10^12 seconds; float64 exact up to ~9×10^15 µs).
+		// long-duration transfers (int64 max ~9.22×10^18 µs; float64 exact up to ~9×10^15 µs).
 		totalDuration := 0.0
 		for _, kv := range st.KVTransfers {
 			totalDuration += float64(kv.TransferDuration)
