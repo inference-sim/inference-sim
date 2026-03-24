@@ -762,7 +762,7 @@ func TestVLLMBatchFormation_ZeroInputRequest_SkipsDecodeOnlyPath(t *testing.T) {
 		t.Errorf("WaitQueue.Len() = %d, want 0: zero-input request was not dequeued", wq.Len())
 	}
 	if computedTokens[req.ID] != 0 {
-		t.Errorf("ComputedTokens[%q] = %d, want 0: zero-input request must not take the decode-only fast-path (ProgressIndex > 0 guard violated)",
+		t.Errorf("ComputedTokens[%q] = %d, want 0: zero-input request must not take the decode-only fast-path (IsDecodeSubRequest guard violated)",
 			req.ID, computedTokens[req.ID])
 	}
 }
