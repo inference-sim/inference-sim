@@ -239,7 +239,8 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 }
 
 // DisaggregationDecisionEvent represents the PD disaggregation decision point for a request.
-// Priority 3: processed after routing events at the same timestamp.
+// Priority 3: scheduled by AdmissionEvent in place of RoutingDecisionEvent (2) when pool
+// topology is configured; fires after admission but before per-pool routing events (4+).
 // Bifurcates: disaggregate=true → PrefillRoutingEvent, disaggregate=false → RoutingDecisionEvent.
 type DisaggregationDecisionEvent struct {
 	time    int64
@@ -255,6 +256,15 @@ func (e *DisaggregationDecisionEvent) Priority() int     { return 3 }
 func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 	decision := cs.disaggregationDecider.Decide(e.request)
 	logrus.Debugf("[cluster] req %s: disaggregate=%v", e.request.ID, decision.Disaggregate)
+
+	// Record disaggregation decision if tracing is enabled (BC-PD-17)
+	if cs.trace != nil {
+		cs.trace.RecordDisaggregation(trace.DisaggregationRecord{
+			RequestID:    e.request.ID,
+			Clock:        cs.clock,
+			Disaggregate: decision.Disaggregate,
+		})
+	}
 
 	if !decision.Disaggregate {
 		// Local path: standard routing (unchanged)
