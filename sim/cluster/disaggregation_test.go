@@ -459,20 +459,23 @@ func TestAllocateTransferredKV_InsufficientCapacity(t *testing.T) {
 	}
 }
 
-// TestPDDisagg_OneOutputToken_NoPanic is a regression test for two edge-case
+// TestPDDisagg_OneOutputToken_CompletesWith1Token is a regression test for two edge-case
 // bugs discovered during PD disaggregation development:
 //
 //  1. processCompletions used == instead of >= for the completion check. In PD
 //     mode, a 1-output-token decode sub-request enters with ProgressIndex ==
 //     inputLen; after one decode step ProgressIndex becomes inputLen+1, which
-//     failed the == check and triggered a second decode step, calling
-//     AllocateKVBlocks with an out-of-bounds index and producing a phantom
-//     output token.
+//     missed the == threshold, triggered a second decode step, and called
+//     AllocateKVBlocks with an out-of-bounds index, producing a phantom token.
+//     Fixed by changing == to >= and adding a ProgressIndex < inputLen+outputLen
+//     bounds guard on the AllocateKVBlocks call.
 //
-//  2. FormBatch Phase 2 used ProgressIndex >= inputLen without a ProgressIndex >
-//     0 guard. A zero-input non-PD request (inputLen == 0) would satisfy 0 >= 0
-//     and incorrectly take the PD decode-only fast-path.
-func TestPDDisagg_OneOutputToken_NoPanic(t *testing.T) {
+//  2. FormBatch Phase 2 used a ProgressIndex >= inputLen heuristic to detect PD
+//     decode sub-requests. A zero-input non-PD request satisfied this vacuously
+//     (0 >= 0) and incorrectly took the decode-only fast-path. Fixed by
+//     replacing the heuristic with an explicit IsDecodeSubRequest flag set only
+//     by KVTransferCompletedEvent.
+func TestPDDisagg_OneOutputToken_CompletesWith1Token(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 
 	requests := []*sim.Request{

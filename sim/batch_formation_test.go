@@ -715,11 +715,12 @@ func TestVLLMBatchFormation_MaxModelLen_Zero_NoClamp(t *testing.T) {
 }
 
 // TestVLLMBatchFormation_ZeroInputRequest_SkipsDecodeOnlyPath is a regression
-// test for the guard `ProgressIndex > 0` added to the Phase 2 decode-only
-// fast-path in FormBatch. Without the guard, a non-PD request with zero input
-// tokens would satisfy ProgressIndex(0) >= inputLen(0) and incorrectly enter
-// the PD decode-only path, skipping prefill KV allocation and producing a
-// phantom output token in ComputedTokens.
+// test for the IsDecodeSubRequest flag introduced in FormBatch Phase 2. Before
+// the flag, the decode-only fast-path was guarded by a ProgressIndex heuristic
+// (ProgressIndex >= inputLen) that a zero-input non-PD request satisfied
+// vacuously (0 >= 0), causing it to skip prefill KV allocation and produce a
+// phantom output token in ComputedTokens. IsDecodeSubRequest is set only by
+// KVTransferCompletedEvent, so non-PD requests can never reach this path.
 func TestVLLMBatchFormation_ZeroInputRequest_SkipsDecodeOnlyPath(t *testing.T) {
 	kvStore := MustNewKVCacheState(10000, 16)
 	bf := NewBatchFormation()
