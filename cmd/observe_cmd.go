@@ -240,7 +240,9 @@ func runObserve(cmd *cobra.Command, _ []string) {
 			}
 		}
 		if len(groups) > 0 {
-			tokensPerWord := calibratePrefixTokenRatio(context.Background(), client)
+			calibCtx, calibCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			tokensPerWord := calibratePrefixTokenRatio(calibCtx, client)
+			calibCancel()
 			prefixes, prefixLengths = buildPrefixStrings(groups, spec.Seed, tokensPerWord)
 			logrus.Infof("Built prefix strings for %d prefix groups (%.3f tokens/word)", len(groups), tokensPerWord)
 		}
@@ -583,8 +585,8 @@ var prefixVocabulary = []string{
 }
 
 // calibrationWordCount is the number of vocabulary words used in the
-// calibration request. Equals len(prefixVocabulary) to avoid repetition.
-const calibrationWordCount = 100
+// calibration request. Must equal len(prefixVocabulary) to avoid repetition.
+var calibrationWordCount = len(prefixVocabulary)
 
 // calibratePrefixTokenRatio sends a calibration request to measure how many
 // tokens the server's tokenizer produces per vocabulary word. Returns the

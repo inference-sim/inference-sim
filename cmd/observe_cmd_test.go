@@ -653,7 +653,7 @@ func TestCalibratePrefixTokenRatio_ReturnsRatio(t *testing.T) {
 	client := NewRealClient(server.URL, "", "test-model", "vllm", WithAPIFormat("chat"))
 	ratio := calibratePrefixTokenRatio(context.Background(), client)
 
-	expected := 167.0 / 100.0
+	expected := 167.0 / float64(calibrationWordCount)
 	if math.Abs(ratio-expected) > 0.01 {
 		t.Errorf("ratio = %.4f, want %.4f", ratio, expected)
 	}
