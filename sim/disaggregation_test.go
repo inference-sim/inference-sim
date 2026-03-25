@@ -147,6 +147,7 @@ func TestDisaggregationDecider_INV9_OracleBoundary(t *testing.T) {
 		&NeverDisaggregate{},
 		&AlwaysDisaggregate{},
 		NewPrefixThresholdDecider(512, 16),
+		NewDirectToDecodeDecider(256),
 	}
 	for _, d := range deciders {
 		d1 := d.Decide(req1)
@@ -156,6 +157,86 @@ func TestDisaggregationDecider_INV9_OracleBoundary(t *testing.T) {
 				d, d1, d2)
 		}
 	}
+}
+
+// --- DirectToDecodeDecider tests ---
+
+// TestDirectToDecodeDecider_ShortPromptDoesNotDisaggregate verifies that requests below
+// the threshold are routed directly to decode (Disaggregate=false).
+func TestDirectToDecodeDecider_ShortPromptDoesNotDisaggregate(t *testing.T) {
+	d := NewDirectToDecodeDecider(256)
+	req := &Request{InputTokens: make([]int, 100)} // 100 < 256
+	decision := d.Decide(req)
+	if decision.Disaggregate {
+		t.Error("short prompt (100 tokens < threshold 256) should not disaggregate")
+	}
+}
+
+// TestDirectToDecodeDecider_LongPromptDisaggregates verifies that requests above the threshold
+// go through the full PD pipeline (Disaggregate=true).
+func TestDirectToDecodeDecider_LongPromptDisaggregates(t *testing.T) {
+	d := NewDirectToDecodeDecider(256)
+	req := &Request{InputTokens: make([]int, 500)} // 500 >= 256
+	decision := d.Decide(req)
+	if !decision.Disaggregate {
+		t.Error("long prompt (500 tokens >= threshold 256) should disaggregate")
+	}
+}
+
+// TestDirectToDecodeDecider_ExactThresholdDisaggregates verifies the >= boundary:
+// exactly threshold tokens must disaggregate (>= semantics, not >).
+func TestDirectToDecodeDecider_ExactThresholdDisaggregates(t *testing.T) {
+	d := NewDirectToDecodeDecider(256)
+	req := &Request{InputTokens: make([]int, 256)} // 256 >= 256
+	decision := d.Decide(req)
+	if !decision.Disaggregate {
+		t.Error("exact threshold (256 tokens >= threshold 256) should disaggregate")
+	}
+}
+
+// TestDirectToDecodeDecider_BelowThresholdDoesNotDisaggregate verifies the >= boundary:
+// threshold-1 tokens must not disaggregate.
+func TestDirectToDecodeDecider_BelowThresholdDoesNotDisaggregate(t *testing.T) {
+	const threshold = 256
+	d := NewDirectToDecodeDecider(threshold)
+	req := &Request{InputTokens: make([]int, threshold-1)} // 255 < 256
+	decision := d.Decide(req)
+	if decision.Disaggregate {
+		t.Errorf("threshold-1 tokens (%d) must not disaggregate (threshold=%d, boundary is >=)",
+			threshold-1, threshold)
+	}
+}
+
+// TestDirectToDecodeDecider_EmptyInputDoesNotDisaggregate verifies that empty input tokens
+// always return Disaggregate=false regardless of threshold.
+func TestDirectToDecodeDecider_EmptyInputDoesNotDisaggregate(t *testing.T) {
+	d := NewDirectToDecodeDecider(256)
+	req := &Request{InputTokens: nil}
+	decision := d.Decide(req)
+	if decision.Disaggregate {
+		t.Error("empty input should not disaggregate")
+	}
+}
+
+// TestDirectToDecodeDecider_ZeroThresholdAlwaysDisaggregates verifies that threshold=0
+// disaggregates all non-empty requests (0 <= any positive length).
+func TestDirectToDecodeDecider_ZeroThresholdAlwaysDisaggregates(t *testing.T) {
+	d := NewDirectToDecodeDecider(0)
+	req := &Request{InputTokens: make([]int, 1)}
+	decision := d.Decide(req)
+	if !decision.Disaggregate {
+		t.Error("threshold 0 with non-empty input should always disaggregate")
+	}
+}
+
+// TestNewDirectToDecodeDecider_PanicsOnNegativeThreshold verifies constructor validates threshold (R3).
+func TestNewDirectToDecodeDecider_PanicsOnNegativeThreshold(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic on negative threshold")
+		}
+	}()
+	NewDirectToDecodeDecider(-1)
 }
 
 // --- PrefixThresholdDecider tests ---

@@ -225,3 +225,14 @@ func TestRunCmd_WorkloadFlagDescriptionExcludesTraces(t *testing.T) {
 		t.Errorf("--workload flag description must not contain 'traces', got: %q", f.Usage)
 	}
 }
+
+func TestRunCmd_PDDirectDecodeThreshold_FlagRegistered(t *testing.T) {
+	// GIVEN the run cobra command
+	// WHEN looking up the --pd-direct-decode-threshold flag
+	flag := runCmd.Flags().Lookup("pd-direct-decode-threshold")
+	// THEN the flag is registered with the correct default
+	assert.NotNil(t, flag, "pd-direct-decode-threshold flag must be registered")
+	defVal, err := strconv.Atoi(flag.DefValue)
+	assert.NoError(t, err, "default value must be a valid integer")
+	assert.Equal(t, 256, defVal, "default pd-direct-decode-threshold must be 256")
+}

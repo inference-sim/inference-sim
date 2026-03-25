@@ -42,6 +42,37 @@ func (a *AlwaysDisaggregate) Decide(_ *Request) DisaggregationDecision {
 	return DisaggregationDecision{Disaggregate: true}
 }
 
+// DirectToDecodeDecider routes short prompts directly to the decode pool (Disaggregate=false)
+// and long prompts through the full PD pipeline (Disaggregate=true).
+// Decision: len(InputTokens) >= threshold -> disaggregate; < threshold -> direct to decode.
+// Empty inputs always return Disaggregate=false (consistent with PrefixThresholdDecider).
+type DirectToDecodeDecider struct {
+	threshold int
+}
+
+// NewDirectToDecodeDecider creates a DirectToDecodeDecider with the given input-length threshold.
+// threshold must be >= 0. Panics otherwise (R3).
+func NewDirectToDecodeDecider(threshold int) *DirectToDecodeDecider {
+	if threshold < 0 {
+		panic(fmt.Sprintf("NewDirectToDecodeDecider: threshold must be >= 0, got %d", threshold))
+	}
+	return &DirectToDecodeDecider{threshold: threshold}
+}
+
+// Decide returns Disaggregate=true when input length >= threshold (long prompt -> full PD pipeline),
+// Disaggregate=false when input length < threshold (short prompt -> direct to decode pool).
+// Empty inputs (len == 0) always return Disaggregate=false regardless of threshold.
+// req must be non-nil (interface contract); panics on nil req (programming error).
+func (d *DirectToDecodeDecider) Decide(req *Request) DisaggregationDecision {
+	if req == nil {
+		panic("DirectToDecodeDecider.Decide: req is nil (programming error)")
+	}
+	if len(req.InputTokens) == 0 {
+		return DisaggregationDecision{Disaggregate: false}
+	}
+	return DisaggregationDecision{Disaggregate: len(req.InputTokens) >= d.threshold}
+}
+
 // NewDisaggregationDecider creates a disaggregation decider by name.
 // Valid names are defined in validDisaggregationDeciders (bundle.go).
 // An empty string defaults to NeverDisaggregate.
@@ -177,5 +208,6 @@ func (p *PrefixThresholdDecider) ObserveRouting(req *Request, _ string) {
 	p.cachedReqID = ""
 }
 
-// Compile-time interface compliance check.
+// Compile-time interface compliance checks.
 var _ DisaggregationObserver = (*PrefixThresholdDecider)(nil)
+var _ DisaggregationDecider = (*DirectToDecodeDecider)(nil)
