@@ -663,3 +663,52 @@ func TestTransferContention_DurationFloor_ZeroBlocks_Invariant(t *testing.T) {
 		}
 	}
 }
+
+// TestTransferContention_ZeroBandwidth_FallsBackToBaseLatency verifies that when
+// PDTransferBandwidthGBps is 0 and contention is enabled, the duration falls back to
+// the base latency floor (i.e., the contention fair-share divisor does not produce NaN
+// or divide-by-zero when bandwidth is zero).
+//
+// With bandwidth=0 and contention enabled: bandwidthBytesPerUs = 0/N = 0 (still zero),
+// so the duration formula uses only baseLatUs, rounded up and subject to the 1 µs floor.
+// This tests the boundary where bandwidthBytesPerUs <= 0 even with contention active.
+func TestTransferContention_ZeroBandwidth_FallsBackToBaseLatency(t *testing.T) {
+	// 10 ms base latency = 10000 µs; bandwidth = 0 (degenerate config)
+	cs := &ClusterSimulator{
+		config: DeploymentConfig{
+			PDTransferContention:    true,
+			PDTransferBandwidthGBps: 0, // zero bandwidth — triggers else branch
+			PDTransferBaseLatencyMs: 10.0,
+			PDKVBytesPerToken:       512,
+			SimConfig: sim.SimConfig{
+				KVCacheConfig: sim.KVCacheConfig{
+					BlockSizeTokens: 16,
+				},
+			},
+		},
+		activeTransfers: 0,
+		clusterEvents:   make(ClusterEventQueue, 0),
+	}
+	parentReq := &ParentRequest{ID: "test-zero-bw", NumKVBlocks: 100}
+	event := &KVTransferStartedEvent{time: 0, parentReq: parentReq}
+	event.Execute(cs)
+
+	if len(cs.clusterEvents) != 1 {
+		t.Fatalf("expected 1 scheduled completion event, got %d", len(cs.clusterEvents))
+	}
+	duration := cs.clusterEvents[0].event.Timestamp() - event.time
+
+	// With zero bandwidth: duration = ceil(10.0 * 1000) = 10000 µs
+	const wantDur = int64(10000)
+	if duration != wantDur {
+		t.Errorf("zero-bandwidth contention duration = %d µs, want %d µs (base latency only)", duration, wantDur)
+	}
+
+	// Invariant: contention tracking still incremented (even with zero bandwidth)
+	if cs.activeTransfers != 1 {
+		t.Errorf("activeTransfers = %d after zero-bw start, want 1 (contention tracking must work regardless of bandwidth)", cs.activeTransfers)
+	}
+	if cs.peakConcurrentTransfers != 1 {
+		t.Errorf("peakConcurrentTransfers = %d, want 1", cs.peakConcurrentTransfers)
+	}
+}

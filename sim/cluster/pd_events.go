@@ -162,7 +162,8 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	if cs.config.PDTransferContention {
 		cs.activeTransfers--
 		if cs.activeTransfers < 0 {
-			logrus.Warnf("[cluster] activeTransfers went negative for %s — contention bookkeeping corrupted", e.parentReq.ID)
+			logrus.Errorf("[cluster] activeTransfers went negative (%d) for %s — contention bookkeeping corrupted, Run() will return error",
+				cs.activeTransfers, e.parentReq.ID)
 			cs.activeTransfers = 0
 			cs.contentionBookkeepingCorrupted = true
 		}

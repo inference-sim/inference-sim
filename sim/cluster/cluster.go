@@ -430,7 +430,8 @@ func (c *ClusterSimulator) Run() error {
 		return fmt.Errorf("contention bookkeeping corrupted: activeTransfers went negative during simulation — contention metrics are invalid")
 	}
 	if c.config.PDTransferContention && c.activeTransfers != 0 {
-		logrus.Warnf("[cluster] post-simulation: activeTransfers = %d (expected 0) — some KV transfers may not have completed before horizon", c.activeTransfers)
+		logrus.Warnf("[cluster] post-simulation: activeTransfers = %d (expected 0), initiated=%d completed=%d — contention metrics (PeakConcurrentTransfers, MeanTransferQueueDepth) may be inflated if horizon cut off in-flight transfers",
+			c.activeTransfers, c.transfersInitiated, c.transfersCompleted)
 	}
 
 	// Post-simulation diagnostic warnings (BC-2, BC-3)
@@ -659,8 +660,14 @@ func (c *ClusterSimulator) PeakConcurrentTransfers() int {
 	return c.peakConcurrentTransfers
 }
 
-// MeanTransferQueueDepth returns the average number of concurrent transfers at each transfer
-// initiation event. Returns 0 when --pd-transfer-contention is disabled or no transfers occurred.
+// MeanTransferQueueDepth returns the mean number of active concurrent transfers sampled at each
+// transfer initiation event (arrival-weighted mean, not a time-average). Specifically:
+//
+//	sum(activeTransfers at each start event) / count(start events)
+//
+// This is not equivalent to a time-averaged queue depth (Little's Law denominator); it measures
+// how many transfers were already in flight at the moment each new transfer began.
+// Returns 0 when --pd-transfer-contention is disabled or no transfers occurred.
 func (c *ClusterSimulator) MeanTransferQueueDepth() float64 {
 	if c.transferStartCount == 0 {
 		return 0
