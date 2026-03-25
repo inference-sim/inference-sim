@@ -475,7 +475,8 @@ func TestTraceV2_FinishReason_RoundTrip(t *testing.T) {
 
 func TestTraceV2_PrefixGroup_RoundTrip(t *testing.T) {
 	// BC-1: PrefixGroup and PrefixLength survive export → load
-	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated", WorkloadSeed: 42}
+	seed := int64(42)
+	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated", WorkloadSeed: &seed}
 	records := []TraceRecord{
 		{RequestID: 0, PrefixGroup: "group-a", PrefixLength: 128,
 			InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, Status: "ok"},
@@ -518,9 +519,9 @@ func TestTraceV2_PrefixGroup_RoundTrip(t *testing.T) {
 	if loaded.Records[2].InputTokens != 300 {
 		t.Errorf("record 2 InputTokens = %d, want 300", loaded.Records[2].InputTokens)
 	}
-	// BC-4: WorkloadSeed preserved
-	if loaded.Header.WorkloadSeed != 42 {
-		t.Errorf("WorkloadSeed = %d, want 42", loaded.Header.WorkloadSeed)
+	// BC-4: WorkloadSeed preserved (pointer type per R9 — seed=0 is valid)
+	if loaded.Header.WorkloadSeed == nil || *loaded.Header.WorkloadSeed != 42 {
+		t.Errorf("WorkloadSeed = %v, want 42", loaded.Header.WorkloadSeed)
 	}
 }
 

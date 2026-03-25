@@ -21,7 +21,7 @@ type TraceHeader struct {
 	CreatedAt      string `yaml:"created_at,omitempty"`
 	Mode           string `yaml:"mode"` // "real" or "generated"
 	WarmUpRequests int    `yaml:"warm_up_requests"`
-	WorkloadSeed   int64  `yaml:"workload_seed,omitempty"`
+	WorkloadSeed   *int64 `yaml:"workload_seed,omitempty"`
 	WorkloadSpec   string `yaml:"workload_spec,omitempty"`
 
 	Server  *TraceServerConfig  `yaml:"server,omitempty"`

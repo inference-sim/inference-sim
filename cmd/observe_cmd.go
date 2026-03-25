@@ -285,7 +285,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		header.WorkloadSpec = observeWorkloadSpec
 	}
 	if spec != nil {
-		header.WorkloadSeed = spec.Seed
+		header.WorkloadSeed = &spec.Seed
 	}
 
 	if err := recorder.Export(header, observeTraceHeader, observeTraceData); err != nil {
@@ -561,6 +561,8 @@ func requestToPending(req *sim.Request, reqIndex int, streaming, unconstrained b
 		ClientID:        req.ClientID,
 		TenantID:        req.TenantID,
 		SLOClass:        req.SLOClass,
+		PrefixGroup:     req.PrefixGroup,
+		PrefixLength:    req.PrefixLength,
 		Prompt:          prompt,
 		Unconstrained:   unconstrained,
 		DeadlineUs:      req.Deadline,

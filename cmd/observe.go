@@ -60,6 +60,8 @@ type PendingRequest struct {
 	ClientID        string
 	TenantID        string
 	SLOClass        string
+	PrefixGroup     string
+	PrefixLength    int
 	Prompt          string
 	Unconstrained   bool
 	DeadlineUs      int64
@@ -316,6 +318,15 @@ type Recorder struct {
 func (r *Recorder) RecordRequest(pending *PendingRequest, result *RequestRecord, arrivalTimeUs int64, sessionID string, roundIndex int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	// InputTokens in trace is suffix-only (total - prefix) so replay can reconstruct.
+	inputTokens := pending.InputTokens - pending.PrefixLength
+	prefixLen := pending.PrefixLength
+	if inputTokens < 0 {
+		inputTokens = pending.InputTokens
+		prefixLen = 0
+	}
+
 	r.records = append(r.records, workload.TraceRecord{
 		Model:             pending.Model,
 		ServerInputTokens: result.ServerInputTokens,
@@ -323,8 +334,10 @@ func (r *Recorder) RecordRequest(pending *PendingRequest, result *RequestRecord,
 		ClientID:          pending.ClientID,
 		TenantID:          pending.TenantID,
 		SLOClass:          pending.SLOClass,
+		PrefixGroup:       pending.PrefixGroup,
+		PrefixLength:      prefixLen,
 		Streaming:         pending.Streaming,
-		InputTokens:       pending.InputTokens,
+		InputTokens:       inputTokens,
 		OutputTokens:      result.OutputTokens,
 		DeadlineUs:        pending.DeadlineUs,
 		ArrivalTimeUs:     arrivalTimeUs,

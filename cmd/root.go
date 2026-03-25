@@ -1373,7 +1373,7 @@ var runCmd = &cobra.Command{
 				Version:      2,
 				TimeUnit:     "microseconds",
 				Mode:         "generated",
-				WorkloadSeed: spec.Seed,
+				WorkloadSeed: &spec.Seed,
 			}
 			if err := workload.ExportTraceV2(header, records, traceOutput+".yaml", traceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)
