@@ -110,6 +110,9 @@ type RawMetrics struct {
 	CacheHitRate    float64
 	PreemptionRate  float64
 	KVThrashingRate float64
+
+	// PD disaggregation metrics (PR4). Nil when disaggregation is not active.
+	PD *PDMetrics
 }
 
 // CollectRawMetrics builds RawMetrics from aggregated and per-instance metrics.

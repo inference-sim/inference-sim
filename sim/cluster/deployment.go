@@ -37,6 +37,25 @@ type DeploymentConfig struct {
 	// Zero value is safe: no loading delay, no warm-up, WAIT drain policy.
 	InstanceLifecycle InstanceLifecycleConfig
 
+	// PD disaggregation configuration (PR1)
+	// When both PrefillInstances and DecodeInstances are 0, disaggregation is disabled
+	// and the pipeline is unchanged (BC-PD-1).
+	PrefillInstances int    // Number of instances dedicated to prefill (0 = disabled)
+	DecodeInstances  int    // Number of instances dedicated to decode (0 = disabled)
+	PDDecider             string // Disaggregation decider: "" or "never" (default), "always", "prefix-threshold", "direct-to-decode"
+	PDPrefixThreshold     int    // Non-cached token threshold for prefix-threshold decider (PR6)
+	PDDirectDecodeThreshold int  // Input token threshold for direct-to-decode decider (>= 0, default 256 from CLI)
+
+	// PD KV transfer configuration (PR2)
+	PDTransferBandwidthGBps float64 // Inter-instance KV transfer bandwidth in GB/s (default 25.0)
+	PDTransferBaseLatencyMs float64 // Inter-instance KV transfer base latency in ms (default 0.05)
+	PDKVBytesPerToken       int64   // KV cache bytes per token for transfer duration (default 512)
+
+	// Per-pool routing scorer configuration (PR2)
+	// When nil, both pools use the main RoutingScorerConfigs.
+	PrefillScorerConfigs []sim.ScorerConfig // Scorer configs for prefill pool routing
+	DecodeScorerConfigs  []sim.ScorerConfig // Scorer configs for decode pool routing
+
 	// Phase 1B-1a: tier-ordered admission shedding config (issue #809).
 	// Zero value is safe: TierShedMinPriority=0 admits all tiers (same as AlwaysAdmit),
 	// but callers should explicitly set 3 (Standard) for meaningful protection.
