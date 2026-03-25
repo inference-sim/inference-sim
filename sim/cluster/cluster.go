@@ -102,10 +102,10 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	// cannot carry the int fields TierShedAdmission requires (research.md D-2).
 	var admissionPolicy sim.AdmissionPolicy
 	if config.AdmissionPolicy == "tier-shed" {
-		admissionPolicy = &sim.TierShedAdmission{
-			OverloadThreshold: config.TierShedThreshold,
-			MinAdmitPriority:  config.TierShedMinPriority,
+		if config.TierShedMinPriority == 0 {
+			logrus.Warn("[cluster] tier-shed: TierShedMinPriority=0 admits all tiers under overload — policy behaves like AlwaysAdmit; set tier_shed_min_priority: 3 for Standard-and-above protection")
 		}
+		admissionPolicy = sim.NewTierShedAdmission(config.TierShedThreshold, config.TierShedMinPriority)
 	} else {
 		admissionPolicy = sim.NewAdmissionPolicy(config.AdmissionPolicy, config.TokenBucketCapacity, config.TokenBucketRefillRate)
 	}
@@ -579,6 +579,21 @@ func (c *ClusterSimulator) RejectedRequests() int {
 // routable instances were available (I13). Distinct from admission rejections.
 func (c *ClusterSimulator) RoutingRejections() int {
 	return c.routingRejections
+}
+
+// ShedByTier returns a copy of per-SLOClass rejection counts recorded during tier-shed admission.
+// The map is populated only when AdmissionPolicy is "tier-shed"; returns an empty map otherwise.
+// Returns a defensive copy so callers cannot mutate the internal counter (R8).
+// Panics if called before Run() completes.
+func (c *ClusterSimulator) ShedByTier() map[string]int {
+	if !c.hasRun {
+		panic("ClusterSimulator.ShedByTier() called before Run()")
+	}
+	result := make(map[string]int, len(c.shedByTier))
+	for k, v := range c.shedByTier {
+		result[k] = v
+	}
+	return result
 }
 
 // Trace returns the decision trace collected during simulation.

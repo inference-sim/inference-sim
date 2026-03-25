@@ -136,6 +136,20 @@ func TestTierShedAdmission_BatchAndBackgroundAlwaysAdmitted(t *testing.T) {
 	}
 }
 
+// Additional: verify MinAdmitPriority=0 admits all tiers regardless of load (I-2 footgun doc).
+// A TierShedAdmission with MinAdmitPriority=0 is functionally identical to AlwaysAdmit.
+func TestTierShedAdmission_ZeroMinPriorityAdmitsAll(t *testing.T) {
+	policy := &TierShedAdmission{OverloadThreshold: 0, MinAdmitPriority: 0}
+	state := makeOverloadedState(9999) // extremely overloaded
+	for _, class := range []string{"critical", "standard", "sheddable", "batch", "background"} {
+		req := &Request{ID: "r", SLOClass: class}
+		admitted, reason := policy.Admit(req, state)
+		if !admitted {
+			t.Errorf("class=%q: MinAdmitPriority=0 should admit all tiers under any load, got rejected (reason=%q)", class, reason)
+		}
+	}
+}
+
 // Additional: verify Sheddable NOT shed when exactly at threshold (strict >).
 func TestTierShedAdmission_ExactThresholdAdmits(t *testing.T) {
 	policy := &TierShedAdmission{OverloadThreshold: 5, MinAdmitPriority: 3}

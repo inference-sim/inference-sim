@@ -39,11 +39,11 @@ None — stateless. No mutation of `req` or `state`. Multiple calls with identic
 | YAML key | Go field on DeploymentConfig | Default | Constraint |
 |----------|------------------------------|---------|-----------|
 | `tier_shed_threshold` | `TierShedThreshold int` | `0` | ≥ 0 |
-| `tier_shed_min_priority` | `TierShedMinPriority int` | `3` | 0–4 |
+| `tier_shed_min_priority` | `TierShedMinPriority int` | `0` (Go zero value) | 0–4 |
 
 `OverloadThreshold=0` means: shed qualifying tiers whenever any instance has effective load > 0.
 
-**Zero-value footgun**: `MinAdmitPriority=0` admits all tiers under overload (equivalent to `AlwaysAdmit`). This is almost certainly unintended. YAML defaults must set this to 3; the zero value is valid but requires explicit opt-in.
+**Zero-value footgun**: `MinAdmitPriority=0` (the Go zero value) admits all tiers under overload — equivalent to `AlwaysAdmit`. This is almost certainly unintended. Callers must explicitly set `tier_shed_min_priority: 3` for Standard-and-above protection. A `logrus.Warn` is emitted at construction time when `MinAdmitPriority=0` is used with `tier-shed`.
 
 ## Registration
 

@@ -91,9 +91,25 @@ func SLOTierPriority(class string) int {
 // TierShedAdmission sheds lower-priority requests under overload.
 // Stateless: all decisions computed from RouterState at call time.
 // Batch and Background always pass through (deferred queue PR handles them).
+// Use NewTierShedAdmission to construct with validated parameters.
 type TierShedAdmission struct {
 	OverloadThreshold int // max per-instance effective load before shedding; 0 = any load triggers
-	MinAdmitPriority  int // minimum tier priority admitted under overload (default: 3 = Standard)
+	MinAdmitPriority  int // minimum tier priority admitted under overload; 0 = admit all (footgun)
+}
+
+// NewTierShedAdmission creates a TierShedAdmission with validated parameters.
+// Panics if overloadThreshold < 0 or minAdmitPriority is outside [0, 4] (R3).
+func NewTierShedAdmission(overloadThreshold, minAdmitPriority int) *TierShedAdmission {
+	if overloadThreshold < 0 {
+		panic(fmt.Sprintf("NewTierShedAdmission: overloadThreshold must be >= 0, got %d", overloadThreshold))
+	}
+	if minAdmitPriority < 0 || minAdmitPriority > 4 {
+		panic(fmt.Sprintf("NewTierShedAdmission: minAdmitPriority must be in [0,4], got %d", minAdmitPriority))
+	}
+	return &TierShedAdmission{
+		OverloadThreshold: overloadThreshold,
+		MinAdmitPriority:  minAdmitPriority,
+	}
 }
 
 // Admit rejects requests whose tier priority is below MinAdmitPriority when the
