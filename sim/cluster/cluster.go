@@ -50,6 +50,13 @@ type ClusterSimulator struct {
 	prefillRoutingPolicy      sim.RoutingPolicy         // nil = use main routingPolicy
 	decodeRoutingPolicy       sim.RoutingPolicy         // nil = use main routingPolicy
 
+	// Transfer contention state (--pd-transfer-contention flag, INV-P2-2)
+	activeTransfers                int
+	peakConcurrentTransfers        int
+	transferDepthSum               int64
+	transferStartCount             int64
+	contentionBookkeepingCorrupted bool
+
 	// Phase 1A: node/GPU placement manager. Nil when NodePools is empty (backward-compat).
 	placement *PlacementManager
 }
@@ -77,6 +84,10 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		if err := config.DecodeOverrides.Validate("decode pool"); err != nil {
 			panic(fmt.Sprintf("ClusterSimulator: %v", err))
 		}
+	}
+
+	if config.PDTransferContention && config.PrefillInstances == 0 && config.DecodeInstances == 0 {
+		panic("ClusterSimulator: PDTransferContention requires PD disaggregation (--prefill-instances and --decode-instances must be set)")
 	}
 
 	// Build pre-construction pool membership so instance construction can resolve per-pool config.
@@ -414,6 +425,14 @@ func (c *ClusterSimulator) Run() error {
 			pdInTransfer, c.pdPrefillCompletedCount, c.pdDecodeCompletedCount, c.droppedAtDecodeKV, len(c.pendingDecodeCompletions))
 	}
 
+	// Post-simulation contention bookkeeping checks (INV-P2-2)
+	if c.contentionBookkeepingCorrupted {
+		return fmt.Errorf("contention bookkeeping corrupted: activeTransfers went negative during simulation — contention metrics are invalid")
+	}
+	if c.config.PDTransferContention && c.activeTransfers != 0 {
+		logrus.Warnf("[cluster] post-simulation: activeTransfers = %d (expected 0) — some KV transfers may not have completed before horizon", c.activeTransfers)
+	}
+
 	// Post-simulation diagnostic warnings (BC-2, BC-3)
 	if c.aggregatedMetrics.CompletedRequests == 0 {
 		if c.rejectedRequests > 0 {
@@ -632,6 +651,21 @@ func (c *ClusterSimulator) notifyDisaggregationObserver(req *sim.Request, instan
 	if obs, ok := c.disaggregationDecider.(sim.DisaggregationObserver); ok {
 		obs.ObserveRouting(req, instanceID)
 	}
+}
+
+// PeakConcurrentTransfers returns the maximum number of KV transfers in flight simultaneously.
+// Returns 0 when --pd-transfer-contention is disabled (backward-compat).
+func (c *ClusterSimulator) PeakConcurrentTransfers() int {
+	return c.peakConcurrentTransfers
+}
+
+// MeanTransferQueueDepth returns the average number of concurrent transfers at each transfer
+// initiation event. Returns 0 when --pd-transfer-contention is disabled or no transfers occurred.
+func (c *ClusterSimulator) MeanTransferQueueDepth() float64 {
+	if c.transferStartCount == 0 {
+		return 0
+	}
+	return float64(c.transferDepthSum) / float64(c.transferStartCount)
 }
 
 // mergeFloat64Map merges src into dst, logging a warning on duplicate keys.
