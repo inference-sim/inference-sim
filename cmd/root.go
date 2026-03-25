@@ -103,7 +103,8 @@ var (
 	pdDecider             string  // Disaggregation decider name
 	pdTransferBandwidth   float64 // Inter-instance KV transfer bandwidth in GB/s
 	pdTransferBaseLatency float64 // Inter-instance KV transfer base latency in ms
-	pdKVBytesPerToken     int     // KV cache bytes per token for transfer duration
+	pdKVBytesPerToken        int     // KV cache bytes per token for transfer duration
+	pdTransferContention     bool    // Enable fair-share bandwidth contention model
 	pdPrefixThreshold       int    // Non-cached token threshold for prefix-threshold decider
 	pdDirectDecodeThreshold int    // Input token threshold for direct-to-decode decider
 	prefillRoutingScorers   string // Scorer weights for prefill pool routing
@@ -295,6 +296,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&pdTransferBandwidth, "pd-transfer-bandwidth", 25.0, "PD KV transfer bandwidth in GB/s (NIXL RDMA default)")
 	cmd.Flags().Float64Var(&pdTransferBaseLatency, "pd-transfer-base-latency", 0.05, "PD KV transfer base latency in ms")
 	cmd.Flags().IntVar(&pdKVBytesPerToken, "pd-kv-bytes-per-token", 512, "KV cache bytes per token for PD transfer duration computation")
+	cmd.Flags().BoolVar(&pdTransferContention, "pd-transfer-contention", false, "Enable fair-share bandwidth contention model for concurrent KV transfers (INV-P2-2)")
 	cmd.Flags().IntVar(&pdPrefixThreshold, "pd-prefix-threshold", 512, "Non-cached token threshold for prefix-threshold decider (>= 0); disaggregate when non-cached tokens exceed this value")
 	cmd.Flags().IntVar(&pdDirectDecodeThreshold, "pd-direct-decode-threshold", 256, "Input token threshold for direct-to-decode (>= 0): requests with fewer than threshold tokens go direct to decode; requests with >= threshold tokens are disaggregated")
 	cmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")
@@ -1331,6 +1333,7 @@ var runCmd = &cobra.Command{
 			PDTransferBandwidthGBps: pdTransferBandwidth,
 			PDTransferBaseLatencyMs: pdTransferBaseLatency,
 			PDKVBytesPerToken:       int64(pdKVBytesPerToken),
+			PDTransferContention:    pdTransferContention,
 			PrefillScorerConfigs:    prefillScorerCfgs,
 			DecodeScorerConfigs:     decodeScorerCfgs,
 			PrefillOverrides:        prefillOverrides,
@@ -1410,6 +1413,11 @@ var runCmd = &cobra.Command{
 			cs.PerInstanceMetricsByID(),
 		)
 
+		if rawMetrics.PD != nil && config.PDTransferContention {
+			rawMetrics.PD.PeakConcurrentTransfers = cs.PeakConcurrentTransfers()
+			rawMetrics.PD.MeanTransferQueueDepth = cs.MeanTransferQueueDepth()
+		}
+
 		if fitnessWeights != "" {
 			weights, err := cluster.ParseFitnessWeights(fitnessWeights)
 			if err != nil {
@@ -1455,7 +1463,7 @@ var runCmd = &cobra.Command{
 		printPerModelMetrics(os.Stdout, perModelMetrics)
 
 		// Print PD disaggregation metrics if disaggregation was active (PR4)
-		printPDMetrics(os.Stdout, rawMetrics.PD)
+		printPDMetrics(os.Stdout, rawMetrics.PD, config.PDTransferContention)
 
 		// Build and print trace summary if requested (BC-9)
 		if cs.Trace() != nil && summarizeTrace {
@@ -1544,8 +1552,9 @@ func printPerModelMetrics(w io.Writer, perModelMetrics map[string]*cluster.Model
 }
 
 // printPDMetrics prints the PD disaggregation metrics section when disaggregation was active.
-// No-op when pd is nil (disaggregation inactive).
-func printPDMetrics(w io.Writer, pd *cluster.PDMetrics) {
+// No-op when pd is nil (disaggregation inactive). When contentionEnabled, also prints
+// peak concurrent transfers and mean transfer queue depth.
+func printPDMetrics(w io.Writer, pd *cluster.PDMetrics, contentionEnabled bool) {
 	if pd == nil {
 		return
 	}
@@ -1566,6 +1575,10 @@ func printPDMetrics(w io.Writer, pd *cluster.PDMetrics) {
 	if pd.TransferDuration.Count > 0 {
 		_, _ = fmt.Fprintf(w, "KV Transfer Duration (us): mean=%.1f p50=%.1f p95=%.1f p99=%.1f\n",
 			pd.TransferDuration.Mean, pd.TransferDuration.P50, pd.TransferDuration.P95, pd.TransferDuration.P99)
+	}
+	if contentionEnabled {
+		_, _ = fmt.Fprintf(w, "Peak Concurrent Transfers: %d\n", pd.PeakConcurrentTransfers)
+		_, _ = fmt.Fprintf(w, "Mean Transfer Queue Depth: %.4f\n", pd.MeanTransferQueueDepth)
 	}
 }
 

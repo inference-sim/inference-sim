@@ -50,6 +50,13 @@ type ClusterSimulator struct {
 	prefillRoutingPolicy      sim.RoutingPolicy         // nil = use main routingPolicy
 	decodeRoutingPolicy       sim.RoutingPolicy         // nil = use main routingPolicy
 
+	// Transfer contention state (--pd-transfer-contention flag, INV-P2-2)
+	activeTransfers                int
+	peakConcurrentTransfers        int
+	transferDepthSum               int64
+	transferStartCount             int64
+	contentionBookkeepingCorrupted bool
+
 	// Phase 1A: node/GPU placement manager. Nil when NodePools is empty (backward-compat).
 	placement *PlacementManager
 }
@@ -77,6 +84,10 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		if err := config.DecodeOverrides.Validate("decode pool"); err != nil {
 			panic(fmt.Sprintf("ClusterSimulator: %v", err))
 		}
+	}
+
+	if config.PDTransferContention && config.PrefillInstances == 0 && config.DecodeInstances == 0 {
+		panic("ClusterSimulator: PDTransferContention requires PD disaggregation (--prefill-instances and --decode-instances must be set)")
 	}
 
 	// Build pre-construction pool membership so instance construction can resolve per-pool config.
@@ -321,6 +332,11 @@ func (c *ClusterSimulator) Run() error {
 			if delta > 0 {
 				c.inFlightRequests[instID] -= delta
 				if c.inFlightRequests[instID] < 0 {
+					// Warn-and-clamp: inFlightRequests is a best-effort routing signal
+					// (INV-7); it recovers from delta mis-accounting and does not corrupt
+					// deterministic metrics. Contrast with activeTransfers (contention
+					// subsystem) which uses a hard error because contention metrics are
+					// meaningless once the counter is wrong.
 					logrus.Warnf("inFlightRequests[%s] went negative (%d) after delta=%d (completed=%d, dropped=%d, timedOut=%d) — bookkeeping bug",
 						instID, c.inFlightRequests[instID], delta, completedAfter-completedBefore, droppedAfter-droppedBefore, timedOutAfter-timedOutBefore)
 					c.inFlightRequests[instID] = 0
@@ -412,6 +428,15 @@ func (c *ClusterSimulator) Run() error {
 	} else if pdInTransfer < 0 {
 		logrus.Warnf("[cluster] pdInTransfer = %d (negative): prefillCompleted=%d, decodeCompleted=%d, droppedAtDecodeKV=%d, pendingDecode=%d — bookkeeping bug in PD disaggregation accounting",
 			pdInTransfer, c.pdPrefillCompletedCount, c.pdDecodeCompletedCount, c.droppedAtDecodeKV, len(c.pendingDecodeCompletions))
+	}
+
+	// Post-simulation contention bookkeeping checks (INV-P2-2)
+	if c.contentionBookkeepingCorrupted {
+		return fmt.Errorf("contention bookkeeping corrupted: activeTransfers went negative during simulation — contention metrics are invalid")
+	}
+	if c.config.PDTransferContention && c.activeTransfers != 0 {
+		logrus.Warnf("[cluster] post-simulation: activeTransfers = %d (expected 0), initiated=%d completed=%d — contention metrics (PeakConcurrentTransfers, MeanTransferQueueDepth) may be inflated if horizon cut off in-flight transfers",
+			c.activeTransfers, c.transfersInitiated, c.transfersCompleted)
 	}
 
 	// Post-simulation diagnostic warnings (BC-2, BC-3)
@@ -632,6 +657,30 @@ func (c *ClusterSimulator) notifyDisaggregationObserver(req *sim.Request, instan
 	if obs, ok := c.disaggregationDecider.(sim.DisaggregationObserver); ok {
 		obs.ObserveRouting(req, instanceID)
 	}
+}
+
+// PeakConcurrentTransfers returns the maximum number of KV transfers in flight simultaneously.
+// Returns 0 when --pd-transfer-contention is disabled (backward-compat).
+func (c *ClusterSimulator) PeakConcurrentTransfers() int {
+	return c.peakConcurrentTransfers
+}
+
+// MeanTransferQueueDepth returns the mean number of active concurrent transfers sampled at each
+// transfer initiation event (arrival-weighted mean, not a time-average). Specifically:
+//
+//	sum(activeTransfers at each start event) / count(start events)
+//
+// The activeTransfers count is taken post-increment, so it includes the initiating transfer
+// itself. For example, with fully sequential transfers the mean is exactly 1.0.
+//
+// This is not equivalent to a time-averaged queue depth (Little's Law denominator); it measures
+// how many transfers were in flight at the moment each new transfer began, including the new one.
+// Returns 0 when --pd-transfer-contention is disabled or no transfers occurred.
+func (c *ClusterSimulator) MeanTransferQueueDepth() float64 {
+	if c.transferStartCount == 0 {
+		return 0
+	}
+	return float64(c.transferDepthSum) / float64(c.transferStartCount)
 }
 
 // mergeFloat64Map merges src into dst, logging a warning on duplicate keys.
