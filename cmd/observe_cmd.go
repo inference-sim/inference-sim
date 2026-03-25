@@ -221,7 +221,6 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	}
 
 	// Setup
-	streaming := !observeNoStreaming
 	client := NewRealClient(observeServerURL, observeAPIKey, observeModel, observeServerType, WithAPIFormat(observeAPIFormat))
 	recorder := &Recorder{}
 
@@ -266,7 +265,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 
 	// Run orchestrator
 	startTime := time.Now()
-	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, streaming, observeMaxConcur, observeWarmup, prefixes, prefixLengths, observeUnconstrainedOutput)
+	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, observeNoStreaming, observeMaxConcur, observeWarmup, prefixes, prefixLengths, observeUnconstrainedOutput)
 	logrus.Infof("Observation wall-clock time: %.3fs", time.Since(startTime).Seconds())
 
 	// Export trace (BC-4)
@@ -311,7 +310,7 @@ func runObserveOrchestrator(
 	recorder *Recorder,
 	sessionMgr *workload.SessionManager,
 	requests []*sim.Request,
-	streaming bool,
+	noStreaming bool,
 	maxConcurrency int,
 	warmupCount int,
 	prefixes map[string]string,
@@ -372,7 +371,7 @@ func runObserveOrchestrator(
 		defer wg.Done()
 		defer func() { <-semaphore }() // release concurrency slot
 
-		pending := requestToPending(req, idx, streaming, unconstrained, prefixes, prefixLengths)
+		pending := requestToPending(req, idx, noStreaming, unconstrained, prefixes, prefixLengths)
 		record, sendErr := client.Send(ctx, pending)
 		if sendErr != nil {
 			logrus.Warnf("request %d: Send returned error: %v", idx, sendErr)
@@ -528,7 +527,7 @@ func adaptForSessionManager(original *sim.Request, record *RequestRecord) *sim.R
 // prefixes maps prefix-group name to a pre-built prefix string; prefixLengths maps
 // prefix-group name to the number of words in the prefix. Both may be nil if no
 // prefix groups exist.
-func requestToPending(req *sim.Request, reqIndex int, streaming, unconstrained bool, prefixes map[string]string, prefixLengths map[string]int) *PendingRequest {
+func requestToPending(req *sim.Request, reqIndex int, noStreaming, unconstrained bool, prefixes map[string]string, prefixLengths map[string]int) *PendingRequest {
 	// Generate proportional prompt: ~N words for N InputTokens.
 	// Actual token count varies by tokenizer; ServerInputTokens provides ground truth.
 	wordCount := len(req.InputTokens)
@@ -557,7 +556,7 @@ func requestToPending(req *sim.Request, reqIndex int, streaming, unconstrained b
 		InputTokens:     len(req.InputTokens),
 		MaxOutputTokens: req.MaxOutputLen,
 		Model:           req.Model,
-		Streaming:       streaming,
+		Streaming:       req.Streaming && !noStreaming,
 		ClientID:        req.ClientID,
 		TenantID:        req.TenantID,
 		SLOClass:        req.SLOClass,
