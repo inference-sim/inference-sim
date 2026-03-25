@@ -17,12 +17,12 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 
 	rng := rand.New(rand.NewSource(seed))
 
-	// Generate shared prefix tokens per prefix group
+	// Generate shared prefix tokens per prefix group using trace-specified length
 	prefixTokens := make(map[string][]int)
 	for _, rec := range trace.Records {
-		if rec.PrefixGroup != "" {
+		if rec.PrefixGroup != "" && rec.PrefixLength > 0 {
 			if _, exists := prefixTokens[rec.PrefixGroup]; !exists {
-				prefixTokens[rec.PrefixGroup] = sim.GenerateRandomTokenIDs(rng, 50)
+				prefixTokens[rec.PrefixGroup] = sim.GenerateRandomTokenIDs(rng, rec.PrefixLength)
 			}
 		}
 	}
@@ -63,6 +63,7 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 			Deadline:         rec.DeadlineUs, // BC-4, BC-5: client timeout; 0 = no timeout
 			ClientID:         rec.ClientID,
 			PrefixGroup:      rec.PrefixGroup,
+			PrefixLength:     rec.PrefixLength,
 			Streaming:        rec.Streaming,
 			// ServerInputTokens: not propagated to sim.Request (calibration-only field, BC-7)
 		}

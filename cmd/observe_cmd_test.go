@@ -606,12 +606,21 @@ func TestRequestToPending_PrependsPrefixString(t *testing.T) {
 	prefixLengths := map[string]int{"shared": 3}
 
 	req := &sim.Request{
-		ID:          "test",
-		InputTokens: make([]int, 10),
-		PrefixGroup: "shared",
+		ID:           "test",
+		InputTokens:  make([]int, 10),
+		PrefixGroup:  "shared",
+		PrefixLength: 64,
 	}
 
 	pending := requestToPending(req, 0, false, false, prefixes, prefixLengths)
+
+	// PrefixGroup and PrefixLength propagated to PendingRequest
+	if pending.PrefixGroup != "shared" {
+		t.Errorf("PrefixGroup = %q, want %q", pending.PrefixGroup, "shared")
+	}
+	if pending.PrefixLength != 64 {
+		t.Errorf("PrefixLength = %d, want 64", pending.PrefixLength)
+	}
 
 	// Prompt should start with prefix
 	if !strings.HasPrefix(pending.Prompt, "alpha bravo charlie ") {
@@ -632,6 +641,35 @@ func TestRequestToPending_PrependsPrefixString(t *testing.T) {
 	pendingNoPrefix := requestToPending(reqNoPrefix, 1, false, false, prefixes, prefixLengths)
 	if strings.HasPrefix(pendingNoPrefix.Prompt, "alpha") {
 		t.Error("request without prefix group should not have prefix")
+	}
+}
+
+func TestRequestToPending_UsesPerRequestStreaming(t *testing.T) {
+	streamingReq := &sim.Request{
+		ID:          "stream-req",
+		InputTokens: make([]int, 5),
+		Streaming:   true,
+	}
+	nonStreamingReq := &sim.Request{
+		ID:          "nostream-req",
+		InputTokens: make([]int, 5),
+		Streaming:   false,
+	}
+
+	// BC-1 / BC-3: without global override, per-request value propagates
+	p1 := requestToPending(streamingReq, 0, false, false, nil, nil)
+	if !p1.Streaming {
+		t.Error("expected Streaming=true for streaming request when noStreaming=false")
+	}
+	p2 := requestToPending(nonStreamingReq, 1, false, false, nil, nil)
+	if p2.Streaming {
+		t.Error("expected Streaming=false for non-streaming request when noStreaming=false")
+	}
+
+	// BC-2: --no-streaming overrides per-request value to false
+	p3 := requestToPending(streamingReq, 2, true, false, nil, nil)
+	if p3.Streaming {
+		t.Error("expected Streaming=false when noStreaming=true overrides req.Streaming=true")
 	}
 }
 

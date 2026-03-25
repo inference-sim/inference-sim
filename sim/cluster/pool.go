@@ -55,24 +55,6 @@ func ValidatePoolTopology(prefill, decode, total int) error {
 	return nil
 }
 
-// BuildPoolMembership constructs an immutable map of instance ID → PoolRole.
-// Instances 0..prefill-1 are assigned PoolRolePrefill, prefill..prefill+decode-1 are PoolRoleDecode.
-// Caller must validate prefill+decode <= len(instances) before calling.
-func BuildPoolMembership(instances []*InstanceSimulator, prefill, decode int) map[string]PoolRole {
-	if prefill+decode > len(instances) {
-		panic(fmt.Sprintf("BuildPoolMembership: prefill(%d)+decode(%d)=%d exceeds len(instances)=%d",
-			prefill, decode, prefill+decode, len(instances)))
-	}
-	membership := make(map[string]PoolRole, prefill+decode)
-	for i := 0; i < prefill; i++ {
-		membership[string(instances[i].ID())] = PoolRolePrefill
-	}
-	for i := prefill; i < prefill+decode; i++ {
-		membership[string(instances[i].ID())] = PoolRoleDecode
-	}
-	return membership
-}
-
 // BuildPoolMembershipFromIndices constructs a pool membership map from instance indices.
 // Uses the same instance ID naming convention as NewClusterSimulator: "instance_N".
 // This variant does not require constructed instances, enabling pool membership

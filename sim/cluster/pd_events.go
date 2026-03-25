@@ -95,17 +95,34 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 	cs.transfersInitiated++
 	e.parentReq.TransferStartTime = e.time
 
-	// Transfer duration: base_latency_us + (numBlocks * blockSizeTokens * bytesPerToken) / bandwidthBytesPerUs
+	// Contention tracking (INV-P2-2): increment before duration calculation so the
+	// divisor reflects the active count including this transfer.
+	if cs.config.PDTransferContention {
+		cs.activeTransfers++
+		if cs.activeTransfers > cs.peakConcurrentTransfers {
+			cs.peakConcurrentTransfers = cs.activeTransfers
+		}
+		cs.transferDepthSum += int64(cs.activeTransfers)
+		cs.transferStartCount++
+	}
+
+	// Transfer duration: base_latency_us + (numBlocks * blockSizeTokens * bytesPerToken) / effectiveBandwidthBytesPerUs
 	numBlocks := e.parentReq.NumKVBlocks
 	blockSizeBytes := cs.config.BlockSizeTokens * cs.config.PDKVBytesPerToken
-	transferBytes := numBlocks * blockSizeBytes
+	// Use float64 for transferBytes to avoid int64 overflow with large blocks
+	transferBytes := float64(numBlocks) * float64(blockSizeBytes)
 
 	bandwidthBytesPerUs := cs.config.PDTransferBandwidthGBps * 1000.0 // GB/s → bytes/μs
 	baseLatUs := cs.config.PDTransferBaseLatencyMs * 1000.0            // ms → μs
 
+	// Fair-share: divide effective bandwidth by number of concurrent transfers (INV-P2-2)
+	if cs.config.PDTransferContention && cs.activeTransfers > 1 {
+		bandwidthBytesPerUs = bandwidthBytesPerUs / float64(cs.activeTransfers)
+	}
+
 	var duration int64
 	if bandwidthBytesPerUs > 0 {
-		duration = int64(math.Ceil(baseLatUs + float64(transferBytes)/bandwidthBytesPerUs))
+		duration = int64(math.Ceil(baseLatUs + transferBytes/bandwidthBytesPerUs))
 	} else {
 		duration = int64(math.Ceil(baseLatUs))
 	}
@@ -113,8 +130,13 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 		duration = 1 // Minimum 1 μs transfer
 	}
 
-	logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs",
-		e.parentReq.ID, numBlocks, duration)
+	if cs.config.PDTransferContention {
+		logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs, activeTransfers=%d",
+			e.parentReq.ID, numBlocks, duration, cs.activeTransfers)
+	} else {
+		logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs",
+			e.parentReq.ID, numBlocks, duration)
+	}
 
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &KVTransferCompletedEvent{
@@ -140,6 +162,21 @@ func (e *KVTransferCompletedEvent) Priority() int     { return 6 }
 func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	cs.transfersCompleted++
 	e.parentReq.TransferCompleteTime = e.time
+
+	// Contention decrement with negative guard (INV-P2-2).
+	// activeTransfers going negative is a hard bookkeeping bug (unlike inFlightRequests,
+	// which is warn-only because it recovers from delta mis-accounting). Here we set
+	// contentionBookkeepingCorrupted so Run() returns an error — contention metrics are
+	// meaningless once the counter is corrupted.
+	if cs.config.PDTransferContention {
+		cs.activeTransfers--
+		if cs.activeTransfers < 0 {
+			logrus.Errorf("[cluster] activeTransfers went negative (%d) for %s — resetting to 0; contention bookkeeping corrupted",
+				cs.activeTransfers, e.parentReq.ID)
+			cs.activeTransfers = 0
+			cs.contentionBookkeepingCorrupted = true
+		}
+	}
 
 	orig := e.parentReq.OriginalRequest
 	decodeSubReq := &sim.Request{

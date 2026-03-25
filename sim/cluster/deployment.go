@@ -50,11 +50,17 @@ type DeploymentConfig struct {
 	PDTransferBandwidthGBps float64 // Inter-instance KV transfer bandwidth in GB/s (default 25.0)
 	PDTransferBaseLatencyMs float64 // Inter-instance KV transfer base latency in ms (default 0.05)
 	PDKVBytesPerToken       int64   // KV cache bytes per token for transfer duration (default 512)
+	PDTransferContention    bool    // Enable fair-share bandwidth contention model (--pd-transfer-contention, INV-P2-2)
 
 	// Per-pool routing scorer configuration (PR2)
 	// When nil, both pools use the main RoutingScorerConfigs.
 	PrefillScorerConfigs []sim.ScorerConfig // Scorer configs for prefill pool routing
 	DecodeScorerConfigs  []sim.ScorerConfig // Scorer configs for decode pool routing
+
+	// Per-pool hardware overrides
+	// When empty (all nil/zero), all instances use the global SimConfig (BC-P2-1).
+	PrefillOverrides PoolOverrides // Hardware overrides for prefill pool instances
+	DecodeOverrides  PoolOverrides // Hardware overrides for decode pool instances
 
 	// Phase 1B-1a: tier-ordered admission shedding config (issue #809).
 	// Zero value is safe: TierShedMinPriority=0 admits all tiers (same as AlwaysAdmit),
@@ -68,4 +74,20 @@ type DeploymentConfig struct {
 // and injects requests via InjectRequestOnline.
 func (d DeploymentConfig) ToSimConfig() sim.SimConfig {
 	return d.SimConfig
+}
+
+// resolveConfigForRole returns the SimConfig appropriate for an instance in the given pool role.
+// For PoolRolePrefill: applies PrefillOverrides to the global SimConfig.
+// For PoolRoleDecode: applies DecodeOverrides to the global SimConfig.
+// For any other role (including 0/unset): returns the global SimConfig unchanged.
+// The global SimConfig is never mutated.
+func (d DeploymentConfig) resolveConfigForRole(role PoolRole) sim.SimConfig {
+	switch role {
+	case PoolRolePrefill:
+		return ResolvePoolConfig(d.SimConfig, d.PrefillOverrides)
+	case PoolRoleDecode:
+		return ResolvePoolConfig(d.SimConfig, d.DecodeOverrides)
+	default:
+		return d.SimConfig
+	}
 }
