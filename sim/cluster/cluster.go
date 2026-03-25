@@ -65,13 +65,37 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	if config.NumInstances < 1 {
 		panic("ClusterSimulator: NumInstances must be >= 1")
 	}
-	simCfg := config.ToSimConfig()
+
+	// Validate pool topology and overrides early (before instance construction).
+	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
+		if err := ValidatePoolTopology(config.PrefillInstances, config.DecodeInstances, config.NumInstances); err != nil {
+			panic(fmt.Sprintf("ClusterSimulator: %v", err))
+		}
+		if err := config.PrefillOverrides.Validate("prefill pool"); err != nil {
+			panic(fmt.Sprintf("ClusterSimulator: %v", err))
+		}
+		if err := config.DecodeOverrides.Validate("decode pool"); err != nil {
+			panic(fmt.Sprintf("ClusterSimulator: %v", err))
+		}
+	}
+
+	// Build pre-construction pool membership so instance construction can resolve per-pool config.
+	// When disaggregation is disabled (PrefillInstances==0), prePoolMembership is nil and
+	// all instances use the global config (backward-compatible).
+	var prePoolMembership map[string]PoolRole
+	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
+		prePoolMembership = BuildPoolMembershipFromIndices(config.NumInstances, config.PrefillInstances, config.DecodeInstances)
+	}
+
 	instances := make([]*InstanceSimulator, config.NumInstances)
 	for idx := range instances {
-		inst := NewInstanceSimulator(
-			InstanceID(fmt.Sprintf("instance_%d", idx)),
-			simCfg,
-		)
+		id := InstanceID(fmt.Sprintf("instance_%d", idx))
+		role := PoolRole(0)
+		if prePoolMembership != nil {
+			role = prePoolMembership[string(id)]
+		}
+		simCfg := config.resolveConfigForRole(role)
+		inst := NewInstanceSimulator(id, simCfg)
 		// Populate Model from config so multi-model routing filter works correctly (FR-010).
 		// Empty string = single-model mode (backward-compatible).
 		inst.Model = config.Model
@@ -112,12 +136,9 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		inFlightRequests:     make(map[string]int, config.NumInstances),
 	}
 
-	// PD disaggregation: validate topology and build pool membership
+	// PD disaggregation: set pool membership (topology already validated above)
 	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
-		if err := ValidatePoolTopology(config.PrefillInstances, config.DecodeInstances, config.NumInstances); err != nil {
-			panic(fmt.Sprintf("ClusterSimulator: %v", err))
-		}
-		cs.poolMembership = BuildPoolMembership(instances, config.PrefillInstances, config.DecodeInstances)
+		cs.poolMembership = prePoolMembership
 		switch config.PDDecider {
 		case "prefix-threshold":
 			cs.disaggregationDecider = sim.NewPrefixThresholdDecider(config.PDPrefixThreshold, int(config.BlockSizeTokens))
