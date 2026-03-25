@@ -75,7 +75,7 @@ var (
 	priorityPolicy string // Priority policy name
 	scheduler      string // Scheduler name
 
-	// Policy bundle config (PR8)
+	// Policy bundle config
 	policyConfigPath string // Path to YAML policy configuration file
 
 	// Fitness evaluation config (PR9)
@@ -109,7 +109,7 @@ var (
 	prefillRoutingScorers   string // Scorer weights for prefill pool routing
 	decodeRoutingScorers  string  // Scorer weights for decode pool routing
 
-	// Per-pool hardware override config (PR8)
+	// Per-pool hardware override config
 	prefillTP             int
 	decodeTP              int
 	prefillHardware       string
@@ -269,7 +269,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based, inverted-slo")
 	cmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf, reverse-priority")
 
-	// Policy bundle config (PR8)
+	// Policy bundle config
 	cmd.Flags().StringVar(&policyConfigPath, "policy-config", "", "Path to YAML policy configuration file")
 
 	// Fitness evaluation config (PR9)
@@ -300,7 +300,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")
 	cmd.Flags().StringVar(&decodeRoutingScorers, "decode-routing-scorers", "", "Scorer weights for decode pool routing (e.g., queue-depth:2,kv-utilization:2)")
 
-	// Per-pool hardware overrides (PR8)
+	// Per-pool hardware overrides
 	cmd.Flags().IntVar(&prefillTP, "prefill-tp", 0, "Tensor parallelism degree for prefill pool instances (0 = use global --tensor-parallelism)")
 	cmd.Flags().IntVar(&decodeTP, "decode-tp", 0, "Tensor parallelism degree for decode pool instances (0 = use global --tensor-parallelism)")
 	cmd.Flags().StringVar(&prefillHardware, "prefill-hardware", "", "GPU type for prefill pool instances (\"\" = use global --gpu)")
@@ -679,7 +679,7 @@ var runCmd = &cobra.Command{
 				"Provide --alpha-coeffs/--beta-coeffs, use --latency-model roofline, crossmodel, or trained-roofline",
 				model, gpu, tensorParallelism)
 		}
-		// Per-pool hardware override vars (PR8). TotalKVBlocks is populated from per-pool KV
+		// Per-pool hardware override vars. TotalKVBlocks is populated from per-pool KV
 		// auto-calc in the analytical backend block below (when applicable). TP/GPU/Backend/MaxModelLen
 		// are populated from CLI flags after PD validation. Both paths are no-ops when disaggregation
 		// is disabled (prefillInstances == 0).
@@ -813,7 +813,7 @@ var runCmd = &cobra.Command{
 				}
 			}
 
-			// Per-pool KV auto-calculation (PR8): when PD disaggregation is active and a pool
+			// Per-pool KV auto-calculation: when PD disaggregation is active and a pool
 			// uses different TP or GPU hardware, compute per-pool KV blocks from model + hardware.
 			// Only runs for analytical backends where hardware configs are available.
 			if prefillInstances > 0 {

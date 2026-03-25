@@ -56,7 +56,7 @@ type DeploymentConfig struct {
 	PrefillScorerConfigs []sim.ScorerConfig // Scorer configs for prefill pool routing
 	DecodeScorerConfigs  []sim.ScorerConfig // Scorer configs for decode pool routing
 
-	// Per-pool hardware overrides (PR8)
+	// Per-pool hardware overrides
 	// When empty (all nil/zero), all instances use the global SimConfig (BC-P2-1).
 	PrefillOverrides PoolOverrides // Hardware overrides for prefill pool instances
 	DecodeOverrides  PoolOverrides // Hardware overrides for decode pool instances
