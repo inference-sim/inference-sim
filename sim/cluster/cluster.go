@@ -665,8 +665,11 @@ func (c *ClusterSimulator) PeakConcurrentTransfers() int {
 //
 //	sum(activeTransfers at each start event) / count(start events)
 //
+// The activeTransfers count is taken post-increment, so it includes the initiating transfer
+// itself. For example, with fully sequential transfers the mean is exactly 1.0.
+//
 // This is not equivalent to a time-averaged queue depth (Little's Law denominator); it measures
-// how many transfers were already in flight at the moment each new transfer began.
+// how many transfers were in flight at the moment each new transfer began, including the new one.
 // Returns 0 when --pd-transfer-contention is disabled or no transfers occurred.
 func (c *ClusterSimulator) MeanTransferQueueDepth() float64 {
 	if c.transferStartCount == 0 {

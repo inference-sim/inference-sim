@@ -55,9 +55,9 @@ type PDMetrics struct {
 	// callers attach from cs.PeakConcurrentTransfers().
 	PeakConcurrentTransfers int
 
-	// MeanTransferQueueDepth is the average number of concurrent transfers at
-	// each transfer initiation. Populated when --pd-transfer-contention is enabled;
-	// callers attach from cs.MeanTransferQueueDepth().
+	// MeanTransferQueueDepth is the mean active-transfer count sampled at each transfer start,
+	// including the initiating transfer (arrival-weighted mean, not a time-average).
+	// Populated when --pd-transfer-contention is enabled; callers attach from cs.MeanTransferQueueDepth().
 	MeanTransferQueueDepth float64
 }
 

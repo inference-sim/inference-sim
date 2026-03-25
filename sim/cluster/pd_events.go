@@ -109,7 +109,7 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 	// Transfer duration: base_latency_us + (numBlocks * blockSizeTokens * bytesPerToken) / effectiveBandwidthBytesPerUs
 	numBlocks := e.parentReq.NumKVBlocks
 	blockSizeBytes := cs.config.BlockSizeTokens * cs.config.PDKVBytesPerToken
-	// Use float64 for transferBytes to avoid int64 overflow with large blocks (R11)
+	// Use float64 for transferBytes to avoid int64 overflow with large blocks
 	transferBytes := float64(numBlocks) * float64(blockSizeBytes)
 
 	bandwidthBytesPerUs := cs.config.PDTransferBandwidthGBps * 1000.0 // GB/s → bytes/μs
