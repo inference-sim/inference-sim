@@ -639,7 +639,7 @@ func TestRequestToPending_PrependsPrefixString(t *testing.T) {
 func TestCalibratePrefixTokenRatio_ReturnsRatio(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{
 				{"message": map[string]string{"content": "ok"}, "finish_reason": "length"},
 			},
@@ -703,7 +703,7 @@ func TestBuildPrefixStrings_ScalesWordCount(t *testing.T) {
 func TestCalibratePrefixTokenRatio_FallbackOnOutOfBounds(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{
 				{"message": map[string]string{"content": "ok"}, "finish_reason": "length"},
 			},
