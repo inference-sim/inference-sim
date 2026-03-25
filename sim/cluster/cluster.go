@@ -118,7 +118,12 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			panic(fmt.Sprintf("ClusterSimulator: %v", err))
 		}
 		cs.poolMembership = BuildPoolMembership(instances, config.PrefillInstances, config.DecodeInstances)
-		cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
+		switch config.PDDecider {
+		case "prefix-threshold":
+			cs.disaggregationDecider = sim.NewPrefixThresholdDecider(config.PDPrefixThreshold, int(config.BlockSizeTokens))
+		default:
+			cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
+		}
 		cs.parentRequests = make(map[string]*ParentRequest)
 		cs.pendingPrefillCompletions = make(map[string]string)
 		cs.pendingDecodeCompletions = make(map[string]string)
@@ -592,6 +597,18 @@ func (c *ClusterSimulator) PerInstanceMetricsByID() map[string]*sim.Metrics {
 		result[string(inst.ID())] = inst.Metrics()
 	}
 	return result
+}
+
+// notifyDisaggregationObserver calls ObserveRouting on the disaggregationDecider if it
+// implements sim.DisaggregationObserver. Called synchronously within the event loop,
+// so the prefix cache is always current at the next Decide() call.
+func (c *ClusterSimulator) notifyDisaggregationObserver(req *sim.Request, instanceID string) {
+	if c.disaggregationDecider == nil {
+		return
+	}
+	if obs, ok := c.disaggregationDecider.(sim.DisaggregationObserver); ok {
+		obs.ObserveRouting(req, instanceID)
+	}
 }
 
 // mergeFloat64Map merges src into dst, logging a warning on duplicate keys.
