@@ -158,11 +158,15 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	cs.transfersCompleted++
 	e.parentReq.TransferCompleteTime = e.time
 
-	// Contention decrement with negative guard (INV-P2-2)
+	// Contention decrement with negative guard (INV-P2-2).
+	// activeTransfers going negative is a hard bookkeeping bug (unlike inFlightRequests,
+	// which is warn-only because it recovers from delta mis-accounting). Here we set
+	// contentionBookkeepingCorrupted so Run() returns an error — contention metrics are
+	// meaningless once the counter is corrupted.
 	if cs.config.PDTransferContention {
 		cs.activeTransfers--
 		if cs.activeTransfers < 0 {
-			logrus.Errorf("[cluster] activeTransfers went negative (%d) for %s — contention bookkeeping corrupted, Run() will return error",
+			logrus.Errorf("[cluster] activeTransfers went negative (%d) for %s — resetting to 0; contention bookkeeping corrupted",
 				cs.activeTransfers, e.parentReq.ID)
 			cs.activeTransfers = 0
 			cs.contentionBookkeepingCorrupted = true

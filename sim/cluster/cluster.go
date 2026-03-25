@@ -332,6 +332,11 @@ func (c *ClusterSimulator) Run() error {
 			if delta > 0 {
 				c.inFlightRequests[instID] -= delta
 				if c.inFlightRequests[instID] < 0 {
+					// Warn-and-clamp: inFlightRequests is a best-effort routing signal
+					// (INV-7); it recovers from delta mis-accounting and does not corrupt
+					// deterministic metrics. Contrast with activeTransfers (contention
+					// subsystem) which uses a hard error because contention metrics are
+					// meaningless once the counter is wrong.
 					logrus.Warnf("inFlightRequests[%s] went negative (%d) after delta=%d (completed=%d, dropped=%d, timedOut=%d) — bookkeeping bug",
 						instID, c.inFlightRequests[instID], delta, completedAfter-completedBefore, droppedAfter-droppedBefore, timedOutAfter-timedOutBefore)
 					c.inFlightRequests[instID] = 0
