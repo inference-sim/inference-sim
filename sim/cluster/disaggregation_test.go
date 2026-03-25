@@ -646,3 +646,67 @@ func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
 		}
 	}
 }
+
+func newTestDirectToDecodeConfig(threshold int) DeploymentConfig {
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	cfg.PDDecider = "direct-to-decode"
+	cfg.PDDirectDecodeThreshold = threshold
+	return cfg
+}
+
+// TestDirectToDecode_BelowThresholdNotDisaggregated verifies the cluster-level wiring for
+// direct-to-decode: requests with fewer tokens than the threshold must not be disaggregated.
+// Tests the full NewClusterSimulator → NewDirectToDecodeDecider constructor path and
+// the DisaggregationDecisionEvent bifurcation.
+func TestDirectToDecode_BelowThresholdNotDisaggregated(t *testing.T) {
+	const threshold = 200
+	config := newTestDirectToDecodeConfig(threshold)
+
+	// Requests with 20 input tokens: 20 < 200 threshold → must NOT disaggregate.
+	requests := make([]*sim.Request, 3)
+	for i := range requests {
+		requests[i] = &sim.Request{
+			ID:           fmt.Sprintf("short_%d", i),
+			InputTokens:  make([]int, 20),
+			OutputTokens: make([]int, 5),
+			State:        sim.StateQueued,
+			ArrivalTime:  int64(i * 100000),
+		}
+	}
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	if len(cs.parentRequests) != 0 {
+		t.Errorf("parentRequests = %d, want 0: short requests (20 tokens < %d threshold) should not be disaggregated",
+			len(cs.parentRequests), threshold)
+	}
+	assertINV1Conservation(t, cs.AggregatedMetrics(), len(requests), "direct-to-decode below threshold")
+}
+
+// TestDirectToDecode_AboveThresholdDisaggregated verifies the cluster-level wiring for
+// direct-to-decode: requests with at least as many tokens as the threshold must be disaggregated.
+func TestDirectToDecode_AboveThresholdDisaggregated(t *testing.T) {
+	const threshold = 200
+	config := newTestDirectToDecodeConfig(threshold)
+
+	// Requests with 400 input tokens: 400 >= 200 threshold → must disaggregate.
+	requests := make([]*sim.Request, 3)
+	for i := range requests {
+		requests[i] = &sim.Request{
+			ID:           fmt.Sprintf("long_%d", i),
+			InputTokens:  make([]int, 400),
+			OutputTokens: make([]int, 5),
+			State:        sim.StateQueued,
+			ArrivalTime:  int64(i * 500000),
+		}
+	}
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	if len(cs.parentRequests) != 3 {
+		t.Errorf("parentRequests = %d, want 3: long requests (400 tokens >= %d threshold) should all be disaggregated",
+			len(cs.parentRequests), threshold)
+	}
+}

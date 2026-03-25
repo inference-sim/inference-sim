@@ -45,7 +45,11 @@ func (a *AlwaysDisaggregate) Decide(_ *Request) DisaggregationDecision {
 // DirectToDecodeDecider routes short prompts directly to the decode pool (Disaggregate=false)
 // and long prompts through the full PD pipeline (Disaggregate=true).
 // Decision: len(InputTokens) >= threshold -> disaggregate; < threshold -> direct to decode.
-// Empty inputs always return Disaggregate=false (consistent with PrefixThresholdDecider).
+//
+// Boundary note: this decider uses >= (disaggregate at exactly threshold tokens), while
+// PrefixThresholdDecider uses strict > on the non-cached token count. A request with exactly
+// threshold tokens disaggregates here but would not disaggregate under PrefixThresholdDecider
+// at the same threshold value (assuming no cached tokens).
 type DirectToDecodeDecider struct {
 	threshold int
 }

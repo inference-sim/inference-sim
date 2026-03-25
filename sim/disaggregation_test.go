@@ -31,10 +31,11 @@ func TestAlwaysDisaggregate_AlwaysReturnsTrue(t *testing.T) {
 	}
 }
 
-// TestDisaggregationDecider_Interface verifies both implementations satisfy the interface.
+// TestDisaggregationDecider_Interface verifies all implementations satisfy the interface.
 func TestDisaggregationDecider_Interface(t *testing.T) {
 	var _ DisaggregationDecider = &NeverDisaggregate{}
 	var _ DisaggregationDecider = &AlwaysDisaggregate{}
+	var _ DisaggregationDecider = &DirectToDecodeDecider{}
 }
 
 // TestNewDisaggregationDecider_Factory verifies factory dispatches correctly
@@ -237,6 +238,18 @@ func TestNewDirectToDecodeDecider_PanicsOnNegativeThreshold(t *testing.T) {
 		}
 	}()
 	NewDirectToDecodeDecider(-1)
+}
+
+// TestDirectToDecodeDecider_PanicsOnNilRequest verifies that Decide panics on nil req,
+// providing a clear error message rather than a nil-pointer dereference.
+func TestDirectToDecodeDecider_PanicsOnNilRequest(t *testing.T) {
+	d := NewDirectToDecodeDecider(256)
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic when req is nil")
+		}
+	}()
+	d.Decide(nil)
 }
 
 // --- PrefixThresholdDecider tests ---
