@@ -460,6 +460,13 @@ Example:
 			logrus.Fatalf("--horizon must be > 0, got %d", replayHorizon)
 		}
 
+		// Warn on PD-disaggregation flags that replay does not support.
+		// These flags are registered via registerSimConfigFlags (shared with runCmd) but
+		// replay does not build a PD-disaggregated ClusterSimulator.
+		if pdTransferContention {
+			logrus.Warnf("[replay] --pd-transfer-contention is not applicable to blis replay (PD disaggregation is not supported); flag ignored")
+		}
+
 		// Load policy bundle if specified (R23: same as runCmd)
 		var bundleScorerConfigs []sim.ScorerConfig
 		if policyConfigPath != "" {
