@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -576,8 +577,8 @@ func TestBuildPrefixStrings_DeterministicAndDistinct(t *testing.T) {
 	groups := map[string]int{"group-a": 20, "group-b": 30}
 
 	// Same seed produces same output
-	p1, l1 := buildPrefixStrings(groups, 42)
-	p2, l2 := buildPrefixStrings(groups, 42)
+	p1, l1 := buildPrefixStrings(groups, 42, 1.0)
+	p2, l2 := buildPrefixStrings(groups, 42, 1.0)
 	if p1["group-a"] != p2["group-a"] {
 		t.Error("same seed should produce identical prefix for group-a")
 	}
@@ -595,7 +596,7 @@ func TestBuildPrefixStrings_DeterministicAndDistinct(t *testing.T) {
 	}
 
 	// Different seed produces different output
-	p3, _ := buildPrefixStrings(groups, 99)
+	p3, _ := buildPrefixStrings(groups, 99, 1.0)
 	if p3["group-a"] == p1["group-a"] {
 		t.Error("different seed should produce different prefix for group-a")
 	}
@@ -632,6 +633,92 @@ func TestRequestToPending_PrependsPrefixString(t *testing.T) {
 	pendingNoPrefix := requestToPending(reqNoPrefix, 1, false, false, prefixes, prefixLengths)
 	if strings.HasPrefix(pendingNoPrefix.Prompt, "alpha") {
 		t.Error("request without prefix group should not have prefix")
+	}
+}
+
+func TestCalibratePrefixTokenRatio_ReturnsRatio(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]string{"content": "ok"}, "finish_reason": "length"},
+			},
+			"usage": map[string]interface{}{
+				"prompt_tokens": 167.0, "completion_tokens": 1.0,
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm", WithAPIFormat("chat"))
+	ratio := calibratePrefixTokenRatio(context.Background(), client)
+
+	expected := 167.0 / 100.0
+	if math.Abs(ratio-expected) > 0.01 {
+		t.Errorf("ratio = %.4f, want %.4f", ratio, expected)
+	}
+}
+
+func TestCalibratePrefixTokenRatio_FallbackOnError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm", WithAPIFormat("chat"))
+	ratio := calibratePrefixTokenRatio(context.Background(), client)
+
+	if ratio != 1.0 {
+		t.Errorf("ratio = %.4f, want 1.0 (fallback)", ratio)
+	}
+}
+
+func TestBuildPrefixStrings_ScalesWordCount(t *testing.T) {
+	groups := map[string]int{"test-group": 1000}
+
+	// With ratio 1.0 (no scaling): 1000 words
+	prefixes1, lengths1 := buildPrefixStrings(groups, 42, 1.0)
+	words1 := strings.Fields(prefixes1["test-group"])
+
+	// With ratio 1.67: round(1000/1.67) = 599 words
+	prefixes2, lengths2 := buildPrefixStrings(groups, 42, 1.67)
+	words2 := strings.Fields(prefixes2["test-group"])
+
+	if len(words1) != 1000 {
+		t.Errorf("ratio=1.0: word count = %d, want 1000", len(words1))
+	}
+	if lengths1["test-group"] != 1000 {
+		t.Errorf("ratio=1.0: prefixLengths = %d, want 1000 (target tokens)", lengths1["test-group"])
+	}
+
+	expectedWords := int(math.Round(1000.0 / 1.67))
+	if len(words2) != expectedWords {
+		t.Errorf("ratio=1.67: word count = %d, want %d", len(words2), expectedWords)
+	}
+	if lengths2["test-group"] != 1000 {
+		t.Errorf("ratio=1.67: prefixLengths = %d, want 1000 (target tokens)", lengths2["test-group"])
+	}
+}
+
+func TestCalibratePrefixTokenRatio_FallbackOnOutOfBounds(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]string{"content": "ok"}, "finish_reason": "length"},
+			},
+			"usage": map[string]interface{}{
+				"prompt_tokens": 50000.0, "completion_tokens": 1.0,
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm", WithAPIFormat("chat"))
+	ratio := calibratePrefixTokenRatio(context.Background(), client)
+
+	if ratio != 1.0 {
+		t.Errorf("ratio = %.4f, want 1.0 (fallback for out-of-bounds)", ratio)
 	}
 }
 

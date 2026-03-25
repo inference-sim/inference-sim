@@ -240,8 +240,9 @@ func runObserve(cmd *cobra.Command, _ []string) {
 			}
 		}
 		if len(groups) > 0 {
-			prefixes, prefixLengths = buildPrefixStrings(groups, spec.Seed)
-			logrus.Infof("Built prefix strings for %d prefix groups", len(groups))
+			tokensPerWord := calibratePrefixTokenRatio(context.Background(), client)
+			prefixes, prefixLengths = buildPrefixStrings(groups, spec.Seed, tokensPerWord)
+			logrus.Infof("Built prefix strings for %d prefix groups (%.3f tokens/word)", len(groups), tokensPerWord)
 		}
 	}
 
@@ -581,16 +582,67 @@ var prefixVocabulary = []string{
 	"poppy", "rye", "saffron", "tea", "urchin", "verbena", "wheat", "xeris", "yucca", "zest",
 }
 
+// calibrationWordCount is the number of vocabulary words used in the
+// calibration request. Equals len(prefixVocabulary) to avoid repetition.
+const calibrationWordCount = 100
+
+// calibratePrefixTokenRatio sends a calibration request to measure how many
+// tokens the server's tokenizer produces per vocabulary word. Returns the
+// ratio (typically 1.5-1.7 for BPE tokenizers with multi-syllable words).
+// The ratio includes a small chat template overhead (~10-20 tokens out of
+// ~167 total, <10%) which is acceptable for prefix scaling purposes.
+// On failure or out-of-bounds ratio, returns 1.0 (no scaling) with a warning.
+func calibratePrefixTokenRatio(ctx context.Context, client *RealClient) float64 {
+	prompt := strings.Join(prefixVocabulary[:calibrationWordCount], " ")
+
+	pending := &PendingRequest{
+		RequestID:       -1,
+		Model:           client.modelName,
+		Streaming:       false,
+		Prompt:          prompt,
+		MaxOutputTokens: 1,
+	}
+
+	record, err := client.Send(ctx, pending)
+	if err != nil || record.Status != "ok" || record.ServerInputTokens <= 0 {
+		msg := "unknown"
+		if err != nil {
+			msg = err.Error()
+		} else if record != nil && record.ErrorMessage != "" {
+			msg = record.ErrorMessage
+		}
+		logrus.Warnf("Prefix token calibration failed (%s); using 1:1 word-to-token ratio", msg)
+		return 1.0
+	}
+
+	ratio := float64(record.ServerInputTokens) / float64(calibrationWordCount)
+	if ratio < 1.0 || ratio > 3.0 {
+		logrus.Warnf("Prefix token calibration ratio %.3f outside expected range [1.0, 3.0]; using 1:1 fallback", ratio)
+		return 1.0
+	}
+
+	logrus.Infof("Prefix token calibration: %d words → %d server tokens (%.3f tokens/word)",
+		calibrationWordCount, record.ServerInputTokens, ratio)
+	return ratio
+}
+
 // buildPrefixStrings generates deterministic prefix strings for each prefix group.
 // Each group gets a distinct sequence of words from the vocabulary, seeded by
 // FNV hash of (seed, group name) for cross-run reproducibility.
-func buildPrefixStrings(groups map[string]int, seed int64) (prefixes map[string]string, prefixLengths map[string]int) {
+func buildPrefixStrings(groups map[string]int, seed int64, tokensPerWord float64) (prefixes map[string]string, prefixLengths map[string]int) {
 	prefixes = make(map[string]string, len(groups))
 	prefixLengths = make(map[string]int, len(groups))
 	for group, length := range groups {
 		if length <= 0 {
 			length = 50 // default prefix length
 		}
+
+		// Scale word count so the server's tokenizer produces ~length tokens.
+		wordCount := int(math.Round(float64(length) / tokensPerWord))
+		if wordCount <= 0 {
+			wordCount = 1
+		}
+
 		// Derive per-group seed from FNV hash
 		h := fnv.New64a()
 		seedBytes := make([]byte, 8)
@@ -601,10 +653,12 @@ func buildPrefixStrings(groups map[string]int, seed int64) (prefixes map[string]
 
 		rng := rand.New(rand.NewSource(groupSeed)) //nolint:gosec // deterministic, not crypto
 		var words []string
-		for i := 0; i < length; i++ {
+		for i := 0; i < wordCount; i++ {
 			words = append(words, prefixVocabulary[rng.Intn(len(prefixVocabulary))])
 		}
 		prefixes[group] = strings.Join(words, " ") + " "
+		// Store target token count (not word count) — downstream suffix
+		// computation uses this against len(req.InputTokens) which is in tokens.
 		prefixLengths[group] = length
 	}
 	return prefixes, prefixLengths
