@@ -130,8 +130,13 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 		duration = 1 // Minimum 1 μs transfer
 	}
 
-	logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs, activeTransfers=%d",
-		e.parentReq.ID, numBlocks, duration, cs.activeTransfers)
+	if cs.config.PDTransferContention {
+		logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs, activeTransfers=%d",
+			e.parentReq.ID, numBlocks, duration, cs.activeTransfers)
+	} else {
+		logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs",
+			e.parentReq.ID, numBlocks, duration)
+	}
 
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &KVTransferCompletedEvent{

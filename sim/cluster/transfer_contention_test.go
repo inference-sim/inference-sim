@@ -46,8 +46,9 @@ func TestTransferContention_INVP22_FairShareBandwidth(t *testing.T) {
 			cs.transfersInitiated, cs.transfersCompleted)
 	}
 
-	// With all requests arriving at once, some transfers should overlap
-	// (peak concurrent > 1 is expected with 4 simultaneous arrivals on 2 prefill instances)
+	// At least one transfer must have started (peak >= 1 required).
+	// With 4 simultaneous arrivals on 2 prefill instances, multiple concurrent transfers
+	// are likely; TestTransferContention_BCP26_FairShareDivision covers strict > 1 concurrency.
 	if cs.PeakConcurrentTransfers() < 1 {
 		t.Errorf("PeakConcurrentTransfers = %d, want >= 1", cs.PeakConcurrentTransfers())
 	}

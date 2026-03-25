@@ -242,7 +242,7 @@ func TestRunCmd_PDTransferContention_FlagRegistered(t *testing.T) {
 	// GIVEN the run cobra command
 	// WHEN looking up the --pd-transfer-contention flag
 	flag := runCmd.Flags().Lookup("pd-transfer-contention")
-	// THEN the flag is registered and defaults to false (BC-P2-5: off by default)
+	// THEN the flag is registered and defaults to false (off by default for backward compatibility)
 	assert.NotNil(t, flag, "pd-transfer-contention flag must be registered")
 	assert.Equal(t, "false", flag.DefValue, "pd-transfer-contention must default to false for backward compatibility")
 }
@@ -269,7 +269,7 @@ func TestPrintPDMetrics_ContentionEnabled(t *testing.T) {
 }
 
 // TestPrintPDMetrics_ContentionDisabled verifies that when contentionEnabled=false,
-// printPDMetrics does NOT emit contention-specific lines (BC-P2-5).
+// printPDMetrics does NOT emit contention-specific lines.
 func TestPrintPDMetrics_ContentionDisabled(t *testing.T) {
 	pd := &cluster.PDMetrics{
 		DisaggregatedCount:      3,
