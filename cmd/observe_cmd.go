@@ -528,8 +528,8 @@ func adaptForSessionManager(original *sim.Request, record *RequestRecord) *sim.R
 
 // requestToPending converts a sim.Request to a PendingRequest for HTTP dispatch.
 // prefixes maps prefix-group name to a pre-built prefix string; prefixLengths maps
-// prefix-group name to the number of words in the prefix. Both may be nil if no
-// prefix groups exist.
+// prefix-group name to the target token count for the prefix (not word count;
+// see buildPrefixStrings). Both may be nil if no prefix groups exist.
 func requestToPending(req *sim.Request, reqIndex int, noStreaming, unconstrained bool, prefixes map[string]string, prefixLengths map[string]int) *PendingRequest {
 	// Generate proportional prompt: ~N words for N InputTokens.
 	// Actual token count varies by tokenizer; ServerInputTokens provides ground truth.
