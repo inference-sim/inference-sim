@@ -760,6 +760,18 @@ func TestCalibratePrefixTokenRatio_FallbackOnOutOfBounds(t *testing.T) {
 	}
 }
 
+func TestBuildPrefixStrings_EmptyGroupsNoWork(t *testing.T) {
+	// BC-5: no prefix groups → no prefix strings, no calibration needed
+	groups := map[string]int{}
+	prefixes, prefixLengths := buildPrefixStrings(groups, 42, 1.0)
+	if len(prefixes) != 0 {
+		t.Errorf("expected empty prefixes, got %d", len(prefixes))
+	}
+	if len(prefixLengths) != 0 {
+		t.Errorf("expected empty prefixLengths, got %d", len(prefixLengths))
+	}
+}
+
 func TestObserveCmd_RttMsFlag_Exists(t *testing.T) {
 	f := observeCmd.Flags().Lookup("rtt-ms")
 	if f == nil {
