@@ -606,12 +606,21 @@ func TestRequestToPending_PrependsPrefixString(t *testing.T) {
 	prefixLengths := map[string]int{"shared": 3}
 
 	req := &sim.Request{
-		ID:          "test",
-		InputTokens: make([]int, 10),
-		PrefixGroup: "shared",
+		ID:           "test",
+		InputTokens:  make([]int, 10),
+		PrefixGroup:  "shared",
+		PrefixLength: 64,
 	}
 
 	pending := requestToPending(req, 0, false, false, prefixes, prefixLengths)
+
+	// PrefixGroup and PrefixLength propagated to PendingRequest
+	if pending.PrefixGroup != "shared" {
+		t.Errorf("PrefixGroup = %q, want %q", pending.PrefixGroup, "shared")
+	}
+	if pending.PrefixLength != 64 {
+		t.Errorf("PrefixLength = %d, want 64", pending.PrefixLength)
+	}
 
 	// Prompt should start with prefix
 	if !strings.HasPrefix(pending.Prompt, "alpha bravo charlie ") {

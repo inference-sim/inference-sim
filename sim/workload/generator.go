@@ -166,6 +166,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				if len(prefix) > 0 {
 					for _, req := range reasoningReqs {
 						req.InputTokens = append(append([]int{}, prefix...), req.InputTokens...)
+						req.PrefixLength = len(prefix)
 					}
 				}
 				// Set Deadline on all reasoning requests (not set in reasoning.go)
@@ -214,6 +215,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				if len(prefix) > 0 {
 					for _, req := range reasoningReqs {
 						req.InputTokens = append(append([]int{}, prefix...), req.InputTokens...)
+						req.PrefixLength = len(prefix)
 					}
 				}
 				// Set Deadline on all reasoning requests (not set in reasoning.go)
@@ -279,8 +281,10 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				outputTokens = sim.GenerateRandomTokenIDs(clientRNG, outputLen)
 			}
 
+			var prefixLength int
 			if len(prefix) > 0 {
 				inputTokens = append(append([]int{}, prefix...), inputTokens...)
+				prefixLength = len(prefix)
 			}
 
 			req := &sim.Request{
@@ -302,6 +306,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				Deadline:         computeDeadline(currentTime, client.Timeout, isClosedLoop(client)),
 				ClientID:         client.ID,
 				PrefixGroup:      client.PrefixGroup,
+				PrefixLength:     prefixLength,
 				Streaming:        client.Streaming,
 			}
 			allRequests = append(allRequests, req)

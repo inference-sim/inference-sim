@@ -63,9 +63,9 @@ func TestLoadTraceV2Requests_PrefixGroup_SharedTokens(t *testing.T) {
 	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated"}
 	records := []TraceRecord{
 		{RequestID: 0, InputTokens: 100, OutputTokens: 50,
-			PrefixGroup: "shared", ArrivalTimeUs: 0, Status: "ok"},
+			PrefixGroup: "shared", PrefixLength: 128, ArrivalTimeUs: 0, Status: "ok"},
 		{RequestID: 1, InputTokens: 100, OutputTokens: 50,
-			PrefixGroup: "shared", ArrivalTimeUs: 100000, Status: "ok"},
+			PrefixGroup: "shared", PrefixLength: 128, ArrivalTimeUs: 100000, Status: "ok"},
 	}
 
 	dir := t.TempDir()
@@ -85,20 +85,28 @@ func TestLoadTraceV2Requests_PrefixGroup_SharedTokens(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Both requests should have the same prefix (first 50 tokens)
-	if len(requests[0].InputTokens) < 50 || len(requests[1].InputTokens) < 50 {
+	// BC-3: Both requests share identical first 128 tokens
+	if len(requests[0].InputTokens) < 128 || len(requests[1].InputTokens) < 128 {
 		t.Fatal("input tokens too short for prefix check")
 	}
-	for i := 0; i < 50; i++ {
+	for i := 0; i < 128; i++ {
 		if requests[0].InputTokens[i] != requests[1].InputTokens[i] {
 			t.Errorf("prefix token %d differs: %d vs %d", i,
 				requests[0].InputTokens[i], requests[1].InputTokens[i])
 			break
 		}
 	}
-	// Total input length = prefix(50) + requested(100) = 150
-	if len(requests[0].InputTokens) != 150 {
-		t.Errorf("input length = %d, want 150 (50 prefix + 100 body)", len(requests[0].InputTokens))
+	// BC-6: Total input length = prefix(128) + suffix(100) = 228
+	if len(requests[0].InputTokens) != 228 {
+		t.Errorf("input length = %d, want 228 (128 prefix + 100 suffix)", len(requests[0].InputTokens))
+	}
+	// BC-3: PrefixGroup propagated to Request
+	if requests[0].PrefixGroup != "shared" {
+		t.Errorf("PrefixGroup = %q, want %q", requests[0].PrefixGroup, "shared")
+	}
+	// PrefixLength propagated to Request
+	if requests[0].PrefixLength != 128 {
+		t.Errorf("PrefixLength = %d, want 128", requests[0].PrefixLength)
 	}
 }
 

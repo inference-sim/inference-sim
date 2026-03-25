@@ -553,3 +553,31 @@ func TestRecorder_WiresModelAndServerInputTokens(t *testing.T) {
 		t.Errorf("ServerInputTokens = %d, want 42", records[0].ServerInputTokens)
 	}
 }
+
+func TestRecorder_PrefixGroupPropagation(t *testing.T) {
+	rec := &Recorder{}
+	rec.RecordRequest(
+		&PendingRequest{
+			RequestID:    0,
+			InputTokens:  200,
+			PrefixGroup:  "shared",
+			PrefixLength: 128,
+		},
+		&RequestRecord{RequestID: 0, Status: "ok"},
+		0, "", 0,
+	)
+	records := rec.Records()
+	if len(records) != 1 {
+		t.Fatalf("got %d records, want 1", len(records))
+	}
+	if records[0].PrefixGroup != "shared" {
+		t.Errorf("PrefixGroup = %q, want %q", records[0].PrefixGroup, "shared")
+	}
+	if records[0].PrefixLength != 128 {
+		t.Errorf("PrefixLength = %d, want 128", records[0].PrefixLength)
+	}
+	// InputTokens in trace is suffix-only: 200 - 128 = 72
+	if records[0].InputTokens != 72 {
+		t.Errorf("InputTokens = %d, want 72 (200 - 128 suffix-only)", records[0].InputTokens)
+	}
+}
