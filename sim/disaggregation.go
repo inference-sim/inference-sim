@@ -78,8 +78,8 @@ func NewDisaggregationDecider(name string) DisaggregationDecider {
 // "instance_0"), whereas this sentinel uses the "__" prefix convention.
 const globalVirtualInstance = "__global__"
 
-// defaultDisaggLRUCapacity is the number of block hashes tracked in PrefixThresholdDecider's
-// router-side prefix cache. 10,000 blocks × 16 tokens/block = 160K tokens per virtual instance.
+// defaultDisaggLRUCapacity is the number of block hash slots tracked in PrefixThresholdDecider's
+// router-side prefix cache (LRU capacity). Independent of block size.
 const defaultDisaggLRUCapacity = 10000
 
 // DisaggregationObserver is an optional interface for stateful DisaggregationDeciders that need

@@ -514,7 +514,7 @@ func newTestPrefixThresholdConfig(threshold int) DeploymentConfig {
 }
 
 // TestPrefixThreshold_BelowThresholdNotDisaggregated verifies BC-PD-21 at the cluster level:
-// requests with non-cached token counts at or below the threshold must not be disaggregated
+// requests with non-cached token counts well below the threshold must not be disaggregated
 // (absent from parentRequests). Tests the full NewClusterSimulator → PrefixThresholdDecider
 // constructor path and the DisaggregationDecisionEvent bifurcation.
 func TestPrefixThreshold_BelowThresholdNotDisaggregated(t *testing.T) {
@@ -544,6 +544,8 @@ func TestPrefixThreshold_BelowThresholdNotDisaggregated(t *testing.T) {
 		t.Errorf("parentRequests = %d, want 0: short requests (20 tokens <= %d threshold) should not be disaggregated",
 			len(cs.parentRequests), threshold)
 	}
+	// INV-1: below-threshold requests route through RoutingDecisionEvent; verify all complete.
+	assertINV1Conservation(t, cs.AggregatedMetrics(), len(requests), "below-threshold")
 }
 
 // TestPrefixThreshold_AboveThresholdDisaggregated verifies BC-PD-21 at the cluster level:
@@ -579,10 +581,10 @@ func TestPrefixThreshold_AboveThresholdDisaggregated(t *testing.T) {
 }
 
 // TestPrefixThreshold_ObserverWarmsCache verifies BC-PD-24 at the cluster level:
-// after a request warms the prefix cache via notifyDisaggregationObserver (wired in
-// PrefillRoutingEvent), a follow-up request with the same prefix + short suffix must
-// not be disaggregated (cached tokens reduce the non-cached count below the threshold).
-// This test exercises the full notifyDisaggregationObserver → pd_events.go wiring path.
+// req1 (disaggregated) warms the prefix cache via notifyDisaggregationObserver in
+// PrefillRoutingEvent.Execute (pd_events.go); req2 (non-disaggregated) verifies that
+// the warmed cache is consulted in DisaggregationDecisionEvent, reducing non-cached
+// token count below the threshold. Tests the full end-to-end wiring path.
 func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
 	const threshold = 300
 	const blockSize = 16
@@ -615,7 +617,8 @@ func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
 		InputTokens:  extended,
 		OutputTokens: make([]int, 5),
 		State:        sim.StateQueued,
-		ArrivalTime:  2000000, // 2s: req1's PrefillRoutingEvent fires at t≈0, cache is warm before req2 arrives
+		ArrivalTime:  2000000, // req1's PrefillRoutingEvent fires at t=0+routingLatency=0; req2 arrives at t=2,000,000;
+		// ordering is guaranteed by event timestamps alone (t=0 < t=2,000,000), not the gap magnitude
 	}
 	_ = blockSize // documents the block arithmetic above
 

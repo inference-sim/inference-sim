@@ -1055,7 +1055,7 @@ var runCmd = &cobra.Command{
 			logrus.Warnf("--pd-prefix-threshold=%d is ignored when --pd-decider=%q (only applies to the prefix-threshold decider)", pdPrefixThreshold, pdDecider)
 		}
 		if pdDecider != "" && pdDecider != "never" && prefillInstances == 0 {
-			logrus.Warnf("--pd-decider=%q has no effect because --prefill-instances=0 (disaggregation is disabled)", pdDecider)
+			logrus.Warnf("--pd-decider=%q has no effect because --prefill-instances=0 (disaggregation is disabled); set --prefill-instances and --decode-instances to enable", pdDecider)
 		}
 		if admissionLatency < 0 {
 			logrus.Fatalf("--admission-latency must be >= 0, got %d", admissionLatency)

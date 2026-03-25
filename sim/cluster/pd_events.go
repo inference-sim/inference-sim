@@ -70,7 +70,7 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 			cs.inFlightRequests[decision.TargetInstance]++
 			inst.InjectRequestOnline(e.request, e.time)
 			// Notify observer so stateful deciders (e.g., PrefixThresholdDecider) can learn
-			// from this prefill routing decision (synchronous call â cache is always current).
+			// from this prefill routing decision (synchronous call -- cache is always current).
 			cs.notifyDisaggregationObserver(e.request, decision.TargetInstance)
 			return
 		}
