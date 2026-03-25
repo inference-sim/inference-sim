@@ -188,4 +188,4 @@ Invariants are properties that must hold at all times during and after simulatio
 
 **Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_PoolStability` compares `PoolMembership()` before and after `Run()`.
 
-**Evidence:** `BuildPoolMembership` is called once in `NewClusterSimulator` and stored in `cs.poolMembership`. No code path in `Run()` modifies this map.
+**Evidence:** `BuildPoolMembershipFromIndices` is called once in `NewClusterSimulator` and stored in `cs.poolMembership`. No code path in `Run()` modifies this map.

@@ -1196,6 +1196,10 @@ var runCmd = &cobra.Command{
 				prefillOverrides.GPU = prefillHardware
 			}
 			if cmd.Flags().Changed("prefill-latency-model") {
+				if !sim.IsValidLatencyBackend(prefillLatencyModel) {
+					logrus.Fatalf("--prefill-latency-model %q is not a recognized backend; valid: %s",
+						prefillLatencyModel, strings.Join(sim.ValidLatencyBackendNames(), ", "))
+				}
 				prefillOverrides.LatencyBackend = prefillLatencyModel
 			}
 			if cmd.Flags().Changed("prefill-max-model-len") {
@@ -1217,6 +1221,10 @@ var runCmd = &cobra.Command{
 				decodeOverrides.GPU = decodeHardware
 			}
 			if cmd.Flags().Changed("decode-latency-model") {
+				if !sim.IsValidLatencyBackend(decodeLatencyModel) {
+					logrus.Fatalf("--decode-latency-model %q is not a recognized backend; valid: %s",
+						decodeLatencyModel, strings.Join(sim.ValidLatencyBackendNames(), ", "))
+				}
 				decodeOverrides.LatencyBackend = decodeLatencyModel
 			}
 			if cmd.Flags().Changed("decode-max-model-len") {

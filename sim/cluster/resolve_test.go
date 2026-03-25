@@ -690,9 +690,9 @@ func TestNewClusterSimulator_PanicsOnInvalidPrefillOverrides(t *testing.T) {
 		if r == nil {
 			t.Fatal("NewClusterSimulator did not panic on invalid PrefillOverrides")
 		}
-		msg := ""
-		if s, ok := r.(string); ok {
-			msg = s
+		msg, ok := r.(string)
+		if !ok {
+			t.Fatalf("panic value type = %T, want string; value = %v", r, r)
 		}
 		if !strings.Contains(msg, "TP must be > 0") {
 			t.Errorf("panic message = %q, want it to contain %q", msg, "TP must be > 0")
@@ -715,12 +715,12 @@ func TestNewClusterSimulator_PanicsOnInvalidDecodeOverrides(t *testing.T) {
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 4, "blackbox", 0),
 		},
-		NumInstances:    4,
+		NumInstances:     4,
 		PrefillInstances: 2,
-		DecodeInstances: 2,
-		PDDecider:       "always",
-		RoutingPolicy:   "round-robin",
-		DecodeOverrides: PoolOverrides{TP: &zero}, // invalid: TP=0
+		DecodeInstances:  2,
+		PDDecider:        "always",
+		RoutingPolicy:    "round-robin",
+		DecodeOverrides:  PoolOverrides{TP: &zero}, // invalid: TP=0
 	}
 
 	defer func() {
@@ -728,9 +728,9 @@ func TestNewClusterSimulator_PanicsOnInvalidDecodeOverrides(t *testing.T) {
 		if r == nil {
 			t.Fatal("NewClusterSimulator did not panic on invalid DecodeOverrides")
 		}
-		msg := ""
-		if s, ok := r.(string); ok {
-			msg = s
+		msg, ok := r.(string)
+		if !ok {
+			t.Fatalf("panic value type = %T, want string; value = %v", r, r)
 		}
 		if !strings.Contains(msg, "TP must be > 0") {
 			t.Errorf("panic message = %q, want it to contain %q", msg, "TP must be > 0")
