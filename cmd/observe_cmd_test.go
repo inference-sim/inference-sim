@@ -760,6 +760,58 @@ func TestCalibratePrefixTokenRatio_FallbackOnOutOfBounds(t *testing.T) {
 	}
 }
 
+func TestCalibratePrefixTokenRatio_FallbackOnLowRatio(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]string{"content": "ok"}, "finish_reason": "length"},
+			},
+			"usage": map[string]interface{}{
+				"prompt_tokens": 50.0, "completion_tokens": 1.0,
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm", WithAPIFormat("chat"))
+	ratio := calibratePrefixTokenRatio(context.Background(), client)
+
+	if ratio != 1.0 {
+		t.Errorf("ratio = %.4f, want 1.0 (fallback for ratio < 1.0)", ratio)
+	}
+}
+
+func TestRequestToPending_SuffixUsesTokenCountNotWordCount(t *testing.T) {
+	// Build prefix with tokensPerWord=2.0: 100 target tokens → 50 words in prefix string
+	groups := map[string]int{"scaled": 100}
+	prefixes, prefixLengths := buildPrefixStrings(groups, 42, 2.0)
+
+	// prefixLengths should store target token count (100), not word count (50)
+	if prefixLengths["scaled"] != 100 {
+		t.Fatalf("prefixLengths = %d, want 100 (target tokens)", prefixLengths["scaled"])
+	}
+	prefixWords := strings.Fields(prefixes["scaled"])
+	if len(prefixWords) != 50 {
+		t.Fatalf("prefix word count = %d, want 50", len(prefixWords))
+	}
+
+	req := &sim.Request{
+		ID:          "test",
+		InputTokens: make([]int, 200),
+		PrefixGroup: "scaled",
+	}
+	pending := requestToPending(req, 0, false, false, prefixes, prefixLengths)
+
+	// Suffix should be 200 - 100 = 100 "hello " words (using token counts),
+	// NOT 200 - 50 = 150 (which would happen if word count leaked into prefixLengths)
+	suffix := pending.Prompt[len(prefixes["scaled"]):]
+	helloCount := strings.Count(suffix, "hello ")
+	if helloCount != 100 {
+		t.Errorf("suffix hello count = %d, want 100 (200 total tokens - 100 prefix tokens)", helloCount)
+	}
+}
+
 func TestBuildPrefixStrings_EmptyGroupsNoWork(t *testing.T) {
 	// BC-5: no prefix groups → no prefix strings, no calibration needed
 	groups := map[string]int{}

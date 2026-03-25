@@ -240,8 +240,8 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		}
 		if len(groups) > 0 {
 			calibCtx, calibCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer calibCancel()
 			tokensPerWord := calibratePrefixTokenRatio(calibCtx, client)
-			calibCancel()
 			prefixes, prefixLengths = buildPrefixStrings(groups, spec.Seed, tokensPerWord)
 			logrus.Infof("Built prefix strings for %d prefix groups (%.3f tokens/word)", len(groups), tokensPerWord)
 		}
@@ -610,14 +610,24 @@ func calibratePrefixTokenRatio(ctx context.Context, client *RealClient) float64 
 	}
 
 	record, err := client.Send(ctx, pending)
-	if err != nil || record.Status != "ok" || record.ServerInputTokens <= 0 {
+	if err != nil || record == nil {
 		msg := "unknown"
 		if err != nil {
 			msg = err.Error()
-		} else if record != nil && record.ErrorMessage != "" {
-			msg = record.ErrorMessage
 		}
 		logrus.Warnf("Prefix token calibration failed (%s); using 1:1 word-to-token ratio", msg)
+		return 1.0
+	}
+	if record.Status != "ok" {
+		msg := record.ErrorMessage
+		if msg == "" {
+			msg = "status=" + record.Status
+		}
+		logrus.Warnf("Prefix token calibration failed (%s); using 1:1 word-to-token ratio", msg)
+		return 1.0
+	}
+	if record.ServerInputTokens <= 0 {
+		logrus.Warnf("Prefix token calibration failed (server returned 0 prompt_tokens — check that usage reporting is enabled); using 1:1 word-to-token ratio")
 		return 1.0
 	}
 
@@ -644,7 +654,11 @@ func buildPrefixStrings(groups map[string]int, seed int64, tokensPerWord float64
 		}
 
 		// Scale word count so the server's tokenizer produces ~length tokens.
-		wordCount := int(math.Round(float64(length) / tokensPerWord))
+		tpw := tokensPerWord
+		if tpw <= 0 {
+			tpw = 1.0
+		}
+		wordCount := int(math.Round(float64(length) / tpw))
 		if wordCount <= 0 {
 			wordCount = 1
 		}
