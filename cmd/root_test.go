@@ -291,3 +291,11 @@ func TestPrintPDMetrics_ContentionDisabled(t *testing.T) {
 	assert.Contains(t, out, "=== PD Metrics ===", "PD Metrics header must always appear")
 	assert.Contains(t, out, "Disaggregated Requests: 3", "Disaggregated Requests must always appear")
 }
+
+// TestPrintPDMetrics_NilPD_ProducesNoOutput verifies the nil-pd guard:
+// when pd is nil, printPDMetrics must return without writing any output.
+func TestPrintPDMetrics_NilPD_ProducesNoOutput(t *testing.T) {
+	var buf bytes.Buffer
+	printPDMetrics(&buf, nil, true)
+	assert.Empty(t, buf.String(), "printPDMetrics with nil pd must produce no output")
+}

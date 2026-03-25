@@ -187,11 +187,14 @@ func TestTransferContention_BCP27_INVPD3_Holds(t *testing.T) {
 	}
 
 	cs := NewClusterSimulator(config, requests, nil)
-	// Run() returns error on INV-PD-3 violation, so err == nil proves conservation.
+	// Run() returns non-nil only if contention bookkeeping was corrupted; err == nil
+	// rules out that failure path but does not by itself prove INV-PD-3.
 	if err := cs.Run(); err != nil {
 		t.Fatalf("INV-PD-3 violated with contention: %v", err)
 	}
 
+	// Direct conservation check: INV-PD-3 requires initiated == completed when all
+	// transfers finish before the simulation horizon.
 	if cs.transfersInitiated != cs.transfersCompleted {
 		t.Errorf("INV-PD-3: initiated=%d != completed=%d",
 			cs.transfersInitiated, cs.transfersCompleted)
@@ -266,6 +269,32 @@ func TestTransferContention_ActiveTransfersZeroAtEnd(t *testing.T) {
 	if cs.activeTransfers != 0 {
 		t.Errorf("activeTransfers = %d after simulation, want 0 (every start must have a matching completion)",
 			cs.activeTransfers)
+	}
+}
+
+// TestTransferContention_HorizonCutoff_RunReturnsNil verifies that when the simulation
+// horizon terminates with KV transfers still in flight (activeTransfers != 0 at end),
+// Run() emits a warning but still returns nil — not an error.
+// This is the complement of TestTransferContention_CorruptionFlagCausesRunError:
+//   - Corruption (activeTransfers went negative) → Run() returns error
+//   - Horizon cutoff (transfers still in flight) → Run() returns nil + Warnf
+//
+// The pre-set activeTransfers simulates a horizon that terminated mid-transfer.
+func TestTransferContention_HorizonCutoff_RunReturnsNil(t *testing.T) {
+	config := newContentionConfig(4, 2, 2, 25.0)
+	// Empty request set: simulation finishes immediately without any events,
+	// leaving activeTransfers untouched at whatever we set before Run().
+	cs := NewClusterSimulator(config, newTestRequests(0), nil)
+	// Pre-set to simulate a horizon that cut off one in-flight transfer.
+	cs.activeTransfers = 1
+
+	err := cs.Run()
+	if err != nil {
+		t.Fatalf("Run() = %v, want nil (horizon-cutoff with activeTransfers=1 should warn, not error)", err)
+	}
+	// Verify the residual count was not silently reset by Run().
+	if cs.activeTransfers != 1 {
+		t.Errorf("activeTransfers = %d after Run(), want 1 (horizon-cutoff residual must be preserved)", cs.activeTransfers)
 	}
 }
 
@@ -474,7 +503,8 @@ func TestTransferContention_DurationFloor_ZeroBlocks(t *testing.T) {
 }
 
 // TestTransferContention_F1_RequiresPDEnabled verifies that PDTransferContention
-// panics at construction time when PD disaggregation is not active (R3 validation).
+// panics at construction time when PD disaggregation is not active (constructor
+// prerequisite check — cross-field guard, not a numeric range rule).
 func TestTransferContention_F1_RequiresPDEnabled(t *testing.T) {
 	defer func() {
 		r := recover()
@@ -669,8 +699,10 @@ func TestTransferContention_DurationFloor_ZeroBlocks_Invariant(t *testing.T) {
 // the base latency floor (i.e., the contention fair-share divisor does not produce NaN
 // or divide-by-zero when bandwidth is zero).
 //
-// With bandwidth=0 and contention enabled: bandwidthBytesPerUs = 0/N = 0 (still zero),
-// so the duration formula uses only baseLatUs, rounded up and subject to the 1 µs floor.
+// With bandwidth=0, bandwidthBytesPerUs is 0 before the fair-share check. Since only
+// one transfer is in flight (activeTransfers == 1 after increment), the fair-share branch
+// (activeTransfers > 1) is skipped. The duration formula therefore uses only baseLatUs,
+// rounded up and subject to the 1 µs floor.
 // This tests the boundary where bandwidthBytesPerUs <= 0 even with contention active.
 func TestTransferContention_ZeroBandwidth_FallsBackToBaseLatency(t *testing.T) {
 	// 10 ms base latency = 10000 µs; bandwidth = 0 (degenerate config)

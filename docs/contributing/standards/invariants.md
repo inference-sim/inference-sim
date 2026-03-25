@@ -208,6 +208,6 @@ Invariants are properties that must hold at all times during and after simulatio
 - `TestTransferContention_INVP22_EffectiveBandwidthFormula` — golden test for the N=1 duration (9 µs with 10 blocks at 10 GB/s)
 - `TestTransferContention_INVP22_N2FormulaExact` — golden test for the N=2 duration (17 µs with same payload at 5 GB/s effective)
 - `TestTransferContention_INVP22_DivisorLaw` — invariant test: `duration(N) / duration(1) ≈ N` for N ∈ {1,2,3,4,5,8,10} with monotonicity
-- `TestTransferContention_INVP22_FairShareBandwidth` — end-to-end: concurrent transfers record peak > 1 when multiple requests arrive simultaneously
+- `TestTransferContention_INVP22_FairShareBandwidth` — end-to-end: concurrent transfers record peak >= 1 when multiple requests arrive simultaneously
 
 **Evidence:** PR9 (`sim/cluster/pd_events.go`, `KVTransferStartedEvent.Execute()`). Gated behind `PDTransferContention` flag (off by default for backward compatibility). The `activeTransfers` counter is incremented before the divisor is applied, ensuring the new transfer receives a fair share of the bandwidth with every other transfer currently in flight.
