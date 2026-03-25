@@ -245,7 +245,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&numInstances, "num-instances", 1, "Number of instances in the cluster")
 
 	// Online routing pipeline config
-	cmd.Flags().StringVar(&admissionPolicy, "admission-policy", "always-admit", "Admission policy: always-admit, token-bucket, reject-all")
+	cmd.Flags().StringVar(&admissionPolicy, "admission-policy", "always-admit", "Admission policy: "+strings.Join(sim.ValidAdmissionPolicyNames(), ", "))
 	cmd.Flags().Int64Var(&admissionLatency, "admission-latency", 0, "Admission latency in microseconds")
 	cmd.Flags().Int64Var(&routingLatency, "routing-latency", 0, "Routing latency in microseconds")
 	cmd.Flags().Float64Var(&tokenBucketCapacity, "token-bucket-capacity", 10000, "Token bucket capacity")
@@ -1238,6 +1238,7 @@ var runCmd = &cobra.Command{
 			cs.PoolMembership(),
 			cs.PerInstanceMetricsByID(),
 		)
+		rawMetrics.ShedByTier = cs.ShedByTier() // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
 
 		if fitnessWeights != "" {
 			weights, err := cluster.ParseFitnessWeights(fitnessWeights)
@@ -1267,6 +1268,16 @@ var runCmd = &cobra.Command{
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
 			fmt.Printf("Rejected Requests (Admission): %d\n", rawMetrics.RejectedRequests)
+			if len(rawMetrics.ShedByTier) > 0 {
+				tierKeys := make([]string, 0, len(rawMetrics.ShedByTier))
+				for k := range rawMetrics.ShedByTier {
+					tierKeys = append(tierKeys, k)
+				}
+				sort.Strings(tierKeys) // R2/INV-6: deterministic output order
+				for _, tier := range tierKeys {
+					fmt.Printf("  Shed (%s): %d\n", tier, rawMetrics.ShedByTier[tier])
+				}
+			}
 			fmt.Printf("Rejected Requests (Routing): %d\n", rawMetrics.RoutingRejections)
 			fmt.Printf("Dropped Unservable: %d\n", rawMetrics.DroppedUnservable)
 			fmt.Printf("Length-Capped Requests: %d\n", rawMetrics.LengthCappedRequests)

@@ -100,8 +100,9 @@ type RawMetrics struct {
 	// Anomaly counters
 	PriorityInversions   int
 	HOLBlockingEvents    int
-	RejectedRequests     int // admission rejections
-	RoutingRejections    int // I13: routing rejections (no routable instances)
+	RejectedRequests     int            // admission rejections
+	ShedByTier           map[string]int // per-SLOClass breakdown of tier-shed rejections (Phase 1B-1a); nil when not using tier-shed
+	RoutingRejections    int            // I13: routing rejections (no routable instances)
 	DroppedUnservable    int
 	LengthCappedRequests int
 	TimedOutRequests     int

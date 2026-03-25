@@ -62,9 +62,10 @@ func TestTierShed_MonotonicSheddingOrder(t *testing.T) {
 	cs := NewClusterSimulator(cfg, requests, nil)
 	mustRun(t, cs)
 
-	shedCritical := cs.shedByTier["critical"]
-	shedStandard := cs.shedByTier["standard"]
-	shedSheddable := cs.shedByTier["sheddable"]
+	shedCounts := cs.ShedByTier()
+	shedCritical := shedCounts["critical"]
+	shedStandard := shedCounts["standard"]
+	shedSheddable := shedCounts["sheddable"]
 
 	// Monotonicity invariant: shed(Sheddable) >= shed(Standard) >= shed(Critical)
 	if shedSheddable < shedStandard {
@@ -137,10 +138,10 @@ func TestTierShed_BatchBackgroundNeverShed(t *testing.T) {
 	cs := NewClusterSimulator(cfg, requests, nil)
 	mustRun(t, cs)
 
-	if shed := cs.shedByTier["batch"]; shed > 0 {
+	if shed := cs.ShedByTier()["batch"]; shed > 0 {
 		t.Errorf("batch requests should never be shed by tier-shed policy, got %d", shed)
 	}
-	if shed := cs.shedByTier["background"]; shed > 0 {
+	if shed := cs.ShedByTier()["background"]; shed > 0 {
 		t.Errorf("background requests should never be shed by tier-shed policy, got %d", shed)
 	}
 }
@@ -152,7 +153,7 @@ func TestTierShed_HighThresholdNeverSheds(t *testing.T) {
 	cs := NewClusterSimulator(cfg, requests, nil)
 	mustRun(t, cs)
 
-	if shed := cs.shedByTier["sheddable"]; shed > 0 {
+	if shed := cs.ShedByTier()["sheddable"]; shed > 0 {
 		t.Errorf("no shedding expected with very high threshold, got %d", shed)
 	}
 }
