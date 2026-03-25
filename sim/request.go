@@ -61,6 +61,7 @@ type Request struct {
 	ReasonRatio     float64 // reason_tokens / total_output_tokens (part of OutputTokens, not additional)
 	ClientID        string  // Client identifier from workload spec (empty for legacy/test workloads)
 	PrefixGroup     string  // Shared prefix group name (empty for no prefix)
+	PrefixLength    int     // Shared prefix token count; 0 = no prefix. Set during workload generation.
 	Streaming       bool    // Whether client expects streaming response
 
 	// Cluster routing metadata. Set by RoutingDecisionEvent; zero-value when
