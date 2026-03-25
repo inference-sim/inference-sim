@@ -202,7 +202,7 @@ Invariants are properties that must hold at all times during and after simulatio
 
 ### INV-P2-2: Fair-Share KV Transfer Bandwidth
 
-**Statement:** When `--pd-transfer-contention` is enabled, the effective bandwidth available to each concurrent KV transfer is `total_bandwidth / active_transfers`, where `active_transfers` is the count of transfers in flight at the moment the new transfer starts (inclusive of the new transfer). With a single transfer in flight, the full bandwidth is used (`active_transfers == 1`, divisor == 1, BC-P2-5). This invariant gates the transfer duration formula in `KVTransferStartedEvent.Execute()`.
+**Statement:** When `--pd-transfer-contention` is enabled, the effective bandwidth available to each concurrent KV transfer is `total_bandwidth / active_transfers`, where `active_transfers` is the count of transfers in flight at the moment the new transfer starts (inclusive of the new transfer). With a single transfer in flight, the full bandwidth is used (`active_transfers == 1`, divisor == 1). This invariant gates the transfer duration formula in `KVTransferStartedEvent.Execute()`.
 
 **Verification:** `sim/cluster/transfer_contention_test.go`:
 - `TestTransferContention_INVP22_EffectiveBandwidthFormula` — golden test for the N=1 duration (9 µs with 10 blocks at 10 GB/s)
@@ -210,4 +210,4 @@ Invariants are properties that must hold at all times during and after simulatio
 - `TestTransferContention_INVP22_DivisorLaw` — invariant test: `duration(N) / duration(1) ≈ N` for N ∈ {1,2,3,4,5,8,10} with monotonicity
 - `TestTransferContention_INVP22_FairShareBandwidth` — end-to-end: concurrent transfers record peak > 1 when multiple requests arrive simultaneously
 
-**Evidence:** PR9 (`sim/cluster/pd_events.go`, `KVTransferStartedEvent.Execute()`). Gated behind `PDTransferContention` flag (off by default, BC-P2-5). The `activeTransfers` counter is incremented before the divisor is applied, ensuring the new transfer receives a fair share of the bandwidth with every other transfer currently in flight.
+**Evidence:** PR9 (`sim/cluster/pd_events.go`, `KVTransferStartedEvent.Execute()`). Gated behind `PDTransferContention` flag (off by default for backward compatibility). The `activeTransfers` counter is incremented before the divisor is applied, ensuring the new transfer receives a fair share of the bandwidth with every other transfer currently in flight.

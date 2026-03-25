@@ -712,3 +712,43 @@ func TestTransferContention_ZeroBandwidth_FallsBackToBaseLatency(t *testing.T) {
 		t.Errorf("peakConcurrentTransfers = %d, want 1", cs.peakConcurrentTransfers)
 	}
 }
+
+// TestTransferContention_ZeroBandwidth_PayloadIndependence verifies that when bandwidth is zero,
+// duration is independent of NumKVBlocks (block count does not affect the result).
+// This is the invariant companion to TestTransferContention_ZeroBandwidth_FallsBackToBaseLatency:
+// the zero-bandwidth formula is duration = ceil(baseLatMs*1000) regardless of payload size.
+func TestTransferContention_ZeroBandwidth_PayloadIndependence(t *testing.T) {
+	const baseLatMs = 5.0
+	const wantDur = int64(5000) // ceil(5.0 * 1000) µs
+
+	blockCounts := []int{0, 1, 100, 10_000}
+	for _, blocks := range blockCounts {
+		cs := &ClusterSimulator{
+			config: DeploymentConfig{
+				PDTransferContention:    true,
+				PDTransferBandwidthGBps: 0,
+				PDTransferBaseLatencyMs: baseLatMs,
+				PDKVBytesPerToken:       512,
+				SimConfig: sim.SimConfig{
+					KVCacheConfig: sim.KVCacheConfig{
+						BlockSizeTokens: 16,
+					},
+				},
+			},
+			activeTransfers: 0,
+			clusterEvents:   make(ClusterEventQueue, 0),
+		}
+		parentReq := &ParentRequest{ID: "test-payload-indep", NumKVBlocks: int64(blocks)}
+		event := &KVTransferStartedEvent{time: 0, parentReq: parentReq}
+		event.Execute(cs)
+
+		if len(cs.clusterEvents) != 1 {
+			t.Fatalf("blocks=%d: expected 1 scheduled completion event, got %d", blocks, len(cs.clusterEvents))
+		}
+		duration := cs.clusterEvents[0].event.Timestamp() - event.time
+		if duration != wantDur {
+			t.Errorf("blocks=%d: duration=%d µs, want %d µs (zero bandwidth — duration must be independent of block count)",
+				blocks, duration, wantDur)
+		}
+	}
+}
