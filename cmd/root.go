@@ -816,10 +816,11 @@ var runCmd = &cobra.Command{
 			// Per-pool KV auto-calculation (PR8): when PD disaggregation is active and a pool
 			// uses different TP or GPU hardware, compute per-pool KV blocks from model + hardware.
 			// Only runs for analytical backends where hardware configs are available.
-			// Best-effort: silently skips on config load errors.
 			if prefillInstances > 0 {
 				kvParamsPool, kvErrPool := latency.ExtractKVCapacityParams(hfConfig)
-				if kvErrPool == nil {
+				if kvErrPool != nil {
+					logrus.Warnf("--prefill-tp/--prefill-hardware/--decode-tp/--decode-hardware: per-pool KV auto-calculation skipped: %v; both pools will use global total-kv-blocks=%d", kvErrPool, totalKVBlocks)
+				} else {
 					// Prefill pool auto-calc
 					poolPrefillTP := tensorParallelism
 					if cmd.Flags().Changed("prefill-tp") {
@@ -831,9 +832,15 @@ var runCmd = &cobra.Command{
 					}
 					if poolPrefillTP != tensorParallelism || poolPrefillGPU != gpu {
 						poolHC, hcErr := latency.GetHWConfig(hwConfigPath, poolPrefillGPU)
-						if hcErr == nil && poolHC.MemoryGiB > 0 {
+						if hcErr != nil {
+							logrus.Warnf("--prefill-hardware: failed to load hardware config for GPU %q: %v; prefill pool will use global total-kv-blocks=%d", poolPrefillGPU, hcErr, totalKVBlocks)
+						} else if poolHC.MemoryGiB <= 0 {
+							logrus.Warnf("--prefill-hardware: GPU memory capacity not available for %q in hardware config; prefill pool will use global total-kv-blocks=%d", poolPrefillGPU, totalKVBlocks)
+						} else {
 							poolBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, poolHC, poolPrefillTP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool)
-							if calcErr == nil {
+							if calcErr != nil {
+								logrus.Warnf("--prefill-tp/--prefill-hardware: KV capacity auto-calculation failed for prefill pool: %v; prefill pool will use global total-kv-blocks=%d", calcErr, totalKVBlocks)
+							} else {
 								prefillOverrides.TotalKVBlocks = &poolBlocks
 								logrus.Infof("--prefill-tp/--prefill-hardware: auto-calculated prefill pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d)",
 									poolBlocks, poolHC.MemoryGiB, poolPrefillTP)
@@ -859,9 +866,15 @@ var runCmd = &cobra.Command{
 					}
 					if poolDecodeTP != tensorParallelism || poolDecodeGPU != gpu {
 						poolHC, hcErr := latency.GetHWConfig(hwConfigPath, poolDecodeGPU)
-						if hcErr == nil && poolHC.MemoryGiB > 0 {
+						if hcErr != nil {
+							logrus.Warnf("--decode-hardware: failed to load hardware config for GPU %q: %v; decode pool will use global total-kv-blocks=%d", poolDecodeGPU, hcErr, totalKVBlocks)
+						} else if poolHC.MemoryGiB <= 0 {
+							logrus.Warnf("--decode-hardware: GPU memory capacity not available for %q in hardware config; decode pool will use global total-kv-blocks=%d", poolDecodeGPU, totalKVBlocks)
+						} else {
 							poolBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, poolHC, poolDecodeTP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool)
-							if calcErr == nil {
+							if calcErr != nil {
+								logrus.Warnf("--decode-tp/--decode-hardware: KV capacity auto-calculation failed for decode pool: %v; decode pool will use global total-kv-blocks=%d", calcErr, totalKVBlocks)
+							} else {
 								decodeOverrides.TotalKVBlocks = &poolBlocks
 								logrus.Infof("--decode-tp/--decode-hardware: auto-calculated decode pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d)",
 									poolBlocks, poolHC.MemoryGiB, poolDecodeTP)

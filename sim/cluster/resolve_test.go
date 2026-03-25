@@ -595,3 +595,188 @@ func TestResolvePoolConfig_MaxModelLen_CappedToPoolKVCapacity(t *testing.T) {
 			result.MaxModelLen, blocksNeeded, result.TotalKVBlocks)
 	}
 }
+
+// TestPoolOverrides_IsEmpty verifies the IsEmpty method for all field branches.
+func TestPoolOverrides_IsEmpty(t *testing.T) {
+	tp := 4
+	maxLen := int64(8192)
+	kvBlocks := int64(5000)
+
+	tests := []struct {
+		name      string
+		overrides PoolOverrides
+		want      bool
+	}{
+		{name: "all nil/zero", overrides: PoolOverrides{}, want: true},
+		{name: "TP set", overrides: PoolOverrides{TP: &tp}, want: false},
+		{name: "GPU set", overrides: PoolOverrides{GPU: "A100"}, want: false},
+		{name: "LatencyBackend set", overrides: PoolOverrides{LatencyBackend: "roofline"}, want: false},
+		{name: "MaxModelLen set", overrides: PoolOverrides{MaxModelLen: &maxLen}, want: false},
+		{name: "TotalKVBlocks set", overrides: PoolOverrides{TotalKVBlocks: &kvBlocks}, want: false},
+		{
+			name: "all fields set",
+			overrides: PoolOverrides{
+				TP:             &tp,
+				GPU:            "A100",
+				LatencyBackend: "roofline",
+				MaxModelLen:    &maxLen,
+				TotalKVBlocks:  &kvBlocks,
+			},
+			want: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.overrides.IsEmpty(); got != tc.want {
+				t.Errorf("IsEmpty() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestResolveConfigForRole_CrossPoolIsolation verifies that prefill and decode overrides
+// do not bleed into each other: asking for PoolRolePrefill does not apply DecodeOverrides
+// and vice versa.
+func TestResolveConfigForRole_CrossPoolIsolation(t *testing.T) {
+	prefillTP := 8
+	decodeTP := 2
+	dc := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			KVCacheConfig:       sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 4, "", 0),
+		},
+		PrefillOverrides: PoolOverrides{TP: &prefillTP},
+		DecodeOverrides:  PoolOverrides{TP: &decodeTP},
+	}
+
+	prefillCfg := dc.resolveConfigForRole(PoolRolePrefill)
+	decodeCfg := dc.resolveConfigForRole(PoolRoleDecode)
+
+	if prefillCfg.TP != 8 {
+		t.Errorf("prefill TP = %d, want 8 (DecodeOverrides must not apply to prefill role)", prefillCfg.TP)
+	}
+	if decodeCfg.TP != 2 {
+		t.Errorf("decode TP = %d, want 2 (PrefillOverrides must not apply to decode role)", decodeCfg.TP)
+	}
+}
+
+// TestNewClusterSimulator_PanicsOnInvalidPrefillOverrides verifies that NewClusterSimulator
+// panics with a descriptive message when PrefillOverrides contains an invalid field,
+// rather than allowing TP=0 to silently propagate to instance construction.
+func TestNewClusterSimulator_PanicsOnInvalidPrefillOverrides(t *testing.T) {
+	zero := 0
+	config := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 4, "blackbox", 0),
+		},
+		NumInstances:     4,
+		PrefillInstances: 2,
+		DecodeInstances:  2,
+		PDDecider:        "always",
+		RoutingPolicy:    "round-robin",
+		PrefillOverrides: PoolOverrides{TP: &zero}, // invalid: TP=0
+	}
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("NewClusterSimulator did not panic on invalid PrefillOverrides")
+		}
+		msg := ""
+		if s, ok := r.(string); ok {
+			msg = s
+		}
+		if !strings.Contains(msg, "TP must be > 0") {
+			t.Errorf("panic message = %q, want it to contain %q", msg, "TP must be > 0")
+		}
+	}()
+
+	NewClusterSimulator(config, nil, nil)
+}
+
+// TestNewClusterSimulator_PanicsOnInvalidDecodeOverrides verifies the same panic contract
+// for DecodeOverrides.
+func TestNewClusterSimulator_PanicsOnInvalidDecodeOverrides(t *testing.T) {
+	zero := 0
+	config := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 4, "blackbox", 0),
+		},
+		NumInstances:    4,
+		PrefillInstances: 2,
+		DecodeInstances: 2,
+		PDDecider:       "always",
+		RoutingPolicy:   "round-robin",
+		DecodeOverrides: PoolOverrides{TP: &zero}, // invalid: TP=0
+	}
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("NewClusterSimulator did not panic on invalid DecodeOverrides")
+		}
+		msg := ""
+		if s, ok := r.(string); ok {
+			msg = s
+		}
+		if !strings.Contains(msg, "TP must be > 0") {
+			t.Errorf("panic message = %q, want it to contain %q", msg, "TP must be > 0")
+		}
+	}()
+
+	NewClusterSimulator(config, nil, nil)
+}
+
+// TestINV_P2_1_RequestConservation verifies INV-1 holds for a heterogeneous PD cluster:
+// injected_requests == completed + still_queued + still_running + dropped + timed_out.
+func TestINV_P2_1_RequestConservation(t *testing.T) {
+	prefillKV := int64(20000)
+	decodeKV := int64(5000)
+	requests := newTestRequests(10)
+	config := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 4, "blackbox", 0),
+		},
+		NumInstances:            4,
+		PrefillInstances:        2,
+		DecodeInstances:         2,
+		PDDecider:               "always",
+		PDTransferBandwidthGBps: 25.0,
+		PDTransferBaseLatencyMs: 0.05,
+		PDKVBytesPerToken:       512,
+		RoutingPolicy:           "round-robin",
+		PrefillOverrides:        PoolOverrides{TotalKVBlocks: &prefillKV},
+		DecodeOverrides:         PoolOverrides{TotalKVBlocks: &decodeKV},
+	}
+
+	cs := NewClusterSimulator(config, requests, nil)
+	if err := cs.Run(); err != nil {
+		t.Fatalf("Run() failed: %v", err)
+	}
+
+	m := cs.AggregatedMetrics()
+	injected := len(requests)
+	conserved := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests
+	if conserved != injected {
+		t.Errorf("INV-1 violated: injected=%d, completed=%d+queued=%d+running=%d+dropped=%d+timedout=%d = %d",
+			injected, m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable, m.TimedOutRequests, conserved)
+	}
+}
