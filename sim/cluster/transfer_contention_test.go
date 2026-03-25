@@ -784,3 +784,39 @@ func TestTransferContention_ZeroBandwidth_PayloadIndependence(t *testing.T) {
 		}
 	}
 }
+
+// TestTransferContention_INV6_Determinism verifies INV-6 (determinism) for the contention
+// subsystem: given the same seed, PeakConcurrentTransfers and MeanTransferQueueDepth must be
+// identical across two independent runs of the same simulation.
+//
+// This catches event-ordering regressions (e.g., tie-break instability in the cluster event
+// heap for same-timestamp KVTransferStartedEvents) that would cause the contention accumulators
+// to diverge between runs while producing the same completed-request metrics.
+func TestTransferContention_INV6_Determinism(t *testing.T) {
+	run := func() (peak int, mean float64, initiated, completed int) {
+		config := newContentionConfig(4, 2, 2, 25.0)
+		// 8 requests at ArrivalTime=0 maximizes the chance of concurrent transfers.
+		requests := newTestRequests(8)
+		for _, r := range requests {
+			r.ArrivalTime = 0
+		}
+		cs := NewClusterSimulator(config, requests, nil)
+		mustRun(t, cs)
+		return cs.PeakConcurrentTransfers(), cs.MeanTransferQueueDepth(),
+			cs.transfersInitiated, cs.transfersCompleted
+	}
+
+	peak1, mean1, init1, done1 := run()
+	peak2, mean2, init2, done2 := run()
+
+	if peak1 != peak2 {
+		t.Errorf("INV-6: PeakConcurrentTransfers = %d vs %d across identical runs", peak1, peak2)
+	}
+	if mean1 != mean2 {
+		t.Errorf("INV-6: MeanTransferQueueDepth = %v vs %v across identical runs", mean1, mean2)
+	}
+	if init1 != init2 || done1 != done2 {
+		t.Errorf("INV-6: transfer counts diverged: initiated %d vs %d, completed %d vs %d",
+			init1, init2, done1, done2)
+	}
+}
