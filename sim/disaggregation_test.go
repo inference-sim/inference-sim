@@ -75,7 +75,7 @@ func TestNewDisaggregationDecider_UnknownPanics(t *testing.T) {
 }
 
 // TestNewDisaggregationDecider_ParameterizedPanic verifies factory panics with guidance
-// for parameterized deciders that require typed constructors (INV-9).
+// for parameterized deciders that require typed constructors (R4: canonical constructor).
 func TestNewDisaggregationDecider_ParameterizedPanic(t *testing.T) {
 	tests := []struct {
 		name string
@@ -208,23 +208,34 @@ func TestPrefixThresholdDecider_EmptyTokens(t *testing.T) {
 }
 
 // TestPrefixThresholdDecider_AboveThreshold verifies BC-PD-21: non-cached tokens > threshold -> true.
+// Uses threshold+1 as the boundary case to pin the strict > semantics (not >=).
 func TestPrefixThresholdDecider_AboveThreshold(t *testing.T) {
 	const blockSize = 16
 	const threshold = 512
 	decider := NewPrefixThresholdDecider(threshold, blockSize)
 
-	// Construct tokens with no cache history: all tokens are non-cached.
-	// 600 tokens > 512 threshold -> disaggregate.
-	tokens := make([]int, 600)
-	for i := range tokens {
-		tokens[i] = i + 1
+	tests := []struct {
+		name   string
+		tokens int
+	}{
+		{"threshold_plus_one", threshold + 1}, // tightest boundary: first value that must disaggregate
+		{"well_above_threshold", 600},
 	}
-	req := &Request{ID: "req-above", InputTokens: tokens}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tokens := make([]int, tc.tokens)
+			for i := range tokens {
+				tokens[i] = i + 1 // unique tokens, no cache hit
+			}
+			req := &Request{ID: fmt.Sprintf("req-%s", tc.name), InputTokens: tokens}
 
-	decision := decider.Decide(req)
+			decision := decider.Decide(req)
 
-	if !decision.Disaggregate {
-		t.Errorf("BC-PD-21: 600 uncached tokens with threshold=%d should return Disaggregate=true", threshold)
+			if !decision.Disaggregate {
+				t.Errorf("BC-PD-21: %d uncached tokens with threshold=%d should return Disaggregate=true",
+					tc.tokens, threshold)
+			}
+		})
 	}
 }
 

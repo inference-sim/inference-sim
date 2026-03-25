@@ -42,7 +42,7 @@ type DeploymentConfig struct {
 	// and the pipeline is unchanged (BC-PD-1).
 	PrefillInstances int    // Number of instances dedicated to prefill (0 = disabled)
 	DecodeInstances  int    // Number of instances dedicated to decode (0 = disabled)
-	PDDecider        string // Disaggregation decider: "" or "never" (default), "always"
+	PDDecider        string // Disaggregation decider: "" or "never" (default), "always", "prefix-threshold"
 	PDPrefixThreshold int  // Non-cached token threshold for prefix-threshold decider (PR6)
 
 	// PD KV transfer configuration (PR2)

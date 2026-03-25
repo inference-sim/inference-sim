@@ -600,7 +600,8 @@ func (c *ClusterSimulator) PerInstanceMetricsByID() map[string]*sim.Metrics {
 }
 
 // notifyDisaggregationObserver calls ObserveRouting on the disaggregationDecider if it
-// implements sim.DisaggregationObserver. Called synchronously after routing decisions (R17, INV-7).
+// implements sim.DisaggregationObserver. Called synchronously within the event loop,
+// so the prefix cache is always current at the next Decide() call.
 func (c *ClusterSimulator) notifyDisaggregationObserver(req *sim.Request, instanceID string) {
 	if c.disaggregationDecider == nil {
 		return

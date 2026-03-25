@@ -1,6 +1,10 @@
 package sim
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/sirupsen/logrus"
+)
 
 // DisaggregationDecision encapsulates the prefill-decode disaggregation decision for a request.
 type DisaggregationDecision struct {
@@ -74,6 +78,10 @@ func NewDisaggregationDecider(name string) DisaggregationDecider {
 // "instance_0"), whereas this sentinel uses the "__" prefix convention.
 const globalVirtualInstance = "__global__"
 
+// defaultDisaggLRUCapacity is the number of block hashes tracked in PrefixThresholdDecider's
+// router-side prefix cache. 10,000 blocks × 16 tokens/block = 160K tokens per virtual instance.
+const defaultDisaggLRUCapacity = 10000
+
 // DisaggregationObserver is an optional interface for stateful DisaggregationDeciders that need
 // to learn from routing decisions. ClusterSimulator calls ObserveRouting after each routing
 // decision that assigns a request to an instance: after standard routing (RoutingDecisionEvent
@@ -81,8 +89,8 @@ const globalVirtualInstance = "__global__"
 // It is not called for decode routing, because the decider's prefix knowledge is based on
 // input tokens, which are identical between prefill and decode sub-requests.
 //
-// Signal freshness (R17): ObserveRouting is called synchronously within the event loop,
-// so the cache state is always current at decision time.
+// ObserveRouting is called synchronously within the event loop immediately after each
+// routing decision, so the prefix cache is always current at the next Decide() call.
 //
 // req is guaranteed non-nil. Implementations must treat req as read-only.
 // instanceID is the routing target; implementations maintaining per-instance state should
@@ -100,13 +108,15 @@ type DisaggregationObserver interface {
 // never exceeds len(InputTokens)). threshold and blockSize are in token counts, not bytes.
 // Decision: Disaggregate = (nonCachedTokens > threshold).
 //
-// Signal freshness (R17, INV-7): Uses router-side PrefixCacheIndex updated synchronously
-// via ObserveRouting after each routing decision -- always fresh.
+// The prefix cache is always current at decision time: ObserveRouting is called
+// synchronously within the event loop immediately after each routing decision.
 //
 // Threading: cachedHashes and cachedReqID are a single-use scratchpad — Decide() writes
-// them and ObserveRouting() consumes them. This is safe only because the DES event loop
-// is single-threaded: no Decide() can interleave between a Decide() call and its paired
-// ObserveRouting() call.
+// them and ObserveRouting() consumes and clears them. This is safe only because the DES
+// event loop is single-threaded: no Decide() can interleave between a Decide() call and
+// its paired ObserveRouting() call. If routing is rejected after Decide() (no routable
+// instances), ObserveRouting() is not called; the stale scratchpad is harmlessly
+// overwritten by the next Decide() call.
 type PrefixThresholdDecider struct {
 	threshold    int
 	blockSize    int
@@ -127,7 +137,7 @@ func NewPrefixThresholdDecider(threshold, blockSize int) *PrefixThresholdDecider
 	return &PrefixThresholdDecider{
 		threshold: threshold,
 		blockSize: blockSize,
-		idx:       NewPrefixCacheIndex(blockSize, defaultLRUCapacity),
+		idx:       NewPrefixCacheIndex(blockSize, defaultDisaggLRUCapacity),
 	}
 }
 
@@ -151,14 +161,20 @@ func (p *PrefixThresholdDecider) Decide(req *Request) DisaggregationDecision {
 // notifyDisaggregationObserver is called with the prefill sub-request (ID "<parent>_prefill"),
 // which differs from the parent request evaluated by Decide.
 func (p *PrefixThresholdDecider) ObserveRouting(req *Request, _ string) {
-	if req == nil || len(req.InputTokens) == 0 {
+	if req == nil {
+		logrus.Errorf("PrefixThresholdDecider.ObserveRouting: req is nil (contract violation); skipping cache update")
 		return
+	}
+	if len(req.InputTokens) == 0 {
+		return // no complete blocks to record; consistent with Decide's early-return for empty tokens
 	}
 	hashes := p.cachedHashes
 	if req.ID != p.cachedReqID || p.cachedHashes == nil {
 		hashes = p.idx.ComputeBlockHashes(req.InputTokens)
 	}
 	p.idx.RecordBlocks(hashes, globalVirtualInstance)
+	p.cachedHashes = nil
+	p.cachedReqID = ""
 }
 
 // Compile-time interface compliance check.

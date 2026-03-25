@@ -501,3 +501,145 @@ func TestPDDisagg_OneOutputToken_CompletesWith1Token(t *testing.T) {
 		t.Errorf("TotalOutputTokens = %d, want 1 (off-by-one would produce 2)", metrics.TotalOutputTokens)
 	}
 }
+
+// --- PrefixThresholdDecider cluster integration tests ---
+
+// newTestPrefixThresholdConfig returns a DeploymentConfig with PDDecider = "prefix-threshold"
+// and the specified threshold, reusing the standard 4-instance (2 prefill, 2 decode) topology.
+func newTestPrefixThresholdConfig(threshold int) DeploymentConfig {
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	cfg.PDDecider = "prefix-threshold"
+	cfg.PDPrefixThreshold = threshold
+	return cfg
+}
+
+// TestPrefixThreshold_BelowThresholdNotDisaggregated verifies BC-PD-21 at the cluster level:
+// requests with non-cached token counts at or below the threshold must not be disaggregated
+// (absent from parentRequests). Tests the full NewClusterSimulator → PrefixThresholdDecider
+// constructor path and the DisaggregationDecisionEvent bifurcation.
+func TestPrefixThreshold_BelowThresholdNotDisaggregated(t *testing.T) {
+	const threshold = 200
+	config := newTestPrefixThresholdConfig(threshold)
+
+	// Requests with 20 unique tokens: nonCached = 20, 20 <= 200 → should NOT disaggregate.
+	requests := make([]*sim.Request, 3)
+	for i := range requests {
+		tokens := make([]int, 20)
+		for j := range tokens {
+			tokens[j] = j + i*1000 + 1 // unique across requests, no prefix cache hit
+		}
+		requests[i] = &sim.Request{
+			ID:           fmt.Sprintf("short_%d", i),
+			InputTokens:  tokens,
+			OutputTokens: make([]int, 5),
+			State:        sim.StateQueued,
+			ArrivalTime:  int64(i * 100000),
+		}
+	}
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	if len(cs.parentRequests) != 0 {
+		t.Errorf("parentRequests = %d, want 0: short requests (20 tokens <= %d threshold) should not be disaggregated",
+			len(cs.parentRequests), threshold)
+	}
+}
+
+// TestPrefixThreshold_AboveThresholdDisaggregated verifies BC-PD-21 at the cluster level:
+// requests with non-cached token counts above the threshold must be disaggregated
+// (present in parentRequests).
+func TestPrefixThreshold_AboveThresholdDisaggregated(t *testing.T) {
+	const threshold = 200
+	config := newTestPrefixThresholdConfig(threshold)
+
+	// Requests with 400 unique tokens: nonCached = 400, 400 > 200 → must disaggregate.
+	requests := make([]*sim.Request, 3)
+	for i := range requests {
+		tokens := make([]int, 400)
+		for j := range tokens {
+			tokens[j] = j + i*10000 + 1 // unique across requests, no prefix cache hit
+		}
+		requests[i] = &sim.Request{
+			ID:           fmt.Sprintf("long_%d", i),
+			InputTokens:  tokens,
+			OutputTokens: make([]int, 5),
+			State:        sim.StateQueued,
+			ArrivalTime:  int64(i * 500000),
+		}
+	}
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	if len(cs.parentRequests) != 3 {
+		t.Errorf("parentRequests = %d, want 3: long requests (400 tokens > %d threshold) should all be disaggregated",
+			len(cs.parentRequests), threshold)
+	}
+}
+
+// TestPrefixThreshold_ObserverWarmsCache verifies BC-PD-24 at the cluster level:
+// after a request warms the prefix cache via notifyDisaggregationObserver (wired in
+// PrefillRoutingEvent), a follow-up request with the same prefix + short suffix must
+// not be disaggregated (cached tokens reduce the non-cached count below the threshold).
+// This test exercises the full notifyDisaggregationObserver → pd_events.go wiring path.
+func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
+	const threshold = 300
+	const blockSize = 16
+	config := newTestPrefixThresholdConfig(threshold)
+
+	// req1: 400 tokens (25 complete blocks), no prior cache.
+	// nonCached = 400 > 300 → disaggregated; ObserveRouting warms 25 blocks in cache.
+	prefix := make([]int, 400)
+	for i := range prefix {
+		prefix[i] = i + 1
+	}
+	req1 := &sim.Request{
+		ID:           "req-warm",
+		InputTokens:  append([]int{}, prefix...),
+		OutputTokens: make([]int, 5),
+		State:        sim.StateQueued,
+		ArrivalTime:  0,
+	}
+
+	// req2: same 400-token prefix + 50 new tokens = 450 total.
+	// After req1 warms the cache: nonCached = 450 - 25*16 = 450 - 400 = 50 <= 300 → NOT disaggregated.
+	// req2 arrives 2s after req1, well after req1's PrefillRoutingEvent fires and warms the cache.
+	extended := make([]int, len(prefix)+50)
+	copy(extended, prefix)
+	for i := len(prefix); i < len(extended); i++ {
+		extended[i] = 10000 + i
+	}
+	req2 := &sim.Request{
+		ID:           "req-follow",
+		InputTokens:  extended,
+		OutputTokens: make([]int, 5),
+		State:        sim.StateQueued,
+		ArrivalTime:  2000000, // 2s: req1's PrefillRoutingEvent fires at t≈0, cache is warm before req2 arrives
+	}
+	_ = blockSize // documents the block arithmetic above
+
+	cs := NewClusterSimulator(config, []*sim.Request{req1, req2}, nil)
+	mustRun(t, cs)
+
+	// req1 must be disaggregated (400 non-cached tokens > 300 threshold).
+	var req1Disaggregated bool
+	for _, pr := range cs.parentRequests {
+		if pr.ID == "req-warm" {
+			req1Disaggregated = true
+		}
+	}
+	if !req1Disaggregated {
+		t.Error("req-warm (400 uncached tokens > 300 threshold) must be disaggregated; " +
+			"check PrefixThresholdDecider constructor wiring in NewClusterSimulator")
+	}
+
+	// req2 must NOT be disaggregated: prefix is cached after req1's PrefillRoutingEvent
+	// fires ObserveRouting, so only 50 tokens are non-cached (50 <= 300 threshold).
+	for _, pr := range cs.parentRequests {
+		if pr.ID == "req-follow" {
+			t.Error("req-follow (50 non-cached tokens <= 300 threshold after cache warming) must NOT be disaggregated; " +
+				"check notifyDisaggregationObserver wiring in PrefillRoutingEvent.Execute (pd_events.go)")
+		}
+	}
+}
