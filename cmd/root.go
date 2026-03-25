@@ -819,7 +819,7 @@ var runCmd = &cobra.Command{
 			if prefillInstances > 0 {
 				kvParamsPool, kvErrPool := latency.ExtractKVCapacityParams(hfConfig)
 				if kvErrPool != nil {
-					logrus.Warnf("--prefill-tp/--prefill-hardware/--decode-tp/--decode-hardware: per-pool KV auto-calculation skipped: %v; both pools will use global total-kv-blocks=%d", kvErrPool, totalKVBlocks)
+					logrus.Warnf("per-pool KV auto-calculation skipped (could not extract model KV params: %v); both pools will use global total-kv-blocks=%d", kvErrPool, totalKVBlocks)
 				} else {
 					// Prefill pool auto-calc
 					poolPrefillTP := tensorParallelism
