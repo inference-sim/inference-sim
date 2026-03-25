@@ -136,6 +136,13 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 
 	if !admitted {
 		cs.rejectedRequests++
+		if cs.shedByTier != nil {
+			tier := e.request.SLOClass
+			if tier == "" {
+				tier = "standard" // normalize empty → standard (matches SLOTierPriority default)
+			}
+			cs.shedByTier[tier]++
+		}
 		return
 	}
 	heap.Push(&cs.clusterEvents, clusterEventEntry{

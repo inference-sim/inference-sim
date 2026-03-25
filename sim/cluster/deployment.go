@@ -36,6 +36,12 @@ type DeploymentConfig struct {
 	// Phase 1A: Instance lifecycle configuration (loading delay, warm-up, drain policy).
 	// Zero value is safe: no loading delay, no warm-up, WAIT drain policy.
 	InstanceLifecycle InstanceLifecycleConfig
+
+	// Phase 1B-1a: tier-ordered admission shedding config (issue #809).
+	// Zero value is safe: TierShedMinPriority=0 admits all tiers (same as AlwaysAdmit),
+	// but callers should explicitly set 3 (Standard) for meaningful protection.
+	TierShedThreshold   int `yaml:"tier_shed_threshold,omitempty"`
+	TierShedMinPriority int `yaml:"tier_shed_min_priority,omitempty"`
 }
 
 // ToSimConfig returns the embedded SimConfig for per-instance construction.

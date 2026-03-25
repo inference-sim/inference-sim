@@ -31,6 +31,7 @@ type ClusterSimulator struct {
 	routingPolicy        sim.RoutingPolicy
 	rejectedRequests     int                    // EC-2: count of requests rejected by admission policy
 	routingRejections    int                    // I13: count of requests rejected at routing (no routable instances)
+	shedByTier           map[string]int         // per-SLOClass rejection counts (Phase 1B-1a)
 	trace                *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
 	preGeneratedRequests []*sim.Request         // Pre-generated requests (all workload paths unified)
 	inFlightRequests     map[string]int         // instance ID → dispatched-but-not-completed count (#463)
@@ -82,6 +83,18 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	// cs.rng.ForSubsystem(SubsystemRouter) elsewhere to avoid interleaving RNG draws.
 	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(config.Seed))
 
+	// Bypass generic factory for "tier-shed": factory signature is float64-only and
+	// cannot carry the int fields TierShedAdmission requires (research.md D-2).
+	var admissionPolicy sim.AdmissionPolicy
+	if config.AdmissionPolicy == "tier-shed" {
+		admissionPolicy = &sim.TierShedAdmission{
+			OverloadThreshold: config.TierShedThreshold,
+			MinAdmitPriority:  config.TierShedMinPriority,
+		}
+	} else {
+		admissionPolicy = sim.NewAdmissionPolicy(config.AdmissionPolicy, config.TokenBucketCapacity, config.TokenBucketRefillRate)
+	}
+
 	cs := &ClusterSimulator{
 		config:               config,
 		instances:            instances,
@@ -90,11 +103,12 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		clusterEvents:        make(ClusterEventQueue, 0),
 		admissionLatency:     config.AdmissionLatency,
 		routingLatency:       config.RoutingLatency,
-		admissionPolicy:      sim.NewAdmissionPolicy(config.AdmissionPolicy, config.TokenBucketCapacity, config.TokenBucketRefillRate),
+		admissionPolicy:      admissionPolicy,
 		snapshotProvider:     NewCachedSnapshotProvider(instanceMap, newObservabilityConfig(config.SnapshotRefreshInterval)),
 		routingPolicy:        sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem(sim.SubsystemRouter)),
 		trace:                simTrace,
 		inFlightRequests:     make(map[string]int, config.NumInstances),
+		shedByTier:           make(map[string]int),
 	}
 
 	// Initialize warmUpRemaining and state for all instances (Phase 1A).

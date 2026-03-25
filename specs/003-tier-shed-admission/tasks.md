@@ -17,10 +17,10 @@
 
 **Purpose**: Add the `SLOTierPriority()` helper and register the `"tier-shed"` policy name — both needed by all subsequent test and implementation tasks.
 
-- [ ] T001 Add `SLOTierPriority(class string) int` function (exported; Critical=4 … Background=0; empty/unknown→3) to `sim/admission.go`
-- [ ] T002 Add `"tier-shed": true` to `validAdmissionPolicies` map in `sim/bundle.go` (validation only — no factory case)
-- [ ] T003 [P] Add `TierShedThreshold int \`yaml:"tier_shed_threshold,omitempty"\`` and `TierShedMinPriority int \`yaml:"tier_shed_min_priority,omitempty"\`` fields to `DeploymentConfig` in `sim/cluster/deployment.go`
-- [ ] T004 [P] Add `shedByTier map[string]int` field to `ClusterSimulator` struct and initialize to `make(map[string]int)` in `NewClusterSimulator()` in `sim/cluster/cluster.go`
+- [X] T001 Add `SLOTierPriority(class string) int` function (exported; Critical=4 … Background=0; empty/unknown→3) to `sim/admission.go`
+- [X] T002 Add `"tier-shed": true` to `validAdmissionPolicies` map in `sim/bundle.go` (validation only — no factory case)
+- [X] T003 [P] Add `TierShedThreshold int \`yaml:"tier_shed_threshold,omitempty"\`` and `TierShedMinPriority int \`yaml:"tier_shed_min_priority,omitempty"\`` fields to `DeploymentConfig` in `sim/cluster/deployment.go`
+- [X] T004 [P] Add `shedByTier map[string]int` field to `ClusterSimulator` struct and initialize to `make(map[string]int)` in `NewClusterSimulator()` in `sim/cluster/cluster.go`
 
 **Checkpoint**: `go build ./...` passes. Foundation ready for all user stories.
 
@@ -42,19 +42,19 @@ No additional foundational work — T001–T004 are sufficient. User story phase
 
 > **Write these first — they MUST FAIL before T012 is implemented.**
 
-- [ ] T005 [P] [US1] Table-driven unit tests for `SLOTierPriority()`: all 5 canonical classes + empty string + unknown string → `sim/admission_tier_test.go` (new file)
-- [ ] T006 [P] [US1] Behavior test: `TierShedAdmission.Admit()` returns `(true,"")` for Critical and Standard under overload — `sim/admission_tier_test.go`
-- [ ] T007 [P] [US1] Behavior test: `TierShedAdmission.Admit()` returns `(false, reason)` for Sheddable when maxLoad > OverloadThreshold — `sim/admission_tier_test.go`
-- [ ] T008 [P] [US1] Behavior test: `TierShedAdmission.Admit()` returns `(true,"")` for all tiers when maxLoad ≤ OverloadThreshold — `sim/admission_tier_test.go`
-- [ ] T009 [P] [US1] Behavior test: empty `state.Snapshots` → no panic, all requests admitted — `sim/admission_tier_test.go`
-- [ ] T010 [P] [US1] Behavior test: empty `SLOClass` treated as Standard (priority 3), never shed below Standard — `sim/admission_tier_test.go`
-- [ ] T011 [P] [US2] Behavior test: Batch and Background always return `(true,"")` from `TierShedAdmission` regardless of load — `sim/admission_tier_test.go`
+- [X] T005 [P] [US1] Table-driven unit tests for `SLOTierPriority()`: all 5 canonical classes + empty string + unknown string → `sim/admission_tier_test.go` (new file)
+- [X] T006 [P] [US1] Behavior test: `TierShedAdmission.Admit()` returns `(true,"")` for Critical and Standard under overload — `sim/admission_tier_test.go`
+- [X] T007 [P] [US1] Behavior test: `TierShedAdmission.Admit()` returns `(false, reason)` for Sheddable when maxLoad > OverloadThreshold — `sim/admission_tier_test.go`
+- [X] T008 [P] [US1] Behavior test: `TierShedAdmission.Admit()` returns `(true,"")` for all tiers when maxLoad ≤ OverloadThreshold — `sim/admission_tier_test.go`
+- [X] T009 [P] [US1] Behavior test: empty `state.Snapshots` → no panic, all requests admitted — `sim/admission_tier_test.go`
+- [X] T010 [P] [US1] Behavior test: empty `SLOClass` treated as Standard (priority 3), never shed below Standard — `sim/admission_tier_test.go`
+- [X] T011 [P] [US2] Behavior test: Batch and Background always return `(true,"")` from `TierShedAdmission` regardless of load — `sim/admission_tier_test.go`
 
 ### Implementation for User Stories 1 & 2
 
-- [ ] T012 [US1] Implement `TierShedAdmission` struct + `Admit()` method in `sim/admission.go` (depends on T001; T005–T011 must fail first)
-- [ ] T013 [US1] In `NewClusterSimulator()`, detect `config.AdmissionPolicy == "tier-shed"` and construct `&sim.TierShedAdmission{OverloadThreshold: config.TierShedThreshold, MinAdmitPriority: config.TierShedMinPriority}` directly (bypassing `NewAdmissionPolicy` factory) — `sim/cluster/cluster.go` (depends on T003, T004, T012)
-- [ ] T014 [US1] In `AdmissionDecisionEvent.Execute()`, after `cs.rejectedRequests++`, increment `cs.shedByTier[tier]++` (normalize empty SLOClass to `"standard"`) — `sim/cluster/cluster_event.go` (depends on T004, T013)
+- [X] T012 [US1] Implement `TierShedAdmission` struct + `Admit()` method in `sim/admission.go` (depends on T001; T005–T011 must fail first)
+- [X] T013 [US1] In `NewClusterSimulator()`, detect `config.AdmissionPolicy == "tier-shed"` and construct `&sim.TierShedAdmission{OverloadThreshold: config.TierShedThreshold, MinAdmitPriority: config.TierShedMinPriority}` directly (bypassing `NewAdmissionPolicy` factory) — `sim/cluster/cluster.go` (depends on T003, T004, T012)
+- [X] T014 [US1] In `AdmissionDecisionEvent.Execute()`, after `cs.rejectedRequests++`, increment `cs.shedByTier[tier]++` (normalize empty SLOClass to `"standard"`) — `sim/cluster/cluster_event.go` (depends on T004, T013)
 
 **Checkpoint**: `go test ./sim/...` passes. T005–T011 now green. Tier-shedding behavior complete.
 
@@ -70,8 +70,8 @@ No additional foundational work — T001–T004 are sufficient. User story phase
 
 > **Write these first — they MUST FAIL before Phase 3 implementation (T012–T014) is complete.**
 
-- [ ] T015 [US3] Invariant test: monotonic shedding order — `shed(Sheddable) ≥ shed(Standard) ≥ shed(Critical)` at each step of a load ramp — `sim/cluster/cluster_tier_test.go` (new file)
-- [ ] T016 [US3] Invariant test: simulation without `tier-shed` produces byte-identical stdout to pre-feature baseline (INV-6) — `sim/cluster/cluster_tier_test.go`
+- [X] T015 [US3] Invariant test: monotonic shedding order — `shed(Sheddable) ≥ shed(Standard) ≥ shed(Critical)` at each step of a load ramp — `sim/cluster/cluster_tier_test.go` (new file)
+- [X] T016 [US3] Invariant test: simulation without `tier-shed` produces byte-identical stdout to pre-feature baseline (INV-6) — `sim/cluster/cluster_tier_test.go`
 
 ### Implementation for User Story 3
 
@@ -83,8 +83,8 @@ No additional implementation tasks — monotonic ordering is a property of the `
 
 ## Phase 5: Polish & Cross-Cutting Concerns
 
-- [ ] T017 [P] Run `go test ./... -count=1 -race` and fix any data-race failures
-- [ ] T018 [P] Run `golangci-lint run ./...` and fix all warnings
+- [X] T017 [P] Run `go test ./... -count=1 -race` and fix any data-race failures
+- [X] T018 [P] Run `golangci-lint run ./...` and fix all warnings
 
 ---
 
