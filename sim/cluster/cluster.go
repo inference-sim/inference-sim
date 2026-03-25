@@ -121,6 +121,8 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		switch config.PDDecider {
 		case "prefix-threshold":
 			cs.disaggregationDecider = sim.NewPrefixThresholdDecider(config.PDPrefixThreshold, int(config.BlockSizeTokens))
+		case "direct-to-decode":
+			cs.disaggregationDecider = sim.NewDirectToDecodeDecider(config.PDDirectDecodeThreshold)
 		default:
 			cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
 		}
