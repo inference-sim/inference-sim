@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/trace"
@@ -34,6 +35,20 @@ type ClusterSimulator struct {
 	trace                *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
 	preGeneratedRequests []*sim.Request         // Pre-generated requests (all workload paths unified)
 	inFlightRequests     map[string]int         // instance ID → dispatched-but-not-completed count (#463)
+	poolMembership       map[string]PoolRole    // instance ID → pool role (nil when disaggregation disabled)
+	disaggregationDecider sim.DisaggregationDecider // PD disaggregation decider (nil when disabled)
+
+	// PD disaggregation state (PR2)
+	parentRequests            map[string]*ParentRequest // parent request ID → tracking record
+	pendingPrefillCompletions map[string]string         // prefill sub-req ID → parent ID
+	pendingDecodeCompletions  map[string]string         // decode sub-req ID → parent ID
+	transfersInitiated        int
+	transfersCompleted        int
+	pdPrefillCompletedCount   int                       // prefill sub-requests that completed (for INV-1 correction)
+	pdDecodeCompletedCount    int                       // decode sub-requests that completed (for INV-1 in-flight tracking)
+	droppedAtDecodeKV         int                       // requests dropped due to insufficient KV at decode
+	prefillRoutingPolicy      sim.RoutingPolicy         // nil = use main routingPolicy
+	decodeRoutingPolicy       sim.RoutingPolicy         // nil = use main routingPolicy
 
 	// Phase 1A: node/GPU placement manager. Nil when NodePools is empty (backward-compat).
 	placement *PlacementManager
@@ -50,13 +65,37 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	if config.NumInstances < 1 {
 		panic("ClusterSimulator: NumInstances must be >= 1")
 	}
-	simCfg := config.ToSimConfig()
+
+	// Validate pool topology and overrides early (before instance construction).
+	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
+		if err := ValidatePoolTopology(config.PrefillInstances, config.DecodeInstances, config.NumInstances); err != nil {
+			panic(fmt.Sprintf("ClusterSimulator: %v", err))
+		}
+		if err := config.PrefillOverrides.Validate("prefill pool"); err != nil {
+			panic(fmt.Sprintf("ClusterSimulator: %v", err))
+		}
+		if err := config.DecodeOverrides.Validate("decode pool"); err != nil {
+			panic(fmt.Sprintf("ClusterSimulator: %v", err))
+		}
+	}
+
+	// Build pre-construction pool membership so instance construction can resolve per-pool config.
+	// When disaggregation is disabled (PrefillInstances==0), prePoolMembership is nil and
+	// all instances use the global config (backward-compatible).
+	var prePoolMembership map[string]PoolRole
+	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
+		prePoolMembership = BuildPoolMembershipFromIndices(config.NumInstances, config.PrefillInstances, config.DecodeInstances)
+	}
+
 	instances := make([]*InstanceSimulator, config.NumInstances)
 	for idx := range instances {
-		inst := NewInstanceSimulator(
-			InstanceID(fmt.Sprintf("instance_%d", idx)),
-			simCfg,
-		)
+		id := InstanceID(fmt.Sprintf("instance_%d", idx))
+		role := PoolRole(0)
+		if prePoolMembership != nil {
+			role = prePoolMembership[string(id)]
+		}
+		simCfg := config.resolveConfigForRole(role)
+		inst := NewInstanceSimulator(id, simCfg)
 		// Populate Model from config so multi-model routing filter works correctly (FR-010).
 		// Empty string = single-model mode (backward-compatible).
 		inst.Model = config.Model
@@ -95,6 +134,33 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		routingPolicy:        sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem(sim.SubsystemRouter)),
 		trace:                simTrace,
 		inFlightRequests:     make(map[string]int, config.NumInstances),
+	}
+
+	// PD disaggregation: set pool membership (topology already validated above)
+	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
+		cs.poolMembership = prePoolMembership
+		switch config.PDDecider {
+		case "prefix-threshold":
+			cs.disaggregationDecider = sim.NewPrefixThresholdDecider(config.PDPrefixThreshold, int(config.BlockSizeTokens))
+		case "direct-to-decode":
+			cs.disaggregationDecider = sim.NewDirectToDecodeDecider(config.PDDirectDecodeThreshold)
+		default:
+			cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
+		}
+		cs.parentRequests = make(map[string]*ParentRequest)
+		cs.pendingPrefillCompletions = make(map[string]string)
+		cs.pendingDecodeCompletions = make(map[string]string)
+
+		// Per-pool routing policies (use separate RNG partitions to avoid fragile coupling)
+		if len(config.PrefillScorerConfigs) > 0 {
+			cs.prefillRoutingPolicy = sim.NewRoutingPolicy("weighted", config.PrefillScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("prefill-router"))
+		}
+		if len(config.DecodeScorerConfigs) > 0 {
+			cs.decodeRoutingPolicy = sim.NewRoutingPolicy("weighted", config.DecodeScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("decode-router"))
+		}
+
+		logrus.Infof("[cluster] PD disaggregation enabled: %d prefill, %d decode instances, decider=%q",
+			config.PrefillInstances, config.DecodeInstances, config.PDDecider)
 	}
 
 	// Initialize warmUpRemaining and state for all instances (Phase 1A).
@@ -276,6 +342,16 @@ func (c *ClusterSimulator) Run() error {
 				inst.TransitionTo(InstanceStateTerminated)
 				c.releaseInstanceGPUs(inst)
 			}
+
+			// PD disaggregation: detect prefill/decode sub-request completions
+			if c.poolsConfigured() {
+				if c.poolMembership[instID] == PoolRolePrefill {
+					c.detectPrefillCompletions(inst)
+				}
+				if c.poolMembership[instID] == PoolRoleDecode {
+					c.detectDecodeCompletions(inst)
+				}
+			}
 		}
 	}
 
@@ -302,6 +378,42 @@ func (c *ClusterSimulator) Run() error {
 
 	c.aggregatedMetrics = c.aggregateMetrics()
 
+	// R1/INV-1: PD disaggregation conservation correction.
+	// Each disaggregated request generates two sub-requests (prefill + decode) that
+	// complete on separate instances. aggregateMetrics() naively sums CompletedRequests
+	// across all instances, double-counting: prefill completion + decode completion = 2
+	// for each original request. Subtract prefill completions to restore correct count.
+	if c.pdPrefillCompletedCount > 0 {
+		c.aggregatedMetrics.CompletedRequests -= c.pdPrefillCompletedCount
+	}
+	// Requests dropped at decode KV allocation: the prefill sub-request already
+	// completed (counted above and subtracted), but the original request is lost.
+	// Count as DroppedUnservable for INV-1 conservation.
+	if c.droppedAtDecodeKV > 0 {
+		c.aggregatedMetrics.DroppedUnservable += c.droppedAtDecodeKV
+	}
+	// In-flight PD transfers: requests whose prefill completed but decode hasn't
+	// finished or been dropped yet (e.g., simulation ended at bounded horizon while
+	// KV transfer was in progress). These requests were subtracted from CompletedRequests
+	// but don't appear in any instance's StillQueued/StillRunning/DroppedUnservable.
+	// Count them as StillRunning for conservation.
+	//
+	// Distinguish three sub-states of "prefill completed but decode not done":
+	// - pendingDecodeCompletions: decode sub-requests already injected into instances
+	//   (appear in instance StillQueued/StillRunning via Finalize — do NOT add again)
+	// - pdInTransfer: requests still in KV transfer or cluster event queue
+	//   (not on any instance — must be added to StillRunning)
+	// - timed-out prefills: entries may remain in pendingPrefillCompletions but
+	//   pdPrefillCompletedCount was NOT incremented; the timeout is already counted
+	//   in instance TimedOutRequests → aggregated via aggregateMetrics(). No correction needed.
+	pdInTransfer := c.pdPrefillCompletedCount - c.pdDecodeCompletedCount - c.droppedAtDecodeKV - len(c.pendingDecodeCompletions)
+	if pdInTransfer > 0 {
+		c.aggregatedMetrics.StillRunning += pdInTransfer
+	} else if pdInTransfer < 0 {
+		logrus.Warnf("[cluster] pdInTransfer = %d (negative): prefillCompleted=%d, decodeCompleted=%d, droppedAtDecodeKV=%d, pendingDecode=%d — bookkeeping bug in PD disaggregation accounting",
+			pdInTransfer, c.pdPrefillCompletedCount, c.pdDecodeCompletedCount, c.droppedAtDecodeKV, len(c.pendingDecodeCompletions))
+	}
+
 	// Post-simulation diagnostic warnings (BC-2, BC-3)
 	if c.aggregatedMetrics.CompletedRequests == 0 {
 		if c.rejectedRequests > 0 {
@@ -324,6 +436,125 @@ func (c *ClusterSimulator) nextSeqID() int64 {
 	id := c.seqCounter
 	c.seqCounter++
 	return id
+}
+
+// poolsConfigured returns true if PD disaggregation pool topology is active.
+func (c *ClusterSimulator) poolsConfigured() bool {
+	return c.poolMembership != nil
+}
+
+// PoolMembership returns a copy of the pool role membership map (R8: no exported mutable maps).
+// Returns nil when disaggregation is disabled.
+func (c *ClusterSimulator) PoolMembership() map[string]PoolRole {
+	if c.poolMembership == nil {
+		return nil
+	}
+	result := make(map[string]PoolRole, len(c.poolMembership))
+	for k, v := range c.poolMembership {
+		result[k] = v
+	}
+	return result
+}
+
+// ParentRequests returns a sorted slice of defensive copies of parent request tracking records.
+// Each ParentRequest struct is copied by value so callers cannot mutate lifecycle timestamps (R8).
+// Note: OriginalRequest is a shared *sim.Request pointer — callers must not mutate via it.
+// Panics if called before Run() completes. Returns an empty (non-nil) slice when disaggregation is disabled,
+// allowing callers to range over the result without a nil check.
+func (c *ClusterSimulator) ParentRequests() []*ParentRequest {
+	if !c.hasRun {
+		panic("ClusterSimulator.ParentRequests() called before Run()")
+	}
+	result := make([]*ParentRequest, 0, len(c.parentRequests))
+	for _, pr := range c.parentRequests {
+		cp := *pr
+		result = append(result, &cp)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	return result
+}
+
+// buildPoolFilteredSnapshots constructs routing snapshots filtered to a specific pool role.
+// Filters by IsRoutable() for parity with buildRouterState (R23), then by pool role.
+// Model filter is intentionally omitted: all instances in a DeploymentConfig share config.Model,
+// so pool-role filtering is sufficient. If multi-model PD clusters are added, add model filtering here.
+// Preserves instance order from c.instances for determinism (R2).
+func (c *ClusterSimulator) buildPoolFilteredSnapshots(role PoolRole) []sim.RoutingSnapshot {
+	allSnapshots := make([]sim.RoutingSnapshot, 0, len(c.instances))
+	for _, inst := range c.instances {
+		if !inst.IsRoutable() {
+			continue
+		}
+		snap := c.snapshotProvider.Snapshot(inst.ID(), c.clock)
+		snap.InFlightRequests = c.inFlightRequests[string(inst.ID())]
+		allSnapshots = append(allSnapshots, snap)
+	}
+	return FilterSnapshotsByPool(allSnapshots, c.poolMembership, role)
+}
+
+// detectPrefillCompletions checks for newly completed prefill sub-requests on the given instance
+// and schedules KV transfer events for each.
+// R2/INV-6: Collects completed IDs into a sorted slice before processing to ensure
+// deterministic nextSeqID() assignment regardless of Go's random map iteration order.
+func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
+	instID := string(inst.ID())
+	// Phase 1: collect completed sub-request IDs (sorted for determinism)
+	var completedIDs []string
+	for subReqID, parentID := range c.pendingPrefillCompletions {
+		parent := c.parentRequests[parentID]
+		if parent == nil || string(parent.PrefillInstanceID) != instID {
+			continue
+		}
+		if _, completed := inst.Metrics().RequestCompletionTimes[subReqID]; completed {
+			completedIDs = append(completedIDs, subReqID)
+		}
+	}
+	sort.Strings(completedIDs)
+
+	// Phase 2: process in deterministic order
+	for _, subReqID := range completedIDs {
+		parentID := c.pendingPrefillCompletions[subReqID]
+		parent := c.parentRequests[parentID]
+		parent.PrefillCompleteTime = c.clock
+		delete(c.pendingPrefillCompletions, subReqID)
+		c.pdPrefillCompletedCount++
+
+		// Schedule KV transfer
+		heap.Push(&c.clusterEvents, clusterEventEntry{
+			event: &KVTransferStartedEvent{
+				time:      c.clock,
+				parentReq: parent,
+			},
+			seqID: c.nextSeqID(),
+		})
+	}
+}
+
+// detectDecodeCompletions checks for newly completed decode sub-requests on the given instance
+// and sets the parent request's CompletionTime.
+// R2/INV-6: Collects completed IDs into a sorted slice before processing for determinism.
+func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
+	instID := string(inst.ID())
+	// Phase 1: collect completed sub-request IDs (sorted for determinism)
+	var completedIDs []string
+	for subReqID, parentID := range c.pendingDecodeCompletions {
+		parent := c.parentRequests[parentID]
+		if parent == nil || string(parent.DecodeInstanceID) != instID {
+			continue
+		}
+		if _, completed := inst.Metrics().RequestCompletionTimes[subReqID]; completed {
+			completedIDs = append(completedIDs, subReqID)
+		}
+	}
+	sort.Strings(completedIDs)
+
+	// Phase 2: process in deterministic order
+	for _, subReqID := range completedIDs {
+		parent := c.parentRequests[c.pendingDecodeCompletions[subReqID]]
+		parent.CompletionTime = c.clock
+		delete(c.pendingDecodeCompletions, subReqID)
+		c.pdDecodeCompletedCount++
+	}
 }
 
 // Clock returns the cluster's current simulation clock.
@@ -374,6 +605,33 @@ func (c *ClusterSimulator) PerInstanceMetrics() []*sim.Metrics {
 		metrics[i] = inst.Metrics()
 	}
 	return metrics
+}
+
+// PerInstanceMetricsByID returns a map of instance ID → *sim.Metrics.
+// Panics if called before Run() completes (R1).
+// The returned map is a new map (R8), but the *sim.Metrics values are live pointers to
+// instance-owned structs — callers must not mutate fields through them.
+func (c *ClusterSimulator) PerInstanceMetricsByID() map[string]*sim.Metrics {
+	if !c.hasRun {
+		panic("ClusterSimulator.PerInstanceMetricsByID() called before Run()")
+	}
+	result := make(map[string]*sim.Metrics, len(c.instances))
+	for _, inst := range c.instances {
+		result[string(inst.ID())] = inst.Metrics()
+	}
+	return result
+}
+
+// notifyDisaggregationObserver calls ObserveRouting on the disaggregationDecider if it
+// implements sim.DisaggregationObserver. Called synchronously within the event loop,
+// so the prefix cache is always current at the next Decide() call.
+func (c *ClusterSimulator) notifyDisaggregationObserver(req *sim.Request, instanceID string) {
+	if c.disaggregationDecider == nil {
+		return
+	}
+	if obs, ok := c.disaggregationDecider.(sim.DisaggregationObserver); ok {
+		obs.ObserveRouting(req, instanceID)
+	}
 }
 
 // mergeFloat64Map merges src into dst, logging a warning on duplicate keys.

@@ -36,6 +36,30 @@ type DeploymentConfig struct {
 	// Phase 1A: Instance lifecycle configuration (loading delay, warm-up, drain policy).
 	// Zero value is safe: no loading delay, no warm-up, WAIT drain policy.
 	InstanceLifecycle InstanceLifecycleConfig
+
+	// PD disaggregation configuration (PR1)
+	// When both PrefillInstances and DecodeInstances are 0, disaggregation is disabled
+	// and the pipeline is unchanged (BC-PD-1).
+	PrefillInstances int    // Number of instances dedicated to prefill (0 = disabled)
+	DecodeInstances  int    // Number of instances dedicated to decode (0 = disabled)
+	PDDecider             string // Disaggregation decider: "" or "never" (default), "always", "prefix-threshold", "direct-to-decode"
+	PDPrefixThreshold     int    // Non-cached token threshold for prefix-threshold decider (PR6)
+	PDDirectDecodeThreshold int  // Input token threshold for direct-to-decode decider (>= 0, default 256 from CLI)
+
+	// PD KV transfer configuration (PR2)
+	PDTransferBandwidthGBps float64 // Inter-instance KV transfer bandwidth in GB/s (default 25.0)
+	PDTransferBaseLatencyMs float64 // Inter-instance KV transfer base latency in ms (default 0.05)
+	PDKVBytesPerToken       int64   // KV cache bytes per token for transfer duration (default 512)
+
+	// Per-pool routing scorer configuration (PR2)
+	// When nil, both pools use the main RoutingScorerConfigs.
+	PrefillScorerConfigs []sim.ScorerConfig // Scorer configs for prefill pool routing
+	DecodeScorerConfigs  []sim.ScorerConfig // Scorer configs for decode pool routing
+
+	// Per-pool hardware overrides
+	// When empty (all nil/zero), all instances use the global SimConfig (BC-P2-1).
+	PrefillOverrides PoolOverrides // Hardware overrides for prefill pool instances
+	DecodeOverrides  PoolOverrides // Hardware overrides for decode pool instances
 }
 
 // ToSimConfig returns the embedded SimConfig for per-instance construction.
@@ -43,4 +67,20 @@ type DeploymentConfig struct {
 // and injects requests via InjectRequestOnline.
 func (d DeploymentConfig) ToSimConfig() sim.SimConfig {
 	return d.SimConfig
+}
+
+// resolveConfigForRole returns the SimConfig appropriate for an instance in the given pool role.
+// For PoolRolePrefill: applies PrefillOverrides to the global SimConfig.
+// For PoolRoleDecode: applies DecodeOverrides to the global SimConfig.
+// For any other role (including 0/unset): returns the global SimConfig unchanged.
+// The global SimConfig is never mutated.
+func (d DeploymentConfig) resolveConfigForRole(role PoolRole) sim.SimConfig {
+	switch role {
+	case PoolRolePrefill:
+		return ResolvePoolConfig(d.SimConfig, d.PrefillOverrides)
+	case PoolRoleDecode:
+		return ResolvePoolConfig(d.SimConfig, d.DecodeOverrides)
+	default:
+		return d.SimConfig
+	}
 }
