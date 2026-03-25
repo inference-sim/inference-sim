@@ -1173,7 +1173,7 @@ var runCmd = &cobra.Command{
 			logrus.Warnf("--pd-decider=%q has no effect because --prefill-instances=0 (disaggregation is disabled); set --prefill-instances and --decode-instances to enable", pdDecider)
 		}
 
-		// Per-pool hardware override construction (PR8, R3): build PoolOverrides from CLI flags.
+		// Per-pool hardware override construction (R3): build PoolOverrides from CLI flags.
 		// Pointer fields use cmd.Flags().Changed() to distinguish "not set" from "set to value".
 		// Warns if per-pool flags are set but disaggregation is disabled.
 		perPoolFlagsChanged := cmd.Flags().Changed("prefill-tp") || cmd.Flags().Changed("decode-tp") ||
