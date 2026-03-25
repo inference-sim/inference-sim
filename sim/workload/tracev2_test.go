@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
-	"gopkg.in/yaml.v3"
 )
 
 func TestTraceV2_RoundTrip_PreservesAllFields(t *testing.T) {
@@ -522,87 +521,6 @@ func TestTraceV2_PrefixGroup_RoundTrip(t *testing.T) {
 	// BC-4: WorkloadSeed preserved (pointer type per R9 — seed=0 is valid)
 	if loaded.Header.WorkloadSeed == nil || *loaded.Header.WorkloadSeed != 42 {
 		t.Errorf("WorkloadSeed = %v, want 42", loaded.Header.WorkloadSeed)
-	}
-}
-
-func TestTraceV2_BackwardCompat_26Columns(t *testing.T) {
-	// BC-5: 26-column CSV (pre-prefix_length) loads with PrefixLength=0
-	header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
-	headerPath := filepath.Join(t.TempDir(), "h.yaml")
-	dataPath := filepath.Join(t.TempDir(), "d.csv")
-
-	headerData, err := yaml.Marshal(header)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(headerPath, headerData, 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Write 26-column CSV (old schema without prefix_length)
-	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index," +
-		"prefix_group,streaming,input_tokens,output_tokens," +
-		"text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio," +
-		"model,deadline_us,server_input_tokens," +
-		"arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us," +
-		"num_chunks,status,error_message,finish_reason\n" +
-		"0,c1,t1,batch,,0,group-a,false,500,100,0,0,0,0,0,model1,0,0,1000,1000,0,0,0,ok,,stop\n"
-	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	trace, err := LoadTraceV2(headerPath, dataPath)
-	if err != nil {
-		t.Fatalf("LoadTraceV2: %v", err)
-	}
-
-	// BC-5: PrefixLength defaults to 0 for legacy traces
-	if trace.Records[0].PrefixLength != 0 {
-		t.Errorf("PrefixLength = %d, want 0 for legacy trace", trace.Records[0].PrefixLength)
-	}
-	// PrefixGroup still preserved from CSV
-	if trace.Records[0].PrefixGroup != "group-a" {
-		t.Errorf("PrefixGroup = %q, want %q", trace.Records[0].PrefixGroup, "group-a")
-	}
-	// InputTokens is total for legacy (no prefix subtraction)
-	if trace.Records[0].InputTokens != 500 {
-		t.Errorf("InputTokens = %d, want 500", trace.Records[0].InputTokens)
-	}
-}
-
-func TestTraceV2_BackwardCompat_25Columns(t *testing.T) {
-	// 25-column CSV (pre-finish_reason) should load with FinishReason defaulting to ""
-	header := &TraceHeader{Version: 1, TimeUnit: "us", Mode: "real"}
-	headerPath := filepath.Join(t.TempDir(), "h.yaml")
-	dataPath := filepath.Join(t.TempDir(), "d.csv")
-
-	headerData, err := yaml.Marshal(header)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(headerPath, headerData, 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Write 25-column CSV (no finish_reason column)
-	csvContent := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message\n"
-	csvContent += "1,,,,,0,,false,10,5,0,0,0,0,0,,0,0,1000,2000,0,0,0,ok,\n"
-	if err := os.WriteFile(dataPath, []byte(csvContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	tv2, err := LoadTraceV2(headerPath, dataPath)
-	if err != nil {
-		t.Fatalf("25-column CSV should load successfully: %v", err)
-	}
-	if len(tv2.Records) != 1 {
-		t.Fatalf("expected 1 record, got %d", len(tv2.Records))
-	}
-	if tv2.Records[0].FinishReason != "" {
-		t.Errorf("FinishReason should default to empty for 25-column CSV, got %q", tv2.Records[0].FinishReason)
-	}
-	if tv2.Records[0].InputTokens != 10 {
-		t.Errorf("InputTokens: got %d, want 10", tv2.Records[0].InputTokens)
 	}
 }
 

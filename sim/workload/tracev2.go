@@ -178,7 +178,7 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	defer func() { _ = file.Close() }()
 
 	reader := csv.NewReader(file)
-	reader.FieldsPerRecord = -1 // allow variable column count for backward compat
+	reader.FieldsPerRecord = -1 // allow extra columns (future extensions)
 
 	// Skip header row
 	if _, err := reader.Read(); err != nil {
@@ -194,25 +194,11 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading CSV row: %w", err)
 		}
-		// Column count tiers:
-		//   27 = current (with prefix_length)
-		//   25-26 = legacy (pre-prefix_length); 25 = pre-finish_reason
-		//   <25 = unsupported
-		const legacyMinColumns = 25
-		if len(row) < legacyMinColumns {
-			hint := ""
-			if len(row) == 22 {
-				hint = " (22-column trace predates model/deadline_us/server_input_tokens fields; re-export to upgrade)"
-			}
-			return nil, fmt.Errorf("CSV row has %d columns, expected at least %d%s", len(row), legacyMinColumns, hint)
+		if len(row) < len(traceV2Columns) {
+			return nil, fmt.Errorf("CSV row has %d columns, expected %d", len(row), len(traceV2Columns))
 		}
 
-		var r *TraceRecord
-		if len(row) >= len(traceV2Columns) { // 27+ = new schema (with prefix_length column)
-			r, err = parseTraceRecord(row)
-		} else {
-			r, err = parseTraceRecordLegacy(row)
-		}
+		r, err := parseTraceRecord(row)
 		if err != nil {
 			return nil, err
 		}
@@ -339,11 +325,7 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 	if deadlineUs > 0 && arrivalTimeUs > 0 && deadlineUs < arrivalTimeUs {
 		return nil, fmt.Errorf("parsing deadline_us: value %d precedes arrival_time_us %d (corrupt trace?)", deadlineUs, arrivalTimeUs)
 	}
-	// finish_reason (column 26) — optional for backward compat with 26-column traces
-	var finishReason string
-	if len(row) >= 27 {
-		finishReason = strings.TrimSpace(row[26])
-	}
+	finishReason := strings.TrimSpace(row[26])
 
 	return &TraceRecord{
 		RequestID:         requestID,
@@ -372,146 +354,6 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 		NumChunks:         numChunks,
 		Status:            row[24],
 		ErrorMessage:      strings.TrimSpace(row[25]),
-		FinishReason:      finishReason,
-	}, nil
-}
-
-// parseTraceRecordLegacy parses a 25-26 column (pre-prefix_length) CSV row.
-// PrefixLength defaults to 0.
-func parseTraceRecordLegacy(row []string) (*TraceRecord, error) {
-	requestID, err := strconv.Atoi(row[0])
-	if err != nil {
-		return nil, fmt.Errorf("parsing request_id %q: %w", row[0], err)
-	}
-	roundIndex, err := strconv.Atoi(row[5])
-	if err != nil {
-		return nil, fmt.Errorf("parsing round_index %q: %w", row[5], err)
-	}
-	streaming, err := strconv.ParseBool(row[7])
-	if err != nil {
-		return nil, fmt.Errorf("parsing streaming %q: %w", row[7], err)
-	}
-	inputTokens, err := strconv.Atoi(row[8])
-	if err != nil {
-		return nil, fmt.Errorf("parsing input_tokens %q: %w", row[8], err)
-	}
-	if inputTokens < 0 {
-		return nil, fmt.Errorf("parsing input_tokens: negative value %d not allowed", inputTokens)
-	}
-	outputTokens, err := strconv.Atoi(row[9])
-	if err != nil {
-		return nil, fmt.Errorf("parsing output_tokens %q: %w", row[9], err)
-	}
-	if outputTokens < 0 {
-		return nil, fmt.Errorf("parsing output_tokens: negative value %d not allowed", outputTokens)
-	}
-	textTokens, err := strconv.Atoi(row[10])
-	if err != nil {
-		return nil, fmt.Errorf("parsing text_tokens %q: %w", row[10], err)
-	}
-	if textTokens < 0 {
-		return nil, fmt.Errorf("parsing text_tokens: negative value %d not allowed", textTokens)
-	}
-	imageTokens, err := strconv.Atoi(row[11])
-	if err != nil {
-		return nil, fmt.Errorf("parsing image_tokens %q: %w", row[11], err)
-	}
-	if imageTokens < 0 {
-		return nil, fmt.Errorf("parsing image_tokens: negative value %d not allowed", imageTokens)
-	}
-	audioTokens, err := strconv.Atoi(row[12])
-	if err != nil {
-		return nil, fmt.Errorf("parsing audio_tokens %q: %w", row[12], err)
-	}
-	if audioTokens < 0 {
-		return nil, fmt.Errorf("parsing audio_tokens: negative value %d not allowed", audioTokens)
-	}
-	videoTokens, err := strconv.Atoi(row[13])
-	if err != nil {
-		return nil, fmt.Errorf("parsing video_tokens %q: %w", row[13], err)
-	}
-	if videoTokens < 0 {
-		return nil, fmt.Errorf("parsing video_tokens: negative value %d not allowed", videoTokens)
-	}
-	reasonRatio, err := strconv.ParseFloat(row[14], 64)
-	if err != nil {
-		return nil, fmt.Errorf("parsing reason_ratio %q: %w", row[14], err)
-	}
-	if math.IsNaN(reasonRatio) || math.IsInf(reasonRatio, 0) || reasonRatio < 0 || reasonRatio > 1.0 {
-		return nil, fmt.Errorf("parsing reason_ratio %q: must be in range [0.0, 1.0], got %g", row[14], reasonRatio)
-	}
-	deadlineUs, err := strconv.ParseInt(row[16], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("parsing deadline_us %q: %w", row[16], err)
-	}
-	if deadlineUs < 0 {
-		return nil, fmt.Errorf("parsing deadline_us: negative value %d not allowed (use 0 for no timeout)", deadlineUs)
-	}
-	serverInputTokens, err := strconv.Atoi(row[17])
-	if err != nil {
-		return nil, fmt.Errorf("parsing server_input_tokens %q: %w", row[17], err)
-	}
-	if serverInputTokens < 0 {
-		return nil, fmt.Errorf("parsing server_input_tokens: negative value %d not allowed", serverInputTokens)
-	}
-	arrivalTimeUs, err := strconv.ParseInt(row[18], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("parsing arrival_time_us %q: %w", row[18], err)
-	}
-	sendTimeUs, err := strconv.ParseInt(row[19], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("parsing send_time_us %q: %w", row[19], err)
-	}
-	firstChunkTimeUs, err := strconv.ParseInt(row[20], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("parsing first_chunk_time_us %q: %w", row[20], err)
-	}
-	lastChunkTimeUs, err := strconv.ParseInt(row[21], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("parsing last_chunk_time_us %q: %w", row[21], err)
-	}
-	numChunks, err := strconv.Atoi(row[22])
-	if err != nil {
-		return nil, fmt.Errorf("parsing num_chunks %q: %w", row[22], err)
-	}
-	if numChunks < 0 {
-		return nil, fmt.Errorf("parsing num_chunks: negative value %d not allowed", numChunks)
-	}
-	if deadlineUs > 0 && arrivalTimeUs > 0 && deadlineUs < arrivalTimeUs {
-		return nil, fmt.Errorf("parsing deadline_us: value %d precedes arrival_time_us %d (corrupt trace?)", deadlineUs, arrivalTimeUs)
-	}
-	var finishReason string
-	if len(row) >= 26 {
-		finishReason = strings.TrimSpace(row[25])
-	}
-
-	return &TraceRecord{
-		RequestID:         requestID,
-		ClientID:          row[1],
-		TenantID:          row[2],
-		SLOClass:          row[3],
-		SessionID:         row[4],
-		RoundIndex:        roundIndex,
-		PrefixGroup:       row[6],
-		PrefixLength:      0, // legacy: no prefix_length column
-		Streaming:         streaming,
-		InputTokens:       inputTokens,
-		OutputTokens:      outputTokens,
-		TextTokens:        textTokens,
-		ImageTokens:       imageTokens,
-		AudioTokens:       audioTokens,
-		VideoTokens:       videoTokens,
-		ReasonRatio:       reasonRatio,
-		Model:             row[15],
-		DeadlineUs:        deadlineUs,
-		ServerInputTokens: serverInputTokens,
-		ArrivalTimeUs:     arrivalTimeUs,
-		SendTimeUs:        sendTimeUs,
-		FirstChunkTimeUs:  firstChunkTimeUs,
-		LastChunkTimeUs:   lastChunkTimeUs,
-		NumChunks:         numChunks,
-		Status:            row[23],
-		ErrorMessage:      strings.TrimSpace(row[24]),
 		FinishReason:      finishReason,
 	}, nil
 }
