@@ -2173,6 +2173,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#inv-p2-1-pool-config-consistency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-P2-1: Pool-Config Consistency
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2963,6 +2974,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#inv-p2-1-pool-config-consistency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-P2-1: Pool-Config Consistency
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3129,7 +3151,11 @@
 <h3 id="inv-pd-5-pool-stability">INV-PD-5: Pool Stability<a class="headerlink" href="#inv-pd-5-pool-stability" title="Permanent link">&para;</a></h3>
 <p><strong>Statement:</strong> Pool membership is fixed at construction time and never changes during simulation.</p>
 <p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_PoolStability</code> compares <code>PoolMembership()</code> before and after <code>Run()</code>.</p>
-<p><strong>Evidence:</strong> <code>BuildPoolMembership</code> is called once in <code>NewClusterSimulator</code> and stored in <code>cs.poolMembership</code>. No code path in <code>Run()</code> modifies this map.</p>
+<p><strong>Evidence:</strong> <code>BuildPoolMembershipFromIndices</code> is called once in <code>NewClusterSimulator</code> and stored in <code>cs.poolMembership</code>. No code path in <code>Run()</code> modifies this map.</p>
+<h3 id="inv-p2-1-pool-config-consistency">INV-P2-1: Pool-Config Consistency<a class="headerlink" href="#inv-p2-1-pool-config-consistency" title="Permanent link">&para;</a></h3>
+<p><strong>Statement:</strong> Per-pool hardware overrides produce a valid <code>SimConfig</code> for each pool role: zero-valued <code>PoolOverrides</code> is a no-op (backward-compatible), non-nil fields override only the specified fields, and the global <code>SimConfig</code> is never mutated.</p>
+<p><strong>Verification:</strong> <code>sim/cluster/resolve_test.go</code> — <code>TestINV_P2_1_PoolConfigConsistency</code> verifies observable KV capacity differences between pools pre-simulation via <code>FreeKVBlocks()</code>; <code>TestINV_P2_1_RequestConservation</code> verifies INV-1 holds under heterogeneous pool configuration.</p>
+<p><strong>Evidence:</strong> <code>ResolvePoolConfig</code> performs a struct copy and applies only non-nil/non-zero overrides. <code>resolveConfigForRole</code> is called in the instance construction loop in <code>NewClusterSimulator</code>, before any simulation state is created.</p>
 
 
 
