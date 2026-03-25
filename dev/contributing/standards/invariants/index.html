@@ -2184,6 +2184,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#inv-p2-2-fair-share-kv-transfer-bandwidth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-P2-2: Fair-Share KV Transfer Bandwidth
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2985,6 +2996,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#inv-p2-2-fair-share-kv-transfer-bandwidth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-P2-2: Fair-Share KV Transfer Bandwidth
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3156,6 +3178,15 @@
 <p><strong>Statement:</strong> Per-pool hardware overrides produce a valid <code>SimConfig</code> for each pool role: zero-valued <code>PoolOverrides</code> is a no-op (backward-compatible), non-nil fields override only the specified fields, and the global <code>SimConfig</code> is never mutated.</p>
 <p><strong>Verification:</strong> <code>sim/cluster/resolve_test.go</code> — <code>TestINV_P2_1_PoolConfigConsistency</code> verifies observable KV capacity differences between pools pre-simulation via <code>FreeKVBlocks()</code>; <code>TestINV_P2_1_RequestConservation</code> verifies INV-1 holds under heterogeneous pool configuration.</p>
 <p><strong>Evidence:</strong> <code>ResolvePoolConfig</code> performs a struct copy and applies only non-nil/non-zero overrides. <code>resolveConfigForRole</code> is called in the instance construction loop in <code>NewClusterSimulator</code>, before any simulation state is created.</p>
+<hr />
+<h3 id="inv-p2-2-fair-share-kv-transfer-bandwidth">INV-P2-2: Fair-Share KV Transfer Bandwidth<a class="headerlink" href="#inv-p2-2-fair-share-kv-transfer-bandwidth" title="Permanent link">&para;</a></h3>
+<p><strong>Statement:</strong> When <code>--pd-transfer-contention</code> is enabled, the effective bandwidth available to each concurrent KV transfer is <code>total_bandwidth / active_transfers</code>, where <code>active_transfers</code> is the count of transfers in flight at the moment the new transfer starts (inclusive of the new transfer). With a single transfer in flight, the full bandwidth is used (<code>active_transfers == 1</code>, divisor == 1). This invariant gates the transfer duration formula in <code>KVTransferStartedEvent.Execute()</code>.</p>
+<p><strong>Verification:</strong> <code>sim/cluster/transfer_contention_test.go</code>:
+- <code>TestTransferContention_INVP22_EffectiveBandwidthFormula</code> — golden test for the N=1 duration (9 µs with 10 blocks at 10 GB/s)
+- <code>TestTransferContention_INVP22_N2FormulaExact</code> — golden test for the N=2 duration (17 µs with same payload at 5 GB/s effective)
+- <code>TestTransferContention_INVP22_DivisorLaw</code> — invariant test: <code>duration(N) / duration(1) ≈ N</code> for N ∈ {1,2,3,4,5,8,10} with monotonicity
+- <code>TestTransferContention_INVP22_FairShareBandwidth</code> — end-to-end: concurrent transfers record peak &gt;= 1 when multiple requests arrive simultaneously</p>
+<p><strong>Evidence:</strong> PR9 (<code>sim/cluster/pd_events.go</code>, <code>KVTransferStartedEvent.Execute()</code>). Gated behind <code>PDTransferContention</code> flag (off by default for backward compatibility). The <code>activeTransfers</code> counter is incremented before the divisor is applied, ensuring the new transfer receives a fair share of the bandwidth with every other transfer currently in flight.</p>
 
 
 
