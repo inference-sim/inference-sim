@@ -263,7 +263,7 @@ func TestLoadTraceV2_UnknownYAMLField_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_InvalidInteger_ReturnsError verifies BC-12: CSV error propagation.
 func TestParseTraceRecord_InvalidInteger_ReturnsError(t *testing.T) {
 	// GIVEN a row with a non-numeric request_id
-	row := make([]string, 26) // must match new column count
+	row := make([]string, 27) // must match current column count
 	row[0] = "abc"             // request_id should be integer
 	for i := 1; i < len(row); i++ {
 		row[i] = "0"
@@ -283,11 +283,11 @@ func TestParseTraceRecord_InvalidInteger_ReturnsError(t *testing.T) {
 
 // TestParseTraceRecord_InvalidDeadlineUs_ReturnsError verifies BC-9.
 func TestParseTraceRecord_InvalidDeadlineUs_ReturnsError(t *testing.T) {
-	row := make([]string, 26)
+	row := make([]string, 27)
 	for i := range row {
 		row[i] = "0"
 	}
-	row[16] = "not_a_number" // deadline_us column
+	row[17] = "not_a_number" // deadline_us column (shifted +1 by prefix_length)
 
 	_, err := parseTraceRecord(row)
 
@@ -301,11 +301,11 @@ func TestParseTraceRecord_InvalidDeadlineUs_ReturnsError(t *testing.T) {
 
 // TestParseTraceRecord_InvalidServerInputTokens_ReturnsError verifies BC-10.
 func TestParseTraceRecord_InvalidServerInputTokens_ReturnsError(t *testing.T) {
-	row := make([]string, 26)
+	row := make([]string, 27)
 	for i := range row {
 		row[i] = "0"
 	}
-	row[17] = "not_a_number" // server_input_tokens column
+	row[18] = "not_a_number" // server_input_tokens column (shifted +1)
 
 	_, err := parseTraceRecord(row)
 
@@ -319,11 +319,11 @@ func TestParseTraceRecord_InvalidServerInputTokens_ReturnsError(t *testing.T) {
 
 // TestParseTraceRecord_NegativeDeadlineUs_ReturnsError verifies R3 validation.
 func TestParseTraceRecord_NegativeDeadlineUs_ReturnsError(t *testing.T) {
-	row := make([]string, 26)
+	row := make([]string, 27)
 	for i := range row {
 		row[i] = "0"
 	}
-	row[16] = "-1" // negative deadline_us
+	row[17] = "-1" // negative deadline_us (shifted +1)
 
 	_, err := parseTraceRecord(row)
 
@@ -338,11 +338,11 @@ func TestParseTraceRecord_NegativeDeadlineUs_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_NegativeInputTokens_ReturnsError verifies R3 for
 // input_tokens (prevents make([]int, negative) panic in replay).
 func TestParseTraceRecord_NegativeInputTokens_ReturnsError(t *testing.T) {
-	row := make([]string, 26)
+	row := make([]string, 27)
 	for i := range row {
 		row[i] = "0"
 	}
-	row[8] = "-1" // input_tokens column
+	row[9] = "-1" // input_tokens column (shifted +1)
 
 	_, err := parseTraceRecord(row)
 
@@ -357,11 +357,11 @@ func TestParseTraceRecord_NegativeInputTokens_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_NegativeOutputTokens_ReturnsError verifies R3 for
 // output_tokens (prevents make([]int, negative) panic in replay).
 func TestParseTraceRecord_NegativeOutputTokens_ReturnsError(t *testing.T) {
-	row := make([]string, 26)
+	row := make([]string, 27)
 	for i := range row {
 		row[i] = "0"
 	}
-	row[9] = "-1" // output_tokens column
+	row[10] = "-1" // output_tokens column (shifted +1)
 
 	_, err := parseTraceRecord(row)
 
@@ -376,11 +376,11 @@ func TestParseTraceRecord_NegativeOutputTokens_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_NegativeServerInputTokens_ReturnsError verifies R3
 // for server_input_tokens (consistent validation for all token count fields).
 func TestParseTraceRecord_NegativeServerInputTokens_ReturnsError(t *testing.T) {
-	row := make([]string, 26)
+	row := make([]string, 27)
 	for i := range row {
 		row[i] = "0"
 	}
-	row[17] = "-1" // server_input_tokens column
+	row[18] = "-1" // server_input_tokens column (shifted +1)
 
 	_, err := parseTraceRecord(row)
 
@@ -395,12 +395,12 @@ func TestParseTraceRecord_NegativeServerInputTokens_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_DeadlineBeforeArrival_ReturnsError verifies cross-field
 // validation: deadline_us must not precede arrival_time_us when both are nonzero.
 func TestParseTraceRecord_DeadlineBeforeArrival_ReturnsError(t *testing.T) {
-	row := make([]string, 26)
+	row := make([]string, 27)
 	for i := range row {
 		row[i] = "0"
 	}
-	row[16] = "1000" // deadline_us = 1000
-	row[18] = "5000" // arrival_time_us = 5000 (deadline < arrival)
+	row[17] = "1000" // deadline_us = 1000 (shifted +1)
+	row[19] = "5000" // arrival_time_us = 5000 (shifted +1)
 
 	_, err := parseTraceRecord(row)
 
@@ -425,11 +425,11 @@ func TestParseTraceRecord_InvalidReasonRatio_ReturnsError(t *testing.T) {
 		{"1.5"},
 	}
 	for _, tc := range cases {
-		row := make([]string, 26)
+		row := make([]string, 27)
 		for i := range row {
 			row[i] = "0"
 		}
-		row[14] = tc.value // reason_ratio column
+		row[15] = tc.value // reason_ratio column (shifted +1)
 
 		_, err := parseTraceRecord(row)
 
@@ -470,6 +470,102 @@ func TestTraceV2_FinishReason_RoundTrip(t *testing.T) {
 	}
 	if tv2.Records[0].FinishReason != "stop" {
 		t.Errorf("FinishReason: got %q, want %q", tv2.Records[0].FinishReason, "stop")
+	}
+}
+
+func TestTraceV2_PrefixGroup_RoundTrip(t *testing.T) {
+	// BC-1: PrefixGroup and PrefixLength survive export → load
+	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated", WorkloadSeed: 42}
+	records := []TraceRecord{
+		{RequestID: 0, PrefixGroup: "group-a", PrefixLength: 128,
+			InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, Status: "ok"},
+		{RequestID: 1, PrefixGroup: "group-a", PrefixLength: 128,
+			InputTokens: 200, OutputTokens: 75, ArrivalTimeUs: 1000, Status: "ok"},
+		{RequestID: 2, PrefixGroup: "", PrefixLength: 0,
+			InputTokens: 300, OutputTokens: 100, ArrivalTimeUs: 2000, Status: "ok"},
+	}
+
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	dataPath := filepath.Join(dir, "data.csv")
+	if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// BC-1: prefix group preserved
+	if loaded.Records[0].PrefixGroup != "group-a" {
+		t.Errorf("record 0 PrefixGroup = %q, want %q", loaded.Records[0].PrefixGroup, "group-a")
+	}
+	if loaded.Records[0].PrefixLength != 128 {
+		t.Errorf("record 0 PrefixLength = %d, want 128", loaded.Records[0].PrefixLength)
+	}
+	// BC-2: input_tokens is suffix-only
+	if loaded.Records[0].InputTokens != 100 {
+		t.Errorf("record 0 InputTokens = %d, want 100", loaded.Records[0].InputTokens)
+	}
+	// BC-7: non-prefix request unchanged
+	if loaded.Records[2].PrefixGroup != "" {
+		t.Errorf("record 2 PrefixGroup = %q, want empty", loaded.Records[2].PrefixGroup)
+	}
+	if loaded.Records[2].PrefixLength != 0 {
+		t.Errorf("record 2 PrefixLength = %d, want 0", loaded.Records[2].PrefixLength)
+	}
+	if loaded.Records[2].InputTokens != 300 {
+		t.Errorf("record 2 InputTokens = %d, want 300", loaded.Records[2].InputTokens)
+	}
+	// BC-4: WorkloadSeed preserved
+	if loaded.Header.WorkloadSeed != 42 {
+		t.Errorf("WorkloadSeed = %d, want 42", loaded.Header.WorkloadSeed)
+	}
+}
+
+func TestTraceV2_BackwardCompat_26Columns(t *testing.T) {
+	// BC-5: 26-column CSV (pre-prefix_length) loads with PrefixLength=0
+	header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
+	headerPath := filepath.Join(t.TempDir(), "h.yaml")
+	dataPath := filepath.Join(t.TempDir(), "d.csv")
+
+	headerData, err := yaml.Marshal(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(headerPath, headerData, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write 26-column CSV (old schema without prefix_length)
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index," +
+		"prefix_group,streaming,input_tokens,output_tokens," +
+		"text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio," +
+		"model,deadline_us,server_input_tokens," +
+		"arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us," +
+		"num_chunks,status,error_message,finish_reason\n" +
+		"0,c1,t1,batch,,0,group-a,false,500,100,0,0,0,0,0,model1,0,0,1000,1000,0,0,0,ok,,stop\n"
+	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	trace, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatalf("LoadTraceV2: %v", err)
+	}
+
+	// BC-5: PrefixLength defaults to 0 for legacy traces
+	if trace.Records[0].PrefixLength != 0 {
+		t.Errorf("PrefixLength = %d, want 0 for legacy trace", trace.Records[0].PrefixLength)
+	}
+	// PrefixGroup still preserved from CSV
+	if trace.Records[0].PrefixGroup != "group-a" {
+		t.Errorf("PrefixGroup = %q, want %q", trace.Records[0].PrefixGroup, "group-a")
+	}
+	// InputTokens is total for legacy (no prefix subtraction)
+	if trace.Records[0].InputTokens != 500 {
+		t.Errorf("InputTokens = %d, want 500", trace.Records[0].InputTokens)
 	}
 }
 
@@ -535,12 +631,12 @@ func TestRequestMetadataFields(t *testing.T) {
 	}
 	r := records[0]
 
-	// BC-5: ClientID preserved, PrefixGroup intentionally cleared, Streaming preserved
+	// BC-5: ClientID preserved, PrefixGroup preserved, Streaming preserved
 	if r.ClientID != "client-alpha" {
 		t.Errorf("ClientID: got %q, want %q", r.ClientID, "client-alpha")
 	}
-	if r.PrefixGroup != "" {
-		t.Errorf("PrefixGroup: got %q, want empty (cleared to prevent double-prepend)", r.PrefixGroup)
+	if r.PrefixGroup != "shared-prefix" {
+		t.Errorf("PrefixGroup: got %q, want %q", r.PrefixGroup, "shared-prefix")
 	}
 	if !r.Streaming {
 		t.Errorf("Streaming: got %v, want true", r.Streaming)
@@ -810,9 +906,9 @@ func TestRequestsToTraceRecords_RoundTrip(t *testing.T) {
 	if lr.DeadlineUs != 50000 {
 		t.Errorf("DeadlineUs: got %d, want 50000", lr.DeadlineUs)
 	}
-	// PrefixGroup intentionally cleared
+	// PrefixGroup preserved (no longer cleared)
 	if lr.PrefixGroup != "" {
-		t.Errorf("PrefixGroup should be empty (cleared), got %q", lr.PrefixGroup)
+		t.Errorf("PrefixGroup: got %q, want empty (no prefix set)", lr.PrefixGroup)
 	}
 
 	// Verify second record (timed out during prefill)

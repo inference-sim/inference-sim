@@ -284,6 +284,9 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	if observeWorkloadSpec != "" {
 		header.WorkloadSpec = observeWorkloadSpec
 	}
+	if spec != nil {
+		header.WorkloadSeed = spec.Seed
+	}
 
 	if err := recorder.Export(header, observeTraceHeader, observeTraceData); err != nil {
 		logrus.Fatalf("Failed to export trace: %v", err)

@@ -21,6 +21,7 @@ type TraceHeader struct {
 	CreatedAt      string `yaml:"created_at,omitempty"`
 	Mode           string `yaml:"mode"` // "real" or "generated"
 	WarmUpRequests int    `yaml:"warm_up_requests"`
+	WorkloadSeed   int64  `yaml:"workload_seed,omitempty"`
 	WorkloadSpec   string `yaml:"workload_spec,omitempty"`
 
 	Server  *TraceServerConfig  `yaml:"server,omitempty"`
@@ -52,6 +53,7 @@ type TraceRecord struct {
 	SessionID         string
 	RoundIndex        int
 	PrefixGroup       string
+	PrefixLength      int
 	Streaming         bool
 	InputTokens       int
 	OutputTokens      int
@@ -82,7 +84,7 @@ type TraceV2 struct {
 // CSV column headers for trace v2 format.
 var traceV2Columns = []string{
 	"request_id", "client_id", "tenant_id", "slo_class", "session_id", "round_index",
-	"prefix_group", "streaming", "input_tokens", "output_tokens",
+	"prefix_group", "prefix_length", "streaming", "input_tokens", "output_tokens",
 	"text_tokens", "image_tokens", "audio_tokens", "video_tokens", "reason_ratio",
 	"model", "deadline_us", "server_input_tokens",
 	"arrival_time_us", "send_time_us", "first_chunk_time_us", "last_chunk_time_us",
@@ -126,6 +128,7 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 			r.SessionID,
 			strconv.Itoa(r.RoundIndex),
 			r.PrefixGroup,
+			strconv.Itoa(r.PrefixLength),
 			strconv.FormatBool(r.Streaming),
 			strconv.Itoa(r.InputTokens),
 			strconv.Itoa(r.OutputTokens),
@@ -191,17 +194,25 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading CSV row: %w", err)
 		}
-		// Accept current column count or previous (finish_reason was added as column 26).
-		minColumns := len(traceV2Columns) - 1 // backward compat: 25-column traces (pre-finish_reason) accepted
-		if len(row) < minColumns {
+		// Column count tiers:
+		//   27 = current (with prefix_length)
+		//   25-26 = legacy (pre-prefix_length); 25 = pre-finish_reason
+		//   <25 = unsupported
+		const legacyMinColumns = 25
+		if len(row) < legacyMinColumns {
 			hint := ""
 			if len(row) == 22 {
 				hint = " (22-column trace predates model/deadline_us/server_input_tokens fields; re-export to upgrade)"
 			}
-			return nil, fmt.Errorf("CSV row has %d columns, expected at least %d%s", len(row), minColumns, hint)
+			return nil, fmt.Errorf("CSV row has %d columns, expected at least %d%s", len(row), legacyMinColumns, hint)
 		}
 
-		r, err := parseTraceRecord(row)
+		var r *TraceRecord
+		if len(row) >= len(traceV2Columns) { // 27+ = new schema (with prefix_length column)
+			r, err = parseTraceRecord(row)
+		} else {
+			r, err = parseTraceRecordLegacy(row)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -211,7 +222,163 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	return &TraceV2{Header: header, Records: records}, nil
 }
 
+// parseTraceRecord parses a 27-column (current schema) CSV row.
 func parseTraceRecord(row []string) (*TraceRecord, error) {
+	requestID, err := strconv.Atoi(row[0])
+	if err != nil {
+		return nil, fmt.Errorf("parsing request_id %q: %w", row[0], err)
+	}
+	roundIndex, err := strconv.Atoi(row[5])
+	if err != nil {
+		return nil, fmt.Errorf("parsing round_index %q: %w", row[5], err)
+	}
+	// Column 7: prefix_length (new in 27-column schema)
+	prefixLength, err := strconv.Atoi(row[7])
+	if err != nil {
+		return nil, fmt.Errorf("parsing prefix_length %q: %w", row[7], err)
+	}
+	if prefixLength < 0 {
+		return nil, fmt.Errorf("parsing prefix_length: negative value %d not allowed", prefixLength)
+	}
+	// Column 8: streaming (was 7)
+	streaming, err := strconv.ParseBool(row[8])
+	if err != nil {
+		return nil, fmt.Errorf("parsing streaming %q: %w", row[8], err)
+	}
+	// Column 9: input_tokens (was 8)
+	inputTokens, err := strconv.Atoi(row[9])
+	if err != nil {
+		return nil, fmt.Errorf("parsing input_tokens %q: %w", row[9], err)
+	}
+	// Negative token counts cause make([]int, negative) panics in LoadTraceV2Requests.
+	if inputTokens < 0 {
+		return nil, fmt.Errorf("parsing input_tokens: negative value %d not allowed", inputTokens)
+	}
+	outputTokens, err := strconv.Atoi(row[10])
+	if err != nil {
+		return nil, fmt.Errorf("parsing output_tokens %q: %w", row[10], err)
+	}
+	if outputTokens < 0 {
+		return nil, fmt.Errorf("parsing output_tokens: negative value %d not allowed", outputTokens)
+	}
+	textTokens, err := strconv.Atoi(row[11])
+	if err != nil {
+		return nil, fmt.Errorf("parsing text_tokens %q: %w", row[11], err)
+	}
+	if textTokens < 0 {
+		return nil, fmt.Errorf("parsing text_tokens: negative value %d not allowed", textTokens)
+	}
+	imageTokens, err := strconv.Atoi(row[12])
+	if err != nil {
+		return nil, fmt.Errorf("parsing image_tokens %q: %w", row[12], err)
+	}
+	if imageTokens < 0 {
+		return nil, fmt.Errorf("parsing image_tokens: negative value %d not allowed", imageTokens)
+	}
+	audioTokens, err := strconv.Atoi(row[13])
+	if err != nil {
+		return nil, fmt.Errorf("parsing audio_tokens %q: %w", row[13], err)
+	}
+	if audioTokens < 0 {
+		return nil, fmt.Errorf("parsing audio_tokens: negative value %d not allowed", audioTokens)
+	}
+	videoTokens, err := strconv.Atoi(row[14])
+	if err != nil {
+		return nil, fmt.Errorf("parsing video_tokens %q: %w", row[14], err)
+	}
+	if videoTokens < 0 {
+		return nil, fmt.Errorf("parsing video_tokens: negative value %d not allowed", videoTokens)
+	}
+	reasonRatio, err := strconv.ParseFloat(row[15], 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing reason_ratio %q: %w", row[15], err)
+	}
+	if math.IsNaN(reasonRatio) || math.IsInf(reasonRatio, 0) || reasonRatio < 0 || reasonRatio > 1.0 {
+		return nil, fmt.Errorf("parsing reason_ratio %q: must be in range [0.0, 1.0], got %g", row[15], reasonRatio)
+	}
+	deadlineUs, err := strconv.ParseInt(row[17], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing deadline_us %q: %w", row[17], err)
+	}
+	if deadlineUs < 0 {
+		return nil, fmt.Errorf("parsing deadline_us: negative value %d not allowed (use 0 for no timeout)", deadlineUs)
+	}
+	serverInputTokens, err := strconv.Atoi(row[18])
+	if err != nil {
+		return nil, fmt.Errorf("parsing server_input_tokens %q: %w", row[18], err)
+	}
+	if serverInputTokens < 0 {
+		return nil, fmt.Errorf("parsing server_input_tokens: negative value %d not allowed", serverInputTokens)
+	}
+	arrivalTimeUs, err := strconv.ParseInt(row[19], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing arrival_time_us %q: %w", row[19], err)
+	}
+	sendTimeUs, err := strconv.ParseInt(row[20], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing send_time_us %q: %w", row[20], err)
+	}
+	firstChunkTimeUs, err := strconv.ParseInt(row[21], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing first_chunk_time_us %q: %w", row[21], err)
+	}
+	lastChunkTimeUs, err := strconv.ParseInt(row[22], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing last_chunk_time_us %q: %w", row[22], err)
+	}
+	numChunks, err := strconv.Atoi(row[23])
+	if err != nil {
+		return nil, fmt.Errorf("parsing num_chunks %q: %w", row[23], err)
+	}
+	if numChunks < 0 {
+		return nil, fmt.Errorf("parsing num_chunks: negative value %d not allowed", numChunks)
+	}
+	// Cross-field invariant: deadline must not precede arrival (would cause immediate
+	// timeout at enqueue before any processing). Zero deadline means "no timeout";
+	// zero arrival means "time origin" — both are exempt from this check.
+	if deadlineUs > 0 && arrivalTimeUs > 0 && deadlineUs < arrivalTimeUs {
+		return nil, fmt.Errorf("parsing deadline_us: value %d precedes arrival_time_us %d (corrupt trace?)", deadlineUs, arrivalTimeUs)
+	}
+	// finish_reason (column 26) — optional for backward compat with 26-column traces
+	var finishReason string
+	if len(row) >= 27 {
+		finishReason = strings.TrimSpace(row[26])
+	}
+
+	return &TraceRecord{
+		RequestID:         requestID,
+		ClientID:          row[1],
+		TenantID:          row[2],
+		SLOClass:          row[3],
+		SessionID:         row[4],
+		RoundIndex:        roundIndex,
+		PrefixGroup:       row[6],
+		PrefixLength:      prefixLength,
+		Streaming:         streaming,
+		InputTokens:       inputTokens,
+		OutputTokens:      outputTokens,
+		TextTokens:        textTokens,
+		ImageTokens:       imageTokens,
+		AudioTokens:       audioTokens,
+		VideoTokens:       videoTokens,
+		ReasonRatio:       reasonRatio,
+		Model:             row[16],
+		DeadlineUs:        deadlineUs,
+		ServerInputTokens: serverInputTokens,
+		ArrivalTimeUs:     arrivalTimeUs,
+		SendTimeUs:        sendTimeUs,
+		FirstChunkTimeUs:  firstChunkTimeUs,
+		LastChunkTimeUs:   lastChunkTimeUs,
+		NumChunks:         numChunks,
+		Status:            row[24],
+		ErrorMessage:      strings.TrimSpace(row[25]),
+		FinishReason:      finishReason,
+	}, nil
+}
+
+// parseTraceRecordLegacy parses a 25-26 column (pre-prefix_length) CSV row.
+// PrefixLength defaults to 0.
+func parseTraceRecordLegacy(row []string) (*TraceRecord, error) {
 	requestID, err := strconv.Atoi(row[0])
 	if err != nil {
 		return nil, fmt.Errorf("parsing request_id %q: %w", row[0], err)
@@ -228,7 +395,6 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing input_tokens %q: %w", row[8], err)
 	}
-	// Negative token counts cause make([]int, negative) panics in LoadTraceV2Requests.
 	if inputTokens < 0 {
 		return nil, fmt.Errorf("parsing input_tokens: negative value %d not allowed", inputTokens)
 	}
@@ -288,7 +454,6 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 	if serverInputTokens < 0 {
 		return nil, fmt.Errorf("parsing server_input_tokens: negative value %d not allowed", serverInputTokens)
 	}
-	// Arrival, send, chunk timestamps, num_chunks: columns 18-22 (shifted +3 by new columns at 15-17)
 	arrivalTimeUs, err := strconv.ParseInt(row[18], 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("parsing arrival_time_us %q: %w", row[18], err)
@@ -312,13 +477,9 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 	if numChunks < 0 {
 		return nil, fmt.Errorf("parsing num_chunks: negative value %d not allowed", numChunks)
 	}
-	// Cross-field invariant: deadline must not precede arrival (would cause immediate
-	// timeout at enqueue before any processing). Zero deadline means "no timeout";
-	// zero arrival means "time origin" — both are exempt from this check.
 	if deadlineUs > 0 && arrivalTimeUs > 0 && deadlineUs < arrivalTimeUs {
 		return nil, fmt.Errorf("parsing deadline_us: value %d precedes arrival_time_us %d (corrupt trace?)", deadlineUs, arrivalTimeUs)
 	}
-	// finish_reason (column 25) — optional for backward compat with 25-column traces
 	var finishReason string
 	if len(row) >= 26 {
 		finishReason = strings.TrimSpace(row[25])
@@ -332,6 +493,7 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 		SessionID:         row[4],
 		RoundIndex:        roundIndex,
 		PrefixGroup:       row[6],
+		PrefixLength:      0, // legacy: no prefix_length column
 		Streaming:         streaming,
 		InputTokens:       inputTokens,
 		OutputTokens:      outputTokens,
@@ -362,9 +524,9 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 // represents the client-observable last-token delivery time. This deliberately
 // excludes PostDecodeFixedOverhead (server-side processing after final token)
 // and therefore differs from the E2E value stored in Metrics.RequestE2Es.
-// PrefixGroup is intentionally cleared because InputTokens already includes prefix
-// tokens baked in during generation; setting PrefixGroup would cause
-// LoadTraceV2Requests to double-prepend prefix on replay.
+// PrefixGroup and PrefixLength are preserved; InputTokens records the suffix-only
+// count (total - PrefixLength) so that LoadTraceV2Requests can reconstruct the
+// full input by prepending a shared prefix of the correct length.
 func RequestsToTraceRecords(requests []*sim.Request) []TraceRecord {
 	records := make([]TraceRecord, 0, len(requests))
 	for i, req := range requests {
@@ -392,6 +554,16 @@ func RequestsToTraceRecords(requests []*sim.Request) []TraceRecord {
 			lastChunkUs = req.ArrivalTime + e2e
 		}
 
+		prefixLen := req.PrefixLength
+		inputTokens := len(req.InputTokens) - prefixLen
+		if inputTokens < 0 {
+			// Safety: PrefixLength exceeds InputTokens (should not happen with well-formed data).
+			// Treat as no prefix. Detectable in output: PrefixLength=0 with non-empty PrefixGroup.
+			// R6: no logrus in sim/ — caller is responsible for detecting this via the record.
+			inputTokens = len(req.InputTokens)
+			prefixLen = 0
+		}
+
 		records = append(records, TraceRecord{
 			RequestID:        i,
 			ClientID:         req.ClientID,
@@ -399,9 +571,10 @@ func RequestsToTraceRecords(requests []*sim.Request) []TraceRecord {
 			SLOClass:         req.SLOClass,
 			SessionID:        req.SessionID,
 			RoundIndex:       req.RoundIndex,
-			PrefixGroup:      "", // intentionally empty: InputTokens already includes prefix
+			PrefixGroup:      req.PrefixGroup,
+			PrefixLength:     prefixLen,
 			Streaming:        req.Streaming,
-			InputTokens:      len(req.InputTokens),
+			InputTokens:      inputTokens,      // suffix-only: total - PrefixLength
 			OutputTokens:     len(req.OutputTokens), // pre-determined count for replay fidelity
 			TextTokens:       req.TextTokenCount,
 			ImageTokens:      req.ImageTokenCount,
