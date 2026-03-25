@@ -1060,7 +1060,7 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("--pd-direct-decode-threshold must be >= 0, got %d", pdDirectDecodeThreshold)
 		}
 		if pdDecider == "direct-to-decode" && pdDirectDecodeThreshold == 0 {
-			logrus.Warnf("--pd-direct-decode-threshold=0 means all non-empty requests will be disaggregated (equivalent to --pd-decider=always for non-empty inputs; empty-input requests always go direct to decode regardless of threshold). Did you intend a non-zero threshold?")
+			logrus.Warnf("--pd-direct-decode-threshold=0 means all non-empty requests will be disaggregated (equivalent to --pd-decider=always for non-empty inputs). Did you intend a non-zero threshold?")
 		}
 		if pdDecider != "direct-to-decode" && cmd.Flags().Changed("pd-direct-decode-threshold") {
 			logrus.Warnf("--pd-direct-decode-threshold=%d is ignored when --pd-decider=%q (only applies to the direct-to-decode decider)", pdDirectDecodeThreshold, pdDecider)

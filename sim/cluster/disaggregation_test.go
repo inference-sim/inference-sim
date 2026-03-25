@@ -709,4 +709,7 @@ func TestDirectToDecode_AboveThresholdDisaggregated(t *testing.T) {
 		t.Errorf("parentRequests = %d, want 3: long requests (400 tokens >= %d threshold) should all be disaggregated",
 			len(cs.parentRequests), threshold)
 	}
+	// INV-1: disaggregated requests complete via the full prefill → KV-transfer → decode path;
+	// verify no sub-request is double-counted or silently dropped.
+	assertINV1Conservation(t, cs.AggregatedMetrics(), len(requests), "direct-to-decode above threshold")
 }
