@@ -516,6 +516,8 @@ func (c *ClusterSimulator) Run() error {
 			logrus.Warnf("[cluster] no requests completed — %d of %d requests timed out (client timeout exceeded, likely KV pressure)",
 				c.aggregatedMetrics.TimedOutRequests,
 				c.aggregatedMetrics.TimedOutRequests+c.aggregatedMetrics.DroppedUnservable)
+		} else if len(c.deferredQueue) > 0 {
+			logrus.Warnf("[cluster] no requests completed — %d batch/background requests remain deferred at horizon (cluster never became idle; mix in standard/critical traffic to trigger promotion)", len(c.deferredQueue))
 		} else {
 			logrus.Warnf("[cluster] no requests completed — horizon may be too short or workload too small")
 		}
@@ -771,6 +773,12 @@ func (c *ClusterSimulator) isBusy() bool {
 // Called when isBusy() transitions to false. Truncates deferredQueue after injection.
 // INV-8: ensures work-conserving behaviour — deferred requests re-enter the pipeline
 // within the same scheduling step as the idle transition.
+//
+// Re-deferral: with non-zero admission latency, standard traffic arriving in the
+// [clock, clock+admissionLatency] window may make isBusy() return true before a
+// promoted request reaches AdmissionDecisionEvent, causing it to be re-deferred.
+// This is intentional (Decision 4 in research.md) but may inflate DeferredHorizonInterrupted
+// counts under continuous light standard load.
 func (c *ClusterSimulator) promoteDeferred() {
 	logrus.Debugf("[cluster] promoting %d deferred requests at tick %d", len(c.deferredQueue), c.clock)
 	for _, req := range c.deferredQueue {

@@ -192,7 +192,7 @@ Example:
 			fmt.Println("=== Anomaly Counters ===")
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
-			fmt.Printf("Rejected Requests: %d\n", rawMetrics.RejectedRequests)
+			fmt.Printf("Rejected Requests (Admission): %d\n", rawMetrics.RejectedRequests)
 			if len(rawMetrics.ShedByTier) > 0 {
 				tierKeys := make([]string, 0, len(rawMetrics.ShedByTier))
 				for k := range rawMetrics.ShedByTier {
@@ -203,6 +203,7 @@ Example:
 					fmt.Printf("  Shed (%s): %d\n", tier, rawMetrics.ShedByTier[tier])
 				}
 			}
+			fmt.Printf("Rejected Requests (Routing): %d\n", rawMetrics.RoutingRejections)
 			fmt.Printf("Dropped Unservable: %d\n", rawMetrics.DroppedUnservable)
 			fmt.Printf("Length-Capped Requests: %d\n", rawMetrics.LengthCappedRequests)
 			if rawMetrics.DeferredHorizonInterrupted > 0 {

@@ -127,6 +127,10 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 	if (e.request.SLOClass == "batch" || e.request.SLOClass == "background") && cs.isBusy() {
 		cs.deferredQueue = append(cs.deferredQueue, e.request)
 		logrus.Debugf("[cluster] req %s deferred (SLOClass=%q, deferredQueueLen=%d)", e.request.ID, e.request.SLOClass, len(cs.deferredQueue))
+		// Trace gap: deferred requests do not get a RecordAdmission() call here.
+		// When promoted, they re-enter as ClusterArrivalEvents and receive an admission
+		// record at promotion time (not original arrival time). Trace consumers should
+		// not assume TotalDecisions == injected_requests in cluster mode.
 		return
 	}
 
