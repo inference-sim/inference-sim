@@ -186,6 +186,49 @@ func TestResolveModelConfig_AllMiss_IncludesDefaultsError(t *testing.T) {
 	}
 }
 
+func TestResolveModelConfig_MultimodalConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	localDir := filepath.Join(tmpDir, modelConfigsDir, "llama4-test")
+	if err := os.MkdirAll(localDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write a multimodal config (text_config structure)
+	multimodalConfig := `{
+		"architectures": ["Llama4ForConditionalGeneration"],
+		"model_type": "llama4",
+		"text_config": {
+			"num_hidden_layers": 48,
+			"hidden_size": 5120,
+			"num_attention_heads": 40,
+			"num_key_value_heads": 8
+		},
+		"vision_config": {
+			"num_hidden_layers": 34,
+			"hidden_size": 1408
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(localDir, hfConfigFile), []byte(multimodalConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock HF fetch to fail (safety net - local config should be found first)
+	old := fetchHFConfigFunc
+	fetchHFConfigFunc = func(_, _ string) (string, error) {
+		return "", fmt.Errorf("test should not reach HF fetch - local config should be found")
+	}
+	t.Cleanup(func() { fetchHFConfigFunc = old })
+
+	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
+	dir, err := resolveModelConfig("test-org/llama4-test", "", defaultsFile)
+	if err != nil {
+		t.Fatalf("multimodal config should be recognized: %v", err)
+	}
+	expected := filepath.Join(tmpDir, modelConfigsDir, "llama4-test")
+	if dir != expected {
+		t.Errorf("expected %s, got %s", expected, dir)
+	}
+}
 
 func TestResolveHardwareConfig_ExplicitOverride(t *testing.T) {
 	path, err := resolveHardwareConfig("/explicit/hw.json", "defaults.yaml")
