@@ -847,15 +847,26 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		delete(m.RequestE2Es, pfx)
 		delete(m.RequestE2Es, dec)
 		if completed {
-			m.RequestE2Es[pid] = float64(parent.CompletionTime - parent.ArrivalTime)
+			e2e := parent.CompletionTime - parent.ArrivalTime
+			if e2e < 0 {
+				logrus.Warnf("[cluster] projectPDMetrics: negative E2E for %s (completionTime=%d arrivalTime=%d); skipping",
+					pid, parent.CompletionTime, parent.ArrivalTime)
+			} else {
+				m.RequestE2Es[pid] = float64(e2e)
+			}
 		}
 
 		// TTFT: rekey from prefill sub-request ID to parent ID (value unchanged).
 		// Only prefill sub-requests record TTFT; decode sub-requests never trigger it.
-		if ttft, ok := m.RequestTTFTs[pfx]; ok {
-			delete(m.RequestTTFTs, pfx)
-			m.RequestTTFTs[pid] = ttft
+		// Gate on completed: dropped-request TTFTs must not enter the distribution.
+		if completed {
+			if ttft, ok := m.RequestTTFTs[pfx]; ok {
+				m.RequestTTFTs[pid] = ttft
+			} else {
+				logrus.Warnf("[cluster] projectPDMetrics: completed parent %s has no prefill TTFT (key %s)", pid, pfx)
+			}
 		}
+		delete(m.RequestTTFTs, pfx)
 		delete(m.RequestTTFTs, dec)
 
 		// Issue #821 fix 2: scheduling delay = prefill sub-request's delay
@@ -865,6 +876,18 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		delete(m.RequestSchedulingDelays, dec)
 		if completed && hasPrefillDelay {
 			m.RequestSchedulingDelays[pid] = prefillDelay
+		}
+
+		// Issue #821 fix 3: Requests metadata keyed by parent ID.
+		delete(m.Requests, pfx)
+		delete(m.Requests, dec)
+		if completed {
+			if parent.OriginalRequest == nil {
+				panic(fmt.Sprintf("projectPDMetrics: parent %s has nil OriginalRequest", pid))
+			}
+			rm := sim.NewRequestMetrics(parent.OriginalRequest, float64(parent.ArrivalTime)/1e6)
+			rm.HandledBy = string(parent.DecodeInstanceID)
+			m.Requests[pid] = rm
 		}
 
 		// Issue #821 fix 4: ITL from decode sub-request (prefill ITL is 0 noise).
@@ -880,15 +903,6 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		delete(m.RequestCompletionTimes, dec)
 		if completed {
 			m.RequestCompletionTimes[pid] = float64(parent.CompletionTime)
-		}
-
-		// Issue #821 fix 3: Requests metadata keyed by parent ID.
-		delete(m.Requests, pfx)
-		delete(m.Requests, dec)
-		if completed {
-			rm := sim.NewRequestMetrics(parent.OriginalRequest, float64(parent.ArrivalTime)/1e6)
-			rm.HandledBy = string(parent.DecodeInstanceID)
-			m.Requests[pid] = rm
 		}
 	}
 }

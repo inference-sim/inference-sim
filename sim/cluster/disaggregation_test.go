@@ -888,6 +888,88 @@ func TestDisaggregation_MetricProjection_RequestsMap(t *testing.T) {
 	}
 }
 
+// TestDisaggregation_MetricProjection_DroppedParent_NoSubRequestKeys verifies
+// INV-PD-6 for the dropped-parent path: when decode KV allocation fails,
+// no sub-request key must remain in any per-request metric map.
+// GIVEN a cluster with tight decode KV causing some parents to be dropped
+// WHEN  Run() completes
+// THEN  no map entry has a "_prefill" or "_decode" suffix (dropped or completed).
+func TestDisaggregation_MetricProjection_DroppedParent_NoSubRequestKeys(t *testing.T) {
+	// 1 decode instance with 3 blocks (48 tokens); each short request needs 2 blocks.
+	// First request fills 2/3, second request tries 2 more with only 1 free → dropped.
+	config := newTestDisaggDeploymentConfig(3, 2, 1)
+	config.SimConfig.KVCacheConfig = sim.NewKVCacheConfig(3, 16, 0, 0, 0, 0)
+
+	requests := newShortRequests(4)
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	if cs.droppedAtDecodeKV == 0 {
+		t.Skip("no decode drops in this scenario; test precondition not met")
+	}
+
+	m := cs.AggregatedMetrics()
+	maps := map[string][]string{
+		"RequestE2Es":             mapKeys(m.RequestE2Es),
+		"RequestTTFTs":            mapKeys(m.RequestTTFTs),
+		"RequestITLs":             mapKeys(m.RequestITLs),
+		"RequestCompletionTimes":  mapKeys(m.RequestCompletionTimes),
+		"RequestSchedulingDelays": mapKeysInt64(m.RequestSchedulingDelays),
+		"Requests":                mapKeysRM(m.Requests),
+	}
+	for mapName, keys := range maps {
+		for _, key := range keys {
+			if hasSubRequestSuffix(key) {
+				t.Errorf("INV-PD-6 violated: %s contains sub-request key %q (dropped parent not cleaned up)",
+					mapName, key)
+			}
+		}
+	}
+}
+
+// TestDisaggregation_MetricProjection_ITL verifies that after projection,
+// ITL entries are keyed by parent ID and carry a positive value (from the
+// decode sub-request, not zero noise from the prefill sub-request).
+// GIVEN a PD disaggregation simulation with multi-token output requests
+// WHEN  Run() completes
+// THEN  no sub-request ITL keys remain, and any present parent ITL is > 0.
+func TestDisaggregation_MetricProjection_ITL(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(10)
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	completedCount := 0
+	for _, parent := range cs.parentRequests {
+		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
+			continue
+		}
+		completedCount++
+		pid := parent.ID
+
+		// Sub-request ITL keys must be absent after projection.
+		if _, ok := m.RequestITLs[parent.PrefillSubReqID]; ok {
+			t.Errorf("parent %s: prefill sub-req key %q in RequestITLs after projection",
+				pid, parent.PrefillSubReqID)
+		}
+		if _, ok := m.RequestITLs[parent.DecodeSubReqID]; ok {
+			t.Errorf("parent %s: decode sub-req key %q in RequestITLs after projection",
+				pid, parent.DecodeSubReqID)
+		}
+
+		// When ITL is present for the parent, it must be positive (decode generates real ITL;
+		// prefill ITL is zero noise that projectPDMetrics discards).
+		if itl, ok := m.RequestITLs[pid]; ok && itl <= 0 {
+			t.Errorf("parent %s: ITL = %.4f, expected > 0 (from decode sub-request)", pid, itl)
+		}
+	}
+	if completedCount == 0 {
+		t.Fatal("no completed parents: test inconclusive")
+	}
+}
+
 // helper: extract keys from map[string]float64.
 func mapKeys(m map[string]float64) []string {
 	keys := make([]string, 0, len(m))

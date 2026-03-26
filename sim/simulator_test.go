@@ -2335,3 +2335,49 @@ func TestSimulator_Timeout_KVConservation(t *testing.T) {
 		t.Errorf("expected 1 timed-out request, got %d", sim.Metrics.TimedOutRequests)
 	}
 }
+
+// TestEnqueueDecodeSubRequest_StepEventAtClusterTime verifies that when a decode
+// sub-request is injected with a clusterTime ahead of the instance's internal clock,
+// the StepEvent is scheduled at clusterTime rather than the stale instance time.
+// GIVEN an idle simulator at internal clock = 0
+// WHEN  EnqueueDecodeSubRequest is called with clusterTime = 50000 (ahead of internal clock)
+// THEN  the earliest pending event is at clusterTime, preventing time-travel processing.
+func TestEnqueueDecodeSubRequest_StepEventAtClusterTime(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             math.MaxInt64,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-clustertime", "H100", 1, "blackbox", 0),
+	}
+	s := mustNewSimulator(t, cfg)
+	// Internal clock is 0 (idle simulator, no events processed).
+
+	const clusterTime = int64(50000)
+	req := &Request{
+		ID:            "dec-1",
+		InputTokens:   make([]int, 10),
+		OutputTokens:  make([]int, 5),
+		State:         StateQueued,
+		ArrivalTime:   clusterTime,
+		ProgressIndex: 10, // KV pre-allocated past input (as done by AllocateTransferredKV)
+	}
+
+	s.EnqueueDecodeSubRequest(req, clusterTime)
+
+	// BC-1: A StepEvent must be scheduled (INV-8 work-conserving).
+	if !s.HasPendingEvents() {
+		t.Fatal("BC-1: no pending events after EnqueueDecodeSubRequest (INV-8 violated)")
+	}
+
+	// BC-2: The StepEvent must be at clusterTime, not at the stale internal clock (0).
+	// Without the max(sim.Clock, clusterTime) fix, this would return 0, causing
+	// the decode sub-request to be processed before its arrival time.
+	got := s.PeekNextEventTime()
+	if got != clusterTime {
+		t.Errorf("BC-2: StepEvent time = %d, want %d (clusterTime); "+
+			"decode sub-request would be processed at stale instance time %d",
+			got, clusterTime, s.Clock)
+	}
+}
