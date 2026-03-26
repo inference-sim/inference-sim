@@ -33,6 +33,7 @@ type ClusterSimulator struct {
 	rejectedRequests     int                    // EC-2: count of requests rejected by admission policy
 	routingRejections    int                    // I13: count of requests rejected at routing (no routable instances)
 	shedByTier           map[string]int         // per-SLOClass rejection counts (Phase 1B-1a)
+	deferredQueue        []*sim.Request         // Batch/Background requests awaiting idle capacity (Phase 1B-1b)
 	trace                *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
 	preGeneratedRequests []*sim.Request         // Pre-generated requests (all workload paths unified)
 	inFlightRequests     map[string]int         // instance ID → dispatched-but-not-completed count (#463)
@@ -415,6 +416,12 @@ func (c *ClusterSimulator) Run() error {
 				}
 			}
 		}
+
+		// Phase 1B-1b: after each event, promote deferred Batch/Background requests
+		// if the cluster has become idle. INV-8: ensures no stall while deferred work waits.
+		if len(c.deferredQueue) > 0 && !c.isBusy() {
+			c.promoteDeferred()
+		}
 	}
 
 	// 4. Finalize all instances (populates StillQueued/StillRunning)
@@ -738,6 +745,44 @@ func (c *ClusterSimulator) ShedByTier() map[string]int {
 		result[k] = v
 	}
 	return result
+}
+
+// isBusy returns true when any instance has non-zero effective load.
+// Uses the three-component definition: QueueDepth + BatchSize + InFlightRequests > 0.
+// An empty instance pool returns false (not busy).
+// Called by the deferred queue pre-admission intercept and the idle-capacity promotion check.
+func (c *ClusterSimulator) isBusy() bool {
+	for _, inst := range c.instances {
+		if inst.QueueDepth()+inst.BatchSize()+c.inFlightRequests[string(inst.ID())] > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// promoteDeferred injects all deferred requests as ClusterArrivalEvents at the current clock.
+// Called when isBusy() transitions to false. Truncates deferredQueue after injection.
+// INV-8: ensures work-conserving behaviour — deferred requests re-enter the pipeline
+// within the same scheduling step as the idle transition.
+func (c *ClusterSimulator) promoteDeferred() {
+	for _, req := range c.deferredQueue {
+		heap.Push(&c.clusterEvents, clusterEventEntry{
+			event: &ClusterArrivalEvent{time: c.clock, request: req},
+			seqID: c.nextSeqID(),
+		})
+	}
+	c.deferredQueue = c.deferredQueue[:0]
+}
+
+// DeferredQueueLen returns the number of Batch/Background requests still in the
+// deferred queue at simulation end (i.e., deferred_horizon_interrupted count).
+// Panics if called before Run() completes.
+// Used by cmd/ to populate RawMetrics.DeferredHorizonInterrupted (Phase 1B-1b).
+func (c *ClusterSimulator) DeferredQueueLen() int {
+	if !c.hasRun {
+		panic("ClusterSimulator.DeferredQueueLen() called before Run()")
+	}
+	return len(c.deferredQueue)
 }
 
 // Trace returns the decision trace collected during simulation.
