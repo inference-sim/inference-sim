@@ -24,50 +24,56 @@ func newDeferredTestRequests(n int, sloClass string) []*sim.Request {
 	return reqs
 }
 
-// T002 — BC-D1: Batch request is deferred (not rejected) when cluster is busy.
+// T002 — BC-D1: Batch and Background requests are deferred (not rejected) when cluster is busy.
+// Table-driven over both SLO classes so that removing either branch from the intercept
+// (cluster_event.go:127) would be caught.
 // Uses a 1-instance cluster overloaded with standard requests arriving densely.
-// After Run(), the batch request must not be rejected AND must reach a terminal
+// After Run(), the deferred request must not be rejected AND must reach a terminal
 // state (completed or deferred-at-horizon) — confirming deferral actually occurred.
 func TestDeferredQueue_BatchDeferredWhenBusy(t *testing.T) {
-	// Create a mix: many standard requests (to keep cluster busy) + 1 batch
-	var requests []*sim.Request
-	// Standard requests arriving very densely to ensure cluster stays busy
-	for i := 0; i < 30; i++ {
-		requests = append(requests, &sim.Request{
-			ID:           fmt.Sprintf("std_%d", i),
-			ArrivalTime:  int64(i) * 5,
-			SLOClass:     "standard",
-			InputTokens:  make([]int, 100),
-			OutputTokens: make([]int, 50),
-			State:        sim.StateQueued,
+	for _, sloClass := range []string{"batch", "background"} {
+		t.Run(sloClass, func(t *testing.T) {
+			// Create a mix: many standard requests (to keep cluster busy) + 1 deferred-tier request
+			var requests []*sim.Request
+			// Standard requests arriving very densely to ensure cluster stays busy
+			for i := 0; i < 30; i++ {
+				requests = append(requests, &sim.Request{
+					ID:           fmt.Sprintf("std_%d", i),
+					ArrivalTime:  int64(i) * 5,
+					SLOClass:     "standard",
+					InputTokens:  make([]int, 100),
+					OutputTokens: make([]int, 50),
+					State:        sim.StateQueued,
+				})
+			}
+			// Deferred-tier request arrives early, when cluster is definitely busy
+			deferredReq := &sim.Request{
+				ID:           sloClass + "_0",
+				ArrivalTime:  50, // arrives while cluster is saturated
+				SLOClass:     sloClass,
+				InputTokens:  make([]int, 50),
+				OutputTokens: make([]int, 20),
+				State:        sim.StateQueued,
+			}
+			requests = append(requests, deferredReq)
+
+			cfg := newTestDeploymentConfig(1)
+			cs := NewClusterSimulator(cfg, requests, nil)
+			mustRun(t, cs)
+
+			// Deferred-tier request must NEVER be counted as rejected by admission policy
+			if cs.RejectedRequests() > 0 {
+				t.Errorf("%s request should not be rejected (it should be deferred); got RejectedRequests=%d", sloClass, cs.RejectedRequests())
+			}
+			// Deferred-tier request must reach a terminal state: completed OR deferred-at-horizon.
+			// If both are zero the request was silently lost (I2).
+			m := cs.AggregatedMetrics()
+			terminalCount := m.CompletedRequests + cs.DeferredQueueLen()
+			if terminalCount < 31 {
+				t.Errorf("%s request did not reach a terminal state: completed(%d)+deferred(%d)=%d, want >= 31 (30 std + 1 %s accounted for)",
+					sloClass, m.CompletedRequests, cs.DeferredQueueLen(), terminalCount, sloClass)
+			}
 		})
-	}
-	// Batch request arrives early, when cluster is definitely busy
-	batchReq := &sim.Request{
-		ID:           "batch_0",
-		ArrivalTime:  50, // arrives while cluster is saturated
-		SLOClass:     "batch",
-		InputTokens:  make([]int, 50),
-		OutputTokens: make([]int, 20),
-		State:        sim.StateQueued,
-	}
-	requests = append(requests, batchReq)
-
-	cfg := newTestDeploymentConfig(1)
-	cs := NewClusterSimulator(cfg, requests, nil)
-	mustRun(t, cs)
-
-	// Batch request must NEVER be counted as rejected by admission policy
-	if cs.RejectedRequests() > 0 {
-		t.Errorf("batch request should not be rejected (it should be deferred); got RejectedRequests=%d", cs.RejectedRequests())
-	}
-	// Batch request must reach a terminal state: completed OR deferred-at-horizon.
-	// If both are zero the request was silently lost (I2).
-	m := cs.AggregatedMetrics()
-	batchTerminal := m.CompletedRequests + cs.DeferredQueueLen()
-	if batchTerminal < 31 {
-		t.Errorf("batch request did not reach a terminal state: completed(%d)+deferred(%d)=%d, want >= 31 (30 std + 1 batch accounted for)",
-			m.CompletedRequests, cs.DeferredQueueLen(), batchTerminal)
 	}
 }
 
@@ -136,6 +142,11 @@ func TestDeferredQueue_DeferredPromotedAfterIdle(t *testing.T) {
 	}
 	if cs.RejectedRequests() > 0 {
 		t.Errorf("no batch requests should be rejected, got RejectedRequests=%d", cs.RejectedRequests())
+	}
+	// Promotion must have fired: all 10 requests should complete.
+	// Without this, a deleted promoteDeferred() still satisfies conservation as 5+5=10.
+	if m.CompletedRequests != 10 {
+		t.Errorf("all 10 requests should complete after deferred promotion, got CompletedRequests=%d", m.CompletedRequests)
 	}
 }
 
@@ -224,13 +235,19 @@ func TestDeferredQueue_INV1_Conservation(t *testing.T) {
 		})
 	}
 
-	// Short horizon: likely cuts off before batch requests are promoted
+	// Short horizon: cuts off before batch requests are promoted.
+	// Horizon is deliberately small to guarantee at least one batch request remains deferred.
 	cfg := newTestDeploymentConfig(1)
-	cfg.Horizon = 5000 // 5ms — may not be enough for everything to complete
+	cfg.Horizon = 500 // 0.5ms — short enough to cut off before all batch requests are promoted
 	cs := NewClusterSimulator(cfg, requests, nil)
 	mustRun(t, cs)
 
 	m := cs.AggregatedMetrics()
+	// The test exists to verify the deferred-at-horizon code path; if nothing is deferred the
+	// extended INV-1 formula is never exercised.
+	if cs.DeferredQueueLen() == 0 {
+		t.Errorf("expected at least one batch request to remain deferred at horizon (reduce Horizon further if this fails), got DeferredQueueLen=0")
+	}
 	// INV-1 extended: injected == completed + still_running + still_queued + dropped + timed_out + rejected + deferred
 	conservation := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable +
 		m.TimedOutRequests + cs.RejectedRequests() + cs.DeferredQueueLen()
