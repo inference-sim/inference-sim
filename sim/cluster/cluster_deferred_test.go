@@ -26,8 +26,8 @@ func newDeferredTestRequests(n int, sloClass string) []*sim.Request {
 
 // T002 — BC-D1: Batch request is deferred (not rejected) when cluster is busy.
 // Uses a 1-instance cluster overloaded with standard requests arriving densely.
-// After Run(), DeferredQueueLen() == 0 (all eventually promoted and processed
-// because the horizon is long enough) OR RejectedRequests() == 0 (batch never rejected).
+// After Run(), the batch request must not be rejected AND must reach a terminal
+// state (completed or deferred-at-horizon) — confirming deferral actually occurred.
 func TestDeferredQueue_BatchDeferredWhenBusy(t *testing.T) {
 	// Create a mix: many standard requests (to keep cluster busy) + 1 batch
 	var requests []*sim.Request
@@ -61,25 +61,38 @@ func TestDeferredQueue_BatchDeferredWhenBusy(t *testing.T) {
 	if cs.RejectedRequests() > 0 {
 		t.Errorf("batch request should not be rejected (it should be deferred); got RejectedRequests=%d", cs.RejectedRequests())
 	}
+	// Batch request must reach a terminal state: completed OR deferred-at-horizon.
+	// If both are zero the request was silently lost (I2).
+	m := cs.AggregatedMetrics()
+	batchTerminal := m.CompletedRequests + cs.DeferredQueueLen()
+	if batchTerminal < 31 {
+		t.Errorf("batch request did not reach a terminal state: completed(%d)+deferred(%d)=%d, want >= 31 (30 std + 1 batch accounted for)",
+			m.CompletedRequests, cs.DeferredQueueLen(), batchTerminal)
+	}
 }
 
 // T003 — BC-D2: Batch request admitted normally when cluster is idle.
+// Also covers "background" SLO class (I3): both classes must be admitted,
+// not deferred, when isBusy() returns false.
 func TestDeferredQueue_BatchAdmittedWhenIdle(t *testing.T) {
-	// Single batch request, cluster starts idle
-	requests := newDeferredTestRequests(1, "batch")
-	cfg := newTestDeploymentConfig(1)
-	cs := NewClusterSimulator(cfg, requests, nil)
-	mustRun(t, cs)
+	for _, sloClass := range []string{"batch", "background"} {
+		t.Run(sloClass, func(t *testing.T) {
+			requests := newDeferredTestRequests(1, sloClass)
+			cfg := newTestDeploymentConfig(1)
+			cs := NewClusterSimulator(cfg, requests, nil)
+			mustRun(t, cs)
 
-	if cs.RejectedRequests() > 0 {
-		t.Errorf("batch request should be admitted when cluster idle, got RejectedRequests=%d", cs.RejectedRequests())
-	}
-	if cs.DeferredQueueLen() != 0 {
-		t.Errorf("deferred queue should be empty after idle-cluster run, got DeferredQueueLen=%d", cs.DeferredQueueLen())
-	}
-	m := cs.AggregatedMetrics()
-	if m.CompletedRequests != 1 {
-		t.Errorf("batch request should complete when admitted to idle cluster, got CompletedRequests=%d", m.CompletedRequests)
+			if cs.RejectedRequests() > 0 {
+				t.Errorf("%s request should be admitted when cluster idle, got RejectedRequests=%d", sloClass, cs.RejectedRequests())
+			}
+			if cs.DeferredQueueLen() != 0 {
+				t.Errorf("%s: deferred queue should be empty after idle-cluster run, got DeferredQueueLen=%d", sloClass, cs.DeferredQueueLen())
+			}
+			m := cs.AggregatedMetrics()
+			if m.CompletedRequests != 1 {
+				t.Errorf("%s request should complete when admitted to idle cluster, got CompletedRequests=%d", sloClass, m.CompletedRequests)
+			}
+		})
 	}
 }
 
@@ -112,12 +125,14 @@ func TestDeferredQueue_DeferredPromotedAfterIdle(t *testing.T) {
 	cs := NewClusterSimulator(cfg, requests, nil)
 	mustRun(t, cs)
 
-	// All requests must be accounted for — none silently lost
+	// All requests must be accounted for — none silently lost (INV-1 extended)
 	m := cs.AggregatedMetrics()
-	total := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + cs.DeferredQueueLen() + cs.RejectedRequests()
+	total := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable +
+		m.TimedOutRequests + cs.DeferredQueueLen() + cs.RejectedRequests()
 	if total != 10 {
-		t.Errorf("conservation: completed(%d)+queued(%d)+running(%d)+dropped(%d)+deferred(%d)+rejected(%d)=%d, want 10",
-			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable, cs.DeferredQueueLen(), cs.RejectedRequests(), total)
+		t.Errorf("conservation: completed(%d)+queued(%d)+running(%d)+dropped(%d)+timedout(%d)+deferred(%d)+rejected(%d)=%d, want 10",
+			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
+			m.TimedOutRequests, cs.DeferredQueueLen(), cs.RejectedRequests(), total)
 	}
 	if cs.RejectedRequests() > 0 {
 		t.Errorf("no batch requests should be rejected, got RejectedRequests=%d", cs.RejectedRequests())
@@ -125,8 +140,9 @@ func TestDeferredQueue_DeferredPromotedAfterIdle(t *testing.T) {
 }
 
 // T005 — BC-D4: Real-time latency is unaffected by Batch traffic.
-// Two identical runs with the same seed: one with only standard requests,
-// one with standard + batch. CompletedRequests for standard tier must be equal.
+// Two runs: run A has only standard requests, run B has standard + batch.
+// All 20 standard requests must complete in run A; run B must also complete
+// at least 20 requests (standard requests are not crowded out by batch).
 func TestDeferredQueue_RealTimeUnaffected(t *testing.T) {
 	makeStandardRequests := func() []*sim.Request {
 		reqs := make([]*sim.Request, 20)
@@ -168,11 +184,14 @@ func TestDeferredQueue_RealTimeUnaffected(t *testing.T) {
 	mA := csA.AggregatedMetrics()
 	mB := csB.AggregatedMetrics()
 
-	// Standard requests should complete at the same rate regardless of batch presence
-	// (batch requests should not steal queue slots from standard requests)
-	if mA.CompletedRequests > mB.CompletedRequests {
-		t.Errorf("standard-only run completed more requests (%d) than mixed run (%d) — batch traffic interfering with real-time",
-			mA.CompletedRequests, mB.CompletedRequests)
+	// All 20 standard-only requests should complete in run A (no other competing traffic)
+	if mA.CompletedRequests != 20 {
+		t.Errorf("run A: expected all 20 standard requests to complete, got CompletedRequests=%d", mA.CompletedRequests)
+	}
+	// Run B must complete at least 20 requests — standard requests must not be crowded out
+	// by batch traffic; deferred batch requests must not consume standard queue slots
+	if mB.CompletedRequests < 20 {
+		t.Errorf("run B: expected at least 20 completions (batch traffic should not crowd out standard), got CompletedRequests=%d", mB.CompletedRequests)
 	}
 }
 
@@ -212,13 +231,13 @@ func TestDeferredQueue_INV1_Conservation(t *testing.T) {
 	mustRun(t, cs)
 
 	m := cs.AggregatedMetrics()
-	// INV-1 extended: injected == completed + still_running + still_queued + dropped + rejected + deferred
+	// INV-1 extended: injected == completed + still_running + still_queued + dropped + timed_out + rejected + deferred
 	conservation := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable +
-		cs.RejectedRequests() + cs.DeferredQueueLen()
+		m.TimedOutRequests + cs.RejectedRequests() + cs.DeferredQueueLen()
 	if conservation != numRequests {
-		t.Errorf("INV-1 violated: completed(%d)+queued(%d)+running(%d)+dropped(%d)+rejected(%d)+deferred(%d)=%d, want %d",
+		t.Errorf("INV-1 violated: completed(%d)+queued(%d)+running(%d)+dropped(%d)+timedout(%d)+rejected(%d)+deferred(%d)=%d, want %d",
 			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
-			cs.RejectedRequests(), cs.DeferredQueueLen(), conservation, numRequests)
+			m.TimedOutRequests, cs.RejectedRequests(), cs.DeferredQueueLen(), conservation, numRequests)
 	}
 }
 

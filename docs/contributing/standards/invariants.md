@@ -8,9 +8,11 @@ Invariants are properties that must hold at all times during and after simulatio
 
 **Statement:** `injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out` at simulation end (all levels).
 
+**Cluster-level extension (Phase 1B-1b):** At cluster level, the deferred queue adds a sixth bucket: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out + deferred_horizon_interrupted`. `deferred_horizon_interrupted` counts Batch/Background requests still parked in the deferred queue when the simulation horizon is reached. Single-instance simulations have no deferred queue; `deferred_horizon_interrupted` is always zero there.
+
 **Full pipeline:** `num_requests == injected_requests + rejected_requests` (from anomaly counters).
 
-**Verification:** `sim/cluster/cluster_test.go` — conservation tests. Conservation fields (`still_queued`, `still_running`, `injected_requests`) are included in CLI JSON output.
+**Verification:** `sim/cluster/cluster_test.go` and `sim/cluster/cluster_deferred_test.go` — conservation tests. Conservation fields (`still_queued`, `still_running`, `injected_requests`) are included in CLI JSON output. `DeferredHorizonInterrupted` is included in `RawMetrics` and printed by the CLI anomaly block when non-zero.
 
 **Evidence:** Issue #183 — a silently-dropped request violated conservation for months.
 

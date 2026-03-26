@@ -404,6 +404,13 @@ func (c *ClusterSimulator) Run() error {
 			if inst.State == InstanceStateDraining && inst.QueueDepth() == 0 && inst.BatchSize() == 0 {
 				inst.TransitionTo(InstanceStateTerminated)
 				c.releaseInstanceGPUs(inst)
+				// I1: a non-zero inFlightRequests at termination time indicates a bookkeeping bug.
+				// This would cause isBusy() to permanently return true, silently stranding
+				// all deferred Batch/Background requests until horizon.
+				if c.inFlightRequests[instID] != 0 {
+					logrus.Warnf("[cluster] instance %s terminated with inFlightRequests=%d — bookkeeping bug; deferred queue may stall",
+						instID, c.inFlightRequests[instID])
+				}
 			}
 
 			// PD disaggregation: detect prefill/decode sub-request completions
@@ -765,6 +772,7 @@ func (c *ClusterSimulator) isBusy() bool {
 // INV-8: ensures work-conserving behaviour — deferred requests re-enter the pipeline
 // within the same scheduling step as the idle transition.
 func (c *ClusterSimulator) promoteDeferred() {
+	logrus.Debugf("[cluster] promoting %d deferred requests at tick %d", len(c.deferredQueue), c.clock)
 	for _, req := range c.deferredQueue {
 		heap.Push(&c.clusterEvents, clusterEventEntry{
 			event: &ClusterArrivalEvent{time: c.clock, request: req},

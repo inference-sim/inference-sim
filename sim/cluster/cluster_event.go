@@ -126,6 +126,7 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 	// INV-9: deferral path reads only e.request.SLOClass — no oracle field access.
 	if (e.request.SLOClass == "batch" || e.request.SLOClass == "background") && cs.isBusy() {
 		cs.deferredQueue = append(cs.deferredQueue, e.request)
+		logrus.Debugf("[cluster] req %s deferred (SLOClass=%q, deferredQueueLen=%d)", e.request.ID, e.request.SLOClass, len(cs.deferredQueue))
 		return
 	}
 
