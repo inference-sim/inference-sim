@@ -136,6 +136,14 @@ Used when `--rate` mode is active (ignored when `--workload-spec` is provided):
 !!! info "Prefix sharing"
     When the workload spec defines prefix groups, observe builds deterministic prefix strings from a fixed vocabulary, seeded by the RNG seed and group name. This activates the server's prefix cache for realistic KV cache hit rates.
 
+    Before dispatching requests, observe sends a single calibration request to measure the server's tokens-per-word ratio (typically 1.5–1.7 for BPE tokenizers). Prefix word counts are then scaled so the server tokenizes them to approximately the target `prefix_length` in the spec — matching what `blis run` simulates. The calibration result is logged at startup:
+
+    ```
+    INFO Prefix token calibration: 100 words → 167 server tokens (1.670 tokens/word)
+    ```
+
+    If calibration fails (server unreachable, timeout, or abnormal ratio), observe falls back to 1:1 word-to-token mapping with a warning.
+
 !!! info "Session support"
     If the workload spec contains session clients, observe runs in closed-loop mode: each completed request may trigger follow-up requests from the session manager, interleaved with pre-generated arrivals by arrival time.
 
