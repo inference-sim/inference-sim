@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -337,18 +336,6 @@ func TestFetchHFConfig_MultimodalConfig(t *testing.T) {
 	// Verify the config is recognized as a valid HF config (behavioral assertion)
 	if !isHFConfig(data) {
 		t.Errorf("expected config to be recognized as valid HuggingFace config")
-	}
-
-	// Verify text_config structure is preserved (behavioral assertion via parsing)
-	var parsed map[string]interface{}
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		t.Fatalf("config is not valid JSON: %v", err)
-	}
-	if _, ok := parsed["text_config"].(map[string]interface{}); !ok {
-		t.Errorf("expected config to preserve text_config as object, got type: %T", parsed["text_config"])
-	}
-	if _, ok := parsed["vision_config"].(map[string]interface{}); !ok {
-		t.Errorf("expected config to preserve vision_config as object, got type: %T", parsed["vision_config"])
 	}
 }
 

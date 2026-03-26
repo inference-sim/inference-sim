@@ -227,7 +227,7 @@ func fetchHFConfigFromURL(url, targetDir string) (string, error) {
 // error responses like {"error":"..."}, or unrelated JSON that passes json.Valid.
 func isHFConfig(data []byte) bool {
 	var m map[string]interface{}
-	// Unreachable in practice: both call sites pre-validate with json.Valid.
+	// Defensive: callers currently pre-validate with json.Valid, but retain this guard for future call sites.
 	if err := json.Unmarshal(data, &m); err != nil {
 		return false
 	}
