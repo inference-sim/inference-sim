@@ -593,6 +593,14 @@ func TestIsHFConfig(t *testing.T) {
 		{"array", `[1, 2, 3]`, false},
 		{"string", `"hello"`, false},
 		{"invalid JSON", `not json`, false},
+		{"multimodal with text_config num_hidden_layers", `{"text_config": {"num_hidden_layers": 48}}`, true},
+		{"multimodal with text_config hidden_size", `{"text_config": {"hidden_size": 5120}}`, true},
+		{"multimodal with both text_config fields", `{"text_config": {"num_hidden_layers": 48, "hidden_size": 5120, "num_attention_heads": 40}}`, true},
+		{"multimodal without expected fields", `{"text_config": {"other_field": 123}, "vision_config": {"hidden_size": 1408}}`, false},
+		{"vision_config only (no text_config)", `{"vision_config": {"num_hidden_layers": 34, "hidden_size": 1408}}`, false},
+		{"text_config is not an object (string)", `{"text_config": "not_an_object"}`, false},
+		{"text_config is not an object (null)", `{"text_config": null}`, false},
+		{"deeply nested text_config", `{"text_config": {"text_config": {"num_hidden_layers": 48}}}`, false},
 	}
 
 	for _, tt := range tests {

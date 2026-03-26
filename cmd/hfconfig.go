@@ -228,10 +228,23 @@ func isHFConfig(data []byte) bool {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return false
 	}
+
 	// Check for fields present in every HuggingFace transformer config.json
+	// Try top level first (text-only models)
 	_, hasLayers := m["num_hidden_layers"]
 	_, hasHidden := m["hidden_size"]
-	return hasLayers || hasHidden
+	if hasLayers || hasHidden {
+		return true
+	}
+
+	// Fall back to text_config.* for multimodal models (Llama4ForConditionalGeneration, etc.)
+	if textCfg, ok := m["text_config"].(map[string]interface{}); ok {
+		_, hasLayers = textCfg["num_hidden_layers"]
+		_, hasHidden = textCfg["hidden_size"]
+		return hasLayers || hasHidden
+	}
+
+	return false
 }
 
 // applyWeightPrecisionFallback applies model-name-based weight precision detection
