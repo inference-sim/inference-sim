@@ -124,17 +124,16 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 	admitted, reason := cs.admissionPolicy.Admit(e.request, state)
 	logrus.Debugf("[cluster] req %s: admitted=%v reason=%q", e.request.ID, admitted, reason)
 
-	// Record admission decision if tracing is enabled (BC-2)
-	if cs.trace != nil {
-		cs.trace.RecordAdmission(trace.AdmissionRecord{
-			RequestID: e.request.ID,
-			Clock:     cs.clock,
-			Admitted:  admitted,
-			Reason:    reason,
-		})
-	}
-
 	if !admitted {
+		// Record rejection from admission policy before returning (BC-2).
+		if cs.trace != nil {
+			cs.trace.RecordAdmission(trace.AdmissionRecord{
+				RequestID: e.request.ID,
+				Clock:     cs.clock,
+				Admitted:  false,
+				Reason:    reason,
+			})
+		}
 		cs.rejectedRequests++
 		// Populate per-tier shed counter only for TierShedAdmission rejections (S-1:
 		// avoids conflating token-bucket or reject-all rejections with tier-shed counts).
@@ -154,6 +153,15 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 	// INV-9 compliant: reads only req.SLOClass and req.TenantID (arrival-time metadata).
 	if cs.tenantTracker != nil && cs.tenantTracker.IsOverBudget(e.request.TenantID) {
 		if sim.SLOTierPriority(e.request.SLOClass) < 3 { // below Standard
+			// Record as rejected by tenant budget before returning (BC-2).
+			if cs.trace != nil {
+				cs.trace.RecordAdmission(trace.AdmissionRecord{
+					RequestID: e.request.ID,
+					Clock:     cs.clock,
+					Admitted:  false,
+					Reason:    "tenant-budget-shed",
+				})
+			}
 			cs.rejectedRequests++
 			tier := e.request.SLOClass
 			if tier == "" {
@@ -162,6 +170,16 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 			cs.shedByTier[tier]++
 			return
 		}
+	}
+
+	// Record admission (BC-2): trace recorded here so tenant override above is reflected.
+	if cs.trace != nil {
+		cs.trace.RecordAdmission(trace.AdmissionRecord{
+			RequestID: e.request.ID,
+			Clock:     cs.clock,
+			Admitted:  true,
+			Reason:    reason,
+		})
 	}
 
 	// BC-PD-4: When pools are configured, schedule DisaggregationDecisionEvent

@@ -183,10 +183,38 @@ Controls which requests enter the routing pipeline. See [Cluster Architecture: A
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--admission-policy` | string | "always-admit" | Policy name: `always-admit`, `token-bucket`, `reject-all`. |
+| `--admission-policy` | string | "always-admit" | Policy name: `always-admit`, `token-bucket`, `reject-all`, `tier-shed`. |
 | `--admission-latency` | int64 | 0 | Admission decision latency in microseconds. Must be >= 0. |
 | `--token-bucket-capacity` | float64 | 10000 | Token bucket maximum capacity. Required > 0 when using `token-bucket`. |
 | `--token-bucket-refill-rate` | float64 | 1000 | Token bucket refill rate in tokens/second. Required > 0 when using `token-bucket`. |
+
+**Tier-shed admission** (`--admission-policy tier-shed`): Sheds lower-priority SLO tiers under overload. Configured via `--policy-config` YAML only:
+
+| YAML field | Type | Default | Description |
+|------------|------|---------|-------------|
+| `admission.tier_shed_threshold` | int | 0 | Per-instance in-flight threshold above which shedding activates. 0 = shed at any load. |
+| `admission.tier_shed_min_priority` | int | 3 | Minimum SLO tier priority admitted under overload. 3 = admit Standard+Critical, shed the rest. 0 = admit all tiers (same as always-admit — footgun). |
+
+SLO tier priorities: `critical`=4, `standard`=3, `sheddable`=2, `batch`=1, `background`=0.
+
+**Per-tenant fair-share budgets** (`tenant_budgets`): A secondary admission layer that runs *after* the admission policy. If the admission policy rejects a request, tenant budgets are not consulted. If the admission policy admits a request, tenant budgets then apply: over-budget tenants have Sheddable-and-below requests (SLO class priority < 3) preferentially shed while Critical and Standard traffic is always protected. Configured via `--policy-config` YAML only (no CLI flag):
+
+| YAML field | Type | Default | Description |
+|------------|------|---------|-------------|
+| `tenant_budgets` | map[string]float64 | nil | Per-tenant fraction of total cluster capacity (NumInstances × MaxRunningReqs). Absent key = unlimited. 0.0 = zero slots allowed. Values must be in [0, 1]. |
+
+Example:
+
+```yaml
+admission:
+  policy: "tier-shed"
+  tier_shed_threshold: 0
+  tier_shed_min_priority: 2  # sheddable passes tier-shed; budget enforcement handles per-tenant limits
+
+tenant_budgets:
+  alice: 0.3   # alice may use at most 30% of total cluster capacity
+  bob: 0.7     # bob may use at most 70% of total cluster capacity
+```
 
 ## Routing Policy
 
@@ -364,6 +392,14 @@ instance_lifecycle:
   warm_up_request_count: 5    # requests served before leaving WarmingUp state
   warm_up_ttft_factor: 2.0    # TTFT multiplier applied to warm-up requests (≥ 1.0)
   drain_policy: "WAIT"        # IMMEDIATE | WAIT | REDIRECT
+
+# Per-tenant fair-share budgets (Phase 1B — optional; omit for no tenant enforcement)
+# Each value is a fraction of total cluster capacity (NumInstances × MaxRunningReqs).
+# Absent key = unlimited. 0.0 = zero slots. Values must be in [0, 1].
+# Critical and Standard traffic is always protected from budget shedding.
+tenant_budgets:
+  team-a: 0.4
+  team-b: 0.4
 ```
 
 CLI flags override policy bundle values when explicitly set. For example, `--routing-policy least-loaded` overrides the bundle's `routing.policy` setting.

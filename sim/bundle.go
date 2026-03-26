@@ -15,10 +15,11 @@ import (
 // Nil pointer fields mean "not set in YAML" — they do not override DeploymentConfig.
 // String fields use empty string for "not set".
 type PolicyBundle struct {
-	Admission AdmissionConfig `yaml:"admission"`
-	Routing   RoutingConfig   `yaml:"routing"`
-	Priority  PriorityConfig  `yaml:"priority"`
-	Scheduler string          `yaml:"scheduler"`
+	Admission     AdmissionConfig    `yaml:"admission"`
+	Routing       RoutingConfig      `yaml:"routing"`
+	Priority      PriorityConfig     `yaml:"priority"`
+	Scheduler     string             `yaml:"scheduler"`
+	TenantBudgets map[string]float64 `yaml:"tenant_budgets"` // nil = no tenant enforcement
 }
 
 // AdmissionConfig holds admission policy configuration.
@@ -26,6 +27,9 @@ type AdmissionConfig struct {
 	Policy                string   `yaml:"policy"`
 	TokenBucketCapacity   *float64 `yaml:"token_bucket_capacity"`
 	TokenBucketRefillRate *float64 `yaml:"token_bucket_refill_rate"`
+	// Tier-shed options (Phase 1B): only used when policy = "tier-shed".
+	TierShedThreshold   *int `yaml:"tier_shed_threshold"`   // nil = use default (0)
+	TierShedMinPriority *int `yaml:"tier_shed_min_priority"` // nil = use default (3)
 }
 
 // RoutingConfig holds routing policy configuration.
@@ -139,6 +143,19 @@ func (b *PolicyBundle) Validate() error {
 	}
 	if err := validateFloat("token_bucket_refill_rate", b.Admission.TokenBucketRefillRate); err != nil {
 		return err
+	}
+	// Validate tier-shed parameters when present.
+	if b.Admission.TierShedThreshold != nil && *b.Admission.TierShedThreshold < 0 {
+		return fmt.Errorf("tier_shed_threshold must be >= 0, got %d", *b.Admission.TierShedThreshold)
+	}
+	if b.Admission.TierShedMinPriority != nil && (*b.Admission.TierShedMinPriority < 0 || *b.Admission.TierShedMinPriority > 4) {
+		return fmt.Errorf("tier_shed_min_priority must be in [0, 4], got %d", *b.Admission.TierShedMinPriority)
+	}
+	// Validate tenant budgets: each value must be in [0, 1].
+	for tenantID, v := range b.TenantBudgets {
+		if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > 1 {
+			return fmt.Errorf("tenant_budgets[%q] must be in [0, 1], got %v", tenantID, v)
+		}
 	}
 	// Validate scorer configs if present
 	scorerSeen := make(map[string]bool, len(b.Routing.Scorers))

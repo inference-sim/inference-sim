@@ -1,11 +1,16 @@
 package cluster
 
+import (
+	"fmt"
+	"math"
+)
+
 // TenantTracker tracks in-flight request counts per tenant and enforces fair-share budgets.
 // Zero-value is safe: when no budgets are configured, IsOverBudget always returns false.
 //
 // Behavioral contract: specs/002-tier-tenant-fairness/contracts/tenant-tracker.md
 type TenantTracker struct {
-	budgets       map[string]float64 // tenantID → fraction of totalCapacity (0 = unlimited)
+	budgets       map[string]float64 // tenantID → fraction of totalCapacity (absent key = unlimited; 0.0 = zero slots allowed)
 	inFlight      map[string]int     // tenantID → current in-flight count
 	totalCapacity int                // max in-flight slots across cluster
 }
@@ -13,9 +18,15 @@ type TenantTracker struct {
 // NewTenantTracker creates a TenantTracker from a budget map and cluster capacity.
 // budgets may be nil (unlimited for all tenants).
 // totalCapacity must be >= 1.
+// Panics if any budget value is outside [0, 1] or is NaN/Inf (R3).
 func NewTenantTracker(budgets map[string]float64, totalCapacity int) *TenantTracker {
 	if totalCapacity < 1 {
 		totalCapacity = 1
+	}
+	for tenantID, v := range budgets {
+		if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > 1 {
+			panic(fmt.Sprintf("NewTenantTracker: budget for tenant %q is %v; must be in [0, 1]", tenantID, v))
+		}
 	}
 	return &TenantTracker{
 		budgets:       budgets,

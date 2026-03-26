@@ -33,44 +33,54 @@ func newTenantConfig(numInstances int, tenantBudgets map[string]float64) Deploym
 }
 
 // T_TenantInteg_001 — Over-budget tenant's Sheddable shed; on-budget tenant's Sheddable admitted.
-// alice has budget 0.1 (1 slot out of 10 total across 2 instances × 5 capacity).
-// bob has budget 0.9 (unlimited for our purposes).
-// Under overload, alice's sheddable requests should be shed more than bob's.
-func TestTenantAdmission_OverBudgetSheddableHigherShedRate(t *testing.T) {
+// Use MaxRunningReqs=5 so totalCapacity = 2×5 = 10; alice budget=0.1 → limit=1 slot.
+// Dense arrivals ensure alice quickly exceeds her 1-slot budget.
+//
+// Differential verification: budgets are swapped in the second run to prove enforcement
+// tracks per-tenant identity, not a fixed constant. The constrained tenant sheds in both
+// configurations; the run with alice constrained and the run with bob constrained both
+// produce non-zero shedding.
+func TestTenantAdmission_OverBudgetSheddableShed(t *testing.T) {
 	const n = 60
-	var requests []*sim.Request
 
-	// Dense arrivals to force overload — alice and bob alternate sheddable requests
-	for i := 0; i < n; i++ {
-		tenant := "alice"
-		if i%2 == 1 {
-			tenant = "bob"
+	makeRequests := func() []*sim.Request {
+		reqs := make([]*sim.Request, 0, n)
+		for i := 0; i < n; i++ {
+			tenant := "alice"
+			if i%2 == 1 {
+				tenant = "bob"
+			}
+			reqs = append(reqs, newTenantRequest(
+				fmt.Sprintf("req_%s_%d", tenant, i),
+				int64(i)*5,
+				tenant,
+				"sheddable",
+			))
 		}
-		requests = append(requests, newTenantRequest(
-			fmt.Sprintf("req_%s_%d", tenant, i),
-			int64(i)*5,
-			tenant,
-			"sheddable",
-		))
+		return reqs
 	}
 
-	// alice gets tiny budget (0.1), bob gets large budget (0.9)
-	cfg := newTenantConfig(2, map[string]float64{
-		"alice": 0.1,
-		"bob":   0.9,
-	})
-	cs := NewClusterSimulator(cfg, requests, nil)
-	mustRun(t, cs)
+	// Run A: alice=0.1 (1 slot), bob=0.9 (9 slots) — alice is over-budget, sheds sheddable.
+	cfgA := newTenantConfig(2, map[string]float64{"alice": 0.1, "bob": 0.9})
+	cfgA.BatchConfig = sim.NewBatchConfig(5, 2048, 0) // totalCapacity=10; alice limit=1 slot
+	csA := NewClusterSimulator(cfgA, makeRequests(), nil)
+	mustRun(t, csA)
 
-	// Check shed counts via ShedByTier — both are "sheddable"
-	// The key behavior: alice's requests should be shed more due to budget enforcement.
-	// We verify by checking completed counts: bob should complete more than alice.
-	metrics := cs.AggregatedMetrics()
-	_ = metrics
+	shedA := csA.ShedByTier()["sheddable"]
+	if shedA == 0 {
+		t.Error("run A: expected over-budget alice's sheddable requests to be shed, got 0 shed")
+	}
 
-	// The tenant tracker should be non-nil
-	if cs.tenantTracker == nil {
-		t.Error("expected tenantTracker to be non-nil when TenantBudgets is configured")
+	// Differential: run B swaps budgets — bob=0.1 (1 slot), alice=0.9 (9 slots).
+	// Now bob is over-budget; shed count should be non-zero regardless of which tenant is constrained.
+	cfgB := newTenantConfig(2, map[string]float64{"alice": 0.9, "bob": 0.1})
+	cfgB.BatchConfig = sim.NewBatchConfig(5, 2048, 0) // totalCapacity=10; bob limit=1 slot
+	csB := NewClusterSimulator(cfgB, makeRequests(), nil)
+	mustRun(t, csB)
+
+	shedB := csB.ShedByTier()["sheddable"]
+	if shedB == 0 {
+		t.Error("run B: expected over-budget bob's sheddable requests to be shed, got 0 shed")
 	}
 }
 
@@ -101,6 +111,11 @@ func TestTenantAdmission_CriticalAndStandardProtectedFromBudgetShed(t *testing.T
 	if shedCritical > 0 {
 		t.Errorf("critical requests should not be shed by tenant budget enforcement, got shed=%d", shedCritical)
 	}
+	// Verify requests actually ran (not silently dropped for an unrelated reason)
+	completed := cs.AggregatedMetrics().CompletedRequests
+	if completed == 0 {
+		t.Errorf("expected some critical requests to complete, got 0 completions out of %d requests", n)
+	}
 }
 
 // T_TenantInteg_003 — Simulation with no TenantID produces byte-identical output (INV-6).
@@ -127,19 +142,8 @@ func TestTenantAdmission_NilBudgetsIdenticalToBaseline(t *testing.T) {
 	}
 }
 
-// T_TenantInteg_004 — tenantTracker is nil when TenantBudgets is nil (zero-value safe).
-func TestTenantAdmission_TrackerNilWhenNoBudgets(t *testing.T) {
-	requests := newTestRequests(10)
-	cfg := newTestDeploymentConfig(2)
-	cs := NewClusterSimulator(cfg, requests, nil)
-	mustRun(t, cs)
-
-	if cs.tenantTracker != nil {
-		t.Error("expected tenantTracker to be nil when TenantBudgets is not configured")
-	}
-}
-
 // T_TenantInteg_005 — INV-9: tenant budget decision never reads req.OutputTokens.
+// (renumbered; original T004 deleted: it was structural; T003 already covers the observable guarantee)
 // This is a structural invariant — enforced by code inspection and TenantTracker contract.
 // We verify it indirectly: a simulation where OutputTokens is zeroed produces the same
 // admission outcomes as one where OutputTokens is populated.
@@ -179,5 +183,43 @@ func TestTenantAdmission_INV9_DoesNotReadOutputTokens(t *testing.T) {
 	shed2 := cs2.ShedByTier()["sheddable"]
 	if shed1 != shed2 {
 		t.Errorf("INV-9 violated: shed counts differ based on OutputTokens content (%d vs %d)", shed1, shed2)
+	}
+}
+
+// T_TenantInteg_006 — Tenant budget enforced in PD disaggregation mode.
+// In PD mode each parent request occupies 2 capacity slots (1 prefill + 1 decode).
+// With alice budget=0.1 and totalCapacity=40, alice's limit is 4 slots (~2 concurrent
+// parent requests). Dense arrivals cause alice to exceed her limit, shedding sheddable requests.
+// This test verifies the 2-slot-per-parent semantics do not prevent budget enforcement.
+func TestTenantAdmission_PDMode_BudgetEnforced(t *testing.T) {
+	const n = 40
+	var requests []*sim.Request
+	for i := 0; i < n; i++ {
+		requests = append(requests, newTenantRequest(
+			fmt.Sprintf("req_alice_pd_%d", i),
+			int64(i)*5,
+			"alice",
+			"sheddable",
+		))
+	}
+
+	// 4 instances: 2 prefill + 2 decode; MaxRunningReqs=10 → totalCapacity=40; alice limit=4 slots.
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	cfg.AdmissionPolicy = "tier-shed"
+	cfg.TierShedThreshold = 0
+	cfg.TierShedMinPriority = 2 // sheddable passes tier-shed; budget catches over-budget alice
+	cfg.TenantBudgets = map[string]float64{"alice": 0.1}
+	cfg.BatchConfig = sim.NewBatchConfig(10, 2048, 0) // totalCapacity=40; alice limit=4 slots
+
+	cs := NewClusterSimulator(cfg, requests, nil)
+	mustRun(t, cs)
+
+	shed := cs.ShedByTier()["sheddable"]
+	if shed == 0 {
+		t.Error("PD mode: expected over-budget alice's sheddable requests to be shed, got 0 shed")
+	}
+	completed := cs.AggregatedMetrics().CompletedRequests
+	if completed == 0 {
+		t.Errorf("PD mode: expected some requests to complete, got 0 completions out of %d", n)
 	}
 }

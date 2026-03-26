@@ -61,11 +61,14 @@ var (
 	numInstances int // Number of instances in the cluster
 
 	// online routing pipeline config
-	admissionPolicy       string  // Admission policy name
-	admissionLatency      int64   // Admission latency in microseconds
-	routingLatency        int64   // Routing latency in microseconds
-	tokenBucketCapacity   float64 // Token bucket capacity
-	tokenBucketRefillRate float64 // Token bucket refill rate (tokens/second)
+	admissionPolicy       string             // Admission policy name
+	admissionLatency      int64              // Admission latency in microseconds
+	routingLatency        int64              // Routing latency in microseconds
+	tokenBucketCapacity   float64            // Token bucket capacity
+	tokenBucketRefillRate float64            // Token bucket refill rate (tokens/second)
+	tierShedThreshold     int                // Tier-shed overload threshold (0 = any load)
+	tierShedMinPriority   int                // Tier-shed minimum admitted priority under overload
+	tenantBudgets         map[string]float64 // Per-tenant fraction of total capacity (nil = no enforcement)
 
 	// routing policy config (PR 6, evolved in PR17)
 	routingPolicy  string // Routing policy name
@@ -1062,6 +1065,17 @@ var runCmd = &cobra.Command{
 			if bundle.Admission.TokenBucketRefillRate != nil && !cmd.Flags().Changed("token-bucket-refill-rate") {
 				tokenBucketRefillRate = *bundle.Admission.TokenBucketRefillRate
 			}
+			if bundle.Admission.TierShedThreshold != nil {
+				tierShedThreshold = *bundle.Admission.TierShedThreshold
+			}
+			if bundle.Admission.TierShedMinPriority != nil {
+				tierShedMinPriority = *bundle.Admission.TierShedMinPriority
+			} else if bundle.Admission.Policy == "tier-shed" && bundle.Admission.TierShedMinPriority == nil {
+				tierShedMinPriority = 3 // default: protect Critical (4) and Standard (3)
+			}
+			if bundle.TenantBudgets != nil {
+				tenantBudgets = bundle.TenantBudgets
+			}
 			if bundle.Routing.Policy != "" && !cmd.Flags().Changed("routing-policy") {
 				routingPolicy = bundle.Routing.Policy
 			}
@@ -1338,6 +1352,9 @@ var runCmd = &cobra.Command{
 			DecodeScorerConfigs:     decodeScorerCfgs,
 			PrefillOverrides:        prefillOverrides,
 			DecodeOverrides:         decodeOverrides,
+			TierShedThreshold:       tierShedThreshold,
+			TierShedMinPriority:     tierShedMinPriority,
+			TenantBudgets:           tenantBudgets,
 		}
 		var followUpRequests []*sim.Request
 		var onRequestDone func(*sim.Request, int64) []*sim.Request

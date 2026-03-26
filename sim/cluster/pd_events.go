@@ -68,6 +68,15 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 	for _, inst := range cs.instances {
 		if string(inst.ID()) == decision.TargetInstance {
 			cs.inFlightRequests[decision.TargetInstance]++
+			// Phase 1B-2a: track tenant in-flight count for fair-share enforcement in PD mode.
+			// PD disaggregation semantics: OnStart is called once here (prefill) and once in
+			// DecodeRoutingEvent (decode), so one parent request consumes 2 capacity slots —
+			// one on the prefill pool, one on the decode pool. IsOverBudget reflects actual
+			// resource occupancy across both pools. OnComplete fires symmetrically via
+			// OnRequestDone when each sub-request finishes.
+			if cs.tenantTracker != nil {
+				cs.tenantTracker.OnStart(e.request.TenantID)
+			}
 			inst.InjectRequestOnline(e.request, e.time)
 			// Notify observer so stateful deciders (e.g., PrefixThresholdDecider) can learn
 			// from this prefill routing decision (synchronous call -- cache is always current).
@@ -296,6 +305,13 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 			}
 
 			cs.inFlightRequests[decision.TargetInstance]++
+			// Phase 1B-2a: track decode slot for fair-share (see PrefillRoutingEvent comment
+			// for PD slot-doubling semantics). OnStart placement here (after AllocateTransferredKV)
+			// ensures balance: a failed KV allocation returns early above without calling OnStart,
+			// matching the zero OnComplete calls for the dropped decode sub-request.
+			if cs.tenantTracker != nil {
+				cs.tenantTracker.OnStart(e.decodeSubReq.TenantID)
+			}
 			// Register decode sub-request so detectDecodeCompletions can stamp ParentRequest.CompletionTime.
 			cs.pendingDecodeCompletions[e.decodeSubReq.ID] = e.parentReq.ID
 			inst.InjectDecodeOnline(e.decodeSubReq, e.time)

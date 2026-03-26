@@ -486,6 +486,17 @@ Example:
 			if bundle.Admission.TokenBucketRefillRate != nil && !cmd.Flags().Changed("token-bucket-refill-rate") {
 				tokenBucketRefillRate = *bundle.Admission.TokenBucketRefillRate
 			}
+			if bundle.Admission.TierShedThreshold != nil {
+				tierShedThreshold = *bundle.Admission.TierShedThreshold
+			}
+			if bundle.Admission.TierShedMinPriority != nil {
+				tierShedMinPriority = *bundle.Admission.TierShedMinPriority
+			} else if bundle.Admission.Policy == "tier-shed" && bundle.Admission.TierShedMinPriority == nil {
+				tierShedMinPriority = 3 // default: protect Critical (4) and Standard (3)
+			}
+			if bundle.TenantBudgets != nil {
+				tenantBudgets = bundle.TenantBudgets
+			}
 			if bundle.Routing.Policy != "" && !cmd.Flags().Changed("routing-policy") {
 				routingPolicy = bundle.Routing.Policy
 			}
@@ -619,6 +630,9 @@ Example:
 			TraceLevel:              traceLevel,
 			CounterfactualK:         counterfactualK,
 			SnapshotRefreshInterval: snapshotRefreshInterval,
+			TierShedThreshold:       tierShedThreshold,
+			TierShedMinPriority:     tierShedMinPriority,
+			TenantBudgets:           tenantBudgets,
 		}
 
 		// Run simulation — no session manager (onRequestDone=nil: session structure encoded in trace)

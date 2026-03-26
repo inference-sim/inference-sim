@@ -276,6 +276,36 @@ func TestPolicyBundle_Validate_ScorersOnNonWeightedPolicy(t *testing.T) {
 	assert.Error(t, err, "invalid scorers should be caught even on non-weighted policy")
 }
 
+// TestPolicyBundle_Validate_TenantBudgets verifies BC-TB-1: invalid tenant budget values are rejected.
+func TestPolicyBundle_Validate_TenantBudgets(t *testing.T) {
+	tests := []struct {
+		name    string
+		budgets map[string]float64
+		wantErr bool
+	}{
+		{"valid: zero", map[string]float64{"alice": 0.0}, false},
+		{"valid: one", map[string]float64{"alice": 1.0}, false},
+		{"valid: fraction", map[string]float64{"alice": 0.3, "bob": 0.7}, false},
+		{"invalid: negative", map[string]float64{"alice": -0.1}, true},
+		{"invalid: greater than one", map[string]float64{"alice": 1.5}, true},
+		{"invalid: NaN", map[string]float64{"alice": math.NaN()}, true},
+		{"invalid: +Inf", map[string]float64{"alice": math.Inf(1)}, true},
+		{"invalid: -Inf", map[string]float64{"alice": math.Inf(-1)}, true},
+		{"nil map: no enforcement", nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bundle := &PolicyBundle{TenantBudgets: tt.budgets}
+			err := bundle.Validate()
+			if tt.wantErr {
+				assert.Error(t, err, "expected validation error for budgets=%v", tt.budgets)
+			} else {
+				assert.NoError(t, err, "unexpected validation error for budgets=%v", tt.budgets)
+			}
+		})
+	}
+}
+
 // TestPolicyBundle_Validate_EmptyScorersIsValid verifies nil/empty scorers list is acceptable.
 func TestPolicyBundle_Validate_EmptyScorersIsValid(t *testing.T) {
 	bundle := &PolicyBundle{
