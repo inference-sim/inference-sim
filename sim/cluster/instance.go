@@ -45,7 +45,8 @@ func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 
 // newInstanceSimulatorCore is the internal constructor that optionally wraps the
 // latency model with InterferenceLatencyModel when interference factors are non-zero.
-// Used by NewClusterSimulator to pass deployment-level interference config.
+// Called by NewInstanceSimulator (with zero factors, preserving existing behavior) and
+// by NewClusterSimulator (passing deployment-level factors from DeploymentConfig).
 func newInstanceSimulatorCore(id InstanceID, cfg sim.SimConfig, prefillInterference, decodeInterference float64) *InstanceSimulator {
 	kvStore := kv.NewKVStore(cfg.KVCacheConfig)
 	latencyModel, err := latency.NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)

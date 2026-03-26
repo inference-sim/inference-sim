@@ -54,7 +54,7 @@ type DeploymentConfig struct {
 
 	// PD interference model (PR10, INV-P2-3)
 	// Multiplicative slowdown applied to StepTime when prefill and decode co-locate.
-	// 0 = no interference (default, BC-P2-9). Both must be >= 0.
+	// Both must be in [0, MaxInterferenceFactor] and finite (R3). 0 = no interference (default, BC-P2-9).
 	PDInterferencePrefill float64 // interference factor for prefill-dominant batches
 	PDInterferenceDecode  float64 // interference factor for decode-dominant batches
 

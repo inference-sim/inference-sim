@@ -133,6 +133,7 @@ func TestInterferenceLatencyModel_INV_P2_3_MultiplierMonotonicity(t *testing.T) 
 		{0, 0}, {1, 0}, {0, 1}, {1, 1},
 		{3, 1}, {1, 3}, {5, 5}, {10, 1}, {1, 10},
 	}
+	nonTrivialCount := 0
 	for _, pf := range factors {
 		for _, df := range factors {
 			model, err := NewInterferenceLatencyModel(inner, pf, df)
@@ -146,12 +147,21 @@ func TestInterferenceLatencyModel_INV_P2_3_MultiplierMonotonicity(t *testing.T) 
 					t.Errorf("INV-P2-3 violated: factors=(%f,%f) comp=(%d,%d) StepTime=%d < base=%d",
 						pf, df, comp[0], comp[1], got, inner.stepTime)
 				}
-				if model.LastAppliedMultiplier() < 1.0 {
+				m := model.LastAppliedMultiplier()
+				if m < 1.0 {
 					t.Errorf("INV-P2-3 violated: factors=(%f,%f) comp=(%d,%d) multiplier=%f < 1.0",
-						pf, df, comp[0], comp[1], model.LastAppliedMultiplier())
+						pf, df, comp[0], comp[1], m)
+				}
+				if m > 1.0 {
+					nonTrivialCount++
 				}
 			}
 		}
+	}
+	// Non-vacuity: at least one combination must have produced a multiplier > 1.0.
+	// If this fails, the implementation always returns 1.0 and the property test is meaningless.
+	if nonTrivialCount == 0 {
+		t.Fatal("INV-P2-3 non-vacuity failed: no combination produced multiplier > 1.0 — implementation may always return 1.0")
 	}
 }
 
@@ -451,6 +461,9 @@ func TestInterferenceModel_PDMode_PhasePurePools(t *testing.T) {
 		t.Errorf("BC-P2-10 violated: SimEndedTime differs with interference in PD mode: base=%d, interf=%d",
 			baseMetrics.SimEndedTime, interfMetrics.SimEndedTime)
 	}
+	if len(interfMetrics.RequestE2Es) == 0 {
+		t.Fatal("interference run completed 0 requests — BC-P2-10 E2E check is vacuous")
+	}
 	for reqID, baseE2E := range baseMetrics.RequestE2Es {
 		if interfE2E, ok := interfMetrics.RequestE2Es[reqID]; ok {
 			if interfE2E != baseE2E {
@@ -470,6 +483,10 @@ func cloneRequests(reqs []*sim.Request) []*sim.Request {
 		copy(clone.InputTokens, r.InputTokens)
 		clone.OutputTokens = make([]int, len(r.OutputTokens))
 		copy(clone.OutputTokens, r.OutputTokens)
+		if r.ITL != nil {
+			clone.ITL = make([]int64, len(r.ITL))
+			copy(clone.ITL, r.ITL)
+		}
 		result[i] = &clone
 	}
 	return result

@@ -258,6 +258,11 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 			// INV-PD-1 defensive check: decode_enqueue_time >= transfer_complete_time.
 			// By construction this always holds: both use the same event timestamp (e.time).
 			// The check makes any future priority-ordering regression detectable at run time.
+			// If this fires, execution continues and the decode sub-request is injected with
+			// causality-violating timestamps — simulation results from this point are suspect.
+			// This indicates a programming error (event priority regression), not a recoverable
+			// condition. The library logs rather than panics to preserve the no-terminate contract
+			// (R6), but any simulation that emits this warning produces invalid output.
 			if e.parentReq.DecodeEnqueueTime < e.parentReq.TransferCompleteTime {
 				logrus.Warnf("[cluster] INV-PD-1 violated: DecodeEnqueueTime (%d) < TransferCompleteTime (%d) for req %s",
 					e.parentReq.DecodeEnqueueTime, e.parentReq.TransferCompleteTime, e.parentReq.ID)

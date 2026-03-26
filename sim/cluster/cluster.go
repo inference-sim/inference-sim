@@ -93,7 +93,11 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	// R3: validate interference factors BEFORE instance construction so the
 	// authored error messages are reachable and no partial allocation occurs.
 	// Upper bound (MaxInterferenceFactor) prevents silent int64 overflow when
-	// factor * stepTime exceeds MaxInt64 after math.Round (see interference.go).
+	// float64(baseTime)*multiplier exceeds MaxInt64 after math.Round, where
+	// multiplier = 1.0 + factor*(minority/total) (see interference.go StepTime).
+	// Redundant with NewInterferenceLatencyModel validation — intentional layering:
+	// cluster-level check fires before any instance is allocated; constructor check
+	// fires if someone bypasses cluster construction.
 	if config.PDInterferencePrefill < 0 || math.IsNaN(config.PDInterferencePrefill) || math.IsInf(config.PDInterferencePrefill, 0) || config.PDInterferencePrefill > MaxInterferenceFactor {
 		panic(fmt.Sprintf("ClusterSimulator: PDInterferencePrefill must be a finite number in [0, %.0f], got %f", MaxInterferenceFactor, config.PDInterferencePrefill))
 	}
@@ -101,16 +105,19 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		panic(fmt.Sprintf("ClusterSimulator: PDInterferenceDecode must be a finite number in [0, %.0f], got %f", MaxInterferenceFactor, config.PDInterferenceDecode))
 	}
 	// R20: warn when interference factors are non-zero but the deployment is fully
-	// disaggregated (all instances pool-assigned). In that case, pool instances only
-	// receive phase-pure batches (INV-PD-2), so the interference multiplier is always
-	// 1.0 and these parameters have no effect.
+	// disaggregated (all instances pool-assigned). In that case, every instance is in
+	// a pool and only receives phase-pure batches (INV-PD-2), so the interference
+	// multiplier is always 1.0 and these parameters have no effect.
+	// Partial topologies (PrefillInstances + DecodeInstances < NumInstances) have
+	// unassigned instances that can receive mixed-phase batches via standard routing,
+	// so interference IS effective there — no warning for partial topologies.
 	if (config.PDInterferencePrefill > 0 || config.PDInterferenceDecode > 0) &&
-		config.PrefillInstances > 0 && config.DecodeInstances > 0 {
+		config.PrefillInstances+config.DecodeInstances == config.NumInstances {
 		logrus.Warnf("[cluster] pd-interference-prefill/decode are non-zero but all instances are pool-assigned "+
-			"(prefill-instances=%d, decode-instances=%d). Pool instances serve only phase-pure batches "+
-			"(INV-PD-2), so the interference multiplier is always 1.0. These parameters have no effect "+
-			"in fully disaggregated deployments.",
-			config.PrefillInstances, config.DecodeInstances)
+			"(prefill-instances=%d + decode-instances=%d == num-instances=%d). Pool instances serve only "+
+			"phase-pure batches (INV-PD-2), so the interference multiplier is always 1.0. These parameters "+
+			"have no effect in fully disaggregated deployments.",
+			config.PrefillInstances, config.DecodeInstances, config.NumInstances)
 	}
 
 	// Build pre-construction pool membership so instance construction can resolve per-pool config.

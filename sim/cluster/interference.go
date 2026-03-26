@@ -23,23 +23,25 @@ var _ sim.LatencyModel = (*InterferenceLatencyModel)(nil)
 // A factor of 1.0 at a 50/50 split produces at most a 1.5× step time multiplier (50% slowdown).
 // A factor of 0.5 at a 50/50 split produces a 1.25× multiplier (25% slowdown).
 //
-// In a fully disaggregated deployment (AlwaysDisaggregate), pool instances only receive
-// phase-pure sub-requests (INV-PD-2: Pool Exclusivity), so their multiplier is always
-// 1.0 (BC-P2-10: no-op). With PrefixThresholdDecider, non-disaggregated requests may
-// still reach pool instances via the standard routing path, producing mixed batches
-// where interference applies. The interference factors have no effect in deployments
-// where every request takes the fully disaggregated path.
+// In a fully disaggregated deployment (all instances pool-assigned), pool instances only
+// receive phase-pure sub-requests (INV-PD-2: Pool Exclusivity), so their multiplier is
+// always 1.0 (BC-P2-10: no-op). When a request is not disaggregated (any decider that
+// returns Disaggregate=false), standard routing sends it across all instances including
+// pool-assigned ones, producing mixed batches where interference applies. The interference
+// factors have no effect only when every request takes the fully disaggregated path.
 //
 // Behavioral guarantees:
 //   - BC-P2-9:  factors=0 → step time identical to inner model
 //   - BC-P2-10: phase-pure batch → multiplier=1.0
 //   - BC-P2-11/INV-P2-3: multiplier >= 1.0 always
 //   - BC-P2-12: LastAppliedMultiplier() records per-call multiplier
+// InterferenceLatencyModel is not thread-safe; designed for the single-goroutine
+// simulation kernel (INV-6 determinism depends on single-goroutine execution).
 type InterferenceLatencyModel struct {
 	inner               sim.LatencyModel
 	prefillInterference float64 // slowdown for prefill-dominant batches (minority is decode)
 	decodeInterference  float64 // slowdown for decode-dominant batches (minority is prefill)
-	lastMultiplier      float64
+	lastMultiplier      float64 // mutable: updated by every StepTime call; read by LastAppliedMultiplier
 }
 
 // MaxInterferenceFactor is the upper bound for interference factors (R3: numeric parameter upper bound).
@@ -53,6 +55,8 @@ const MaxInterferenceFactor = 100.0
 // prefillFactor is the interference factor when prefill is the majority phase.
 // decodeFactor is the interference factor when decode is the majority phase.
 // Both factors must be in [0, MaxInterferenceFactor] and finite (R3).
+// Tie-breaking: when prefillCount == decodeCount, the larger of the two factors is used
+// (conservative worst-case — assumes maximum interference when neither phase dominates).
 func NewInterferenceLatencyModel(inner sim.LatencyModel, prefillFactor, decodeFactor float64) (*InterferenceLatencyModel, error) {
 	if inner == nil {
 		return nil, fmt.Errorf("NewInterferenceLatencyModel: inner must not be nil")
@@ -76,6 +80,14 @@ func NewInterferenceLatencyModel(inner sim.LatencyModel, prefillFactor, decodeFa
 // then applies: multiplier = 1.0 + factor * (minority_count / total_count).
 func (m *InterferenceLatencyModel) StepTime(batch []*sim.Request) int64 {
 	baseTime := m.inner.StepTime(batch)
+
+	// Guard against inner model contract violation (R1: no silent data loss).
+	// A non-positive baseTime indicates a bug in the inner LatencyModel — log it
+	// so the inner model is diagnosed rather than the anomaly appearing as fast throughput.
+	if baseTime <= 0 {
+		logrus.Errorf("InterferenceLatencyModel: inner StepTime returned non-positive value %d (inner model contract violation); returning 1", baseTime)
+		return 1
+	}
 
 	multiplier := m.computeMultiplier(batch)
 	m.lastMultiplier = multiplier
