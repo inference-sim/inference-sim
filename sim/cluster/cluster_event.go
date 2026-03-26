@@ -148,6 +148,22 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 		return
 	}
 
+	// Phase 1B-2a: tenant budget override after admission policy (issue #811).
+	// When a tenant is over their fair-share budget, shed Sheddable-and-below requests.
+	// Critical (4) and Standard (3) are protected — budget never sheds them.
+	// INV-9 compliant: reads only req.SLOClass and req.TenantID (arrival-time metadata).
+	if cs.tenantTracker != nil && cs.tenantTracker.IsOverBudget(e.request.TenantID) {
+		if sim.SLOTierPriority(e.request.SLOClass) < 3 { // below Standard
+			cs.rejectedRequests++
+			tier := e.request.SLOClass
+			if tier == "" {
+				tier = "standard"
+			}
+			cs.shedByTier[tier]++
+			return
+		}
+	}
+
 	// BC-PD-4: When pools are configured, schedule DisaggregationDecisionEvent
 	// between admission and routing. When not configured, go directly to routing.
 	if cs.poolsConfigured() {
@@ -229,7 +245,11 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 					// Increment in-flight AFTER target validation — gives next routing decision
 					// visibility into this routing decision (#170)
 					cs.inFlightRequests[decision.TargetInstance]++
-			
+					// Phase 1B-2a: track tenant in-flight count for fair-share enforcement.
+					if cs.tenantTracker != nil {
+						cs.tenantTracker.OnStart(e.request.TenantID)
+					}
+
 					// T042: record warm-up requests for TTFT factor application (Phase 1A).
 					// Record the first WarmUpRequestCount requests routed to this instance.
 					// We check the count of already-recorded IDs rather than State or warmUpRemaining
