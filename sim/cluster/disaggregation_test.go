@@ -948,7 +948,7 @@ func TestDisaggregation_MetricProjection_DroppedParent_NoSubRequestKeys(t *testi
 	// 1 decode instance with 3 blocks (48 tokens); each short request needs 2 blocks.
 	// First request fills 2/3, second request tries 2 more with only 1 free → dropped.
 	config := newTestDisaggDeploymentConfig(3, 2, 1)
-	config.SimConfig.KVCacheConfig = sim.NewKVCacheConfig(3, 16, 0, 0, 0, 0)
+	config.KVCacheConfig = sim.NewKVCacheConfig(3, 16, 0, 0, 0, 0)
 
 	requests := newShortRequests(4)
 	cs := NewClusterSimulator(config, requests, nil)
