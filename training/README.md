@@ -65,15 +65,15 @@ python run_blis_and_compute_loss.py --latency-model roofline --evaluate-per-expe
       "e2e_mean_ape": 12.3,
       "combined_loss": 22.8,
       "wall_clock_seconds": 45.2,
-      "latency": {
-        "e2e": {"mean": 250.5, "p90": 310.2, "p99": 450.8},
-        "ttft": {"mean": 45.3, "p90": 55.1, "p99": 78.4},
-        "itl": {"mean": 12.1, "p90": 15.3, "p99": 22.7}
+      "latency_ape": {
+        "e2e": {"mean": 12.3, "p90": 15.4, "p99": 18.2},
+        "ttft": {"mean": 10.5, "p90": 13.1, "p99": 16.8},
+        "itl": {"mean": 8.7}
       },
-      "throughput": {
-        "input_tokens_per_sec": 1234.5,
-        "output_tokens_per_sec": 987.6,
-        "requests_per_sec": 8.5
+      "throughput_ape": {
+        "input_tokens_per_sec": 5.2,
+        "output_tokens_per_sec": 7.8,
+        "requests_per_sec": 6.1
       }
     }
   ]
@@ -81,10 +81,15 @@ python run_blis_and_compute_loss.py --latency-model roofline --evaluate-per-expe
 ```
 
 **Per-Experiment Fields:**
-- **Loss metrics:** `ttft_mean_ape`, `e2e_mean_ape`, `combined_loss` (APE = Absolute Percentage Error)
+- **Loss metrics:** `ttft_mean_ape`, `e2e_mean_ape`, `combined_loss` (APE = Absolute Percentage Error %)
 - **Runtime:** `wall_clock_seconds` (simulation wall-clock time)
-- **Latency:** Mean, P90, P99 for E2E, TTFT, and ITL (milliseconds)
-- **Throughput:** Input/output tokens per second, requests per second
+- **Latency errors:** `latency_ape` - APE (%) for:
+  - E2E: mean, P90, P99
+  - TTFT: mean, P90, P99
+  - ITL: mean only (percentiles unavailable in ground truth)
+- **Throughput errors:** `throughput_ape` - APE (%) for input/output tokens per second, requests per second
+
+**Note:** Values may be `null` if the metric is unavailable in ground truth or simulation.
 
 Experiments are sorted by `combined_loss` (descending), so worst predictions appear first.
 
