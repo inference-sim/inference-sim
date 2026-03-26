@@ -2106,6 +2106,100 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#pd-disaggregation-invariants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PD Disaggregation Invariants
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="PD Disaggregation Invariants">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inv-pd-1-kv-completeness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-1: KV Completeness
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inv-pd-2-pool-exclusivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-2: Pool Exclusivity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inv-pd-3-transfer-conservation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-3: Transfer Conservation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inv-pd-4-phase-causality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-4: Phase Causality
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inv-pd-5-pool-stability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-5: Pool Stability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inv-p2-1-pool-config-consistency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-P2-1: Pool-Config Consistency
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inv-p2-2-fair-share-kv-transfer-bandwidth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-P2-2: Fair-Share KV Transfer Bandwidth
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2824,6 +2918,100 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#pd-disaggregation-invariants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PD Disaggregation Invariants
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="PD Disaggregation Invariants">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inv-pd-1-kv-completeness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-1: KV Completeness
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inv-pd-2-pool-exclusivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-2: Pool Exclusivity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inv-pd-3-transfer-conservation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-3: Transfer Conservation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inv-pd-4-phase-causality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-4: Phase Causality
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inv-pd-5-pool-stability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-5: Pool Stability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inv-p2-1-pool-config-consistency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-P2-1: Pool-Config Consistency
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inv-p2-2-fair-share-kv-transfer-bandwidth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-P2-2: Fair-Share KV Transfer Bandwidth
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2964,6 +3152,41 @@
 <p><strong>Verification:</strong> <code>sim/workload/session_test.go</code> — tests cover all terminal paths: <code>TestSession_TimeoutCancels_NoMoreRounds</code> (cancelled), <code>TestSession_FinalRound_Completes</code> (completed), <code>TestSession_BeyondHorizon_NotGenerated</code> (horizon-interrupted), <code>TestSession_DroppedFollowUp_CancelsSession</code> (cancelled via drop).</p>
 <p><strong>Evidence:</strong> Design doc INV-11 definition. The <code>SessionManager.OnComplete</code> method transitions sessions to exactly one terminal state before returning nil.</p>
 <p><strong>Hypothesis family:</strong> Structural model — session lifecycle completeness.</p>
+<hr />
+<h2 id="pd-disaggregation-invariants">PD Disaggregation Invariants<a class="headerlink" href="#pd-disaggregation-invariants" title="Permanent link">&para;</a></h2>
+<h3 id="inv-pd-1-kv-completeness">INV-PD-1: KV Completeness<a class="headerlink" href="#inv-pd-1-kv-completeness" title="Permanent link">&para;</a></h3>
+<p><strong>Statement:</strong> For every disaggregated request, <code>decode_enqueue_time &gt;= kv_transfer_completion_time</code>. A decode sub-request must not be enqueued before its KV transfer completes.</p>
+<p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_RequestCompletesFullPath</code> checks DecodeEnqueueTime &gt;= TransferCompleteTime for every parent request. Runtime defensive check in <code>DecodeRoutingEvent.Execute()</code>.</p>
+<p><strong>Evidence:</strong> By event priority ordering: KVTransferCompletedEvent (priority 6) schedules DecodeRoutingEvent (priority 7) at the same timestamp. DecodeEnqueueTime is set in DecodeRoutingEvent which fires after transfer completion.</p>
+<h3 id="inv-pd-2-pool-exclusivity">INV-PD-2: Pool Exclusivity<a class="headerlink" href="#inv-pd-2-pool-exclusivity" title="Permanent link">&para;</a></h3>
+<p><strong>Statement:</strong> Prefill sub-requests route only to prefill pool instances; decode sub-requests route only to decode pool instances.</p>
+<p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_PrefillRoutedToPrefillPool</code> and <code>TestDisaggregation_DecodeRoutedToDecodePool</code> verify pool role for every parent request's prefill and decode instance assignments.</p>
+<p><strong>Evidence:</strong> <code>buildPoolFilteredSnapshots(role)</code> filters routing snapshots to only include instances of the specified pool role before passing to the routing policy.</p>
+<h3 id="inv-pd-3-transfer-conservation">INV-PD-3: Transfer Conservation<a class="headerlink" href="#inv-pd-3-transfer-conservation" title="Permanent link">&para;</a></h3>
+<p><strong>Statement:</strong> <code>initiated_transfers == completed_transfers</code> at simulation end, provided all transfers complete within the simulation horizon. At bounded horizons, the difference (<code>initiated - completed</code>) represents in-flight transfers accounted for in the <code>pdInTransfer</code> conservation correction (see INV-1 PD correction in <code>cluster.go</code>).</p>
+<p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_TransferConservation</code> asserts equality and expected count (uses unbounded horizon).</p>
+<p><strong>Evidence:</strong> <code>transfersInitiated</code> incremented in <code>KVTransferStartedEvent.Execute()</code>, <code>transfersCompleted</code> incremented in <code>KVTransferCompletedEvent.Execute()</code>. Every started event schedules exactly one completed event.</p>
+<h3 id="inv-pd-4-phase-causality">INV-PD-4: Phase Causality<a class="headerlink" href="#inv-pd-4-phase-causality" title="Permanent link">&para;</a></h3>
+<p><strong>Statement:</strong> For every disaggregated request: <code>arrival &lt;= prefill_enqueue &lt;= prefill_complete &lt;= transfer_start &lt;= transfer_complete &lt;= decode_enqueue &lt;= completion</code>.</p>
+<p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_PhaseCausality</code> checks the full causal chain for every parent request.</p>
+<p><strong>Evidence:</strong> Each phase transition is enforced by DES event ordering: earlier phases schedule later-phase events at <code>time &gt;= current_time</code>.</p>
+<h3 id="inv-pd-5-pool-stability">INV-PD-5: Pool Stability<a class="headerlink" href="#inv-pd-5-pool-stability" title="Permanent link">&para;</a></h3>
+<p><strong>Statement:</strong> Pool membership is fixed at construction time and never changes during simulation.</p>
+<p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_PoolStability</code> compares <code>PoolMembership()</code> before and after <code>Run()</code>.</p>
+<p><strong>Evidence:</strong> <code>BuildPoolMembershipFromIndices</code> is called once in <code>NewClusterSimulator</code> and stored in <code>cs.poolMembership</code>. No code path in <code>Run()</code> modifies this map.</p>
+<h3 id="inv-p2-1-pool-config-consistency">INV-P2-1: Pool-Config Consistency<a class="headerlink" href="#inv-p2-1-pool-config-consistency" title="Permanent link">&para;</a></h3>
+<p><strong>Statement:</strong> Per-pool hardware overrides produce a valid <code>SimConfig</code> for each pool role: zero-valued <code>PoolOverrides</code> is a no-op (backward-compatible), non-nil fields override only the specified fields, and the global <code>SimConfig</code> is never mutated.</p>
+<p><strong>Verification:</strong> <code>sim/cluster/resolve_test.go</code> — <code>TestINV_P2_1_PoolConfigConsistency</code> verifies observable KV capacity differences between pools pre-simulation via <code>FreeKVBlocks()</code>; <code>TestINV_P2_1_RequestConservation</code> verifies INV-1 holds under heterogeneous pool configuration.</p>
+<p><strong>Evidence:</strong> <code>ResolvePoolConfig</code> performs a struct copy and applies only non-nil/non-zero overrides. <code>resolveConfigForRole</code> is called in the instance construction loop in <code>NewClusterSimulator</code>, before any simulation state is created.</p>
+<hr />
+<h3 id="inv-p2-2-fair-share-kv-transfer-bandwidth">INV-P2-2: Fair-Share KV Transfer Bandwidth<a class="headerlink" href="#inv-p2-2-fair-share-kv-transfer-bandwidth" title="Permanent link">&para;</a></h3>
+<p><strong>Statement:</strong> When <code>--pd-transfer-contention</code> is enabled, the effective bandwidth available to each concurrent KV transfer is <code>total_bandwidth / active_transfers</code>, where <code>active_transfers</code> is the count of transfers in flight at the moment the new transfer starts (inclusive of the new transfer). With a single transfer in flight, the full bandwidth is used (<code>active_transfers == 1</code>, divisor == 1). This invariant gates the transfer duration formula in <code>KVTransferStartedEvent.Execute()</code>.</p>
+<p><strong>Verification:</strong> <code>sim/cluster/transfer_contention_test.go</code>:
+- <code>TestTransferContention_INVP22_EffectiveBandwidthFormula</code> — golden test for the N=1 duration (9 µs with 10 blocks at 10 GB/s)
+- <code>TestTransferContention_INVP22_N2FormulaExact</code> — golden test for the N=2 duration (17 µs with same payload at 5 GB/s effective)
+- <code>TestTransferContention_INVP22_DivisorLaw</code> — invariant test: <code>duration(N) / duration(1) ≈ N</code> for N ∈ {1,2,3,4,5,8,10} with monotonicity
+- <code>TestTransferContention_INVP22_FairShareBandwidth</code> — end-to-end: concurrent transfers record peak &gt;= 1 when multiple requests arrive simultaneously</p>
+<p><strong>Evidence:</strong> PR9 (<code>sim/cluster/pd_events.go</code>, <code>KVTransferStartedEvent.Execute()</code>). Gated behind <code>PDTransferContention</code> flag (off by default for backward compatibility). The <code>activeTransfers</code> counter is incremented before the divisor is applied, ensuring the new transfer receives a fair share of the bandwidth with every other transfer currently in flight.</p>
 
 
 
