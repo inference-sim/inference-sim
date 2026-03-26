@@ -104,19 +104,19 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	if config.PDInterferenceDecode < 0 || math.IsNaN(config.PDInterferenceDecode) || math.IsInf(config.PDInterferenceDecode, 0) || config.PDInterferenceDecode > MaxInterferenceFactor {
 		panic(fmt.Sprintf("ClusterSimulator: PDInterferenceDecode must be a finite number in [0, %.0f], got %f", MaxInterferenceFactor, config.PDInterferenceDecode))
 	}
-	// R20: warn when interference factors are non-zero but the deployment is fully
-	// disaggregated (all instances pool-assigned). In that case, every instance is in
-	// a pool and only receives phase-pure batches (INV-PD-2), so the interference
-	// multiplier is always 1.0 and these parameters have no effect.
-	// Partial topologies (PrefillInstances + DecodeInstances < NumInstances) have
-	// unassigned instances that can receive mixed-phase batches via standard routing,
-	// so interference IS effective there — no warning for partial topologies.
+	// Degenerate config warning: interference factors are non-zero but have no effect.
+	// Pool exclusivity (INV-PD-2) only guarantees phase-pure batches when ALL of:
+	//   (a) every instance is pool-assigned (sum == NumInstances), AND
+	//   (b) the decider always disaggregates (PDDecider == "always").
+	// If either condition is false, standard routing can send non-disaggregated requests
+	// to pool-assigned instances, producing mixed batches where interference applies.
 	if (config.PDInterferencePrefill > 0 || config.PDInterferenceDecode > 0) &&
-		config.PrefillInstances+config.DecodeInstances == config.NumInstances {
-		logrus.Warnf("[cluster] pd-interference-prefill/decode are non-zero but all instances are pool-assigned "+
-			"(prefill-instances=%d + decode-instances=%d == num-instances=%d). Pool instances serve only "+
-			"phase-pure batches (INV-PD-2), so the interference multiplier is always 1.0. These parameters "+
-			"have no effect in fully disaggregated deployments.",
+		config.PrefillInstances+config.DecodeInstances == config.NumInstances &&
+		config.PDDecider == "always" {
+		logrus.Warnf("[cluster] pd-interference-prefill/decode are non-zero but have no effect: "+
+			"all instances are pool-assigned (prefill-instances=%d + decode-instances=%d == num-instances=%d) "+
+			"and --pd-decider=always ensures every request is disaggregated. Pool instances serve only "+
+			"phase-pure batches (INV-PD-2), so the interference multiplier is always 1.0.",
 			config.PrefillInstances, config.DecodeInstances, config.NumInstances)
 	}
 
