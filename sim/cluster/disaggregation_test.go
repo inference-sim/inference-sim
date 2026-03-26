@@ -718,7 +718,52 @@ func TestDirectToDecode_AboveThresholdDisaggregated(t *testing.T) {
 
 // hasSubRequestSuffix returns true if key ends with "_prefill" or "_decode".
 func hasSubRequestSuffix(key string) bool {
-	return len(key) > 8 && (key[len(key)-8:] == "_prefill" || key[len(key)-7:] == "_decode")
+	return (len(key) >= 8 && key[len(key)-8:] == "_prefill") ||
+		(len(key) >= 7 && key[len(key)-7:] == "_decode")
+}
+
+// TestDisaggregation_MetricProjection_NoOp verifies that projectPDMetrics is a
+// no-op when disaggregation is not active (parentRequests is empty).
+// GIVEN a non-disaggregated cluster (all instances in the default pool)
+// WHEN  Run() completes
+// THEN  per-request maps contain the original request keys, unmodified by projection.
+func TestDisaggregation_MetricProjection_NoOp(t *testing.T) {
+	config := newTestDeploymentConfig(2) // standard cluster, no PD roles
+	requests := newTestRequests(3)
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	if len(cs.parentRequests) != 0 {
+		t.Fatalf("expected no parentRequests in non-disaggregated cluster, got %d", len(cs.parentRequests))
+	}
+
+	m := cs.AggregatedMetrics()
+	// All injected request IDs should appear in RequestE2Es (no suffix mangling).
+	for _, req := range requests {
+		if _, ok := m.RequestE2Es[req.ID]; !ok {
+			// Some requests may not complete (e.g., horizon), but no key should have a suffix.
+			continue
+		}
+		if hasSubRequestSuffix(req.ID) {
+			t.Errorf("non-disaggregated cluster: original request key %q has a sub-request suffix", req.ID)
+		}
+	}
+	// None of the map keys should carry a sub-request suffix.
+	for mapName, keys := range map[string][]string{
+		"RequestE2Es":             mapKeys(m.RequestE2Es),
+		"RequestTTFTs":            mapKeys(m.RequestTTFTs),
+		"RequestITLs":             mapKeys(m.RequestITLs),
+		"RequestCompletionTimes":  mapKeys(m.RequestCompletionTimes),
+		"RequestSchedulingDelays": mapKeysInt64(m.RequestSchedulingDelays),
+		"Requests":                mapKeysRM(m.Requests),
+	} {
+		for _, key := range keys {
+			if hasSubRequestSuffix(key) {
+				t.Errorf("non-disaggregated cluster: %s contains sub-request key %q", mapName, key)
+			}
+		}
+	}
 }
 
 // TestDisaggregation_MetricProjection_NoSubRequestKeys verifies INV-PD-6:
@@ -884,6 +929,11 @@ func TestDisaggregation_MetricProjection_RequestsMap(t *testing.T) {
 		}
 		if rm.ID != pid {
 			t.Errorf("parent %s: Requests[%s].ID = %q, want %q", pid, pid, rm.ID, pid)
+		}
+		wantHandledBy := string(parent.DecodeInstanceID)
+		if rm.HandledBy != wantHandledBy {
+			t.Errorf("parent %s: Requests[%s].HandledBy = %q, want decode instance %q",
+				pid, pid, rm.HandledBy, wantHandledBy)
 		}
 	}
 }

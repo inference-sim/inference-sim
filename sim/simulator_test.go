@@ -2381,3 +2381,81 @@ func TestEnqueueDecodeSubRequest_StepEventAtClusterTime(t *testing.T) {
 			got, clusterTime, s.Clock)
 	}
 }
+
+// TestEnqueueDecodeSubRequest_SimClockAhead_StepEventAtSimClock verifies the
+// other branch of max(sim.Clock, clusterTime): when the instance has already
+// advanced past the cluster time, the StepEvent is scheduled at sim.Clock.
+// GIVEN a simulator that has processed events up to clock T_sim
+// WHEN  EnqueueDecodeSubRequest is called with clusterTime < T_sim
+// THEN  the StepEvent is at T_sim (not at clusterTime), preserving INV-3.
+func TestEnqueueDecodeSubRequest_SimClockAhead_StepEventAtSimClock(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             math.MaxInt64,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-simclockahead", "H100", 1, "blackbox", 0),
+	}
+	s := mustNewSimulator(t, cfg)
+
+	// Advance the simulator's internal clock by processing a real request.
+	s.InjectArrival(&Request{
+		ID: "req-advance", ArrivalTime: 0,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+		State: StateQueued,
+	})
+	s.Run()
+	advancedClock := s.Clock
+	if advancedClock <= 0 {
+		t.Fatalf("simulator clock did not advance after Run: clock = %d", advancedClock)
+	}
+
+	// Create a second simulator at the advanced clock state by injecting into a fresh sim
+	// that has manually processed events to advance the clock.
+	// Simpler approach: inject directly into the internal queue at an advanced time.
+	cfg2 := cfg
+	s2 := mustNewSimulator(t, cfg2)
+	// Advance s2's clock by processing an arrival event.
+	s2.InjectArrival(&Request{
+		ID: "req-prime", ArrivalTime: 0,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+		State: StateQueued,
+	})
+	for s2.HasPendingEvents() {
+		s2.ProcessNextEvent()
+	}
+	simClock := s2.Clock
+	if simClock <= 0 {
+		t.Fatalf("s2 clock did not advance: %d", simClock)
+	}
+
+	// clusterTime is behind the instance's current clock.
+	clusterTime := simClock / 2
+	if clusterTime <= 0 {
+		t.Skip("clock did not advance enough to create clusterTime < simClock; skipping")
+	}
+
+	req := &Request{
+		ID:            "dec-behind",
+		InputTokens:   make([]int, 10),
+		OutputTokens:  make([]int, 5),
+		State:         StateQueued,
+		ArrivalTime:   clusterTime,
+		ProgressIndex: 10,
+	}
+	s2.EnqueueDecodeSubRequest(req, clusterTime)
+
+	if !s2.HasPendingEvents() {
+		t.Fatal("BC-1: no pending events after EnqueueDecodeSubRequest (INV-8 violated)")
+	}
+
+	// BC-2: The StepEvent must be at simClock (not clusterTime < simClock),
+	// preserving clock monotonicity (INV-3).
+	got := s2.PeekNextEventTime()
+	if got != simClock {
+		t.Errorf("BC-2: StepEvent time = %d, want %d (simClock); "+
+			"using clusterTime (%d) would violate clock monotonicity INV-3",
+			got, simClock, clusterTime)
+	}
+}

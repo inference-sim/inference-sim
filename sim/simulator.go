@@ -403,8 +403,8 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 // pre-allocated (via PD disaggregation transfer). Bypasses the oversized-request guard
 // (blocks already allocated, guard would leak them) and does NOT increment TotalInputTokens
 // (input tokens were already counted by the prefill sub-request).
-// clusterTime is the cluster-level clock when this request is injected (from the
-// KVTransferCompleted/DecodeRouting event). The StepEvent is scheduled at
+// clusterTime is the cluster-level clock when this request is injected (from
+// DecodeRoutingEvent.Execute()). The StepEvent is scheduled at
 // max(sim.Clock, clusterTime) to prevent the instance from processing the
 // decode sub-request at a stale internal time that precedes the request's arrival.
 // Triggers StepEvent if the instance is idle (INV-8: work-conserving).

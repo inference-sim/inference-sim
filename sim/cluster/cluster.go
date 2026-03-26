@@ -842,14 +842,16 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		pid := parent.ID              // "req_N"
 		completed := parent.CompletionTime > 0 && parent.DecodeInstanceID != ""
 
-		// Issue #821 fix 1: E2E = parent.CompletionTime - parent.ArrivalTime
+		// E2E = parent.CompletionTime - parent.ArrivalTime
 		// (arrival → prefill → transfer → decode → completion).
 		delete(m.RequestE2Es, pfx)
 		delete(m.RequestE2Es, dec)
 		if completed {
 			e2e := parent.CompletionTime - parent.ArrivalTime
 			if e2e < 0 {
-				logrus.Warnf("[cluster] projectPDMetrics: negative E2E for %s (completionTime=%d arrivalTime=%d); skipping",
+				// INV-3/INV-5 violation: completion before arrival. Should never occur
+				// after the clusterTime fix in EnqueueDecodeSubRequest.
+				logrus.Errorf("[cluster] projectPDMetrics: negative E2E for %s (completionTime=%d arrivalTime=%d); skipping",
 					pid, parent.CompletionTime, parent.ArrivalTime)
 			} else {
 				m.RequestE2Es[pid] = float64(e2e)
@@ -859,6 +861,7 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// TTFT: rekey from prefill sub-request ID to parent ID (value unchanged).
 		// Only prefill sub-requests record TTFT; decode sub-requests never trigger it.
 		// Gate on completed: dropped-request TTFTs must not enter the distribution.
+		// Source keys are always deleted, regardless of completion status.
 		if completed {
 			if ttft, ok := m.RequestTTFTs[pfx]; ok {
 				m.RequestTTFTs[pid] = ttft
@@ -869,7 +872,7 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		delete(m.RequestTTFTs, pfx)
 		delete(m.RequestTTFTs, dec)
 
-		// Issue #821 fix 2: scheduling delay = prefill sub-request's delay
+		// Scheduling delay = prefill sub-request's delay
 		// (the real user-facing delay, not the decode pipeline cumulative latency).
 		prefillDelay, hasPrefillDelay := m.RequestSchedulingDelays[pfx]
 		delete(m.RequestSchedulingDelays, pfx)
@@ -878,7 +881,7 @@ func (c *ClusterSimulator) projectPDMetrics() {
 			m.RequestSchedulingDelays[pid] = prefillDelay
 		}
 
-		// Issue #821 fix 3: Requests metadata keyed by parent ID.
+		// Requests metadata keyed by parent ID, HandledBy set to decode instance.
 		delete(m.Requests, pfx)
 		delete(m.Requests, dec)
 		if completed {
@@ -890,7 +893,7 @@ func (c *ClusterSimulator) projectPDMetrics() {
 			m.Requests[pid] = rm
 		}
 
-		// Issue #821 fix 4: ITL from decode sub-request (prefill ITL is 0 noise).
+		// ITL from decode sub-request (prefill ITL is 0 noise).
 		decodeITL, hasDecodeITL := m.RequestITLs[dec]
 		delete(m.RequestITLs, pfx)
 		delete(m.RequestITLs, dec)
@@ -898,7 +901,7 @@ func (c *ClusterSimulator) projectPDMetrics() {
 			m.RequestITLs[pid] = decodeITL
 		}
 
-		// Issue #821 fix 5: completion time from parent lifecycle tracking.
+		// Completion time from parent lifecycle tracking.
 		delete(m.RequestCompletionTimes, pfx)
 		delete(m.RequestCompletionTimes, dec)
 		if completed {

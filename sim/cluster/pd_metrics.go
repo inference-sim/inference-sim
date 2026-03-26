@@ -16,12 +16,12 @@ type PDMetrics struct {
 	DisaggregatedCount int
 
 	// ParentTTFT is the distribution of parent-level TTFT (microseconds).
-	// Parent TTFT = prefill sub-request TTFT from aggregated.RequestTTFTs[PrefillSubReqID].
-	// The prefill sub-request is constructed with ArrivalTime = original request ArrivalTime
-	// and records TTFT when ProgressIndex == inputLen (prefill completion = first token generated).
-	// In the BLIS PD model, the first output token is generated at prefill completion; the
-	// decode sub-request generates subsequent tokens. Decode sub-requests start with
-	// ProgressIndex = inputLen (pre-allocated) and never trigger TTFT recording.
+	// Parent TTFT = prefill sub-request TTFT from aggregated.RequestTTFTs[parent.ID].
+	// projectPDMetrics() rekeys the entry from PrefillSubReqID to the parent ID before
+	// CollectPDMetrics runs, so the lookup uses parent.ID (see BC-1 comment at the call site).
+	// The prefill sub-request records TTFT when ProgressIndex == inputLen (prefill completion
+	// = first token generated). Decode sub-requests start with ProgressIndex = inputLen
+	// (pre-allocated) and never trigger TTFT recording.
 	// Values of 0.0 (missing key) are excluded (BC-11).
 	ParentTTFT Distribution
 
