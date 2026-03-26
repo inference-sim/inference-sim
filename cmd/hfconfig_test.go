@@ -297,6 +297,51 @@ func TestFetchHFConfig_Success(t *testing.T) {
 	}
 }
 
+func TestFetchHFConfig_MultimodalConfig(t *testing.T) {
+	// Verify that fetchHFConfigFromURL accepts multimodal configs with text_config
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		// Multimodal config structure (text_config + vision_config)
+		_, _ = w.Write([]byte(`{
+			"architectures": ["Llama4ForConditionalGeneration"],
+			"model_type": "llama4",
+			"text_config": {
+				"num_hidden_layers": 48,
+				"hidden_size": 5120,
+				"num_attention_heads": 40
+			},
+			"vision_config": {
+				"num_hidden_layers": 34,
+				"hidden_size": 1408
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	targetDir := filepath.Join(tmpDir, modelConfigsDir, "multimodal-model")
+
+	dir, err := fetchHFConfigFromURL(server.URL+"/test/multimodal/resolve/main/config.json", targetDir)
+	if err != nil {
+		t.Fatalf("multimodal config should be accepted via fetch: %v", err)
+	}
+
+	// Verify the file was written
+	writtenPath := filepath.Join(dir, hfConfigFile)
+	data, err := os.ReadFile(writtenPath)
+	if err != nil {
+		t.Fatalf("config file not found: %v", err)
+	}
+
+	// Verify the config contains text_config structure
+	if !strings.Contains(string(data), "text_config") {
+		t.Errorf("expected config to contain text_config, got: %s", string(data))
+	}
+	if !strings.Contains(string(data), "vision_config") {
+		t.Errorf("expected config to contain vision_config, got: %s", string(data))
+	}
+}
+
 func TestFetchHFConfig_404(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
