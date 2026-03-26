@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -333,12 +334,21 @@ func TestFetchHFConfig_MultimodalConfig(t *testing.T) {
 		t.Fatalf("config file not found: %v", err)
 	}
 
-	// Verify the config contains text_config structure
-	if !strings.Contains(string(data), "text_config") {
-		t.Errorf("expected config to contain text_config, got: %s", string(data))
+	// Verify the config is recognized as a valid HF config (behavioral assertion)
+	if !isHFConfig(data) {
+		t.Errorf("expected config to be recognized as valid HuggingFace config")
 	}
-	if !strings.Contains(string(data), "vision_config") {
-		t.Errorf("expected config to contain vision_config, got: %s", string(data))
+
+	// Verify text_config structure is preserved (behavioral assertion via parsing)
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("config is not valid JSON: %v", err)
+	}
+	if _, ok := parsed["text_config"].(map[string]interface{}); !ok {
+		t.Errorf("expected config to preserve text_config as object, got type: %T", parsed["text_config"])
+	}
+	if _, ok := parsed["vision_config"].(map[string]interface{}); !ok {
+		t.Errorf("expected config to preserve vision_config as object, got type: %T", parsed["vision_config"])
 	}
 }
 
@@ -689,6 +699,11 @@ func TestIsHFConfig(t *testing.T) {
 		{"text_config is not an object (string)", `{"text_config": "not_an_object"}`, false},
 		{"text_config is not an object (null)", `{"text_config": null}`, false},
 		{"deeply nested text_config", `{"text_config": {"text_config": {"num_hidden_layers": 48}}}`, false},
+		{"zero-value num_hidden_layers at top level", `{"num_hidden_layers": 0}`, true},
+		{"zero-value hidden_size at top level", `{"hidden_size": 0}`, true},
+		{"zero-value num_hidden_layers in text_config", `{"text_config": {"num_hidden_layers": 0}}`, true},
+		{"zero-value hidden_size in text_config", `{"text_config": {"hidden_size": 0}}`, true},
+		{"mixed top-level and text_config fields", `{"num_hidden_layers": 48, "text_config": {"hidden_size": 5120}}`, true},
 	}
 
 	for _, tt := range tests {
