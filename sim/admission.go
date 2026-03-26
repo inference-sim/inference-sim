@@ -67,6 +67,80 @@ func (r *RejectAll) Admit(_ *Request, _ *RouterState) (bool, string) {
 	return false, "reject-all"
 }
 
+// SLOTierPriority maps an SLOClass string to an integer priority.
+// Higher = more important. Background=0 … Critical=4.
+// Empty or unknown string maps to Standard (3) for backward compatibility.
+// Exported so sim/cluster/ can call it without a circular import.
+func SLOTierPriority(class string) int {
+	switch class {
+	case "critical":
+		return 4
+	case "standard":
+		return 3
+	case "sheddable":
+		return 2
+	case "batch":
+		return 1
+	case "background":
+		return 0
+	default:
+		return 3 // empty or unknown → Standard
+	}
+}
+
+// TierShedAdmission sheds lower-priority requests under overload.
+// Stateless: all decisions computed from RouterState at call time.
+// Batch and Background always pass through (deferred queue PR handles them).
+// Use NewTierShedAdmission to construct with validated parameters.
+type TierShedAdmission struct {
+	OverloadThreshold int // max per-instance effective load before shedding; 0 = any load triggers
+	MinAdmitPriority  int // minimum tier priority admitted under overload; 0 = admit all (footgun)
+}
+
+// NewTierShedAdmission creates a TierShedAdmission with validated parameters.
+// Panics if overloadThreshold < 0 or minAdmitPriority is outside [0, 4] (R3).
+func NewTierShedAdmission(overloadThreshold, minAdmitPriority int) *TierShedAdmission {
+	if overloadThreshold < 0 {
+		panic(fmt.Sprintf("NewTierShedAdmission: overloadThreshold must be >= 0, got %d", overloadThreshold))
+	}
+	if minAdmitPriority < 0 || minAdmitPriority > 4 {
+		panic(fmt.Sprintf("NewTierShedAdmission: minAdmitPriority must be in [0,4], got %d", minAdmitPriority))
+	}
+	return &TierShedAdmission{
+		OverloadThreshold: overloadThreshold,
+		MinAdmitPriority:  minAdmitPriority,
+	}
+}
+
+// Admit rejects requests whose tier priority is below MinAdmitPriority when the
+// cluster is overloaded (max effective load across instances > OverloadThreshold).
+// Batch and Background classes always return admitted=true.
+// Empty Snapshots (no instances) also returns admitted=true (safe default).
+func (t *TierShedAdmission) Admit(req *Request, state *RouterState) (bool, string) {
+	class := req.SLOClass
+	// Batch/Background bypass tier-shed (deferred queue handles them in PR-2).
+	if class == "batch" || class == "background" {
+		return true, ""
+	}
+	// Compute max effective load across all instance snapshots.
+	maxLoad := 0
+	for _, snap := range state.Snapshots {
+		if l := snap.EffectiveLoad(); l > maxLoad {
+			maxLoad = l
+		}
+	}
+	if maxLoad <= t.OverloadThreshold {
+		return true, "" // under threshold: admit all
+	}
+	// Under overload: reject tiers below MinAdmitPriority.
+	priority := SLOTierPriority(class)
+	if priority < t.MinAdmitPriority {
+		return false, fmt.Sprintf("tier-shed: class=%s priority=%d < min=%d load=%d",
+			class, priority, t.MinAdmitPriority, maxLoad)
+	}
+	return true, ""
+}
+
 // NewAdmissionPolicy creates an admission policy by name.
 // Valid names are defined in ValidAdmissionPolicies (bundle.go).
 // An empty string defaults to AlwaysAdmit (for CLI flag default compatibility).

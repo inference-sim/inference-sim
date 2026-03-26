@@ -61,6 +61,12 @@ type DeploymentConfig struct {
 	// When empty (all nil/zero), all instances use the global SimConfig (BC-P2-1).
 	PrefillOverrides PoolOverrides // Hardware overrides for prefill pool instances
 	DecodeOverrides  PoolOverrides // Hardware overrides for decode pool instances
+
+	// Phase 1B-1a: tier-ordered admission shedding config (issue #809).
+	// Zero value is safe: TierShedMinPriority=0 admits all tiers (same as AlwaysAdmit),
+	// but callers should explicitly set 3 (Standard) for meaningful protection.
+	TierShedThreshold   int `yaml:"tier_shed_threshold,omitempty"`
+	TierShedMinPriority int `yaml:"tier_shed_min_priority,omitempty"`
 }
 
 // ToSimConfig returns the embedded SimConfig for per-instance construction.
