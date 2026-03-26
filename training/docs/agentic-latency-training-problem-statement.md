@@ -68,11 +68,11 @@ The agentic training process evolves **both** alphas (by testing different reque
 
 ### Outer Loop: Agentic Strategy Evolution
 
-**Responsibility**: Evolve the structure of the latency model by reasoning about physics and residual patterns.
+**Responsibility**: Evolve the structure of the latency model by reasoning about physics and error patterns.
 
 **Input** (iteration N):
 - Minimum-loss (α, β) from previous inner loop (if N=0: no prior iteration, start from scratch with α=[0,0,0])
-- Loss value and residuals: `observed_latency - predicted_latency` per experiment
+- Loss value and per-experiment APE (Absolute Percentage Error) from `run_blis_and_compute_loss.py --evaluate-per-experiment`: APE for TTFT, E2E, and ITL per experiment
 - Current basis functions f₁, ..., fₙ (if N=0: no prior basis functions, propose novel structure)
 - Access to `training/references/` folder and internet search for background research
 
@@ -83,13 +83,13 @@ The agentic training process evolves **both** alphas (by testing different reque
    - Understand what operations occur during a vLLM step (attention kernels, FFN, all-reduce, KV cache access)
    - Study empirical findings from prior latency modeling research
 
-2. **Residual analysis**: Examine systematic error patterns
-   - "TTFT residuals correlate with input length → α₁ (per-input-token overhead) may need adjustment"
-   - "Queueing time shows constant bias → α₀ (fixed API overhead) miscalibrated"
-   - "Output token processing shows per-token bias → α₂ needs tuning"
-   - "Step time underprediction at TP=4 → missing TP communication term in beta basis functions"
-   - "Prefill-heavy batches show bias → prefill basis function needs revision"
-   - "MoE models deviate from dense → need MoE-specific basis function (expert routing overhead)"
+2. **Error pattern analysis**: Examine systematic patterns in per-experiment APE
+   - "TTFT APE correlates with input length → α₁ (per-input-token overhead) may need adjustment"
+   - "TTFT shows consistent underprediction (negative bias) → α₀ (fixed API overhead) miscalibrated"
+   - "E2E APE shows per-token bias → α₂ (output token processing) needs tuning"
+   - "Step time consistently underpredicted at TP=4 → missing TP communication term in beta basis functions"
+   - "Prefill-heavy batches show high APE → prefill basis function needs revision"
+   - "MoE experiments show higher APE than dense → need MoE-specific basis function (expert routing overhead)"
 
 2. **Physics-informed hypothesis generation**: Propose new/modified basis functions for StepTime
 
@@ -128,7 +128,7 @@ The agentic training process evolves **both** alphas (by testing different reque
 
    The agent should specify search bounds for each coefficient based on:
    - **Physical constraints**: Hardware specs (e.g., β can't predict faster than hardware peak throughput)
-   - **Empirical bounds**: Observed residual magnitudes in training data
+   - **Empirical bounds**: Observed APE magnitudes in training data
    - **Dimensional analysis**: Units of the coefficient constrain plausible ranges
    - **Prior knowledge**: Framework overhead characteristics from similar systems
 
@@ -156,7 +156,7 @@ The agentic training process evolves **both** alphas (by testing different reque
    - Basis functions (code/description)
    - Final coefficients (α*, β*)
    - Overall loss
-   - Per-experiment metrics (TTFT MAPE, E2E MAPE, residuals)
+   - Per-experiment metrics (TTFT APE, E2E APE, ITL APE)
    - Agent reasoning (what was changed and why)
 3. This ledger enables:
    - Progress tracking across iterations
@@ -200,7 +200,7 @@ The agentic training process evolves **both** alphas (by testing different reque
 
 **Output**: Minimum-loss (α*, β*) and final loss value
 
-**Post-convergence evaluation**: ONLY after inner loop converges to optimal (α*, β*), run a single detailed evaluation with `--evaluate-per-experiment` flag to generate diagnostics (residuals, latency breakdown, throughput) for outer loop residual analysis. This step happens ONCE per outer loop iteration, not during the optimization loop.
+**Post-convergence evaluation**: ONLY after inner loop converges to optimal (α*, β*), run a single detailed evaluation with `--evaluate-per-experiment` flag to generate diagnostics (per-experiment APE, latency breakdown, throughput) for outer loop error pattern analysis. This step happens ONCE per outer loop iteration, not during the optimization loop.
 
 ## Generalization Requirements
 
@@ -370,7 +370,7 @@ The agent should propose basis functions that use these hardware parameters rath
 
 ### Qualitative Goals
 
-7. **Agent reasoning quality**: Agent explanations for adding/removing basis functions should cite specific residual patterns
+7. **Agent reasoning quality**: Agent explanations for adding/removing basis functions should cite specific error patterns (APE correlations, systematic biases)
 8. **Discovered physics**: System should discover known effects from first principles (attention quadratic scaling with sequence length, TP communication overhead scaling with log₂(TP), batch formation amortization)
 9. **Robustness**: Predictions should degrade gracefully for out-of-distribution inputs:
    - Untested TP=8 configuration
@@ -381,7 +381,7 @@ The agent should propose basis functions that use these hardware parameters rath
 ## Deliverables
 
 1. **Python training driver** (`training/train_latency_model.py`):
-   - Outer loop: Calls Claude API with residual analysis prompt
+   - Outer loop: Calls Claude API with error pattern analysis prompt (provides per-experiment APE from `--evaluate-per-experiment`)
    - Inner loop: Bayesian optimization over coefficient space using `run_blis_and_compute_loss.py` as objective function
    - Ledger management: After each outer loop iteration, runs `--evaluate-per-experiment` and records results
    - Outputs: Best (α, β) per iteration, final latency backend code, evolution ledger
