@@ -59,7 +59,7 @@ func resolveModelConfig(model, explicitFolder, defaultsFile string) (string, err
 		}
 		// Don't delete — the file may be a user-provided config with non-standard
 		// field names. Fall through to HF fetch, which will overwrite if successful.
-		logrus.Warnf("--latency-model: config at %s exists but lacks expected HuggingFace fields (num_hidden_layers, hidden_size); trying HuggingFace fetch", localPath)
+		logrus.Warnf("--latency-model: config at %s exists but lacks expected HuggingFace fields (num_hidden_layers, hidden_size, or text_config.num_hidden_layers, text_config.hidden_size); trying HuggingFace fetch", localPath)
 	}
 
 	// 3. Fetch from HuggingFace and write into model_configs/<short-name>/
@@ -203,7 +203,7 @@ func fetchHFConfigFromURL(url, targetDir string) (string, error) {
 	// like {"error": "..."}, and non-config JSON that passes json.Valid.
 	if !isHFConfig(body) {
 		return "", fmt.Errorf("response from %s is valid JSON but does not contain expected "+
-			"HuggingFace config fields (num_hidden_layers, hidden_size). "+
+			"HuggingFace config fields (num_hidden_layers, hidden_size, or text_config.num_hidden_layers, text_config.hidden_size). "+
 			"The model may not exist or the response is an error page", url)
 	}
 
@@ -220,18 +220,33 @@ func fetchHFConfigFromURL(url, targetDir string) (string, error) {
 	return targetDir, nil
 }
 
-// isHFConfig checks whether JSON bytes contain at least one expected
-// HuggingFace transformer config field. This prevents caching empty JSON {},
-// error responses, or non-config JSON.
+// isHFConfig checks whether JSON bytes represent a HuggingFace transformer
+// config.json. It looks for num_hidden_layers or hidden_size at the top level
+// (text-only models) or nested inside text_config (multimodal models such as
+// Llama4ForConditionalGeneration). This prevents caching empty JSON {},
+// error responses like {"error":"..."}, or unrelated JSON that passes json.Valid.
 func isHFConfig(data []byte) bool {
 	var m map[string]interface{}
+	// Defensive: callers currently pre-validate with json.Valid, but retain this guard for future call sites.
 	if err := json.Unmarshal(data, &m); err != nil {
 		return false
 	}
-	// Check for fields present in every HuggingFace transformer config.json
+
+	// Top-level fields cover text-only transformer configs.
 	_, hasLayers := m["num_hidden_layers"]
 	_, hasHidden := m["hidden_size"]
-	return hasLayers || hasHidden
+	if hasLayers || hasHidden {
+		return true
+	}
+
+	// Fall back to text_config.* for multimodal models (Llama4ForConditionalGeneration, etc.)
+	if textCfg, ok := m["text_config"].(map[string]interface{}); ok {
+		_, hasLayers = textCfg["num_hidden_layers"]
+		_, hasHidden = textCfg["hidden_size"]
+		return hasLayers || hasHidden
+	}
+
+	return false
 }
 
 // applyWeightPrecisionFallback applies model-name-based weight precision detection
