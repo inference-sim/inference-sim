@@ -6,19 +6,13 @@ Build a two-loop agentic system that automatically discovers and fits physics-in
 
 ## Background
 
-BLIS currently supports four latency model backends:
-1. **Roofline**: Analytical model using FLOPs and memory bandwidth bounds
-2. **Blackbox**: Per-model empirical coefficients with no cross-model generalization
-3. **Cross-model**: Linear regression on model features (limited expressiveness)
-4. **Trained-roofline**: Hybrid approach with manually-tuned coefficients
+BLIS supports four latency backends, each with limitations:
+- **Roofline**: Analytical (FLOPs/bandwidth bounds) but ignores overheads
+- **Blackbox**: Empirical per-model coefficients, no cross-model/cross-TP generalization
+- **Cross-model**: Linear regression with fixed basis functions, limited expressiveness
+- **Trained-roofline**: Manual coefficient tuning, requires iterative feature engineering
 
-Each backend has fundamental limitations:
-- **Roofline** ignores empirical variance (framework overhead, kernel inefficiencies, TP synchronization costs)
-- **Blackbox** requires per-model calibration with no transfer learning
-- **Cross-model** uses fixed linear basis functions that may not capture true physics
-- **Trained-roofline** requires manual iteration on coefficient search ranges and feature selection
-
-**The opportunity**: Use agentic reasoning to automatically discover the right functional form (basis functions) while Bayesian optimization finds the optimal coefficients.
+**Opportunity**: Replace manual feature engineering with agentic reasoning that discovers optimal basis functions, while Bayesian optimization fits coefficients.
 
 ## Problem Definition
 
@@ -31,9 +25,12 @@ Given:
   - **Metrics**: Per-request TTFT and ITL (Inter-Token Latency) with complete batch shape traces
 - **Evaluation infrastructure**: `run_blis_and_compute_loss.py` runs BLIS with specified latency model (e.g., `--latency-model evolved`) and outputs JSON with loss: `RMSE[APE(mean_TTFT_per_exp)] + RMSE[APE(mean_E2E_per_exp)]`
 - **Physics constraints**: Basis functions must respect causality, dimensional analysis, and known GPU architecture properties
+- **Workload-agnostic constraint**: Basis functions MUST NOT use workload type labels (codegen, reasoning, roleplay, general-lite are training metadata only). At inference time, the latency model only observes: batch composition (prefill/decode token counts, context lengths, batch size), model architecture features, and hardware specs. This ensures generalization to unseen workload distributions.
 
 Produce:
 - **Generalized basis functions** f₁(batch, model, hardware), ..., fₙ(batch, model, hardware) that work across all model types, TP configs, and workloads
+  - **CRITICAL**: Basis functions can ONLY depend on observable batch characteristics (token counts, context lengths, batch size), model architecture (layers, dimensions, attention heads), and hardware specs (FLOPS, bandwidth, TP config)
+  - **FORBIDDEN**: Workload type labels, model name strings, hardcoded GPU-specific constants, or any feature not available at inference time
 - **Request-level alpha coefficients** [α₀, α₁, α₂] for per-request overheads:
   - α₀ = Fixed API processing overhead (µs per request)
   - α₁ = Per-input-token API processing overhead (µs/token) — tokenization, input validation
@@ -112,6 +109,13 @@ The agentic training process evolves **both** alphas (by testing different reque
    - **Interaction terms**: Non-linear effects from batch composition or resource contention
    - **Bottleneck terms**: Modeling overlapping compute/memory operations
 
+   **CRITICAL CONSTRAINT — Workload-agnostic features**:
+   Basis functions MUST depend ONLY on features observable at inference time:
+   - ✅ **Allowed**: Batch composition (num_prefill_tokens, num_decode_tokens per request), context lengths, batch size, model architecture (layers, dimensions, attention heads, MoE parameters), hardware specs (FLOPS, bandwidth, TP config)
+   - ❌ **FORBIDDEN**: Workload type labels (codegen/reasoning/roleplay/general-lite), model name strings, hardcoded GPU-specific constants, any metadata not available at inference time
+
+   Workload labels in training data are metadata for cross-validation only. If a basis function would behave differently on two batches with identical (tokens, context_lengths, model, hardware) but different workload labels, it violates the generalization requirement.
+
    The agent proposes specific functional forms based on residual analysis and domain knowledge, ensuring all terms use hardware parameters from `hardware_config.json` rather than hardcoded constants.
 
 3. **Dimensional consistency check**: Ensure `Σᵢ βᵢ · fᵢ` produces time (µs)
@@ -146,10 +150,7 @@ The agentic training process evolves **both** alphas (by testing different reque
 - Initial β values [β₁, ..., βₙ] and search ranges for each basis function
 
 **End-of-iteration recording**: After each outer loop iteration completes (i.e., AFTER inner loop has converged to optimal coefficients):
-1. Run detailed evaluation with per-experiment breakdown:
-   ```bash
-   python run_blis_and_compute_loss.py --latency-model evolved --evaluate-per-experiment
-   ```
+1. Run detailed evaluation: `run_blis_and_compute_loss.py` with `--evaluate-per-experiment` flag
 2. Record in training ledger (append to `training/evolution_ledger.jsonl` or similar):
    - Iteration number
    - Basis functions (code/description)
@@ -199,11 +200,7 @@ The agentic training process evolves **both** alphas (by testing different reque
 
 **Output**: Minimum-loss (α*, β*) and final loss value
 
-**Post-convergence evaluation**: ONLY after inner loop converges to optimal (α*, β*), run a single detailed evaluation:
-```bash
-python run_blis_and_compute_loss.py --latency-model evolved --evaluate-per-experiment
-```
-This generates detailed per-experiment diagnostics (residuals, latency breakdown, throughput) that feed into the outer loop's residual analysis. This step happens ONCE per outer loop iteration, not during the optimization loop.
+**Post-convergence evaluation**: ONLY after inner loop converges to optimal (α*, β*), run a single detailed evaluation with `--evaluate-per-experiment` flag to generate diagnostics (residuals, latency breakdown, throughput) for outer loop residual analysis. This step happens ONCE per outer loop iteration, not during the optimization loop.
 
 ## Generalization Requirements
 
@@ -262,16 +259,7 @@ TP introduces:
 - **Unseen distributions**: Different input/output length distributions, arrival patterns, batch compositions
 - **Production scenarios**: Mixed workloads in the same batch, extreme outliers (single-token decode, 10K-token prefill)
 
-**Key invariant**: Basis functions must depend ONLY on observable batch characteristics (prefill/decode token counts, context lengths, batch size) and model/hardware features. Workload type labels (codegen, reasoning, etc.) are NOT available at inference time — the model must predict latency purely from batch shape.
-
-**Design principle**: If a basis function would perform differently on two batches with identical (tokens, context_lengths, model, hardware) but different "workload labels," it violates the generalization requirement. The agent should propose features that capture the underlying computational/memory pattern, not the semantic workload category.
-
-**Requirement**: Basis functions must depend only on:
-- Batch composition: token counts (prefill/decode), context lengths, batch size
-- Model architecture: layer count, hidden dimensions, attention heads, MoE parameters
-- Hardware specs: compute throughput, memory bandwidth, TP configuration
-
-No workload type labels, no model name strings, no hardcoded GPU-specific constants.
+**Workload-agnostic constraint** (see "Given" section above): Workload type labels are training metadata only, NOT inference-time features. Basis functions must predict latency purely from batch shape (token counts, context lengths), not from semantic workload categories. Two batches with identical (tokens, context_lengths, model, hardware) must receive identical latency predictions regardless of workload label.
 
 ### 5. Hardware Platform
 
@@ -315,14 +303,11 @@ The agent should propose basis functions that use these hardware parameters rath
      - `OutputTokenProcessingTime() int64` — per-token detokenization
      - `PostDecodeFixedOverhead() int64` — fixed post-decode overhead (E2E only)
 
-3. **Coefficient structure** (`sim/config.go`):
-```go
-type LatencyCoeffs struct {
-    BetaCoeffs  []float64  // vLLM step-level coefficients (≥3 elements)
-    AlphaCoeffs []float64  // request-level coefficients (≥3 elements)
-}
-```
-   - **AlphaCoeffs = [α₀, α₁, α₂]**: Request-level overheads (independent of batch)
+3. **Coefficient structure** (`sim/config.go`): `LatencyCoeffs` struct with two fields:
+   - `BetaCoeffs []float64` — vLLM step-level coefficients (≥3 elements)
+   - `AlphaCoeffs []float64` — request-level coefficients (≥3 elements)
+
+   **AlphaCoeffs = [α₀, α₁, α₂]**: Request-level overheads (independent of batch)
      - α₀ = Fixed API processing overhead (microseconds per request)
      - α₁ = Per-input-token API overhead (microseconds/token)
      - α₂ = Per-output-token post-decode overhead (microseconds/token)
@@ -353,7 +338,7 @@ type LatencyCoeffs struct {
      - Embed alpha coefficients [α₀, α₁, α₂] in the model struct
      - Embed beta coefficients [β₁, ..., βₙ] in the model struct
      - Implement `LatencyModel` interface methods:
-       - `QueueingTime(req) = α₀ + α₁ × len(req.InputTokens)`
+       - `QueueingTime(req) = α₀ + α₁ × num_input_tokens`
        - `OutputTokenProcessingTime() = α₂`
        - `StepTime(batch) = Σᵢ βᵢ · fᵢ(batch, model, hardware)`
    - Recompile BLIS with updated latency backend
@@ -363,29 +348,16 @@ type LatencyCoeffs struct {
 3. **Bayesian optimization integration**:
    - Python driver using Optuna, Ax, or GPyOpt
    - Objective function wraps `run_blis_and_compute_loss.py`:
-     ```python
-     def objective(alpha, beta):
-         # 1. Write coefficients to evolved latency backend (Go code or config)
-         write_evolved_model(alpha, beta, basis_functions)
-
-         # 2. Run BLIS with the evolved backend
-         # IMPORTANT: Do NOT use --evaluate-per-experiment here (inner loop optimization only needs overall_loss)
-         result = subprocess.run([
-             'python', 'run_blis_and_compute_loss.py',
-             '--latency-model', 'evolved'
-         ], capture_output=True, text=True)
-
-         # 3. Parse JSON output to extract loss
-         output = json.loads(result.stdout)
-         return output['overall_loss']  # RMSE[APE(TTFT)] + RMSE[APE(E2E)]
-     ```
-   - Loss function: `RMSE[APE(mean_TTFT_per_exp)] + RMSE[APE(mean_E2E_per_exp)]`
+     1. Write (α, β) coefficients to evolved latency backend (Go code or config)
+     2. Run BLIS with `--latency-model evolved` (NO `--evaluate-per-experiment` flag — inner loop needs only overall_loss)
+     3. Parse JSON output to extract `overall_loss = RMSE[APE(TTFT)] + RMSE[APE(E2E)]`
+     4. Return loss value to Bayesian optimizer
 
 ## Success Criteria
 
 ### Primary Metrics
 
-1. **Prediction accuracy**: When running `python run_blis_and_compute_loss.py --evaluate-per-experiment`, all three error metrics (E2E, TTFT, and ITL) must be below 10% MAPE across all 15 experiments
+1. **Prediction accuracy**: When running evaluation with `--evaluate-per-experiment` flag, all three error metrics (E2E, TTFT, and ITL) must be below 10% MAPE across all 15 experiments
 2. **Cross-model generalization**: Trained on 80% of experiments, test on held-out 20% with MAPE < 15% on TTFT/ITL
 3. **Workload generalization**: Model trained on {codegen, reasoning, roleplay, general-lite} should generalize to unseen workload patterns (document QA, creative writing, translation, etc.) without retraining — basis functions must be workload-agnostic
 4. **Physics interpretability**: Each basis function corresponds to a known GPU operation (compute, memory, communication) or observable batch characteristic (batch size, token distribution)
@@ -438,106 +410,19 @@ type LatencyCoeffs struct {
 
 ## Resolved Design Decisions
 
-1. **Cold start initialization**: **NO** — Do NOT start from trained_roofline or any existing backend. Iteration 0 should propose a novel latency model structure from first principles. Initialize alphas to 0 as starting point for optimization.
+1. **Cold start**: Do NOT start from existing backends (trained_roofline, etc.) — propose novel structure from first principles
+2. **Loss function**: Single combined loss `RMSE[APE(TTFT)] + RMSE[APE(E2E)]` from `run_blis_and_compute_loss.py`
+3. **Regularization**: Delegated to agent — decides whether to penalize complexity based on residual analysis
+4. **Hardware portability**: Deferred until after H100 baseline established
+5. **KV cache dynamics**: BLIS handles GPU/CPU tiering — basis functions can leverage if needed
+6. **Batch granularity**: Agent decides level of detail (aggregate vs per-request heterogeneity)
+7. **ITL definition**: Use ground truth ITL from `trainval_data` as-is
 
-2. **Multi-objective optimization**: Handled by `run_blis_and_compute_loss.py` — it returns a single combined loss. Bayesian optimization treats this as single-objective.
+## Generalization Validation
 
-3. **Coefficient regularization**: Delegated to strategy evolution — the agent decides whether to penalize model complexity based on residual analysis and generalization performance.
+**Challenge**: With only 15 experiments, we must validate that the trained model generalizes to unseen models, workloads, and configurations without overfitting.
 
-4. **Hardware portability**: Deferred — will address A100/L40S transfer learning after establishing H100 baseline.
-
-5. **KV cache dynamics**: BLIS simulator already handles GPU/CPU tiered cache mechanics. Basis functions can leverage this if needed, but not required initially.
-
-6. **Batch shape granularity**: Delegated to strategy evolution — the agent proposes basis functions at whatever granularity is needed (aggregate batch stats vs per-request heterogeneity).
-
-7. **ITL definition**: Whatever BLIS metrics return — use the ground truth ITL values from `trainval_data` experiments as-is.
-
-## Open Question: Generalization Validation
-
-**Challenge**: How to validate generalization to unseen models and workloads without collecting expensive new ground-truth data?
-
-### Proposed Generalization Validation Strategies
-
-**A. Cross-validation holdout strategies:**
-
-1. **Leave-one-model-out (LOMO)**:
-   - Train on 5 models, test on 6th held-out model
-   - Tests cross-model generalization within training workload types
-   - Example: Train on {Llama-2-7B, Llama-3.1-70B, Mistral-Nemo-12B, Qwen2.5-7B, Yi-34B}, test on {Llama-4-Scout-17B-16E (MoE)}
-   - MoE holdout is particularly valuable — tests dense→MoE generalization
-
-2. **Leave-one-workload-out (LOWO)**:
-   - Train on 3 workload types, test on 4th held-out workload
-   - Tests cross-workload generalization within training model set
-   - Example: Train on {codegen, reasoning, roleplay}, test on {general-lite}
-   - Rotate to test all 4 workloads as holdout
-
-3. **Leave-one-TP-out (LOTO)**:
-   - Train on TP∈{1,2}, test on TP=4 (or vice versa)
-   - Tests parallelism scaling generalization
-   - Validates that TP-dependent basis functions extrapolate correctly
-
-4. **Stratified k-fold (k=3 or k=5)**:
-   - Partition 15 experiments into k folds, ensuring each fold has diverse {model, workload, TP}
-   - Train on k-1 folds, test on 1 fold
-   - Example with k=3: Train on 10 experiments, test on 5 experiments
-   - Aggregate MAPE across all 4 test folds for final generalization score
-
-**B. Synthetic workload probing:**
-
-5. **Extreme batch composition tests**:
-   - Generate synthetic batch shapes not seen in training:
-     - All-prefill batches (batch_size=32, all prefill=512 tokens, decode=0)
-     - All-decode batches (batch_size=128, all decode=1 token each)
-     - Highly heterogeneous contexts (context lengths: [10, 100, 1000, 5000] in same batch)
-   - Run through BLIS with evolved model, compare against roofline/trained_roofline
-   - **No ground truth**, but can check for:
-     - Prediction stability (no NaN, no negative latencies)
-     - Physics consistency (decode-heavy batch should have lower per-token latency than prefill-heavy)
-     - Relative ordering (batch with 2x tokens should take ≈2x time for memory-bound ops)
-
-6. **Out-of-distribution sequence lengths**:
-   - Test on {very short: 10 tokens, very long: 8192 tokens} if training data is [128, 2048]
-   - Check if basis functions degrade gracefully or exhibit runaway extrapolation
-
-7. **Unseen model architectures (no ground truth)**:
-   - Test on models not in `trainval_data` but available in HuggingFace:
-     - Phi-3-mini (different architecture family)
-     - DeepSeek-Coder (code-specific tuning)
-     - Different MoE configs (e.g., Mixtral 8x7B if not in training)
-   - Compare predictions across {evolved model, roofline, trained_roofline}
-   - Flag large discrepancies as potential generalization failures
-
-**C. Analytical consistency checks:**
-
-8. **Hardware scaling laws**:
-   - If we train on H100, test prediction ratios for A100/L40S using only hardware specs
-   - Expected ratio: `latency_A100 / latency_H100 ≈ (H100_FLOPS / A100_FLOPS)` for compute-bound
-   - No ground truth needed — just check if predictions respect hardware performance ratios
-
-9. **TP scaling consistency**:
-   - Check if predicted TP scaling matches theoretical bounds:
-     - Ideal speedup: `latency(TP=4) ≤ latency(TP=1) / 4`
-     - Communication penalty: `latency(TP=4) > latency(TP=1) / 4` (should have overhead)
-   - Flag if predicted TP=4 latency is faster than TP=1 (violates causality)
-
-10. **Batch size saturation**:
-    - Check if `latency(batch_size=128)` shows diminishing per-request overhead vs `latency(batch_size=8)`
-    - Kernel launch amortization should make per-request cost decrease with batch size
-
-**D. Post-deployment monitoring (future work):**
-
-11. **Prediction error tracking in production**:
-    - Deploy evolved model in BLIS capacity planner
-    - Track actual vs predicted latencies for real workloads
-    - Collect outliers (high error cases) as candidates for retraining data
-
-12. **Incremental retraining**:
-    - When new ground truth becomes available (new model, new workload), add to training set
-    - Re-run inner loop optimization (faster than outer loop) to recalibrate betas
-    - Check if basis functions remain stable or if outer loop refinement needed
-
-**Recommendation**: Use **stratified k-fold (strategy 4)** as primary generalization metric during training, supplemented by **LOMO (strategy 1)** to specifically validate MoE generalization and **synthetic probing (strategies 5-6)** to check boundary behavior.
+**Full details**: See [`generalization-validation-protocol.md`](generalization-validation-protocol.md) for complete validation protocol with pass/fail criteria, failure diagnosis, and validation schedule.
 
 ## Next Steps
 
