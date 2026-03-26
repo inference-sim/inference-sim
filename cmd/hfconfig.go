@@ -59,7 +59,7 @@ func resolveModelConfig(model, explicitFolder, defaultsFile string) (string, err
 		}
 		// Don't delete — the file may be a user-provided config with non-standard
 		// field names. Fall through to HF fetch, which will overwrite if successful.
-		logrus.Warnf("--latency-model: config at %s exists but lacks expected HuggingFace fields (num_hidden_layers, hidden_size); trying HuggingFace fetch", localPath)
+		logrus.Warnf("--latency-model: config at %s exists but lacks expected HuggingFace fields (num_hidden_layers, hidden_size, or text_config.*); trying HuggingFace fetch", localPath)
 	}
 
 	// 3. Fetch from HuggingFace and write into model_configs/<short-name>/
@@ -203,7 +203,7 @@ func fetchHFConfigFromURL(url, targetDir string) (string, error) {
 	// like {"error": "..."}, and non-config JSON that passes json.Valid.
 	if !isHFConfig(body) {
 		return "", fmt.Errorf("response from %s is valid JSON but does not contain expected "+
-			"HuggingFace config fields (num_hidden_layers, hidden_size). "+
+			"HuggingFace config fields (num_hidden_layers, hidden_size, or text_config with these fields). "+
 			"The model may not exist or the response is an error page", url)
 	}
 
