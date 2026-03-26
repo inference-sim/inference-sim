@@ -108,6 +108,33 @@ The cluster uses `(timestamp, priority, seqID)` ordering for deterministic event
 
 BLIS is work-conserving (INV-8): it never idles while requests wait. After every step completion, if the WaitQ has requests, a new StepEvent is immediately scheduled. Real systems may have scheduling delays not modeled here.
 
+## Co-Location Interference Model
+
+When prefill and decode requests share the same instance (no disaggregation, or mixed fleets), the two phases interfere: decode steps slow down prefill iteration, and prefill increases memory pressure for decode tokens. Use `--pd-interference-prefill` and `--pd-interference-decode` to model this slowdown:
+
+```bash
+./blis run --model meta-llama/llama-3.1-8b-instruct \
+  --num-instances 4 \
+  --pd-interference-prefill 0.5 \
+  --pd-interference-decode 0.3
+```
+
+The interference model applies a multiplier to every step's latency:
+
+```
+multiplier = 1.0 + factor × (minority_phase_count / total_batch_size)
+```
+
+where `minority_phase_count` is the number of requests in the less-common phase. A factor of `0.5` at a 50/50 split produces a **1.25×** step time increase (25% slowdown). A factor of `1.0` produces at most **1.5×** (50% slowdown).
+
+- `--pd-interference-prefill` — factor applied when prefill is the majority phase (decode co-locates as minority)
+- `--pd-interference-decode` — factor applied when decode is the majority phase (prefill co-locates as minority)
+- When the batch is exactly 50/50, the larger of the two factors is used (conservative worst-case)
+- When the batch is phase-pure (all prefill or all decode), the multiplier is always 1.0 — no penalty
+
+!!! note "No effect in disaggregated mode"
+    In PD disaggregated mode (`--prefill-instances`, `--decode-instances`), each pool receives only its own phase (INV-PD-2: Pool Exclusivity). Batches are always phase-pure, so interference factors have no effect. These flags are useful for **non-disaggregated** deployments, or for **break-even analysis**: compare the slowdown from co-location against the latency added by KV transfer in disaggregated mode.
+
 ## Further Reading
 
 - [Cluster Architecture](../concepts/architecture.md) — internal mechanics of the shared-clock event loop

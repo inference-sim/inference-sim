@@ -211,3 +211,15 @@ Invariants are properties that must hold at all times during and after simulatio
 - `TestTransferContention_INVP22_FairShareBandwidth` — end-to-end: concurrent transfers record peak >= 1 when multiple requests arrive simultaneously
 
 **Evidence:** PR9 (`sim/cluster/pd_events.go`, `KVTransferStartedEvent.Execute()`). Gated behind `PDTransferContention` flag (off by default for backward compatibility). The `activeTransfers` counter is incremented before the divisor is applied, ensuring the new transfer receives a fair share of the bandwidth with every other transfer currently in flight.
+
+---
+
+### INV-P2-3: Interference Monotonicity
+
+**Statement:** The interference multiplier applied by `InterferenceLatencyModel` is always `>= 1.0`. Interference never speeds up execution — it can only add overhead or be a no-op. The multiplier is exactly `1.0` when the batch is phase-pure (all prefill or all decode) or when both interference factors are `0`.
+
+**Verification:** `sim/cluster/interference_test.go`:
+- `TestInterferenceLatencyModel_INV_P2_3_MultiplierMonotonicity` — property test across all factor combinations in {0,0.1,0.5,1.0,2.0,5.0} × {0,0.1,0.5,1.0,2.0,5.0} and 9 batch compositions; verifies `StepTime >= baseTime` and `multiplier >= 1.0` for all combinations
+- `TestInterferenceModel_ClusterIntegration_INV_P2_3` — law test at cluster level: `SimEndedTime(interference) >= SimEndedTime(baseline)` and per-request E2E monotonicity
+
+**Evidence:** PR10 (`sim/cluster/interference.go`, `computeMultiplier()`). The formula `1.0 + factor*(minority/total)` always produces a value `>= 1.0` because `factor >= 0` (validated in constructor, R3) and `minority/total >= 0`. Phase-pure batches produce `minorityCount == 0`, returning `1.0` directly.

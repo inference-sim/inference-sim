@@ -213,6 +213,41 @@ Default (when `--routing-scorers` is empty): `prefix-affinity:3, queue-depth:2, 
 
 See [Cluster Architecture: Scorer Composition](../concepts/architecture.md#scorer-composition) for details on each scorer.
 
+## PD Disaggregation
+
+Prefill-Decode disaggregation splits LLM inference so prefill and decode phases execute on separate, dedicated instance pools connected by simulated KV cache transfer. When `--prefill-instances` and `--decode-instances` are both 0 (the default), disaggregation is disabled and the pipeline is unchanged.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--prefill-instances` | int | 0 | Number of instances dedicated to prefill (0 = disaggregation disabled). |
+| `--decode-instances` | int | 0 | Number of instances dedicated to decode (0 = disaggregation disabled). |
+| `--pd-decider` | string | "never" | Disaggregation decider: `never`, `always`, `prefix-threshold`, `direct-to-decode`. |
+| `--pd-prefix-threshold` | int | 512 | Non-cached token threshold for `prefix-threshold` decider (>= 0): disaggregate when non-cached tokens exceed this value. |
+| `--pd-direct-decode-threshold` | int | 256 | Input token threshold for `direct-to-decode` (>= 0): requests with fewer tokens go direct to decode; requests with >= threshold are disaggregated. |
+| `--pd-transfer-bandwidth` | float64 | 25.0 | Inter-instance KV transfer bandwidth in GB/s. |
+| `--pd-transfer-base-latency` | float64 | 0.05 | Base transfer latency per transfer in milliseconds. |
+| `--pd-kv-bytes-per-token` | int | 512 | KV cache bytes per token for transfer size calculation. |
+| `--pd-transfer-contention` | bool | false | Enable fair-share bandwidth contention model (INV-P2-2): when N transfers are in-flight, each gets `bandwidth/N`. Models a shared global fabric where all concurrent transfers contend for the same bandwidth pool. Disabled by default. |
+| `--pd-interference-prefill` | float64 | 0 | Co-location interference factor for prefill-dominant batches (majority is prefill, minority is decode). Multiplier = `1 + factor × (minority/total)`. Factor 0.5 at 50/50 split → 1.25× step time. 0 = disabled (no co-location penalty). |
+| `--pd-interference-decode` | float64 | 0 | Co-location interference factor for decode-dominant batches (majority is decode, minority is prefill). Multiplier = `1 + factor × (minority/total)`. Factor 0.5 at 50/50 split → 1.25× step time. 0 = disabled (no co-location penalty). |
+| `--prefill-routing-scorers` | string | "" | Scorer config for weighted routing within the prefill pool. |
+| `--decode-routing-scorers` | string | "" | Scorer config for weighted routing within the decode pool. |
+
+### Per-Pool Hardware Overrides
+
+Override hardware configuration independently for prefill and decode pools.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--prefill-tp` | int | 0 | Tensor parallelism for prefill pool instances (0 = use global `--tensor-parallelism`). |
+| `--decode-tp` | int | 0 | Tensor parallelism for decode pool instances (0 = use global `--tensor-parallelism`). |
+| `--prefill-hardware` | string | "" | GPU type for prefill pool instances ("" = use global `--gpu`). |
+| `--decode-hardware` | string | "" | GPU type for decode pool instances ("" = use global `--gpu`). |
+| `--prefill-latency-model` | string | "" | Latency model backend for prefill pool instances ("" = use global `--latency-model`). |
+| `--decode-latency-model` | string | "" | Latency model backend for decode pool instances ("" = use global `--latency-model`). |
+| `--prefill-max-model-len` | int64 | 0 | Max model length for prefill pool instances (0 = use global `--max-model-len`). |
+| `--decode-max-model-len` | int64 | 0 | Max model length for decode pool instances (0 = use global `--max-model-len`). |
+
 ## Scheduling and Priority
 
 Per-instance policies that control request ordering within the wait queue. Maps to `PolicyConfig`.

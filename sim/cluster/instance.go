@@ -40,15 +40,29 @@ type InstanceSimulator struct {
 // Thread-safety: NOT thread-safe. Must be called from single goroutine.
 // Failure modes: Panics if internal Simulator creation fails (matches existing behavior).
 func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
-	// Create KV store (single-tier or tiered based on config)
+	return newInstanceSimulatorCore(id, cfg, 0, 0)
+}
+
+// newInstanceSimulatorCore is the internal constructor that optionally wraps the
+// latency model with InterferenceLatencyModel when interference factors are non-zero.
+// Used by NewClusterSimulator to pass deployment-level interference config.
+func newInstanceSimulatorCore(id InstanceID, cfg sim.SimConfig, prefillInterference, decodeInterference float64) *InstanceSimulator {
 	kvStore := kv.NewKVStore(cfg.KVCacheConfig)
 	latencyModel, err := latency.NewLatencyModel(cfg.LatencyCoeffs, cfg.ModelHardwareConfig)
 	if err != nil {
-		panic(fmt.Sprintf("NewInstanceSimulator(%s): NewLatencyModel: %v", id, err))
+		panic(fmt.Sprintf("newInstanceSimulatorCore(%s): NewLatencyModel: %v", id, err))
+	}
+	// Wrap with interference model when either factor is non-zero (BC-P2-9: no-op only when both are zero).
+	if prefillInterference > 0 || decodeInterference > 0 {
+		wrapped, wrapErr := NewInterferenceLatencyModel(latencyModel, prefillInterference, decodeInterference)
+		if wrapErr != nil {
+			panic(fmt.Sprintf("newInstanceSimulatorCore(%s): NewInterferenceLatencyModel: %v", id, wrapErr))
+		}
+		latencyModel = wrapped
 	}
 	s, err := sim.NewSimulator(cfg, kvStore, latencyModel)
 	if err != nil {
-		panic(fmt.Sprintf("NewInstanceSimulator(%s): %v", id, err))
+		panic(fmt.Sprintf("newInstanceSimulatorCore(%s): %v", id, err))
 	}
 	return &InstanceSimulator{
 		id:  id,

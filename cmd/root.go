@@ -105,6 +105,8 @@ var (
 	pdTransferBaseLatency float64 // Inter-instance KV transfer base latency in ms
 	pdKVBytesPerToken        int     // KV cache bytes per token for transfer duration
 	pdTransferContention     bool    // Enable fair-share bandwidth contention model
+	pdInterferencePrefill    float64 // interference factor for prefill-dominant batches
+	pdInterferenceDecode     float64 // interference factor for decode-dominant batches
 	pdPrefixThreshold       int    // Non-cached token threshold for prefix-threshold decider
 	pdDirectDecodeThreshold int    // Input token threshold for direct-to-decode decider
 	prefillRoutingScorers   string // Scorer weights for prefill pool routing
@@ -297,6 +299,8 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&pdTransferBaseLatency, "pd-transfer-base-latency", 0.05, "PD KV transfer base latency in ms")
 	cmd.Flags().IntVar(&pdKVBytesPerToken, "pd-kv-bytes-per-token", 512, "KV cache bytes per token for PD transfer duration computation")
 	cmd.Flags().BoolVar(&pdTransferContention, "pd-transfer-contention", false, "Enable fair-share bandwidth contention model for concurrent KV transfers (INV-P2-2)")
+	cmd.Flags().Float64Var(&pdInterferencePrefill, "pd-interference-prefill", 0, "Co-location interference factor applied when prefill is the majority phase (0 = disabled). Multiplier = 1+factor*(minority/total): factor=0.5 at even split → 1.25x slowdown")
+	cmd.Flags().Float64Var(&pdInterferenceDecode, "pd-interference-decode", 0, "Co-location interference factor applied when decode is the majority phase (0 = disabled). Multiplier = 1+factor*(minority/total): factor=0.5 at even split → 1.25x slowdown")
 	cmd.Flags().IntVar(&pdPrefixThreshold, "pd-prefix-threshold", 512, "Non-cached token threshold for prefix-threshold decider (>= 0); disaggregate when non-cached tokens exceed this value")
 	cmd.Flags().IntVar(&pdDirectDecodeThreshold, "pd-direct-decode-threshold", 256, "Input token threshold for direct-to-decode (>= 0): requests with fewer than threshold tokens go direct to decode; requests with >= threshold tokens are disaggregated")
 	cmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")
@@ -1156,6 +1160,15 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("--pd-kv-bytes-per-token must be > 0, got %d", pdKVBytesPerToken)
 			}
 		}
+		// PD interference parameter validation (R3, R20)
+		// Upper bound (cluster.MaxInterferenceFactor) prevents silent int64 overflow in StepTime
+		// for any realistic step time. Factor=100 at even split produces at most 51× slowdown.
+		if pdInterferencePrefill < 0 || math.IsNaN(pdInterferencePrefill) || math.IsInf(pdInterferencePrefill, 0) || pdInterferencePrefill > cluster.MaxInterferenceFactor {
+			logrus.Fatalf("--pd-interference-prefill must be a finite number in [0, %.0f], got %f", cluster.MaxInterferenceFactor, pdInterferencePrefill)
+		}
+		if pdInterferenceDecode < 0 || math.IsNaN(pdInterferenceDecode) || math.IsInf(pdInterferenceDecode, 0) || pdInterferenceDecode > cluster.MaxInterferenceFactor {
+			logrus.Fatalf("--pd-interference-decode must be a finite number in [0, %.0f], got %f", cluster.MaxInterferenceFactor, pdInterferenceDecode)
+		}
 		if pdDecider == "prefix-threshold" && pdPrefixThreshold < 0 {
 			logrus.Fatalf("--pd-prefix-threshold must be >= 0, got %d", pdPrefixThreshold)
 		}
@@ -1334,6 +1347,8 @@ var runCmd = &cobra.Command{
 			PDTransferBaseLatencyMs: pdTransferBaseLatency,
 			PDKVBytesPerToken:       int64(pdKVBytesPerToken),
 			PDTransferContention:    pdTransferContention,
+			PDInterferencePrefill:   pdInterferencePrefill,
+			PDInterferenceDecode:    pdInterferenceDecode,
 			PrefillScorerConfigs:    prefillScorerCfgs,
 			DecodeScorerConfigs:     decodeScorerCfgs,
 			PrefillOverrides:        prefillOverrides,

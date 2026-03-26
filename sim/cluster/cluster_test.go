@@ -511,6 +511,50 @@ func TestNewClusterSimulator_ZeroInstances_Panics(t *testing.T) {
 	NewClusterSimulator(config, newTestRequests(10), nil)
 }
 
+// TestNewClusterSimulator_InvalidInterferenceFactors_Panics verifies that
+// NewClusterSimulator rejects invalid PDInterferencePrefill/PDInterferenceDecode
+// BEFORE constructing any instances (R3: validate numeric parameters early).
+func TestNewClusterSimulator_InvalidInterferenceFactors_Panics(t *testing.T) {
+	tests := []struct {
+		name          string
+		prefillFactor float64
+		decodeFactor  float64
+		wantSubstr    string
+	}{
+		{name: "negative prefill", prefillFactor: -1.0, decodeFactor: 0, wantSubstr: "PDInterferencePrefill"},
+		{name: "negative decode", prefillFactor: 0, decodeFactor: -0.5, wantSubstr: "PDInterferenceDecode"},
+		{name: "NaN prefill", prefillFactor: math.NaN(), decodeFactor: 0, wantSubstr: "PDInterferencePrefill"},
+		{name: "NaN decode", prefillFactor: 0, decodeFactor: math.NaN(), wantSubstr: "PDInterferenceDecode"},
+		{name: "Inf prefill", prefillFactor: math.Inf(1), decodeFactor: 0, wantSubstr: "PDInterferencePrefill"},
+		{name: "Inf decode", prefillFactor: 0, decodeFactor: math.Inf(-1), wantSubstr: "PDInterferenceDecode"},
+		{name: "above max prefill", prefillFactor: MaxInterferenceFactor + 1, decodeFactor: 0, wantSubstr: "PDInterferencePrefill"},
+		{name: "above max decode", prefillFactor: 0, decodeFactor: MaxInterferenceFactor + 1, wantSubstr: "PDInterferenceDecode"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				r := recover()
+				if r == nil {
+					t.Errorf("expected panic, got none")
+					return
+				}
+				msg, ok := r.(string)
+				if !ok {
+					t.Errorf("panic value is not a string: %v", r)
+					return
+				}
+				if !strings.Contains(msg, tc.wantSubstr) {
+					t.Errorf("panic message %q does not contain %q", msg, tc.wantSubstr)
+				}
+			}()
+			cfg := newTestDeploymentConfig(2)
+			cfg.PDInterferencePrefill = tc.prefillFactor
+			cfg.PDInterferenceDecode = tc.decodeFactor
+			NewClusterSimulator(cfg, nil, nil)
+		})
+	}
+}
+
 // TestInstanceSimulator_InjectAfterRun_Panics verifies C.3:
 // GIVEN instance has Run()
 // WHEN InjectRequest() called

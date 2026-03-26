@@ -52,6 +52,12 @@ type DeploymentConfig struct {
 	PDKVBytesPerToken       int64   // KV cache bytes per token for transfer duration (default 512)
 	PDTransferContention    bool    // Enable fair-share bandwidth contention model (--pd-transfer-contention, INV-P2-2)
 
+	// PD interference model (PR10, INV-P2-3)
+	// Multiplicative slowdown applied to StepTime when prefill and decode co-locate.
+	// 0 = no interference (default, BC-P2-9). Both must be >= 0.
+	PDInterferencePrefill float64 // interference factor for prefill-dominant batches
+	PDInterferenceDecode  float64 // interference factor for decode-dominant batches
+
 	// Per-pool routing scorer configuration (PR2)
 	// When nil, both pools use the main RoutingScorerConfigs.
 	PrefillScorerConfigs []sim.ScorerConfig // Scorer configs for prefill pool routing

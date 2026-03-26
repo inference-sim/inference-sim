@@ -126,6 +126,14 @@ Full details (verification strategies, evidence): see [`docs/contributing/standa
 - **INV-9 Oracle knowledge boundary**: Servability decisions (enqueue guard, admission, routing, priority) must not read `Request.OutputTokens`. The control plane uses `MaxOutputLen` (client budget) or input-only checks. Only the execution engine may access `OutputTokens` for token generation and completion detection. See `docs/contributing/standards/invariants.md`.
 - **INV-10 Session causality**: For all rounds N in a closed-loop session: `round[N+1].ArrivalTime >= round[N].CompletionTime + ThinkTimeUs`. See `docs/contributing/standards/invariants.md`.
 - **INV-11 Session completeness**: Every session reaches exactly one terminal state: completed, cancelled, or horizon-interrupted. No session is silently abandoned. See `docs/contributing/standards/invariants.md`.
+- **INV-PD-1 KV completeness**: Every disaggregated request that begins the prefill phase either completes KV transfer and reaches the decode instance, or is dropped and recorded. No silent abandonment.
+- **INV-PD-2 Pool exclusivity**: Prefill pool instances only execute prefill sub-requests; decode pool instances only execute decode sub-requests. Requests never cross pool boundaries post-routing.
+- **INV-PD-3 Transfer conservation**: `transfers_initiated == transfers_completed + transfers_in_flight` at any point in simulation.
+- **INV-PD-4 Phase causality**: `transfer_start_time <= transfer_complete_time <= decode_enqueue_time`.
+- **INV-PD-5 Pool stability**: Pool membership is fixed after `NewClusterSimulator` returns; no instance changes its pool role during simulation.
+- **INV-P2-1 Pool-config consistency**: Each instance receives config consistent with its pool role. Instances with no pool role receive global config.
+- **INV-P2-2 Transfer fair-share**: When `active_transfers > 1`, `effective_bandwidth = total_bandwidth / active_transfers`; when `active_transfers == 1`, full bandwidth is used. INV-PD-3 (transfer conservation) still holds.
+- **INV-P2-3 Interference monotonicity**: Multiplier >= 1.0 (interference never speeds up execution). Multiplier = 1.0 when batch is phase-pure.
 
 ### Engineering Principles
 
