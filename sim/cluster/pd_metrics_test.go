@@ -18,7 +18,7 @@ func buildAggregatedWithTTFTs(ttfts map[string]float64, simEndedTime int64) *sim
 }
 
 // buildParentRequest creates a minimal ParentRequest for testing.
-// prefillSubReqID is the ID used to look up TTFT in RequestTTFTs.
+// After projectPDMetrics(), TTFT is looked up by parent ID (not prefillSubReqID).
 func buildParentRequest(id string, prefillSubReqID string, transferStart, transferComplete int64) *ParentRequest {
 	return &ParentRequest{
 		ID:                   id,
@@ -73,15 +73,15 @@ func TestCollectPDMetrics_NilWhenNoParents(t *testing.T) {
 	}
 }
 
-// BC-1: ParentTTFT populated from aggregated.RequestTTFTs[PrefillSubReqID].
+// BC-1: ParentTTFT populated from aggregated.RequestTTFTs[parent.ID].
 func TestCollectPDMetrics_ParentTTFT(t *testing.T) {
 	parents := []*ParentRequest{
 		buildParentRequest("req-1", "req-1_prefill", 100, 200),
 		buildParentRequest("req-2", "req-2_prefill", 100, 200),
 	}
 	agg := buildAggregatedWithTTFTs(map[string]float64{
-		"req-1_prefill": 5000.0,
-		"req-2_prefill": 3000.0,
+		"req-1": 5000.0,
+		"req-2": 3000.0,
 	}, 1_000_000)
 
 	pd := CollectPDMetrics(parents, agg, nil, nil)
@@ -104,8 +104,8 @@ func TestCollectPDMetrics_TTFTExcludesMissing(t *testing.T) {
 		buildParentRequest("req-2", "req-2_prefill", 100, 200), // no TTFT in map
 	}
 	agg := buildAggregatedWithTTFTs(map[string]float64{
-		"req-1_prefill": 5000.0,
-		// req-2_prefill missing -> 0.0 default -> excluded
+		"req-1": 5000.0,
+		// "req-2" missing -> 0.0 default -> excluded
 	}, 1_000_000)
 
 	pd := CollectPDMetrics(parents, agg, nil, nil)
@@ -127,8 +127,8 @@ func TestCollectPDMetrics_TransferDuration(t *testing.T) {
 		buildParentRequest("req-2", "req-2_prefill", 2000, 2300), // duration = 300
 	}
 	agg := buildAggregatedWithTTFTs(map[string]float64{
-		"req-1_prefill": 5000.0,
-		"req-2_prefill": 3000.0,
+		"req-1": 5000.0,
+		"req-2": 3000.0,
 	}, 1_000_000)
 
 	pd := CollectPDMetrics(parents, agg, nil, nil)
@@ -152,8 +152,8 @@ func TestCollectPDMetrics_DisaggregatedCount(t *testing.T) {
 		buildParentRequest("req-3", "req-3_prefill", 100, 300),  // completed transfer
 	}
 	agg := buildAggregatedWithTTFTs(map[string]float64{
-		"req-1_prefill": 5000.0,
-		"req-3_prefill": 3000.0,
+		"req-1": 5000.0,
+		"req-3": 3000.0,
 	}, 1_000_000)
 
 	pd := CollectPDMetrics(parents, agg, nil, nil)
@@ -223,7 +223,7 @@ func TestCollectPDMetrics_PerPoolThroughput(t *testing.T) {
 	}
 	// 2s sim, prefill has 10 completions, decode has 5 completions
 	simEndedUs := int64(2_000_000)
-	agg := buildAggregatedWithTTFTs(map[string]float64{"req-1_prefill": 5000.0}, simEndedUs)
+	agg := buildAggregatedWithTTFTs(map[string]float64{"req-1": 5000.0}, simEndedUs)
 	agg.CompletedRequests = 15
 
 	poolMembership := map[string]PoolRole{
@@ -259,7 +259,7 @@ func TestCollectPDMetrics_PerPoolThroughput(t *testing.T) {
 func TestCollectPDMetrics_LoadImbalanceRatio_Balanced(t *testing.T) {
 	parents := []*ParentRequest{buildParentRequest("req-1", "req-1_prefill", 100, 200)}
 	simEndedUs := int64(1_000_000)
-	agg := buildAggregatedWithTTFTs(map[string]float64{"req-1_prefill": 5000.0}, simEndedUs)
+	agg := buildAggregatedWithTTFTs(map[string]float64{"req-1": 5000.0}, simEndedUs)
 
 	poolMembership := map[string]PoolRole{
 		"instance_0": PoolRolePrefill,
@@ -287,7 +287,7 @@ func TestCollectPDMetrics_LoadImbalanceRatio_Balanced(t *testing.T) {
 func TestCollectPDMetrics_LoadImbalanceRatio_Imbalanced(t *testing.T) {
 	parents := []*ParentRequest{buildParentRequest("req-1", "req-1_prefill", 100, 200)}
 	simEndedUs := int64(1_000_000)
-	agg := buildAggregatedWithTTFTs(map[string]float64{"req-1_prefill": 5000.0}, simEndedUs)
+	agg := buildAggregatedWithTTFTs(map[string]float64{"req-1": 5000.0}, simEndedUs)
 
 	poolMembership := map[string]PoolRole{
 		"instance_0": PoolRolePrefill,
@@ -317,7 +317,7 @@ func TestCollectPDMetrics_LoadImbalanceRatio_Imbalanced(t *testing.T) {
 func TestCollectPDMetrics_LoadImbalanceRatio_ZeroMinGuard(t *testing.T) {
 	parents := []*ParentRequest{buildParentRequest("req-1", "req-1_prefill", 100, 200)}
 	simEndedUs := int64(1_000_000)
-	agg := buildAggregatedWithTTFTs(map[string]float64{"req-1_prefill": 5000.0}, simEndedUs)
+	agg := buildAggregatedWithTTFTs(map[string]float64{"req-1": 5000.0}, simEndedUs)
 
 	poolMembership := map[string]PoolRole{
 		"instance_0": PoolRolePrefill,
@@ -353,7 +353,7 @@ func TestCollectPDMetrics_Invariant_LoadImbalanceGeq1(t *testing.T) {
 	for _, tc := range cases {
 		parents := []*ParentRequest{buildParentRequest("req-1", "req-1_prefill", 100, 200)}
 		simEndedUs := int64(1_000_000)
-		agg := buildAggregatedWithTTFTs(map[string]float64{"req-1_prefill": 5000.0}, simEndedUs)
+		agg := buildAggregatedWithTTFTs(map[string]float64{"req-1": 5000.0}, simEndedUs)
 		poolMembership := map[string]PoolRole{
 			"instance_0": PoolRolePrefill,
 			"instance_1": PoolRoleDecode,
@@ -380,7 +380,7 @@ func TestCollectPDMetrics_Invariant_LoadImbalanceGeq1(t *testing.T) {
 func TestCollectPDMetrics_LoadImbalanceRatio_BothZeroGuard(t *testing.T) {
 	parents := []*ParentRequest{buildParentRequest("req-1", "req-1_prefill", 100, 200)}
 	simEndedUs := int64(1_000_000)
-	agg := buildAggregatedWithTTFTs(map[string]float64{"req-1_prefill": 5000.0}, simEndedUs)
+	agg := buildAggregatedWithTTFTs(map[string]float64{"req-1": 5000.0}, simEndedUs)
 
 	poolMembership := map[string]PoolRole{
 		"instance_0": PoolRolePrefill,

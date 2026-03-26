@@ -403,8 +403,12 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 // pre-allocated (via PD disaggregation transfer). Bypasses the oversized-request guard
 // (blocks already allocated, guard would leak them) and does NOT increment TotalInputTokens
 // (input tokens were already counted by the prefill sub-request).
+// clusterTime is the cluster-level clock when this request is injected (from the
+// KVTransferCompleted/DecodeRouting event). The StepEvent is scheduled at
+// max(sim.Clock, clusterTime) to prevent the instance from processing the
+// decode sub-request at a stale internal time that precedes the request's arrival.
 // Triggers StepEvent if the instance is idle (INV-8: work-conserving).
-func (sim *Simulator) EnqueueDecodeSubRequest(r *Request) {
+func (sim *Simulator) EnqueueDecodeSubRequest(r *Request, clusterTime int64) {
 	sim.WaitQ.Enqueue(r)
 	// Do NOT add len(r.InputTokens) to TotalInputTokens — already counted by prefill sub-request.
 
@@ -413,9 +417,15 @@ func (sim *Simulator) EnqueueDecodeSubRequest(r *Request) {
 		sim.Schedule(&TimeoutEvent{time: r.Deadline, Request: r})
 	}
 
-	// Trigger StepEvent if idle (work-conserving: INV-8)
+	// Trigger StepEvent if idle (work-conserving: INV-8).
+	// Use max(sim.Clock, clusterTime) so the decode sub-request is not processed
+	// at a stale instance time that precedes the cluster time when it was injected.
 	if (sim.RunningBatch == nil || len(sim.RunningBatch.Requests) == 0) && sim.stepEvent == nil {
-		step := &StepEvent{time: sim.Clock}
+		stepTime := sim.Clock
+		if clusterTime > stepTime {
+			stepTime = clusterTime
+		}
+		step := &StepEvent{time: stepTime}
 		sim.stepEvent = step
 		sim.Schedule(step)
 	}

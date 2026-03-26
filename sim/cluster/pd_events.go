@@ -298,7 +298,7 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 			cs.inFlightRequests[decision.TargetInstance]++
 			// Register decode sub-request so detectDecodeCompletions can stamp ParentRequest.CompletionTime.
 			cs.pendingDecodeCompletions[e.decodeSubReq.ID] = e.parentReq.ID
-			inst.InjectDecodeOnline(e.decodeSubReq)
+			inst.InjectDecodeOnline(e.decodeSubReq, e.time)
 			return
 		}
 	}
