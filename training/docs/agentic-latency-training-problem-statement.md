@@ -196,7 +196,7 @@ The agentic training process evolves **both** alphas (by testing different reque
 5. **Surrogate update**: Incorporate new loss observation into Gaussian process
 6. **Repeat** until convergence
 
-**Termination criterion**: `Δloss < ε` (e.g., improvement < 0.1% MAPE per iteration)
+**Termination criterion**: `Δloss < ε` or 100 iterations.
 
 **Output**: Minimum-loss (α*, β*) and final loss value
 
@@ -420,17 +420,21 @@ The agent should propose basis functions that use these hardware parameters rath
 
 ## Generalization Validation
 
-**Challenge**: With only 15 experiments, we must validate that the trained model generalizes to unseen models, workloads, and configurations without overfitting.
+**Challenge**: With only 15 experiments, validate generalization without overfitting.
 
-**Full details**: See [`generalization-validation-protocol.md`](generalization-validation-protocol.md) for complete validation protocol with pass/fail criteria, failure diagnosis, and validation schedule.
+**Solution**: Two-tier validation (cross-validation + analytical checks)
 
-## Next Steps
+**Current Focus: Tier 1 (Cross-Validation)**
 
-1. **Milestone 1**: Implement inner loop BO driver that can optimize coefficients for a fixed (manually specified) set of basis functions
-2. **Milestone 2**: Build agent prompt that analyzes residuals and proposes new basis functions (manually review and implement)
-3. **Milestone 3**: Automate code generation — agent outputs Go code, system compiles and validates
-4. **Milestone 4**: Close the outer loop — full automated training from cold start to converged latency backend
-5. **Milestone 5**: Validation on held-out test set and comparison against existing BLIS backends
+Three holdout tests validate that basis functions generalize. For each test, **basis functions are frozen** (from main training), but **coefficients (α, β) are refit** on the holdout training set via inner loop optimization, then evaluated on the holdout test set:
+
+- **CV-1 (LOMO)**: Train on 11 dense, test on 4 MoE → Dense→MoE architectural transfer (MAPE < 20%)
+- **CV-2 (LOWO)**: Train on codegen+reasoning (7), test on roleplay+general (8) → Workload-agnostic constraint (MAPE < 15%, variance < 3%)
+- **CV-3 (LOTO)**: Train on TP∈{1,4} (9), test on TP=2 (6) → TP communication interpolation (MAPE < 15%)
+
+**Future: Tier 2 (Physics Checks)**: Fast analytical checks (AC-1 through AC-6) ensuring predictions respect causality, TP scaling, batch amortization, prefill/decode asymmetry, model monotonicity. Deferred until Tier 1 validation is working.
+
+**Full details**: See [`generalization-validation-protocol.md`](generalization-validation-protocol.md) for complete pass/fail criteria and failure diagnosis.
 
 ## References
 

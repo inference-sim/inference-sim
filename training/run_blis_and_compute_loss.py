@@ -52,15 +52,15 @@ Example Output (with --evaluate-per-experiment):
           "e2e_mean_ape": 12.3,
           "combined_loss": 22.8,
           "wall_clock_seconds": 45.2,
-          "latency": {
-            "e2e": {"mean": 250.5, "p90": 310.2, "p99": 450.8},
-            "ttft": {"mean": 45.3, "p90": 55.1, "p99": 78.4},
-            "itl": {"mean": 12.1, "p90": 15.3, "p99": 22.7}
+          "latency_ape": {
+            "e2e": {"mean": 12.3, "p90": 15.4, "p99": 18.2},
+            "ttft": {"mean": 10.5, "p90": 13.1, "p99": 16.8},
+            "itl": {"mean": 8.7}
           },
-          "throughput": {
-            "input_tokens_per_sec": 1234.5,
-            "output_tokens_per_sec": 987.6,
-            "requests_per_sec": 8.5
+          "throughput_ape": {
+            "input_tokens_per_sec": 5.2,
+            "output_tokens_per_sec": 7.8,
+            "requests_per_sec": 6.1
           }
         },
         ...
@@ -328,7 +328,7 @@ def run_blis_on_experiment(
 
 @dataclass
 class ExperimentLoss:
-    """Per-experiment loss breakdown with full metrics."""
+    """Per-experiment loss breakdown with full error metrics."""
     experiment_folder: str
     model: str
     workload: str
@@ -336,26 +336,22 @@ class ExperimentLoss:
     e2e_mean_ape: float
     combined_loss: float
     wall_clock_seconds: float
-    # Latency metrics (predicted values in ms)
-    e2e_mean: float
-    e2e_p90: float
-    e2e_p99: float
-    ttft_mean: float
-    ttft_p90: float
-    ttft_p99: float
-    itl_mean: float
-    itl_p90: float
-    itl_p99: float
-    # Throughput metrics
-    input_tokens_per_sec: float
-    output_tokens_per_sec: float
-    requests_per_sec: float
+    # Latency errors (APE - Absolute Percentage Error), None if data unavailable
+    e2e_p90_ape: float | None
+    e2e_p99_ape: float | None
+    ttft_p90_ape: float | None
+    ttft_p99_ape: float | None
+    itl_mean_ape: float | None
+    # Throughput errors (APE), None if data unavailable
+    input_tokens_per_sec_ape: float | None
+    output_tokens_per_sec_ape: float | None
+    requests_per_sec_ape: float | None
 
 
 def compute_experiment_loss(
-    error_records: list[ErrorRecord], runtime_seconds: float, result: SimulatorResult
+    error_records: list[ErrorRecord], runtime_seconds: float, result: SimulatorResult, experiment: Experiment
 ) -> ExperimentLoss | None:
-    """Extract APE and full metrics for summary-level data from error records.
+    """Extract APE for all metrics from error records and compute throughput APE.
 
     Returns None if the required metrics are missing.
     """
@@ -365,14 +361,12 @@ def compute_experiment_loss(
     # Find summary metrics (stage_index == -1)
     summary_records = [r for r in error_records if r.stage_index == -1]
 
-    ttft_mean_ape = None
-    e2e_mean_ape = None
+    # Build a map of metric_name -> APE
+    ape_map = {rec.metric_name: rec.mape for rec in summary_records}
 
-    for rec in summary_records:
-        if rec.metric_name == "ttft_mean":
-            ttft_mean_ape = rec.mape
-        elif rec.metric_name == "e2e_mean":
-            e2e_mean_ape = rec.mape
+    # Extract required metrics for overall loss calculation
+    ttft_mean_ape = ape_map.get("ttft_mean")
+    e2e_mean_ape = ape_map.get("e2e_mean")
 
     if ttft_mean_ape is None or e2e_mean_ape is None:
         return None
@@ -380,8 +374,24 @@ def compute_experiment_loss(
     # For per-experiment, combine as sum
     combined = ttft_mean_ape + e2e_mean_ape
 
-    # Extract summary-level metrics from SimulatorResult
-    summary = result.summary
+    # Helper to get APE with None if missing (indicates no data available)
+    def get_ape(metric_name: str) -> float | None:
+        return ape_map.get(metric_name)
+
+    # Compute throughput APE from ground truth and predicted
+    from experiment.metrics import compute_mape
+
+    gt_throughput = experiment.summary.throughput
+    pred_throughput = result.summary.throughput
+
+    # Throughput APE might be inf if actual is 0, return None in that case
+    def safe_mape(pred: float, actual: float) -> float | None:
+        result = compute_mape(pred, actual)
+        return None if result == float('inf') or result == float('-inf') else result
+
+    input_tps_ape = safe_mape(pred_throughput.input_tokens_per_sec, gt_throughput.input_tokens_per_sec)
+    output_tps_ape = safe_mape(pred_throughput.output_tokens_per_sec, gt_throughput.output_tokens_per_sec)
+    rps_ape = safe_mape(pred_throughput.requests_per_sec, gt_throughput.requests_per_sec)
 
     return ExperimentLoss(
         experiment_folder=error_records[0].experiment_folder,
@@ -391,20 +401,16 @@ def compute_experiment_loss(
         e2e_mean_ape=e2e_mean_ape,
         combined_loss=combined,
         wall_clock_seconds=runtime_seconds,
-        # Latency metrics
-        e2e_mean=summary.e2e.mean,
-        e2e_p90=summary.e2e.p90,
-        e2e_p99=summary.e2e.p99,
-        ttft_mean=summary.ttft.mean,
-        ttft_p90=summary.ttft.p90,
-        ttft_p99=summary.ttft.p99,
-        itl_mean=summary.itl.mean,
-        itl_p90=summary.itl.p90,
-        itl_p99=summary.itl.p99,
-        # Throughput metrics
-        input_tokens_per_sec=summary.throughput.input_tokens_per_sec,
-        output_tokens_per_sec=summary.throughput.output_tokens_per_sec,
-        requests_per_sec=summary.throughput.requests_per_sec,
+        # Latency errors (APE) - None means data unavailable
+        e2e_p90_ape=get_ape("e2e_p90"),
+        e2e_p99_ape=get_ape("e2e_p99"),
+        ttft_p90_ape=get_ape("ttft_p90"),
+        ttft_p99_ape=get_ape("ttft_p99"),
+        itl_mean_ape=get_ape("itl_mean"),
+        # Throughput errors (APE) - None means data unavailable
+        input_tokens_per_sec_ape=input_tps_ape,
+        output_tokens_per_sec_ape=output_tps_ape,
+        requests_per_sec_ape=rps_ape,
     )
 
 
@@ -445,7 +451,7 @@ def discover_experiment_dirs(base_dir: str) -> list[str]:
 
 def run_single_experiment_wrapper(
     args: tuple[int, int, Experiment, str, str]
-) -> tuple[Experiment, list[ErrorRecord], RuntimeRecord | None, SimulatorResult | None, Exception | None]:
+) -> tuple[Experiment, list[ErrorRecord], RuntimeRecord | None, SimulatorResult | None, Experiment | None, Exception | None]:
     """Wrapper for running a single experiment (used by parallel execution)."""
     i, total, exp, blis_binary, latency_model = args
 
@@ -474,10 +480,10 @@ def run_single_experiment_wrapper(
             max_num_batched_tokens=exp.max_num_batched_tokens,
         )
 
-        return exp, records, runtime_record, result, None
+        return exp, records, runtime_record, result, exp, None
 
     except Exception as exc:
-        return exp, [], None, None, exc
+        return exp, [], None, None, None, exc
 
 
 @dataclass
@@ -545,7 +551,7 @@ def run_evaluation(
 
         # Collect results as they complete
         for future in as_completed(futures):
-            exp, records, runtime_record, result, exc = future.result()
+            exp, records, runtime_record, result, ground_truth_exp, exc = future.result()
 
             if exc is None:
                 error_records.extend(records)
@@ -554,8 +560,8 @@ def run_evaluation(
 
                 # Compute per-experiment loss
                 runtime_seconds = runtime_record.wall_clock_seconds if runtime_record else 0.0
-                if result:
-                    exp_loss = compute_experiment_loss(records, runtime_seconds, result)
+                if result and ground_truth_exp:
+                    exp_loss = compute_experiment_loss(records, runtime_seconds, result, ground_truth_exp)
                     if exp_loss:
                         experiment_losses.append(exp_loss)
 
@@ -581,27 +587,25 @@ def run_evaluation(
                 "e2e_mean_ape": exp_loss.e2e_mean_ape,
                 "combined_loss": exp_loss.combined_loss,
                 "wall_clock_seconds": exp_loss.wall_clock_seconds,
-                "latency": {
+                "latency_ape": {
                     "e2e": {
-                        "mean": exp_loss.e2e_mean,
-                        "p90": exp_loss.e2e_p90,
-                        "p99": exp_loss.e2e_p99,
+                        "mean": exp_loss.e2e_mean_ape,
+                        "p90": exp_loss.e2e_p90_ape,
+                        "p99": exp_loss.e2e_p99_ape,
                     },
                     "ttft": {
-                        "mean": exp_loss.ttft_mean,
-                        "p90": exp_loss.ttft_p90,
-                        "p99": exp_loss.ttft_p99,
+                        "mean": exp_loss.ttft_mean_ape,
+                        "p90": exp_loss.ttft_p90_ape,
+                        "p99": exp_loss.ttft_p99_ape,
                     },
                     "itl": {
-                        "mean": exp_loss.itl_mean,
-                        "p90": exp_loss.itl_p90,
-                        "p99": exp_loss.itl_p99,
+                        "mean": exp_loss.itl_mean_ape,
                     },
                 },
-                "throughput": {
-                    "input_tokens_per_sec": exp_loss.input_tokens_per_sec,
-                    "output_tokens_per_sec": exp_loss.output_tokens_per_sec,
-                    "requests_per_sec": exp_loss.requests_per_sec,
+                "throughput_ape": {
+                    "input_tokens_per_sec": exp_loss.input_tokens_per_sec_ape,
+                    "output_tokens_per_sec": exp_loss.output_tokens_per_sec_ape,
+                    "requests_per_sec": exp_loss.requests_per_sec_ape,
                 },
             }
             for exp_loss in sorted(experiment_losses, key=lambda x: x.combined_loss, reverse=True)
