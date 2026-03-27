@@ -361,6 +361,51 @@ cohorts:
       duration_us: 5000000         # Lasts 5 seconds
 ```
 
+### Multi-Turn Sessions
+
+Cohorts support the same advanced client features as explicit clients. The fields below propagate to every expanded member client unchanged.
+
+| Field | Type | Description |
+|---|---|---|
+| `reasoning` | object | Enables reasoning workload; requires `reason_ratio_distribution` (reasoning-to-output token ratio). `multi_turn.max_rounds` controls conversation depth |
+| `closed_loop` | \*bool | `null` (omitted): `true` for multi-turn, `false` for all others. `true`: each round waits for the previous reply. `false`: all rounds pre-generated at open-loop arrival times |
+| `timeout` | \*int64 | Per-request timeout in µs. `null`: 300 s default when closed-loop; no deadline when open-loop. `0` = no timeout |
+| `prefix_length` | int | Shared prefix token count prepended to every request |
+| `network` | object | Client-side network RTT and bandwidth simulation |
+| `multimodal` | object | Mixed-modality token generation (text + image/audio/video) |
+
+Example — 50 agentic clients, each running 10-round reasoning sessions with a 2-second think time between rounds:
+
+```yaml
+version: "2"
+category: reasoning
+aggregate_rate: 5.0
+cohorts:
+  - id: agents
+    population: 50
+    rate_fraction: 1.0
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params: { mean: 512, std_dev: 128, min: 64, max: 2048 }
+    output_distribution:
+      type: exponential
+      params: { mean: 256 }
+    reasoning:
+      reason_ratio_distribution:
+        type: constant
+        params: { value: 50 }     # 50% reasoning tokens (0-100 scale)
+      multi_turn:
+        max_rounds: 10
+        think_time_us: 2000000    # 2 seconds between rounds
+        context_growth: accumulate
+    closed_loop: true
+    timeout: 300000000            # 300-second per-request timeout
+```
+
+> **Note:** Do not combine `spike` (which creates a short lifecycle window) with multi-turn `reasoning` (which generates rounds seconds apart). Rounds whose arrival times fall outside the spike window are silently filtered by the lifecycle window filter. Use diurnal or drain patterns — or no lifecycle modifier — with multi-turn cohorts.
+
 ## Advanced Features
 
 ### Multimodal Requests

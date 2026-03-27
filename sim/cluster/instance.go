@@ -261,9 +261,10 @@ func (i *InstanceSimulator) AllocateTransferredKV(req *sim.Request) bool {
 // Bypasses the normal ArrivalEvent → QueuedEvent → EnqueueRequest chain to avoid
 // the oversized-request guard (KV already allocated) and TotalInputTokens double-counting.
 // Registers request in metrics and directly enqueues into wait queue.
-func (i *InstanceSimulator) InjectDecodeOnline(req *sim.Request) {
+// clusterTime is the cluster clock at the time of injection (from DecodeRoutingEvent).
+func (i *InstanceSimulator) InjectDecodeOnline(req *sim.Request, clusterTime int64) {
 	i.sim.Metrics.Requests[req.ID] = sim.NewRequestMetrics(req, float64(req.ArrivalTime)/1e6)
-	i.sim.EnqueueDecodeSubRequest(req)
+	i.sim.EnqueueDecodeSubRequest(req, clusterTime)
 }
 
 // DrainWaitQueue extracts all pending (queued but not yet scheduled) requests

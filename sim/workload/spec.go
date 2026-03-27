@@ -53,6 +53,9 @@ type WorkloadSpec struct {
 
 // CohortSpec describes a population of clients that share arrival behavior
 // and token distributions. Expanded into explicit ClientSpecs before generation.
+// It carries all ClientSpec fields except two: ID (generated per member by
+// ExpandCohorts) and Lifecycle (synthesized from Diurnal/Spike/Drain — exposing
+// Lifecycle directly would create two conflicting paths to the same effect).
 type CohortSpec struct {
 	ID           string      `yaml:"id"`
 	Population   int         `yaml:"population"`
@@ -68,6 +71,12 @@ type CohortSpec struct {
 	Diurnal      *DiurnalSpec `yaml:"diurnal,omitempty"`
 	Spike        *SpikeSpec   `yaml:"spike,omitempty"`
 	Drain        *DrainSpec   `yaml:"drain,omitempty"`
+	PrefixLength int              `yaml:"prefix_length,omitempty"`
+	Reasoning    *ReasoningSpec   `yaml:"reasoning,omitempty"`
+	ClosedLoop   *bool            `yaml:"closed_loop,omitempty"`
+	Timeout      *int64           `yaml:"timeout,omitempty"`
+	Network      *NetworkSpec     `yaml:"network,omitempty"`
+	Multimodal   *MultimodalSpec  `yaml:"multimodal,omitempty"`
 }
 
 // DiurnalSpec configures sinusoidal rate modulation over a 24-hour cycle.
@@ -304,6 +313,17 @@ func validateCohort(c *CohortSpec, idx int) error {
 	if !validArrivalProcesses[c.Arrival.Process] {
 		return fmt.Errorf("%s: unknown arrival process %q; valid: poisson, gamma, weibull, constant", prefix, c.Arrival.Process)
 	}
+	if c.Arrival.Process == "weibull" && c.Arrival.CV != nil {
+		cv := *c.Arrival.CV
+		if cv < 0.01 || cv > 10.4 {
+			return fmt.Errorf("%s: weibull CV must be in [0.01, 10.4], got %f", prefix, cv)
+		}
+	}
+	if c.Arrival.CV != nil {
+		if err := validateFinitePositive(prefix+".cv", *c.Arrival.CV); err != nil {
+			return err
+		}
+	}
 	if err := validateDistSpec(prefix+".input_distribution", &c.InputDist); err != nil {
 		return err
 	}
@@ -333,6 +353,15 @@ func validateCohort(c *CohortSpec, idx int) error {
 		if c.Drain.RampDurationUs <= 0 {
 			return fmt.Errorf("%s: drain ramp_duration_us must be > 0, got %d", prefix, c.Drain.RampDurationUs)
 		}
+	}
+	if c.PrefixLength < 0 {
+		return fmt.Errorf("%s: prefix_length must be non-negative, got %d", prefix, c.PrefixLength)
+	}
+	if c.Timeout != nil && *c.Timeout < 0 {
+		return fmt.Errorf("%s: timeout must be non-negative, got %d", prefix, *c.Timeout)
+	}
+	if c.Reasoning != nil && c.Reasoning.MultiTurn != nil && c.Reasoning.MultiTurn.MaxRounds < 1 {
+		return fmt.Errorf("%s: reasoning.multi_turn.max_rounds must be >= 1, got %d", prefix, c.Reasoning.MultiTurn.MaxRounds)
 	}
 	return nil
 }

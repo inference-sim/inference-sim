@@ -713,3 +713,336 @@ func TestDirectToDecode_AboveThresholdDisaggregated(t *testing.T) {
 	// verify no sub-request is double-counted or silently dropped.
 	assertINV1Conservation(t, cs.AggregatedMetrics(), len(requests), "direct-to-decode above threshold")
 }
+
+// --- Metric projection tests (INV-PD-6, Issue #821) ---
+
+// hasSubRequestSuffix returns true if key ends with "_prefill" or "_decode".
+func hasSubRequestSuffix(key string) bool {
+	return (len(key) >= 8 && key[len(key)-8:] == "_prefill") ||
+		(len(key) >= 7 && key[len(key)-7:] == "_decode")
+}
+
+// TestDisaggregation_MetricProjection_NoOp verifies that projectPDMetrics is a
+// no-op when disaggregation is not active (parentRequests is empty).
+// GIVEN a non-disaggregated cluster (all instances in the default pool)
+// WHEN  Run() completes
+// THEN  per-request maps contain the original request keys, unmodified by projection.
+func TestDisaggregation_MetricProjection_NoOp(t *testing.T) {
+	config := newTestDeploymentConfig(2) // standard cluster, no PD roles
+	requests := newTestRequests(3)
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	if len(cs.parentRequests) != 0 {
+		t.Fatalf("expected no parentRequests in non-disaggregated cluster, got %d", len(cs.parentRequests))
+	}
+
+	m := cs.AggregatedMetrics()
+	// All injected request IDs should appear in RequestE2Es (no suffix mangling).
+	for _, req := range requests {
+		if _, ok := m.RequestE2Es[req.ID]; !ok {
+			// Some requests may not complete (e.g., horizon), but no key should have a suffix.
+			continue
+		}
+		if hasSubRequestSuffix(req.ID) {
+			t.Errorf("non-disaggregated cluster: original request key %q has a sub-request suffix", req.ID)
+		}
+	}
+	// None of the map keys should carry a sub-request suffix.
+	for mapName, keys := range map[string][]string{
+		"RequestE2Es":             mapKeys(m.RequestE2Es),
+		"RequestTTFTs":            mapKeys(m.RequestTTFTs),
+		"RequestITLs":             mapKeys(m.RequestITLs),
+		"RequestCompletionTimes":  mapKeys(m.RequestCompletionTimes),
+		"RequestSchedulingDelays": mapKeysInt64(m.RequestSchedulingDelays),
+		"Requests":                mapKeysRM(m.Requests),
+	} {
+		for _, key := range keys {
+			if hasSubRequestSuffix(key) {
+				t.Errorf("non-disaggregated cluster: %s contains sub-request key %q", mapName, key)
+			}
+		}
+	}
+}
+
+// TestDisaggregation_MetricProjection_NoSubRequestKeys verifies INV-PD-6:
+// after Run(), per-request metric maps contain only parent-level IDs.
+// GIVEN a PD disaggregation simulation with N requests
+// WHEN  all requests complete through the full disaggregated path
+// THEN  no per-request map entry has a "_prefill" or "_decode" suffix.
+func TestDisaggregation_MetricProjection_NoSubRequestKeys(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	maps := map[string][]string{
+		"RequestE2Es":             mapKeys(m.RequestE2Es),
+		"RequestTTFTs":            mapKeys(m.RequestTTFTs),
+		"RequestITLs":             mapKeys(m.RequestITLs),
+		"RequestCompletionTimes":  mapKeys(m.RequestCompletionTimes),
+		"RequestSchedulingDelays": mapKeysInt64(m.RequestSchedulingDelays),
+		"Requests":                mapKeysRM(m.Requests),
+	}
+
+	for mapName, keys := range maps {
+		for _, key := range keys {
+			if hasSubRequestSuffix(key) {
+				t.Errorf("INV-PD-6 violated: %s contains sub-request key %q", mapName, key)
+			}
+		}
+	}
+}
+
+// TestDisaggregation_MetricProjection_E2ECount verifies that the E2E
+// distribution has exactly N entries (not 2N sub-request entries).
+func TestDisaggregation_MetricProjection_E2ECount(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	if m.CompletedRequests != 5 {
+		t.Fatalf("CompletedRequests = %d, want 5", m.CompletedRequests)
+	}
+	if len(m.RequestE2Es) != m.CompletedRequests {
+		t.Errorf("len(RequestE2Es) = %d, want %d (CompletedRequests)", len(m.RequestE2Es), m.CompletedRequests)
+	}
+}
+
+// TestDisaggregation_MetricProjection_E2ECorrectness verifies that each
+// parent E2E = CompletionTime - ArrivalTime, and E2E > TTFT.
+func TestDisaggregation_MetricProjection_E2ECorrectness(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	for _, parent := range cs.parentRequests {
+		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
+			continue // skip incomplete/dropped
+		}
+		pid := parent.ID
+		expectedE2E := float64(parent.CompletionTime - parent.ArrivalTime)
+
+		e2e, ok := m.RequestE2Es[pid]
+		if !ok {
+			t.Errorf("parent %s: missing RequestE2Es entry", pid)
+			continue
+		}
+		if math.Abs(e2e-expectedE2E) > 1e-9 {
+			t.Errorf("parent %s: E2E = %.0f, want %.0f (CompletionTime-ArrivalTime)",
+				pid, e2e, expectedE2E)
+		}
+
+		ttft, hasTTFT := m.RequestTTFTs[pid]
+		if hasTTFT && e2e <= ttft {
+			t.Errorf("parent %s: E2E (%.0f) <= TTFT (%.0f), E2E must exceed TTFT (includes decode)",
+				pid, e2e, ttft)
+		}
+	}
+}
+
+// TestDisaggregation_MetricProjection_SchedulingDelay verifies that the
+// scheduling delay is the prefill sub-request delay (not inflated by decode pipeline).
+func TestDisaggregation_MetricProjection_SchedulingDelay(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	for _, parent := range cs.parentRequests {
+		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
+			continue
+		}
+		pid := parent.ID
+		delay, ok := m.RequestSchedulingDelays[pid]
+		if !ok {
+			t.Errorf("parent %s: missing RequestSchedulingDelays entry", pid)
+			continue
+		}
+		// Scheduling delay must be less than E2E (it's just the queuing portion).
+		e2e := m.RequestE2Es[pid]
+		if float64(delay) >= e2e {
+			t.Errorf("parent %s: scheduling delay (%d) >= E2E (%.0f), delay should be queuing time only",
+				pid, delay, e2e)
+		}
+	}
+}
+
+// TestDisaggregation_MetricProjection_CompletionTimes verifies that the
+// projected completion time matches the parent's CompletionTime.
+func TestDisaggregation_MetricProjection_CompletionTimes(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	for _, parent := range cs.parentRequests {
+		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
+			continue
+		}
+		pid := parent.ID
+		ct, ok := m.RequestCompletionTimes[pid]
+		if !ok {
+			t.Errorf("parent %s: missing RequestCompletionTimes entry", pid)
+			continue
+		}
+		expected := float64(parent.CompletionTime)
+		if math.Abs(ct-expected) > 1e-9 {
+			t.Errorf("parent %s: RequestCompletionTimes = %.0f, want %.0f",
+				pid, ct, expected)
+		}
+	}
+}
+
+// TestDisaggregation_MetricProjection_RequestsMap verifies that the Requests
+// map contains parent IDs (not sub-request IDs) after projection.
+func TestDisaggregation_MetricProjection_RequestsMap(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	for _, parent := range cs.parentRequests {
+		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
+			continue
+		}
+		pid := parent.ID
+		rm, ok := m.Requests[pid]
+		if !ok {
+			t.Errorf("parent %s: missing Requests entry", pid)
+			continue
+		}
+		if rm.ID != pid {
+			t.Errorf("parent %s: Requests[%s].ID = %q, want %q", pid, pid, rm.ID, pid)
+		}
+		wantHandledBy := string(parent.DecodeInstanceID)
+		if rm.HandledBy != wantHandledBy {
+			t.Errorf("parent %s: Requests[%s].HandledBy = %q, want decode instance %q",
+				pid, pid, rm.HandledBy, wantHandledBy)
+		}
+	}
+}
+
+// TestDisaggregation_MetricProjection_DroppedParent_NoSubRequestKeys verifies
+// INV-PD-6 for the dropped-parent path: when decode KV allocation fails,
+// no sub-request key must remain in any per-request metric map.
+// GIVEN a cluster with tight decode KV causing some parents to be dropped
+// WHEN  Run() completes
+// THEN  no map entry has a "_prefill" or "_decode" suffix (dropped or completed).
+func TestDisaggregation_MetricProjection_DroppedParent_NoSubRequestKeys(t *testing.T) {
+	// 1 decode instance with 3 blocks (48 tokens); each short request needs 2 blocks.
+	// First request fills 2/3, second request tries 2 more with only 1 free → dropped.
+	config := newTestDisaggDeploymentConfig(3, 2, 1)
+	config.KVCacheConfig = sim.NewKVCacheConfig(3, 16, 0, 0, 0, 0)
+
+	requests := newShortRequests(4)
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	if cs.droppedAtDecodeKV == 0 {
+		t.Skip("no decode drops in this scenario; test precondition not met")
+	}
+
+	m := cs.AggregatedMetrics()
+	maps := map[string][]string{
+		"RequestE2Es":             mapKeys(m.RequestE2Es),
+		"RequestTTFTs":            mapKeys(m.RequestTTFTs),
+		"RequestITLs":             mapKeys(m.RequestITLs),
+		"RequestCompletionTimes":  mapKeys(m.RequestCompletionTimes),
+		"RequestSchedulingDelays": mapKeysInt64(m.RequestSchedulingDelays),
+		"Requests":                mapKeysRM(m.Requests),
+	}
+	for mapName, keys := range maps {
+		for _, key := range keys {
+			if hasSubRequestSuffix(key) {
+				t.Errorf("INV-PD-6 violated: %s contains sub-request key %q (dropped parent not cleaned up)",
+					mapName, key)
+			}
+		}
+	}
+}
+
+// TestDisaggregation_MetricProjection_ITL verifies that after projection,
+// ITL entries are keyed by parent ID and carry a positive value (from the
+// decode sub-request, not zero noise from the prefill sub-request).
+// GIVEN a PD disaggregation simulation with multi-token output requests
+// WHEN  Run() completes
+// THEN  no sub-request ITL keys remain, and any present parent ITL is > 0.
+func TestDisaggregation_MetricProjection_ITL(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(10)
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	completedCount := 0
+	for _, parent := range cs.parentRequests {
+		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
+			continue
+		}
+		completedCount++
+		pid := parent.ID
+
+		// Sub-request ITL keys must be absent after projection.
+		if _, ok := m.RequestITLs[parent.PrefillSubReqID]; ok {
+			t.Errorf("parent %s: prefill sub-req key %q in RequestITLs after projection",
+				pid, parent.PrefillSubReqID)
+		}
+		if _, ok := m.RequestITLs[parent.DecodeSubReqID]; ok {
+			t.Errorf("parent %s: decode sub-req key %q in RequestITLs after projection",
+				pid, parent.DecodeSubReqID)
+		}
+
+		// When ITL is present for the parent, it must be positive (decode generates real ITL;
+		// prefill ITL is zero noise that projectPDMetrics discards).
+		if itl, ok := m.RequestITLs[pid]; ok && itl <= 0 {
+			t.Errorf("parent %s: ITL = %.4f, expected > 0 (from decode sub-request)", pid, itl)
+		}
+	}
+	if completedCount == 0 {
+		t.Fatal("no completed parents: test inconclusive")
+	}
+}
+
+// helper: extract keys from map[string]float64.
+func mapKeys(m map[string]float64) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// helper: extract keys from map[string]int64.
+func mapKeysInt64(m map[string]int64) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// helper: extract keys from map[string]RequestMetrics.
+func mapKeysRM(m map[string]sim.RequestMetrics) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
