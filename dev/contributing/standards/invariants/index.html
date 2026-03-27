@@ -2174,6 +2174,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#inv-pd-6-metric-map-parent-granularity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-6: Metric Map Parent Granularity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#inv-p2-1-pool-config-consistency" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2986,6 +2997,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#inv-pd-6-metric-map-parent-granularity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-6: Metric Map Parent Granularity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#inv-p2-1-pool-config-consistency" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3174,6 +3196,10 @@
 <p><strong>Statement:</strong> Pool membership is fixed at construction time and never changes during simulation.</p>
 <p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_PoolStability</code> compares <code>PoolMembership()</code> before and after <code>Run()</code>.</p>
 <p><strong>Evidence:</strong> <code>BuildPoolMembershipFromIndices</code> is called once in <code>NewClusterSimulator</code> and stored in <code>cs.poolMembership</code>. No code path in <code>Run()</code> modifies this map.</p>
+<h3 id="inv-pd-6-metric-map-parent-granularity">INV-PD-6: Metric Map Parent Granularity<a class="headerlink" href="#inv-pd-6-metric-map-parent-granularity" title="Permanent link">&para;</a></h3>
+<p><strong>Statement:</strong> After <code>Run()</code> completes on a disaggregated cluster, every per-request metric map (<code>RequestE2Es</code>, <code>RequestTTFTs</code>, <code>RequestITLs</code>, <code>RequestSchedulingDelays</code>, <code>RequestCompletionTimes</code>, <code>Requests</code>) contains only parent-level request IDs. No key may have a <code>_prefill</code> or <code>_decode</code> suffix. Completed parents contribute exactly one entry per map (keyed by parent ID); dropped or incomplete parents contribute no entry.</p>
+<p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_MetricProjection_NoSubRequestKeys</code> checks all six maps for suffix-free keys; <code>TestDisaggregation_MetricProjection_DroppedParent_NoSubRequestKeys</code> verifies the invariant holds when decode KV allocation fails. <code>TestDisaggregation_MetricProjection_NoOp</code> verifies the projection is a no-op for non-disaggregated clusters.</p>
+<p><strong>Evidence:</strong> <code>projectPDMetrics()</code> in <code>sim/cluster/cluster.go</code> is called after <code>aggregateMetrics()</code> and the conservation correction. It unconditionally deletes the <code>pfx</code> and <code>dec</code> keys for every parent request, and conditionally inserts a parent-keyed entry only for completed parents (<code>CompletionTime &gt; 0 &amp;&amp; DecodeInstanceID != ""</code>).</p>
 <h3 id="inv-p2-1-pool-config-consistency">INV-P2-1: Pool-Config Consistency<a class="headerlink" href="#inv-p2-1-pool-config-consistency" title="Permanent link">&para;</a></h3>
 <p><strong>Statement:</strong> Per-pool hardware overrides produce a valid <code>SimConfig</code> for each pool role: zero-valued <code>PoolOverrides</code> is a no-op (backward-compatible), non-nil fields override only the specified fields, and the global <code>SimConfig</code> is never mutated.</p>
 <p><strong>Verification:</strong> <code>sim/cluster/resolve_test.go</code> — <code>TestINV_P2_1_PoolConfigConsistency</code> verifies observable KV capacity differences between pools pre-simulation via <code>FreeKVBlocks()</code>; <code>TestINV_P2_1_RequestConservation</code> verifies INV-1 holds under heterogeneous pool configuration.</p>
