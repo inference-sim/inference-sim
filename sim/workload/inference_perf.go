@@ -3,6 +3,7 @@ package workload
 import (
 	"fmt"
 	"math"
+	"math/rand"
 )
 
 // InferencePerfSpec defines an inference-perf style workload using a compact
@@ -102,6 +103,8 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 
 	if len(spec.Stages) == 1 {
 		// Single stage: no lifecycle windows needed.
+		// Use NormalizedExponentialSampler for inference-perf parity:
+		// each client pre-generates N intervals that sum exactly to stage duration.
 		stage := spec.Stages[0]
 		aggregateRate = stage.Rate
 		rateFraction := 1.0 / float64(numClientsPerStage)
@@ -112,22 +115,82 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 			reasoning = computeReasoningSpec(stage.Rate, stage.Duration, numClientsPerStage)
 		}
 
-		for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
-			prefixGroup := fmt.Sprintf("prompt-%d", p)
-			for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
-				clientID := fmt.Sprintf("prompt-%d-user-%d", p, u)
-				clients = append(clients, ClientSpec{
-					ID:           clientID,
-					TenantID:     prefixGroup,
-					SLOClass:     "batch",
-					RateFraction: rateFraction,
-					Arrival:      ArrivalSpec{Process: "poisson"},
-					InputDist:    inputDist,
-					OutputDist:   outputDist,
-					PrefixGroup:  prefixGroup,
-					PrefixLength: sp.SystemPromptLen,
-					Reasoning:    reasoning,
-				})
+		// For multi-turn (reasoning) workloads, use Poisson arrival for session start time.
+		// The rounds within each session are spaced by ThinkTimeUs (not sampled IATs).
+		// NormalizedExponentialSampler only applies to non-reasoning (language) workloads
+		// where each request is independent (not part of a multi-round session).
+		if sp.EnableMultiTurnChat {
+			// Multi-turn: use Poisson, rounds controlled by MaxRounds + ThinkTimeUs
+			for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
+				prefixGroup := fmt.Sprintf("prompt-%d", p)
+				for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
+					clientID := fmt.Sprintf("prompt-%d-user-%d", p, u)
+					clients = append(clients, ClientSpec{
+						ID:           clientID,
+						TenantID:     prefixGroup,
+						SLOClass:     "batch",
+						RateFraction: rateFraction,
+						Arrival:      ArrivalSpec{Process: "poisson"},
+						InputDist:    inputDist,
+						OutputDist:   outputDist,
+						PrefixGroup:  prefixGroup,
+						PrefixLength: sp.SystemPromptLen,
+						Reasoning:    reasoning,
+					})
+				}
+			}
+		} else {
+			// Single-request (language) workload: use NormalizedExponentialSampler
+			// Each client gets exactly ceil(stageRate * duration / numClients) requests
+			// over the stage duration, using normalized exponential distribution.
+			// NOTE: math.Ceil means total requests may exceed stage.Rate * stage.Duration
+			// by up to numClients-1. This matches inference-perf behavior.
+			requestsPerClient := int64(math.Ceil(stage.Rate * float64(stage.Duration) / float64(numClientsPerStage)))
+			durationUs := stage.Duration * 1_000_000 // seconds to microseconds
+
+			// Validate sampler parameters before construction (prevent panic on user input)
+			if requestsPerClient <= 0 {
+				return nil, fmt.Errorf("inference_perf: requestsPerClient must be positive, got %d", requestsPerClient)
+			}
+			if requestsPerClient > 10_000_000 {
+				return nil, fmt.Errorf("inference_perf: requestsPerClient %d exceeds safety limit (10M); reduce rate, duration, or increase clients", requestsPerClient)
+			}
+			if durationUs < requestsPerClient {
+				return nil, fmt.Errorf("inference_perf: durationUs (%d) < requestsPerClient (%d) produces degenerate distribution", durationUs, requestsPerClient)
+			}
+
+			// Defensive: prevent integer overflow in seed calculation (cast before multiply)
+			totalClients := int64(sp.NumUniqueSystemPrompts) * int64(sp.NumUsersPerSystemPrompt)
+			if totalClients > 1_000_000 {
+				return nil, fmt.Errorf("total client count %d exceeds safety limit (1M)", totalClients)
+			}
+
+			// Create factory closure that captures requestsPerClient and durationUs.
+			// Each GenerateRequests call will invoke this factory with a sub-RNG,
+			// producing a fresh sampler instance (workload reusability).
+			factory := func(rng *rand.Rand) ArrivalSampler {
+				return NewNormalizedExponentialSampler(rng, requestsPerClient, durationUs)
+			}
+
+			for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
+				prefixGroup := fmt.Sprintf("prompt-%d", p)
+				for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
+					clientID := fmt.Sprintf("prompt-%d-user-%d", p, u)
+
+					clients = append(clients, ClientSpec{
+						ID:                   clientID,
+						TenantID:             prefixGroup,
+						SLOClass:             "batch",
+						RateFraction:         rateFraction,
+						Arrival:              ArrivalSpec{Process: "poisson"}, // Fallback for diagnostics/serialization
+						CustomSamplerFactory: factory,
+						InputDist:            inputDist,
+						OutputDist:           outputDist,
+						PrefixGroup:          prefixGroup,
+						PrefixLength:         sp.SystemPromptLen,
+						Reasoning:            reasoning,
+					})
+				}
 			}
 		}
 	} else {
@@ -138,6 +201,14 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 		// Math: aggregateRate = sum(stageRates), rateFraction = stageRate/numClientsPerStage.
 		// After normalization, each client's rate = stageRate/numClientsPerStage.
 		// During a stage, N*M clients are active → total rate = stageRate.
+		//
+		// NOTE: Multi-stage workloads use Poisson (not NormalizedExponentialSampler).
+		// Rationale: NormalizedExponentialSampler pre-generates intervals spanning the
+		// full workload duration, but per-stage clients are only active during their
+		// stage's window (a subset of the full duration). This mismatch would waste
+		// intervals or require complex windowing. Poisson generates incrementally
+		// during the active window, matching the per-stage lifecycle architecture.
+		// See BC-4 in plan for full details.
 		windows := stagesToWindows(spec.Stages)
 
 		for _, stage := range spec.Stages {

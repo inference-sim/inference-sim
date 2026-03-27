@@ -1,6 +1,8 @@
 package workload
 
 import (
+	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -845,10 +847,9 @@ inference_perf:
 // --- Equivalence tests (Task 7) ---
 
 func TestInferencePerfExpansion_EquivalentToManual(t *testing.T) {
-	// Acceptance criterion: shorthand and manual expansion produce identical requests.
-	// Build equivalent specs and compare generated request sequences.
+	// Acceptance criterion: two expansions with same seed produce identical results.
+	// CustomSamplerFactory ensures fresh sampler instances for each GenerateRequests call.
 
-	// Shorthand spec
 	ipSpec := &InferencePerfSpec{
 		Stages: []StageSpec{
 			{Rate: 10.0, Duration: 10},
@@ -861,36 +862,31 @@ func TestInferencePerfExpansion_EquivalentToManual(t *testing.T) {
 			OutputLen:               50,
 		},
 	}
-	expanded, err := ExpandInferencePerfSpec(ipSpec, 42)
+	horizon := int64(10_000_000) // 10 seconds
+
+	// First expansion and generation
+	expanded1, err := ExpandInferencePerfSpec(ipSpec, 42)
 	if err != nil {
 		t.Fatalf("expansion error: %v", err)
 	}
-
-	// Manual spec: construct the same clients explicitly
-	manual := &WorkloadSpec{
-		Version:       expanded.Version,
-		Seed:          expanded.Seed,
-		Category:      expanded.Category,
-		AggregateRate: expanded.AggregateRate,
-		Clients:       expanded.Clients, // use the expanded clients directly
-	}
-
-	horizon := int64(10_000_000) // 10 seconds
-
-	// Generate from expanded
-	r1, err1 := GenerateRequests(expanded, horizon, 0)
+	r1, err1 := GenerateRequests(expanded1, horizon, 0)
 	if err1 != nil {
-		t.Fatalf("expanded generation error: %v", err1)
+		t.Fatalf("generation error: %v", err1)
 	}
 
-	// Generate from manual (same clients)
-	r2, err2 := GenerateRequests(manual, horizon, 0)
+	// Second expansion with same seed (fresh samplers)
+	expanded2, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+	r2, err2 := GenerateRequests(expanded2, horizon, 0)
 	if err2 != nil {
-		t.Fatalf("manual generation error: %v", err2)
+		t.Fatalf("generation error: %v", err2)
 	}
 
+	// Verify identical output
 	if len(r1) != len(r2) {
-		t.Fatalf("different request counts: expanded=%d, manual=%d", len(r1), len(r2))
+		t.Fatalf("different request counts: %d vs %d", len(r1), len(r2))
 	}
 
 	for i := range r1 {
@@ -1343,6 +1339,324 @@ func TestGenerateRequests_InferencePerfSpec_MultiTurnMultiStage_Integration(t *t
 		if ratio < 0.3 || ratio > 0.7 {
 			t.Errorf("stage ratio = %.3f (s0=%d, s1=%d), want ~0.5 (±0.2)",
 				ratio, stage0Count, stage1Count)
+		}
+	}
+}
+
+// --- NormalizedExponentialSampler integration tests (Task 3) ---
+
+func TestExpandInferencePerfSpec_SingleStage_NormalizedExponential(t *testing.T) {
+	// BC-2: Single-stage expansion uses normalized exponential and produces
+	// exactly ceil(rate*duration/numClients) requests per client, summing to
+	// the stage duration.
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 10.0, Duration: 60}, // 10 req/s for 60s = 600 total requests
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  3,
+			NumUsersPerSystemPrompt: 2,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+	// 3*2 = 6 clients, each should get ceil(600/6) = 100 requests
+	// Horizon = 2× duration: ensures sampler exhaustion (not horizon) stops generation.
+	horizon := int64(120_000_000) // 120 seconds in µs (2× stage duration)
+	requests, err := GenerateRequests(expanded, horizon, 0)
+	if err != nil {
+		t.Fatalf("generation error: %v", err)
+	}
+	// Total requests should be exactly 600
+	if len(requests) != 600 {
+		t.Errorf("request count = %d, want 600", len(requests))
+	}
+	// Verify all arrivals are within the stage duration (not the inflated horizon)
+	stageDurationUs := int64(60_000_000)
+	for i, req := range requests {
+		if req.ArrivalTime < 0 || req.ArrivalTime >= stageDurationUs {
+			t.Errorf("request %d: arrival time %d µs outside [0, %d) µs",
+				i, req.ArrivalTime, stageDurationUs)
+		}
+	}
+}
+
+func TestExpandInferencePerfSpec_SingleStage_ExactCountWithLargeHorizon(t *testing.T) {
+	// Verify that sampler (not horizon) limits request count.
+	// With horizon >> durationUs, all N intervals should be consumed.
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 10.0, Duration: 60}, // 10 req/s for 60s = 600 total requests
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  3,
+			NumUsersPerSystemPrompt: 2,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+
+	// Set horizon to 2x the stage duration to ensure sampler exhaustion, not horizon, limits requests
+	horizon := int64(120_000_000) // 120 seconds (2x the 60s stage duration)
+	requests, err := GenerateRequests(expanded, horizon, 0)
+	if err != nil {
+		t.Fatalf("generation error: %v", err)
+	}
+
+	// Should get exactly 600 requests (sampler-limited, not horizon-limited)
+	if len(requests) != 600 {
+		t.Errorf("request count = %d, want 600 (sampler should limit, not horizon)", len(requests))
+	}
+
+	// All requests should arrive well before the 120s horizon
+	for i, req := range requests {
+		if req.ArrivalTime >= int64(60_000_000) {
+			t.Errorf("request %d: arrival %d µs >= stage duration 60s; sampler should limit to stage duration",
+				i, req.ArrivalTime)
+		}
+	}
+}
+
+func TestExpandInferencePerfSpec_SingleStage_NormalizedDeterministic(t *testing.T) {
+	// BC-3: Same seed produces byte-identical expansion.
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 10.0, Duration: 10},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  2,
+			NumUsersPerSystemPrompt: 2,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+		},
+	}
+	horizon := int64(10_000_000) // 10 seconds in µs
+
+	// First run
+	expanded1, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+	r1, err := GenerateRequests(expanded1, horizon, 0)
+	if err != nil {
+		t.Fatalf("generation error: %v", err)
+	}
+
+	// Second run with same seed
+	expanded2, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+	r2, err := GenerateRequests(expanded2, horizon, 0)
+	if err != nil {
+		t.Fatalf("generation error: %v", err)
+	}
+
+	// Verify identical output
+	if len(r1) != len(r2) {
+		t.Fatalf("different request counts: %d vs %d", len(r1), len(r2))
+	}
+	for i := range r1 {
+		if r1[i].ArrivalTime != r2[i].ArrivalTime {
+			t.Errorf("request %d: arrival %d vs %d", i, r1[i].ArrivalTime, r2[i].ArrivalTime)
+			break
+		}
+		if r1[i].ID != r2[i].ID {
+			t.Errorf("request %d: ID %q vs %q", i, r1[i].ID, r2[i].ID)
+			break
+		}
+	}
+}
+
+func TestExpandInferencePerfSpec_MultiStage_KeepsPoisson(t *testing.T) {
+	// BC-4: Multi-stage expansion still uses Poisson arrival (for now).
+	// Verify that clients have Arrival field set (not CustomSamplerFactory).
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 8.0, Duration: 10},
+			{Rate: 20.0, Duration: 10},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  1,
+			NumUsersPerSystemPrompt: 1,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+	// 2 stages × 1 client each = 2 clients
+	if len(expanded.Clients) != 2 {
+		t.Fatalf("client count = %d, want 2", len(expanded.Clients))
+	}
+	for i, client := range expanded.Clients {
+		if client.Arrival.Process != "poisson" {
+			t.Errorf("client %d: arrival process = %q, want poisson", i, client.Arrival.Process)
+		}
+		if client.CustomSamplerFactory != nil {
+			t.Errorf("client %d: CustomSamplerFactory should be nil (using Poisson)", i)
+		}
+	}
+}
+
+func TestExpandInferencePerfSpec_SingleStage_ConservationInvariant(t *testing.T) {
+	// Invariant test: sum(per_client_requests) == total expected requests
+	// Tests the conservation law that requestsPerClient allocation sums correctly.
+	cases := []struct {
+		rate       float64
+		duration   int64
+		numPrompts int
+		numUsers   int
+	}{
+		{rate: 10.0, duration: 60, numPrompts: 3, numUsers: 2},  // 600 total / 6 clients = 100 each
+		{rate: 10.0, duration: 61, numPrompts: 2, numUsers: 2},  // 610 total / 4 clients = ceil(152.5)=153 each
+		{rate: 5.0, duration: 100, numPrompts: 1, numUsers: 7},  // 500 total / 7 clients
+		{rate: 100.0, duration: 10, numPrompts: 10, numUsers: 3}, // 1000 total / 30 clients
+	}
+
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("rate=%.0f_dur=%d_clients=%dx%d", tc.rate, tc.duration, tc.numPrompts, tc.numUsers), func(t *testing.T) {
+			ipSpec := &InferencePerfSpec{
+				Stages: []StageSpec{
+					{Rate: tc.rate, Duration: tc.duration},
+				},
+				SharedPrefix: &SharedPrefixSpec{
+					NumUniqueSystemPrompts:  tc.numPrompts,
+					NumUsersPerSystemPrompt: tc.numUsers,
+					SystemPromptLen:         10,
+					QuestionLen:             10,
+					OutputLen:               10,
+				},
+			}
+			expanded, err := ExpandInferencePerfSpec(ipSpec, 42)
+			if err != nil {
+				t.Fatalf("expansion error: %v", err)
+			}
+
+			// Horizon = 2× duration: ensures sampler exhaustion (not horizon) stops generation.
+			// With horizon == duration, sampler and horizon guard race, creating test fragility.
+			horizon := tc.duration * 2_000_000
+			requests, err := GenerateRequests(expanded, horizon, 0)
+			if err != nil {
+				t.Fatalf("generation error: %v", err)
+			}
+
+			// Count requests per client ID
+			perClientCounts := make(map[string]int)
+			for _, req := range requests {
+				perClientCounts[req.ClientID]++
+			}
+
+			// Expected: each client gets ceil(rate * duration / numClients) requests
+			numClients := tc.numPrompts * tc.numUsers
+			expectedPerClient := int(math.Ceil(tc.rate * float64(tc.duration) / float64(numClients)))
+
+			// Verify each client got exactly expectedPerClient requests
+			for clientID, count := range perClientCounts {
+				if count != expectedPerClient {
+					t.Errorf("client %s: got %d requests, want %d", clientID, count, expectedPerClient)
+				}
+			}
+
+			// Verify sum equals numClients * expectedPerClient (conservation)
+			expectedTotal := numClients * expectedPerClient
+			if len(requests) != expectedTotal {
+				t.Errorf("total requests = %d, want %d (conservation: %d clients * %d each)",
+					len(requests), expectedTotal, numClients, expectedPerClient)
+			}
+		})
+	}
+}
+
+// TestExpandInferencePerfSpec_WorkloadReusability verifies that factory pattern
+// enables calling GenerateRequests multiple times on the same WorkloadSpec.
+// This is the primary architectural validation for CustomSamplerFactory.
+func TestExpandInferencePerfSpec_WorkloadReusability(t *testing.T) {
+	// GIVEN a WorkloadSpec with NormalizedExponentialSampler (via factory)
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 10.0, Duration: 30}, // 300 requests total
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  2,
+			NumUsersPerSystemPrompt: 3, // 6 clients × 50 requests/client = 300 total
+			SystemPromptLen:         10,
+			QuestionLen:             100,
+			OutputLen:               50,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+
+	horizon := int64(60_000_000) // 60s (2× duration)
+
+	// WHEN GenerateRequests is called twice with the same WorkloadSpec
+	requests1, err := GenerateRequests(expanded, horizon, 0)
+	if err != nil {
+		t.Fatalf("first generation error: %v", err)
+	}
+
+	requests2, err := GenerateRequests(expanded, horizon, 0)
+	if err != nil {
+		t.Fatalf("second generation error: %v", err)
+	}
+
+	// THEN both runs produce identical request counts
+	if len(requests1) != len(requests2) {
+		t.Fatalf("request count mismatch: run1=%d, run2=%d", len(requests1), len(requests2))
+	}
+
+	// AND identical per-client distributions
+	perClient1 := make(map[string]int)
+	perClient2 := make(map[string]int)
+	for _, req := range requests1 {
+		perClient1[req.ClientID]++
+	}
+	for _, req := range requests2 {
+		perClient2[req.ClientID]++
+	}
+
+	if len(perClient1) != len(perClient2) {
+		t.Fatalf("client count mismatch: run1=%d clients, run2=%d clients",
+			len(perClient1), len(perClient2))
+	}
+
+	for clientID, count1 := range perClient1 {
+		count2, ok := perClient2[clientID]
+		if !ok {
+			t.Errorf("client %s missing in run2", clientID)
+			continue
+		}
+		if count1 != count2 {
+			t.Errorf("client %s: run1=%d requests, run2=%d requests", clientID, count1, count2)
+		}
+	}
+
+	// AND identical arrival times (deterministic from seed)
+	for i := range requests1 {
+		if requests1[i].ArrivalTime != requests2[i].ArrivalTime {
+			t.Errorf("request %d: arrival time mismatch: run1=%d, run2=%d",
+				i, requests1[i].ArrivalTime, requests2[i].ArrivalTime)
+			if i >= 5 {
+				t.Logf("... (stopping after 5 mismatches)")
+				break
+			}
 		}
 	}
 }

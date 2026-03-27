@@ -571,11 +571,13 @@ func TestCohortClientSpecFieldParity(t *testing.T) {
 	// Lifecycle: synthesized from Diurnal/Spike/Drain by ExpandCohorts.
 	// Concurrency: client-level closed-loop mode; cohorts are rate-based.
 	// ThinkTimeUs: paired with Concurrency; not applicable to cohorts.
+	// CustomSamplerFactory: programmatic-only field, not exposed in YAML.
 	excluded := map[string]bool{
-		"ID":          true,
-		"Lifecycle":   true,
-		"Concurrency": true,
-		"ThinkTimeUs": true,
+		"ID":                   true,
+		"Lifecycle":            true,
+		"Concurrency":         true,
+		"ThinkTimeUs":         true,
+		"CustomSamplerFactory": true,
 	}
 
 	for i := 0; i < clientType.NumField(); i++ {
