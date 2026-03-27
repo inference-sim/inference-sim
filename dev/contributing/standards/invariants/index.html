@@ -2185,6 +2185,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#inv-pd-6b-completiontime-includes-postdecodefixedoverhead" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-6b: CompletionTime Includes PostDecodeFixedOverhead
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#inv-p2-1-pool-config-consistency" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3008,6 +3019,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#inv-pd-6b-completiontime-includes-postdecodefixedoverhead" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-PD-6b: CompletionTime Includes PostDecodeFixedOverhead
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#inv-p2-1-pool-config-consistency" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3200,6 +3222,10 @@
 <p><strong>Statement:</strong> After <code>Run()</code> completes on a disaggregated cluster, every per-request metric map (<code>RequestE2Es</code>, <code>RequestTTFTs</code>, <code>RequestITLs</code>, <code>RequestSchedulingDelays</code>, <code>RequestCompletionTimes</code>, <code>Requests</code>) contains only parent-level request IDs. No key may have a <code>_prefill</code> or <code>_decode</code> suffix. Completed parents contribute exactly one entry per map (keyed by parent ID); dropped or incomplete parents contribute no entry.</p>
 <p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_MetricProjection_NoSubRequestKeys</code> checks all six maps for suffix-free keys; <code>TestDisaggregation_MetricProjection_DroppedParent_NoSubRequestKeys</code> verifies the invariant holds when decode KV allocation fails. <code>TestDisaggregation_MetricProjection_NoOp</code> verifies the projection is a no-op for non-disaggregated clusters.</p>
 <p><strong>Evidence:</strong> <code>projectPDMetrics()</code> in <code>sim/cluster/cluster.go</code> is called after <code>aggregateMetrics()</code> and the conservation correction. It unconditionally deletes the <code>pfx</code> and <code>dec</code> keys for every parent request, and conditionally inserts a parent-keyed entry only for completed parents (<code>CompletionTime &gt; 0 &amp;&amp; DecodeInstanceID != ""</code>).</p>
+<h3 id="inv-pd-6b-completiontime-includes-postdecodefixedoverhead">INV-PD-6b: CompletionTime Includes PostDecodeFixedOverhead<a class="headerlink" href="#inv-pd-6b-completiontime-includes-postdecodefixedoverhead" title="Permanent link">&para;</a></h3>
+<p><strong>Statement:</strong> For all successfully decoded parent requests (<code>DecodeInstanceID != ""</code>), <code>parent.CompletionTime</code> equals the cluster clock at decode completion plus the decode instance's <code>PostDecodeFixedOverhead()</code>. For backends where overhead is 0 (blackbox, roofline, cross-model), <code>CompletionTime</code> equals the raw cluster clock tick. For <code>trained-roofline</code> (overhead ≈ 1850 µs), <code>CompletionTime</code> exceeds the raw clock by the overhead amount. This ensures that <code>projectPDMetrics()</code> computes <code>RequestE2Es[parentID] = CompletionTime - ArrivalTime</code> consistently with how <code>recordRequestCompletion</code> computes non-PD E2E (which also adds <code>PostDecodeFixedOverhead</code>). Note: the non-PD path applies the overhead conditionally when <code>len(req.OutputTokens) &gt; 0</code>; the PD path applies it unconditionally, which is safe because decode sub-requests always inherit <code>OutputTokens</code> from the original request via <code>KVTransferCompletedEvent.Execute</code>.</p>
+<p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_CompletionTime_IncludesNonZeroOverhead</code> verifies that <code>E2E_with_overhead − E2E_without_overhead == overhead</code> exactly for trained-roofline clusters (directly exercises the bug-fix site). <code>TestDisaggregation_CompletionTime_GeqAllPriorPhaseTimestamps</code> verifies <code>CompletionTime &gt;= DecodeEnqueueTime</code> and <code>CompletionTime &gt;= TransferCompleteTime</code> (phase causality preserved). <code>TestDisaggregation_E2E_IncludesOverhead_ZeroOverheadRegression</code> verifies <code>RequestE2Es[parentID] == CompletionTime − ArrivalTime</code> and <code>E2E &gt;= TTFT</code> for blackbox (overhead=0) clusters.</p>
+<p><strong>Evidence:</strong> <code>detectDecodeCompletions()</code> in <code>sim/cluster/cluster.go</code> stamps <code>parent.CompletionTime = c.clock + inst.PostDecodeFixedOverhead()</code>. Fixed in issue #846.</p>
 <h3 id="inv-p2-1-pool-config-consistency">INV-P2-1: Pool-Config Consistency<a class="headerlink" href="#inv-p2-1-pool-config-consistency" title="Permanent link">&para;</a></h3>
 <p><strong>Statement:</strong> Per-pool hardware overrides produce a valid <code>SimConfig</code> for each pool role: zero-valued <code>PoolOverrides</code> is a no-op (backward-compatible), non-nil fields override only the specified fields, and the global <code>SimConfig</code> is never mutated.</p>
 <p><strong>Verification:</strong> <code>sim/cluster/resolve_test.go</code> — <code>TestINV_P2_1_PoolConfigConsistency</code> verifies observable KV capacity differences between pools pre-simulation via <code>FreeKVBlocks()</code>; <code>TestINV_P2_1_RequestConservation</code> verifies INV-1 holds under heterogeneous pool configuration.</p>
