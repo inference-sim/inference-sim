@@ -94,7 +94,7 @@ jobs:
           ANTHROPIC_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
         with:
           anthropic_api_key: ${{ secrets.LITELLM_API_KEY }}
-          claude_args: '--model aws/claude-sonnet-4-6 --allowed-tools Skill Agent'
+          claude_args: '--model aws/claude-sonnet-4-6 --allowed-tools Skill Agent Bash'
           plugin_marketplaces: |
             https://github.com/anthropics/claude-plugins-official.git
             https://github.com/obra/superpowers-marketplace.git

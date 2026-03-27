@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestCohortValidation_ZeroPopulation_ReturnsError(t *testing.T) {
@@ -300,6 +302,226 @@ func TestGenerateRequests_WithCohorts_MergesWithExplicitClients(t *testing.T) {
 	}
 }
 
+// --- New-field tests (BC-1 through BC-7) ---
+
+// BC-4: YAML round-trip with strict decoder preserves reasoning.multi_turn fields.
+func TestCohortSpec_YAMLRoundTrip_Reasoning(t *testing.T) {
+	input := `
+version: "2"
+aggregate_rate: 1.0
+cohorts:
+  - id: thinkers
+    population: 1
+    rate_fraction: 1.0
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 100
+        std_dev: 10
+        min: 1
+        max: 200
+    output_distribution:
+      type: gaussian
+      params:
+        mean: 50
+        std_dev: 5
+        min: 1
+        max: 100
+    reasoning:
+      reason_ratio_distribution:
+        type: constant
+        params:
+          value: 50
+      multi_turn:
+        max_rounds: 5
+        think_time_us: 2000000
+`
+	var spec WorkloadSpec
+	decoder := yaml.NewDecoder(strings.NewReader(input))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&spec); err != nil {
+		t.Fatalf("YAML decode failed: %v", err)
+	}
+	if len(spec.Cohorts) != 1 {
+		t.Fatalf("expected 1 cohort, got %d", len(spec.Cohorts))
+	}
+	c := spec.Cohorts[0]
+	if c.Reasoning == nil {
+		t.Fatal("Reasoning is nil after YAML decode")
+	}
+	if c.Reasoning.MultiTurn == nil {
+		t.Fatal("Reasoning.MultiTurn is nil after YAML decode")
+	}
+	if c.Reasoning.MultiTurn.MaxRounds != 5 {
+		t.Errorf("MaxRounds = %d, want 5", c.Reasoning.MultiTurn.MaxRounds)
+	}
+	if c.Reasoning.MultiTurn.ThinkTimeUs != 2_000_000 {
+		t.Errorf("ThinkTimeUs = %d, want 2000000", c.Reasoning.MultiTurn.ThinkTimeUs)
+	}
+}
+
+// BC-1 + BC-5: All 6 new fields propagate to every expanded ClientSpec.
+func TestExpandCohorts_NewFieldsPropagate(t *testing.T) {
+	closedLoopFalse := false
+	timeoutVal := int64(60_000_000)
+	cohorts := []CohortSpec{
+		{
+			ID: "agents", Population: 3, RateFraction: 1.0,
+			Arrival:   ArrivalSpec{Process: "poisson"},
+			InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+			PrefixLength: 64,
+			Reasoning: &ReasoningSpec{
+				MultiTurn: &MultiTurnSpec{MaxRounds: 4, ThinkTimeUs: 1_000_000},
+			},
+			ClosedLoop: &closedLoopFalse,
+			Timeout:    &timeoutVal,
+			Network:    &NetworkSpec{RTTMs: 2.5},
+			Multimodal: &MultimodalSpec{
+				TextDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 128}},
+			},
+		},
+	}
+
+	result := ExpandCohorts(cohorts, 42)
+	if len(result) != 3 {
+		t.Fatalf("expected 3 expanded clients, got %d", len(result))
+	}
+
+	for _, c := range result {
+		if c.PrefixLength != 64 {
+			t.Errorf("client %s: PrefixLength = %d, want 64", c.ID, c.PrefixLength)
+		}
+		if c.Reasoning == nil || c.Reasoning.MultiTurn == nil || c.Reasoning.MultiTurn.MaxRounds != 4 {
+			t.Errorf("client %s: Reasoning.MultiTurn.MaxRounds not propagated", c.ID)
+		}
+		if c.ClosedLoop == nil || *c.ClosedLoop != false {
+			t.Errorf("client %s: ClosedLoop not propagated as false", c.ID)
+		}
+		if c.Timeout == nil || *c.Timeout != 60_000_000 {
+			t.Errorf("client %s: Timeout not propagated", c.ID)
+		}
+		if c.Network == nil || c.Network.RTTMs != 2.5 {
+			t.Errorf("client %s: Network not propagated", c.ID)
+		}
+		if c.Multimodal == nil {
+			t.Errorf("client %s: Multimodal is nil", c.ID)
+		}
+	}
+}
+
+// BC-6: nil/zero new fields leave expanded clients without accidental injection.
+func TestExpandCohorts_NilNewFields_NoChange(t *testing.T) {
+	cohorts := []CohortSpec{
+		{
+			ID: "simple", Population: 2, RateFraction: 1.0,
+			Arrival:   ArrivalSpec{Process: "constant"},
+			InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+			// PrefixLength, Reasoning, ClosedLoop, Timeout, Network, Multimodal all zero/nil
+		},
+	}
+
+	result := ExpandCohorts(cohorts, 0)
+	for _, c := range result {
+		if c.PrefixLength != 0 {
+			t.Errorf("client %s: PrefixLength = %d, want 0", c.ID, c.PrefixLength)
+		}
+		if c.Reasoning != nil {
+			t.Errorf("client %s: Reasoning should be nil", c.ID)
+		}
+		if c.ClosedLoop != nil {
+			t.Errorf("client %s: ClosedLoop should be nil", c.ID)
+		}
+		if c.Timeout != nil {
+			t.Errorf("client %s: Timeout should be nil", c.ID)
+		}
+		if c.Network != nil {
+			t.Errorf("client %s: Network should be nil", c.ID)
+		}
+		if c.Multimodal != nil {
+			t.Errorf("client %s: Multimodal should be nil", c.ID)
+		}
+	}
+}
+
+// BC-2: reasoning.multi_turn.max_rounds < 1 → validation error.
+func TestCohortValidation_InvalidMaxRounds_ReturnsError(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 10.0,
+		Cohorts: []CohortSpec{
+			{
+				ID: "bad-rounds", Population: 1, RateFraction: 1.0,
+				Arrival:   ArrivalSpec{Process: "poisson"},
+				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+				Reasoning: &ReasoningSpec{
+					MultiTurn: &MultiTurnSpec{MaxRounds: 0, ThinkTimeUs: 1_000_000},
+				},
+			},
+		},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected error for max_rounds=0")
+	}
+	if !strings.Contains(err.Error(), "max_rounds must be >= 1") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+// BC-3: timeout < 0 → validation error.
+func TestCohortValidation_NegativeTimeout_ReturnsError(t *testing.T) {
+	negTimeout := int64(-1)
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 10.0,
+		Cohorts: []CohortSpec{
+			{
+				ID: "bad-timeout", Population: 1, RateFraction: 1.0,
+				Arrival:   ArrivalSpec{Process: "poisson"},
+				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+				Timeout: &negTimeout,
+			},
+		},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative timeout")
+	}
+	if !strings.Contains(err.Error(), "timeout must be non-negative") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+// BC-7: prefix_length < 0 → validation error.
+func TestCohortValidation_NegativePrefixLength_ReturnsError(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 10.0,
+		Cohorts: []CohortSpec{
+			{
+				ID: "bad-prefix", Population: 1, RateFraction: 1.0,
+				Arrival:   ArrivalSpec{Process: "poisson"},
+				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+				PrefixLength: -1,
+			},
+		},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative prefix_length")
+	}
+	if !strings.Contains(err.Error(), "prefix_length must be non-negative") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
 func TestExpandCohorts_IndependentRNG_ReorderingDoesNotChange(t *testing.T) {
 	cohortA := CohortSpec{
 		ID: "a", Population: 3, RateFraction: 0.5,
@@ -325,5 +547,124 @@ func TestExpandCohorts_IndependentRNG_ReorderingDoesNotChange(t *testing.T) {
 		if resultAB[i].ID != resultA[i].ID {
 			t.Errorf("client[%d]: ID differs between AB and A-only expansion", i)
 		}
+	}
+}
+
+// --- Parity drift guard ---
+
+// TestCohortClientSpecFieldParity ensures CohortSpec carries every field present
+// on ClientSpec except the two intentionally excluded ones: ID (generated by
+// ExpandCohorts per member) and Lifecycle (synthesized from Diurnal/Spike/Drain).
+// If a new field is added to ClientSpec without mirroring it in CohortSpec,
+// this test fails immediately, preventing the silent-drop bug class.
+func TestCohortClientSpecFieldParity(t *testing.T) {
+	cohortType := reflect.TypeOf(CohortSpec{})
+	clientType := reflect.TypeOf(ClientSpec{})
+
+	cohortFields := make(map[string]bool)
+	for i := 0; i < cohortType.NumField(); i++ {
+		cohortFields[cohortType.Field(i).Name] = true
+	}
+
+	// Fields on ClientSpec that are intentionally absent from CohortSpec.
+	// ID: generated per member by ExpandCohorts.
+	// Lifecycle: synthesized from Diurnal/Spike/Drain by ExpandCohorts.
+	excluded := map[string]bool{
+		"ID":        true,
+		"Lifecycle": true,
+	}
+
+	for i := 0; i < clientType.NumField(); i++ {
+		name := clientType.Field(i).Name
+		if excluded[name] {
+			continue
+		}
+		if !cohortFields[name] {
+			t.Errorf("ClientSpec.%s has no corresponding field in CohortSpec; add it or update the excluded list", name)
+		}
+	}
+}
+
+// --- End-to-end test: cohort with multi-turn reasoning produces multi-round requests ---
+
+// TestGenerateRequests_CohortWithMultiTurn_ProducesMultiRoundRequests verifies
+// the core purpose of this PR: a cohort with reasoning.multi_turn set produces
+// requests with RoundIndex > 0 through the full GenerateRequests pipeline.
+func TestGenerateRequests_CohortWithMultiTurn_ProducesMultiRoundRequests(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "2",
+		Seed:          42,
+		AggregateRate: 1.0,
+		Cohorts: []CohortSpec{
+			{
+				ID: "agents", Population: 1, RateFraction: 1.0,
+				Arrival:   ArrivalSpec{Process: "constant"},
+				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+				Reasoning: &ReasoningSpec{
+					ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}}, // 50% (0-100 scale; sampler does /100)
+					MultiTurn:       &MultiTurnSpec{MaxRounds: 3, ThinkTimeUs: 100_000, ContextGrowth: "accumulate"},
+				},
+			},
+		},
+	}
+
+	// Use a long enough horizon to fit 3 rounds (3 × 100ms think time + generation time).
+	requests, err := GenerateRequests(spec, 10_000_000_000, 0) // 10 seconds
+	if err != nil {
+		t.Fatalf("GenerateRequests failed: %v", err)
+	}
+	if len(requests) == 0 {
+		t.Fatal("expected requests from multi-turn cohort, got none")
+	}
+
+	// At least one request must have RoundIndex > 0 (i.e., a follow-up round).
+	hasLaterRound := false
+	for _, r := range requests {
+		if r.RoundIndex > 0 {
+			hasLaterRound = true
+			break
+		}
+	}
+	if !hasLaterRound {
+		t.Errorf("no request with RoundIndex > 0 found; cohort multi-turn not reaching GenerateRequests reasoning path")
+	}
+
+	// INV-10: within each session, each round must arrive at least ThinkTimeUs
+	// after the previous round (GenerateReasoningRequests advances time by
+	// ThinkTimeUs + estimated output length per round).
+	const thinkTimeUs = 100_000
+	type sessionState struct {
+		lastArrival    int64
+		lastRound      int
+		lastInputLen   int
+	}
+	sessions := make(map[string]*sessionState)
+	for _, r := range requests {
+		if r.SessionID == "" {
+			continue
+		}
+		s, ok := sessions[r.SessionID]
+		if !ok {
+			sessions[r.SessionID] = &sessionState{
+				lastArrival:  r.ArrivalTime,
+				lastRound:    r.RoundIndex,
+				lastInputLen: len(r.InputTokens),
+			}
+			continue
+		}
+		gap := r.ArrivalTime - s.lastArrival
+		if gap < thinkTimeUs {
+			t.Errorf("session %s: round %d→%d arrival gap %d µs < ThinkTimeUs %d (INV-10 violated)",
+				r.SessionID, s.lastRound, r.RoundIndex, gap, thinkTimeUs)
+		}
+		// With context_growth: accumulate, each round's InputTokens must grow.
+		if len(r.InputTokens) <= s.lastInputLen {
+			t.Errorf("session %s: round %d input len %d <= round %d input len %d (context not accumulating)",
+				r.SessionID, r.RoundIndex, len(r.InputTokens), s.lastRound, s.lastInputLen)
+		}
+		s.lastArrival = r.ArrivalTime
+		s.lastRound = r.RoundIndex
+		s.lastInputLen = len(r.InputTokens)
 	}
 }

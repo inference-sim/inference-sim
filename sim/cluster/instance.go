@@ -93,6 +93,13 @@ func (i *InstanceSimulator) Horizon() int64 {
 	return i.sim.SimHorizon()
 }
 
+// PostDecodeFixedOverhead returns the fixed per-request post-decode overhead (µs)
+// from the instance's underlying latency model. Used by detectDecodeCompletions
+// to stamp parent.CompletionTime with the correct client-visible completion time.
+// Returns 0 for blackbox/roofline/cross-model; non-zero for trained-roofline (BC-2, #846).
+func (i *InstanceSimulator) PostDecodeFixedOverhead() int64 {
+	return i.sim.PostDecodeFixedOverhead()
+}
 
 // InjectRequest delegates to sim.InjectArrival. Panics if called after Run().
 func (i *InstanceSimulator) InjectRequest(req *sim.Request) {
@@ -132,8 +139,13 @@ func (i *InstanceSimulator) BatchSize() int {
 }
 
 // KVUtilization returns the fraction of KV cache blocks in use.
+// Returns 0 when TotalCapacity is 0 to avoid division by zero (R11 defensive guard).
 func (i *InstanceSimulator) KVUtilization() float64 {
-	return float64(i.sim.KVCache.UsedBlocks()) / float64(i.sim.KVCache.TotalCapacity())
+	total := i.sim.KVCache.TotalCapacity()
+	if total <= 0 {
+		return 0
+	}
+	return float64(i.sim.KVCache.UsedBlocks()) / float64(total)
 }
 
 // FreeKVBlocks returns the number of free KV cache blocks.
@@ -234,6 +246,32 @@ func (i *InstanceSimulator) TransitionTo(state InstanceState) {
 		panic(fmt.Sprintf("TransitionTo %s: invalid transition %q → %q", i.id, i.State, state))
 	}
 	i.State = state
+}
+
+// AllocateTransferredKV simulates receiving transferred KV cache data from a prefill instance.
+// Pre-allocates KV blocks for the request's input tokens and sets ProgressIndex past input.
+// Returns false if insufficient KV capacity on this instance.
+func (i *InstanceSimulator) AllocateTransferredKV(req *sim.Request) bool {
+	inputLen := int64(len(req.InputTokens))
+	if inputLen == 0 {
+		req.ProgressIndex = 0
+		return true
+	}
+	ok := i.sim.KVCache.AllocateKVBlocks(req, 0, inputLen, nil)
+	if ok {
+		req.ProgressIndex = inputLen
+	}
+	return ok
+}
+
+// InjectDecodeOnline injects a decode sub-request with pre-allocated KV.
+// Bypasses the normal ArrivalEvent → QueuedEvent → EnqueueRequest chain to avoid
+// the oversized-request guard (KV already allocated) and TotalInputTokens double-counting.
+// Registers request in metrics and directly enqueues into wait queue.
+// clusterTime is the cluster clock at the time of injection (from DecodeRoutingEvent).
+func (i *InstanceSimulator) InjectDecodeOnline(req *sim.Request, clusterTime int64) {
+	i.sim.Metrics.Requests[req.ID] = sim.NewRequestMetrics(req, float64(req.ArrivalTime)/1e6)
+	i.sim.EnqueueDecodeSubRequest(req, clusterTime)
 }
 
 // DrainWaitQueue extracts all pending (queued but not yet scheduled) requests

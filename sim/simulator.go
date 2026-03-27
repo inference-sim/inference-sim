@@ -279,6 +279,14 @@ func (sim *Simulator) CurrentClock() int64 { return sim.Clock }
 // SimHorizon returns the simulation horizon (in ticks).
 func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 
+// PostDecodeFixedOverhead returns the latency model's fixed per-request post-decode
+// overhead in microseconds. Used by the cluster layer to include overhead in
+// parent.CompletionTime when disaggregated decode sub-requests complete.
+// Returns 0 for all backends except trained-roofline (BC-1, issue #846).
+func (sim *Simulator) PostDecodeFixedOverhead() int64 {
+	return sim.latencyModel.PostDecodeFixedOverhead()
+}
+
 // EnqueueRequest adds a newly arrived request to the waiting queue.
 //
 // Preprocessing: auto-fills MaxOutputLen when the client doesn't set a budget
@@ -396,6 +404,38 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 	// Skip scheduling when deadline > horizon (perf: avoids orphaned events)
 	if r.Deadline > 0 && r.Deadline <= sim.Horizon {
 		sim.Schedule(&TimeoutEvent{time: r.Deadline, Request: r})
+	}
+}
+
+// EnqueueDecodeSubRequest enqueues a decode sub-request that already has KV blocks
+// pre-allocated (via PD disaggregation transfer). Bypasses the oversized-request guard
+// (blocks already allocated, guard would leak them) and does NOT increment TotalInputTokens
+// (input tokens were already counted by the prefill sub-request).
+// clusterTime is the cluster-level clock when this request is injected (from
+// DecodeRoutingEvent.Execute()). The StepEvent is scheduled at
+// max(sim.Clock, clusterTime) to prevent the instance from processing the
+// decode sub-request at a stale internal time that precedes the request's arrival.
+// Triggers StepEvent if the instance is idle (INV-8: work-conserving).
+func (sim *Simulator) EnqueueDecodeSubRequest(r *Request, clusterTime int64) {
+	sim.WaitQ.Enqueue(r)
+	// Do NOT add len(r.InputTokens) to TotalInputTokens — already counted by prefill sub-request.
+
+	// Schedule timeout for decode sub-request (R23: parity with EnqueueRequest)
+	if r.Deadline > 0 && r.Deadline <= sim.Horizon {
+		sim.Schedule(&TimeoutEvent{time: r.Deadline, Request: r})
+	}
+
+	// Trigger StepEvent if idle (work-conserving: INV-8).
+	// Use max(sim.Clock, clusterTime) so the decode sub-request is not processed
+	// at a stale instance time that precedes the cluster time when it was injected.
+	if (sim.RunningBatch == nil || len(sim.RunningBatch.Requests) == 0) && sim.stepEvent == nil {
+		stepTime := sim.Clock
+		if clusterTime > stepTime {
+			stepTime = clusterTime
+		}
+		step := &StepEvent{time: stepTime}
+		sim.stepEvent = step
+		sim.Schedule(step)
 	}
 }
 
@@ -606,14 +646,25 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 	remaining := []*Request{}
 	for _, req := range sim.RunningBatch.Requests {
 		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
-		if req.ProgressIndex == util.Len64(req.InputTokens)+max(util.Len64(req.OutputTokens), 1)-1 {
+		if req.ProgressIndex >= util.Len64(req.InputTokens)+max(util.Len64(req.OutputTokens), 1)-1 {
 			// State transitions
 			req.State = StateCompleted
 			// Zero-output requests complete at prefill end with no decode phase.
-			// The final-token KV allocation only applies to requests that have
-			// output tokens. ITL is NOT appended here — executeBatchStep already
-			// recorded it for this decode step (fix for #524 phantom ITL entry).
-			if len(req.OutputTokens) > 0 {
+			// The guard below has two distinct roles depending on output length:
+			//
+			// 1-output-token PD decode sub-requests: FormBatch Phase 2 already
+			// allocated the single decode token's KV block. After executeBatchStep
+			// runs, ProgressIndex = inputLen+1, so the guard
+			// (req.ProgressIndex < inputLen+outputLen) evaluates to
+			// (inputLen+1) < (inputLen+1) = false — preventing a duplicate allocation.
+			//
+			// Requests with 2+ output tokens (PD or non-PD): after executeBatchStep
+			// runs, ProgressIndex = inputLen+outputLen-1 on the final decode step,
+			// so the guard evaluates to true — this is the first and only allocation
+			// for the final token.
+			// ITL is NOT appended here — executeBatchStep already recorded it
+			// for this decode step (fix for #524 phantom ITL entry).
+			if len(req.OutputTokens) > 0 && req.ProgressIndex < util.Len64(req.InputTokens)+util.Len64(req.OutputTokens) {
 				ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int64{})
 				if !ok {
 					logrus.Errorf("[tick %07d] KV allocation failed for completing request %s (request will still complete) — this indicates a cache accounting bug", now, req.ID)

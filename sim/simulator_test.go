@@ -13,6 +13,41 @@ import (
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
 
+// fixedOverheadModel is a test-only LatencyModel stub with configurable PostDecodeFixedOverhead.
+type fixedOverheadModel struct {
+	overhead int64
+}
+
+func (m *fixedOverheadModel) StepTime(batch []*Request) int64     { return 1 }
+func (m *fixedOverheadModel) QueueingTime(req *Request) int64      { return 0 }
+func (m *fixedOverheadModel) OutputTokenProcessingTime() int64     { return 0 }
+func (m *fixedOverheadModel) PostDecodeFixedOverhead() int64       { return m.overhead }
+
+// BC-1: Simulator.PostDecodeFixedOverhead() delegates to the underlying LatencyModel.
+func TestSimulator_PostDecodeFixedOverhead_DelegatesToModel(t *testing.T) {
+	tests := []struct {
+		name     string
+		overhead int64
+	}{
+		{"zero (blackbox/roofline)", 0},
+		{"positive (trained-roofline)", 1850},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := newTestSimConfig()
+			kvStore := MustNewKVStoreFromConfig(cfg.KVCacheConfig)
+			model := &fixedOverheadModel{overhead: tc.overhead}
+			s, err := NewSimulator(cfg, kvStore, model)
+			if err != nil {
+				t.Fatalf("NewSimulator: %v", err)
+			}
+			if got := s.PostDecodeFixedOverhead(); got != tc.overhead {
+				t.Errorf("PostDecodeFixedOverhead() = %d, want %d", got, tc.overhead)
+			}
+		})
+	}
+}
+
 // mustNewSimulator is a test helper that calls NewSimulator and fails the test on error.
 // Honors KVCPUBlocks for tiered KV cache construction via MustNewKVStoreFromConfig.
 func mustNewSimulator(t *testing.T, cfg SimConfig) *Simulator {
@@ -2333,5 +2368,129 @@ func TestSimulator_Timeout_KVConservation(t *testing.T) {
 	}
 	if sim.Metrics.TimedOutRequests != 1 {
 		t.Errorf("expected 1 timed-out request, got %d", sim.Metrics.TimedOutRequests)
+	}
+}
+
+// TestEnqueueDecodeSubRequest_StepEventAtClusterTime verifies that when a decode
+// sub-request is injected with a clusterTime ahead of the instance's internal clock,
+// the StepEvent is scheduled at clusterTime rather than the stale instance time.
+// GIVEN an idle simulator at internal clock = 0
+// WHEN  EnqueueDecodeSubRequest is called with clusterTime = 50000 (ahead of internal clock)
+// THEN  the earliest pending event is at clusterTime, preventing time-travel processing.
+func TestEnqueueDecodeSubRequest_StepEventAtClusterTime(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             math.MaxInt64,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-clustertime", "H100", 1, "blackbox", 0),
+	}
+	s := mustNewSimulator(t, cfg)
+	// Internal clock is 0 (idle simulator, no events processed).
+
+	const clusterTime = int64(50000)
+	req := &Request{
+		ID:            "dec-1",
+		InputTokens:   make([]int, 10),
+		OutputTokens:  make([]int, 5),
+		State:         StateQueued,
+		ArrivalTime:   clusterTime,
+		ProgressIndex: 10, // KV pre-allocated past input (as done by AllocateTransferredKV)
+	}
+
+	s.EnqueueDecodeSubRequest(req, clusterTime)
+
+	// BC-1: A StepEvent must be scheduled (INV-8 work-conserving).
+	if !s.HasPendingEvents() {
+		t.Fatal("BC-1: no pending events after EnqueueDecodeSubRequest (INV-8 violated)")
+	}
+
+	// BC-2: The StepEvent must be at clusterTime, not at the stale internal clock (0).
+	// Without the max(sim.Clock, clusterTime) fix, this would return 0, causing
+	// the decode sub-request to be processed before its arrival time.
+	got := s.PeekNextEventTime()
+	if got != clusterTime {
+		t.Errorf("BC-2: StepEvent time = %d, want %d (clusterTime); "+
+			"decode sub-request would be processed at stale instance time %d",
+			got, clusterTime, s.Clock)
+	}
+}
+
+// TestEnqueueDecodeSubRequest_SimClockAhead_StepEventAtSimClock verifies the
+// other branch of max(sim.Clock, clusterTime): when the instance has already
+// advanced past the cluster time, the StepEvent is scheduled at sim.Clock.
+// GIVEN a simulator that has processed events up to clock T_sim
+// WHEN  EnqueueDecodeSubRequest is called with clusterTime < T_sim
+// THEN  the StepEvent is at T_sim (not at clusterTime), preserving INV-3.
+func TestEnqueueDecodeSubRequest_SimClockAhead_StepEventAtSimClock(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             math.MaxInt64,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-simclockahead", "H100", 1, "blackbox", 0),
+	}
+	s := mustNewSimulator(t, cfg)
+
+	// Advance the simulator's internal clock by processing a real request.
+	s.InjectArrival(&Request{
+		ID: "req-advance", ArrivalTime: 0,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+		State: StateQueued,
+	})
+	s.Run()
+	advancedClock := s.Clock
+	if advancedClock <= 0 {
+		t.Fatalf("simulator clock did not advance after Run: clock = %d", advancedClock)
+	}
+
+	// Create a second simulator at the advanced clock state by injecting into a fresh sim
+	// that has manually processed events to advance the clock.
+	// Simpler approach: inject directly into the internal queue at an advanced time.
+	cfg2 := cfg
+	s2 := mustNewSimulator(t, cfg2)
+	// Advance s2's clock by processing an arrival event.
+	s2.InjectArrival(&Request{
+		ID: "req-prime", ArrivalTime: 0,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+		State: StateQueued,
+	})
+	for s2.HasPendingEvents() {
+		s2.ProcessNextEvent()
+	}
+	simClock := s2.Clock
+	if simClock <= 0 {
+		t.Fatalf("s2 clock did not advance: %d", simClock)
+	}
+
+	// clusterTime is behind the instance's current clock.
+	clusterTime := simClock / 2
+	if clusterTime <= 0 {
+		t.Skip("clock did not advance enough to create clusterTime < simClock; skipping")
+	}
+
+	req := &Request{
+		ID:            "dec-behind",
+		InputTokens:   make([]int, 10),
+		OutputTokens:  make([]int, 5),
+		State:         StateQueued,
+		ArrivalTime:   clusterTime,
+		ProgressIndex: 10,
+	}
+	s2.EnqueueDecodeSubRequest(req, clusterTime)
+
+	if !s2.HasPendingEvents() {
+		t.Fatal("BC-1: no pending events after EnqueueDecodeSubRequest (INV-8 violated)")
+	}
+
+	// BC-2: The StepEvent must be at simClock (not clusterTime < simClock),
+	// preserving clock monotonicity (INV-3).
+	got := s2.PeekNextEventTime()
+	if got != simClock {
+		t.Errorf("BC-2: StepEvent time = %d, want %d (simClock); "+
+			"using clusterTime (%d) would violate clock monotonicity INV-3",
+			got, simClock, clusterTime)
 	}
 }

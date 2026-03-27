@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -224,4 +225,77 @@ func TestRunCmd_WorkloadFlagDescriptionExcludesTraces(t *testing.T) {
 	if strings.Contains(f.Usage, "traces") {
 		t.Errorf("--workload flag description must not contain 'traces', got: %q", f.Usage)
 	}
+}
+
+func TestRunCmd_PDDirectDecodeThreshold_FlagRegistered(t *testing.T) {
+	// GIVEN the run cobra command
+	// WHEN looking up the --pd-direct-decode-threshold flag
+	flag := runCmd.Flags().Lookup("pd-direct-decode-threshold")
+	// THEN the flag is registered with the correct default
+	assert.NotNil(t, flag, "pd-direct-decode-threshold flag must be registered")
+	defVal, err := strconv.Atoi(flag.DefValue)
+	assert.NoError(t, err, "default value must be a valid integer")
+	assert.Equal(t, 256, defVal, "default pd-direct-decode-threshold must be 256")
+}
+
+func TestRunCmd_PDTransferContention_FlagRegistered(t *testing.T) {
+	// GIVEN the run cobra command
+	// WHEN looking up the --pd-transfer-contention flag
+	flag := runCmd.Flags().Lookup("pd-transfer-contention")
+	// THEN the flag is registered and defaults to false (off by default for backward compatibility)
+	assert.NotNil(t, flag, "pd-transfer-contention flag must be registered")
+	assert.Equal(t, "false", flag.DefValue, "pd-transfer-contention must default to false for backward compatibility")
+}
+
+// TestPrintPDMetrics_ContentionEnabled verifies that when contentionEnabled=true,
+// printPDMetrics emits Peak Concurrent Transfers and Mean Transfer Queue Depth lines.
+func TestPrintPDMetrics_ContentionEnabled(t *testing.T) {
+	pd := &cluster.PDMetrics{
+		DisaggregatedCount:      3,
+		PeakConcurrentTransfers: 2,
+		MeanTransferQueueDepth:  1.5,
+		LoadImbalanceRatio:      1.0,
+	}
+
+	var buf bytes.Buffer
+
+	// WHEN contention is enabled
+	printPDMetrics(&buf, pd, true)
+	out := buf.String()
+
+	// THEN contention metrics must appear
+	assert.Contains(t, out, "Peak Concurrent Transfers: 2", "Peak Concurrent Transfers must be printed when contentionEnabled=true")
+	assert.Contains(t, out, "Mean Transfer Queue Depth: 1.5000", "Mean Transfer Queue Depth must be printed when contentionEnabled=true")
+}
+
+// TestPrintPDMetrics_ContentionDisabled verifies that when contentionEnabled=false,
+// printPDMetrics does NOT emit contention-specific lines.
+func TestPrintPDMetrics_ContentionDisabled(t *testing.T) {
+	pd := &cluster.PDMetrics{
+		DisaggregatedCount:      3,
+		PeakConcurrentTransfers: 0,
+		MeanTransferQueueDepth:  0,
+		LoadImbalanceRatio:      1.0,
+	}
+
+	var buf bytes.Buffer
+
+	// WHEN contention is disabled
+	printPDMetrics(&buf, pd, false)
+	out := buf.String()
+
+	// THEN contention metrics must NOT appear
+	assert.NotContains(t, out, "Peak Concurrent Transfers", "Peak Concurrent Transfers must not be printed when contentionEnabled=false")
+	assert.NotContains(t, out, "Mean Transfer Queue Depth", "Mean Transfer Queue Depth must not be printed when contentionEnabled=false")
+	// But the header and standard PD fields must still appear
+	assert.Contains(t, out, "=== PD Metrics ===", "PD Metrics header must always appear")
+	assert.Contains(t, out, "Disaggregated Requests: 3", "Disaggregated Requests must always appear")
+}
+
+// TestPrintPDMetrics_NilPD_ProducesNoOutput verifies the nil-pd guard:
+// when pd is nil, printPDMetrics must return without writing any output.
+func TestPrintPDMetrics_NilPD_ProducesNoOutput(t *testing.T) {
+	var buf bytes.Buffer
+	printPDMetrics(&buf, nil, true)
+	assert.Empty(t, buf.String(), "printPDMetrics with nil pd must produce no output")
 }

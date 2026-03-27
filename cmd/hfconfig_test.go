@@ -186,6 +186,49 @@ func TestResolveModelConfig_AllMiss_IncludesDefaultsError(t *testing.T) {
 	}
 }
 
+func TestResolveModelConfig_MultimodalConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	localDir := filepath.Join(tmpDir, modelConfigsDir, "llama4-test")
+	if err := os.MkdirAll(localDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write a multimodal config (text_config structure)
+	multimodalConfig := `{
+		"architectures": ["Llama4ForConditionalGeneration"],
+		"model_type": "llama4",
+		"text_config": {
+			"num_hidden_layers": 48,
+			"hidden_size": 5120,
+			"num_attention_heads": 40,
+			"num_key_value_heads": 8
+		},
+		"vision_config": {
+			"num_hidden_layers": 34,
+			"hidden_size": 1408
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(localDir, hfConfigFile), []byte(multimodalConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock HF fetch to fail (safety net - local config should be found first)
+	old := fetchHFConfigFunc
+	fetchHFConfigFunc = func(_, _ string) (string, error) {
+		return "", fmt.Errorf("test should not reach HF fetch - local config should be found")
+	}
+	t.Cleanup(func() { fetchHFConfigFunc = old })
+
+	defaultsFile := filepath.Join(tmpDir, "defaults.yaml")
+	dir, err := resolveModelConfig("test-org/llama4-test", "", defaultsFile)
+	if err != nil {
+		t.Fatalf("multimodal config should be recognized: %v", err)
+	}
+	expected := filepath.Join(tmpDir, modelConfigsDir, "llama4-test")
+	if dir != expected {
+		t.Errorf("expected %s, got %s", expected, dir)
+	}
+}
 
 func TestResolveHardwareConfig_ExplicitOverride(t *testing.T) {
 	path, err := resolveHardwareConfig("/explicit/hw.json", "defaults.yaml")
@@ -251,6 +294,48 @@ func TestFetchHFConfig_Success(t *testing.T) {
 	}
 	if dir != targetDir {
 		t.Errorf("expected dir %s, got %s", targetDir, dir)
+	}
+}
+
+func TestFetchHFConfig_MultimodalConfig(t *testing.T) {
+	// Verify that fetchHFConfigFromURL accepts multimodal configs with text_config
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		// Multimodal config structure (text_config + vision_config)
+		_, _ = w.Write([]byte(`{
+			"architectures": ["Llama4ForConditionalGeneration"],
+			"model_type": "llama4",
+			"text_config": {
+				"num_hidden_layers": 48,
+				"hidden_size": 5120,
+				"num_attention_heads": 40
+			},
+			"vision_config": {
+				"num_hidden_layers": 34,
+				"hidden_size": 1408
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	targetDir := filepath.Join(tmpDir, modelConfigsDir, "multimodal-model")
+
+	dir, err := fetchHFConfigFromURL(server.URL+"/test/multimodal/resolve/main/config.json", targetDir)
+	if err != nil {
+		t.Fatalf("multimodal config should be accepted via fetch: %v", err)
+	}
+
+	// Verify the file was written
+	writtenPath := filepath.Join(dir, hfConfigFile)
+	data, err := os.ReadFile(writtenPath)
+	if err != nil {
+		t.Fatalf("config file not found: %v", err)
+	}
+
+	// Verify the config is recognized as a valid HF config (behavioral assertion)
+	if !isHFConfig(data) {
+		t.Errorf("expected config to be recognized as valid HuggingFace config")
 	}
 }
 
@@ -593,6 +678,19 @@ func TestIsHFConfig(t *testing.T) {
 		{"array", `[1, 2, 3]`, false},
 		{"string", `"hello"`, false},
 		{"invalid JSON", `not json`, false},
+		{"multimodal with text_config num_hidden_layers", `{"text_config": {"num_hidden_layers": 48}}`, true},
+		{"multimodal with text_config hidden_size", `{"text_config": {"hidden_size": 5120}}`, true},
+		{"multimodal with both text_config fields", `{"text_config": {"num_hidden_layers": 48, "hidden_size": 5120, "num_attention_heads": 40}}`, true},
+		{"multimodal without expected fields", `{"text_config": {"other_field": 123}, "vision_config": {"hidden_size": 1408}}`, false},
+		{"vision_config only (no text_config)", `{"vision_config": {"num_hidden_layers": 34, "hidden_size": 1408}}`, false},
+		{"text_config is not an object (string)", `{"text_config": "not_an_object"}`, false},
+		{"text_config is not an object (null)", `{"text_config": null}`, false},
+		{"deeply nested text_config", `{"text_config": {"text_config": {"num_hidden_layers": 48}}}`, false},
+		{"zero-value num_hidden_layers at top level", `{"num_hidden_layers": 0}`, true},
+		{"zero-value hidden_size at top level", `{"hidden_size": 0}`, true},
+		{"zero-value num_hidden_layers in text_config", `{"text_config": {"num_hidden_layers": 0}}`, true},
+		{"zero-value hidden_size in text_config", `{"text_config": {"hidden_size": 0}}`, true},
+		{"mixed top-level and text_config fields", `{"num_hidden_layers": 48, "text_config": {"hidden_size": 5120}}`, true},
 	}
 
 	for _, tt := range tests {

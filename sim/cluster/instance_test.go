@@ -456,3 +456,13 @@ func TestInstanceSimulator_InjectRequestOnline(t *testing.T) {
 		t.Error("expected pending events after InjectRequestOnline, got none")
 	}
 }
+
+// BC-2: PostDecodeFixedOverhead() delegates to inner sim.Simulator.PostDecodeFixedOverhead().
+// Uses blackbox config (overhead=0) to verify the delegation path exists and returns 0.
+func TestInstanceSimulator_PostDecodeFixedOverhead_DelegatesToSim(t *testing.T) {
+	cfg := newTestSimConfig() // blackbox model → PostDecodeFixedOverhead() = 0
+	inst := NewInstanceSimulator("instance_0", cfg)
+	if got := inst.PostDecodeFixedOverhead(); got != 0 {
+		t.Errorf("PostDecodeFixedOverhead() = %d, want 0 for blackbox model", got)
+	}
+}

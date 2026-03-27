@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -576,8 +577,8 @@ func TestBuildPrefixStrings_DeterministicAndDistinct(t *testing.T) {
 	groups := map[string]int{"group-a": 20, "group-b": 30}
 
 	// Same seed produces same output
-	p1, l1 := buildPrefixStrings(groups, 42)
-	p2, l2 := buildPrefixStrings(groups, 42)
+	p1, l1 := buildPrefixStrings(groups, 42, 1.0)
+	p2, l2 := buildPrefixStrings(groups, 42, 1.0)
 	if p1["group-a"] != p2["group-a"] {
 		t.Error("same seed should produce identical prefix for group-a")
 	}
@@ -595,7 +596,7 @@ func TestBuildPrefixStrings_DeterministicAndDistinct(t *testing.T) {
 	}
 
 	// Different seed produces different output
-	p3, _ := buildPrefixStrings(groups, 99)
+	p3, _ := buildPrefixStrings(groups, 99, 1.0)
 	if p3["group-a"] == p1["group-a"] {
 		t.Error("different seed should produce different prefix for group-a")
 	}
@@ -606,12 +607,21 @@ func TestRequestToPending_PrependsPrefixString(t *testing.T) {
 	prefixLengths := map[string]int{"shared": 3}
 
 	req := &sim.Request{
-		ID:          "test",
-		InputTokens: make([]int, 10),
-		PrefixGroup: "shared",
+		ID:           "test",
+		InputTokens:  make([]int, 10),
+		PrefixGroup:  "shared",
+		PrefixLength: 64,
 	}
 
 	pending := requestToPending(req, 0, false, false, prefixes, prefixLengths)
+
+	// PrefixGroup and PrefixLength propagated to PendingRequest
+	if pending.PrefixGroup != "shared" {
+		t.Errorf("PrefixGroup = %q, want %q", pending.PrefixGroup, "shared")
+	}
+	if pending.PrefixLength != 64 {
+		t.Errorf("PrefixLength = %d, want 64", pending.PrefixLength)
+	}
 
 	// Prompt should start with prefix
 	if !strings.HasPrefix(pending.Prompt, "alpha bravo charlie ") {
@@ -632,6 +642,185 @@ func TestRequestToPending_PrependsPrefixString(t *testing.T) {
 	pendingNoPrefix := requestToPending(reqNoPrefix, 1, false, false, prefixes, prefixLengths)
 	if strings.HasPrefix(pendingNoPrefix.Prompt, "alpha") {
 		t.Error("request without prefix group should not have prefix")
+	}
+}
+
+func TestRequestToPending_UsesPerRequestStreaming(t *testing.T) {
+	streamingReq := &sim.Request{
+		ID:          "stream-req",
+		InputTokens: make([]int, 5),
+		Streaming:   true,
+	}
+	nonStreamingReq := &sim.Request{
+		ID:          "nostream-req",
+		InputTokens: make([]int, 5),
+		Streaming:   false,
+	}
+
+	// BC-1 / BC-3: without global override, per-request value propagates
+	p1 := requestToPending(streamingReq, 0, false, false, nil, nil)
+	if !p1.Streaming {
+		t.Error("expected Streaming=true for streaming request when noStreaming=false")
+	}
+	p2 := requestToPending(nonStreamingReq, 1, false, false, nil, nil)
+	if p2.Streaming {
+		t.Error("expected Streaming=false for non-streaming request when noStreaming=false")
+	}
+
+	// BC-2: --no-streaming overrides per-request value to false
+	p3 := requestToPending(streamingReq, 2, true, false, nil, nil)
+	if p3.Streaming {
+		t.Error("expected Streaming=false when noStreaming=true overrides req.Streaming=true")
+	}
+}
+
+func TestCalibratePrefixTokenRatio_ReturnsRatio(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]string{"content": "ok"}, "finish_reason": "length"},
+			},
+			"usage": map[string]interface{}{
+				"prompt_tokens": 167.0, "completion_tokens": 1.0,
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm", WithAPIFormat("chat"))
+	ratio := calibratePrefixTokenRatio(context.Background(), client)
+
+	expected := 167.0 / float64(calibrationWordCount)
+	if math.Abs(ratio-expected) > 0.01 {
+		t.Errorf("ratio = %.4f, want %.4f", ratio, expected)
+	}
+}
+
+func TestCalibratePrefixTokenRatio_FallbackOnError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm", WithAPIFormat("chat"))
+	ratio := calibratePrefixTokenRatio(context.Background(), client)
+
+	if ratio != 1.0 {
+		t.Errorf("ratio = %.4f, want 1.0 (fallback)", ratio)
+	}
+}
+
+func TestBuildPrefixStrings_ScalesWordCount(t *testing.T) {
+	groups := map[string]int{"test-group": 1000}
+
+	// With ratio 1.0 (no scaling): 1000 words
+	prefixes1, lengths1 := buildPrefixStrings(groups, 42, 1.0)
+	words1 := strings.Fields(prefixes1["test-group"])
+
+	// With ratio 1.67: round(1000/1.67) = 599 words
+	prefixes2, lengths2 := buildPrefixStrings(groups, 42, 1.67)
+	words2 := strings.Fields(prefixes2["test-group"])
+
+	if len(words1) != 1000 {
+		t.Errorf("ratio=1.0: word count = %d, want 1000", len(words1))
+	}
+	if lengths1["test-group"] != 1000 {
+		t.Errorf("ratio=1.0: prefixLengths = %d, want 1000 (target tokens)", lengths1["test-group"])
+	}
+
+	expectedWords := int(math.Round(1000.0 / 1.67))
+	if len(words2) != expectedWords {
+		t.Errorf("ratio=1.67: word count = %d, want %d", len(words2), expectedWords)
+	}
+	if lengths2["test-group"] != 1000 {
+		t.Errorf("ratio=1.67: prefixLengths = %d, want 1000 (target tokens)", lengths2["test-group"])
+	}
+}
+
+func TestCalibratePrefixTokenRatio_FallbackOnOutOfBounds(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]string{"content": "ok"}, "finish_reason": "length"},
+			},
+			"usage": map[string]interface{}{
+				"prompt_tokens": 50000.0, "completion_tokens": 1.0,
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm", WithAPIFormat("chat"))
+	ratio := calibratePrefixTokenRatio(context.Background(), client)
+
+	if ratio != 1.0 {
+		t.Errorf("ratio = %.4f, want 1.0 (fallback for out-of-bounds)", ratio)
+	}
+}
+
+func TestCalibratePrefixTokenRatio_FallbackOnLowRatio(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]string{"content": "ok"}, "finish_reason": "length"},
+			},
+			"usage": map[string]interface{}{
+				"prompt_tokens": 50.0, "completion_tokens": 1.0,
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm", WithAPIFormat("chat"))
+	ratio := calibratePrefixTokenRatio(context.Background(), client)
+
+	if ratio != 1.0 {
+		t.Errorf("ratio = %.4f, want 1.0 (fallback for ratio < 1.0)", ratio)
+	}
+}
+
+func TestRequestToPending_SuffixUsesTokenCountNotWordCount(t *testing.T) {
+	// Build prefix with tokensPerWord=2.0: 100 target tokens → 50 words in prefix string
+	groups := map[string]int{"scaled": 100}
+	prefixes, prefixLengths := buildPrefixStrings(groups, 42, 2.0)
+
+	// prefixLengths should store target token count (100), not word count (50)
+	if prefixLengths["scaled"] != 100 {
+		t.Fatalf("prefixLengths = %d, want 100 (target tokens)", prefixLengths["scaled"])
+	}
+	prefixWords := strings.Fields(prefixes["scaled"])
+	if len(prefixWords) != 50 {
+		t.Fatalf("prefix word count = %d, want 50", len(prefixWords))
+	}
+
+	req := &sim.Request{
+		ID:          "test",
+		InputTokens: make([]int, 200),
+		PrefixGroup: "scaled",
+	}
+	pending := requestToPending(req, 0, false, false, prefixes, prefixLengths)
+
+	// Suffix should be 200 - 100 = 100 "hello " words (using token counts),
+	// NOT 200 - 50 = 150 (which would happen if word count leaked into prefixLengths)
+	suffix := pending.Prompt[len(prefixes["scaled"]):]
+	helloCount := strings.Count(suffix, "hello ")
+	if helloCount != 100 {
+		t.Errorf("suffix hello count = %d, want 100 (200 total tokens - 100 prefix tokens)", helloCount)
+	}
+}
+
+func TestBuildPrefixStrings_EmptyGroupsNoWork(t *testing.T) {
+	// BC-5: no prefix groups → no prefix strings, no calibration needed
+	groups := map[string]int{}
+	prefixes, prefixLengths := buildPrefixStrings(groups, 42, 1.0)
+	if len(prefixes) != 0 {
+		t.Errorf("expected empty prefixes, got %d", len(prefixes))
+	}
+	if len(prefixLengths) != 0 {
+		t.Errorf("expected empty prefixLengths, got %d", len(prefixLengths))
 	}
 }
 

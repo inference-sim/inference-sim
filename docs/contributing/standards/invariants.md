@@ -145,3 +145,85 @@ Invariants are properties that must hold at all times during and after simulatio
 **Evidence:** Design doc INV-11 definition. The `SessionManager.OnComplete` method transitions sessions to exactly one terminal state before returning nil.
 
 **Hypothesis family:** Structural model — session lifecycle completeness.
+
+---
+
+## PD Disaggregation Invariants
+
+### INV-PD-1: KV Completeness
+
+**Statement:** For every disaggregated request, `decode_enqueue_time >= kv_transfer_completion_time`. A decode sub-request must not be enqueued before its KV transfer completes.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_RequestCompletesFullPath` checks DecodeEnqueueTime >= TransferCompleteTime for every parent request. Runtime defensive check in `DecodeRoutingEvent.Execute()`.
+
+**Evidence:** By event priority ordering: KVTransferCompletedEvent (priority 6) schedules DecodeRoutingEvent (priority 7) at the same timestamp. DecodeEnqueueTime is set in DecodeRoutingEvent which fires after transfer completion.
+
+### INV-PD-2: Pool Exclusivity
+
+**Statement:** Prefill sub-requests route only to prefill pool instances; decode sub-requests route only to decode pool instances.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_PrefillRoutedToPrefillPool` and `TestDisaggregation_DecodeRoutedToDecodePool` verify pool role for every parent request's prefill and decode instance assignments.
+
+**Evidence:** `buildPoolFilteredSnapshots(role)` filters routing snapshots to only include instances of the specified pool role before passing to the routing policy.
+
+### INV-PD-3: Transfer Conservation
+
+**Statement:** `initiated_transfers == completed_transfers` at simulation end, provided all transfers complete within the simulation horizon. At bounded horizons, the difference (`initiated - completed`) represents in-flight transfers accounted for in the `pdInTransfer` conservation correction (see INV-1 PD correction in `cluster.go`).
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_TransferConservation` asserts equality and expected count (uses unbounded horizon).
+
+**Evidence:** `transfersInitiated` incremented in `KVTransferStartedEvent.Execute()`, `transfersCompleted` incremented in `KVTransferCompletedEvent.Execute()`. Every started event schedules exactly one completed event.
+
+### INV-PD-4: Phase Causality
+
+**Statement:** For every disaggregated request: `arrival <= prefill_enqueue <= prefill_complete <= transfer_start <= transfer_complete <= decode_enqueue <= completion`.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_PhaseCausality` checks the full causal chain for every parent request.
+
+**Evidence:** Each phase transition is enforced by DES event ordering: earlier phases schedule later-phase events at `time >= current_time`.
+
+### INV-PD-5: Pool Stability
+
+**Statement:** Pool membership is fixed at construction time and never changes during simulation.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_PoolStability` compares `PoolMembership()` before and after `Run()`.
+
+**Evidence:** `BuildPoolMembershipFromIndices` is called once in `NewClusterSimulator` and stored in `cs.poolMembership`. No code path in `Run()` modifies this map.
+
+### INV-PD-6: Metric Map Parent Granularity
+
+**Statement:** After `Run()` completes on a disaggregated cluster, every per-request metric map (`RequestE2Es`, `RequestTTFTs`, `RequestITLs`, `RequestSchedulingDelays`, `RequestCompletionTimes`, `Requests`) contains only parent-level request IDs. No key may have a `_prefill` or `_decode` suffix. Completed parents contribute exactly one entry per map (keyed by parent ID); dropped or incomplete parents contribute no entry.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_MetricProjection_NoSubRequestKeys` checks all six maps for suffix-free keys; `TestDisaggregation_MetricProjection_DroppedParent_NoSubRequestKeys` verifies the invariant holds when decode KV allocation fails. `TestDisaggregation_MetricProjection_NoOp` verifies the projection is a no-op for non-disaggregated clusters.
+
+**Evidence:** `projectPDMetrics()` in `sim/cluster/cluster.go` is called after `aggregateMetrics()` and the conservation correction. It unconditionally deletes the `pfx` and `dec` keys for every parent request, and conditionally inserts a parent-keyed entry only for completed parents (`CompletionTime > 0 && DecodeInstanceID != ""`).
+
+### INV-PD-6b: CompletionTime Includes PostDecodeFixedOverhead
+
+**Statement:** For all successfully decoded parent requests (`DecodeInstanceID != ""`), `parent.CompletionTime` equals the cluster clock at decode completion plus the decode instance's `PostDecodeFixedOverhead()`. For backends where overhead is 0 (blackbox, roofline, cross-model), `CompletionTime` equals the raw cluster clock tick. For `trained-roofline` (overhead ≈ 1850 µs), `CompletionTime` exceeds the raw clock by the overhead amount. This ensures that `projectPDMetrics()` computes `RequestE2Es[parentID] = CompletionTime - ArrivalTime` consistently with how `recordRequestCompletion` computes non-PD E2E (which also adds `PostDecodeFixedOverhead`). Note: the non-PD path applies the overhead conditionally when `len(req.OutputTokens) > 0`; the PD path applies it unconditionally, which is safe because decode sub-requests always inherit `OutputTokens` from the original request via `KVTransferCompletedEvent.Execute`.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_CompletionTime_IncludesNonZeroOverhead` verifies that `E2E_with_overhead − E2E_without_overhead == overhead` exactly for trained-roofline clusters (directly exercises the bug-fix site). `TestDisaggregation_CompletionTime_GeqAllPriorPhaseTimestamps` verifies `CompletionTime >= DecodeEnqueueTime` and `CompletionTime >= TransferCompleteTime` (phase causality preserved). `TestDisaggregation_E2E_IncludesOverhead_ZeroOverheadRegression` verifies `RequestE2Es[parentID] == CompletionTime − ArrivalTime` and `E2E >= TTFT` for blackbox (overhead=0) clusters.
+
+**Evidence:** `detectDecodeCompletions()` in `sim/cluster/cluster.go` stamps `parent.CompletionTime = c.clock + inst.PostDecodeFixedOverhead()`. Fixed in issue #846.
+
+### INV-P2-1: Pool-Config Consistency
+
+**Statement:** Per-pool hardware overrides produce a valid `SimConfig` for each pool role: zero-valued `PoolOverrides` is a no-op (backward-compatible), non-nil fields override only the specified fields, and the global `SimConfig` is never mutated.
+
+**Verification:** `sim/cluster/resolve_test.go` — `TestINV_P2_1_PoolConfigConsistency` verifies observable KV capacity differences between pools pre-simulation via `FreeKVBlocks()`; `TestINV_P2_1_RequestConservation` verifies INV-1 holds under heterogeneous pool configuration.
+
+**Evidence:** `ResolvePoolConfig` performs a struct copy and applies only non-nil/non-zero overrides. `resolveConfigForRole` is called in the instance construction loop in `NewClusterSimulator`, before any simulation state is created.
+
+---
+
+### INV-P2-2: Fair-Share KV Transfer Bandwidth
+
+**Statement:** When `--pd-transfer-contention` is enabled, the effective bandwidth available to each concurrent KV transfer is `total_bandwidth / active_transfers`, where `active_transfers` is the count of transfers in flight at the moment the new transfer starts (inclusive of the new transfer). With a single transfer in flight, the full bandwidth is used (`active_transfers == 1`, divisor == 1). This invariant gates the transfer duration formula in `KVTransferStartedEvent.Execute()`.
+
+**Verification:** `sim/cluster/transfer_contention_test.go`:
+- `TestTransferContention_INVP22_EffectiveBandwidthFormula` — golden test for the N=1 duration (9 µs with 10 blocks at 10 GB/s)
+- `TestTransferContention_INVP22_N2FormulaExact` — golden test for the N=2 duration (17 µs with same payload at 5 GB/s effective)
+- `TestTransferContention_INVP22_DivisorLaw` — invariant test: `duration(N) / duration(1) ≈ N` for N ∈ {1,2,3,4,5,8,10} with monotonicity
+- `TestTransferContention_INVP22_FairShareBandwidth` — end-to-end: concurrent transfers record peak >= 1 when multiple requests arrive simultaneously
+
+**Evidence:** PR9 (`sim/cluster/pd_events.go`, `KVTransferStartedEvent.Execute()`). Gated behind `PDTransferContention` flag (off by default for backward compatibility). The `activeTransfers` counter is incremented before the divisor is applied, ensuring the new transfer receives a fair share of the bandwidth with every other transfer currently in flight.

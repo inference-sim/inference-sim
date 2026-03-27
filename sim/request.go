@@ -61,6 +61,7 @@ type Request struct {
 	ReasonRatio     float64 // reason_tokens / total_output_tokens (part of OutputTokens, not additional)
 	ClientID        string  // Client identifier from workload spec (empty for legacy/test workloads)
 	PrefixGroup     string  // Shared prefix group name (empty for no prefix)
+	PrefixLength    int     // Shared prefix token count; 0 = no prefix. Set during workload generation.
 	Streaming       bool    // Whether client expects streaming response
 
 	// Cluster routing metadata. Set by RoutingDecisionEvent; zero-value when
@@ -81,6 +82,12 @@ type Request struct {
 	// site and increments CompletedRequests normally.
 	// Do NOT skip completion accounting for redirected requests.
 	Redirected bool
+
+	// IsDecodeSubRequest is true when this request was created by PD disaggregation
+	// after KV transfer from a prefill instance. It enters the decode instance with
+	// ProgressIndex already set to len(InputTokens) and KV blocks pre-allocated.
+	// Set by KVTransferCompletedEvent before the request is routed and enqueued.
+	IsDecodeSubRequest bool
 }
 
 // This method returns a human-readable string representation of a Request.
