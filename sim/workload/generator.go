@@ -113,8 +113,13 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 
 		// Create samplers
 		var arrivalSampler ArrivalSampler
-		if client.CustomSampler != nil {
-			arrivalSampler = client.CustomSampler
+		if client.CustomSamplerFactory != nil {
+			// Derive sub-RNG for factory with single entropy draw from clientRNG.
+			// This isolates the sampler's N-draw RNG consumption (for N pre-generated intervals)
+			// from downstream content sampling, keeping input/output distributions stable.
+			subSeed := clientRNG.Int63()
+			subRNG := newRandFromSeed(subSeed)
+			arrivalSampler = client.CustomSamplerFactory(subRNG)
 		} else {
 			arrivalSampler = NewArrivalSampler(client.Arrival, clientRate)
 		}
@@ -143,7 +148,9 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				// where each client is one persistent session cycling through rounds.
 				iat := arrivalSampler.SampleIAT(clientRNG)
 				if iat == 0 {
-					continue // Sampler exhausted; skip this client
+					// Stateful sampler exhausted (e.g., NormalizedExponentialSampler).
+					// Stateless samplers (Poisson, Gamma, etc.) never return 0.
+					continue
 				}
 				startTime := iat
 				// For clients with lifecycle windows, offset into the first window.
@@ -203,7 +210,9 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				}
 				iat := arrivalSampler.SampleIAT(clientRNG)
 				if iat == 0 {
-					break // Sampler exhausted; stop generating sessions for this client
+					// Stateful sampler exhausted (e.g., NormalizedExponentialSampler).
+					// Stateless samplers (Poisson, Gamma, etc.) never return 0.
+					break
 				}
 				currentTime += iat
 				if currentTime >= horizon {
@@ -262,7 +271,9 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 
 			iat := arrivalSampler.SampleIAT(clientRNG)
 			if iat == 0 {
-				break // Sampler exhausted
+				// Stateful sampler exhausted (e.g., NormalizedExponentialSampler).
+				// Stateless samplers (Poisson, Gamma, etc.) never return 0.
+				break
 			}
 			currentTime += iat
 			if currentTime >= horizon {

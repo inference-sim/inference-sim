@@ -10,8 +10,9 @@ import (
 // ArrivalSampler generates inter-arrival times for a client.
 type ArrivalSampler interface {
 	// SampleIAT returns the next inter-arrival time in microseconds.
-	// Returns >= 1 for active samplers.
-	// Returns 0 to signal exhaustion for stateful samplers (e.g., NormalizedExponentialSampler).
+	// Returns >= 1 for stateless samplers (Poisson, Gamma, Weibull, Constant).
+	// Returns 0 to signal exhaustion for stateful samplers (only NormalizedExponentialSampler).
+	// Callers MUST check for 0 and stop generation when encountered.
 	SampleIAT(rng *rand.Rand) int64
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"math/rand"
 	"os"
 
 	"github.com/sirupsen/logrus"
@@ -118,17 +119,22 @@ type ClientSpec struct {
 	Reasoning    *ReasoningSpec  `yaml:"reasoning,omitempty"`
 	Timeout      *int64          `yaml:"timeout,omitempty"`      // Per-request timeout in µs. nil = default (300s). 0 = no timeout. (R9: pointer for zero-value)
 	ClosedLoop   *bool           `yaml:"closed_loop,omitempty"`  // nil = default (true for reasoning/multi-turn). false = open-loop (all rounds pre-generated).
-	// CustomSampler allows programmatic injection of arrival samplers,
+	// CustomSamplerFactory allows programmatic injection of arrival sampler factories,
 	// bypassing the factory-based construction from Arrival.Process.
 	//
 	// Use cases:
 	// - inference-perf expansion: NormalizedExponentialSampler for exact count control
 	// - Programmatic workload generation with custom distributions
 	//
-	// When CustomSampler is set, Arrival.Process validation is skipped.
+	// The factory receives a sub-RNG derived from clientRNG with a single entropy draw,
+	// isolating the sampler's RNG consumption from downstream content sampling.
+	// This ensures input/output token distributions remain stable regardless of request count.
+	//
+	// When CustomSamplerFactory is set, Arrival.Process validation is skipped.
+	// The factory is called once per GenerateRequests invocation, ensuring workload reusability.
 	// Callers MUST handle zero-IAT as exhaustion signal if the sampler is stateful.
 	// Not exposed in YAML (yaml:"-" tag).
-	CustomSampler ArrivalSampler `yaml:"-"`
+	CustomSamplerFactory func(*rand.Rand) ArrivalSampler `yaml:"-"`
 }
 
 // ArrivalSpec configures the inter-arrival time process.
@@ -258,8 +264,8 @@ func validateClient(c *ClientSpec, idx int) error {
 	if err := validateFinitePositive(prefix+".rate_fraction", c.RateFraction); err != nil {
 		return err
 	}
-	// CustomSampler bypasses arrival process validation (programmatic injection)
-	if c.CustomSampler == nil {
+	// CustomSamplerFactory bypasses arrival process validation (programmatic injection)
+	if c.CustomSamplerFactory == nil {
 		if !validArrivalProcesses[c.Arrival.Process] {
 			return fmt.Errorf("%s: unknown arrival process %q; valid: poisson, gamma, weibull, constant", prefix, c.Arrival.Process)
 		}

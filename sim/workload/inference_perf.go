@@ -165,30 +165,30 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 				return nil, fmt.Errorf("total client count %d exceeds safety limit (1M)", totalClients)
 			}
 
-			// Use a base RNG to derive per-client seeds (avoids sequential offset correlation)
-			baseRNG := rand.New(rand.NewSource(seed))
+			// Create factory closure that captures requestsPerClient and durationUs.
+			// Each GenerateRequests call will invoke this factory with a sub-RNG,
+			// producing a fresh sampler instance (workload reusability).
+			factory := func(rng *rand.Rand) ArrivalSampler {
+				return NewNormalizedExponentialSampler(rng, requestsPerClient, durationUs)
+			}
 
 			for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
 				prefixGroup := fmt.Sprintf("prompt-%d", p)
 				for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
 					clientID := fmt.Sprintf("prompt-%d-user-%d", p, u)
-					// Derive client-specific seed from base RNG for proper isolation
-					clientSeed := baseRNG.Int63()
-					clientRNG := rand.New(rand.NewSource(clientSeed))
-					sampler := NewNormalizedExponentialSampler(clientRNG, requestsPerClient, durationUs)
 
 					clients = append(clients, ClientSpec{
-						ID:            clientID,
-						TenantID:      prefixGroup,
-						SLOClass:      "batch",
-						RateFraction:  rateFraction,
-						Arrival:       ArrivalSpec{Process: "poisson"}, // Fallback for diagnostics/serialization
-						CustomSampler: sampler,
-						InputDist:     inputDist,
-						OutputDist:    outputDist,
-						PrefixGroup:   prefixGroup,
-						PrefixLength:  sp.SystemPromptLen,
-						Reasoning:     reasoning,
+						ID:                   clientID,
+						TenantID:             prefixGroup,
+						SLOClass:             "batch",
+						RateFraction:         rateFraction,
+						Arrival:              ArrivalSpec{Process: "poisson"}, // Fallback for diagnostics/serialization
+						CustomSamplerFactory: factory,
+						InputDist:            inputDist,
+						OutputDist:           outputDist,
+						PrefixGroup:          prefixGroup,
+						PrefixLength:         sp.SystemPromptLen,
+						Reasoning:            reasoning,
 					})
 				}
 			}

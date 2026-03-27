@@ -848,7 +848,7 @@ inference_perf:
 
 func TestInferencePerfExpansion_EquivalentToManual(t *testing.T) {
 	// Acceptance criterion: two expansions with same seed produce identical results.
-	// With CustomSampler (stateful), we need fresh expansions for each run.
+	// CustomSamplerFactory ensures fresh sampler instances for each GenerateRequests call.
 
 	ipSpec := &InferencePerfSpec{
 		Stages: []StageSpec{
@@ -1479,7 +1479,7 @@ func TestExpandInferencePerfSpec_SingleStage_NormalizedDeterministic(t *testing.
 
 func TestExpandInferencePerfSpec_MultiStage_KeepsPoisson(t *testing.T) {
 	// BC-4: Multi-stage expansion still uses Poisson arrival (for now).
-	// Verify that clients have Arrival field set (not CustomSampler).
+	// Verify that clients have Arrival field set (not CustomSamplerFactory).
 	ipSpec := &InferencePerfSpec{
 		Stages: []StageSpec{
 			{Rate: 8.0, Duration: 10},
@@ -1505,8 +1505,8 @@ func TestExpandInferencePerfSpec_MultiStage_KeepsPoisson(t *testing.T) {
 		if client.Arrival.Process != "poisson" {
 			t.Errorf("client %d: arrival process = %q, want poisson", i, client.Arrival.Process)
 		}
-		if client.CustomSampler != nil {
-			t.Errorf("client %d: CustomSampler should be nil (using Poisson)", i)
+		if client.CustomSamplerFactory != nil {
+			t.Errorf("client %d: CustomSamplerFactory should be nil (using Poisson)", i)
 		}
 	}
 }

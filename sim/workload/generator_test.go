@@ -1644,7 +1644,7 @@ func TestGenerateRequests_MutualExclusion_CohortsWithInferencePerf_Allowed(t *te
 	}
 }
 
-// mockSampler returns fixed intervals for testing CustomSampler
+// mockSampler returns fixed intervals for testing CustomSamplerFactory
 type mockSampler struct {
 	intervals []int64
 	index     int
@@ -1660,8 +1660,10 @@ func (m *mockSampler) SampleIAT(_ *rand.Rand) int64 {
 }
 
 func TestClientSpec_CustomSampler(t *testing.T) {
-	// Create a mock sampler that returns 3 fixed intervals
-	mock := &mockSampler{intervals: []int64{100000, 200000, 300000}} // 100ms, 200ms, 300ms
+	// Create a factory that returns a fresh mock sampler on each call
+	factory := func(_ *rand.Rand) ArrivalSampler {
+		return &mockSampler{intervals: []int64{100000, 200000, 300000}} // 100ms, 200ms, 300ms
+	}
 
 	spec := &WorkloadSpec{
 		Version:       "1",
@@ -1669,14 +1671,14 @@ func TestClientSpec_CustomSampler(t *testing.T) {
 		Category:      "language",
 		AggregateRate: 10.0,
 		Clients: []ClientSpec{{
-			ID:            "c1",
-			TenantID:      "t1",
-			SLOClass:      "batch",
-			RateFraction:  1.0,
-			Arrival:       ArrivalSpec{Process: "poisson"}, // Will be ignored
-			CustomSampler: mock,                            // This will be used instead
-			InputDist:     DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
-			OutputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+			ID:                   "c1",
+			TenantID:             "t1",
+			SLOClass:             "batch",
+			RateFraction:         1.0,
+			Arrival:              ArrivalSpec{Process: "poisson"}, // Will be ignored
+			CustomSamplerFactory: factory,                         // This will be used instead
+			InputDist:            DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+			OutputDist:           DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
 		}},
 	}
 	horizon := int64(1e9) // 1000 seconds (large enough for all 3 requests)
@@ -1704,8 +1706,10 @@ func TestClientSpec_CustomSampler(t *testing.T) {
 // exhaustion signal from stateful samplers (e.g., NormalizedExponentialSampler).
 func TestCustomSampler_ZeroIATExhaustion(t *testing.T) {
 	t.Run("SingleSessionReasoning", func(t *testing.T) {
-		// GIVEN a client with CustomSampler that returns 0 immediately (exhausted)
-		exhaustedSampler := &mockSampler{intervals: []int64{0}}
+		// GIVEN a client with CustomSamplerFactory that returns 0 immediately (exhausted)
+		factory := func(_ *rand.Rand) ArrivalSampler {
+			return &mockSampler{intervals: []int64{0}}
+		}
 		spec := &WorkloadSpec{
 			Version:       "1",
 			Seed:          42,
@@ -1713,13 +1717,13 @@ func TestCustomSampler_ZeroIATExhaustion(t *testing.T) {
 			AggregateRate: 10.0,
 			Clients: []ClientSpec{
 				{
-					ID:            "client-1",
-					TenantID:      "t1",
-					SLOClass:      "batch",
-					RateFraction:  1.0,
-					CustomSampler: exhaustedSampler,
-					InputDist:     DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
-					OutputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+					ID:                   "client-1",
+					TenantID:             "t1",
+					SLOClass:             "batch",
+					RateFraction:         1.0,
+					CustomSamplerFactory: factory,
+					InputDist:            DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+					OutputDist:           DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
 					Reasoning: &ReasoningSpec{
 						MultiTurn: &MultiTurnSpec{
 							MaxRounds:     5,
@@ -1745,8 +1749,10 @@ func TestCustomSampler_ZeroIATExhaustion(t *testing.T) {
 	})
 
 	t.Run("MultiSessionReasoning", func(t *testing.T) {
-		// GIVEN a client with CustomSampler that returns 2 IATs then exhausts
-		exhaustedSampler := &mockSampler{intervals: []int64{100_000, 200_000, 0}}
+		// GIVEN a client with CustomSamplerFactory that returns 2 IATs then exhausts
+		factory := func(_ *rand.Rand) ArrivalSampler {
+			return &mockSampler{intervals: []int64{100_000, 200_000, 0}}
+		}
 		spec := &WorkloadSpec{
 			Version:       "1",
 			Seed:          42,
@@ -1754,13 +1760,13 @@ func TestCustomSampler_ZeroIATExhaustion(t *testing.T) {
 			AggregateRate: 10.0,
 			Clients: []ClientSpec{
 				{
-					ID:            "client-1",
-					TenantID:      "t1",
-					SLOClass:      "batch",
-					RateFraction:  1.0,
-					CustomSampler: exhaustedSampler,
-					InputDist:     DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
-					OutputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+					ID:                   "client-1",
+					TenantID:             "t1",
+					SLOClass:             "batch",
+					RateFraction:         1.0,
+					CustomSamplerFactory: factory,
+					InputDist:            DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+					OutputDist:           DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
 					Reasoning: &ReasoningSpec{
 						MultiTurn: &MultiTurnSpec{
 							MaxRounds:     3,
@@ -1787,10 +1793,12 @@ func TestCustomSampler_ZeroIATExhaustion(t *testing.T) {
 	})
 }
 
-// TestCustomSampler_ReasoningIntegration tests CustomSampler with reasoning clients.
+// TestCustomSampler_ReasoningIntegration tests CustomSamplerFactory with reasoning clients.
 func TestCustomSampler_ReasoningIntegration(t *testing.T) {
-	// GIVEN a client with CustomSampler and reasoning enabled
-	sampler := &mockSampler{intervals: []int64{100_000, 200_000, 300_000}}
+	// GIVEN a client with CustomSamplerFactory and reasoning enabled
+	factory := func(_ *rand.Rand) ArrivalSampler {
+		return &mockSampler{intervals: []int64{100_000, 200_000, 300_000}}
+	}
 	spec := &WorkloadSpec{
 		Version:       "1",
 		Seed:          42,
@@ -1798,13 +1806,13 @@ func TestCustomSampler_ReasoningIntegration(t *testing.T) {
 		AggregateRate: 10.0,
 		Clients: []ClientSpec{
 			{
-				ID:            "client-1",
-				TenantID:      "t1",
-				SLOClass:      "batch",
-				RateFraction:  1.0,
-				CustomSampler: sampler,
-				InputDist:     DistSpec{Type: "constant", Params: map[string]float64{"value": 128}},
-				OutputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 64}},
+				ID:                   "client-1",
+				TenantID:             "t1",
+				SLOClass:             "batch",
+				RateFraction:         1.0,
+				CustomSamplerFactory: factory,
+				InputDist:            DistSpec{Type: "constant", Params: map[string]float64{"value": 128}},
+				OutputDist:           DistSpec{Type: "constant", Params: map[string]float64{"value": 64}},
 				Reasoning: &ReasoningSpec{
 					MultiTurn: &MultiTurnSpec{
 						MaxRounds:     2,
