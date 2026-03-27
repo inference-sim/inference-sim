@@ -1,0 +1,34 @@
+iteration: 0
+latency_backend_name: "evolved"
+modified_files:
+  - "sim/latency/evolved_model.go"
+  - "sim/latency/latency.go"
+reasoning: |
+  Iteration 0: Cold start with scaled roofline + request overheads.
+
+  Hypothesis: Roofline model with learned efficiency factors (β₀, β₁) captures
+  first-order vLLM latency behavior. Request-level overheads (α₀, α₁, α₂) capture
+  API processing, tokenization, and detokenization costs.
+
+  Basis functions:
+  - β₀ × prefill_compute_time: Prefill FLOPs / (peak_TFLOPS × MFU_prefill)
+  - β₁ × decode_compute_time: Decode FLOPs / (peak_TFLOPS × MFU_decode)
+  - β₂ × constant: Fixed vLLM scheduler overhead per step
+
+  Physics grounding: BLIS roofline (sim/latency/roofline.go:227) computes
+  max(compute_time, memory_time). We learn β₀, β₁ to correct for kernel
+  overhead, framework inefficiency, and imperfect compute-memory overlap.
+
+  Expected coefficients:
+  - β₀ ≈ 0.6-0.8 (prefill tensor core efficiency)
+  - β₁ ≈ 0.4-0.6 (decode memory-bound, lower utilization)
+  - β₂ ≈ 50-200μs (vLLM scheduler overhead)
+  - α₀ ≈ 100-300μs (API processing)
+  - α₁ ≈ 0.5-2μs/token (tokenization)
+  - α₂ ≈ 1-3μs/token (detokenization)
+
+  Prediction: Overall loss < 35% (baseline for iteration 0).
+
+  If loss > 50%, max() roofline is insufficient → iteration 1 needs additive
+  terms (TP communication, scheduler overhead, or compute-memory overlap model).
+timestamp: "2026-03-27T14:30:00Z"

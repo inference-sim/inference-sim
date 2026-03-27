@@ -1,0 +1,58 @@
+[I 2026-03-27 14:35:41,609] A new study created in memory with name: iter0_evolved
+======================================================================
+INNER LOOP SETUP
+======================================================================
+
+Iteration: 0
+Backend: evolved
+Reasoning: Iteration 0: Cold start with scaled roofline + request overheads.
+
+Hypothesis: Roofline model with learned efficiency factors (β₀, β₁) captures
+first-order vLLM latency behavior. Request-level overheads (α₀, α₁, α₂) capture
+API processing, tokenization, and detokenization costs.
+
+Basis functions:
+- β₀ × prefill_compute_time: Prefill FLOPs / (peak_TFLOPS × MFU_prefill)
+- β₁ × decode_compute_time: Decode FLOPs / (peak_TFLOPS × MFU_decode)
+- β₂ × constant: Fixed vLLM scheduler overhead per step
+
+Physics grounding: BLIS roofline (sim/latency/roofline.go:227) computes
+max(compute_time, memory_time). We learn β₀, β₁ to correct for kernel
+overhead, framework inefficiency, and imperfect compute-memory overlap.
+
+Expected coefficients:
+- β₀ ≈ 0.6-0.8 (prefill tensor core efficiency)
+- β₁ ≈ 0.4-0.6 (decode memory-bound, lower utilization)
+- β₂ ≈ 50-200μs (vLLM scheduler overhead)
+- α₀ ≈ 100-300μs (API processing)
+- α₁ ≈ 0.5-2μs/token (tokenization)
+- α₂ ≈ 1-3μs/token (detokenization)
+
+Prediction: Overall loss < 35% (baseline for iteration 0).
+
+If loss > 50%, max() roofline is insufficient → iteration 1 needs additive
+terms (TP communication, scheduler overhead, or compute-memory overlap model).
+
+Modified files: ['sim/latency/evolved_model.go', 'sim/latency/latency.go']
+
+Verifying declared files...
+  ✓ sim/latency/evolved_model.go
+  ✓ sim/latency/latency.go
+
+Coefficient bounds loaded:
+  Alpha: 3 coefficients
+  Beta: 3 coefficients
+
+Compiling BLIS...
+  ✓ Compilation successful (0.1s)
+
+Setup complete. Ready to optimize evolved.
+======================================================================
+
+======================================================================
+BAYESIAN OPTIMIZATION (up to 50 trials)
+Early stopping: >1% improvement required in 50-trial window
+======================================================================
+  Warm-start: Enqueued initial trial with suggested values
+  0%|          | 0/50 [00:00<?, ?it/s]                                        0%|          | 0/50 [01:05<?, ?it/s]Best trial: 0. Best value: 712.344:   0%|          | 0/50 [01:05<?, ?it/s]Best trial: 0. Best value: 712.344:   2%|▏         | 1/50 [01:05<53:28, 65.47s/it]                                                                                  Best trial: 0. Best value: 712.344:   2%|▏         | 1/50 [02:10<53:28, 65.47s/it]Best trial: 0. Best value: 712.344:   2%|▏         | 1/50 [02:10<53:28, 65.47s/it]Best trial: 0. Best value: 712.344:   4%|▍         | 2/50 [02:10<52:16, 65.35s/it]                                                                                  Best trial: 0. Best value: 712.344:   4%|▍         | 2/50 [03:16<52:16, 65.35s/it]Best trial: 0. Best value: 712.344:   4%|▍         | 2/50 [03:16<52:16, 65.35s/it]Best trial: 0. Best value: 712.344:   6%|▌         | 3/50 [03:16<51:18, 65.50s/it]                                                                                  Best trial: 0. Best value: 712.344:   6%|▌         | 3/50 [04:20<51:18, 65.50s/it]Best trial: 3. Best value: 530.102:   6%|▌         | 3/50 [04:20<51:18, 65.50s/it]Best trial: 3. Best value: 530.102:   8%|▊         | 4/50 [04:20<49:40, 64.78s/it]                                                                                  Best trial: 3. Best value: 530.102:   8%|▊         | 4/50 [05:25<49:40, 64.78s/it]Best trial: 4. Best value: 402.186:   8%|▊         | 4/50 [05:25<49:40, 64.78s/it]Best trial: 4. Best value: 402.186:  10%|█         | 5/50 [05:25<48:52, 65.16s/it]                                                                                  Best trial: 4. Best value: 402.186:  10%|█         | 5/50 [06:31<48:52, 65.16s/it]Best trial: 4. Best value: 402.186:  10%|█         | 5/50 [06:31<48:52, 65.16s/it]Best trial: 4. Best value: 402.186:  12%|█▏        | 6/50 [06:31<47:56, 65.37s/it]                                                                                  Best trial: 4. Best value: 402.186:  12%|█▏        | 6/50 [07:36<47:56, 65.37s/it]Best trial: 4. Best value: 402.186:  12%|█▏        | 6/50 [07:36<47:56, 65.37s/it]Best trial: 4. Best value: 402.186:  14%|█▍        | 7/50 [07:36<46:48, 65.32s/it]                                                                                  Best trial: 4. Best value: 402.186:  14%|█▍        | 7/50 [08:41<46:48, 65.32s/it]Best trial: 4. Best value: 402.186:  14%|█▍        | 7/50 [08:41<46:48, 65.32s/it]Best trial: 4. Best value: 402.186:  16%|█▌        | 8/50 [08:41<45:37, 65.17s/it]                                                                                  Best trial: 4. Best value: 402.186:  16%|█▌        | 8/50 [09:46<45:37, 65.17s/it]Best trial: 4. Best value: 402.186:  16%|█▌        | 8/50 [09:46<45:37, 65.17s/it]Best trial: 4. Best value: 402.186:  18%|█▊        | 9/50 [09:46<44:30, 65.14s/it]                                                                                  Best trial: 4. Best value: 402.186:  18%|█▊        | 9/50 [10:52<44:30, 65.14s/it]Best trial: 4. Best value: 402.186:  18%|█▊        | 9/50 [10:52<44:30, 65.14s/it]Best trial: 4. Best value: 402.186:  20%|██        | 10/50 [10:52<43:27, 65.20s/it]                                                                                   Best trial: 4. Best value: 402.186:  20%|██        | 10/50 [11:56<43:27, 65.20s/it]Best trial: 10. Best value: 234.027:  20%|██        | 10/50 [11:56<43:27, 65.20s/it]Best trial: 10. Best value: 234.027:  22%|██▏       | 11/50 [11:56<42:11, 64.91s/it]                                                                                    Best trial: 10. Best value: 234.027:  22%|██▏       | 11/50 [12:59<42:11, 64.91s/it]Best trial: 11. Best value: 214.768:  22%|██▏       | 11/50 [12:59<42:11, 64.91s/it]Best trial: 11. Best value: 214.768:  24%|██▍       | 12/50 [12:59<40:49, 64.46s/it]/opt/homebrew/Cellar/python@3.13/3.13.3_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/resource_tracker.py:301: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown: {'/mp-l749jaay'}
+  warnings.warn(

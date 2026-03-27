@@ -10,6 +10,7 @@ import os
 import sys
 import json
 import subprocess
+import shutil
 import time
 from datetime import datetime
 from pathlib import Path
@@ -31,28 +32,63 @@ class InnerLoopOptimizer:
     """
 
     def __init__(self,
-                 manifest_path: str = "iteration_manifest.yaml",
-                 bounds_path: str = "coefficient_bounds.yaml",
+                 iteration: int,
                  n_trials: int = 50,
-                 timeout_per_trial: int = 120):
+                 timeout_per_trial: int = 120,
+                 data_dir: str = "trainval_data",
+                 seed: int = 42):
         """
         Initialize inner loop optimizer.
 
         Args:
-            manifest_path: Path to iteration manifest from outer loop
-            bounds_path: Path to coefficient bounds specification
+            iteration: Iteration number (used to locate files in iterations/iter{N}/)
             n_trials: Number of Bayesian optimization trials
             timeout_per_trial: Timeout in seconds for each BLIS run
+            data_dir: Directory containing ground-truth experiments (for CV: subset of trainval_data)
+            seed: Random seed for Bayesian optimization (determinism guarantee)
         """
-        self.manifest_path = manifest_path
-        self.bounds_path = bounds_path
+        self.iteration = iteration
+        self.iteration_dir = f"iterations/iter{iteration}"
+        self.manifest_path = os.path.join(self.iteration_dir, "iteration_manifest.yaml")
+        self.bounds_path = os.path.join(self.iteration_dir, "coefficient_bounds.yaml")
         self.n_trials = n_trials
         self.timeout_per_trial = timeout_per_trial
+        self.data_dir = data_dir
+        self.seed = seed
 
         self.backend_name = None
         self.bounds = None
-        self.iteration = None
         self.error_log = []  # Track failed trials
+
+        # Get reliable Python executable (fix macOS Homebrew .app bundle issues)
+        self.python_executable = self._get_python_executable()
+
+    def _get_python_executable(self) -> str:
+        """
+        Get a reliable Python executable path.
+
+        macOS Homebrew Python's sys.executable points to Python.app/Contents/MacOS/Python,
+        which doesn't work properly in subprocess calls. This method finds a working
+        python3 executable.
+
+        Returns:
+            Path to python3 executable
+        """
+        # First try: Use python3 from PATH (works if in venv or system python3)
+        python3_path = shutil.which("python3")
+        if python3_path:
+            return python3_path
+
+        # Second try: If sys.executable is a .app bundle, find the bin/python3
+        if "Python.app" in sys.executable:
+            # Homebrew pattern: /opt/homebrew/.../Python.app/Contents/MacOS/Python
+            # We want: /opt/homebrew/bin/python3
+            parts = sys.executable.split("/")
+            if "opt" in parts and "homebrew" in parts:
+                return "/opt/homebrew/bin/python3"
+
+        # Fallback: Use sys.executable (will fail on Homebrew .app but we tried)
+        return sys.executable
 
     def setup(self) -> None:
         """
@@ -94,15 +130,41 @@ class InnerLoopOptimizer:
         print(f"Reasoning: {reasoning}")
         print(f"Modified files: {modified_files}")
 
-        # 2. Verify declared files exist
+        # 2. Verify declared files exist (relative to project root)
         print("\nVerifying declared files...")
+        self.project_root = os.path.dirname(self.script_dir)
         for filepath in modified_files:
-            if not os.path.exists(filepath):
+            full_path = os.path.join(self.project_root, filepath)
+            if not os.path.exists(full_path):
                 raise FileNotFoundError(
-                    f"Agent declared {filepath} but file not found.\n"
+                    f"Agent declared {filepath} but file not found at {full_path}.\n"
                     f"Check outer loop output."
                 )
             print(f"  ✓ {filepath}")
+
+        # 2.5. Run pre-flight validation (checks backend registration and integration)
+        print("\nRunning pre-flight validation...")
+        validate_script = os.path.join(self.script_dir, "scripts", "validate_backend.py")
+        if os.path.exists(validate_script):
+            try:
+                result = subprocess.run(
+                    [sys.executable, validate_script, self.backend_name],
+                    cwd=self.script_dir,
+                    capture_output=True,
+                    timeout=60
+                )
+                # Print validation output
+                print(result.stdout.decode('utf-8', errors='replace'))
+                if result.returncode != 0:
+                    print(result.stderr.decode('utf-8', errors='replace'))
+                    raise RuntimeError(
+                        f"Pre-flight validation failed for backend '{self.backend_name}'.\n"
+                        f"Fix the integration issues listed above before retrying."
+                    )
+            except subprocess.TimeoutExpired:
+                print("  ⚠ Validation script timed out - skipping (proceeding with caution)")
+        else:
+            print(f"  ⚠ Validation script not found at {validate_script} - skipping")
 
         # 3. Load coefficient bounds
         if not os.path.exists(self.bounds_path):
@@ -141,6 +203,8 @@ class InnerLoopOptimizer:
         print(f"  Alpha: {n_alpha} coefficients")
         print(f"  Beta: {n_beta} coefficients")
 
+        print(f"\nPython executable: {self.python_executable}")
+
         # 4. Compile BLIS binary with new latency backend
         print("\nCompiling BLIS...")
         compile_start = time.time()
@@ -150,7 +214,8 @@ class InnerLoopOptimizer:
                 ["go", "build", "-o", "blis", "main.go"],
                 capture_output=True,
                 check=True,
-                timeout=60
+                timeout=60,
+                cwd=self.project_root  # Compile from project root
             )
             compile_time = time.time() - compile_start
             print(f"  ✓ Compilation successful ({compile_time:.1f}s)")
@@ -171,8 +236,9 @@ class InnerLoopOptimizer:
             raise RuntimeError("Compilation timeout (>60s). Check for infinite loops.")
 
         # 5. Verify binary exists
-        if not os.path.exists("./blis"):
-            raise RuntimeError("BLIS binary not found after compilation.")
+        self.blis_binary = os.path.join(self.project_root, "blis")
+        if not os.path.exists(self.blis_binary):
+            raise RuntimeError(f"BLIS binary not found at {self.blis_binary} after compilation.")
 
         print(f"\nSetup complete. Ready to optimize {self.backend_name}.")
         print("=" * 70)
@@ -198,13 +264,13 @@ class InnerLoopOptimizer:
         # Run run_blis_and_compute_loss.py with injected coefficients
         try:
             result = subprocess.run([
-                sys.executable,  # Use same Python interpreter
+                self.python_executable,  # Use reliable Python interpreter
                 self.run_blis_script,  # Absolute path to script
                 "--latency-model", self.backend_name,
                 "--alpha-coeffs", alpha_str,
                 "--beta-coeffs", beta_str,
                 "--blis-binary", "../blis",
-                "--data-dir", "trainval_data"
+                "--data-dir", self.data_dir
             ],
             capture_output=True,
             check=True,
@@ -279,14 +345,15 @@ class InnerLoopOptimizer:
         """
         print("\n" + "=" * 70)
         print(f"BAYESIAN OPTIMIZATION (up to {self.n_trials} trials)")
-        print("Early stopping: >1% improvement required in 50-trial window")
+        print("Early stopping: >1% improvement required in 15-trial window")
+        print(f"Random seed: {self.seed} (deterministic)")
         print("=" * 70)
 
-        # Create Optuna study
+        # Create Optuna study with deterministic seed
         study = optuna.create_study(
             direction="minimize",
             study_name=f"iter{self.iteration}_{self.backend_name}",
-            sampler=optuna.samplers.TPESampler(seed=42)
+            sampler=optuna.samplers.TPESampler(seed=self.seed)
         )
 
         # Enqueue initial trial if suggested values provided (warm-start optimization)
@@ -307,28 +374,28 @@ class InnerLoopOptimizer:
             else:
                 print(f"  Warning: Initial values have wrong length, skipping warm-start")
 
-        # Convergence callback: stop if no >1% improvement in last 50 trials
+        # Convergence callback: stop if no >1% improvement in last 15 trials
         converged_early = [False]  # Mutable container for callback
 
         def convergence_callback(study: optuna.Study, trial: optuna.trial.FrozenTrial):
-            """Stop if best loss hasn't improved >1% in last 50 trials."""
+            """Stop if best loss hasn't improved >1% in last 15 trials."""
             n = len(study.trials)
-            if n <= 50:
-                return  # Need more than 50 trials to check 50-trial window
+            if n <= 15:
+                return  # Need more than 15 trials to check 15-trial window
 
-            # Get best loss from all trials up to 50 trials ago (trials 0 to n-51)
-            trials_before_window = study.trials[:n-50]
-            best_loss_50_ago = min(t.value for t in trials_before_window if t.value is not None)
+            # Get best loss from all trials up to 15 trials ago (trials 0 to n-16)
+            trials_before_window = study.trials[:n-15]
+            best_loss_15_ago = min(t.value for t in trials_before_window if t.value is not None)
 
             # Get current best loss
             current_best = study.best_value
 
             # Calculate improvement
-            improvement = (best_loss_50_ago - current_best) / best_loss_50_ago
+            improvement = (best_loss_15_ago - current_best) / best_loss_15_ago
 
             if improvement <= 0.01:  # ≤1% improvement
                 print(f"\n[Convergence] Stopping at trial {n}/{self.n_trials}")
-                print(f"[Convergence] Best loss 50 trials ago: {best_loss_50_ago:.6f}")
+                print(f"[Convergence] Best loss 15 trials ago: {best_loss_15_ago:.6f}")
                 print(f"[Convergence] Current best loss: {current_best:.6f}")
                 print(f"[Convergence] Improvement: {improvement*100:.2f}% (threshold: >1.00%)")
                 converged_early[0] = True
@@ -359,7 +426,7 @@ class InnerLoopOptimizer:
         print(f"Best beta: {best_beta}")
         print(f"Trials completed: {actual_trials}/{self.n_trials}")
         if converged_early[0]:
-            print(f"Status: Converged early (no >1% improvement in last 50 trials)")
+            print(f"Status: Converged early (no >1% improvement in last 15 trials)")
         else:
             print(f"Status: Completed all requested trials")
         print(f"Optimization time: {opt_time:.1f}s")
@@ -394,13 +461,13 @@ class InnerLoopOptimizer:
 
         # Run with --evaluate-per-experiment flag
         result = subprocess.run([
-            sys.executable,  # Use same Python interpreter
+            self.python_executable,  # Use reliable Python interpreter
             self.run_blis_script,  # Absolute path to script
             "--latency-model", self.backend_name,
             "--alpha-coeffs", alpha_str,
             "--beta-coeffs", beta_str,
             "--blis-binary", "../blis",
-            "--data-dir", "trainval_data",
+            "--data-dir", self.data_dir,
             "--evaluate-per-experiment"  # Detailed diagnostics
         ],
         capture_output=True,
@@ -422,22 +489,98 @@ class InnerLoopOptimizer:
 
         return diagnostics
 
-    def save_results(self, results: Dict[str, Any], output_path: str = "inner_loop_results.json") -> None:
+    def save_results(self, results: Dict[str, Any]) -> None:
         """
-        Save optimization results to JSON file.
+        Save optimization results to JSON file in iteration directory.
 
         Args:
             results: Results dictionary from optimize()
-            output_path: Output file path
+
+        Output JSON structure:
+        {
+          "iteration": N,
+          "backend_name": "evolved",
+          "timestamp": "ISO-8601 timestamp",
+
+          # Optimization metadata
+          "optimization": {
+            "n_trials": int,  # Actual trials run (may be less if converged early)
+            "converged_early": bool,
+            "optimization_time_seconds": float,
+            "num_errors": int  # Failed trials (penalty loss)
+          },
+
+          # Best coefficients found
+          "best_params": {
+            "alpha": [α₀, α₁, α₂],  # Request-level: fixed overhead, per-input-token, per-output-token
+            "beta": [β₀, β₁, ..., βₙ]  # Step-level: basis function coefficients
+          },
+
+          # Overall loss (RMSE across experiments)
+          "loss": {
+            "overall_loss": float,  # Sum of ttft_rmse + e2e_rmse
+            "ttft_rmse": float,     # RMSE[APE(mean_TTFT_per_exp)] - root mean square of APE across 15 experiments
+            "e2e_rmse": float       # RMSE[APE(mean_E2E_per_exp)] - root mean square of APE across 15 experiments
+          },
+
+          # Per-experiment diagnostics (only if detailed eval ran)
+          "per_experiment_results": [
+            {
+              "experiment_folder": str,
+              "model": str,
+              "workload": str,
+              "ttft_mean_ape": float,  # Absolute percentage error for TTFT mean (this experiment only)
+              "e2e_mean_ape": float,   # Absolute percentage error for E2E mean (this experiment only)
+              "latency_ape": {...},    # Detailed latency APEs (mean/p90/p99 for TTFT/E2E/ITL)
+              "throughput_ape": {...}  # Throughput APEs
+            },
+            ...
+          ],
+
+          # Error log (failed trials)
+          "error_log": [str, ...]
+        }
         """
-        results["timestamp"] = datetime.now().isoformat()
-        results["iteration"] = self.iteration
-        results["backend_name"] = self.backend_name
-        results["num_errors"] = len(self.error_log)
-        results["error_log"] = self.error_log  # Include failed trials
+        output_path = os.path.join(self.iteration_dir, "inner_loop_results.json")
+
+        # Restructure for clarity
+        detailed_diagnostics = results.get("detailed_diagnostics", {})
+
+        output = {
+            "iteration": self.iteration,
+            "backend_name": self.backend_name,
+            "timestamp": datetime.now().isoformat(),
+
+            # Optimization metadata
+            "optimization": {
+                "n_trials": results["n_trials"],
+                "converged_early": results["converged_early"],
+                "optimization_time_seconds": results["optimization_time"],
+                "num_errors": len(self.error_log)
+            },
+
+            # Best parameters
+            "best_params": {
+                "alpha": results["best_alpha"],
+                "beta": results["best_beta"]
+            },
+
+            # Overall loss (RMSE across experiments)
+            "loss": {
+                "overall_loss": results["best_loss"],
+                "ttft_rmse": detailed_diagnostics.get("ttft_rmse"),
+                "e2e_rmse": detailed_diagnostics.get("e2e_rmse")
+            },
+
+            # Per-experiment results (if available)
+            "per_experiment_results": detailed_diagnostics.get("per_experiment", []),
+
+            # Error log
+            "error_log": self.error_log
+        }
 
         with open(output_path, "w") as f:
-            json.dump(results, f, indent=2)
+            json.dump(output, f, indent=2)
 
         print(f"\nResults saved to: {output_path}")
         if self.error_log:
@@ -452,14 +595,10 @@ def main():
         description="Inner loop Bayesian optimization for latency coefficients"
     )
     parser.add_argument(
-        "--manifest",
-        default="iteration_manifest.yaml",
-        help="Path to iteration manifest from outer loop"
-    )
-    parser.add_argument(
-        "--bounds",
-        default="coefficient_bounds.yaml",
-        help="Path to coefficient bounds specification"
+        "--iteration",
+        type=int,
+        required=True,
+        help="Iteration number (reads files from iterations/iter{N}/)"
     )
     parser.add_argument(
         "--n-trials",
@@ -474,24 +613,31 @@ def main():
         help="Timeout per trial in seconds"
     )
     parser.add_argument(
-        "--output",
-        default="inner_loop_results.json",
-        help="Output file for results"
-    )
-    parser.add_argument(
         "--no-detailed-eval",
         action="store_true",
         help="Skip post-convergence detailed evaluation"
+    )
+    parser.add_argument(
+        "--data-dir",
+        default="trainval_data",
+        help="Directory containing ground-truth experiments (default: trainval_data)"
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for Bayesian optimization (default: 42, for determinism)"
     )
 
     args = parser.parse_args()
 
     # Initialize optimizer
     optimizer = InnerLoopOptimizer(
-        manifest_path=args.manifest,
-        bounds_path=args.bounds,
+        iteration=args.iteration,
         n_trials=args.n_trials,
-        timeout_per_trial=args.timeout
+        timeout_per_trial=args.timeout,
+        data_dir=args.data_dir,
+        seed=args.seed
     )
 
     # Phase 1: Setup
@@ -521,7 +667,7 @@ def main():
             print("Continuing with basic results...")
 
     # Save results
-    optimizer.save_results(results, args.output)
+    optimizer.save_results(results)
 
     print("\n" + "=" * 70)
     print("INNER LOOP COMPLETE")
