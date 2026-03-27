@@ -28,6 +28,81 @@
 
 ---
 
+## 🎯 MANDATORY METHODOLOGY: Strategy Evolution + Hypothesis Bundles
+
+**YOU MUST follow the Strategy Evolution methodology and hypothesis bundle structure.**
+
+### Required Reading
+
+Before designing ANY iteration, read and follow:
+
+1. **[Strategy Evolution](../../docs/methodology/strategy-evolution.md)** — The complete methodology you must follow
+   - Phase 2 (Hypothesis Bundle Design) — your primary responsibility
+   - Phase 5 (Principle Extraction) — informs how you learn from previous iterations
+
+2. **[Hypothesis Bundles in Practice](../../docs/methodology/hypothesis-bundles.md)** — Worked examples showing exactly what you must produce
+   - What is a hypothesis bundle? (Section 1)
+   - The three required elements: quantitative prediction, causal mechanism, diagnostic clause
+   - Real examples from PR #452 and PR #447
+
+### H-main is MANDATORY
+
+**Every iteration MUST have an H-main hypothesis.** This is non-negotiable.
+
+**H-main (Main Mechanism Claim)** tests whether your core mechanism works and WHY:
+
+```markdown
+## H-main: [Mechanism Name]
+
+**Prediction**: [Quantitative threshold with specific metric]
+Example: "Overall loss will decrease to <80% (from 111% in iter0), with TTFT RMSE <50% and E2E RMSE <40%"
+
+**Causal Mechanism**: [WHY this should hold - explain the physics in detail]
+Example: "...because prefill chunking introduces per-chunk kernel launch overhead (~50μs) that scales with num_chunks, and this overhead is not captured by the total FLOPs formula which only accounts for compute time..."
+
+**Code Citations**: [Where in vLLM/BLIS does this mechanism occur]
+Example: "vLLM scheduler.py:schedule_prefills(), BLIS sim/latency/evolved_model.go:StepTime()"
+
+**Diagnostic Clause**: *If this fails, it indicates [what to investigate next]*
+Example: "If this fails, it indicates that chunk overhead is negligible (<5% of step time) or our chunk size assumption is wrong"
+```
+
+**H-main Requirements** (from Strategy Evolution Phase 2b):
+
+1. **Quantitative prediction with threshold** — Not "will improve" but "TTFT RMSE will reduce from 111% to <50%"
+2. **Causal mechanism** — Not "because it's better" but a detailed physics explanation of WHY the basis functions should reduce prediction error
+3. **Diagnostic clause** — Directs investigation when prediction fails: "if this fails, it indicates X, investigate Y"
+4. **Must address loss function** — Predict how both `RMSE[APE_TTFT]` and `RMSE[APE_E2E]` will change
+
+### Additional Hypothesis Arms (Optional but Recommended)
+
+Beyond H-main, consider these arms from hypothesis bundles methodology:
+
+- **H-ablation-{component}**: Which basis functions matter most? Test by removing each one
+- **H-boundary**: Where should the mechanism break down? (e.g., "at batch_size=1, prefill term should dominate")
+- **H-error-pattern**: Which experiments should see largest improvement? (e.g., "Scout MoE experiments should improve >30% because...")
+- **H-robustness**: How does the mechanism generalize? (e.g., "across TP configs")
+
+**Organize hypotheses however best reflects your iteration's goals.** The structure should emerge from your reasoning, not a rigid template.
+
+### Why This Matters
+
+From Strategy Evolution Phase 5: **Prediction errors are your most valuable output.**
+
+When H-main is refuted:
+- ✅ The diagnostic clause directs Agent 3's investigation
+- ✅ The causal mechanism reveals what you misunderstood about vLLM/GPU dynamics
+- ✅ The prediction error becomes a principle that constrains all future iterations
+
+When H-main is confirmed:
+- ✅ You've validated a mechanism and can build on it
+- ✅ The threshold quantifies the gain for the ledger
+- ✅ The mechanism becomes a principle for future work
+
+**Without a proper H-main, prediction errors cannot guide learning.**
+
+---
+
 ## Training Data and Targets
 
 **Training Data**: 15 ground-truth experiments in `training/trainval_data/`:
@@ -166,12 +241,20 @@ This reduces inner loop trials from 50 to ~20-30 by starting near the optimum.
 
 ## How Hypothesis Generation Works
 
-**Methodology**: Follow the [Strategy Evolution](../../docs/methodology/strategy-evolution.md) methodology, adapted for latency model training. Each iteration formulates a **hypothesis bundle** — a set of testable predictions designed before implementation.
+**⚠️ CRITICAL: Read the "MANDATORY METHODOLOGY" section above FIRST.** This section provides implementation details, but you must follow the Strategy Evolution methodology and hypothesis bundle structure defined above.
 
-**Key References**:
-- **Strategy Evolution**: [docs/methodology/strategy-evolution.md](../../docs/methodology/strategy-evolution.md) — Phase 2 (hypothesis bundle design), Phase 3 (implement & verify), Phase 5 (principle extraction)
-- **Hypothesis Bundles**: [docs/methodology/hypothesis-bundles.md](../../docs/methodology/hypothesis-bundles.md) — Worked examples with prediction-vs-outcome analysis
-- **Architecture Discussion**: [GitHub Issue #4 Comment](https://github.com/inference-sim/training/issues/4#issuecomment-4056357828) — Coefficient injection mechanism and two-loop architecture
+**Methodology**: You are executing **Strategy Evolution Phase 2 (Hypothesis Bundle Design)**, adapted for latency model training. Each iteration formulates a **hypothesis bundle** — a set of testable predictions designed before implementation.
+
+**Your workflow follows Strategy Evolution Phase 2b exactly:**
+1. Generate candidate basis functions (Step 2a analog)
+2. Decompose into hypothesis bundle with **H-main as the mandatory core** (Step 2b)
+3. Write predictions BEFORE implementation (design-time commitment)
+4. Agent 3 will compare your predictions to outcomes (Phase 4 verification)
+
+**Required reading before proceeding:**
+- **[Strategy Evolution Phase 2](../../docs/methodology/strategy-evolution.md#phase-2-hypothesis-bundle-design)** — The process you're executing
+- **[Hypothesis Bundles in Practice](../../docs/methodology/hypothesis-bundles.md)** — Concrete examples of H-main and other arms from real experiments
+- **[Architecture Discussion](https://github.com/inference-sim/training/issues/4#issuecomment-4056357828)** — Coefficient injection mechanism and two-loop architecture
 
 ### 1. Background Research (iter0 or new basis function categories)
 
@@ -187,23 +270,32 @@ This reduces inner loop trials from 50 to ~20-30 by starting near the optimum.
 
 ### 2. Physics-Informed Reasoning (Strategy Evolution Phase 2b)
 
-**Hypothesis Bundle Structure**:
+**⚠️ MANDATORY: Every iteration must start with H-main.** See the "MANDATORY METHODOLOGY" section above for the complete H-main template and requirements.
 
-Each hypothesis must have three elements:
+**The Three Required Elements** (from [Hypothesis Bundles](../../docs/methodology/hypothesis-bundles.md)):
+
+Each hypothesis must have:
 1. **Quantitative prediction**: Specific threshold (e.g., "Overall loss < 80%", "TTFT RMSE reduces from 111% to <50%")
 2. **Causal mechanism**: WHY the prediction holds — explain the physics (e.g., "because chunking overhead scales with num_chunks")
 3. **Diagnostic clause**: What failure would reveal (e.g., "if this fails, kernel launch overhead dominates")
 
-**Example from Hypothesis Bundles**:
+**Example H-main from Hypothesis Bundles** (PR #452 scheduling track):
 > "Adding prefill chunking term β₃ × num_chunks will reduce TTFT RMSE from 111% to <50%, **because** vLLM splits long prefills into 2048-token chunks with per-chunk overhead not captured by total FLOPs formula. **If this fails**, chunking overhead is negligible or chunk size assumption is wrong."
 
-**Design your own hypotheses** based on what you're testing. Consider:
-- Primary mechanism hypotheses (does the core approach work?)
-- Component importance (which basis functions matter most?)
-- Boundary conditions (where should effects vanish or amplify?)
-- Generalization scope (which experiment types should succeed/fail?)
+Note the structure:
+- **Quantitative**: "reduce TTFT RMSE from 111% to <50%" (specific numbers)
+- **Causal**: "because vLLM splits... per-chunk overhead..." (physics explanation)
+- **Diagnostic**: "if this fails, chunking overhead is negligible..." (investigation direction)
 
-Organize your hypotheses however makes sense for your iteration — the structure should reflect your reasoning, not a fixed template.
+**Beyond H-main: Additional Arms** (optional but recommended):
+
+Design additional hypotheses based on what you're testing. From [Hypothesis Bundles](../../docs/methodology/hypothesis-bundles.md):
+- **H-ablation**: Component importance (which basis functions matter most?)
+- **H-boundary**: Where should effects vanish or amplify?
+- **H-error-pattern**: Which experiments should see largest improvement?
+- **H-robustness**: Generalization across TP configs, model sizes, batch compositions?
+
+**Organize your bundle to match your reasoning** — the structure should reflect your iteration's goals, not a rigid template. But **H-main is always required.**
 
 **Potential Basis Function Categories** (agent explores what's needed):
 - **Compute-bound**: FLOPs / (peak_TFLOPS × MFU)
@@ -431,6 +523,12 @@ func max(a, b int64) int64 {
 
 | Mistake | Fix |
 |---------|-----|
+| **Skip reading Strategy Evolution / Hypothesis Bundles docs** | **Read [strategy-evolution.md](../../docs/methodology/strategy-evolution.md) and [hypothesis-bundles.md](../../docs/methodology/hypothesis-bundles.md) BEFORE designing** |
+| **No H-main hypothesis** | **H-main is MANDATORY — every iteration must have it. See "MANDATORY METHODOLOGY" section above** |
+| **H-main missing elements** | **H-main must have: (1) quantitative prediction, (2) causal mechanism, (3) diagnostic clause** |
+| **Vague predictions** | Not "will improve" but "TTFT RMSE will reduce from 111% to <50%" with specific numbers |
+| **No causal mechanism** | Not "because it's better" but detailed physics explanation of WHY basis functions reduce error |
+| **No diagnostic clause** | Must include "if this fails, it indicates X" to direct Agent 3's investigation |
 | Skip reading current evolved backend | Read `sim/latency/evolved_model.go` to see what basis functions already exist (if N > 0) |
 | Skip reviewing previous iterations | Read all iter{0..N-1} FINDINGS.md and results before designing |
 | Ignore loss function components | Hypotheses must predict RMSE[APE_TTFT] and RMSE[APE_E2E] changes |
@@ -456,11 +554,15 @@ Before you finish, verify:
 - [ ] Identified what's been tried and what's been confirmed/rejected
 - [ ] Extracted `best_params` from `iter{N-1}/inner_loop_results.json` for warm-start
 
-**Hypothesis Design**:
+**Hypothesis Design** (following [Strategy Evolution](../../docs/methodology/strategy-evolution.md) Phase 2):
 - [ ] `iterations/iter{N}/iter{N}-HYPOTHESIS.md` exists with your designed hypotheses
+- [ ] **H-main hypothesis exists and is complete** — this is MANDATORY
+- [ ] H-main has all three required elements: (1) quantitative prediction with threshold, (2) causal mechanism explaining WHY, (3) diagnostic clause for failures
+- [ ] H-main predicts specific loss function changes: "Overall loss will decrease to <X%", "TTFT RMSE will reduce from Y% to <Z%"
+- [ ] Additional hypotheses (H-ablation, H-boundary, etc.) included as appropriate for your iteration's complexity
 - [ ] Each hypothesis has: (1) quantitative threshold, (2) causal mechanism ("because..."), (3) diagnostic clause ("if this fails...")
-- [ ] Hypotheses predict loss function improvements: RMSE[APE_TTFT] and RMSE[APE_E2E] changes
 - [ ] Hypotheses address gaps/failures from previous iterations (if N > 0)
+- [ ] Followed [Hypothesis Bundles](../../docs/methodology/hypothesis-bundles.md) examples and structure
 
 **Implementation**:
 - [ ] `iterations/iter{N}/iteration_manifest.yaml` declares backend="evolved" and lists all modified files
