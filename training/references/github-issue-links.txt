@@ -1,0 +1,12 @@
+# GitHub Issue Links - Training References
+
+## Latency Training Architecture Discussion
+https://github.com/inference-sim/training/issues/4#issuecomment-4056357828
+
+This comment provides detailed architectural discussion on the agentic latency model training approach, including:
+- Two-loop architecture (outer loop strategy evolution + inner loop Bayesian optimization)
+- Coefficient injection mechanism
+- Integration with BLIS simulator
+- Validation protocol
+
+Date: Referenced in training documentation (March 2026)
