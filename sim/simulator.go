@@ -279,6 +279,14 @@ func (sim *Simulator) CurrentClock() int64 { return sim.Clock }
 // SimHorizon returns the simulation horizon (in ticks).
 func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 
+// PostDecodeFixedOverhead returns the latency model's fixed per-request post-decode
+// overhead in microseconds. Used by the cluster layer to include overhead in
+// parent.CompletionTime when disaggregated decode sub-requests complete.
+// Returns 0 for all backends except trained-roofline (BC-1, issue #846).
+func (sim *Simulator) PostDecodeFixedOverhead() int64 {
+	return sim.latencyModel.PostDecodeFixedOverhead()
+}
+
 // EnqueueRequest adds a newly arrived request to the waiting queue.
 //
 // Preprocessing: auto-fills MaxOutputLen when the client doesn't set a budget

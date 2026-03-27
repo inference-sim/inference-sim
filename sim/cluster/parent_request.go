@@ -19,11 +19,16 @@ type ParentRequest struct {
 	TransferCompleteTime int64
 	DecodeEnqueueTime    int64
 	// CompletionTime has two meanings depending on outcome:
-	//   - Successful decode: set by detectDecodeCompletions when the decode sub-request
-	//     finishes its last step. CompletionTime == actual decode completion time.
-	//   - Dropped at decode KV allocation: set to the DecodeRoutingEvent time (the point
-	//     when the drop was detected). CompletionTime < actual decode time (which never
-	//     happened). Use DecodeInstanceID == "" to distinguish dropped requests.
+	//   - Successful decode: set by detectDecodeCompletions to
+	//     clusterClock + decodeInstance.PostDecodeFixedOverhead() when the decode
+	//     sub-request finishes its last step. Includes PostDecodeFixedOverhead so
+	//     that projectPDMetrics() computes the same client-visible E2E as non-PD
+	//     recordRequestCompletion (issue #846). For blackbox/roofline/cross-model
+	//     (overhead=0), equals the raw cluster clock tick.
+	//   - Dropped at decode KV allocation: set to the DecodeRoutingEvent time (the
+	//     point when the drop was detected). Since decode never ran, this reflects
+	//     the drop-detection time, not a decode completion time.
+	//     Use DecodeInstanceID == "" to distinguish dropped requests.
 	CompletionTime int64
 
 	// Instance assignment

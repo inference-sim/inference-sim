@@ -93,6 +93,13 @@ func (i *InstanceSimulator) Horizon() int64 {
 	return i.sim.SimHorizon()
 }
 
+// PostDecodeFixedOverhead returns the fixed per-request post-decode overhead (µs)
+// from the instance's underlying latency model. Used by detectDecodeCompletions
+// to stamp parent.CompletionTime with the correct client-visible completion time.
+// Returns 0 for blackbox/roofline/cross-model; non-zero for trained-roofline (BC-2, #846).
+func (i *InstanceSimulator) PostDecodeFixedOverhead() int64 {
+	return i.sim.PostDecodeFixedOverhead()
+}
 
 // InjectRequest delegates to sim.InjectArrival. Panics if called after Run().
 func (i *InstanceSimulator) InjectRequest(req *sim.Request) {
