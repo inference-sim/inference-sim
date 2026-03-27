@@ -380,6 +380,43 @@ After completing analysis (and CV if applicable), report to orchestrator:
 
 ---
 
+## Step 6: Commit Analysis Results
+
+After completing all analysis phases (validation, findings, and CV if applicable), commit your work to git.
+
+```bash
+cd training
+
+# Stage all analysis documents
+git add iterations/iter{N}/iter{N}-HYPOTHESIS-validation.md
+git add iterations/iter{N}/iter{N}-FINDINGS.md
+
+# If CV tests were run, also stage CV results
+if [ -f iterations/iter{N}/iter{N}-GENERALIZATION-FINDINGS.md ]; then
+  git add iterations/iter{N}/iter{N}-GENERALIZATION-FINDINGS.md
+  git add iterations/iter{N}/cv*_results.json
+  git add iterations/iter{N}/cv*_report.md
+fi
+
+# Create commit with clear message
+git commit -m "feat(training): complete iter{N} analysis and validation
+
+- Add hypothesis validation against optimization results
+- Document findings and principles for iter{N+1}
+- $([ -f iterations/iter{N}/iter{N}-GENERALIZATION-FINDINGS.md ] && echo 'Complete generalization validation (CV1/CV2/CV3)' || echo 'CV tests skipped (criteria not met)')
+
+Overall loss: X.XX (TTFT RMSE: Y.YY, E2E RMSE: Z.ZZ)
+Verdict: [ALL CONFIRMED / PARTIAL / NEEDS ITERATION]"
+```
+
+**Commit message guidelines**:
+- First line: `feat(training): complete iter{N} analysis and validation`
+- Bullet points describing what was analyzed
+- Include key metrics (overall loss, RMSE values) in the body
+- Include final verdict for quick reference
+
+---
+
 ## What Happens Next
 
 After you report:
