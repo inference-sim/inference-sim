@@ -278,6 +278,11 @@ func (s *WorkloadSpec) Validate() error {
 			hasMultiTurn = true
 		}
 	}
+	for _, c := range s.Cohorts {
+		if c.Reasoning != nil && c.Reasoning.MultiTurn != nil {
+			hasMultiTurn = true
+		}
+	}
 	if hasConcurrency && hasMultiTurn {
 		return fmt.Errorf("concurrency clients and multi-turn clients cannot be mixed in the same spec: follow-up budget accounting does not support this combination")
 	}
