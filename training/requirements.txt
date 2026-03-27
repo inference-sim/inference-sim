@@ -1,0 +1,3 @@
+# Inner Loop Dependencies
+optuna>=3.0.0
+pyyaml>=6.0.0
