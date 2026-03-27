@@ -62,9 +62,9 @@ This is the data collection step of the observe/replay/calibrate pipeline.
 The output TraceV2 files can be fed to 'blis replay' for simulation comparison
 and 'blis calibrate' for accuracy measurement.
 
-Supports both --workload-spec (YAML) and --rate (distribution synthesis) input paths.
-Closed-loop sessions with multi-turn follow-ups are supported when the WorkloadSpec
-contains session clients.
+Supports --workload-spec (YAML), --rate (distribution synthesis), or --concurrency
+(closed-loop virtual users) input paths. Closed-loop sessions with multi-turn
+follow-ups are supported when the WorkloadSpec contains session clients.
 
 API format: Use --api-format=chat for servers that expose /v1/chat/completions
 (most production vLLM/SGLang deployments). Default is --api-format=completions
@@ -82,7 +82,11 @@ Example:
     --workload-spec workload.yaml --trace-header trace.yaml --trace-data trace.csv
 
   blis observe --server-url http://localhost:8000 --model meta-llama/Llama-3.1-8B-Instruct \
-    --api-format chat --rate 10 --num-requests 100 --trace-header trace.yaml --trace-data trace.csv`,
+    --api-format chat --rate 10 --num-requests 100 --trace-header trace.yaml --trace-data trace.csv
+
+  blis observe --server-url http://localhost:8000 --model meta-llama/Llama-3.1-8B-Instruct \
+    --api-format chat --concurrency 50 --num-requests 500 --think-time-ms 200 \
+    --trace-header trace.yaml --trace-data trace.csv`,
 	Run: runObserve,
 }
 

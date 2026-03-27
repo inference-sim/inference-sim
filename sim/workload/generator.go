@@ -362,8 +362,8 @@ type GeneratedWorkload struct {
 	Requests       []*sim.Request
 	Sessions       []SessionBlueprint // nil for non-session workloads
 	// FollowUpBudget is the cap on follow-up requests for concurrency sessions.
-	// -1 = no cap (either no concurrency clients, or maxRequests was 0/unlimited).
-	//  0 = no follow-ups allowed (seeds consumed the entire request budget).
+	// -1 = no cap (maxRequests was 0/unlimited, or only closed-loop multi-turn clients present).
+	//  0 = no follow-ups allowed (seeds consumed the entire budget, or no sessions at all).
 	// >0 = exactly that many follow-ups allowed.
 	FollowUpBudget int64
 }

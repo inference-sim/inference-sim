@@ -143,6 +143,10 @@ func ComposeSpecs(specs []*WorkloadSpec) (*WorkloadSpec, error) {
 		return merged, nil
 	}
 
+	if totalRate < 0 {
+		return nil, fmt.Errorf("compose: total aggregate rate must be non-negative, got %f", totalRate)
+	}
+
 	// Rate-based or mixed: renormalize each client's RateFraction by its
 	// spec's proportional share of the combined rate.
 	for _, s := range specs {

@@ -130,6 +130,22 @@ func TestComposeSpecs_AllConcurrency_MergesClients(t *testing.T) {
 	}
 }
 
+func TestComposeSpecs_NegativeTotalRate_ReturnsError(t *testing.T) {
+	dist := DistSpec{Type: "constant", Params: map[string]float64{"value": 100}}
+	spec := &WorkloadSpec{
+		Version:       "2",
+		Category:      "language",
+		AggregateRate: -5.0,
+		Clients: []ClientSpec{
+			{ID: "c1", RateFraction: 1.0, Arrival: ArrivalSpec{Process: "poisson"}, InputDist: dist, OutputDist: dist},
+		},
+	}
+	_, err := ComposeSpecs([]*WorkloadSpec{spec})
+	if err == nil {
+		t.Error("expected error for negative aggregate rate")
+	}
+}
+
 func TestComposeSpecs_EmptyList_ReturnsError(t *testing.T) {
 	_, err := ComposeSpecs(nil)
 	if err == nil {
