@@ -26,8 +26,9 @@ type ParentRequest struct {
 	//     recordRequestCompletion (issue #846). For blackbox/roofline/cross-model
 	//     (overhead=0), equals the raw cluster clock tick.
 	//   - Dropped at decode KV allocation: set to the DecodeRoutingEvent time (the
-	//     point when the drop was detected). CompletionTime < actual decode time
-	//     (which never happened). Use DecodeInstanceID == "" to distinguish dropped.
+	//     point when the drop was detected). Since decode never ran, this reflects
+	//     the drop-detection time, not a decode completion time.
+	//     Use DecodeInstanceID == "" to distinguish dropped requests.
 	CompletionTime int64
 
 	// Instance assignment

@@ -47,6 +47,45 @@ func TestParentRequest_ZeroInputTokens(t *testing.T) {
 
 // --- Integration and invariant tests ---
 
+// newTestDisaggDeploymentConfigWithOverhead creates a 4-instance (2 prefill, 2 decode)
+// disaggregated DeploymentConfig using trained-roofline with the given post-decode
+// overhead (µs). alpha[1] = overhead, so PostDecodeFixedOverhead() == overhead.
+// Used to test that detectDecodeCompletions stamps parent.CompletionTime correctly
+// when overhead > 0 (issue #846).
+func newTestDisaggDeploymentConfigWithOverhead(overhead float64) DeploymentConfig {
+	// Minimal trained-roofline model: 2-layer, 4-head, 64-dim with positive HW numbers.
+	// beta[4] = 100 µs/layer gives finite step times; remaining betas zero.
+	// NumKVHeads=0 triggers MHA fallback (uses NumHeads), divisible by TP=1.
+	modelCfg := sim.ModelConfig{
+		NumLayers:       2,
+		NumHeads:        4,
+		HiddenDim:       64,
+		IntermediateDim: 128,
+		BytesPerParam:   2.0,
+	}
+	hwCfg := sim.HardwareCalib{TFlopsPeak: 1.0, BwPeakTBs: 0.001}
+	betas := []float64{0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0} // β₅ = 100 µs/layer
+	alphas := []float64{0.0, overhead, 0.0}                   // α₁ = overhead (PostDecodeFixedOverhead)
+	return DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs(betas, alphas),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(modelCfg, hwCfg, "test-model", "H100", 1, "trained-roofline", 0),
+		},
+		NumInstances:            4,
+		PrefillInstances:        2,
+		DecodeInstances:         2,
+		PDDecider:               "always",
+		RoutingPolicy:           "round-robin",
+		PDTransferBandwidthGBps: 25.0,
+		PDTransferBaseLatencyMs: 0.05,
+		PDKVBytesPerToken:       512,
+	}
+}
+
 func newTestDisaggDeploymentConfig(numInstances, prefill, decode int) DeploymentConfig {
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
@@ -1045,6 +1084,51 @@ func mapKeysRM(m map[string]sim.RequestMetrics) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// BC-3b: detectDecodeCompletions adds PostDecodeFixedOverhead to parent.CompletionTime.
+// Law: for matching completed parents across two runs (zero vs non-zero overhead),
+// E2E_with_overhead - E2E_without_overhead == wantOverhead exactly.
+// This is the only cluster-level test that exercises overhead > 0, directly
+// verifying the line `parent.CompletionTime = c.clock + inst.PostDecodeFixedOverhead()`
+// that was the bug site fixed in issue #846.
+func TestDisaggregation_CompletionTime_IncludesNonZeroOverhead(t *testing.T) {
+	const wantOverheadUs = int64(1000) // 1ms overhead, chosen to be clearly distinguishable
+
+	requests := newTestRequests(3)
+	// Run 1: overhead = 0 (baseline)
+	cs0 := NewClusterSimulator(newTestDisaggDeploymentConfigWithOverhead(0), requests, nil)
+	mustRun(t, cs0)
+	m0 := cs0.AggregatedMetrics()
+
+	// Run 2: overhead = wantOverheadUs
+	cs1 := NewClusterSimulator(newTestDisaggDeploymentConfigWithOverhead(float64(wantOverheadUs)), requests, nil)
+	mustRun(t, cs1)
+	m1 := cs1.AggregatedMetrics()
+
+	// Both runs must complete at least one parent for the test to be meaningful.
+	completed := 0
+	for _, parent := range cs0.parentRequests {
+		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
+			continue // dropped or horizon-interrupted
+		}
+		e2e0, ok0 := m0.RequestE2Es[parent.ID]
+		e2e1, ok1 := m1.RequestE2Es[parent.ID]
+		if !ok0 || !ok1 {
+			t.Errorf("parent %s: missing E2E in one or both runs (ok0=%v ok1=%v)", parent.ID, ok0, ok1)
+			continue
+		}
+		// Law: E2E with overhead = E2E without overhead + wantOverheadUs (exactly, int64 arithmetic)
+		gotDiff := e2e1 - e2e0
+		if gotDiff != float64(wantOverheadUs) {
+			t.Errorf("parent %s: E2E diff = %.0f µs, want %d µs (overhead not stamped into CompletionTime)",
+				parent.ID, gotDiff, wantOverheadUs)
+		}
+		completed++
+	}
+	if completed == 0 {
+		t.Fatal("no completed parents in baseline run — test is vacuously passing, check config")
+	}
 }
 
 // BC-3: parent.CompletionTime is >= all prior phase timestamps.

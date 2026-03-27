@@ -599,7 +599,9 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 		// Include PostDecodeFixedOverhead so parent.CompletionTime represents the
 		// client-visible completion time, matching non-PD E2E semantics (issue #846).
 		// For blackbox/roofline/cross-model (overhead=0), value is byte-identical to before.
-		parent.CompletionTime = c.clock + inst.PostDecodeOverhead()
+		// No zero-output-token guard needed: decode sub-requests always inherit
+		// OutputTokens from the original request via KVTransferCompletedEvent.Execute.
+		parent.CompletionTime = c.clock + inst.PostDecodeFixedOverhead()
 		delete(c.pendingDecodeCompletions, subReqID)
 		c.pdDecodeCompletedCount++
 	}
