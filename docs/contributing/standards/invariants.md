@@ -190,6 +190,14 @@ Invariants are properties that must hold at all times during and after simulatio
 
 **Evidence:** `BuildPoolMembershipFromIndices` is called once in `NewClusterSimulator` and stored in `cs.poolMembership`. No code path in `Run()` modifies this map.
 
+### INV-PD-6: Metric Map Parent Granularity
+
+**Statement:** After `Run()` completes on a disaggregated cluster, every per-request metric map (`RequestE2Es`, `RequestTTFTs`, `RequestITLs`, `RequestSchedulingDelays`, `RequestCompletionTimes`, `Requests`) contains only parent-level request IDs. No key may have a `_prefill` or `_decode` suffix. Completed parents contribute exactly one entry per map (keyed by parent ID); dropped or incomplete parents contribute no entry.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_MetricProjection_NoSubRequestKeys` checks all six maps for suffix-free keys; `TestDisaggregation_MetricProjection_DroppedParent_NoSubRequestKeys` verifies the invariant holds when decode KV allocation fails. `TestDisaggregation_MetricProjection_NoOp` verifies the projection is a no-op for non-disaggregated clusters.
+
+**Evidence:** `projectPDMetrics()` in `sim/cluster/cluster.go` is called after `aggregateMetrics()` and the conservation correction. It unconditionally deletes the `pfx` and `dec` keys for every parent request, and conditionally inserts a parent-keyed entry only for completed parents (`CompletionTime > 0 && DecodeInstanceID != ""`).
+
 ### INV-P2-1: Pool-Config Consistency
 
 **Statement:** Per-pool hardware overrides produce a valid `SimConfig` for each pool role: zero-valued `PoolOverrides` is a no-op (backward-compatible), non-nil fields override only the specified fields, and the global `SimConfig` is never mutated.

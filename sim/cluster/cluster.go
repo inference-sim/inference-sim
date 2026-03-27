@@ -444,6 +444,12 @@ func (c *ClusterSimulator) Run() error {
 			pdInTransfer, c.pdPrefillCompletedCount, c.pdDecodeCompletedCount, c.droppedAtDecodeKV, len(c.pendingDecodeCompletions))
 	}
 
+	// INV-PD-6: Project sub-request metrics to parent-request granularity.
+	// aggregateMetrics() merges per-instance maps keyed by sub-request IDs
+	// (req_N_prefill, req_N_decode). Replace with parent-keyed entries so
+	// user-facing distributions reflect the full request lifecycle.
+	c.projectPDMetrics()
+
 	// Post-simulation contention bookkeeping checks (INV-P2-2)
 	if c.contentionBookkeepingCorrupted {
 		return fmt.Errorf("contention bookkeeping corrupted: activeTransfers went negative during simulation — contention metrics are invalid")
@@ -813,4 +819,93 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 	}
 
 	return merged
+}
+
+// projectPDMetrics replaces sub-request entries in per-request metric maps
+// with parent-level entries. For each ParentRequest:
+//   - Completed parents (CompletionTime > 0, DecodeInstanceID != ""):
+//     sub-request entries are replaced with parent-keyed entries using
+//     true user-facing values (e.g., E2E = CompletionTime - ArrivalTime).
+//   - Incomplete/dropped parents: sub-request entries are removed
+//     (these requests did not complete successfully).
+//
+// This is a no-op when disaggregation is not active (parentRequests is empty).
+func (c *ClusterSimulator) projectPDMetrics() {
+	if len(c.parentRequests) == 0 {
+		return
+	}
+	m := c.aggregatedMetrics
+
+	for _, parent := range c.parentRequests {
+		pfx := parent.PrefillSubReqID // "req_N_prefill"
+		dec := parent.DecodeSubReqID  // "req_N_decode"
+		pid := parent.ID              // "req_N"
+		completed := parent.CompletionTime > 0 && parent.DecodeInstanceID != ""
+
+		// E2E = parent.CompletionTime - parent.ArrivalTime
+		// (arrival → prefill → transfer → decode → completion).
+		delete(m.RequestE2Es, pfx)
+		delete(m.RequestE2Es, dec)
+		if completed {
+			e2e := parent.CompletionTime - parent.ArrivalTime
+			if e2e < 0 {
+				// INV-3/INV-5 violation: completion before arrival. Should never occur
+				// after the clusterTime fix in EnqueueDecodeSubRequest.
+				logrus.Errorf("[cluster] projectPDMetrics: negative E2E for %s (completionTime=%d arrivalTime=%d); skipping",
+					pid, parent.CompletionTime, parent.ArrivalTime)
+			} else {
+				m.RequestE2Es[pid] = float64(e2e)
+			}
+		}
+
+		// TTFT: rekey from prefill sub-request ID to parent ID (value unchanged).
+		// Only prefill sub-requests record TTFT; decode sub-requests never trigger it.
+		// Gate on completed: dropped-request TTFTs must not enter the distribution.
+		// Source keys are always deleted, regardless of completion status.
+		if completed {
+			if ttft, ok := m.RequestTTFTs[pfx]; ok {
+				m.RequestTTFTs[pid] = ttft
+			} else {
+				logrus.Warnf("[cluster] projectPDMetrics: completed parent %s has no prefill TTFT (key %s)", pid, pfx)
+			}
+		}
+		delete(m.RequestTTFTs, pfx)
+		delete(m.RequestTTFTs, dec)
+
+		// Scheduling delay = prefill sub-request's delay
+		// (the real user-facing delay, not the decode pipeline cumulative latency).
+		prefillDelay, hasPrefillDelay := m.RequestSchedulingDelays[pfx]
+		delete(m.RequestSchedulingDelays, pfx)
+		delete(m.RequestSchedulingDelays, dec)
+		if completed && hasPrefillDelay {
+			m.RequestSchedulingDelays[pid] = prefillDelay
+		}
+
+		// Requests metadata keyed by parent ID, HandledBy set to decode instance.
+		delete(m.Requests, pfx)
+		delete(m.Requests, dec)
+		if completed {
+			if parent.OriginalRequest == nil {
+				panic(fmt.Sprintf("projectPDMetrics: parent %s has nil OriginalRequest", pid))
+			}
+			rm := sim.NewRequestMetrics(parent.OriginalRequest, float64(parent.ArrivalTime)/1e6)
+			rm.HandledBy = string(parent.DecodeInstanceID)
+			m.Requests[pid] = rm
+		}
+
+		// ITL from decode sub-request (prefill ITL is 0 noise).
+		decodeITL, hasDecodeITL := m.RequestITLs[dec]
+		delete(m.RequestITLs, pfx)
+		delete(m.RequestITLs, dec)
+		if completed && hasDecodeITL {
+			m.RequestITLs[pid] = decodeITL
+		}
+
+		// Completion time from parent lifecycle tracking.
+		delete(m.RequestCompletionTimes, pfx)
+		delete(m.RequestCompletionTimes, dec)
+		if completed {
+			m.RequestCompletionTimes[pid] = float64(parent.CompletionTime)
+		}
+	}
 }
