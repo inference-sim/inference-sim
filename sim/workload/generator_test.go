@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"gopkg.in/yaml.v3"
 )
 
 func TestGenerateRequests_SingleClient_ProducesRequests(t *testing.T) {
@@ -1269,6 +1270,69 @@ func TestGenerateWorkload_OpenLoop_AllRounds(t *testing.T) {
 	}
 	if !hasLaterRound {
 		t.Error("open-loop: expected requests with RoundIndex > 0 (all rounds pre-generated)")
+	}
+}
+
+// TestGenerateWorkload_ClosedLoop_YAML_RoundTrip verifies that a YAML spec containing
+// closed_loop: false is correctly parsed and routes to the open-loop path.
+// This test specifically guards the yaml:"closed_loop,omitempty" struct tag on
+// ClientSpec.ClosedLoop — the existing struct-literal tests do not exercise YAML parsing,
+// so a mistyped or removed tag would go undetected without this test.
+func TestGenerateWorkload_ClosedLoop_YAML_RoundTrip(t *testing.T) {
+	const yamlStr = `
+version: "2"
+seed: 42
+category: language
+aggregate_rate: 10.0
+clients:
+  - id: reasoning-yaml
+    tenant_id: t1
+    slo_class: standard
+    rate_fraction: 1.0
+    arrival:
+      process: poisson
+    input_distribution:
+      type: constant
+      params:
+        value: 50
+    output_distribution:
+      type: constant
+      params:
+        value: 20
+    reasoning:
+      reason_ratio_distribution:
+        type: constant
+        params:
+          value: 0
+      multi_turn:
+        max_rounds: 3
+        think_time_us: 1000
+    closed_loop: false
+`
+	var spec WorkloadSpec
+	dec := yaml.NewDecoder(strings.NewReader(yamlStr))
+	dec.KnownFields(true)
+	if err := dec.Decode(&spec); err != nil {
+		t.Fatalf("yaml decode: %v", err)
+	}
+	wl, err := GenerateWorkload(&spec, 10_000_000, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// YAML-parsed closed_loop: false must route to open-loop path (no session blueprints)
+	if len(wl.Sessions) != 0 {
+		t.Errorf("YAML closed_loop:false: expected 0 session blueprints, got %d", len(wl.Sessions))
+	}
+	// Open-loop path pre-generates all rounds; at least one request must have RoundIndex > 0
+	hasLaterRound := false
+	for _, req := range wl.Requests {
+		if req.RoundIndex > 0 {
+			hasLaterRound = true
+			break
+		}
+	}
+	if !hasLaterRound {
+		t.Error("YAML closed_loop:false: expected RoundIndex > 0 (all rounds pre-generated)")
 	}
 }
 
