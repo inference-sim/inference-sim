@@ -112,7 +112,17 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 		clientRNG := newRandFromSeed(clientSeed)
 
 		// Create samplers
-		arrivalSampler := NewArrivalSampler(client.Arrival, clientRate)
+		var arrivalSampler ArrivalSampler
+		if client.CustomSamplerFactory != nil {
+			// Derive sub-RNG for factory with single entropy draw from clientRNG.
+			// This isolates the sampler's N-draw RNG consumption (for N pre-generated intervals)
+			// from downstream content sampling, keeping input/output distributions stable.
+			subSeed := clientRNG.Int63()
+			subRNG := newRandFromSeed(subSeed)
+			arrivalSampler = client.CustomSamplerFactory(subRNG)
+		} else {
+			arrivalSampler = NewArrivalSampler(client.Arrival, clientRate)
+		}
 		inputSampler, err := NewLengthSampler(client.InputDist)
 		if err != nil {
 			return nil, fmt.Errorf("client %q input distribution: %w", client.ID, err)
@@ -137,6 +147,11 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				// filter rounds against horizon. Models inference-perf's behavior
 				// where each client is one persistent session cycling through rounds.
 				iat := arrivalSampler.SampleIAT(clientRNG)
+				if iat == 0 {
+					// Stateful sampler exhausted (e.g., NormalizedExponentialSampler).
+					// Stateless samplers (Poisson, Gamma, etc.) never return 0.
+					continue
+				}
 				startTime := iat
 				// For clients with lifecycle windows, offset into the first window.
 				// The IAT sample provides staggering within the window.
@@ -194,6 +209,11 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 					break
 				}
 				iat := arrivalSampler.SampleIAT(clientRNG)
+				if iat == 0 {
+					// Stateful sampler exhausted (e.g., NormalizedExponentialSampler).
+					// Stateless samplers (Poisson, Gamma, etc.) never return 0.
+					break
+				}
 				currentTime += iat
 				if currentTime >= horizon {
 					break
@@ -250,6 +270,11 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 			}
 
 			iat := arrivalSampler.SampleIAT(clientRNG)
+			if iat == 0 {
+				// Stateful sampler exhausted (e.g., NormalizedExponentialSampler).
+				// Stateless samplers (Poisson, Gamma, etc.) never return 0.
+				break
+			}
 			currentTime += iat
 			if currentTime >= horizon {
 				break

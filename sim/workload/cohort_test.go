@@ -569,9 +569,11 @@ func TestCohortClientSpecFieldParity(t *testing.T) {
 	// Fields on ClientSpec that are intentionally absent from CohortSpec.
 	// ID: generated per member by ExpandCohorts.
 	// Lifecycle: synthesized from Diurnal/Spike/Drain by ExpandCohorts.
+	// CustomSamplerFactory: programmatic-only field, not exposed in YAML.
 	excluded := map[string]bool{
-		"ID":        true,
-		"Lifecycle": true,
+		"ID":                   true,
+		"Lifecycle":            true,
+		"CustomSamplerFactory": true,
 	}
 
 	for i := 0; i < clientType.NumField(); i++ {

@@ -10,7 +10,9 @@ import (
 // ArrivalSampler generates inter-arrival times for a client.
 type ArrivalSampler interface {
 	// SampleIAT returns the next inter-arrival time in microseconds.
-	// Always returns a positive value (>= 1).
+	// Returns >= 1 for stateless samplers (Poisson, Gamma, Weibull, Constant).
+	// Returns 0 to signal exhaustion for stateful samplers (only NormalizedExponentialSampler).
+	// Callers MUST check for 0 and stop generation when encountered.
 	SampleIAT(rng *rand.Rand) int64
 }
 
@@ -110,6 +112,101 @@ type ConstantArrivalSampler struct {
 
 func (s *ConstantArrivalSampler) SampleIAT(_ *rand.Rand) int64 {
 	return s.iatMicros
+}
+
+// NormalizedExponentialSampler generates exactly N inter-arrival times
+// that sum to exactly the target duration. Direct port of inference-perf's
+// normalized exponential algorithm.
+//
+// Unlike other samplers which generate IATs incrementally, this sampler
+// pre-generates all N intervals in the constructor, normalizing them so their
+// sum equals the target duration exactly. This matches the behavior of
+// inference-perf's ConstantLoadTimer.
+type NormalizedExponentialSampler struct {
+	intervals []int64
+	index     int
+}
+
+// NewNormalizedExponentialSampler creates a sampler that pre-generates
+// count intervals normalized to sum to durationUs microseconds.
+//
+// Algorithm (direct port from inference-perf load_timer.py):
+// 1. Generate count exponential samples with mean IAT = 1/rate
+// 2. Normalize samples so their sum equals durationUs exactly
+// 3. Convert to int64 microseconds, floor each to >= 1
+//
+// The rate parameter only affects the distribution shape; normalization
+// ensures the sum equals durationUs regardless of rate.
+//
+// NOTE: Truncating float64 to int64 means the actual sum may be slightly less
+// than durationUs (by at most count microseconds). The floor-to-1 clamp only
+// affects intervals when normalized values fall below 1µs, which is prevented
+// by the durationUs >= count validation. This matches inference-perf behavior.
+func NewNormalizedExponentialSampler(rng *rand.Rand, count int64, durationUs int64) *NormalizedExponentialSampler {
+	if count <= 0 {
+		panic("NormalizedExponentialSampler: count must be positive")
+	}
+	if durationUs <= 0 {
+		panic("NormalizedExponentialSampler: duration must be positive")
+	}
+	if count > 10_000_000 {
+		panic("NormalizedExponentialSampler: count exceeds safety limit (10M)")
+	}
+	if durationUs < count {
+		panic("NormalizedExponentialSampler: durationUs < count produces degenerate distribution")
+	}
+
+	// Generate exponential samples (float64)
+	rate := float64(count) / float64(durationUs) // Requests per microsecond
+	raw := make([]float64, count)
+	for i := range raw {
+		raw[i] = rng.ExpFloat64() / rate
+	}
+
+	// Normalize to sum exactly to duration (float64 arithmetic).
+	// Normalization is necessary because exponential samples have high variance;
+	// without normalization, the actual sum would deviate significantly from
+	// the target duration, violating the inference-perf contract.
+	sum := 0.0
+	for _, v := range raw {
+		sum += v
+	}
+	if sum == 0 {
+		// Defensive: should never happen with ExpFloat64, but guard division by zero
+		panic("NormalizedExponentialSampler: sum of raw samples is zero")
+	}
+	if math.IsInf(sum, 0) {
+		// Defensive: catch overflow from extreme inputs (e.g., very small rate with large ExpFloat64 samples)
+		panic("NormalizedExponentialSampler: sum overflow to infinity; inputs may be extreme")
+	}
+	scaleFactor := float64(durationUs) / sum
+
+	// Convert to int64 microseconds with floor to >= 1
+	intervals := make([]int64, count)
+	for i, v := range raw {
+		iat := int64(v * scaleFactor)
+		if iat < 1 {
+			iat = 1
+		}
+		intervals[i] = iat
+	}
+
+	return &NormalizedExponentialSampler{intervals: intervals}
+}
+
+// SampleIAT returns pre-generated intervals sequentially.
+// Returns 0 when exhausted (signals caller to stop).
+//
+// This is the only ArrivalSampler implementation that returns 0.
+// Callers using CustomSampler must handle zero-IAT as exhaustion signal;
+// see GenerateRequests for the zero-IAT guard pattern in all request generation loops.
+func (s *NormalizedExponentialSampler) SampleIAT(_ *rand.Rand) int64 {
+	if s.index >= len(s.intervals) {
+		return 0 // Exhausted
+	}
+	iat := s.intervals[s.index]
+	s.index++
+	return iat
 }
 
 // NewArrivalSampler creates an ArrivalSampler from a spec and rate.
