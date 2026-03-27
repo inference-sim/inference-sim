@@ -40,6 +40,8 @@ var (
 	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
 	rate                      float64   // Requests arrival per second
 	numRequests               int       // Number of requests
+	concurrency               int       // Number of concurrent virtual users (closed-loop)
+	thinkTimeMs               int       // Think time between response and next request (ms)
 	prefixTokens              int       // Prefix Token Count
 	promptTokensMean          int       // Average Prompt Token Count
 	promptTokensStdev         int       // Stdev Prompt Token Count
@@ -907,6 +909,18 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("--prefix-tokens must be >= 0, got %d", prefixTokens)
 		}
 
+		// R3: Validate concurrency flags
+		if concurrency < 0 {
+			logrus.Fatalf("--concurrency must be >= 0, got %d", concurrency)
+		}
+		if thinkTimeMs < 0 {
+			logrus.Fatalf("--think-time-ms must be >= 0, got %d", thinkTimeMs)
+		}
+		// BC-1: --concurrency and --rate are mutually exclusive
+		if concurrency > 0 && cmd.Flags().Changed("rate") {
+			logrus.Fatalf("--concurrency and --rate are mutually exclusive; use one or the other")
+		}
+
 		// Workload configuration — all paths synthesize a v2 WorkloadSpec
 		// and generate requests via workload.GenerateRequests (BC-10).
 		var spec *workload.WorkloadSpec
@@ -930,6 +944,17 @@ var runCmd = &cobra.Command{
 			if spec.Horizon > 0 && !cmd.Flags().Changed("horizon") {
 				simulationHorizon = spec.Horizon
 			}
+		} else if concurrency > 0 {
+			// Concurrency mode → synthesize v2 spec with closed-loop client
+			spec = workload.SynthesizeFromDistribution(workload.DistributionParams{
+				Concurrency: concurrency, ThinkTimeMs: thinkTimeMs,
+				NumRequests: numRequests, PrefixTokens: prefixTokens,
+				PromptTokensMean: promptTokensMean, PromptTokensStdDev: promptTokensStdev,
+				PromptTokensMin: promptTokensMin, PromptTokensMax: promptTokensMax,
+				OutputTokensMean: outputTokensMean, OutputTokensStdDev: outputTokensStdev,
+				OutputTokensMin: outputTokensMin, OutputTokensMax: outputTokensMax,
+			})
+			spec.Seed = seed
 		} else if workloadType == "distribution" {
 			// Distribution mode → synthesize v2 spec from CLI flags
 			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
@@ -1011,6 +1036,9 @@ var runCmd = &cobra.Command{
 		preGeneratedRequests = wl.Requests
 		if len(wl.Sessions) > 0 {
 			sessionMgr = workload.NewSessionManager(wl.Sessions)
+			if wl.FollowUpBudget > 0 {
+				sessionMgr.SetFollowUpBudget(wl.FollowUpBudget)
+			}
 			logrus.Infof("Generated %d requests + %d session blueprints (closed-loop)", len(wl.Requests), len(wl.Sessions))
 		} else {
 			logrus.Infof("Generated %d requests via unified workload pipeline", len(wl.Requests))
@@ -1609,6 +1637,8 @@ func init() {
 
 	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")
 	runCmd.Flags().IntVar(&numRequests, "num-requests", 100, "Number of requests to generate")
+	runCmd.Flags().IntVar(&concurrency, "concurrency", 0, "Number of concurrent virtual users (closed-loop, mutually exclusive with --rate)")
+	runCmd.Flags().IntVar(&thinkTimeMs, "think-time-ms", 0, "Think time in ms between response and next request (concurrency mode)")
 	runCmd.Flags().IntVar(&prefixTokens, "prefix-tokens", 0, "Prefix Token Count")
 	runCmd.Flags().IntVar(&promptTokensMean, "prompt-tokens", 512, "Average Prompt Token Count")
 	runCmd.Flags().IntVar(&promptTokensStdev, "prompt-tokens-stdev", 256, "Stddev Prompt Token Count")
