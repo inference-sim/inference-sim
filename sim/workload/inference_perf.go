@@ -115,53 +115,82 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 			reasoning = computeReasoningSpec(stage.Rate, stage.Duration, numClientsPerStage)
 		}
 
-		// Each client gets exactly ceil(stageRate * duration / numClients) requests
-		// over the stage duration, using normalized exponential distribution.
-		// NOTE: math.Ceil means total requests may exceed stage.Rate * stage.Duration
-		// by up to numClients-1. This matches inference-perf behavior.
-		requestsPerClient := int64(math.Ceil(stage.Rate * float64(stage.Duration) / float64(numClientsPerStage)))
-		durationUs := stage.Duration * 1_000_000 // seconds to microseconds
+		// For multi-turn (reasoning) workloads, use Poisson arrival for session start time.
+		// The rounds within each session are spaced by ThinkTimeUs (not sampled IATs).
+		// NormalizedExponentialSampler only applies to non-reasoning (language) workloads
+		// where each request is independent (not part of a multi-round session).
+		if sp.EnableMultiTurnChat {
+			// Multi-turn: use Poisson, rounds controlled by MaxRounds + ThinkTimeUs
+			for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
+				prefixGroup := fmt.Sprintf("prompt-%d", p)
+				for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
+					clientID := fmt.Sprintf("prompt-%d-user-%d", p, u)
+					clients = append(clients, ClientSpec{
+						ID:           clientID,
+						TenantID:     prefixGroup,
+						SLOClass:     "batch",
+						RateFraction: rateFraction,
+						Arrival:      ArrivalSpec{Process: "poisson"},
+						InputDist:    inputDist,
+						OutputDist:   outputDist,
+						PrefixGroup:  prefixGroup,
+						PrefixLength: sp.SystemPromptLen,
+						Reasoning:    reasoning,
+					})
+				}
+			}
+		} else {
+			// Single-request (language) workload: use NormalizedExponentialSampler
+			// Each client gets exactly ceil(stageRate * duration / numClients) requests
+			// over the stage duration, using normalized exponential distribution.
+			// NOTE: math.Ceil means total requests may exceed stage.Rate * stage.Duration
+			// by up to numClients-1. This matches inference-perf behavior.
+			requestsPerClient := int64(math.Ceil(stage.Rate * float64(stage.Duration) / float64(numClientsPerStage)))
+			durationUs := stage.Duration * 1_000_000 // seconds to microseconds
 
-		// Validate sampler parameters before construction (prevent panic on user input)
-		if requestsPerClient <= 0 {
-			return nil, fmt.Errorf("inference_perf: requestsPerClient must be positive, got %d", requestsPerClient)
-		}
-		if requestsPerClient > 10_000_000 {
-			return nil, fmt.Errorf("inference_perf: requestsPerClient %d exceeds safety limit (10M); reduce rate, duration, or increase clients", requestsPerClient)
-		}
-		if durationUs < requestsPerClient {
-			return nil, fmt.Errorf("inference_perf: durationUs (%d) < requestsPerClient (%d) produces degenerate distribution", durationUs, requestsPerClient)
-		}
+			// Validate sampler parameters before construction (prevent panic on user input)
+			if requestsPerClient <= 0 {
+				return nil, fmt.Errorf("inference_perf: requestsPerClient must be positive, got %d", requestsPerClient)
+			}
+			if requestsPerClient > 10_000_000 {
+				return nil, fmt.Errorf("inference_perf: requestsPerClient %d exceeds safety limit (10M); reduce rate, duration, or increase clients", requestsPerClient)
+			}
+			if durationUs < requestsPerClient {
+				return nil, fmt.Errorf("inference_perf: durationUs (%d) < requestsPerClient (%d) produces degenerate distribution", durationUs, requestsPerClient)
+			}
 
-		// Defensive: prevent integer overflow in seed calculation (cast before multiply)
-		totalClients := int64(sp.NumUniqueSystemPrompts) * int64(sp.NumUsersPerSystemPrompt)
-		if totalClients > 1_000_000 {
-			return nil, fmt.Errorf("total client count %d exceeds safety limit (1M)", totalClients)
-		}
+			// Defensive: prevent integer overflow in seed calculation (cast before multiply)
+			totalClients := int64(sp.NumUniqueSystemPrompts) * int64(sp.NumUsersPerSystemPrompt)
+			if totalClients > 1_000_000 {
+				return nil, fmt.Errorf("total client count %d exceeds safety limit (1M)", totalClients)
+			}
 
-		for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
-			prefixGroup := fmt.Sprintf("prompt-%d", p)
-			for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
-				clientID := fmt.Sprintf("prompt-%d-user-%d", p, u)
-				// Derive client-specific RNG from seed, prompt, and user index
-				clientOffset := int64(p*sp.NumUsersPerSystemPrompt + u)
-				clientSeed := seed + clientOffset
-				clientRNG := rand.New(rand.NewSource(clientSeed))
-				sampler := NewNormalizedExponentialSampler(clientRNG, requestsPerClient, durationUs)
+			// Use a base RNG to derive per-client seeds (avoids sequential offset correlation)
+			baseRNG := rand.New(rand.NewSource(seed))
 
-				clients = append(clients, ClientSpec{
-					ID:            clientID,
-					TenantID:      prefixGroup,
-					SLOClass:      "batch",
-					RateFraction:  rateFraction,
-					CustomSampler: sampler,
-				Arrival:       ArrivalSpec{Process: "poisson"}, // Fallback for diagnostics/serialization
-					InputDist:     inputDist,
-					OutputDist:    outputDist,
-					PrefixGroup:   prefixGroup,
-					PrefixLength:  sp.SystemPromptLen,
-					Reasoning:     reasoning,
-				})
+			for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
+				prefixGroup := fmt.Sprintf("prompt-%d", p)
+				for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
+					clientID := fmt.Sprintf("prompt-%d-user-%d", p, u)
+					// Derive client-specific seed from base RNG for proper isolation
+					clientSeed := baseRNG.Int63()
+					clientRNG := rand.New(rand.NewSource(clientSeed))
+					sampler := NewNormalizedExponentialSampler(clientRNG, requestsPerClient, durationUs)
+
+					clients = append(clients, ClientSpec{
+						ID:            clientID,
+						TenantID:      prefixGroup,
+						SLOClass:      "batch",
+						RateFraction:  rateFraction,
+						Arrival:       ArrivalSpec{Process: "poisson"}, // Fallback for diagnostics/serialization
+						CustomSampler: sampler,
+						InputDist:     inputDist,
+						OutputDist:    outputDist,
+						PrefixGroup:   prefixGroup,
+						PrefixLength:  sp.SystemPromptLen,
+						Reasoning:     reasoning,
+					})
+				}
 			}
 		}
 	} else {

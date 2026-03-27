@@ -39,18 +39,20 @@ THEN sum(intervals) ≈ 600,000,000 µs (within count microseconds for rounding)
 **BC-2: Request Generation Guarantees**
 ```gherkin
 GIVEN a client with CustomSampler=NormalizedExponentialSampler(count=3000, duration=600s)
-WHEN workload is generated
+WHEN workload is generated with horizon >= duration
 THEN exactly 3000 requests are generated for that client
   AND all 3000 requests arrive within the duration window
+NOTE: If horizon < duration, some requests may be dropped by the horizon guard
 ```
 
-**BC-3: Inference-Perf Auto-Application**
+**BC-3: Inference-Perf Auto-Application (Single-Stage)**
 ```gherkin
-GIVEN an InferencePerfSpec with any stages
+GIVEN an InferencePerfSpec with a single stage
 WHEN expanded to WorkloadSpec
 THEN all clients use NormalizedExponentialSampler via CustomSampler field
-  AND count is set from (stage.Rate * stage.Duration / numClients)
+  AND count is set from ceil(stage.Rate * stage.Duration / numClients)
   AND duration is set from stage.Duration in microseconds
+NOTE: Multi-stage workloads continue to use Poisson arrival for now
 ```
 
 ### C. Component Interaction

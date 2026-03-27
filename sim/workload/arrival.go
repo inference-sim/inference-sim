@@ -137,9 +137,10 @@ type NormalizedExponentialSampler struct {
 // The rate parameter only affects the distribution shape; normalization
 // ensures the sum equals durationUs regardless of rate.
 //
-// NOTE: Flooring each IAT to >= 1 means the actual sum may slightly exceed
-// durationUs. This matches inference-perf behavior and is acceptable for
-// workload generation (exact count matters more than exact duration).
+// NOTE: Truncating float64 to int64 means the actual sum may be slightly less
+// than durationUs (by at most count microseconds). The floor-to-1 clamp only
+// affects intervals when normalized values fall below 1µs, which is prevented
+// by the durationUs >= count validation. This matches inference-perf behavior.
 func NewNormalizedExponentialSampler(rng *rand.Rand, count int64, durationUs int64) *NormalizedExponentialSampler {
 	if count <= 0 {
 		panic("NormalizedExponentialSampler: count must be positive")
@@ -196,8 +197,8 @@ func NewNormalizedExponentialSampler(rng *rand.Rand, count int64, durationUs int
 // Returns 0 when exhausted (signals caller to stop).
 //
 // This is the only ArrivalSampler implementation that returns 0.
-// Callers using CustomSampler must handle zero-IAT as exhaustion signal.
-// See generator.go lines 147, 204 for zero-IAT guards.
+// Callers using CustomSampler must handle zero-IAT as exhaustion signal;
+// see GenerateRequests for the zero-IAT guard pattern in all request generation loops.
 func (s *NormalizedExponentialSampler) SampleIAT(_ *rand.Rand) int64 {
 	if s.index >= len(s.intervals) {
 		return 0 // Exhausted

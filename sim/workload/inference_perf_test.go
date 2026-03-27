@@ -1384,6 +1384,47 @@ func TestExpandInferencePerfSpec_SingleStage_NormalizedExponential(t *testing.T)
 	}
 }
 
+func TestExpandInferencePerfSpec_SingleStage_ExactCountWithLargeHorizon(t *testing.T) {
+	// Verify that sampler (not horizon) limits request count.
+	// With horizon >> durationUs, all N intervals should be consumed.
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 10.0, Duration: 60}, // 10 req/s for 60s = 600 total requests
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  3,
+			NumUsersPerSystemPrompt: 2,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+
+	// Set horizon to 2x the stage duration to ensure sampler exhaustion, not horizon, limits requests
+	horizon := int64(120_000_000) // 120 seconds (2x the 60s stage duration)
+	requests, err := GenerateRequests(expanded, horizon, 0)
+	if err != nil {
+		t.Fatalf("generation error: %v", err)
+	}
+
+	// Should get exactly 600 requests (sampler-limited, not horizon-limited)
+	if len(requests) != 600 {
+		t.Errorf("request count = %d, want 600 (sampler should limit, not horizon)", len(requests))
+	}
+
+	// All requests should arrive well before the 120s horizon
+	for i, req := range requests {
+		if req.ArrivalTime >= int64(60_000_000) {
+			t.Errorf("request %d: arrival %d µs >= stage duration 60s; sampler should limit to stage duration",
+				i, req.ArrivalTime)
+		}
+	}
+}
+
 func TestExpandInferencePerfSpec_SingleStage_NormalizedDeterministic(t *testing.T) {
 	// BC-3: Same seed produces byte-identical expansion.
 	ipSpec := &InferencePerfSpec{
