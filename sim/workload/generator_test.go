@@ -3,6 +3,7 @@ package workload
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"strings"
 	"testing"
 
@@ -1640,5 +1641,61 @@ func TestGenerateRequests_MutualExclusion_CohortsWithInferencePerf_Allowed(t *te
 	}
 	if len(reqs) == 0 {
 		t.Error("expected requests from Cohorts + InferencePerf composition")
+	}
+}
+
+// mockSampler returns fixed intervals for testing CustomSampler
+type mockSampler struct {
+	intervals []int64
+	index     int
+}
+
+func (m *mockSampler) SampleIAT(_ *rand.Rand) int64 {
+	if m.index >= len(m.intervals) {
+		return 0 // Exhausted
+	}
+	iat := m.intervals[m.index]
+	m.index++
+	return iat
+}
+
+func TestClientSpec_CustomSampler(t *testing.T) {
+	// Create a mock sampler that returns 3 fixed intervals
+	mock := &mockSampler{intervals: []int64{100000, 200000, 300000}} // 100ms, 200ms, 300ms
+
+	spec := &WorkloadSpec{
+		Version:       "1",
+		Seed:          42,
+		Category:      "language",
+		AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID:            "c1",
+			TenantID:      "t1",
+			SLOClass:      "batch",
+			RateFraction:  1.0,
+			Arrival:       ArrivalSpec{Process: "poisson"}, // Will be ignored
+			CustomSampler: mock,                            // This will be used instead
+			InputDist:     DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+			OutputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+		}},
+	}
+	horizon := int64(1e9) // 1000 seconds (large enough for all 3 requests)
+
+	requests, err := GenerateRequests(spec, horizon, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should generate exactly 3 requests (mock returns 3 intervals then 0)
+	if len(requests) != 3 {
+		t.Fatalf("expected 3 requests, got %d", len(requests))
+	}
+
+	// Verify arrival times match mock intervals (cumulative)
+	expectedTimes := []int64{100000, 300000, 600000} // 100ms, 300ms (100+200), 600ms (100+200+300)
+	for i, req := range requests {
+		if req.ArrivalTime != expectedTimes[i] {
+			t.Errorf("request %d: ArrivalTime = %d, want %d", i, req.ArrivalTime, expectedTimes[i])
+		}
 	}
 }

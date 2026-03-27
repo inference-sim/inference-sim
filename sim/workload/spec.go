@@ -118,6 +118,10 @@ type ClientSpec struct {
 	Reasoning    *ReasoningSpec  `yaml:"reasoning,omitempty"`
 	Timeout      *int64          `yaml:"timeout,omitempty"`      // Per-request timeout in µs. nil = default (300s). 0 = no timeout. (R9: pointer for zero-value)
 	ClosedLoop   *bool           `yaml:"closed_loop,omitempty"`  // nil = default (true for reasoning/multi-turn). false = open-loop (all rounds pre-generated).
+	// CustomSampler allows programmatic injection of arrival samplers
+	// (bypassing the factory). Used by inference-perf expansion.
+	// Not exposed in YAML (yaml:"-" tag).
+	CustomSampler ArrivalSampler `yaml:"-"`
 }
 
 // ArrivalSpec configures the inter-arrival time process.

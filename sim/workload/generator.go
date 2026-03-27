@@ -112,7 +112,12 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 		clientRNG := newRandFromSeed(clientSeed)
 
 		// Create samplers
-		arrivalSampler := NewArrivalSampler(client.Arrival, clientRate)
+		var arrivalSampler ArrivalSampler
+		if client.CustomSampler != nil {
+			arrivalSampler = client.CustomSampler
+		} else {
+			arrivalSampler = NewArrivalSampler(client.Arrival, clientRate)
+		}
 		inputSampler, err := NewLengthSampler(client.InputDist)
 		if err != nil {
 			return nil, fmt.Errorf("client %q input distribution: %w", client.ID, err)
@@ -250,6 +255,9 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 			}
 
 			iat := arrivalSampler.SampleIAT(clientRNG)
+			if iat == 0 {
+				break // Sampler exhausted
+			}
 			currentTime += iat
 			if currentTime >= horizon {
 				break
