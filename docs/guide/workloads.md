@@ -187,6 +187,12 @@ clients:
 
 Context accumulation means round N sees all prior input+output tokens as prefix, creating growing KV cache pressure across rounds.
 
+#### Open-loop vs closed-loop scheduling
+
+By default, multi-turn sessions use **closed-loop** scheduling: each round's arrival time is set by the simulator *after* the prior round completes — `next_arrival = completion_time + think_time_us`. This means actual server latency propagates into inter-round spacing; under high load the session stretches to reflect real queuing delays. This is the behaviorally correct default for capacity planning.
+
+Setting `closed_loop: false` switches to **open-loop** scheduling: all round arrival times are pre-stamped before simulation begins, using a `1 µs/output-token` heuristic as the expected completion time. Server latency does not affect inter-round spacing — useful for reproducing pre-defined workload traces (e.g., inference-perf-style exports) where you want arrival times fixed regardless of how the simulator performs.
+
 ## CLI Distribution Mode (Default)
 
 The simplest way to generate traffic:
@@ -261,6 +267,27 @@ clients:
 
 !!! info "DES implication"
     Arrival processes directly determine the timing of `ArrivalEvent` injections into the event queue. Gamma CV=3.5 produces 1.66x worse TTFT p99 at sub-saturation because burst events arrive before the prior burst drains.
+
+#### What the arrival process governs for multi-turn clients
+
+The unit controlled by the arrival process differs by client type:
+
+| Client type | Arrival process governs |
+|---|---|
+| Non-multi-turn | Inter-arrival time between individual requests |
+| Multi-turn, `single_session: false` (default) | Inter-arrival time between **session starts** — one new session begins per IAT tick, producing `max_rounds` rounds per session |
+| Multi-turn, `single_session: true` | Fires exactly once per client, determining when that client's single session starts |
+
+Within any session, inter-round spacing is always controlled by `think_time_us`, never by the arrival process.
+
+#### ClientSpec is a traffic source, not a single user
+
+A `ClientSpec` represents a **traffic source** that emits sessions over time, not a single user. One client with `single_session: false` and a long horizon generates many sequential sessions — it models a stream of independent users arriving over time. `single_session: true` changes the semantics to one persistent user who has exactly one conversation.
+
+This distinction matters for modeling concurrent users correctly:
+
+- **Wrong** for 50 concurrent users: one client with `rate_fraction: 1.0` and `single_session: false` — this produces sessions sequentially from a single source, not 50 simultaneous sessions.
+- **Right** for 50 concurrent users: 50 clients (or a cohort with `population: 50`) each with `single_session: true` — each client draws one independent IAT and starts its own session. Per-client RNGs are seeded independently so start times are staggered even when all clients share the same arrival spec.
 
 ## Token Distributions
 
@@ -437,8 +464,11 @@ The `reasoning` field generates multi-turn conversation sessions where each roun
 - `reason_ratio_distribution`: fraction of output tokens that represent "reasoning" (sampled as integer percentage, divided by 100)
 - `multi_turn.max_rounds`: number of conversation rounds per session
 - `multi_turn.think_time_us`: inter-round delay (user think time, in microseconds)
-- `multi_turn.context_growth`: `"accumulate"` to prepend all prior input+output as context, or omit for independent rounds
+- `multi_turn.context_growth`: controls how each round's input is constructed.
+    - `"accumulate"`: round N's input = all prior rounds' inputs + all prior rounds' outputs + freshly sampled new user turn. Input length grows linearly with round index, creating expanding KV cache pressure and enabling prefix-affinity routing reuse across rounds — use this for realistic chat or reasoning sessions.
+    - `""` (omit): each round uses only freshly sampled tokens. Input length is stationary across rounds; no cross-round prefix sharing. Use this for agent workloads that do not maintain conversation history.
 - `multi_turn.single_session`: if `true`, each client creates exactly one session (useful for modeling persistent chat sessions like inference-perf's `enable_multi_turn_chat`). Default: `false` (multiple independent sessions per client)
+- `closed_loop`: controls whether round scheduling adapts to actual server latency. `null` (omit): closed-loop by default for multi-turn clients — each subsequent round is generated after the prior round completes, scheduling its arrival at `completion_time + think_time_us`. `false`: open-loop — all round arrival times are pre-stamped before simulation using a `1 µs/output-token` heuristic; inter-round spacing does not adapt to server latency. Use `false` to reproduce inference-perf-style pre-generated workloads.
 
 ### Client-Side Network Latency
 
