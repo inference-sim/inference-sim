@@ -334,25 +334,31 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 
 // GeneratedWorkload holds the output of GenerateWorkload: requests plus session blueprints.
 type GeneratedWorkload struct {
-	Requests []*sim.Request
-	Sessions []SessionBlueprint // nil for non-session workloads
+	Requests       []*sim.Request
+	Sessions       []SessionBlueprint // nil for non-session workloads
+	FollowUpBudget int64              // max follow-up requests for concurrency sessions; 0 = unlimited
 }
 
 // GenerateWorkload creates requests and session blueprints from a WorkloadSpec.
 // For closed-loop reasoning/multi-turn clients, only round-0 requests are generated
 // and SessionBlueprints are created for the SessionManager to generate follow-up rounds.
+// For concurrency clients (Concurrency > 0), seed requests and unlimited-round
+// SessionBlueprints are generated directly (concurrency clients have RateFraction=0,
+// so GenerateRequests naturally skips them).
 // For all other clients (including open-loop reasoning), identical to GenerateRequests.
 func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*GeneratedWorkload, error) {
 	// Generate all requests using existing logic.
 	// For closed-loop clients, this currently generates ALL rounds (open-loop style).
 	// We'll filter to round-0 only below and create blueprints for the rest.
+	// Concurrency clients (RateFraction=0) are skipped by GenerateRequests.
 	reqs, err := GenerateRequests(spec, horizon, maxRequests)
 	if err != nil {
 		return nil, err
 	}
 
-	// Check if any client is closed-loop — if not, return early (no sessions)
+	// Check if any client is closed-loop or concurrency — if neither, return early (no sessions)
 	hasClosedLoop := false
+	hasConcurrency := false
 	allClients := append([]ClientSpec{}, spec.Clients...)
 	if len(spec.Cohorts) > 0 {
 		allClients = append(allClients, ExpandCohorts(spec.Cohorts, spec.Seed)...)
@@ -360,10 +366,12 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 	for i := range allClients {
 		if isClosedLoop(&allClients[i]) {
 			hasClosedLoop = true
-			break
+		}
+		if allClients[i].Concurrency > 0 {
+			hasConcurrency = true
 		}
 	}
-	if !hasClosedLoop {
+	if !hasClosedLoop && !hasConcurrency {
 		return &GeneratedWorkload{Requests: reqs}, nil
 	}
 
@@ -381,7 +389,7 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 	// when two clients share the same TenantID/SLOClass/Model tuple).
 	claimedSessions := make(map[string]string) // sessionID → clientID
 
-	// Build session blueprints for closed-loop clients
+	// Build session blueprints for closed-loop multi-turn clients
 	for i := range allClients {
 		client := &allClients[i]
 		if !isClosedLoop(client) {
@@ -477,12 +485,130 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 		}
 	}
 
-	// Re-assign sequential IDs (round-0 filter changed the count)
-	for i, req := range round0Only {
+	// --- Handle concurrency clients ---
+	// Concurrency clients have RateFraction=0, so GenerateRequests skips them.
+	// We generate seed requests and SessionBlueprints here.
+	// Uses a separate RNG offset (spec.Seed + 10007) to avoid colliding with
+	// both GenerateRequests' and closed-loop blueprint RNG streams.
+	concurrencyRNG := rand.New(rand.NewSource(spec.Seed + 10007))
+
+	// Reuse prefix tokens from GenerateRequests' RNG stream for consistency
+	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(spec.Seed))
+	workloadRNG := rng.ForSubsystem(sim.SubsystemWorkloadGen)
+	prefixes := generatePrefixTokens(allClients, workloadRNG)
+
+	var concurrencySeeds []*sim.Request
+	totalConcurrencyUsers := 0
+
+	for i := range allClients {
+		client := &allClients[i]
+		if client.Concurrency <= 0 {
+			continue
+		}
+
+		inputSampler, err := NewLengthSampler(client.InputDist)
+		if err != nil {
+			return nil, fmt.Errorf("client %q input distribution: %w", client.ID, err)
+		}
+		outputSampler, err := NewLengthSampler(client.OutputDist)
+		if err != nil {
+			return nil, fmt.Errorf("client %q output distribution: %w", client.ID, err)
+		}
+
+		var prefix []int
+		if client.PrefixGroup != "" {
+			prefix = prefixes[client.PrefixGroup]
+		}
+
+		for u := 0; u < client.Concurrency; u++ {
+			userSeed := concurrencyRNG.Int63()
+			userRNG := rand.New(rand.NewSource(userSeed))
+
+			sessionID := fmt.Sprintf("concurrency_%s_user_%d", client.ID, u)
+
+			// BC-3: Stagger seed arrivals within [0, think_time)
+			var arrivalTime int64
+			if client.ThinkTimeUs > 0 && client.Concurrency > 1 {
+				arrivalTime = int64(u) * client.ThinkTimeUs / int64(client.Concurrency)
+			}
+
+			// Sample token lengths
+			inputLen := inputSampler.Sample(userRNG)
+			outputLen := outputSampler.Sample(userRNG)
+			inputTokens := sim.GenerateRandomTokenIDs(userRNG, inputLen)
+			outputTokens := sim.GenerateRandomTokenIDs(userRNG, outputLen)
+
+			var prefixLength int
+			if len(prefix) > 0 {
+				inputTokens = append(append([]int{}, prefix...), inputTokens...)
+				prefixLength = len(prefix)
+			}
+
+			seed := &sim.Request{
+				ID:           "", // assigned after merge+sort
+				ArrivalTime:  arrivalTime,
+				InputTokens:  inputTokens,
+				OutputTokens: outputTokens,
+				MaxOutputLen: len(outputTokens),
+				State:        sim.StateQueued,
+				Deadline:     computeDeadline(arrivalTime, client.Timeout, true),
+				TenantID:     client.TenantID,
+				SLOClass:     client.SLOClass,
+				Model:        client.Model,
+				ClientID:     client.ID,
+				PrefixGroup:  client.PrefixGroup,
+				PrefixLength: prefixLength,
+				Streaming:    client.Streaming,
+				SessionID:    sessionID,
+				RoundIndex:   0,
+			}
+			concurrencySeeds = append(concurrencySeeds, seed)
+
+			// Create blueprint for this virtual user's session
+			bpSeed := concurrencyRNG.Int63()
+			sessions = append(sessions, SessionBlueprint{
+				SessionID:       sessionID,
+				ClientID:        client.ID,
+				UnlimitedRounds: true,
+				ContextGrowth:   "", // no accumulation for concurrency clients
+				ThinkTimeUs:     client.ThinkTimeUs,
+				Timeout:         client.Timeout,
+				Horizon:         horizon,
+				InputSampler:    inputSampler,
+				OutputSampler:   outputSampler,
+				RNG:             rand.New(rand.NewSource(bpSeed)),
+				Prefix:          prefix,
+				TenantID:        client.TenantID,
+				SLOClass:        client.SLOClass,
+				Model:           client.Model,
+			})
+		}
+		totalConcurrencyUsers += client.Concurrency
+	}
+
+	// Merge closed-loop round-0 requests with concurrency seeds
+	allReqs := append(round0Only, concurrencySeeds...)
+
+	// Sort by arrival time (stable sort preserves order for ties)
+	sort.SliceStable(allReqs, func(i, j int) bool {
+		return allReqs[i].ArrivalTime < allReqs[j].ArrivalTime
+	})
+
+	// Re-assign sequential IDs
+	for i, req := range allReqs {
 		req.ID = fmt.Sprintf("request_%d", i)
 	}
 
-	return &GeneratedWorkload{Requests: round0Only, Sessions: sessions}, nil
+	// Compute follow-up budget for concurrency sessions
+	var followUpBudget int64
+	if maxRequests > 0 && totalConcurrencyUsers > 0 {
+		followUpBudget = maxRequests - int64(len(allReqs))
+		if followUpBudget < 0 {
+			followUpBudget = 0
+		}
+	}
+
+	return &GeneratedWorkload{Requests: allReqs, Sessions: sessions, FollowUpBudget: followUpBudget}, nil
 }
 
 // isInActiveWindow checks if a timestamp falls within any active window.
