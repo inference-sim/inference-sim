@@ -71,6 +71,20 @@ Experiment findings reflect simulator behavior at the time of execution. Subsequ
 | H27 | Performance-regime | Chunked prefill (threshold=256) reduces short-request TTFT p99 by >=30% in bimodal workloads | **Confirmed** | 46-58% TTFT p99 reduction (avg 51.9%); chunking splits 2048-token prefills into 8 steps of ~11ms vs one ~43ms step; tradeoff: 60-69% TTFT increase for long requests |
 | H28 | Performance-regime | Chunked prefill (threshold=512) improves mean ITL by >15% for concurrent decode requests | **Refuted** | ITL improvement is effectively zero (-0.5%); decode-dominated step count (~255 steps) drowns out the rare prefill-co-batched steps; unexpected -13.3% short-request TTFT improvement |
 | H29 | Structural model | Stale routing snapshots (100ms vs 1ms) degrade TTFT p99 by >=20% for kv-utilization scorer | **Confirmed** | +242% to +548% TTFT p99 degradation; queue-depth negative control shows 0.0% change (Immediate mode); composite scorer mitigates ~99% of effect; dose-response monotonic with safe zone <5ms |
+| H30 | Structural model | BLIS crossmodel backend matches real vLLM aggregate latency within 25% for training-set experiments | **Partially confirmed** | Passes 25% RE gate at moderate load; ~5% input token undercount from missing chat template/BOS/EOS overhead; multi-turn semantic mismatch (BLIS accumulates context; real inference-perf does not) |
+| H31 | Structural model | BLIS completes ≥90% of requests with TTFT MAPE <30% for near-saturation reasoning workloads | **Refuted** | BLIS TTFT 45ms vs real 120,171ms; root cause: µ underestimate (3.93 vs 3.22 rps) shifts ρ from 124% to 102%, placing BLIS in barely-saturated regime while real server is heavily overloaded |
+| H32 | Structural model | BLIS crossmodel meets validation gates on codellama but fails on mixtral reasoning | **Partially confirmed** | Codellama passes all gates (TTFT RE <25%, E2E RE <20%, throughput RE <10%); generalizes to unseen workload profiles (codegen, roleplay); failure mode prediction confirmed for near-saturation reasoning |
+| H1-Burstiness | Workload/arrival | Bursty (Gamma CV=3) arrivals produce significantly higher TTFT and E2E than Poisson at equal throughput | **Confirmed** | 4.8–5.3x TTFT p99 ratios at all utilization ≥ 22%; mean ratio monotonically increases 3.20x→4.03x as ρ goes 0.22→0.93; falsification criterion not met at any utilization level |
+| H-Perf-Wallclock | Performance-regime | Combining O(1) LRU, hash dedup, and SHA256 reuse reduces wall-clock time by >50% without changing simulation output | **Confirmed** | All three optimizations together exceed 50% reduction target; INV-6 determinism preserved across all 9 samples; negative control (load-balance only) confirms bottleneck is prefix-affinity-specific |
+| H-SLO-Admission | Cross-policy | SLO-gated admission reduces critical TTFT P99 by >20% at 120% capacity | **Partially confirmed** | Primary refuted: +5.2% worse at 120% (multi-turn context accumulation dominates); non-zero-sum mechanism confirmed — sheddable rejection reduces queue depth for all classes; modest ~15% improvement at 80% load |
+| H-Priority-Preemption | Cross-policy | Priority-based preemption reduces critical TTFT P99 by >50% over baseline at 120% capacity | **Partially confirmed** | 20.9% improvement at 120% load (exceeds 20% but not 50% target); circuit breaker (max 3 preemptions/step) limits leverage; inconclusive at 80% load due to seed variance |
+| H-Compound-Strategy | Cross-policy | Full compound strategy (StaticClassWeight + SLOGatedAdmission + PriorityPreemption) reduces critical TTFT P99 by >25% at 120% capacity | **Confirmed with nuance** | 35.5% critical TTFT P99 improvement (exceeds 25% threshold); preemption is stronger individual lever (29.3%) than admission (10.9%); super-additivity seed-dependent; cluster-wide P99 favors admission-only |
+| H-Deadline-Urgency | Cross-policy | Dynamic deadline-urgency weights outperform static class weights for SLO differentiation | **Refuted** | Deadline urgency adds no value over static class weights; class-awareness mechanism confirmed but deadline scaling is redundant given the existing priority ordering |
+| H-Heterogeneous-Pools | Cross-policy | Physical fast-lane isolation achieves critical TTFT P99 < 100ms even under overload | **Confirmed with nuance** | 20.6x relative improvement over shared pool; isolation dominates queue-management (compound strategy achieves only 1.6x on same metric); absolute P99 target not met at extreme overload (2.8x system capacity) |
+| H-Joint-KV-Scheduling | Cross-policy | SLO-aware KV eviction creates multiplicative (super-additive) interaction with elastic priority batching under KV pressure | **Confirmed with nuance** | Super-additive interaction confirmed at moderate KV pressure (1200–1500 blocks); mechanisms work independently at heavy pressure; no effect at abundant KV; elastic batching is the primary lever |
+| H-Elastic-Batching | Strategy Evolution | Large batches (maxRunningReqs=64) with aggressive priority preemption can simultaneously achieve high SLO attainment and high GPU utilization | **Confirmed** | 4.7x better critical TTFT P99 vs large-batch (no preemption) at equivalent batch occupancy; resolves the SLO-throughput conflict from prior iterations with small batches |
+| H-Elastic-Generalization | Strategy Evolution | Elastic priority batching dual-objective breakthrough generalizes across all major workload dimensions | **Confirmed** | Universal benefit across all 12 workload variants spanning load level (80%–150%), arrival process (Poisson/Gamma), session structure (stateless/multi-turn), and SLO mix |
+| H-Elastic-Stress | Strategy Evolution | Elastic batching generalizes across cluster scale (2–16 instances), KV cache pressure, and asymmetric request sizes | **Confirmed with boundary** | Strong benefit in 6/8 variants; 2/8 show no effect (minimal KV pressure — test design artifact, not mechanism failure); benefit holds across all cluster scales tested |
 
 ## Running Experiments
 
@@ -90,11 +104,12 @@ Scripts are self-contained — they build the binary, run all experiment variant
 | Family | Done | Pending | Gaps |
 |--------|------|---------|------|
 | **Scheduler invariants** | H12, H13, H-Liveness, H25 | — | Family complete |
-| **Structural model** | H3, H9, H10, H-Phase, H-MMK, H26, H-Step-Quantum, H19, H-Cross-Model, H29 | — | Family complete |
+| **Structural model** | H3, H9, H10, H-Phase, H-MMK, H26, H-Step-Quantum, H19, H-Cross-Model, H29, H30, H31, H32 | — | Family complete |
 | **Robustness/failure-mode** | H5, H14, H-Overload, H-Overload-KV, H21, H22, H24 | — | Family complete |
-| **Performance-regime** | H7, H8, H11, H-Reasoning-KV, H27, H28 | — | Family complete |
-| **Workload/arrival** | H-Arrival, H16, H20 | — | Family complete |
-| **Cross-policy comparative** | Prefix-Affinity, H1-SJF, H2, H4, H6, H15, H17, H23 | H18 | 1 remaining |
+| **Performance-regime** | H7, H8, H11, H-Reasoning-KV, H27, H28, H-Perf-Wallclock | — | Family complete |
+| **Workload/arrival** | H-Arrival, H1-Burstiness, H16, H20 | — | Family complete |
+| **Cross-policy comparative** | Prefix-Affinity, H1-SJF, H2, H4, H6, H15, H17, H23, H-SLO-Admission, H-Priority-Preemption, H-Compound-Strategy, H-Deadline-Urgency, H-Heterogeneous-Pools, H-Joint-KV-Scheduling | H18 | 1 remaining |
+| **Strategy Evolution** | H-Elastic-Batching, H-Elastic-Generalization, H-Elastic-Stress | — | Family complete |
 
 ## Hypothesis Tiers (priority from research.md)
 
