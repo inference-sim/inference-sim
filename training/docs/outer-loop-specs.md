@@ -101,15 +101,18 @@ type EvolvedModel struct {
 
 // StepTime computes vLLM step execution time using agent-designed basis functions.
 //
-// Basis functions (iteration 3):
+// **THIS IS THE ONLY METHOD YOU CUSTOMIZE.** Design basis functions that capture
+// compute, memory, and communication costs during batch execution.
+//
+// Basis functions (iteration 3 example):
 //   - beta[0]: Prefill compute (FLOPs / GPU_throughput)
 //   - beta[1]: Decode compute (FLOPs / GPU_throughput)
 //   - beta[2]: TP communication overhead (log₂(TP) × num_layers) [NEW]
 //
-// Alpha coefficients:
-//   - alpha[0]: Fixed API overhead (μs per request)
-//   - alpha[1]: Per-input-token processing (μs/token)
-//   - alpha[2]: Per-output-token processing (μs/token)
+// Alpha coefficients (used by other methods, DO NOT use in StepTime):
+//   - alpha[0]: Fixed API overhead (μs per request) - used by QueueingTime
+//   - alpha[1]: Per-input-token overhead (μs/token) - used by QueueingTime
+//   - alpha[2]: Per-output-token overhead (μs/token) - used by OutputTokenProcessingTime
 func (m *EvolvedModel) StepTime(
     modelConfig sim.ModelConfig,
     hwConfig sim.HardwareConfig,
@@ -131,18 +134,21 @@ func (m *EvolvedModel) StepTime(
 }
 
 // QueueingTime computes request-level overhead (ARRIVED → QUEUED).
+// **DO NOT MODIFY THIS METHOD.** Standard implementation: α₀ + α₁ × input_len
 func (m *EvolvedModel) QueueingTime(req *sim.Request) int64 {
     return int64(m.Alpha[0] + m.Alpha[1]*float64(req.NumInputTokens))
 }
 
-// OutputTokenProcessingTime computes per-output-token post-processing overhead.
+// OutputTokenProcessingTime returns per-output-token post-processing overhead.
+// **DO NOT MODIFY THIS METHOD.** Standard implementation: α₂ (streaming detokenization)
 func (m *EvolvedModel) OutputTokenProcessingTime() int64 {
     return int64(m.Alpha[2])
 }
 
-// PostDecodeFixedOverhead returns fixed overhead after decode step.
+// PostDecodeFixedOverhead returns fixed per-request overhead at completion.
+// **DO NOT MODIFY THIS METHOD.** Return 0 unless systematic per-request bias observed.
 func (m *EvolvedModel) PostDecodeFixedOverhead() int64 {
-    return 0  // No systematic bias observed
+    return 0  // No systematic bias observed in current training data
 }
 
 func init() {
@@ -160,10 +166,12 @@ func init() {
 - ✅ Package must be `latency`
 - ✅ Type name can be anything (e.g., `EvolvedModel`, `PhysicsModel`, etc.)
 - ✅ Must implement all 4 interface methods: `StepTime`, `QueueingTime`, `OutputTokenProcessingTime`, `PostDecodeFixedOverhead`
+- ✅ **Only customize `StepTime()`** — design basis functions that capture batch execution costs
+- ✅ **DO NOT modify** `QueueingTime`, `OutputTokenProcessingTime`, or `PostDecodeFixedOverhead` — use standard implementations shown in template
 - ✅ `StepTime` returns `float64` (microseconds)
 - ✅ Other methods return `int64` (microseconds)
 - ✅ `Register()` call must use backend name from manifest
-- ✅ Include comments explaining each basis function and reasoning
+- ✅ Include comments explaining each basis function and reasoning in `StepTime()`
 
 ---
 
@@ -178,11 +186,27 @@ alpha_bounds:  # Always exactly 3 bounds
   - [0.0, 0.0001]     # α₁: Per-input-token overhead (seconds/token)
   - [0.0, 0.0001]     # α₂: Per-output-token overhead (seconds/token)
 
+alpha_initial:  # Optional: suggested starting points for optimization
+  - 0.0002          # α₀: ~200μs fixed overhead (typical vLLM API processing)
+  - 0.000001        # α₁: ~1μs/token tokenization
+  - 0.000002        # α₂: ~2μs/token detokenization (streaming mode)
+
 beta_bounds:  # Variable count - must match number of beta terms in StepTime()
   - [0.0, 0.002]      # β₀: Prefill compute efficiency factor
   - [0.0, 0.002]      # β₁: Decode compute efficiency factor
   - [0.0, 0.00005]    # β₂: TP comm overhead (NEW)
+
+beta_initial:  # Optional: suggested starting points for optimization
+  - 1.0             # β₀: Start at theoretical roofline prediction
+  - 1.0             # β₁: Start at theoretical roofline prediction
+  - 0.00002         # β₂: ~20μs/layer TP comm overhead
 ```
+
+**Note on initial values:**
+- `alpha_initial` and `beta_initial` are **optional** but recommended
+- Provide physically plausible starting points based on hardware specs or prior knowledge
+- Inner loop uses these as Optuna suggestions to warm-start optimization
+- If omitted, Optuna samples uniformly from bounds (slower convergence)
 
 **Bound specification guidelines:**
 

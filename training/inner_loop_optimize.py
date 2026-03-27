@@ -123,6 +123,20 @@ class InnerLoopOptimizer:
                 f"Alpha must be [α₀, α₁, α₂]."
             )
 
+        # Validate non-negative bounds (BLIS requirement: all coefficients >= 0)
+        for i, (low, high) in enumerate(self.bounds["alpha_bounds"]):
+            if low < 0:
+                raise ValueError(
+                    f"Alpha bound {i} has negative lower bound: {low}. "
+                    f"All alpha coefficients must be non-negative."
+                )
+        for i, (low, high) in enumerate(self.bounds["beta_bounds"]):
+            if low < 0:
+                raise ValueError(
+                    f"Beta bound {i} has negative lower bound: {low}. "
+                    f"All beta coefficients must be non-negative."
+                )
+
         print(f"\nCoefficient bounds loaded:")
         print(f"  Alpha: {n_alpha} coefficients")
         print(f"  Beta: {n_beta} coefficients")
@@ -274,6 +288,24 @@ class InnerLoopOptimizer:
             study_name=f"iter{self.iteration}_{self.backend_name}",
             sampler=optuna.samplers.TPESampler(seed=42)
         )
+
+        # Enqueue initial trial if suggested values provided (warm-start optimization)
+        if "alpha_initial" in self.bounds and "beta_initial" in self.bounds:
+            alpha_init = self.bounds["alpha_initial"]
+            beta_init = self.bounds["beta_initial"]
+
+            # Validate initial values length
+            if len(alpha_init) == 3 and len(beta_init) == len(self.bounds["beta_bounds"]):
+                initial_params = {}
+                for i in range(3):
+                    initial_params[f"alpha_{i}"] = alpha_init[i]
+                for i in range(len(beta_init)):
+                    initial_params[f"beta_{i}"] = beta_init[i]
+
+                study.enqueue_trial(initial_params)
+                print(f"  Warm-start: Enqueued initial trial with suggested values")
+            else:
+                print(f"  Warning: Initial values have wrong length, skipping warm-start")
 
         # Convergence callback: stop if no >1% improvement in last 50 trials
         converged_early = [False]  # Mutable container for callback

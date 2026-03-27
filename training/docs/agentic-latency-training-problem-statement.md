@@ -95,6 +95,11 @@ The agentic training process evolves **both** alphas (by testing different reque
 
 2. **Physics-informed hypothesis generation**: Propose new/modified basis functions for StepTime
 
+   **IMPORTANT**: The agent designs **only the `StepTime()` method**. Other LatencyModel methods use standard BLIS implementations:
+   - `QueueingTime(req)` = `α₀ + α₁ × input_len` (DO NOT modify)
+   - `OutputTokenProcessingTime()` = `α₂` (DO NOT modify; models per-token streaming detokenization)
+   - `PostDecodeFixedOverhead()` = `0` (DO NOT modify unless systematic per-request bias observed)
+
    The agent reasons about what computational/memory/communication operations occur during a vLLM step and proposes basis functions that capture those costs. Each basis function returns a value (typically in microseconds or dimensionless), which gets multiplied by its corresponding beta coefficient.
 
    **Knowledge sources for hypothesis generation**:
@@ -134,15 +139,31 @@ The agentic training process evolves **both** alphas (by testing different reque
    - **Dimensional analysis**: Units of the coefficient constrain plausible ranges
    - **Prior knowledge**: Framework overhead characteristics from similar systems
 
+   **MANDATORY constraint**: All bounds must have `lower_bound >= 0.0` (no negative coefficients allowed).
+
    **Alpha bounds considerations**:
    - α₀ (fixed overhead): Based on API framework characteristics (HTTP parsing, request validation)
+     - Typical range: [0, 1ms] = [0, 0.001]
+     - Suggested initial: 0.0002 (~200μs, typical vLLM API overhead)
    - α₁ (per-input-token): Based on tokenizer performance benchmarks
-   - α₂ (per-output-token): Based on detokenizer and output formatting costs
+     - Typical range: [0, 100μs/token] = [0, 0.0001]
+     - Suggested initial: 0.000001 (~1μs/token tokenization)
+   - α₂ (per-output-token): Based on detokenizer and output formatting costs in streaming mode
+     - Typical range: [0, 100μs/token] = [0, 0.0001]
+     - Suggested initial: 0.000002 (~2μs/token detokenization)
 
    **Beta bounds considerations**:
    - If βᵢ scales a time estimate (dimensionless): Allow deviation from analytical model, but not orders of magnitude
+     - Example: Roofline predicts 1.0, allow [0.3, 3.0] to capture overhead/inefficiency
+     - Suggested initial: 1.0 (start at theoretical prediction)
    - If βᵢ scales a count (µs per unit): Based on typical GPU/scheduler overhead ranges
+     - Example: Per-layer overhead [0, 50μs] = [0, 0.00005]
+     - Suggested initial: midpoint or physically motivated value
    - If βᵢ is a constant term (µs): Based on observed maximum step overhead in profiling data
+     - Example: Fixed scheduler overhead [0, 1ms] = [0, 0.001]
+
+   **Initial value recommendations** (optional but recommended):
+   The agent should provide `alpha_initial` and `beta_initial` arrays in `coefficient_bounds.yaml` to warm-start Bayesian optimization with physically plausible starting points. This accelerates convergence compared to uniform sampling from bounds.
 
    The agent should justify each range based on the specific basis function and available evidence, not use universal defaults.
 
