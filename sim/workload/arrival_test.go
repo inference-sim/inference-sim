@@ -187,3 +187,83 @@ func TestConstantArrivalSampler_MinimumOneUs(t *testing.T) {
 		t.Errorf("SampleIAT = %d, want >= 1", iat)
 	}
 }
+
+// TestNormalizedExponentialSampler_Normalized verifies BC-1:
+// Sampler generates exactly count intervals with sum ≈ duration.
+func TestNormalizedExponentialSampler_Normalized(t *testing.T) {
+	// GIVEN a sampler with count=600, duration=60s (60M µs)
+	rng := rand.New(rand.NewSource(42))
+	count := int64(600)
+	durationUs := int64(60_000_000) // 60 seconds
+	sampler := NewNormalizedExponentialSampler(rng, count, durationUs)
+
+	// WHEN all 600 IATs are sampled
+	intervals := make([]int64, 0, count)
+	for {
+		iat := sampler.SampleIAT(nil) // RNG not used after construction
+		if iat == 0 {
+			break // Exhausted
+		}
+		intervals = append(intervals, iat)
+	}
+
+	// THEN exactly 600 intervals returned
+	if int64(len(intervals)) != count {
+		t.Fatalf("count = %d, want %d", len(intervals), count)
+	}
+
+	// AND sum ≈ 60,000,000 µs (within count microseconds for rounding)
+	sum := int64(0)
+	for _, iat := range intervals {
+		sum += iat
+	}
+	tolerance := count // At most 1µs error per interval from flooring
+	if sum < durationUs-tolerance || sum > durationUs+tolerance {
+		t.Errorf("sum = %d µs, want ≈ %d µs (within %d µs)", sum, durationUs, tolerance)
+	}
+
+	// AND all IATs >= 1
+	for i, iat := range intervals {
+		if iat < 1 {
+			t.Errorf("intervals[%d] = %d, want >= 1", i, iat)
+			break
+		}
+	}
+
+	// AND final SampleIAT returns 0 (exhausted)
+	finalIAT := sampler.SampleIAT(nil)
+	if finalIAT != 0 {
+		t.Errorf("SampleIAT after exhaustion = %d, want 0", finalIAT)
+	}
+}
+
+// TestNormalizedExponentialSampler_Deterministic verifies that same seed
+// produces identical intervals (INV-6: determinism).
+func TestNormalizedExponentialSampler_Deterministic(t *testing.T) {
+	// GIVEN two samplers with same seed, count, duration
+	seed := int64(42)
+	count := int64(100)
+	durationUs := int64(10_000_000) // 10 seconds
+
+	rng1 := rand.New(rand.NewSource(seed))
+	sampler1 := NewNormalizedExponentialSampler(rng1, count, durationUs)
+
+	rng2 := rand.New(rand.NewSource(seed))
+	sampler2 := NewNormalizedExponentialSampler(rng2, count, durationUs)
+
+	// WHEN all intervals are sampled from each
+	intervals1 := make([]int64, count)
+	intervals2 := make([]int64, count)
+	for i := int64(0); i < count; i++ {
+		intervals1[i] = sampler1.SampleIAT(nil)
+		intervals2[i] = sampler2.SampleIAT(nil)
+	}
+
+	// THEN intervals are byte-identical
+	for i := range intervals1 {
+		if intervals1[i] != intervals2[i] {
+			t.Errorf("interval[%d]: sampler1=%d, sampler2=%d (want identical)", i, intervals1[i], intervals2[i])
+			break
+		}
+	}
+}
