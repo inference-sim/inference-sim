@@ -45,14 +45,44 @@ THEN exactly 3000 requests are generated for that client
 NOTE: If horizon < duration, some requests may be dropped by the horizon guard
 ```
 
-**BC-3: Inference-Perf Auto-Application (Single-Stage)**
+**BC-3: Inference-Perf Auto-Application (Single-Stage Only)**
 ```gherkin
-GIVEN an InferencePerfSpec with a single stage
+GIVEN an InferencePerfSpec with a single stage AND no multi-turn
 WHEN expanded to WorkloadSpec
-THEN all clients use NormalizedExponentialSampler via CustomSampler field
+THEN all clients use NormalizedExponentialSampler via CustomSamplerFactory
   AND count is set from ceil(stage.Rate * stage.Duration / numClients)
   AND duration is set from stage.Duration in microseconds
-NOTE: Multi-stage workloads continue to use Poisson arrival for now
+NOTE: Multi-stage workloads continue to use Poisson arrival (see BC-4)
+NOTE: Multi-turn workloads continue to use Poisson arrival (see BC-5)
+```
+
+**BC-4: Multi-Stage Asymmetry (Architectural Constraint)**
+```gherkin
+GIVEN an InferencePerfSpec with multiple stages
+WHEN expanded to WorkloadSpec
+THEN all clients use Poisson arrival (not NormalizedExponentialSampler)
+RATIONALE: Multi-stage workloads use per-stage client cohorts with lifecycle windows.
+  Each cohort is active only during its stage's window. NormalizedExponentialSampler
+  pre-generates N intervals spanning the FULL duration, but multi-stage clients are
+  only active for a SUBSET of that duration (their stage's window). This mismatch
+  would waste intervals or require complex windowing logic. Poisson generates
+  intervals incrementally during the active window, matching the architecture.
+FUTURE WORK: Per-stage NormalizedExponentialSampler construction (each stage gets
+  its own sampler with count/duration scoped to that stage).
+```
+
+**BC-5: Multi-Turn Asymmetry (Session Start Time Only)**
+```gherkin
+GIVEN an InferencePerfSpec with multi-turn enabled
+WHEN expanded to WorkloadSpec
+THEN all clients use Poisson arrival for session start times
+RATIONALE: Multi-turn workloads with SingleSession=true use ONE arrival sample
+  for the session start time. The rounds within the session are spaced by
+  ThinkTimeUs (not sampled IATs). NormalizedExponentialSampler pre-generates N
+  intervals, but only the first would be used — wasting N-1 intervals.
+  Poisson generates the session start time on-demand without waste.
+NOTE: The rounds within each session still occur at exact ThinkTimeUs intervals,
+  maintaining inference-perf's round-robin cycling semantics.
 ```
 
 ### C. Component Interaction
