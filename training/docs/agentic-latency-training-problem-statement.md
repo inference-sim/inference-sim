@@ -74,7 +74,7 @@ Each iteration N follows this sequence:
 **Process**:
 1. Read manifest, bounds, Go code from `iterations/iter{N}/`
 2. Compile BLIS with evolved backend
-3. Run Bayesian optimization (up to 50 trials, early stopping)
+3. Run Bayesian optimization (up to 250 trials, early stopping if <1% improvement in 50-trial window)
 4. For each trial: Inject coefficients → run BLIS → compute loss
 5. Save results to `iterations/iter{N}/inner_loop_results.json`
 
@@ -113,7 +113,7 @@ overall_loss = RMSE[APE(mean_TTFT_per_exp)] + RMSE[APE(mean_E2E_per_exp)]
 
 **Invocation**:
 ```bash
-cd training && python inner_loop_optimize.py --iteration N --n-trials 50
+cd training && python inner_loop_optimize.py --iteration N --n-trials 250
 ```
 
 ---
@@ -213,7 +213,7 @@ type LatencyModel interface {
 ### Secondary Metrics
 
 5. **Sample efficiency**: Converge in ≤ 5 outer loop iterations
-6. **Optimization efficiency**: Inner loop converges in ≤ 50 trials
+6. **Optimization efficiency**: Inner loop converges in ≤ 250 trials (early stopping if <1% improvement in 50-trial window)
 7. **Coefficient stability**: β values stay within physically plausible ranges
 
 ### Qualitative Goals
@@ -309,8 +309,8 @@ Training stops when **all** of the following conditions are met:
 
 **TL;DR**: For iteration N:
 1. **Agent 1**: Use prompt from [`agent-invocation-prompts.md`](agent-invocation-prompts.md) → generates 4 files
-2. **Agent 2**: Run `python inner_loop_optimize.py --iteration N --n-trials 50` → generates results.json
+2. **Agent 2**: Run `python inner_loop_optimize.py --iteration N --n-trials 250` → generates results.json
 3. **Agent 3**: Use prompt from [`agent-invocation-prompts.md`](agent-invocation-prompts.md) → generates 2-3 analysis documents
 4. **Iterate**: If not converged, Agent 1 uses FINDINGS.md to design iter{N+1}
 
-**Typical trajectory**: 3-5 iterations to convergence (~1-2 hours per iteration).
+**Typical trajectory**: 3-5 iterations to convergence (~1-3 hours per iteration with 250 trials).
