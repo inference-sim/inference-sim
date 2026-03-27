@@ -20,7 +20,7 @@ type ParentRequest struct {
 	DecodeEnqueueTime    int64
 	// CompletionTime has two meanings depending on outcome:
 	//   - Successful decode: set by detectDecodeCompletions to
-	//     clusterClock + decodeInstance.PostDecodeOverhead() when the decode
+	//     clusterClock + decodeInstance.PostDecodeFixedOverhead() when the decode
 	//     sub-request finishes its last step. Includes PostDecodeFixedOverhead so
 	//     that projectPDMetrics() computes the same client-visible E2E as non-PD
 	//     recordRequestCompletion (issue #846). For blackbox/roofline/cross-model
