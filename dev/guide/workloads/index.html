@@ -1206,6 +1206,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Multi-Turn Conversations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#open-loop-vs-closed-loop-scheduling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Open-loop vs closed-loop scheduling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
       </ul>
@@ -1243,6 +1260,34 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Arrival Processes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-the-arrival-process-governs-for-multi-turn-clients" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the arrival process governs for multi-turn clients
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clientspec-is-a-traffic-source-not-a-single-user" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ClientSpec is a traffic source, not a single user
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2951,6 +2996,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Multi-Turn Conversations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#open-loop-vs-closed-loop-scheduling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Open-loop vs closed-loop scheduling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
       </ul>
@@ -2988,6 +3050,34 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Arrival Processes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-the-arrival-process-governs-for-multi-turn-clients" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the arrival process governs for multi-turn clients
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clientspec-is-a-traffic-source-not-a-single-user" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ClientSpec is a traffic source, not a single user
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -3369,6 +3459,9 @@
 <a id="__codelineno-7-29" name="__codelineno-7-29" href="#__codelineno-7-29"></a><span class="w">        </span><span class="nt">context_growth</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">accumulate</span><span class="w"> </span><span class="c1"># Each round prepends full prior context</span>
 </code></pre></div>
 <p>Context accumulation means round N sees all prior input+output tokens as prefix, creating growing KV cache pressure across rounds.</p>
+<h4 id="open-loop-vs-closed-loop-scheduling">Open-loop vs closed-loop scheduling<a class="headerlink" href="#open-loop-vs-closed-loop-scheduling" title="Permanent link">&para;</a></h4>
+<p>By default, multi-turn sessions use <strong>closed-loop</strong> scheduling: each round's arrival time is set by the simulator <em>after</em> the prior round completes — <code>next_arrival = completion_time + think_time_us</code>. This means actual server latency propagates into inter-round spacing; under high load the session stretches to reflect real queuing delays. This is the behaviorally correct default for capacity planning.</p>
+<p>Setting <code>closed_loop: false</code> switches to <strong>open-loop</strong> scheduling: all round arrival times are pre-stamped before simulation begins, using a <code>1 µs/output-token</code> heuristic as the expected completion time. Server latency does not affect inter-round spacing — useful for reproducing pre-defined workload traces (e.g., inference-perf-style exports) where you want arrival times fixed regardless of how the simulator performs.</p>
 <h2 id="cli-distribution-mode-default">CLI Distribution Mode (Default)<a class="headerlink" href="#cli-distribution-mode-default" title="Permanent link">&para;</a></h2>
 <p>The simplest way to generate traffic:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
@@ -3465,6 +3558,38 @@
 <p class="admonition-title">DES implication</p>
 <p>Arrival processes directly determine the timing of <code>ArrivalEvent</code> injections into the event queue. Gamma CV=3.5 produces 1.66x worse TTFT p99 at sub-saturation because burst events arrive before the prior burst drains.</p>
 </div>
+<h4 id="what-the-arrival-process-governs-for-multi-turn-clients">What the arrival process governs for multi-turn clients<a class="headerlink" href="#what-the-arrival-process-governs-for-multi-turn-clients" title="Permanent link">&para;</a></h4>
+<p>The unit controlled by the arrival process differs by client type:</p>
+<table>
+<thead>
+<tr>
+<th>Client type</th>
+<th>Arrival process governs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Non-multi-turn</td>
+<td>Inter-arrival time between individual requests</td>
+</tr>
+<tr>
+<td>Multi-turn, <code>single_session: false</code> (default)</td>
+<td>Inter-arrival time between <strong>session starts</strong> — one new session begins per IAT tick, producing <code>max_rounds</code> rounds per session</td>
+</tr>
+<tr>
+<td>Multi-turn, <code>single_session: true</code></td>
+<td>Fires exactly once per client, determining when that client's single session starts</td>
+</tr>
+</tbody>
+</table>
+<p>Within any session, inter-round spacing is always controlled by <code>think_time_us</code>, never by the arrival process.</p>
+<h4 id="clientspec-is-a-traffic-source-not-a-single-user">ClientSpec is a traffic source, not a single user<a class="headerlink" href="#clientspec-is-a-traffic-source-not-a-single-user" title="Permanent link">&para;</a></h4>
+<p>A <code>ClientSpec</code> represents a <strong>traffic source</strong> that emits sessions over time, not a single user. One client with <code>single_session: false</code> and a long horizon generates many sequential sessions — it models a stream of independent users arriving over time. <code>single_session: true</code> changes the semantics to one persistent user who has exactly one conversation.</p>
+<p>This distinction matters for modeling concurrent users correctly:</p>
+<ul>
+<li><strong>Wrong</strong> for 50 concurrent users: one client with <code>rate_fraction: 1.0</code> and <code>single_session: false</code> — this produces sessions sequentially from a single source, not 50 simultaneous sessions.</li>
+<li><strong>Right</strong> for 50 concurrent users: 50 clients (or a cohort with <code>population: 50</code>) each with <code>single_session: true</code> — each client draws one independent IAT and starts its own session. Per-client RNGs are seeded independently so start times are staggered even when all clients share the same arrival spec.</li>
+</ul>
 <h2 id="token-distributions">Token Distributions<a class="headerlink" href="#token-distributions" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -3719,8 +3844,13 @@
 <li><code>reason_ratio_distribution</code>: fraction of output tokens that represent "reasoning" (sampled as integer percentage, divided by 100)</li>
 <li><code>multi_turn.max_rounds</code>: number of conversation rounds per session</li>
 <li><code>multi_turn.think_time_us</code>: inter-round delay (user think time, in microseconds)</li>
-<li><code>multi_turn.context_growth</code>: <code>"accumulate"</code> to prepend all prior input+output as context, or omit for independent rounds</li>
+<li><code>multi_turn.context_growth</code>: controls how each round's input is constructed.<ul>
+<li><code>"accumulate"</code>: round N's input = all prior rounds' inputs + all prior rounds' outputs + freshly sampled new user turn. Input length grows linearly with round index, creating expanding KV cache pressure and enabling prefix-affinity routing reuse across rounds — use this for realistic chat or reasoning sessions.</li>
+<li><code>""</code> (omit): each round uses only freshly sampled tokens. Input length is stationary across rounds; no cross-round prefix sharing. Use this for agent workloads that do not maintain conversation history.</li>
+</ul>
+</li>
 <li><code>multi_turn.single_session</code>: if <code>true</code>, each client creates exactly one session (useful for modeling persistent chat sessions like inference-perf's <code>enable_multi_turn_chat</code>). Default: <code>false</code> (multiple independent sessions per client)</li>
+<li><code>closed_loop</code>: controls whether round scheduling adapts to actual server latency. <code>null</code> (omit): closed-loop by default for multi-turn clients — each subsequent round is generated after the prior round completes, scheduling its arrival at <code>completion_time + think_time_us</code>. <code>false</code>: open-loop — all round arrival times are pre-stamped before simulation using a <code>1 µs/output-token</code> heuristic; inter-round spacing does not adapt to server latency. Use <code>false</code> to reproduce inference-perf-style pre-generated workloads.</li>
 </ul>
 <h3 id="client-side-network-latency">Client-Side Network Latency<a class="headerlink" href="#client-side-network-latency" title="Permanent link">&para;</a></h3>
 <p>The <code>network</code> field adds client-perspective latency to server-side metrics. Useful for modeling geographically distributed users:</p>
