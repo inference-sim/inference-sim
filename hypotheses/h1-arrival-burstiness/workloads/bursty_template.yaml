@@ -1,0 +1,57 @@
+# Bursty arrival workload template — Gamma (CV=3)
+# __RATE__ is substituted by run.sh with the actual rate (e.g., 50.0, 150.0, 300.0)
+#
+# Control: identical to smooth_template.yaml in every respect EXCEPT arrival process.
+# Same mean IAT (same aggregate_rate), same token distributions, same prefix structure.
+#
+# Gamma CV=3 produces pronounced bursts: shape=1/CV²=0.111, meaning ~11% of the
+# exponential "base" time. The IAT distribution is highly right-skewed — most arrivals
+# cluster tightly (short IATs within a burst) with long quiet periods between bursts.
+
+version: "1"
+category: language
+aggregate_rate: __RATE__
+num_requests: 2000
+
+clients:
+  # 70% of traffic: prefixed requests (chat/assistant use case, shared system prompt)
+  - id: "chat-prefixed"
+    slo_class: "standard"
+    rate_fraction: 0.70
+    streaming: false
+    arrival:
+      process: gamma
+      cv: 3.0                   # Bursty: CV=3, shape=0.111, strong clustering
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 512
+        std_dev: 128
+        min: 64
+        max: 1024
+    output_distribution:
+      type: exponential
+      params:
+        mean: 256
+    prefix_group: "system-prompt"
+    prefix_length: 256
+
+  # 30% of traffic: unprefixed requests (API/direct use case, no shared context)
+  - id: "api-unprefixed"
+    slo_class: "standard"
+    rate_fraction: 0.30
+    streaming: false
+    arrival:
+      process: gamma
+      cv: 3.0                   # Bursty: CV=3, same as prefixed client
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 512
+        std_dev: 128
+        min: 64
+        max: 1024
+    output_distribution:
+      type: exponential
+      params:
+        mean: 256
