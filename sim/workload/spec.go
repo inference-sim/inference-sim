@@ -313,6 +313,17 @@ func validateCohort(c *CohortSpec, idx int) error {
 	if !validArrivalProcesses[c.Arrival.Process] {
 		return fmt.Errorf("%s: unknown arrival process %q; valid: poisson, gamma, weibull, constant", prefix, c.Arrival.Process)
 	}
+	if c.Arrival.Process == "weibull" && c.Arrival.CV != nil {
+		cv := *c.Arrival.CV
+		if cv < 0.01 || cv > 10.4 {
+			return fmt.Errorf("%s: weibull CV must be in [0.01, 10.4], got %f", prefix, cv)
+		}
+	}
+	if c.Arrival.CV != nil {
+		if err := validateFinitePositive(prefix+".cv", *c.Arrival.CV); err != nil {
+			return err
+		}
+	}
 	if err := validateDistSpec(prefix+".input_distribution", &c.InputDist); err != nil {
 		return err
 	}

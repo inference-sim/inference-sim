@@ -630,10 +630,14 @@ func TestGenerateRequests_CohortWithMultiTurn_ProducesMultiRoundRequests(t *test
 		t.Errorf("no request with RoundIndex > 0 found; cohort multi-turn not reaching GenerateRequests reasoning path")
 	}
 
-	// Requests sharing a SessionID must have monotonically increasing arrival times (INV-10).
+	// INV-10: within each session, each round must arrive at least ThinkTimeUs
+	// after the previous round (GenerateReasoningRequests advances time by
+	// ThinkTimeUs + estimated output length per round).
+	const thinkTimeUs = 100_000
 	type sessionState struct {
-		lastArrival int64
-		lastRound   int
+		lastArrival    int64
+		lastRound      int
+		lastInputLen   int
 	}
 	sessions := make(map[string]*sessionState)
 	for _, r := range requests {
@@ -642,14 +646,25 @@ func TestGenerateRequests_CohortWithMultiTurn_ProducesMultiRoundRequests(t *test
 		}
 		s, ok := sessions[r.SessionID]
 		if !ok {
-			sessions[r.SessionID] = &sessionState{lastArrival: r.ArrivalTime, lastRound: r.RoundIndex}
+			sessions[r.SessionID] = &sessionState{
+				lastArrival:  r.ArrivalTime,
+				lastRound:    r.RoundIndex,
+				lastInputLen: len(r.InputTokens),
+			}
 			continue
 		}
-		if r.ArrivalTime < s.lastArrival {
-			t.Errorf("session %s: round %d arrives at %d < previous round %d at %d (INV-10 violated)",
-				r.SessionID, r.RoundIndex, r.ArrivalTime, s.lastRound, s.lastArrival)
+		gap := r.ArrivalTime - s.lastArrival
+		if gap < thinkTimeUs {
+			t.Errorf("session %s: round %d→%d arrival gap %d µs < ThinkTimeUs %d (INV-10 violated)",
+				r.SessionID, s.lastRound, r.RoundIndex, gap, thinkTimeUs)
+		}
+		// With context_growth: accumulate, each round's InputTokens must grow.
+		if len(r.InputTokens) <= s.lastInputLen {
+			t.Errorf("session %s: round %d input len %d <= round %d input len %d (context not accumulating)",
+				r.SessionID, r.RoundIndex, len(r.InputTokens), s.lastRound, s.lastInputLen)
 		}
 		s.lastArrival = r.ArrivalTime
 		s.lastRound = r.RoundIndex
+		s.lastInputLen = len(r.InputTokens)
 	}
 }
