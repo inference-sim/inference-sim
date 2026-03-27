@@ -27,40 +27,40 @@ BLIS supports four latency backends, each with limitations:
 **Role**: Evolve latency model structure through physics-informed reasoning using a sequential 3-agent pipeline.
 
 **⚠️ CRITICAL: This follows the [Strategy Evolution](../../docs/methodology/strategy-evolution.md) methodology**, adapted for latency model training:
-- **Phase 2**: Agent 1 generates hypothesis bundle with **mandatory H-main** (mechanism claim + predictions)
-- **Phase 3**: Agent 2 implements and optimizes (Bayesian inner loop)
-- **Phase 4**: Agent 3 verifies predictions against results
-- **Phase 5**: Agent 3 extracts principles from both confirmations AND prediction errors → guides next iteration
+- **Hypothesis Bundle Design**: Agent 1 generates hypothesis bundle with **mandatory H-main** (mechanism claim + predictions)
+- **Implementation & Optimization**: Agent 2 implements and optimizes (Bayesian inner loop)
+- **Verification**: Agent 3 verifies predictions against results
+- **Principle Extraction**: Agent 3 extracts principles from both confirmations AND prediction errors → guides next iteration
 
 Each iteration commits to predictions BEFORE seeing results. Prediction errors are the primary learning signal.
 
-**Pipeline** (following [Strategy Evolution Phase 2-5](../../docs/methodology/strategy-evolution.md)):
+**Pipeline** (following [Strategy Evolution](../../docs/methodology/strategy-evolution.md)):
 
-1. **Agent 1: Design** ([`design-agent-prompt.md`](design-agent-prompt.md)) — **Strategy Evolution Phase 2**
+1. **Agent 1: Design** ([`design-agent-prompt.md`](design-agent-prompt.md)) — **Hypothesis Bundle Design**
    - **Input**: Previous iteration findings (if N > 0), training data, references
    - **Process**: Research → hypothesis bundle design (with **mandatory H-main**) → Go implementation
    - **Output**: `iter{N}-HYPOTHESIS.md`, `iteration_manifest.yaml`, `coefficient_bounds.yaml`, `evolved_model.go`
    - **Key requirement**: Must generate H-main with (1) quantitative prediction, (2) causal mechanism, (3) diagnostic clause
    - **Follows**: [Hypothesis Bundles](../../docs/methodology/hypothesis-bundles.md) structure and examples
 
-2. **Agent 2: Orchestration** ([`orchestration-agent-prompt.md`](orchestration-agent-prompt.md)) — **Strategy Evolution Phase 3**
+2. **Agent 2: Orchestration** ([`orchestration-agent-prompt.md`](orchestration-agent-prompt.md)) — **Implementation & Optimization**
    - **Input**: Iteration number N (assumes Agent 1 completed)
    - **Process**: Validate backend → run Bayesian optimization → monitor progress
    - **Output**: `inner_loop_results.json` + status report
    - **Role**: Executes the optimization loop that tests Agent 1's predictions
 
-3. **Agent 3: Analysis** ([`analysis-agent-prompt.md`](analysis-agent-prompt.md)) — **Strategy Evolution Phase 4-5**
+3. **Agent 3: Analysis** ([`analysis-agent-prompt.md`](analysis-agent-prompt.md)) — **Verification & Principle Extraction**
    - **Input**: Optimization results from Agent 2
-   - **Process**: Verify predictions (Phase 4) → extract principles from confirmations AND errors (Phase 5) → run CV if warranted
+   - **Process**: Verify predictions → extract principles from confirmations AND errors → run CV if warranted
    - **Output**: `iter{N}-HYPOTHESIS-validation.md`, `iter{N}-FINDINGS.md`, `iter{N}-GENERALIZATION-FINDINGS.md` (if CV ran), CV results
    - **Key focus**: Evaluate H-main first, use diagnostic clauses to direct investigation when predictions fail
 
-**End-to-End Workflow** (Strategy Evolution Phases 2-5):
+**End-to-End Workflow** (Strategy Evolution):
 
 Each iteration N follows this sequence:
-1. **Agent 1** (Phase 2) reads previous iterations (0 to N-1) → generates hypothesis bundle with **mandatory H-main** → implements basis functions in Go → produces 4 files
-2. **Agent 2** (Phase 3) validates backend → runs Bayesian optimization → produces `inner_loop_results.json`
-3. **Agent 3** (Phase 4-5) compares H-main + other predictions vs results → validates verdicts → extracts principles from both successes AND failures → produces validation + findings + CV results (if warranted)
+1. **Agent 1** reads previous iterations (0 to N-1) → generates hypothesis bundle with **mandatory H-main** → implements basis functions in Go → produces 4 files
+2. **Agent 2** validates backend → runs Bayesian optimization → produces `inner_loop_results.json`
+3. **Agent 3** compares H-main + other predictions vs results → validates verdicts → extracts principles from both successes AND failures → produces validation + findings + CV results (if warranted)
 4. If not converged, Agent 1 uses Agent 3's findings (especially diagnostic clauses from failed predictions) to design iter{N+1}
 
 **Key insight from Strategy Evolution**: Prediction errors are as valuable as confirmations — they reveal gaps in our understanding of vLLM/GPU dynamics.
@@ -292,9 +292,9 @@ Training stops when **all** of the following conditions are met:
 **⚠️ All agents must follow the Strategy Evolution methodology:**
 
 - **Strategy Evolution**: [`../../docs/methodology/strategy-evolution.md`](../../docs/methodology/strategy-evolution.md)
-  - **Phase 2 (Agent 1)**: Hypothesis bundle design with mandatory H-main
-  - **Phase 3 (Agent 2)**: Implementation and optimization
-  - **Phase 4-5 (Agent 3)**: Prediction verification and principle extraction
+  - **Agent 1**: Hypothesis bundle design with mandatory H-main
+  - **Agent 2**: Implementation and optimization
+  - **Agent 3**: Prediction verification and principle extraction
 
 - **Hypothesis Bundles**: [`../../docs/methodology/hypothesis-bundles.md`](../../docs/methodology/hypothesis-bundles.md)
   - Complete worked examples from PR #452 (scheduling) and PR #447 (routing)
