@@ -4,6 +4,20 @@
 
 Build a two-loop agentic system that automatically discovers and fits physics-informed latency models for BLIS. The system must produce basis functions that generalize across model architectures (dense and MoE), tensor parallelism configurations, vLLM scheduling parameters, and workload patterns — achieving state-of-the-art prediction accuracy without manual feature engineering.
 
+## Related Work & Methodology
+
+**Architectural Discussion**: For detailed discussion of the two-loop architecture, coefficient injection mechanism, and integration with BLIS, see [GitHub Issue #4 Comment](https://github.com/inference-sim/training/issues/4#issuecomment-4056357828).
+
+**Agentic Strategy Evolution**: This problem adapts the [Strategy Evolution](../../docs/methodology/strategy-evolution.md) methodology developed for discovering optimal BLIS configurations. Key principles adapted:
+- **Hypothesis-driven iteration**: Each outer loop iteration formulates testable predictions (basis function effectiveness) before implementation
+- **Physics-informed reasoning**: Agent proposes basis functions grounded in GPU architecture, vLLM internals, and transformer compute patterns
+- **Principle extraction**: Prediction errors (when basis functions fail) reveal causal model corrections that constrain future iterations
+- **Convergence criterion**: Stop when error patterns show white noise (no systematic structure remaining)
+
+For Strategy Evolution details, see:
+- [Strategy Evolution Overview](../../docs/methodology/strategy-evolution.md) — structured iterative search with hypothesis bundles
+- [Hypothesis Bundles in Practice](../../docs/methodology/hypothesis-bundles.md) — worked examples with prediction-vs-outcome analysis
+
 ## Background
 
 BLIS supports four latency backends, each with limitations:
