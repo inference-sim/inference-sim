@@ -22,32 +22,6 @@ import (
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
-// distDefaults are the shared default values for distribution synthesis flags.
-// Both runCmd and observeCmd use these constants so the two commands produce
-// identical workload shapes when called with no explicit distribution flags.
-// Changing a value here affects both commands simultaneously.
-//
-// Flags covered:
-//
-//	--prompt-tokens, --prompt-tokens-stdev, --prompt-tokens-min, --prompt-tokens-max
-//	--output-tokens, --output-tokens-stdev, --output-tokens-min, --output-tokens-max
-//
-// NOT covered: --prefix-tokens (default 0 means "no shared prefix", a feature toggle,
-// not a distribution shape parameter).
-//
-// --num-requests is intentionally NOT shared: run defaults to 100 (safe for quick sims),
-// observe defaults to 0 (requires explicit bound — see observe_cmd.go).
-const (
-	defaultPromptMean  = 512
-	defaultPromptStdev = 256
-	defaultPromptMin   = 2
-	defaultPromptMax   = 7000
-	defaultOutputMean  = 512
-	defaultOutputStdev = 256
-	defaultOutputMin   = 2
-	defaultOutputMax   = 7000
-)
-
 var (
 	// CLI flags for vllm server configs
 	seed                      int64     // Seed for random token generation
@@ -66,8 +40,6 @@ var (
 	longPrefillTokenThreshold int64     // Max length of prefill beyond which chunked prefill is triggered
 	rate                      float64   // Requests arrival per second
 	numRequests               int       // Number of requests
-	concurrency               int       // Number of concurrent virtual users (closed-loop)
-	thinkTimeMs               int       // Think time between response and next request (ms)
 	prefixTokens              int       // Prefix Token Count
 	promptTokensMean          int       // Average Prompt Token Count
 	promptTokensStdev         int       // Stdev Prompt Token Count
@@ -148,9 +120,8 @@ var (
 	prefillMaxModelLen    int64
 	decodeMaxModelLen     int64
 
-	// output file paths
-	metricsPath string // File to write MetricsOutput JSON for blis run (--metrics-path)
-	resultsPath string // File to write []SimResult JSON for blis replay (--results-path)
+	// results file path
+	resultsPath string // File to save BLIS results to
 
 	// trace export
 	traceOutput string // File prefix for TraceV2 export (<prefix>.yaml + <prefix>.csv)
@@ -341,6 +312,8 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&prefillMaxModelLen, "prefill-max-model-len", 0, "Max model length for prefill pool instances (0 = use global --max-model-len)")
 	cmd.Flags().Int64Var(&decodeMaxModelLen, "decode-max-model-len", 0, "Max model length for decode pool instances (0 = use global --max-model-len)")
 
+	// Results path
+	cmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")
 }
 
 // runCmd executes the simulation using parameters from CLI flags
@@ -981,18 +954,6 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("--prefix-tokens must be >= 0, got %d", prefixTokens)
 		}
 
-		// R3: Validate concurrency flags
-		if concurrency < 0 {
-			logrus.Fatalf("--concurrency must be >= 0, got %d", concurrency)
-		}
-		if thinkTimeMs < 0 {
-			logrus.Fatalf("--think-time-ms must be >= 0, got %d", thinkTimeMs)
-		}
-		// BC-1: --concurrency and --rate are mutually exclusive
-		if concurrency > 0 && cmd.Flags().Changed("rate") {
-			logrus.Fatalf("--concurrency and --rate are mutually exclusive; use one or the other")
-		}
-
 		// Workload configuration — all paths synthesize a v2 WorkloadSpec
 		// and generate requests via workload.GenerateRequests (BC-10).
 		var spec *workload.WorkloadSpec
@@ -1000,10 +961,6 @@ var runCmd = &cobra.Command{
 		var sessionMgr *workload.SessionManager
 
 		if workloadSpecPath != "" {
-			if concurrency > 0 {
-				logrus.Fatalf("--concurrency cannot be used with --workload-spec; " +
-					"define concurrency in the spec file using clients[].concurrency instead")
-			}
 			// --workload-spec takes precedence over --workload
 			var err error
 			spec, err = workload.LoadWorkloadSpec(workloadSpecPath)
@@ -1020,25 +977,6 @@ var runCmd = &cobra.Command{
 			if spec.Horizon > 0 && !cmd.Flags().Changed("horizon") {
 				simulationHorizon = spec.Horizon
 			}
-		} else if concurrency > 0 {
-			// Concurrency mode → synthesize v2 spec with closed-loop client.
-			// In concurrency mode, --num-requests has no meaningful default.
-			// If the user did not explicitly set it, leave it at 0 (unbounded) and
-			// require --horizon to bound the run. The existing unbounded-generation
-			// guard will fire with a clear message if neither is provided.
-			concurrencyNumRequests := 0
-			if cmd.Flags().Changed("num-requests") {
-				concurrencyNumRequests = numRequests
-			}
-			spec = workload.SynthesizeFromDistribution(workload.DistributionParams{
-				Concurrency: concurrency, ThinkTimeMs: thinkTimeMs,
-				NumRequests: concurrencyNumRequests, PrefixTokens: prefixTokens,
-				PromptTokensMean: promptTokensMean, PromptTokensStdDev: promptTokensStdev,
-				PromptTokensMin: promptTokensMin, PromptTokensMax: promptTokensMax,
-				OutputTokensMean: outputTokensMean, OutputTokensStdDev: outputTokensStdev,
-				OutputTokensMin: outputTokensMin, OutputTokensMax: outputTokensMax,
-			})
-			spec.Seed = seed
 		} else if workloadType == "distribution" {
 			// Distribution mode → synthesize v2 spec from CLI flags
 			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
@@ -1120,9 +1058,6 @@ var runCmd = &cobra.Command{
 		preGeneratedRequests = wl.Requests
 		if len(wl.Sessions) > 0 {
 			sessionMgr = workload.NewSessionManager(wl.Sessions)
-			if wl.FollowUpBudget >= 0 {
-				sessionMgr.SetFollowUpBudget(wl.FollowUpBudget)
-			}
 			logrus.Infof("Generated %d requests + %d session blueprints (closed-loop)", len(wl.Requests), len(wl.Sessions))
 		} else {
 			logrus.Infof("Generated %d requests via unified workload pipeline", len(wl.Requests))
@@ -1504,8 +1439,8 @@ var runCmd = &cobra.Command{
 				}
 			}
 		}
-		// Save aggregated metrics (prints to stdout + saves to file if metricsPath set)
-		if err := cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, metricsPath); err != nil {
+		// Save aggregated metrics (prints to stdout + saves to file if resultsPath set)
+		if err := cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, resultsPath); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
@@ -1721,22 +1656,19 @@ func init() {
 
 	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")
 	runCmd.Flags().IntVar(&numRequests, "num-requests", 100, "Number of requests to generate")
-	runCmd.Flags().IntVar(&concurrency, "concurrency", 0, "Number of concurrent virtual users (closed-loop, mutually exclusive with --rate)")
-	runCmd.Flags().IntVar(&thinkTimeMs, "think-time-ms", 0, "Think time in ms between response and next request (concurrency mode)")
 	runCmd.Flags().IntVar(&prefixTokens, "prefix-tokens", 0, "Prefix Token Count")
-	runCmd.Flags().IntVar(&promptTokensMean, "prompt-tokens", defaultPromptMean, "Average Prompt Token Count")
-	runCmd.Flags().IntVar(&promptTokensStdev, "prompt-tokens-stdev", defaultPromptStdev, "Stddev Prompt Token Count")
-	runCmd.Flags().IntVar(&promptTokensMin, "prompt-tokens-min", defaultPromptMin, "Min Prompt Token Count")
-	runCmd.Flags().IntVar(&promptTokensMax, "prompt-tokens-max", defaultPromptMax, "Max Prompt Token Count")
-	runCmd.Flags().IntVar(&outputTokensMean, "output-tokens", defaultOutputMean, "Average Output Token Count")
-	runCmd.Flags().IntVar(&outputTokensStdev, "output-tokens-stdev", defaultOutputStdev, "Stddev Output Token Count")
-	runCmd.Flags().IntVar(&outputTokensMin, "output-tokens-min", defaultOutputMin, "Min Output Token Count")
-	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", defaultOutputMax, "Max Output Token Count")
+	runCmd.Flags().IntVar(&promptTokensMean, "prompt-tokens", 512, "Average Prompt Token Count")
+	runCmd.Flags().IntVar(&promptTokensStdev, "prompt-tokens-stdev", 256, "Stddev Prompt Token Count")
+	runCmd.Flags().IntVar(&promptTokensMin, "prompt-tokens-min", 2, "Min Prompt Token Count")
+	runCmd.Flags().IntVar(&promptTokensMax, "prompt-tokens-max", 7000, "Max Prompt Token Count")
+	runCmd.Flags().IntVar(&outputTokensMean, "output-tokens", 512, "Average Output Token Count")
+	runCmd.Flags().IntVar(&outputTokensStdev, "output-tokens-stdev", 256, "Stddev Output Token Count")
+	runCmd.Flags().IntVar(&outputTokensMin, "output-tokens-min", 2, "Min Output Token Count")
+	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", 7000, "Max Output Token Count")
 	runCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "Path to YAML workload specification file (overrides --workload)")
 
 	// Run-specific export
 	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")
-	runCmd.Flags().StringVar(&metricsPath, "metrics-path", "", "File to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats). Use --results-path on blis replay for per-request SimResult JSON.")
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)
