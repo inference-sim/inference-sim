@@ -361,7 +361,11 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 type GeneratedWorkload struct {
 	Requests       []*sim.Request
 	Sessions       []SessionBlueprint // nil for non-session workloads
-	FollowUpBudget int64              // max follow-up requests for concurrency sessions; 0 = unlimited
+	// FollowUpBudget is the cap on follow-up requests for concurrency sessions.
+	// -1 = no cap (either no concurrency clients, or maxRequests was 0/unlimited).
+	//  0 = no follow-ups allowed (seeds consumed the entire request budget).
+	// >0 = exactly that many follow-ups allowed.
+	FollowUpBudget int64
 }
 
 // GenerateWorkload creates requests and session blueprints from a WorkloadSpec.
@@ -513,8 +517,12 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 	// --- Handle concurrency clients ---
 	// Concurrency clients have RateFraction=0, so GenerateRequests skips them.
 	// We generate seed requests and SessionBlueprints here.
-	// Uses a separate RNG offset (spec.Seed + 10007) to avoid colliding with
-	// both GenerateRequests' and closed-loop blueprint RNG streams.
+	//
+	// concurrencyRNG drives per-user seed selection and blueprint RNG seeding.
+	// Uses spec.Seed + 10007, distinct from blueprintRNG's spec.Seed + 7919 above,
+	// so the two streams do not produce identical sequences for the same spec seed.
+	// If new per-client RNG streams are added here, choose an offset not already
+	// in use in this function and document it with the same pattern.
 	concurrencyRNG := rand.New(rand.NewSource(spec.Seed + 10007))
 
 	// Re-derive prefix tokens by initializing a fresh RNG from spec.Seed —
@@ -547,6 +555,10 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 		}
 
 		for u := 0; u < client.Concurrency; u++ {
+			// Never generate more seeds than the global request budget allows.
+			if maxRequests > 0 && int64(len(round0Only)+len(concurrencySeeds)) >= maxRequests {
+				break
+			}
 			userSeed := concurrencyRNG.Int63()
 			userRNG := rand.New(rand.NewSource(userSeed))
 
@@ -625,13 +637,15 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 		req.ID = fmt.Sprintf("request_%d", i)
 	}
 
-	// Compute follow-up budget for concurrency sessions
-	var followUpBudget int64
+	// Compute follow-up budget for concurrency sessions.
+	// -1 = no cap (default); >= 0 = exact cap on follow-ups.
+	followUpBudget := int64(-1)
 	if maxRequests > 0 && totalConcurrencyUsers > 0 {
-		followUpBudget = maxRequests - int64(len(allReqs))
-		if followUpBudget < 0 {
-			followUpBudget = 0
+		budget := maxRequests - int64(len(allReqs))
+		if budget < 0 {
+			budget = 0
 		}
+		followUpBudget = budget
 	}
 
 	return &GeneratedWorkload{Requests: allReqs, Sessions: sessions, FollowUpBudget: followUpBudget}, nil

@@ -57,8 +57,9 @@ type activeSession struct {
 type SessionManager struct {
 	sessions       map[string]*activeSession
 	idCounter      int64 // monotonic counter for follow-up request IDs
-	followUpBudget int64 // max follow-ups to generate; 0 = unlimited
+	followUpBudget int64 // max follow-ups to generate (only meaningful when budgetEnabled)
 	followUpCount  int64 // follow-ups generated so far
+	budgetEnabled  bool  // true once SetFollowUpBudget has been called
 }
 
 // NewSessionManager creates a SessionManager from pre-generated session blueprints.
@@ -79,9 +80,12 @@ func NewSessionManager(blueprints []SessionBlueprint) *SessionManager {
 }
 
 // SetFollowUpBudget sets a global cap on the number of follow-up requests
-// the SessionManager will generate. Zero means unlimited (the default).
+// the SessionManager will generate. Zero means no follow-ups allowed.
+// The budget is only active once this method is called; the default
+// (budgetEnabled=false) means unlimited follow-ups.
 func (sm *SessionManager) SetFollowUpBudget(budget int64) {
 	sm.followUpBudget = budget
+	sm.budgetEnabled = true
 }
 
 // OnComplete is called when a request reaches a terminal state. It determines
@@ -134,7 +138,7 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 	}
 
 	// Budget check: stop generating follow-ups once global budget is exhausted
-	if sm.followUpBudget > 0 && sm.followUpCount >= sm.followUpBudget {
+	if sm.budgetEnabled && sm.followUpCount >= sm.followUpBudget {
 		sess.state = sessionBudgetExhausted
 		return nil
 	}
@@ -196,7 +200,7 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 		SessionID:    bp.SessionID,
 		RoundIndex:   sess.currentRound,
 	}
-	if sm.followUpBudget > 0 {
+	if sm.budgetEnabled {
 		sm.followUpCount++
 	}
 	return []*sim.Request{nextReq}

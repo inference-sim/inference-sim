@@ -174,6 +174,10 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	// Generate workload
 	var spec *workload.WorkloadSpec
 	if observeWorkloadSpec != "" {
+		if observeConcurrency > 0 {
+			logrus.Fatalf("--concurrency cannot be used with --workload-spec; " +
+				"define concurrency in the spec file using clients[].concurrency instead")
+		}
 		var err error
 		spec, err = workload.LoadWorkloadSpec(observeWorkloadSpec)
 		if err != nil {
@@ -266,7 +270,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	var sessionMgr *workload.SessionManager
 	if len(wl.Sessions) > 0 {
 		sessionMgr = workload.NewSessionManager(wl.Sessions)
-		if wl.FollowUpBudget > 0 {
+		if wl.FollowUpBudget >= 0 {
 			sessionMgr.SetFollowUpBudget(wl.FollowUpBudget)
 		}
 	}

@@ -928,6 +928,10 @@ var runCmd = &cobra.Command{
 		var sessionMgr *workload.SessionManager
 
 		if workloadSpecPath != "" {
+			if concurrency > 0 {
+				logrus.Fatalf("--concurrency cannot be used with --workload-spec; " +
+					"define concurrency in the spec file using clients[].concurrency instead")
+			}
 			// --workload-spec takes precedence over --workload
 			var err error
 			spec, err = workload.LoadWorkloadSpec(workloadSpecPath)
@@ -945,10 +949,18 @@ var runCmd = &cobra.Command{
 				simulationHorizon = spec.Horizon
 			}
 		} else if concurrency > 0 {
-			// Concurrency mode → synthesize v2 spec with closed-loop client
+			// Concurrency mode → synthesize v2 spec with closed-loop client.
+			// In concurrency mode, --num-requests has no meaningful default.
+			// If the user did not explicitly set it, leave it at 0 (unbounded) and
+			// require --horizon to bound the run. The existing unbounded-generation
+			// guard will fire with a clear message if neither is provided.
+			concurrencyNumRequests := 0
+			if cmd.Flags().Changed("num-requests") {
+				concurrencyNumRequests = numRequests
+			}
 			spec = workload.SynthesizeFromDistribution(workload.DistributionParams{
 				Concurrency: concurrency, ThinkTimeMs: thinkTimeMs,
-				NumRequests: numRequests, PrefixTokens: prefixTokens,
+				NumRequests: concurrencyNumRequests, PrefixTokens: prefixTokens,
 				PromptTokensMean: promptTokensMean, PromptTokensStdDev: promptTokensStdev,
 				PromptTokensMin: promptTokensMin, PromptTokensMax: promptTokensMax,
 				OutputTokensMean: outputTokensMean, OutputTokensStdDev: outputTokensStdev,
@@ -1036,7 +1048,7 @@ var runCmd = &cobra.Command{
 		preGeneratedRequests = wl.Requests
 		if len(wl.Sessions) > 0 {
 			sessionMgr = workload.NewSessionManager(wl.Sessions)
-			if wl.FollowUpBudget > 0 {
+			if wl.FollowUpBudget >= 0 {
 				sessionMgr.SetFollowUpBudget(wl.FollowUpBudget)
 			}
 			logrus.Infof("Generated %d requests + %d session blueprints (closed-loop)", len(wl.Requests), len(wl.Sessions))

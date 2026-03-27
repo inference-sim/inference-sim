@@ -316,8 +316,10 @@ func validateClient(c *ClientSpec, idx int) error {
 			return err
 		}
 	}
-	// CustomSamplerFactory bypasses arrival process validation (programmatic injection)
-	if c.CustomSamplerFactory == nil {
+	// Arrival process and CV only apply to rate-based clients. Concurrency clients
+	// use staggered fixed seed times and never construct an arrival sampler.
+	// CustomSamplerFactory also bypasses arrival process validation (programmatic injection).
+	if c.Concurrency == 0 && c.CustomSamplerFactory == nil {
 		if !validArrivalProcesses[c.Arrival.Process] {
 			return fmt.Errorf("%s: unknown arrival process %q; valid: poisson, gamma, weibull, constant", prefix, c.Arrival.Process)
 		}
@@ -328,7 +330,7 @@ func validateClient(c *ClientSpec, idx int) error {
 			}
 		}
 	}
-	if c.Arrival.CV != nil {
+	if c.Concurrency == 0 && c.Arrival.CV != nil {
 		if err := validateFinitePositive(prefix+".cv", *c.Arrival.CV); err != nil {
 			return err
 		}

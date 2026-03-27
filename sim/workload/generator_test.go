@@ -1837,6 +1837,72 @@ func TestGenerateWorkload_ConcurrencyClient_BlueprintProperties(t *testing.T) {
 	}
 }
 
+func TestGenerateWorkload_ConcurrencyClient_SeedsCappedByMaxRequests(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:  "2",
+		Seed:     42,
+		Category: "language",
+		Clients: []ClientSpec{{
+			ID:          "conc",
+			Concurrency: 200,
+			ThinkTimeUs: 0,
+			Arrival:     ArrivalSpec{Process: "constant"},
+			InputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+			OutputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+		}},
+	}
+	// maxRequests=100, but Concurrency=200 → seeds must be capped at 100
+	wl, err := GenerateWorkload(spec, 10_000_000, 100)
+	if err != nil {
+		t.Fatalf("GenerateWorkload failed: %v", err)
+	}
+	if len(wl.Requests) != 100 {
+		t.Errorf("seed count = %d, want 100 (capped by maxRequests)", len(wl.Requests))
+	}
+	if wl.FollowUpBudget != 0 {
+		t.Errorf("follow-up budget = %d, want 0 (seeds consumed entire budget)", wl.FollowUpBudget)
+	}
+}
+
+func TestGenerateWorkload_ConcurrencyClient_ZeroBudgetMeansNoFollowUps(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:  "2",
+		Seed:     42,
+		Category: "language",
+		Clients: []ClientSpec{{
+			ID:          "conc",
+			Concurrency: 50,
+			ThinkTimeUs: 10_000,
+			Arrival:     ArrivalSpec{Process: "constant"},
+			InputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+			OutputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+		}},
+	}
+	// 50 seeds, 50 max → budget=0
+	wl, err := GenerateWorkload(spec, 10_000_000, 50)
+	if err != nil {
+		t.Fatalf("GenerateWorkload failed: %v", err)
+	}
+	if len(wl.Requests) != 50 {
+		t.Fatalf("seed count = %d, want 50", len(wl.Requests))
+	}
+	if wl.FollowUpBudget != 0 {
+		t.Fatalf("budget = %d, want 0", wl.FollowUpBudget)
+	}
+
+	// SetFollowUpBudget(0) should immediately exhaust — no follow-ups generated
+	sm := NewSessionManager(wl.Sessions)
+	sm.SetFollowUpBudget(wl.FollowUpBudget)
+
+	seed := wl.Requests[0]
+	seed.State = sim.StateCompleted
+	seed.ProgressIndex = int64(len(seed.InputTokens) + len(seed.OutputTokens))
+	follow := sm.OnComplete(seed, 5000)
+	if follow != nil {
+		t.Errorf("expected nil follow-up with budget=0, got %d", len(follow))
+	}
+}
+
 func TestGenerateWorkload_NonConcurrencySpec_Unchanged(t *testing.T) {
 	spec := &WorkloadSpec{
 		Version:       "2",
@@ -1859,7 +1925,7 @@ func TestGenerateWorkload_NonConcurrencySpec_Unchanged(t *testing.T) {
 		t.Errorf("BC-11: non-concurrency spec has %d sessions, want 0", len(wl.Sessions))
 	}
 	if wl.FollowUpBudget != 0 {
-		t.Errorf("BC-11: non-concurrency spec has FollowUpBudget = %d, want 0", wl.FollowUpBudget)
+		t.Errorf("BC-11: non-concurrency spec has FollowUpBudget = %d, want 0 (no sessions)", wl.FollowUpBudget)
 	}
 }
 
