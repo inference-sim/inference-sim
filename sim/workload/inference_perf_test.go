@@ -1545,7 +1545,9 @@ func TestExpandInferencePerfSpec_SingleStage_ConservationInvariant(t *testing.T)
 				t.Fatalf("expansion error: %v", err)
 			}
 
-			horizon := tc.duration * 1_000_000
+			// Horizon = 2× duration: ensures sampler exhaustion (not horizon) stops generation.
+			// With horizon == duration, sampler and horizon guard race, creating test fragility.
+			horizon := tc.duration * 2_000_000
 			requests, err := GenerateRequests(expanded, horizon, 0)
 			if err != nil {
 				t.Fatalf("generation error: %v", err)
@@ -1575,5 +1577,84 @@ func TestExpandInferencePerfSpec_SingleStage_ConservationInvariant(t *testing.T)
 					len(requests), expectedTotal, numClients, expectedPerClient)
 			}
 		})
+	}
+}
+
+// TestExpandInferencePerfSpec_WorkloadReusability verifies that factory pattern
+// enables calling GenerateRequests multiple times on the same WorkloadSpec.
+// This is the primary architectural validation for CustomSamplerFactory.
+func TestExpandInferencePerfSpec_WorkloadReusability(t *testing.T) {
+	// GIVEN a WorkloadSpec with NormalizedExponentialSampler (via factory)
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 10.0, Duration: 30}, // 300 requests total
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  2,
+			NumUsersPerSystemPrompt: 3, // 6 clients × 50 requests/client = 300 total
+			SystemPromptLen:         10,
+			QuestionLen:             100,
+			OutputLen:               50,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+
+	horizon := int64(60_000_000) // 60s (2× duration)
+
+	// WHEN GenerateRequests is called twice with the same WorkloadSpec
+	requests1, err := GenerateRequests(expanded, horizon, 0)
+	if err != nil {
+		t.Fatalf("first generation error: %v", err)
+	}
+
+	requests2, err := GenerateRequests(expanded, horizon, 0)
+	if err != nil {
+		t.Fatalf("second generation error: %v", err)
+	}
+
+	// THEN both runs produce identical request counts
+	if len(requests1) != len(requests2) {
+		t.Fatalf("request count mismatch: run1=%d, run2=%d", len(requests1), len(requests2))
+	}
+
+	// AND identical per-client distributions
+	perClient1 := make(map[string]int)
+	perClient2 := make(map[string]int)
+	for _, req := range requests1 {
+		perClient1[req.ClientID]++
+	}
+	for _, req := range requests2 {
+		perClient2[req.ClientID]++
+	}
+
+	if len(perClient1) != len(perClient2) {
+		t.Fatalf("client count mismatch: run1=%d clients, run2=%d clients",
+			len(perClient1), len(perClient2))
+	}
+
+	for clientID, count1 := range perClient1 {
+		count2, ok := perClient2[clientID]
+		if !ok {
+			t.Errorf("client %s missing in run2", clientID)
+			continue
+		}
+		if count1 != count2 {
+			t.Errorf("client %s: run1=%d requests, run2=%d requests", clientID, count1, count2)
+		}
+	}
+
+	// AND identical arrival times (deterministic from seed)
+	for i := range requests1 {
+		if requests1[i].ArrivalTime != requests2[i].ArrivalTime {
+			t.Errorf("request %d: arrival time mismatch: run1=%d, run2=%d",
+				i, requests1[i].ArrivalTime, requests2[i].ArrivalTime)
+			if i >= 5 {
+				t.Logf("... (stopping after 5 mismatches)")
+				break
+			}
+		}
 	}
 }

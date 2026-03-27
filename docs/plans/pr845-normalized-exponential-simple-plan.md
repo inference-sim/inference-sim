@@ -87,12 +87,17 @@ NOTE: The rounds within each session still occur at exact ThinkTimeUs intervals,
 
 ### C. Component Interaction
 
-**Generator Loop (add CustomSampler check):**
+**Generator Loop (CustomSamplerFactory pattern with sub-RNG isolation):**
 ```go
-// generator.go:~115 (new code):
+// generator.go:~114 (post-refactor):
 var arrivalSampler ArrivalSampler
-if client.CustomSampler != nil {
-    arrivalSampler = client.CustomSampler
+if client.CustomSamplerFactory != nil {
+    // Derive sub-RNG for factory with single entropy draw from clientRNG.
+    // This isolates the sampler's N-draw RNG consumption from downstream
+    // content sampling, keeping input/output distributions stable.
+    subSeed := clientRNG.Int63()
+    subRNG := newRandFromSeed(subSeed)
+    arrivalSampler = client.CustomSamplerFactory(subRNG)
 } else {
     arrivalSampler = NewArrivalSampler(client.Arrival, ratePerMicrosecond)
 }
@@ -100,7 +105,7 @@ if client.CustomSampler != nil {
 // Rest of loop unchanged:
 for currentTime < horizon {
     iat := arrivalSampler.SampleIAT(clientRNG)
-    if iat == 0 { break }  // Exhausted sampler signals stop
+    if iat == 0 { break }  // Stateful sampler exhausted (e.g., NormalizedExponentialSampler)
     currentTime += iat
     if currentTime >= horizon { break }
     // generate request...

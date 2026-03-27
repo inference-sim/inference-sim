@@ -201,6 +201,14 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 		// Math: aggregateRate = sum(stageRates), rateFraction = stageRate/numClientsPerStage.
 		// After normalization, each client's rate = stageRate/numClientsPerStage.
 		// During a stage, N*M clients are active → total rate = stageRate.
+		//
+		// NOTE: Multi-stage workloads use Poisson (not NormalizedExponentialSampler).
+		// Rationale: NormalizedExponentialSampler pre-generates intervals spanning the
+		// full workload duration, but per-stage clients are only active during their
+		// stage's window (a subset of the full duration). This mismatch would waste
+		// intervals or require complex windowing. Poisson generates incrementally
+		// during the active window, matching the per-stage lifecycle architecture.
+		// See BC-4 in plan for full details.
 		windows := stagesToWindows(spec.Stages)
 
 		for _, stage := range spec.Stages {
