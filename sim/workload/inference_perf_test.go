@@ -1366,7 +1366,8 @@ func TestExpandInferencePerfSpec_SingleStage_NormalizedExponential(t *testing.T)
 		t.Fatalf("expansion error: %v", err)
 	}
 	// 3*2 = 6 clients, each should get ceil(600/6) = 100 requests
-	horizon := int64(60_000_000) // 60 seconds in µs
+	// Horizon = 2× duration: ensures sampler exhaustion (not horizon) stops generation.
+	horizon := int64(120_000_000) // 120 seconds in µs (2× stage duration)
 	requests, err := GenerateRequests(expanded, horizon, 0)
 	if err != nil {
 		t.Fatalf("generation error: %v", err)
@@ -1375,11 +1376,12 @@ func TestExpandInferencePerfSpec_SingleStage_NormalizedExponential(t *testing.T)
 	if len(requests) != 600 {
 		t.Errorf("request count = %d, want 600", len(requests))
 	}
-	// Verify all arrivals are within the stage duration
+	// Verify all arrivals are within the stage duration (not the inflated horizon)
+	stageDurationUs := int64(60_000_000)
 	for i, req := range requests {
-		if req.ArrivalTime < 0 || req.ArrivalTime >= horizon {
+		if req.ArrivalTime < 0 || req.ArrivalTime >= stageDurationUs {
 			t.Errorf("request %d: arrival time %d µs outside [0, %d) µs",
-				i, req.ArrivalTime, horizon)
+				i, req.ArrivalTime, stageDurationUs)
 		}
 	}
 }
