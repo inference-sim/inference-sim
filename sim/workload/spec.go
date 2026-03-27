@@ -118,8 +118,15 @@ type ClientSpec struct {
 	Reasoning    *ReasoningSpec  `yaml:"reasoning,omitempty"`
 	Timeout      *int64          `yaml:"timeout,omitempty"`      // Per-request timeout in µs. nil = default (300s). 0 = no timeout. (R9: pointer for zero-value)
 	ClosedLoop   *bool           `yaml:"closed_loop,omitempty"`  // nil = default (true for reasoning/multi-turn). false = open-loop (all rounds pre-generated).
-	// CustomSampler allows programmatic injection of arrival samplers
-	// (bypassing the factory). Used by inference-perf expansion.
+	// CustomSampler allows programmatic injection of arrival samplers,
+	// bypassing the factory-based construction from Arrival.Process.
+	//
+	// Use cases:
+	// - inference-perf expansion: NormalizedExponentialSampler for exact count control
+	// - Programmatic workload generation with custom distributions
+	//
+	// When CustomSampler is set, Arrival.Process validation is skipped.
+	// Callers MUST handle zero-IAT as exhaustion signal if the sampler is stateful.
 	// Not exposed in YAML (yaml:"-" tag).
 	CustomSampler ArrivalSampler `yaml:"-"`
 }

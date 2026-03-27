@@ -1699,3 +1699,145 @@ func TestClientSpec_CustomSampler(t *testing.T) {
 		}
 	}
 }
+
+// TestCustomSampler_ZeroIATExhaustion tests that generator handles zero-IAT
+// exhaustion signal from stateful samplers (e.g., NormalizedExponentialSampler).
+func TestCustomSampler_ZeroIATExhaustion(t *testing.T) {
+	t.Run("SingleSessionReasoning", func(t *testing.T) {
+		// GIVEN a client with CustomSampler that returns 0 immediately (exhausted)
+		exhaustedSampler := &mockSampler{intervals: []int64{0}}
+		spec := &WorkloadSpec{
+			Version:       "1",
+			Seed:          42,
+			Category:      "language",
+			AggregateRate: 10.0,
+			Clients: []ClientSpec{
+				{
+					ID:            "client-1",
+					TenantID:      "t1",
+					SLOClass:      "batch",
+					RateFraction:  1.0,
+					CustomSampler: exhaustedSampler,
+					InputDist:     DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+					OutputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+					Reasoning: &ReasoningSpec{
+						MultiTurn: &MultiTurnSpec{
+							MaxRounds:     5,
+							ThinkTimeUs:   100_000, // 100ms
+							SingleSession: true,
+						},
+					},
+				},
+			},
+		}
+		horizon := int64(3600_000_000) // 1 hour
+
+		// WHEN requests are generated
+		requests, err := GenerateRequests(spec, horizon, 0)
+
+		// THEN no error, and zero requests generated (sampler exhausted before first arrival)
+		if err != nil {
+			t.Fatalf("GenerateRequests failed: %v", err)
+		}
+		if len(requests) != 0 {
+			t.Errorf("expected 0 requests (exhausted sampler), got %d", len(requests))
+		}
+	})
+
+	t.Run("MultiSessionReasoning", func(t *testing.T) {
+		// GIVEN a client with CustomSampler that returns 2 IATs then exhausts
+		exhaustedSampler := &mockSampler{intervals: []int64{100_000, 200_000, 0}}
+		spec := &WorkloadSpec{
+			Version:       "1",
+			Seed:          42,
+			Category:      "language",
+			AggregateRate: 10.0,
+			Clients: []ClientSpec{
+				{
+					ID:            "client-1",
+					TenantID:      "t1",
+					SLOClass:      "batch",
+					RateFraction:  1.0,
+					CustomSampler: exhaustedSampler,
+					InputDist:     DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+					OutputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+					Reasoning: &ReasoningSpec{
+						MultiTurn: &MultiTurnSpec{
+							MaxRounds:     3,
+							ThinkTimeUs:   50_000, // 50ms
+							SingleSession: false,
+						},
+					},
+				},
+			},
+		}
+		horizon := int64(3600_000_000) // 1 hour
+
+		// WHEN requests are generated
+		requests, err := GenerateRequests(spec, horizon, 0)
+
+		// THEN no error, and exactly 2 sessions generated (3 rounds each = 6 requests)
+		if err != nil {
+			t.Fatalf("GenerateRequests failed: %v", err)
+		}
+		expectedRequests := 2 * 3 // 2 sessions * 3 rounds each
+		if len(requests) != expectedRequests {
+			t.Errorf("expected %d requests, got %d", expectedRequests, len(requests))
+		}
+	})
+}
+
+// TestCustomSampler_ReasoningIntegration tests CustomSampler with reasoning clients.
+func TestCustomSampler_ReasoningIntegration(t *testing.T) {
+	// GIVEN a client with CustomSampler and reasoning enabled
+	sampler := &mockSampler{intervals: []int64{100_000, 200_000, 300_000}}
+	spec := &WorkloadSpec{
+		Version:       "1",
+		Seed:          42,
+		Category:      "language",
+		AggregateRate: 10.0,
+		Clients: []ClientSpec{
+			{
+				ID:            "client-1",
+				TenantID:      "t1",
+				SLOClass:      "batch",
+				RateFraction:  1.0,
+				CustomSampler: sampler,
+				InputDist:     DistSpec{Type: "constant", Params: map[string]float64{"value": 128}},
+				OutputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 64}},
+				Reasoning: &ReasoningSpec{
+					MultiTurn: &MultiTurnSpec{
+						MaxRounds:     2,
+						ThinkTimeUs:   10_000, // 10ms
+						SingleSession: false,
+					},
+				},
+			},
+		},
+	}
+	horizon := int64(3600_000_000)
+
+	// WHEN requests are generated
+	requests, err := GenerateRequests(spec, horizon, 0)
+
+	// THEN no error, and 3 sessions * 2 rounds = 6 requests
+	if err != nil {
+		t.Fatalf("GenerateRequests failed: %v", err)
+	}
+	expectedRequests := 3 * 2
+	if len(requests) != expectedRequests {
+		t.Errorf("expected %d requests, got %d", expectedRequests, len(requests))
+	}
+
+	// AND each session's rounds are spaced by ThinkTimeUs
+	// (We can't verify exact spacing here since CompletionTime is set by the simulator,
+	// so we just verify that round2.ArrivalTime > round1.ArrivalTime)
+	for i := 0; i < 3; i++ { // 3 sessions
+		round1 := requests[i*2]
+		round2 := requests[i*2+1]
+		if round2.ArrivalTime <= round1.ArrivalTime {
+			t.Errorf("session %d: round2 arrival (%d) should be after round1 arrival (%d)",
+				i, round2.ArrivalTime, round1.ArrivalTime)
+		}
+	}
+}

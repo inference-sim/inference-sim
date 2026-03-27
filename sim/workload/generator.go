@@ -142,6 +142,9 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				// filter rounds against horizon. Models inference-perf's behavior
 				// where each client is one persistent session cycling through rounds.
 				iat := arrivalSampler.SampleIAT(clientRNG)
+				if iat == 0 {
+					continue // Sampler exhausted; skip this client
+				}
 				startTime := iat
 				// For clients with lifecycle windows, offset into the first window.
 				// The IAT sample provides staggering within the window.
@@ -199,6 +202,9 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 					break
 				}
 				iat := arrivalSampler.SampleIAT(clientRNG)
+				if iat == 0 {
+					break // Sampler exhausted; stop generating sessions for this client
+				}
 				currentTime += iat
 				if currentTime >= horizon {
 					break

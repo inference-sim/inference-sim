@@ -103,7 +103,8 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 
 	if len(spec.Stages) == 1 {
 		// Single stage: no lifecycle windows needed.
-		// Use normalized exponential arrival for inference-perf parity.
+		// Use NormalizedExponentialSampler for inference-perf parity:
+		// each client pre-generates N intervals that sum exactly to stage duration.
 		stage := spec.Stages[0]
 		aggregateRate = stage.Rate
 		rateFraction := 1.0 / float64(numClientsPerStage)
@@ -116,15 +117,24 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 
 		// Each client gets exactly ceil(stageRate * duration / numClients) requests
 		// over the stage duration, using normalized exponential distribution.
+		// NOTE: Math.Ceil means total requests may exceed stage.Rate * stage.Duration
+		// by up to numClients-1. This matches inference-perf behavior.
 		requestsPerClient := int64(math.Ceil(stage.Rate * float64(stage.Duration) / float64(numClientsPerStage)))
 		durationUs := stage.Duration * 1_000_000 // seconds to microseconds
+
+		// Defensive: prevent integer overflow in seed calculation
+		totalClients := int64(sp.NumUniqueSystemPrompts * sp.NumUsersPerSystemPrompt)
+		if totalClients > 1_000_000 {
+			return nil, fmt.Errorf("total client count %d exceeds safety limit (1M)", totalClients)
+		}
 
 		for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
 			prefixGroup := fmt.Sprintf("prompt-%d", p)
 			for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
 				clientID := fmt.Sprintf("prompt-%d-user-%d", p, u)
 				// Derive client-specific RNG from seed, prompt, and user index
-				clientSeed := seed + int64(p*sp.NumUsersPerSystemPrompt+u)
+				clientOffset := int64(p*sp.NumUsersPerSystemPrompt + u)
+				clientSeed := seed + clientOffset
 				clientRNG := rand.New(rand.NewSource(clientSeed))
 				sampler := NewNormalizedExponentialSampler(clientRNG, requestsPerClient, durationUs)
 

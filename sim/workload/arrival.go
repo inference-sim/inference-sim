@@ -10,7 +10,8 @@ import (
 // ArrivalSampler generates inter-arrival times for a client.
 type ArrivalSampler interface {
 	// SampleIAT returns the next inter-arrival time in microseconds.
-	// Always returns a positive value (>= 1).
+	// Returns >= 1 for active samplers.
+	// Returns 0 to signal exhaustion for stateful samplers (e.g., NormalizedExponentialSampler).
 	SampleIAT(rng *rand.Rand) int64
 }
 
@@ -135,12 +136,22 @@ type NormalizedExponentialSampler struct {
 //
 // The rate parameter only affects the distribution shape; normalization
 // ensures the sum equals durationUs regardless of rate.
+//
+// NOTE: Flooring each IAT to >= 1 means the actual sum may slightly exceed
+// durationUs. This matches inference-perf behavior and is acceptable for
+// workload generation (exact count matters more than exact duration).
 func NewNormalizedExponentialSampler(rng *rand.Rand, count int64, durationUs int64) *NormalizedExponentialSampler {
 	if count <= 0 {
 		panic("NormalizedExponentialSampler: count must be positive")
 	}
 	if durationUs <= 0 {
 		panic("NormalizedExponentialSampler: duration must be positive")
+	}
+	if count > 10_000_000 {
+		panic("NormalizedExponentialSampler: count exceeds safety limit (10M)")
+	}
+	if durationUs < count {
+		panic("NormalizedExponentialSampler: durationUs < count produces degenerate distribution")
 	}
 
 	// Generate exponential samples (float64)
@@ -150,10 +161,17 @@ func NewNormalizedExponentialSampler(rng *rand.Rand, count int64, durationUs int
 		raw[i] = rng.ExpFloat64() / rate
 	}
 
-	// Normalize to sum exactly to duration (float64 arithmetic)
+	// Normalize to sum exactly to duration (float64 arithmetic).
+	// Normalization is necessary because exponential samples have high variance;
+	// without normalization, the actual sum would deviate significantly from
+	// the target duration, violating the inference-perf contract.
 	sum := 0.0
 	for _, v := range raw {
 		sum += v
+	}
+	if sum == 0 {
+		// Defensive: should never happen with ExpFloat64, but guard division by zero
+		panic("NormalizedExponentialSampler: sum of raw samples is zero")
 	}
 	scaleFactor := float64(durationUs) / sum
 
@@ -172,6 +190,10 @@ func NewNormalizedExponentialSampler(rng *rand.Rand, count int64, durationUs int
 
 // SampleIAT returns pre-generated intervals sequentially.
 // Returns 0 when exhausted (signals caller to stop).
+//
+// This is the only ArrivalSampler implementation that returns 0.
+// Callers using CustomSampler must handle zero-IAT as exhaustion signal.
+// See generator.go lines 147, 204 for zero-IAT guards.
 func (s *NormalizedExponentialSampler) SampleIAT(_ *rand.Rand) int64 {
 	if s.index >= len(s.intervals) {
 		return 0 // Exhausted

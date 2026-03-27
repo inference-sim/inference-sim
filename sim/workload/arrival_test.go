@@ -267,3 +267,90 @@ func TestNormalizedExponentialSampler_Deterministic(t *testing.T) {
 		}
 	}
 }
+
+// TestNormalizedExponentialSampler_EdgeCases tests edge cases and validation.
+func TestNormalizedExponentialSampler_EdgeCases(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+
+	t.Run("MinimalDuration", func(t *testing.T) {
+		// GIVEN durationUs == count (mean IAT = 1µs, minimum possible per-interval)
+		count := int64(1000)
+		durationUs := int64(1000)
+		sampler := NewNormalizedExponentialSampler(rng, count, durationUs)
+
+		// WHEN all intervals sampled
+		var sum int64
+		var allAtLeastOne bool = true
+		for i := int64(0); i < count; i++ {
+			iat := sampler.SampleIAT(nil)
+			if iat < 1 {
+				allAtLeastOne = false
+				t.Errorf("iat[%d] = %d, want >= 1", i, iat)
+			}
+			sum += iat
+		}
+
+		// THEN all IATs >= 1
+		if !allAtLeastOne {
+			t.Error("some IATs < 1")
+		}
+
+		// AND sum ≈ durationUs (within tolerance for flooring)
+		// Due to flooring to >= 1, the sum may exceed durationUs by up to count microseconds
+		if sum < durationUs || sum > durationUs+count {
+			t.Errorf("sum = %d, want in range [%d, %d]", sum, durationUs, durationUs+count)
+		}
+	})
+
+	t.Run("LargeCount", func(t *testing.T) {
+		// GIVEN a large count (1M requests)
+		count := int64(1_000_000)
+		durationUs := int64(3600_000_000) // 1 hour
+		sampler := NewNormalizedExponentialSampler(rng, count, durationUs)
+
+		// WHEN first few intervals sampled
+		iat1 := sampler.SampleIAT(nil)
+		iat2 := sampler.SampleIAT(nil)
+
+		// THEN all IATs >= 1
+		if iat1 < 1 || iat2 < 1 {
+			t.Errorf("IATs: %d, %d; want >= 1", iat1, iat2)
+		}
+	})
+
+	t.Run("PanicOnInvalidCount", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for count <= 0")
+			}
+		}()
+		NewNormalizedExponentialSampler(rng, 0, 1000)
+	})
+
+	t.Run("PanicOnInvalidDuration", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for durationUs <= 0")
+			}
+		}()
+		NewNormalizedExponentialSampler(rng, 100, 0)
+	})
+
+	t.Run("PanicOnExcessiveCount", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for count > 10M")
+			}
+		}()
+		NewNormalizedExponentialSampler(rng, 10_000_001, 3600_000_000)
+	})
+
+	t.Run("PanicOnDegenerateDistribution", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Expected panic for durationUs < count")
+			}
+		}()
+		NewNormalizedExponentialSampler(rng, 1000, 999)
+	})
+}
