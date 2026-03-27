@@ -29,7 +29,7 @@
 	"L40S": {
 		"_comment":    "MFU values calibrated per Discussion #589: https://github.com/inference-sim/inference-sim/discussions/589",
 		"TFlopsPeak":  362.05,
-		"TFlopsFP8":   0,
+		"TFlopsFP8":   1466.0,
 		"BwPeakTBs":   0.864,
 		"mfuPrefill":  0.32,
 		"mfuDecode":   0.08,
