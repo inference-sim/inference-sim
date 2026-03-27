@@ -1046,3 +1046,58 @@ func mapKeysRM(m map[string]sim.RequestMetrics) []string {
 	}
 	return keys
 }
+
+// BC-3: parent.CompletionTime is >= all prior phase timestamps.
+// Law: CompletionTime >= DecodeEnqueueTime >= TransferCompleteTime (phase causality).
+// For blackbox (overhead=0): CompletionTime == cluster clock at decode completion tick.
+func TestDisaggregation_CompletionTime_GeqAllPriorPhaseTimestamps(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(3)
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	for _, parent := range cs.parentRequests {
+		if parent.CompletionTime == 0 {
+			continue // incomplete (horizon-interrupted)
+		}
+		if parent.CompletionTime < parent.DecodeEnqueueTime {
+			t.Errorf("parent %s: CompletionTime (%d) < DecodeEnqueueTime (%d) — causality violated",
+				parent.ID, parent.CompletionTime, parent.DecodeEnqueueTime)
+		}
+		if parent.CompletionTime < parent.TransferCompleteTime {
+			t.Errorf("parent %s: CompletionTime (%d) < TransferCompleteTime (%d) — causality violated",
+				parent.ID, parent.CompletionTime, parent.TransferCompleteTime)
+		}
+	}
+}
+
+// BC-4 regression: With blackbox (overhead=0), RequestE2Es[parentID] equals
+// parent.CompletionTime - parent.ArrivalTime, and E2E >= TTFT (causality law).
+func TestDisaggregation_E2E_IncludesOverhead_ZeroOverheadRegression(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(3)
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	for _, parent := range cs.parentRequests {
+		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
+			continue // dropped or incomplete
+		}
+		e2e, ok := m.RequestE2Es[parent.ID]
+		if !ok {
+			t.Errorf("parent %s: no RequestE2Es entry after projectPDMetrics", parent.ID)
+			continue
+		}
+		wantE2E := float64(parent.CompletionTime - parent.ArrivalTime)
+		if e2e != wantE2E {
+			t.Errorf("parent %s: RequestE2Es = %.0f, want %.0f (CompletionTime-ArrivalTime)",
+				parent.ID, e2e, wantE2E)
+		}
+		// Law: E2E >= TTFT (first token precedes full decode completion)
+		ttft, hasTTFT := m.RequestTTFTs[parent.ID]
+		if hasTTFT && e2e < ttft {
+			t.Errorf("parent %s: E2E (%.0f) < TTFT (%.0f) — causality violated", parent.ID, e2e, ttft)
+		}
+	}
+}

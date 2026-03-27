@@ -596,7 +596,10 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 	// Phase 2: process in deterministic order
 	for _, subReqID := range completedIDs {
 		parent := c.parentRequests[c.pendingDecodeCompletions[subReqID]]
-		parent.CompletionTime = c.clock
+		// Include PostDecodeFixedOverhead so parent.CompletionTime represents the
+		// client-visible completion time, matching non-PD E2E semantics (issue #846).
+		// For blackbox/roofline/cross-model (overhead=0), value is byte-identical to before.
+		parent.CompletionTime = c.clock + inst.PostDecodeOverhead()
 		delete(c.pendingDecodeCompletions, subReqID)
 		c.pdDecodeCompletedCount++
 	}
