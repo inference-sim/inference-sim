@@ -395,11 +395,11 @@ cohorts:
     reasoning:
       reason_ratio_distribution:
         type: constant
-        params: { value: 0.5 }
+        params: { value: 50 }     # 50% reasoning tokens (0-100 scale)
       multi_turn:
         max_rounds: 10
         think_time_us: 2000000    # 2 seconds between rounds
-        context_growth: append
+        context_growth: accumulate
     closed_loop: true
     timeout: 300000000            # 300-second per-request timeout
 ```

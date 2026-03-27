@@ -333,7 +333,7 @@ cohorts:
       reason_ratio_distribution:
         type: constant
         params:
-          value: 0.5
+          value: 50
       multi_turn:
         max_rounds: 5
         think_time_us: 2000000
@@ -602,8 +602,8 @@ func TestGenerateRequests_CohortWithMultiTurn_ProducesMultiRoundRequests(t *test
 				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
 				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
 				Reasoning: &ReasoningSpec{
-					ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0.5}},
-					MultiTurn:       &MultiTurnSpec{MaxRounds: 3, ThinkTimeUs: 100_000, ContextGrowth: "append"},
+					ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}}, // 50% (0-100 scale; sampler does /100)
+					MultiTurn:       &MultiTurnSpec{MaxRounds: 3, ThinkTimeUs: 100_000, ContextGrowth: "accumulate"},
 				},
 			},
 		},
