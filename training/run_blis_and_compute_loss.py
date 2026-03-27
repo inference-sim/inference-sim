@@ -144,9 +144,11 @@ def build_blis_command(
     workload_spec: str,
     results_path: str,
     latency_model: str,
+    alpha_coeffs: str | None = None,
+    beta_coeffs: str | None = None,
 ) -> list[str]:
     """Build BLIS command-line arguments."""
-    return [
+    cmd = [
         blis_binary,
         "run",
         "--model",
@@ -176,6 +178,13 @@ def build_blis_command(
         "--results-path",
         results_path,
     ]
+
+    # Add coefficient flags if provided
+    if alpha_coeffs is not None and beta_coeffs is not None:
+        cmd.extend(["--alpha-coeffs", alpha_coeffs])
+        cmd.extend(["--beta-coeffs", beta_coeffs])
+
+    return cmd
 
 
 def split_requests_by_stage(requests: list[dict], stages_config: list[dict]) -> list[list[dict]]:
@@ -299,7 +308,11 @@ def parse_blis_results(results_path: str, experiment: Experiment) -> SimulatorRe
 
 
 def run_blis_on_experiment(
-    blis_binary: str, experiment: Experiment, latency_model: str
+    blis_binary: str,
+    experiment: Experiment,
+    latency_model: str,
+    alpha_coeffs: str | None = None,
+    beta_coeffs: str | None = None,
 ) -> SimulatorResult:
     """Run BLIS binary on a single experiment and return results."""
     blis_binary_abs = os.path.abspath(blis_binary)
@@ -314,7 +327,10 @@ def run_blis_on_experiment(
         results_path = os.path.join(tmpdir, "results.json")
 
         # Build command
-        cmd = build_blis_command(blis_binary_abs, experiment, spec_path, results_path, latency_model)
+        cmd = build_blis_command(
+            blis_binary_abs, experiment, spec_path, results_path,
+            latency_model, alpha_coeffs, beta_coeffs
+        )
 
         # Run BLIS
         result = subprocess.run(cmd, capture_output=True, cwd=blis_dir)
@@ -450,14 +466,14 @@ def discover_experiment_dirs(base_dir: str) -> list[str]:
 
 
 def run_single_experiment_wrapper(
-    args: tuple[int, int, Experiment, str, str]
+    args: tuple[int, int, Experiment, str, str, str | None, str | None]
 ) -> tuple[Experiment, list[ErrorRecord], RuntimeRecord | None, SimulatorResult | None, Experiment | None, Exception | None]:
     """Wrapper for running a single experiment (used by parallel execution)."""
-    i, total, exp, blis_binary, latency_model = args
+    i, total, exp, blis_binary, latency_model, alpha_coeffs, beta_coeffs = args
 
     try:
         t0 = time.perf_counter()
-        result = run_blis_on_experiment(blis_binary, exp, latency_model)
+        result = run_blis_on_experiment(blis_binary, exp, latency_model, alpha_coeffs, beta_coeffs)
         elapsed = time.perf_counter() - t0
 
         # Compute errors
@@ -505,6 +521,8 @@ def run_evaluation(
     latency_model: str,
     max_workers: int = 4,
     evaluate_per_experiment: bool = False,
+    alpha_coeffs: str | None = None,
+    beta_coeffs: str | None = None,
 ) -> LossOutput | None:
     """Run BLIS evaluation pipeline and return loss metrics."""
 
@@ -544,7 +562,7 @@ def run_evaluation(
         futures = {
             executor.submit(
                 run_single_experiment_wrapper,
-                (i, len(experiments), exp, blis_binary, latency_model)
+                (i, len(experiments), exp, blis_binary, latency_model, alpha_coeffs, beta_coeffs)
             ): exp
             for i, exp in enumerate(experiments, 1)
         }
@@ -644,8 +662,19 @@ def main():
     parser.add_argument(
         "--latency-model",
         required=True,
-        choices=["roofline", "blackbox", "crossmodel", "trained-roofline"],
-        help="Latency model backend: roofline, blackbox, crossmodel, trained-roofline",
+        help="Latency model backend: roofline, blackbox, crossmodel, trained-roofline, or custom backend name",
+    )
+    parser.add_argument(
+        "--alpha-coeffs",
+        type=str,
+        default=None,
+        help="Comma-separated alpha coefficients (e.g., '0.00032,0.000045,0.000038')",
+    )
+    parser.add_argument(
+        "--beta-coeffs",
+        type=str,
+        default=None,
+        help="Comma-separated beta coefficients (e.g., '0.00087,0.00124,0.000021')",
     )
     parser.add_argument(
         "--max-workers",
@@ -674,6 +703,8 @@ def main():
             latency_model=args.latency_model,
             max_workers=args.max_workers,
             evaluate_per_experiment=args.evaluate_per_experiment,
+            alpha_coeffs=args.alpha_coeffs,
+            beta_coeffs=args.beta_coeffs,
         )
 
         if loss_output is None:

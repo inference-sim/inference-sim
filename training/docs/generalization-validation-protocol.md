@@ -4,6 +4,8 @@
 
 **Solution**: Two-tier validation framework combining cross-validation (uses existing data) and analytical checks (physics constraints).
 
+**Implementation**: Validation tests are run using the pre-implemented `inner_loop_optimize.py` script with different data subsets. The script accepts `--data-dir` to specify which experiments to use for training vs testing.
+
 ## Tier 1: Cross-Validation (Ground Truth Required)
 
 **Three clean holdout tests using the 15 training experiments:**
@@ -137,6 +139,75 @@ min_latency = max(
 - **CV-1 (MoE) fails** → Need MoE-specific basis function (expert routing overhead, load imbalance)
 - **CV-2 (workload) fails** → Basis functions memorizing workload distributions, violates workload-agnostic constraint
 - **CV-3 (TP=2) fails** → TP basis function has wrong functional form, doesn't interpolate between TP=1 and TP=4
+
+## Running Cross-Validation Tests
+
+**Using the pre-implemented inner loop script:**
+
+### CV-1: Leave-One-Model-Out (Dense→MoE)
+
+```bash
+# Step 1: Create training subset (dense models only)
+mkdir -p trainval_data_cv1_train
+cp -r trainval_data/{llama-2-7b,llama-3.1-70b,mistral-nemo-12b,qwen2.5-7b,yi-34b}* trainval_data_cv1_train/
+
+# Step 2: Create test subset (MoE only)
+mkdir -p trainval_data_cv1_test
+cp -r trainval_data/llama-4-scout-17b-16e* trainval_data_cv1_test/
+
+# Step 3: Generate manifest and Go code with outer loop agent
+# (Agent runs on dense models only)
+
+# Step 4: Train on dense subset
+cd training/
+python inner_loop_optimize.py --data-dir trainval_data_cv1_train
+
+# Step 5: Evaluate on MoE holdout (frozen basis functions, refit coefficients)
+python inner_loop_optimize.py --data-dir trainval_data_cv1_test \
+  --manifest iteration_manifest_cv1.yaml  # Uses same basis functions
+
+# Step 6: Check: MAPE < 20% on MoE test set?
+```
+
+### CV-2: Leave-One-Workload-Out
+
+```bash
+# Training: codegen + reasoning
+mkdir -p trainval_data_cv2_train
+cp -r trainval_data/*codegen* trainval_data/*reasoning* trainval_data_cv2_train/
+
+# Test: roleplay + general
+mkdir -p trainval_data_cv2_test
+cp -r trainval_data/*roleplay* trainval_data/*general* trainval_data_cv2_test/
+
+# Train and evaluate
+python inner_loop_optimize.py --data-dir trainval_data_cv2_train
+python inner_loop_optimize.py --data-dir trainval_data_cv2_test
+
+# Check: Mean MAPE < 15%? Roleplay vs general variance < 3%?
+```
+
+### CV-3: Leave-One-TP-Out
+
+```bash
+# Training: TP=1 + TP=4
+mkdir -p trainval_data_cv3_train
+cp -r trainval_data/*tp1* trainval_data/*tp4* trainval_data_cv3_train/
+
+# Test: TP=2
+mkdir -p trainval_data_cv3_test
+cp -r trainval_data/*tp2* trainval_data_cv3_test/
+
+# Train and evaluate
+python inner_loop_optimize.py --data-dir trainval_data_cv3_train
+python inner_loop_optimize.py --data-dir trainval_data_cv3_test
+
+# Check: MAPE < 15% on TP=2?
+```
+
+**Note**: In all CV tests, **basis functions are frozen** from the main training run. Only the coefficients (α, β) are refit on the holdout training set using `inner_loop_optimize.py`.
+
+---
 
 ## Post-Deployment Monitoring (Future Work)
 
