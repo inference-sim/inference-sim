@@ -10,9 +10,45 @@
 
 ---
 
+## 🎯 MANDATORY METHODOLOGY: Strategy Evolution Phase 4 & 5
+
+**YOU MUST follow Strategy Evolution methodology for hypothesis validation and principle extraction.**
+
+### Your Role in Strategy Evolution
+
+You execute **Strategy Evolution Phase 4 (Verify Predictions)** and **Phase 5 (Extract Principles)**:
+
+- **Phase 4**: Compare each hypothesis from Agent 1's HYPOTHESIS.md against optimization results → verdict (✅/❌/⚠️)
+- **Phase 5**: Extract principles from BOTH confirmed predictions (what works) AND prediction errors (what we don't understand) → guide next iteration
+
+**Required reading**:
+- **[Strategy Evolution Phase 4-5](../../docs/methodology/strategy-evolution.md#phase-4-bayesian-parameter-optimization)** — The verification and principle extraction process
+- **[Hypothesis Bundles - Why Prediction Errors Matter](../../docs/methodology/hypothesis-bundles.md#why-prediction-errors-matter)** — How to analyze prediction failures
+
+### H-main is Your Primary Focus
+
+**Agent 1 was required to write an H-main hypothesis.** This is your first validation target.
+
+**H-main structure** (from Agent 1's HYPOTHESIS.md):
+- **Prediction**: Quantitative threshold (e.g., "Overall loss < 80%", "TTFT RMSE from 111% to <50%")
+- **Causal Mechanism**: WHY the prediction should hold (physics explanation)
+- **Diagnostic Clause**: What failure reveals ("if this fails, it indicates X")
+
+**Your job for H-main**:
+1. **Evaluate prediction**: Did the quantitative threshold hold?
+2. **Test causal mechanism**: Do the results confirm the physics explanation?
+3. **Use diagnostic clause**: If prediction failed, what does the diagnostic clause reveal?
+4. **Extract principle**: From either confirmation or refutation, what principle emerges?
+
+**From [Hypothesis Bundles](../../docs/methodology/hypothesis-bundles.md)**: "The most valuable output is often prediction errors — they reveal gaps in our understanding of vLLM/GPU dynamics that Agent 1 should address next."
+
+---
+
 ## Your Job
 
 Compare Agent 1's predictions (from `iter{N}-HYPOTHESIS.md`) against actual optimization results (from `inner_loop_results.json`) and extract principles to guide the next iteration.
+
+**CRITICAL**: Agent 1 designed hypotheses BEFORE seeing results. Your job is to verify those predictions and extract learning from matches AND mismatches.
 
 ### Step 1: Load Hypothesis and Results
 
@@ -72,16 +108,22 @@ Where each RMSE is computed across 15 per-experiment APE values.
 
 Create `iterations/iter{N}/iter{N}-HYPOTHESIS-validation.md`:
 
-**Structure** (from [Strategy Evolution](../../docs/methodology/strategy-evolution.md) Phase 4):
+**Structure** (../../docs/methodology/strategy-evolution.md):
 
-For **each hypothesis** in `iter{N}-HYPOTHESIS.md`, write a section with:
+**START WITH H-MAIN** — this is the mandatory core hypothesis that Agent 1 was required to write.
+
+For **each hypothesis** in `iter{N}-HYPOTHESIS.md` (H-main first, then others), write a section with:
 
 ```markdown
 # Iteration N: Hypothesis Validation
 
-## [Hypothesis Title from HYPOTHESIS.md]
+## H-main: [Main Hypothesis Title from HYPOTHESIS.md]
 
-**Prediction**: [Copy the quantitative threshold from hypothesis]
+**Prediction** (from Agent 1): [Copy the quantitative threshold from hypothesis]
+
+**Causal Mechanism** (from Agent 1): [Copy Agent 1's physics explanation]
+
+**Diagnostic Clause** (from Agent 1): [Copy "if this fails, it indicates..."]
 
 **Actual Result**: [What actually happened - cite specific metrics]
 
@@ -89,10 +131,29 @@ For **each hypothesis** in `iter{N}-HYPOTHESIS.md`, write a section with:
 
 **Evidence**: [What confirms/rejects this?]
 - Overall loss: `loss.overall_loss` = X.XX (TTFT RMSE = Y.YY, E2E RMSE = Z.ZZ)
+- Target vs actual: [Did we hit the quantitative threshold?]
 - Per-experiment patterns: [cite specific `per_experiment_results[i].ttft_mean_ape` or `e2e_mean_ape`]
-- Coefficient values: [cite `best_params.alpha` or `best_params.beta` if relevant]
+- Coefficient values: [cite `best_params.alpha` or `best_params.beta` if relevant to mechanism]
 
-**Causal Analysis**: [Why did this succeed/fail? What does this tell us about the mechanism?]
+**Causal Analysis**: [Why did this succeed/fail? Does the evidence support Agent 1's causal mechanism?]
+
+**Diagnostic Analysis** (if rejected/partial): [Use Agent 1's diagnostic clause - what does this failure indicate? What should we investigate next?]
+
+---
+
+## [Next Hypothesis Title from HYPOTHESIS.md]
+
+**Prediction** (from Agent 1): [Copy the quantitative threshold]
+
+**Actual Result**: [What happened]
+
+**Verdict**: ✅ CONFIRMED / ❌ REJECTED / ⚠️ PARTIAL
+
+**Evidence**: [Specific metrics and patterns]
+
+**Causal Analysis**: [Why did this succeed/fail?]
+
+**Diagnostic Analysis** (if rejected/partial): [What does the diagnostic clause reveal?]
 
 ---
 
@@ -432,12 +493,16 @@ Your job is to extract maximum learning from each iteration — both from what w
 
 | Pitfall | Fix |
 |---------|-----|
+| **Skip reading Strategy Evolution / Hypothesis Bundles docs** | **Read [strategy-evolution.md](../../docs/methodology/strategy-evolution.md) Phase 4-5 and [hypothesis-bundles.md](../../docs/methodology/hypothesis-bundles.md) BEFORE analyzing** |
+| **Don't validate H-main first** | **H-main is the core hypothesis — evaluate it first and thoroughly** |
+| **Ignore diagnostic clause** | **When prediction fails, use Agent 1's diagnostic clause to direct investigation** |
 | **Verdict without evidence** | Always cite specific numbers (APE values, coefficients, etc.) |
 | **"The model did well"** | Quantify: "RMSE[APE_TTFT]=35%, below 50% threshold" |
-| **Skip causal analysis** | Every verdict needs "because [mechanism]" |
-| **Ignore partial confirmations** | ⚠️ verdicts are valuable — explain the gap |
+| **Skip causal analysis** | Every verdict needs "because [mechanism]" — test Agent 1's physics explanation |
+| **Ignore partial confirmations** | ⚠️ verdicts are valuable — explain the gap between prediction and reality |
 | **Skip CV when warranted** | If all hypotheses ✅, MUST run CV tests |
 | **No actionable recommendations** | Every principle should translate to specific action for next iteration |
+| **Miss the learning in prediction errors** | **From [Hypothesis Bundles](../../docs/methodology/hypothesis-bundles.md): Prediction errors are the most valuable output — they reveal what we don't understand** |
 
 ---
 
