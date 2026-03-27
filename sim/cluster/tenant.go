@@ -38,6 +38,11 @@ func NewTenantTracker(budgets map[string]float64, totalCapacity int) *TenantTrac
 // IsOverBudget returns true when tenantID has a configured budget and currently exceeds it.
 // Always returns false when tenantID is empty or has no configured budget.
 // Pure query — no state mutation.
+//
+// DES ordering note: inFlight reflects dispatched (routed) requests, not admitted-but-pending-routing
+// requests. Admission events (priority 1) fire before routing events (priority 2) at the same tick,
+// so multiple requests admitted at the same tick are all checked against the same inFlight snapshot.
+// This is a known event-ordering tradeoff: burst enforcement lags by one routing cycle per request.
 func (t *TenantTracker) IsOverBudget(tenantID string) bool {
 	if tenantID == "" || t.budgets == nil {
 		return false

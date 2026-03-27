@@ -170,17 +170,25 @@ func TestTenantAdmission_INV9_DoesNotReadOutputTokens(t *testing.T) {
 		return reqs
 	}
 
+	// Use MaxRunningReqs=5 so totalCapacity=10; alice budget=0.1 → limit=1 slot.
+	// Dense arrivals ensure the budget enforcement code path actually executes.
 	cfg1 := newTenantConfig(2, map[string]float64{"alice": 0.1})
+	cfg1.BatchConfig = sim.NewBatchConfig(5, 2048, 0)
 	cs1 := NewClusterSimulator(cfg1, makeReqs(true), nil)
 	mustRun(t, cs1)
 
 	cfg2 := newTenantConfig(2, map[string]float64{"alice": 0.1})
+	cfg2.BatchConfig = sim.NewBatchConfig(5, 2048, 0)
 	cs2 := NewClusterSimulator(cfg2, makeReqs(false), nil)
 	mustRun(t, cs2)
 
-	// Shed counts must be equal — output tokens must not influence admission
 	shed1 := cs1.ShedByTier()["sheddable"]
 	shed2 := cs2.ShedByTier()["sheddable"]
+	// Verify the budget enforcement code path was reached.
+	if shed1 == 0 {
+		t.Error("INV-9 test setup error: alice was never over-budget; budget enforcement did not fire")
+	}
+	// Shed counts must be equal — output tokens must not influence admission
 	if shed1 != shed2 {
 		t.Errorf("INV-9 violated: shed counts differ based on OutputTokens content (%d vs %d)", shed1, shed2)
 	}

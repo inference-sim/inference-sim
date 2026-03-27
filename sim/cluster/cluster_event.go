@@ -164,6 +164,8 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 			}
 			cs.rejectedRequests++
 			tier := e.request.SLOClass
+			// Note: tier=="" is unreachable here — SLOTierPriority("")==3 so the outer
+			// if (priority<3) never fires for empty SLOClass. Defensive for future changes.
 			if tier == "" {
 				tier = "standard"
 			}
