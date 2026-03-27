@@ -251,13 +251,16 @@ func validateClient(c *ClientSpec, idx int) error {
 	if err := validateFinitePositive(prefix+".rate_fraction", c.RateFraction); err != nil {
 		return err
 	}
-	if !validArrivalProcesses[c.Arrival.Process] {
-		return fmt.Errorf("%s: unknown arrival process %q; valid: poisson, gamma, weibull, constant", prefix, c.Arrival.Process)
-	}
-	if c.Arrival.Process == "weibull" && c.Arrival.CV != nil {
-		cv := *c.Arrival.CV
-		if cv < 0.01 || cv > 10.4 {
-			return fmt.Errorf("%s: weibull CV must be in [0.01, 10.4], got %f", prefix, cv)
+	// CustomSampler bypasses arrival process validation (programmatic injection)
+	if c.CustomSampler == nil {
+		if !validArrivalProcesses[c.Arrival.Process] {
+			return fmt.Errorf("%s: unknown arrival process %q; valid: poisson, gamma, weibull, constant", prefix, c.Arrival.Process)
+		}
+		if c.Arrival.Process == "weibull" && c.Arrival.CV != nil {
+			cv := *c.Arrival.CV
+			if cv < 0.01 || cv > 10.4 {
+				return fmt.Errorf("%s: weibull CV must be in [0.01, 10.4], got %f", prefix, cv)
+			}
 		}
 	}
 	if c.Arrival.CV != nil {

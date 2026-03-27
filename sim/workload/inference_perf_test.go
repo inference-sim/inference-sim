@@ -845,10 +845,9 @@ inference_perf:
 // --- Equivalence tests (Task 7) ---
 
 func TestInferencePerfExpansion_EquivalentToManual(t *testing.T) {
-	// Acceptance criterion: shorthand and manual expansion produce identical requests.
-	// Build equivalent specs and compare generated request sequences.
+	// Acceptance criterion: two expansions with same seed produce identical results.
+	// With CustomSampler (stateful), we need fresh expansions for each run.
 
-	// Shorthand spec
 	ipSpec := &InferencePerfSpec{
 		Stages: []StageSpec{
 			{Rate: 10.0, Duration: 10},
@@ -861,36 +860,31 @@ func TestInferencePerfExpansion_EquivalentToManual(t *testing.T) {
 			OutputLen:               50,
 		},
 	}
-	expanded, err := ExpandInferencePerfSpec(ipSpec, 42)
+	horizon := int64(10_000_000) // 10 seconds
+
+	// First expansion and generation
+	expanded1, err := ExpandInferencePerfSpec(ipSpec, 42)
 	if err != nil {
 		t.Fatalf("expansion error: %v", err)
 	}
-
-	// Manual spec: construct the same clients explicitly
-	manual := &WorkloadSpec{
-		Version:       expanded.Version,
-		Seed:          expanded.Seed,
-		Category:      expanded.Category,
-		AggregateRate: expanded.AggregateRate,
-		Clients:       expanded.Clients, // use the expanded clients directly
-	}
-
-	horizon := int64(10_000_000) // 10 seconds
-
-	// Generate from expanded
-	r1, err1 := GenerateRequests(expanded, horizon, 0)
+	r1, err1 := GenerateRequests(expanded1, horizon, 0)
 	if err1 != nil {
-		t.Fatalf("expanded generation error: %v", err1)
+		t.Fatalf("generation error: %v", err1)
 	}
 
-	// Generate from manual (same clients)
-	r2, err2 := GenerateRequests(manual, horizon, 0)
+	// Second expansion with same seed (fresh samplers)
+	expanded2, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+	r2, err2 := GenerateRequests(expanded2, horizon, 0)
 	if err2 != nil {
-		t.Fatalf("manual generation error: %v", err2)
+		t.Fatalf("generation error: %v", err2)
 	}
 
+	// Verify identical output
 	if len(r1) != len(r2) {
-		t.Fatalf("different request counts: expanded=%d, manual=%d", len(r1), len(r2))
+		t.Fatalf("different request counts: %d vs %d", len(r1), len(r2))
 	}
 
 	for i := range r1 {
@@ -1343,6 +1337,133 @@ func TestGenerateRequests_InferencePerfSpec_MultiTurnMultiStage_Integration(t *t
 		if ratio < 0.3 || ratio > 0.7 {
 			t.Errorf("stage ratio = %.3f (s0=%d, s1=%d), want ~0.5 (±0.2)",
 				ratio, stage0Count, stage1Count)
+		}
+	}
+}
+
+// --- NormalizedExponentialSampler integration tests (Task 3) ---
+
+func TestExpandInferencePerfSpec_SingleStage_NormalizedExponential(t *testing.T) {
+	// BC-2: Single-stage expansion uses normalized exponential and produces
+	// exactly ceil(rate*duration/numClients) requests per client, summing to
+	// the stage duration.
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 10.0, Duration: 60}, // 10 req/s for 60s = 600 total requests
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  3,
+			NumUsersPerSystemPrompt: 2,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+	// 3*2 = 6 clients, each should get ceil(600/6) = 100 requests
+	horizon := int64(60_000_000) // 60 seconds in µs
+	requests, err := GenerateRequests(expanded, horizon, 0)
+	if err != nil {
+		t.Fatalf("generation error: %v", err)
+	}
+	// Total requests should be exactly 600
+	if len(requests) != 600 {
+		t.Errorf("request count = %d, want 600", len(requests))
+	}
+	// Verify all arrivals are within the stage duration
+	for i, req := range requests {
+		if req.ArrivalTime < 0 || req.ArrivalTime >= horizon {
+			t.Errorf("request %d: arrival time %d µs outside [0, %d) µs",
+				i, req.ArrivalTime, horizon)
+		}
+	}
+}
+
+func TestExpandInferencePerfSpec_SingleStage_NormalizedDeterministic(t *testing.T) {
+	// BC-3: Same seed produces byte-identical expansion.
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 10.0, Duration: 10},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  2,
+			NumUsersPerSystemPrompt: 2,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+		},
+	}
+	horizon := int64(10_000_000) // 10 seconds in µs
+
+	// First run
+	expanded1, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+	r1, err := GenerateRequests(expanded1, horizon, 0)
+	if err != nil {
+		t.Fatalf("generation error: %v", err)
+	}
+
+	// Second run with same seed
+	expanded2, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+	r2, err := GenerateRequests(expanded2, horizon, 0)
+	if err != nil {
+		t.Fatalf("generation error: %v", err)
+	}
+
+	// Verify identical output
+	if len(r1) != len(r2) {
+		t.Fatalf("different request counts: %d vs %d", len(r1), len(r2))
+	}
+	for i := range r1 {
+		if r1[i].ArrivalTime != r2[i].ArrivalTime {
+			t.Errorf("request %d: arrival %d vs %d", i, r1[i].ArrivalTime, r2[i].ArrivalTime)
+			break
+		}
+		if r1[i].ID != r2[i].ID {
+			t.Errorf("request %d: ID %q vs %q", i, r1[i].ID, r2[i].ID)
+			break
+		}
+	}
+}
+
+func TestExpandInferencePerfSpec_MultiStage_KeepsPoisson(t *testing.T) {
+	// BC-4: Multi-stage expansion still uses Poisson arrival (for now).
+	// Verify that clients have Arrival field set (not CustomSampler).
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 8.0, Duration: 10},
+			{Rate: 20.0, Duration: 10},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  1,
+			NumUsersPerSystemPrompt: 1,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+	// 2 stages × 1 client each = 2 clients
+	if len(expanded.Clients) != 2 {
+		t.Fatalf("client count = %d, want 2", len(expanded.Clients))
+	}
+	for i, client := range expanded.Clients {
+		if client.Arrival.Process != "poisson" {
+			t.Errorf("client %d: arrival process = %q, want poisson", i, client.Arrival.Process)
+		}
+		if client.CustomSampler != nil {
+			t.Errorf("client %d: CustomSampler should be nil (using Poisson)", i)
 		}
 	}
 }

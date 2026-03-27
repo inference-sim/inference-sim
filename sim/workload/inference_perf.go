@@ -3,6 +3,7 @@ package workload
 import (
 	"fmt"
 	"math"
+	"math/rand"
 )
 
 // InferencePerfSpec defines an inference-perf style workload using a compact
@@ -102,6 +103,7 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 
 	if len(spec.Stages) == 1 {
 		// Single stage: no lifecycle windows needed.
+		// Use normalized exponential arrival for inference-perf parity.
 		stage := spec.Stages[0]
 		aggregateRate = stage.Rate
 		rateFraction := 1.0 / float64(numClientsPerStage)
@@ -112,21 +114,31 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 			reasoning = computeReasoningSpec(stage.Rate, stage.Duration, numClientsPerStage)
 		}
 
+		// Each client gets exactly ceil(stageRate * duration / numClients) requests
+		// over the stage duration, using normalized exponential distribution.
+		requestsPerClient := int64(math.Ceil(stage.Rate * float64(stage.Duration) / float64(numClientsPerStage)))
+		durationUs := stage.Duration * 1_000_000 // seconds to microseconds
+
 		for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
 			prefixGroup := fmt.Sprintf("prompt-%d", p)
 			for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
 				clientID := fmt.Sprintf("prompt-%d-user-%d", p, u)
+				// Derive client-specific RNG from seed, prompt, and user index
+				clientSeed := seed + int64(p*sp.NumUsersPerSystemPrompt+u)
+				clientRNG := rand.New(rand.NewSource(clientSeed))
+				sampler := NewNormalizedExponentialSampler(clientRNG, requestsPerClient, durationUs)
+
 				clients = append(clients, ClientSpec{
-					ID:           clientID,
-					TenantID:     prefixGroup,
-					SLOClass:     "batch",
-					RateFraction: rateFraction,
-					Arrival:      ArrivalSpec{Process: "poisson"},
-					InputDist:    inputDist,
-					OutputDist:   outputDist,
-					PrefixGroup:  prefixGroup,
-					PrefixLength: sp.SystemPromptLen,
-					Reasoning:    reasoning,
+					ID:            clientID,
+					TenantID:      prefixGroup,
+					SLOClass:      "batch",
+					RateFraction:  rateFraction,
+					CustomSampler: sampler,
+					InputDist:     inputDist,
+					OutputDist:    outputDist,
+					PrefixGroup:   prefixGroup,
+					PrefixLength:  sp.SystemPromptLen,
+					Reasoning:     reasoning,
 				})
 			}
 		}
