@@ -1861,3 +1861,127 @@ func TestGenerateWorkload_NonConcurrencySpec_Unchanged(t *testing.T) {
 		t.Errorf("BC-11: non-concurrency spec has FollowUpBudget = %d, want 0", wl.FollowUpBudget)
 	}
 }
+
+func TestConcurrencyMode_EndToEnd_SessionFollowUps(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:  "2",
+		Seed:     42,
+		Category: "language",
+		Clients: []ClientSpec{{
+			ID:          "conc",
+			Concurrency: 2,
+			ThinkTimeUs: 10_000,
+			Arrival:     ArrivalSpec{Process: "constant"},
+			InputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
+			OutputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+		}},
+	}
+
+	wl, err := GenerateWorkload(spec, 1_000_000, 6)
+	if err != nil {
+		t.Fatalf("GenerateWorkload failed: %v", err)
+	}
+	if len(wl.Requests) != 2 {
+		t.Fatalf("seed count = %d, want 2", len(wl.Requests))
+	}
+	if wl.FollowUpBudget != 4 {
+		t.Fatalf("budget = %d, want 4", wl.FollowUpBudget)
+	}
+
+	sm := NewSessionManager(wl.Sessions)
+	sm.SetFollowUpBudget(wl.FollowUpBudget)
+
+	// Simulate: seed 0 completes at tick 5000
+	seed0 := wl.Requests[0]
+	seed0.State = sim.StateCompleted
+	seed0.ProgressIndex = int64(len(seed0.InputTokens) + len(seed0.OutputTokens))
+	follow0 := sm.OnComplete(seed0, 5000)
+	if len(follow0) != 1 {
+		t.Fatalf("expected follow-up for user 0, got %d", len(follow0))
+	}
+
+	// BC-4: follow-up arrival = completion_time + think_time
+	if follow0[0].ArrivalTime != 15_000 {
+		t.Errorf("BC-4: follow-up arrival = %d, want 15000", follow0[0].ArrivalTime)
+	}
+
+	// BC-6: fresh tokens (no context accumulation)
+	if len(follow0[0].InputTokens) != 20 {
+		t.Errorf("BC-6: follow-up input len = %d, want 20 (fresh)", len(follow0[0].InputTokens))
+	}
+
+	// BC-5: session IDs preserved
+	if follow0[0].SessionID != seed0.SessionID {
+		t.Errorf("BC-5: follow-up SessionID = %q, want %q", follow0[0].SessionID, seed0.SessionID)
+	}
+
+	// Seed 1 completes → follow-up (budget: 4→3→2)
+	seed1 := wl.Requests[1]
+	seed1.State = sim.StateCompleted
+	seed1.ProgressIndex = int64(len(seed1.InputTokens) + len(seed1.OutputTokens))
+	follow1 := sm.OnComplete(seed1, 6000)
+	if len(follow1) != 1 {
+		t.Fatalf("expected follow-up for user 1")
+	}
+
+	// Follow-up for user 0 completes → follow-up (budget: 2→1)
+	follow0[0].State = sim.StateCompleted
+	follow0[0].ProgressIndex = int64(len(follow0[0].InputTokens) + len(follow0[0].OutputTokens))
+	follow0b := sm.OnComplete(follow0[0], 20_000)
+	if len(follow0b) != 1 {
+		t.Fatalf("expected follow-up for user 0 round 2")
+	}
+
+	// Follow-up for user 1 completes → follow-up (budget: 1→0)
+	follow1[0].State = sim.StateCompleted
+	follow1[0].ProgressIndex = int64(len(follow1[0].InputTokens) + len(follow1[0].OutputTokens))
+	follow1b := sm.OnComplete(follow1[0], 21_000)
+	if len(follow1b) != 1 {
+		t.Fatalf("expected follow-up for user 1 round 2")
+	}
+
+	// Budget exhausted — next completion should NOT generate follow-up
+	follow0b[0].State = sim.StateCompleted
+	follow0b[0].ProgressIndex = int64(len(follow0b[0].InputTokens) + len(follow0b[0].OutputTokens))
+	followExhausted := sm.OnComplete(follow0b[0], 30_000)
+	if followExhausted != nil {
+		t.Errorf("BC-7: expected nil after budget exhausted, got %d follow-ups", len(followExhausted))
+	}
+}
+
+func TestConcurrencyMode_TimeoutCancelsSession(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:  "2",
+		Seed:     42,
+		Category: "language",
+		Clients: []ClientSpec{{
+			ID:          "conc",
+			Concurrency: 1,
+			ThinkTimeUs: 10_000,
+			Arrival:     ArrivalSpec{Process: "constant"},
+			InputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
+			OutputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+		}},
+	}
+
+	wl, err := GenerateWorkload(spec, 1_000_000, 0)
+	if err != nil {
+		t.Fatalf("GenerateWorkload failed: %v", err)
+	}
+
+	sm := NewSessionManager(wl.Sessions)
+
+	seed := wl.Requests[0]
+	seed.State = sim.StateTimedOut
+	follow := sm.OnComplete(seed, 5000)
+	if follow != nil {
+		t.Errorf("BC-10: expected nil after timeout, got %d", len(follow))
+	}
+
+	seed.State = sim.StateCompleted
+	seed.ProgressIndex = 30
+	follow2 := sm.OnComplete(seed, 6000)
+	if follow2 != nil {
+		t.Errorf("BC-10: expected nil after session cancelled, got %d", len(follow2))
+	}
+}
