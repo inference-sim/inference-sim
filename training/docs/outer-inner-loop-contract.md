@@ -38,9 +38,12 @@ Declares what was generated and why.
 Implements `LatencyModel` interface with agent-designed basis functions.
 
 **Required methods:**
-- `StepTime(modelConfig, hwConfig, batchState) float64` - basis function logic
-- `QueueingTime(req) int64` - request-level API overhead
-- `OutputTokenProcessingTime() int64` - per-token post-processing
+- `StepTime(modelConfig, hwConfig, batchState) float64` - **CUSTOM**: agent designs basis functions
+- `QueueingTime(req) int64` - **STANDARD**: `α₀ + α₁ × input_len` (DO NOT modify)
+- `OutputTokenProcessingTime() int64` - **STANDARD**: `α₂` (DO NOT modify)
+- `PostDecodeFixedOverhead() int64` - **STANDARD**: return `0` (DO NOT modify)
+
+**Key principle**: Only `StepTime()` contains custom basis functions. Other methods use standard BLIS implementations for request-level and per-token overheads.
 
 **Backend registration:**
 ```go
@@ -56,10 +59,14 @@ func init() {
 Search space for Bayesian optimization.
 
 **Required fields:**
-- `alpha_bounds`: Exactly 3 bounds `[[min, max], [min, max], [min, max]]`
-- `beta_bounds`: N bounds matching number of beta coefficients in `StepTime()`
+- `alpha_bounds`: Exactly 3 bounds `[[min, max], [min, max], [min, max]]` (must be non-negative)
+- `beta_bounds`: N bounds matching number of beta coefficients in `StepTime()` (must be non-negative)
 
-**Agent responsibility:** Bounds must be physically plausible and justified.
+**Optional fields (recommended):**
+- `alpha_initial`: 3 suggested starting values for warm-starting Bayesian optimization
+- `beta_initial`: N suggested starting values matching beta_bounds length
+
+**Agent responsibility:** Bounds must be physically plausible, justified, and **all lower bounds ≥ 0** (no negative coefficients allowed).
 
 ## Inner Loop Responsibilities
 
@@ -123,7 +130,9 @@ timestamp: "2026-03-27T14:30:00Z"
 `coefficient_bounds.yaml`:
 ```yaml
 alpha_bounds: [[0.0, 0.001], [0.0, 0.0001], [0.0, 0.0001]]
+alpha_initial: [0.0002, 0.000001, 0.000002]  # Warm-start suggestions
 beta_bounds: [[0.0, 0.002], [0.0, 0.002], [0.0, 0.00005]]  # 3 betas
+beta_initial: [1.0, 1.0, 0.00002]  # Start at roofline + typical TP overhead
 ```
 
 `sim/latency/evolved_model.go`: (agent-generated implementation)
