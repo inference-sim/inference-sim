@@ -492,7 +492,8 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 	// both GenerateRequests' and closed-loop blueprint RNG streams.
 	concurrencyRNG := rand.New(rand.NewSource(spec.Seed + 10007))
 
-	// Reuse prefix tokens from GenerateRequests' RNG stream for consistency
+	// Re-derive prefix tokens by initializing a fresh RNG from spec.Seed —
+	// same seed produces same prefix tokens as GenerateRequests produced.
 	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(spec.Seed))
 	workloadRNG := rng.ForSubsystem(sim.SubsystemWorkloadGen)
 	prefixes := generatePrefixTokens(allClients, workloadRNG)

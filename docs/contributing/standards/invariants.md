@@ -138,11 +138,11 @@ Invariants are properties that must hold at all times during and after simulatio
 
 ## INV-11: Session Completeness
 
-**Statement:** Every session reaches exactly one terminal state: completed (all rounds done), cancelled (a round timed out or was dropped), or horizon-interrupted (simulation ended mid-session). No session is silently abandoned.
+**Statement:** Every session reaches exactly one terminal state: completed (all rounds done), cancelled (a round timed out or was dropped), horizon-interrupted (simulation ended mid-session), or budget-exhausted (concurrency mode: global follow-up request cap reached). No session is silently abandoned.
 
-**Verification:** `sim/workload/session_test.go` — tests cover all terminal paths: `TestSession_TimeoutCancels_NoMoreRounds` (cancelled), `TestSession_FinalRound_Completes` (completed), `TestSession_BeyondHorizon_NotGenerated` (horizon-interrupted), `TestSession_DroppedFollowUp_CancelsSession` (cancelled via drop).
+**Verification:** `sim/workload/session_test.go` — tests cover all terminal paths: `TestSession_TimeoutCancels_NoMoreRounds` (cancelled), `TestSession_FinalRound_Completes` (completed), `TestSession_BeyondHorizon_NotGenerated` (horizon-interrupted), `TestSession_DroppedFollowUp_CancelsSession` (cancelled via drop). Budget-exhausted path verified via `TestConcurrencyMode_EndToEnd_SessionFollowUps` (budget exhaustion stops follow-up generation).
 
-**Evidence:** Design doc INV-11 definition. The `SessionManager.OnComplete` method transitions sessions to exactly one terminal state before returning nil.
+**Evidence:** Design doc INV-11 definition. The `SessionManager.OnComplete` method transitions sessions to exactly one terminal state before returning nil. The `budget_exhausted` state is reached when the shared follow-up budget (set via `SetFollowUpBudget` for `--concurrency` mode) is depleted — the session's unlimited-rounds flag would otherwise continue generating follow-ups, but the global cap takes precedence.
 
 **Hypothesis family:** Structural model — session lifecycle completeness.
 

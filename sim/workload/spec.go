@@ -248,6 +248,22 @@ func (s *WorkloadSpec) Validate() error {
 			return err
 		}
 	}
+	// Mixed concurrency + multi-turn clients: the follow-up budget for
+	// concurrency sessions does not account for closed-loop multi-turn
+	// follow-ups, which could cause total requests to exceed num_requests.
+	hasConcurrency := false
+	hasMultiTurn := false
+	for _, c := range s.Clients {
+		if c.Concurrency > 0 {
+			hasConcurrency = true
+		}
+		if c.Reasoning != nil && c.Reasoning.MultiTurn != nil {
+			hasMultiTurn = true
+		}
+	}
+	if hasConcurrency && hasMultiTurn {
+		return fmt.Errorf("concurrency clients and multi-turn clients cannot be mixed in the same spec: follow-up budget accounting does not support this combination")
+	}
 	for i, c := range s.Cohorts {
 		if err := validateCohort(&c, i); err != nil {
 			return err
