@@ -39,6 +39,14 @@ func ExpandCohorts(cohorts []CohortSpec, seed int64) []ClientSpec {
 				OutputDist:   cohort.OutputDist,
 				PrefixGroup:  cohort.PrefixGroup,
 				Streaming:    cohort.Streaming,
+				PrefixLength: cohort.PrefixLength,
+				// Pointer fields shared across all expanded clients.
+				// Safe: GenerateRequests reads but never mutates these fields.
+				Reasoning:  cohort.Reasoning,
+				ClosedLoop: cohort.ClosedLoop,
+				Timeout:    cohort.Timeout,
+				Network:    cohort.Network,
+				Multimodal: cohort.Multimodal,
 			}
 
 			// Build lifecycle windows from cohort patterns

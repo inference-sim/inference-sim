@@ -68,6 +68,12 @@ type CohortSpec struct {
 	Diurnal      *DiurnalSpec `yaml:"diurnal,omitempty"`
 	Spike        *SpikeSpec   `yaml:"spike,omitempty"`
 	Drain        *DrainSpec   `yaml:"drain,omitempty"`
+	PrefixLength int              `yaml:"prefix_length,omitempty"`
+	Reasoning    *ReasoningSpec   `yaml:"reasoning,omitempty"`
+	ClosedLoop   *bool            `yaml:"closed_loop,omitempty"`
+	Timeout      *int64           `yaml:"timeout,omitempty"`
+	Network      *NetworkSpec     `yaml:"network,omitempty"`
+	Multimodal   *MultimodalSpec  `yaml:"multimodal,omitempty"`
 }
 
 // DiurnalSpec configures sinusoidal rate modulation over a 24-hour cycle.
@@ -333,6 +339,15 @@ func validateCohort(c *CohortSpec, idx int) error {
 		if c.Drain.RampDurationUs <= 0 {
 			return fmt.Errorf("%s: drain ramp_duration_us must be > 0, got %d", prefix, c.Drain.RampDurationUs)
 		}
+	}
+	if c.PrefixLength < 0 {
+		return fmt.Errorf("%s: prefix_length must be non-negative, got %d", prefix, c.PrefixLength)
+	}
+	if c.Timeout != nil && *c.Timeout < 0 {
+		return fmt.Errorf("%s: timeout must be non-negative, got %d", prefix, *c.Timeout)
+	}
+	if c.Reasoning != nil && c.Reasoning.MultiTurn != nil && c.Reasoning.MultiTurn.MaxRounds < 1 {
+		return fmt.Errorf("%s: reasoning.multi_turn.max_rounds must be >= 1, got %d", prefix, c.Reasoning.MultiTurn.MaxRounds)
 	}
 	return nil
 }
