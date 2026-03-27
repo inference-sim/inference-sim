@@ -48,6 +48,8 @@ var (
 	observeAPIFormat           string
 	observeUnconstrainedOutput bool
 	observeRttMs               float64
+	observeConcurrency         int
+	observeThinkTimeMs         int
 )
 
 var observeCmd = &cobra.Command{
@@ -104,6 +106,8 @@ func init() {
 	observeCmd.Flags().Int64Var(&observeSeed, "seed", 42, "RNG seed for workload generation")
 	observeCmd.Flags().Int64Var(&observeHorizon, "horizon", 0, "Observation horizon in microseconds (0 = from spec or unlimited)")
 	observeCmd.Flags().IntVar(&observeNumRequests, "num-requests", 0, "Maximum requests to generate (0 = from spec or unlimited)")
+	observeCmd.Flags().IntVar(&observeConcurrency, "concurrency", 0, "Number of concurrent virtual users (closed-loop, mutually exclusive with --rate)")
+	observeCmd.Flags().IntVar(&observeThinkTimeMs, "think-time-ms", 0, "Think time in ms between response and next request (concurrency mode)")
 
 	// Distribution synthesis flags (same names as blis run)
 	observeCmd.Flags().IntVar(&observePromptTokens, "prompt-tokens", 512, "Average prompt token count (distribution mode)")
@@ -136,8 +140,18 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	if observeTraceData == "" {
 		logrus.Fatalf("--trace-data is required")
 	}
-	if observeWorkloadSpec == "" && !cmd.Flags().Changed("rate") {
-		logrus.Fatalf("Either --workload-spec or --rate is required")
+	if observeWorkloadSpec == "" && !cmd.Flags().Changed("rate") && observeConcurrency <= 0 {
+		logrus.Fatalf("Either --workload-spec, --rate, or --concurrency is required")
+	}
+	// BC-1: --concurrency and --rate are mutually exclusive
+	if observeConcurrency > 0 && cmd.Flags().Changed("rate") {
+		logrus.Fatalf("--concurrency and --rate are mutually exclusive; use one or the other")
+	}
+	if observeConcurrency < 0 {
+		logrus.Fatalf("--concurrency must be >= 0, got %d", observeConcurrency)
+	}
+	if observeThinkTimeMs < 0 {
+		logrus.Fatalf("--think-time-ms must be >= 0, got %d", observeThinkTimeMs)
 	}
 
 	// BC-14: Numeric flag validation (R3)
@@ -169,9 +183,11 @@ func runObserve(cmd *cobra.Command, _ []string) {
 			spec.Seed = observeSeed
 		}
 	} else {
-		// Distribution synthesis (BC-2)
+		// Distribution or concurrency synthesis
 		spec = workload.SynthesizeFromDistribution(workload.DistributionParams{
 			Rate:               observeRate,
+			Concurrency:        observeConcurrency,
+			ThinkTimeMs:        observeThinkTimeMs,
 			NumRequests:        observeNumRequests,
 			PrefixTokens:       observePrefixTokens,
 			PromptTokensMean:   observePromptTokens,
@@ -250,6 +266,15 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	var sessionMgr *workload.SessionManager
 	if len(wl.Sessions) > 0 {
 		sessionMgr = workload.NewSessionManager(wl.Sessions)
+		if wl.FollowUpBudget > 0 {
+			sessionMgr.SetFollowUpBudget(wl.FollowUpBudget)
+		}
+	}
+
+	// Auto-set max-concurrency for concurrency mode
+	if observeConcurrency > 0 && !cmd.Flags().Changed("max-concurrency") {
+		observeMaxConcur = observeConcurrency
+		logrus.Infof("Auto-setting --max-concurrency=%d to match --concurrency", observeConcurrency)
 	}
 
 	// Context for graceful shutdown (BC-12)
