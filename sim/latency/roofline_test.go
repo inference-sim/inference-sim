@@ -1377,18 +1377,18 @@ func TestScoutInterleavedArchitecture_EndToEnd(t *testing.T) {
 	expectedTotalFlops := 1.18e13
 	tolerance := 0.15 // 15% tolerance (conservative, accounts for attention approximation)
 
-	relativeError := math.Abs(flops["total"]-expectedTotalFlops) / expectedTotalFlops
+	relativeError := math.Abs(flops.Total-expectedTotalFlops) / expectedTotalFlops
 	if relativeError > tolerance {
 		t.Errorf("Scout total FLOPs outside expected range: expected %.3e, got %.3e (%.1f%% error)",
-			expectedTotalFlops, flops["total"], relativeError*100)
+			expectedTotalFlops, flops.Total, relativeError*100)
 	}
 
 	// AND weight bandwidth distinguishes MoE vs dense
 	mem := calculateMemoryAccessBytes(scoutConfig, 588, 588, false)
-	if mem["model_weights"] == 0 {
+	if mem.ModelWeights == 0 {
 		t.Fatalf("model_weights should be non-zero")
 	}
 	// Sanity: weight bandwidth should be 10-20% of previous buggy calculation
 	// (buggy version over-counted due to nEff on all layers)
-	t.Logf("Scout weight bandwidth: %.3e bytes (FLOPs: %.3e)", mem["model_weights"], flops["total"])
+	t.Logf("Scout weight bandwidth: %.3e bytes (FLOPs: %.3e)", mem.ModelWeights, flops.Total)
 }
