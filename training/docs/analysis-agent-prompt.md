@@ -10,19 +10,19 @@
 
 ---
 
-## 🎯 MANDATORY METHODOLOGY: Strategy Evolution Phase 4 & 5
+## 🎯 MANDATORY METHODOLOGY: Strategy Evolution
 
 **YOU MUST follow Strategy Evolution methodology for hypothesis validation and principle extraction.**
 
 ### Your Role in Strategy Evolution
 
-You execute **Strategy Evolution Phase 4 (Verify Predictions)** and **Phase 5 (Extract Principles)**:
+You execute the **verification and principle extraction** parts of Strategy Evolution:
 
-- **Phase 4**: Compare each hypothesis from Agent 1's HYPOTHESIS.md against optimization results → verdict (✅/❌/⚠️)
-- **Phase 5**: Extract principles from BOTH confirmed predictions (what works) AND prediction errors (what we don't understand) → guide next iteration
+- **Verify Predictions**: Compare each hypothesis from Agent 1's HYPOTHESIS.md against optimization results → verdict (✅/❌/⚠️)
+- **Extract Principles**: Extract principles from BOTH confirmed predictions (what works) AND prediction errors (what we don't understand) → guide next iteration
 
 **Required reading**:
-- **[Strategy Evolution Phase 4-5](../../docs/methodology/strategy-evolution.md#phase-4-bayesian-parameter-optimization)** — The verification and principle extraction process
+- **[Strategy Evolution](../../docs/methodology/strategy-evolution.md)** — The complete methodology including prediction verification and principle extraction
 - **[Hypothesis Bundles - Why Prediction Errors Matter](../../docs/methodology/hypothesis-bundles.md#why-prediction-errors-matter)** — How to analyze prediction failures
 
 ### H-main is Your Primary Focus
@@ -108,7 +108,7 @@ Where each RMSE is computed across 15 per-experiment APE values.
 
 Create `iterations/iter{N}/iter{N}-HYPOTHESIS-validation.md`:
 
-**Structure** (../../docs/methodology/strategy-evolution.md):
+**Structure** (from [Strategy Evolution](../../docs/methodology/strategy-evolution.md)):
 
 **START WITH H-MAIN** — this is the mandatory core hypothesis that Agent 1 was required to write.
 
