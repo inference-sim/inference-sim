@@ -70,6 +70,8 @@ The agentic training process evolves **both** alphas (by testing different reque
 
 **Responsibility**: Evolve the structure of the latency model by reasoning about physics and error patterns.
 
+**Agent specification**: For the complete prompt specification for implementing the outer loop agent (including output format requirements, Go code templates, reasoning guidelines, and validation checklist), see **[outer-loop-specs.md](outer-loop-specs.md)**.
+
 **Input** (iteration N):
 - Minimum-loss (α, β) from previous inner loop (if N=0: no prior iteration, start from scratch with α=[0,0,0])
 - Loss value and per-experiment APE (Absolute Percentage Error) from `run_blis_and_compute_loss.py --evaluate-per-experiment`: APE for TTFT, E2E, and ITL per experiment
@@ -404,7 +406,7 @@ The agent should propose basis functions that use these hardware parameters rath
 ### To Be Implemented
 
 3. **Outer loop driver** (`training/train_latency_model.py`):
-   - Calls Claude API with error pattern analysis prompt
+   - Calls Claude API with error pattern analysis prompt (see **[outer-loop-specs.md](outer-loop-specs.md)** for the complete agent prompt specification)
    - Receives agent-generated: Go code, manifest, bounds
    - Invokes `python inner_loop_optimize.py`
    - Reads `inner_loop_results.json` for next iteration
