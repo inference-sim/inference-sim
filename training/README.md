@@ -95,7 +95,9 @@ Experiments are sorted by `combined_loss` (descending), so worst predictions app
 
 ## Options
 
-- `--latency-model` — **Required**. Latency model backend: `roofline`, `blackbox`, `crossmodel`, or `trained-roofline`
+- `--latency-model` — **Required**. Latency model backend: `roofline`, `blackbox`, `crossmodel`, `trained-roofline`, or custom backend name
+- `--alpha-coeffs` — Comma-separated alpha coefficients (e.g., `"0.00032,0.000045,0.000038"`)
+- `--beta-coeffs` — Comma-separated beta coefficients (e.g., `"0.00087,0.00124,0.000021"`)
 - `--data-dir` — Ground-truth experiments directory (default: `trainval_data`)
 - `--blis-binary` — Path to BLIS binary (default: `../blis`)
 - `--output-dir` — Output directory (default: `validation_results`) - **Note:** Currently unused, no files are created
@@ -117,6 +119,12 @@ python run_blis_and_compute_loss.py \
   --max-workers 8 \
   --evaluate-per-experiment
 
+# With custom coefficients (for training)
+python run_blis_and_compute_loss.py \
+  --latency-model evolved \
+  --alpha-coeffs "0.00032,0.000045,0.000038" \
+  --beta-coeffs "0.00087,0.00124,0.000021"
+
 # Extract just the overall loss value
 python run_blis_and_compute_loss.py --latency-model roofline | jq '.overall_loss'
 ```
@@ -134,3 +142,95 @@ Each experiment directory must contain:
 - `profile.yaml` — Workload profile
 - `vllm.log` — Ground-truth logs
 - `results/` — Ground-truth metrics folder
+
+---
+
+# Inner Loop Optimizer
+
+Bayesian optimization for latency model coefficients. Part of the agentic two-loop training system.
+
+## Prerequisites
+
+```bash
+# Install Python dependencies
+pip install -r training/requirements.txt
+
+# Ensure outer loop has provided deliverables:
+# - iteration_manifest.yaml
+# - coefficient_bounds.yaml
+# - sim/latency/<backend>.go
+```
+
+## Usage
+
+```bash
+cd training/
+
+# Run inner loop optimization (default 50 trials)
+python inner_loop_optimize.py
+
+# Custom number of trials
+python inner_loop_optimize.py --n-trials 100
+
+# Custom timeout per trial (default 120s)
+python inner_loop_optimize.py --timeout 180
+
+# Skip detailed post-convergence evaluation
+python inner_loop_optimize.py --no-detailed-eval
+```
+
+## What It Does
+
+**Phase 1: Setup**
+1. Reads `iteration_manifest.yaml` from outer loop
+2. Verifies all declared Go source files exist
+3. Compiles BLIS binary with new latency backend (~5-10s)
+4. Loads coefficient bounds from `coefficient_bounds.yaml`
+
+**Phase 2: Bayesian Optimization**
+1. Runs 50-100 trials sampling coefficient space
+2. Each trial injects coefficients via `--alpha-coeffs` and `--beta-coeffs`
+3. Evaluates loss: `RMSE[APE(TTFT)] + RMSE[APE(E2E)]`
+4. Updates Gaussian process surrogate model
+
+**Phase 3: Post-Convergence Evaluation**
+1. Runs detailed evaluation with optimal coefficients
+2. Generates per-experiment diagnostics using `--evaluate-per-experiment`
+
+## Output
+
+Results saved to `inner_loop_results.json`:
+
+```json
+{
+  "best_alpha": [0.00032, 0.000045, 0.000038],
+  "best_beta": [0.00087, 0.00124, 0.000021],
+  "best_loss": 8.234,
+  "n_trials": 50,
+  "optimization_time": 245.3,
+  "detailed_diagnostics": { ... },
+  "timestamp": "2026-03-27T14:30:00Z",
+  "iteration": 3,
+  "backend_name": "evolved"
+}
+```
+
+## Architecture
+
+**For understanding the system**:
+- [outer-inner-loop-contract.md](docs/outer-inner-loop-contract.md) - Interface contract between outer and inner loops
+- [agentic-latency-training-problem-statement.md](docs/agentic-latency-training-problem-statement.md) - Complete problem definition
+
+**For implementing the outer loop**:
+- [outer-loop-specs.md](docs/outer-loop-specs.md) - **Agent prompt specification** (what the outer loop must generate)
+
+**For running validation**:
+- [generalization-validation-protocol.md](docs/generalization-validation-protocol.md) - Cross-validation and physics checks
+
+**Key principles:**
+- Inner loop is a pre-implemented script (no agent implementation needed)
+- Outer loop agent generates 3 files: manifest, Go code, bounds
+- Inner loop compiles BLIS and runs Bayesian optimization automatically
+- Coefficients injected at runtime (no recompilation per trial)
+- One compilation per outer loop iteration (~5-10s overhead)
+- 50-100 fast evaluations per iteration

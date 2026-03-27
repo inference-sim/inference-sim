@@ -169,38 +169,45 @@ The agentic training process evolves **both** alphas (by testing different reque
 - Additional terms don't reduce loss below noise floor
 - Generalization performance (cross-validation MAPE) stops improving
 
-### Inner Loop: Bayesian Optimization
+### Inner Loop: Bayesian Optimization (Pre-implemented Script)
 
 **Responsibility**: Find the best-fitting (α, β) coefficients for a fixed set of basis functions.
 
-**CRITICAL**: The inner loop MUST call `run_blis_and_compute_loss.py` **WITHOUT** the `--evaluate-per-experiment` flag. This flag should ONLY be used after inner loop convergence for residual analysis. During optimization, only `overall_loss` is needed - per-experiment breakdown would slow down the Bayesian optimization loop unnecessarily.
+**Implementation**: The inner loop is a **pre-implemented Python script** (`training/inner_loop_optimize.py`). The outer loop agent does NOT need to implement optimization logic—it only needs to generate the three required input files.
 
-**Input**:
-- Basis functions f₁, ..., fₙ from outer loop (fixed code in evolved latency backend)
-- Search ranges for α [α₀, α₁, α₂] and β [β₁, ..., βₙ]
-- Loss function: `L(α, β) = run_blis_and_compute_loss(α, β)` which computes:
-  - `RMSE[APE(mean_TTFT_per_exp)] + RMSE[APE(mean_E2E_per_exp)]`
-  - APE computed per experiment on experiment's mean TTFT and E2E
-  - RMSE taken across all experiments, then summed
+**How to invoke**:
+```bash
+cd training/
+python inner_loop_optimize.py --n-trials 50
+```
 
-**Optimization process**:
-1. **Surrogate model**: Build Gaussian process over the loss surface L(α, β)
-2. **Acquisition function**: Balance exploration (high uncertainty) vs exploitation (low predicted loss)
-3. **Candidate selection**: Propose next (α, β) point to evaluate
-4. **Loss evaluation**:
-   - Write current (α, β) coefficients into evolved latency backend code/config
-   - Call `run_blis_and_compute_loss.py --latency-model evolved` (NO `--evaluate-per-experiment` flag)
-   - Script runs BLIS on all experiments in `trainval_data/` using the evolved backend
-   - Computes per-experiment APE on mean TTFT and mean E2E, then RMSE across experiments
-   - Returns JSON output with: `{"overall_loss": RMSE[APE(TTFT)] + RMSE[APE(E2E)], ...}` (minimal output for speed)
-5. **Surrogate update**: Incorporate new loss observation into Gaussian process
-6. **Repeat** until convergence
+The script automatically:
+1. Reads `iteration_manifest.yaml` (outer loop output)
+2. Verifies Go source files exist
+3. Compiles BLIS binary
+4. Loads `coefficient_bounds.yaml`
+5. Runs Bayesian optimization (50-100 trials)
+6. Calls `run_blis_and_compute_loss.py` for each trial **WITHOUT** `--evaluate-per-experiment` (optimization mode)
+7. After convergence, runs ONE final evaluation **WITH** `--evaluate-per-experiment` (diagnostic mode)
+8. Saves results to `inner_loop_results.json`
 
-**Termination criterion**: `Δloss < ε` or 100 iterations.
+**Input files (outer loop must provide)**:
+1. `iteration_manifest.yaml` - declares backend name and modified files
+2. Go source file(s) - implements basis functions (path declared in manifest)
+3. `coefficient_bounds.yaml` - search space for (α, β)
 
-**Output**: Minimum-loss (α*, β*) and final loss value
+**Output file (inner loop produces)**:
+- `inner_loop_results.json` containing:
+  - `best_alpha`: Optimal alpha coefficients
+  - `best_beta`: Optimal beta coefficients
+  - `best_loss`: Final loss value
+  - `detailed_diagnostics`: Per-experiment APE for error pattern analysis
+  - `num_errors`: Count of failed trials
+  - `error_log`: Details of any crashed trials
 
-**Post-convergence evaluation**: ONLY after inner loop converges to optimal (α*, β*), run a single detailed evaluation with `--evaluate-per-experiment` flag to generate diagnostics (per-experiment APE, latency breakdown, throughput) for outer loop error pattern analysis. This step happens ONCE per outer loop iteration, not during the optimization loop.
+**Termination criterion**: Bayesian optimizer stops after 50-100 trials (configurable via `--n-trials`).
+
+**Post-convergence evaluation**: The script automatically runs `run_blis_and_compute_loss.py --evaluate-per-experiment` after finding optimal coefficients to generate per-experiment diagnostics for the outer loop's next iteration.
 
 ## Generalization Requirements
 
@@ -380,33 +387,44 @@ The agent should propose basis functions that use these hardware parameters rath
 
 ## Deliverables
 
-1. **Python training driver** (`training/train_latency_model.py`):
-   - Outer loop: Calls Claude API with error pattern analysis prompt (provides per-experiment APE from `--evaluate-per-experiment`)
-   - Inner loop: Bayesian optimization over coefficient space using `run_blis_and_compute_loss.py` as objective function
-   - Ledger management: After each outer loop iteration, runs `--evaluate-per-experiment` and records results
-   - Outputs: Best (α, β) per iteration, final latency backend code, evolution ledger
+### Pre-implemented Components (Already Exist)
 
-2. **Generated BLIS latency backend** (`sim/latency/evolved_model.go`):
-   - Implements `LatencyBackend` interface
-   - Basis functions as documented helper methods
-   - Coefficient values in embedded struct or external config
+1. **Inner loop script** (`training/inner_loop_optimize.py`): ✅ **Already implemented**
+   - Reads outer loop outputs (manifest, bounds, Go code)
+   - Compiles BLIS, runs Bayesian optimization
+   - Saves results to `inner_loop_results.json`
 
-3. **Training report** (`training/docs/training_report.md`):
-   - Evolution history: Basis functions proposed at each iteration
-   - Loss trajectory: Overall loss reduction across outer loop iterations
-   - Per-iteration metrics: Detailed breakdown from `--evaluate-per-experiment` runs
-   - Residual analysis: Plots showing error patterns before/after each evolution
-   - Final coefficient values with physical interpretation
+2. **Loss computation** (`training/run_blis_and_compute_loss.py`): ✅ **Already implemented**
+   - Runs BLIS on all experiments
+   - Computes `RMSE[APE(TTFT)] + RMSE[APE(E2E)]`
+   - Returns JSON with loss metrics
 
-3a. **Evolution ledger** (`training/evolution_ledger.jsonl`):
-   - JSON Lines format: One entry per outer loop iteration
-   - Contains: iteration number, basis functions, coefficients, loss, per-experiment metrics, agent reasoning
-   - Enables progress tracking, rollback, and post-training analysis
+### To Be Implemented
 
-4. **Validation results** (`training/validation_results/`):
-   - Per-experiment error breakdown (TTFT, ITL, per-stage latencies)
-   - Comparison against existing backends (roofline, blackbox, cross-model, trained-roofline)
-   - Ablation study: Contribution of each basis function to final accuracy
+3. **Outer loop driver** (`training/train_latency_model.py`):
+   - Calls Claude API with error pattern analysis prompt
+   - Receives agent-generated: Go code, manifest, bounds
+   - Invokes `python inner_loop_optimize.py`
+   - Reads `inner_loop_results.json` for next iteration
+   - Manages evolution ledger
+
+4. **Generated BLIS latency backend** (`sim/latency/evolved_model.go`):
+   - **Agent-generated** each iteration
+   - Implements `LatencyModel` interface
+   - Basis functions with agent's reasoning in comments
+   - Registered with backend name from manifest
+
+5. **Training report** (`training/docs/training_report.md`):
+   - Generated after training completes
+   - Evolution history: Basis functions per iteration
+   - Loss trajectory across iterations
+   - Residual analysis plots
+   - Final coefficient values with interpretation
+
+6. **Evolution ledger** (`training/evolution_ledger.jsonl`):
+   - JSON Lines: One entry per iteration
+   - Records: iteration, basis functions, coefficients, loss, diagnostics, reasoning
+   - Enables rollback and post-training analysis
 
 ## Resolved Design Decisions
 
