@@ -13,6 +13,41 @@ import (
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
 
+// fixedOverheadModel is a test-only LatencyModel stub with configurable PostDecodeFixedOverhead.
+type fixedOverheadModel struct {
+	overhead int64
+}
+
+func (m *fixedOverheadModel) StepTime(batch []*Request) int64     { return 1 }
+func (m *fixedOverheadModel) QueueingTime(req *Request) int64      { return 0 }
+func (m *fixedOverheadModel) OutputTokenProcessingTime() int64     { return 0 }
+func (m *fixedOverheadModel) PostDecodeFixedOverhead() int64       { return m.overhead }
+
+// BC-1: Simulator.PostDecodeFixedOverhead() delegates to the underlying LatencyModel.
+func TestSimulator_PostDecodeFixedOverhead_DelegatesToModel(t *testing.T) {
+	tests := []struct {
+		name     string
+		overhead int64
+	}{
+		{"zero (blackbox/roofline)", 0},
+		{"positive (trained-roofline)", 1850},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := newTestSimConfig()
+			kvStore := MustNewKVStoreFromConfig(cfg.KVCacheConfig)
+			model := &fixedOverheadModel{overhead: tc.overhead}
+			s, err := NewSimulator(cfg, kvStore, model)
+			if err != nil {
+				t.Fatalf("NewSimulator: %v", err)
+			}
+			if got := s.PostDecodeFixedOverhead(); got != tc.overhead {
+				t.Errorf("PostDecodeFixedOverhead() = %d, want %d", got, tc.overhead)
+			}
+		})
+	}
+}
+
 // mustNewSimulator is a test helper that calls NewSimulator and fails the test on error.
 // Honors KVCPUBlocks for tiered KV cache construction via MustNewKVStoreFromConfig.
 func mustNewSimulator(t *testing.T, cfg SimConfig) *Simulator {
