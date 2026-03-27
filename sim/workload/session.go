@@ -17,19 +17,21 @@ import (
 type sessionState string
 
 const (
-	sessionActive            sessionState = "active"
-	sessionCompleted         sessionState = "completed"
-	sessionCancelled         sessionState = "cancelled"
+	sessionActive             sessionState = "active"
+	sessionCompleted          sessionState = "completed"
+	sessionCancelled          sessionState = "cancelled"
 	sessionHorizonInterrupted sessionState = "horizon_interrupted"
+	sessionBudgetExhausted    sessionState = "budget_exhausted"
 )
 
 // SessionBlueprint describes a session's full shape. Created during workload generation,
 // immutable after creation. Each session has its own deterministic RNG (INV-6).
 type SessionBlueprint struct {
-	SessionID     string
-	ClientID      string
-	MaxRounds     int
-	ContextGrowth string // "accumulate" or ""
+	SessionID       string
+	ClientID        string
+	MaxRounds       int
+	UnlimitedRounds bool   // when true, session continues past MaxRounds until budget/horizon/timeout/drop
+	ContextGrowth   string // "accumulate" or ""
 	ThinkTimeUs   int64
 	Timeout       *int64 // per-request timeout from ClientSpec (nil = default 300s)
 	Horizon       int64  // simulation horizon for BC-19 guard
@@ -53,8 +55,10 @@ type activeSession struct {
 // SessionManager tracks active sessions and generates follow-up rounds on completion.
 // Single-threaded: assumes invocation only from the DES event loop.
 type SessionManager struct {
-	sessions  map[string]*activeSession
-	idCounter int64 // monotonic counter for follow-up request IDs
+	sessions       map[string]*activeSession
+	idCounter      int64 // monotonic counter for follow-up request IDs
+	followUpBudget int64 // max follow-ups to generate; 0 = unlimited
+	followUpCount  int64 // follow-ups generated so far
 }
 
 // NewSessionManager creates a SessionManager from pre-generated session blueprints.
@@ -63,7 +67,7 @@ func NewSessionManager(blueprints []SessionBlueprint) *SessionManager {
 	sm := &SessionManager{sessions: make(map[string]*activeSession, len(blueprints))}
 	for i := range blueprints {
 		bp := &blueprints[i]
-		if bp.MaxRounds < 1 {
+		if bp.MaxRounds < 1 && !bp.UnlimitedRounds {
 			panic(fmt.Sprintf("NewSessionManager: session %s has MaxRounds=%d, must be >= 1", bp.SessionID, bp.MaxRounds))
 		}
 		sm.sessions[bp.SessionID] = &activeSession{
@@ -72,6 +76,12 @@ func NewSessionManager(blueprints []SessionBlueprint) *SessionManager {
 		}
 	}
 	return sm
+}
+
+// SetFollowUpBudget sets a global cap on the number of follow-up requests
+// the SessionManager will generate. Zero means unlimited (the default).
+func (sm *SessionManager) SetFollowUpBudget(budget int64) {
+	sm.followUpBudget = budget
 }
 
 // OnComplete is called when a request reaches a terminal state. It determines
@@ -118,8 +128,14 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 	// Length-capped: continues session (BC-16) — State is StateCompleted
 
 	// Final round check
-	if sess.currentRound >= sess.blueprint.MaxRounds-1 {
+	if !sess.blueprint.UnlimitedRounds && sess.currentRound >= sess.blueprint.MaxRounds-1 {
 		sess.state = sessionCompleted
+		return nil
+	}
+
+	// Budget check: stop generating follow-ups once global budget is exhausted
+	if sm.followUpBudget > 0 && sm.followUpCount >= sm.followUpBudget {
+		sess.state = sessionBudgetExhausted
 		return nil
 	}
 
@@ -179,6 +195,9 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 		ClientID:     bp.ClientID,
 		SessionID:    bp.SessionID,
 		RoundIndex:   sess.currentRound,
+	}
+	if sm.followUpBudget > 0 {
+		sm.followUpCount++
 	}
 	return []*sim.Request{nextReq}
 }
