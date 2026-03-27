@@ -259,11 +259,13 @@ class InnerLoopOptimizer:
                 - best_alpha: Optimal alpha coefficients
                 - best_beta: Optimal beta coefficients
                 - best_loss: Final loss value
-                - n_trials: Number of trials run
+                - n_trials: Number of trials run (actual, may be less than requested if converged early)
                 - optimization_time: Wall-clock time in seconds
+                - converged_early: Whether optimization stopped early due to convergence
         """
         print("\n" + "=" * 70)
-        print(f"BAYESIAN OPTIMIZATION ({self.n_trials} trials)")
+        print(f"BAYESIAN OPTIMIZATION (up to {self.n_trials} trials)")
+        print("Early stopping: >1% improvement required in 50-trial window")
         print("=" * 70)
 
         # Create Optuna study
@@ -273,12 +275,40 @@ class InnerLoopOptimizer:
             sampler=optuna.samplers.TPESampler(seed=42)
         )
 
+        # Convergence callback: stop if no >1% improvement in last 50 trials
+        converged_early = [False]  # Mutable container for callback
+
+        def convergence_callback(study: optuna.Study, trial: optuna.trial.FrozenTrial):
+            """Stop if best loss hasn't improved >1% in last 50 trials."""
+            n = len(study.trials)
+            if n <= 50:
+                return  # Need more than 50 trials to check 50-trial window
+
+            # Get best loss from all trials up to 50 trials ago (trials 0 to n-51)
+            trials_before_window = study.trials[:n-50]
+            best_loss_50_ago = min(t.value for t in trials_before_window if t.value is not None)
+
+            # Get current best loss
+            current_best = study.best_value
+
+            # Calculate improvement
+            improvement = (best_loss_50_ago - current_best) / best_loss_50_ago
+
+            if improvement <= 0.01:  # ≤1% improvement
+                print(f"\n[Convergence] Stopping at trial {n}/{self.n_trials}")
+                print(f"[Convergence] Best loss 50 trials ago: {best_loss_50_ago:.6f}")
+                print(f"[Convergence] Current best loss: {current_best:.6f}")
+                print(f"[Convergence] Improvement: {improvement*100:.2f}% (threshold: >1.00%)")
+                converged_early[0] = True
+                study.stop()
+
         # Run optimization
         opt_start = time.time()
         study.optimize(
             self.optuna_objective,
             n_trials=self.n_trials,
-            show_progress_bar=True
+            show_progress_bar=True,
+            callbacks=[convergence_callback]
         )
         opt_time = time.time() - opt_start
 
@@ -287,6 +317,7 @@ class InnerLoopOptimizer:
         best_alpha = [best_params[f"alpha_{i}"] for i in range(3)]
         best_beta = [best_params[f"beta_{i}"] for i in range(len(self.bounds["beta_bounds"]))]
         best_loss = study.best_value
+        actual_trials = len(study.trials)
 
         print("\n" + "=" * 70)
         print("OPTIMIZATION COMPLETE")
@@ -294,15 +325,21 @@ class InnerLoopOptimizer:
         print(f"\nBest loss: {best_loss:.6f}")
         print(f"Best alpha: {best_alpha}")
         print(f"Best beta: {best_beta}")
+        print(f"Trials completed: {actual_trials}/{self.n_trials}")
+        if converged_early[0]:
+            print(f"Status: Converged early (no >1% improvement in last 50 trials)")
+        else:
+            print(f"Status: Completed all requested trials")
         print(f"Optimization time: {opt_time:.1f}s")
-        print(f"Time per trial: {opt_time / self.n_trials:.2f}s")
+        print(f"Time per trial: {opt_time / actual_trials:.2f}s")
 
         return {
             "best_alpha": best_alpha,
             "best_beta": best_beta,
             "best_loss": best_loss,
-            "n_trials": self.n_trials,
-            "optimization_time": opt_time
+            "n_trials": actual_trials,
+            "optimization_time": opt_time,
+            "converged_early": converged_early[0]
         }
 
     def evaluate_detailed(self, alpha: List[float], beta: List[float]) -> Dict[str, Any]:

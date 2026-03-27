@@ -70,7 +70,7 @@ Search space for Bayesian optimization.
 3. Compile BLIS: `go build -o blis main.go`
 4. Load `coefficient_bounds.yaml`
 
-### Phase 2: Optimization (50-100 Trials)
+### Phase 2: Optimization (Up to 50-100 Trials)
 
 1. Bayesian optimizer proposes candidate (α, β)
 2. Run BLIS with coefficients injected via CLI:
@@ -82,6 +82,7 @@ Search space for Bayesian optimization.
    ```
 3. Parse loss from output: `RMSE[APE(TTFT)] + RMSE[APE(E2E)]`
 4. Update surrogate model and repeat
+5. **Convergence check**: Stop early if best loss hasn't improved >1% in last 50 trials
 
 ### Phase 3: Post-Convergence Evaluation
 

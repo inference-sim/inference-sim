@@ -188,10 +188,11 @@ python inner_loop_optimize.py --no-detailed-eval
 4. Loads coefficient bounds from `coefficient_bounds.yaml`
 
 **Phase 2: Bayesian Optimization**
-1. Runs 50-100 trials sampling coefficient space
+1. Runs up to 50-100 trials sampling coefficient space
 2. Each trial injects coefficients via `--alpha-coeffs` and `--beta-coeffs`
 3. Evaluates loss: `RMSE[APE(TTFT)] + RMSE[APE(E2E)]`
 4. Updates Gaussian process surrogate model
+5. **Early stopping**: Stops if best loss hasn't improved >1% in last 50 trials
 
 **Phase 3: Post-Convergence Evaluation**
 1. Runs detailed evaluation with optimal coefficients
@@ -208,6 +209,7 @@ Results saved to `inner_loop_results.json`:
   "best_loss": 8.234,
   "n_trials": 50,
   "optimization_time": 245.3,
+  "converged_early": false,
   "detailed_diagnostics": { ... },
   "timestamp": "2026-03-27T14:30:00Z",
   "iteration": 3,

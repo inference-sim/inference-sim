@@ -186,7 +186,9 @@ The script automatically:
 2. Verifies Go source files exist
 3. Compiles BLIS binary
 4. Loads `coefficient_bounds.yaml`
-5. Runs Bayesian optimization (50-100 trials)
+5. Runs Bayesian optimization (up to 50-100 trials)
+   - **Early stopping**: Stops if best loss hasn't improved by >1% in last 50 trials
+   - Prevents wasteful trials after convergence plateau
 6. Calls `run_blis_and_compute_loss.py` for each trial **WITHOUT** `--evaluate-per-experiment` (optimization mode)
 7. After convergence, runs ONE final evaluation **WITH** `--evaluate-per-experiment` (diagnostic mode)
 8. Saves results to `inner_loop_results.json`
