@@ -1,0 +1,76 @@
+# Coefficient bounds for Bayesian optimization (Iteration 0)
+# All bounds must have lower_bound >= 0.0 (no negative coefficients)
+
+# Alpha coefficients: Request-level overheads (3 required)
+alpha_bounds:
+  - [0.0, 0.001]      # α₀: Fixed API processing overhead (seconds)
+                       # Range: 0 to 1ms (1000μs)
+                       # Expected: ~200μs (HTTP parsing, request validation)
+
+  - [0.0, 0.0001]     # α₁: Per-input-token tokenization (seconds/token)
+                       # Range: 0 to 100μs/token
+                       # Expected: ~1μs/token (HF tokenizer BPE encoding)
+
+  - [0.0, 0.0001]     # α₂: Per-output-token detokenization (seconds/token)
+                       # Range: 0 to 100μs/token
+                       # Expected: ~2μs/token (streaming decode + output formatting)
+
+# Alpha initial values: Warm-start suggestions for optimization
+# Based on typical vLLM/FastAPI overhead characteristics
+alpha_initial:
+  - 0.0002            # α₀: ~200μs fixed API overhead (typical vLLM measurement)
+  - 0.000001          # α₁: ~1μs/token tokenization (typical HF tokenizer performance)
+  - 0.000002          # α₂: ~2μs/token detokenization (streaming mode is faster than batch)
+
+# Beta coefficients: vLLM step-level basis function coefficients (3 for iteration 0)
+beta_bounds:
+  - [0.3, 3.0]        # β₀: Prefill compute efficiency factor (dimensionless)
+                       # Range: 0.3 to 3.0 (allow deviation from theoretical MFU)
+                       # Expected: ~0.6-0.8 (50-60% kernel efficiency)
+                       # Justification: Prefill large-GEMM tensor core efficiency includes
+                       # kernel launch overhead, non-perfect pipelining, framework costs
+
+  - [0.3, 3.0]        # β₁: Decode compute efficiency factor (dimensionless)
+                       # Range: 0.3 to 3.0 (allow deviation from theoretical MFU)
+                       # Expected: ~0.4-0.6 (40-50% effective utilization)
+                       # Justification: Decode is memory-bound (KV cache reads dominate),
+                       # lower tensor core utilization, bandwidth haircut
+
+  - [0.0, 0.001]      # β₂: Fixed scheduler overhead per step (seconds)
+                       # Range: 0 to 1ms (1000μs)
+                       # Expected: ~50-200μs (100μs = 0.0001 seconds)
+                       # Justification: vLLM scheduler overhead (batch formation,
+                       # KV block allocation, CUDA kernel launch, framework overhead)
+
+# Beta initial values: Warm-start suggestions for optimization
+# Based on roofline physics and typical GPU kernel efficiency
+beta_initial:
+  - 1.0               # β₀: Start at theoretical roofline prediction (MFU_prefill from hardware_config)
+                       # Optimizer will learn actual correction factor
+  - 1.0               # β₁: Start at theoretical roofline prediction (MFU_decode from hardware_config)
+                       # Optimizer will learn memory-bound regime efficiency
+  - 0.0001            # β₂: ~100μs scheduler overhead (midpoint of expected range)
+
+# Physical justification for bounds:
+#
+# Alpha bounds:
+#   - α₀ (fixed API): Based on FastAPI/vLLM request processing pipeline
+#     Upper bound 1ms is generous (typical HTTP frameworks handle requests in 100-500μs)
+#   - α₁ (tokenization): Based on HuggingFace tokenizer benchmarks
+#     BPE encoding typically 0.5-5μs/token depending on tokenizer complexity
+#   - α₂ (detokenization): Based on streaming decode measurements
+#     Streaming mode is faster than batch (no accumulation), 1-5μs/token typical
+#
+# Beta bounds:
+#   - β₀, β₁ (MFU corrections): Allow 0.3-3.0× deviation from theoretical MFU
+#     0.3 = pessimistic (30% efficiency, high overhead)
+#     1.0 = theoretical (roofline prediction)
+#     3.0 = optimistic (some overlap/fusion effects not in roofline model)
+#   - β₂ (scheduler overhead): Based on vLLM profiling and CUDA kernel launch costs
+#     Typical vLLM step overhead: 50-200μs (batch formation + block allocation)
+#     Upper bound 1ms allows for large batch or complex scheduling scenarios
+#
+# Dimensional consistency:
+#   - α₀, α₁, α₂: Units are seconds (BLIS internally converts to microseconds)
+#   - β₀, β₁: Dimensionless (scale time estimates from roofline basis functions)
+#   - β₂: Units are seconds (constant overhead added to step time)

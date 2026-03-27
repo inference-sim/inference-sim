@@ -129,7 +129,7 @@ func validateCoeffs(name string, coeffs []float64) error {
 
 // NewLatencyModel creates the appropriate LatencyModel based on config.
 // Dispatches on hw.Backend: "" or "roofline" → RooflineLatencyModel, "crossmodel" → CrossModelLatencyModel,
-// "blackbox" → BlackboxLatencyModel, "trained-roofline" → TrainedRooflineLatencyModel.
+// "blackbox" → BlackboxLatencyModel, "trained-roofline" → TrainedRooflineLatencyModel, "evolved" → EvolvedModel.
 // Returns error if coefficient slices are too short, contain NaN/Inf, or config validation fails.
 func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.LatencyModel, error) {
 	// All implementations index alphaCoeffs[0..2]; validate upfront.
@@ -257,6 +257,14 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			flopsPeakUs: hw.HWConfig.TFlopsPeak * 1e6,
 			bwHbmUs:     hw.HWConfig.BwPeakTBs * 1e6,
 		}, nil
+	case "evolved":
+		// EvolvedModel: Agentic training iteration 0 - scaled roofline + request overheads.
+		// Uses roofline basis functions with learned efficiency factors (β₀, β₁, β₂).
+		model, err := NewEvolvedModel(coeffs, hw)
+		if err != nil {
+			return nil, err
+		}
+		return model, nil
 	case "blackbox":
 		// BlackboxLatencyModel indexes betaCoeffs[0..2]; validate upfront.
 		if len(coeffs.BetaCoeffs) < 3 {

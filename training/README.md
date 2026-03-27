@@ -1,238 +1,189 @@
-# BLIS Training Loss Computation
+# Agentic Latency Training
 
-Run BLIS binary against ground-truth training/validation experiments and compute loss metrics for model training.
-
-## Prerequisites
-
-```bash
-# Build BLIS binary
-cd /path/to/inference-sim
-go build -o blis main.go
-
-# Navigate to training directory
-cd training/
-```
-
-## Usage
-
-The script runs experiments in parallel and outputs loss metrics as JSON to stdout. It operates in two modes:
-
-### Mode 1: Overall Loss Only (Default)
-
-Returns aggregate loss metrics across all experiments:
-
-```bash
-python run_blis_and_compute_loss.py --latency-model roofline
-```
-
-**Output:**
-```json
-{
-  "ttft_rmse": 12.34,
-  "e2e_rmse": 15.67,
-  "overall_loss": 28.01,
-  "num_experiments": 10,
-  "num_succeeded": 10,
-  "num_failed": 0
-}
-```
-
-**Loss Formula:** `overall_loss = RMSE[APE(TTFT mean)] + RMSE[APE(E2E mean)]` across all experiments
-
-### Mode 2: Per-Experiment Breakdown
-
-Include detailed metrics for each experiment with `--evaluate-per-experiment`:
-
-```bash
-python run_blis_and_compute_loss.py --latency-model roofline --evaluate-per-experiment
-```
-
-**Output:**
-```json
-{
-  "ttft_rmse": 12.34,
-  "e2e_rmse": 15.67,
-  "overall_loss": 28.01,
-  "num_experiments": 10,
-  "num_succeeded": 10,
-  "num_failed": 0,
-  "per_experiment": [
-    {
-      "experiment_folder": "/path/to/exp",
-      "model": "qwen/qwen3-14b",
-      "workload": "chatbot",
-      "ttft_mean_ape": 10.5,
-      "e2e_mean_ape": 12.3,
-      "combined_loss": 22.8,
-      "wall_clock_seconds": 45.2,
-      "latency_ape": {
-        "e2e": {"mean": 12.3, "p90": 15.4, "p99": 18.2},
-        "ttft": {"mean": 10.5, "p90": 13.1, "p99": 16.8},
-        "itl": {"mean": 8.7}
-      },
-      "throughput_ape": {
-        "input_tokens_per_sec": 5.2,
-        "output_tokens_per_sec": 7.8,
-        "requests_per_sec": 6.1
-      }
-    }
-  ]
-}
-```
-
-**Per-Experiment Fields:**
-- **Loss metrics:** `ttft_mean_ape`, `e2e_mean_ape`, `combined_loss` (APE = Absolute Percentage Error %)
-- **Runtime:** `wall_clock_seconds` (simulation wall-clock time)
-- **Latency errors:** `latency_ape` - APE (%) for:
-  - E2E: mean, P90, P99
-  - TTFT: mean, P90, P99
-  - ITL: mean only (percentiles unavailable in ground truth)
-- **Throughput errors:** `throughput_ape` - APE (%) for input/output tokens per second, requests per second
-
-**Note:** Values may be `null` if the metric is unavailable in ground truth or simulation.
-
-Experiments are sorted by `combined_loss` (descending), so worst predictions appear first.
-
-## Options
-
-- `--latency-model` — **Required**. Latency model backend: `roofline`, `blackbox`, `crossmodel`, `trained-roofline`, or custom backend name
-- `--alpha-coeffs` — Comma-separated alpha coefficients (e.g., `"0.00032,0.000045,0.000038"`)
-- `--beta-coeffs` — Comma-separated beta coefficients (e.g., `"0.00087,0.00124,0.000021"`)
-- `--data-dir` — Ground-truth experiments directory (default: `trainval_data`)
-- `--blis-binary` — Path to BLIS binary (default: `../blis`)
-- `--output-dir` — Output directory (default: `validation_results`) - **Note:** Currently unused, no files are created
-- `--max-workers` — Maximum parallel experiment runs (default: `4`)
-- `--evaluate-per-experiment` — Include per-experiment breakdown in output
-
-## Examples
-
-```bash
-# Basic usage - overall loss only
-python run_blis_and_compute_loss.py --latency-model roofline
-
-# Save JSON to file
-python run_blis_and_compute_loss.py --latency-model roofline > loss.json
-
-# Per-experiment breakdown with 8 parallel workers
-python run_blis_and_compute_loss.py \
-  --latency-model trained-roofline \
-  --max-workers 8 \
-  --evaluate-per-experiment
-
-# With custom coefficients (for training)
-python run_blis_and_compute_loss.py \
-  --latency-model evolved \
-  --alpha-coeffs "0.00032,0.000045,0.000038" \
-  --beta-coeffs "0.00087,0.00124,0.000021"
-
-# Extract just the overall loss value
-python run_blis_and_compute_loss.py --latency-model roofline | jq '.overall_loss'
-```
-
-## Output Behavior
-
-- **Stdout:** JSON output only (clean for automation/parsing)
-- **Stderr:** Silent (no progress messages)
-- **Exit codes:** `0` on success, `1` on failure
-
-## Requirements
-
-Each experiment directory must contain:
-- `exp-config.yaml` — Experiment configuration
-- `profile.yaml` — Workload profile
-- `vllm.log` — Ground-truth logs
-- `results/` — Ground-truth metrics folder
+**Purpose**: Iteratively improve BLIS latency prediction through hypothesis-driven evolution.
 
 ---
 
-# Inner Loop Optimizer
+## 📚 Documentation Structure
 
-Bayesian optimization for latency model coefficients. Part of the agentic two-loop training system.
+```
+training/docs/
+├── agent-workflow-discipline.md  ⭐ START HERE - Mandatory validation gates
+├── iteration-workflow-checklist.md  - Detailed phase-by-phase guide  
+├── agentic-latency-training-problem-statement.md  - Problem definition
+├── outer-loop-specs.md  - 5-file deliverables specification
+├── outer-inner-loop-contract.md  - Interface contract
+├── generalization-validation-protocol.md  - CV testing strategy
+└── cv-test-implementation.md  - CV test technical details
+```
 
-## Prerequisites
+---
+
+##  Validation Scripts (Mandatory Gates)
+
+```
+training/scripts/
+├── validate_hypothesis.py  → GATE 1: Before implementation
+├── validate_backend.py     → GATE 2: After Go code written
+├── validate_iteration.py   → GATE 3: After optimization
+├── analyze_errors.py       → Extract error patterns
+├── run_cv_tests.py         → GATE 4: Cross-validation (iter1+)
+└── monitor_optimization.py → Live progress dashboard (optional)
+```
+
+**All validation scripts MUST pass before proceeding to next phase.**
+
+**Note on hypothesis validation**: `validate_hypothesis.py` only requires H-main section (with quantitative prediction). Other hypotheses (H-prefill-regime, H-tp-invariance, H-moe-specific, etc.) are iteration-specific and flexible — the script validates their structure when present but doesn't enforce which specific hypotheses must exist.
+
+---
+
+## ⚡ Quick Start for Iter0
 
 ```bash
-# Install Python dependencies
-pip install -r training/requirements.txt
+# Phase 1: Hypothesis validation
+python scripts/validate_hypothesis.py --hypothesis iter0-HYPOTHESIS.md
 
-# Ensure outer loop has provided deliverables:
-# - iteration_manifest.yaml
-# - coefficient_bounds.yaml
-# - sim/latency/<backend>.go
+# Phase 2: Backend validation (after generating evolved_model.go)
+python scripts/validate_backend.py evolved
+
+# Phase 3: Optimization
+cd training
+python inner_loop_optimize.py --n-trials 50
+
+# Phase 4: Analysis
+python scripts/validate_iteration.py --iteration 0
+python scripts/analyze_errors.py --results inner_loop_results.json --output iter0-error-analysis.md
+
+# Phase 5: Document findings
+# (Manually write iter0-FINDINGS.md based on validation reports)
 ```
 
-## Usage
+---
 
-```bash
-cd training/
+## 🎯 Agent Discipline Rules
 
-# Run inner loop optimization (default 50 trials)
-python inner_loop_optimize.py
+### 5 Mandatory Rules:
 
-# Custom number of trials
-python inner_loop_optimize.py --n-trials 100
+1. **NEVER skip validation** - Scripts are gates, not suggestions
+2. **NEVER write Go code before hypothesis validated** - Gate 1 must pass
+3. **NEVER start optimization with stale binary** - Recompile after every Go change
+4. **NEVER skip error analysis** - Patterns reveal next iteration's design
+5. **NEVER add >2 basis functions per iteration** - Incremental changes only
 
-# Custom timeout per trial (default 120s)
-python inner_loop_optimize.py --timeout 180
+### Go Code Translation Requirements:
 
-# Skip detailed post-convergence evaluation
-python inner_loop_optimize.py --no-detailed-eval
+Every basis function MUST have:
+- **Physics justification** (comment explaining hardware/software cost)
+- **Expected coefficient range** (based on specs or profiling)
+- **Functional form rationale** (why this math: linear, log, etc.)
+- **Units consistency** (all times in microseconds)
+- **Defensive bounds** (clamp to prevent overflow/negative)
+
+Example:
+```go
+// β₃ × log₂(TP) × num_layers × all_reduce_latency
+//
+// Physics: Ring all-reduce scales O(log₂ N) with N ranks
+// Expected β₃: 0.8-1.2 (near-ideal ring performance)
+// Range: [0.5, 2.0] (allow for inefficiency)
+tpCommOverhead := m.Beta[3] * math.Log2(float64(m.tp)) *
+                  float64(m.modelConfig.NumLayers) * 50e-6  // 50μs per layer
 ```
 
-## What It Does
+---
 
-**Phase 1: Setup**
-1. Reads `iteration_manifest.yaml` from outer loop
-2. Verifies all declared Go source files exist
-3. Compiles BLIS binary with new latency backend (~5-10s)
-4. Loads coefficient bounds from `coefficient_bounds.yaml`
+## 📊 Decision Tree: Add vs Tune?
 
-**Phase 2: Bayesian Optimization**
-1. Runs up to 50-100 trials sampling coefficient space
-2. Each trial injects coefficients via `--alpha-coeffs` and `--beta-coeffs`
-3. Evaluates loss: `RMSE[APE(TTFT)] + RMSE[APE(E2E)]`
-4. Updates Gaussian process surrogate model
-5. **Early stopping**: Stops if best loss hasn't improved >1% in last 50 trials
-
-**Phase 3: Post-Convergence Evaluation**
-1. Runs detailed evaluation with optimal coefficients
-2. Generates per-experiment diagnostics using `--evaluate-per-experiment`
-
-## Output
-
-Results saved to `inner_loop_results.json`:
-
-```json
-{
-  "best_alpha": [0.00032, 0.000045, 0.000038],
-  "best_beta": [0.00087, 0.00124, 0.000021],
-  "best_loss": 8.234,
-  "n_trials": 50,
-  "optimization_time": 245.3,
-  "converged_early": false,
-  "detailed_diagnostics": { ... },
-  "timestamp": "2026-03-27T14:30:00Z",
-  "iteration": 3,
-  "backend_name": "evolved"
-}
+```
+Is loss > 50%?
+├─ YES: Add 1-2 new basis functions (structural change)
+└─ NO: Model structure reasonable
+    ├─ Random errors (no pattern)? → Tune coefficients
+    ├─ Systematic errors (TP/model-dependent)? → Add targeted basis function
+    ├─ Training low but CV high? → Remove basis functions (overfitting)
+    └─ Bimodal distribution? → Add categorical basis (e.g., MoE flag)
 ```
 
-## Architecture
+---
 
-**For understanding the system**:
-- [outer-inner-loop-contract.md](docs/outer-inner-loop-contract.md) - Interface contract between outer and inner loops
-- [agentic-latency-training-problem-statement.md](docs/agentic-latency-training-problem-statement.md) - Complete problem definition
+## 🔬 Iteration Lifecycle
 
-**For implementing the outer loop**:
-- [outer-loop-specs.md](docs/outer-loop-specs.md) - **Agent prompt specification** (what the outer loop must generate)
+```
+Iter{N-1}-FINDINGS.md
+    ↓ (extract principles)
+Iter{N}-HYPOTHESIS.md
+    ↓ (validate hypothesis)
+[GATE 1] validate_hypothesis.py
+    ↓ (translate to Go)
+evolved_model.go + coefficient_bounds.yaml
+    ↓ (validate backend)
+[GATE 2] validate_backend.py
+    ↓ (optimize)
+inner_loop_optimize.py (50 trials)
+    ↓ (analyze)
+[GATE 3] validate_iteration.py + analyze_errors.py
+    ↓ (cross-validate, iter1+)
+[GATE 4] run_cv_tests.py
+    ↓ (document)
+Iter{N}-FINDINGS.md
+    ↓ (decide)
+Converged? YES → STOP / NO → Iter{N+1}
+```
 
-**For running validation**:
-- [generalization-validation-protocol.md](docs/generalization-validation-protocol.md) - Cross-validation and physics checks
+---
 
-**Key principles:**
-- Inner loop is a pre-implemented script (no agent implementation needed)
-- Outer loop agent generates 3 files: manifest, Go code, bounds
-- Inner loop compiles BLIS and runs Bayesian optimization automatically
-- Coefficients injected at runtime (no recompilation per trial)
-- One compilation per outer loop iteration (~5-10s overhead)
-- 50-100 fast evaluations per iteration
+## 📁 Files Per Iteration
+
+```
+training/
+├── iter{N}-HYPOTHESIS.md           # Before implementation
+├── iteration_manifest.yaml          # Generated (outer loop)
+├── coefficient_bounds.yaml          # Generated (outer loop)
+├── inner_loop_results.json         # Generated (optimization)
+├── iter{N}-VALIDATION-REPORT.md    # Generated (validate_iteration.py)
+├── iter{N}-error-analysis.md       # Generated (analyze_errors.py)
+└── iter{N}-FINDINGS.md             # Manual (required!)
+```
+
+---
+
+## ✅ Success Criteria
+
+| Metric | Iter0 Target | Iter1 Target | Final Target |
+|--------|--------------|--------------|--------------|
+| Overall loss | < 35% | < 20% | < 10% |
+| CV-1 MAPE | N/A | < 20% | < 15% |
+| CV-2 MAPE | N/A | < 20% | < 15% |
+| CV-3 MAPE | N/A | < 20% | < 15% |
+
+**Converged when:**
+- Overall loss < 10%
+- All CV tests pass
+- Error pattern is white noise (no systematic clustering)
+- Analytical consistency checks pass
+
+---
+
+## 🚨 Common Mistakes
+
+| Mistake | Fix |
+|---------|-----|
+| Skipping validation scripts | Run all gates - they catch real issues |
+| Adding too many basis functions | Max 1-2 per iteration |
+| No physics justification in comments | Every term needs hardware/software explanation |
+| Mixed units (ms vs μs) | Always use microseconds |
+| Forgot to recompile BLIS | `go build -o blis main.go` after every change |
+
+---
+
+## 📞 Support
+
+For questions about:
+- **Methodology**: See `docs/agent-workflow-discipline.md`
+- **Scripts**: See script reference table in discipline doc
+- **CV tests**: See `docs/generalization-validation-protocol.md`
+- **Strategy Evolution**: See `../../docs/methodology/strategy-evolution.md`
+
+---
+
+**Remember**: Scripts are **validation gates**. If a gate fails, **FIX THE ISSUE** before proceeding.

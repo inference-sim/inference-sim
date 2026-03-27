@@ -626,6 +626,53 @@ var runCmd = &cobra.Command{
 			}
 		}
 
+		// --latency-model evolved: auto-resolve model config (used for agentic training)
+		if backend == "evolved" {
+			var missing []string
+			if gpu == "" {
+				missing = append(missing, "--hardware (GPU type)")
+			}
+			if tensorParallelism <= 0 {
+				missing = append(missing, "--tp (tensor parallelism)")
+			}
+			if len(missing) > 0 {
+				logrus.Fatalf("--latency-model evolved requires %s. "+
+					"No defaults found in defaults.yaml for model=%s. "+
+					"Provide these flags explicitly", strings.Join(missing, " and "), model)
+			}
+
+			// Resolve model config folder (same auto-fetch chain as roofline)
+			resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
+			if err != nil {
+				logrus.Fatalf("%v", err)
+			}
+			modelConfigFolder = resolved
+
+			// Resolve hardware config
+			resolvedHW, err := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
+			if err != nil {
+				logrus.Fatalf("%v", err)
+			}
+			hwConfigPath = resolvedHW
+
+			// Coefficients must be provided via --alpha-coeffs and --beta-coeffs for training.
+			// No defaults loading from defaults.yaml — evolved model is trained via inner loop.
+			if !cmd.Flags().Changed("alpha-coeffs") || !cmd.Flags().Changed("beta-coeffs") {
+				logrus.Fatalf("--latency-model evolved requires explicit --alpha-coeffs and --beta-coeffs. "+
+					"This backend is used for agentic training; coefficients are optimized by the inner loop, not defaults.yaml")
+			}
+
+			// Load KV blocks from defaults.yaml if available
+			if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
+				_, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
+				if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
+					totalKVBlocks = kvBlocks
+					kvBlocksFromDefaults = true
+					logrus.Infof("--latency-model: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
+				}
+			}
+		}
+
 		// Blackbox mode: load alpha/beta coefficients and KV blocks from defaults.yaml.
 		// Skipped for analytical backends (roofline, crossmodel, trained-roofline) which
 		// load their own coefficients in their respective blocks above.
@@ -687,9 +734,9 @@ var runCmd = &cobra.Command{
 		// is disabled (prefillInstances == 0).
 		var prefillOverrides, decodeOverrides cluster.PoolOverrides
 
-		// Analytical backends (roofline, crossmodel): parse HFConfig once, use for
+		// Analytical backends (roofline, crossmodel, trained-roofline, evolved): parse HFConfig once, use for
 		// both model config extraction and KV capacity auto-calculation.
-		if backend == "roofline" || backend == "crossmodel" || backend == "trained-roofline" {
+		if backend == "roofline" || backend == "crossmodel" || backend == "trained-roofline" || backend == "evolved" {
 			hfPath := filepath.Join(modelConfigFolder, "config.json")
 			hfConfig, err := latency.ParseHFConfig(hfPath)
 			if err != nil {
