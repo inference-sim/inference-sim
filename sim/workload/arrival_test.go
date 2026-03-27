@@ -280,7 +280,7 @@ func TestNormalizedExponentialSampler_EdgeCases(t *testing.T) {
 
 		// WHEN all intervals sampled
 		var sum int64
-		var allAtLeastOne bool = true
+		allAtLeastOne := true
 		for i := int64(0); i < count; i++ {
 			iat := sampler.SampleIAT(nil)
 			if iat < 1 {

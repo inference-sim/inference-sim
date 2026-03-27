@@ -173,6 +173,10 @@ func NewNormalizedExponentialSampler(rng *rand.Rand, count int64, durationUs int
 		// Defensive: should never happen with ExpFloat64, but guard division by zero
 		panic("NormalizedExponentialSampler: sum of raw samples is zero")
 	}
+	if math.IsInf(sum, 0) {
+		// Defensive: catch overflow from extreme inputs (e.g., very small rate with large ExpFloat64 samples)
+		panic("NormalizedExponentialSampler: sum overflow to infinity; inputs may be extreme")
+	}
 	scaleFactor := float64(durationUs) / sum
 
 	// Convert to int64 microseconds with floor to >= 1

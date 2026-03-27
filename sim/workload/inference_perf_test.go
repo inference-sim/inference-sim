@@ -1,6 +1,8 @@
 package workload
 
 import (
+	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1465,5 +1467,72 @@ func TestExpandInferencePerfSpec_MultiStage_KeepsPoisson(t *testing.T) {
 		if client.CustomSampler != nil {
 			t.Errorf("client %d: CustomSampler should be nil (using Poisson)", i)
 		}
+	}
+}
+
+func TestExpandInferencePerfSpec_SingleStage_ConservationInvariant(t *testing.T) {
+	// Invariant test: sum(per_client_requests) == total expected requests
+	// Tests the conservation law that requestsPerClient allocation sums correctly.
+	cases := []struct {
+		rate       float64
+		duration   int64
+		numPrompts int
+		numUsers   int
+	}{
+		{rate: 10.0, duration: 60, numPrompts: 3, numUsers: 2},  // 600 total / 6 clients = 100 each
+		{rate: 10.0, duration: 61, numPrompts: 2, numUsers: 2},  // 610 total / 4 clients = ceil(152.5)=153 each
+		{rate: 5.0, duration: 100, numPrompts: 1, numUsers: 7},  // 500 total / 7 clients
+		{rate: 100.0, duration: 10, numPrompts: 10, numUsers: 3}, // 1000 total / 30 clients
+	}
+
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("rate=%.0f_dur=%d_clients=%dx%d", tc.rate, tc.duration, tc.numPrompts, tc.numUsers), func(t *testing.T) {
+			ipSpec := &InferencePerfSpec{
+				Stages: []StageSpec{
+					{Rate: tc.rate, Duration: tc.duration},
+				},
+				SharedPrefix: &SharedPrefixSpec{
+					NumUniqueSystemPrompts:  tc.numPrompts,
+					NumUsersPerSystemPrompt: tc.numUsers,
+					SystemPromptLen:         10,
+					QuestionLen:             10,
+					OutputLen:               10,
+				},
+			}
+			expanded, err := ExpandInferencePerfSpec(ipSpec, 42)
+			if err != nil {
+				t.Fatalf("expansion error: %v", err)
+			}
+
+			horizon := tc.duration * 1_000_000
+			requests, err := GenerateRequests(expanded, horizon, 0)
+			if err != nil {
+				t.Fatalf("generation error: %v", err)
+			}
+
+			// Count requests per client ID
+			perClientCounts := make(map[string]int)
+			for _, req := range requests {
+				perClientCounts[req.ClientID]++
+			}
+
+			// Expected: each client gets ceil(rate * duration / numClients) requests
+			numClients := tc.numPrompts * tc.numUsers
+			expectedPerClient := int(math.Ceil(tc.rate * float64(tc.duration) / float64(numClients)))
+
+			// Verify each client got exactly expectedPerClient requests
+			for clientID, count := range perClientCounts {
+				if count != expectedPerClient {
+					t.Errorf("client %s: got %d requests, want %d", clientID, count, expectedPerClient)
+				}
+			}
+
+			// Verify sum equals numClients * expectedPerClient (conservation)
+			expectedTotal := numClients * expectedPerClient
+			if len(requests) != expectedTotal {
+				t.Errorf("total requests = %d, want %d (conservation: %d clients * %d each)",
+					len(requests), expectedTotal, numClients, expectedPerClient)
+			}
+		})
 	}
 }

@@ -117,13 +117,24 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 
 		// Each client gets exactly ceil(stageRate * duration / numClients) requests
 		// over the stage duration, using normalized exponential distribution.
-		// NOTE: Math.Ceil means total requests may exceed stage.Rate * stage.Duration
+		// NOTE: math.Ceil means total requests may exceed stage.Rate * stage.Duration
 		// by up to numClients-1. This matches inference-perf behavior.
 		requestsPerClient := int64(math.Ceil(stage.Rate * float64(stage.Duration) / float64(numClientsPerStage)))
 		durationUs := stage.Duration * 1_000_000 // seconds to microseconds
 
-		// Defensive: prevent integer overflow in seed calculation
-		totalClients := int64(sp.NumUniqueSystemPrompts * sp.NumUsersPerSystemPrompt)
+		// Validate sampler parameters before construction (prevent panic on user input)
+		if requestsPerClient <= 0 {
+			return nil, fmt.Errorf("inference_perf: requestsPerClient must be positive, got %d", requestsPerClient)
+		}
+		if requestsPerClient > 10_000_000 {
+			return nil, fmt.Errorf("inference_perf: requestsPerClient %d exceeds safety limit (10M); reduce rate, duration, or increase clients", requestsPerClient)
+		}
+		if durationUs < requestsPerClient {
+			return nil, fmt.Errorf("inference_perf: durationUs (%d) < requestsPerClient (%d) produces degenerate distribution", durationUs, requestsPerClient)
+		}
+
+		// Defensive: prevent integer overflow in seed calculation (cast before multiply)
+		totalClients := int64(sp.NumUniqueSystemPrompts) * int64(sp.NumUsersPerSystemPrompt)
 		if totalClients > 1_000_000 {
 			return nil, fmt.Errorf("total client count %d exceeds safety limit (1M)", totalClients)
 		}
@@ -144,6 +155,7 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 					SLOClass:      "batch",
 					RateFraction:  rateFraction,
 					CustomSampler: sampler,
+				Arrival:       ArrivalSpec{Process: "poisson"}, // Fallback for diagnostics/serialization
 					InputDist:     inputDist,
 					OutputDist:    outputDist,
 					PrefixGroup:   prefixGroup,
