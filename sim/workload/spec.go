@@ -53,6 +53,9 @@ type WorkloadSpec struct {
 
 // CohortSpec describes a population of clients that share arrival behavior
 // and token distributions. Expanded into explicit ClientSpecs before generation.
+// It carries all ClientSpec fields except two: ID (generated per member by
+// ExpandCohorts) and Lifecycle (synthesized from Diurnal/Spike/Drain — exposing
+// Lifecycle directly would create two conflicting paths to the same effect).
 type CohortSpec struct {
 	ID           string      `yaml:"id"`
 	Population   int         `yaml:"population"`

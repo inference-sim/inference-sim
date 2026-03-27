@@ -367,9 +367,9 @@ Cohorts support the same advanced client features as explicit clients. The field
 
 | Field | Type | Description |
 |---|---|---|
-| `reasoning` | object | Enables reasoning workload; `multi_turn.max_rounds` controls conversation depth |
+| `reasoning` | object | Enables reasoning workload; requires `reason_ratio_distribution` (reasoning-to-output token ratio). `multi_turn.max_rounds` controls conversation depth |
 | `closed_loop` | bool | `true` (default for multi-turn): each round waits for the previous reply before sending the next. `false`: all rounds are pre-generated at open-loop arrival times |
-| `timeout` | int64 | Per-request timeout in microseconds. `null` = 300 s default. `0` = no timeout |
+| `timeout` | int64 | Per-request timeout in microseconds. `null` = 300 s default for multi-turn/session clients. `0` = no timeout |
 | `prefix_length` | int | Shared prefix token count prepended to every request |
 | `network` | object | Client-side network RTT and bandwidth simulation |
 | `multimodal` | object | Mixed-modality token generation (text + image/audio/video) |
@@ -378,6 +378,7 @@ Example — 50 agentic clients, each running 10-round reasoning sessions with a 
 
 ```yaml
 version: "2"
+category: reasoning
 aggregate_rate: 5.0
 cohorts:
   - id: agents
