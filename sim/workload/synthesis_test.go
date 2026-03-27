@@ -103,6 +103,71 @@ func TestSynthesizeFromDistribution_WithPrefix(t *testing.T) {
 	}
 }
 
+func TestSynthesizeFromDistribution_ConcurrencyMode(t *testing.T) {
+	params := DistributionParams{
+		Concurrency:        50,
+		ThinkTimeMs:        200,
+		NumRequests:        500,
+		PromptTokensMean:   512,
+		PromptTokensStdDev: 256,
+		PromptTokensMin:    2,
+		PromptTokensMax:    7000,
+		OutputTokensMean:   512,
+		OutputTokensStdDev: 256,
+		OutputTokensMin:    2,
+		OutputTokensMax:    7000,
+	}
+	spec := SynthesizeFromDistribution(params)
+	if spec.Version != "2" {
+		t.Errorf("version = %q, want %q", spec.Version, "2")
+	}
+	if spec.NumRequests != 500 {
+		t.Errorf("num_requests = %d, want 500", spec.NumRequests)
+	}
+	if len(spec.Clients) != 1 {
+		t.Fatalf("clients count = %d, want 1", len(spec.Clients))
+	}
+	c := spec.Clients[0]
+	if c.Concurrency != 50 {
+		t.Errorf("concurrency = %d, want 50", c.Concurrency)
+	}
+	if c.ThinkTimeUs != 200_000 {
+		t.Errorf("think_time_us = %d, want 200000 (200ms)", c.ThinkTimeUs)
+	}
+	if c.RateFraction != 0 {
+		t.Errorf("rate_fraction = %f, want 0 (concurrency mode)", c.RateFraction)
+	}
+	if spec.AggregateRate != 0 {
+		t.Errorf("aggregate_rate = %f, want 0 (concurrency mode)", spec.AggregateRate)
+	}
+	if err := spec.Validate(); err != nil {
+		t.Errorf("synthesized concurrency spec fails validation: %v", err)
+	}
+}
+
+func TestSynthesizeFromDistribution_ConcurrencyWithPrefix(t *testing.T) {
+	params := DistributionParams{
+		Concurrency:        10,
+		NumRequests:        100,
+		PrefixTokens:       50,
+		PromptTokensMean:   100,
+		PromptTokensStdDev: 10,
+		PromptTokensMin:    1,
+		PromptTokensMax:    200,
+		OutputTokensMean:   50,
+		OutputTokensStdDev: 5,
+		OutputTokensMin:    1,
+		OutputTokensMax:    100,
+	}
+	spec := SynthesizeFromDistribution(params)
+	if spec.Clients[0].PrefixGroup != "shared" {
+		t.Errorf("prefix_group = %q, want %q", spec.Clients[0].PrefixGroup, "shared")
+	}
+	if spec.Clients[0].PrefixLength != 50 {
+		t.Errorf("prefix_length = %d, want 50", spec.Clients[0].PrefixLength)
+	}
+}
+
 func TestSynthesizeFromDistribution_GeneratesRequests(t *testing.T) {
 	// Integration: synthesized spec -> GenerateRequests -> non-empty requests
 	params := DistributionParams{
