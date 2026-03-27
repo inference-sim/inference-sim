@@ -148,7 +148,7 @@ class InnerLoopOptimizer:
         if os.path.exists(validate_script):
             try:
                 result = subprocess.run(
-                    [sys.executable, validate_script, self.backend_name],
+                    [sys.executable, validate_script, self.backend_name, '--iteration', str(self.iteration)],
                     cwd=self.script_dir,
                     capture_output=True,
                     timeout=60

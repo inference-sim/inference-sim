@@ -35,16 +35,27 @@ If any file is missing, **STOP and report error to orchestrator**.
 ### Step 2: Validate Backend
 
 ```bash
-python scripts/validate_backend.py evolved
+python scripts/validate_backend.py evolved --iteration {N}
 ```
 
-**What it checks**:
-- Backend registered in `sim/latency/latency.go`
-- Auto-fetch works (HuggingFace model configs)
-- Go code compiles
-- Test run executes without crash
+**CRITICAL**: The `--iteration {N}` flag is REQUIRED. It loads the correct number of alpha/beta coefficients from `iterations/iter{N}/coefficient_bounds.yaml`.
 
-**If validation fails**: Report the error (compile error, missing registration, etc.) and **STOP**.
+**What it checks**:
+- Backend registered in `sim/bundle.go`
+- Auto-fetch block exists in `cmd/root.go`
+- Go code compiles and BLIS binary is up-to-date
+- `coefficient_bounds.yaml` exists with valid `alpha_initial` and `beta_initial`
+- Test run executes without crash using iteration-specific coefficients
+
+**Output on success**:
+```
+📋 Using coefficients from iteration N:
+   Alpha: 3 coefficients
+   Beta: M coefficients
+✅ Test simulation succeeded
+```
+
+**If validation fails**: Report the error (missing coefficient_bounds.yaml, compile error, missing registration, coefficient mismatch, etc.) and **STOP**.
 
 ### Step 3: Start Monitoring (Optional but Recommended)
 
@@ -114,7 +125,8 @@ kill $MONITOR_PID 2>/dev/null || true
 | Error | Action |
 |-------|--------|
 | **Files missing** | Stop, report to orchestrator: "Agent 1 did not produce all files" |
-| **Backend validation fails** | Stop, report compile/registration errors from `validate_backend.py` stderr |
+| **coefficient_bounds.yaml missing/invalid** | Stop, report: "Coefficient bounds file missing or lacks alpha_initial/beta_initial" |
+| **Backend validation fails** | Stop, report errors from `validate_backend.py` stderr (compile error, registration missing, coefficient count mismatch, test run failure) |
 | **Optimization crashes** | Stop, report crash reason from stderr |
 | **Timeout (>2 hours)** | Kill process, report: "Optimization did not converge in 2 hours" |
 | **optimization.num_errors > 25** | Report warning: "Many trials failed (>50%), check bounds or Go code" |
