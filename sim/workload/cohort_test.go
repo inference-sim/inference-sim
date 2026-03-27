@@ -569,9 +569,13 @@ func TestCohortClientSpecFieldParity(t *testing.T) {
 	// Fields on ClientSpec that are intentionally absent from CohortSpec.
 	// ID: generated per member by ExpandCohorts.
 	// Lifecycle: synthesized from Diurnal/Spike/Drain by ExpandCohorts.
+	// Concurrency: client-level closed-loop mode; cohorts are rate-based.
+	// ThinkTimeUs: paired with Concurrency; not applicable to cohorts.
 	excluded := map[string]bool{
-		"ID":        true,
-		"Lifecycle": true,
+		"ID":          true,
+		"Lifecycle":   true,
+		"Concurrency": true,
+		"ThinkTimeUs": true,
 	}
 
 	for i := 0; i < clientType.NumField(); i++ {

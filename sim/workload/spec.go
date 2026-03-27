@@ -106,6 +106,8 @@ type ClientSpec struct {
 	SLOClass     string        `yaml:"slo_class"`
 	Model        string        `yaml:"model,omitempty"`
 	RateFraction float64       `yaml:"rate_fraction"`
+	Concurrency  int           `yaml:"concurrency,omitempty"`
+	ThinkTimeUs  int64         `yaml:"think_time_us,omitempty"`
 	Arrival      ArrivalSpec   `yaml:"arrival"`
 	InputDist    DistSpec      `yaml:"input_distribution"`
 	OutputDist   DistSpec      `yaml:"output_distribution"`
@@ -220,8 +222,23 @@ func (s *WorkloadSpec) Validate() error {
 	if !validCategories[s.Category] {
 		return fmt.Errorf("unknown category %q; valid: language, multimodal, reasoning", s.Category)
 	}
-	if err := validateFinitePositive("aggregate_rate", s.AggregateRate); err != nil {
-		return err
+	// Only require aggregate_rate > 0 when at least one client is rate-based
+	// (Concurrency == 0). All-concurrency workloads don't need aggregate_rate.
+	hasRateBasedClient := false
+	for _, c := range s.Clients {
+		if c.Concurrency == 0 {
+			hasRateBasedClient = true
+			break
+		}
+	}
+	// Cohorts are always rate-based (no concurrency field).
+	if len(s.Cohorts) > 0 {
+		hasRateBasedClient = true
+	}
+	if hasRateBasedClient {
+		if err := validateFinitePositive("aggregate_rate", s.AggregateRate); err != nil {
+			return err
+		}
 	}
 	if len(s.Clients) == 0 && s.ServeGenData == nil && len(s.Cohorts) == 0 {
 		return fmt.Errorf("at least one client, cohort, or servegen_data path required")
@@ -244,8 +261,22 @@ func validateClient(c *ClientSpec, idx int) error {
 	if !validSLOClasses[c.SLOClass] {
 		return fmt.Errorf("%s: unknown slo_class %q; valid: critical, standard, sheddable, batch, background, or empty", prefix, c.SLOClass)
 	}
-	if err := validateFinitePositive(prefix+".rate_fraction", c.RateFraction); err != nil {
-		return err
+	// R3: Validate concurrency and think_time_us
+	if c.Concurrency < 0 {
+		return fmt.Errorf("%s: concurrency must be non-negative, got %d", prefix, c.Concurrency)
+	}
+	if c.ThinkTimeUs < 0 {
+		return fmt.Errorf("%s: think_time_us must be non-negative, got %d", prefix, c.ThinkTimeUs)
+	}
+	// Mutual exclusion: concurrency and rate_fraction cannot both be set
+	if c.Concurrency > 0 && c.RateFraction > 0 {
+		return fmt.Errorf("%s: concurrency and rate_fraction are mutually exclusive", prefix)
+	}
+	// Only require rate_fraction when not using concurrency mode
+	if c.Concurrency == 0 {
+		if err := validateFinitePositive(prefix+".rate_fraction", c.RateFraction); err != nil {
+			return err
+		}
 	}
 	if !validArrivalProcesses[c.Arrival.Process] {
 		return fmt.Errorf("%s: unknown arrival process %q; valid: poisson, gamma, weibull, constant", prefix, c.Arrival.Process)
