@@ -1644,6 +1644,415 @@ func TestGenerateRequests_MutualExclusion_CohortsWithInferencePerf_Allowed(t *te
 	}
 }
 
+func TestGenerateWorkload_ConcurrencyClient_ProducesSeedsAndBlueprints(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:  "2",
+		Seed:     42,
+		Category: "language",
+		Clients: []ClientSpec{{
+			ID:          "conc",
+			Concurrency: 5,
+			ThinkTimeUs: 100_000,
+			Arrival:     ArrivalSpec{Process: "constant"},
+			InputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+			OutputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+		}},
+	}
+	wl, err := GenerateWorkload(spec, 10_000_000, 100)
+	if err != nil {
+		t.Fatalf("GenerateWorkload failed: %v", err)
+	}
+	if len(wl.Requests) != 5 {
+		t.Errorf("BC-2: seed count = %d, want 5", len(wl.Requests))
+	}
+	if len(wl.Sessions) != 5 {
+		t.Errorf("blueprint count = %d, want 5", len(wl.Sessions))
+	}
+	if wl.FollowUpBudget != 95 {
+		t.Errorf("follow-up budget = %d, want 95 (100 total - 5 seeds)", wl.FollowUpBudget)
+	}
+}
+
+func TestGenerateWorkload_ConcurrencyClient_StaggeredArrivals(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:  "2",
+		Seed:     42,
+		Category: "language",
+		Clients: []ClientSpec{{
+			ID:          "conc",
+			Concurrency: 4,
+			ThinkTimeUs: 400_000,
+			Arrival:     ArrivalSpec{Process: "constant"},
+			InputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+			OutputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+		}},
+	}
+	wl, err := GenerateWorkload(spec, 10_000_000, 0)
+	if err != nil {
+		t.Fatalf("GenerateWorkload failed: %v", err)
+	}
+	if len(wl.Requests) != 4 {
+		t.Fatalf("seed count = %d, want 4", len(wl.Requests))
+	}
+	for i, req := range wl.Requests {
+		expectedArrival := int64(i) * 100_000
+		if req.ArrivalTime != expectedArrival {
+			t.Errorf("BC-3: seed %d arrival = %d, want %d", i, req.ArrivalTime, expectedArrival)
+		}
+	}
+}
+
+func TestGenerateWorkload_ConcurrencyClient_ZeroThinkTime_AllAtZero(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:  "2",
+		Seed:     42,
+		Category: "language",
+		Clients: []ClientSpec{{
+			ID:          "conc",
+			Concurrency: 3,
+			ThinkTimeUs: 0,
+			Arrival:     ArrivalSpec{Process: "constant"},
+			InputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+			OutputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+		}},
+	}
+	wl, err := GenerateWorkload(spec, 10_000_000, 0)
+	if err != nil {
+		t.Fatalf("GenerateWorkload failed: %v", err)
+	}
+	for i, req := range wl.Requests {
+		if req.ArrivalTime != 0 {
+			t.Errorf("BC-3: seed %d arrival = %d, want 0 (zero think time)", i, req.ArrivalTime)
+		}
+	}
+}
+
+func TestGenerateWorkload_ConcurrencyClient_Deterministic(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:  "2",
+		Seed:     42,
+		Category: "language",
+		Clients: []ClientSpec{{
+			ID:          "conc",
+			Concurrency: 5,
+			ThinkTimeUs: 100_000,
+			Arrival:     ArrivalSpec{Process: "constant"},
+			InputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+		}},
+	}
+	wl1, _ := GenerateWorkload(spec, 10_000_000, 100)
+	wl2, _ := GenerateWorkload(spec, 10_000_000, 100)
+	if len(wl1.Requests) != len(wl2.Requests) {
+		t.Fatalf("different seed counts: %d vs %d", len(wl1.Requests), len(wl2.Requests))
+	}
+	for i := range wl1.Requests {
+		if wl1.Requests[i].ArrivalTime != wl2.Requests[i].ArrivalTime {
+			t.Errorf("seed %d: arrival %d vs %d", i, wl1.Requests[i].ArrivalTime, wl2.Requests[i].ArrivalTime)
+			break
+		}
+		if len(wl1.Requests[i].InputTokens) != len(wl2.Requests[i].InputTokens) {
+			t.Errorf("seed %d: input len %d vs %d", i, len(wl1.Requests[i].InputTokens), len(wl2.Requests[i].InputTokens))
+			break
+		}
+	}
+}
+
+func TestGenerateWorkload_ConcurrencyClient_SessionMetadata(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:  "2",
+		Seed:     42,
+		Category: "language",
+		Clients: []ClientSpec{{
+			ID:          "conc-client",
+			TenantID:    "tenant-1",
+			SLOClass:    "standard",
+			Model:       "test-model",
+			Concurrency: 3,
+			ThinkTimeUs: 0,
+			Arrival:     ArrivalSpec{Process: "constant"},
+			InputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+			OutputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+		}},
+	}
+	wl, err := GenerateWorkload(spec, 10_000_000, 0)
+	if err != nil {
+		t.Fatalf("GenerateWorkload failed: %v", err)
+	}
+	sessionIDs := make(map[string]bool)
+	for _, req := range wl.Requests {
+		if req.SessionID == "" {
+			t.Error("seed request has empty SessionID")
+		}
+		sessionIDs[req.SessionID] = true
+		if req.RoundIndex != 0 {
+			t.Errorf("seed round index = %d, want 0", req.RoundIndex)
+		}
+		if req.ClientID != "conc-client" {
+			t.Errorf("ClientID = %q, want %q", req.ClientID, "conc-client")
+		}
+		if req.TenantID != "tenant-1" {
+			t.Errorf("TenantID = %q, want %q", req.TenantID, "tenant-1")
+		}
+		if req.SLOClass != "standard" {
+			t.Errorf("SLOClass = %q, want %q", req.SLOClass, "standard")
+		}
+	}
+	if len(sessionIDs) != 3 {
+		t.Errorf("unique session IDs = %d, want 3", len(sessionIDs))
+	}
+}
+
+func TestGenerateWorkload_ConcurrencyClient_BlueprintProperties(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:  "2",
+		Seed:     42,
+		Category: "language",
+		Clients: []ClientSpec{{
+			ID:          "conc",
+			Concurrency: 3,
+			ThinkTimeUs: 50_000,
+			Arrival:     ArrivalSpec{Process: "constant"},
+			InputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+			OutputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+		}},
+	}
+	wl, err := GenerateWorkload(spec, 10_000_000, 0)
+	if err != nil {
+		t.Fatalf("GenerateWorkload failed: %v", err)
+	}
+	for i, bp := range wl.Sessions {
+		if !bp.UnlimitedRounds {
+			t.Errorf("blueprint %d: UnlimitedRounds = false, want true", i)
+		}
+		if bp.ContextGrowth != "" {
+			t.Errorf("blueprint %d: ContextGrowth = %q, want empty (no accumulation)", i, bp.ContextGrowth)
+		}
+		if bp.ThinkTimeUs != 50_000 {
+			t.Errorf("blueprint %d: ThinkTimeUs = %d, want 50000", i, bp.ThinkTimeUs)
+		}
+		if bp.ClientID != "conc" {
+			t.Errorf("blueprint %d: ClientID = %q, want %q", i, bp.ClientID, "conc")
+		}
+	}
+}
+
+func TestGenerateWorkload_ConcurrencyClient_SeedsCappedByMaxRequests(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:  "2",
+		Seed:     42,
+		Category: "language",
+		Clients: []ClientSpec{{
+			ID:          "conc",
+			Concurrency: 200,
+			ThinkTimeUs: 0,
+			Arrival:     ArrivalSpec{Process: "constant"},
+			InputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+			OutputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+		}},
+	}
+	// maxRequests=100, but Concurrency=200 → seeds must be capped at 100
+	wl, err := GenerateWorkload(spec, 10_000_000, 100)
+	if err != nil {
+		t.Fatalf("GenerateWorkload failed: %v", err)
+	}
+	if len(wl.Requests) != 100 {
+		t.Errorf("seed count = %d, want 100 (capped by maxRequests)", len(wl.Requests))
+	}
+	if wl.FollowUpBudget != 0 {
+		t.Errorf("follow-up budget = %d, want 0 (seeds consumed entire budget)", wl.FollowUpBudget)
+	}
+}
+
+func TestGenerateWorkload_ConcurrencyClient_ZeroBudgetMeansNoFollowUps(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:  "2",
+		Seed:     42,
+		Category: "language",
+		Clients: []ClientSpec{{
+			ID:          "conc",
+			Concurrency: 50,
+			ThinkTimeUs: 10_000,
+			Arrival:     ArrivalSpec{Process: "constant"},
+			InputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+			OutputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+		}},
+	}
+	// 50 seeds, 50 max → budget=0
+	wl, err := GenerateWorkload(spec, 10_000_000, 50)
+	if err != nil {
+		t.Fatalf("GenerateWorkload failed: %v", err)
+	}
+	if len(wl.Requests) != 50 {
+		t.Fatalf("seed count = %d, want 50", len(wl.Requests))
+	}
+	if wl.FollowUpBudget != 0 {
+		t.Fatalf("budget = %d, want 0", wl.FollowUpBudget)
+	}
+
+	// SetFollowUpBudget(0) should immediately exhaust — no follow-ups generated
+	sm := NewSessionManager(wl.Sessions)
+	sm.SetFollowUpBudget(wl.FollowUpBudget)
+
+	seed := wl.Requests[0]
+	seed.State = sim.StateCompleted
+	seed.ProgressIndex = int64(len(seed.InputTokens) + len(seed.OutputTokens))
+	follow := sm.OnComplete(seed, 5000)
+	if follow != nil {
+		t.Errorf("expected nil follow-up with budget=0, got %d", len(follow))
+	}
+}
+
+func TestGenerateWorkload_NonConcurrencySpec_Unchanged(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "2",
+		Seed:          42,
+		Category:      "language",
+		AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID:           "rate-client",
+			RateFraction: 1.0,
+			Arrival:      ArrivalSpec{Process: "poisson"},
+			InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 20, "min": 10, "max": 500}},
+			OutputDist:   DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	wl, err := GenerateWorkload(spec, 1_000_000, 50)
+	if err != nil {
+		t.Fatalf("GenerateWorkload failed: %v", err)
+	}
+	if len(wl.Sessions) != 0 {
+		t.Errorf("BC-11: non-concurrency spec has %d sessions, want 0", len(wl.Sessions))
+	}
+	if wl.FollowUpBudget != 0 {
+		t.Errorf("BC-11: non-concurrency spec has FollowUpBudget = %d, want 0 (no sessions)", wl.FollowUpBudget)
+	}
+}
+
+func TestConcurrencyMode_EndToEnd_SessionFollowUps(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:  "2",
+		Seed:     42,
+		Category: "language",
+		Clients: []ClientSpec{{
+			ID:          "conc",
+			Concurrency: 2,
+			ThinkTimeUs: 10_000,
+			Arrival:     ArrivalSpec{Process: "constant"},
+			InputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
+			OutputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+		}},
+	}
+
+	wl, err := GenerateWorkload(spec, 1_000_000, 6)
+	if err != nil {
+		t.Fatalf("GenerateWorkload failed: %v", err)
+	}
+	if len(wl.Requests) != 2 {
+		t.Fatalf("seed count = %d, want 2", len(wl.Requests))
+	}
+	if wl.FollowUpBudget != 4 {
+		t.Fatalf("budget = %d, want 4", wl.FollowUpBudget)
+	}
+
+	sm := NewSessionManager(wl.Sessions)
+	sm.SetFollowUpBudget(wl.FollowUpBudget)
+
+	// Simulate: seed 0 completes at tick 5000
+	seed0 := wl.Requests[0]
+	seed0.State = sim.StateCompleted
+	seed0.ProgressIndex = int64(len(seed0.InputTokens) + len(seed0.OutputTokens))
+	follow0 := sm.OnComplete(seed0, 5000)
+	if len(follow0) != 1 {
+		t.Fatalf("expected follow-up for user 0, got %d", len(follow0))
+	}
+
+	// BC-4: follow-up arrival = completion_time + think_time
+	if follow0[0].ArrivalTime != 15_000 {
+		t.Errorf("BC-4: follow-up arrival = %d, want 15000", follow0[0].ArrivalTime)
+	}
+
+	// BC-6: fresh tokens (no context accumulation)
+	if len(follow0[0].InputTokens) != 20 {
+		t.Errorf("BC-6: follow-up input len = %d, want 20 (fresh)", len(follow0[0].InputTokens))
+	}
+
+	// BC-5: session IDs preserved
+	if follow0[0].SessionID != seed0.SessionID {
+		t.Errorf("BC-5: follow-up SessionID = %q, want %q", follow0[0].SessionID, seed0.SessionID)
+	}
+
+	// Seed 1 completes → follow-up (budget: 4→3→2)
+	seed1 := wl.Requests[1]
+	seed1.State = sim.StateCompleted
+	seed1.ProgressIndex = int64(len(seed1.InputTokens) + len(seed1.OutputTokens))
+	follow1 := sm.OnComplete(seed1, 6000)
+	if len(follow1) != 1 {
+		t.Fatalf("expected follow-up for user 1")
+	}
+
+	// Follow-up for user 0 completes → follow-up (budget: 2→1)
+	follow0[0].State = sim.StateCompleted
+	follow0[0].ProgressIndex = int64(len(follow0[0].InputTokens) + len(follow0[0].OutputTokens))
+	follow0b := sm.OnComplete(follow0[0], 20_000)
+	if len(follow0b) != 1 {
+		t.Fatalf("expected follow-up for user 0 round 2")
+	}
+
+	// Follow-up for user 1 completes → follow-up (budget: 1→0)
+	follow1[0].State = sim.StateCompleted
+	follow1[0].ProgressIndex = int64(len(follow1[0].InputTokens) + len(follow1[0].OutputTokens))
+	follow1b := sm.OnComplete(follow1[0], 21_000)
+	if len(follow1b) != 1 {
+		t.Fatalf("expected follow-up for user 1 round 2")
+	}
+
+	// Budget exhausted — next completion should NOT generate follow-up
+	follow0b[0].State = sim.StateCompleted
+	follow0b[0].ProgressIndex = int64(len(follow0b[0].InputTokens) + len(follow0b[0].OutputTokens))
+	followExhausted := sm.OnComplete(follow0b[0], 30_000)
+	if followExhausted != nil {
+		t.Errorf("BC-7: expected nil after budget exhausted, got %d follow-ups", len(followExhausted))
+	}
+}
+
+func TestConcurrencyMode_TimeoutCancelsSession(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:  "2",
+		Seed:     42,
+		Category: "language",
+		Clients: []ClientSpec{{
+			ID:          "conc",
+			Concurrency: 1,
+			ThinkTimeUs: 10_000,
+			Arrival:     ArrivalSpec{Process: "constant"},
+			InputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
+			OutputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+		}},
+	}
+
+	wl, err := GenerateWorkload(spec, 1_000_000, 0)
+	if err != nil {
+		t.Fatalf("GenerateWorkload failed: %v", err)
+	}
+
+	sm := NewSessionManager(wl.Sessions)
+
+	seed := wl.Requests[0]
+	seed.State = sim.StateTimedOut
+	follow := sm.OnComplete(seed, 5000)
+	if follow != nil {
+		t.Errorf("BC-10: expected nil after timeout, got %d", len(follow))
+	}
+
+	seed.State = sim.StateCompleted
+	seed.ProgressIndex = 30
+	follow2 := sm.OnComplete(seed, 6000)
+	if follow2 != nil {
+		t.Errorf("BC-10: expected nil after session cancelled, got %d", len(follow2))
+	}
+}
+
 // mockSampler returns fixed intervals for testing CustomSamplerFactory
 type mockSampler struct {
 	intervals []int64

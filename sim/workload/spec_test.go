@@ -590,6 +590,182 @@ func TestWorkloadSpec_Validate_WeibullCVOutOfRange_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestValidate_ConcurrencyClient_AcceptsZeroRateFraction(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:  "2",
+		Category: "language",
+		Clients: []ClientSpec{{
+			ID:          "conc",
+			Concurrency: 10,
+			ThinkTimeUs: 0,
+			Arrival:     ArrivalSpec{Process: "constant"},
+			InputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+		}},
+	}
+	if err := spec.Validate(); err != nil {
+		t.Errorf("expected valid concurrency spec, got: %v", err)
+	}
+}
+
+func TestValidate_ConcurrencyAndRateFraction_Rejects(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "2",
+		Category:      "language",
+		AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID:           "bad",
+			Concurrency:  10,
+			RateFraction: 1.0,
+			Arrival:      ArrivalSpec{Process: "constant"},
+			InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Error("expected error for client with both concurrency and rate_fraction")
+	}
+}
+
+func TestValidate_NegativeConcurrency_Rejects(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:  "2",
+		Category: "language",
+		Clients: []ClientSpec{{
+			ID:          "bad",
+			Concurrency: -1,
+			Arrival:     ArrivalSpec{Process: "constant"},
+			InputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Error("expected error for negative concurrency")
+	}
+}
+
+func TestValidate_NegativeThinkTimeUs_Rejects(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:  "2",
+		Category: "language",
+		Clients: []ClientSpec{{
+			ID:          "bad",
+			Concurrency: 10,
+			ThinkTimeUs: -1,
+			Arrival:     ArrivalSpec{Process: "constant"},
+			InputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Error("expected error for negative think_time_us")
+	}
+}
+
+func TestValidate_AggregateRateNotRequired_WhenAllConcurrency(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "2",
+		Category:      "language",
+		AggregateRate: 0,
+		Clients: []ClientSpec{{
+			ID:          "conc",
+			Concurrency: 10,
+			Arrival:     ArrivalSpec{Process: "constant"},
+			InputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+		}},
+	}
+	if err := spec.Validate(); err != nil {
+		t.Errorf("expected valid spec with all-concurrency clients, got: %v", err)
+	}
+}
+
+func TestValidate_ConcurrencyAndMultiTurn_Rejects(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "2",
+		Category:      "reasoning",
+		AggregateRate: 10.0,
+		Clients: []ClientSpec{
+			{
+				ID:          "conc",
+				Concurrency: 10,
+				Arrival:     ArrivalSpec{Process: "constant"},
+				InputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+			},
+			{
+				ID:           "multi",
+				RateFraction: 1.0,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+				Reasoning:    &ReasoningSpec{MultiTurn: &MultiTurnSpec{MaxRounds: 3, ThinkTimeUs: 1000}},
+			},
+		},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Error("expected error for mixed concurrency + multi-turn clients")
+	}
+	if err != nil && !strings.Contains(err.Error(), "concurrency clients and multi-turn clients cannot be mixed") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_ConcurrencyAndCohortMultiTurn_Rejects(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "2",
+		Category:      "reasoning",
+		AggregateRate: 10.0,
+		Clients: []ClientSpec{
+			{
+				ID:          "conc",
+				Concurrency: 10,
+				Arrival:     ArrivalSpec{Process: "constant"},
+				InputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+			},
+		},
+		Cohorts: []CohortSpec{
+			{
+				ID:           "cohort-mt",
+				Population:   5,
+				RateFraction: 1.0,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+				Reasoning:    &ReasoningSpec{MultiTurn: &MultiTurnSpec{MaxRounds: 3, ThinkTimeUs: 1000}},
+			},
+		},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Error("expected error for concurrency client + multi-turn cohort")
+	}
+	if err != nil && !strings.Contains(err.Error(), "concurrency clients and multi-turn clients cannot be mixed") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_ConcurrencyClient_NoArrivalField_Accepted(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:  "2",
+		Category: "language",
+		Clients: []ClientSpec{{
+			ID:          "conc",
+			Concurrency: 10,
+			InputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+		}},
+	}
+	if err := spec.Validate(); err != nil {
+		t.Errorf("expected valid spec for concurrency client without arrival field, got: %v", err)
+	}
+}
+
 func TestExampleWorkloadFiles_AllValid(t *testing.T) {
 	// Validate all example workload specs load and pass validation.
 	// Only files that parse as WorkloadSpec are tested — examples/

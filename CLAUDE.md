@@ -125,7 +125,7 @@ Full details (verification strategies, evidence): see [`docs/contributing/standa
 - **INV-8 Work-conserving**: After every step completion, if `WaitQ.Len() > 0`, a `StepEvent` must exist in the event queue. The simulator must not idle while work is waiting.
 - **INV-9 Oracle knowledge boundary**: Servability decisions (enqueue guard, admission, routing, priority) must not read `Request.OutputTokens`. The control plane uses `MaxOutputLen` (client budget) or input-only checks. Only the execution engine may access `OutputTokens` for token generation and completion detection. See `docs/contributing/standards/invariants.md`.
 - **INV-10 Session causality**: For all rounds N in a closed-loop session: `round[N+1].ArrivalTime >= round[N].CompletionTime + ThinkTimeUs`. See `docs/contributing/standards/invariants.md`.
-- **INV-11 Session completeness**: Every session reaches exactly one terminal state: completed, cancelled, or horizon-interrupted. No session is silently abandoned. See `docs/contributing/standards/invariants.md`.
+- **INV-11 Session completeness**: Every session reaches exactly one terminal state: completed, cancelled, horizon-interrupted, or budget-exhausted (concurrency mode: global request cap reached). No session is silently abandoned. See `docs/contributing/standards/invariants.md`.
 
 ### Engineering Principles
 
