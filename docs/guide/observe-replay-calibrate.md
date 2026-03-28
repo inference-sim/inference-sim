@@ -86,13 +86,13 @@ Used when `--rate` mode is active (ignored when `--workload-spec` is provided):
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--prompt-tokens` | `int` | `512` | Average prompt token count |
-| `--prompt-tokens-stdev` | `int` | `50` | Prompt token standard deviation |
-| `--prompt-tokens-min` | `int` | `1` | Minimum prompt tokens |
-| `--prompt-tokens-max` | `int` | `2048` | Maximum prompt tokens |
+| `--prompt-tokens-stdev` | `int` | `256` | Prompt token standard deviation |
+| `--prompt-tokens-min` | `int` | `2` | Minimum prompt tokens |
+| `--prompt-tokens-max` | `int` | `7000` | Maximum prompt tokens |
 | `--output-tokens` | `int` | `512` | Average output token count |
-| `--output-tokens-stdev` | `int` | `50` | Output token standard deviation |
-| `--output-tokens-min` | `int` | `1` | Minimum output tokens |
-| `--output-tokens-max` | `int` | `2048` | Maximum output tokens |
+| `--output-tokens-stdev` | `int` | `256` | Output token standard deviation |
+| `--output-tokens-min` | `int` | `2` | Minimum output tokens |
+| `--output-tokens-max` | `int` | `7000` | Maximum output tokens |
 | `--prefix-tokens` | `int` | `0` | Shared prefix token count |
 
 ### Examples
