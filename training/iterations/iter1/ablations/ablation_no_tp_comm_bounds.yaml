@@ -1,0 +1,32 @@
+# Ablation: Remove β₃ (TP communication term)
+# Test H-ablation-tp-comm: Does removing TP comm increase loss by >10% for TP>1?
+
+alpha_bounds:  # Request-level overheads (unchanged)
+  - [0.0, 0.002]   # α₀: Fixed API overhead (seconds)
+  - [0.0, 0.0001]  # α₁: Per-input-token overhead (seconds/token)
+  - [0.0, 0.0001]  # α₂: Per-output-token overhead (seconds/token)
+
+alpha_initial:  # Warm-start from iter0
+  - 0.0008721      # α₀
+  - 0.0000360      # α₁
+  - 0.0000834      # α₂
+
+beta_bounds:  # Step-level coefficients (8 terms, β₃ forced to 0)
+  - [0.1, 2.0]     # β₀: Prefill compute scaling factor
+  - [0.1, 2.0]     # β₁: Decode memory-bound scaling (small-batch)
+  - [0.0, 0.001]   # β₂: Fixed scheduler overhead per step
+  - [0.0, 0.0]     # β₃: ABLATED - TP communication (forced to 0)
+  - [0.0, 0.001]   # β₄: KV cache management overhead per request
+  - [0.0, 0.001]   # β₅: Prefill chunking overhead per chunk
+  - [0.1, 2.0]     # β₆: Decode compute-bound scaling for large batches
+  - [0.0, 0.01]    # β₇: MoE gating network overhead per expert
+
+beta_initial:  # Warm-start from iter0 + physics estimates (β₃=0)
+  - 0.308          # β₀
+  - 1.548          # β₁
+  - 0.0003965      # β₂
+  - 0.0            # β₃: ABLATED - Start at 0
+  - 0.00005        # β₄
+  - 0.0001         # β₅
+  - 0.6            # β₆
+  - 0.001          # β₇
