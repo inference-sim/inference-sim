@@ -1197,94 +1197,10 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("--horizon must be > 0, got %d", simulationHorizon)
 		}
 
-		// Load policy bundle if specified (BC-6: CLI flags override YAML values)
-		var bundleScorerConfigs []sim.ScorerConfig // captured for use in weighted routing setup
-		if policyConfigPath != "" {
-			bundle, err := sim.LoadPolicyBundle(policyConfigPath)
-			if err != nil {
-				logrus.Fatalf("Failed to load policy config: %v", err)
-			}
-			if err := bundle.Validate(); err != nil {
-				logrus.Fatalf("Invalid policy config: %v", err)
-			}
+		// Resolve policy configuration (single code path shared with replayCmd).
+		// Per-pool scorer configs (PD disaggregation) remain inline below.
+		parsedScorerConfigs := resolvePolicies(cmd)
 
-			// Apply bundle values as defaults; CLI flags override via Changed().
-			// Pointer fields (nil = not set in YAML) correctly distinguish "0.0" from "unset".
-			if bundle.Admission.Policy != "" && !cmd.Flags().Changed("admission-policy") {
-				admissionPolicy = bundle.Admission.Policy
-			}
-			if bundle.Admission.TokenBucketCapacity != nil && !cmd.Flags().Changed("token-bucket-capacity") {
-				tokenBucketCapacity = *bundle.Admission.TokenBucketCapacity
-			}
-			if bundle.Admission.TokenBucketRefillRate != nil && !cmd.Flags().Changed("token-bucket-refill-rate") {
-				tokenBucketRefillRate = *bundle.Admission.TokenBucketRefillRate
-			}
-			if bundle.Routing.Policy != "" && !cmd.Flags().Changed("routing-policy") {
-				routingPolicy = bundle.Routing.Policy
-			}
-			// Capture scorer configs from YAML bundle (already validated; CLI --routing-scorers overrides)
-			bundleScorerConfigs = bundle.Routing.Scorers
-			if bundle.Priority.Policy != "" && !cmd.Flags().Changed("priority-policy") {
-				priorityPolicy = bundle.Priority.Policy
-			}
-			if bundle.Scheduler != "" && !cmd.Flags().Changed("scheduler") {
-				scheduler = bundle.Scheduler
-			}
-		}
-
-		// Validate policy names (catches CLI typos before they become panics)
-		// Token bucket parameter validation (R3: validate when policy is selected)
-		if admissionPolicy == "token-bucket" {
-			if tokenBucketCapacity <= 0 || math.IsNaN(tokenBucketCapacity) || math.IsInf(tokenBucketCapacity, 0) {
-				logrus.Fatalf("--token-bucket-capacity must be a finite value > 0, got %v", tokenBucketCapacity)
-			}
-			if tokenBucketRefillRate <= 0 || math.IsNaN(tokenBucketRefillRate) || math.IsInf(tokenBucketRefillRate, 0) {
-				logrus.Fatalf("--token-bucket-refill-rate must be a finite value > 0, got %v", tokenBucketRefillRate)
-			}
-		}
-
-		if !sim.IsValidAdmissionPolicy(admissionPolicy) {
-			logrus.Fatalf("Unknown admission policy %q. Valid: %s", admissionPolicy, strings.Join(sim.ValidAdmissionPolicyNames(), ", "))
-		}
-		if !sim.IsValidRoutingPolicy(routingPolicy) {
-			logrus.Fatalf("Unknown routing policy %q. Valid: %s", routingPolicy, strings.Join(sim.ValidRoutingPolicyNames(), ", "))
-		}
-		if !sim.IsValidPriorityPolicy(priorityPolicy) {
-			logrus.Fatalf("Unknown priority policy %q. Valid: %s", priorityPolicy, strings.Join(sim.ValidPriorityPolicyNames(), ", "))
-		}
-		if !sim.IsValidScheduler(scheduler) {
-			logrus.Fatalf("Unknown scheduler %q. Valid: %s", scheduler, strings.Join(sim.ValidSchedulerNames(), ", "))
-		}
-		if !trace.IsValidTraceLevel(traceLevel) {
-			logrus.Fatalf("Unknown trace level %q. Valid: none, decisions", traceLevel)
-		}
-		if counterfactualK < 0 {
-			logrus.Fatalf("--counterfactual-k must be >= 0, got %d", counterfactualK)
-		}
-		if traceLevel == "none" && counterfactualK > 0 {
-			logrus.Warnf("--counterfactual-k=%d has no effect without --trace-level decisions", counterfactualK)
-		}
-		if traceLevel == "none" && summarizeTrace {
-			logrus.Warnf("--summarize-trace has no effect without --trace-level decisions")
-		}
-		if traceLevel != "none" && !summarizeTrace {
-			logrus.Infof("Decision tracing enabled (trace-level=%s). Use --summarize-trace to print summary.", traceLevel)
-		}
-		if kvCPUBlocks < 0 {
-			logrus.Fatalf("--kv-cpu-blocks must be >= 0, got %d", kvCPUBlocks)
-		}
-		if kvOffloadThreshold < 0 || kvOffloadThreshold > 1 || math.IsNaN(kvOffloadThreshold) || math.IsInf(kvOffloadThreshold, 0) {
-			logrus.Fatalf("--kv-offload-threshold must be a finite value in [0, 1], got %f", kvOffloadThreshold)
-		}
-		if kvCPUBlocks > 0 && (kvTransferBandwidth <= 0 || math.IsNaN(kvTransferBandwidth) || math.IsInf(kvTransferBandwidth, 0)) {
-			logrus.Fatalf("--kv-transfer-bandwidth must be a finite value > 0 when --kv-cpu-blocks > 0, got %f", kvTransferBandwidth)
-		}
-		if kvTransferBaseLatency < 0 {
-			logrus.Fatalf("--kv-transfer-base-latency must be >= 0, got %d", kvTransferBaseLatency)
-		}
-		if snapshotRefreshInterval < 0 {
-			logrus.Fatalf("--snapshot-refresh-interval must be >= 0, got %d", snapshotRefreshInterval)
-		}
 		// PD disaggregation validation (R3: validate at CLI boundary)
 		if prefillInstances < 0 {
 			logrus.Fatalf("--prefill-instances must be >= 0, got %d", prefillInstances)
@@ -1392,44 +1308,7 @@ var runCmd = &cobra.Command{
 			}
 		}
 
-		if admissionLatency < 0 {
-			logrus.Fatalf("--admission-latency must be >= 0, got %d", admissionLatency)
-		}
-		if routingLatency < 0 {
-			logrus.Fatalf("--routing-latency must be >= 0, got %d", routingLatency)
-		}
-
-		// Log active policy configuration so users can verify which policies are in effect
-		logrus.Infof("Policy config: admission=%s, routing=%s, priority=%s, scheduler=%s",
-			admissionPolicy, routingPolicy, priorityPolicy, scheduler)
-		// Parse and validate scorer configuration for weighted routing
-		var parsedScorerConfigs []sim.ScorerConfig
-		if routingPolicy == "weighted" {
-			if routingScorers != "" {
-				var err error
-				parsedScorerConfigs, err = sim.ParseScorerConfigs(routingScorers)
-				if err != nil {
-					logrus.Fatalf("Invalid --routing-scorers: %v", err)
-				}
-			} else if len(bundleScorerConfigs) > 0 {
-				// Use YAML bundle scorers directly (no string round-trip)
-				parsedScorerConfigs = bundleScorerConfigs
-			}
-			// Log active scorer configuration
-			activeScorerConfigs := parsedScorerConfigs
-			if len(activeScorerConfigs) == 0 {
-				activeScorerConfigs = sim.DefaultScorerConfigs()
-			}
-			scorerStrs := make([]string, len(activeScorerConfigs))
-			for i, sc := range activeScorerConfigs {
-				scorerStrs[i] = fmt.Sprintf("%s:%.1f", sc.Name, sc.Weight)
-			}
-			logrus.Infof("Weighted routing scorers: %s", strings.Join(scorerStrs, ", "))
-		}
-		if routingPolicy != "weighted" && routingScorers != "" {
-			logrus.Warnf("--routing-scorers has no effect when routing policy is %q (only applies to 'weighted')", routingPolicy)
-		}
-		// Parse per-pool scorer configs (PR2)
+		// Parse per-pool scorer configs (PD disaggregation — not in resolvePolicies)
 		var prefillScorerCfgs, decodeScorerCfgs []sim.ScorerConfig
 		if prefillRoutingScorers != "" {
 			var err error
@@ -1445,11 +1324,6 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("Invalid --decode-routing-scorers: %v", err)
 			}
 		}
-		if admissionPolicy == "token-bucket" {
-			logrus.Infof("Token bucket: capacity=%.0f, refill-rate=%.0f",
-				tokenBucketCapacity, tokenBucketRefillRate)
-		}
-
 		// Log configuration after all config sources (CLI, workload spec, policy bundle) are resolved
 		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v",
 			totalKVBlocks, simulationHorizon, alphaCoeffs, betaCoeffs)
