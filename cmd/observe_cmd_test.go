@@ -7,7 +7,9 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -851,5 +853,87 @@ func TestObserveCmd_UnconstrainedOutputFlag_Exists(t *testing.T) {
 	}
 	if f.DefValue != "false" {
 		t.Errorf("--unconstrained-output default: got %q, want %q", f.DefValue, "false")
+	}
+}
+
+// TestObserveDistributionDefaults_MatchRunDefaults verifies that observeCmd's eight
+// distribution flag defaults are identical to runCmd's defaults (BC-1).
+//
+// Why this test matters: the observe→calibrate loop compares simulator output against
+// real-server output. If the two commands generate different workload shapes by default,
+// calibration conflates model error with distribution skew.
+//
+// If someone changes a constant in root.go, both commands change together and this
+// test still passes. If someone accidentally re-introduces a hardcoded literal with a
+// different value, this test fails.
+func TestObserveDistributionDefaults_MatchRunDefaults(t *testing.T) {
+	tests := []struct {
+		flag    string
+		wantInt int
+	}{
+		{"prompt-tokens", defaultPromptMean},
+		{"prompt-tokens-stdev", defaultPromptStdev},
+		{"prompt-tokens-min", defaultPromptMin},
+		{"prompt-tokens-max", defaultPromptMax},
+		{"output-tokens", defaultOutputMean},
+		{"output-tokens-stdev", defaultOutputStdev},
+		{"output-tokens-min", defaultOutputMin},
+		{"output-tokens-max", defaultOutputMax},
+	}
+	for _, tt := range tests {
+		f := observeCmd.Flags().Lookup(tt.flag)
+		if f == nil {
+			t.Fatalf("flag --%s not found on observeCmd", tt.flag)
+		}
+		got, err := strconv.Atoi(f.DefValue)
+		if err != nil {
+			t.Fatalf("--%s DefValue %q is not an int: %v", tt.flag, f.DefValue, err)
+		}
+		if got != tt.wantInt {
+			t.Errorf("--%s default: got %d, want %d (must match runCmd default)",
+				tt.flag, got, tt.wantInt)
+		}
+	}
+
+	// BC-3: num-requests intentional asymmetry — observe must default to 0, not 100.
+	f := observeCmd.Flags().Lookup("num-requests")
+	if f == nil {
+		t.Fatal("flag --num-requests not found on observeCmd")
+	}
+	if f.DefValue != "0" {
+		t.Errorf("--num-requests default: got %q, want \"0\" (intentional asymmetry with run's 100)", f.DefValue)
+	}
+}
+
+// TestObserveDistributionDefaults_NoHardcodedLiterals verifies that none of the old
+// literal defaults (50, 1, 2048) appear in observe_cmd.go's distribution IntVar calls
+// (BC-2: single source of truth).
+//
+// This is a source-level scan test, following the pattern in simconfig_shared_test.go.
+// It catches the scenario where someone re-introduces a literal that coincidentally has
+// the same value as a constant — which the value-equality test above would miss.
+func TestObserveDistributionDefaults_NoHardcodedLiterals(t *testing.T) {
+	data, err := os.ReadFile("observe_cmd.go")
+	if err != nil {
+		t.Fatalf("cannot read observe_cmd.go: %v", err)
+	}
+	content := string(data)
+
+	// These patterns are the old hardcoded literals that must no longer appear as
+	// the default argument in distribution flag IntVar calls.
+	// Format: the flag name string followed by the old literal default.
+	forbidden := []string{
+		`"prompt-tokens-stdev", 50`,
+		`"prompt-tokens-min", 1`,
+		`"prompt-tokens-max", 2048`,
+		`"output-tokens-stdev", 50`,
+		`"output-tokens-min", 1`,
+		`"output-tokens-max", 2048`,
+	}
+	for _, pattern := range forbidden {
+		if strings.Contains(content, pattern) {
+			t.Errorf("old hardcoded literal found in observe_cmd.go: %q\n"+
+				"Use the distDefaults constants from root.go instead (BC-2).", pattern)
+		}
 	}
 }

@@ -35,7 +35,8 @@ var (
 	observeSeed         int64
 	observeHorizon      int64
 	observeNumRequests  int
-	// Distribution synthesis flags (same as blis run)
+	// Distribution synthesis flags — same names and defaults as blis run.
+	// Default values are defined in cmd/root.go (distDefaults const block).
 	observePromptTokens  int
 	observePromptStdDev  int
 	observePromptMin     int
@@ -109,19 +110,20 @@ func init() {
 	observeCmd.Flags().BoolVar(&observeNoStreaming, "no-streaming", false, "Disable streaming (use non-streaming HTTP)")
 	observeCmd.Flags().Int64Var(&observeSeed, "seed", 42, "RNG seed for workload generation")
 	observeCmd.Flags().Int64Var(&observeHorizon, "horizon", 0, "Observation horizon in microseconds (0 = from spec or unlimited)")
-	observeCmd.Flags().IntVar(&observeNumRequests, "num-requests", 0, "Maximum requests to generate (0 = from spec or unlimited)")
+	observeCmd.Flags().IntVar(&observeNumRequests, "num-requests", 0, "Maximum requests to generate (0 = from spec or unlimited; differs from blis run default of 100)")
 	observeCmd.Flags().IntVar(&observeConcurrency, "concurrency", 0, "Number of concurrent virtual users (closed-loop, mutually exclusive with --rate)")
 	observeCmd.Flags().IntVar(&observeThinkTimeMs, "think-time-ms", 0, "Think time in ms between response and next request (concurrency mode)")
 
-	// Distribution synthesis flags (same names as blis run)
-	observeCmd.Flags().IntVar(&observePromptTokens, "prompt-tokens", 512, "Average prompt token count (distribution mode)")
-	observeCmd.Flags().IntVar(&observePromptStdDev, "prompt-tokens-stdev", 50, "Prompt token std dev (distribution mode)")
-	observeCmd.Flags().IntVar(&observePromptMin, "prompt-tokens-min", 1, "Minimum prompt tokens (distribution mode)")
-	observeCmd.Flags().IntVar(&observePromptMax, "prompt-tokens-max", 2048, "Maximum prompt tokens (distribution mode)")
-	observeCmd.Flags().IntVar(&observeOutputTokens, "output-tokens", 512, "Average output token count (distribution mode)")
-	observeCmd.Flags().IntVar(&observeOutputStdDev, "output-tokens-stdev", 50, "Output token std dev (distribution mode)")
-	observeCmd.Flags().IntVar(&observeOutputMin, "output-tokens-min", 1, "Minimum output tokens (distribution mode)")
-	observeCmd.Flags().IntVar(&observeOutputMax, "output-tokens-max", 2048, "Maximum output tokens (distribution mode)")
+	// Distribution synthesis flags — same names AND defaults as blis run.
+	// Default values are defined in root.go (distDefaults const block).
+	observeCmd.Flags().IntVar(&observePromptTokens, "prompt-tokens", defaultPromptMean, "Average prompt token count (distribution mode)")
+	observeCmd.Flags().IntVar(&observePromptStdDev, "prompt-tokens-stdev", defaultPromptStdev, "Prompt token std dev (distribution mode)")
+	observeCmd.Flags().IntVar(&observePromptMin, "prompt-tokens-min", defaultPromptMin, "Minimum prompt tokens (distribution mode)")
+	observeCmd.Flags().IntVar(&observePromptMax, "prompt-tokens-max", defaultPromptMax, "Maximum prompt tokens (distribution mode)")
+	observeCmd.Flags().IntVar(&observeOutputTokens, "output-tokens", defaultOutputMean, "Average output token count (distribution mode)")
+	observeCmd.Flags().IntVar(&observeOutputStdDev, "output-tokens-stdev", defaultOutputStdev, "Output token std dev (distribution mode)")
+	observeCmd.Flags().IntVar(&observeOutputMin, "output-tokens-min", defaultOutputMin, "Minimum output tokens (distribution mode)")
+	observeCmd.Flags().IntVar(&observeOutputMax, "output-tokens-max", defaultOutputMax, "Maximum output tokens (distribution mode)")
 	observeCmd.Flags().IntVar(&observePrefixTokens, "prefix-tokens", 0, "Shared prefix token count (distribution mode)")
 	observeCmd.Flags().StringVar(&observeAPIFormat, "api-format", "completions", "API format: 'completions' (/v1/completions) or 'chat' (/v1/chat/completions)")
 	observeCmd.Flags().BoolVar(&observeUnconstrainedOutput, "unconstrained-output", false, "Do not set max_tokens (let server decide output length)")
