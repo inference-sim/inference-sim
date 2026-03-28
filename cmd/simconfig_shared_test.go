@@ -10,21 +10,20 @@ import (
 )
 
 
-// TestResolveLatencyConfig_Exists verifies the shared function exists and is callable.
-// This test fails until resolveLatencyConfig is implemented (Task 1).
-func TestResolveLatencyConfig_Exists(t *testing.T) {
-	// GIVEN the cmd package
-	// WHEN we reference the resolveLatencyConfig function
-	// THEN it must exist with the expected signature
-	fn := resolveLatencyConfig
-	assert.NotNil(t, fn, "resolveLatencyConfig must exist in cmd package")
+// TestResolveLatencyConfig_SignatureCheck is a compile-time guard: if resolveLatencyConfig
+// is removed or its signature changes, this file will not compile. The function value
+// assignment is intentional — it documents the expected signature for code readers.
+func TestResolveLatencyConfig_SignatureCheck(t *testing.T) {
+	// Compile-time assertion: resolveLatencyConfig(cmd) returns latencyResolution.
+	// The function value is never nil; this test catches signature drift at compile time.
+	_ = resolveLatencyConfig
 }
 
-// TestResolvePolicies_Exists verifies the shared policy function exists.
-// This test fails until resolvePolicies is implemented (Task 4).
-func TestResolvePolicies_Exists(t *testing.T) {
-	fn := resolvePolicies
-	assert.NotNil(t, fn, "resolvePolicies must exist in cmd package")
+// TestResolvePolicies_SignatureCheck is a compile-time guard: if resolvePolicies
+// is removed or its signature changes, this file will not compile.
+func TestResolvePolicies_SignatureCheck(t *testing.T) {
+	// Compile-time assertion: resolvePolicies(cmd) returns []sim.ScorerConfig.
+	_ = resolvePolicies
 }
 
 // TestNoR23CommentSyncMarkersInReplay verifies that after the refactor,

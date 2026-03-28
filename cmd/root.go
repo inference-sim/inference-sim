@@ -689,7 +689,6 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 // Returns the parsed scorer configs for weighted routing (caller uses these in
 // DeploymentConfig.RoutingScorerConfigs). Per-pool scorer configs (PD disaggregation)
 // are NOT handled here — they remain inline in runCmd.
-//
 func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
 	var bundleScorerConfigs []sim.ScorerConfig
 
