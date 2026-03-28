@@ -690,10 +690,133 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 // DeploymentConfig.RoutingScorerConfigs). Per-pool scorer configs (PD disaggregation)
 // are NOT handled here — they remain inline in runCmd.
 //
-// TODO(Task 4): implement full body — currently a stub so tests compile.
 func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
-	// Stub — full implementation in Task 4.
-	return nil
+	var bundleScorerConfigs []sim.ScorerConfig
+
+	// Load policy bundle if specified (R18: CLI flags override YAML values)
+	if policyConfigPath != "" {
+		bundle, err := sim.LoadPolicyBundle(policyConfigPath)
+		if err != nil {
+			logrus.Fatalf("Failed to load policy config: %v", err)
+		}
+		if err := bundle.Validate(); err != nil {
+			logrus.Fatalf("Invalid policy config: %v", err)
+		}
+		// Apply bundle values as defaults; CLI flags override via Changed().
+		if bundle.Admission.Policy != "" && !cmd.Flags().Changed("admission-policy") {
+			admissionPolicy = bundle.Admission.Policy
+		}
+		if bundle.Admission.TokenBucketCapacity != nil && !cmd.Flags().Changed("token-bucket-capacity") {
+			tokenBucketCapacity = *bundle.Admission.TokenBucketCapacity
+		}
+		if bundle.Admission.TokenBucketRefillRate != nil && !cmd.Flags().Changed("token-bucket-refill-rate") {
+			tokenBucketRefillRate = *bundle.Admission.TokenBucketRefillRate
+		}
+		if bundle.Routing.Policy != "" && !cmd.Flags().Changed("routing-policy") {
+			routingPolicy = bundle.Routing.Policy
+		}
+		bundleScorerConfigs = bundle.Routing.Scorers
+		if bundle.Priority.Policy != "" && !cmd.Flags().Changed("priority-policy") {
+			priorityPolicy = bundle.Priority.Policy
+		}
+		if bundle.Scheduler != "" && !cmd.Flags().Changed("scheduler") {
+			scheduler = bundle.Scheduler
+		}
+	}
+
+	// Policy name validation (R3: validate at CLI boundary before passing to library)
+	if admissionPolicy == "token-bucket" {
+		if tokenBucketCapacity <= 0 || math.IsNaN(tokenBucketCapacity) || math.IsInf(tokenBucketCapacity, 0) {
+			logrus.Fatalf("--token-bucket-capacity must be a finite value > 0, got %v", tokenBucketCapacity)
+		}
+		if tokenBucketRefillRate <= 0 || math.IsNaN(tokenBucketRefillRate) || math.IsInf(tokenBucketRefillRate, 0) {
+			logrus.Fatalf("--token-bucket-refill-rate must be a finite value > 0, got %v", tokenBucketRefillRate)
+		}
+	}
+	if !sim.IsValidAdmissionPolicy(admissionPolicy) {
+		logrus.Fatalf("Unknown admission policy %q. Valid: %s", admissionPolicy, strings.Join(sim.ValidAdmissionPolicyNames(), ", "))
+	}
+	if !sim.IsValidRoutingPolicy(routingPolicy) {
+		logrus.Fatalf("Unknown routing policy %q. Valid: %s", routingPolicy, strings.Join(sim.ValidRoutingPolicyNames(), ", "))
+	}
+	if !sim.IsValidPriorityPolicy(priorityPolicy) {
+		logrus.Fatalf("Unknown priority policy %q. Valid: %s", priorityPolicy, strings.Join(sim.ValidPriorityPolicyNames(), ", "))
+	}
+	if !sim.IsValidScheduler(scheduler) {
+		logrus.Fatalf("Unknown scheduler %q. Valid: %s", scheduler, strings.Join(sim.ValidSchedulerNames(), ", "))
+	}
+	if !trace.IsValidTraceLevel(traceLevel) {
+		logrus.Fatalf("Unknown trace level %q. Valid: none, decisions", traceLevel)
+	}
+	if counterfactualK < 0 {
+		logrus.Fatalf("--counterfactual-k must be >= 0, got %d", counterfactualK)
+	}
+	if traceLevel == "none" && counterfactualK > 0 {
+		logrus.Warnf("--counterfactual-k=%d has no effect without --trace-level decisions", counterfactualK)
+	}
+	if traceLevel == "none" && summarizeTrace {
+		logrus.Warnf("--summarize-trace has no effect without --trace-level decisions")
+	}
+	if traceLevel != "none" && !summarizeTrace {
+		logrus.Infof("Decision tracing enabled (trace-level=%s). Use --summarize-trace to print summary.", traceLevel)
+	}
+	if kvCPUBlocks < 0 {
+		logrus.Fatalf("--kv-cpu-blocks must be >= 0, got %d", kvCPUBlocks)
+	}
+	if kvOffloadThreshold < 0 || kvOffloadThreshold > 1 || math.IsNaN(kvOffloadThreshold) || math.IsInf(kvOffloadThreshold, 0) {
+		logrus.Fatalf("--kv-offload-threshold must be a finite value in [0, 1], got %f", kvOffloadThreshold)
+	}
+	// Note: gpuMemoryUtilization and blockSizeTokens are validated in resolveLatencyConfig
+	// (before KV auto-calc). Not repeated here to avoid double-validation.
+	if kvCPUBlocks > 0 && (kvTransferBandwidth <= 0 || math.IsNaN(kvTransferBandwidth) || math.IsInf(kvTransferBandwidth, 0)) {
+		logrus.Fatalf("--kv-transfer-bandwidth must be a finite value > 0 when --kv-cpu-blocks > 0, got %f", kvTransferBandwidth)
+	}
+	if kvTransferBaseLatency < 0 {
+		logrus.Fatalf("--kv-transfer-base-latency must be >= 0, got %d", kvTransferBaseLatency)
+	}
+	if snapshotRefreshInterval < 0 {
+		logrus.Fatalf("--snapshot-refresh-interval must be >= 0, got %d", snapshotRefreshInterval)
+	}
+	if admissionLatency < 0 {
+		logrus.Fatalf("--admission-latency must be >= 0, got %d", admissionLatency)
+	}
+	if routingLatency < 0 {
+		logrus.Fatalf("--routing-latency must be >= 0, got %d", routingLatency)
+	}
+
+	logrus.Infof("Policy config: admission=%s, routing=%s, priority=%s, scheduler=%s",
+		admissionPolicy, routingPolicy, priorityPolicy, scheduler)
+
+	// Parse scorer configuration for weighted routing
+	var parsedScorerConfigs []sim.ScorerConfig
+	if routingPolicy == "weighted" {
+		if routingScorers != "" {
+			var err error
+			parsedScorerConfigs, err = sim.ParseScorerConfigs(routingScorers)
+			if err != nil {
+				logrus.Fatalf("Invalid --routing-scorers: %v", err)
+			}
+		} else if len(bundleScorerConfigs) > 0 {
+			parsedScorerConfigs = bundleScorerConfigs
+		}
+		activeScorerConfigs := parsedScorerConfigs
+		if len(activeScorerConfigs) == 0 {
+			activeScorerConfigs = sim.DefaultScorerConfigs()
+		}
+		scorerStrs := make([]string, len(activeScorerConfigs))
+		for i, sc := range activeScorerConfigs {
+			scorerStrs[i] = fmt.Sprintf("%s:%.1f", sc.Name, sc.Weight)
+		}
+		logrus.Infof("Weighted routing scorers: %s", strings.Join(scorerStrs, ", "))
+	}
+	if routingPolicy != "weighted" && routingScorers != "" {
+		logrus.Warnf("--routing-scorers has no effect when routing policy is %q (only applies to 'weighted')", routingPolicy)
+	}
+	if admissionPolicy == "token-bucket" {
+		logrus.Infof("Token bucket: capacity=%.0f, refill-rate=%.0f", tokenBucketCapacity, tokenBucketRefillRate)
+	}
+
+	return parsedScorerConfigs
 }
 
 // registerSimConfigFlags registers all simulation-engine configuration flags
