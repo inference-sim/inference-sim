@@ -61,7 +61,11 @@ largesweep/
 *.zip
 
 # Training data pipeline (large data files — keep .py and .md only)
-training
+training/references
+training/trainval_data
+training/trainval_data_dp_scaling
+training/__pycache__/*
+training/*/__pycache__/*
 
 # Hypothesis experiment output (generated, reproducible from run.sh)
 hypotheses/*/output/

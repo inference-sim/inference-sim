@@ -85,6 +85,8 @@ Beyond H-main, consider these arms from hypothesis bundles methodology:
 
 **Organize hypotheses however best reflects your iteration's goals.** The structure should emerge from your reasoning, not a rigid template.
 
+**Note on experimental hypotheses**: If you design hypotheses that require additional experiments to validate (e.g., ablations, parameter sweeps, implementation comparisons), design them to enable quick validation. Agent 3 (Analysis) will need to run these experiments before completing their analysis. Keep experiments focused and efficient.
+
 ### Why This Matters
 
 From Strategy Evolution Phase 5: **Prediction errors are your most valuable output.**
@@ -296,6 +298,8 @@ Design additional hypotheses based on what you're testing. From [Hypothesis Bund
 - **H-robustness**: Generalization across TP configs, model sizes, batch compositions?
 
 **Organize your bundle to match your reasoning** — the structure should reflect your iteration's goals, not a rigid template. But **H-main is always required.**
+
+**For experimental hypotheses** (H-ablation, parameter sweeps, etc.): Design them to enable quick validation. Agent 3 will run these experiments - keep them focused so analysis can complete efficiently.
 
 **Potential Basis Function Categories** (agent explores what's needed):
 - **Compute-bound**: FLOPs / (peak_TFLOPS × MFU)

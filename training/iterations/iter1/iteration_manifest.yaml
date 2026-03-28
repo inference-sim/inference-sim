@@ -1,0 +1,26 @@
+iteration: 1
+latency_backend_name: "evolved"  # MUST be "evolved", not "evolved_iter1"
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 1: Additive overhead terms + prefill chunking mechanism
+
+  Previous iteration (iter0): Single-crossover roofline model max(compute, memory) achieved
+  200.544% loss with inverted coefficients (β₀=0.308, β₁=1.548), indicating fundamental
+  structural inadequacy. The optimizer compensated for missing additive terms by distorting
+  the prefill/decode relationship.
+
+  This iteration adds 5 new basis functions (total: 8 Beta terms):
+  - β₃: TP communication overhead (all-reduce per layer when TP > 1)
+  - β₄: KV cache management overhead (per-request block allocation/deallocation)
+  - β₅: Prefill chunking overhead (per-chunk boundary cost for sequences > 2048 tokens)
+  - β₆: Decode compute-bound scaling (large-batch regime where compute dominates memory)
+  - β₇: MoE gating network overhead (routing probability computation for experts)
+
+  Key mechanism change: Model structure evolves from max(compute, memory) + constant to
+  additive terms: prefill + decode + tp_comm + kv_mgmt + chunking + scheduler.
+
+  Expected: Overall loss < 80% (from 200.54%), with β₀ rising to 0.5-0.6 (physical range)
+  and β₁ dropping to 0.5-0.7 (physical range) as new terms absorb overhead.
+
+timestamp: "2026-03-27T14:30:00Z"
