@@ -382,3 +382,25 @@ func TestRunCmdDistributionDefaults_UseSharedConstants(t *testing.T) {
 		}
 	}
 }
+
+// TestRunCmd_HasMetricsPathFlag verifies BC-1: blis run exposes --metrics-path,
+// not --results-path.
+func TestRunCmd_HasMetricsPathFlag(t *testing.T) {
+	if runCmd.Flags().Lookup("metrics-path") == nil {
+		t.Error("BC-1: runCmd missing --metrics-path flag")
+	}
+	if runCmd.Flags().Lookup("results-path") != nil {
+		t.Error("BC-1: runCmd must NOT have --results-path flag (schema footgun)")
+	}
+}
+
+// TestReplayCmd_HasResultsPathFlag verifies BC-2: blis replay exposes --results-path,
+// not --metrics-path.
+func TestReplayCmd_HasResultsPathFlag(t *testing.T) {
+	if replayCmd.Flags().Lookup("results-path") == nil {
+		t.Error("BC-2: replayCmd missing --results-path flag")
+	}
+	if replayCmd.Flags().Lookup("metrics-path") != nil {
+		t.Error("BC-2: replayCmd must NOT have --metrics-path flag")
+	}
+}
