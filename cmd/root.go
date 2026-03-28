@@ -713,7 +713,8 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 // would bypass those validations.
 //
 // Side effects: may write admissionPolicy, routingPolicy, priorityPolicy, scheduler,
-// tokenBucketCapacity, tokenBucketRefillRate package-level vars (from policy bundle).
+// tokenBucketCapacity, tokenBucketRefillRate, tierShedThreshold, tierShedMinPriority,
+// tenantBudgets package-level vars (from policy bundle).
 //
 // Returns the parsed scorer configs for weighted routing (caller uses these in
 // DeploymentConfig.RoutingScorerConfigs). Per-pool scorer configs (PD disaggregation)
