@@ -186,16 +186,42 @@ The skill MUST maintain these properties (SK-INV = skill invariant, separate fro
    - **This is a soft gate:** warnings are emitted but dispatch proceeds regardless. The next Phase A round is the real verification — this substep catches obvious oversights early.
    - **Note:** The `location` field records where the problem was found, not necessarily which file was edited to fix it. A finding citing `sim/config.go:88` might be fixed by editing `sim/kv/cache.go`. This heuristic catches the common case; the full re-review catches the rest.
 
-3. **Dispatch all N perspectives** simultaneously as background agents. Model from state file.
-   - **Exception:** The structural validation perspective in PR plan reviews is performed directly (not delegated to an agent) because it requires full conversation context.
-   - **Context payload per gate type:**
-     - File-anchored gates (`design`, `macro-plan`, `pr-plan`, `h-code`, `h-findings`): Pass the file contents of `$1` to each agent.
-     - Diff-anchored gates (`pr-code`): Pass `git diff HEAD` output to each agent.
-     - Context-anchored gates (`h-design`): Pass the hypothesis sentence, classification, and experiment design from the current conversation context.
+3. **Assemble and dispatch a single foreground agent** with all N perspective prompts and the artifact. Model from state file.
+
+   **Why single agent:** Background task IDs are session-local and can become invalid mid-session (producing "No task found with ID" errors). A single foreground call is reliable and sends the artifact once instead of N times (lower token cost for large diffs/files).
+
+   - **Exception:** The structural validation perspective in PR plan reviews (PP-5) is performed directly by the skill — not delegated. For `pr-plan` gates, the agent receives 9 prompts (PP-1 through PP-4, PP-6 through PP-10); PP-5 findings from direct evaluation are added to the findings array in step 4 alongside sections parsed from the agent's output. For all other gates, the agent receives all N prompts.
+
    - **Empty-diff precondition (diff-anchored gates only):** If `git diff HEAD` produces no output, emit warning ("No changes detected since last commit — nothing to review") and skip dispatch. Stage new files or commit before invoking.
 
-4. **Collect, extract, and tally independently.** For each agent's output:
-   a. Extract individual findings. For each finding, record: `perspective` (agent ID), `severity`, `location` (file:line or best available reference), `description`.
+   - **Prompt assembly:** Build a single prompt in this order:
+     1. Opening instruction:
+        ```
+        You are performing a multi-perspective review. Each section below is an independent review perspective. Complete each section fully before moving to the next. Do not let earlier sections influence later ones — treat each as if starting fresh.
+        ```
+     2. Artifact block (once):
+        ```
+        ## ARTIFACT
+
+        <artifact content — diff, file contents, or context per gate type>
+        ```
+        Context payload per gate type:
+        - File-anchored gates (`design`, `macro-plan`, `pr-plan`, `h-code`, `h-findings`): paste the file contents of `$1`.
+        - Diff-anchored gates (`pr-code`): paste `git diff HEAD` output.
+        - Context-anchored gates (`h-design`): paste the hypothesis sentence, classification, and experiment design from the current conversation context.
+     3. Perspective sections (one per prompt, in ID order):
+        ```
+        ## [<ID>] <Perspective Name>
+
+        <full prompt text for this perspective>
+        ```
+
+   - **Invoke:** Call the Agent tool with `run_in_background=False` (foreground), the assembled prompt, and `model=REVIEW_MODEL` where `REVIEW_MODEL` defaults to `"haiku"` when `--model` is not specified (see Model Selection section). Pass the model value explicitly — never omit it — so the Agent tool never inherits the session's active model (which may be `opus`).
+
+   - **Missing section handling:** After the agent completes, collect all `## [<ID>]` headers that appear in the output. For each expected perspective ID that is absent, emit `"WARNING: No section found for <ID> in agent output — recording 0 findings for this perspective"` and proceed. Do NOT treat a missing section as convergence-clean evidence.
+
+4. **Collect, extract, and tally independently.** Parse the single agent's output by section header:
+   a. Split the output on `## [<ID>]` headers (lines matching `^## \[`) to isolate each perspective's section. For each section, extract individual findings. For each finding, record: `perspective` (the ID from the section header, e.g., "PP-1"), `severity`, `location` (file:line or best available reference), `description`. For `pr-plan` gates, also include findings from the direct PP-5 evaluation in this same array.
    b. If a finding lacks a parseable location, set `location` to `"unknown"` and emit a warning: `"Finding from <perspective> has no location — recorded as 'unknown'."` (BC-7)
    c. Set initial `disposition` to `"fix"` for all findings. (Triage in step 6 may update some to `"filed"`.)
    d. Count CRITICAL and IMPORTANT yourself. **Never trust agent-reported totals** (per #390).
