@@ -804,493 +804,25 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("LLM name not provided. Exiting simulation.")
 		}
 
-		// Load alpha/beta coeffs from coefficients.yaml
-		alphaCoeffs, betaCoeffs := alphaCoeffs, betaCoeffs
+		// Resolve latency backend configuration (single code path shared with replayCmd).
+		lr := resolveLatencyConfig(cmd)
 
-		// Validate --latency-model flag
-		if !sim.IsValidLatencyBackend(latencyModelBackend) {
-			logrus.Fatalf("unknown --latency-model %q; valid options: %s",
-				latencyModelBackend, strings.Join(sim.ValidLatencyBackendNames(), ", "))
-		}
-
-		// Local copy of CLI-provided backend.
-		// Default is "roofline" both at the CLI level (Cobra flag) and the
-		// library level (factory case "", "roofline": dispatch).
-		backend := latencyModelBackend
-
-		// Alpha and beta coefficients must be provided together or not at all.
-		// Alpha controls queueing time, beta controls step time — one without
-		// the other produces nonsensical results.
-		alphaChanged := cmd.Flags().Changed("alpha-coeffs")
-		betaChanged := cmd.Flags().Changed("beta-coeffs")
-		if alphaChanged != betaChanged {
-			if alphaChanged {
-				logrus.Fatalf("--alpha-coeffs requires --beta-coeffs. " +
-					"Both coefficient sets are needed for blackbox mode")
-			}
-			logrus.Fatalf("--beta-coeffs requires --alpha-coeffs. " +
-				"Both coefficient sets are needed for blackbox mode")
-		}
-
-		// Validate coefficient values for NaN/Inf/negative (R3: CLI flags AND library constructors).
-		// Library-level validateCoeffs() also checks, but CLI-level gives user-friendly flag names.
-		for i, c := range alphaCoeffs {
-			if math.IsNaN(c) || math.IsInf(c, 0) || c < 0 {
-				logrus.Fatalf("--alpha-coeffs[%d] must be a finite non-negative number, got %v", i, c)
-			}
-		}
-		for i, c := range betaCoeffs {
-			if math.IsNaN(c) || math.IsInf(c, 0) || c < 0 {
-				logrus.Fatalf("--beta-coeffs[%d] must be a finite non-negative number, got %v", i, c)
-			}
-		}
-
-		// If both alpha and beta coefficients are explicitly provided but
-		// --latency-model was not, auto-switch to blackbox. Providing both
-		// coefficient sets is a clear signal the user wants trained blackbox
-		// estimation, not analytical roofline.
-		if !cmd.Flags().Changed("latency-model") && alphaChanged && betaChanged {
-			backend = "blackbox"
-			logrus.Infof("--alpha-coeffs and --beta-coeffs provided; using blackbox mode")
-		}
-
-		var modelConfig = sim.ModelConfig{}
-		var hwConfig = sim.HardwareCalib{}
-
-		// Normalize model name to lowercase for consistent lookups. All defaults.yaml
-		// keys, hf_repo lookups, bundled model_configs/ directories, and coefficient
-		// matching use lowercase names. This runs unconditionally (even with explicit
-		// --alpha-coeffs/--beta-coeffs) to ensure output metadata and logs use a
-		// canonical form. Note: HuggingFace repo names are case-sensitive, so the
-		// hf_repo mapping in defaults.yaml preserves the original casing for API calls.
-		model = strings.ToLower(model)
-
-		// Early defaults resolution: load hardware/TP/vllm-version from defaults.yaml
-		// when not explicitly set via CLI flags. This runs BEFORE analytical backend
-		// blocks so that the default roofline mode can find --hardware and --tp values
-		// for models registered in defaults.yaml (e.g., qwen/qwen3-14b).
-		if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
-			hardware, tp, version := GetDefaultSpecs(model)
-			if tensorParallelism == 0 && tp > 0 {
-				logrus.Warnf("Finding default values of TP for model=%v", model)
-				logrus.Warnf("Using default tp=%v", tp)
-				tensorParallelism = tp
-			}
-			if gpu == "" && len(hardware) > 0 {
-				logrus.Warnf("Finding default values of hardware for model=%v", model)
-				logrus.Warnf("Using default GPU=%v", hardware)
-				gpu = hardware
-			}
-			if vllmVersion == "" && len(version) > 0 {
-				logrus.Warnf("Finding default values of vLLM version for model=%v", model)
-				logrus.Warnf("Using default vLLM version=%v", version)
-				vllmVersion = version
-			}
-		}
-
-		// Track whether defaults.yaml provided KV blocks (used to skip auto-calc).
-		// Precedence: (1) --total-kv-blocks CLI flag, (2) defaults.yaml, (3) auto-calc.
-		kvBlocksFromDefaults := false
-
-		// --latency-model roofline: auto-resolve model config and hardware config
-		if backend == "roofline" {
-			var missing []string
-			if gpu == "" {
-				missing = append(missing, "--hardware (GPU type)")
-			}
-			if tensorParallelism <= 0 {
-				missing = append(missing, "--tp (tensor parallelism)")
-			}
-			if len(missing) > 0 {
-				logrus.Fatalf("Roofline mode (the default) requires %s. "+
-					"No defaults found in defaults.yaml for model=%s. "+
-					"Provide these flags explicitly, or use --latency-model blackbox for offline coefficient-based estimation",
-					strings.Join(missing, " and "), model)
-			}
-
-			// Hard error if user explicitly requested roofline AND provided coefficients.
-			// Roofline computes step time analytically — beta coefficients are meaningless.
-			// Note: alphaChanged == betaChanged is guaranteed by the "both or neither"
-			// check above, so checking betaChanged implies both were provided.
-			if cmd.Flags().Changed("latency-model") && betaChanged {
-				logrus.Fatalf("--alpha-coeffs/--beta-coeffs cannot be used with --latency-model roofline. " +
-					"Roofline computes step time analytically. " +
-					"Use --latency-model blackbox if you want coefficient-based estimation")
-			}
-
-			// Log when explicit overrides interact with --latency-model roofline
-			if modelConfigFolder != "" {
-				logrus.Infof("--latency-model: explicit --model-config-folder takes precedence over auto-resolution")
-			}
-			if hwConfigPath != "" {
-				logrus.Infof("--latency-model: explicit --hardware-config takes precedence over auto-resolution")
-			}
-
-			// Resolve model config folder (cache → HF fetch → bundled fallback)
-			resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
-			if err != nil {
-				logrus.Fatalf("%v", err)
-			}
-			modelConfigFolder = resolved
-
-			// Resolve hardware config (explicit → bundled default)
-			resolvedHW, err := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
-			if err != nil {
-				logrus.Fatalf("%v", err)
-			}
-			hwConfigPath = resolvedHW
-
-			// Load totalKVBlocks from defaults.yaml if available. Roofline does NOT
-			// use alpha coefficients — QueueingTime and OutputTokenProcessingTime
-			// are zero by design.
-			if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
-				// vllmVersion already resolved by early defaults block (lines 248-265).
-				_, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
-				if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
-					totalKVBlocks = kvBlocks
-					kvBlocksFromDefaults = true
-					logrus.Infof("--latency-model: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
-				}
-			}
-		}
-
-		// --latency-model crossmodel: auto-resolve model config and load global coefficients
-		if backend == "crossmodel" {
-			var missing []string
-			if gpu == "" {
-				missing = append(missing, "--hardware (GPU type)")
-			}
-			if tensorParallelism <= 0 {
-				missing = append(missing, "--tp (tensor parallelism)")
-			}
-			if len(missing) > 0 {
-				logrus.Fatalf("--latency-model crossmodel requires %s. "+
-					"No defaults found in defaults.yaml for model=%s. "+
-					"Provide these flags explicitly", strings.Join(missing, " and "), model)
-			}
-
-			// Resolve model config folder (same auto-fetch chain as roofline)
-			resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
-			if err != nil {
-				logrus.Fatalf("%v", err)
-			}
-			modelConfigFolder = resolved
-
-			// Resolve hardware config (validates --hardware flag; crossmodel doesn't use HWConfig
-			// for step time but loading validates the GPU type for future use)
-			resolvedHW, err := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
-			if err != nil {
-				logrus.Fatalf("%v", err)
-			}
-			hwConfigPath = resolvedHW
-
-			// Load crossmodel defaults from defaults.yaml (R18: use Flags().Changed, not allZeros)
-			if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
-				data, readErr := os.ReadFile(defaultsFilePath)
-				if readErr != nil {
-					logrus.Warnf("--latency-model crossmodel: failed to read %s: %v", defaultsFilePath, readErr)
-				} else {
-					var cfg Config
-					decoder := yaml.NewDecoder(bytes.NewReader(data))
-					decoder.KnownFields(true) // R10: strict YAML parsing
-					if yamlErr := decoder.Decode(&cfg); yamlErr != nil {
-						logrus.Fatalf("--latency-model crossmodel: failed to parse %s: %v", defaultsFilePath, yamlErr)
-					}
-					if cfg.CrossModelDefaults != nil {
-						if !cmd.Flags().Changed("beta-coeffs") {
-							betaCoeffs = cfg.CrossModelDefaults.BetaCoeffs
-							logrus.Infof("--latency-model: loaded crossmodel beta coefficients from defaults.yaml")
-						}
-						if !cmd.Flags().Changed("alpha-coeffs") {
-							alphaCoeffs = cfg.CrossModelDefaults.AlphaCoeffs
-							logrus.Infof("--latency-model: loaded crossmodel alpha coefficients from defaults.yaml")
-						}
-					}
-				}
-				// Also load KV blocks from per-model config if available.
-				// vllmVersion already resolved by early defaults block (lines 248-265).
-				_, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
-				if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
-					totalKVBlocks = kvBlocks
-					kvBlocksFromDefaults = true
-					logrus.Infof("--latency-model: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
-				}
-			}
-			// Validate crossmodel coefficients were loaded (catches missing file, missing section, etc.)
-			if !cmd.Flags().Changed("beta-coeffs") && (len(betaCoeffs) < 4 || allZeros(betaCoeffs)) {
-				logrus.Fatalf("--latency-model crossmodel: no crossmodel_defaults found in %s and no --beta-coeffs provided. "+
-					"Add crossmodel_defaults to defaults.yaml or provide --beta-coeffs explicitly",
-					defaultsFilePath)
-			}
-		}
-
-		// --latency-model trained-roofline: auto-resolve model config and load global coefficients
-		if backend == "trained-roofline" {
-			var missing []string
-			if gpu == "" {
-				missing = append(missing, "--hardware (GPU type)")
-			}
-			if tensorParallelism <= 0 {
-				missing = append(missing, "--tp (tensor parallelism)")
-			}
-			if len(missing) > 0 {
-				logrus.Fatalf("--latency-model trained-roofline requires %s. "+
-					"No defaults found in defaults.yaml for model=%s. "+
-					"Provide these flags explicitly", strings.Join(missing, " and "), model)
-			}
-
-			// Resolve model config folder (same auto-fetch chain as roofline/crossmodel)
-			resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
-			if err != nil {
-				logrus.Fatalf("%v", err)
-			}
-			modelConfigFolder = resolved
-
-			// Resolve hardware config
-			resolvedHW, err := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
-			if err != nil {
-				logrus.Fatalf("%v", err)
-			}
-			hwConfigPath = resolvedHW
-
-			// Load trained-roofline defaults from defaults.yaml (R18: use Flags().Changed)
-			if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
-				data, readErr := os.ReadFile(defaultsFilePath)
-				if readErr != nil {
-					logrus.Warnf("--latency-model trained-roofline: failed to read %s: %v", defaultsFilePath, readErr)
-				} else {
-					var cfg Config
-					decoder := yaml.NewDecoder(bytes.NewReader(data))
-					decoder.KnownFields(true) // R10: strict YAML parsing
-					if yamlErr := decoder.Decode(&cfg); yamlErr != nil {
-						logrus.Fatalf("--latency-model trained-roofline: failed to parse %s: %v", defaultsFilePath, yamlErr)
-					}
-					if cfg.TrainedRooflineDefaults != nil {
-						if !cmd.Flags().Changed("beta-coeffs") {
-							betaCoeffs = cfg.TrainedRooflineDefaults.BetaCoeffs
-							logrus.Infof("--latency-model: loaded trained-roofline beta coefficients from defaults.yaml")
-						}
-						if !cmd.Flags().Changed("alpha-coeffs") {
-							alphaCoeffs = cfg.TrainedRooflineDefaults.AlphaCoeffs
-							logrus.Infof("--latency-model: loaded trained-roofline alpha coefficients from defaults.yaml")
-						}
-					}
-				}
-				// Also load KV blocks from per-model config if available.
-				// vllmVersion already resolved by early defaults block (lines 248-265).
-				_, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
-				if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
-					totalKVBlocks = kvBlocks
-					kvBlocksFromDefaults = true
-					logrus.Infof("--latency-model: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
-				}
-			}
-			// Validate trained-roofline coefficients were loaded
-			if !cmd.Flags().Changed("beta-coeffs") && (len(betaCoeffs) < 7 || allZeros(betaCoeffs)) {
-				logrus.Fatalf("--latency-model trained-roofline: no trained_roofline_defaults found in %s and no --beta-coeffs provided. "+
-					"Add trained_roofline_defaults to defaults.yaml or provide --beta-coeffs explicitly",
-					defaultsFilePath)
-			}
-			// Warn if alpha coefficients are zero (user provided --beta-coeffs but not --alpha-coeffs)
-			if allZeros(alphaCoeffs) && !cmd.Flags().Changed("alpha-coeffs") {
-				logrus.Warnf("--latency-model trained-roofline: no trained alpha coefficients found; " +
-					"QueueingTime, PostDecodeFixedOverhead, and OutputTokenProcessingTime will use zero alpha (may underestimate TTFT/E2E)")
-			}
-		}
-
-		// Blackbox mode: load alpha/beta coefficients and KV blocks from defaults.yaml.
-		// Skipped for analytical backends (roofline, crossmodel, trained-roofline) which
-		// load their own coefficients in their respective blocks above.
-		// Note: the old guard also checked len(modelConfigFolder)==0 && len(hwConfigPath)==0
-		// as part of implicit roofline detection. With explicit --latency-model selection,
-		// those guards are no longer needed — blackbox ignores model-config/hw-config paths.
-		if backend == "blackbox" && !cmd.Flags().Changed("alpha-coeffs") && !cmd.Flags().Changed("beta-coeffs") {
-			newAlpha, newBeta, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
-			alphaCoeffs, betaCoeffs = newAlpha, newBeta
-			if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
-				totalKVBlocks = kvBlocks
-				kvBlocksFromDefaults = true
-			}
-		}
-		// Blackbox mode: auto-calculate KV blocks when neither CLI flag nor
-		// defaults.yaml provided a value. Uses cached model config (no HF fetch)
-		// and bundled hardware config. Best-effort — falls through silently if
-		// configs are unavailable (totalKVBlocks validation at line ~770 catches 0).
-		if backend == "blackbox" && !cmd.Flags().Changed("total-kv-blocks") && !kvBlocksFromDefaults {
-			baseDir := filepath.Dir(defaultsFilePath)
-			cachedDir, dirErr := bundledModelConfigDir(model, baseDir)
-			if dirErr == nil {
-				hfPath := filepath.Join(cachedDir, "config.json")
-				if _, statErr := os.Stat(hfPath); statErr == nil {
-					hfCfg, parseErr := latency.ParseHFConfig(hfPath)
-					if parseErr == nil {
-						mc, mcErr := latency.GetModelConfigFromHF(hfCfg)
-						if mcErr == nil {
-							applyWeightPrecisionFallback(mc, model, hfCfg.Raw)
-						}
-						resolvedHW, hwPathErr := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
-						if mcErr == nil && hwPathErr == nil {
-							hc, hcErr := latency.GetHWConfig(resolvedHW, gpu)
-							if hcErr == nil && hc.MemoryGiB > 0 {
-								kvParams, kvErr := latency.ExtractKVCapacityParams(hfCfg)
-								if kvErr == nil {
-									autoBlocks, calcErr := latency.CalculateKVBlocks(*mc, hc, tensorParallelism, blockSizeTokens, gpuMemoryUtilization, kvParams)
-									if calcErr == nil {
-										totalKVBlocks = autoBlocks
-										logrus.Infof("--latency-model blackbox: auto-calculated total-kv-blocks=%d from cached model config", totalKVBlocks)
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-		// Zero-coefficients safety guard: prevents silently running with zero step times
-		// when blackbox mode has no trained coefficients (would produce meaningless results).
-		if backend == "blackbox" && allZeros(alphaCoeffs) && allZeros(betaCoeffs) {
-			logrus.Fatalf("No trained coefficients found for model=%s, GPU=%s, TP=%d. "+
-				"Provide --alpha-coeffs/--beta-coeffs, use --latency-model roofline, crossmodel, or trained-roofline",
-				model, gpu, tensorParallelism)
-		}
 		// Per-pool hardware override vars. TotalKVBlocks is populated from per-pool KV
 		// auto-calc in the analytical backend block below (when applicable). TP/GPU/Backend/MaxModelLen
 		// are populated from CLI flags after PD validation. Both paths are no-ops when disaggregation
 		// is disabled (prefillInstances == 0).
 		var prefillOverrides, decodeOverrides cluster.PoolOverrides
 
-		// Analytical backends (roofline, crossmodel): parse HFConfig once, use for
-		// both model config extraction and KV capacity auto-calculation.
-		if backend == "roofline" || backend == "crossmodel" || backend == "trained-roofline" {
-			hfPath := filepath.Join(modelConfigFolder, "config.json")
-			hfConfig, err := latency.ParseHFConfig(hfPath)
-			if err != nil {
-				logrus.Fatalf("Failed to parse HuggingFace config: %v", err)
-			}
-			mc, err := latency.GetModelConfigFromHF(hfConfig)
-			if err != nil {
-				logrus.Fatalf("Failed to load model config: %v", err)
-			}
-			modelConfig = *mc
-			hc, err := latency.GetHWConfig(hwConfigPath, gpu)
-			if err != nil {
-				logrus.Fatalf("Failed to load hardware config: %v", err)
-			}
-			hwConfig = hc
-
-			applyWeightPrecisionFallback(&modelConfig, model, hfConfig.Raw)
-
-			// Trained-roofline uses hardcoded FP16 bytesPerElement (matching its training
-			// pipeline); quantized weight precision is not applied to step time estimates.
-			if backend == "trained-roofline" {
-				warnTrainedRooflineQuantization(&modelConfig)
-			}
-
-			// MoE informational note: roofline models per-routed-expert FLOPs (top_k active)
-			// and all-expert weight bandwidth (E experts loaded from HBM per step).
-			// Shared expert FLOPs/weights and gate/router weights are NOT modeled in
-			// roofline step time (they are included in KV capacity weight estimation).
-			// Remaining approximations: no expert-load-imbalance or MoE dispatch overhead.
-			if backend == "roofline" && modelConfig.NumLocalExperts > 1 {
-				logrus.Infof("--latency-model: MoE model detected (%d experts, top_%d). "+
-					"Roofline models per-expert FLOPs and active weights; dispatch overhead is not modeled",
-					modelConfig.NumLocalExperts, modelConfig.NumExpertsPerTok)
-			}
-
-			// KV capacity auto-calculation: derive total-kv-blocks from model + hardware.
-			// Precedence: (1) --total-kv-blocks CLI flag, (2) defaults.yaml match,
-			// (3) auto-calculate from model architecture + GPU memory.
-			if !cmd.Flags().Changed("total-kv-blocks") && !kvBlocksFromDefaults {
-				kvParams, kvParamsErr := latency.ExtractKVCapacityParams(hfConfig)
-				if kvParamsErr != nil {
-					logrus.Warnf("--latency-model: could not extract KV capacity params: %v. "+
-						"Using total-kv-blocks=%d. Set --total-kv-blocks explicitly to override", kvParamsErr, totalKVBlocks)
-				} else if hwConfig.MemoryGiB <= 0 {
-					logrus.Warnf("--latency-model: GPU memory capacity not available in hardware config; using current total-kv-blocks=%d. "+
-						"Add MemoryGiB to hardware_config.json or pass --total-kv-blocks explicitly", totalKVBlocks)
-				} else {
-					if kvParams.HiddenAct == "" {
-						logrus.Infof("--latency-model: hidden_act not set in config.json; assuming SwiGLU (3-matrix MLP) for weight estimation")
-					}
-					autoBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, hwConfig, tensorParallelism, blockSizeTokens, gpuMemoryUtilization, kvParams)
-					if calcErr != nil {
-						logrus.Warnf("--latency-model: KV capacity auto-calculation failed: %v. "+
-							"Using total-kv-blocks=%d. Set --total-kv-blocks explicitly to override", calcErr, totalKVBlocks)
-					} else {
-						totalKVBlocks = autoBlocks
-						logrus.Infof("--gpu-memory-utilization: %.2f used for KV block auto-calculation", gpuMemoryUtilization)
-						logrus.Infof("--latency-model: auto-calculated total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, block_size=%d, MoE=%v)",
-							totalKVBlocks, hwConfig.MemoryGiB, tensorParallelism, blockSizeTokens, kvParams.IsMoE)
-					}
-				}
-			}
-
-			// Auto-derive --max-model-len from HF config when not explicitly set (R18).
-			// Mirrors vLLM's _auto_fit_max_model_len(): uses max_position_embeddings,
-			// applies rope_scaling factor for older models, then caps at KV-feasible max.
-			if !cmd.Flags().Changed("max-model-len") {
-				maxPosEmb := hfConfig.MustGetInt("max_position_embeddings", 0)
-				if maxPosEmb > 0 {
-					maxModelLen = int64(maxPosEmb)
-
-					// Apply rope_scaling factor via pure function (extracted for testability).
-					// See applyRopeScaling godoc for blacklist details and vLLM fidelity notes.
-					modelType, _ := hfConfig.Raw["model_type"].(string)
-					scaled, applied := applyRopeScaling(maxPosEmb, modelType, hfConfig.Raw["rope_scaling"])
-					if applied {
-						// Recover rope type and factor for diagnostic logging
-						ropeType := ""
-						factor := 0.0
-						if ropeMap, ok := hfConfig.Raw["rope_scaling"].(map[string]any); ok {
-							ropeType, _ = ropeMap["type"].(string)
-							if ropeType == "" {
-								ropeType, _ = ropeMap["rope_type"].(string)
-							}
-							factor, _ = ropeMap["factor"].(float64)
-						}
-						logrus.Infof("--latency-model: applying %s rope_scaling factor %.1f: %d → %d", ropeType, factor, maxPosEmb, scaled)
-						maxModelLen = int64(scaled)
-					} else if strings.Contains(modelType, "gemma3") {
-						logrus.Infof("--latency-model: skipping rope_scaling for gemma3 (max_position_embeddings is pre-scaled)")
-					} else if ropeScaling, ok := hfConfig.Raw["rope_scaling"]; ok && ropeScaling != nil {
-						// Factor not applied — could be excluded type, missing/invalid factor, or overflow
-						if ropeMap, ok := ropeScaling.(map[string]any); ok {
-							if _, hasKey := ropeMap["factor"]; hasKey {
-								logrus.Warnf("--latency-model: rope_scaling.factor present but not applied (excluded type, invalid value, or overflow); using max_position_embeddings as-is")
-							}
-						} else {
-							logrus.Warnf("--latency-model: rope_scaling present but not a JSON object (type %T); ignoring", ropeScaling)
-						}
-					}
-
-					logrus.Infof("--latency-model: auto-derived max-model-len=%d from max_position_embeddings", maxModelLen)
-				}
-			}
-
-			// Cap maxModelLen at KV-feasible maximum (matches vLLM's _maybe_limit_model_len).
-			// Without this, auto-derived max_position_embeddings can exceed KV capacity
-			// for models with large context windows on small GPU configs (e.g., 128K context, TP=1).
-			// Overflow-safe KV feasible max: compare in block space to avoid int64 multiplication overflow.
-			// Instead of computing totalKVBlocks * blockSizeTokens (which could overflow for extreme configs),
-			// we check whether ceil(maxModelLen / blockSizeTokens) > totalKVBlocks — the same comparison
-			// used in NewSimulator's startup validation.
-			if maxModelLen > 0 && blockSizeTokens > 0 {
-				blocksNeeded := maxModelLen / blockSizeTokens
-				if maxModelLen%blockSizeTokens != 0 {
-					blocksNeeded++
-				}
-				if blocksNeeded > totalKVBlocks {
-					kvFeasibleMax := totalKVBlocks * blockSizeTokens // product bounded by maxModelLen (blocksNeeded > totalKVBlocks)
-					logrus.Warnf("--latency-model: max-model-len %d exceeds KV capacity (%d blocks × %d tokens); capping to %d tokens",
-						maxModelLen, totalKVBlocks, blockSizeTokens, kvFeasibleMax)
-					maxModelLen = kvFeasibleMax
-				}
-			}
-
-			// Per-pool KV auto-calculation: when PD disaggregation is active and a pool
-			// uses different TP or GPU hardware, compute per-pool KV blocks from model + hardware.
-			// Only runs for analytical backends where hardware configs are available.
+		// Per-pool KV auto-calculation: when PD disaggregation is active and a pool
+		// uses different TP or GPU hardware, compute per-pool KV blocks from model + hardware.
+		// Only runs for analytical backends where hardware configs are available.
+		if lr.Backend == "roofline" || lr.Backend == "crossmodel" || lr.Backend == "trained-roofline" {
 			if prefillInstances > 0 {
+				hfPath := filepath.Join(modelConfigFolder, "config.json")
+				hfConfig, err := latency.ParseHFConfig(hfPath)
+				if err != nil {
+					logrus.Fatalf("Failed to parse HuggingFace config for per-pool KV calc: %v", err)
+				}
 				kvParamsPool, kvErrPool := latency.ExtractKVCapacityParams(hfConfig)
 				if kvErrPool != nil {
 					logrus.Warnf("per-pool KV auto-calculation skipped (could not extract model KV params: %v); both pools will use global total-kv-blocks=%d", kvErrPool, totalKVBlocks)
@@ -1311,7 +843,7 @@ var runCmd = &cobra.Command{
 						} else if poolHC.MemoryGiB <= 0 {
 							logrus.Warnf("--prefill-hardware: GPU memory capacity not available for %q in hardware config; prefill pool will use global total-kv-blocks=%d", poolPrefillGPU, totalKVBlocks)
 						} else {
-							poolBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, poolHC, poolPrefillTP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool)
+							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolPrefillTP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool)
 							if calcErr != nil {
 								logrus.Warnf("--prefill-tp/--prefill-hardware: KV capacity auto-calculation failed for prefill pool: %v; prefill pool will use global total-kv-blocks=%d", calcErr, totalKVBlocks)
 							} else {
@@ -1345,7 +877,7 @@ var runCmd = &cobra.Command{
 						} else if poolHC.MemoryGiB <= 0 {
 							logrus.Warnf("--decode-hardware: GPU memory capacity not available for %q in hardware config; decode pool will use global total-kv-blocks=%d", poolDecodeGPU, totalKVBlocks)
 						} else {
-							poolBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, poolHC, poolDecodeTP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool)
+							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolDecodeTP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool)
 							if calcErr != nil {
 								logrus.Warnf("--decode-tp/--decode-hardware: KV capacity auto-calculation failed for decode pool: %v; decode pool will use global total-kv-blocks=%d", calcErr, totalKVBlocks)
 							} else {
@@ -1364,11 +896,6 @@ var runCmd = &cobra.Command{
 					}
 				}
 			}
-		}
-
-		// R3: Validate --max-model-len
-		if maxModelLen < 0 {
-			logrus.Fatalf("--max-model-len must be >= 0, got %d", maxModelLen)
 		}
 
 		// R3: Validate workload generation flags (before any synthesis path consumes them)
@@ -1532,9 +1059,6 @@ var runCmd = &cobra.Command{
 		if totalKVBlocks <= 0 {
 			logrus.Fatalf("--total-kv-blocks must be > 0, got %d", totalKVBlocks)
 		}
-		if blockSizeTokens <= 0 {
-			logrus.Fatalf("--block-size-in-tokens must be > 0, got %d", blockSizeTokens)
-		}
 		if maxRunningReqs <= 0 {
 			logrus.Fatalf("--max-num-running-reqs must be > 0, got %d", maxRunningReqs)
 		}
@@ -1628,9 +1152,6 @@ var runCmd = &cobra.Command{
 		}
 		if kvOffloadThreshold < 0 || kvOffloadThreshold > 1 || math.IsNaN(kvOffloadThreshold) || math.IsInf(kvOffloadThreshold, 0) {
 			logrus.Fatalf("--kv-offload-threshold must be a finite value in [0, 1], got %f", kvOffloadThreshold)
-		}
-		if gpuMemoryUtilization <= 0 || gpuMemoryUtilization > 1.0 || math.IsNaN(gpuMemoryUtilization) || math.IsInf(gpuMemoryUtilization, 0) {
-			logrus.Fatalf("--gpu-memory-utilization must be a finite value in (0, 1.0], got %f", gpuMemoryUtilization)
 		}
 		if kvCPUBlocks > 0 && (kvTransferBandwidth <= 0 || math.IsNaN(kvTransferBandwidth) || math.IsInf(kvTransferBandwidth, 0)) {
 			logrus.Fatalf("--kv-transfer-bandwidth must be a finite value > 0 when --kv-cpu-blocks > 0, got %f", kvTransferBandwidth)
@@ -1820,8 +1341,8 @@ var runCmd = &cobra.Command{
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
 				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
-				LatencyCoeffs:       sim.NewLatencyCoeffs(betaCoeffs, alphaCoeffs),
-				ModelHardwareConfig: sim.NewModelHardwareConfig(modelConfig, hwConfig, model, gpu, tensorParallelism, backend, maxModelLen),
+				LatencyCoeffs:       sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
+				ModelHardwareConfig: sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, lr.Backend, maxModelLen),
 				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler),
 			},
 			NumInstances:            numInstances,
