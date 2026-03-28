@@ -1,436 +1,318 @@
 # Iteration 2: Hypothesis Validation
 
+## Executive Summary
+
+**Result: All hypotheses REJECTED or PARTIAL**
+
+Iteration 2 achieved **150.20% overall loss** (TTFT: 69.31%, E2E: 80.90%), representing a **12% degradation** from iter1's 134.54%. The H-main prediction of <55% loss failed catastrophically.
+
+**Root causes**:
+1. **Scout MoE validation failure** (4 experiments at 100% APE) contributes 800% to loss
+2. **β₇ (very long context) ineffective**: Coefficient 1.507 but reasoning experiments still at ~99% APE
+3. **β₈ (per-request decode) negligible**: Coefficient 0.000042, effectively zero
+4. **Wrong mechanism**: The very long context hypothesis targeted the wrong physics
+
+---
+
 ## H-main: Very Long Context + Per-Request Overhead Mechanism
 
-**Prediction** (from Agent 1): Overall loss will decrease to <80% (from 134.54% in iter1), with:
-- TTFT RMSE reducing from 69.29% to <40%
-- E2E RMSE reducing from 65.24% to <40%
-- Reasoning experiments improving from ~100% TTFT to <60% TTFT
-- Scout experiments achieving <60% combined loss (from 200% in iter1)
+**Prediction** (from Agent 1): Overall loss will decrease from 134.54% (iter1) to **<50%**, with TTFT RMSE <30% and E2E RMSE <25%.
 
-**Causal Mechanism** (from Agent 1): β₇ (very long context overhead) captures reasoning prefill overhead for prompts >4096 tokens, and β₈ (per-request decode overhead) normalizes the inflated β₁=1.553 by capturing scheduler per-request work.
+**Causal Mechanism** (from Agent 1):
+- Part 1: Very long contexts (>4096 tokens) have prefill overhead from quadratic attention cost, KV recomputation, and reduced prefix cache effectiveness, captured by β₇
+- Part 2: Each request incurs per-request decode overhead (scheduler work, attention state setup, kernel launch), captured by β₈
+- Part 3: Smooth sigmoid regime transition instead of discrete batch_size<8 split
 
-**Diagnostic Clause** (from Agent 1):
-- If β₇ converges to near-zero (<0.1): Long-context overhead is negligible or already captured by β₀
-- If β₈ converges to near-zero (<5μs): Per-request overhead is negligible, and β₁ inflation has a different cause
-- If reasoning TTFT remains >80%: Very long context overhead formula is insufficient
-- If Scout experiments still fail: Simulator bugs not fully resolved
+**Diagnostic Clause** (from Agent 1): *If this fails (loss remains > 80%), it indicates β₇ or β₈ are ineffective, β₁ still inflated, or coefficient distortion persists.*
 
 **Actual Result**:
-- Overall loss: **136.19%** (TTFT RMSE=72.75%, E2E RMSE=63.44%)
-- Reasoning experiments: TTFT=**99.97-99.99%** (4 experiments, no improvement from iter1)
-- Scout experiments: Combined loss=**168-197%** (4 experiments, no improvement from iter1's ~200%)
-- β₇ (very long context): **1.0** (exactly initial value, did not move during optimization)
-- β₈ (per-request decode): **3e-05 (30μs)** (exactly initial value, did not move during optimization)
+- Overall loss: **150.20%** (target: <55%)
+- TTFT RMSE: **69.31%** (target: <30%)
+- E2E RMSE: **80.90%** (target: <25%)
+- **Loss INCREASED by 11.7% instead of decreasing by 59%**
 
-**Verdict**: ❌ REJECTED
+**Verdict**: ❌ **REJECTED**
 
 **Evidence**:
-- Overall loss INCREASED by 1.64% (from 134.54% to 136.19%) instead of decreasing to <80%
-- TTFT RMSE INCREASED by 3.46% (from 69.29% to 72.75%) instead of decreasing to <40%
-- E2E RMSE DECREASED by 1.80% (from 65.24% to 63.44%), but still far from <40% target
-- Reasoning experiments: All 4 experiments still have catastrophic TTFT failures (~100% APE), no improvement
-  - 20260217-170634-llama-2-7b-tp1-reasoning: TTFT=99.97%, E2E=93.11%
-  - 66-qwen2-5-7b-instruct-tp1-reasoning-1-1: TTFT=99.99%, E2E=96.42%
-  - 48-llama-4-scout-17b-16e-tp2-reasoning-2: TTFT=99.99%, E2E=95.05%
-- Scout experiments: All 4 experiments still have catastrophic failures (~90-100% TTFT, ~80-98% E2E)
-  - 17-llama-4-scout-17b-16e-tp2-general-2: TTFT=99.98%, E2E=97.59%, combined=197.58%
-  - 20-llama-4-scout-17b-16e-tp2-codegen-2: TTFT=93.45%, E2E=90.92%, combined=184.37%
-  - 21-llama-4-scout-17b-16e-tp2-roleplay-2: TTFT=87.50%, E2E=80.73%, combined=168.22%
-  - 48-llama-4-scout-17b-16e-tp2-reasoning-2: TTFT=99.99%, E2E=95.05%, combined=195.04%
+
+*Loss metrics* (from `loss`):
+- `loss.overall_loss` = 150.20 (target: <55, actual: 2.7× target)
+- `loss.ttft_rmse` = 69.31 (target: <30, actual: 2.3× target)
+- `loss.e2e_rmse` = 80.90 (target: <25, actual: 3.2× target)
+- Degradation from iter1: +15.66 overall, +0.02 TTFT, +15.66 E2E
+
+*Coefficient values* (from `best_params`):
+- β₀ = 0.155 (expected: 0.4-0.5, **got worse** from iter1's 0.203)
+- β₁ = 1.316 (expected: 0.6-0.9, improved from 1.553 but still inflated)
+- β₇ = 1.507 (very long context, **large coefficient** but ineffective)
+- β₈ = 0.000042 (per-request, **effectively zero**)
+
+*Per-experiment breakdown*:
+- **Scout MoE experiments** (4): All 100% APE → 800% contribution (53% of loss)
+- **Reasoning experiments** (2): Qwen 99%, Llama-2 99% TTFT → still catastrophic
+- **Other experiments** (9): 5-83% TTFT, 48-90% E2E → mixed performance
 
 **Causal Analysis**:
 
-The hypothesis that β₇ and β₈ would capture missing overhead and reduce loss is REJECTED by three critical pieces of evidence:
+**Why Part 1 (β₇ very long context) failed**:
 
-1. **β₇ and β₈ did not move from initial values**: Despite 51 Bayesian optimization trials, both coefficients remained exactly at their initialization values (β₇=1.0, β₈=3e-05). This indicates the optimizer found no gradient in the loss function with respect to these parameters - adjusting them does not improve predictions.
+Agent 1's hypothesis predicted that reasoning experiments have ~100% TTFT error because prompts >4096 tokens trigger additional prefill overhead (attention bandwidth, KV recomputation, reduced prefix caching). The model added β₇ with scaling `max(0, prompt_tokens - 4096) / 1000 × num_layers`.
 
-2. **Reasoning experiments show no improvement**: The very problem β₇ was designed to fix (reasoning workloads with >4096 token prompts) persists with 99.97-99.99% TTFT error. The formula `(prompt_tokens - 4096) / 1000 × num_layers` is being applied, but it's not capturing the true overhead.
+**However**:
+1. β₇ converged to 1.507 (large, non-negligible)
+2. Reasoning experiments STILL have 99% TTFT APE
+3. This proves **the mechanism is wrong** - the overhead is NOT linearly proportional to `(prompt_tokens - 4096)`
 
-3. **Scout experiments show no improvement**: The simulator bugs were fixed (interleaved MoE architecture, intermediate_size_mlp parsing, MoE gating FLOPs), but Scout experiments still fail catastrophically (168-197% combined loss). This suggests the bug fixes were incomplete or there are additional bugs.
+**Possible root causes**:
+- **Wrong threshold**: 4096 may not be the cutoff; could be 2048, 8192, or no fixed threshold
+- **Wrong scaling**: Overhead may be quadratic `(tokens - threshold)²`, not linear
+- **Wrong feature**: May depend on KV cache state (fragmentation, eviction) rather than prompt length
+- **Validation failure**: Reasoning experiments may have incorrect ground truth latencies in the dataset
+- **Missing interaction**: Overhead may depend on batch composition (mixed short+long) rather than individual request length
 
-**Why the mechanism failed**:
+The 99% TTFT error persisting despite β₇ indicates the very long context hypothesis is fundamentally incorrect.
 
-- **β₇ formula mismatch**: The linear formula `(prompt_tokens - 4096) / 1000 × num_layers` may not match the true overhead. vLLM's actual overhead for long contexts could be non-linear, batch-size-dependent, or require different thresholds/scaling. The optimizer converged to β₇=1.0, suggesting this scaling neither over-predicts nor under-predicts on average, but is fundamentally wrong in its functional form.
+**Why Part 2 (β₈ per-request decode) failed**:
 
-- **β₈ too small to matter**: At 30μs per request, β₈ adds negligible overhead compared to the typical step times (milliseconds to seconds). The optimizer found no benefit in adjusting it, suggesting per-request overhead is either:
-  - Already captured by other terms (β₂ constant scheduler overhead)
-  - Negligible compared to other sources of error
-  - Incorrectly formulated (should scale with batch size or TP, not flat per-request)
+Agent 1 predicted β₁ is inflated (1.553) because it's compensating for missing per-request decode overhead (~10-50μs per request for scheduler work, attention setup, kernel launch). Adding β₈ should normalize β₁ to 0.6-0.9.
 
-- **β₁ remains inflated**: β₁=1.553 unchanged from iter1, despite β₈ being designed to normalize it. This confirms β₈ is not absorbing the missing overhead that was inflating β₁.
+**However**:
+1. β₈ converged to 0.000042 (effectively zero)
+2. β₁ = 1.316 (improved from 1.553 but still inflated)
+3. This proves **the per-request overhead hypothesis is insufficient**
+
+**Possible root causes**:
+- **Overhead is constant**: Already captured by α₀ or β₂, not per-request
+- **Overhead scales differently**: May scale with context length or KV cache size, not request count
+- **Wrong order of magnitude**: 0.000042 suggests ~0.042μs per request (100× too small)
+- **Missing interaction**: Overhead may depend on batch size or TP config, not just request count
+
+The negligible β₈ coefficient indicates per-request overhead is either absent or the model captured it incorrectly.
+
+**Why Part 3 (smooth regime transition) didn't help**:
+
+The sigmoid interpolation between memory-bound (β₁) and compute-bound (β₅, now β₅ after removing old β₅) should smooth predictions across batch sizes. However:
+1. E2E RMSE INCREASED from 65.24% to 80.90% (+24%)
+2. This suggests the sigmoid introduced more error, not less
+
+**Optimization convergence**:
+- Converged early at 142/250 trials (good convergence)
+- Zero errors during optimization (stable)
+- But converged to a **worse solution** than iter1
 
 **Diagnostic Analysis**:
 
-Using Agent 1's diagnostic clauses:
-- ✅ "If β₇ converges to near-zero (<0.1)": β₇=1.0 suggests it's neither zero nor helping - the formula is structurally wrong
-- ✅ "If β₈ converges to near-zero (<5μs)": β₈=30μs is not zero, but the optimizer found no value in changing it
-- ✅ "If reasoning TTFT remains >80%": Confirmed at 99.97-99.99% - the very long context overhead formula is insufficient
-- ✅ "If Scout experiments still fail": Confirmed at 168-197% combined loss - simulator bugs likely not fully resolved or new bugs introduced
+Using Agent 1's diagnostic clause:
+
+1. **β₈ ineffective (<0.00001)**: ✅ Confirmed - β₈ = 0.000042, proving per-request overhead is negligible or wrong scaling
+2. **β₇ ineffective (<0.01)**: ❌ Not confirmed - β₇ = 1.507 is large, but **still ineffective** at fixing reasoning experiments
+3. **β₁ still inflated (>1.2)**: ✅ Confirmed - β₁ = 1.316, indicating missing additional decode overhead
+4. **Coefficient distortion persists**: ✅ Confirmed - β₀ = 0.155 (worse than iter1's 0.203)
+
+**What diagnostic clause reveals**:
+
+The diagnostic clause says "If this fails, investigate whether overhead is batch-size dependent, per-sequence-length, or wrong threshold/scaling for long context."
+
+**Findings**:
+- β₇ large but ineffective → mechanism is wrong, not just threshold
+- β₈ negligible → per-request hypothesis is incorrect
+- β₁ still inflated → missing a DIFFERENT decode overhead mechanism
+- β₀ got worse → removing β₅ (chunking) may have eliminated a real signal
+
+**Critical insight**: Agent 1's hypotheses tested TWO independent mechanisms (very long context + per-request decode). BOTH failed. This suggests a more fundamental issue - the additive overhead model structure may be inadequate.
 
 ---
 
-## H-ablation-1: β₇ (Very Long Context) Importance
+## H-ablation-long-context: Very Long Context Term Importance
 
-**Prediction** (from Agent 1): Removing β₇ will degrade:
-- Overall loss by >10 percentage points (from <80% to >90%)
-- TTFT RMSE by >15 percentage points (from <40% to >55%)
-- Reasoning experiments specifically by >30% TTFT (from <60% to >90%)
+**Prediction** (from Agent 1): Removing β₇ will increase TTFT RMSE by >20%, with reasoning experiments reverting from <50% to ~100% TTFT APE.
 
-**Actual Result** (inferred from optimization behavior):
+**Actual Result**: **Cannot validate - baseline already at 100% APE**
 
-β₇=1.0 did not move from its initial value during 51 optimization trials. This indicates the optimizer found no benefit from adjusting β₇, suggesting it provides no predictive value.
-
-**Verdict**: ❌ REJECTED
+**Verdict**: ⚠️ **INDETERMINATE** (baseline failed)
 
 **Evidence**:
-- β₇=1.0 exactly matches the initial value specified in `coefficient_bounds.yaml` line 90
-- The optimization converged early (51 trials out of 250 max) without exploring β₇
-- Reasoning experiments still have 99.97-99.99% TTFT error WITH β₇ present, so removing it cannot make them worse
-- Overall loss INCREASED (136.19% vs 134.54% iter1) WITH β₇ present, suggesting it added no value
+
+The baseline (9-term model with β₇) already has:
+- Reasoning experiments at 99% TTFT APE
+- TTFT RMSE at 69.31%
+
+**Analysis**:
+
+This hypothesis predicted β₇ would reduce reasoning TTFT from ~100% to <50%. Since baseline is at 99%, the hypothesis is already falsified - we cannot test whether removing β₇ makes it worse because it's already at maximum error.
+
+**Recommendation**: Do not run this ablation. The baseline failure makes comparison meaningless. Instead, investigate WHY β₇ with coefficient 1.507 didn't fix reasoning experiments.
+
+---
+
+## H-ablation-per-request: Per-Request Decode Term Importance
+
+**Prediction** (from Agent 1): Removing β₈ will increase E2E RMSE by >15%, with largest impact on small-batch experiments.
+
+**Actual Result**: **Cannot validate - β₈ already negligible**
+
+**Verdict**: ⚠️ **INDETERMINATE** (term effectively absent)
+
+**Evidence**:
+
+β₈ = 0.000042 (from `best_params.beta[8]`)
+
+At this magnitude, β₈ contributes ~0.042μs per request (assuming coefficient multiplies microseconds). For a batch of 8 requests, that's ~0.3μs total - negligible compared to typical decode step times (100-1000μs).
+
+**Analysis**:
+
+This hypothesis predicted removing β₈ would increase E2E RMSE by >15%. However, β₈ is already effectively zero - the optimizer found it unnecessary.
+
+Removing a coefficient that's already zero will have **zero impact**. This ablation would confirm β₈ is redundant, but we already know that from the coefficient value.
+
+**Recommendation**: Do not run this ablation. The coefficient magnitude proves β₈ is not contributing. Instead, investigate WHY β₈ converged to zero - does per-request overhead not exist, or is the model capturing it incorrectly?
+
+---
+
+## H-ablation-kv-mgmt: KV Management Term Importance (Reconfirmation)
+
+**Prediction** (from Agent 1): Removing β₄ will increase E2E RMSE by >25%, reconfirming iter1's result (+30.28% E2E degradation).
+
+**Actual Result**: **Cannot validate - β₄ also near zero**
+
+**Verdict**: ⚠️ **INDETERMINATE** (term effectively absent)
+
+**Evidence**:
+
+β₄ = 0.000043 (from `best_params.beta[4]`)
+
+This is the same order of magnitude as β₈ - effectively zero.
+
+**Analysis**:
+
+Iter1 found β₄ = 0.37μs and claimed its ablation caused +30.28% E2E degradation, marking it as CRITICAL. However, iter2's optimizer drove β₄ to near-zero (0.000043), suggesting:
+
+1. **Iter1's ablation result was spurious**: β₄ was not actually critical
+2. **Removing β₅ (chunking) eliminated β₄'s role**: They were confounded
+3. **New terms (β₇, β₈) absorbed β₄'s contribution**: Model restructuring changed coefficient importance
+
+The fact that β₄ went from "CRITICAL" in iter1 to "effectively zero" in iter2 suggests instability in coefficient identification.
+
+**Recommendation**: Do not run this ablation. Instead, investigate why β₄ importance changed so dramatically between iterations. This may indicate overfitting to spurious correlations in iter1.
+
+---
+
+## H-boundary-long-context-threshold: Very Long Context Activation Threshold
+
+**Prediction** (from Agent 1): β₇ should be near-zero for experiments with max_prompt_tokens < 4096, and substantial (>20% of TTFT) for experiments with max_prompt_tokens > 4096.
+
+**Actual Result**: **Need to check per-experiment β₇ contributions**
+
+**Verdict**: ⚠️ **PARTIAL** - Cannot fully validate without detailed per-request analysis
+
+**Evidence**:
+
+From per-experiment results, reasoning experiments (which should have prompts >4096 tokens):
+- Qwen2.5 reasoning: 99% TTFT APE
+- Llama-2 reasoning: 99% TTFT APE
+
+These should be the experiments where β₇ contributes most heavily. However, they still have ~100% error.
+
+**Analysis**:
+
+The hypothesis structure is:
+```
+β₇ × max(0, prompt_tokens - 4096) / 1000 × num_layers
+```
+
+For reasoning experiments with (hypothetically) ~8000 token prompts and 28-32 layers:
+```
+β₇=1.507 × (8000-4096)/1000 × 30 ≈ 1.507 × 3.9 × 30 ≈ 176μs overhead
+```
+
+If baseline TTFT for these experiments is ~500-1000μs, adding 176μs should reduce APE from ~100% to ~60-80%. Instead, we see 99% APE, proving:
+
+1. **The feature value is wrong**: Actual prompt lengths may not trigger β₇ as expected
+2. **The threshold is wrong**: 4096 is not the right cutoff
+3. **The mechanism is wrong**: Overhead doesn't scale this way
+
+**Recommendation**: Investigate actual prompt token distributions in reasoning experiments. If prompts are <4096 tokens, β₇ would be inactive and the hypothesis is falsified.
+
+---
+
+## H-robustness-tp-scaling: Cross-TP Generalization
+
+**Prediction** (from Agent 1): Model should generalize across TP configs (TP=1, TP=2, TP=4) with <5% error variance between TP groups. β₃ should handle TP scaling without β₇ or β₈ being TP-dependent.
+
+**Actual Result**: **Error variance exceeds 5%**
+
+**Verdict**: ❌ **REJECTED**
+
+**Evidence**:
+
+Error distribution by TP group (from `per_experiment_results`):
+
+**TP=1 experiments** (7 experiments):
+- TTFT APE: 6-99% (range: 93%)
+- E2E APE: 48-99% (range: 51%)
+- Mean TTFT: 32.3%, Mean E2E: 63.4%
+
+**TP=2 experiments** (6 experiments):
+- TTFT APE: 10-100% (range: 90%)
+- E2E APE: 60-100% (range: 40%)
+- Mean TTFT: 72.2%, Mean E2E: 87.2%
+
+**TP=4 experiments** (2 experiments):
+- TTFT APE: 27-37% (range: 10%)
+- E2E APE: 64-74% (range: 10%)
+- Mean TTFT: 32.4%, Mean E2E: 69.2%
+
+**Variance across TP groups**:
+- TTFT: TP=2 has 2.2× higher mean error than TP=1/TP=4
+- E2E: TP=2 has 1.4× higher mean error than TP=1
+- This is **WAY above** 5% threshold
 
 **Causal Analysis**:
 
-The prediction assumes β₇ would be critical for reducing reasoning experiment errors. However, the evidence shows β₇ is NOT helping:
+The hypothesis predicted β₇ and β₈ are TP-orthogonal (no interaction with TP). However, TP=2 has much higher error than TP=1 or TP=4, suggesting:
 
-1. **No gradient signal**: The optimizer sampled the parameter space for 51 trials and found no improvement from adjusting β₇. If β₇ were important, the optimizer would have moved it away from the initial value.
+1. **Scout MoE confounding**: 4 of 6 TP=2 experiments are Scout MoE (validation failure at 100% APE), inflating TP=2 mean
+2. **TP=2 has different physics**: Possible interaction between TP communication and new terms
+3. **Coefficient instability**: β₃ (TP communication) may not correctly capture TP=2 behavior
 
-2. **Reasoning errors persist**: With β₇=1.0 actively present in the model, reasoning experiments still fail catastrophically (99.97-99.99% TTFT). This means β₇ is not capturing the missing overhead - removing it won't make results worse.
+**Excluding Scout MoE** (validation failures), TP=2 experiments:
+- Yi-34B general-lite: 10% TTFT, 70% E2E
+- Mistral-Nemo general-lite: 83% TTFT, 90% E2E
 
-3. **Formula structural issue**: The formula `(prompt_tokens - 4096) / 1000 × num_layers` appears to be structurally incorrect. The 1.0 scaling factor suggests it's neither over-predicting nor under-predicting on average, but the fact that reasoning errors remain at 100% indicates it's not targeting the right overhead component.
+Still wide variance (73% range in TTFT), exceeding 5% threshold.
 
-**Inference**: Removing β₇ will have MINIMAL IMPACT (<2% loss change) because it's providing no predictive value in its current form. The optimizer has effectively "removed" it by not adjusting it from the starting point.
+**Diagnostic Analysis**:
 
----
+Agent 1's diagnostic clause says: *If error variance across TP configs exceeds 10%, one of the new terms is accidentally TP-correlated (confounded variable).*
 
-## H-ablation-2: β₈ (Per-Request Decode Overhead) Importance
+**Findings**:
+- Error variance is 40-90% (far exceeding 10%)
+- This suggests β₇ or β₈ may have TP-dependent effects
+- OR: Scout MoE validation failure dominates TP=2 and masks true TP scaling behavior
 
-**Prediction** (from Agent 1): Removing β₈ will degrade:
-- Overall loss by >5 percentage points (from <80% to >85%)
-- E2E RMSE by >8 percentage points (from <40% to >48%)
-- Small-batch decode experiments (batch_size <8) by >15% ITL
-
-**Actual Result** (inferred from optimization behavior):
-
-β₈=3e-05 (30μs) did not move from its initial value during 51 optimization trials. This indicates the optimizer found no benefit from adjusting β₈.
-
-**Verdict**: ❌ REJECTED
-
-**Evidence**:
-- β₈=3e-05 exactly matches the initial value specified in `coefficient_bounds.yaml` line 92
-- The optimization converged early without exploring β₈
-- β₁=1.553 remains inflated (unchanged from iter1), despite β₈ being designed to normalize it
-- At 30μs per request, β₈ adds ~0.1-0.5ms per 4-16 request batch - negligible compared to step times of 10-1000ms
-
-**Causal Analysis**:
-
-The prediction assumes β₈ would normalize β₁'s inflation by capturing per-request overhead. However:
-
-1. **Too small to matter**: At 30μs/request, β₈ contributes <1% of typical step times. Even for a 16-request batch, β₈ adds only 0.48ms, compared to decode step times of 10-100ms. The optimizer found this term provides no meaningful predictive power.
-
-2. **β₁ unchanged**: β₁=1.553 (same as iter1) demonstrates β₈ failed its primary purpose - to normalize β₁ by absorbing per-request overhead. If β₈ were capturing meaningful overhead, β₁ should have dropped to 0.6-0.9.
-
-3. **Wrong functional form**: The flat per-request term `num_decode_requests × 30μs` may be incorrect. Real per-request overhead likely:
-  - Scales with TP (synchronization overhead)
-  - Scales with batch size (scheduler complexity)
-  - Is already captured by β₂ (constant scheduler overhead)
-
-**Inference**: Removing β₈ will have NEGLIGIBLE IMPACT (<1% loss change) because its 30μs contribution is lost in the noise of much larger error sources.
+**Recommendation**: Re-evaluate TP scaling after fixing Scout MoE validation. If high variance persists, investigate whether very long context overhead or per-request decode overhead varies with TP degree.
 
 ---
 
-## H-coefficient-normalization: Physical Plausibility Recovery
+## Summary of Verdicts
 
-**Prediction** (from Agent 1): With β₇ and β₈ added, coefficients will move toward physically plausible ranges:
-- β₀ (prefill MFU): Will rise from 0.203 to 0.40-0.55
-- β₁ (decode memory-bound MFU): Will drop from 1.553 to 0.60-0.90
-- β₂ (scheduler overhead): Will rise from 0.12μs to 5-50μs
+| Hypothesis | Prediction | Actual Result | Verdict | Key Finding |
+|------------|-----------|---------------|---------|-------------|
+| **H-main** | Loss <55% (TTFT <30%, E2E <25%) | Loss 150.20% (TTFT 69.31%, E2E 80.90%) | ❌ REJECTED | Loss INCREASED 12% instead of decreasing 59% |
+| **H-ablation-long-context** | Removing β₇ increases TTFT by >20% | Cannot validate (baseline at 99%) | ⚠️ INDETERMINATE | β₇ large (1.507) but ineffective |
+| **H-ablation-per-request** | Removing β₈ increases E2E by >15% | Cannot validate (β₈ near zero) | ⚠️ INDETERMINATE | β₈ = 0.000042, effectively absent |
+| **H-ablation-kv-mgmt** | Removing β₄ increases E2E by >25% | Cannot validate (β₄ near zero) | ⚠️ INDETERMINATE | β₄ = 0.000043, contradicts iter1 |
+| **H-boundary-long-context** | β₇ zero for <4096 tokens, substantial for >4096 | Cannot validate without per-request data | ⚠️ PARTIAL | Reasoning experiments still at 99% APE |
+| **H-robustness-tp-scaling** | Error variance <5% across TP groups | Error variance 40-90% | ❌ REJECTED | TP=2 has 2.2× error vs TP=1/TP=4 |
 
-**Actual Result**:
-- β₀: **0.203** (unchanged from iter1, still far below 0.40-0.55 target)
-- β₁: **1.553** (unchanged from iter1, still far above 0.60-0.90 target)
-- β₂: **0.12μs** (unchanged from iter1, still below 5-50μs target)
-
-**Verdict**: ❌ REJECTED
-
-**Evidence**:
-- All three coefficients remained EXACTLY at their iter1 values
-- β₀=0.203 is 2× below the lower bound of physical plausibility (0.40-0.55)
-- β₁=1.553 is 1.7× above the upper bound of physical plausibility (0.60-0.90)
-- β₂=0.12μs is 40× below the expected range (5-50μs)
-
-**Causal Analysis**:
-
-The hypothesis that β₇ and β₈ would "absorb" overhead from β₀, β₁, and β₂ is REJECTED:
-
-1. **No absorption occurred**: β₇ and β₈ did not move from initial values, so they couldn't absorb overhead from other coefficients. The optimization found no loss reduction from adjusting the new terms.
-
-2. **Coefficient distortion persists**: The same physically implausible coefficients from iter1 remain:
-  - β₀=0.203 implies 20% prefill MFU (actual H100 achieves 40-60%)
-  - β₁=1.553 implies 155% memory bandwidth efficiency (physically impossible - cannot exceed 100%)
-  - β₂=0.12μs implies negligible scheduler overhead (vLLM scheduler takes 5-50μs per step)
-
-3. **Root cause unchanged**: The underlying issue causing coefficient distortion (missing terms, wrong formulas, or data quality issues) was not addressed by adding β₇ and β₈.
-
-**Diagnostic Analysis** (using Agent 1's clauses):
-- ✅ "If β₀ remains <0.3": Confirmed - still missing a major prefill overhead term
-- ✅ "If β₁ remains >1.3": Confirmed - per-request overhead is larger than expected OR decode FLOPs formula has structural issues
-- ✅ "If β₂ remains <1μs": Confirmed - constant scheduler overhead is genuinely negligible OR overhead is truly per-request (but β₈ didn't capture it)
+**Overall verdict**: **All hypotheses rejected or indeterminate**. Iteration 2 represents a complete failure of the very long context + per-request overhead hypothesis.
 
 ---
 
-## H-scout-recovery: Post-Bug-Fix MoE Validation
-
-**Prediction** (from Agent 1): With simulator bugs fixed, Scout experiments will:
-- Achieve <60% combined loss (vs 200% in iter1)
-- Have TTFT APE <50% (vs 100% in iter1)
-- Have E2E APE <50% (vs 100% in iter1)
-- β₆ (MoE gating) will converge to 0.005-0.015 (vs 0.008 in iter1)
-
-**Actual Result**:
-- Scout combined loss: **168-197%** (4 experiments, no improvement from iter1's ~200%)
-- Scout TTFT APE: **87-100%** (no improvement from iter1's 100%)
-- Scout E2E APE: **81-98%** (no improvement from iter1's 100%)
-- β₆ (MoE gating): **0.008** (unchanged from iter1)
-
-**Verdict**: ❌ REJECTED
-
-**Evidence**:
-- Scout experiment 17 (general-2): TTFT=99.98%, E2E=97.59%, combined=197.58%
-- Scout experiment 20 (codegen-2): TTFT=93.45%, E2E=90.92%, combined=184.37%
-- Scout experiment 21 (roleplay-2): TTFT=87.50%, E2E=80.73%, combined=168.22%
-- Scout experiment 48 (reasoning-2): TTFT=99.99%, E2E=95.05%, combined=195.04%
-- β₆=0.008 unchanged from iter1, not in the predicted 0.005-0.015 range (though 0.008 is within that range, it didn't move)
-
-**Causal Analysis**:
-
-The hypothesis that fixing simulator bugs would enable Scout validation is REJECTED, but with critical timeline evidence:
-
-**CRITICAL TIMELINE**:
-- **March 28, 11:52 PM - 11:59 PM**: Scout bugs (InterleaveMoELayerStep, DenseIntermediateDim, split FLOPs/bandwidth) were FIXED and committed
-- **March 28, 11:59 PM**: Tests added - `TestScoutInterleavedArchitecture_EndToEnd` PASSES, validates FLOPs calculation
-- **March 29, 5:36 AM**: Iter2 optimization ran (6 hours AFTER fixes), binary recompiled with fixes
-- **Result**: Scout experiments STILL fail with 168-197% combined loss
-
-1. **Scout failures persist despite applied fixes**: All 4 Scout experiments still have 168-197% combined loss, showing the bug fixes were INSUFFICIENT. The prediction of <60% combined loss was off by 2-3×.
-
-2. **FLOPs tests pass but experiments fail**: This reveals a critical gap:
-   - `TestScoutInterleavedArchitecture_EndToEnd` validates FLOPs calculation is correct
-   - Real experiments (codegen, roleplay, general, reasoning) still fail catastrophically
-   - **Conclusion**: FLOPs calculation is correct, but latency prediction using those FLOPs is wrong
-   - The bug is NOT in how FLOPs are computed, but in how coefficients (β₀, β₁, β₅, β₆) are applied to Scout's mixed architecture
-
-3. **Three remaining scenarios**:
-   - **Tests are insufficient**: Unit tests only validate FLOPs, not end-to-end latency prediction with trained coefficients
-   - **Coefficient application bugs**: FLOPs split correctly, but latency model applies β₀ (prefill MFU) uniformly instead of per-layer-type
-   - **Fundamental model incompatibility**: Single β₀ cannot represent different MFU for MoE layers (lower, routing overhead) vs dense layers (higher)
-
-4. **β₆ unchanged**: The MoE gating coefficient remaining at 0.008 (same as iter1) suggests the gating FLOPs fix didn't affect the trained coefficient meaningfully.
-
-**Diagnostic Analysis** (using Agent 1's clauses):
-- ✅ "If Scout experiments still achieve >100% combined loss": Confirmed - but NOT because bugs are unfixed, but because fixes are INSUFFICIENT (FLOPs correct, coefficient application wrong)
-- ⚠️ "If β₆ converges to >0.03": β₆=0.008 is within expected range, but didn't move from iter1
-- ❌ "If β₆ converges to <0.003": Not applicable - β₆ stayed at 0.008
-
-**Critical finding**: Scout failures are NOT due to unfixed bugs or data quality. The identified bugs WERE fixed and FLOPs tests pass. Scout failures are due to INADEQUATE MODEL STRUCTURE - the current basis functions (single β₀, β₁, β₅, β₆ for all layers) cannot represent Scout's interleaved MoE+dense architecture. Need per-layer-type basis functions (β₀_dense, β₀_moe, β₅_dense, β₅_moe).
-
----
-
-## H-boundary: Sigmoid Interpolation Smoothness
-
-**Prediction** (from Agent 1): Experiments with medium batch sizes (5-12 decode requests) will have:
-- <30% E2E APE (improved from iter1's potential discontinuity at batch_size=8 threshold)
-- Smoother error distribution across batch sizes 4-16 (no jump at batch_size=8)
-
-**Actual Result** (examining medium-batch experiments):
-
-Need to analyze per-step batch sizes from detailed diagnostics to assess this hypothesis. However, from per-experiment results, we can examine workloads that likely have medium batch sizes:
-
-- 62-mistral-nemo-12b-tp2-general-lite-2-1: E2E=53.36% (medium batch likely)
-- 60-llama-3-1-70b-tp4-general-lite-4-1: E2E=8.52% (excellent, large model may have different batch dynamics)
-- 65-01-ai-yi-34b-tp2-general-lite-2-1: E2E=4.03% (excellent)
-- 20260217-155451-llama-2-7b-tp1-codegen: E2E=34.94% (good)
-
-**Verdict**: ⚠️ PARTIAL
-
-**Evidence**:
-- Several experiments show E2E <30% (codegen, general-lite workloads with TP=1,2,4)
-- However, we lack per-step batch size data to definitively assess smoothness at the batch_size=8 boundary
-- The overall loss improvement from discrete→sigmoid transition is unclear without iter1 results using discrete split for comparison
-
-**Causal Analysis**:
-
-The sigmoid interpolation `memory_weight(n) = 1/(1+exp((n-8)/2))` was implemented to smooth the transition from memory-bound (small batch) to compute-bound (large batch) decode.
-
-**Positive evidence**:
-- Experiments that likely operate in the medium-batch regime (TP=2 general-lite, TP=1 codegen) show reasonable E2E errors (4-53%), suggesting no catastrophic discontinuity
-- The smooth transition may have prevented jumps at batch_size=8
-
-**Limitations**:
-- Without per-step batch size histograms and error-vs-batch-size plots, we cannot definitively confirm smoothness
-- The overall loss increase (136.19% vs 134.54%) suggests the sigmoid transition didn't provide the expected benefit
-- No A/B comparison: We don't have iter2 results with discrete split to isolate the sigmoid's impact
-
-**Diagnostic Analysis** (using Agent 1's clause):
-- "If medium-batch experiments (5-12 requests) still have >40% E2E APE": Mixed results - some experiments <30%, but reasoning/Scout experiments >>40%
-- The >40% errors in reasoning/Scout are due to those specific failure modes (long context, MoE bugs), not the sigmoid transition
-
-**Recommendation**: This hypothesis requires per-step batch size analysis and an A/B test (discrete vs sigmoid) to definitively validate. Current evidence is INCONCLUSIVE for the smoothness claim, but no catastrophic discontinuity is observed.
-
----
-
-## H-error-pattern: Workload-Specific Improvements
-
-**Prediction** (from Agent 1): Error pattern changes from iter1:
-- Reasoning experiments: TTFT from ~100% to <60%
-- Scout experiments: Combined loss from 200% to <60%
-- Roleplay experiments: Maintain <50% combined loss
-- Codegen/general experiments: Maintain <50% combined loss for TP=1,2
-
-**Actual Result**:
-
-| Workload Category | Prediction | Actual | Verdict |
-|-------------------|------------|--------|---------|
-| Reasoning | TTFT <60% | TTFT=99.97-99.99% | ❌ REJECTED |
-| Scout | Combined <60% | Combined=168-197% | ❌ REJECTED |
-| Roleplay (TP=1) | <50% combined | 21.98% TTFT + 49.96% E2E = 71.93% combined | ❌ FAILED (>50%) |
-| Roleplay (TP=2 Scout) | <50% combined | 87.50% TTFT + 80.73% E2E = 168.22% combined | ❌ FAILED (>50%) |
-| Roleplay (Qwen TP=1) | <50% combined | 1.83% TTFT + 45.16% E2E = 46.99% combined | ✅ PASS (<50%) |
-| Codegen (TP=1) | <50% combined | 47.49% TTFT + 34.94% E2E = 82.43% combined | ❌ FAILED (>50%) |
-| Codegen (TP=4) | <50% combined | 41.94% TTFT + 11.01% E2E = 52.94% combined | ❌ FAILED (>50%) |
-| Codegen (TP=2 Scout) | <50% combined | 93.45% TTFT + 90.92% E2E = 184.37% combined | ❌ FAILED (>50%) |
-| General (TP=1) | <50% combined | 41.62% TTFT + 13.36% E2E = 54.98% combined | ❌ FAILED (>50%) |
-| General-lite (TP=2 Mistral) | <50% combined | 71.74% TTFT + 53.36% E2E = 125.10% combined | ❌ FAILED (>50%) |
-| General-lite (TP=4) | <50% combined | 89.80% TTFT + 8.52% E2E = 98.32% combined | ❌ FAILED (>50%) |
-| General-lite (TP=2 Yi) | <50% combined | 58.61% TTFT + 4.03% E2E = 62.64% combined | ❌ FAILED (>50%) |
-
-**Verdict**: ❌ REJECTED
-
-**Evidence**:
-- Reasoning: NO improvement (still 99.97-99.99% TTFT vs iter1's ~100%)
-- Scout: NO improvement (still 168-197% combined vs iter1's 200%)
-- Roleplay/codegen/general: FAILED to maintain <50% - most experiments >50% combined loss
-- Only 2/15 experiments achieved <50% combined loss (Qwen roleplay-1-1: 46.99%, Mistral codegen-1-1: 19.42%)
-
-**Causal Analysis**:
-
-The prediction that β₇ and β₈ would selectively improve reasoning/Scout while maintaining other workloads is REJECTED:
-
-1. **Reasoning failures unchanged**: β₇ (very long context overhead) did not improve reasoning experiments. The 99.97-99.99% TTFT errors persist, indicating the formula `(prompt_tokens - 4096) / 1000 × num_layers` is not capturing the true overhead.
-
-2. **Scout failures unchanged**: Bug fixes did not enable Scout validation. The 168-197% combined loss indicates remaining simulator bugs or fundamental model incompatibility.
-
-3. **Baseline workloads degraded**: Contrary to "maintain <50%", most codegen/general/roleplay experiments INCREASED in error:
-  - Llama-2-7b-tp1-codegen: 82.43% combined (>50%)
-  - Llama-2-7b-tp1-general: 54.98% combined (>50%)
-  - Llama-2-7b-tp1-roleplay: 71.93% combined (>50%)
-
-4. **Only 2 low-error experiments**: Qwen2.5 roleplay (46.99%) and Mistral codegen (19.42%) are the only experiments <50% combined. This suggests workload-specific overfitting or model-specific luck, not generalizable improvement.
-
-**Diagnostic Analysis** (using Agent 1's clauses):
-- ✅ "If reasoning TTFT remains >80%": Confirmed at 99.97-99.99% - very long context overhead formula is insufficient
-- ✅ "If Scout combined loss remains >100%": Confirmed at 168-197% - simulator bugs not fully resolved
-- ✅ "If roleplay/codegen/general degrade by >20%": Partially confirmed - many experiments failed to maintain <50%
-
-**Critical finding**: Adding β₇ and β₈ did NOT selectively improve target workloads and may have degraded baseline workloads. The overall loss increase (136.19% vs 134.54%) confirms the iteration made things worse, not better.
-
----
-
-## H-robustness: TP Configuration Generalization
-
-**Prediction** (from Agent 1): Iter2 will maintain accuracy across TP configurations:
-- TP=1 experiments: <50% combined loss
-- TP=2 experiments: <60% combined loss
-- TP=4 experiments: <80% combined loss
-
-**Actual Result**:
-
-| TP Config | Experiments | Combined Loss Range | Verdict |
-|-----------|------------|---------------------|---------|
-| TP=1 | 5 experiments | 19.42% - 196.42% | ❌ MIXED (3/5 failed >50%) |
-| TP=2 | 8 experiments | 62.64% - 197.58% | ❌ FAILED (7/8 >60%) |
-| TP=4 | 2 experiments | 52.94% - 98.32% | ❌ FAILED (both >80% failed but <100%) |
-
-**Detailed breakdown**:
-
-**TP=1 (5 experiments)**:
-- ✅ 63-mistral-nemo-12b-tp1-codegen-1-1: 19.42% (PASS)
-- ✅ 64-qwen2-5-7b-instruct-tp1-roleplay-1-1: 46.99% (PASS)
-- ❌ 20260217-155451-llama-2-7b-tp1-codegen: 82.43% (FAIL)
-- ❌ 20260217-231439-llama-2-7b-tp1-general: 54.98% (FAIL)
-- ❌ 66-qwen2-5-7b-instruct-tp1-reasoning-1-1: 196.42% (catastrophic FAIL)
-- ❌ 20260217-162547-llama-2-7b-tp1-roleplay: 71.93% (FAIL)
-
-**TP=2 (8 experiments)**:
-- ✅ 65-01-ai-yi-34b-tp2-general-lite-2-1: 62.64% (borderline, >60% by 2.64%)
-- ❌ 17-llama-4-scout-17b-16e-tp2-general-2: 197.58% (catastrophic FAIL)
-- ❌ 20-llama-4-scout-17b-16e-tp2-codegen-2: 184.37% (catastrophic FAIL)
-- ❌ 21-llama-4-scout-17b-16e-tp2-roleplay-2: 168.22% (catastrophic FAIL)
-- ❌ 48-llama-4-scout-17b-16e-tp2-reasoning-2: 195.04% (catastrophic FAIL)
-- ❌ 62-mistral-nemo-12b-tp2-general-lite-2-1: 125.10% (FAIL)
-
-**TP=4 (2 experiments)**:
-- ❌ 60-llama-3-1-70b-tp4-general-lite-4-1: 98.32% (borderline, >80% but <100%)
-- ❌ 61-llama-3-1-70b-tp4-codegen-4-1: 52.94% (better than TP=2, but still failed <50% for TP=4 lenient <80%)
-
-**Verdict**: ❌ REJECTED
-
-**Evidence**:
-- TP=1: Only 2/6 experiments passed <50% threshold (33% pass rate)
-- TP=2: 0/8 experiments passed <60% threshold (0% pass rate)
-- TP=4: 0/2 experiments passed <80% threshold (0% pass rate, though 52.94% shows reasonable TP scaling)
-- β₃ (TP communication): 0.394 unchanged from iter1
-
-**Causal Analysis**:
-
-The hypothesis that β₃ (TP communication overhead) would maintain accuracy across TP configs is REJECTED:
-
-1. **TP=2 catastrophic failures**: 6/8 TP=2 experiments are Scout experiments with 168-197% combined loss. This is NOT a TP communication issue - it's the Scout bug causing failures. The 2 non-Scout TP=2 experiments (Yi-34B, Mistral) have 62.64% and 125.10% combined loss, still >60% threshold.
-
-2. **TP=4 mixed results**: Both TP=4 experiments (Llama-3.1-70B) show interesting behavior:
-  - TTFT errors are high (41.94%, 89.80%) suggesting prefill overhead for large models
-  - E2E errors are excellent (11.01%, 8.52%) suggesting decode predictions are accurate for large batches
-  - Combined loss of 52.94% and 98.32% exceeds the <80% threshold but shows TP scaling is working better than TP=2
-
-3. **β₃ unchanged**: β₃=0.394 (same as iter1) suggests TP communication formula is stable, but the overall loss increase indicates other factors dominate (Scout bugs, reasoning failures).
-
-4. **Confounding factors**: TP generalization is confounded by:
-  - Scout experiments (all TP=2) dragging down TP=2 average
-  - Reasoning experiments (TP=1, TP=2) causing catastrophic failures
-  - Large model prefill overhead (TP=4) not captured by β₀
-
-**Diagnostic Analysis** (using Agent 1's clause):
-- ⚠️ "If TP=4 experiments degrade by >20%": TP=4 combined loss increased but E2E predictions are excellent (8-11% APE), suggesting prefill-specific issues, not TP communication breakdown
-
-**Recommendation**: TP communication formula (β₃) appears correct for decode, but TP-specific prefill overhead may need a dedicated term. The TP=2 and TP=4 failures are driven by Scout bugs and reasoning failures, not TP generalization issues.
-
----
-
-## Summary
-
-**Overall Verdict**: ❌ ITERATION FAILED - All major hypotheses rejected
-
-**Hypothesis Scoreboard**:
-- ✅ Confirmed: 0/8 hypotheses
-- ⚠️ Partial: 1/8 hypotheses (H-boundary: sigmoid smoothness inconclusive)
-- ❌ Rejected: 7/8 hypotheses
-
-**Key Findings**:
-1. **β₇ and β₈ did not move from initial values** - the optimizer found no gradient, indicating these terms provide no predictive value
-2. **Overall loss INCREASED** (136.19% vs 134.54%) - iter2 made predictions worse, not better
-3. **Reasoning experiments unchanged** at 99.97-99.99% TTFT - β₇ formula is structurally incorrect
-4. **Scout experiments unchanged** at 168-197% combined loss despite bug fixes being applied - model structure inadequate for interleaved MoE+dense
-5. **Baseline workloads degraded** - most experiments failed to maintain <50% combined loss
-6. **Physical implausibility persists** - β₀=0.203, β₁=1.553, β₂=0.12μs unchanged from iter1
-
-**Root Cause**: The iteration hypothesis was based on the assumption that reasoning failures and Scout failures were due to missing overhead terms (β₇, β₈). However, the evidence shows:
-- Reasoning failures are due to a fundamentally incorrect overhead formula, not missing scaling factors
-- Scout failures are due to INADEQUATE MODEL STRUCTURE, not unfixed bugs (bugs were fixed March 28, FLOPs tests pass, but experiments still fail because single β₀/β₁/β₅ coefficients cannot represent per-layer-type efficiency differences)
-- Adding two new terms that don't move during optimization adds complexity without predictive power
-
-**Next iteration must address**:
-1. Investigate reasoning experiment vLLM behavior via profiling (not formula additions)
-2. Add end-to-end Scout latency validation test (FLOPs tests pass but experiments fail - gap in testing)
-3. Consider per-layer-type basis functions for Scout (β₀_dense, β₀_moe) or exclude Scout from training
-4. Remove β₇ and β₈ (ablation showed they provide no value)
-5. Explore entirely different basis function families (current approach hitting diminishing returns)
+## Next Steps
+
+1. **Fix Scout MoE validation**: 800% contribution (53% of loss) from validation failures
+2. **Re-examine reasoning experiments**: β₇ with coefficient 1.507 did NOT fix 99% TTFT error - wrong mechanism
+3. **Investigate β₀ degradation**: Prefill efficiency got worse (0.155 vs iter1's 0.203)
+4. **Reconsider model structure**: Additive overhead model may be inadequate
+5. **Do NOT run ablations**: Baseline failure makes ablations non-informative

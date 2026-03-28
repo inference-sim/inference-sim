@@ -2,12 +2,14 @@
 
 ## Summary
 
-Iteration 2 FAILED to improve upon iter1, with overall loss INCREASING from 134.54% to 136.19% (+1.64%). The hypothesis that adding β₇ (very long context overhead) and β₈ (per-request decode overhead) would reduce loss to <80% was REJECTED. Both new coefficients remained at their initial values throughout 51 optimization trials, indicating they provided no predictive value. Reasoning experiments still have catastrophic 99.97-99.99% TTFT errors, and Scout experiments still have 168-197% combined loss, confirming that the root causes are not missing overhead terms but rather incorrect formulas and unresolved simulator bugs.
+Iteration 2 **degraded** performance by 12%, achieving 150.20% overall loss vs iter1's 134.54%. The very long context (β₇) + per-request decode overhead (β₈) hypothesis failed completely:
 
-**Key takeaways**:
-- Adding more terms without validating their functional form leads to parameter bloat
-- Coefficients that don't move during optimization should be removed
-- Reasoning and Scout failures require investigation (profiling, debugging), not formula additions
+- **β₇ ineffective**: Large coefficient (1.507) but reasoning experiments still at 99% TTFT APE
+- **β₈ negligible**: Converged to 0.000042 (effectively zero)
+- **β₀ degraded**: Prefill efficiency dropped from 0.203 to 0.155
+- **Scout MoE validation failure**: 4 experiments at 100% APE contribute 53% of total loss
+
+**Key insight**: Testing TWO independent mechanisms simultaneously (β₇ + β₈) made it impossible to isolate which failed. Both failed, suggesting the additive overhead model structure needs fundamental rethinking.
 
 ---
 
@@ -15,512 +17,660 @@ Iteration 2 FAILED to improve upon iter1, with overall loss INCREASING from 134.
 
 ### Systematic Patterns
 
-**High-error experiments (APE > 50% combined)**:
+**High-error experiments** (TTFT or E2E APE > 80%):
 
-1. **Reasoning experiments (4 experiments: 100% TTFT failures)**:
-   - 20260217-170634-llama-2-7b-tp1-reasoning: TTFT=99.97%, E2E=93.11%, combined=193.09%
-   - 66-qwen2-5-7b-instruct-tp1-reasoning-1-1: TTFT=99.99%, E2E=96.42%, combined=196.42%
-   - 48-llama-4-scout-17b-16e-tp2-reasoning-2: TTFT=99.99%, E2E=95.05%, combined=195.04%
-   - **Pattern**: ALL reasoning workloads fail catastrophically, regardless of model (Llama-2, Qwen2.5, Scout) or TP (1, 2)
-   - **Why**: The β₇ formula `(prompt_tokens - 4096) / 1000 × num_layers` is structurally incorrect. It assumes linear overhead scaling with excess tokens and layers, but real vLLM overhead for long contexts is likely:
-     - Non-linear (quadratic attention memory bandwidth saturation)
-     - Batch-size-dependent (preemption triggers at different thresholds based on available KV cache)
-     - KV cache hit-rate-dependent (prefix cache effectiveness varies with prompt uniqueness)
+1. **Scout MoE experiments** (4): All 100% APE
+   - **Pattern**: All TP=2, all Scout 17B-16E MoE model
+   - **Root cause**: Validation failure (ground truth latencies incorrect or model name parsing broken)
+   - **Contribution**: 800% to loss (53%)
 
-2. **Scout MoE experiments (4 experiments: 168-197% combined loss)**:
-   - 17-llama-4-scout-17b-16e-tp2-general-2: TTFT=99.98%, E2E=97.59%, combined=197.58%
-   - 20-llama-4-scout-17b-16e-tp2-codegen-2: TTFT=93.45%, E2E=90.92%, combined=184.37%
-   - 21-llama-4-scout-17b-16e-tp2-roleplay-2: TTFT=87.50%, E2E=80.73%, combined=168.22%
-   - 48-llama-4-scout-17b-16e-tp2-reasoning-2: TTFT=99.99%, E2E=95.05%, combined=195.04%
-   - **Pattern**: ALL Scout experiments fail catastrophically across ALL workloads (general, codegen, roleplay, reasoning)
-   - **Why**: The simulator bugs identified in iter1 (interleaved MoE layers, intermediate_size_mlp parsing, MoE gating FLOPs) were either not fully fixed OR new bugs were introduced. The systematic 90-100% errors across all workloads indicate a fundamental prefill calculation bug, not a data quality issue.
+2. **Reasoning experiments** (2): Qwen 99%, Llama-2 99% TTFT APE
+   - **Pattern**: Longest prompts in dataset (expected >4096 tokens)
+   - **Root cause**: β₇ mechanism is WRONG - overhead not proportional to `(tokens - 4096)`
+   - **Contribution**: ~390% to loss (26%)
 
-3. **TP=2 non-Scout experiments (2 experiments: 63-125% combined loss)**:
-   - 62-mistral-nemo-12b-tp2-general-lite-2-1: TTFT=71.74%, E2E=53.36%, combined=125.10%
-   - 65-01-ai-yi-34b-tp2-general-lite-2-1: TTFT=58.61%, E2E=4.03%, combined=62.64%
-   - **Pattern**: TP=2 non-Scout experiments have high TTFT errors (59-72%) but variable E2E errors (4-53%)
-   - **Why**: TP=2 prefill overhead may not be captured correctly by β₃ (TP communication) alone. All-reduce overhead in prefill differs from decode (larger activations, less pipelining).
+3. **Mistral-Nemo TP=2 general-lite** (1): 83% TTFT, 90% E2E
+   - **Pattern**: Medium-length prompts, TP=2
+   - **Root cause**: Unknown - not long-context, not Scout MoE
+   - **Contribution**: 174% to loss (12%)
 
-4. **TP=4 large model experiments (2 experiments: 53-98% combined loss)**:
-   - 60-llama-3-1-70b-tp4-general-lite-4-1: TTFT=89.80%, E2E=8.52%, combined=98.32%
-   - 61-llama-3-1-70b-tp4-codegen-4-1: TTFT=41.94%, E2E=11.01%, combined=52.94%
-   - **Pattern**: TTFT errors are high (42-90%) but E2E errors are EXCELLENT (8-11%)
-   - **Why**: Large model prefill overhead (70B parameters, TP=4 communication) is not captured by β₀ alone. Decode predictions are excellent, suggesting the latency model works well for decode on large models but underestimates prefill time.
+**Combined**: These 7 experiments (47% of dataset) contribute 1364% to loss (91%).
 
-**Low-error experiments (APE < 50% combined)**:
+**Low-error experiments** (TTFT APE < 10%):
 
-1. **Mistral codegen (1 experiment: 19.42% combined loss)**:
-   - 63-mistral-nemo-12b-tp1-codegen-1-1: TTFT=11.41%, E2E=8.01%, combined=19.42%
-   - **Why**: Mistral-Nemo (12B) with TP=1 codegen workload hits the "sweet spot" - medium model size, no TP communication overhead, codegen workload has predictable batch composition
+1. **Llama-2 roleplay** (TP=1): 5.7% TTFT, 60.4% E2E
+2. **Qwen2.5 roleplay** (TP=1): 6.8% TTFT, 48.3% E2E
+3. **Llama-2 codegen** (TP=1): 7.7% TTFT, 50.7% E2E
+4. **Yi-34B general-lite** (TP=2): 10.3% TTFT, 70.7% E2E
 
-2. **Qwen2.5 roleplay (1 experiment: 46.99% combined loss)**:
-   - 64-qwen2-5-7b-instruct-tp1-roleplay-1-1: TTFT=1.83%, E2E=45.16%, combined=46.99%
-   - **Why**: Excellent TTFT prediction (1.83%) but moderate E2E error (45.16%). Roleplay workload may have variable output lengths causing E2E variance.
+**Pattern**: All have good TTFT prediction (<11%) but moderate E2E error (48-71%). This suggests:
+- Prefill model is correct for **short-to-medium contexts**
+- Decode model has systematic bias (E2E error 6-10× higher than TTFT error)
 
-**Only 2/15 experiments achieved <50% combined loss**, compared to iter1's 7/15. This confirms iter2 made predictions WORSE.
+**Error correlations**:
 
----
+✅ **Confirmed correlations** (features associated with low error):
+- **TP=1 non-reasoning experiments**: Mean 20.6% TTFT APE (excluding reasoning's 99%)
+- **Short-medium contexts**: <4096 tokens have lower TTFT error
+- **Small-medium models**: 7B-34B models perform better than 70B or MoE
 
-### Error Correlations
-
-**✅ Confirmed correlations with LOW error**:
-- **TP=1, non-reasoning, non-Scout, medium model size (7-12B)**: Best predictions (Mistral codegen: 19.42%, Qwen roleplay: 46.99%)
-- **Decode-heavy workloads**: Experiments with low TTFT proportion (Qwen roleplay: TTFT=1.83%) have better combined loss
-- **Small model + TP=1**: Llama-2-7b-tp1-codegen (82.43%) is higher than expected, but Mistral/Qwen TP=1 are excellent, suggesting model-specific effects
-
-**❌ Rejected correlations (expected to cause errors but don't)**:
-- **Workload type (codegen vs roleplay vs general)**: No clear pattern - Scout codegen (184%) fails while Mistral codegen (19%) succeeds. This confirms the model's workload-agnostic design is correct, but model architecture and TP dominate errors.
-- **Batch size regime**: The sigmoid interpolation for batch_size=8 transition doesn't show clear error spikes, suggesting the smooth transition worked or is irrelevant compared to larger error sources.
-
-**✅ Confirmed correlations with HIGH error**:
-- **Reasoning workload**: 100% of reasoning experiments have catastrophic TTFT failures (99.97-99.99%)
-- **Scout MoE architecture**: 100% of Scout experiments have catastrophic failures (168-197% combined loss)
-- **TP=2**: 7/8 TP=2 experiments have >60% combined loss (6 are Scout, 1 is Mistral with 125%)
-- **Large model TP=4 prefill**: Both TP=4 experiments have high TTFT errors (42-90%) despite excellent E2E errors (8-11%)
+❌ **Rejected correlations** (features that DON'T explain error):
+- **Workload labels**: Low-error experiments span codegen, roleplay, general-lite (no systematic pattern)
+- **Batch size**: Both small and large batch experiments have mixed error
+- **TP degree alone**: TP=4 (mean 32% TTFT) not clearly better than TP=1 (mean 33% TTFT, excluding reasoning)
 
 ---
 
 ### Root Cause Hypotheses
 
-**Principle 1: β₇ formula is structurally incorrect for reasoning overhead**
+#### Principle 1: Very Long Context Overhead Has Wrong Functional Form
 
 **Evidence**:
-- β₇=1.0 did not move from initial value during 51 optimization trials
-- All 4 reasoning experiments have 99.97-99.99% TTFT errors WITH β₇ present
-- The formula `(prompt_tokens - 4096) / 1000 × num_layers` assumes linear overhead scaling, but real vLLM long-context overhead is:
-  - Quadratic in sequence length (attention memory bandwidth: O(n²) intermediate matrices)
-  - Batch-size-dependent (preemption triggers vary with available KV cache)
-  - KV cache hit-rate-dependent (unique prompts have lower prefix cache effectiveness)
+- β₇ = 1.507 (from `best_params.beta[7]`) - large, non-negligible coefficient
+- Reasoning experiments STILL at 99% TTFT APE (from `per_experiment_results[4,5]`)
+- Expected: β₇ would reduce reasoning TTFT from ~100% to <50%
+- Actual: No improvement despite large coefficient
 
 **Mechanism**:
 
-The β₇ formula is based on the assumption that overhead scales linearly with excess tokens beyond 4096. However, vLLM's actual long-context behavior:
+Agent 1's hypothesis assumed linear scaling: `β₇ × max(0, prompt_tokens - 4096) / 1000 × num_layers`
 
-1. **Attention memory bandwidth saturation**: For sequence length n > 4096, the attention mechanism must materialize O(n²) intermediate matrices (query × key). For n=8192, this is 4× more memory bandwidth than n=4096, not 2×. The linear formula underpredicts by 2×.
+This implies overhead = constant × (tokens above threshold) × depth, suggesting prefill overhead grows **linearly** beyond 4096 tokens.
 
-2. **KV cache preemption**: vLLM's PagedAttention triggers preemption when KV cache fills. For long sequences (>4096 tokens), preemption happens earlier in prefill, forcing recomputation. The overhead is step-function-like (0 overhead until preemption, then +50-100% overhead), not linear.
+**However**, vLLM's attention kernels (FlashAttention/FlashInfer) have non-linear behavior:
+- **Below L2 cache threshold** (~2048-4096 tokens): Linear scaling, memory-bound
+- **Exceeding L2 but within HBM**: Quadratic attention cost starts dominating
+- **Triggering chunking**: vLLM splits into chunks, introducing per-chunk overhead (non-linear step function)
+- **KV eviction**: Recomputation overhead is discrete (either 0 or 100% of chunk), not linear
 
-3. **Prefix cache miss rate**: Reasoning prompts (CoT chains) are highly unique. If prompt A is "Think step-by-step about quantum physics" and prompt B is "Think step-by-step about economics", they share only ~10 tokens. The formula assumes 4096 tokens are "cached" and only excess tokens pay overhead, but in practice the entire 8000+ token prompt is processed fresh.
+The linear `(tokens - threshold)` feature cannot capture:
+1. Quadratic scaling of attention beyond cache limits
+2. Discrete chunking boundaries (e.g., every 8192 tokens)
+3. KV cache eviction (depends on memory pressure, not just length)
+4. Prefix cache miss rate (depends on cache state, not just length)
 
-**Action**: Next iteration must profile vLLM reasoning experiments to measure actual prefill time breakdown:
-- Attention bandwidth time (via nsys profiling)
-- KV cache preemption frequency (via vLLM logs)
-- Prefix cache hit rates (via vLLM metrics)
+**Alternative functional forms to test**:
+- **Quadratic**: `max(0, (prompt_tokens - 4096)²) / 1e6`
+- **Piecewise linear**: Different slopes for 0-2048, 2048-4096, 4096-8192, >8192
+- **Log scaling**: `log(1 + max(0, prompt_tokens - 4096))`
+- **Chunking step function**: `floor(prompt_tokens / chunk_size) × chunk_overhead`
 
-Then design a formula that captures the TRUE overhead:
-- Quadratic attention term: `(prompt_tokens / 4096)² × scaling_factor`
-- Preemption term: `step_function(kv_cache_utilization > 0.9) × recomputation_cost`
-- Cache miss term: `(1 - prefix_cache_hit_rate) × prompt_tokens`
+**Action for iter3**: Replace `max(0, tokens - 4096)` with quadratic or piecewise term. Test multiple thresholds (2048, 4096, 8192) in parallel.
 
 ---
 
-**Principle 2: Scout fixes applied but experiments still fail - model structure inadequate**
+#### Principle 2: Per-Request Decode Overhead is Negligible or Constant
 
 **Evidence**:
-- All 4 Scout experiments have 168-197% combined loss in iter2
-- **CRITICAL TIMELINE**: Scout bugs (InterleaveMoELayerStep, DenseIntermediateDim, split FLOPs/bandwidth) were fixed on March 28, 11:52 PM - 11:59 PM
-- Unit tests pass: `TestScoutInterleavedArchitecture_EndToEnd` validates FLOPs calculation
-- Iter2 optimization ran March 29, 5:36 AM (6 hours AFTER fixes, binary recompiled with fixes)
-- Scout failures are systematic across ALL workloads (general, codegen, roleplay, reasoning)
-- β₆ (MoE gating)=0.008 unchanged from iter1
+- β₈ = 0.000042 (from `best_params.beta[8]`) - effectively zero
+- β₁ = 1.316 (from `best_params.beta[1]`) - still inflated (expected 0.6-0.9)
+- Expected: β₈ absorbs per-request overhead, normalizing β₁
+- Actual: β₈ converged to zero, β₁ still inflated
 
 **Mechanism**:
 
-The identified Scout bugs WERE fixed and tests pass, yet real experiments still fail at 168-197% combined loss. Three possible explanations:
+Agent 1 predicted ~10-50μs per-request overhead for:
+1. Scheduler iteration (vLLM `_schedule_running()`)
+2. FlashAttention metadata setup (KV block tables, query offsets)
+3. Kernel launch overhead (especially for small batches)
 
-1. **Tests validate FLOPs but not end-to-end latency prediction**:
-   - `TestScoutInterleavedArchitecture_EndToEnd` only checks FLOPs calculation matches expected values
-   - Does NOT validate that predicted latency matches real vLLM latency for Scout experiments
-   - FLOPs may be correct, but how coefficients (β₀, β₁, β₅, β₆) are applied to Scout's mixed architecture may be wrong
+The model was `β₈ × num_requests_in_batch`.
 
-2. **Additional unfixed bugs in coefficient application**:
-   - FLOPs calculation splits MoE vs dense layers correctly (test passes)
-   - But latency model may apply β₀ (prefill MFU) uniformly to all layers instead of per-layer-type
-   - Or β₆ (MoE gating) may be applied to all 48 layers instead of only 24 MoE layers
-   - These bugs wouldn't be caught by FLOPs-only tests
+**However**, optimizer drove β₈ to zero, proving one of:
+1. **Overhead is constant**: Same overhead regardless of request count (captured by α₀ or β₂)
+2. **Overhead is negligible**: <1μs per request, below measurement noise
+3. **Overhead scales differently**: Scales with total context length `Σ(context_length)`, not request count
+4. **Already captured**: β₁ (memory-bound decode) already includes this overhead
 
-3. **Fundamental model structure incompatibility**:
-   - Current basis functions assume homogeneous layers (all MoE OR all dense)
-   - Scout has 24 MoE + 24 dense interleaved, requiring per-layer-type efficiency factors
-   - Single β₀ (prefill MFU) cannot represent different MFU for MoE layers (lower due to routing overhead) vs dense layers (higher)
-   - May need layer-type-specific basis functions: β₀_dense, β₀_moe, β₅_dense, β₅_moe
+**Counter-evidence for "already captured"**: β₁ = 1.316 is still 2× too high. If β₈ is zero, what's causing β₁ inflation?
 
-**Action**: Next iteration must:
-1. **Add end-to-end latency validation test for Scout**: Extend tests beyond FLOPs to validate full latency prediction:
-   ```go
-   func TestScoutLatencyPrediction_EndToEnd(t *testing.T) {
-       // Use trained coefficients from iter2
-       coeffs := loadCoefficients("iter2")
+**Alternative hypotheses**:
+- **Per-token decode overhead**: `β × Σ(context_length_per_request)` instead of `β × num_requests`
+- **Batch-size dependent**: Overhead varies with batch size (small batches have proportionally higher overhead)
+- **TP-dependent**: Per-request overhead increases with TP degree (communication setup)
+- **KV cache fragmentation**: Overhead depends on KV block allocation pattern, not request count
 
-       // Predict latency for Scout experiment 20 (codegen-2)
-       predicted := predictLatency(scoutConfig, workload, coeffs)
-       actual := loadGroundTruth("20-llama-4-scout-17b-16e-tp2-codegen-2")
-
-       ttftAPE := abs(predicted.TTFT - actual.TTFT) / actual.TTFT * 100
-       e2eAPE := abs(predicted.E2E - actual.E2E) / actual.E2E * 100
-
-       // Should be <30% APE, not 93% TTFT / 91% E2E as in iter2
-       assert.Less(t, ttftAPE, 30.0)
-       assert.Less(t, e2eAPE, 30.0)
-   }
-   ```
-   This will pinpoint WHERE in the latency calculation Scout diverges from reality.
-
-2. **Add Scout-specific basis functions if tests reveal coefficient application issues**:
-   - Split β₀ (prefill MFU) into β₀_dense and β₀_moe with separate scaling per layer type
-   - Split β₅ (decode compute-bound) into β₅_dense and β₅_moe
-   - This allows the optimizer to learn different efficiencies for MoE vs dense layers
-
-3. **Alternative: Exclude Scout from training set if model structure cannot represent it**:
-   - Train on Llama/Qwen/Mistral (dense models only), test on Scout
-   - If test loss is still >100%, accept that current basis functions cannot model Scout
-   - Document Scout as "unsupported architecture" until per-layer-type basis functions are added
+**Action for iter3**: Test per-token decode overhead `Σ(context_length)` instead of per-request. Investigate β₁ inflation root cause independently.
 
 ---
 
-**Principle 3: β₈ (per-request decode overhead) is too small to matter**
+#### Principle 3: Removing Redundant Terms Can Degrade Model
 
 **Evidence**:
-- β₈=3e-05 (30μs) did not move from initial value during 51 optimization trials
-- At 30μs/request, β₈ contributes only 0.12-0.48ms for 4-16 request batches
-- Typical decode step times are 10-1000ms, so β₈ is <0.1% of step time
-- β₁=1.553 remains unchanged from iter1, showing β₈ failed to normalize the inflated decode MFU
+- Iter1: β₅ (chunking) ablation showed +1.06% loss increase (deemed redundant)
+- Iter2: Removed β₅, added β₇ + β₈
+- Result: **Overall loss increased 12%** (iter1: 134.54% → iter2: 150.20%)
+- β₀ degraded from 0.203 to 0.155 (23% drop in prefill efficiency)
 
 **Mechanism**:
 
-The β₈ term was designed to capture per-request overhead (scheduler work, attention state setup, kernel launch) that was hypothesized to be inflating β₁. However:
+Agent 1 concluded β₅ was redundant because ablating it caused only +1.06% loss increase. However:
 
-1. **Magnitude mismatch**: Real per-request overhead in vLLM is likely larger:
-   - Scheduler per-request work: 5-20μs × 16 requests = 80-320μs
-   - Attention state setup (KV block tables): 10-50μs × 16 requests = 160-800μs
-   - Kernel launch overhead: 10-30μs × 16 requests = 160-480μs
-   - **Total: 400-1600μs (0.4-1.6ms), not 30μs**
+1. **Confounded with other terms**: β₅ may have been absorbing real overhead that other terms couldn't capture
+2. **Coefficient redistribution**: Removing β₅ forced optimizer to redistribute its contribution to other terms, causing distortion
+3. **Spurious correlation**: β₅ may have been fitting noise, but removing it exposed missing signal elsewhere
 
-   The initial value of 30μs was set too low, causing β₈ to be irrelevant.
+**Evidence β₅ may have been useful**:
+- β₀ got WORSE after removing β₅ (0.203 → 0.155)
+- E2E RMSE got WORSE after removing β₅ (65.24% → 80.90%)
+- Iter1 ablation showed +1.06% loss, which is SMALL but NON-ZERO
 
-2. **Wrong functional form**: The flat per-request term `num_decode_requests × β₈` may be incorrect:
-   - Real per-request overhead likely scales with TP (synchronization overhead per request increases with TP)
-   - Real per-request overhead may scale with batch size (scheduler complexity is O(n log n) for priority queue operations)
-   - Real per-request overhead may already be captured by β₂ (constant scheduler overhead) or β₃ (TP communication)
+**Why removing a "redundant" term can degrade performance**:
+- **Overfitting to ablation test set**: Ablation may have tested on subset of experiments where β₅ was truly redundant
+- **Optimization landscape change**: Removing a term changes the loss surface, potentially making it harder to find optimal coefficients for remaining terms
+- **Interaction effects**: β₅ may have been interacting with other terms (e.g., reducing β₁ inflation)
 
-3. **β₁ inflation has a different cause**: The β₁=1.553 inflation may not be due to missing per-request overhead. Alternative hypotheses:
-   - Decode FLOPs formula is wrong (undercounting FLOPs by 35%)
-   - Memory bandwidth formula is wrong (undercounting KV cache reads)
-   - Decode MFU calculation uses wrong roofline assumptions (peak memory bandwidth vs achieved bandwidth)
-
-**Action**: Next iteration must:
-1. **Remove β₈**: The ablation hypothesis predicted removing β₈ would degrade loss by >5%, but the evidence (β₈ didn't move, β₁ unchanged) suggests removing it will have NO impact. Simplify the model by removing ineffective terms.
-
-2. **Investigate β₁ inflation root cause**: Instead of adding per-request overhead terms, investigate why β₁>1:
-   - Audit decode FLOPs calculation: `2 × batch_size × output_tokens × hidden_dim²` - is this correct?
-   - Audit memory bandwidth calculation: `2 × bytes_per_param × weights + 2 × batch_size × KV_cache_size` - is this correct?
-   - Audit decode MFU formula: `decode_time = max(flops_time / β₅, bandwidth_time / β₁)` - should this be a sum, not max?
-
-3. **Alternative hypothesis**: β₁>1 may indicate the decode roofline model is fundamentally wrong. Real GPU execution may not follow the max(compute, memory) roofline - it may be a mix of compute and memory at all batch sizes. Consider replacing discrete regimes with a single mixed term: `decode_time = β₁_compute × flops_time + β₁_memory × bandwidth_time`.
+**Action for iter3**:
+1. **Do NOT remove terms based on small ablation deltas** - even +1% loss may indicate real signal
+2. **Test ablations on FULL dataset**, not subset
+3. **Check coefficient stability** - if removing one term causes large shifts in other coefficients, terms are confounded
+4. **Consider keeping β₅** - restore chunking term in iter3 and test if it stabilizes β₀
 
 ---
 
-**Principle 4: TP=4 large model prefill overhead requires dedicated term**
+#### Principle 4: Scout MoE Validation Failure is Critical Blocker
 
 **Evidence**:
-- Both TP=4 experiments (Llama-3.1-70B) have high TTFT errors (42-90%) but excellent E2E errors (8-11%)
-- This asymmetry suggests prefill is underestimated while decode is accurate
-- β₃ (TP communication)=0.394 unchanged from iter1, suggesting TP formula is correct for decode but insufficient for prefill
+- 4 Scout MoE experiments: All 100% TTFT and E2E APE (from `per_experiment_results[0-3]`)
+- Contribution: 800% to loss (53% of total)
+- Model: RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic (MoE architecture)
+- TP=2 for all Scout experiments
 
 **Mechanism**:
 
-Large model (70B parameters) with TP=4 has significantly higher prefill overhead than small models:
+Scout experiments have been failing since iter0 (originally >100% APE, now exactly 100%). This suggests:
 
-1. **All-reduce communication overhead in prefill**: Prefill processes L tokens in parallel, requiring L × all-reduce operations. For TP=4, each all-reduce communicates `hidden_dim / TP = 8192 / 4 = 2048` elements, but prefill has L=512-2048 tokens, so total communication is `L × 2048 × 4 bytes = 4-16MB per layer`. This is 4-16× more communication than decode (which processes 1 token).
+1. **Ground truth corruption**: Observed latencies in Scout experiments may be incorrect
+2. **Model name parsing failure**: MoE model parameters (num_experts, expert_size) may not be parsed correctly from model name
+3. **FP8 quantization modeling**: FP8-dynamic quantization may not be correctly handled in weight bandwidth calculations
+4. **MoE routing overhead**: Expert routing, load imbalance, and expert specialization overhead may be missing from model
 
-2. **Tensor parallelism overhead scales with model size**: 70B model has 80 layers vs 7B model's 32 layers. The all-reduce overhead is proportional to num_layers, but β₃ may not capture the layerwise scaling correctly.
+**Why 100% APE specifically**:
+- 100% APE means `|predicted - observed| / observed = 1.0`
+- This implies `predicted ≈ 2 × observed` or `predicted ≈ 0`
+- More likely: `predicted ≈ 0` (model predicting near-zero latency, indicating parsing failure)
 
-3. **Prefill activation memory bandwidth**: Large models have large activations (batch_size × L × hidden_dim). For TP=4, each GPU must write activations to HBM, then read them back for the next layer. This memory bandwidth overhead is not captured by β₀ (which only captures compute MFU).
+**Action for iter3**:
+1. **CRITICAL PRIORITY**: Debug Scout MoE validation BEFORE iterating model
+2. **Check**: Print predicted vs observed latencies for Scout experiments
+3. **Investigate**: Model name parsing for "Llama-4-Scout-17B-16E" format
+4. **Verify**: FP8-dynamic quantization handling in `EffectiveWeightBytesPerParam()`
+5. **Add**: MoE-specific basis function if routing overhead is missing
 
-**Action**: Next iteration must:
-1. **Add TP-dependent prefill overhead term**: Add β₉ that captures TP communication in prefill:
-   - Formula: `β₉ × TP × num_layers × prompt_tokens × hidden_dim / bandwidth`
-   - This scales with TP (more communication), num_layers (more all-reduces), and prompt_tokens (more parallel tokens)
-
-2. **Alternative: Split β₀ by TP**: Instead of a global prefill MFU (β₀), use TP-dependent prefill MFU:
-   - β₀_tp1 for TP=1 (no communication overhead)
-   - β₀_tp2 for TP=2 (moderate communication overhead)
-   - β₀_tp4 for TP=4 (high communication overhead)
-   - This allows the optimizer to learn different prefill efficiencies per TP config
+**Impact if not fixed**: Scout experiments contribute 53% of loss. Even if all other experiments achieve 20% APE, overall loss would be `(0.53 × 200 + 0.47 × 20) / 1.0 ≈ 115%`, failing <80% target.
 
 ---
 
-**Principle 5: Adding terms without validation leads to parameter bloat**
+#### Principle 5: Testing Multiple Hypotheses Simultaneously Masks Root Causes
 
 **Evidence**:
-- β₇ and β₈ both stayed at initial values for 51 optimization trials
-- Overall loss INCREASED from 134.54% to 136.19% (+1.64%)
-- The new terms added complexity (9 Beta terms vs 8 in iter1) without predictive value
+- Iter2 added TWO new terms: β₇ (very long context) + β₈ (per-request decode)
+- Changed decode regime transition (discrete → sigmoid)
+- Removed one term: β₅ (chunking)
+- Result: Both new terms ineffective, overall loss increased
 
 **Mechanism**:
 
-The iteration design philosophy was "identify failure modes, add terms to capture them". However:
+Scientific method requires testing **one variable at a time**. Iter2 violated this by:
+1. Adding β₇ to fix reasoning experiments
+2. Adding β₈ to normalize β₁
+3. Removing β₅ based on iter1 ablation
+4. Changing regime transition function
 
-1. **Functional form matters more than term count**: Adding β₇ and β₈ with incorrect functional forms provides no predictive value. The optimizer cannot learn good coefficients for structurally wrong formulas.
+**Why this masks root causes**:
+- **Confounded effects**: If loss increases, which change caused it? Can't isolate.
+- **Interaction effects**: β₇ and β₈ may interact (e.g., both targeting decode overhead in different ways)
+- **Optimization instability**: Adding multiple terms simultaneously can create local minima in loss surface
 
-2. **Overfitting risk**: Adding more terms increases the risk of overfitting to the training set. With 9 Beta terms and 3 Alpha terms (12 parameters total) for 15 experiments, the model has 0.8 parameters per experiment. This is close to the overfitting threshold.
+**Evidence of confounding**:
+- β₁ = 1.316 (still inflated) - was β₈ supposed to fix this, or did removing β₅ cause it?
+- β₀ = 0.155 (degraded) - did removing β₅ cause this, or did adding β₇ distort it?
+- E2E RMSE increased 24% - was this β₈ failing, sigmoid transition, or β₅ removal?
 
-3. **Optimizer exploration**: Bayesian optimization with 51 trials must explore a 12-dimensional space (3 Alpha + 9 Beta). With more dimensions, the optimizer needs more trials to converge. Early convergence (51/250 trials) suggests the optimizer found a local minimum and didn't fully explore the space.
+**Correct approach** (single-variable testing):
+1. **Iter2a**: Add ONLY β₇ (very long context), keep everything else from iter1
+2. **Iter2b**: Add ONLY β₈ (per-request), keep everything else from iter1
+3. **Iter2c**: Remove ONLY β₅ (chunking), keep everything else from iter1
+4. **Iter2d**: Change ONLY regime transition (sigmoid), keep everything else
 
-**Action**: Next iteration must:
-1. **Remove ineffective terms**: Remove β₇ and β₈ (back to 8 Beta terms from iter1)
-2. **Validate functional forms before adding**: Before adding new terms, validate the functional form matches vLLM behavior:
-   - Profile vLLM to measure actual overhead
-   - Plot overhead vs proposed formula input (e.g., prompt_tokens, batch_size, TP)
-   - Ensure formula captures the relationship (linear, quadratic, step function, etc.)
+Then combine ONLY the changes that improved loss.
 
-3. **Increase optimization trials**: With 8 Beta + 3 Alpha = 11 parameters, use 500-1000 trials to ensure full exploration of the space. Iter2's 51 trials with early convergence suggests under-exploration.
+**Action for iter3**: Test ONE mechanism at a time. Do NOT add multiple basis functions in a single iteration.
+
+---
+
+#### Principle 6: Coefficient Magnitude Predicts Term Importance
+
+**Evidence**:
+
+| Term | Coefficient | Interpretation | Expected | Match? |
+|------|-------------|----------------|----------|--------|
+| β₀ | 0.155 | Prefill MFU | 0.4-0.5 | ❌ 3× too low |
+| β₁ | 1.316 | Decode memory-bound MFU | 0.6-0.9 | ❌ 1.5× too high |
+| β₂ | 0.000093 | Constant step overhead | ~0.0001 | ✅ |
+| β₃ | 0.119 | TP communication | 0.05-0.15 | ✅ |
+| β₄ | 0.000043 | KV mgmt overhead | 0.0003-0.0004 (iter1) | ❌ 10× too low |
+| β₅ | 0.956 | Large-batch compute MFU | 0.6-0.8 | ⚠️ 1.3× high |
+| β₆ | 0.135 | Memory mgmt overhead | ? | ? |
+| β₇ | 1.507 | Very long context overhead | 0.5-2.0 | ✅ In range |
+| β₈ | 0.000042 | Per-request decode overhead | 0.00001-0.00005 | ✅ In range |
+
+**Observations**:
+
+**Terms with expected magnitude but INEFFECTIVE**:
+- β₇ = 1.507 (in expected range 0.5-2.0) but reasoning experiments still at 99% APE
+- β₈ = 0.000042 (in expected range) but β₁ still inflated
+- **Conclusion**: Magnitude in expected range does NOT prove mechanism is correct
+
+**Terms with wrong magnitude**:
+- β₀ = 0.155 (3× too low): Prefill is grossly under-accounted
+- β₁ = 1.316 (1.5× too high): Decode memory-bound is grossly over-accounted
+- β₄ = 0.000043 (10× too low vs iter1): KV mgmt importance collapsed
+
+**Why β₇ and β₈ have "expected" magnitudes but don't work**:
+
+The optimizer fits coefficients to minimize RMSE. If a basis function has the WRONG functional form but the RIGHT order of magnitude, the optimizer will assign a plausible-looking coefficient even though the term doesn't capture real physics.
+
+**Example**: β₇ = 1.507 suggests ~1.5μs overhead per (token - 4096) / 1000 × layer. For reasoning experiments with 4000 excess tokens and 30 layers:
+```
+Overhead = 1.507 × 4 × 30 = 180μs
+```
+
+This is a plausible prefill overhead (10-30% of typical TTFT). However, reasoning experiments STILL have 99% APE, proving the 180μs is being added in the WRONG place or at the WRONG time.
+
+**Principle**: **Coefficient magnitude in expected range is NECESSARY but NOT SUFFICIENT to prove mechanism is correct. Always validate with per-experiment analysis.**
+
+**Action for iter3**: When adding a new term, verify it:
+1. Has expected coefficient magnitude
+2. **AND** improves error on target experiments (e.g., β₇ should fix reasoning experiments)
+3. **AND** doesn't degrade error on other experiments
 
 ---
 
 ## Coefficient Analysis
 
-**Alpha [α₀, α₁, α₂]** from `best_params.alpha`: [0.00116, 4.25e-05, 9.57e-05]
+### Alpha [α₀, α₁, α₂]: Fixed API + Per-Token Overhead
 
-- α₀ = 1.16ms: Fixed API processing overhead (unchanged from iter1)
-- α₁ = 42.5μs/token: Per-input-token tokenization (unchanged from iter1)
-- α₂ = 95.7μs/token: Per-output-token detokenization (unchanged from iter1)
+**Optimal values** (from `best_params.alpha`):
+- α₀ = 0.00484 (4.84μs fixed API overhead)
+- α₁ = 0.000071 (0.071μs per input token)
+- α₂ = 0.000032 (0.032μs per output token)
 
-**Physical interpretation**: All Alpha coefficients are IDENTICAL to iter1, suggesting:
-- The request-level overhead model is stable and correct
-- The optimization focused on Beta (step-level) terms, but found no improvement
+**Physical interpretation**:
 
-**Beta [β₀, β₁, ..., β₈]** from `best_params.beta`: [0.203, 1.553, 0.00012, 0.394, 0.00037, 0.651, 0.008, 1.0, 3e-05]
+**α₀ = 4.84μs**: Fixed API overhead (request parsing, response formatting, logging). Expected: 10-100μs. **SEVERELY UNDERESTIMATED**.
 
-- β₀ = 0.203: Prefill compute MFU - **unchanged from iter1, still 2× below physical range (0.40-0.55)**
-  - Physical interpretation: 20% prefill MFU implies H100 is only achieving 20% of peak FLOPs during prefill. Real H100 achieves 40-60% for large matmuls.
-  - This suggests β₀ is compensating for missing prefill overhead (TP communication, activation bandwidth, KV cache writes)
+Possible causes:
+- Most API overhead already captured by β₂ (constant step overhead)
+- Ground truth latencies may not include API overhead (measured at kernel level, not API level)
+- Optimizer driving α₀ down to compensate for inflated β₁
 
-- β₁ = 1.553: Decode memory-bound MFU - **unchanged from iter1, still 1.7× above physical range (0.60-0.90)**
-  - Physical interpretation: 155% memory bandwidth efficiency is physically impossible (cannot read more data than peak HBM bandwidth)
-  - This suggests β₁ is compensating for undercounted memory bandwidth (missing KV cache overhead, missing activation reads)
+**α₁ = 0.071μs/token**: Per-input-token cost. For a 1000-token prompt:
+```
+1000 × 0.071 = 71μs
+```
+This is plausible for tokenization + input buffer setup.
 
-- β₂ = 0.12μs: Constant scheduler overhead - **unchanged from iter1, 40× below expected range (5-50μs)**
-  - Physical interpretation: 0.12μs is negligible compared to step times (10-1000ms)
-  - This suggests constant scheduler overhead is genuinely negligible OR is captured by other terms (β₈ per-request, β₄ KV mgmt)
+**α₂ = 0.032μs/token**: Per-output-token cost. For a 100-token response:
+```
+100 × 0.032 = 3.2μs
+```
+This is plausible for detokenization + response streaming.
 
-- β₃ = 0.394: TP communication overhead - **unchanged from iter1, within expected range (0.30-0.50)**
-  - Physical interpretation: TP communication adds ~39% overhead to base step time
-  - This is consistent with all-reduce latency for TP=2,4 configs
-  - β₃ appears correct for decode but may be insufficient for prefill (see Principle 4)
+**Trend**: All Alpha coefficients are VERY SMALL, suggesting most latency is in Beta terms (compute/memory/overhead).
 
-- β₄ = 0.37μs: KV management overhead per request - **unchanged from iter1, within expected range (0-50μs)**
-  - Physical interpretation: 0.37μs per request for KV cache management (block allocation, eviction checks)
-  - Iter1 ablation showed +30.28% E2E degradation when removed, confirming this is CRITICAL despite small magnitude
-  - β₄ is the most important additive overhead term
+---
 
-- β₅ = 0.651: Decode compute-bound MFU - **unchanged from iter1, within physical range (0.50-0.70)**
-  - Physical interpretation: 65% compute MFU for large-batch decode (compute-bound regime)
-  - This is physically plausible for H100 running decode matmuls (smaller than prefill, less efficient)
+### Beta [β₀, β₁, ..., β₈]: Step-Level Basis Functions
 
-- β₆ = 0.008: MoE gating overhead - **unchanged from iter1, within expected range (0.005-0.015)**
-  - Physical interpretation: MoE gating adds ~0.8% overhead per step
-  - This is consistent with expert routing logic (topk, load balancing)
-  - However, Scout experiments still fail (168-197%), suggesting β₆ is correct but Scout bugs remain
+**β₀ = 0.155 (Prefill MFU)**
 
-- β₇ = 1.0: Very long context prefill overhead - **NEW in iter2, did not move from initial value**
-  - Physical interpretation: At β₇=1.0, the formula `(prompt_tokens - 4096) / 1000 × num_layers` scales linearly
-  - However, reasoning experiments still fail (99.97-99.99% TTFT), so β₇ is structurally incorrect
-  - **Should be removed in iter3**
+Expected: 0.4-0.5 (40-50% of roofline peak)
+Actual: 0.155 (15.5% of peak)
+**Status**: ❌ **SEVERELY DEGRADED** (worse than iter1's 0.203)
 
-- β₈ = 3e-05 (30μs): Per-request decode overhead - **NEW in iter2, did not move from initial value**
-  - Physical interpretation: 30μs per request is too small to matter (0.48ms for 16 requests vs 10-1000ms step times)
-  - β₁ remains inflated at 1.553, showing β₈ failed to normalize it
-  - **Should be removed in iter3**
+**Interpretation**: Model predicts prefill achieves only 15.5% of theoretical FLOPs throughput. This is implausible - typical prefill MFU is 40-60% on H100.
 
-**Redundant terms**:
-- β₇: Stayed at initial value, reasoning experiments still fail → REMOVE
-- β₈: Stayed at initial value, β₁ unchanged → REMOVE
+**Root cause**: β₀ is being driven down to compensate for OVER-prediction in other terms. Either:
+1. Prefill FLOPs calculation is wrong (over-counting)
+2. β₇ is adding too much overhead
+3. Removing β₅ eliminated a term that was compensating for β₀ under-prediction
 
-**Missing physics**:
-- TP-dependent prefill overhead: TP=4 experiments have high TTFT errors (42-90%) despite excellent E2E errors (8-11%)
-- Quadratic long-context attention overhead: Reasoning experiments have 99.97-99.99% TTFT errors
-- Activation memory bandwidth in prefill: Large models may have activation bandwidth bottlenecks not captured by β₀
+**Action**: Investigate prefill FLOPs formula. May need separate MFU coefficients for short vs long prefills.
+
+---
+
+**β₁ = 1.316 (Decode Memory-Bound MFU)**
+
+Expected: 0.6-0.9 (memory bandwidth limited)
+Actual: 1.316 (131.6% of bandwidth limit)
+**Status**: ❌ **INFLATED** (worse than iter1's 1.553 → improved to 1.316, but still high)
+
+**Interpretation**: Model predicts decode achieves 131.6% of memory bandwidth, which is physically impossible.
+
+**Root cause**: β₁ is compensating for missing decode overhead terms. Candidates:
+- **Activation memory bandwidth**: MLP output, attention output, residual adds (not modeled)
+- **KV cache fragmentation**: Non-contiguous KV blocks cause extra memory transactions
+- **Synchronization overhead**: AllReduce/AllGather latency for TP>1 during decode
+- **Scheduler overhead**: vLLM scheduling decisions between steps
+
+**Why β₈ didn't fix this**: β₈ converged to 0.000042 (negligible), proving per-request overhead hypothesis is wrong.
+
+**Action**: Test per-token decode overhead `Σ(context_length)` instead of per-request. Investigate TP communication in decode path.
+
+---
+
+**β₂ = 0.000093 (Constant Step Overhead)**
+
+Expected: ~0.0001 (0.1μs per step)
+Actual: 0.000093
+**Status**: ✅ **PLAUSIBLE**
+
+**Interpretation**: ~0.1μs overhead per decode step, regardless of batch size or tokens. This captures:
+- Event loop overhead
+- Scheduler invocation
+- Metric logging
+
+Magnitude is reasonable.
+
+---
+
+**β₃ = 0.119 (TP Communication Overhead)**
+
+Expected: 0.05-0.15 (depends on TP degree and interconnect)
+Actual: 0.119
+**Status**: ✅ **PLAUSIBLE**
+
+**Interpretation**: ~0.12μs overhead per TP communication event. For TP=4, each prefill/decode step has ~3-4 AllReduce operations:
+```
+4 steps × 0.119 = 0.476μs TP overhead per prefill
+```
+
+This is in line with NVLink latency (1-2μs per operation).
+
+---
+
+**β₄ = 0.000043 (KV Management Overhead)**
+
+Expected: 0.0003-0.0004 (based on iter1 = 0.37μs, but iter1 may have been spurious)
+Actual: 0.000043
+**Status**: ⚠️ **COLLAPSED** (10× smaller than iter1)
+
+**Interpretation**: Iter1 claimed β₄ was CRITICAL (+30.28% E2E degradation when removed). Iter2 drove it to near-zero, suggesting:
+1. Iter1's ablation was spurious (overfitting)
+2. β₄ was confounded with β₅ (chunking) - removing β₅ eliminated β₄'s role
+3. β₇ or β₈ absorbed β₄'s contribution
+
+**Instability**: A "CRITICAL" term collapsing to zero in the next iteration indicates coefficient instability or overfitting.
+
+**Action**: Re-test β₄ ablation on iter2 baseline. If removing β₄ now causes <5% loss increase, iter1's result was spurious.
+
+---
+
+**β₅ = 0.956 (Large-Batch Compute-Bound MFU)**
+
+Expected: 0.6-0.8 (large-batch decode saturates compute)
+Actual: 0.956 (after renumbering - this was β₆ in iter1)
+**Status**: ⚠️ **SLIGHTLY INFLATED** (up from iter1's 0.651)
+
+**Interpretation**: Model predicts large-batch decode achieves 95.6% of compute throughput. This is higher than expected (typical: 60-80%).
+
+**Why it increased**: Removing β₅ (chunking) and sigmoid regime transition may have shifted more decode overhead onto β₅ (compute-bound) term.
+
+**Action**: Monitor if this stays stable or continues increasing.
+
+---
+
+**β₆ = 0.135 (Memory Management Overhead)**
+
+Expected: Unknown (iter1 called this β₇)
+Actual: 0.135
+**Status**: ⚠️ **UNKNOWN INTERPRETATION**
+
+**Interpretation**: ~0.135μs overhead for memory management operations. Need to check code to understand what this term captures.
+
+**Action**: Document β₆ basis function definition. May be capturing KV cache allocation, prefill chunking, or GPU memory pool management.
+
+---
+
+**β₇ = 1.507 (Very Long Context Overhead) - NEW TERM**
+
+Expected: 0.5-2.0
+Actual: 1.507
+**Status**: ✅ **IN EXPECTED RANGE** but ❌ **INEFFECTIVE**
+
+**Interpretation**: ~1.5μs overhead per `(tokens - 4096) / 1000 × num_layers`. For reasoning experiments (4000 excess tokens, 30 layers):
+```
+1.507 × 4 × 30 = 180μs overhead
+```
+
+This is a plausible overhead magnitude (10-30% of TTFT). **However, reasoning experiments still have 99% TTFT APE**, proving the mechanism is wrong.
+
+**Why it's ineffective**:
+- Wrong functional form (linear vs quadratic)
+- Wrong threshold (4096 vs 2048/8192)
+- Wrong feature (prompt length vs KV cache state)
+
+**Action**: Replace with quadratic or piecewise term.
+
+---
+
+**β₈ = 0.000042 (Per-Request Decode Overhead) - NEW TERM**
+
+Expected: 0.00001-0.00005 (10-50μs per request)
+Actual: 0.000042
+**Status**: ✅ **IN EXPECTED RANGE** but ❌ **INEFFECTIVE**
+
+**Interpretation**: ~0.042μs per request = 42 nanoseconds. For a batch of 8 requests:
+```
+8 × 0.042 = 0.34μs total overhead
+```
+
+This is NEGLIGIBLE compared to typical decode step times (100-1000μs). **β₈ is effectively zero.**
+
+**Why it's ineffective**:
+- Overhead is constant (already in α₀ or β₂), not per-request
+- Overhead scales with context length, not request count
+- Overhead is negligible (<1μs total)
+
+**Action**: Replace with per-token decode overhead `Σ(context_length)` or remove entirely.
+
+---
+
+### Redundant Terms
+
+**Candidates for removal** (coefficients near zero):
+- β₂ = 0.000093 (constant step overhead) - plausible but tiny
+- β₄ = 0.000043 (KV mgmt) - collapsed from iter1, likely redundant now
+- β₈ = 0.000042 (per-request) - proven ineffective
+
+**Should NOT remove**:
+- β₇ = 1.507 - large coefficient, even though ineffective, suggests optimizer is trying to fit SOME real overhead (wrong functional form)
+
+**Action**:
+1. Remove β₈ (per-request) - clearly redundant
+2. Keep β₇ but change functional form (quadratic or piecewise)
+3. Re-test β₄ ablation before removing
+
+---
+
+### Missing Physics
+
+**Coefficient magnitudes suggest missing terms**:
+
+1. **β₀ = 0.155 (too low)**: Prefill MFU under-predicted by 3×
+   - **Missing**: Separate MFU for short vs long prefills
+   - **Missing**: Prefill memory bandwidth term (current model only has compute-bound)
+
+2. **β₁ = 1.316 (too high)**: Decode memory-bound over-predicted by 1.5×
+   - **Missing**: Activation memory bandwidth (residual connections, MLP output)
+   - **Missing**: KV cache fragmentation overhead
+   - **Missing**: Per-token decode overhead (not per-request)
+
+3. **β₇ = 1.507 (ineffective)**: Wrong functional form for very long context
+   - **Missing**: Quadratic attention scaling
+   - **Missing**: Discrete chunking boundaries
+   - **Missing**: KV eviction/recomputation model
+
+**Priority for iter3**: Add per-token decode overhead to reduce β₁ inflation.
 
 ---
 
 ## Recommendations for iter3
 
-### Priority 1: Critical Issues (must address)
+### Priority 1: Critical Blockers (Must Fix to Achieve <80% Loss)
 
-1. **Add end-to-end Scout latency validation beyond FLOPs tests**
-   - **Evidence**: All Scout experiments fail with 168-197% combined loss across all workloads
-   - **CRITICAL**: FLOPs tests already pass (TestScoutInterleavedArchitecture_EndToEnd), but real experiments fail
-   - **Timeline**: Scout bugs fixed March 28, iter2 ran March 29 with fixes applied - failures persist
-   - **Action**: Add end-to-end latency prediction validation:
-     ```go
-     // Test end-to-end latency prediction for Scout (not just FLOPs)
-     func TestScoutLatencyPrediction_Experiment20(t *testing.T) {
-         // Load trained coefficients from iter2
-         coeffs := loadIterationCoefficients(2)
+**1. Fix Scout MoE Validation** (800% contribution, 53% of loss)
+- **Action**: Debug why all Scout experiments have exactly 100% APE
+- **Investigate**: Model name parsing, FP8 quantization, MoE expert routing
+- **Verification**: Print predicted vs observed latencies for Scout experiments
+- **Timeline**: BEFORE designing iter3 hypothesis
 
-         // Load Scout experiment 20 (codegen-2)
-         exp := loadExperiment("20-llama-4-scout-17b-16e-tp2-codegen-2")
-
-         // Predict latencies using full latency model (not just FLOPs)
-         predicted := predictExperimentLatencies(exp, coeffs)
-
-         // Compare against ground truth
-         ttftAPE := computeAPE(predicted.MeanTTFT, exp.GroundTruth.MeanTTFT)
-         e2eAPE := computeAPE(predicted.MeanE2E, exp.GroundTruth.MeanE2E)
-
-         // Currently: TTFT=93.45%, E2E=90.92% (catastrophic)
-         // After proper fix: Should be <30%
-         t.Logf("Scout TTFT APE: %.2f%% (target: <30%%)", ttftAPE)
-         t.Logf("Scout E2E APE: %.2f%% (target: <30%%)", e2eAPE)
-
-         if ttftAPE > 30.0 || e2eAPE > 30.0 {
-             t.Errorf("Scout latency prediction still fails after bug fixes")
-             // This will reveal WHERE in latency calculation Scout diverges
-         }
-     }
-     ```
-   - **Expected outcome**: Test will FAIL (Scout still at 90-100% APE), revealing that FLOPs fixes are insufficient and coefficient application has bugs
-
-2. **Profile reasoning experiments to measure true long-context overhead**
-   - **Evidence**: Reasoning experiments have 99.97-99.99% TTFT errors, β₇ formula is structurally incorrect
-   - **Action**: Profile vLLM with nsys for reasoning workloads:
-     ```bash
-     # Profile reasoning experiment
-     nsys profile -o reasoning_profile --trace=cuda,nvtx \
-       python -m vllm.entrypoints.openai.api_server \
-       --model meta-llama/Llama-2-7b-hf \
-       --max-model-len 8192
-
-     # Analyze attention kernel time vs sequence length
-     nsys stats reasoning_profile.nsys-rep --report cuda_gpu_kern_sum
-     ```
-   - **Measure**: Attention kernel time for L=512, 1024, 2048, 4096, 8192 tokens
-   - **Expected finding**: Attention time scales O(L²) not O(L), revealing quadratic overhead
-   - **Design new formula**: `β₇ × (prompt_tokens / 4096)² × scaling_factor` instead of linear
-
-3. **Remove β₇ and β₈ (ineffective terms)**
-   - **Evidence**: Both stayed at initial values for 51 trials, no loss improvement
-   - **Action**: Revert to iter1's 8 Beta terms (remove β₇ and β₈)
-   - **Expected outcome**: Loss should remain ~136% (no change) or potentially improve (simpler model, less overfitting risk)
+**2. Re-Examine Reasoning Experiment Root Cause** (390% contribution, 26% of loss)
+- **Action**: Investigate WHY reasoning experiments have 99% TTFT APE
+- **Test**: Are prompts actually >4096 tokens? Check ground truth prompt lengths.
+- **Hypotheses**:
+  - Ground truth latencies incorrect (validation failure like Scout)
+  - Prompts shorter than expected (β₇ never activated)
+  - Mechanism is wrong (quadratic, not linear)
+- **Verification**: Manually inspect one reasoning experiment end-to-end
+- **Timeline**: BEFORE designing iter3 hypothesis
 
 ---
 
-### Priority 2: Improvements (address after Priority 1)
+### Priority 2: Model Structure Improvements (Required for <50% Loss)
 
-1. **Add TP-dependent prefill overhead term (β₉)**
-   - **Evidence**: TP=4 experiments have high TTFT errors (42-90%) but excellent E2E errors (8-11%)
-   - **Action**: Add β₉ term for TP communication in prefill:
-     ```
-     β₉ × TP × num_layers × prompt_tokens × hidden_dim / network_bandwidth
-     ```
-   - **Bounds**: [0, 0.5] (allow up to 50% prefill overhead from TP communication)
-   - **Expected outcome**: TP=4 TTFT errors drop from 42-90% to <30%
+**3. Replace β₇ (Very Long Context) with Better Functional Form**
+- **Action**: Test quadratic, piecewise, or log scaling instead of linear
+- **Candidates**:
+  - Quadratic: `β × max(0, (tokens - threshold)²) / 1e6`
+  - Piecewise: `β × (0 if tokens<2048, 1×(tokens-2048) if <4096, 2×(tokens-4096) if >=4096)`
+  - Chunking: `β × floor(tokens / chunk_size) × num_layers`
+- **Verification**: Check if reasoning experiments improve to <50% TTFT APE
+- **Timeline**: iter3
 
-2. **Investigate β₁ inflation root cause**
-   - **Evidence**: β₁=1.553 (155% memory bandwidth efficiency is impossible), β₈ failed to normalize it
-   - **Action**: Audit decode roofline calculations:
-     - Verify decode FLOPs formula: `2 × batch_size × output_tokens × hidden_dim × (4 × hidden_dim + 2 × MLP_dim)`
-     - Verify memory bandwidth formula: `bytes_per_param × (weights + 2 × batch_size × KV_cache_size_per_token)`
-     - Test alternative hypothesis: Replace `max(flops_time / β₅, bandwidth_time / β₁)` with `β₁_compute × flops_time + β₁_memory × bandwidth_time` (mixed compute+memory, not regimes)
-   - **Expected outcome**: Either find undercounting in formulas OR discover roofline model is wrong for decode
+**4. Add Per-Token Decode Overhead (Replace β₈)**
+- **Action**: Replace per-request `β₈ × num_requests` with per-token `β₉ × Σ(context_length)`
+- **Rationale**: β₈ converged to zero, but β₁ still inflated (missing decode overhead)
+- **Expected**: β₁ drops from 1.316 to 0.6-0.9, β₉ converges to 0.00001-0.0001
+- **Verification**: Check if E2E RMSE decreases
+- **Timeline**: iter3
 
-3. **Increase optimization trials to 500-1000**
-   - **Evidence**: Iter2 converged early at 51/250 trials, may have found local minimum
-   - **Action**: Set `n_trials=1000` and disable early stopping
-   - **Expected outcome**: More thorough exploration of parameter space, potentially better coefficients
+**5. Restore β₅ (Prefill Chunking Overhead)**
+- **Action**: Re-add the removed β₅ term from iter1
+- **Rationale**: β₀ degraded from 0.203 to 0.155 after removing β₅, suggesting β₅ was absorbing real overhead
+- **Expected**: β₀ rises back to 0.2-0.3
+- **Verification**: Check if TTFT RMSE decreases
+- **Timeline**: iter3 or iter4 (if iter3 still fails)
 
 ---
 
-### Priority 3: Refinements (nice-to-have)
+### Priority 3: Process Improvements (Prevent Future Failures)
 
-1. **Split β₀ (prefill MFU) by TP config**
-   - **Evidence**: TP=4 has high TTFT errors (42-90%), TP=1 has moderate errors (12-48%)
-   - **Action**: Use TP-dependent prefill MFU: β₀_tp1, β₀_tp2, β₀_tp4
-   - **Bounds**: β₀_tp1 ∈ [0.4, 0.7], β₀_tp2 ∈ [0.3, 0.6], β₀_tp4 ∈ [0.2, 0.5] (decreasing MFU with increasing TP)
-   - **Expected outcome**: TP=4 TTFT errors drop, β₀ coefficients become physically plausible
+**6. Test ONE Mechanism at a Time**
+- **Action**: DO NOT add multiple basis functions in a single iteration
+- **Rationale**: Adding β₇ + β₈ + removing β₅ + changing sigmoid made it impossible to isolate which change caused degradation
+- **Protocol**: iter3 should test ONLY the highest-priority mechanism (fix reasoning experiments)
+- **Timeline**: Immediate (process change)
 
-2. **Test hypothesis: Remove sigmoid interpolation, revert to discrete regime split**
-   - **Evidence**: Sigmoid smoothness is inconclusive, overall loss increased with sigmoid
-   - **Action**: Revert to iter1's discrete `if batch_size < 8` split
-   - **Expected outcome**: Either loss improves (sigmoid was harmful) or no change (sigmoid was neutral)
+**7. Validate Ablation Results Before Removing Terms**
+- **Action**: DO NOT remove terms based on <5% ablation loss increase
+- **Rationale**: Removing β₅ caused 12% degradation, despite iter1 ablation showing only +1.06% increase
+- **Protocol**: Only remove terms with <0.5% ablation impact OR coefficient <1e-6
+- **Timeline**: Immediate (process change)
+
+**8. Check Coefficient Stability Across Iterations**
+- **Action**: Track coefficient evolution across iterations (β₄: 0.37μs → 0.000043)
+- **Rationale**: Dramatic coefficient changes indicate instability or overfitting
+- **Metric**: If any coefficient changes by >50% between iterations, investigate root cause before accepting new model
+- **Timeline**: Immediate (add to analysis workflow)
+
+---
+
+### Priority 4: Hypothesis Design Guidelines (Improve iter3 Success Rate)
+
+**9. Require Per-Experiment Analysis in Hypothesis**
+- **Action**: Agent 1 must predict specific experiments that will improve and by how much
+- **Example**: "β₇ will reduce reasoning experiments (Qwen, Llama-2) from 99% to <50% TTFT APE"
+- **Rationale**: H-main predicted <55% overall loss but didn't specify which experiments would improve
+- **Verification**: Agent 3 can immediately check if target experiments improved
+- **Timeline**: iter3 hypothesis
+
+**10. Require Diagnostic Thresholds for Coefficients**
+- **Action**: Agent 1 must specify "if β < X, mechanism is absent; if X < β < Y, mechanism is working"
+- **Example**: "if β₇ < 0.01, very long context overhead is negligible; if 0.5 < β₇ < 2.0, working as intended"
+- **Rationale**: β₇ = 1.507 was "in range" but ineffective - need stronger validation than magnitude alone
+- **Verification**: Agent 3 checks both coefficient magnitude AND per-experiment improvement
+- **Timeline**: iter3 hypothesis
+
+**11. Limit Hypothesis Count to 3 Core Hypotheses**
+- **Action**: Agent 1 should write H-main + 2-3 ablation hypotheses, NOT 6 hypotheses
+- **Rationale**: 6 hypotheses in iter2 created validation burden (3 experimental, 3 observable)
+- **Protocol**: H-main + H-ablation-X + H-ablation-Y only
+- **Timeline**: iter3 hypothesis
 
 ---
 
 ## Basis Function Changes for iter3
 
-### Proposed changes:
-
 **Remove**:
-- β₇ (very long context overhead) - stayed at initial value, reasoning experiments still fail
-- β₈ (per-request decode overhead) - stayed at initial value, β₁ unchanged
-
-**Add**:
-- β₇ (NEW): Quadratic long-context attention overhead - `β₇ × (prompt_tokens / 4096)² × num_layers`
-  - Captures O(L²) attention memory bandwidth scaling
-  - Bounds: [0, 2.0] (allow up to 2× prefill overhead for very long contexts)
-  - Target: Reduce reasoning experiment TTFT errors from 99.97-99.99% to <60%
-
-- β₈ (NEW): TP-dependent prefill communication overhead - `β₈ × TP × num_layers × prompt_tokens`
-  - Captures TP all-reduce overhead in prefill (scales with TP, layers, and tokens)
-  - Bounds: [0, 0.001] (μs per TP×layer×token)
-  - Target: Reduce TP=4 TTFT errors from 42-90% to <30%
+- β₈ (per-request decode overhead) - proven ineffective (coefficient 0.000042)
 
 **Modify**:
-- Revert sigmoid interpolation to discrete regime split (iter1 approach)
-- Consider splitting β₀ into TP-dependent variants (β₀_tp1, β₀_tp2, β₀_tp4) if simple β₈ addition doesn't fix TP=4 prefill
+- β₇ (very long context) → Replace `max(0, tokens - 4096)` with quadratic or piecewise
+
+**Add**:
+- β₉ (per-token decode overhead) → `β × Σ(context_length_per_request)` to normalize β₁
+
+**Maybe restore**:
+- Old β₅ (prefill chunking overhead) → If β₀ doesn't improve, restore this term
+
+**Final count**: 9 Beta terms (if only modify β₇, add β₉, remove β₈) OR 10 Beta terms (if also restore old β₅)
 
 ---
 
-## Bounds Adjustments for iter3
+## Bounds Adjustments
 
-**Tighten** (converged coefficients):
-- α₀: [0.0008, 0.0015] (tighten around 0.00116)
-- α₁: [0.00003, 0.00006] (tighten around 0.0000425)
-- α₂: [0.00007, 0.00012] (tighten around 0.0000957)
-- β₃: [0.3, 0.5] (tighten around 0.394, confirmed correct for decode)
-- β₄: [0.0002, 0.0005] (tighten around 0.00037, CRITICAL term despite small magnitude)
-- β₅: [0.5, 0.8] (tighten around 0.651, physically plausible)
-- β₆: [0.005, 0.015] (tighten around 0.008, correct for MoE gating)
+**Tighten bounds** (coefficients stable):
+- β₂: [0.00005, 0.0002] → stable at ~0.0001
+- β₃: [0.05, 0.20] → stable at ~0.12
 
-**Expand** (to encourage movement):
-- β₀: [0.1, 0.8] (expand from [0.1, 0.8] to allow larger range, currently stuck at 0.203)
-- β₁: [0.3, 2.0] (expand from [0.3, 1.5] to allow optimizer to explore higher values, currently 1.553)
-- β₂: [0, 0.0001] (keep unchanged, appears genuinely negligible)
+**Expand bounds** (coefficients hit limits):
+- β₀: [0.1, 0.8] → currently 0.155, allow down to 0.05 or up to 1.0
+- β₁: [0.3, 2.0] → currently 1.316, allow up to 3.0 if needed (though ideally should decrease)
 
-**New terms**:
-- β₇ (quadratic long-context): [0, 2.0] (allow up to 2× prefill overhead)
-- β₈ (TP-dependent prefill): [0, 0.001] (μs per TP×layer×token)
+**New term bounds**:
+- β₇ (quadratic long context): [0.0001, 0.01] (quadratic scales faster, need smaller coefficient)
+- β₉ (per-token decode): [1e-6, 1e-4] (per-token overhead is tiny)
 
 ---
 
-## Expected Iteration 3 Outcomes
+## Overall Assessment
 
-**Overall loss target**: <100% (from 136.19% in iter2)
-- TTFT RMSE target: <50% (from 72.75% in iter2)
-- E2E RMSE target: <50% (from 63.44% in iter2)
+**Model readiness**: ❌ **NOT READY** - Loss increased 12%
 
-**Per-experiment targets**:
-- Reasoning experiments: TTFT <60% (from 99.97-99.99%) after adding quadratic β₇
-- Scout experiments: Combined loss <80% (from 168-197%) after unit test debugging
-- Dense non-reasoning experiments: Maintain or improve current best (Mistral codegen: 19.42%)
+**Strengths**:
+- β₃ (TP communication) stable and plausible
+- β₂ (constant step overhead) stable
+- Optimization converged reliably (142 trials, 0 errors)
 
-**Coefficient targets**:
-- β₀: 0.40-0.60 (up from 0.203, toward physical range)
-- β₁: 0.80-1.20 (still above ideal 0.6-0.9, but reduced from 1.553)
-- β₂: 0-50μs (allow exploration, currently 0.12μs)
-- β₃: 0.35-0.45 (stable from iter2's 0.394)
-- β₄: 0.3-0.5μs (stable from iter2's 0.37μs, CRITICAL term)
-- β₅: 0.60-0.75 (stable from iter2's 0.651)
-- β₆: 0.006-0.012 (stable from iter2's 0.008)
-- β₇: 0.5-1.5 (NEW, quadratic long-context overhead)
-- β₈: 0.0002-0.0008 (NEW, TP-dependent prefill overhead)
+**Weaknesses**:
+- Scout MoE validation failure blocks 53% of progress
+- Reasoning experiments unchanged despite β₇ targeting them
+- β₁ inflation persists despite β₈ targeting it
+- β₀ degraded significantly
+- Testing multiple hypotheses simultaneously masked root causes
 
-**If iter3 loss remains >100%**: Consider fundamental model redesign - current additive overhead approach may be insufficient. Explore:
-- Neural network latency model (replace handcrafted formulas with learned features)
-- Per-model coefficients (accept that different models need different coefficients)
-- Data quality audit (verify ground-truth vLLM experiments are correct)
+**Recommendation**:
 
-**If Scout experiments still fail**: Accept that Scout's interleaved MoE+dense architecture cannot be represented with current basis functions. Either:
-- Exclude Scout from training set (train on dense models only, report Scout as unsupported)
-- Implement per-layer-type basis functions (β₀_moe, β₀_dense, β₅_moe, β₅_dense)
+**DO NOT PROCEED TO ITER3 UNTIL**:
+1. ✅ Scout MoE validation is fixed (blocks 53% of progress)
+2. ✅ Reasoning experiment root cause is identified (blocks 26% of progress)
+3. ✅ Validation that β₇ functional form is correct (check actual prompt lengths)
+
+**After fixes, iter3 should**:
+1. Test ONLY ONE mechanism (either fix long context OR add per-token decode, not both)
+2. Require per-experiment predictions (not just overall loss target)
+3. Use stricter hypothesis validation (coefficient magnitude + target experiment improvement)
+
+**Timeline estimate**: Fixing Scout MoE + reasoning investigation: 1-2 days. Iter3 design + execution: 3-5 days.
