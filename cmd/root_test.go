@@ -299,3 +299,38 @@ func TestPrintPDMetrics_NilPD_ProducesNoOutput(t *testing.T) {
 	printPDMetrics(&buf, nil, true)
 	assert.Empty(t, buf.String(), "printPDMetrics with nil pd must produce no output")
 }
+
+// TestRunCmdDistributionDefaults_UseSharedConstants verifies that runCmd's eight distribution
+// flag defaults equal the package-level constants (BC-1, BC-2: single source of truth).
+//
+// What this test catches: if someone changes a constant value, both commands change
+// together and the test still passes. If someone bypasses the constants with a different
+// hardcoded literal, the test fails.
+func TestRunCmdDistributionDefaults_UseSharedConstants(t *testing.T) {
+	tests := []struct {
+		flag string
+		want int
+	}{
+		{"prompt-tokens", defaultPromptMean},
+		{"prompt-tokens-stdev", defaultPromptStdev},
+		{"prompt-tokens-min", defaultPromptMin},
+		{"prompt-tokens-max", defaultPromptMax},
+		{"output-tokens", defaultOutputMean},
+		{"output-tokens-stdev", defaultOutputStdev},
+		{"output-tokens-min", defaultOutputMin},
+		{"output-tokens-max", defaultOutputMax},
+	}
+	for _, tt := range tests {
+		f := runCmd.Flags().Lookup(tt.flag)
+		if f == nil {
+			t.Fatalf("flag --%s not found on runCmd", tt.flag)
+		}
+		got, err := strconv.Atoi(f.DefValue)
+		if err != nil {
+			t.Fatalf("--%s DefValue %q is not an int: %v", tt.flag, f.DefValue, err)
+		}
+		if got != tt.want {
+			t.Errorf("--%s default: got %d, want %d", tt.flag, got, tt.want)
+		}
+	}
+}
