@@ -71,7 +71,7 @@ When instances serve different models (multi-model deployment), BLIS prints per-
     Throughput: 50.00 req/s, 6400.00 tok/s
 ```
 
-When `--results-path` is set, the JSON output includes a `per_model` key (omitted when no requests carry model tags). Each entry has:
+When `--metrics-path` is set, the JSON output includes a `per_model` key (omitted when no requests carry model tags). Each entry has:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -132,7 +132,7 @@ For detailed analysis, save per-request data:
 
 ```bash
 ./blis run --model qwen/qwen3-14b \
-  --rate 100 --num-requests 500 --results-path results.json
+  --rate 100 --num-requests 500 --metrics-path results.json
 ```
 
 Each request record includes TTFT, E2E, scheduling delay, and completion status.
