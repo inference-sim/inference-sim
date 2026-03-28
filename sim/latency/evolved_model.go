@@ -224,14 +224,23 @@ func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 	// ========================================
 	// Physics: MoE gating network computes routing probabilities for all experts
 	// Expected range: 0.008 (stable from iter1's β₇)
-	// Units: seconds
+	// Units: seconds (converted to μs below)
 	// Code: vllm/model_executor/layers/fused_moe/fused_moe.py computes gating logits
 	// Note: Index is now β₆ (formerly β₇ in iter1) due to removing β₅ chunking
+	//
+	// BUG FIX (2026-03-28): Previous calculation multiplied num_experts × tokens (dimensionless count)
+	// by 1e6 and treated it as time. Correct calculation: compute gating FLOPs and convert to time.
+	// Gating network: hidden_dim → num_experts linear projection per token
+	// FLOPs: 2 × tokens × hidden_dim × num_experts
 	var moeGatingTimeSeconds float64
 	if m.modelConfig.NumLocalExperts > 1 {
-		// Gating network overhead: num_experts × batch_tokens
 		totalTokens := totalPrefillTokens + int64(len(stepConfig.DecodeRequests))
-		moeGatingTimeSeconds = float64(m.modelConfig.NumLocalExperts) * float64(totalTokens)
+		// Gating FLOPs: 2 (multiply-add) × tokens × hidden_dim × num_experts
+		gatingFlops := 2.0 * float64(totalTokens) * float64(m.modelConfig.HiddenDim) * float64(m.modelConfig.NumLocalExperts)
+		// Gating runs on tensor cores with lower efficiency than main compute (small GEMM)
+		// Use conservative 30% MFU for gating network
+		gatingEfficiency := 0.3
+		moeGatingTimeSeconds = gatingFlops / tpFactor / (peakFlops * gatingEfficiency)
 	}
 	moeGatingTimeUs := moeGatingTimeSeconds * 1e6 // Convert to microseconds
 	moeGatingContribution := m.Beta[6] * moeGatingTimeUs // Note: β₆ is now MoE gating (formerly β₇)
