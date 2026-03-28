@@ -300,6 +300,41 @@ func TestPrintPDMetrics_NilPD_ProducesNoOutput(t *testing.T) {
 	assert.Empty(t, buf.String(), "printPDMetrics with nil pd must produce no output")
 }
 
+// TestRunCmdDistributionDefaults_NoHardcodedLiterals verifies that none of the distDefaults
+// constant values appear as hardcoded literals in root.go's distribution flag IntVar calls
+// (BC-2: single source of truth).
+//
+// Companion to TestObserveDistributionDefaults_NoHardcodedLiterals in observe_cmd_test.go.
+// Together they ensure neither command can silently bypass the shared constants.
+func TestRunCmdDistributionDefaults_NoHardcodedLiterals(t *testing.T) {
+	data, err := os.ReadFile("root.go")
+	if err != nil {
+		t.Fatalf("cannot read root.go: %v", err)
+	}
+	content := string(data)
+
+	// These patterns are the constant values that must not appear as inline literals
+	// in the distribution flag IntVar calls.
+	// If someone writes IntVar(&promptTokensMean, "prompt-tokens", 512, ...) instead
+	// of IntVar(&promptTokensMean, "prompt-tokens", defaultPromptMean, ...), this fails.
+	forbidden := []string{
+		`"prompt-tokens", 512`,
+		`"prompt-tokens-stdev", 256`,
+		`"prompt-tokens-min", 2`,
+		`"prompt-tokens-max", 7000`,
+		`"output-tokens", 512`,
+		`"output-tokens-stdev", 256`,
+		`"output-tokens-min", 2`,
+		`"output-tokens-max", 7000`,
+	}
+	for _, pattern := range forbidden {
+		if strings.Contains(content, pattern) {
+			t.Errorf("hardcoded literal found in root.go: %q\n"+
+				"Use the distDefaults constants instead (BC-2).", pattern)
+		}
+	}
+}
+
 // TestRunCmdNumRequestsDefault_Is100 verifies that runCmd's --num-requests defaults to 100.
 // This value is referenced in observe_cmd.go's --num-requests help text ("differs from blis run
 // default of 100"). If this default ever changes, the help text must be updated too.
