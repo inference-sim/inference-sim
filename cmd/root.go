@@ -22,6 +22,32 @@ import (
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
+// distDefaults are the shared default values for distribution synthesis flags.
+// Both runCmd and observeCmd use these constants so the two commands produce
+// identical workload shapes when called with no explicit distribution flags.
+// Changing a value here affects both commands simultaneously.
+//
+// Flags covered:
+//
+//	--prompt-tokens, --prompt-tokens-stdev, --prompt-tokens-min, --prompt-tokens-max
+//	--output-tokens, --output-tokens-stdev, --output-tokens-min, --output-tokens-max
+//
+// NOT covered: --prefix-tokens (default 0 means "no shared prefix", a feature toggle,
+// not a distribution shape parameter).
+//
+// --num-requests is intentionally NOT shared: run defaults to 100 (safe for quick sims),
+// observe defaults to 0 (requires explicit bound — see observe_cmd.go).
+const (
+	defaultPromptMean  = 512
+	defaultPromptStdev = 256
+	defaultPromptMin   = 2
+	defaultPromptMax   = 7000
+	defaultOutputMean  = 512
+	defaultOutputStdev = 256
+	defaultOutputMin   = 2
+	defaultOutputMax   = 7000
+)
+
 var (
 	// CLI flags for vllm server configs
 	seed                      int64     // Seed for random token generation
@@ -1639,14 +1665,14 @@ func init() {
 	runCmd.Flags().IntVar(&concurrency, "concurrency", 0, "Number of concurrent virtual users (closed-loop, mutually exclusive with --rate)")
 	runCmd.Flags().IntVar(&thinkTimeMs, "think-time-ms", 0, "Think time in ms between response and next request (concurrency mode)")
 	runCmd.Flags().IntVar(&prefixTokens, "prefix-tokens", 0, "Prefix Token Count")
-	runCmd.Flags().IntVar(&promptTokensMean, "prompt-tokens", 512, "Average Prompt Token Count")
-	runCmd.Flags().IntVar(&promptTokensStdev, "prompt-tokens-stdev", 256, "Stddev Prompt Token Count")
-	runCmd.Flags().IntVar(&promptTokensMin, "prompt-tokens-min", 2, "Min Prompt Token Count")
-	runCmd.Flags().IntVar(&promptTokensMax, "prompt-tokens-max", 7000, "Max Prompt Token Count")
-	runCmd.Flags().IntVar(&outputTokensMean, "output-tokens", 512, "Average Output Token Count")
-	runCmd.Flags().IntVar(&outputTokensStdev, "output-tokens-stdev", 256, "Stddev Output Token Count")
-	runCmd.Flags().IntVar(&outputTokensMin, "output-tokens-min", 2, "Min Output Token Count")
-	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", 7000, "Max Output Token Count")
+	runCmd.Flags().IntVar(&promptTokensMean, "prompt-tokens", defaultPromptMean, "Average Prompt Token Count")
+	runCmd.Flags().IntVar(&promptTokensStdev, "prompt-tokens-stdev", defaultPromptStdev, "Stddev Prompt Token Count")
+	runCmd.Flags().IntVar(&promptTokensMin, "prompt-tokens-min", defaultPromptMin, "Min Prompt Token Count")
+	runCmd.Flags().IntVar(&promptTokensMax, "prompt-tokens-max", defaultPromptMax, "Max Prompt Token Count")
+	runCmd.Flags().IntVar(&outputTokensMean, "output-tokens", defaultOutputMean, "Average Output Token Count")
+	runCmd.Flags().IntVar(&outputTokensStdev, "output-tokens-stdev", defaultOutputStdev, "Stddev Output Token Count")
+	runCmd.Flags().IntVar(&outputTokensMin, "output-tokens-min", defaultOutputMin, "Min Output Token Count")
+	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", defaultOutputMax, "Max Output Token Count")
 	runCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "Path to YAML workload specification file (overrides --workload)")
 
 	// Run-specific export
