@@ -131,20 +131,29 @@ func ComposeSpecs(specs []*WorkloadSpec) (*WorkloadSpec, error) {
 	if math.IsNaN(totalRate) || math.IsInf(totalRate, 0) {
 		return nil, fmt.Errorf("compose: total aggregate rate is not finite: %f", totalRate)
 	}
-	if totalRate <= 0 {
-		return nil, fmt.Errorf("compose: total aggregate rate must be positive, got %f", totalRate)
-	}
 	merged.AggregateRate = totalRate
 
-	// Renormalize: each client's fraction is scaled by its spec's share of total rate.
-	// client_merged_fraction = client_original_fraction * (spec_rate / total_rate)
-	if totalRate > 0 {
+	if totalRate == 0 {
+		// All specs are concurrency-only (Validate() ensures any spec with a rate-based
+		// client requires AggregateRate > 0, so totalRate==0 means all-concurrency).
+		// No rate fraction scaling is needed — just concatenate clients.
 		for _, s := range specs {
-			weight := s.AggregateRate / totalRate
-			for _, c := range s.Clients {
-				c.RateFraction *= weight
-				merged.Clients = append(merged.Clients, c)
-			}
+			merged.Clients = append(merged.Clients, s.Clients...)
+		}
+		return merged, nil
+	}
+
+	if totalRate < 0 {
+		return nil, fmt.Errorf("compose: total aggregate rate must be non-negative, got %f", totalRate)
+	}
+
+	// Rate-based or mixed: renormalize each client's RateFraction by its
+	// spec's proportional share of the combined rate.
+	for _, s := range specs {
+		weight := s.AggregateRate / totalRate
+		for _, c := range s.Clients {
+			c.RateFraction *= weight
+			merged.Clients = append(merged.Clients, c)
 		}
 	}
 

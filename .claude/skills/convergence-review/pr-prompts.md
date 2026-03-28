@@ -4,12 +4,7 @@ Reference file for the convergence-review skill. Contains exact prompts for the 
 
 **Canonical source:** `docs/contributing/pr-workflow.md` (v4.0). After the human-first rewrite, pr-workflow.md contains the same checklist content in human-readable format; this file preserves the agent dispatch format. Content is aligned; format differs intentionally. If checklist *content* diverges, pr-workflow.md is authoritative.
 
-**Dispatch pattern:** Launch each perspective as a parallel Task agent:
-```
-Task(subagent_type="general-purpose", model=REVIEW_MODEL, run_in_background=True,
-     prompt="<prompt from below>\n\n<artifact content>")
-```
-Model selection is controlled by the `--model` flag in the convergence-review skill (default: `haiku`).
+**Dispatch pattern:** All perspectives are passed to a single foreground agent in one call. The artifact is sent once; each perspective appears as a `## [<ID>] <Name>` section. See SKILL.md Phase A Step 3 for the full assembly specification. Model selection is controlled by the `--model` flag in the convergence-review skill (default: `haiku`).
 
 ---
 

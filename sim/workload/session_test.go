@@ -242,3 +242,100 @@ func TestNewSessionManager_PanicsOnZeroMaxRounds(t *testing.T) {
 	bp := makeTestBlueprint("bad", 0, 1000, "", 1_000_000)
 	NewSessionManager([]SessionBlueprint{bp})
 }
+
+func TestSession_UnlimitedRounds_ContinuesPastMaxRounds(t *testing.T) {
+	bp := makeTestBlueprint("sess-unlim", 1, 1000, "", 1_000_000)
+	bp.UnlimitedRounds = true
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "sess-unlim", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+	}
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up with UnlimitedRounds, got %d", len(follow))
+	}
+}
+
+func TestSession_FollowUpBudget_StopsWhenExhausted(t *testing.T) {
+	bp1 := makeTestBlueprint("sess-b1", 1, 1000, "", 1_000_000)
+	bp1.UnlimitedRounds = true
+	bp2 := makeTestBlueprint("sess-b2", 1, 1000, "", 1_000_000)
+	bp2.UnlimitedRounds = true
+	sm := NewSessionManager([]SessionBlueprint{bp1, bp2})
+	sm.SetFollowUpBudget(2)
+
+	req1 := &sim.Request{
+		ID: "r1-0", SessionID: "sess-b1", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+	}
+	follow1 := sm.OnComplete(req1, 5000)
+	if len(follow1) != 1 {
+		t.Fatalf("expected 1 follow-up (budget=2), got %d", len(follow1))
+	}
+
+	req2 := &sim.Request{
+		ID: "r2-0", SessionID: "sess-b2", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+	}
+	follow2 := sm.OnComplete(req2, 6000)
+	if len(follow2) != 1 {
+		t.Fatalf("expected 1 follow-up (budget=1), got %d", len(follow2))
+	}
+
+	req1b := &sim.Request{
+		ID: "r1-1", SessionID: "sess-b1", RoundIndex: 1,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+	}
+	follow1b := sm.OnComplete(req1b, 8000)
+	if follow1b != nil {
+		t.Errorf("expected nil after budget exhausted, got %d", len(follow1b))
+	}
+}
+
+func TestSession_UnlimitedRounds_AllowsZeroMaxRounds(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("unexpected panic for UnlimitedRounds with MaxRounds=0: %v", r)
+		}
+	}()
+	bp := SessionBlueprint{
+		SessionID:       "sess-zero",
+		ClientID:        "test-client",
+		MaxRounds:       0,
+		UnlimitedRounds: true,
+		ThinkTimeUs:     1000,
+		Horizon:         1_000_000,
+		InputSampler:    &constantSampler{value: 10},
+		OutputSampler:   &constantSampler{value: 5},
+		RNG:             rand.New(rand.NewSource(42)),
+		TenantID:        "test-tenant",
+		SLOClass:        "standard",
+		Model:           "test-model",
+	}
+	NewSessionManager([]SessionBlueprint{bp})
+}
+
+func TestSession_NoContextAccumulation_FreshTokens(t *testing.T) {
+	bp := makeTestBlueprint("sess-fresh", 1, 1000, "", 1_000_000)
+	bp.UnlimitedRounds = true
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "sess-fresh", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+	}
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+	if len(follow[0].InputTokens) != 10 {
+		t.Errorf("BC-6: follow-up input length = %d, want 10 (fresh, no accumulation)", len(follow[0].InputTokens))
+	}
+}

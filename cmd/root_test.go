@@ -299,3 +299,86 @@ func TestPrintPDMetrics_NilPD_ProducesNoOutput(t *testing.T) {
 	printPDMetrics(&buf, nil, true)
 	assert.Empty(t, buf.String(), "printPDMetrics with nil pd must produce no output")
 }
+
+// TestRunCmdDistributionDefaults_NoHardcodedLiterals verifies that none of the distDefaults
+// constant values appear as hardcoded literals in root.go's distribution flag IntVar calls
+// (BC-2: single source of truth).
+//
+// Companion to TestObserveDistributionDefaults_NoHardcodedLiterals in observe_cmd_test.go.
+// Together they ensure neither command can silently bypass the shared constants.
+func TestRunCmdDistributionDefaults_NoHardcodedLiterals(t *testing.T) {
+	data, err := os.ReadFile("root.go")
+	if err != nil {
+		t.Fatalf("cannot read root.go: %v", err)
+	}
+	content := string(data)
+
+	// These patterns are the constant values that must not appear as inline literals
+	// in the distribution flag IntVar calls.
+	// If someone writes IntVar(&promptTokensMean, "prompt-tokens", 512, ...) instead
+	// of IntVar(&promptTokensMean, "prompt-tokens", defaultPromptMean, ...), this fails.
+	forbidden := []string{
+		`"prompt-tokens", 512`,
+		`"prompt-tokens-stdev", 256`,
+		`"prompt-tokens-min", 2`,
+		`"prompt-tokens-max", 7000`,
+		`"output-tokens", 512`,
+		`"output-tokens-stdev", 256`,
+		`"output-tokens-min", 2`,
+		`"output-tokens-max", 7000`,
+	}
+	for _, pattern := range forbidden {
+		if strings.Contains(content, pattern) {
+			t.Errorf("hardcoded literal found in root.go: %q\n"+
+				"Use the distDefaults constants instead (BC-2).", pattern)
+		}
+	}
+}
+
+// TestRunCmdNumRequestsDefault_Is100 verifies that runCmd's --num-requests defaults to 100.
+// This value is referenced in observe_cmd.go's --num-requests help text ("differs from blis run
+// default of 100"). If this default ever changes, the help text must be updated too.
+func TestRunCmdNumRequestsDefault_Is100(t *testing.T) {
+	f := runCmd.Flags().Lookup("num-requests")
+	if f == nil {
+		t.Fatal("flag --num-requests not found on runCmd")
+	}
+	if f.DefValue != "100" {
+		t.Errorf("--num-requests default: got %q, want \"100\" (referenced in observe --help text)", f.DefValue)
+	}
+}
+
+// TestRunCmdDistributionDefaults_UseSharedConstants verifies that runCmd's eight distribution
+// flag defaults equal the package-level constants (BC-1, BC-2: single source of truth).
+//
+// What this test catches: if someone changes a constant value, both commands change
+// together and the test still passes. If someone bypasses the constants with a different
+// hardcoded literal, the test fails.
+func TestRunCmdDistributionDefaults_UseSharedConstants(t *testing.T) {
+	tests := []struct {
+		flag string
+		want int
+	}{
+		{"prompt-tokens", defaultPromptMean},
+		{"prompt-tokens-stdev", defaultPromptStdev},
+		{"prompt-tokens-min", defaultPromptMin},
+		{"prompt-tokens-max", defaultPromptMax},
+		{"output-tokens", defaultOutputMean},
+		{"output-tokens-stdev", defaultOutputStdev},
+		{"output-tokens-min", defaultOutputMin},
+		{"output-tokens-max", defaultOutputMax},
+	}
+	for _, tt := range tests {
+		f := runCmd.Flags().Lookup(tt.flag)
+		if f == nil {
+			t.Fatalf("flag --%s not found on runCmd", tt.flag)
+		}
+		got, err := strconv.Atoi(f.DefValue)
+		if err != nil {
+			t.Fatalf("--%s DefValue %q is not an int: %v", tt.flag, f.DefValue, err)
+		}
+		if got != tt.want {
+			t.Errorf("--%s default: got %d, want %d", tt.flag, got, tt.want)
+		}
+	}
+}
