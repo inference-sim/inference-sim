@@ -300,6 +300,19 @@ func TestPrintPDMetrics_NilPD_ProducesNoOutput(t *testing.T) {
 	assert.Empty(t, buf.String(), "printPDMetrics with nil pd must produce no output")
 }
 
+// TestRunCmdNumRequestsDefault_Is100 verifies that runCmd's --num-requests defaults to 100.
+// This value is referenced in observe_cmd.go's --num-requests help text ("differs from blis run
+// default of 100"). If this default ever changes, the help text must be updated too.
+func TestRunCmdNumRequestsDefault_Is100(t *testing.T) {
+	f := runCmd.Flags().Lookup("num-requests")
+	if f == nil {
+		t.Fatal("flag --num-requests not found on runCmd")
+	}
+	if f.DefValue != "100" {
+		t.Errorf("--num-requests default: got %q, want \"100\" (referenced in observe --help text)", f.DefValue)
+	}
+}
+
 // TestRunCmdDistributionDefaults_UseSharedConstants verifies that runCmd's eight distribution
 // flag defaults equal the package-level constants (BC-1, BC-2: single source of truth).
 //

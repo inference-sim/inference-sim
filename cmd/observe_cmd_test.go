@@ -919,13 +919,18 @@ func TestObserveDistributionDefaults_NoHardcodedLiterals(t *testing.T) {
 	}
 	content := string(data)
 
-	// These patterns are the old hardcoded literals that must no longer appear as
+	// These patterns are the hardcoded literals that must no longer appear as
 	// the default argument in distribution flag IntVar calls.
 	// Format: the flag name string followed by the old literal default.
+	// Covers all 8 distribution flags:
+	//   - 6 formerly-divergent flags (old values: stdev=50, min=1, max=2048)
+	//   - 2 mean flags (old values: 512 — already matched run, but must use the constant)
 	forbidden := []string{
+		`"prompt-tokens", 512`,
 		`"prompt-tokens-stdev", 50`,
 		`"prompt-tokens-min", 1`,
 		`"prompt-tokens-max", 2048`,
+		`"output-tokens", 512`,
 		`"output-tokens-stdev", 50`,
 		`"output-tokens-min", 1`,
 		`"output-tokens-max", 2048`,

@@ -27,7 +27,7 @@ import (
 // identical workload shapes when called with no explicit distribution flags.
 // Changing a value here affects both commands simultaneously.
 //
-// Flags covered (8 total):
+// Flags covered:
 //
 //	--prompt-tokens, --prompt-tokens-stdev, --prompt-tokens-min, --prompt-tokens-max
 //	--output-tokens, --output-tokens-stdev, --output-tokens-min, --output-tokens-max

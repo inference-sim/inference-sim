@@ -36,7 +36,7 @@ var (
 	observeHorizon      int64
 	observeNumRequests  int
 	// Distribution synthesis flags — same names and defaults as blis run.
-	// Default values are defined in cmd/root.go (distDefaults const block).
+	// Default values are defined in root.go (distDefaults const block).
 	observePromptTokens  int
 	observePromptStdDev  int
 	observePromptMin     int
@@ -45,7 +45,7 @@ var (
 	observeOutputStdDev  int
 	observeOutputMin     int
 	observeOutputMax     int
-	observePrefixTokens  int
+	observePrefixTokens  int // hardcoded 0 — not in distDefaults (feature toggle, not distribution shape)
 	observeAPIFormat           string
 	observeUnconstrainedOutput bool
 	observeRttMs               float64
