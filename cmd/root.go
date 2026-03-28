@@ -1444,7 +1444,7 @@ var runCmd = &cobra.Command{
 				}
 			}
 		}
-		// Save aggregated metrics (prints to stdout + saves to file if resultsPath set)
+		// Save aggregated metrics (prints to stdout + saves to file if metricsPath set)
 		if err := cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, metricsPath); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
