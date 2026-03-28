@@ -1326,7 +1326,7 @@ var runCmd = &cobra.Command{
 		}
 		// Log configuration after all config sources (CLI, workload spec, policy bundle) are resolved
 		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v",
-			totalKVBlocks, simulationHorizon, alphaCoeffs, betaCoeffs)
+			totalKVBlocks, simulationHorizon, lr.AlphaCoeffs, lr.BetaCoeffs)
 
 		startTime := time.Now() // Get current time (start)
 

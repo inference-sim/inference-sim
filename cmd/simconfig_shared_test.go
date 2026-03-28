@@ -171,7 +171,9 @@ func TestBothCommands_SimConfigFlagsHaveIdenticalDefaults(t *testing.T) {
 	for _, name := range sharedFlags {
 		runFlag := runCmd.Flags().Lookup(name)
 		replayFlag := replayCmd.Flags().Lookup(name)
-		if runFlag == nil || replayFlag == nil {
+		// Both commands must register the flag (not skip silently — a missing flag is a regression).
+		if !assert.NotNilf(t, runFlag, "runCmd must have --%s", name) ||
+			!assert.NotNilf(t, replayFlag, "replayCmd must have --%s", name) {
 			continue
 		}
 		assert.Equalf(t, runFlag.DefValue, replayFlag.DefValue,
