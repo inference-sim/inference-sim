@@ -94,15 +94,54 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 
 	if includeMLP {
 		nMat := mlpMatrixCount(config.HiddenAct)
-		dExpert := dFF
-		if config.NumLocalExperts > 1 && config.MoEExpertFFNDim > 0 {
-			dExpert = float64(config.MoEExpertFFNDim)
+
+		// Determine layer counts based on interleave pattern
+		var numMoELayers, numDenseLayers float64
+		if config.InterleaveMoELayerStep > 0 && config.NumLocalExperts > 1 {
+			// Interleaved architecture: split layers between MoE and dense
+			// HuggingFace semantics: layer i is MoE if (i % (step+1)) == step
+			// With interleave_step=1: layers 1,3,5,...=MoE; layers 0,2,4,...=dense (alternating)
+			// With interleave_step=2: layers 2,5,8,...=MoE; layers 0,1,3,4,...=dense
+			// Every (step+1)-th layer is MoE: numMoELayers = floor(numLayers / (step + 1))
+			// For Scout (step=1, 48 layers): floor(48/2) = 24 MoE, 48-24 = 24 dense
+			step := config.InterleaveMoELayerStep
+			numMoELayers = math.Floor(nLayers / float64(step+1))
+			numDenseLayers = nLayers - numMoELayers
+		} else if config.NumLocalExperts > 1 {
+			// Uniform MoE: all layers are MoE
+			numMoELayers = nLayers
+			numDenseLayers = 0
+		} else {
+			// Dense model: all layers are dense
+			numMoELayers = 0
+			numDenseLayers = nLayers
 		}
-		mlpFlopsPerLayer := 2 * newT * (nMat * dModel * dExpert)
-		if config.NumLocalExperts > 1 {
-			mlpFlopsPerLayer *= float64(config.NumExpertsPerTok)
+
+		// Calculate MoE layer contribution
+		var moeMLPFlops float64
+		if numMoELayers > 0 {
+			dExpert := dFF
+			if config.MoEExpertFFNDim > 0 {
+				dExpert = float64(config.MoEExpertFFNDim)
+			}
+			// MoE layers: apply expert routing (top-k)
+			moeMLPFlopsPerLayer := 2 * newT * (nMat * dModel * dExpert) * float64(config.NumExpertsPerTok)
+			moeMLPFlops = moeMLPFlopsPerLayer * numMoELayers
 		}
-		flops["gemm_ops"] += mlpFlopsPerLayer * nLayers
+
+		// Calculate dense layer contribution
+		var denseMLPFlops float64
+		if numDenseLayers > 0 {
+			dDense := dFF // Default to IntermediateDim
+			if config.DenseIntermediateDim > 0 {
+				dDense = float64(config.DenseIntermediateDim)
+			}
+			// Dense layers: single FFN, no expert routing
+			denseMLPFlopsPerLayer := 2 * newT * (nMat * dModel * dDense)
+			denseMLPFlops = denseMLPFlopsPerLayer * numDenseLayers
+		}
+
+		flops["gemm_ops"] += moeMLPFlops + denseMLPFlops
 	}
 
 	flops["total"] = flops["gemm_ops"] + flops["sram_ops"]
