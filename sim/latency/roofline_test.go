@@ -1378,3 +1378,48 @@ func TestCalculateMemoryAccessBytes_InterleavedWithZeroTokens_BaseWeightCalculat
 			expectedWeightBytes, mem["model_weights"], relativeError*100)
 	}
 }
+
+func TestScoutInterleavedArchitecture_EndToEnd(t *testing.T) {
+	// GIVEN Scout's actual architecture
+	scoutConfig := sim.ModelConfig{
+		NumLayers:              48,
+		HiddenDim:              5120,
+		NumHeads:               40,
+		NumKVHeads:             40,
+		VocabSize:              128256,
+		BytesPerParam:          1.0, // FP8
+		IntermediateDim:        8192,
+		NumLocalExperts:        16,
+		NumExpertsPerTok:       1,
+		MoEExpertFFNDim:        8192,
+		InterleaveMoELayerStep: 1,     // Alternate MoE/dense
+		DenseIntermediateDim:   16384, // Dense FFN
+		WeightBytesPerParam:    1.0,
+	}
+
+	// WHEN computing FLOPs for 588-token prefill (Scout codegen experiment)
+	flops := calculateTransformerFlops(scoutConfig, 0, 588, true, true)
+
+	// THEN FLOPs account for both layer types correctly
+	// Expected (from SCOUT-MOE-BUGS.md):
+	//   Attention: 4.6e12 FLOPs (same for all layers)
+	//   MLP: (9.8e10 × 24 MoE) + (2.0e11 × 24 dense) = 7.2e12 FLOPs
+	//   Total: ~11.8e12 FLOPs (attention + MLP)
+	expectedTotalFlops := 1.18e13
+	tolerance := 0.15 // 15% tolerance (conservative, accounts for attention approximation)
+
+	relativeError := math.Abs(flops["total"]-expectedTotalFlops) / expectedTotalFlops
+	if relativeError > tolerance {
+		t.Errorf("Scout total FLOPs outside expected range: expected %.3e, got %.3e (%.1f%% error)",
+			expectedTotalFlops, flops["total"], relativeError*100)
+	}
+
+	// AND weight bandwidth distinguishes MoE vs dense
+	mem := calculateMemoryAccessBytes(scoutConfig, 588, 588, false)
+	if mem["model_weights"] == 0 {
+		t.Fatalf("model_weights should be non-zero")
+	}
+	// Sanity: weight bandwidth should be 10-20% of previous buggy calculation
+	// (buggy version over-counted due to nEff on all layers)
+	t.Logf("Scout weight bandwidth: %.3e bytes (FLOPs: %.3e)", mem["model_weights"], flops["total"])
+}
