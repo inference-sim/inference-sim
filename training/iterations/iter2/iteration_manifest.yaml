@@ -1,0 +1,36 @@
+iteration: 2
+latency_backend_name: "evolved"  # Backend name stays constant across iterations
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 2: Very long context overhead + per-request decode overhead + smooth regime transition.
+
+  Previous iteration (iter1): Added 5 additive overhead terms (TP comm, KV mgmt, chunking, decode regime split, MoE gating), achieving 33% loss improvement (200.54% → 134.54%) but fell short of <80% target. Ablation experiments revealed β₅ (chunking) is redundant (+1.06% loss when removed), while β₄ (KV mgmt) is critical (+30.28% E2E degradation). Reasoning experiments catastrophically failed (~100% TTFT), and Scout MoE experiments hit validation failures (100% APE for all metrics) due to simulator bugs.
+
+  This iteration addresses three critical gaps:
+
+  1. **Remove β₅ (chunking overhead)**: Ablation confirmed redundancy. Prefill base term (β₀) already captures chunking costs adequately.
+
+  2. **Add β₇ (very long context prefill overhead)**: Captures reasoning experiment failures. Formula: `(prompt_tokens - 4096) / 1000 × num_layers` — naturally scales with excess context length without workload labels. Reasoning prompts (>4096 tokens) have overhead beyond standard FLOPs: attention memory bandwidth saturation (intermediate matrices spill to HBM), KV recomputation under memory pressure, reduced prefix cache effectiveness.
+
+  3. **Add β₈ (per-request decode overhead)**: Normalizes inflated β₁=1.553 by capturing scheduler per-request work, attention state setup, and kernel launch overhead. Formula: `num_decode_requests × per_request_time`. Expected β₈ ~ 10-50μs per request, which should allow β₁ to drop from 1.553 to 0.6-0.9 (physically plausible).
+
+  4. **Replace discrete decode regime split with sigmoid interpolation**: Smooth transition from memory-bound to compute-bound. Formula: `memory_weight(n) = 1/(1+exp((n-8)/2))`. Prevents discontinuity at batch_size=8 that caused potential prediction jumps in iter1.
+
+  5. **Scout MoE simulator bugs fixed**: Previous iter2 discovered three critical bugs (interleaved MoE architecture ignored, `intermediate_size_mlp` not parsed, MoE gating FLOPs calculation wrong). Bugs now patched via commits 8bd79f56 and 2308663e. Scout experiments should validate properly in this iteration.
+
+  Basis function changes (9 Beta terms, up from 8):
+  - **Removed**: β₅ (chunking) — ablation showed +1.06% loss (redundant)
+  - **Added**: β₇ (very long context overhead) — captures reasoning experiments
+  - **Added**: β₈ (per-request decode overhead) — normalizes inflated β₁
+  - **Modified**: Decode regime split now uses continuous sigmoid interpolation instead of discrete if-else
+
+  Expected outcomes:
+  - Overall loss: <80% (from 134.54%)
+  - TTFT RMSE: <40% (from 69.29%)
+  - E2E RMSE: <40% (from 65.24%)
+  - Reasoning experiments: TTFT <60% (from ~100%)
+  - Scout experiments: Combined loss <60% (from 200% validation failure)
+  - Coefficient normalization: β₀ → 0.40-0.55, β₁ → 0.60-0.90 (toward physical ranges)
+
+timestamp: "2026-03-29T00:00:00Z"
