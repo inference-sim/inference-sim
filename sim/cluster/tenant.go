@@ -10,7 +10,7 @@ import (
 //
 // Behavioral contract: specs/002-tier-tenant-fairness/contracts/tenant-tracker.md
 type TenantTracker struct {
-	budgets       map[string]float64 // tenantID → fraction of totalCapacity (absent key = unlimited; 0.0 = zero slots allowed)
+	budgets       map[string]float64 // tenantID → fraction of totalCapacity (absent key = unlimited; 0.0 = effectively zero concurrent slots, see IsOverBudget DES ordering note)
 	inFlight      map[string]int     // tenantID → current in-flight count
 	totalCapacity int                // max in-flight slots across cluster
 }
@@ -28,8 +28,12 @@ func NewTenantTracker(budgets map[string]float64, totalCapacity int) *TenantTrac
 			panic(fmt.Sprintf("NewTenantTracker: budget for tenant %q is %v; must be in [0, 1]", tenantID, v))
 		}
 	}
+	budgetsCopy := make(map[string]float64, len(budgets))
+	for k, v := range budgets {
+		budgetsCopy[k] = v
+	}
 	return &TenantTracker{
-		budgets:       budgets,
+		budgets:       budgetsCopy,
 		inFlight:      make(map[string]int),
 		totalCapacity: totalCapacity,
 	}

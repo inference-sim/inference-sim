@@ -102,6 +102,24 @@ func TestTenantTracker_TwoTenantsIndependent(t *testing.T) {
 	}
 }
 
+// T_Tenant_009 — budget=0.0 edge case: first request at any tick is not blocked.
+// DES ordering: admission events fire at priority 1, routing events at priority 2.
+// At admission time inFlight=0, so 0 > 0.0 is false → the first request passes through.
+// This is the extreme edge of the same-tick burst tradeoff documented in IsOverBudget.
+// The second request (after the first is routed and OnStart fires) will be blocked.
+func TestTenantTracker_ZeroBudget_FirstRequestNotBlocked(t *testing.T) {
+	tracker := NewTenantTracker(map[string]float64{"alice": 0.0}, 10)
+	// Before any routing: inFlight=0. 0 > (0.0 * 10 = 0.0) is false → not over budget.
+	if tracker.IsOverBudget("alice") {
+		t.Error("zero budget: IsOverBudget should be false when inFlight=0 (DES ordering; first request slips through)")
+	}
+	// After routing fires (OnStart called): inFlight=1. 1 > 0.0 is true → over budget.
+	tracker.OnStart("alice")
+	if !tracker.IsOverBudget("alice") {
+		t.Error("zero budget: IsOverBudget should be true when inFlight=1 (subsequent requests blocked)")
+	}
+}
+
 // T_Tenant_008 — OnStart/OnComplete are no-ops for empty tenantID.
 func TestTenantTracker_EmptyTenantIDNoop(t *testing.T) {
 	tracker := NewTenantTracker(map[string]float64{"": 0.1}, 10)

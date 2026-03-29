@@ -118,9 +118,9 @@ func TestTenantAdmission_CriticalAndStandardProtectedFromBudgetShed(t *testing.T
 	}
 }
 
-// T_TenantInteg_003 — Simulation with no TenantID produces byte-identical output (INV-6).
-// TenantBudgets: nil → zero-value path — same as running without any tenant config.
-func TestTenantAdmission_NilBudgetsIdenticalToBaseline(t *testing.T) {
+// T_TenantInteg_003 — Zero-value safety: nil TenantBudgets produces identical metrics to no-budget config.
+// This verifies the zero-value contract, not INV-6 (determinism). INV-6 is tested separately below.
+func TestTenantAdmission_NilBudgets_ZeroValueSafety(t *testing.T) {
 	requests1 := newTestRequests(30)
 	requests2 := newTestRequests(30)
 
@@ -138,7 +138,85 @@ func TestTenantAdmission_NilBudgetsIdenticalToBaseline(t *testing.T) {
 	m1, _ := json.Marshal(cs1.AggregatedMetrics())
 	m2, _ := json.Marshal(cs2.AggregatedMetrics())
 	if !bytes.Equal(m1, m2) {
-		t.Error("nil TenantBudgets should produce byte-identical output (INV-6 violated)")
+		t.Error("nil TenantBudgets should produce byte-identical output to no-budget config")
+	}
+}
+
+// T_TenantInteg_003b — INV-6 determinism: same tenant-budgeted simulation with same seed must
+// produce byte-identical AggregatedMetrics JSON across independent runs.
+// This catches non-determinism bugs in tenant tracking (e.g. map iteration influencing output ordering).
+func TestTenantAdmission_INV6_Determinism(t *testing.T) {
+	makeReqs := func() []*sim.Request {
+		reqs := make([]*sim.Request, 0, 40)
+		for i := 0; i < 40; i++ {
+			tenant := "alice"
+			if i%2 == 1 {
+				tenant = "bob"
+			}
+			reqs = append(reqs, newTenantRequest(
+				fmt.Sprintf("req_%s_%d", tenant, i),
+				int64(i)*5,
+				tenant,
+				"sheddable",
+			))
+		}
+		return reqs
+	}
+
+	cfg := newTenantConfig(2, map[string]float64{"alice": 0.1, "bob": 0.9})
+	cfg.BatchConfig = sim.NewBatchConfig(5, 2048, 0)
+
+	// Run 1
+	cs1 := NewClusterSimulator(cfg, makeReqs(), nil)
+	mustRun(t, cs1)
+	m1, _ := json.Marshal(cs1.AggregatedMetrics())
+
+	// Run 2 — identical config and seed
+	cs2 := NewClusterSimulator(cfg, makeReqs(), nil)
+	mustRun(t, cs2)
+	m2, _ := json.Marshal(cs2.AggregatedMetrics())
+
+	if !bytes.Equal(m1, m2) {
+		t.Errorf("INV-6 violated: same seed produced different output\nrun1: %s\nrun2: %s", m1, m2)
+	}
+}
+
+// T_TenantInteg_004 — INV-1: conservation holds for the budget-shed path (R7).
+// Budget-shed requests increment cs.rejectedRequests. If that increment were accidentally
+// dropped in a refactor, no existing test would catch the violation.
+// GIVEN: alice is over-budget and sheds Sheddable requests
+// WHEN: Run() completes
+// THEN: len(requests) == completedRequests + stillQueued + stillRunning + cs.RejectedRequests()
+func TestTenantAdmission_INV1_BudgetShedConservation(t *testing.T) {
+	const n = 60
+	requests := make([]*sim.Request, 0, n)
+	for i := 0; i < n; i++ {
+		requests = append(requests, newTenantRequest(
+			fmt.Sprintf("req_alice_%d", i),
+			int64(i)*5,
+			"alice",
+			"sheddable",
+		))
+	}
+
+	// alice budget=0.1 with totalCapacity=10 → 1 slot; dense arrivals guarantee budget enforcement fires.
+	cfg := newTenantConfig(2, map[string]float64{"alice": 0.1})
+	cfg.BatchConfig = sim.NewBatchConfig(5, 2048, 0) // totalCapacity=10; alice limit=1 slot
+	cs := NewClusterSimulator(cfg, requests, nil)
+	mustRun(t, cs)
+
+	// Verify budget enforcement actually fired (test setup check).
+	shed := cs.ShedByTier()["sheddable"]
+	if shed == 0 {
+		t.Fatal("INV-1 test setup error: alice was never over-budget; budget enforcement did not fire")
+	}
+
+	// INV-1 conservation: every request must be accounted for.
+	agg := cs.AggregatedMetrics()
+	conservation := agg.CompletedRequests + agg.StillQueued + agg.StillRunning + agg.DroppedUnservable + agg.TimedOutRequests + cs.RejectedRequests()
+	if conservation != n {
+		t.Errorf("INV-1 violated: completed(%d) + queued(%d) + running(%d) + dropped(%d) + timedOut(%d) + rejected(%d) = %d, want %d",
+			agg.CompletedRequests, agg.StillQueued, agg.StillRunning, agg.DroppedUnservable, agg.TimedOutRequests, cs.RejectedRequests(), conservation, n)
 	}
 }
 

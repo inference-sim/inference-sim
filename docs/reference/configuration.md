@@ -201,7 +201,7 @@ SLO tier priorities: `critical`=4, `standard`=3, `sheddable`=2, `batch`=1, `back
 
 | YAML field | Type | Default | Description |
 |------------|------|---------|-------------|
-| `tenant_budgets` | map[string]float64 | nil | Per-tenant fraction of total cluster capacity (NumInstances × MaxRunningReqs). Absent key = unlimited. 0.0 = zero slots allowed. Values must be in [0, 1]. |
+| `tenant_budgets` | map[string]float64 | nil | Per-tenant fraction of total cluster capacity (NumInstances × MaxRunningReqs). Absent key = unlimited. 0.0 = effectively zero concurrent slots (one request may slip through per admission tick due to DES admission-before-routing event ordering; see IsOverBudget docstring). Values must be in [0, 1]. |
 
 Example:
 
@@ -395,7 +395,7 @@ instance_lifecycle:
 
 # Per-tenant fair-share budgets (Phase 1B — optional; omit for no tenant enforcement)
 # Each value is a fraction of total cluster capacity (NumInstances × MaxRunningReqs).
-# Absent key = unlimited. 0.0 = zero slots. Values must be in [0, 1].
+# Absent key = unlimited. 0.0 = effectively zero concurrent slots (DES ordering caveat: see IsOverBudget docstring). Values must be in [0, 1].
 # Critical and Standard traffic is always protected from budget shedding.
 tenant_budgets:
   team-a: 0.4

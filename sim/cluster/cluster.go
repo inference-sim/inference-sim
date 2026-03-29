@@ -238,7 +238,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	// totalCapacity = NumInstances × MaxRunningReqs (batch size proxy for cluster-wide capacity).
 	if config.TenantBudgets != nil {
 		totalCapacity := config.NumInstances * int(config.MaxRunningReqs)
-		if totalCapacity == 0 {
+		if len(config.TenantBudgets) > 0 && totalCapacity == 0 {
 			logrus.Warnf("[cluster] tenant_budgets configured but totalCapacity=0 (NumInstances=%d, MaxRunningReqs=%d); all budgeted tenants will be immediately over-budget — set max_running_reqs > 0",
 				config.NumInstances, config.MaxRunningReqs)
 		}
