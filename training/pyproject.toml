@@ -1,0 +1,20 @@
+[project]
+name = "inference-sim-training"
+version = "0.1.0"
+description = "Training data and utilities for the inference-sim latency prediction model"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "scipy>=1.10",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "pytest",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

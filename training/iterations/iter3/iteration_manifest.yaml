@@ -1,0 +1,36 @@
+iteration: 3
+latency_backend_name: "evolved"  # Backend name stays constant across iterations
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 3: Simplification + TP-Dependent Prefill Communication Overhead
+
+  Previous iteration (iter2): Added β₇ (very long context overhead) and β₈ (per-request
+  decode overhead) to address reasoning and Scout failures. Result: Overall loss INCREASED
+  from 134.54% to 136.19% (+1.64%). Both new coefficients remained at initial values
+  throughout 51 optimization trials, indicating they provided no predictive value.
+
+  Iter3 addresses this regression through:
+
+  1. Simplification (REMOVE β₇ and β₈):
+     - β₇ stayed at 1.0 (initial), reasoning TTFT still ~100% → formula was ineffective
+     - β₈ stayed at 30μs (initial), β₁ inflation persists → too small to matter
+     - Reduces model from 9 to 7 Beta terms (back to iter1-like complexity)
+     - Eliminates parameter bloat (12 params → 10 params for 15 experiments)
+
+  2. Targeted improvement (ADD new β₇: TP-dependent prefill communication):
+     - TP=4 experiments have asymmetric errors: high TTFT (42-90%), excellent E2E (8-11%)
+     - Current β₃ captures decode TP comm correctly (β₃=0.394 stable)
+     - Missing: Prefill TP comm, which scales with prompt_tokens × TP × num_layers
+     - Formula: β₇ × TP × num_layers × (prompt_tokens / 1000.0) microseconds
+
+  Basis function changes:
+  - β₀ through β₆: Unchanged (prefill compute, decode memory/compute, scheduler, TP decode comm, KV mgmt, MoE gating)
+  - β₇ (NEW): TP-dependent prefill communication overhead (replaces ineffective iter2 β₇)
+  - β₈: REMOVED (ineffective per-request decode overhead)
+
+  Expected outcome: Overall loss <100% (vs 136% in iter2), with TP=4 experiments seeing
+  largest TTFT improvements (42-90% → <35%). Reasoning and Scout will remain problematic,
+  confirming they need investigation (profiling, end-to-end testing) not formula additions.
+
+timestamp: "2026-03-29T12:00:00Z"
