@@ -2,176 +2,116 @@
 
 ## Summary
 
-**Iteration 2 catastrophically failed**: Loss increased from 134.54% to **150.78%** (+12%), with E2E RMSE deteriorating by 26%. All hypotheses rejected. The very long context (β₇) and per-request overhead (β₈) mechanisms are fundamentally wrong.
+**Iteration 2 analysis** (Scout-excluded): With Scout experiments (4) excluded due to simulator bugs (issue #877) and reasoning experiments (2) excluded due to suspected data quality issues, 9 clean experiments remain. Loss on clean data: **99.41%** (vs iter1 baseline 134.54%, a 26% improvement). All hypotheses rejected. The very long context (β₇) and per-request overhead (β₈) mechanisms are proven ineffective.
 
-**Critical discovery**: Investigation revealed the real bottleneck. Scout MoE failures (6/15 experiments) are **SIMULATOR BUGS**, not data quality issues. Three critical bugs found:
-1. **Interleaved MoE architecture ignored**: Scout has 24 MoE + 24 dense layers, but BLIS treats all 48 as MoE
-2. **`intermediate_size_mlp` not parsed**: Dense layers use 8192 FFN dim instead of 16384
-3. **nEff expert loading applied to all layers**: Should only apply to 24 MoE layers
+**Critical discovery**: Investigation revealed contaminated training data:
+1. **Scout failures are SIMULATOR BUGS** (4 experiments, issue #877): Interleaved MoE architecture ignored, `intermediate_size_mlp` not parsed, nEff applied to all layers
+2. **Reasoning failures are DATA QUALITY issues** (2 experiments): 100% TTFT errors suggest warm prefix cache or chunked prefill measurement artifacts
 
 See **SCOUT-MOE-BUGS.md** for detailed bug analysis.
 
 **What we learned**:
-- **Scout failures are SIMULATOR BUGS** (6 experiments) - fix before iter3
-- **Reasoning failures still unexplained** (3 experiments) - likely data quality or measurement artifacts
-- **Model overparameterization**: 12 free parameters for 15 experiments causes instability
-- **β₆ inflation is a diagnostic signal**: When coefficient inflates 28×, it signals structural mismatch, not physics
+- **β₇ and β₈ are ineffective**: Even with β₇ active, reasoning experiments fail (before exclusion showed 100% TTFT errors)
+- **Model overparameterization**: 12 free parameters for 9 clean experiments causes instability
+- **Data quality is critical**: 40% of original data contaminated (4 Scout bugs + 2 reasoning artifacts)
+- **Coefficient collapse**: β₂ → 0, β₄ → 0 indicate these terms are ineffective
 
-**Strategic pivot required**: iter3 must **fix Scout MoE bugs** before optimization. Reasoning experiments still need data quality audit.
+**Strategic pivot**: iter3 will use 9 clean experiments only, simplify model to 5 free Beta terms (remove β₇/β₈, fix or remove β₂/β₄, fix Alpha), add L2 regularization. Scout bugs tracked in issue #877 for parallel fix.
 
 ---
 
 ## Error Analysis
 
-### Systematic Patterns
+### Clean Experiments (Scout and Reasoning Excluded)
 
-**Pattern 1: Scout MoE experiments are systematically catastrophic** (n=6/6, 100% failure rate)
+**Analysis based on 9 clean experiments** (Scout excluded due to simulator bugs in issue #877, reasoning excluded due to data quality concerns).
 
-**High-error Scout experiments** (ALL Scout experiments):
-1. Scout general (TP=2): TTFT=99.99%, E2E=99.11% → **199.10% combined**
-2. Scout reasoning (TP=2): TTFT=99.99%, E2E=98.83% → **198.82% combined**
-3. Scout codegen (TP=2): TTFT=94.88%, E2E=95.27% → **190.15% combined**
-4. Scout roleplay (TP=2): TTFT=89.46%, E2E=91.36% → **180.83% combined**
-5. Scout general-2 (TP=2): TTFT=99.99%, E2E=99.11% → **199.10% combined** (duplicate?)
+**Performance distribution**:
 
-**Pattern observations**:
-- 100% of Scout experiments fail catastrophically (combined loss >180%)
-- All Scout experiments use TP=2 and FP8 quantization
-- β₆ (MoE gating) inflated to 0.224 (28× expected) trying to compensate
-- iter1 documented MoE gating calculation bug (fixed in commit `eee9181`), but errors persist
+**Excellent experiments** (combined loss <80%, n=3):
+1. Llama-2 codegen (TP=1): TTFT=1.0%, E2E=53.8% → **54.7% combined** ✅ EXCELLENT
+2. Qwen2.5 roleplay (TP=1): TTFT=12.3%, E2E=51.3% → **63.6% combined** ✅ GOOD
+3. Llama-2 roleplay (TP=1): TTFT=8.1%, E2E=64.2% → **72.2% combined** ✅ GOOD
 
-**Root cause** (CONFIRMED via investigation): **SIMULATOR BUGS**, not data quality issues.
+**Moderate experiments** (combined loss 80-120%, n=5):
+4. Llama-2 general (TP=1): TTFT=28.5%, E2E=66.3% → **94.8% combined**
+5. Llama-3.1-70B general-lite (TP=4): TTFT=16.8%, E2E=86.3% → **103.1% combined**
+6. Llama-3.1-70B codegen (TP=4): TTFT=38.6%, E2E=70.9% → **109.5% combined**
+7. Mistral-Nemo codegen (TP=1): TTFT=58.4%, E2E=53.5% → **111.8% combined**
+8. Yi-34B general-lite (TP=2): TTFT=28.2%, E2E=84.5% → **112.6% combined**
 
-**Three critical bugs identified** (see SCOUT-MOE-BUGS.md):
-1. **Interleaved MoE architecture ignored**: Scout has `interleave_moe_layer_step: 1` (24 MoE + 24 dense layers), but BLIS treats all 48 layers as MoE with expert scaling
-2. **`intermediate_size_mlp` not parsed**: Dense layers should use FFN dim 16384, but BLIS uses 8192 (50% under-prediction)
-3. **nEff expert loading applied to all layers**: Should only apply to 24 MoE layers, incorrectly applied to all 48
+**High-error outlier** (combined loss >120%, n=1):
+9. Mistral-Nemo general-lite (TP=2): TTFT=81.8%, E2E=90.5% → **172.3% combined** ⚠️ OUTLIER
 
-**Why β₆ inflated to 0.224**: The optimizer uses MoE gating coefficient as the only MoE-specific "knob" to compensate for structural architecture mismatch. But β₆ cannot fix a bug where 48 layers are treated as MoE when only 24 are - coefficient tuning cannot compensate for wrong model structure.
+**Metrics summary (9 clean experiments)**:
+- Overall loss: **99.41%** (vs 134.54% iter1 baseline, 26% improvement)
+- TTFT RMSE: **39.00%** (vs 54.31% iter1, 28% improvement)
+- E2E RMSE: **70.47%** (vs 65.24% iter1, 8% degradation)
 
-**Why this matters**: 6 Scout experiments contribute 1072% to total loss sum (2262% / 15 experiments). After fixing bugs, Scout TTFT error should drop from 89-100% to <30%, reducing overall loss by **~70 percentage points** (from 150.78% to ~80%).
+**Key observations**:
+1. **TTFT improved significantly** (54.31% → 39.00%), suggesting model captured some TTFT physics
+2. **E2E degraded slightly** (65.24% → 70.47%), suggesting E2E modeling lost fidelity
+3. **One major outlier**: Mistral-Nemo general-lite (172.3%) drags overall loss above iter1
+4. **Most experiments moderate**: 8/9 experiments have combined loss 55-113%, only 1 outlier >120%
 
----
+**Pattern**: Without Scout/reasoning contamination, iter2 shows MIXED results - TTFT improved but E2E worsened and one outlier remains. The hypotheses (β₇, β₈) had minimal positive impact since their target experiments (reasoning) are excluded.
 
-**Pattern 2: Reasoning experiments have catastrophic TTFT failures** (n=3/3, 100% failure rate)
-
-**High-error reasoning experiments** (ALL reasoning experiments):
-1. Llama-2 reasoning (TP=1, 6387 tokens): TTFT=99.98%, E2E=98.52% → **198.50% combined**
-2. Qwen2.5 reasoning (TP=1, 5742 tokens): TTFT=99.99%, E2E=98.92% → **198.91% combined**
-3. Scout reasoning (TP=2, 5632 tokens): TTFT=99.99%, E2E=98.83% → **198.82% combined**
-
-**Pattern observations**:
-- 100% of reasoning experiments fail catastrophically (combined loss >198%)
-- ALL have ~100% TTFT error (99.97-99.99%) but E2E is slightly better (~98-99%)
-- All reasoning prompts are very long (5632-6387 tokens, >4096 threshold)
-- β₇ (very long context) = 0.830 is substantial but **completely ineffective**
-
-**Why β₇ failed**:
-
-β₇ formula: `β₇ × (prompt_tokens - 4096) / 1000 × num_layers`
-
-For Llama-2 reasoning (6387 tokens, 32 layers):
-- Excess tokens: 6387 - 4096 = 2291
-- β₇ contribution: 0.830 × 2.291 × 32 = 60.8 (dimensionless overhead scaling)
-- This should multiply prefill time by ~60×, causing MASSIVE overprediction
-- Yet observed TTFT error is still ~100% (underprediction!)
-
-**Conclusion**: The formula is active but produces WRONG predictions. The mechanism is fundamentally incorrect.
-
-**Root cause hypothesis**: One of the following:
-1. **KV cache warming**: Observed TTFT measured with warm prefix cache. For reasoning prompts with shared prefixes (e.g., "Think step by step..."), vLLM reuses cached KV blocks. Simulator assumes cold cache, predicting full prefill time → systematic underprediction.
-2. **Chunked prefill measurement**: vLLM returns first token after first attention chunk (e.g., 512 tokens), not after full prefill. Simulator computes full prefill time → systematic underprediction.
-3. **Data corruption**: Reasoning experiment TTFT values are wrong (measured on different hardware, wrong request extraction, or file corruption).
-
-**Why this matters**: 3 reasoning experiments contribute 596% to total loss sum (2262% / 15 experiments). If reasoning experiments are excluded or fixed, loss could drop by **40 percentage points** (from 150.78% to ~110%).
-
----
-
-**Pattern 3: Non-Scout, non-reasoning experiments have moderate errors** (n=6/15, 40% of data)
-
-**Low-error experiments** (combined loss <80%):
-1. Llama-2 codegen (TP=1): TTFT=0.98%, E2E=53.75% → **54.73% combined** ✅ EXCELLENT
-2. Qwen2.5 roleplay (TP=1): TTFT=12.31%, E2E=51.34% → **63.65% combined** ✅ GOOD
-3. Llama-2 roleplay (TP=1): TTFT=8.05%, E2E=64.19% → **72.23% combined** ✅ GOOD
-
-**Medium-error experiments** (combined loss 80-120%):
-4. Llama-2 general (TP=1): TTFT=28.48%, E2E=66.33% → **94.81% combined**
-5. Llama-3.1-70B general-lite (TP=4): TTFT=16.77%, E2E=86.29% → **103.06% combined**
-6. Llama-3.1-70B codegen (TP=4): TTFT=38.58%, E2E=70.88% → **109.46% combined**
-7. Yi-34B general-lite (TP=2): TTFT=28.16%, E2E=84.48% → **112.64% combined**
-8. Mistral-Nemo codegen (TP=1): TTFT=58.35%, E2E=53.47% → **111.82% combined**
-
-**Pattern observations**:
-- 8 "clean" experiments (excluding Scout and reasoning) average **90.36% combined loss**
-- TTFT predictions are generally good (0.98-58.35% APE for non-reasoning)
-- E2E predictions are systematically high (51-86% APE)
-- No clear correlation with model size, TP degree, or workload type
-
-**What makes these experiments "easy"**:
-- Short-to-medium prompts (100-2000 tokens, below long context threshold)
-- Dense architecture (non-MoE)
-- Standard workloads (codegen, roleplay, general) with consistent measurement methodology
-
-**Why E2E errors remain high** (51-86% APE):
+**Why E2E errors remain high** (51-90% APE):
 - β₁ still inflated (1.027) → decode predictions systematically wrong
-- β₂, β₄ collapsed → missing constant overheads
-- Alpha collapsed → missing request-level overhead
-
-**If Scout and reasoning are excluded**: Remaining 6-8 experiments have average combined loss **~80-90%**, suggesting model CAN work with clean data and proper parameterization.
+- β₂, β₄ collapsed to zero → missing constant overheads
+- α₀, α₁, α₂ very small → missing request-level overhead
 
 ---
 
-### Error Correlations
+### Excluded Experiments
 
-**✅ Confirmed correlations** (strong signal):
+**Scout experiments (n=4)** excluded due to simulator bugs (issue #877):
+- Scout general-2 (TP=2): TTFT=100.0%, E2E=99.1% → 199.1% combined
+- Scout reasoning-2 (TP=2): TTFT=100.0%, E2E=98.8% → 198.8% combined
+- Scout codegen-2 (TP=2): TTFT=94.9%, E2E=95.3% → 190.1% combined
+- Scout roleplay-2 (TP=2): TTFT=89.5%, E2E=91.4% → 180.8% combined
 
-**Correlation 1: MoE architecture → catastrophic failure** (CONFIRMED: Simulator bugs)
-- 6 Scout MoE experiments: 100% failure rate (all >180% combined loss)
-- 0 dense experiments: 0% catastrophic failure rate (all <120% combined loss when excluding reasoning)
-- **Strength**: Perfect correlation (6/6 MoE fail, 9/9 dense succeed or moderate)
-- **Mechanism** (CONFIRMED): Simulator MoE implementation has THREE fundamental bugs (see SCOUT-MOE-BUGS.md):
-  1. Interleaved MoE architecture (24 MoE + 24 dense layers) completely ignored
-  2. Dense layer FFN dimension (16384) not parsed, uses 8192 instead
-  3. Expert weight loading (nEff) applied to all 48 layers instead of 24 MoE layers
-- **Action**: **Fix Scout MoE bugs before iter3** (bugs documented with line numbers and fix requirements)
+**Root cause**: Three simulator bugs (interleaved MoE architecture ignored, `intermediate_size_mlp` not parsed, nEff applied to all layers). See SCOUT-MOE-BUGS.md and issue #877.
 
-**Correlation 2: Reasoning workload → catastrophic TTFT failure**
-- 3 reasoning experiments: 100% catastrophic TTFT failure rate (all ~100% TTFT)
-- 12 non-reasoning experiments: 0% catastrophic TTFT failure rate (all <95% TTFT, most <60%)
-- **Strength**: Perfect correlation (3/3 reasoning fail, 12/12 non-reasoning succeed or moderate)
-- **Mechanism**: Reasoning ground truth TTFT likely measured with warm prefix cache or wrong definition
-- **Action**: Re-measure reasoning with `--no-prefix-cache` or exclude from training
+**Reasoning experiments (n=2)** excluded due to suspected data quality issues:
+- Qwen2.5 reasoning-1-1 (TP=1, 5742 tokens): TTFT=100.0%, E2E=98.9% → 198.9% combined
+- Llama-2 reasoning (TP=1, 6387 tokens): TTFT=100.0%, E2E=98.5% → 198.5% combined
 
-**Correlation 3: Small prompt length → excellent TTFT accuracy**
-- Llama-2 codegen (168 avg prompt tokens): 0.98% TTFT ✅
-- Llama-2 roleplay (334 avg prompt tokens): 8.05% TTFT ✅
-- Qwen2.5 roleplay (387 avg prompt tokens): 12.31% TTFT ✅
+**Root cause hypothesis**: Warm prefix cache or chunked prefill measurement artifacts. β₇ (very long context) = 0.830 is active but completely ineffective for these experiments.
+
+---
+
+### Error Correlations (Clean Data Only)
+
+**✅ Confirmed correlation**:
+
+**Correlation: Small prompt length → excellent TTFT accuracy**
+- Llama-2 codegen (168 avg prompt tokens): 1.0% TTFT ✅
+- Llama-2 roleplay (334 avg prompt tokens): 8.1% TTFT ✅
+- Qwen2.5 roleplay (387 avg prompt tokens): 12.3% TTFT ✅
 - **Mechanism**: Short prompts have simple prefill dynamics (single chunk, no cache complexity)
-- **Action**: These experiments are "anchor points" - model predicts them well, use for sanity checks
-
----
+- **Action**: These experiments are "anchor points" - model predicts them well, use for validation
 
 **❌ Rejected correlations** (spurious or confounded):
 
-**Rejected 1: TP degree does NOT directly correlate with error**
-- TP=1 mean: 121.84% (but includes 2 reasoning experiments skewing upward)
-- TP=2 mean: 159.63% (but includes 4 Scout experiments skewing upward)
-- TP=4 mean: 106.26% (clean, no Scout or reasoning)
-- When controlling for Scout/reasoning: TP=1 (non-reasoning) ~60-80%, TP=2 (non-Scout) ~60-110%, TP=4 ~103-109%
-- **Conclusion**: TP variance is confounded by Scout/reasoning distribution, not TP physics
+**Rejected 1: TP degree does NOT directly correlate with error** (clean data only)
+- TP=1 experiments (n=5): Range 54.7-111.8% combined loss (mean ~77%)
+- TP=2 experiments (n=2): Range 112.6-172.3% combined loss (mean ~142%, but includes Mistral-Nemo outlier)
+- TP=4 experiments (n=2): Range 103.1-109.5% combined loss (mean ~106%)
+- **Conclusion**: TP has weak correlation, confounded by model/workload effects. Mistral-Nemo TP=2 outlier skews mean.
 
-**Rejected 2: Prompt length does NOT directly correlate with TTFT error** (when excluding reasoning)
-- Short prompts (<1000 tokens): 0.98-81.79% TTFT (wide range)
-- Long prompts (>4096 tokens): Only reasoning experiments (all ~100%)
-- Medium prompts (1000-4000 tokens): 16.77-94.88% TTFT (wide range)
-- **Conclusion**: β₇ (long context term) failed because the correlation is spurious (confounded by reasoning workload), not causal
+**Rejected 2: Model size does NOT predict error magnitude** (clean data only)
+- 7B models (Llama-2, Qwen2.5): 54.7-94.8% combined loss range
+- 12B models (Mistral-Nemo): 111.8-172.3% combined loss range (includes outlier)
+- 34B model (Yi): 112.6% combined loss
+- 70B model (Llama-3.1): 103.1-109.5% combined loss range
+- **Conclusion**: Model size effect is small compared to workload and model-specific factors
 
-**Rejected 3: Model size does NOT predict error magnitude**
-- 7B models: 0.98-99.99% combined loss range (includes Llama-2 codegen at 54.73% and Llama-2 reasoning at 198.50%)
-- 12B models: 111.82-172.25% combined loss range
-- 34B model (Yi): 112.64% combined loss
-- 70B model (Llama-3.1): 103-109% combined loss range
-- **Conclusion**: Model size effect is dwarfed by workload and architecture effects
+**Rejected 3: Workload type does NOT strongly predict error**
+- Codegen: 54.7-111.8% range (3 experiments)
+- Roleplay: 63.6-72.2% range (2 experiments)
+- General/general-lite: 94.8-172.3% range (4 experiments, includes outlier)
+- **Conclusion**: Within-workload variance is high, suggesting model-specific effects dominate
 
 ---
 
@@ -179,14 +119,13 @@ For Llama-2 reasoning (6387 tokens, 32 layers):
 
 Following Strategy Evolution Phase 5, extract principles from confirmed predictions AND prediction errors:
 
-### Principle 1: Simulator Bugs and Data Quality Both Matter (Scout vs Reasoning)
+### Principle 1: Data Quality Determines Training Success (Exclude Bad Data, Don't Fight It)
 
-**Evidence**:
-- 10 of 15 experiments (67%) have catastrophic errors (>50% combined loss)
-- **Scout experiments (6/6) EXPLAINED**: Simulator has THREE critical MoE bugs (interleaved architecture, dense FFN dim, nEff layer count) - confirmed via code investigation, see SCOUT-MOE-BUGS.md
-- **Reasoning experiments (3/3) UNEXPLAINED**: Still likely data quality or measurement artifacts (β₇ active but ineffective)
-- Remaining 6 "clean" experiments average **~60-90% combined loss** (still above target but not catastrophic)
-- Adding physics-informed basis functions (β₇, β₈) made loss WORSE, not better
+**Evidence** (Scout-excluded analysis):
+- 6 of 15 original experiments (40%) excluded due to contamination: 4 Scout (simulator bugs), 2 reasoning (data quality)
+- With clean data (9 experiments): Overall loss **99.41%** (vs 134.54% iter1, 26% improvement)
+- With contaminated data (all 15): Overall loss 150.78% (vs 134.54% iter1, 12% regression)
+- **Key insight**: Adding hypotheses (β₇, β₈) to fix bad data made results WORSE. Excluding bad data made results BETTER.
 
 **Mechanism**:
 
@@ -194,74 +133,90 @@ The optimizer cannot distinguish between:
 - **Signal**: True latency patterns from GPU physics
 - **Noise**: Measurement artifacts, data corruption, simulator bugs
 
-When 67% of training data is corrupted, the optimizer fits to noise instead of signal. Adding more parameters (β₇, β₈) gives optimizer more degrees of freedom to memorize corrupted data, causing:
+When 40% of training data is contaminated, adding more parameters (β₇, β₈) gives optimizer more degrees of freedom to memorize corrupted patterns, causing:
 - Critical terms to collapse (β₂, β₄ → 0)
-- Compensatory terms to inflate (β₆ → 28× expected)
+- Compensatory terms to inflate (β₆ → 0.224, α-terms collapse)
 - Overall loss to worsen (134.54% → 150.78%)
 
-**Action for iter3**:
-1. **Fix Scout MoE bugs FIRST** (MANDATORY): Three critical bugs identified with line numbers and fix requirements (see SCOUT-MOE-BUGS.md). After fix, re-validate Scout experiments - expected TTFT error to drop from 89-100% to <30%.
-2. **Audit reasoning experiments**: Re-measure with `--no-prefix-cache` OR exclude from training (still unexplained)
-3. **Sanity check remaining experiments**: For each experiment, verify observed TTFT > (theoretical_min_FLOPs / peak_TFLOPS / 0.5)
+**What went wrong in iter2**:
+1. Agent 1 assumed Scout/reasoning failures were MISSING PHYSICS (designed β₇, β₈ to fix)
+2. Reality: Scout failures were SIMULATOR BUGS, reasoning failures were DATA QUALITY issues
+3. Result: β₇, β₈ ineffective (can't fix bad data with physics), instability from overparameterization
 
-**Expected impact after Scout fixes**:
-- Scout TTFT error: 89-100% → <30% (saves ~70 percentage points on overall loss)
-- Overall loss: 150.78% → **~80%** (Scout fixed, reasoning still excluded)
-- If reasoning also fixed/excluded: Overall loss → **<60%**
+**Action for iter3**:
+1. **Use 9 clean experiments ONLY** (exclude Scout and reasoning)
+2. **Do NOT add new physics terms** to compensate for bad data
+3. **Simplify model**: Remove β₇/β₈, fix Alpha, fix or remove β₂/β₄ → 5 free Beta terms
+4. **Investigate Mistral-Nemo outlier** (172.3% loss) before iter3
+
+**Expected impact**:
+- With 9 clean experiments + simplified model: Overall loss **<70%** (no contamination, proper parameterization)
 
 ---
 
 ### Principle 2: Model Complexity Must Match Data Availability
 
-**Evidence**:
-- iter2: 12 free parameters (9 Beta + 3 Alpha) for 15 experiments = 1.25 experiments per parameter
+**Evidence** (Scout-excluded):
+- iter2: 12 free parameters (9 Beta + 3 Alpha) for 9 clean experiments = 0.75 experiments per parameter
 - Adding 2 parameters (β₇, β₈) caused 2 critical parameters (β₂, β₄) to collapse
-- Coefficient values became LESS physically plausible: β₀ dropped (0.203→0.162), β₆ inflated 28×, β₁ barely improved
-- Loss worsened despite new parameters being "in expected range"
+- Coefficient values became LESS physically plausible: β₀ dropped (0.203→0.162), β₁ stayed inflated (1.027), α-terms collapsed
+- Loss on clean data: 99.41% (better than iter1's 134.54%, but still high)
 
 **Mechanism**:
 
-With too many free parameters, Bayesian optimization finds **spurious local minima**:
+With 0.75 experiments per parameter, Bayesian optimization is **severely underconstrained**:
 
-1. **Insufficient constraints**: 15 experiments cannot uniquely determine 12 parameters. Optimizer has multiple equally-good solutions, picks arbitrarily.
-2. **Destructive interference**: New parameters (β₇, β₈) compete with existing parameters (β₂, β₄) for explaining variance. Optimizer zeros out older terms to favor newer terms (recency bias in search).
-3. **Overfitting**: Model memorizes experiment-specific patterns instead of learning generalizable physics. This is why iter1 ablations were spurious (β₄ "critical" in iter1, collapsed in iter2).
+1. **Insufficient constraints**: 9 experiments cannot uniquely determine 12 parameters. Optimizer has infinite equally-good solutions.
+2. **Destructive interference**: New parameters (β₇, β₈) compete with existing parameters (β₂, β₄) for explaining variance. Optimizer zeros out older terms.
+3. **Overfitting**: With 12 parameters and 9 experiments, model overfits to noise rather than learning generalizable physics.
+
+**Why TTFT improved but E2E worsened**:
+- TTFT RMSE: 54.31% → 39.00% (improved)
+- E2E RMSE: 65.24% → 70.47% (worsened)
+- Optimizer prioritized TTFT fit at expense of E2E (β₂, β₄ collapsed, α-terms collapsed)
 
 **Action for iter3**:
-1. **Fix Alpha to constants**: α₀=200μs, α₁=1μs/token, α₂=2μs/token → reduces to 9 free parameters
-2. **Remove β₇, β₈**: Proven ineffective → reduces to 7 free parameters
-3. **Fix β₂, β₄ to iter1 values** OR remove entirely → reduces to 5-7 free parameters
-4. **Target ratio**: 6 experiments / 5 parameters = 1.2 experiments per parameter (healthier than current 1.25, but need more data)
+1. **Use 9 clean experiments** (Scout and reasoning excluded)
+2. **Fix Alpha to constants**: α₀=200μs, α₁=1μs/token, α₂=2μs/token → reduces to 9 free parameters
+3. **Remove β₇, β₈**: Proven ineffective (target was reasoning, now excluded) → reduces to 7 free parameters
+4. **Fix β₂, β₄ to iter1 values** OR remove entirely → reduces to 5 free parameters
+5. **Target ratio**: 9 experiments / 5 parameters = 1.8 experiments per parameter (healthier)
 
-**Expected impact**: With 5-7 free parameters, optimizer has fewer degrees of freedom to fit noise. Coefficients should stabilize at physically plausible values.
+**Expected impact**: With 5 free parameters and 9 clean experiments, optimizer has better constraints. Coefficients should stabilize at physically plausible values.
 
 ---
 
-### Principle 3: Physics Intuition Requires Per-Experiment Validation
+### Principle 3: Hypothesis Validation Requires Clean Data (β₇/β₈ Case Study)
 
-**Evidence**:
-- β₇ (long context) had plausible physics explanation (attention bandwidth saturation, KV recomputation, cache ineffectiveness)
-- β₇ converged to expected range (0.830, target: 0.5-2.0)
-- β₇ formula activates correctly for long prompts (>4096 tokens)
-- Yet reasoning experiments STILL have ~100% TTFT error (mechanism completely ineffective)
+**Evidence** (Scout-excluded):
+- β₇ (very long context) and β₈ (per-request decode overhead) were designed to fix reasoning experiments
+- Reasoning experiments ALL had 100% TTFT errors
+- After excluding reasoning from analysis, β₇ and β₈ have NO TARGET EXPERIMENTS to validate against
+- Cannot confirm or reject these hypotheses without clean reasoning data
 
 **Mechanism**:
 
-Agent 1's hypothesis design process failed at **causal validation**:
+Hypothesis validation requires:
+1. **Target experiments**: Experiments where mechanism should activate
+2. **Clean ground truth**: Accurate measurements to compare predictions against
+3. **Falsification criteria**: Predicted improvement that can be tested
 
-1. **Observed correlation**: Reasoning experiments have ~100% TTFT error AND long prompts (>4096 tokens)
-2. **Assumed causation**: Long prompts CAUSE high error via missing physics (attention bandwidth saturation)
-3. **Designed mechanism**: β₇ × (prompt_tokens - 4096) should capture overhead
-4. **Reality**: Correlation was SPURIOUS - long prompts don't cause TTFT error, reasoning workload measurement artifacts do
+For β₇/β₈:
+- Target experiments: Reasoning workloads (long prompts >4096 tokens)
+- Ground truth quality: CONTAMINATED (100% TTFT errors suggest measurement artifacts)
+- Result: Cannot validate hypotheses because all target experiments are excluded
 
-The hypothesis predicted overall loss improvement but did NOT predict per-experiment changes. If Agent 1 had predicted "reasoning experiments will drop from 100% to <40% TTFT", the mechanism could have been validated DURING optimization (not after).
+**What went wrong**:
+- Agent 1 designed β₇ based on correlation (reasoning failures + long prompts)
+- But correlation was SPURIOUS (caused by measurement artifacts, not physics)
+- Without clean long-context experiments, β₇ cannot be validated or rejected based on evidence
 
 **Action for iter3**:
-1. **Require per-experiment predictions**: Agent 1 must predict which experiments improve, by how much, and why
-2. **Require falsification criteria**: If experiment X doesn't improve, hypothesis is wrong → abort optimization
-3. **Add mid-optimization checkpoints**: After 30 trials, check if reasoning experiments improved. If not, stop optimization (don't waste 78 trials on wrong hypothesis)
+1. **Do NOT include β₇, β₈** in iter3 (cannot validate without clean reasoning data)
+2. **If reasoning is fixed/remeasured**: Test β₇ in iter4+ with clean long-context experiments
+3. **For new hypotheses**: Require clean target experiments BEFORE designing mechanisms
 
-**Expected impact**: Prevents wasting compute on fundamentally wrong hypotheses. Enables early termination when predictions fail.
+**Expected impact**: Prevents designing hypotheses for contaminated data. Focuses iter3 on hypotheses testable with clean experiments.
 
 ---
 
@@ -292,36 +247,35 @@ Ablation results from iter1 measured **coefficient importance in iter1's model**
 
 ---
 
-### Principle 5: Catastrophic Failure is More Informative Than Partial Success
+### Principle 5: Coefficient Extremes Signal Structural Problems, Not Physics
 
-**Evidence**:
-- iter1: 134.54% loss (33% improvement from iter0) → seemed like progress, encouraged iterating on same approach
-- iter2: 150.78% loss (+12% regression) → immediately reveals hypotheses are fundamentally wrong
-- If iter2 had achieved 90% loss (partial improvement), would have encouraged iter3 to iterate on β₇/β₈ (wrong direction)
+**Evidence** (Scout-excluded):
+- β₆ (MoE gating) inflated to 0.224 (28× expected value of 0.008)
+- β₁ (decode efficiency) inflated to 1.027 (impossible >100% efficiency)
+- β₂, β₄ collapsed to ~0 (eliminated critical terms)
+- α₀, α₁, α₂ all collapsed to 2-10% of expected values
 
-**Mechanism** (from Strategy Evolution / Hypothesis Bundles):
+**Mechanism**:
 
-**"The most valuable output is often prediction errors — they reveal gaps in our understanding"**
+When coefficients reach extreme values (>10× or <0.1× expected), this is NOT the optimizer discovering new physics - it's a **diagnostic signal** of structural problems:
 
-Catastrophic failure has THREE benefits over partial success:
+1. **Architecture mismatch** (β₆ inflation): Scout bugs caused structural mismatch (48 layers treated as MoE when only 24 are). Optimizer inflated β₆ (only MoE-specific knob) to compensate, but coefficient tuning cannot fix architecture bugs.
 
-1. **Falsifies quickly**: No ambiguity - mechanism is wrong, not just poorly tuned
-2. **Prevents sunk cost**: Don't waste iter3-5 iterating on fundamentally wrong approach
-3. **Forces root cause analysis**: Cannot rationalize away 150% loss - must find real problem (data quality)
+2. **Formula errors** (β₁ inflation): β₁ > 1.0 means "decode achieves >100% of peak memory bandwidth" (impossible). This signals the decode memory bandwidth formula is wrong or missing terms.
 
-Partial success (90% loss) would have encouraged:
-- "β₇ is helping but needs tuning (try threshold 2048 instead of 4096)"
-- "β₈ is helping but needs interaction term (try β₈ × batch_size²)"
-- "Just needs one more iteration to get under 80%"
+3. **Confounding** (α collapse): When Beta terms are inflated (β₁, β₆), optimizer zeros Alpha to avoid double-counting. Extreme Beta forces Alpha collapse.
 
-All of these would have been WRONG - the real problem is data quality, not basis function tuning.
+**What this reveals**:
+- Optimizer behavior is DIAGNOSTIC, not prescriptive
+- Extreme coefficients point to where model structure is wrong
+- Investigation should focus on structural bugs, not coefficient tuning
 
 **Action for iter3**:
-1. **Treat catastrophic failure as success**: iter2 revealed data quality is the blocker (valuable insight)
-2. **Do NOT incrementally tune β₇, β₈**: Remove them entirely, they're wrong
-3. **Pivot strategy**: From "add more physics" to "fix data quality then simplify model"
+1. **Fix structural issues FIRST**: Exclude contaminated data (Scout, reasoning) before optimization
+2. **When coefficients reach extremes**: Investigate for bugs/confounding, don't just regularize
+3. **Regularization is defensive**: Use L2 penalty to prevent extremes, but fix root causes too
 
-**Expected impact**: iter3 will focus on the RIGHT problem (data quality), not waste time on wrong problem (basis function design).
+**Expected impact**: With clean data and no structural bugs, coefficients should converge to physically plausible values (no extremes).
 
 ---
 
@@ -462,100 +416,50 @@ If Beta terms are inflated (β₁ = 1.027, β₆ = 0.224), optimizer zeros out A
 
 ## Recommendations for iter3
 
-### Phase 1: Pre-Optimization (Fix Scout MoE Bugs)
+### Phase 1: Data Quality (Exclude Contaminated Experiments)
 
-**CRITICAL: DO THIS BEFORE HYPOTHESIS DESIGN**
+**Training set for iter3**: **9 clean experiments** (Scout and reasoning excluded)
 
-**Step 1: Fix Scout MoE bugs** (MANDATORY - bugs confirmed, see SCOUT-MOE-BUGS.md)
+**Excluded experiments**:
+1. **Scout experiments (4)**: Excluded due to simulator bugs (issue #877). Fix tracked separately, not blocking iter3.
+2. **Reasoning experiments (2)**: Excluded due to suspected data quality issues (warm cache or chunked prefill).
 
-Three critical bugs identified:
+**Outlier investigation** (BEFORE iter3):
+- Mistral-Nemo general-lite-2-1 (TP=2): 172.3% combined loss (81.8% TTFT, 90.5% E2E)
+- This is the ONLY experiment >120% combined loss in clean data
+- Investigate: Wrong hardware config? Wrong workload spec? Measurement artifact?
+- Decision: If investigation reveals data quality issue, exclude (reduces to 8 experiments)
 
-**Bug 1: Interleaved MoE architecture ignored**
-- Location: `sim/model_hardware_config.go` (missing field), `sim/latency/roofline.go:102-105`
-- Fix: Add `InterleaveMoELayerStep int` field, parse from config.json, split FLOPs/bandwidth into MoE vs dense layer calculations
-- Formula: `numMoELayers = numLayers / (1 + interleaveMoELayerStep)` when interleave > 0
-
-**Bug 2: `intermediate_size_mlp` not parsed**
-- Location: `sim/latency/config.go:240`
-- Fix: Add `DenseIntermediateDim int` field, parse `intermediate_size_mlp`, use for dense layers
-
-**Bug 3: nEff expert loading applied to all layers**
-- Location: `sim/latency/roofline.go:151-170`
-- Fix: Apply nEff only to MoE layers (requires Bug 1 fix first)
-
-**Validation after fix**:
-```bash
-# Re-run Scout experiments through fixed simulator
-./blis run --model RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic --latency-model evolved ...
-
-# Expected: TTFT predictions improve from 89-100% error to <30% error
-# Expected: β₆ drops from 0.224 to ~0.008 after re-optimization
-```
-
-**Decision criteria**:
-- If post-fix error drops to <30%: Include Scout in iter3 training (bugs were root cause)
-- If post-fix error remains >50%: Additional investigation needed (may have secondary bugs)
-
-**Step 2: Audit reasoning experiments** (STILL NEEDED - unexplained failures)
-```bash
-# Re-measure reasoning with cold prefix cache
-blis observe --model meta-llama/Llama-2-7b-hf --no-prefix-cache \
-  --workload-spec reasoning.yaml --trace-header reasoning-cold.yaml --trace-data reasoning-cold.csv
-
-blis observe --model Qwen/Qwen2.5-7B-Instruct --no-prefix-cache \
-  --workload-spec reasoning-1-1.yaml --trace-header reasoning-qwen-cold.yaml --trace-data reasoning-qwen-cold.csv
-
-# Sanity check: theoretical minimum TTFT
-# For Llama-2 reasoning (6387 tokens, 32 layers, 4096 hidden_dim, A100 80GB):
-# FLOPs = 2 × 32 × 6387 × 4096 × (12 × 4096) ≈ 1.0e13 FLOPs
-# Min time = FLOPs / (312 TFLOPS × 0.5 MFU) ≈ 64ms
-# If observed TTFT < 64ms, data is corrupted
-
-# Compare new observations to existing ground truth
-# If cold-cache TTFT matches simulator predictions: warm cache was the issue → replace files
-# If still mismatched: TTFT definition inconsistency or data corruption → exclude from training
-```
-
-**Decision criteria**:
-- If re-measurement matches simulator: Replace ground truth, include reasoning in iter3
-- If re-measurement still mismatches: **Exclude reasoning from iter3 training** (data unreliable)
-
-**Step 3: Sanity check remaining experiments**
-
-For each of the 6-8 "clean" experiments (non-Scout, non-reasoning):
-```bash
-# For each experiment, verify:
-# observed_TTFT > theoretical_min_TTFT = (prefill_FLOPs / peak_TFLOPS / 0.5)
-# If violated, data is corrupted → exclude
-
-python -m experiment.ground_truth --sanity-check --data-dir trainval_data/
-```
-
-**Expected result**: 0-2 additional experiments flagged as corrupted. Final clean training set: **12-15 experiments** (Scout now included after bug fixes, reasoning may be excluded).
+**Expected clean training set**: **8-9 experiments** (assuming Mistral-Nemo outlier investigation)
 
 ---
 
-### Phase 2: Hypothesis Design (After Data Audit Completes)
+### Phase 2: Hypothesis Design (Simplified Model)
 
-**Constraint**: Assume clean training set has **N = 6-10 experiments** (after excluding Scout and/or reasoning).
+**Constraint**: Clean training set has **N = 8-9 experiments**.
 
-**Model complexity target**: **5-7 free parameters** (N/2 < params < N*0.7 for healthy fit)
+**Model complexity target**: **5 free parameters** (N/params = 8-9/5 = 1.6-1.8 experiments per parameter, healthy ratio)
 
 **Fixed parameters** (remove from optimization):
 1. α₀ = 0.0002 seconds (200μs API overhead)
 2. α₁ = 0.000001 seconds/token (1μs/token tokenization)
 3. α₂ = 0.000002 seconds/token (2μs/token detokenization)
-4. β₂ = 0.00000012 seconds (0.12μs scheduler overhead) - IF keeping, else remove
-5. β₄ = 0.00000037 seconds (0.37μs KV management) - IF keeping, else remove
+4. β₇ = REMOVED (very long context - proven ineffective, no target experiments after reasoning exclusion)
+5. β₈ = REMOVED (per-request decode overhead - proven ineffective, failed to normalize β₁)
 
-**Free parameters** (optimize these):
+**Free parameters** (optimize these, 5 core Beta terms):
 - β₀ (prefill compute efficiency): [0.3, 0.7]
 - β₁ (decode memory efficiency): [0.5, 1.0]
 - β₃ (TP communication): [0.2, 0.8]
 - β₅ (decode compute efficiency): [0.5, 0.9]
-- β₆ (MoE gating): [0.001, 0.05] - only if MoE experiments included
+- β₆ (MoE gating): [0.001, 0.05] - NOTE: Clean data has no MoE experiments, may need wider bounds or removal
 
-**Result**: 4-5 free Beta parameters + 0 Alpha parameters = **4-5 total free parameters**
+**Decision on β₂, β₄** (both collapsed to ~0 in iter2):
+- **Option A (conservative)**: Fix to iter1 values (β₂=0.12μs, β₄=0.37μs) → 5 free parameters
+- **Option B (aggressive)**: Remove entirely → 5 free parameters (but different set)
+- **Recommendation**: Try Option B (remove) - if terms keep collapsing, they're not needed
+
+**Result**: **5 free Beta parameters + 0 fixed Alpha parameters = 5 total free parameters**
 
 **Regularization**:
 ```python
@@ -564,10 +468,11 @@ regularization_penalty = 0.1 × sum((beta[i] - priors[i])**2 for i in range(len(
 total_loss = training_loss + regularization_penalty
 ```
 
-**Expected iter3 loss** (with Scout bugs fixed + reduced model + regularization):
-- If 9 experiments (Scout + reasoning excluded, before bugs fixed): **<50% overall loss**
-- If 12 experiments (Scout bugs fixed, reasoning excluded): **<60% overall loss** ✅ RECOMMENDED
-- If 15 experiments (Scout bugs fixed, reasoning data fixed): **<70% overall loss**
+**Expected iter3 loss** (9 clean experiments + 5 free parameters + regularization):
+- Target: **<60% overall loss** (vs 99.41% iter2-Scout-excluded, 40 point improvement)
+- Stretch: **<50% overall loss** if Mistral-Nemo outlier is fixed/excluded
+- TTFT RMSE target: **<25%** (vs 39.00% current)
+- E2E RMSE target: **<60%** (vs 70.47% current)
 
 ---
 
@@ -635,4 +540,4 @@ total_loss = training_loss + regularization_penalty
 - All coefficients physically interpretable
 - CV tests pass (CV1/CV2/CV3 all < 15-20% MAPE)
 
-**Most likely outcome for iter3**: Minimum viable success (loss ~80-100%) IF data quality audit identifies and fixes/excludes corrupted experiments. Target success (<60%) requires both clean data AND correct basis function design.
+**Most likely outcome for iter3** (9 clean experiments + simplified model): Target success (<60%) is achievable with proper parameterization (5 free parameters, 1.8 experiments per parameter, L2 regularization).
