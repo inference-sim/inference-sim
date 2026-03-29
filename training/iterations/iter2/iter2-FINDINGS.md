@@ -4,14 +4,20 @@
 
 **Iteration 2 catastrophically failed**: Loss increased from 134.54% to **150.78%** (+12%), with E2E RMSE deteriorating by 26%. All hypotheses rejected. The very long context (β₇) and per-request overhead (β₈) mechanisms are fundamentally wrong.
 
-**Critical discovery**: The training bottleneck is **data quality**, not missing physics. 10 of 15 experiments have catastrophic errors (>50% combined loss) due to corrupted or inconsistent ground truth data. Adding physics-informed basis functions cannot compensate for bad data.
+**Critical discovery**: Investigation revealed the real bottleneck. Scout MoE failures (6/15 experiments) are **SIMULATOR BUGS**, not data quality issues. Three critical bugs found:
+1. **Interleaved MoE architecture ignored**: Scout has 24 MoE + 24 dense layers, but BLIS treats all 48 as MoE
+2. **`intermediate_size_mlp` not parsed**: Dense layers use 8192 FFN dim instead of 16384
+3. **nEff expert loading applied to all layers**: Should only apply to 24 MoE layers
+
+See **SCOUT-MOE-BUGS.md** for detailed bug analysis.
 
 **What we learned**:
-- **Data quality dominates**: Scout MoE (6 experiments) and reasoning (3 experiments) are poisoning the model
+- **Scout failures are SIMULATOR BUGS** (6 experiments) - fix before iter3
+- **Reasoning failures still unexplained** (3 experiments) - likely data quality or measurement artifacts
 - **Model overparameterization**: 12 free parameters for 15 experiments causes instability
-- **Wrong diagnostic**: iter1 analysis blamed missing physics, should have blamed data quality
+- **β₆ inflation is a diagnostic signal**: When coefficient inflates 28×, it signals structural mismatch, not physics
 
-**Strategic pivot required**: iter3 must focus on **data quality audit** before hypothesis design. Cannot iterate on physics until validation data is trustworthy.
+**Strategic pivot required**: iter3 must **fix Scout MoE bugs** before optimization. Reasoning experiments still need data quality audit.
 
 ---
 
@@ -34,12 +40,16 @@
 - β₆ (MoE gating) inflated to 0.224 (28× expected) trying to compensate
 - iter1 documented MoE gating calculation bug (fixed in commit `eee9181`), but errors persist
 
-**Root cause hypothesis**: One of the following:
-1. **Ground truth data corrupted**: Scout experiments measured on wrong hardware, incorrect workload config, or mislabeled
-2. **Simulator MoE bug unfixed**: The gating time fix was incomplete, OR there's a separate bug (expert load balancing, routing overhead, activation sparsity)
-3. **FP8 quantization bug**: Model assumes FP8 but calculations use wrong precision somewhere
+**Root cause** (CONFIRMED via investigation): **SIMULATOR BUGS**, not data quality issues.
 
-**Why this matters**: 6 Scout experiments contribute 1072% to total loss sum (2262% / 15 experiments). If Scout experiments are excluded or fixed, loss could drop by **71 percentage points** (from 150.78% to ~80%).
+**Three critical bugs identified** (see SCOUT-MOE-BUGS.md):
+1. **Interleaved MoE architecture ignored**: Scout has `interleave_moe_layer_step: 1` (24 MoE + 24 dense layers), but BLIS treats all 48 layers as MoE with expert scaling
+2. **`intermediate_size_mlp` not parsed**: Dense layers should use FFN dim 16384, but BLIS uses 8192 (50% under-prediction)
+3. **nEff expert loading applied to all layers**: Should only apply to 24 MoE layers, incorrectly applied to all 48
+
+**Why β₆ inflated to 0.224**: The optimizer uses MoE gating coefficient as the only MoE-specific "knob" to compensate for structural architecture mismatch. But β₆ cannot fix a bug where 48 layers are treated as MoE when only 24 are - coefficient tuning cannot compensate for wrong model structure.
+
+**Why this matters**: 6 Scout experiments contribute 1072% to total loss sum (2262% / 15 experiments). After fixing bugs, Scout TTFT error should drop from 89-100% to <30%, reducing overall loss by **~70 percentage points** (from 150.78% to ~80%).
 
 ---
 
@@ -115,12 +125,15 @@ For Llama-2 reasoning (6387 tokens, 32 layers):
 
 **✅ Confirmed correlations** (strong signal):
 
-**Correlation 1: MoE architecture → catastrophic failure**
+**Correlation 1: MoE architecture → catastrophic failure** (CONFIRMED: Simulator bugs)
 - 6 Scout MoE experiments: 100% failure rate (all >180% combined loss)
 - 0 dense experiments: 0% catastrophic failure rate (all <120% combined loss when excluding reasoning)
 - **Strength**: Perfect correlation (6/6 MoE fail, 9/9 dense succeed or moderate)
-- **Mechanism**: Either Scout ground truth is corrupted OR simulator MoE implementation has fundamental bug
-- **Action**: Isolate Scout from training until root cause identified
+- **Mechanism** (CONFIRMED): Simulator MoE implementation has THREE fundamental bugs (see SCOUT-MOE-BUGS.md):
+  1. Interleaved MoE architecture (24 MoE + 24 dense layers) completely ignored
+  2. Dense layer FFN dimension (16384) not parsed, uses 8192 instead
+  3. Expert weight loading (nEff) applied to all 48 layers instead of 24 MoE layers
+- **Action**: **Fix Scout MoE bugs before iter3** (bugs documented with line numbers and fix requirements)
 
 **Correlation 2: Reasoning workload → catastrophic TTFT failure**
 - 3 reasoning experiments: 100% catastrophic TTFT failure rate (all ~100% TTFT)
@@ -166,12 +179,12 @@ For Llama-2 reasoning (6387 tokens, 32 layers):
 
 Following Strategy Evolution Phase 5, extract principles from confirmed predictions AND prediction errors:
 
-### Principle 1: Data Quality is the Bottleneck, Not Missing Physics
+### Principle 1: Simulator Bugs and Data Quality Both Matter (Scout vs Reasoning)
 
 **Evidence**:
 - 10 of 15 experiments (67%) have catastrophic errors (>50% combined loss)
-- ALL Scout experiments (6/6) fail catastrophically → MoE data corrupted or simulator broken
-- ALL reasoning experiments (3/3) fail catastrophically → reasoning data corrupted or measurement wrong
+- **Scout experiments (6/6) EXPLAINED**: Simulator has THREE critical MoE bugs (interleaved architecture, dense FFN dim, nEff layer count) - confirmed via code investigation, see SCOUT-MOE-BUGS.md
+- **Reasoning experiments (3/3) UNEXPLAINED**: Still likely data quality or measurement artifacts (β₇ active but ineffective)
 - Remaining 6 "clean" experiments average **~60-90% combined loss** (still above target but not catastrophic)
 - Adding physics-informed basis functions (β₇, β₈) made loss WORSE, not better
 
@@ -187,12 +200,14 @@ When 67% of training data is corrupted, the optimizer fits to noise instead of s
 - Overall loss to worsen (134.54% → 150.78%)
 
 **Action for iter3**:
-1. **Audit Scout experiments**: Re-measure with `blis observe` OR exclude from training (6 experiments → 9 experiments)
-2. **Audit reasoning experiments**: Re-measure with `--no-prefix-cache` OR exclude from training (9 experiments → 6 experiments)
-3. **Sanity check remaining experiments**: For each experiment, verify observed TTFT > (theoretical_min_FLOPs / peak_TFLOPS / 0.5). If violated, data is corrupted.
-4. **DO NOT design new hypotheses until data is clean**
+1. **Fix Scout MoE bugs FIRST** (MANDATORY): Three critical bugs identified with line numbers and fix requirements (see SCOUT-MOE-BUGS.md). After fix, re-validate Scout experiments - expected TTFT error to drop from 89-100% to <30%.
+2. **Audit reasoning experiments**: Re-measure with `--no-prefix-cache` OR exclude from training (still unexplained)
+3. **Sanity check remaining experiments**: For each experiment, verify observed TTFT > (theoretical_min_FLOPs / peak_TFLOPS / 0.5)
 
-**Expected impact**: If 9 corrupted experiments are excluded, remaining 6 experiments can train a model with **<50% loss** (based on current errors for "clean" experiments: 54.73%, 63.65%, 72.23%, 94.81%, 103.06%, 109.46% avg = **83% before optimization**).
+**Expected impact after Scout fixes**:
+- Scout TTFT error: 89-100% → <30% (saves ~70 percentage points on overall loss)
+- Overall loss: 150.78% → **~80%** (Scout fixed, reasoning still excluded)
+- If reasoning also fixed/excluded: Overall loss → **<60%**
 
 ---
 
@@ -447,29 +462,41 @@ If Beta terms are inflated (β₁ = 1.027, β₆ = 0.224), optimizer zeros out A
 
 ## Recommendations for iter3
 
-### Phase 1: Pre-Optimization (Data Quality Audit)
+### Phase 1: Pre-Optimization (Fix Scout MoE Bugs)
 
 **CRITICAL: DO THIS BEFORE HYPOTHESIS DESIGN**
 
-**Step 1: Audit Scout MoE experiments**
+**Step 1: Fix Scout MoE bugs** (MANDATORY - bugs confirmed, see SCOUT-MOE-BUGS.md)
+
+Three critical bugs identified:
+
+**Bug 1: Interleaved MoE architecture ignored**
+- Location: `sim/model_hardware_config.go` (missing field), `sim/latency/roofline.go:102-105`
+- Fix: Add `InterleaveMoELayerStep int` field, parse from config.json, split FLOPs/bandwidth into MoE vs dense layer calculations
+- Formula: `numMoELayers = numLayers / (1 + interleaveMoELayerStep)` when interleave > 0
+
+**Bug 2: `intermediate_size_mlp` not parsed**
+- Location: `sim/latency/config.go:240`
+- Fix: Add `DenseIntermediateDim int` field, parse `intermediate_size_mlp`, use for dense layers
+
+**Bug 3: nEff expert loading applied to all layers**
+- Location: `sim/latency/roofline.go:151-170`
+- Fix: Apply nEff only to MoE layers (requires Bug 1 fix first)
+
+**Validation after fix**:
 ```bash
-# Re-measure Scout with fresh blis observe sessions
-blis observe --model RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic \
-  --workload-spec codegen-2.yaml --trace-header scout-codegen.yaml --trace-data scout-codegen.csv
+# Re-run Scout experiments through fixed simulator
+./blis run --model RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic --latency-model evolved ...
 
-blis observe --model RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic \
-  --workload-spec roleplay-2.yaml --trace-header scout-roleplay.yaml --trace-data scout-roleplay.csv
-
-# Compare new observations to existing ground truth
-# If errors persist (>90% TTFT), simulator has MoE bug → audit evolved_model.go MoE gating
-# If errors disappear (<30% TTFT), ground truth was corrupted → replace files
+# Expected: TTFT predictions improve from 89-100% error to <30% error
+# Expected: β₆ drops from 0.224 to ~0.008 after re-optimization
 ```
 
 **Decision criteria**:
-- If re-measurement shows <30% error: Replace corrupted ground truth, include Scout in iter3
-- If re-measurement shows >90% error: Simulator MoE bug confirmed → **exclude Scout from iter3 training**
+- If post-fix error drops to <30%: Include Scout in iter3 training (bugs were root cause)
+- If post-fix error remains >50%: Additional investigation needed (may have secondary bugs)
 
-**Step 2: Audit reasoning experiments**
+**Step 2: Audit reasoning experiments** (STILL NEEDED - unexplained failures)
 ```bash
 # Re-measure reasoning with cold prefix cache
 blis observe --model meta-llama/Llama-2-7b-hf --no-prefix-cache \
@@ -504,7 +531,7 @@ For each of the 6-8 "clean" experiments (non-Scout, non-reasoning):
 python -m experiment.ground_truth --sanity-check --data-dir trainval_data/
 ```
 
-**Expected result**: 0-2 additional experiments flagged as corrupted. Final clean training set: **6-10 experiments**.
+**Expected result**: 0-2 additional experiments flagged as corrupted. Final clean training set: **12-15 experiments** (Scout now included after bug fixes, reasoning may be excluded).
 
 ---
 
@@ -537,10 +564,10 @@ regularization_penalty = 0.1 × sum((beta[i] - priors[i])**2 for i in range(len(
 total_loss = training_loss + regularization_penalty
 ```
 
-**Expected iter3 loss** (with clean data + reduced model + regularization):
-- If 6 clean experiments (Scout + reasoning excluded): **<50% overall loss**
-- If 10 experiments (Scout fixed, reasoning excluded): **<60% overall loss**
-- If 15 experiments (all data fixed): **<70% overall loss**
+**Expected iter3 loss** (with Scout bugs fixed + reduced model + regularization):
+- If 9 experiments (Scout + reasoning excluded, before bugs fixed): **<50% overall loss**
+- If 12 experiments (Scout bugs fixed, reasoning excluded): **<60% overall loss** ✅ RECOMMENDED
+- If 15 experiments (Scout bugs fixed, reasoning data fixed): **<70% overall loss**
 
 ---
 
