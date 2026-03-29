@@ -1843,17 +1843,6 @@
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#-results-path-semantic-difference" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        --results-path Semantic Difference
-      
-    </span>
-  </a>
-  
-</li>
-        
       </ul>
     </nav>
   
@@ -3530,17 +3519,6 @@
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#-results-path-semantic-difference" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        --results-path Semantic Difference
-      
-    </span>
-  </a>
-  
-</li>
-        
       </ul>
     </nav>
   
@@ -3783,10 +3761,10 @@
 <td>Log verbosity: trace, debug, info, warn, error, fatal, panic. Logs go to stderr.</td>
 </tr>
 <tr>
-<td><code>--results-path</code></td>
+<td><code>--metrics-path</code></td>
 <td>string</td>
 <td>""</td>
-<td>File path to save per-request results JSON. Empty = stdout only.</td>
+<td>File path to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats). blis run only — blis replay uses <code>--results-path</code> instead. Empty = no file output.</td>
 </tr>
 </tbody>
 </table>
@@ -4514,7 +4492,7 @@
 </tr>
 <tr>
 <td><strong>Top-level</strong></td>
-<td><code>--seed</code>, <code>--horizon</code>, <code>--log</code>, <code>--results-path</code>, <code>--trace-output</code>, <code>--policy-config</code>, <code>--fitness-weights</code>, <code>--summarize-trace</code></td>
+<td><code>--seed</code>, <code>--horizon</code>, <code>--log</code>, <code>--metrics-path</code> (run only), <code>--trace-output</code>, <code>--policy-config</code>, <code>--fitness-weights</code>, <code>--summarize-trace</code></td>
 </tr>
 </tbody>
 </table>
@@ -4756,28 +4734,11 @@
 <td>""</td>
 <td>Path to TraceV2 data CSV file (required).</td>
 </tr>
-</tbody>
-</table>
-<h3 id="-results-path-semantic-difference"><code>--results-path</code> Semantic Difference<a class="headerlink" href="#-results-path-semantic-difference" title="Permanent link">&para;</a></h3>
-<p>The <code>--results-path</code> flag is shared with <code>blis run</code> but writes a different schema:</p>
-<table>
-<thead>
 <tr>
-<th>Command</th>
-<th>Schema</th>
-<th>Contents</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>blis run</code></td>
-<td><code>MetricsOutput</code> JSON</td>
-<td>Full simulation metrics (aggregated statistics, per-request details, fitness scores).</td>
-</tr>
-<tr>
-<td><code>blis replay</code></td>
-<td><code>[]SimResult</code> JSON</td>
-<td>Per-request array with fields: <code>request_id</code>, <code>ttft_us</code>, <code>e2e_us</code>, <code>input_tokens</code>, <code>output_tokens</code>. Designed for <code>blis calibrate</code> consumption.</td>
+<td><code>--results-path</code></td>
+<td>string</td>
+<td>""</td>
+<td>File to write <code>[]SimResult</code> JSON (fields: <code>request_id</code>, <code>ttft_us</code>, <code>e2e_us</code>, <code>input_tokens</code>, <code>output_tokens</code>) for <code>blis calibrate</code> consumption.</td>
 </tr>
 </tbody>
 </table>

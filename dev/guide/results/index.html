@@ -3132,7 +3132,7 @@
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    E2E:  p50=9876.54 p99=12345.67 (n=250)
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    Throughput: 50.00 req/s, 6400.00 tok/s
 </code></pre></div>
-<p>When <code>--results-path</code> is set, the JSON output includes a <code>per_model</code> key (omitted when no requests carry model tags). Each entry has:</p>
+<p>When <code>--metrics-path</code> is set, the JSON output includes a <code>per_model</code> key (omitted when no requests carry model tags). Each entry has:</p>
 <table>
 <thead>
 <tr>
@@ -3207,7 +3207,7 @@
 <h2 id="per-request-results">Per-Request Results<a class="headerlink" href="#per-request-results" title="Permanent link">&para;</a></h2>
 <p>For detailed analysis, save per-request data:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span>--results-path<span class="w"> </span>results.json
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span>--metrics-path<span class="w"> </span>metrics.json
 </code></pre></div>
 <p>Each request record includes TTFT, E2E, scheduling delay, and completion status.</p>
 <h2 id="further-reading">Further Reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>

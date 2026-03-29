@@ -2924,7 +2924,7 @@
 - See the <code>compressed-tensors</code> branch (~line 240) for formats with nested config structures
 - See <code>InferWeightBytesFromModelName()</code> for regex-based name pattern detection</p>
 <h2 id="adding-new-per-request-metric-fields">Adding New Per-Request Metric Fields<a class="headerlink" href="#adding-new-per-request-metric-fields" title="Permanent link">&para;</a></h2>
-<p>To add a new field to per-request JSON output (appears in <code>--results-path</code> output):</p>
+<p>To add a new field to per-request JSON output (appears in <code>--metrics-path</code> output):</p>
 <ol>
 <li><strong>Add field to <code>Request</code></strong> in <code>sim/request.go</code> (runtime state, zero-value safe). When constructing <code>Request</code> structs, use <code>RequestState</code> typed constants (<code>StateQueued</code>, <code>StateRunning</code>, <code>StateCompleted</code>) — never bare strings.</li>
 <li><strong>Add field to <code>RequestMetrics</code></strong> in <code>sim/metrics_utils.go</code> (JSON output struct, use <code>omitempty</code> for backward compatibility)</li>
