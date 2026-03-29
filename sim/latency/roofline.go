@@ -182,34 +182,55 @@ func calculateMemoryAccessBytes(
 	attnWeightsPerLayer := dModel*(dModel+2*dKV) + (dModel * dModel)
 
 	nMat := mlpMatrixCount(config.HiddenAct)
-	dExpert := dFF
-	if config.NumLocalExperts > 1 && config.MoEExpertFFNDim > 0 {
-		dExpert = float64(config.MoEExpertFFNDim)
+
+	// Determine layer counts (same logic as FLOPs calculation)
+	var numMoELayers, numDenseLayers float64
+	if config.InterleaveMoELayerStep > 0 && config.NumLocalExperts > 1 {
+		step := config.InterleaveMoELayerStep
+		numMoELayers = math.Floor(nLayers / float64(step+1))
+		numDenseLayers = nLayers - numMoELayers
+	} else if config.NumLocalExperts > 1 {
+		numMoELayers = nLayers
+		numDenseLayers = 0
+	} else {
+		numMoELayers = 0
+		numDenseLayers = nLayers
 	}
-	mlpWeightsPerLayer := nMat * dModel * dExpert
-	if config.NumLocalExperts > 1 {
-		// MoE: only the expected unique experts are loaded from HBM per step.
+
+	// Calculate MoE layer weight contribution (with nEff expert loading)
+	var moeMLPWeights float64
+	if numMoELayers > 0 {
+		dExpert := dFF
+		if config.MoEExpertFFNDim > 0 {
+			dExpert = float64(config.MoEExpertFFNDim)
+		}
+		moeMLPWeightsPerLayer := nMat * dModel * dExpert
+
+		// MoE: only expected unique experts loaded per step (nEff formula)
 		// Formula: nEff = N * (1 - ((N-k)/N)^B)
-		//   N = total experts, k = active experts per token, B = tokens in this step.
-		// Derivation: P(expert i not selected by any token) = ((N-k)/N)^B, so
-		//   E[unique experts loaded] = N * (1 - ((N-k)/N)^B).
-		// Assumes uniform random routing, which maximizes nEff and overestimates weight
-		// bandwidth. In practice tokens tend to activate the same experts (correlated
-		// routing), so actual nEff ≤ formula — making this a conservative (pessimistic)
-		// upper bound for capacity planning.
-		// See issue #789 for non-uniform routing research.
 		N := float64(config.NumLocalExperts)
 		k := float64(config.NumExpertsPerTok)
 		B := float64(newTokens)
-
 		probNotSelected := (N - k) / N
 		nEff := N * (1.0 - math.Pow(probNotSelected, B))
 
-		mlpWeightsPerLayer *= nEff
+		moeMLPWeights = moeMLPWeightsPerLayer * nEff * numMoELayers
 	}
 
-	weightsPerLayer := attnWeightsPerLayer + mlpWeightsPerLayer
-	mem["model_weights"] = weightsPerLayer * nLayers * config.EffectiveWeightBytesPerParam()
+	// Calculate dense layer weight contribution (no nEff scaling)
+	var denseMLPWeights float64
+	if numDenseLayers > 0 {
+		dDense := dFF
+		if config.DenseIntermediateDim > 0 {
+			dDense = float64(config.DenseIntermediateDim)
+		}
+		// Dense layers: single full FFN weight (no expert routing)
+		denseMLPWeightsPerLayer := nMat * dModel * dDense
+		denseMLPWeights = denseMLPWeightsPerLayer * numDenseLayers
+	}
+
+	totalAttnWeights := attnWeightsPerLayer * nLayers // Attention same for all layers
+	mem["model_weights"] = (totalAttnWeights + moeMLPWeights + denseMLPWeights) * config.EffectiveWeightBytesPerParam()
 
 	if includeKVCache {
 		// KV Growth: Writing new tokens to HBM.
