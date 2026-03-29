@@ -1257,3 +1257,124 @@ func TestRooflineStepTime_Scout_InterleavedMoE(t *testing.T) {
 			weightBytesZero/1e9, weightBytesBatch/1e9)
 	})
 }
+
+func TestCalculateMemoryAccessBytes_InterleavedMoE_SplitsWeightBandwidth(t *testing.T) {
+	// GIVEN Scout-like interleaved config
+	scoutConfig := sim.ModelConfig{
+		NumLayers:              48,
+		HiddenDim:              5120,
+		NumHeads:               40,
+		NumKVHeads:             40,
+		BytesPerParam:          1.0, // FP8
+		IntermediateDim:        8192,
+		NumLocalExperts:        16,
+		NumExpertsPerTok:       1,
+		MoEExpertFFNDim:        8192,
+		InterleaveMoELayerStep: 1,
+		DenseIntermediateDim:   16384,
+		WeightBytesPerParam:    1.0, // FP8
+	}
+
+	// WHEN computing memory access for batch_size=10
+	mem := calculateMemoryAccessBytes(scoutConfig, 1024, 10, false)
+
+	// THEN weight bandwidth splits MoE (with nEff) vs dense (full weight)
+	// Manual calculation:
+	//   Attention weights: (5120*(5120+2*5120) + 5120*5120) * 48 layers * 1.0 bytes
+	//     = (5120*15360 + 5120*5120) * 48 = (78643200 + 26214400) * 48 = 5.03e9 bytes
+	//   MoE weights (24 layers):
+	//     nEff for batch=10, N=16, k=1: 16*(1-(15/16)^10) = 16*(1-0.5244) ≈ 7.61 experts
+	//     MoE weight per layer: 2*5120*8192 = 83886080 bytes
+	//     MoE weight total: 83886080 * 7.61 * 24 layers * 1.0 bytes = 1.53e10 bytes
+	//   Dense weights (24 layers):
+	//     Dense weight: 2*5120*16384 * 24 layers * 1.0 bytes = 4.03e9 bytes
+	//   Total: 5.03e9 + 1.53e10 + 4.03e9 = 2.46e10 bytes
+	expectedWeightBytes := 2.46e10
+	tolerance := 0.10 // 10% tolerance
+
+	if mem["model_weights"] == 0 {
+		t.Fatalf("model_weights is zero, calculation not implemented")
+	}
+
+	relativeError := math.Abs(mem["model_weights"]-expectedWeightBytes) / expectedWeightBytes
+	if relativeError > tolerance {
+		t.Errorf("Weight bandwidth mismatch: expected %.3e, got %.3e (%.1f%% error)",
+			expectedWeightBytes, mem["model_weights"], relativeError*100)
+	}
+}
+
+func TestCalculateMemoryAccessBytes_UniformMoE_BackwardCompatible(t *testing.T) {
+	// GIVEN uniform MoE (InterleaveMoELayerStep=0)
+	mixtralConfig := sim.ModelConfig{
+		NumLayers:              32,
+		HiddenDim:              4096,
+		NumHeads:               32,
+		NumKVHeads:             8,
+		BytesPerParam:          2.0,
+		IntermediateDim:        14336,
+		NumLocalExperts:        8,
+		NumExpertsPerTok:       2,
+		MoEExpertFFNDim:        14336,
+		InterleaveMoELayerStep: 0, // Uniform
+		WeightBytesPerParam:    2.0,
+	}
+
+	// WHEN computing memory access for batch=16
+	mem := calculateMemoryAccessBytes(mixtralConfig, 512, 16, false)
+
+	// THEN behavior matches current implementation (all 32 layers get nEff scaling)
+	// Attention per layer: 4096*(4096+2*1024) + 4096*4096 = 4096*6144 + 16777216 = 41943040
+	// Total attention: 41943040 * 32 = 1.34e9 bytes
+	// nEff for B=16, N=8, k=2: 8*(1-(6/8)^16) = 8*(1-0.01002) ≈ 7.92
+	// MLP per layer: 2*4096*14336 = 117440512
+	// MLP total: 117440512 * 7.92 * 32 = 2.98e10 bytes
+	// Total: (1.34e9 + 2.98e10) * 2.0 bytes = 6.23e10
+	expectedWeightBytes := 6.23e10
+	tolerance := 0.10
+
+	relativeError := math.Abs(mem["model_weights"]-expectedWeightBytes) / expectedWeightBytes
+	if relativeError > tolerance {
+		t.Errorf("Mixtral weight bandwidth changed: expected %.3e, got %.3e (%.1f%% error)",
+			expectedWeightBytes, mem["model_weights"], relativeError*100)
+	}
+}
+
+func TestCalculateMemoryAccessBytes_InterleavedWithZeroTokens_BaseWeightCalculation(t *testing.T) {
+	// GIVEN interleaved config with Scout-like parameters
+	scoutConfig := sim.ModelConfig{
+		NumLayers:              48,
+		HiddenDim:              5120,
+		NumHeads:               40,
+		NumKVHeads:             40,
+		BytesPerParam:          1.0,
+		IntermediateDim:        8192,
+		NumLocalExperts:        16,
+		NumExpertsPerTok:       1,
+		MoEExpertFFNDim:        8192,
+		InterleaveMoELayerStep: 1,
+		DenseIntermediateDim:   16384,
+		WeightBytesPerParam:    1.0,
+	}
+
+	// WHEN computing base weights with newTokens=0 (B=0 edge case)
+	mem := calculateMemoryAccessBytes(scoutConfig, 0, 0, false)
+
+	// THEN dense layer weights are counted, MoE layer weights are zero (nEff=0 for B=0)
+	// Manual calculation:
+	//   Attention: (5120*15360 + 5120*5120) * 48 * 1.0 = 5.03e9 bytes
+	//   MoE:   nEff=16*(1-(15/16)^0) = 16*0 = 0 -> 0 bytes
+	//   Dense: 2*5120*16384 * 24 * 1.0 = 4.03e9 bytes
+	//   Total: 5.03e9 + 0 + 4.03e9 = 9.06e9 bytes
+	expectedWeightBytes := 9.06e9
+	tolerance := 0.05
+
+	if mem["model_weights"] == 0 {
+		t.Fatalf("model_weights is zero, calculation not implemented")
+	}
+
+	relativeError := math.Abs(mem["model_weights"]-expectedWeightBytes) / expectedWeightBytes
+	if relativeError > tolerance {
+		t.Errorf("B=0 base weight mismatch: expected %.3e, got %.3e (%.1f%% error)",
+			expectedWeightBytes, mem["model_weights"], relativeError*100)
+	}
+}
