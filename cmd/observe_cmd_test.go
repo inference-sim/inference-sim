@@ -943,6 +943,73 @@ func TestObserveDistributionDefaults_NoHardcodedLiterals(t *testing.T) {
 	}
 }
 
+func TestValidateObserveWorkloadFlags_PresetRequiresRate(t *testing.T) {
+	// BC-2: preset without --rate is rejected
+	msg := validateObserveWorkloadFlags("chatbot", "", false, 0)
+	if msg == "" {
+		t.Fatal("expected validation error for preset without --rate, got none")
+	}
+	if !strings.Contains(msg, "--rate") {
+		t.Errorf("error should mention --rate, got: %q", msg)
+	}
+}
+
+func TestValidateObserveWorkloadFlags_PresetExclusiveWithSpec(t *testing.T) {
+	// BC-3: preset + --workload-spec is rejected
+	msg := validateObserveWorkloadFlags("chatbot", "spec.yaml", true, 0)
+	if msg == "" {
+		t.Fatal("expected validation error for --workload + --workload-spec, got none")
+	}
+	if !strings.Contains(msg, "--workload-spec") {
+		t.Errorf("error should mention --workload-spec, got: %q", msg)
+	}
+}
+
+func TestValidateObserveWorkloadFlags_PresetExclusiveWithConcurrency(t *testing.T) {
+	// BC-4: preset + --concurrency is rejected
+	msg := validateObserveWorkloadFlags("chatbot", "", true, 50)
+	if msg == "" {
+		t.Fatal("expected validation error for --workload + --concurrency, got none")
+	}
+	if !strings.Contains(msg, "--concurrency") {
+		t.Errorf("error should mention --concurrency, got: %q", msg)
+	}
+}
+
+func TestValidateObserveWorkloadFlags_ValidPreset_Accepted(t *testing.T) {
+	// Precondition for BC-1: valid preset + rate is accepted by validator
+	msg := validateObserveWorkloadFlags("chatbot", "", true, 0)
+	if msg != "" {
+		t.Errorf("expected no error for valid preset+rate combination, got: %q", msg)
+	}
+}
+
+func TestValidateObserveWorkloadFlags_EmptyPreset_NoOp(t *testing.T) {
+	// Non-preset modes must not be affected by the validator
+	msg := validateObserveWorkloadFlags("", "", false, 0)
+	if msg != "" {
+		t.Errorf("expected no error when --workload is not set, got: %q", msg)
+	}
+}
+
+// TestObserveCmd_WorkloadInputGuard_IncludesPreset verifies BC-7:
+// the required-input error message lists --workload as an option.
+// Uses source-level scan (acceptable here: tests the exact error message text
+// that users see — a behavioral property of the CLI contract).
+func TestObserveCmd_WorkloadInputGuard_IncludesPreset(t *testing.T) {
+	data, err := os.ReadFile("observe_cmd.go")
+	if err != nil {
+		t.Fatalf("cannot read observe_cmd.go: %v", err)
+	}
+	content := string(data)
+	// The required-input guard message must list all four input modes.
+	// We check for the specific error string text, not just any occurrence of "--workload".
+	wantText := "Either --workload, --workload-spec, --rate, or --concurrency is required"
+	if !strings.Contains(content, wantText) {
+		t.Errorf("required-input guard in observe_cmd.go must contain:\n  %q\nnot found in file", wantText)
+	}
+}
+
 func TestObserveCmd_WorkloadFlag_Exists(t *testing.T) {
 	f := observeCmd.Flags().Lookup("workload")
 	if f == nil {

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"hash/fnv"
 	"math"
 	"math/rand"
@@ -136,6 +137,25 @@ func init() {
 	rootCmd.AddCommand(observeCmd)
 }
 
+// validateObserveWorkloadFlags checks preset-mode flag constraints.
+// Returns a non-empty error string if the combination is invalid, empty string if valid.
+// Called from runObserve; extracted for unit testability (R14).
+func validateObserveWorkloadFlags(preset, workloadSpec string, rateChanged bool, concurrency int) string {
+	if preset == "" {
+		return "" // no preset — nothing to validate
+	}
+	if workloadSpec != "" {
+		return "--workload and --workload-spec are mutually exclusive"
+	}
+	if concurrency > 0 {
+		return "--workload and --concurrency are mutually exclusive; define concurrency in the spec file"
+	}
+	if !rateChanged {
+		return fmt.Sprintf("--workload %q requires --rate (preset synthesis needs a request rate)", preset)
+	}
+	return ""
+}
+
 func runObserve(cmd *cobra.Command, _ []string) {
 	// BC-13: Required flag validation
 	if observeServerURL == "" {
@@ -150,8 +170,14 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	if observeTraceData == "" {
 		logrus.Fatalf("--trace-data is required")
 	}
-	if observeWorkloadSpec == "" && !cmd.Flags().Changed("rate") && observeConcurrency <= 0 {
-		logrus.Fatalf("Either --workload-spec, --rate, or --concurrency is required")
+	// BC-7: at least one workload input mode must be provided
+	if observeWorkload == "" && observeWorkloadSpec == "" && !cmd.Flags().Changed("rate") && observeConcurrency <= 0 {
+		logrus.Fatalf("Either --workload, --workload-spec, --rate, or --concurrency is required")
+	}
+	// BC-2/3/4: preset-mode constraint check (extracted for testability, R14).
+	// Runs before the existing concurrency/rate exclusion so preset errors are shown first.
+	if msg := validateObserveWorkloadFlags(observeWorkload, observeWorkloadSpec, cmd.Flags().Changed("rate"), observeConcurrency); msg != "" {
+		logrus.Fatalf("%s", msg)
 	}
 	// BC-1: --concurrency and --rate are mutually exclusive
 	if observeConcurrency > 0 && cmd.Flags().Changed("rate") {
