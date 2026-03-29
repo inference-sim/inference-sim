@@ -32,6 +32,11 @@ go build -o blis main.go
   --api-format chat --rtt-ms 2.5 --workload-spec workload.yaml \
   --trace-header trace.yaml --trace-data trace.csv
 
+# Observe with named workload preset (chatbot, summarization, contentgen, multidoc)
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --workload chatbot --rate 10 --num-requests 100 \
+  --trace-header trace.yaml --trace-data trace.csv
+
 # Observe with rate-mode distribution synthesis and optional flags
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --api-format chat --rate 10 --num-requests 100 \

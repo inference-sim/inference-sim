@@ -153,7 +153,7 @@ func validateObserveWorkloadFlags(preset, workloadSpec string, rateChanged bool,
 		return "--workload and --workload-spec are mutually exclusive"
 	}
 	if concurrency > 0 {
-		return "--workload and --concurrency are mutually exclusive; define concurrency in the spec file"
+		return "--workload and --concurrency are mutually exclusive; use --workload-spec with clients[].concurrency for closed-loop preset workloads"
 	}
 	if !rateChanged {
 		return fmt.Sprintf("--workload %q requires --rate (preset synthesis needs a request rate)", preset)
@@ -162,10 +162,18 @@ func validateObserveWorkloadFlags(preset, workloadSpec string, rateChanged bool,
 }
 
 // buildPresetSpec loads the named preset from defaults.yaml and synthesizes a WorkloadSpec.
-// Returns (nil, errMsg) if the preset is not defined; (spec, "") on success.
-// Extracted from runObserve for unit testability (R14). File I/O errors from
-// loadPresetWorkload are CLI-fatal (consistent with all other defaults.yaml reads).
+// Returns (nil, errMsg) if the preset is not defined or defaults.yaml cannot be accessed; (spec, "") on success.
+// Extracted from runObserve for unit testability (R14). File read or YAML parse errors
+// are CLI-fatal inside loadDefaultsConfig — consistent with all other defaults.yaml reads.
 func buildPresetSpec(preset, defaultsPath string, rate float64, numRequests int) (*workload.WorkloadSpec, string) {
+	if _, err := os.Stat(defaultsPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Sprintf("--workload requires a defaults.yaml with preset definitions; "+
+				"file not found at %q — use --defaults-filepath to specify its location", defaultsPath)
+		}
+		return nil, fmt.Sprintf("--workload requires a defaults.yaml with preset definitions; "+
+			"cannot access %q: %v", defaultsPath, err)
+	}
 	wl := loadPresetWorkload(defaultsPath, preset)
 	if wl == nil {
 		return nil, fmt.Sprintf("Undefined workload %q. Use one among (chatbot, summarization, contentgen, multidoc) or --workload-spec", preset)
@@ -252,8 +260,8 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		}
 	} else if observeWorkload != "" {
 		// Preset synthesis — BC-1: same token distribution as blis run --workload <preset>
-		// Rate was validated finite+positive by the check below (defense-in-depth: also guarded
-		// by validateObserveWorkloadFlags above, which requires rateChanged to be true).
+		// Rate was validated finite+positive by the earlier rate validation above (defense-in-depth:
+		// also guarded by validateObserveWorkloadFlags above, which requires rateChanged to be true).
 		// Use separate errMsg var + = (not :=) to avoid shadowing the outer spec variable.
 		var errMsg string
 		spec, errMsg = buildPresetSpec(observeWorkload, observeDefaultsFilePath, observeRate, observeNumRequests)
@@ -389,6 +397,8 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	}
 	if observeWorkloadSpec != "" {
 		header.WorkloadSpec = observeWorkloadSpec
+	} else if observeWorkload != "" {
+		header.WorkloadSpec = "preset:" + observeWorkload
 	}
 	if spec != nil {
 		header.WorkloadSeed = &spec.Seed
