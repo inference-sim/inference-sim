@@ -51,6 +51,8 @@ var (
 	observeRttMs               float64
 	observeConcurrency         int
 	observeThinkTimeMs         int
+	observeWorkload            string
+	observeDefaultsFilePath    string
 )
 
 var observeCmd = &cobra.Command{
@@ -100,6 +102,8 @@ func init() {
 
 	// Workload input
 	observeCmd.Flags().StringVar(&observeWorkloadSpec, "workload-spec", "", "Path to WorkloadSpec YAML (alternative to --rate)")
+	observeCmd.Flags().StringVar(&observeWorkload, "workload", "", "Workload preset name (chatbot, summarization, contentgen, multidoc); requires --rate")
+	observeCmd.Flags().StringVar(&observeDefaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to defaults.yaml (for preset workload definitions)")
 	observeCmd.Flags().Float64Var(&observeRate, "rate", 0, "Requests per second for distribution synthesis")
 
 	// Optional

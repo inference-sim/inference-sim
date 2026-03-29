@@ -942,3 +942,23 @@ func TestObserveDistributionDefaults_NoHardcodedLiterals(t *testing.T) {
 		}
 	}
 }
+
+func TestObserveCmd_WorkloadFlag_Exists(t *testing.T) {
+	f := observeCmd.Flags().Lookup("workload")
+	if f == nil {
+		t.Fatal("missing expected flag --workload on observeCmd")
+	}
+	if f.DefValue != "" {
+		t.Errorf("--workload default: got %q, want %q (empty — no default preset)", f.DefValue, "")
+	}
+}
+
+func TestObserveCmd_DefaultsFilepathFlag_Exists(t *testing.T) {
+	f := observeCmd.Flags().Lookup("defaults-filepath")
+	if f == nil {
+		t.Fatal("missing expected flag --defaults-filepath on observeCmd")
+	}
+	if f.DefValue != "defaults.yaml" {
+		t.Errorf("--defaults-filepath default: got %q, want %q", f.DefValue, "defaults.yaml")
+	}
+}
