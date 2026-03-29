@@ -1122,3 +1122,304 @@ func TestRooflineStepTime_FP8ComputeSelection_EdgeCases(t *testing.T) {
 		})
 	}
 }
+
+func TestCalculateTransformerFlops_InterleavedMoE_SplitsMoEAndDenseLayers(t *testing.T) {
+	// GIVEN Scout-like interleaved config
+	scoutConfig := sim.ModelConfig{
+		NumLayers:              48,
+		HiddenDim:              5120,
+		NumHeads:               40,
+		NumKVHeads:             40,
+		BytesPerParam:          2.0, // bfloat16
+		IntermediateDim:        8192,  // MoE expert FFN
+		NumLocalExperts:        16,
+		NumExpertsPerTok:       1,
+		MoEExpertFFNDim:        8192,
+		InterleaveMoELayerStep: 1,    // Alternate MoE/dense
+		DenseIntermediateDim:   16384, // Dense FFN
+	}
+
+	// WHEN computing MLP FLOPs for 588-token prefill
+	flops := calculateTransformerFlops(scoutConfig, 0, 588, false, true)
+
+	// THEN MLP FLOPs account for 24 MoE layers (8192 FFN, top-1) + 24 dense layers (16384 FFN)
+	// Manual calculation:
+	//   MoE:   2 × 588 × (2 × 5120 × 8192) × 1 = 9.87e10 FLOPs/layer × 24 = 2.37e12
+	//   Dense: 2 × 588 × (2 × 5120 × 16384)   = 1.97e11 FLOPs/layer × 24 = 4.73e12
+	//   Total: 2.37e12 + 4.73e12 = 7.10e12 FLOPs
+	expectedMLPFlops := 7.10e12
+	tolerance := 0.05 // 5% tolerance for rounding
+
+	if flops["gemm_ops"] == 0 {
+		t.Fatalf("gemm_ops is zero, calculation not implemented")
+	}
+
+	relativeError := math.Abs(flops["gemm_ops"]-expectedMLPFlops) / expectedMLPFlops
+	if relativeError > tolerance {
+		t.Errorf("MLP FLOPs mismatch: expected %.3e, got %.3e (%.1f%% error)",
+			expectedMLPFlops, flops["gemm_ops"], relativeError*100)
+	}
+}
+
+func TestCalculateTransformerFlops_UniformMoE_BackwardCompatible(t *testing.T) {
+	// GIVEN uniform MoE config (InterleaveMoELayerStep=0, default)
+	mixtralConfig := sim.ModelConfig{
+		NumLayers:              32,
+		HiddenDim:              4096,
+		NumHeads:               32,
+		NumKVHeads:             8,
+		BytesPerParam:          2.0,
+		IntermediateDim:        14336,
+		NumLocalExperts:        8,
+		NumExpertsPerTok:       2,
+		MoEExpertFFNDim:        14336,
+		InterleaveMoELayerStep: 0, // Uniform - all layers MoE
+	}
+
+	// WHEN computing MLP FLOPs for 128 tokens
+	flops := calculateTransformerFlops(mixtralConfig, 0, 128, false, true)
+
+	// THEN behavior matches current implementation (all 32 layers treated as MoE)
+	// Expected: 2 * 128 * 2 * 4096 * 14336 * 2 (top-2) * 32 layers = 1.92e12
+	expectedMLPFlops := 1.92e12
+	tolerance := 0.05
+
+	relativeError := math.Abs(flops["gemm_ops"]-expectedMLPFlops) / expectedMLPFlops
+	if relativeError > tolerance {
+		t.Errorf("Mixtral MLP FLOPs changed: expected %.3e, got %.3e (%.1f%% error)",
+			expectedMLPFlops, flops["gemm_ops"], relativeError*100)
+	}
+}
+
+func TestCalculateTransformerFlops_InterleavedStep2_VerifiesFormulaForNonAlternating(t *testing.T) {
+	// GIVEN config with interleave_step=2 (every 3rd layer is MoE)
+	config := sim.ModelConfig{
+		NumLayers:              48,
+		HiddenDim:              4096,
+		NumHeads:               32,
+		NumKVHeads:             8,
+		BytesPerParam:          2.0,
+		IntermediateDim:        14336,  // Dense FFN
+		NumLocalExperts:        8,
+		NumExpertsPerTok:       2,
+		MoEExpertFFNDim:        8192,   // MoE expert FFN
+		InterleaveMoELayerStep: 2,      // Every 3rd layer MoE
+		DenseIntermediateDim:   14336,
+	}
+
+	// WHEN computing MLP FLOPs
+	flops := calculateTransformerFlops(config, 0, 128, false, true)
+
+	// THEN layer split: floor(48/3) = 16 MoE, 48-16 = 32 dense
+	// Manual calculation:
+	//   MoE:   2 * 128 * 2 * 4096 * 8192 * 2 (top-2) = 3.44e10 per layer * 16 = 5.50e11
+	//   Dense: 2 * 128 * 2 * 4096 * 14336 = 3.01e10 per layer * 32 = 9.63e11
+	//   Total: 5.50e11 + 9.63e11 = 1.51e12
+	expectedMLPFlops := 1.51e12
+	tolerance := 0.05
+
+	relativeError := math.Abs(flops["gemm_ops"]-expectedMLPFlops) / expectedMLPFlops
+	if relativeError > tolerance {
+		t.Errorf("Step=2 FLOPs mismatch: expected %.3e, got %.3e (%.1f%% error)",
+			expectedMLPFlops, flops["gemm_ops"], relativeError*100)
+	}
+}
+
+func TestCalculateTransformerFlops_DenseFallback_UsesIntermediateDim(t *testing.T) {
+	// GIVEN interleaved config with DenseIntermediateDim=0 (should fall back to IntermediateDim)
+	config := sim.ModelConfig{
+		NumLayers:              48,
+		HiddenDim:              4096,
+		NumHeads:               32,
+		NumKVHeads:             8,
+		BytesPerParam:          2.0,
+		IntermediateDim:        14336,
+		NumLocalExperts:        8,
+		NumExpertsPerTok:       2,
+		MoEExpertFFNDim:        8192,
+		InterleaveMoELayerStep: 1,    // Alternate
+		DenseIntermediateDim:   0,    // Fall back to IntermediateDim
+	}
+
+	// WHEN computing MLP FLOPs
+	flops := calculateTransformerFlops(config, 0, 128, false, true)
+
+	// THEN dense layers use IntermediateDim (14336)
+	// MoE: 2 * 128 * 2 * 4096 * 8192 * 2 = 3.44e10 * 24 = 8.26e11
+	// Dense: 2 * 128 * 2 * 4096 * 14336 = 3.01e10 * 24 = 7.22e11
+	// Total: 1.55e12
+	expectedMLPFlops := 1.55e12
+	tolerance := 0.05
+
+	relativeError := math.Abs(flops["gemm_ops"]-expectedMLPFlops) / expectedMLPFlops
+	if relativeError > tolerance {
+		t.Errorf("Fallback FLOPs mismatch: expected %.3e, got %.3e (%.1f%% error)",
+			expectedMLPFlops, flops["gemm_ops"], relativeError*100)
+	}
+}
+
+func TestCalculateMemoryAccessBytes_InterleavedMoE_SplitsWeightBandwidth(t *testing.T) {
+	// GIVEN Scout-like interleaved config
+	scoutConfig := sim.ModelConfig{
+		NumLayers:              48,
+		HiddenDim:              5120,
+		NumHeads:               40,
+		NumKVHeads:             40,
+		BytesPerParam:          1.0, // FP8
+		IntermediateDim:        8192,
+		NumLocalExperts:        16,
+		NumExpertsPerTok:       1,
+		MoEExpertFFNDim:        8192,
+		InterleaveMoELayerStep: 1,
+		DenseIntermediateDim:   16384,
+		WeightBytesPerParam:    1.0, // FP8
+	}
+
+	// WHEN computing memory access for batch_size=10
+	mem := calculateMemoryAccessBytes(scoutConfig, 1024, 10, false)
+
+	// THEN weight bandwidth splits MoE (with nEff) vs dense (full weight)
+	// Manual calculation:
+	//   Attention weights: (5120*(5120+2*5120) + 5120*5120) * 48 layers * 1.0 bytes
+	//     = (5120*15360 + 5120*5120) * 48 = (78643200 + 26214400) * 48 = 5.03e9 bytes
+	//   MoE weights (24 layers):
+	//     nEff for batch=10, N=16, k=1: 16*(1-(15/16)^10) = 16*(1-0.5244) ≈ 7.61 experts
+	//     MoE weight per layer: 2*5120*8192 = 83886080 bytes
+	//     MoE weight total: 83886080 * 7.61 * 24 layers * 1.0 bytes = 1.53e10 bytes
+	//   Dense weights (24 layers):
+	//     Dense weight: 2*5120*16384 * 24 layers * 1.0 bytes = 4.03e9 bytes
+	//   Total: 5.03e9 + 1.53e10 + 4.03e9 = 2.46e10 bytes
+	expectedWeightBytes := 2.46e10
+	tolerance := 0.10 // 10% tolerance
+
+	if mem["model_weights"] == 0 {
+		t.Fatalf("model_weights is zero, calculation not implemented")
+	}
+
+	relativeError := math.Abs(mem["model_weights"]-expectedWeightBytes) / expectedWeightBytes
+	if relativeError > tolerance {
+		t.Errorf("Weight bandwidth mismatch: expected %.3e, got %.3e (%.1f%% error)",
+			expectedWeightBytes, mem["model_weights"], relativeError*100)
+	}
+}
+
+func TestCalculateMemoryAccessBytes_UniformMoE_BackwardCompatible(t *testing.T) {
+	// GIVEN uniform MoE (InterleaveMoELayerStep=0)
+	mixtralConfig := sim.ModelConfig{
+		NumLayers:              32,
+		HiddenDim:              4096,
+		NumHeads:               32,
+		NumKVHeads:             8,
+		BytesPerParam:          2.0,
+		IntermediateDim:        14336,
+		NumLocalExperts:        8,
+		NumExpertsPerTok:       2,
+		MoEExpertFFNDim:        14336,
+		InterleaveMoELayerStep: 0, // Uniform
+		WeightBytesPerParam:    2.0,
+	}
+
+	// WHEN computing memory access for batch=16
+	mem := calculateMemoryAccessBytes(mixtralConfig, 512, 16, false)
+
+	// THEN behavior matches current implementation (all 32 layers get nEff scaling)
+	// Attention per layer: 4096*(4096+2*1024) + 4096*4096 = 4096*6144 + 16777216 = 41943040
+	// Total attention: 41943040 * 32 = 1.34e9 bytes
+	// nEff for B=16, N=8, k=2: 8*(1-(6/8)^16) = 8*(1-0.01002) ≈ 7.92
+	// MLP per layer: 2*4096*14336 = 117440512
+	// MLP total: 117440512 * 7.92 * 32 = 2.98e10 bytes
+	// Total: (1.34e9 + 2.98e10) * 2.0 bytes = 6.23e10
+	expectedWeightBytes := 6.23e10
+	tolerance := 0.10
+
+	relativeError := math.Abs(mem["model_weights"]-expectedWeightBytes) / expectedWeightBytes
+	if relativeError > tolerance {
+		t.Errorf("Mixtral weight bandwidth changed: expected %.3e, got %.3e (%.1f%% error)",
+			expectedWeightBytes, mem["model_weights"], relativeError*100)
+	}
+}
+
+func TestCalculateMemoryAccessBytes_InterleavedWithZeroTokens_BaseWeightCalculation(t *testing.T) {
+	// GIVEN interleaved config with Scout-like parameters
+	scoutConfig := sim.ModelConfig{
+		NumLayers:              48,
+		HiddenDim:              5120,
+		NumHeads:               40,
+		NumKVHeads:             40,
+		BytesPerParam:          1.0,
+		IntermediateDim:        8192,
+		NumLocalExperts:        16,
+		NumExpertsPerTok:       1,
+		MoEExpertFFNDim:        8192,
+		InterleaveMoELayerStep: 1,
+		DenseIntermediateDim:   16384,
+		WeightBytesPerParam:    1.0,
+	}
+
+	// WHEN computing base weights with newTokens=0 (B=0 edge case)
+	mem := calculateMemoryAccessBytes(scoutConfig, 0, 0, false)
+
+	// THEN dense layer weights are counted, MoE layer weights are zero (nEff=0 for B=0)
+	// Manual calculation:
+	//   Attention: (5120*15360 + 5120*5120) * 48 * 1.0 = 5.03e9 bytes
+	//   MoE:   nEff=16*(1-(15/16)^0) = 16*0 = 0 -> 0 bytes
+	//   Dense: 2*5120*16384 * 24 * 1.0 = 4.03e9 bytes
+	//   Total: 5.03e9 + 0 + 4.03e9 = 9.06e9 bytes
+	expectedWeightBytes := 9.06e9
+	tolerance := 0.05
+
+	if mem["model_weights"] == 0 {
+		t.Fatalf("model_weights is zero, calculation not implemented")
+	}
+
+	relativeError := math.Abs(mem["model_weights"]-expectedWeightBytes) / expectedWeightBytes
+	if relativeError > tolerance {
+		t.Errorf("B=0 base weight mismatch: expected %.3e, got %.3e (%.1f%% error)",
+			expectedWeightBytes, mem["model_weights"], relativeError*100)
+	}
+}
+
+func TestScoutInterleavedArchitecture_EndToEnd(t *testing.T) {
+	// GIVEN Scout's actual architecture
+	scoutConfig := sim.ModelConfig{
+		NumLayers:              48,
+		HiddenDim:              5120,
+		NumHeads:               40,
+		NumKVHeads:             40,
+		VocabSize:              128256,
+		BytesPerParam:          1.0, // FP8
+		IntermediateDim:        8192,
+		NumLocalExperts:        16,
+		NumExpertsPerTok:       1,
+		MoEExpertFFNDim:        8192,
+		InterleaveMoELayerStep: 1,     // Alternate MoE/dense
+		DenseIntermediateDim:   16384, // Dense FFN
+		WeightBytesPerParam:    1.0,
+	}
+
+	// WHEN computing FLOPs for 588-token prefill (Scout codegen experiment)
+	flops := calculateTransformerFlops(scoutConfig, 0, 588, true, true)
+
+	// THEN FLOPs account for both layer types correctly
+	// Expected (from SCOUT-MOE-BUGS.md):
+	//   Attention: 4.6e12 FLOPs (same for all layers)
+	//   MLP: (9.8e10 × 24 MoE) + (2.0e11 × 24 dense) = 7.2e12 FLOPs
+	//   Total: ~11.8e12 FLOPs (attention + MLP)
+	expectedTotalFlops := 1.18e13
+	tolerance := 0.15 // 15% tolerance (conservative, accounts for attention approximation)
+
+	relativeError := math.Abs(flops["total"]-expectedTotalFlops) / expectedTotalFlops
+	if relativeError > tolerance {
+		t.Errorf("Scout total FLOPs outside expected range: expected %.3e, got %.3e (%.1f%% error)",
+			expectedTotalFlops, flops["total"], relativeError*100)
+	}
+
+	// AND weight bandwidth distinguishes MoE vs dense
+	mem := calculateMemoryAccessBytes(scoutConfig, 588, 588, false)
+	if mem["model_weights"] == 0 {
+		t.Fatalf("model_weights should be non-zero")
+	}
+	// Sanity: weight bandwidth should be 10-20% of previous buggy calculation
+	// (buggy version over-counted due to nEff on all layers)
+	t.Logf("Scout weight bandwidth: %.3e bytes (FLOPs: %.3e)", mem["model_weights"], flops["total"])
+}

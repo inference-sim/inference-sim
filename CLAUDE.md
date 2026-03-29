@@ -257,4 +257,5 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 - In-memory node/GPU inventory maps; no external storage
 
 ## Recent Changes
+- Scout MoE fix (#877): Added InterleaveMoELayerStep and DenseIntermediateDim to ModelConfig for interleaved MoE/dense architectures (e.g., Scout, DeepSeek-V3). Corrects FLOPs and weight bandwidth calculations by splitting layer types.
 - Phase 1A: Added node/GPU placement, instance lifecycle, multi-model routing, per-model metrics

@@ -284,6 +284,17 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 		}
 	}
 
+	// Interleaved MoE architecture support (Scout, DeepSeek-V3)
+	// interleave_moe_layer_step indicates how layers alternate between MoE and dense.
+	// 0 = uniform (all layers same type), 1 = alternate (MoE/dense/MoE/dense), etc.
+	interleaveMoELayerStep := getInt("interleave_moe_layer_step")
+
+	// Dense layer FFN dimension (for architectures where dense layers differ from MoE expert FFN)
+	// intermediate_size_mlp is used by Scout for dense layer FFN dim (16384)
+	// while moe_intermediate_size (8192) is for MoE expert FFN.
+	// Default 0 means "use IntermediateDim for both".
+	denseIntermediateDim := getInt("intermediate_size_mlp")
+
 	modelConfig := &sim.ModelConfig{
 		NumLayers:           getInt("num_hidden_layers"),
 		HiddenDim:           getInt("hidden_size"),
@@ -296,6 +307,8 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 		NumExpertsPerTok:    numExpertsPerTok,
 		MoEExpertFFNDim:     moeExpertFFNDim,
 		SharedExpertFFNDim:  sharedExpertFFNDim,
+		InterleaveMoELayerStep: interleaveMoELayerStep,
+		DenseIntermediateDim: denseIntermediateDim,
 		HiddenAct:           hiddenAct,
 		WeightBytesPerParam: weightBytesPerParam,
 	}
@@ -424,6 +437,19 @@ func ValidateRooflineConfig(mc sim.ModelConfig, hc sim.HardwareCalib) error {
 			logrus.Warnf("WeightBytesPerParam (%.2f) > BytesPerParam (%.2f): weight precision exceeds compute precision (unusual but valid, e.g., FP32 weights with INT4 KV cache)",
 				mc.WeightBytesPerParam, mc.BytesPerParam)
 		}
+	}
+
+	// Validate InterleaveMoELayerStep is in valid range (R3)
+	if mc.InterleaveMoELayerStep < 0 {
+		problems = append(problems, fmt.Sprintf("interleave_moe_layer_step must be >= 0, got %d", mc.InterleaveMoELayerStep))
+	}
+	if mc.InterleaveMoELayerStep >= mc.NumLayers {
+		problems = append(problems, fmt.Sprintf("interleave_moe_layer_step must be < num_layers (%d), got %d", mc.NumLayers, mc.InterleaveMoELayerStep))
+	}
+
+	// Validate DenseIntermediateDim is non-negative (R3)
+	if mc.DenseIntermediateDim < 0 {
+		problems = append(problems, fmt.Sprintf("intermediate_size_mlp must be >= 0, got %d", mc.DenseIntermediateDim))
 	}
 
 	if len(problems) > 0 {
