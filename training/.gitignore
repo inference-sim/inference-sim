@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+
+# Secrets
+hftoken.txt
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Claude Code
+.claude/
+
+# Large data files (>100MB, not suitable for GitHub)
+# Raw experiment data — keep configs, exclude bulk telemetry
+default_args/*/vllm.log
+default_args/*/traces.json
+default_args/*/kv_events.jsonl
+default_args/*/results/per_request_lifecycle_metrics.json
+default_args/*/results/stdout.log
+default_args/*/results/stderr.log
+
+# Box notes (not versioned)
+*.boxnote
+
+# Generated output
+output/*
+!output/fit/
+!output/evaluate/
+
+# instrumented vllm code
+vllm
+
+# Iteration artifacts
+iterations/*/inner_loop_results.json
+iterations/*/ablations/*.log
+iterations/*/ablations/*_results.json
+iterations/*/ablations/*_bounds.yaml
+iterations/*/cv*_results.json
+iterations/*/cv*_report.md
