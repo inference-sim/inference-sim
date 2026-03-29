@@ -8,27 +8,28 @@ import (
 )
 
 // EvolvedModel implements physics-informed latency model with learned efficiency factors.
-// Iteration 3: Simplification + TP-dependent prefill communication overhead.
+// Iteration 4: Activation memory bandwidth + continued simplification.
 //
-// Hypothesis: Iter2 regressed (136% vs 134% in iter1) due to parameter bloat - β₇ and β₈
-// remained at initial values throughout optimization, providing no predictive value. Iter3
-// addresses this by: (1) removing ineffective β₇/β₈, (2) adding TP-dependent prefill
-// communication overhead that targets TP=4 experiments' asymmetric TTFT errors.
+// Hypothesis: Iter3 showed β₀ = 0.169 far below physical MFU (0.40-0.55), and β₇ (TP prefill
+// comm) was rejected by optimizer (coefficient ≈ 0), eliminating communication as the missing
+// overhead. Iter4 addresses this by: (1) removing ineffective β₂/β₇ (continuing iter3's
+// successful simplification pattern), (2) adding activation memory bandwidth term to capture
+// prefill bottleneck and allow β₀ to rise toward physical plausibility.
 //
-// Changes from iter2:
-//   - **Removed** β₇ (very long context overhead) - stayed at initial value 1.0, reasoning TTFT still ~100%
-//   - **Removed** β₈ (per-request decode overhead) - stayed at initial value 30μs, β₁ inflation persists
-//   - **Added** β₇ (NEW: TP-dependent prefill communication) - captures TP=4 prefill underestimation
+// Changes from iter3:
+//   - **Removed** β₂ (scheduler overhead) - coefficient 9.97e-05 ≈ 0, negligible
+//   - **Removed** β₇ (TP prefill communication) - coefficient 2.78e-07 ≈ 0, rejected by optimizer
+//   - **Added** β₆ (NEW: activation write bandwidth) - captures HBM writes during prefill
+//   - **Renumbered** remaining terms: β₃→β₂, β₄→β₃, β₅→β₄, β₆→β₅
 //
-// Basis functions (StepTime) - 8 terms:
+// Basis functions (StepTime) - 7 terms:
 //   - β₀ × prefill_compute_time: Prefill FLOPs / (peak_TFLOPS × MFU_prefill)
 //   - β₁ × decode_memory_time × memory_weight: Decode small-batch memory-bound (with interpolation)
-//   - β₂ × constant: Fixed vLLM scheduler overhead per step (microseconds)
-//   - β₃ × tp_comm_time: TP communication overhead (all-reduce per layer, DECODE ONLY)
-//   - β₄ × kv_mgmt_time: KV cache management overhead per request
-//   - β₅ × decode_compute_time × compute_weight: Decode large-batch compute-bound (with interpolation)
-//   - β₆ × moe_gating_time: MoE gating network overhead per expert per token
-//   - β₇ × tp_prefill_comm_time: TP-dependent prefill communication (NEW in iter3)
+//   - β₂ × tp_comm_time: TP communication overhead (all-reduce per layer, DECODE ONLY)
+//   - β₃ × kv_mgmt_time: KV cache management overhead per request
+//   - β₄ × decode_compute_time × compute_weight: Decode large-batch compute-bound (with interpolation)
+//   - β₅ × moe_gating_time: MoE gating network overhead per expert per token
+//   - β₆ × activation_bandwidth_time: Activation write bandwidth during prefill (NEW in iter4)
 //
 // Alpha coefficients (request-level, unchanged):
 //   - α₀: Fixed API processing overhead (microseconds per request)
@@ -36,7 +37,7 @@ import (
 //   - α₂: Per-output-token detokenization (microseconds per token)
 type EvolvedModel struct {
 	Alpha       [3]float64 // [α₀, α₁, α₂] - request-level overheads
-	Beta        []float64  // [β₀, β₁, β₂, β₃, β₄, β₅, β₆, β₇] - step-level coefficients (8 terms)
+	Beta        []float64  // [β₀, β₁, β₂, β₃, β₄, β₅, β₆] - step-level coefficients (7 terms)
 	modelConfig sim.ModelConfig
 	hwConfig    sim.HardwareCalib
 	tp          int
@@ -47,15 +48,14 @@ type EvolvedModel struct {
 // **THIS IS THE ONLY METHOD YOU CUSTOMIZE.** Design basis functions that capture
 // compute, memory, communication, and overhead costs during batch execution.
 //
-// Iteration 3 basis functions (8 terms):
+// Iteration 4 basis functions (7 terms):
 //   - beta[0] × prefill_compute_time: Prefill efficiency vs theoretical MFU
 //   - beta[1] × decode_memory_time × memory_weight(batch_size): Decode small-batch memory-bound
-//   - beta[2] × constant: Fixed scheduler overhead (microseconds)
-//   - beta[3] × tp_comm_time: TP communication overhead (decode all-reduce)
-//   - beta[4] × kv_mgmt_time: KV cache management per request
-//   - beta[5] × decode_compute_time × compute_weight(batch_size): Decode large-batch compute-bound
-//   - beta[6] × moe_gating_time: MoE gating network overhead
-//   - beta[7] × tp_prefill_comm_time: TP-dependent prefill communication (NEW)
+//   - beta[2] × tp_comm_time: TP communication overhead (decode all-reduce)
+//   - beta[3] × kv_mgmt_time: KV cache management per request
+//   - beta[4] × decode_compute_time × compute_weight(batch_size): Decode large-batch compute-bound
+//   - beta[5] × moe_gating_time: MoE gating network overhead
+//   - beta[6] × activation_bandwidth_time: Activation write bandwidth during prefill (NEW)
 //
 // Physics grounding:
 //   - Prefill is O(n²) attention, compute-bound, large GEMMs → high tensor core utilization
@@ -63,19 +63,18 @@ type EvolvedModel struct {
 //   - Decode large-batch becomes compute-bound due to tensor core utilization
 //   - Smooth transition via sigmoid interpolation: memory_weight(n) = 1/(1+exp((n-8)/2))
 //   - TP communication (decode): all-reduce after each layer when TP > 1
-//   - TP communication (prefill): all-reduce per layer per token, scales with prompt_tokens
 //   - KV management: PagedAttention block allocation/deallocation per request
 //   - MoE gating: routing probability computation for all experts
+//   - Activation bandwidth: HBM writes for residual connections, attention outputs, layer norms
 //
-// Expected coefficients (iteration 3):
-//   - β₀ ≈ 0.30-0.45 (prefill efficiency, should rise from iter2's 0.203 after simplification)
-//   - β₁ ≈ 1.50-1.60 (decode memory-bound, likely stays inflated - β₈ removal won't help)
-//   - β₂ ≈ 0.12μs (vLLM scheduler overhead per step, stable from iter2)
-//   - β₃ ≈ 0.394 (TP communication scaling for decode, stable from iter2)
-//   - β₄ ≈ 0.37μs per request (KV block allocation, stable from iter2, CRITICAL)
-//   - β₅ ≈ 0.651 (decode compute-bound for large batches, stable from iter2)
-//   - β₆ ≈ 0.008 (MoE gating overhead, stable from iter2)
-//   - β₇ ≈ 5-15μs per (TP×layer×K-token) (NEW: TP prefill comm, targets TP=4 TTFT errors)
+// Expected coefficients (iteration 4):
+//   - β₀ ≈ 0.25-0.35 (prefill MFU, should rise from iter3's 0.169 with activation term added)
+//   - β₁ ≈ 1.00-1.10 (decode memory-bound, stable at 1.037 from iter3)
+//   - β₂ ≈ 0.318 (TP communication scaling for decode, stable from iter3)
+//   - β₃ ≈ 0.37μs per request (KV block allocation, stable from iter3)
+//   - β₄ ≈ 0.60-0.70 (decode compute-bound, may decrease from 0.796 if was absorbing activation overhead)
+//   - β₅ ≈ 0.008-0.010 (MoE gating, may decrease from 0.0117 if was absorbing activation overhead)
+//   - β₆ ≈ 3.0-6.0 (NEW: activation bandwidth multiplier, captures HBM write overhead)
 //
 // Alpha coefficients are NOT used in StepTime (only in QueueingTime and OutputTokenProcessingTime).
 func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
@@ -119,7 +118,7 @@ func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 	// β₀ × prefill_compute_time
 	// ========================================
 	// Physics: Prefill is compute-bound (large GEMMs, O(n²) attention)
-	// Expected range: 0.30-0.45 (should rise from iter2's 0.203 after simplification)
+	// Expected range: 0.25-0.35 (should rise from iter3's 0.169 with activation bandwidth term added)
 	// Units: seconds (converted to μs below)
 	// Code: vllm/worker/model_runner.py:_prepare_model_input() computes prefill FLOPs
 	var prefillComputeTimeSeconds float64
@@ -136,10 +135,10 @@ func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 
 	// ========================================
 	// β₁ × decode_memory_time × memory_weight (small-batch, with sigmoid interpolation)
-	// β₅ × decode_compute_time × compute_weight (large-batch, with sigmoid interpolation)
+	// β₄ × decode_compute_time × compute_weight (large-batch, with sigmoid interpolation)
 	// ========================================
 	// Physics: Decode transitions from memory-bound (small batches) to compute-bound (large batches)
-	// Expected range: β₁ ≈ 1.50-1.60 (likely stays inflated), β₅ ≈ 0.651 (stable from iter2)
+	// Expected range: β₁ ≈ 1.00-1.10 (stable at 1.037 from iter3), β₄ ≈ 0.60-0.70 (may decrease if was absorbing activation overhead)
 	// Units: seconds (converted to μs below)
 	// Code: vllm/attention/backends/flashinfer.py reads KV cache per decode token
 	//
@@ -167,25 +166,15 @@ func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 	decodeMemoryTimeUs := decodeMemoryTimeSeconds * 1e6
 	decodeComputeTimeUs := decodeComputeTimeSeconds * 1e6
 	decodeMemoryContribution := m.Beta[1] * decodeMemoryTimeUs * memoryWeight
-	decodeComputeContribution := m.Beta[5] * decodeComputeTimeUs * computeWeight
+	decodeComputeContribution := m.Beta[4] * decodeComputeTimeUs * computeWeight
 
 	// ========================================
-	// β₂ × constant (scheduler overhead)
-	// ========================================
-	// Physics: Fixed vLLM scheduler overhead (batch formation, KV block allocation, kernel launch)
-	// Expected range: 0.12μs based on iter2 convergence (genuinely negligible)
-	// Units: microseconds
-	// Code: vllm/core/scheduler.py:schedule() has per-step overhead
-	schedulerOverhead := m.Beta[2]
-
-	// ========================================
-	// β₃ × tp_comm_time (TP communication for DECODE)
+	// β₂ × tp_comm_time (TP communication for DECODE)
 	// ========================================
 	// Physics: Ring all-reduce after each transformer layer (TP > 1), DECODE ONLY
-	// Expected range: 0.394 (stable from iter2)
+	// Expected range: 0.318 (stable from iter3)
 	// Units: seconds (converted to μs below)
 	// Code: vllm/model_executor/layers/linear.py:ColumnParallelLinear.forward() calls all_reduce
-	// Note: This captures decode TP comm. Prefill TP comm is separate (β₇ below).
 	var tpCommTimeSeconds float64
 	if m.tp > 1 {
 		// All-reduce bytes per layer: 2 × hidden_dim × bytes_per_param (forward + backward activations)
@@ -197,29 +186,27 @@ func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 		tpCommTimeSeconds = tpCommFactor * float64(m.modelConfig.NumLayers) * allReduceBytesPerLayer / nvlinkBandwidthBytesPerSec
 	}
 	tpCommTimeUs := tpCommTimeSeconds * 1e6 // Convert to microseconds
-	tpCommContribution := m.Beta[3] * tpCommTimeUs
+	tpCommContribution := m.Beta[2] * tpCommTimeUs
 
 	// ========================================
-	// β₄ × kv_mgmt_time (KV cache management)
+	// β₃ × kv_mgmt_time (KV cache management)
 	// ========================================
 	// Physics: vLLM PagedAttention block allocation/deallocation per request
-	// Expected range: 0.37μs per request (stable from iter2, CRITICAL per iter1 ablation)
+	// Expected range: 0.37μs per request (stable from iter3)
 	// Units: seconds per request
 	// Code: vllm/core/block_manager.py:BlockSpaceManager.allocate() allocates blocks per request
 	kvMgmtTimeSeconds := float64(len(batch)) // Number of requests in batch
 	kvMgmtTimeUs := kvMgmtTimeSeconds * 1e6  // Convert to microseconds
-	kvMgmtContribution := m.Beta[4] * kvMgmtTimeUs
+	kvMgmtContribution := m.Beta[3] * kvMgmtTimeUs
 
 	// ========================================
-	// β₆ × moe_gating_time (MoE gating)
+	// β₅ × moe_gating_time (MoE gating)
 	// ========================================
 	// Physics: MoE gating network computes routing probabilities for all experts
-	// Expected range: 0.008 (stable from iter2)
+	// Expected range: 0.008-0.010 (may decrease from 0.0117 if was absorbing activation overhead)
 	// Units: seconds (converted to μs below)
 	// Code: vllm/model_executor/layers/fused_moe/fused_moe.py computes gating logits
-	// Note: This is β₆ in iter3 (was β₆ in iter2, β₇ in iter1)
 	//
-	// Iter2 bug fix applied: Compute gating FLOPs instead of dimensionless count
 	// Gating network: hidden_dim → num_experts linear projection per token
 	// FLOPs: 2 × tokens × hidden_dim × num_experts
 	var moeGatingTimeSeconds float64
@@ -233,42 +220,53 @@ func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 		moeGatingTimeSeconds = gatingFlops / tpFactor / (peakFlops * gatingEfficiency)
 	}
 	moeGatingTimeUs := moeGatingTimeSeconds * 1e6 // Convert to microseconds
-	moeGatingContribution := m.Beta[6] * moeGatingTimeUs
+	moeGatingContribution := m.Beta[5] * moeGatingTimeUs
 
 	// ========================================
-	// β₇ × tp_prefill_comm_time (TP-dependent prefill communication) - NEW in iter3
+	// β₆ × activation_bandwidth_time (Activation write bandwidth) - NEW in iter4
 	// ========================================
-	// Physics: Prefill processes L tokens in parallel, requiring L all-reduce operations per layer
-	// For TP=4, each all-reduce communicates hidden_dim/TP elements = 2048 floats
-	// Total prefill communication: TP × num_layers × prompt_tokens × bytes_per_element / network_bandwidth
-	// Expected range: 5-15 μs per (TP × layer × K-token)
-	// Units: seconds per (TP × layer × K-token)
-	// Code: vllm/model_executor/layers/linear.py:ColumnParallelLinear.forward() calls all_reduce
-	//       Prefill all-reduce happens per token, not per batch like decode
-	// Observable proxy: TP × num_layers × (prompt_tokens / 1000) captures TP scaling, layer accumulation, token scaling
+	// Physics: During prefill, each transformer layer writes large activation tensors to HBM:
+	//   - Residual connections (full hidden_dim vectors after each sublayer)
+	//   - Attention outputs (Q, K, V projections before attention)
+	//   - Layer norm outputs (normalized activations before/after sublayers)
+	//   - MLP intermediate activations (expanded dimensions, 4× or 8× hidden_dim)
 	//
-	// This term specifically targets TP=4 experiments' asymmetric errors:
-	// - TP=4 experiments have high TTFT errors (42-90%) but excellent E2E errors (8-11%)
-	// - Indicates prefill underestimation while decode is accurate
-	// - β₃ captures decode TP comm correctly (stable 0.394)
-	// - Missing: prefill TP comm, which scales with prompt_tokens × TP × num_layers
-	var tpPrefillCommTimeSeconds float64
-	if m.tp > 1 && totalPrefillTokens > 0 {
-		// TP-dependent prefill communication: scales with TP degree, num_layers, and prompt_tokens
-		// Divide prompt_tokens by 1000 to normalize (prevents huge numbers like 4×80×4000=1,280,000)
-		tpPrefillBasis := float64(m.tp) * float64(m.modelConfig.NumLayers) * (float64(totalPrefillTokens) / 1000.0)
-		tpPrefillCommTimeSeconds = tpPrefillBasis
+	// For long prompts (4K-16K tokens), these writes become bandwidth-limited and compete
+	// with KV cache writes. This overhead is NOT captured by β₀ (prefill compute MFU).
+	//
+	// Expected range: β₆ ~ 3.0-6.0 (multiplier on theoretical write time)
+	// Units: seconds (converted to μs below)
+	// Code: vllm/worker/model_runner.py allocates activation buffers,
+	//       vllm/model_executor/layers/attention.py writes attention outputs to HBM
+	//
+	// Formula: activation_bytes = num_prefill_tokens × hidden_dim × bytes_per_param × num_layers × k
+	// where k ≈ 4-6 accounts for:
+	//   - Residual connections (1×)
+	//   - Attention QKV projections (3×)
+	//   - Layer norms (1-2×)
+	//   - Competing KV cache writes (overhead factor)
+	var activationBandwidthTimeSeconds float64
+	if totalPrefillTokens > 0 {
+		// Activation writes per layer: tokens × hidden_dim × bytes_per_param × k_factor
+		// k_factor = 4 accounts for residual (1×) + QKV (3×)
+		kFactor := 4.0
+		activationBytesPerLayer := float64(totalPrefillTokens) * float64(m.modelConfig.HiddenDim) * bytesPerParam * kFactor
+		totalActivationBytes := activationBytesPerLayer * float64(m.modelConfig.NumLayers)
+		// HBM bandwidth (bytes per second)
+		hbmBandwidthBytesPerSec := m.hwConfig.BwPeakTBs * 1e12 // Convert TB/s to bytes/s
+		// Theoretical write time (seconds)
+		activationBandwidthTimeSeconds = totalActivationBytes / hbmBandwidthBytesPerSec
 	}
-	tpPrefillCommTimeUs := tpPrefillCommTimeSeconds * 1e6 // Convert to microseconds
-	tpPrefillCommContribution := m.Beta[7] * tpPrefillCommTimeUs
+	activationBandwidthTimeUs := activationBandwidthTimeSeconds * 1e6 // Convert to microseconds
+	activationBandwidthContribution := m.Beta[6] * activationBandwidthTimeUs
 
 	// ========================================
 	// Total step time (additive model)
 	// ========================================
-	// Iteration 3: 8 terms total (removed β₇ long context, β₈ per-request, added β₇ TP prefill comm)
-	totalTimeUs := prefillContribution + decodeMemoryContribution + schedulerOverhead +
+	// Iteration 4: 7 terms total (removed β₂ scheduler, β₇ TP prefill comm; added β₆ activation bandwidth)
+	totalTimeUs := prefillContribution + decodeMemoryContribution +
 		tpCommContribution + kvMgmtContribution + decodeComputeContribution +
-		moeGatingContribution + tpPrefillCommContribution
+		moeGatingContribution + activationBandwidthContribution
 
 	return max(1, clampToInt64(totalTimeUs))
 }
@@ -312,12 +310,12 @@ func (m *EvolvedModel) PostDecodeFixedOverhead() int64 {
 // This function is meant to be integrated into the main NewLatencyModel switch statement
 // in latency.go. The factory pattern follows the existing backends (roofline, blackbox, etc.).
 func NewEvolvedModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (*EvolvedModel, error) {
-	// Validate coefficient counts (iteration 3: 3 alpha, 8 beta)
+	// Validate coefficient counts (iteration 4: 3 alpha, 7 beta)
 	if len(coeffs.AlphaCoeffs) < 3 {
 		return nil, fmt.Errorf("evolved model: AlphaCoeffs requires at least 3 elements, got %d", len(coeffs.AlphaCoeffs))
 	}
-	if len(coeffs.BetaCoeffs) < 8 {
-		return nil, fmt.Errorf("evolved model: BetaCoeffs requires at least 8 elements for iteration 3, got %d", len(coeffs.BetaCoeffs))
+	if len(coeffs.BetaCoeffs) < 7 {
+		return nil, fmt.Errorf("evolved model: BetaCoeffs requires at least 7 elements for iteration 4, got %d", len(coeffs.BetaCoeffs))
 	}
 
 	// Validate hardware config (same checks as roofline)
@@ -338,7 +336,7 @@ func NewEvolvedModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (*Evo
 
 	return &EvolvedModel{
 		Alpha:       [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
-		Beta:        coeffs.BetaCoeffs, // Use all beta coefficients (iteration 3 expects 8)
+		Beta:        coeffs.BetaCoeffs, // Use all beta coefficients (iteration 4 expects 7)
 		modelConfig: hw.ModelConfig,
 		hwConfig:    hw.HWConfig,
 		tp:          hw.TP,
