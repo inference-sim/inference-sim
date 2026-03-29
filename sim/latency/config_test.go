@@ -1245,3 +1245,58 @@ func TestGetModelConfigFromHF_DenseIntermediateDim_ParsedCorrectly(t *testing.T)
 		t.Errorf("expected DenseIntermediateDim=16384, got %d", mc.DenseIntermediateDim)
 	}
 }
+
+func TestValidateRooflineConfig_InvalidInterleaveMoELayerStep_ReturnsError(t *testing.T) {
+	tests := []struct {
+		name                 string
+		numLayers            int
+		interleaveStep       int
+		denseIntermediateDim int
+		wantErr              bool
+		errContains          string
+	}{
+		{"negative interleave", 48, -1, 0, true, "interleave_moe_layer_step must be >= 0"},
+		{"interleave >= numLayers", 48, 48, 0, true, "interleave_moe_layer_step must be < num_layers"},
+		{"interleave > numLayers", 48, 50, 0, true, "interleave_moe_layer_step must be < num_layers"},
+		{"negative dense FFN", 48, 1, -1, true, "intermediate_size_mlp must be >= 0"},
+		{"valid zero", 48, 0, 0, false, ""},
+		{"valid one", 48, 1, 0, false, ""},
+		{"valid two", 48, 2, 16384, false, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// GIVEN config with specified interleave step and dense FFN dim
+			config := sim.ModelConfig{
+				NumLayers:              tt.numLayers,
+				HiddenDim:              4096,
+				NumHeads:               32,
+				BytesPerParam:          2.0,
+				InterleaveMoELayerStep: tt.interleaveStep,
+				DenseIntermediateDim:   tt.denseIntermediateDim,
+			}
+			hwConfig := sim.HardwareCalib{
+				TFlopsPeak: 312.0,
+				BwPeakTBs:  2.0,
+				MfuPrefill: 0.50,
+				MfuDecode:  0.30,
+			}
+
+			// WHEN validating config
+			err := latency.ValidateRooflineConfig(config, hwConfig)
+
+			// THEN error matches expectation
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error containing %q, got nil", tt.errContains)
+				} else if !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("expected error containing %q, got %q", tt.errContains, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("expected no error, got %v", err)
+				}
+			}
+		})
+	}
+}
