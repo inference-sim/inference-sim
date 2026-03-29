@@ -439,6 +439,19 @@ func ValidateRooflineConfig(mc sim.ModelConfig, hc sim.HardwareCalib) error {
 		}
 	}
 
+	// Validate InterleaveMoELayerStep is in valid range (R3)
+	if mc.InterleaveMoELayerStep < 0 {
+		problems = append(problems, fmt.Sprintf("interleave_moe_layer_step must be >= 0, got %d", mc.InterleaveMoELayerStep))
+	}
+	if mc.InterleaveMoELayerStep >= mc.NumLayers {
+		problems = append(problems, fmt.Sprintf("interleave_moe_layer_step must be < num_layers (%d), got %d", mc.NumLayers, mc.InterleaveMoELayerStep))
+	}
+
+	// Validate DenseIntermediateDim is non-negative (R3)
+	if mc.DenseIntermediateDim < 0 {
+		problems = append(problems, fmt.Sprintf("intermediate_size_mlp must be >= 0, got %d", mc.DenseIntermediateDim))
+	}
+
 	if len(problems) > 0 {
 		return fmt.Errorf("invalid roofline config: %s", strings.Join(problems, "; "))
 	}
