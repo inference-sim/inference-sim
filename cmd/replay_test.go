@@ -58,7 +58,7 @@ func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
 		"kv-transfer-bandwidth", "kv-transfer-base-latency",
 		"snapshot-refresh-interval",
 
-		// registerSimConfigFlags: results
+		// replay-specific: results
 		"results-path",
 
 		// replay-specific flags
@@ -510,7 +510,6 @@ warm_up_requests: 0
 		"--total-kv-blocks", "1000",
 		"--trace-header", headerPath,
 		"--trace-data", dataPath,
-		"--results-path", resultsFilePath,
 	}); err != nil {
 		t.Fatalf("ParseFlags failed: %v", err)
 	}

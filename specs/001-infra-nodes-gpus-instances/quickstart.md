@@ -123,7 +123,7 @@ The simulator automatically checks `allocated + free == total_gpus` per node aft
 
 ## Per-Model Metrics JSON Schema
 
-When using `--results-path`, the output JSON includes a `per_model` key (omitted if no requests carry a model tag):
+When using `--metrics-path`, the output JSON includes a `per_model` key (omitted if no requests carry a model tag):
 
 ```json
 {

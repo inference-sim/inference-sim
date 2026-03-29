@@ -95,7 +95,7 @@ Top-level settings that control the simulation run.
 | `--seed` | int64 | 42 | Random seed for deterministic simulation. Same seed produces byte-identical stdout. |
 | `--horizon` | int64 | MaxInt64 | Simulation time limit in ticks (microseconds). Simulation stops when clock exceeds horizon or all requests complete. |
 | `--log` | string | "warn" | Log verbosity: trace, debug, info, warn, error, fatal, panic. Logs go to stderr. |
-| `--results-path` | string | "" | File path to save per-request results JSON. Empty = stdout only. |
+| `--metrics-path` | string | "" | File path to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats). blis run only — blis replay uses `--results-path` instead. Empty = no file output. |
 
 ## KV Cache Configuration
 
@@ -478,7 +478,7 @@ For environments where live profiling is not feasible, the [Roofline model](../c
 | **PolicyConfig** | `--scheduler`, `--priority-policy` |
 | **WorkloadConfig** | `--workload`, `--workload-spec`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
 | **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` | YAML-only (no CLI flag): `node_pools`, `instance_lifecycle` |
-| **Top-level** | `--seed`, `--horizon`, `--log`, `--results-path`, `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
+| **Top-level** | `--seed`, `--horizon`, `--log`, `--metrics-path` (run only), `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
 
 ---
 
@@ -546,15 +546,7 @@ Replays a captured TraceV2 file through the discrete-event simulator. Replay reu
 |------|------|---------|-------------|
 | `--trace-header` | string | "" | Path to TraceV2 header YAML file (required). |
 | `--trace-data` | string | "" | Path to TraceV2 data CSV file (required). |
-
-### `--results-path` Semantic Difference
-
-The `--results-path` flag is shared with `blis run` but writes a different schema:
-
-| Command | Schema | Contents |
-|---------|--------|----------|
-| `blis run` | `MetricsOutput` JSON | Full simulation metrics (aggregated statistics, per-request details, fitness scores). |
-| `blis replay` | `[]SimResult` JSON | Per-request array with fields: `request_id`, `ttft_us`, `e2e_us`, `input_tokens`, `output_tokens`. Designed for `blis calibrate` consumption. |
+| `--results-path` | string | "" | File to write `[]SimResult` JSON (fields: `request_id`, `ttft_us`, `e2e_us`, `input_tokens`, `output_tokens`) for `blis calibrate` consumption. |
 
 ---
 

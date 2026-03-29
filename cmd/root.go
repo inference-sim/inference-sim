@@ -148,8 +148,9 @@ var (
 	prefillMaxModelLen    int64
 	decodeMaxModelLen     int64
 
-	// results file path
-	resultsPath string // File to save BLIS results to
+	// output file paths
+	metricsPath string // File to write MetricsOutput JSON for blis run (--metrics-path)
+	resultsPath string // File to write []SimResult JSON for blis replay (--results-path)
 
 	// trace export
 	traceOutput string // File prefix for TraceV2 export (<prefix>.yaml + <prefix>.csv)
@@ -932,8 +933,6 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&prefillMaxModelLen, "prefill-max-model-len", 0, "Max model length for prefill pool instances (0 = use global --max-model-len)")
 	cmd.Flags().Int64Var(&decodeMaxModelLen, "decode-max-model-len", 0, "Max model length for decode pool instances (0 = use global --max-model-len)")
 
-	// Results path
-	cmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")
 }
 
 // runCmd executes the simulation using parameters from CLI flags
@@ -1445,8 +1444,8 @@ var runCmd = &cobra.Command{
 				}
 			}
 		}
-		// Save aggregated metrics (prints to stdout + saves to file if resultsPath set)
-		if err := cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, resultsPath); err != nil {
+		// Save aggregated metrics (prints to stdout + saves to file if metricsPath set)
+		if err := cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, metricsPath); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
@@ -1681,6 +1680,7 @@ func init() {
 
 	// Run-specific export
 	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")
+	runCmd.Flags().StringVar(&metricsPath, "metrics-path", "", "File to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats). Use --results-path on blis replay for per-request SimResult JSON.")
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)

@@ -261,9 +261,7 @@ func init() {
 	registerSimConfigFlags(replayCmd)
 	replayCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "Path to TraceV2 header YAML file (required)")
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
-	// Override --results-path description for replay: schema differs from blis run.
-	// blis run writes MetricsOutput JSON; blis replay writes []SimResult JSON.
-	replayCmd.Flags().Lookup("results-path").Usage = "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens) for blis calibrate consumption. Note: blis run writes MetricsOutput JSON to this flag; blis replay writes SimResult JSON."
+	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens) for blis calibrate consumption.")
 	rootCmd.AddCommand(replayCmd)
 }
 

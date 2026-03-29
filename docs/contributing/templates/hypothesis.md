@@ -128,7 +128,7 @@ setup_experiment "${1:-}"
 # Example (with per-request JSON):
 #   blis_run $TIMEOUT_STANDARD "$RESULTS_DIR/config_a.txt" \
 #       --model "$MODEL" --num-instances 4 --seed 42 --log error \
-#       --results-path "$RESULTS_DIR/config_a_results.json"
+#       --metrics-path "$RESULTS_DIR/config_a_results.json"
 #
 # Example (robustness/stress — non-zero exit expected, use || true under set -e):
 #   blis_run $TIMEOUT_EXTENDED "$RESULTS_DIR/stress.txt" \
