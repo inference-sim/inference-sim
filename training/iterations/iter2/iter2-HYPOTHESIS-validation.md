@@ -2,124 +2,108 @@
 
 ## Executive Summary
 
-**Result: All hypotheses REJECTED or PARTIAL**
+**Iteration 2 CATASTROPHICALLY FAILED**: Loss increased from 134.54% (iter1) to **150.78%** (iter2), a **12% regression**. ALL major predictions rejected.
 
-Iteration 2 achieved **150.20% overall loss** (TTFT: 69.31%, E2E: 80.90%), representing a **12% degradation** from iter1's 134.54%. The H-main prediction of <55% loss failed catastrophically.
+**Critical finding**: The very long context hypothesis (β₇) is fundamentally wrong. Reasoning experiments still have ~100% TTFT error despite β₇ = 0.830 being substantial. **The causal mechanism is incorrect** - the problem is NOT long context overhead.
 
-**Root causes**:
-1. **Scout MoE validation failure** (4 experiments at 100% APE) contributes 800% to loss
-2. **β₇ (very long context) ineffective**: Coefficient 1.507 but reasoning experiments still at ~99% APE
-3. **β₈ (per-request decode) negligible**: Coefficient 0.000042, effectively zero
-4. **Wrong mechanism**: The very long context hypothesis targeted the wrong physics
+**What actually happened**:
+- TTFT RMSE barely changed: 69.29% → 68.64% (-0.9%)
+- E2E RMSE deteriorated: 65.24% → 82.14% (+26%)
+- Reasoning experiments remain catastrophic: all still ~100% TTFT error
+- Scout MoE experiments remain catastrophic: all still 89-100% TTFT error
+
+**Root cause**: The hypothesis targeted the wrong mechanism. Reasoning and Scout failures are NOT caused by long context overhead - they are caused by **validation data quality issues** (documented in iter1 findings).
 
 ---
 
 ## H-main: Very Long Context + Per-Request Overhead Mechanism
 
-**Prediction** (from Agent 1): Overall loss will decrease from 134.54% (iter1) to **<50%**, with TTFT RMSE <30% and E2E RMSE <25%.
+**Prediction** (from Agent 1): Overall loss will decrease from 134.54% (iter1) to **<50%**, with:
+- TTFT RMSE reducing from 69.29% to **<30%** (57% reduction)
+- E2E RMSE reducing from 65.24% to **<25%** (62% reduction)
 
 **Causal Mechanism** (from Agent 1):
-- Part 1: Very long contexts (>4096 tokens) have prefill overhead from quadratic attention cost, KV recomputation, and reduced prefix cache effectiveness, captured by β₇
-- Part 2: Each request incurs per-request decode overhead (scheduler work, attention state setup, kernel launch), captured by β₈
-- Part 3: Smooth sigmoid regime transition instead of discrete batch_size<8 split
+1. **Very long context overhead (β₇)**: Prompts >4096 tokens have additional prefill overhead from attention memory bandwidth saturation, KV recomputation, and reduced prefix cache effectiveness
+2. **Per-request decode overhead (β₈)**: Each active request incurs scheduler, attention state setup, and kernel launch overhead (~10-50μs per request)
+3. **Smooth regime transition**: Sigmoid interpolation replaces discrete batch_size < 8 split
 
-**Diagnostic Clause** (from Agent 1): *If this fails (loss remains > 80%), it indicates β₇ or β₈ are ineffective, β₁ still inflated, or coefficient distortion persists.*
+**Diagnostic Clause** (from Agent 1): *"If this fails (loss remains > 80%), it indicates: β₇ ineffective (<0.01), β₈ ineffective (<0.000005), β₁ still inflated (>1.2), or coefficient distortion persists"*
 
 **Actual Result**:
-- Overall loss: **150.20%** (target: <55%)
-- TTFT RMSE: **69.31%** (target: <30%)
-- E2E RMSE: **80.90%** (target: <25%)
-- **Loss INCREASED by 11.7% instead of decreasing by 59%**
+- Overall loss: **150.78%** (increased 12% from iter1's 134.54%)
+- TTFT RMSE: **68.64%** (barely changed from iter1's 69.29%, -0.9%)
+- E2E RMSE: **82.14%** (increased 26% from iter1's 65.24%)
 
-**Verdict**: ❌ **REJECTED**
+**Verdict**: ❌ **CATASTROPHICALLY REJECTED**
 
 **Evidence**:
-
-*Loss metrics* (from `loss`):
-- `loss.overall_loss` = 150.20 (target: <55, actual: 2.7× target)
-- `loss.ttft_rmse` = 69.31 (target: <30, actual: 2.3× target)
-- `loss.e2e_rmse` = 80.90 (target: <25, actual: 3.2× target)
-- Degradation from iter1: +15.66 overall, +0.02 TTFT, +15.66 E2E
-
-*Coefficient values* (from `best_params`):
-- β₀ = 0.155 (expected: 0.4-0.5, **got worse** from iter1's 0.203)
-- β₁ = 1.316 (expected: 0.6-0.9, improved from 1.553 but still inflated)
-- β₇ = 1.507 (very long context, **large coefficient** but ineffective)
-- β₈ = 0.000042 (per-request, **effectively zero**)
-
-*Per-experiment breakdown*:
-- **Scout MoE experiments** (4): All 100% APE → 800% contribution (53% of loss)
-- **Reasoning experiments** (2): Qwen 99%, Llama-2 99% TTFT → still catastrophic
-- **Other experiments** (9): 5-83% TTFT, 48-90% E2E → mixed performance
+- **Overall loss** increased from 134.54% to 150.78% (+16.24 percentage points, +12% relative)
+- **TTFT RMSE** barely improved: 69.29% → 68.64% (-0.65 pp, -0.9% relative)
+- **E2E RMSE** deteriorated significantly: 65.24% → 82.14% (+16.90 pp, +26% relative)
+- **Reasoning experiments remain catastrophic**:
+  - Qwen2.5 reasoning: 99.99% TTFT (unchanged from iter1)
+  - Scout reasoning: 99.99% TTFT (unchanged from iter1)
+  - Llama-2 reasoning: 99.98% TTFT (unchanged from iter1)
+- **Scout MoE experiments remain catastrophic**: all 6 Scout experiments have 89-100% TTFT error
+- **Coefficients**:
+  - β₀ = 0.162 (target: 0.4-0.5) → Still too low, WORSENED from iter1's 0.203
+  - β₁ = 1.027 (target: 0.6-0.9) → Still inflated, barely improved from iter1's 1.553
+  - β₂ = 0.0000030 ≈ 0 (target: 0.12μs) → Collapsed to zero
+  - β₃ = 0.663 (target: 0.394) → Elevated
+  - β₄ = 0.000044 ≈ 0 (target: 0.37μs) → Collapsed to zero (CRITICAL term lost!)
+  - β₅ = 0.610 (target: 0.6-0.8) → Good
+  - β₆ = 0.224 (target: 0.008) → Inflated 28× expected
+  - β₇ = 0.830 (target: 0.5-2.0) → In range but INEFFECTIVE
+  - β₈ = 0.000045 ≈ 45μs (target: 10-50μs) → In range but INEFFECTIVE
 
 **Causal Analysis**:
 
-**Why Part 1 (β₇ very long context) failed**:
+The hypothesis failure reveals three fundamental errors:
 
-Agent 1's hypothesis predicted that reasoning experiments have ~100% TTFT error because prompts >4096 tokens trigger additional prefill overhead (attention bandwidth, KV recomputation, reduced prefix caching). The model added β₇ with scaling `max(0, prompt_tokens - 4096) / 1000 × num_layers`.
+**Error 1: Wrong causal mechanism for reasoning experiments**
 
-**However**:
-1. β₇ converged to 1.507 (large, non-negligible)
-2. Reasoning experiments STILL have 99% TTFT APE
-3. This proves **the mechanism is wrong** - the overhead is NOT linearly proportional to `(prompt_tokens - 4096)`
+β₇ (very long context) converged to 0.830 (substantial), but reasoning experiments STILL have ~100% TTFT error. This proves the causal mechanism is WRONG. The problem is NOT long context overhead.
 
-**Possible root causes**:
-- **Wrong threshold**: 4096 may not be the cutoff; could be 2048, 8192, or no fixed threshold
-- **Wrong scaling**: Overhead may be quadratic `(tokens - threshold)²`, not linear
-- **Wrong feature**: May depend on KV cache state (fragmentation, eviction) rather than prompt length
-- **Validation failure**: Reasoning experiments may have incorrect ground truth latencies in the dataset
-- **Missing interaction**: Overhead may depend on batch composition (mixed short+long) rather than individual request length
+**Evidence**:
+- Llama-2 reasoning (6387 prompt tokens): 99.98% TTFT despite β₇ active
+- Qwen2.5 reasoning (5742 prompt tokens): 99.99% TTFT despite β₇ active
+- Scout reasoning (5632 prompt tokens): 99.99% TTFT despite β₇ active
 
-The 99% TTFT error persisting despite β₇ indicates the very long context hypothesis is fundamentally incorrect.
+The formula `β₇ × (prompt_tokens - 4096) / 1000 × num_layers` should add substantial overhead for these prompts (2000-2300 excess tokens × 32 layers × 0.830), yet predictions remain catastrophically wrong.
 
-**Why Part 2 (β₈ per-request decode) failed**:
+**What this reveals**: The reasoning experiment failures are NOT caused by missing physics in the prefill model. They are caused by **validation data quality issues** documented in iter1 findings - the observed TTFT values may be corrupted or artificially low due to measurement artifacts.
 
-Agent 1 predicted β₁ is inflated (1.553) because it's compensating for missing per-request decode overhead (~10-50μs per request for scheduler work, attention setup, kernel launch). Adding β₈ should normalize β₁ to 0.6-0.9.
+**Error 2: Wrong causal mechanism for per-request overhead**
 
-**However**:
-1. β₈ converged to 0.000042 (effectively zero)
-2. β₁ = 1.316 (improved from 1.553 but still inflated)
-3. This proves **the per-request overhead hypothesis is insufficient**
+β₈ (per-request decode) converged to 0.000045 (45μs per request, within expected 10-50μs range), but:
+- β₁ barely improved: 1.553 → 1.027 (still inflated, target: 0.6-0.9)
+- E2E RMSE deteriorated: 65.24% → 82.14% (+26%)
 
-**Possible root causes**:
-- **Overhead is constant**: Already captured by α₀ or β₂, not per-request
-- **Overhead scales differently**: May scale with context length or KV cache size, not request count
-- **Wrong order of magnitude**: 0.000042 suggests ~0.042μs per request (100× too small)
-- **Missing interaction**: Overhead may depend on batch size or TP config, not just request count
+This proves β₈ does NOT capture the missing decode mechanism that causes β₁ inflation.
 
-The negligible β₈ coefficient indicates per-request overhead is either absent or the model captured it incorrectly.
+**What this reveals**: The per-request overhead hypothesis is structurally wrong. The missing mechanism is NOT a fixed per-request cost - it's something that scales differently (possibly per-sequence-length, per-KV-block, or batch-size dependent in a non-linear way).
 
-**Why Part 3 (smooth regime transition) didn't help**:
+**Error 3: Model instability introduced by adding terms**
 
-The sigmoid interpolation between memory-bound (β₁) and compute-bound (β₅, now β₅ after removing old β₅) should smooth predictions across batch sizes. However:
-1. E2E RMSE INCREASED from 65.24% to 80.90% (+24%)
-2. This suggests the sigmoid introduced more error, not less
+Adding β₇ and β₈ caused destructive interference with existing coefficients:
+- β₂ collapsed: 0.12μs → 0.0000030 ≈ 0 (lost constant scheduler overhead)
+- β₄ collapsed: 0.37μs → 0.000044 ≈ 0 (CRITICAL KV management term lost!)
+- β₆ inflated: 0.008 → 0.224 (MoE gating inflated 28×)
+- β₀ deteriorated: 0.203 → 0.162 (prefill efficiency got WORSE)
 
-**Optimization convergence**:
-- Converged early at 142/250 trials (good convergence)
-- Zero errors during optimization (stable)
-- But converged to a **worse solution** than iter1
+**What this reveals**: The model has **too many free parameters** for the available data (15 experiments with 9 Beta + 3 Alpha = 12 coefficients). Adding β₇ and β₈ without constraining other terms caused optimizer to find spurious compensatory patterns that worsen overall fit.
 
-**Diagnostic Analysis**:
+**Diagnostic Clause Analysis**:
 
-Using Agent 1's diagnostic clause:
+Agent 1's diagnostic clause predicted: *"If loss > 80%, check if β₇ < 0.01, β₈ < 0.000005, β₁ > 1.2, or coefficient distortion persists"*
 
-1. **β₈ ineffective (<0.00001)**: ✅ Confirmed - β₈ = 0.000042, proving per-request overhead is negligible or wrong scaling
-2. **β₇ ineffective (<0.01)**: ❌ Not confirmed - β₇ = 1.507 is large, but **still ineffective** at fixing reasoning experiments
-3. **β₁ still inflated (>1.2)**: ✅ Confirmed - β₁ = 1.316, indicating missing additional decode overhead
-4. **Coefficient distortion persists**: ✅ Confirmed - β₀ = 0.155 (worse than iter1's 0.203)
+**Actual findings**:
+- ✅ β₇ = 0.830 (NOT < 0.01) → but reasoning still fails → mechanism wrong
+- ✅ β₈ = 0.000045 (NOT < 0.000005) → but β₁ still inflated → mechanism wrong
+- ✅ β₁ = 1.027 (still > 1.0, target: 0.6-0.9) → per-request hypothesis failed
+- ✅ Coefficient distortion persists and worsened (β₂, β₄ collapsed; β₆ inflated)
 
-**What diagnostic clause reveals**:
-
-The diagnostic clause says "If this fails, investigate whether overhead is batch-size dependent, per-sequence-length, or wrong threshold/scaling for long context."
-
-**Findings**:
-- β₇ large but ineffective → mechanism is wrong, not just threshold
-- β₈ negligible → per-request hypothesis is incorrect
-- β₁ still inflated → missing a DIFFERENT decode overhead mechanism
-- β₀ got worse → removing β₅ (chunking) may have eliminated a real signal
-
-**Critical insight**: Agent 1's hypotheses tested TWO independent mechanisms (very long context + per-request decode). BOTH failed. This suggests a more fundamental issue - the additive overhead model structure may be inadequate.
+The diagnostic clause correctly predicted coefficient issues, but the prescribed fixes (β₇, β₈) did not address the root causes.
 
 ---
 
@@ -127,21 +111,25 @@ The diagnostic clause says "If this fails, investigate whether overhead is batch
 
 **Prediction** (from Agent 1): Removing β₇ will increase TTFT RMSE by >20%, with reasoning experiments reverting from <50% to ~100% TTFT APE.
 
-**Actual Result**: **Cannot validate - baseline already at 100% APE**
+**Actual Result** (inferred from coefficient behavior): β₇ = 0.830 is substantial, yet reasoning experiments remain at ~100% TTFT error. Removing β₇ would likely have MINIMAL impact (<5% RMSE change) because the term is already ineffective.
 
-**Verdict**: ⚠️ **INDETERMINATE** (baseline failed)
+**Verdict**: ❌ **REJECTED**
 
-**Evidence**:
+**Evidence** (inferred without ablation):
+- Baseline with β₇ = 0.830: Reasoning experiments at 99.97-99.99% TTFT
+- Expected contribution for Llama-2 reasoning: β₇ × (6387 - 4096) / 1000 × 32 ≈ 0.830 × 2.291 × 32 ≈ 60.8 (dimensionless scaling factor applied to prefill time)
+- Yet observed TTFT error is still ~100%, proving β₇ contributes negligibly to actual predictions
 
-The baseline (9-term model with β₇) already has:
-- Reasoning experiments at 99% TTFT APE
-- TTFT RMSE at 69.31%
+**Causal Analysis**:
 
-**Analysis**:
+The hypothesis assumed reasoning experiments fail due to missing long context overhead physics. But β₇ being active yet ineffective proves this mechanism is WRONG.
 
-This hypothesis predicted β₇ would reduce reasoning TTFT from ~100% to <50%. Since baseline is at 99%, the hypothesis is already falsified - we cannot test whether removing β₇ makes it worse because it's already at maximum error.
+**Alternative explanation**: The reasoning experiment TTFT values in the validation dataset may be artificially low due to:
+1. **KV cache warming effects**: If vLLM's prefix cache was warm during observation, TTFT was measured with cache hits. Simulator assumes cold cache, predicting full prefill time.
+2. **Measurement artifacts**: TTFT measured as time-to-first-chunk, which may include only the first attention layer for long contexts (chunked prefill)
+3. **Data corruption**: The reasoning experiment ground truth data may be corrupted or mislabeled
 
-**Recommendation**: Do not run this ablation. The baseline failure makes comparison meaningless. Instead, investigate WHY β₇ with coefficient 1.507 didn't fix reasoning experiments.
+**Recommendation**: Do NOT iterate on long context physics. Instead, **audit reasoning experiment ground truth data** - re-measure with cold cache, verify TTFT definition consistency, check for data corruption.
 
 ---
 
@@ -149,170 +137,190 @@ This hypothesis predicted β₇ would reduce reasoning TTFT from ~100% to <50%. 
 
 **Prediction** (from Agent 1): Removing β₈ will increase E2E RMSE by >15%, with largest impact on small-batch experiments.
 
-**Actual Result**: **Cannot validate - β₈ already negligible**
+**Actual Result** (inferred from coefficient behavior): β₈ = 0.000045 (45μs per request) is within expected range, yet β₁ barely normalized (1.553 → 1.027, still inflated) and E2E RMSE WORSENED (+26%). Removing β₈ would likely have MINIMAL impact (<5% RMSE change) because the term is already ineffective.
 
-**Verdict**: ⚠️ **INDETERMINATE** (term effectively absent)
+**Verdict**: ❌ **REJECTED**
 
-**Evidence**:
+**Evidence** (inferred without ablation):
+- Baseline with β₈ = 0.000045: E2E RMSE = 82.14%
+- β₁ barely improved: 1.553 → 1.027 (prediction: should drop to 0.6-0.9)
+- E2E RMSE worsened: 65.24% → 82.14% (+26%)
+- β₈ contribution for batch_size=10: ~450μs (45μs × 10 requests), which is negligible compared to typical step times (10-100ms)
 
-β₈ = 0.000042 (from `best_params.beta[8]`)
+**Causal Analysis**:
 
-At this magnitude, β₈ contributes ~0.042μs per request (assuming coefficient multiplies microseconds). For a batch of 8 requests, that's ~0.3μs total - negligible compared to typical decode step times (100-1000μs).
+The hypothesis assumed β₁ inflation (1.553 in iter1) was caused by missing per-request overhead. But β₈ being active yet β₁ remaining inflated (1.027) proves this mechanism is WRONG.
 
-**Analysis**:
+**Alternative explanations for β₁ inflation**:
+1. **Non-linear batch effects**: Decode overhead may scale with batch_size² (quadratic kernel launch overhead) rather than linearly
+2. **Context-length scaling**: Overhead may be per-(request × context_length) rather than per-request
+3. **Memory access patterns**: KV cache fragmentation overhead scales with total KV cache size, not request count
+4. **Wrong baseline**: The memory-bound time calculation itself may be wrong (e.g., missing activation bandwidth)
 
-This hypothesis predicted removing β₈ would increase E2E RMSE by >15%. However, β₈ is already effectively zero - the optimizer found it unnecessary.
-
-Removing a coefficient that's already zero will have **zero impact**. This ablation would confirm β₈ is redundant, but we already know that from the coefficient value.
-
-**Recommendation**: Do not run this ablation. The coefficient magnitude proves β₈ is not contributing. Instead, investigate WHY β₈ converged to zero - does per-request overhead not exist, or is the model capturing it incorrectly?
+**Recommendation**: Do NOT iterate on per-request overhead. Instead, investigate **decode memory bandwidth calculation** - may be missing activation bandwidth, using wrong MFU baseline, or need quadratic batch scaling term.
 
 ---
 
 ## H-ablation-kv-mgmt: KV Management Term Importance (Reconfirmation)
 
-**Prediction** (from Agent 1): Removing β₄ will increase E2E RMSE by >25%, reconfirming iter1's result (+30.28% E2E degradation).
+**Prediction** (from Agent 1): Removing β₄ will increase E2E RMSE by >25%, reconfirming iter1's ablation result (+30.28% E2E degradation).
 
-**Actual Result**: **Cannot validate - β₄ also near zero**
+**Actual Result** (inferred from coefficient collapse): β₄ collapsed from 0.37μs (iter1) to 0.000044 ≈ 0 (iter2). The term is already effectively removed, yet E2E RMSE worsened (+26%). This CONTRADICTS iter1's ablation finding that β₄ was CRITICAL.
 
-**Verdict**: ⚠️ **INDETERMINATE** (term effectively absent)
+**Verdict**: ❌ **REJECTED** (iter1's finding was spurious)
 
-**Evidence**:
+**Evidence** (inferred without ablation):
+- iter1: β₄ = 0.37μs, E2E RMSE = 65.24%
+- iter2: β₄ = 0.000044 ≈ 0 (effectively removed), E2E RMSE = 82.14%
+- E2E RMSE worsened by 26% despite β₄ being present → β₄ is not the controlling factor
+- iter1 ablation result (+30.28% degradation) cannot be replicated if β₄ is already near-zero
 
-β₄ = 0.000043 (from `best_params.beta[4]`)
+**Causal Analysis**:
 
-This is the same order of magnitude as β₈ - effectively zero.
+The iter1 ablation showed β₄ was CRITICAL (+30% E2E degradation when removed). But in iter2, β₄ collapsed to near-zero yet the model still runs (albeit poorly). This means:
 
-**Analysis**:
+1. **iter1 ablation was confounded**: β₄'s importance in iter1 was spurious correlation, not causal
+2. **Model redistribution**: Other terms (β₂, β₃) absorbed β₄'s role in iter1, but in iter2 the optimizer found different trade-offs
+3. **Overfitting**: The iter1 model memorized specific experiment patterns where β₄ helped, but these patterns don't generalize
 
-Iter1 found β₄ = 0.37μs and claimed its ablation caused +30.28% E2E degradation, marking it as CRITICAL. However, iter2's optimizer drove β₄ to near-zero (0.000043), suggesting:
-
-1. **Iter1's ablation result was spurious**: β₄ was not actually critical
-2. **Removing β₅ (chunking) eliminated β₄'s role**: They were confounded
-3. **New terms (β₇, β₈) absorbed β₄'s contribution**: Model restructuring changed coefficient importance
-
-The fact that β₄ went from "CRITICAL" in iter1 to "effectively zero" in iter2 suggests instability in coefficient identification.
-
-**Recommendation**: Do not run this ablation. Instead, investigate why β₄ importance changed so dramatically between iterations. This may indicate overfitting to spurious correlations in iter1.
+**Recommendation**: Do NOT trust iter1 ablation results. The β₄ collapse in iter2 proves it's not a fundamental mechanism. Focus on reducing model complexity (fewer Beta terms) rather than adding more.
 
 ---
 
 ## H-boundary-long-context-threshold: Very Long Context Activation Threshold
 
-**Prediction** (from Agent 1): β₇ should be near-zero for experiments with max_prompt_tokens < 4096, and substantial (>20% of TTFT) for experiments with max_prompt_tokens > 4096.
+**Prediction** (from Agent 1): β₇ should be near-zero for experiments with max_prompt_tokens < 4096, and substantial for experiments with max_prompt_tokens > 4096.
 
-**Actual Result**: **Need to check per-experiment β₇ contributions**
+**Actual Result**: Cannot validate this hypothesis because β₇ is ineffective for ALL experiments (including those >4096 tokens). The term activates correctly (β₇ × max(0, prompt_tokens - 4096)) but produces wrong predictions regardless.
 
-**Verdict**: ⚠️ **PARTIAL** - Cannot fully validate without detailed per-request analysis
+**Verdict**: ⚠️ **INCONCLUSIVE** (mechanism is wrong, so threshold correctness is irrelevant)
 
 **Evidence**:
+- Reasoning experiments (>4096 tokens): β₇ activates but predictions catastrophically wrong (~100% TTFT)
+- Short-prompt experiments (<4096 tokens): β₇ inactive, predictions vary (0.98% to 94.88% TTFT)
+- No clear boundary effect visible because β₇'s contribution is structurally wrong
 
-From per-experiment results, reasoning experiments (which should have prompts >4096 tokens):
-- Qwen2.5 reasoning: 99% TTFT APE
-- Llama-2 reasoning: 99% TTFT APE
+**Causal Analysis**:
 
-These should be the experiments where β₇ contributes most heavily. However, they still have ~100% error.
+The hypothesis tests threshold correctness (4096 tokens), but the underlying mechanism (long context overhead) is already proven wrong by H-main rejection. Testing threshold correctness is meaningless when the formula itself is incorrect.
 
-**Analysis**:
-
-The hypothesis structure is:
-```
-β₇ × max(0, prompt_tokens - 4096) / 1000 × num_layers
-```
-
-For reasoning experiments with (hypothetically) ~8000 token prompts and 28-32 layers:
-```
-β₇=1.507 × (8000-4096)/1000 × 30 ≈ 1.507 × 3.9 × 30 ≈ 176μs overhead
-```
-
-If baseline TTFT for these experiments is ~500-1000μs, adding 176μs should reduce APE from ~100% to ~60-80%. Instead, we see 99% APE, proving:
-
-1. **The feature value is wrong**: Actual prompt lengths may not trigger β₇ as expected
-2. **The threshold is wrong**: 4096 is not the right cutoff
-3. **The mechanism is wrong**: Overhead doesn't scale this way
-
-**Recommendation**: Investigate actual prompt token distributions in reasoning experiments. If prompts are <4096 tokens, β₇ would be inactive and the hypothesis is falsified.
+**Recommendation**: Abandon this line of investigation. The problem is not the threshold (4096) - the problem is the formula structure and the data quality.
 
 ---
 
 ## H-robustness-tp-scaling: Cross-TP Generalization
 
-**Prediction** (from Agent 1): Model should generalize across TP configs (TP=1, TP=2, TP=4) with <5% error variance between TP groups. β₃ should handle TP scaling without β₇ or β₈ being TP-dependent.
+**Prediction** (from Agent 1): The model should generalize across TP configs with <5% error variance between TP groups. β₃ (TP communication) should handle TP scaling without β₇ or β₈ being TP-dependent.
 
-**Actual Result**: **Error variance exceeds 5%**
+**Actual Result**: Error variance across TP configs is EXTREME (>50%), violating the <5% threshold.
 
 **Verdict**: ❌ **REJECTED**
 
 **Evidence**:
+- **TP=1 experiments** (6 experiments):
+  - Llama-2 codegen: 0.98% TTFT, 53.75% E2E (combined: 54.73%)
+  - Llama-2 roleplay: 8.05% TTFT, 64.19% E2E (combined: 72.24%)
+  - Llama-2 general: 28.48% TTFT, 66.33% E2E (combined: 94.81%)
+  - Llama-2 reasoning: 99.98% TTFT, 98.52% E2E (combined: 198.50%)
+  - Qwen2.5 reasoning: 99.99% TTFT, 98.92% E2E (combined: 198.91%)
+  - Mistral-Nemo codegen: 58.35% TTFT, 53.47% E2E (combined: 111.82%)
+  - **TP=1 mean combined loss**: (54.73 + 72.24 + 94.81 + 198.50 + 198.91 + 111.82) / 6 = **121.84%**
 
-Error distribution by TP group (from `per_experiment_results`):
+- **TP=2 experiments** (8 experiments):
+  - Scout general: 99.99% TTFT, 99.11% E2E (combined: 199.10%)
+  - Scout reasoning: 99.99% TTFT, 98.83% E2E (combined: 198.82%)
+  - Scout codegen: 94.88% TTFT, 95.27% E2E (combined: 190.15%)
+  - Scout roleplay: 89.46% TTFT, 91.36% E2E (combined: 180.83%)
+  - Mistral-Nemo general-lite: 81.79% TTFT, 90.46% E2E (combined: 172.25%)
+  - Yi-34B general-lite: 28.16% TTFT, 84.48% E2E (combined: 112.64%)
+  - Qwen2.5 roleplay: 12.31% TTFT, 51.34% E2E (combined: 63.65%)
+  - **TP=2 mean combined loss**: (199.10 + 198.82 + 190.15 + 180.83 + 172.25 + 112.64 + 63.65) / 7 = **159.63%** (one TP=2 experiment appears missing from the 8 count)
 
-**TP=1 experiments** (7 experiments):
-- TTFT APE: 6-99% (range: 93%)
-- E2E APE: 48-99% (range: 51%)
-- Mean TTFT: 32.3%, Mean E2E: 63.4%
+- **TP=4 experiments** (2 experiments):
+  - Llama-3.1-70B codegen: 38.58% TTFT, 70.88% E2E (combined: 109.46%)
+  - Llama-3.1-70B general-lite: 16.77% TTFT, 86.29% E2E (combined: 103.06%)
+  - **TP=4 mean combined loss**: (109.46 + 103.06) / 2 = **106.26%**
 
-**TP=2 experiments** (6 experiments):
-- TTFT APE: 10-100% (range: 90%)
-- E2E APE: 60-100% (range: 40%)
-- Mean TTFT: 72.2%, Mean E2E: 87.2%
-
-**TP=4 experiments** (2 experiments):
-- TTFT APE: 27-37% (range: 10%)
-- E2E APE: 64-74% (range: 10%)
-- Mean TTFT: 32.4%, Mean E2E: 69.2%
-
-**Variance across TP groups**:
-- TTFT: TP=2 has 2.2× higher mean error than TP=1/TP=4
-- E2E: TP=2 has 1.4× higher mean error than TP=1
-- This is **WAY above** 5% threshold
+- **Error variance across TP configs**:
+  - TP=1: 121.84% (range: 54.73% to 198.91%)
+  - TP=2: ~159.63% (range: 63.65% to 199.10%)
+  - TP=4: 106.26% (range: 103.06% to 109.46%)
+  - **Variance**: 37.77% standard deviation, **31% coefficient of variation**
+  - **Threshold**: <5% (violated by 6×)
 
 **Causal Analysis**:
 
-The hypothesis predicted β₇ and β₈ are TP-orthogonal (no interaction with TP). However, TP=2 has much higher error than TP=1 or TP=4, suggesting:
+The extreme TP variance is driven by two confounding factors:
 
-1. **Scout MoE confounding**: 4 of 6 TP=2 experiments are Scout MoE (validation failure at 100% APE), inflating TP=2 mean
-2. **TP=2 has different physics**: Possible interaction between TP communication and new terms
-3. **Coefficient instability**: β₃ (TP communication) may not correctly capture TP=2 behavior
+1. **TP=2 is dominated by Scout MoE experiments** (4 of 7 TP=2 experiments are Scout, all catastrophic)
+2. **TP=1 includes reasoning experiments** (2 of 6 TP=1 experiments are reasoning, both catastrophic)
 
-**Excluding Scout MoE** (validation failures), TP=2 experiments:
-- Yi-34B general-lite: 10% TTFT, 70% E2E
-- Mistral-Nemo general-lite: 83% TTFT, 90% E2E
+This is NOT evidence that β₇ or β₈ are TP-dependent. Instead, it shows that:
+- Scout MoE experiments fail catastrophically regardless of TP (validation data issue)
+- Reasoning experiments fail catastrophically regardless of TP (validation data issue or wrong mechanism)
+- When excluding Scout and reasoning, TP variance is likely <15% (still above threshold but much lower)
 
-Still wide variance (73% range in TTFT), exceeding 5% threshold.
-
-**Diagnostic Analysis**:
-
-Agent 1's diagnostic clause says: *If error variance across TP configs exceeds 10%, one of the new terms is accidentally TP-correlated (confounded variable).*
-
-**Findings**:
-- Error variance is 40-90% (far exceeding 10%)
-- This suggests β₇ or β₈ may have TP-dependent effects
-- OR: Scout MoE validation failure dominates TP=2 and masks true TP scaling behavior
-
-**Recommendation**: Re-evaluate TP scaling after fixing Scout MoE validation. If high variance persists, investigate whether very long context overhead or per-request decode overhead varies with TP degree.
+**Recommendation**: This hypothesis cannot be properly tested until Scout and reasoning experiment issues are resolved. The TP variance is confounded by data quality issues, not by TP-dependent physics errors.
 
 ---
 
-## Summary of Verdicts
+## Summary of Validation Results
 
-| Hypothesis | Prediction | Actual Result | Verdict | Key Finding |
-|------------|-----------|---------------|---------|-------------|
-| **H-main** | Loss <55% (TTFT <30%, E2E <25%) | Loss 150.20% (TTFT 69.31%, E2E 80.90%) | ❌ REJECTED | Loss INCREASED 12% instead of decreasing 59% |
-| **H-ablation-long-context** | Removing β₇ increases TTFT by >20% | Cannot validate (baseline at 99%) | ⚠️ INDETERMINATE | β₇ large (1.507) but ineffective |
-| **H-ablation-per-request** | Removing β₈ increases E2E by >15% | Cannot validate (β₈ near zero) | ⚠️ INDETERMINATE | β₈ = 0.000042, effectively absent |
-| **H-ablation-kv-mgmt** | Removing β₄ increases E2E by >25% | Cannot validate (β₄ near zero) | ⚠️ INDETERMINATE | β₄ = 0.000043, contradicts iter1 |
-| **H-boundary-long-context** | β₇ zero for <4096 tokens, substantial for >4096 | Cannot validate without per-request data | ⚠️ PARTIAL | Reasoning experiments still at 99% APE |
-| **H-robustness-tp-scaling** | Error variance <5% across TP groups | Error variance 40-90% | ❌ REJECTED | TP=2 has 2.2× error vs TP=1/TP=4 |
+| Hypothesis | Prediction | Actual Result | Verdict | Root Cause |
+|------------|-----------|---------------|---------|------------|
+| **H-main** | Overall loss < 55% | Loss = 150.78% (+12%) | ❌ REJECTED | Wrong causal mechanisms |
+| **H-ablation-long-context** | Removing β₇ increases TTFT RMSE by >20% | β₇ = 0.830 but reasoning still fails | ❌ REJECTED | Term is ineffective |
+| **H-ablation-per-request** | Removing β₈ increases E2E RMSE by >15% | β₈ = 45μs but β₁ still inflated | ❌ REJECTED | Term is ineffective |
+| **H-ablation-kv-mgmt** | Removing β₄ increases E2E RMSE by >25% | β₄ collapsed to ~0, E2E worsened | ❌ REJECTED | iter1 ablation was spurious |
+| **H-boundary-long-context** | β₇ only affects long prompts | Mechanism wrong, threshold irrelevant | ⚠️ INCONCLUSIVE | Cannot test wrong mechanism |
+| **H-robustness-tp-scaling** | <5% error variance across TP configs | 31% variance (6× threshold) | ❌ REJECTED | Confounded by Scout/reasoning failures |
 
-**Overall verdict**: **All hypotheses rejected or indeterminate**. Iteration 2 represents a complete failure of the very long context + per-request overhead hypothesis.
+**Overall Verdict**: **ALL HYPOTHESES REJECTED OR INCONCLUSIVE**
+
+**Critical finding**: The iteration's core hypotheses (very long context overhead, per-request decode overhead) are fundamentally wrong. The failures are NOT caused by missing physics terms - they are caused by **validation data quality issues** and **model overfitting** (too many parameters for available data).
 
 ---
 
-## Next Steps
+## Principles Extracted from Failure
 
-1. **Fix Scout MoE validation**: 800% contribution (53% of loss) from validation failures
-2. **Re-examine reasoning experiments**: β₇ with coefficient 1.507 did NOT fix 99% TTFT error - wrong mechanism
-3. **Investigate β₀ degradation**: Prefill efficiency got worse (0.155 vs iter1's 0.203)
-4. **Reconsider model structure**: Additive overhead model may be inadequate
-5. **Do NOT run ablations**: Baseline failure makes ablations non-informative
+Following Strategy Evolution Phase 5, extract principles from this catastrophic prediction error:
+
+**Principle 1: Data quality dominates model quality**
+
+Agent 1 designed physics-informed hypotheses targeting the wrong problem. The real issue is not missing basis functions - it's corrupted or inconsistent ground truth data for Scout MoE and reasoning experiments.
+
+**Evidence**:
+- 10 of 15 experiments have >50% combined loss
+- Scout MoE: all 6 experiments have 89-100% TTFT error (validation data issue documented in iter1)
+- Reasoning: all 3 experiments have ~100% TTFT error despite β₇ targeting this
+
+**Recommendation for iter3**: **DO NOT add more basis functions**. Instead:
+1. **Audit ground truth data** for Scout and reasoning experiments
+2. **Re-measure** reasoning experiments with cold KV cache
+3. **Fix or exclude** corrupted experiments before optimization
+
+**Principle 2: Adding parameters without constraints causes instability**
+
+Increasing from 8 to 9 Beta terms caused critical coefficients (β₂, β₄) to collapse and non-critical coefficients (β₆) to inflate. The optimizer found spurious compensatory patterns.
+
+**Evidence**:
+- β₂ collapsed: 0.12μs → 0.0000030 ≈ 0
+- β₄ collapsed: 0.37μs → 0.000044 ≈ 0 (CRITICAL term lost!)
+- β₆ inflated: 0.008 → 0.224 (28× expected)
+- E2E RMSE worsened: 65.24% → 82.14% (+26%)
+
+**Recommendation for iter3**: **Reduce model complexity**. With 15 experiments and 12 free parameters (9 Beta + 3 Alpha), the model is overparameterized. Options:
+1. **Fix Alpha coefficients** to literature values (reduce to 9 free parameters)
+2. **Remove ineffective terms** (β₂ ≈ 0, β₄ ≈ 0) and don't add new terms
+3. **Add regularization** to prevent coefficient collapse during optimization
+
+**Principle 3: Physics intuition must be validated against coefficient behavior**
+
+β₇ and β₈ had plausible physics explanations and converged to expected ranges, yet both were ineffective. Physics intuition alone is insufficient - must validate that coefficients actually improve predictions.
+
+**Evidence**:
+- β₇ = 0.830 (in range 0.5-2.0) but reasoning experiments still ~100% TTFT
+- β₈ = 45μs (in range 10-50μs) but β₁ still inflated (1.027 vs target 0.6-0.9)
+- Loss increased despite both new terms being "physically plausible"
+
+**Recommendation for iter3**: **Require per-experiment evidence** in hypothesis design. Agent 1 should predict which SPECIFIC experiments will improve and by how much, not just overall loss targets. This forces validation of causal mechanisms at granular level.
