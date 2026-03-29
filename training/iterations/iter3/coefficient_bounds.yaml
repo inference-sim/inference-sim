@@ -1,0 +1,61 @@
+# Coefficient bounds and initial values for iteration 3
+#
+# Warm-started from iter2 optimal values:
+# - Alpha: [0.00116, 0.0000425, 0.0000957] (unchanged)
+# - Beta: [0.203, 1.553, 0.00012, 0.394, 0.00037, 0.651, 0.008] (removed β₇, β₈)
+# - NEW β₇: TP-dependent prefill communication overhead (initial: 0.00001)
+#
+# Bounds adjustments from iter2:
+# - Tighten converged coefficients (α, β₃, β₄, β₅, β₆) around iter2 values
+# - Expand stuck coefficients (β₀, β₁) to encourage movement
+# - β₂ remains wide [0, 0.0001] as it appears genuinely negligible
+
+alpha_bounds:  # Request-level overheads (3 terms)
+  - [0.0008, 0.0015]    # α₀: Fixed API overhead (μs → seconds), tightened around 0.00116
+  - [0.00003, 0.00006]  # α₁: Per-input-token overhead (μs/token → seconds/token), tightened around 0.0000425
+  - [0.00007, 0.00012]  # α₂: Per-output-token overhead (μs/token → seconds/token), tightened around 0.0000957
+
+alpha_initial:  # Warm-start from iter2 optimal
+  - 0.00116    # α₀
+  - 0.0000425  # α₁
+  - 0.0000957  # α₂
+
+beta_bounds:  # Step-level coefficients (8 terms)
+  - [0.1, 0.8]       # β₀: Prefill compute MFU (dimensionless, scales prefill compute time)
+                     # Expanded from [0.1, 0.8] to encourage movement (iter2: 0.203, too low)
+  - [0.3, 2.0]       # β₁: Decode memory-bound MFU (dimensionless, scales decode memory time)
+                     # Expanded from [0.3, 1.5] to allow exploration (iter2: 1.553, inflated)
+  - [0, 0.0001]      # β₂: Constant scheduler overhead (seconds per step)
+                     # Wide range, appears genuinely negligible (iter2: 0.00012)
+  - [0.3, 0.5]       # β₃: TP communication scaling (dimensionless, scales decode TP comm time)
+                     # Tightened around 0.394 (iter2 converged, stable)
+  - [0.0002, 0.0005] # β₄: KV management overhead per request (seconds per request)
+                     # Tightened around 0.00037 (iter2 converged, CRITICAL per ablation)
+  - [0.5, 0.8]       # β₅: Decode compute-bound MFU (dimensionless, scales large-batch decode compute)
+                     # Tightened around 0.651 (iter2 converged, physically plausible)
+  - [0.005, 0.015]   # β₆: MoE gating overhead (dimensionless, scales MoE gating time)
+                     # Tightened around 0.008 (iter2 converged, stable)
+  - [0, 0.0001]      # β₇: TP-dependent prefill communication overhead (NEW in iter3)
+                     # Units: seconds per (TP × layer × K-token)
+                     # Physics: Prefill all-reduce scales with TP, num_layers, and prompt_tokens
+                     # Expected range: 0-100 μs per unit (0.0-0.0001 seconds)
+
+beta_initial:  # Warm-start values
+  - 0.203     # β₀: Prefill compute MFU (from iter2, will hopefully rise toward 0.3-0.45)
+  - 1.553     # β₁: Decode memory-bound MFU (from iter2, likely stays inflated)
+  - 0.00012   # β₂: Constant scheduler overhead (from iter2, near-zero)
+  - 0.394     # β₃: TP communication scaling (from iter2, stable)
+  - 0.00037   # β₄: KV management per request (from iter2, critical term)
+  - 0.651     # β₅: Decode compute-bound MFU (from iter2, stable)
+  - 0.008     # β₆: MoE gating overhead (from iter2, stable)
+  - 0.00001   # β₇: TP prefill comm overhead (NEW, 10 μs per TP×layer×K-token)
+               # For TP=4, layers=80, tokens=4000: 0.00001 × 4 × 80 × 4 × 1e6 = 12,800 μs = 12.8 ms
+
+# Rationale for bounds adjustments:
+# - Tightened converged coefficients (α, β₃-β₆): Speed up optimization, reduce search space
+# - Expanded stuck coefficients (β₀, β₁): Encourage movement toward physical plausibility
+# - β₂ wide range: Genuinely negligible or captured elsewhere, let optimizer decide
+# - New β₇: Physics-based estimate (10 μs per unit), allow 10× range for uncertainty
+#
+# Parameter count: 3 Alpha + 8 Beta = 11 total (vs 12 in iter2, 10 in iter1)
+# Parameters per experiment: 11 / 15 = 0.73 (safer than iter2's 0.80)
