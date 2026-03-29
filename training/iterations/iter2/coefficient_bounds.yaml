@@ -1,0 +1,130 @@
+# Coefficient bounds for Bayesian optimization (Iteration 2)
+# All bounds must have lower_bound >= 0.0 (no negative coefficients)
+
+# Alpha coefficients: Request-level overheads (3 required, unchanged from iter1)
+alpha_bounds:
+  - [0.0005, 0.005]      # α₀: Fixed API processing overhead (seconds)
+                          # Tightened from iter0 [0.0, 0.001] based on iter1 convergence to 0.00116
+                          # Range: 0.5ms to 5ms (500μs to 5000μs)
+
+  - [0.00001, 0.0001]    # α₁: Per-input-token tokenization (seconds/token)
+                          # Tightened from iter0 [0.0, 0.0001] based on iter1 convergence to 0.0000425
+                          # Range: 10μs/token to 100μs/token
+
+  - [0.00001, 0.0002]    # α₂: Per-output-token detokenization (seconds/token)
+                          # Tightened from iter0 [0.0, 0.0001] based on iter1 convergence to 0.0000957
+                          # Range: 10μs/token to 200μs/token
+
+# Alpha initial values: Warm-start from iter1 optimal coefficients
+alpha_initial:
+  - 0.00116              # α₀: ~1.16ms (from iter1)
+  - 0.0000425            # α₁: ~42.5μs/token (from iter1)
+  - 0.0000957            # α₂: ~95.7μs/token (from iter1)
+
+# Beta coefficients: vLLM step-level basis function coefficients (9 for iteration 2)
+# Iteration 2 changes: Removed β₅ (chunking), added β₇ (very long context), added β₈ (per-request decode)
+# Numbering shifted: iter1's β₆→β₅, iter1's β₇→β₆, new β₇, new β₈
+
+beta_bounds:
+  - [0.1, 0.8]           # β₀: Prefill compute efficiency factor (dimensionless)
+                          # Tightened from iter1 [0.0, 1.0] to force physically plausible range
+                          # Expected: 0.40-0.55 (up from iter1's 0.203 after β₇ absorbs long-context overhead)
+                          # Justification: Prefill MFU should be 40-60% with new terms capturing missing overhead
+
+  - [0.3, 1.5]           # β₁: Decode memory-bound efficiency factor (dimensionless)
+                          # Tightened from iter1 [0.0, 2.0] but still allow current inflated value
+                          # Expected: 0.60-0.90 (down from iter1's 1.553 after β₈ absorbs per-request overhead)
+                          # Justification: Memory-bound MFU should normalize to 60-90% after β₈ captures scheduler/kernel overhead
+
+  - [0.0, 0.0001]        # β₂: Fixed scheduler overhead per step (seconds)
+                          # Tightened from iter1 [0.0, 0.0005] based on near-zero convergence
+                          # Range: 0 to 100μs
+                          # Expected: Still near-zero (0.12μs from iter1) — constant overhead may be genuinely negligible
+                          # Justification: Iter1 showed β₂ converged to 0.12μs; may rise if per-request overhead (β₈) absorbs variable component
+
+  - [0.1, 1.2]           # β₃: TP communication overhead scaling (dimensionless)
+                          # Tightened from iter1 [0.0, 2.0] around convergence
+                          # Expected: 0.3-0.5 (stable from iter1's 0.394)
+                          # Justification: TP communication formula worked in iter1 (ablation showed +6.77% E2E degradation), maintain
+
+  - [0.0, 0.00005]       # β₄: KV management overhead per request (seconds)
+                          # Tightened from iter1 [0.0, 0.0001] based on convergence
+                          # Range: 0 to 50μs
+                          # Expected: ~0.37μs (stable from iter1, CRITICAL per ablation +30.28% E2E degradation)
+                          # Justification: Small coefficient but ablation proved it's the most important additive overhead
+
+  - [0.3, 1.0]           # β₅: Decode compute-bound efficiency factor (dimensionless) [formerly iter1's β₆]
+                          # Tightened from iter1 [0.0, 1.5] to force physically plausible range
+                          # Expected: 0.5-0.7 (stable from iter1's β₆=0.651)
+                          # Justification: Large-batch decode compute-bound MFU was physically plausible in iter1
+
+  - [0.0, 0.3]           # β₆: MoE gating overhead scaling (dimensionless) [formerly iter1's β₇]
+                          # Tightened from iter1 [0.0, 0.5] based on convergence
+                          # Expected: 0.005-0.015 (may drop from iter1's 0.008 after Scout bug fixes)
+                          # Justification: Scout simulator bugs fixed; gating overhead should be 0.5-1.5% of step time
+
+  - [0.0, 2.0]           # β₇: Very long context prefill overhead (dimensionless) [NEW in iter2]
+                          # Range: Allow up to 2× prefill overhead for very long contexts
+                          # Expected: 0.5-2.0 (captures reasoning experiments' ~100% TTFT failure)
+                          # Physics: Overhead scaling factor for prompts >4096 tokens
+                          # Formula: (prompt_tokens - 4096) / 1000 × num_layers
+                          # Captures: attention memory bandwidth saturation, KV recomputation, reduced prefix cache effectiveness
+                          # Justification: Reasoning experiments (100% TTFT) need dedicated long-context term
+
+  - [0.0, 0.00005]       # β₈: Per-request decode overhead (seconds per request) [NEW in iter2]
+                          # Range: 0 to 50μs per request
+                          # Expected: 0.00001-0.00005 (10-50μs per request)
+                          # Physics: Scheduler per-request work, attention state setup, kernel launch overhead
+                          # Captures: Per-request overhead independent of compute/memory bottlenecks
+                          # Justification: Should normalize β₁ from inflated 1.553 to 0.6-0.9
+
+# Beta initial values: Warm-start from iter1 optimal coefficients (with adjustments for new terms)
+beta_initial:
+  - 0.203                # β₀: From iter1 (expect to rise to 0.4-0.5 after β₇ absorbs long-context overhead)
+  - 1.553                # β₁: From iter1 (expect to drop to 0.6-0.9 after β₈ absorbs per-request overhead)
+  - 0.00012              # β₂: From iter1 (0.12μs, may rise if constant overhead becomes visible)
+  - 0.394                # β₃: From iter1 (stable, TP communication worked well)
+  - 0.00037              # β₄: From iter1 (0.37μs, CRITICAL per ablation despite small value)
+  - 0.651                # β₅: From iter1's β₆ (large-batch decode compute-bound, physically plausible)
+  - 0.008                # β₆: From iter1's β₇ (MoE gating, may drop after Scout bug fixes)
+  - 1.0                  # β₇: NEW - initialize to moderate overhead (1.0× scaling for long context)
+                          # Physics estimate: reasoning experiments show ~100% TTFT error, suggesting 1-2× overhead
+  - 0.00003              # β₈: NEW - initialize to 30μs per request (midpoint of 10-50μs expected range)
+                          # Physics estimate: scheduler (5-20μs) + attention state (10-50μs) + kernel launch (10-30μs) ≈ 30μs
+
+# Physical justification for iteration 2 changes:
+#
+# Removed β₅ (chunking overhead):
+#   - Iter1 ablation showed +1.06% overall loss (+0.07% TTFT) when removed → redundant
+#   - Coefficient converged to 0.37μs (near-zero), indicating prefill base term β₀ captures chunking adequately
+#
+# Added β₇ (very long context prefill overhead):
+#   - Reasoning experiments catastrophically failed in iter1 (~100% TTFT vs <50% for other workloads)
+#   - Formula: (prompt_tokens - 4096) / 1000 × num_layers
+#   - Captures: attention memory bandwidth saturation (intermediate matrices spill to HBM for long sequences),
+#     KV cache recomputation (vLLM preemption triggers recomputation under memory pressure),
+#     reduced prefix cache effectiveness (unique long prompts have lower cache hit rates)
+#   - Expected coefficient: 0.5-2.0 (allows 50-200% prefill overhead for very long contexts)
+#   - Observable proxy: prompt_tokens threshold (4096) and layer depth naturally capture reasoning overhead without workload labels
+#
+# Added β₈ (per-request decode overhead):
+#   - β₁ inflated to 1.553 (2.6× physically plausible 0.6) in iter1, indicating missing per-request term
+#   - Formula: num_decode_requests × per_request_time
+#   - Captures: scheduler per-request work (priority checks, sequence state updates, 5-20μs),
+#     attention state setup (query offsets, KV block tables, sequence lengths, 10-50μs),
+#     kernel launch overhead for small batches (10-30μs per request)
+#   - Expected coefficient: 10-50μs per request (total ~30μs)
+#   - Should normalize β₁ from 1.553 to 0.6-0.9
+#
+# Modified decode regime split (sigmoid interpolation):
+#   - Iter1 used discrete if-else at batch_size=8, causing potential discontinuity
+#   - Iter2 uses continuous sigmoid: memory_weight(n) = 1/(1+exp((n-8)/2))
+#   - Smooth transition from memory-bound (small batch) to compute-bound (large batch)
+#   - No change to coefficient bounds — same β₁ and β₅ (formerly β₆), just different weighting function
+#
+# Tightened bounds rationale:
+#   - Iter1 converged early (205 trials, 18% of 1120 max), suggesting search space too large
+#   - Bounds tightened around physically plausible ranges to speed convergence and discourage implausible solutions
+#   - α bounds: Tightened around iter1 converged values (±5× range)
+#   - β₀, β₁: Tightened to force physical plausibility while allowing iter1 values as starting points
+#   - Other β bounds: Tightened around iter1 converged values (±2-3× range)
