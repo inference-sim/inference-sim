@@ -1216,3 +1216,32 @@ func TestGetModelConfigFromHF_InterleaveMoELayerStep_ParsedCorrectly(t *testing.
 		t.Errorf("expected InterleaveMoELayerStep=1, got %d", mc.InterleaveMoELayerStep)
 	}
 }
+
+func TestGetModelConfigFromHF_DenseIntermediateDim_ParsedCorrectly(t *testing.T) {
+	// GIVEN a mock HF config with intermediate_size_mlp
+	hf := &latency.HFConfig{
+		Raw: map[string]any{
+			"num_hidden_layers":     float64(48),
+			"hidden_size":           float64(5120),
+			"num_attention_heads":   float64(40),
+			"num_key_value_heads":   float64(40),
+			"vocab_size":            float64(128256),
+			"torch_dtype":           "bfloat16",
+			"intermediate_size":     float64(8192),  // MoE expert FFN
+			"intermediate_size_mlp": float64(16384), // Dense layer FFN
+			"num_local_experts":     float64(16),
+			"num_experts_per_tok":   float64(1),
+		},
+	}
+
+	// WHEN parsing the config
+	mc, err := latency.GetModelConfigFromHF(hf)
+
+	// THEN DenseIntermediateDim is parsed correctly
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if mc.DenseIntermediateDim != 16384 {
+		t.Errorf("expected DenseIntermediateDim=16384, got %d", mc.DenseIntermediateDim)
+	}
+}
