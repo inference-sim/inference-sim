@@ -1029,3 +1029,89 @@ func TestObserveCmd_DefaultsFilepathFlag_Exists(t *testing.T) {
 		t.Errorf("--defaults-filepath default: got %q, want %q", f.DefValue, "defaults.yaml")
 	}
 }
+
+// TestBuildPresetSpec_MatchesPresetDefinition verifies BC-1:
+// buildPresetSpec loads token distribution from defaults.yaml and passes it
+// to SynthesizeFromPreset, producing a spec with correct rate and token means.
+//
+// This is the wiring test: it exercises the actual buildPresetSpec code path
+// in observe_cmd.go, not just the workload package independently.
+func TestBuildPresetSpec_MatchesPresetDefinition(t *testing.T) {
+	dir := t.TempDir()
+	defaultsPath := filepath.Join(dir, "defaults.yaml")
+	// YAML keys must match Workload struct tags exactly (R10: KnownFields(true)).
+	// prompt_tokens → PromptTokensMean, output_tokens → OutputTokensMean (see default_config.go:15,19)
+	defaultsContent := `workloads:
+  chatbot:
+    prefix_tokens: 0
+    prompt_tokens: 512
+    prompt_tokens_stdev: 100
+    prompt_tokens_min: 50
+    prompt_tokens_max: 1024
+    output_tokens: 256
+    output_tokens_stdev: 50
+    output_tokens_min: 10
+    output_tokens_max: 512
+`
+	if err := os.WriteFile(defaultsPath, []byte(defaultsContent), 0600); err != nil {
+		t.Fatalf("write defaults.yaml: %v", err)
+	}
+
+	const testRate = 5.0
+	const testNumRequests = 10
+	spec, errMsg := buildPresetSpec("chatbot", defaultsPath, testRate, testNumRequests)
+	if errMsg != "" {
+		t.Fatalf("buildPresetSpec returned error: %q", errMsg)
+	}
+	if spec == nil {
+		t.Fatal("buildPresetSpec returned nil spec")
+	}
+	if len(spec.Clients) == 0 {
+		t.Fatal("spec has no clients")
+	}
+	client := spec.Clients[0]
+	// Invariant: aggregate rate matches requested rate (set on spec, not per-client)
+	if spec.AggregateRate != testRate {
+		t.Errorf("AggregateRate: got %v, want %v", spec.AggregateRate, testRate)
+	}
+	// Invariant: token means come from preset YAML (via InputDist/OutputDist params),
+	// not distribution synthesis defaults
+	gotPromptMean := client.InputDist.Params["mean"]
+	if gotPromptMean != 512 {
+		t.Errorf("InputDist.Params[mean]: got %v, want 512 (from chatbot preset)", gotPromptMean)
+	}
+	gotOutputMean := client.OutputDist.Params["mean"]
+	if gotOutputMean != 256 {
+		t.Errorf("OutputDist.Params[mean]: got %v, want 256 (from chatbot preset)", gotOutputMean)
+	}
+	// Invariant: num-requests bound propagated into spec
+	if spec.NumRequests != int64(testNumRequests) {
+		t.Errorf("spec.NumRequests: got %d, want %d", spec.NumRequests, testNumRequests)
+	}
+}
+
+// TestBuildPresetSpec_UnknownPreset_ReturnsError verifies BC-5:
+// buildPresetSpec returns a non-empty error for an undefined preset name.
+// Error message must list valid preset names.
+func TestBuildPresetSpec_UnknownPreset_ReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	defaultsPath := filepath.Join(dir, "defaults.yaml")
+	// Minimal valid defaults.yaml — no workloads section means all presets are undefined
+	if err := os.WriteFile(defaultsPath, []byte("version: test\n"), 0600); err != nil {
+		t.Fatalf("write defaults.yaml: %v", err)
+	}
+
+	spec, errMsg := buildPresetSpec("unknown-preset", defaultsPath, 5.0, 10)
+	if spec != nil {
+		t.Error("expected nil spec for unknown preset, got non-nil")
+	}
+	if errMsg == "" {
+		t.Fatal("expected error for unknown preset, got empty message")
+	}
+	// Invariant: error lists valid preset names so users know what to pass
+	for _, name := range []string{"chatbot", "summarization", "contentgen", "multidoc"} {
+		if !strings.Contains(errMsg, name) {
+			t.Errorf("error message should list valid preset %q, got: %q", name, errMsg)
+		}
+	}
+}

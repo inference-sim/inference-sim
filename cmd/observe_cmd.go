@@ -66,9 +66,10 @@ This is the data collection step of the observe/replay/calibrate pipeline.
 The output TraceV2 files can be fed to 'blis replay' for simulation comparison
 and 'blis calibrate' for accuracy measurement.
 
-Supports --workload-spec (YAML), --rate (distribution synthesis), or --concurrency
-(closed-loop virtual users) input paths. Closed-loop sessions with multi-turn
-follow-ups are supported when the WorkloadSpec contains session clients.
+Supports --workload-spec (YAML), --workload <preset> (named preset; requires --rate),
+--rate (distribution synthesis), or --concurrency (closed-loop virtual users) input paths.
+Closed-loop sessions with multi-turn follow-ups are supported when the WorkloadSpec
+contains session clients.
 
 API format: Use --api-format=chat for servers that expose /v1/chat/completions
 (most production vLLM/SGLang deployments). Default is --api-format=completions
@@ -87,6 +88,10 @@ Example:
 
   blis observe --server-url http://localhost:8000 --model meta-llama/Llama-3.1-8B-Instruct \
     --api-format chat --rate 10 --num-requests 100 --trace-header trace.yaml --trace-data trace.csv
+
+  blis observe --server-url http://localhost:8000 --model meta-llama/Llama-3.1-8B-Instruct \
+    --workload chatbot --rate 10 --num-requests 100 \
+    --trace-header trace.yaml --trace-data trace.csv
 
   blis observe --server-url http://localhost:8000 --model meta-llama/Llama-3.1-8B-Instruct \
     --api-format chat --concurrency 50 --num-requests 500 --think-time-ms 200 \
@@ -156,6 +161,29 @@ func validateObserveWorkloadFlags(preset, workloadSpec string, rateChanged bool,
 	return ""
 }
 
+// buildPresetSpec loads the named preset from defaults.yaml and synthesizes a WorkloadSpec.
+// Returns (nil, errMsg) if the preset is not defined; (spec, "") on success.
+// Extracted from runObserve for unit testability (R14). File I/O errors from
+// loadPresetWorkload are CLI-fatal (consistent with all other defaults.yaml reads).
+func buildPresetSpec(preset, defaultsPath string, rate float64, numRequests int) (*workload.WorkloadSpec, string) {
+	wl := loadPresetWorkload(defaultsPath, preset)
+	if wl == nil {
+		return nil, fmt.Sprintf("Undefined workload %q. Use one among (chatbot, summarization, contentgen, multidoc) or --workload-spec", preset)
+	}
+	spec := workload.SynthesizeFromPreset(preset, workload.PresetConfig{
+		PrefixTokens:      wl.PrefixTokens,
+		PromptTokensMean:  wl.PromptTokensMean,
+		PromptTokensStdev: wl.PromptTokensStdev,
+		PromptTokensMin:   wl.PromptTokensMin,
+		PromptTokensMax:   wl.PromptTokensMax,
+		OutputTokensMean:  wl.OutputTokensMean,
+		OutputTokensStdev: wl.OutputTokensStdev,
+		OutputTokensMin:   wl.OutputTokensMin,
+		OutputTokensMax:   wl.OutputTokensMax,
+	}, rate, numRequests)
+	return spec, ""
+}
+
 func runObserve(cmd *cobra.Command, _ []string) {
 	// BC-13: Required flag validation
 	if observeServerURL == "" {
@@ -222,6 +250,17 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		if cmd.Flags().Changed("seed") {
 			spec.Seed = observeSeed
 		}
+	} else if observeWorkload != "" {
+		// Preset synthesis — BC-1: same token distribution as blis run --workload <preset>
+		// Rate was validated finite+positive by the check below (defense-in-depth: also guarded
+		// by validateObserveWorkloadFlags above, which requires rateChanged to be true).
+		// Use separate errMsg var + = (not :=) to avoid shadowing the outer spec variable.
+		var errMsg string
+		spec, errMsg = buildPresetSpec(observeWorkload, observeDefaultsFilePath, observeRate, observeNumRequests)
+		if errMsg != "" {
+			logrus.Fatalf("%s", errMsg)
+		}
+		spec.Seed = observeSeed
 	} else {
 		// Distribution or concurrency synthesis
 		spec = workload.SynthesizeFromDistribution(workload.DistributionParams{
