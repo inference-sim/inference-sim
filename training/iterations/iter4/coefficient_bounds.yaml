@@ -1,0 +1,50 @@
+alpha_bounds:  # Request-level overheads (unchanged from iter3)
+  - [0.0, 0.005]      # α₀: Fixed API overhead (μs per request)
+  - [0.0, 0.0005]     # α₁: Per-input-token overhead (μs/token)
+  - [0.0, 0.0005]     # α₂: Per-output-token overhead (μs/token)
+
+alpha_initial:  # Warm-start from iter3 best_params
+  - 0.001107          # α₀ = 1.107ms (from iter3)
+  - 0.0000527         # α₁ = 52.7μs/token (from iter3)
+  - 0.0000849         # α₂ = 84.9μs/token (from iter3)
+
+beta_bounds:  # Step-level coefficients (7 terms after removing β₂, β₇ from iter3)
+  - [0.15, 0.55]      # β₀: Prefill MFU efficiency (expect rise from 0.169 to 0.25-0.35)
+  - [0.8, 2.0]        # β₁: Decode memory-bound MFU (stable ~1.0)
+  - [0.0, 1.5]        # β₂: TP decode communication overhead (from iter3 β₃)
+  - [0.0, 0.01]       # β₃: KV cache management per request (from iter3 β₄)
+  - [0.4, 1.5]        # β₄: Decode compute-bound MFU (from iter3 β₅)
+  - [0.0, 0.05]       # β₅: MoE gating overhead (from iter3 β₆)
+  - [1.0, 8.0]        # β₆: Activation write bandwidth multiplier (NEW in iter4)
+
+beta_initial:  # Warm-start from iter3, with NEW β₆ for activation bandwidth
+  - 0.169             # β₀: Prefill MFU (from iter3, expect to rise to 0.25-0.35)
+  - 1.037             # β₁: Decode memory-bound (from iter3, stable)
+  - 0.318             # β₂: TP decode comm (from iter3 β₃ = 0.318)
+  - 0.00041           # β₃: KV mgmt (from iter3 β₄ = 0.00041)
+  - 0.796             # β₄: Decode compute-bound (from iter3 β₅ = 0.796)
+  - 0.0117            # β₅: MoE gating (from iter3 β₆ = 0.0117)
+  - 4.0               # β₆: Activation bandwidth (NEW, physics-based initial: 3-6 expected)
+
+# Notes on changes from iter3:
+# - Removed β₂ (scheduler overhead = 9.97e-05 ≈ 0, negligible)
+# - Removed β₇ (TP prefill comm = 2.78e-07 ≈ 0, rejected by optimizer)
+# - Added β₆ (activation write bandwidth, NEW mechanism)
+# - Renumbered: iter3's β₃→β₂, β₄→β₃, β₅→β₄, β₆→β₅
+# - Total parameters: 10 (iter3) → 8 (iter4) = 3 alpha + 7 beta (but using 0-indexed so β₆ is 7th term)
+
+# Bounds rationale:
+# - β₀ [0.15, 0.55]: Allow β₀ to rise from 0.169 toward physical MFU 0.40-0.55
+# - β₁ [0.8, 2.0]: β₁ = 1.037 is stable, keep wide bounds for safety
+# - β₂ [0.0, 1.5]: TP comm stable at ~0.3-0.4 across iterations
+# - β₃ [0.0, 0.01]: KV mgmt small but non-zero (~0.4ms per request)
+# - β₄ [0.4, 1.5]: Decode compute should be 0.6-0.8 (iter3 was 0.796)
+# - β₅ [0.0, 0.05]: MoE gating overhead small (~0.01-0.012)
+# - β₆ [1.0, 8.0]: Activation BW multiplier, expected 3-6, allow wider range for discovery
+
+# Expected coefficient movements:
+# - β₀: 0.169 → 0.25-0.35 (rises as activation term absorbs missing overhead)
+# - β₁: 1.037 → 1.00-1.10 (stays stable)
+# - β₄: 0.796 → 0.60-0.70 (may decrease if was absorbing activation overhead)
+# - β₅: 0.0117 → 0.008-0.010 (may decrease if was absorbing activation overhead)
+# - β₆: 4.0 → 3.0-6.0 (converges to physics-based multiplier)

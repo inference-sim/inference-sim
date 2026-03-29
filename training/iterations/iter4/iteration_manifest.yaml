@@ -1,0 +1,47 @@
+iteration: 4
+latency_backend_name: "evolved"
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 4: Activation memory bandwidth + continued simplification
+
+  Previous iteration (iter3): Added TP-dependent prefill communication (β₇) but optimizer
+  rejected it (coefficient ≈ 0), indicating TP prefill overhead is NOT communication-dominated.
+  Simplification (removing iter2's β₇/β₈) successfully improved loss by 3% and normalized
+  β₁ from 1.553 → 1.037. However, β₀ = 0.169 remains far below physical plausibility
+  (ideal: 0.40-0.55), and reasoning experiments stay at ~100% TTFT (massive prefill
+  underestimation).
+
+  This iteration addresses these gaps through:
+
+  1. **Continue simplification**: Remove β₂ (scheduler overhead ≈ 0) and β₇ (TP prefill
+     comm ≈ 0) from iter3. Reduces parameters from 10 → 8, following iter3's successful
+     pattern of removing ineffective terms.
+
+  2. **Add activation memory bandwidth**: New β₇ captures activation writes during prefill
+     (residual connections, attention QKV, layer norms, MLP intermediates). Expected to
+     allow β₀ to rise from 0.169 → 0.25-0.35 and improve reasoning experiments from
+     ~100% TTFT → 70-85% TTFT.
+
+  Basis function changes:
+  - **Removed**: β₂ (scheduler overhead, was 9.97e-05 ≈ 0)
+  - **Removed**: β₇ (TP prefill comm, was 2.78e-07 ≈ 0)
+  - **Added**: β₇ (NEW: activation write bandwidth for prefill)
+
+  Final structure (8 Beta terms):
+  - β₀: Prefill compute time (MFU scaling)
+  - β₁: Decode memory-bound time
+  - β₂: TP decode communication (was β₃ in iter3)
+  - β₃: KV cache management overhead (was β₄ in iter3)
+  - β₄: Decode compute-bound time (was β₅ in iter3)
+  - β₅: MoE gating overhead (was β₆ in iter3)
+  - β₆: Batch formation overhead (was β₄ in iter2, renumbered)
+  - β₇: Activation write bandwidth (NEW in iter4)
+
+  Expected outcomes:
+  - Overall loss: 133% → 100-115%
+  - TTFT RMSE: 70.59% → <55%
+  - β₀ rises from 0.169 → 0.25-0.35
+  - Reasoning experiments: ~100% TTFT → 70-85% TTFT
+
+timestamp: "2026-03-29T13:00:00Z"
