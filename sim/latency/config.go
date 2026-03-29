@@ -284,6 +284,17 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 		}
 	}
 
+	// Interleaved MoE architecture support (Scout, DeepSeek-V3)
+	// interleave_moe_layer_step indicates how layers alternate between MoE and dense.
+	// 0 = uniform (all layers same type), 1 = alternate (MoE/dense/MoE/dense), etc.
+	interleaveMoELayerStep := getInt("interleave_moe_layer_step")
+
+	// Dense layer FFN dimension (for architectures where dense layers differ from MoE expert FFN)
+	// intermediate_size_mlp is used by Scout for dense layer FFN dim (16384)
+	// while moe_intermediate_size (8192) is for MoE expert FFN.
+	// Default 0 means "use IntermediateDim for both".
+	denseIntermediateDim := getInt("intermediate_size_mlp")
+
 	modelConfig := &sim.ModelConfig{
 		NumLayers:           getInt("num_hidden_layers"),
 		HiddenDim:           getInt("hidden_size"),
@@ -296,6 +307,8 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 		NumExpertsPerTok:    numExpertsPerTok,
 		MoEExpertFFNDim:     moeExpertFFNDim,
 		SharedExpertFFNDim:  sharedExpertFFNDim,
+		InterleaveMoELayerStep: interleaveMoELayerStep,
+		DenseIntermediateDim: denseIntermediateDim,
 		HiddenAct:           hiddenAct,
 		WeightBytesPerParam: weightBytesPerParam,
 	}
