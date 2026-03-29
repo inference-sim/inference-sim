@@ -147,7 +147,7 @@ Examples:
 
 ## Adding New Per-Request Metric Fields
 
-To add a new field to per-request JSON output (appears in `--results-path` output):
+To add a new field to per-request JSON output (appears in `--metrics-path` output):
 
 1. **Add field to `Request`** in `sim/request.go` (runtime state, zero-value safe). When constructing `Request` structs, use `RequestState` typed constants (`StateQueued`, `StateRunning`, `StateCompleted`) — never bare strings.
 2. **Add field to `RequestMetrics`** in `sim/metrics_utils.go` (JSON output struct, use `omitempty` for backward compatibility)

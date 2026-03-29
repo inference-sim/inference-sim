@@ -2,12 +2,16 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -380,5 +384,179 @@ func TestRunCmdDistributionDefaults_UseSharedConstants(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("--%s default: got %d, want %d", tt.flag, got, tt.want)
 		}
+	}
+}
+
+// TestRunCmd_HasMetricsPathFlag verifies BC-1: blis run exposes --metrics-path,
+// not --results-path.
+func TestRunCmd_HasMetricsPathFlag(t *testing.T) {
+	if runCmd.Flags().Lookup("metrics-path") == nil {
+		t.Error("BC-1: runCmd missing --metrics-path flag")
+	}
+	if runCmd.Flags().Lookup("results-path") != nil {
+		t.Error("BC-1: runCmd must NOT have --results-path flag (schema footgun)")
+	}
+}
+
+// TestReplayCmd_HasResultsPathFlag verifies BC-2: blis replay exposes --results-path,
+// not --metrics-path.
+func TestReplayCmd_HasResultsPathFlag(t *testing.T) {
+	if replayCmd.Flags().Lookup("results-path") == nil {
+		t.Error("BC-2: replayCmd missing --results-path flag")
+	}
+	if replayCmd.Flags().Lookup("metrics-path") != nil {
+		t.Error("BC-2: replayCmd must NOT have --metrics-path flag")
+	}
+}
+
+// TestRunCmd_MetricsPath_WritesMetricsOutput verifies BC-3: --metrics-path on
+// blis run produces MetricsOutput JSON (instance_id string ≠ SimResult request_id int).
+// NOTE: Do NOT use t.Parallel() — mutates package-level vars.
+func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
+	outFile := filepath.Join(t.TempDir(), "metrics.json")
+
+	// Save and restore all package-level flag vars mutated by runCmd.Run.
+	// Base list copied from TestReplayCmd_EndToEnd_BlackboxMode:377-434;
+	// run-only workload vars and metricsPath added on top.
+	origMetrics := metricsPath
+	origModel := model
+	origBackend := latencyModelBackend
+	origBeta := betaCoeffs
+	origAlpha := alphaCoeffs
+	origTotalKV := totalKVBlocks
+	origBlockSize := blockSizeTokens
+	origMaxRunning := maxRunningReqs
+	origMaxSched := maxScheduledTokens
+	origInstances := numInstances
+	origSeed := seed
+	origResults := resultsPath
+	origThreshold := longPrefillTokenThreshold
+	origKVCPU := kvCPUBlocks
+	origOffload := kvOffloadThreshold
+	origBandwidth := kvTransferBandwidth
+	origBaseLatency := kvTransferBaseLatency
+	origSnapRefresh := snapshotRefreshInterval
+	origAdmission := admissionPolicy
+	origRouting := routingPolicy
+	origPriority := priorityPolicy
+	origScheduler := scheduler
+	origPolicyConfig := policyConfigPath
+	origMaxModelLen := maxModelLen
+	origTraceLevel := traceLevel
+	origCounterfactualK := counterfactualK
+	origSimHorizon := simulationHorizon
+	// run-only workload vars
+	origWorkloadType := workloadType
+	origRate := rate
+	origNumReqs := numRequests
+	origConcurrency := concurrency
+	origThinkTime := thinkTimeMs
+	origPrefix := prefixTokens
+	origPromptMean := promptTokensMean
+	origPromptStdev := promptTokensStdev
+	origPromptMin := promptTokensMin
+	origPromptMax := promptTokensMax
+	origOutputMean := outputTokensMean
+	origOutputStdev := outputTokensStdev
+	origOutputMin := outputTokensMin
+	origOutputMax := outputTokensMax
+	origWorkloadSpec := workloadSpecPath
+	origTraceOut := traceOutput
+	origLogLevel := logLevel
+	defer func() {
+		metricsPath = origMetrics
+		model = origModel
+		latencyModelBackend = origBackend
+		betaCoeffs = origBeta
+		alphaCoeffs = origAlpha
+		totalKVBlocks = origTotalKV
+		blockSizeTokens = origBlockSize
+		maxRunningReqs = origMaxRunning
+		maxScheduledTokens = origMaxSched
+		numInstances = origInstances
+		seed = origSeed
+		resultsPath = origResults
+		longPrefillTokenThreshold = origThreshold
+		kvCPUBlocks = origKVCPU
+		kvOffloadThreshold = origOffload
+		kvTransferBandwidth = origBandwidth
+		kvTransferBaseLatency = origBaseLatency
+		snapshotRefreshInterval = origSnapRefresh
+		admissionPolicy = origAdmission
+		routingPolicy = origRouting
+		priorityPolicy = origPriority
+		scheduler = origScheduler
+		policyConfigPath = origPolicyConfig
+		maxModelLen = origMaxModelLen
+		traceLevel = origTraceLevel
+		counterfactualK = origCounterfactualK
+		simulationHorizon = origSimHorizon
+		workloadType = origWorkloadType
+		rate = origRate
+		numRequests = origNumReqs
+		concurrency = origConcurrency
+		thinkTimeMs = origThinkTime
+		prefixTokens = origPrefix
+		promptTokensMean = origPromptMean
+		promptTokensStdev = origPromptStdev
+		promptTokensMin = origPromptMin
+		promptTokensMax = origPromptMax
+		outputTokensMean = origOutputMean
+		outputTokensStdev = origOutputStdev
+		outputTokensMin = origOutputMin
+		outputTokensMax = origOutputMax
+		workloadSpecPath = origWorkloadSpec
+		traceOutput = origTraceOut
+		logLevel = origLogLevel
+	}()
+
+	// Set required run vars — runCmd.Run has logrus.Fatalf guards on zero/invalid values.
+	metricsPath = outFile
+	workloadType = "distribution" // avoids preset-path Fatalf("Undefined workload")
+	rate = 1.0                    // required by distribution rate-mode path
+	numRequests = 1               // minimal run
+	promptTokensMean = 512
+	promptTokensStdev = 256
+	promptTokensMin = 2
+	promptTokensMax = 7000
+	outputTokensMean = 512
+	outputTokensStdev = 256
+	outputTokensMin = 2
+	outputTokensMax = 7000
+
+	// Build testCmd with Changed() tracking so resolveLatencyConfig works.
+	testCmd := &cobra.Command{}
+	registerSimConfigFlags(testCmd)
+	// Register run-only workload flags that runCmd.Run checks via Changed().
+	testCmd.Flags().IntVar(&numRequests, "num-requests", 0, "")
+	testCmd.Flags().Float64Var(&rate, "rate", 0, "")
+	testCmd.Flags().StringVar(&workloadType, "workload", "", "")
+	if err := testCmd.ParseFlags([]string{
+		"--model", "qwen/qwen3-14b",
+		"--latency-model", "blackbox", // avoids roofline HF config fetch
+		"--beta-coeffs", "10000.0,1.0,1.0",
+		"--alpha-coeffs", "0.0,0.0,0.0",
+		"--total-kv-blocks", "1000",
+		"--num-requests", "1",
+		"--seed", "42",
+		"--rate", "1.0",
+		"--workload", "distribution",
+	}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+
+	runCmd.Run(testCmd, nil)
+
+	data, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("BC-3: metrics file not written: %v", err)
+	}
+	var out sim.MetricsOutput
+	if err := json.Unmarshal(data, &out); err != nil {
+		t.Fatalf("BC-3: not MetricsOutput JSON: %v\nraw: %s", err, data)
+	}
+	// MetricsOutput.InstanceID is "cluster"; SimResult.RequestID is an int — schemas are distinct.
+	if out.InstanceID == "" {
+		t.Error("BC-3: InstanceID empty — wrong schema or SaveResults not called")
 	}
 }
