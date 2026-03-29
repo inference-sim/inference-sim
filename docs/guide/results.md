@@ -132,7 +132,7 @@ For detailed analysis, save per-request data:
 
 ```bash
 ./blis run --model qwen/qwen3-14b \
-  --rate 100 --num-requests 500 --metrics-path results.json
+  --rate 100 --num-requests 500 --metrics-path metrics.json
 ```
 
 Each request record includes TTFT, E2E, scheduling delay, and completion status.
