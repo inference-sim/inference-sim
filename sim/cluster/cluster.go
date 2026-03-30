@@ -47,6 +47,7 @@ type ClusterSimulator struct {
 	transfersCompleted        int
 	pdPrefillCompletedCount   int                       // prefill sub-requests that completed (for INV-1 correction)
 	pdDecodeCompletedCount    int                       // decode sub-requests that completed (for INV-1 in-flight tracking)
+	pdDecodeTimedOutCount     int                       // decode sub-requests that timed out (for INV-1 in-flight tracking)
 	droppedAtDecodeKV         int                       // requests dropped due to insufficient KV at decode
 	prefillRoutingPolicy      sim.RoutingPolicy         // nil = use main routingPolicy
 	decodeRoutingPolicy       sim.RoutingPolicy         // nil = use main routingPolicy
@@ -467,12 +468,12 @@ func (c *ClusterSimulator) Run() error {
 	// - timed-out prefills: entries may remain in pendingPrefillCompletions but
 	//   pdPrefillCompletedCount was NOT incremented; the timeout is already counted
 	//   in instance TimedOutRequests → aggregated via aggregateMetrics(). No correction needed.
-	pdInTransfer := c.pdPrefillCompletedCount - c.pdDecodeCompletedCount - c.droppedAtDecodeKV - len(c.pendingDecodeCompletions)
+	pdInTransfer := c.pdPrefillCompletedCount - c.pdDecodeCompletedCount - c.pdDecodeTimedOutCount - c.droppedAtDecodeKV - len(c.pendingDecodeCompletions)
 	if pdInTransfer > 0 {
 		c.aggregatedMetrics.StillRunning += pdInTransfer
 	} else if pdInTransfer < 0 {
-		logrus.Warnf("[cluster] pdInTransfer = %d (negative): prefillCompleted=%d, decodeCompleted=%d, droppedAtDecodeKV=%d, pendingDecode=%d — bookkeeping bug in PD disaggregation accounting",
-			pdInTransfer, c.pdPrefillCompletedCount, c.pdDecodeCompletedCount, c.droppedAtDecodeKV, len(c.pendingDecodeCompletions))
+		logrus.Warnf("[cluster] pdInTransfer = %d (negative): prefillCompleted=%d, decodeCompleted=%d, decodeTimedOut=%d, droppedAtDecodeKV=%d, pendingDecode=%d — bookkeeping bug in PD disaggregation accounting",
+			pdInTransfer, c.pdPrefillCompletedCount, c.pdDecodeCompletedCount, c.pdDecodeTimedOutCount, c.droppedAtDecodeKV, len(c.pendingDecodeCompletions))
 	}
 
 	// INV-PD-6: Project sub-request metrics to parent-request granularity.
@@ -606,13 +607,14 @@ func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
 	}
 }
 
-// detectDecodeCompletions checks for newly completed decode sub-requests on the given instance
-// and sets the parent request's CompletionTime.
-// R2/INV-6: Collects completed IDs into a sorted slice before processing for determinism.
+// detectDecodeCompletions checks for newly completed or timed-out decode sub-requests
+// on the given instance and sets the parent request's CompletionTime.
+// R2/INV-6: Collects IDs into sorted slices before processing for determinism.
 func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 	instID := string(inst.ID())
-	// Phase 1: collect completed sub-request IDs (sorted for determinism)
+	// Phase 1: collect completed and timed-out sub-request IDs (sorted for determinism)
 	var completedIDs []string
+	var timedOutIDs []string
 	for subReqID, parentID := range c.pendingDecodeCompletions {
 		parent := c.parentRequests[parentID]
 		if parent == nil || string(parent.DecodeInstanceID) != instID {
@@ -620,11 +622,14 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 		}
 		if _, completed := inst.Metrics().RequestCompletionTimes[subReqID]; completed {
 			completedIDs = append(completedIDs, subReqID)
+		} else if parent.DecodeSubReq != nil && parent.DecodeSubReq.State == sim.StateTimedOut {
+			timedOutIDs = append(timedOutIDs, subReqID)
 		}
 	}
 	sort.Strings(completedIDs)
+	sort.Strings(timedOutIDs)
 
-	// Phase 2: process in deterministic order
+	// Phase 2: process completions in deterministic order
 	for _, subReqID := range completedIDs {
 		parent := c.parentRequests[c.pendingDecodeCompletions[subReqID]]
 		// Include PostDecodeFixedOverhead so parent.CompletionTime represents the
@@ -645,11 +650,37 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 			// (contract at ParentRequests: callers must not mutate via OriginalRequest).
 			origCopy := *parent.OriginalRequest
 			origCopy.State = sim.StateCompleted
-			// Use MaxOutputLen (client budget) to respect INV-9 (oracle knowledge
-			// boundary). For completed decodes, MaxOutputLen equals the actual
-			// output count by construction in generated workloads.
+			// Use the decode sub-request's actual ProgressIndex for accurate context
+			// accumulation (session.go:163). For length-capped decode sub-requests
+			// (BC-5 force-completion), MaxOutputLen overstates the actual output;
+			// DecodeSubReq.ProgressIndex reflects the true final position.
 			// (blis replay passes onRequestDone=nil, so this code never runs in replay mode.)
-			origCopy.ProgressIndex = int64(len(origCopy.InputTokens) + origCopy.MaxOutputLen)
+			origCopy.ProgressIndex = parent.DecodeSubReq.ProgressIndex
+			nextReqs := c.sessionCallback(&origCopy, parent.CompletionTime)
+			for _, next := range nextReqs {
+				heap.Push(&c.clusterEvents, clusterEventEntry{
+					event: &ClusterArrivalEvent{time: next.ArrivalTime, request: next},
+					seqID: c.nextSeqID(),
+				})
+			}
+		}
+	}
+
+	// Phase 3: process timed-out decode sub-requests (INV-11 session completeness).
+	// Non-PD equivalent: TimeoutEvent.Execute calls OnRequestDone with StateTimedOut →
+	// SessionManager cancels the session. The PD path needs the same treatment.
+	for _, subReqID := range timedOutIDs {
+		parent := c.parentRequests[c.pendingDecodeCompletions[subReqID]]
+		parent.CompletionTime = c.clock
+		delete(c.pendingDecodeCompletions, subReqID)
+		c.pdDecodeTimedOutCount++
+
+		if c.sessionCallback != nil {
+			origCopy := *parent.OriginalRequest
+			origCopy.State = sim.StateTimedOut
+			origCopy.ProgressIndex = parent.DecodeSubReq.ProgressIndex
+			// SessionManager.OnComplete cancels the session for StateTimedOut (session.go:112).
+			// No follow-ups expected, but handle defensively.
 			nextReqs := c.sessionCallback(&origCopy, parent.CompletionTime)
 			for _, next := range nextReqs {
 				heap.Push(&c.clusterEvents, clusterEventEntry{

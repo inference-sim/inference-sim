@@ -312,7 +312,9 @@ func (e *DecodeRoutingEvent) Execute(cs *ClusterSimulator) {
 			if cs.tenantTracker != nil {
 				cs.tenantTracker.OnStart(e.decodeSubReq.TenantID)
 			}
-			// Register decode sub-request so detectDecodeCompletions can stamp ParentRequest.CompletionTime.
+			// Register decode sub-request so detectDecodeCompletions can stamp ParentRequest.CompletionTime
+			// and read DecodeSubReq.State/ProgressIndex for timeout detection and context accumulation.
+			e.parentReq.DecodeSubReq = e.decodeSubReq
 			cs.pendingDecodeCompletions[e.decodeSubReq.ID] = e.parentReq.ID
 			inst.InjectDecodeOnline(e.decodeSubReq, e.time)
 			return

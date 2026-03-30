@@ -1253,9 +1253,12 @@ func TestDisaggregation_SessionFollowUp_CallsOnRequestDone(t *testing.T) {
 		if sc.req.State != sim.StateCompleted {
 			t.Errorf("call %d: State = %q, want %q", i, sc.req.State, sim.StateCompleted)
 		}
-		wantProgress := int64(len(sc.req.InputTokens) + sc.req.MaxOutputLen)
+		// ProgressIndex comes from the decode sub-request's actual final position
+		// (len(Input) + len(Output) - 1), matching non-PD behavior.
+		wantProgress := int64(len(sc.req.InputTokens) + len(sc.req.OutputTokens) - 1)
 		if sc.req.ProgressIndex != wantProgress {
-			t.Errorf("call %d: ProgressIndex = %d, want %d", i, sc.req.ProgressIndex, wantProgress)
+			t.Errorf("call %d: ProgressIndex = %d, want %d (len(Input)=%d + len(Output)=%d - 1)",
+				i, sc.req.ProgressIndex, wantProgress, len(sc.req.InputTokens), len(sc.req.OutputTokens))
 		}
 		if sc.tick < sc.req.ArrivalTime {
 			t.Errorf("call %d: tick (%d) < ArrivalTime (%d) — violates causality",
@@ -1451,4 +1454,120 @@ func TestDisaggregation_PD_SessionManager_GeneratesFollowUps(t *testing.T) {
 
 	// INV-1 conservation
 	assertINV1Conservation(t, metrics, 4, "PD SessionManager follow-ups")
+}
+
+// TestDisaggregation_PD_SessionManager_ContextAccumulation verifies that
+// ProgressIndex flows correctly through the session manager's context
+// accumulation logic (BC-8) when using the PD pipeline.
+//
+// GIVEN: PD cluster (2P + 2D) with real SessionManager (MaxRounds=2, ContextGrowth="accumulate")
+// AND: 1 initial session request with input=50, output=20
+// WHEN: simulation runs to completion
+// THEN: round-1 follow-up has InputTokens longer than round-0 (context accumulated),
+//
+//	and total completed requests == 2 (1 session x 2 rounds)
+func TestDisaggregation_PD_SessionManager_ContextAccumulation(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+
+	rng := rand.New(rand.NewSource(77))
+	inputSampler, err := workload.NewLengthSampler(workload.DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 50},
+	})
+	if err != nil {
+		t.Fatalf("NewLengthSampler (input): %v", err)
+	}
+	outputSampler, err := workload.NewLengthSampler(workload.DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 20},
+	})
+	if err != nil {
+		t.Fatalf("NewLengthSampler (output): %v", err)
+	}
+
+	blueprints := []workload.SessionBlueprint{
+		{
+			SessionID:     "acc_sess_0",
+			MaxRounds:     2,
+			ThinkTimeUs:   1000,
+			Horizon:       math.MaxInt64,
+			ContextGrowth: "accumulate",
+			InputSampler:  inputSampler,
+			OutputSampler: outputSampler,
+			RNG:           rand.New(rand.NewSource(rng.Int63())),
+		},
+	}
+
+	sm := workload.NewSessionManager(blueprints)
+	callback := sm.OnComplete
+
+	// Round-0 request: 50 input tokens, 20 output tokens
+	round0InputLen := 50
+	round0OutputLen := 20
+	reqs := []*sim.Request{
+		{
+			ID:           "acc_sess_0_r0",
+			ArrivalTime:  0,
+			InputTokens:  make([]int, round0InputLen),
+			OutputTokens: make([]int, round0OutputLen),
+			MaxOutputLen: round0OutputLen,
+			State:        sim.StateQueued,
+			SessionID:    "acc_sess_0",
+			RoundIndex:   0,
+		},
+	}
+
+	cs := NewClusterSimulator(config, reqs, callback)
+	mustRun(t, cs)
+
+	metrics := cs.AggregatedMetrics()
+	// 1 session x 2 rounds = 2 completed requests
+	if metrics.CompletedRequests != 2 {
+		t.Errorf("CompletedRequests = %d, want 2 (1 session x 2 rounds)", metrics.CompletedRequests)
+	}
+
+	// Find the round-1 follow-up among parent requests
+	parents := cs.ParentRequests()
+	if len(parents) != 2 {
+		t.Fatalf("ParentRequests() = %d, want 2", len(parents))
+	}
+
+	var round1Parent *ParentRequest
+	for _, p := range parents {
+		if p.OriginalRequest.RoundIndex == 1 {
+			round1Parent = p
+			break
+		}
+	}
+	if round1Parent == nil {
+		t.Fatal("no round-1 parent request found")
+	}
+
+	// Context accumulation: round-1 input should include accumulated context from round-0.
+	// Round 0: input=50, actual output = PI - len(Input) = (50+20-1) - 50 = 19 tokens
+	// Accumulated context: 50 (round-0 input) + 19 (round-0 actual output) = 69
+	// Round 1 new input: 50 (from constant sampler)
+	// Round 1 total input: 69 (context) + 50 (new) = 119
+	round1InputLen := len(round1Parent.OriginalRequest.InputTokens)
+	if round1InputLen <= round0InputLen {
+		t.Errorf("round-1 InputTokens length = %d, want > %d (context should have accumulated)",
+			round1InputLen, round0InputLen)
+	}
+
+	// Verify the exact accumulated length: context(69) + new_input(50) = 119
+	wantRound1InputLen := (round0InputLen + (round0OutputLen - 1)) + 50 // context + new_input
+	if round1InputLen != wantRound1InputLen {
+		t.Errorf("round-1 InputTokens length = %d, want %d (context=%d + new_input=50)",
+			round1InputLen, wantRound1InputLen, round0InputLen+(round0OutputLen-1))
+	}
+
+	// All parents should have completed
+	for _, p := range parents {
+		if p.CompletionTime == 0 {
+			t.Errorf("parent %s: CompletionTime = 0", p.ID)
+		}
+	}
+
+	// INV-1 conservation
+	assertINV1Conservation(t, metrics, 2, "PD SessionManager context accumulation")
 }
