@@ -165,6 +165,20 @@ Example:
 
 		logrus.Infof("Replay wall-clock time: %.3fs", time.Since(startTime).Seconds())
 
+		// Export trace if requested (BC-1, BC-2, BC-3)
+		if replayTraceOutput != "" {
+			records := workload.RequestsToTraceRecords(requests)
+			header := &workload.TraceHeader{
+				Version:  2,
+				TimeUnit: "microseconds",
+				Mode:     "replayed",
+			}
+			if err := workload.ExportTraceV2(header, records, replayTraceOutput+".yaml", replayTraceOutput+".csv"); err != nil {
+				logrus.Fatalf("Trace export failed: %v", err)
+			}
+			logrus.Infof("Trace exported: %s.yaml, %s.csv (%d records)", replayTraceOutput, replayTraceOutput, len(records))
+		}
+
 		// Save aggregate metrics to stdout (same as runCmd)
 		if numInstances > 1 {
 			for _, inst := range cs.Instances() {

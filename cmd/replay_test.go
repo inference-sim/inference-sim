@@ -356,6 +356,180 @@ func TestComputeReplayHorizon_LargeArrival_NoOverflow(t *testing.T) {
 	}
 }
 
+// TestReplayCmd_TraceOutput_FilesCreated verifies BC-1 and BC-2:
+// --trace-output creates <prefix>.yaml with mode:"replayed" and <prefix>.csv.
+func TestReplayCmd_TraceOutput_FilesCreated(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	outputPrefix := filepath.Join(dir, "out")
+
+	// Write header YAML
+	headerContent := `trace_version: 2
+time_unit: microseconds
+mode: generated
+warm_up_requests: 0
+`
+	if err := os.WriteFile(headerPath, []byte(headerContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write data CSV: 2 requests
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n" +
+		"1,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,100000,100000,0,0,0,ok,,\n"
+	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Save and restore all package-level flag vars (same pattern as EndToEnd test)
+	origModel := model
+	origBackend := latencyModelBackend
+	origBeta := betaCoeffs
+	origAlpha := alphaCoeffs
+	origTotalKV := totalKVBlocks
+	origBlockSize := blockSizeTokens
+	origMaxRunning := maxRunningReqs
+	origMaxSched := maxScheduledTokens
+	origInstances := numInstances
+	origSeed := seed
+	origResults := resultsPath
+	origThreshold := longPrefillTokenThreshold
+	origKVCPU := kvCPUBlocks
+	origOffload := kvOffloadThreshold
+	origBandwidth := kvTransferBandwidth
+	origBaseLatency := kvTransferBaseLatency
+	origSnapRefresh := snapshotRefreshInterval
+	origAdmission := admissionPolicy
+	origRouting := routingPolicy
+	origPriority := priorityPolicy
+	origScheduler := scheduler
+	origPolicyConfig := policyConfigPath
+	origMaxModelLen := maxModelLen
+	origTraceLevel := traceLevel
+	origCounterfactualK := counterfactualK
+	origTraceHeader := traceHeaderPath
+	origTraceData := traceDataPath
+	origSimHorizon := simulationHorizon
+	origTraceOutput := replayTraceOutput
+	defer func() {
+		model = origModel
+		latencyModelBackend = origBackend
+		betaCoeffs = origBeta
+		alphaCoeffs = origAlpha
+		totalKVBlocks = origTotalKV
+		blockSizeTokens = origBlockSize
+		maxRunningReqs = origMaxRunning
+		maxScheduledTokens = origMaxSched
+		numInstances = origInstances
+		seed = origSeed
+		resultsPath = origResults
+		longPrefillTokenThreshold = origThreshold
+		kvCPUBlocks = origKVCPU
+		kvOffloadThreshold = origOffload
+		kvTransferBandwidth = origBandwidth
+		kvTransferBaseLatency = origBaseLatency
+		snapshotRefreshInterval = origSnapRefresh
+		admissionPolicy = origAdmission
+		routingPolicy = origRouting
+		priorityPolicy = origPriority
+		scheduler = origScheduler
+		policyConfigPath = origPolicyConfig
+		maxModelLen = origMaxModelLen
+		traceLevel = origTraceLevel
+		counterfactualK = origCounterfactualK
+		traceHeaderPath = origTraceHeader
+		traceDataPath = origTraceData
+		simulationHorizon = origSimHorizon
+		replayTraceOutput = origTraceOutput
+	}()
+
+	// Set package-level vars
+	model = "test-model"
+	latencyModelBackend = "blackbox"
+	betaCoeffs = []float64{10000.0, 1.0, 1.0}
+	alphaCoeffs = []float64{0.0, 0.0, 0.0}
+	totalKVBlocks = 1000
+	blockSizeTokens = 16
+	maxRunningReqs = 64
+	maxScheduledTokens = 2048
+	numInstances = 1
+	seed = 42
+	resultsPath = ""
+	longPrefillTokenThreshold = 0
+	kvCPUBlocks = 0
+	kvOffloadThreshold = 0.9
+	kvTransferBandwidth = 100.0
+	kvTransferBaseLatency = 0
+	snapshotRefreshInterval = 0
+	admissionPolicy = "always-admit"
+	routingPolicy = "round-robin"
+	priorityPolicy = "constant"
+	scheduler = "fcfs"
+	policyConfigPath = ""
+	maxModelLen = 0
+	traceLevel = "none"
+	counterfactualK = 0
+	traceHeaderPath = headerPath
+	traceDataPath = dataPath
+	simulationHorizon = math.MaxInt64
+	replayTraceOutput = outputPrefix
+
+	testCmd := &cobra.Command{}
+	registerSimConfigFlags(testCmd)
+	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+	testCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "")
+	if err := testCmd.ParseFlags([]string{
+		"--model", "test-model",
+		"--latency-model", "blackbox",
+		"--beta-coeffs", "10000.0,1.0,1.0",
+		"--alpha-coeffs", "0.0,0.0,0.0",
+		"--total-kv-blocks", "1000",
+		"--trace-header", headerPath,
+		"--trace-data", dataPath,
+		"--trace-output", outputPrefix,
+	}); err != nil {
+		t.Fatalf("ParseFlags failed: %v", err)
+	}
+
+	// Run replay
+	replayCmd.Run(testCmd, nil)
+
+	// BC-1: both output files must exist
+	yamlPath := outputPrefix + ".yaml"
+	csvPath := outputPrefix + ".csv"
+	if _, err := os.Stat(yamlPath); err != nil {
+		t.Fatalf("BC-1: output YAML not created: %v", err)
+	}
+	if _, err := os.Stat(csvPath); err != nil {
+		t.Fatalf("BC-1: output CSV not created: %v", err)
+	}
+
+	// BC-1: files must round-trip through LoadTraceV2
+	loaded, err := workload.LoadTraceV2(yamlPath, csvPath)
+	if err != nil {
+		t.Fatalf("BC-1: LoadTraceV2 failed on output files: %v", err)
+	}
+
+	// BC-2: header mode must be "replayed"
+	if loaded.Header.Mode != "replayed" {
+		t.Errorf("BC-2: header.Mode = %q, want \"replayed\"", loaded.Header.Mode)
+	}
+
+	// BC-1: record count matches input
+	if len(loaded.Records) != 2 {
+		t.Errorf("BC-1: want 2 records, got %d", len(loaded.Records))
+	}
+
+	// BC-3: for all requests, send_time_us = arrival_time_us (universal)
+	for i, rec := range loaded.Records {
+		if rec.SendTimeUs != rec.ArrivalTimeUs {
+			t.Errorf("BC-3: record[%d] send_time_us=%d != arrival_time_us=%d", i, rec.SendTimeUs, rec.ArrivalTimeUs)
+		}
+	}
+}
+
 func TestReplayCmd_EndToEnd_BlackboxMode(t *testing.T) {
 	// NOTE: This test mutates package-level flag vars shared with runCmd.
 	// Do NOT use t.Parallel() — concurrent execution would create data races.
