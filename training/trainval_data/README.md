@@ -23,7 +23,9 @@ This directory contains **15 experiments** from vLLM inference runs:
 | Performance metrics | ✓ | ✓ |
 | vLLM logs | ✓ | ✓ |
 
-**🔄 Dataset Update (2026-03-30)**: Original reasoning experiments (3) were collected from an overloaded server (85% failure rate, 4-minute timeout latencies). They have been **replaced with reasoning-lite experiments** (3) collected under normal operating conditions. Reasoning-lite uses reduced workload intensity (1 req/s vs original higher rates), resulting in 100% success rate and normal latency distributions.
+**🔄 Dataset Update (2026-03-30)**:
+- **Reasoning experiments**: Original reasoning experiments (3) were collected from an overloaded server (85% failure rate, 4-minute timeout latencies). They have been **replaced with reasoning-lite experiments** (3) collected under normal operating conditions. Reasoning-lite uses reduced workload intensity (1 req/s vs original higher rates), resulting in 100% success rate and normal latency distributions.
+- **Scout general experiment**: Original exp17 (`17-llama-4-scout-17b-16e-tp2-general-2`) was collected under saturated server conditions. It has been **replaced with exp17 general-lite** (`17-llama-4-scout-17b-16e-tp2-general-lite-2-1`) collected under normal operating conditions with reduced workload intensity.
 
 ### Model Coverage
 
@@ -36,7 +38,7 @@ This directory contains **15 experiments** from vLLM inference runs:
 
 **MoE Models**:
 - **Llama-4-Scout-17B-16E** (17B parameters, 16 experts): TP=2 → 2 GPUs, 4 experiments
-  - 3 with metrics only (general, codegen, roleplay)
+  - 3 with metrics only (general-lite, codegen, roleplay)
   - 1 with full tracing (reasoning-lite)
   - Expert Parallelism: EP=TP*DLP (auto-enabled for MoE)
 
@@ -54,7 +56,7 @@ Example: `20260217-155451-llama-2-7b-tp1-codegen`
 ```
 {id}-{model}-tp{N}-{workload}-{variant}
 ```
-Examples: `63-mistral-nemo-12b-tp1-codegen-1-1`, `17-llama-4-scout-17b-16e-tp2-general-2`, `66-qwen2-5-7b-instruct-tp1-reasoning-lite-1-1`
+Examples: `63-mistral-nemo-12b-tp1-codegen-1-1`, `17-llama-4-scout-17b-16e-tp2-general-lite-2-1`, `66-qwen2-5-7b-instruct-tp1-reasoning-lite-1-1`
 
 ## Workload Types
 
@@ -156,7 +158,7 @@ Per-stage aggregated metrics (same schema as summary, scoped to load stage).
 | 66-qwen2-5-7b-instruct-tp1-reasoning-lite-1-1 | Qwen2.5-7B | 1 | 1 | 1 | reasoning-lite | ✓ |
 | 67-llama-2-7b-hf-tp1-reasoning-lite-1-1 | Llama-2-7B-HF | 1 | 1 | 1 | reasoning-lite | ✓ |
 | **Metrics Only (3)** | | | | | | |
-| 17-llama-4-scout-17b-16e-tp2-general-2 | Scout-17B-16E | 2 | 1 | 2 | general | ✗ |
+| 17-llama-4-scout-17b-16e-tp2-general-lite-2-1 | Scout-17B-16E | 2 | 1 | 2 | general-lite | ✗ |
 | 20-llama-4-scout-17b-16e-tp2-codegen-2 | Scout-17B-16E | 2 | 1 | 2 | codegen | ✗ |
 | 21-llama-4-scout-17b-16e-tp2-roleplay-2 | Scout-17B-16E | 2 | 1 | 2 | roleplay | ✗ |
 
