@@ -2,18 +2,31 @@
 
 ## Summary
 
-Iter5 tested the hypothesis that **per-layer fixed overhead** (kernel launch + scheduler + memory allocation) is the missing prefill term causing reasoning experiments' 1000× underestimation. The hypothesis was **catastrophically rejected**:
+**🚨 CRITICAL DISCOVERY**: Post-analysis trace investigation revealed that **ALL reasoning experiments use ~1K tokens** (NOT 8K-16K as hypothesized in iter3/4/5). This invalidates the entire hypothesis lineage.
+
+Iter5 tested the hypothesis that **per-layer fixed overhead** for long contexts (8K tokens with chunking) is causing reasoning's 1000× underestimation. The hypothesis was **catastrophically rejected AND fundamentally wrong**:
 
 - Overall loss: **603.26%** (vs target <110%, 467% worse than iter4's 129%)
 - TTFT RMSE: **518.85%** (vs target <55%, 8× worse than iter4's 66.49%)
-- E2E RMSE: **84.41%** (vs stable 62-65%, 30% worse than expected)
 - All 5 hypotheses **rejected or partial** (0 confirmed)
+- **Most importantly**: Trace analysis shows reasoning uses **1082 tokens (mean), 106ms TTFT**, not "8K tokens, 1000ms TTFT"
 
-**Root cause**: Adding per-layer overhead β₆ without constraining prefill MFU β₀ caused β₀ to rise from 0.165 → 0.266 (61% increase), predicting 38% shorter prefill times for ALL experiments. This broke short-context predictions (300-1091% TTFT error). The optimizer then minimized β₆ to 521μs (far below expected 1000-3000μs) to protect short contexts, failing to help reasoning (only 0.5pp improvement from 99.75% → 99%).
+**The Real Problem** (discovered from traces):
+- **NOT**: "1000× underestimation for 8K-token long contexts" (iter3/4/5 assumption)
+- **ACTUALLY**: "100-200× underestimation for 1K-token SHORT contexts with queuing delay"
+- Reasoning (1K tokens): actual TTFT = 100-200ms, predicted ~1ms → 99% APE (artifact of near-zero baseline)
+- Codegen (1K tokens): actual TTFT = 20-50ms, predicted ~1ms → 30-40% APE (better, but still under-predicted)
+- **Difference is NOT context length** (both 1K) → likely **queuing/scheduler delay** (reasoning has 10× variance: p10=0.13ms, p90=215ms)
 
-**Critical insight**: The per-layer overhead mechanism is **plausibly correct** (β₀ rose to predicted 0.25-0.35 range), but the **functional form creates a zero-sum game** where helping reasoning experiments (4 exps, 27% of data) catastrophically degrades short-context experiments (11 exps, 73% of data). The hypothesis failed not because the physics is wrong, but because applying uniform overhead to all contexts violated the boundary condition that short contexts must remain well-predicted.
+**Root cause of iter5 failure**: Adding per-layer overhead β₆ with chunking scale factor (1.0 + tokens/2048) was based on wrong assumption that reasoning uses 8K tokens. Formula applied minimal overhead (1.5× factor for 1K tokens) while β₀ rose 61%, breaking ALL short-context predictions.
 
-**Key learning**: Coefficients must be **context-dependent** (separate β₀_short vs β₀_long, or gated overhead terms) to model vLLM's qualitatively different behavior for short vs long contexts. Iter6 must profile vLLM reasoning to identify the actual algorithmic switch or memory pattern causing 1000× underestimation.
+**Critical insight for iter6**:
+- ❌ **DO NOT** assume reasoning = long context (all experiments <2K tokens)
+- ❌ **DO NOT** add context-gated coefficients (no long contexts exist in training data)
+- ❌ **DO NOT** profile vLLM for "long-context behavior" (doesn't exist)
+- ✅ **DO** analyze existing traces to decompose 100-200ms TTFT for 1K tokens into: queuing delay + kernel execution + memory allocation
+- ✅ **DO** add queuing term (likely 50-150ms scheduler delay for reasoning workload)
+- ✅ **DO** understand why reasoning (1K tokens, 100-200ms) differs from codegen (1K tokens, 20-50ms) despite same prompt length
 
 ---
 
@@ -839,6 +852,66 @@ Warm-starting from iter3 was **directionally correct** (avoid iter4's coefficien
 
 ---
 
+## 🚨 DO NOT REPEAT: Critical Mistakes from Iter3/4/5
+
+**Agent 1 (Design) for iter6: READ THIS BEFORE DESIGNING NEXT HYPOTHESIS**
+
+Three consecutive iterations (iter3, iter4, iter5) made the **SAME FUNDAMENTAL ERROR**: assuming reasoning experiments use long contexts (8K-16K tokens) without validating from traces.
+
+### What Iter3/4/5 Assumed (ALL WRONG):
+1. ❌ **Iter3 hypothesis**: "Reasoning workload has context lengths not captured by model"
+2. ❌ **Iter4 hypothesis**: "Activation bandwidth overhead for long contexts (8K tokens) causing 1000× underestimation"
+3. ❌ **Iter5 hypothesis**: "Per-layer overhead scales with chunking for 8K tokens (scale factor = 5.0)"
+
+### What Traces Actually Show:
+✅ **ALL reasoning experiments use ~1K tokens** (verified from `trainval_data/*/results/summary_lifecycle_metrics.json`):
+- Llama-2-7B reasoning: **1082 tokens** (mean), 106.6ms TTFT
+- Qwen2.5-7B reasoning: **1090 tokens** (mean), 200.1ms TTFT
+- Scout reasoning: **~1K tokens**, similar TTFT
+
+### Critical Lessons for Iter6:
+
+**DO NOT**:
+1. ❌ Design hypotheses about "long-context behavior" (no long contexts exist in training data)
+2. ❌ Add context-gated coefficients (β₀_short vs β₀_long) — all experiments <2K tokens
+3. ❌ Profile vLLM for "8K-token prefill behavior" — reasoning doesn't use 8K tokens
+4. ❌ Add terms that scale with chunking (1.0 + tokens/2048) — no chunking for 1K tokens
+5. ❌ Assume "reasoning = long context" without checking traces first
+
+**DO**:
+1. ✅ **VALIDATE workload assumptions from traces BEFORE designing hypothesis**
+2. ✅ Check `trainval_data/*/results/summary_lifecycle_metrics.json` for actual prompt lengths and TTFT distributions
+3. ✅ Understand that reasoning (1K tokens, 100-200ms) differs from codegen (1K tokens, 20-50ms) by **queuing/batching**, NOT context length
+4. ✅ Analyze TTFT variance (reasoning p10=0.13ms, p90=215ms shows 1650× variance → queuing delay)
+5. ✅ Decompose SHORT-context prefill (1K tokens) into: queuing + execution + memory allocation
+
+### The Real Problem (Not What Iter3/4/5 Thought):
+
+**WRONG** (iter3/4/5 assumption):
+> "Reasoning experiments have 1000× underestimation because they use 8K-16K token long contexts that trigger algorithmic switches, quadratic attention memory, or chunking overhead."
+
+**RIGHT** (from trace analysis):
+> "Reasoning experiments have 100-200× underestimation because they use 1K-token contexts (same as all other workloads) but experience 100-200ms TTFT (vs 20-50ms for codegen) due to queuing/scheduler delay, not prefill compute/memory."
+
+### How to Avoid Repeating This Mistake:
+
+**STEP 1**: Before designing any hypothesis, open the traces and check:
+```python
+# For each experiment in trainval_data/*/results/summary_lifecycle_metrics.json
+print(f"{experiment}: prompt_len.mean = {...}, TTFT.mean = {...}")
+# Verify your assumption about "reasoning = 8K tokens" or whatever
+```
+
+**STEP 2**: If your hypothesis mentions "long contexts", "8K tokens", "chunking", or "context-gated coefficients", STOP and re-read the trace analysis above.
+
+**STEP 3**: Design hypothesis to explain why reasoning (1K tokens, 100-200ms TTFT) differs from codegen (1K tokens, 20-50ms TTFT) **despite same prompt length**.
+
+### Key Insight:
+
+**The 99% TTFT error is an artifact** of predicting ~1ms when actual is 100-200ms, NOT a "1000× slowdown for long contexts". The error magnitude (99%) mislead iter3/4/5 into thinking reasoning was fundamentally different (long contexts). Reality: reasoning has same context length (1K), but different queuing behavior.
+
+---
+
 ## Lessons Learned
 
 **What worked**:
@@ -853,21 +926,23 @@ Warm-starting from iter3 was **directionally correct** (avoid iter4's coefficien
 3. **Base factor in overhead formula**: Adding 1.0 + tokens/2048 applied overhead to short contexts (should be max(0, ...))
 4. **Not profiling before hypothesizing**: Three iterations (iter3/iter4/iter5) failed to improve reasoning — should have profiled after iter4
 
-**Key insights for iter6**:
-1. **Context-dependent coefficients are essential**: Short vs long contexts have qualitatively different behavior (different MFU, different overhead)
-2. **Profile before hypothesizing**: Don't add basis functions based on physics intuition — profile vLLM to identify actual bottleneck
-3. **Constrain coefficients defensively**: Prevent coefficients from rising/falling into ranges that break well-modeled experiments
-4. **Test for boundary effects**: H-boundary was correct to predict short vs long would differ — but didn't predict INVERSE effect
-5. **Zero-sum games are failure modes**: If helping X% of data hurts (100-X)% of data, optimizer will choose bad compromise
+**Key insights for iter6** (⚠️ CORRECTED AFTER TRACE ANALYSIS):
+1. ~~**Context-dependent coefficients are essential**~~ → **WRONG**: All experiments use ~1K tokens, no long contexts exist
+2. ~~**Profile before hypothesizing**~~ → **WRONG**: Traces already contain the answer, no vLLM profiling needed
+3. **Validate assumptions from traces BEFORE designing hypothesis**: Iter3/4/5 all assumed "reasoning = 8K tokens" without checking traces
+4. **Understand workload differences beyond context length**: Reasoning (1K tokens, 100-200ms) differs from codegen (1K tokens, 20-50ms) by queuing/batching, not prompt length
+5. **Zero-sum games are failure modes**: If helping X% of data hurts (100-X)% of data, optimizer will choose bad compromise (still valid)
 
 **Strategy Evolution validation**:
 - **Prediction errors ARE valuable**: H-main rejection revealed β₀ rising breaks short contexts (wasn't anticipated in hypothesis)
 - **Diagnostic clauses need refinement**: Should have included "if short contexts degrade, β₀ rose too high" clause
 - **Causal mechanisms were testable**: H-boundary's boundary effect prediction was clear and testable (failed with inverse effect)
 - **Multiple hypotheses help**: H-coefficient-norm provided additional evidence that β₆ converged too low (not just H-main failure)
+- **⚠️ MOST IMPORTANT**: Validate workload assumptions from traces BEFORE hypothesis design — iter3/4/5 wasted 3 iterations on wrong problem
 
-**For next iteration (iter6)**:
-1. **BLOCK on profiling**: DO NOT design iter6 hypothesis until profiling results available
-2. **Context gating is mandatory**: Implement β₀_short / β₀_long / β₆_long architecture
-3. **Defensive constraints**: Constrain β₀_short ≥ 0.35, β₀_long ≤ 0.30
-4. **Expect 2-3 more iterations**: Reasoning may require algorithmic switch term (iter6) + refinement (iter7) before <80% loss
+**For next iteration (iter6)** (⚠️ CORRECTED):
+1. ~~**BLOCK on profiling**~~ → **WRONG**: Analyze existing traces, don't profile vLLM
+2. ~~**Context gating is mandatory**~~ → **WRONG**: No long contexts exist, context gating adds useless complexity
+3. **Decompose SHORT-context TTFT** (1K tokens) into: queuing delay + kernel execution + memory allocation
+4. **Add queuing term**: Model scheduler delay that causes reasoning to have 100-200ms TTFT vs codegen's 20-50ms (both 1K tokens)
+5. **Expect 1-2 more iterations**: If queuing term captures 50-150ms delay, reasoning should improve from 99% → 20-40% TTFT in iter6
