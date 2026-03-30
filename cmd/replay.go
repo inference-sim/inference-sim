@@ -210,6 +210,14 @@ Example:
 		sloDistributions := cluster.ComputePerSLODistributions(cs.AggregatedMetrics())
 		printPerSLOMetrics(os.Stdout, sloDistributions)
 
+		// Print per-model metrics if requests carry model tags (Phase 1A, FR-011)
+		perModelMetrics := cluster.ComputePerModelMetrics(cs.AggregatedMetrics())
+		printPerModelMetrics(os.Stdout, perModelMetrics)
+
+		// Print per-tenant fairness metrics if any request carries a tenant label (Phase 1B-2b, FR-010)
+		perTenantMetrics := cluster.ComputePerTenantMetrics(cs.AggregatedMetrics())
+		printPerTenantMetrics(os.Stdout, perTenantMetrics)
+
 		if cs.Trace() != nil && summarizeTrace {
 			traceSummary := trace.Summarize(cs.Trace())
 			fmt.Println("=== Trace Summary ===")
