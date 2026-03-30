@@ -8,6 +8,25 @@ Iteration 8 **failed to achieve any measurable improvement** despite β₈ conve
 
 ---
 
+## ⚠️ IMPORTANT: Data Update Post-Analysis
+
+**AFTER this analysis was completed**, exp17 (Scout general) was replaced with clean data:
+
+- **Old exp17**: `17-llama-4-scout-17b-16e-tp2-general-2` — Collected under **saturated server conditions**
+- **New exp17**: `17-llama-4-scout-17b-16e-tp2-general-lite-2-1` — Collected on 2026-03-30 under **normal operating conditions** (reduced workload intensity)
+
+**Impact on iter8 analysis**:
+- ✅ This analysis used the **OLD saturated data** (general-2)
+- ✅ Analysis conclusions remain valid (β₈ mechanism real but insufficient)
+- ⚠️ **iter9 MUST re-run optimization** with new exp17 (general-lite-2-1) to ensure clean training data
+- ⚠️ Scout general errors in this analysis (99.97% TTFT) may be inflated by server saturation
+
+**Rationale**: Similar to the reasoning → reasoning-lite replacement in iter7, Scout general workload caused server saturation. The new general-lite workload mirrors the strategy that fixed reasoning experiments (reduced intensity, normal server operation).
+
+**Action for iter9**: Re-train with 15 experiments using new exp17 (general-lite-2-1) before adding β₉ term.
+
+---
+
 ## Error Analysis
 
 ### Systematic Patterns
