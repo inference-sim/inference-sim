@@ -56,12 +56,36 @@ Dispatches requests to a real inference server, records per-request timing (TTFT
 
 ### Workload Input (one required)
 
+Four input modes are available. At least one must be provided per invocation:
+
+| Mode | Flags | Description |
+|------|-------|-------------|
+| **Named preset** | `--workload <name> --rate <N>` | Standard workload from `defaults.yaml`; identical token distributions to `blis run --workload <name>` |
+| **Workload spec** | `--workload-spec <file>` | Multi-client workload from a YAML file |
+| **Distribution synthesis** | `--rate <N>` | Single-client workload with custom token distributions (see Distribution Synthesis Flags) |
+| **Closed-loop** | `--concurrency <N>` | Fixed pool of virtual users; arrival is response-driven (token distributions from Distribution Synthesis Flags) |
+
+**Flag reference:**
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--workload-spec` | `string` | `""` | Path to WorkloadSpec YAML (alternative to `--rate`) |
-| `--rate` | `float64` | `0` | Requests per second for distribution synthesis |
+| `--workload` | `string` | `""` | Preset name (chatbot, summarization, contentgen, multidoc); requires `--rate` |
+| `--workload-spec` | `string` | `""` | Path to WorkloadSpec YAML (alternative to `--workload` or `--rate`) |
+| `--rate` | `float64` | `0` | Requests per second; required for `--workload` preset mode and distribution synthesis |
+| `--concurrency` | `int` | `0` | Number of closed-loop virtual users; mutually exclusive with `--rate` |
 
-These two flags are mutually exclusive. Use `--workload-spec` for multi-client workloads defined in YAML (see [Workload Specifications](workloads.md)). Use `--rate` for quick single-client experiments with distribution parameters.
+**Combinations that produce an error:**
+
+| Combination | Error |
+|-------------|-------|
+| `--workload` without `--rate` | preset requires a rate |
+| `--workload` + `--workload-spec` | mutually exclusive |
+| `--workload` + `--concurrency` | mutually exclusive |
+| `--rate` + `--concurrency` | mutually exclusive |
+| `--workload-spec` + `--concurrency` | use `clients[].concurrency` in the spec file instead |
+
+!!! note
+    `--workload-spec` takes priority over `--rate` if both are provided — the spec is used and `--rate` is ignored. All other distribution synthesis flags (`--prompt-tokens`, etc.) are similarly ignored when `--workload-spec` is active.
 
 ### Optional Flags
 
@@ -75,13 +99,15 @@ These two flags are mutually exclusive. Use `--workload-spec` for multi-client w
 | `--seed` | `int64` | `42` | RNG seed for workload generation |
 | `--horizon` | `int64` | `0` | Observation horizon in microseconds (0 = from spec or unlimited) |
 | `--num-requests` | `int` | `0` | Maximum requests to generate (0 = from spec or unlimited) |
+| `--think-time-ms` | `int` | `0` | Think time in ms between response and next request (concurrency mode only) |
 | `--api-format` | `string` | `"completions"` | API format: `completions` or `chat` |
 | `--unconstrained-output` | `bool` | `false` | Do not set `max_tokens` (let server decide output length) |
 | `--rtt-ms` | `float64` | `0` | Measured network round-trip time in milliseconds |
+| `--defaults-filepath` | `string` | `"defaults.yaml"` | Path to `defaults.yaml` containing preset definitions (preset mode only) |
 
 ### Distribution Synthesis Flags
 
-Used when `--rate` mode is active (ignored when `--workload-spec` is provided):
+Used when `--rate` or `--concurrency` mode is active (ignored when `--workload-spec` or `--workload <preset>` is provided):
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -96,6 +122,14 @@ Used when `--rate` mode is active (ignored when `--workload-spec` is provided):
 | `--prefix-tokens` | `int` | `0` | Shared prefix token count |
 
 ### Examples
+
+**Named preset mode** — drive the server with a standard workload (same shape as `blis run --workload chatbot`):
+
+```bash
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --workload chatbot --rate 10 --num-requests 100 \
+  --trace-header trace.yaml --trace-data trace.csv
+```
 
 **Workload-spec mode** — multi-client workload from a YAML spec:
 

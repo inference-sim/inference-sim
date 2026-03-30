@@ -67,6 +67,11 @@ type DeploymentConfig struct {
 	// but callers should explicitly set 3 (Standard) for meaningful protection.
 	TierShedThreshold   int `yaml:"tier_shed_threshold,omitempty"`
 	TierShedMinPriority int `yaml:"tier_shed_min_priority,omitempty"`
+
+	// Phase 1B-2a: per-tenant fair-share budgets (issue #811).
+	// Key: TenantID string. Value: fraction of total cluster capacity (0.0–1.0).
+	// Zero value is safe: nil = no enforcement (all tenants unlimited).
+	TenantBudgets map[string]float64 `yaml:"tenant_budgets,omitempty"`
 }
 
 // ToSimConfig returns the embedded SimConfig for per-instance construction.

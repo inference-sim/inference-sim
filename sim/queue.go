@@ -24,7 +24,7 @@ func (wq *WaitQueue) String() string {
 	var sb strings.Builder
 	sb.WriteString("[")
 	for i, val := range wq.queue {
-		sb.WriteString(fmt.Sprint(val)) // Convert value to string
+		fmt.Fprint(&sb, val)
 		if i < len(wq.queue)-1 {
 			sb.WriteString(" ")
 		}

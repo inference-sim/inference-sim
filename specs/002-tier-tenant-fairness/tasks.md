@@ -94,17 +94,17 @@ No additional foundational work — T001 and T002 are sufficient. User story pha
 
 > **Write these first — they MUST FAIL before T020–T023 are implemented.**
 
-- [ ] T017 [US3] Unit tests for `TenantTracker`: `IsOverBudget` true/false, `OnStart`/`OnComplete` balance, zero-value safety (nil budgets → always false), empty TenantID → no-op — `sim/cluster/tenant_test.go` (new file)
-- [ ] T018 [US3] Behavior test: over-budget tenant's Sheddable request rejected while on-budget tenant's Sheddable request admitted under same load — `sim/cluster/cluster_tenant_test.go` (new file)
-- [ ] T019 [US3] Behavior test: over-budget tenant's Critical request is NOT rejected solely due to budget status — `sim/cluster/cluster_tenant_test.go`
-- [ ] T020 [US3] Invariant test: simulation with `TenantBudgets: nil` produces byte-identical stdout to run without tenant tracking (INV-6) — `sim/cluster/cluster_tenant_test.go`
+- [X] T017 [US3] Unit tests for `TenantTracker`: `IsOverBudget` true/false, `OnStart`/`OnComplete` balance, zero-value safety (nil budgets → always false), empty TenantID → no-op — `sim/cluster/tenant_test.go` (new file)
+- [X] T018 [US3] Behavior test: over-budget tenant's Sheddable request rejected while on-budget tenant's Sheddable request admitted under same load — `sim/cluster/cluster_tenant_test.go` (new file)
+- [X] T019 [US3] Behavior test: over-budget tenant's Critical request is NOT rejected solely due to budget status — `sim/cluster/cluster_tenant_test.go`
+- [X] T020 [US3] Invariant test: simulation with `TenantBudgets: nil` produces byte-identical stdout to run without tenant tracking (INV-6) — `sim/cluster/cluster_tenant_test.go`
 
 ### Implementation for User Story 3
 
-- [ ] T021 [P] [US3] Implement `TenantTracker` struct + `NewTenantTracker()` + `IsOverBudget()` + `OnStart()` + `OnComplete()` — `sim/cluster/tenant.go` (new file; depends on T017 failing first)
-- [ ] T022 [P] [US3] Add `TenantBudgets map[string]float64 \`yaml:"tenant_budgets,omitempty"\`` to `DeploymentConfig` — `sim/cluster/deployment.go` (R8 note: this exported map field is config-time only and never mutated after `NewClusterSimulator()` reads it, satisfying R8's intent — no runtime mutation through the exported field)
-- [ ] T023 [US3] Add `tenantTracker *TenantTracker` field to `ClusterSimulator`; initialize in `NewClusterSimulator()` when `config.TenantBudgets != nil`; call `OnStart`/`OnComplete` at request dispatch and terminal state — `sim/cluster/cluster.go` (depends on T021, T022)
-- [ ] T024 [US3] Add tenant budget override in `AdmissionDecisionEvent.Execute()`: after admission policy returns `admitted=true`, if `cs.tenantTracker.IsOverBudget(req.TenantID)` and `sim.SLOTierPriority(req.SLOClass) < 3`, override to rejected — `sim/cluster/cluster_event.go` (depends on T023)
+- [X] T021 [P] [US3] Implement `TenantTracker` struct + `NewTenantTracker()` + `IsOverBudget()` + `OnStart()` + `OnComplete()` — `sim/cluster/tenant.go` (new file; depends on T017 failing first)
+- [X] T022 [P] [US3] Add `TenantBudgets map[string]float64 \`yaml:"tenant_budgets,omitempty"\`` to `DeploymentConfig` — `sim/cluster/deployment.go` (R8 note: this exported map field is config-time only and never mutated after `NewClusterSimulator()` reads it, satisfying R8's intent — no runtime mutation through the exported field)
+- [X] T023 [US3] Add `tenantTracker *TenantTracker` field to `ClusterSimulator`; initialize in `NewClusterSimulator()` when `config.TenantBudgets != nil`; call `OnStart`/`OnComplete` at request dispatch and terminal state — `sim/cluster/cluster.go` (depends on T021, T022)
+- [X] T024 [US3] Add tenant budget override in `AdmissionDecisionEvent.Execute()`: after admission policy returns `admitted=true`, if `cs.tenantTracker.IsOverBudget(req.TenantID)` and `sim.SLOTierPriority(req.SLOClass) < 3`, override to rejected — `sim/cluster/cluster_event.go` (depends on T023)
 
 **Checkpoint**: `go test ./sim/cluster/...` passes. T017–T020 now pass. PR #811 is ready.
 
