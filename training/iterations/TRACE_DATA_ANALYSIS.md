@@ -115,6 +115,44 @@ Examined the trace data for Llama-2-7B reasoning experiment to understand what t
 5. **Batch formation delay**: Time waiting for batch to fill (explains 1650× variance)
 6. **Prefix cache hit/miss**: Whether shared system prompt was cached (no events for cache hits)
 
+## CRITICAL FINDING: Journey Traces Reveal Overloaded Server (Not Normal Operation!)
+
+### Journey Event Timeline Analysis
+
+**Journey events** (from `vllm.scheduler` scope, `llm_core` spans):
+1. `journey.QUEUED` - Request enters queue
+2. `journey.SCHEDULED` - Scheduler assigns request for execution
+3. `journey.FIRST_TOKEN` - First token generated
+4. `journey.FINISHED` - Request completes
+
+**Timing breakdown for SUCCESSFUL requests** (730 out of 4800, only 15% success rate):
+- **Queue time** (QUEUED → SCHEDULED): 0.3-2ms mean (NEGLIGIBLE!)
+- **Prefill time** (SCHEDULED → FIRST_TOKEN): 45-61ms mean
+- **Total TTFT**: 50-110ms
+
+**For FAILED/TIMEOUT requests** (4070 out of 4800, 85% failure rate):
+- **Queue time**: 259 SECONDS mean (stuck in queue for 4+ minutes!)
+- **Total TTFT**: 255 SECONDS before timeout
+- These requests never get scheduled due to server overload
+
+### The 1650× Variance is NOT Normal Batching Delay
+
+The p10=0.13ms vs p90=215ms variance is actually:
+- **p10 (fast path)**: Requests that get scheduled immediately, ~50ms TTFT
+- **p50-p90 (slow/timeout path)**: Requests stuck in queue for minutes, eventually timeout at 300s
+
+**This is server OVERLOAD**, not batching delay! The reasoning experiment data is from a severely overloaded server where 85% of requests fail/timeout.
+
+### Implications
+
+**For successful requests** (the 15% that complete):
+- Queue time is ~0.5ms (NOT 100-200ms as hypothesized)
+- Prefill time is ~50ms (includes KV allocation ~30ms + compute ~20ms)
+- β₆ = 21.5ms in iter6 is actually REASONABLE for successful requests
+- The model doesn't need 100ms scheduler overhead - that's timeout behavior!
+
+**The real problem**: Training data includes 85% failed/timeout requests with 255-second "TTFT" (time until timeout). These create the extreme variance and make the model think reasoning needs 100-200ms overhead, when successful reasoning requests only need ~50ms total.
+
 ## Critical Finding: KV Events Reveal Timing Breakdown
 
 ### Sample Request Analysis (TTFT = 78.4ms)
@@ -219,29 +257,46 @@ nsys profile -o reasoning_profile python -m vllm.entrypoints.api_server ...
 **Pro**: Would reveal exact breakdown (kernel launch, memory alloc, etc.)
 **Con**: Requires new instrumentation, not available in existing traces
 
-## Recommendation (Updated After KV Events Analysis)
+## Recommendation (Updated After Journey Traces Analysis - MAJOR REVISION)
 
-**Primary approach: Model batching delay variance explicitly**
+**CRITICAL: The training data is from an OVERLOADED server!**
 
-The KV events prove that:
-1. **KV allocation is fast** (~30ms), NOT the 100ms+ bottleneck
-2. **1650× variance** (0.13ms → 215ms) cannot be explained by KV allocation or compute
-3. **Batching delay is the dominant factor** (some requests immediate, others wait ~200ms)
+Journey traces reveal:
+1. **85% of requests fail/timeout** after waiting 4-5 minutes in queue
+2. **Only 15% succeed** - these have ~50ms TTFT (0.5ms queue + 50ms prefill)
+3. **The 1650× variance is success vs timeout**, NOT normal batching delay
+4. **β₆ = 21.5ms in iter6 is CORRECT** for successful requests!
 
-**For iter7, model p90 batching delay instead of mean**:
-```go
-// Current iter6: β₆ = 21.5ms (captures mean)
-// Iter7: Fit to p90 = 215ms, or model variance explicitly
-queuing_delay_us = β₆ × percentile_multiplier × 1000.0
-// percentile_multiplier: 1.0 for mean, 10.0 for p90 (215ms / 21.5ms)
-```
+### The Real Problem
 
-**Alternative: Model as function of concurrent requests** (Option 1 from original):
-- High concurrency (reasoning multi-turn) → longer batch formation delay
-- Low concurrency (codegen) → immediate processing
-- Workload-agnostic and physically grounded
+Training data mixes two populations:
+1. **Successful requests** (15%): TTFT = 50-110ms, queue time = 0.5ms
+2. **Timeout requests** (85%): TTFT = 255,000ms (4+ minutes), stuck in queue
 
-**If both fail**: The variance may be position-in-batch dependent (first request in batch: 0.13ms, last request: 215ms). Would need to model request position explicitly.
+The model sees this as "reasoning needs 100-200ms overhead" but it's actually "85% of reasoning requests timeout due to server overload."
+
+### For Iter7: DATA QUALITY ISSUE, NOT MODEL ISSUE
+
+**DO NOT** add more scheduler overhead terms! The model is already correct for successful requests.
+
+**Options**:
+
+1. **Filter out timeout/failed requests** from training data:
+   - Only train on the 730 successful requests (15% of reasoning data)
+   - This will show reasoning ~50-110ms TTFT (similar to codegen!)
+   - β₆ = 21.5ms will be sufficient
+
+2. **Model timeout/overload explicitly** (if needed):
+   - Add binary "server_overloaded" flag based on request arrival rate
+   - Overloaded: TTFT → very large (timeout behavior)
+   - Normal: TTFT = prefill_compute + queue_overhead
+
+3. **Investigate why reasoning server was overloaded**:
+   - 85% failure rate suggests server couldn't keep up with load
+   - May be higher arrival rate, longer generation, or resource constraint
+   - Check if other workloads have similar overload patterns
+
+**Most likely**: Reasoning data is simply **bad data** from an overload scenario. Should be excluded or re-collected under normal operating conditions.
 
 ## Code Citation
 
