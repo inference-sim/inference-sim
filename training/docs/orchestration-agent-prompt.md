@@ -67,10 +67,14 @@ MONITOR_PID=$!
 
 This gives live progress updates. You don't need to parse the output - just let it run in the background.
 
-### Step 4: Run Inner Loop Optimization
+### Step 4: Run Inner Loop Optimization (Background)
 
 ```bash
-python inner_loop_optimize.py --iteration {N} --n-trials 250
+# Run optimization in background and redirect output
+python inner_loop_optimize.py --iteration {N} --n-trials 250 > iterations/iter{N}/optimization.log 2>&1 &
+OPTIMIZE_PID=$!
+
+echo "Started optimization (PID: $OPTIMIZE_PID)"
 ```
 
 **What it does** (pre-implemented, you just invoke it):
@@ -82,6 +86,12 @@ python inner_loop_optimize.py --iteration {N} --n-trials 250
 6. Saves results to `iterations/iter{N}/inner_loop_results.json`
 
 **Expected runtime**: 30-120 minutes depending on hardware and convergence speed.
+
+**While it runs in background**:
+- Check progress periodically: `tail -20 iterations/iter{N}/optimization.log`
+- Monitor process status: `ps -p $OPTIMIZE_PID > /dev/null && echo "Running" || echo "Stopped"`
+- Wait for completion: `wait $OPTIMIZE_PID`
+- Timeout after 2 hours: If still running after 2 hours, kill and report error
 
 **Monitor for**:
 - Process hangs (timeout after 2 hours → kill and report error)
@@ -111,11 +121,25 @@ cat iterations/iter{N}/inner_loop_results.json | jq '{
 - `loss.overall_loss` is finite (not NaN, not 1e6 penalty)
 - `per_experiment_results` array populated (detailed evaluation ran)
 
-### Step 6: Stop Monitoring
+### Step 6: Wait for Completion and Cleanup
 
 ```bash
+# Wait for optimization to complete (if still running)
+if ps -p $OPTIMIZE_PID > /dev/null 2>&1; then
+  echo "Waiting for optimization to complete..."
+  wait $OPTIMIZE_PID
+fi
+
 # Kill the monitoring process if it's still running
 kill $MONITOR_PID 2>/dev/null || true
+
+# Check final status
+if [ -f iterations/iter{N}/inner_loop_results.json ]; then
+  echo "✅ Optimization completed successfully"
+else
+  echo "❌ Optimization failed - no results file found"
+  cat iterations/iter{N}/optimization.log | tail -50
+fi
 ```
 
 ---
@@ -128,7 +152,7 @@ kill $MONITOR_PID 2>/dev/null || true
 | **coefficient_bounds.yaml missing/invalid** | Stop, report: "Coefficient bounds file missing or lacks alpha_initial/beta_initial" |
 | **Backend validation fails** | Stop, report errors from `validate_backend.py` stderr (compile error, registration missing, coefficient count mismatch, test run failure) |
 | **Optimization crashes** | Stop, report crash reason from stderr |
-| **Timeout (>2 hours)** | Kill process, report: "Optimization did not converge in 2 hours" |
+| **Timeout (>2 hours)** | Kill process: `kill $OPTIMIZE_PID`, report: "Optimization did not converge in 2 hours" |
 | **optimization.num_errors > 25** | Report warning: "Many trials failed (>50%), check bounds or Go code" |
 | **loss.overall_loss == 1e6** | Report error: "All trials failed, check Go code for runtime errors" |
 
