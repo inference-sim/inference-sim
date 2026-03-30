@@ -51,7 +51,7 @@ Arrival (ClusterArrivalEvent)
          │                        ├─ admitted=true  ──► RoutingDecisionEvent
          │                        └─ admitted=false ──► rejectedRequests++ (e.g., reject-all policy)
          │
-         └─ Horizon reached while in deferredQueue ──► DeferredHorizonInterrupted++
+         └─ Horizon reached while in deferredQueue ──► DeferredHorizonInterrupted = len(deferredQueue) [post-Run]
 ```
 
 ## Relationships

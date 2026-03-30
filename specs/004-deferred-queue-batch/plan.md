@@ -267,7 +267,7 @@ All 8 principles re-checked after design artifacts:
 - **IV. BDD/TDD**: ✅ 7 test tasks (T001–T007) written before 5 impl tasks (T008–T012).
 - **V. Error Handling**: ✅ `DeferredQueueLen()` panics on pre-Run call per library error strategy; no silent drops.
 - **VI. Config Discipline**: ✅ Zero config changes; `deferredQueue` is behavior, not configuration.
-- **VII. Invariants**: ✅ INV-1 extended with `deferred_horizon_interrupted`; INV-8 verified by T005 (idle check fires); INV-9 verified by contract (no `OutputTokens` read).
+- **VII. Invariants**: ✅ INV-1 extended with `deferred_horizon_interrupted`; INV-8 verified by T004 (DeferredPromotedAfterIdle: all requests complete after promotion); INV-9 verified by contract (no `OutputTokens` read).
 - **VIII. Antipatterns**: ✅ R1 (deferred requests accounted in metrics); R4 (no new struct literal — deferredQueue is nil-initialized); R21 (promoteDeferred uses index-safe iteration).
 
 **Gate result**: PASS — no violations.
