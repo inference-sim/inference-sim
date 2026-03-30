@@ -214,7 +214,7 @@ if (e.request.SLOClass == "batch" || e.request.SLOClass == "background") && cs.i
 ```go
 // DeferredHorizonInterrupted is the count of Batch/Background requests still in the
 // deferred queue when the simulation horizon was reached (Phase 1B-1b).
-// INV-1 extended: injected == completed + running + queued + shed + dropped + deferred_horizon_interrupted
+// INV-1 extended: injected == completed + running + queued + shed + dropped + timed_out + deferred_horizon_interrupted
 DeferredHorizonInterrupted int
 ```
 

@@ -722,6 +722,9 @@ func (c *ClusterSimulator) Instances() []*InstanceSimulator {
 
 // AggregatedMetrics returns the merged metrics across all instances.
 // Panics if called before Run() has completed.
+// Note (Phase 1B-1b): INV-1 conservation at cluster level requires callers to also add
+// DeferredQueueLen() for the deferred-horizon-interrupted bucket. AggregatedMetrics alone
+// does not include deferred-at-horizon requests.
 func (c *ClusterSimulator) AggregatedMetrics() *sim.Metrics {
 	if !c.hasRun {
 		panic("ClusterSimulator.AggregatedMetrics() called before Run()")

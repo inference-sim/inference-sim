@@ -73,7 +73,7 @@ A simulation auditor verifies that no requests are silently lost. Every injected
 - **FR-004**: Deferral MUST NOT increment the rejected-requests counter; deferred requests are neither admitted nor rejected.
 - **FR-005**: The simulator MUST NOT access output token counts during deferral or promotion decisions.
 - **FR-006**: Metrics output MUST include a `deferred_horizon_interrupted` count representing requests still deferred when the simulation horizon is reached.
-- **FR-007**: Request conservation MUST hold at simulation end: `injected == completed + running + queued + shed + dropped + deferred_horizon_interrupted`.
+- **FR-007**: Request conservation MUST hold at simulation end: `injected == completed + running + queued + shed + dropped + timed_out + deferred_horizon_interrupted`.
 - **FR-008**: The deferred queue MUST activate without any new configuration — no new YAML fields or flags are needed.
 - **FR-009**: The simulator MUST remain work-conserving: promotion must not stall or delay in-progress real-time work.
 - **FR-010**: Critical, Standard, and Sheddable requests MUST be completely unaffected — same admission, routing, and latency behavior as before this feature.
