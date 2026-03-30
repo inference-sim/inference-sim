@@ -1543,6 +1543,10 @@ var runCmd = &cobra.Command{
 		perModelMetrics := cluster.ComputePerModelMetrics(cs.AggregatedMetrics())
 		printPerModelMetrics(os.Stdout, perModelMetrics)
 
+		// Print per-tenant fairness metrics if any request carries a tenant label (Phase 1B-2b, FR-010)
+		perTenantMetrics := cluster.ComputePerTenantMetrics(cs.AggregatedMetrics())
+		printPerTenantMetrics(os.Stdout, perTenantMetrics)
+
 		// Print PD disaggregation metrics if disaggregation was active (PR4)
 		printPDMetrics(os.Stdout, rawMetrics.PD, config.PDTransferContention)
 
@@ -1630,6 +1634,29 @@ func printPerModelMetrics(w io.Writer, perModelMetrics map[string]*cluster.Model
 		_, _ = fmt.Fprintf(w, "    E2E:  p50=%.2f p99=%.2f (n=%d)\n", m.E2E.P50, m.E2E.P99, m.E2E.Count)
 		_, _ = fmt.Fprintf(w, "    Throughput: %.2f req/s, %.2f tok/s\n", m.ThroughputRPS, m.ThroughputTokenSec)
 	}
+}
+
+// printPerTenantMetrics prints per-tenant request counts, token totals, and Jain fairness index.
+// Follows the same pattern as printPerModelMetrics (R2: sorted keys).
+// No-op when perTenantMetrics is nil or empty.
+func printPerTenantMetrics(w io.Writer, perTenantMetrics map[string]*cluster.TenantMetrics) {
+	if len(perTenantMetrics) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "=== Per-Tenant Metrics ===")
+	keys := make([]string, 0, len(perTenantMetrics))
+	for k := range perTenantMetrics {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	tokenMap := make(map[string]float64, len(perTenantMetrics))
+	for _, tid := range keys {
+		tm := perTenantMetrics[tid]
+		_, _ = fmt.Fprintf(w, "  %s: requests=%d, tokens=%d\n", tid, tm.CompletedRequests, tm.TotalTokensServed)
+		tokenMap[tid] = float64(tm.TotalTokensServed)
+	}
+	jain := cluster.JainFairnessIndex(tokenMap)
+	_, _ = fmt.Fprintf(w, "  Jain Fairness Index: %.4f\n", jain)
 }
 
 // printPDMetrics prints the PD disaggregation metrics section when disaggregation was active.
