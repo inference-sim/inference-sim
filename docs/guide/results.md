@@ -82,6 +82,31 @@ When `--metrics-path` is set, the JSON output includes a `per_model` key (omitte
 | `tokens_per_sec` | float64 | Output tokens per second for this model |
 | `total_requests` | int | Number of completed requests for this model |
 
+## Per-Tenant Metrics
+
+When requests carry `tenant_id` labels, BLIS prints per-tenant request counts, total output tokens served, and a [Jain Fairness Index](https://en.wikipedia.org/wiki/Fairness_measure) over the token distribution. This section appears automatically and is omitted for single-tenant or legacy workloads.
+
+```
+=== Per-Tenant Metrics ===
+  alice: requests=50, tokens=12500
+  bob: requests=50, tokens=12480
+  Jain Fairness Index: 0.9999
+```
+
+Tenants are listed in lexicographic order. The Jain Fairness Index ranges from `1/N` (maximally unfair — one tenant receives everything) to `1.0` (perfectly fair — all tenants receive equal tokens). A balanced two-tenant workload produces a value ≥ 0.99.
+
+To tag requests with tenant labels, set `tenant_id` in your workload spec cohort:
+
+```yaml
+cohorts:
+  - name: alice-traffic
+    tenant_id: alice
+    ...
+  - name: bob-traffic
+    tenant_id: bob
+    ...
+```
+
 ## Fitness Evaluation
 
 For automated multi-configuration comparison:
