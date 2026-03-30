@@ -6,6 +6,8 @@ Iter6 tested the hypothesis that **per-request scheduler overhead** (moved from 
 
 **Result**: ⚠️ **PARTIAL RECOVERY** — short-context experiments largely recovered (8/11 experiments), but reasoning experiments completely unchanged (99% TTFT).
 
+**🔄 POST-ITER6 DATA COLLECTION**: After discovering that original reasoning experiments were from an overloaded server (85% failure rate), **fresh reasoning-lite data was collected** (2026-03-30) with reduced workload intensity. The new `reasoning-lite-*` experiments show dramatically better roofline baseline performance (15-92% TTFT error vs 99% for original reasoning), confirming the data quality issue. Future iterations should train on reasoning-lite data instead of the original reasoning experiments.
+
 - Overall loss: **161.69%** (vs iter5: 603%, 73% improvement ✓; vs target <110%, 51.7pp miss ✗)
 - TTFT RMSE: **69.47%** (vs iter5: 519%, 87% improvement ✓; vs target <50%, 19.5pp miss ✗)
 - E2E RMSE: **92.22%** (vs iter5: 84%, 9% worse ✗; vs target <60%, 32.2pp miss ✗)
@@ -387,24 +389,31 @@ The model sees this as "reasoning needs 100-200ms overhead" but it's actually "8
 
 **DO NOT** add more scheduler overhead terms! The model is already correct for successful requests.
 
-**Options**:
+**✅ RESOLVED (2026-03-30): Fresh reasoning-lite data collected with reduced workload**
 
-1. **Filter out timeout/failed requests** from training data:
-   - Only train on the 730 successful requests (15% of reasoning data)
-   - This will show reasoning ~50-110ms TTFT (similar to codegen!)
-   - β₆ = 21.5ms will be sufficient
+The original reasoning data quality issue has been addressed:
 
-2. **Model timeout/overload explicitly** (if needed):
-   - Add binary "server_overloaded" flag based on request arrival rate
-   - Overloaded: TTFT → very large (timeout behavior)
-   - Normal: TTFT = prefill_compute + queue_overhead
+**New reasoning-lite experiments** (added to `trainval_data/` on 2026-03-30):
+- `48-llama-4-scout-17b-16e-tp2-reasoning-lite-2-1`
+- `66-qwen2-5-7b-instruct-tp1-reasoning-lite-1-1`
+- `67-llama-2-7b-hf-tp1-reasoning-lite-1-1`
 
-3. **Investigate why reasoning server was overloaded**:
-   - 85% failure rate suggests server couldn't keep up with load
-   - May be higher arrival rate, longer generation, or resource constraint
-   - Check if other workloads have similar overload patterns
+**Roofline baseline performance on reasoning-lite** (vs original reasoning):
+- Original reasoning: **99.97-99.98% TTFT error** (85% request failure rate)
+- Reasoning-lite: **14.78-92.03% TTFT error** (0% failure rate, normal operation)
+- **Average improvement**: 99% → 53% TTFT error (46pp improvement!)
 
-**Most likely**: Reasoning data is simply **bad data** from an overload scenario. Should be excluded or re-collected under normal operating conditions.
+**Key differences**:
+1. **Reduced workload intensity**: Lower arrival rate prevents server overload
+2. **100% success rate**: No timeout/failed requests in traces
+3. **Normal latency distribution**: TTFT 50-110ms (vs 50ms-255s bimodal in original)
+4. **Roofline tractable**: Roofline model works reasonably well (15-92% error vs 99% error)
+
+**Implications for iter7+**:
+- **Train on reasoning-lite data** instead of original reasoning experiments
+- Original reasoning experiments (20260217-170634-*, 48-*, 66-*) should be **excluded** from training set
+- Reasoning-lite shows roofline baseline is already decent (53% avg TTFT error) — no need for complex reasoning-specific overhead terms
+- Focus iter7+ on improving codegen/roleplay workloads (645%/545% avg TTFT error) which are now the worst performers
 
 **Per-Experiment Failure Rate Analysis**:
 

@@ -14,7 +14,7 @@
 
 ## ⚠️ CRITICAL CONSTRAINTS
 
-1. **Evolved Backend Isolation**: ONLY modify `sim/latency/evolved_*.go` files. NEVER touch roofline.go, blackbox.go, or other existing backends. If you need code from them, COPY into `evolved_helpers.go`.
+1. **Evolved Backend Isolation**: ONLY modify `sim/latency/evolved_*.go` files. NEVER touch roofline.go, blackbox.go, or other existing backends. **The roofline model is the read-only baseline for comparison — you are designing a better model (evolved), not fixing the baseline.** If you need helper code from other backends, COPY into `evolved_helpers.go`.
 
 2. **Evolved Backend is Mutable**: The evolved backend (`sim/latency/evolved_model.go`) **changes across iterations** — each iteration REPLACES the previous implementation. Previous versions persist in git history, not in the filesystem. **If N > 0, read the current `evolved_model.go` before modifying it** to understand what basis functions already exist.
 
@@ -58,7 +58,7 @@ Before designing ANY iteration, read and follow:
 Example: "Overall loss will decrease to <80% (from 111% in iter0), with TTFT RMSE <50% and E2E RMSE <40%"
 
 **Causal Mechanism**: [WHY this should hold - explain the physics in detail]
-Example: "...because prefill chunking introduces per-chunk kernel launch overhead (~50μs) that scales with num_chunks, and this overhead is not captured by the total FLOPs formula which only accounts for compute time..."
+Example: "...because operation X introduces per-unit overhead that scales with count Y, and this overhead is not captured by the existing model which only accounts for compute time..."
 
 **Code Citations**: [Where in vLLM/BLIS does this mechanism occur]
 Example: "vLLM scheduler.py:schedule_prefills(), BLIS sim/latency/evolved_model.go:StepTime()"
@@ -110,7 +110,7 @@ When H-main is confirmed:
 **Training Data**: 15 ground-truth experiments in `training/trainval_data/`:
 - **Models**: Llama-2-7B, Llama-3.1-70B, Mistral-Nemo-12B, Qwen2.5-7B, Yi-34B (dense), Llama-4-Scout-17B-16E (MoE)
 - **TP configs**: TP ∈ {1, 2, 4}
-- **Workloads**: codegen, reasoning, roleplay, general-lite (representative sample - must generalize to unseen)
+- **Workloads**: codegen, roleplay, general, general-lite, reasoning-lite (representative sample - must generalize to unseen)
 - **Metrics**: Per-request TTFT, ITL (Inter-Token Latency), E2E latency with complete batch traces
 
 **Target Accuracy**: MAPE < 10% on TTFT, ITL, and E2E across all 15 experiments
@@ -120,6 +120,147 @@ When H-main is confirmed:
 overall_loss = RMSE[APE(mean_TTFT_per_exp)] + RMSE[APE(mean_E2E_per_exp)]
 ```
 Where APE is computed per experiment (15 values), then RMSE across experiments.
+
+---
+
+## 🚨 BASELINE PERFORMANCE: Roofline Model Evaluation Results
+
+**⚠️ CRITICAL REFERENCE: Before designing ANY iteration, review the roofline baseline performance to understand scope for improvements.**
+
+**Location**: `training/roofline_evaluation_results.json`
+
+### ⛔ ROOFLINE MODEL IS READ-ONLY BASELINE — DO NOT MODIFY
+
+**CRITICAL**: The roofline model (`sim/latency/roofline.go`) is the **BASELINE** for comparison purposes only.
+
+- ✅ **DO**: Read roofline results to understand its failure modes
+- ✅ **DO**: Reference roofline performance in your hypotheses
+- ✅ **DO**: Compare your evolved model predictions against roofline baseline
+- ❌ **DO NOT**: Modify `roofline.go` or any existing latency backend files
+- ❌ **DO NOT**: "Fix" roofline's mistakes — that's what the evolved model is for
+- ❌ **DO NOT**: Copy roofline code into evolved model as a starting point
+
+**Your job**: Design the evolved model to improve upon roofline's 571% baseline loss, NOT to change roofline itself.
+
+### Roofline Model Performance Summary
+
+The analytical roofline model (BLIS default) was evaluated on all ground-truth experiments in `trainval_data`. **These results establish the baseline you're improving upon:**
+
+```
+Overall Loss: 571.06
+  - TTFT RMSE: 511.03  ← PRIMARY BOTTLENECK
+  - E2E RMSE:   60.04
+
+Experiments: 15/15 succeeded (100% success rate)
+```
+
+### 🎯 Key Insight: TTFT Prediction is the Bottleneck
+
+**TTFT prediction error (511.03 RMSE) is 8.5× larger than E2E error (60.04 RMSE).**
+
+**What this means for your iteration design:**
+- **High-priority target**: Reducing TTFT error will have ~8-9× more impact on overall loss than reducing E2E error
+- **Physics hypothesis**: The roofline model severely underestimates prefill latency for certain workloads — investigate what mechanisms are missing
+- **Workload patterns**: Check which workload types have worst TTFT errors — these reveal missing physics
+- **Workload error ranges**: TTFT APE varies from 4.38% (best case: general-lite) to 1031% (worst case: codegen) — huge variance indicates different failure modes
+
+### Per-Experiment Error Patterns
+
+**Read `training/roofline_evaluation_results.json` before designing your hypotheses!**
+
+The JSON file contains detailed per-experiment breakdowns. Key patterns to investigate:
+
+1. **Worst TTFT Errors (>900% APE)**:
+   - `mistral-nemo-12b-tp1-codegen-1-1`: **1031% TTFT error**, 6.5% E2E error
+   - `llama-3-1-70b-tp4-codegen-4-1`: **912% TTFT error**, 35% E2E error
+   - `llama-2-7b-tp1-roleplay`: **904% TTFT error**, 31% E2E error
+
+   **Question for your hypothesis**: What do these experiments have in common? Large batch sizes? Long contexts? Specific TP configs?
+
+2. **Best Performance (<100% TTFT APE)**:
+   - `mistral-nemo-12b-tp2-general-lite-2-1`: **4.38% TTFT error**, 54% E2E error (BEST CASE)
+   - `qwen2-5-7b-instruct-tp1-reasoning-lite-1-1`: **14.78% TTFT error**, 60% E2E error (2nd best, reasoning-lite)
+   - `scout-17b-tp2-codegen-2`: **50% TTFT error**, 94% E2E error
+   - `llama-2-7b-hf-tp1-reasoning-lite-1-1`: **52.79% TTFT error**, 62% E2E error (reasoning-lite)
+
+   **Question for your hypothesis**: Why does roofline work well here? The 4.38% case proves roofline CAN predict accurately. **Reasoning-lite workloads also show good performance (15-53% TTFT error)** — what makes these different from codegen/roleplay?
+
+3. **Workload Type Patterns** (from `per_experiment` array):
+   - **Codegen** workloads: Avg ~645% TTFT error (worst category)
+   - **Roleplay** workloads: Avg ~545% TTFT error (second worst)
+   - **General** workloads: Avg ~276% TTFT error (moderate)
+   - **General-lite** workloads: Avg ~205% TTFT error (includes 4.38% best case)
+   - **Reasoning-lite** workloads: Avg ~53% TTFT error (BEST category! Range: 15-92%)
+
+   **Physics hypothesis**: Codegen/roleplay likely have longer prompts or different batch dynamics than general-lite. **Reasoning-lite shows roofline works well for certain long-context workloads** — understand what makes these different from codegen/roleplay.
+
+4. **MoE vs Dense Models**:
+   - Scout (MoE): Mixed results (50-100% TTFT error depending on workload)
+   - Dense models: Consistently high TTFT errors (>400% on most)
+
+   **Question for your hypothesis**: Does MoE routing create different latency patterns? Or is workload type more predictive than model architecture?
+
+### How to Use These Results
+
+**When designing your iteration hypotheses:**
+
+1. **Identify roofline's failure modes**: Which experiments have highest APE? What do they share (workload, model, TP config)?
+
+2. **Target the biggest gaps**: If an experiment has 1000% TTFT error, there's missing physics. Your basis functions should address that gap.
+
+3. **Explain roofline's successes**: Why does it work on `mistral-nemo-12b-tp2-general-lite`? Your evolved model should preserve what works while fixing what's broken.
+
+4. **Predict relative improvements**: Your H-main hypothesis should say which experiments will improve most and WHY (based on roofline's error patterns).
+
+**Example hypothesis structure using roofline baseline**:
+
+```markdown
+## H-main: [Descriptive Title of Your Mechanism]
+
+**Prediction**: Overall loss will decrease from 571% (roofline baseline) to <TARGET%, with:
+- TTFT RMSE: 511% → <TARGET%
+- E2E RMSE: 60% → <TARGET%
+- Targeting high-error experiments: [list specific experiments you expect to improve most]
+
+**Roofline failure mode addressed**: [Identify which experiments have highest errors and what
+pattern they share. Reference specific numbers from roofline_evaluation_results.json.
+Example: "Roofline shows ~1000% TTFT error on codegen workloads but only 53% on reasoning-lite,
+suggesting the issue is specific to certain workload patterns rather than a general prefill problem."]
+
+**Causal Mechanism**: [Explain WHY your basis functions should reduce prediction error.
+What GPU/vLLM operation does roofline miss? Why does this explain the error pattern?
+Example: "Operation X has cost that scales with Y, but roofline only models Z..."]
+
+**Code Citations**: [Where in vLLM/BLIS does this mechanism occur?
+Example: "vLLM module.py:function() handles X; BLIS sim/latency/roofline.go:StepTime()
+doesn't account for this cost."]
+
+**Diagnostic Clause**: *If this fails (specify what failure looks like), it indicates
+[what you learned about the system]. We should then investigate [alternative direction].*
+```
+
+**Key principles for writing good hypotheses:**
+- Use actual numbers from roofline_evaluation_results.json (don't make up examples)
+- Explain WHY the mechanism addresses the observed error patterns
+- Make predictions falsifiable with specific thresholds
+- Direct future investigation if your hypothesis is wrong
+
+### Action Items Before Designing Hypotheses
+
+- [ ] **Read the full JSON**: `cat training/roofline_evaluation_results.json | jq`
+- [ ] **Identify top-5 worst experiments**: Which have highest combined_loss?
+- [ ] **Identify top-5 best experiments**: Why does roofline work here?
+- [ ] **Check per-workload patterns**: Do codegen/reasoning/roleplay/general have different error signatures?
+- [ ] **Check per-model patterns**: Dense vs MoE, small vs large, different TP configs
+- [ ] **Formulate physics hypothesis**: What mechanism is roofline missing that would explain the error patterns?
+
+**Remember**:
+- Your **evolved model** is iteratively improving upon roofline's 571% baseline loss
+- Understanding roofline's failure modes guides hypothesis generation
+- **NEVER modify roofline.go** — it's the fixed baseline for comparison
+- Design your evolved model basis functions to address roofline's gaps
+- Use `training/roofline_evaluation_results.json` for complete per-experiment data (15 experiments)
+- **Key insight**: Reasoning-lite workloads (avg 53% TTFT error) show roofline CAN work for long contexts — investigate what makes codegen/roleplay (645%/545% avg TTFT error) different
 
 ---
 
@@ -277,17 +418,17 @@ This reduces inner loop trials from 50 to ~20-30 by starting near the optimum.
 **The Three Required Elements** (from [Hypothesis Bundles](../../docs/methodology/hypothesis-bundles.md)):
 
 Each hypothesis must have:
-1. **Quantitative prediction**: Specific threshold (e.g., "Overall loss < 80%", "TTFT RMSE reduces from 111% to <50%")
-2. **Causal mechanism**: WHY the prediction holds — explain the physics (e.g., "because chunking overhead scales with num_chunks")
-3. **Diagnostic clause**: What failure would reveal (e.g., "if this fails, kernel launch overhead dominates")
+1. **Quantitative prediction**: Specific threshold (e.g., "Overall loss < 200%", "TTFT RMSE reduces from 511% to <150%")
+2. **Causal mechanism**: WHY the prediction holds — explain the physics (e.g., "because operation X has cost that scales with Y")
+3. **Diagnostic clause**: What failure would reveal (e.g., "if this fails, mechanism X is negligible, investigate Y instead")
 
-**Example H-main from Hypothesis Bundles** (PR #452 scheduling track):
-> "Adding prefill chunking term β₃ × num_chunks will reduce TTFT RMSE from 111% to <50%, **because** vLLM splits long prefills into 2048-token chunks with per-chunk overhead not captured by total FLOPs formula. **If this fails**, chunking overhead is negligible or chunk size assumption is wrong."
+**Generic H-main example showing required structure**:
+> "Adding basis function β₃ that captures [mechanism] will reduce TTFT RMSE from 511% (roofline baseline) to <150%, **because** [GPU/vLLM operation] has [cost/overhead] that scales with [observable feature], which roofline doesn't model. **If this fails**, [mechanism] is not the dominant factor; investigate [alternative direction]."
 
 Note the structure:
-- **Quantitative**: "reduce TTFT RMSE from 111% to <50%" (specific numbers)
-- **Causal**: "because vLLM splits... per-chunk overhead..." (physics explanation)
-- **Diagnostic**: "if this fails, chunking overhead is negligible..." (investigation direction)
+- **Quantitative**: "reduce TTFT RMSE from 511% to <150%" (specific numbers from actual baseline)
+- **Causal**: "because [operation] has [cost] that scales with [feature]" (physics explanation)
+- **Diagnostic**: "if this fails, [mechanism] is not dominant, investigate [alternative]" (investigation direction)
 
 **Beyond H-main: Additional Arms** (optional but recommended):
 
@@ -528,6 +669,7 @@ func max(a, b int64) int64 {
 | Mistake | Fix |
 |---------|-----|
 | **Skip reading Strategy Evolution / Hypothesis Bundles docs** | **Read [strategy-evolution.md](../../docs/methodology/strategy-evolution.md) and [hypothesis-bundles.md](../../docs/methodology/hypothesis-bundles.md) BEFORE designing** |
+| **Skip reading roofline baseline results** | **ALWAYS read `training/roofline_evaluation_results.json` FIRST — it reveals roofline's failure modes and improvement opportunities** |
 | **No H-main hypothesis** | **H-main is MANDATORY — every iteration must have it. See "MANDATORY METHODOLOGY" section above** |
 | **H-main missing elements** | **H-main must have: (1) quantitative prediction, (2) causal mechanism, (3) diagnostic clause** |
 | **Vague predictions** | Not "will improve" but "TTFT RMSE will reduce from 111% to <50%" with specific numbers |
@@ -537,7 +679,8 @@ func max(a, b int64) int64 {
 | Skip reviewing previous iterations | Read all iter{0..N-1} FINDINGS.md and results before designing |
 | Ignore loss function components | Hypotheses must predict RMSE[APE_TTFT] and RMSE[APE_E2E] changes |
 | Random initial values | Warm-start from iter{N-1} best_params (or physics estimates for iter0) |
-| Modify roofline.go | COPY into evolved_helpers.go |
+| Modify roofline.go or other backends | **NEVER modify roofline.go — it's the read-only baseline. ONLY modify evolved_*.go files. If you need helper code, COPY into evolved_helpers.go** |
+| Try to "fix" roofline's mistakes in roofline.go | **Design evolved model to improve upon roofline, don't change roofline itself** |
 | Modify QueueingTime/OutputTokenProcessingTime/PostDecodeFixedOverhead | Only StepTime() allowed |
 | Skip hypothesis document | Always create iter{N}-HYPOTHESIS.md first |
 | Bypass failed validation | Fix the issue, don't bypass |
@@ -550,6 +693,15 @@ func max(a, b int64) int64 {
 ## Validation Checklist
 
 Before you finish, verify:
+
+**Baseline Analysis** (ALWAYS, including iter0):
+- [ ] **Read `training/roofline_evaluation_results.json` to understand roofline baseline performance**
+- [ ] **Confirmed understanding: roofline is READ-ONLY baseline — I will NOT modify roofline.go**
+- [ ] **Identified top-5 worst experiments by combined_loss** — these reveal roofline's biggest failure modes
+- [ ] **Identified top-5 best experiments** — understand where roofline works well and why
+- [ ] **Analyzed per-workload error patterns** (codegen vs reasoning vs roleplay vs general-lite)
+- [ ] **Analyzed per-model patterns** (dense vs MoE, small vs large, different TP configs)
+- [ ] **Formulated physics hypothesis** about which mechanisms roofline is missing
 
 **History Review** (if N > 0):
 - [ ] Read current `sim/latency/evolved_model.go` to understand existing basis functions
