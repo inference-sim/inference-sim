@@ -1,0 +1,57 @@
+iteration: 9
+latency_backend_name: "evolved"  # Backend name stays constant across iterations
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 9: FP8 Dequantization Overhead Mechanism
+
+  **Critical Discovery from Iter8**: β₈ (MoE routing overhead) converged to 30μs per
+  routed token (physically plausible) and contributes ~39ms per Scout request. However,
+  Scout TTFT errors remained COMPLETELY UNCHANGED (79-100% APE, 0pp improvement).
+  Overall loss stayed at 155.35% (vs iter7's 155.37%). This proves β₈ captures a REAL
+  mechanism but is INSUFFICIENT — Scout's bottleneck is 100-200ms, not 39ms.
+
+  **Gap Analysis**:
+  - Roofline underestimates Scout by -99.88% MPE (missing 99.88ms overhead)
+  - β₈ contribution: 39ms (only 39% of the gap)
+  - Remaining gap: 61ms (61% of missing overhead)
+  - β₃, β₅, β₇ remain inflated (4.4ms, 41μs, 26ms vs physical 0.4-1ms, 10-20μs, 10-20ms)
+
+  **Previous Iteration (Iter8)**: MoE routing overhead mechanism
+  - Added β₈ (per-token MoE routing overhead: expert selection, load balancing, coordination)
+  - β₈ converged to 30μs per routed token (within 10-50μs predicted range)
+  - Scout errors unchanged: routing overhead is real but not the primary bottleneck
+  - Key learning: Physically plausible ≠ sufficient. Must target dominant term.
+
+  **This Iteration (Iter9)**: Add β₉ to capture FP8 dequantization overhead
+  - **Root Cause**: Scout is the ONLY FP8 model (torch.float8_e4m3fn, all others FP16/BF16)
+  - **Physics**: FP8 → FP16/BF16 dequantization per layer before matmul (10-30μs per token per layer)
+  - **Mixed-precision coordination**: FP8 weights × FP16 activations (5-15μs per token per layer)
+  - **Dynamic scale management**: Per-tensor scale factors applied per layer (2-5μs per token per layer)
+  - **Total overhead**: 17-50μs per token per layer × 56 layers = 950-2800μs per token
+  - **Per-request**: 950-2800μs × 100 tokens = 95-280ms per Scout prefill request
+
+  **Basis Function**: β₉ × (totalTokens × numLayers × isFP8)
+  - `isFP8 = 1 if BytesPerParam == 1.0 else 0` (Scout: BytesPerParam=1.0, others: 2.0)
+  - For Scout: β₉ × (100 tokens × 56 layers × 1) = β₉ × 5600 ≈ 95-280ms
+  - For non-FP8: β₉ × (... × 0) = 0 (unaffected)
+
+  **Expected β₉**: 17-50μs per token per layer (in seconds: 0.000017-0.000050)
+
+  **Target**: Overall loss 155% → <75%, Scout TTFT 92% → <40% (>52pp improvement)
+
+  **Expected Reversions**:
+  - β₃: 4.40ms → 0.4-1.0ms (10× decrease, KV management overhead)
+  - β₅: 41.1μs → 10-20μs (2-4× decrease, MoE gating overhead)
+  - β₇: 26.3ms → 10-20ms (1.3-2.6× decrease, decode overhead)
+
+  **Key Changes**:
+  1. Added β₉ term in StepTime: Captures per-token FP8 dequantization cost
+  2. Updated coefficient_bounds.yaml: Added β₉ bounds [0, 100] μs per token per layer
+  3. Warm-start from iter8: All alpha/beta from iter8 optimal (except β₉ = 35μs initial)
+  4. Training data: 15 experiments with NEW exp17 (general-lite-2-1, clean data from 2026-03-30)
+
+  **Data Update**: exp17 replaced with clean general-lite data after iter8 analysis
+  (saturated server → normal operating conditions, mirrors reasoning → reasoning-lite fix from iter7)
+
+timestamp: "2026-03-30T18:00:00"
