@@ -278,6 +278,18 @@ func TestExtractSimResults_DeterminismInvariant(t *testing.T) {
 	}
 }
 
+// TestReplayCmd_TraceOutputFlag_Registered verifies BC-6:
+// --trace-output is registered with empty default (flag is optional).
+func TestReplayCmd_TraceOutputFlag_Registered(t *testing.T) {
+	f := replayCmd.Flags().Lookup("trace-output")
+	if f == nil {
+		t.Fatal("replayCmd missing --trace-output flag")
+	}
+	if f.DefValue != "" {
+		t.Errorf("--trace-output default must be empty (optional flag), got %q", f.DefValue)
+	}
+}
+
 func TestReplayCmd_TraceHeaderFlag_Registered(t *testing.T) {
 	// GIVEN the replay command
 	// WHEN checking for --trace-header flag

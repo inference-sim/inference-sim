@@ -20,8 +20,9 @@ import (
 )
 
 var (
-	traceHeaderPath string
-	traceDataPath   string
+	traceHeaderPath   string
+	traceDataPath     string
+	replayTraceOutput string // File prefix for TraceV2 re-export (<prefix>.yaml + <prefix>.csv)
 )
 
 var replayCmd = &cobra.Command{
@@ -273,6 +274,7 @@ func init() {
 	replayCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "Path to TraceV2 header YAML file (required)")
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
 	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens) for blis calibrate consumption.")
+	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\"")
 	rootCmd.AddCommand(replayCmd)
 }
 
