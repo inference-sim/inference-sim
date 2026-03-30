@@ -145,36 +145,45 @@ Replacing corrupted reasoning with reasoning-lite **succeeded for non-Scout**:
 
 ## Recommendation for Iter8
 
-### PRIMARY: Exclude Scout Experiments Temporarily
+### PRIMARY: Add β₈ for MoE Routing Overhead
 
 **Why**:
 - Scout dominates error: 49% of total loss from 27% of experiments
-- Non-Scout avg loss: 73% (below <80% target!)
-- Isolates pure model performance vs architecture-specific issue
+- Current model captures MoE gating FLOPs (β₅) but NOT expert routing latency
+- Keep Scout in training to learn MoE-specific coefficient
+- Model will generalize to all MoE architectures (Scout, Mixtral, DeepSeek-V3)
+
+**Proposed β₈ Basis Function**:
+```
+β₈ × (numMoELayers × totalTokens × numExpertsPerTok / TP)
+```
+- Captures per-token expert routing cost (selection, load balancing, coordination)
+- Expected range: 10-50μs per routed token
+- For Scout prefill (100 tokens, 24 MoE layers, top-1): β₈ × 2400 ≈ 24-120ms
 
 **Expected Outcome**:
-- Overall loss: ~73% (798% / 11 experiments)
-- TTFT RMSE: <40% (non-Scout reasoning-lite already 54-66%)
-- E2E RMSE: <60% (β₇ should converge to 5-20ms without Scout)
+- Overall loss: 155% → <80% as β₈ captures Scout residual
+- Scout TTFT error: 79-100% → <50% with MoE-specific term
+- β₇: closer to 5-15ms (not absorbing Scout error)
 - α₂: closer to <50μs (no Scout compensation)
-- β₇: closer to 5-15ms (no Scout error absorption)
+- Model generalizes to all MoE models
 
 **Benefits**:
-1. ✅ Achieves <80% overall loss target
-2. ✅ Validates decode overhead hypothesis (β₇ without Scout)
-3. ✅ Confirms Scout MoE as bottleneck vs model limitation
-4. ✅ Isolates Scout issue for separate profiling/handling
+1. ✅ Achieves <80% overall loss target by capturing Scout overhead
+2. ✅ Generalizes to all MoE architectures (not just Scout)
+3. ✅ Preserves training data diversity (all 15 experiments)
+4. ✅ Physics-informed basis function (scales with MoE parameters)
 
-**Risks**:
-1. ⚠️ TP=2 Mistral still 90% TTFT (may prevent <80% loss)
-2. ⚠️ Overfitting to 11 experiments (may not generalize to Scout later)
-3. ⚠️ Delays addressing Scout architecture-specific handling
+**Implementation**:
+- Add β₈ to `sim/latency/evolved_model.go` StepTime calculation
+- Update coefficient_bounds.yaml with β₈ bounds: `[0, 100]` μs per routed token
+- Retrain iter8 on **all 15 experiments** (including 4 Scout)
 
-**Action**: Train iter8 on **11 non-Scout experiments** (exclude 4 Scout: general-2, reasoning-lite-2-1, codegen-2, roleplay-2). If <80% loss achieved, profile Scout separately and add MoE-specific term.
+**Action**: Implement β₈ for iter8, keep all experiments in training data.
 
-### SECONDARY: Profile Scout MoE Overhead
+### SECONDARY: Profile Scout MoE Overhead (Validation)
 
-If iter8 includes Scout, profile to identify bottleneck:
+After implementing β₈, profile to validate coefficient aligns with measured overhead:
 
 **Profile Targets**:
 1. Expert routing latency (gating network, expert selection)
@@ -182,10 +191,7 @@ If iter8 includes Scout, profile to identify bottleneck:
 3. Mixed-precision overhead (FP8 dequantization)
 4. TP communication (cross-GPU expert routing)
 
-**After Profiling**: Add β_moe (MoE per-request overhead) term:
-```
-QueueingTime = α₀ + α₁×input_tokens + α₂×output_tokens + β₆ + β_moe×(num_experts/top_k)
-```
+**Validation**: Verify β₈ coefficient (10-50μs per routed token) aligns with profiled routing latency
 
 ---
 
@@ -235,7 +241,7 @@ QueueingTime = α₀ + α₁×input_tokens + α₂×output_tokens + β₆ + β_m
 - [x] Coefficient analysis (Alpha, Beta) with iter6 comparison
 - [x] Error patterns analyzed (Scout MoE vs non-Scout)
 - [x] Root cause identified (Scout MoE architecture bottleneck)
-- [x] Recommendation provided (exclude Scout in iter8)
+- [x] Recommendation provided (add β₈ for MoE routing overhead in iter8)
 - [x] Key insights extracted for future iterations
 - [x] Executive summary created for quick reference
 

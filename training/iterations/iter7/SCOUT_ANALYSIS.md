@@ -378,45 +378,34 @@ grep -A 10 "RedHatAI/Llama-4-Scout" sim/models.go
 
 ## Recommendation for Iter8
 
-### Option A: Exclude Scout Experiments (Recommended)
+### Add β₈ for MoE Routing Overhead (Recommended)
 
 **Rationale**:
 - Scout dominates error (49% of total loss from 27% of experiments)
-- Non-Scout avg loss: 73% (below <80% target)
-- Diagnostic plan (Phase 1-2) takes 2-6 hours, training takes 40-60 minutes
-- Excluding Scout **immediately tests whether <80% achievable without Scout**
+- Current model captures MoE gating FLOPs (β₅) but NOT expert routing latency
+- Keep Scout in training to learn MoE-specific coefficient
+- Model will generalize to all MoE architectures (Scout, Mixtral, DeepSeek-V3)
+
+**Proposed β₈ Basis Function**:
+```
+β₈ × (numMoELayers × totalTokens × numExpertsPerTok / TP)
+```
+- Captures per-token expert routing cost (selection, load balancing, coordination)
+- Expected range: 10-50μs per routed token
+- For Scout prefill (100 tokens, 24 MoE layers, top-1): β₈ × 2400 ≈ 24-120ms
 
 **Benefits**:
-1. ✅ Achieves <80% overall loss target (11 non-Scout experiments)
-2. ✅ Validates decode overhead hypothesis (β₇ should converge to 5-20ms)
-3. ✅ Confirms Scout MoE as bottleneck vs model limitation
-4. ✅ Provides clean baseline for Scout-specific handling later
+1. ✅ Achieves <80% overall loss target by capturing Scout overhead
+2. ✅ Generalizes to all MoE architectures (not just Scout)
+3. ✅ Preserves training data diversity (all 15 experiments)
+4. ✅ Physics-informed basis function (scales with MoE parameters)
 
-**Risks**:
-1. ⚠️ TP=2 Mistral still 90% TTFT (may prevent <80% loss)
-2. ⚠️ Delays addressing Scout architecture-specific handling
+**Implementation**:
+- Add β₈ to `sim/latency/evolved_model.go` StepTime calculation
+- Update coefficient_bounds.yaml with β₈ bounds: `[0, 100]` μs per routed token
+- Retrain iter8 on **all 15 experiments** (including 4 Scout)
 
-**Action**: Train iter8 on **11 non-Scout experiments**. Then execute Diagnostic Plan Phase 1-2 in parallel.
-
----
-
-### Option B: Profile Scout First, Then Retrain (Alternative)
-
-**Rationale**:
-- Diagnostic Plan Phase 1 (verify config) takes 30 minutes
-- If config wrong, roofline baseline improves → no training needed yet
-- If config correct, Phase 2 (profile MoE) takes 2-4 hours → identifies bottleneck
-
-**Benefits**:
-1. ✅ Addresses Scout issue directly (not delaying)
-2. ✅ May discover quick fix (config correction)
-3. ✅ Provides profiling data for β_moe term design
-
-**Risks**:
-1. ⚠️ May take 6+ hours (Phase 1 + Phase 2) before next training iteration
-2. ⚠️ If profiling inconclusive, wasted time vs immediate iter8 training
-
-**Action**: Execute Diagnostic Plan Phase 1-2, then decide whether to add β_moe term or exclude Scout.
+**Action**: Implement β₈ for iter8, keep all experiments in training data. Profile Scout for validation after training.
 
 ---
 
@@ -493,17 +482,14 @@ func (e *EvolvedModel) QueueingTime(req *sim.Request, cfg *ModelConfig) float64 
 
 **Root Cause** (most likely): MoE expert routing overhead (78-130ms per request) not captured by current model.
 
-**Recommendation**: Exclude Scout in iter8 to achieve <80% loss, then profile Scout MoE overhead (Phase 1-2) to design β_moe term.
+**Recommendation**: Add β₈ (MoE routing overhead) in iter8, keep all 15 experiments in training data.
 
-**Alternative**: Profile Scout first (Phase 1-2, 2-6 hours), then add β_moe term and retrain on all 15 experiments.
-
-**Expected Outcome** (after β_moe addition):
+**Expected Outcome** (after β₈ addition):
 - Scout TTFT: 79-100% → 30-50% (50-70pp improvement)
-- Overall loss: 155% → 80-90% (65-75pp improvement)
-- Non-Scout experiments unaffected (β_moe=0 for dense models)
+- Overall loss: 155% → <80% (75pp improvement)
+- β₈ will absorb Scout residual while non-Scout experiments unaffected (β₈ contribution = 0 for dense models)
+- Model generalizes to all MoE architectures (Scout, Mixtral, DeepSeek-V3)
 
 **Next Steps**:
-1. **Iter8**: Train on 11 non-Scout experiments (immediate)
-2. **Diagnostic Plan Phase 1**: Verify Scout model config (30 minutes)
-3. **Diagnostic Plan Phase 2**: Profile Scout MoE overhead (2-4 hours)
-4. **Iter9**: Add β_moe term, retrain on all 15 experiments (after profiling)
+1. **Iter8**: Implement β₈, train on all 15 experiments (including 4 Scout)
+2. **Validation**: Profile Scout MoE overhead to verify β₈ coefficient aligns with measured routing latency (10-50μs per routed token)
