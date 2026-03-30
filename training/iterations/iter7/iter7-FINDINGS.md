@@ -20,10 +20,15 @@ Iter7 tested the hypothesis that **clean data retraining** (excluding 3 corrupte
 4. **Alpha reversion mostly succeeded**: α₁ (351μs → 118μs), α₂ (216μs → 91μs) improved 3-6×
 5. **β₇ converged higher**: 26.3ms (vs 5-15ms predicted), suggesting decode overhead larger than expected OR absorbing Scout error
 
-**Implication for iter8**: Scout MoE requires **architecture-specific handling**. Options:
-1. **Exclude Scout experiments temporarily** to isolate pure model performance (12 non-Scout experiments)
-2. **Profile Scout MoE overhead** to identify missing physics (expert routing, load balancing, mixed-precision)
-3. **Add MoE-specific term** (β_moe) after isolating Scout bottleneck via profiling
+**Implication for iter8**: Scout MoE requires **architecture-specific handling**. Recommended approach:
+1. **Add β₈ (MoE routing overhead)** to capture expert routing cost beyond gating FLOPs (β₅)
+2. **Keep Scout in training data** to learn MoE-specific coefficients
+3. **Profile Scout MoE overhead** to validate β₈ captures expert routing, load balancing, mixed-precision coordination
+
+Proposed β₈ basis function: `β₈ × (numMoELayers × totalTokens × numExpertsPerTok / TP)`
+- Captures per-token expert routing cost
+- Expected range: 10-50μs per routed token
+- Will absorb Scout's residual MoE overhead not captured by FLOPs (β₀, β₁, β₄) or gating (β₅)
 
 ---
 
@@ -252,16 +257,22 @@ Scout is interleaved MoE+dense architecture with FP8 dynamic quantization. Four 
    - May be incorrect or incomplete for Scout architecture
    - Check HuggingFace config.json for Scout model
 
-**Options for iter8**:
+**Recommended approach for iter8**:
 
-1. **Exclude Scout experiments** (recommended for next iteration):
-   - Train on 11 non-Scout experiments to isolate pure model performance
-   - Expected: Overall loss 798% / 11 = 73% avg (vs <80% target)
-   - This tests whether non-Scout experiments can achieve <80% loss
+1. **Add β₈ (MoE routing overhead) basis function**:
+   - Formula: `β₈ × (numMoELayers × totalTokens × numExpertsPerTok / TP)`
+   - Captures per-token expert routing cost beyond gating FLOPs (β₅)
+   - Expected range: 10-50μs per routed token
+   - Will absorb Scout's 767% combined loss through learned coefficient
 
-2. **Profile Scout MoE overhead**:
+2. **Keep Scout in training data**:
+   - Train on all 15 experiments (including 4 Scout) to learn MoE-specific coefficients
+   - β₈ will differentiate MoE overhead from dense model physics
+   - Expected: Overall loss 155% → <80% as β₈ captures Scout residual
+
+3. **Profile Scout MoE overhead** (validation):
    - Use vLLM profiling to measure expert routing latency
-   - Identify missing physics (routing, load balancing, communication)
+   - Verify β₈ coefficient aligns with measured routing overhead
    - Add MoE-specific term (β_moe) after isolating bottleneck
 
 3. **Verify Scout model config**:
@@ -483,9 +494,9 @@ But β₇ converged to 26.3ms instead of 5-15ms expected:
 - But 75% higher than expected, suggests β₇ absorbing non-decode error
 
 **Action**:
-- Iter8 should exclude Scout experiments and re-check β₇ convergence
-- If β₇ → 10-20ms without Scout, decode overhead hypothesis confirmed
-- If β₇ still >25ms without Scout, need to investigate batching delay or memory allocation
+- Iter8 should add β₈ (MoE routing overhead) to capture Scout-specific latency
+- Keep Scout in training data to learn MoE-specific coefficient
+- If β₇ remains >25ms after β₈ addition, investigate batching delay or memory allocation overhead
 
 ---
 
@@ -562,7 +573,7 @@ But β₇ converged to 26.3ms instead of 5-15ms expected:
 - Reasoning-lite improved to 54-66% for non-Scout ✓
 - Scout did NOT improve to <80% (79-100%) → **MoE-specific overhead confirmed as bottleneck**
 
-**Action**: Iter8 should profile Scout MoE overhead (expert routing, load balancing) or exclude Scout temporarily.
+**Action**: Iter8 should add β₈ (MoE routing overhead) to capture Scout-specific latency while keeping Scout in training data.
 
 ---
 
@@ -588,45 +599,62 @@ But β₇ converged to 26.3ms instead of 5-15ms expected:
 3. Verify linearity at high output counts (β₇ << per-token cost × 100)
 
 **Action**:
-- For iter8, if Scout excluded, re-check β₇ convergence (should be closer to 5-15ms)
+- For iter8, after adding β₈ (MoE routing overhead), re-check β₇ convergence (should be closer to 5-15ms without absorbing Scout error)
 - Create plot to verify decode scaling behavior
 
 ---
 
 ## Recommendations for Iter8
 
-### Primary Recommendation: Exclude Scout Experiments Temporarily
+### Primary Recommendation: Add β₈ for MoE Routing Overhead
 
 **Rationale**:
 - Scout MoE dominates error budget: 49% of total loss from 27% of experiments (4/15)
 - All Scout workloads fail uniformly (79-100% TTFT), regardless of data quality
 - Non-Scout reasoning-lite succeeded (99% → 54-66%), confirming data quality issue resolved
-- Excluding Scout isolates pure model performance on 11 non-Scout experiments
+- Current model captures MoE gating FLOPs (β₅) but NOT expert routing latency
+- **Keep Scout in training data** to learn MoE-specific coefficient
+
+**Proposed β₈ basis function**:
+```
+β₈ × (numMoELayers × totalTokens × numExpertsPerTok / TP)
+```
+
+Where:
+- `numMoELayers`: Number of MoE layers (24 for Scout, 32 for Mixtral, 0 for dense models)
+- `totalTokens`: Prefill + decode tokens in batch
+- `numExpertsPerTok`: Active experts per token (1 for Scout, 2 for Mixtral)
+- `TP`: Tensor parallelism degree
+
+**Expected β₈ range**: 10-50μs per routed token
+- Captures expert selection, load balancing, coordination overhead beyond gating FLOPs
+- For Scout prefill (100 tokens, 24 MoE layers, top-1): β₈ × 2400 ≈ 24-120ms contribution
+- Will absorb Scout's 767% combined loss through learned coefficient
 
 **Expected outcome**:
-- Non-Scout combined loss: 798% / 11 experiments = 73% avg loss per experiment
-- Overall loss target: <80% (achievable without Scout)
-- TTFT RMSE target: <40% (non-Scout reasoning-lite already 54-66%)
-- E2E RMSE target: <60% (β₇ should converge closer to 5-15ms without Scout)
+- Overall loss: 155% → <80% as β₈ captures Scout residual
+- Scout TTFT error: 79-100% → <50% with MoE-specific term
+- β₇ should converge closer to 5-15ms (not absorbing Scout error)
+- Model generalizes to all MoE architectures (Scout, Mixtral, DeepSeek-V3)
 
 **Benefits**:
-1. **Isolates Scout issue**: Confirms whether Scout MoE is bottleneck or model limitation
-2. **Achieves <80% loss**: 11 non-Scout experiments likely achieve target
-3. **Validates β₇**: Should converge to 5-15ms without Scout error absorption
-4. **Validates α₂**: Should converge closer to <50μs without Scout compensation
+1. **Captures Scout accurately**: β₈ absorbs MoE routing overhead
+2. **Generalizes to all MoE models**: Works for Scout, Mixtral, future MoE architectures
+3. **Preserves training data diversity**: All 15 experiments contribute to coefficient learning
+4. **Physics-informed**: β₈ scales with MoE architecture parameters
 
-**Risks**:
-1. **Overfitting to 11 experiments**: Model may not generalize to Scout later
-2. **TP=2 Mistral still bad**: 90% TTFT may prevent <80% overall loss
-3. **Missing MoE physics**: Delays addressing Scout architecture-specific handling
+**Implementation**:
+- Add β₈ to `sim/latency/evolved_model.go` StepTime calculation
+- Update `coefficient_bounds.yaml` with β₈ bounds: `[0, 100]` (in microseconds per routed token)
+- Retrain iter8 on all 15 experiments (including 4 Scout)
 
-**Action**: Train iter8 on 11 non-Scout experiments (exclude 4 Scout). If <80% loss achieved, then profile Scout separately and add MoE-specific term.
+**Action**: Implement β₈ for iter8, keep all experiments in training data.
 
 ---
 
-### Secondary Recommendation: Profile Scout MoE Overhead
+### Secondary Recommendation: Profile Scout MoE Overhead (Validation)
 
-If iter8 includes Scout experiments, profile to identify bottleneck:
+After implementing β₈ in iter8, profile to validate coefficient aligns with measured overhead:
 
 **Profile targets**:
 1. **Expert routing latency**: Gating network computation, expert selection
@@ -639,12 +667,9 @@ If iter8 includes Scout experiments, profile to identify bottleneck:
 - CUDA profiling: `nsys profile` for kernel-level analysis
 - vLLM journey traces: Check Scout experiments for unusual patterns (queue time, batch formation)
 
-**Expected bottleneck**: Expert routing overhead (per-request gating network + expert selection)
+**Expected bottleneck**: Expert routing overhead (per-token gating network + expert selection)
 
-**After profiling**: Add β_moe (MoE per-request overhead) term:
-```
-QueueingTime = α₀ + α₁×input_tokens + α₂×output_tokens + β₆ + β_moe×(num_experts/top_k)
-```
+**Validation**: Verify β₈ coefficient (10-50μs per routed token) aligns with profiled routing latency
 
 ---
 
@@ -677,24 +702,25 @@ QueueingTime = α₀ + α₁×input_tokens + α₂×output_tokens + β₆ + β_m
 
 **Overall**: 0 hypotheses fully confirmed, 4 partial, 1 rejected. Primary blocker: Scout MoE architecture.
 
-**Critical Discovery**: Problem is **NOT reasoning workload** but **Scout MoE architecture**. Excluding Scout should enable <80% loss on 11 non-Scout experiments.
+**Critical Discovery**: Problem is **NOT reasoning workload** but **Scout MoE architecture**. Adding β₈ (MoE routing overhead) should enable <80% loss by capturing Scout-specific latency.
 
 ---
 
 ## Next Steps
 
-1. **Iter8 strategy decision**:
-   - **Option A** (recommended): Exclude Scout experiments, train on 11 non-Scout, achieve <80% loss
-   - **Option B**: Profile Scout MoE overhead, add β_moe term, retrain on all 15 experiments
-   - **Option C**: Keep all 15 experiments, accept >155% loss, investigate E2E decomposition
+1. **Iter8 strategy** (recommended):
+   - **Add β₈ (MoE routing overhead)** basis function to evolved_model.go
+   - **Keep all 15 experiments** in training data (including 4 Scout)
+   - Update coefficient_bounds.yaml with β₈ bounds: `[0, 100]` μs per routed token
+   - Expected: Overall loss 155% → <80% as β₈ captures Scout residual
 
-2. **If Option A (exclude Scout)**:
-   - Expected: Overall loss ~73% avg (798% / 11), achievable <80% target
-   - Re-check β₇ convergence (should be 5-20ms without Scout)
+2. **β₈ implementation**:
+   - Formula: `β₈ × (numMoELayers × totalTokens × numExpertsPerTok / TP)`
+   - Add to StepTime calculation (same level as β₀-β₇)
+   - Re-check β₇ convergence (should be 5-20ms without absorbing Scout error)
    - Re-check α₂ convergence (should be closer to <50μs)
-   - Validate coefficient stability on non-Scout experiments
 
-3. **After achieving <80% on non-Scout**:
+3. **After iter8 training**:
    - Profile Scout MoE overhead separately
    - Identify bottleneck (expert routing, load balancing, mixed-precision)
    - Add MoE-specific term (β_moe) to model
