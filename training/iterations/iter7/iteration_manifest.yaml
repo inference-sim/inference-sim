@@ -1,0 +1,41 @@
+iteration: 7
+latency_backend_name: "evolved"
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 7: Clean data retraining with decode overhead decoupling.
+
+  Critical discovery from iter6 post-analysis: Original reasoning experiments were from
+  overloaded servers (85% failure rate, 259s timeout). Fresh reasoning-lite data collected
+  on 2026-03-30 shows roofline baseline 15-92% TTFT error (vs 99% for original), confirming
+  data quality issue rather than model deficiency.
+
+  Changes from iter6:
+    - **Training data**: Exclude 3 corrupted reasoning experiments, use 3 reasoning-lite experiments
+      (total still 15 experiments: 12 original + 3 reasoning-lite)
+    - **Added β₇**: Decode per-request overhead (5-15ms expected) in StepTime to decouple
+      framework overhead from compute/memory efficiency (β₁/β₄)
+    - **Alpha reversion**: Warm-start from iter4 Alpha values (not iter6) with tight bounds
+      [0.0, 0.0002] to prevent inflation now that corrupt data removed
+    - **Beta reversion**: β₁/β₄ warm-start from iter3 (1.037, 0.796) with tight bounds to
+      enforce physical plausibility; other Beta warm-start from iter6
+    - **Constrained β₄**: Upper bound 1.0 (cannot exceed theoretical compute time)
+
+  Expected outcome:
+    - Overall loss: 161.69% → <80% (removing 597% combined loss from corrupt reasoning)
+    - TTFT RMSE: 69.47% → <40% (reasoning-lite tractable at 30-60% vs 99%)
+    - E2E RMSE: 92.22% → <50% (β₇ stabilizes β₁/β₄)
+    - Alpha: Return to physical plausibility (α₁ <150μs, α₂ <50μs)
+    - Beta: Stabilize decode (β₁ → 1.00-1.15, β₄ → 0.75-0.90)
+
+  Basis functions (8 beta terms):
+    - β₀: Prefill compute MFU (unchanged)
+    - β₁: Decode memory-bound MFU (unchanged)
+    - β₂: TP decode communication (unchanged)
+    - β₃: KV cache management (unchanged)
+    - β₄: Decode compute-bound MFU (unchanged)
+    - β₅: MoE gating overhead (unchanged)
+    - β₆: Per-request scheduler overhead in QueueingTime (unchanged)
+    - β₇: **NEW** Decode per-request overhead in StepTime (output processing + TP coordination)
+
+timestamp: "2026-03-30T13:15:00.000000"
