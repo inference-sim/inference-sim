@@ -339,9 +339,9 @@ func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 		// Units: number of routed tokens (TP division accounts for cross-GPU routing)
 		routedTokens := numMoELayers * totalTokens * numExpertsPerTok / tpFactor
 
-		// β₈ coefficient is in milliseconds per routed token (expected 0.000010-0.000050 = 10-50μs)
-		// Convert to microseconds: routedTokens × β₈ × 1000
-		moeRoutingTimeUs = routedTokens * m.Beta[8] * 1000.0
+		// β₈ coefficient is in SECONDS per routed token (expected 0.000010-0.000050 = 10-50μs)
+		// Convert to microseconds: routedTokens × β₈ × 1e6
+		moeRoutingTimeUs = routedTokens * m.Beta[8] * 1e6
 	}
 	moeRoutingContribution := moeRoutingTimeUs // Already in microseconds
 
