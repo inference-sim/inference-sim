@@ -1,0 +1,67 @@
+# Iteration 7 coefficient bounds and initial values
+#
+# Strategy: Clean data retraining with decode overhead decoupling
+#   - Alpha: Revert to iter4 with tight bounds (prevent inflation)
+#   - Beta: β₁/β₄ from iter3 (stabilize decode), others from iter6, add β₇ (decode overhead)
+#   - Training data: 15 experiments (12 original + 3 reasoning-lite, exclude 3 corrupted reasoning)
+
+alpha_bounds:
+  - [0.0, 0.005]   # α₀: Fixed API overhead (ms per request)
+  - [0.0, 0.0002]  # α₁: Per-input-token tokenization (ms per token, TIGHT bound to prevent inflation)
+  - [0.0, 0.0001]  # α₂: Per-output-token detokenization (ms per token, TIGHT bound to prevent inflation)
+
+alpha_initial:
+  - 0.001498    # α₀ from iter4: 1.5ms (NOT iter6's inflated 4.07ms)
+  - 0.0001247   # α₁ from iter4: 125μs (NOT iter6's inflated 351μs)
+  - 0.00003599  # α₂ from iter4: 36μs (NOT iter6's inflated 216μs)
+
+beta_bounds:
+  - [0.10, 0.35]   # β₀: Prefill compute MFU (dimensionless, expected 0.15-0.25)
+  - [0.8, 1.5]     # β₁: Decode memory-bound MFU (dimensionless, expected 1.00-1.15, WIDENED from [0.8, 2.0] to allow room)
+  - [0.0, 1.5]     # β₂: TP decode communication (dimensionless, expected 0.30-0.35)
+  - [0.0, 0.01]    # β₃: KV cache management (ms per request, expected 0.4-0.5ms = 0.0004-0.0005)
+  - [0.4, 1.0]     # β₄: Decode compute-bound MFU (dimensionless, expected 0.75-0.90, CONSTRAINED upper bound to 1.0)
+  - [0.0, 0.05]    # β₅: MoE gating overhead (ms, expected 0.01-0.012ms = 10-12μs)
+  - [0.01, 0.10]   # β₆: Per-request scheduler overhead (ms, expected 0.05-0.15 = 50-150ms, used in QueueingTime)
+  - [0.0, 0.03]    # β₇: **NEW** Decode per-request overhead (ms, expected 0.005-0.015 = 5-15ms, used in StepTime)
+
+beta_initial:
+  - 0.164        # β₀ from iter6: 0.164 (stable, good)
+  - 1.037        # β₁ from iter3: 1.037 (NOT iter6's destabilized 1.851, NOT iter5's 1.449)
+  - 0.270        # β₂ from iter6: 0.270 (biggest improvement in iter6, stable)
+  - 0.000620     # β₃ from iter6: 0.620ms (recovered in iter6, stable)
+  - 0.796        # β₄ from iter3: 0.796 (NOT iter6's destabilized 1.451, NOT iter5's 0.620)
+  - 0.00431      # β₅ from iter6: 4.31ms (improving toward iter3, stable)
+  - 0.0215       # β₆ from iter6: 21.5ms (correct for short-context, may increase with clean reasoning-lite data)
+  - 0.010        # β₇ NEW: 10ms initial (middle of expected 5-15ms range)
+
+# Rationale:
+#
+# Alpha reversion (tight bounds):
+#   - Iter6 Alpha inflated (α₁ = 351μs, α₂ = 216μs, 6-10× above physical) to compensate
+#     for reasoning's 100-200ms TTFT gap from corrupt data
+#   - With clean data (reasoning-lite 15-92% TTFT, no 99% outliers), inflation unnecessary
+#   - Tight bounds [0.0, 0.0002] for α₁ and [0.0, 0.0001] for α₂ enforce physical plausibility
+#   - Warm-start from iter4 (not iter6) to avoid propagating inflation
+#
+# Beta reversion (decode stabilization):
+#   - β₁/β₄ destabilized in iter6 (1.851/1.451 vs iter3's 1.037/0.796)
+#   - Warm-start from iter3 (not iter6/iter5) to restore physical plausibility
+#   - β₄ constrained [0.4, 1.0] upper bound to enforce physical constraint (decode compute
+#     cannot exceed theoretical time, i.e., cannot be slower than 1.0× theoretical)
+#   - Other Beta (β₀/β₂/β₃/β₅/β₆) from iter6 (stable and physically plausible)
+#
+# Beta₇ addition (decode overhead):
+#   - New term to decouple decode framework overhead from compute/memory efficiency
+#   - Expected 5-15ms per request (output processing, TP coordination, result aggregation)
+#   - Should stabilize β₁/β₄ by removing burden of fitting fixed overhead via multiplicative scaling
+#   - Bounds [0.0, 0.03] allow up to 30ms (conservative upper limit)
+#   - Initial 10ms (middle of expected range, physics-based estimate)
+#
+# Impact on optimization:
+#   - Tight Alpha bounds reduce search space (no inflation paths available)
+#   - β₁/β₄ warm-start from iter3 (not iter6) + β₇ addition should enable convergence to
+#     iter3-like decode coefficients (stable, physically plausible)
+#   - Clean data (reasoning-lite 15-92% TTFT) eliminates 99% outliers preventing convergence
+#   - Expected trials: 150-200 (typical for 8-coefficient model, may need more due to
+#     data distribution change)

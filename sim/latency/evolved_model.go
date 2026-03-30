@@ -8,52 +8,52 @@ import (
 )
 
 // EvolvedModel implements physics-informed latency model with learned efficiency factors.
-// Iteration 6: Per-request scheduler overhead (batch formation + KV block allocation).
+// Iteration 7: Clean data retraining with decode overhead decoupling.
 //
-// Hypothesis: Iter5 CATASTROPHICALLY FAILED (loss 603% vs target <110%, TTFT 519% vs <55%).
-// Post-analysis trace investigation revealed iter3/4/5 were based on WRONG ASSUMPTIONS:
-// all assumed reasoning = long context (8K-16K tokens), but traces show reasoning uses ~1K tokens
-// (same as all workloads). The "1000× underestimation" was actually "100-200× underestimation
-// for SHORT contexts". Critical discovery: Reasoning (1K tokens, 100-200ms TTFT) differs from
-// codegen (1K tokens, 20-50ms TTFT) NOT by context length, but by QUEUING/SCHEDULER DELAY.
-// Trace variance (p10=0.13ms, p90=215ms = 1650×) indicates batching delay, not prefill compute.
+// Critical discovery from iter6 post-analysis: Original reasoning experiments were from
+// overloaded servers (85% failure rate, 259s timeout). Journey trace analysis revealed
+// 97-99% of training data consisted of requests stuck in queue for 259 seconds before
+// timeout—no physics-based model can fit this. Fresh reasoning-lite data collected on
+// 2026-03-30 shows roofline baseline improved from 99% → 53% avg TTFT error (range: 15-92%),
+// confirming data quality issue rather than model deficiency.
 //
-// Iter6 moves scheduler overhead from StepTime (per-layer kernel overhead) to QueueingTime
-// (per-request scheduler overhead):
-//   - **Redefined** β₆: Now models vLLM scheduler overhead (batch formation + KV block allocation)
-//     as fixed cost per request (50-150ms), not per-layer cost (500-3000μs × num_layers)
-//   - **Moved** β₆ from StepTime to QueueingTime (scheduler overhead is per-request, not per-step)
-//   - **Removed** per-layer overhead term entirely from StepTime (keep only β₀-β₅)
-//   - **Expected**: Reasoning improves (99% → 40-45% TTFT) by capturing scheduler overhead,
-//     short-context recovers (200-1091% → 4-40% TTFT) by removing wrong per-layer term
+// Iter7 strategy: Retrain on clean dataset (exclude 3 corrupted reasoning experiments,
+// include 3 fresh reasoning-lite experiments, total still 15) while addressing decode
+// coefficient destabilization observed in iter6.
 //
-// Changes from iter5:
-//   - **Removed** β₆ per-layer overhead from StepTime (caused catastrophic over-prediction for short contexts)
-//   - **Added** β₆ scheduler overhead to QueueingTime (captures batch formation + KV allocation delay)
-//   - **Reverted** Alpha to iter4 (iter5 Alpha exploded to absorb TTFT error)
-//   - **Constrained** β₀ bounds to [0.10, 0.35] (prevent over-rise like iter5)
-//   - **Expected**: Overall loss 603% → 90-110%, TTFT RMSE 519% → 40-50%, E2E RMSE 84% → 55-60%
+// Changes from iter6:
+//   - **Training data**: Exclude 3 corrupted reasoning experiments (99% TTFT), use 3
+//     reasoning-lite experiments (roofline 15-92% TTFT)
+//   - **Added β₇**: Decode per-request overhead (5-15ms) in StepTime to decouple framework
+//     overhead from compute/memory efficiency (β₁/β₄)
+//   - **Alpha reversion**: Warm-start from iter4 Alpha (not iter6) with tight bounds to
+//     prevent inflation now that corrupt data removed
+//   - **Beta reversion**: β₁/β₄ warm-start from iter3 (1.037, 0.796) to restore stability;
+//     other Beta from iter6 (stable)
+//   - **Expected**: Overall loss 161.69% → <80%, TTFT RMSE 69.47% → <40%, E2E RMSE 92.22% → <50%
 //
 // Basis functions:
-//   - StepTime (6 beta terms: β₀-β₅): Prefill/decode compute, memory, communication, KV management, MoE gating
+//   - StepTime (7 beta terms: β₀-β₆, note β₆ MOVED to QueueingTime, β₇ NEW in StepTime):
+//     Prefill/decode compute, memory, communication, KV management, MoE gating, decode overhead
 //   - QueueingTime (Alpha + β₆): API overhead (α₀, α₁) + scheduler overhead (β₆)
 //
-// Beta coefficients (7 total):
+// Beta coefficients (8 total):
 //   - β₀: Prefill compute MFU scaling (dimensionless, expected 0.15-0.25)
-//   - β₁: Decode memory-bound MFU (dimensionless, expected 1.00-1.10)
+//   - β₁: Decode memory-bound MFU (dimensionless, expected 1.00-1.15)
 //   - β₂: TP decode communication scaling (dimensionless, expected 0.30-0.35)
-//   - β₃: KV cache management overhead (μs per request, expected 400-500μs)
-//   - β₄: Decode compute-bound MFU (dimensionless, expected 0.75-0.85)
-//   - β₅: MoE gating overhead (μs, expected 10-12μs)
-//   - β₆: **NEW** Scheduler overhead per request (ms, expected 50-150ms) - used in QueueingTime, NOT StepTime
+//   - β₃: KV cache management overhead (ms per request, expected 0.4-0.5ms)
+//   - β₄: Decode compute-bound MFU (dimensionless, expected 0.75-0.90, constrained ≤1.0)
+//   - β₅: MoE gating overhead (ms, expected 0.01-0.012ms = 10-12μs)
+//   - β₆: Scheduler overhead per request (ms, expected 50-150ms) - used in QueueingTime, NOT StepTime
+//   - β₇: **NEW** Decode per-request overhead (ms, expected 5-15ms) - used in StepTime for decode-phase overhead
 //
-// Alpha coefficients (request-level, reverted to iter4):
-//   - α₀: Fixed API processing overhead (ms per request, 1.5ms)
-//   - α₁: Per-input-token tokenization (ms per token, 125μs)
-//   - α₂: Per-output-token detokenization (ms per token, 36μs)
+// Alpha coefficients (request-level, reverted to iter4 with tight bounds):
+//   - α₀: Fixed API processing overhead (ms per request, 1.5ms target)
+//   - α₁: Per-input-token tokenization (ms per token, 125μs target, bounds [0.0, 0.0002] to prevent inflation)
+//   - α₂: Per-output-token detokenization (ms per token, 36μs target, bounds [0.0, 0.0001] to prevent inflation)
 type EvolvedModel struct {
 	Alpha       [3]float64 // [α₀, α₁, α₂] - request-level overheads
-	Beta        []float64  // [β₀, β₁, β₂, β₃, β₄, β₅, β₆] - β₀-β₅ for StepTime, β₆ for QueueingTime
+	Beta        []float64  // [β₀, β₁, β₂, β₃, β₄, β₅, β₆, β₇] - β₀-β₅,β₇ for StepTime, β₆ for QueueingTime
 	modelConfig sim.ModelConfig
 	hwConfig    sim.HardwareCalib
 	tp          int
@@ -64,13 +64,14 @@ type EvolvedModel struct {
 // **THIS IS THE ONLY METHOD YOU CUSTOMIZE.** Design basis functions that capture
 // compute, memory, communication, and overhead costs during batch execution.
 //
-// Iteration 6 basis functions (6 terms in StepTime, β₆ moved to QueueingTime):
+// Iteration 7 basis functions (7 terms in StepTime, β₆ in QueueingTime):
 //   - beta[0] × prefill_compute_time: Prefill efficiency vs theoretical MFU
 //   - beta[1] × decode_memory_time × memory_weight(batch_size): Decode small-batch memory-bound
 //   - beta[2] × tp_comm_time: TP communication overhead (decode all-reduce)
 //   - beta[3] × kv_mgmt_time: KV cache management per request
 //   - beta[4] × decode_compute_time × compute_weight(batch_size): Decode large-batch compute-bound
 //   - beta[5] × moe_gating_time: MoE gating network overhead
+//   - beta[7] × num_decode_requests: **NEW** Decode per-request overhead (output processing, TP coordination)
 //
 // Physics grounding:
 //   - Prefill is O(n²) attention, compute-bound, large GEMMs → high tensor core utilization
@@ -80,17 +81,20 @@ type EvolvedModel struct {
 //   - TP communication (decode): all-reduce after each layer when TP > 1
 //   - KV management: PagedAttention block allocation/deallocation per request
 //   - MoE gating: routing probability computation for all experts
+//   - Decode overhead (NEW): Output processing, TP coordination, result aggregation per decode request
 //
-// Expected coefficients (iteration 6):
-//   - β₀ ≈ 0.15-0.25 (prefill MFU, should drop from iter5's 0.266 with scheduler overhead decoupled)
-//   - β₁ ≈ 1.00-1.10 (decode memory-bound, continue recovery from iter5's 1.449 toward iter3's 1.037)
-//   - β₂ ≈ 0.30-0.35 (TP communication, needs to drop from stuck 1.36-1.37)
-//   - β₃ ≈ 400-500μs per request (KV block allocation, should recover from iter5's collapsed 0.013μs)
-//   - β₄ ≈ 0.75-0.85 (decode compute-bound, recover from iter5's implausible 0.620 to iter3's 0.796)
-//   - β₅ ≈ 10-12μs (MoE gating, close at iter5's 14.85μs, finish convergence to iter3's 11.66μs)
-//   - β₆ ≈ 50-150ms (scheduler overhead per request, NEW in iter6, moved to QueueingTime)
+// Expected coefficients (iteration 7):
+//   - β₀ ≈ 0.15-0.25 (prefill MFU, from iter6's 0.164)
+//   - β₁ ≈ 1.00-1.15 (decode memory-bound, revert to iter3's 1.037 range)
+//   - β₂ ≈ 0.30-0.35 (TP communication, from iter6's stable 0.270)
+//   - β₃ ≈ 0.4-0.5ms per request (KV block allocation, from iter6's recovered 0.620ms)
+//   - β₄ ≈ 0.75-0.90 (decode compute-bound, revert to iter3's 0.796, constrained ≤1.0)
+//   - β₅ ≈ 10-12μs (MoE gating, from iter6's improving 4.31ms)
+//   - β₆ ≈ 50-150ms (scheduler overhead per request, from iter6's 21.5ms, used in QueueingTime)
+//   - β₇ ≈ 5-15ms (decode overhead per request, NEW in iter7)
 //
 // Beta[6] is NOT used in StepTime (moved to QueueingTime in iter6).
+// Beta[7] is NEW in iter7 (decode per-request overhead in StepTime).
 func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 	if len(batch) == 0 {
 		return 0
@@ -239,12 +243,35 @@ func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 	moeGatingContribution := m.Beta[5] * moeGatingTimeUs
 
 	// ========================================
+	// β₇ × decode_per_request_overhead (NEW in iter7)
+	// ========================================
+	// Physics: vLLM decode phase has fixed overhead per request beyond memory/compute:
+	//   1. Output processing: After each decode step, vLLM processes output tokens
+	//      (sampling, stop condition check, streaming updates)
+	//   2. TP coordination: Decode requires per-request coordination across TP workers
+	//      (synchronization barriers per step)
+	//   3. KV cache write-back: Updated KV cache blocks written back to memory
+	//      (similar to β₃ for prefill, but during decode phase)
+	// Expected range: 5-15ms per decode request
+	// Units: milliseconds per request
+	// Code: vllm/model_executor/model_loader.py:_run_workers() calls execute_model() per step
+	//       vllm/worker/worker.py:execute_model() synchronizes across TP ranks per step
+	//
+	// This term decouples decode framework overhead from compute/memory efficiency (β₁/β₄).
+	// Iter6 destabilization: β₁ = 1.851, β₄ = 1.451 (both increased to compensate for missing
+	// fixed overhead). Adding β₇ should stabilize β₁ → 1.00-1.15, β₄ → 0.75-0.90.
+	numDecodeRequests := len(stepConfig.DecodeRequests)
+	decodeOverheadTimeMs := float64(numDecodeRequests) // Number of decode requests
+	decodeOverheadTimeUs := decodeOverheadTimeMs * 1000.0 // Convert to microseconds (β₇ is in ms)
+	decodeOverheadContribution := m.Beta[7] * decodeOverheadTimeUs
+
+	// ========================================
 	// Total step time (additive model)
 	// ========================================
-	// Iteration 6: 6 terms in StepTime (β₀-β₅), β₆ moved to QueueingTime
+	// Iteration 7: 7 terms in StepTime (β₀-β₅, β₇), β₆ moved to QueueingTime
 	totalTimeUs := prefillContribution + decodeMemoryContribution +
 		tpCommContribution + kvMgmtContribution + decodeComputeContribution +
-		moeGatingContribution
+		moeGatingContribution + decodeOverheadContribution
 
 	return max(1, clampToInt64(totalTimeUs))
 }
@@ -310,13 +337,13 @@ func (m *EvolvedModel) PostDecodeFixedOverhead() int64 {
 // This function is meant to be integrated into the main NewLatencyModel switch statement
 // in latency.go. The factory pattern follows the existing backends (roofline, blackbox, etc.).
 func NewEvolvedModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (*EvolvedModel, error) {
-	// Validate coefficient counts (iteration 6: 3 alpha, 7 beta)
-	// Beta count unchanged from iter5 (still 7), but β₆ moved from StepTime to QueueingTime
+	// Validate coefficient counts (iteration 7: 3 alpha, 8 beta)
+	// Beta count increased from iter6 (7 → 8), added β₇ for decode per-request overhead
 	if len(coeffs.AlphaCoeffs) < 3 {
 		return nil, fmt.Errorf("evolved model: AlphaCoeffs requires at least 3 elements, got %d", len(coeffs.AlphaCoeffs))
 	}
-	if len(coeffs.BetaCoeffs) < 7 {
-		return nil, fmt.Errorf("evolved model: BetaCoeffs requires at least 7 elements for iteration 6, got %d", len(coeffs.BetaCoeffs))
+	if len(coeffs.BetaCoeffs) < 8 {
+		return nil, fmt.Errorf("evolved model: BetaCoeffs requires at least 8 elements for iteration 7, got %d", len(coeffs.BetaCoeffs))
 	}
 
 	// Validate hardware config (same checks as roofline)
@@ -337,7 +364,7 @@ func NewEvolvedModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (*Evo
 
 	return &EvolvedModel{
 		Alpha:       [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
-		Beta:        coeffs.BetaCoeffs, // Use all beta coefficients (iteration 6 expects 7: β₀-β₆)
+		Beta:        coeffs.BetaCoeffs, // Use all beta coefficients (iteration 7 expects 8: β₀-β₇)
 		modelConfig: hw.ModelConfig,
 		hwConfig:    hw.HWConfig,
 		tp:          hw.TP,
