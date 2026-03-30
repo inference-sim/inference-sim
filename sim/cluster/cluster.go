@@ -63,6 +63,12 @@ type ClusterSimulator struct {
 
 	// Phase 1B-2a: per-tenant fair-share tracker. Nil when TenantBudgets is nil (backward-compat).
 	tenantTracker *TenantTracker
+
+	// sessionCallback is the raw onRequestDone parameter for session follow-up
+	// generation in PD mode. Called from detectDecodeCompletions with the original
+	// request (which carries SessionID). Separate from the per-instance closure to
+	// avoid double-notifying tenantTracker (issue #884). Nil for non-session workloads.
+	sessionCallback func(*sim.Request, int64) []*sim.Request
 }
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
@@ -251,6 +257,9 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		logrus.Warnf("[cluster] horizon (%d) < pipeline latency (%d); no requests can complete — increase --horizon or reduce admission/routing latency",
 			cs.config.Horizon, pipelineLatency)
 	}
+
+	// Store raw callback for PD session follow-up (issue #884).
+	cs.sessionCallback = onRequestDone
 
 	// Wire OnRequestDone callback on each instance (BC-9: follow-ups route through cluster pipeline).
 	// The callback pushes follow-up requests as ClusterArrivalEvents, ensuring they go through
@@ -626,6 +635,26 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 		parent.CompletionTime = c.clock + inst.PostDecodeFixedOverhead()
 		delete(c.pendingDecodeCompletions, subReqID)
 		c.pdDecodeCompletedCount++
+
+		// Issue #884: trigger session follow-up for the original (parent) request.
+		// The per-instance OnRequestDone fires for the decode sub-request (no
+		// SessionID), so SessionManager never sees PD completions. We call
+		// sessionCallback directly with the original request to generate follow-ups.
+		if c.sessionCallback != nil {
+			orig := parent.OriginalRequest
+			orig.State = sim.StateCompleted
+			// Use MaxOutputLen (client budget) to respect INV-9 (oracle knowledge
+			// boundary). For completed decodes, MaxOutputLen equals the actual
+			// output count by construction in generated workloads.
+			orig.ProgressIndex = int64(len(orig.InputTokens) + orig.MaxOutputLen)
+			nextReqs := c.sessionCallback(orig, parent.CompletionTime)
+			for _, next := range nextReqs {
+				heap.Push(&c.clusterEvents, clusterEventEntry{
+					event: &ClusterArrivalEvent{time: next.ArrivalTime, request: next},
+					seqID: c.nextSeqID(),
+				})
+			}
+		}
 	}
 }
 

@@ -3,6 +3,7 @@ package cluster
 import (
 	"fmt"
 	"math"
+	"sync"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -1182,6 +1183,181 @@ func TestDisaggregation_E2E_IncludesOverhead_ZeroOverheadRegression(t *testing.T
 		ttft, hasTTFT := m.RequestTTFTs[parent.ID]
 		if hasTTFT && e2e < ttft {
 			t.Errorf("parent %s: E2E (%.0f) < TTFT (%.0f) — causality violated", parent.ID, e2e, ttft)
+		}
+	}
+}
+
+// --- Session follow-up tests (issue #884) ---
+
+// sessionCallbackCapture records every invocation of the onRequestDone callback.
+type sessionCallbackCapture struct {
+	mu    sync.Mutex
+	calls []sessionCallbackCall
+}
+
+type sessionCallbackCall struct {
+	req  *sim.Request
+	tick int64
+}
+
+// newTestRequestsWithSession creates n test requests with SessionID and MaxOutputLen set.
+func newTestRequestsWithSession(n int, sessionID string) []*sim.Request {
+	reqs := newTestRequests(n)
+	for _, r := range reqs {
+		r.SessionID = sessionID
+		r.MaxOutputLen = len(r.OutputTokens)
+	}
+	return reqs
+}
+
+// TestDisaggregation_SessionFollowUp_CallsOnRequestDone verifies that
+// detectDecodeCompletions triggers the session callback with the original
+// request (which carries SessionID), not the decode sub-request.
+//
+// GIVEN: a PD cluster (2P + 2D) with onRequestDone callback
+// AND: requests have SessionID set
+// WHEN: simulation runs to completion
+// THEN: callback is invoked with a request where SessionID is preserved,
+//
+//	State == StateCompleted, and ProgressIndex == len(Input) + len(Output)
+func TestDisaggregation_SessionFollowUp_CallsOnRequestDone(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	reqs := newTestRequestsWithSession(3, "sess_0")
+
+	var capture sessionCallbackCapture
+	callback := func(req *sim.Request, tick int64) []*sim.Request {
+		capture.mu.Lock()
+		defer capture.mu.Unlock()
+		capture.calls = append(capture.calls, sessionCallbackCall{req: req, tick: tick})
+		return nil // no follow-ups — just capture
+	}
+
+	cs := NewClusterSimulator(config, reqs, callback)
+	mustRun(t, cs)
+
+	// Filter calls with non-empty SessionID (sub-request callbacks have empty SessionID)
+	var sessionCalls []sessionCallbackCall
+	for _, c := range capture.calls {
+		if c.req.SessionID != "" {
+			sessionCalls = append(sessionCalls, c)
+		}
+	}
+
+	if len(sessionCalls) != 3 {
+		t.Fatalf("expected 3 session callback calls (one per request), got %d", len(sessionCalls))
+	}
+
+	for i, sc := range sessionCalls {
+		if sc.req.SessionID != "sess_0" {
+			t.Errorf("call %d: SessionID = %q, want %q", i, sc.req.SessionID, "sess_0")
+		}
+		if sc.req.State != sim.StateCompleted {
+			t.Errorf("call %d: State = %q, want %q", i, sc.req.State, sim.StateCompleted)
+		}
+		wantProgress := int64(len(sc.req.InputTokens) + sc.req.MaxOutputLen)
+		if sc.req.ProgressIndex != wantProgress {
+			t.Errorf("call %d: ProgressIndex = %d, want %d", i, sc.req.ProgressIndex, wantProgress)
+		}
+		if sc.tick < sc.req.ArrivalTime {
+			t.Errorf("call %d: tick (%d) < ArrivalTime (%d) — violates causality",
+				i, sc.tick, sc.req.ArrivalTime)
+		}
+	}
+}
+
+// TestDisaggregation_SessionFollowUp_InjectsFollowUp verifies that follow-up
+// requests returned by the session callback are injected into the cluster
+// pipeline and complete through the PD disaggregation path.
+//
+// GIVEN: PD cluster with onRequestDone that returns 1 follow-up per call (single extra round)
+// AND: 2 initial requests with SessionID
+// WHEN: simulation runs
+// THEN: follow-up requests complete through PD pipeline (more parentRequests than initial)
+func TestDisaggregation_SessionFollowUp_InjectsFollowUp(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	reqs := newTestRequestsWithSession(2, "sess_inject")
+
+	followUpCount := 0
+	callback := func(req *sim.Request, tick int64) []*sim.Request {
+		if req.SessionID == "" {
+			return nil // sub-request callback, ignore
+		}
+		// Generate exactly one follow-up per original request (cap at 2 total follow-ups)
+		if followUpCount >= 2 {
+			return nil
+		}
+		followUpCount++
+		return []*sim.Request{{
+			ID:           fmt.Sprintf("followup_%d", followUpCount),
+			ArrivalTime:  tick + 1000, // 1ms think time
+			InputTokens:  make([]int, 50),
+			OutputTokens: make([]int, 20),
+			MaxOutputLen: 20,
+			State:        sim.StateQueued,
+			SessionID:    req.SessionID,
+			RoundIndex:   1,
+		}}
+	}
+
+	cs := NewClusterSimulator(config, reqs, callback)
+	mustRun(t, cs)
+
+	// Follow-ups should have been disaggregated too — more parentRequests than initial
+	if len(cs.parentRequests) <= 2 {
+		t.Errorf("parentRequests = %d, want > 2 (follow-ups should have been disaggregated)",
+			len(cs.parentRequests))
+	}
+
+	// All parent requests should have CompletionTime > 0
+	for _, parent := range cs.parentRequests {
+		if parent.CompletionTime == 0 {
+			t.Errorf("parent %s: CompletionTime = 0, follow-up may not have completed", parent.ID)
+		}
+	}
+
+	metrics := cs.AggregatedMetrics()
+	if metrics.CompletedRequests < 4 {
+		t.Errorf("CompletedRequests = %d, want >= 4 (2 initial + 2 follow-ups)", metrics.CompletedRequests)
+	}
+}
+
+// TestDisaggregation_AggregateMode_Unaffected verifies that aggregate (non-PD)
+// clusters still trigger session callbacks correctly — regression guard.
+//
+// GIVEN: non-PD cluster with onRequestDone callback
+// AND: requests with SessionID
+// WHEN: simulation runs
+// THEN: callback fires for each completed request with SessionID preserved
+func TestDisaggregation_AggregateMode_Unaffected(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 0, 0) // no PD
+	config.PDDecider = ""                             // disable decider
+	reqs := newTestRequestsWithSession(3, "sess_agg")
+
+	var capture sessionCallbackCapture
+	callback := func(req *sim.Request, tick int64) []*sim.Request {
+		capture.mu.Lock()
+		defer capture.mu.Unlock()
+		capture.calls = append(capture.calls, sessionCallbackCall{req: req, tick: tick})
+		return nil
+	}
+
+	cs := NewClusterSimulator(config, reqs, callback)
+	mustRun(t, cs)
+
+	// In aggregate mode, ALL completed requests should trigger callback with SessionID
+	var sessionCalls []sessionCallbackCall
+	for _, c := range capture.calls {
+		if c.req.SessionID == "sess_agg" {
+			sessionCalls = append(sessionCalls, c)
+		}
+	}
+
+	if len(sessionCalls) != 3 {
+		t.Fatalf("aggregate mode: expected 3 session callback calls, got %d", len(sessionCalls))
+	}
+	for i, sc := range sessionCalls {
+		if sc.req.State != sim.StateCompleted {
+			t.Errorf("aggregate call %d: State = %q, want %q", i, sc.req.State, sim.StateCompleted)
 		}
 	}
 }
