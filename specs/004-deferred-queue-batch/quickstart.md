@@ -10,8 +10,11 @@ The deferred queue activates automatically based on `SLOClass`. No new YAML fiel
 
 ## Scenario 1: Mixed Workload — Batch Waits, Real-Time Proceeds
 
+> **Note:** The YAML below is a conceptual illustration only. `blis run` uses WorkloadSpec v2 format (with `clients:` and statistical distributions). Use `blis convert preset --name chatbot --rate 10` to generate a valid WorkloadSpec YAML.
+
 ```yaml
-# workload.yaml
+# conceptual illustration — not valid WorkloadSpec v2 syntax
+# (actual format uses clients:/aggregate_rate:/distributions)
 requests:
   - id: critical_0
     slo_class: critical
@@ -54,13 +57,13 @@ These 5 requests are accounted for in the conservation equation:
 
 ## Scenario 3: Background Requests with Tier-Shed Enabled
 
-When `tier-shed` admission is active and the cluster is overloaded:
+When `tier-shed` admission is active and the cluster is overloaded, pass the policy via CLI flags:
 
-```yaml
-deployment:
-  admission_policy: tier-shed
-  tier_shed_threshold: 5
-  tier_shed_min_priority: 3
+```bash
+./blis run --model qwen/qwen3-14b \
+  --admission-policy tier-shed \
+  --tier-shed-threshold 5 \
+  --tier-shed-min-priority 3
 ```
 
 - Background requests (priority 0): deferred when cluster is busy (never shed by tier-shed policy).
@@ -69,20 +72,14 @@ deployment:
 
 ## Verifying Request Conservation
 
-Run with `--json` output and check:
-
-```bash
-./blis run --model qwen/qwen3-14b --json | jq '.deferred_horizon_interrupted'
-```
-
-The sum `completed + shed + dropped + deferred_horizon_interrupted` must equal `injected`.
-
-## What Appears in the Output
-
-A new line in the "=== Anomaly Counters ===" block (only printed when non-zero):
+`DeferredHorizonInterrupted` appears in the stdout **Anomaly Counters** block (only printed when non-zero):
 
 ```
+=== Anomaly Counters ===
 Deferred (horizon-interrupted): N
 ```
 
-This count is also available in the JSON metrics output as `deferred_horizon_interrupted`.
+The conservation equation holds at simulation end:
+`injected == completed + still_running + still_queued + shed + dropped + timed_out + deferred_horizon_interrupted`
+
+To capture metrics programmatically, use `--metrics-path output.json` and check the returned `MetricsOutput` fields. Note that `DeferredHorizonInterrupted` is a CLI-level counter (in `RawMetrics`), not part of `sim.MetricsOutput`.

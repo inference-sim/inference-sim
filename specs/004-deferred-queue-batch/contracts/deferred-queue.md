@@ -38,6 +38,8 @@
 
 **Side effects**: Writes to `c.clusterEvents` (heap push); clears `c.deferredQueue`.
 
+**Re-deferral note**: With non-zero admission latency, standard traffic arriving in the `[clock, clock+admissionLatency]` window may make `isBusy()` return `true` before a promoted request reaches `AdmissionDecisionEvent`, causing it to be re-deferred. This is intentional (Decision 4 in `research.md`) but callers should be aware that `DeferredHorizonInterrupted` may be inflated under continuous light standard load.
+
 ---
 
 ### Pre-admission deferral intercept (in AdmissionDecisionEvent.Execute)

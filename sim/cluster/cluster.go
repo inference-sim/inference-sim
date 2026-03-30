@@ -762,6 +762,9 @@ func (c *ClusterSimulator) ShedByTier() map[string]int {
 // Called by the deferred queue pre-admission intercept and the idle-capacity promotion check.
 func (c *ClusterSimulator) isBusy() bool {
 	for _, inst := range c.instances {
+		if inst.State == InstanceStateTerminated {
+			continue // stale inFlightRequests on terminated instances must not count as load
+		}
 		if inst.QueueDepth()+inst.BatchSize()+c.inFlightRequests[string(inst.ID())] > 0 {
 			return true
 		}

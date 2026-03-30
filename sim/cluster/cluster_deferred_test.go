@@ -58,20 +58,25 @@ func TestDeferredQueue_BatchDeferredWhenBusy(t *testing.T) {
 			requests = append(requests, deferredReq)
 
 			cfg := newTestDeploymentConfig(1)
+			// Short horizon guarantees standard requests are still running when the
+			// deferred-tier request arrives and the cluster never becomes idle before
+			// horizon. This makes DeferredQueueLen() > 0 the falsifiable assertion:
+			// without the deferral intercept the request would be admitted normally
+			// by AlwaysAdmit and NOT appear in the deferred queue.
+			cfg.Horizon = 200
 			cs := NewClusterSimulator(cfg, requests, nil)
 			mustRun(t, cs)
 
-			// Deferred-tier request must NEVER be counted as rejected by admission policy
+			// Core contract 1: deferred-tier request must NEVER be rejected by admission.
 			if cs.RejectedRequests() > 0 {
 				t.Errorf("%s request should not be rejected (it should be deferred); got RejectedRequests=%d", sloClass, cs.RejectedRequests())
 			}
-			// Deferred-tier request must reach a terminal state: completed OR deferred-at-horizon.
-			// If both are zero the request was silently lost (I2).
-			m := cs.AggregatedMetrics()
-			terminalCount := m.CompletedRequests + cs.DeferredQueueLen()
-			if terminalCount < 31 {
-				t.Errorf("%s request did not reach a terminal state: completed(%d)+deferred(%d)=%d, want >= 31 (30 std + 1 %s accounted for)",
-					sloClass, m.CompletedRequests, cs.DeferredQueueLen(), terminalCount, sloClass)
+			// Core contract 2: the request must actually be in the deferred queue at
+			// horizon — confirming the intercept fired. Removing the deferral intercept
+			// would cause AlwaysAdmit to admit the request normally; it would end up in
+			// the wait queue or running, and DeferredQueueLen() would be 0.
+			if cs.DeferredQueueLen() == 0 {
+				t.Errorf("%s request should remain in deferred queue at short horizon (intercept must have fired), got DeferredQueueLen=0", sloClass)
 			}
 		})
 	}
@@ -150,11 +155,11 @@ func TestDeferredQueue_DeferredPromotedAfterIdle(t *testing.T) {
 	}
 }
 
-// T005 — BC-D4: Real-time latency is unaffected by Batch traffic.
+// T005 — BC-D4: Standard requests are not crowded out by Batch traffic.
 // Two runs: run A has only standard requests, run B has standard + batch.
 // All 20 standard requests must complete in run A; run B must also complete
 // at least 20 requests (standard requests are not crowded out by batch).
-func TestDeferredQueue_RealTimeUnaffected(t *testing.T) {
+func TestDeferredQueue_RealTimeNotCrowdedOut(t *testing.T) {
 	makeStandardRequests := func() []*sim.Request {
 		reqs := make([]*sim.Request, 20)
 		for i := range reqs {
