@@ -417,8 +417,7 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 
 	// Save and restore all package-level flag vars mutated by runCmd.Run.
 	// Base list copied from TestReplayCmd_EndToEnd_BlackboxMode:377-434;
-	// run-only workload vars and metricsPath added on top.
-	origMetrics := metricsPath
+	// run-only workload vars added on top.
 	origModel := model
 	origBackend := latencyModelBackend
 	origBeta := betaCoeffs
@@ -464,7 +463,6 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	origTraceOut := traceOutput
 	origLogLevel := logLevel
 	defer func() {
-		metricsPath = origMetrics
 		model = origModel
 		latencyModelBackend = origBackend
 		betaCoeffs = origBeta
@@ -511,7 +509,7 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	}()
 
 	// Set required run vars — runCmd.Run has logrus.Fatalf guards on zero/invalid values.
-	metricsPath = outFile
+	resultsPath = outFile
 	workloadType = "distribution" // avoids preset-path Fatalf("Undefined workload")
 	rate = 1.0                    // required by distribution rate-mode path
 	numRequests = 1               // minimal run

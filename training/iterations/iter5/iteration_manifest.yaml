@@ -1,0 +1,35 @@
+iteration: 5
+latency_backend_name: "evolved"  # MUST be "evolved", not "evolved_iter5"
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 5: Per-layer fixed overhead (kernel launch + scheduler + memory allocation)
+
+  Previous iteration (4): Added activation bandwidth term β₆, but it was decisively rejected:
+  - 0% improvement in reasoning experiments (stayed at 99.98-99.99% TTFT)
+  - Coefficient explosion: β₁ +73.8%, β₂ +328%, β₅ +160%
+  - β₆ converged to 1.818 (expected 3.0-6.0)
+  - β₀ decreased 0.169 → 0.165 instead of rising
+  - 3.93% improvement came entirely from simplification, not from adding β₆
+
+  This iteration removes β₆ (activation bandwidth) and adds new β₆ (per-layer prefill overhead):
+  - **Removed**: Activation bandwidth term (misspecified, caused collinearity)
+  - **Added**: Per-layer fixed overhead term that scales with prefill length and chunking
+  - **Rationale**: Reasoning experiments show 1000× underestimation (predicted ~1ms, actual ~1000ms).
+    Physical impossibility: Memory bandwidth can only cause 3-5× slowdown, compute 2-3×, communication 2×.
+    A 1000× slowdown requires fixed per-operation overhead (kernel launch, scheduler, memory allocation).
+  - **Formula**: overhead_us = β₆ × num_layers × (1.0 + num_prefill_tokens / 2048.0)
+  - **Expected coefficient**: β₆ ~ 1000-3000μs (1-3ms per layer per chunk-equivalent)
+  - **Expected impact**: Reasoning TTFT 100% → 70-85%, β₀ rises to 0.25-0.35, other coefficients stabilize
+  - **Warm-start**: From iter3 (not iter4) to avoid coefficient drift
+
+  Basis functions (6 Beta terms, same as iter3):
+  - β₀: Prefill compute MFU (expect rise from 0.165 to 0.25-0.35)
+  - β₁: Decode memory-bound MFU (revert to 1.00-1.10 from 1.802)
+  - β₂: TP decode communication (revert to 0.30-0.35 from 1.360)
+  - β₃: KV cache management (stable ~0.0004-0.0005)
+  - β₄: Decode compute-bound MFU (stable ~0.75-0.85)
+  - β₅: MoE gating overhead (revert to 0.01-0.012 from 0.0304)
+  - β₆: Per-layer prefill overhead (NEW, replaces activation bandwidth)
+
+timestamp: "2026-03-29T12:00:00.000000"

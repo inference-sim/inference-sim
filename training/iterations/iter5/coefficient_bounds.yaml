@@ -1,0 +1,67 @@
+alpha_bounds:  # Request-level overheads (unchanged from iter3/iter4)
+  - [0.0, 0.005]      # α₀: Fixed API overhead (ms per request)
+  - [0.0, 0.0005]     # α₁: Per-input-token overhead (ms/token)
+  - [0.0, 0.0005]     # α₂: Per-output-token overhead (ms/token)
+
+alpha_initial:  # Warm-start from iter3 best_params (NOT iter4 - avoid coefficient drift)
+  - 0.001107          # α₀ = 1.107ms (from iter3)
+  - 0.0000527         # α₁ = 52.7μs/token (from iter3)
+  - 0.0000849         # α₂ = 84.9μs/token (from iter3)
+
+beta_bounds:  # Step-level coefficients (7 terms: β₀-β₆)
+  - [0.15, 0.55]      # β₀: Prefill MFU efficiency (expect rise from 0.169 to 0.25-0.35 with per-layer term)
+  - [0.8, 2.0]        # β₁: Decode memory-bound MFU (expect revert to 1.00-1.10 from iter4's 1.802)
+  - [0.0, 1.5]        # β₂: TP decode communication overhead (expect revert to 0.30-0.35 from iter4's 1.360)
+  - [0.0, 0.01]       # β₃: KV cache management per request (stable ~0.0004-0.0005)
+  - [0.4, 1.5]        # β₄: Decode compute-bound MFU (stable ~0.75-0.85)
+  - [0.0, 0.05]       # β₅: MoE gating overhead (expect revert to 0.01-0.012 from iter4's 0.0304)
+  - [500.0, 5000.0]   # β₆: Per-layer prefill overhead in μs (NEW: 0.5-5ms per layer-chunk, replaces activation BW)
+
+beta_initial:  # Warm-start from iter3 (NOT iter4) + NEW β₆ for per-layer overhead
+  - 0.169             # β₀: Prefill MFU (from iter3, expect to rise to 0.25-0.35)
+  - 1.037             # β₁: Decode memory-bound (from iter3, stable and physically plausible)
+  - 0.318             # β₂: TP decode comm (from iter3, stable)
+  - 0.00041           # β₃: KV mgmt (from iter3, stable)
+  - 0.796             # β₄: Decode compute-bound (from iter3, stable)
+  - 0.0117            # β₅: MoE gating (from iter3, stable)
+  - 2000.0            # β₆: Per-layer overhead (NEW, physics-based: 2ms per layer-chunk in middle of 0.5-5ms range)
+
+# Notes on changes from iter4:
+# - **REMOVED** β₆ (activation write bandwidth) from iter4 — misspecified, caused coefficient drift
+# - **ADDED** NEW β₆ (per-layer prefill overhead) — captures kernel launch + scheduler + memory allocation
+# - **WARM-START FROM ITER3** for β₀-β₅ — avoids iter4's coefficient explosion
+# - Total parameters: 7 (iter4) → 7 (iter5) = 3 alpha + 7 beta (but using 0-indexed so β₆ is 7th term)
+# - Parameter count stays at 7, but β₆ has different meaning and functional form
+
+# Bounds rationale:
+# - β₀ [0.15, 0.55]: Allow β₀ to rise from 0.169 toward physical MFU 0.40-0.55 with per-layer term added
+# - β₁ [0.8, 2.0]: Expect revert to 1.00-1.10 (iter3: 1.037) after removing iter4's misspecified β₆
+# - β₂ [0.0, 1.5]: Expect revert to 0.30-0.35 (iter3: 0.318) after removing iter4's misspecified β₆
+# - β₃ [0.0, 0.01]: KV mgmt stable at ~0.4-0.5ms per request across iterations
+# - β₄ [0.4, 1.5]: Decode compute stable at ~0.75-0.85 (iter3: 0.796)
+# - β₅ [0.0, 0.05]: Expect revert to 0.01-0.012 (iter3: 0.0117) after removing iter4's misspecified β₆
+# - β₆ [500, 5000]: Per-layer overhead, expected 1000-3000μs (1-3ms per layer-chunk)
+#   - Lower bound 500μs (0.5ms): Minimum plausible kernel launch + scheduler overhead
+#   - Upper bound 5000μs (5ms): Maximum plausible before becoming physically unrealistic
+#   - Initial 2000μs (2ms): Physics-based estimate for kernel launch + scheduler + memory allocation
+
+# Expected coefficient movements from iter4 → iter5:
+# - β₀: 0.165 → 0.25-0.35 (rises as per-layer term captures missing overhead)
+# - β₁: 1.802 → 1.00-1.10 (reverts to iter3 stability after removing misspecified activation BW)
+# - β₂: 1.360 → 0.30-0.35 (reverts to iter3 stability)
+# - β₃: 0.0005 → 0.0004-0.0005 (stable)
+# - β₄: 0.918 → 0.75-0.85 (slight decrease, stable)
+# - β₅: 0.0304 → 0.01-0.012 (reverts to iter3 stability)
+# - β₆: 1.818 (activation BW) → 2000.0 (per-layer overhead) — completely different mechanism
+
+# Impact on loss function:
+# - Overall loss: 129.20% (iter4) → <110% (target for iter5)
+# - TTFT RMSE: 66.49% (iter4) → <55% (target for iter5)
+# - E2E RMSE: ~62-65% (stable, decode already well-modeled)
+# - Reasoning TTFT: 99.98-99.99% (iter4) → 70-85% (target for iter5)
+
+# Why warm-start from iter3 (not iter4):
+# - Iter4 coefficients were destabilized by misspecified β₆ (activation bandwidth)
+# - Iter3 coefficients were stable and physically plausible (β₁ = 1.037, β₂ = 0.318, β₅ = 0.0117)
+# - Using iter3 as baseline avoids propagating iter4's coefficient drift into iter5
+# - Expected: Faster convergence (~20-30 trials) with stable coefficients
