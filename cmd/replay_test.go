@@ -588,6 +588,7 @@ warm_up_requests: 0
 	origTraceHeader := traceHeaderPath
 	origTraceData := traceDataPath
 	origSimHorizon := simulationHorizon
+	origTraceOutput := replayTraceOutput
 	defer func() {
 		model = origModel
 		latencyModelBackend = origBackend
@@ -617,6 +618,7 @@ warm_up_requests: 0
 		traceHeaderPath = origTraceHeader
 		traceDataPath = origTraceData
 		simulationHorizon = origSimHorizon
+		replayTraceOutput = origTraceOutput
 	}()
 
 	// Library-level BC-1 verification: trace loads correctly and requests are correct
