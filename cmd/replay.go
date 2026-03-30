@@ -184,13 +184,15 @@ Example:
 			priorityPolicy,
 			cs.RoutingRejections(),
 		)
-		rawMetrics.ShedByTier = cs.ShedByTier() // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
+		rawMetrics.ShedByTier = cs.ShedByTier()                             // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
+		rawMetrics.DeferredHorizonInterrupted = cs.DeferredQueueLen()        // Phase 1B-1b: deferred queue horizon count (FR-006)
 
-		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 {
+		// Print anomaly counters if any detected
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.DeferredHorizonInterrupted > 0 {
 			fmt.Println("=== Anomaly Counters ===")
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
-			fmt.Printf("Rejected Requests: %d\n", rawMetrics.RejectedRequests)
+			fmt.Printf("Rejected Requests (Admission): %d\n", rawMetrics.RejectedRequests)
 			if len(rawMetrics.ShedByTier) > 0 {
 				tierKeys := make([]string, 0, len(rawMetrics.ShedByTier))
 				for k := range rawMetrics.ShedByTier {
@@ -201,8 +203,12 @@ Example:
 					fmt.Printf("  Shed (%s): %d\n", tier, rawMetrics.ShedByTier[tier])
 				}
 			}
+			fmt.Printf("Rejected Requests (Routing): %d\n", rawMetrics.RoutingRejections)
 			fmt.Printf("Dropped Unservable: %d\n", rawMetrics.DroppedUnservable)
 			fmt.Printf("Length-Capped Requests: %d\n", rawMetrics.LengthCappedRequests)
+			if rawMetrics.DeferredHorizonInterrupted > 0 {
+				fmt.Printf("Deferred (horizon-interrupted): %d\n", rawMetrics.DeferredHorizonInterrupted)
+			}
 		}
 
 		printKVCacheMetrics(os.Stdout, rawMetrics.PreemptionRate, rawMetrics.CacheHitRate, rawMetrics.KVThrashingRate)
