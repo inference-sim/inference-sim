@@ -151,6 +151,9 @@ Example:
 			TraceLevel:              traceLevel,
 			CounterfactualK:         counterfactualK,
 			SnapshotRefreshInterval: snapshotRefreshInterval,
+			TierShedThreshold:       tierShedThreshold,
+			TierShedMinPriority:     tierShedMinPriority,
+			TenantBudgets:           tenantBudgets,
 		}
 
 		// Run simulation — no session manager (onRequestDone=nil: session structure encoded in trace)

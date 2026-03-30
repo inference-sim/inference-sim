@@ -60,6 +60,9 @@ type ClusterSimulator struct {
 
 	// Phase 1A: node/GPU placement manager. Nil when NodePools is empty (backward-compat).
 	placement *PlacementManager
+
+	// Phase 1B-2a: per-tenant fair-share tracker. Nil when TenantBudgets is nil (backward-compat).
+	tenantTracker *TenantTracker
 }
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
@@ -231,6 +234,17 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		}
 	}
 
+	// Phase 1B-2a: initialize TenantTracker when TenantBudgets is configured (issue #811).
+	// totalCapacity = NumInstances × MaxRunningReqs (batch size proxy for cluster-wide capacity).
+	if config.TenantBudgets != nil {
+		totalCapacity := config.NumInstances * int(config.MaxRunningReqs)
+		if len(config.TenantBudgets) > 0 && totalCapacity == 0 {
+			logrus.Warnf("[cluster] tenant_budgets configured but totalCapacity=0 (NumInstances=%d, MaxRunningReqs=%d); all budgeted tenants will be immediately over-budget — set max_running_reqs > 0",
+				config.NumInstances, config.MaxRunningReqs)
+		}
+		cs.tenantTracker = NewTenantTracker(config.TenantBudgets, totalCapacity)
+	}
+
 	// Startup warning: horizon too small for pipeline (BC-1)
 	pipelineLatency := cs.admissionLatency + cs.routingLatency
 	if cs.config.Horizon > 0 && cs.config.Horizon < pipelineLatency {
@@ -242,9 +256,17 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	// The callback pushes follow-up requests as ClusterArrivalEvents, ensuring they go through
 	// admission → routing → instance injection. The callback returns nil so the per-instance
 	// simulator does not inject locally.
-	if onRequestDone != nil {
+	// Phase 1B-2a: also notify tenantTracker on completion when budgets are configured.
+	if onRequestDone != nil || cs.tenantTracker != nil {
 		for _, inst := range cs.instances {
 			inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
+				// Phase 1B-2a: release tenant in-flight slot on every terminal state.
+				if cs.tenantTracker != nil {
+					cs.tenantTracker.OnComplete(req.TenantID)
+				}
+				if onRequestDone == nil {
+					return nil
+				}
 				nextReqs := onRequestDone(req, tick)
 				for _, next := range nextReqs {
 					heap.Push(&cs.clusterEvents, clusterEventEntry{
