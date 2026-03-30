@@ -942,3 +942,291 @@ func TestObserveDistributionDefaults_NoHardcodedLiterals(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateObserveWorkloadFlags_PresetRequiresRate(t *testing.T) {
+	// BC-2: preset without --rate is rejected
+	msg := validateObserveWorkloadFlags("chatbot", "", false, 0)
+	if msg == "" {
+		t.Fatal("expected validation error for preset without --rate, got none")
+	}
+	if !strings.Contains(msg, "--rate") {
+		t.Errorf("error should mention --rate, got: %q", msg)
+	}
+}
+
+func TestValidateObserveWorkloadFlags_PresetExclusiveWithSpec(t *testing.T) {
+	// BC-3: preset + --workload-spec is rejected
+	msg := validateObserveWorkloadFlags("chatbot", "spec.yaml", true, 0)
+	if msg == "" {
+		t.Fatal("expected validation error for --workload + --workload-spec, got none")
+	}
+	if !strings.Contains(msg, "--workload-spec") {
+		t.Errorf("error should mention --workload-spec, got: %q", msg)
+	}
+}
+
+func TestValidateObserveWorkloadFlags_PresetExclusiveWithConcurrency(t *testing.T) {
+	// BC-4: preset + --concurrency is rejected
+	msg := validateObserveWorkloadFlags("chatbot", "", true, 50)
+	if msg == "" {
+		t.Fatal("expected validation error for --workload + --concurrency, got none")
+	}
+	if !strings.Contains(msg, "--concurrency") {
+		t.Errorf("error should mention --concurrency, got: %q", msg)
+	}
+}
+
+func TestValidateObserveWorkloadFlags_ValidPreset_Accepted(t *testing.T) {
+	// Precondition for BC-1: valid preset + rate is accepted by validator
+	msg := validateObserveWorkloadFlags("chatbot", "", true, 0)
+	if msg != "" {
+		t.Errorf("expected no error for valid preset+rate combination, got: %q", msg)
+	}
+}
+
+func TestValidateObserveWorkloadFlags_EmptyPreset_NoOp(t *testing.T) {
+	// Non-preset modes must not be affected by the validator
+	msg := validateObserveWorkloadFlags("", "", false, 0)
+	if msg != "" {
+		t.Errorf("expected no error when --workload is not set, got: %q", msg)
+	}
+}
+
+// TestObserveCmd_WorkloadInputGuard_IncludesPreset verifies BC-7:
+// the required-input error message lists --workload as an option.
+// Uses source-level scan (acceptable here: tests the exact error message text
+// that users see — a behavioral property of the CLI contract).
+func TestObserveCmd_WorkloadInputGuard_IncludesPreset(t *testing.T) {
+	data, err := os.ReadFile("observe_cmd.go")
+	if err != nil {
+		t.Fatalf("cannot read observe_cmd.go: %v", err)
+	}
+	content := string(data)
+	// The required-input guard message must list all four input modes.
+	// We check for the specific error string text, not just any occurrence of "--workload".
+	wantText := "Either --workload, --workload-spec, --rate, or --concurrency is required"
+	if !strings.Contains(content, wantText) {
+		t.Errorf("required-input guard in observe_cmd.go must contain:\n  %q\nnot found in file", wantText)
+	}
+}
+
+func TestObserveCmd_WorkloadFlag_Exists(t *testing.T) {
+	f := observeCmd.Flags().Lookup("workload")
+	if f == nil {
+		t.Fatal("missing expected flag --workload on observeCmd")
+	}
+	if f.DefValue != "" {
+		t.Errorf("--workload default: got %q, want %q (empty — no default preset)", f.DefValue, "")
+	}
+}
+
+func TestObserveCmd_DefaultsFilepathFlag_Exists(t *testing.T) {
+	f := observeCmd.Flags().Lookup("defaults-filepath")
+	if f == nil {
+		t.Fatal("missing expected flag --defaults-filepath on observeCmd")
+	}
+	if f.DefValue != "defaults.yaml" {
+		t.Errorf("--defaults-filepath default: got %q, want %q", f.DefValue, "defaults.yaml")
+	}
+}
+
+// TestBuildPresetSpec_MatchesPresetDefinition verifies BC-1:
+// buildPresetSpec loads token distribution from defaults.yaml and passes it
+// to SynthesizeFromPreset, producing a spec with correct rate and token means.
+//
+// This is the wiring test: it exercises the actual buildPresetSpec code path
+// in observe_cmd.go, not just the workload package independently.
+func TestBuildPresetSpec_MatchesPresetDefinition(t *testing.T) {
+	dir := t.TempDir()
+	defaultsPath := filepath.Join(dir, "defaults.yaml")
+	// YAML keys must match Workload struct tags exactly (R10: KnownFields(true)).
+	// prompt_tokens → PromptTokensMean, output_tokens → OutputTokensMean (see default_config.go:15,19)
+	defaultsContent := `workloads:
+  chatbot:
+    prefix_tokens: 0
+    prompt_tokens: 512
+    prompt_tokens_stdev: 100
+    prompt_tokens_min: 50
+    prompt_tokens_max: 1024
+    output_tokens: 256
+    output_tokens_stdev: 50
+    output_tokens_min: 10
+    output_tokens_max: 512
+`
+	if err := os.WriteFile(defaultsPath, []byte(defaultsContent), 0600); err != nil {
+		t.Fatalf("write defaults.yaml: %v", err)
+	}
+
+	const testRate = 5.0
+	const testNumRequests = 10
+	spec, errMsg := buildPresetSpec("chatbot", defaultsPath, testRate, testNumRequests)
+	if errMsg != "" {
+		t.Fatalf("buildPresetSpec returned error: %q", errMsg)
+	}
+	if spec == nil {
+		t.Fatal("buildPresetSpec returned nil spec")
+	}
+	if len(spec.Clients) == 0 {
+		t.Fatal("spec has no clients")
+	}
+	client := spec.Clients[0]
+	// Invariant: aggregate rate matches requested rate (set on spec, not per-client)
+	if spec.AggregateRate != testRate {
+		t.Errorf("AggregateRate: got %v, want %v", spec.AggregateRate, testRate)
+	}
+	// Invariant: token means come from preset YAML (via InputDist/OutputDist params),
+	// not distribution synthesis defaults
+	gotPromptMean := client.InputDist.Params["mean"]
+	if gotPromptMean != 512 {
+		t.Errorf("InputDist.Params[mean]: got %v, want 512 (from chatbot preset)", gotPromptMean)
+	}
+	gotOutputMean := client.OutputDist.Params["mean"]
+	if gotOutputMean != 256 {
+		t.Errorf("OutputDist.Params[mean]: got %v, want 256 (from chatbot preset)", gotOutputMean)
+	}
+	// Invariant: num-requests bound propagated into spec
+	if spec.NumRequests != int64(testNumRequests) {
+		t.Errorf("spec.NumRequests: got %d, want %d", spec.NumRequests, testNumRequests)
+	}
+}
+
+// TestBuildPresetSpec_ParityWithRunPresetPath verifies BC-1 cross-command parity:
+// buildPresetSpec (observe path, observe_cmd.go:177-188) must produce a WorkloadSpec
+// identical to the inline synthesis in root.go:1167-1173 (run path) for the same input.
+//
+// This is a law test: it exercises both code paths against the same Workload input and
+// asserts they produce identical WorkloadSpec output. If a future change adds a field
+// to Workload but updates only one code path's PresetConfig construction, this test fails.
+func TestBuildPresetSpec_ParityWithRunPresetPath(t *testing.T) {
+	// Write a temp defaults.yaml so buildPresetSpec (observe path) can load the preset.
+	dir := t.TempDir()
+	defaultsPath := filepath.Join(dir, "defaults.yaml")
+	defaultsContent := `workloads:
+  chatbot:
+    prefix_tokens: 32
+    prompt_tokens: 512
+    prompt_tokens_stdev: 100
+    prompt_tokens_min: 50
+    prompt_tokens_max: 1024
+    output_tokens: 256
+    output_tokens_stdev: 50
+    output_tokens_min: 10
+    output_tokens_max: 512
+`
+	if err := os.WriteFile(defaultsPath, []byte(defaultsContent), 0600); err != nil {
+		t.Fatalf("write defaults.yaml: %v", err)
+	}
+
+	const presetName = "chatbot"
+	const testRate = 7.0
+	const testNumRequests = 20
+
+	// blis observe path: goes through buildPresetSpec -> loadPresetWorkload -> SynthesizeFromPreset
+	observeSpec, errMsg := buildPresetSpec(presetName, defaultsPath, testRate, testNumRequests)
+	if errMsg != "" {
+		t.Fatalf("buildPresetSpec error: %q", errMsg)
+	}
+
+	// blis run path (root.go:1163-1173): loadPresetWorkload + inline PresetConfig construction.
+	// Mirror the exact field mapping from root.go to catch any future divergence.
+	wl := loadPresetWorkload(defaultsPath, presetName)
+	if wl == nil {
+		t.Fatal("loadPresetWorkload returned nil for chatbot preset")
+	}
+	runSpec := workload.SynthesizeFromPreset(presetName, workload.PresetConfig{
+		PrefixTokens:     wl.PrefixTokens,
+		PromptTokensMean: wl.PromptTokensMean, PromptTokensStdev: wl.PromptTokensStdev,
+		PromptTokensMin: wl.PromptTokensMin, PromptTokensMax: wl.PromptTokensMax,
+		OutputTokensMean: wl.OutputTokensMean, OutputTokensStdev: wl.OutputTokensStdev,
+		OutputTokensMin: wl.OutputTokensMin, OutputTokensMax: wl.OutputTokensMax,
+	}, testRate, testNumRequests)
+
+	if runSpec == nil || observeSpec == nil {
+		t.Fatal("SynthesizeFromPreset returned nil spec")
+	}
+	if len(runSpec.Clients) == 0 || len(observeSpec.Clients) == 0 {
+		t.Fatal("spec has no clients")
+	}
+
+	// Parity invariants: both paths must produce identical WorkloadSpec
+	if runSpec.AggregateRate != observeSpec.AggregateRate {
+		t.Errorf("AggregateRate parity: run=%v, observe=%v", runSpec.AggregateRate, observeSpec.AggregateRate)
+	}
+	if runSpec.NumRequests != observeSpec.NumRequests {
+		t.Errorf("NumRequests parity: run=%d, observe=%d", runSpec.NumRequests, observeSpec.NumRequests)
+	}
+	rc, oc := runSpec.Clients[0], observeSpec.Clients[0]
+	if rc.InputDist.Params["mean"] != oc.InputDist.Params["mean"] {
+		t.Errorf("PromptMean parity: run=%v, observe=%v", rc.InputDist.Params["mean"], oc.InputDist.Params["mean"])
+	}
+	if rc.InputDist.Params["std_dev"] != oc.InputDist.Params["std_dev"] {
+		t.Errorf("PromptStdev parity: run=%v, observe=%v", rc.InputDist.Params["std_dev"], oc.InputDist.Params["std_dev"])
+	}
+	if rc.OutputDist.Params["mean"] != oc.OutputDist.Params["mean"] {
+		t.Errorf("OutputMean parity: run=%v, observe=%v", rc.OutputDist.Params["mean"], oc.OutputDist.Params["mean"])
+	}
+	if rc.OutputDist.Params["std_dev"] != oc.OutputDist.Params["std_dev"] {
+		t.Errorf("OutputStdev parity: run=%v, observe=%v", rc.OutputDist.Params["std_dev"], oc.OutputDist.Params["std_dev"])
+	}
+	if rc.InputDist.Params["min"] != oc.InputDist.Params["min"] {
+		t.Errorf("PromptMin parity: run=%v, observe=%v", rc.InputDist.Params["min"], oc.InputDist.Params["min"])
+	}
+	if rc.InputDist.Params["max"] != oc.InputDist.Params["max"] {
+		t.Errorf("PromptMax parity: run=%v, observe=%v", rc.InputDist.Params["max"], oc.InputDist.Params["max"])
+	}
+	if rc.OutputDist.Params["min"] != oc.OutputDist.Params["min"] {
+		t.Errorf("OutputMin parity: run=%v, observe=%v", rc.OutputDist.Params["min"], oc.OutputDist.Params["min"])
+	}
+	if rc.OutputDist.Params["max"] != oc.OutputDist.Params["max"] {
+		t.Errorf("OutputMax parity: run=%v, observe=%v", rc.OutputDist.Params["max"], oc.OutputDist.Params["max"])
+	}
+	if rc.PrefixLength != oc.PrefixLength {
+		t.Errorf("PrefixLength parity: run=%d, observe=%d", rc.PrefixLength, oc.PrefixLength)
+	}
+}
+
+// TestBuildPresetSpec_MissingDefaultsFile verifies that buildPresetSpec returns a
+// user-friendly error (mentioning --workload and --defaults-filepath) when the
+// defaults.yaml file does not exist, rather than a generic fatal from loadDefaultsConfig.
+func TestBuildPresetSpec_MissingDefaultsFile(t *testing.T) {
+	spec, errMsg := buildPresetSpec("chatbot", "/nonexistent/path/defaults.yaml", 5.0, 10)
+	if spec != nil {
+		t.Error("expected nil spec for missing defaults file, got non-nil")
+	}
+	if errMsg == "" {
+		t.Fatal("expected error for missing defaults file, got empty message")
+	}
+	// Error must guide user toward --defaults-filepath flag
+	if !strings.Contains(errMsg, "--defaults-filepath") {
+		t.Errorf("error should mention --defaults-filepath, got: %q", errMsg)
+	}
+	if !strings.Contains(errMsg, "--workload") {
+		t.Errorf("error should mention --workload, got: %q", errMsg)
+	}
+}
+
+// TestBuildPresetSpec_UnknownPreset_ReturnsError verifies BC-5:
+// buildPresetSpec returns a non-empty error for an undefined preset name.
+// Error message must list valid preset names.
+func TestBuildPresetSpec_UnknownPreset_ReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	defaultsPath := filepath.Join(dir, "defaults.yaml")
+	// Minimal valid defaults.yaml — no workloads section means all presets are undefined
+	if err := os.WriteFile(defaultsPath, []byte("version: test\n"), 0600); err != nil {
+		t.Fatalf("write defaults.yaml: %v", err)
+	}
+
+	spec, errMsg := buildPresetSpec("unknown-preset", defaultsPath, 5.0, 10)
+	if spec != nil {
+		t.Error("expected nil spec for unknown preset, got non-nil")
+	}
+	if errMsg == "" {
+		t.Fatal("expected error for unknown preset, got empty message")
+	}
+	// Invariant: error lists valid preset names so users know what to pass
+	for _, name := range []string{"chatbot", "summarization", "contentgen", "multidoc"} {
+		if !strings.Contains(errMsg, name) {
+			t.Errorf("error message should list valid preset %q, got: %q", name, errMsg)
+		}
+	}
+}

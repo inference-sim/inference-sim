@@ -22,6 +22,10 @@ type TraceHeader struct {
 	Mode           string `yaml:"mode"` // "real" or "generated"
 	WarmUpRequests int    `yaml:"warm_up_requests"`
 	WorkloadSeed   *int64 `yaml:"workload_seed,omitempty"`
+	// WorkloadSpec records workload provenance:
+	//   - a file path when --workload-spec is used (e.g. "workload.yaml")
+	//   - "preset:<name>" when --workload is used (e.g. "preset:chatbot")
+	//   - empty (omitted) when distribution synthesis or concurrency mode is used
 	WorkloadSpec   string `yaml:"workload_spec,omitempty"`
 
 	Server  *TraceServerConfig  `yaml:"server,omitempty"`

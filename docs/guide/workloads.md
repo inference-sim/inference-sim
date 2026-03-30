@@ -489,15 +489,22 @@ Client TTFT = server TTFT + RTT + upload delay. Client E2E = server E2E + RTT + 
 
 ### Named Presets from defaults.yaml
 
-BLIS ships with preset workload profiles in `defaults.yaml`. Use them via the CLI or the convert command:
+BLIS ships with preset workload profiles in `defaults.yaml`. Use them with `blis run`, `blis observe`, or the convert command:
 
 ```bash
-# Run directly with a named preset
-./blis run --model qwen/qwen3-14b --workload chatbot
+# Run simulation with a named preset
+./blis run --model qwen/qwen3-14b --workload chatbot --rate 10
+
+# Observe a real server with the same preset (identical token distributions as run)
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --workload chatbot --rate 10 --num-requests 100 \
+  --trace-header trace.yaml --trace-data trace.csv
 
 # Convert a preset to a v2 WorkloadSpec YAML for customization
 ./blis convert preset --name chatbot --rate 10 --num-requests 100 > chatbot.yaml
 ```
+
+Using the same preset for both `run` and `observe` ensures the observe→replay→calibrate pipeline compares identical workload shapes — eliminating workload skew as a calibration variable.
 
 Available presets from `defaults.yaml`:
 
