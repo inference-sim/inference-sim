@@ -744,3 +744,290 @@ warm_up_requests: 0
 		t.Errorf("TTFT %f looks like it's in ms (expected ~10000 µs for 10ms prefill base)", simResults[0].TTFT)
 	}
 }
+
+// TestReplayCmd_TraceOutput_NoOp verifies BC-4:
+// omitting --trace-output produces no .yaml/.csv files.
+func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+
+	headerContent := "trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"
+	if err := os.WriteFile(headerPath, []byte(headerContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"
+	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Save/restore package-level vars
+	origModel := model
+	origBackend := latencyModelBackend
+	origBeta := betaCoeffs
+	origAlpha := alphaCoeffs
+	origTotalKV := totalKVBlocks
+	origBlockSize := blockSizeTokens
+	origMaxRunning := maxRunningReqs
+	origMaxSched := maxScheduledTokens
+	origInstances := numInstances
+	origSeed := seed
+	origResults := resultsPath
+	origThreshold := longPrefillTokenThreshold
+	origKVCPU := kvCPUBlocks
+	origOffload := kvOffloadThreshold
+	origBandwidth := kvTransferBandwidth
+	origBaseLatency := kvTransferBaseLatency
+	origSnapRefresh := snapshotRefreshInterval
+	origAdmission := admissionPolicy
+	origRouting := routingPolicy
+	origPriority := priorityPolicy
+	origScheduler := scheduler
+	origPolicyConfig := policyConfigPath
+	origMaxModelLen := maxModelLen
+	origTraceLevel := traceLevel
+	origCounterfactualK := counterfactualK
+	origTraceHeader := traceHeaderPath
+	origTraceData := traceDataPath
+	origSimHorizon := simulationHorizon
+	origTraceOutput := replayTraceOutput
+	defer func() {
+		model = origModel
+		latencyModelBackend = origBackend
+		betaCoeffs = origBeta
+		alphaCoeffs = origAlpha
+		totalKVBlocks = origTotalKV
+		blockSizeTokens = origBlockSize
+		maxRunningReqs = origMaxRunning
+		maxScheduledTokens = origMaxSched
+		numInstances = origInstances
+		seed = origSeed
+		resultsPath = origResults
+		longPrefillTokenThreshold = origThreshold
+		kvCPUBlocks = origKVCPU
+		kvOffloadThreshold = origOffload
+		kvTransferBandwidth = origBandwidth
+		kvTransferBaseLatency = origBaseLatency
+		snapshotRefreshInterval = origSnapRefresh
+		admissionPolicy = origAdmission
+		routingPolicy = origRouting
+		priorityPolicy = origPriority
+		scheduler = origScheduler
+		policyConfigPath = origPolicyConfig
+		maxModelLen = origMaxModelLen
+		traceLevel = origTraceLevel
+		counterfactualK = origCounterfactualK
+		traceHeaderPath = origTraceHeader
+		traceDataPath = origTraceData
+		simulationHorizon = origSimHorizon
+		replayTraceOutput = origTraceOutput
+	}()
+
+	model = "test-model"
+	latencyModelBackend = "blackbox"
+	betaCoeffs = []float64{10000.0, 1.0, 1.0}
+	alphaCoeffs = []float64{0.0, 0.0, 0.0}
+	totalKVBlocks = 1000
+	blockSizeTokens = 16
+	maxRunningReqs = 64
+	maxScheduledTokens = 2048
+	numInstances = 1
+	seed = 42
+	resultsPath = ""
+	longPrefillTokenThreshold = 0
+	kvCPUBlocks = 0
+	kvOffloadThreshold = 0.9
+	kvTransferBandwidth = 100.0
+	kvTransferBaseLatency = 0
+	snapshotRefreshInterval = 0
+	admissionPolicy = "always-admit"
+	routingPolicy = "round-robin"
+	priorityPolicy = "constant"
+	scheduler = "fcfs"
+	policyConfigPath = ""
+	maxModelLen = 0
+	traceLevel = "none"
+	counterfactualK = 0
+	traceHeaderPath = headerPath
+	traceDataPath = dataPath
+	simulationHorizon = math.MaxInt64
+	replayTraceOutput = "" // BC-4: no --trace-output flag set
+
+	testCmd := &cobra.Command{}
+	registerSimConfigFlags(testCmd)
+	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+	if err := testCmd.ParseFlags([]string{
+		"--model", "test-model", "--latency-model", "blackbox",
+		"--beta-coeffs", "10000.0,1.0,1.0", "--alpha-coeffs", "0.0,0.0,0.0",
+		"--total-kv-blocks", "1000", "--trace-header", headerPath, "--trace-data", dataPath,
+	}); err != nil {
+		t.Fatalf("ParseFlags failed: %v", err)
+	}
+
+	replayCmd.Run(testCmd, nil)
+
+	// BC-4: no output files written — check a prefix that was NOT requested
+	prefix := filepath.Join(dir, "out")
+	if _, err := os.Stat(prefix + ".yaml"); !os.IsNotExist(err) {
+		t.Error("BC-4: unexpected .yaml file written when --trace-output was absent")
+	}
+	if _, err := os.Stat(prefix + ".csv"); !os.IsNotExist(err) {
+		t.Error("BC-4: unexpected .csv file written when --trace-output was absent")
+	}
+}
+
+// TestReplayCmd_TraceOutput_Determinism verifies BC-5 (INV-6):
+// same seed + same trace produces byte-identical output files.
+func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+
+	headerContent := "trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"
+	if err := os.WriteFile(headerPath, []byte(headerContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n" +
+		"1,c1,t1,standard,s1,0,,0,false,20,8,20,0,0,0,0.0,,0,0,100000,100000,0,0,0,ok,,\n"
+	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// runOnce runs the replay and returns the content of the output files
+	runOnce := func(prefix string) (yamlBytes, csvBytes []byte) {
+		t.Helper()
+
+		origModel := model
+		origBackend := latencyModelBackend
+		origBeta := betaCoeffs
+		origAlpha := alphaCoeffs
+		origTotalKV := totalKVBlocks
+		origBlockSize := blockSizeTokens
+		origMaxRunning := maxRunningReqs
+		origMaxSched := maxScheduledTokens
+		origInstances := numInstances
+		origSeed := seed
+		origResults := resultsPath
+		origThreshold := longPrefillTokenThreshold
+		origKVCPU := kvCPUBlocks
+		origOffload := kvOffloadThreshold
+		origBandwidth := kvTransferBandwidth
+		origBaseLatency := kvTransferBaseLatency
+		origSnapRefresh := snapshotRefreshInterval
+		origAdmission := admissionPolicy
+		origRouting := routingPolicy
+		origPriority := priorityPolicy
+		origScheduler := scheduler
+		origPolicyConfig := policyConfigPath
+		origMaxModelLen := maxModelLen
+		origTraceLevel := traceLevel
+		origCounterfactualK := counterfactualK
+		origTraceHeader := traceHeaderPath
+		origTraceData := traceDataPath
+		origSimHorizon := simulationHorizon
+		origTraceOutput := replayTraceOutput
+		defer func() {
+			model = origModel
+			latencyModelBackend = origBackend
+			betaCoeffs = origBeta
+			alphaCoeffs = origAlpha
+			totalKVBlocks = origTotalKV
+			blockSizeTokens = origBlockSize
+			maxRunningReqs = origMaxRunning
+			maxScheduledTokens = origMaxSched
+			numInstances = origInstances
+			seed = origSeed
+			resultsPath = origResults
+			longPrefillTokenThreshold = origThreshold
+			kvCPUBlocks = origKVCPU
+			kvOffloadThreshold = origOffload
+			kvTransferBandwidth = origBandwidth
+			kvTransferBaseLatency = origBaseLatency
+			snapshotRefreshInterval = origSnapRefresh
+			admissionPolicy = origAdmission
+			routingPolicy = origRouting
+			priorityPolicy = origPriority
+			scheduler = origScheduler
+			policyConfigPath = origPolicyConfig
+			maxModelLen = origMaxModelLen
+			traceLevel = origTraceLevel
+			counterfactualK = origCounterfactualK
+			traceHeaderPath = origTraceHeader
+			traceDataPath = origTraceData
+			simulationHorizon = origSimHorizon
+			replayTraceOutput = origTraceOutput
+		}()
+
+		model = "test-model"
+		latencyModelBackend = "blackbox"
+		betaCoeffs = []float64{10000.0, 1.0, 1.0}
+		alphaCoeffs = []float64{0.0, 0.0, 0.0}
+		totalKVBlocks = 1000
+		blockSizeTokens = 16
+		maxRunningReqs = 64
+		maxScheduledTokens = 2048
+		numInstances = 1
+		seed = 42
+		resultsPath = ""
+		longPrefillTokenThreshold = 0
+		kvCPUBlocks = 0
+		kvOffloadThreshold = 0.9
+		kvTransferBandwidth = 100.0
+		kvTransferBaseLatency = 0
+		snapshotRefreshInterval = 0
+		admissionPolicy = "always-admit"
+		routingPolicy = "round-robin"
+		priorityPolicy = "constant"
+		scheduler = "fcfs"
+		policyConfigPath = ""
+		maxModelLen = 0
+		traceLevel = "none"
+		counterfactualK = 0
+		traceHeaderPath = headerPath
+		traceDataPath = dataPath
+		simulationHorizon = math.MaxInt64
+		replayTraceOutput = prefix
+
+		testCmd := &cobra.Command{}
+		registerSimConfigFlags(testCmd)
+		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+		testCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "")
+		if err := testCmd.ParseFlags([]string{
+			"--model", "test-model", "--latency-model", "blackbox",
+			"--beta-coeffs", "10000.0,1.0,1.0", "--alpha-coeffs", "0.0,0.0,0.0",
+			"--total-kv-blocks", "1000", "--trace-header", headerPath,
+			"--trace-data", dataPath, "--trace-output", prefix,
+		}); err != nil {
+			t.Fatalf("ParseFlags failed: %v", err)
+		}
+		replayCmd.Run(testCmd, nil)
+
+		y, err := os.ReadFile(prefix + ".yaml")
+		if err != nil {
+			t.Fatalf("output YAML not found: %v", err)
+		}
+		c, err := os.ReadFile(prefix + ".csv")
+		if err != nil {
+			t.Fatalf("output CSV not found: %v", err)
+		}
+		return y, c
+	}
+
+	prefix1 := filepath.Join(dir, "run1")
+	prefix2 := filepath.Join(dir, "run2")
+
+	yaml1, csv1 := runOnce(prefix1)
+	yaml2, csv2 := runOnce(prefix2)
+
+	// BC-5 / INV-6: byte-identical output
+	if string(yaml1) != string(yaml2) {
+		t.Error("BC-5: YAML output is non-deterministic across runs with same seed")
+	}
+	if string(csv1) != string(csv2) {
+		t.Error("BC-5: CSV output is non-deterministic across runs with same seed")
+	}
+}
