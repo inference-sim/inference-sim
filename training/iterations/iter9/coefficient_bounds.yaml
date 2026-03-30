@@ -1,0 +1,97 @@
+# Iteration 9 coefficient bounds and initial values
+#
+# Strategy: Add β₉ (FP8 dequantization overhead) to capture Scout FP8 architecture-specific latency
+#   - Alpha: Warm-start from iter8 optimal (stable and physically plausible)
+#   - Beta[0-8]: Warm-start from iter8 optimal (β₈ real but insufficient, keep for Scout MoE overhead)
+#   - Beta[9]: NEW — FP8 dequantization overhead per token per layer (expected 17-50μs)
+#   - Training data: 15 experiments with NEW exp17 (general-lite-2-1, clean data from 2026-03-30)
+
+alpha_bounds:
+  - [0.0, 0.005]   # α₀: Fixed API overhead (ms per request)
+  - [0.0, 0.0002]  # α₁: Per-input-token tokenization (ms per token, TIGHT bound from iter7)
+  - [0.0, 0.00015] # α₂: Per-output-token detokenization (ms per token, widened to 150μs from iter8)
+
+alpha_initial:
+  - 0.001320    # α₀ from iter8: 1.32ms (stable, unchanged from iter7)
+  - 0.0001176   # α₁ from iter8: 117.6μs (stable, -0.3% from iter7)
+  - 0.00009054  # α₂ from iter8: 90.54μs (stable, -0.5% from iter7)
+
+beta_bounds:
+  - [0.10, 0.35]   # β₀: Prefill compute MFU (dimensionless, expected 0.15-0.25)
+  - [0.8, 1.5]     # β₁: Decode memory-bound MFU (dimensionless, expected 1.00-1.15)
+  - [0.0, 1.5]     # β₂: TP decode communication (dimensionless, expected 0.20-0.35)
+  - [0.0, 0.01]    # β₃: KV cache management (ms per request, expected 0.4-0.5ms = 0.0004-0.0005, should REVERT from iter8's 4.4ms)
+  - [0.4, 1.0]     # β₄: Decode compute-bound MFU (dimensionless, expected 0.70-0.90, CONSTRAINED upper bound 1.0)
+  - [0.0, 0.05]    # β₅: MoE gating overhead (ms, expected 0.010-0.020ms = 10-20μs, should REVERT from iter8's 41.1μs)
+  - [0.01, 0.10]   # β₆: Per-request scheduler overhead (ms, expected 0.015-0.030ms = 15-30ms)
+  - [0.0, 0.03]    # β₇: Decode per-request overhead (ms, expected 0.010-0.020ms = 10-20ms, should REVERT from iter8's 26.3ms)
+  - [0.0, 0.0001]  # β₈: MoE routing overhead (SECONDS per routed token, expected 0.000010-0.000050 = 10-50μs, keep from iter8)
+  - [0.0, 0.0001]  # β₉: **NEW** FP8 dequantization overhead (SECONDS per token per layer, expected 0.000017-0.000050 = 17-50μs)
+
+beta_initial:
+  - 0.1912       # β₀ from iter8: 0.1912 (stable, +0.1% from iter7)
+  - 1.1076       # β₁ from iter8: 1.1076 (stable, -0.0% from iter7)
+  - 0.1846       # β₂ from iter8: 0.1846 (stable, -0.2% from iter7)
+  - 0.004404     # β₃ from iter8: 0.004404 (INFLATED, +0.1% from iter7, should revert to 0.0004-0.001 in iter9)
+  - 0.7132       # β₄ from iter8: 0.7132 (stable, +0.0% from iter7)
+  - 0.04112      # β₅ from iter8: 0.04112 (INFLATED, +0.0% from iter7, should revert to 0.010-0.020 in iter9)
+  - 0.01316      # β₆ from iter8: 0.01316 (stable, -0.3% from iter7)
+  - 0.02626      # β₇ from iter8: 0.02626 (INFLATED, -0.2% from iter7, should revert to 0.010-0.020 in iter9)
+  - 0.00003      # β₈ from iter8: 0.00003 = 30μs (stable, real but insufficient for Scout, KEEP for MoE routing overhead)
+  - 0.000035     # β₉ NEW: 35μs per token per layer (middle of expected 17-50μs range, physics-based estimate)
+
+# Rationale:
+#
+# Warm-start from iter8 optimal (all coefficients stable, β₈ real but insufficient):
+#   - Iter8 achieved no loss improvement (155.35% vs iter7's 155.37%), Scout errors unchanged
+#   - β₈ = 30μs per routed token (physically plausible, adds 39ms per Scout request)
+#   - But Scout needs 100-200ms overhead (roofline underestimates by -99.88% MPE)
+#   - Remaining gap: 61-161ms → need β₉ to capture FP8 dequantization overhead
+#   - Starting from iter8 optimal reduces trials from ~50 to ~20-30
+#
+# β₉ addition (FP8 dequantization overhead):
+#   - **Physics**: FP8 → FP16/BF16 dequantization per layer before matmul
+#     1. Weight dequantization: 10-30μs per token per layer (torch.float8_e4m3fn → torch.float16)
+#     2. Mixed-precision coordination: 5-15μs per token per layer (FP8 weights × FP16 activations)
+#     3. Dynamic scale management: 2-5μs per token per layer (per-tensor scales applied per layer)
+#     Total: 17-50μs per token per layer
+#   - **Basis function**: β₉ × (totalTokens × numLayers × isFP8)
+#     - `isFP8 = 1 if BytesPerParam == 1.0 else 0` (Scout: 1.0, others: 2.0)
+#     - Scout: β₉ × (100 tokens × 56 layers × 1) = β₉ × 5600 ≈ 95-280ms contribution
+#     - Non-FP8: β₉ × (... × 0) = 0 (no contribution, unaffected)
+#   - **Expected range**: 17-50μs per token per layer (in seconds: 0.000017-0.000050)
+#   - **Bounds**: [0, 0.0001] = [0, 100μs] (conservative upper limit, same as β₈)
+#   - **Initial**: 0.000035 = 35μs per token per layer (middle of expected range)
+#
+# Expected coefficient changes in iter9:
+#   - β₉: NEW, converge to 0.000017-0.000050 (17-50μs per token per layer)
+#   - β₃: 0.004404 → 0.0004-0.001 (10× reversion after β₉ offloads Scout error)
+#   - β₅: 0.04112 → 0.010-0.020 (2-4× reversion after β₉ offloads Scout error)
+#   - β₇: 0.02626 → 0.010-0.020 (1.3-2.6× reversion after β₉ offloads Scout error)
+#   - β₈: 0.00003 → 0.000025-0.000035 (stable, keep for Scout MoE routing overhead)
+#   - α₂: 0.00009054 → 0.00006-0.00012 (may improve slightly)
+#   - Others (α₀, α₁, β₀, β₁, β₂, β₄, β₆): Minimal change expected (<10%)
+#
+# Impact on optimization:
+#   - Adding 1 coefficient (9 → 10 Beta coefficients) increases search space moderately
+#   - Warm-start from iter8 optimal should enable quick convergence (20-30 trials)
+#   - β₉ is orthogonal to existing terms (only affects FP8 models: Scout)
+#   - Expected: Overall loss 155% → <75%, Scout TTFT 92% → <40% (>52pp improvement)
+#   - Expected reversion: β₃, β₅, β₇ revert to physical ranges after β₉ offloads Scout error
+#   - Non-FP8 experiments expected to remain stable (<±10pp change)
+#
+# Data update:
+#   - Iter9 trains on 15 experiments with NEW exp17 (general-lite-2-1, clean data from 2026-03-30)
+#   - Old exp17 (general-2) collected under saturated server conditions (used in iter0-iter8)
+#   - New exp17 has cleaner signal (normal operating conditions, reduced workload intensity)
+#   - Scout bottleneck persists (architecture-specific FP8, not server condition)
+#
+# Alternative formulations considered:
+#   1. **Per-layer FP8 overhead**: β₉ × numLayers × isFP8
+#      - Rejected: Doesn't scale with tokens, underestimates long sequences
+#   2. **Per-request FP8 overhead**: β₉ × numRequests × numLayers × isFP8
+#      - Rejected: Doesn't account for token count variation across requests
+#   3. **Per-token per-layer with FP8 flag** (CHOSEN): β₉ × (totalTokens × numLayers × isFP8)
+#      - Correct: Scales with all relevant dimensions (tokens, layers, FP8 vs non-FP8)
+#      - FP8 flag ensures non-FP8 models unaffected (isFP8 = 0 for BytesPerParam = 2.0)
+#
