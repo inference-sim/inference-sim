@@ -1,0 +1,93 @@
+# Iteration 6: Coefficient Bounds and Initial Values
+#
+# Warm-starting strategy:
+# - Alpha: Revert to iter4 (iter5 Alpha exploded to absorb TTFT error)
+# - Beta[0]: Warm-start from iter5 (0.266) BUT constrain to [0.10, 0.35] to prevent over-rise
+# - Beta[1,2,5]: Warm-start from iter5 (improving toward iter3)
+# - Beta[3]: Revert to iter4 (0.0005, NOT iter5's collapsed 0.000013)
+# - Beta[4]: Revert to iter3 (0.796, NOT iter5's implausible 0.620)
+# - Beta[6]: **REDEFINED** - scheduler overhead per request (ms), NOT per-layer (μs)
+#
+# Key change: Beta[6] moves from StepTime (per-layer kernel overhead) to QueueingTime
+# (per-request scheduler overhead). Expected range: 50-150ms for reasoning workloads.
+
+alpha_bounds:
+  # α₀: Fixed API processing overhead (ms per request)
+  # Physics: HTTP parsing, request validation, queue insertion
+  # Expected: 1-5ms (typical API gateway overhead)
+  - [0.0, 0.01]
+
+  # α₁: Per-input-token tokenization overhead (ms per token)
+  # Physics: HuggingFace BPE encoding, scales with input length
+  # Expected: 50-200μs per token (0.00005-0.0002 ms)
+  - [0.0, 0.001]
+
+  # α₂: Per-output-token detokenization overhead (ms per token)
+  # Physics: Streaming detokenization, output formatting
+  # Expected: 20-100μs per token (0.00002-0.0001 ms)
+  - [0.0, 0.001]
+
+alpha_initial:
+  - 0.001498    # α₀: 1.498ms (from iter4, before iter5 explosion)
+  - 0.0001247   # α₁: 124.7μs (from iter4)
+  - 0.000036    # α₂: 36.0μs (from iter4)
+
+beta_bounds:
+  # β₀: Prefill compute efficiency (MFU scaling factor)
+  # Physics: FLOPs / (peak_TFLOPS × MFU_prefill) × β₀
+  # Expected: 0.15-0.35 (prefill MFU 15-35%, typical for attention-heavy workloads)
+  # Iter5: Rose to 0.266, broke short contexts by reducing predicted time 38%
+  # Iter6: Constrain upper bound to 0.35 to prevent over-rise
+  - [0.10, 0.35]
+
+  # β₁: Decode memory-bound efficiency (small-batch MFU)
+  # Physics: Memory bandwidth utilization for KV cache reads
+  # Expected: 1.00-1.10 (actual time = 1.0-1.1× theoretical HBM bandwidth time)
+  # Iter5: 1.449 (improving from iter4's 1.802 toward iter3's 1.037)
+  - [0.8, 2.0]
+
+  # β₂: TP communication efficiency (decode all-reduce)
+  # Physics: NVLink all-reduce overhead per layer
+  # Expected: 0.30-0.35 (ring all-reduce efficiency)
+  # Iter5: 1.368 (stuck high, may indicate missing TP prefill term)
+  - [0.0, 1.5]
+
+  # β₃: KV cache management overhead (μs per request)
+  # Physics: PagedAttention block allocation/deallocation
+  # Expected: 400-500μs per request (iter3/iter4 baseline)
+  # Iter5: Collapsed to 0.000013 (β₀ rise absorbed this overhead)
+  # Iter6: Should recover when β₀ constrained
+  - [0.0, 0.01]
+
+  # β₄: Decode compute-bound efficiency (large-batch MFU)
+  # Physics: Tensor core utilization for large batches
+  # Expected: 0.75-0.85 (decode compute at 75-85% of theoretical TFLOPS)
+  # Iter5: 0.620 (physically implausible, balancing β₁ being too high)
+  # Iter6: Should recover when β₁ normalizes
+  - [0.4, 1.5]
+
+  # β₅: MoE gating overhead (μs per step)
+  # Physics: Expert routing probability computation
+  # Expected: 10-12μs (0.01-0.012 ms, iter3 baseline)
+  # Iter5: 0.0149 (improving from iter4's 0.0304 toward iter3's 0.0117)
+  - [0.0, 0.05]
+
+  # β₆: **REDEFINED** - Per-request scheduler overhead (ms per request)
+  # Physics: vLLM scheduler batch formation + KV block allocation
+  #   - Batch formation: Scheduler computes can-schedule decision (10-50ms)
+  #   - KV allocation: PagedAttention allocates blocks (10-30ms)
+  #   - Priority queue processing: Sorts and selects requests (5-20ms)
+  # Expected: 50-150ms per request for reasoning (high concurrency, multi-turn)
+  #           10-30ms per request for codegen (low concurrency, single-turn)
+  # **CRITICAL**: This is in MILLISECONDS (matches Alpha units), NOT microseconds (iter5 units)
+  # Applied in QueueingTime() alongside α₀/α₁, NOT in StepTime()
+  - [0.01, 0.20]
+
+beta_initial:
+  - 0.20        # β₀: Start at 0.20 (between iter3's 0.169 and iter5's 0.266, constrained to prevent over-rise)
+  - 1.449       # β₁: From iter5 (improving toward iter3's 1.037)
+  - 1.368       # β₂: From iter5 (monitor for missing TP prefill term)
+  - 0.0005      # β₃: From iter4 (NOT iter5's collapsed 0.000013, expect recovery)
+  - 0.796       # β₄: From iter3 (NOT iter5's implausible 0.620, physically plausible baseline)
+  - 0.0149      # β₅: From iter5 (close to iter3's 0.0117, continuing convergence)
+  - 0.10        # β₆: NEW - 100ms scheduler overhead (mid-range of 50-150ms expected)

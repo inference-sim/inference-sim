@@ -1,0 +1,28 @@
+iteration: 6
+latency_backend_name: "evolved"
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 6: Per-request scheduler overhead hypothesis
+
+  Previous iteration (iter5): Tested per-layer fixed overhead (kernel launch + scheduler) that scaled with
+  chunking (1.0 + tokens/2048). Hypothesis was CATASTROPHICALLY REJECTED - overall loss 603% (vs target <110%),
+  TTFT RMSE 519% (vs target <55%). Post-analysis trace investigation revealed the hypothesis was based on
+  WRONG ASSUMPTIONS: iter3/4/5 all assumed reasoning experiments use 8K-16K tokens, but traces show reasoning
+  uses ~1K tokens (same as all workloads). The "1000× underestimation" was actually "100-200× underestimation
+  for SHORT contexts with queuing delay".
+
+  Critical discovery: Reasoning (1K tokens, 100-200ms TTFT) differs from codegen (1K tokens, 20-50ms TTFT)
+  NOT by context length, but by QUEUING/SCHEDULER DELAY. Trace variance (p10=0.13ms, p90=215ms = 1650× range)
+  indicates batching delay, not prefill compute.
+
+  This iteration moves scheduler overhead from StepTime (per-layer kernel overhead) to QueueingTime
+  (per-request scheduler overhead):
+  - Redefine β₆: Now models vLLM scheduler overhead (batch formation + KV block allocation) as fixed cost
+    per request (50-150ms), not per-layer cost (500-3000μs × num_layers)
+  - Apply β₆ in QueueingTime() alongside α₀/α₁, NOT in StepTime()
+  - Remove per-layer overhead term entirely from StepTime() (keep only 6 beta terms: β₀-β₅)
+  - Expected: Reasoning improves (99% → 40-45% TTFT) by capturing scheduler overhead, short-context
+    recovers (200-1091% → 4-40% TTFT) by removing wrong per-layer term, coefficients stabilize to iter3 ranges
+
+timestamp: "2026-03-29T23:30:00"
