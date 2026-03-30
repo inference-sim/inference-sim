@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"hash/fnv"
 	"math"
 	"math/rand"
@@ -51,6 +52,8 @@ var (
 	observeRttMs               float64
 	observeConcurrency         int
 	observeThinkTimeMs         int
+	observeWorkload            string
+	observeDefaultsFilePath    string
 )
 
 var observeCmd = &cobra.Command{
@@ -63,9 +66,10 @@ This is the data collection step of the observe/replay/calibrate pipeline.
 The output TraceV2 files can be fed to 'blis replay' for simulation comparison
 and 'blis calibrate' for accuracy measurement.
 
-Supports --workload-spec (YAML), --rate (distribution synthesis), or --concurrency
-(closed-loop virtual users) input paths. Closed-loop sessions with multi-turn
-follow-ups are supported when the WorkloadSpec contains session clients.
+Supports --workload-spec (YAML), --workload <preset> (named preset; requires --rate),
+--rate (distribution synthesis), or --concurrency (closed-loop virtual users) input paths.
+Closed-loop sessions with multi-turn follow-ups are supported when the WorkloadSpec
+contains session clients.
 
 API format: Use --api-format=chat for servers that expose /v1/chat/completions
 (most production vLLM/SGLang deployments). Default is --api-format=completions
@@ -86,6 +90,10 @@ Example:
     --api-format chat --rate 10 --num-requests 100 --trace-header trace.yaml --trace-data trace.csv
 
   blis observe --server-url http://localhost:8000 --model meta-llama/Llama-3.1-8B-Instruct \
+    --workload chatbot --rate 10 --num-requests 100 \
+    --trace-header trace.yaml --trace-data trace.csv
+
+  blis observe --server-url http://localhost:8000 --model meta-llama/Llama-3.1-8B-Instruct \
     --api-format chat --concurrency 50 --num-requests 500 --think-time-ms 200 \
     --trace-header trace.yaml --trace-data trace.csv`,
 	Run: runObserve,
@@ -100,6 +108,8 @@ func init() {
 
 	// Workload input
 	observeCmd.Flags().StringVar(&observeWorkloadSpec, "workload-spec", "", "Path to WorkloadSpec YAML (alternative to --rate)")
+	observeCmd.Flags().StringVar(&observeWorkload, "workload", "", "Workload preset name (chatbot, summarization, contentgen, multidoc); requires --rate")
+	observeCmd.Flags().StringVar(&observeDefaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to defaults.yaml (for preset workload definitions)")
 	observeCmd.Flags().Float64Var(&observeRate, "rate", 0, "Requests per second for distribution synthesis")
 
 	// Optional
@@ -132,6 +142,56 @@ func init() {
 	rootCmd.AddCommand(observeCmd)
 }
 
+// validateObserveWorkloadFlags checks preset-mode flag constraints.
+// Returns a non-empty error string if the combination is invalid, empty string if valid.
+// Called from runObserve; extracted for unit testability (R14).
+func validateObserveWorkloadFlags(preset, workloadSpec string, rateChanged bool, concurrency int) string {
+	if preset == "" {
+		return "" // no preset — nothing to validate
+	}
+	if workloadSpec != "" {
+		return "--workload and --workload-spec are mutually exclusive"
+	}
+	if concurrency > 0 {
+		return "--workload and --concurrency are mutually exclusive; use --workload-spec with clients[].concurrency for closed-loop preset workloads"
+	}
+	if !rateChanged {
+		return fmt.Sprintf("--workload %q requires --rate (preset synthesis needs a request rate)", preset)
+	}
+	return ""
+}
+
+// buildPresetSpec loads the named preset from defaults.yaml and synthesizes a WorkloadSpec.
+// Returns (nil, errMsg) if the preset is not defined or defaults.yaml cannot be accessed; (spec, "") on success.
+// Extracted from runObserve for unit testability (R14). File read or YAML parse errors
+// are CLI-fatal inside loadDefaultsConfig — consistent with all other defaults.yaml reads.
+func buildPresetSpec(preset, defaultsPath string, rate float64, numRequests int) (*workload.WorkloadSpec, string) {
+	if _, err := os.Stat(defaultsPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Sprintf("--workload requires a defaults.yaml with preset definitions; "+
+				"file not found at %q — use --defaults-filepath to specify its location", defaultsPath)
+		}
+		return nil, fmt.Sprintf("--workload requires a defaults.yaml with preset definitions; "+
+			"cannot access %q: %v", defaultsPath, err)
+	}
+	wl := loadPresetWorkload(defaultsPath, preset)
+	if wl == nil {
+		return nil, fmt.Sprintf("Undefined workload %q. Use one among (chatbot, summarization, contentgen, multidoc) or --workload-spec", preset)
+	}
+	spec := workload.SynthesizeFromPreset(preset, workload.PresetConfig{
+		PrefixTokens:      wl.PrefixTokens,
+		PromptTokensMean:  wl.PromptTokensMean,
+		PromptTokensStdev: wl.PromptTokensStdev,
+		PromptTokensMin:   wl.PromptTokensMin,
+		PromptTokensMax:   wl.PromptTokensMax,
+		OutputTokensMean:  wl.OutputTokensMean,
+		OutputTokensStdev: wl.OutputTokensStdev,
+		OutputTokensMin:   wl.OutputTokensMin,
+		OutputTokensMax:   wl.OutputTokensMax,
+	}, rate, numRequests)
+	return spec, ""
+}
+
 func runObserve(cmd *cobra.Command, _ []string) {
 	// BC-13: Required flag validation
 	if observeServerURL == "" {
@@ -146,8 +206,14 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	if observeTraceData == "" {
 		logrus.Fatalf("--trace-data is required")
 	}
-	if observeWorkloadSpec == "" && !cmd.Flags().Changed("rate") && observeConcurrency <= 0 {
-		logrus.Fatalf("Either --workload-spec, --rate, or --concurrency is required")
+	// BC-7: at least one workload input mode must be provided
+	if observeWorkload == "" && observeWorkloadSpec == "" && !cmd.Flags().Changed("rate") && observeConcurrency <= 0 {
+		logrus.Fatalf("Either --workload, --workload-spec, --rate, or --concurrency is required")
+	}
+	// BC-2/3/4: preset-mode constraint check (extracted for testability, R14).
+	// Runs before the existing concurrency/rate exclusion so preset errors are shown first.
+	if msg := validateObserveWorkloadFlags(observeWorkload, observeWorkloadSpec, cmd.Flags().Changed("rate"), observeConcurrency); msg != "" {
+		logrus.Fatalf("%s", msg)
 	}
 	// BC-1: --concurrency and --rate are mutually exclusive
 	if observeConcurrency > 0 && cmd.Flags().Changed("rate") {
@@ -192,6 +258,17 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		if cmd.Flags().Changed("seed") {
 			spec.Seed = observeSeed
 		}
+	} else if observeWorkload != "" {
+		// Preset synthesis — BC-1: same token distribution as blis run --workload <preset>
+		// Rate was validated finite+positive by the earlier rate validation above (defense-in-depth:
+		// also guarded by validateObserveWorkloadFlags above, which requires rateChanged to be true).
+		// Use separate errMsg var + = (not :=) to avoid shadowing the outer spec variable.
+		var errMsg string
+		spec, errMsg = buildPresetSpec(observeWorkload, observeDefaultsFilePath, observeRate, observeNumRequests)
+		if errMsg != "" {
+			logrus.Fatalf("%s", errMsg)
+		}
+		spec.Seed = observeSeed
 	} else {
 		// Distribution or concurrency synthesis
 		spec = workload.SynthesizeFromDistribution(workload.DistributionParams{
@@ -320,6 +397,8 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	}
 	if observeWorkloadSpec != "" {
 		header.WorkloadSpec = observeWorkloadSpec
+	} else if observeWorkload != "" {
+		header.WorkloadSpec = "preset:" + observeWorkload
 	}
 	if spec != nil {
 		header.WorkloadSeed = &spec.Seed
