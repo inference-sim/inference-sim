@@ -3,9 +3,11 @@ package cluster
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
 func TestParentRequest_NewParentRequest(t *testing.T) {
@@ -1184,4 +1186,388 @@ func TestDisaggregation_E2E_IncludesOverhead_ZeroOverheadRegression(t *testing.T
 			t.Errorf("parent %s: E2E (%.0f) < TTFT (%.0f) — causality violated", parent.ID, e2e, ttft)
 		}
 	}
+}
+
+// --- Session follow-up tests (issue #884) ---
+
+// sessionCallbackCapture records every invocation of the onRequestDone callback.
+// No mutex needed: the DES is single-threaded (see session.go).
+type sessionCallbackCapture struct {
+	calls []sessionCallbackCall
+}
+
+type sessionCallbackCall struct {
+	req  *sim.Request
+	tick int64
+}
+
+// newTestRequestsWithSession creates n test requests with SessionID and MaxOutputLen set.
+func newTestRequestsWithSession(n int, sessionID string) []*sim.Request {
+	reqs := newTestRequests(n)
+	for _, r := range reqs {
+		r.SessionID = sessionID
+		r.MaxOutputLen = len(r.OutputTokens)
+	}
+	return reqs
+}
+
+// TestDisaggregation_SessionFollowUp_CallsOnRequestDone verifies that
+// detectDecodeCompletions triggers the session callback with the original
+// request (which carries SessionID), not the decode sub-request.
+//
+// GIVEN: a PD cluster (2P + 2D) with onRequestDone callback
+// AND: requests have SessionID set
+// WHEN: simulation runs to completion
+// THEN: callback is invoked with a request where SessionID is preserved,
+//
+//	State == StateCompleted, and ProgressIndex == len(Input) + len(Output)
+func TestDisaggregation_SessionFollowUp_CallsOnRequestDone(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	reqs := newTestRequestsWithSession(3, "sess_0")
+
+	var capture sessionCallbackCapture
+	callback := func(req *sim.Request, tick int64) []*sim.Request {
+		capture.calls = append(capture.calls, sessionCallbackCall{req: req, tick: tick})
+		return nil // no follow-ups — just capture
+	}
+
+	cs := NewClusterSimulator(config, reqs, callback)
+	mustRun(t, cs)
+
+	// Filter calls with non-empty SessionID (sub-request callbacks have empty SessionID)
+	var sessionCalls []sessionCallbackCall
+	for _, c := range capture.calls {
+		if c.req.SessionID != "" {
+			sessionCalls = append(sessionCalls, c)
+		}
+	}
+
+	if len(sessionCalls) != 3 {
+		t.Fatalf("expected 3 session callback calls (one per request), got %d", len(sessionCalls))
+	}
+
+	for i, sc := range sessionCalls {
+		if sc.req.SessionID != "sess_0" {
+			t.Errorf("call %d: SessionID = %q, want %q", i, sc.req.SessionID, "sess_0")
+		}
+		if sc.req.State != sim.StateCompleted {
+			t.Errorf("call %d: State = %q, want %q", i, sc.req.State, sim.StateCompleted)
+		}
+		// ProgressIndex comes from the decode sub-request's actual final position
+		// (len(Input) + len(Output) - 1), matching non-PD behavior.
+		wantProgress := int64(len(sc.req.InputTokens) + len(sc.req.OutputTokens) - 1)
+		if sc.req.ProgressIndex != wantProgress {
+			t.Errorf("call %d: ProgressIndex = %d, want %d (len(Input)=%d + len(Output)=%d - 1)",
+				i, sc.req.ProgressIndex, wantProgress, len(sc.req.InputTokens), len(sc.req.OutputTokens))
+		}
+		if sc.tick < sc.req.ArrivalTime {
+			t.Errorf("call %d: tick (%d) < ArrivalTime (%d) — violates causality",
+				i, sc.tick, sc.req.ArrivalTime)
+		}
+	}
+}
+
+// TestDisaggregation_SessionFollowUp_InjectsFollowUp verifies that follow-up
+// requests returned by the session callback are injected into the cluster
+// pipeline and complete through the PD disaggregation path.
+//
+// GIVEN: PD cluster with onRequestDone that returns 1 follow-up per call (single extra round)
+// AND: 2 initial requests with SessionID
+// WHEN: simulation runs
+// THEN: follow-up requests complete through PD pipeline (more parentRequests than initial)
+func TestDisaggregation_SessionFollowUp_InjectsFollowUp(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	reqs := newTestRequestsWithSession(2, "sess_inject")
+
+	followUpCount := 0
+	callback := func(req *sim.Request, tick int64) []*sim.Request {
+		if req.SessionID == "" {
+			return nil // sub-request callback, ignore
+		}
+		// Generate exactly one follow-up per original request (cap at 2 total follow-ups)
+		if followUpCount >= 2 {
+			return nil
+		}
+		followUpCount++
+		return []*sim.Request{{
+			ID:           fmt.Sprintf("followup_%d", followUpCount),
+			ArrivalTime:  tick + 1000, // 1ms think time
+			InputTokens:  make([]int, 50),
+			OutputTokens: make([]int, 20),
+			MaxOutputLen: 20,
+			State:        sim.StateQueued,
+			SessionID:    req.SessionID,
+			RoundIndex:   1,
+		}}
+	}
+
+	cs := NewClusterSimulator(config, reqs, callback)
+	mustRun(t, cs)
+
+	// Follow-ups should have been disaggregated too — more parentRequests than initial
+	parents := cs.ParentRequests()
+	if len(parents) <= 2 {
+		t.Errorf("ParentRequests() = %d, want > 2 (follow-ups should have been disaggregated)",
+			len(parents))
+	}
+
+	// All parent requests should have CompletionTime > 0
+	for _, parent := range parents {
+		if parent.CompletionTime == 0 {
+			t.Errorf("parent %s: CompletionTime = 0, follow-up may not have completed", parent.ID)
+		}
+	}
+
+	metrics := cs.AggregatedMetrics()
+	if metrics.CompletedRequests < 4 {
+		t.Errorf("CompletedRequests = %d, want >= 4 (2 initial + 2 follow-ups)", metrics.CompletedRequests)
+	}
+}
+
+// TestDisaggregation_AggregateMode_Unaffected verifies that aggregate (non-PD)
+// clusters still trigger session callbacks correctly — regression guard.
+//
+// GIVEN: non-PD cluster with onRequestDone callback
+// AND: requests with SessionID
+// WHEN: simulation runs
+// THEN: callback fires for each completed request with SessionID preserved
+func TestDisaggregation_AggregateMode_Unaffected(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 0, 0) // no PD
+	config.PDDecider = ""                             // disable decider
+	reqs := newTestRequestsWithSession(3, "sess_agg")
+
+	var capture sessionCallbackCapture
+	callback := func(req *sim.Request, tick int64) []*sim.Request {
+		capture.calls = append(capture.calls, sessionCallbackCall{req: req, tick: tick})
+		return nil
+	}
+
+	cs := NewClusterSimulator(config, reqs, callback)
+	mustRun(t, cs)
+
+	// In aggregate mode, ALL completed requests should trigger callback with SessionID
+	var sessionCalls []sessionCallbackCall
+	for _, c := range capture.calls {
+		if c.req.SessionID == "sess_agg" {
+			sessionCalls = append(sessionCalls, c)
+		}
+	}
+
+	if len(sessionCalls) != 3 {
+		t.Fatalf("aggregate mode: expected 3 session callback calls, got %d", len(sessionCalls))
+	}
+	for i, sc := range sessionCalls {
+		if sc.req.State != sim.StateCompleted {
+			t.Errorf("aggregate call %d: State = %q, want %q", i, sc.req.State, sim.StateCompleted)
+		}
+	}
+}
+
+// TestDisaggregation_PD_SessionManager_GeneratesFollowUps exercises the real
+// SessionManager (not a mock callback) through the PD pipeline. This verifies
+// that State and ProgressIndex are correctly threaded through OnComplete, and
+// that follow-up requests complete through the full disaggregation path.
+//
+// GIVEN: PD cluster (2P + 2D) with real SessionManager (MaxRounds=2)
+// AND: 2 initial session requests
+// WHEN: simulation runs to completion
+// THEN: SessionManager generates follow-ups that complete through PD,
+//
+//	and total completed requests == 4 (2 rounds x 2 sessions)
+func TestDisaggregation_PD_SessionManager_GeneratesFollowUps(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+
+	rng := rand.New(rand.NewSource(99))
+	inputSampler, err := workload.NewLengthSampler(workload.DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 50},
+	})
+	if err != nil {
+		t.Fatalf("NewLengthSampler (input): %v", err)
+	}
+	outputSampler, err := workload.NewLengthSampler(workload.DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 20},
+	})
+	if err != nil {
+		t.Fatalf("NewLengthSampler (output): %v", err)
+	}
+
+	blueprints := []workload.SessionBlueprint{
+		{
+			SessionID:     "pd_sess_0",
+			MaxRounds:     2,
+			ThinkTimeUs:   1000,
+			Horizon:       math.MaxInt64,
+			InputSampler:  inputSampler,
+			OutputSampler: outputSampler,
+			RNG:           rand.New(rand.NewSource(rng.Int63())),
+		},
+		{
+			SessionID:     "pd_sess_1",
+			MaxRounds:     2,
+			ThinkTimeUs:   1000,
+			Horizon:       math.MaxInt64,
+			InputSampler:  inputSampler,
+			OutputSampler: outputSampler,
+			RNG:           rand.New(rand.NewSource(rng.Int63())),
+		},
+	}
+
+	sm := workload.NewSessionManager(blueprints)
+	callback := sm.OnComplete
+
+	// Initial round-0 requests (one per session)
+	reqs := make([]*sim.Request, 2)
+	for i := 0; i < 2; i++ {
+		reqs[i] = &sim.Request{
+			ID:           fmt.Sprintf("pd_sess_%d_r0", i),
+			ArrivalTime:  int64(i * 1000),
+			InputTokens:  make([]int, 50),
+			OutputTokens: make([]int, 20),
+			MaxOutputLen: 20,
+			State:        sim.StateQueued,
+			SessionID:    fmt.Sprintf("pd_sess_%d", i),
+			RoundIndex:   0,
+		}
+	}
+
+	cs := NewClusterSimulator(config, reqs, callback)
+	mustRun(t, cs)
+
+	metrics := cs.AggregatedMetrics()
+	// 2 sessions x 2 rounds = 4 completed requests
+	if metrics.CompletedRequests != 4 {
+		t.Errorf("CompletedRequests = %d, want 4 (2 sessions x 2 rounds)", metrics.CompletedRequests)
+	}
+
+	// All parent requests should have completed through the PD pipeline
+	parents := cs.ParentRequests()
+	if len(parents) != 4 {
+		t.Errorf("ParentRequests() = %d, want 4", len(parents))
+	}
+	for _, parent := range parents {
+		if parent.CompletionTime == 0 {
+			t.Errorf("parent %s: CompletionTime = 0", parent.ID)
+		}
+	}
+
+	// INV-1 conservation
+	assertINV1Conservation(t, metrics, 4, "PD SessionManager follow-ups")
+}
+
+// TestDisaggregation_PD_SessionManager_ContextAccumulation verifies that
+// ProgressIndex flows correctly through the session manager's context
+// accumulation logic (BC-8) when using the PD pipeline.
+//
+// GIVEN: PD cluster (2P + 2D) with real SessionManager (MaxRounds=2, ContextGrowth="accumulate")
+// AND: 1 initial session request with input=50, output=20
+// WHEN: simulation runs to completion
+// THEN: round-1 follow-up has InputTokens longer than round-0 (context accumulated),
+//
+//	and total completed requests == 2 (1 session x 2 rounds)
+func TestDisaggregation_PD_SessionManager_ContextAccumulation(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+
+	rng := rand.New(rand.NewSource(77))
+	inputSampler, err := workload.NewLengthSampler(workload.DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 50},
+	})
+	if err != nil {
+		t.Fatalf("NewLengthSampler (input): %v", err)
+	}
+	outputSampler, err := workload.NewLengthSampler(workload.DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 20},
+	})
+	if err != nil {
+		t.Fatalf("NewLengthSampler (output): %v", err)
+	}
+
+	blueprints := []workload.SessionBlueprint{
+		{
+			SessionID:     "acc_sess_0",
+			MaxRounds:     2,
+			ThinkTimeUs:   1000,
+			Horizon:       math.MaxInt64,
+			ContextGrowth: "accumulate",
+			InputSampler:  inputSampler,
+			OutputSampler: outputSampler,
+			RNG:           rand.New(rand.NewSource(rng.Int63())),
+		},
+	}
+
+	sm := workload.NewSessionManager(blueprints)
+	callback := sm.OnComplete
+
+	// Round-0 request: 50 input tokens, 20 output tokens
+	round0InputLen := 50
+	round0OutputLen := 20
+	reqs := []*sim.Request{
+		{
+			ID:           "acc_sess_0_r0",
+			ArrivalTime:  0,
+			InputTokens:  make([]int, round0InputLen),
+			OutputTokens: make([]int, round0OutputLen),
+			MaxOutputLen: round0OutputLen,
+			State:        sim.StateQueued,
+			SessionID:    "acc_sess_0",
+			RoundIndex:   0,
+		},
+	}
+
+	cs := NewClusterSimulator(config, reqs, callback)
+	mustRun(t, cs)
+
+	metrics := cs.AggregatedMetrics()
+	// 1 session x 2 rounds = 2 completed requests
+	if metrics.CompletedRequests != 2 {
+		t.Errorf("CompletedRequests = %d, want 2 (1 session x 2 rounds)", metrics.CompletedRequests)
+	}
+
+	// Find the round-1 follow-up among parent requests
+	parents := cs.ParentRequests()
+	if len(parents) != 2 {
+		t.Fatalf("ParentRequests() = %d, want 2", len(parents))
+	}
+
+	var round1Parent *ParentRequest
+	for _, p := range parents {
+		if p.OriginalRequest.RoundIndex == 1 {
+			round1Parent = p
+			break
+		}
+	}
+	if round1Parent == nil {
+		t.Fatal("no round-1 parent request found")
+	}
+
+	// Context accumulation: round-1 input should include accumulated context from round-0.
+	// Round 0: input=50, actual output = PI - len(Input) = (50+20-1) - 50 = 19 tokens
+	// Accumulated context: 50 (round-0 input) + 19 (round-0 actual output) = 69
+	// Round 1 new input: 50 (from constant sampler)
+	// Round 1 total input: 69 (context) + 50 (new) = 119
+	round1InputLen := len(round1Parent.OriginalRequest.InputTokens)
+	if round1InputLen <= round0InputLen {
+		t.Errorf("round-1 InputTokens length = %d, want > %d (context should have accumulated)",
+			round1InputLen, round0InputLen)
+	}
+
+	// Verify the exact accumulated length: context(69) + new_input(50) = 119
+	wantRound1InputLen := (round0InputLen + (round0OutputLen - 1)) + 50 // context + new_input
+	if round1InputLen != wantRound1InputLen {
+		t.Errorf("round-1 InputTokens length = %d, want %d (context=%d + new_input=50)",
+			round1InputLen, wantRound1InputLen, round0InputLen+(round0OutputLen-1))
+	}
+
+	// All parents should have completed
+	for _, p := range parents {
+		if p.CompletionTime == 0 {
+			t.Errorf("parent %s: CompletionTime = 0", p.ID)
+		}
+	}
+
+	// INV-1 conservation
+	assertINV1Conservation(t, metrics, 2, "PD SessionManager context accumulation")
 }

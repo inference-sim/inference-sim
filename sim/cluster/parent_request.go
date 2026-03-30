@@ -9,7 +9,8 @@ type ParentRequest struct {
 	OriginalRequest *sim.Request // Pointer to the original request (for metadata)
 	PrefillSubReqID string
 	DecodeSubReqID  string
-	NumKVBlocks     int64 // KV blocks to transfer (ceil(inputLen / blockSize))
+	DecodeSubReq    *sim.Request // Pointer to the decode sub-request (set by DecodeRoutingEvent)
+	NumKVBlocks     int64        // KV blocks to transfer (ceil(inputLen / blockSize))
 
 	// Phase timestamps (microseconds). Zero means phase not yet reached.
 	ArrivalTime          int64
@@ -18,7 +19,7 @@ type ParentRequest struct {
 	TransferStartTime    int64
 	TransferCompleteTime int64
 	DecodeEnqueueTime    int64
-	// CompletionTime has two meanings depending on outcome:
+	// CompletionTime has three meanings depending on outcome:
 	//   - Successful decode: set by detectDecodeCompletions to
 	//     clusterClock + decodeInstance.PostDecodeFixedOverhead() when the decode
 	//     sub-request finishes its last step. Includes PostDecodeFixedOverhead so
@@ -29,6 +30,8 @@ type ParentRequest struct {
 	//     point when the drop was detected). Since decode never ran, this reflects
 	//     the drop-detection time, not a decode completion time.
 	//     Use DecodeInstanceID == "" to distinguish dropped requests.
+	//   - Decode timeout: set by detectDecodeCompletions to the cluster clock at
+	//     timeout detection time. The session is cancelled via sessionCallback.
 	CompletionTime int64
 
 	// Instance assignment

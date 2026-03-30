@@ -120,6 +120,8 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 	//   1. processCompletions (req.State == StateCompleted) — handled above
 	//   2. TimeoutEvent.Execute (req.State == StateTimedOut) — handled above
 	//   3. EnqueueRequest guard drops (req.State == StateQueued) — handled here
+	//   4. detectDecodeCompletions (cluster.go) — req.State set to StateCompleted
+	//      before invocation; not a drop path (issue #884)
 	// A legitimately queued request never triggers this callback.
 	// If a future code path invokes OnRequestDone for a queued request that is
 	// NOT dropped, this detection would incorrectly cancel the session. Review
