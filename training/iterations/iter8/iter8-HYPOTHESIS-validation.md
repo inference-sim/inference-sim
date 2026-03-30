@@ -1,5 +1,16 @@
 # Iteration 8: Hypothesis Validation
 
+## ⚠️ IMPORTANT: Data Update Post-Analysis
+
+**AFTER this analysis was completed**, exp17 (Scout general) was replaced with clean data:
+
+- **Old exp17**: `17-llama-4-scout-17b-16e-tp2-general-2` — Saturated server (used in this analysis)
+- **New exp17**: `17-llama-4-scout-17b-16e-tp2-general-lite-2-1` — Normal conditions (use for iter9+)
+
+**Impact**: This validation used saturated Scout general data (99.97% TTFT may be inflated). **iter9 MUST re-train** with new exp17 before adding β₉.
+
+---
+
 ## H-main: MoE Routing Overhead Captures Scout Residual
 
 **Prediction** (from Agent 1):
