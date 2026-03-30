@@ -46,7 +46,7 @@ A simulation auditor verifies that no requests are silently lost. Every injected
 
 **Why this priority**: Invariant correctness. Request conservation is a foundational guarantee of the simulator. Deferred requests represent a new accounting category that must be included.
 
-**Independent Test**: Run any simulation with Batch/Background traffic and a finite horizon. Verify that `injected == completed + shed + dropped + deferred_horizon_interrupted` at simulation end.
+**Independent Test**: Run any simulation with Batch/Background traffic and a finite horizon. Verify that `injected == completed + still_running + still_queued + shed + dropped_unservable + timed_out + rejected + deferred_horizon_interrupted` at simulation end.
 
 **Acceptance Scenarios**:
 

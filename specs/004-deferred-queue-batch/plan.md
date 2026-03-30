@@ -128,11 +128,17 @@ No initialization needed in struct literal — `nil` slice is safe for `len()` a
 #### `isBusy() bool`
 
 ```go
-// isBusy returns true when any instance has non-zero effective load.
+// isBusy returns true when any non-terminated instance has non-zero effective load.
 // Matches the three-component definition: QueueDepth + BatchSize + InFlightRequests > 0.
+// Skips InstanceStateTerminated instances — stale inFlightRequests on terminated instances
+// must not count as load (otherwise a recently terminated instance would permanently block
+// deferred-queue promotion).
 // An empty instance pool (zero instances) is not busy.
 func (c *ClusterSimulator) isBusy() bool {
     for _, inst := range c.instances {
+        if inst.State == InstanceStateTerminated {
+            continue // stale inFlightRequests on terminated instances must not count as load
+        }
         if inst.QueueDepth()+inst.BatchSize()+c.inFlightRequests[string(inst.ID())] > 0 {
             return true
         }

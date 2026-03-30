@@ -108,54 +108,60 @@ func TestDeferredQueue_BatchAdmittedWhenIdle(t *testing.T) {
 }
 
 // T004 — BC-D3: Deferred requests are promoted and complete once the cluster becomes idle.
+// Table-driven over both SLO classes so that a class-filtered bug in promoteDeferred()
+// (e.g., one that silently discards "background" entries) would be caught.
 func TestDeferredQueue_DeferredPromotedAfterIdle(t *testing.T) {
-	// 5 standard requests complete first, then 5 batch requests should be promoted
-	var requests []*sim.Request
-	for i := 0; i < 5; i++ {
-		requests = append(requests, &sim.Request{
-			ID:           fmt.Sprintf("std_%d", i),
-			ArrivalTime:  int64(i) * 100,
-			SLOClass:     "standard",
-			InputTokens:  make([]int, 30),
-			OutputTokens: make([]int, 10),
-			State:        sim.StateQueued,
-		})
-	}
-	for i := 0; i < 5; i++ {
-		requests = append(requests, &sim.Request{
-			ID:           fmt.Sprintf("batch_%d", i),
-			ArrivalTime:  int64(i) * 100, // arrive same time as standard — will be deferred
-			SLOClass:     "batch",
-			InputTokens:  make([]int, 20),
-			OutputTokens: make([]int, 5),
-			State:        sim.StateQueued,
-		})
-	}
+	for _, sloClass := range []string{"batch", "background"} {
+		t.Run(sloClass, func(t *testing.T) {
+			// 5 standard requests complete first, then 5 deferred-tier requests should be promoted
+			var requests []*sim.Request
+			for i := 0; i < 5; i++ {
+				requests = append(requests, &sim.Request{
+					ID:           fmt.Sprintf("std_%d", i),
+					ArrivalTime:  int64(i) * 100,
+					SLOClass:     "standard",
+					InputTokens:  make([]int, 30),
+					OutputTokens: make([]int, 10),
+					State:        sim.StateQueued,
+				})
+			}
+			for i := 0; i < 5; i++ {
+				requests = append(requests, &sim.Request{
+					ID:           fmt.Sprintf("%s_%d", sloClass, i),
+					ArrivalTime:  int64(i) * 100, // arrive same time as standard — will be deferred
+					SLOClass:     sloClass,
+					InputTokens:  make([]int, 20),
+					OutputTokens: make([]int, 5),
+					State:        sim.StateQueued,
+				})
+			}
 
-	cfg := newTestDeploymentConfig(1)
-	cs := NewClusterSimulator(cfg, requests, nil)
-	mustRun(t, cs)
+			cfg := newTestDeploymentConfig(1)
+			cs := NewClusterSimulator(cfg, requests, nil)
+			mustRun(t, cs)
 
-	// All requests must be accounted for — none silently lost (INV-1 extended)
-	m := cs.AggregatedMetrics()
-	total := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable +
-		m.TimedOutRequests + cs.DeferredQueueLen() + cs.RejectedRequests()
-	if total != 10 {
-		t.Errorf("conservation: completed(%d)+queued(%d)+running(%d)+dropped(%d)+timedout(%d)+deferred(%d)+rejected(%d)=%d, want 10",
-			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
-			m.TimedOutRequests, cs.DeferredQueueLen(), cs.RejectedRequests(), total)
-	}
-	if cs.RejectedRequests() > 0 {
-		t.Errorf("no batch requests should be rejected, got RejectedRequests=%d", cs.RejectedRequests())
-	}
-	// Promotion must have fired: all 10 requests should complete.
-	// Without this, a deleted promoteDeferred() still satisfies conservation as 5+5=10.
-	if m.CompletedRequests != 10 {
-		t.Errorf("all 10 requests should complete after deferred promotion, got CompletedRequests=%d", m.CompletedRequests)
-	}
-	// All promoted requests must have left the deferred queue (no partial-promotion bug).
-	if cs.DeferredQueueLen() != 0 {
-		t.Errorf("deferred queue must be empty after full promotion, got DeferredQueueLen=%d", cs.DeferredQueueLen())
+			// All requests must be accounted for — none silently lost (INV-1 extended)
+			m := cs.AggregatedMetrics()
+			total := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable +
+				m.TimedOutRequests + cs.DeferredQueueLen() + cs.RejectedRequests() + cs.RoutingRejections()
+			if total != 10 {
+				t.Errorf("conservation: completed(%d)+queued(%d)+running(%d)+dropped(%d)+timedout(%d)+deferred(%d)+rejected(%d)+routingRejected(%d)=%d, want 10",
+					m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
+					m.TimedOutRequests, cs.DeferredQueueLen(), cs.RejectedRequests(), cs.RoutingRejections(), total)
+			}
+			if cs.RejectedRequests() > 0 {
+				t.Errorf("%s requests should not be rejected, got RejectedRequests=%d", sloClass, cs.RejectedRequests())
+			}
+			// Promotion must have fired: all 10 requests should complete.
+			// Without this, a deleted promoteDeferred() still satisfies conservation as 5+5=10.
+			if m.CompletedRequests != 10 {
+				t.Errorf("all 10 requests should complete after deferred promotion, got CompletedRequests=%d", m.CompletedRequests)
+			}
+			// All promoted requests must have left the deferred queue (no partial-promotion bug).
+			if cs.DeferredQueueLen() != 0 {
+				t.Errorf("deferred queue must be empty after full promotion, got DeferredQueueLen=%d", cs.DeferredQueueLen())
+			}
+		})
 	}
 }
 
@@ -257,13 +263,13 @@ func TestDeferredQueue_INV1_Conservation(t *testing.T) {
 	if cs.DeferredQueueLen() == 0 {
 		t.Fatalf("expected at least one batch request to remain deferred at horizon (reduce Horizon further if this fails), got DeferredQueueLen=0")
 	}
-	// INV-1 extended: injected == completed + still_running + still_queued + dropped + timed_out + rejected + deferred
+	// INV-1 extended: injected == completed + still_running + still_queued + dropped + timed_out + rejected + routing_rejected + deferred
 	conservation := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable +
-		m.TimedOutRequests + cs.RejectedRequests() + cs.DeferredQueueLen()
+		m.TimedOutRequests + cs.RejectedRequests() + cs.RoutingRejections() + cs.DeferredQueueLen()
 	if conservation != numRequests {
-		t.Errorf("INV-1 violated: completed(%d)+queued(%d)+running(%d)+dropped(%d)+timedout(%d)+rejected(%d)+deferred(%d)=%d, want %d",
+		t.Errorf("INV-1 violated: completed(%d)+queued(%d)+running(%d)+dropped(%d)+timedout(%d)+rejected(%d)+routingRejected(%d)+deferred(%d)=%d, want %d",
 			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
-			m.TimedOutRequests, cs.RejectedRequests(), cs.DeferredQueueLen(), conservation, numRequests)
+			m.TimedOutRequests, cs.RejectedRequests(), cs.RoutingRejections(), cs.DeferredQueueLen(), conservation, numRequests)
 	}
 }
 
