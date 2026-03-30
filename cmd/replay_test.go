@@ -528,6 +528,18 @@ warm_up_requests: 0
 			t.Errorf("BC-3: record[%d] send_time_us=%d != arrival_time_us=%d", i, rec.SendTimeUs, rec.ArrivalTimeUs)
 		}
 	}
+
+	// BC-3: completed requests have simulation-computed timing (non-zero chunk times)
+	for i, rec := range loaded.Records {
+		if rec.Status == "ok" {
+			if rec.FirstChunkTimeUs <= 0 {
+				t.Errorf("BC-3: record[%d] status=ok but first_chunk_time_us=%d (want >0)", i, rec.FirstChunkTimeUs)
+			}
+			if rec.LastChunkTimeUs < rec.FirstChunkTimeUs {
+				t.Errorf("BC-3: record[%d] last_chunk_time_us=%d < first_chunk_time_us=%d", i, rec.LastChunkTimeUs, rec.FirstChunkTimeUs)
+			}
+		}
+	}
 }
 
 func TestReplayCmd_EndToEnd_BlackboxMode(t *testing.T) {
