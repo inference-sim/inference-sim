@@ -1,0 +1,105 @@
+# Coefficient Bounds and Initial Values for Iteration 16
+# Dimensionality Reduction and Stable Basin Recovery
+#
+# CRITICAL: Warm-start from iter9 (161% loss, same 15-experiment dataset, last stable state)
+# CHANGES FROM ITER15:
+#   - Removed β₃, β₆, β₇, β₈, β₉ (all collapsed to ~0 in iter15) → 10D → 5D
+#   - Warm-start from iter9 instead of cold-start or iter7
+#   - Adjusted iter9 coefficients for amplified decode bounds (iter9: β₁=1.361, β₄=0.466 vs iter16 bounds: [5-15], [3-8])
+#   - Kept bounds from iter15 for β₀, β₁, β₂, β₄, β₅ (proven to work, just need better initialization)
+
+# Alpha coefficients (request-level overheads) — 3 total
+# Units: seconds (converted to μs in code)
+alpha_bounds:
+  - [0.0005, 0.0025]    # α₀: Fixed API overhead (0.5-2.5 ms per request)
+  - [0.00005, 0.00015]  # α₁: Per-input-token tokenization (50-150 μs per token)
+  - [0.00004, 0.00012]  # α₂: Per-output-token detokenization (40-120 μs per token)
+
+# Alpha initial values (warm-start from iter9)
+# Iter9 optimal: [0.000351, 0.0000650, 0.0000485]
+alpha_initial:
+  - 0.000351   # α₀: 0.351 ms (iter9 optimal, physically plausible)
+  - 0.0000650  # α₁: 65.0 μs (iter9 optimal, physically plausible)
+  - 0.0000485  # α₂: 48.5 μs (iter9 optimal, physically plausible)
+
+# Beta coefficients (step-level terms) — 5 total (iter16: removed β₃, β₆, β₇, β₈, β₉)
+# **CRITICAL MAPPING**: Iter16 uses ONLY 5 coefficients, but optimizer expects array indexing.
+# New mapping for evolved_model.go:
+#   - Beta[0] → β₀ (prefill compute MFU)
+#   - Beta[1] → β₁ (decode memory MFU)
+#   - Beta[2] → β₂ (TP communication)
+#   - Beta[3] → β₄ (decode compute MFU)  ← NOTE: β₃ removed, this is β₄ from iter15
+#   - Beta[4] → β₅ (MoE gating efficiency) ← NOTE: β₅ from iter15
+beta_bounds:
+  # β₀: Prefill compute MFU scaling (dimensionless)
+  # Physics: Scales roofline prefill estimate to match reality
+  # Expected: 0.05-0.25 (unchanged from iter15)
+  # Iter9 optimal: 0.162 (within range)
+  # Iter15 optimal: 0.092 (within range, but led to 13-40× underestimation)
+  - [0.05, 0.25]
+
+  # β₁: Decode memory-bound MFU scaling (dimensionless) — **AMPLIFIED 10× from iter7-9**
+  # Physics: Scales roofline decode memory time (small-batch regime)
+  # Expected: 5.0-15.0 (unchanged from iter15)
+  # Iter9 optimal: 1.361 (was in old [1.0-1.5] range, but new range is [5-15])
+  # Iter15 optimal: 6.398 (within range, helped decode-heavy workloads)
+  # Warm-start: Use 10.0 (midpoint of [5-15], not iter9's 1.361 which is out of range)
+  - [5.0, 15.0]
+
+  # β₂: TP communication scaling (dimensionless)
+  # Physics: Scales TP all-reduce time (decode phase only)
+  # Expected: 0.15-0.25 (unchanged from iter15)
+  # Iter9 optimal: 0.817 (OUT OF RANGE, was inflated)
+  # Iter15 optimal: 0.207 (within range)
+  # Warm-start: Use 0.20 (midpoint, not iter9's inflated 0.817)
+  - [0.15, 0.25]
+
+  # β₄: Decode compute-bound MFU scaling (dimensionless) — **AMPLIFIED 5× from iter7-9**
+  # Physics: Scales roofline decode compute time (large-batch regime)
+  # Expected: 3.0-8.0 (unchanged from iter15)
+  # Iter9 optimal: 0.466 (was in old [0.3-0.8] range, but new range is [3-8])
+  # Iter15 optimal: 6.471 (within range, helped decode-heavy workloads)
+  # Warm-start: Use 5.5 (midpoint of [3-8], not iter9's 0.466 which is out of range)
+  - [3.0, 8.0]
+
+  # β₅: MoE gating efficiency (dimensionless)
+  # Physics: Scales roofline MoE gating network FLOPs (routing probability computation)
+  # Expected: 20-50 (unchanged from iter15)
+  # Iter9 optimal: 0.0198 (was 19.8 μs, but this is PER-TOKEN, need to check units)
+  # Iter15 optimal: 33.569 (within range)
+  # Warm-start: Use 35.0 (close to iter15's working value, not iter9's 0.02 which may be wrong units)
+  - [20.0, 50.0]
+
+# Beta initial values (warm-start from iter9, adjusted for new bounds)
+# Iter9 optimal: [0.162, 1.361, 0.817, 0.00959, 0.466, 0.0198, 0.0993, 0.0110, 0.0000728, 1.37e-7]
+#                [β₀,   β₁,    β₂,    β₃,      β₄,    β₅,     β₆,     β₇,     β₈,        β₉]
+# Iter16 keeps: β₀, β₁, β₂, β₄, β₅ (indices 0, 1, 2, 4, 5 from iter9)
+# Adjustments:
+#   - β₁: iter9=1.361 → iter16=10.0 (midpoint of [5-15], iter9 value out of range)
+#   - β₂: iter9=0.817 → iter16=0.20 (midpoint of [0.15-0.25], iter9 was inflated)
+#   - β₄: iter9=0.466 → iter16=5.5 (midpoint of [3-8], iter9 value out of range)
+#   - β₅: iter9=0.0198 → iter16=35.0 (use iter15's working value 33.6, rounded to 35)
+beta_initial:
+  - 0.162    # β₀: Prefill MFU (iter9 optimal, physically plausible, within bounds)
+  - 10.0     # β₁: Decode memory MFU (midpoint, iter9's 1.361 out of range [5-15])
+  - 0.20     # β₂: TP comm (midpoint, iter9's 0.817 was inflated beyond bounds)
+  - 5.5      # β₄: Decode compute MFU (midpoint, iter9's 0.466 out of range [3-8])
+  - 35.0     # β₅: MoE gating (use iter15's working value 33.6, close to midpoint 35)
+
+# Optimization configuration
+# NOTE: These values are DOCUMENTATION ONLY - not read by inner_loop_optimize.py
+optimization:
+  algorithm: "TPE"  # Tree-structured Parzen Estimator
+  n_trials: 1000    # 1000 trials in 5D = 200 trials/dimension (same density as iter15's 200 trials/dim in 10D)
+  initialization: "warm_start"  # Trial 0 uses iter9-derived values (adjusted for new bounds), trials 1-999 explore via TPE
+  rationale: |
+    Warm-start from iter9 (161% loss, last stable state on same dataset) instead of iter15's cold-start or iter7 (different dataset).
+
+    Adjustments to iter9 coefficients:
+    - β₁ (decode memory): 1.361 → 10.0 (iter9 value out of new [5-15] range, use midpoint)
+    - β₂ (TP comm): 0.817 → 0.20 (iter9 value inflated beyond [0.15-0.25] range, use midpoint)
+    - β₄ (decode compute): 0.466 → 5.5 (iter9 value out of new [3-8] range, use midpoint)
+    - β₅ (MoE gating): 0.0198 → 35.0 (use iter15's working value 33.6, physically plausible)
+
+    1000 trials (standard budget) because 5D search space is much smaller than iter15's 10D.
+    Expected sample efficiency: Starting near iter9's 161% loss basin should converge faster than iter15's cold-start (6538%).

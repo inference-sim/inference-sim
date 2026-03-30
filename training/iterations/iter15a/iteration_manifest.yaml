@@ -1,0 +1,42 @@
+iteration: 16
+latency_backend_name: "evolved"  # Backend name stays constant; implementation evolves
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 16: Dimensionality Reduction and Stable Basin Recovery
+
+  **Context**: Iter15 catastrophically failed (loss 6538%, 182% worse than iter14) due to 10-dimensional cold-start search that rejected 5/10 coefficients. The three-axis correction strategy (decode amplification + MoE non-compute + dense batching) was fundamentally flawed — the optimizer pushed β₃, β₆, β₇, β₈, β₉ to effectively zero, indicating wrong physics hypotheses or negligible contributions.
+
+  **Previous iteration (iter15)**: Three-axis correction with 10 beta coefficients, cold-start initialization, 2000 trials. Result: 5/10 coefficients collapsed, loss increased 182%. Key learnings:
+  - β₈ (MoE non-compute) hypothesis was WRONG: β₈=0.000037 (270,000× too small) → MoE routing overhead is negligible or already in β₅
+  - β₉ (prefill batching) hypothesis was WRONG: β₉=7.2e-07 (2,800,000× too small) → Batch heterogeneity does NOT explain dense overestimation
+  - β₁, β₄ decode amplification was directionally CORRECT: β₁=6.4, β₄=6.5 helped reasoning-lite E2E (75-180%)
+  - Dimensional curse (10D cold-start): 2000 trials = 200 trials/dimension → insufficient for convergence
+  - Wrong baseline: Compared to iter7 (different dataset) instead of iter9 (same dataset, 161% loss, last stable state)
+
+  **This iteration removes**:
+  - **β₃ (KV management base)**: Collapsed to 0.001 (1500× too small) → negligible or already in β₀/β₁
+  - **β₆ (scheduler overhead)**: Collapsed to 0.042 (1000× too small) → vLLM scheduler is fast (<1ms), not 40-100ms
+  - **β₇ (decode per-request overhead)**: Collapsed to 0.016 (1000× too small) → output processing is fast
+  - **β₈ (MoE non-compute latency)**: Collapsed to 0.000037 (270,000× too small) → wrong hypothesis
+  - **β₉ (prefill batching penalty)**: Collapsed to 7.2e-07 (2,800,000× too small) → wrong hypothesis
+
+  **This iteration keeps**:
+  - **β₀ (prefill compute MFU)**: Used by iter15 (0.092) → scales down roofline prefill by 11×
+  - **β₁ (decode memory MFU)**: Used by iter15 (6.4) → amplifies decode memory-bound term
+  - **β₂ (TP communication)**: Used by iter15 (0.21) → scales TP all-reduce overhead
+  - **β₄ (decode compute MFU)**: Used by iter15 (6.5) → amplifies decode compute-bound term
+  - **β₅ (MoE gating efficiency)**: Used by iter15 (33.6) → scales MoE gating network FLOPs
+
+  **Strategy changes**:
+  1. **Reduce dimensionality**: 10D → 5D (remove collapsed coefficients)
+  2. **Warm-start from iter9**: Use iter9's optimal coefficients (161% loss, same dataset) instead of cold-start or iter7
+  3. **Adjust iter9 coefficients for amplified decode bounds**: Iter9 had β₁=1.361, β₄=0.466, but iter16 bounds are [5-15] and [3-8] → initialize to midpoints (10.0, 5.5) instead
+  4. **Standard trial budget**: 1000 trials (200 trials/dim in 5D, same sample density as iter15's 200 trials/dim in 10D)
+
+  **Expected outcome**: Loss 6538% → <1500% (≥4× improvement), with physically plausible coefficients and 10/15 experiments achieving TTFT APE <100%.
+
+timestamp: "2026-04-01T12:00:00Z"
+
+# Standard optimization command (default n_trials=1000)
+optimization_command: "python3 inner_loop_optimize.py --iteration 16 --n_trials 1000"
