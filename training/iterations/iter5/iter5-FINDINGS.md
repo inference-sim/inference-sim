@@ -17,6 +17,136 @@ Iter5 tested the hypothesis that **per-layer fixed overhead** (kernel launch + s
 
 ---
 
+## 🚨 CRITICAL DISCOVERY: Hypothesis Was Based on Wrong Assumptions
+
+**POST-ANALYSIS TRACE INVESTIGATION REVEALS FUNDAMENTAL ERROR IN HYPOTHESIS DESIGN:**
+
+After completing the iter5 analysis, inspection of the actual trace data from reasoning experiments revealed that **the hypothesis was based on completely incorrect assumptions about the workload**:
+
+### What the Hypotheses Assumed (iter3/iter4/iter5)
+
+All three iterations assumed reasoning experiments have **8K-16K token contexts**:
+
+- **Iter3 hypothesis**: "Reasoning workload context lengths not captured"
+- **Iter4 hypothesis**: "Activation bandwidth for long contexts causing 1000× underestimation"
+- **Iter5 hypothesis**: "Per-layer overhead scales with prefill chunking for 8K tokens (1.0 + 8192/2048 = 5.0 scale factor)"
+
+**Example from iter5-HYPOTHESIS.md**:
+> "For reasoning (8K tokens, 80 layers): overhead = β₆ × 80 × 5.0 = 400 × β₆"
+> "Reasoning experiment: 8K tokens, 80 layers, Llama-2-7B"
+
+### What the Traces Actually Show
+
+**Analysis of `trainval_data/20260217-170634-llama-2-7b-tp1-reasoning/results/summary_lifecycle_metrics.json`**:
+
+```json
+"prompt_len": {
+  "mean": 1082.2,
+  "median": 1081.0,
+  "p90": 1094.0,
+  "max": 1108.0
+}
+
+"time_to_first_token": {
+  "mean": 106.6 ms,
+  "median": 91.3 ms,
+  "p90": 215.4 ms,
+  "max": 248.4 ms
+}
+```
+
+**ALL reasoning experiments use ~1K tokens, NOT 8K-16K:**
+
+| Experiment | Prompt Length (mean) | Actual TTFT (mean) |
+|------------|---------------------|-------------------|
+| Llama-2-7B reasoning | 1082 tokens | 106.6 ms |
+| Qwen2.5-7B reasoning | 1090 tokens | 200.1 ms |
+| Scout reasoning | ~1K tokens | ~similar |
+
+### What This Means
+
+**The "1000× underestimation for long contexts" problem does not exist.** The real problem is:
+
+1. **Reasoning uses SHORT contexts (1K tokens)**, same as codegen/roleplay/general workloads
+2. **Actual TTFT is 100-200ms** for 1K-token prefill (not 1000ms)
+3. **Simulator predicts ~1ms TTFT** for 1K-token prefill
+4. **This is a 100-200× underestimation**, not 1000×
+5. **The underestimation occurs for ALL short-context experiments**, not just reasoning
+
+### Why This Invalidates Iter3/4/5 Hypotheses
+
+**Iter4 (activation bandwidth)**:
+- **Assumed**: Long contexts (8K tokens) have high activation write overhead
+- **Reality**: Reasoning uses 1K tokens → activation bandwidth term should be MINIMAL
+- **Result**: β₆ = 1.818 (far below expected 3.0-6.0) because no long contexts exist → hypothesis rejected
+
+**Iter5 (per-layer overhead)**:
+- **Assumed**: Chunking overhead for 8K tokens (scale factor = 1.0 + 8192/2048 = 5.0)
+- **Reality**: Reasoning uses 1K tokens → chunking overhead should be MINIMAL (scale factor = 1.5)
+- **Result**: β₆ = 521μs with formula giving 521 × 32 × 1.5 = 25ms overhead (not 640ms as calculated for 8K tokens)
+
+**Iter3/4/5 all made the same error**: Assumed reasoning = long context. Reality: reasoning = short context with high E2E latency due to DECODE time, not PREFILL time.
+
+### The Real Problem
+
+**The simulator massively under-predicts SHORT-context prefill (1K tokens):**
+
+- **Expected TTFT**: 1-5ms (based on FLOPs calculation)
+- **Actual TTFT**: 100-200ms
+- **Error**: 20-200× underestimation
+
+This is **NOT** a missing overhead term for long contexts. This is a **fundamental misunderstanding of vLLM's prefill behavior for standard 1K-token requests**.
+
+### Why Reasoning Shows 99% TTFT Error
+
+Reasoning experiments show 99% TTFT error not because they have long prefill times, but because:
+
+1. **Actual TTFT**: ~100-200ms (1K tokens)
+2. **Simulator predicts**: ~1ms (massively underestimated)
+3. **APE**: (200 - 1) / 200 × 100% = 99.5%
+
+The 99% error is **an artifact of the baseline being ~1ms** (near-zero prediction), not because actual TTFT is 1000ms.
+
+### What "Reasoning" Workload Actually Is
+
+From `profile.yaml`:
+```yaml
+data:
+  type: shared_prefix
+  shared_prefix:
+    system_prompt_len: 100
+    question_len: 934
+    output_len: 1448
+    enable_multi_turn_chat: true
+```
+
+**"Reasoning" = multi-turn chat with shared prefix**:
+- Short prompts (1K tokens)
+- Long outputs (1.4K tokens)
+- Shared system prompt across users (prefix caching opportunity)
+- E2E dominated by DECODE time (1.4K tokens × 18ms/token = 25 seconds decode)
+
+**Not** the long-context reasoning workload the hypotheses assumed.
+
+### Corrected Profiling Question for Iter6
+
+**WRONG question** (from iter5 recommendations):
+> "Profile vLLM reasoning experiments with 8K tokens to identify algorithmic switch or O(n²) attention memory"
+
+**RIGHT question**:
+> "Why does vLLM prefill take 100-200ms for standard 1K-token requests when roofline predicts 1-5ms?"
+
+**Possible explanations**:
+1. **Batching/queuing delay**: Requests wait in queue before prefill starts (scheduler overhead)
+2. **Kernel launch overhead**: Even for 1K tokens, 32 layers × 15 kernels = 480 launches × 50μs = 24ms
+3. **Memory allocation overhead**: KV cache block allocation, attention buffer setup
+4. **Attention kernel overhead**: FlashAttention-2 has fixed startup cost per batch
+5. **Prefix cache miss penalty**: Shared prefix not cached, recomputing on every request
+
+**The traces already contain this information** - no additional profiling needed, just analysis of existing traces to decompose the 100-200ms TTFT into components.
+
+---
+
 ## Error Analysis
 
 ### Systematic Patterns
@@ -129,59 +259,51 @@ This inverse correlation indicates the **β₀ increase (0.165 → 0.266) domina
 
 Based on the catastrophic error patterns, five root causes emerge:
 
-#### **Principle 1**: β₀ and β₆ must be context-dependent, not uniform coefficients
+#### **Principle 1**: Hypothesis invalidated - "reasoning = long context" assumption was wrong, no context-gating needed
 
-**Evidence**:
-- β₀ rose from 0.165 → 0.266 (within predicted 0.25-0.35 range ✓)
-- But this **broke short-context predictions**: 4-77% TTFT → 300-1091% TTFT
-- β₆ converged to 521μs (far below expected 1000-3000μs)
-- Reasoning experiments barely improved: 99.75-99.99% → 99.45-99.85% TTFT (0.5pp average)
-- Large-model short-context experiments degraded 10-30× (worst: Llama-3.1-70B codegen +1087pp)
+**⚠️ CORRECTED AFTER TRACE ANALYSIS**:
 
-**Mechanism**:
+The original Principle 1 recommended context-gated coefficients (β₀_short vs β₀_long) based on the assumption that reasoning experiments use long contexts (8K-16K tokens). **Trace analysis revealed this assumption is FALSE.**
 
-The current model assumes **uniform coefficients** across all contexts:
-```
-prefill_time = FLOPs / (peak_TFLOPS × β₀) + β₆ × num_layers × (1.0 + tokens/2048)
-```
+**Evidence from traces** (`trainval_data/*/results/summary_lifecycle_metrics.json`):
+- Llama-2-7B reasoning: mean prompt = 1082 tokens, median = 1081 tokens
+- Qwen2.5-7B reasoning: mean prompt = 1090 tokens, median = 1090 tokens
+- Scout reasoning: ~1K tokens (similar)
+- **ALL reasoning experiments use ~1K tokens**, same as codegen/roleplay/general workloads
 
-This creates a **zero-sum gradient conflict**:
-1. Increasing β₀ helps reasoning (reduces predicted time for long contexts where actual time is ~1000ms)
-2. But increasing β₀ also reduces predicted time for SHORT contexts (where actual time is ~50-150ms)
-3. Short contexts were already well-predicted in iter4 (4-77% TTFT) → β₀ increase over-predicts them
-4. Optimizer must choose: help reasoning (4 exps) OR protect short contexts (11 exps)
-5. Optimizer chose compromise: β₀ = 0.266 (moderate increase), β₆ = 521μs (low overhead)
-6. Result: Short contexts catastrophically over-predicted, reasoning barely improved
+**What this means**:
+- **No "long context" experiments exist in training data** (all <2K tokens)
+- **Context-gated coefficients are unnecessary** (all experiments in same regime)
+- **The hypothesis that "reasoning needs different MFU than short contexts" is invalid** (reasoning IS a short-context workload)
 
-**Why uniform coefficients fail**:
-- vLLM has **qualitatively different prefill behavior** for short vs long contexts:
-  - Short contexts (<2K): Compute-bound, achieves ~40-50% MFU, minimal scheduler overhead
-  - Long contexts (>4K): Memory-bound OR algorithm-switched, achieves ~15-25% MFU, high scheduler overhead OR different attention kernel
-- Single β₀ cannot represent both regimes (forced to 0.266 = bad compromise)
-- Single β₆ overhead applies to ALL contexts, but overhead may only exist for long contexts
+**Revised mechanism**:
+
+β₀ rising from 0.165 → 0.266 broke ALL short-context predictions uniformly:
+1. **ALL experiments use 1K tokens** (reasoning, codegen, roleplay, general all ~1K)
+2. β₀ increase shortened predictions for ALL experiments by 38%
+3. Some experiments were already well-predicted (codegen: 4-30% TTFT) → β₀ increase over-predicted them
+4. Other experiments were poorly-predicted (reasoning: 99% TTFT) → β₀ increase didn't help (still under-predicted)
+5. β₆ formula with chunking factor (1.0 + tokens/2048) applied small overhead (1.5×) to all 1K-token experiments
+6. Result: Well-predicted experiments catastrophically degraded, poorly-predicted experiments barely improved
+
+**Why reasoning differs from codegen** (both use 1K tokens):
+- **NOT context length** (both ~1K tokens)
+- **NOT workload type** (model is workload-agnostic per design)
+- **Likely: batching/queuing behavior**:
+  - Reasoning workload: multi-turn chat with shared prefix → high concurrency → long queue wait
+  - Codegen workload: single-turn completion → lower concurrency → short queue wait
+  - Trace analysis needed to confirm: decompose TTFT into queuing vs execution time
 
 **Action for iter6**:
-- **Option 1: Context-gated coefficients**:
-  ```
-  if num_prefill_tokens > 4096:
-      β₀_long = 0.15-0.25  # Low MFU for long contexts
-      β₆_long = 1000-3000μs  # High per-layer overhead
-  else:
-      β₀_short = 0.40-0.55  # High MFU for short contexts
-      β₆_short = 0μs  # No per-layer overhead
-  ```
-- **Option 2: Continuous context-length scaling** (avoids discontinuity at 4K):
-  ```
-  context_scale = min(1.0, num_prefill_tokens / 4096.0)
-  β₀_effective = β₀_short × (1 - context_scale) + β₀_long × context_scale
-  β₆_effective = β₆_long × context_scale  # Only apply to long contexts
-  ```
-- **Option 3: Profile vLLM** to confirm algorithmic switch at >4K or >8K tokens (different FlashAttention kernel? PagedAttention chunking threshold?)
+- **NO context gating needed** (all experiments <2K tokens)
+- **Instead: Decompose SHORT-context prefill** (1K tokens) into components:
+  1. **Queuing delay**: Time waiting in scheduler queue before prefill starts
+  2. **Kernel execution**: Actual prefill compute time
+  3. **Memory allocation**: KV cache block allocation overhead
+- **Add queuing term** if traces show reasoning has 50-150ms queuing delay
+- **Keep single β₀ and β₆** (no short/long split), but adjust expected ranges for 1K tokens
 
-**Expected outcome**: With context-dependent coefficients:
-- Short contexts: β₀ = 0.45, β₆ = 0 → predicted time matches iter4 baseline (4-77% TTFT)
-- Long contexts: β₀ = 0.20, β₆ = 2000μs → reasoning improves from 99% → 60-80% TTFT (if per-layer overhead is correct mechanism)
-- Overall loss: 603% → 90-110% (recovering iter4 short-context accuracy + gaining reasoning improvement)
+**Expected outcome**: Identify why reasoning (1K tokens, 100-200ms TTFT) differs from codegen (1K tokens, 20-50ms TTFT) despite same prompt length → likely queuing/batching, not context length or MFU.
 
 ---
 
@@ -299,66 +421,71 @@ Removing iter4's β₆ (activation bandwidth) **partially reduced collinearity**
 
 ---
 
-#### **Principle 4**: Reasoning experiments require a different mechanism (not per-layer overhead)
+#### **Principle 4**: Reasoning underestimation is NOT 1000× for long contexts, but 100-200× for SHORT contexts with queuing
 
-**Evidence from H-main, H-boundary, H-error-pattern**:
-- Reasoning improved by only 0.14-0.52pp (99.75-99.99% → 99.45-99.85% TTFT)
-- 1000× underestimation persists (predicted ~100ms, actual ~1000ms)
-- β₆ converged to 521μs (far below expected 1000-3000μs)
-- No meaningful progress in 3 iterations (iter3: 99.71%, iter4: 99.85%, iter5: 99.65% average)
+**⚠️ CORRECTED AFTER TRACE ANALYSIS**:
 
-**Mechanism**:
+**Evidence from traces** (`trainval_data/*/results/summary_lifecycle_metrics.json`):
+- Reasoning uses ~1K tokens (NOT 8K-16K as hypothesized)
+- Actual TTFT: 100-200ms (Llama-2: 106.6ms, Qwen: 200.1ms)
+- Simulator predicts: ~1ms (massive underestimation)
+- Error: (200 - 1) / 200 × 100% = **99.5% APE** (artifact of near-zero baseline, not 1000ms actual time)
 
-Three iterations have conclusively ruled out **memory bandwidth bottlenecks** for reasoning:
-- Iter4: Activation write bandwidth (β₆ = 1.818, expected 3.0-6.0) → 0% improvement
-- Iter5: Per-layer overhead (β₆ = 521μs, expected 1000-3000μs) → 0.5pp improvement
-- Both hypotheses predicted >25pp improvement (from 99.75% → 70-75% TTFT) → failed
+**The "1000× underestimation" claim was wrong**:
+- **Not 1000×**: Not predicting 1ms when actual is 1000ms
+- **Actually 100-200×**: Predicting 1ms when actual is 100-200ms
+- **Not long-context**: Reasoning uses 1K tokens, same as all other workloads
+- **Not prefill-dominated**: E2E latency 25-30 seconds, mostly decode time (1.4K tokens × 18ms/token)
 
-**Physical impossibility**: 1000× underestimation cannot be explained by continuous bottlenecks:
-- Memory bandwidth (HBM): max 3-5× slowdown (limited by 3.35 TB/s on H100)
-- Compute throughput: max 2-3× slowdown (limited by MFU 40-55%)
-- Communication (NVLink): max 2× slowdown (limited by 900 GB/s)
+**Revised mechanism**:
 
-**A 1000× slowdown requires**:
-1. **Algorithmic switch**: vLLM uses different attention kernel for contexts >8K tokens
-   - FlashAttention-2 (short contexts) vs PagedAttention with CPU offload (long contexts)
-   - Or: Different chunking strategy (smaller chunks for long contexts → more overhead)
-   - Or: Attention computation switches from O(n²) tiled to O(n²) full materialization
-2. **Quadratic memory overhead**: Attention working set ∝ (tokens)² for contexts >4K
-   - Current model: prefill FLOPs ∝ tokens × num_layers (linear in tokens)
-   - Reality: For n > 4K, attention may materialize full attention matrix (n² memory)
-   - Memory bandwidth time ∝ n² → explains 1000× slowdown for n=8K (64× from n² alone)
-3. **Scheduler batching**: Reasoning requests batched differently (larger batches → longer wait times)
-   - vLLM may prioritize short requests over long requests (starvation)
-   - Or: Reasoning prompts trigger KV cache eviction (swapping blocks to CPU)
-   - Or: Prefix cache misses (reasoning prompts don't share prefixes with other requests)
-4. **Kernel launch overhead**: Fixed cost per layer per chunk (already tested — β₆ = 521μs insufficient)
+Reasoning differs from codegen/roleplay/general **NOT by context length** (all ~1K tokens), but likely by:
 
-**Why per-layer overhead failed** (from Principle 2):
-- β₆ = 521μs gives 208ms overhead for reasoning (8K tokens, 80 layers)
-- Need ~900ms to close gap → β₆ should be 2167μs (4.2× higher)
-- But optimizer chose 521μs to protect short contexts from degradation
-- This suggests per-layer overhead is **a component** but **not the dominant bottleneck**
+1. **Queuing/scheduler delay** (most likely):
+   - Reasoning workload: Multi-turn chat, shared prefix, high concurrency → long queue wait
+   - Codegen workload: Single-turn completion, lower concurrency → short queue wait
+   - Traces show TTFT variance: Llama-2 reasoning p10=0.13ms, p90=215ms (1650× variance!)
+   - This variance suggests queuing: some requests processed immediately, others wait 200ms
 
-**Action for iter6** (CRITICAL — must profile before next iteration):
-1. **Profile vLLM reasoning experiments**:
-   ```bash
-   nsys profile -o reasoning_profile vllm serve --model meta-llama/Llama-2-7b-hf --tensor-parallel-size 1
-   # Send 8K-token reasoning prompt, capture timeline
+2. **Prefix cache behavior**:
+   - Reasoning uses shared system prompt (100 tokens) across all requests
+   - If prefix NOT cached: Every request recomputes 100 tokens → +10-20ms overhead
+   - If prefix cached but evicted: First request after eviction pays 100ms penalty
+
+3. **Batch formation timing**:
+   - vLLM continuous batching waits for batch to fill before processing
+   - Reasoning workload may trigger different batching thresholds
+   - E.g., wait 100ms to batch 8 requests vs process immediately
+
+4. **Per-layer overhead** (minor component):
+   - β₆ = 521μs × 32 layers × 1.5 (1K tokens) = 25ms
+   - This captures ~25% of the 100ms gap, suggesting it's a component but not dominant
+
+**Why three iterations failed**:
+- **All assumed long contexts** (8K-16K tokens) → tested wrong hypotheses
+- **All focused on prefill compute/memory** → missed queuing/batching overhead
+- **All predicted >25pp improvement** → but queuing/batching wasn't addressed
+
+**No additional profiling needed** — traces already contain the answer:
+- Traces have `start_time` (request arrival) and `output_token_times[0]` (first token produced)
+- Can decompose TTFT into: queuing delay + prefill execution + post-processing
+- Variance analysis (p10=0.13ms, p90=215ms) strongly suggests queuing is dominant
+
+**Action for iter6**:
+1. **Analyze existing traces** to decompose 100-200ms TTFT:
+   ```python
+   # For each request in traces:
+   queuing_delay = min(output_token_times) - start_time - expected_prefill_time
+   # If queuing_delay > 50ms for reasoning but <5ms for codegen → queuing is the issue
    ```
-2. **Measure**:
-   - Kernel launch count and timing distribution (is it 50μs × 200 kernels × 80 layers?)
-   - Attention kernel type for long contexts (FlashAttention vs PagedAttention?)
-   - Memory allocation overhead (KV cache blocks, attention buffers)
-   - Scheduler queue depth and batch formation latency
-   - CPU-GPU memory transfers (KV cache offload?)
-3. **Identify dominant bottleneck**:
-   - If kernel launch: Add kernel-specific β_kernel term (may need >2000μs per layer)
-   - If algorithmic switch: Add context-gated β₀ (β₀_short vs β₀_long)
-   - If O(n²) attention: Add quadratic memory term (bandwidth ∝ tokens²)
-   - If scheduler batching: Add queuing term (wait time before prefill starts)
+2. **Add queuing term** to model:
+   ```go
+   queuing_delay_us = Beta[6] * queue_depth  // or function of arrival rate
+   total_ttft = prefill_time + queuing_delay_us
+   ```
+3. **Expected β₆ range**: 10-50ms per request in queue (typical scheduler overhead)
 
-**Expected outcome**: Profiling will reveal ONE of four mechanisms dominates (likely algorithmic switch or O(n²) memory), enabling targeted hypothesis for iter6.
+**Expected outcome**: Reasoning improves from 99% → 20-40% TTFT if queuing term captures the 100-150ms scheduler delay. The remaining 40-60ms may be per-layer overhead (kernel launch) or prefix cache misses.
 
 ---
 
@@ -502,52 +629,51 @@ Warm-starting from iter3 was **directionally correct** (avoid iter4's coefficien
 
 ### Priority 1: Critical Issues (MUST address before iter6 optimization)
 
-**1.1 Profile vLLM reasoning experiments to identify actual bottleneck — BLOCKING**
-- **Rationale**: Three iterations (iter3/iter4/iter5) failed to improve reasoning (99.7-99.9% TTFT consistently)
-- **Action**: Run `nsys profile` on Llama-2-7B reasoning (8K tokens) and Qwen reasoning (16K tokens)
-- **Measure**:
-  - Kernel launch count and timing distribution (hypothesis: 50μs × 200 kernels × 80 layers = 800ms)
-  - Attention kernel type (FlashAttention-2 vs PagedAttention vs other?)
-  - Memory allocation overhead (KV cache blocks, attention buffers, CPU offload?)
-  - Scheduler queue depth and batch formation latency
-  - CPU-GPU memory transfers (KV cache swapping to CPU?)
-- **Expected outcome**: Identify ONE of four mechanisms:
-  1. Kernel launch overhead (confirms per-layer hypothesis, but need higher β₆)
-  2. Algorithmic switch (different kernel for contexts >8K → context-gated β₀)
-  3. O(n²) attention memory (quadratic bandwidth term needed)
-  4. Scheduler batching overhead (queuing term needed before prefill)
-- **Time estimate**: 2-4 hours for profiling + analysis
-- **Blocking**: DO NOT proceed to iter6 hypothesis design without profiling results
+**1.1 Analyze existing traces to decompose SHORT-context prefill (1K tokens) — BLOCKING**
 
-**1.2 Implement context-gated coefficients to prevent short-context degradation — ARCHITECTURE**
-- **Rationale**: Uniform β₀ and β₆ create zero-sum game (helping reasoning hurts short contexts)
-- **Action**: Add context-length threshold (4096 tokens) for coefficient selection:
-  ```go
-  if num_prefill_tokens <= 4096 {
-      // Short-context regime: high MFU, no per-layer overhead
-      prefill_mfu = Beta[0]  // β₀_short, bounds [0.35, 0.55]
-      per_layer_overhead_us = 0.0
-  } else {
-      // Long-context regime: low MFU, high per-layer overhead
-      prefill_mfu = Beta[6]  // β₀_long, bounds [0.15, 0.30]
-      chunks = 1.0 + float64(num_prefill_tokens - 4096) / 2048.0
-      per_layer_overhead_us = Beta[7] * num_layers * chunks  // β₆_long
-  }
+**⚠️ CRITICAL UPDATE**: Reasoning experiments use **~1K tokens**, NOT 8K-16K as hypothesized. No vLLM profiling needed - traces already contain the answer.
+
+- **Rationale**: Post-analysis trace investigation revealed reasoning uses 1K tokens (actual TTFT: 100-200ms), not 8K tokens (hypothesized TTFT: 1000ms). The real problem is 100-200× underestimation for SHORT contexts, not 1000× for long contexts.
+- **Action**: Analyze existing trace data from `trainval_data/*/results/per_request_lifecycle_metrics.json` to decompose the 100-200ms TTFT for 1K-token prefill:
+  ```python
+  # For reasoning experiments (Llama-2, Qwen, Scout)
+  # Decompose: start_time → first output_token_time
+  # into: queuing delay + kernel execution + memory allocation
   ```
-- **Coefficient mapping**:
-  - β₀: Short-context prefill MFU (0.35-0.55)
-  - β₁-β₅: Unchanged (decode terms, KV management, MoE gating)
-  - β₆: Long-context prefill MFU (0.15-0.30)
-  - β₇: Long-context per-layer overhead (1000-3000 μs)
-- **Total parameters**: 10 (3 alpha + 7 beta, +1 from iter5's 6 beta)
-- **Expected outcome**: Short contexts recover to iter4 baseline (4-77% TTFT), reasoning can improve independently
+- **Measure** (from existing traces, no profiling needed):
+  1. **Request arrival → processing start**: Queuing/scheduler delay
+  2. **Processing start → first token**: Prefill kernel execution time
+  3. **Per-request variance**: Does TTFT vary with batch size, request position, or concurrent load?
+  4. **Shared prefix behavior**: Does prefix caching work? (requests should have <10ms TTFT if prefix cached)
+- **Expected outcome**: Identify dominant component of 100-200ms TTFT:
+  1. **Queuing delay (50-150ms)**: Requests wait before prefill starts → add queuing term
+  2. **Kernel overhead (24-50ms)**: 32 layers × 15 kernels × 50μs = 24ms → keep β₆ but adjust expected range
+  3. **Memory allocation (20-40ms)**: KV cache block allocation per request → β₃ should be 0.02-0.04ms, not 0.0005ms
+  4. **Prefix cache miss (50-100ms)**: Shared prefix not cached → requires workload-specific handling
+- **Time estimate**: 2-4 hours analyzing existing traces (NO new profiling needed)
+- **Blocking**: DO NOT proceed to iter6 hypothesis design without trace analysis results
 
-**1.3 Remove base factor (1.0) from per-layer overhead formula — BUG FIX**
-- **Rationale**: Current formula applies overhead to ALL contexts, causing short-context over-prediction
-- **Action**: Change `prefill_scale_factor = 1.0 + tokens/2048` to `max(0, (tokens - 4096) / 2048)`
-- **Effect**: No overhead for contexts <4K tokens, linear scaling above 4K
-- **Combine with 1.2**: Use context gating (4096 threshold) for both β₀ and β₆
-- **Expected outcome**: Short contexts get zero overhead, long contexts get full overhead (β₆ can converge to 2000-3000 μs)
+**1.2 Abandon context-gated coefficients (no long contexts exist in training data) — ARCHITECTURE SIMPLIFICATION**
+- **Rationale**: ALL experiments use <2K tokens. The "long context" problem doesn't exist. Context gating would add complexity with no benefit.
+- **Action**: Keep SINGLE β₀ and β₆ (no β₀_short/β₀_long split), but fix their expected ranges based on trace analysis:
+  - β₀: Prefill compute MFU, bounds [0.15, 0.45] (allow optimizer freedom to find right value for 1K tokens)
+  - β₆: Per-layer overhead, bounds [500, 3000] μs (based on trace analysis - could be queuing, kernel launch, or memory allocation)
+- **Expected outcome**: Simpler model (6 beta terms, not 7-8), fits actual data (1K tokens) rather than hypothesized data (8K tokens)
+
+**1.3 Fix per-layer overhead formula for 1K-token contexts — BUG FIX**
+- **Rationale**: Current formula assumes chunking overhead for long contexts. Reality: 1K tokens don't get chunked (< 2048 threshold).
+- **Action**: Remove chunking scale factor entirely for now:
+  ```go
+  // Current (wrong for 1K tokens):
+  prefill_scale_factor = 1.0 + num_prefill_tokens / 2048.0
+  overhead_us = Beta[6] * num_layers * prefill_scale_factor
+
+  // Fixed (correct for 1K tokens):
+  overhead_us = Beta[6] * num_layers  // No chunking factor for contexts <2K
+  ```
+- **Effect**: β₆ represents per-layer overhead for STANDARD batch processing, not chunking overhead
+- **Expected β₆ range**: 500-2000 μs per layer (not 1000-3000 μs, since no chunking amplification)
+- **Expected outcome**: Reasoning experiments improve from 99% → 40-60% TTFT (if β₆ captures queuing or kernel overhead correctly)
 
 ### Priority 2: Improvements (address coefficient drift)
 
