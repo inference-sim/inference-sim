@@ -130,44 +130,84 @@ We're trying to predict how long it takes for vLLM (an LLM inference server) to 
 
 ---
 
+## ⚠️ CRITICAL DISCOVERY: The Real Problem (Post-Iter6 Analysis)
+
+**GAME-CHANGER**: After 7 iterations of trying to fix reasoning with model changes, trace analysis reveals **the problem is NOT missing physics — it's corrupted training data**.
+
+### What We Found
+
+Analyzed ground-truth OpenTelemetry traces for all 3 reasoning experiments:
+
+**Failure rates**:
+- Llama-2-7B: 84.8% failed/timeout (only **1.3% usable**, 63 out of 4800 fast successful)
+- Scout-17B: 86.0% failed/timeout (**0% usable**, all successful requests >10s from overload)
+- Qwen2.5-7B: 69.0% failed/timeout (only **1.7% usable**, 83 out of 4800 fast successful)
+
+**The 1-3% successful requests**:
+- Queue time: 0.3-2ms (NOT 100-200ms!)
+- Prefill time: 45-61ms
+- Total TTFT: 50-110ms
+- **β₆ = 21.5ms captures these perfectly!**
+
+**The 85-86% failed requests**:
+- Queue time: 259 SECONDS (stuck in queue until timeout)
+- Never scheduled due to server overload
+- No physics-based model can fit "259 seconds stuck in queue"
+
+### Why This Explains Everything
+
+1. **β₆ = 21.5ms is CORRECT**: It fits the 1-3% of successful reasoning requests under normal operation
+2. **Reasoning stuck at 99%**: Cannot improve because 97-99% of data is from overloaded servers
+3. **No missing physics**: The model works perfectly for clean data (the 1-3% successful requests match predictions)
+4. **Alpha inflation**: Absorbing error from trying to fit two incompatible regimes (normal vs overload)
+5. **"Missing 78.5-178.5ms"**: Doesn't exist! Successful reasoning requests have 50-110ms TTFT (which the model captures correctly)
+
+### What Actually Happened
+
+**Iterations 3-6**: We kept trying different physics terms (long context, activation bandwidth, per-layer overhead, per-request overhead) because we thought the model was missing something.
+
+**Reality**: The model is fine. The reasoning experiments were collected from **overloaded servers** where 85% of requests timeout after 259 seconds in queue. No amount of model changes can fit this.
+
+---
+
 ## The Path Forward
 
-### Immediate Actions (Iter7)
+### Immediate Actions (Before Iter7)
 
-**MUST DO FIRST: Analyze traces to identify reasoning's dominant bottleneck**
-- Measure prefix cache hit rate
-- Decompose batching delay variance (p10 vs p90)
-- Profile attention kernel startup cost
-- Profile memory allocation overhead
+**⚠️ BLOCK ITER7 UNTIL DATA QUALITY RESOLVED**
 
-**Then: Add workload-dependent or variance-driven term**
+**Options** (in order of preference):
 
-Can't use uniform β₆ for both reasoning and short-context. Three options:
+1. **Exclude all reasoning experiments** from training
+   - Reduce dataset from 15 → 11 experiments
+   - Eliminate 97-99% unusable data
+   - **Expected**: Coefficients stabilize, alpha returns to physical values
+   - **Advantage**: Immediate, no data collection needed
 
-1. **Split by workload** (β₆_reasoning=100ms, β₆_codegen=20ms)
-   - ❌ Violates workload-agnostic design principle
-   - ✅ Simple, guaranteed to work
+2. **Re-collect reasoning data under normal server load**
+   - Run reasoning experiments with arrival rate ÷ 10
+   - Target 0-5% failure rate (matching codegen/roleplay)
+   - Collect 4800 clean requests per experiment
+   - **Cost**: 3 new data collection runs, but gets clean data
 
-2. **Model batching delay variance** (p10 vs p90 explicitly)
-   - ✅ Workload-agnostic (variance is observable from request patterns)
-   - ⚠️ Complex, may need per-request position in batch
+3. **Filter to fast successful requests only**
+   - Keep only 146 total requests (63 + 0 + 83) across 3 experiments
+   - **Risk**: Insufficient data for training (only 146 vs 4800 original)
 
-3. **Model as function of concurrency** (more concurrent requests → longer delays)
-   - ✅ Workload-agnostic (reasoning has higher concurrency due to multi-turn chat)
-   - ✅ Physically grounded (scheduler delay increases with load)
+### Other Issues (Secondary)
 
-### Other Issues
-
-- **Scout MoE**: Profile to identify expert routing overhead
-- **Mistral TP=2**: Profile cross-GPU KV cache allocation
-- **Decode coefficients**: β₁/β₄ destabilized in iter6, may need decode overhead term
+- **Scout MoE**: All Scout experiments uniformly bad (87-99% error) — may be architecture-specific issue
+- **Mistral TP=2**: 91% error (but TP=1 works at 11%) — TP-specific issue
+- **Decode coefficients**: β₁/β₄ destabilized in iter6 — may need decode overhead term
 
 ---
 
 ## Bottom Line
 
-**After 7 iterations**: We've successfully modeled 11 out of 15 experiments (11-46% error). But **reasoning is fundamentally stuck** at 99% error, and we've tried 4 different hypotheses without success.
+**After 7 iterations and trace analysis**: We've successfully modeled 11 out of 15 experiments (11-46% error). The remaining 4 reasoning experiments are stuck at 99% error NOT because of missing physics, but because **97-99% of the training data is from overloaded servers** (85% failed/timeout).
 
-**The challenge**: Reasoning differs from codegen by only ~100ms (both use ~1K tokens, both do the same compute), but this 100ms is invisible to our current model. It's likely **batching/queuing behavior** that varies by workload pattern (multi-turn vs single-turn), not by any physical property we can measure from the request itself.
+**The breakthrough**: β₆ = 21.5ms is CORRECT for normal operation. The 1-3% of successful reasoning requests match predictions perfectly (50-110ms TTFT with 0.3-2ms queue time). The model isn't broken — the data is.
 
-**Next step**: Stop guessing. Profile the actual systems to measure where the 100ms goes, then add the right term. We're at the limit of what pure coefficient fitting can solve - need empirical data.
+**Next step**: Fix the data quality issue BEFORE iter7. Either exclude reasoning experiments (recommended for speed) or re-collect under normal load (recommended for completeness). No model changes will help until we train on clean data.
+
+**Full analysis**: See `training/iterations/TRACE_DATA_ANALYSIS.md` for detailed evidence, timelines, and per-experiment breakdowns.

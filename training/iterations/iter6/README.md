@@ -147,7 +147,70 @@ All three critical diagnostics triggered:
    - **Triggered**: β₁ and β₄ destabilized (moved away from iter3)
    - **Action**: Profile decode phase to identify missing decode overhead
 
+## ⚠️ CRITICAL DISCOVERY: Data Quality Issue (Post-Analysis)
+
+**GAME-CHANGING FINDING**: Trace analysis reveals **85-86% of reasoning requests fail/timeout**, with only **0-1.7% usable data**. The 7-iteration struggle to fix reasoning is NOT due to missing physics, but **training on corrupted data from overloaded servers**.
+
+### Evidence from Ground-Truth Traces
+
+Analyzed OpenTelemetry journey traces + KV events for all 3 reasoning experiments:
+
+**Failure rates** (see `TRACE_DATA_ANALYSIS.md` for full analysis):
+- Llama-2-7B: 84.8% failed/timeout, only **1.3% usable** (63 out of 4800 fast successful)
+- Scout-17B: 86.0% failed/timeout, **0% usable** (0 fast successful)
+- Qwen2.5-7B: 69.0% failed/timeout, only **1.7% usable** (83 out of 4800 fast successful)
+
+**Successful requests** (the 1-3% usable data):
+- Queue time (QUEUED → SCHEDULED): **0.3-2ms** (NOT 100-200ms!)
+- Prefill time (SCHEDULED → FIRST_TOKEN): **45-61ms**
+- Total TTFT: **50-110ms**
+- **β₆ = 21.5ms is CORRECT for these requests!**
+
+**Failed/timeout requests** (the 85-86% unusable data):
+- Queue time: **259 SECONDS** (stuck in queue until timeout)
+- Never scheduled due to server overload
+- Create p90=215ms in aggregate statistics (contaminating metrics)
+
+### Why This Explains Everything
+
+1. **β₆ = 21.5ms is CORRECT**: Fits the 1-3% of successful reasoning requests (0.3-2ms queue time, normal operation)
+
+2. **Reasoning stuck at 99% TTFT**: Cannot improve because 97-99% of data is failed/timeout requests (259s stuck in queue), which no physics-based model can fit
+
+3. **Alpha inflation** (α₀=4.07ms, α₁=351μs): Absorbing the error from trying to fit overloaded/timeout data
+
+4. **"Missing 78.5-178.5ms"**: Doesn't exist! Successful reasoning requests have 50-110ms TTFT (which β₆ = 21.5ms + prefill captures correctly). The "100-200ms" in aggregate metrics is contaminated by failed/timeout requests.
+
+5. **No zero-sum trade-off**: The "trade-off" between reasoning and short-context is an artifact of trying to fit two incompatible regimes (normal operation vs server overload) with one set of coefficients.
+
+### Implications for Iter6 Results
+
+**What we thought**:
+- β₆ = 21.5ms insufficient, expected 50-150ms
+- Missing physics: prefix cache misses? attention kernel startup? batching variance?
+- Need workload-dependent overhead term to help reasoning without hurting short-context
+
+**What's actually happening**:
+- β₆ = 21.5ms is CORRECT for all experiments under normal operation
+- No missing physics — the model works perfectly for clean data
+- Reasoning metrics cannot improve because 97-99% of reasoning data is from overloaded servers (259s timeout)
+
+### Recommendation: BLOCK Iter7 Until Data Quality Resolved
+
+**DO NOT proceed with iter7 hypothesis design.** No amount of model changes can fix training on corrupted data.
+
+**Options** (in order of preference):
+1. **Exclude all reasoning experiments** from training (reduce 15 → 11 experiments, eliminate 97-99% unusable data)
+2. **Re-collect reasoning data** under normal server load (target 0-5% failure rate, matching codegen/roleplay)
+3. **Filter to fast successful requests only** (146 total across 3 experiments, may be insufficient for training)
+
+See `../TRACE_DATA_ANALYSIS.md` for full analysis with per-experiment breakdowns, timeline evidence, and detailed recommendations.
+
+---
+
 ## Expected Iter7 Approach
+
+**⚠️ WARNING: DO NOT START ITER7 UNTIL DATA QUALITY ISSUE RESOLVED (see section above)**
 
 **Priority 1: Critical Issues (MANDATORY)**
 

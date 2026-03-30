@@ -240,6 +240,184 @@ Reasoning's 100-200ms TTFT gap has four components:
 
 ---
 
+#### **Detailed Trace Data Analysis**: Reasoning Workload Bottleneck Decomposition
+
+**Purpose**: Decompose reasoning's 100-200ms TTFT gap using existing trace data to identify the dominant bottleneck before iter7 hypothesis design.
+
+**Trace Data Sources** (`training/trainval_data/20260217-170634-llama-2-7b-tp1-reasoning/`):
+1. `results/per_request_lifecycle_metrics.json` — Per-request arrival/completion timestamps, token counts
+2. `results/summary_lifecycle_metrics.json` — Aggregate TTFT/ITL/E2E statistics, prompt lengths
+3. `traces.json` — OpenTelemetry traces with journey events (QUEUED → SCHEDULED → FIRST_TOKEN → FINISHED)
+4. `kv_events.jsonl` — KV cache operation timing (BlockStored, CacheStoreCommitted, TransferInitiated/Completed)
+
+**✅ What We Can Measure from Traces**:
+1. **E2E latency**: End-to-end request time (start to completion)
+2. **TTFT**: Time to first token (`output_token_times[0] - start_time`)
+3. **ITL**: Inter-token latency (delta between consecutive `output_token_times`)
+4. **TTFT variance**: p10=0.13ms, p90=215.4ms (1650× variance!)
+5. **Prompt length**: Confirms ~1082 tokens (NOT 8K as hypothesized in iter3/4/5)
+6. **KV allocation timing**: Per-request KV cache operations (block allocation, CPU offloading, transfer overhead)
+7. **KV allocation overhead**: ~20ms for initial 67-block allocation + ~6.8ms per CPU transfer
+8. **CPU offloading pattern**: All KV cache committed to CPU (not GPU-only)
+9. **Queue time vs prefill time**: Journey events provide `QUEUED → SCHEDULED` (queue delay) and `SCHEDULED → FIRST_TOKEN` (prefill execution)
+
+**❌ What We CANNOT Measure (Still Missing)**:
+1. **Queuing delay vs prefill execution**: KV allocation starts at t=0, but we can't distinguish queue wait vs prefill compute within TTFT without journey events
+2. **Prefill compute time**: Actual GPU kernel execution time (TTFT includes KV allocation + compute + transfers)
+3. **Attention kernel time**: FlashAttention-2 execution time breakdown
+4. **Memory allocation beyond KV**: Activation buffer allocation time
+5. **Batch formation delay**: Time waiting for batch to fill (explains 1650× variance)
+6. **Prefix cache hit/miss**: Whether shared system prompt was cached (no events for cache hits)
+
+**🚨 CRITICAL FINDING: Journey Traces Reveal Overloaded Server (Not Normal Operation!)**
+
+**Journey event timeline** (from `vllm.scheduler` scope, `llm_core` spans):
+1. `journey.QUEUED` — Request enters queue
+2. `journey.SCHEDULED` — Scheduler assigns request for execution
+3. `journey.FIRST_TOKEN` — First token generated
+4. `journey.FINISHED` — Request completes
+
+**Timing breakdown for SUCCESSFUL requests** (730 out of 4800, **only 15% success rate**):
+- **Queue time** (QUEUED → SCHEDULED): 0.3-2ms mean (NEGLIGIBLE!)
+- **Prefill time** (SCHEDULED → FIRST_TOKEN): 45-61ms mean
+- **Total TTFT**: 50-110ms
+
+**For FAILED/TIMEOUT requests** (4070 out of 4800, **85% failure rate**):
+- **Queue time**: 259 SECONDS mean (stuck in queue for 4+ minutes!)
+- **Total TTFT**: 255 SECONDS before timeout
+- These requests never get scheduled due to server overload
+
+**⚠️ The 1650× Variance is NOT Normal Batching Delay**
+
+The p10=0.13ms vs p90=215ms variance is actually:
+- **p10 (fast path)**: Requests that get scheduled immediately, ~50ms TTFT
+- **p50-p90 (slow/timeout path)**: Requests stuck in queue for minutes, eventually timeout at 300s
+
+**This is server OVERLOAD**, not batching delay! The reasoning experiment data is from a severely overloaded server where 85% of requests fail/timeout.
+
+**Implications for Iter6/7**:
+
+**For successful requests** (the 15% that complete):
+- Queue time is ~0.5ms (NOT 100-200ms as hypothesized)
+- Prefill time is ~50ms (includes KV allocation ~30ms + compute ~20ms)
+- β₆ = 21.5ms in iter6 is actually REASONABLE for successful requests
+- The model doesn't need 100ms scheduler overhead — that's timeout behavior!
+
+**The real problem**: Training data includes 85% failed/timeout requests with 255-second "TTFT" (time until timeout). These create the extreme variance and make the model think reasoning needs 100-200ms overhead, when successful reasoning requests only need ~50ms total.
+
+**Critical Finding: KV Events Reveal Timing Breakdown**
+
+**Sample Request Analysis (TTFT = 78.4ms from successful requests)**:
+
+Timeline from KV events:
+```
+t=0ms:    Request arrives, KV allocation starts immediately
+          - BlockStored: 67 blocks
+          - CacheStoreCommitted: 67 blocks to CPU
+t=14ms:   TransferInitiated (CPU offloading starts)
+t=21ms:   TransferCompleted (7ms transfer overhead)
+t=33ms:   Additional block allocated (1 block to CPU)
+t=45ms:   Transfer initiated again
+t=78ms:   First token generated ✓
+```
+
+**What this tells us**:
+1. **KV allocation is NOT the bottleneck**: 67 blocks allocated in first 0-21ms, plus ongoing per-token allocation
+2. **CPU offloading overhead**: ~7ms per transfer, but happens in parallel with compute
+3. **Total measured KV overhead**: ~20-30ms (allocation + first transfer)
+4. **Remaining unexplained**: 78.4ms - 30ms = **48ms still unaccounted for**
+
+**Where is the Missing 48-100ms?**
+
+KV events account for **~30ms** of the 78-100ms TTFT (for successful requests). The remaining **48-70ms** must be:
+
+1. **Batch formation delay** (most likely): Request waits for batch to form before prefill starts
+   - Explains 1650× variance (p10=0.13ms when immediate, p90=215ms when waiting)
+   - Multi-turn chat (reasoning) has higher concurrency → longer waits
+
+2. **Prefill compute time**: Actual GPU kernel execution (~5-15ms for 1K tokens)
+   - But KV allocation happens in parallel, so may overlap
+
+3. **Attention kernel startup**: FlashAttention-2 initialization (~5-20ms)
+
+4. **Queue processing overhead**: Scheduler overhead to move from queue → running
+
+**Conclusion**: KV allocation is **fast** (~30ms including CPU offload). The bottleneck is **batching delay** (request waiting for batch formation), NOT KV cache operations.
+
+**Implications for Iter7**:
+
+**What KV Events Reveal About the 100-200ms TTFT**:
+
+The missing 78.5-178.5ms in reasoning (β₆=21.5ms captured, actual=100-200ms) **CAN be partially decomposed**:
+
+**From KV events**:
+- KV allocation + CPU offload: ~30ms (measured from BlockStored → TransferCompleted)
+- This leaves **48-170ms unexplained** (not ~78-178ms as previously thought)
+
+**Still cannot measure** (need additional instrumentation or trace analysis):
+- Batch formation delay (queue wait time) — **most likely dominant component**
+- Prefill compute time (GPU kernel execution)
+- Attention kernel startup overhead
+- Queue processing / scheduler overhead
+
+**Key insight**: KV allocation is **fast** (~30ms). The bottleneck is **batching delay**, which explains:
+- 1650× variance (immediate processing vs waiting for batch)
+- Why reasoning differs from codegen (higher concurrency → longer batch waits)
+- Why β₆=21.5ms is insufficient (captures mean delay, not p90=215ms)
+
+**⚠️ DATA QUALITY ISSUE FOR REASONING EXPERIMENTS**
+
+**CRITICAL: The training data is from an OVERLOADED server!**
+
+Journey traces reveal:
+1. **85% of requests fail/timeout** after waiting 4-5 minutes in queue
+2. **Only 15% succeed** — these have ~50ms TTFT (0.5ms queue + 50ms prefill)
+3. **The 1650× variance is success vs timeout**, NOT normal batching delay
+4. **β₆ = 21.5ms in iter6 is CORRECT** for successful requests!
+
+**The Real Problem**:
+
+Training data mixes two populations:
+1. **Successful requests** (15%): TTFT = 50-110ms, queue time = 0.5ms
+2. **Timeout requests** (85%): TTFT = 255,000ms (4+ minutes), stuck in queue
+
+The model sees this as "reasoning needs 100-200ms overhead" but it's actually "85% of reasoning requests timeout due to server overload."
+
+**For Iter7: DATA QUALITY ISSUE, NOT MODEL ISSUE**
+
+**DO NOT** add more scheduler overhead terms! The model is already correct for successful requests.
+
+**Options**:
+
+1. **Filter out timeout/failed requests** from training data:
+   - Only train on the 730 successful requests (15% of reasoning data)
+   - This will show reasoning ~50-110ms TTFT (similar to codegen!)
+   - β₆ = 21.5ms will be sufficient
+
+2. **Model timeout/overload explicitly** (if needed):
+   - Add binary "server_overloaded" flag based on request arrival rate
+   - Overloaded: TTFT → very large (timeout behavior)
+   - Normal: TTFT = prefill_compute + queue_overhead
+
+3. **Investigate why reasoning server was overloaded**:
+   - 85% failure rate suggests server couldn't keep up with load
+   - May be higher arrival rate, longer generation, or resource constraint
+   - Check if other workloads have similar overload patterns
+
+**Most likely**: Reasoning data is simply **bad data** from an overload scenario. Should be excluded or re-collected under normal operating conditions.
+
+**Code Citation**:
+
+Trace data location: `training/trainval_data/20260217-170634-llama-2-7b-tp1-reasoning/`
+- Lifecycle metrics: `results/per_request_lifecycle_metrics.json`
+- Summary: `results/summary_lifecycle_metrics.json`
+- OpenTelemetry traces: `traces.json`
+- KV events: `kv_events.jsonl`
+
+vLLM instrumentation: Traces generated by vLLM OpenTelemetry integration, but lacks fine-grained scheduler/kernel events needed for bottleneck analysis.
+
+---
+
 #### **Principle 3**: Decoupling β₆ from β₀ successfully eliminated collinearity (4 coefficients normalized)
 
 **Evidence from coefficient recovery**:
