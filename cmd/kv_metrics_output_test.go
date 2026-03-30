@@ -76,3 +76,50 @@ func TestPrintPerSLOMetrics_SingleClass_NoOutput(t *testing.T) {
 	// THEN no output (single class = no differentiation)
 	assert.Empty(t, buf.String())
 }
+
+// BC-T6: printPerTenantMetrics is a no-op when map is nil.
+//
+// GIVEN printPerTenantMetrics called with nil map
+// WHEN output is captured
+// THEN nothing is written to the writer
+func TestPrintPerTenantMetrics_Nil_NoOutput(t *testing.T) {
+	var buf bytes.Buffer
+
+	printPerTenantMetrics(&buf, nil)
+
+	assert.Empty(t, buf.String())
+}
+
+// BC-T7: printPerTenantMetrics emits correct section, sorted tenant lines, and Jain index.
+//
+// GIVEN a map with two tenants "alice" and "bob" with near-equal token totals
+// WHEN printPerTenantMetrics is called
+// THEN output contains the section header, "alice" before "bob" (lexicographic),
+//
+//	each line contains request count and token total,
+//	and a Jain Fairness Index line appears last with value >= 0.99
+func TestPrintPerTenantMetrics_TwoTenants_CorrectOutput(t *testing.T) {
+	var buf bytes.Buffer
+	perTenant := map[string]*cluster.TenantMetrics{
+		"alice": {TenantID: "alice", CompletedRequests: 50, TotalTokensServed: 12500},
+		"bob":   {TenantID: "bob", CompletedRequests: 50, TotalTokensServed: 12480},
+	}
+
+	printPerTenantMetrics(&buf, perTenant)
+
+	output := buf.String()
+	assert.Contains(t, output, "=== Per-Tenant Metrics ===", "section header must be present")
+	assert.Contains(t, output, "alice", "alice must appear in output")
+	assert.Contains(t, output, "bob", "bob must appear in output")
+	assert.Contains(t, output, "requests=50", "request count must appear")
+	assert.Contains(t, output, "Jain Fairness Index:", "Jain index line must be present")
+
+	// alice must appear before bob (lexicographic order, R2/INV-6)
+	aliceIdx := bytes.Index([]byte(output), []byte("alice"))
+	bobIdx := bytes.Index([]byte(output), []byte("bob"))
+	assert.True(t, aliceIdx < bobIdx, "tenants must be listed in lexicographic order")
+
+	// Jain line must appear after per-tenant lines
+	jainIdx := bytes.Index([]byte(output), []byte("Jain Fairness Index:"))
+	assert.True(t, jainIdx > bobIdx, "Jain index line must appear after per-tenant lines")
+}
