@@ -460,7 +460,7 @@ func (c *ClusterSimulator) Run() error {
 	// but don't appear in any instance's StillQueued/StillRunning/DroppedUnservable.
 	// Count them as StillRunning for conservation.
 	//
-	// Distinguish three sub-states of "prefill completed but decode not done":
+	// Distinguish four sub-states of "prefill completed but decode not done":
 	// - pendingDecodeCompletions: decode sub-requests already injected into instances
 	//   (appear in instance StillQueued/StillRunning via Finalize — do NOT add again)
 	// - pdInTransfer: requests still in KV transfer or cluster event queue
@@ -468,6 +468,8 @@ func (c *ClusterSimulator) Run() error {
 	// - timed-out prefills: entries may remain in pendingPrefillCompletions but
 	//   pdPrefillCompletedCount was NOT incremented; the timeout is already counted
 	//   in instance TimedOutRequests → aggregated via aggregateMetrics(). No correction needed.
+	// - timed-out decodes: counted in pdDecodeTimedOutCount; already in instance
+	//   TimedOutRequests via aggregateMetrics(). Subtracted here to keep pdInTransfer = 0.
 	pdInTransfer := c.pdPrefillCompletedCount - c.pdDecodeCompletedCount - c.pdDecodeTimedOutCount - c.droppedAtDecodeKV - len(c.pendingDecodeCompletions)
 	if pdInTransfer > 0 {
 		c.aggregatedMetrics.StillRunning += pdInTransfer
@@ -535,7 +537,7 @@ func (c *ClusterSimulator) PoolMembership() map[string]PoolRole {
 
 // ParentRequests returns a sorted slice of defensive copies of parent request tracking records.
 // Each ParentRequest struct is copied by value so callers cannot mutate lifecycle timestamps (R8).
-// Note: OriginalRequest is a shared *sim.Request pointer — callers must not mutate via it.
+// Note: OriginalRequest and DecodeSubReq are shared *sim.Request pointers — callers must not mutate via them.
 // Panics if called before Run() completes. Returns an empty (non-nil) slice when disaggregation is disabled,
 // allowing callers to range over the result without a nil check.
 func (c *ClusterSimulator) ParentRequests() []*ParentRequest {
