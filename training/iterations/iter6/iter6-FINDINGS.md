@@ -406,9 +406,74 @@ The model sees this as "reasoning needs 100-200ms overhead" but it's actually "8
 
 **Most likely**: Reasoning data is simply **bad data** from an overload scenario. Should be excluded or re-collected under normal operating conditions.
 
+**Per-Experiment Failure Rate Analysis**:
+
+Analyzed all 3 reasoning experiments to quantify data quality issue:
+
+**Llama-2-7B TP1 - Total: 4800 requests**
+```
+❌ Failed/Timeout:              4068 (84.8%)
+⏱️  Successful but VERY slow (>10s): 655 (13.6%)
+⚠️  Successful but slow (100ms-10s):  13 (0.3%)
+✅ Successful and fast (<100ms):     64 (1.3%) ← ONLY USABLE DATA!
+
+📊 Data Quality:
+   Usable (fast, representative):    64 (1.3%)
+   Unusable (overload/timeout):    4736 (98.7%)
+```
+
+**Scout-17B TP2 - Total: 4800 requests**
+```
+❌ Failed/Timeout:              4129 (86.0%)
+⏱️  Successful but VERY slow (>10s): 573 (11.9%)
+⚠️  Successful but slow (100ms-10s):  98 (2.0%)
+✅ Successful and fast (<100ms):      0 (0.0%) ← NO USABLE DATA!
+
+📊 Data Quality:
+   Usable (fast, representative):     0 (0.0%)
+   Unusable (overload/timeout):    4800 (100.0%)
+```
+
+**Qwen2.5-7B TP1 - Total: 4800 requests**
+```
+❌ Failed/Timeout:              3311 (69.0%)
+⏱️  Successful but VERY slow (>10s): 1323 (27.6%)
+⚠️  Successful but slow (100ms-10s):  82 (1.7%)
+✅ Successful and fast (<100ms):     84 (1.8%) ← ONLY USABLE DATA!
+
+📊 Data Quality:
+   Usable (fast, representative):    84 (1.8%)
+   Unusable (overload/timeout):    4716 (98.2%)
+```
+
+**Summary Statistics**:
+
+| Experiment | Total | Failed | Usable (<100ms) | Usable % |
+|------------|-------|--------|-----------------|----------|
+| Llama-2-7B | 4800  | 4068   | 64              | **1.3%** |
+| Scout-17B  | 4800  | 4129   | 0               | **0.0%** |
+| Qwen2.5-7B | 4800  | 3311   | 84              | **1.8%** |
+| **Average** | **4800** | **3836** | **49** | **1.0%** |
+
+**Critical Insights**:
+1. **69-86% failure rate** across all reasoning experiments (vs 0-5% for codegen/roleplay)
+2. **97-100% unusable data** (failed/timeout or >10s from severe overload)
+3. **Only 0-1.8% fast successful requests** that represent normal operation
+4. **Scout has ZERO usable data** (all 671 successful requests >10s latency)
+5. This explains why 7 iterations couldn't improve reasoning: training on 259-second timeout data
+
+**Comparison with Non-Reasoning Experiments**:
+- Codegen/roleplay: 0-5% failure rate, 95%+ usable data, 10-50ms TTFT
+- Reasoning: 69-86% failure rate, 0-1.8% usable data, bimodal (50ms fast vs 259s timeout)
+
 **Code Citation**:
 
-Trace data location: `training/trainval_data/20260217-170634-llama-2-7b-tp1-reasoning/`
+Trace data locations:
+- `training/trainval_data/20260217-170634-llama-2-7b-tp1-reasoning/`
+- `training/trainval_data/48-llama-4-scout-17b-16e-tp2-reasoning-2/`
+- `training/trainval_data/66-qwen2-5-7b-instruct-tp1-reasoning-1-1/`
+
+Data files analyzed:
 - Lifecycle metrics: `results/per_request_lifecycle_metrics.json`
 - Summary: `results/summary_lifecycle_metrics.json`
 - OpenTelemetry traces: `traces.json`
