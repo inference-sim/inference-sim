@@ -1,0 +1,86 @@
+# Iteration 8 coefficient bounds and initial values
+#
+# Strategy: Add β₈ (MoE routing overhead) to capture Scout MoE architecture-specific latency
+#   - Alpha: Warm-start from iter7 optimal (stable and physically plausible)
+#   - Beta[0-7]: Warm-start from iter7 optimal (stabilized in iter7)
+#   - Beta[8]: NEW — MoE routing overhead per routed token (expected 10-50μs)
+#   - Training data: Same 15 experiments as iter7 (all Scout kept to learn MoE coefficient)
+
+alpha_bounds:
+  - [0.0, 0.005]   # α₀: Fixed API overhead (ms per request)
+  - [0.0, 0.0002]  # α₁: Per-input-token tokenization (ms per token, TIGHT bound from iter7)
+  - [0.0, 0.00015] # α₂: Per-output-token detokenization (ms per token, WIDENED to 150μs to prevent ceiling - iter7 was 91μs/100μs)
+
+alpha_initial:
+  - 0.001320    # α₀ from iter7: 1.32ms (stable, physically plausible)
+  - 0.0001176   # α₁ from iter7: 118μs (achieved <150μs target in iter7)
+  - 0.00009054  # α₂ from iter7: 91μs (close to <100μs, may improve in iter8)
+
+beta_bounds:
+  - [0.10, 0.35]   # β₀: Prefill compute MFU (dimensionless, expected 0.15-0.25)
+  - [0.8, 1.5]     # β₁: Decode memory-bound MFU (dimensionless, expected 1.00-1.15)
+  - [0.0, 1.5]     # β₂: TP decode communication (dimensionless, expected 0.20-0.35)
+  - [0.0, 0.01]    # β₃: KV cache management (ms per request, expected 0.4-0.5ms = 0.0004-0.0005)
+  - [0.4, 1.0]     # β₄: Decode compute-bound MFU (dimensionless, expected 0.70-0.90, CONSTRAINED upper bound 1.0)
+  - [0.0, 0.05]    # β₅: MoE gating overhead (ms, expected 0.010-0.020ms = 10-20μs, may decrease from iter7's 41.1ms)
+  - [0.01, 0.10]   # β₆: Per-request scheduler overhead (ms, expected 0.015-0.030ms = 15-30ms)
+  - [0.0, 0.03]    # β₇: Decode per-request overhead (ms, expected 0.010-0.020ms = 10-20ms, should decrease from iter7's 26.3ms)
+  - [0.0, 0.0001]  # β₈: **NEW** MoE routing overhead (ms per routed token, expected 0.000010-0.000050 = 10-50μs per routed token)
+
+beta_initial:
+  - 0.1912       # β₀ from iter7: 0.191 (stable, within expected range)
+  - 1.1076       # β₁ from iter7: 1.108 (stabilized in iter7 after reversion from iter6's 1.851)
+  - 0.1846       # β₂ from iter7: 0.185 (decreased from iter6's 0.270, may increase in iter8)
+  - 0.004404     # β₃ from iter7: 0.00440 (increased 7× in iter7, should revert in iter8 after β₈ offloads Scout error)
+  - 0.7132       # β₄ from iter7: 0.713 (stabilized in iter7 after reversion from iter6's 1.451)
+  - 0.04112      # β₅ from iter7: 0.0411 = 41.1ms (increased 10× in iter7, should decrease in iter8 after β₈ offloads MoE routing)
+  - 0.01316      # β₆ from iter7: 0.0132 = 13.2ms (decreased 39% from iter6's 21.5ms)
+  - 0.02626      # β₇ from iter7: 0.0263 = 26.3ms (higher than 5-15ms predicted, should decrease in iter8 after β₈ offloads Scout error)
+  - 0.00003      # β₈ NEW: 30μs initial (middle of expected 10-50μs range, physics-based estimate)
+
+# Rationale:
+#
+# Warm-start from iter7 optimal (all coefficients stable):
+#   - Iter7 achieved coefficient stabilization (β₁, β₄) and alpha reversion (α₁, α₂)
+#   - All iter7 coefficients physically plausible and well-converged
+#   - Starting from iter7 optimal reduces trials from ~50 to ~20-30
+#
+# α₂ bound widening (ceiling prevention):
+#   - Iter7: α₂ = 91μs with upper bound 100μs (91% utilization, risky)
+#   - Widened to 150μs (50% more headroom) to prevent ceiling effect
+#   - If Scout pressure remains and optimizer needs 110-120μs, won't get stuck at 100μs
+#   - Trade-off: Slightly looser bound, but allows natural convergence
+#
+# β₈ addition (MoE routing overhead):
+#   - **Physics**: Per-token MoE routing cost beyond gating FLOPs (β₅)
+#   - **Basis function**: β₈ × (numMoELayers × totalTokens × numExpertsPerTok / TP)
+#   - **Expected range**: 10-50μs per routed token (in seconds: 0.000010-0.000050)
+#   - **For Scout**: numMoELayers=26, totalTokens≈100 prefill, numExpertsPerTok=1, TP=2
+#     → β₈ × (26 × 100 × 1 / 2) = β₈ × 1300 ≈ 13-65ms contribution
+#   - **For dense models**: numMoELayers=0 → β₈ × 0 = 0 (no contribution, unaffected)
+#   - **Bounds**: [0, 0.0001] = [0, 100μs] (conservative upper limit)
+#   - **Initial**: 0.00003 = 30μs (middle of expected range)
+#
+# Expected coefficient changes in iter8:
+#   - β₈: NEW, converge to 0.000010-0.000050 (10-50μs per routed token)
+#   - β₇: 0.0263 → 0.010-0.020 (decrease 20-40% as β₈ offloads Scout decode error)
+#   - β₅: 0.0411 → 0.010-0.020 (decrease 50-75% as β₈ offloads MoE routing overhead)
+#   - β₃: 0.004404 → 0.0004-0.001 (revert after stopped absorbing Scout error)
+#   - α₂: 0.00009054 → 0.00006-0.00012 (may improve slightly, now has headroom up to 150μs)
+#   - Others (α₀, α₁, β₀, β₁, β₂, β₄, β₆): Minimal change expected (<10%)
+#
+# Impact on optimization:
+#   - Adding 1 coefficient (8 → 9 Beta coefficients) increases search space moderately
+#   - Warm-start from iter7 optimal should enable quick convergence (20-30 trials)
+#   - β₈ is orthogonal to existing terms (only affects MoE models)
+#   - Expected: Overall loss 155% → <80% as β₈ absorbs Scout's 767% combined loss
+#   - Non-Scout experiments expected to remain stable (<±10pp change)
+#
+# Alternative formulations considered:
+#   1. **Per-layer routing overhead**: β₈ × numMoELayers
+#      - Rejected: Doesn't scale with tokens or experts, underestimates large batches
+#   2. **Per-request routing overhead**: β₈ × numRequests × numMoELayers
+#      - Rejected: Doesn't account for token count variation across requests
+#   3. **Per-token with TP scaling** (CHOSEN): β₈ × (numMoELayers × totalTokens × numExpertsPerTok / TP)
+#      - Correct: Scales with all MoE parameters, TP division accounts for cross-GPU routing
+#
