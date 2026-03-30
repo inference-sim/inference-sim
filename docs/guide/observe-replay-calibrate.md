@@ -195,6 +195,7 @@ Replays a captured TraceV2 file through the BLIS discrete-event simulator. Inste
 | `--trace-data` | `string` | `""` | Path to TraceV2 data CSV (required) |
 | `--results-path` | `string` | `""` | File to write SimResult JSON for `blis calibrate` consumption |
 | `--model` | `string` | `""` | LLM name (required) |
+| `--trace-output` | `string` | `""` | Export replay results as TraceV2 files (`<prefix>.yaml` + `<prefix>.csv`); header `mode: "replayed"` |
 
 Replay also accepts all shared simulation config flags (`--latency-model`, `--total-kv-blocks`, `--max-num-running-reqs`, etc.) — the same flags available in `blis run`. See [Configuration](../reference/configuration.md) for the full list.
 
@@ -208,6 +209,7 @@ Replay also accepts all shared simulation config flags (`--latency-model`, `--to
 | **Horizon** | From `--horizon` flag or spec | Auto-computed as 2x max arrival time (override with `--horizon`) |
 | **Output format** | Full `MetricsOutput` JSON | `SimResult` JSON array (request_id, ttft_us, e2e_us, input_tokens, output_tokens) |
 | **Session support** | Session manager creates follow-ups | Session structure encoded in trace (no manager needed) |
+| **Trace export** | `--trace-output` (header `mode: "generated"`) | `--trace-output` (header `mode: "replayed"`) |
 
 !!! warning "Latency model matters"
     The replay command simulates token generation using the configured latency model. For accurate calibration, choose the latency model that best matches the server's behavior. See [Latency Models](latency-models.md) for guidance on selecting between roofline, blackbox, cross-model, and trained-roofline modes.
