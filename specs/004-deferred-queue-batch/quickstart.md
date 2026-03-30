@@ -52,8 +52,9 @@ Sample output (Anomaly Counters):
 Deferred (horizon-interrupted): 5
 ```
 
-These 5 requests are accounted for in the conservation equation:
-`injected == completed + deferred_horizon_interrupted`
+These 5 requests are accounted for in the full conservation equation:
+`injected == completed + still_running + still_queued + shed + dropped + timed_out + deferred_horizon_interrupted`
+(In this illustrative example, all non-deferred requests have completed, so only two terms are non-zero.)
 
 ## Scenario 3: Background Requests with Tier-Shed Enabled
 

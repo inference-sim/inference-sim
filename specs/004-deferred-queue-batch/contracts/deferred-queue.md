@@ -15,7 +15,7 @@
 - `c.instances` may be empty (zero-length slice) — must not panic.
 
 **Postconditions**:
-- Returns `true` iff `∃ inst ∈ c.instances: inst.QueueDepth() + inst.BatchSize() + c.inFlightRequests[string(inst.ID())] > 0`.
+- Returns `true` iff `∃ inst ∈ c.instances where inst.State != InstanceStateTerminated: inst.QueueDepth() + inst.BatchSize() + c.inFlightRequests[string(inst.ID())] > 0`.
 - Returns `false` when `c.instances` is empty (zero-length cluster is not busy).
 - Pure read: no mutation of `c`, `c.instances`, or `c.inFlightRequests`.
 - INV-9 compliant: does not read `req.OutputTokens` (receives no request parameter).
@@ -95,7 +95,7 @@ After processing each event:
 The deferred queue adds a new terminal category to request conservation:
 
 ```
-injected == completed + still_running + still_queued + shed + dropped_unservable + deferred_horizon_interrupted
+injected == completed + still_running + still_queued + shed + dropped_unservable + timed_out + deferred_horizon_interrupted
 ```
 
 Where `deferred_horizon_interrupted = DeferredQueueLen()` (requests still in deferredQueue when horizon is reached).

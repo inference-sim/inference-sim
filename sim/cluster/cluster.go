@@ -756,8 +756,11 @@ func (c *ClusterSimulator) ShedByTier() map[string]int {
 	return result
 }
 
-// isBusy returns true when any instance has non-zero effective load.
+// isBusy returns true when any non-terminated instance has non-zero effective load.
 // Uses the three-component definition: QueueDepth + BatchSize + InFlightRequests > 0.
+// Skips instances in InstanceStateTerminated state — stale inFlightRequests on terminated
+// instances must not count as load (otherwise a recently terminated instance with residual
+// accounting would permanently block deferred-queue promotion).
 // An empty instance pool returns false (not busy).
 // Called by the deferred queue pre-admission intercept and the idle-capacity promotion check.
 func (c *ClusterSimulator) isBusy() bool {

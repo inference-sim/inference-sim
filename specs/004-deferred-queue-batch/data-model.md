@@ -32,7 +32,7 @@ An integer count added to `RawMetrics` representing requests still in `deferredQ
 
 **Field**: `RawMetrics.DeferredHorizonInterrupted int`
 **Population**: `rawMetrics.DeferredHorizonInterrupted = cs.DeferredQueueLen()` in `cmd/root.go` and `cmd/replay.go` after `CollectRawMetrics()` returns.
-**INV-1 role**: Extends conservation equation: `injected == completed + running + queued + shed + dropped + deferred_horizon_interrupted`.
+**INV-1 role**: Extends conservation equation: `injected == completed + running + queued + shed + dropped + timed_out + deferred_horizon_interrupted`.
 
 ---
 
