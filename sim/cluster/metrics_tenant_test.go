@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -15,7 +16,7 @@ func buildMetricsWithTenants(entries []struct {
 }) *sim.Metrics {
 	m := sim.NewMetrics()
 	for i, e := range entries {
-		id := string(rune('a'+i)) + "-req" // deterministic unique IDs
+		id := fmt.Sprintf("req-%d", i) // deterministic unique IDs
 		rm := sim.RequestMetrics{
 			ID:              id,
 			TenantID:        e.tenantID,
@@ -191,5 +192,35 @@ func TestComputePerTenantMetrics_UntenantedRequestsExcluded(t *testing.T) {
 	}
 	if result["alice"].TotalTokensServed != 700 {
 		t.Errorf("expected alice TotalTokensServed=700, got %d", result["alice"].TotalTokensServed)
+	}
+}
+
+// BC-T6: Orphaned RequestE2Es entries (no matching Requests entry) are silently skipped.
+//
+// GIVEN aggregated metrics with a reqID in RequestE2Es but not in Requests
+// WHEN ComputePerTenantMetrics is called
+// THEN no panic occurs AND the orphaned ID does not appear in any tenant entry
+func TestComputePerTenantMetrics_OrphanedE2E_Skipped(t *testing.T) {
+	m := buildMetricsWithTenants([]struct {
+		tenantID string
+		tokens   int
+	}{
+		{"alice", 500},
+	})
+	// Inject an orphaned E2E entry with no corresponding Requests entry.
+	m.RequestE2Es["ghost"] = 9999.0
+
+	result := ComputePerTenantMetrics(m)
+
+	if result == nil {
+		t.Fatal("expected non-nil result for workload with one tenanted request")
+	}
+	for _, tm := range result {
+		if tm.TenantID == "ghost" {
+			t.Error("orphaned entry 'ghost' must not appear in any tenant")
+		}
+	}
+	if len(result) != 1 {
+		t.Errorf("expected exactly 1 tenant entry (alice), got %d", len(result))
 	}
 }

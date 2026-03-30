@@ -578,8 +578,9 @@ type TenantMetrics struct {
 
 // ComputePerTenantMetrics partitions completed requests by TenantID and accumulates
 // per-tenant request counts and output token totals.
-// Returns nil when no completed request has a non-empty TenantID (zero-value safe,
-// backward-compatible — no section printed for single-tenant or legacy workloads).
+// Returns nil when no completed request has a non-empty TenantID (backward-compatible —
+// section absent for legacy/untenanted workloads). A workload with a single named tenant
+// returns a one-entry map; Jain=1.0 is correct and intentional — do not add a len<=1 guard.
 // Iterates RequestE2Es (authoritative set of completed request IDs) following the
 // same two-map join used by ComputePerModelMetrics (R2: sorted keys in caller).
 func ComputePerTenantMetrics(aggregated *sim.Metrics) map[string]*TenantMetrics {

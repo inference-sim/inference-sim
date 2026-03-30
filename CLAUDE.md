@@ -262,7 +262,7 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 - In-memory node/GPU inventory maps; no external storage
 
 ## Recent Changes
-- Phase 1B-2b: Per-tenant Jain fairness index in simulation output (#812, PR #881): `ComputePerTenantMetrics` + `printPerTenantMetrics` wired into `blis run` and `blis replay`; section absent for single-tenant/legacy workloads
+- Phase 1B-2b: Per-tenant Jain fairness index in simulation output (#812, PR #881): `ComputePerTenantMetrics` + `printPerTenantMetrics` wired into `blis run` and `blis replay`; section absent for untenanted/legacy workloads
 - Phase 1B-2a: Deferred queue for batch/background requests (#810)
 - Phase 1B-1b: Per-tenant fair-share tracking and admission enforcement (#811)
 - Phase 1A: Added node/GPU placement, instance lifecycle, multi-model routing, per-model metrics

@@ -112,6 +112,7 @@ func TestPrintPerTenantMetrics_TwoTenants_CorrectOutput(t *testing.T) {
 	assert.Contains(t, output, "alice", "alice must appear in output")
 	assert.Contains(t, output, "bob", "bob must appear in output")
 	assert.Contains(t, output, "requests=50", "request count must appear")
+	assert.Contains(t, output, "tokens=12500", "alice token total must appear in output")
 	assert.Contains(t, output, "Jain Fairness Index:", "Jain index line must be present")
 
 	// alice must appear before bob (lexicographic order, R2/INV-6)
@@ -122,4 +123,25 @@ func TestPrintPerTenantMetrics_TwoTenants_CorrectOutput(t *testing.T) {
 	// Jain line must appear after per-tenant lines
 	jainIdx := bytes.Index([]byte(output), []byte("Jain Fairness Index:"))
 	assert.True(t, jainIdx > bobIdx, "Jain index line must appear after per-tenant lines")
+}
+
+// BC-T8: printPerTenantMetrics with a single-tenant map prints the section (does not suppress).
+//
+// GIVEN printPerTenantMetrics called with a one-entry map {TenantID: "alice"}
+// WHEN output is captured
+// THEN the section header is present, "alice" appears, and Jain Fairness Index: 1.0000 is present.
+// NOTE: This codifies the intentional divergence from printPerSLOMetrics, which suppresses
+// single-class output via a len<=1 guard. printPerTenantMetrics must NOT add that guard.
+func TestPrintPerTenantMetrics_SingleTenant_PrintsSection(t *testing.T) {
+	var buf bytes.Buffer
+	perTenant := map[string]*cluster.TenantMetrics{
+		"alice": {TenantID: "alice", CompletedRequests: 5, TotalTokensServed: 1000},
+	}
+
+	printPerTenantMetrics(&buf, perTenant)
+
+	output := buf.String()
+	assert.Contains(t, output, "=== Per-Tenant Metrics ===", "section header must be present for single tenant")
+	assert.Contains(t, output, "alice", "tenant name must appear")
+	assert.Contains(t, output, "Jain Fairness Index: 1.0000", "Jain=1.0 must be present for single tenant")
 }

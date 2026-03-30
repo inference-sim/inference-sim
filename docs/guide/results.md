@@ -84,7 +84,7 @@ When `--metrics-path` is set, the JSON output includes a `per_model` key (omitte
 
 ## Per-Tenant Metrics
 
-When requests carry `tenant_id` labels, BLIS prints per-tenant request counts, total output tokens served, and a [Jain Fairness Index](https://en.wikipedia.org/wiki/Fairness_measure) over the token distribution. This section appears automatically and is omitted for single-tenant or legacy workloads.
+When requests carry `tenant_id` labels, BLIS prints per-tenant request counts, total output tokens served, and a [Jain Fairness Index](https://en.wikipedia.org/wiki/Fairness_measure) over the token distribution. This section appears automatically and is omitted when no requests carry tenant labels (backward-compatible with legacy and untenanted workloads). A workload with a single named tenant shows the section with Jain=1.0 (trivially fair).
 
 ```
 === Per-Tenant Metrics ===
