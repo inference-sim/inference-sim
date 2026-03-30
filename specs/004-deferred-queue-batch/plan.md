@@ -97,7 +97,7 @@ cmd/
 
 **GIVEN** any simulation with Batch/Background requests and a finite horizon
 **WHEN** the simulation ends
-**THEN** `injected == completed + still_running + still_queued + shed + dropped_unservable + deferred_horizon_interrupted`
+**THEN** `injected == completed + still_running + still_queued + shed + dropped_unservable + timed_out + deferred_horizon_interrupted`
 
 ### BC-D6: INV-9 — no oracle access
 

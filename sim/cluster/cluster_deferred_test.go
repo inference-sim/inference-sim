@@ -153,6 +153,10 @@ func TestDeferredQueue_DeferredPromotedAfterIdle(t *testing.T) {
 	if m.CompletedRequests != 10 {
 		t.Errorf("all 10 requests should complete after deferred promotion, got CompletedRequests=%d", m.CompletedRequests)
 	}
+	// All promoted requests must have left the deferred queue (no partial-promotion bug).
+	if cs.DeferredQueueLen() != 0 {
+		t.Errorf("deferred queue must be empty after full promotion, got DeferredQueueLen=%d", cs.DeferredQueueLen())
+	}
 }
 
 // T005 — BC-D4: Standard requests are not crowded out by Batch traffic.
@@ -251,7 +255,7 @@ func TestDeferredQueue_INV1_Conservation(t *testing.T) {
 	// The test exists to verify the deferred-at-horizon code path; if nothing is deferred the
 	// extended INV-1 formula is never exercised.
 	if cs.DeferredQueueLen() == 0 {
-		t.Errorf("expected at least one batch request to remain deferred at horizon (reduce Horizon further if this fails), got DeferredQueueLen=0")
+		t.Fatalf("expected at least one batch request to remain deferred at horizon (reduce Horizon further if this fails), got DeferredQueueLen=0")
 	}
 	// INV-1 extended: injected == completed + still_running + still_queued + dropped + timed_out + rejected + deferred
 	conservation := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable +

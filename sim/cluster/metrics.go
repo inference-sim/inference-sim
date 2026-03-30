@@ -102,8 +102,8 @@ type RawMetrics struct {
 	HOLBlockingEvents    int
 	RejectedRequests     int            // admission rejections
 	ShedByTier                map[string]int // per-SLOClass breakdown of tier-shed rejections (Phase 1B-1a); nil when not using tier-shed
-	DeferredHorizonInterrupted int           // Batch/Background requests still deferred at horizon (Phase 1B-1b)
 	// INV-1 extended: injected == completed + running + queued + shed + dropped + timed_out + deferred_horizon_interrupted
+	DeferredHorizonInterrupted int           // Batch/Background requests still deferred at horizon (Phase 1B-1b)
 	RoutingRejections    int            // I13: routing rejections (no routable instances)
 	DroppedUnservable    int
 	LengthCappedRequests int

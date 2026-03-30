@@ -21,7 +21,7 @@ A FIFO ordered slice of `*sim.Request` objects representing Batch/Background req
 
 A transient boolean derived by `isBusy()` — not stored as a field. True when any instance has non-zero combined effective load.
 
-**Derivation**: `∃ inst ∈ instances: QueueDepth(inst) + BatchSize(inst) + inFlightRequests[inst.ID()] > 0`
+**Derivation**: `∃ inst ∈ instances where inst.State != InstanceStateTerminated: QueueDepth(inst) + BatchSize(inst) + inFlightRequests[inst.ID()] > 0`
 **Empty cluster**: returns false (a cluster with no instances is idle — requests are admitted normally).
 
 ---
