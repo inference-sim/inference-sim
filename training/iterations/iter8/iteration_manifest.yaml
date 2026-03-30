@@ -1,0 +1,35 @@
+iteration: 8
+latency_backend_name: "evolved"  # Backend name stays constant across iterations
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 8: MoE Routing Overhead Mechanism
+
+  **Critical Discovery from Iter7**: Scout MoE architecture dominates error budget
+  (49% of total loss from 27% of experiments). All 4 Scout experiments fail uniformly
+  (79-100% TTFT) regardless of workload, while non-Scout reasoning-lite succeeded
+  (99% → 54-66% TTFT). This proves the bottleneck is NOT workload or data quality
+  but Scout MoE architecture-specific overhead.
+
+  **Previous Iteration (Iter7)**: Clean data retraining with decode overhead decoupling
+  - Excluded 3 corrupted reasoning experiments, included 3 fresh reasoning-lite
+  - Added β₇ (decode per-request overhead) to decouple framework overhead from compute/memory
+  - Achieved coefficient stabilization: β₁ (1.851 → 1.108), β₄ (1.451 → 0.713)
+  - Achieved alpha reversion: α₁ (351μs → 118μs), α₂ (216μs → 91μs)
+  - But overall loss only improved 6pp (161.69% → 155.37%) due to Scout MoE dominance
+
+  **This Iteration (Iter8)**: Add β₈ to capture MoE routing overhead
+  - **Added β₈**: Per-token MoE routing overhead (expert selection, load balancing, coordination)
+  - **Basis function**: β₈ × (numMoELayers × totalTokens × numExpertsPerTok / TP)
+  - **Expected β₈**: 10-50μs per routed token (for Scout: 26-130ms per prefill request)
+  - **Physics**: vLLM MoE routing (fused_moe.py) has per-token overhead beyond gating FLOPs
+  - **Target**: Overall loss 155% → <80% as β₈ absorbs Scout's 767% combined loss
+  - **Non-Scout**: Unaffected (β₈ = 0 for dense models with numMoELayers = 0)
+
+  **Key Changes**:
+  1. Added β₈ term in StepTime: Captures per-token MoE routing cost
+  2. Updated coefficient_bounds.yaml: Added β₈ bounds [0, 100] μs per routed token
+  3. Warm-start from iter7: All alpha/beta from iter7 optimal (except β₈ = 30μs initial)
+  4. Training data: Same 15 experiments as iter7 (all Scout kept to learn MoE coefficient)
+
+timestamp: "2026-03-30T16:00:00"
