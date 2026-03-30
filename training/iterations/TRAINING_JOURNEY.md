@@ -112,7 +112,7 @@ We're trying to predict how long it takes for vLLM (an LLM inference server) to 
 
 4. **Memory allocation**: Reasoning may allocate large activation buffers beyond KV cache blocks (+30-80ms per request).
 
-5. **Workload-specific batching behavior**: Multi-turn chat (reasoning) has different scheduler behavior than single-turn completions (codegen), even with same context length.
+5. **Workload-specific batching behavior**: Multi-turn chat (reasoning) may have higher concurrency and different batching patterns than other workloads (codegen, roleplay), even with same context length.
 
 ---
 
