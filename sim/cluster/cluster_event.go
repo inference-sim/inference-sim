@@ -116,7 +116,12 @@ type AdmissionDecisionEvent struct {
 func (e *AdmissionDecisionEvent) Timestamp() int64 { return e.time }
 func (e *AdmissionDecisionEvent) Priority() int     { return 1 }
 
-// Execute checks admission policy with full RouterState (BC-8: includes snapshots).
+// Execute processes the admission decision for an incoming request.
+// For Batch/Background SLO-class requests when the cluster is busy, defers to
+// cs.deferredQueue and returns early (Phase 1B-1b). No admission decision is made
+// and no trace record is emitted for deferred requests.
+// For all other requests (and Batch/Background when the cluster is idle):
+// checks admission policy with full RouterState (BC-8: includes snapshots).
 // If admitted, schedules a RoutingDecisionEvent.
 // If rejected, increments cs.rejectedRequests counter (EC-2).
 func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {

@@ -81,7 +81,7 @@
 The deferred queue adds a new accounting category:
 
 ```
-injected == completed + running + queued + shed + dropped + deferred_horizon_interrupted
+injected == completed + running + queued + shed + dropped + timed_out + deferred_horizon_interrupted
 ```
 
 Where `deferred_horizon_interrupted = len(cs.deferredQueue)` at simulation end (after `Run()` returns, before `deferredQueue` is cleared).

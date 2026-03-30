@@ -58,14 +58,15 @@ These 5 requests are accounted for in the full conservation equation:
 
 ## Scenario 3: Background Requests with Tier-Shed Enabled
 
-When `tier-shed` admission is active and the cluster is overloaded, pass the policy via CLI flags:
+When `tier-shed` admission is active and the cluster is overloaded, select the policy via the `--admission-policy` CLI flag:
 
 ```bash
 ./blis run --model qwen/qwen3-14b \
   --admission-policy tier-shed \
-  --tier-shed-threshold 5 \
-  --tier-shed-min-priority 3
+  --workload-spec workload.yaml
 ```
+
+Tier-shed parameters (`TierShedThreshold`, `TierShedMinPriority`) are configured in the workload spec YAML under `bundle.admission`, not as CLI flags.
 
 - Background requests (priority 0): deferred when cluster is busy (never shed by tier-shed policy).
 - Sheddable requests (priority 2): shed by tier-shed under overload.
