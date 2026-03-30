@@ -3,10 +3,11 @@ package cluster
 import (
 	"fmt"
 	"math"
-	"sync"
+	"math/rand"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
 func TestParentRequest_NewParentRequest(t *testing.T) {
@@ -1190,8 +1191,8 @@ func TestDisaggregation_E2E_IncludesOverhead_ZeroOverheadRegression(t *testing.T
 // --- Session follow-up tests (issue #884) ---
 
 // sessionCallbackCapture records every invocation of the onRequestDone callback.
+// No mutex needed: the DES is single-threaded (see session.go).
 type sessionCallbackCapture struct {
-	mu    sync.Mutex
 	calls []sessionCallbackCall
 }
 
@@ -1226,8 +1227,6 @@ func TestDisaggregation_SessionFollowUp_CallsOnRequestDone(t *testing.T) {
 
 	var capture sessionCallbackCapture
 	callback := func(req *sim.Request, tick int64) []*sim.Request {
-		capture.mu.Lock()
-		defer capture.mu.Unlock()
 		capture.calls = append(capture.calls, sessionCallbackCall{req: req, tick: tick})
 		return nil // no follow-ups — just capture
 	}
@@ -1303,13 +1302,14 @@ func TestDisaggregation_SessionFollowUp_InjectsFollowUp(t *testing.T) {
 	mustRun(t, cs)
 
 	// Follow-ups should have been disaggregated too — more parentRequests than initial
-	if len(cs.parentRequests) <= 2 {
-		t.Errorf("parentRequests = %d, want > 2 (follow-ups should have been disaggregated)",
-			len(cs.parentRequests))
+	parents := cs.ParentRequests()
+	if len(parents) <= 2 {
+		t.Errorf("ParentRequests() = %d, want > 2 (follow-ups should have been disaggregated)",
+			len(parents))
 	}
 
 	// All parent requests should have CompletionTime > 0
-	for _, parent := range cs.parentRequests {
+	for _, parent := range parents {
 		if parent.CompletionTime == 0 {
 			t.Errorf("parent %s: CompletionTime = 0, follow-up may not have completed", parent.ID)
 		}
@@ -1335,8 +1335,6 @@ func TestDisaggregation_AggregateMode_Unaffected(t *testing.T) {
 
 	var capture sessionCallbackCapture
 	callback := func(req *sim.Request, tick int64) []*sim.Request {
-		capture.mu.Lock()
-		defer capture.mu.Unlock()
 		capture.calls = append(capture.calls, sessionCallbackCall{req: req, tick: tick})
 		return nil
 	}
@@ -1360,4 +1358,97 @@ func TestDisaggregation_AggregateMode_Unaffected(t *testing.T) {
 			t.Errorf("aggregate call %d: State = %q, want %q", i, sc.req.State, sim.StateCompleted)
 		}
 	}
+}
+
+// TestDisaggregation_PD_SessionManager_GeneratesFollowUps exercises the real
+// SessionManager (not a mock callback) through the PD pipeline. This verifies
+// that State and ProgressIndex are correctly threaded through OnComplete, and
+// that follow-up requests complete through the full disaggregation path.
+//
+// GIVEN: PD cluster (2P + 2D) with real SessionManager (MaxRounds=2)
+// AND: 2 initial session requests
+// WHEN: simulation runs to completion
+// THEN: SessionManager generates follow-ups that complete through PD,
+//
+//	and total completed requests == 4 (2 rounds x 2 sessions)
+func TestDisaggregation_PD_SessionManager_GeneratesFollowUps(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+
+	rng := rand.New(rand.NewSource(99))
+	inputSampler, err := workload.NewLengthSampler(workload.DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 50},
+	})
+	if err != nil {
+		t.Fatalf("NewLengthSampler (input): %v", err)
+	}
+	outputSampler, err := workload.NewLengthSampler(workload.DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 20},
+	})
+	if err != nil {
+		t.Fatalf("NewLengthSampler (output): %v", err)
+	}
+
+	blueprints := []workload.SessionBlueprint{
+		{
+			SessionID:     "pd_sess_0",
+			MaxRounds:     2,
+			ThinkTimeUs:   1000,
+			Horizon:       math.MaxInt64,
+			InputSampler:  inputSampler,
+			OutputSampler: outputSampler,
+			RNG:           rand.New(rand.NewSource(rng.Int63())),
+		},
+		{
+			SessionID:     "pd_sess_1",
+			MaxRounds:     2,
+			ThinkTimeUs:   1000,
+			Horizon:       math.MaxInt64,
+			InputSampler:  inputSampler,
+			OutputSampler: outputSampler,
+			RNG:           rand.New(rand.NewSource(rng.Int63())),
+		},
+	}
+
+	sm := workload.NewSessionManager(blueprints)
+	callback := sm.OnComplete
+
+	// Initial round-0 requests (one per session)
+	reqs := make([]*sim.Request, 2)
+	for i := 0; i < 2; i++ {
+		reqs[i] = &sim.Request{
+			ID:           fmt.Sprintf("pd_sess_%d_r0", i),
+			ArrivalTime:  int64(i * 1000),
+			InputTokens:  make([]int, 50),
+			OutputTokens: make([]int, 20),
+			MaxOutputLen: 20,
+			State:        sim.StateQueued,
+			SessionID:    fmt.Sprintf("pd_sess_%d", i),
+			RoundIndex:   0,
+		}
+	}
+
+	cs := NewClusterSimulator(config, reqs, callback)
+	mustRun(t, cs)
+
+	metrics := cs.AggregatedMetrics()
+	// 2 sessions x 2 rounds = 4 completed requests
+	if metrics.CompletedRequests != 4 {
+		t.Errorf("CompletedRequests = %d, want 4 (2 sessions x 2 rounds)", metrics.CompletedRequests)
+	}
+
+	// All parent requests should have completed through the PD pipeline
+	parents := cs.ParentRequests()
+	if len(parents) != 4 {
+		t.Errorf("ParentRequests() = %d, want 4", len(parents))
+	}
+	for _, parent := range parents {
+		if parent.CompletionTime == 0 {
+			t.Errorf("parent %s: CompletionTime = 0", parent.ID)
+		}
+	}
+
+	// INV-1 conservation
+	assertINV1Conservation(t, metrics, 4, "PD SessionManager follow-ups")
 }

@@ -641,13 +641,16 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 		// SessionID), so SessionManager never sees PD completions. We call
 		// sessionCallback directly with the original request to generate follow-ups.
 		if c.sessionCallback != nil {
-			orig := parent.OriginalRequest
-			orig.State = sim.StateCompleted
+			// Value copy to avoid mutating the shared *sim.Request pointer
+			// (contract at ParentRequests: callers must not mutate via OriginalRequest).
+			origCopy := *parent.OriginalRequest
+			origCopy.State = sim.StateCompleted
 			// Use MaxOutputLen (client budget) to respect INV-9 (oracle knowledge
 			// boundary). For completed decodes, MaxOutputLen equals the actual
 			// output count by construction in generated workloads.
-			orig.ProgressIndex = int64(len(orig.InputTokens) + orig.MaxOutputLen)
-			nextReqs := c.sessionCallback(orig, parent.CompletionTime)
+			// (blis replay passes onRequestDone=nil, so this code never runs in replay mode.)
+			origCopy.ProgressIndex = int64(len(origCopy.InputTokens) + origCopy.MaxOutputLen)
+			nextReqs := c.sessionCallback(&origCopy, parent.CompletionTime)
 			for _, next := range nextReqs {
 				heap.Push(&c.clusterEvents, clusterEventEntry{
 					event: &ClusterArrivalEvent{time: next.ArrivalTime, request: next},
