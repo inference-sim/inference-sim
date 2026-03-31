@@ -96,7 +96,6 @@ cat inner_loop_results.json | jq '{
   },
   "optimization": {
     "n_trials": int,
-    "converged_early": bool,
     "num_errors": int
   },
   "best_params": {
