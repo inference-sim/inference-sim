@@ -8,15 +8,18 @@ import (
 )
 
 // EvolvedModel implements physics-informed latency model with learned efficiency factors.
-// Iteration 11: Basis Function Bug Fixes (Corrected Expected Coefficient Ranges)
+// Iteration 12: Memory Bandwidth Saturation via Widened β₃' Bounds (SIMPLIFIED DESIGN)
 //
-// **CRITICAL CORRECTION FROM ITER10**: Iter10 suffered catastrophic failure (loss 4267.22%,
-// 27× worse than iter9's 160.6%). Root cause analysis revealed that the BASIS FUNCTION
-// IMPLEMENTATIONS WERE CORRECT, but the HYPOTHESIS EXPECTED RANGES WERE WRONG by factor of 1000×.
+// **DESIGN EVOLUTION**: Original iter12 hypothesis (split β₆ → β₆ₐ + β₁₁ queueing) was REJECTED
+// after analyzing profiling data. Second hypothesis (add β₁₁ bandwidth penalty) was REJECTED due
+// to collinearity with β₃' (identical basis functions). Final simplified design: widen β₃' bounds
+// to capture BOTH KV allocation (CPU-side) and bandwidth saturation (GPU-side) in single term.
 //
-// Iter10 β₁₀ converged to 0.945 μs, which is actually IN THE CORRECT PHYSICAL RANGE!
-// The hypothesis incorrectly expected 0.1-1.0 **ms**, but physics analysis shows it should
-// be 0.1-1.0 **μs** per (token²/batch_request) — a factor of 1000× difference.
+// **HYPOTHESIS**: Memory bandwidth saturation during prefill causes triple explosion
+// - β₂ (TP comm): 0.82 vs 0.25-0.60 expected (3× high)
+// - β₃ (KV mgmt): 9.6ms vs 0.4-1.5ms expected (6× high)
+// - β₆ (scheduler): 99ms vs 15-40ms expected (2.5-6× high, but profiling shows 40-100ms is CORRECT)
+// - **Single root cause**: HBM bandwidth saturation slows down ALL memory operations simultaneously
 //
 // Critical discovery from iter9: Scout's bottleneck is **sequence-length-dependent**, NOT
 // architecture-dependent (FP8). The FP8 hypothesis was REJECTED — β₉ converged to 0.14 μs
@@ -30,41 +33,45 @@ import (
 //     • General-lite: 100% → 92% TTFT (long sequences ~400-600 tokens)
 //     • Reasoning-lite: 99% → 91% TTFT (long sequences ~200-400 tokens)
 //
-// Coefficient Explosions (iter9 absorbed long-sequence overhead into existing terms):
-//   - β₆ (scheduler overhead): +654% (13ms → 99ms) — absorbing long-sequence queueing delays
-//   - β₂ (TP communication): +343% (0.18 → 0.82) — absorbing sequence-length-dependent TP overhead
-//   - β₈ (MoE routing): +143% (30μs → 73μs) — now above predicted 10-50μs range
-//   - β₃ (KV management): +118% (4.4ms → 9.6ms) — moving away from physical 0.4-1ms range
+// **Iter12 Simplified Strategy**: Widen β₃' bounds to capture BOTH mechanisms in single term
+//   - **β₃' basis function**: Σ(prefillTokens × numLayers) [captures CPU + GPU effects]
+//   - **Original role**: CPU-side KV cache block allocation (PagedAttention)
+//   - **Extended role**: ALSO captures GPU-side HBM bandwidth saturation penalty
+//   - **Solution**: Widen bounds from [0.05-2.0μs] to [0.05-5.0μs] (2.5× increase)
+//   - **Advantage**: Single term, no collinearity, simpler than adding separate β₁₁
+//   - **Cascading effect**: Should trigger β₂, β₃ reversion to physical ranges
 //
-// Iter10 strategy: Add β₁₀ to capture batching inefficiency (long sequences → lower batch efficiency
-// → scheduling delays), split β₃ into base + sequence-length components (β₃ and β₃'), remove β₉
-// (FP8 hypothesis rejected), and constrain alpha bounds to prevent spurious decreases.
+// Profiling data findings (Scout, Llama-3.1, Qwen2.5):
+//   - Cold-start effect: First 4-10 requests have 2-7× higher TTFT, then stabilizes
+//   - Steady-state TTFT: 25-120ms (weakly correlated with tokens)
+//   - **β₆ = 60-100ms is CORRECT** (captures cold-start + batch formation), expected range was WRONG
 //
-// Changes from iter9:
-//   - **Removed β₉**: FP8 dequantization hypothesis rejected (converged to 0.14 μs, essentially zero)
-//   - **Added β₁₀**: Batching inefficiency (Σ(prefillTokens² / batchSize)) — captures queueing delays
-//   - **Split β₃**: KV management now has base (β₃) + sequence-length (β₃') components
-//   - **Alpha constraints**: Lower bounds on α₀ ≥ 0.5ms, α₁ ≥ 50μs, α₂ ≥ 40μs to prevent spurious reduction
-//   - **Expected**: Scout long-sequence 91-92% → <60% TTFT, β₆ revert 99ms → 15-40ms, β₃ revert 9.6ms → 0.4-1.5ms
+// Changes from iter11:
+//   - **Widen β₃' bounds**: [0.05-2.0μs] → [0.05-5.0μs] (to capture bandwidth penalty)
+//   - **Keep β₁₀ unchanged**: Iter11 audit proved correct (0% error in unit tests)
+//   - **Warm-start from iter9**: Use iter9's optimal coefficients (loss 160.6%), NOT iter10/11
+//   - **Update β₆ expected range**: 15-40ms → 40-100ms (based on profiling data)
+//   - **Expected**: Cascading stabilization: β₂ (0.82 → 0.25-0.60), β₃ (9.6ms → 0.4-1.5ms),
+//     β₃' (0.252μs → 1-3μs), β₆ (99ms → 40-100ms or accept as correct), overall loss <120%
 //
 // Basis functions:
 //   - StepTime (10 beta terms: β₀-β₅, β₇-β₈, β₁₀, β₃', note β₆ in QueueingTime):
-//     Prefill/decode compute, memory, communication, KV mgmt (base + seq-len), MoE gating, MoE routing,
-//     decode overhead, batching inefficiency
+//     Prefill/decode compute, memory, communication, KV mgmt (base + seq-len with bandwidth penalty),
+//     MoE gating, MoE routing, decode overhead, batching inefficiency
 //   - QueueingTime (Alpha + β₆): API overhead (α₀, α₁) + scheduler overhead (β₆)
 //
 // Beta coefficients (11 total, indexed 0-10):
-//   - β₀ (index 0): Prefill compute MFU scaling (dimensionless, expected 0.14-0.22)
-//   - β₁ (index 1): Decode memory-bound MFU (dimensionless, expected 1.2-1.5)
-//   - β₂ (index 2): TP decode communication scaling (dimensionless, expected 0.25-0.60, should REVERT from iter9's 0.82)
-//   - β₃ (index 3): KV cache management BASE overhead (seconds per request, expected 0.0004-0.0015s = 0.4-1.5ms, should REVERT from iter9's 9.6ms)
-//   - β₃' (index 4): KV cache management SEQUENCE-LENGTH overhead (seconds per token×layer, expected 0.1-1.0μs = 0.0000001-0.000001s, NEW)
-//   - β₄ (index 5): Decode compute-bound MFU (dimensionless, expected 0.40-0.65)
-//   - β₅ (index 6): MoE gating overhead (seconds, expected 15-25μs, stable from iter9's 19.8μs ✓)
-//   - β₆ (index 7): Scheduler overhead per request (seconds, expected 15-40ms, should REVERT from iter9's 99ms) - used in QueueingTime, NOT StepTime
-//   - β₇ (index 8): Decode per-request overhead (seconds, expected 8-20ms, stable from iter9's 11ms ✓) - used in StepTime
-//   - β₈ (index 9): MoE routing overhead per routed token (seconds, expected 25-80μs, may decrease from iter9's 73μs) - used in StepTime
-//   - β₁₀ (index 10): Batching inefficiency overhead (seconds per token²/batch_request, expected 0.1-1.0μs = 0.0000001-0.000001s, CORRECTED FROM ITER10) - used in StepTime
+//   - β₀ (index 0): Prefill compute MFU scaling (dimensionless, expected 0.14-0.22, stable)
+//   - β₁ (index 1): Decode memory-bound MFU (dimensionless, expected 1.2-1.5, stable)
+//   - β₂ (index 2): TP decode communication scaling (dimensionless, expected 0.25-0.60, EXPECT REVERT from iter9's 0.82 via cascading)
+//   - β₃ (index 3): KV cache management BASE overhead (seconds per request, expected 0.0004-0.0015s = 0.4-1.5ms, EXPECT REVERT from iter9's 9.6ms via cascading)
+//   - β₃' (index 4): KV cache + bandwidth overhead (seconds per token×layer, WIDENED to 0.05-5.0μs to capture BOTH KV allocation + bandwidth saturation, from iter10, expanded in iter12)
+//   - β₄ (index 5): Decode compute-bound MFU (dimensionless, expected 0.40-0.65, stable)
+//   - β₅ (index 6): MoE gating overhead (seconds, expected 15-25μs, stable)
+//   - β₆ (index 7): Scheduler overhead per request (seconds, UPDATED RANGE: 40-100ms from profiling data, OLD 15-40ms was WRONG) - used in QueueingTime
+//   - β₇ (index 8): Decode per-request overhead (seconds, expected 8-20ms, stable) - used in StepTime
+//   - β₈ (index 9): MoE routing overhead per routed token (seconds, expected 25-80μs, stable) - used in StepTime
+//   - β₁₀ (index 10): Batching inefficiency overhead (seconds per token²/batch_request, expected 0.1-1.0μs, from iter10, proven correct) - used in StepTime
 //
 // Alpha coefficients (request-level, constrained in iter10):
 //   - α₀: Fixed API processing overhead (seconds per request, constrained ≥ 0.5ms)
@@ -72,7 +79,7 @@ import (
 //   - α₂: Per-output-token detokenization (seconds per token, constrained ≥ 40μs)
 type EvolvedModel struct {
 	Alpha       [3]float64 // [α₀, α₁, α₂] - request-level overheads
-	Beta        []float64  // [β₀, β₁, β₂, β₃, β₃', β₄, β₅, β₆, β₇, β₈, β₁₀] - 11 coefficients total
+	Beta        []float64  // [β₀, β₁, β₂, β₃, β₃', β₄, β₅, β₆, β₇, β₈, β₁₀] - 11 coefficients total (iter12 simplified)
 	modelConfig sim.ModelConfig
 	hwConfig    sim.HardwareCalib
 	tp          int
@@ -83,17 +90,17 @@ type EvolvedModel struct {
 // **THIS IS THE ONLY METHOD YOU CUSTOMIZE.** Design basis functions that capture
 // compute, memory, communication, and overhead costs during batch execution.
 //
-// Iteration 10 basis functions (10 terms in StepTime, β₆ in QueueingTime):
+// Iteration 12 basis functions (10 terms in StepTime, β₆ in QueueingTime):
 //   - beta[0] × prefill_compute_time: Prefill efficiency vs theoretical MFU
 //   - beta[1] × decode_memory_time × memory_weight(batch_size): Decode small-batch memory-bound
 //   - beta[2] × tp_comm_time: TP communication overhead (decode all-reduce)
 //   - beta[3] × num_requests: KV cache management BASE overhead (PagedAttention setup)
-//   - beta[4] × Σ(prefillTokens × numLayers): KV cache management SEQUENCE-LENGTH overhead (NEW, block allocation scaling)
+//   - beta[4] × Σ(prefillTokens × numLayers): KV + bandwidth overhead (block allocation + HBM saturation, DUAL MECHANISM)
 //   - beta[5] × decode_compute_time × compute_weight(batch_size): Decode large-batch compute-bound
 //   - beta[6] × moe_gating_time: MoE gating network overhead
 //   - beta[8] × num_decode_requests: Decode per-request overhead (output processing, TP coordination)
 //   - beta[9] × moe_routing_time: MoE per-token routing overhead (expert selection, load balancing)
-//   - beta[10] × Σ(prefillTokens² / batchSize): Batching inefficiency overhead (NEW, queueing delays for long sequences)
+//   - beta[10] × Σ(prefillTokens² / batchSize): Batching inefficiency overhead (queueing delays for long sequences)
 //
 // Physics grounding:
 //   - Prefill is O(n²) attention, compute-bound, large GEMMs → high tensor core utilization
@@ -101,30 +108,31 @@ type EvolvedModel struct {
 //   - Decode large-batch becomes compute-bound due to tensor core utilization
 //   - Smooth transition via sigmoid interpolation: memory_weight(n) = 1/(1+exp((n-8)/2))
 //   - TP communication (decode): all-reduce after each layer when TP > 1
-//   - KV management: PagedAttention block allocation (base overhead per request + seq-len scaling)
+//   - KV management: PagedAttention block allocation (base overhead per request + seq-len scaling with bandwidth penalty)
 //   - MoE gating: routing probability computation for all experts (captured by β₅)
 //   - MoE routing: per-token expert selection, dispatch, load balancing (captured by β₈)
-//   - Batching inefficiency (NEW): long sequences consume disproportionate batch capacity → queueing delays (captured by β₁₀)
+//   - Batching inefficiency: long sequences consume disproportionate batch capacity → queueing delays (captured by β₁₀)
+//   - Memory bandwidth saturation (iter12): HBM bandwidth contention during prefill (captured by widened β₃', DUAL MECHANISM)
 //   - Decode overhead: Output processing, TP coordination, result aggregation per decode request
 //
-// Expected coefficients (iteration 10):
-//   - β₀ ≈ 0.14-0.22 (prefill MFU, from iter9's 0.1624)
-//   - β₁ ≈ 1.2-1.5 (decode memory-bound, from iter9's 1.3611)
-//   - β₂ ≈ 0.25-0.60 (TP communication, should REVERT from iter9's 0.8171 after β₁₀)
-//   - β₃ ≈ 0.4-1.5ms per request (KV base overhead, should REVERT from iter9's 9.6ms after β₃' split)
-//   - β₃' ≈ 0.1-1.0μs per (token×layer) (NEW: KV seq-len overhead, 0.0000001-0.000001s in code)
-//   - β₄ ≈ 0.40-0.65 (decode compute-bound, from iter9's 0.4658)
-//   - β₅ ≈ 15-25μs (MoE gating, stable from iter9's 19.8μs ✓)
-//   - β₆ ≈ 15-40ms (scheduler overhead, should REVERT from iter9's 99ms after β₁₀, used in QueueingTime)
-//   - β₇ ≈ 8-20ms (decode overhead per request, stable from iter9's 11ms ✓)
-//   - β₈ ≈ 25-80μs per routed token (MoE routing, may decrease from iter9's 73μs)
-//   - β₁₀ ≈ 0.1-1.0 μs per (token²/batch_request) (CORRECTED from iter10's erroneous 0.1-1.0 ms, 0.0000001-0.000001s in code)
+// Expected coefficients (iteration 12):
+//   - β₀ ≈ 0.14-0.22 (prefill MFU, stable)
+//   - β₁ ≈ 1.2-1.5 (decode memory-bound, stable)
+//   - β₂ ≈ 0.25-0.60 (TP communication, EXPECT REVERT from iter9's 0.82 via cascading after widened β₃')
+//   - β₃ ≈ 0.4-1.5ms per request (KV base overhead, EXPECT REVERT from iter9's 9.6ms via cascading after widened β₃')
+//   - β₃' ≈ 1.0-3.0μs per (token×layer) (KV + bandwidth, WIDENED to capture BOTH mechanisms, EXPECT 4-12× increase from iter11's 0.252μs)
+//   - β₄ ≈ 0.40-0.65 (decode compute-bound, stable)
+//   - β₅ ≈ 15-25μs (MoE gating, stable)
+//   - β₆ ≈ 40-100ms (scheduler overhead, UPDATED RANGE from profiling data, OLD 15-40ms was WRONG, used in QueueingTime)
+//   - β₇ ≈ 8-20ms (decode overhead per request, stable)
+//   - β₈ ≈ 25-80μs per routed token (MoE routing, stable)
+//   - β₁₀ ≈ 0.1-1.0 μs per (token²/batch_request) (batching inefficiency, proven correct)
 //
 // Beta[7] is β₆, used in QueueingTime (NOT StepTime).
 // Beta[8] is β₇ (decode per-request overhead, added in iter7).
 // Beta[9] is β₈ (MoE routing overhead per routed token, added in iter8).
-// Beta[10] is β₁₀ (batching inefficiency, NEW in iter10).
-// Beta[4] is β₃' (KV seq-len component, NEW in iter10, split from β₃).
+// Beta[10] is β₁₀ (batching inefficiency, added in iter10, proven correct).
+// Beta[4] is β₃' (KV + bandwidth, added in iter10, WIDENED in iter12 to capture dual mechanism).
 func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 	if len(batch) == 0 {
 		return 0
@@ -246,15 +254,23 @@ func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 	kvMgmtBaseContribution := kvMgmtBaseTimeSeconds * 1e6    // Convert to microseconds
 
 	// ========================================
-	// β₃' × Σ(prefillTokens × numLayers) (KV cache management SEQUENCE-LENGTH overhead, NEW in iter10)
+	// β₃' × Σ(prefillTokens × numLayers) (KV cache + bandwidth overhead, DUAL MECHANISM in iter12)
 	// ========================================
-	// Physics: Block allocation/deallocation scaling with KV cache size (long sequences need more blocks)
-	// Expected range: 0.1-1.0μs per (token×layer)
+	// Physics: DUAL MECHANISM (both scale with tokens × layers, captured by single term)
+	//   1. CPU-side: KV cache block allocation (PagedAttention) - 0.1-1.0μs per (token×layer)
+	//   2. GPU-side: HBM bandwidth saturation penalty during prefill - adds 0.5-4.0μs per (token×layer)
+	// Expected range (WIDENED in iter12): 0.05-5.0μs per (token×layer)
+	// Expected value: 1.0-3.0μs (4-12× increase from iter11's 0.252μs to capture bandwidth effect)
 	// Units: seconds per (token×layer) (converted to μs below)
-	// Code: vllm/core/block_manager.py:BlockSpaceManager.allocate() allocates blocks proportional to KV size
+	// Code: vllm/core/block_manager.py:BlockSpaceManager.allocate() (CPU-side)
+	//       H100 HBM3 memory controller queuing during prefill (GPU-side, physical bottleneck)
 	//
-	// For Scout general-lite (500 tokens × 56 layers): β₃' × 28,000 ≈ 3-28ms if β₃' = 0.1-1.0μs
-	// For Scout roleplay (100 tokens × 56 layers): β₃' × 5,600 ≈ 0.6-5.6ms (5× smaller)
+	// Expected contribution (with widened β₃' = 1-3μs):
+	//   - Scout general-lite (500 tokens × 56 layers): β₃' × 28,000 = 2μs × 28,000 ≈ 56ms
+	//   - Scout roleplay (100 tokens × 56 layers): β₃' × 5,600 = 2μs × 5,600 ≈ 11ms
+	// Comparison to iter11 (β₃' = 0.252μs):
+	//   - Iter11: β₃' × 28,000 ≈ 7ms (underestimating, captures KV allocation only)
+	//   - Iter12: β₃' × 28,000 ≈ 56ms (8× larger, captures BOTH KV allocation + bandwidth penalty)
 	var kvMgmtSeqLenTokenLayers float64
 	for _, req := range batch {
 		// For prefill requests: use NumNewPrefillTokens (tokens being processed this step)
@@ -420,7 +436,8 @@ func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 	// ========================================
 	// Total step time (additive model)
 	// ========================================
-	// Iteration 10: 10 terms in StepTime (β₀-β₅, β₇-β₈, β₁₀, β₃'), β₆ moved to QueueingTime
+	// Iteration 12 simplified: 10 terms in StepTime (β₀-β₅, β₇-β₈, β₁₀, β₃'), β₆ in QueueingTime
+	// β₃' captures BOTH KV allocation (CPU-side) and bandwidth saturation (GPU-side) via widened bounds
 	totalTimeUs := prefillContribution + decodeMemoryContribution +
 		tpCommContribution + kvMgmtBaseContribution + kvMgmtSeqLenContribution +
 		decodeComputeContribution + moeGatingContribution + decodeOverheadContribution +
@@ -441,11 +458,12 @@ func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 //   1. Batch formation: vLLM scheduler computes can-schedule decision (capacity check, priority ordering)
 //   2. KV block allocation: PagedAttention allocates physical blocks from block manager
 //   3. Priority queue processing: Sorts waiting requests and selects batch
+//   4. Cold-start overhead: First 4-10 requests have 2-7× higher TTFT (profiling data finding)
 //
-// Expected values (iter10):
+// Expected values (iter12, UPDATED based on profiling data):
 //   - α₀: 0.8-2.5ms (constrained ≥ 0.5ms to prevent spurious reduction)
 //   - α₁: 60-150μs per token (constrained ≥ 50μs)
-//   - β₆: 15-40ms per request (should REVERT from iter9's 99ms after β₁₀ offloads queueing delay)
+//   - β₆: 40-100ms per request (UPDATED from old 15-40ms based on profiling data showing cold-start overhead)
 func (m *EvolvedModel) QueueingTime(req *sim.Request) int64 {
 	var totalProcessingTime float64
 	// Alpha coefficients (in seconds, convert to microseconds)
@@ -487,13 +505,13 @@ func (m *EvolvedModel) PostDecodeFixedOverhead() int64 {
 // This function is meant to be integrated into the main NewLatencyModel switch statement
 // in latency.go. The factory pattern follows the existing backends (roofline, blackbox, etc.).
 func NewEvolvedModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (*EvolvedModel, error) {
-	// Validate coefficient counts (iteration 10: 3 alpha, 11 beta)
-	// Beta count: β₀-β₈ (9 coefficients) + β₁₀ (1 coefficient) + β₃' (1 coefficient) = 11 total
+	// Validate coefficient counts (iteration 12 simplified: 3 alpha, 11 beta)
+	// Beta count: β₀-β₈ (9 coefficients) + β₃' (1 coefficient) + β₁₀ (1 coefficient) = 11 total
 	if len(coeffs.AlphaCoeffs) < 3 {
 		return nil, fmt.Errorf("evolved model: AlphaCoeffs requires at least 3 elements, got %d", len(coeffs.AlphaCoeffs))
 	}
 	if len(coeffs.BetaCoeffs) < 11 {
-		return nil, fmt.Errorf("evolved model: BetaCoeffs requires at least 11 elements for iteration 10, got %d (expected β₀-β₈, β₃', β₁₀)", len(coeffs.BetaCoeffs))
+		return nil, fmt.Errorf("evolved model: BetaCoeffs requires at least 11 elements for iteration 12, got %d (expected β₀-β₈, β₃', β₁₀)", len(coeffs.BetaCoeffs))
 	}
 
 	// Validate hardware config (same checks as roofline)
@@ -514,7 +532,7 @@ func NewEvolvedModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (*Evo
 
 	return &EvolvedModel{
 		Alpha:       [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
-		Beta:        coeffs.BetaCoeffs, // Use all beta coefficients (iteration 10 expects 11: β₀-β₈, β₃', β₁₀)
+		Beta:        coeffs.BetaCoeffs, // Use all beta coefficients (iteration 12 simplified expects 11: β₀-β₈, β₃', β₁₀)
 		modelConfig: hw.ModelConfig,
 		hwConfig:    hw.HWConfig,
 		tp:          hw.TP,
