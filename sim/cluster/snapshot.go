@@ -1,6 +1,10 @@
 package cluster
 
-import "github.com/inference-sim/inference-sim/sim"
+import (
+	"fmt"
+
+	"github.com/inference-sim/inference-sim/sim"
+)
 
 // UpdateMode controls when a snapshot field is refreshed.
 type UpdateMode int
@@ -137,6 +141,17 @@ func (p *CachedSnapshotProvider) RefreshAll(clock int64) {
 			KVUtilization: clock,
 		}
 	}
+}
+
+// AddInstance registers a new instance with the provider so that subsequent
+// Snapshot calls will include it. Panics if the ID is already registered.
+func (p *CachedSnapshotProvider) AddInstance(id InstanceID, inst *InstanceSimulator) {
+	if _, exists := p.instances[id]; exists {
+		panic(fmt.Sprintf("CachedSnapshotProvider.AddInstance: instance %s already registered", id))
+	}
+	p.instances[id] = inst
+	p.cache[id] = sim.NewRoutingSnapshot(string(id))
+	p.lastRefresh[id] = fieldTimestamps{}
 }
 
 // shouldRefresh returns true if a field should be refreshed based on its config.
