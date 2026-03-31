@@ -1448,6 +1448,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#gie-headers-for-llm-d" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GIE Headers for llm-d
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="GIE Headers for llm-d">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-gie-resolves-priority" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How GIE resolves priority
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prerequisite-deploy-inferenceobjective-crds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisite: deploy InferenceObjective CRDs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workload-spec-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workload spec example
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#tips" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3054,6 +3104,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#gie-headers-for-llm-d" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GIE Headers for llm-d
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="GIE Headers for llm-d">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-gie-resolves-priority" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How GIE resolves priority
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prerequisite-deploy-inferenceobjective-crds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prerequisite: deploy InferenceObjective CRDs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workload-spec-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workload spec example
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#tips" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3784,6 +3884,72 @@
 <li><strong>Adjust server config flags:</strong> Match <code>--max-num-running-reqs</code> and <code>--max-num-scheduled-tokens</code> to the real server's settings</li>
 <li><strong>Increase sample size:</strong> Use more requests (<code>--num-requests</code>) for statistical stability</li>
 </ol>
+<hr />
+<h2 id="gie-headers-for-llm-d">GIE Headers for llm-d<a class="headerlink" href="#gie-headers-for-llm-d" title="Permanent link">&para;</a></h2>
+<p>When observing an llm-d cluster with <a href="https://gateway-api-inference-extension.sigs.k8s.io/">Gateway Inference Extension (GIE)</a>, <code>blis observe</code> automatically sends two HTTP headers that GIE's Endpoint Picker (EPP) uses for admission control:</p>
+<table>
+<thead>
+<tr>
+<th>Header</th>
+<th>Workload spec field</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>x-gateway-inference-objective</code></td>
+<td><code>slo_class</code></td>
+<td>Name of an <code>InferenceObjective</code> CRD on the target cluster. EPP looks up this CRD and reads its <code>spec.priority</code> integer for queue ordering and shedding.</td>
+</tr>
+<tr>
+<td><code>x-gateway-inference-fairness-id</code></td>
+<td><code>tenant_id</code></td>
+<td>Tenant key for per-tenant fair-share scheduling. Fairness is enforced between requests of the same priority level.</td>
+</tr>
+</tbody>
+</table>
+<p>Headers are only sent when the field is non-empty, so non-GIE servers are unaffected.</p>
+<h3 id="how-gie-resolves-priority">How GIE resolves priority<a class="headerlink" href="#how-gie-resolves-priority" title="Permanent link">&para;</a></h3>
+<p>GIE does not accept a priority integer directly from the client. Instead, priority is resolved server-side through a CRD lookup:</p>
+<ol>
+<li>Client sends <code>x-gateway-inference-objective: critical</code> (the <code>slo_class</code> value)</li>
+<li>EPP looks up <code>InferenceObjective/critical</code> CRD on the cluster</li>
+<li>EPP reads <code>spec.priority</code> (e.g. 100) from the CRD</li>
+<li>The integer priority is used for strict priority queue ordering and shedding decisions</li>
+</ol>
+<p>If no matching CRD exists, EPP defaults to priority 0.</p>
+<h3 id="prerequisite-deploy-inferenceobjective-crds">Prerequisite: deploy InferenceObjective CRDs<a class="headerlink" href="#prerequisite-deploy-inferenceobjective-crds" title="Permanent link">&para;</a></h3>
+<p>For GIE headers to have any effect, matching <code>InferenceObjective</code> CRDs must exist on the target cluster. The CRD names must match the <code>slo_class</code> values in your workload spec:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1"># On your Kubernetes cluster:</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">inference.networking.x-k8s.io/v1alpha2</span>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">InferenceObjective</span>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="nt">metadata</span><span class="p">:</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">critical</span><span class="w">              </span><span class="c1"># must match slo_class in workload spec</span>
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="nt">spec</span><span class="p">:</span>
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="w">  </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span><span class="w">               </span><span class="c1"># higher = more important; negative = sheddable</span>
+<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="w">  </span><span class="nt">poolRef</span><span class="p">:</span>
+<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-pool</span>
+<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="nn">---</span>
+<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">inference.networking.x-k8s.io/v1alpha2</span>
+<a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">InferenceObjective</span>
+<a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a><span class="nt">metadata</span><span class="p">:</span>
+<a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">background</span>
+<a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a><span class="nt">spec</span><span class="p">:</span>
+<a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a><span class="w">  </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-10</span><span class="w">               </span><span class="c1"># negative priority → shed under load (HTTP 503)</span>
+<a id="__codelineno-15-17" name="__codelineno-15-17" href="#__codelineno-15-17"></a><span class="w">  </span><span class="nt">poolRef</span><span class="p">:</span>
+<a id="__codelineno-15-18" name="__codelineno-15-18" href="#__codelineno-15-18"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-pool</span>
+</code></pre></div>
+<h3 id="workload-spec-example">Workload spec example<a class="headerlink" href="#workload-spec-example" title="Permanent link">&para;</a></h3>
+<p>Set <code>slo_class</code> and <code>tenant_id</code> on your clients to activate GIE headers. The <code>slo_class</code> value must match an <code>InferenceObjective</code> CRD name on the target cluster:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="nt">clients</span><span class="p">:</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;realtime-api&quot;</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">    </span><span class="nt">slo_class</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;critical&quot;</span><span class="w">       </span><span class="c1"># → sent as x-gateway-inference-objective header</span>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="w">    </span><span class="nt">tenant_id</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;team-alpha&quot;</span><span class="w">     </span><span class="c1"># → sent as x-gateway-inference-fairness-id header</span>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;batch-job&quot;</span>
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="w">    </span><span class="nt">slo_class</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;background&quot;</span><span class="w">     </span><span class="c1"># → GIE resolves to negative priority via CRD</span>
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="w">    </span><span class="nt">tenant_id</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;team-beta&quot;</span>
+</code></pre></div>
+<p>Note: The GIE API version (<code>v1alpha2</code>) shown above may differ on your cluster. Check your installed CRD version with <code>kubectl get crd inferenceobjectives.inference.networking.x-k8s.io</code>.</p>
 <hr />
 <h2 id="tips">Tips<a class="headerlink" href="#tips" title="Permanent link">&para;</a></h2>
 <ul>
