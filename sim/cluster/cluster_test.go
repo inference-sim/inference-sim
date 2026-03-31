@@ -1931,6 +1931,164 @@ func TestNewClusterSimulator_NoNodePools_DeterminismPreserved(t *testing.T) {
 	}
 }
 
+// T048 — SC-001 (roofline, sync path): when NodePools are configured, HWConfigByGPU must supply
+// the pool's hardware calibration to the roofline latency model. The roofline model uses
+// TFlopsPeak/BwPeakTBs from HWConfigByGPU[pool.gpu_type], not from the CLI --gpu HWConfig.
+//
+// Observable: roofline step time is proportional to hardware speed. An artificially slow A100
+// calibration (TFlopsPeak=1e-6, BwPeakTBs=1e-8) produces step times >> horizon, yielding zero
+// completions. An artificially fast H100 calibration yields step time ~1µs, completing all 5
+// requests well within the horizon. If HWConfigByGPU is ignored, both clusters use the same
+// fast H100 calibration → same completions → assertion fails.
+//
+// Refactor survival: any reimplementation that correctly applies pool hardware calibration to
+// the roofline model will produce fewer completions on the slow-calibrated cluster. The test
+// makes no assertion about internal types, field names, or construction order.
+func TestNewClusterSimulator_RooflineUsesPoolHWConfig(t *testing.T) {
+	mc := sim.ModelConfig{
+		NumLayers: 4, HiddenDim: 256, NumHeads: 4, NumKVHeads: 4,
+		BytesPerParam: 2.0, IntermediateDim: 512, VocabSize: 1000,
+	}
+	// Slow A100: artificially low TFLOPS/BW → weight-BW step time >> 1s horizon.
+	slowA100 := sim.HardwareCalib{TFlopsPeak: 1e-6, BwPeakTBs: 1e-8, MfuPrefill: 0.3, MfuDecode: 0.3}
+	// Fast H100: realistic values → step time clamps to 1µs minimum.
+	fastH100 := sim.HardwareCalib{TFlopsPeak: 312.0, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.5}
+
+	baseSimCfg := sim.SimConfig{
+		Horizon:             1_000_000, // 1 second
+		Seed:                42,
+		ModelHardwareConfig: sim.NewModelHardwareConfig(mc, fastH100, "test-model", "H100", 1, "roofline", 0),
+		KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+		BatchConfig:         sim.NewBatchConfig(8, 2048, 0),
+		LatencyCoeffs:       sim.NewLatencyCoeffs(nil, []float64{0, 0, 0}),
+	}
+
+	makeReqs := func() []*sim.Request {
+		reqs := make([]*sim.Request, 5)
+		for i := range reqs {
+			reqs[i] = &sim.Request{
+				ID:           fmt.Sprintf("req_%d", i),
+				ArrivalTime:  int64(i) * 100,
+				InputTokens:  make([]int, 50),
+				OutputTokens: make([]int, 20),
+				State:        sim.StateQueued,
+			}
+		}
+		return reqs
+	}
+
+	// Pool cluster: pool gpu_type=A100; HWConfigByGPU provides slow A100 calibration.
+	// CLI SimConfig.HWConfig is fast H100 — must be overridden by HWConfigByGPU lookup.
+	poolCfg := DeploymentConfig{
+		SimConfig:    baseSimCfg,
+		NumInstances: 1,
+		NodePools: []NodePoolConfig{
+			{Name: "a100-pool", GPUType: "A100", GPUsPerNode: 8, InitialNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80},
+		},
+		HWConfigByGPU: map[string]sim.HardwareCalib{
+			"A100": slowA100,
+			"H100": fastH100,
+		},
+	}
+	csPool := NewClusterSimulator(poolCfg, makeReqs(), nil)
+	mustRun(t, csPool)
+	completedPool := csPool.AggregatedMetrics().CompletedRequests
+
+	// No-pool cluster: uses CLI H100 calibration directly (no NodePools, no HWConfigByGPU).
+	noPoolCfg := DeploymentConfig{
+		SimConfig:    baseSimCfg,
+		NumInstances: 1,
+	}
+	csNoPool := NewClusterSimulator(noPoolCfg, makeReqs(), nil)
+	mustRun(t, csNoPool)
+	completedNoPool := csNoPool.AggregatedMetrics().CompletedRequests
+
+	// THEN: pool cluster completes fewer requests (slow A100 → ~0 completions vs fast H100 → 5).
+	// If HWConfigByGPU is ignored, both clusters use fast H100 → equal completions → fails.
+	if completedPool >= completedNoPool {
+		t.Errorf("SC-001 (roofline, sync): pool cluster completed %d requests, no-pool cluster completed %d; "+
+			"expected pool cluster to complete fewer (slow A100 calibration must be applied via HWConfigByGPU, not ignored)",
+			completedPool, completedNoPool)
+	}
+}
+
+// T049 — SC-001 (roofline, deferred path): same hardware calibration contract as T048,
+// but for instances constructed in NodeReadyEvent.Execute (InitialNodes=0).
+// The deferred construction path must also apply HWConfigByGPU[pool.gpu_type] as HWConfig.
+func TestNodeReadyEvent_RooflineUsesPoolHWConfig(t *testing.T) {
+	mc := sim.ModelConfig{
+		NumLayers: 4, HiddenDim: 256, NumHeads: 4, NumKVHeads: 4,
+		BytesPerParam: 2.0, IntermediateDim: 512, VocabSize: 1000,
+	}
+	slowA100 := sim.HardwareCalib{TFlopsPeak: 1e-6, BwPeakTBs: 1e-8, MfuPrefill: 0.3, MfuDecode: 0.3}
+	fastH100 := sim.HardwareCalib{TFlopsPeak: 312.0, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.5}
+
+	baseSimCfg := sim.SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		ModelHardwareConfig: sim.NewModelHardwareConfig(mc, fastH100, "test-model", "H100", 1, "roofline", 0),
+		KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+		BatchConfig:         sim.NewBatchConfig(8, 2048, 0),
+		LatencyCoeffs:       sim.NewLatencyCoeffs(nil, []float64{0, 0, 0}),
+	}
+
+	makeReqs := func() []*sim.Request {
+		reqs := make([]*sim.Request, 5)
+		for i := range reqs {
+			reqs[i] = &sim.Request{
+				ID:           fmt.Sprintf("req_%d", i),
+				ArrivalTime:  int64(i)*100 + 200, // arrive after node is ready (T=0)
+				InputTokens:  make([]int, 50),
+				OutputTokens: make([]int, 20),
+				State:        sim.StateQueued,
+			}
+		}
+		return reqs
+	}
+
+	// Pool cluster (deferred): InitialNodes=0 → all instances pending until NodeReadyEvent.
+	deferredCfg := DeploymentConfig{
+		SimConfig:    baseSimCfg,
+		NumInstances: 1,
+		NodePools: []NodePoolConfig{
+			{Name: "a100-pool", GPUType: "A100", GPUsPerNode: 8, InitialNodes: 0, MaxNodes: 1, GPUMemoryGiB: 80},
+		},
+		HWConfigByGPU: map[string]sim.HardwareCalib{
+			"A100": slowA100,
+			"H100": fastH100,
+		},
+	}
+	csDeferred := NewClusterSimulator(deferredCfg, makeReqs(), nil)
+	if len(csDeferred.instances) != 0 {
+		t.Fatalf("precondition: expected 0 instances before NodeReadyEvent (InitialNodes=0), got %d", len(csDeferred.instances))
+	}
+	// Trigger deferred construction via NodeReadyEvent (simulates provisioning delay elapsing).
+	node, _ := csDeferred.placement.ProvisionNode("a100-pool", 0)
+	event := &NodeReadyEvent{timestamp: 0, nodeID: node.ID}
+	event.Execute(csDeferred)
+	if len(csDeferred.instances) == 0 {
+		t.Fatal("NodeReadyEvent.Execute did not construct any deferred instances")
+	}
+	mustRun(t, csDeferred)
+	completedDeferred := csDeferred.AggregatedMetrics().CompletedRequests
+
+	// No-pool cluster uses fast H100 calibration directly.
+	noPoolCfg := DeploymentConfig{
+		SimConfig:    baseSimCfg,
+		NumInstances: 1,
+	}
+	csNoPool := NewClusterSimulator(noPoolCfg, makeReqs(), nil)
+	mustRun(t, csNoPool)
+	completedNoPool := csNoPool.AggregatedMetrics().CompletedRequests
+
+	// THEN: deferred cluster completes fewer requests (slow A100) than no-pool cluster (fast H100).
+	if completedDeferred >= completedNoPool {
+		t.Errorf("SC-001 (roofline, deferred): deferred cluster completed %d requests, no-pool cluster completed %d; "+
+			"expected deferred cluster to complete fewer (HWConfigByGPU must be applied in NodeReadyEvent path)",
+			completedDeferred, completedNoPool)
+	}
+}
+
 // TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType verifies US2 deferred construction:
 // GIVEN a cluster with NodePools but InitialNodes=0 (no initial capacity), all instances start pending.
 // WHEN a NodeReadyEvent fires (node provisioned and marked ready).
