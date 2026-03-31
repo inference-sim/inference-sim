@@ -345,7 +345,7 @@ class InnerLoopOptimizer:
         """
         print("\n" + "=" * 70)
         print(f"BAYESIAN OPTIMIZATION (up to {self.n_trials} trials)")
-        print("Early stopping: >1% improvement required in 200-trial window")
+        print("Early stopping: stops if no improvement in 200-trial window")
         print(f"Random seed: {self.seed} (deterministic)")
         print("=" * 70)
 
@@ -374,11 +374,11 @@ class InnerLoopOptimizer:
             else:
                 print(f"  Warning: Initial values have wrong length, skipping warm-start")
 
-        # Convergence callback: stop if no >1% improvement in last 200 trials
+        # Convergence callback: stop if no improvement in last 200 trials
         converged_early = [False]  # Mutable container for callback
 
         def convergence_callback(study: optuna.Study, trial: optuna.trial.FrozenTrial):
-            """Stop if best loss hasn't improved >1% in last 200 trials."""
+            """Stop if best loss hasn't improved at all in last 200 trials."""
             n = len(study.trials)
             if n <= 200:
                 return  # Need more than 200 trials to check 200-trial window
@@ -390,14 +390,15 @@ class InnerLoopOptimizer:
             # Get current best loss
             current_best = study.best_value
 
-            # Calculate improvement
-            improvement = (best_loss_200_ago - current_best) / best_loss_200_ago
+            # Calculate absolute improvement
+            absolute_improvement = best_loss_200_ago - current_best
 
-            if improvement <= 0.01:  # ≤1% improvement
+            # Stop if no improvement at all (current >= old)
+            if current_best >= best_loss_200_ago:
                 print(f"\n[Convergence] Stopping at trial {n}/{self.n_trials}")
                 print(f"[Convergence] Best loss 200 trials ago: {best_loss_200_ago:.6f}")
                 print(f"[Convergence] Current best loss: {current_best:.6f}")
-                print(f"[Convergence] Improvement: {improvement*100:.2f}% (threshold: >1.00%)")
+                print(f"[Convergence] Change: {absolute_improvement:+.6f} (no improvement)")
                 converged_early[0] = True
                 study.stop()
 
@@ -426,7 +427,7 @@ class InnerLoopOptimizer:
         print(f"Best beta: {best_beta}")
         print(f"Trials completed: {actual_trials}/{self.n_trials}")
         if converged_early[0]:
-            print(f"Status: Converged early (no >1% improvement in last 200 trials)")
+            print(f"Status: Converged early (no improvement in last 200 trials)")
         else:
             print(f"Status: Completed all requested trials")
         print(f"Optimization time: {opt_time:.1f}s")
