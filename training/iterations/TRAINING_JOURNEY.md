@@ -2,20 +2,20 @@
 
 ## Quick Reference: Formula Evolution
 
-| Iter | Formula (StepTime only, see note for QueueingTime) | Loss | Result |
+| Iter | Formula (StepTime only, see note for QueueingTime) | Loss (RMSE) | Result |
 |------|-----------|------|--------|
-| **0** | `β₀·prefill + β₁·decode_mem + β₂·const` | 200% | ❌ Insufficient |
-| **1** | `β₀·prefill + β₁·decode_mem + β₂·sched + β₃·TP + β₄·KV + β₅·chunk + β₆·decode_comp + β₇·MoE` | 135% | ⚠️ +33% but missed <80% |
-| **2** | `β₀·prefill + β₁·decode_mem + β₂·sched + β₃·TP + β₄·KV + β₅·decode_comp + β₆·MoE + β₇·longctx + β₈·dec_oh` | 136% | ❌ β₇, β₈ never moved |
-| **3** | `β₀·prefill + β₁·decode_mem + β₂·sched + β₃·TP + β₄·KV + β₅·decode_comp + β₆·MoE + β₇·TP_prefill` | 133% | ⚠️ β₇ rejected (≈0) |
-| **4** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE + β₆·activation_BW` | 129% | ❌ Coefficients destabilized |
-| **5** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE + β₆·per_layer` | 603% | 💥 CATASTROPHIC |
-| **6** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE` + **β₆ → QueueingTime** | 162% | ✅ **Decoupling breakthrough** |
-| **7** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE + β₇·decode_oh` + β₆ in QueueingTime | 155% | ✅ β₁/β₄ stabilized |
-| **8** | `+ β₈·MoE_routing` | 155% | ❌ No improvement, MoE routing not Scout's bottleneck |
-| **9** | `+ β₉·FP8_dequant` | 161% | ❌ β₉→0, hypothesis rejected; Scout is seq-len dependent |
-| **10** | `+ β₁₀·batch_ineff + β₃'·KV_seqlen` | 4267% | 💥💥 CATASTROPHIC (thought basis bugs) |
-| **11** | Same as iter10 (basis functions audited) | 4084% | 💥💥 CATASTROPHIC (basis correct, YAML typo!) |
+| **0** | `β₀·prefill + β₁·decode_mem + β₂·const` | 200 | ❌ Insufficient |
+| **1** | `β₀·prefill + β₁·decode_mem + β₂·sched + β₃·TP + β₄·KV + β₅·chunk + β₆·decode_comp + β₇·MoE` | 135 | ⚠️ +33% but missed <80 |
+| **2** | `β₀·prefill + β₁·decode_mem + β₂·sched + β₃·TP + β₄·KV + β₅·decode_comp + β₆·MoE + β₇·longctx + β₈·dec_oh` | 136 | ❌ β₇, β₈ never moved |
+| **3** | `β₀·prefill + β₁·decode_mem + β₂·sched + β₃·TP + β₄·KV + β₅·decode_comp + β₆·MoE + β₇·TP_prefill` | 133 | ⚠️ β₇ rejected (≈0) |
+| **4** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE + β₆·activation_BW` | 129 | ❌ Coefficients destabilized |
+| **5** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE + β₆·per_layer` | 603 | 💥 CATASTROPHIC |
+| **6** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE` + **β₆ → QueueingTime** | 162 | ✅ **Decoupling breakthrough** |
+| **7** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE + β₇·decode_oh` + β₆ in QueueingTime | 155 | ✅ β₁/β₄ stabilized |
+| **8** | `+ β₈·MoE_routing` | 155 | ❌ No improvement, MoE routing not Scout's bottleneck |
+| **9** | `+ β₉·FP8_dequant` | 161 | ❌ β₉→0, hypothesis rejected; Scout is seq-len dependent |
+| **10** | `+ β₁₀·batch_ineff + β₃'·KV_seqlen` | 4267 | 💥💥 CATASTROPHIC (thought basis bugs) |
+| **11** | Same as iter10 (basis functions audited) | 4084 | 💥💥 CATASTROPHIC (basis correct, YAML typo!) |
 
 **Note**: Iter6-7 split overhead between StepTime and QueueingTime. β₆ (scheduler overhead) moved to QueueingTime in iter6.
 
@@ -96,7 +96,7 @@ QueueingTime = α₀ + α₁·input_tokens + β₆·scheduler_overhead
 
 **Added**: β₈ MoE routing overhead (30μs per routed token)
 
-**Result**: Zero improvement (155.35% vs 155.37%)
+**Result**: Zero improvement (RMSE: 155.35 vs 155.37)
 
 **Learning**: β₈ captures a REAL mechanism (39ms per Scout prefill), but it's NOT Scout's primary bottleneck (100-200ms gap remains).
 
@@ -110,7 +110,7 @@ QueueingTime = α₀ + α₁·input_tokens + β₆·scheduler_overhead
 
 **Added**: β₉ FP8 dequantization overhead
 
-**Result**: β₉ → 0.14μs (rejected!), loss worsened to 160.6% (+5.25pp)
+**Result**: β₉ → 0.14μs (rejected!), loss worsened to RMSE 160.6 (+5.25 pts)
 
 **CRITICAL DISCOVERY**: Scout's bottleneck is **sequence-length-dependent**, NOT architecture-dependent!
 
@@ -129,7 +129,7 @@ QueueingTime = α₀ + α₁·input_tokens + β₆·scheduler_overhead
 
 **Iter10 - Added**: β₁₀ (batching inefficiency) + β₃' (KV seq-len component)
 
-**Result**: Catastrophic loss explosion (4267%, 27× worse than iter9)
+**Result**: Catastrophic loss explosion (RMSE: 4267, 27× worse than iter9)
 
 **Initial Diagnosis (WRONG)**: "Basis function formulation bugs" — β₁₀ converged 1000× too small, β₃' converged 65× too large.
 
@@ -168,8 +168,8 @@ QueueingTime = α₀ + α₁·input_tokens + β₆·scheduler_overhead
 - **5/11 coefficients in range**: β₂, β₃', β₅, β₈, β₁₀ all converged to physical ranges
 
 ### ❌ What's Broken
-- **Catastrophic convergence failure**: 4084% loss (45× worse than target, unchanged from iter10)
-- **Long-sequence experiments**: Scout general-lite (92% TTFT), reasoning-lite (91% TTFT) still fail
+- **Catastrophic convergence failure**: RMSE 4084 (45× worse than target, unchanged from iter10)
+- **Long-sequence experiments**: Scout general-lite (92% TTFT APE), reasoning-lite (91% TTFT APE) still fail
 - **6/11 coefficients out of range**: β₀ (+30%), β₁ (-8%), β₃ (-50%), β₄ (+25%), β₆ (+48-295% ⚠️), β₇ (-38-75%)
 - **β₆ explosion**: 59.3ms (expected 15-40ms) — scheduler overhead absorbing unexplained error
 
@@ -192,6 +192,8 @@ QueueingTime = α₀ + α₁·input_tokens + β₆·scheduler_overhead
 2. ✅ Unit tests for any new basis functions
 3. ✅ Validation that β₆ explosion is NOT absorbing missing physics
 4. ⚠️ Consider: Is the current basis function set fundamentally insufficient?
+
+**Note on Metrics**: RMSE (Root Mean Square Error) is computed across all experiments' APE (Absolute Percentage Error) values. Target RMSE < 90 means the model should have low and consistent error across all test cases.
 
 ---
 
