@@ -853,6 +853,9 @@ func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
 		if flowControlMaxQueueDepth < 0 {
 			logrus.Fatalf("--max-gateway-queue-depth must be >= 0, got %d", flowControlMaxQueueDepth)
 		}
+		if flowControlDetector == "" || flowControlDetector == "never" {
+			logrus.Warnf("--flow-control enabled but --saturation-detector is %q (pass-through); specify 'utilization' or 'concurrency' for actual gating", flowControlDetector)
+		}
 	}
 
 	logrus.Infof("Policy config: admission=%s, routing=%s, priority=%s, scheduler=%s",

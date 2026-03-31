@@ -57,6 +57,14 @@ go build -o blis main.go
 ./blis convert servegen --path data/
 ./blis convert inference-perf --spec spec.yaml
 ./blis compose --from spec1.yaml --from spec2.yaml
+
+# Run with gateway queue flow control (utilization-based saturation gating)
+./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
+  --queue-depth-threshold 5 --kv-cache-util-threshold 0.8
+
+# Run with concurrency-based flow control and priority dispatch ordering
+./blis run --model qwen/qwen3-14b --flow-control --saturation-detector concurrency \
+  --max-concurrency 64 --dispatch-order priority --max-gateway-queue-depth 1000
 ```
 
 ## Testing
