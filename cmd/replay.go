@@ -20,8 +20,9 @@ import (
 )
 
 var (
-	traceHeaderPath string
-	traceDataPath   string
+	traceHeaderPath   string
+	traceDataPath     string
+	replayTraceOutput string // File prefix for TraceV2 re-export (<prefix>.yaml + <prefix>.csv)
 )
 
 var replayCmd = &cobra.Command{
@@ -164,6 +165,20 @@ Example:
 
 		logrus.Infof("Replay wall-clock time: %.3fs", time.Since(startTime).Seconds())
 
+		// Export trace if requested (BC-1, BC-2, BC-3)
+		if replayTraceOutput != "" {
+			records := workload.RequestsToTraceRecords(requests)
+			header := &workload.TraceHeader{
+				Version:  2,
+				TimeUnit: "microseconds",
+				Mode:     "replayed",
+			}
+			if err := workload.ExportTraceV2(header, records, replayTraceOutput+".yaml", replayTraceOutput+".csv"); err != nil {
+				logrus.Fatalf("Trace export failed: %v", err)
+			}
+			logrus.Infof("Trace exported: %s.yaml, %s.csv (%d records)", replayTraceOutput, replayTraceOutput, len(records))
+		}
+
 		// Save aggregate metrics to stdout (same as runCmd)
 		if numInstances > 1 {
 			for _, inst := range cs.Instances() {
@@ -273,6 +288,7 @@ func init() {
 	replayCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "Path to TraceV2 header YAML file (required)")
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
 	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens) for blis calibrate consumption.")
+	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\"")
 	rootCmd.AddCommand(replayCmd)
 }
 

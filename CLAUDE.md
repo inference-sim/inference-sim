@@ -23,6 +23,10 @@ go build -o blis main.go
 # Replay a captured TraceV2 file through the DES
 ./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b
 
+# Replay and re-export trace with simulation-computed timing (mode: replayed)
+./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
+  --trace-output out
+
 # Observe real server latency and record timing into TraceV2
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --workload-spec workload.yaml --trace-header trace.yaml --trace-data trace.csv

@@ -19,7 +19,7 @@ type TraceHeader struct {
 	Version        int    `yaml:"trace_version"`
 	TimeUnit       string `yaml:"time_unit"`
 	CreatedAt      string `yaml:"created_at,omitempty"`
-	Mode           string `yaml:"mode"` // "real" or "generated"
+	Mode           string `yaml:"mode"` // "real" (blis observe), "generated" (blis run), or "replayed" (blis replay)
 	WarmUpRequests int    `yaml:"warm_up_requests"`
 	WorkloadSeed   *int64 `yaml:"workload_seed,omitempty"`
 	// WorkloadSpec records workload provenance:
