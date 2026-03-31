@@ -443,7 +443,8 @@ func (kvc *KVCacheState) ReleaseKVBlocks(req *sim.Request) {
 		blk.RefCount--
 		if blk.RefCount == 0 {
 			blk.InUse = false
-			blk.TierPriority = 0
+			// Preserve TierPriority so prefix cache entries retain SLO-tier
+			// protection: higher-tier blocks are evicted later by popFreeBlock.
 			kvc.UsedBlockCnt--
 			kvc.appendToFreeList(blk)
 		}

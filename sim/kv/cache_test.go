@@ -478,14 +478,17 @@ func TestAllocateKVBlocks_Rollback_PreservesFreeListOrder(t *testing.T) {
 	// TestAllocateKVBlocks_CachedBlockRollback_OnNewBlockFailure).
 	kvc := NewKVCacheState(4, 2)
 
-	// Create and release to populate prefix cache
-	req1 := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	// Create and release to populate prefix cache.
+	// Use "background" SLOClass so released blocks return to tier 0 (same as
+	// freshly-initialized blocks), keeping all free blocks in one tier list
+	// for the free-list-order assertions below.
+	req1 := &sim.Request{ID: "r1", SLOClass: "background", InputTokens: []int{1, 2, 3, 4}}
 	kvc.AllocateKVBlocks(req1, 0, 4, []int64{})
 	kvc.ReleaseKVBlocks(req1)
 	// 4 free blocks, 2 with cached hashes
 
 	// Consume 1 with filler → 3 free
-	filler := &sim.Request{ID: "filler", InputTokens: []int{90, 91}}
+	filler := &sim.Request{ID: "filler", SLOClass: "background", InputTokens: []int{90, 91}}
 	kvc.AllocateKVBlocks(filler, 0, 2, []int64{})
 
 	// Record free list order before the failed allocation
@@ -493,7 +496,7 @@ func TestAllocateKVBlocks_Rollback_PreservesFreeListOrder(t *testing.T) {
 	secondFreeBlockBefore := kvc.freeTierHead[0].NextFree.ID
 
 	// WHEN mid-loop allocation fails (cached blocks consume free budget)
-	req2 := &sim.Request{ID: "r2", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
+	req2 := &sim.Request{ID: "r2", SLOClass: "background", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
 	cached := kvc.GetCachedBlocks(req2.InputTokens)
 	ok := kvc.AllocateKVBlocks(req2, 4, 8, cached)
 	if ok {
@@ -711,4 +714,97 @@ func TestAllocateKVBlocks_ChunkedPrefill_NoPhantomBlocks(t *testing.T) {
 			t.Errorf("block %d has empty Tokens (phantom block)", blk.ID)
 		}
 	}
+}
+
+// TestTieredLRU_SheddableEvictedBeforeStandard verifies that under KV pressure,
+// a sheddable-tier prefix block is evicted before a standard-tier prefix block.
+// BC-KV1: Tiered LRU protects high-SLO prefix cache entries.
+func TestTieredLRU_SheddableEvictedBeforeStandard(t *testing.T) {
+	// 2 blocks total: one for sheddable, one for standard.
+	kvc := NewKVCacheState(2, 16)
+
+	// Each request has 16 input tokens = exactly 1 block with BlockSize=16.
+	sheddableReq := &sim.Request{ID: "shed-1", SLOClass: "sheddable",
+		InputTokens: make([]int, 16)}
+	standardReq := &sim.Request{ID: "std-1", SLOClass: "standard",
+		InputTokens: make([]int, 16)}
+
+	// Allocate one block each.
+	if !kvc.AllocateKVBlocks(sheddableReq, 0, 16, []int64{}) {
+		t.Fatal("sheddable allocation failed")
+	}
+	if !kvc.AllocateKVBlocks(standardReq, 0, 16, []int64{}) {
+		t.Fatal("standard allocation failed")
+	}
+
+	// Release both — they go to the prefix cache free lists with their tier priorities.
+	kvc.ReleaseKVBlocks(sheddableReq)
+	kvc.ReleaseKVBlocks(standardReq)
+
+	// SLOTierPriority("sheddable")=2, SLOTierPriority("standard")=3.
+	// popFreeBlock drains tiers 0,1,2,3,4 in order, so tier 2 (sheddable)
+	// is evicted before tier 3 (standard).
+
+	// Allocate for a new request — forces eviction of exactly one free block.
+	newReq := &sim.Request{ID: "new-critical", SLOClass: "critical",
+		InputTokens: make([]int, 16)}
+	if !kvc.AllocateKVBlocks(newReq, 0, 16, []int64{}) {
+		t.Fatal("new allocation failed")
+	}
+
+	// The sheddable block (tier 2) should have been evicted (popped from free list).
+	// freeTierHead[2] should be nil; freeTierHead[3] should still have the standard block.
+	if kvc.freeTierHead[2] != nil {
+		t.Error("sheddable tier free list should be empty after eviction (sheddable block was taken)")
+	}
+	if kvc.freeTierHead[3] == nil {
+		t.Error("standard tier free list should still have a block (standard was not evicted)")
+	}
+}
+
+// TestTieredLRU_KVConservation verifies allocated+free == total after
+// mixed-tier operations (INV-4).
+func TestTieredLRU_KVConservation(t *testing.T) {
+	total := int64(6)
+	kvc := NewKVCacheState(total, 16)
+
+	reqs := []*sim.Request{
+		{ID: "c1", SLOClass: "critical", InputTokens: make([]int, 32)},
+		{ID: "s1", SLOClass: "standard", InputTokens: make([]int, 32)},
+		{ID: "sh1", SLOClass: "sheddable", InputTokens: make([]int, 32)},
+	}
+
+	// Allocate 2 blocks per request (3 requests x 2 blocks = 6 total, BlockSize=16)
+	for _, r := range reqs {
+		if !kvc.AllocateKVBlocks(r, 0, 32, []int64{}) {
+			t.Fatalf("allocation failed for %s", r.ID)
+		}
+	}
+
+	// INV-4 check: allocated + free == total
+	checkConservation := func(label string) {
+		t.Helper()
+		used := kvc.UsedBlocks()
+		free := kvc.TotalCapacity() - used
+		if used+free != total {
+			t.Errorf("[%s] INV-4 violated: used=%d + free=%d != total=%d", label, used, free, total)
+		}
+	}
+
+	checkConservation("after allocation")
+
+	// Release sheddable
+	kvc.ReleaseKVBlocks(reqs[2])
+	checkConservation("after sheddable release")
+
+	// Release standard
+	kvc.ReleaseKVBlocks(reqs[1])
+	checkConservation("after standard release")
+
+	// Allocate new critical (forces eviction from free list)
+	newReq := &sim.Request{ID: "c-new", SLOClass: "critical", InputTokens: make([]int, 16)}
+	if !kvc.AllocateKVBlocks(newReq, 0, 16, []int64{}) {
+		t.Fatal("new critical allocation failed")
+	}
+	checkConservation("after new allocation with eviction")
 }
