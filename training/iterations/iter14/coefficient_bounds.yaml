@@ -1,0 +1,93 @@
+# Iteration 14: Coefficient Bounds and Initial Values
+#
+# **Warm-Start Strategy**: Use iter7 optimal coefficients (loss 155%, stable baseline)
+# **Architecture**: 8 beta coefficients (β₀-β₇, indices 0-7), same as iter7
+# **Key Change**: β₅ bounds tightened to [0, 100] to prevent explosion (was [0, 2000] in iter13)
+#
+# **Rationale**: Iter7 was last stable iteration (155% loss, 6/8 coefficients in range).
+# After fixing β₅ basis function (adding layer multiplier), expect β₅ to converge to 20-40
+# (not 0.0411 collapsed or 1924.4 exploded), unlocking remaining improvements.
+
+alpha_bounds:
+  - [0.0005, 0.0025]   # α₀: Fixed API overhead (seconds) - expected 0.8-2.5ms
+  - [0.00005, 0.00015] # α₁: Per-input-token tokenization (seconds) - expected 60-150μs/token
+  - [0.00004, 0.00012] # α₂: Per-output-token detokenization (seconds) - expected 50-120μs/token
+
+alpha_initial:
+  - 0.0013203497002758444   # α₀: 1.32ms (iter7 optimal)
+  - 0.00011755415462300615  # α₁: 118μs/token (iter7 optimal)
+  - 9.05373651637129e-05    # α₂: 90.5μs/token (iter7 optimal)
+
+beta_bounds:
+  - [0.05, 0.50]    # β₀: Prefill compute MFU scaling (dimensionless) - expected 0.16-0.22
+  - [0.80, 1.50]    # β₁: Decode memory-bound MFU scaling (dimensionless) - expected 1.00-1.15
+  - [0.10, 0.60]    # β₂: TP decode communication scaling (dimensionless) - expected 0.15-0.25
+  - [0.0002, 0.002] # β₃: KV cache management base overhead (seconds) - expected 0.4-1.5ms
+  - [0.50, 1.20]    # β₄: Decode compute-bound MFU scaling (dimensionless) - expected 0.70-0.85
+  - [0.0, 100.0]    # β₅: MoE gating efficiency scaling (dimensionless) - expected 1-50 after fix
+  - [0.005, 0.120]  # β₆: Scheduler overhead per request (seconds) - expected 40-100ms (used in QueueingTime)
+  - [0.010, 0.040]  # β₇: Decode per-request overhead (seconds) - expected 15-30ms
+
+beta_initial:
+  - 0.19116281832398505     # β₀: 0.191 (iter7, physically plausible prefill MFU)
+  - 1.107582827856762       # β₁: 1.108 (iter7, physically plausible decode memory MFU)
+  - 0.1845841867110804      # β₂: 0.185 (iter7, physically plausible TP comm scaling)
+  - 0.004403966639981373    # β₃: 4.4ms (iter7, may decrease after β₅ fix unlocks capacity)
+  - 0.713240961338525       # β₄: 0.713 (iter7, physically plausible decode compute MFU)
+  - 0.0411178430799963      # β₅: 0.0411 (iter7 collapsed value, expect 20-40 after basis fix)
+  - 0.013157126573261829    # β₆: 13.2ms (iter7, may increase to 40-100ms with profiling)
+  - 0.026258732912539808    # β₇: 26.3ms (iter7, physically plausible decode overhead)
+
+# ============================================================
+# Notes on Coefficient Expectations (After β₅ Fix)
+# ============================================================
+#
+# **β₅ (MoE gating) - PRIMARY CHANGE**:
+#   - Iter7: 0.0411 (collapsed, essentially zero contribution)
+#   - Iter13: 1924.4 (catastrophic explosion due to missing layer multiplier)
+#   - Iter14 expected: 20-40 (physically plausible after adding × numMoELayers)
+#   - Rationale: With corrected basis function, β₅ should behave like other MFU scaling
+#     factors (β₀=0.19, β₁=1.11, β₄=0.71). If gating efficiency (30%) accurate, β₅ ≈ 1.0.
+#     But gating is memory-bound (small GEMMs) → expect β₅ > 1 to compensate.
+#   - Bounds tightened: [0, 2000] → [0, 100] to prevent future explosions
+#
+# **Other Coefficients (Expected to Match Iter7)**:
+#   - β₀: 0.191 → 0.18-0.20 (stable prefill MFU)
+#   - β₁: 1.108 → 1.05-1.15 (stable decode memory MFU)
+#   - β₂: 0.185 → 0.18-0.20 (stable TP comm, no explosion like iter13's 0.362)
+#   - β₃: 4.4ms → 2-5ms (may decrease as β₅ fix unlocks capacity)
+#   - β₄: 0.713 → 0.70-0.75 (stable decode compute MFU)
+#   - β₆: 13.2ms → 13-20ms (stable scheduler overhead, no collapse like iter13's 10.0ms)
+#   - β₇: 26.3ms → 25-28ms (stable decode per-request overhead)
+#
+# **Why Iter7 Warm-Start?**:
+#   - Iter7 was last stable iteration before iter9-13 catastrophic failures
+#   - Dataset changed between iter7/iter13 (reasoning → reasoning-lite), but iter7
+#     coefficients still physically plausible starting point
+#   - All iter7 coefficients (except β₅ collapsed) were within expected ranges
+#   - Warm-starting from iter7 reduces optimization trials from ~1000 to ~200-300
+#
+# **Why NOT Warm-Start from Iter13?**:
+#   - Iter13 coefficients catastrophically inflated/collapsed:
+#     - β₅: 1924.4 (46,800× too high)
+#     - α₁: 54.3μs (54% below range)
+#     - β₂: 0.362 (96% above range)
+#     - β₄: 0.562 (21% below range)
+#     - β₆: 10.0ms (24% below range)
+#   - Warm-starting from inflated coefficients creates unstable optimization landscape
+#   - Iter12 proved this: warm-started from iter9 inflated values → β₃' collapsed
+#
+# **Expected Optimization Behavior**:
+#   - Trials: 200-400 (vs iter13's 738 early convergence)
+#   - β₅ should increase from 0.0411 → 20-40 (1000× increase, vs 46,800× in iter13)
+#   - Other coefficients should remain stable (±20% from iter7 values)
+#   - Loss should decrease to <180% (targeting iter7 baseline 155% + margin)
+#
+# **Validation Checklist**:
+#   - [ ] β₅ converges to 1-50 (physically plausible)
+#   - [ ] β₅ does NOT explode >100 (bounds prevent this)
+#   - [ ] β₅ does NOT collapse <0.1 (indicates collinearity or over-correction)
+#   - [ ] All 8 coefficients in expected ranges (7-8/8 stable)
+#   - [ ] Loss <180% (iter7 baseline + margin)
+#   - [ ] Zero 100% timeout errors (reasoning-lite recovers)
+#   - [ ] Dense models recover to iter7 ±10pp
