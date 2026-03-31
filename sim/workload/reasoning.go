@@ -17,6 +17,7 @@ func GenerateReasoningRequests(
 	inputSampler, outputSampler LengthSampler,
 	startTime int64,
 	clientID, tenantID, sloClass, model string,
+	giePriority int,
 ) ([]*sim.Request, error) {
 	if spec == nil || spec.MultiTurn == nil {
 		return nil, nil
@@ -74,6 +75,7 @@ func GenerateReasoningRequests(
 			State:        sim.StateQueued,
 			TenantID:     tenantID,
 			SLOClass:     sloClass,
+			GIEPriority:  giePriority,
 			Model:        model,
 			ClientID:     clientID,
 			SessionID:    sessionID,

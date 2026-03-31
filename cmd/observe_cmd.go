@@ -271,6 +271,10 @@ func runObserve(cmd *cobra.Command, _ []string) {
 			logrus.Fatalf("%s", errMsg)
 		}
 		spec.Seed = observeSeed
+		// Apply --priority to preset-synthesized clients (same as distribution path).
+		for i := range spec.Clients {
+			spec.Clients[i].GIEPriority = observePriority
+		}
 	} else {
 		// Distribution or concurrency synthesis
 		spec = workload.SynthesizeFromDistribution(workload.DistributionParams{

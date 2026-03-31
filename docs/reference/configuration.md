@@ -512,7 +512,7 @@ For environments where live profiling is not feasible, the [Roofline model](../c
 | **LatencyCoeffs** | `--alpha-coeffs`, `--beta-coeffs` |
 | **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--vllm-version`, `--latency-model`, `--model-config-folder`, `--hardware-config`, `--max-model-len` |
 | **PolicyConfig** | `--scheduler`, `--priority-policy` |
-| **WorkloadConfig** | `--workload`, `--workload-spec`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
+| **WorkloadConfig** | `--workload`, `--workload-spec`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens`, `--priority` |
 | **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` | YAML-only (no CLI flag): `node_pools`, `instance_lifecycle` |
 | **Top-level** | `--seed`, `--horizon`, `--log`, `--metrics-path` (run only), `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
 
@@ -566,6 +566,7 @@ Used when `--rate` is set instead of `--workload-spec`. Same flag names as `blis
 | `--output-tokens-min` | int | 1 | Minimum output tokens. |
 | `--output-tokens-max` | int | 2048 | Maximum output tokens. |
 | `--prefix-tokens` | int | 0 | Shared prefix token count. |
+| `--priority` | int | 0 | GIE priority integer sent as `x-gateway-inference-priority` header (0 = omit). |
 | `--api-format` | string | "completions" | API format: `completions` (`/v1/completions`) or `chat` (`/v1/chat/completions`). |
 | `--unconstrained-output` | bool | false | Do not set `max_tokens` (let server decide output length). |
 | `--rtt-ms` | float64 | 0 | Measured network round-trip time in milliseconds (recorded in trace header for calibrate). |
