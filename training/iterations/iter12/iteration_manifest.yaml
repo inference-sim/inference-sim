@@ -1,0 +1,59 @@
+iteration: 12
+latency_backend_name: "evolved"
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 12: Memory Bandwidth Saturation via Widened β₃' Bounds (SIMPLIFIED DESIGN)
+
+  **ORIGINAL HYPOTHESIS (REJECTED)**: Split β₆ → β₆ₐ (fixed) + β₁₁ (queueing delay per token)
+  - Profiling data showed queueing delay does NOT scale linearly with tokens
+  - Cold-start dominates (2-7× higher TTFT), steady-state weakly correlated with sequence length
+  - β₆ = 60-100ms is CORRECT (captures cold-start + batch formation), expected range was WRONG
+
+  **SECOND HYPOTHESIS (REJECTED)**: Add β₁₁ (bandwidth penalty) separate from β₃'
+  - β₁₁ and β₃' would have IDENTICAL basis function: Σ(prefillTokens × numLayers)
+  - Creates collinearity problem - optimizer cannot distinguish CPU-side (β₃') from GPU-side (β₁₁)
+  - Overly complex solution for single underlying mechanism
+
+  **FINAL SIMPLIFIED HYPOTHESIS**: Widen β₃' bounds to capture BOTH mechanisms
+
+  Profiling data analysis (Scout general/roleplay, Llama-3.1, Qwen2.5):
+    - Cold-start effect: First 4-10 requests have 2-7× higher TTFT, then stabilizes
+    - Steady-state TTFT: 25-120ms (weakly correlated with tokens, NOT linear)
+    - β₆ = 99ms (iter9) captures AVERAGE across cold/warm requests → NOT inflation
+
+  Root cause analysis (iter9 coefficient explosions):
+    - β₂ (TP comm): 0.82 vs 0.25-0.60 expected (3× high)
+    - β₃ (KV mgmt): 9.6ms vs 0.4-1.5ms expected (6× high)
+    - β₆ (scheduler): 99ms vs 15-40ms expected (2.5-6× high, but profiling shows 40-100ms is correct)
+    - **Pattern**: All three exploded TOGETHER in iter9 when β₉ (FP8) rejected
+
+  Hypothesis: Single root cause = memory bandwidth saturation during long-sequence prefill
+    - Long sequences (500 tokens × 56 layers) generate ~420 MB memory traffic
+    - Saturates H100 HBM bandwidth (2.0-2.3 TB/s effective during prefill)
+    - Slows down ALL memory operations simultaneously:
+      → TP communication stalls (β₂ inflates)
+      → KV cache access stalls (β₃ inflates)
+      → Scheduler waits for memory (β₆ inflates)
+
+  Iter12 simplified strategy: Widen β₃' bounds to capture BOTH KV allocation + bandwidth penalty
+    - β₃' already exists from iter11 (basis function: Σ(prefillTokens × numLayers))
+    - Original role: CPU-side KV cache block allocation (PagedAttention)
+    - Extended role: ALSO captures GPU-side HBM bandwidth saturation penalty
+    - Solution: Widen bounds from [0.05-2.0μs] to [0.05-5.0μs] (2.5× increase)
+    - Advantage: Single term, no collinearity, simpler than adding β₁₁
+
+  Changes from iter11:
+    - Widen β₃' bounds: [0.05-2.0μs] → [0.05-5.0μs] (to capture bandwidth penalty)
+    - Update β₆ expected range: 15-40ms → 40-100ms (based on profiling data)
+    - Warm-start from iter9 (NOT iter10/11 catastrophic failures)
+    - Total coefficients: 3 alpha + 11 beta (β₀-β₈, β₁₀, β₃') - SAME as iter11
+
+  Expected outcome: Cascading stabilization triggers β₂ (0.82 → 0.25-0.60), β₃ (9.6ms → 0.4-1.5ms),
+  β₃' (0.252μs → 1-3μs), β₆ (99ms → 40-100ms or accept as correct), overall loss improves to <120%
+  (25% improvement from iter9's 160.6%)
+
+  **Why simplified**: Avoids collinearity by using single term with wider bounds instead of adding
+  separate β₁₁ term that would compete with β₃' for same variance
+
+timestamp: "2026-03-31T00:00:00Z"

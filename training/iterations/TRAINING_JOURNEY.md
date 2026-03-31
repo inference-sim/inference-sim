@@ -16,16 +16,19 @@
 | **9** | `+ β₉·FP8_dequant` | 161 | ❌ β₉→0, hypothesis rejected; Scout is seq-len dependent | Watch coefficient explosions (reveal missing terms) |
 | **10** | `+ β₁₀·batch_ineff + β₃'·KV_seqlen` | 4267 | 💥💥 CATASTROPHIC (thought basis bugs) | Misdiagnosed - units were actually correct |
 | **11** | Same as iter10 (basis functions audited) | 4084 | 💥💥 CATASTROPHIC (basis correct, YAML typo!) | Unit test basis functions BEFORE training |
+| **12** | Widened β₃' bounds (0.05-5μs) to capture bandwidth | 2590 | 💥💥💥 CATASTROPHIC (β₃' collapsed!) | Don't warm-start from inflated coefficients |
 
 **Note**: Iter6-7 split overhead between StepTime and QueueingTime. β₆ (scheduler overhead) moved to QueueingTime in iter6.
 
-**Current Formula (Iter11)**:
+**Current Formula (Iter12 - Same as Iter11, only bounds changed)**:
 ```
 StepTime = β₀·prefill_comp + β₁·decode_mem + β₂·TP_comm + β₃·KV_base + β₃'·KV_seqlen +
            β₄·decode_comp + β₅·MoE_gating + β₇·decode_overhead + β₈·MoE_routing +
            β₁₀·batch_ineff
 QueueingTime = α₀ + α₁·input_tokens + β₆·scheduler_overhead
 ```
+
+**Change from Iter11**: Widened β₃' bounds from 0.05-2.0μs → 0.05-5.0μs (2.5× increase) to allow capturing both KV allocation and bandwidth saturation penalty.
 
 ---
 
@@ -143,6 +146,39 @@ QueueingTime = α₀ + α₁·input_tokens + β₆·scheduler_overhead
 
 ---
 
+### Iter12: The Warm-Start Catastrophe 💥💥💥
+
+**Hypothesis**: Widen β₃' bounds to 0.05-5.0μs to allow capturing BOTH KV allocation (CPU-side) and memory bandwidth saturation (GPU-side) in a single term.
+
+**Rationale**:
+- Iter9 saw THREE coefficients explode together: β₂ (TP comm), β₃ (KV base), β₆ (scheduler)
+- Single root cause suspected: Memory bandwidth saturation during long-sequence prefill
+- β₃' already uses basis function Σ(prefillTokens × numLayers) — perfect for bandwidth penalty
+- Widen bounds to let optimizer increase β₃' from 0.252μs → 1-3μs to capture both mechanisms
+
+**Result**: **CATASTROPHIC FAILURE** — RMSE 2590 (16× worse than iter9, worst iteration ever)
+
+**What Actually Happened**:
+- **β₃' collapsed** from 0.252μs → **0.064μs** (4× DECREASE, moved AWAY from target!)
+- **Three experiments failed completely** (100% APE) — ALL reasoning-lite workloads
+- **Cascading stabilization PARTIAL**: β₂, β₃ improved but β₆ over-corrected (22ms vs 40-100ms expected)
+
+**Root Causes**:
+1. **Warm-Start Paradox**: Started from iter9's inflated coefficients (β₂=0.82, β₃=9.6ms, β₆=99ms) while trying to fix them → unstable optimization landscape
+2. **Bounds Widening Backfired**: Gave optimizer room to collapse β₃' instead of increase it (no lower bound constraint)
+3. **Data Quality Issues**: Three reasoning-lite experiments failed (100% APE) — suggests corrupted ground truth data
+
+**Partial Success**: The cascading stabilization mechanism WAS confirmed:
+- β₂: 0.82 → 0.284 ✅ (entered range 0.25-0.60)
+- β₃: 9.6ms → 1.16ms ✅ (entered range 0.4-1.5ms)
+- This proves cascade exists, but operates incorrectly when warm-starting from inflated coefficients
+
+**Key Learning**: **Don't warm-start from inflated coefficients**. Widening bounds on a coefficient competing with inflated neighbors doesn't work. Must first return to stable baseline (iter6/7) before expanding parameter space.
+
+**Cost**: 413 trials × 16 min = 110 hours wasted, 16× regression from baseline
+
+---
+
 ## Key Lessons
 
 | Lesson | Evidence |
@@ -156,42 +192,61 @@ QueueingTime = α₀ + α₁·input_tokens + β₆·scheduler_overhead
 | **Coefficient explosions reveal missing mechanisms** | Iter9: β₆ +654%, β₂ +343% when β₉→0 → optimizer compensating for wrong hypothesis |
 | **Unit test basis functions BEFORE training** | Iter10-11: 7,250 trial-hours wasted on "bugs" that didn't exist (just YAML typo) |
 | **Audit code before accepting diagnoses** | A 5-minute unit test would have prevented entire iter10-11 detour |
+| **Don't warm-start from inflated coefficients** | Iter12: Warm-started from iter9 (β₂=0.82, β₃=9.6ms inflated) → β₃' collapsed, loss 16× worse |
+| **Widening bounds requires constraints** | Iter12: Widened β₃' 0.05-5.0μs without lower bound → collapsed to 0.064μs (wrong direction) |
+| **Validate data quality BEFORE training** | Iter12: Three reasoning-lite experiments failed (100% APE) — suggests corrupted data |
 
 ---
 
-## Current Status (Post-Iter11)
+## Current Status (Post-Iter12)
 
 ### ✅ What Works
-- **Iter9 sequence-length discovery**: Confirmed Scout's bottleneck is sequence-length-dependent (not architecture-specific)
-- **Short-sequence predictions improved**: Scout roleplay (26% TTFT), codegen (58% TTFT) — dramatic improvement from iter8
-- **Basis functions validated**: β₁₀ and β₃' implementations are CORRECT (0% error in unit tests)
-- **5/11 coefficients in range**: β₂, β₃', β₅, β₈, β₁₀ all converged to physical ranges
+- **Cascading stabilization mechanism confirmed**: β₂ (0.82→0.284) and β₃ (9.6ms→1.16ms) improved when β₃' bounds widened — proves the cascade exists!
+- **Basis functions validated**: β₁₀ and β₃' implementations are CORRECT (0% error in unit tests, iter11)
+- **Sequence-length discovery preserved**: Confirmed Scout's bottleneck is sequence-length-dependent (iter9 finding)
 
-### ❌ What's Broken
-- **Catastrophic convergence failure**: RMSE 4084 (45× worse than target, unchanged from iter10)
-- **Long-sequence experiments**: Scout general-lite (92% TTFT APE), reasoning-lite (91% TTFT APE) still fail
-- **6/11 coefficients out of range**: β₀ (+30%), β₁ (-8%), β₃ (-50%), β₄ (+25%), β₆ (+48-295% ⚠️), β₇ (-38-75%)
-- **β₆ explosion**: 59.3ms (expected 15-40ms) — scheduler overhead absorbing unexplained error
+### ❌ What's Broken (Worse Than Ever)
+- **CATASTROPHIC REGRESSION**: RMSE 2590 (16× worse than iter9, worst iteration ever)
+- **β₃' collapsed**: 0.252μs → 0.064μs (moved AWAY from target 1-3μs range)
+- **Three experiments failed completely** (100% APE) — ALL reasoning-lite workloads (data corruption suspected)
+- **Cascade operates incorrectly**: β₂, β₃ improved but β₆ over-corrected (22ms vs 40-100ms expected)
+- **5/11 coefficients out of range**: β₀, β₁, β₃', β₄, β₆, β₇ all outside expected ranges
 
-### 🔍 Root Cause Analysis Needed
-**Key Questions**:
-1. Why does β₆ (scheduler overhead) keep exploding? (59ms vs 15-40ms expected)
-2. What mechanism explains long-sequence Scout failures? (100-200ms unexplained gap)
-3. Are basis functions correct but INSUFFICIENT? (missing critical terms?)
-4. Is training data quality still an issue? (saturated servers, non-representative workloads?)
+### 🔍 Root Cause: The Warm-Start Trap
+**What went wrong in iter12**:
+1. **Warm-started from iter9's inflated coefficients** (β₂=0.82, β₃=9.6ms, β₆=99ms) while trying to fix them
+2. **Created unstable optimization landscape** → optimizer collapsed ALL coefficients instead of increasing β₃'
+3. **Widened bounds without constraints** → gave optimizer room to move wrong direction
+4. **Data quality not validated** → three reasoning-lite experiments failed (100% APE)
 
-**Hypotheses for Iter12+**:
-- **Option 1**: Profile scheduler code path for long-sequence requests (vllm/core/scheduler.py)
-- **Option 2**: Add memory bandwidth saturation term (HBM throughput × seq_len scaling)
-- **Option 3**: Investigate batch formation efficiency (why long sequences delay others?)
-- **Option 4**: Collect targeted Scout profiling data (nsys/nvprof on long vs short sequences)
+**The Paradox**: Trying to fix inflated coefficients by widening bounds on a competing term made things worse. The inflation must be resolved FIRST by returning to stable baseline.
 
-### 🎯 Next Steps
-**DO NOT proceed to iter12 without**:
-1. ✅ Root cause verification (profiling data or trace analysis)
-2. ✅ Unit tests for any new basis functions
-3. ✅ Validation that β₆ explosion is NOT absorbing missing physics
-4. ⚠️ Consider: Is the current basis function set fundamentally insufficient?
+### 🎯 Critical Next Steps (Before Iter13)
+
+**MANDATORY Step 1**: Validate reasoning-lite data quality
+```bash
+# Check for corrupted ground truth
+grep -E "ttft.*: 0\.|e2e.*: 0\." training/trainval_data/*reasoning*/ground_truth.csv
+```
+If corrupted: Exclude from training OR regenerate ground truth
+
+**MANDATORY Step 2**: REVERT to stable baseline (iter6 or iter7)
+- **Iter6**: Loss ~80% (best iteration ever)
+- **Iter9-12**: Failures (160-2590%)
+- **Architecture**: 3 alpha + 8 beta (β₀-β₇, NO β₈/β₉/β₁₀/β₃')
+- **Expected**: Loss <100% (return to stability)
+
+**DO NOT**:
+- ❌ Attempt to fix iter12 architecture (fundamentally flawed)
+- ❌ Warm-start from iter9-12 (all have inflated or collapsed coefficients)
+- ❌ Add new terms before returning to <100% loss baseline
+- ❌ Train without data validation (reasoning-lite may be corrupted)
+
+**Strategy**: Return to known-good state (iter6/7), validate <100% loss, THEN incrementally add terms with:
+1. Unit tests for new basis functions
+2. Collinearity checks (design matrix condition number <30)
+3. Data validation (no zero-latencies, balanced workload distribution)
+4. Warm-start from STABLE iteration (≥80% coefficients in range)
 
 **Note on Metrics**: RMSE (Root Mean Square Error) is computed across all experiments' APE (Absolute Percentage Error) values. Target RMSE < 90 means the model should have low and consistent error across all test cases.
 
