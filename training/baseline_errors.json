@@ -1,0 +1,416 @@
+{
+  "summary": {
+    "total_experiments": 13,
+    "total_measurements": 190,
+    "simulators": [
+      "aiconfigurator-estimate",
+      "blis-roofline",
+      "llm-optimizer-estimate",
+      "vidur"
+    ],
+    "models": [
+      "01-ai/Yi-34B",
+      "Qwen/Qwen2.5-7B-Instruct",
+      "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
+      "meta-llama/Llama-2-7b-hf",
+      "meta-llama/Llama-3.1-70B-Instruct",
+      "mistralai/Mistral-Nemo-Instruct-2407"
+    ],
+    "workloads": [
+      "codegen",
+      "general",
+      "reasoning",
+      "roleplay"
+    ],
+    "metrics": [
+      "e2e_mean",
+      "e2e_p90",
+      "e2e_p99",
+      "itl_mean",
+      "ttft_mean",
+      "ttft_p90",
+      "ttft_p99"
+    ]
+  },
+  "experiments": {
+    "exp_17": {
+      "metadata": {
+        "exp_id": 17,
+        "model": "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
+        "workload": "general",
+        "hardware": "H100",
+        "tp": 2,
+        "precision": "FP8",
+        "max_num_batched_tokens": 2048
+      },
+      "simulators": {
+        "blis-roofline": {
+          "e2e_mean_mpe": -99.15733058044,
+          "e2e_p90_mpe": -99.49745796459108,
+          "e2e_p99_mpe": -99.53789047195328,
+          "ttft_mean_mpe": -99.87843630572748,
+          "ttft_p90_mpe": -99.8724826871309,
+          "ttft_p99_mpe": -99.86493683449652,
+          "itl_mean_mpe": -94.04521270452628
+        }
+      }
+    },
+    "exp_20": {
+      "metadata": {
+        "exp_id": 20,
+        "model": "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
+        "workload": "codegen",
+        "hardware": "H100",
+        "tp": 2,
+        "precision": "FP8",
+        "max_num_batched_tokens": 2048
+      },
+      "simulators": {
+        "blis-roofline": {
+          "e2e_mean_mpe": -93.6533336645462,
+          "e2e_p90_mpe": -90.65087678882504,
+          "e2e_p99_mpe": -90.37529748313946,
+          "ttft_mean_mpe": -50.068777606766304,
+          "ttft_p90_mpe": 23.597765027001792,
+          "ttft_p99_mpe": 64.98141553019786,
+          "itl_mean_mpe": -94.19230098695289
+        }
+      }
+    },
+    "exp_21": {
+      "metadata": {
+        "exp_id": 21,
+        "model": "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
+        "workload": "roleplay",
+        "hardware": "H100",
+        "tp": 2,
+        "precision": "FP8",
+        "max_num_batched_tokens": 2048
+      },
+      "simulators": {
+        "blis-roofline": {
+          "e2e_mean_mpe": -87.99257511013553,
+          "e2e_p90_mpe": -85.74637304995385,
+          "e2e_p99_mpe": -88.20098627654433,
+          "ttft_mean_mpe": 65.82063591293222,
+          "ttft_p90_mpe": 239.95426867216543,
+          "ttft_p99_mpe": 151.6666319879754,
+          "itl_mean_mpe": -89.83598048567244
+        }
+      }
+    },
+    "exp_48": {
+      "metadata": {
+        "exp_id": 48,
+        "model": "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
+        "workload": "reasoning",
+        "hardware": "H100",
+        "tp": 2,
+        "precision": "FP8",
+        "max_num_batched_tokens": 2048
+      },
+      "simulators": {
+        "blis-roofline": {
+          "e2e_mean_mpe": -95.76297972927696,
+          "e2e_p90_mpe": -95.96074209688987,
+          "e2e_p99_mpe": -96.12635852475492,
+          "ttft_mean_mpe": -92.02864621110372,
+          "ttft_p90_mpe": -93.70981335484308,
+          "ttft_p99_mpe": -90.57385975288092,
+          "itl_mean_mpe": -95.85749982235942
+        }
+      }
+    },
+    "exp_60": {
+      "metadata": {
+        "exp_id": 60,
+        "model": "meta-llama/Llama-3.1-70B-Instruct",
+        "workload": "general",
+        "hardware": "H100",
+        "tp": 4,
+        "precision": "FP16",
+        "max_num_batched_tokens": 8192
+      },
+      "simulators": {
+        "blis-roofline": {
+          "e2e_mean_mpe": -49.01058236909771,
+          "e2e_p90_mpe": -42.0977181271039,
+          "e2e_p99_mpe": -36.66836303870072,
+          "ttft_mean_mpe": 330.44218979173945,
+          "ttft_p90_mpe": 890.4266006402407,
+          "ttft_p99_mpe": 1130.7651829857516,
+          "itl_mean_mpe": -54.30982284179051
+        },
+        "llm-optimizer-estimate": {
+          "e2e_mean_mpe": -47.2936540104772,
+          "ttft_mean_mpe": 695.2304282234657,
+          "itl_mean_mpe": -57.10824218478552
+        },
+        "aiconfigurator-estimate": {
+          "e2e_mean_mpe": 20.20880875100799,
+          "ttft_mean_mpe": 1543.3582049904276,
+          "itl_mean_mpe": 0.2450223503537301
+        }
+      }
+    },
+    "exp_61": {
+      "metadata": {
+        "exp_id": 61,
+        "model": "meta-llama/Llama-3.1-70B-Instruct",
+        "workload": "codegen",
+        "hardware": "H100",
+        "tp": 4,
+        "precision": "FP16",
+        "max_num_batched_tokens": 2048
+      },
+      "simulators": {
+        "blis-roofline": {
+          "e2e_mean_mpe": -34.95571052698768,
+          "e2e_p90_mpe": -15.116891806772273,
+          "e2e_p99_mpe": -17.175225607024366,
+          "ttft_mean_mpe": 912.0165672068696,
+          "ttft_p90_mpe": 1537.6580874331678,
+          "ttft_p99_mpe": 2606.593336116382,
+          "itl_mean_mpe": -47.221139757589
+        },
+        "llm-optimizer-estimate": {
+          "e2e_mean_mpe": -39.207106706248766,
+          "ttft_mean_mpe": 1526.6243200509668,
+          "itl_mean_mpe": -58.992315323469555
+        },
+        "aiconfigurator-estimate": {
+          "e2e_mean_mpe": 69.55834991988131,
+          "ttft_mean_mpe": 2081.6504612091717,
+          "itl_mean_mpe": 43.05293842767558
+        }
+      }
+    },
+    "exp_62": {
+      "metadata": {
+        "exp_id": 62,
+        "model": "mistralai/Mistral-Nemo-Instruct-2407",
+        "workload": "general",
+        "hardware": "H100",
+        "tp": 2,
+        "precision": "FP16",
+        "max_num_batched_tokens": 1024
+      },
+      "simulators": {
+        "blis-roofline": {
+          "e2e_mean_mpe": -54.430524448822915,
+          "e2e_p90_mpe": -51.57145183150899,
+          "e2e_p99_mpe": -48.167844740528395,
+          "ttft_mean_mpe": -4.3829920043645085,
+          "ttft_p90_mpe": 96.73757821822878,
+          "ttft_p99_mpe": 218.39047159120616,
+          "itl_mean_mpe": -55.34107659731251
+        },
+        "llm-optimizer-estimate": {
+          "e2e_mean_mpe": -46.39602041316062,
+          "ttft_mean_mpe": 117.08613886464144,
+          "itl_mean_mpe": -49.16687922939567
+        }
+      }
+    },
+    "exp_63": {
+      "metadata": {
+        "exp_id": 63,
+        "model": "mistralai/Mistral-Nemo-Instruct-2407",
+        "workload": "codegen",
+        "hardware": "H100",
+        "tp": 1,
+        "precision": "FP16",
+        "max_num_batched_tokens": 2048
+      },
+      "simulators": {
+        "blis-roofline": {
+          "e2e_mean_mpe": -6.518250693183207,
+          "e2e_p90_mpe": 20.52241663357603,
+          "e2e_p99_mpe": 31.12321532746225,
+          "ttft_mean_mpe": 1031.226900341156,
+          "ttft_p90_mpe": 1888.1767165405297,
+          "ttft_p99_mpe": 3031.0623729451186,
+          "itl_mean_mpe": -20.352826084493973
+        },
+        "llm-optimizer-estimate": {
+          "e2e_mean_mpe": -5.280580563487818,
+          "ttft_mean_mpe": 1971.3412399751012,
+          "itl_mean_mpe": -31.618196200239996
+        }
+      }
+    },
+    "exp_64": {
+      "metadata": {
+        "exp_id": 64,
+        "model": "Qwen/Qwen2.5-7B-Instruct",
+        "workload": "roleplay",
+        "hardware": "H100",
+        "tp": 1,
+        "precision": "FP16",
+        "max_num_batched_tokens": 2048
+      },
+      "simulators": {
+        "blis-roofline": {
+          "e2e_mean_mpe": -33.324118691613634,
+          "e2e_p90_mpe": -19.021580550808014,
+          "e2e_p99_mpe": -21.60027867063001,
+          "ttft_mean_mpe": 664.7103545931164,
+          "ttft_p90_mpe": 1178.7830607595542,
+          "ttft_p99_mpe": 1245.5903387286396,
+          "itl_mean_mpe": -44.351836632218905
+        },
+        "llm-optimizer-estimate": {
+          "e2e_mean_mpe": -66.67174758022188,
+          "ttft_mean_mpe": 94.22170010646497,
+          "itl_mean_mpe": -69.44525525447006
+        },
+        "aiconfigurator-estimate": {
+          "e2e_mean_mpe": -11.841898787193644,
+          "ttft_mean_mpe": 176.92941789063934,
+          "itl_mean_mpe": -15.251537517476294
+        }
+      }
+    },
+    "exp_65": {
+      "metadata": {
+        "exp_id": 65,
+        "model": "01-ai/Yi-34B",
+        "workload": "general",
+        "hardware": "H100",
+        "tp": 2,
+        "precision": "FP16",
+        "max_num_batched_tokens": 2048
+      },
+      "simulators": {
+        "blis-roofline": {
+          "e2e_mean_mpe": -40.905673079493354,
+          "e2e_p90_mpe": -28.873993077206897,
+          "e2e_p99_mpe": -22.5681058421544,
+          "ttft_mean_mpe": 279.40913963724626,
+          "ttft_p90_mpe": 935.094584002706,
+          "ttft_p99_mpe": 1052.2873531807531,
+          "itl_mean_mpe": -44.77117500142118
+        },
+        "aiconfigurator-estimate": {
+          "e2e_mean_mpe": 10.259884319379902,
+          "ttft_mean_mpe": 931.575077727998,
+          "itl_mean_mpe": -0.9099558899164708
+        }
+      }
+    },
+    "exp_66": {
+      "metadata": {
+        "exp_id": 66,
+        "model": "Qwen/Qwen2.5-7B-Instruct",
+        "workload": "reasoning",
+        "hardware": "H100",
+        "tp": 1,
+        "precision": "FP16",
+        "max_num_batched_tokens": 1024
+      },
+      "simulators": {
+        "blis-roofline": {
+          "e2e_mean_mpe": -59.964899961946536,
+          "e2e_p90_mpe": -60.992812985038,
+          "e2e_p99_mpe": -63.90834460076314,
+          "ttft_mean_mpe": -14.77772873145111,
+          "ttft_p90_mpe": -2.6843352777049,
+          "ttft_p99_mpe": -12.164196975950109,
+          "itl_mean_mpe": -60.62523969352116
+        },
+        "llm-optimizer-estimate": {
+          "e2e_mean_mpe": -69.47048126997053,
+          "ttft_mean_mpe": 135.98654367814953,
+          "itl_mean_mpe": -70.4827083223136
+        },
+        "aiconfigurator-estimate": {
+          "e2e_mean_mpe": -17.43117076576841,
+          "ttft_mean_mpe": 549.2971335846154,
+          "itl_mean_mpe": -20.145201922290852
+        }
+      }
+    },
+    "exp_67": {
+      "metadata": {
+        "exp_id": 67,
+        "model": "meta-llama/Llama-2-7b-hf",
+        "workload": "reasoning",
+        "hardware": "H100",
+        "tp": 1,
+        "precision": "FP16",
+        "max_num_batched_tokens": 2048
+      },
+      "simulators": {
+        "blis-roofline": {
+          "e2e_mean_mpe": -61.61191420993955,
+          "e2e_p90_mpe": -64.65888516342622,
+          "e2e_p99_mpe": -65.26150451823258,
+          "ttft_mean_mpe": -52.78872975089036,
+          "ttft_p90_mpe": -57.59782002791643,
+          "ttft_p99_mpe": -22.27543170217532,
+          "itl_mean_mpe": -70.34218870422215
+        },
+        "vidur": {
+          "e2e_mean_mpe": -28.566288206683183,
+          "e2e_p90_mpe": -9.745656729314694,
+          "e2e_p99_mpe": -10.46754599582161,
+          "ttft_mean_mpe": -31.792043857396045,
+          "ttft_p90_mpe": -34.528653701174356,
+          "ttft_p99_mpe": -22.69965672828701,
+          "itl_mean_mpe": -29.4020094985328
+        },
+        "llm-optimizer-estimate": {
+          "e2e_mean_mpe": -56.44164006126224,
+          "ttft_mean_mpe": 352.8401074777518,
+          "itl_mean_mpe": -67.37035119030669
+        },
+        "aiconfigurator-estimate": {
+          "e2e_mean_mpe": -15.176702275234424,
+          "ttft_mean_mpe": 36.14253136032018,
+          "itl_mean_mpe": -34.547048521515464
+        }
+      }
+    },
+    "exp_20260217": {
+      "metadata": {
+        "exp_id": 20260217,
+        "model": "meta-llama/Llama-2-7b-hf",
+        "workload": "codegen",
+        "hardware": "H100",
+        "tp": 1,
+        "precision": "FP16",
+        "max_num_batched_tokens": 2048
+      },
+      "simulators": {
+        "blis-roofline": {
+          "e2e_mean_mpe": 3.9623907613641207,
+          "e2e_p90_mpe": 39.902585059118465,
+          "e2e_p99_mpe": 48.52291533363468,
+          "ttft_mean_mpe": 586.9926061946436,
+          "ttft_p90_mpe": 1151.990313057424,
+          "ttft_p99_mpe": 1285.742262511343,
+          "itl_mean_mpe": -24.24561774297721
+        },
+        "vidur": {
+          "e2e_mean_mpe": -2.382294436552294,
+          "e2e_p90_mpe": 29.60939225687432,
+          "e2e_p99_mpe": 32.598883379100215,
+          "ttft_mean_mpe": -13.59078160856767,
+          "ttft_p90_mpe": -4.40539350328566,
+          "ttft_p99_mpe": -8.208126230726768,
+          "itl_mean_mpe": -3.965463769892315
+        },
+        "llm-optimizer-estimate": {
+          "e2e_mean_mpe": -35.04205977898876,
+          "ttft_mean_mpe": 618.6553141148399,
+          "itl_mean_mpe": -55.95861489700938
+        },
+        "aiconfigurator-estimate": {
+          "e2e_mean_mpe": 3.346626624922385,
+          "ttft_mean_mpe": 652.5687621885879,
+          "itl_mean_mpe": -25.44333533788665
+        }
+      }
+    }
+  }
+}
