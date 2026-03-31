@@ -209,9 +209,15 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 		e.request.GatewayEnqueueTime = cs.clock
 		shed := cs.gatewayQueue.Enqueue(e.request, cs.nextSeqID())
 		if shed {
-			return // request was shed from full queue — don't route
+			// Trace gap: this request was admitted (RecordAdmission above wrote Admitted:true)
+			// but was subsequently shed from the full gateway queue. No shed trace record is
+			// emitted here. Trace consumers must not assume all Admitted:true requests have
+			// routing records when flow control is enabled.
+			e.request.GatewayEnqueueTime = 0 // clean up — request never actually queued
+			return
 		}
-		// Attempt immediate dispatch (NeverSaturated will always succeed here)
+		// Attempt immediate dispatch — succeeds when cluster is not saturated.
+		// NeverSaturated always dispatches; real detectors dispatch when load is below threshold.
 		cs.tryDispatchFromGatewayQueue()
 		return
 	}

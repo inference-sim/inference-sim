@@ -886,6 +886,8 @@ func (c *ClusterSimulator) tryDispatchFromGatewayQueue() bool {
 	state := buildRouterState(c, nil)
 	sat := c.saturationDetector.Saturation(state)
 	if sat >= 1.0 {
+		logrus.Debugf("[cluster] tryDispatch: held (saturation=%.2f, snapshots=%d, queueLen=%d)",
+			sat, len(state.Snapshots), c.gatewayQueue.Len())
 		return false // hold until next completion
 	}
 	req := c.gatewayQueue.Dequeue()

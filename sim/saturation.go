@@ -41,7 +41,7 @@ func NewUtilizationDetector(queueDepthThreshold, kvCacheUtilThreshold float64) *
 
 func (u *UtilizationDetector) Saturation(state *RouterState) float64 {
 	if len(state.Snapshots) == 0 {
-		return 1.0 // no instances → assume saturated (EC-2)
+		return 1.0 // no routable instances — hold all requests until an instance becomes available
 	}
 	sum := 0.0
 	for _, snap := range state.Snapshots {
@@ -69,7 +69,7 @@ func NewConcurrencyDetector(maxConcurrency int) *ConcurrencyDetector {
 
 func (c *ConcurrencyDetector) Saturation(state *RouterState) float64 {
 	if len(state.Snapshots) == 0 {
-		return 1.0 // no instances → assume saturated (EC-2)
+		return 1.0 // no routable instances — hold all requests until an instance becomes available
 	}
 	totalInFlight := 0
 	for _, snap := range state.Snapshots {

@@ -1727,12 +1727,18 @@ func TestClusterSimulator_FlowControl_NeverSaturated_PassThrough(t *testing.T) {
 func TestClusterSimulator_FlowControl_GatewayQueueDelay(t *testing.T) {
 	config := newTestDeploymentConfig(1)
 	config.FlowControlEnabled = true
-	config.FlowControlDetector = "utilization"
+	config.FlowControlDetector = "concurrency"
 	config.FlowControlDispatchOrder = "fifo"
-	config.FlowControlQueueDepthThreshold = 1  // very tight: saturated when QueueDepth >= 1
-	config.FlowControlKVCacheUtilThreshold = 0.1
+	config.FlowControlMaxConcurrency = 1 // only 1 in-flight at a time — forces queuing
 
+	// Stagger arrivals so that by the time later requests are admitted,
+	// earlier ones have been routed and incremented inFlightRequests.
+	// RoutingLatency=0 in test config, so routing happens at admission time.
+	// We need enough spacing that RoutingDecisionEvent fires before the next arrival.
 	requests := newTestRequests(5)
+	for i, req := range requests {
+		req.ArrivalTime = int64(i) * 100 // 100 ticks apart
+	}
 	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
@@ -1741,8 +1747,8 @@ func TestClusterSimulator_FlowControl_GatewayQueueDelay(t *testing.T) {
 		t.Fatal("expected some completed requests")
 	}
 
-	// With tight utilization thresholds, some requests should have waited in the gateway queue.
-	// Verify that at least one completed request has GatewayEnqueueTime set (non-zero).
+	// With maxConcurrency=1 and all requests arriving at once, only the first dispatches
+	// immediately. The rest must wait in the gateway queue until completions free capacity.
 	foundEnqueued := false
 	foundNonZeroDelay := false
 	for _, req := range requests {
@@ -1757,7 +1763,7 @@ func TestClusterSimulator_FlowControl_GatewayQueueDelay(t *testing.T) {
 		t.Error("BC-8: expected at least one request with GatewayEnqueueTime > 0")
 	}
 	if !foundNonZeroDelay {
-		t.Log("BC-8: no request had nonzero gateway queue delay — all dispatched immediately (may happen with very fast completions)")
+		t.Error("BC-8: expected at least one request with nonzero gateway queue delay when concurrency-gated")
 	}
 }
 

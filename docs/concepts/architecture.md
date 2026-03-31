@@ -12,7 +12,10 @@ A BLIS cluster consists of N independent inference instances orchestrated by a s
 flowchart TD
     WG["Workload<br/>Generator"] -->|Requests| Adm{"Admission<br/>Policy"}
     Adm -->|rejected| Rej["Rejected<br/>(counted)"]
-    Adm -->|admitted| Rtr["Routing Policy<br/>(WeightedScoring)<br/>PA:3 QD:2 KV:2"]
+    Adm -->|admitted| GQ["Gateway Queue<br/>(opt: --flow-control)"]
+    GQ -->|dispatch| Rtr["Routing Policy<br/>(WeightedScoring)<br/>PA:3 QD:2 KV:2"]
+
+    style GQ fill:#e7f5ff,stroke:#90caf9
 
     Snap["Routing Snapshots<br/>QueueDepth, BatchSize,<br/>KVUtil, InFlightRequests"] -.-> Rtr
 
