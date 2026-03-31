@@ -5,6 +5,7 @@ package cluster
 import (
 	"container/heap"
 
+	"github.com/inference-sim/inference-sim/sim"
 	"github.com/sirupsen/logrus"
 )
 
@@ -28,6 +29,8 @@ func (e *NodeReadyEvent) Timestamp() int64 { return e.timestamp }
 func (e *NodeReadyEvent) Priority() int    { return priorityNodeLifecycle }
 
 // Execute transitions the node Provisioning → Ready and retries any pending instances.
+// Deferred construction: pending instances have no InstanceSimulator yet — construct them
+// here using the pool's GPU type (SC-003: pool-authoritative, not CLI flag).
 func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 	if cs.placement == nil {
 		return
@@ -41,17 +44,50 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 	placed := cs.placement.RetryPendingInstances()
 	for idx := range placed {
 		p := &placed[idx]
-		// Find the InstanceSimulator for this pending instance and start loading.
-		for _, inst := range cs.instances {
-			if inst.ID() == p.id {
-				// R4: mirror the initial placement path in NewClusterSimulator —
-				// set nodeID, allocatedGPUIDs, and warmUpRemaining before scheduling load.
-				inst.nodeID = p.nodeID
-				inst.allocatedGPUIDs = p.gpuIDs
-				inst.warmUpRemaining = cs.config.InstanceLifecycle.WarmUpRequestCount
-				inst.TransitionTo(InstanceStateLoading)
-				cs.scheduleInstanceLoadedEvent(inst)
-				break
+		// Deferred construction: set pool's GPU type (authoritative per SC-003).
+		p.simCfg.GPU = p.gpuType
+		inst := NewInstanceSimulator(p.id, p.simCfg)
+		inst.Model = cs.config.Model
+		inst.nodeID = p.nodeID
+		inst.allocatedGPUIDs = p.gpuIDs
+		inst.warmUpRemaining = cs.config.InstanceLifecycle.WarmUpRequestCount
+		inst.TransitionTo(InstanceStateLoading)
+
+		// Register with snapshot provider for routing (deferred instances were not
+		// in the initial instanceMap passed to NewCachedSnapshotProvider).
+		// Must happen BEFORE scheduleInstanceLoadedEvent so the instance is routable
+		// when the load event fires.
+		csp, ok := cs.snapshotProvider.(*CachedSnapshotProvider)
+		if !ok {
+			// snapshotProvider is nil or not *CachedSnapshotProvider — log and continue.
+			// R1: no silent data loss; this can occur in unit tests that bypass NewClusterSimulator.
+			logrus.Warnf("[cluster] NodeReadyEvent: snapshotProvider is not *CachedSnapshotProvider for instance %s — skipping registration", p.id)
+		} else {
+			csp.AddInstance(p.id, inst)
+		}
+
+		cs.scheduleInstanceLoadedEvent(inst)
+		cs.instances = append(cs.instances, inst)
+		cs.inFlightRequests[string(p.id)] = 0
+
+		// Wire OnRequestDone callback — mirror startup path in NewClusterSimulator (R4).
+		onRequestDone := cs.sessionCallback
+		if onRequestDone != nil || cs.tenantTracker != nil {
+			inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
+				if cs.tenantTracker != nil {
+					cs.tenantTracker.OnComplete(req.TenantID)
+				}
+				if onRequestDone == nil {
+					return nil
+				}
+				nextReqs := onRequestDone(req, tick)
+				for _, next := range nextReqs {
+					heap.Push(&cs.clusterEvents, clusterEventEntry{
+						event: &ClusterArrivalEvent{time: next.ArrivalTime, request: next},
+						seqID: cs.nextSeqID(),
+					})
+				}
+				return nil // don't inject locally — route through cluster pipeline
 			}
 		}
 	}

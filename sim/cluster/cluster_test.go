@@ -1930,3 +1930,82 @@ func TestNewClusterSimulator_NoNodePools_DeterminismPreserved(t *testing.T) {
 		t.Errorf("ITLSum: run1=%d, run2=%d (INV-6 violation)", m1.ITLSum, m2.ITLSum)
 	}
 }
+
+// TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType verifies US2 deferred construction:
+// GIVEN a cluster with NodePools but InitialNodes=0 (no initial capacity), all instances start pending.
+// WHEN a NodeReadyEvent fires (node provisioned and marked ready).
+// THEN the newly constructed instance uses the pool's GPU type (SC-003: pool-authoritative).
+// THEN the instance is registered with the snapshot provider and is routable (SC-003).
+func TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType(t *testing.T) {
+	// GIVEN: CLI --gpu flag = "H100", pool gpu_type = "A100" — they differ intentionally.
+	// InitialNodes=0 means no nodes at startup → all instances deferred (pending).
+	cfg := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             1_000_000,
+			Seed:                42,
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0),
+			KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(4, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		},
+		NumInstances: 2,
+		NodePools: []NodePoolConfig{
+			{
+				Name:         "a100-pool",
+				GPUType:      "A100",
+				GPUsPerNode:  8,
+				InitialNodes: 0, // no initial capacity — all instances start pending
+				MaxNodes:     2,
+				GPUMemoryGiB: 80,
+			},
+		},
+	}
+
+	cs := NewClusterSimulator(cfg, nil, nil)
+
+	// Precondition: all instances are pending (no capacity at startup).
+	if len(cs.instances) != 0 {
+		t.Fatalf("precondition failed: expected 0 placed instances at startup (InitialNodes=0), got %d", len(cs.instances))
+	}
+	if cs.placement == nil {
+		t.Fatal("precondition failed: placement must be non-nil when NodePools are configured")
+	}
+
+	// Provision a node in the pool (sets it to Provisioning state).
+	node, _ := cs.placement.ProvisionNode("a100-pool", 0)
+
+	// Fire NodeReadyEvent directly (simulate provisioning delay elapsing).
+	event := &NodeReadyEvent{timestamp: 0, nodeID: node.ID}
+	event.Execute(cs)
+
+	// THEN: instances grew — deferred construction fired.
+	if len(cs.instances) == 0 {
+		t.Fatal("NodeReadyEvent.Execute did not construct any deferred instances")
+	}
+
+	// THEN: pool GPU type ("A100") is used, not CLI --gpu ("H100").
+	for _, inst := range cs.instances {
+		if got := inst.GPU(); got != "A100" {
+			t.Errorf("deferred instance %s: GPU() = %q, want %q (pool gpu_type must override CLI --gpu in deferred path)",
+				inst.ID(), got, "A100")
+		}
+		// Verify scheduleInstanceLoadedEvent fired and instance reached Active state
+		// (WarmUpRequestCount=0 and loading delay=0, so Loading → Active immediately).
+		if got := inst.State; got != InstanceStateActive {
+			t.Errorf("instance %s: State = %v, want InstanceStateActive (scheduleInstanceLoadedEvent must fire)", inst.ID(), got)
+		}
+	}
+
+	// THEN: instance is registered with snapshotProvider and routable (SC-003).
+	// Verify AddInstance was called by querying Snapshot — a registered instance returns
+	// a snapshot with matching ID; an unregistered instance would panic or return wrong ID.
+	if cs.snapshotProvider != nil {
+		for _, inst := range cs.instances {
+			snap := cs.snapshotProvider.Snapshot(inst.ID(), cs.clock)
+			if snap.ID != string(inst.ID()) {
+				t.Errorf("instance %s not registered with snapshotProvider: Snapshot().ID = %q, want %q (deferred instance must be routable)",
+					inst.ID(), snap.ID, string(inst.ID()))
+			}
+		}
+	}
+}
