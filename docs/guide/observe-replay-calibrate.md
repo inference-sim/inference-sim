@@ -381,6 +381,71 @@ If calibration quality is poor, try:
 
 ---
 
+## GIE Headers for llm-d
+
+When observing an llm-d cluster with [Gateway Inference Extension (GIE)](https://gateway-api-inference-extension.sigs.k8s.io/), `blis observe` automatically sends two HTTP headers that GIE's Endpoint Picker (EPP) uses for admission control:
+
+| Header | Workload spec field | Purpose |
+|--------|-------------------|---------|
+| `x-gateway-inference-objective` | `slo_class` | Name of an `InferenceObjective` CRD on the target cluster. EPP looks up this CRD and reads its `spec.priority` integer for queue ordering and shedding. |
+| `x-gateway-inference-fairness-id` | `tenant_id` | Tenant key for per-tenant fair-share scheduling. Fairness is enforced between requests of the same priority level. |
+
+Headers are only sent when the field is non-empty, so non-GIE servers are unaffected.
+
+### How GIE resolves priority
+
+GIE does not accept a priority integer directly from the client. Instead, priority is resolved server-side through a CRD lookup:
+
+1. Client sends `x-gateway-inference-objective: critical` (the `slo_class` value)
+2. EPP looks up `InferenceObjective/critical` CRD on the cluster
+3. EPP reads `spec.priority` (e.g. 100) from the CRD
+4. The integer priority is used for strict priority queue ordering and shedding decisions
+
+If no matching CRD exists, EPP defaults to priority 0.
+
+### Prerequisite: deploy InferenceObjective CRDs
+
+For GIE headers to have any effect, matching `InferenceObjective` CRDs must exist on the target cluster. The CRD names must match the `slo_class` values in your workload spec:
+
+```yaml
+# On your Kubernetes cluster:
+apiVersion: inference.networking.x-k8s.io/v1alpha2
+kind: InferenceObjective
+metadata:
+  name: critical              # must match slo_class in workload spec
+spec:
+  priority: 100               # higher = more important; negative = sheddable
+  poolRef:
+    name: my-pool
+---
+apiVersion: inference.networking.x-k8s.io/v1alpha2
+kind: InferenceObjective
+metadata:
+  name: background
+spec:
+  priority: -10               # negative priority → shed under load (HTTP 503)
+  poolRef:
+    name: my-pool
+```
+
+### Workload spec example
+
+Set `slo_class` and `tenant_id` on your clients to activate GIE headers. The `slo_class` value must match an `InferenceObjective` CRD name on the target cluster:
+
+```yaml
+clients:
+  - id: "realtime-api"
+    slo_class: "critical"       # → sent as x-gateway-inference-objective header
+    tenant_id: "team-alpha"     # → sent as x-gateway-inference-fairness-id header
+  - id: "batch-job"
+    slo_class: "background"     # → GIE resolves to negative priority via CRD
+    tenant_id: "team-beta"
+```
+
+Note: The GIE API version (`v1alpha2`) shown above may differ on your cluster. Check your installed CRD version with `kubectl get crd inferenceobjectives.inference.networking.x-k8s.io`.
+
+---
+
 ## Tips
 
 - **Warmup requests:** Always use `--warmup-requests` during observation to exclude cold-start latencies (JIT compilation, KV cache initialization) from the trace.
