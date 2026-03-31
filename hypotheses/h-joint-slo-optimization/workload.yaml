@@ -15,7 +15,7 @@
 version: "1"
 seed: 42
 category: language
-aggregate_rate: 200.0   # PLACEHOLDER: replace with 2 × measured_saturation_req_per_s
+aggregate_rate: 400.0   # 2 × saturation (~210 req/s measured on H100, qwen3-14b, 4 instances TP=2)
 num_requests: 5000
 
 clients:

@@ -1,305 +1,283 @@
 #!/usr/bin/env python3
 """
-analyze.py — Statistical analysis for h-joint-slo-optimization experiments.
+analyze.py — Statistical analysis for h-joint-slo-optimization.
 
 USAGE
-  python3 analyze.py iter0                Print Iter 0 baseline table
-  python3 analyze.py iter1                H-main + ablation results for Iter 1
-  python3 analyze.py iter2                SLO-priority preemption analysis
-  python3 analyze.py iter3                Tiered-LRU analysis
-  python3 analyze.py iter4                Tier-budget analysis + fraction sweep
-  python3 analyze.py all                  All iterations in sequence
+  python3 analyze.py <iteration> <results_dir>
+
+  python3 analyze.py iter0  results/     # baseline tables
+  python3 analyze.py iter1  results/     # composition + ablations
+  python3 analyze.py iter2  results/     # SLO-priority preemption
+  python3 analyze.py iter3  results/     # tiered-LRU KV eviction
+  python3 analyze.py iter4  results/     # tier-budget + fraction sweep
+  python3 analyze.py all    results/     # all iterations in sequence
 
 OUTPUT
-  Markdown tables suitable for pasting directly into FINDINGS.md.
+  Markdown tables ready to paste into FINDINGS.md.
 
-ASSUMPTIONS
-  Results are in results/iter{N}/{label}/seed{42,123,456}.json
-  Each JSON file has the structure produced by `blis run --output`:
-    {
-      "completed_requests": N,
-      "injected_requests": N,
-      "timed_out_requests": N,
-      "slo_metrics": {
-        "ttft_p99_ms_by_class": {"critical": F, "standard": F, "sheddable": F},
-        "goodput_by_class": {"critical": F, "standard": F, "sheddable": F}
-      },
-      "kv_metrics": {
-        "cache_hit_rate": F,
-        "preemption_count": N
-      }
-    }
-
-  If your blis build uses different field names, update FIELD_MAP below.
+PARSING
+  Uses hypotheses/lib/analyze_helpers.py (parse_blis_output) and
+  h-compound-strategy's parse_per_slo_metrics pattern for per-SLO P99.
+  BLIS per-SLO output is in ticks (microseconds); converted to ms here.
 """
 
-import json
+import re
 import sys
 import statistics
 from pathlib import Path
 
-# ── Field mapping (adjust if blis output format differs) ────────────────────
-def get_critical_p99(d: dict) -> float | None:
-    """Extract critical TTFT P99 from result JSON."""
-    try:
-        return d["slo_metrics"]["ttft_p99_ms_by_class"]["critical"]
-    except (KeyError, TypeError):
-        pass
-    # Fallback: flat structure
-    return d.get("critical_ttft_p99_ms") or d.get("ttft_p99_ms")
+# Add shared helpers
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+from analyze_helpers import parse_blis_output, check_for_timeout  # noqa: E402
 
-def get_goodput(d: dict, cls: str) -> float | None:
-    try:
-        return d["slo_metrics"]["goodput_by_class"][cls]
-    except (KeyError, TypeError):
-        return d.get(f"{cls}_goodput")
-
-def get_kv_hit_rate(d: dict) -> float | None:
-    try:
-        return d["kv_metrics"]["cache_hit_rate"]
-    except (KeyError, TypeError):
-        return d.get("kv_cache_hit_rate")
-
-def get_preemption_count(d: dict) -> int:
-    try:
-        return d["kv_metrics"]["preemption_count"]
-    except (KeyError, TypeError):
-        return d.get("preemption_count", 0)
-
-# ── Utilities ────────────────────────────────────────────────────────────────
-RESULTS_DIR = Path(__file__).parent / "results"
 SEEDS = [42, 123, 456]
 
-def load_results(subpath: str) -> list[dict]:
-    """Load all seed results from results/<subpath>/seed{N}.json."""
+
+# ── Per-SLO parser (matches actual blis output format) ───────────────────────
+
+def parse_per_slo(filepath: str) -> dict[str, dict]:
+    """Parse '=== Per-SLO Metrics ===' section from blis output.
+
+    Returns {slo_class: {"ttft_p99_ms": float, "ttft_mean_ms": float, "n": int}}
+    BLIS outputs ticks (microseconds); we divide by 1000 to get ms.
+    Returns empty dict if section is missing or file is missing/timed-out.
+    """
+    result: dict[str, dict] = {}
+    path = Path(filepath)
+    if not path.exists():
+        return result
+    content = path.read_text()
+    slo_section = re.search(
+        r"=== Per-SLO Metrics ===\s*\n(.*?)(?:\n===|\Z)", content, re.DOTALL
+    )
+    if not slo_section:
+        return result
+    class_pattern = re.compile(
+        r"^\s+(\S+):\s*\n"
+        r"\s+TTFT:\s+mean=([0-9.]+)\s+p99=([0-9.]+)\s+\(n=(\d+)\)",
+        re.MULTILINE,
+    )
+    for m in class_pattern.finditer(slo_section.group(1)):
+        cls, mean_us, p99_us, n = m.group(1), float(m.group(2)), float(m.group(3)), int(m.group(4))
+        result[cls] = {
+            "ttft_mean_ms": mean_us / 1000.0,
+            "ttft_p99_ms":  p99_us  / 1000.0,
+            "n": n,
+        }
+    return result
+
+
+# ── Aggregation helpers ───────────────────────────────────────────────────────
+
+def load_arm(arm_dir: str) -> list[tuple[int, dict, dict]]:
+    """Load all seed results for an arm. Returns [(seed, cluster_metrics, slo_metrics)]."""
     results = []
     for seed in SEEDS:
-        p = RESULTS_DIR / subpath / f"seed{seed}.json"
-        if p.exists():
-            with open(p) as f:
-                results.append(json.load(f))
-        else:
-            print(f"  WARNING: missing {p}", file=sys.stderr)
+        p = Path(arm_dir) / f"seed{seed}.txt"
+        cluster = parse_blis_output(str(p))
+        slo     = parse_per_slo(str(p))
+        results.append((seed, cluster, slo))
     return results
 
-def mean_std(values: list[float | None]) -> tuple[float, float]:
-    clean = [v for v in values if v is not None]
+
+def critical_p99s(arm_results: list) -> list[float]:
+    return [slo.get("critical", {}).get("ttft_p99_ms", float("nan"))
+            for _, _, slo in arm_results]
+
+
+def goodput(arm_results: list, cls: str) -> list[float]:
+    """Goodput = completed requests for that SLO class / injected for that class."""
+    # BLIS doesn't report per-class injected separately; use n from per-SLO as a proxy.
+    return [slo.get(cls, {}).get("n", float("nan"))
+            for _, _, slo in arm_results]
+
+
+def cache_hit_rates(arm_results: list) -> list[float]:
+    return [c.get("cache_hit_rate", float("nan")) for _, c, _ in arm_results]
+
+
+def ms(x: float) -> str:
+    return "—" if x != x else f"{x:.1f}"  # nan check
+
+
+def pct(x: float) -> str:
+    return "—" if x != x else f"{x:+.1f}%"
+
+
+def mean_pm_std(vals: list[float]) -> str:
+    clean = [v for v in vals if v == v]
     if not clean:
-        return float("nan"), float("nan")
-    if len(clean) == 1:
-        return clean[0], 0.0
-    return statistics.mean(clean), statistics.stdev(clean)
-
-def pct_change(baseline: float, treatment: float) -> float:
-    if baseline == 0:
-        return float("nan")
-    return (baseline - treatment) / baseline * 100  # positive = improvement
-
-def fmt(v) -> str:
-    if v is None or (isinstance(v, float) and (v != v)):  # nan check
         return "—"
-    if isinstance(v, float):
-        return f"{v:.1f}"
-    return str(v)
+    m = statistics.mean(clean)
+    s = statistics.stdev(clean) if len(clean) > 1 else 0.0
+    return f"{m:.1f}±{s:.1f}"
 
-def print_table(headers: list[str], rows: list[list]) -> None:
+
+def improvement(baseline: list[float], treatment: list[float]) -> list[float]:
+    """% reduction in P99 (positive = better). Per-seed."""
+    return [
+        (b - t) / b * 100 if b == b and t == t and b != 0 else float("nan")
+        for b, t in zip(baseline, treatment)
+    ]
+
+
+def print_table(headers: list, rows: list) -> None:
+    def fmt(v) -> str:
+        if isinstance(v, float):
+            return "—" if v != v else f"{v:.1f}"
+        return str(v) if v is not None else "—"
     widths = [max(len(str(h)), max((len(fmt(r[i])) for r in rows), default=0))
               for i, h in enumerate(headers)]
-    sep = "| " + " | ".join("-" * w for w in widths) + " |"
-    hdr = "| " + " | ".join(str(h).ljust(w) for h, w in zip(headers, widths)) + " |"
-    print(hdr)
-    print(sep)
+    print("| " + " | ".join(str(h).ljust(w) for h, w in zip(headers, widths)) + " |")
+    print("| " + " | ".join("-" * w for w in widths) + " |")
     for row in rows:
         print("| " + " | ".join(fmt(v).ljust(w) for v, w in zip(row, widths)) + " |")
     print()
 
+
 # ── Per-iteration analyses ────────────────────────────────────────────────────
 
-def analyze_iter0():
+def analyze_iter0(results_dir: str) -> None:
     print("## Iteration 0: Baseline\n")
-    results = load_results("iter0")
-    if not results:
-        print("No results found.\n"); return
-
+    arm = load_arm(f"{results_dir}/iter0/compound")
     rows = []
-    p99s, std_goods, shed_goods = [], [], []
-    for r, seed in zip(results, SEEDS):
-        p99 = get_critical_p99(r)
-        sg  = get_goodput(r, "standard")
-        shg = get_goodput(r, "sheddable")
-        pc  = get_preemption_count(r)
-        hr  = get_kv_hit_rate(r)
-        rows.append([seed, p99, sg, shg, pc, hr])
-        if p99 is not None: p99s.append(p99)
-        if sg  is not None: std_goods.append(sg)
-        if shg is not None: shed_goods.append(shg)
-
-    p99_m, p99_s = mean_std(p99s)
-    sg_m,  sg_s  = mean_std(std_goods)
-    shg_m, shg_s = mean_std(shed_goods)
-    rows.append(["Mean±σ", f"{p99_m:.1f}±{p99_s:.1f}", f"{sg_m:.1f}±{sg_s:.1f}",
-                 f"{shg_m:.1f}±{shg_s:.1f}", "—", "—"])
-
-    print_table(["Seed", "Critical P99 (ms)", "Std Goodput", "Shed Goodput",
+    p99s, hr_vals = [], []
+    for seed, cluster, slo in arm:
+        p99 = slo.get("critical", {}).get("ttft_p99_ms", float("nan"))
+        hr  = cluster.get("cache_hit_rate", float("nan"))
+        pc  = cluster.get("preemption_count", 0)
+        std_n   = slo.get("standard",  {}).get("n", "—")
+        shed_n  = slo.get("sheddable", {}).get("n", "—")
+        crit_n  = slo.get("critical",  {}).get("n", "—")
+        rows.append([seed, ms(p99), std_n, shed_n, crit_n, pc, f"{hr:.3f}" if hr == hr else "—"])
+        if p99 == p99: p99s.append(p99)
+        if hr  == hr:  hr_vals.append(hr)
+    p99_m = statistics.mean(p99s) if p99s else float("nan")
+    p99_s = statistics.stdev(p99s) if len(p99s) > 1 else 0.0
+    rows.append(["Mean±σ", f"{p99_m:.1f}±{p99_s:.1f}", "—", "—", "—", "—", "—"])
+    print_table(["Seed", "Critical P99 (ms)", "Std n", "Shed n", "Crit n",
                  "Preemptions", "KV Hit Rate"], rows)
-    print(f"Reference values: critical_p99_baseline={p99_m:.1f}ms "
-          f"std_goodput_baseline={sg_m:.1f} shed_goodput_baseline={shg_m:.1f}\n")
+    print(f"**Reference:** critical_p99_baseline = {p99_m:.1f} ms\n")
 
 
-def analyze_iter1():
+def analyze_iter1(results_dir: str) -> None:
     print("## Iteration 1: Joint Composition\n")
-    compound  = load_results("iter1/compound")
-    defaults  = load_results("iter1/blis-defaults")
-
-    if not compound or not defaults:
-        print("Missing compound or blis-defaults results.\n"); return
+    compound  = load_arm(f"{results_dir}/iter1/compound")
+    defaults  = load_arm(f"{results_dir}/iter1/blis-defaults")
+    cp99s = critical_p99s(compound)
+    dp99s = critical_p99s(defaults)
+    imps  = improvement(dp99s, cp99s)
 
     print("### H-main: Compound vs BLIS defaults\n")
-    rows = []
-    for seed, c, d in zip(SEEDS, compound, defaults):
-        cp99 = get_critical_p99(c)
-        dp99 = get_critical_p99(d)
-        imp  = pct_change(dp99, cp99) if cp99 and dp99 else None
-        rows.append([seed, cp99, dp99, imp])
-    cp99s = [get_critical_p99(r) for r in compound if get_critical_p99(r)]
-    dp99s = [get_critical_p99(r) for r in defaults if get_critical_p99(r)]
-    cm, cs = mean_std(cp99s); dm, ds = mean_std(dp99s)
-    rows.append(["Mean±σ", f"{cm:.1f}±{cs:.1f}", f"{dm:.1f}±{ds:.1f}",
-                 f"{pct_change(dm, cm):.1f}%"])
-    print_table(["Seed", "Compound P99 (ms)", "Default P99 (ms)", "Improvement %"], rows)
-    imp_m = pct_change(dm, cm)
-    verdict = "✅ CONFIRMED" if imp_m > 40 else ("⚠️ BELOW 40% THRESHOLD" if imp_m > 15 else "❌ BELOW 15% MIN")
-    print(f"H-main verdict: {verdict} (improvement={imp_m:.1f}%, threshold >40%)\n")
+    rows = [(s, ms(c), ms(d), pct(i)) for s, c, d, i in zip(SEEDS, cp99s, dp99s, imps)]
+    rows.append(["Mean±σ", mean_pm_std(cp99s), mean_pm_std(dp99s), mean_pm_std(imps)])
+    print_table(["Seed", "Compound P99 (ms)", "Default P99 (ms)", "Improvement"], rows)
+    imp_m = statistics.mean([v for v in imps if v == v]) if any(v == v for v in imps) else float("nan")
+    verdict = ("✅ CONFIRMED" if imp_m > 40
+               else ("⚠️  BELOW 40% (but >15%)" if imp_m > 15
+               else "❌ BELOW 15% MINIMUM"))
+    print(f"**H-main verdict:** {verdict} (mean improvement={imp_m:.1f}%, threshold >40%)\n")
 
     print("### H-ablation: Component contributions\n")
     ablations = [
-        ("abl-routing",     "Round-robin routing", 15),
-        ("abl-scheduling",  "FCFS scheduler",      20),
-        ("abl-nochunk",     "All tiers chunked",   10),
-        ("abl-admission",   "Always-admit",        30),
+        ("abl-routing",    "Round-robin routing",  15),
+        ("abl-scheduling", "FCFS scheduler",        20),
+        ("abl-admission",  "Always-admit",          30),
     ]
     rows = []
     for subdir, label, threshold in ablations:
-        abl_results = load_results(f"iter1/{subdir}")
-        if not abl_results:
-            rows.append([label, "—", "—", "—", f"> {threshold}%", "?"]);  continue
-        abl_p99s = [get_critical_p99(r) for r in abl_results if get_critical_p99(r)]
-        am, _ = mean_std(abl_p99s)
-        degradation = pct_change(cm, am)  # how much worse vs compound
-        fast_fail = "DROP" if degradation < 5 else ""
-        verdict_sym = "✅" if degradation >= threshold else "❌"
-        rows.append([label, f"{am:.1f}", f"{degradation:.1f}%",
-                     f"> {threshold}%", f"{verdict_sym} {fast_fail}"])
-    print_table(["Arm", "Ablation P99 (ms)", "Degradation", "Threshold", "Pass?"], rows)
+        abl = load_arm(f"{results_dir}/iter1/{subdir}")
+        ap99s = critical_p99s(abl)
+        # Degradation = how much worse than compound (positive = ablation is worse)
+        degs = improvement(cp99s, ap99s)  # positive means abl has higher P99 than compound
+        deg_m = statistics.mean([v for v in degs if v == v]) if any(v == v for v in degs) else float("nan")
+        # Negate: we want "ablation is X% worse than compound"
+        deg_m = -deg_m  # now positive means compound beats ablation
+        fast_fail = " → FAST-FAIL" if abs(deg_m) < 5 else ""
+        verdict_sym = "✅" if deg_m >= threshold else "❌"
+        rows.append([label, mean_pm_std(ap99s), f"{deg_m:+.1f}%", f">{threshold}%",
+                     f"{verdict_sym}{fast_fail}"])
+    print_table(["Arm", "Ablation P99 (ms)", "Degradation vs Compound", "Threshold", "Pass?"], rows)
 
 
-def analyze_iter2():
+def analyze_iter2(results_dir: str) -> None:
     print("## Iteration 2: SLO-Priority Preemption\n")
-    treatment = load_results("iter2/treatment")
-    ablation  = load_results("iter2/ablation")
-
-    if not treatment or not ablation:
-        print("Missing treatment or ablation results.\n"); return
+    treatment = load_arm(f"{results_dir}/iter2/treatment")
+    ablation  = load_arm(f"{results_dir}/iter2/ablation")
+    tp99s = critical_p99s(treatment)
+    ap99s = critical_p99s(ablation)
+    imps  = improvement(ap99s, tp99s)
 
     print("### H-main\n")
-    rows = []
-    for seed, t, a in zip(SEEDS, treatment, ablation):
-        tp99 = get_critical_p99(t)
-        ap99 = get_critical_p99(a)
-        imp  = pct_change(ap99, tp99) if tp99 and ap99 else None
-        rows.append([seed, tp99, ap99, imp])
-    tp99s = [get_critical_p99(r) for r in treatment if get_critical_p99(r)]
-    ap99s = [get_critical_p99(r) for r in ablation  if get_critical_p99(r)]
-    tm, ts = mean_std(tp99s); am, as_ = mean_std(ap99s)
-    imp_m = pct_change(am, tm)
-    rows.append(["Mean±σ", f"{tm:.1f}±{ts:.1f}", f"{am:.1f}±{as_:.1f}", f"{imp_m:.1f}%"])
-    print_table(["Seed", "SLO-priority P99", "LIFO (ablation) P99", "Improvement %"], rows)
-    verdict = "✅ CONFIRMED" if imp_m > 15 else ("⚠️ MARGINAL" if imp_m > 5 else "❌ FAST-FAIL")
-    print(f"H-main verdict: {verdict} (improvement={imp_m:.1f}%, threshold >15%)\n")
+    rows = [(s, ms(t), ms(a), pct(i)) for s, t, a, i in zip(SEEDS, tp99s, ap99s, imps)]
+    rows.append(["Mean±σ", mean_pm_std(tp99s), mean_pm_std(ap99s), mean_pm_std(imps)])
+    print_table(["Seed", "SLO-priority P99 (ms)", "LIFO (ablation) P99 (ms)", "Improvement"], rows)
+    imp_m = statistics.mean([v for v in imps if v == v]) if any(v == v for v in imps) else float("nan")
+    verdict = "✅ CONFIRMED" if imp_m > 15 else ("⚠️  MARGINAL" if imp_m > 5 else "❌ FAST-FAIL (<5%)")
+    print(f"**H-main verdict:** {verdict} (mean improvement={imp_m:.1f}%, threshold >15%)\n")
 
-    print("### H-zero-sum: Standard goodput\n")
-    rows = []
-    for seed, t, a in zip(SEEDS, treatment, ablation):
-        tsg = get_goodput(t, "standard")
-        asg = get_goodput(a, "standard")
-        deg = pct_change(asg, tsg) if tsg and asg else None  # positive = degradation
-        rows.append([seed, tsg, asg, deg])
-    tsgs = [get_goodput(r, "standard") for r in treatment if get_goodput(r, "standard")]
-    asgs = [get_goodput(r, "standard") for r in ablation  if get_goodput(r, "standard")]
-    tgm, _ = mean_std(tsgs); agm, _ = mean_std(asgs)
-    deg_m = pct_change(agm, tgm)
-    rows.append(["Mean", tgm, agm, f"{deg_m:.1f}%"])
-    print_table(["Seed", "Std Goodput (treatment)", "Std Goodput (ablation)", "Degradation %"], rows)
-    v2 = "✅ NON-ZERO-SUM" if deg_m <= 20 else "❌ ZERO-SUM (>20% degradation)"
-    print(f"H-zero-sum verdict: {v2}\n")
+    print("### H-zero-sum: Standard request count\n")
+    t_std = goodput(treatment, "standard")
+    a_std = goodput(ablation,  "standard")
+    rows = [(s, ts, as_) for s, ts, as_ in zip(SEEDS, t_std, a_std)]
+    rows.append(["Total", sum(v for v in t_std if str(v) != "nan"),
+                 sum(v for v in a_std if str(v) != "nan")])
+    print_table(["Seed", "Std completed (treatment)", "Std completed (LIFO)"], rows)
+    print("*(Goodput floor: treatment std count ≥ 85% of ablation std count)*\n")
 
 
-def analyze_iter3():
-    print("## Iteration 3: Tiered LRU KV Eviction\n")
-    treatment = load_results("iter3/treatment")
-    ablation  = load_results("iter3/ablation")
-
-    if not treatment or not ablation:
-        print("Missing treatment or ablation results.\n"); return
+def analyze_iter3(results_dir: str) -> None:
+    print("## Iteration 3: Tiered-LRU KV Eviction\n")
+    treatment = load_arm(f"{results_dir}/iter3/treatment")
+    ablation  = load_arm(f"{results_dir}/iter3/ablation")
+    tp99s = critical_p99s(treatment)
+    ap99s = critical_p99s(ablation)
+    imps  = improvement(ap99s, tp99s)
 
     print("### H-main: P99\n")
-    tp99s = [get_critical_p99(r) for r in treatment if get_critical_p99(r)]
-    ap99s = [get_critical_p99(r) for r in ablation  if get_critical_p99(r)]
-    tm, ts = mean_std(tp99s); am, _ = mean_std(ap99s)
-    imp_m = pct_change(am, tm)
-    print_table(["", "Tiered-LRU P99 (ms)", "Single-list P99 (ms)", "Improvement %"],
-                [["Mean", f"{tm:.1f}±{ts:.1f}", f"{am:.1f}", f"{imp_m:.1f}%"]])
-    verdict = "✅ CONFIRMED" if imp_m > 15 else ("⚠️ MARGINAL" if imp_m > 5 else "❌ FAST-FAIL")
-    print(f"H-main verdict: {verdict} (improvement={imp_m:.1f}%, threshold >15%)\n")
+    rows = [(s, ms(t), ms(a), pct(i)) for s, t, a, i in zip(SEEDS, tp99s, ap99s, imps)]
+    rows.append(["Mean±σ", mean_pm_std(tp99s), mean_pm_std(ap99s), mean_pm_std(imps)])
+    print_table(["Seed", "Tiered-LRU P99 (ms)", "Single-list P99 (ms)", "Improvement"], rows)
+    imp_m = statistics.mean([v for v in imps if v == v]) if any(v == v for v in imps) else float("nan")
+    verdict = "✅ CONFIRMED" if imp_m > 15 else ("⚠️  MARGINAL" if imp_m > 5 else "❌ FAST-FAIL")
+    print(f"**H-main verdict:** {verdict} (mean improvement={imp_m:.1f}%, threshold >15%)\n")
 
     print("### Cache hit rate\n")
-    thrs = [get_kv_hit_rate(r) for r in treatment if get_kv_hit_rate(r)]
-    ahrs = [get_kv_hit_rate(r) for r in ablation  if get_kv_hit_rate(r)]
-    if thrs and ahrs:
-        thrm, _ = mean_std(thrs); ahrm, _ = mean_std(ahrs)
-        hr_imp = pct_change(ahrm, thrm)
-        print_table(["", "Tiered-LRU hit rate", "Single-list hit rate", "Improvement %"],
-                    [["Mean", f"{thrm:.3f}", f"{ahrm:.3f}", f"{hr_imp:.1f}%"]])
-        verdict = "✅ CONFIRMED" if hr_imp > 10 else "❌ BELOW 10% THRESHOLD"
-        print(f"Hit rate verdict: {verdict}\n")
+    t_hr = cache_hit_rates(treatment)
+    a_hr = cache_hit_rates(ablation)
+    rows = [(s, f"{t:.3f}" if t==t else "—", f"{a:.3f}" if a==a else "—")
+            for s, t, a in zip(SEEDS, t_hr, a_hr)]
+    print_table(["Seed", "Tiered-LRU hit rate", "Single-list hit rate"], rows)
 
 
-def analyze_iter4():
+def analyze_iter4(results_dir: str) -> None:
     print("## Iteration 4: Tier-Budget Batch Formation\n")
-    treatment = load_results("iter4/treatment")
-    ablation  = load_results("iter4/ablation-equal-share")
+    treatment = load_arm(f"{results_dir}/iter4/treatment")
+    abl_equal = load_arm(f"{results_dir}/iter4/abl-equal-share")
 
-    if not treatment or not ablation:
-        print("Missing treatment or ablation results.\n"); return
+    # Baseline for iter4 = iter2 treatment
+    iter2 = load_arm(f"{results_dir}/iter2/treatment")
+    i2p99s = critical_p99s(iter2)
+    tp99s  = critical_p99s(treatment)
+    imps   = improvement(i2p99s, tp99s)
 
-    print("### H-main: f_c=0.50 vs Iter 3 compound\n")
-    # Note: Iter 3 treatment is the baseline for Iter 4
-    iter3 = load_results("iter3/treatment")
-    if not iter3:
-        print("  (Iter 3 results not found — cannot compute improvement over Iter 3)\n")
-    else:
-        i3p99s = [get_critical_p99(r) for r in iter3 if get_critical_p99(r)]
-        i3m, _ = mean_std(i3p99s)
-        tp99s = [get_critical_p99(r) for r in treatment if get_critical_p99(r)]
-        tm, ts = mean_std(tp99s)
-        imp_m = pct_change(i3m, tm)
-        print_table(["", "Tier-budget P99 (ms)", "Iter3 compound P99 (ms)", "Improvement %"],
-                    [["Mean", f"{tm:.1f}±{ts:.1f}", f"{i3m:.1f}", f"{imp_m:.1f}%"]])
-        verdict = "✅ CONFIRMED" if imp_m > 10 else ("⚠️ MARGINAL" if imp_m > 5 else "❌ FAST-FAIL")
-        print(f"H-main verdict: {verdict} (improvement={imp_m:.1f}%, threshold >10%)\n")
+    print("### H-main: f_c=0.50 vs Iter 2 compound\n")
+    rows = [(s, ms(t), ms(b), pct(i)) for s, t, b, i in zip(SEEDS, tp99s, i2p99s, imps)]
+    rows.append(["Mean±σ", mean_pm_std(tp99s), mean_pm_std(i2p99s), mean_pm_std(imps)])
+    print_table(["Seed", "Tier-budget P99 (ms)", "Iter2 compound P99 (ms)", "Improvement"], rows)
+    imp_m = statistics.mean([v for v in imps if v == v]) if any(v == v for v in imps) else float("nan")
+    verdict = "✅ CONFIRMED" if imp_m > 10 else ("⚠️  MARGINAL" if imp_m > 5 else "❌ FAST-FAIL")
+    print(f"**H-main verdict:** {verdict} (mean improvement={imp_m:.1f}%, threshold >10%)\n")
 
-    print("### H-ablation: f_c=0.50 vs f_c=0.333 (equal-share)\n")
-    tp99s = [get_critical_p99(r) for r in treatment if get_critical_p99(r)]
-    ap99s = [get_critical_p99(r) for r in ablation  if get_critical_p99(r)]
-    tm, ts = mean_std(tp99s); am, _ = mean_std(ap99s)
-    deg_m = pct_change(am, tm)  # how much worse with equal-share
-    print_table(["", "f_c=0.50 P99", "f_c=0.333 P99", "Degradation (equal-share) %"],
-                [["Mean", f"{tm:.1f}", f"{am:.1f}", f"{deg_m:.1f}%"]])
-    verdict = "✅ CONFIRMED" if deg_m > 8 else "❌ FRACTION-INSENSITIVE"
-    print(f"H-ablation verdict: {verdict} (degradation={deg_m:.1f}%, threshold >8%)\n")
+    print("### H-ablation: f_c=0.50 vs equal-share f_c=0.333\n")
+    ap99s = critical_p99s(abl_equal)
+    degs  = improvement(tp99s, ap99s)  # positive = equal-share is worse
+    rows = [(s, ms(t), ms(a), pct(d)) for s, t, a, d in zip(SEEDS, tp99s, ap99s, degs)]
+    rows.append(["Mean±σ", mean_pm_std(tp99s), mean_pm_std(ap99s), mean_pm_std(degs)])
+    print_table(["Seed", "f_c=0.50 P99 (ms)", "f_c=0.333 P99 (ms)", "Degradation (equal-share)"], rows)
 
     print("### H-robustness: fraction sweep\n")
-    sweep_dirs = {
+    sweep = {
         "0.20": "iter4/sweep-fc020",
         "0.30": "iter4/sweep-fc030",
         "0.40": "iter4/sweep-fc040",
@@ -308,32 +286,30 @@ def analyze_iter4():
         "0.70": "iter4/sweep-fc070",
     }
     rows = []
-    prev_p99 = None
-    for fc, subdir in sweep_dirs.items():
-        res = load_results(subdir)
-        if not res:
-            rows.append([fc, "—", "—", "—"]); continue
-        p99s = [get_critical_p99(r) for r in res if get_critical_p99(r)]
-        sgs  = [get_goodput(r, "standard") for r in res if get_goodput(r, "standard")]
-        pm, _ = mean_std(p99s); sgm, _ = mean_std(sgs)
-        mono = "✅" if prev_p99 is None or pm <= prev_p99 else "❌ non-monotone"
-        rows.append([fc, f"{pm:.1f}", f"{sgm:.3f}", mono])
-        prev_p99 = pm
-    print_table(["f_c", "Critical P99 (ms)", "Std Goodput", "Monotone?"], rows)
+    prev = float("nan")
+    for fc, subdir in sweep.items():
+        arm = load_arm(f"{results_dir}/{subdir}")
+        p99s = critical_p99s(arm)
+        pm = statistics.mean([v for v in p99s if v == v]) if any(v == v for v in p99s) else float("nan")
+        mono = "✅" if prev != prev or pm <= prev else "❌ non-monotone"
+        rows.append([fc, ms(pm), mono])
+        prev = pm
+    print_table(["f_c", "Critical P99 (ms)", "Monotone?"], rows)
 
 
-def analyze_all():
-    analyze_iter0()
-    analyze_iter1()
-    analyze_iter2()
-    analyze_iter3()
-    analyze_iter4()
+def analyze_all(results_dir: str) -> None:
+    for fn in [analyze_iter0, analyze_iter1, analyze_iter2, analyze_iter3, analyze_iter4]:
+        fn(results_dir)
+        print("---\n")
 
 
-# ── Entry point ──────────────────────────────────────────────────────────────
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    cmd = sys.argv[1] if len(sys.argv) > 1 else "help"
+    if len(sys.argv) < 3:
+        print("Usage: python3 analyze.py <iter0|iter1|iter2|iter3|iter4|all> <results_dir>")
+        sys.exit(1)
+    cmd, results_dir = sys.argv[1], sys.argv[2]
     dispatch = {
         "iter0": analyze_iter0,
         "iter1": analyze_iter1,
@@ -343,6 +319,6 @@ if __name__ == "__main__":
         "all":   analyze_all,
     }
     if cmd not in dispatch:
-        print("Usage: python3 analyze.py {iter0|iter1|iter2|iter3|iter4|all}")
+        print(f"Unknown command: {cmd}. Use: {', '.join(dispatch)}")
         sys.exit(1)
-    dispatch[cmd]()
+    dispatch[cmd](results_dir)

@@ -2,160 +2,176 @@
 # run.sh — Joint SLO Optimization experiment runner
 #
 # USAGE
-#   ./run.sh calibrate            Measure saturation throughput, update workload.yaml
-#   ./run.sh iter0                Baseline measurement (joint compound, 3 seeds)
-#   ./run.sh iter1                Joint composition vs BLIS defaults
-#   ./run.sh iter2                SLO-priority preemption + ablation
-#   ./run.sh iter3                Tiered-LRU comparison (needs two binary builds)
-#   ./run.sh iter4                Tier-budget formation + fraction sweep
-#   ./run.sh all                  Run iter0 → iter4 in sequence
+#   ./run.sh [--rebuild] <command>
 #
-# PREREQUISITES
-#   1. Build blis: go build -o blis main.go  (from repo root)
-#   2. Set MODEL env var: export MODEL=qwen/qwen3-14b
-#   3. Run ./run.sh calibrate to set aggregate_rate in workload.yaml
+# COMMANDS
+#   calibrate     Probe multiple rates to find saturation throughput
+#   iter0         Baseline: joint compound, 3 seeds
+#   iter1         Joint composition vs BLIS defaults + ablations
+#   iter2         SLO-priority preemption ordering
+#   iter3         Tiered-LRU KV eviction (requires BLIS_OLD env var)
+#   iter4         Tier-budget batch formation + fraction sweep
+#   all           iter0 → iter2 → iter4 (iter3 requires separate binary)
 #
-# All results are written to results/iter{N}/*.json
-# All commands are run from the repo root (cd up two levels from this script).
+# ENVIRONMENT VARIABLES
+#   BLIS        Path to implementation binary (default: auto-built from repo root)
+#   BLIS_OLD    Pre-tiered-LRU binary for iter3 ablation (required for iter3)
+#   MODEL       Model name (default: qwen/qwen3-14b)
+#
+# OUTPUT
+#   results/iter{N}/{arm}/seed{S}.txt — raw blis output per run
+#
+# NOTE: Build the binary from the joint-slo-optimization branch, not main.
+#   The blis binary on main lacks --batch-formation and tier-shed policy.
 
 set -euo pipefail
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-cd "$REPO_ROOT"
+
+# Use shared harness
+source "$SCRIPT_DIR/../lib/harness.sh"
+
+# ── Configuration ────────────────────────────────────────────────────────────
 
 MODEL="${MODEL:-qwen/qwen3-14b}"
 SEEDS=(42 123 456)
 WORKLOAD="$SCRIPT_DIR/workload.yaml"
-RESULTS="$SCRIPT_DIR/results"
-BLIS="${BLIS:-./blis}"
+RESULTS_BASE="$SCRIPT_DIR/results"
+BLIS="${BLIS:-$REPO_ROOT/blis}"
 
-# ── Shared flag sets ────────────────────────────────────────────────────────
+# Cluster setup matching prior Strategy Evolution tracks (h-compound-strategy)
+INSTANCES=4
+TP=2
+HARDWARE=H100
+NUM_REQUESTS=1500
 
-# The joint compound: best known from prior tracks
-COMPOUND_FLAGS=(
-  --admission-policy   tier-shed
-  --routing-policy     weighted
-  --routing-scorers    "prefix-affinity:4,queue-depth:3"
-  --priority-policy    slo-based
-  --scheduler          priority-fcfs
-  --batch-formation    vllm
+# Rate: set to 2× saturation. Run ./run.sh calibrate first to measure saturation.
+# Prior track (h-compound-strategy): rate=300 for 120% with input_mean=256, 4 instances.
+# This workload: input_mean=512 — saturation roughly halved. Start with rate=200.
+RATE=200   # UPDATE after calibration: set to 2 × measured_saturation
+
+# Policy configs
+POLICY_COMPOUND="$SCRIPT_DIR/policy-compound.yaml"
+POLICY_DEFAULTS="$SCRIPT_DIR/policy-defaults.yaml"
+
+# Common flags for all runs
+BASE_FLAGS=(
+  --model      "$MODEL"
+  --tp         $TP
+  --hardware   "$HARDWARE"
+  --num-instances $INSTANCES
+  --num-requests  $NUM_REQUESTS
+  --routing-scorers "prefix-affinity:4,queue-depth:3"
+  --log error
 )
 
-# BLIS defaults (for H-main comparison in Iter 1)
-DEFAULT_FLAGS=(
-  --admission-policy   always-admit
-  --routing-policy     round-robin
-  --priority-policy    constant
-  --scheduler          fcfs
-  --batch-formation    vllm
-)
+# ── Helper: run one arm across all seeds ─────────────────────────────────────
 
-# ── Helpers ─────────────────────────────────────────────────────────────────
-
-run_seeds() {
-  local label="$1"; shift
-  local out_dir="$1"; shift
+run_arm() {
+  local label="$1"   # e.g. "iter0/compound"
+  shift
+  # Remaining args are blis flags
+  local out_dir="$RESULTS_BASE/$label"
   mkdir -p "$out_dir"
   for SEED in "${SEEDS[@]}"; do
+    local outfile="$out_dir/seed${SEED}.txt"
     echo "  [seed $SEED] $label"
-    "$BLIS" run \
-      --model "$MODEL" \
+    blis_run $TIMEOUT_EXTENDED "$outfile" \
+      "${BASE_FLAGS[@]}" \
       --seed "$SEED" \
       --workload-spec "$WORKLOAD" \
-      "$@" \
-      > "$out_dir/seed${SEED}.json"
+      "$@"
   done
   echo "  → $out_dir/"
 }
 
-# ── calibrate ───────────────────────────────────────────────────────────────
-# Runs a binary search over aggregate_rate to find the saturation point.
-# Saturation = highest rate at which all requests complete (no timeouts, queue < 5%).
-# Updates aggregate_rate in workload.yaml to 2× saturation.
+# ── calibrate ─────────────────────────────────────────────────────────────────
 
 do_calibrate() {
   echo "=== Calibration: finding saturation throughput ==="
+  echo "Testing rates: 50 100 150 200 250 300 req/s"
   echo ""
-  echo "NOTE: Calibration requires manual binary search."
-  echo "Suggested procedure:"
+
+  mkdir -p "$RESULTS_BASE/calibrate"
+  for RATE_PROBE in 50 100 150 200 250 300; do
+    local outfile="$RESULTS_BASE/calibrate/rate${RATE_PROBE}.txt"
+    echo -n "  rate=$RATE_PROBE ... "
+    blis_run $TIMEOUT_QUICK "$outfile" \
+      "${BASE_FLAGS[@]}" \
+      --seed 42 \
+      --num-requests 200 \
+      --workload-spec "$WORKLOAD" \
+      --policy-config "$POLICY_COMPOUND" \
+      --rate "$RATE_PROBE" 2>/dev/null || true
+
+    # Parse completed vs injected
+    if [[ -f "$outfile" ]]; then
+      python3 - "$outfile" <<'PYEOF'
+import sys, re
+t = open(sys.argv[1]).read()
+m_comp = re.search(r'"completed_requests":\s*(\d+)', t)
+m_inj  = re.search(r'"injected_requests":\s*(\d+)', t)
+m_tout = re.search(r'"timed_out_requests":\s*(\d+)', t)
+comp = int(m_comp.group(1)) if m_comp else 0
+inj  = int(m_inj.group(1))  if m_inj  else 0
+tout = int(m_tout.group(1)) if m_tout else 0
+util = f"{comp/inj*100:.0f}%" if inj > 0 else "?"
+print(f"completed={comp}/{inj} ({util}), timeouts={tout}")
+PYEOF
+    else
+      echo "NO OUTPUT"
+    fi
+  done
+
   echo ""
-  echo "  1. Edit workload.yaml: set aggregate_rate to a low value (e.g. 50)"
-  echo "  2. Run: $BLIS run --model $MODEL --seed 42 --workload-spec $WORKLOAD ${COMPOUND_FLAGS[*]}"
-  echo "  3. Check stdout for timeout_count and queue depth"
-  echo "  4. Double aggregate_rate and repeat until timeouts appear"
-  echo "  5. Binary search between last-good and first-bad values"
-  echo "  6. Record saturation_rate = last rate with 0 timeouts"
-  echo "  7. Set aggregate_rate = 2 × saturation_rate in workload.yaml"
-  echo ""
-  echo "Quick single-rate probe:"
-  echo "  RATE=100 $0 probe"
-  echo ""
-  echo "After calibration, record the saturation rate in FINDINGS.md."
+  echo "Find the last rate where timeouts=0 and completed=injected."
+  echo "That is ~saturation. Set RATE=$(awk 'BEGIN{print 2*that}') in this script."
+  echo "Also update aggregate_rate in workload.yaml to the same value."
 }
 
-do_probe() {
-  local rate="${RATE:-100}"
-  echo "=== Probe: aggregate_rate=$rate ==="
-  # Temporarily patch workload rate
-  local tmp=$(mktemp)
-  sed "s/^aggregate_rate:.*/aggregate_rate: $rate/" "$WORKLOAD" > "$tmp"
-  "$BLIS" run \
-    --model "$MODEL" --seed 42 \
-    --workload-spec "$tmp" \
-    "${COMPOUND_FLAGS[@]}" \
-    | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-m = d.get('metrics', d)
-print(f'  rate={$rate}  completed={m.get(\"completed_requests\",\"?\")}  timeouts={m.get(\"timed_out_requests\",0)}  p99={m.get(\"ttft_p99_ms\",\"?\")}ms')
-"
-  rm -f "$tmp"
-}
-
-# ── iter0: baseline measurement ─────────────────────────────────────────────
+# ── iter0: baseline measurement ──────────────────────────────────────────────
 
 do_iter0() {
   echo "=== Iteration 0: Baseline measurement ==="
-  run_seeds "baseline (joint compound)" "$RESULTS/iter0" "${COMPOUND_FLAGS[@]}"
-  echo "Done. Analyze: python3 analyze.py iter0"
+  run_arm "iter0/compound" \
+    --policy-config "$POLICY_COMPOUND" \
+    --routing-scorers "prefix-affinity:4,queue-depth:3" \
+    --batch-formation vllm
+  echo "Analyze: python3 $SCRIPT_DIR/analyze.py iter0 $RESULTS_BASE"
 }
 
-# ── iter1: joint composition vs BLIS defaults ────────────────────────────────
+# ── iter1: joint composition vs BLIS defaults ─────────────────────────────────
 
 do_iter1() {
   echo "=== Iteration 1: Joint composition validation ==="
 
-  echo "--- H-main: compound vs BLIS defaults ---"
-  run_seeds "compound" "$RESULTS/iter1/compound" "${COMPOUND_FLAGS[@]}"
-  run_seeds "blis-defaults" "$RESULTS/iter1/blis-defaults" "${DEFAULT_FLAGS[@]}"
-
-  echo "--- H-ablation: routing ---"
-  run_seeds "abl-routing (round-robin)" "$RESULTS/iter1/abl-routing" \
-    --admission-policy tier-shed \
-    --routing-policy round-robin \
-    --priority-policy slo-based \
-    --scheduler priority-fcfs \
+  echo "--- H-main: compound ---"
+  run_arm "iter1/compound" \
+    --policy-config "$POLICY_COMPOUND" \
+    --routing-scorers "prefix-affinity:4,queue-depth:3" \
     --batch-formation vllm
 
-  echo "--- H-ablation: scheduling ---"
-  run_seeds "abl-scheduling (fcfs)" "$RESULTS/iter1/abl-scheduling" \
-    --admission-policy tier-shed \
-    --routing-policy weighted \
+  echo "--- H-main: BLIS defaults ---"
+  run_arm "iter1/blis-defaults" \
+    --policy-config "$POLICY_DEFAULTS" \
+    --batch-formation vllm
+
+  echo "--- H-ablation: routing (round-robin, keep admission+scheduling) ---"
+  run_arm "iter1/abl-routing" \
+    --policy-config "$POLICY_COMPOUND" \
+    --routing-policy round-robin \
+    --batch-formation vllm
+
+  echo "--- H-ablation: scheduling (fcfs, keep rest) ---"
+  # Override scheduler via CLI flag (overrides policy-config)
+  run_arm "iter1/abl-scheduling" \
+    --policy-config "$POLICY_COMPOUND" \
     --routing-scorers "prefix-affinity:4,queue-depth:3" \
-    --priority-policy constant \
     --scheduler fcfs \
     --batch-formation vllm
 
-  echo "--- H-ablation: no-chunk ---"
-  # no-chunk is controlled by longprefill-token-threshold; 0 = always chunk
-  run_seeds "abl-nochunk (chunked for all)" "$RESULTS/iter1/abl-nochunk" \
-    "${COMPOUND_FLAGS[@]}"
-    # NOTE: Add --longprefill-token-threshold 0 when that flag is available
-
-  echo "--- H-ablation: admission ---"
-  run_seeds "abl-admission (always-admit)" "$RESULTS/iter1/abl-admission" \
-    --admission-policy always-admit \
+  echo "--- H-ablation: admission (always-admit, keep routing+scheduling) ---"
+  run_arm "iter1/abl-admission" \
+    --policy-config "$POLICY_DEFAULTS" \
     --routing-policy weighted \
     --routing-scorers "prefix-affinity:4,queue-depth:3" \
     --priority-policy slo-based \
@@ -163,160 +179,168 @@ do_iter1() {
     --batch-formation vllm
 
   echo "--- H-control-negative: uniform SLO ---"
-  # All-standard workload: patch slo_class to standard in a temp spec
-  local tmp=$(mktemp --suffix=.yaml)
-  sed 's/slo_class: "[^"]*"/slo_class: "standard"/g' "$WORKLOAD" > "$tmp"
-  mkdir -p "$RESULTS/iter1/ctrl-uniform-slo"
+  # Patch workload: set all slo_class to standard
+  local uniform_wl
+  uniform_wl=$(mktemp --suffix=.yaml)
+  sed 's/slo_class: "[^"]*"/slo_class: "standard"/g' "$WORKLOAD" > "$uniform_wl"
+  mkdir -p "$RESULTS_BASE/iter1/ctrl-uniform-slo"
   for SEED in "${SEEDS[@]}"; do
     echo "  [seed $SEED] ctrl-uniform-slo"
-    "$BLIS" run --model "$MODEL" --seed "$SEED" --workload-spec "$tmp" \
-      "${COMPOUND_FLAGS[@]}" \
-      > "$RESULTS/iter1/ctrl-uniform-slo/seed${SEED}.json"
+    blis_run $TIMEOUT_EXTENDED "$RESULTS_BASE/iter1/ctrl-uniform-slo/seed${SEED}.txt" \
+      "${BASE_FLAGS[@]}" --seed "$SEED" --workload-spec "$uniform_wl" \
+      --policy-config "$POLICY_COMPOUND" \
+      --routing-scorers "prefix-affinity:4,queue-depth:3" \
+      --batch-formation vllm
   done
-  rm -f "$tmp"
+  rm -f "$uniform_wl"
 
-  echo "Done. Analyze: python3 analyze.py iter1"
+  echo "Analyze: python3 $SCRIPT_DIR/analyze.py iter1 $RESULTS_BASE"
 }
 
-# ── iter2: SLO-priority preemption ──────────────────────────────────────────
+# ── iter2: SLO-priority preemption ordering ───────────────────────────────────
 
 do_iter2() {
   echo "=== Iteration 2: SLO-priority preemption ordering ==="
 
-  echo "--- H-main: SLO-priority vs LIFO ---"
-  run_seeds "slo-priority-preemption" "$RESULTS/iter2/treatment" \
-    --admission-policy tier-shed \
-    --routing-policy weighted \
+  echo "--- H-main: treatment (slo-priority-preemption) ---"
+  run_arm "iter2/treatment" \
+    --policy-config "$POLICY_COMPOUND" \
     --routing-scorers "prefix-affinity:4,queue-depth:3" \
-    --priority-policy slo-based \
-    --scheduler priority-fcfs \
     --batch-formation slo-priority-preemption
 
-  run_seeds "lifo-ablation" "$RESULTS/iter2/ablation" \
-    "${COMPOUND_FLAGS[@]}"  # vllm = LIFO, same as iter1
-
-  echo "--- H-control-negative: abundant KV ---"
-  # Increase KV blocks to 4× default to make preemption rare
-  run_seeds "abundant-kv" "$RESULTS/iter2/ctrl-abundant-kv" \
-    --admission-policy tier-shed \
-    --routing-policy weighted \
+  echo "--- H-main: ablation (vllm/LIFO) ---"
+  run_arm "iter2/ablation" \
+    --policy-config "$POLICY_COMPOUND" \
     --routing-scorers "prefix-affinity:4,queue-depth:3" \
-    --priority-policy slo-based \
-    --scheduler priority-fcfs \
-    --batch-formation slo-priority-preemption \
-    --kv-blocks 524288   # 4× default 131072; adjust per hardware
+    --batch-formation vllm
 
-  echo "Done. Analyze: python3 analyze.py iter2"
+  echo "Analyze: python3 $SCRIPT_DIR/analyze.py iter2 $RESULTS_BASE"
 }
 
-# ── iter3: tiered LRU (structural — needs two builds) ───────────────────────
+# ── iter3: tiered LRU (requires two binary builds) ────────────────────────────
 
 do_iter3() {
-  echo "=== Iteration 3: Tiered LRU KV eviction ==="
-  echo ""
-  echo "NOTE: This iteration compares two binary builds:"
-  echo "  BLIS_NEW (with tiered-LRU, PR #901) = \$BLIS (current)"
-  echo "  BLIS_OLD (pre-PR-#901 build)        = set \$BLIS_OLD env var"
+  echo "=== Iteration 3: Tiered-LRU KV eviction ==="
   echo ""
 
   BLIS_OLD="${BLIS_OLD:-}"
   if [[ -z "$BLIS_OLD" ]]; then
-    echo "BLIS_OLD not set. Build the pre-PR-#901 binary and set:"
-    echo "  export BLIS_OLD=/path/to/blis-without-tiered-lru"
-    echo "  ./run.sh iter3"
+    echo "ERROR: BLIS_OLD not set. Build a pre-PR-#901 binary and export BLIS_OLD=<path>"
+    echo "  git -C $REPO_ROOT checkout <pre-PR-901-sha> -- sim/kv/cache.go"
+    echo "  go build -o /tmp/blis-old $REPO_ROOT/main.go"
+    echo "  export BLIS_OLD=/tmp/blis-old"
     exit 1
   fi
 
-  echo "--- Treatment: tiered-LRU build (PR #901) ---"
-  run_seeds "tiered-lru" "$RESULTS/iter3/treatment" \
-    --admission-policy tier-shed \
-    --routing-policy weighted \
+  echo "--- Treatment: tiered-LRU build (slo-priority-preemption + tiered-LRU) ---"
+  run_arm "iter3/treatment" \
+    --policy-config "$POLICY_COMPOUND" \
     --routing-scorers "prefix-affinity:4,queue-depth:3" \
-    --priority-policy slo-based \
-    --scheduler priority-fcfs \
     --batch-formation slo-priority-preemption
 
   echo "--- Ablation: single-list LRU build (pre-PR-#901) ---"
-  mkdir -p "$RESULTS/iter3/ablation"
+  mkdir -p "$RESULTS_BASE/iter3/ablation"
+  local saved_blis="$BINARY"
+  BINARY="$BLIS_OLD"
   for SEED in "${SEEDS[@]}"; do
-    echo "  [seed $SEED] single-list-lru"
-    "$BLIS_OLD" run \
-      --model "$MODEL" --seed "$SEED" --workload-spec "$WORKLOAD" \
-      --admission-policy tier-shed \
+    echo "  [seed $SEED] single-list-lru (BLIS_OLD)"
+    blis_run $TIMEOUT_EXTENDED "$RESULTS_BASE/iter3/ablation/seed${SEED}.txt" \
+      --model "$MODEL" --tp $TP --hardware "$HARDWARE" --num-instances $INSTANCES \
+      --num-requests $NUM_REQUESTS --seed "$SEED" \
+      --workload-spec "$WORKLOAD" \
+      --admission-policy always-admit \
       --routing-policy weighted \
       --routing-scorers "prefix-affinity:4,queue-depth:3" \
       --priority-policy slo-based \
       --scheduler priority-fcfs \
-      --batch-formation slo-priority-preemption \
-      > "$RESULTS/iter3/ablation/seed${SEED}.json"
+      --batch-formation vllm \
+      --log error
   done
+  BINARY="$saved_blis"
 
-  echo "Done. Analyze: python3 analyze.py iter3"
+  echo "Analyze: python3 $SCRIPT_DIR/analyze.py iter3 $RESULTS_BASE"
 }
 
-# ── iter4: tier-budget batch formation ──────────────────────────────────────
+# ── iter4: tier-budget batch formation ────────────────────────────────────────
 
 do_iter4() {
   echo "=== Iteration 4: Admission-feedback batch formation ==="
 
   echo "--- H-main: tier-budget f_c=0.50 ---"
-  run_seeds "tier-budget-fc050" "$RESULTS/iter4/treatment" \
-    --admission-policy tier-shed \
-    --routing-policy weighted \
+  run_arm "iter4/treatment" \
+    --policy-config "$POLICY_COMPOUND" \
     --routing-scorers "prefix-affinity:4,queue-depth:3" \
-    --priority-policy slo-based \
-    --scheduler priority-fcfs \
     --batch-formation tier-budget \
     --tier-budget-critical-frac 0.50 \
     --tier-budget-standard-frac 0.70
 
   echo "--- H-ablation: equal-share f_c=0.333 ---"
-  run_seeds "tier-budget-fc033" "$RESULTS/iter4/ablation-equal-share" \
-    --admission-policy tier-shed \
-    --routing-policy weighted \
+  run_arm "iter4/abl-equal-share" \
+    --policy-config "$POLICY_COMPOUND" \
     --routing-scorers "prefix-affinity:4,queue-depth:3" \
-    --priority-policy slo-based \
-    --scheduler priority-fcfs \
     --batch-formation tier-budget \
     --tier-budget-critical-frac 0.333 \
     --tier-budget-standard-frac 0.50
 
   echo "--- H-robustness: fraction sweep ---"
   for FC in 0.20 0.30 0.40 0.50 0.60 0.70; do
-    FS="0.70"
-    run_seeds "fc=${FC}" "$RESULTS/iter4/sweep-fc${FC/./}" \
-      --admission-policy tier-shed \
-      --routing-policy weighted \
+    run_arm "iter4/sweep-fc${FC/./}" \
+      --policy-config "$POLICY_COMPOUND" \
       --routing-scorers "prefix-affinity:4,queue-depth:3" \
-      --priority-policy slo-based \
-      --scheduler priority-fcfs \
       --batch-formation tier-budget \
       --tier-budget-critical-frac "$FC" \
-      --tier-budget-standard-frac "$FS"
+      --tier-budget-standard-frac 0.70
   done
 
-  echo "Done. Analyze: python3 analyze.py iter4"
+  echo "Analyze: python3 $SCRIPT_DIR/analyze.py iter4 $RESULTS_BASE"
 }
 
-# ── all ─────────────────────────────────────────────────────────────────────
+# ── all ───────────────────────────────────────────────────────────────────────
 
 do_all() {
   do_iter0
   do_iter1
   do_iter2
-  # iter3 requires BLIS_OLD — skipped in batch run
-  echo "Skipping iter3 (requires BLIS_OLD; run manually)"
+  echo "(Skipping iter3 — requires BLIS_OLD; run manually with: BLIS_OLD=<path> ./run.sh iter3)"
   do_iter4
   echo ""
-  echo "All iterations complete. Run: python3 analyze.py all"
+  echo "All iterations complete. Run: python3 $SCRIPT_DIR/analyze.py all $RESULTS_BASE"
 }
 
-# ── dispatch ────────────────────────────────────────────────────────────────
+# ── Build BINARY if needed ────────────────────────────────────────────────────
+
+# Override harness BINARY with implementation branch binary
+# The joint-slo-optimization worktree has --batch-formation; main does not.
+IMPL_WORKTREE="$REPO_ROOT/.worktrees/joint-slo-optimization"
+if [[ -x "$IMPL_WORKTREE/blis" ]]; then
+  BINARY="$IMPL_WORKTREE/blis"
+elif [[ -x "$REPO_ROOT/blis" ]]; then
+  BINARY="$REPO_ROOT/blis"
+else
+  echo "Building blis from implementation branch..."
+  if [[ -d "$IMPL_WORKTREE" ]]; then
+    (cd "$IMPL_WORKTREE" && go build -o blis main.go)
+    BINARY="$IMPL_WORKTREE/blis"
+  else
+    (cd "$REPO_ROOT" && go build -o blis main.go)
+    BINARY="$REPO_ROOT/blis"
+  fi
+fi
+echo "Using binary: $BINARY" >&2
+
+# ── Dispatch ──────────────────────────────────────────────────────────────────
+
+# Parse --rebuild flag
+REBUILD=""
+if [[ "${1:-}" == "--rebuild" ]]; then
+  REBUILD="--rebuild"
+  shift
+fi
+setup_experiment "$REBUILD"
 
 CMD="${1:-help}"
 case "$CMD" in
   calibrate) do_calibrate ;;
-  probe)     do_probe ;;
   iter0)     do_iter0 ;;
   iter1)     do_iter1 ;;
   iter2)     do_iter2 ;;
@@ -324,13 +348,12 @@ case "$CMD" in
   iter4)     do_iter4 ;;
   all)       do_all ;;
   *)
-    echo "Usage: $0 {calibrate|probe|iter0|iter1|iter2|iter3|iter4|all}"
+    echo "Usage: $0 [--rebuild] {calibrate|iter0|iter1|iter2|iter3|iter4|all}"
     echo ""
     echo "Environment variables:"
-    echo "  MODEL=qwen/qwen3-14b   Model to simulate"
-    echo "  BLIS=./blis            Path to blis binary (default: ./blis in repo root)"
-    echo "  BLIS_OLD=./blis-old    Pre-PR-#901 binary for iter3 ablation"
-    echo "  RATE=100               Rate for probe subcommand"
+    echo "  BLIS=<path>      Override blis binary (default: auto-detected from worktree)"
+    echo "  BLIS_OLD=<path>  Pre-PR-#901 binary for iter3 ablation"
+    echo "  MODEL=<name>     Model name (default: qwen/qwen3-14b)"
     exit 1
     ;;
 esac
