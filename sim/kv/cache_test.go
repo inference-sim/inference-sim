@@ -489,8 +489,8 @@ func TestAllocateKVBlocks_Rollback_PreservesFreeListOrder(t *testing.T) {
 	kvc.AllocateKVBlocks(filler, 0, 2, []int64{})
 
 	// Record free list order before the failed allocation
-	freeHeadBefore := kvc.FreeHead.ID
-	secondFreeBlockBefore := kvc.FreeHead.NextFree.ID
+	freeHeadBefore := kvc.freeTierHead[0].ID
+	secondFreeBlockBefore := kvc.freeTierHead[0].NextFree.ID
 
 	// WHEN mid-loop allocation fails (cached blocks consume free budget)
 	req2 := &sim.Request{ID: "r2", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
@@ -504,19 +504,19 @@ func TestAllocateKVBlocks_Rollback_PreservesFreeListOrder(t *testing.T) {
 	// Before allocation: free list was [3, 0, 1] (head=3, next=0).
 	// With appendToFreeList (bug): rollback produces [3, 1, 0] (next=1, WRONG).
 	// With prependToFreeList (fix): rollback produces [3, 0, 1] (next=0, CORRECT).
-	if kvc.FreeHead == nil {
+	if kvc.freeTierHead[0] == nil {
 		t.Fatal("FreeHead should not be nil after rollback")
 	}
-	if kvc.FreeHead.ID != freeHeadBefore {
+	if kvc.freeTierHead[0].ID != freeHeadBefore {
 		t.Errorf("rollback should restore free head to block %d, got block %d",
-			freeHeadBefore, kvc.FreeHead.ID)
+			freeHeadBefore, kvc.freeTierHead[0].ID)
 	}
-	if kvc.FreeHead.NextFree == nil {
+	if kvc.freeTierHead[0].NextFree == nil {
 		t.Fatal("FreeHead.Next should not be nil (3 blocks should be free)")
 	}
-	if kvc.FreeHead.NextFree.ID != secondFreeBlockBefore {
+	if kvc.freeTierHead[0].NextFree.ID != secondFreeBlockBefore {
 		t.Errorf("rollback should restore second free block to %d, got %d (append to tail instead of prepend to head)",
-			secondFreeBlockBefore, kvc.FreeHead.NextFree.ID)
+			secondFreeBlockBefore, kvc.freeTierHead[0].NextFree.ID)
 	}
 }
 

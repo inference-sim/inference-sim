@@ -476,7 +476,7 @@ func TestTieredKVCache_Conservation_MirrorReloadCycle(t *testing.T) {
 		// Walk the free list independently of UsedBlockCnt to avoid tautology.
 		// INV-4: UsedBlockCnt + (free list length) == TotalBlocks
 		actualFree := int64(0)
-		blk := gpu.FreeHead
+		blk := gpu.freeTierHead[0]
 		for blk != nil {
 			actualFree++
 			blk = blk.NextFree

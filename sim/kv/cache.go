@@ -40,8 +40,8 @@ type KVCacheState struct {
 	Blocks          []*KVBlock         // All KV blocks
 	RequestMap      map[string][]int64 // RequestID -> block sequence
 	HashToBlock     map[string]int64   // Hash -> block ID
-	FreeHead        *KVBlock           // Head of free list
-	FreeTail        *KVBlock           // Tail of free list
+	freeTierHead [5]*KVBlock // LRU head per tier priority (0=background, 4=critical); evict tier 0 first
+	freeTierTail [5]*KVBlock // LRU tail per tier priority
 	UsedBlockCnt    int64              // Total number of used blocks (tracked incrementally)
 	CacheHits       int64              // blocks found via prefix cache (PR12)
 	CacheMisses     int64              // blocks not found, allocated fresh (PR12)
@@ -70,53 +70,47 @@ func NewKVCacheState(totalBlocks int64, blockSizeTokens int64) *KVCacheState {
 	return kvc
 }
 
-// appendToFreeList inserts a block at the tail of the free list.
+// appendToFreeList inserts a block at the tail (MRU position) of its tier's free list.
 func (kvc *KVCacheState) appendToFreeList(block *KVBlock) {
+	tier := block.TierPriority
+	block.PrevFree = kvc.freeTierTail[tier]
 	block.NextFree = nil
-	// in a doubly linked list, either both head and tail will be nil, or neither or nil
-	if kvc.FreeTail != nil {
-		// non-empty list; append block at end
-		kvc.FreeTail.NextFree = block
-		block.PrevFree = kvc.FreeTail
-		kvc.FreeTail = block
+	if kvc.freeTierTail[tier] != nil {
+		kvc.freeTierTail[tier].NextFree = block
 	} else {
-		// empty list; create list with a single block
-		kvc.FreeHead = block
-		kvc.FreeTail = block
-		block.PrevFree = nil
+		kvc.freeTierHead[tier] = block
 	}
+	kvc.freeTierTail[tier] = block
 }
 
-// prependToFreeList adds a block to the HEAD of the free list.
+// prependToFreeList adds a block to the HEAD (LRU position) of its tier's free list.
 // Used by rollbackAllocation to restore blocks to their original position
 // (blocks were popped from the head, so rollback prepends them back).
 func (kvc *KVCacheState) prependToFreeList(block *KVBlock) {
+	tier := block.TierPriority
 	block.PrevFree = nil
-	block.NextFree = kvc.FreeHead
-	if kvc.FreeHead != nil {
-		kvc.FreeHead.PrevFree = block
+	block.NextFree = kvc.freeTierHead[tier]
+	if kvc.freeTierHead[tier] != nil {
+		kvc.freeTierHead[tier].PrevFree = block
 	}
-	kvc.FreeHead = block
-	if kvc.FreeTail == nil {
-		kvc.FreeTail = block
+	kvc.freeTierHead[tier] = block
+	if kvc.freeTierTail[tier] == nil {
+		kvc.freeTierTail[tier] = block
 	}
 }
 
-// removeFromFreeList detaches a block from the LRU free list.
+// removeFromFreeList detaches a block from the LRU free list for its tier.
 func (kvc *KVCacheState) removeFromFreeList(block *KVBlock) {
+	tier := block.TierPriority
 	if block.PrevFree != nil {
-		// a - b - block - c => a - b - c
 		block.PrevFree.NextFree = block.NextFree
 	} else {
-		// block - c - d => c - d
-		kvc.FreeHead = block.NextFree
+		kvc.freeTierHead[tier] = block.NextFree
 	}
 	if block.NextFree != nil {
-		// a - b - block - c => a - b - c
 		block.NextFree.PrevFree = block.PrevFree
 	} else {
-		// a - b - block => a - b
-		kvc.FreeTail = block.PrevFree
+		kvc.freeTierTail[tier] = block.PrevFree
 	}
 	block.NextFree = nil
 	block.PrevFree = nil
@@ -261,8 +255,8 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				// Save the original prefix hash before popFreeBlock clears it.
 				// This allows rollback to restore cached prefix hashes.
 				var originalHash string
-				if kvc.FreeHead != nil {
-					originalHash = kvc.FreeHead.Hash
+				if head := kvc.peekFreeBlock(); head != nil {
+					originalHash = head.Hash
 				}
 				blk := kvc.popFreeBlock()
 				if blk == nil {
@@ -304,19 +298,33 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 	return true
 }
 
+// peekFreeBlock returns the next block that popFreeBlock would return, without removing it.
+func (kvc *KVCacheState) peekFreeBlock() *KVBlock {
+	for tier := 0; tier < 5; tier++ {
+		if kvc.freeTierHead[tier] != nil {
+			return kvc.freeTierHead[tier]
+		}
+	}
+	return nil
+}
+
 // popFreeBlock evicts a block from the free list and prepares it for reuse.
+// Drains lowest tier first (tier 0 = background/sheddable, tier 4 = critical).
 func (kvc *KVCacheState) popFreeBlock() *KVBlock {
-	head := kvc.FreeHead
-	if head == nil {
-		return nil
+	for tier := 0; tier < 5; tier++ {
+		head := kvc.freeTierHead[tier]
+		if head == nil {
+			continue
+		}
+		kvc.removeFromFreeList(head)
+		if head.Hash != "" {
+			delete(kvc.HashToBlock, head.Hash)
+			head.Hash = ""
+		}
+		head.Tokens = nil
+		return head
 	}
-	kvc.removeFromFreeList(head)
-	if head.Hash != "" {
-		delete(kvc.HashToBlock, head.Hash)
-		head.Hash = ""
-	}
-	head.Tokens = nil
-	return head
+	return nil
 }
 
 // countFreeBlocks returns the number of blocks not currently in use.
@@ -357,6 +365,7 @@ func (kvc *KVCacheState) rollbackAllocation(reqID string, cachedMutations []cach
 		blk.InUse = false
 		blk.RefCount = 0
 		blk.Tokens = nil
+		blk.TierPriority = 0
 		kvc.UsedBlockCnt--
 		kvc.CacheMisses--
 		kvc.prependToFreeList(blk)
@@ -370,6 +379,7 @@ func (kvc *KVCacheState) rollbackAllocation(reqID string, cachedMutations []cach
 		kvc.CacheHits--
 		if !cm.wasInUse && cm.block.RefCount == 0 {
 			cm.block.InUse = false
+			cm.block.TierPriority = 0
 			kvc.UsedBlockCnt--
 			kvc.appendToFreeList(cm.block)
 		}
