@@ -56,6 +56,22 @@ type BatchResult struct {
 // nil means LIFO (evict the last element — default vLLM behavior).
 type VictimSelector func(requests []*Request) int
 
+// SLOLowestPriorityVictim selects the running request with the lowest SLO tier priority.
+// Ties (same SLO class) resolve to the last element (LIFO among equals).
+// Uses SLOTierPriority which maps: background=0, batch=1, sheddable=2, standard=3, critical=4.
+func SLOLowestPriorityVictim(requests []*Request) int {
+	idx := 0
+	minPriority := SLOTierPriority(requests[0].SLOClass)
+	for i := 1; i < len(requests); i++ {
+		p := SLOTierPriority(requests[i].SLOClass)
+		if p <= minPriority {
+			minPriority = p
+			idx = i
+		}
+	}
+	return idx
+}
+
 // VLLMBatchFormation implements the vLLM FCFS + chunked-prefill + preemption strategy.
 type VLLMBatchFormation struct {
 	selectVictim VictimSelector // nil = LIFO
@@ -260,4 +276,12 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 // Currently returns VLLMBatchFormation (the only implementation).
 func NewBatchFormation() BatchFormation {
 	return &VLLMBatchFormation{}
+}
+
+// NewSLOPriorityBatchFormation creates a BatchFormation that uses SLO-priority victim
+// selection during KV preemption: the lowest-SLO running request is evicted first.
+// Ties in SLO class resolve to LIFO ordering (last element evicted among equals).
+// All other behavior (chunked prefill, decode, scheduling) is identical to VLLMBatchFormation.
+func NewSLOPriorityBatchFormation() BatchFormation {
+	return &VLLMBatchFormation{selectVictim: SLOLowestPriorityVictim}
 }
