@@ -8,7 +8,6 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -144,19 +143,16 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 	if c.apiKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
-	// GIE headers for llm-d admission control
+	// GIE headers for llm-d admission control.
+	// x-gateway-inference-fairness-id: tenant key for per-tenant fair-share scheduling.
+	// x-gateway-inference-objective: name of an InferenceObjective CRD on the target
+	//   cluster. GIE's EPP looks up the CRD and resolves its spec.priority integer
+	//   for queue ordering and shedding. If no matching CRD exists, defaults to 0.
 	if req.TenantID != "" {
 		httpReq.Header.Set("x-gateway-inference-fairness-id", req.TenantID)
 	}
 	if req.SLOClass != "" {
 		httpReq.Header.Set("x-gateway-inference-objective", req.SLOClass)
-	}
-	// GIE treats priority=0 as "no priority set" (default scheduling).
-	// We intentionally omit the header for zero to avoid noise on non-GIE servers.
-	// If GIE ever defines 0 as a distinct priority level, this guard (and the int
-	// type) would need to change to *int to distinguish "unset" from "zero".
-	if req.GIEPriority != 0 {
-		httpReq.Header.Set("x-gateway-inference-priority", strconv.Itoa(req.GIEPriority))
 	}
 
 	// Record send time

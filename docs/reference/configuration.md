@@ -566,7 +566,7 @@ Used when `--rate` is set instead of `--workload-spec`. Same flag names as `blis
 | `--output-tokens-min` | int | 1 | Minimum output tokens. |
 | `--output-tokens-max` | int | 2048 | Maximum output tokens. |
 | `--prefix-tokens` | int | 0 | Shared prefix token count. |
-| `--priority` | int | 0 | GIE priority integer sent as `x-gateway-inference-priority` header (0 = omit). |
+| `--priority` | int | 0 | GIE priority integer recorded in TraceV2 (matches `InferenceObjective` CRD `spec.priority` on target cluster; 0 = default). |
 | `--api-format` | string | "completions" | API format: `completions` (`/v1/completions`) or `chat` (`/v1/chat/completions`). |
 | `--unconstrained-output` | bool | false | Do not set `max_tokens` (let server decide output length). |
 | `--rtt-ms` | float64 | 0 | Measured network round-trip time in milliseconds (recorded in trace header for calibrate). |

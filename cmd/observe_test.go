@@ -583,7 +583,12 @@ func TestRecorder_PrefixGroupPropagation(t *testing.T) {
 }
 
 // TestRealClient_GIEHeaders_SentWhenNonEmpty verifies BC-2: GIE headers are
-// sent when TenantID, SLOClass, and GIEPriority are populated.
+// sent when TenantID and SLOClass are populated. SLOClass is sent as the
+// x-gateway-inference-objective header (the name of an InferenceObjective CRD
+// on the target cluster); TenantID is sent as x-gateway-inference-fairness-id
+// for per-tenant fair-share scheduling. GIE's EPP resolves the objective name
+// to an integer priority via CRD lookup — the client does not send priority
+// as a header.
 func TestRealClient_GIEHeaders_SentWhenNonEmpty(t *testing.T) {
 	var capturedHeaders http.Header
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -611,9 +616,6 @@ func TestRealClient_GIEHeaders_SentWhenNonEmpty(t *testing.T) {
 	}
 	if got := capturedHeaders.Get("x-gateway-inference-objective"); got != "critical" {
 		t.Errorf("x-gateway-inference-objective = %q, want %q", got, "critical")
-	}
-	if got := capturedHeaders.Get("x-gateway-inference-priority"); got != "3" {
-		t.Errorf("x-gateway-inference-priority = %q, want %q", got, "3")
 	}
 }
 
@@ -643,8 +645,5 @@ func TestRealClient_GIEHeaders_OmittedWhenDefault(t *testing.T) {
 	}
 	if got := capturedHeaders.Get("x-gateway-inference-objective"); got != "" {
 		t.Errorf("x-gateway-inference-objective should be absent, got %q", got)
-	}
-	if got := capturedHeaders.Get("x-gateway-inference-priority"); got != "" {
-		t.Errorf("x-gateway-inference-priority should be absent, got %q", got)
 	}
 }
