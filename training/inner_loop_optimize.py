@@ -339,13 +339,11 @@ class InnerLoopOptimizer:
                 - best_alpha: Optimal alpha coefficients
                 - best_beta: Optimal beta coefficients
                 - best_loss: Final loss value
-                - n_trials: Number of trials run (actual, may be less than requested if converged early)
+                - n_trials: Number of trials run
                 - optimization_time: Wall-clock time in seconds
-                - converged_early: Whether optimization stopped early due to convergence
         """
         print("\n" + "=" * 70)
-        print(f"BAYESIAN OPTIMIZATION (up to {self.n_trials} trials)")
-        print("Early stopping: stops if no improvement in 200-trial window")
+        print(f"BAYESIAN OPTIMIZATION ({self.n_trials} trials)")
         print(f"Random seed: {self.seed} (deterministic)")
         print("=" * 70)
 
@@ -374,41 +372,12 @@ class InnerLoopOptimizer:
             else:
                 print(f"  Warning: Initial values have wrong length, skipping warm-start")
 
-        # Convergence callback: stop if no improvement in last 200 trials
-        converged_early = [False]  # Mutable container for callback
-
-        def convergence_callback(study: optuna.Study, trial: optuna.trial.FrozenTrial):
-            """Stop if best loss hasn't improved at all in last 200 trials."""
-            n = len(study.trials)
-            if n <= 200:
-                return  # Need more than 200 trials to check 200-trial window
-
-            # Get best loss from all trials up to 200 trials ago (trials 0 to n-201)
-            trials_before_window = study.trials[:n-200]
-            best_loss_200_ago = min(t.value for t in trials_before_window if t.value is not None)
-
-            # Get current best loss
-            current_best = study.best_value
-
-            # Calculate absolute improvement
-            absolute_improvement = best_loss_200_ago - current_best
-
-            # Stop if no improvement at all (current >= old)
-            if current_best >= best_loss_200_ago:
-                print(f"\n[Convergence] Stopping at trial {n}/{self.n_trials}")
-                print(f"[Convergence] Best loss 200 trials ago: {best_loss_200_ago:.6f}")
-                print(f"[Convergence] Current best loss: {current_best:.6f}")
-                print(f"[Convergence] Change: {absolute_improvement:+.6f} (no improvement)")
-                converged_early[0] = True
-                study.stop()
-
         # Run optimization
         opt_start = time.time()
         study.optimize(
             self.optuna_objective,
             n_trials=self.n_trials,
-            show_progress_bar=True,
-            callbacks=[convergence_callback]
+            show_progress_bar=True
         )
         opt_time = time.time() - opt_start
 
@@ -426,10 +395,6 @@ class InnerLoopOptimizer:
         print(f"Best alpha: {best_alpha}")
         print(f"Best beta: {best_beta}")
         print(f"Trials completed: {actual_trials}/{self.n_trials}")
-        if converged_early[0]:
-            print(f"Status: Converged early (no improvement in last 200 trials)")
-        else:
-            print(f"Status: Completed all requested trials")
         print(f"Optimization time: {opt_time:.1f}s")
         print(f"Time per trial: {opt_time / actual_trials:.2f}s")
 
@@ -438,8 +403,7 @@ class InnerLoopOptimizer:
             "best_beta": best_beta,
             "best_loss": best_loss,
             "n_trials": actual_trials,
-            "optimization_time": opt_time,
-            "converged_early": converged_early[0]
+            "optimization_time": opt_time
         }
 
     def evaluate_detailed(self, alpha: List[float], beta: List[float]) -> Dict[str, Any]:
@@ -505,8 +469,7 @@ class InnerLoopOptimizer:
 
           # Optimization metadata
           "optimization": {
-            "n_trials": int,  # Actual trials run (may be less if converged early)
-            "converged_early": bool,
+            "n_trials": int,  # Number of trials run
             "optimization_time_seconds": float,
             "num_errors": int  # Failed trials (penalty loss)
           },
@@ -555,7 +518,6 @@ class InnerLoopOptimizer:
             # Optimization metadata
             "optimization": {
                 "n_trials": results["n_trials"],
-                "converged_early": results["converged_early"],
                 "optimization_time_seconds": results["optimization_time"],
                 "num_errors": len(self.error_log)
             },
