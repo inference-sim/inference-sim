@@ -224,11 +224,12 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 				continue
 			}
 			// Placement succeeded: use pool's GPU type (SC-004: pool-authoritative, not CLI flag).
-			// NOTE: This updates ModelHardwareConfig.GPU (the label) and fixes hardware calibration
-			// for the blackbox backend (which does not use HWConfig). For roofline/trained-roofline
-			// backends, ModelHardwareConfig.HWConfig is loaded at CLI time using --gpu and is not
-			// reloaded here — instances on pools with a different gpu_type will use the CLI --gpu
-			// hardware coefficients for roofline math. See issue #893 for the full fix.
+			// NOTE: This updates ModelHardwareConfig.GPU (the GPU label) for all backends.
+			// For the blackbox backend this is sufficient — it uses alpha/beta coefficients from
+			// LatencyCoeffs, not HWConfig, so the label is the only per-pool field that needs updating.
+			// For roofline/trained-roofline backends, ModelHardwareConfig.HWConfig (TFlopsPeak,
+			// BwPeakTBs etc.) is loaded at CLI time from --gpu and is not reloaded here — those
+			// backends still use CLI GPU hardware coefficients for roofline math. See issue #893.
 			simCfg.GPU = matchedGPUType
 			inst := NewInstanceSimulator(id, simCfg)
 			inst.Model = config.Model

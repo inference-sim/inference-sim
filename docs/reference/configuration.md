@@ -374,7 +374,7 @@ scheduler: "fcfs"
 # Node pool infrastructure (Phase 1A — optional; omit for backward-compatible single-pool mode)
 node_pools:
   - name: "gpu-pool-1"
-    gpu_type: "H100"      # pool-authoritative: overrides --gpu flag for hardware calibration (all backends); configure HWConfigByGPU in DeploymentConfig for per-pool roofline coefficients
+    gpu_type: "H100"      # pool-authoritative: sets GPU label on all instances to pool's gpu_type (all backends); blackbox fully fixed (uses alpha/beta coefficients, not HWConfig); roofline/trained-roofline HWConfig still loaded from --gpu at CLI time, fix tracked in #893
     gpus_per_node: 8
     gpu_memory_gib: 80.0
     initial_nodes: 2
