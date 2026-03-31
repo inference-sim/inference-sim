@@ -33,7 +33,7 @@ class InnerLoopOptimizer:
 
     def __init__(self,
                  iteration: int,
-                 n_trials: int = 250,
+                 n_trials: int = 500,
                  timeout_per_trial: int = 120,
                  data_dir: str = "trainval_data",
                  seed: int = 42):
@@ -42,7 +42,7 @@ class InnerLoopOptimizer:
 
         Args:
             iteration: Iteration number (used to locate files in iterations/iter{N}/)
-            n_trials: Number of Bayesian optimization trials (default: 250)
+            n_trials: Number of Bayesian optimization trials (default: 500)
             timeout_per_trial: Timeout in seconds for each BLIS run
             data_dir: Directory containing ground-truth experiments (for CV: subset of trainval_data)
             seed: Random seed for Bayesian optimization (determinism guarantee)
@@ -345,7 +345,7 @@ class InnerLoopOptimizer:
         """
         print("\n" + "=" * 70)
         print(f"BAYESIAN OPTIMIZATION (up to {self.n_trials} trials)")
-        print("Early stopping: >1% improvement required in 50-trial window")
+        print("Early stopping: >1% improvement required in 200-trial window")
         print(f"Random seed: {self.seed} (deterministic)")
         print("=" * 70)
 
@@ -374,28 +374,28 @@ class InnerLoopOptimizer:
             else:
                 print(f"  Warning: Initial values have wrong length, skipping warm-start")
 
-        # Convergence callback: stop if no >1% improvement in last 50 trials
+        # Convergence callback: stop if no >1% improvement in last 200 trials
         converged_early = [False]  # Mutable container for callback
 
         def convergence_callback(study: optuna.Study, trial: optuna.trial.FrozenTrial):
-            """Stop if best loss hasn't improved >1% in last 50 trials."""
+            """Stop if best loss hasn't improved >1% in last 200 trials."""
             n = len(study.trials)
-            if n <= 50:
-                return  # Need more than 50 trials to check 50-trial window
+            if n <= 200:
+                return  # Need more than 200 trials to check 200-trial window
 
-            # Get best loss from all trials up to 50 trials ago (trials 0 to n-51)
-            trials_before_window = study.trials[:n-50]
-            best_loss_50_ago = min(t.value for t in trials_before_window if t.value is not None)
+            # Get best loss from all trials up to 200 trials ago (trials 0 to n-201)
+            trials_before_window = study.trials[:n-200]
+            best_loss_200_ago = min(t.value for t in trials_before_window if t.value is not None)
 
             # Get current best loss
             current_best = study.best_value
 
             # Calculate improvement
-            improvement = (best_loss_50_ago - current_best) / best_loss_50_ago
+            improvement = (best_loss_200_ago - current_best) / best_loss_200_ago
 
             if improvement <= 0.01:  # ≤1% improvement
                 print(f"\n[Convergence] Stopping at trial {n}/{self.n_trials}")
-                print(f"[Convergence] Best loss 50 trials ago: {best_loss_50_ago:.6f}")
+                print(f"[Convergence] Best loss 200 trials ago: {best_loss_200_ago:.6f}")
                 print(f"[Convergence] Current best loss: {current_best:.6f}")
                 print(f"[Convergence] Improvement: {improvement*100:.2f}% (threshold: >1.00%)")
                 converged_early[0] = True
@@ -426,7 +426,7 @@ class InnerLoopOptimizer:
         print(f"Best beta: {best_beta}")
         print(f"Trials completed: {actual_trials}/{self.n_trials}")
         if converged_early[0]:
-            print(f"Status: Converged early (no >1% improvement in last 15 trials)")
+            print(f"Status: Converged early (no >1% improvement in last 200 trials)")
         else:
             print(f"Status: Completed all requested trials")
         print(f"Optimization time: {opt_time:.1f}s")
@@ -603,8 +603,8 @@ def main():
     parser.add_argument(
         "--n-trials",
         type=int,
-        default=250,
-        help="Number of Bayesian optimization trials (default: 250)"
+        default=500,
+        help="Number of Bayesian optimization trials (default: 500)"
     )
     parser.add_argument(
         "--timeout",

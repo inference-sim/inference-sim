@@ -1,0 +1,33 @@
+iteration: 10
+latency_backend_name: "evolved"
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 10: Sequence-Length-Dependent Batching Inefficiency
+
+  Iter9 discovered that Scout's bottleneck is sequence-length-dependent, NOT architecture-dependent (FP8).
+  β₉ (FP8 dequantization) converged to zero (0.14 μs vs expected 17-50 μs), rejecting the FP8 hypothesis.
+  However, a powerful pattern emerged: Scout short-sequence (roleplay, codegen) improved significantly
+  (-53pp, -34pp TTFT), while Scout long-sequence (general-lite, reasoning-lite) failed completely (0pp, -8pp).
+  This inverse correlation strongly indicates batching inefficiency — long sequences don't pack well into
+  batches, leading to scheduling delays and reduced GPU utilization.
+
+  Coefficient explosions in iter9 (β₆ +654%, β₂ +343%, β₈ +143%, β₃ +118%) signal the optimizer compensating
+  for missing sequence-length-dependent terms. These explosions absorbed long-sequence overhead into existing
+  coefficients, moving them beyond physically plausible ranges.
+
+  Iter10 adds:
+  - β₁₀ (batching inefficiency): Σ(prefillTokens² / batchSize) — captures queueing delays for long sequences
+  - β₃' (KV seq-len component): Split β₃ into base + sequence-length scaling (prefillTokens × numLayers)
+  - Alpha lower bounds: Constrain α₀ ≥ 0.5ms, α₁ ≥ 50μs, α₂ ≥ 40μs to prevent spurious reduction
+  - Remove β₉: FP8 hypothesis rejected
+
+  Expected outcomes:
+  - β₁₀ = 0.1-1.0 ms per (token²/batch_request) offloads long-sequence overhead from β₆, β₂, β₈
+  - β₆ reverts from 99ms to 15-40ms (scheduler overhead no longer absorbs queueing delays)
+  - β₃ reverts from 9.6ms to 0.4-1.5ms (base KV overhead)
+  - β₃' = 0.1-1.0 μs per (token×layer) captures sequence-length-dependent KV allocation
+  - Scout long-sequence TTFT: 91-92% → <60% (>31pp improvement)
+  - Overall loss: 160.6% → <90%
+
+timestamp: "2026-03-30T12:00:00Z"

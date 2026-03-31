@@ -71,7 +71,7 @@ This gives live progress updates. You don't need to parse the output - just let 
 
 ```bash
 # Run optimization in background and redirect output
-python inner_loop_optimize.py --iteration {N} --n-trials 250 > iterations/iter{N}/optimization.log 2>&1 &
+python inner_loop_optimize.py --iteration {N} --n-trials 500 > iterations/iter{N}/optimization.log 2>&1 &
 OPTIMIZE_PID=$!
 
 echo "Started optimization (PID: $OPTIMIZE_PID)"
@@ -80,7 +80,7 @@ echo "Started optimization (PID: $OPTIMIZE_PID)"
 **What it does** (pre-implemented, you just invoke it):
 1. Reads `iterations/iter{N}/iteration_manifest.yaml` and `coefficient_bounds.yaml`
 2. Compiles BLIS with evolved backend
-3. Runs Bayesian optimization (up to 250 trials, early stopping if <1% improvement in 50-trial window)
+3. Runs Bayesian optimization (up to 500 trials, early stopping if <1% improvement in 200-trial window)
 4. For each trial: Injects (α, β) → runs BLIS → computes loss
 5. After convergence: Runs detailed evaluation with `--evaluate-per-experiment`
 6. Saves results to `iterations/iter{N}/inner_loop_results.json`
