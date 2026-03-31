@@ -1,0 +1,16 @@
+# Policy config for the joint compound strategy.
+# Use with: blis run --policy-config policy-compound.yaml
+# Routing scorer weights are passed via --routing-scorers CLI flag.
+
+admission:
+  policy: tier-shed
+  tier_shed_threshold: 100      # shed when in-flight > 100 (matches Iter 10 from scheduling track)
+  tier_shed_min_priority: 3     # shed sheddable (2) and below; protect standard (3) and critical (4)
+
+routing:
+  policy: weighted
+
+priority:
+  policy: slo-based
+
+scheduler: priority-fcfs

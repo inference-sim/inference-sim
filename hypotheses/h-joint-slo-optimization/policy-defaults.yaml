@@ -1,0 +1,13 @@
+# Policy config for BLIS defaults (control arm).
+# Use with: blis run --policy-config policy-defaults.yaml
+
+admission:
+  policy: always-admit
+
+routing:
+  policy: round-robin
+
+priority:
+  policy: constant
+
+scheduler: fcfs
