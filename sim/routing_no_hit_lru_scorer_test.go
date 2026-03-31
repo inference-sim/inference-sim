@@ -84,6 +84,51 @@ func TestNoHitLRU_SingleEndpoint_ScoresOne(t *testing.T) {
 	}
 }
 
+// TestNoHitLRU_AllEndpointsUsed_LRUDifferentiates verifies that when all endpoints have
+// been used for cold requests, the scorer still differentiates by LRU order. This catches
+// the formula bug where using total-1 as the denominator produces negative scores (clamped
+// to 0) when all endpoints are in the LRU, losing differentiation.
+func TestNoHitLRU_AllEndpointsUsed_LRUDifferentiates(t *testing.T) {
+	cqf := makeCacheQueryFn(map[string]int{"A": 0, "B": 0})
+	policy := sim.NewRoutingPolicy("weighted", []sim.ScorerConfig{
+		{Name: "no-hit-lru", Weight: 1.0},
+	}, 16, nil, cqf)
+
+	state := &sim.RouterState{
+		Snapshots: []sim.RoutingSnapshot{{ID: "A"}, {ID: "B"}},
+	}
+
+	// Route two cold requests — both endpoints get used
+	r1 := &sim.Request{ID: "r1", InputTokens: []int{1}}
+	d1 := policy.Route(r1, state)
+	first := d1.TargetInstance
+
+	r2 := &sim.Request{ID: "r2", InputTokens: []int{2}}
+	d2 := policy.Route(r2, state)
+	second := d2.TargetInstance
+
+	if first == second {
+		t.Fatalf("expected different targets for first two requests, both went to %s", first)
+	}
+
+	// Third cold request: both endpoints are in the LRU.
+	// The first-used endpoint (LRU oldest) should score higher than the second-used (MRU).
+	r3 := &sim.Request{ID: "r3", InputTokens: []int{3}}
+	d3 := policy.Route(r3, state)
+
+	if d3.Scores[first] <= d3.Scores[second] {
+		t.Errorf("LRU endpoint %s (score %.3f) should score higher than MRU endpoint %s (score %.3f)",
+			first, d3.Scores[first], second, d3.Scores[second])
+	}
+
+	// Verify scores are in [0, 1] — no negative scores from formula bug
+	for _, id := range []string{"A", "B"} {
+		if d3.Scores[id] < 0 || d3.Scores[id] > 1.0 {
+			t.Errorf("score for %s = %f, outside [0, 1]", id, d3.Scores[id])
+		}
+	}
+}
+
 // TestNoHitLRU_NilCacheQueryFn_Panics verifies factory panics without cacheQueryFn.
 func TestNoHitLRU_NilCacheQueryFn_Panics(t *testing.T) {
 	defer func() {

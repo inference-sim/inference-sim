@@ -11,6 +11,12 @@ import "math"
 //
 // No router-side index, no approximation. Observer is nil (state is ground truth).
 // cacheQueryFn must be non-nil; panics otherwise (factory validation).
+//
+// Signal freshness (R17, INV-7):
+//
+//	Reads: KV cache state via cacheQueryFn (direct call to GetCachedBlocks).
+//	Freshness: Synchronous ground-truth — bypasses snapshot staleness model entirely.
+//	Not affected by --snapshot-refresh-interval.
 func newPrecisePrefixCacheScorer(cacheQueryFn CacheQueryFn) (scorerFunc, observerFunc) {
 	if cacheQueryFn == nil {
 		panic("precise-prefix-cache scorer requires cacheQueryFn (nil provided); " +

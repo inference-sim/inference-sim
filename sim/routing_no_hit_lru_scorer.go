@@ -101,6 +101,12 @@ func (l *noHitLRU) rank(snapshots []RoutingSnapshot) map[string]int {
 // the DES is single-threaded and Route() always calls scorer then observer for the
 // same request before moving to the next (sim/routing.go WeightedScoring.Route).
 // cacheQueryFn must be non-nil; panics otherwise.
+//
+// Signal freshness (R17, INV-7):
+//
+//	Reads: KV cache state via cacheQueryFn (direct call to GetCachedBlocks).
+//	Freshness: Synchronous ground-truth — bypasses snapshot staleness model entirely.
+//	Not affected by --snapshot-refresh-interval.
 func newNoHitLRUScorer(cacheQueryFn CacheQueryFn) (scorerFunc, observerFunc) {
 	if cacheQueryFn == nil {
 		panic("no-hit-lru scorer requires cacheQueryFn (nil provided); " +
@@ -152,11 +158,12 @@ func newNoHitLRUScorer(cacheQueryFn CacheQueryFn) (scorerFunc, observerFunc) {
 
 		ranks := lru.rank(snapshots)
 
-		// Positional scoring: rank 0 (never-used/LRU) → highest score
-		// score = 1.0 - rank / (totalEndpoints - 1)
+		// Positional scoring: rank 0 (never-used) → 1.0, rank total (MRU) → 0.0.
+		// Uses total (not total-1) as denominator so scores stay in [0, 1] even
+		// when all endpoints have been used (ranks 1..total).
 		total := len(snapshots)
 		for _, snap := range snapshots {
-			scores[snap.ID] = 1.0 - float64(ranks[snap.ID])/float64(total-1)
+			scores[snap.ID] = 1.0 - float64(ranks[snap.ID])/float64(total)
 		}
 		return scores
 	}
