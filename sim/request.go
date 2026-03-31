@@ -88,6 +88,10 @@ type Request struct {
 	// ProgressIndex already set to len(InputTokens) and KV blocks pre-allocated.
 	// Set by KVTransferCompletedEvent before the request is routed and enqueued.
 	IsDecodeSubRequest bool
+
+	// Flow control timestamps (issue #882). Zero when flow control is disabled.
+	GatewayEnqueueTime  int64 // microseconds: when request entered the gateway queue
+	GatewayDispatchTime int64 // microseconds: when request was dispatched from the gateway queue
 }
 
 // This method returns a human-readable string representation of a Request.

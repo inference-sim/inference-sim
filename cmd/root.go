@@ -141,6 +141,15 @@ var (
 	prefillRoutingScorers   string // Scorer weights for prefill pool routing
 	decodeRoutingScorers  string  // Scorer weights for decode pool routing
 
+	// Flow control config (issue #882, GIE parity)
+	flowControlEnabled              bool
+	flowControlDetector             string
+	flowControlDispatchOrder        string
+	flowControlMaxQueueDepth        int
+	flowControlQueueDepthThreshold  float64
+	flowControlKVCacheUtilThreshold float64
+	flowControlMaxConcurrency       int
+
 	// Per-pool hardware override config
 	prefillTP             int
 	decodeTP              int
@@ -938,6 +947,15 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")
 	cmd.Flags().StringVar(&decodeRoutingScorers, "decode-routing-scorers", "", "Scorer weights for decode pool routing (e.g., queue-depth:2,kv-utilization:2)")
 
+	// Flow control config (issue #882, GIE parity)
+	cmd.Flags().BoolVar(&flowControlEnabled, "flow-control", false, "Enable gateway queue with saturation-gated dispatch (GIE flow control)")
+	cmd.Flags().StringVar(&flowControlDetector, "saturation-detector", "never", "Saturation detector: "+strings.Join(sim.ValidSaturationDetectorNames(), ", "))
+	cmd.Flags().StringVar(&flowControlDispatchOrder, "dispatch-order", "fifo", "Gateway queue dispatch order: fifo, priority")
+	cmd.Flags().IntVar(&flowControlMaxQueueDepth, "max-gateway-queue-depth", 0, "Max gateway queue depth (0=unlimited)")
+	cmd.Flags().Float64Var(&flowControlQueueDepthThreshold, "queue-depth-threshold", 5, "Queue depth threshold for utilization detector")
+	cmd.Flags().Float64Var(&flowControlKVCacheUtilThreshold, "kv-cache-util-threshold", 0.8, "KV cache utilization threshold for utilization detector")
+	cmd.Flags().IntVar(&flowControlMaxConcurrency, "max-concurrency", 100, "Max concurrency per instance for concurrency detector")
+
 	// Per-pool hardware overrides
 	cmd.Flags().IntVar(&prefillTP, "prefill-tp", 0, "Tensor parallelism degree for prefill pool instances (0 = use global --tensor-parallelism)")
 	cmd.Flags().IntVar(&decodeTP, "decode-tp", 0, "Tensor parallelism degree for decode pool instances (0 = use global --tensor-parallelism)")
@@ -1408,6 +1426,13 @@ var runCmd = &cobra.Command{
 			TierShedThreshold:       tierShedThreshold,
 			TierShedMinPriority:     tierShedMinPriority,
 			TenantBudgets:           tenantBudgets,
+			FlowControlEnabled:              flowControlEnabled,
+			FlowControlDetector:             flowControlDetector,
+			FlowControlDispatchOrder:        flowControlDispatchOrder,
+			FlowControlMaxQueueDepth:        flowControlMaxQueueDepth,
+			FlowControlQueueDepthThreshold:  flowControlQueueDepthThreshold,
+			FlowControlKVCacheUtilThreshold: flowControlKVCacheUtilThreshold,
+			FlowControlMaxConcurrency:       flowControlMaxConcurrency,
 		}
 		var followUpRequests []*sim.Request
 		var onRequestDone func(*sim.Request, int64) []*sim.Request
@@ -1484,6 +1509,8 @@ var runCmd = &cobra.Command{
 		)
 		rawMetrics.ShedByTier = cs.ShedByTier()                             // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
 		rawMetrics.DeferredHorizonInterrupted = cs.DeferredQueueLen()        // Phase 1B-1b: deferred queue horizon count (FR-006)
+		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth()               // Issue #882: gateway queue depth at horizon
+		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()                 // Issue #882: gateway queue shed count
 
 		if rawMetrics.PD != nil && config.PDTransferContention {
 			rawMetrics.PD.PeakConcurrentTransfers = cs.PeakConcurrentTransfers()
@@ -1513,7 +1540,7 @@ var runCmd = &cobra.Command{
 		}
 
 		// Print anomaly counters if any detected
-		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.DeferredHorizonInterrupted > 0 {
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.DeferredHorizonInterrupted > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 {
 			fmt.Println("=== Anomaly Counters ===")
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
@@ -1533,6 +1560,12 @@ var runCmd = &cobra.Command{
 			fmt.Printf("Length-Capped Requests: %d\n", rawMetrics.LengthCappedRequests)
 			if rawMetrics.DeferredHorizonInterrupted > 0 {
 				fmt.Printf("Deferred (horizon-interrupted): %d\n", rawMetrics.DeferredHorizonInterrupted)
+			}
+			if rawMetrics.GatewayQueueDepth > 0 {
+				fmt.Printf("Gateway Queue Depth (horizon): %d\n", rawMetrics.GatewayQueueDepth)
+			}
+			if rawMetrics.GatewayQueueShed > 0 {
+				fmt.Printf("Gateway Queue Shed: %d\n", rawMetrics.GatewayQueueShed)
 			}
 		}
 

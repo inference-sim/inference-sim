@@ -203,6 +203,19 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 		})
 	}
 
+	// Flow control: enqueue in gateway queue instead of scheduling routing directly.
+	// When flow control is disabled (default), the original path is unchanged (BC-1).
+	if cs.flowControlEnabled {
+		e.request.GatewayEnqueueTime = cs.clock
+		shed := cs.gatewayQueue.Enqueue(e.request, cs.nextSeqID())
+		if shed {
+			return // request was shed from full queue — don't route
+		}
+		// Attempt immediate dispatch (NeverSaturated will always succeed here)
+		cs.tryDispatchFromGatewayQueue()
+		return
+	}
+
 	// BC-PD-4: When pools are configured, schedule DisaggregationDecisionEvent
 	// between admission and routing. When not configured, go directly to routing.
 	if cs.poolsConfigured() {

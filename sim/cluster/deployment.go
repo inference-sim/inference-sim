@@ -72,6 +72,17 @@ type DeploymentConfig struct {
 	// Key: TenantID string. Value: fraction of total cluster capacity (0.0–1.0).
 	// Zero value is safe: nil = no enforcement (all tenants unlimited).
 	TenantBudgets map[string]float64 `yaml:"tenant_budgets,omitempty"`
+
+	// Flow control configuration (issue #882, GIE parity).
+	// When FlowControlEnabled is false (default), the gateway queue is bypassed
+	// and requests flow directly from admission to routing (BC-1 pass-through).
+	FlowControlEnabled              bool    `yaml:"flow_control_enabled,omitempty"`
+	FlowControlDetector             string  `yaml:"flow_control_detector,omitempty"`               // "never" (default), "utilization", "concurrency"
+	FlowControlDispatchOrder        string  `yaml:"flow_control_dispatch_order,omitempty"`          // "fifo" (default), "priority"
+	FlowControlMaxQueueDepth        int     `yaml:"flow_control_max_queue_depth,omitempty"`         // 0 = unlimited
+	FlowControlQueueDepthThreshold  float64 `yaml:"flow_control_queue_depth_threshold,omitempty"`   // for utilization detector
+	FlowControlKVCacheUtilThreshold float64 `yaml:"flow_control_kv_cache_util_threshold,omitempty"` // for utilization detector
+	FlowControlMaxConcurrency       int     `yaml:"flow_control_max_concurrency,omitempty"`         // for concurrency detector
 }
 
 // ToSimConfig returns the embedded SimConfig for per-instance construction.
