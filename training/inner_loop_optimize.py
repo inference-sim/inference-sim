@@ -33,7 +33,7 @@ class InnerLoopOptimizer:
 
     def __init__(self,
                  iteration: int,
-                 n_trials: int = 1000,
+                 n_trials: int = 2000,
                  timeout_per_trial: int = 120,
                  data_dir: str = "trainval_data",
                  seed: int = 42):
@@ -42,7 +42,7 @@ class InnerLoopOptimizer:
 
         Args:
             iteration: Iteration number (used to locate files in iterations/iter{N}/)
-            n_trials: Number of Bayesian optimization trials (default: 1000)
+            n_trials: Number of Bayesian optimization trials (default: 2000)
             timeout_per_trial: Timeout in seconds for each BLIS run
             data_dir: Directory containing ground-truth experiments (for CV: subset of trainval_data)
             seed: Random seed for Bayesian optimization (determinism guarantee)
@@ -566,8 +566,8 @@ def main():
     parser.add_argument(
         "--n-trials",
         type=int,
-        default=1000,
-        help="Number of Bayesian optimization trials (default: 1000)"
+        default=2000,
+        help="Number of Bayesian optimization trials (default: 2000)"
     )
     parser.add_argument(
         "--timeout",
