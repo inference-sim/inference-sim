@@ -158,6 +158,14 @@ func (i *InstanceSimulator) CacheHitRate() float64 {
 	return i.sim.KVCache.CacheHitRate()
 }
 
+// GetCachedBlockCount returns the number of consecutive prefix blocks
+// cached on this instance for the given token sequence. Delegates to
+// the instance's KVStore.GetCachedBlocks and returns the count.
+// Used by the precise-prefix-cache scorer for ground-truth prefix matching.
+func (i *InstanceSimulator) GetCachedBlockCount(tokens []int) int {
+	return len(i.sim.KVCache.GetCachedBlocks(tokens))
+}
+
 // InjectRequestOnline injects a request during the event loop (online routing mode).
 // Unlike InjectRequest, this does NOT check hasRun, allowing injection during simulation.
 func (i *InstanceSimulator) InjectRequestOnline(req *sim.Request, eventTime int64) {

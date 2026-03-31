@@ -20,10 +20,12 @@ type scorerFunc func(req *Request, snapshots []RoutingSnapshot) map[string]float
 
 // validScorerNames maps scorer names to validity. Unexported to prevent mutation (antipattern rule 8).
 var validScorerNames = map[string]bool{
-	"prefix-affinity": true,
-	"queue-depth":     true,
-	"kv-utilization":  true,
-	"load-balance":    true,
+	"prefix-affinity":      true,
+	"queue-depth":          true,
+	"kv-utilization":       true,
+	"load-balance":         true,
+	"precise-prefix-cache": true,
+	"no-hit-lru":           true,
 }
 
 // IsValidScorer returns true if name is a recognized scorer.
@@ -94,11 +96,18 @@ func normalizeScorerWeights(configs []ScorerConfig) []float64 {
 	return weights
 }
 
+// CacheQueryFn maps instance IDs to functions that return the number of
+// consecutive cached prefix blocks for a given token sequence.
+// Used by precise-prefix-cache and no-hit-lru scorers.
+// Nil for non-cluster usage or when no cache-aware scorers are configured.
+type CacheQueryFn map[string]func([]int) int
+
 // newScorerWithObserver creates a scorer function and optional observer for a named scorer.
 // Returns (scorer, observer) where observer is nil for stateless scorers.
 // blockSize is used by stateful scorers (prefix-affinity) for block hash computation.
+// cacheQueryFn is used by precise-prefix-cache and no-hit-lru scorers; nil for others.
 // Panics on unknown name (validation should catch this before reaching here).
-func newScorerWithObserver(name string, blockSize int) (scorerFunc, observerFunc) {
+func newScorerWithObserver(name string, blockSize int, cacheQueryFn CacheQueryFn) (scorerFunc, observerFunc) {
 	switch name {
 	case "prefix-affinity":
 		return newPrefixAffinityScorer(blockSize)
@@ -108,6 +117,10 @@ func newScorerWithObserver(name string, blockSize int) (scorerFunc, observerFunc
 		return scoreKVUtilization, nil
 	case "load-balance":
 		return scoreLoadBalance, nil
+	case "precise-prefix-cache":
+		return newPrecisePrefixCacheScorer(cacheQueryFn)
+	case "no-hit-lru":
+		return newNoHitLRUScorer(cacheQueryFn)
 	default:
 		panic(fmt.Sprintf("unknown scorer %q", name))
 	}

@@ -264,11 +264,20 @@ func (ab *AlwaysBusiest) Route(_ *Request, state *RouterState) RoutingDecision {
 // Non-weighted policies ignore scorerConfigs.
 // The rng parameter enables random tie-breaking for least-loaded and weighted policies;
 // nil preserves positional tie-breaking. Ignored by round-robin and always-busiest.
+// cacheQueryFn maps instance IDs to functions returning cached block counts;
+// required by precise-prefix-cache and no-hit-lru scorers, nil for others.
 // Panics on unrecognized names.
-func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand) RoutingPolicy {
+func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand, cacheQueryFn ...CacheQueryFn) RoutingPolicy {
 	if !IsValidRoutingPolicy(name) {
 		panic(fmt.Sprintf("unknown routing policy %q", name))
 	}
+
+	// Extract optional cacheQueryFn (variadic to preserve backward compatibility).
+	var cqf CacheQueryFn
+	if len(cacheQueryFn) > 0 {
+		cqf = cacheQueryFn[0]
+	}
+
 	switch name {
 	case "", "round-robin":
 		return &RoundRobin{}
@@ -281,7 +290,7 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64
 		scorers := make([]scorerFunc, len(scorerConfigs))
 		var observers []observerFunc
 		for i, cfg := range scorerConfigs {
-			scorer, obs := newScorerWithObserver(cfg.Name, int(blockSize))
+			scorer, obs := newScorerWithObserver(cfg.Name, int(blockSize), cqf)
 			scorers[i] = scorer
 			if obs != nil {
 				observers = append(observers, obs)

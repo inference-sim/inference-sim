@@ -156,6 +156,16 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		admissionPolicy = sim.NewAdmissionPolicy(config.AdmissionPolicy, config.TokenBucketCapacity, config.TokenBucketRefillRate)
 	}
 
+	// Build per-instance cache query function map for precise prefix scorers.
+	// Each closure captures its own *InstanceSimulator to avoid aliasing.
+	cacheQueryFn := make(sim.CacheQueryFn, len(instanceMap))
+	for id, inst := range instanceMap {
+		inst := inst // capture loop variable
+		cacheQueryFn[string(id)] = func(tokens []int) int {
+			return inst.GetCachedBlockCount(tokens)
+		}
+	}
+
 	cs := &ClusterSimulator{
 		config:               config,
 		instances:            instances,
@@ -166,7 +176,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		routingLatency:       config.RoutingLatency,
 		admissionPolicy:      admissionPolicy,
 		snapshotProvider:     NewCachedSnapshotProvider(instanceMap, newObservabilityConfig(config.SnapshotRefreshInterval)),
-		routingPolicy:        sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem(sim.SubsystemRouter)),
+		routingPolicy:        sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem(sim.SubsystemRouter), cacheQueryFn),
 		trace:                simTrace,
 		inFlightRequests:     make(map[string]int, config.NumInstances),
 		shedByTier:           make(map[string]int),
@@ -189,10 +199,10 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 
 		// Per-pool routing policies (use separate RNG partitions to avoid fragile coupling)
 		if len(config.PrefillScorerConfigs) > 0 {
-			cs.prefillRoutingPolicy = sim.NewRoutingPolicy("weighted", config.PrefillScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("prefill-router"))
+			cs.prefillRoutingPolicy = sim.NewRoutingPolicy("weighted", config.PrefillScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("prefill-router"), cacheQueryFn)
 		}
 		if len(config.DecodeScorerConfigs) > 0 {
-			cs.decodeRoutingPolicy = sim.NewRoutingPolicy("weighted", config.DecodeScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("decode-router"))
+			cs.decodeRoutingPolicy = sim.NewRoutingPolicy("weighted", config.DecodeScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("decode-router"), cacheQueryFn)
 		}
 
 		logrus.Infof("[cluster] PD disaggregation enabled: %d prefill, %d decode instances, decider=%q",
