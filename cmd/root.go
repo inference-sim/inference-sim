@@ -841,19 +841,23 @@ func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
 		if flowControlDispatchOrder != "fifo" && flowControlDispatchOrder != "priority" {
 			logrus.Fatalf("--dispatch-order must be 'fifo' or 'priority', got %q", flowControlDispatchOrder)
 		}
-		if flowControlQueueDepthThreshold <= 0 || math.IsNaN(flowControlQueueDepthThreshold) || math.IsInf(flowControlQueueDepthThreshold, 0) {
-			logrus.Fatalf("--queue-depth-threshold must be a finite value > 0, got %v", flowControlQueueDepthThreshold)
-		}
-		if flowControlKVCacheUtilThreshold <= 0 || math.IsNaN(flowControlKVCacheUtilThreshold) || math.IsInf(flowControlKVCacheUtilThreshold, 0) {
-			logrus.Fatalf("--kv-cache-util-threshold must be a finite value > 0, got %v", flowControlKVCacheUtilThreshold)
-		}
-		if flowControlMaxConcurrency <= 0 {
-			logrus.Fatalf("--max-concurrency must be > 0, got %d", flowControlMaxConcurrency)
-		}
 		if flowControlMaxQueueDepth < 0 {
 			logrus.Fatalf("--max-gateway-queue-depth must be >= 0, got %d", flowControlMaxQueueDepth)
 		}
-		if flowControlDetector == "" || flowControlDetector == "never" {
+		// Validate only parameters consumed by the selected detector
+		switch flowControlDetector {
+		case "utilization":
+			if flowControlQueueDepthThreshold <= 0 || math.IsNaN(flowControlQueueDepthThreshold) || math.IsInf(flowControlQueueDepthThreshold, 0) {
+				logrus.Fatalf("--queue-depth-threshold must be a finite value > 0, got %v", flowControlQueueDepthThreshold)
+			}
+			if flowControlKVCacheUtilThreshold <= 0 || math.IsNaN(flowControlKVCacheUtilThreshold) || math.IsInf(flowControlKVCacheUtilThreshold, 0) {
+				logrus.Fatalf("--kv-cache-util-threshold must be a finite value > 0, got %v", flowControlKVCacheUtilThreshold)
+			}
+		case "concurrency":
+			if flowControlMaxConcurrency <= 0 {
+				logrus.Fatalf("--max-concurrency must be > 0, got %d", flowControlMaxConcurrency)
+			}
+		case "", "never":
 			logrus.Warnf("--flow-control enabled but --saturation-detector is %q (pass-through); specify 'utilization' or 'concurrency' for actual gating", flowControlDetector)
 		}
 	}

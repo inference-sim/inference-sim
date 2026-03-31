@@ -237,14 +237,15 @@ A complete request lifecycle through the cluster pipeline:
 3. **AdmissionDecisionEvent:** Admission policy evaluates the request
    - If rejected: request counted, pipeline ends
    - If admitted: proceed to routing (with optional `--admission-latency` delay)
-4. **RoutingDecisionEvent:** Routing policy selects target instance
+4. **Gateway Queue (optional, `--flow-control`):** When flow control is enabled, admitted requests enter a priority-ordered gateway queue instead of routing immediately. A saturation detector evaluates cluster capacity on each completion; when saturation < 1.0, the highest-priority request is dequeued and routed with fresh `RouterState` (late binding). When disabled (default), this step is skipped.
+5. **RoutingDecisionEvent:** Routing policy selects target instance
    - InFlightRequests for target instance incremented
    - Request injected into target instance's wait queue (with optional `--routing-latency` delay)
-5. **QueuedEvent:** Fired by target instance when request enters its queue
+6. **QueuedEvent:** Fired by target instance when request enters its queue
    - If no StepEvent exists, one is scheduled (work-conserving)
-6. **Per-instance processing:** Request follows the single-instance lifecycle (see [Core Engine](core-engine.md))
-7. **Completion/Drop:** InFlightRequests decremented when request completes or is dropped as unservable
-8. **Metrics:** Request metrics (TTFT, E2E, ITL) recorded at instance level, aggregated at cluster level
+7. **Per-instance processing:** Request follows the single-instance lifecycle (see [Core Engine](core-engine.md))
+8. **Completion/Drop:** InFlightRequests decremented when request completes or is dropped as unservable
+9. **Metrics:** Request metrics (TTFT, E2E, ITL) recorded at instance level, aggregated at cluster level
 
 ## Observe / Replay / Calibrate Pipeline
 
