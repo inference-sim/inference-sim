@@ -1,0 +1,133 @@
+# Iteration 10: Coefficient Bounds and Initial Values
+# Warm-started from iter9 optimal coefficients with adjustments for new terms (β₁₀, β₃')
+
+# ============================================================================
+# Alpha Coefficients (Request-Level Overheads)
+# ============================================================================
+
+alpha_bounds:
+  # α₀: Fixed API overhead (ms per request)
+  # Physical range: 0.5-5.0ms (HTTP parsing, request validation, queue insertion)
+  # Iter9: 0.35ms (unrealistically low, spurious reduction)
+  # Iter10: Add lower bound 0.5ms to prevent spurious reduction
+  - [0.0005, 0.005]  # [0.5ms, 5.0ms]
+
+  # α₁: Per-input-token tokenization overhead (ms per token)
+  # Physical range: 50-300μs per token (BPE encoding, tensor copy)
+  # Iter9: 65.0μs (decreased -45% from iter8, compensating for beta explosions)
+  # Iter10: Add lower bound 50μs to prevent spurious reduction
+  - [0.00005, 0.0003]  # [50μs, 300μs]
+
+  # α₂: Per-output-token detokenization overhead (ms per token)
+  # Physical range: 40-250μs per token (output processing, streaming)
+  # Iter9: 48.5μs (decreased -46% from iter8, compensating for beta explosions)
+  # Iter10: Add lower bound 40μs to prevent spurious reduction
+  - [0.00004, 0.00025]  # [40μs, 250μs]
+
+alpha_initial:
+  # Warm-start from iter9 optimal values, but nudge upward toward physical ranges
+  # to account for expected beta coefficient reversions (β₆, β₂, β₃ should decrease)
+  - 0.0008  # α₀ = 0.8ms (2.3× iter9's 0.35ms, toward physical 1-2ms)
+  - 0.00008  # α₁ = 80μs (1.2× iter9's 65μs, toward physical 100-150μs)
+  - 0.00006  # α₂ = 60μs (1.2× iter9's 48.5μs, toward physical 80-120μs)
+
+# ============================================================================
+# Beta Coefficients (Step-Level Basis Functions)
+# ============================================================================
+
+beta_bounds:
+  # β₀: Prefill compute MFU scaling factor (dimensionless)
+  # Physical range: 0.10-0.30 (prefill efficiency vs theoretical MFU)
+  # Iter9: 0.1624 (stable, -15% from iter8's 0.1912)
+  # Iter10: Tighten bounds around optimal value
+  - [0.10, 0.30]
+
+  # β₁: Decode memory-bound MFU factor (dimensionless)
+  # Physical range: 1.00-1.50 (decode memory bandwidth efficiency)
+  # Iter9: 1.3611 (increased +23% from iter8's 1.1076, absorbing decode overhead)
+  # Iter10: Maintain current bounds, expect slight decrease as other terms improve
+  - [1.0, 1.6]
+
+  # β₂: TP communication scaling factor (dimensionless)
+  # Physical range: 0.15-0.60 (TP all-reduce efficiency)
+  # Iter9: 0.8171 (EXPLODED +343% from iter8's 0.1846, absorbing long-seq TP overhead)
+  # Iter10: Expand upper bound to 1.2 to allow optimizer flexibility, but expect decrease to 0.25-0.60 after β₁₀
+  - [0.15, 1.2]
+
+  # β₃: KV cache management BASE overhead (seconds per request)
+  # Physical range: 0.0004-0.0020s = 0.4-2.0ms (PagedAttention setup per request)
+  # Iter9: 0.00959s = 9.6ms (INFLATED +118% from iter8's 4.4ms, absorbing seq-len overhead)
+  # Iter10: Target physical range after splitting into base + seq-len components
+  - [0.0004, 0.003]  # [0.4ms, 3.0ms] — expand upper bound slightly to allow gradual reversion
+
+  # β₃': KV cache management SEQUENCE-LENGTH component (seconds per token×layer) — NEW in iter10
+  # Physical range: 0.0000001-0.000001s = 0.1-1.0μs per (token×layer)
+  # Expected contribution: For Scout general-lite (500 tokens × 56 layers): β₃' × 28,000 ≈ 3-28ms
+  # Initial value: 0.0000003s = 0.3μs (mid-range, allow optimizer to refine)
+  - [0.0000001, 0.000002]  # [0.1μs, 2.0μs] — expand upper bound to 2μs for flexibility
+
+  # β₄: Decode compute-bound MFU factor (dimensionless)
+  # Physical range: 0.30-0.80 (decode compute efficiency, large batches)
+  # Iter9: 0.4658 (decreased -35% from iter8's 0.7132, compensating for decode memory bottleneck)
+  # Iter10: Maintain current bounds, stable
+  - [0.30, 0.85]
+
+  # β₅: MoE gating overhead (seconds per token)
+  # Physical range: 0.00001-0.00003s = 10-30μs (gating network FLOPs)
+  # Iter9: 0.0000198s = 19.8μs (REVERTED -52% from iter8's 41.1μs, now within physical range ✓)
+  # Iter10: Maintain tight bounds around optimal value (physically plausible)
+  - [0.00001, 0.00003]
+
+  # β₆: Scheduler overhead per request (seconds per request)
+  # Physical range: 0.015-0.040s = 15-40ms (vLLM scheduler CPU overhead)
+  # Iter9: 0.0993s = 99.3ms (EXPLODED +654% from iter8's 13.2ms, absorbing long-seq queueing delay)
+  # Iter10: Reduce upper bound to 60ms, expect reversion to 15-40ms after β₁₀ offloads queueing delay
+  - [0.010, 0.060]  # [10ms, 60ms] — allow gradual reversion
+
+  # β₇: Decode per-request overhead (seconds per request)
+  # Physical range: 0.005-0.025s = 5-25ms (output processing, TP coordination)
+  # Iter9: 0.0110s = 11.0ms (REVERTED -58% from iter8's 26.3ms, now within physical range ✓)
+  # Iter10: Maintain tight bounds around optimal value (physically plausible)
+  - [0.005, 0.025]
+
+  # β₈: MoE routing overhead per routed token (seconds per routed token)
+  # Physical range: 0.00001-0.0001s = 10-100μs (expert dispatch, load balancing, aggregation)
+  # Iter9: 0.0000727s = 72.7μs (INFLATED +143% from iter8's 30.0μs, now above initial predicted 10-50μs)
+  # Iter10: Expand upper bound to 100μs (accept 73μs as plausible), expect slight decrease after β₁₀
+  - [0.00001, 0.0001]
+
+  # β₁₀: Batching inefficiency overhead (seconds per token²) — NEW in iter10
+  # Physical range: 0.0000001-0.000001s = 0.1-1.0 μs per token²
+  # Expected contribution: For Scout general-lite (500 tokens, batch_size=4):
+  #   β₁₀ × (500²/4) = β₁₀ × 62,500 ≈ 6-62ms if β₁₀ = 0.0000001-0.000001
+  # Initial value: 0.0000005s = 0.5 μs per token² (mid-range, captures ~31ms for Scout long-seq)
+  - [0.0000001, 0.000001]  # [0.1 μs, 1.0 μs] per token²
+
+beta_initial:
+  # Warm-start from iter9 optimal values with adjustments:
+  # - Remove β₉ (FP8 dequantization, hypothesis rejected)
+  # - Add β₁₀ (batching inefficiency) at position 9
+  # - Add β₃' (KV seq-len component) at position 10
+
+  - 0.1624     # β₀ (prefill compute) — from iter9, stable
+  - 1.3611     # β₁ (decode memory) — from iter9, stable
+  - 0.5        # β₂ (TP comm) — warm-start at 0.5 (expect decrease from iter9's 0.8171 after β₁₀ addition)
+  - 0.003      # β₃ (KV mgmt base) — warm-start at 3.0ms (expect decrease from iter9's 9.6ms after β₃' addition)
+  - 0.0000003  # β₃' (KV seq-len, NEW) — initialize at 0.3μs per (token×layer), mid-range
+  - 0.4658     # β₄ (decode compute) — from iter9, stable
+  - 0.0000198  # β₅ (MoE gating) — from iter9, stable within physical range ✓
+  - 0.040      # β₆ (scheduler) — warm-start at 40ms (expect decrease from iter9's 99ms after β₁₀ addition)
+  - 0.0110     # β₇ (decode overhead) — from iter9, stable within physical range ✓
+  - 0.0000727  # β₈ (MoE routing) — from iter9, may decrease after β₁₀ reduces Scout pressure
+  - 0.0000005  # β₁₀ (batching inefficiency, NEW) — initialize at 0.5 μs per token² (mid-range)
+
+# ============================================================================
+# Notes
+# ============================================================================
+# - Total coefficients: 3 alpha + 11 beta = 14 total
+# - Iter9 had 3 alpha + 10 beta (β₀-β₈, β₉) = 13 total
+# - Iter10 has 3 alpha + 11 beta (β₀-β₈, β₃', β₁₀) = 14 total after removing β₉ and adding β₁₀ + β₃'
+# - Beta indexing: [β₀, β₁, β₂, β₃, β₃', β₄, β₅, β₆, β₇, β₈, β₁₀]
+#   (β₃' inserted at index 4, β₁₀ at index 10, total 11 coefficients)
+# - All bounds satisfy lower_bound >= 0.0 (no negative coefficients)
+# - Initial values warm-started from iter9 with adjustments for new terms and expected reversions
