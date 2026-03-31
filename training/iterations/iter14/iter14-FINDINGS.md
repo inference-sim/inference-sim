@@ -89,41 +89,53 @@ Iteration 14 attempted to fix iter13's catastrophic failure (loss 2387%) by corr
 
 ---
 
-**Principle 3**: **Roofline Baseline Systematic Bias** (Overpredicts Prefill/Decode MFU by 2×)
+**Principle 3**: **Roofline-Based Coefficients Out of Expected Range** (β₀ Doubled, β₁/β₄ Shifted)
 
 - **Evidence**:
-  - β₀ (prefill MFU scaling) = 0.392 vs expected 0.16-0.22 → 2× higher than expected
-  - β₁ (decode memory MFU) = 0.916 vs expected 1.00-1.15 → ~10% lower than expected
-  - β₄ (decode compute MFU) = 0.943 vs expected 0.70-0.85 → 11% higher than expected
-  - **Pattern**: Roofline-based terms (β₀, β₁, β₄) are ALL out of expected ranges, suggesting roofline baseline is systematically wrong
-  - Dense models overpredicted by 10-40× (e.g., Mistral general-lite: 3774% TTFT)
+  - β₀ (prefill MFU scaling) = 0.392 vs expected 0.16-0.22 → **+105% increase from iter7** (0.191 → 0.392)
+  - β₁ (decode memory MFU) = 0.916 vs expected 1.00-1.15 → **-8% below lower bound**
+  - β₄ (decode compute MFU) = 0.943 vs expected 0.70-0.85 → **+11% above upper bound**
+  - **Pattern**: All three roofline-based terms (β₀, β₁, β₄) are out of expected ranges
+  - Dense models still massively overpredict (10-40×) despite these coefficient changes
+  - Other terms adjusted simultaneously: β₃ -68%, β₆ -61%, β₇ +23%
 
-- **Mechanism**: **Why is roofline wrong?**
+- **Mechanism**: **Why are roofline coefficients out of range?**
 
-  **Prefill MFU (β₀)**:
-  - Roofline assumes prefill phase achieves ~22% MFU (based on iter7 β₀=0.191, where 1.0 = theoretical peak)
-  - Iter14 β₀=0.392 suggests prefill actually achieves ~11% MFU (half of roofline prediction)
-  - **Root cause**: Roofline model assumes perfect batching and no framework overhead during prefill
-  - **Reality**: vLLM prefill has kernel launch overhead, memory fragmentation, and suboptimal batching for mixed-length sequences
+  **The interpretability problem**: β₀, β₁, β₄ are LEARNED parameters that scale roofline baselines. Their values depend on:
+  1. The roofline MFU assumptions (MfuPrefill, MfuDecode) baked into hardware config
+  2. The other 7 coefficients (trade-offs between terms)
+  3. Optimizer state (warm-start from iter7)
+  4. Dataset characteristics (reasoning-lite vs reasoning)
 
-  **Decode Memory MFU (β₁)**:
-  - Roofline assumes decode phase is memory-bound with MFU > 1.0 (memory bandwidth exceeds compute)
-  - Iter14 β₁=0.916 suggests decode is LESS memory-bound than roofline predicts
-  - **Root cause**: Roofline model uses per-token KV cache bandwidth, but vLLM does chunk-level caching and attention optimization
+  **Without additional data**, we cannot determine whether:
+  - Roofline MFU assumptions are wrong (too optimistic or pessimistic)
+  - Optimizer got stuck in wrong region due to warm-start
+  - Dataset shift (reasoning → reasoning-lite) requires different coefficients
+  - Coefficient trade-offs are hiding the real issue
 
-  **Decode Compute MFU (β₄)**:
-  - Roofline assumes decode compute achieves ~75% MFU
-  - Iter14 β₄=0.943 suggests decode compute achieves ~94% MFU (closer to theoretical peak)
-  - **Root cause**: Modern GPUs (H100) have better tensor core utilization than roofline model assumes
+  **What we CAN conclude**:
+  - β₀ doubling means prefill contribution increased 2× relative to iter7
+  - β₁/β₄ shifts mean decode balance changed (less memory-bound, more compute-bound)
+  - These changes did NOT fix overprediction (still 10-40× errors)
+  - The model is not converging to physically plausible values
 
-- **Action for iter15**: **VALIDATE ROOFLINE ASSUMPTIONS**
-  1. **Prefill MFU**: Profile real vLLM prefill phase to measure actual MFU (use NVIDIA Nsight or dcgm-exporter)
-     - If actual MFU is ~10-15% (not 22%), adjust roofline baseline by 0.5× multiplier
-  2. **Decode Memory MFU**: Profile real vLLM decode phase to measure KV cache bandwidth utilization
-     - If decode is compute-bound (not memory-bound), reformulate β₁ term
-  3. **Decode Compute MFU**: Profile real vLLM decode compute to measure GEMM efficiency
-     - If actual MFU is >90%, this term may be correct (don't change)
-  4. **Hypothesis**: If roofline baseline is corrected, β₀/β₁/β₄ will converge to ~1.0 (no scaling needed) and dense models will recover
+- **Action for iter15**: **DIAGNOSE ROOT CAUSE BEFORE ASSUMING ROOFLINE IS WRONG**
+  1. **Profile actual MFU**: Measure real vLLM prefill/decode MFU using NVIDIA Nsight
+     - If measured MFU significantly differs from config assumptions, roofline baseline may be wrong
+     - If measured MFU matches config, the problem is elsewhere (optimizer, dataset, architecture)
+
+  2. **Run cold-start ablation**: Re-run optimization WITHOUT warm-starting from iter7
+     - If β₀/β₁/β₄ converge to expected ranges, warm-start was the problem
+     - If they remain out of range, deeper architectural issue exists
+
+  3. **Check dataset shift impact**: Compare coefficient ranges between iter7 (reasoning) and iter14 (reasoning-lite)
+     - If reasoning-lite REQUIRES different coefficients, expected ranges may be wrong for this dataset
+     - If coefficients should be similar, dataset shift is not the issue
+
+  4. **Verify expected ranges**: Check if 0.16-0.22 range for β₀ was derived from similar datasets
+     - If derived from reasoning (not reasoning-lite), range may not apply to iter14
+
+  **Hypothesis**: The root cause could be (A) roofline baseline wrong, OR (B) warm-start stuck, OR (C) dataset shift, OR (D) expected ranges wrong. We need to run diagnostics (steps 1-4) to distinguish these.
 
 ---
 
@@ -303,7 +315,7 @@ Iteration 14 attempted to fix iter13's catastrophic failure (loss 2387%) by corr
 **Critical Observations**:
 
 1. **β₅ fix validated**: 32.53 is within predicted range 1-50 ✅ — layer multiplier implementation is correct
-2. **β₀ doubled**: Prefill MFU scaling increased from 0.191 → 0.392 (+105%) — suggests roofline prefill baseline is 2× too optimistic
+2. **β₀ doubled**: Prefill MFU scaling increased from 0.191 → 0.392 (+105%) — root cause unclear (roofline wrong? warm-start stuck? dataset shift?)
 3. **β₃ converged correctly**: 1.39ms is within expected 0.4-1.5ms range ✅ — KV management overhead is reasonable
 4. **β₆ systematically low**: 5.09ms vs expected 40-100ms (7.9× below) — either expected range is wrong OR scheduler overhead absorbed elsewhere
 5. **β₇ slightly high**: 32.3ms vs expected 15-30ms (+8% above) — decode per-request overhead reasonable, possibly absorbing some β₆ overhead
@@ -352,7 +364,7 @@ if totalTimeUs > 1e12 {  // 1 million seconds
 
 **Issue 2: Roofline Baseline Validation (10-40× Overprediction)**
 
-**Problem**: β₀ doubled (+105%), β₃/β₆/β₇ collapsed (800-3000×), suggesting roofline prefill/decode baselines are systematically wrong (predict 2× higher MFU than reality).
+**Problem**: β₀ doubled (+105%) and is out of expected range, suggesting roofline baseline MAY be wrong OR warm-start trapped optimizer in wrong region OR dataset shift requires different coefficients.
 
 **Action**:
 1. **Profile real vLLM prefill/decode MFU** using NVIDIA Nsight or dcgm-exporter on production workload
@@ -512,8 +524,8 @@ Iteration 14 was a **necessary but insufficient** step toward fixing the evolved
 
 **Key insight**: The model has **multiple independent architectural defects**:
 1. **Numerical stability**: Reasoning-lite experiments return 100% error (simulator catastrophe)
-2. **Roofline baseline**: Prefill/decode MFU predictions are 2× too optimistic, causing 10-40× overprediction
-3. **Warm-start failure**: Dataset change (reasoning → reasoning-lite) invalidated iter7 coefficients
+2. **Roofline-based coefficients out of range**: β₀/β₁/β₄ all deviated from expected ranges, root cause unclear (need profiling/ablations to diagnose)
+3. **Warm-start failure**: Dataset change (reasoning → reasoning-lite) may have invalidated iter7 coefficients
 
 Iter15 must address ALL THREE issues simultaneously (not sequentially). The training process is at a critical juncture — two consecutive catastrophic failures (iter13, iter14) with >2000% loss suggest fundamental problems requiring a multi-pronged approach.
 
