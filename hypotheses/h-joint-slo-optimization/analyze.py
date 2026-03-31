@@ -35,8 +35,6 @@ ASSUMPTIONS
 
 import json
 import sys
-import os
-import glob
 import statistics
 from pathlib import Path
 
@@ -125,7 +123,7 @@ def analyze_iter0():
 
     rows = []
     p99s, std_goods, shed_goods = [], [], []
-    for i, (r, seed) in enumerate(zip(results, SEEDS)):
+    for r, seed in zip(results, SEEDS):
         p99 = get_critical_p99(r)
         sg  = get_goodput(r, "standard")
         shg = get_goodput(r, "sheddable")
