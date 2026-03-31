@@ -142,7 +142,7 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 				blocksForMaxLen, cfg.MaxModelLen, cfg.BlockSizeTokens, cfg.TotalKVBlocks)
 		}
 	}
-	batchFormation := NewBatchFormation()
+	batchFormation := NewBatchFormationFromPolicy(cfg.PolicyConfig)
 
 	s := &Simulator{
 		Clock:                     0,

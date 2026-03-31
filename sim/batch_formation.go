@@ -280,6 +280,31 @@ func NewBatchFormation() BatchFormation {
 	return &VLLMBatchFormation{}
 }
 
+// NewBatchFormationFromPolicy creates a BatchFormation from a PolicyConfig.
+// "" or "vllm" → VLLMBatchFormation (LIFO preemption, default)
+// "slo-priority-preemption" → VLLMBatchFormation with SLO-priority victim selector
+// "tier-budget" → TierBudgetBatchFormation (critFrac defaults to 0.50, stdFrac to 0.70)
+func NewBatchFormationFromPolicy(cfg PolicyConfig) BatchFormation {
+	switch cfg.BatchFormationPolicy {
+	case "", "vllm":
+		return &VLLMBatchFormation{}
+	case "slo-priority-preemption":
+		return NewSLOPriorityBatchFormation()
+	case "tier-budget":
+		cf := cfg.TierBudgetCritFrac
+		if cf == 0 {
+			cf = 0.50
+		}
+		sf := cfg.TierBudgetStdFrac
+		if sf == 0 {
+			sf = 0.70
+		}
+		return NewTierBudgetBatchFormation(cf, sf)
+	default:
+		panic(fmt.Sprintf("NewBatchFormationFromPolicy: unknown batch formation policy %q", cfg.BatchFormationPolicy))
+	}
+}
+
 // NewSLOPriorityBatchFormation creates a BatchFormation that uses SLO-priority victim
 // selection during KV preemption: the lowest-SLO running request is evicted first.
 // Ties in SLO class resolve to LIFO ordering (last element evicted among equals).

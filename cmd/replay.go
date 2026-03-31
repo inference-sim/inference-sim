@@ -139,7 +139,7 @@ Example:
 				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
 				ModelHardwareConfig: sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, lr.Backend, maxModelLen),
-				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler),
+				PolicyConfig:        sim.NewEnginePolicyConfig(priorityPolicy, scheduler, batchFormationPolicy, tierBudgetCritFrac, tierBudgetStdFrac),
 			},
 			NumInstances:            numInstances,
 			AdmissionPolicy:         admissionPolicy,

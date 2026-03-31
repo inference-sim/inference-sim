@@ -126,8 +126,11 @@ func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 
 // PolicyConfig groups scheduling and priority policy selection.
 type PolicyConfig struct {
-	PriorityPolicy string // "constant" (default) or "slo-based"
-	Scheduler      string // "fcfs" (default), "priority-fcfs", "sjf", "reverse-priority"
+	PriorityPolicy       string  // "constant" (default) or "slo-based"
+	Scheduler            string  // "fcfs" (default), "priority-fcfs", "sjf", "reverse-priority"
+	BatchFormationPolicy string  // "vllm" (default), "slo-priority-preemption", "tier-budget"
+	TierBudgetCritFrac   float64 // for "tier-budget" only; 0 = use default 0.50
+	TierBudgetStdFrac    float64 // for "tier-budget" only; 0 = use default 0.70
 }
 
 // NewPolicyConfig creates a PolicyConfig with all fields explicitly set.
@@ -137,6 +140,17 @@ func NewPolicyConfig(priorityPolicy, scheduler string) PolicyConfig {
 		PriorityPolicy: priorityPolicy,
 		Scheduler:      scheduler,
 	}
+}
+
+// NewEnginePolicyConfig creates a PolicyConfig including engine mechanism policies.
+// batchPolicy: "vllm", "slo-priority-preemption", or "tier-budget".
+// critFrac and stdFrac are used only when batchPolicy="tier-budget"; pass 0 to use defaults.
+func NewEnginePolicyConfig(priorityPolicy, scheduler, batchPolicy string, critFrac, stdFrac float64) PolicyConfig {
+	cfg := NewPolicyConfig(priorityPolicy, scheduler)
+	cfg.BatchFormationPolicy = batchPolicy
+	cfg.TierBudgetCritFrac = critFrac
+	cfg.TierBudgetStdFrac = stdFrac
+	return cfg
 }
 
 // WorkloadConfig is retained as an empty struct for SimConfig embedding compatibility.

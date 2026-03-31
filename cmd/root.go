@@ -106,6 +106,11 @@ var (
 	priorityPolicy string // Priority policy name
 	scheduler      string // Scheduler name
 
+	// Batch formation config
+	batchFormationPolicy string  // Batch formation policy name
+	tierBudgetCritFrac   float64 // Critical tier token budget fraction
+	tierBudgetStdFrac    float64 // Standard tier token budget fraction
+
 	// Policy bundle config
 	policyConfigPath string // Path to YAML policy configuration file
 
@@ -906,6 +911,14 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based, inverted-slo")
 	cmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf, reverse-priority")
 
+	// Batch formation config
+	cmd.Flags().StringVar(&batchFormationPolicy, "batch-formation", "vllm",
+		`Batch formation policy: "vllm", "slo-priority-preemption", "tier-budget"`)
+	cmd.Flags().Float64Var(&tierBudgetCritFrac, "tier-budget-critical-frac", 0.0,
+		"Critical tier token budget fraction for tier-budget policy (0 = default 0.50)")
+	cmd.Flags().Float64Var(&tierBudgetStdFrac, "tier-budget-standard-frac", 0.0,
+		"Standard tier fraction of remaining budget for tier-budget policy (0 = default 0.70)")
+
 	// Policy bundle config
 	cmd.Flags().StringVar(&policyConfigPath, "policy-config", "", "Path to YAML policy configuration file")
 
@@ -1379,7 +1392,7 @@ var runCmd = &cobra.Command{
 				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
 				ModelHardwareConfig: sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, lr.Backend, maxModelLen),
-				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler),
+				PolicyConfig:        sim.NewEnginePolicyConfig(priorityPolicy, scheduler, batchFormationPolicy, tierBudgetCritFrac, tierBudgetStdFrac),
 			},
 			NumInstances:            numInstances,
 			AdmissionPolicy:         admissionPolicy,
