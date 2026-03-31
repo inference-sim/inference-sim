@@ -201,6 +201,12 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading CSV row: %w", err)
 		}
+		// Backward compatibility: 27-column files (pre-priority schema) get a
+		// default priority="0" inserted at position 4 before parsing.
+		const prePriorityColumnCount = 27
+		if len(row) == prePriorityColumnCount {
+			row = append(row[:4], append([]string{"0"}, row[4:]...)...)
+		}
 		if len(row) < len(traceV2Columns) {
 			return nil, fmt.Errorf("CSV row has %d columns, expected %d", len(row), len(traceV2Columns))
 		}

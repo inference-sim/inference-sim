@@ -151,6 +151,10 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 	if req.SLOClass != "" {
 		httpReq.Header.Set("x-gateway-inference-objective", req.SLOClass)
 	}
+	// GIE treats priority=0 as "no priority set" (default scheduling).
+	// We intentionally omit the header for zero to avoid noise on non-GIE servers.
+	// If GIE ever defines 0 as a distinct priority level, this guard (and the int
+	// type) would need to change to *int to distinguish "unset" from "zero".
 	if req.GIEPriority != 0 {
 		httpReq.Header.Set("x-gateway-inference-priority", strconv.Itoa(req.GIEPriority))
 	}

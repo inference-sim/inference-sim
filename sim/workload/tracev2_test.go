@@ -896,3 +896,56 @@ func TestRequestsToTraceRecords_GIEPriority(t *testing.T) {
 		t.Errorf("record 1 GIEPriority = %d, want 0", records[1].GIEPriority)
 	}
 }
+
+// TestTraceV2_BackwardCompat_27Columns verifies that old 27-column CSV files
+// (pre-priority schema) load successfully with GIEPriority defaulting to 0.
+func TestTraceV2_BackwardCompat_27Columns(t *testing.T) {
+	// 27-column CSV header (old schema without priority column)
+	oldHeader := "request_id,client_id,tenant_id,slo_class," +
+		"session_id,round_index," +
+		"prefix_group,prefix_length,streaming,input_tokens,output_tokens," +
+		"text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio," +
+		"model,deadline_us,server_input_tokens," +
+		"arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us," +
+		"num_chunks,status,error_message,finish_reason\n"
+	// 27-column data row (no priority field)
+	oldRow := "0,c1,t1,critical," +
+		",0," +
+		",0,false,100,50," +
+		"0,0,0,0,0.0," +
+		",0,0," +
+		"1000,1010,1100,1200," +
+		"3,ok,,stop\n"
+
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	dataPath := filepath.Join(dir, "data.csv")
+	headerYAML := "trace_version: 2\ntime_unit: microseconds\nmode: observed\n"
+	if err := os.WriteFile(headerPath, []byte(headerYAML), 0644); err != nil {
+		t.Fatalf("WriteFile header: %v", err)
+	}
+	if err := os.WriteFile(dataPath, []byte(oldHeader+oldRow), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	loaded, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatalf("LoadTraceV2: %v", err)
+	}
+	if len(loaded.Records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(loaded.Records))
+	}
+	rec := loaded.Records[0]
+	if rec.GIEPriority != 0 {
+		t.Errorf("GIEPriority = %d, want 0 (default for old schema)", rec.GIEPriority)
+	}
+	if rec.ClientID != "c1" {
+		t.Errorf("ClientID = %q, want c1", rec.ClientID)
+	}
+	if rec.InputTokens != 100 {
+		t.Errorf("InputTokens = %d, want 100", rec.InputTokens)
+	}
+	if rec.FinishReason != "stop" {
+		t.Errorf("FinishReason = %q, want stop", rec.FinishReason)
+	}
+}
