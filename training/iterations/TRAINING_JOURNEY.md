@@ -1,4 +1,4 @@
-# Training Journey: 8 Iterations to Model vLLM Latency
+# Training Journey: 11 Iterations to Model vLLM Latency
 
 ## Quick Reference: Formula Evolution
 
@@ -12,13 +12,18 @@
 | **5** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE + β₆·per_layer` | 603% | 💥 CATASTROPHIC |
 | **6** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE` + **β₆ → QueueingTime** | 162% | ✅ **Decoupling breakthrough** |
 | **7** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE + β₇·decode_oh` + β₆ in QueueingTime | 155% | ✅ β₁/β₄ stabilized |
+| **8** | `+ β₈·MoE_routing` | 155% | ❌ No improvement, MoE routing not Scout's bottleneck |
+| **9** | `+ β₉·FP8_dequant` | 161% | ❌ β₉→0, hypothesis rejected; Scout is seq-len dependent |
+| **10** | `+ β₁₀·batch_ineff + β₃'·KV_seqlen` | 4267% | 💥💥 CATASTROPHIC (thought basis bugs) |
+| **11** | Same as iter10 (basis functions audited) | 4084% | 💥💥 CATASTROPHIC (basis correct, YAML typo!) |
 
 **Note**: Iter6-7 split overhead between StepTime and QueueingTime. β₆ (scheduler overhead) moved to QueueingTime in iter6.
 
-**Current Formula (Iter7)**:
+**Current Formula (Iter11)**:
 ```
-StepTime = β₀·prefill_comp + β₁·decode_mem + β₂·TP_comm + β₃·KV_mgmt +
-           β₄·decode_comp + β₅·MoE_gating + β₇·decode_overhead
+StepTime = β₀·prefill_comp + β₁·decode_mem + β₂·TP_comm + β₃·KV_base + β₃'·KV_seqlen +
+           β₄·decode_comp + β₅·MoE_gating + β₇·decode_overhead + β₈·MoE_routing +
+           β₁₀·batch_ineff
 QueueingTime = α₀ + α₁·input_tokens + β₆·scheduler_overhead
 ```
 
@@ -87,6 +92,57 @@ QueueingTime = α₀ + α₁·input_tokens + β₆·scheduler_overhead
 
 ---
 
+### Iter8: MoE Routing Hypothesis Rejected ❌
+
+**Added**: β₈ MoE routing overhead (30μs per routed token)
+
+**Result**: Zero improvement (155.35% vs 155.37%)
+
+**Learning**: β₈ captures a REAL mechanism (39ms per Scout prefill), but it's NOT Scout's primary bottleneck (100-200ms gap remains).
+
+**Critical Discovery**: Scout's bottleneck is NOT MoE routing overhead. This eliminates a major hypothesis and narrows the search space.
+
+**Data Update**: Post-analysis, replaced exp17 (Scout general-2, saturated) with Scout general-lite-2-1 (clean data) — mirroring the reasoning → reasoning-lite fix from iter7.
+
+---
+
+### Iter9: Sequence-Length Breakthrough 🎯
+
+**Added**: β₉ FP8 dequantization overhead
+
+**Result**: β₉ → 0.14μs (rejected!), loss worsened to 160.6% (+5.25pp)
+
+**CRITICAL DISCOVERY**: Scout's bottleneck is **sequence-length-dependent**, NOT architecture-dependent!
+
+**Evidence**:
+- Short-sequence Scout improved dramatically: roleplay -53pp (79%→26%), codegen -34pp (92%→58%)
+- Long-sequence Scout failed: general-lite 92%, reasoning-lite 91% (no improvement)
+- **Inverse correlation**: Longer sequences → worse performance (opposite of FP8 hypothesis)
+
+**Mechanism Revealed**: Long sequences face batching inefficiency, scheduler struggles, or memory bandwidth issues.
+
+**Coefficient Explosions**: β₆ +654% (13ms→99ms), β₂ +343% (0.18→0.82), β₈ +143% (30μs→73μs) — optimizer compensating for wrong hypothesis.
+
+---
+
+### Iter10-11: The Catastrophic Detour 💥
+
+**Iter10 - Added**: β₁₀ (batching inefficiency) + β₃' (KV seq-len component)
+
+**Result**: Catastrophic loss explosion (4267%, 27× worse than iter9)
+
+**Initial Diagnosis (WRONG)**: "Basis function formulation bugs" — β₁₀ converged 1000× too small, β₃' converged 65× too large.
+
+**Iter11 - Reality Check**: Wrote unit tests → **basis functions were CORRECT all along!**
+
+**Actual Problem**: A YAML comment typo wrote "0.1-1.0 ms" instead of "0.1-1.0 μs", leading to incorrect expected ranges. Wasted 7,250 trial-hours chasing non-existent bugs.
+
+**Real Issue Revealed**: 6/11 coefficients out of range, particularly β₆ (scheduler) = 59ms vs expected 15-40ms. The model cannot converge with current basis function set.
+
+**Key Learning**: **Always write unit tests BEFORE training**. A 5-minute test would have prevented this entire detour.
+
+---
+
 ## Key Lessons
 
 | Lesson | Evidence |
@@ -96,25 +152,46 @@ QueueingTime = α₀ + α₁·input_tokens + β₆·scheduler_overhead
 | **Term location matters** | Moving β₆ to QueueingTime eliminated collinearity |
 | **Optimizer rejection is signal** | When terms don't move from initial values, remove them |
 | **Check data quality early** | 7 iterations before discovering 85% failure rate in reasoning data |
+| **Zero improvement eliminates hypotheses** | Iter8: β₈ = 30μs (plausible) but 0pp improvement → MoE routing NOT the bottleneck |
+| **Coefficient explosions reveal missing mechanisms** | Iter9: β₆ +654%, β₂ +343% when β₉→0 → optimizer compensating for wrong hypothesis |
+| **Unit test basis functions BEFORE training** | Iter10-11: 7,250 trial-hours wasted on "bugs" that didn't exist (just YAML typo) |
+| **Audit code before accepting diagnoses** | A 5-minute unit test would have prevented entire iter10-11 detour |
 
 ---
 
-## Current Status (Post-Iter7)
+## Current Status (Post-Iter11)
 
 ### ✅ What Works
-- **11/15 experiments**: 5-66% error (good!)
-- **Coefficient stability**: β₁=1.108, β₄=0.713 returned to physical ranges
-- **Clean data validated**: Non-Scout reasoning-lite improved dramatically
+- **Iter9 sequence-length discovery**: Confirmed Scout's bottleneck is sequence-length-dependent (not architecture-specific)
+- **Short-sequence predictions improved**: Scout roleplay (26% TTFT), codegen (58% TTFT) — dramatic improvement from iter8
+- **Basis functions validated**: β₁₀ and β₃' implementations are CORRECT (0% error in unit tests)
+- **5/11 coefficients in range**: β₂, β₃', β₅, β₈, β₁₀ all converged to physical ranges
 
 ### ❌ What's Broken
-- **Scout MoE**: 4 experiments, 79-100% TTFT error, 49% of total error budget
-- **Root cause**: MoE routing overhead not captured by current 8 terms
+- **Catastrophic convergence failure**: 4084% loss (45× worse than target, unchanged from iter10)
+- **Long-sequence experiments**: Scout general-lite (92% TTFT), reasoning-lite (91% TTFT) still fail
+- **6/11 coefficients out of range**: β₀ (+30%), β₁ (-8%), β₃ (-50%), β₄ (+25%), β₆ (+48-295% ⚠️), β₇ (-38-75%)
+- **β₆ explosion**: 59.3ms (expected 15-40ms) — scheduler overhead absorbing unexplained error
 
-### 🎯 Next Steps (Iter8)
-**Add β₈**: MoE routing overhead = `β₈ × (MoE_layers × tokens × experts_per_token / TP)`
-- Expected: 10-50μs per routed token
-- Should capture Scout's 767% combined loss
-- Keep all 15 experiments in training (including Scout)
+### 🔍 Root Cause Analysis Needed
+**Key Questions**:
+1. Why does β₆ (scheduler overhead) keep exploding? (59ms vs 15-40ms expected)
+2. What mechanism explains long-sequence Scout failures? (100-200ms unexplained gap)
+3. Are basis functions correct but INSUFFICIENT? (missing critical terms?)
+4. Is training data quality still an issue? (saturated servers, non-representative workloads?)
+
+**Hypotheses for Iter12+**:
+- **Option 1**: Profile scheduler code path for long-sequence requests (vllm/core/scheduler.py)
+- **Option 2**: Add memory bandwidth saturation term (HBM throughput × seq_len scaling)
+- **Option 3**: Investigate batch formation efficiency (why long sequences delay others?)
+- **Option 4**: Collect targeted Scout profiling data (nsys/nvprof on long vs short sequences)
+
+### 🎯 Next Steps
+**DO NOT proceed to iter12 without**:
+1. ✅ Root cause verification (profiling data or trace analysis)
+2. ✅ Unit tests for any new basis functions
+3. ✅ Validation that β₆ explosion is NOT absorbing missing physics
+4. ⚠️ Consider: Is the current basis function set fundamentally insufficient?
 
 ---
 
