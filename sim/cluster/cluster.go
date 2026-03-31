@@ -426,9 +426,15 @@ func (c *ClusterSimulator) Run() error {
 				// Flow control: completion-triggered dispatch (BC-4).
 				// Each completion opens capacity — try to dequeue from gateway queue.
 				// Loop up to delta times so batch completions can dispatch multiple requests.
+				// Early-exit when saturated or queue empty to avoid redundant buildRouterState calls.
 				if c.flowControlEnabled {
 					for i := 0; i < delta; i++ {
-						c.tryDispatchFromGatewayQueue()
+						if c.gatewayQueue.Len() == 0 {
+							break
+						}
+						if !c.tryDispatchFromGatewayQueue() {
+							break // saturated — no point rebuilding state for remaining iterations
+						}
 					}
 				}
 			}
@@ -871,19 +877,20 @@ func (c *ClusterSimulator) GatewayQueueShed() int {
 // tryDispatchFromGatewayQueue attempts to dispatch one request from the gateway queue.
 // Called after each completion (BC-4) and after each enqueue (for NeverSaturated pass-through).
 // Builds fresh RouterState at dispatch time for late binding (BC-3).
-func (c *ClusterSimulator) tryDispatchFromGatewayQueue() {
+// Returns true if a request was dispatched, false if saturated or queue empty.
+func (c *ClusterSimulator) tryDispatchFromGatewayQueue() bool {
 	if c.gatewayQueue == nil || c.gatewayQueue.Len() == 0 {
-		return
+		return false
 	}
 	// Build fresh state for late binding (BC-3)
 	state := buildRouterState(c, nil)
 	sat := c.saturationDetector.Saturation(state)
 	if sat >= 1.0 {
-		return // hold until next completion
+		return false // hold until next completion
 	}
 	req := c.gatewayQueue.Dequeue()
 	if req == nil {
-		return
+		return false
 	}
 	req.GatewayDispatchTime = c.clock
 
@@ -905,6 +912,7 @@ func (c *ClusterSimulator) tryDispatchFromGatewayQueue() {
 			seqID: c.nextSeqID(),
 		})
 	}
+	return true
 }
 
 // Trace returns the decision trace collected during simulation.
