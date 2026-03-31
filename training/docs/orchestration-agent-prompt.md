@@ -80,12 +80,12 @@ echo "Started optimization (PID: $OPTIMIZE_PID)"
 **What it does** (pre-implemented, you just invoke it):
 1. Reads `iterations/iter{N}/iteration_manifest.yaml` and `coefficient_bounds.yaml`
 2. Compiles BLIS with evolved backend
-3. Runs Bayesian optimization (up to 1000 trials, early stopping if no improvement in 200-trial window)
+3. Runs Bayesian optimization (1000 trials)
 4. For each trial: Injects (α, β) → runs BLIS → computes loss
-5. After convergence: Runs detailed evaluation with `--evaluate-per-experiment`
+5. After optimization: Runs detailed evaluation with `--evaluate-per-experiment`
 6. Saves results to `iterations/iter{N}/inner_loop_results.json`
 
-**Expected runtime**: 30-120 minutes depending on hardware and convergence speed.
+**Expected runtime**: 30-60 minutes depending on hardware (2s/trial × 1000 trials ≈ 33 minutes).
 
 **While it runs in background**:
 - Check progress periodically: `tail -20 iterations/iter{N}/optimization.log`
