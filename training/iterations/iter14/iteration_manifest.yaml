@@ -1,0 +1,38 @@
+iteration: 14
+latency_backend_name: "evolved"  # MUST be "evolved", not "evolved_iter14"
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 14: Fix β₅ MoE Gating Layer Multiplier Bug (One Bug, One Fix)
+
+  **What Changed**:
+  - Added missing `× numMoELayers` multiplier to β₅ (MoE gating) basis function
+  - Reverted to iter7's stable 8-beta architecture (β₀-β₅, β₆-β₇, indices 0-7)
+  - Removed β₈ (MoE routing) and β₁₀ (batching inefficiency) until β₅ proven stable
+  - Warm-started from iter7 optimal coefficients (not iter13's inflated values)
+
+  **Why This Matters**:
+  - Iter13 catastrophic failure (loss 2387%, 15.4× worse than iter7) traced to single bug:
+    β₅ basis function computed gating time for SINGLE layer but Scout has 56 MoE layers
+  - Evidence: β₅ = 1924.4 / 56 layers = 34.4 (within expected 1-50 range for per-layer coefficient)
+  - The β₈ (MoE routing) code already correctly multiplies by numMoELayers (line 290),
+    but β₅ (MoE gating) was missing this multiplier (lines 230-238)
+
+  **Expected Outcome**:
+  - β₅ converges to 1-50 (physically plausible), not 1924.4 (catastrophic)
+  - Loss 2387% → <180% (targeting iter7 baseline 155% + margin for dataset shift)
+  - Three reasoning-lite experiments recover from 100% timeout errors
+  - Dense models recover to iter7 ±10pp (proves β₅ was sole cascade cause)
+
+  **Previous Iteration (13)**:
+  - Attempted to return to iter7 baseline + add β₈ + β₁₀
+  - Result: β₅ exploded 46,800× (0.0411 → 1924.4), worst iteration in history
+  - Root cause: Missing numMoELayers multiplier in β₅ basis function
+  - Dataset changed between iter7/iter13: reasoning → reasoning-lite (lighter load)
+
+  **This Iteration Strategy**:
+  - Return to iter7's PROVEN stable 8-beta architecture (NOT iter7+β₈+β₁₀)
+  - Fix β₅ basis function ONLY (add layer multiplier, copied from β₈ pattern)
+  - Validate fix works (β₅ converges to 1-50) before adding complexity in iter15+
+
+timestamp: "2026-03-31T17:00:00.000000"
