@@ -1,0 +1,159 @@
+# Mixed Sustained+Burst Workload for Joint SLO Optimization (Strategy Evolution)
+# ---
+# SETUP: Replace AGGREGATE_RATE_PLACEHOLDER with the burst peak rate before running.
+# Peak rate = 2 x measured saturation throughput.
+# Base Poisson rate = 0.85 x saturation = 0.425 x peak.
+# Burst Gamma rate = 0.575 x peak (CV=2.0 creates spike dynamics).
+#
+# SLO tier mix: 20% critical, 60% standard, 20% sheddable (orthogonal shapes).
+# ---
+version: "1"
+seed: 42
+category: language
+aggregate_rate: 200.0   # PLACEHOLDER: replace with 2 x measured saturation req/s
+num_requests: 5000
+
+clients:
+  # -- Critical tier --------------------------------------------------------
+  - id: "critical-sustained"
+    slo_class: "critical"
+    rate_fraction: 0.085   # 0.20 x 0.425 = 8.5% of aggregate (Poisson sustained)
+    streaming: false
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 512
+        std_dev: 64
+        min: 256
+        max: 768
+    output_distribution:
+      type: gaussian
+      params:
+        mean: 128
+        std_dev: 16
+        min: 64
+        max: 192
+    prefix_group: "shared-system-prompt"
+    prefix_length: 256
+
+  - id: "critical-burst"
+    slo_class: "critical"
+    rate_fraction: 0.115   # 0.20 x 0.575 = 11.5% of aggregate (Gamma burst)
+    streaming: false
+    arrival:
+      process: gamma
+      cv: 2.0
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 512
+        std_dev: 64
+        min: 256
+        max: 768
+    output_distribution:
+      type: gaussian
+      params:
+        mean: 128
+        std_dev: 16
+        min: 64
+        max: 192
+    prefix_group: "shared-system-prompt"
+    prefix_length: 256
+
+  # -- Standard tier --------------------------------------------------------
+  - id: "standard-sustained"
+    slo_class: "standard"
+    rate_fraction: 0.255   # 0.60 x 0.425 = 25.5% of aggregate
+    streaming: false
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 512
+        std_dev: 64
+        min: 256
+        max: 768
+    output_distribution:
+      type: gaussian
+      params:
+        mean: 128
+        std_dev: 16
+        min: 64
+        max: 192
+    prefix_group: "shared-system-prompt"
+    prefix_length: 256
+
+  - id: "standard-burst"
+    slo_class: "standard"
+    rate_fraction: 0.345   # 0.60 x 0.575 = 34.5% of aggregate
+    streaming: false
+    arrival:
+      process: gamma
+      cv: 2.0
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 512
+        std_dev: 64
+        min: 256
+        max: 768
+    output_distribution:
+      type: gaussian
+      params:
+        mean: 128
+        std_dev: 16
+        min: 64
+        max: 192
+    prefix_group: "shared-system-prompt"
+    prefix_length: 256
+
+  # -- Sheddable tier -------------------------------------------------------
+  - id: "sheddable-sustained"
+    slo_class: "sheddable"
+    rate_fraction: 0.085   # 0.20 x 0.425 = 8.5% of aggregate
+    streaming: false
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 512
+        std_dev: 64
+        min: 256
+        max: 768
+    output_distribution:
+      type: gaussian
+      params:
+        mean: 128
+        std_dev: 16
+        min: 64
+        max: 192
+    prefix_group: "shared-system-prompt"
+    prefix_length: 256
+
+  - id: "sheddable-burst"
+    slo_class: "sheddable"
+    rate_fraction: 0.115   # 0.20 x 0.575 = 11.5% of aggregate
+    streaming: false
+    arrival:
+      process: gamma
+      cv: 2.0
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 512
+        std_dev: 64
+        min: 256
+        max: 768
+    output_distribution:
+      type: gaussian
+      params:
+        mean: 128
+        std_dev: 16
+        min: 64
+        max: 192
+    prefix_group: "shared-system-prompt"
+    prefix_length: 256
