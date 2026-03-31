@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -60,6 +61,7 @@ type PendingRequest struct {
 	ClientID        string
 	TenantID        string
 	SLOClass        string
+	GIEPriority     int
 	PrefixGroup     string
 	PrefixLength    int
 	Prompt          string
@@ -141,6 +143,16 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 	httpReq.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	// GIE headers for llm-d admission control
+	if req.TenantID != "" {
+		httpReq.Header.Set("x-gateway-inference-fairness-id", req.TenantID)
+	}
+	if req.SLOClass != "" {
+		httpReq.Header.Set("x-gateway-inference-objective", req.SLOClass)
+	}
+	if req.GIEPriority != 0 {
+		httpReq.Header.Set("x-gateway-inference-priority", strconv.Itoa(req.GIEPriority))
 	}
 
 	// Record send time
@@ -334,6 +346,7 @@ func (r *Recorder) RecordRequest(pending *PendingRequest, result *RequestRecord,
 		ClientID:          pending.ClientID,
 		TenantID:          pending.TenantID,
 		SLOClass:          pending.SLOClass,
+		GIEPriority:       pending.GIEPriority,
 		PrefixGroup:       pending.PrefixGroup,
 		PrefixLength:      prefixLen,
 		Streaming:         pending.Streaming,

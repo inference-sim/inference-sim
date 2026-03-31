@@ -52,6 +52,7 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 			FinishedStepIdx:  0,
 			TenantID:         rec.TenantID,
 			SLOClass:         rec.SLOClass,
+			GIEPriority:     rec.GIEPriority,
 			SessionID:        rec.SessionID,
 			RoundIndex:       rec.RoundIndex,
 			TextTokenCount:   rec.TextTokens,

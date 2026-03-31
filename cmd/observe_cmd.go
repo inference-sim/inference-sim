@@ -677,6 +677,7 @@ func requestToPending(req *sim.Request, reqIndex int, noStreaming, unconstrained
 		ClientID:        req.ClientID,
 		TenantID:        req.TenantID,
 		SLOClass:        req.SLOClass,
+		GIEPriority:     req.GIEPriority,
 		PrefixGroup:     req.PrefixGroup,
 		PrefixLength:    req.PrefixLength,
 		Prompt:          prompt,

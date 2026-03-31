@@ -62,6 +62,7 @@ type CohortSpec struct {
 	Population   int         `yaml:"population"`
 	TenantID     string      `yaml:"tenant_id,omitempty"`
 	SLOClass     string      `yaml:"slo_class,omitempty"`
+	GIEPriority  int         `yaml:"priority,omitempty"` // GIE integer priority (0 = default)
 	Model        string      `yaml:"model,omitempty"`
 	Arrival      ArrivalSpec `yaml:"arrival"`
 	InputDist    DistSpec    `yaml:"input_distribution"`
@@ -105,6 +106,7 @@ type ClientSpec struct {
 	ID           string        `yaml:"id"`
 	TenantID     string        `yaml:"tenant_id"`
 	SLOClass     string        `yaml:"slo_class"`
+	GIEPriority  int           `yaml:"priority,omitempty"` // GIE integer priority (0 = default)
 	Model        string        `yaml:"model,omitempty"`
 	RateFraction float64       `yaml:"rate_fraction"`
 	Concurrency  int           `yaml:"concurrency,omitempty"`

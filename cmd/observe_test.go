@@ -581,3 +581,70 @@ func TestRecorder_PrefixGroupPropagation(t *testing.T) {
 		t.Errorf("InputTokens = %d, want 72 (200 - 128 suffix-only)", records[0].InputTokens)
 	}
 }
+
+// TestRealClient_GIEHeaders_SentWhenNonEmpty verifies BC-2: GIE headers are
+// sent when TenantID, SLOClass, and GIEPriority are populated.
+func TestRealClient_GIEHeaders_SentWhenNonEmpty(t *testing.T) {
+	var capturedHeaders http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeaders = r.Header.Clone()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"choices":[{"text":"ok"}],"usage":{"prompt_tokens":10,"completion_tokens":1}}`)
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	_, err := client.Send(context.Background(), &PendingRequest{
+		RequestID:   0,
+		InputTokens: 10,
+		Prompt:      "hello",
+		TenantID:    "tenant-a",
+		SLOClass:    "critical",
+		GIEPriority: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := capturedHeaders.Get("x-gateway-inference-fairness-id"); got != "tenant-a" {
+		t.Errorf("x-gateway-inference-fairness-id = %q, want %q", got, "tenant-a")
+	}
+	if got := capturedHeaders.Get("x-gateway-inference-objective"); got != "critical" {
+		t.Errorf("x-gateway-inference-objective = %q, want %q", got, "critical")
+	}
+	if got := capturedHeaders.Get("x-gateway-inference-priority"); got != "3" {
+		t.Errorf("x-gateway-inference-priority = %q, want %q", got, "3")
+	}
+}
+
+// TestRealClient_GIEHeaders_OmittedWhenDefault verifies BC-3: no GIE headers
+// when fields are empty/zero (avoids noise on non-GIE servers).
+func TestRealClient_GIEHeaders_OmittedWhenDefault(t *testing.T) {
+	var capturedHeaders http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeaders = r.Header.Clone()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"choices":[{"text":"ok"}],"usage":{"prompt_tokens":10,"completion_tokens":1}}`)
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	_, err := client.Send(context.Background(), &PendingRequest{
+		RequestID:   0,
+		InputTokens: 10,
+		Prompt:      "hello",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := capturedHeaders.Get("x-gateway-inference-fairness-id"); got != "" {
+		t.Errorf("x-gateway-inference-fairness-id should be absent, got %q", got)
+	}
+	if got := capturedHeaders.Get("x-gateway-inference-objective"); got != "" {
+		t.Errorf("x-gateway-inference-objective should be absent, got %q", got)
+	}
+	if got := capturedHeaders.Get("x-gateway-inference-priority"); got != "" {
+		t.Errorf("x-gateway-inference-priority should be absent, got %q", got)
+	}
+}
