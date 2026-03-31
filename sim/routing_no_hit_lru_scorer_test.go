@@ -96,6 +96,55 @@ func TestNoHitLRU_NilCacheQueryFn_Panics(t *testing.T) {
 	}, 16, nil)
 }
 
+// TestNoHitLRU_RankFiltersNonSnapshotInstances verifies that LRU ranking only considers
+// instances present in the current routing snapshots. This prevents rank inflation from
+// non-routable or filtered-out instances that may exist in the LRU.
+func TestNoHitLRU_RankFiltersNonSnapshotInstances(t *testing.T) {
+	// cacheQueryFn includes all 4 instances, but snapshots only include A, B, C
+	cqf := makeCacheQueryFn(map[string]int{"A": 0, "B": 0, "C": 0, "D": 0})
+	policy := sim.NewRoutingPolicy("weighted", []sim.ScorerConfig{
+		{Name: "no-hit-lru", Weight: 1.0},
+	}, 16, nil, cqf)
+
+	// Route to D first (using full snapshot set) to put D in the LRU
+	fullState := &sim.RouterState{
+		Snapshots: []sim.RoutingSnapshot{{ID: "A"}, {ID: "B"}, {ID: "C"}, {ID: "D"}},
+	}
+	req1 := &sim.Request{ID: "r1", InputTokens: []int{1}}
+	policy.Route(req1, fullState)
+
+	// Route with D as target (route a second request to make sure D is in LRU)
+	req2 := &sim.Request{ID: "r2", InputTokens: []int{2}}
+	policy.Route(req2, fullState)
+
+	// Now route with D filtered out of snapshots (e.g., non-routable).
+	// Scores for A, B, C should still span the full [0, 1] range.
+	filteredState := &sim.RouterState{
+		Snapshots: []sim.RoutingSnapshot{{ID: "A"}, {ID: "B"}, {ID: "C"}},
+	}
+	req3 := &sim.Request{ID: "r3", InputTokens: []int{3}}
+	d3 := policy.Route(req3, filteredState)
+
+	// At least one instance should score 1.0 (never-used instances among the candidates)
+	maxScore := 0.0
+	for _, snap := range filteredState.Snapshots {
+		if d3.Scores[snap.ID] > maxScore {
+			maxScore = d3.Scores[snap.ID]
+		}
+	}
+	if maxScore < 0.99 {
+		t.Errorf("expected at least one candidate to score ≈ 1.0, max was %f (rank filtering may be broken)", maxScore)
+	}
+
+	// No score should be negative (would indicate non-snapshot entries inflating ranks)
+	for _, snap := range filteredState.Snapshots {
+		if d3.Scores[snap.ID] < 0 {
+			t.Errorf("score for %s is negative (%f) — non-snapshot LRU entries are inflating ranks",
+				snap.ID, d3.Scores[snap.ID])
+		}
+	}
+}
+
 // TestNoHitLRU_CombinedWithPrecisePrefix verifies the two scorers compose correctly.
 func TestNoHitLRU_CombinedWithPrecisePrefix(t *testing.T) {
 	// A has cached blocks, B and C do not

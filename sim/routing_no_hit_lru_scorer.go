@@ -58,48 +58,48 @@ func (l *noHitLRU) pushFront(e *noHitLRUEntry) {
 	}
 }
 
-// rank returns the LRU rank for each snapshot ID.
+// rank returns the LRU rank for each snapshot ID, considering only snapshot-visible
+// endpoints. Non-snapshot entries in the LRU are skipped to prevent rank inflation
+// from filtered-out instances (e.g., non-routable or different-model instances).
+//
 // Never-used endpoints get rank 0 (highest priority).
-// Used endpoints rank from 1 (least recently used = oldest) to N (most recently used).
-// The ranking is: never-used (0) < tail (1) < ... < head (N).
+// Used endpoints among snapshots rank from 1 (LRU oldest) to N (MRU newest).
 // Lower rank = higher score (preferred for cold requests).
 func (l *noHitLRU) rank(snapshots []RoutingSnapshot) map[string]int {
 	ranks := make(map[string]int, len(snapshots))
 
-	// Count used endpoints among snapshots for rank offset
-	usedCount := 0
+	// Build a set of snapshot IDs for fast lookup
+	snapshotSet := make(map[string]bool, len(snapshots))
 	for _, snap := range snapshots {
-		if _, ok := l.entries[snap.ID]; ok {
-			usedCount++
-		}
+		snapshotSet[snap.ID] = true
 	}
 
-	// Never-used endpoints get rank 0
-	// Used endpoints: walk from tail (LRU) to head (MRU), assign ranks starting at 1
-	usedRank := make(map[string]int, usedCount)
+	// Walk from tail (LRU) to head (MRU), assigning ranks only to
+	// endpoints present in the current snapshot set. This ensures
+	// ranks are contiguous within the candidate pool.
 	r := 1
 	for e := l.tail; e != nil; e = e.prev {
-		usedRank[e.id] = r
-		r++
-	}
-
-	for _, snap := range snapshots {
-		if ur, ok := usedRank[snap.ID]; ok {
-			ranks[snap.ID] = ur
+		if snapshotSet[e.id] {
+			ranks[e.id] = r
+			r++
 		}
-		// else: rank 0 (never-used)
 	}
+	// Endpoints not in the LRU keep rank 0 (never-used) — the zero value.
+
 	return ranks
 }
 
 // newNoHitLRUScorer creates a scorer that distributes cold requests (no cache hits)
 // to least-recently-used endpoints, matching llm-d's NoHitLRU scorer.
 //
-// Warm requests (any instance has cached blocks): all instances score 0.5 (neutral).
-// Cold requests (no cached blocks on any instance): score by LRU position.
+// Warm requests (any candidate instance has cached blocks): all instances score 0.5 (neutral).
+// Cold requests (no cached blocks on any candidate): score by LRU position.
 // Never-used endpoints score highest. Single endpoint scores 1.0.
 //
 // LRU is only updated on cold request routing (via observer).
+// The scorer and observer share a warm/cold determination via closure — safe because
+// the DES is single-threaded and Route() always calls scorer then observer for the
+// same request before moving to the next (sim/routing.go WeightedScoring.Route).
 // cacheQueryFn must be non-nil; panics otherwise.
 func newNoHitLRUScorer(cacheQueryFn CacheQueryFn) (scorerFunc, observerFunc) {
 	if cacheQueryFn == nil {
@@ -109,13 +109,20 @@ func newNoHitLRUScorer(cacheQueryFn CacheQueryFn) (scorerFunc, observerFunc) {
 
 	lru := newNoHitLRU()
 
+	// Shared warm/cold determination between scorer and observer.
+	// The scorer sets this; the observer reads it. Safe because DES is single-threaded
+	// and Route() calls scorer → observer sequentially for the same request.
+	var lastReqID string
+	var lastReqWarm bool
+
 	scorer := func(req *Request, snapshots []RoutingSnapshot) map[string]float64 {
 		scores := make(map[string]float64, len(snapshots))
 		if req == nil || len(snapshots) == 0 {
 			return scores
 		}
 
-		// Check if any instance has cached blocks for this request
+		// Check if any candidate instance has cached blocks for this request.
+		// Only checks snapshot instances (the routing candidates), not all instances.
 		isWarm := false
 		for _, snap := range snapshots {
 			fn, ok := cacheQueryFn[snap.ID]
@@ -124,6 +131,10 @@ func newNoHitLRUScorer(cacheQueryFn CacheQueryFn) (scorerFunc, observerFunc) {
 				break
 			}
 		}
+
+		// Cache determination for the observer
+		lastReqID = req.ID
+		lastReqWarm = isWarm
 
 		if isWarm {
 			// Warm request: neutral score for all instances
@@ -154,10 +165,18 @@ func newNoHitLRUScorer(cacheQueryFn CacheQueryFn) (scorerFunc, observerFunc) {
 		if req == nil {
 			return
 		}
-		// Only update LRU for cold requests
-		for _, fn := range cacheQueryFn {
-			if fn(req.InputTokens) > 0 {
-				return // warm request — don't update LRU
+		// Reuse the scorer's warm/cold determination for the same request.
+		// Falls back to checking all candidates if IDs don't match (defensive).
+		if req.ID == lastReqID {
+			if lastReqWarm {
+				return
+			}
+		} else {
+			// Defensive fallback: scorer wasn't called for this request (shouldn't happen)
+			for _, fn := range cacheQueryFn {
+				if fn(req.InputTokens) > 0 {
+					return
+				}
 			}
 		}
 		lru.touch(targetInstance)
