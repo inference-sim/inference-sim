@@ -3524,6 +3524,12 @@
 <td><code>""</code></td>
 <td>LLM name (required)</td>
 </tr>
+<tr>
+<td><code>--trace-output</code></td>
+<td><code>string</code></td>
+<td><code>""</code></td>
+<td>Export replay results as TraceV2 files (<code>&lt;prefix&gt;.yaml</code> + <code>&lt;prefix&gt;.csv</code>); header <code>mode: "replayed"</code></td>
+</tr>
 </tbody>
 </table>
 <p>Replay also accepts all shared simulation config flags (<code>--latency-model</code>, <code>--total-kv-blocks</code>, <code>--max-num-running-reqs</code>, etc.) — the same flags available in <code>blis run</code>. See <a href="../../reference/configuration/">Configuration</a> for the full list.</p>
@@ -3566,6 +3572,11 @@
 <td><strong>Session support</strong></td>
 <td>Session manager creates follow-ups</td>
 <td>Session structure encoded in trace (no manager needed)</td>
+</tr>
+<tr>
+<td><strong>Trace export</strong></td>
+<td><code>--trace-output</code> (header <code>mode: "generated"</code>)</td>
+<td><code>--trace-output</code> (header <code>mode: "replayed"</code>)</td>
 </tr>
 </tbody>
 </table>
