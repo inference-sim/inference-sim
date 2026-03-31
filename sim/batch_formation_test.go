@@ -767,3 +767,63 @@ func TestVLLMBatchFormation_ZeroInputRequest_SkipsDecodeOnlyPath(t *testing.T) {
 			req.ID, computedTokens[req.ID])
 	}
 }
+
+// TestTierBudget_FractionsComputeCorrectly verifies TierBudgets returns the correct
+// per-tier budget for given fractions (BC-TB1).
+func TestTierBudget_FractionsComputeCorrectly(t *testing.T) {
+	cases := []struct {
+		critFrac, stdFrac float64
+		maxTokens         int64
+		wantCrit          int64
+		wantStd           int64
+		wantShed          int64
+	}{
+		// critFrac=0.6: crit=600, remaining=400; stdFrac=0.7: std=280, shed=120
+		{0.6, 0.7, 1000, 600, 280, 120},
+		// critFrac=0.5, stdFrac=0.5: crit=500, remaining=500, std=250, shed=250
+		{0.5, 0.5, 1000, 500, 250, 250},
+		// Equal thirds (approx): critFrac=0.333, stdFrac=0.5
+		// crit=333, remaining=667, std=333, shed=334
+		{0.333, 0.5, 1000, 333, 333, 334},
+	}
+	for _, c := range cases {
+		bf := NewTierBudgetBatchFormation(c.critFrac, c.stdFrac)
+		got := bf.TierBudgets(c.maxTokens)
+		if got[0] != c.wantCrit {
+			t.Errorf("critFrac=%.3f stdFrac=%.3f: critical want %d got %d", c.critFrac, c.stdFrac, c.wantCrit, got[0])
+		}
+		if got[1] != c.wantStd {
+			t.Errorf("critFrac=%.3f stdFrac=%.3f: standard want %d got %d", c.critFrac, c.stdFrac, c.wantStd, got[1])
+		}
+		if got[2] != c.wantShed {
+			t.Errorf("critFrac=%.3f stdFrac=%.3f: sheddable want %d got %d", c.critFrac, c.stdFrac, c.wantShed, got[2])
+		}
+		// Budgets must sum to maxTokens
+		if got[0]+got[1]+got[2] != c.maxTokens {
+			t.Errorf("budgets don't sum to maxTokens: %d+%d+%d=%d != %d", got[0], got[1], got[2], got[0]+got[1]+got[2], c.maxTokens)
+		}
+	}
+}
+
+// TestNewTierBudgetBatchFormation_InvalidFracsPanic verifies constructor panics
+// when fractions are at or outside (0,1) boundaries.
+func TestNewTierBudgetBatchFormation_InvalidFracsPanic(t *testing.T) {
+	invalid := []struct{ cf, sf float64 }{
+		{0.0, 0.5},  // critFrac = 0 (boundary, invalid)
+		{1.0, 0.5},  // critFrac = 1 (boundary, invalid)
+		{0.5, 0.0},  // stdFrac = 0 (boundary, invalid)
+		{0.5, 1.0},  // stdFrac = 1 (boundary, invalid)
+		{-0.1, 0.5}, // critFrac negative
+		{0.5, 1.1},  // stdFrac > 1
+	}
+	for _, c := range invalid {
+		func() {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("expected panic for critFrac=%v stdFrac=%v, got none", c.cf, c.sf)
+				}
+			}()
+			NewTierBudgetBatchFormation(c.cf, c.sf)
+		}()
+	}
+}
