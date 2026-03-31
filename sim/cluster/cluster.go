@@ -239,6 +239,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			cs.scheduleInstanceLoadedEvent(inst)
 			cs.instances = append(cs.instances, inst)
 			instanceMap[id] = inst
+			cs.inFlightRequests[string(id)] = 0
 		} else {
 			// No NodePools: the CLI --gpu flag (config.ModelHardwareConfig.GPU, accessed via
 			// DeploymentConfig's embedded SimConfig) is the authoritative source (backward-compat).
@@ -254,6 +255,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			}
 			cs.instances = append(cs.instances, inst)
 			instanceMap[id] = inst
+			cs.inFlightRequests[string(id)] = 0
 		}
 	}
 
