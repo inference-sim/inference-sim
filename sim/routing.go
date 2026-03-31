@@ -221,6 +221,9 @@ func (ws *WeightedScoring) Route(req *Request, state *RouterState) RoutingDecisi
 
 	// Notify observers of routing decision (stateful scorers update their state).
 	// Uses post-tie-breaking bestIdx so prefix-affinity records the actual target.
+	// ORDERING CONTRACT: observers run AFTER all scorers for the same request.
+	// The no-hit-lru scorer depends on this: it sets lastReqWarm in the scorer,
+	// which the observer reads to decide whether to update the LRU.
 	for _, obs := range ws.observers {
 		obs(req, snapshots[bestIdx].ID)
 	}
@@ -276,7 +279,10 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64
 
 	// Extract optional cacheQueryFn (variadic to preserve backward compatibility).
 	var cqf CacheQueryFn
-	if len(cacheQueryFn) > 0 {
+	if len(cacheQueryFn) > 1 {
+		panic("NewRoutingPolicy: at most one CacheQueryFn expected")
+	}
+	if len(cacheQueryFn) == 1 {
 		cqf = cacheQueryFn[0]
 	}
 

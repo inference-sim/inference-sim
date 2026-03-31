@@ -47,6 +47,13 @@ func TestPrecisePrefixCache_MinMaxNormalization(t *testing.T) {
 	if s := decision.Scores["C"]; s < -0.01 || s > 0.01 {
 		t.Errorf("expected C score ≈ 0.0, got %f", s)
 	}
+
+	// BC-9: verify all scores in [0, 1]
+	for _, id := range []string{"A", "B", "C"} {
+		if s := decision.Scores[id]; s < 0 || s > 1.0 {
+			t.Errorf("score for %s = %f, outside [0, 1]", id, s)
+		}
+	}
 }
 
 // TestPrecisePrefixCache_AllEqual_AllScoreOne verifies all-equal raw scores → all 1.0.

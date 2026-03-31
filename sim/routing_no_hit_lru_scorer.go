@@ -179,7 +179,11 @@ func newNoHitLRUScorer(cacheQueryFn CacheQueryFn) (scorerFunc, observerFunc) {
 				return
 			}
 		} else {
-			// Defensive fallback: scorer wasn't called for this request (shouldn't happen)
+			// Defensive fallback: scorer wasn't called for this request (shouldn't happen
+			// in normal DES flow — Route() always calls scorer then observer sequentially).
+			// Intentionally checks ALL instances in cacheQueryFn (not just snapshot candidates)
+			// because snapshots are not available to the observer. This is conservative: a
+			// non-candidate cache hit skips the LRU update, which is safer than a spurious update.
 			for _, fn := range cacheQueryFn {
 				if fn(req.InputTokens) > 0 {
 					return
