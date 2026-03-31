@@ -99,4 +99,4 @@ actions-runner/
 .bob/notes
 
 # Agent instruction files (generated, not committed)
-AGENTS.md
+AGENTS.md.worktrees/
