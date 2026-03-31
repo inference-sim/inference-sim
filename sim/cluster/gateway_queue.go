@@ -38,11 +38,11 @@ func (h *gatewayQueueHeap) Swap(i, j int) {
 	h.entries[i], h.entries[j] = h.entries[j], h.entries[i]
 }
 
-func (h *gatewayQueueHeap) Push(x interface{}) {
+func (h *gatewayQueueHeap) Push(x any) {
 	h.entries = append(h.entries, x.(gatewayQueueEntry))
 }
 
-func (h *gatewayQueueHeap) Pop() interface{} {
+func (h *gatewayQueueHeap) Pop() any {
 	old := h.entries
 	n := len(old)
 	entry := old[n-1]
