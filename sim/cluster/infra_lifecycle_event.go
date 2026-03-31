@@ -45,6 +45,7 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 	for idx := range placed {
 		p := &placed[idx]
 		// Deferred construction: set pool's GPU type (authoritative per SC-003).
+		// See cluster.go construction loop comment re: HWConfig limitation for roofline backends.
 		p.simCfg.GPU = p.gpuType
 		inst := NewInstanceSimulator(p.id, p.simCfg)
 		inst.Model = cs.config.Model
@@ -59,12 +60,14 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 		// when the load event fires.
 		csp, ok := cs.snapshotProvider.(*CachedSnapshotProvider)
 		if !ok {
-			// snapshotProvider is nil or not *CachedSnapshotProvider — log and continue.
+			// snapshotProvider is nil or not *CachedSnapshotProvider — release GPUs and skip.
 			// R1: no silent data loss; this can occur in unit tests that bypass NewClusterSimulator.
-			logrus.Warnf("[cluster] NodeReadyEvent: snapshotProvider is not *CachedSnapshotProvider for instance %s — skipping registration", p.id)
-		} else {
-			csp.AddInstance(p.id, inst)
+			// Release GPUs so they are not held by an instance that can never be routed to.
+			logrus.Warnf("[cluster] NodeReadyEvent: snapshotProvider is not *CachedSnapshotProvider for instance %s — releasing GPUs and skipping", p.id)
+			cs.releaseInstanceGPUs(inst)
+			continue
 		}
+		csp.AddInstance(p.id, inst)
 
 		cs.scheduleInstanceLoadedEvent(inst)
 		cs.instances = append(cs.instances, inst)
