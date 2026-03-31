@@ -425,8 +425,11 @@ func (c *ClusterSimulator) Run() error {
 
 				// Flow control: completion-triggered dispatch (BC-4).
 				// Each completion opens capacity — try to dequeue from gateway queue.
+				// Loop up to delta times so batch completions can dispatch multiple requests.
 				if c.flowControlEnabled {
-					c.tryDispatchFromGatewayQueue()
+					for i := 0; i < delta; i++ {
+						c.tryDispatchFromGatewayQueue()
+					}
 				}
 			}
 

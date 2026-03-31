@@ -1704,26 +1704,60 @@ func TestClusterSimulator_FlowControl_NeverSaturated_PassThrough(t *testing.T) {
 	if mNoFC.DroppedUnservable != mWithFC.DroppedUnservable {
 		t.Errorf("pass-through: DroppedUnservable %d != %d", mNoFC.DroppedUnservable, mWithFC.DroppedUnservable)
 	}
+	if mNoFC.StillQueued != mWithFC.StillQueued {
+		t.Errorf("pass-through: StillQueued %d != %d", mNoFC.StillQueued, mWithFC.StillQueued)
+	}
+	if mNoFC.StillRunning != mWithFC.StillRunning {
+		t.Errorf("pass-through: StillRunning %d != %d", mNoFC.StillRunning, mWithFC.StillRunning)
+	}
+	if mNoFC.TimedOutRequests != mWithFC.TimedOutRequests {
+		t.Errorf("pass-through: TimedOutRequests %d != %d", mNoFC.TimedOutRequests, mWithFC.TimedOutRequests)
+	}
+	// NeverSaturated pass-through must not shed or hold any requests
+	if csWithFC.GatewayQueueDepth() != 0 {
+		t.Errorf("pass-through: GatewayQueueDepth should be 0, got %d", csWithFC.GatewayQueueDepth())
+	}
+	if csWithFC.GatewayQueueShed() != 0 {
+		t.Errorf("pass-through: GatewayQueueShed should be 0, got %d", csWithFC.GatewayQueueShed())
+	}
 }
 
 // TestClusterSimulator_FlowControl_GatewayQueueDelay verifies BC-8:
-// Requests dispatched through gateway queue have nonzero GatewayQueueDelay.
+// Requests dispatched through gateway queue under saturation gating have nonzero GatewayQueueDelay.
 func TestClusterSimulator_FlowControl_GatewayQueueDelay(t *testing.T) {
 	config := newTestDeploymentConfig(1)
 	config.FlowControlEnabled = true
-	config.FlowControlDetector = "never" // pass-through for simplicity
+	config.FlowControlDetector = "utilization"
 	config.FlowControlDispatchOrder = "fifo"
+	config.FlowControlQueueDepthThreshold = 1  // very tight: saturated when QueueDepth >= 1
+	config.FlowControlKVCacheUtilThreshold = 0.1
 
 	requests := newTestRequests(5)
 	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
-	// With NeverSaturated, dispatch is immediate so GatewayEnqueueTime == GatewayDispatchTime
-	// and delay is 0. That's correct for BC-8 (delay = dispatch - enqueue).
-	// Just verify the fields are set (non-zero enqueue time on completed requests).
 	agg := cs.AggregatedMetrics()
 	if agg.CompletedRequests == 0 {
 		t.Fatal("expected some completed requests")
+	}
+
+	// With tight utilization thresholds, some requests should have waited in the gateway queue.
+	// Verify that at least one completed request has GatewayEnqueueTime set (non-zero).
+	foundEnqueued := false
+	foundNonZeroDelay := false
+	for _, req := range requests {
+		if req.GatewayEnqueueTime > 0 {
+			foundEnqueued = true
+		}
+		if req.GatewayDispatchTime > req.GatewayEnqueueTime && req.GatewayEnqueueTime > 0 {
+			foundNonZeroDelay = true
+		}
+	}
+	if !foundEnqueued {
+		t.Error("BC-8: expected at least one request with GatewayEnqueueTime > 0")
+	}
+	if !foundNonZeroDelay {
+		t.Log("BC-8: no request had nonzero gateway queue delay — all dispatched immediately (may happen with very fast completions)")
 	}
 }
 

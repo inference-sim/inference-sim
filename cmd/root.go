@@ -833,6 +833,27 @@ func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
 	if routingLatency < 0 {
 		logrus.Fatalf("--routing-latency must be >= 0, got %d", routingLatency)
 	}
+	// Flow control validation (R3: validate at CLI boundary before passing to library)
+	if flowControlEnabled {
+		if !sim.IsValidSaturationDetector(flowControlDetector) {
+			logrus.Fatalf("Unknown saturation detector %q. Valid: %s", flowControlDetector, strings.Join(sim.ValidSaturationDetectorNames(), ", "))
+		}
+		if flowControlDispatchOrder != "fifo" && flowControlDispatchOrder != "priority" {
+			logrus.Fatalf("--dispatch-order must be 'fifo' or 'priority', got %q", flowControlDispatchOrder)
+		}
+		if flowControlQueueDepthThreshold <= 0 || math.IsNaN(flowControlQueueDepthThreshold) || math.IsInf(flowControlQueueDepthThreshold, 0) {
+			logrus.Fatalf("--queue-depth-threshold must be a finite value > 0, got %v", flowControlQueueDepthThreshold)
+		}
+		if flowControlKVCacheUtilThreshold <= 0 || math.IsNaN(flowControlKVCacheUtilThreshold) || math.IsInf(flowControlKVCacheUtilThreshold, 0) {
+			logrus.Fatalf("--kv-cache-util-threshold must be a finite value > 0, got %v", flowControlKVCacheUtilThreshold)
+		}
+		if flowControlMaxConcurrency <= 0 {
+			logrus.Fatalf("--max-concurrency must be > 0, got %d", flowControlMaxConcurrency)
+		}
+		if flowControlMaxQueueDepth < 0 {
+			logrus.Fatalf("--max-gateway-queue-depth must be >= 0, got %d", flowControlMaxQueueDepth)
+		}
+	}
 
 	logrus.Infof("Policy config: admission=%s, routing=%s, priority=%s, scheduler=%s",
 		admissionPolicy, routingPolicy, priorityPolicy, scheduler)

@@ -27,11 +27,11 @@ type UtilizationDetector struct {
 // NewUtilizationDetector creates a UtilizationDetector with the given thresholds.
 // Panics if either threshold is <= 0 (R3).
 func NewUtilizationDetector(queueDepthThreshold, kvCacheUtilThreshold float64) *UtilizationDetector {
-	if queueDepthThreshold <= 0 {
-		panic(fmt.Sprintf("UtilizationDetector: queueDepthThreshold must be > 0, got %f", queueDepthThreshold))
+	if queueDepthThreshold <= 0 || math.IsNaN(queueDepthThreshold) || math.IsInf(queueDepthThreshold, 0) {
+		panic(fmt.Sprintf("UtilizationDetector: queueDepthThreshold must be a finite value > 0, got %f", queueDepthThreshold))
 	}
-	if kvCacheUtilThreshold <= 0 {
-		panic(fmt.Sprintf("UtilizationDetector: kvCacheUtilThreshold must be > 0, got %f", kvCacheUtilThreshold))
+	if kvCacheUtilThreshold <= 0 || math.IsNaN(kvCacheUtilThreshold) || math.IsInf(kvCacheUtilThreshold, 0) {
+		panic(fmt.Sprintf("UtilizationDetector: kvCacheUtilThreshold must be a finite value > 0, got %f", kvCacheUtilThreshold))
 	}
 	return &UtilizationDetector{
 		queueDepthThreshold:  queueDepthThreshold,
