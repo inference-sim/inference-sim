@@ -164,6 +164,9 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeOverrideU
 			for i := 1; i < len(rounds); i++ {
 				gap := rounds[i].ArrivalTimeUs - rounds[i-1].ArrivalTimeUs
 				if gap < 0 {
+					// Non-monotone timestamps (e.g., clock skew in observed trace).
+					// Clamp to 0 rather than propagating a negative think time,
+					// which would violate INV-3 (clock monotonicity) in OnComplete.
 					gap = 0
 				}
 				thinkTimes[i-1] = int(gap)
