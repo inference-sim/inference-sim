@@ -221,11 +221,11 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 					// request's own partially-filled block).
 					startBlock := (startIndex + t.gpu.BlockSize() - 1) / t.gpu.BlockSize()
 					if startBlock < endBlock {
-						t.gpu.commitCachedBlocks(req.ID, newCached[startBlock:endBlock])
+						t.gpu.commitCachedBlocks(req, newCached[startBlock:endBlock])
 					}
 				} else {
 					// New request: commit all cached blocks from block 0.
-					t.gpu.commitCachedBlocks(req.ID, newCached[:endBlock])
+					t.gpu.commitCachedBlocks(req, newCached[:endBlock])
 				}
 				return true
 			}
@@ -242,11 +242,11 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 				// same ceiling division as the full-range reload path above.
 				startBlock := (startIndex + t.gpu.BlockSize() - 1) / t.gpu.BlockSize()
 				if startBlock < newStartBlock {
-					t.gpu.commitCachedBlocks(req.ID, newCached[startBlock:newStartBlock])
+					t.gpu.commitCachedBlocks(req, newCached[startBlock:newStartBlock])
 				}
 			} else {
 				// New request: commit all reloaded blocks from block 0.
-				t.gpu.commitCachedBlocks(req.ID, newCached[:newStartBlock])
+				t.gpu.commitCachedBlocks(req, newCached[:newStartBlock])
 			}
 			return t.gpu.AllocateKVBlocks(req, newStart, endIndex, newCached)
 		}

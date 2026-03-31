@@ -214,6 +214,9 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 					kvc.removeFromFreeList(blk)
 				}
 				cachedMutations = append(cachedMutations, cachedBlockMutation{block: blk, wasInUse: wasInUse})
+				if p := sim.SLOTierPriority(req.SLOClass); p > blk.TierPriority {
+					blk.TierPriority = p
+				}
 				kvc.CacheHits++
 				logrus.Debugf("Hit KV Cache for req: %s of length: %d", req.ID, util.Len64(cachedBlocks)*kvc.BlockSizeTokens)
 				kvc.RequestMap[reqID] = append(kvc.RequestMap[reqID], blockId)
@@ -277,6 +280,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				blk.Tokens = append([]int{}, tok...) // copy tokens
 				blk.RefCount = 1
 				blk.InUse = true
+				blk.TierPriority = sim.SLOTierPriority(req.SLOClass)
 				kvc.UsedBlockCnt++
 				kvc.CacheMisses++
 
@@ -396,7 +400,7 @@ func (kvc *KVCacheState) rollbackAllocation(reqID string, cachedMutations []cach
 // countFreeBlocks() cannot decrease before the allocation loop runs.
 // The inline equivalent in AllocateKVBlocks feeds cachedMutations for
 // rollback support — do not replace that inline code with this method.
-func (kvc *KVCacheState) commitCachedBlocks(reqID string, cachedBlocks []int64) {
+func (kvc *KVCacheState) commitCachedBlocks(req *sim.Request, cachedBlocks []int64) {
 	for _, blockID := range cachedBlocks {
 		blk := kvc.Blocks[blockID]
 		blk.RefCount++
@@ -405,8 +409,11 @@ func (kvc *KVCacheState) commitCachedBlocks(reqID string, cachedBlocks []int64) 
 			kvc.UsedBlockCnt++
 			kvc.removeFromFreeList(blk)
 		}
+		if p := sim.SLOTierPriority(req.SLOClass); p > blk.TierPriority {
+			blk.TierPriority = p
+		}
 		kvc.CacheHits++
-		kvc.RequestMap[reqID] = append(kvc.RequestMap[reqID], blockID)
+		kvc.RequestMap[req.ID] = append(kvc.RequestMap[req.ID], blockID)
 	}
 }
 
@@ -426,6 +433,7 @@ func (kvc *KVCacheState) ReleaseKVBlocks(req *sim.Request) {
 		blk.RefCount--
 		if blk.RefCount == 0 {
 			blk.InUse = false
+			blk.TierPriority = 0
 			kvc.UsedBlockCnt--
 			kvc.appendToFreeList(blk)
 		}
