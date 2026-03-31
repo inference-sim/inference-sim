@@ -217,8 +217,21 @@ func TestAddPending_StoresSimCfg(t *testing.T) {
 	if len(pm.pendingInsts) != 1 {
 		t.Fatalf("expected 1 pending instance, got %d", len(pm.pendingInsts))
 	}
-	if pm.pendingInsts[0].simCfg.MaxRunningReqs != 7 {
-		t.Errorf("pendingInsts[0].simCfg.MaxRunningReqs = %d, want 7", pm.pendingInsts[0].simCfg.MaxRunningReqs)
+
+	// Provision a node and mark it ready so RetryPendingInstances can place the instance.
+	node, _ := pm.ProvisionNode("h100-pool", 0)
+	if err := pm.MarkNodeReady(node.ID); err != nil {
+		t.Fatalf("MarkNodeReady: %v", err)
+	}
+
+	placed := pm.RetryPendingInstances()
+	if len(placed) != 1 {
+		t.Fatalf("RetryPendingInstances() placed %d instances, want 1", len(placed))
+	}
+
+	// Verify the sentinel simCfg value survives propagation through RetryPendingInstances.
+	if placed[0].simCfg.MaxRunningReqs != 7 {
+		t.Errorf("placed[0].simCfg.MaxRunningReqs = %d, want 7", placed[0].simCfg.MaxRunningReqs)
 	}
 }
 
@@ -288,10 +301,8 @@ func TestPlaceInstance_ReturnsMatchedPoolGPUType(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			// newTestPM creates nodes in Ready state.
 			pm := newTestPM([]NodePoolConfig{newTestPool("a100-pool", tc.poolGPUType, 8, tc.initialNodes)})
-			if tc.initialNodes > 0 {
-				// Ensure node is ready (newTestPM creates Ready nodes)
-			}
 			_, _, matchedGPUType, err := pm.PlaceInstance("inst-0", "model-a", tc.requestGPUType, tc.tpDegree)
 			if tc.wantErr && err == nil {
 				t.Errorf("expected error, got nil")
