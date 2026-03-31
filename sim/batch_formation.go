@@ -1,6 +1,8 @@
 package sim
 
 import (
+	"fmt"
+
 	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/inference-sim/sim/internal/util"
@@ -284,4 +286,90 @@ func NewBatchFormation() BatchFormation {
 // All other behavior (chunked prefill, decode, scheduling) is identical to VLLMBatchFormation.
 func NewSLOPriorityBatchFormation() BatchFormation {
 	return &VLLMBatchFormation{selectVictim: SLOLowestPriorityVictim}
+}
+
+// TierBudgetBatchFormation partitions the per-step token budget by SLO tier.
+// Critical requests get first claim (CriticalFrac × MaxScheduledTokens),
+// standard gets StandardFrac × (1-CriticalFrac) × MaxScheduledTokens,
+// sheddable takes the remainder.
+// All preemption and scheduling behavior is delegated to an inner VLLMBatchFormation.
+//
+// Use NewTierBudgetBatchFormation to construct with validated fractions.
+type TierBudgetBatchFormation struct {
+	CriticalFrac float64 // fraction of MaxScheduledTokens for critical tier; must be in (0,1)
+	StandardFrac float64 // fraction of remaining budget for standard tier; must be in (0,1)
+}
+
+// NewTierBudgetBatchFormation creates a TierBudgetBatchFormation with validated fractions.
+// criticalFrac: fraction of MaxScheduledTokens reserved for critical (must be in (0,1)).
+// standardFrac: fraction of remaining budget for standard (must be in (0,1)).
+// Sheddable fraction = (1-criticalFrac) * (1-standardFrac).
+func NewTierBudgetBatchFormation(criticalFrac, standardFrac float64) *TierBudgetBatchFormation {
+	if criticalFrac <= 0 || criticalFrac >= 1 {
+		panic(fmt.Sprintf("NewTierBudgetBatchFormation: CriticalFrac must be in (0,1), got %v", criticalFrac))
+	}
+	if standardFrac <= 0 || standardFrac >= 1 {
+		panic(fmt.Sprintf("NewTierBudgetBatchFormation: StandardFrac must be in (0,1), got %v", standardFrac))
+	}
+	return &TierBudgetBatchFormation{
+		CriticalFrac: criticalFrac,
+		StandardFrac: standardFrac,
+	}
+}
+
+// TierBudgets computes per-tier token budgets from a total token count.
+// Returns [criticalBudget, standardBudget, sheddableBudget].
+// critical = int64(maxTokens * CriticalFrac)
+// standard = int64(remaining * StandardFrac)
+// sheddable = remaining - standard
+func (t *TierBudgetBatchFormation) TierBudgets(maxTokens int64) [3]int64 {
+	critBudget := int64(float64(maxTokens) * t.CriticalFrac)
+	remaining := maxTokens - critBudget
+	stdBudget := int64(float64(remaining) * t.StandardFrac)
+	shedBudget := remaining - stdBudget
+	return [3]int64{critBudget, stdBudget, shedBudget}
+}
+
+// tierBudgetIndex maps SLO class to a budget array index (0=critical,1=standard,2=sheddable/other).
+func tierBudgetIndex(sloClass string) int {
+	switch sloClass {
+	case "critical":
+		return 0
+	case "standard":
+		return 1
+	default:
+		return 2
+	}
+}
+
+// FormBatch delegates to VLLMBatchFormation for core scheduling, then applies
+// a post-pass that zeroes out token grants for requests that exceed their tier budget.
+// This is a soft stall: over-budget requests remain in the running batch but receive
+// 0 new tokens this step and are retried next step.
+func (t *TierBudgetBatchFormation) FormBatch(ctx BatchContext) BatchResult {
+	if ctx.RunningBatch == nil {
+		ctx.RunningBatch = &Batch{}
+	}
+	budgets := t.TierBudgets(ctx.MaxScheduledTokens)
+	tierUsed := [3]int64{}
+
+	inner := &VLLMBatchFormation{}
+	result := inner.FormBatch(ctx)
+
+	// Post-pass: enforce tier budgets by zeroing grants that exceed the cap.
+	for _, req := range result.RunningBatch.Requests {
+		if req.NumNewTokens <= 0 {
+			continue
+		}
+		ti := tierBudgetIndex(req.SLOClass)
+		if tierUsed[ti]+int64(req.NumNewTokens) > budgets[ti] {
+			// Tier budget exhausted: soft-stall this request for this step.
+			delete(ctx.ComputedTokens, req.ID)
+			req.NumNewTokens = 0
+			continue
+		}
+		tierUsed[ti] += int64(req.NumNewTokens)
+	}
+
+	return result
 }
