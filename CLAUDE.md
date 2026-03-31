@@ -32,22 +32,17 @@ go build -o blis main.go
   --workload-spec workload.yaml --trace-header trace.yaml --trace-data trace.csv
 
 # Observe with chat completions endpoint and network RTT
-./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --api-format chat --rtt-ms 2.5 --workload-spec workload.yaml \
   --trace-header trace.yaml --trace-data trace.csv
 
 # Observe with named workload preset (chatbot, summarization, contentgen, multidoc)
-./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --workload chatbot --rate 10 --num-requests 100 \
-  --trace-header trace.yaml --trace-data trace.csv
 
 # Observe with rate-mode distribution synthesis and optional flags
-./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --api-format chat --rate 10 --num-requests 100 \
   --prompt-tokens 512 --output-tokens 128 --prefix-tokens 64 \
   --warmup-requests 5 --no-streaming --api-key $API_KEY \
   --max-concurrency 32 --unconstrained-output \
-  --trace-header trace.yaml --trace-data trace.csv
 
 # Compare real observed latencies against simulator predictions
 ./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json --report calibration.json
@@ -69,7 +64,6 @@ go build -o blis main.go
 
 ## Testing
 
-```bash
 # Run all tests
 go test ./...
 
@@ -84,7 +78,6 @@ go test -v ./...
 
 # Run tests with coverage
 go test -cover ./...
-```
 
 ## Development Guidelines
 
@@ -276,6 +269,7 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 ## Recent Changes
 - Gateway queue with saturation-gated dispatch (#882): `SaturationDetector` interface (NeverSaturated, UtilizationDetector, ConcurrencyDetector), `GatewayQueue` with FIFO/Priority dispatch, completion-triggered dispatch, per-request `GatewayQueueDelay` metric, INV-1 conservation extended with `gateway_queue_depth` + `gateway_queue_shed`
 - fix(cluster): defer instance construction until after placement (#888, PR #892): `NodePool.gpu_type` is now pool-authoritative for GPU label on all instances (all backends); fully fixes the blackbox backend (uses alpha/beta coefficients, not `HWConfig`); for roofline/trained-roofline, `ModelHardwareConfig.HWConfig` is still loaded from `--gpu` at CLI time — see #893 for that follow-up. `NodeReadyEvent` constructs `InstanceSimulator` after deferred placement. `CachedSnapshotProvider.AddInstance` added for dynamic instance registration.
+- fix(cluster): defer instance construction until after placement (#888, PR #892): `NodePool.gpu_type` is now pool-authoritative for hardware calibration (blackbox backend); `--gpu` flag is overridden per pool. `NodeReadyEvent` constructs `InstanceSimulator` after deferred placement instead of finding a pre-built instance. `CachedSnapshotProvider.AddInstance` added for dynamic instance registration. See issue #893 for roofline backend follow-up.
 - Phase 1B-2b: Per-tenant Jain fairness index in simulation output (#812, PR #881): `ComputePerTenantMetrics` + `printPerTenantMetrics` wired into `blis run` and `blis replay`; section absent for untenanted/legacy workloads
 - Phase 1B-2a: Deferred queue for batch/background requests (#810)
 - Phase 1B-1b: Per-tenant fair-share tracking and admission enforcement (#811)
