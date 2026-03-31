@@ -1780,14 +1780,14 @@ func TestClusterSimulator_FlowControl_Conservation(t *testing.T) {
 	gwDepth := cs.GatewayQueueDepth()
 	gwShed := cs.GatewayQueueShed()
 
-	// INV-1: injected == completed + queued + running + dropped + timedout + deferred + gwDepth + gwShed
+	// INV-1: injected == completed + queued + running + dropped + timedout + deferred + routingRejections + gwDepth + gwShed
 	injected := len(requests) - cs.RejectedRequests()
-	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests + cs.DeferredQueueLen() + gwDepth + gwShed
+	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests + cs.DeferredQueueLen() + cs.RoutingRejections() + gwDepth + gwShed
 	if injected != accounted {
-		t.Errorf("INV-1: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d deferred=%d gwDepth=%d gwShed=%d)",
+		t.Errorf("INV-1: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d deferred=%d routingRejections=%d gwDepth=%d gwShed=%d)",
 			injected, accounted,
 			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
-			m.TimedOutRequests, cs.DeferredQueueLen(), gwDepth, gwShed)
+			m.TimedOutRequests, cs.DeferredQueueLen(), cs.RoutingRejections(), gwDepth, gwShed)
 	}
 }
 
