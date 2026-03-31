@@ -33,6 +33,7 @@ type InstanceSimulator struct {
 	warmUpRequestIDs []string      // IDs of requests served during warm-up (for TTFT factor)
 	nodeID           string        // node this instance is placed on (empty = unplaced)
 	allocatedGPUIDs  []string      // GPU IDs allocated to this instance
+	gpu              string        // GPU type used for this instance (set from pool gpu_type, or config.GPU)
 }
 
 // NewInstanceSimulator creates an InstanceSimulator from a SimConfig struct.
@@ -53,8 +54,14 @@ func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 	return &InstanceSimulator{
 		id:  id,
 		sim: s,
+		gpu: cfg.GPU,
 	}
 }
+
+// GPU returns the GPU type this instance was constructed with.
+// When NodePools are configured, this reflects the pool's gpu_type (authoritative).
+// When NodePools are absent, this reflects config.GPU (the CLI flag).
+func (i *InstanceSimulator) GPU() string { return i.gpu }
 
 // Run executes the simulation to completion.
 // Delegates directly to wrapped Simulator.Run().

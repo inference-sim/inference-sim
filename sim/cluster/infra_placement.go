@@ -174,6 +174,9 @@ func (pm *PlacementManager) VerifyConservation() error {
 
 // PlaceInstance attempts to place an instance using first-fit bin-packing.
 // Considers only Ready nodes in pools matching gpuType, in pool declaration order.
+// When gpuType is empty (""), all pools are considered (match-any semantics) — used by the
+// NodePools construction path (SC-004) where the pool's gpu_type is authoritative, not the
+// CLI --gpu flag. When gpuType is non-empty, only pools whose GPUType equals gpuType are tried.
 // Select-then-commit atomicity (R5): GPUs are only mutated after full selection succeeds.
 // Returns (nodeID, gpuIDs, matchedGPUType, nil) on success; ("", nil, "", error) when no capacity found.
 // matchedGPUType is the gpu_type value from the matched pool config.
@@ -183,7 +186,9 @@ func (pm *PlacementManager) PlaceInstance(id InstanceID, model, gpuType string, 
 	}
 
 	for _, poolState := range pm.pools {
-		if poolState.config.GPUType != gpuType {
+		// Empty gpuType means "match any pool" — used when NodePools are configured
+		// and the CLI --gpu flag is not used as a pool filter (SC-004).
+		if gpuType != "" && poolState.config.GPUType != gpuType {
 			continue // type mismatch — skip pool
 		}
 
@@ -221,7 +226,11 @@ func (pm *PlacementManager) PlaceInstance(id InstanceID, model, gpuType string, 
 		}
 	}
 
-	return "", nil, "", fmt.Errorf("PlaceInstance %s: no Ready node has %d free %s GPUs", id, tpDegree, gpuType)
+	gpuTypeDisplay := gpuType
+	if gpuTypeDisplay == "" {
+		gpuTypeDisplay = "any"
+	}
+	return "", nil, "", fmt.Errorf("PlaceInstance %s: no Ready node has %d free %s GPUs", id, tpDegree, gpuTypeDisplay)
 }
 
 // ReleaseInstance returns GPUs allocated to id back to the free pool.
