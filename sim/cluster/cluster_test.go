@@ -1669,3 +1669,146 @@ func TestClusterSimulator_MaxModelLen_DroppedUnservable(t *testing.T) {
 		}
 	}
 }
+
+// TestClusterSimulator_FlowControl_NeverSaturated_PassThrough verifies BC-1:
+// NeverSaturated produces identical completed request counts to no flow control.
+func TestClusterSimulator_FlowControl_NeverSaturated_PassThrough(t *testing.T) {
+	configNoFC := newTestDeploymentConfig(2)
+	configWithFC := newTestDeploymentConfig(2)
+	configWithFC.FlowControlEnabled = true
+	configWithFC.FlowControlDetector = "never"
+	configWithFC.FlowControlDispatchOrder = "fifo"
+
+	requests := newTestRequests(10)
+	// Deep copy for the second run
+	requestsCopy := make([]*sim.Request, len(requests))
+	for i, r := range requests {
+		cp := *r
+		cp.InputTokens = make([]int, len(r.InputTokens))
+		copy(cp.InputTokens, r.InputTokens)
+		cp.OutputTokens = make([]int, len(r.OutputTokens))
+		copy(cp.OutputTokens, r.OutputTokens)
+		requestsCopy[i] = &cp
+	}
+
+	csNoFC := NewClusterSimulator(configNoFC, requests, nil)
+	csWithFC := NewClusterSimulator(configWithFC, requestsCopy, nil)
+	mustRun(t, csNoFC)
+	mustRun(t, csWithFC)
+
+	mNoFC := csNoFC.AggregatedMetrics()
+	mWithFC := csWithFC.AggregatedMetrics()
+	if mNoFC.CompletedRequests != mWithFC.CompletedRequests {
+		t.Errorf("pass-through: CompletedRequests %d != %d", mNoFC.CompletedRequests, mWithFC.CompletedRequests)
+	}
+	if mNoFC.DroppedUnservable != mWithFC.DroppedUnservable {
+		t.Errorf("pass-through: DroppedUnservable %d != %d", mNoFC.DroppedUnservable, mWithFC.DroppedUnservable)
+	}
+	if mNoFC.StillQueued != mWithFC.StillQueued {
+		t.Errorf("pass-through: StillQueued %d != %d", mNoFC.StillQueued, mWithFC.StillQueued)
+	}
+	if mNoFC.StillRunning != mWithFC.StillRunning {
+		t.Errorf("pass-through: StillRunning %d != %d", mNoFC.StillRunning, mWithFC.StillRunning)
+	}
+	if mNoFC.TimedOutRequests != mWithFC.TimedOutRequests {
+		t.Errorf("pass-through: TimedOutRequests %d != %d", mNoFC.TimedOutRequests, mWithFC.TimedOutRequests)
+	}
+	// NeverSaturated pass-through must not shed or hold any requests
+	if csWithFC.GatewayQueueDepth() != 0 {
+		t.Errorf("pass-through: GatewayQueueDepth should be 0, got %d", csWithFC.GatewayQueueDepth())
+	}
+	if csWithFC.GatewayQueueShed() != 0 {
+		t.Errorf("pass-through: GatewayQueueShed should be 0, got %d", csWithFC.GatewayQueueShed())
+	}
+}
+
+// TestClusterSimulator_FlowControl_GatewayQueueDelay verifies BC-8:
+// Requests dispatched through gateway queue under saturation gating have nonzero GatewayQueueDelay.
+func TestClusterSimulator_FlowControl_GatewayQueueDelay(t *testing.T) {
+	config := newTestDeploymentConfig(1)
+	config.FlowControlEnabled = true
+	config.FlowControlDetector = "concurrency"
+	config.FlowControlDispatchOrder = "fifo"
+	config.FlowControlMaxConcurrency = 1 // only 1 in-flight at a time — forces queuing
+
+	// Stagger arrivals so that by the time later requests are admitted,
+	// earlier ones have been routed and incremented inFlightRequests.
+	// RoutingLatency=0 in test config, so routing happens at admission time.
+	// We need enough spacing that RoutingDecisionEvent fires before the next arrival.
+	requests := newTestRequests(5)
+	for i, req := range requests {
+		req.ArrivalTime = int64(i) * 100 // 100 ticks apart
+	}
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	agg := cs.AggregatedMetrics()
+	if agg.CompletedRequests == 0 {
+		t.Fatal("expected some completed requests")
+	}
+
+	// With maxConcurrency=1 and all requests arriving at once, only the first dispatches
+	// immediately. The rest must wait in the gateway queue until completions free capacity.
+	foundEnqueued := false
+	foundNonZeroDelay := false
+	for _, req := range requests {
+		if req.GatewayEnqueueTime > 0 {
+			foundEnqueued = true
+		}
+		if req.GatewayDispatchTime > req.GatewayEnqueueTime && req.GatewayEnqueueTime > 0 {
+			foundNonZeroDelay = true
+		}
+	}
+	if !foundEnqueued {
+		t.Error("BC-8: expected at least one request with GatewayEnqueueTime > 0")
+	}
+	if !foundNonZeroDelay {
+		t.Error("BC-8: expected at least one request with nonzero gateway queue delay when concurrency-gated")
+	}
+}
+
+// TestClusterSimulator_FlowControl_Conservation verifies BC-10:
+// INV-1 holds with flow control enabled.
+func TestClusterSimulator_FlowControl_Conservation(t *testing.T) {
+	config := newTestDeploymentConfig(2)
+	config.FlowControlEnabled = true
+	config.FlowControlDetector = "utilization"
+	config.FlowControlDispatchOrder = "priority"
+	config.FlowControlMaxQueueDepth = 5
+	config.FlowControlQueueDepthThreshold = 2
+	config.FlowControlKVCacheUtilThreshold = 0.5
+
+	requests := newTestRequests(20)
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	gwDepth := cs.GatewayQueueDepth()
+	gwShed := cs.GatewayQueueShed()
+
+	// INV-1: injected == completed + queued + running + dropped + timedout + deferred + routingRejections + gwDepth + gwShed
+	injected := len(requests) - cs.RejectedRequests()
+	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests + cs.DeferredQueueLen() + cs.RoutingRejections() + gwDepth + gwShed
+	if injected != accounted {
+		t.Errorf("INV-1: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d deferred=%d routingRejections=%d gwDepth=%d gwShed=%d)",
+			injected, accounted,
+			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
+			m.TimedOutRequests, cs.DeferredQueueLen(), cs.RoutingRejections(), gwDepth, gwShed)
+	}
+}
+
+// TestClusterSimulator_FlowControl_Accessors_BeforeRun verifies zero values
+// when flow control is disabled or before run.
+func TestClusterSimulator_FlowControl_Accessors_Disabled(t *testing.T) {
+	config := newTestDeploymentConfig(1)
+	// flow control NOT enabled
+	cs := NewClusterSimulator(config, newTestRequests(3), nil)
+	mustRun(t, cs)
+
+	if cs.GatewayQueueDepth() != 0 {
+		t.Errorf("GatewayQueueDepth should be 0 when disabled, got %d", cs.GatewayQueueDepth())
+	}
+	if cs.GatewayQueueShed() != 0 {
+		t.Errorf("GatewayQueueShed should be 0 when disabled, got %d", cs.GatewayQueueShed())
+	}
+}

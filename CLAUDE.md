@@ -57,6 +57,14 @@ go build -o blis main.go
 ./blis convert servegen --path data/
 ./blis convert inference-perf --spec spec.yaml
 ./blis compose --from spec1.yaml --from spec2.yaml
+
+# Run with gateway queue flow control (utilization-based saturation gating)
+./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
+  --queue-depth-threshold 5 --kv-cache-util-threshold 0.8
+
+# Run with concurrency-based flow control and priority dispatch ordering
+./blis run --model qwen/qwen3-14b --flow-control --saturation-detector concurrency \
+  --max-concurrency 64 --dispatch-order priority --max-gateway-queue-depth 1000
 ```
 
 ## Testing
@@ -124,7 +132,7 @@ During PR reviews, check all Antipattern Prevention rules (R1-R23) in [`docs/con
 
 Full details (verification strategies, evidence): see [`docs/contributing/standards/invariants.md`](docs/contributing/standards/invariants.md).
 
-- **INV-1 Request conservation**: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out` at simulation end. Full pipeline: `num_requests == injected_requests + rejected_requests`.
+- **INV-1 Request conservation**: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out + deferred_horizon_interrupted + routing_rejections + gateway_queue_depth + gateway_queue_shed` at simulation end. Full pipeline: `num_requests == injected_requests + rejected_requests`.
 - **INV-2 Request lifecycle**: Requests transition queued → running → completed; not completed before horizon remain in current state
 - **INV-3 Clock monotonicity**: Simulation clock never decreases
 - **INV-4 KV cache conservation**: `allocated_blocks + free_blocks = total_blocks` at all times
@@ -266,6 +274,7 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 - In-memory node/GPU inventory maps; no external storage
 
 ## Recent Changes
+- Gateway queue with saturation-gated dispatch (#882): `SaturationDetector` interface (NeverSaturated, UtilizationDetector, ConcurrencyDetector), `GatewayQueue` with FIFO/Priority dispatch, completion-triggered dispatch, per-request `GatewayQueueDelay` metric, INV-1 conservation extended with `gateway_queue_depth` + `gateway_queue_shed`
 - Phase 1B-2b: Per-tenant Jain fairness index in simulation output (#812, PR #881): `ComputePerTenantMetrics` + `printPerTenantMetrics` wired into `blis run` and `blis replay`; section absent for untenanted/legacy workloads
 - Phase 1B-2a: Deferred queue for batch/background requests (#810)
 - Phase 1B-1b: Per-tenant fair-share tracking and admission enforcement (#811)

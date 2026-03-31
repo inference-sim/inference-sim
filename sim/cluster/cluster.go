@@ -71,6 +71,12 @@ type ClusterSimulator struct {
 	// request (which carries SessionID). Separate from the per-instance closure to
 	// avoid double-notifying tenantTracker (issue #884). Nil for non-session workloads.
 	sessionCallback func(*sim.Request, int64) []*sim.Request
+
+	// Flow control state (issue #882, GIE parity).
+	// When flowControlEnabled is false, these fields are nil/zero (BC-1 pass-through).
+	flowControlEnabled bool
+	saturationDetector sim.SaturationDetector
+	gatewayQueue       *GatewayQueue
 }
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
@@ -253,6 +259,26 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		cs.tenantTracker = NewTenantTracker(config.TenantBudgets, totalCapacity)
 	}
 
+	// Flow control: gateway queue with saturation-gated dispatch (issue #882).
+	// When disabled (default), the pipeline is unchanged — requests flow directly
+	// from admission to routing (BC-1 pass-through equivalence).
+	if config.FlowControlEnabled {
+		dispatchOrder := config.FlowControlDispatchOrder
+		if dispatchOrder == "" {
+			dispatchOrder = "fifo"
+		}
+		cs.flowControlEnabled = true
+		cs.gatewayQueue = NewGatewayQueue(dispatchOrder, config.FlowControlMaxQueueDepth)
+		cs.saturationDetector = sim.NewSaturationDetector(
+			config.FlowControlDetector,
+			config.FlowControlQueueDepthThreshold,
+			config.FlowControlKVCacheUtilThreshold,
+			config.FlowControlMaxConcurrency,
+		)
+		logrus.Infof("[cluster] flow control enabled: detector=%q, dispatch=%q, maxDepth=%d",
+			config.FlowControlDetector, dispatchOrder, config.FlowControlMaxQueueDepth)
+	}
+
 	// Startup warning: horizon too small for pipeline (BC-1)
 	pipelineLatency := cs.admissionLatency + cs.routingLatency
 	if cs.config.Horizon > 0 && cs.config.Horizon < pipelineLatency {
@@ -396,6 +422,21 @@ func (c *ClusterSimulator) Run() error {
 						inst.ConsumeWarmUpRequest()
 					}
 				}
+
+				// Flow control: completion-triggered dispatch (BC-4).
+				// Each completion opens capacity — try to dequeue from gateway queue.
+				// Loop up to delta times so batch completions can dispatch multiple requests.
+				// Early-exit when saturated or queue empty to avoid redundant buildRouterState calls.
+				if c.flowControlEnabled {
+					for i := 0; i < delta; i++ {
+						if c.gatewayQueue.Len() == 0 {
+							break
+						}
+						if !c.tryDispatchFromGatewayQueue() {
+							break // saturated — no point rebuilding state for remaining iterations
+						}
+					}
+				}
 			}
 
 			// T042: drain completion accounting (Phase 1A).
@@ -505,6 +546,11 @@ func (c *ClusterSimulator) Run() error {
 	if c.config.PDTransferContention && c.activeTransfers != 0 {
 		logrus.Warnf("[cluster] post-simulation: activeTransfers = %d (expected 0), initiated=%d completed=%d — contention metrics (PeakConcurrentTransfers, MeanTransferQueueDepth) may be inflated if horizon cut off in-flight transfers",
 			c.activeTransfers, c.transfersInitiated, c.transfersCompleted)
+	}
+
+	// Flow control: log gateway queue state at simulation end
+	if c.flowControlEnabled && c.gatewayQueue.Len() > 0 {
+		logrus.Warnf("[cluster] %d requests remain in gateway queue at simulation end", c.gatewayQueue.Len())
 	}
 
 	// Post-simulation diagnostic warnings (BC-2, BC-3)
@@ -808,6 +854,67 @@ func (c *ClusterSimulator) DeferredQueueLen() int {
 		panic("ClusterSimulator.DeferredQueueLen() called before Run()")
 	}
 	return len(c.deferredQueue)
+}
+
+// GatewayQueueDepth returns the number of requests still in the gateway queue
+// at simulation end. Returns 0 when flow control is disabled.
+func (c *ClusterSimulator) GatewayQueueDepth() int {
+	if c.gatewayQueue == nil {
+		return 0
+	}
+	return c.gatewayQueue.Len()
+}
+
+// GatewayQueueShed returns the number of requests shed from the gateway queue
+// due to capacity limits. Returns 0 when flow control is disabled.
+func (c *ClusterSimulator) GatewayQueueShed() int {
+	if c.gatewayQueue == nil {
+		return 0
+	}
+	return c.gatewayQueue.ShedCount()
+}
+
+// tryDispatchFromGatewayQueue attempts to dispatch one request from the gateway queue.
+// Called after each completion (BC-4) and after each enqueue (for NeverSaturated pass-through).
+// Builds fresh RouterState at dispatch time for late binding (BC-3).
+// Returns true if a request was dispatched, false if saturated or queue empty.
+func (c *ClusterSimulator) tryDispatchFromGatewayQueue() bool {
+	if c.gatewayQueue == nil || c.gatewayQueue.Len() == 0 {
+		return false
+	}
+	// Build fresh state for late binding (BC-3)
+	state := buildRouterState(c, nil)
+	sat := c.saturationDetector.Saturation(state)
+	if sat >= 1.0 {
+		logrus.Debugf("[cluster] tryDispatch: held (saturation=%.2f, snapshots=%d, queueLen=%d)",
+			sat, len(state.Snapshots), c.gatewayQueue.Len())
+		return false // hold until next completion
+	}
+	req := c.gatewayQueue.Dequeue()
+	if req == nil {
+		return false
+	}
+	req.GatewayDispatchTime = c.clock
+
+	// Schedule routing or disaggregation event (BC-9)
+	if c.poolsConfigured() {
+		heap.Push(&c.clusterEvents, clusterEventEntry{
+			event: &DisaggregationDecisionEvent{
+				time:    c.clock,
+				request: req,
+			},
+			seqID: c.nextSeqID(),
+		})
+	} else {
+		heap.Push(&c.clusterEvents, clusterEventEntry{
+			event: &RoutingDecisionEvent{
+				time:    c.clock + c.routingLatency,
+				request: req,
+			},
+			seqID: c.nextSeqID(),
+		})
+	}
+	return true
 }
 
 // Trace returns the decision trace collected during simulation.

@@ -203,6 +203,25 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 		})
 	}
 
+	// Flow control: enqueue in gateway queue instead of scheduling routing directly.
+	// When flow control is disabled (default), the original path is unchanged (BC-1).
+	if cs.flowControlEnabled {
+		e.request.GatewayEnqueueTime = cs.clock
+		shed := cs.gatewayQueue.Enqueue(e.request, cs.nextSeqID())
+		if shed {
+			// Trace gap: this request was admitted (RecordAdmission above wrote Admitted:true)
+			// but was subsequently shed from the full gateway queue. No shed trace record is
+			// emitted here. Trace consumers must not assume all Admitted:true requests have
+			// routing records when flow control is enabled.
+			e.request.GatewayEnqueueTime = 0 // clean up — request never actually queued
+			return
+		}
+		// Attempt immediate dispatch — succeeds when cluster is not saturated.
+		// NeverSaturated always dispatches; real detectors dispatch when load is below threshold.
+		cs.tryDispatchFromGatewayQueue()
+		return
+	}
+
 	// BC-PD-4: When pools are configured, schedule DisaggregationDecisionEvent
 	// between admission and routing. When not configured, go directly to routing.
 	if cs.poolsConfigured() {
