@@ -1,0 +1,3772 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A discrete-event simulator for LLM inference serving systems">
+      
+      
+      
+      
+        <link rel="prev" href="../">
+      
+      
+        <link rel="next" href="../hypothesis-bundles/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
+    
+    
+      
+        <title>Strategy Evolution - BLIS — Blackbox Inference Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#strategy-evolution" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            BLIS — Blackbox Inference Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Strategy Evolution
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../concepts/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guide/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Methodology
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../contributing/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../blog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Blog
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    BLIS — Blackbox Inference Simulator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: Capacity Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../concepts/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/core-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/roofline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roofline Estimation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../guide/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/routing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Routing Policies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/admission/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admission Control
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/scheduling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduling & Priority
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/latency-models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Latency Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/kv-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/workloads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workload Specifications
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Simulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metrics & Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/observe-replay-calibrate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observe / Replay / Calibrate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/experimentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experimentation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/skills-and-plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Skills & Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/project-structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Supported Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/workload-spec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workload Spec Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Methodology
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Methodology
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Strategy Evolution
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Strategy Evolution
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-1-problem-framing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1: Problem Framing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-2-hypothesis-bundle-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2: Hypothesis Bundle Design
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 2: Hypothesis Bundle Design">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-2a-generate-and-review-candidates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2a: Generate and review candidates
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2b-decompose-winner-into-hypothesis-bundle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2b: Decompose winner into hypothesis bundle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2c-design-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2c: Design Review
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2d-human-approval-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2d: Human approval gate
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-3-implement-and-verify" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3: Implement and Verify
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-4-bayesian-parameter-optimization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4: Bayesian Parameter Optimization
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-5-principle-extraction-and-iteration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5: Principle Extraction and Iteration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 5: Principle Extraction and Iteration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#principle-extraction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Principle extraction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fast-fail-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fast-fail rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stopping-criterion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stopping criterion
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#practical-considerations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Practical Considerations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Practical Considerations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bundle-size-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bundle size management
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-to-use-the-full-bundle-vs-a-lighter-iteration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to use the full bundle vs. a lighter iteration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-strategy-evolution-connects-to-existing-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Strategy Evolution connects to existing workflows
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#skills-and-tools-inventory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skills and Tools Inventory
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#applying-to-a-new-problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Applying to a New Problem
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#results-how-two-tracks-converged" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results: How Two Tracks Converged
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hypothesis-bundles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Bundles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../contributing/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/extension-recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/pr-workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PR Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/design-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/macro-planning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/convergence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Convergence Protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_7_8" id="__nav_7_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Standards
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Standards
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/standards/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Antipattern Rules (R1-R23)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/standards/invariants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Invariants (INV-1-INV-11)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/standards/principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engineering Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/standards/experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiment Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_7_9" id="__nav_7_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Templates
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/templates/design-guidelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/templates/macro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/templates/micro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Micro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/templates/hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../blog/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Blog
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8" id="__nav_8_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Blog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_2" id="__nav_8_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archive
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Archive
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/archive/2026/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    2026
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_3" id="__nav_8_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Categories
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Categories
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/category/capacity-planning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capacity Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/category/what-is-blis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    What is BLIS?
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-1-problem-framing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1: Problem Framing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-2-hypothesis-bundle-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2: Hypothesis Bundle Design
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 2: Hypothesis Bundle Design">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-2a-generate-and-review-candidates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2a: Generate and review candidates
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2b-decompose-winner-into-hypothesis-bundle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2b: Decompose winner into hypothesis bundle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2c-design-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2c: Design Review
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2d-human-approval-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2d: Human approval gate
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-3-implement-and-verify" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3: Implement and Verify
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-4-bayesian-parameter-optimization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4: Bayesian Parameter Optimization
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-5-principle-extraction-and-iteration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5: Principle Extraction and Iteration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 5: Principle Extraction and Iteration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#principle-extraction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Principle extraction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fast-fail-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fast-fail rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stopping-criterion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stopping criterion
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#practical-considerations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Practical Considerations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Practical Considerations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bundle-size-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bundle size management
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-to-use-the-full-bundle-vs-a-lighter-iteration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to use the full bundle vs. a lighter iteration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-strategy-evolution-connects-to-existing-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Strategy Evolution connects to existing workflows
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#skills-and-tools-inventory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skills and Tools Inventory
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#applying-to-a-new-problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Applying to a New Problem
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#results-how-two-tracks-converged" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results: How Two Tracks Converged
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="strategy-evolution">Strategy Evolution<a class="headerlink" href="#strategy-evolution" title="Permanent link">&para;</a></h1>
+<p>A structured, iterative search methodology for discovering high-performing system configurations in complex, multi-dimensional policy spaces. The methodology structure is domain-agnostic; the specific instantiation described here was developed for LLM inference serving using BLIS.</p>
+<hr />
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>In systems with multiple interacting policy layers — routing, scheduling, memory management, admission control — the optimal configuration cannot be derived analytically or guessed by experts. Interactions between layers produce non-obvious emergent behaviors: super-additive effects, signal cancellation, and regime-dependent dominance.</p>
+<p>Strategy Evolution discovers optimal configurations through disciplined experimentation: human-guided mechanism design combined with machine-guided parameter optimization, organized into iterative cycles with rigorous measurement and cumulative principle extraction.</p>
+<p>The central idea: <strong>a strategy is a hypothesis bundle.</strong> Every candidate mechanism is formulated as a set of testable predictions — a main hypothesis, ablation hypotheses, controls, and robustness checks — all designed before any code is written. Prediction errors, not just fitness scores, are the primary signal for learning.</p>
+<pre class="mermaid"><code>flowchart TD
+    P1["Phase 1&lt;br/&gt;Problem Framing"] --&gt; P2["Phase 2&lt;br/&gt;Hypothesis Bundle Design"]
+    P2 --&gt; P3["Phase 3&lt;br/&gt;Implement &amp; Verify"]
+    P3 --&gt; P4["Phase 4&lt;br/&gt;Bayesian Optimization"]
+    P4 --&gt; P5["Phase 5&lt;br/&gt;Principles &amp; Iteration"]
+    P5 --&gt;|Iterate| P2
+    P5 --&gt;|Converged| Done["Definitive Strategy&lt;br/&gt;+ Principles"]
+
+    style P2 fill:#e1f5fe
+    style P3 fill:#e8f5e9
+    style P5 fill:#fff3e0</code></pre>
+<p>For detailed examples of hypothesis bundles drawn from PR #452 and PR #447, see <strong><a href="../hypothesis-bundles/">Hypothesis Bundles in Practice</a></strong>.</p>
+<hr />
+<h2 id="phase-1-problem-framing">Phase 1: Problem Framing<a class="headerlink" href="#phase-1-problem-framing" title="Permanent link">&para;</a></h2>
+<p>Write a precise problem statement (<code>problem.md</code>) that specifies:</p>
+<ul>
+<li><strong>The baseline to beat</strong> — exact configuration parameters, measured across 3+ seeds</li>
+<li><strong>The target workload</strong> — designed to prevent shortcutting (see below)</li>
+<li><strong>Quantitative success criteria</strong> — e.g., "&gt;15% TTFT P99 improvement, &gt;5% throughput improvement"</li>
+<li><strong>Hard constraints</strong> — must be implementable, defensible to domain experts, robust across seeds</li>
+<li><strong>Prior knowledge inventory</strong> — experimental findings that narrow the design space</li>
+</ul>
+<div class="admonition tip">
+<p class="admonition-title">Workload Design is Critical</p>
+<p>Design the workload to prevent strategies from gaming the metric. In our work, we used <strong>orthogonal SLO tiers</strong> — all tiers share identical request shapes, so strategies cannot use token-length as a proxy for priority. The SLO class metadata is the <em>only</em> differentiator.</p>
+</div>
+<p><strong>Artifacts produced:</strong> <code>problem.md</code>, <code>baseline.json</code></p>
+<hr />
+<h2 id="phase-2-hypothesis-bundle-design">Phase 2: Hypothesis Bundle Design<a class="headerlink" href="#phase-2-hypothesis-bundle-design" title="Permanent link">&para;</a></h2>
+<p>Phase 2 is the heart of Strategy Evolution. Each iteration generates candidate strategies and formulates the winner as a <strong>hypothesis bundle</strong> — a set of testable predictions designed before any code is written.</p>
+<h3 id="step-2a-generate-and-review-candidates">Step 2a: Generate and review candidates<a class="headerlink" href="#step-2a-generate-and-review-candidates" title="Permanent link">&para;</a></h3>
+<p>Generate 2–3 candidate strategies. Each must be:</p>
+<ol>
+<li><strong>A parameterized template</strong> — the mechanism defines <em>what</em> the strategy does; tunable parameters control <em>how aggressively</em></li>
+<li><strong>Self-critiqued</strong> — identify weaknesses before external review</li>
+<li><strong>Reviewed by multiple independent judges</strong> — we used Claude Opus, GPT-4o, and Gemini 2.5 Flash</li>
+</ol>
+<pre class="mermaid"><code>sequenceDiagram
+    participant A as Author
+    participant J1 as Judge 1 (Claude)
+    participant J2 as Judge 2 (GPT-4o)
+    participant J3 as Judge 3 (Gemini)
+
+    A-&gt;&gt;A: Generate 2-3 candidates + self-critique
+    par Multi-judge review
+        A-&gt;&gt;J1: Candidate designs
+        A-&gt;&gt;J2: Candidate designs
+        A-&gt;&gt;J3: Candidate designs
+        J1--&gt;&gt;A: Design flaws + improvements
+        J2--&gt;&gt;A: Design flaws + improvements
+        J3--&gt;&gt;A: Design flaws + improvements
+    end
+    A-&gt;&gt;A: Select winner by consensus</code></pre>
+<div class="admonition example">
+<p class="admonition-title">Multi-Judge Catches Real Design Flaws</p>
+<ul>
+<li><strong>Claude Opus</strong> identified that a proposed cache score (<code>1 - KVUtilization</code>) was a free-capacity signal, not a cache-affinity signal — a subtle conflation that would have wasted an entire iteration</li>
+<li><strong>GPT-4o</strong> caught a bang-bang oscillation problem in an online learning controller</li>
+<li><strong>Gemini</strong> caught a numerical instability in hyperbolic starvation protection</li>
+</ul>
+</div>
+<h3 id="step-2b-decompose-winner-into-hypothesis-bundle">Step 2b: Decompose winner into hypothesis bundle<a class="headerlink" href="#step-2b-decompose-winner-into-hypothesis-bundle" title="Permanent link">&para;</a></h3>
+<p>After selecting the winning strategy, decompose it into a <strong>hypothesis bundle</strong> — a set of testable, falsifiable predictions:</p>
+<pre class="mermaid"><code>flowchart LR
+    S["Selected Strategy"]
+
+    S --&gt; HM["H-main&lt;br/&gt;Mechanism claim +&lt;br/&gt;predicted effect size"]
+    S --&gt; HA["H-ablation&lt;br/&gt;One per component:&lt;br/&gt;isolate contribution"]
+    S --&gt; HSA["H-super-additivity&lt;br/&gt;Compound effect vs&lt;br/&gt;sum of parts"]
+    S --&gt; HC["H-control-negative&lt;br/&gt;Condition where effect&lt;br/&gt;should vanish"]
+    S --&gt; HR["H-robustness&lt;br/&gt;Generalization&lt;br/&gt;boundaries"]
+
+    style HM fill:#c8e6c9
+    style HA fill:#ffecb3
+    style HSA fill:#ffecb3
+    style HC fill:#e1bee7
+    style HR fill:#bbdefb</code></pre>
+<table>
+<thead>
+<tr>
+<th>Arm</th>
+<th>What it tests</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>H-main</strong></td>
+<td>Mechanism's predicted effect + causal explanation</td>
+<td>Does the strategy work, and <em>why</em>?</td>
+</tr>
+<tr>
+<td><strong>H-ablation-{component}</strong></td>
+<td>Each component's individual contribution</td>
+<td>Which parts matter? Are any redundant?</td>
+</tr>
+<tr>
+<td><strong>H-super-additivity</strong></td>
+<td>Whether compound effect exceeds sum of parts</td>
+<td>Do components interact?</td>
+</tr>
+<tr>
+<td><strong>H-control-negative</strong></td>
+<td>Where the effect should vanish</td>
+<td>Confirms mechanism specificity</td>
+</tr>
+<tr>
+<td><strong>H-robustness</strong></td>
+<td>Generalization across workloads, resources, scale</td>
+<td>Where does the strategy break?</td>
+</tr>
+</tbody>
+</table>
+<p>Each arm follows the <a href="../../contributing/hypothesis/">hypothesis experiment workflow</a>: experiment design standards (ED-1 through ED-6), convergence-gated review, formal controls, FINDINGS documentation. Every arm includes a <strong>diagnostic clause</strong> ("if this fails, it indicates...") that directs investigation when predictions don't match outcomes.</p>
+<div class="admonition warning">
+<p class="admonition-title">Pre-commit ablation, don't bolt it on</p>
+<p>Ablation hypotheses are designed HERE, before any code is written. This prevents confirmation bias — you predict each component's contribution before seeing whether the compound strategy works. If you can't articulate what removing a component should do, you don't understand the mechanism well enough to implement it.</p>
+</div>
+<p>For a complete worked example of a hypothesis bundle, see <strong><a href="../hypothesis-bundles/#example-scheduling-track-iteration-1-pr-452">Hypothesis Bundles in Practice — Scheduling Example</a></strong>.</p>
+<h3 id="step-2c-design-review">Step 2c: Design Review<a class="headerlink" href="#step-2c-design-review" title="Permanent link">&para;</a></h3>
+<p>Run the <strong>5-perspective Design Review</strong> on the hypothesis bundle using the <a href="../../contributing/convergence/">universal convergence protocol</a>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>/convergence-review h-design
+</code></pre></div>
+<p>The review covers the full bundle — not just H-main, but all ablation, control, and robustness arms.</p>
+<h3 id="step-2d-human-approval-gate">Step 2d: Human approval gate<a class="headerlink" href="#step-2d-human-approval-gate" title="Permanent link">&para;</a></h3>
+<p>Present the hypothesis bundle for human approval. The human reviews: H-main predictions, ablation predictions, control designs, and robustness boundaries.</p>
+<p><strong>This is a hard gate.</strong> Do not proceed to implementation until the human approves.</p>
+<p><strong>Artifacts produced:</strong> <code>research.md</code>, <code>iter&lt;N&gt;-bundle.yaml</code>, Design Review convergence log</p>
+<hr />
+<h2 id="phase-3-implement-and-verify">Phase 3: Implement and Verify<a class="headerlink" href="#phase-3-implement-and-verify" title="Permanent link">&para;</a></h2>
+<p>Implement the strategy code AND the experiment code for the full hypothesis bundle, then execute, analyze, and review — all before moving to parameter optimization.</p>
+<pre class="mermaid"><code>flowchart TD
+    A["3a: Implement strategy code"]
+    B["3b: Implement experiment code"]
+    C["3c: Code Review&lt;br/&gt;(5 perspectives)"]
+    D["3d: Execute all arms&lt;br/&gt;(parallel, 3+ seeds)"]
+    E["3e: Compare predictions&lt;br/&gt;to outcomes"]
+    F["3f: Document FINDINGS.md"]
+    G["3g: FINDINGS Review&lt;br/&gt;(10 perspectives)"]
+    H["3h: Self-audit&lt;br/&gt;(6 dimensions)"]
+    I["3i: Record in ledger"]
+
+    A --&gt; B --&gt; C --&gt; D --&gt; E --&gt; F --&gt; G --&gt; H --&gt; I
+
+    style C fill:#fff3e0
+    style E fill:#e8f5e9
+    style G fill:#fff3e0</code></pre>
+<p><strong>3a — Implement strategy.</strong> New policy code, CLI flags, or configuration.</p>
+<p><strong>3b — Implement experiments.</strong> For each hypothesis arm, create <code>run.sh</code> (sources shared harness) and <code>analyze.py</code>. All arms share one <code>run.sh</code> — they are independent and can execute in parallel.</p>
+<p><strong>3c — Code Review.</strong> 5-perspective review on all experiment code BEFORE running experiments (<code>/convergence-review h-code</code>).</p>
+<p><strong>3d — Execute.</strong> Run all hypothesis arms across 3+ seeds.</p>
+<p><strong>3e — Compare predictions to outcomes.</strong> For each arm, record:</p>
+<ul>
+<li>What was <strong>predicted</strong> (from the bundle design in Phase 2)</li>
+<li>What was <strong>observed</strong> (from the experiment)</li>
+<li>Whether the prediction was <strong>confirmed</strong> (direction correct AND exceeds threshold), <strong>partially confirmed</strong> (direction correct, magnitude falls short), or <strong>refuted</strong> (direction wrong or magnitude negligible &lt;5%)</li>
+<li>If refuted: what the <strong>discrepancy reveals</strong> about the causal model</li>
+</ul>
+<p><strong>3f — Document FINDINGS.</strong> Write <code>FINDINGS.md</code> using the <a href="../../contributing/templates/hypothesis/">hypothesis template</a>. The prediction-vs-outcome comparison is a required section.</p>
+<p><strong>3g — FINDINGS Review.</strong> 10-perspective review using the <a href="../../contributing/convergence/">convergence protocol</a> (<code>/convergence-review h-findings</code>).</p>
+<p><strong>3h — Self-audit.</strong> Six dimensions of critical self-review.</p>
+<p><strong>3i — Record in ledger.</strong> One row per iteration, including prediction accuracy.</p>
+<div class="admonition warning">
+<p class="admonition-title">The Ledger is the Single Source of Truth</p>
+<p>Never delete rows. Failed approaches are as valuable as successes. The ledger prevents revisiting failed approaches and makes the full exploration path auditable.</p>
+</div>
+<p><strong>Extended ledger format:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Iter</th>
+<th>Strategy</th>
+<th>TTFT P99 Δ%</th>
+<th>Throughput Δ%</th>
+<th>Key Mechanism</th>
+<th>Prediction Accuracy</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>Baseline</td>
+<td>—</td>
+<td>—</td>
+<td>FCFS + constant priority</td>
+<td>—</td>
+<td>Measured</td>
+</tr>
+<tr>
+<td>1</td>
+<td>SLO-Gated Priority</td>
+<td>-50.8%</td>
+<td>~0%</td>
+<td>Priority cascade</td>
+<td>H-main confirmed; H-zero-sum refuted (zero-sum)</td>
+<td>Bundle verified</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Artifacts produced:</strong> <code>ledger.md</code>, <code>iter&lt;N&gt;-FINDINGS.md</code>, convergence logs</p>
+<hr />
+<h2 id="phase-4-bayesian-parameter-optimization">Phase 4: Bayesian Parameter Optimization<a class="headerlink" href="#phase-4-bayesian-parameter-optimization" title="Permanent link">&para;</a></h2>
+<p>Once a mechanism's H-main is <strong>confirmed</strong> in Phase 3, optimize its parameters. Mechanisms whose H-main was refuted skip this phase — their prediction errors are analyzed for principles instead.</p>
+<pre class="mermaid"><code>flowchart TD
+    A["Define parameter ranges&lt;br/&gt;in strategy YAML"] --&gt; B["Bayesian optimizer&lt;br/&gt;selects next point"]
+    B --&gt; C["Run simulator&lt;br/&gt;3 seeds x N params"]
+    C --&gt; D{"Constraint&lt;br/&gt;violation?"}
+    D --&gt;|Yes| E["Add penalty&lt;br/&gt;to objective"]
+    D --&gt;|No| F["Record metric"]
+    E --&gt; G["Update GP&lt;br/&gt;surrogate model"]
+    F --&gt; G
+    G --&gt;|Budget remaining| B
+    G --&gt;|Budget exhausted| H["Extract best&lt;br/&gt;parameters"]</code></pre>
+<p>This separates <strong>mechanism design</strong> (human creativity + hypothesis testing) from <strong>parameter tuning</strong> (machine search). Every strategy gets the benefit of optimization, so comparisons are fair.</p>
+<p><strong>Strategy YAML format:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;slo-gated-priority-cascade&quot;</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">parameters</span><span class="p">:</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;base_critical&quot;</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="nt">flag</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;--slo-base-critical&quot;</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;real&quot;</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="nt">low</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5.0</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="nt">high</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20.0</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;age_weight&quot;</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="nt">flag</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;--slo-age-weight&quot;</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;real&quot;</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="nt">low</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.000001</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">    </span><span class="nt">high</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0001</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">    </span><span class="nt">prior</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;log-uniform&quot;</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="nt">objective</span><span class="p">:</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">  </span><span class="nt">metric</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;ttft_p99_ms&quot;</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">  </span><span class="nt">direction</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;min&quot;</span>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="nt">constraints</span><span class="p">:</span>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">metric</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;throughput_tps&quot;</span>
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">    </span><span class="nt">direction</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;max&quot;</span>
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">    </span><span class="nt">threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">15000</span>
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="w">    </span><span class="nt">weight</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+</code></pre></div>
+<p><strong>Budget:</strong> 30–50 evaluations × 3 seeds = 90–150 simulator runs per strategy.</p>
+<p><strong>Artifacts produced:</strong> <code>optimize.py</code>, <code>*-optimization-results.json</code></p>
+<hr />
+<h2 id="phase-5-principle-extraction-and-iteration">Phase 5: Principle Extraction and Iteration<a class="headerlink" href="#phase-5-principle-extraction-and-iteration" title="Permanent link">&para;</a></h2>
+<p>Extract principles from the iteration's results and decide whether to iterate.</p>
+<h3 id="principle-extraction">Principle extraction<a class="headerlink" href="#principle-extraction" title="Permanent link">&para;</a></h3>
+<p>Distill findings into <strong>numbered principles</strong> — concise, falsifiable statements grounded in experimental evidence. Principles come from two sources:</p>
+<ol>
+<li><strong>Confirmed predictions</strong> — the mechanism works as theorized (e.g., RP-1: "Orthogonal signals &gt; pre-combined signals")</li>
+<li><strong>Prediction errors</strong> — the most valuable source. When a prediction fails, the discrepancy reveals something about the system that wasn't understood (e.g., S6: "Scheduling is zero-sum at saturation")</li>
+</ol>
+<pre class="mermaid"><code>flowchart TD
+    subgraph "Phase 3 outputs"
+        C["Confirmed predictions"]
+        R["Refuted predictions"]
+    end
+
+    C --&gt; P1["New principle&lt;br/&gt;(mechanism verified)"]
+    R --&gt; D["Discrepancy analysis"]
+    D --&gt; P2["New principle&lt;br/&gt;(causal model corrected)"]
+    D --&gt; RD["Redesign&lt;br/&gt;(next iteration)"]
+
+    P1 --&gt; PC["Principles Catalog"]
+    P2 --&gt; PC
+
+    PC --&gt;|Constrains| Next["Phase 2&lt;br/&gt;(next iteration)"]
+
+    style R fill:#ffcdd2
+    style D fill:#fff3e0
+    style P2 fill:#c8e6c9</code></pre>
+<p>Principles function as <strong>hard constraints</strong> on subsequent iterations:</p>
+<ul>
+<li><strong>RP-1</strong> (orthogonality) prevented building a combined cache-load scorer in iterations 5–19</li>
+<li><strong>RP-6</strong> (KV-util counterproductive) eliminated KV-utilization from all subsequent strategies</li>
+<li><strong>S6</strong> (scheduling is zero-sum) redirected effort from scheduler optimization to admission control</li>
+<li><strong>RP-10</strong> (PA:QD safety rule) prevented ratio violations in Bayesian search bounds</li>
+</ul>
+<p>When a new iteration proposes a mechanism that contradicts an existing principle, it must either provide experimental evidence that the principle doesn't hold in the new regime, or redesign to work within the principle's constraints.</p>
+<h3 id="fast-fail-rules">Fast-fail rules<a class="headerlink" href="#fast-fail-rules" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>H-main refuted</strong></td>
+<td>H-main refutation still requires a minimum 5-perspective FINDINGS Review to confirm the refutation is genuine (not an analyzer bug). After verification, skip ablation arms. Record refutation + diagnostic. Iterate.</td>
+</tr>
+<tr>
+<td><strong>H-main confirmed, single dominant component (&gt;80% of effect)</strong></td>
+<td>Simplify strategy to that component. Iterate.</td>
+</tr>
+<tr>
+<td><strong>H-control-negative fails</strong> (effect appears when it shouldn't)</td>
+<td>Mechanism is confounded. Redesign before continuing.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="stopping-criterion">Stopping criterion<a class="headerlink" href="#stopping-criterion" title="Permanent link">&para;</a></h3>
+<p>Stop when multiple consecutive iterations produce null or marginal results — you have found the basin of the optimal strategy. The <a href="../principles/">principles catalog</a> is the durable output.</p>
+<hr />
+<h2 id="practical-considerations">Practical Considerations<a class="headerlink" href="#practical-considerations" title="Permanent link">&para;</a></h2>
+<h3 id="bundle-size-management">Bundle size management<a class="headerlink" href="#bundle-size-management" title="Permanent link">&para;</a></h3>
+<p>The number of hypothesis arms scales with strategy complexity (see the <a href="../hypothesis-bundles/#bundle-size-guide">Bundle Size Guide</a> for detailed breakdowns). Three mitigations keep this manageable:</p>
+<ol>
+<li>
+<p><strong>Tiered review depth.</strong> H-main gets the full 10-perspective FINDINGS review. Ablation arms get a 5-perspective review. Byte-identical controls get a spot-check that the treatment was active, then automatic validation.</p>
+</li>
+<li>
+<p><strong>Parallel execution.</strong> Hypothesis arms are independent. Use <a href="../../contributing/hypothesis/#parallel-execution-mode">parallel execution mode</a>. All arms must use the same seed set for valid comparison.</p>
+</li>
+<li>
+<p><strong>Fast-fail.</strong> If H-main is refuted (after FINDINGS review confirms the refutation), skip remaining arms.</p>
+</li>
+</ol>
+<h3 id="when-to-use-the-full-bundle-vs-a-lighter-iteration">When to use the full bundle vs. a lighter iteration<a class="headerlink" href="#when-to-use-the-full-bundle-vs-a-lighter-iteration" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Iteration type</th>
+<th>Required arms</th>
+<th>Optional arms</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>New compound mechanism (≥2 components)</td>
+<td>H-main, all H-ablation, H-super-additivity, H-control-negative</td>
+<td>H-robustness</td>
+</tr>
+<tr>
+<td>Component removal/simplification</td>
+<td>H-main, H-control-negative, H-ablation for removed component</td>
+<td>H-robustness</td>
+</tr>
+<tr>
+<td>Single-component mechanism</td>
+<td>H-main, H-control-negative</td>
+<td>H-robustness</td>
+</tr>
+<tr>
+<td>Parameter-only change (same active components, only numeric values change)</td>
+<td>H-main only</td>
+<td>Proceed directly to Bayesian optimization</td>
+</tr>
+<tr>
+<td>Robustness sweep (post-confirmation)</td>
+<td>H-robustness arms only</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h3 id="how-strategy-evolution-connects-to-existing-workflows">How Strategy Evolution connects to existing workflows<a class="headerlink" href="#how-strategy-evolution-connects-to-existing-workflows" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Skill / Process</th>
+<th>Role in Strategy Evolution</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/research-ideas</code></td>
+<td>Generates candidate strategies (Step 2a)</td>
+</tr>
+<tr>
+<td><code>/hypothesis-experiment</code></td>
+<td>Guided Steps 0-10 experiment workflow (project skill)</td>
+</tr>
+<tr>
+<td><code>/hypothesis-test</code></td>
+<td>Experiment scaffolding: run.sh, analyze.py templates (sdlc-plugins)</td>
+</tr>
+<tr>
+<td><code>/convergence-review</code></td>
+<td>Gates Design Review, Code Review, FINDINGS Review</td>
+</tr>
+<tr>
+<td><code>/brainstorming</code></td>
+<td>Explores solution space before committing to candidates</td>
+</tr>
+<tr>
+<td><a href="../../contributing/hypothesis/">Hypothesis experiment process</a></td>
+<td>Defines the detailed per-arm workflow</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="skills-and-tools-inventory">Skills and Tools Inventory<a class="headerlink" href="#skills-and-tools-inventory" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Skill</th>
+<th>Phase</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/research-ideas</code></td>
+<td>2a</td>
+<td>Structured idea generation with iterative external LLM review</td>
+</tr>
+<tr>
+<td><code>/brainstorming</code></td>
+<td>2a</td>
+<td>Explore solution space before committing to an approach</td>
+</tr>
+<tr>
+<td><code>/review-plan</code></td>
+<td>2a</td>
+<td>Send candidate designs to external LLMs for technical review</td>
+</tr>
+<tr>
+<td><code>/convergence-review</code> (h-design)</td>
+<td>2c</td>
+<td>5-perspective design review on hypothesis bundle</td>
+</tr>
+<tr>
+<td><code>/hypothesis-experiment</code></td>
+<td>3b</td>
+<td>Guided Steps 0-10 experiment workflow (project skill)</td>
+</tr>
+<tr>
+<td><code>/hypothesis-test</code></td>
+<td>3b</td>
+<td>Experiment scaffolding: run.sh, analyze.py templates (sdlc-plugins)</td>
+</tr>
+<tr>
+<td><code>/test-driven-development</code></td>
+<td>3a</td>
+<td>TDD for new policy implementations</td>
+</tr>
+<tr>
+<td><code>/convergence-review</code> (h-code)</td>
+<td>3c</td>
+<td>5-perspective code review on experiment code</td>
+</tr>
+<tr>
+<td><code>/convergence-review</code> (h-findings)</td>
+<td>3g</td>
+<td>10-perspective findings review</td>
+</tr>
+<tr>
+<td><code>/verification-before-completion</code></td>
+<td>3h</td>
+<td>Confirm results before claiming success</td>
+</tr>
+<tr>
+<td><code>/dispatching-parallel-agents</code></td>
+<td>3d</td>
+<td>Parallel hypothesis arm execution</td>
+</tr>
+<tr>
+<td><code>/commit-push-pr</code></td>
+<td>5</td>
+<td>Clean git integration after validation</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition info">
+<p class="admonition-title">Where to Get These Skills</p>
+<p>These skills are <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a> plugins. To install them:</p>
+<ul>
+<li><strong><code>/brainstorming</code>, <code>/test-driven-development</code>, <code>/verification-before-completion</code>, <code>/dispatching-parallel-agents</code>, <code>/commit-push-pr</code></strong>: Install the <a href="https://github.com/anthropics/claude-code-plugins">superpowers</a> plugin — <code>claude plugins add superpowers</code></li>
+<li><strong><code>/convergence-review</code>, <code>/hypothesis-experiment</code></strong>: Project-local skills defined in this repository's <code>.claude/skills/</code> directory. Available automatically when Claude Code is run from the repo root.</li>
+<li><strong><code>/hypothesis-test</code></strong>: Install the <a href="https://github.com/inference-sim/sdlc-plugins">sdlc-plugins</a> plugin — <code>claude plugins add sdlc-plugins</code></li>
+<li><strong><code>/research-ideas</code>, <code>/review-plan</code></strong>: Install the <a href="https://github.com/anthropics/claude-code-plugins">research-ideas</a> plugin — <code>claude plugins add research-ideas</code></li>
+</ul>
+</div>
+<p><strong>Non-skill tools:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Phase</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>optimize.py</code> + scikit-optimize</td>
+<td>4</td>
+<td>Bayesian optimization harness (<code>gp_minimize</code>)</td>
+</tr>
+<tr>
+<td><code>strategy_template.yaml</code></td>
+<td>4</td>
+<td>Parameterized strategy configuration format</td>
+</tr>
+<tr>
+<td><code>ledger.md</code></td>
+<td>All</td>
+<td>Single source of truth (1 row per iteration, with prediction accuracy)</td>
+</tr>
+<tr>
+<td>Git worktrees</td>
+<td>All</td>
+<td>Isolation per experiment track</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="applying-to-a-new-problem">Applying to a New Problem<a class="headerlink" href="#applying-to-a-new-problem" title="Permanent link">&para;</a></h2>
+<ol>
+<li>
+<p><strong>Write <code>problem.md</code></strong> — baseline, workload, success criteria, constraints, prior knowledge. Design the workload to prevent shortcutting.</p>
+</li>
+<li>
+<p><strong>Build the measurement harness</strong> — deterministic simulator or benchmark that accepts parameterized configuration, produces machine-parseable metrics, and runs fast enough for 100–200 evaluations. For noisy real-system benchmarks, increase seed count and evaluation budget proportionally.</p>
+</li>
+<li>
+<p><strong>Start the ledger</strong> — <code>ledger.md</code> with baseline row. One row per iteration with a prediction accuracy column. Never delete rows.</p>
+</li>
+<li>
+<p><strong>Run the loop</strong> — for each iteration:</p>
+<ul>
+<li>Generate 2-3 candidates with multi-judge review (Phase 2a)</li>
+<li>Decompose winner into a hypothesis bundle with predictions, ablation, controls, and robustness checks (Phase 2b)</li>
+<li>Convergence-gated Design Review + human approval (Phase 2c-2d)</li>
+<li>Implement strategy + experiments, Code Review, execute all arms, compare predictions to outcomes, FINDINGS Review (Phase 3)</li>
+<li>Bayesian optimization for confirmed mechanisms (Phase 4)</li>
+<li>Extract principles from both confirmed predictions and prediction errors (Phase 5)</li>
+</ul>
+</li>
+<li>
+<p><strong>Know when to stop</strong> — when multiple consecutive iterations produce null or marginal results, you have found the basin of the optimal strategy. The <a href="../principles/">principles catalog</a> is the durable output.</p>
+</li>
+</ol>
+<hr />
+<h2 id="results-how-two-tracks-converged">Results: How Two Tracks Converged<a class="headerlink" href="#results-how-two-tracks-converged" title="Permanent link">&para;</a></h2>
+<p>Strategy Evolution was applied in parallel on two complementary problem spaces:</p>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Scheduling Track (11 iters)</th>
+<th>Routing Track (19 iters)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Primary lever</td>
+<td>Priority ordering + admission control</td>
+<td>Scorer weights + signal selection</td>
+</tr>
+<tr>
+<td>Best result</td>
+<td>73.7% critical TTFT improvement</td>
+<td>65% combined improvement (bursty)</td>
+</tr>
+<tr>
+<td>Key discovery</td>
+<td>Priority is zero-sum; admission is non-zero-sum</td>
+<td>KV-utilization scorer is counterproductive</td>
+</tr>
+<tr>
+<td>Winning strategy</td>
+<td>SLO-tiered priority + no-chunk prefill</td>
+<td><code>pa:4,qd:3</code> + SLO-gated admission</td>
+</tr>
+</tbody>
+</table>
+<p>Both tracks converged on <strong>SLO-gated admission control as the breakthrough "third lever"</strong> and on <code>prefix-affinity</code> + <code>queue-depth</code> as the optimal signal pair.</p>
+<pre class="mermaid"><code>gantt
+    title Two-Track Convergence Timeline
+    dateFormat X
+    axisFormat %s
+    section Scheduling Track
+    Baseline + SLO priority     :s1, 0, 2
+    Bayesian optimization       :s2, 2, 3
+    Admission control discovery :crit, s3, 3, 5
+    Prefill threshold tuning    :s4, 5, 7
+    Robustness + multi-turn     :s5, 7, 11
+    section Routing Track
+    P2C + dynamic weights       :r1, 0, 3
+    Signal orthogonality        :r2, 3, 5
+    KV-util counterproductive   :crit, r3, 5, 8
+    Compound + admission        :crit, r4, 8, 14
+    Bayesian + scaling sweep    :r5, 14, 19
+    section Convergence
+    Both discover admission ctrl :milestone, 10, 10
+    Both drop kv-utilization     :milestone, 12, 12</code></pre>
+<div class="admonition note">
+<p class="admonition-title">Experimental Configurations</p>
+<p>The winning strategies described above were discovered during Strategy Evolution experiments using custom configurations. Some components (SLO-gated admission, SLO-tiered priority as compound strategies) are not yet available as standard BLIS policy templates. The current BLIS default (<code>pa:3,qd:2,kv:2</code>) is maintained for llm-d parity. The regime-dependent recommendation (normal KV: <code>pa:3,qd:2,kv:2</code>; under pressure: <code>pa:3,qd:2</code>; high load with admission: <code>pa:4,qd:3</code>) will be documented in the <a href="../principles/">principles catalog</a> (currently in draft).</p>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../" class="md-footer__link md-footer__link--prev" aria-label="Previous: Methodology">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Methodology
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../hypothesis-bundles/" class="md-footer__link md-footer__link--next" aria-label="Next: Hypothesis Bundles">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Hypothesis Bundles
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.indexes", "navigation.sections", "navigation.expand", "navigation.footer", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

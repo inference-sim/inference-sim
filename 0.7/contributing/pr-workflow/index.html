@@ -1,0 +1,4220 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A discrete-event simulator for LLM inference serving systems">
+      
+      
+      
+      
+        <link rel="prev" href="../extension-recipes/">
+      
+      
+        <link rel="next" href="../design-process/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
+    
+    
+      
+        <title>PR Workflow - BLIS — Blackbox Inference Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#pr-development-workflow" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-header__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            BLIS — Blackbox Inference Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              PR Workflow
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../concepts/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Concepts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guide/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../methodology/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Methodology
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../blog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Blog
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="BLIS — Blackbox Inference Simulator" class="md-nav__button md-logo" aria-label="BLIS — Blackbox Inference Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    BLIS — Blackbox Inference Simulator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/inference-sim/inference-sim" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    inference-sim/inference-sim
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: Capacity Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../concepts/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/core-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/roofline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roofline Estimation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../guide/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/routing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Routing Policies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/admission/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admission Control
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/scheduling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduling & Priority
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/latency-models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Latency Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/kv-cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KV Cache & Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/workloads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workload Specifications
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster Simulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metrics & Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/observe-replay-calibrate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observe / Replay / Calibrate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/experimentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experimentation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/skills-and-plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Skills & Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/project-structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Supported Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/workload-spec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workload Spec Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../methodology/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Methodology
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Methodology
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../methodology/strategy-evolution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Strategy Evolution
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../methodology/hypothesis-bundles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Bundles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../extension-recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extension Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PR Workflow
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PR Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-by-step-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step-by-Step Process
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step-by-Step Process">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-1-create-an-isolated-workspace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1: Create an Isolated Workspace
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-15-audit-the-source-document" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1.5: Audit the Source Document
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2-write-an-implementation-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2: Write an Implementation Plan
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-25-review-the-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2.5: Review the Plan
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 2.5: Review the Plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#perspective-1-substance-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 1: Substance &amp; Design
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-2-cross-document-consistency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 2: Cross-Document Consistency
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-3-architecture-boundary-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 3: Architecture Boundary Verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-4-codebase-readiness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 4: Codebase Readiness
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-5-plan-structural-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 5: Plan Structural Validation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-6-des-expert" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 6: DES Expert
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-7-vllmsglang-expert" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 7: vLLM/SGLang Expert
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-8-distributed-inference-platform-expert" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 8: Distributed Inference Platform Expert
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-9-performance-scalability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 9: Performance &amp; Scalability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-10-security-robustness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 10: Security &amp; Robustness
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-3-human-review-of-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3: Human Review of Plan
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-4-implement-the-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4: Implement the Plan
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-45-review-the-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4.5: Review the Code
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 4.5: Review the Code">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#perspective-1-substance-design_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 1: Substance &amp; Design
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-2-code-quality-error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 2: Code Quality + Error Handling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-3-test-behavioral-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 3: Test Behavioral Quality
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-4-getting-started-experience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 4: Getting-Started Experience
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-5-automated-reviewer-simulation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 5: Automated Reviewer Simulation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-6-des-expert_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 6: DES Expert
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-7-vllmsglang-expert_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 7: vLLM/SGLang Expert
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-8-distributed-inference-platform-expert_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 8: Distributed Inference Platform Expert
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-9-performance-scalability_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 9: Performance &amp; Scalability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-10-security-robustness_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 10: Security &amp; Robustness
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#filing-pre-existing-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filing Pre-Existing Issues
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#after-convergence-verification-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        After Convergence: Verification Gate
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-475-pre-commit-self-audit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4.75: Pre-Commit Self-Audit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-5-commit-push-and-create-pr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5: Commit, Push, and Create PR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workflow-variants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow Variants
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Workflow Variants">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#subagent-driven-development-in-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subagent-Driven Development (In-Session)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pr-size-tiers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PR Size Tiers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-walkthrough" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Walkthrough
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tips-for-success" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tips for Success
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tips for Success">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#headless-mode-for-reviews-context-overflow-workaround" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Headless Mode for Reviews (Context Overflow Workaround)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-issues-and-solutions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Issues and Solutions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Common Issues and Solutions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#issue-plan-too-generic-agents-ask-clarifying-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Issue: Plan too generic, agents ask clarifying questions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#issue-tasks-miss-behavioral-contracts-during-execution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Issue: Tasks miss behavioral contracts during execution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#issue-lint-fails-at-the-end-with-many-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Issue: Lint fails at the end with many issues
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#issue-dead-code-introduced-unused-functions-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Issue: Dead code introduced (unused functions, fields)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#issue-review-finds-many-critical-issues-overwhelming-to-fix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Issue: Review finds many critical issues, overwhelming to fix
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#issue-uncertain-if-review-findings-are-valid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Issue: Uncertain if review findings are valid
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../macro-planning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis Experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../convergence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Convergence Protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_7_8" id="__nav_7_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Standards
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Standards
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../standards/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Antipattern Rules (R1-R23)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../standards/invariants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Invariants (INV-1-INV-11)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../standards/principles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engineering Principles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../standards/experiments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Experiment Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_7_9" id="__nav_7_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Templates
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Templates
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/design-guidelines/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/macro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Macro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/micro-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Micro Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../templates/hypothesis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hypothesis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../blog/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Blog
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8" id="__nav_8_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Blog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_2" id="__nav_8_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archive
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Archive
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/archive/2026/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    2026
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_3" id="__nav_8_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Categories
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Categories
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/category/capacity-planning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capacity Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/category/what-is-blis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    What is BLIS?
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-by-step-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step-by-Step Process
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step-by-Step Process">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-1-create-an-isolated-workspace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1: Create an Isolated Workspace
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-15-audit-the-source-document" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1.5: Audit the Source Document
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2-write-an-implementation-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2: Write an Implementation Plan
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-25-review-the-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2.5: Review the Plan
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 2.5: Review the Plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#perspective-1-substance-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 1: Substance &amp; Design
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-2-cross-document-consistency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 2: Cross-Document Consistency
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-3-architecture-boundary-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 3: Architecture Boundary Verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-4-codebase-readiness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 4: Codebase Readiness
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-5-plan-structural-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 5: Plan Structural Validation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-6-des-expert" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 6: DES Expert
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-7-vllmsglang-expert" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 7: vLLM/SGLang Expert
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-8-distributed-inference-platform-expert" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 8: Distributed Inference Platform Expert
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-9-performance-scalability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 9: Performance &amp; Scalability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-10-security-robustness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 10: Security &amp; Robustness
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-3-human-review-of-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3: Human Review of Plan
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-4-implement-the-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4: Implement the Plan
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-45-review-the-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4.5: Review the Code
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 4.5: Review the Code">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#perspective-1-substance-design_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 1: Substance &amp; Design
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-2-code-quality-error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 2: Code Quality + Error Handling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-3-test-behavioral-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 3: Test Behavioral Quality
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-4-getting-started-experience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 4: Getting-Started Experience
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-5-automated-reviewer-simulation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 5: Automated Reviewer Simulation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-6-des-expert_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 6: DES Expert
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-7-vllmsglang-expert_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 7: vLLM/SGLang Expert
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-8-distributed-inference-platform-expert_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 8: Distributed Inference Platform Expert
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-9-performance-scalability_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 9: Performance &amp; Scalability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#perspective-10-security-robustness_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perspective 10: Security &amp; Robustness
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#filing-pre-existing-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filing Pre-Existing Issues
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#after-convergence-verification-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        After Convergence: Verification Gate
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-475-pre-commit-self-audit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4.75: Pre-Commit Self-Audit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-5-commit-push-and-create-pr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5: Commit, Push, and Create PR
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workflow-variants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow Variants
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Workflow Variants">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#subagent-driven-development-in-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subagent-Driven Development (In-Session)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pr-size-tiers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PR Size Tiers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-walkthrough" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Walkthrough
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tips-for-success" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tips for Success
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tips for Success">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#headless-mode-for-reviews-context-overflow-workaround" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Headless Mode for Reviews (Context Overflow Workaround)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-issues-and-solutions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Issues and Solutions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Common Issues and Solutions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#issue-plan-too-generic-agents-ask-clarifying-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Issue: Plan too generic, agents ask clarifying questions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#issue-tasks-miss-behavioral-contracts-during-execution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Issue: Tasks miss behavioral contracts during execution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#issue-lint-fails-at-the-end-with-many-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Issue: Lint fails at the end with many issues
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#issue-dead-code-introduced-unused-functions-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Issue: Dead code introduced (unused functions, fields)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#issue-review-finds-many-critical-issues-overwhelming-to-fix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Issue: Review finds many critical issues, overwhelming to fix
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#issue-uncertain-if-review-findings-are-valid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Issue: Uncertain if review findings are valid
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="pr-development-workflow">PR Development Workflow<a class="headerlink" href="#pr-development-workflow" title="Permanent link">&para;</a></h1>
+<p><strong>Status:</strong> Active (v4.2 — updated 2026-03-17)</p>
+<p>This document describes the complete workflow for implementing a PR from any source: a macro plan section, GitHub issues, a design document, or a feature request. The same steps apply whether you use Claude Code or standard git tools.</p>
+<hr />
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>flowchart TD
+    S1["Step 1: Create Isolated Workspace"]
+    S15["Step 1.5: Source Document Audit"]
+    S2["Step 2: Write Implementation Plan"]
+    S25["Step 2.5: Review the Plan&lt;br/&gt;(10 perspectives → convergence)"]
+    S3["Step 3: Human Review&lt;br/&gt;(Approve plan)"]
+    S4["Step 4: Implement the Plan"]
+    S45["Step 4.5: Review the Code&lt;br/&gt;(10 perspectives → convergence)"]
+    S475["Step 4.75: Pre-Commit Self-Audit&lt;br/&gt;(Critical thinking — no agent)"]
+    S5["Step 5: Commit, Push, Create PR"]
+
+    S1 --&gt; S15 --&gt; S2 --&gt; S25 --&gt; S3 --&gt; S4 --&gt; S45 --&gt; S475 --&gt; S5
+    S25 --&gt;|convergence&lt;br/&gt;rounds| S25
+    S45 --&gt;|convergence&lt;br/&gt;rounds| S45
+
+    style S25 fill:#fff3e0
+    style S3 fill:#e1bee7
+    style S45 fill:#fff3e0
+    style S475 fill:#ffecb3</code></pre>
+<blockquote>
+<p><strong>Note:</strong> The diagram above shows the default (Medium/Large) path. Express Lane PRs follow an abbreviated path: implement → self-audit (3 dimensions) → commit. Small PRs follow the full path but skip the pre-pass in Steps 2.5 and 4.5. See <a href="#pr-size-tiers">PR Size Tiers</a>.</p>
+</blockquote>
+<p><strong>Key insights:</strong>
+1. <strong>Worktree isolation from start</strong> (Step 1) — Create worktree BEFORE any work. Main worktree never touched. Enables parallel work on multiple PRs.
+2. <strong>Three-stage quality assurance:</strong>
+   - <strong>Plan Review</strong> (Step 2.5) — up to two stages depending on <a href="#pr-size-tiers">PR size tier</a>: holistic pre-pass (Medium/Large only), then 10 targeted perspectives. Catches design issues before implementation.
+   - <strong>Code Review</strong> (Step 4.5) — up to two stages depending on <a href="#pr-size-tiers">PR size tier</a>: holistic pre-pass (Medium/Large only), then 10 targeted perspectives. Catches implementation issues before PR creation.
+   - <strong>Self-Audit</strong> (Step 4.75) — deliberate critical thinking across 10 dimensions. Catches substance bugs that pattern-matching agents miss.</p>
+<hr />
+<h2 id="step-by-step-process">Step-by-Step Process<a class="headerlink" href="#step-by-step-process" title="Permanent link">&para;</a></h2>
+<h3 id="step-1-create-an-isolated-workspace">Step 1: Create an Isolated Workspace<a class="headerlink" href="#step-1-create-an-isolated-workspace" title="Permanent link">&para;</a></h3>
+<p>Create a git worktree BEFORE any work begins:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>worktree<span class="w"> </span>add<span class="w"> </span>.worktrees/pr&lt;N&gt;-&lt;feature-name&gt;<span class="w"> </span>-b<span class="w"> </span>pr&lt;N&gt;-&lt;feature-name&gt;
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">cd</span><span class="w"> </span>.worktrees/pr&lt;N&gt;-&lt;feature-name&gt;
+</code></pre></div>
+<p><strong>Why first?</strong> This ensures:
+- Main worktree stays clean (no uncommitted plans or code)
+- Plan document committed on feature branch (not main)
+- Complete isolation for entire PR lifecycle (planning + implementation)
+- Ability to work on multiple PRs in parallel</p>
+<p>All remaining steps happen in the worktree.</p>
+<div class="admonition tip">
+<p class="admonition-title">Automation</p>
+<p><code>/superpowers:using-git-worktrees pr&lt;N&gt;-&lt;feature-name&gt;</code> creates the worktree and switches your shell into it. Optional pre-cleanup: <code>/commit-commands:clean_gone</code> removes stale branches. See <a href="../../guide/skills-and-plugins/">Skills &amp; Plugins</a>.</p>
+</div>
+<hr />
+<h3 id="step-15-audit-the-source-document">Step 1.5: Audit the Source Document<a class="headerlink" href="#step-15-audit-the-source-document" title="Permanent link">&para;</a></h3>
+<p>Before writing the plan, scan the source document (design doc, macro plan section, GitHub issue, or feature request) for:</p>
+<ol>
+<li><strong>Ambiguous requirements</strong> — flag and resolve with the document author before planning</li>
+<li><strong>Contradictions with existing invariants or standards</strong> — check against <code>standards/invariants.md</code> and <code>standards/rules.md</code></li>
+<li><strong>Missing information needed for planning</strong> — which extension type? which invariants affected? which construction sites?</li>
+</ol>
+<p><strong>Output:</strong> A list of resolved clarifications, appended to the micro plan's Deviation Log with reason <code>CLARIFICATION</code>.</p>
+<blockquote>
+<p><strong>CLARIFICATION vs CORRECTION:</strong> Use <code>CLARIFICATION</code> when the source was ambiguous or incomplete and you chose an interpretation. Use <code>CORRECTION</code> when the source was factually wrong about existing code or behavior.</p>
+</blockquote>
+<p>If the source document is unambiguous and complete, skip this step — but note in the plan that no clarifications were needed.</p>
+<hr />
+<h3 id="step-2-write-an-implementation-plan">Step 2: Write an Implementation Plan<a class="headerlink" href="#step-2-write-an-implementation-plan" title="Permanent link">&para;</a></h3>
+<p>Write an implementation plan following the <a href="../templates/micro-plan/">micro-plan template</a>. The plan must include:</p>
+<ul>
+<li><strong>Behavioral contracts</strong> (GIVEN/WHEN/THEN) defining what this PR guarantees</li>
+<li><strong>TDD task breakdown</strong> (6–12 tasks, each: test → fail → implement → pass → lint → commit)</li>
+<li><strong>Test strategy</strong> mapping contracts to specific tests</li>
+</ul>
+<p>Save the plan to <code>docs/plans/&lt;feature-name&gt;-plan.md</code>.</p>
+<p>The source of work can be a macro plan section, a design document, one or more GitHub issues, or a feature request.</p>
+<div class="admonition tip">
+<p class="admonition-title">Automation</p>
+<p><code>/superpowers:writing-plans for &lt;work-item&gt; in @docs/plans/&lt;name&gt;-plan.md using @docs/contributing/templates/micro-plan-prompt.md and @&lt;source-document&gt;</code> generates the plan automatically. The skill reads the source document and the template, inspects the codebase, and produces behavioral contracts with executable tasks.</p>
+</div>
+<hr />
+<h3 id="step-25-review-the-plan">Step 2.5: Review the Plan<a class="headerlink" href="#step-25-review-the-plan" title="Permanent link">&para;</a></h3>
+<p>Review the plan from 10 targeted perspectives, applying the <a href="../convergence/">convergence protocol</a>: run all perspectives in parallel as one round; if zero CRITICAL and zero IMPORTANT across all reviewers, the round converged; otherwise fix and re-run the entire round. Max 10 rounds per gate. Hard gate — no exceptions. See <a href="../convergence/">convergence.md</a> for full rules.</p>
+<p><strong>Two-stage review (Medium/Large PRs; Small PRs skip the pre-pass — see <a href="#pr-size-tiers">PR Size Tiers</a>):</strong></p>
+<ol>
+<li><strong>Holistic pre-pass (Medium/Large only):</strong> Do a single deep review to catch cross-cutting issues before the formal convergence protocol.</li>
+<li><strong>Formal convergence:</strong> Run all 10 perspectives below in parallel.</li>
+</ol>
+<div class="admonition tip">
+<p class="admonition-title">Automation</p>
+<p>Stage 1: <code>/pr-review-toolkit:review-pr</code>. Stage 2: <code>/convergence-review pr-plan docs/plans/&lt;name&gt;-plan.md</code>. See <a href="../../guide/skills-and-plugins/">Skills &amp; Plugins</a>.</p>
+</div>
+<p><strong>Why two stages?</strong> The holistic sweep catches emergent cross-cutting issues (the kind a human reviewer would spot). Fixing those first means the convergence review starts from a cleaner baseline — fewer rounds needed because obvious issues are already addressed. Small PRs skip the pre-pass because cross-cutting issues are unlikely with ≤3 files; perspectives 1 (Substance) and 2 (Cross-doc) cover the same ground.</p>
+<p><strong>Why rounds with multiple perspectives?</strong> Generic "review everything" misses issues that targeted perspectives catch. Different lenses find different bugs: cross-doc consistency catches stale references, architecture catches boundary violations, substance catches design bugs. Running them in parallel maximizes coverage per round. The hypothesis process proved this model: 3 parallel reviewers with different foci caught issues that sequential single-reviewer rounds missed.</p>
+<h4 id="perspective-1-substance-design">Perspective 1: Substance &amp; Design<a class="headerlink" href="#perspective-1-substance-design" title="Permanent link">&para;</a></h4>
+<p>Check for: design bugs, mathematical errors, logical inconsistencies, scale mismatches, missing edge cases. Are the behavioral contracts logically sound? Could the design actually achieve what the contracts promise? Check formulas, thresholds, and edge cases from first principles — not just structural completeness.</p>
+<p><strong>Catches:</strong> Design bugs, mathematical errors, logical inconsistencies, scale mismatches, missing edge cases.</p>
+<p><strong>Why this perspective exists:</strong> In PR9, the fitness normalization formula (<code>1/(1+value)</code>) passed all structural checks but was a design bug (500,000x scale imbalance between throughput and latency). A substance-focused review caught what structure-focused reviews missed.</p>
+<h4 id="perspective-2-cross-document-consistency">Perspective 2: Cross-Document Consistency<a class="headerlink" href="#perspective-2-cross-document-consistency" title="Permanent link">&para;</a></h4>
+<p>Check for: scope mismatch between micro plan and source document, stale file paths, deviation log completeness. Does the deviation log account for all differences between what the source says and what the micro plan does? Check for stale references.</p>
+<p><strong>Catches:</strong> Stale references, scope mismatch, missing deviations, wrong file paths.</p>
+<h4 id="perspective-3-architecture-boundary-verification">Perspective 3: Architecture Boundary Verification<a class="headerlink" href="#perspective-3-architecture-boundary-verification" title="Permanent link">&para;</a></h4>
+<p>Check for: import cycle risks, boundary violations (individual instances accessing cluster-level state), types in wrong packages, multiple construction sites for the same type, high touch-point multipliers (adding one field requires &gt;3 files), library code (<code>sim/</code>) calling <code>logrus.Fatalf</code>.</p>
+<p><strong>Catches:</strong> Import cycle risks, boundary violations, missing bridge types, wrong abstraction level, construction site proliferation, high touch-point multipliers, error handling boundary violations.</p>
+<h4 id="perspective-4-codebase-readiness">Perspective 4: Codebase Readiness<a class="headerlink" href="#perspective-4-codebase-readiness" title="Permanent link">&para;</a></h4>
+<p>Check for: stale comments ("planned for PR N" where N is completed), pre-existing bugs in files the plan will modify, missing dependencies, unclear insertion points, TODO/FIXME items in the modification zone.</p>
+<p><strong>Catches:</strong> Stale comments, pre-existing bugs, missing dependencies, unclear insertion points.</p>
+<h4 id="perspective-5-plan-structural-validation">Perspective 5: Plan Structural Validation<a class="headerlink" href="#perspective-5-plan-structural-validation" title="Permanent link">&para;</a></h4>
+<p>Perform these 4 checks directly (no agent needed):</p>
+<p><strong>Check 1: Task Dependencies</strong> — For each task, verify it can actually start given what comes before it. Trace the dependency chain: what files does each task create/modify? Does any task require a file or type that hasn't been created yet? Flag tasks that modify the same file and could conflict.</p>
+<p><strong>Check 2: Template Completeness</strong> — Verify all sections from the <a href="../templates/micro-plan/">micro-plan template</a> are present and non-empty: Header, Part 1 (A–E), Part 2 (F–I), Part 3 (J), Appendix. For compact-format plans (Small tier), verify the compact sections are present: Header (Goal/Source/Closes), Behavioral Contracts, Tasks, Sanity Checklist.</p>
+<p><strong>Check 3: Executive Summary Clarity</strong> — Read the executive summary as if you're a new team member with no context. Is it clear what the PR does and why? Can you understand the scope without reading the rest of the plan?</p>
+<p><strong>Check 4: Under-specified Tasks</strong> — For each task, verify it has complete code in every step (no "add validation" without showing exact code). Verify exact test commands with expected output. Verify exact commit commands. Flag any step that an executing agent would need to figure out on its own.</p>
+<p><strong>Catches:</strong> Broken task ordering, missing template sections, unclear summaries, vague implementation steps that will cause agent confusion.</p>
+<h4 id="perspective-6-des-expert">Perspective 6: DES Expert<a class="headerlink" href="#perspective-6-des-expert" title="Permanent link">&para;</a></h4>
+<p>Check for: event ordering bugs, clock monotonicity violations, stale signal propagation between event types, heap priority errors, event-driven race conditions, work-conserving property violations, incorrect assumptions about DES event processing semantics. Verify that any new events respect the <code>(timestamp, priority, seqID)</code> ordering contract.</p>
+<p><strong>Catches:</strong> Event ordering violations, clock regression, stale-signal bugs, priority inversion in event queues.</p>
+<h4 id="perspective-7-vllmsglang-expert">Perspective 7: vLLM/SGLang Expert<a class="headerlink" href="#perspective-7-vllmsglang-expert" title="Permanent link">&para;</a></h4>
+<p>Check for: batching semantics that don't match real continuous-batching servers, KV cache eviction policies that differ from vLLM's implementation, chunked prefill behavior mismatches, preemption policy differences, missing scheduling features that real servers have. Flag any assumption about LLM serving that this plan gets wrong.</p>
+<p><strong>Catches:</strong> Batching model inaccuracies, KV cache behavior mismatches, prefill/decode pipeline errors, scheduling assumption violations.</p>
+<h4 id="perspective-8-distributed-inference-platform-expert">Perspective 8: Distributed Inference Platform Expert<a class="headerlink" href="#perspective-8-distributed-inference-platform-expert" title="Permanent link">&para;</a></h4>
+<p>Check for: multi-instance coordination bugs, routing load imbalance under high request rates, stale snapshot propagation between instances, admission control edge cases at scale, horizontal scaling assumption violations, prefix-affinity routing correctness across instances.</p>
+<p><strong>Catches:</strong> Load imbalance, stale routing state, admission control failures, scaling assumption violations, cross-instance coordination bugs.</p>
+<h4 id="perspective-9-performance-scalability">Perspective 9: Performance &amp; Scalability<a class="headerlink" href="#perspective-9-performance-scalability" title="Permanent link">&para;</a></h4>
+<p>Check for: algorithmic complexity issues (O(n²) where O(n) suffices), unnecessary allocations in hot paths, map iteration in O(n) loops that could grow, benchmark-sensitive changes, memory growth patterns, changes that would degrade performance at 1000+ requests or 10+ instances.</p>
+<p><strong>Catches:</strong> Algorithmic complexity regressions, hot-path allocations, memory growth, scalability bottlenecks.</p>
+<h4 id="perspective-10-security-robustness">Perspective 10: Security &amp; Robustness<a class="headerlink" href="#perspective-10-security-robustness" title="Permanent link">&para;</a></h4>
+<p>Check for: input validation completeness (all CLI flags, YAML fields, config values), panic paths reachable from user input, resource exhaustion vectors (unbounded loops, unlimited memory growth), degenerate input handling (empty, zero, negative, NaN, Inf), configuration injection risks.</p>
+<p><strong>Catches:</strong> Input validation gaps, user-reachable panics, resource exhaustion, degenerate input failures, injection risks.</p>
+<hr />
+<h3 id="step-3-human-review-of-plan">Step 3: Human Review of Plan<a class="headerlink" href="#step-3-human-review-of-plan" title="Permanent link">&para;</a></h3>
+<p>Final human review of the plan (after automated review).</p>
+<p><strong>Focus areas</strong> (full-format plans):</p>
+<ol>
+<li><strong>Part 1 (Design Validation)</strong> — Review behavioral contracts, component interaction, risks</li>
+<li><strong>Part 2 (Executable Tasks)</strong> — Verify task breakdown makes sense, no dead code</li>
+<li><strong>Deviation Log</strong> — Check if deviations from source document are justified</li>
+<li><strong>Appendix</strong> — Spot-check file-level details for accuracy</li>
+</ol>
+<p>For compact-format plans (Small tier): review only behavioral contracts (from item 1) and task completeness (from item 2). Skip component interaction, deviation log (item 3), and appendix (item 4). Also review the sanity checklist, which compact plans include directly.</p>
+<p><strong>Common issues to catch:</strong>
+- Behavioral contracts too vague or missing edge cases
+- Tasks not properly ordered (dependencies)
+- Missing test coverage for contracts
+- Deviations from source document not justified
+- Dead code or scaffolding</p>
+<p><strong>Outcome:</strong> ✅ Approve plan → proceed to Step 4 (implementation). ❌ Need revisions → iterate, re-review (Step 2.5), then approve.</p>
+<p><strong>Note:</strong> The plan will be committed together with the implementation in Step 5 (single commit for entire PR).</p>
+<hr />
+<h3 id="step-4-implement-the-plan">Step 4: Implement the Plan<a class="headerlink" href="#step-4-implement-the-plan" title="Permanent link">&para;</a></h3>
+<p>Implement the tasks from the approved plan using TDD:</p>
+<p>For each task:
+1. Write the failing test
+2. Run test to verify it fails
+3. Implement minimal code to pass
+4. Run test to verify it passes
+5. Run lint: <code>golangci-lint run ./path/to/package/...</code>
+6. Commit with contract reference</p>
+<p>Execute all tasks sequentially. Stop only on test failure, lint failure, or build error.</p>
+<div class="admonition tip">
+<p class="admonition-title">Automation</p>
+<p><code>/superpowers:executing-plans @docs/plans/&lt;name&gt;-plan.md</code> executes all tasks continuously without pausing. On failure, use <code>/superpowers:systematic-debugging</code> for structured root-cause analysis.</p>
+</div>
+<hr />
+<h3 id="step-45-review-the-code">Step 4.5: Review the Code<a class="headerlink" href="#step-45-review-the-code" title="Permanent link">&para;</a></h3>
+<p>Review the implementation from 10 targeted perspectives, applying the <a href="../convergence/">convergence protocol</a>: zero CRITICAL + zero IMPORTANT = converged; fix and re-run entire round otherwise. Max 10 rounds. Same structure as Step 2.5 (two-stage for Medium/Large, convergence-only for Small), but the 10 perspectives differ: plan review checks design soundness; code review checks implementation quality.</p>
+<p><strong>Two-stage review (Medium/Large PRs; Small PRs skip the pre-pass — see <a href="#pr-size-tiers">PR Size Tiers</a>):</strong></p>
+<ol>
+<li><strong>Holistic pre-pass (Medium/Large only):</strong> Single deep review to catch cross-cutting issues.</li>
+<li><strong>Formal convergence:</strong> Run all 10 perspectives below in parallel.</li>
+</ol>
+<div class="admonition tip">
+<p class="admonition-title">Automation</p>
+<p>Stage 1: <code>/pr-review-toolkit:review-pr</code>. Stage 2: <code>/convergence-review pr-code</code>. See <a href="../../guide/skills-and-plugins/">Skills &amp; Plugins</a>.</p>
+</div>
+<p><strong>Why two stages?</strong> The holistic sweep catches emergent cross-cutting issues. In past PRs, this pre-pass found issues (runtime-breaking regressions, stale panic message prefixes) that individual targeted perspectives missed because they were each focused on their narrow lens. Fixing those first reduces convergence rounds. Small PRs skip the pre-pass for the same reason as Step 2.5.</p>
+<p><strong>Why 10 perspectives in parallel?</strong> Each catches issues the others miss. In the standards-audit-hardening PR, Perspective 1 (substance) found a runtime-breaking regression, Perspective 3 (tests) found weakened coverage, Perspective 7 (vLLM expert) confirmed CLI validation matches real server semantics, and Perspective 10 (security) found pre-existing factory validation gaps. Domain-specific perspectives (DES, vLLM, distributed platform) catch issues that generic code-quality reviewers miss.</p>
+<h4 id="perspective-1-substance-design_1">Perspective 1: Substance &amp; Design<a class="headerlink" href="#perspective-1-substance-design_1" title="Permanent link">&para;</a></h4>
+<p>Check for: logic bugs, design mismatches between contracts and implementation, mathematical errors, silent regressions. Does the implementation actually achieve what the behavioral contracts promise? Check from first principles — not just structural patterns.</p>
+<p><strong>Catches:</strong> Design bugs, formula errors, silent regressions, semantic mismatches between intent and implementation.</p>
+<h4 id="perspective-2-code-quality-error-handling">Perspective 2: Code Quality + Error Handling<a class="headerlink" href="#perspective-2-code-quality-error-handling" title="Permanent link">&para;</a></h4>
+<p>Check for:
+(1) Any new error paths that use <code>continue</code> or early <code>return</code> — do they clean up partial state?
+(2) Any map iteration that accumulates floats — are keys sorted?
+(3) Any struct field added — are all construction sites updated?
+(4) Does library code (<code>sim/</code>) call <code>logrus.Fatalf</code> anywhere in new code?
+(5) Any exported mutable maps — should they be unexported with <code>IsValid*()</code> accessors?
+(6) Any YAML config fields using <code>float64</code> instead of <code>*float64</code> where zero is valid?
+(7) Any division where the denominator derives from runtime state without a zero guard?
+(8) Any new interface with methods only meaningful for one implementation?
+(9) Any method &gt;50 lines spanning multiple concerns (scheduling + latency + metrics)?
+(10) Any changes to <code>docs/contributing/standards/</code> files — are CLAUDE.md working copies updated to match?</p>
+<p><strong>Catches:</strong> Logic errors, nil pointer risks, silent failures (discarded return values), panic paths reachable from user input, CLAUDE.md convention violations, dead code, silent <code>continue</code> data loss, non-deterministic map iteration, construction site drift, library code calling <code>os.Exit</code>, exported mutable maps, YAML zero-value ambiguity, division by zero in runtime computation, leaky interfaces, monolith methods, documentation drift.</p>
+<h4 id="perspective-3-test-behavioral-quality">Perspective 3: Test Behavioral Quality<a class="headerlink" href="#perspective-3-test-behavioral-quality" title="Permanent link">&para;</a></h4>
+<p>Check for: Are all tests truly behavioral (testing WHAT, not HOW)? Rate each test as Behavioral, Mixed, or Structural. Would they survive a refactor? Are there golden dataset tests that lack companion invariant tests? Golden tests encode current behavior as "correct" — if the code had a bug when golden values were captured, the test perpetuates the bug. Flag golden tests whose expected values are not independently validated by an invariant test.</p>
+<p><strong>Catches:</strong> Structural tests (Go struct assignment, trivial getters), type assertions in factory tests, exact-formula assertions instead of behavioral invariants, tests that pass even if the feature is broken, golden-only tests that would perpetuate pre-existing bugs (issue #183: codellama golden dataset encoded a silently-dropped request as the expected value since its initial commit).</p>
+<h4 id="perspective-4-getting-started-experience">Perspective 4: Getting-Started Experience<a class="headerlink" href="#perspective-4-getting-started-experience" title="Permanent link">&para;</a></h4>
+<p>Check for: Simulate the journey of (1) a user doing capacity planning with the CLI, and (2) a contributor adding a new algorithm. Where would they get stuck? What's missing? Check for missing example files, undocumented output metrics, incomplete contributor guide, unclear extension points, README not updated for new features.</p>
+<p><strong>Catches:</strong> Missing example files, undocumented output metrics, incomplete contributor guide, unclear extension points, README not updated for new features.</p>
+<h4 id="perspective-5-automated-reviewer-simulation">Perspective 5: Automated Reviewer Simulation<a class="headerlink" href="#perspective-5-automated-reviewer-simulation" title="Permanent link">&para;</a></h4>
+<p>Check for: What GitHub Copilot, Claude, and Codex would flag. Exported mutable globals, user-controlled panic paths, YAML typo acceptance, NaN/Inf validation gaps, redundant code, style nits.</p>
+<p><strong>Catches:</strong> Exported mutable globals, user-controlled panic paths, YAML typo acceptance, NaN/Inf validation gaps, redundant code, style nits.</p>
+<h4 id="perspective-6-des-expert_1">Perspective 6: DES Expert<a class="headerlink" href="#perspective-6-des-expert_1" title="Permanent link">&para;</a></h4>
+<p>Check for: event ordering bugs, clock monotonicity violations, stale signal propagation between event types, heap priority errors, event-driven race conditions, work-conserving property violations.</p>
+<p><strong>Catches:</strong> Event ordering violations, clock regression, stale-signal bugs, work-conserving property gaps.</p>
+<h4 id="perspective-7-vllmsglang-expert_1">Perspective 7: vLLM/SGLang Expert<a class="headerlink" href="#perspective-7-vllmsglang-expert_1" title="Permanent link">&para;</a></h4>
+<p>Check for: batching semantics that don't match real continuous-batching servers, KV cache eviction mismatches, chunked prefill behavior errors, preemption policy differences, missing scheduling features. Flag any assumption about LLM serving that this code gets wrong.</p>
+<p><strong>Catches:</strong> Batching model inaccuracies, KV cache behavior mismatches, scheduling assumption violations.</p>
+<h4 id="perspective-8-distributed-inference-platform-expert_1">Perspective 8: Distributed Inference Platform Expert<a class="headerlink" href="#perspective-8-distributed-inference-platform-expert_1" title="Permanent link">&para;</a></h4>
+<p>Check for: multi-instance coordination bugs, routing load imbalance, stale snapshot propagation, admission control edge cases, horizontal scaling assumptions, prefix-affinity routing correctness.</p>
+<p><strong>Catches:</strong> Load imbalance, stale routing state, scaling assumption violations, cross-instance bugs.</p>
+<h4 id="perspective-9-performance-scalability_1">Perspective 9: Performance &amp; Scalability<a class="headerlink" href="#perspective-9-performance-scalability_1" title="Permanent link">&para;</a></h4>
+<p>Check for: algorithmic complexity issues, unnecessary allocations in hot paths, map iteration in O(n) loops, benchmark-sensitive changes, memory growth patterns, changes that would degrade performance at 1000+ requests or 10+ instances.</p>
+<p><strong>Catches:</strong> Complexity regressions, hot-path allocations, memory growth, scalability bottlenecks.</p>
+<h4 id="perspective-10-security-robustness_1">Perspective 10: Security &amp; Robustness<a class="headerlink" href="#perspective-10-security-robustness_1" title="Permanent link">&para;</a></h4>
+<p>Check for: input validation completeness, panic paths reachable from user input, resource exhaustion vectors, degenerate input handling (empty, zero, NaN, Inf), configuration injection risks.</p>
+<p><strong>Catches:</strong> Validation gaps, user-reachable panics, resource exhaustion, degenerate input failures.</p>
+<h4 id="filing-pre-existing-issues">Filing Pre-Existing Issues<a class="headerlink" href="#filing-pre-existing-issues" title="Permanent link">&para;</a></h4>
+<p>Review passes naturally surface pre-existing bugs in surrounding code. These are valuable discoveries but outside the current PR's scope.</p>
+<p><strong>Rule:</strong> File a GitHub issue immediately. Do not fix in the current PR.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>gh<span class="w"> </span>issue<span class="w"> </span>create<span class="w"> </span>--title<span class="w"> </span><span class="s2">&quot;Bug: &lt;concise description&gt;&quot;</span><span class="w"> </span>--body<span class="w"> </span><span class="s2">&quot;&lt;location, impact, discovery context&gt;&quot;</span><span class="w"> </span>--label<span class="w"> </span>bug
+</code></pre></div>
+<p><strong>Label guide:</strong> Use <code>bug</code> for code defects, <code>design</code> for design limitations, <code>enhancement</code> for feature gaps, <code>hardening</code> for correctness/invariant issues. Every issue must have at least one label — unlabeled issues are invisible in filtered views.</p>
+<p><strong>After filing:</strong> Reference the issue number in the PR description under a "Discovered Issues" section so reviewers know it was found and tracked.</p>
+<p><strong>Why not fix in-PR?</strong>
+- <strong>Scope creep</strong> — muddies the diff, makes review harder, risks introducing regressions in unrelated code
+- <strong>Attribution</strong> — the fix deserves its own tests and its own commit history
+- <strong>Tracking</strong> — issues that aren't filed are issues that are lost</p>
+<h4 id="after-convergence-verification-gate">After Convergence: Verification Gate<a class="headerlink" href="#after-convergence-verification-gate" title="Permanent link">&para;</a></h4>
+<p>After fixing issues from all passes, run the verification gate to ensure all claims are backed by evidence:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>go<span class="w"> </span>build<span class="w"> </span>./...<span class="w">            </span><span class="c1"># Build passes</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./...<span class="w"> </span>-count<span class="o">=</span><span class="m">1</span><span class="w">    </span><span class="c1"># All tests pass (with counts)</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>golangci-lint<span class="w"> </span>run<span class="w"> </span>./...<span class="w">   </span><span class="c1"># Zero lint issues</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>git<span class="w"> </span>status<span class="w">                </span><span class="c1"># Working tree status</span>
+</code></pre></div>
+<p>Report: build exit code, test pass/fail counts, lint issue count, working tree status. Wait for user approval before proceeding.</p>
+<p><strong>Why a gate instead of informal checking?</strong> In PR9, the manual "run these commands" instruction was easy to skip or half-execute. Making verification a formal gate with expected output makes it non-optional and evidence-based.</p>
+<div class="admonition tip">
+<p class="admonition-title">Automation</p>
+<p><code>/superpowers:verification-before-completion</code> enforces running these commands and confirming output before making any success claims.</p>
+</div>
+<hr />
+<h3 id="step-475-pre-commit-self-audit">Step 4.75: Pre-Commit Self-Audit<a class="headerlink" href="#step-475-pre-commit-self-audit" title="Permanent link">&para;</a></h3>
+<p>Stop, think critically, and answer each question below from your own reasoning. Do not delegate to automated tools — review each dimension yourself using critical thinking. Report all issues found. If you find zero issues, explain why you're confident for each dimension.</p>
+<blockquote>
+<p><strong>Express Lane PRs:</strong> Check only dimensions 1 (logic bugs), 3 (determinism), and 4 (consistency). The full 10-dimension audit applies to Small and above.</p>
+</blockquote>
+<p><strong>Why this step exists:</strong> In PR9, the 4-perspective automated code review (Step 4.5) found 0 new issues in the final perspective. Then the user asked "are you confident?" and Claude found 3 real bugs by thinking critically: a wrong reference scale for token throughput normalization, non-deterministic map iteration in output, and inconsistent comment patterns. Automated review perspectives check structure; this step checks substance.</p>
+<p><strong>Self-audit dimensions — think through each one:</strong></p>
+<ol>
+<li><strong>Logic bugs:</strong> Trace through the core algorithm mentally. Are there edge cases where the math breaks? Division by zero? Off-by-one? Wrong comparisons?</li>
+<li><strong>Design bugs:</strong> Does the design actually achieve what the contracts promise? Would a user get the expected behavior? Are there scale mismatches, unit confusions, or semantic errors?</li>
+<li><strong>Determinism (R2, INV-6):</strong> Is all output deterministic? Any map iteration used for ordered output? Any floating-point accumulation order dependencies?</li>
+<li><strong>Consistency:</strong> Are naming patterns consistent across all changed files? Do comments match code? Do doc strings match implementations? Are there stale references?</li>
+<li><strong>Documentation:</strong> Would a new user find everything they need? Would a contributor know how to extend this? Are CLI flags documented everywhere (CLAUDE.md, README, <code>--help</code>)?</li>
+<li><strong>Defensive edge cases:</strong> What happens with zero input? Empty collections? Maximum values? What if the user passes unusual but valid flag combinations?</li>
+<li><strong>Test epistemology (R7, R12):</strong> For every test that compares against a golden value, ask: "How do I know this expected value is correct?" If the answer is "because the code produced it," that test catches regressions but not pre-existing bugs. Verify a corresponding invariant test validates the result from first principles. (See issue #183: a golden test perpetuated a silently-dropped request for months.)</li>
+<li><strong>Construction site uniqueness (R4):</strong> Does this PR add fields to existing structs? If so, are ALL construction sites updated? Grep for <code>StructName{</code> across the codebase. Are there canonical constructors, or are structs built inline in multiple places?</li>
+<li><strong>Error path completeness (R1, R5):</strong> For every error/failure path in new code, what happens to partially-mutated state? Does every <code>continue</code> or early <code>return</code> clean up what was started? Is there a counter or log so the failure is observable?</li>
+<li><strong>Documentation DRY (source-of-truth map):</strong> Does this PR modify content that exists as a working copy elsewhere? Check the source-of-truth map in <code>docs/contributing/standards/principles.md</code>. If a canonical source was updated (rules.md, invariants.md, principles.md, extension-recipes.md), verify all working copies listed in the map are also updated. If a new file or section was added, verify it appears in the File Organization tree. Note: hypothesis experiments do not merge to <code>main</code> — they live in their feature branches.</li>
+</ol>
+<p><strong>Why no agent?</strong> Agents are good at pattern-matching (finding style violations, checking structure). They're bad at stepping back and asking "does this actually make sense?" That requires the kind of critical thinking that only happens when you deliberately pause and reflect.</p>
+<p><strong>Fix all issues found. Then wait for user approval before Step 5.</strong></p>
+<hr />
+<h3 id="step-5-commit-push-and-create-pr">Step 5: Commit, Push, and Create PR<a class="headerlink" href="#step-5-commit-push-and-create-pr" title="Permanent link">&para;</a></h3>
+<p>Stage your changes, commit, push, and create a PR:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>git<span class="w"> </span>add<span class="w"> </span>&lt;files&gt;
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(scope): &lt;description&gt;</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="s2">- Implement BC-1: &lt;brief description&gt;</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="s2">- Implement BC-2: &lt;brief description&gt;</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="s2">Co-Authored-By: Claude &lt;noreply@anthropic.com&gt;&quot;</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>git<span class="w"> </span>push<span class="w"> </span>-u<span class="w"> </span>origin<span class="w"> </span>&lt;branch-name&gt;
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>gh<span class="w"> </span>pr<span class="w"> </span>create<span class="w"> </span>--title<span class="w"> </span><span class="s2">&quot;&lt;title&gt;&quot;</span><span class="w"> </span>--body<span class="w"> </span><span class="s2">&quot;&lt;description with behavioral contracts&gt;&quot;</span>
+</code></pre></div>
+<p>The PR description should include a summary, behavioral contracts (GIVEN/WHEN/THEN), testing verification, and GitHub closing keywords from the plan's <code>Closes:</code> field (e.g., <code>Fixes #183, fixes #189</code>).</p>
+<div class="admonition tip">
+<p class="admonition-title">Automation</p>
+<p><code>/commit-commands:commit-push-pr</code> handles staging, committing, pushing, and PR creation in one command. It analyzes current git state, creates an appropriate commit message referencing behavioral contracts, and opens the PR.</p>
+</div>
+<hr />
+<h2 id="workflow-variants">Workflow Variants<a class="headerlink" href="#workflow-variants" title="Permanent link">&para;</a></h2>
+<h3 id="subagent-driven-development-in-session">Subagent-Driven Development (In-Session)<a class="headerlink" href="#subagent-driven-development-in-session" title="Permanent link">&para;</a></h3>
+<p>Alternative to Step 4 for simpler PRs where you want tighter iteration. Executes in the current session with a fresh subagent per task and immediate code review after each task.</p>
+<p><strong>Trade-offs:</strong> ✅ Faster for simple PRs (no session switching), better for iterative refinement. ⚠️ Uses current session's context (can grow large), review after every task (vs continuous execution).</p>
+<div class="admonition tip">
+<p class="admonition-title">Automation</p>
+<p>Use the <code>superpowers:subagent-driven-development</code> skill to implement the plan with fresh subagent per task.</p>
+</div>
+<h3 id="pr-size-tiers">PR Size Tiers<a class="headerlink" href="#pr-size-tiers" title="Permanent link">&para;</a></h3>
+<p>Not all PRs need the same level of review. Use these objective criteria:</p>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Criteria</th>
+<th>Plan Review (Step 2.5)</th>
+<th>Code Review (Step 4.5)</th>
+<th>Self-Audit (Step 4.75)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Express Lane</strong></td>
+<td>≤3 lines changed AND purely mechanical — limited to: typo fixes in prose/comments, whitespace/formatting, comment rewording, removal of commented-out code — AND no behavioral change AND not in any file from the <a href="../standards/principles/#source-of-truth-map">source-of-truth map</a></td>
+<td>Skip</td>
+<td>Skip</td>
+<td>3 dimensions (correctness, determinism, consistency)</td>
+</tr>
+<tr>
+<td><strong>Small</strong></td>
+<td>Docs-only with no process/workflow semantic changes (typo fixes, formatting, comment updates, link fixes), OR ≤3 files changed AND only mechanical changes (renames, formatting) AND no behavioral logic changes AND no new interfaces/types AND no new CLI flags</td>
+<td>Single convergence round (no pre-pass)</td>
+<td>Single convergence round (no pre-pass)</td>
+<td>Full (all 10 dimensions)</td>
+</tr>
+<tr>
+<td><strong>Medium</strong></td>
+<td>4–10 files changed, OR new policy template behind existing interface</td>
+<td>Full two-stage (pre-pass + convergence)</td>
+<td>Full two-stage (pre-pass + convergence)</td>
+<td>Full (all 10 dimensions)</td>
+</tr>
+<tr>
+<td><strong>Large</strong></td>
+<td>&gt;10 files, OR new interfaces/modules, OR architecture changes</td>
+<td>Full two-stage (pre-pass + convergence)</td>
+<td>Full two-stage (pre-pass + convergence)</td>
+<td>Full (all 10 dimensions)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Rules:</strong>
+- <strong>Express Lane process:</strong> Implement → self-audit (3 dimensions: correctness, determinism, consistency) → commit. No worktree, plan, convergence review, or human gate required. If the change grows beyond 3 lines, touches a source-of-truth file, or introduces any behavioral change, stop and switch to Small tier.
+- <strong>All other tiers require Steps 1–5</strong> — worktree, source audit, plan, human review, execution, and commit apply to Small, Medium, and Large.
+- <strong>Self-audit is always full for Small and above</strong> — the 10-dimension critical thinking check catches substance bugs that no automated review can. It costs 5 minutes and has caught 3+ real bugs in every PR where it was applied.
+- <strong>When in doubt, tier up</strong> — if you're unsure whether a change is Express Lane or Small, use Small. If unsure between Small and Medium, use Medium.
+- <strong>Human reviewer can override</strong> — if the human reviewer at Step 3 believes the tier is wrong, they can request a different tier.</p>
+<div class="admonition note">
+<p class="admonition-title">Compact Plan Format</p>
+<p>Small tier PRs may use the <a href="../templates/micro-plan/#compact-format-small-tier-prs">compact plan format</a> instead of the full micro-plan template. The compact format retains behavioral contracts and TDD tasks but drops ceremony sections. See the template for criteria and structure.</p>
+</div>
+<hr />
+<h2 id="example-walkthrough">Example Walkthrough<a class="headerlink" href="#example-walkthrough" title="Permanent link">&para;</a></h2>
+<p>A typical PR from a macro plan section:</p>
+<ol>
+<li><strong>Create worktree:</strong> <code>git worktree add .worktrees/pr8-routing -b pr8-routing &amp;&amp; cd .worktrees/pr8-routing</code></li>
+<li><strong>Audit source:</strong> Scan source document for ambiguities, contradictions, missing info. Record clarifications.</li>
+<li><strong>Write plan:</strong> Follow <a href="../templates/micro-plan/">micro-plan template</a>, save to <code>docs/plans/pr8-routing-plan.md</code></li>
+<li><strong>Review plan:</strong> For Medium/Large PRs, run holistic pre-pass first. Then run all 10 perspectives in convergence rounds. Fix issues, re-run until converged. (Small PRs skip the pre-pass.)</li>
+<li><strong>Human review:</strong> Read plan — contracts, tasks, appendix. Approve to proceed.</li>
+<li><strong>Implement:</strong> Execute TDD tasks: test → fail → implement → pass → lint → commit.</li>
+<li><strong>Review code:</strong> Same review structure as plan (two-stage for Medium/Large, convergence-only for Small). Fix issues, re-run until converged. Run verification gate.</li>
+<li><strong>Self-audit:</strong> Think through all 10 dimensions. Fix issues.</li>
+<li><strong>Commit + PR:</strong> Push branch, create PR with closing keywords.</li>
+</ol>
+<p>The workflow is the same regardless of source (macro plan, design doc, GitHub issues). Only the source document passed to the planning step differs.</p>
+<hr />
+<h2 id="tips-for-success">Tips for Success<a class="headerlink" href="#tips-for-success" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Use automated reviews proactively</strong> — run reviews after plan creation and after implementation (don't wait for human review to catch issues)</li>
+<li><strong>Fix critical issues immediately</strong> — don't proceed with known critical issues (they compound)</li>
+<li><strong>Re-run targeted reviews after fixes</strong> — verify fixes worked</li>
+<li><strong>Use worktrees for complex PRs</strong> — avoid disrupting main workspace</li>
+<li><strong>Review after execution</strong> — use automated code review (Step 4.5) after all tasks complete</li>
+<li><strong>Reference contracts in commits</strong> — makes review easier and more traceable</li>
+<li><strong>Update CLAUDE.md immediately</strong> — don't defer documentation</li>
+<li><strong>Keep source documents updated</strong> — mark PRs as completed in macro plan; close resolved issues</li>
+<li><strong>Don't trust automated passes alone</strong> — the self-audit (Step 4.75) catches substance bugs that pattern-matching agents miss. In PR9, 3 real bugs were found by critical thinking after 4 automated passes found 0 issues.</li>
+<li><strong>Checkpoint long sessions</strong> — for PRs with 8+ tasks or multi-round reviews, write a checkpoint summary to <code>.claude/checkpoint.md</code> after each major phase. If you hit context limits, read the checkpoint first.</li>
+</ol>
+<h3 id="headless-mode-for-reviews-context-overflow-workaround">Headless Mode for Reviews (Context Overflow Workaround)<a class="headerlink" href="#headless-mode-for-reviews-context-overflow-workaround" title="Permanent link">&para;</a></h3>
+<p>If multi-agent review passes hit context overflow during consolidation, run each review as an isolated invocation that writes findings to a file, then consolidate in a lightweight final pass.</p>
+<div class="admonition tip">
+<p class="admonition-title">Requires Claude Code</p>
+<p>This workaround uses the <code>claude</code> CLI tool. Contributors without Claude Code can run reviews manually using the perspective checklists in Steps 2.5 and 4.5.</p>
+</div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="ch">#!/bin/bash</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="c1"># headless-review.sh — Run review agents with full context each</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nv">BRANCH</span><span class="o">=</span><span class="k">$(</span>git<span class="w"> </span>branch<span class="w"> </span>--show-current<span class="k">)</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>.review
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="c1"># Run each pass in its own context (no overflow)</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>claude<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Pass 1: Code quality review of branch </span><span class="nv">$BRANCH</span><span class="s2">. Write findings to .review/01-code-quality.md&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span>--allowedTools<span class="w"> </span><span class="s2">&quot;Read,Grep,Glob,Bash&quot;</span><span class="w"> </span><span class="p">&amp;</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>claude<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Pass 2: Test behavioral quality review. Write findings to .review/02-test-quality.md&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">  </span>--allowedTools<span class="w"> </span><span class="s2">&quot;Read,Grep,Glob,Bash&quot;</span><span class="w"> </span><span class="p">&amp;</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>claude<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Pass 3: Getting-started review. Write findings to .review/03-getting-started.md&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">  </span>--allowedTools<span class="w"> </span><span class="s2">&quot;Read,Grep,Glob,Bash&quot;</span><span class="w"> </span><span class="p">&amp;</span>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="nb">wait</span>
+<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>
+<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="c1"># Lightweight consolidation</span>
+<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>claude<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Read .review/*.md files. Produce a consolidated summary sorted by severity.&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="w">  </span>--allowedTools<span class="w"> </span><span class="s2">&quot;Read,Glob&quot;</span>
+</code></pre></div>
+<p>When to use: When Step 2.5 or Step 4.5 hits context limits. Not needed for most PRs.</p>
+<hr />
+<h2 id="common-issues-and-solutions">Common Issues and Solutions<a class="headerlink" href="#common-issues-and-solutions" title="Permanent link">&para;</a></h2>
+<h3 id="issue-plan-too-generic-agents-ask-clarifying-questions">Issue: Plan too generic, agents ask clarifying questions<a class="headerlink" href="#issue-plan-too-generic-agents-ask-clarifying-questions" title="Permanent link">&para;</a></h3>
+<p><strong>Solution:</strong> Add specific guidance in the invocation. Claude reads the full source document and extracts context automatically. If still too generic, add explicit notes about integration points.</p>
+<h3 id="issue-tasks-miss-behavioral-contracts-during-execution">Issue: Tasks miss behavioral contracts during execution<a class="headerlink" href="#issue-tasks-miss-behavioral-contracts-during-execution" title="Permanent link">&para;</a></h3>
+<p><strong>Solution:</strong> After execution completes, verify all contracts are tested: "Confirm all contracts are tested: BC-1: Show test results. BC-2: Show test results."</p>
+<h3 id="issue-lint-fails-at-the-end-with-many-issues">Issue: Lint fails at the end with many issues<a class="headerlink" href="#issue-lint-fails-at-the-end-with-many-issues" title="Permanent link">&para;</a></h3>
+<p><strong>Solution:</strong> Ensure lint runs in each task step: <code>golangci-lint run ./path/to/modified/package/...</code></p>
+<h3 id="issue-dead-code-introduced-unused-functions-fields">Issue: Dead code introduced (unused functions, fields)<a class="headerlink" href="#issue-dead-code-introduced-unused-functions-fields" title="Permanent link">&para;</a></h3>
+<p><strong>Solution:</strong> In Step 3 plan review, check every struct field is used by end of task or a later task. Every method called by tests or production code. Every parameter actually needed.</p>
+<h3 id="issue-review-finds-many-critical-issues-overwhelming-to-fix">Issue: Review finds many critical issues, overwhelming to fix<a class="headerlink" href="#issue-review-finds-many-critical-issues-overwhelming-to-fix" title="Permanent link">&para;</a></h3>
+<p><strong>Solution:</strong> Fix issues in priority order: (1) Fix all critical, re-run. (2) Fix important, re-run. (3) Consider suggestions. Use targeted review after fixes.</p>
+<h3 id="issue-uncertain-if-review-findings-are-valid">Issue: Uncertain if review findings are valid<a class="headerlink" href="#issue-uncertain-if-review-findings-are-valid" title="Permanent link">&para;</a></h3>
+<p><strong>Solution:</strong> Review agents provide file:line references. Check the specific code location. If uncertain, ask Claude to explain. If agent is wrong, document why and proceed.</p>
+<hr />
+<details>
+<summary>Appendix: Workflow Evolution</summary>
+
+**v1.0 (pre-2026-02-14):** Manual agent team prompts, separate design/execution plans
+**v2.0 (2026-02-14):** Unified planning with `writing-plans` skill, batch execution with `executing-plans` skill, automated two-stage review with `pr-review-toolkit:review-pr`, simplified invocations with @ file references
+**v2.1 (2026-02-16):** Same-session worktree workflow (project-local `.worktrees/` no longer requires new session); continuous execution replaces batch checkpoints (tasks run without pausing, stop only on failure)
+**v2.2 (2026-02-16):** Focused review passes replace generic review-pr invocations. Step 2.5 expanded to 3 passes (cross-doc consistency, architecture boundary, codebase readiness). Step 4.5 expanded to 4 passes (code quality, test behavioral quality, getting-started experience, automated reviewer simulation). Based on PR8 experience where each focused pass caught issues the others missed.
+**v2.3 (2026-02-16):** Step 2.5 expanded to 4 passes — added Pass 4 (structural validation: task dependencies, template completeness, executive summary clarity, under-specified task detection). Based on PR9 experience where deferred items fell through cracks in the macro plan, and an under-specified documentation task would have confused the executing agent.
+**v2.4 (2026-02-16):** Four targeted skill integrations addressing real failure modes: (1) `review-plan` as Pass 0 in Step 2.5 — external LLM review catches design bugs that self-review misses (PR9: fitness normalization bug passed 3 focused passes). (2) `superpowers:systematic-debugging` as on-failure handler in Step 4 — structured root-cause analysis instead of ad-hoc debugging. (3) `superpowers:verification-before-completion` replaces manual verification prose after Step 4.5 — makes build/test/lint gate non-skippable. (4) `commit-commands:clean_gone` as pre-cleanup in Step 1 — prevents stale branch accumulation.
+**v2.5 (2026-02-16):** Three additions from `/insights` analysis of 212 sessions: (1) Step 4.75 (pre-commit self-audit) — deliberate critical thinking step with no agent, checking logic/design/determinism/consistency/docs/edge-cases. In PR9, this step found 3 real bugs that 4 automated passes missed. (2) Headless mode documentation for review passes. (3) Checkpointing tip for long sessions.
+**v2.6 (2026-02-18):** Two additions: (1) "Filing Pre-Existing Issues" subsection to Step 4.5. (2) Antipattern prevention from hardening audit — Step 4.75 expanded to 9 self-audit dimensions; Step 4.5 Pass 1 prompt expanded with 4 antipattern checks.
+**v2.7 (2026-02-18):** Generalized workflow from "macro plan only" to any source document (macro plan sections, design docs, GitHub issues, feature requests).
+**v2.8 (2026-02-18):** Auto-close issues on PR merge. Added `Closes:` field to micro plan header template.
+**v2.9 (2026-02-20):** Convergence re-run protocol for both Step 2.5 and Step 4.5.
+**v3.0 (2026-02-23):** Multi-perspective rounds replace sequential passes. External LLM review removed. Convergence redefined as property of a clean round.
+**v4.0 (2026-02-27):** Human-first rewrite (#464). Steps describe human actions; skills in admonition callouts. Manual path is primary; automation is additive. Templates split into human-readable format descriptions + agent prompt companions.
+**v4.1 (2026-03-17):** Added Step 1.5 (Source Document Audit) between Steps 1 and 2 — structured pre-audit of source documents for ambiguities, contradictions, and missing information before planning begins. Added `CLARIFICATION` as a Deviation Log reason (#664).
+**v4.2 (2026-03-17):** Added Express Lane tier for ≤3-line mechanical changes (implement → self-audit → commit, no plan/review/human gate). Eliminated pre-pass for Small PRs — single convergence round sufficient. Medium/Large unchanged (#673).
+
+</details>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../extension-recipes/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Extension Recipes">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Extension Recipes
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../design-process/" class="md-footer__link md-footer__link--next" aria-label="Next: Design Process">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Design Process
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.indexes", "navigation.sections", "navigation.expand", "navigation.footer", "navigation.top", "search.highlight", "search.suggest", "content.code.copy", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
