@@ -374,7 +374,7 @@ scheduler: "fcfs"
 # Node pool infrastructure (Phase 1A — optional; omit for backward-compatible single-pool mode)
 node_pools:
   - name: "gpu-pool-1"
-    gpu_type: "H100"
+    gpu_type: "H100"      # pool-authoritative: overrides --gpu flag for hardware calibration (blackbox backend); see issue #893 for roofline backend
     gpus_per_node: 8
     gpu_memory_gib: 80.0
     initial_nodes: 2
