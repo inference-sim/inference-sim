@@ -27,13 +27,13 @@
 
 **⚠️ CRITICAL**: Phases 3–5 all block on this phase.
 
-- [ ] T001 Write failing test `TestPlaceInstance_ReturnsMatchedPoolGPUType` (table-driven: pool `gpu_type` matches, mismatches, error path — assert returned `matchedGPUType` equals pool's own value) in `sim/cluster/infra_placement_test.go`
-- [ ] T002 Extend `PlaceInstance` signature in `sim/cluster/infra_placement.go`: add `matchedGPUType string` as third return value; set it to `poolState.config.GPUType` on success path; return `""` on all error paths
-- [ ] T003 [P] Write failing test `TestRetryPendingInstances_PlacedInstanceHasGPUType` (assert `placedInstance.gpuType` equals the pool's GPU type after retry succeeds) in `sim/cluster/infra_placement_test.go`
-- [ ] T004 [P] Add `gpuType string` field to `placedInstance` struct in `sim/cluster/infra_placement.go`; update `RetryPendingInstances` to capture `matchedGPUType` from `PlaceInstance` and populate `placedInstance.gpuType`
-- [ ] T005 Write failing test `TestAddPending_StoresSimCfg` (call `AddPending` with a non-zero `simCfg`; verify it is accessible through the retry path) in `sim/cluster/infra_placement_test.go`
-- [ ] T006 Add `simCfg sim.SimConfig` field to `pendingInstance` struct in `sim/cluster/infra_placement.go`; add `simCfg sim.SimConfig` parameter to `AddPending`; store in literal; add `simCfg sim.SimConfig` field to `placedInstance` struct; propagate from `pendingInstance` through `RetryPendingInstances`
-- [ ] T007 Update all existing `PlaceInstance(...)` call sites in `sim/cluster/infra_placement_test.go` and `sim/cluster/infra_placement.go` to capture or discard the new `matchedGPUType` return value; run `go test ./sim/cluster/... -run TestPlace` to confirm green
+- [X] T001 Write failing test `TestPlaceInstance_ReturnsMatchedPoolGPUType` (table-driven: pool `gpu_type` matches, mismatches, error path — assert returned `matchedGPUType` equals pool's own value) in `sim/cluster/infra_placement_test.go`
+- [X] T002 Extend `PlaceInstance` signature in `sim/cluster/infra_placement.go`: add `matchedGPUType string` as third return value; set it to `poolState.config.GPUType` on success path; return `""` on all error paths
+- [X] T003 [P] Write failing test `TestRetryPendingInstances_PlacedInstanceHasGPUType` (assert `placedInstance.gpuType` equals the pool's GPU type after retry succeeds) in `sim/cluster/infra_placement_test.go`
+- [X] T004 [P] Add `gpuType string` field to `placedInstance` struct in `sim/cluster/infra_placement.go`; update `RetryPendingInstances` to capture `matchedGPUType` from `PlaceInstance` and populate `placedInstance.gpuType`
+- [X] T005 Write failing test `TestAddPending_StoresSimCfg` (call `AddPending` with a non-zero `simCfg`; verify it is accessible through the retry path) in `sim/cluster/infra_placement_test.go`
+- [X] T006 Add `simCfg sim.SimConfig` field to `pendingInstance` struct in `sim/cluster/infra_placement.go`; add `simCfg sim.SimConfig` parameter to `AddPending`; store in literal; add `simCfg sim.SimConfig` field to `placedInstance` struct; propagate from `pendingInstance` through `RetryPendingInstances`
+- [X] T007 Update all existing `PlaceInstance(...)` call sites in `sim/cluster/infra_placement_test.go` and `sim/cluster/infra_placement.go` to capture or discard the new `matchedGPUType` return value; run `go test ./sim/cluster/... -run TestPlace` to confirm green
 
 **Checkpoint**: `go test ./sim/cluster/... -run TestPlace -run TestRetry -run TestAddPending` passes. Foundation ready — user story phases may begin.
 
@@ -45,12 +45,12 @@
 
 **Independent Test**: `go test ./sim/cluster/... -run TestNewClusterSimulator_UsesPoolGPUType` passes; `go test ./sim/cluster/... -run TestNewClusterSimulator_NoNodePools_DeterminismPreserved` passes.
 
-- [ ] T008 [US1] Write failing test `TestNewClusterSimulator_UsesPoolGPUType` (GIVEN `NodePools` with `gpu_type: A100` and `config.GPU = "H100"`, WHEN `NewClusterSimulator` runs, THEN each placed instance's `LatencyModel` step-time reflects A100 hardware coefficients — assert via observable latency output, not internal field access) in `sim/cluster/cluster_test.go`
-- [ ] T009 [US1] Write failing test `TestNewClusterSimulator_NoNodePools_DeterminismPreserved` (GIVEN `NodePools` empty and same seed as a reference run, WHEN `NewClusterSimulator` runs, THEN simulation output metrics are byte-identical to the pre-refactor baseline — use the existing determinism test pattern) in `sim/cluster/cluster_test.go`
-- [ ] T010 [US1] Implement unified construction loop in `sim/cluster/cluster.go`: move `NewInstanceSimulator` call to after `PlaceInstance` succeeds; set `simCfg.GPU = matchedGPUType` (pool-authoritative) before construction; handle no-NodePools path as immediate placement with `gpuType = config.GPU`; update `AddPending` call to pass `simCfg` (with `GPU` unset); remove pre-construction of instances for the pending path (instances in `pendingInsts` are not yet created)
-- [ ] T011 [US1] Update `instanceMap` and `snapshotProvider` initialization in `sim/cluster/cluster.go` to reflect that pending instances are not yet constructed at startup (only placed instances enter `instanceMap` at construction time)
-- [ ] T012 [US1] Update the `OnRequestDone` / `tenantTracker` callback wiring loop in `sim/cluster/cluster.go` to iterate only over instances that are actually constructed (placed instances); pending instances are wired when constructed in `NodeReadyEvent`
-- [ ] T013 [US1] Update call sites of `AddPending` in `sim/cluster/cluster.go` to pass the pre-resolved `simCfg` (with `GPU` field left empty)
+- [X] T008 [US1] Write failing test `TestNewClusterSimulator_UsesPoolGPUType` (GIVEN `NodePools` with `gpu_type: A100` and `config.GPU = "H100"`, WHEN `NewClusterSimulator` runs, THEN each placed instance's `LatencyModel` step-time reflects A100 hardware coefficients — assert via observable latency output, not internal field access) in `sim/cluster/cluster_test.go`
+- [X] T009 [US1] Write failing test `TestNewClusterSimulator_NoNodePools_DeterminismPreserved` (GIVEN `NodePools` empty and same seed as a reference run, WHEN `NewClusterSimulator` runs, THEN simulation output metrics are byte-identical to the pre-refactor baseline — use the existing determinism test pattern) in `sim/cluster/cluster_test.go`
+- [X] T010 [US1] Implement unified construction loop in `sim/cluster/cluster.go`: move `NewInstanceSimulator` call to after `PlaceInstance` succeeds; set `simCfg.GPU = matchedGPUType` (pool-authoritative) before construction; handle no-NodePools path as immediate placement with `gpuType = config.GPU`; update `AddPending` call to pass `simCfg` (with `GPU` unset); remove pre-construction of instances for the pending path (instances in `pendingInsts` are not yet created)
+- [X] T011 [US1] Update `instanceMap` and `snapshotProvider` initialization in `sim/cluster/cluster.go` to reflect that pending instances are not yet constructed at startup (only placed instances enter `instanceMap` at construction time)
+- [X] T012 [US1] Update the `OnRequestDone` / `tenantTracker` callback wiring loop in `sim/cluster/cluster.go` to iterate only over instances that are actually constructed (placed instances); pending instances are wired when constructed in `NodeReadyEvent`
+- [X] T013 [US1] Update call sites of `AddPending` in `sim/cluster/cluster.go` to pass the pre-resolved `simCfg` (with `GPU` field left empty)
 
 **Checkpoint**: `go test ./sim/cluster/... -run TestNewClusterSimulator` passes. User Story 1 is fully functional: synchronous placement uses pool GPU type; no-NodePools path is determinism-preserved.
 
@@ -62,8 +62,8 @@
 
 **Independent Test**: `go test ./sim/cluster/... -run TestCachedSnapshotProvider_AddInstance` passes; a newly added instance appears in `Snapshot()` output.
 
-- [ ] T014 [P] [US3] Write failing test `TestCachedSnapshotProvider_AddInstance` (GIVEN a provider with N instances, WHEN `AddInstance(newID, newInst)` is called, THEN `Snapshot(newID, clock)` returns a valid snapshot for the new instance; WHEN called again with the same ID, THEN it panics) in `sim/cluster/snapshot_test.go`
-- [ ] T015 [P] [US3] Implement `AddInstance(id InstanceID, inst *InstanceSimulator)` on `CachedSnapshotProvider` in `sim/cluster/snapshot.go`: insert into `p.instances`, initialize `p.cache[id]` with `sim.NewRoutingSnapshot(string(id))`, initialize `p.lastRefresh[id]` with zero timestamps; panic if `id` already present (R1: no silent overwrite)
+- [X] T014 [P] [US3] Write failing test `TestCachedSnapshotProvider_AddInstance` (GIVEN a provider with N instances, WHEN `AddInstance(newID, newInst)` is called, THEN `Snapshot(newID, clock)` returns a valid snapshot for the new instance; WHEN called again with the same ID, THEN it panics) in `sim/cluster/snapshot_test.go`
+- [X] T015 [P] [US3] Implement `AddInstance(id InstanceID, inst *InstanceSimulator)` on `CachedSnapshotProvider` in `sim/cluster/snapshot.go`: insert into `p.instances`, initialize `p.cache[id]` with `sim.NewRoutingSnapshot(string(id))`, initialize `p.lastRefresh[id]` with zero timestamps; panic if `id` already present (R1: no silent overwrite)
 
 **Checkpoint**: `go test ./sim/cluster/... -run TestCachedSnapshotProvider_AddInstance` passes. Dynamic registration works in isolation.
 
@@ -77,8 +77,8 @@
 
 **Depends on**: Phase 4 (T015 — `AddInstance` must exist before wiring here).
 
-- [ ] T016 [US2] Write failing test `TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType` (GIVEN a cluster with insufficient initial capacity so one instance is pending, WHEN a `NodeReadyEvent` fires at a later tick, THEN the newly constructed instance uses the pool's `gpu_type` for latency estimation — assert via observable latency output; THEN a subsequent request can be routed to the new instance) in `sim/cluster/cluster_test.go`
-- [ ] T017 [US2] Rewrite `NodeReadyEvent.Execute` in `sim/cluster/infra_lifecycle_event.go`: replace the pre-constructed instance lookup loop with deferred construction — for each `placedInstance` returned by `RetryPendingInstances`, set `p.simCfg.GPU = p.gpuType`, call `NewInstanceSimulator(p.id, p.simCfg)`, wire `OnRequestDone`/`tenantTracker` callback (mirror startup path), call `cs.snapshotProvider.(*CachedSnapshotProvider).AddInstance(p.id, inst)`, append `inst` to `cs.instances`, initialize `cs.inFlightRequests[string(p.id)] = 0`, set `warmUpRemaining`, `TransitionTo(InstanceStateLoading)`, call `scheduleInstanceLoadedEvent(inst)`
+- [X] T016 [US2] Write failing test `TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType` (GIVEN a cluster with insufficient initial capacity so one instance is pending, WHEN a `NodeReadyEvent` fires at a later tick, THEN the newly constructed instance uses the pool's `gpu_type` for latency estimation — assert via observable latency output; THEN a subsequent request can be routed to the new instance) in `sim/cluster/cluster_test.go`
+- [X] T017 [US2] Rewrite `NodeReadyEvent.Execute` in `sim/cluster/infra_lifecycle_event.go`: replace the pre-constructed instance lookup loop with deferred construction — for each `placedInstance` returned by `RetryPendingInstances`, set `p.simCfg.GPU = p.gpuType`, call `NewInstanceSimulator(p.id, p.simCfg)`, wire `OnRequestDone`/`tenantTracker` callback (mirror startup path), call `cs.snapshotProvider.(*CachedSnapshotProvider).AddInstance(p.id, inst)`, append `inst` to `cs.instances`, initialize `cs.inFlightRequests[string(p.id)] = 0`, set `warmUpRemaining`, `TransitionTo(InstanceStateLoading)`, call `scheduleInstanceLoadedEvent(inst)`
 
 **Checkpoint**: `go test ./sim/cluster/... -run TestNodeReadyEvent` passes. User Story 2 fully functional: deferred instances use pool GPU type and are routable.
 
@@ -88,10 +88,10 @@
 
 **Purpose**: Caller updates, invariant verification, and the final acceptance gate.
 
-- [ ] T018 [P] Update all remaining `AddPending(...)` call sites in test files (`sim/cluster/infra_placement_test.go`, `sim/cluster/pool_test.go`, any other test using `AddPending`) to pass a `simCfg` argument (use `sim.SimConfig{}` as zero-value where the config content is irrelevant to the test)
-- [ ] T019 [P] Update all remaining `PlaceInstance(...)` call sites in test files to capture or explicitly discard (`_`) the new `matchedGPUType` return value; confirm no compile errors
-- [ ] T020 Grep `sim/cluster/` for `config\.GPU` reads in the NodePools-active construction path; confirm zero occurrences after refactor (acceptance criterion SC-004); document result as a comment in `cluster.go` near the unified construction loop
-- [ ] T021 Run full verification gate: `go build ./...` (exit 0), `go test ./... -count=1` (exit 0), `golangci-lint run ./...` (exit 0); fix any issues found before marking done
+- [X] T018 [P] Update all remaining `AddPending(...)` call sites in test files (`sim/cluster/infra_placement_test.go`, `sim/cluster/pool_test.go`, any other test using `AddPending`) to pass a `simCfg` argument (use `sim.SimConfig{}` as zero-value where the config content is irrelevant to the test)
+- [X] T019 [P] Update all remaining `PlaceInstance(...)` call sites in test files to capture or explicitly discard (`_`) the new `matchedGPUType` return value; confirm no compile errors
+- [X] T020 Grep `sim/cluster/` for `config\.GPU` reads in the NodePools-active construction path; confirm zero occurrences after refactor (acceptance criterion SC-004); document result as a comment in `cluster.go` near the unified construction loop
+- [X] T021 Run full verification gate: `go build ./...` (exit 0), `go test ./... -count=1` (exit 0), `golangci-lint run ./...` (exit 0); fix any issues found before marking done
 
 ---
 
