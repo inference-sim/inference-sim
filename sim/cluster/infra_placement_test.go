@@ -353,3 +353,102 @@ func TestPlacement_RetryPendingAfterNodeReady(t *testing.T) {
 		t.Errorf("VerifyConservation: %v", err)
 	}
 }
+
+// T023: RetryPendingInstances is segmented by pool — when capacity arrives for pool A,
+// only pool A's pending instances are placed; pool B's pending instances remain pending
+// until pool B gets a Ready node.
+func TestRetryPendingInstances_SegmentedByPool(t *testing.T) {
+	// GIVEN: two pools, both with no initial capacity (InitialNodes=0).
+	pm := newTestPM([]NodePoolConfig{
+		{
+			Name:         "h100-pool",
+			GPUType:      "H100",
+			GPUsPerNode:  8,
+			GPUMemoryGiB: 80.0,
+			MaxNodes:     4,
+		},
+		{
+			Name:         "a100-pool",
+			GPUType:      "A100",
+			GPUsPerNode:  4,
+			GPUMemoryGiB: 40.0,
+			MaxNodes:     4,
+		},
+	})
+
+	// AND: 2 pending instances per pool (4 total).
+	pm.AddPending("inst-h100-0", "model-a", "H100", 4, sim.SimConfig{})
+	pm.AddPending("inst-h100-1", "model-a", "H100", 4, sim.SimConfig{})
+	pm.AddPending("inst-a100-0", "model-b", "A100", 2, sim.SimConfig{})
+	pm.AddPending("inst-a100-1", "model-b", "A100", 2, sim.SimConfig{})
+	if len(pm.pendingInsts) != 4 {
+		t.Fatalf("precondition: expected 4 pending instances, got %d", len(pm.pendingInsts))
+	}
+
+	// WHEN: a node becomes ready ONLY in h100-pool.
+	h100Node, _ := pm.ProvisionNode("h100-pool", 0)
+	if err := pm.MarkNodeReady(h100Node.ID); err != nil {
+		t.Fatalf("MarkNodeReady h100: %v", err)
+	}
+
+	placed1 := pm.RetryPendingInstances()
+
+	t.Run("only H100 instances placed when H100 node becomes ready", func(t *testing.T) {
+		if len(placed1) != 2 {
+			t.Errorf("placed %d instances, want 2 (H100 pool only)", len(placed1))
+		}
+		for _, p := range placed1 {
+			if p.gpuType != "H100" {
+				t.Errorf("placed instance gpuType = %q, want H100", p.gpuType)
+			}
+		}
+	})
+
+	t.Run("A100 instances remain pending after H100 node ready", func(t *testing.T) {
+		if len(pm.pendingInsts) != 2 {
+			t.Errorf("pendingInsts = %d, want 2 (A100 instances must remain pending)", len(pm.pendingInsts))
+		}
+		for _, p := range pm.pendingInsts {
+			if p.gpuType != "A100" {
+				t.Errorf("remaining pending instance gpuType = %q, want A100", p.gpuType)
+			}
+		}
+	})
+
+	t.Run("INV-A holds after partial placement", func(t *testing.T) {
+		if err := pm.VerifyConservation(); err != nil {
+			t.Errorf("VerifyConservation: %v", err)
+		}
+	})
+
+	// AND WHEN: a node becomes ready in a100-pool.
+	a100Node, _ := pm.ProvisionNode("a100-pool", 0)
+	if err := pm.MarkNodeReady(a100Node.ID); err != nil {
+		t.Fatalf("MarkNodeReady a100: %v", err)
+	}
+
+	placed2 := pm.RetryPendingInstances()
+
+	t.Run("A100 instances placed after A100 node ready", func(t *testing.T) {
+		if len(placed2) != 2 {
+			t.Errorf("second retry placed %d instances, want 2 (A100 pool only)", len(placed2))
+		}
+		for _, p := range placed2 {
+			if p.gpuType != "A100" {
+				t.Errorf("second retry: placed instance gpuType = %q, want A100", p.gpuType)
+			}
+		}
+	})
+
+	t.Run("pending queue empty after both pools have capacity", func(t *testing.T) {
+		if len(pm.pendingInsts) != 0 {
+			t.Errorf("pendingInsts = %d, want 0 after all pools have capacity", len(pm.pendingInsts))
+		}
+	})
+
+	t.Run("INV-A holds after full placement", func(t *testing.T) {
+		if err := pm.VerifyConservation(); err != nil {
+			t.Errorf("VerifyConservation: %v", err)
+		}
+	})
+}
