@@ -151,13 +151,15 @@ type observerFunc func(req *Request, targetInstance string)
 // Each scorer evaluates all instances on a [0,1] scale. Scores are combined
 // with configurable weights: composite = Σ clamp(s_i) × w_i, then argmax.
 //
-// Available scorers: prefix-affinity (proportional prefix match ratio),
+// Available scorers: prefix-affinity (approximate prefix match ratio),
+// precise-prefix-cache (exact prefix match from instance KV cache, min-max normalized),
 // queue-depth (min-max normalization of EffectiveLoad),
-// kv-utilization (1 - KVUtilization), load-balance (1/(1 + EffectiveLoad)).
-// See sim/routing_scorers.go and sim/routing_prefix_scorer.go for implementations.
+// kv-utilization (1 - KVUtilization), load-balance (1/(1 + EffectiveLoad)),
+// no-hit-lru (cold request distribution to LRU endpoints).
+// See sim/routing_scorers.go and sim/routing_*_scorer.go for implementations.
 //
-// Stateful scorers (prefix-affinity) register observers that update internal
-// state after each routing decision. Observers are called after argmax selection.
+// Stateful scorers (prefix-affinity, no-hit-lru) register observers that update
+// internal state after each routing decision. Observers are called after argmax selection.
 //
 // Higher scores are preferred. Ties broken randomly when rng is non-nil;
 // by first occurrence (lowest index) when rng is nil.

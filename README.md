@@ -216,8 +216,10 @@ inference-sim/
 │   ├── simulator.go        # Discrete-event simulation loop
 │   ├── admission.go        # Admission policy interface and templates
 │   ├── routing.go          # Routing policy interface and templates
-│   ├── routing_scorers.go  # ScorerConfig, stateless scorers, ParseScorerConfigs
-│   ├── routing_prefix_scorer.go # Prefix-affinity scorer + observer
+│   ├── routing_scorers.go  # ScorerConfig, CacheQueryFn, stateless scorers, ParseScorerConfigs
+│   ├── routing_prefix_scorer.go # Prefix-affinity scorer + observer (approximate)
+│   ├── routing_precise_prefix_scorer.go # Precise prefix cache scorer (ground-truth KV state)
+│   ├── routing_no_hit_lru_scorer.go # No-hit LRU scorer (cold request distribution)
 │   ├── prefix_cache_index.go # PrefixCacheIndex: per-instance LRU of block hashes
 │   ├── priority.go         # Priority policy interface and templates
 │   ├── scheduler.go        # Instance scheduler interface and templates

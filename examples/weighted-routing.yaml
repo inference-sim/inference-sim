@@ -5,10 +5,12 @@
 # configurable weights: score = clamp(s_i) * w_i, then argmax.
 #
 # Available scorers:
-#   prefix-affinity — proportional prefix match ratio via router-side cache
-#   queue-depth     — min-max normalization of effective load (llm-d match)
-#   kv-utilization  — inverse utilization: 1 - KVUtilization (llm-d match)
-#   load-balance    — inverse transform: 1/(1 + effectiveLoad) (BLIS-native)
+#   prefix-affinity      — proportional prefix match ratio via router-side cache
+#   precise-prefix-cache — exact prefix block match from actual instance KV cache (llm-d match)
+#   queue-depth          — min-max normalization of effective load (llm-d match)
+#   kv-utilization       — inverse utilization: 1 - KVUtilization (llm-d match)
+#   load-balance         — inverse transform: 1/(1 + effectiveLoad) (BLIS-native)
+#   no-hit-lru           — cold request distribution to LRU endpoints (llm-d match)
 #
 # Default profile (when --routing-scorers is not specified):
 #   prefix-affinity:3, queue-depth:2, kv-utilization:2 (llm-d parity)

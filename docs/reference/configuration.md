@@ -235,7 +235,7 @@ When using `--routing-policy weighted`, the `--routing-scorers` flag configures 
 --routing-scorers "prefix-affinity:3,queue-depth:2,kv-utilization:2"
 ```
 
-Available scorers: `prefix-affinity`, `queue-depth`, `kv-utilization`, `load-balance`.
+Available scorers: `prefix-affinity`, `precise-prefix-cache`, `queue-depth`, `kv-utilization`, `load-balance`, `no-hit-lru`.
 
 Default (when `--routing-scorers` is empty): `prefix-affinity:3, queue-depth:2, kv-utilization:2` (llm-d parity).
 

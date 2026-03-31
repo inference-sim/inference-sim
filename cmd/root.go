@@ -900,7 +900,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 
 	// Routing policy config
 	cmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, always-busiest")
-	cmd.Flags().StringVar(&routingScorers, "routing-scorers", "", "Scorer weights for weighted routing (e.g., queue-depth:2,kv-utilization:2,load-balance:1). Default: prefix-affinity:3,queue-depth:2,kv-utilization:2")
+	cmd.Flags().StringVar(&routingScorers, "routing-scorers", "", "Scorer weights for weighted routing (e.g., precise-prefix-cache:2,kv-utilization:1,queue-depth:1). Available: prefix-affinity, precise-prefix-cache, queue-depth, kv-utilization, load-balance, no-hit-lru. Default: prefix-affinity:3,queue-depth:2,kv-utilization:2")
 
 	// Priority and scheduler config (PR7)
 	cmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based, inverted-slo")

@@ -145,18 +145,22 @@ Scorers are the building blocks of the weighted routing policy. Each scorer eval
 
 | Scorer | Signal | Score Computation | Notes |
 |--------|--------|-------------------|-------|
-| `prefix-affinity` | Prefix cache overlap | Proportion of request's block hashes found in instance's cache index | Stateful: updates cache index after routing via observer |
+| `prefix-affinity` | Prefix cache overlap (approximate) | Proportion of request's block hashes found in router-side cache index | Stateful: updates cache index after routing via observer |
+| `precise-prefix-cache` | Prefix cache overlap (exact) | Min-max normalization of cached block count from actual instance KV cache | Stateless (reads ground-truth KV state); llm-d production parity |
 | `queue-depth` | Instance load | Min-max normalization of effective load (lower load = higher score) | Stateless |
 | `kv-utilization` | Memory pressure | `1 - KVUtilization` (lower utilization = higher score) | Stateless |
 | `load-balance` | Instance load | `1 / (1 + EffectiveLoad)` (decreasing function of load) | Stateless |
+| `no-hit-lru` | Cold request distribution | Cold requests: LRU-positional scoring (never-used endpoints preferred). Warm requests: 0.5 (neutral) | Stateful: tracks endpoint usage order via observer (cold requests only) |
 
 ### Stateful vs. Stateless Scorers
 
-Most scorers are **stateless** — they compute scores purely from the current routing snapshot. The `prefix-affinity` scorer is **stateful**: after a routing decision, an observer callback updates the router-side prefix cache index with the routed request's block hashes. This enables the scorer to track which prefixes are cached at which instance without querying the actual per-instance KV caches.
+Most scorers are **stateless** — they compute scores purely from the current routing snapshot. Two scorers are **stateful**: `prefix-affinity` updates a router-side prefix cache index after each routing decision, and `no-hit-lru` tracks endpoint usage order for cold request distribution (updated only when no instance has cached blocks for the request).
 
-### Router-Side Prefix Cache Index
+### Approximate vs. Precise Prefix Scoring
 
-The prefix-affinity scorer maintains a lightweight approximate cache of per-instance block hash history. This is separate from the actual per-instance KV cache and serves as a routing-time estimate of cache hit probability.
+The `prefix-affinity` scorer maintains a lightweight approximate cache of per-instance block hash history at the router level. This is separate from the actual per-instance KV cache and serves as a routing-time estimate of cache hit probability.
+
+The `precise-prefix-cache` scorer queries actual instance KV cache state via `GetCachedBlocks`, providing ground-truth prefix matching. This matches llm-d's production `PrecisePrefixCacheScorer` and uses min-max normalization across candidates (highest match count → 1.0, lowest → 0.0, all-equal → 1.0).
 
 Key properties:
 - Per-instance LRU with bounded capacity (default: 10,000 blocks)

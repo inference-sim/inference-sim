@@ -31,12 +31,14 @@ The `weighted` routing policy is the most flexible. It combines multiple scoring
 | Scorer | What It Measures | llm-d Equivalent |
 |--------|-----------------|------------------|
 | `prefix-affinity` | Proportional prefix match ratio via router-side block hash cache | prefix-scorer |
+| `precise-prefix-cache` | Exact prefix block match count from actual instance KV cache (min-max normalized) | precise-prefix-cache-scorer |
 | `queue-depth` | Effective load: `QueueDepth + BatchSize + InFlightRequests` (min-max normalized) | queue-scorer |
 | `kv-utilization` | Inverse KV utilization: `1 - KVUtilization` | kv-cache-utilization-scorer |
 | `load-balance` | Inverse transform: `1 / (1 + effectiveLoad)` | BLIS-native (no llm-d equivalent) |
+| `no-hit-lru` | Cold request distribution to least-recently-used endpoints; warm requests score 0.5 (neutral) | no-hit-lru-scorer |
 
-!!! note "Prefix-affinity is a scorer, not a standalone policy"
-    The `prefix-affinity` scorer operates within the `weighted` routing pipeline, composed with load-balancing scorers. It uses a router-side `PrefixCacheIndex` with proportional block hash matching and LRU eviction. Always pair it with at least one load-aware scorer (queue-depth or kv-utilization) to prevent cold-start pile-on.
+!!! note "Two prefix scoring approaches"
+    **`precise-prefix-cache`** queries actual instance KV cache state — ground truth, matching llm-d's production scorer. **`prefix-affinity`** uses a router-side approximate cache index with proportional scoring. Use `precise-prefix-cache` for production-parity simulations; `prefix-affinity` for studying approximate routing. Both require at least one load-aware scorer (queue-depth or kv-utilization) to prevent cold-start pile-on.
 
 ### Default Profile
 
@@ -84,7 +86,8 @@ At high request rates, many routing decisions occur between KV utilization updat
 | Workload | Recommended Policy | Why |
 |----------|-------------------|-----|
 | Uniform traffic, no prefix sharing | `least-loaded` or `weighted` with `queue-depth:1` | Load balance is the only signal that matters |
-| RAG with shared system prompts | `weighted` with `prefix-affinity:3,queue-depth:1` | Prefix affinity maximizes KV cache reuse |
+| RAG with shared system prompts | `weighted` with `precise-prefix-cache:2,queue-depth:1,kv-utilization:1` | Precise prefix scoring maximizes KV cache reuse using ground truth |
+| RAG with cold-start distribution | `weighted` with `precise-prefix-cache:2,no-hit-lru:1,kv-utilization:1` | no-hit-lru spreads cold requests across endpoints to grow cache coverage |
 | Mixed SLO classes | `weighted` default + [priority scheduling](scheduling.md) | Routing distributes load; scheduling prioritizes critical requests |
 | Low traffic (< 10 req/s) | Any | All policies produce equivalent results within 5% |
 
