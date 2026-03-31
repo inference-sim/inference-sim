@@ -74,7 +74,7 @@ Each iteration N follows this sequence:
 **Process**:
 1. Read manifest, bounds, Go code from `iterations/iter{N}/`
 2. Compile BLIS with evolved backend
-3. Run Bayesian optimization (up to 250 trials, early stopping if <1% improvement in 50-trial window)
+3. Run Bayesian optimization (1000 trials)
 4. For each trial: Inject coefficients → run BLIS → compute loss
 5. Save results to `iterations/iter{N}/inner_loop_results.json`
 
@@ -93,7 +93,6 @@ overall_loss = RMSE[APE(mean_TTFT_per_exp)] + RMSE[APE(mean_E2E_per_exp)]
   },
   "optimization": {
     "n_trials": int,
-    "converged_early": bool,
     "num_errors": int
   },
   "best_params": {
@@ -213,7 +212,7 @@ type LatencyModel interface {
 ### Secondary Metrics
 
 5. **Sample efficiency**: Converge in ≤ 5 outer loop iterations
-6. **Optimization efficiency**: Inner loop converges in ≤ 250 trials (early stopping if <1% improvement in 50-trial window)
+6. **Optimization efficiency**: Inner loop runs 1000 trials (~33 minutes per iteration)
 7. **Coefficient stability**: β values stay within physically plausible ranges
 
 ### Qualitative Goals

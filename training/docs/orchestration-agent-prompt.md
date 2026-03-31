@@ -110,7 +110,6 @@ cat iterations/iter{N}/inner_loop_results.json | jq '{
   ttft_rmse: .loss.ttft_rmse,
   e2e_rmse: .loss.e2e_rmse,
   n_trials: .optimization.n_trials,
-  converged_early: .optimization.converged_early,
   num_errors: .optimization.num_errors
 }'
 ```
@@ -174,7 +173,6 @@ After completion (success or failure), report to orchestrator:
   },
   "optimization": {
     "n_trials": <count>,
-    "converged_early": <bool>,
     "num_errors": <count>,
     "optimization_time_seconds": <duration>
   }
