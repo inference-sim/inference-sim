@@ -376,6 +376,14 @@ func (t *TierBudgetBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		ctx.RunningBatch = &Batch{}
 	}
 	budgets := t.TierBudgets(ctx.MaxScheduledTokens)
+
+	// Snapshot ComputedTokens before inner FormBatch modifies it.
+	// Used to restore stalled requests' token counts (not delete — deletion resets ProgressIndex).
+	prevComputed := make(map[string]int64, len(ctx.ComputedTokens))
+	for k, v := range ctx.ComputedTokens {
+		prevComputed[k] = v
+	}
+
 	tierUsed := [3]int64{}
 
 	inner := &VLLMBatchFormation{}
@@ -389,7 +397,7 @@ func (t *TierBudgetBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		ti := tierBudgetIndex(req.SLOClass)
 		if tierUsed[ti]+int64(req.NumNewTokens) > budgets[ti] {
 			// Tier budget exhausted: soft-stall this request for this step.
-			delete(ctx.ComputedTokens, req.ID)
+			ctx.ComputedTokens[req.ID] = prevComputed[req.ID] // restore, not delete
 			req.NumNewTokens = 0
 			continue
 		}

@@ -207,7 +207,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 					kvc.UsedBlockCnt++
 					kvc.removeFromFreeList(blk)
 				}
-				cachedMutations = append(cachedMutations, cachedBlockMutation{block: blk, wasInUse: wasInUse})
+				cachedMutations = append(cachedMutations, cachedBlockMutation{block: blk, wasInUse: wasInUse, originalTierPrio: blk.TierPriority})
 				if p := sim.SLOTierPriority(req.SLOClass); p > blk.TierPriority {
 					blk.TierPriority = p
 				}
@@ -274,6 +274,8 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				blk.Tokens = append([]int{}, tok...) // copy tokens
 				blk.RefCount = 1
 				blk.InUse = true
+				// Save original tier priority before overwriting with req's tier.
+				originalTierPrio := blk.TierPriority
 				blk.TierPriority = sim.SLOTierPriority(req.SLOClass)
 				kvc.UsedBlockCnt++
 				kvc.CacheMisses++
@@ -287,7 +289,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 					kvc.HashToBlock[h] = blk.ID
 					prevHash = h
 				}
-				newlyAllocated = append(newlyAllocated, newBlockMutation{block: blk, originalHash: originalHash})
+				newlyAllocated = append(newlyAllocated, newBlockMutation{block: blk, originalHash: originalHash, originalTierPrio: originalTierPrio})
 				// allocated is the block IDs allocated for this request
 				kvc.RequestMap[reqID] = append(kvc.RequestMap[reqID], blk.ID)
 				newTokenProgressIndex = end
@@ -334,14 +336,16 @@ func (kvc *KVCacheState) countFreeBlocks() int64 {
 
 // cachedBlockMutation tracks a cached block's state before mutation for rollback.
 type cachedBlockMutation struct {
-	block    *KVBlock
-	wasInUse bool
+	block            *KVBlock
+	wasInUse         bool
+	originalTierPrio int // tier priority before max-update
 }
 
 // newBlockMutation tracks a newly allocated block and its pre-pop hash for rollback.
 type newBlockMutation struct {
-	block        *KVBlock
-	originalHash string // hash before popFreeBlock cleared it (empty if block had no hash)
+	block            *KVBlock
+	originalHash     string // hash before popFreeBlock cleared it (empty if block had no hash)
+	originalTierPrio int    // tier priority before popFreeBlock cleared it
 }
 
 // rollbackAllocation undoes all mutations from a failed AllocateKVBlocks call.
@@ -365,7 +369,7 @@ func (kvc *KVCacheState) rollbackAllocation(reqID string, cachedMutations []cach
 		blk.InUse = false
 		blk.RefCount = 0
 		blk.Tokens = nil
-		blk.TierPriority = 0
+		blk.TierPriority = m.originalTierPrio
 		kvc.UsedBlockCnt--
 		kvc.CacheMisses--
 		kvc.prependToFreeList(blk)
@@ -379,7 +383,7 @@ func (kvc *KVCacheState) rollbackAllocation(reqID string, cachedMutations []cach
 		kvc.CacheHits--
 		if !cm.wasInUse && cm.block.RefCount == 0 {
 			cm.block.InUse = false
-			cm.block.TierPriority = 0
+			cm.block.TierPriority = cm.originalTierPrio
 			kvc.UsedBlockCnt--
 			kvc.appendToFreeList(cm.block)
 		}
