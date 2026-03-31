@@ -79,7 +79,7 @@ Agent 1's hypothesis assumed β₅ was the **sole cause** of cascading failures,
 
 **Alternative explanation**: The catastrophic failures in iter13-14 are caused by **multiple architectural defects**, not just β₅:
 1. **Reasoning-lite experiments**: 100% error indicates numerical overflow/underflow in the simulator (not fixed by β₅ correction)
-2. **Dense models**: 10-30× overprediction suggests roofline baseline assumptions are wrong (prefill MFU, decode MFU, or framework overhead)
+2. **Dense models**: 10-30× overprediction could be due to roofline baseline issues, warm-start getting stuck, dataset shift, or architectural problems
 3. **MoE models**: Even with β₅ fixed, Scout experiments show 3-8× overprediction, suggesting missing MoE-specific overhead terms (routing, load imbalance, expert switching)
 
 **Diagnostic Analysis** (using Agent 1's diagnostic clause):
@@ -101,11 +101,11 @@ Agent 1 predicted three failure scenarios:
 - **Actual**: ✅ **THIS IS WHAT HAPPENED** - β₅ = 32.5 (within range) but loss = 2319% (>250%)
 - **Investigate**: Per-experiment error breakdown shows THREE distinct failure modes:
   1. **Reasoning-lite catastrophe**: All three experiments return 100% error (numerical overflow in simulator)
-  2. **Dense model overprediction**: 10-30× overprediction (roofline baseline wrong)
+  2. **Dense model overprediction**: 10-30× overprediction (root cause unclear - need profiling and ablations)
   3. **MoE model overprediction**: 3-8× overprediction (missing MoE-specific overhead)
 - **Action**: **URGENT** - β₅ fix validated but insufficient. Must investigate:
   - Add defensive guards for numerical overflow in reasoning-lite (iter15 priority 1)
-  - Validate roofline baseline assumptions for dense models (iter15 priority 2)
+  - Profile actual vLLM MFU and run cold-start ablation to diagnose dense model issues (iter15 priority 2)
   - Add MoE-specific overhead terms beyond β₅ (iter15 priority 3)
 
 ---
@@ -161,7 +161,7 @@ Agent 1's hypothesis was that returning to iter7's proven architecture would pre
 6. **β₇ increased slightly** (26.3ms → 32.3ms, +23%) - decode per-request overhead grew slightly
 
 **Pattern recognition**: The coefficients show a **systematic bias**:
-- **Roofline-based terms (β₀, β₁, β₄) are out of range** → roofline assumptions wrong
+- **Roofline-based terms (β₀, β₁, β₄) are out of range** → roofline assumptions may be wrong, OR warm-start trapped optimizer, OR dataset shift requires different coefficients
 - **Scheduler overhead (β₆) reduced significantly** → dropped 2.6× below lower bound (expected 40-100ms)
 - **MoE term (β₅) is correct** → layer multiplier fix worked
 - **KV management (β₃) and decode overhead (β₇) are reasonable** → both in or near expected ranges
@@ -297,23 +297,26 @@ Agent 1's hypothesis was that dense models failed in iter13 due to **cascading c
 - Global coefficients did NOT recover (β₀ +105%, β₁ -8%, β₃ -287×, β₄ +11%, β₆ -7859×, β₇ -464×)
 - Dense models did NOT recover (all still 10-150× worse than iter7)
 
-**Alternative explanation**: The cascading failures are NOT caused by β₅. Instead, there are **multiple independent architectural defects**:
+**Alternative explanation**: The cascading failures are NOT caused by β₅ alone. Instead, there are **multiple independent architectural defects**:
 
-1. **Roofline baseline assumptions wrong**:
-   - β₀ (prefill MFU) = 0.392 vs expected 0.19 → roofline overpredicts prefill efficiency by 2×
-   - β₁ (decode memory MFU) = 0.916 vs expected 1.11 → roofline overpredicts decode memory efficiency
-   - β₄ (decode compute MFU) = 0.943 vs expected 0.71 → roofline overpredicts decode compute efficiency
+1. **Roofline-based coefficients out of expected ranges**:
+   - β₀ (prefill) = 0.392 vs expected 0.16-0.22 → doubled from iter7 (0.191)
+   - β₁ (decode memory) = 0.916 vs expected 1.00-1.15 → 8% below lower bound
+   - β₄ (decode compute) = 0.943 vs expected 0.70-0.85 → 11% above upper bound
+   - **Cannot determine root cause** without profiling actual MFU or running cold-start ablation
+   - Could be: roofline wrong, warm-start stuck, dataset shift, or expected ranges wrong
 
-2. **Framework overhead terms collapsed**:
-   - β₃ (KV mgmt) = 1.39μs vs expected 0.4-1.5ms → 287× too small
-   - β₆ (scheduler) = 5.09μs vs expected 40-100ms → 7859× too small
-   - β₇ (decode per-request) = 32.3μs vs expected 15-30ms → 464× too small
-   - **Pattern**: All framework overhead terms collapsed because roofline is overpredicting so much that optimizer suppresses overhead to compensate
+2. **Scheduler overhead consistently low**:
+   - β₃ (KV mgmt) = 1.39ms → ✅ within expected 0.4-1.5ms
+   - β₆ (scheduler) = 5.09ms vs expected 40-100ms → 7.9× below lower bound
+   - β₇ (decode per-request) = 32.3ms vs expected 15-30ms → 8% above (reasonable)
+   - **Pattern**: Only β₆ is significantly low; β₃ and β₇ are reasonable
+   - Suggests either β₆ expected range is wrong, OR scheduler overhead absorbed by β₇
 
-3. **Warm-start from iter7 invalid**:
+3. **Warm-start from iter7 may be invalid**:
    - Dataset changed between iter7 (reasoning) and iter13-14 (reasoning-lite)
    - Iter7 coefficients may not be appropriate starting point for reasoning-lite data
-   - Need cold-start optimization from random initialization
+   - Need cold-start optimization to test this hypothesis
 
 **Diagnostic Analysis** (using Agent 1's diagnostic clause):
 
