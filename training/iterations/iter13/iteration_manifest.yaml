@@ -1,0 +1,50 @@
+iteration: 13
+latency_backend_name: "evolved"  # MUST be "evolved", not "evolved_iter13"
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 13: Return to Iter7 Stable Baseline + Sequence-Length Term
+
+  **Critical Learning**: Iter9-12 catastrophic failures (161% → 4267% → 4084% → 2590%) were caused by:
+  1. Warm-starting from inflated coefficients (iter9 had β₆=99ms, β₂=0.82, β₈=73μs after β₉ rejection)
+  2. Collinearity between β₁₀ and β₃' (both scale with sequence length)
+  3. Missing the stable foundation - iter7 (155%) was better than iter6 (162%)
+
+  **Strategy**: Return to iter7 stable baseline + add sequence-length term
+
+  **Previous iteration (iter12)**: Catastrophic failure (loss 2590%, 16× worse than iter9)
+  - Widened β₃' bounds to capture bandwidth saturation
+  - Result: β₃' collapsed (0.252μs → 0.064μs), moved AWAY from target
+  - Root cause: Warm-started from iter9's inflated coefficients, collinearity with β₁₀
+
+  **This iteration returns to iter7 stable baseline**:
+  - Iter7 had loss 155.37% (7pp better than iter6's 162%)
+  - Iter7's β₇ (decode overhead) stabilized β₁ (1.851→1.108) and β₄ (1.451→0.713)
+  - All iter7 coefficients physically plausible except β₅ (0.0411 collapsed, should be 300-1000)
+
+  **Architecture changes**:
+  - KEEP all iter7 terms (β₀-β₇, proven stable)
+  - ADD β₈ from iter8 (30μs MoE routing, captures real 39ms Scout mechanism)
+  - ADD β₁₀ (batching inefficiency, addresses iter9's sequence-length discovery)
+  - DO NOT add β₃' (causes collinearity with β₁₀)
+  - Total: 3 alpha + 10 beta
+
+  **Warm-start source**:
+  - Alpha: Iter7 optimal [1.32ms, 118μs, 90.5μs]
+  - Beta[0-7]: Iter7 optimal (β₀-β₇)
+  - Beta[8]: Iter8 optimal for β₈ (30μs)
+  - Beta[9]: NEW β₁₀ (0.5μs initial, mid-range of 0.1-1.0μs expected)
+
+  **Key insight from iter9**: Scout's bottleneck is sequence-length-dependent (not FP8):
+  - Short-sequence Scout improved: roleplay -53pp, codegen -34pp
+  - Long-sequence Scout failed: general-lite 0pp, reasoning-lite -8pp
+  - β₁₀ (batching inefficiency) addresses this with quadratic scaling: prefillTokens² / batchSize
+
+  **Expected outcome**: Loss 155% → 120-140% (15-35pp improvement), stable foundation for iter14+
+
+  **Risk mitigation**:
+  - Clean warm-start from iter7 (not inflated iter9-12) prevents trapped local optimum
+  - Proven architecture (iter7 + iter8) minimizes risk
+  - If β₁₀ causes problems, can remove for iter14 (still have stable iter7 baseline)
+
+timestamp: "2026-03-31T14:30:00.000000"

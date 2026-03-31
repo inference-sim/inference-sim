@@ -1,0 +1,130 @@
+# Iteration 13: Coefficient Bounds and Initial Values
+#
+# Strategy: Return to Iter7 stable baseline + add β₈ (Scout MoE routing) + add β₁₀ (batching inefficiency)
+#
+# Warm-starting from iter7 optimal coefficients (loss 155.37%, proven stable)
+# - Alpha: Iter7 values [1.32ms, 118μs, 90.5μs]
+# - Beta[0-7]: Iter7 values (β₀-β₇)
+# - Beta[8]: Iter8 value for β₈ (30μs MoE routing)
+# - Beta[9]: NEW β₁₀ (batching inefficiency, expected 0.1-1.0μs)
+#
+# Key insight: Iter9-12 failures caused by warm-starting from inflated coefficients.
+# Iter13 returns to clean iter7 baseline to escape bad local optimum.
+
+alpha_bounds:
+  # α₀: Fixed API processing overhead (seconds per request)
+  # Physics: HTTP parsing, request validation, queue insertion
+  # Expected: 0.8-2.5ms (iter7: 1.32ms ✓)
+  # Constrained: Lower bound ≥ 0.5ms (prevent spurious drops observed in iter9-12)
+  - [0.0005, 0.005]
+
+  # α₁: Per-input-token tokenization overhead (seconds per token)
+  # Physics: HuggingFace BPE encoding, scales with input length
+  # Expected: 60-150μs per token (iter7: 118μs ✓)
+  # Constrained: Lower bound ≥ 50μs (prevent spurious drops)
+  - [0.00005, 0.0003]
+
+  # α₂: Per-output-token detokenization overhead (seconds per token)
+  # Physics: Streaming detokenization, output formatting
+  # Expected: 50-120μs per token (iter7: 90.5μs ✓)
+  # Constrained: Lower bound ≥ 40μs (prevent spurious drops)
+  - [0.00004, 0.00025]
+
+alpha_initial:
+  - 0.0013203   # α₀: 1.32ms (from iter7 optimal, physically plausible)
+  - 0.00011755  # α₁: 118μs (from iter7 optimal, physically plausible)
+  - 0.00009054  # α₂: 90.5μs (from iter7 optimal, physically plausible)
+
+beta_bounds:
+  # β₀: Prefill compute efficiency (MFU scaling factor)
+  # Physics: FLOPs / (peak_TFLOPS × MFU_prefill) × β₀
+  # Expected: 0.16-0.22 (prefill MFU 16-22%, iter7: 0.191 ✓)
+  - [0.10, 0.30]
+
+  # β₁: Decode memory-bound efficiency (small-batch MFU)
+  # Physics: Memory bandwidth utilization for KV cache reads
+  # Expected: 1.00-1.15 (iter7: 1.108 ✓, back in physical range after β₇ stabilization)
+  - [1.0, 1.5]
+
+  # β₂: TP communication efficiency (decode all-reduce)
+  # Physics: NVLink all-reduce overhead per layer
+  # Expected: 0.15-0.25 (ring all-reduce efficiency, iter7: 0.185 ✓)
+  - [0.0, 0.6]
+
+  # β₃: KV cache management BASE overhead (seconds per request)
+  # Physics: PagedAttention block allocation/deallocation (base overhead, independent of seq-len)
+  # Expected: 0.4-1.5ms per request (iter7: 4.4ms, may decrease after β₁₀ offloads seq-len overhead)
+  - [0.0004, 0.006]
+
+  # β₄: Decode compute-bound efficiency (large-batch MFU)
+  # Physics: Tensor core utilization for large batches
+  # Expected: 0.70-0.85 (iter7: 0.713 ✓, stable after β₇ stabilization)
+  - [0.4, 1.0]
+
+  # β₅: MoE gating overhead efficiency (dimensionless scaling factor)
+  # Physics: Multiplies computed roofline estimate of gating network time
+  #   - Gating FLOPs per layer: 2 × tokens × hiddenDim × numExperts (linear projection)
+  #   - Base computation: gatingFlops / (peakFlops × 0.3 gating_efficiency)
+  #   - For Scout (100 tokens): roofline = 0.04μs per layer, need ~56 layers
+  #   - To get 15-30μs total contribution: β₅ should be 375-750 dimensionless
+  # Expected: 300-1000 dimensionless (iter7: 0.0411 ANOMALOUSLY LOW, collapsed due to missing β₈/β₁₀)
+  # Note: Iter7's β₅=0.0411 gave essentially ZERO contribution (0.0411 × 0.04μs = 0.0016μs)
+  #       Scout underpredicted 79-100% because missing overhead went uncaptured
+  #       After adding β₈+β₁₀, β₅ can recover to physical value (9000-24000× increase!)
+  # Upper bound: 2000 to allow convergence
+  - [0.0, 2000.0]
+
+  # β₆: Per-request scheduler overhead (seconds per request)
+  # Physics: vLLM scheduler batch formation + KV block allocation (in QueueingTime, NOT StepTime)
+  #   - Batch formation: 10-50ms
+  #   - KV allocation: 10-30ms
+  #   - Priority queue processing: 5-20ms
+  #   - Cold-start overhead: First 4-10 requests have 2-7× higher TTFT (profiling data)
+  # Expected: 40-100ms per request (iter7: 13.2ms may be too low for cold-start overhead)
+  # Allow wide bounds for optimizer to find correct value based on profiling evidence
+  - [0.010, 0.150]
+
+  # β₇: Decode per-request overhead (seconds per request)
+  # Physics: vLLM decode phase fixed overhead per request (in StepTime)
+  #   - Output processing: sampling, stop condition check, streaming
+  #   - TP coordination: synchronization barriers per step
+  #   - KV cache write-back: updated blocks written to memory
+  # Expected: 15-30ms per decode request (iter7: 26.3ms ✓, physically plausible)
+  - [0.008, 0.040]
+
+  # β₈: MoE routing overhead per routed token (seconds per routed token)
+  # Physics: MoE per-token expert routing beyond gating FLOPs (β₅)
+  #   - Expert selection: Top-k selection from num_experts
+  #   - Expert dispatch: Token reordering and routing
+  #   - Load balancing: Dynamic expert assignment
+  #   - Expert aggregation: Weighted sum of expert outputs
+  # Expected: 25-80μs per routed token (iter8: 30μs ✓)
+  # Basis function: β₈ × (numMoELayers × totalTokens × numExpertsPerTok / TP)
+  - [0.000010, 0.000100]
+
+  # β₁₀: Batching inefficiency overhead (seconds per token²/batch_request) — NEW in iter13
+  # Physics: Long sequences consume disproportionate batch capacity → queueing delays
+  #   - Batch packing constraint: Σ(prefill_tokens + kv_cache_blocks) ≤ max_num_batched_tokens
+  #   - Long sequences (500 tokens) consume 10× more capacity than short (50 tokens)
+  #   - Fewer requests per batch → lower GPU utilization → increased wait time
+  #   - Quadratic penalty: prefillTokens² captures disproportionate impact
+  #   - Division by batchSize: Amplifies effect for long sequences (lower batch efficiency → smaller denominator)
+  # Expected: 0.1-1.0μs per (token²/batch_request) (validated in iter11 unit tests, 0% error)
+  # Basis function: β₁₀ × Σ(prefillTokens² / batchSize)
+  # Expected contribution:
+  #   - Scout general-lite (500 tokens, batch_size=4): β₁₀ × (500²/4) = 0.5μs × 62,500 ≈ 31.25ms
+  #   - Scout roleplay (100 tokens, batch_size=32): β₁₀ × (100²/32) = 0.5μs × 312 ≈ 0.156ms
+  #   - Ratio: 200× difference (matches observed long-sequence vs short-sequence error pattern from iter9)
+  - [0.0000001, 0.000002]  # [0.1μs, 2.0μs] — allow wide range for optimizer
+
+beta_initial:
+  - 0.19116       # β₀: 0.191 (from iter7 optimal, stable)
+  - 1.10758       # β₁: 1.108 (from iter7 optimal, physically plausible after β₇ stabilization)
+  - 0.18458       # β₂: 0.185 (from iter7 optimal, physically plausible)
+  - 0.00440       # β₃: 4.4ms (from iter7 optimal, may decrease after β₁₀ added)
+  - 0.71324       # β₄: 0.713 (from iter7 optimal, physically plausible)
+  - 500.0         # β₅: 500 (mid-range of expected 300-1000, iter7's 0.0411 collapsed/unusable)
+  - 0.01316       # β₆: 13.2ms (from iter7 optimal, may increase to 40-100ms with profiling evidence)
+  - 0.02626       # β₇: 26.3ms (from iter7 optimal, physically plausible)
+  - 0.00003       # β₈: 30μs (from iter8 optimal, captures Scout MoE routing)
+  - 0.0000005     # β₁₀: 0.5μs (mid-range of 0.1-1.0μs expected, physics-based estimate)
