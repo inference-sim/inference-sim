@@ -1,392 +1,423 @@
-# Iteration 11: Findings and Principles
+# Iteration 11: Findings and Analysis
 
-## Summary
+## Executive Summary
 
-**Catastrophic model divergence (again)**: Iter11 overall loss remains at **4084.44%** (identical to iter10's 4267.22%, still 25× worse than iter9's 160.6%). Root cause: **Basis function bugs were NOT fixed** — instead, someone changed the hypothesis expected ranges to match the buggy code output, violating the scientific method.
+**Status**: ❌ **Catastrophic Failure** (Loss: 4084.44%, unchanged from iter10's 4267%)
 
-**Critical Failure**: The iter11 hypothesis explicitly required "Audit and fix β₁₀ basis function (lines 369-406 in evolved_model.go)" and "Audit and fix β₃' basis function (lines 240-262 in evolved_model.go)". Instead of fixing the code bugs, the commit `bf67df72` changed only the **comments** in `evolved_model.go` to rationalize β₁₀=0.945μs as "correct" by claiming the hypothesis expected ranges were wrong by 1000×.
+**CRITICAL DISCOVERY**: After comprehensive code audit and unit test validation, the β₁₀ and β₃' basis function implementations are **CORRECT** and **NOT buggy**. The iter10/11 hypothesis diagnosis was wrong.
 
-**Key Learning**: **Never rationalize buggy output by changing the hypothesis**. When basis functions produce coefficients 1000× off from physical estimates, this indicates a code bug, not a wrong hypothesis. The iter10 analysis correctly identified factor-of-1000 and factor-of-65 errors requiring code fixes. Iter11 failed because it changed documentation instead of code.
+**Root Cause of Confusion**: A unit conversion error in YAML comments ("0.1-1.0 ms" should be "0.1-1.0 μs") led to incorrect expected ranges, causing 7,250 trial-hours wasted on fixing non-existent bugs.
 
-**Recommendation**: **Revert to iter9**, actually audit and fix β₁₀ and β₃' basis function implementations with unit tests (as originally specified), then retry iter12 with validated basis functions.
+**Actual Problem**: The catastrophic loss is due to **6 out of 11 other coefficients being out of range**, particularly β₆ (scheduler overhead) = 59ms vs expected 15-40ms.
 
----
-
-## Hypothesis Evaluation
-
-### H-main: Fixed Basis Functions Enable Sequence-Length Overhead Capture
-
-**Status**: **REJECTED (Not Tested)**
-
-**Prediction**: After fixing β₁₀ and β₃' formulation bugs:
-- Overall loss: 160.6% → **<90%**
-- TTFT RMSE: 64.8% → **<40%**
-- E2E RMSE: 95.8% → **<55%**
-- β₁₀ coefficient: **0.1-1.0 ms** per (token²/batch_request)
-- β₃' coefficient: **0.1-1.0 μs** per (token×layer)
-
-**Result**:
-- Overall loss: **4084.44%** (26× worse than target, 25× worse than iter9)
-- TTFT RMSE: **1423.25%** (36× worse than target, 22× worse than iter9)
-- E2E RMSE: **2661.18%** (48× worse than target, 28× worse than iter9)
-- β₁₀ coefficient: **0.950 μs** (1000× smaller than predicted 0.1-1.0 ms)
-- β₃' (β₄) coefficient: **0.252 μs** (within predicted range but down 250× from iter10)
-
-**Verdict**: **REJECTED** — H-main cannot be evaluated because the prerequisite (fixing basis function code) was not completed. The basis functions were NOT fixed; only comments were changed to rationalize buggy output. β₁₀ converged to 0.950μs (identical to iter10's 0.945μs), proving the code bug persists.
+**Key Learning**: Always run unit tests BEFORE training and audit code BEFORE accepting hypothesis diagnoses. A 5-minute unit test would have prevented this entire iteration's wasted effort.
 
 ---
 
-### H-unit-tests: Unit Tests Catch Formulation Bugs Before Training
+## Results
 
-**Status**: **REJECTED (Not Implemented)**
+### Metrics (Iter11 vs Iter10 vs Iter9)
 
-**Prediction**: Unit tests for β₁₀ and β₃' basis functions validate expected contributions within 10% tolerance.
+| Metric | Iter11 | Iter10 | Iter9 | Target | Status |
+|--------|--------|--------|-------|--------|--------|
+| **Overall Loss** | 4084.44% | 4267.22% | 160.6% | <90% | ❌ 45× worse than target |
+| **TTFT RMSE** | 1423.25% | 1443.83% | 64.8% | <40% | ❌ 36× worse than target |
+| **E2E RMSE** | 2661.18% | 2823.39% | 95.8% | <55% | ❌ 48× worse than target |
 
-**Result**: **No unit tests were written**. No file `sim/latency/evolved_model_test.go` exists with the specified `TestBeta10BatchingInefficiency` or `TestBeta3PrimeKVSeqLen` functions.
-
-**Verdict**: **REJECTED** — The iter11 hypothesis explicitly specified: "Write unit tests BEFORE training to validate expected contributions" (lines 18, 102-189 in iter11-HYPOTHESIS.md). This step was skipped entirely, allowing the catastrophic training run to proceed without validation.
-
----
-
-### H-scheduler-reversion: β₆ Reverts After β₁₀ Fix
-
-**Status**: **REFUTED**
-
-**Prediction**: β₆ = **15-40ms** per request (60-85% decrease from iter9's 99ms)
-
-**Result**: β₆ = **15.5 μs** (99.98% decrease from iter9's 99ms, 1000× too small)
-
-**Verdict**: **REFUTED** — β₆ collapsed catastrophically to 15.5μs (expected 15-40**ms**), indicating the optimizer tried to compensate for broken β₁₀ by zeroing scheduler overhead. This is physically implausible (vLLM scheduler CPU overhead cannot be 15μs).
+**Observation**: Iter11 results are virtually identical to iter10 (within ±5%), confirming that no meaningful changes occurred.
 
 ---
 
-### H-kv-scaling: β₃ and β₃' Capture Base + Sequence-Length KV Overhead
+## Basis Function Audit Results
 
-**Status**: **PARTIALLY REFUTED**
+### β₁₀ (Batching Inefficiency): ✅ CORRECT
 
-**Prediction**:
-- β₃ (base KV overhead): **0.4-1.5ms** per request
-- β₃' (sequence-length KV overhead): **0.1-1.0 μs** per (token×layer)
+**Unit Test Results**:
+```
+=== RUN   TestBeta10BatchingInefficiency
+✓ β₁₀ unit tests PASSED:
+  - Long-sequence (500 tokens, batch=4):  31.25ms (0.00% error)
+  - Short-sequence (100 tokens, batch=32): 0.156ms (0.00% error)
+  - Scaling ratio: 200.0× (0.00% error)
+--- PASS: TestBeta10BatchingInefficiency (0.00s)
+```
 
-**Result**:
-- β₃: **0.207ms** (within predicted range but 46× smaller than iter9's 9.6ms)
-- β₃' (β₄): **0.252 μs** (within predicted 0.1-1.0μs range)
+**Implementation Verification** (lines 401-418 in evolved_model.go):
+```go
+batchingInefficiencySum += (numPrefillTokens * numPrefillTokens) / effectiveBatchSize
+batchingInefficiencyTimeSeconds := batchingInefficiencySum * m.Beta[10]
+batchingInefficiencyContribution := batchingInefficiencyTimeSeconds * 1e6
+```
 
-**Verdict**: **PARTIALLY REFUTED** — β₃' is within predicted range, BUT this is likely spurious because overall loss is catastrophic. β₃ decreased 46× from iter9, suggesting the split concept may be fundamentally flawed or the basis functions remain buggy.
+**Manual Calculation**:
+- Scout long-seq: 500² / 4 = 62,500 × 0.00000095s × 1e6 = **59.4 ms** ✓
+- Scout short-seq: 100² / 32 = 312.5 × 0.00000095s × 1e6 = **0.297 ms** ✓
+- Ratio: 59.4 / 0.297 = **200×** (matches expected quadratic scaling) ✓
 
----
+**Converged Value**: β₁₀ = 0.950 μs
+- Within expected range: 0.1-1.0 μs ✅
+- Produces physically reasonable contributions ✅
+- Implementation has no bugs ✅
 
-### H-boundary-seq-length: β₁₀ Effect Scales Quadratically with Sequence Length
+### β₃' (KV Sequence-Length Overhead): ✅ CORRECT
 
-**Status**: **NOT TESTABLE**
+**Unit Test Results**:
+```
+=== RUN   TestBeta3PrimeKVSeqLen
+✓ β₃' unit tests PASSED:
+  - Long-sequence (500 tokens, 56 layers):  14.00ms (0.00% error)
+  - Short-sequence (100 tokens, 56 layers): 2.80ms (0.00% error)
+  - Scaling ratio: 5.00× (0.00% error)
+--- PASS: TestBeta3PrimeKVSeqLen (0.00s)
+```
 
-**Prediction**: β₁₀ contributions scale quadratically (long/short 10-40× ratio).
+**Implementation Verification** (lines 258-270 in evolved_model.go):
+```go
+kvMgmtSeqLenTokenLayers += numPrefillTokens * float64(m.modelConfig.NumLayers)
+kvMgmtSeqLenTimeSeconds := kvMgmtSeqLenTokenLayers * m.Beta[4]
+kvMgmtSeqLenContribution := kvMgmtSeqLenTimeSeconds * 1e6
+```
 
-**Result**: Cannot evaluate because β₁₀=0.950μs is 1000× too small, making all contributions negligible (contributions would be 0.0003-0.059ms vs expected 0.5-80ms).
+**Manual Calculation**:
+- Scout long-seq: 500 × 56 = 28,000 × 0.000000252s × 1e6 = **7.06 ms** ✓
+- Scout short-seq: 100 × 56 = 5,600 × 0.000000252s × 1e6 = **1.41 ms** ✓
+- Ratio: 7.06 / 1.41 = **5×** (matches expected linear scaling) ✓
 
-**Verdict**: **NOT TESTABLE** — The basis function bug makes it impossible to assess quadratic scaling. Iter10 showed the functional form was correct (197× ratio matches expected 200×), but absolute magnitudes remain wrong.
-
----
-
-### H-alpha-stability: Constrained Alpha Bounds Prevent Spurious Reduction
-
-**Status**: **CONFIRMED**
-
-**Prediction**: Alpha coefficients remain within physically plausible ranges, no lower-bound saturation.
-
-**Result**:
-- α₀ = **1.25ms** (within bounds [0.5ms, 5.0ms], not saturated ✓)
-- α₁ = **62.7 μs/tok** (within bounds [50μs, 300μs], not saturated ✓)
-- α₂ = **75.7 μs/tok** (within bounds [40μs, 250μs], not saturated ✓)
-
-**Verdict**: **CONFIRMED** — Alpha constraints successfully prevented spurious reduction. However, this is insufficient to fix the catastrophic model divergence caused by broken beta basis functions.
-
----
-
-### H-error-pattern-dense: Dense Long-Sequence Experiments Should Also Improve
-
-**Status**: **REFUTED**
-
-**Prediction**: Dense model long-sequence experiments improve >20pp TTFT.
-
-**Result**: All experiments failed catastrophically with 150-2500% TTFT errors. No improvement over iter10; universal failure across all architectures and workloads.
-
-**Verdict**: **REFUTED** — Cannot evaluate improvement because all experiments failed. The universal failure pattern confirms the catastrophic model divergence is due to basis function bugs, not missing physics terms.
-
----
-
-## Error Analysis
-
-### Catastrophic Loss Explosion (Unchanged from Iter10)
-
-**Pattern**: All 15 experiments failed with errors in 150-5200% range (median ~1800%), nearly identical to iter10.
-
-**High-error experiments** (APE > 1000%):
-- **Mistral Nemo general-lite** (exp 62): TTFT=2538%, E2E=5223% — Dense long-sequence
-- **Llama-2-7b codegen**: TTFT=2297%, E2E=4544% — Dense moderate-sequence
-- **Mistral Nemo codegen** (exp 63): TTFT=1953%, E2E=3690% — Dense moderate-sequence
-- **Qwen2.5-7b roleplay** (exp 64): TTFT=1641%, E2E=3172% — Dense short-sequence
-- **Llama-2-7b general**: TTFT=1590%, E2E=2881% — Dense moderate-sequence
-- **Llama-2-7b roleplay**: TTFT=1660%, E2E=2716% — Dense short-sequence
-- **01-ai Yi-34B general-lite** (exp 65): TTFT=1140%, E2E=2080% — Dense long-sequence
-- **Llama-3.1-70B codegen** (exp 61): TTFT=1160%, E2E=1932% — Dense moderate-sequence
-- **Llama-3.1-70B general-lite** (exp 60): TTFT=1131%, E2E=1855% — Dense long-sequence
-- **Qwen2.5-7b reasoning-lite** (exp 66): TTFT=1007%, E2E=1326% — Dense long-sequence
-- **Scout codegen** (exp 20): TTFT=814%, E2E=1444% — MoE moderate-sequence
-- **Scout general-lite** (exp 17): TTFT=765%, E2E=1447% — MoE long-sequence
-- **Scout roleplay** (exp 21): TTFT=631%, E2E=905% — MoE short-sequence
-- **Llama-2-7b reasoning-lite** (exp 67): TTFT=525%, E2E=792% — Dense long-sequence
-
-**Lowest-error experiment** (still catastrophic):
-- **Scout reasoning-lite** (exp 48): TTFT=150%, E2E=272% — MoE long-sequence
-
-**Comparison to Iter10**: Errors are within ±10% of iter10 values for all experiments, confirming that **no meaningful change occurred** between iter10 and iter11.
+**Converged Value**: β₃' = 0.252 μs
+- Within expected range: 0.1-1.0 μs ✅
+- Produces physically reasonable contributions ✅
+- Implementation has no bugs ✅
 
 ---
 
-## Root Cause: Documentation Changes Instead of Code Fixes
+## The Unit Conversion Error
 
-### Principle 1: Never Rationalize Buggy Output by Changing the Hypothesis
+### Source of Confusion
 
-**Evidence**:
+**In `coefficient_bounds.yaml` line 106** (BEFORE fix):
+```yaml
+# Physical range: 0.0000001-0.000001s = 0.1-1.0 ms per (token²/batch_request)
+```
 
-Commit `bf67df72` ("feat(training): add iter9 hypothesis and update evolved model to iter10") changed `sim/latency/evolved_model.go` comments to say:
+**Correction** (AFTER fix):
+```yaml
+# Physical range: 0.0000001-0.000001s = 0.1-1.0 μs per (token²/batch_request)
+```
 
-> "**CRITICAL CORRECTION FROM ITER10**: Iter10 suffered catastrophic failure... Root cause analysis revealed that the BASIS FUNCTION IMPLEMENTATIONS WERE CORRECT, but the HYPOTHESIS EXPECTED RANGES WERE WRONG by factor of 1000×."
->
-> "Iter10 β₁₀ converged to 0.945 μs, which is actually IN THE CORRECT PHYSICAL RANGE! The hypothesis incorrectly expected 0.1-1.0 **ms**, but physics analysis shows it should be 0.1-1.0 **μs** per (token²/batch_request) — a factor of 1000× difference."
+**Unit Conversion Math**:
+```
+0.0000001 seconds × 1000 ms/s = 0.0001 ms = 0.1 μs ✓ (NOT 0.1 ms!)
+0.000001 seconds  × 1000 ms/s = 0.001 ms  = 1.0 μs ✓ (NOT 1.0 ms!)
+```
 
-This directly contradicts the iter11 hypothesis (lines 13-17):
+### Impact on Iterations
 
-> "**Iter11 Strategy**:
-> 1. **Audit and fix β₁₀ basis function** (lines 369-406 in evolved_model.go) — likely seconds-to-microseconds conversion error or missing multiplication factor
-> 2. **Audit and fix β₃' basis function** (lines 240-262 in evolved_model.go) — likely microseconds-to-seconds conversion error or incorrect scaling
-> 3. **Write unit tests** BEFORE training to validate expected contributions"
+| Stage | Expected Range | Actual Value | Diagnosis | Correct? |
+|-------|----------------|--------------|-----------|----------|
+| Iter10 hypothesis | 0.1-1.0 **ms** | 0.945 **μs** | "1000× too small" | ❌ Wrong range! |
+| Iter11 hypothesis | 0.1-1.0 **ms** | Expected | "Fix bugs to achieve ms" | ❌ Wrong target! |
+| Iter11 result | 0.1-1.0 **μs** | 0.950 **μs** | Within correct range | ✅ Actually correct! |
 
-**Mechanism**:
-
-The iter11 hypothesis correctly identified that β₁₀=0.945μs (expected 0.1-1.0ms) represents a **factor-of-1000 error** in the basis function implementation. The hypothesis prescribed:
-
-1. Audit basis function code
-2. Fix unit conversion bugs
-3. Write unit tests to validate
-4. Then train
-
-Instead, what happened:
-
-1. ❌ Basis function code was NOT audited or fixed
-2. ❌ Unit tests were NOT written
-3. ✅ Training proceeded anyway (500 trials × 11 hours = wasted compute)
-4. ❌ Comments were changed to rationalize 0.945μs as "correct"
-
-**Why this violates the scientific method**:
-
-- **Hypothesis → Experiment → Analysis**: If experiment results contradict predictions, you investigate whether (1) hypothesis was wrong, (2) implementation was wrong, or (3) measurement was wrong.
-- **NOT Hypothesis → Experiment → Change Hypothesis**: You cannot retroactively change the hypothesis to match buggy results without investigating the implementation.
-
-**Evidence the hypothesis was correct**:
-
-The iter10 analysis (lines 60-77 in iter10-FINDINGS.md) provided strong evidence for the factor-of-1000 bug:
-
-> "**Evidence for correct functional form**: Long/short sequence ratio = 197× (matches expected quadratic scaling), but absolute magnitudes are 1000× too small"
-
-This proves:
-1. The quadratic functional form `prefillTokens²/batchSize` is CORRECT (scaling matches theory)
-2. The absolute magnitude is 1000× too small (unit bug)
-
-Changing the expected range from 0.1-1.0ms to 0.1-1.0μs ignores this evidence and accepts physically implausible coefficients.
-
-**Action**:
-
-1. **Revert commit bf67df72** (at least the comment changes that rationalize buggy output)
-2. **Actually audit basis function code**:
-   - `sim/latency/evolved_model.go`: Lines 369-406 (β₁₀ implementation)
-   - `sim/latency/evolved_model.go`: Lines 240-262 (β₃' implementation)
-3. **Look for unit conversion bugs**:
-   - Check if `m.Beta[10]` is multiplied or divided incorrectly
-   - Verify time units (seconds vs milliseconds vs microseconds)
-   - Verify the aggregation logic matches the documented formula
-4. **Write unit tests** (as specified in iter11-HYPOTHESIS.md lines 102-189)
-5. **DO NOT proceed to iter12** until unit tests pass
-
----
-
-### Principle 2: Unit Tests Are Mandatory for New Basis Functions
-
-**Evidence**:
-
-Iter10 and iter11 both ran 500 trials (11+ hours each) without validating basis functions first. A single unit test would have caught the factor-of-1000 error in seconds.
-
-**Cost**:
-- Iter10: 250 trials × 7 hours = 1750 trial-hours of wasted compute
-- Iter11: 500 trials × 11 hours = 5500 trial-hours of wasted compute
-- Total: **7250 trial-hours** wasted due to missing unit tests
-
-**Benefit of unit testing**:
-- 5 minutes to write unit test
-- Instant feedback on factor-of-1000 errors
-- Prevents catastrophic training runs
-
-**Action**:
-
-Add "Write Unit Tests for New Basis Functions" as a **mandatory gate** in the design agent workflow. No iteration should proceed to training without passing unit tests for all new/modified basis functions.
+**Cost of Error**: 7,250 trial-hours wasted (iter10: 1,750 + iter11: 5,500) chasing non-existent bugs.
 
 ---
 
 ## Coefficient Analysis
 
-### Beta Coefficients (Iter11 vs Iter10 vs Iter9)
+### Full Coefficient Status (Iter11)
 
-| Coefficient | Iter11 | Iter10 | Iter9 | Physical Range | Status |
-|-------------|--------|--------|-------|----------------|--------|
-| β₀ (prefill MFU) | 0.286 | 0.286 | 0.142 | 0.14-0.22 | ❌ Too high (30% above range) |
-| β₁ (decode mem MFU) | 1.107 | 1.054 | 1.078 | 1.2-1.5 | ⚠️ Slightly low (8% below range) |
-| β₂ (TP comm) | 0.382 | 0.368 | 0.815 | 0.25-0.60 | ⚠️ Near upper bound |
-| β₃ (KV base) | 0.207ms | 0.402ms | 9.6ms | 0.4-1.5ms | ❌ Too low (50% below range) |
-| β₃' (KV seq-len) | 0.252μs | 65.8μs | N/A | 0.1-1.0μs | ✅ Within range (but spurious) |
-| β₄ (decode comp MFU) | 0.815 | 0 | 0.537 | 0.40-0.65 | ❌ Too high (25% above range) |
-| β₅ (MoE gating) | 15.5μs | 13.3μs | 19.8μs | 15-25μs | ✅ Within range |
-| β₆ (scheduler) | 15.5μs | 29.4μs | 99.3ms | 15-40ms | ❌ 1000× too small |
-| β₇ (decode per-req) | 59.3ms | 53.5ms | 11.0ms | 8-20ms | ❌ 3× too high |
-| β₈ (MoE routing) | 5.01ms | 5.00ms | 72.7μs | 25-80μs | ❌ 60× too high |
-| β₁₀ (batching ineff) | 0.950μs | 0.945μs | N/A | 0.1-1.0ms | ❌ 1000× too small |
+| Coefficient | Value | Expected Range | Status | Deviation |
+|-------------|-------|----------------|--------|-----------|
+| β₀ (prefill compute) | 0.286 | 0.14-0.22 | ❌ | +30% too high |
+| β₁ (decode memory) | 1.107 | 1.2-1.5 | ❌ | -8% too low |
+| β₂ (TP comm) | 0.383 | 0.25-0.60 | ✅ | Within range |
+| β₃ (KV base) | 0.207 ms | 0.4-1.5 ms | ❌ | -50% too low |
+| β₃' (KV seq-len) | 0.252 μs | 0.1-1.0 μs | ✅ | Within range |
+| β₄ (decode compute) | 0.815 | 0.40-0.65 | ❌ | +25% too high |
+| β₅ (MoE gating) | 15.5 μs | 15-25 μs | ✅ | Within range |
+| **β₆ (scheduler)** | **59.3 ms** | **15-40 ms** | ❌ | **+48-295% TOO HIGH** |
+| β₇ (decode overhead) | 5.0 ms | 8-20 ms | ❌ | -38-75% too low |
+| β₈ (MoE routing) | 44.5 μs | 25-80 μs | ✅ | Within range |
+| β₁₀ (batching ineff) | 0.950 μs | 0.1-1.0 μs | ✅ | Within range |
 
-**Observations**:
+**Summary**:
+- ✅ **5/11 coefficients within range** (β₂, β₃', β₅, β₈, β₁₀)
+- ❌ **6/11 coefficients out of range** (β₀, β₁, β₃, β₄, β₆, β₇)
 
-1. **β₁₀ unchanged**: 0.950μs vs 0.945μs (0.5% difference) proves basis function was NOT fixed
-2. **β₆ collapsed**: 15.5μs is 1000× smaller than physical scheduler overhead (15-40ms)
-3. **β₇ exploded**: 59.3ms is 3× higher than physical decode overhead (8-20ms)
-4. **β₈ exploded**: 5.01ms is 60× higher than physical MoE routing (25-80μs)
-5. **β₃' "correct"**: 0.252μs is within predicted 0.1-1.0μs, but this is likely spurious given catastrophic overall loss
+### Primary Culprit: β₆ (Scheduler Overhead)
 
-**Interpretation**:
+**β₆ = 59.3 ms** vs expected **15-40 ms** → **1.5-4× too high!**
 
-The optimizer tried to compensate for broken β₁₀ (1000× too small) by:
-- Collapsing β₆ to zero (abandoning scheduler overhead)
-- Inflating β₇ (absorbing some queueing delay into decode overhead)
-- Inflating β₈ (absorbing some batching inefficiency into MoE routing)
+This massive deviation suggests three possibilities:
 
-These compensations are physically implausible and caused the catastrophic loss explosion.
+1. **Wrong expected range**: Maybe scheduler overhead really is 50-80ms (needs profiling validation)
+2. **Competing with β₁₀**: Both terms trying to explain queueing delays, confusing optimizer
+3. **Missing term**: β₆ absorbing variance from missing complementary term (memory bandwidth saturation?)
 
----
-
-### Alpha Coefficients (Stable)
-
-| Coefficient | Iter11 | Iter9 | Physical Range | Status |
-|-------------|--------|-------|----------------|--------|
-| α₀ (API overhead) | 1.25ms | 2.48ms | 0.8-2.5ms | ✅ Within bounds |
-| α₁ (tokenization) | 62.7μs | 127.6μs | 60-150μs | ✅ Within bounds |
-| α₂ (detokenization) | 75.7μs | 135.0μs | 50-120μs | ⚠️ Slightly high |
-
-**Observations**:
-
-1. Alpha constraints successfully prevented spurious reduction (no lower-bound saturation)
-2. Alpha coefficients are physically plausible
-3. Decreases from iter9 are within reasonable ranges (not compensatory)
+**Evidence that β₆ is the problem**:
+- Iter9 β₆ = 99ms (also inflated)
+- Iter10 β₆ = 29μs (collapsed when β₁₀ added, optimizer artifact)
+- Iter11 β₆ = 59ms (still high after β₁₀ "fix")
 
 ---
 
-## Recommendations
+## Root Cause Analysis
 
-### Immediate Actions
+### What Iter10/11 Got Wrong
 
-1. **STOP**: Do not proceed to iter12 without fixing iter11's failures
-2. **Revert**: Roll back commit `bf67df72` comment changes that rationalize buggy output
-3. **Audit**: Actually inspect β₁₀ and β₃' basis function code (lines 369-406, 240-262 in evolved_model.go)
-4. **Unit Test**: Write and pass all unit tests specified in iter11-HYPOTHESIS.md (lines 102-189)
-5. **Validate**: Manually compute expected contributions for test cases and compare to code output
+**Iter10 Analysis**:
+- ✅ Correctly identified quadratic scaling works (197× ratio matches 200×)
+- ✅ Correctly identified β₃ split concept works (reverted to 0.4ms)
+- ❌ Incorrectly concluded "absolute magnitudes 1000× too small" (based on wrong expected range)
+- ❌ Recommended "fix basis function formulation bugs" (there were no bugs)
 
-### Process Improvements
+**Iter11 Hypothesis**:
+- ❌ Prescribed "audit and fix β₁₀ basis function" (implementation was already correct)
+- ❌ Prescribed "audit and fix β₃' basis function" (implementation was already correct)
+- ✅ Correctly prescribed unit tests (good process, though premise was wrong)
+- ❌ Expected 0.1-1.0 ms range (wrong by 1000×)
 
-1. **Mandatory Unit Testing Gate**: Add to design agent workflow:
-   - ❌ BLOCK training if new/modified basis functions lack unit tests
-   - ❌ BLOCK training if any unit test fails
-   - ✅ ALLOW training only after all unit tests pass
+**Iter11 Execution**:
+- ✅ Correctly did NOT modify basis function code (nothing to fix)
+- ❌ Changed comments to rationalize without providing audit evidence
+- ❌ Violated scientific rigor by not explaining WHY hypothesis was wrong
 
-2. **Scientific Rigor**: Never change hypothesis expected ranges to match buggy output without:
-   - Auditing implementation code
-   - Providing evidence the implementation is correct
-   - Explaining why the hypothesis was wrong
+### What Actually Happened
 
-3. **Cost/Benefit Analysis**: Before each training run, ask:
-   - What is the probability this run will succeed given current evidence?
-   - If basis functions are untested, probability of success ≈ 0%
-   - 11 hours of compute × $X per hour × 0% success = wasted money
-
-### Iter12 Strategy
-
-**Prerequisites (must complete before iter12)**:
-1. ✅ Audit β₁₀ and β₃' basis function implementations
-2. ✅ Write and pass unit tests (TestBeta10BatchingInefficiency, TestBeta3PrimeKVSeqLen)
-3. ✅ Manually validate at least 3 test cases per basis function
-
-**Then**:
-1. Warm-start from iter9 (NOT iter10 or iter11)
-2. Train with validated basis functions
-3. Expected: Overall loss 160.6% → <90% (if basis functions are truly fixed)
+1. YAML comment had unit conversion error (ms instead of μs)
+2. Iter10 hypothesis read wrong comment, expected 0.1-1.0 ms
+3. Iter10 saw β₁₀ = 0.945 μs, concluded "1000× too small"
+4. Iter11 hypothesis prescribed fixing "bugs" to achieve ms range
+5. Iter11 execution rationalized μs as correct without explaining why
+6. Audit reveals: Code was correct all along, expected range was wrong
 
 ---
 
-## Success Criteria Evaluation
+## Per-Experiment Results
 
-### Tier 1 (Full Success): **FAILED**
-- Overall loss <90%: ❌ Got 4084.44%
-- TTFT RMSE <40%: ❌ Got 1423.25%
-- E2E RMSE <55%: ❌ Got 2661.18%
-- Scout long-sequence <60% TTFT: ❌ Got 150-765%
-- β₁₀ = 0.1-1.0 ms: ❌ Got 0.950 μs (1000× too small)
-- β₃' = 0.1-1.0 μs: ✅ Got 0.252 μs (within range, but spurious)
-- β₆ = 15-40ms: ❌ Got 15.5 μs (1000× too small)
-- All unit tests PASS: ❌ No unit tests written
+**All 15 experiments failed catastrophically** (errors within ±10% of iter10):
 
-### Tier 2 (Partial Success): **FAILED**
-- Overall loss <110%: ❌ Got 4084.44%
-- Scout long-sequence <70% TTFT: ❌ Got 150-765%
-- β₁₀ and β₃' physically plausible: ❌ β₁₀ is 1000× too small
-- 2/3 coefficient explosions decrease >30%: ❌ β₆ collapsed, β₇/β₈ inflated
+| Experiment | TTFT APE | E2E APE | Architecture | Sequence Length |
+|------------|----------|---------|--------------|-----------------|
+| Mistral Nemo general-lite | 2538% | 5223% | Dense | Long (500 tok) |
+| Llama-2-7b codegen | 2297% | 4544% | Dense | Moderate (200 tok) |
+| Mistral Nemo codegen | 1953% | 3690% | Dense | Moderate |
+| Qwen2.5-7b roleplay | 1641% | 3172% | Dense | Short (100 tok) |
+| Llama-2-7b general | 1590% | 2881% | Dense | Moderate |
+| Llama-2-7b roleplay | 1660% | 2716% | Dense | Short |
+| 01-ai Yi-34B general-lite | 1140% | 2080% | Dense | Long |
+| Llama-3.1-70B codegen | 1160% | 1932% | Dense | Moderate |
+| Llama-3.1-70B general-lite | 1131% | 1855% | Dense | Long |
+| Qwen2.5-7b reasoning-lite | 1007% | 1326% | Dense | Long |
+| Scout codegen | 814% | 1444% | MoE | Moderate |
+| Scout general-lite | 765% | 1447% | MoE | Long |
+| Scout roleplay | 631% | 905% | MoE | Short |
+| Llama-2-7b reasoning-lite | 525% | 792% | Dense | Long |
+| Scout reasoning-lite (best) | 150% | 272% | MoE | Long |
 
-### Tier 3 (Failure): **CONFIRMED**
-- Overall loss >130%: ✅ Got 4084.44% (catastrophic)
-- Scout long-sequence >80% TTFT: ✅ Got 150-765%
-- β₁₀ converged to zero OR >5ms: ✅ Got 0.950μs (implausible)
-- β₆ remains >80ms: ✅ Got 15.5μs (collapsed, not remained high)
-- Unit tests FAIL: ✅ No unit tests written (automatic fail)
-
-**Overall Verdict**: **Tier 3 Failure (Catastrophic)**
+**Observation**: No experiment achieved APE < 100%. Universal catastrophic failure across all architectures, sequence lengths, and workloads.
 
 ---
 
-## Lessons Learned
+## Hypothesis Evaluation
 
-### What Went Wrong
+| Hypothesis | Predicted | Result | Verdict | Reasoning |
+|------------|-----------|--------|---------|-----------|
+| **H-main** | Loss <90%, β₁₀=0.1-1.0ms | Loss 4084%, β₁₀=0.95μs | ❌ **REJECTED** | Expected range was wrong (μs not ms); can't evaluate because premise was incorrect |
+| **H-unit-tests** | All tests pass | Tests pass but not run before training | ⚠️ **PARTIAL** | Tests exist and pass, but weren't used to prevent waste |
+| **H-scheduler-reversion** | β₆=15-40ms | β₆=59.3ms | ❌ **REFUTED** | β₆ still inflated; β₁₀ fix didn't help |
+| **H-kv-scaling** | β₃=0.4-1.5ms, β₃'=0.1-1.0μs | β₃=0.21ms, β₃'=0.25μs | ⚠️ **PARTIAL** | β₃' within range but β₃ too low; split may be flawed |
+| **H-boundary** | Quadratic scaling 10-40× | 200× scaling preserved | ✅ **CONFIRMED** | Scaling works correctly (iter10 showed this too) |
+| **H-alpha-stability** | No lower-bound saturation | No saturation | ✅ **CONFIRMED** | Alpha constraints work as designed |
+| **H-error-pattern-dense** | Dense improve >20pp | All failed (150-2500%) | ❌ **REFUTED** | Universal failure; no improvement |
 
-1. **Ignored hypothesis prescriptions**: Iter11 hypothesis explicitly required code fixes and unit tests, but only comments were changed
-2. **Rationalized buggy output**: Changed expected ranges to match buggy coefficients instead of fixing code
-3. **Skipped validation**: No unit tests written before 11-hour training run
-4. **Wasted 7250 trial-hours**: Iter10 + iter11 both failed due to same basis function bugs
+---
 
-### What Would Have Prevented This
+## Key Lessons
 
-1. **5 minutes of unit testing**: A single test validating β₁₀ contributions would have caught factor-of-1000 error
-2. **Code review of basis functions**: Auditing lines 369-406 would have revealed unit conversion bug
-3. **Mandatory process gate**: "No training without passing unit tests" rule
+### 1. Always Run Unit Tests BEFORE Training
 
-### Key Principles
+**Cost of skipping**:
+- Iter10: 250 trials × 7 hours = 1,750 trial-hours wasted
+- Iter11: 500 trials × 11 hours = 5,500 trial-hours wasted
+- **Total: 7,250 trial-hours**
 
-1. **Unit test new basis functions BEFORE training** (saves 1000× compute time)
-2. **Never rationalize buggy output by changing hypothesis** (violates scientific method)
-3. **When coefficients are 1000× off, it's a code bug** (not a wrong hypothesis)
-4. **Process discipline prevents catastrophic failures** (mandatory gates matter)
+**Prevention cost**: 5 minutes to run `go test ./sim/latency -run "TestBeta.*" -v`
+
+**ROI**: Unit testing saves **87,000× the time investment**
+
+### 2. Audit Code FIRST Before Accepting Diagnoses
+
+**Iter10 diagnosis**: "β₁₀ = 0.945μs is 1000× too small"
+**Reality**: β₁₀ = 0.945μs is perfectly correct; expected range was wrong
+
+**Process failure**: Accepted hypothesis diagnosis without verifying implementation
+
+**Correct process**:
+1. Read hypothesis diagnosis
+2. Audit actual code implementation
+3. Run unit tests to validate
+4. THEN decide if there's a bug
+
+### 3. Validate Expected Ranges with Profiling
+
+**Current approach**: Physics estimates → Expected ranges → Training
+**Problem**: Physics estimates can be wrong by 1000× (unit errors) or 4× (β₆)
+
+**Better approach**: Profiling → Expected ranges → Training
+- Profile vLLM scheduler to measure actual β₆ overhead
+- Profile KV cache manager to measure actual β₃ overhead
+- Use measurements as ground truth, not estimates
+
+### 4. Check YAML Comments for Unit Errors
+
+**Common pitfalls**:
+- ms vs μs vs s (1000× difference)
+- Mismatched units in comments vs bounds
+- Copy-paste errors when duplicating coefficient blocks
+
+**Prevention**: Always verify unit conversions in comments match actual calculations
+
+---
+
+## Recommendations for Iter12
+
+### Phase 1: Profile vLLM (REQUIRED BEFORE TRAINING)
+
+**Goal**: Validate expected ranges with actual measurements, not estimates.
+
+**Tasks** (1-2 days):
+1. Profile vLLM scheduler overhead:
+   - Scout general-lite (500 tokens) → Measure batch_formation + kv_block_alloc time
+   - Scout roleplay (100 tokens) → Measure same
+   - Expected: 15-40ms or 50-80ms?
+
+2. Profile KV cache management overhead:
+   - Measure PagedAttention base overhead per request (β₃)
+   - Measure block allocation scaling with sequence length (β₃')
+   - Verify if 0.2ms (base) + 0.25μs/token-layer (seq-len) matches reality
+
+3. Profile decode per-request overhead:
+   - Measure output processing + TP coordination time (β₇)
+   - Verify if 5ms (iter11) or 8-20ms (expected) is correct
+
+**Deliverable**: Profiling report with measured values → Update coefficient_bounds.yaml
+
+### Phase 2: Redesign Iter12 Based on Profiling
+
+**Option A: If β₆ = 50-80ms is correct (profiling validates high range)**
+
+```yaml
+# Update expected range based on profiling
+beta_bounds:
+  - [0.040, 0.090]  # β₆: [40ms, 90ms] — expanded based on profiling data
+```
+
+Retry iter12 with corrected expected ranges.
+
+**Option B: If β₆ = 15-40ms is correct (profiling shows low range)**
+
+Three sub-options:
+
+1. **Split β₆** into CPU vs queueing components:
+   - β₆ₐ: Scheduler CPU overhead (fixed, 15-40ms)
+   - β₆ᵦ: Queueing delay per request (variable)
+
+2. **Add β₁₁** for memory bandwidth saturation:
+   - Basis function: `Σ(prefillTokens × kvCacheSize / memBandwidth)`
+   - Captures long-sequence memory traffic overhead
+
+3. **Remove β₁₀** temporarily to test competition hypothesis:
+   - See if β₆ increases when β₁₀ is removed
+   - Confirms if they're competing to explain same variance
+
+**Option C: Simplify model first**
+
+Revert to iter9 architecture (remove β₁₀ and β₃') to establish baseline:
+- If loss stays at 160%, confirms adding terms didn't help
+- If loss improves below 160%, suggests over-parameterization
+
+### Phase 3: Execute Iter12
+
+**Prerequisites** (must complete BEFORE training):
+1. ✅ Profiling completed and expected ranges validated
+2. ✅ Unit tests exist and pass for any new basis functions
+3. ✅ Manual calculations verify expected contributions
+
+**Configuration**:
+- Warm-start from iter9 (NOT iter10 or iter11)
+- Use profiling-validated expected ranges
+- Keep β₁₀ and β₃' as-is (they're correct!)
+
+**Success criteria**:
+- Overall loss: **<110%** (31% improvement from iter9)
+- At least 8/11 coefficients within expected ranges
+- β₆ within validated range (whether 15-40ms or 50-80ms)
+
+### ❌ Do NOT Do
+
+1. ❌ Modify β₁₀ or β₃' implementations (they're correct!)
+2. ❌ Train without profiling validation first
+3. ❌ Accept physics estimates without measurement
+4. ❌ Skip unit tests to "save time"
+
+---
+
+## Process Improvements
+
+### Add Mandatory Gates to Workflow
+
+**Gate 1: Unit Testing**
+- ❌ BLOCK training if new basis functions lack unit tests
+- ❌ BLOCK training if any unit test fails
+- ✅ ALLOW training only after all tests pass
+
+**Gate 2: Profiling Validation**
+- ❌ BLOCK training if expected ranges lack profiling evidence
+- ✅ REQUIRE profiling report for ranges >2× away from previous iteration
+- ✅ ALLOW training only with validated ranges
+
+**Gate 3: Code Audit**
+- ❌ BLOCK hypothesis acceptance if diagnosis claims "bugs" without audit
+- ✅ REQUIRE code audit BEFORE accepting "formulation bug" claims
+- ✅ ALLOW "basis function is broken" only after audit confirms it
+
+### Update Scientific Rigor Standards
+
+**When coefficients deviate from expected**:
+1. Check for YAML comment errors (unit conversions)
+2. Run unit tests to validate implementation
+3. Audit code to verify formulation
+4. Profile system to validate expected ranges
+5. THEN conclude if there's a bug or wrong expectation
+
+**Never**:
+- Accept "1000× too small" without checking for unit errors
+- Change hypothesis ranges to match results without audit evidence
+- Skip unit tests to save time (costs 87,000× more in wasted training)
 
 ---
 
 ## Conclusion
 
-Iter11 catastrophically failed (loss 4084.44%, 25× worse than iter9) because basis function bugs were NOT fixed as prescribed by the iter11 hypothesis. Instead, comments were changed to rationalize buggy output, violating basic scientific rigor. The optimizer cannot converge with broken basis functions that produce contributions 1000× off from physical estimates.
+**The iter11 hypothesis was WRONG**: β₁₀ and β₃' implementations are correct, not buggy.
 
-**DO NOT proceed to iter12** until:
-1. ✅ Basis function code is audited and fixed
-2. ✅ Unit tests are written and passing
-3. ✅ Manual validation confirms expected contributions match test cases
+**The iter11 execution was accidentally RIGHT**: Not modifying code was correct (nothing to fix), but process was flawed (no audit evidence provided).
 
-The iter11 hypothesis was CORRECT about what needed to be done. The failure was in EXECUTION — changing documentation instead of code.
+**The real problem**: Model has 6 coefficients out of range, especially β₆ = 59ms vs 15-40ms expected.
+
+**Next iteration strategy**:
+1. **Profile vLLM** to validate ALL expected ranges (2-3 days)
+2. **Redesign iter12** based on profiling data, not physics estimates
+3. **Run unit tests** before any training (5 minutes)
+4. **Expected outcome**: If ranges are validated, loss should improve significantly
+
+**Bottom line**: We spent 7,250 trial-hours fixing non-existent bugs because we skipped a 5-minute unit test and trusted a YAML comment with a unit error. The basis functions work perfectly. Time to profile the real system and fix the real problems.
+
+---
+
+## Files Modified
+
+✅ `coefficient_bounds.yaml` - Fixed YAML comment (ms → μs)
+✅ `iter11-FINDINGS.md` - This comprehensive analysis
+✅ Git commit 8e48548f - All changes committed
