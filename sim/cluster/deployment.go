@@ -91,7 +91,7 @@ type DeploymentConfig struct {
 	// ensuring pool-placed instances use the correct roofline hardware coefficients
 	// (TFlopsPeak, BwPeakTBs) rather than the CLI --gpu calibration.
 	// Zero value (nil) is safe: no override, backward-compatible with all existing callers.
-	HWConfigByGPU map[string]sim.HardwareCalib
+	HWConfigByGPU map[string]sim.HardwareCalib `yaml:"hw_config_by_gpu,omitempty"`
 }
 
 // ToSimConfig returns the embedded SimConfig for per-instance construction.
