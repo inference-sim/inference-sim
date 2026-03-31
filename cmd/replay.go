@@ -23,6 +23,8 @@ var (
 	traceHeaderPath   string
 	traceDataPath     string
 	replayTraceOutput string // File prefix for TraceV2 re-export (<prefix>.yaml + <prefix>.csv)
+	replaySessionMode string
+	replayThinkTimeMs int
 )
 
 var replayCmd = &cobra.Command{
@@ -77,12 +79,54 @@ Example:
 		}
 		logrus.Infof("Loaded trace: %d records (mode=%s)", len(traceData.Records), traceData.Header.Mode)
 
-		// Build requests from trace (BC-1)
-		requests, err := workload.LoadTraceV2Requests(traceData, seed)
-		if err != nil {
-			logrus.Fatalf("Failed to build requests from trace: %v", err)
+		// Validate session mode flags (BC-11)
+		if replaySessionMode != "fixed" && replaySessionMode != "closed-loop" {
+			logrus.Fatalf("--session-mode must be \"fixed\" or \"closed-loop\", got %q", replaySessionMode)
 		}
-		logrus.Infof("Built %d requests for replay", len(requests))
+		if replayThinkTimeMs < 0 {
+			logrus.Fatalf("--think-time-ms must be non-negative, got %d", replayThinkTimeMs)
+		}
+		if replayThinkTimeMs > 0 && replaySessionMode != "closed-loop" {
+			logrus.Fatalf("--think-time-ms requires --session-mode closed-loop")
+		}
+
+		// Build requests from trace — mode selects pre-baked vs closed-loop (BC-8, BC-9)
+		var requests []*sim.Request
+		var sessionMgr *workload.SessionManager
+		if replaySessionMode == "closed-loop" {
+			// Closed-loop: inject only round-0 requests; SessionManager drives follow-ups
+			r0Requests, blueprints, bErr := workload.LoadTraceV2SessionBlueprints(traceData, seed, 0, 0)
+			if bErr != nil {
+				logrus.Fatalf("Failed to build session blueprints from trace: %v", bErr)
+			}
+			requests = r0Requests
+			if len(blueprints) == 0 {
+				logrus.Warnf("--session-mode closed-loop: no session records found in trace; all requests injected with fixed timing")
+			} else {
+				// Recompute blueprints with correct horizon and think-time override
+				// (horizon is derived from requests, so we must compute it now)
+				replayHorizonPrelim := computeReplayHorizon(requests)
+				if cmd.Flags().Changed("horizon") {
+					replayHorizonPrelim = simulationHorizon
+				}
+				thinkTimeUs := int64(replayThinkTimeMs) * 1000
+				r0Requests2, blueprints2, bErr2 := workload.LoadTraceV2SessionBlueprints(traceData, seed, thinkTimeUs, replayHorizonPrelim)
+				if bErr2 != nil {
+					logrus.Fatalf("Failed to build session blueprints from trace: %v", bErr2)
+				}
+				requests = r0Requests2
+				sessionMgr = workload.NewSessionManager(blueprints2)
+				logrus.Infof("Closed-loop mode: %d session blueprints, %d round-0 requests", len(blueprints2), len(requests))
+			}
+		} else {
+			// Fixed mode (default): pre-baked arrivals, existing behavior (BC-8)
+			var bErr error
+			requests, bErr = workload.LoadTraceV2Requests(traceData, seed)
+			if bErr != nil {
+				logrus.Fatalf("Failed to build requests from trace: %v", bErr)
+			}
+			logrus.Infof("Built %d requests for replay", len(requests))
+		}
 
 		// Compute horizon (BC-3)
 		replayHorizon := computeReplayHorizon(requests)
@@ -157,8 +201,12 @@ Example:
 			TenantBudgets:           tenantBudgets,
 		}
 
-		// Run simulation — no session manager (onRequestDone=nil: session structure encoded in trace)
-		cs := cluster.NewClusterSimulator(config, requests, nil)
+		// Run simulation — wire SessionManager for closed-loop, nil for fixed mode
+		var onRequestDone func(*sim.Request, int64) []*sim.Request
+		if sessionMgr != nil {
+			onRequestDone = sessionMgr.OnComplete
+		}
+		cs := cluster.NewClusterSimulator(config, requests, onRequestDone)
 		if err := cs.Run(); err != nil {
 			logrus.Fatalf("Replay simulation failed: %v", err)
 		}
@@ -289,6 +337,8 @@ func init() {
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
 	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens) for blis calibrate consumption.")
 	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\"")
+	replayCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", `Session replay mode: "fixed" (pre-baked arrivals from trace) or "closed-loop" (load-adaptive follow-ups via SessionManager)`)
+	replayCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "Override think time between session rounds in milliseconds (0 = derive from trace inter-round gaps; requires --session-mode closed-loop)")
 	rootCmd.AddCommand(replayCmd)
 }
 
