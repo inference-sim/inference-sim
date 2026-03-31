@@ -1,0 +1,28 @@
+iteration: 11
+latency_backend_name: "evolved"
+modified_files:
+  - "sim/latency/evolved_model.go"
+  - "sim/latency/evolved_model_test.go"
+reasoning: |
+  Iteration 11: Basis Function Bug Fixes (Batching Inefficiency + KV Seq-Len Scaling)
+
+  Previous iteration (iter10): Catastrophic failure (loss 4267.22%, 27× worse than iter9's 160.6%).
+  Root cause identified: Systematic unit/scaling errors in β₁₀ (batching inefficiency) and β₃' (KV seq-len component).
+
+  Critical discoveries from iter10 analysis:
+  - β₁₀ functional form is CORRECT (quadratic scaling preserved: long/short ratio = 197× matches expected 200×)
+  - β₁₀ magnitude is WRONG (all contributions 1000× too small — factor-of-1000 error)
+  - β₃' magnitude is WRONG (65× too large: 65.8μs vs expected 0.1-1.0μs per token×layer)
+  - β₃ split concept is SOUND (β₃ reverted correctly to 0.402ms within expected 0.4-1.5ms)
+
+  Iter11 strategy:
+  1. Audit and fix β₁₀ basis function (lines 369-406 in evolved_model.go) — likely seconds-to-microseconds conversion error
+  2. Audit and fix β₃' basis function (lines 240-262 in evolved_model.go) — likely microseconds-to-seconds conversion error
+  3. Write unit tests BEFORE training to validate expected contributions (TestBeta10BatchingInefficiency, TestBeta3PrimeKVSeqLen)
+  4. Warm-start from iter9 (NOT iter10) to avoid broken coefficient artifacts
+  5. Maintain constrained alpha bounds to prevent spurious reduction
+
+  Expected outcome: Overall loss 160.6% → <90% (44% improvement), Scout long-sequence TTFT <60% (>31pp improvement),
+  β₁₀ = 0.1-1.0 ms, β₃' = 0.1-1.0 μs, β₆ revert to 15-40ms.
+
+timestamp: "2026-03-30T22:00:00.000000"
