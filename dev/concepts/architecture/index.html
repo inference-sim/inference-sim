@@ -3084,7 +3084,10 @@
 <pre class="mermaid"><code>flowchart TD
     WG["Workload&lt;br/&gt;Generator"] --&gt;|Requests| Adm{"Admission&lt;br/&gt;Policy"}
     Adm --&gt;|rejected| Rej["Rejected&lt;br/&gt;(counted)"]
-    Adm --&gt;|admitted| Rtr["Routing Policy&lt;br/&gt;(WeightedScoring)&lt;br/&gt;PA:3 QD:2 KV:2"]
+    Adm --&gt;|admitted| GQ["Gateway Queue&lt;br/&gt;(opt: --flow-control)"]
+    GQ --&gt;|dispatch| Rtr["Routing Policy&lt;br/&gt;(WeightedScoring)&lt;br/&gt;PA:3 QD:2 KV:2"]
+
+    style GQ fill:#e7f5ff,stroke:#90caf9
 
     Snap["Routing Snapshots&lt;br/&gt;QueueDepth, BatchSize,&lt;br/&gt;KVUtil, InFlightRequests"] -.-&gt; Rtr
 
@@ -3365,6 +3368,7 @@
 <li><strong>AdmissionDecisionEvent:</strong> Admission policy evaluates the request</li>
 <li>If rejected: request counted, pipeline ends</li>
 <li>If admitted: proceed to routing (with optional <code>--admission-latency</code> delay)</li>
+<li><strong>Gateway Queue (optional, <code>--flow-control</code>):</strong> When flow control is enabled, admitted requests enter a priority-ordered gateway queue instead of routing immediately. A saturation detector evaluates cluster capacity on each completion; when saturation &lt; 1.0, the highest-priority request is dequeued and routed with fresh <code>RouterState</code> (late binding). When disabled (default), this step is skipped.</li>
 <li><strong>RoutingDecisionEvent:</strong> Routing policy selects target instance</li>
 <li>InFlightRequests for target instance incremented</li>
 <li>Request injected into target instance's wait queue (with optional <code>--routing-latency</code> delay)</li>
