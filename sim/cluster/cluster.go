@@ -232,11 +232,11 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			tpDegree = 1 // default to TP=1 when not explicitly set (R3: defensive correction with comment)
 		}
 		for _, inst := range cs.instances {
-			nodeID, gpuIDs, err := cs.placement.PlaceInstance(inst.ID(), inst.Model, gpuType, tpDegree)
+			nodeID, gpuIDs, _, err := cs.placement.PlaceInstance(inst.ID(), inst.Model, gpuType, tpDegree)
 			if err != nil {
 				// No capacity — instance stays in Scheduling (pending) state
 				inst.TransitionTo(InstanceStateScheduling)
-				cs.placement.AddPending(inst.ID(), inst.Model, gpuType, tpDegree)
+				cs.placement.AddPending(inst.ID(), inst.Model, gpuType, tpDegree, sim.SimConfig{})
 			} else {
 				inst.nodeID = nodeID
 				inst.allocatedGPUIDs = gpuIDs

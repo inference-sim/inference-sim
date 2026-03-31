@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math/rand"
 	"sort"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 // PlacementManager manages node/GPU inventory and instance placement decisions.
@@ -33,13 +35,16 @@ type pendingInstance struct {
 	model    string
 	gpuType  string
 	tpDegree int
+	simCfg   sim.SimConfig // per-instance simulator configuration
 }
 
 // placedInstance records a successfully placed instance with its node and GPU assignments.
 type placedInstance struct {
-	id     InstanceID
-	nodeID string
-	gpuIDs []string
+	id      InstanceID
+	nodeID  string
+	gpuIDs  []string
+	gpuType string         // gpu_type from the matched pool config
+	simCfg  sim.SimConfig  // per-instance simulator configuration
 }
 
 // NewPlacementManager creates a PlacementManager from the given node pool configs.
@@ -170,10 +175,11 @@ func (pm *PlacementManager) VerifyConservation() error {
 // PlaceInstance attempts to place an instance using first-fit bin-packing.
 // Considers only Ready nodes in pools matching gpuType, in pool declaration order.
 // Select-then-commit atomicity (R5): GPUs are only mutated after full selection succeeds.
-// Returns (nodeID, gpuIDs, nil) on success; ("", nil, error) when no capacity found.
-func (pm *PlacementManager) PlaceInstance(id InstanceID, model, gpuType string, tpDegree int) (nodeID string, gpuIDs []string, err error) {
+// Returns (nodeID, gpuIDs, matchedGPUType, nil) on success; ("", nil, "", error) when no capacity found.
+// matchedGPUType is the gpu_type value from the matched pool config.
+func (pm *PlacementManager) PlaceInstance(id InstanceID, model, gpuType string, tpDegree int) (nodeID string, gpuIDs []string, matchedGPUType string, err error) {
 	if tpDegree < 1 {
-		return "", nil, fmt.Errorf("PlaceInstance %s: tpDegree must be ≥1, got %d", id, tpDegree)
+		return "", nil, "", fmt.Errorf("PlaceInstance %s: tpDegree must be ≥1, got %d", id, tpDegree)
 	}
 
 	for _, poolState := range pm.pools {
@@ -211,11 +217,11 @@ func (pm *PlacementManager) PlaceInstance(id InstanceID, model, gpuType string, 
 				gpu.AllocatedTo = id
 				resultIDs[i] = gpu.ID
 			}
-			return node.ID, resultIDs, nil
+			return node.ID, resultIDs, poolState.config.GPUType, nil
 		}
 	}
 
-	return "", nil, fmt.Errorf("PlaceInstance %s: no Ready node has %d free %s GPUs", id, tpDegree, gpuType)
+	return "", nil, "", fmt.Errorf("PlaceInstance %s: no Ready node has %d free %s GPUs", id, tpDegree, gpuType)
 }
 
 // ReleaseInstance returns GPUs allocated to id back to the free pool.
@@ -348,9 +354,9 @@ func (pm *PlacementManager) RetryPendingInstances() []placedInstance {
 	i := 0
 	for i < len(pm.pendingInsts) && i < maxIter {
 		p := pm.pendingInsts[i]
-		nodeID, gpuIDs, err := pm.PlaceInstance(p.id, p.model, p.gpuType, p.tpDegree)
+		nodeID, gpuIDs, matchedGPUType, err := pm.PlaceInstance(p.id, p.model, p.gpuType, p.tpDegree)
 		if err == nil {
-			nowPlaced = append(nowPlaced, placedInstance{id: p.id, nodeID: nodeID, gpuIDs: gpuIDs})
+			nowPlaced = append(nowPlaced, placedInstance{id: p.id, nodeID: nodeID, gpuIDs: gpuIDs, gpuType: matchedGPUType, simCfg: p.simCfg})
 			// Remove from pending: swap with last and shrink (R21).
 			// Swap-remove pattern: move last element to position i, then truncate.
 			// This is O(1) removal vs O(N) for shifting all elements left.
@@ -366,12 +372,13 @@ func (pm *PlacementManager) RetryPendingInstances() []placedInstance {
 }
 
 // AddPending registers an instance as pending (placement deferred until a node is ready).
-func (pm *PlacementManager) AddPending(id InstanceID, model, gpuType string, tpDegree int) {
+func (pm *PlacementManager) AddPending(id InstanceID, model, gpuType string, tpDegree int, simCfg sim.SimConfig) {
 	pm.pendingInsts = append(pm.pendingInsts, pendingInstance{
 		id:       id,
 		model:    model,
 		gpuType:  gpuType,
 		tpDegree: tpDegree,
+		simCfg:   simCfg,
 	})
 }
 
