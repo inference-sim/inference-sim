@@ -51,8 +51,15 @@ type BatchResult struct {
 	PreemptionHappened bool
 }
 
+// VictimSelector chooses which index in the running batch to evict during KV pressure.
+// Returns the index of the request to preempt.
+// nil means LIFO (evict the last element — default vLLM behavior).
+type VictimSelector func(requests []*Request) int
+
 // VLLMBatchFormation implements the vLLM FCFS + chunked-prefill + preemption strategy.
-type VLLMBatchFormation struct{}
+type VLLMBatchFormation struct {
+	selectVictim VictimSelector // nil = LIFO
+}
 
 func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 	if ctx.RunningBatch == nil {
@@ -209,9 +216,15 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 			}
 
 			result.PreemptionHappened = true
-			preemptedRequest := result.RunningBatch.Requests[len(result.RunningBatch.Requests)-1]
+			victimIdx := len(result.RunningBatch.Requests) - 1
+			if v.selectVictim != nil {
+				victimIdx = v.selectVictim(result.RunningBatch.Requests)
+			}
+			preemptedRequest := result.RunningBatch.Requests[victimIdx]
 			logrus.Warnf("[tick %07d] preemption: evicting %s to make room", ctx.Now, preemptedRequest.ID)
-			result.RunningBatch.Requests = result.RunningBatch.Requests[:len(result.RunningBatch.Requests)-1]
+			result.RunningBatch.Requests = append(
+				result.RunningBatch.Requests[:victimIdx],
+				result.RunningBatch.Requests[victimIdx+1:]...)
 
 			result.Preempted = append(result.Preempted, PreemptedRequest{
 				Request: preemptedRequest,
