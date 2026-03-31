@@ -231,6 +231,51 @@ func TestSession_NonSessionRequest_ReturnsNil(t *testing.T) {
 	}
 }
 
+// TestSession_ThinkTimeSampler_UsedWhenPresent verifies BC-3:
+// when ThinkTimeSampler is set, OnComplete uses it instead of constant ThinkTimeUs.
+func TestSession_ThinkTimeSampler_UsedWhenPresent(t *testing.T) {
+	bp := makeTestBlueprint("tts1", 3, 1000, "", 1_000_000)
+	bp.ThinkTimeSampler = &SequenceSampler{values: []int{2000, 3000}}
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "tts1", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+	}
+
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+	// Should use ThinkTimeSampler value (2000) not constant ThinkTimeUs (1000)
+	if follow[0].ArrivalTime != 7000 {
+		t.Errorf("BC-3: arrival = %d, want 7000 (5000 + 2000)", follow[0].ArrivalTime)
+	}
+}
+
+// TestSession_ThinkTimeSampler_NilFallsBack verifies BC-4:
+// when ThinkTimeSampler is nil, OnComplete falls back to constant ThinkTimeUs.
+func TestSession_ThinkTimeSampler_NilFallsBack(t *testing.T) {
+	bp := makeTestBlueprint("tts2", 3, 1000, "", 1_000_000)
+	// ThinkTimeSampler is nil by default
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "tts2", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+	}
+
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+	if follow[0].ArrivalTime != 6000 {
+		t.Errorf("BC-4: arrival = %d, want 6000 (5000 + 1000)", follow[0].ArrivalTime)
+	}
+}
+
 // TestNewSessionManager_PanicsOnZeroMaxRounds verifies MaxRounds validation.
 func TestNewSessionManager_PanicsOnZeroMaxRounds(t *testing.T) {
 	defer func() {
