@@ -605,7 +605,6 @@ func TestRealClient_GIEHeaders_SentWhenNonEmpty(t *testing.T) {
 		Prompt:      "hello",
 		TenantID:    "tenant-a",
 		SLOClass:    "critical",
-		GIEPriority: 3,
 	})
 	if err != nil {
 		t.Fatal(err)

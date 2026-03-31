@@ -48,10 +48,10 @@ warm_up_requests: 0
 	if err := os.WriteFile(headerPath, []byte(header), 0644); err != nil {
 		t.Fatal(err)
 	}
-	csvData := "request_id,client_id,tenant_id,slo_class,priority,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
-		"0,c1,t1,standard,0,s1,0,,0,true,10,5,10,0,0,0,0.0,,0,10,0,1000,5000,10000,5,ok,,stop\n" +
-		"1,c1,t1,standard,0,s1,0,,0,true,10,5,10,0,0,0,0.0,,0,10,100000,101000,105000,110000,5,ok,,stop\n" +
-		"2,c1,t1,standard,0,s1,0,,0,true,10,5,10,0,0,0,0.0,,0,10,200000,201000,205000,210000,5,ok,,stop\n"
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
+		"0,c1,t1,standard,s1,0,,0,true,10,5,10,0,0,0,0.0,,0,10,0,1000,5000,10000,5,ok,,stop\n" +
+		"1,c1,t1,standard,s1,0,,0,true,10,5,10,0,0,0,0.0,,0,10,100000,101000,105000,110000,5,ok,,stop\n" +
+		"2,c1,t1,standard,s1,0,,0,true,10,5,10,0,0,0,0.0,,0,10,200000,201000,205000,210000,5,ok,,stop\n"
 	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -133,9 +133,9 @@ func writeTempTrace(t *testing.T, dir, headerYAML string, rows [][4]int64) (stri
 		t.Fatal(err)
 	}
 	lines := make([]string, 0, len(rows)+1)
-	lines = append(lines, "request_id,client_id,tenant_id,slo_class,priority,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason")
+	lines = append(lines, "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason")
 	for _, r := range rows {
-		lines = append(lines, fmt.Sprintf("%d,c1,t1,standard,0,s1,0,,0,true,10,5,10,0,0,0,0.0,,0,10,%d,%d,%d,%d,5,ok,,",
+		lines = append(lines, fmt.Sprintf("%d,c1,t1,standard,s1,0,,0,true,10,5,10,0,0,0,0.0,,0,10,%d,%d,%d,%d,5,ok,,",
 			r[0], r[0]*100000, r[1], r[2], r[3]))
 	}
 	if err := os.WriteFile(dataPath, []byte(strings.Join(lines, "\n")+"\n"), 0644); err != nil {

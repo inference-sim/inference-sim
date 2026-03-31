@@ -16,7 +16,6 @@ type DistributionParams struct {
 	OutputTokensStdDev int
 	OutputTokensMin    int
 	OutputTokensMax    int
-	GIEPriority        int // GIE integer priority (0 = default/unset)
 }
 
 // SynthesizeFromDistribution creates a v2 WorkloadSpec from legacy distribution
@@ -30,9 +29,8 @@ type DistributionParams struct {
 //     AggregateRate and RateFraction are both zero.
 func SynthesizeFromDistribution(params DistributionParams) *WorkloadSpec {
 	client := ClientSpec{
-		ID:          "distribution",
-		GIEPriority: params.GIEPriority,
-		Arrival:     ArrivalSpec{Process: "constant"},
+		ID:      "distribution",
+		Arrival: ArrivalSpec{Process: "constant"},
 		InputDist: DistSpec{
 			Type: "gaussian",
 			Params: map[string]float64{

@@ -54,7 +54,6 @@ type TraceRecord struct {
 	ClientID          string
 	TenantID          string
 	SLOClass          string
-	GIEPriority       int
 	SessionID         string
 	RoundIndex        int
 	PrefixGroup       string
@@ -88,8 +87,7 @@ type TraceV2 struct {
 
 // CSV column headers for trace v2 format.
 var traceV2Columns = []string{
-	"request_id", "client_id", "tenant_id", "slo_class", "priority",
-	"session_id", "round_index",
+	"request_id", "client_id", "tenant_id", "slo_class", "session_id", "round_index",
 	"prefix_group", "prefix_length", "streaming", "input_tokens", "output_tokens",
 	"text_tokens", "image_tokens", "audio_tokens", "video_tokens", "reason_ratio",
 	"model", "deadline_us", "server_input_tokens",
@@ -131,7 +129,6 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 			r.ClientID,
 			r.TenantID,
 			r.SLOClass,
-			strconv.Itoa(r.GIEPriority),
 			r.SessionID,
 			strconv.Itoa(r.RoundIndex),
 			r.PrefixGroup,
@@ -201,12 +198,6 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading CSV row: %w", err)
 		}
-		// Backward compatibility: 27-column files (pre-priority schema) get a
-		// default priority="0" inserted at position 4 before parsing.
-		const prePriorityColumnCount = 27
-		if len(row) == prePriorityColumnCount {
-			row = append(row[:4], append([]string{"0"}, row[4:]...)...)
-		}
 		if len(row) < len(traceV2Columns) {
 			return nil, fmt.Errorf("CSV row has %d columns, expected %d", len(row), len(traceV2Columns))
 		}
@@ -221,118 +212,113 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	return &TraceV2{Header: header, Records: records}, nil
 }
 
-// parseTraceRecord parses a 28-column (current schema) CSV row.
+// parseTraceRecord parses a 27-column (current schema) CSV row.
 func parseTraceRecord(row []string) (*TraceRecord, error) {
 	requestID, err := strconv.Atoi(row[0])
 	if err != nil {
 		return nil, fmt.Errorf("parsing request_id %q: %w", row[0], err)
 	}
-	// Column 4: priority (GIE integer priority)
-	giePriority, err := strconv.Atoi(row[4])
+	roundIndex, err := strconv.Atoi(row[5])
 	if err != nil {
-		return nil, fmt.Errorf("parsing priority %q: %w", row[4], err)
+		return nil, fmt.Errorf("parsing round_index %q: %w", row[5], err)
 	}
-	roundIndex, err := strconv.Atoi(row[6])
+	// Column 7: prefix_length (new in 27-column schema)
+	prefixLength, err := strconv.Atoi(row[7])
 	if err != nil {
-		return nil, fmt.Errorf("parsing round_index %q: %w", row[6], err)
-	}
-	// Column 8: prefix_length
-	prefixLength, err := strconv.Atoi(row[8])
-	if err != nil {
-		return nil, fmt.Errorf("parsing prefix_length %q: %w", row[8], err)
+		return nil, fmt.Errorf("parsing prefix_length %q: %w", row[7], err)
 	}
 	if prefixLength < 0 {
 		return nil, fmt.Errorf("parsing prefix_length: negative value %d not allowed", prefixLength)
 	}
-	// Column 9: streaming
-	streaming, err := strconv.ParseBool(row[9])
+	// Column 8: streaming (was 7)
+	streaming, err := strconv.ParseBool(row[8])
 	if err != nil {
-		return nil, fmt.Errorf("parsing streaming %q: %w", row[9], err)
+		return nil, fmt.Errorf("parsing streaming %q: %w", row[8], err)
 	}
-	// Column 10: input_tokens
-	inputTokens, err := strconv.Atoi(row[10])
+	// Column 9: input_tokens (was 8)
+	inputTokens, err := strconv.Atoi(row[9])
 	if err != nil {
-		return nil, fmt.Errorf("parsing input_tokens %q: %w", row[10], err)
+		return nil, fmt.Errorf("parsing input_tokens %q: %w", row[9], err)
 	}
 	// Negative token counts cause make([]int, negative) panics in LoadTraceV2Requests.
 	if inputTokens < 0 {
 		return nil, fmt.Errorf("parsing input_tokens: negative value %d not allowed", inputTokens)
 	}
-	outputTokens, err := strconv.Atoi(row[11])
+	outputTokens, err := strconv.Atoi(row[10])
 	if err != nil {
-		return nil, fmt.Errorf("parsing output_tokens %q: %w", row[11], err)
+		return nil, fmt.Errorf("parsing output_tokens %q: %w", row[10], err)
 	}
 	if outputTokens < 0 {
 		return nil, fmt.Errorf("parsing output_tokens: negative value %d not allowed", outputTokens)
 	}
-	textTokens, err := strconv.Atoi(row[12])
+	textTokens, err := strconv.Atoi(row[11])
 	if err != nil {
-		return nil, fmt.Errorf("parsing text_tokens %q: %w", row[12], err)
+		return nil, fmt.Errorf("parsing text_tokens %q: %w", row[11], err)
 	}
 	if textTokens < 0 {
 		return nil, fmt.Errorf("parsing text_tokens: negative value %d not allowed", textTokens)
 	}
-	imageTokens, err := strconv.Atoi(row[13])
+	imageTokens, err := strconv.Atoi(row[12])
 	if err != nil {
-		return nil, fmt.Errorf("parsing image_tokens %q: %w", row[13], err)
+		return nil, fmt.Errorf("parsing image_tokens %q: %w", row[12], err)
 	}
 	if imageTokens < 0 {
 		return nil, fmt.Errorf("parsing image_tokens: negative value %d not allowed", imageTokens)
 	}
-	audioTokens, err := strconv.Atoi(row[14])
+	audioTokens, err := strconv.Atoi(row[13])
 	if err != nil {
-		return nil, fmt.Errorf("parsing audio_tokens %q: %w", row[14], err)
+		return nil, fmt.Errorf("parsing audio_tokens %q: %w", row[13], err)
 	}
 	if audioTokens < 0 {
 		return nil, fmt.Errorf("parsing audio_tokens: negative value %d not allowed", audioTokens)
 	}
-	videoTokens, err := strconv.Atoi(row[15])
+	videoTokens, err := strconv.Atoi(row[14])
 	if err != nil {
-		return nil, fmt.Errorf("parsing video_tokens %q: %w", row[15], err)
+		return nil, fmt.Errorf("parsing video_tokens %q: %w", row[14], err)
 	}
 	if videoTokens < 0 {
 		return nil, fmt.Errorf("parsing video_tokens: negative value %d not allowed", videoTokens)
 	}
-	reasonRatio, err := strconv.ParseFloat(row[16], 64)
+	reasonRatio, err := strconv.ParseFloat(row[15], 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing reason_ratio %q: %w", row[16], err)
+		return nil, fmt.Errorf("parsing reason_ratio %q: %w", row[15], err)
 	}
 	if math.IsNaN(reasonRatio) || math.IsInf(reasonRatio, 0) || reasonRatio < 0 || reasonRatio > 1.0 {
-		return nil, fmt.Errorf("parsing reason_ratio %q: must be in range [0.0, 1.0], got %g", row[16], reasonRatio)
+		return nil, fmt.Errorf("parsing reason_ratio %q: must be in range [0.0, 1.0], got %g", row[15], reasonRatio)
 	}
-	deadlineUs, err := strconv.ParseInt(row[18], 10, 64)
+	deadlineUs, err := strconv.ParseInt(row[17], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing deadline_us %q: %w", row[18], err)
+		return nil, fmt.Errorf("parsing deadline_us %q: %w", row[17], err)
 	}
 	if deadlineUs < 0 {
 		return nil, fmt.Errorf("parsing deadline_us: negative value %d not allowed (use 0 for no timeout)", deadlineUs)
 	}
-	serverInputTokens, err := strconv.Atoi(row[19])
+	serverInputTokens, err := strconv.Atoi(row[18])
 	if err != nil {
-		return nil, fmt.Errorf("parsing server_input_tokens %q: %w", row[19], err)
+		return nil, fmt.Errorf("parsing server_input_tokens %q: %w", row[18], err)
 	}
 	if serverInputTokens < 0 {
 		return nil, fmt.Errorf("parsing server_input_tokens: negative value %d not allowed", serverInputTokens)
 	}
-	arrivalTimeUs, err := strconv.ParseInt(row[20], 10, 64)
+	arrivalTimeUs, err := strconv.ParseInt(row[19], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing arrival_time_us %q: %w", row[20], err)
+		return nil, fmt.Errorf("parsing arrival_time_us %q: %w", row[19], err)
 	}
-	sendTimeUs, err := strconv.ParseInt(row[21], 10, 64)
+	sendTimeUs, err := strconv.ParseInt(row[20], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing send_time_us %q: %w", row[21], err)
+		return nil, fmt.Errorf("parsing send_time_us %q: %w", row[20], err)
 	}
-	firstChunkTimeUs, err := strconv.ParseInt(row[22], 10, 64)
+	firstChunkTimeUs, err := strconv.ParseInt(row[21], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing first_chunk_time_us %q: %w", row[22], err)
+		return nil, fmt.Errorf("parsing first_chunk_time_us %q: %w", row[21], err)
 	}
-	lastChunkTimeUs, err := strconv.ParseInt(row[23], 10, 64)
+	lastChunkTimeUs, err := strconv.ParseInt(row[22], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing last_chunk_time_us %q: %w", row[23], err)
+		return nil, fmt.Errorf("parsing last_chunk_time_us %q: %w", row[22], err)
 	}
-	numChunks, err := strconv.Atoi(row[24])
+	numChunks, err := strconv.Atoi(row[23])
 	if err != nil {
-		return nil, fmt.Errorf("parsing num_chunks %q: %w", row[24], err)
+		return nil, fmt.Errorf("parsing num_chunks %q: %w", row[23], err)
 	}
 	if numChunks < 0 {
 		return nil, fmt.Errorf("parsing num_chunks: negative value %d not allowed", numChunks)
@@ -343,17 +329,16 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 	if deadlineUs > 0 && arrivalTimeUs > 0 && deadlineUs < arrivalTimeUs {
 		return nil, fmt.Errorf("parsing deadline_us: value %d precedes arrival_time_us %d (corrupt trace?)", deadlineUs, arrivalTimeUs)
 	}
-	finishReason := strings.TrimSpace(row[27])
+	finishReason := strings.TrimSpace(row[26])
 
 	return &TraceRecord{
 		RequestID:         requestID,
 		ClientID:          row[1],
 		TenantID:          row[2],
 		SLOClass:          row[3],
-		GIEPriority:       giePriority,
-		SessionID:         row[5],
+		SessionID:         row[4],
 		RoundIndex:        roundIndex,
-		PrefixGroup:       row[7],
+		PrefixGroup:       row[6],
 		PrefixLength:      prefixLength,
 		Streaming:         streaming,
 		InputTokens:       inputTokens,
@@ -363,7 +348,7 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 		AudioTokens:       audioTokens,
 		VideoTokens:       videoTokens,
 		ReasonRatio:       reasonRatio,
-		Model:             row[17],
+		Model:             row[16],
 		DeadlineUs:        deadlineUs,
 		ServerInputTokens: serverInputTokens,
 		ArrivalTimeUs:     arrivalTimeUs,
@@ -371,8 +356,8 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 		FirstChunkTimeUs:  firstChunkTimeUs,
 		LastChunkTimeUs:   lastChunkTimeUs,
 		NumChunks:         numChunks,
-		Status:            row[25],
-		ErrorMessage:      strings.TrimSpace(row[26]),
+		Status:            row[24],
+		ErrorMessage:      strings.TrimSpace(row[25]),
 		FinishReason:      finishReason,
 	}, nil
 }
@@ -430,7 +415,6 @@ func RequestsToTraceRecords(requests []*sim.Request) []TraceRecord {
 			ClientID:         req.ClientID,
 			TenantID:         req.TenantID,
 			SLOClass:         req.SLOClass,
-			GIEPriority:      req.GIEPriority,
 			SessionID:        req.SessionID,
 			RoundIndex:       req.RoundIndex,
 			PrefixGroup:      req.PrefixGroup,

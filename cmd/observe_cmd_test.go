@@ -1231,29 +1231,3 @@ func TestBuildPresetSpec_UnknownPreset_ReturnsError(t *testing.T) {
 	}
 }
 
-// TestRecordRequest_PopulatesGIEPriority verifies BC-2: GIEPriority from
-// PendingRequest propagates to the recorded TraceRecord.
-func TestRecordRequest_PopulatesGIEPriority(t *testing.T) {
-	recorder := &Recorder{}
-	pending := &PendingRequest{
-		RequestID:   0,
-		InputTokens: 10,
-		ClientID:    "c1",
-		TenantID:    "t1",
-		SLOClass:    "critical",
-		GIEPriority: 5,
-	}
-	result := &RequestRecord{
-		RequestID: 0, Status: "ok", OutputTokens: 3,
-		SendTimeUs: 1000, FirstChunkTimeUs: 2000, LastChunkTimeUs: 3000,
-	}
-
-	recorder.RecordRequest(pending, result, 500, "s1", 0)
-	records := recorder.Records()
-	if len(records) != 1 {
-		t.Fatalf("expected 1 record, got %d", len(records))
-	}
-	if records[0].GIEPriority != 5 {
-		t.Errorf("GIEPriority = %d, want 5", records[0].GIEPriority)
-	}
-}

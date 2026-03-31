@@ -169,7 +169,6 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 					inputSampler, outputSampler,
 					startTime,
 					client.ID, client.TenantID, client.SLOClass, client.Model,
-					client.GIEPriority,
 				)
 				if err != nil {
 					return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
@@ -228,7 +227,6 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 					inputSampler, outputSampler,
 					currentTime,
 					client.ID, client.TenantID, client.SLOClass, client.Model,
-					client.GIEPriority,
 				)
 				if err != nil {
 					return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
@@ -325,7 +323,6 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				FinishedStepIdx:  0,
 				TenantID:         client.TenantID,
 				SLOClass:         client.SLOClass,
-				GIEPriority:     client.GIEPriority,
 				Model:            client.Model,
 				TextTokenCount:   textCount,
 				ImageTokenCount:  imageCount,
@@ -499,7 +496,6 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 				Prefix:        prefixTokens,
 				TenantID:      client.TenantID,
 				SLOClass:      client.SLOClass,
-				GIEPriority:   client.GIEPriority,
 				Model:         client.Model,
 			})
 		}
@@ -596,7 +592,6 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 				Deadline:     computeDeadline(arrivalTime, client.Timeout, true),
 				TenantID:     client.TenantID,
 				SLOClass:     client.SLOClass,
-				GIEPriority:  client.GIEPriority,
 				Model:        client.Model,
 				ClientID:     client.ID,
 				PrefixGroup:  client.PrefixGroup,
@@ -623,7 +618,6 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 				Prefix:          prefix,
 				TenantID:        client.TenantID,
 				SLOClass:        client.SLOClass,
-				GIEPriority:     client.GIEPriority,
 				Model:           client.Model,
 			})
 		}

@@ -428,17 +428,21 @@ spec:
     name: my-pool
 ```
 
-### The `priority` field in workload specs
+### Workload spec example
 
-The optional `priority` field on clients/cohorts records the integer priority that the user configured in their `InferenceObjective` CRD. This value is **not** sent as an HTTP header — it is recorded in the TraceV2 CSV for round-trip fidelity, so that `blis replay` and `blis calibrate` can see what priority GIE would have resolved for each request.
+Set `slo_class` and `tenant_id` on your clients to activate GIE headers. The `slo_class` value must match an `InferenceObjective` CRD name on the target cluster:
 
 ```yaml
 clients:
   - id: "realtime-api"
     slo_class: "critical"       # → sent as x-gateway-inference-objective header
     tenant_id: "team-alpha"     # → sent as x-gateway-inference-fairness-id header
-    priority: 100               # → recorded in trace (matches CRD spec.priority)
+  - id: "batch-job"
+    slo_class: "background"     # → GIE resolves to negative priority via CRD
+    tenant_id: "team-beta"
 ```
+
+Note: The GIE API version (`v1alpha2`) shown above may differ on your cluster. Check your installed CRD version with `kubectl get crd inferenceobjectives.inference.networking.x-k8s.io`.
 
 ---
 

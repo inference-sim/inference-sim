@@ -32,7 +32,6 @@ func ExpandCohorts(cohorts []CohortSpec, seed int64) []ClientSpec {
 				ID:           clientID,
 				TenantID:     cohort.TenantID,
 				SLOClass:     cohort.SLOClass,
-				GIEPriority:  cohort.GIEPriority,
 				Model:        cohort.Model,
 				RateFraction: perMemberFraction,
 				Arrival:      cohort.Arrival,

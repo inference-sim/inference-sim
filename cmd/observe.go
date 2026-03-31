@@ -60,7 +60,6 @@ type PendingRequest struct {
 	ClientID        string
 	TenantID        string
 	SLOClass        string
-	GIEPriority     int
 	PrefixGroup     string
 	PrefixLength    int
 	Prompt          string
@@ -346,7 +345,6 @@ func (r *Recorder) RecordRequest(pending *PendingRequest, result *RequestRecord,
 		ClientID:          pending.ClientID,
 		TenantID:          pending.TenantID,
 		SLOClass:          pending.SLOClass,
-		GIEPriority:       pending.GIEPriority,
 		PrefixGroup:       pending.PrefixGroup,
 		PrefixLength:      prefixLen,
 		Streaming:         pending.Streaming,

@@ -262,7 +262,7 @@ func TestLoadTraceV2_UnknownYAMLField_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_InvalidInteger_ReturnsError verifies BC-12: CSV error propagation.
 func TestParseTraceRecord_InvalidInteger_ReturnsError(t *testing.T) {
 	// GIVEN a row with a non-numeric request_id
-	row := make([]string, 28) // must match current column count
+	row := make([]string, 27) // must match current column count
 	row[0] = "abc"             // request_id should be integer
 	for i := 1; i < len(row); i++ {
 		row[i] = "0"
@@ -282,11 +282,11 @@ func TestParseTraceRecord_InvalidInteger_ReturnsError(t *testing.T) {
 
 // TestParseTraceRecord_InvalidDeadlineUs_ReturnsError verifies BC-9.
 func TestParseTraceRecord_InvalidDeadlineUs_ReturnsError(t *testing.T) {
-	row := make([]string, 28)
+	row := make([]string, 27)
 	for i := range row {
 		row[i] = "0"
 	}
-	row[18] = "not_a_number" // deadline_us column
+	row[17] = "not_a_number" // deadline_us column (shifted +1 by prefix_length)
 
 	_, err := parseTraceRecord(row)
 
@@ -300,11 +300,11 @@ func TestParseTraceRecord_InvalidDeadlineUs_ReturnsError(t *testing.T) {
 
 // TestParseTraceRecord_InvalidServerInputTokens_ReturnsError verifies BC-10.
 func TestParseTraceRecord_InvalidServerInputTokens_ReturnsError(t *testing.T) {
-	row := make([]string, 28)
+	row := make([]string, 27)
 	for i := range row {
 		row[i] = "0"
 	}
-	row[19] = "not_a_number" // server_input_tokens column
+	row[18] = "not_a_number" // server_input_tokens column (shifted +1)
 
 	_, err := parseTraceRecord(row)
 
@@ -318,11 +318,11 @@ func TestParseTraceRecord_InvalidServerInputTokens_ReturnsError(t *testing.T) {
 
 // TestParseTraceRecord_NegativeDeadlineUs_ReturnsError verifies R3 validation.
 func TestParseTraceRecord_NegativeDeadlineUs_ReturnsError(t *testing.T) {
-	row := make([]string, 28)
+	row := make([]string, 27)
 	for i := range row {
 		row[i] = "0"
 	}
-	row[18] = "-1" // negative deadline_us
+	row[17] = "-1" // negative deadline_us (shifted +1)
 
 	_, err := parseTraceRecord(row)
 
@@ -337,11 +337,11 @@ func TestParseTraceRecord_NegativeDeadlineUs_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_NegativeInputTokens_ReturnsError verifies R3 for
 // input_tokens (prevents make([]int, negative) panic in replay).
 func TestParseTraceRecord_NegativeInputTokens_ReturnsError(t *testing.T) {
-	row := make([]string, 28)
+	row := make([]string, 27)
 	for i := range row {
 		row[i] = "0"
 	}
-	row[10] = "-1" // input_tokens column
+	row[9] = "-1" // input_tokens column (shifted +1)
 
 	_, err := parseTraceRecord(row)
 
@@ -356,11 +356,11 @@ func TestParseTraceRecord_NegativeInputTokens_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_NegativeOutputTokens_ReturnsError verifies R3 for
 // output_tokens (prevents make([]int, negative) panic in replay).
 func TestParseTraceRecord_NegativeOutputTokens_ReturnsError(t *testing.T) {
-	row := make([]string, 28)
+	row := make([]string, 27)
 	for i := range row {
 		row[i] = "0"
 	}
-	row[11] = "-1" // output_tokens column
+	row[10] = "-1" // output_tokens column (shifted +1)
 
 	_, err := parseTraceRecord(row)
 
@@ -375,11 +375,11 @@ func TestParseTraceRecord_NegativeOutputTokens_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_NegativeServerInputTokens_ReturnsError verifies R3
 // for server_input_tokens (consistent validation for all token count fields).
 func TestParseTraceRecord_NegativeServerInputTokens_ReturnsError(t *testing.T) {
-	row := make([]string, 28)
+	row := make([]string, 27)
 	for i := range row {
 		row[i] = "0"
 	}
-	row[19] = "-1" // server_input_tokens column
+	row[18] = "-1" // server_input_tokens column (shifted +1)
 
 	_, err := parseTraceRecord(row)
 
@@ -394,12 +394,12 @@ func TestParseTraceRecord_NegativeServerInputTokens_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_DeadlineBeforeArrival_ReturnsError verifies cross-field
 // validation: deadline_us must not precede arrival_time_us when both are nonzero.
 func TestParseTraceRecord_DeadlineBeforeArrival_ReturnsError(t *testing.T) {
-	row := make([]string, 28)
+	row := make([]string, 27)
 	for i := range row {
 		row[i] = "0"
 	}
-	row[18] = "1000" // deadline_us
-	row[20] = "5000" // arrival_time_us
+	row[17] = "1000" // deadline_us = 1000 (shifted +1)
+	row[19] = "5000" // arrival_time_us = 5000 (shifted +1)
 
 	_, err := parseTraceRecord(row)
 
@@ -424,11 +424,11 @@ func TestParseTraceRecord_InvalidReasonRatio_ReturnsError(t *testing.T) {
 		{"1.5"},
 	}
 	for _, tc := range cases {
-		row := make([]string, 28)
+		row := make([]string, 27)
 		for i := range row {
 			row[i] = "0"
 		}
-		row[16] = tc.value // reason_ratio column
+		row[15] = tc.value // reason_ratio column (shifted +1)
 
 		_, err := parseTraceRecord(row)
 
@@ -837,115 +837,5 @@ func TestRequestsToTraceRecords_RoundTrip(t *testing.T) {
 	}
 	if lr2.FirstChunkTimeUs != 0 {
 		t.Errorf("Prefill-timeout FirstChunkTimeUs: got %d, want 0", lr2.FirstChunkTimeUs)
-	}
-}
-
-// TestTraceV2_GIEPriority_RoundTrip verifies BC-4: priority field survives
-// export → load round-trip.
-func TestTraceV2_GIEPriority_RoundTrip(t *testing.T) {
-	header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
-	records := []TraceRecord{
-		{RequestID: 0, ClientID: "c1", TenantID: "t1", SLOClass: "critical",
-			GIEPriority: 7, InputTokens: 10, OutputTokens: 5,
-			ArrivalTimeUs: 1000, Status: "ok"},
-		{RequestID: 1, ClientID: "c2", TenantID: "t2", SLOClass: "standard",
-			GIEPriority: 0, InputTokens: 20, OutputTokens: 10,
-			ArrivalTimeUs: 2000, Status: "ok"},
-	}
-
-	dir := t.TempDir()
-	headerPath := filepath.Join(dir, "header.yaml")
-	dataPath := filepath.Join(dir, "data.csv")
-	if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
-		t.Fatal(err)
-	}
-	loaded, err := LoadTraceV2(headerPath, dataPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(loaded.Records) != 2 {
-		t.Fatalf("records = %d, want 2", len(loaded.Records))
-	}
-	if loaded.Records[0].GIEPriority != 7 {
-		t.Errorf("record 0 GIEPriority = %d, want 7", loaded.Records[0].GIEPriority)
-	}
-	if loaded.Records[1].GIEPriority != 0 {
-		t.Errorf("record 1 GIEPriority = %d, want 0", loaded.Records[1].GIEPriority)
-	}
-}
-
-// TestRequestsToTraceRecords_GIEPriority verifies BC-1: GIEPriority from
-// Request propagates to TraceRecord.
-func TestRequestsToTraceRecords_GIEPriority(t *testing.T) {
-	reqs := []*sim.Request{
-		{
-			ID: "r1", InputTokens: []int{1, 2}, OutputTokens: []int{3},
-			State: sim.StateCompleted, GIEPriority: 5,
-		},
-		{
-			ID: "r2", InputTokens: []int{4, 5, 6}, OutputTokens: []int{7, 8},
-			State: sim.StateCompleted, GIEPriority: 0,
-		},
-	}
-	records := RequestsToTraceRecords(reqs)
-	if records[0].GIEPriority != 5 {
-		t.Errorf("record 0 GIEPriority = %d, want 5", records[0].GIEPriority)
-	}
-	if records[1].GIEPriority != 0 {
-		t.Errorf("record 1 GIEPriority = %d, want 0", records[1].GIEPriority)
-	}
-}
-
-// TestTraceV2_BackwardCompat_27Columns verifies that old 27-column CSV files
-// (pre-priority schema) load successfully with GIEPriority defaulting to 0.
-func TestTraceV2_BackwardCompat_27Columns(t *testing.T) {
-	// 27-column CSV header (old schema without priority column)
-	oldHeader := "request_id,client_id,tenant_id,slo_class," +
-		"session_id,round_index," +
-		"prefix_group,prefix_length,streaming,input_tokens,output_tokens," +
-		"text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio," +
-		"model,deadline_us,server_input_tokens," +
-		"arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us," +
-		"num_chunks,status,error_message,finish_reason\n"
-	// 27-column data row (no priority field)
-	oldRow := "0,c1,t1,critical," +
-		",0," +
-		",0,false,100,50," +
-		"0,0,0,0,0.0," +
-		",0,0," +
-		"1000,1010,1100,1200," +
-		"3,ok,,stop\n"
-
-	dir := t.TempDir()
-	headerPath := filepath.Join(dir, "header.yaml")
-	dataPath := filepath.Join(dir, "data.csv")
-	headerYAML := "trace_version: 2\ntime_unit: microseconds\nmode: observed\n"
-	if err := os.WriteFile(headerPath, []byte(headerYAML), 0644); err != nil {
-		t.Fatalf("WriteFile header: %v", err)
-	}
-	if err := os.WriteFile(dataPath, []byte(oldHeader+oldRow), 0644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	loaded, err := LoadTraceV2(headerPath, dataPath)
-	if err != nil {
-		t.Fatalf("LoadTraceV2: %v", err)
-	}
-	if len(loaded.Records) != 1 {
-		t.Fatalf("expected 1 record, got %d", len(loaded.Records))
-	}
-	rec := loaded.Records[0]
-	if rec.GIEPriority != 0 {
-		t.Errorf("GIEPriority = %d, want 0 (default for old schema)", rec.GIEPriority)
-	}
-	if rec.ClientID != "c1" {
-		t.Errorf("ClientID = %q, want c1", rec.ClientID)
-	}
-	if rec.InputTokens != 100 {
-		t.Errorf("InputTokens = %d, want 100", rec.InputTokens)
-	}
-	if rec.FinishReason != "stop" {
-		t.Errorf("FinishReason = %q, want stop", rec.FinishReason)
 	}
 }

@@ -47,7 +47,6 @@ var (
 	observeOutputMin     int
 	observeOutputMax     int
 	observePrefixTokens  int // hardcoded 0 — not in distDefaults (feature toggle, not distribution shape)
-	observePriority      int // GIE priority (0 = default/unset)
 	observeAPIFormat           string
 	observeUnconstrainedOutput bool
 	observeRttMs               float64
@@ -136,7 +135,6 @@ func init() {
 	observeCmd.Flags().IntVar(&observeOutputMin, "output-tokens-min", defaultOutputMin, "Minimum output tokens (distribution mode)")
 	observeCmd.Flags().IntVar(&observeOutputMax, "output-tokens-max", defaultOutputMax, "Maximum output tokens (distribution mode)")
 	observeCmd.Flags().IntVar(&observePrefixTokens, "prefix-tokens", 0, "Shared prefix token count (distribution mode)")
-	observeCmd.Flags().IntVar(&observePriority, "priority", 0, "GIE priority integer recorded in TraceV2 (should match InferenceObjective CRD spec.priority on target cluster; 0 = default)")
 	observeCmd.Flags().StringVar(&observeAPIFormat, "api-format", "completions", "API format: 'completions' (/v1/completions) or 'chat' (/v1/chat/completions)")
 	observeCmd.Flags().BoolVar(&observeUnconstrainedOutput, "unconstrained-output", false, "Do not set max_tokens (let server decide output length)")
 	observeCmd.Flags().Float64Var(&observeRttMs, "rtt-ms", 0, "Measured network round-trip time in milliseconds (recorded in trace header)")
@@ -271,10 +269,6 @@ func runObserve(cmd *cobra.Command, _ []string) {
 			logrus.Fatalf("%s", errMsg)
 		}
 		spec.Seed = observeSeed
-		// Apply --priority to preset-synthesized clients (same as distribution path).
-		for i := range spec.Clients {
-			spec.Clients[i].GIEPriority = observePriority
-		}
 	} else {
 		// Distribution or concurrency synthesis
 		spec = workload.SynthesizeFromDistribution(workload.DistributionParams{
@@ -291,7 +285,6 @@ func runObserve(cmd *cobra.Command, _ []string) {
 			OutputTokensStdDev: observeOutputStdDev,
 			OutputTokensMin:    observeOutputMin,
 			OutputTokensMax:    observeOutputMax,
-			GIEPriority:        observePriority,
 		})
 		spec.Seed = observeSeed
 	}
@@ -684,7 +677,6 @@ func requestToPending(req *sim.Request, reqIndex int, noStreaming, unconstrained
 		ClientID:        req.ClientID,
 		TenantID:        req.TenantID,
 		SLOClass:        req.SLOClass,
-		GIEPriority:     req.GIEPriority,
 		PrefixGroup:     req.PrefixGroup,
 		PrefixLength:    req.PrefixLength,
 		Prompt:          prompt,

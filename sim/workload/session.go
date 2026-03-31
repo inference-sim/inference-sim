@@ -41,7 +41,6 @@ type SessionBlueprint struct {
 	Prefix        []int      // shared system prompt tokens
 	TenantID      string
 	SLOClass      string
-	GIEPriority   int
 	Model         string
 }
 
@@ -198,7 +197,6 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 		Deadline:     computeDeadline(arrivalTime, bp.Timeout, true), // session follow-up always gets default timeout
 		TenantID:     bp.TenantID,
 		SLOClass:     bp.SLOClass,
-		GIEPriority:  bp.GIEPriority,
 		Model:        bp.Model,
 		ClientID:     bp.ClientID,
 		SessionID:    bp.SessionID,
