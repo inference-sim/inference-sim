@@ -1,0 +1,164 @@
+# Mixed Sustained+Burst Workload — Joint SLO Optimization
+#
+# BEFORE RUNNING: Replace aggregate_rate with 2 × measured saturation throughput.
+# Run `./run.sh calibrate` first to measure saturation for your model/GPU.
+#
+# Design rationale:
+#   - 6 clients: Poisson (sustained) + Gamma CV=2.0 (burst) for each of 3 SLO tiers
+#   - Orthogonal tiers: all tiers share identical request shapes (only slo_class differs)
+#   - rate_fraction split: 0.425 sustained / 0.575 burst (85% base + variable burst)
+#   - Rate fractions sum: 0.085+0.115+0.255+0.345+0.085+0.115 = 1.000
+#   - Shared prefix: activates prefix cache, makes tiered-LRU eviction consequential
+#
+# See hypotheses/h-joint-slo-optimization/problem.md §4 for full workload rationale.
+
+version: "1"
+seed: 42
+category: language
+aggregate_rate: 200.0   # PLACEHOLDER: replace with 2 × measured_saturation_req_per_s
+num_requests: 5000
+
+clients:
+  # ── Critical tier (20% of traffic) ────────────────────────────────────────
+  - id: "critical-sustained"
+    slo_class: "critical"
+    rate_fraction: 0.085   # 0.20 × 0.425
+    streaming: false
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 512
+        std_dev: 64
+        min: 256
+        max: 768
+    output_distribution:
+      type: gaussian
+      params:
+        mean: 128
+        std_dev: 16
+        min: 64
+        max: 192
+    prefix_group: "shared-system-prompt"
+    prefix_length: 256
+
+  - id: "critical-burst"
+    slo_class: "critical"
+    rate_fraction: 0.115   # 0.20 × 0.575
+    streaming: false
+    arrival:
+      process: gamma
+      cv: 2.0
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 512
+        std_dev: 64
+        min: 256
+        max: 768
+    output_distribution:
+      type: gaussian
+      params:
+        mean: 128
+        std_dev: 16
+        min: 64
+        max: 192
+    prefix_group: "shared-system-prompt"
+    prefix_length: 256
+
+  # ── Standard tier (60% of traffic) ────────────────────────────────────────
+  - id: "standard-sustained"
+    slo_class: "standard"
+    rate_fraction: 0.255   # 0.60 × 0.425
+    streaming: false
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 512
+        std_dev: 64
+        min: 256
+        max: 768
+    output_distribution:
+      type: gaussian
+      params:
+        mean: 128
+        std_dev: 16
+        min: 64
+        max: 192
+    prefix_group: "shared-system-prompt"
+    prefix_length: 256
+
+  - id: "standard-burst"
+    slo_class: "standard"
+    rate_fraction: 0.345   # 0.60 × 0.575
+    streaming: false
+    arrival:
+      process: gamma
+      cv: 2.0
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 512
+        std_dev: 64
+        min: 256
+        max: 768
+    output_distribution:
+      type: gaussian
+      params:
+        mean: 128
+        std_dev: 16
+        min: 64
+        max: 192
+    prefix_group: "shared-system-prompt"
+    prefix_length: 256
+
+  # ── Sheddable tier (20% of traffic) ───────────────────────────────────────
+  - id: "sheddable-sustained"
+    slo_class: "sheddable"
+    rate_fraction: 0.085   # 0.20 × 0.425
+    streaming: false
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 512
+        std_dev: 64
+        min: 256
+        max: 768
+    output_distribution:
+      type: gaussian
+      params:
+        mean: 128
+        std_dev: 16
+        min: 64
+        max: 192
+    prefix_group: "shared-system-prompt"
+    prefix_length: 256
+
+  - id: "sheddable-burst"
+    slo_class: "sheddable"
+    rate_fraction: 0.115   # 0.20 × 0.575
+    streaming: false
+    arrival:
+      process: gamma
+      cv: 2.0
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 512
+        std_dev: 64
+        min: 256
+        max: 768
+    output_distribution:
+      type: gaussian
+      params:
+        mean: 128
+        std_dev: 16
+        min: 64
+        max: 192
+    prefix_group: "shared-system-prompt"
+    prefix_length: 256
