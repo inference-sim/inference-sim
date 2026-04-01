@@ -14,8 +14,8 @@
 | **—** | **DATASET CHANGED (1/2)** | — | reasoning → reasoning-lite (3 experiments replaced) | Fresh data from unloaded servers |
 | **7** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE + β₇·decode_oh` + β₆ in QueueingTime | 155 | ✅ β₁/β₄ stabilized (14 clean + 1 bad exp) | Check data quality early (97% bad data found) |
 | **8** | `+ β₈·MoE_routing` | 155 | ❌ No improvement (still 14 clean + 1 bad exp) | Zero improvement eliminates hypothesis |
-| **—** | **DATASET CHANGED (2/2)** | — | Scout general → general-lite (exp17 replaced) | All 15 experiments now clean |
-| **9** | `+ β₉·FP8_dequant` | 161 | ❌ β₉→0 (**FIRST iter with 15 clean experiments**) | Watch coefficient explosions (reveal missing terms) |
+| **—** | **DATASET FINALIZED** | — | exp17 Scout general → general-lite replaced | **All 15 experiments clean (100%)** ✅ |
+| **9** | `+ β₉·FP8_dequant` | 161 | ❌ β₉→0 (**FIRST iter with 15 clean**) | Watch coefficient explosions (reveal missing terms) |
 | **10** | `+ β₁₀·batch_ineff + β₃'·KV_seqlen` | 4267 | 💥💥 CATASTROPHIC (thought basis bugs) | Misdiagnosed - units were actually correct |
 | **11** | Same as iter10 (basis functions audited) | 4084 | 💥💥 CATASTROPHIC (basis correct, YAML typo!) | Unit test basis functions BEFORE training |
 | **12** | Widened β₃' bounds (0.05-5μs) to capture bandwidth | 2590 | 💥💥💥 CATASTROPHIC (β₃' collapsed!) | Don't warm-start from inflated coefficients |
