@@ -111,8 +111,8 @@ func TestParseScorerConfigs_SingleScorer(t *testing.T) {
 // weighted with load-balance:1 must select the same instance as least-loaded
 // for every request, because argmax(1/(1+load)) = argmin(load).
 func TestLoadBalanceOnly_EquivalentToLeastLoaded(t *testing.T) {
-	loadBalanceOnly := NewRoutingPolicy("weighted", []ScorerConfig{{Name: "load-balance", Weight: 1.0}}, 16, nil, nil)
-	leastLoaded := NewRoutingPolicy("least-loaded", nil, 16, nil, nil)
+	loadBalanceOnly := NewRoutingPolicy("weighted", []ScorerConfig{{Name: "load-balance", Weight: 1.0}}, 16, nil)
+	leastLoaded := NewRoutingPolicy("least-loaded", nil, 16, nil)
 
 	testCases := [][]RoutingSnapshot{
 		{
@@ -268,7 +268,7 @@ func TestNewScorerFactory_PrecisePrefixAndNoHitLRU(t *testing.T) {
 		"a": func(tokens []int) int { return 5 },
 		"b": func(tokens []int) int { return 0 },
 	}
-	policy := NewRoutingPolicy("weighted", []ScorerConfig{
+	policy := NewRoutingPolicyWithCache("weighted", []ScorerConfig{
 		{Name: "precise-prefix-cache", Weight: 1.0},
 	}, 16, nil, cacheQueryFn)
 

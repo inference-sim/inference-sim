@@ -267,7 +267,19 @@ func (ab *AlwaysBusiest) Route(_ *Request, state *RouterState) RoutingDecision {
 // The rng parameter enables random tie-breaking for least-loaded and weighted policies;
 // nil preserves positional tie-breaking. Ignored by round-robin and always-busiest.
 // Panics on unrecognized names.
-func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand, cacheQueryFn CacheQueryFn) RoutingPolicy {
+func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand) RoutingPolicy {
+	return newRoutingPolicyInternal(name, scorerConfigs, blockSize, rng, nil)
+}
+
+// NewRoutingPolicyWithCache is like NewRoutingPolicy but enables the precise-prefix-cache
+// and no-hit-lru scorers. cacheQueryFn maps instance ID to cached block count;
+// pass nil to disable those scorers (equivalent to calling NewRoutingPolicy).
+func NewRoutingPolicyWithCache(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand, cacheQueryFn CacheQueryFn) RoutingPolicy {
+	return newRoutingPolicyInternal(name, scorerConfigs, blockSize, rng, cacheQueryFn)
+}
+
+// newRoutingPolicyInternal creates a routing policy, shared by both public constructors.
+func newRoutingPolicyInternal(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand, cacheQueryFn CacheQueryFn) RoutingPolicy {
 	if !IsValidRoutingPolicy(name) {
 		panic(fmt.Sprintf("unknown routing policy %q", name))
 	}
