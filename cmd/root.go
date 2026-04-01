@@ -1015,37 +1015,25 @@ var runCmd = &cobra.Command{
 
 		// PD disaggregation requires ModelConfig for KV transfer duration derivation.
 		// Analytical backends populate ModelConfig from HF config.json; blackbox does not.
-		// When PD is enabled and ModelConfig is zero-valued, attempt to load it from the
-		// HF config so KVBytesPerToken can derive the transfer size at runtime.
+		// When PD is enabled and ModelConfig is zero-valued, resolve and load it using the
+		// same 3-step resolution as analytical backends (local bundled → HuggingFace fetch → error).
 		if prefillInstances > 0 && lr.ModelConfig.NumHeads == 0 {
-			hfPath := filepath.Join(modelConfigFolder, "config.json")
-			if _, statErr := os.Stat(hfPath); statErr != nil {
-				// modelConfigFolder may be empty for blackbox; try bundled config.
-				baseDir := filepath.Dir(defaultsFilePath)
-				if cachedDir, dirErr := bundledModelConfigDir(model, baseDir); dirErr == nil {
-					hfPath = filepath.Join(cachedDir, "config.json")
-				}
+			resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
+			if err != nil {
+				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing: %v", err)
 			}
-			if _, statErr := os.Stat(hfPath); statErr == nil {
-				hfConfig, parseErr := latency.ParseHFConfig(hfPath)
-				if parseErr == nil {
-					mc, mcErr := latency.GetModelConfigFromHF(hfConfig)
-					if mcErr == nil {
-						applyWeightPrecisionFallback(mc, model, hfConfig.Raw)
-						lr.ModelConfig = *mc
-						logrus.Infof("PD disaggregation: loaded ModelConfig from %s for KV transfer derivation", hfPath)
-					} else {
-						logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing, but failed to extract ModelConfig: %v. "+
-							"Use an analytical latency model (roofline, crossmodel, trained-roofline) or provide --model-config-folder", mcErr)
-					}
-				} else {
-					logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing, but failed to parse %s: %v. "+
-						"Use an analytical latency model (roofline, crossmodel, trained-roofline) or provide --model-config-folder", hfPath, parseErr)
-				}
-			} else {
-				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing, but no config.json found. "+
-					"Use an analytical latency model (roofline, crossmodel, trained-roofline) or provide --model-config-folder")
+			hfPath := filepath.Join(resolved, "config.json")
+			hfConfig, parseErr := latency.ParseHFConfig(hfPath)
+			if parseErr != nil {
+				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing, but failed to parse %s: %v", hfPath, parseErr)
 			}
+			mc, mcErr := latency.GetModelConfigFromHF(hfConfig)
+			if mcErr != nil {
+				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing, but failed to extract ModelConfig: %v", mcErr)
+			}
+			applyWeightPrecisionFallback(mc, model, hfConfig.Raw)
+			lr.ModelConfig = *mc
+			logrus.Infof("PD disaggregation: loaded ModelConfig from %s for KV transfer derivation", hfPath)
 		}
 
 		// Per-pool hardware override vars. TotalKVBlocks is populated from per-pool KV
