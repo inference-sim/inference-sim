@@ -77,9 +77,13 @@ def compute_mape(predicted: float, actual: float) -> float:
     Returns 0.0 when both values are zero (perfect match).
     Returns ``float('inf')`` when ``actual == 0`` but ``predicted != 0``
     to avoid masking real errors.
+    Returns ``float('inf')`` when ``predicted == 0`` but ``actual != 0``
+    (zero prediction is invalid and should be heavily penalized).
     """
     if actual == 0:
         return 0.0 if predicted == 0 else float("inf")
+    if predicted == 0:
+        return float("inf")  # Zero prediction is nonsensical → infinite penalty
     return abs(predicted - actual) / abs(actual) * 100
 
 
@@ -89,11 +93,15 @@ def compute_mpe(predicted: float, actual: float) -> float:
     Returns 0.0 when both values are zero (perfect match).
     Returns ``float('inf')`` (or ``float('-inf')``) when ``actual == 0``
     but ``predicted != 0`` to avoid masking real errors.
+    Returns ``float('-inf')`` when ``predicted == 0`` but ``actual != 0``
+    (zero prediction is invalid and should be heavily penalized).
     """
     if actual == 0:
         if predicted == 0:
             return 0.0
         return float("inf") if predicted > 0 else float("-inf")
+    if predicted == 0:
+        return float("-inf")  # Zero prediction is nonsensical → infinite penalty (negative since underpredicting)
     return (predicted - actual) / abs(actual) * 100
 
 
