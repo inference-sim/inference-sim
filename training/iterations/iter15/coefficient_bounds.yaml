@@ -1,0 +1,118 @@
+# Coefficient Bounds and Initial Values for Iteration 15
+# Three-Axis Correction: Decode Amplification + MoE Non-Compute + Dense Batching
+#
+# CRITICAL: Cold-start initialization (NOT warm-start from iter7/iter14)
+# Rationale: Dataset shifted (reasoning → reasoning-lite), iter14 warm-start failed
+#
+# Changes from iter14:
+#   - β₁ bounds: 1.0-1.15 → 5.0-15.0 (decode memory 10× amplification)
+#   - β₄ bounds: 0.7-0.85 → 3.0-8.0 (decode compute 5× amplification)
+#   - β₀ bounds: 0.16-0.22 → 0.5-1.0 (prefill MFU more conservative)
+#   - Added β₈: MoE non-compute latency (20-80 μs/token)
+#   - Added β₉: Prefill batching penalty (0.5-2.0 μs/token)
+
+# Alpha coefficients (request-level overheads) — 3 total
+# Units: seconds (converted to μs in code)
+alpha_bounds:
+  - [0.0005, 0.0025]    # α₀: Fixed API overhead (0.5-2.5 ms per request)
+  - [0.00005, 0.00015]  # α₁: Per-input-token tokenization (50-150 μs per token)
+  - [0.00004, 0.00012]  # α₂: Per-output-token detokenization (40-120 μs per token)
+
+# Alpha initial values (cold-start: uniform random within bounds)
+# Physics-based midpoints (not iter7 values)
+alpha_initial:
+  - 0.0015    # α₀: 1.5 ms (midpoint of 0.5-2.5 ms)
+  - 0.0001    # α₁: 100 μs (midpoint of 50-150 μs)
+  - 0.00008   # α₂: 80 μs (midpoint of 40-120 μs)
+
+# Beta coefficients (step-level terms) — 10 total (iter15: added β₈, β₉)
+beta_bounds:
+  # β₀: Prefill compute MFU scaling (dimensionless)
+  # Physics: Scales roofline prefill estimate to match reality
+  # Expected: 0.05-0.25 (SCALE DOWN from iter7's 0.16-0.22)
+  # Rationale: Dense models overestimate by 3-30× → need to DIVIDE roofline by 4-20×
+  # If roofline predicts 10s and reality is 1s, then β₀ = 0.1
+  - [0.05, 0.25]
+
+  # β₁: Decode memory-bound MFU scaling (dimensionless) — **AMPLIFIED 10×**
+  # Physics: Scales roofline decode memory time (small-batch regime)
+  # Expected: 5.0-15.0 (was 1.0-1.15 in iter7-14)
+  # Rationale: All models show -90% to -95% ITL MPE → decode 10-20× slower than roofline
+  - [5.0, 15.0]
+
+  # β₂: TP communication scaling (dimensionless)
+  # Physics: Scales TP all-reduce time (decode phase only)
+  # Expected: 0.15-0.25 (unchanged from iter7)
+  - [0.15, 0.25]
+
+  # β₃: KV cache management base overhead (seconds per request)
+  # Physics: PagedAttention block allocation per request
+  # Expected: 0.0004-0.0015 (0.4-1.5 ms, unchanged from iter7)
+  - [0.0004, 0.0015]
+
+  # β₄: Decode compute-bound MFU scaling (dimensionless) — **AMPLIFIED 5×**
+  # Physics: Scales roofline decode compute time (large-batch regime)
+  # Expected: 3.0-8.0 (was 0.7-0.85 in iter7-14)
+  # Rationale: Decode underestimation applies to both memory- and compute-bound regimes
+  - [3.0, 8.0]
+
+  # β₅: MoE gating efficiency (dimensionless)
+  # Physics: Scales roofline MoE gating network FLOPs (routing probability computation)
+  # Expected: 20-50 (iter14 prediction, now that layer multiplier is fixed)
+  # Note: This is gating COMPUTE cost; β₈ handles gating LATENCY cost
+  - [20.0, 50.0]
+
+  # β₆: Scheduler overhead per request (seconds)
+  # Physics: vLLM batch formation + KV block allocation + priority queue processing
+  # Expected: 0.04-0.1 (40-100 ms, unchanged from iter7)
+  - [0.04, 0.1]
+
+  # β₇: Decode per-request overhead (seconds)
+  # Physics: Output processing + TP coordination + KV cache write-back per decode request
+  # Expected: 0.015-0.03 (15-30 ms, unchanged from iter7)
+  - [0.015, 0.03]
+
+  # β₈: MoE non-compute latency (seconds per token) — **NEW in iter15**
+  # Physics: Per-token routing overhead beyond FLOPs (scatter/gather, load imbalance, all-to-all comm)
+  # Expected: 0.00001-0.00004 (10-40 μs per token, reduced from initial 20-80)
+  # Rationale: Scout baseline shows -69% avg TTFT MPE → MoE missing 2-3× overhead beyond compute
+  # Code: Will multiply by (num_moe_layers × total_tokens) to get total MoE non-compute time
+  # Upper bound reduced: 40 μs/token × 500 tokens × 20 layers = 400 ms (more reasonable than 800 ms)
+  - [0.00001, 0.00004]
+
+  # β₉: Prefill batching inefficiency penalty (seconds per token) — **NEW in iter15**
+  # Physics: Per-prefill-token overhead from batch heterogeneity (mixed prefill/decode)
+  # Expected: 0.0000005-0.000002 (0.5-2.0 μs per token)
+  # Rationale: Dense baseline shows +820% avg TTFT MPE → prefill batches don't achieve theoretical MFU
+  # Code: Will multiply by (num_prefill_tokens × heterogeneity_factor) where
+  #       heterogeneity_factor = num_decode_tokens / max(1, num_prefill_tokens)
+  - [0.0000005, 0.000002]
+
+# Beta initial values (cold-start: physics-based midpoints, NOT iter7/iter14 values)
+# Rationale: Dataset shifted, warm-start failed in iter14
+beta_initial:
+  - 0.15     # β₀: Midpoint of 0.05-0.25 (prefill MFU, SCALE DOWN for dense overestimation)
+  - 10.0     # β₁: Midpoint of 5.0-15.0 (decode memory MFU, 10× amplification)
+  - 0.20     # β₂: Midpoint of 0.15-0.25 (TP comm)
+  - 0.001    # β₃: 1.0 ms (midpoint of 0.4-1.5 ms, KV management)
+  - 5.5      # β₄: Midpoint of 3.0-8.0 (decode compute MFU, 5× amplification)
+  - 35.0     # β₅: Midpoint of 20-50 (MoE gating)
+  - 0.07     # β₆: 70 ms (midpoint of 40-100 ms, scheduler)
+  - 0.0225   # β₇: 22.5 ms (midpoint of 15-30 ms, decode overhead)
+  - 0.000025 # β₈: 25 μs/token (midpoint of 10-40 μs, reduced, MoE non-compute) — NEW
+  - 0.00000125  # β₉: 1.25 μs/token (midpoint of 0.5-2.0 μs, prefill batching) — NEW
+
+# Optimization configuration
+# NOTE: These values are DOCUMENTATION ONLY - not read by inner_loop_optimize.py
+optimization:
+  algorithm: "TPE"  # Tree-structured Parzen Estimator (better for 10D search than GP)
+  n_trials: 2000    # Default as of 2026-03-31 (increased from 1000 to handle 10D search space)
+  initialization: "hybrid"  # Trial 0 uses alpha_initial/beta_initial (physics midpoints), trials 1-1999 explore freely
+  rationale: |
+    Hybrid initialization: Trial 0 uses physics-based midpoints (not iter7 coefficients), then
+    1999 trials explore via TPE. This differs from iter14 which warm-started from iter7 optimal
+    coefficients (biased to old basin). Physics midpoints are unbiased and just provide an
+    informed starting point for TPE's surrogate model.
+
+    2000 trials (increased from iter14's 1000) because 10-dimensional search space (added β₈, β₉)
+    requires more exploration trials.
