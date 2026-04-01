@@ -1,0 +1,30 @@
+iteration: 16
+latency_backend_name: "evolved"  # MUST be "evolved" — the backend name stays constant
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 16: Adopt trained-roofline architecture + MoE/quantization fixes.
+
+  **What Changed**:
+  - Complete rewrite of evolved_model.go to use trained-roofline's 7-term formula:
+    β₁·max(T_pf_compute, T_pf_kv) + β₂·max(T_dc_compute, T_dc_kv) + β₃·T_weight
+    + β₄·T_tp + β₅·L + β₆·batchSize + β₇
+  - Added InterleaveMoELayerStep/DenseIntermediateDim handling (#877 fix for Scout)
+  - Added EffectiveWeightBytesPerParam (FP8-aware, Scout uses 1 byte/param not 2)
+  - Added FP8 peak FLOPS selection for FP8 models on FP8-capable GPUs
+  - PostDecodeFixedOverhead now returns α₁ (was 0 in iter0-14)
+  - QueueingTime now returns constant α₀ (was α₀ + α₁×tokens + β₆ in iter0-14)
+  - Coefficient count: 7 betas + 3 alphas (was 8 betas + 3 alphas in iter14)
+
+  **Why This Architecture**:
+  Diagnostic analysis revealed two structural bugs in iter0-14's evolved model:
+  1. Missing memory-bandwidth floor: decode used compute-only formula, 13× too low at B=1
+  2. Per-request overhead accumulation: β₃/β₇ in StepTime accumulated O(N×B) per request
+  The trained-roofline backend (same codebase, 7% MAPE) avoids both. Iter15 adopts it
+  with enhancements for the current dataset (MoE interleave, FP8 quantization).
+
+  **Previous Iteration (14)**:
+  - Loss 2319% (catastrophic) — β₅ fix worked but structural E2E bug remained
+  - E2E RMSE 91% across ALL experiments due to phantom overhead accumulation
+
+timestamp: "2026-04-01T12:00:00.000000"
