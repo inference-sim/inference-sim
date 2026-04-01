@@ -33,19 +33,21 @@ class InnerLoopOptimizer:
 
     def __init__(self,
                  iteration: int,
-                 n_trials: int = 1000,
+                 n_trials: int = 2000,
                  timeout_per_trial: int = 120,
                  data_dir: str = "trainval_data",
-                 seed: int = 42):
+                 seed: int = 42,
+                 n_jobs: int = 1):
         """
         Initialize inner loop optimizer.
 
         Args:
             iteration: Iteration number (used to locate files in iterations/iter{N}/)
-            n_trials: Number of Bayesian optimization trials (default: 1000)
+            n_trials: Number of Bayesian optimization trials (default: 2000)
             timeout_per_trial: Timeout in seconds for each BLIS run
             data_dir: Directory containing ground-truth experiments (for CV: subset of trainval_data)
             seed: Random seed for Bayesian optimization (determinism guarantee)
+            n_jobs: Number of parallel trials (default: 1). Uses SQLite storage when > 1.
         """
         self.iteration = iteration
         self.iteration_dir = f"iterations/iter{iteration}"
@@ -55,6 +57,7 @@ class InnerLoopOptimizer:
         self.timeout_per_trial = timeout_per_trial
         self.data_dir = data_dir
         self.seed = seed
+        self.n_jobs = n_jobs
 
         self.backend_name = None
         self.bounds = None
@@ -270,7 +273,8 @@ class InnerLoopOptimizer:
                 "--alpha-coeffs", alpha_str,
                 "--beta-coeffs", beta_str,
                 "--blis-binary", "../blis",
-                "--data-dir", self.data_dir
+                "--data-dir", self.data_dir,
+                "--max-workers", str(max(1, 4 // self.n_jobs))
             ],
             capture_output=True,
             check=True,
@@ -347,36 +351,54 @@ class InnerLoopOptimizer:
         print(f"Random seed: {self.seed} (deterministic)")
         print("=" * 70)
 
-        # Create Optuna study with deterministic seed
+        # Create Optuna study — use SQLite storage for crash resilience and parallel support
+        study_name = f"iter{self.iteration}_{self.backend_name}"
+        if self.n_jobs > 1:
+            db_path = os.path.join(self.iteration_dir, f"{study_name}.db")
+            storage = f"sqlite:///{db_path}"
+            # Delete stale DB to avoid resuming a different run's state
+            if os.path.exists(db_path):
+                os.remove(db_path)
+            print(f"  SQLite storage: {db_path} (crash-resilient, {self.n_jobs} parallel jobs)")
+        else:
+            storage = None
+
         study = optuna.create_study(
             direction="minimize",
-            study_name=f"iter{self.iteration}_{self.backend_name}",
+            study_name=study_name,
+            storage=storage,
             sampler=optuna.samplers.TPESampler(seed=self.seed)
         )
 
         # Enqueue initial trial if suggested values provided (warm-start optimization)
+        # Note: enqueue_trial is incompatible with n_jobs > 1 (Optuna parallel conflict)
         if "alpha_initial" in self.bounds and "beta_initial" in self.bounds:
             alpha_init = self.bounds["alpha_initial"]
             beta_init = self.bounds["beta_initial"]
 
             # Validate initial values length
             if len(alpha_init) == 3 and len(beta_init) == len(self.bounds["beta_bounds"]):
-                initial_params = {}
-                for i in range(3):
-                    initial_params[f"alpha_{i}"] = alpha_init[i]
-                for i in range(len(beta_init)):
-                    initial_params[f"beta_{i}"] = beta_init[i]
+                if self.n_jobs <= 1:
+                    initial_params = {}
+                    for i in range(3):
+                        initial_params[f"alpha_{i}"] = alpha_init[i]
+                    for i in range(len(beta_init)):
+                        initial_params[f"beta_{i}"] = beta_init[i]
 
-                study.enqueue_trial(initial_params)
-                print(f"  Warm-start: Enqueued initial trial with suggested values")
+                    study.enqueue_trial(initial_params)
+                    print(f"  Warm-start: Enqueued initial trial with suggested values")
+                else:
+                    print(f"  Warm-start: Skipped enqueue (incompatible with n_jobs={self.n_jobs})")
             else:
                 print(f"  Warning: Initial values have wrong length, skipping warm-start")
 
-        # Run optimization
+        # Run optimization (n_jobs > 1 runs trials in parallel via threading;
+        # each trial spawns a subprocess so GIL is not a bottleneck)
         opt_start = time.time()
         study.optimize(
             self.optuna_objective,
             n_trials=self.n_trials,
+            n_jobs=self.n_jobs,
             show_progress_bar=True
         )
         opt_time = time.time() - opt_start
@@ -591,6 +613,12 @@ def main():
         default=42,
         help="Random seed for Bayesian optimization (default: 42, for determinism)"
     )
+    parser.add_argument(
+        "--n-jobs",
+        type=int,
+        default=1,
+        help="Number of parallel trials (default: 1). Uses SQLite storage when > 1 for crash resilience."
+    )
 
     args = parser.parse_args()
 
@@ -600,7 +628,8 @@ def main():
         n_trials=args.n_trials,
         timeout_per_trial=args.timeout,
         data_dir=args.data_dir,
-        seed=args.seed
+        seed=args.seed,
+        n_jobs=args.n_jobs
     )
 
     # Phase 1: Setup

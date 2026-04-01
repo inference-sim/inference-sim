@@ -1,0 +1,68 @@
+# Iteration 16: Coefficient Bounds and Initial Values
+#
+# **Architecture**: Trained-roofline 7-term formula with MoE/FP8 enhancements
+# **Warm-Start**: From trained-roofline fitted values (7% MAPE on 13 experiments)
+# **Units**: All basis functions compute µs; alpha coefficients are µs directly
+#
+# Key changes from iter14:
+#   - 7 betas (was 8) — removed per-request overhead from StepTime
+#   - Alpha units: µs (was seconds in iter0-14)
+#   - PostDecodeFixedOverhead = α₁ (was 0 in iter0-14)
+#   - QueueingTime = α₀ constant (was α₀ + α₁×tokens + β₆ in iter0-14)
+
+alpha_bounds:
+  - [100.0, 50000.0]   # α₀: QueueingTime — fixed API processing overhead (µs), expect ~5-15ms
+  - [0.0, 10000.0]     # α₁: PostDecodeFixedOverhead — per-request completion overhead (µs), expect ~1-3ms
+  - [0.0, 50.0]        # α₂: OutputTokenProcessingTime — per-output-token streaming (µs/token), expect ~1-5µs
+
+alpha_initial:  # Warm-start from trained-roofline fitted values
+  - 9315.338771116985     # α₀: 9.3ms API processing overhead (trained-roofline fitted)
+  - 1849.5902371340574    # α₁: 1.85ms post-decode fixed overhead (trained-roofline fitted)
+  - 1.7079389122469397    # α₂: 1.71µs per output token (trained-roofline fitted)
+
+beta_bounds:
+  - [0.2, 3.0]      # β₁: Prefill roofline correction (dimensionless), expect ~0.5-1.5
+  - [0.3, 3.0]      # β₂: Decode roofline correction (dimensionless), expect ~0.8-1.5
+  - [0.3, 3.0]      # β₃: Weight loading correction (dimensionless), expect ~0.8-1.3
+  - [0.0, 2.0]      # β₄: TP communication correction (dimensionless), currently zeroed
+  - [0.0, 200.0]    # β₅: Per-layer overhead (µs/layer), expect ~20-80µs
+  - [0.0, 500.0]    # β₆: Per-request scheduling overhead (µs/request), expect ~30-100µs
+  - [0.0, 500.0]    # β₇: Per-step constant overhead (µs/step), currently zeroed
+
+beta_initial:  # Warm-start from trained-roofline fitted values
+  - 0.7726491335309499    # β₁: 0.77 prefill correction (trained-roofline fitted)
+  - 1.127489556719325     # β₂: 1.13 decode correction (trained-roofline fitted)
+  - 1.0559901872766853    # β₃: 1.06 weight loading correction (trained-roofline fitted)
+  - 0.0                   # β₄: 0.0 TP communication (zeroed in trained-roofline fit)
+  - 43.500541908701074    # β₅: 43.5µs/layer (trained-roofline fitted)
+  - 48.80613214319187     # β₆: 48.8µs/request (trained-roofline fitted)
+  - 0.0                   # β₇: 0.0µs/step (zeroed in trained-roofline fit)
+
+# ============================================================
+# Notes on Warm-Start Strategy
+# ============================================================
+#
+# The trained-roofline achieved 7% MAPE on 13 experiments (old dataset).
+# These initial values place the optimizer near a known-good minimum.
+# The optimizer needs to adjust for:
+#
+# 1. Dataset shift: reasoning → reasoning-lite, saturated → general-lite
+#    - Reasoning-lite has 934 prefill + 1448 decode tokens (new workload)
+#    - Scout general-lite replaces saturated general-2 (healthier server data)
+#
+# 2. MoE FLOPs change: #877 splits Scout's 48 layers into 24 MoE + 24 dense
+#    - Basis function values for Scout are now different (more physically accurate)
+#    - β₁ (prefill) and β₂ (decode) may shift to compensate
+#
+# 3. FP8 weight precision: Scout uses 1 byte/param instead of FP16's 2
+#    - Weight loading time halved for Scout → β₃ may increase
+#
+# Expected convergence: <1000 trials (warm-start near known-good solution)
+#
+# Validation checklist:
+#   - [ ] β₁-β₃ within ±50% of trained-roofline priors (0.5-1.5× range)
+#   - [ ] β₅ (per-layer) in 20-100µs range (not collapsed to 0 or exploded >200)
+#   - [ ] β₆ (per-request) in 20-200µs range
+#   - [ ] α₁ (PostDecodeFixed) in 500-5000µs range (1-5ms per request)
+#   - [ ] Zero experiments with exactly 100% APE (reasoning-lite recovered)
+#   - [ ] Overall loss < 100% (5× improvement from iter14's 2319%)
