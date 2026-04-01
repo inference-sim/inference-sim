@@ -32,17 +32,22 @@ go build -o blis main.go
   --workload-spec workload.yaml --trace-header trace.yaml --trace-data trace.csv
 
 # Observe with chat completions endpoint and network RTT
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --api-format chat --rtt-ms 2.5 --workload-spec workload.yaml \
   --trace-header trace.yaml --trace-data trace.csv
 
 # Observe with named workload preset (chatbot, summarization, contentgen, multidoc)
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --workload chatbot --rate 10 --num-requests 100 \
+  --trace-header trace.yaml --trace-data trace.csv
 
 # Observe with rate-mode distribution synthesis and optional flags
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --api-format chat --rate 10 --num-requests 100 \
   --prompt-tokens 512 --output-tokens 128 --prefix-tokens 64 \
   --warmup-requests 5 --no-streaming --api-key $API_KEY \
   --max-concurrency 32 --unconstrained-output \
+  --trace-header trace.yaml --trace-data trace.csv
 
 # Compare real observed latencies against simulator predictions
 ./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json --report calibration.json
@@ -64,6 +69,7 @@ go build -o blis main.go
 
 ## Testing
 
+```bash
 # Run all tests
 go test ./...
 
@@ -78,6 +84,7 @@ go test -v ./...
 
 # Run tests with coverage
 go test -cover ./...
+```
 
 ## Development Guidelines
 

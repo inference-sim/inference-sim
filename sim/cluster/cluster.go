@@ -228,6 +228,10 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			// roofline/trained-roofline backends use the pool's hardware coefficients (issue #893).
 			simCfg.GPU = matchedGPUType
 			if hc, ok := config.HWConfigByGPU[matchedGPUType]; ok {
+				if hc.TFlopsPeak <= 0 || hc.BwPeakTBs <= 0 {
+					panic(fmt.Sprintf("HWConfigByGPU[%q]: TFlopsPeak and BwPeakTBs must be positive, got TFlopsPeak=%v BwPeakTBs=%v",
+						matchedGPUType, hc.TFlopsPeak, hc.BwPeakTBs))
+				}
 				simCfg.HWConfig = hc
 			}
 			inst := NewInstanceSimulator(id, simCfg)

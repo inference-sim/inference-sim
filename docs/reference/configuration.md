@@ -10,7 +10,9 @@ BLIS uses a layered configuration system where more specific sources override mo
 CLI flags (highest priority — explicit user input)
     ↓ overrides
 YAML files (policy-config, workload-spec, defaults.yaml)
+    ↓ overrides
 Hardcoded defaults (lowest priority)
+```
 
 CLI flags only override YAML values when explicitly set. BLIS checks whether each flag was provided by the user (not just whether it has a non-default value), so default flag values do not accidentally override YAML configuration.
 
@@ -45,11 +47,13 @@ The general precedence (CLI → YAML → hardcoded) applies everywhere, but each
 
 **Routing, admission, and scheduling** (`--routing-policy`, `--admission-policy`, `--scheduler`, etc.):
 
+1. Explicit CLI flags
 2. `--policy-config` YAML bundle — loads all policy settings from one file
 3. Hardcoded defaults — `round-robin`, `always-admit`, `fcfs`
 
 **Batch formation** (`--max-num-running-reqs`, `--max-num-scheduled-tokens`, etc.):
 
+1. Explicit CLI flags
 2. Hardcoded defaults — 256 running reqs, 2048 scheduled tokens
 
 Batch formation has no YAML override path — `defaults.yaml` and `--policy-config` do not include batch settings.
@@ -97,6 +101,8 @@ Top-level settings that control the simulation run.
 
 Controls GPU and CPU memory simulation for key-value cache blocks. Maps to `KVCacheConfig`.
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--total-kv-blocks` | int64 | 1000000\* | Total GPU-tier KV blocks. |
 | `--block-size-in-tokens` | int64 | 16 | Tokens per KV block. |
 | `--kv-cpu-blocks` | int64 | 0 | CPU-tier blocks. 0 disables tiered caching. |
@@ -110,6 +116,8 @@ Controls GPU and CPU memory simulation for key-value cache blocks. Maps to `KVCa
 
 Controls how requests are selected for the running batch. Maps to `BatchConfig`.
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--max-num-running-reqs` | int64 | 256 | Maximum requests in the running batch simultaneously. |
 | `--max-num-scheduled-tokens` | int64 | 2048 | Maximum total new tokens across all running requests per step (token budget). |
 | `--long-prefill-token-threshold` | int64 | 0 | Prefill length threshold for chunked prefill. 0 = disabled (all prefill in one step). |
@@ -120,6 +128,8 @@ Controls how requests are selected for the running batch. Maps to `BatchConfig`.
 
 Trained coefficients for the blackbox latency model. Maps to `LatencyCoeffs`.
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--alpha-coeffs` | float64 slice | [0, 0, 0] | Alpha coefficients [alpha0, alpha1, alpha2]. Models non-GPU overhead. Must be non-negative. |
 | `--beta-coeffs` | float64 slice | [0, 0, 0] | Beta coefficients [beta0, beta1, beta2]. Models GPU step time. Must be non-negative. |
 
@@ -129,6 +139,8 @@ When `--alpha-coeffs` and `--beta-coeffs` are not explicitly provided on the CLI
 
 Maps to `ModelHardwareConfig`.
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--model` | string | (required) | LLM model name (e.g., `qwen/qwen3-14b`). |
 | `--hardware` | string | "" | GPU type. Bundled options: `H100`, `A100-SXM`, `A100-80`. If empty, loaded from `defaults.yaml`. Add new GPUs to `hardware_config.json`. |
 | `--tp` | int | 0 | Tensor parallelism degree. If 0, loaded from `defaults.yaml`. |
@@ -139,6 +151,8 @@ Maps to `ModelHardwareConfig`.
 
 For analytical step time estimation without trained coefficients.
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--latency-model` | string | "roofline" | Latency model backend: `roofline` (default), `blackbox`, `crossmodel`, `trained-roofline`. When set to `roofline`, `crossmodel`, or `trained-roofline`, auto-fetches HuggingFace config.json and resolves hardware config. Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. `trained-roofline` is recommended for new models (7% MAPE GPU step time). |
 | `--model-config-folder` | string | "" | Path to folder containing HuggingFace `config.json`. Overrides `--latency-model` auto-resolution. |
 | `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. Overrides `--latency-model` auto-resolution. |
@@ -159,12 +173,16 @@ The latency model mode is selected based on available configuration:
 
 With `--num-instances 1` (the default), BLIS runs a single-instance simulation — requests go directly to the wait queue with no admission or routing layer. With `--num-instances N` (N > 1), the cluster simulation activates: requests pass through the admission and routing pipeline before reaching per-instance wait queues. See [Cluster Architecture](../concepts/architecture.md) for the multi-instance pipeline and [Core Engine](../concepts/core-engine.md) for single-instance internals.
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--num-instances` | int | 1 | Number of inference instances. 1 = single-instance mode; > 1 = cluster mode with admission and routing. |
 
 ## Admission Policy
 
 Controls which requests enter the routing pipeline. See [Cluster Architecture: Admission](../concepts/architecture.md#admission-pipeline).
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--admission-policy` | string | "always-admit" | Policy name: `always-admit`, `token-bucket`, `reject-all`, `tier-shed`. |
 | `--admission-latency` | int64 | 0 | Admission decision latency in microseconds. Must be >= 0. |
 | `--token-bucket-capacity` | float64 | 10000 | Token bucket maximum capacity. Required > 0 when using `token-bucket`. |
@@ -181,6 +199,8 @@ SLO tier priorities: `critical`=4, `standard`=3, `sheddable`=2, `batch`=1, `back
 
 **Per-tenant fair-share budgets** (`tenant_budgets`): A secondary admission layer that runs *after* the admission policy. If the admission policy rejects a request, tenant budgets are not consulted. If the admission policy admits a request, tenant budgets then apply: over-budget tenants have Sheddable-and-below requests (SLO class priority < 3) preferentially shed while Critical and Standard traffic is always protected. Configured via `--policy-config` YAML only (no CLI flag):
 
+| YAML field | Type | Default | Description |
+|------------|------|---------|-------------|
 | `tenant_budgets` | map[string]float64 | nil | Per-tenant fraction of total cluster capacity (NumInstances × MaxRunningReqs). Absent key = unlimited. 0.0 = effectively zero concurrent slots (one request may slip through per admission tick due to DES admission-before-routing event ordering; see IsOverBudget docstring). Values must be in [0, 1]. |
 
 Example:
@@ -194,11 +214,14 @@ admission:
 tenant_budgets:
   alice: 0.3   # alice may use at most 30% of total cluster capacity
   bob: 0.7     # bob may use at most 70% of total cluster capacity
+```
 
 ## Routing Policy
 
 Controls how admitted requests are assigned to instances. See [Cluster Architecture: Routing](../concepts/architecture.md#routing-pipeline).
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--routing-policy` | string | "round-robin" | Policy name: `round-robin`, `least-loaded`, `weighted`, `always-busiest`. |
 | `--routing-latency` | int64 | 0 | Routing decision latency in microseconds. Must be >= 0. |
 | `--routing-scorers` | string | "" | Scorer configuration for `weighted` policy. Format: `name:weight,name:weight,...` |
@@ -210,6 +233,7 @@ When using `--routing-policy weighted`, the `--routing-scorers` flag configures 
 
 ```bash
 --routing-scorers "prefix-affinity:3,queue-depth:2,kv-utilization:2"
+```
 
 Available scorers: `prefix-affinity`, `queue-depth`, `kv-utilization`, `load-balance`.
 
@@ -221,6 +245,8 @@ See [Cluster Architecture: Scorer Composition](../concepts/architecture.md#score
 
 Per-instance policies that control request ordering within the wait queue. Maps to `PolicyConfig`.
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--scheduler` | string | "fcfs" | Scheduler: `fcfs`, `priority-fcfs`, `sjf`, `reverse-priority`. |
 | `--priority-policy` | string | "constant" | Priority policy: `constant`, `slo-based`, `inverted-slo`. |
 
@@ -242,6 +268,8 @@ BLIS supports three workload specification modes, in order of precedence:
 
 Used when `--workload distribution` (the default) and no `--workload-spec` is set.
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--rate` | float64 | 1.0 | Request arrival rate in requests/second. |
 | `--num-requests` | int | 100 | Total number of requests to generate. |
 | `--prompt-tokens` | int | 512 | Mean prompt (input) token count. |
@@ -258,6 +286,7 @@ Used when `--workload distribution` (the default) and no `--workload-spec` is se
 
 The `--workload-spec` flag loads a YAML file defining multi-client workloads:
 
+```yaml
 aggregate_rate: 100       # Total arrival rate in requests/second
 num_requests: 1000
 seed: 42
@@ -279,17 +308,29 @@ clients:
         max: 4096
     output_distribution:
       type: "exponential"
+      params:
         mean: 128
 
   - id: "batch"
     rate_fraction: 0.4
+    arrival:
       process: "gamma"
       cv: 2.0
+    input_distribution:
+      type: "gaussian"
+      params:
         mean: 1024
         std_dev: 512
+        min: 2
         max: 7000
+    output_distribution:
+      type: "gaussian"
+      params:
         mean: 512
         std_dev: 256
+        min: 2
+        max: 7000
+```
 
 **Supported arrival processes:** `poisson`, `gamma` (with `cv` parameter), `weibull` (with `cv` parameter), `constant`.
 
@@ -299,6 +340,8 @@ When `--workload-spec` is set, CLI `--seed`, `--horizon`, and `--num-requests` s
 
 ### Trace Files
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--workload-spec` | string | "" | Path to workload-spec YAML. |
 | `--defaults-filepath` | string | "defaults.yaml" | Path to `defaults.yaml`. |
 | `--trace-output` | string | "" | Export workload as TraceV2 files (`<prefix>.yaml` + `<prefix>.csv`). |
@@ -307,6 +350,8 @@ When `--workload-spec` is set, CLI `--seed`, `--horizon`, and `--num-requests` s
 
 The `--policy-config` flag loads admission, routing, priority, and scheduling configuration from a single YAML file:
 
+```yaml
+admission:
   policy: "always-admit"
   token_bucket_capacity: 10000.0
   token_bucket_refill_rate: 1000.0
@@ -319,6 +364,7 @@ routing:
     - name: "queue-depth"
       weight: 2.0
     - name: "kv-utilization"
+      weight: 2.0
 
 priority:
   policy: "constant"
@@ -345,6 +391,7 @@ node_pools:
 # ensuring pool-placed instances use the correct TFlopsPeak/BwPeakTBs for roofline math.
 # Omitting this field (zero value) is safe: no override, backward-compatible with all callers.
 # The blackbox backend does not use HWConfig and is unaffected by this field.
+# Keys must exactly match the gpu_type strings used in the node_pools entries above.
 hw_config_by_gpu:
   H100:
     tflops_peak: 1979.0    # FP16 TFLOPS
@@ -370,8 +417,10 @@ instance_lifecycle:
 # Each value is a fraction of total cluster capacity (NumInstances × MaxRunningReqs).
 # Absent key = unlimited. 0.0 = effectively zero concurrent slots (DES ordering caveat: see IsOverBudget docstring). Values must be in [0, 1].
 # Critical and Standard traffic is always protected from budget shedding.
+tenant_budgets:
   team-a: 0.4
   team-b: 0.4
+```
 
 CLI flags override policy bundle values when explicitly set. For example, `--routing-policy least-loaded` overrides the bundle's `routing.policy` setting.
 
@@ -380,6 +429,8 @@ CLI flags override policy bundle values when explicitly set. For example, `--rou
 
 ## Decision Tracing
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--trace-level` | string | "none" | Trace verbosity: `none` or `decisions`. |
 | `--counterfactual-k` | int | 0 | Number of counterfactual candidates per routing decision. Requires `--trace-level decisions`. |
 | `--summarize-trace` | bool | false | Print trace summary after simulation. Requires `--trace-level decisions`. |
@@ -388,6 +439,8 @@ See [Cluster Architecture: Counterfactual Regret](../concepts/architecture.md#co
 
 ## Fitness Evaluation
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--fitness-weights` | string | "" | Fitness function weights. Format: `metric:weight,metric:weight,...` |
 
 When configured, BLIS computes a single fitness score from aggregated metrics. Latency metrics are normalized via `1/(1 + value/1000)` where `value` is in ticks (microseconds) and 1000 = 1ms reference (lower is better); throughput metrics via `value/(value + reference)` where `referenceRPS = 100.0` and `referenceTPS = 10000.0` (higher is better). Useful for automated policy comparison across multiple simulation runs.
@@ -396,6 +449,7 @@ When configured, BLIS computes a single fitness score from aggregated metrics. L
 
 The `defaults.yaml` file serves as a model registry and workload preset store:
 
+```yaml
 # Section 1: Hardware/TP mappings (keyed by model ID)
 defaults:
   qwen/qwen3-14b:
@@ -416,9 +470,13 @@ workloads:
 # Section 3: Trained coefficients (keyed by model+GPU+TP)
 models:
   - id: qwen/qwen3-14b
+    GPU: H100
+    tensor_parallelism: 1
+    vllm_version: vllm/vllm-openai:v0.11.0
     alpha_coeffs: [8888.09, 0.18, 0.0]
     beta_coeffs: [13578.19, 39.44, 27.32]
     total_kv_blocks: 17600
+```
 
 ### Resolution Process
 
@@ -486,6 +544,8 @@ Dispatches a workload to a real inference server and records request-level timin
 
 ### Required
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--server-url` | string | "" | Inference server URL (required). |
 | `--model` | string | "" | Model name for API requests (required). |
 | `--trace-header` | string | "" | Output path for TraceV2 header YAML (required). |
@@ -493,11 +553,15 @@ Dispatches a workload to a real inference server and records request-level timin
 
 ### Workload Input
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--workload-spec` | string | "" | Path to WorkloadSpec YAML (alternative to `--rate` + distribution flags). |
 | `--rate` | float64 | 0 | Requests per second for distribution synthesis. |
 
 ### Optional
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--api-key` | string | "" | Bearer token for server authentication. |
 | `--server-type` | string | "vllm" | Server type (`vllm`, `tgi`, etc.). |
 | `--max-concurrency` | int | 256 | Maximum simultaneous in-flight requests. |
@@ -511,6 +575,8 @@ Dispatches a workload to a real inference server and records request-level timin
 
 Used when `--rate` is set instead of `--workload-spec`. Same flag names as `blis run` but with different defaults tuned for observe workloads.
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--prompt-tokens` | int | 512 | Average prompt token count. |
 | `--prompt-tokens-stdev` | int | 50 | Prompt token standard deviation. |
 | `--prompt-tokens-min` | int | 1 | Minimum prompt tokens. |
@@ -524,6 +590,7 @@ Used when `--rate` is set instead of `--workload-spec`. Same flag names as `blis
 | `--unconstrained-output` | bool | false | Do not set `max_tokens` (let server decide output length). |
 | `--rtt-ms` | float64 | 0 | Measured network round-trip time in milliseconds (recorded in trace header for calibrate). |
 
+---
 
 ## blis replay
 
@@ -531,15 +598,20 @@ Replays a captured TraceV2 file through the discrete-event simulator. Replay reu
 
 ### Replay-Specific Flags
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--trace-header` | string | "" | Path to TraceV2 header YAML file (required). |
 | `--trace-data` | string | "" | Path to TraceV2 data CSV file (required). |
 | `--results-path` | string | "" | File to write `[]SimResult` JSON (fields: `request_id`, `ttft_us`, `e2e_us`, `input_tokens`, `output_tokens`) for `blis calibrate` consumption. |
 
+---
 
 ## blis calibrate
 
 Compares real observed latencies (from `blis observe`) against simulator predictions (from `blis replay`) and produces a calibration report with per-metric MAPE, Pearson R, and quality grades.
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--trace-header` | string | "" | Path to TraceV2 header YAML file (from `blis observe`; required). |
 | `--trace-data` | string | "" | Path to TraceV2 data CSV file (from `blis observe`; required). |
 | `--sim-results` | string | "" | Path to SimResult JSON file (from `blis replay --results-path`; required). |
@@ -548,6 +620,7 @@ Compares real observed latencies (from `blis observe`) against simulator predict
 | `--network-rtt-us` | int64 | -1 | Network RTT in microseconds added to sim-side latencies. Default: from trace header `network.measured_rtt_ms`. |
 | `--network-bandwidth-mbps` | float64 | 0 | Network bandwidth in Mbps for upload/download delay calculation (0 = no delay). |
 
+---
 
 ## blis convert
 
@@ -557,25 +630,35 @@ Converts external workload formats into BLIS WorkloadSpec v2 YAML. Three subcomm
 
 Generates a WorkloadSpec from a named preset in `defaults.yaml`.
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--name` | string | "" | Preset name (e.g., `chatbot`, `summarization`, `contentgen`, `multidoc`). |
 | `--rate` | float64 | 1.0 | Request rate in requests/second. |
 | `--num-requests` | int | 100 | Number of requests. |
+| `--defaults-filepath` | string | "defaults.yaml" | Path to `defaults.yaml`. |
 
 ### `blis convert servegen`
 
 Converts a ServeGen data directory into WorkloadSpec format.
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--path` | string | "" | Path to ServeGen data directory. |
 
 ### `blis convert infperf`
 
 Converts an inference-perf YAML specification into WorkloadSpec format.
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--spec` | string | "" | Path to inference-perf YAML spec. |
 
+---
 
 ## blis compose
 
 Merges multiple WorkloadSpec v2 YAML files into a single combined specification.
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
 | `--from` | string (repeatable) | (none) | Path to v2 WorkloadSpec YAML file. Can be repeated to merge multiple specs. |
