@@ -12,7 +12,7 @@
 | **5** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE + β₆·per_layer` | 603 | 💥 CATASTROPHIC | Validate assumptions from traces first |
 | **6** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE` + **β₆ → QueueingTime** | 162 | ✅ **Decoupling breakthrough** | Term location matters (avoid collinearity) |
 | **7** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE + β₇·decode_oh` + β₆ in QueueingTime | 155 | ✅ β₁/β₄ stabilized | Check data quality early (97% bad data found) |
-| **—** | **DATASET CHANGED** | — | reasoning → reasoning-lite (13→11 experiments) | Fresh data from unloaded servers |
+| **—** | **DATASET CHANGED** | — | reasoning → reasoning-lite (3 experiments replaced) | Fresh data from unloaded servers |
 | **8** | `+ β₈·MoE_routing` | 155 | ❌ No improvement, MoE routing not Scout's bottleneck | Zero improvement eliminates hypothesis |
 | **9** | `+ β₉·FP8_dequant` | 161 | ❌ β₉→0, hypothesis rejected; Scout is seq-len dependent | Watch coefficient explosions (reveal missing terms) |
 | **10** | `+ β₁₀·batch_ineff + β₃'·KV_seqlen` | 4267 | 💥💥 CATASTROPHIC (thought basis bugs) | Misdiagnosed - units were actually correct |
@@ -100,16 +100,16 @@ QueueingTime = α₀ + α₁·input_tokens + β₆·scheduler_overhead
 
 **Context**: Iter7 discovered that 97-99% of reasoning workload data came from overloaded servers (85% failure rate, 259s timeouts). Only 1-3% of requests were usable.
 
-**Action Taken**: Replaced reasoning experiments with fresh "reasoning-lite" data collected from unloaded servers:
-- **Before (Iter0-7)**: 13 experiments including reasoning workloads
-- **After (Iter8+)**: 11 experiments with reasoning-lite workloads + exp17 (Scout general-2) replaced by Scout general-lite-2-1
+**Action Taken**: Replaced 3 corrupted reasoning experiments with fresh "reasoning-lite" data collected from unloaded servers:
+- **Before (Iter0-7)**: 15 experiments including 3 corrupted reasoning workloads (97% bad data)
+- **After (Iter8+)**: 15 experiments with 3 fresh reasoning-lite workloads + exp17 (Scout general-2) replaced by Scout general-lite-2-1
 
 **Impact**:
-- Non-Scout experiments improved: 99% → 54-66% error ✅
+- Non-Scout reasoning-lite improved: 99% → 54-66% error ✅
 - Scout experiments remained problematic (architecture-specific bottleneck)
-- Training dataset stabilized at 11 high-quality experiments
+- Training dataset stabilized at 15 high-quality experiments (3 replaced, 12 unchanged)
 
-**Note**: This dataset change means iter7 coefficients are NOT directly comparable to iter8+ (different ground truth data). All subsequent iterations trained on the new 11-experiment dataset.
+**Note**: This dataset change means iter7 coefficients are NOT directly comparable to iter8+ (different ground truth for 3 experiments). All subsequent iterations trained on the updated 15-experiment dataset.
 
 ---
 
