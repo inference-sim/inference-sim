@@ -107,6 +107,31 @@ func TestKVBytesPerToken_InvalidInputs(t *testing.T) {
 	}
 }
 
+func TestKVBytesPerToken_GQA_KVHeadsLessThanTP(t *testing.T) {
+	// When numKVHeads < TP (e.g., 4 KV heads, TP=8), vLLM replicates KV heads
+	// per GPU. Our formula divides total KV by TP, which underestimates per-GPU
+	// KV bytes — a known approximation inherited from CalculateKVBlocks.
+	mc := sim.ModelConfig{
+		NumLayers:       2,
+		NumHeads:        32,
+		NumKVHeads:      4,
+		HiddenDim:       128,
+		IntermediateDim: 256,
+		BytesPerParam:   2.0,
+	}
+	got, err := latency.KVBytesPerToken(mc, 8)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// headDim = 128/32 = 4; total = 2 × 2 × 4 × 4 × 2.0 = 128; per-GPU = 128/8 = 16
+	// In reality vLLM replicates, so per-GPU would be higher. This documents the
+	// current (optimistic) approximation.
+	want := int64(16)
+	if got != want {
+		t.Errorf("KVBytesPerToken(numKVHeads=4, TP=8) = %d, want %d", got, want)
+	}
+}
+
 // --- Input validation tests ---
 
 func TestCalculateKVBlocks_ZeroDenominators_ReturnError(t *testing.T) {

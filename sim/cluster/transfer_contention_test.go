@@ -16,6 +16,7 @@ func testModelHardwareConfig() sim.ModelHardwareConfig {
 		HiddenDim:       64,
 		IntermediateDim: 128,
 		BytesPerParam:   2.0,
+		// NumKVHeads=0: MHA fallback, uses NumHeads=4
 	}
 	return sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0)
 }
