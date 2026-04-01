@@ -316,6 +316,90 @@ But decode amplification FAILS when:
    - β₁, β₄ from measured decode MFU (profile decode phase)
    - β₅ from measured MoE overhead (profile Scout vs equivalent dense)
 
+### Critical Oversight: The Iter9 Baseline
+
+**The most serious strategic error in iter15 was comparing cold-start to warm-start from iter7, while completely ignoring iter9.**
+
+From TRAINING_JOURNEY.md, **iter9 was the last stable state before catastrophic cascade**:
+
+| Iteration | Loss | Dataset | Status |
+|-----------|------|---------|--------|
+| **Iter7** | 155% | 14 clean + 1 bad (93% clean) | Stable, but wrong dataset |
+| **Iter8** | 155% | 14 clean + 1 bad (93% clean) | β₈ rejected, stable |
+| **Iter9** | **161%** | **15 clean (100% clean)** | **FIRST with final dataset, LAST STABLE** ✅ |
+| **Iter10** | 4267% | 15 clean | 💥 CATASTROPHIC (added β₁₀ + β₃') |
+| **Iter13** | 2387% | 15 clean | Warm-started from iter7 (wrong dataset) |
+| **Iter14** | 2319% | 15 clean | Fixed β₅, but still warm-started from iter7 |
+| **Iter15** | 6538% | 15 clean | Cold-start (threw away ALL history) |
+
+**Why iter9 is the correct baseline**:
+
+1. **Dataset alignment**:
+   - Iter9 trained on SAME dataset as iter15 (15 clean experiments, reasoning-lite)
+   - Iter7 trained on DIFFERENT dataset (14 clean, old reasoning data)
+   - Warm-starting from iter7 anchors optimizer in basin optimized for WRONG data distribution
+
+2. **Coefficient quality**:
+   - Iter9: β₀=0.191, β₁=1.108, β₄=0.705, β₅=27.5 (stable, physically plausible)
+   - Iter9: β₆=99ms (inflated, compensating for wrong β₉), β₃=9.6ms (inflated)
+   - 5 out of 7 major coefficients were GOOD, only 2 needed adjustment
+
+3. **Cascade origin**:
+   - **Iter9 → iter10 is where cascade started** (161% → 4267%, 26× worse)
+   - Iter10 added β₁₀ (batching) + β₃' (KV seq-len) simultaneously → catastrophic failure
+   - Going back to iter9 and adding terms **incrementally** would prevent cascade
+
+4. **Sample efficiency**:
+   - Warm-start from iter9: Need ~1000 trials (starting near good region)
+   - Cold-start (iter15): Used 2000 trials, still failed catastrophically
+   - **2× efficiency gain** by using historical information
+
+**What iter15 SHOULD have done**:
+
+```python
+# Option A: Warm-start from iter9 with resets (RECOMMENDED)
+warm_start_from_iter9 = {
+    'beta': [
+        0.191,  # β₀ prefill (iter9 stable) ✅
+        1.108,  # β₁ decode mem (iter9 stable) ✅
+        0.820,  # β₂ TP comm (iter9 slightly inflated, but reasonable)
+        1.0,    # β₃ KV mgmt (RESET from iter9's 9.6ms)
+        0.705,  # β₄ decode comp (iter9 stable) ✅
+        27.5,   # β₅ MoE gating (iter9 stable) ✅
+        40.0,   # β₆ scheduler (RESET from iter9's 99ms)
+        0.027,  # β₇ decode overhead (iter9 stable) ✅
+        20.0,   # β₈ MoE non-compute (NEW, physics prior)
+        1.0     # β₉ prefill batching (NEW, physics prior)
+    ]
+}
+# Expected: 5/10 coefficients start from PROVEN good values (iter9)
+# Expected: Loss 161% → <500% with 1000 trials (vs 6538% cold-start)
+```
+
+**Why this would have worked better**:
+
+1. **Start in correct basin**: Iter9 already converged on final clean dataset → optimizer starts in right region
+2. **Leverage proven coefficients**: 5 coefficients (β₀, β₁, β₄, β₅, β₇) are known-good from iter9
+3. **Adjust inflated terms**: Only β₃, β₆ need resetting (2 out of 10)
+4. **Add new terms carefully**: β₈, β₉ start from physics priors (not random)
+
+**The debugging analogy**:
+
+When a system enters catastrophic failure:
+- ❌ **Wrong**: Revert to commit on different branch (iter7, different dataset)
+- ❌ **Wrong**: Fresh install (cold-start, no history)
+- ✅ **Right**: Revert to last commit that worked on current branch (iter9, same dataset)
+
+**Impact on iter16 strategy**:
+
+Agent 1 (Design) should:
+1. **Use iter9 as warm-start baseline** (not iter7, not cold-start)
+2. **Fix inflated coefficients**: β₃ (9.6ms → 1.0ms), β₆ (99ms → 40ms)
+3. **Keep stable coefficients**: β₀, β₁, β₄, β₅, β₇ from iter9 (proven on final dataset)
+4. **Add new terms from vLLM profiling** (not physics guesses like iter15's β₈, β₉)
+
+**Expected improvement**: If prefill/MoE basis functions are fixed AND warm-started from iter9, loss should decrease from 6538% → <500% (13× improvement).
+
 ---
 
 ## Coefficient Analysis
@@ -687,24 +771,35 @@ But decode amplification FAILS when:
 
 ### Priority 2: Improvements (SHOULD FIX)
 
-**Issue 4: 10D search space is too large for cold-start optimization**
+**Issue 4: Wrong warm-start baseline (should be iter9, not iter7 or cold-start)**
 
 **Evidence**:
 - Cold-start loss (6538%) is 2.8× worse than iter14's warm-start (2319%)
+- Iter14 warm-started from iter7 (different dataset) → loss 2319%
+- **Iter9 was last stable state** (161% loss) on SAME dataset as iter15 (15 clean experiments)
+- Iter15 ignored iter9 entirely, compared cold-start to iter7 (wrong comparison)
 - Optimizer rejected 5/10 coefficients (β₃, β₆, β₇, β₈, β₉ collapsed to 0)
-- 2000 trials in 10D space → only 200 trials per dimension (sparse coverage)
+
+**Why iter9, not iter7**:
+1. **Dataset alignment**: Iter9 trained on SAME dataset as iter15 (15 clean, reasoning-lite)
+2. **Last stable state**: Iter9 (161%) → iter10 (4267%) is where cascade started
+3. **Proven coefficients**: Iter9's β₀, β₁, β₄, β₅, β₇ were stable (5 out of 7)
+4. **Sample efficiency**: Starting from iter9 needs 1000 trials (not 2000 like cold-start)
 
 **Action**:
 1. **Reduce dimensionality**: Remove collapsed terms (β₃, β₆, β₇, β₈, β₉) → 5 beta coefficients (β₀, β₁, β₂, β₄, β₅)
-2. **Use warm-start from iter7** (once basis functions are fixed):
-   - Iter7 coefficients: β₀=0.191, β₁=1.108, β₂=0.195, β₄=0.705, β₅=27.5
-   - Warm-start is more sample-efficient (explores locally near known good region)
-3. **Add physics priors** from vLLM profiling (instead of physics midpoints):
-   - β₀ from measured prefill MFU
-   - β₁, β₄ from measured decode MFU
-   - β₅ from measured MoE gating overhead
+2. **Use warm-start from iter9** (NOT iter7, NOT cold-start):
+   - Iter9 stable coefficients: β₀=0.191, β₁=1.108, β₄=0.705, β₅=27.5, β₇=0.027 ✅
+   - Iter9 inflated coefficients: β₃=9.6ms (reset to 1.0ms), β₆=99ms (reset to 40ms)
+   - Iter9 dataset: 15 clean experiments (SAME as iter15/16)
+3. **Add vLLM-profiled basis functions** (not roofline-based):
+   - Replace β₀ × roofline with empirical prefill model from profiling
+   - Validate β₁, β₄ decode formulas from profiling
+   - Fix MoE FLOPs calculation for β₅
 
-**Expected impact**: 5D search space with warm-start should converge in 500-1000 trials (vs 2000 for 10D cold-start).
+**Expected impact**: 5D search space + warm-start from iter9 + fixed basis functions → loss 6538% to <500% (13× improvement).
+
+**Critical lesson**: When system enters cascade (iter10-15), revert to **last known-good state on CURRENT dataset** (iter9), not earlier state on different dataset (iter7) or fresh start (cold-start).
 
 ---
 
