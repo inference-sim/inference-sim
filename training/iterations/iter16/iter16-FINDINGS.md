@@ -10,6 +10,41 @@ Iteration 16 adopted the trained-roofline architecture (`max(compute, memory)` b
 
 ---
 
+## Training vs Evaluation Split
+
+**Important caveat**: The optimizer trained on only **9 of 15 experiments**. Six experiments using gated Meta Llama models failed silently during optimization because `HF_TOKEN` was not set and `model_configs/` lacked their `config.json` files. The full 15-experiment evaluation was performed post-hoc using locally-cached configs from NousResearch public mirrors.
+
+### 9 Training Experiments (used during optimization)
+
+| Experiment | Model | TP | Workload | HF Gated? |
+|---|---|---|---|---|
+| 17-llama-4-scout-17b-16e-tp2-general-lite-2-1 | Scout-17B-16E (FP8) | 2 | general-lite | No |
+| 20-llama-4-scout-17b-16e-tp2-codegen-2 | Scout-17B-16E (FP8) | 2 | codegen | No |
+| 21-llama-4-scout-17b-16e-tp2-roleplay-2 | Scout-17B-16E (FP8) | 2 | roleplay | No |
+| 48-llama-4-scout-17b-16e-tp2-reasoning-lite-2-1 | Scout-17B-16E (FP8) | 2 | reasoning-lite | No |
+| 62-mistral-nemo-12b-tp2-general-lite-2-1 | Mistral-Nemo-12B | 2 | general-lite | No |
+| 63-mistral-nemo-12b-tp1-codegen-1-1 | Mistral-Nemo-12B | 1 | codegen | No |
+| 64-qwen2-5-7b-instruct-tp1-roleplay-1-1 | Qwen2.5-7B | 1 | roleplay | No |
+| 65-01-ai-yi-34b-tp2-general-lite-2-1 | Yi-34B | 2 | general-lite | No |
+| 66-qwen2-5-7b-instruct-tp1-reasoning-lite-1-1 | Qwen2.5-7B | 1 | reasoning-lite | No |
+
+### 6 Unseen Experiments (evaluation only — not used during optimization)
+
+| Experiment | Model | TP | Workload | Failure Reason |
+|---|---|---|---|---|
+| 20260217-155451-llama-2-7b-tp1-codegen | Llama-2-7B | 1 | codegen | `meta-llama/Llama-2-7b-hf` requires HF_TOKEN |
+| 20260217-162547-llama-2-7b-tp1-roleplay | Llama-2-7B | 1 | roleplay | Same |
+| 20260217-231439-llama-2-7b-tp1-general | Llama-2-7B | 1 | general | Same |
+| 60-llama-3-1-70b-tp4-general-lite-4-1 | Llama-3.1-70B | 4 | general-lite | `meta-llama/Llama-3.1-70B-Instruct` requires HF_TOKEN |
+| 61-llama-3-1-70b-tp4-codegen-4-1 | Llama-3.1-70B | 4 | codegen | Same |
+| 67-llama-2-7b-hf-tp1-reasoning-lite-1-1 | Llama-2-7B | 1 | reasoning-lite | Same |
+
+**Generalization result**: Coefficients trained on the 9 ungated experiments generalized well to the 6 unseen Llama experiments. Notably, the unseen experiments have *lower* average error than the training experiments (Llama-2 codegen: 12.2% TTFT, Llama-3.1-70B: 7-11% TTFT), suggesting the trained-roofline architecture captures model-agnostic physics.
+
+**Recommendation for iter17**: Set `HF_TOKEN` or pre-cache Llama model configs (see `trainval_data/README.md` for NousResearch mirror instructions) so the optimizer trains on all 15 experiments.
+
+---
+
 ## Error Analysis
 
 ### Per-Experiment Results (sorted by TTFT APE)
