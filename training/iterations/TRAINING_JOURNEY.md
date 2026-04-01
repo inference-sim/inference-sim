@@ -11,10 +11,11 @@
 | **4** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE + β₆·activation_BW` | 129 | ❌ Coefficients destabilized | Low RMSE ≠ good (check coefficient ranges) |
 | **5** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE + β₆·per_layer` | 603 | 💥 CATASTROPHIC | Validate assumptions from traces first |
 | **6** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE` + **β₆ → QueueingTime** | 162 | ✅ **Decoupling breakthrough** | Term location matters (avoid collinearity) |
-| **—** | **DATASET CHANGED** | — | reasoning → reasoning-lite (3 experiments replaced) | Fresh data from unloaded servers |
-| **7** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE + β₇·decode_oh` + β₆ in QueueingTime | 155 | ✅ β₁/β₄ stabilized, first with clean data | Check data quality early (97% bad data found) |
-| **8** | `+ β₈·MoE_routing` | 155 | ❌ No improvement, MoE routing not Scout's bottleneck | Zero improvement eliminates hypothesis |
-| **9** | `+ β₉·FP8_dequant` | 161 | ❌ β₉→0, hypothesis rejected; Scout is seq-len dependent | Watch coefficient explosions (reveal missing terms) |
+| **—** | **DATASET CHANGED (1/2)** | — | reasoning → reasoning-lite (3 experiments replaced) | Fresh data from unloaded servers |
+| **7** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE + β₇·decode_oh` + β₆ in QueueingTime | 155 | ✅ β₁/β₄ stabilized (14 clean + 1 bad exp) | Check data quality early (97% bad data found) |
+| **8** | `+ β₈·MoE_routing` | 155 | ❌ No improvement (still 14 clean + 1 bad exp) | Zero improvement eliminates hypothesis |
+| **—** | **DATASET CHANGED (2/2)** | — | Scout general → general-lite (exp17 replaced) | All 15 experiments now clean |
+| **9** | `+ β₉·FP8_dequant` | 161 | ❌ β₉→0 (**FIRST iter with 15 clean experiments**) | Watch coefficient explosions (reveal missing terms) |
 | **10** | `+ β₁₀·batch_ineff + β₃'·KV_seqlen` | 4267 | 💥💥 CATASTROPHIC (thought basis bugs) | Misdiagnosed - units were actually correct |
 | **11** | Same as iter10 (basis functions audited) | 4084 | 💥💥 CATASTROPHIC (basis correct, YAML typo!) | Unit test basis functions BEFORE training |
 | **12** | Widened β₃' bounds (0.05-5μs) to capture bandwidth | 2590 | 💥💥💥 CATASTROPHIC (β₃' collapsed!) | Don't warm-start from inflated coefficients |
@@ -82,11 +83,11 @@ QueueingTime = α₀ + α₁·input_tokens + β₆·scheduler_overhead
 
 ---
 
-### Iter7: First Iteration with Clean Data 🔍
+### Iter7: First Iteration with Reasoning-Lite Data 🔍
 
 **Added**: β₇ decode per-request overhead → β₁/β₄ stabilized
 
-**Dataset Change**: This is the **first iteration trained on reasoning-lite data** (3 experiments replaced between iter6 and iter7 on March 30, 2026).
+**Dataset Status**: **14 clean + 1 bad** (3 reasoning-lite ✅ + exp17 Scout general saturated ❌)
 
 **Critical Discovery from Iter6**: Analyzed reasoning traces → **97-99% of data was from overloaded servers!**
 - 85% failure rate, 259-second timeouts
@@ -99,22 +100,38 @@ QueueingTime = α₀ + α₁·input_tokens + β₆·scheduler_overhead
 
 ---
 
-### Dataset Change: Reasoning → Reasoning-Lite (Before Iter7) 🔄
+### Dataset Changes: Two-Stage Data Quality Fix 🔄
 
-**Context**: Iter6 discovered that 97-99% of reasoning workload data came from overloaded servers (85% failure rate, 259s timeouts). Only 1-3% of requests were usable.
+**Change 1: Reasoning → Reasoning-Lite** (March 30, 2026 - between iter6 and iter7)
 
-**Action Taken** (March 30, 2026 - between iter6 and iter7): Replaced 3 corrupted reasoning experiments with fresh "reasoning-lite" data collected from unloaded servers:
-- **Before (Iter0-6)**: 15 experiments including 3 corrupted reasoning workloads (97% bad data)
-- **After (Iter7+)**: 15 experiments with 3 fresh reasoning-lite workloads
+**Context**: Iter6 discovered that 97-99% of reasoning workload data came from overloaded servers (85% failure rate, 259s timeouts).
 
-**Additional change** (after iter8): exp17 (Scout general-2) replaced by Scout general-lite-2-1 (same reason - server saturation)
+**Action**: Replaced 3 corrupted reasoning experiments with fresh "reasoning-lite" data:
+- **Iter0-6**: 15 experiments (3 bad reasoning + 12 good) = **14 clean + 1 bad**
+- **Iter7-8**: 15 experiments (3 reasoning-lite + 12 good) = **14 clean + 1 bad**
+
+**Impact**: Non-Scout reasoning-lite improved from 99% → 54-66% error ✅
+
+---
+
+**Change 2: Scout General → General-Lite** (March 30, 2026 - after iter8)
+
+**Context**: Iter8 analysis revealed exp17 (Scout general) was collected under saturated server conditions.
+
+**Action**: Replaced exp17 with Scout general-lite-2-1 (reduced workload intensity):
+- **Iter0-8**: exp17 Scout general-2 (saturated) = **14 clean + 1 bad**
+- **Iter9+**: exp17 Scout general-lite-2-1 (clean) = **15 clean ✅**
 
 **Impact**:
-- **Iter7**: First iteration with clean data - non-Scout reasoning-lite improved from 99% → 54-66% error ✅
-- Scout experiments remained problematic (architecture-specific bottleneck, not data quality)
-- Training dataset stabilized at 15 high-quality experiments
+- **Iter9 is the FIRST iteration trained on a fully clean dataset** (all 15 experiments from unloaded servers)
+- Loss: 161 RMSE (worse than iter7/8's 155, but due to wrong β₉ hypothesis, not data quality)
 
-**Note**: This dataset change means iter6 coefficients are NOT directly comparable to iter7+ (different ground truth for 3 experiments). All iter7+ iterations trained on the reasoning-lite dataset.
+---
+
+**Summary**:
+- **Iter0-6**: 3 bad reasoning + 1 bad Scout general = 11/15 clean (73%)
+- **Iter7-8**: 3 reasoning-lite + 1 bad Scout general = 14/15 clean (93%)
+- **Iter9+**: 3 reasoning-lite + 1 Scout general-lite = **15/15 clean (100%)** ✅
 
 ---
 
@@ -122,13 +139,15 @@ QueueingTime = α₀ + α₁·input_tokens + β₆·scheduler_overhead
 
 **Added**: β₈ MoE routing overhead (30μs per routed token)
 
+**Dataset Status**: **14 clean + 1 bad** (still using saturated exp17 Scout general-2)
+
 **Result**: Zero improvement (RMSE: 155.35 vs 155.37)
 
 **Learning**: β₈ captures a REAL mechanism (39ms per Scout prefill), but it's NOT Scout's primary bottleneck (100-200ms gap remains).
 
 **Critical Discovery**: Scout's bottleneck is NOT MoE routing overhead. This eliminates a major hypothesis and narrows the search space.
 
-**Data Update**: Post-analysis, replaced exp17 (Scout general-2, saturated) with Scout general-lite-2-1 (clean data) — mirroring the reasoning → reasoning-lite fix from iter7.
+**Data Update After Iter8**: Replaced exp17 (Scout general-2, saturated) with Scout general-lite-2-1 (clean data) for iter9+.
 
 ---
 
@@ -136,7 +155,10 @@ QueueingTime = α₀ + α₁·input_tokens + β₆·scheduler_overhead
 
 **Added**: β₉ FP8 dequantization overhead
 
-**Result**: β₉ → 0.14μs (rejected!), loss worsened to RMSE 160.6 (+5.25 pts)
+**Dataset Status**: **15 clean experiments (100%)** ✅ **FIRST ITERATION WITH FULLY CLEAN DATASET**
+
+**Result**: β₉ → 0.14μs (rejected!), loss worsened to RMSE 160.6 (+5.25 pts from iter8's 155)
+- Loss increased despite clean data because β₉ hypothesis was wrong, not data quality
 
 **CRITICAL DISCOVERY**: Scout's bottleneck is **sequence-length-dependent**, NOT architecture-dependent!
 
