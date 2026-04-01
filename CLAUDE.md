@@ -275,6 +275,7 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 
 ## Recent Changes
 - Gateway queue with saturation-gated dispatch (#882): `SaturationDetector` interface (NeverSaturated, UtilizationDetector, ConcurrencyDetector), `GatewayQueue` with FIFO/Priority dispatch, completion-triggered dispatch, per-request `GatewayQueueDelay` metric, INV-1 conservation extended with `gateway_queue_depth` + `gateway_queue_shed`
+- fix(cluster): defer instance construction until after placement (#888, PR #892): `NodePool.gpu_type` is now pool-authoritative for GPU label on all instances (all backends); fully fixes the blackbox backend (uses alpha/beta coefficients, not `HWConfig`); for roofline/trained-roofline, `ModelHardwareConfig.HWConfig` is still loaded from `--gpu` at CLI time — see #893 for that follow-up. `NodeReadyEvent` constructs `InstanceSimulator` after deferred placement. `CachedSnapshotProvider.AddInstance` added for dynamic instance registration.
 - Phase 1B-2b: Per-tenant Jain fairness index in simulation output (#812, PR #881): `ComputePerTenantMetrics` + `printPerTenantMetrics` wired into `blis run` and `blis replay`; section absent for untenanted/legacy workloads
 - Phase 1B-2a: Deferred queue for batch/background requests (#810)
 - Phase 1B-1b: Per-tenant fair-share tracking and admission enforcement (#811)

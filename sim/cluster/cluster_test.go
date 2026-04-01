@@ -1812,3 +1812,200 @@ func TestClusterSimulator_FlowControl_Accessors_Disabled(t *testing.T) {
 		t.Errorf("GatewayQueueShed should be 0 when disabled, got %d", cs.GatewayQueueShed())
 	}
 }
+
+// TestNewClusterSimulator_UsesPoolGPUType verifies the observable hardware commitment:
+// when NodePools are configured, GPU() on each placed instance reflects the pool's
+// gpu_type (authoritative), not the CLI --gpu flag.
+//
+// GPU() is a public behavioral API that exposes the hardware commitment made at construction.
+// The refactor-survival test passes: any reimplementation preserving SC-004 behavior
+// ("pool gpu_type overrides CLI --gpu when NodePools are present") would produce the same
+// GPU() result. The counter-assertion (no NodePools → CLI flag preserved) confirms the
+// override is specific to the NodePools construction path, not a general override of the CLI flag.
+func TestNewClusterSimulator_UsesPoolGPUType(t *testing.T) {
+	// GIVEN: CLI --gpu flag = "H100", pool gpu_type = "A100" — they differ intentionally.
+	sharedConfig := sim.SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0),
+		KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+		BatchConfig:         sim.NewBatchConfig(4, 2048, 0),
+		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+	}
+
+	// WHEN: NodePools path — pool is authoritative (SC-004).
+	withPools := DeploymentConfig{
+		SimConfig:    sharedConfig,
+		NumInstances: 2,
+		NodePools: []NodePoolConfig{
+			{Name: "a100-pool", GPUType: "A100", GPUsPerNode: 8, InitialNodes: 2, MaxNodes: 2, GPUMemoryGiB: 80},
+		},
+		InstanceLifecycle: InstanceLifecycleConfig{},
+	}
+	cs := NewClusterSimulator(withPools, nil, nil)
+	if len(cs.instances) != 2 {
+		t.Fatalf("expected 2 placed instances, got %d", len(cs.instances))
+	}
+	// THEN: GPU() = "A100" (pool gpu_type overrides CLI --gpu flag "H100").
+	for _, inst := range cs.instances {
+		if got := inst.GPU(); got != "A100" {
+			t.Errorf("pool path: instance %s: GPU() = %q, want %q (pool gpu_type must override CLI --gpu)", inst.ID(), got, "A100")
+		}
+	}
+
+	// Counter-assertion: without NodePools, CLI --gpu flag "H100" is preserved unchanged.
+	// This confirms the pool override is specific to the NodePools construction path.
+	withoutPools := DeploymentConfig{
+		SimConfig:         sharedConfig,
+		NumInstances:      2,
+		InstanceLifecycle: InstanceLifecycleConfig{},
+	}
+	cs2 := NewClusterSimulator(withoutPools, nil, nil)
+	if len(cs2.instances) != 2 {
+		t.Fatalf("counter-assertion: expected 2 instances, got %d", len(cs2.instances))
+	}
+	for _, inst := range cs2.instances {
+		if got := inst.GPU(); got != "H100" {
+			t.Errorf("no-pools path: instance %s: GPU() = %q, want %q (CLI --gpu must be preserved when no NodePools)", inst.ID(), got, "H100")
+		}
+	}
+}
+
+// TestNewClusterSimulator_NoNodePools_DeterminismPreserved verifies INV-6:
+// when NodePools is empty, two runs with the same seed produce byte-identical scalar metrics.
+func TestNewClusterSimulator_NoNodePools_DeterminismPreserved(t *testing.T) {
+	// NodePools intentionally empty (not set in newTestDeploymentConfig)
+	config := newTestDeploymentConfig(2)
+
+	cs1 := NewClusterSimulator(config, newTestRequests(100), nil)
+	mustRun(t, cs1)
+
+	cs2 := NewClusterSimulator(config, newTestRequests(100), nil)
+	mustRun(t, cs2)
+
+	m1 := cs1.AggregatedMetrics()
+	m2 := cs2.AggregatedMetrics()
+
+	// Compare all scalar fields (INV-6: same seed must produce identical results).
+	if m1.CompletedRequests != m2.CompletedRequests {
+		t.Errorf("CompletedRequests: run1=%d, run2=%d (INV-6 violation)", m1.CompletedRequests, m2.CompletedRequests)
+	}
+	if m1.TotalInputTokens != m2.TotalInputTokens {
+		t.Errorf("TotalInputTokens: run1=%d, run2=%d (INV-6 violation)", m1.TotalInputTokens, m2.TotalInputTokens)
+	}
+	if m1.TotalOutputTokens != m2.TotalOutputTokens {
+		t.Errorf("TotalOutputTokens: run1=%d, run2=%d (INV-6 violation)", m1.TotalOutputTokens, m2.TotalOutputTokens)
+	}
+	if m1.SimEndedTime != m2.SimEndedTime {
+		t.Errorf("SimEndedTime: run1=%d, run2=%d (INV-6 violation)", m1.SimEndedTime, m2.SimEndedTime)
+	}
+	if m1.PeakKVBlocksUsed != m2.PeakKVBlocksUsed {
+		t.Errorf("PeakKVBlocksUsed: run1=%d, run2=%d (INV-6 violation)", m1.PeakKVBlocksUsed, m2.PeakKVBlocksUsed)
+	}
+	if m1.PreemptionCount != m2.PreemptionCount {
+		t.Errorf("PreemptionCount: run1=%d, run2=%d (INV-6 violation)", m1.PreemptionCount, m2.PreemptionCount)
+	}
+	if m1.KVAllocationFailures != m2.KVAllocationFailures {
+		t.Errorf("KVAllocationFailures: run1=%d, run2=%d (INV-6 violation)", m1.KVAllocationFailures, m2.KVAllocationFailures)
+	}
+	if m1.StillQueued != m2.StillQueued {
+		t.Errorf("StillQueued: run1=%d, run2=%d (INV-6 violation)", m1.StillQueued, m2.StillQueued)
+	}
+	if m1.StillRunning != m2.StillRunning {
+		t.Errorf("StillRunning: run1=%d, run2=%d (INV-6 violation)", m1.StillRunning, m2.StillRunning)
+	}
+	if m1.DroppedUnservable != m2.DroppedUnservable {
+		t.Errorf("DroppedUnservable: run1=%d, run2=%d (INV-6 violation)", m1.DroppedUnservable, m2.DroppedUnservable)
+	}
+	if m1.LengthCappedRequests != m2.LengthCappedRequests {
+		t.Errorf("LengthCappedRequests: run1=%d, run2=%d (INV-6 violation)", m1.LengthCappedRequests, m2.LengthCappedRequests)
+	}
+	if m1.TimedOutRequests != m2.TimedOutRequests {
+		t.Errorf("TimedOutRequests: run1=%d, run2=%d (INV-6 violation)", m1.TimedOutRequests, m2.TimedOutRequests)
+	}
+	if m1.TTFTSum != m2.TTFTSum {
+		t.Errorf("TTFTSum: run1=%d, run2=%d (INV-6 violation)", m1.TTFTSum, m2.TTFTSum)
+	}
+	if m1.ITLSum != m2.ITLSum {
+		t.Errorf("ITLSum: run1=%d, run2=%d (INV-6 violation)", m1.ITLSum, m2.ITLSum)
+	}
+}
+
+// TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType verifies US2 deferred construction:
+// GIVEN a cluster with NodePools but InitialNodes=0 (no initial capacity), all instances start pending.
+// WHEN a NodeReadyEvent fires (node provisioned and marked ready).
+// THEN the newly constructed instance uses the pool's GPU type (SC-003: pool-authoritative).
+// THEN the instance is registered with the snapshot provider and is routable (SC-003).
+func TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType(t *testing.T) {
+	// GIVEN: CLI --gpu flag = "H100", pool gpu_type = "A100" — they differ intentionally.
+	// InitialNodes=0 means no nodes at startup → all instances deferred (pending).
+	cfg := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             1_000_000,
+			Seed:                42,
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0),
+			KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(4, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		},
+		NumInstances: 2,
+		NodePools: []NodePoolConfig{
+			{
+				Name:         "a100-pool",
+				GPUType:      "A100",
+				GPUsPerNode:  8,
+				InitialNodes: 0, // no initial capacity — all instances start pending
+				MaxNodes:     2,
+				GPUMemoryGiB: 80,
+			},
+		},
+	}
+
+	cs := NewClusterSimulator(cfg, nil, nil)
+
+	// Precondition: all instances are pending (no capacity at startup).
+	if len(cs.instances) != 0 {
+		t.Fatalf("precondition failed: expected 0 placed instances at startup (InitialNodes=0), got %d", len(cs.instances))
+	}
+	if cs.placement == nil {
+		t.Fatal("precondition failed: placement must be non-nil when NodePools are configured")
+	}
+
+	// Provision a node in the pool (sets it to Provisioning state).
+	node, _ := cs.placement.ProvisionNode("a100-pool", 0)
+
+	// Fire NodeReadyEvent directly (simulate provisioning delay elapsing).
+	event := &NodeReadyEvent{timestamp: 0, nodeID: node.ID}
+	event.Execute(cs)
+
+	// THEN: instances grew — deferred construction fired.
+	if len(cs.instances) == 0 {
+		t.Fatal("NodeReadyEvent.Execute did not construct any deferred instances")
+	}
+
+	// THEN: pool GPU type ("A100") is used, not CLI --gpu ("H100").
+	for _, inst := range cs.instances {
+		if got := inst.GPU(); got != "A100" {
+			t.Errorf("deferred instance %s: GPU() = %q, want %q (pool gpu_type must override CLI --gpu in deferred path)",
+				inst.ID(), got, "A100")
+		}
+		// Verify scheduleInstanceLoadedEvent fired and instance reached Active state
+		// (WarmUpRequestCount=0 and loading delay=0, so Loading → Active immediately).
+		if got := inst.State; got != InstanceStateActive {
+			t.Errorf("instance %s: State = %v, want InstanceStateActive (scheduleInstanceLoadedEvent must fire)", inst.ID(), got)
+		}
+	}
+
+	// THEN: instance is registered with snapshotProvider and routable (SC-003).
+	// Verify AddInstance was called by querying Snapshot — a registered instance returns
+	// a snapshot with matching ID; an unregistered instance would panic or return wrong ID.
+	if cs.snapshotProvider != nil {
+		for _, inst := range cs.instances {
+			snap := cs.snapshotProvider.Snapshot(inst.ID(), cs.clock)
+			if snap.ID != string(inst.ID()) {
+				t.Errorf("instance %s not registered with snapshotProvider: Snapshot().ID = %q, want %q (deferred instance must be routable)",
+					inst.ID(), snap.ID, string(inst.ID()))
+			}
+		}
+	}
+}

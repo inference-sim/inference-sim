@@ -116,25 +116,9 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		prePoolMembership = BuildPoolMembershipFromIndices(config.NumInstances, config.PrefillInstances, config.DecodeInstances)
 	}
 
-	instances := make([]*InstanceSimulator, config.NumInstances)
-	for idx := range instances {
-		id := InstanceID(fmt.Sprintf("instance_%d", idx))
-		role := PoolRole(0)
-		if prePoolMembership != nil {
-			role = prePoolMembership[string(id)]
-		}
-		simCfg := config.resolveConfigForRole(role)
-		inst := NewInstanceSimulator(id, simCfg)
-		// Populate Model from config so multi-model routing filter works correctly (FR-010).
-		// Empty string = single-model mode (backward-compatible).
-		inst.Model = config.Model
-		instances[idx] = inst
-	}
-	// Build instance map for snapshot provider
-	instanceMap := make(map[InstanceID]*InstanceSimulator, len(instances))
-	for _, inst := range instances {
-		instanceMap[inst.ID()] = inst
-	}
+	// instances and instanceMap are populated by the unified construction+placement loop below.
+	// Declared here so they are available throughout NewClusterSimulator.
+	instanceMap := make(map[InstanceID]*InstanceSimulator, config.NumInstances)
 
 	// Initialize trace collector if tracing is enabled (BC-1: nil when none)
 	var simTrace *trace.SimulationTrace
@@ -164,14 +148,14 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 
 	cs := &ClusterSimulator{
 		config:               config,
-		instances:            instances,
+		instances:            make([]*InstanceSimulator, 0, config.NumInstances),
 		rng:                  rng,
 		preGeneratedRequests: requests,
 		clusterEvents:        make(ClusterEventQueue, 0),
 		admissionLatency:     config.AdmissionLatency,
 		routingLatency:       config.RoutingLatency,
 		admissionPolicy:      admissionPolicy,
-		snapshotProvider:     NewCachedSnapshotProvider(instanceMap, newObservabilityConfig(config.SnapshotRefreshInterval)),
+		snapshotProvider:     nil, // set after unified construction loop below
 		routingPolicy:        sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem(sim.SubsystemRouter)),
 		trace:                simTrace,
 		inFlightRequests:     make(map[string]int, config.NumInstances),
@@ -205,48 +189,81 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			config.PrefillInstances, config.DecodeInstances, config.PDDecider)
 	}
 
-	// Initialize warmUpRemaining and state for all instances (Phase 1A).
-	// Must happen before placement logic to ensure backward-compat mode (no NodePools) also gets warm-up.
-	for _, inst := range cs.instances {
-		inst.warmUpRemaining = config.InstanceLifecycle.WarmUpRequestCount
-		if inst.warmUpRemaining > 0 {
-			inst.TransitionTo(InstanceStateWarmingUp)
-		} else {
-			inst.TransitionTo(InstanceStateActive)
-		}
-	}
-
 	// Phase 1A: initialize PlacementManager when node pools are configured.
-	// When NodePools is empty, placement is a no-op (backward-compat).
+	// Must happen BEFORE the unified construction loop so cs.placement is set.
 	if len(config.NodePools) > 0 {
 		provisionRng := rng.ForSubsystem(subsystemNodeProvisioning)
 		loadingRng := rng.ForSubsystem(subsystemInstanceLoading)
 		cs.placement = NewPlacementManager(config.NodePools, provisionRng, loadingRng, 0)
+	}
 
-		// Place each instance onto a node (or mark pending if no capacity).
-		// TP=0 in ModelHardwareConfig means "not configured" — treat as 1 GPU per instance.
-		// This matches the existing behavior for configs that don't specify TP.
-		gpuType := config.GPU
-		tpDegree := config.TP
-		if tpDegree < 1 {
-			tpDegree = 1 // default to TP=1 when not explicitly set (R3: defensive correction with comment)
+	// Unified construction+placement loop: construct each InstanceSimulator AFTER placement
+	// so the pool's GPU type (authoritative) is used instead of the CLI flag (SC-004).
+	// TP=0 in ModelHardwareConfig means "not configured" — treat as 1 GPU per instance.
+	tpDegree := config.TP
+	if tpDegree < 1 {
+		tpDegree = 1 // default to TP=1 when not explicitly set (R3: defensive correction with comment)
+	}
+	for idx := 0; idx < config.NumInstances; idx++ {
+		id := InstanceID(fmt.Sprintf("instance_%d", idx))
+		role := PoolRole(0)
+		if prePoolMembership != nil {
+			role = prePoolMembership[string(id)]
 		}
-		for _, inst := range cs.instances {
-			nodeID, gpuIDs, err := cs.placement.PlaceInstance(inst.ID(), inst.Model, gpuType, tpDegree)
+		simCfg := config.resolveConfigForRole(role)
+
+		if cs.placement != nil {
+			// NodePools path: placement determines GPU type (authoritative).
+			// Pass "" as gpuType so PlacementManager selects any available pool
+			// (the pool's gpu_type is the authoritative source, not the CLI --gpu flag).
+			nodeID, gpuIDs, matchedGPUType, err := cs.placement.PlaceInstance(id, config.Model, "", tpDegree)
 			if err != nil {
-				// No capacity — instance stays in Scheduling (pending) state
-				inst.TransitionTo(InstanceStateScheduling)
-				cs.placement.AddPending(inst.ID(), inst.Model, gpuType, tpDegree)
-			} else {
-				inst.nodeID = nodeID
-				inst.allocatedGPUIDs = gpuIDs
-				inst.warmUpRemaining = config.InstanceLifecycle.WarmUpRequestCount
-				// Schedule loading event; transitions Loading → WarmingUp/Active after delay
-				inst.TransitionTo(InstanceStateLoading)
-				cs.scheduleInstanceLoadedEvent(inst)
+				// No capacity — defer construction until NodeReadyEvent.
+				// Pass "" as gpuType (any pool) to match AddPending's placement semantics.
+				cs.placement.AddPending(id, config.Model, "", tpDegree, simCfg)
+				continue
 			}
+			// Placement succeeded: use pool's GPU type (SC-004: pool-authoritative, not CLI flag).
+			// NOTE: This updates ModelHardwareConfig.GPU (the GPU label) for all backends.
+			// For the blackbox backend this is sufficient — it uses alpha/beta coefficients from
+			// LatencyCoeffs, not HWConfig, so the label is the only per-pool field that needs updating.
+			// For roofline/trained-roofline backends, ModelHardwareConfig.HWConfig (TFlopsPeak,
+			// BwPeakTBs etc.) is loaded at CLI time from --gpu and is not reloaded here — those
+			// backends still use CLI GPU hardware coefficients for roofline math. See issue #893.
+			simCfg.GPU = matchedGPUType
+			inst := NewInstanceSimulator(id, simCfg)
+			inst.Model = config.Model
+			inst.nodeID = nodeID
+			inst.allocatedGPUIDs = gpuIDs
+			inst.warmUpRemaining = config.InstanceLifecycle.WarmUpRequestCount
+			inst.TransitionTo(InstanceStateLoading)
+			cs.scheduleInstanceLoadedEvent(inst)
+			cs.instances = append(cs.instances, inst)
+			instanceMap[id] = inst
+			cs.inFlightRequests[string(id)] = 0
+		} else {
+			// No NodePools: the CLI --gpu flag (config.ModelHardwareConfig.GPU, accessed via
+			// DeploymentConfig's embedded SimConfig) is the authoritative source (backward-compat).
+			// simCfg.GPU is already set — resolveConfigForRole returns config.SimConfig as-is
+			// for the default role, preserving ModelHardwareConfig.GPU from the CLI flag.
+			inst := NewInstanceSimulator(id, simCfg)
+			inst.Model = config.Model
+			inst.warmUpRemaining = config.InstanceLifecycle.WarmUpRequestCount
+			if inst.warmUpRemaining > 0 {
+				inst.TransitionTo(InstanceStateWarmingUp)
+			} else {
+				inst.TransitionTo(InstanceStateActive)
+			}
+			cs.instances = append(cs.instances, inst)
+			instanceMap[id] = inst
+			cs.inFlightRequests[string(id)] = 0
 		}
 	}
+
+	// Initialize snapshot provider with exactly the placed instances.
+	// Deferred instances are registered via CachedSnapshotProvider.AddInstance
+	// when NodeReadyEvent.Execute constructs them (Phase 4, T017).
+	cs.snapshotProvider = NewCachedSnapshotProvider(instanceMap, newObservabilityConfig(config.SnapshotRefreshInterval))
 
 	// Phase 1B-2a: initialize TenantTracker when TenantBudgets is configured (issue #811).
 	// totalCapacity = NumInstances × MaxRunningReqs (batch size proxy for cluster-wide capacity).

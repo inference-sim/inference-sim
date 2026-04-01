@@ -236,6 +236,41 @@ func TestNewObservabilityConfig_NonZeroInterval_AllFieldsPeriodic(t *testing.T) 
 	}
 }
 
+// TestCachedSnapshotProvider_AddInstance verifies that AddInstance dynamically
+// registers a new instance so that subsequent Snapshot calls return a valid snapshot,
+// and panics when called again with the same ID.
+func TestCachedSnapshotProvider_AddInstance(t *testing.T) {
+	// GIVEN a CachedSnapshotProvider initialized with one instance
+	inst := newTestInstance("existing", 100)
+	instances := map[InstanceID]*InstanceSimulator{"existing": inst}
+	provider := NewCachedSnapshotProvider(instances, DefaultObservabilityConfig())
+
+	// WHEN AddInstance is called with a new ID
+	newInst := newTestInstance("new-inst", 64)
+	provider.AddInstance("new-inst", newInst)
+
+	// THEN subsequent Snapshot calls return a valid (non-zero ID) snapshot for the new instance
+	snap := provider.Snapshot("new-inst", 0)
+	if snap.ID != "new-inst" {
+		t.Errorf("Snapshot after AddInstance: ID = %q, want %q", snap.ID, "new-inst")
+	}
+
+	// WHEN AddInstance is called again with the same ID
+	// THEN it panics
+	panicked := false
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				panicked = true
+			}
+		}()
+		provider.AddInstance("new-inst", newInst)
+	}()
+	if !panicked {
+		t.Error("AddInstance with duplicate ID did not panic")
+	}
+}
+
 // TestCachedSnapshotProvider_ImmediateAlwaysReadsLive verifies Immediate mode
 // re-reads from the instance on every Snapshot() call.
 func TestCachedSnapshotProvider_ImmediateAlwaysReadsLive(t *testing.T) {
