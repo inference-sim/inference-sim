@@ -1,14 +1,96 @@
 # Iteration 15: Findings and Principles
 
-## Summary
+## Executive Summary
 
-Iteration 15 attempted to address catastrophic failures (iter10-14 loss: 2000-4000%) by introducing **three-axis correction**: decode amplification (β₁, β₄), MoE non-compute (β₈), and prefill batching penalty (β₉). The iteration **FAILED catastrophically** - loss INCREASED from 2319% (iter14) to **6538%** (iter15), a 182% deterioration.
+**Iteration 15 FAILED catastrophically** - loss INCREASED from 2319% (iter14) to **6538%** (182% worse).
 
-**Key finding**: **Scaling broken roofline estimates does not fix them**. The optimizer rejected the two new terms (β₈, β₉ collapsed to ~0) and used decode amplification (β₁, β₄ ≈ 6.5), but the model still failed. This reveals that roofline-based basis functions have fundamentally wrong **functional forms**, not just wrong magnitudes.
+The iteration attempted a "three-axis correction" strategy:
+1. Decode amplification (β₁, β₄ at 5-15×, 3-8×)
+2. MoE non-compute term (β₈, NEW)
+3. Prefill batching penalty (β₉, NEW)
 
-**Only positive signal**: Reasoning-lite experiments (decode-heavy workloads) returned valid results with acceptable errors (30-668% vs 100% timeout in iter14), confirming decode amplification helps decode-dominated latencies.
+**What actually happened**:
+- ✅ Decode amplification was USED (β₁=6.4, β₄=6.5) - helped reasoning-lite (E2E 75-180%)
+- ❌ MoE non-compute was REJECTED (β₈≈0) - Scout errors INCREASED (527% → 1068%)
+- ❌ Prefill batching was REJECTED (β₉≈0) - Dense errors remain catastrophic (1300-4000%)
 
-**Root cause**: Attempting to fix three independent systematic errors (decode underestimation, MoE underestimation, dense overestimation) with multiplicative scaling factors (β × roofline_term) is fundamentally flawed. The roofline calculations themselves are orders of magnitude wrong, and scaling cannot correct structural mismatches with vLLM's execution model.
+### Hypothesis Validation Results
+
+| Hypothesis | Verdict | Key Finding |
+|------------|---------|-------------|
+| **H-main** (Three-axis correction) | ❌ REJECTED | Loss increased 182%, all metrics worse |
+| **H-ablation-decode** | ⚠️ PARTIAL | Decode amplification helps decode-heavy, but can't fix prefill |
+| **H-ablation-moe** | ❌ REJECTED | β₈ collapsed to 0, MoE FLOPs likely wrong |
+| **H-ablation-batching** | ❌ REJECTED | β₉ collapsed to 0, batch heterogeneity not the issue |
+| **H-boundary** (cold-start) | ❌ REJECTED | Cold-start 4219pp worse than warm-start |
+| **H-error-pattern** | ⚠️ PARTIAL | Only reasoning-lite improved (30-668%), Scout/dense got worse |
+| **H-robustness** | ⚠️ PARTIAL | 6/10 coefficients in range, but 4/10 collapsed (β₃,β₆,β₇,β₈,β₉) |
+
+**Overall**: 0/7 confirmed, 3/7 partial, 4/7 rejected.
+
+### Root Cause: Scaling Broken Formulas Doesn't Fix Them
+
+The fundamental error in iter15 was attempting to **FIX roofline estimates by scaling them** (β × roofline_term), rather than **REPLACING them with vLLM-accurate formulas**.
+
+**Evidence**:
+1. **Prefill**: β₀=0.092 scales down roofline by 11×, but dense TTFT is still 13-40× wrong → base roofline is 140-440× off
+2. **MoE**: β₈ (non-compute correction) rejected by optimizer → MoE FLOPs calculation itself is wrong
+3. **Batching**: β₉ (heterogeneity penalty) rejected by optimizer → dense overestimation is NOT about batching
+
+**You cannot fix a broken formula by multiplying it by a constant.**
+
+### Critical Learnings
+
+**✅ What Worked:**
+
+**Decode amplification helps decode-heavy workloads**:
+- Reasoning-lite E2E APE: 75-180% (vs 100% timeout in iter14)
+- β₁=6.4, β₄=6.5 amplify decode time → prevents underestimation for long outputs
+- **Limitation**: Only helps when decode DOMINATES total latency (256-512 output tokens)
+
+**❌ What Failed:**
+
+1. **Roofline-based prefill model is fundamentally broken**:
+   - Dense TTFT APE: 1300-4000% (13-40× too fast)
+   - β₀=0.092 provides 11× scale-down, still insufficient
+   - Pattern: Shorter prompts (64 tokens) have WORSE errors than longer prompts (512 tokens)
+   - Root cause: Base roofline prefill calculation (FLOPs or memory formula) is orders of magnitude wrong
+
+2. **MoE non-compute hypothesis was wrong**:
+   - β₈ collapsed to 0 (optimizer rejected it)
+   - Scout errors INCREASED from 527% (iter14) to 1068% (iter15)
+   - Alternative hypothesis: MoE FLOPs calculation is wrong (active vs total experts? load imbalance in FLOPs?)
+
+3. **Prefill batching hypothesis was wrong**:
+   - β₉ collapsed to 0 (optimizer rejected it)
+   - Dense roleplay (low heterogeneity) has WORSE errors than dense codegen (high heterogeneity)
+   - Alternative hypothesis: Dense overestimation is due to wrong BASE prefill FLOPs, not batching
+
+4. **Cold-start in 10D space is inefficient**:
+   - Loss 6538% (cold-start) vs 2319% (iter14 warm-start) - 2.8× worse
+   - 2000 trials in 10D → only 200 per dimension (sparse coverage)
+   - Optimizer rejected 5/10 new coefficients (β₃,β₆,β₇,β₈,β₉)
+
+5. **Ignored iter9 baseline** (critical oversight):
+   - **Iter9 was LAST STABLE STATE** (161% loss) on SAME dataset as iter15
+   - Iter15 compared cold-start to iter7 (wrong dataset), ignored iter9 entirely
+   - Should have warm-started from iter9 (5 proven coefficients + same dataset)
+
+### Quick Reference: Next Steps for Iter16
+
+**Priority 1 (MUST DO)**: **Stop scaling roofline. Start profiling vLLM.**
+
+1. **Profile real vLLM prefill latency** → Replace `β₀ × roofline` with empirical model
+2. **Profile real vLLM decode latency** → Validate β₁, β₄ functional forms
+3. **Investigate MoE FLOPs calculation** → Fix expert counting (active vs total)
+
+**Priority 2**: Remove optimizer-rejected terms (β₃,β₆,β₇,β₈,β₉) → **5 coefficients**
+
+**Priority 3**: Warm-start from **iter9** (not iter7, not cold-start)
+- Iter9: 161% loss, 15 clean experiments (SAME dataset as iter16)
+- Proven coefficients: β₀=0.191, β₁=1.108, β₄=0.705, β₅=27.5, β₇=0.027
+
+**Expected outcome**: Loss 6538% → <500% (13× improvement)
 
 ---
 
