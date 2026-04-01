@@ -170,7 +170,7 @@ Full details: see [`docs/contributing/standards/principles.md`](docs/contributin
 
 ### Current Implementation Focus
 
-Composable Scorer Framework completed: PR17 (scorer framework + stateless scorers) and PR18 (prefix-affinity scorer + router-side cache). Default weighted routing profile: `prefix-affinity:3,queue-depth:2,kv-utilization:2` (llm-d parity).
+Composable Scorer Framework completed: PR17 (scorer framework + stateless scorers) and PR18 (prefix-affinity scorer + router-side cache). Default weighted routing profile: `prefix-affinity:3,queue-depth:2,kv-utilization:2` (llm-d parity). Precise prefix scoring (#883): `precise-prefix-cache` scorer queries actual instance KV cache state with min-max normalization (llm-d production parity); `no-hit-lru` scorer distributes cold requests to least-recently-used endpoints. Valid scorer names: `prefix-affinity`, `precise-prefix-cache`, `no-hit-lru`, `queue-depth`, `kv-utilization`, `load-balance`.
 
 Phase 0 workload unification complete (see issue #420): W0-1 (spec v2 schema + SLO tiers), W0-2 (binary rename + converters), W0-3 (cohort population dynamics), W0-4 (legacy retirement). All workload generation now flows through `sim/workload/GenerateRequests()`. SLO tiers: critical, standard, sheddable, batch, background. Arrival processes: poisson, gamma, weibull, constant. CLI binary renamed from `simulation_worker` to `blis`.
 
@@ -274,6 +274,7 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 - In-memory node/GPU inventory maps; no external storage
 
 ## Recent Changes
+- Precise prefix cache scoring (#883): `precise-prefix-cache` and `no-hit-lru` scorers query actual instance KV cache state via `CacheQueryFn` threading through `NewRoutingPolicy`. `GetCachedBlockCount` accessor on `InstanceSimulator`. Cluster layer builds `cacheQueryFn` from instances, including deferred NodePool instances.
 - Gateway queue with saturation-gated dispatch (#882): `SaturationDetector` interface (NeverSaturated, UtilizationDetector, ConcurrencyDetector), `GatewayQueue` with FIFO/Priority dispatch, completion-triggered dispatch, per-request `GatewayQueueDelay` metric, INV-1 conservation extended with `gateway_queue_depth` + `gateway_queue_shed`
 - fix(cluster): defer instance construction until after placement (#888, PR #892): `NodePool.gpu_type` is now pool-authoritative for GPU label on all instances (all backends); fully fixes the blackbox backend (uses alpha/beta coefficients, not `HWConfig`); for roofline/trained-roofline, `ModelHardwareConfig.HWConfig` is still loaded from `--gpu` at CLI time — see #893 for that follow-up. `NodeReadyEvent` constructs `InstanceSimulator` after deferred placement. `CachedSnapshotProvider.AddInstance` added for dynamic instance registration.
 - Phase 1B-2b: Per-tenant Jain fairness index in simulation output (#812, PR #881): `ComputePerTenantMetrics` + `printPerTenantMetrics` wired into `blis run` and `blis replay`; section absent for untenanted/legacy workloads

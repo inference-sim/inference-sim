@@ -18,12 +18,19 @@ type ScorerConfig struct {
 // Stateless scorers may ignore it.
 type scorerFunc func(req *Request, snapshots []RoutingSnapshot) map[string]float64
 
+// CacheQueryFn maps instance IDs to functions that return the count of
+// consecutive cached prefix blocks for given tokens. Used by precise
+// prefix cache scoring. Nil for sim-level tests without cluster instances.
+type CacheQueryFn map[string]func([]int) int
+
 // validScorerNames maps scorer names to validity. Unexported to prevent mutation (antipattern rule 8).
 var validScorerNames = map[string]bool{
-	"prefix-affinity": true,
-	"queue-depth":     true,
-	"kv-utilization":  true,
-	"load-balance":    true,
+	"prefix-affinity":      true,
+	"precise-prefix-cache": true,
+	"no-hit-lru":           true,
+	"queue-depth":          true,
+	"kv-utilization":       true,
+	"load-balance":         true,
 }
 
 // IsValidScorer returns true if name is a recognized scorer.
@@ -98,10 +105,14 @@ func normalizeScorerWeights(configs []ScorerConfig) []float64 {
 // Returns (scorer, observer) where observer is nil for stateless scorers.
 // blockSize is used by stateful scorers (prefix-affinity) for block hash computation.
 // Panics on unknown name (validation should catch this before reaching here).
-func newScorerWithObserver(name string, blockSize int) (scorerFunc, observerFunc) {
+func newScorerWithObserver(name string, blockSize int, cacheQueryFn CacheQueryFn) (scorerFunc, observerFunc) {
 	switch name {
 	case "prefix-affinity":
 		return newPrefixAffinityScorer(blockSize)
+	case "precise-prefix-cache":
+		return newPrecisePrefixCacheScorer(cacheQueryFn)
+	case "no-hit-lru":
+		return newNoHitLRUScorer(cacheQueryFn)
 	case "queue-depth":
 		return scoreQueueDepth, nil
 	case "kv-utilization":

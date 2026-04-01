@@ -73,6 +73,14 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 		cs.instances = append(cs.instances, inst)
 		cs.inFlightRequests[string(p.id)] = 0
 
+		// Register with cacheQueryFn for precise prefix scoring (deferred instances).
+		if cs.cacheQueryFn != nil {
+			inst := inst // capture for closure
+			cs.cacheQueryFn[string(p.id)] = func(tokens []int) int {
+				return inst.GetCachedBlockCount(tokens)
+			}
+		}
+
 		// Wire OnRequestDone callback — mirror startup path in NewClusterSimulator (R4).
 		onRequestDone := cs.sessionCallback
 		if onRequestDone != nil || cs.tenantTracker != nil {

@@ -152,9 +152,11 @@ type observerFunc func(req *Request, targetInstance string)
 // with configurable weights: composite = Σ clamp(s_i) × w_i, then argmax.
 //
 // Available scorers: prefix-affinity (proportional prefix match ratio),
+// precise-prefix-cache (min-max normalization of actual KV cache hits),
+// no-hit-lru (cold request distribution to least-recently-used instances),
 // queue-depth (min-max normalization of EffectiveLoad),
 // kv-utilization (1 - KVUtilization), load-balance (1/(1 + EffectiveLoad)).
-// See sim/routing_scorers.go and sim/routing_prefix_scorer.go for implementations.
+// See sim/routing_*.go for scorer implementations.
 //
 // Stateful scorers (prefix-affinity) register observers that update internal
 // state after each routing decision. Observers are called after argmax selection.
@@ -265,7 +267,7 @@ func (ab *AlwaysBusiest) Route(_ *Request, state *RouterState) RoutingDecision {
 // The rng parameter enables random tie-breaking for least-loaded and weighted policies;
 // nil preserves positional tie-breaking. Ignored by round-robin and always-busiest.
 // Panics on unrecognized names.
-func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand) RoutingPolicy {
+func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand, cacheQueryFn CacheQueryFn) RoutingPolicy {
 	if !IsValidRoutingPolicy(name) {
 		panic(fmt.Sprintf("unknown routing policy %q", name))
 	}
@@ -281,7 +283,7 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64
 		scorers := make([]scorerFunc, len(scorerConfigs))
 		var observers []observerFunc
 		for i, cfg := range scorerConfigs {
-			scorer, obs := newScorerWithObserver(cfg.Name, int(blockSize))
+			scorer, obs := newScorerWithObserver(cfg.Name, int(blockSize), cacheQueryFn)
 			scorers[i] = scorer
 			if obs != nil {
 				observers = append(observers, obs)
