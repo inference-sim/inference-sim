@@ -67,49 +67,52 @@ def get_python_executable() -> str:
 # DETERMINISTIC DATA SPLITS (NEVER CHANGE THESE!)
 # ============================================================================
 
-# CV-1: Leave-One-Model-Out (Dense → MoE)
-# Test: Can model trained on dense architectures generalize to MoE?
+# CV-1: Leave-Yi-and-Mistral-Out (Dense model family generalization)
+# Test: Can model trained on Llama+Qwen+Scout generalize to Yi and Mistral?
 CV1_TRAIN_EXPERIMENTS = [
-    # Dense models only (11 experiments)
+    # Llama family (6 experiments: 4 Llama-2 + 2 Llama-3.1)
     "20260217-155451-llama-2-7b-tp1-codegen",
     "20260217-162547-llama-2-7b-tp1-roleplay",
-    "20260217-170634-llama-2-7b-tp1-reasoning",
     "20260217-231439-llama-2-7b-tp1-general",
+    "67-llama-2-7b-hf-tp1-reasoning-lite-1-1",
     "60-llama-3-1-70b-tp4-general-lite-4-1",
     "61-llama-3-1-70b-tp4-codegen-4-1",
-    "62-mistral-nemo-12b-tp2-general-lite-2-1",
-    "63-mistral-nemo-12b-tp1-codegen-1-1",
+    # Qwen family (2 experiments)
     "64-qwen2-5-7b-instruct-tp1-roleplay-1-1",
-    "65-01-ai-yi-34b-tp2-general-lite-2-1",
-    "66-qwen2-5-7b-instruct-tp1-reasoning-1-1",
+    "66-qwen2-5-7b-instruct-tp1-reasoning-lite-1-1",
+    # Scout MoE (4 experiments - ensures MoE-specific terms are trainable)
+    "17-llama-4-scout-17b-16e-tp2-general-lite-2-1",
+    "20-llama-4-scout-17b-16e-tp2-codegen-2",
+    "21-llama-4-scout-17b-16e-tp2-roleplay-2",
+    "48-llama-4-scout-17b-16e-tp2-reasoning-lite-2-1",
 ]
 
 CV1_TEST_EXPERIMENTS = [
-    # MoE models only (4 experiments)
-    "17-llama-4-scout-17b-16e-tp2-general-2",
-    "20-llama-4-scout-17b-16e-tp2-codegen-2",
-    "21-llama-4-scout-17b-16e-tp2-roleplay-2",
-    "48-llama-4-scout-17b-16e-tp2-reasoning-2",
+    # Yi family (1 experiment)
+    "65-01-ai-yi-34b-tp2-general-lite-2-1",
+    # Mistral family (2 experiments)
+    "62-mistral-nemo-12b-tp2-general-lite-2-1",
+    "63-mistral-nemo-12b-tp1-codegen-1-1",
 ]
 
 # CV-2: Leave-One-Workload-Out (Workload-agnostic validation)
 # Test: Can model trained on codegen+reasoning generalize to roleplay+general?
 CV2_TRAIN_EXPERIMENTS = [
-    # codegen (4) + reasoning (3) = 7 experiments
+    # codegen (4) + reasoning-lite (3) = 7 experiments
     "20260217-155451-llama-2-7b-tp1-codegen",
-    "20260217-170634-llama-2-7b-tp1-reasoning",
+    "67-llama-2-7b-hf-tp1-reasoning-lite-1-1",
     "20-llama-4-scout-17b-16e-tp2-codegen-2",
-    "48-llama-4-scout-17b-16e-tp2-reasoning-2",
+    "48-llama-4-scout-17b-16e-tp2-reasoning-lite-2-1",
     "61-llama-3-1-70b-tp4-codegen-4-1",
     "63-mistral-nemo-12b-tp1-codegen-1-1",
-    "66-qwen2-5-7b-instruct-tp1-reasoning-1-1",
+    "66-qwen2-5-7b-instruct-tp1-reasoning-lite-1-1",
 ]
 
 CV2_TEST_EXPERIMENTS = [
     # roleplay (3) + general (5) = 8 experiments
     "20260217-162547-llama-2-7b-tp1-roleplay",
     "20260217-231439-llama-2-7b-tp1-general",
-    "17-llama-4-scout-17b-16e-tp2-general-2",
+    "17-llama-4-scout-17b-16e-tp2-general-lite-2-1",
     "21-llama-4-scout-17b-16e-tp2-roleplay-2",
     "60-llama-3-1-70b-tp4-general-lite-4-1",
     "62-mistral-nemo-12b-tp2-general-lite-2-1",
@@ -123,21 +126,21 @@ CV3_TRAIN_EXPERIMENTS = [
     # TP=1 (7) + TP=4 (2) = 9 experiments
     "20260217-155451-llama-2-7b-tp1-codegen",
     "20260217-162547-llama-2-7b-tp1-roleplay",
-    "20260217-170634-llama-2-7b-tp1-reasoning",
+    "67-llama-2-7b-hf-tp1-reasoning-lite-1-1",
     "20260217-231439-llama-2-7b-tp1-general",
     "60-llama-3-1-70b-tp4-general-lite-4-1",
     "61-llama-3-1-70b-tp4-codegen-4-1",
     "63-mistral-nemo-12b-tp1-codegen-1-1",
     "64-qwen2-5-7b-instruct-tp1-roleplay-1-1",
-    "66-qwen2-5-7b-instruct-tp1-reasoning-1-1",
+    "66-qwen2-5-7b-instruct-tp1-reasoning-lite-1-1",
 ]
 
 CV3_TEST_EXPERIMENTS = [
     # TP=2 only (6 experiments)
-    "17-llama-4-scout-17b-16e-tp2-general-2",
+    "17-llama-4-scout-17b-16e-tp2-general-lite-2-1",
     "20-llama-4-scout-17b-16e-tp2-codegen-2",
     "21-llama-4-scout-17b-16e-tp2-roleplay-2",
-    "48-llama-4-scout-17b-16e-tp2-reasoning-2",
+    "48-llama-4-scout-17b-16e-tp2-reasoning-lite-2-1",
     "62-mistral-nemo-12b-tp2-general-lite-2-1",
     "65-01-ai-yi-34b-tp2-general-lite-2-1",
 ]
@@ -148,11 +151,11 @@ CV3_TEST_EXPERIMENTS = [
 
 CV_TESTS = {
     "CV-1": {
-        "name": "Leave-One-Model-Out (Dense → MoE)",
+        "name": "Leave-Yi-and-Mistral-Out (Dense family generalization)",
         "train": CV1_TRAIN_EXPERIMENTS,
         "test": CV1_TEST_EXPERIMENTS,
-        "pass_criteria": "MAPE < 20% (lenient - only 1 MoE architecture)",
-        "failure_diagnosis": "Need MoE-specific basis function (expert routing, load imbalance)",
+        "pass_criteria": "Mean MAPE < 15% across 3 test experiments (Yi + Mistral)",
+        "failure_diagnosis": "Model overfitting to Llama/Qwen specifics; not learning transferable dense model principles",
     },
     "CV-2": {
         "name": "Leave-One-Workload-Out (Workload-agnostic)",
@@ -479,8 +482,8 @@ class CVTestRunner:
             # Determine pass/fail based on test name (using MAPE, not RMSE)
             passed = False
             if test_name == "CV-1":
-                # CV-1: MAPE < 20% (lenient - only 1 MoE architecture)
-                passed = test_ttft_mape < 20.0 and test_e2e_mape < 20.0
+                # CV-1: MAPE < 15% (testing dense → dense generalization)
+                passed = test_ttft_mape < 15.0 and test_e2e_mape < 15.0
             elif test_name == "CV-2":
                 # CV-2: Mean MAPE < 15%, variance < 3% between roleplay and general
                 variance = results.get("cv2_workload_variance", float('inf'))
@@ -662,7 +665,7 @@ def main():
             # Check pass criteria (using MAPE)
             passed = False
             if test_name == "CV-1":
-                passed = test_ttft_mape < 20.0 and test_e2e_mape < 20.0
+                passed = test_ttft_mape < 15.0 and test_e2e_mape < 15.0
             elif test_name == "CV-2":
                 variance = result.get("cv2_workload_variance", float('inf'))
                 passed = test_ttft_mape < 15.0 and test_e2e_mape < 15.0 and variance < 3.0
