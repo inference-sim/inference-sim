@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/latency"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/sirupsen/logrus"
 )
@@ -106,6 +107,14 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		}
 		if err := config.DecodeOverrides.Validate("decode pool"); err != nil {
 			panic(fmt.Sprintf("ClusterSimulator: %v", err))
+		}
+	}
+
+	// Validate KV bytes per token derivation early so KVTransferStartedEvent never
+	// encounters a configuration error at runtime (the panic there is now unreachable).
+	if config.PrefillInstances > 0 {
+		if _, err := latency.KVBytesPerToken(config.ModelConfig, config.EffectivePrefillTP()); err != nil {
+			panic(fmt.Sprintf("ClusterSimulator: PD disaggregation requires valid ModelConfig for KV transfer sizing: %v", err))
 		}
 	}
 

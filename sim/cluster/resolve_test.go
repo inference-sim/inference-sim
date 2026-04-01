@@ -202,6 +202,9 @@ func TestResolveConfigForRole_NoRole_ReturnsGlobal(t *testing.T) {
 func TestNewClusterSimulator_PerPoolConfig_HeterogeneousTP(t *testing.T) {
 	prefillTP := 8
 	decodeTP := 2
+	// ModelConfig must be valid for KVBytesPerToken (validated at construction when PD is enabled).
+	// NumHeads=8 → MHA fallback NumKVHeads=8, divisible by prefillTP=8.
+	mc := sim.ModelConfig{NumLayers: 2, NumHeads: 8, HiddenDim: 64, IntermediateDim: 128, BytesPerParam: 2.0}
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
 			Horizon:             math.MaxInt64,
@@ -209,7 +212,7 @@ func TestNewClusterSimulator_PerPoolConfig_HeterogeneousTP(t *testing.T) {
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 4, "blackbox", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "test-model", "H100", 4, "blackbox", 0),
 		},
 		NumInstances:            4,
 		PrefillInstances:        2,
@@ -251,6 +254,9 @@ func TestNewClusterSimulator_PerPoolConfig_HeterogeneousTP(t *testing.T) {
 // TestNewClusterSimulator_NoOverrides_BackwardCompat verifies BC-P2-1:
 // without overrides, behavior is identical to Phase 1.
 func TestNewClusterSimulator_NoOverrides_BackwardCompat(t *testing.T) {
+	// ModelConfig must be valid for KVBytesPerToken (validated at construction when PD is enabled).
+	// NumKVHeads=0 → MHA fallback uses NumHeads=4, divisible by global TP=4.
+	mc := sim.ModelConfig{NumLayers: 2, NumHeads: 4, HiddenDim: 64, IntermediateDim: 128, BytesPerParam: 2.0}
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
 			Horizon:             math.MaxInt64,
@@ -258,7 +264,7 @@ func TestNewClusterSimulator_NoOverrides_BackwardCompat(t *testing.T) {
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 4, "blackbox", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "test-model", "H100", 4, "blackbox", 0),
 		},
 		NumInstances:            4,
 		PrefillInstances:        2,

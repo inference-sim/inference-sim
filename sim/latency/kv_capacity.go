@@ -61,11 +61,21 @@ var swiGLUActivations = map[string]bool{
 // Uses BytesPerParam (compute/activation dtype), not WeightBytesPerParam, since
 // KV cache is stored at compute precision regardless of weight quantization.
 //
+// Returns a float64 so callers can choose when to truncate. CalculateKVBlocks
+// multiplies by blockSize before truncating (avoids loss when the per-token
+// value is fractional, e.g., INT4 quantization with small head dimensions).
+// PD transfer sizing truncates to int64 immediately.
+//
 // Returns per-GPU bytes (divided by TP), since each GPU stores/transfers its
 // own KV shard. When numKVHeads < TP (e.g., GQA with 2 KV heads at TP=4),
 // vLLM replicates KV heads per GPU; dividing by TP underestimates per-GPU KV
 // bytes in this case. This is a known approximation (optimistic).
-func KVBytesPerToken(mc sim.ModelConfig, tp int) (int64, error) {
+//
+// When numKVHeads < tp, divisibility is not enforced — the GQA head-replication
+// case is accepted. In this case the returned value underestimates the true
+// per-GPU bytes (optimistic approximation). When numKVHeads >= tp, numKVHeads
+// must be evenly divisible by tp or an error is returned.
+func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
 	if tp <= 0 {
 		return 0, fmt.Errorf("KVBytesPerToken: TP must be > 0, got %d", tp)
 	}
@@ -101,12 +111,11 @@ func KVBytesPerToken(mc sim.ModelConfig, tp int) (int64, error) {
 	perTokenKVBytesF := float64(mc.NumLayers) * 2.0 * float64(headDim) * float64(numKVHeads) * mc.BytesPerParam
 	perTokenKVBytesPerGPUF := perTokenKVBytesF / float64(tp)
 
-	result := int64(perTokenKVBytesPerGPUF)
-	if result <= 0 {
-		return 0, fmt.Errorf("KVBytesPerToken: computed value is %d (expected > 0); check BytesPerParam=%.4f, numKVHeads=%d, headDim=%d, tp=%d",
-			result, mc.BytesPerParam, numKVHeads, headDim, tp)
+	if perTokenKVBytesPerGPUF <= 0 {
+		return 0, fmt.Errorf("KVBytesPerToken: computed value is %.4f (expected > 0); check BytesPerParam=%.4f, numKVHeads=%d, headDim=%d, tp=%d",
+			perTokenKVBytesPerGPUF, mc.BytesPerParam, numKVHeads, headDim, tp)
 	}
-	return result, nil
+	return perTokenKVBytesPerGPUF, nil
 }
 
 // CalculateKVBlocks computes the maximum number of KV cache blocks that fit
@@ -154,21 +163,15 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSi
 		return 0, fmt.Errorf("CalculateKVBlocks: unsupported activation %q; only SwiGLU-family activations (silu, swiglu, geglu) are supported", params.HiddenAct)
 	}
 
-	// --- Step 1-2: Per-token KV bytes per GPU (delegated to KVBytesPerToken for validation) ---
-	_, err := KVBytesPerToken(mc, tp)
+	// --- Step 1-2: Per-token KV bytes per GPU ---
+	perTokenKVBytesPerGPUF, err := KVBytesPerToken(mc, tp)
 	if err != nil {
 		return 0, fmt.Errorf("CalculateKVBlocks: %w", err)
 	}
 
 	// --- Step 3: Per-block bytes ---
-	// Use float64 arithmetic (matching pre-extraction behavior) to avoid premature
-	// int64 truncation for fractional BytesPerParam (e.g., INT4 = 0.5).
-	numKVHeads := mc.NumKVHeads
-	if numKVHeads == 0 {
-		numKVHeads = mc.NumHeads
-	}
-	headDim := mc.HiddenDim / mc.NumHeads
-	perTokenKVBytesPerGPUF := float64(mc.NumLayers) * 2.0 * float64(headDim) * float64(numKVHeads) * mc.BytesPerParam / float64(tp)
+	// Multiply by blockSize before truncating to int64 to avoid loss when the
+	// per-token value is fractional (e.g., INT4 quantization with small head dims).
 	perBlockBytes := int64(perTokenKVBytesPerGPUF * float64(blockSize))
 	if perBlockBytes <= 0 {
 		return 0, fmt.Errorf("CalculateKVBlocks: per-block KV bytes is %d (expected > 0)", perBlockBytes)

@@ -118,16 +118,14 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 
 	// Transfer duration: base_latency_us + (numBlocks * blockSizeTokens * kvBytesPerToken) / effectiveBandwidthBytesPerUs
 	// Derive per-GPU KV bytes per token from model config using the prefill pool's TP.
-	prefillTP := cs.config.TP
-	if cs.config.PrefillOverrides.TP != nil {
-		prefillTP = *cs.config.PrefillOverrides.TP
-	}
-	kvBytesPerToken, err := latency.KVBytesPerToken(cs.config.ModelConfig, prefillTP)
+	kvBytesPerTokenF, err := latency.KVBytesPerToken(cs.config.ModelConfig, cs.config.EffectivePrefillTP())
 	if err != nil {
-		// R6: library panic — ModelConfig should be validated at the CLI boundary (cmd/root.go)
-		// before reaching this point. If this fires, it indicates a missing validation upstream.
-		panic(fmt.Sprintf("KVTransferStartedEvent: failed to derive KV bytes per token: %v", err))
+		// Unreachable: NewClusterSimulator validates KVBytesPerToken at construction time
+		// when PD disaggregation is enabled. If this fires, it indicates a missing
+		// validation in the construction path.
+		panic(fmt.Sprintf("unreachable: KVTransferStartedEvent: failed to derive KV bytes per token: %v", err))
 	}
+	kvBytesPerToken := int64(kvBytesPerTokenF)
 
 	numBlocks := e.parentReq.NumKVBlocks
 	blockSizeBytes := cs.config.BlockSizeTokens * kvBytesPerToken

@@ -100,6 +100,16 @@ func (d DeploymentConfig) ToSimConfig() sim.SimConfig {
 	return d.SimConfig
 }
 
+// EffectivePrefillTP returns the tensor parallelism degree used by the prefill pool.
+// This is the single source of truth for prefill TP — used both for instance
+// construction (via resolveConfigForRole) and KV transfer sizing (pd_events.go).
+func (d DeploymentConfig) EffectivePrefillTP() int {
+	if d.PrefillOverrides.TP != nil {
+		return *d.PrefillOverrides.TP
+	}
+	return d.TP
+}
+
 // resolveConfigForRole returns the SimConfig appropriate for an instance in the given pool role.
 // For PoolRolePrefill: applies PrefillOverrides to the global SimConfig.
 // For PoolRoleDecode: applies DecodeOverrides to the global SimConfig.
