@@ -11,7 +11,7 @@
 | **4** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE + β₆·activation_BW` | 129 | ❌ Coefficients destabilized | Low RMSE ≠ good (check coefficient ranges) |
 | **5** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE + β₆·per_layer` | 603 | 💥 CATASTROPHIC | Validate assumptions from traces first |
 | **6** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE` + **β₆ → QueueingTime** | 162 | ✅ **Decoupling breakthrough** | Term location matters (avoid collinearity) |
-| **—** | **DATASET CHANGED (1/2)** | — | reasoning → reasoning-lite (3 experiments replaced) | Fresh data from unloaded servers |
+| **—** | **DATASET CHANGED** | — | reasoning → reasoning-lite (3 experiments replaced) | Fresh data from unloaded servers |
 | **7** | `β₀·prefill + β₁·decode_mem + β₂·TP + β₃·KV + β₄·decode_comp + β₅·MoE + β₇·decode_oh` + β₆ in QueueingTime | 155 | ✅ β₁/β₄ stabilized (14 clean + 1 bad exp) | Check data quality early (97% bad data found) |
 | **8** | `+ β₈·MoE_routing` | 155 | ❌ No improvement (still 14 clean + 1 bad exp) | Zero improvement eliminates hypothesis |
 | **—** | **DATASET FINALIZED** | — | exp17 Scout general → general-lite replaced | **All 15 experiments clean (100%)** ✅ |
