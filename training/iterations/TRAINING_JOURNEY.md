@@ -18,6 +18,8 @@
 | **10** | `+ β₁₀·batch_ineff + β₃'·KV_seqlen` | 4267 | 💥💥 CATASTROPHIC (thought basis bugs) | Misdiagnosed - units were actually correct |
 | **11** | Same as iter10 (basis functions audited) | 4084 | 💥💥 CATASTROPHIC (basis correct, YAML typo!) | Unit test basis functions BEFORE training |
 | **12** | Widened β₃' bounds (0.05-5μs) to capture bandwidth | 2590 | 💥💥💥 CATASTROPHIC (β₃' collapsed!) | Don't warm-start from inflated coefficients |
+| **13** | Return to iter7 baseline + β₈ + β₁₀ | 2387 | 💥💥 β₅ exploded 46,800× (1924.4) | Coefficient explosion ≠ missing term (bug in basis) |
+| **14** | Fixed β₅ basis function (added numMoELayers) | 2319 | 💥💥 Only 2.8% improvement | Fixing one coefficient doesn't fix cascade |
 
 **Note**: Iter6-7 split overhead between StepTime and QueueingTime. β₆ (scheduler overhead) moved to QueueingTime in iter6.
 
@@ -197,6 +199,62 @@ QueueingTime = α₀ + α₁·input_tokens + β₆·scheduler_overhead
 
 ---
 
+### Iter13: β₅ Explosion from Missing Multiplier 💥💥
+
+**Strategy**: Return to stable iter7 baseline (155% loss, 8 coefficients) and add back β₈ (MoE routing) + β₁₀ (batching inefficiency) incrementally.
+
+**Hypothesis**: Warm-starting from iter7 will provide stability, β₁₀ will recover sequence-length prediction.
+
+**Result**: **WORST FAILURE IN TRAINING HISTORY** — RMSE 2387 (15.4× worse than iter7)
+
+**What Happened**:
+- **β₅ explosion**: MoE gating coefficient exploded from 0.0411 (iter7) → **1924.4** (46,800× increase!)
+- **Complete simulator failure**: Three reasoning-lite experiments returned exactly 100% error
+- **Massive overprediction**: Codegen experiments 1200-2700% TTFT (152× worse than iter7)
+
+**Root Cause Analysis**:
+- **Bug in basis function**: β₅ computation was missing `× numMoELayers` multiplier
+- With β₅=1924.4 and missing multiplier, effective contribution ≈ 4.3ms per request (physically implausible)
+- Optimizer compensated for under-computed basis function by inflating the coefficient
+- Dataset shift also played a role: reasoning→reasoning-lite changed between iter7 and iter13
+
+**Key Discovery**: **Coefficient explosion often indicates basis function bug, not missing physics term**. When a coefficient increases by 1000×+, audit the basis function implementation before adding new terms.
+
+**Cost**: 738 trials × 13 min = 160 hours, 15.4× regression from baseline
+
+---
+
+### Iter14: The Necessary-But-Not-Sufficient Fix 💥
+
+**Strategy**: Fix β₅ basis function bug (add `× numMoELayers` multiplier), expect dramatic loss improvement.
+
+**Hypothesis**: β₅ is the "sole cause" of iter13's cascade. Fixing it will recover to near-iter7 performance (155% loss).
+
+**Prediction**: Loss 2387% → <200% (≥92% improvement), with β₅ converging to 1-50 range.
+
+**Result**: ❌ **HYPOTHESIS REFUTED** — Loss barely improved: 2387% → 2319% (only 2.8% improvement)
+
+**What Happened**:
+- **β₅ converged correctly**: 1924.4 → 32.5 (within predicted 1-50 range) ✅
+- **Loss barely changed**: 2319% still catastrophic ❌
+- **Other coefficients destabilized**: β₀ +105%, β₃ -287×, β₆ -7859× trying to compensate
+- **Dense models still failed**: All 10-40× overprediction despite β₅ fix
+- **Scout improved slightly**: MoE experiments performed BETTER than dense (342-767% vs 1000-3700%)
+
+**Critical Insight — Principle 1**: **Coefficient Convergence ≠ Performance Recovery**
+
+When you fix ONE broken coefficient, the optimizer adjusts ALL OTHER coefficients to maintain similar total error. β₅ converged, but β₀/β₃/β₆ absorbed the error. **Analogy**: Fixing one broken table leg doesn't fix the table if the other three legs are also broken.
+
+**Critical Insight — Principle 2**: **Warm-Start Failure Indicates Dataset Shift**
+
+Iter7 trained on reasoning (long sequences, overloaded servers). Iter13-14 trained on reasoning-lite (shorter, cleaner data). Warm-starting from iter7 coefficients anchored the optimizer in the wrong basin of attraction — it couldn't escape iter7's local minimum despite 1000 trials.
+
+**Action for Iter15**: Try **cold-start optimization** (uniform random initialization, 2000 trials) instead of warm-starting from any previous iteration.
+
+**Cost**: 1000 trials × 9 min = 150 hours, only 2.8% improvement
+
+---
+
 ## Key Lessons
 
 | Lesson | Evidence |
@@ -213,58 +271,59 @@ QueueingTime = α₀ + α₁·input_tokens + β₆·scheduler_overhead
 | **Don't warm-start from inflated coefficients** | Iter12: Warm-started from iter9 (β₂=0.82, β₃=9.6ms inflated) → β₃' collapsed, loss 16× worse |
 | **Widening bounds requires constraints** | Iter12: Widened β₃' 0.05-5.0μs without lower bound → collapsed to 0.064μs (wrong direction) |
 | **Validate data quality BEFORE training** | Iter12: Three reasoning-lite experiments failed (100% APE) — suggests corrupted data |
+| **Coefficient explosion → audit basis function** | Iter13: β₅ increased 46,800× → found missing `× numMoELayers` in implementation |
+| **Coefficient convergence ≠ performance recovery** | Iter14: β₅ fixed (1924→32.5) but loss barely improved (2387%→2319%, 2.8%) — other coefficients absorbed error |
+| **Warm-start fails after dataset shift** | Iter13-14: Warm-started from iter7 (reasoning data) but training on reasoning-lite → optimizer stuck in wrong basin |
 
 ---
 
-## Current Status (Post-Iter12)
+## Current Status (Post-Iter14)
 
 ### ✅ What Works
-- **Cascading stabilization mechanism confirmed**: β₂ (0.82→0.284) and β₃ (9.6ms→1.16ms) improved when β₃' bounds widened — proves the cascade exists!
-- **Basis functions validated**: β₁₀ and β₃' implementations are CORRECT (0% error in unit tests, iter11)
-- **Sequence-length discovery preserved**: Confirmed Scout's bottleneck is sequence-length-dependent (iter9 finding)
+- **β₅ bug fixed**: Missing `× numMoELayers` multiplier added, coefficient converged correctly (1924→32.5)
+- **Scout improved relative to dense**: After β₅ fix, MoE experiments perform BETTER than dense models (342-767% vs 1000-3700%)
+- **Basis functions audited**: β₁₀ and β₃' implementations validated with unit tests (iter11)
+- **Dataset updated**: All 15 experiments use clean data (reasoning-lite replacing corrupted reasoning)
 
-### ❌ What's Broken (Worse Than Ever)
-- **CATASTROPHIC REGRESSION**: RMSE 2590 (16× worse than iter9, worst iteration ever)
-- **β₃' collapsed**: 0.252μs → 0.064μs (moved AWAY from target 1-3μs range)
-- **Three experiments failed completely** (100% APE) — ALL reasoning-lite workloads (data corruption suspected)
-- **Cascade operates incorrectly**: β₂, β₃ improved but β₆ over-corrected (22ms vs 40-100ms expected)
-- **5/11 coefficients out of range**: β₀, β₁, β₃', β₄, β₆, β₇ all outside expected ranges
+### ❌ What's Broken (Still Catastrophic)
+- **MINIMAL IMPROVEMENT**: Loss 2387% → 2319% (only 2.8% improvement despite β₅ fix)
+- **Dense models still fail**: General-lite and codegen experiments 10-40× overprediction
+- **Coefficient cascade**: Fixing β₅ caused β₀ (+105%), β₃ (-287×), β₆ (-7859×) to destabilize
+- **Three reasoning-lite experiments**: Exactly 100% error (numerical failure in simulator)
+- **All roofline coefficients out of range**: β₀, β₁, β₄ all outside expected physical bounds
 
-### 🔍 Root Cause: The Warm-Start Trap
-**What went wrong in iter12**:
-1. **Warm-started from iter9's inflated coefficients** (β₂=0.82, β₃=9.6ms, β₆=99ms) while trying to fix them
-2. **Created unstable optimization landscape** → optimizer collapsed ALL coefficients instead of increasing β₃'
-3. **Widened bounds without constraints** → gave optimizer room to move wrong direction
-4. **Data quality not validated** → three reasoning-lite experiments failed (100% APE)
+### 🔍 Root Causes: Two Independent Problems
 
-**The Paradox**: Trying to fix inflated coefficients by widening bounds on a competing term made things worse. The inflation must be resolved FIRST by returning to stable baseline.
+**Problem 1**: **Coefficient Convergence ≠ Performance Recovery**
+- Fixing ONE coefficient (β₅) doesn't fix the MODEL because other coefficients adjust to compensate
+- The optimizer treats coefficients as independent knobs, not coupled physics parameters
+- Result: β₅ converged, but overall behavior barely changed (other coefficients absorbed the error)
 
-### 🎯 Critical Next Steps (Before Iter13)
+**Problem 2**: **Warm-Start Failure After Dataset Shift**
+- Iter7 trained on reasoning (long sequences, overloaded servers)
+- Iter13-14 trained on reasoning-lite (shorter, cleaner data)
+- Warm-starting from iter7 anchored optimizer in wrong basin of attraction
+- 1000 trials insufficient to escape iter7's local minimum in new landscape
 
-**MANDATORY Step 1**: Validate reasoning-lite data quality
-```bash
-# Check for corrupted ground truth
-grep -E "ttft.*: 0\.|e2e.*: 0\." training/trainval_data/*reasoning*/ground_truth.csv
-```
-If corrupted: Exclude from training OR regenerate ground truth
+### 🎯 Critical Next Steps (Iter15+)
 
-**MANDATORY Step 2**: REVERT to stable baseline (iter6 or iter7)
-- **Iter6**: Loss ~80% (best iteration ever)
-- **Iter9-12**: Failures (160-2590%)
-- **Architecture**: 3 alpha + 8 beta (β₀-β₇, NO β₈/β₉/β₁₀/β₃')
-- **Expected**: Loss <100% (return to stability)
+**MANDATORY**: **Try Cold-Start Optimization**
+1. **Uniform random initialization** within physically plausible bounds (DO NOT warm-start from any previous iteration)
+2. **Increase trials**: 1000 → 2000-3000 (10-dimensional search requires more exploration)
+3. **Multi-term addition**: Add β₈, β₉, β₁₀ simultaneously (address all three roofline defects together)
+4. **Holistic validation**: Track coefficient CONTRIBUTIONS (e.g., β₅ × basis < 10% of total StepTime), not just values
+
+**Hypothesis for Iter15**: Cold-start will find different local minimum better suited to reasoning-lite dataset, allowing model to escape iter7's basin.
+
+**What to Monitor**:
+- Coefficient stability (are roofline terms β₀/β₁/β₄ staying in expected ranges?)
+- Per-workload breakdown (are general-lite improving? Are reasoning-lite still 100% error?)
+- Contribution analysis (which terms dominate StepTime? Are they physically plausible?)
 
 **DO NOT**:
-- ❌ Attempt to fix iter12 architecture (fundamentally flawed)
-- ❌ Warm-start from iter9-12 (all have inflated or collapsed coefficients)
-- ❌ Add new terms before returning to <100% loss baseline
-- ❌ Train without data validation (reasoning-lite may be corrupted)
-
-**Strategy**: Return to known-good state (iter6/7), validate <100% loss, THEN incrementally add terms with:
-1. Unit tests for new basis functions
-2. Collinearity checks (design matrix condition number <30)
-3. Data validation (no zero-latencies, balanced workload distribution)
-4. Warm-start from STABLE iteration (≥80% coefficients in range)
+- ❌ Warm-start from iter7, iter13, or iter14 (wrong dataset, wrong basin)
+- ❌ Assume single-coefficient fixes will cascade to overall improvement
+- ❌ Add new terms without validating existing ones are stable
 
 **Note on Metrics**: RMSE (Root Mean Square Error) is computed across all experiments' APE (Absolute Percentage Error) values. Target RMSE < 90 means the model should have low and consistent error across all test cases.
 
