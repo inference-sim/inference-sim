@@ -83,6 +83,15 @@ type DeploymentConfig struct {
 	FlowControlQueueDepthThreshold  float64 `yaml:"flow_control_queue_depth_threshold,omitempty"`   // for utilization detector
 	FlowControlKVCacheUtilThreshold float64 `yaml:"flow_control_kv_cache_util_threshold,omitempty"` // for utilization detector
 	FlowControlMaxConcurrency       int     `yaml:"flow_control_max_concurrency,omitempty"`         // for concurrency detector
+
+	// Issue #893: per-GPU-type hardware calibration for roofline/trained-roofline backends.
+	// Key: GPU type string (e.g., "A100", "H100"). Value: HardwareCalib for that GPU.
+	// When non-nil and a pool's gpu_type is found in the map, the matched HardwareCalib
+	// overrides simCfg.HWConfig at instance construction time (both sync and deferred paths),
+	// ensuring pool-placed instances use the correct roofline hardware coefficients
+	// (TFlopsPeak, BwPeakTBs) rather than the CLI --gpu calibration.
+	// Zero value (nil) is safe: no override, backward-compatible with all existing callers.
+	HWConfigByGPU map[string]sim.HardwareCalib `yaml:"hw_config_by_gpu,omitempty"`
 }
 
 // ToSimConfig returns the embedded SimConfig for per-instance construction.

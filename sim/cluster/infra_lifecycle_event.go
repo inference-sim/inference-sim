@@ -4,6 +4,7 @@ package cluster
 
 import (
 	"container/heap"
+	"fmt"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/sirupsen/logrus"
@@ -44,9 +45,16 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 	placed := cs.placement.RetryPendingInstances()
 	for idx := range placed {
 		p := &placed[idx]
-		// Deferred construction: set pool's GPU type (authoritative per SC-003).
-		// See cluster.go construction loop comment re: HWConfig limitation for roofline backends.
+		// Deferred construction: set pool's GPU type (authoritative per SC-003) and,
+		// when HWConfigByGPU is provided, override HWConfig for roofline backends (issue #893).
 		p.simCfg.GPU = p.gpuType
+		if hc, ok := cs.config.HWConfigByGPU[p.gpuType]; ok {
+			if hc.TFlopsPeak <= 0 || hc.BwPeakTBs <= 0 {
+				panic(fmt.Sprintf("HWConfigByGPU[%q]: TFlopsPeak and BwPeakTBs must be positive, got TFlopsPeak=%v BwPeakTBs=%v",
+					p.gpuType, hc.TFlopsPeak, hc.BwPeakTBs))
+			}
+			p.simCfg.HWConfig = hc
+		}
 		inst := NewInstanceSimulator(p.id, p.simCfg)
 		inst.Model = cs.config.Model
 		inst.nodeID = p.nodeID
