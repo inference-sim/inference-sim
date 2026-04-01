@@ -58,8 +58,13 @@ var swiGLUActivations = map[string]bool{
 //
 // The formula is: NumLayers × 2 (K+V) × headDim × numKVHeads × BytesPerParam / TP
 //
+// Uses BytesPerParam (compute/activation dtype), not WeightBytesPerParam, since
+// KV cache is stored at compute precision regardless of weight quantization.
+//
 // Returns per-GPU bytes (divided by TP), since each GPU stores/transfers its
-// own KV shard.
+// own KV shard. When numKVHeads < TP (e.g., GQA with 2 KV heads at TP=4),
+// vLLM replicates KV heads per GPU; dividing by TP underestimates per-GPU KV
+// bytes in this case. This is a known approximation (optimistic).
 func KVBytesPerToken(mc sim.ModelConfig, tp int) (int64, error) {
 	if tp <= 0 {
 		return 0, fmt.Errorf("KVBytesPerToken: TP must be > 0, got %d", tp)
@@ -149,14 +154,22 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSi
 		return 0, fmt.Errorf("CalculateKVBlocks: unsupported activation %q; only SwiGLU-family activations (silu, swiglu, geglu) are supported", params.HiddenAct)
 	}
 
-	// --- Step 1-2: Per-token KV bytes per GPU (delegated to KVBytesPerToken) ---
-	kvBytesPerToken, err := KVBytesPerToken(mc, tp)
+	// --- Step 1-2: Per-token KV bytes per GPU (delegated to KVBytesPerToken for validation) ---
+	_, err := KVBytesPerToken(mc, tp)
 	if err != nil {
 		return 0, fmt.Errorf("CalculateKVBlocks: %w", err)
 	}
 
 	// --- Step 3: Per-block bytes ---
-	perBlockBytes := kvBytesPerToken * blockSize
+	// Use float64 arithmetic (matching pre-extraction behavior) to avoid premature
+	// int64 truncation for fractional BytesPerParam (e.g., INT4 = 0.5).
+	numKVHeads := mc.NumKVHeads
+	if numKVHeads == 0 {
+		numKVHeads = mc.NumHeads
+	}
+	headDim := mc.HiddenDim / mc.NumHeads
+	perTokenKVBytesPerGPUF := float64(mc.NumLayers) * 2.0 * float64(headDim) * float64(numKVHeads) * mc.BytesPerParam / float64(tp)
+	perBlockBytes := int64(perTokenKVBytesPerGPUF * float64(blockSize))
 	if perBlockBytes <= 0 {
 		return 0, fmt.Errorf("CalculateKVBlocks: per-block KV bytes is %d (expected > 0)", perBlockBytes)
 	}

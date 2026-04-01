@@ -84,7 +84,6 @@ func newTestDisaggDeploymentConfigWithOverhead(overhead float64) DeploymentConfi
 		RoutingPolicy:           "round-robin",
 		PDTransferBandwidthGBps: 25.0,
 		PDTransferBaseLatencyMs: 0.05,
-
 	}
 }
 
@@ -114,7 +113,6 @@ func newTestDisaggDeploymentConfig(numInstances, prefill, decode int) Deployment
 		RoutingPolicy:           "round-robin",
 		PDTransferBandwidthGBps: 25.0,
 		PDTransferBaseLatencyMs: 0.05,
-
 	}
 }
 

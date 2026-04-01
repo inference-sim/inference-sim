@@ -124,7 +124,8 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 	}
 	kvBytesPerToken, err := latency.KVBytesPerToken(cs.config.ModelConfig, prefillTP)
 	if err != nil {
-		// R6: library panic on invariant violation — model config is validated at construction time.
+		// R6: library panic — ModelConfig should be validated at the CLI boundary (cmd/root.go)
+		// before reaching this point. If this fires, it indicates a missing validation upstream.
 		panic(fmt.Sprintf("KVTransferStartedEvent: failed to derive KV bytes per token: %v", err))
 	}
 
