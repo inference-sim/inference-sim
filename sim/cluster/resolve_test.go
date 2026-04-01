@@ -217,7 +217,7 @@ func TestNewClusterSimulator_PerPoolConfig_HeterogeneousTP(t *testing.T) {
 		PDDecider:               "always",
 		PDTransferBandwidthGBps: 25.0,
 		PDTransferBaseLatencyMs: 0.05,
-		PDKVBytesPerToken:       512,
+
 		RoutingPolicy:           "round-robin",
 		PrefillOverrides:        PoolOverrides{TP: &prefillTP},
 		DecodeOverrides:         PoolOverrides{TP: &decodeTP},
@@ -267,7 +267,7 @@ func TestNewClusterSimulator_NoOverrides_BackwardCompat(t *testing.T) {
 		PDDecider:               "always",
 		PDTransferBandwidthGBps: 25.0,
 		PDTransferBaseLatencyMs: 0.05,
-		PDKVBytesPerToken:       512,
+
 		RoutingPolicy:           "round-robin",
 		// No PrefillOverrides or DecodeOverrides — zero valued
 	}
@@ -287,6 +287,14 @@ func TestINV_P2_1_PoolConfigConsistency(t *testing.T) {
 	// Decode pool: smaller KV capacity (needs less for decode-only)
 	prefillKV := int64(20000)
 	decodeKV := int64(5000)
+	// ModelConfig with NumKVHeads=4 (divisible by TP=4) for KV transfer derivation.
+	mc := sim.ModelConfig{
+		NumLayers:       2,
+		NumHeads:        4,
+		HiddenDim:       64,
+		IntermediateDim: 128,
+		BytesPerParam:   2.0,
+	}
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
 			Horizon:             math.MaxInt64,
@@ -294,7 +302,7 @@ func TestINV_P2_1_PoolConfigConsistency(t *testing.T) {
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 4, "blackbox", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "test-model", "H100", 4, "blackbox", 0),
 		},
 		NumInstances:            4,
 		PrefillInstances:        2,
@@ -302,7 +310,7 @@ func TestINV_P2_1_PoolConfigConsistency(t *testing.T) {
 		PDDecider:               "always",
 		PDTransferBandwidthGBps: 25.0,
 		PDTransferBaseLatencyMs: 0.05,
-		PDKVBytesPerToken:       512,
+
 		RoutingPolicy:           "round-robin",
 		PrefillOverrides:        PoolOverrides{TotalKVBlocks: &prefillKV},
 		DecodeOverrides:         PoolOverrides{TotalKVBlocks: &decodeKV},
@@ -520,7 +528,7 @@ func newHeterogeneousDeploymentConfig(numInstances, prefill, decode int, prefill
 		PDDecider:               "always",
 		PDTransferBandwidthGBps: 25.0,
 		PDTransferBaseLatencyMs: 0.05,
-		PDKVBytesPerToken:       512,
+
 		RoutingPolicy:           "round-robin",
 		PrefillOverrides:        prefillOverrides,
 		DecodeOverrides:         decodeOverrides,
@@ -746,6 +754,14 @@ func TestINV_P2_1_RequestConservation(t *testing.T) {
 	prefillKV := int64(20000)
 	decodeKV := int64(5000)
 	requests := newTestRequests(10)
+	// ModelConfig with NumKVHeads=4 (divisible by TP=4) for KV transfer derivation.
+	mc := sim.ModelConfig{
+		NumLayers:       2,
+		NumHeads:        4,
+		HiddenDim:       64,
+		IntermediateDim: 128,
+		BytesPerParam:   2.0,
+	}
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
 			Horizon:             math.MaxInt64,
@@ -753,7 +769,7 @@ func TestINV_P2_1_RequestConservation(t *testing.T) {
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 4, "blackbox", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "test-model", "H100", 4, "blackbox", 0),
 		},
 		NumInstances:            4,
 		PrefillInstances:        2,
@@ -761,7 +777,7 @@ func TestINV_P2_1_RequestConservation(t *testing.T) {
 		PDDecider:               "always",
 		PDTransferBandwidthGBps: 25.0,
 		PDTransferBaseLatencyMs: 0.05,
-		PDKVBytesPerToken:       512,
+
 		RoutingPolicy:           "round-robin",
 		PrefillOverrides:        PoolOverrides{TotalKVBlocks: &prefillKV},
 		DecodeOverrides:         PoolOverrides{TotalKVBlocks: &decodeKV},

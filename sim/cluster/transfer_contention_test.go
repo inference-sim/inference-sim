@@ -7,6 +7,19 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
+// testModelHardwareConfig returns a ModelHardwareConfig that produces 512 KV bytes/token/GPU
+// at TP=1: 2 layers × 2 (K+V) × 16 headDim × 4 numKVHeads × 2.0 BytesPerParam = 512.
+func testModelHardwareConfig() sim.ModelHardwareConfig {
+	mc := sim.ModelConfig{
+		NumLayers:       2,
+		NumHeads:        4,
+		HiddenDim:       64,
+		IntermediateDim: 128,
+		BytesPerParam:   2.0,
+	}
+	return sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0)
+}
+
 // newContentionConfig creates a PD deployment config with transfer contention enabled.
 // Uses high bandwidth and zero base latency for predictable duration calculations.
 func newContentionConfig(numInstances, prefill, decode int, bandwidthGBps float64) DeploymentConfig {
@@ -399,11 +412,12 @@ func TestTransferContention_INVP22_N2FormulaExact(t *testing.T) {
 			PDTransferContention:    true,
 			PDTransferBandwidthGBps: 10.0,
 			PDTransferBaseLatencyMs: 0,
-			PDKVBytesPerToken:       512,
+
 			SimConfig: sim.SimConfig{
 				KVCacheConfig: sim.KVCacheConfig{
 					BlockSizeTokens: 16,
 				},
+				ModelHardwareConfig: testModelHardwareConfig(),
 			},
 		},
 		activeTransfers: 1, // pre-existing transfer; Execute() increments to 2
@@ -473,11 +487,12 @@ func TestTransferContention_DurationFloor_ZeroBlocks(t *testing.T) {
 			PDTransferContention:    true,
 			PDTransferBandwidthGBps: 10.0,
 			PDTransferBaseLatencyMs: 0,
-			PDKVBytesPerToken:       512,
+
 			SimConfig: sim.SimConfig{
 				KVCacheConfig: sim.KVCacheConfig{
 					BlockSizeTokens: 16,
 				},
+				ModelHardwareConfig: testModelHardwareConfig(),
 			},
 		},
 		activeTransfers: 0,
@@ -582,11 +597,12 @@ func TestTransferContention_INVP22_DivisorLaw(t *testing.T) {
 				PDTransferContention:    true,
 				PDTransferBandwidthGBps: 10.0,
 				PDTransferBaseLatencyMs: 0,
-				PDKVBytesPerToken:       512,
+
 				SimConfig: sim.SimConfig{
 					KVCacheConfig: sim.KVCacheConfig{
 						BlockSizeTokens: 16,
 					},
+					ModelHardwareConfig: testModelHardwareConfig(),
 				},
 			},
 			activeTransfers: preExisting,
@@ -653,11 +669,12 @@ func TestTransferContention_DurationFloor_ZeroBlocks_Invariant(t *testing.T) {
 				PDTransferContention:    true,
 				PDTransferBandwidthGBps: 10.0,
 				PDTransferBaseLatencyMs: 0,
-				PDKVBytesPerToken:       512,
+
 				SimConfig: sim.SimConfig{
 					KVCacheConfig: sim.KVCacheConfig{
 						BlockSizeTokens: 16,
 					},
+					ModelHardwareConfig: testModelHardwareConfig(),
 				},
 			},
 			activeTransfers: 0,
@@ -712,11 +729,12 @@ func TestTransferContention_ZeroBandwidth_FallsBackToBaseLatency(t *testing.T) {
 			PDTransferContention:    true,
 			PDTransferBandwidthGBps: 0, // zero bandwidth — triggers else branch
 			PDTransferBaseLatencyMs: 10.0,
-			PDKVBytesPerToken:       512,
+
 			SimConfig: sim.SimConfig{
 				KVCacheConfig: sim.KVCacheConfig{
 					BlockSizeTokens: 16,
 				},
+				ModelHardwareConfig: testModelHardwareConfig(),
 			},
 		},
 		activeTransfers: 0,
@@ -761,11 +779,12 @@ func TestTransferContention_ZeroBandwidth_PayloadIndependence(t *testing.T) {
 				PDTransferContention:    true,
 				PDTransferBandwidthGBps: 0,
 				PDTransferBaseLatencyMs: baseLatMs,
-				PDKVBytesPerToken:       512,
+
 				SimConfig: sim.SimConfig{
 					KVCacheConfig: sim.KVCacheConfig{
 						BlockSizeTokens: 16,
 					},
+					ModelHardwareConfig: testModelHardwareConfig(),
 				},
 			},
 			activeTransfers: 0,

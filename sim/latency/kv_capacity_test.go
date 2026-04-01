@@ -44,6 +44,69 @@ func validDenseKVParams() latency.KVCapacityParams {
 	return latency.NewKVCapacityParams(false, 0, false, "silu", 0, 0)
 }
 
+// --- KVBytesPerToken tests ---
+
+func TestKVBytesPerToken_Llama8B_TP1(t *testing.T) {
+	mc := validDenseModelConfig() // 32 layers, 8 KV heads, 4096 hidden, 32 heads → headDim=128
+	got, err := latency.KVBytesPerToken(mc, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 32 layers × 2 (K+V) × 128 headDim × 8 KVHeads × 2 BytesPerParam / 1 TP = 131072
+	want := int64(32 * 2 * 128 * 8 * 2)
+	if got != want {
+		t.Errorf("KVBytesPerToken = %d, want %d", got, want)
+	}
+}
+
+func TestKVBytesPerToken_TPSharding(t *testing.T) {
+	mc := validDenseModelConfig()
+	tp1, _ := latency.KVBytesPerToken(mc, 1)
+	tp4, _ := latency.KVBytesPerToken(mc, 4)
+	if tp4 != tp1/4 {
+		t.Errorf("KVBytesPerToken(TP=4) = %d, want %d (TP=1 value / 4)", tp4, tp1/4)
+	}
+}
+
+func TestKVBytesPerToken_MHA_FallbackToNumHeads(t *testing.T) {
+	mc := validDenseModelConfig()
+	mc.NumKVHeads = 0 // MHA: should use NumHeads (32)
+	got, err := latency.KVBytesPerToken(mc, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 32 layers × 2 × 128 headDim × 32 heads × 2 = 524288
+	want := int64(32 * 2 * 128 * 32 * 2)
+	if got != want {
+		t.Errorf("KVBytesPerToken(MHA) = %d, want %d", got, want)
+	}
+}
+
+func TestKVBytesPerToken_InvalidInputs(t *testing.T) {
+	mc := validDenseModelConfig()
+	cases := []struct {
+		name string
+		mc   sim.ModelConfig
+		tp   int
+	}{
+		{"zero TP", mc, 0},
+		{"negative TP", mc, -1},
+		{"zero NumHeads", sim.ModelConfig{NumLayers: 1, HiddenDim: 64, BytesPerParam: 2.0}, 1},
+		{"zero NumLayers", sim.ModelConfig{NumHeads: 4, HiddenDim: 64, BytesPerParam: 2.0}, 1},
+		{"zero HiddenDim", sim.ModelConfig{NumHeads: 4, NumLayers: 1, BytesPerParam: 2.0}, 1},
+		{"zero BytesPerParam", sim.ModelConfig{NumHeads: 4, NumLayers: 1, HiddenDim: 64}, 1},
+		{"indivisible KVHeads", sim.ModelConfig{NumHeads: 4, NumLayers: 1, HiddenDim: 64, NumKVHeads: 3, BytesPerParam: 2.0}, 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := latency.KVBytesPerToken(tc.mc, tc.tp)
+			if err == nil {
+				t.Errorf("expected error for %s, got nil", tc.name)
+			}
+		})
+	}
+}
+
 // --- Input validation tests ---
 
 func TestCalculateKVBlocks_ZeroDenominators_ReturnError(t *testing.T) {

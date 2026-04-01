@@ -49,7 +49,6 @@ type DeploymentConfig struct {
 	// PD KV transfer configuration (PR2)
 	PDTransferBandwidthGBps float64 // Inter-instance KV transfer bandwidth in GB/s (default 25.0)
 	PDTransferBaseLatencyMs float64 // Inter-instance KV transfer base latency in ms (default 0.05)
-	PDKVBytesPerToken       int64   // KV cache bytes per token for transfer duration (default 512)
 	PDTransferContention    bool    // Enable fair-share bandwidth contention model (--pd-transfer-contention, INV-P2-2)
 
 	// Per-pool routing scorer configuration (PR2)

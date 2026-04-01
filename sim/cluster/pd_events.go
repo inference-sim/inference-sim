@@ -8,6 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/latency"
 	"github.com/inference-sim/inference-sim/sim/trace"
 )
 
@@ -115,9 +116,20 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 		cs.transferStartCount++
 	}
 
-	// Transfer duration: base_latency_us + (numBlocks * blockSizeTokens * bytesPerToken) / effectiveBandwidthBytesPerUs
+	// Transfer duration: base_latency_us + (numBlocks * blockSizeTokens * kvBytesPerToken) / effectiveBandwidthBytesPerUs
+	// Derive per-GPU KV bytes per token from model config using the prefill pool's TP.
+	prefillTP := cs.config.TP
+	if cs.config.PrefillOverrides.TP != nil {
+		prefillTP = *cs.config.PrefillOverrides.TP
+	}
+	kvBytesPerToken, err := latency.KVBytesPerToken(cs.config.ModelConfig, prefillTP)
+	if err != nil {
+		// R6: library panic on invariant violation — model config is validated at construction time.
+		panic(fmt.Sprintf("KVTransferStartedEvent: failed to derive KV bytes per token: %v", err))
+	}
+
 	numBlocks := e.parentReq.NumKVBlocks
-	blockSizeBytes := cs.config.BlockSizeTokens * cs.config.PDKVBytesPerToken
+	blockSizeBytes := cs.config.BlockSizeTokens * kvBytesPerToken
 	// Use float64 for transferBytes to avoid int64 overflow with large blocks
 	transferBytes := float64(numBlocks) * float64(blockSizeBytes)
 

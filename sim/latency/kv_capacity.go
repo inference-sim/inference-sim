@@ -52,6 +52,58 @@ var swiGLUActivations = map[string]bool{
 	"":       true,
 }
 
+// KVBytesPerToken computes the per-GPU KV cache bytes per token for a given
+// model config and tensor parallelism degree. This is used for both KV cache
+// capacity sizing and PD transfer duration estimation.
+//
+// The formula is: NumLayers × 2 (K+V) × headDim × numKVHeads × BytesPerParam / TP
+//
+// Returns per-GPU bytes (divided by TP), since each GPU stores/transfers its
+// own KV shard.
+func KVBytesPerToken(mc sim.ModelConfig, tp int) (int64, error) {
+	if tp <= 0 {
+		return 0, fmt.Errorf("KVBytesPerToken: TP must be > 0, got %d", tp)
+	}
+	if mc.NumHeads <= 0 {
+		return 0, fmt.Errorf("KVBytesPerToken: num_attention_heads must be > 0, got %d", mc.NumHeads)
+	}
+	if mc.NumLayers <= 0 {
+		return 0, fmt.Errorf("KVBytesPerToken: num_layers must be > 0, got %d", mc.NumLayers)
+	}
+	if mc.HiddenDim <= 0 {
+		return 0, fmt.Errorf("KVBytesPerToken: hidden_dim must be > 0, got %d", mc.HiddenDim)
+	}
+	if mc.BytesPerParam <= 0 || math.IsNaN(mc.BytesPerParam) || math.IsInf(mc.BytesPerParam, 0) {
+		return 0, fmt.Errorf("KVBytesPerToken: precision (BytesPerParam) must be a valid positive number, got %v", mc.BytesPerParam)
+	}
+	if mc.HiddenDim%mc.NumHeads != 0 {
+		return 0, fmt.Errorf("KVBytesPerToken: hidden_dim (%d) must be evenly divisible by num_attention_heads (%d)", mc.HiddenDim, mc.NumHeads)
+	}
+
+	numKVHeads := mc.NumKVHeads
+	if numKVHeads < 0 {
+		return 0, fmt.Errorf("KVBytesPerToken: num_kv_heads must be >= 0, got %d", numKVHeads)
+	}
+	if numKVHeads == 0 {
+		numKVHeads = mc.NumHeads
+	}
+
+	if numKVHeads >= tp && numKVHeads%tp != 0 {
+		return 0, fmt.Errorf("KVBytesPerToken: num_kv_heads (%d) must be evenly divisible by TP (%d)", numKVHeads, tp)
+	}
+
+	headDim := mc.HiddenDim / mc.NumHeads
+	perTokenKVBytesF := float64(mc.NumLayers) * 2.0 * float64(headDim) * float64(numKVHeads) * mc.BytesPerParam
+	perTokenKVBytesPerGPUF := perTokenKVBytesF / float64(tp)
+
+	result := int64(perTokenKVBytesPerGPUF)
+	if result <= 0 {
+		return 0, fmt.Errorf("KVBytesPerToken: computed value is %d (expected > 0); check BytesPerParam=%.4f, numKVHeads=%d, headDim=%d, tp=%d",
+			result, mc.BytesPerParam, numKVHeads, headDim, tp)
+	}
+	return result, nil
+}
+
 // CalculateKVBlocks computes the maximum number of KV cache blocks that fit
 // in GPU memory after accounting for model weights, activations, and
 // non-PyTorch overhead. The formula matches the llm-d-benchmark
@@ -72,29 +124,14 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSi
 	if gpuMemoryUtilization <= 0 || gpuMemoryUtilization > 1.0 || math.IsNaN(gpuMemoryUtilization) || math.IsInf(gpuMemoryUtilization, 0) {
 		return 0, fmt.Errorf("CalculateKVBlocks: gpuMemoryUtilization must be in (0, 1.0], got %v", gpuMemoryUtilization)
 	}
-	if tp <= 0 {
-		return 0, fmt.Errorf("CalculateKVBlocks: TP must be > 0, got %d", tp)
-	}
 	if blockSize <= 0 {
 		return 0, fmt.Errorf("CalculateKVBlocks: block size must be > 0, got %d", blockSize)
-	}
-	if mc.NumHeads <= 0 {
-		return 0, fmt.Errorf("CalculateKVBlocks: num_attention_heads must be > 0, got %d", mc.NumHeads)
-	}
-	if mc.NumLayers <= 0 {
-		return 0, fmt.Errorf("CalculateKVBlocks: num_layers must be > 0, got %d", mc.NumLayers)
-	}
-	if mc.HiddenDim <= 0 {
-		return 0, fmt.Errorf("CalculateKVBlocks: hidden_dim must be > 0, got %d", mc.HiddenDim)
 	}
 	if mc.IntermediateDim <= 0 {
 		return 0, fmt.Errorf("CalculateKVBlocks: intermediate_dim must be > 0, got %d", mc.IntermediateDim)
 	}
 	if mc.VocabSize <= 0 {
 		return 0, fmt.Errorf("CalculateKVBlocks: vocab_size must be > 0, got %d", mc.VocabSize)
-	}
-	if mc.BytesPerParam <= 0 || math.IsNaN(mc.BytesPerParam) || math.IsInf(mc.BytesPerParam, 0) {
-		return 0, fmt.Errorf("CalculateKVBlocks: precision (BytesPerParam) must be a valid positive number, got %v", mc.BytesPerParam)
 	}
 	if hc.MemoryGiB <= 0 || math.IsNaN(hc.MemoryGiB) || math.IsInf(hc.MemoryGiB, 0) {
 		return 0, fmt.Errorf("CalculateKVBlocks: GPU memory (MemoryGiB) must be a valid positive number, got %v", hc.MemoryGiB)
@@ -107,50 +144,21 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSi
 		}
 	}
 
-	// Head dimension must be evenly divisible.
-	if mc.HiddenDim%mc.NumHeads != 0 {
-		return 0, fmt.Errorf("CalculateKVBlocks: hidden_dim (%d) must be evenly divisible by num_attention_heads (%d)", mc.HiddenDim, mc.NumHeads)
-	}
-
 	// Only SwiGLU-family activations are supported (3-matrix MLP).
 	if !swiGLUActivations[params.HiddenAct] {
 		return 0, fmt.Errorf("CalculateKVBlocks: unsupported activation %q; only SwiGLU-family activations (silu, swiglu, geglu) are supported", params.HiddenAct)
 	}
 
-	// Resolve numKVHeads: 0 means MHA (same as NumHeads); negative is invalid.
-	numKVHeads := mc.NumKVHeads
-	if numKVHeads < 0 {
-		return 0, fmt.Errorf("CalculateKVBlocks: num_kv_heads must be >= 0, got %d", numKVHeads)
+	// --- Step 1-2: Per-token KV bytes per GPU (delegated to KVBytesPerToken) ---
+	kvBytesPerToken, err := KVBytesPerToken(mc, tp)
+	if err != nil {
+		return 0, fmt.Errorf("CalculateKVBlocks: %w", err)
 	}
-	if numKVHeads == 0 {
-		numKVHeads = mc.NumHeads
-	}
-
-	// TP divisibility: if numKVHeads >= tp, they must be evenly divisible.
-	// When numKVHeads < tp (e.g., GQA with 2 KV heads, TP=4), vLLM replicates
-	// KV heads per GPU. Our formula divides total KV by tp, which underestimates
-	// per-GPU KV memory in this case. This is a known approximation — the error
-	// is optimistic (overestimates available blocks).
-	if numKVHeads >= tp && numKVHeads%tp != 0 {
-		return 0, fmt.Errorf("CalculateKVBlocks: num_kv_heads (%d) must be evenly divisible by TP (%d)", numKVHeads, tp)
-	}
-
-	headDim := mc.HiddenDim / mc.NumHeads
-
-	// --- Step 1: Per-token KV bytes ---
-	// Each layer has a K and V projection, each of size headDim * numKVHeads.
-	// Use float64 arithmetic to avoid int64 truncation of fractional BytesPerParam
-	// (e.g., INT4 = 0.5 bytes/param would truncate to 0 with int64 cast).
-	perTokenKVBytesF := float64(mc.NumLayers) * 2.0 * float64(headDim) * float64(numKVHeads) * mc.BytesPerParam
-
-	// --- Step 2: Per-token KV bytes per GPU (TP sharding) ---
-	perTokenKVBytesPerGPUF := perTokenKVBytesF / float64(tp)
 
 	// --- Step 3: Per-block bytes ---
-	perBlockBytes := int64(perTokenKVBytesPerGPUF * float64(blockSize))
+	perBlockBytes := kvBytesPerToken * blockSize
 	if perBlockBytes <= 0 {
-		return 0, fmt.Errorf("CalculateKVBlocks: per-block KV bytes is %d (expected > 0); check BytesPerParam=%.4f, numKVHeads=%d, headDim=%d",
-			perBlockBytes, mc.BytesPerParam, numKVHeads, headDim)
+		return 0, fmt.Errorf("CalculateKVBlocks: per-block KV bytes is %d (expected > 0)", perBlockBytes)
 	}
 
 	// --- Step 4: Available memory budget (total across all TP GPUs) ---

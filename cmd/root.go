@@ -134,7 +134,6 @@ var (
 	pdDecider             string  // Disaggregation decider name
 	pdTransferBandwidth   float64 // Inter-instance KV transfer bandwidth in GB/s
 	pdTransferBaseLatency float64 // Inter-instance KV transfer base latency in ms
-	pdKVBytesPerToken        int     // KV cache bytes per token for transfer duration
 	pdTransferContention     bool    // Enable fair-share bandwidth contention model
 	pdPrefixThreshold       int    // Non-cached token threshold for prefix-threshold decider
 	pdDirectDecodeThreshold int    // Input token threshold for direct-to-decode decider
@@ -968,7 +967,6 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&pdDecider, "pd-decider", "never", "PD disaggregation decider: never (default), always, prefix-threshold, direct-to-decode")
 	cmd.Flags().Float64Var(&pdTransferBandwidth, "pd-transfer-bandwidth", 25.0, "PD KV transfer bandwidth in GB/s (NIXL RDMA default)")
 	cmd.Flags().Float64Var(&pdTransferBaseLatency, "pd-transfer-base-latency", 0.05, "PD KV transfer base latency in ms")
-	cmd.Flags().IntVar(&pdKVBytesPerToken, "pd-kv-bytes-per-token", 512, "KV cache bytes per token for PD transfer duration computation")
 	cmd.Flags().BoolVar(&pdTransferContention, "pd-transfer-contention", false, "Enable fair-share bandwidth contention model for concurrent KV transfers (INV-P2-2)")
 	cmd.Flags().IntVar(&pdPrefixThreshold, "pd-prefix-threshold", 512, "Non-cached token threshold for prefix-threshold decider (>= 0); disaggregate when non-cached tokens exceed this value")
 	cmd.Flags().IntVar(&pdDirectDecodeThreshold, "pd-direct-decode-threshold", 256, "Input token threshold for direct-to-decode (>= 0): requests with fewer than threshold tokens go direct to decode; requests with >= threshold tokens are disaggregated")
@@ -1307,9 +1305,6 @@ var runCmd = &cobra.Command{
 			if pdTransferBaseLatency < 0 || math.IsInf(pdTransferBaseLatency, 0) || math.IsNaN(pdTransferBaseLatency) {
 				logrus.Fatalf("--pd-transfer-base-latency must be a finite non-negative number, got %f", pdTransferBaseLatency)
 			}
-			if pdKVBytesPerToken <= 0 {
-				logrus.Fatalf("--pd-kv-bytes-per-token must be > 0, got %d", pdKVBytesPerToken)
-			}
 		}
 		if pdDecider == "prefix-threshold" && pdPrefixThreshold < 0 {
 			logrus.Fatalf("--pd-prefix-threshold must be >= 0, got %d", pdPrefixThreshold)
@@ -1445,7 +1440,6 @@ var runCmd = &cobra.Command{
 			PDDirectDecodeThreshold: pdDirectDecodeThreshold,
 			PDTransferBandwidthGBps: pdTransferBandwidth,
 			PDTransferBaseLatencyMs: pdTransferBaseLatency,
-			PDKVBytesPerToken:       int64(pdKVBytesPerToken),
 			PDTransferContention:    pdTransferContention,
 			PrefillScorerConfigs:    prefillScorerCfgs,
 			DecodeScorerConfigs:     decodeScorerCfgs,
