@@ -149,13 +149,15 @@ Scorers are the building blocks of the weighted routing policy. Each scorer eval
 | Scorer | Signal | Score Computation | Notes |
 |--------|--------|-------------------|-------|
 | `prefix-affinity` | Prefix cache overlap | Proportion of request's block hashes found in instance's cache index | Stateful: updates cache index after routing via observer |
+| `precise-prefix-cache` | Actual KV cache state | Min-max normalization of cached prefix block count per instance | Stateless: queries instance KV cache directly via `CacheQueryFn` |
+| `no-hit-lru` | Routing history | Cold requests (zero cache hits): LRU positional scoring; warm requests: neutral 0.5 | Stateful: observer tracks LRU order on cold routing only |
 | `queue-depth` | Instance load | Min-max normalization of effective load (lower load = higher score) | Stateless |
 | `kv-utilization` | Memory pressure | `1 - KVUtilization` (lower utilization = higher score) | Stateless |
 | `load-balance` | Instance load | `1 / (1 + EffectiveLoad)` (decreasing function of load) | Stateless |
 
 ### Stateful vs. Stateless Scorers
 
-Most scorers are **stateless** — they compute scores purely from the current routing snapshot. The `prefix-affinity` scorer is **stateful**: after a routing decision, an observer callback updates the router-side prefix cache index with the routed request's block hashes. This enables the scorer to track which prefixes are cached at which instance without querying the actual per-instance KV caches.
+Most scorers are **stateless** — they compute scores purely from the current routing snapshot. Two scorers are **stateful**: `prefix-affinity` updates its router-side prefix cache index after each routing decision via an observer callback, and `no-hit-lru` tracks LRU ordering of cold request routing to distribute cache-miss traffic. The `precise-prefix-cache` scorer queries actual instance KV cache state directly (via `CacheQueryFn`) rather than maintaining a router-side approximation.
 
 ### Router-Side Prefix Cache Index
 
