@@ -1,0 +1,73 @@
+# Iteration 17: Coefficient Bounds and Initial Values
+#
+# **Architecture**: Trained-roofline 7-term formula (unchanged from iter16)
+# **Warm-Start**: iter16 best coefficients (Trial 957, loss 60.19%)
+# **Units**: All basis functions compute µs; alpha coefficients are µs directly
+#
+# Key insight: iter16 coefficients are suboptimal because the optimizer searched
+# against wrong Scout FLOPs (pre-#877). The warm-start values here are the
+# iter16 best, but the optimizer is expected to MOVE AWAY from them as it
+# discovers the corrected loss landscape for Scout experiments.
+#
+# Expected shifts relative to iter16:
+#   - β₁: 0.20 → 0.4–0.9 (prefill correction should recover toward physical range)
+#   - α₂: 45.7 → 1–10µs (inflated output token cost should deflate)
+#   - α₀, β₂, β₃, β₅: minor adjustments expected (Scout FLOPs change affects prefill,
+#     not decode or weight loading directly)
+
+alpha_bounds:
+  - [100.0, 50000.0]   # α₀: QueueingTime — fixed API processing overhead (µs), expect ~5-20ms
+  - [0.0, 10000.0]     # α₁: PostDecodeFixedOverhead — per-request completion overhead (µs), expect ~0.5-3ms
+  - [0.0, 50.0]        # α₂: OutputTokenProcessingTime — per-output-token streaming (µs/token), expect ~1-10µs
+
+alpha_initial:  # Warm-start from iter16 best (Trial 957)
+  - 15569.495449697066    # α₀: 15.6ms — up from 9.3ms prior (iter16 fit)
+  - 815.0556502348827     # α₁: 0.82ms — down from 1.85ms prior (iter16 fit)
+  - 45.705744318725586    # α₂: 45.7µs — inflated 27× above prior (iter16 artifact; expected to retreat)
+
+beta_bounds:
+  - [0.1, 3.0]      # β₁: Prefill roofline correction (dimensionless) — lower bound relaxed to 0.1
+  - [0.3, 3.0]      # β₂: Decode roofline correction (dimensionless), expect ~0.8-1.8
+  - [0.3, 3.0]      # β₃: Weight loading correction (dimensionless), expect ~0.8-1.5
+  - [0.0, 2.0]      # β₄: TP communication correction (dimensionless)
+  - [0.0, 200.0]    # β₅: Per-layer overhead (µs/layer), expect ~20-100µs
+  - [0.0, 500.0]    # β₆: Per-request scheduling overhead (µs/request)
+  - [0.0, 500.0]    # β₇: Per-step constant overhead (µs/step)
+
+beta_initial:  # Warm-start from iter16 best (Trial 957)
+  - 0.20081681581824434    # β₁: 0.20 — collapsed prefill (iter16 artifact; expected to recover)
+  - 1.6173961192042448     # β₂: 1.62 — decode correction (physically plausible)
+  - 1.3603417361920076     # β₃: 1.36 — weight loading correction (physically plausible)
+  - 0.39579536655780084    # β₄: 0.40 — TP communication (non-zero, new in iter16)
+  - 62.19421689224744      # β₅: 62.2µs/layer — per-layer overhead (physically plausible)
+  - 2.937563498958273      # β₆: 2.94µs/req — collapsed from 48.8µs (iter16 fit)
+  - 169.37780505091155     # β₇: 169.4µs/step — per-step constant (new in iter16)
+
+# ============================================================
+# Notes on Warm-Start Strategy
+# ============================================================
+#
+# The warm-start is enqueued only when n_jobs=1 (Optuna constraint). With n_jobs=10
+# (as in iter16 and intended for iter17), the initial values are NOT used by the
+# optimizer — TPE starts with random exploration from the bounds.
+#
+# Despite this limitation, the warm-start values are documented here for:
+# 1. Reference when interpreting convergence (did coefficients move toward/away?)
+# 2. Possible future use with n_jobs=1 for a single high-quality warm-start trial
+#
+# Validation checklist for iter17 results:
+#
+# Main optimization:
+#   - [ ] 15/15 experiments used during optimization (verify via num_succeeded in log)
+#   - [ ] Loss strictly < 60.19% (iter16 best) — PRIMARY SUCCESS CRITERION
+#   - [ ] β₁ (prefill) > 0.35 (recovering from 0.20 collapse)
+#   - [ ] α₂ (output token) < 15µs (retreating from 45.7µs inflation)
+#   - [ ] Scout TTFT APE < 39.6% for all 4 Scout experiments
+#   - [ ] Dense model APE within ±5pp of iter16 values (stability check)
+#   - [ ] Optimizer stopped via patience criterion (not budget exhaustion)
+#   - [ ] Best trial found before trial 300
+#
+# Cross-validation (run_cv_tests.py --iteration 17 --cv-test all):
+#   - [ ] CV-1 PASS: TTFT MAPE < 15% on Yi + 2×Mistral holdout
+#   - [ ] CV-2 PASS: TTFT MAPE < 15%, workload variance < 3%
+#   - [ ] CV-3 PASS: TTFT MAPE < 15% on TP=2 holdout (6 experiments)

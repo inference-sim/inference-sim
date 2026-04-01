@@ -21,6 +21,32 @@ import optuna
 from optuna.trial import Trial
 
 
+class _EarlyStoppingCallback:
+    """
+    Optuna callback that stops optimization when best loss has not improved
+    for `patience` consecutive trial completions.
+
+    Safe for parallel execution (n_jobs > 1): study.stop() only prevents new
+    trials from being enqueued; in-flight trials complete normally.
+    """
+
+    def __init__(self, patience: int) -> None:
+        self.patience = patience
+        self._best_value = float("inf")
+        self._best_trial_number = 0
+
+    def __call__(self, study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
+        if study.best_value < self._best_value:
+            self._best_value = study.best_value
+            self._best_trial_number = trial.number
+        elif trial.number - self._best_trial_number >= self.patience:
+            print(
+                f"\n  Early stopping: no improvement for {self.patience} trials "
+                f"(best at trial {self._best_trial_number}, loss={self._best_value:.4f})"
+            )
+            study.stop()
+
+
 class InnerLoopOptimizer:
     """
     Inner loop Bayesian optimization for latency model coefficients.
@@ -37,7 +63,8 @@ class InnerLoopOptimizer:
                  timeout_per_trial: int = 120,
                  data_dir: str = "trainval_data",
                  seed: int = 42,
-                 n_jobs: int = 1):
+                 n_jobs: int = 1,
+                 patience: int = 0):
         """
         Initialize inner loop optimizer.
 
@@ -48,6 +75,8 @@ class InnerLoopOptimizer:
             data_dir: Directory containing ground-truth experiments (for CV: subset of trainval_data)
             seed: Random seed for Bayesian optimization (determinism guarantee)
             n_jobs: Number of parallel trials (default: 1). Uses SQLite storage when > 1.
+            patience: Stop when best loss is unchanged for this many consecutive trial
+                      completions (default: 0 = disabled).
         """
         self.iteration = iteration
         self.iteration_dir = f"iterations/iter{iteration}"
@@ -58,6 +87,7 @@ class InnerLoopOptimizer:
         self.data_dir = data_dir
         self.seed = seed
         self.n_jobs = n_jobs
+        self.patience = patience
 
         self.backend_name = None
         self.bounds = None
@@ -392,6 +422,14 @@ class InnerLoopOptimizer:
             else:
                 print(f"  Warning: Initial values have wrong length, skipping warm-start")
 
+        # Build callbacks (patience-based early stopping if requested)
+        callbacks = []
+        if self.patience > 0:
+            callbacks.append(_EarlyStoppingCallback(self.patience))
+            print(f"  Early stopping: enabled (patience={self.patience} trials)")
+        else:
+            print(f"  Early stopping: disabled")
+
         # Run optimization (n_jobs > 1 runs trials in parallel via threading;
         # each trial spawns a subprocess so GIL is not a bottleneck)
         opt_start = time.time()
@@ -399,7 +437,8 @@ class InnerLoopOptimizer:
             self.optuna_objective,
             n_trials=self.n_trials,
             n_jobs=self.n_jobs,
-            show_progress_bar=True
+            show_progress_bar=True,
+            callbacks=callbacks if callbacks else None,
         )
         opt_time = time.time() - opt_start
 
@@ -476,7 +515,7 @@ class InnerLoopOptimizer:
 
         return diagnostics
 
-    def save_results(self, results: Dict[str, Any]) -> None:
+    def save_results(self, results: Dict[str, Any], output_path: str = "") -> None:
         """
         Save optimization results to JSON file in iteration directory.
 
@@ -527,7 +566,8 @@ class InnerLoopOptimizer:
           "error_log": [str, ...]
         }
         """
-        output_path = os.path.join(self.iteration_dir, "inner_loop_results.json")
+        if not output_path:
+            output_path = os.path.join(self.iteration_dir, "inner_loop_results.json")
 
         # Restructure for clarity
         detailed_diagnostics = results.get("detailed_diagnostics", {})
@@ -619,6 +659,24 @@ def main():
         default=1,
         help="Number of parallel trials (default: 1). Uses SQLite storage when > 1 for crash resilience."
     )
+    parser.add_argument(
+        "--patience",
+        type=int,
+        default=0,
+        help=(
+            "Stop when best loss is unchanged for this many consecutive trial completions "
+            "(default: 0 = disabled). Safe for n_jobs > 1."
+        )
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="",
+        help=(
+            "Path to write results JSON (default: iterations/iter{N}/inner_loop_results.json). "
+            "Override for cross-validation runs to avoid overwriting the main results file."
+        )
+    )
 
     args = parser.parse_args()
 
@@ -629,7 +687,8 @@ def main():
         timeout_per_trial=args.timeout,
         data_dir=args.data_dir,
         seed=args.seed,
-        n_jobs=args.n_jobs
+        n_jobs=args.n_jobs,
+        patience=args.patience,
     )
 
     # Phase 1: Setup
@@ -659,7 +718,7 @@ def main():
             print("Continuing with basic results...")
 
     # Save results
-    optimizer.save_results(results)
+    optimizer.save_results(results, output_path=args.output)
 
     print("\n" + "=" * 70)
     print("INNER LOOP COMPLETE")
