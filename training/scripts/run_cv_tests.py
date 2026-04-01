@@ -12,9 +12,12 @@ Determinism guarantees:
 
 Usage:
     python scripts/run_cv_tests.py --iteration 0 --cv-test all
-    python scripts/run_cv_tests.py --iteration 0 --cv-test CV-1
+    python scripts/run_cv_tests.py --iteration 0 --cv-test CV-1 --n-trials 1000
     python scripts/run_cv_tests.py --iteration 0 --cv-test CV-2
     python scripts/run_cv_tests.py --iteration 0 --cv-test CV-3
+
+Note: Default n_trials=1000 matches inner_loop_optimize.py for fair train/test comparison.
+      Use --n-trials to override if needed.
 
 Outputs:
     - cv{1,2,3}_results.json - Test set predictions and metrics
@@ -171,7 +174,7 @@ CV_TESTS = {
 class CVTestRunner:
     """Run cross-validation tests with determinism guarantees."""
 
-    def __init__(self, iteration: int, data_dir: str, output_dir: str):
+    def __init__(self, iteration: int, data_dir: str, output_dir: str, n_trials: int = 1000):
         self.iteration = iteration
         self.data_dir = Path(data_dir)
         self.output_dir = Path(output_dir)
@@ -184,7 +187,7 @@ class CVTestRunner:
         # Determinism parameters
         self.optimization_seed = 42
         self.blis_seed = 42
-        self.n_trials = 50  # Fixed for reproducibility
+        self.n_trials = n_trials  # Match inner_loop_optimize.py for fair comparison
 
         # Get reliable Python executable (fix macOS Homebrew .app bundle issues)
         self.python_executable = get_python_executable()
@@ -595,6 +598,12 @@ def main():
         default='cv_results',
         help='Output directory for CV test results'
     )
+    parser.add_argument(
+        '--n-trials',
+        type=int,
+        default=1000,
+        help='Number of Bayesian optimization trials (default: 1000, should match inner_loop_optimize.py)'
+    )
 
     args = parser.parse_args()
 
@@ -609,7 +618,7 @@ def main():
         sys.exit(1)
 
     # Create test runner
-    runner = CVTestRunner(args.iteration, data_dir, output_dir)
+    runner = CVTestRunner(args.iteration, data_dir, output_dir, n_trials=args.n_trials)
 
     # Run requested tests
     tests_to_run = ['CV-1', 'CV-2', 'CV-3'] if args.cv_test == 'all' else [args.cv_test]
