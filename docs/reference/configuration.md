@@ -338,6 +338,25 @@ node_pools:
       mean: 30.0   # seconds
       stddev: 5.0  # 0 = constant delay
 
+# Per-GPU hardware calibration overrides for roofline/trained-roofline backends (issue #893 — optional)
+# Key: GPU type string matching a pool's gpu_type. Value: HardwareCalib for that GPU.
+# When a pool's gpu_type is found in this map, the matched calibration overrides the CLI
+# --gpu calibration at instance construction time (both sync and deferred/NodeReadyEvent paths),
+# ensuring pool-placed instances use the correct TFlopsPeak/BwPeakTBs for roofline math.
+# Omitting this field (zero value) is safe: no override, backward-compatible with all callers.
+# The blackbox backend does not use HWConfig and is unaffected by this field.
+hw_config_by_gpu:
+  H100:
+    tflops_peak: 1979.0    # FP16 TFLOPS
+    bw_peak_tbs: 3.35      # HBM bandwidth in TB/s
+    mfu_prefill: 0.5
+    mfu_decode: 0.5
+  A100:
+    tflops_peak: 1248.0
+    bw_peak_tbs: 2.0
+    mfu_prefill: 0.5
+    mfu_decode: 0.5
+
 # Instance lifecycle (Phase 1A — all zero/empty = backward-compatible defaults)
 instance_lifecycle:
   loading_delay:
@@ -456,7 +475,7 @@ For environments where live profiling is not feasible, the [Roofline model](../c
 | **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--vllm-version`, `--latency-model`, `--model-config-folder`, `--hardware-config`, `--max-model-len` |
 | **PolicyConfig** | `--scheduler`, `--priority-policy` |
 | **WorkloadConfig** | `--workload`, `--workload-spec`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
-| **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` | YAML-only (no CLI flag): `node_pools`, `instance_lifecycle` |
+| **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` | YAML-only (no CLI flag): `node_pools`, `instance_lifecycle`, `hw_config_by_gpu` |
 | **Top-level** | `--seed`, `--horizon`, `--log`, `--metrics-path` (run only), `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
 
 ---

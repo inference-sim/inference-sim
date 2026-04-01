@@ -3,7 +3,7 @@
 **Feature Branch**: `006-defer-instance-placement`
 **Created**: 2026-03-31
 **Status**: Draft
-**Input**: User description: "fix(cluster): defer instance construction until after placement so roofline uses the pool's GPU type (issue #888)"
+**Input**: User description: "fix(cluster): defer instance construction until after placement so roofline uses the pool's GPU type (issue #888/#893)"
 
 ## User Scenarios & Testing *(mandatory)*
 
