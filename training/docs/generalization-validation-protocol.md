@@ -10,24 +10,34 @@
 
 **Three clean holdout tests using the 15 training experiments:**
 
-### CV-1: Leave-One-Model-Out (LOMO)
-**Test**: Dense→MoE architectural generalization
+### CV-1: Leave-Yi-and-Mistral-Out (Dense Family Generalization)
+**Test**: Dense model family generalization (Llama/Qwen → Yi/Mistral)
 
 **Method**:
-- Training: 11 dense model experiments (Llama-2-7B, Llama-3.1-70B, Mistral-Nemo-12B, Qwen2.5-7B, Yi-34B)
-- Test: 4 MoE experiments (Llama-4-Scout-17B-16E)
+- Training: 12 experiments (6 Llama + 2 Qwen + 4 Scout MoE)
+  - Llama: Llama-2-7B (4 workloads) + Llama-3.1-70B (2 workloads)
+  - Qwen: Qwen2.5-7B (2 workloads)
+  - Scout: Llama-4-Scout-17B-16E MoE (4 workloads) — ensures MoE-specific terms (β₅, β₈) are trainable
+- Test: 3 experiments (1 Yi + 2 Mistral-Nemo)
+  - Yi-34B (1 workload)
+  - Mistral-Nemo-12B (2 workloads)
 
-**Pass criteria**: MAPE < 20% (TTFT and E2E)
-- Lenient threshold since only 1 MoE architecture in training data
+**Pass criteria**: Mean MAPE < 15% (TTFT and E2E) across 3 test experiments
+- Standard threshold (same as CV-2/CV-3) — fair test since all coefficients trainable
 
-**Failure diagnosis**: If fails → Need MoE-specific basis function (expert routing overhead, load imbalance)
+**Failure diagnosis**: If fails → Model overfitting to Llama/Qwen architectural specifics; not learning transferable dense model principles (compute/memory/TP patterns)
+
+**Rationale for design**:
+- **Why include Scout in training?** The evolved model has MoE-specific terms (β₅ for gating, β₈ for routing). If we trained only on dense models, these terms would be **unidentifiable** (MoE basis functions return 0 for dense models → no gradient signal). Including Scout ensures all coefficients are trainable.
+- **Why test on Yi+Mistral?** Tests whether the model learned general dense model principles (compute/memory/TP scaling) that transfer to unseen dense architectures, rather than memorizing Llama/Qwen specifics.
+- **Why not test on Scout?** Testing dense→MoE generalization with untrainable MoE terms would be a flawed test (guaranteed to fail). CV-1 tests dense→dense generalization with all terms trainable.
 
 ### CV-2: Leave-One-Workload-Out (LOWO)
 **Test**: Workload-agnostic constraint validation
 
 **Method**:
-- Training: codegen (4) + reasoning (3) = 7 experiments
-- Test: roleplay (3) + general (5) = 8 experiments
+- Training: codegen (4) + reasoning-lite (3) = 7 experiments
+- Test: roleplay (3) + general-lite (5) = 8 experiments
 
 **Pass criteria**:
 - Mean MAPE < 15% (TTFT and E2E) across test set
@@ -130,82 +140,101 @@ min_latency = max(
 **Acceptance criteria for final model**:
 - **MANDATORY**: All AC checks pass (Tier 2) — physics violations are unacceptable
 - **PRIMARY**: All CV checks pass with specified thresholds (Tier 1)
-  - CV-1 (MoE): MAPE < 20%
+  - CV-1 (Yi+Mistral): Mean MAPE < 15% across 3 test experiments
   - CV-2 (workload): Mean MAPE < 15%, roleplay vs general variance < 3%
   - CV-3 (TP=2): MAPE < 15%
 
 **If validation fails**:
 - **AC failure** → Agent must add missing physics terms (communication overhead, causality bounds, etc.)
-- **CV-1 (MoE) fails** → Need MoE-specific basis function (expert routing overhead, load imbalance)
+- **CV-1 (Yi+Mistral) fails** → Model overfitting to Llama/Qwen specifics; not learning transferable compute/memory/TP patterns
 - **CV-2 (workload) fails** → Basis functions memorizing workload distributions, violates workload-agnostic constraint
 - **CV-3 (TP=2) fails** → TP basis function has wrong functional form, doesn't interpolate between TP=1 and TP=4
 
 ## Running Cross-Validation Tests
 
-**Using the pre-implemented inner loop script:**
+**Using the automated CV test runner:**
 
-### CV-1: Leave-One-Model-Out (Dense→MoE)
+All CV tests are implemented in `training/scripts/run_cv_tests.py`, which handles:
+- Creating train/test data splits (deterministic, never randomized)
+- Training on train set (1000 trials, seed=42)
+- Evaluating on test set with trained coefficients
+- Computing MAPE metrics and checking pass/fail criteria
+- Generating JSON results + markdown reports
 
-```bash
-# Step 1: Create training subset (dense models only)
-mkdir -p trainval_data_cv1_train
-cp -r trainval_data/{llama-2-7b,llama-3.1-70b,mistral-nemo-12b,qwen2.5-7b,yi-34b}* trainval_data_cv1_train/
-
-# Step 2: Create test subset (MoE only)
-mkdir -p trainval_data_cv1_test
-cp -r trainval_data/llama-4-scout-17b-16e* trainval_data_cv1_test/
-
-# Step 3: Generate manifest and Go code with outer loop agent
-# (Agent runs on dense models only)
-
-# Step 4: Train on dense subset
-cd training/
-python inner_loop_optimize.py --data-dir trainval_data_cv1_train
-
-# Step 5: Evaluate on MoE holdout (frozen basis functions, refit coefficients)
-python inner_loop_optimize.py --data-dir trainval_data_cv1_test \
-  --manifest iteration_manifest_cv1.yaml  # Uses same basis functions
-
-# Step 6: Check: MAPE < 20% on MoE test set?
-```
-
-### CV-2: Leave-One-Workload-Out
+### Run All Tests
 
 ```bash
-# Training: codegen + reasoning
-mkdir -p trainval_data_cv2_train
-cp -r trainval_data/*codegen* trainval_data/*reasoning* trainval_data_cv2_train/
+cd training
 
-# Test: roleplay + general
-mkdir -p trainval_data_cv2_test
-cp -r trainval_data/*roleplay* trainval_data/*general* trainval_data_cv2_test/
+# Run all three CV tests (recommended after iteration converges)
+python scripts/run_cv_tests.py --iteration 9 --cv-test all
 
-# Train and evaluate
-python inner_loop_optimize.py --data-dir trainval_data_cv2_train
-python inner_loop_optimize.py --data-dir trainval_data_cv2_test
-
-# Check: Mean MAPE < 15%? Roleplay vs general variance < 3%?
+# Or run individual tests
+python scripts/run_cv_tests.py --iteration 9 --cv-test CV-1
+python scripts/run_cv_tests.py --iteration 9 --cv-test CV-2
+python scripts/run_cv_tests.py --iteration 9 --cv-test CV-3
 ```
 
-### CV-3: Leave-One-TP-Out
+**Runtime**: ~33 minutes per test (1000 trials), ~100 minutes total for all 3 tests.
+
+### Outputs
+
+```
+training/cv_results/
+├── cv-1_results.json        # CV-1 detailed results
+├── cv-1_report.md            # CV-1 human-readable report (with pass/fail)
+├── cv-2_results.json
+├── cv-2_report.md
+├── cv-3_results.json
+└── cv-3_report.md
+```
+
+### Interpreting Results
+
+**Check the reports:**
+```bash
+cat cv_results/cv-1_report.md  # Look for "Status: ✅ PASS" or "❌ FAIL"
+cat cv_results/cv-2_report.md
+cat cv_results/cv-3_report.md
+```
+
+**Pass criteria:**
+- **CV-1**: Mean MAPE < 15% across Yi + Mistral (3 experiments)
+- **CV-2**: Mean MAPE < 15% AND roleplay/general variance < 3%
+- **CV-3**: Mean MAPE < 15% across TP=2 experiments
+
+**Example successful result (CV-1):**
+```
+Status: ✅ PASS
+Train loss: 155.0%
+Test TTFT MAPE: 14.2% ← Under 15% threshold
+Test E2E MAPE: 13.8%  ← Under 15% threshold
+```
+
+**Example failure (CV-1):**
+```
+Status: ❌ FAIL
+Train loss: 155.0%
+Test TTFT MAPE: 22.5% ← Over 15% threshold
+Test E2E MAPE: 19.3%  ← Over 15% threshold
+
+Interpretation: Model overfitting to Llama/Qwen; add regularization or more diverse training data
+```
+
+### Advanced Options
 
 ```bash
-# Training: TP=1 + TP=4
-mkdir -p trainval_data_cv3_train
-cp -r trainval_data/*tp1* trainval_data/*tp4* trainval_data_cv3_train/
+# Use fewer trials for faster testing (less accurate)
+python scripts/run_cv_tests.py --iteration 9 --cv-test CV-1 --n-trials 500
 
-# Test: TP=2
-mkdir -p trainval_data_cv3_test
-cp -r trainval_data/*tp2* trainval_data_cv3_test/
+# Specify custom data directory
+python scripts/run_cv_tests.py --iteration 9 --cv-test all --data-dir trainval_data
 
-# Train and evaluate
-python inner_loop_optimize.py --data-dir trainval_data_cv3_train
-python inner_loop_optimize.py --data-dir trainval_data_cv3_test
-
-# Check: MAPE < 15% on TP=2?
+# Custom output directory
+python scripts/run_cv_tests.py --iteration 9 --cv-test all --output-dir my_cv_results
 ```
 
-**Note**: In all CV tests, **basis functions are frozen** from the main training run. Only the coefficients (α, β) are refit on the holdout training set using `inner_loop_optimize.py`.
+**Note**: The script uses **fixed deterministic data splits** (never randomized) with seed=42 for reproducibility. All results are fully reproducible across runs.
 
 ---
 
