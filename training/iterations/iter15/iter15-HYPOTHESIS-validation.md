@@ -272,6 +272,82 @@ The diagnostic clause stated: "If cold-start performs WORSE than warm-start by >
 
 ---
 
+### Critical Oversight: Why Not Iter9?
+
+**The most serious strategic error in iter15 was ignoring iter9 as a warm-start baseline.**
+
+**Iter9 characteristics** (from TRAINING_JOURNEY.md):
+- Loss: **161% RMSE** (only 6pp worse than iter7's 155%)
+- **FIRST iteration with fully clean dataset** (15/15 experiments, 100% clean data)
+- Stable coefficients: β₀, β₁, β₂, β₄, β₅ all physically plausible
+- Critical discovery: Sequence-length dependence (not architecture-specific)
+- β₉ (FP8) rejected by optimizer (→0.14μs), but model remained stable
+
+**Compare to iter7** (which iter14-15 referenced):
+- Loss: **155% RMSE** (6pp better than iter9)
+- But trained on **14 clean + 1 bad** (93% clean) - still had corrupted Scout general-lite
+- **Dataset mismatch**: reasoning-lite came AFTER iter7 → warm-starting from iter7 anchors optimizer in wrong basin
+
+**The cascade timeline**:
+- **Iter9: 161%** (stable, final clean dataset) ← **LAST KNOWN GOOD STATE**
+- Iter10: 4267% (💥 catastrophic, added β₁₀ + β₃')
+- Iter11-12: 2590-4084% (still catastrophic)
+- Iter13: 2387% (returned to iter7, but wrong dataset + β₅ bug)
+- Iter14: 2319% (fixed β₅, but warm-start from iter7 failed)
+- Iter15: 6538% (cold-start, threw away ALL historical information)
+
+**Why iter15 should have warm-started from iter9**:
+
+1. **Dataset alignment**: Iter9 trained on SAME dataset as iter15 (15 clean experiments, reasoning-lite)
+   - Warm-starting from iter7 (different dataset) anchors optimizer in wrong basin
+   - Cold-starting throws away the fact that iter9 ALREADY converged on the correct dataset
+
+2. **Coefficient priors**: Iter9's coefficients are better priors than random:
+   - β₀=0.191, β₁=1.108, β₄=0.705, β₅=27.5 were stable and physically plausible
+   - β₆=99ms was inflated (compensating for wrong β₉), but that's a local correction
+   - Starting from iter9 gives optimizer 5-6 good coefficients instead of 0
+
+3. **Sample efficiency**: Warm-starting from iter9 would need **1000 trials** (not 2000):
+   - Start near known-good region → optimizer explores locally
+   - Cold-start wastes trials exploring obviously bad regions (e.g., β₀=0.01 → prefill 100× too slow)
+
+4. **Iter9 → iter10 is where cascade started**:
+   - The catastrophic failure began when iter10 added β₁₀ (batching) + β₃' (KV seq-len) simultaneously
+   - Going back to iter9 and adding terms **incrementally** (not all at once) would prevent cascade
+
+**What iter15 should have done**:
+
+```python
+# Instead of cold-start (2000 trials, 0 priors):
+warm_start_from_iter9 = {
+    'beta': [
+        0.191,  # β₀ prefill (iter9 stable)
+        1.108,  # β₁ decode mem (iter9 stable)
+        0.820,  # β₂ TP comm (iter9 had inflated, but reasonable)
+        1.0,    # β₃ KV mgmt (reset, iter9 was inflated to 9.6ms)
+        0.705,  # β₄ decode comp (iter9 stable)
+        27.5,   # β₅ MoE gating (iter9 stable)
+        40.0,   # β₆ scheduler (reset, iter9 was inflated to 99ms)
+        0.027,  # β₇ decode overhead (iter9 stable)
+        20.0,   # β₈ MoE non-compute (NEW, use physics prior)
+        1.0     # β₉ prefill batching (NEW, use physics prior)
+    ]
+}
+# Expected: Loss 161% → <300% with 1000 trials (vs 6538% with cold-start 2000 trials)
+```
+
+**Why this matters for iter16**:
+
+Agent 1 (Design) should:
+1. **Start from iter9 coefficients** (not iter7, not cold-start)
+2. **Fix β₃, β₆** (both inflated in iter9: 9.6ms, 99ms → reset to 1.0ms, 40ms)
+3. **Add new terms incrementally**: First fix prefill (vLLM profiling), THEN add MoE/batching if needed
+4. **Use 1000 trials** (warm-start is 2× more sample-efficient than cold-start)
+
+**Critical lesson**: When a system enters catastrophic cascade (iter10-15), **revert to the last known-good state on the CURRENT dataset** (iter9), not an earlier state on a different dataset (iter7) or a fresh start (cold-start). This is debugging 101: revert to the last commit that worked, not an arbitrary earlier commit or a fresh install.
+
+---
+
 ## H-error-pattern: Workload-Specific Predictions
 
 **Prediction** (from Agent 1): After iter15, error distribution will show:
