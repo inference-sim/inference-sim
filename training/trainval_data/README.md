@@ -167,6 +167,39 @@ Per-stage aggregated metrics (same schema as summary, scoped to load stage).
 - **DLP**: Data-Local Parallelism (multiple batches per pod, within TP×DLP GPUs)
 - **GPUs**: Total GPUs = TP × DLP
 
+## Gated Model Configs
+
+Several training experiments use gated HuggingFace models (Meta Llama family) that require authentication for `config.json` auto-fetch. Without `HF_TOKEN`, these experiments silently fail during optimization — the optimizer trains on fewer experiments without warning.
+
+**Affected models**: `meta-llama/Llama-2-7b-hf` (4 experiments), `meta-llama/Llama-3.1-70B-Instruct` (2 experiments)
+
+**Option 1: Set HF_TOKEN** (recommended if you have Meta model access):
+```bash
+export HF_TOKEN=hf_your_token_here
+```
+
+**Option 2: Use NousResearch public mirrors** (no authentication required):
+```bash
+mkdir -p model_configs/llama-2-7b-hf model_configs/llama-3.1-70b-instruct
+
+curl -sL "https://huggingface.co/NousResearch/Llama-2-7b-hf/resolve/main/config.json" \
+  -o model_configs/llama-2-7b-hf/config.json
+
+curl -sL "https://huggingface.co/NousResearch/Meta-Llama-3.1-70B-Instruct/resolve/main/config.json" \
+  -o model_configs/llama-3.1-70b-instruct/config.json
+```
+
+NousResearch hosts architecture-identical, ungated copies of Meta models. The `config.json` files contain only model architecture parameters (layer count, hidden dim, etc.) — no weights.
+
+**Verify all 15 experiments work**:
+```bash
+python run_blis_and_compute_loss.py --latency-model evolved \
+  --alpha-coeffs "1,1,1" --beta-coeffs "1,1,1,1,1,1,1" \
+  --blis-binary ../blis --data-dir trainval_data --evaluate-per-experiment 2>/dev/null \
+  | python -c "import json,sys; d=json.load(sys.stdin); print(f'{d[\"num_succeeded\"]}/{d[\"num_experiments\"]} experiments')"
+# Expected: 15/15 experiments
+```
+
 ## Data Provenance
 
 - **Collection Framework**: inference-sim data collection pipeline
