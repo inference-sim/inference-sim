@@ -74,7 +74,7 @@ Each iteration N follows this sequence:
 **Process**:
 1. Read manifest, bounds, Go code from `iterations/iter{N}/`
 2. Compile BLIS with evolved backend
-3. Run Bayesian optimization (2000 trials)
+3. Run Bayesian optimization (1000 trials)
 4. For each trial: Inject coefficients → run BLIS → compute loss
 5. Save results to `iterations/iter{N}/inner_loop_results.json`
 
@@ -212,7 +212,7 @@ type LatencyModel interface {
 ### Secondary Metrics
 
 5. **Sample efficiency**: Converge in ≤ 5 outer loop iterations
-6. **Optimization efficiency**: Inner loop runs 2000 trials (~67 minutes per iteration)
+6. **Optimization efficiency**: Inner loop runs 1000 trials (~33 minutes per iteration)
 7. **Coefficient stability**: β values stay within physically plausible ranges
 
 ### Qualitative Goals
