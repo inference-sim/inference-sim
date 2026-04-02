@@ -33,13 +33,16 @@ import (
 //  3. FP8 peak FLOPS: Select TFlopsFP8 for FP8 models on GPUs with native FP8
 //     tensor cores (H100), matching roofline.go's logic.
 //
-// Step-time formula (same 7-term structure as trained-roofline):
+// Step-time formula (8-term, extends trained-roofline with MoE overhead):
 //
 //	β₁·max(T_pf_compute, T_pf_kv) + β₂·max(T_dc_compute, T_dc_kv)
 //	+ β₃·T_weight + β₄·T_tp + β₅·L + β₆·batchSize + β₇
+//	+ β₈·nMoELayers
 //
 // Where β₁-β₃ are dimensionless roofline corrections (analytical prior ≈ 1.0),
-// β₄ is TP communication correction, β₅ is µs/layer, β₆ is µs/request, β₇ is µs/step.
+// β₄ is TP communication correction, β₅ is µs/layer, β₆ is µs/request, β₇ is µs/step,
+// β₈ is µs/MoE-layer (router gating + token permutation + EP communication overhead;
+// zero for dense models since nMoELayers=0).
 //
 // Alpha coefficients:
 //   - α₀: QueueingTime — fixed per-request API processing overhead (µs)
@@ -47,7 +50,7 @@ import (
 //   - α₂: OutputTokenProcessingTime — per-output-token overhead (µs/token)
 type EvolvedModel struct {
 	Alpha [3]float64 // [α₀, α₁, α₂]
-	Beta  []float64  // [β₁..β₇] — 7 coefficients
+	Beta  []float64  // [β₁..β₈] — 8 coefficients (β₈=0 when 7 provided for backward compat)
 
 	// Pre-computed architecture features (frozen at construction).
 	numLayers      int
@@ -192,14 +195,15 @@ func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 	// Currently zeroed (β₄=0 in trained-roofline fit; TP cost absorbed into β₅·L).
 	tTp := 0.0
 
-	// ─── 7-term step-time formula ──────────────────────────────────────
+	// ─── 8-term step-time formula ──────────────────────────────────────
 	stepTime := m.Beta[0]*math.Max(tPfCompute, tPfKv) +
 		m.Beta[1]*math.Max(tDcCompute, tDcKv) +
 		m.Beta[2]*tWeight +
 		m.Beta[3]*tTp +
 		m.Beta[4]*L +
 		m.Beta[5]*batchSize +
-		m.Beta[6]
+		m.Beta[6] +
+		m.Beta[7]*float64(m.numMoELayers) // β₈: per-MoE-layer overhead (µs/MoE-layer; 0 for dense)
 
 	return max(1, clampToInt64(stepTime))
 }
@@ -231,13 +235,17 @@ func (m *EvolvedModel) PostDecodeFixedOverhead() int64 {
 // NewEvolvedModel creates an EvolvedModel with validation.
 // Called by NewLatencyModel() when hw.Backend == "evolved".
 func NewEvolvedModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (*EvolvedModel, error) {
-	// Validate coefficient counts (iteration 15: 3 alpha, 7 beta)
+	// Validate coefficient counts (at least 7 beta required; 8th is optional MoE term)
 	if len(coeffs.AlphaCoeffs) < 3 {
 		return nil, fmt.Errorf("evolved model: AlphaCoeffs requires at least 3 elements, got %d", len(coeffs.AlphaCoeffs))
 	}
 	if len(coeffs.BetaCoeffs) < 7 {
-		return nil, fmt.Errorf("evolved model: BetaCoeffs requires at least 7 elements for iteration 15, got %d (expected β₁-β₇)", len(coeffs.BetaCoeffs))
+		return nil, fmt.Errorf("evolved model: BetaCoeffs requires at least 7 elements, got %d (expected β₁-β₇, optionally β₈)", len(coeffs.BetaCoeffs))
 	}
+
+	// Backward compatible: 7 betas still work (β₈ defaults to 0 = no MoE correction)
+	betaSlice := make([]float64, 8)
+	copy(betaSlice, coeffs.BetaCoeffs[:min(8, len(coeffs.BetaCoeffs))])
 
 	// Validate hardware config
 	if hw.TP <= 0 {
@@ -314,7 +322,7 @@ func NewEvolvedModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (*Evo
 
 	return &EvolvedModel{
 		Alpha:          [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
-		Beta:           coeffs.BetaCoeffs[:7],
+		Beta:           betaSlice,
 		numLayers:      hw.ModelConfig.NumLayers,
 		numMoELayers:   numMoELayers,
 		numDenseLayers: numDenseLayers,

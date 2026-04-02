@@ -1,0 +1,30 @@
+iteration: 20
+latency_backend_name: "evolved"
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 20: Add β₈·nMoELayers to the evolved model — first architectural change
+  since iter16 adopted the trained-roofline formula.
+
+  **What Changed in evolved_model.go**:
+  - 8-term formula: added β₈·float64(m.numMoELayers) to the step-time sum
+  - Backward compatible: 7-beta callers get β₈=0 (padded automatically)
+  - No other files changed; Python optimizer reads beta count dynamically
+
+  **Why**:
+  Diagnostic analysis of iter19 best coefficients showed Scout MoE experiments
+  systematically under-predict by ~50% (TTFT, E2E, ITL all uniformly low). The
+  model predicts roughly half of actual Scout latency. A per-MoE-layer term
+  captures router gating, token permutation, and EP communication overhead that
+  the 7-term formula entirely misses.
+
+  **Run Command**:
+  python3.11 inner_loop_optimize.py \
+    --iteration 20 \
+    --n-trials 500 \
+    --n-jobs 15 \
+    --patience 100 \
+    --timeout 200 \
+    --data-dir /Users/sri/Documents/Projects/inference-sim/training/trainval_data
+
+timestamp: "2026-04-01T22:00:00.000000"
