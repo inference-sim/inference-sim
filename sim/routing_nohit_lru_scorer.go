@@ -10,7 +10,7 @@ package sim
 //	Reads: KVCache.GetCachedBlocks via cacheQueryFn — ground truth (synchronous,
 //	no staleness). Used only for warm/cold detection, not scoring magnitude.
 //	LRU state is deterministic (updated by observer on cold routing only).
-func newNoHitLRUScorer(cacheQueryFn CacheQueryFn) (scorerFunc, observerFunc) {
+func newNoHitLRUScorer(cacheQueryFn cacheQueryFn) (scorerFunc, observerFunc) {
 	// LRU tracking: ordered list of instance IDs, most-recently-used first.
 	// Only updated on cold request routing.
 	var lruOrder []string // most-recent first
@@ -40,7 +40,7 @@ func newNoHitLRUScorer(cacheQueryFn CacheQueryFn) (scorerFunc, observerFunc) {
 		lastWarm = false
 		lastReqID = req.ID
 		for _, snap := range snapshots {
-			if fn, ok := cacheQueryFn[snap.ID]; ok {
+			if fn, ok := cacheQueryFn[snap.ID]; ok && fn != nil {
 				if fn(req.InputTokens) > 0 {
 					lastWarm = true
 					break
@@ -57,11 +57,31 @@ func newNoHitLRUScorer(cacheQueryFn CacheQueryFn) (scorerFunc, observerFunc) {
 		}
 		// BC-3: cold request → LRU positional scoring
 		total := len(snapshots)
-		if total == 1 {
-			scores[snapshots[0].ID] = 1.0
+		if total <= 1 {
+			if total == 1 {
+				scores[snapshots[0].ID] = 1.0
+			}
 			return scores
 		}
-		// Build rank: never-used first (rank 0), then oldest-used to newest-used
+
+		// Prune stale entries: remove instances no longer in the current snapshot set.
+		// Prevents unbounded growth of lruOrder/lruSet under instance churn (autoscaling).
+		currentIDs := make(map[string]bool, total)
+		for _, snap := range snapshots {
+			currentIDs[snap.ID] = true
+		}
+		pruned := lruOrder[:0]
+		for _, id := range lruOrder {
+			if currentIDs[id] {
+				pruned = append(pruned, id)
+			} else {
+				delete(lruSet, id)
+			}
+		}
+		lruOrder = pruned
+
+		// Build rank: never-used first (rank 0), then oldest-used to newest-used.
+		// O(N*S) where N=len(lruOrder), S=len(snapshots); acceptable for typical cluster sizes.
 		rank := 0
 		// Never-used instances (not in lruSet) get lowest rank indices (= highest scores)
 		var neverUsed []string
@@ -77,18 +97,8 @@ func newNoHitLRUScorer(cacheQueryFn CacheQueryFn) (scorerFunc, observerFunc) {
 		// Used instances: oldest first (end of lruOrder) to newest (start)
 		for i := len(lruOrder) - 1; i >= 0; i-- {
 			id := lruOrder[i]
-			// Only score if this instance is in the current snapshot set
-			found := false
-			for _, snap := range snapshots {
-				if snap.ID == id {
-					found = true
-					break
-				}
-			}
-			if found {
-				scores[id] = 1.0 - float64(rank)/float64(total-1)
-				rank++
-			}
+			scores[id] = 1.0 - float64(rank)/float64(total-1)
+			rank++
 		}
 		return scores
 	}

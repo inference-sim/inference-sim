@@ -6,7 +6,7 @@ import "testing"
 // to never-used instances first, then by LRU position.
 func TestNoHitLRU_ColdRequestDistribution(t *testing.T) {
 	// All instances return 0 cached blocks (cold)
-	cacheQueryFn := CacheQueryFn{
+	cacheQueryFn := cacheQueryFn{
 		"a": func(tokens []int) int { return 0 },
 		"b": func(tokens []int) int { return 0 },
 		"c": func(tokens []int) int { return 0 },
@@ -62,7 +62,7 @@ func TestNoHitLRU_ColdRequestDistribution(t *testing.T) {
 
 // TestNoHitLRU_WarmRequestNeutral verifies BC-4: warm requests → all 0.5.
 func TestNoHitLRU_WarmRequestNeutral(t *testing.T) {
-	cacheQueryFn := CacheQueryFn{
+	cacheQueryFn := cacheQueryFn{
 		"a": func(tokens []int) int { return 3 }, // has cached blocks
 		"b": func(tokens []int) int { return 0 },
 	}
@@ -82,7 +82,7 @@ func TestNoHitLRU_WarmRequestNeutral(t *testing.T) {
 func TestNoHitLRU_ObserverColdOnly(t *testing.T) {
 	// Use a mutable flag so we can switch from warm to cold mid-test.
 	warmA := true
-	cacheQueryFn := CacheQueryFn{
+	cacheQueryFn := cacheQueryFn{
 		"a": func(tokens []int) int {
 			if warmA {
 				return 3
@@ -110,7 +110,7 @@ func TestNoHitLRU_ObserverColdOnly(t *testing.T) {
 
 // TestNoHitLRU_SingleInstanceCold verifies single instance cold → score 1.0.
 func TestNoHitLRU_SingleInstanceCold(t *testing.T) {
-	cacheQueryFn := CacheQueryFn{
+	cacheQueryFn := cacheQueryFn{
 		"only": func(tokens []int) int { return 0 },
 	}
 	scorer, _ := newNoHitLRUScorer(cacheQueryFn)
@@ -140,8 +140,8 @@ func TestNoHitLRU_NilCacheQueryFn(t *testing.T) {
 // TestNoHitLRU_Determinism verifies INV-6: identical routing sequences produce
 // identical LRU state and scores.
 func TestNoHitLRU_Determinism(t *testing.T) {
-	makeCacheQueryFn := func() CacheQueryFn {
-		return CacheQueryFn{
+	makeCacheQueryFn := func() cacheQueryFn {
+		return cacheQueryFn{
 			"a": func(tokens []int) int { return 0 },
 			"b": func(tokens []int) int { return 0 },
 			"c": func(tokens []int) int { return 0 },
@@ -184,5 +184,65 @@ func TestNoHitLRU_Determinism(t *testing.T) {
 				t.Errorf("request %d, instance %s: run1=%.3f, run2=%.3f (determinism violation)", i, id, v1, v2)
 			}
 		}
+	}
+}
+
+// TestNoHitLRU_LRURepromotion verifies that routing the same instance twice
+// re-promotes it to most-recently-used, producing correct LRU rank scores.
+func TestNoHitLRU_LRURepromotion(t *testing.T) {
+	cqf := cacheQueryFn{
+		"a": func(tokens []int) int { return 0 },
+		"b": func(tokens []int) int { return 0 },
+		"c": func(tokens []int) int { return 0 },
+	}
+	scorer, obs := newNoHitLRUScorer(cqf)
+	snapshots := []RoutingSnapshot{{ID: "a"}, {ID: "b"}, {ID: "c"}}
+
+	// Route: a, b, a (re-promote a to most-recently-used)
+	for _, target := range []string{"a", "b", "a"} {
+		req := &Request{ID: "r-" + target, InputTokens: []int{1}}
+		scorer(req, snapshots)
+		obs(req, target)
+	}
+
+	// After [a, b, a]: lruOrder = [a, b]. c is never-used.
+	// c=1.0 (never-used, rank 0), b=0.5 (oldest-used, rank 1), a=0.0 (newest-used, rank 2)
+	req := &Request{ID: "r-check", InputTokens: []int{1}}
+	scores := scorer(req, snapshots)
+	if scores["c"] != 1.0 {
+		t.Errorf("c: got %.3f, want 1.0 (never-used)", scores["c"])
+	}
+	if scores["b"] != 0.5 {
+		t.Errorf("b: got %.3f, want 0.5 (oldest-used)", scores["b"])
+	}
+	if scores["a"] != 0.0 {
+		t.Errorf("a: got %.3f, want 0.0 (newest-used, re-promoted)", scores["a"])
+	}
+}
+
+// TestNoHitLRU_ObserverMismatchedReqID verifies that the observer ignores calls
+// with a request ID different from the last scored request (safety net against
+// stale LRU updates).
+func TestNoHitLRU_ObserverMismatchedReqID(t *testing.T) {
+	cqf := cacheQueryFn{
+		"a": func(tokens []int) int { return 0 },
+		"b": func(tokens []int) int { return 0 },
+	}
+	scorer, obs := newNoHitLRUScorer(cqf)
+	snapshots := []RoutingSnapshot{{ID: "a"}, {ID: "b"}}
+
+	// Score req1 (cold) — sets lastReqID = "r1"
+	req1 := &Request{ID: "r1", InputTokens: []int{1}}
+	scorer(req1, snapshots)
+
+	// Call observer with DIFFERENT request — should NOT update LRU
+	req2 := &Request{ID: "r2", InputTokens: []int{1}}
+	obs(req2, "a")
+
+	// Score req3 (cold) — "a" should still be never-used (observer was no-op)
+	req3 := &Request{ID: "r3", InputTokens: []int{1}}
+	scores := scorer(req3, snapshots)
+	if scores["a"] != 1.0 {
+		t.Errorf("a: got %.3f, want 1.0 (never-used — mismatched observer should be no-op)", scores["a"])
 	}
 }

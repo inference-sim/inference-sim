@@ -75,7 +75,7 @@ type ClusterSimulator struct {
 	// cacheQueryFn maps instance IDs to KV cache query functions for precise
 	// prefix cache scoring. Built after instance construction; deferred instances
 	// are added in NodeReadyEvent.Execute. Nil when no instances exist yet.
-	cacheQueryFn sim.CacheQueryFn
+	cacheQueryFn map[string]func([]int) int
 
 	// Flow control state (issue #882, GIE parity).
 	// When flowControlEnabled is false, these fields are nil/zero (BC-1 pass-through).
@@ -269,7 +269,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	cs.snapshotProvider = NewCachedSnapshotProvider(instanceMap, newObservabilityConfig(config.SnapshotRefreshInterval))
 
 	// Build cacheQueryFn from constructed instances for precise prefix cache scoring.
-	cs.cacheQueryFn = make(sim.CacheQueryFn, len(cs.instances))
+	cs.cacheQueryFn = make(map[string]func([]int) int, len(cs.instances))
 	for _, inst := range cs.instances {
 		id := string(inst.ID())
 		inst := inst // capture for closure

@@ -224,7 +224,7 @@ func TestAllScorers_ReturnScoreForEveryInstance(t *testing.T) {
 		{ID: "b", QueueDepth: 2, KVUtilization: 0.7},
 		{ID: "c", QueueDepth: 0, KVUtilization: 0.0},
 	}
-	cacheQueryFn := CacheQueryFn{
+	cacheQueryFn := cacheQueryFn{
 		"a": func(tokens []int) int { return 2 },
 		"b": func(tokens []int) int { return 0 },
 		"c": func(tokens []int) int { return 1 },
@@ -259,12 +259,20 @@ func TestAllScorers_ReturnScoreForEveryInstance(t *testing.T) {
 			}
 		})
 	}
+	// Verify nil-request path for original stateless scorers (queue-depth, kv-utilization, load-balance).
+	// These scorers ignore the request parameter; this confirms they don't panic on nil.
+	for _, sf := range scorerFns[:3] {
+		t.Run(sf.name+"/nil-request", func(t *testing.T) {
+			scores := sf.fn(nil, snapshots)
+			assert.Len(t, scores, len(snapshots))
+		})
+	}
 }
 
 // TestNewScorerFactory_PrecisePrefixAndNoHitLRU verifies BC-6: factory chain
-// correctly wires precise-prefix-cache and no-hit-lru scorers via NewRoutingPolicy.
+// correctly wires precise-prefix-cache and no-hit-lru scorers via NewRoutingPolicyWithCache.
 func TestNewScorerFactory_PrecisePrefixAndNoHitLRU(t *testing.T) {
-	cacheQueryFn := CacheQueryFn{
+	cacheQueryFn := cacheQueryFn{
 		"a": func(tokens []int) int { return 5 },
 		"b": func(tokens []int) int { return 0 },
 	}

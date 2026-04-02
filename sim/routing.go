@@ -158,7 +158,7 @@ type observerFunc func(req *Request, targetInstance string)
 // kv-utilization (1 - KVUtilization), load-balance (1/(1 + EffectiveLoad)).
 // See sim/routing_*.go for scorer implementations.
 //
-// Stateful scorers (prefix-affinity) register observers that update internal
+// Stateful scorers (prefix-affinity, no-hit-lru) register observers that update internal
 // state after each routing decision. Observers are called after argmax selection.
 //
 // Higher scores are preferred. Ties broken randomly when rng is non-nil;
@@ -272,14 +272,15 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64
 }
 
 // NewRoutingPolicyWithCache is like NewRoutingPolicy but enables the precise-prefix-cache
-// and no-hit-lru scorers. cacheQueryFn maps instance ID to cached block count;
-// pass nil to disable those scorers (equivalent to calling NewRoutingPolicy).
-func NewRoutingPolicyWithCache(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand, cacheQueryFn CacheQueryFn) RoutingPolicy {
-	return newRoutingPolicyInternal(name, scorerConfigs, blockSize, rng, cacheQueryFn)
+// and no-hit-lru scorers. cacheFn maps instance ID to a function returning the count of
+// consecutive cached prefix blocks for given tokens; pass nil to disable those scorers
+// (equivalent to calling NewRoutingPolicy).
+func NewRoutingPolicyWithCache(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand, cacheFn map[string]func([]int) int) RoutingPolicy {
+	return newRoutingPolicyInternal(name, scorerConfigs, blockSize, rng, cacheQueryFn(cacheFn))
 }
 
 // newRoutingPolicyInternal creates a routing policy, shared by both public constructors.
-func newRoutingPolicyInternal(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand, cacheQueryFn CacheQueryFn) RoutingPolicy {
+func newRoutingPolicyInternal(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand, cacheFn cacheQueryFn) RoutingPolicy {
 	if !IsValidRoutingPolicy(name) {
 		panic(fmt.Sprintf("unknown routing policy %q", name))
 	}
@@ -295,7 +296,7 @@ func newRoutingPolicyInternal(name string, scorerConfigs []ScorerConfig, blockSi
 		scorers := make([]scorerFunc, len(scorerConfigs))
 		var observers []observerFunc
 		for i, cfg := range scorerConfigs {
-			scorer, obs := newScorerWithObserver(cfg.Name, int(blockSize), cacheQueryFn)
+			scorer, obs := newScorerWithObserver(cfg.Name, int(blockSize), cacheFn)
 			scorers[i] = scorer
 			if obs != nil {
 				observers = append(observers, obs)

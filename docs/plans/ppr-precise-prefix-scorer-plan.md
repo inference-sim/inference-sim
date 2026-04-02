@@ -17,6 +17,12 @@
 **Source:** [Issue #883](https://github.com/inference-sim/inference-sim/issues/883)
 **Closes:** `Fixes #883`
 
+> **Implementation note:** After code review feedback (see PR #914 comments), the factory
+> threading was refactored to use a dual-constructor pattern (`NewRoutingPolicy` unchanged /
+> `NewRoutingPolicyWithCache` for cluster call sites) instead of modifying the existing
+> `NewRoutingPolicy` signature. This eliminated all 48 test call site updates. The plan below
+> describes the original approach; the final implementation differs in Task 2 and Task 5.
+
 ---
 
 ## Phase 0: Component Context
