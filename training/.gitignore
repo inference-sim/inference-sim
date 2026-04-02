@@ -43,8 +43,7 @@ output/*
 # instrumented vllm code
 vllm
 
-# Iteration artifacts
-iterations/*/inner_loop_results.json
+# Iteration artifacts (inner_loop_results.json is tracked — it's the iteration output record)
 iterations/*/ablations/*.log
 iterations/*/ablations/*_results.json
 iterations/*/ablations/*_bounds.yaml

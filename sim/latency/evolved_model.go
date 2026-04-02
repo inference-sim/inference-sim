@@ -33,14 +33,27 @@ import (
 //  3. FP8 peak FLOPS: Select TFlopsFP8 for FP8 models on GPUs with native FP8
 //     tensor cores (H100), matching roofline.go's logic.
 //
-// Step-time formula (8-term, extends trained-roofline with MoE overhead):
+// Step-time formula (up to 9-term, extends trained-roofline with MoE overhead
+// and optional prefill compute/memory split):
+//
+// With 8 betas (default):
 //
 //	β₁·max(T_pf_compute, T_pf_kv) + β₂·max(T_dc_compute, T_dc_kv)
 //	+ β₃·T_weight + β₄·T_tp + β₅·L + β₆·batchSize + β₇
 //	+ β₈·nMoELayers
 //
-// Where β₁-β₃ are dimensionless roofline corrections (analytical prior ≈ 1.0),
-// β₄ is TP communication correction, β₅ is µs/layer, β₆ is µs/request, β₇ is µs/step,
+// With 9 betas (prefill split — separates compute and memory corrections):
+//
+//	β₁ₐ·T_pf_compute + β₁ᵦ·T_pf_kv + β₂·max(T_dc_compute, T_dc_kv)
+//	+ β₃·T_weight + β₄·T_tp + β₅·L + β₆·batchSize + β₇
+//	+ β₈·nMoELayers
+//
+// The prefill split allows independent correction of compute (FlashAttention may
+// reduce effective FLOPs) and memory bandwidth (closer to roofline prediction).
+//
+// Where β₁/β₁ₐ-β₃ are dimensionless roofline corrections (analytical prior ≈ 1.0),
+// β₁ᵦ (β₉) is prefill memory correction, β₄ is TP communication correction,
+// β₅ is µs/layer, β₆ is µs/request, β₇ is µs/step,
 // β₈ is µs/MoE-layer (router gating + token permutation + EP communication overhead;
 // zero for dense models since nMoELayers=0).
 //
@@ -50,7 +63,10 @@ import (
 //   - α₂: OutputTokenProcessingTime — per-output-token overhead (µs/token)
 type EvolvedModel struct {
 	Alpha [3]float64 // [α₀, α₁, α₂]
-	Beta  []float64  // [β₁..β₈] — 8 coefficients (β₈=0 when 7 provided for backward compat)
+	Beta  []float64  // [β₁..β₉] — 7-9 coefficients (backward compat: 7→β₈=0, 8→β₉ unused)
+
+	// Mode flags.
+	prefillSplit bool // true when 9 betas provided: β₁ₐ·compute + β₁ᵦ·kv instead of β₁·max
 
 	// Pre-computed architecture features (frozen at construction).
 	numLayers      int
@@ -195,8 +211,18 @@ func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 	// Currently zeroed (β₄=0 in trained-roofline fit; TP cost absorbed into β₅·L).
 	tTp := 0.0
 
-	// ─── 8-term step-time formula ──────────────────────────────────────
-	stepTime := m.Beta[0]*math.Max(tPfCompute, tPfKv) +
+	// ─── Step-time formula ─────────────────────────────────────────────
+	//
+	// Prefill term: β₁·max(compute, kv) when 8 betas,
+	//               β₁ₐ·compute + β₁ᵦ·kv when 9 betas (prefill split).
+	var prefillTerm float64
+	if m.prefillSplit {
+		prefillTerm = m.Beta[0]*tPfCompute + m.Beta[8]*tPfKv
+	} else {
+		prefillTerm = m.Beta[0] * math.Max(tPfCompute, tPfKv)
+	}
+
+	stepTime := prefillTerm +
 		m.Beta[1]*math.Max(tDcCompute, tDcKv) +
 		m.Beta[2]*tWeight +
 		m.Beta[3]*tTp +
@@ -243,9 +269,9 @@ func NewEvolvedModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (*Evo
 		return nil, fmt.Errorf("evolved model: BetaCoeffs requires at least 7 elements, got %d (expected β₁-β₇, optionally β₈)", len(coeffs.BetaCoeffs))
 	}
 
-	// Backward compatible: 7 betas still work (β₈ defaults to 0 = no MoE correction)
-	betaSlice := make([]float64, 8)
-	copy(betaSlice, coeffs.BetaCoeffs[:min(8, len(coeffs.BetaCoeffs))])
+	// Backward compatible: 7→β₈=0, 8→no prefill split, 9→prefill split active
+	betaSlice := make([]float64, 9)
+	copy(betaSlice, coeffs.BetaCoeffs[:min(9, len(coeffs.BetaCoeffs))])
 
 	// Validate hardware config
 	if hw.TP <= 0 {
@@ -323,6 +349,7 @@ func NewEvolvedModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (*Evo
 	return &EvolvedModel{
 		Alpha:          [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
 		Beta:           betaSlice,
+		prefillSplit:   len(coeffs.BetaCoeffs) >= 9,
 		numLayers:      hw.ModelConfig.NumLayers,
 		numMoELayers:   numMoELayers,
 		numDenseLayers: numDenseLayers,
