@@ -1,0 +1,61 @@
+{
+  "iteration": 22,
+  "backend_name": "evolved",
+  "timestamp": "2026-04-02T00:49:14.289361",
+  "optimization": {
+    "n_trials": 16,
+    "optimization_time_seconds": null,
+    "num_errors": 0,
+    "note": "Golden section search on \u03b2\u2082 (decode correction) with all other coefficients held at iter21 values. Tolerance 0.005."
+  },
+  "best_params": {
+    "alpha": [
+      15561.959717498621,
+      776.243476414174,
+      45.910232684500556
+    ],
+    "beta": [
+      0.116,
+      1.1457,
+      1.363060401466404,
+      0.3960942587233032,
+      62.28932987355146,
+      2.7976795228174027,
+      169.36568163371626,
+      440.0,
+      0.0
+    ]
+  },
+  "loss": {
+    "overall_loss": 39.42,
+    "ttft_rmse": 24.0,
+    "e2e_rmse": 15.42
+  },
+  "coordinate_descent_history": [
+    {
+      "coeff": "\u03b2\u2088 (MoE overhead)",
+      "iter": 20,
+      "before": 0,
+      "after": 440.0,
+      "loss_before": 60.11,
+      "loss_after": 40.58
+    },
+    {
+      "coeff": "\u03b2\u2081\u2090 (prefill compute)",
+      "iter": 21,
+      "before": 0.201,
+      "after": 0.116,
+      "loss_before": 40.58,
+      "loss_after": 39.86
+    },
+    {
+      "coeff": "\u03b2\u2082 (decode correction)",
+      "iter": 22,
+      "before": 1.611,
+      "after": 1.146,
+      "loss_before": 39.86,
+      "loss_after": 39.42
+    }
+  ],
+  "error_log": []
+}
