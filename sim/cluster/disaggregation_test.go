@@ -988,8 +988,8 @@ func TestDisaggregation_TTFT_IncludesTransferAndDecode(t *testing.T) {
 
 	// BC-3: TTFTSum must be consistent with RequestTTFTs after projection.
 	var manualSum float64
-	for _, v := range m.RequestTTFTs {
-		manualSum += v
+	for _, k := range sortedKeys(m.RequestTTFTs) {
+		manualSum += m.RequestTTFTs[k]
 	}
 	if math.Abs(float64(m.TTFTSum)-manualSum) > 1.0 {
 		t.Errorf("BC-3: TTFTSum (%d) != sum(RequestTTFTs) (%.1f)", m.TTFTSum, manualSum)
@@ -1064,6 +1064,7 @@ func TestDisaggregation_TTFT_FallbackWhenDecodeDataMissing(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := sim.NewMetrics()
 			m.RequestTTFTs[tc.parent.PrefillSubReqID] = prefillTTFT
+			m.RequestTTFTs[tc.parent.DecodeSubReqID] = 999.0
 
 			cs := &ClusterSimulator{
 				aggregatedMetrics: m,
