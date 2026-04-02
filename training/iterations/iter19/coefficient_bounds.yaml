@@ -1,0 +1,64 @@
+# Iteration 19: Negative-λ Affine Extension
+#
+# **Strategy**: Extrapolate AWAY from iter17 CMA-ES, past iter16, into unexplored
+#   territory where the iter18 line-search gradient predicts lower loss.
+#
+# Endpoint A (λ=0 in physical space): iter16 best — loss 60.19%
+# Endpoint B (λ=-0.2 in physical space): affine extension clamped to bounds
+#
+# The interpolation parameter t ∈ [0,1] maps to physical λ ∈ [0, -0.2]:
+#   t=0 → iter16 (λ=0), t=1 → extrapolated point (λ=-0.2)
+#
+# Key transitions along this path:
+#   t ≈ 0.12 (λ=-0.025): β₆ clamps to 0 (per-request scheduling removed)
+#   t ≈ 0.75 (λ=-0.149): α₁ clamps to 0 (post-decode overhead removed)
+#   t ≈ 0.85 (λ=-0.170): α₂ clamps to 50 (output token cost at upper bound)
+#
+# First ~3 points are fully unclamped — smooth gradient exploration.
+# Beyond that, clamping gradually removes per-request overhead terms.
+
+alpha_bounds:
+  - [100.0, 50000.0]
+  - [0.0, 10000.0]
+  - [0.0, 50.0]
+
+alpha_initial:  # Endpoint A: iter16 best (loss 60.19%)
+  - 15569.495449697066
+  - 815.0556502348827
+  - 45.705744318725586
+
+beta_bounds:
+  - [0.1, 3.0]
+  - [0.3, 3.0]
+  - [0.3, 3.0]
+  - [0.0, 2.0]
+  - [0.0, 200.0]
+  - [0.0, 500.0]
+  - [0.0, 500.0]
+
+beta_initial:  # Endpoint A: iter16 best
+  - 0.20081681581824434
+  - 1.6173961192042448
+  - 1.3603417361920076
+  - 0.39579536655780084
+  - 62.19421689224744
+  - 2.937563498958273
+  - 169.37780505091155
+
+# Endpoint B: λ=-0.2 extrapolation (clamped to parameter bounds)
+# Direction: AWAY from iter17 CMA-ES, following the gradient that iter18
+# line search confirmed decreases loss.
+interpolation_endpoints:
+  n_points: 20
+  alpha:
+    - 15411.245073529777
+    - 0
+    - 50
+  beta:
+    - 0.20819294980362518
+    - 1.4765838267331408
+    - 1.4174337069543343
+    - 0.4020721020333524
+    - 64.19158949963195
+    - 0
+    - 169.1232132898107
