@@ -61,6 +61,13 @@ type DeploymentConfig struct {
 	PrefillOverrides PoolOverrides // Hardware overrides for prefill pool instances
 	DecodeOverrides  PoolOverrides // Hardware overrides for decode pool instances
 
+	// Phase 1C: Model autoscaler pipeline (issue #692).
+	// Zero value is safe: ModelAutoscalerIntervalUs=0 disables the autoscaler entirely (INV-6).
+	ModelAutoscalerIntervalUs float64   `yaml:"model_autoscaler_interval_us,omitempty"` // tick interval in μs; 0 = autoscaler disabled
+	ActuationDelayUs          DelaySpec `yaml:"actuation_delay_us,omitempty"`            // HPA/KEDA scrape lag; zero = same-tick actuation
+	ScaleUpCooldownUs         float64   `yaml:"scale_up_cooldown_us,omitempty"`          // min μs between scale-up decisions per model
+	ScaleDownCooldownUs       float64   `yaml:"scale_down_cooldown_us,omitempty"`        // min μs between scale-down decisions per model
+
 	// Phase 1B-1a: tier-ordered admission shedding config (issue #809).
 	// Zero value is safe: TierShedMinPriority=0 admits all tiers (same as AlwaysAdmit),
 	// but callers should explicitly set 3 (Standard) for meaningful protection.
