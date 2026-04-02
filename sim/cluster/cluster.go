@@ -72,6 +72,11 @@ type ClusterSimulator struct {
 	// avoid double-notifying tenantTracker (issue #884). Nil for non-session workloads.
 	sessionCallback func(*sim.Request, int64) []*sim.Request
 
+	// cacheQueryFn maps instance IDs to KV cache query functions for precise
+	// prefix cache scoring. Built after instance construction; deferred instances
+	// are added in NodeReadyEvent.Execute. Nil when no instances exist yet.
+	cacheQueryFn map[string]func([]int) int
+
 	// Flow control state (issue #882, GIE parity).
 	// When flowControlEnabled is false, these fields are nil/zero (BC-1 pass-through).
 	flowControlEnabled bool
@@ -155,8 +160,8 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		admissionLatency:     config.AdmissionLatency,
 		routingLatency:       config.RoutingLatency,
 		admissionPolicy:      admissionPolicy,
-		snapshotProvider:     nil, // set after unified construction loop below
-		routingPolicy:        sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem(sim.SubsystemRouter)),
+		snapshotProvider: nil, // set after unified construction loop below
+		routingPolicy:    nil, // set after instance construction (needs cacheQueryFn from instances)
 		trace:                simTrace,
 		inFlightRequests:     make(map[string]int, config.NumInstances),
 		shedByTier:           make(map[string]int),
@@ -177,13 +182,8 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		cs.pendingPrefillCompletions = make(map[string]string)
 		cs.pendingDecodeCompletions = make(map[string]string)
 
-		// Per-pool routing policies (use separate RNG partitions to avoid fragile coupling)
-		if len(config.PrefillScorerConfigs) > 0 {
-			cs.prefillRoutingPolicy = sim.NewRoutingPolicy("weighted", config.PrefillScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("prefill-router"))
-		}
-		if len(config.DecodeScorerConfigs) > 0 {
-			cs.decodeRoutingPolicy = sim.NewRoutingPolicy("weighted", config.DecodeScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("decode-router"))
-		}
+		// Per-pool routing policies are created after the construction loop
+		// (need cacheQueryFn from instances).
 
 		logrus.Infof("[cluster] PD disaggregation enabled: %d prefill, %d decode instances, decider=%q",
 			config.PrefillInstances, config.DecodeInstances, config.PDDecider)
@@ -267,6 +267,25 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	// Deferred instances are registered via CachedSnapshotProvider.AddInstance
 	// when NodeReadyEvent.Execute constructs them (Phase 4, T017).
 	cs.snapshotProvider = NewCachedSnapshotProvider(instanceMap, newObservabilityConfig(config.SnapshotRefreshInterval))
+
+	// Build cacheQueryFn from constructed instances for precise prefix cache scoring.
+	cs.cacheQueryFn = make(map[string]func([]int) int, len(cs.instances))
+	for _, inst := range cs.instances {
+		id := string(inst.ID())
+		inst := inst // capture for closure
+		cs.cacheQueryFn[id] = func(tokens []int) int {
+			return inst.GetCachedBlockCount(tokens)
+		}
+	}
+
+	// Create routing policies now that cacheQueryFn is available.
+	cs.routingPolicy = sim.NewRoutingPolicyWithCache(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem(sim.SubsystemRouter), cs.cacheQueryFn)
+	if len(config.PrefillScorerConfigs) > 0 {
+		cs.prefillRoutingPolicy = sim.NewRoutingPolicyWithCache("weighted", config.PrefillScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("prefill-router"), cs.cacheQueryFn)
+	}
+	if len(config.DecodeScorerConfigs) > 0 {
+		cs.decodeRoutingPolicy = sim.NewRoutingPolicyWithCache("weighted", config.DecodeScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("decode-router"), cs.cacheQueryFn)
+	}
 
 	// Phase 1B-2a: initialize TenantTracker when TenantBudgets is configured (issue #811).
 	// totalCapacity = NumInstances × MaxRunningReqs (batch size proxy for cluster-wide capacity).

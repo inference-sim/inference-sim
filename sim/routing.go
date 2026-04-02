@@ -152,11 +152,13 @@ type observerFunc func(req *Request, targetInstance string)
 // with configurable weights: composite = Σ clamp(s_i) × w_i, then argmax.
 //
 // Available scorers: prefix-affinity (proportional prefix match ratio),
+// precise-prefix-cache (min-max normalization of actual KV cache hits),
+// no-hit-lru (cold request distribution to least-recently-used instances),
 // queue-depth (min-max normalization of EffectiveLoad),
 // kv-utilization (1 - KVUtilization), load-balance (1/(1 + EffectiveLoad)).
-// See sim/routing_scorers.go and sim/routing_prefix_scorer.go for implementations.
+// See sim/routing_*.go for scorer implementations.
 //
-// Stateful scorers (prefix-affinity) register observers that update internal
+// Stateful scorers (prefix-affinity, no-hit-lru) register observers that update internal
 // state after each routing decision. Observers are called after argmax selection.
 //
 // Higher scores are preferred. Ties broken randomly when rng is non-nil;
@@ -266,6 +268,19 @@ func (ab *AlwaysBusiest) Route(_ *Request, state *RouterState) RoutingDecision {
 // nil preserves positional tie-breaking. Ignored by round-robin and always-busiest.
 // Panics on unrecognized names.
 func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand) RoutingPolicy {
+	return newRoutingPolicyInternal(name, scorerConfigs, blockSize, rng, nil)
+}
+
+// NewRoutingPolicyWithCache is like NewRoutingPolicy but enables the precise-prefix-cache
+// and no-hit-lru scorers. cacheFn maps instance ID to a function returning the count of
+// consecutive cached prefix blocks for given tokens; pass nil to disable those scorers
+// (equivalent to calling NewRoutingPolicy).
+func NewRoutingPolicyWithCache(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand, cacheFn map[string]func([]int) int) RoutingPolicy {
+	return newRoutingPolicyInternal(name, scorerConfigs, blockSize, rng, cacheQueryFn(cacheFn))
+}
+
+// newRoutingPolicyInternal creates a routing policy, shared by both public constructors.
+func newRoutingPolicyInternal(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand, cacheFn cacheQueryFn) RoutingPolicy {
 	if !IsValidRoutingPolicy(name) {
 		panic(fmt.Sprintf("unknown routing policy %q", name))
 	}
@@ -281,7 +296,7 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64
 		scorers := make([]scorerFunc, len(scorerConfigs))
 		var observers []observerFunc
 		for i, cfg := range scorerConfigs {
-			scorer, obs := newScorerWithObserver(cfg.Name, int(blockSize))
+			scorer, obs := newScorerWithObserver(cfg.Name, int(blockSize), cacheFn)
 			scorers[i] = scorer
 			if obs != nil {
 				observers = append(observers, obs)
