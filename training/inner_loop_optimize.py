@@ -64,7 +64,8 @@ class InnerLoopOptimizer:
                  data_dir: str = "trainval_data",
                  seed: int = 42,
                  n_jobs: int = 1,
-                 patience: int = 0):
+                 patience: int = 0,
+                 sampler: str = "tpe"):
         """
         Initialize inner loop optimizer.
 
@@ -75,6 +76,9 @@ class InnerLoopOptimizer:
             data_dir: Directory containing ground-truth experiments (for CV: subset of trainval_data)
             seed: Random seed for Bayesian optimization (determinism guarantee)
             n_jobs: Number of parallel trials (default: 1). Uses SQLite storage when > 1.
+            sampler: Optuna sampler to use: "tpe" (default) or "cmaes". CMA-ES uses
+                     alpha_initial/beta_initial from coefficient_bounds.yaml as x0 and
+                     requires n_jobs=1 (sequential). Better at escaping local minima.
             patience: Stop when best loss is unchanged for this many consecutive trial
                       completions (default: 0 = disabled).
         """
@@ -87,6 +91,7 @@ class InnerLoopOptimizer:
         self.data_dir = data_dir
         self.seed = seed
         self.n_jobs = n_jobs
+        self.sampler = sampler
         self.patience = patience
 
         self.backend_name = None
@@ -393,34 +398,85 @@ class InnerLoopOptimizer:
         else:
             storage = None
 
+        # Build sampler — extract warm-start values for CMA-ES if available
+        x0 = None
+        if "alpha_initial" in self.bounds and "beta_initial" in self.bounds:
+            alpha_init = self.bounds["alpha_initial"]
+            beta_init = self.bounds["beta_initial"]
+            if len(alpha_init) == 3 and len(beta_init) == len(self.bounds["beta_bounds"]):
+                x0 = {}
+                for i in range(3):
+                    x0[f"alpha_{i}"] = alpha_init[i]
+                for i in range(len(beta_init)):
+                    x0[f"beta_{i}"] = beta_init[i]
+
+        # Extract secondary endpoint for interpolation (if present)
+        x1 = None
+        interp = self.bounds.get("interpolation_endpoints")
+        if interp and "alpha" in interp and "beta" in interp:
+            alpha_sec = interp["alpha"]
+            beta_sec = interp["beta"]
+            if len(alpha_sec) == 3 and len(beta_sec) == len(self.bounds["beta_bounds"]):
+                x1 = {}
+                for i in range(3):
+                    x1[f"alpha_{i}"] = alpha_sec[i]
+                for i in range(len(beta_sec)):
+                    x1[f"beta_{i}"] = beta_sec[i]
+
+        if self.sampler == "cmaes":
+            optuna_sampler = optuna.samplers.CmaEsSampler(
+                x0=x0,
+                sigma0=0.3,
+                seed=self.seed,
+                n_startup_trials=1 if x0 else 5,
+            )
+            print(f"  Sampler: CMA-ES (sigma0=0.3, warm-start={'yes' if x0 else 'no'}, n_jobs={self.n_jobs})")
+        else:
+            optuna_sampler = optuna.samplers.TPESampler(
+                seed=self.seed,
+                multivariate=True,  # model parameter correlations
+            )
+            print(f"  Sampler: TPE (multivariate=True)")
+
         study = optuna.create_study(
             direction="minimize",
             study_name=study_name,
             storage=storage,
-            sampler=optuna.samplers.TPESampler(seed=self.seed)
+            sampler=optuna_sampler,
         )
 
-        # Enqueue initial trial if suggested values provided (warm-start optimization)
-        # Note: enqueue_trial is incompatible with n_jobs > 1 (Optuna parallel conflict)
-        if "alpha_initial" in self.bounds and "beta_initial" in self.bounds:
-            alpha_init = self.bounds["alpha_initial"]
-            beta_init = self.bounds["beta_initial"]
+        # Enqueue initial trials — interpolation line search or single warm-start
+        n_enqueued = 0
+        if x0 is not None and x1 is not None and self.sampler != "cmaes":
+            # Line search: enqueue interpolated points between x0 and x1
+            n_interp = interp.get("n_points", 30)
+            param_keys = sorted(x0.keys())
 
-            # Validate initial values length
-            if len(alpha_init) == 3 and len(beta_init) == len(self.bounds["beta_bounds"]):
-                if self.n_jobs <= 1:
-                    initial_params = {}
-                    for i in range(3):
-                        initial_params[f"alpha_{i}"] = alpha_init[i]
-                    for i in range(len(beta_init)):
-                        initial_params[f"beta_{i}"] = beta_init[i]
+            # Enqueue endpoint x0 (λ=0)
+            study.enqueue_trial(x0)
+            n_enqueued += 1
 
-                    study.enqueue_trial(initial_params)
-                    print(f"  Warm-start: Enqueued initial trial with suggested values")
-                else:
-                    print(f"  Warm-start: Skipped enqueue (incompatible with n_jobs={self.n_jobs})")
-            else:
-                print(f"  Warning: Initial values have wrong length, skipping warm-start")
+            # Enqueue N interpolated points (λ = 1/N+1 ... N/N+1)
+            for k in range(1, n_interp + 1):
+                lam = k / (n_interp + 1)
+                trial_params = {}
+                for key in param_keys:
+                    trial_params[key] = x0[key] * (1 - lam) + x1[key] * lam
+                study.enqueue_trial(trial_params)
+                n_enqueued += 1
+
+            # Enqueue endpoint x1 (λ=1)
+            study.enqueue_trial(x1)
+            n_enqueued += 1
+
+            print(f"  Line search: Enqueued {n_enqueued} trials ({n_interp} interpolated + 2 endpoints)")
+
+        elif x0 is not None and self.sampler != "cmaes":
+            study.enqueue_trial(x0)
+            n_enqueued = 1
+            print(f"  Warm-start: Enqueued initial coefficients as trial 0")
+        elif x0 is not None:
+            print(f"  Warm-start: x0 passed to CMA-ES sampler")
 
         # Build callbacks (patience-based early stopping if requested)
         callbacks = []
@@ -458,6 +514,18 @@ class InnerLoopOptimizer:
         print(f"Trials completed: {actual_trials}/{self.n_trials}")
         print(f"Optimization time: {opt_time:.1f}s")
         print(f"Time per trial: {opt_time / actual_trials:.2f}s")
+
+        # Save line-search profile CSV if interpolation was used
+        if n_enqueued > 2:
+            profile_path = os.path.join(self.iteration_dir, f"iter{self.iteration}_line_profile.csv")
+            with open(profile_path, "w") as pf:
+                pf.write("trial,lambda,loss\n")
+                for i in range(min(n_enqueued, len(study.trials))):
+                    trial = study.trials[i]
+                    lam = i / (n_enqueued - 1)  # 0 to 1
+                    loss_val = trial.value if trial.value is not None else float("inf")
+                    pf.write(f"{trial.number},{lam:.6f},{loss_val:.6f}\n")
+            print(f"\nLine profile saved to: {profile_path}")
 
         return {
             "best_alpha": best_alpha,
@@ -678,6 +746,18 @@ def main():
         )
     )
 
+    parser.add_argument(
+        "--sampler",
+        type=str,
+        default="tpe",
+        choices=["tpe", "cmaes"],
+        help=(
+            "Optuna sampler: 'tpe' (default, parallel-friendly) or 'cmaes' "
+            "(better at escaping local minima, requires n_jobs=1, uses "
+            "alpha_initial/beta_initial from coefficient_bounds.yaml as starting point)."
+        )
+    )
+
     args = parser.parse_args()
 
     # Initialize optimizer
@@ -689,6 +769,7 @@ def main():
         seed=args.seed,
         n_jobs=args.n_jobs,
         patience=args.patience,
+        sampler=args.sampler,
     )
 
     # Phase 1: Setup
