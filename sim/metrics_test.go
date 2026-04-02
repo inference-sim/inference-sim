@@ -404,7 +404,7 @@ func TestSaveResults_AlwaysEmitsHeader_ZeroCompletions(t *testing.T) {
 
 	saveErr := m.SaveResults("test", 10_000_000, 100, "")
 
-	w.Close()
+	require.NoError(t, w.Close())
 	os.Stdout = origStdout
 
 	var buf []byte
