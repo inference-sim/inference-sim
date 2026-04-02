@@ -3243,6 +3243,18 @@
 <td>Stateful: updates cache index after routing via observer</td>
 </tr>
 <tr>
+<td><code>precise-prefix-cache</code></td>
+<td>Actual KV cache state</td>
+<td>Min-max normalization of cached prefix block count per instance</td>
+<td>Stateless: queries instance KV cache directly via <code>CacheQueryFn</code></td>
+</tr>
+<tr>
+<td><code>no-hit-lru</code></td>
+<td>Routing history</td>
+<td>Cold requests (zero cache hits): LRU positional scoring; warm requests: neutral 0.5</td>
+<td>Stateful: observer tracks LRU order on cold routing only</td>
+</tr>
+<tr>
 <td><code>queue-depth</code></td>
 <td>Instance load</td>
 <td>Min-max normalization of effective load (lower load = higher score)</td>
@@ -3263,7 +3275,7 @@
 </tbody>
 </table>
 <h3 id="stateful-vs-stateless-scorers">Stateful vs. Stateless Scorers<a class="headerlink" href="#stateful-vs-stateless-scorers" title="Permanent link">&para;</a></h3>
-<p>Most scorers are <strong>stateless</strong> — they compute scores purely from the current routing snapshot. The <code>prefix-affinity</code> scorer is <strong>stateful</strong>: after a routing decision, an observer callback updates the router-side prefix cache index with the routed request's block hashes. This enables the scorer to track which prefixes are cached at which instance without querying the actual per-instance KV caches.</p>
+<p>Most scorers are <strong>stateless</strong> — they compute scores purely from the current routing snapshot. Two scorers are <strong>stateful</strong>: <code>prefix-affinity</code> updates its router-side prefix cache index after each routing decision via an observer callback, and <code>no-hit-lru</code> tracks LRU ordering of cold request routing to distribute cache-miss traffic. The <code>precise-prefix-cache</code> scorer queries actual instance KV cache state directly (via <code>CacheQueryFn</code>) rather than maintaining a router-side approximation.</p>
 <h3 id="router-side-prefix-cache-index">Router-Side Prefix Cache Index<a class="headerlink" href="#router-side-prefix-cache-index" title="Permanent link">&para;</a></h3>
 <p>The prefix-affinity scorer maintains a lightweight approximate cache of per-instance block hash history. This is separate from the actual per-instance KV cache and serves as a routing-time estimate of cache hit probability.</p>
 <p>Key properties:
