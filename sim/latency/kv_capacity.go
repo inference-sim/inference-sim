@@ -174,7 +174,10 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSi
 	// per-token value is fractional (e.g., INT4 quantization with small head dims).
 	perBlockBytes := int64(perTokenKVBytesPerGPUF * float64(blockSize))
 	if perBlockBytes <= 0 {
-		return 0, fmt.Errorf("CalculateKVBlocks: per-block KV bytes is %d (expected > 0)", perBlockBytes)
+		return 0, fmt.Errorf(
+			"CalculateKVBlocks: per-block KV bytes is %d (expected > 0); "+
+				"perTokenKVBytesPerGPU=%.6f, blockSize=%d — check BytesPerParam and TP",
+			perBlockBytes, perTokenKVBytesPerGPUF, blockSize)
 	}
 
 	// --- Step 4: Available memory budget (total across all TP GPUs) ---

@@ -113,6 +113,9 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	// Validate KV bytes per token derivation early so KVTransferStartedEvent never
 	// encounters a configuration error at runtime (the panic there is now unreachable).
 	if config.PrefillInstances > 0 {
+		if config.EffectivePrefillTP() <= 0 {
+			panic("ClusterSimulator: PD disaggregation requires prefill TP > 0 (set --tp or --prefill-tp)")
+		}
 		if _, err := latency.KVBytesPerToken(config.ModelConfig, config.EffectivePrefillTP()); err != nil {
 			panic(fmt.Sprintf("ClusterSimulator: PD disaggregation requires valid ModelConfig for KV transfer sizing: %v", err))
 		}

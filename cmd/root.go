@@ -1016,7 +1016,7 @@ var runCmd = &cobra.Command{
 		// PD disaggregation requires ModelConfig for KV transfer duration derivation.
 		// Analytical backends populate ModelConfig from HF config.json; blackbox does not.
 		// When PD is enabled and ModelConfig is zero-valued, resolve and load it using the
-		// same 3-step resolution as analytical backends (local bundled → HuggingFace fetch → error).
+		// same resolution as analytical backends (--model-config-folder → local bundled → HuggingFace fetch → error).
 		if prefillInstances > 0 && lr.ModelConfig.NumHeads == 0 {
 			resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
 			if err != nil {

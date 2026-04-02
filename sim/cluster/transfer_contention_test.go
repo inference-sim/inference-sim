@@ -822,7 +822,6 @@ func TestTransferContention_ZeroBandwidth_PayloadIndependence(t *testing.T) {
 				PDTransferContention:    true,
 				PDTransferBandwidthGBps: 0,
 				PDTransferBaseLatencyMs: baseLatMs,
-
 				SimConfig: sim.SimConfig{
 					KVCacheConfig: sim.KVCacheConfig{
 						BlockSizeTokens: 16,

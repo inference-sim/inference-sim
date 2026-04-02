@@ -116,6 +116,19 @@ func newTestDisaggDeploymentConfig(numInstances, prefill, decode int) Deployment
 	}
 }
 
+func TestNewClusterSimulator_PDEnabled_InvalidModelConfig_Panics(t *testing.T) {
+	cfg := newTestDisaggDeploymentConfig(2, 1, 1)
+	// Replace the valid ModelConfig with a zero-value one to trigger the guard.
+	zeroCfg := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, "blackbox", 0)
+	cfg.ModelHardwareConfig = zeroCfg
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for PD with zero ModelConfig, got none")
+		}
+	}()
+	NewClusterSimulator(cfg, nil, nil)
+}
+
 func TestDisaggregation_PrefillRoutedToPrefillPool(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(3)

@@ -125,12 +125,13 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 		// validation in the construction path.
 		panic(fmt.Sprintf("unreachable: KVTransferStartedEvent: failed to derive KV bytes per token: %v", err))
 	}
-	kvBytesPerToken := int64(kvBytesPerTokenF)
 
 	numBlocks := e.parentReq.NumKVBlocks
-	blockSizeBytes := cs.config.BlockSizeTokens * kvBytesPerToken
-	// Use float64 for transferBytes to avoid int64 overflow with large blocks
-	transferBytes := float64(numBlocks) * float64(blockSizeBytes)
+	// Defer truncation: multiply float64 kvBytesPerToken by blockSize before converting,
+	// matching the CalculateKVBlocks pattern to avoid precision loss for fractional
+	// BytesPerParam (e.g., INT4=0.5 at high TP).
+	blockSizeBytesF := float64(cs.config.BlockSizeTokens) * kvBytesPerTokenF
+	transferBytes := float64(numBlocks) * blockSizeBytesF
 
 	bandwidthBytesPerUs := cs.config.PDTransferBandwidthGBps * 1000.0 // GB/s → bytes/μs
 	baseLatUs := cs.config.PDTransferBaseLatencyMs * 1000.0            // ms → μs

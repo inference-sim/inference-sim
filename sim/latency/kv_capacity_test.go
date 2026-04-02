@@ -84,6 +84,22 @@ func TestKVBytesPerToken_LinearInNumLayers(t *testing.T) {
 	}
 }
 
+func TestKVBytesPerToken_LinearInBytesPerParam(t *testing.T) {
+	mc := validDenseModelConfig()
+	base, err := latency.KVBytesPerToken(mc, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	mc.BytesPerParam *= 2
+	doubled, err := latency.KVBytesPerToken(mc, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if doubled != 2*base {
+		t.Errorf("KVBytesPerToken should scale linearly with BytesPerParam: got %v, want 2*%v=%v", doubled, base, 2*base)
+	}
+}
+
 func TestKVBytesPerToken_MHA_FallbackToNumHeads(t *testing.T) {
 	mc := validDenseModelConfig()
 	mc.NumKVHeads = 0 // MHA: should use NumHeads (32)
