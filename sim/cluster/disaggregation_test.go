@@ -996,20 +996,15 @@ func TestDisaggregation_TTFT_IncludesTransferAndDecode(t *testing.T) {
 	}
 }
 
-// TestDisaggregation_TTFT_FallbackWhenDecodeDataMissing verifies the defensive
-// fallback: if a completed parent has no decode ITL or TransferCompleteTime,
-// projectPDMetrics uses the prefill-only TTFT rather than dropping the entry.
-func TestDisaggregation_TTFT_FallbackWhenDecodeDataMissing(t *testing.T) {
+// TestDisaggregation_TTFT_NoSilentDrops verifies R1: all completed PD parents
+// have a TTFT entry after projection, regardless of which branch fired.
+func TestDisaggregation_TTFT_NoSilentDrops(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(3)
 
 	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
-	// Verify that all completed parents have TTFT entries (no silent drops).
-	// This is a structural safety check — the fallback branch should never fire
-	// in a well-formed simulation, but the test confirms the entry exists even if
-	// the primary path were to fail.
 	m := cs.AggregatedMetrics()
 	for _, parent := range cs.ParentRequests() {
 		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
@@ -1018,6 +1013,80 @@ func TestDisaggregation_TTFT_FallbackWhenDecodeDataMissing(t *testing.T) {
 		if _, ok := m.RequestTTFTs[parent.ID]; !ok {
 			t.Errorf("parent %s: missing TTFT entry after projection (R1: no silent data loss)", parent.ID)
 		}
+	}
+}
+
+// TestDisaggregation_TTFT_FallbackWhenDecodeDataMissing exercises the defensive
+// fallback in projectPDMetrics: when a completed parent has TransferCompleteTime=0
+// or empty DecodeSubReq.ITL, TTFT falls back to the prefill-only value.
+func TestDisaggregation_TTFT_FallbackWhenDecodeDataMissing(t *testing.T) {
+	prefillTTFT := 2500.0
+
+	origReq := &sim.Request{ID: "orig", ArrivalTime: 0}
+
+	tests := []struct {
+		name   string
+		parent *ParentRequest
+	}{
+		{
+			name: "TransferCompleteTime=0",
+			parent: &ParentRequest{
+				ID: "p1", PrefillSubReqID: "p1_prefill", DecodeSubReqID: "p1_decode",
+				OriginalRequest: origReq,
+				ArrivalTime: 0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				TransferStartTime: 0, TransferCompleteTime: 0,
+				DecodeSubReq: &sim.Request{ITL: []int64{100}},
+			},
+		},
+		{
+			name: "empty DecodeSubReq.ITL",
+			parent: &ParentRequest{
+				ID: "p2", PrefillSubReqID: "p2_prefill", DecodeSubReqID: "p2_decode",
+				OriginalRequest: origReq,
+				ArrivalTime: 0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				TransferStartTime: 100, TransferCompleteTime: 200,
+				DecodeSubReq: &sim.Request{ITL: nil},
+			},
+		},
+		{
+			name: "nil DecodeSubReq",
+			parent: &ParentRequest{
+				ID: "p3", PrefillSubReqID: "p3_prefill", DecodeSubReqID: "p3_decode",
+				OriginalRequest: origReq,
+				ArrivalTime: 0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				TransferStartTime: 100, TransferCompleteTime: 200,
+				DecodeSubReq: nil,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := sim.NewMetrics()
+			m.RequestTTFTs[tc.parent.PrefillSubReqID] = prefillTTFT
+
+			cs := &ClusterSimulator{
+				aggregatedMetrics: m,
+				parentRequests:    map[string]*ParentRequest{tc.parent.ID: tc.parent},
+			}
+			cs.projectPDMetrics()
+
+			got, ok := m.RequestTTFTs[tc.parent.ID]
+			if !ok {
+				t.Fatalf("R1: parent %s TTFT entry missing after fallback", tc.parent.ID)
+			}
+			if math.Abs(got-prefillTTFT) > 1e-9 {
+				t.Errorf("fallback: got TTFT=%.1f, want %.1f (prefill-only)", got, prefillTTFT)
+			}
+
+			// Sub-request keys must be deleted (INV-PD-6).
+			if _, exists := m.RequestTTFTs[tc.parent.PrefillSubReqID]; exists {
+				t.Errorf("INV-PD-6: prefill sub-request key %s still present", tc.parent.PrefillSubReqID)
+			}
+			if _, exists := m.RequestTTFTs[tc.parent.DecodeSubReqID]; exists {
+				t.Errorf("INV-PD-6: decode sub-request key %s still present", tc.parent.DecodeSubReqID)
+			}
+		})
 	}
 }
 
