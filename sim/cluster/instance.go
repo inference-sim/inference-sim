@@ -174,6 +174,31 @@ func (i *InstanceSimulator) GetCachedBlockCount(tokens []int) int {
 	return len(i.sim.KVCache.GetCachedBlocks(tokens))
 }
 
+// cacheSnapshotCapable is satisfied by KVStore implementations that can produce
+// a frozen snapshot query function. Both KVCacheState and TieredKVCache implement this.
+// Used for stale cache signal simulation (issue #919).
+type cacheSnapshotCapable interface {
+	SnapshotCachedBlocksFn() func([]int) int
+}
+
+// SnapshotCacheQueryFn returns a function that queries a frozen copy of this
+// instance's KV cache hash map. The returned function is safe to call after
+// the live cache state has changed — it always returns results as of snapshot time.
+// Returns a zero-returning function if the simulator is nil or the KV cache
+// does not support snapshotting.
+func (i *InstanceSimulator) SnapshotCacheQueryFn() func([]int) int {
+	if i.sim == nil {
+		return func([]int) int { return 0 }
+	}
+	if cs, ok := i.sim.KVCache.(cacheSnapshotCapable); ok {
+		return cs.SnapshotCachedBlocksFn()
+	}
+	// Fallback: live query (for KVStore implementations without snapshot support)
+	return func(tokens []int) int {
+		return i.GetCachedBlockCount(tokens)
+	}
+}
+
 // InjectRequestOnline injects a request during the event loop (online routing mode).
 // Unlike InjectRequest, this does NOT check hasRun, allowing injection during simulation.
 func (i *InstanceSimulator) InjectRequestOnline(req *sim.Request, eventTime int64) {

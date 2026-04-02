@@ -83,8 +83,9 @@ Invariants are properties that must hold at all times during and after simulatio
 | BatchSize | Instance | Immediate | Periodic | `StepEvent.Execute()` |
 | KVUtilization | Instance | Immediate | Periodic | `FormBatch()` → `AllocateKVBlocks()` |
 | CacheHitRate | Instance | Immediate | Periodic | `FormBatch()` |
+| cacheQueryFn (precise-prefix-cache, no-hit-lru) | Instance (via StaleCacheIndex) | Ground truth (synchronous) | Periodic (CacheSignalDelay interval) | `StaleCacheIndex.RefreshIfNeeded()` in `buildRouterState()` |
 
-**Design implication:** When `--snapshot-refresh-interval > 0`, all Prometheus-sourced signals (QueueDepth, BatchSize, KVUtilization) share the same scrape interval — matching real vLLM deployments where all three are exposed via the same `/metrics` endpoint. `InFlightRequests` remains synchronous (gateway-local counter, not Prometheus-sourced).
+**Design implication:** When `--snapshot-refresh-interval > 0`, all Prometheus-sourced signals (QueueDepth, BatchSize, KVUtilization) share the same scrape interval — matching real vLLM deployments where all three are exposed via the same `/metrics` endpoint. `InFlightRequests` remains synchronous (gateway-local counter, not Prometheus-sourced). When `--cache-signal-delay > 0`, prefix cache query closures use a separate periodic snapshot of each instance's `HashToBlock` map, modeling asynchronous KV event propagation from production llm-d.
 
 `EffectiveLoad()` = `QueueDepth + BatchSize + InFlightRequests`. The synchronous `InFlightRequests` term compensates for Periodic staleness in the other two terms.
 

@@ -83,9 +83,19 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 
 		// Register with cacheQueryFn for precise prefix scoring (deferred instances).
 		if cs.cacheQueryFn != nil {
-			inst := inst // capture for closure
-			cs.cacheQueryFn[string(p.id)] = func(tokens []int) int {
-				return inst.GetCachedBlockCount(tokens)
+			if cs.staleCache != nil {
+				// Stale mode: register with StaleCacheIndex and delegate to stale queries (issue #919).
+				cs.staleCache.AddInstance(p.id, inst)
+				idStr := string(p.id)
+				cs.cacheQueryFn[idStr] = func(tokens []int) int {
+					return cs.staleCache.Query(idStr, tokens)
+				}
+			} else {
+				// Oracle mode: direct live query.
+				inst := inst // capture for closure
+				cs.cacheQueryFn[string(p.id)] = func(tokens []int) int {
+					return inst.GetCachedBlockCount(tokens)
+				}
 			}
 		}
 

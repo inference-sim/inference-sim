@@ -147,6 +147,37 @@ func (kvc *KVCacheState) GetCachedBlocks(tokens []int) (blockIDs []int64) {
 	return
 }
 
+// SnapshotCachedBlocksFn returns a function that queries a frozen copy of the
+// current HashToBlock map. The returned function counts consecutive cached prefix
+// blocks for given tokens using the snapshot, NOT the live state.
+// Used for stale cache signal simulation (issue #919).
+//
+// The snapshot captures HashToBlock at call time. Subsequent allocations/releases
+// do NOT affect the returned function's results.
+func (kvc *KVCacheState) SnapshotCachedBlocksFn() func([]int) int {
+	snapshot := make(map[string]int64, len(kvc.HashToBlock))
+	for k, v := range kvc.HashToBlock {
+		snapshot[k] = v
+	}
+	blockSize := kvc.BlockSizeTokens
+	return func(tokens []int) int {
+		n := int64(len(tokens)) / blockSize
+		prevHash := ""
+		count := 0
+		for i := int64(0); i < n; i++ {
+			start := i * blockSize
+			end := start + blockSize
+			h := hash.HashBlock(prevHash, tokens[start:end])
+			if _, ok := snapshot[h]; !ok {
+				break
+			}
+			count++
+			prevHash = h
+		}
+		return count
+	}
+}
+
 // AllocateKVBlocks handles KV Block allocation for both prefill and decode.
 // If the latest block is full, a new one is allocated. Otherwise push to latest allocated block.
 // start and endIndex are by original requests' index

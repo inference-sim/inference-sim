@@ -29,6 +29,14 @@ type DeploymentConfig struct {
 	// use Periodic refresh with this interval (microseconds). 0 = Immediate (default).
 	SnapshotRefreshInterval int64
 
+	// Cache signal propagation delay for precise prefix cache scoring (issue #919).
+	// When > 0, precise-prefix-cache and no-hit-lru scorers query a periodically-refreshed
+	// stale snapshot of each instance's KV cache block hash map instead of live state.
+	// Models the asynchronous KV event propagation delay in production llm-d.
+	// 0 = oracle mode (default, current behavior — scorers read live cache state).
+	// Units: microseconds of simulated time.
+	CacheSignalDelay int64
+
 	// Phase 1A: Node pool infrastructure (optional — empty = backward-compatible mode).
 	// When non-empty, activates PlacementManager for GPU inventory tracking.
 	NodePools []NodePoolConfig
