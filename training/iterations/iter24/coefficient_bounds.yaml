@@ -1,0 +1,36 @@
+# Iteration 24: Final coefficients with prefill+decode split
+# 10 betas: β₁ₐ(pf_compute), β₂ₐ(dc_compute)=0, β₃-β₈, β₁ᵦ(pf_memory)=0, β₂ᵦ(dc_memory)
+
+alpha_bounds:
+  - [100.0, 50000.0]
+  - [0.0, 10000.0]
+  - [0.0, 50.0]
+
+alpha_initial:
+  - 15561.959717498621
+  - 776.243476414174
+  - 45.910232684500556
+
+beta_bounds:
+  - [0.0, 3.0]      # β₁ₐ: prefill compute correction
+  - [0.0, 3.0]      # β₂ₐ: decode compute correction (optimal=0)
+  - [0.3, 3.0]      # β₃: weight loading correction
+  - [0.0, 2.0]      # β₄: TP communication correction
+  - [0.0, 200.0]    # β₅: per-layer overhead (µs/layer)
+  - [0.0, 500.0]    # β₆: per-request scheduling (µs/req)
+  - [0.0, 500.0]    # β₇: per-step constant (µs/step)
+  - [0.0, 600.0]    # β₈: per-MoE-layer overhead (µs/MoE-layer)
+  - [0.0, 3.0]      # β₁ᵦ: prefill memory correction (optimal=0)
+  - [0.0, 3.0]      # β₂ᵦ: decode memory correction
+
+beta_initial:
+  - 0.138541
+  - 0.0
+  - 1.363060401466404
+  - 0.3960942587233032
+  - 62.28932987355146
+  - 2.7976795228174027
+  - 169.36568163371626
+  - 427.3
+  - 0.0
+  - 1.2632

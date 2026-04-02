@@ -1,0 +1,95 @@
+{
+  "cv_test": "CV-1",
+  "ttft_mape": 13.82605282105468,
+  "e2e_mape": 22.449519562730227,
+  "passed": false,
+  "per_experiment": [
+    {
+      "experiment_folder": "/Users/sri/Documents/Projects/inference-sim/training/cv_results/iter24/cv-1_test_data/62-mistral-nemo-12b-tp2-general-lite-2-1",
+      "model": "mistralai/Mistral-Nemo-Instruct-2407",
+      "workload": "general-lite-2-1",
+      "ttft_mean_ape": 27.360590209294788,
+      "e2e_mean_ape": 24.27739205600316,
+      "combined_loss": 51.63798226529795,
+      "wall_clock_seconds": 1.6103665829868987,
+      "latency_ape": {
+        "e2e": {
+          "mean": 24.27739205600316,
+          "p90": 23.391392888794872,
+          "p99": 24.21875007864987
+        },
+        "ttft": {
+          "mean": 27.360590209294788,
+          "p90": 27.00188958893558,
+          "p99": 0.34332644325746714
+        },
+        "itl": {
+          "mean": 23.648243008939346
+        }
+      },
+      "throughput_ape": {
+        "input_tokens_per_sec": 41.359215829620716,
+        "output_tokens_per_sec": 54.28641644252467,
+        "requests_per_sec": 54.297774981584354
+      }
+    },
+    {
+      "experiment_folder": "/Users/sri/Documents/Projects/inference-sim/training/cv_results/iter24/cv-1_test_data/63-mistral-nemo-12b-tp1-codegen-1-1",
+      "model": "mistralai/Mistral-Nemo-Instruct-2407",
+      "workload": "codegen-1-1",
+      "ttft_mean_ape": 11.384768674946384,
+      "e2e_mean_ape": 26.120167860924266,
+      "combined_loss": 37.50493653587065,
+      "wall_clock_seconds": 3.3694803341059014,
+      "latency_ape": {
+        "e2e": {
+          "mean": 26.120167860924266,
+          "p90": 28.570938391413463,
+          "p99": 26.67829181130921
+        },
+        "ttft": {
+          "mean": 11.384768674946384,
+          "p90": 11.410408366156842,
+          "p99": 8.033163476405662
+        },
+        "itl": {
+          "mean": 25.84039057159895
+        }
+      },
+      "throughput_ape": {
+        "input_tokens_per_sec": 34.17111518658107,
+        "output_tokens_per_sec": 53.361808587325854,
+        "requests_per_sec": 53.33532972255362
+      }
+    },
+    {
+      "experiment_folder": "/Users/sri/Documents/Projects/inference-sim/training/cv_results/iter24/cv-1_test_data/65-01-ai-yi-34b-tp2-general-lite-2-1",
+      "model": "01-ai/Yi-34B",
+      "workload": "general-lite-2-1",
+      "ttft_mean_ape": 2.7327995789228647,
+      "e2e_mean_ape": 16.950998771263258,
+      "combined_loss": 19.683798350186123,
+      "wall_clock_seconds": 1.6636144170770422,
+      "latency_ape": {
+        "e2e": {
+          "mean": 16.950998771263258,
+          "p90": 17.278560406746873,
+          "p99": 15.203553817172114
+        },
+        "ttft": {
+          "mean": 2.7327995789228647,
+          "p90": 0.38879730757228526,
+          "p99": 14.348210697691327
+        },
+        "itl": {
+          "mean": 17.27249006160895
+        }
+      },
+      "throughput_ape": {
+        "input_tokens_per_sec": 42.295869322714864,
+        "output_tokens_per_sec": 56.75671609986204,
+        "requests_per_sec": 56.54429295087892
+      }
+    }
+  ]
+}
