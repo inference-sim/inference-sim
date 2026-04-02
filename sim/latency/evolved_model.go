@@ -33,8 +33,8 @@ import (
 //  3. FP8 peak FLOPS: Select TFlopsFP8 for FP8 models on GPUs with native FP8
 //     tensor cores (H100), matching roofline.go's logic.
 //
-// Step-time formula (up to 9-term, extends trained-roofline with MoE overhead
-// and optional prefill compute/memory split):
+// Step-time formula (up to 10-term, extends trained-roofline with MoE overhead
+// and optional prefill/decode compute/memory splits):
 //
 // With 8 betas (default):
 //
@@ -42,14 +42,20 @@ import (
 //	+ β₃·T_weight + β₄·T_tp + β₅·L + β₆·batchSize + β₇
 //	+ β₈·nMoELayers
 //
-// With 9 betas (prefill split — separates compute and memory corrections):
+// With 9 betas (prefill split — prefill is compute-dominated):
 //
 //	β₁ₐ·T_pf_compute + β₁ᵦ·T_pf_kv + β₂·max(T_dc_compute, T_dc_kv)
 //	+ β₃·T_weight + β₄·T_tp + β₅·L + β₆·batchSize + β₇
 //	+ β₈·nMoELayers
 //
-// The prefill split allows independent correction of compute (FlashAttention may
-// reduce effective FLOPs) and memory bandwidth (closer to roofline prediction).
+// With 10 betas (prefill + decode split — decode is memory-dominated):
+//
+//	β₁ₐ·T_pf_compute + β₁ᵦ·T_pf_kv + β₂ₐ·T_dc_compute + β₂ᵦ·T_dc_kv
+//	+ β₃·T_weight + β₄·T_tp + β₅·L + β₆·batchSize + β₇
+//	+ β₈·nMoELayers
+//
+// Physical insight: prefill is compute-bound (FlashAttention), decode is
+// memory-bound (single-token bandwidth). Each uses only its bottleneck term.
 //
 // Where β₁/β₁ₐ-β₃ are dimensionless roofline corrections (analytical prior ≈ 1.0),
 // β₁ᵦ (β₉) is prefill memory correction, β₄ is TP communication correction,
@@ -63,10 +69,11 @@ import (
 //   - α₂: OutputTokenProcessingTime — per-output-token overhead (µs/token)
 type EvolvedModel struct {
 	Alpha [3]float64 // [α₀, α₁, α₂]
-	Beta  []float64  // [β₁..β₉] — 7-9 coefficients (backward compat: 7→β₈=0, 8→β₉ unused)
+	Beta  []float64  // [β₁..β₁₀] — 7-10 coefficients (7→β₈=0, 8→MoE, 9→pf split, 10→dc split)
 
 	// Mode flags.
-	prefillSplit bool // true when 9 betas provided: β₁ₐ·compute + β₁ᵦ·kv instead of β₁·max
+	prefillSplit bool // true when ≥9 betas: β₁ₐ·compute + β₁ᵦ·kv instead of β₁·max
+	decodeSplit  bool // true when ≥10 betas: β₂ₐ·compute + β₂ᵦ·kv instead of β₂·max
 
 	// Pre-computed architecture features (frozen at construction).
 	numLayers      int
@@ -222,8 +229,17 @@ func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 		prefillTerm = m.Beta[0] * math.Max(tPfCompute, tPfKv)
 	}
 
+	// Decode term: β₂·max(compute, kv) when ≤9 betas,
+	//              β₂ₐ·compute + β₂ᵦ·kv when 10 betas (decode is memory-dominated).
+	var decodeTerm float64
+	if m.decodeSplit {
+		decodeTerm = m.Beta[1]*tDcCompute + m.Beta[9]*tDcKv
+	} else {
+		decodeTerm = m.Beta[1] * math.Max(tDcCompute, tDcKv)
+	}
+
 	stepTime := prefillTerm +
-		m.Beta[1]*math.Max(tDcCompute, tDcKv) +
+		decodeTerm +
 		m.Beta[2]*tWeight +
 		m.Beta[3]*tTp +
 		m.Beta[4]*L +
@@ -270,8 +286,8 @@ func NewEvolvedModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (*Evo
 	}
 
 	// Backward compatible: 7→β₈=0, 8→no prefill split, 9→prefill split active
-	betaSlice := make([]float64, 9)
-	copy(betaSlice, coeffs.BetaCoeffs[:min(9, len(coeffs.BetaCoeffs))])
+	betaSlice := make([]float64, 10)
+	copy(betaSlice, coeffs.BetaCoeffs[:min(10, len(coeffs.BetaCoeffs))])
 
 	// Validate hardware config
 	if hw.TP <= 0 {
@@ -350,6 +366,7 @@ func NewEvolvedModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (*Evo
 		Alpha:          [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
 		Beta:           betaSlice,
 		prefillSplit:   len(coeffs.BetaCoeffs) >= 9,
+		decodeSplit:    len(coeffs.BetaCoeffs) >= 10,
 		numLayers:      hw.ModelConfig.NumLayers,
 		numMoELayers:   numMoELayers,
 		numDenseLayers: numDenseLayers,
