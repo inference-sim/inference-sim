@@ -413,7 +413,6 @@ func TestTransferContention_INVP22_N2FormulaExact(t *testing.T) {
 			PDTransferContention:    true,
 			PDTransferBandwidthGBps: 10.0,
 			PDTransferBaseLatencyMs: 0,
-
 			SimConfig: sim.SimConfig{
 				KVCacheConfig: sim.KVCacheConfig{
 					BlockSizeTokens: 16,
@@ -535,7 +534,6 @@ func TestTransferContention_DurationFloor_ZeroBlocks(t *testing.T) {
 			PDTransferContention:    true,
 			PDTransferBandwidthGBps: 10.0,
 			PDTransferBaseLatencyMs: 0,
-
 			SimConfig: sim.SimConfig{
 				KVCacheConfig: sim.KVCacheConfig{
 					BlockSizeTokens: 16,
@@ -645,7 +643,6 @@ func TestTransferContention_INVP22_DivisorLaw(t *testing.T) {
 				PDTransferContention:    true,
 				PDTransferBandwidthGBps: 10.0,
 				PDTransferBaseLatencyMs: 0,
-
 				SimConfig: sim.SimConfig{
 					KVCacheConfig: sim.KVCacheConfig{
 						BlockSizeTokens: 16,
@@ -717,7 +714,6 @@ func TestTransferContention_DurationFloor_ZeroBlocks_Invariant(t *testing.T) {
 				PDTransferContention:    true,
 				PDTransferBandwidthGBps: 10.0,
 				PDTransferBaseLatencyMs: 0,
-
 				SimConfig: sim.SimConfig{
 					KVCacheConfig: sim.KVCacheConfig{
 						BlockSizeTokens: 16,
@@ -777,7 +773,6 @@ func TestTransferContention_ZeroBandwidth_FallsBackToBaseLatency(t *testing.T) {
 			PDTransferContention:    true,
 			PDTransferBandwidthGBps: 0, // zero bandwidth — triggers else branch
 			PDTransferBaseLatencyMs: 10.0,
-
 			SimConfig: sim.SimConfig{
 				KVCacheConfig: sim.KVCacheConfig{
 					BlockSizeTokens: 16,

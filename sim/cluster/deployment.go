@@ -101,8 +101,9 @@ func (d DeploymentConfig) ToSimConfig() sim.SimConfig {
 }
 
 // EffectivePrefillTP returns the tensor parallelism degree used by the prefill pool.
-// This is the single source of truth for prefill TP — used both for instance
-// construction (via resolveConfigForRole) and KV transfer sizing (pd_events.go).
+// Used for KV transfer sizing in both NewClusterSimulator (upfront validation) and
+// KVTransferStartedEvent.Execute (runtime). Note: resolveConfigForRole independently
+// applies PrefillOverrides via ResolvePoolConfig.
 func (d DeploymentConfig) EffectivePrefillTP() int {
 	if d.PrefillOverrides.TP != nil {
 		return *d.PrefillOverrides.TP

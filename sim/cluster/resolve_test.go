@@ -291,7 +291,7 @@ func TestINV_P2_1_PoolConfigConsistency(t *testing.T) {
 	// Decode pool: smaller KV capacity (needs less for decode-only)
 	prefillKV := int64(20000)
 	decodeKV := int64(5000)
-	// ModelConfig with NumKVHeads=4 (divisible by TP=4) for KV transfer derivation.
+	// NumKVHeads omitted → MHA fallback uses NumHeads=4 (divisible by TP=4) for KV transfer derivation.
 	mc := sim.ModelConfig{
 		NumLayers:       2,
 		NumHeads:        4,
@@ -516,7 +516,7 @@ func TestPoolOverrides_Validate_ValidValues(t *testing.T) {
 // newHeterogeneousDeploymentConfig creates a DeploymentConfig with per-pool overrides.
 // This is the test helper consumed by future PRs.
 func newHeterogeneousDeploymentConfig(numInstances, prefill, decode int, prefillOverrides, decodeOverrides PoolOverrides) DeploymentConfig {
-	// ModelConfig with NumKVHeads=4 (divisible by TP=4) for KV transfer derivation.
+	// NumKVHeads omitted → MHA fallback uses NumHeads=4 (divisible by TP=4) for KV transfer derivation.
 	mc := sim.ModelConfig{
 		NumLayers:       2,
 		NumHeads:        4,
@@ -765,7 +765,7 @@ func TestINV_P2_1_RequestConservation(t *testing.T) {
 	prefillKV := int64(20000)
 	decodeKV := int64(5000)
 	requests := newTestRequests(10)
-	// ModelConfig with NumKVHeads=4 (divisible by TP=4) for KV transfer derivation.
+	// NumKVHeads omitted → MHA fallback uses NumHeads=4 (divisible by TP=4) for KV transfer derivation.
 	mc := sim.ModelConfig{
 		NumLayers:       2,
 		NumHeads:        4,
