@@ -251,10 +251,12 @@ class CVTestRunner:
         optimize_cmd = [
             self.python_executable,
             str(self.training_dir / "inner_loop_optimize.py"),
+            f"--iteration={self.iteration}",
             f"--n-trials={self.n_trials}",
             f"--data-dir={train_dir}",
             f"--seed={self.optimization_seed}",
-            f"--output={train_results_file}"
+            f"--output={train_results_file}",
+            "--no-detailed-eval",  # CV train pass only needs coefficients
         ]
 
         print(f"Command: {' '.join(optimize_cmd)}")
@@ -286,9 +288,9 @@ class CVTestRunner:
         with open(train_results_file) as f:
             train_results = json.load(f)
 
-        best_alpha = train_results["best_alpha"]
-        best_beta = train_results["best_beta"]
-        train_loss = train_results["best_loss"]
+        best_alpha = train_results["best_params"]["alpha"]
+        best_beta = train_results["best_params"]["beta"]
+        train_loss = train_results["loss"]["overall_loss"]
 
         print(f"Best coefficients from training:")
         print(f"  Alpha: {best_alpha}")

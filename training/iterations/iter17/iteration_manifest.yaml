@@ -1,0 +1,72 @@
+iteration: 17
+latency_backend_name: "evolved"  # MUST be "evolved" — the backend name stays constant
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 17: Re-optimize fixing two compounding iter16 defects — Scout MoE fix
+  absent during optimization, and only 9/15 experiments used during training.
+
+  **What Changed**:
+  - No code changes to evolved_model.go — architecture is unchanged from iter16
+  - Defect 1 fixed: #877 (InterleaveMoELayerStep / DenseIntermediateDim) is now in
+    the compiled blis binary for every trial evaluation
+  - Defect 2 fixed: All 15 experiments available via NousResearch mirror configs
+    (see prerequisite step below)
+
+  **Why iter16's Coefficients Are Suboptimal**:
+  1. Scout MoE fix absent: iter16 optimizer ran 1705 trials with Scout's 48 layers
+     modeled as homogeneous MoE, forcing β₁ → 0.20 and α₂ → 45.7µs as artifacts
+  2. 9/15 training coverage: 6 Llama experiments silently failed (HF_TOKEN unset),
+     leaving the optimizer without any Llama-family signal during fitting
+
+  **Optimization Settings**:
+  - n_jobs: 10 (same as iter16 — 10 parallel Optuna workers via SQLite)
+  - n_trials: 1000 (budget; may stop early via patience criterion)
+  - patience: 100 (stop when best loss unchanged for 100 consecutive trial completions)
+  - warm_start: iter16 best coefficients (Trial 957, loss 60.19%)
+    Note: warm start is skipped by optimizer when n_jobs > 1 (Optuna constraint);
+    included here as documentation of the coefficient neighborhood being targeted
+
+  **Expected Outcome**:
+  Loss strictly < 60.19% (iter16 best). Both defects were systematically biasing
+  the optimizer away from the true minimum.
+
+  **Prerequisite: Pre-cache Llama model configs (one-time setup)**:
+  Run from the project root before starting optimization:
+
+    mkdir -p model_configs/llama-2-7b-hf model_configs/llama-3.1-70b-instruct
+
+    curl -sL "https://huggingface.co/NousResearch/Llama-2-7b-hf/resolve/main/config.json" \
+      -o model_configs/llama-2-7b-hf/config.json
+
+    curl -sL "https://huggingface.co/NousResearch/Meta-Llama-3.1-70B-Instruct/resolve/main/config.json" \
+      -o model_configs/llama-3.1-70b-instruct/config.json
+
+  Verify all 15 experiments resolve before starting:
+
+    cd training && python3 run_blis_and_compute_loss.py \
+      --latency-model evolved --alpha-coeffs "1,1,1" --beta-coeffs "1,1,1,1,1,1,1" \
+      --blis-binary ../blis --data-dir trainval_data --evaluate-per-experiment 2>/dev/null \
+      | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'{d[\"num_succeeded\"]}/{d[\"num_experiments\"]} experiments')"
+    # Expected: 15/15 experiments
+
+  **Run Command** (after prerequisite):
+  cd training && python3 inner_loop_optimize.py \
+    --iteration 17 \
+    --n-trials 1000 \
+    --n-jobs 10 \
+    --patience 100
+
+  **Post-Convergence Cross-Validation** (after main optimization completes):
+  cd training && python3 scripts/run_cv_tests.py \
+    --iteration 17 \
+    --cv-test all \
+    --data-dir trainval_data \
+    --output-dir cv_results/iter17
+
+  Pass criteria (from generalization-validation-protocol.md):
+    CV-1 (Leave-Yi+Mistral-Out): TTFT MAPE < 15%, E2E MAPE < 15%
+    CV-2 (Leave-One-Workload-Out): TTFT MAPE < 15%, E2E MAPE < 15%, workload variance < 3%
+    CV-3 (Leave-One-TP-Out): TTFT MAPE < 15%, E2E MAPE < 15%
+
+timestamp: "2026-04-01T16:00:00.000000"

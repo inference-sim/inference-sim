@@ -1,0 +1,21 @@
+iteration: 19
+latency_backend_name: "evolved"
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 19: Negative-λ affine extension — extrapolate past iter16 in the direction
+  AWAY from iter17 CMA-ES, following the gradient discovered in iter18's line search.
+
+  20 interpolated points from iter16 (λ=0) to the clamped λ=-0.2 extrapolation,
+  plus both endpoints = 22 initial trials for multivariate TPE.
+
+  **Run Command**:
+  python3.11 inner_loop_optimize.py \
+    --iteration 19 \
+    --n-trials 500 \
+    --n-jobs 15 \
+    --patience 100 \
+    --timeout 200 \
+    --data-dir /Users/sri/Documents/Projects/inference-sim/training/trainval_data
+
+timestamp: "2026-04-01T21:30:00.000000"

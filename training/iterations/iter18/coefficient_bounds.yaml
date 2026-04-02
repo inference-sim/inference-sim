@@ -1,0 +1,62 @@
+# Iteration 18: Line-Search Seeded TPE
+#
+# **Architecture**: Trained-roofline 7-term formula (unchanged)
+# **Strategy**: 30 interpolated points between iter16 and iter17 CMA-ES coefficients,
+#   enqueued as initial trials for multivariate TPE
+#
+# Endpoint A (λ=0): iter16 best — loss 60.19% on 15 experiments
+# Endpoint B (λ=1): iter17 CMA-ES best — loss 65.37% on 15 experiments
+# Interpolated: 30 points at λ = 1/31, 2/31, ..., 30/31
+
+alpha_bounds:
+  - [100.0, 50000.0]   # α₀: QueueingTime (µs)
+  - [0.0, 10000.0]     # α₁: PostDecodeFixedOverhead (µs)
+  - [0.0, 50.0]        # α₂: OutputTokenProcessingTime (µs/token)
+
+alpha_initial:  # Endpoint A: iter16 best (Trial 957, loss 60.19%)
+  - 15569.495449697066
+  - 815.0556502348827
+  - 45.705744318725586
+
+beta_bounds:
+  - [0.1, 3.0]      # β₁: Prefill roofline correction
+  - [0.3, 3.0]      # β₂: Decode roofline correction
+  - [0.3, 3.0]      # β₃: Weight loading correction
+  - [0.0, 2.0]      # β₄: TP communication correction
+  - [0.0, 200.0]    # β₅: Per-layer overhead (µs/layer)
+  - [0.0, 500.0]    # β₆: Per-request scheduling overhead (µs/request)
+  - [0.0, 500.0]    # β₇: Per-step constant overhead (µs/step)
+
+beta_initial:  # Endpoint A: iter16 best
+  - 0.20081681581824434
+  - 1.6173961192042448
+  - 1.3603417361920076
+  - 0.39579536655780084
+  - 62.19421689224744
+  - 2.937563498958273
+  - 169.37780505091155
+
+# Endpoint B: iter17 CMA-ES best (Trial 178, loss 65.37%)
+# The optimizer will generate 30 linearly interpolated points between
+# alpha_initial/beta_initial (endpoint A) and these values (endpoint B).
+interpolation_endpoints:
+  n_points: 30
+  alpha:
+    - 16360.747330533513
+    - 6270.297570004024
+    - 20.377122769221582
+  beta:
+    - 0.1639361458913401
+    - 2.321457581559765
+    - 1.0748818823803743
+    - 0.36441168918004285
+    - 52.20735385532493
+    - 122.44197835137406
+    - 170.65076385641578
+
+# Validation checklist:
+#   - [ ] At least one interpolated trial achieves loss < 60.19% (PRIMARY)
+#   - [ ] TPE post-interpolation finds loss < best interpolated point
+#   - [ ] Loss profile saved to iter18_line_profile.csv
+#   - [ ] Profile is non-convex (contains a valley between endpoints)
+#   - [ ] Optimizer stops via patience (not budget exhaustion)
