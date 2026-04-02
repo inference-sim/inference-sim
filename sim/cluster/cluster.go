@@ -257,6 +257,19 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		}
 	}
 
+	// Phase 1C: initialize autoscaler pipeline when ModelAutoscalerIntervalUs > 0 (issue #692).
+	// Zero interval disables the autoscaler entirely (INV-6 backward-compat).
+	// Concrete pipeline components (collector, analyzer, engine, actuator) are injected after
+	// construction by tests or by the wiring logic in cmd/. Until they are set, all four fields
+	// on cs.autoscaler remain nil, and ScalingTickEvent.Execute() will guard against them.
+	if config.ModelAutoscalerIntervalUs > 0 {
+		cs.autoscaler = &autoscalerPipeline{
+			lastScaleUpAt:   make(map[string]int64),
+			lastScaleDownAt: make(map[string]int64),
+			rng:             rng.ForSubsystem(subsystemAutoscaler),
+		}
+	}
+
 	// Phase 1B-2a: initialize TenantTracker when TenantBudgets is configured (issue #811).
 	// totalCapacity = NumInstances × MaxRunningReqs (batch size proxy for cluster-wide capacity).
 	if config.TenantBudgets != nil {
@@ -326,6 +339,17 @@ func (c *ClusterSimulator) Run() error {
 
 	// 2. Schedule ClusterArrivalEvents (NC-1: no pre-dispatch before event loop)
 	heap.Init(&c.clusterEvents)
+
+	// Phase 1C: schedule the first ScalingTickEvent when the autoscaler is enabled (T015).
+	// The autoscaler is enabled when ModelAutoscalerIntervalUs > 0 AND cs.autoscaler is non-nil.
+	// Zero-interval guard: no tick is ever scheduled when interval is 0 (INV-6).
+	if c.autoscaler != nil && c.config.ModelAutoscalerIntervalUs > 0 {
+		heap.Push(&c.clusterEvents, clusterEventEntry{
+			event: &ScalingTickEvent{At: c.clock},
+			seqID: c.nextSeqID(),
+		})
+	}
+
 	for _, req := range requests {
 		heap.Push(&c.clusterEvents, clusterEventEntry{
 			event: &ClusterArrivalEvent{time: req.ArrivalTime, request: req},
@@ -791,6 +815,59 @@ func (c *ClusterSimulator) isBusy() bool {
 		}
 	}
 	return false
+}
+
+// gpuInventory computes the current GPU inventory for Engine.Optimize().
+// Phase 1C (T012): returns free GPU slots per VariantSpec.
+//
+// Free slots for a variant = total GPUs of that GPU type on Ready nodes
+//   - GPUs held by Loading instances of that GPU type
+//   - GPUs held by Active/WarmingUp instances of that GPU type
+//   - GPUs held by Draining instances of that GPU type (hold GPUs until drain completes)
+//
+// Pending (Scheduling) instances are NOT subtracted.
+// Terminated instances are NOT subtracted.
+//
+// Returns an empty inventory when cs.placement is nil (no NodePools configured, backward-compat).
+func (c *ClusterSimulator) gpuInventory() GPUInventory {
+	if c.placement == nil {
+		return GPUInventory{ByVariant: make(map[VariantSpec]int)}
+	}
+
+	// Step 1: count total GPUs on Ready nodes per GPUType.
+	totalByGPUType := make(map[string]int)
+	for _, node := range c.placement.nodesByID {
+		if node.State == NodeStateReady {
+			totalByGPUType[node.GPUType] += node.TotalGPUs
+		}
+	}
+
+	// Step 2: subtract GPUs used by Loading, Active (incl. WarmingUp), and Draining instances.
+	usedByGPUType := make(map[string]int)
+	seenVariants := make(map[VariantSpec]struct{})
+	for _, inst := range c.instances {
+		switch inst.State {
+		case InstanceStateLoading, InstanceStateWarmingUp, InstanceStateActive, InstanceStateDraining:
+			if inst.GPUType != "" {
+				usedByGPUType[inst.GPUType] += inst.TPDegree
+				if inst.TPDegree > 0 {
+					seenVariants[VariantSpec{GPUType: inst.GPUType, TPDegree: inst.TPDegree}] = struct{}{}
+				}
+			}
+		}
+	}
+
+	// Step 3: build ByVariant — same raw free count for each variant of the same GPUType.
+	// Callers must sort keys before iterating (R2: map iteration is non-deterministic).
+	byVariant := make(map[VariantSpec]int, len(seenVariants))
+	for v := range seenVariants {
+		free := totalByGPUType[v.GPUType] - usedByGPUType[v.GPUType]
+		if free < 0 {
+			free = 0 // defense-in-depth: clamp to zero on bookkeeping inconsistency
+		}
+		byVariant[v] = free
+	}
+	return GPUInventory{ByVariant: byVariant}
 }
 
 // promoteDeferred injects all deferred requests as ClusterArrivalEvents at the current clock.

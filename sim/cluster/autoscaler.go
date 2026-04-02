@@ -144,8 +144,57 @@ type autoscalerPipeline struct {
 }
 
 // tick executes the autoscaling pipeline for one tick at timestamp nowUs.
-// Full implementation wired in commit 3 (T011–T014).
+// Collect → Analyze → Optimize → cooldown filter → schedule ScaleActuationEvent → schedule next tick.
 func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
+	// Guard: all four components must be wired (nil components skip this tick).
+	if p.collector == nil || p.analyzer == nil || p.engine == nil || p.actuator == nil {
+		p.scheduleNextTick(cs, nowUs)
+		return
+	}
+
+	// Stage 1: Collect — build ModelSignals for each active model.
+	routerState := buildRouterState(cs, nil)
+	modelSignals := p.collector.Collect(routerState)
+
+	// Stage 2: Analyze — run Analyzer once per model.
+	results := make([]AnalyzerResult, 0, len(modelSignals))
+	for _, ms := range modelSignals {
+		results = append(results, p.analyzer.Analyze(ms))
+	}
+
+	// Stage 3: Optimize — ask Engine for scale decisions.
+	inventory := cs.gpuInventory()
+	decisions := p.engine.Optimize(results, inventory)
+
+	// Stage 4: Cooldown filter — suppress decisions within cooldown window per model.
+	filtered := decisions[:0] // reuse backing array
+	for _, d := range decisions {
+		if d.Delta > 0 {
+			cooldown := cs.config.ScaleUpCooldownUs
+			if cooldown > 0 && nowUs-p.lastScaleUpAt[d.ModelID] < int64(cooldown) {
+				continue // suppressed by scale-up cooldown (INV-A7)
+			}
+			p.lastScaleUpAt[d.ModelID] = nowUs
+		} else if d.Delta < 0 {
+			cooldown := cs.config.ScaleDownCooldownUs
+			if cooldown > 0 && nowUs-p.lastScaleDownAt[d.ModelID] < int64(cooldown) {
+				continue // suppressed by scale-down cooldown
+			}
+			p.lastScaleDownAt[d.ModelID] = nowUs
+		}
+		filtered = append(filtered, d)
+	}
+
+	// Stage 5: Schedule ScaleActuationEvent (even when filtered is empty, to preserve event semantics).
+	// DelaySpec.Sample(rng) is safe with rng=nil when Stddev=0 (constant delay needs no RNG).
+	// If Stddev>0 and rng=nil, Sample will panic — that is a configuration error, not a code bug.
+	actuationAt := nowUs + cs.config.ActuationDelayUs.Sample(p.rng)
+	heap.Push(&cs.clusterEvents, clusterEventEntry{
+		event: &ScaleActuationEvent{At: actuationAt, Decisions: filtered},
+		seqID: cs.nextSeqID(),
+	})
+
+	// Stage 6: Schedule next ScalingTickEvent.
 	p.scheduleNextTick(cs, nowUs)
 }
 
