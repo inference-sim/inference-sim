@@ -20,6 +20,9 @@ type RoutingSnapshot struct {
 	CacheHitRate     float64
 	InFlightRequests int    // Requests dispatched to this instance but not yet completed
 	Model            string // Model served by this instance; used by buildRouterState() for per-model filtering
+	GPUType          string  // GPU hardware type (e.g. "A100-80GB"); populated by buildRouterState() from instance config
+	TPDegree         int     // Tensor-parallel degree; populated by buildRouterState() from instance config
+	CostPerHour      float64 // Node pool cost in $/hr; populated by buildRouterState() from NodePool.CostPerHour
 }
 
 // EffectiveLoad returns the total effective load on this instance:

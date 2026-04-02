@@ -33,6 +33,12 @@ type InstanceSimulator struct {
 	warmUpRequestIDs []string      // IDs of requests served during warm-up (for TTFT factor)
 	nodeID           string        // node this instance is placed on (empty = unplaced)
 	allocatedGPUIDs  []string      // GPU IDs allocated to this instance
+
+	// Phase 1C: hardware variant fields (set at placement time in cluster.go).
+	// Used by buildRouterState() to populate RoutingSnapshot for the autoscaler Collector.
+	GPUType     string  // GPU hardware type, e.g. "A100-80GB" (empty = unplaced/unknown)
+	TPDegree    int     // tensor-parallel degree; 0 = unplaced/unknown
+	CostPerHour float64 // $/hr from NodePool.CostPerHour; 0 = unplaced/free tier
 }
 
 // NewInstanceSimulator creates an InstanceSimulator from a SimConfig struct.
