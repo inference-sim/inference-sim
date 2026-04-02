@@ -1337,19 +1337,33 @@ func (c *ClusterSimulator) projectPDMetrics() {
 			}
 		}
 
-		// TTFT: rekey from prefill sub-request ID to parent ID (value unchanged).
-		// Only prefill sub-requests record TTFT; decode sub-requests never trigger it.
+		// TTFT: user-visible time-to-first-token for PD disaggregation.
+		// In llm-d, the first token reaches the user from the decode pod, not
+		// prefill: prefill completes → KV transfers → decode pod recomputes last
+		// prompt token and samples first output token. User-visible TTFT =
+		// prefillTTFT + transferDuration + firstDecodeStep. See issue #930.
+		//
+		// Read prefill TTFT before deleting sub-request keys (R1: no silent data loss).
 		// Gate on completed: dropped-request TTFTs must not enter the distribution.
-		// Source keys are always deleted, regardless of completion status.
+		prefillTTFT, hasPrefillTTFT := m.RequestTTFTs[pfx]
+		delete(m.RequestTTFTs, pfx)
+		delete(m.RequestTTFTs, dec)
 		if completed {
-			if ttft, ok := m.RequestTTFTs[pfx]; ok {
-				m.RequestTTFTs[pid] = ttft
+			if hasPrefillTTFT && parent.TransferCompleteTime > 0 && parent.DecodeSubReq != nil && len(parent.DecodeSubReq.ITL) > 0 {
+				transferDuration := float64(parent.TransferCompleteTime - parent.TransferStartTime)
+				firstDecodeStep := float64(parent.DecodeSubReq.ITL[0])
+				newTTFT := prefillTTFT + transferDuration + firstDecodeStep
+				m.RequestTTFTs[pid] = newTTFT
+				// BC-3: Keep TTFTSum consistent with the TTFT adjustment.
+				m.TTFTSum += int64(newTTFT - prefillTTFT)
+			} else if hasPrefillTTFT {
+				// Defensive fallback: use prefill-only TTFT if decode data unavailable.
+				m.RequestTTFTs[pid] = prefillTTFT
+				logrus.Warnf("[cluster] projectPDMetrics: parent %s missing decode ITL or TransferCompleteTime; using prefill TTFT", pid)
 			} else {
 				logrus.Warnf("[cluster] projectPDMetrics: completed parent %s has no prefill TTFT (key %s)", pid, pfx)
 			}
 		}
-		delete(m.RequestTTFTs, pfx)
-		delete(m.RequestTTFTs, dec)
 
 		// Scheduling delay = prefill sub-request's delay
 		// (the real user-facing delay, not the decode pipeline cumulative latency).
