@@ -1,0 +1,112 @@
+{
+  "iteration": 24,
+  "backend_name": "evolved",
+  "timestamp": "2026-04-02T08:48:59.054210",
+  "optimization": {
+    "method": "2D grid search (144 pts) + golden section polish (25 evals) for decode split, then golden section (15 evals) for memory-only decode",
+    "total_evaluations": 184,
+    "key_finding": "Decode is memory-dominated. Dropping compute entirely (\u03b2\u2082\u2090=0) and keeping only memory (\u03b2\u2082\u1d66=1.263) gives the best result. Mirrors prefill finding (compute-only)."
+  },
+  "best_params": {
+    "alpha": [
+      15561.959717498621,
+      776.243476414174,
+      45.910232684500556
+    ],
+    "beta": [
+      0.138541,
+      0.0,
+      1.363060401466404,
+      0.3960942587233032,
+      62.28932987355146,
+      2.7976795228174027,
+      169.36568163371626,
+      427.3,
+      0.0,
+      1.2632
+    ]
+  },
+  "loss": {
+    "overall_loss": 39.18,
+    "ttft_rmse": 24.13,
+    "e2e_rmse": 15.05
+  },
+  "per_experiment_results": [
+    {
+      "name": "Scout reasoning-lite",
+      "ttft_ape": 60.3,
+      "e2e_ape": 11.8
+    },
+    {
+      "name": "Llama-2 reasoning-lite",
+      "ttft_ape": 39.4,
+      "e2e_ape": 8.7
+    },
+    {
+      "name": "Llama-2 general",
+      "ttft_ape": 28.1,
+      "e2e_ape": 27.5
+    },
+    {
+      "name": "Mistral general-lite",
+      "ttft_ape": 27.4,
+      "e2e_ape": 24.3
+    },
+    {
+      "name": "Scout codegen",
+      "ttft_ape": 24.9,
+      "e2e_ape": 1.5
+    },
+    {
+      "name": "Scout roleplay",
+      "ttft_ape": 18.0,
+      "e2e_ape": 12.3
+    },
+    {
+      "name": "Llama-2 roleplay",
+      "ttft_ape": 15.7,
+      "e2e_ape": 16.5
+    },
+    {
+      "name": "Scout general-lite",
+      "ttft_ape": 15.0,
+      "e2e_ape": 12.7
+    },
+    {
+      "name": "Llama-3.1 codegen",
+      "ttft_ape": 13.2,
+      "e2e_ape": 2.5
+    },
+    {
+      "name": "Mistral codegen",
+      "ttft_ape": 11.4,
+      "e2e_ape": 26.1
+    },
+    {
+      "name": "Llama-3.1 general-lite",
+      "ttft_ape": 11.1,
+      "e2e_ape": 9.4
+    },
+    {
+      "name": "Qwen roleplay",
+      "ttft_ape": 7.9,
+      "e2e_ape": 7.9
+    },
+    {
+      "name": "Llama-2 codegen",
+      "ttft_ape": 7.6,
+      "e2e_ape": 10.7
+    },
+    {
+      "name": "Qwen reasoning-lite",
+      "ttft_ape": 6.2,
+      "e2e_ape": 3.3
+    },
+    {
+      "name": "Yi general-lite",
+      "ttft_ape": 2.7,
+      "e2e_ape": 17.0
+    }
+  ],
+  "error_log": []
+}
