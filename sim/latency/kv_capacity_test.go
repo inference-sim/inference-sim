@@ -44,6 +44,137 @@ func validDenseKVParams() latency.KVCapacityParams {
 	return latency.NewKVCapacityParams(false, 0, false, "silu", 0, 0)
 }
 
+// --- KVBytesPerToken tests ---
+
+func TestKVBytesPerToken_Llama8B_TP1(t *testing.T) {
+	mc := validDenseModelConfig() // 32 layers, 8 KV heads, 4096 hidden, 32 heads → headDim=128
+	got, err := latency.KVBytesPerToken(mc, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 32 layers × 2 (K+V) × 128 headDim × 8 KVHeads × 2 BytesPerParam / 1 TP = 131072
+	want := float64(32 * 2 * 128 * 8 * 2)
+	if got != want {
+		t.Errorf("KVBytesPerToken = %v, want %v", got, want)
+	}
+}
+
+func TestKVBytesPerToken_TPSharding(t *testing.T) {
+	mc := validDenseModelConfig()
+	tp1, _ := latency.KVBytesPerToken(mc, 1)
+	tp4, _ := latency.KVBytesPerToken(mc, 4)
+	if tp4 != tp1/4 {
+		t.Errorf("KVBytesPerToken(TP=4) = %v, want %v (TP=1 value / 4)", tp4, tp1/4)
+	}
+}
+
+func TestKVBytesPerToken_LinearInNumLayers(t *testing.T) {
+	mc := validDenseModelConfig()
+	base, err := latency.KVBytesPerToken(mc, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	mc.NumLayers *= 2
+	doubled, err := latency.KVBytesPerToken(mc, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if doubled != 2*base {
+		t.Errorf("KVBytesPerToken should scale linearly with NumLayers: got %v, want 2*%v=%v", doubled, base, 2*base)
+	}
+}
+
+func TestKVBytesPerToken_LinearInBytesPerParam(t *testing.T) {
+	mc := validDenseModelConfig()
+	base, err := latency.KVBytesPerToken(mc, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	mc.BytesPerParam *= 2
+	doubled, err := latency.KVBytesPerToken(mc, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if doubled != 2*base {
+		t.Errorf("KVBytesPerToken should scale linearly with BytesPerParam: got %v, want 2*%v=%v", doubled, base, 2*base)
+	}
+}
+
+func TestKVBytesPerToken_MHA_FallbackToNumHeads(t *testing.T) {
+	mc := validDenseModelConfig()
+	mc.NumKVHeads = 0 // MHA: should use NumHeads (32)
+	got, err := latency.KVBytesPerToken(mc, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 32 layers × 2 × 128 headDim × 32 heads × 2 = 524288
+	want := float64(32 * 2 * 128 * 32 * 2)
+	if got != want {
+		t.Errorf("KVBytesPerToken(MHA) = %v, want %v", got, want)
+	}
+}
+
+func TestKVBytesPerToken_InvalidInputs(t *testing.T) {
+	mc := validDenseModelConfig()
+	cases := []struct {
+		name string
+		mc   sim.ModelConfig
+		tp   int
+	}{
+		{"zero TP", mc, 0},
+		{"negative TP", mc, -1},
+		{"zero NumHeads", sim.ModelConfig{NumLayers: 1, HiddenDim: 64, BytesPerParam: 2.0}, 1},
+		{"zero NumLayers", sim.ModelConfig{NumHeads: 4, HiddenDim: 64, BytesPerParam: 2.0}, 1},
+		{"zero HiddenDim", sim.ModelConfig{NumHeads: 4, NumLayers: 1, BytesPerParam: 2.0}, 1},
+		{"zero BytesPerParam", sim.ModelConfig{NumHeads: 4, NumLayers: 1, HiddenDim: 64}, 1},
+		{"indivisible KVHeads", sim.ModelConfig{NumHeads: 4, NumLayers: 1, HiddenDim: 64, NumKVHeads: 3, BytesPerParam: 2.0}, 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := latency.KVBytesPerToken(tc.mc, tc.tp)
+			if err == nil {
+				t.Errorf("expected error for %s, got nil", tc.name)
+			}
+		})
+	}
+}
+
+func TestKVBytesPerToken_GQA_KVHeadsLessThanTP(t *testing.T) {
+	// When numKVHeads < TP (e.g., 4 KV heads, TP=8), vLLM replicates KV heads
+	// per GPU. Our formula divides total KV by TP, which underestimates per-GPU
+	// KV bytes — a known approximation inherited from CalculateKVBlocks.
+	mc := sim.ModelConfig{
+		NumLayers:       2,
+		NumHeads:        32,
+		NumKVHeads:      4,
+		HiddenDim:       128,
+		IntermediateDim: 256,
+		BytesPerParam:   2.0,
+	}
+	got, err := latency.KVBytesPerToken(mc, 8)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// headDim = 128/32 = 4; total = 2 × 2 × 4 × 4 × 2.0 = 128; per-GPU = 128/8 = 16
+	// In reality vLLM replicates, so per-GPU would be higher. This documents the
+	// current (optimistic) approximation.
+	want := float64(16)
+	if got != want {
+		t.Errorf("KVBytesPerToken(numKVHeads=4, TP=8) = %v, want %v", got, want)
+	}
+}
+
+func TestKVBytesPerToken_NonDivisibleKVHeadsLessThanTP_Accepted(t *testing.T) {
+	// Non-divisible numKVHeads=3 with TP=8: should SUCCEED (numKVHeads < TP → no divisibility check).
+	// This documents the asymmetry with the "indivisible KVHeads" TP=2 case in
+	// TestKVBytesPerToken_InvalidInputs that errors (numKVHeads=3 >= TP=2).
+	mc := sim.ModelConfig{NumHeads: 32, NumKVHeads: 3, NumLayers: 1, HiddenDim: 64, BytesPerParam: 2.0}
+	_, err := latency.KVBytesPerToken(mc, 8)
+	if err != nil {
+		t.Errorf("expected success for numKVHeads=3 < TP=8, got error: %v", err)
+	}
+}
+
 // --- Input validation tests ---
 
 func TestCalculateKVBlocks_ZeroDenominators_ReturnError(t *testing.T) {

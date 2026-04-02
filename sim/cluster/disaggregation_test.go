@@ -84,11 +84,19 @@ func newTestDisaggDeploymentConfigWithOverhead(overhead float64) DeploymentConfi
 		RoutingPolicy:           "round-robin",
 		PDTransferBandwidthGBps: 25.0,
 		PDTransferBaseLatencyMs: 0.05,
-		PDKVBytesPerToken:       512,
 	}
 }
 
 func newTestDisaggDeploymentConfig(numInstances, prefill, decode int) DeploymentConfig {
+	// ModelConfig produces 512 KV bytes/token/GPU at TP=1:
+	// 2 layers × 2 (K+V) × 16 headDim × 4 numKVHeads × 2.0 BytesPerParam = 512
+	modelCfg := sim.ModelConfig{
+		NumLayers:       2,
+		NumHeads:        4,
+		HiddenDim:       64,
+		IntermediateDim: 128,
+		BytesPerParam:   2.0,
+	}
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
 			Horizon:             math.MaxInt64,
@@ -96,7 +104,7 @@ func newTestDisaggDeploymentConfig(numInstances, prefill, decode int) Deployment
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(modelCfg, sim.HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0),
 		},
 		NumInstances:            numInstances,
 		PrefillInstances:        prefill,
@@ -105,8 +113,20 @@ func newTestDisaggDeploymentConfig(numInstances, prefill, decode int) Deployment
 		RoutingPolicy:           "round-robin",
 		PDTransferBandwidthGBps: 25.0,
 		PDTransferBaseLatencyMs: 0.05,
-		PDKVBytesPerToken:       512,
 	}
+}
+
+func TestNewClusterSimulator_PDEnabled_InvalidModelConfig_Panics(t *testing.T) {
+	cfg := newTestDisaggDeploymentConfig(2, 1, 1)
+	// Replace the valid ModelConfig with a zero-value one to trigger the guard.
+	zeroCfg := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, "blackbox", 0)
+	cfg.ModelHardwareConfig = zeroCfg
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for PD with zero ModelConfig, got none")
+		}
+	}()
+	NewClusterSimulator(cfg, nil, nil)
 }
 
 func TestDisaggregation_PrefillRoutedToPrefillPool(t *testing.T) {
