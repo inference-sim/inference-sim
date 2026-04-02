@@ -26,7 +26,7 @@ beta_bounds:
   - [0.0, 200.0]    # β₅: Per-layer overhead (µs/layer)
   - [0.0, 500.0]    # β₆: Per-request scheduling overhead (µs/request)
   - [0.0, 500.0]    # β₇: Per-step constant overhead (µs/step)
-  - [0.0, 500.0]    # β₈: Per-MoE-layer overhead (µs/MoE-layer) — NEW
+  - [0.0, 200.0]    # β₈: Per-MoE-layer overhead (µs/MoE-layer) — NEW (capped to avoid simulation timeouts)
 
 beta_initial:  # iter19 best + β₈=0.0 (let optimizer discover MoE correction)
   - 0.20116806029373865
