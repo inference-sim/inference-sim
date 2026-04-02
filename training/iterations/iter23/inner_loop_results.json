@@ -1,0 +1,37 @@
+{
+  "iteration": 23,
+  "backend_name": "evolved",
+  "timestamp": "2026-04-02T07:36:42.478130",
+  "optimization": {
+    "method": "3-phase joint 3D optimization of (\u03b2\u2081\u2090, \u03b2\u2082, \u03b2\u2088)",
+    "phase1": "8\u00d78\u00d78=512 coarse grid, 12 parallel workers",
+    "phase2": "5\u00d75\u00d75=125 fine grid around Phase 1 best",
+    "phase3": "Nested golden section polish (\u03b2\u2088\u2192\u03b2\u2082\u2192\u03b2\u2081\u2090)",
+    "total_evaluations": 682,
+    "total_time_seconds": 9568
+  },
+  "best_params": {
+    "alpha": [
+      15561.959717498621,
+      776.243476414174,
+      45.910232684500556
+    ],
+    "beta": [
+      0.138541,
+      1.242045,
+      1.363060401466404,
+      0.3960942587233032,
+      62.28932987355146,
+      2.7976795228174027,
+      169.36568163371626,
+      427.3,
+      0.0
+    ]
+  },
+  "loss": {
+    "overall_loss": 39.24,
+    "ttft_rmse": 23.97,
+    "e2e_rmse": 15.27
+  },
+  "error_log": []
+}
