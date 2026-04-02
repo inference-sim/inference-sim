@@ -76,21 +76,22 @@ type EvolvedModel struct {
 	decodeSplit  bool // true when ≥10 betas: β₂ₐ·compute + β₂ᵦ·kv instead of β₂·max
 
 	// Pre-computed architecture features (frozen at construction).
-	numLayers      int
-	numMoELayers   int // Interleaved MoE layers (0 for dense models)
-	numDenseLayers int // Dense layers (= numLayers for dense models)
-	hiddenDim      int
-	numHeads       int
-	headDim        int     // d_h = hiddenDim / numHeads
-	dKV            int     // kvHeads * d_h (differs from hiddenDim for GQA)
-	dFF            int     // Default FFN intermediate dim
-	dFFMoE         int     // MoE expert FFN dim (may differ from dFF)
-	dFFDense       int     // Dense layer FFN dim (may differ for interleaved archs)
-	kEff           int     // max(1, NumExpertsPerTok)
-	numExperts     int     // NumLocalExperts (0 for dense)
-	isMoE          bool    // NumLocalExperts > 0
-	tp             int     // Tensor parallelism degree
-	weightBPP      float64 // EffectiveWeightBytesPerParam (FP8-aware)
+	numLayers              int
+	numMoELayers           int // Interleaved MoE layers (0 for dense models)
+	numDenseLayers         int // Dense layers (= numLayers for dense models)
+	hiddenDim              int
+	numHeads               int
+	headDim                int     // d_h = hiddenDim / numHeads
+	dKV                    int     // kvHeads * d_h (differs from hiddenDim for GQA)
+	dFF                    int     // Default FFN intermediate dim
+	dFFMoE                 int     // MoE expert FFN dim (may differ from dFF)
+	dFFDense               int     // Dense layer FFN dim (may differ for interleaved archs)
+	kEff                   int     // max(1, NumExpertsPerTok)
+	numExperts             int     // NumLocalExperts (0 for dense)
+	isMoE                  bool    // NumLocalExperts > 0
+	hasInterleavedMoE      bool    // InterleaveMoELayerStep > 0 (Scout-style alternating MoE/dense)
+	tp                     int     // Tensor parallelism degree
+	weightBPP              float64 // EffectiveWeightBytesPerParam (FP8-aware)
 
 	// Pre-converted hardware specs for hot-path efficiency.
 	flopsPeakUs float64 // FLOP/µs (divide FLOPs by this → µs)
@@ -238,6 +239,21 @@ func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 		decodeTerm = m.Beta[1] * math.Max(tDcCompute, tDcKv)
 	}
 
+	// β₈ MoE overhead: Applies only to interleaved MoE architectures.
+	// Hypothesis: β₈=427µs represents interleaved MoE/dense synchronization overhead:
+	//   - Kernel switching between MoE (expert-parallel) and dense (GEMM) layers
+	//   - Cache effects from alternating memory access patterns
+	//   - Scheduler state transitions between different layer types
+	// Scout (InterleaveMoELayerStep=1): 24 MoE + 24 dense → β₈ applies
+	// Mixtral (uniform MoE, no interleaving): All layers MoE → β₈ does not apply
+	// Physics-motivated: Uniform architectures avoid kernel switching overhead.
+	var moeScaling float64
+	if m.hasInterleavedMoE {
+		moeScaling = 1.0
+	} else {
+		moeScaling = 0.0
+	}
+
 	stepTime := prefillTerm +
 		decodeTerm +
 		m.Beta[2]*tWeight +
@@ -245,7 +261,7 @@ func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 		m.Beta[4]*L +
 		m.Beta[5]*batchSize +
 		m.Beta[6] +
-		m.Beta[7]*float64(m.numMoELayers) // β₈: per-MoE-layer overhead (µs/MoE-layer; 0 for dense)
+		m.Beta[7]*moeScaling*float64(m.numMoELayers) // β₈: per-MoE-layer overhead (interleaved archs only)
 
 	return max(1, clampToInt64(stepTime))
 }
@@ -363,22 +379,23 @@ func NewEvolvedModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (*Evo
 	}
 
 	return &EvolvedModel{
-		Alpha:          [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
-		Beta:           betaSlice,
-		prefillSplit:   len(coeffs.BetaCoeffs) >= 9,
-		decodeSplit:    len(coeffs.BetaCoeffs) >= 10,
-		numLayers:      hw.ModelConfig.NumLayers,
-		numMoELayers:   numMoELayers,
-		numDenseLayers: numDenseLayers,
-		hiddenDim:      hw.ModelConfig.HiddenDim,
-		numHeads:       hw.ModelConfig.NumHeads,
-		headDim:        headDim,
-		dKV:            numKVHeads * headDim,
-		dFF:            dFF,
-		dFFMoE:         dFFMoE,
-		dFFDense:       dFFDense,
-		kEff:           max(1, hw.ModelConfig.NumExpertsPerTok),
-		numExperts:     hw.ModelConfig.NumLocalExperts,
+		Alpha:             [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
+		Beta:              betaSlice,
+		prefillSplit:      len(coeffs.BetaCoeffs) >= 9,
+		decodeSplit:       len(coeffs.BetaCoeffs) >= 10,
+		numLayers:         hw.ModelConfig.NumLayers,
+		numMoELayers:      numMoELayers,
+		numDenseLayers:    numDenseLayers,
+		hiddenDim:         hw.ModelConfig.HiddenDim,
+		numHeads:          hw.ModelConfig.NumHeads,
+		headDim:           headDim,
+		dKV:               numKVHeads * headDim,
+		dFF:               dFF,
+		dFFMoE:            dFFMoE,
+		dFFDense:          dFFDense,
+		kEff:              max(1, hw.ModelConfig.NumExpertsPerTok),
+		numExperts:        hw.ModelConfig.NumLocalExperts,
+		hasInterleavedMoE: hw.ModelConfig.InterleaveMoELayerStep > 0,
 		isMoE:          hw.ModelConfig.NumLocalExperts > 0,
 		tp:             hw.TP,
 		weightBPP:      weightBPP,
