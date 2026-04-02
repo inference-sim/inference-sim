@@ -66,6 +66,9 @@ type ClusterSimulator struct {
 	// Phase 1B-2a: per-tenant fair-share tracker. Nil when TenantBudgets is nil (backward-compat).
 	tenantTracker *TenantTracker
 
+	// Phase 1C: model autoscaler pipeline. Nil when ModelAutoscalerIntervalUs == 0 (backward-compat, INV-6).
+	autoscaler *autoscalerPipeline
+
 	// sessionCallback is the raw onRequestDone parameter for session follow-up
 	// generation in PD mode. Called from detectDecodeCompletions with the original
 	// request (which carries SessionID). Separate from the per-instance closure to
@@ -225,6 +228,15 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		if tpDegree < 1 {
 			tpDegree = 1 // default to TP=1 when not explicitly set (R3: defensive correction with comment)
 		}
+		// Phase 1C: look up CostPerHour for this GPU type from the first matching pool.
+		// All instances placed in this block share the same gpuType, so a single lookup is sufficient.
+		var poolCostPerHour float64
+		for i := range config.NodePools {
+			if config.NodePools[i].GPUType == gpuType {
+				poolCostPerHour = config.NodePools[i].CostPerHour
+				break
+			}
+		}
 		for _, inst := range cs.instances {
 			nodeID, gpuIDs, err := cs.placement.PlaceInstance(inst.ID(), inst.Model, gpuType, tpDegree)
 			if err != nil {
@@ -234,6 +246,9 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			} else {
 				inst.nodeID = nodeID
 				inst.allocatedGPUIDs = gpuIDs
+				inst.GPUType = gpuType
+				inst.TPDegree = tpDegree
+				inst.CostPerHour = poolCostPerHour
 				inst.warmUpRemaining = config.InstanceLifecycle.WarmUpRequestCount
 				// Schedule loading event; transitions Loading → WarmingUp/Active after delay
 				inst.TransitionTo(InstanceStateLoading)

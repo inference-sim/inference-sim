@@ -3,6 +3,13 @@
 // All types live here; events live in cluster_event.go.
 package cluster
 
+import (
+	"container/heap"
+	"math/rand"
+
+	"github.com/inference-sim/inference-sim/sim"
+)
+
 // VariantSpec identifies a specific hardware configuration for a replica.
 // Used as a map key in GPUInventory.ByVariant and carried in ScaleDecision.Variant.
 // Both fields are comparable types (string, int) — safe for use as a Go map key.
@@ -50,11 +57,11 @@ type VariantCapacity struct {
 // Utilization guard: when TotalSupply == 0, Utilization = 0 (no division).
 type AnalyzerResult struct {
 	ModelID           string
-	TotalSupply       float64          // aggregate serving capacity (model-level)
-	TotalDemand       float64          // aggregate load (model-level)
-	Utilization       float64          // TotalDemand / TotalSupply; 0 when TotalSupply == 0
-	RequiredCapacity  float64          // scale-up signal: capacity needed beyond current supply
-	SpareCapacity     float64          // scale-down signal: capacity safely removable
+	TotalSupply       float64           // aggregate serving capacity (model-level)
+	TotalDemand       float64           // aggregate load (model-level)
+	Utilization       float64           // TotalDemand / TotalSupply; 0 when TotalSupply == 0
+	RequiredCapacity  float64           // scale-up signal: capacity needed beyond current supply
+	SpareCapacity     float64           // scale-down signal: capacity safely removable
 	VariantCapacities []VariantCapacity // sorted by CostPerReplica ascending for determinism (R2)
 }
 
@@ -73,4 +80,88 @@ type ScaleDecision struct {
 // Callers must sort keys before iterating (R2: map iteration is non-deterministic).
 type GPUInventory struct {
 	ByVariant map[VariantSpec]int // free GPU slots per variant
+}
+
+// ---------------------------------------------------------------------------
+// Interfaces
+// ---------------------------------------------------------------------------
+
+// Collector observes RouterState and produces one ModelSignals per active model,
+// grouping replicas by ModelID. Must not modify state, filter models, or apply thresholds.
+// Pure function: same RouterState always produces the same output (determinism).
+type Collector interface {
+	Collect(state *sim.RouterState) []ModelSignals
+}
+
+// Analyzer assesses capacity for one model. Name() returns a human-readable identifier.
+// Analyze() is called once per model per tick. Must not access RouterState, GPUInventory,
+// or any external state — only ModelSignals. Must not panic on empty Replicas slice.
+// Invariants: sum(vc.Supply) == TotalSupply; sum(vc.Demand) == TotalDemand.
+type Analyzer interface {
+	Name() string
+	Analyze(metrics ModelSignals) AnalyzerResult
+}
+
+// Engine optimizes replica allocation across all models given current GPU inventory.
+// Produces at most one ScaleDecision per ModelID per call. Must not emit both scale-up and
+// scale-down for the same ModelID. Must not access RouterState or ModelSignals directly.
+// Scale-up targets cheapest variant (CostPerReplica ascending); scale-down targets most
+// expensive variant (CostPerReplica descending). Map keys must be sorted before iteration (R2).
+type Engine interface {
+	Optimize(results []AnalyzerResult, inventory GPUInventory) []ScaleDecision
+}
+
+// Actuator applies scale decisions to the cluster. Delta > 0 calls PlacementManager.PlaceInstance();
+// Delta < 0 transitions the instance to Draining (WaitDrain semantics). Must not block.
+// Failure on PlaceInstance is logged, not silently dropped (INV-A2).
+// Pending placements for the model must be cancelled before applying scale-down.
+// Orchestrator has already applied cooldown filtering before calling Apply().
+type Actuator interface {
+	Apply(decisions []ScaleDecision)
+}
+
+// ---------------------------------------------------------------------------
+// autoscalerPipeline — internal orchestrator (not a public interface)
+// ---------------------------------------------------------------------------
+
+// autoscalerPipeline holds the four interface components and cooldown state.
+// Owned by ClusterSimulator as an optional field (nil when autoscaler disabled).
+// tick() runs the Collect → Analyze → Optimize pipeline and schedules a ScaleActuationEvent.
+// actuate() calls Actuator.Apply() with the decisions from a ScaleActuationEvent.
+type autoscalerPipeline struct {
+	collector Collector
+	analyzer  Analyzer
+	engine    Engine
+	actuator  Actuator
+
+	// Cooldown state (Decision 8): keyed by ModelID.
+	// Updated when a decision survives cooldown filtering and is forwarded to ScaleActuationEvent.
+	lastScaleUpAt   map[string]int64
+	lastScaleDownAt map[string]int64
+
+	// rng is used to sample ActuationDelayUs (Decision 4).
+	rng *rand.Rand
+}
+
+// tick executes the autoscaling pipeline for one tick at timestamp nowUs.
+// Full implementation wired in commit 3 (T011–T014).
+func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
+	p.scheduleNextTick(cs, nowUs)
+}
+
+// scheduleNextTick pushes the next ScalingTickEvent to the cluster event queue.
+func (p *autoscalerPipeline) scheduleNextTick(cs *ClusterSimulator, nowUs int64) {
+	nextAt := nowUs + int64(cs.config.ModelAutoscalerIntervalUs)
+	heap.Push(&cs.clusterEvents, clusterEventEntry{
+		event: &ScalingTickEvent{At: nextAt},
+		seqID: cs.nextSeqID(),
+	})
+}
+
+// actuate calls Actuator.Apply() with the decisions from a ScaleActuationEvent.
+// Full implementation wired in US3 (T019-T023).
+func (p *autoscalerPipeline) actuate(_ *ClusterSimulator, decisions []ScaleDecision) {
+	if p.actuator != nil {
+		p.actuator.Apply(decisions)
+	}
 }
