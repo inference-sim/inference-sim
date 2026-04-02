@@ -10,10 +10,10 @@ import "math"
 //	Reads: KVCache.GetCachedBlocks via cacheQueryFn — ground truth (synchronous,
 //	no staleness). Each routing decision queries the current KV cache state
 //	at the moment of routing.
-func newPrecisePrefixCacheScorer(cacheQueryFn cacheQueryFn) (scorerFunc, observerFunc) {
+func newPrecisePrefixCacheScorer(cacheFn cacheQueryFn) (scorerFunc, observerFunc) {
 	scorer := func(req *Request, snapshots []RoutingSnapshot) map[string]float64 {
 		scores := make(map[string]float64, len(snapshots))
-		if req == nil || cacheQueryFn == nil {
+		if req == nil || cacheFn == nil {
 			for _, snap := range snapshots {
 				scores[snap.ID] = 1.0
 			}
@@ -24,7 +24,7 @@ func newPrecisePrefixCacheScorer(cacheQueryFn cacheQueryFn) (scorerFunc, observe
 		minRaw, maxRaw := math.MaxInt, 0
 		for _, snap := range snapshots {
 			count := 0
-			if fn, ok := cacheQueryFn[snap.ID]; ok && fn != nil {
+			if fn, ok := cacheFn[snap.ID]; ok && fn != nil {
 				count = fn(req.InputTokens)
 			}
 			raw[snap.ID] = count

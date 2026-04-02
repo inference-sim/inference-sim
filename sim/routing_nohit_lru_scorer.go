@@ -10,7 +10,7 @@ package sim
 //	Reads: KVCache.GetCachedBlocks via cacheQueryFn — ground truth (synchronous,
 //	no staleness). Used only for warm/cold detection, not scoring magnitude.
 //	LRU state is deterministic (updated by observer on cold routing only).
-func newNoHitLRUScorer(cacheQueryFn cacheQueryFn) (scorerFunc, observerFunc) {
+func newNoHitLRUScorer(cacheFn cacheQueryFn) (scorerFunc, observerFunc) {
 	// LRU tracking: ordered list of instance IDs, most-recently-used first.
 	// Only updated on cold request routing.
 	var lruOrder []string // most-recent first
@@ -27,7 +27,7 @@ func newNoHitLRUScorer(cacheQueryFn cacheQueryFn) (scorerFunc, observerFunc) {
 		scores := make(map[string]float64, len(snapshots))
 
 		// Nil cacheQueryFn → neutral (cannot determine hit status)
-		if req == nil || cacheQueryFn == nil {
+		if req == nil || cacheFn == nil {
 			for _, snap := range snapshots {
 				scores[snap.ID] = 0.5
 			}
@@ -40,7 +40,7 @@ func newNoHitLRUScorer(cacheQueryFn cacheQueryFn) (scorerFunc, observerFunc) {
 		lastWarm = false
 		lastReqID = req.ID
 		for _, snap := range snapshots {
-			if fn, ok := cacheQueryFn[snap.ID]; ok && fn != nil {
+			if fn, ok := cacheFn[snap.ID]; ok && fn != nil {
 				if fn(req.InputTokens) > 0 {
 					lastWarm = true
 					break
@@ -70,7 +70,7 @@ func newNoHitLRUScorer(cacheQueryFn cacheQueryFn) (scorerFunc, observerFunc) {
 		for _, snap := range snapshots {
 			currentIDs[snap.ID] = true
 		}
-		pruned := lruOrder[:0]
+		pruned := make([]string, 0, len(lruOrder))
 		for _, id := range lruOrder {
 			if currentIDs[id] {
 				pruned = append(pruned, id)

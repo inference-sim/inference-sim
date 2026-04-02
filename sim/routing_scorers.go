@@ -105,14 +105,14 @@ func normalizeScorerWeights(configs []ScorerConfig) []float64 {
 // Returns (scorer, observer) where observer is nil for stateless scorers.
 // blockSize is used by stateful scorers (prefix-affinity) for block hash computation.
 // Panics on unknown name (validation should catch this before reaching here).
-func newScorerWithObserver(name string, blockSize int, cacheQueryFn cacheQueryFn) (scorerFunc, observerFunc) {
+func newScorerWithObserver(name string, blockSize int, cacheFn cacheQueryFn) (scorerFunc, observerFunc) {
 	switch name {
 	case "prefix-affinity":
 		return newPrefixAffinityScorer(blockSize)
 	case "precise-prefix-cache":
-		return newPrecisePrefixCacheScorer(cacheQueryFn)
+		return newPrecisePrefixCacheScorer(cacheFn)
 	case "no-hit-lru":
-		return newNoHitLRUScorer(cacheQueryFn)
+		return newNoHitLRUScorer(cacheFn)
 	case "queue-depth":
 		return scoreQueueDepth, nil
 	case "kv-utilization":
