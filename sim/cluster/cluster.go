@@ -67,6 +67,9 @@ type ClusterSimulator struct {
 	// Phase 1B-2a: per-tenant fair-share tracker. Nil when TenantBudgets is nil (backward-compat).
 	tenantTracker *TenantTracker
 
+	// Phase 1C: model autoscaler pipeline. Nil when ModelAutoscalerIntervalUs == 0 (backward-compat, INV-6).
+	autoscaler *autoscalerPipeline
+
 	// sessionCallback is the raw onRequestDone parameter for session follow-up
 	// generation in PD mode. Called from detectDecodeCompletions with the original
 	// request (which carries SessionID). Separate from the per-instance closure to
@@ -246,10 +249,20 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 				}
 				simCfg.HWConfig = hc
 			}
+			// Phase 1C: look up CostPerHour for this matched GPU type (issue #692).
+			var poolCostPerHour float64
+			for i := range config.NodePools {
+				if config.NodePools[i].GPUType == matchedGPUType {
+					poolCostPerHour = config.NodePools[i].CostPerHour
+					break
+				}
+			}
 			inst := NewInstanceSimulator(id, simCfg)
 			inst.Model = config.Model
 			inst.nodeID = nodeID
 			inst.allocatedGPUIDs = gpuIDs
+			inst.TPDegree = tpDegree
+			inst.CostPerHour = poolCostPerHour
 			inst.warmUpRemaining = config.InstanceLifecycle.WarmUpRequestCount
 			inst.TransitionTo(InstanceStateLoading)
 			cs.scheduleInstanceLoadedEvent(inst)
