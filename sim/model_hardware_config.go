@@ -15,6 +15,8 @@ type ModelConfig struct {
 	NumExpertsPerTok    int     `json:"num_experts_per_tok"`              // 0 = dense model (MoE: active experts per token)
 	MoEExpertFFNDim     int     `json:"moe_intermediate_size"`            // Per-routed-expert FFN dim; 0 = use IntermediateDim (Mixtral convention)
 	SharedExpertFFNDim  int     `json:"shared_expert_intermediate_size"`  // Total shared-expert FFN dim; 0 = no shared experts
+	InterleaveMoELayerStep int  `json:"interleave_moe_layer_step"`        // Layer interleave pattern: 0 = uniform (all same type), 1 = alternate MoE/dense, 2 = every 3rd layer is MoE, etc. Used for Scout-style hybrid architectures.
+	DenseIntermediateDim int    `json:"intermediate_size_mlp"`            // Dense layer FFN dimension; 0 = use IntermediateDim. For models like Scout where dense layers have different FFN size than MoE expert FFN.
 	HiddenAct           string  `json:"hidden_act"`                       // Activation function (e.g. "silu", "gelu", "relu"); used by KV capacity (3-matrix SwiGLU detection), reserved for future roofline per-activation tuning
 	WeightBytesPerParam float64 `json:"weight_bytes_per_param,omitempty"` // Quantized weight precision (bytes/param); 0 = not set, use BytesPerParam. Auto-detected from quantization_config or model name conventions.
 }
