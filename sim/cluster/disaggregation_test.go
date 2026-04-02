@@ -966,6 +966,14 @@ func TestDisaggregation_TTFT_IncludesTransferAndDecode(t *testing.T) {
 		}
 
 		// BC-2: User-visible TTFT > prefill-only TTFT (transfer + decode add positive time).
+		// Explicit non-triviality guards: if either addend is zero, BC-2 is vacuously true
+		// and a regression to prefill-only TTFT would not be caught.
+		if transferDuration <= 0 {
+			t.Errorf("BC-2 precondition: parent %s: transferDuration=%d, expected positive (verify PDTransferBandwidthGBps/PDTransferBaseLatencyMs in test config)", pid, transferDuration)
+		}
+		if firstDecodeStep <= 0 {
+			t.Errorf("BC-2 precondition: parent %s: firstDecodeStep=%d, expected positive (verify LatencyCoeffs in test config)", pid, firstDecodeStep)
+		}
 		if ttft <= origPrefillTTFT {
 			t.Errorf("BC-2: parent %s: TTFT (%.1f) <= prefill-only TTFT (%.1f), must include transfer+decode",
 				pid, ttft, origPrefillTTFT)
@@ -987,6 +995,8 @@ func TestDisaggregation_TTFT_IncludesTransferAndDecode(t *testing.T) {
 	}
 
 	// BC-3: TTFTSum must be consistent with RequestTTFTs after projection.
+	// Tolerance is 1.0 (1 µs) rather than 1e-9 because TTFTSum is int64 (truncated
+	// per accumulation) while manualSum accumulates float64 values; rounding is expected.
 	var manualSum float64
 	for _, k := range sortedKeys(m.RequestTTFTs) {
 		manualSum += m.RequestTTFTs[k]
