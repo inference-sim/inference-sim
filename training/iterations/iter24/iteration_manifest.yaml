@@ -1,0 +1,8 @@
+iteration: 24
+latency_backend_name: "evolved"
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 24: Decode compute/memory split. Found decode is memory-only
+  (β₂ₐ=0, β₂ᵦ=1.263). Combined with prefill compute-only from iter21.
+timestamp: "2026-04-02T02:00:00.000000"

@@ -1,0 +1,14 @@
+=== CV-2: 7 train, 8 test ===
+Train data: 7 experiments copied
+Training: 200 trials, n_jobs=4, patience=100
+CV iteration dir: iter2402
+TRAIN FAILED: 7<1:05:05, 21.11s/it]
+                                                                                      
+
+Best trial: 0. Best value: 41.9192:   8%|▊         | 15/200 [06:27<1:05:05, 21.11s/it]
+Best trial: 0. Best value: 41.9192:   8%|▊         | 15/200 [06:27<1:05:05, 21.11s/it]
+Best trial: 0. Best value: 41.9192:   8%|▊         | 16/200 [06:27<45:37, 14.88s/it]  
+Best trial: 0. Best value: 41.9192:   8%|▊         | 16/200 [08:24<1:36:38, 31.51s/it]
+
+❌ Optimization failed: Should not reach.
+
