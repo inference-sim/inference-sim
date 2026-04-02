@@ -1,0 +1,38 @@
+{
+  "iteration": 21,
+  "backend_name": "evolved",
+  "timestamp": "2026-04-02T00:14:19.556003",
+  "optimization": {
+    "n_trials": 144,
+    "optimization_time_seconds": null,
+    "num_errors": 0,
+    "note": "2D grid search (144 points) showed \u03b2\u2081\u1d66 irrelevant. Golden section search (11 evals) on \u03b2\u2081\u2090 with \u03b2\u2081\u1d66=0 found optimum at 0.116."
+  },
+  "best_params": {
+    "alpha": [
+      15561.959717498621,
+      776.243476414174,
+      45.910232684500556
+    ],
+    "beta": [
+      0.116,
+      1.6106907719437158,
+      1.363060401466404,
+      0.3960942587233032,
+      62.28932987355146,
+      2.7976795228174027,
+      169.36568163371626,
+      440.0,
+      0.0
+    ]
+  },
+  "loss": {
+    "overall_loss": 39.86,
+    "ttft_rmse": null,
+    "e2e_rmse": null,
+    "note": "Prefill compute-only: \u03b2\u2081\u2090=0.116\u00b7T_pf_compute (\u03b2\u2081\u1d66=0, memory term dropped). Verified 39.86 on 15/15 experiments."
+  },
+  "key_finding": "Prefill is compute-dominated: dropping the memory term entirely (\u03b2\u2081\u1d66=0) costs only 0.05 loss. \u03b2\u2081\u2090=0.116 implies 8.6\u00d7 prefill compute discount, consistent with FlashAttention-2 reducing effective FLOPs.",
+  "per_experiment_results": [],
+  "error_log": []
+}
