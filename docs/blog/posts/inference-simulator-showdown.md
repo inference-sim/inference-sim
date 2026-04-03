@@ -120,7 +120,7 @@ Accuracy tells you whether to trust a simulator. Speed tells you whether you can
 | **Vidur** | 9.1 | 134× |
 | **LLMServingSim** | 353.3 | 0.4× |
 
-Median runtime and speedup relative to real GPU experiments. LLM-Optimizer is 22,000× faster, BLIS-Evolved 1,500× faster, while LLMServingSim is actually slower than running real experiments. **Practical impact?** Simulating 100 experiments takes 10 seconds (LLM-Optimizer), 80 seconds (BLIS-Evolved), 15 minutes (Vidur), or 10 hours (LLMServingSim).
+*Median runtime and speedup relative to real GPU experiments. LLM-Optimizer is 22,000× faster, BLIS-Evolved 1,500× faster, while LLMServingSim is actually slower than running real experiments. Practical impact? Simulating 100 experiments takes 10 seconds (LLM-Optimizer), 80 seconds (BLIS-Evolved), 15 minutes (Vidur), or 10 hours (LLMServingSim).*
 
 ![Speed vs Accuracy Pareto Frontier](figures/fig5_pareto.png)
 
