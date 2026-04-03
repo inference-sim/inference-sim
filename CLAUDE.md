@@ -230,7 +230,14 @@ For the full annotated file tree, see [`docs/reference/project-structure.md`](do
 
 ### Latency Estimation
 
-Four latency model modes (roofline, blackbox, cross-model, trained-roofline), selected via `--latency-model` flag. See [`docs/guide/latency-models.md`](docs/guide/latency-models.md) for details on each mode, configuration, and auto-fetch behavior.
+Five latency model modes (roofline, blackbox, cross-model, trained-roofline, evolved), selected via `--latency-model` flag.
+
+**Evolved model**: Physics-informed roofline basis functions with learned corrections. Architecture-aware MoE overhead scaling:
+- Interleaved MoE/dense architectures (InterleaveMoELayerStep > 0): β₈ overhead applies
+- Uniform MoE architectures (InterleaveMoELayerStep = 0): β₈ overhead skipped
+- 10-beta mode: prefill compute-only (β₁ₐ), decode memory-only (β₂ᵦ)
+
+See [`docs/guide/latency-models.md`](docs/guide/latency-models.md) for details.
 
 **Quantized model support**: Three-tier auto-detection of weight precision: (1) `quantization_config` in HF `config.json` — GPTQ/AWQ (`bits`), FP8 (implicit), compressed-tensors (`config_groups.*.weights.num_bits`); (2) model name conventions (`w4a16` → 0.5, `FP8` → 1.0 via `InferWeightBytesFromModelName`); (3) fallback to `BytesPerParam` from `torch_dtype`. Uses quantized weight precision for weight bandwidth and KV capacity calculations while keeping compute dtype for KV cache and activations. `ModelConfig.WeightBytesPerParam` (0=fallback to `BytesPerParam`) with `EffectiveWeightBytesPerParam()` accessor decouples weight storage precision from compute/KV dtype.
 
