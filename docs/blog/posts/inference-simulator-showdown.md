@@ -51,17 +51,17 @@ Let us answer the question: which approach actually delivers?
 <a name="how-we-tested"></a>
 ## How We Tested
 
-We ran **38 experiments** on production hardware using vLLM v0.15.1, then asked each simulator to predict the results.
+We ran **38 experiments** on production hardware using vLLM v0.15.1, then asked each simulator to predict the results. We selected widely-deployed models, common GPU types, and practical serving configurations that teams encounter in production.
 
 The test matrix: 
 
 - **6 models** spanning dense and MoE architectures—Llama-3.1-8B, Qwen3-14B, CodeLlama-34B, Llama-2-70B (dense), and Mixtral-8x7B, Mixtral-8x22B (MoE).  
 - **3 GPU types:** H100, A100-80GB, L40S. 
 - Serving parameters swept: 
-  - tensor parallelism (1/2/4/8), 
-  - CPU offload (on/off), 
-  - LLM GPU memory utilization (0.90/0.95), 
-  - vLLM chunk size (1024/2048/4096).
+    - tensor parallelism (1/2/4/8),
+    - CPU offload (on/off), 
+    - LLM GPU memory utilization (0.90/0.95), 
+    - vLLM chunk size (1024/2048/4096).
 
 For workloads, we used **[ServeGen](https://github.com/alibaba/ServeGen) multi-turn traces from production logs**, split into four categories:
 
