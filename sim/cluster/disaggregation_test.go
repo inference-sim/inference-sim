@@ -911,6 +911,217 @@ func TestDisaggregation_MetricProjection_E2ECorrectness(t *testing.T) {
 	}
 }
 
+// TestDisaggregation_TTFT_IncludesTransferAndDecode verifies BC-1/BC-2/BC-3/BC-4:
+// In PD disaggregation, user-visible TTFT includes prefill + KV transfer + first
+// decode step (matching llm-d behavior where the decode pod produces the first
+// user-visible token). See issue #930.
+func TestDisaggregation_TTFT_IncludesTransferAndDecode(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+
+	// Collect prefill-only TTFTs from per-instance metrics (before projection).
+	prefillTTFTs := make(map[string]float64)
+	for _, inst := range cs.PerInstanceMetricsByID() {
+		for id, ttft := range inst.RequestTTFTs {
+			prefillTTFTs[id] = ttft
+		}
+	}
+
+	verified := 0
+	for _, parent := range cs.ParentRequests() {
+		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
+			continue
+		}
+		pid := parent.ID
+
+		ttft, hasTTFT := m.RequestTTFTs[pid]
+		if !hasTTFT {
+			t.Errorf("parent %s: missing RequestTTFTs entry", pid)
+			continue
+		}
+
+		// BC-1: TTFT = prefillTTFT + transferDuration + firstDecodeStep.
+		// Prefill TTFT (instance-level) captures arrival → prefill completion.
+		// Transfer duration and first decode step are additive on top.
+		if parent.DecodeSubReq == nil || len(parent.DecodeSubReq.ITL) == 0 {
+			t.Errorf("parent %s: DecodeSubReq nil or empty ITL", pid)
+			continue
+		}
+		origPrefillTTFT, hasPrefill := prefillTTFTs[parent.PrefillSubReqID]
+		if !hasPrefill {
+			t.Errorf("parent %s: no prefill TTFT for %s in per-instance metrics", pid, parent.PrefillSubReqID)
+			continue
+		}
+		transferDuration := parent.TransferCompleteTime - parent.TransferStartTime
+		firstDecodeStep := parent.DecodeSubReq.ITL[0]
+		expectedTTFT := origPrefillTTFT + float64(transferDuration) + float64(firstDecodeStep)
+		if math.Abs(ttft-expectedTTFT) > 1e-9 {
+			t.Errorf("BC-1: parent %s: TTFT = %.1f, want %.1f (prefillTTFT=%.0f + transfer=%d + decode=%d)",
+				pid, ttft, expectedTTFT, origPrefillTTFT, transferDuration, firstDecodeStep)
+		}
+
+		// BC-2: User-visible TTFT > prefill-only TTFT (transfer + decode add positive time).
+		// Explicit non-triviality guards: if either addend is zero, BC-2 is vacuously true
+		// and a regression to prefill-only TTFT would not be caught.
+		if transferDuration <= 0 {
+			t.Errorf("BC-2 precondition: parent %s: transferDuration=%d, expected positive (verify PDTransferBandwidthGBps/PDTransferBaseLatencyMs in test config)", pid, transferDuration)
+		}
+		if firstDecodeStep <= 0 {
+			t.Errorf("BC-2 precondition: parent %s: firstDecodeStep=%d, expected positive (verify LatencyCoeffs in test config)", pid, firstDecodeStep)
+		}
+		if ttft <= origPrefillTTFT {
+			t.Errorf("BC-2: parent %s: TTFT (%.1f) <= prefill-only TTFT (%.1f), must include transfer+decode",
+				pid, ttft, origPrefillTTFT)
+		}
+
+		// BC-4: TTFT <= E2E (causality). Missing E2E for a completed parent is itself a violation.
+		e2e, hasE2E := m.RequestE2Es[pid]
+		if !hasE2E {
+			t.Errorf("BC-4: parent %s: E2E missing from RequestE2Es for completed parent", pid)
+		} else if ttft > e2e {
+			t.Errorf("BC-4: parent %s: TTFT (%.1f) > E2E (%.1f), causality violated",
+				pid, ttft, e2e)
+		}
+
+		verified++
+	}
+	if verified == 0 {
+		t.Fatal("no completed PD parents found to verify")
+	}
+
+	// BC-3: TTFTSum must be consistent with RequestTTFTs after projection.
+	// Tolerance is 1.0 (1 µs) rather than 1e-9 because TTFTSum is int64 (truncated
+	// per accumulation) while manualSum accumulates float64 values; rounding is expected.
+	var manualSum float64
+	for _, k := range sortedKeys(m.RequestTTFTs) {
+		manualSum += m.RequestTTFTs[k]
+	}
+	if math.Abs(float64(m.TTFTSum)-manualSum) > 1.0 {
+		t.Errorf("BC-3: TTFTSum (%d) != sum(RequestTTFTs) (%.1f)", m.TTFTSum, manualSum)
+	}
+}
+
+// TestDisaggregation_TTFT_NoSilentDrops verifies R1: all completed PD parents
+// have a TTFT entry after projection, regardless of which branch fired.
+func TestDisaggregation_TTFT_NoSilentDrops(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(3)
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	for _, parent := range cs.ParentRequests() {
+		if parent.CompletionTime == 0 || parent.DecodeInstanceID == "" {
+			continue
+		}
+		if _, ok := m.RequestTTFTs[parent.ID]; !ok {
+			t.Errorf("parent %s: missing TTFT entry after projection (R1: no silent data loss)", parent.ID)
+		}
+	}
+}
+
+// TestDisaggregation_TTFT_FallbackWhenDecodeDataMissing exercises the defensive
+// fallback in projectPDMetrics: when a completed parent has TransferCompleteTime=0
+// or empty DecodeSubReq.ITL, TTFT falls back to the prefill-only value.
+func TestDisaggregation_TTFT_FallbackWhenDecodeDataMissing(t *testing.T) {
+	prefillTTFT := 2500.0
+
+	origReq := &sim.Request{ID: "orig", ArrivalTime: 0}
+
+	tests := []struct {
+		name            string
+		parent          *ParentRequest
+		skipPrefillTTFT bool
+	}{
+		{
+			name: "TransferCompleteTime=0",
+			parent: &ParentRequest{
+				ID: "p1", PrefillSubReqID: "p1_prefill", DecodeSubReqID: "p1_decode",
+				OriginalRequest: origReq,
+				ArrivalTime: 0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				TransferStartTime: 0, TransferCompleteTime: 0,
+				DecodeSubReq: &sim.Request{ITL: []int64{100}},
+			},
+		},
+		{
+			name: "empty DecodeSubReq.ITL",
+			parent: &ParentRequest{
+				ID: "p2", PrefillSubReqID: "p2_prefill", DecodeSubReqID: "p2_decode",
+				OriginalRequest: origReq,
+				ArrivalTime: 0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				TransferStartTime: 100, TransferCompleteTime: 200,
+				DecodeSubReq: &sim.Request{ITL: nil},
+			},
+		},
+		{
+			name: "nil DecodeSubReq",
+			parent: &ParentRequest{
+				ID: "p3", PrefillSubReqID: "p3_prefill", DecodeSubReqID: "p3_decode",
+				OriginalRequest: origReq,
+				ArrivalTime: 0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				TransferStartTime: 100, TransferCompleteTime: 200,
+				DecodeSubReq: nil,
+			},
+		},
+		{
+			name: "no prefill TTFT key",
+			parent: &ParentRequest{
+				ID: "p4", PrefillSubReqID: "p4_prefill", DecodeSubReqID: "p4_decode",
+				OriginalRequest: origReq,
+				ArrivalTime: 0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				TransferStartTime: 100, TransferCompleteTime: 200,
+				DecodeSubReq: &sim.Request{ITL: []int64{100}},
+			},
+			skipPrefillTTFT: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := sim.NewMetrics()
+			if !tc.skipPrefillTTFT {
+				m.RequestTTFTs[tc.parent.PrefillSubReqID] = prefillTTFT
+			}
+			m.RequestTTFTs[tc.parent.DecodeSubReqID] = 999.0
+
+			cs := &ClusterSimulator{
+				aggregatedMetrics: m,
+				parentRequests:    map[string]*ParentRequest{tc.parent.ID: tc.parent},
+			}
+			cs.projectPDMetrics()
+
+			if tc.skipPrefillTTFT {
+				// Branch C: completed parent with no prefill TTFT key must produce no entry.
+				if _, ok := m.RequestTTFTs[tc.parent.ID]; ok {
+					t.Errorf("Branch C: unexpected TTFT entry for parent %s (no prefill key)", tc.parent.ID)
+				}
+			} else {
+				got, ok := m.RequestTTFTs[tc.parent.ID]
+				if !ok {
+					t.Fatalf("R1: parent %s TTFT entry missing after fallback", tc.parent.ID)
+				}
+				if math.Abs(got-prefillTTFT) > 1e-9 {
+					t.Errorf("fallback: got TTFT=%.1f, want %.1f (prefill-only)", got, prefillTTFT)
+				}
+			}
+
+			// Sub-request keys must be deleted (INV-PD-6).
+			if _, exists := m.RequestTTFTs[tc.parent.PrefillSubReqID]; exists {
+				t.Errorf("INV-PD-6: prefill sub-request key %s still present", tc.parent.PrefillSubReqID)
+			}
+			if _, exists := m.RequestTTFTs[tc.parent.DecodeSubReqID]; exists {
+				t.Errorf("INV-PD-6: decode sub-request key %s still present", tc.parent.DecodeSubReqID)
+			}
+		})
+	}
+}
+
 // TestDisaggregation_MetricProjection_SchedulingDelay verifies that the
 // scheduling delay is the prefill sub-request delay (not inflated by decode pipeline).
 func TestDisaggregation_MetricProjection_SchedulingDelay(t *testing.T) {
