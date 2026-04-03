@@ -104,7 +104,9 @@ Only **BLIS** (both variants) covers all 38 experiments. Since no other simulato
 
 *Figure 4: Accuracy comparison between BLIS and LLMServingSim on 1 shared experiment (Mixtral-8x7B TP4, 2000-request cluster workload). BLIS-Evolved achieved 1.34% E2E MAPE, LLMServingSim 76.00%, and BLIS-Roofline 97.69%. BLIS-Evolved is 72.8× more accurate than roofline and 56.7× better than LLMServingSim on this high-TP MoE configuration.*
 
-**Accuracy varies dramatically across simulators.** Across their supported experiments, median E2E error ranges from 7.4% (BLIS-Evolved) to 619% (Vidur) - an 83× spread. TTFT error spans 12.6% to 29,783% (2,355× spread). ITL error ranges 9.8% to 259% (26× spread). These gaps are not rounding errors, they determine whether your capacity plan holds or collapses on launch day.
+**Accuracy varies dramatically across simulators.** Across their supported experiments, median E2E error ranges from 7.4% (BLIS-Evolved) to 619% (Vidur) - an 83× spread. TTFT error spans 12.6% (BLIS-Evolved) to 29,783% (2,355× spread). ITL error ranges 9.8% (BLIS-Evolved) to 259% (26× spread).
+
+**BLIS-Evolved's accuracy limitations:** While E2E latency prediction is strong (11.79% MAPE), TTFT accuracy is weaker (22.81% MAPE) - nearly 2× worse. This means first-token latency predictions are less reliable than overall request latency. For workloads where time-to-first-token dominates user experience, this gap matters.
 
 <a name="speed-vs-accuracy-the-pareto-frontier"></a>
 ## Speed vs. Accuracy: The Pareto Frontier
@@ -135,7 +137,9 @@ Accuracy tells you whether to trust a simulator. Speed tells you whether you can
 
 **Accuracy matters most.** A fast simulator with 50% error means wrong resource decisions—overprovision and waste budget, or underprovision and miss SLOs. BLIS-Evolved delivered 11.79% E2E error and 22.81% TTFT error across 38 experiments (Figure 1). Pure roofline models miss queueing delays and communication overhead—errors that compound when planning at scale.
 
-**For capacity planning with SLO targets:** Use **BLIS-Evolved**. If your SLOs specify tail latency (P90 < 500ms, P99 < 1s), you need a discrete-event simulator that models queueing and outputs P90/P99 metrics. Analytical simulators (LLM-Optimizer, AIConfigurator) only predict mean latency and cannot validate tail latency SLOs. BLIS-Evolved covers all models/GPUs/workloads at 0.8s per run and supports vLLM arguments (chunk size, GPU memory utilization, CPU offload). Vidur provides scheduler-level detail and can be used if you have time to profile each model you want to plan for.
+**For capacity planning with SLO targets:** Use **BLIS-Evolved** if you need broad coverage across models/GPUs/workloads at 0.8s per run. It supports vLLM arguments (chunk size, GPU memory utilization, CPU offload) and tail latency metrics (P90/P99). Analytical simulators (LLM-Optimizer, AIConfigurator) only predict mean latency and cannot validate tail latency SLOs.
+
+**Use Vidur if scheduler-level fidelity matters more than speed.** Vidur replicates vLLM's scheduling logic at the finest grain, making it the most faithful simulator for understanding queueing behavior. Trade-off: requires profiling each model upfront and runs slower (9.1s median runtime). Best for deep investigations of specific model-hardware combinations.
 
 **For rapid config space exploration (mean latency only):** Use **LLM-Optimizer** first, then validate with BLIS-Evolved. At 0.1 seconds per config, LLM-Optimizer sweeps 1,000 candidates in 2 minutes to eliminate obviously bad configs (wrong TP, insufficient memory). But roofline accuracy degrades on high-parallelism and MoE workloads (Figure 1)—validate final candidates with BLIS-Evolved (0.8s per config, 13 minutes for 1,000 runs) before making resource commitments.
 
@@ -147,11 +151,11 @@ An exciting emerging area: using RL or automated search to *discover* better ser
 
 **Speed dominates.** Training loops need many simulations. At ~6 minutes per run, LLMServingSim is impractical. Even Vidur at 9.1 seconds adds up fast. You need sub-second simulation for training to complete in reasonable time.
 
-**LLM-Optimizer (0.1s) is the natural fit for single-instance simulation.** Fast enough for large-scale exploration when you are discovering scheduling policies or batching strategies for a single server. Misses queueing dynamics, but for discovery you are learning *relative* performance across policies, not absolute accuracy. Limited to single-instance—cannot model multi-instance features like routing.
+**Use LLM-Optimizer for algorithm discovery.** At 0.1s per run, it's 8× faster than BLIS-Evolved and makes large-scale exploration feasible. Misses queueing dynamics, but for discovery you are learning *relative* performance across policies, not absolute accuracy. Limited to single-instance—cannot model multi-instance features like routing. **Winner: LLM-Optimizer.**
 
-**BLIS-Evolved (0.8s) offers a middle ground with multi-instance support.** Captures queueing effects and supports multi-instance features like routing policies across replicas. Tradeoff: 8× slower than LLM-Optimizer, but enables exploration of distributed serving algorithms.
+**BLIS-Evolved is too slow for this use case.** At 0.8s per run, 8× slower than LLM-Optimizer, training loops become impractical. Only consider it if you specifically need multi-instance routing policy exploration and can accept the 8× slowdown.
 
-**AIConfigurator and Vidur also support multi-instance scenarios** but runtime makes large-scale training impractical. Better for validating hand-designed multi-instance systems. LLMServingSim does not scale for training loops.
+**AIConfigurator and Vidur** also fall short on speed. Better for validating hand-designed systems than training. LLMServingSim does not scale for training loops.
 
 <a name="the-bottom-line"></a>
 ## The Bottom Line
@@ -160,8 +164,11 @@ There is no universal best simulator - only the best simulator *for your problem
 
 Across 38 experiments, we measured a massive accuracy spread between simulators. We evaluated on three axes: **Accuracy** (can you trust it?), **Speed** (can you explore with it?), **Coverage** (can it model your deployment?). Fast but inaccurate wastes time. Accurate but slow limits exploration. Neither matters if coverage gaps block your architecture.
 
-**BLIS-Evolved** hits the sweet spot: high accuracy, extensive coverage, moderate speed. 
-**LLM-Optimizer** dominates speed at 0.1s for rapid exploration. **Vidur** provides scheduler-level fidelity for focused research.
+**For capacity planning:** BLIS-Evolved offers the best accuracy-coverage trade-off (11.79% E2E MAPE), but TTFT prediction is weaker (22.81% MAPE). Vidur provides scheduler-level fidelity if you can invest in per-model profiling.
+
+**For algorithm discovery:** LLM-Optimizer wins decisively at 0.1s per run—8× faster than any alternative. BLIS-Evolved is too slow for training loops.
+
+**For rapid exploration:** LLM-Optimizer's analytical approach delivers instant feedback. Use it to prune configuration spaces, then validate finalists with a discrete-event simulator.
 
 Marketing claims are not validation. Run the simulator on *your* model, *your* hardware, *your* workload, then compare against real measurements. Test before you trust.
 
