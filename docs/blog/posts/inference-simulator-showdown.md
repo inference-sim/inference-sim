@@ -160,11 +160,9 @@ There is no universal best simulator - only the best simulator *for your problem
 
 Across 38 experiments, we measured a massive accuracy spread between simulators. We evaluated on three axes: **Accuracy** (can you trust it?), **Speed** (can you explore with it?), **Coverage** (can it model your deployment?). Fast but inaccurate wastes time. Accurate but slow limits exploration. Neither matters if coverage gaps block your architecture.
 
-**For capacity planning:** BLIS-Evolved offers the best accuracy-coverage trade-off (11.79% E2E MAPE), but TTFT prediction is weaker (22.81% MAPE). Vidur provides scheduler-level fidelity if you can invest in per-model profiling.
+**For capacity planning:** LLM-Optimizer allows rapid configuration exploration, but cannot be used for tail latency-based SLO predictions. BLIS-Evolved offers the best accuracy-coverage trade-off (11.79% E2E MAPE), but TTFT prediction is weaker (22.81% MAPE). Identify promising candidates through LLM-Optimizer, then validate using BLIS-Evolved.
 
-**For algorithm discovery:** LLM-Optimizer wins decisively at 0.1s per run—8× faster than any alternative. BLIS-Evolved is too slow for algorithm discovery loops.
-
-**For rapid exploration:** LLM-Optimizer's analytical approach delivers instant feedback. Use it to prune configuration spaces, then validate finalists with a discrete-event simulator.
+**For algorithm discovery:** For single-instance experiments, LLM-Optimizer wins at 0.1s per run — 8× faster than any alternative. However, for multi-instance algorithm exploration, rely on BLIS-Evolved.
 
 Marketing claims are not validation. Run the simulator on *your* model, *your* hardware, *your* workload, then compare against real measurements. Test before you trust.
 
@@ -172,10 +170,10 @@ Marketing claims are not validation. Run the simulator on *your* model, *your* h
 
 This evaluation focuses on single-instance vLLM serving accuracy. What we did not test:
 
-**Multi-instance cluster dynamics:** Our 38 experiments measured single-server latency prediction. Real deployments use load balancing, request routing, and autoscaling across multiple instances. How well do simulators predict cluster-level behavior under load balancing policies? We did not test this.
+**Multi-instance cluster dynamics:** Our 38 experiments measured single-server latency prediction. Real deployments use load balancing, request routing, and autoscaling across multiple instances. We did not test how well simulators predict cluster-level behavior under load balancing policies.
 
-**Cost modeling:** Capacity planning is not just about latency—it is about cost per token, GPU utilization, and total cost of ownership. None of the simulators we tested provide built-in cost models. Future work should evaluate cost prediction accuracy alongside latency.
+**Cost modeling:** Capacity planning is not just about latency — it is about cost per token and total cost of ownership. Future work should evaluate cost prediction accuracy alongside latency.
 
 **Production drift:** Models update, workloads shift, hardware changes. How quickly do simulators become stale? How much re-profiling or re-training is needed? We tested accuracy at a point in time, not over time.
 
-Acknowledging these gaps does not diminish the findings—it clarifies their scope. Single-instance latency prediction is the foundation, but production serving is a bigger problem.
+Acknowledging these gaps does not diminish the findings — it clarifies their scope. Single-instance latency prediction is the foundation, but production serving is a bigger problem.
