@@ -1756,4 +1756,24 @@ trained_roofline_defaults:
   beta_coeffs: [0.7726491335309499, 1.127489556719325, 1.0559901872766853, 0.0, 43.500541908701074, 48.80613214319187, 0.0]
   # α₀=API processing overhead (µs), α₁=post-decode fixed (µs), α₂=per-output-token detokenization (µs/tok).
   alpha_coeffs: [9315.338771116985, 1849.5902371340574, 1.7079389122469397]
+# Evolved latency model coefficients (physics-informed roofline + learned corrections)
+# Trained from iter25: architecture-aware β₈ scaling for interleaved vs uniform MoE.
+evolved_coefficients:
+  # Alpha coefficients: API/framework overheads (µs)
+  # α₀: QueueingTime (HTTP parsing, request validation, queue insertion)
+  # α₁: PostDecodeFixedOverhead (per-request post-decode overhead)
+  # α₂: OutputTokenProcessingTime (streaming detokenization per output token)
+  alpha: [15561.959717498621, 776.243476414174, 45.910232684500556]
+  # Beta coefficients: roofline corrections + overheads
+  # β₁ₐ: prefill compute correction (dimensionless)
+  # β₂ₐ: decode compute correction (dimensionless, dropped - zero)
+  # β₃: weight loading correction (dimensionless)
+  # β₄: TP communication correction (dimensionless)
+  # β₅: per-layer overhead (µs/layer)
+  # β₆: per-request scheduling overhead (µs/request)
+  # β₇: per-step constant overhead (µs/step)
+  # β₈: per-MoE-layer overhead - architecture-aware (µs/MoE-layer, interleaved only)
+  # β₁ᵦ (β₉): prefill memory correction (dimensionless, dropped - zero)
+  # β₂ᵦ (β₁₀): decode memory correction (dimensionless)
+  beta: [0.138541, 0.0, 1.363060401466404, 0.3960942587233032, 62.28932987355146, 2.7976795228174027, 169.36568163371626, 427.3, 0.0, 1.2632]
 version: 0.0.1
