@@ -50,13 +50,13 @@ Five popular simulators. Five completely different bets on how to predict LLM in
 
 **[Vidur](https://github.com/microsoft/vidur)** replays your exact workload through discrete-event simulation, using profiled GPU kernel times to model vLLM's scheduling decisions. High fidelity to scheduler behavior, but you need to profile each model first.
 
-**[LLMServingSim](https://github.com/casys-kaist/LLMServingSim)** takes a different path—discrete-event simulation with fine-grained network modeling via [astra-sim](https://github.com/astra-sim/astra-sim). The catch? 353 seconds per experiment.
+**[LLMServingSim](https://github.com/casys-kaist/LLMServingSim)** takes a different path—discrete-event simulation with fine-grained network modeling via [astra-sim](https://github.com/astra-sim/astra-sim). The catch? ~6 minutes per experiment.
 
 **[LLM-Optimizer](https://github.com/bentoml/llm-optimizer)** takes the opposite approach: analytical modeling from first principles. Query HuggingFace for LLM config, run the roofline calculation, get an answer in 0.1 seconds. No request scheduling or queueing behavior captured.
 
 **[AIConfigurator](https://github.com/ai-dynamo/aiconfigurator)** uses operation-level profiling—break inference into GEMM, attention, communication ops, measure them on hardware, then compose the results. Dense models only.
 
-**[BLIS](https://github.com/inference-sim/inference-sim)** combines analytical roofline with discrete-event scheduling. Multiple latency modes available—we are comparing Roofline (analytical baseline) and Evolved (learned coefficients).
+**[BLIS](https://github.com/inference-sim/inference-sim)** combines analytical roofline with discrete-event scheduling. Multiple latency modes available — we are comparing Roofline (analytical baseline) and Evolved (learned coefficients).
 
 Let us answer the question: which approach actually delivers?
 
@@ -67,7 +67,7 @@ We ran **38 experiments** on production hardware using vLLM v0.15.1, then asked 
 
 The test matrix: **6 models** spanning dense and MoE architectures—Llama-3.1-8B, Qwen3-14B, CodeLlama-34B, Llama-2-70B (dense), and Mixtral-8x7B, Mixtral-8x22B (MoE). **3 GPU types:** H100, A100-80GB, L40S. Serving parameters swept: tensor parallelism (1/2/4/8), CPU offload (on/off), vLLM GPU memory utilization (0.90/0.95), vLLM chunk size (1024/2048/4096).
 
-For workloads, we used **[ServeGen](https://github.com/alibaba/ServeGen) multi-turn traces from Alibaba production logs**, split into four categories:
+For workloads, we used **[ServeGen](https://github.com/alibaba/ServeGen) multi-turn traces from production logs**, split into four categories:
 
 - **General-Purpose:** Chatbot traffic with variable request patterns
 - **Code Generation:** GitHub Copilot-style code assistant traffic
@@ -98,21 +98,21 @@ Only **BLIS** (both variants) covers all 38 experiments. Since no other simulato
 
 **Head-to-head accuracy comparisons on shared experiments:**
 
-![Figure 1: BLIS vs LLM-Optimizer](figures/sim_comparisons/blis_vs_llm_optimizer.png)
+![BLIS vs LLM-Optimizer comparison](figures/sim_comparisons/blis_vs_llm_optimizer.png)
 
-**Figure 1:** 36 shared experiments on H100/A100-80GB, all 6 models. BLIS-Evolved achieved 11.79% E2E MAPE and 22.81% TTFT MAPE. Pure roofline (BLIS-Roofline, LLM-Optimizer) misses queueing delays and TP communication overhead. LLM-Optimizer: MoE approximated as dense, no L40S GPU support.
+*Figure 1: Accuracy comparison between BLIS and LLM-Optimizer across 36 shared experiments on H100/A100-80GB with all 6 models. BLIS-Evolved achieved 11.79% E2E MAPE and 22.81% TTFT MAPE. Pure roofline models (BLIS-Roofline, LLM-Optimizer) miss queueing delays and TP communication overhead. LLM-Optimizer approximates MoE as dense and lacks L40S GPU support.*
 
-![Figure 2: BLIS vs AIConfigurator](figures/sim_comparisons/blis_vs_aiconfigurator.png)
+![BLIS vs AIConfigurator comparison](figures/sim_comparisons/blis_vs_aiconfigurator.png)
 
-**Figure 2:** 19 shared experiments on H100, dense models only (Qwen3-14B, CodeLlama-34B, Llama-2-70B, Llama-3.1-8B). AIConfigurator uses operation-level profiling but excludes MoE and A100/L40S GPUs.
+*Figure 2: Accuracy comparison between BLIS and AIConfigurator across 19 shared experiments on H100 with dense models only (Qwen3-14B, CodeLlama-34B, Llama-2-70B, Llama-3.1-8B). AIConfigurator uses operation-level profiling but excludes MoE architectures and A100/L40S GPUs.*
 
-![Figure 3: BLIS vs Vidur](figures/sim_comparisons/blis_vs_vidur.png)
+![BLIS vs Vidur comparison](figures/sim_comparisons/blis_vs_vidur.png)
 
-**Figure 3:** 4 shared experiments, 2 models (CodeLlama-34B, Llama-2-70B) only on H100. Vidur requires pre-built model profiles, does not support MoE.
+*Figure 3: Accuracy comparison between BLIS and Vidur across 4 shared experiments with 2 models (CodeLlama-34B, Llama-2-70B) on H100 only. Vidur requires pre-built model profiles and does not support MoE architectures.*
 
-![Figure 4: BLIS vs LLMServingSim](figures/sim_comparisons/blis_vs_llmservingsim.png)
+![BLIS vs LLMServingSim comparison](figures/sim_comparisons/blis_vs_llmservingsim.png)
 
-**Figure 4:** 1 shared experiment (Mixtral-8x7B TP4, 2000-request cluster workload). BLIS-Evolved: 1.34% E2E MAPE. LLMServingSim: 76.00%. BLIS-Roofline: 97.69%. BLIS-Evolved 72.8× more accurate than roofline, 56.7× better than LLMServingSim on this high-TP MoE configuration.
+*Figure 4: Accuracy comparison between BLIS and LLMServingSim on 1 shared experiment (Mixtral-8x7B TP4, 2000-request cluster workload). BLIS-Evolved achieved 1.34% E2E MAPE, LLMServingSim 76.00%, and BLIS-Roofline 97.69%. BLIS-Evolved is 72.8× more accurate than roofline and 56.7× better than LLMServingSim on this high-TP MoE configuration.*
 
 **Accuracy varies dramatically across simulators.** Across their supported experiments, median E2E error ranges from 7.4% (BLIS-Evolved) to 619% (Vidur) - an 83× spread. TTFT error spans 12.6% to 29,783% (2,355× spread). ITL error ranges 9.8% to 259% (26× spread). These gaps are not rounding errors, they determine whether your capacity plan holds or collapses on launch day.
 
@@ -132,9 +132,9 @@ Accuracy tells you whether to trust a simulator. Speed tells you whether you can
 
 Median runtime and speedup relative to real GPU experiments. LLM-Optimizer is 22,000× faster, BLIS-Evolved 1,500× faster, while LLMServingSim is actually slower than running real experiments. **Practical impact?** Simulating 100 experiments takes 10 seconds (LLM-Optimizer), 80 seconds (BLIS-Evolved), 15 minutes (Vidur), or 10 hours (LLMServingSim).
 
-![Figure 5: Pareto Frontier](figures/fig5_pareto.png)
+![Speed vs Accuracy Pareto Frontier](figures/fig5_pareto.png)
 
-**Figure 5:** Speed vs accuracy Pareto frontier across all 38 experiments. LLM-Optimizer occupies the fast-but-rough corner (0.1s, instant feedback, no queueing). LLMServingSim sits in slow-but-detailed (353s, yet higher MAPE than BLIS-Evolved—fidelity alone does not guarantee accuracy). **BLIS-Evolved hits the frontier elbow** (0.8s, 11.79% E2E MAPE), balancing accuracy and speed. Median runtime with IQR error bars.
+*Figure 5: Speed vs accuracy Pareto frontier across all 38 experiments. LLM-Optimizer occupies the fast-but-rough corner (0.1s runtime, instant feedback, no queueing dynamics). LLMServingSim sits in the slow-but-detailed region (353s runtime, yet higher MAPE than BLIS-Evolved—fidelity alone does not guarantee accuracy). BLIS-Evolved hits the frontier elbow (0.8s runtime, 11.79% E2E MAPE), balancing accuracy and speed. Error bars show median runtime with interquartile range.*
 
 **Pick your point on the curve.** One deployment decision? BLIS-Evolved (0.8s) once. Searching 1,000 configs? 13 minutes with BLIS-Evolved vs 98 hours with LLMServingSim. Training an RL agent? Only LLM-Optimizer (0.1s) makes millions of episodes feasible.
 
