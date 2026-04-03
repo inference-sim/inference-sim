@@ -151,7 +151,7 @@ An exciting emerging area: using RL or automated search to *discover* better ser
 
 **Use LLM-Optimizer for algorithm discovery.** At 0.1s per run, it's 8× faster than BLIS-Evolved and makes large-scale exploration feasible. Misses queueing dynamics, but for discovery you are learning *relative* performance across policies, not absolute accuracy. However, it is limited to single-instance—cannot model multi-instance features like routing.
 
-**Use BLIS-Evolved for multi-instance algorithms** At 0.8s per run, BLIS-Evolved is 8× slower than LLM-Optimizer. If you specifically need multi-instance routing policy exploration and can accept the 8× slowdown, then use BLIS-Evolved for this use-case.
+**Use BLIS-Evolved for multi-instance algorithms** At 0.8s per run, BLIS-Evolved is 8× slower than LLM-Optimizer. If you specifically need multi-instance capabilities such as routing policy exploration and can accept the 8× slowdown, then use BLIS-Evolved for this use-case.
 
 **AIConfigurator and Vidur** also fall short on speed. Better for validating hand-designed systems than training. LLMServingSim does not scale for training loops.
 
