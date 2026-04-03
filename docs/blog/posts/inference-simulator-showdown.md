@@ -139,7 +139,7 @@ Accuracy tells you whether to trust a simulator. Speed tells you whether you can
 
 **Use Vidur if scheduler-level fidelity matters more than speed.** Vidur replicates vLLM's scheduling logic at the finest grain, making it the most faithful simulator for understanding queueing behavior. Trade-off: requires profiling each model upfront and runs slower (9.1s median runtime). Best for deep investigations of specific model-hardware combinations.
 
-**For rapid config space exploration (mean latency only):** Use **LLM-Optimizer** first, then validate with BLIS-Evolved. At 0.1 seconds per config, LLM-Optimizer sweeps 1,000 candidates in 2 minutes to eliminate obviously bad configs (wrong TP, insufficient memory). But roofline accuracy degrades on high-parallelism and MoE workloads (Figure 1)—validate final candidates with BLIS-Evolved (0.8s per config, 13 minutes for 1,000 runs) before making resource commitments.
+**For rapid config space exploration (mean latency only):** Use **LLM-Optimizer** first, then validate with BLIS-Evolved. At 0.1 seconds per config, LLM-Optimizer sweeps 1,000 candidates in 2 minutes to eliminate obviously bad configs (wrong TP, insufficient memory). But roofline accuracy degrades on high-parallelism and MoE workloads (Figure 1) — validate final candidates with BLIS-Evolved (0.8s per config, 13 minutes for 1,000 runs) before making resource commitments.
 
 **LLMServingSim** At ~6 minutes per run, LLMServingSim is too slow for the iterative config exploration capacity planning requires.
 
@@ -149,7 +149,7 @@ An exciting emerging area: using RL or AI-driven search to *discover* better ser
 
 **Speed dominates.** Algorithm discovery loops need many simulations. At ~6 minutes per run, LLMServingSim is impractical. **AIConfigurator and Vidur** also fall short on speed - they are better for validating hand-designed systems than training. You need sub-second simulation for algorithm discovery to complete in reasonable time.
 
-**Use LLM-Optimizer for algorithm discovery.** At 0.1s per run, it's 8× faster than BLIS-Evolved and makes large-scale exploration feasible. Misses queueing dynamics, but for discovery you are learning *relative* performance across policies, not absolute accuracy. However, it is limited to single-instance—cannot model multi-instance features like routing.
+**Use LLM-Optimizer for algorithm discovery.** At 0.1s per run, it is 8× faster than BLIS-Evolved and makes large-scale exploration feasible. Misses queueing dynamics, but for discovery you are learning *relative* performance across policies, not absolute accuracy. However, it is limited to single-instance—cannot model multi-instance features like routing.
 
 **Use BLIS-Evolved for multi-instance algorithms** At 0.8s per run, BLIS-Evolved is 8× slower than LLM-Optimizer. If you specifically need multi-instance capabilities such as routing policy exploration and can accept the 8× slowdown, then use BLIS-Evolved for this use-case.
 
