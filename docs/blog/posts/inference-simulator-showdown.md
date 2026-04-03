@@ -145,15 +145,13 @@ Accuracy tells you whether to trust a simulator. Speed tells you whether you can
 
 ### AI-Driven Algorithm Discovery
 
-An exciting emerging area: using RL or automated search to *discover* better serving algorithms ([ADRS](https://sky.cs.berkeley.edu/project/adrs/)). The simulator becomes a training environment for exploring scheduling policies and batching strategies.
+An exciting emerging area: using RL or AI-driven search to *discover* better serving algorithms ([ADRS](https://sky.cs.berkeley.edu/project/adrs/)). The simulator becomes a training environment for exploring scheduling policies and batching strategies.
 
-**Speed dominates.** Training loops need many simulations. At ~6 minutes per run, LLMServingSim is impractical. Even Vidur at 9.1 seconds adds up fast. You need sub-second simulation for training to complete in reasonable time.
+**Speed dominates.** Algorithm discovery loops need many simulations. At ~6 minutes per run, LLMServingSim is impractical. **AIConfigurator and Vidur** also fall short on speed - they are better for validating hand-designed systems than training. You need sub-second simulation for algorithm discovery to complete in reasonable time.
 
 **Use LLM-Optimizer for algorithm discovery.** At 0.1s per run, it's 8× faster than BLIS-Evolved and makes large-scale exploration feasible. Misses queueing dynamics, but for discovery you are learning *relative* performance across policies, not absolute accuracy. However, it is limited to single-instance—cannot model multi-instance features like routing.
 
 **Use BLIS-Evolved for multi-instance algorithms** At 0.8s per run, BLIS-Evolved is 8× slower than LLM-Optimizer. If you specifically need multi-instance capabilities such as routing policy exploration and can accept the 8× slowdown, then use BLIS-Evolved for this use-case.
-
-**AIConfigurator and Vidur** also fall short on speed. Better for validating hand-designed systems than training. LLMServingSim does not scale for training loops.
 
 <a name="the-bottom-line"></a>
 ## The Bottom Line
@@ -164,7 +162,7 @@ Across 38 experiments, we measured a massive accuracy spread between simulators.
 
 **For capacity planning:** BLIS-Evolved offers the best accuracy-coverage trade-off (11.79% E2E MAPE), but TTFT prediction is weaker (22.81% MAPE). Vidur provides scheduler-level fidelity if you can invest in per-model profiling.
 
-**For algorithm discovery:** LLM-Optimizer wins decisively at 0.1s per run—8× faster than any alternative. BLIS-Evolved is too slow for training loops.
+**For algorithm discovery:** LLM-Optimizer wins decisively at 0.1s per run—8× faster than any alternative. BLIS-Evolved is too slow for algorithm discovery loops.
 
 **For rapid exploration:** LLM-Optimizer's analytical approach delivers instant feedback. Use it to prune configuration spaces, then validate finalists with a discrete-event simulator.
 
