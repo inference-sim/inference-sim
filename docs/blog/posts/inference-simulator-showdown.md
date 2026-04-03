@@ -104,9 +104,7 @@ Only **BLIS** (both variants) covers all 38 experiments. Since no other simulato
 
 *Figure 4: Accuracy comparison between BLIS and LLMServingSim on 1 shared experiment (Mixtral-8x7B TP4, 2000-request cluster workload). BLIS-Evolved achieved 1.34% E2E MAPE, LLMServingSim 76.00%, and BLIS-Roofline 97.69%. BLIS-Evolved is 72.8× more accurate than roofline and 56.7× better than LLMServingSim on this high-TP MoE configuration.*
 
-**Accuracy varies dramatically across simulators.** Across their supported experiments, median E2E error ranges from 7.4% (BLIS-Evolved) to 619% (Vidur) - an 83× spread. TTFT error spans 12.6% (BLIS-Evolved) to 29,783% (2,355× spread). ITL error ranges 9.8% (BLIS-Evolved) to 259% (26× spread).
-
-**BLIS-Evolved's accuracy limitations:** While E2E latency prediction is strong (11.79% MAPE), TTFT accuracy is weaker (22.81% MAPE) - nearly 2× worse. This means first-token latency predictions are less reliable than overall request latency. For workloads where time-to-first-token dominates user experience, this gap matters.
+**Accuracy varies dramatically across simulators.** Across their supported experiments, median E2E error ranges from 7.4% (BLIS-Evolved) to 619% (Vidur) - an 83× spread. TTFT error spans 12.6% (BLIS-Evolved) to 29,783% (2,355× spread). ITL error ranges 9.8% (BLIS-Evolved) to 259% (26× spread). BLIS-Evolved achieves the best accuracy overall. However, while its E2E latency prediction is strong (11.79% MAPE), TTFT accuracy is weaker (22.81% MAPE) - nearly 2× worse. This means first-token latency predictions are less reliable than overall request latency. For workloads where time-to-first-token dominates user experience, this gap matters.
 
 <a name="speed-vs-accuracy-the-pareto-frontier"></a>
 ## Speed vs. Accuracy: The Pareto Frontier
@@ -151,9 +149,9 @@ An exciting emerging area: using RL or automated search to *discover* better ser
 
 **Speed dominates.** Training loops need many simulations. At ~6 minutes per run, LLMServingSim is impractical. Even Vidur at 9.1 seconds adds up fast. You need sub-second simulation for training to complete in reasonable time.
 
-**Use LLM-Optimizer for algorithm discovery.** At 0.1s per run, it's 8× faster than BLIS-Evolved and makes large-scale exploration feasible. Misses queueing dynamics, but for discovery you are learning *relative* performance across policies, not absolute accuracy. Limited to single-instance—cannot model multi-instance features like routing. **Winner: LLM-Optimizer.**
+**Use LLM-Optimizer for algorithm discovery.** At 0.1s per run, it's 8× faster than BLIS-Evolved and makes large-scale exploration feasible. Misses queueing dynamics, but for discovery you are learning *relative* performance across policies, not absolute accuracy. However, it is limited to single-instance—cannot model multi-instance features like routing.
 
-**BLIS-Evolved is too slow for this use case.** At 0.8s per run, 8× slower than LLM-Optimizer, training loops become impractical. Only consider it if you specifically need multi-instance routing policy exploration and can accept the 8× slowdown.
+**Use BLIS-Evolved for multi-instance algorithms** At 0.8s per run, BLIS-Evolved is 8× slower than LLM-Optimizer. If you specifically need multi-instance routing policy exploration and can accept the 8× slowdown, then use BLIS-Evolved for this use-case.
 
 **AIConfigurator and Vidur** also fall short on speed. Better for validating hand-designed systems than training. LLMServingSim does not scale for training loops.
 
