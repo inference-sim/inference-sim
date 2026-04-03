@@ -111,9 +111,9 @@ func CollectPDMetrics(
 		}
 
 		// BC-1: parent TTFT from the aggregated TTFT map, keyed by parent ID.
-		// After projectPDMetrics(), the prefill sub-request TTFT has been rekeyed
-		// from PrefillSubReqID to the parent ID. The value is unchanged: first_token_time -
-		// arrival_time, recorded when ProgressIndex == inputLen (prefill completion).
+		// After projectPDMetrics(), the user-visible TTFT is stored under the parent ID.
+		// Value = prefillTTFT + KV transfer duration + first decode step — the full
+		// time from arrival to the first token reaching the user (issue #930).
 		// Missing key returns 0.0 in Go maps; exclude 0.0 values (BC-11).
 		if ttft := aggregated.RequestTTFTs[p.ID]; ttft > 0 {
 			ttftValues = append(ttftValues, ttft)
