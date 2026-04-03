@@ -13,10 +13,12 @@ import (
 //
 // Signal freshness (R17, INV-7):
 //
-//	Reads: KVCache.SnapshotCachedBlocksFn snapshots — Periodic staleness.
-//	Refresh interval controlled by DeploymentConfig.CacheSignalDelay.
+//	Reads: KVCache.SnapshotCachedBlocksFn snapshots — demand-triggered staleness.
+//	Refresh checked at routing-decision boundaries (buildRouterState), not by an
+//	independent timer. During idle simulation periods, staleness can exceed the
+//	nominal CacheSignalDelay interval. Controlled by DeploymentConfig.CacheSignalDelay.
 //	When delay=0, this type is not used (oracle mode).
-//	Default delay is 2s, matching llm-d's speculative TTL.
+//	Default delay is 2s (DefaultCacheSignalDelay), matching llm-d's speculative TTL.
 type StaleCacheIndex struct {
 	instances   map[InstanceID]*InstanceSimulator
 	staleFns    map[string]func([]int) int // instanceID → frozen snapshot closure
