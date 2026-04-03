@@ -78,7 +78,7 @@ func (r *recordingActuator) Apply(decisions []ScaleDecision) error {
 // All requests are nil (no-load run). Horizon is 200s so we can count tick firings.
 func newAutoscalerTestConfig(intervalUs float64) DeploymentConfig {
 	cfg := newTestDeploymentConfig(1)
-	cfg.SimConfig.Horizon = 200_000_000 // 200s in microseconds
+	cfg.Horizon = 200_000_000 // 200s in microseconds
 	cfg.ModelAutoscalerIntervalUs = intervalUs
 	return cfg
 }
@@ -151,7 +151,7 @@ func TestScalingTickScheduling(t *testing.T) {
 		// time as the tick. We use a recordingActuator to capture the call time.
 		const intervalUs = 60_000_000.0
 		cfg := newAutoscalerTestConfig(intervalUs)
-		cfg.SimConfig.Horizon = 1 // 1µs horizon: only first tick at t=0 fires
+		cfg.Horizon = 1 // 1µs horizon: only first tick at t=0 fires
 		cfg.ActuationDelay = DelaySpec{Mean: 0, Stddev: 0}
 		cs := NewClusterSimulator(cfg, nil, nil)
 
@@ -174,7 +174,7 @@ func TestScalingTickScheduling(t *testing.T) {
 		const intervalUs = 60_000_000.0
 		const horizonUs = 200_000_000 // 200s — enough for tick at t=0, actuation at t=30s
 		cfg := newAutoscalerTestConfig(intervalUs)
-		cfg.SimConfig.Horizon = horizonUs
+		cfg.Horizon = horizonUs
 		cfg.ActuationDelay = DelaySpec{Mean: 30, Stddev: 0} // 30s deterministic delay
 		cs := NewClusterSimulator(cfg, nil, nil)
 
@@ -210,7 +210,7 @@ func TestNoOpPipelineDeterminism(t *testing.T) {
 		// Each run needs its own request slice — sim.Request is mutated during simulation.
 		cfg := newTestDeploymentConfig(1)
 		cfg.ModelAutoscalerIntervalUs = intervalUs
-		cfg.SimConfig.Horizon = horizonUs
+		cfg.Horizon = horizonUs
 		cs := NewClusterSimulator(cfg, newTestRequests(20), nil)
 		wireAutoscaler(cs)
 		if err := cs.Run(); err != nil {
@@ -301,7 +301,7 @@ func TestCooldownFilterSuppression(t *testing.T) {
 	const intervalUs = 60_000_000.0
 	cfg := newAutoscalerTestConfig(intervalUs)
 	cfg.ScaleUpCooldownUs = cooldownUs
-	cfg.SimConfig.Horizon = 400_000_000 // 400s: ticks at 0, 60s, 120s, 180s, 240s, 300s, 360s
+	cfg.Horizon = 400_000_000 // 400s: ticks at 0, 60s, 120s, 180s, 240s, 300s, 360s
 
 	// Use a full autoscalerPipeline with a countingCollector and an engine that always
 	// emits a scale-up decision, plus a custom actuator that counts non-empty Apply() calls.
