@@ -80,7 +80,7 @@ Every experiment tracked three latency metrics: **E2E Mean MAPE** (end-to-end la
 
 Picture this: you are deploying Mixtral-8x7B on A100 nodes with TP=4. You have read the accuracy benchmarks, picked your simulator, fired it up, and it tells you it does not support MoE models! Or A100s. Or diverse TP configurations. Before you ever question the predictions, coverage gaps have already made the decision for you.
 
-Only **BLIS** (both variants) covers all 38 experiments. Since no other simulator runs the full test suite, we compare BLIS against each simulator on their supported experiments.
+Only **BLIS** (both variants) covers all 38 experiments. We evaluate each simulator as a blackbox: off-the-shelf usage with publicly available documentation, no custom profiling, no internal modifications, no advantage to any tool. This reflects how platform engineers without simulator-specific expertise would use these tools in practice. We compare BLIS against each simulator on their natively-supported experiments.
 
 | Simulator | Experiments Covered | Coverage | Key Limitations |
 |-----------|---------------------|----------|-----------------|
