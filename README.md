@@ -13,7 +13,7 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 - **Discrete-event simulation** for prefill, decode, and request scheduling
 - **KV-cache modeling** (blocks, prefix caching, prefill chunking, tiered GPU+CPU offload)
 - **CPU-only inference cost model** via analytical roofline estimation or learned α/β coefficients
-- **Four latency estimation modes**: roofline (default, analytical), blackbox (data-driven), cross-model (physics-informed, MoE-aware), and trained-roofline (roofline × learned corrections)
+- **Five latency estimation modes**: roofline (default, analytical), blackbox (data-driven), cross-model (physics-informed, MoE-aware), trained-roofline (roofline × learned corrections), and evolved (physics-informed basis functions with architecture-aware MoE scaling)
 - **Multi-instance cluster simulation** with shared-clock event loop and pluggable routing (round-robin, least-loaded, weighted-scoring)
 - **Multiple workload types**: preset (`chatbot`, `contentgen`, `summarization`, `multidoc`), custom distributions, or trace replay
 
@@ -242,6 +242,7 @@ inference-sim/
 ├── sim/latency/            # Latency model implementations
 │   ├── latency.go          # RooflineLatencyModel, BlackboxLatencyModel, CrossModelLatencyModel, NewLatencyModel factory
 │   ├── trained_roofline.go # TrainedRooflineLatencyModel: roofline basis functions × learned corrections
+│   ├── evolved_model.go    # EvolvedLatencyModel: physics-informed basis functions with architecture-aware MoE scaling
 │   ├── crossmodel.go       # CrossModelLatencyModel: physics-informed step time from architecture features (MoE-aware)
 │   ├── roofline.go         # Analytical FLOPs/bandwidth latency estimation
 │   ├── config.go           # HFConfig, GetHWConfig, GetModelConfig, ValidateRooflineConfig
