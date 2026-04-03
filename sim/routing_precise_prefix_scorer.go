@@ -10,7 +10,7 @@ import "math"
 //	Reads: KVCache.GetCachedBlocks via cacheQueryFn.
 //	Freshness depends on --cache-signal-delay:
 //	  - delay=0: ground truth (synchronous, no staleness) — oracle mode.
-//	  - delay>0 (default 2s): Periodic staleness via StaleCacheIndex snapshot refresh.
+//	  - delay>0 (default 2s): Demand-triggered staleness via StaleCacheIndex snapshot refresh.
 //	    Each routing decision queries a frozen copy of the HashToBlock map,
 //	    refreshed every CacheSignalDelay microseconds of sim time.
 //	    Default 2s matches production llm-d's speculative TTL — the blind spot

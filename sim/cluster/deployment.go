@@ -3,9 +3,11 @@ package cluster
 import "github.com/inference-sim/inference-sim/sim"
 
 // DefaultCacheSignalDelay is the default propagation delay for prefix cache
-// signals in microseconds (2 seconds). This matches production llm-d's
-// defaultSpeculativeTTL — the blind spot between a routing decision and
-// KV event arrival via ZMQ. Set to 0 for oracle mode (live cache state).
+// signals in microseconds (2 seconds). Only affects precise-prefix-cache and
+// no-hit-lru scorers; has no observable effect on other routing policies.
+// Matches production llm-d's defaultSpeculativeTTL — the blind spot between
+// a routing decision and KV event arrival via ZMQ.
+// Set to 0 for oracle mode (live cache state).
 const DefaultCacheSignalDelay int64 = 2_000_000
 
 // DeploymentConfig describes a cluster where all instances share identical
@@ -36,10 +38,12 @@ type DeploymentConfig struct {
 	SnapshotRefreshInterval int64
 
 	// Cache signal propagation delay for precise prefix cache scoring (issue #919).
-	// When > 0, precise-prefix-cache and no-hit-lru scorers query a periodically-refreshed
-	// stale snapshot of each instance's KV cache block hash map instead of live state.
+	// Only affects routing when precise-prefix-cache or no-hit-lru scorers are active;
+	// has no observable effect on other routing policies (round-robin, least-loaded, etc.).
+	// When > 0, those scorers query a periodically-refreshed stale snapshot of each
+	// instance's KV cache block hash map instead of live state.
 	// Models the asynchronous KV event propagation delay in production llm-d.
-	// Use DefaultCacheSignalDelay (2s) for production fidelity.
+	// Default: DefaultCacheSignalDelay (2s), matching llm-d's speculative TTL.
 	// 0 = oracle mode (scorers read live cache state with zero delay).
 	// Units: microseconds of simulated time.
 	CacheSignalDelay int64
