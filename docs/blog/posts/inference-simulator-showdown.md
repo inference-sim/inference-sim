@@ -174,8 +174,6 @@ Acknowledging these gaps does not diminish the findings — it clarifies their s
 
 There is no universal best simulator - only the best simulator *for your problem*.
 
-Across 38 experiments, we measured a massive accuracy spread between simulators. We evaluated on three axes: **Accuracy** (can you trust it?), **Speed** (can you explore with it?), **Coverage** (can it model your deployment?). Fast but inaccurate wastes time. Accurate but slow limits exploration. Neither matters if coverage gaps block your architecture.
-
-Use LLM-Optimizer (0.1s) for rapid exploration, then validate with BLIS-Evolved (0.8s, tail latency support); for multi-instance algorithms, use BLIS-Evolved directly.
+Across 38 experiments, we measured a massive accuracy spread between simulators. We evaluated on three axes: **Accuracy** (can you trust it?), **Speed** (can you explore with it?), **Coverage** (can it model your deployment?). Fast but inaccurate wastes time. Accurate but slow limits exploration. Neither matters if coverage gaps block your architecture. A hybrid approach combining multiple simulators may be suitable for common use-cases such as capacity planning or configuration search - use fast analytical simulators like BLIS-Roofline or LLM-Optimizer for rapid exploration, then validate using slower, more-accurate simulators like BLIS-Evolved or AIConfigurator. Of course, the stakes are different for multi-instance cluster experiments, but that is a story for another day.
 
 Marketing claims are not validation. Run the simulator on *your* model, *your* hardware, *your* workload, then compare against real measurements. Test before you trust.
