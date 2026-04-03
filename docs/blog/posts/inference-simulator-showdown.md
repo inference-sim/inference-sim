@@ -38,7 +38,7 @@ This guide breaks down which simulator to use for capacity planning, configurati
 
 Five popular simulators. Five completely different bets on how to predict LLM inference performance.
 
-**[Vidur](https://github.com/microsoft/vidur)** replays your exact workload through discrete-event simulation, using profiled GPU kernel times to model vLLM's scheduling decisions. High fidelity to scheduler behavior, but you need to profile each model first.
+**[Vidur](https://github.com/microsoft/vidur)** replays your exact workload through discrete-event simulation, using profiled GPU kernel times to model vLLM's scheduling decisions. High fidelity to scheduler behavior, but you need to profile each model first. Pre-profiled kernels are available only for vLLM v0.
 
 **[LLMServingSim](https://github.com/casys-kaist/LLMServingSim)** takes a different path—discrete-event simulation with fine-grained network modeling via [astra-sim](https://github.com/astra-sim/astra-sim). The catch? ~6 minutes per experiment.
 
@@ -102,7 +102,7 @@ Only **BLIS** (both variants) covers all 38 experiments. Since no other simulato
 
 ![BLIS vs LLMServingSim comparison](figures/sim_comparisons/blis_vs_llmservingsim.png)
 
-*Figure 4: Accuracy comparison between BLIS and LLMServingSim on 1 shared experiment (Mixtral-8x7B TP4, 2000-request cluster workload). BLIS-Evolved achieved 1.34% E2E MAPE, LLMServingSim 76.00%, and BLIS-Roofline 97.69%. BLIS-Evolved is 72.8× more accurate than roofline and 56.7× better than LLMServingSim on this high-TP MoE configuration.*
+*Figure 4: Accuracy comparison between BLIS and LLMServingSim on 1 shared experiment (Mixtral-8x7B TP4, 2000-request cluster workload). BLIS-Evolved achieved 1.34% E2E MAPE, LLMServingSim 76%, and BLIS-Roofline 97.69%. BLIS-Evolved is 72.8× more accurate than roofline and 56.7× better than LLMServingSim on this high-TP MoE configuration.*
 
 **Accuracy varies dramatically across simulators.** Across their supported experiments, median E2E error ranges from 7.4% (BLIS-Evolved) to 619% (Vidur) - an 83× spread. TTFT error spans 12.6% (BLIS-Evolved) to 29,783% (2,355× spread). ITL error ranges 9.8% (BLIS-Evolved) to 259% (26× spread). BLIS-Evolved achieves the best accuracy overall. However, while its E2E latency prediction is strong (11.79% MAPE), TTFT accuracy is weaker (22.81% MAPE) - nearly 2× worse. This means first-token latency predictions are less reliable than overall request latency. For workloads where time-to-first-token dominates user experience, this gap matters.
 
