@@ -3163,9 +3163,17 @@
 <td>Periodic</td>
 <td><code>FormBatch()</code></td>
 </tr>
+<tr>
+<td>cacheQueryFn (precise-prefix-cache, no-hit-lru) ¹</td>
+<td>Instance (via StaleCacheIndex)</td>
+<td>Ground truth (synchronous)</td>
+<td>Demand-triggered (CacheSignalDelay interval, checked at routing decisions)</td>
+<td><code>StaleCacheIndex.RefreshIfNeeded()</code> in <code>buildRouterState()</code></td>
+</tr>
 </tbody>
 </table>
-<p><strong>Design implication:</strong> When <code>--snapshot-refresh-interval &gt; 0</code>, all Prometheus-sourced signals (QueueDepth, BatchSize, KVUtilization) share the same scrape interval — matching real vLLM deployments where all three are exposed via the same <code>/metrics</code> endpoint. <code>InFlightRequests</code> remains synchronous (gateway-local counter, not Prometheus-sourced).</p>
+<p>¹ <code>cacheQueryFn</code> freshness is governed by <code>--cache-signal-delay</code> (default 2s), not <code>--snapshot-refresh-interval</code>. The "interval=0" / "interval&gt;0" columns for this row refer to <code>--cache-signal-delay</code>.</p>
+<p><strong>Design implication:</strong> When <code>--snapshot-refresh-interval &gt; 0</code>, all Prometheus-sourced signals (QueueDepth, BatchSize, KVUtilization) share the same scrape interval — matching real vLLM deployments where all three are exposed via the same <code>/metrics</code> endpoint. <code>InFlightRequests</code> remains synchronous (gateway-local counter, not Prometheus-sourced). When <code>--cache-signal-delay &gt; 0</code> (default: 2s), prefix cache query closures use a separate periodic snapshot of each instance's <code>HashToBlock</code> map, modeling asynchronous KV event propagation from production llm-d. The 2s default matches llm-d's <code>defaultSpeculativeTTL</code> — the blind spot between routing decision and KV event arrival via ZMQ. Set <code>--cache-signal-delay 0</code> for oracle mode (live cache state).</p>
 <p><code>EffectiveLoad()</code> = <code>QueueDepth + BatchSize + InFlightRequests</code>. The synchronous <code>InFlightRequests</code> term compensates for Periodic staleness in the other two terms.</p>
 <p><strong>Verification:</strong> H3 hypothesis experiment, H29 snapshot-staleness experiment (see <a href="https://github.com/inference-sim/inference-sim/tree/hypothesis-archive/hypotheses"><code>hypothesis-archive</code> branch</a>).</p>
 <p><strong>Evidence:</strong> Issues #282, #283. At rate=5000, kv-utilization-only routing produces 200x worse distribution uniformity than queue-depth. Issue #463: unified Prometheus staleness model.</p>
