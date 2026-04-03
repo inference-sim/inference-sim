@@ -16,6 +16,7 @@ import (
 //	Reads: KVCache.SnapshotCachedBlocksFn snapshots — Periodic staleness.
 //	Refresh interval controlled by DeploymentConfig.CacheSignalDelay.
 //	When delay=0, this type is not used (oracle mode).
+//	Default delay is 2s, matching llm-d's speculative TTL.
 type StaleCacheIndex struct {
 	instances   map[InstanceID]*InstanceSimulator
 	staleFns    map[string]func([]int) int // instanceID → frozen snapshot closure

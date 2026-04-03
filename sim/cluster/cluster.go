@@ -80,6 +80,7 @@ type ClusterSimulator struct {
 
 	// staleCache manages periodic snapshots of per-instance KV cache hash maps
 	// for stale prefix cache scoring (issue #919). Nil when CacheSignalDelay == 0 (oracle mode).
+	// Default CacheSignalDelay is 2s, matching llm-d's speculative TTL.
 	staleCache *StaleCacheIndex
 
 	// Flow control state (issue #882, GIE parity).

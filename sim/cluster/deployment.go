@@ -33,7 +33,9 @@ type DeploymentConfig struct {
 	// When > 0, precise-prefix-cache and no-hit-lru scorers query a periodically-refreshed
 	// stale snapshot of each instance's KV cache block hash map instead of live state.
 	// Models the asynchronous KV event propagation delay in production llm-d.
-	// 0 = oracle mode (default, current behavior — scorers read live cache state).
+	// Default: 2_000_000 (2 seconds), matching llm-d's defaultSpeculativeTTL — the
+	// blind spot between a routing decision and KV event arrival via ZMQ.
+	// 0 = oracle mode (scorers read live cache state with zero delay).
 	// Units: microseconds of simulated time.
 	CacheSignalDelay int64
 

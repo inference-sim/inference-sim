@@ -189,7 +189,7 @@ func TestCluster_CacheSignalDelay_StaleRouting(t *testing.T) {
 }
 
 func TestCluster_CacheSignalDelay_Zero_OracleBehavior(t *testing.T) {
-	// GIVEN a cluster with cache-signal-delay = 0 (default)
+	// GIVEN a cluster with cache-signal-delay = 0 (oracle mode)
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
 			Horizon:             5_000_000,

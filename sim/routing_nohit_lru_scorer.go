@@ -9,8 +9,9 @@ package sim
 //
 //	Reads: KVCache.GetCachedBlocks via cacheQueryFn for warm/cold detection.
 //	Freshness depends on --cache-signal-delay:
-//	  - delay=0 (default): ground truth (synchronous, no staleness) — oracle mode.
-//	  - delay>0: Periodic staleness via StaleCacheIndex snapshot refresh.
+//	  - delay=0: ground truth (synchronous, no staleness) — oracle mode.
+//	  - delay>0 (default 2s): Periodic staleness via StaleCacheIndex snapshot refresh.
+//	    Default 2s matches production llm-d's speculative TTL.
 //	LRU state is deterministic (updated by observer on cold routing only).
 func newNoHitLRUScorer(cacheFn cacheQueryFn) (scorerFunc, observerFunc) {
 	// LRU tracking: ordered list of instance IDs, most-recently-used first.
