@@ -963,7 +963,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&kvTransferBandwidth, "kv-transfer-bandwidth", 100.0, "CPU↔GPU transfer rate in blocks per tick. Higher = faster transfers")
 	cmd.Flags().Int64Var(&kvTransferBaseLatency, "kv-transfer-base-latency", 0, "Fixed per-transfer latency in ticks for CPU↔GPU KV transfers (0 = no fixed cost)")
 	cmd.Flags().Int64Var(&snapshotRefreshInterval, "snapshot-refresh-interval", 0, "Prometheus snapshot refresh interval for all instance metrics in microseconds (0 = immediate)")
-	cmd.Flags().Int64Var(&cacheSignalDelay, "cache-signal-delay", 2_000_000, "Propagation delay for prefix cache signals in microseconds (0 = oracle/live, >0 = stale snapshots refreshed at this interval). Default 2s matches production llm-d speculative TTL (blind spot between routing decision and KV event arrival via ZMQ).")
+	cmd.Flags().Int64Var(&cacheSignalDelay, "cache-signal-delay", cluster.DefaultCacheSignalDelay, "Propagation delay for prefix cache signals in microseconds (0 = oracle/live, >0 = stale snapshots refreshed at this interval). Default 2s matches production llm-d speculative TTL (blind spot between routing decision and KV event arrival via ZMQ).")
 	cmd.Flags().Float64Var(&gpuMemoryUtilization, "gpu-memory-utilization", 0.9, "Fraction of GPU memory to use for KV cache, in the range (0, 1.0]. Default: 0.9 (90%)")
 
 	// PD disaggregation config
