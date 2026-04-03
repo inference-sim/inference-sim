@@ -1,0 +1,41 @@
+{
+  "iteration": 26,
+  "backend_name": "evolved",
+  "timestamp": "2026-04-02T22:00:00.000000",
+  "optimization": {
+    "method": "Golden section search: Phase 1 β₄ ∈ [0.0, 0.5], Phase 2 β₅ ∈ [40.0, 90.0]",
+    "total_evaluations": 23,
+    "note": "15-way parallelism within each trial (~20s/eval). Phase 2 triggered because Phase 1 improvement > 0.1%."
+  },
+  "best_params": {
+    "alpha": [15561.959717498621, 776.243476414174, 45.910232684500556],
+    "beta": [
+      0.138541,
+      0.0,
+      1.363060401466404,
+      0.409533,
+      49.626791,
+      2.7976795228174027,
+      169.36568163371626,
+      427.3,
+      0.0,
+      1.2632
+    ]
+  },
+  "loss": {
+    "overall_loss": 37.42,
+    "ttft_rmse": 24.34,
+    "e2e_rmse": 13.09
+  },
+  "coordinate_descent_history": [
+    {"coeff": "β₈ (MoE overhead)",       "iter": 20, "before": 0,      "after": 440.0,   "loss_before": 60.11, "loss_after": 40.58},
+    {"coeff": "β₁ₐ (prefill compute)",   "iter": 21, "before": 0.201,  "after": 0.116,   "loss_before": 40.58, "loss_after": 39.86},
+    {"coeff": "β₂ (decode correction)",  "iter": 22, "before": 1.611,  "after": 1.146,   "loss_before": 39.86, "loss_after": 39.42},
+    {"coeff": "(β₁ₐ, β₂, β₈) joint",    "iter": 23, "before": null,   "after": null,    "loss_before": 39.42, "loss_after": 39.24},
+    {"coeff": "β₁ᵦ/β₂ᵦ decode split",   "iter": 24, "before": null,   "after": null,    "loss_before": 39.24, "loss_after": 39.18},
+    {"coeff": "β₈ moeScaling (iter25)",   "iter": 25, "before": null,   "after": null,    "loss_before": 39.18, "loss_after": 39.18},
+    {"coeff": "β₄ (TP All-Reduce)",       "iter": 26, "before": 0.0,    "after": 0.410,   "loss_before": 39.18, "loss_after": 39.03},
+    {"coeff": "β₅ (per-layer overhead)", "iter": 26, "before": 62.29,  "after": 49.63,   "loss_before": 39.03, "loss_after": 37.42}
+  ],
+  "error_log": []
+}
