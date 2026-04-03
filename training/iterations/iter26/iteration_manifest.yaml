@@ -1,0 +1,16 @@
+iteration: 26
+latency_backend_name: "evolved"
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 26: Activate physics-based T_tp (TP All-Reduce) basis function.
+
+  Replace tTp:=0 with:
+    (2·numDenseLayers + numMoELayers) × totalTokens × d × 2B × 2phases × (TP-1)/TP / bwHBM
+
+  β₄ is searched via golden section (bounds [0.0, 0.5]).
+  All other coefficients frozen at iter25 best values.
+
+  Expected β₄ ≈ 0.27 (NVLink/HBM bandwidth ratio on H100).
+
+timestamp: "2026-04-02T12:00:00.000000"
