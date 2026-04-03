@@ -16,9 +16,9 @@ categories:
   - Capacity Planning
 ---
 
-# The LLM Simulator Showdown: Which Tool Actually Delivers?
+# The Inference Simulator Showdown: Which Tool Actually Delivers?
 
-Choosing the right LLM inference simulator can save weeks of experimentation and thousands in compute costs. But which one actually works? We tested five popular simulators head-to-head across 38 real-world experiments on production hardware.
+Choosing the right inference simulator can save weeks of experimentation and thousands in compute costs. But which one actually works? We tested five popular LLM inference simulators head-to-head across 38 real-world experiments on production hardware.
 
 <!-- more -->
 
@@ -35,7 +35,7 @@ Choosing the right LLM inference simulator can save weeks of experimentation and
 <a name="why-simulator-choice-matters"></a>
 ## Why Simulator Choice Matters
 
-Choosing the right LLM inference simulator can save weeks of experimentation and thousands in compute costs. But which one actually works?
+Choosing the right inference simulator can save weeks of experimentation and thousands in compute costs. But which one actually works?
 
 Imagine you are deploying Mixtral-8x7B for your AI-powered coding assistant. Four GPUs or eight? Which hardware meets your SLO targets? Running real experiments could take days and cost thousands. A simulator promises answers in minutes — if you trust its predictions.
 
@@ -58,7 +58,7 @@ Five popular simulators. Five completely different bets on how to predict LLM in
 
 **[BLIS](https://github.com/inference-sim/inference-sim)** combines analytical roofline with discrete-event scheduling. Multiple latency modes available—we are comparing Roofline (analytical baseline) and Evolved (learned coefficients).
 
-Let us answer the question : which approach actually delivers?
+Let us answer the question: which approach actually delivers?
 
 <a name="how-we-tested"></a>
 ## How We Tested
