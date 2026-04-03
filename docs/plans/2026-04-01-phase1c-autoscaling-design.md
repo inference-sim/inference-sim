@@ -37,8 +37,8 @@ BLIS can simulate a multi-instance cluster with admission control, routing, and 
               ┌─────────────────────────┐
               │  Collector interface    │
               │  DefaultCollector       │  ← wraps RouterState into
-              └────────────┬────────────┘    per-model ModelMetrics
-                           │  []ModelMetrics
+              └────────────┬────────────┘    per-model ModelSignals
+                           │  []ModelSignals
                            ▼
               ┌─────────────────────────┐
               │  Analyzer interface     │  ← called once per model
@@ -58,7 +58,7 @@ BLIS can simulate a multi-instance cluster with admission control, routing, and 
               └────────────┬────────────┘
                            │  []ScaleDecision
                            │
-              ActuationDelayUs elapsed
+              ActuationDelay elapsed
                            │
                            ▼
               ┌─────────────────────────┐
@@ -93,7 +93,7 @@ RouterState (existing)
     │
     │ Collector.Collect()
     ▼
-ModelMetrics                     // per model
+ModelSignals                     // per model
   ModelID  string
   Replicas []ReplicaMetrics      // one per active replica
     InstanceID    string
@@ -127,7 +127,7 @@ AnalyzerResult                   // per model, aggregated from replica states
   Variant  VariantSpec
   Delta    int          // +N = add replicas, -N = remove replicas
     │
-    │ (ActuationDelayUs elapses)
+    │ (ActuationDelay elapses)
     │
     │ Actuator.Apply()
     ▼
@@ -144,7 +144,7 @@ GPUInventory.ByVariant[v] = total GPU slots for variant v
 ```
 Pending placements are NOT subtracted (no GPU committed yet). Draining instances ARE subtracted (they still hold their GPUs until drain completes). This is a committed-state snapshot — optimistic relative to in-flight operations.
 
-**Zero-replica edge case:** When a model has no active replicas, `Collector` returns `ModelMetrics{Replicas: []}`. `Analyzer.Analyze()` must return `AnalyzerResult{TotalSupply: 0, TotalDemand: 0, RequiredCapacity: 0, SpareCapacity: 0}` — no division by zero. Scale-from-zero is triggered by a separate path outside the `Analyzer` (see #908, deferred).
+**Zero-replica edge case:** When a model has no active replicas, `Collector` returns `ModelSignals{Replicas: []}`. `Analyzer.Analyze()` must return `AnalyzerResult{TotalSupply: 0, TotalDemand: 0, RequiredCapacity: 0, SpareCapacity: 0}` — no division by zero. Scale-from-zero is triggered by a separate path outside the `Analyzer` (see #908, deferred).
 
 ---
 
@@ -153,21 +153,21 @@ Pending placements are NOT subtracted (no GPU committed yet). Draining instances
 ### `Collector`
 ```go
 type Collector interface {
-    Collect(state *RouterState) []ModelMetrics
+    Collect(state *RouterState) []ModelSignals
 }
 ```
 **Observes:** `RouterState` (per-instance signals, already populated every tick).  
-**Produces:** one `ModelMetrics` per active model, grouping replicas by model ID.  
+**Produces:** one `ModelSignals` per active model, grouping replicas by model ID.  
 **Must not:** modify state, filter models, or apply thresholds — raw data only.
 
 ### `Analyzer`
 ```go
 type Analyzer interface {
     Name() string
-    Analyze(metrics ModelMetrics) AnalyzerResult
+    Analyze(metrics ModelSignals) AnalyzerResult
 }
 ```
-**Observes:** `ModelMetrics` for one model.  
+**Observes:** `ModelSignals` for one model.  
 **Produces:** model-level `TotalSupply`, `TotalDemand`, `RequiredCapacity`, `SpareCapacity`, and per-variant `VariantCapacities`.  
 **Must not:** read `RouterState` directly, access GPU inventory, or emit `ScaleDecision`.  
 **Zero-replica contract:** when `metrics.Replicas` is empty, return `AnalyzerResult` with all numeric fields zero — no panics, no divisions.  
@@ -184,7 +184,7 @@ type Engine interface {
 **Scale-up rule:** target cheapest available variant (`CostPerReplica` ascending).  
 **Scale-down rule:** target most expensive active variant (`CostPerReplica` descending).  
 **Cross-model priority:** when GPU inventory is insufficient to satisfy all scale-up requests, models are served in descending `RequiredCapacity` order (highest need first). This is the `GreedyEngine` default; other `Engine` implementations may use different priority rules (e.g. SLO tier).  
-**Must not:** read `RouterState` or `ModelMetrics` directly — only `AnalyzerResult`.
+**Must not:** read `RouterState` or `ModelSignals` directly — only `AnalyzerResult`.
 
 ### `Actuator`
 ```go
@@ -200,7 +200,7 @@ type Actuator interface {
 
 ### Pipeline cooldown (orchestrator-level, not an interface)
 
-WVA delegates cooldown to Kubernetes' reconciliation stabilization window. BLIS owns the full pipeline and must implement it explicitly. Cooldown lives in the `ScalingTickEvent` handler in `cluster.go`, not inside any interface — keeping `Engine` stateless:
+WVA delegates cooldown to Kubernetes' reconciliation stabilization window. BLIS owns the full pipeline and must implement it explicitly. Cooldown lives in `autoscalerPipeline.tick()` in `autoscaler.go`, not inside any interface — keeping `Engine` stateless:
 
 ```go
 // In ClusterConfig:
@@ -208,7 +208,7 @@ ScaleUpCooldownUs   float64 // min sim-time between scale-up decisions per model
 ScaleDownCooldownUs float64 // min sim-time between scale-down decisions per model (0 = disabled)
 ```
 
-The handler tracks `lastScaleUpAt[modelID]` and `lastScaleDownAt[modelID]`. A `ScaleDecision` from the Engine is suppressed (not forwarded to Actuator) if `now - lastScaleAt[modelID] < CooldownUs`. The cooldown timer resets when the Actuator actually applies a decision, not when the Engine produces one.
+The handler tracks `lastScaleUpAt[modelID]` and `lastScaleDownAt[modelID]`. A `ScaleDecision` from the Engine is suppressed (not forwarded to Actuator) if `now - lastScaleAt[modelID] < CooldownUs`. The cooldown timestamp is recorded when the decision passes the cooldown filter and is forwarded to ScaleActuationEvent (not on actuation).
 
 ---
 
@@ -218,7 +218,7 @@ WVA's actuator emits a Prometheus metric; HPA/KEDA reads it and calls the Kubern
 
 | Field | Models | Typical range |
 |-------|--------|---------------|
-| `ActuationDelayUs` | HPA/KEDA scrape + eval lag (WVA → scale API) | 15s–90s |
+| `ActuationDelay` | HPA/KEDA scrape + eval lag (WVA → scale API) | 15s–90s |
 | `NodeProvisioningDelayUs` | VM boot time (Karpenter) | 30s–5min |
 | `InstanceLoadingDelayUs` | Model weight load onto GPU | 10s–2min |
 
@@ -227,7 +227,7 @@ ScalingTickEvent
   → Collector.Collect()
   → Analyzer.Analyze() per model
   → Engine.Optimize()
-  → ScaleActuationEvent scheduled at (now + ActuationDelayUs)
+  → ScaleActuationEvent scheduled at (now + ActuationDelay)
 
 ScaleActuationEvent
   → Actuator.Apply()
@@ -238,8 +238,8 @@ ScaleActuationEvent
                 → placement retried
 ```
 
-`ActuationDelayUs = 0` (default) preserves all existing test output (INV-6).  
-`ActuationDelayUs > 0` enables oscillation research (H-Oscillation in Phase 1D).
+`ActuationDelay = 0` (default) preserves all existing test output (INV-6).  
+`ActuationDelay > 0` enables oscillation research (H-Oscillation in Phase 1D).
 
 ---
 
@@ -250,7 +250,7 @@ ScaleActuationEvent
 | **INV-A1** (instance conservation) | `active + draining + loading == sum(ScaleDecisions applied) - terminated` at all times |
 | **INV-A2** (no silent drops) | Every `PlacementEngine.TryPlace()` failure produces a `PendingPlacement`. No `ScaleDecision` is silently discarded. |
 | **INV-A3** (GPU conservation) | INV-4: `free + allocated == total` per node after every add, remove, place, and drain. |
-| **INV-A4** (actuation ordering) | With `ActuationDelayUs > 0`, no placement fires before `decision_time + sampled_delay`. INV-5 (causality) is preserved. |
+| **INV-A4** (actuation ordering) | With `ActuationDelay > 0`, no placement fires before `decision_time + sampled_delay`. INV-5 (causality) is preserved. |
 | **INV-A5** (drain completeness) | Every instance that enters `Draining` eventually reaches `Terminated`. No instance stranded. Pairs with INV-11. |
 | **INV-A6** (analyzer aggregation) | `sum(VariantCapacity.Supply) == AnalyzerResult.TotalSupply` and `sum(VariantCapacity.Demand) == AnalyzerResult.TotalDemand` for every result. |
 | **INV-A7** (cooldown ordering) | No scale-up `ScaleDecision` is forwarded to the Actuator for model M within `ScaleUpCooldownUs` of the previous scale-up for M. Same for scale-down. |
@@ -282,7 +282,7 @@ Two drain policies add new terms:
 | `pkg/solver/solver.go` SolveUnlimited — separable greedy | `UnlimitedEngine` (#new) |
 | `pkg/solver` TODO: MIP solver | Future `Engine` implementation — Phase 2 OpenEvolve target |
 | `internal/actuator/direct_actuator.go` — calls K8s scale subresource | `DirectActuator` (calls `PlacementEngine` directly) |
-| HPA/KEDA scrape + eval lag | `ActuationDelayUs` distribution (#742) |
+| HPA/KEDA scrape + eval lag | `ActuationDelay` distribution (#742) |
 | K8s `terminationGracePeriodSeconds` | `WaitDrain` (#910) |
 | Pod preStop / service mesh drain | `RedirectDrain` (#911) |
 | SIGKILL | `ImmediateDrain` (#910) |

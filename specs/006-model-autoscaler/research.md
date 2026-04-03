@@ -22,7 +22,7 @@
 
 **Decision**: Add `GPUType string`, `TPDegree int`, and `CostPerHour float64` to `RoutingSnapshot` (in `sim/router_state.go`). Populate in `buildRouterState()` from the instance's configuration.
 
-**Rationale**: `DefaultCollector.Collect(*RouterState) []ModelMetrics` receives only `RouterState`. The current `RoutingSnapshot` has no variant information (`GPUType`, `TPDegree`). To enable `DefaultCollector` to populate `ReplicaMetrics.Variant` and `ReplicaMetrics.CostPerHour` without broadening its interface, the variant fields must be present in `RoutingSnapshot`. This is a clean additive change: `sim/router_state.go` is in the `sim/` package which does not import `sim/cluster/`, so there is no import cycle. `buildRouterState()` in `cluster_event.go` already has access to instance config and can populate these fields.
+**Rationale**: `DefaultCollector.Collect(*RouterState) []ModelSignals` receives only `RouterState`. The current `RoutingSnapshot` has no variant information (`GPUType`, `TPDegree`). To enable `DefaultCollector` to populate `ReplicaMetrics.Variant` and `ReplicaMetrics.CostPerHour` without broadening its interface, the variant fields must be present in `RoutingSnapshot`. This is a clean additive change: `sim/router_state.go` is in the `sim/` package which does not import `sim/cluster/`, so there is no import cycle. `buildRouterState()` in `cluster_event.go` already has access to instance config and can populate these fields.
 
 **Alternatives considered**:
 - Change `Collect` signature to `Collect(*RouterState, variantLookup func(id string) VariantSpec)`: breaks the declared interface contract and adds complexity to all Collector implementations.
@@ -34,7 +34,7 @@
 
 **Decision**: Add `CostPerHour float64` to `NodePoolConfig` (in `infra_config.go`). Populate `RoutingSnapshot.CostPerHour` from the instance's node pool. `DefaultCollector` maps `RoutingSnapshot.CostPerHour` to a `CostPerHour float64` field added to `ReplicaMetrics`. `Analyzer` uses `replica.CostPerHour` when building `VariantCapacity.CostPerReplica` — taking the CostPerHour from any replica in the variant group (all replicas of the same variant have the same cost).
 
-**Rationale**: The declared `ReplicaMetrics` type in the issue spec does not include `CostPerHour`. Adding this one field keeps the propagation chain clean without requiring the Analyzer to accept a cost map parameter (which would violate the `Analyze(ModelMetrics) AnalyzerResult` interface contract). The Analyzer must remain pure: it must not access external state. The field is cheap to carry and semantically belongs on a replica snapshot.
+**Rationale**: The declared `ReplicaMetrics` type in the issue spec does not include `CostPerHour`. Adding this one field keeps the propagation chain clean without requiring the Analyzer to accept a cost map parameter (which would violate the `Analyze(ModelSignals) AnalyzerResult` interface contract). The Analyzer must remain pure: it must not access external state. The field is cheap to carry and semantically belongs on a replica snapshot.
 
 **Alternatives considered**:
 - Populate `VariantCapacity.CostPerReplica` in the orchestrator (cluster.go tick handler) after calling `Analyzer.Analyze()`: requires the orchestrator to re-look up cost per variant from NodePoolConfig. More indirection with no benefit. The Analyzer already groups by variant; doing the cost lookup in the Analyzer is simpler.
@@ -42,9 +42,9 @@
 
 ---
 
-## Decision 4: ActuationDelayUs uses existing DelaySpec
+## Decision 4: ActuationDelay uses existing DelaySpec
 
-**Decision**: `DeploymentConfig.ActuationDelayUs` is of type `DelaySpec` (existing, in `infra_config.go`), not a new `DistributionSpec` type.
+**Decision**: `DeploymentConfig.ActuationDelay` is of type `DelaySpec` (existing, in `infra_config.go`), not a new `DistributionSpec` type.
 
 **Rationale**: The design doc uses "DistributionSpec" as a conceptual name for a configurable delay distribution. The existing `DelaySpec{Mean, Stddev}` with Gaussian sampling already serves this purpose and is used for `NodePoolConfig.ProvisioningDelay` and `InstanceLifecycleConfig.LoadingDelay`. Introducing a new type would be duplicate code. `DelaySpec.IsZero()` directly implements the "zero = deterministic no-delay" semantic needed for INV-6 compatibility.
 

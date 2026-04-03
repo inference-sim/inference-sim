@@ -45,12 +45,14 @@ ReplicaMetrics
 
 ---
 
-### ModelMetrics
+### ModelSignals
 
 All replica snapshots for one model. Output of Collector. Input to Analyzer (one call per model).
 
+Named `ModelSignals` (not `ModelMetrics`) to avoid collision with the existing `ModelMetrics` output-stats type in `metrics.go`.
+
 ```
-ModelMetrics
+ModelSignals
 ├── ModelID  string
 └── Replicas []ReplicaMetrics   // may be empty (zero-replica model)
 ```
@@ -160,7 +162,7 @@ ScaleActuationEvent
 ```
 
 **Priority**: 9 (after ScalingTickEvent).  
-**Delay**: Scheduled at `now + ActuationDelayUs.Sample(rng)`. With `ActuationDelayUs = {Mean:0, Stddev:0}` (default), fires in the same tick.
+**Delay**: Scheduled at `now + ActuationDelay.Sample(rng)`. With `ActuationDelay = {Mean:0, Stddev:0}` (default), fires in the same tick.
 
 ---
 
@@ -213,7 +215,7 @@ ScaleActuationEvent
 ```diff
  // Autoscaler pipeline (Phase 1C)
 +ModelAutoscalerIntervalUs float64   // tick interval in μs; 0 = autoscaler disabled
-+ActuationDelayUs          DelaySpec // HPA/KEDA scrape lag; zero = same-tick actuation
++ActuationDelay            DelaySpec // HPA/KEDA scrape lag; zero = same-tick actuation
 +ScaleUpCooldownUs         float64   // min μs between scale-up decisions per model
 +ScaleDownCooldownUs       float64   // min μs between scale-down decisions per model
 ```
@@ -234,7 +236,7 @@ RoutingSnapshot.{GPUType, TPDegree, CostPerHour}
 ReplicaMetrics.{Variant, CostPerHour}
         │ (grouped by ModelID)
         ▼
-ModelMetrics.Replicas[]
+ModelSignals.Replicas[]
         │
         ▼ Analyzer.Analyze() — one per model
 AnalyzerResult.{TotalSupply, TotalDemand, RequiredCapacity, SpareCapacity}
@@ -243,7 +245,7 @@ AnalyzerResult.VariantCapacities[].{Variant, Supply, Demand, ReplicaCount, CostP
         ▼ Engine.Optimize() — all models + GPUInventory
 ScaleDecision[].{ModelID, Variant, Delta}
         │
-        ▼ (ActuationDelayUs elapses — ScaleActuationEvent)
+        ▼ (ActuationDelay elapses — ScaleActuationEvent)
         ▼ Actuator.Apply()
 PlacementManager.PlaceInstance() / instance state → Draining
 ```

@@ -2,7 +2,7 @@
 
 **Branch**: `006-model-autoscaler`  
 **File**: `sim/cluster/autoscaler.go`  
-**Pattern**: Single-method interfaces (same as Router, Scheduler, AdmissionPolicy)
+**Pattern**: Single-method interfaces for Collector, Engine, Actuator; Analyzer adds `Name()` for observability.
 
 ---
 
@@ -10,9 +10,9 @@
 
 ```
 Contract: Collector
-  Signature:  Collect(state *RouterState) []ModelMetrics
+  Signature:  Collect(state *RouterState) []ModelSignals
   Observes:   RouterState — per-instance signals, fully populated before each tick
-  Produces:   One ModelMetrics per active model, all replicas grouped by ModelID
+  Produces:   One ModelSignals per active model, all replicas grouped by ModelID
   Must NOT:   Modify state; filter or threshold signals; return fewer models than are active
   Must NOT:   Access GPUInventory, AnalyzerResult, or ScaleDecision
   Invariant:  len(result) == number of distinct ModelIDs in active instances
@@ -29,8 +29,8 @@ Contract: Collector
 
 ```
 Contract: Analyzer
-  Signature:  Name() string; Analyze(metrics ModelMetrics) AnalyzerResult
-  Observes:   ModelMetrics for exactly one model (slice of ReplicaMetrics)
+  Signature:  Name() string; Analyze(metrics ModelSignals) AnalyzerResult
+  Observes:   ModelSignals for exactly one model (slice of ReplicaMetrics)
   Produces:   Model-level TotalSupply, TotalDemand, RequiredCapacity, SpareCapacity, VariantCapacities
   Must NOT:   Access RouterState, GPUInventory, or any external state
   Must NOT:   Emit ScaleDecision
@@ -39,7 +39,7 @@ Contract: Analyzer
   Invariant:  sum(vc.Supply for vc in VariantCapacities) == TotalSupply
   Invariant:  sum(vc.Demand for vc in VariantCapacities) == TotalDemand
   Invariant:  Utilization = TotalDemand / TotalSupply when TotalSupply > 0; else Utilization = 0
-  Determinism: Must be a pure function of ModelMetrics (except QueueAnalyzer which carries consecutive-tick state)
+  Determinism: Must be a pure function of ModelSignals (except QueueAnalyzer which carries consecutive-tick state)
 ```
 
 **Implementations**:
@@ -57,7 +57,7 @@ Contract: Engine
   Observes:   All AnalyzerResults for this tick + current GPUInventory
   Produces:   At most one ScaleDecision per ModelID per call
   Must NOT:   Emit both scale-up and scale-down for the same ModelID in one call
-  Must NOT:   Access RouterState, ModelMetrics, or any external state
+  Must NOT:   Access RouterState, ModelSignals, or any external state
   Scale-up:   Target cheapest variant (CostPerReplica ascending) with available GPU slots
   Scale-down: Target most expensive variant (CostPerReplica descending) with active replicas
   Priority:   When inventory insufficient for all scale-ups, serve models in descending RequiredCapacity order
@@ -91,13 +91,13 @@ Contract: Actuator
 
 ## Orchestrator (Pipeline, not an interface)
 
-The pipeline orchestrator is NOT an interface — it is the `ScalingTickEvent.Execute()` method in `cluster.go`. It:
+The pipeline orchestrator is NOT an interface — the pipeline orchestration logic lives in `autoscalerPipeline.tick()` in `autoscaler.go`, called from `ScalingTickEvent.Execute()` in `cluster_event.go`. It:
 
-1. Calls `Collector.Collect(routerState)` → `[]ModelMetrics`
+1. Calls `Collector.Collect(routerState)` → `[]ModelSignals`
 2. Calls `Analyzer.Analyze(m)` for each `m` in metrics → `[]AnalyzerResult`
 3. Calls `Engine.Optimize(results, gpuInventory())` → `[]ScaleDecision`
 4. Applies cooldown filter: suppresses decisions within cooldown window per model
-5. Schedules `ScaleActuationEvent{At: now + ActuationDelayUs.Sample(rng), Decisions: filtered}`
+5. Schedules `ScaleActuationEvent{At: now + ActuationDelay.Sample(rng), Decisions: filtered}`
 6. Schedules next `ScalingTickEvent{At: now + ModelAutoscalerIntervalUs}`
 
 The `ScaleActuationEvent.Execute()` method calls `Actuator.Apply(decisions)`.

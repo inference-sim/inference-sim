@@ -13,7 +13,7 @@ This guide shows how to enable and configure the model autoscaler in a BLIS simu
 model_autoscaler_interval_us: 60000000   # 60s tick interval
 
 # No actuation delay (default): ScaleActuationEvent fires in same tick as ScalingTickEvent
-# actuation_delay_us:
+# actuation_delay:
 #   mean: 0
 #   stddev: 0
 
@@ -42,7 +42,7 @@ node_pools:
 cfg := cluster.DeploymentConfig{
     // ... existing fields ...
     ModelAutoscalerIntervalUs: 60_000_000,  // 60s
-    ActuationDelayUs:          cluster.DelaySpec{Mean: 30, Stddev: 10},  // 30s ± 10s
+    ActuationDelay:            cluster.DelaySpec{Mean: 30, Stddev: 10},  // 30s ± 10s (Mean/Stddev are in seconds)
     ScaleUpCooldownUs:         120_000_000,
     ScaleDownCooldownUs:       300_000_000,
 }

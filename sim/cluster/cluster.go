@@ -317,6 +317,25 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	// Concrete pipeline components (collector, analyzer, engine, actuator) are injected after
 	// construction by tests or by the wiring logic in cmd/. Until they are set, all four fields
 	// on cs.autoscaler remain nil, and ScalingTickEvent.Execute() will guard against them.
+	// R3: validate autoscaler float64 fields — NaN/Inf/negative values are configuration errors.
+	if math.IsNaN(config.ModelAutoscalerIntervalUs) || math.IsInf(config.ModelAutoscalerIntervalUs, 0) {
+		panic("ModelAutoscalerIntervalUs must not be NaN or Inf")
+	}
+	if config.ModelAutoscalerIntervalUs < 0 {
+		panic("ModelAutoscalerIntervalUs must be ≥0 (0 = disabled)")
+	}
+	if math.IsNaN(config.ScaleUpCooldownUs) || math.IsInf(config.ScaleUpCooldownUs, 0) || config.ScaleUpCooldownUs < 0 {
+		panic("ScaleUpCooldownUs must be a finite non-negative number")
+	}
+	if math.IsNaN(config.ScaleDownCooldownUs) || math.IsInf(config.ScaleDownCooldownUs, 0) || config.ScaleDownCooldownUs < 0 {
+		panic("ScaleDownCooldownUs must be a finite non-negative number")
+	}
+	if math.IsNaN(config.ActuationDelay.Mean) || math.IsInf(config.ActuationDelay.Mean, 0) || config.ActuationDelay.Mean < 0 {
+		panic("ActuationDelay.Mean must be a finite non-negative number")
+	}
+	if math.IsNaN(config.ActuationDelay.Stddev) || math.IsInf(config.ActuationDelay.Stddev, 0) || config.ActuationDelay.Stddev < 0 {
+		panic("ActuationDelay.Stddev must be a finite non-negative number")
+	}
 	if config.ModelAutoscalerIntervalUs > 0 {
 		cs.autoscaler = &autoscalerPipeline{
 			lastScaleUpAt:   make(map[string]int64),
@@ -927,7 +946,7 @@ func (c *ClusterSimulator) isBusy() bool {
 // Returns an empty inventory when cs.placement is nil (no NodePools configured, backward-compat).
 func (c *ClusterSimulator) gpuInventory() GPUInventory {
 	if c.placement == nil {
-		return GPUInventory{ByVariant: make(map[VariantSpec]int)}
+		return GPUInventory{byVariant: make(map[VariantSpec]int)}
 	}
 
 	// Step 1: count total GPUs on Ready nodes per GPUType.
@@ -939,8 +958,20 @@ func (c *ClusterSimulator) gpuInventory() GPUInventory {
 	}
 
 	// Step 2: subtract GPUs used by Loading, Active (incl. WarmingUp), and Draining instances.
+	// Also populate seenVariants so every GPU type with Ready capacity appears in the result,
+	// even when there are no active instances of that GPU type (enables scale-up from zero).
+	clusterTPDegree := c.config.TP
+	if clusterTPDegree < 1 {
+		clusterTPDegree = 1
+	}
 	usedByGPUType := make(map[string]int)
 	seenVariants := make(map[VariantSpec]struct{})
+	// Seed from Ready node GPU types so zero-instance pools appear in inventory.
+	for gpuType, total := range totalByGPUType {
+		if total > 0 {
+			seenVariants[VariantSpec{GPUType: gpuType, TPDegree: clusterTPDegree}] = struct{}{}
+		}
+	}
 	for _, inst := range c.instances {
 		switch inst.State {
 		case InstanceStateLoading, InstanceStateWarmingUp, InstanceStateActive, InstanceStateDraining:
@@ -953,17 +984,18 @@ func (c *ClusterSimulator) gpuInventory() GPUInventory {
 		}
 	}
 
-	// Step 3: build ByVariant — same raw free count for each variant of the same GPUType.
-	// Callers must sort keys before iterating (R2: map iteration is non-deterministic).
+	// Step 3: build byVariant — same raw free count for each variant of the same GPUType.
+	// Callers must use Variants() to iterate (R2: map iteration is non-deterministic).
 	byVariant := make(map[VariantSpec]int, len(seenVariants))
 	for v := range seenVariants {
 		free := totalByGPUType[v.GPUType] - usedByGPUType[v.GPUType]
 		if free < 0 {
-			free = 0 // defense-in-depth: clamp to zero on bookkeeping inconsistency
+			logrus.Warnf("[autoscaler] gpuInventory: variant %+v has negative free slots (%d) — bookkeeping inconsistency; clamping to 0", v, free)
+			free = 0
 		}
 		byVariant[v] = free
 	}
-	return GPUInventory{ByVariant: byVariant}
+	return GPUInventory{byVariant: byVariant}
 }
 
 // promoteDeferred injects all deferred requests as ClusterArrivalEvents at the current clock.

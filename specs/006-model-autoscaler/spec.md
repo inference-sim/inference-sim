@@ -21,8 +21,8 @@ A researcher configuring a BLIS simulation wants to enable dynamic replica manag
 1. **Given** a simulation with `ModelAutoscalerIntervalUs = 0`, **When** the simulation runs, **Then** no scaling tick is ever scheduled and no autoscaler logic executes.
 2. **Given** a simulation with `ModelAutoscalerIntervalUs = T`, **When** the simulation runs past time T, **Then** a scaling tick fires at `t=0`, `t=T`, `t=2T`.
 3. **Given** a no-op pipeline where all interfaces return empty/zero results, **When** the simulation runs, **Then** the output is byte-identical to a run without the autoscaler (determinism preserved).
-4. **Given** `ActuationDelayUs = constant(0)`, **When** a tick fires, **Then** the actuation event fires in the same simulation tick.
-5. **Given** `ActuationDelayUs = constant(30s)`, **When** a tick fires at time T, **Then** the actuation event fires at time T+30s.
+4. **Given** `ActuationDelay = constant(0)`, **When** a tick fires, **Then** the actuation event fires in the same simulation tick.
+5. **Given** `ActuationDelay = constant(30s)`, **When** a tick fires at time T, **Then** the actuation event fires at time T+30s.
 
 ---
 
@@ -32,7 +32,7 @@ A researcher running a load spike experiment wants the simulator to detect when 
 
 **Why this priority**: The SaturationAnalyzer is the reference algorithm from WVA that the llm-d team can recognize and validate. Without it, there is no meaningful capacity signal to drive scaling decisions. It is the analytical core of the model autoscaler baseline.
 
-**Independent Test**: Inject a ModelMetrics snapshot with all replicas above the KV saturation threshold and verify RequiredCapacity > 0. Inject a snapshot with all replicas well below threshold with enough headroom to remove one replica and verify SpareCapacity > 0.
+**Independent Test**: Inject a ModelSignals snapshot with all replicas above the KV saturation threshold and verify RequiredCapacity > 0. Inject a snapshot with all replicas well below threshold with enough headroom to remove one replica and verify SpareCapacity > 0.
 
 **Acceptance Scenarios**:
 
@@ -54,7 +54,7 @@ A researcher running a scaling experiment wants the simulator to actually add or
 
 **Acceptance Scenarios**:
 
-1. **Given** a RouterState with active model instances, **When** DefaultCollector.Collect is called, **Then** one ModelMetrics entry is produced per active model, with one ReplicaMetrics entry per active instance.
+1. **Given** a RouterState with active model instances, **When** DefaultCollector.Collect is called, **Then** one ModelSignals entry is produced per active model, with one ReplicaMetrics entry per active instance.
 2. **Given** a ScaleDecision with Delta > 0, **When** DirectActuator.Apply is called, **Then** PlacementEngine attempts to place a new instance for the specified model and variant.
 3. **Given** a ScaleDecision with Delta < 0, **When** DirectActuator.Apply is called, **Then** the selected instance enters Draining state, stops receiving new requests, and its GPUs are freed only after all in-flight requests complete.
 4. **Given** a scale-down decision for a model that also has a pending scale-up placement, **When** DirectActuator.Apply is called, **Then** the pending placement is cancelled before drain begins.
@@ -118,7 +118,7 @@ A researcher studying oscillation behavior wants to configure scale-up and scale
 - What happens when a model has zero active replicas? Collector produces empty Replicas list; Analyzer returns all-zero result; no scale-down is emitted.
 - What happens when GPU inventory is fully exhausted? GreedyEngine emits no scale-up decisions for affected models; no panic or silent failure.
 - What happens when both RequiredCapacity and SpareCapacity are non-zero for the same model? Neither should be non-zero simultaneously — Analyzer implementations must ensure scale-up and scale-down signals are mutually exclusive.
-- What happens when ActuationDelayUs is sampled as zero? The actuation event fires in the same tick as the scaling tick; causality is preserved.
+- What happens when ActuationDelay is sampled as zero? The actuation event fires in the same tick as the scaling tick; causality is preserved.
 - What happens when a Draining instance's model receives another scale-down decision? The Draining instance is already excluded from routing; the decision targets a different active instance.
 - What happens when a placement fails because capacity is unavailable? A PendingPlacement is queued; no ScaleDecision is silently dropped.
 
@@ -129,13 +129,13 @@ A researcher studying oscillation behavior wants to configure scale-up and scale
 **Pipeline Orchestration**
 
 - **FR-001**: The simulator MUST fire the autoscaling pipeline at a configurable interval (`ModelAutoscalerIntervalUs`); when the interval is zero, no tick is ever scheduled.
-- **FR-002**: The pipeline MUST execute in order: Collector → Analyzer (per model) → Engine → schedule actuation event after `ActuationDelayUs` → Actuator applies decisions.
+- **FR-002**: The pipeline MUST execute in order: Collector → Analyzer (per model) → Engine → schedule actuation event after `ActuationDelay` → Actuator applies decisions.
 - **FR-003**: The pipeline MUST support per-model scale-up and scale-down cooldown windows; a decision suppressed by cooldown is discarded silently (not forwarded to Actuator).
-- **FR-004**: The actuation step MUST be separated from the decision step by a configurable delay (`ActuationDelayUs`), which defaults to zero for determinism compatibility.
+- **FR-004**: The actuation step MUST be separated from the decision step by a configurable delay (`ActuationDelay`), which defaults to zero for determinism compatibility.
 
 **Collector**
 
-- **FR-005**: The Collector MUST produce exactly one ModelMetrics snapshot per active model from the current cluster state, grouping all replicas for that model together.
+- **FR-005**: The Collector MUST produce exactly one ModelSignals snapshot per active model from the current cluster state, grouping all replicas for that model together.
 - **FR-006**: The Collector MUST NOT filter, threshold, or modify the raw per-replica signals it collects.
 
 **Analyzer**
@@ -165,7 +165,7 @@ A researcher studying oscillation behavior wants to configure scale-up and scale
 
 ### Key Entities
 
-- **ModelMetrics**: A snapshot of all replica states for one model at the moment of collection. Contains one ReplicaMetrics per active replica.
+- **ModelSignals**: A snapshot of all replica states for one model at the moment of collection. Contains one ReplicaMetrics per active replica.
 - **ReplicaMetrics**: The state of a single replica at collection time: KV utilization, queue depth, in-flight count, time-to-first-token, dispatch rate, and the hardware variant it runs on.
 - **AnalyzerResult**: The model-level capacity assessment output by an Analyzer: aggregate supply, aggregate demand, scale-up signal (RequiredCapacity), scale-down signal (SpareCapacity), and a per-variant breakdown.
 - **VariantCapacity**: One variant's share of the model's total supply and demand, with replica count and cost per replica. Used by the Engine to make allocation decisions.
@@ -178,7 +178,7 @@ A researcher studying oscillation behavior wants to configure scale-up and scale
 ### Measurable Outcomes
 
 - **SC-001**: A simulation with the minimal viable pipeline (DefaultCollector → SaturationAnalyzer → UnlimitedEngine → DirectActuator) runs to completion without error on any workload configuration that runs today without the autoscaler.
-- **SC-002**: With `ActuationDelayUs = 0` and a no-op pipeline, simulation output is byte-identical to a run without the autoscaler enabled (zero regression on existing determinism).
+- **SC-002**: With `ActuationDelay = 0` and a no-op pipeline, simulation output is byte-identical to a run without the autoscaler enabled (zero regression on existing determinism).
 - **SC-003**: The full pipeline (tick → collect → analyze × N models → optimize → actuate) completes within each scaling tick without delaying the simulation clock; autoscaler overhead does not appear in simulated time.
 - **SC-004**: A controlled scale-up experiment — where load is driven above the saturation threshold — results in at least one new replica being placed within two scaling ticks of the threshold being exceeded.
 - **SC-005**: A controlled scale-down experiment — where load drops and stays below the spare capacity threshold for the required hysteresis period — results in at least one replica entering drain state.
@@ -191,10 +191,10 @@ A researcher studying oscillation behavior wants to configure scale-up and scale
 ### In Scope
 
 - Four interfaces: Collector, Analyzer, Engine, Actuator
-- All shared data types: ModelMetrics, ReplicaMetrics, AnalyzerResult, VariantCapacity, ScaleDecision, GPUInventory, VariantSpec
+- All shared data types: ModelSignals, ReplicaMetrics, AnalyzerResult, VariantCapacity, ScaleDecision, GPUInventory, VariantSpec
 - Pipeline event types: ScalingTickEvent, ScaleActuationEvent
 - Pipeline orchestration wiring: tick handler, actuation event handler, cooldown tracking
-- Configuration fields: ModelAutoscalerIntervalUs, ActuationDelayUs, ScaleUpCooldownUs, ScaleDownCooldownUs
+- Configuration fields: ModelAutoscalerIntervalUs, ActuationDelay, ScaleUpCooldownUs, ScaleDownCooldownUs
 - Reference implementations: DefaultCollector, SaturationAnalyzer, UtilizationAnalyzer, QueueAnalyzer, GreedyEngine, UnlimitedEngine, DirectActuator
 - Cross-cutting invariants: INV-A1 through INV-A7, INV-1 extension with drained_dropped terminal state
 - Integration test: full pipeline end-to-end with a simulated cluster
@@ -217,4 +217,4 @@ A researcher studying oscillation behavior wants to configure scale-up and scale
 - Cooldown is tracked in the pipeline orchestrator (cluster.go tick handler), not inside any interface, so Engine and Analyzer remain stateless and independently testable.
 - Each Analyzer is called once per model per tick. There is no batch call across models; the Engine is the cross-model layer.
 - The minimal viable pipeline for WVA team validation is: DefaultCollector → SaturationAnalyzer → UnlimitedEngine → DirectActuator. GreedyEngine and baseline analyzers are additive.
-- ActuationDelayUs defaults to zero. This preserves byte-identical output with existing tests (INV-6 determinism) and allows the delay to be introduced explicitly for oscillation research.
+- ActuationDelay defaults to zero. This preserves byte-identical output with existing tests (INV-6 determinism) and allows the delay to be introduced explicitly for oscillation research.

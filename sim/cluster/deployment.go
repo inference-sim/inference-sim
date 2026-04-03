@@ -64,7 +64,7 @@ type DeploymentConfig struct {
 	// Phase 1C: Model autoscaler pipeline (issue #692).
 	// Zero value is safe: ModelAutoscalerIntervalUs=0 disables the autoscaler entirely (INV-6).
 	ModelAutoscalerIntervalUs float64   `yaml:"model_autoscaler_interval_us,omitempty"` // tick interval in μs; 0 = autoscaler disabled
-	ActuationDelayUs          DelaySpec `yaml:"actuation_delay_us,omitempty"`            // HPA/KEDA scrape lag; zero = same-tick actuation
+	ActuationDelay            DelaySpec `yaml:"actuation_delay,omitempty"`              // HPA/KEDA scrape lag; zero = same-tick actuation; Mean/Stddev in seconds
 	ScaleUpCooldownUs         float64   `yaml:"scale_up_cooldown_us,omitempty"`          // min μs between scale-up decisions per model
 	ScaleDownCooldownUs       float64   `yaml:"scale_down_cooldown_us,omitempty"`        // min μs between scale-down decisions per model
 

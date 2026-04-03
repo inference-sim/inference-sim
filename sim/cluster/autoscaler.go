@@ -6,12 +6,14 @@ package cluster
 import (
 	"container/heap"
 	"math/rand"
+	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/sirupsen/logrus"
 )
 
 // VariantSpec identifies a specific hardware configuration for a replica.
-// Used as a map key in GPUInventory.ByVariant and carried in ScaleDecision.Variant.
+// Used as a map key in GPUInventory.byVariant and carried in ScaleDecision.Variant.
 // Both fields are comparable types (string, int) — safe for use as a Go map key.
 type VariantSpec struct {
 	GPUType  string // e.g. "A100-80GB", "H100-80GB"
@@ -75,11 +77,32 @@ type ScaleDecision struct {
 }
 
 // GPUInventory is a read-only view of available GPU capacity, passed to Engine.Optimize().
-// ByVariant[v] = total GPU slots for v - slots held by Running instances - slots held by Loading instances.
+// byVariant[v] = total GPU slots for v - slots held by Running instances - slots held by Loading instances.
 // Pending placements are NOT subtracted. Draining instances ARE subtracted (hold GPUs until drain completes).
-// Callers must sort keys before iterating (R2: map iteration is non-deterministic).
+// Callers must use FreeSlots() and Variants() to read (R2: map iteration is non-deterministic).
 type GPUInventory struct {
-	ByVariant map[VariantSpec]int // free GPU slots per variant
+	byVariant map[VariantSpec]int // free GPU slots per variant; use FreeSlots() and Variants() to read
+}
+
+// FreeSlots returns the free GPU slots for the given variant (0 if variant not in inventory).
+func (g GPUInventory) FreeSlots(v VariantSpec) int {
+	return g.byVariant[v]
+}
+
+// Variants returns all variants in the inventory, sorted ascending by GPUType then TPDegree.
+// Callers must use this instead of iterating byVariant directly (R2: deterministic iteration).
+func (g GPUInventory) Variants() []VariantSpec {
+	vs := make([]VariantSpec, 0, len(g.byVariant))
+	for v := range g.byVariant {
+		vs = append(vs, v)
+	}
+	sort.Slice(vs, func(i, j int) bool {
+		if vs[i].GPUType != vs[j].GPUType {
+			return vs[i].GPUType < vs[j].GPUType
+		}
+		return vs[i].TPDegree < vs[j].TPDegree
+	})
+	return vs
 }
 
 // ---------------------------------------------------------------------------
@@ -117,7 +140,7 @@ type Engine interface {
 // Pending placements for the model must be cancelled before applying scale-down.
 // Orchestrator has already applied cooldown filtering before calling Apply().
 type Actuator interface {
-	Apply(decisions []ScaleDecision)
+	Apply(decisions []ScaleDecision) error
 }
 
 // ---------------------------------------------------------------------------
@@ -139,7 +162,7 @@ type autoscalerPipeline struct {
 	lastScaleUpAt   map[string]int64
 	lastScaleDownAt map[string]int64
 
-	// rng is used to sample ActuationDelayUs (Decision 4).
+	// rng is used to sample ActuationDelay (Decision 4).
 	rng *rand.Rand
 }
 
@@ -148,6 +171,8 @@ type autoscalerPipeline struct {
 func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 	// Guard: all four components must be wired (nil components skip this tick).
 	if p.collector == nil || p.analyzer == nil || p.engine == nil || p.actuator == nil {
+		logrus.Warnf("[autoscaler] tick at t=%d skipped: pipeline not fully wired (collector=%v analyzer=%v engine=%v actuator=%v)",
+			nowUs, p.collector != nil, p.analyzer != nil, p.engine != nil, p.actuator != nil)
 		p.scheduleNextTick(cs, nowUs)
 		return
 	}
@@ -167,18 +192,22 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 	decisions := p.engine.Optimize(results, inventory)
 
 	// Stage 4: Cooldown filter — suppress decisions within cooldown window per model.
-	filtered := decisions[:0] // reuse backing array
+	filtered := make([]ScaleDecision, 0, len(decisions))
 	for _, d := range decisions {
+		if d.Delta == 0 {
+			logrus.Warnf("[autoscaler] engine emitted ScaleDecision with Delta=0 for model %q — contract violation, skipping", d.ModelID)
+			continue
+		}
 		if d.Delta > 0 {
 			cooldown := cs.config.ScaleUpCooldownUs
 			if cooldown > 0 && nowUs-p.lastScaleUpAt[d.ModelID] < int64(cooldown) {
 				continue // suppressed by scale-up cooldown (INV-A7)
 			}
 			p.lastScaleUpAt[d.ModelID] = nowUs
-		} else if d.Delta < 0 {
+		} else {
 			cooldown := cs.config.ScaleDownCooldownUs
 			if cooldown > 0 && nowUs-p.lastScaleDownAt[d.ModelID] < int64(cooldown) {
-				continue // suppressed by scale-down cooldown
+				continue // suppressed by scale-down cooldown (INV-A7)
 			}
 			p.lastScaleDownAt[d.ModelID] = nowUs
 		}
@@ -188,7 +217,7 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 	// Stage 5: Schedule ScaleActuationEvent (even when filtered is empty, to preserve event semantics).
 	// DelaySpec.Sample(rng) is safe with rng=nil when Stddev=0 (constant delay needs no RNG).
 	// If Stddev>0 and rng=nil, Sample will panic — that is a configuration error, not a code bug.
-	actuationAt := nowUs + cs.config.ActuationDelayUs.Sample(p.rng)
+	actuationAt := nowUs + cs.config.ActuationDelay.Sample(p.rng)
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &ScaleActuationEvent{At: actuationAt, Decisions: filtered},
 		seqID: cs.nextSeqID(),
@@ -207,10 +236,15 @@ func (p *autoscalerPipeline) scheduleNextTick(cs *ClusterSimulator, nowUs int64)
 	})
 }
 
-// actuate calls Actuator.Apply() with the decisions from a ScaleActuationEvent.
-// Full implementation wired in US3 (T019-T023).
+// actuate calls Actuator.Apply() with decisions from a ScaleActuationEvent. No-ops when actuator is nil.
 func (p *autoscalerPipeline) actuate(_ *ClusterSimulator, decisions []ScaleDecision) {
-	if p.actuator != nil {
-		p.actuator.Apply(decisions)
+	if p.actuator == nil {
+		if len(decisions) > 0 {
+			logrus.Warnf("[autoscaler] actuate: %d decision(s) dropped — actuator not wired", len(decisions))
+		}
+		return
+	}
+	if err := p.actuator.Apply(decisions); err != nil {
+		logrus.Errorf("[autoscaler] actuate: Apply returned error: %v", err)
 	}
 }
