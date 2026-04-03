@@ -257,6 +257,14 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			flopsPeakUs: hw.HWConfig.TFlopsPeak * 1e6,
 			bwHbmUs:     hw.HWConfig.BwPeakTBs * 1e6,
 		}, nil
+	case "evolved":
+		// EvolvedModel: physics-informed roofline with architecture-aware MoE overhead.
+		// Uses roofline basis functions with learned corrections and conditional β₈ scaling.
+		model, err := NewEvolvedModel(coeffs, hw)
+		if err != nil {
+			return nil, err
+		}
+		return model, nil
 	case "blackbox":
 		// BlackboxLatencyModel indexes betaCoeffs[0..2]; validate upfront.
 		if len(coeffs.BetaCoeffs) < 3 {
