@@ -1,0 +1,36 @@
+{
+  "iteration": 27,
+  "backend_name": "evolved",
+  "timestamp": "2026-04-03T09:18:22.507609",
+  "optimization": {
+    "method": "CMA-ES, n_jobs=4, 6-parameter joint search (\u03b2\u2081\u2090, \u03b2\u2084, \u03b2\u2085, \u03b2\u2087, \u03b2\u2088, \u03b2\u2082\u1d66)",
+    "total_trials": 141,
+    "best_trial": 62,
+    "note": "TPE excluded this iteration due to SQLite race conditions at n_jobs>1; TPE planned for iter28."
+  },
+  "best_params": {
+    "alpha": [
+      15563.199579,
+      777.3455,
+      45.907545
+    ],
+    "beta": [
+      0.152128,
+      0.000721,
+      1.363621,
+      0.752037,
+      32.394131,
+      2.805128,
+      126.024825,
+      505.508488,
+      0.000746,
+      1.922366
+    ]
+  },
+  "loss": {
+    "overall_loss": 34.61,
+    "ttft_rmse": 22.81,
+    "e2e_rmse": 11.79
+  },
+  "error_log": []
+}

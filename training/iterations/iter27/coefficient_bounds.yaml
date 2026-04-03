@@ -1,0 +1,37 @@
+# Warm start: iter26 best coefficients
+# Active (6): β₁ₐ, β₄, β₅, β₇, β₈, β₂ᵦ
+# Frozen (4): β₂ₐ=0, β₃, β₆, β₁ᵦ=0  (tight bounds keep them near current value)
+
+alpha_bounds:
+  - [15560.0, 15564.0]   # α₀ frozen
+  - [775.0,   778.0]     # α₁ frozen
+  - [45.8,    46.0]      # α₂ frozen
+
+alpha_initial:
+  - 15561.959717498621
+  - 776.243476414174
+  - 45.910232684500556
+
+beta_bounds:
+  - [0.05,  0.40]    # β₁ₐ  ACTIVE: prefill compute correction
+  - [0.0,   0.001]   # β₂ₐ  frozen=0 (decode compute, dropped)
+  - [1.360, 1.367]   # β₃   frozen: weight loading
+  - [0.0,   0.80]    # β₄   ACTIVE: TP All-Reduce correction
+  - [20.0,  100.0]   # β₅   ACTIVE: per-layer overhead (µs/layer)
+  - [2.79,  2.81]    # β₆   frozen: per-request scheduling
+  - [50.0,  300.0]   # β₇   ACTIVE: per-step constant (µs/step)
+  - [200.0, 700.0]   # β₈   ACTIVE: per-MoE-layer overhead (µs/MoE-layer)
+  - [0.0,   0.001]   # β₁ᵦ  frozen=0 (prefill memory, dropped)
+  - [0.5,   2.5]     # β₂ᵦ  ACTIVE: decode memory correction
+
+beta_initial:
+  - 0.138541                # β₁ₐ  iter26
+  - 0.0                     # β₂ₐ  frozen
+  - 1.363060401466404       # β₃   iter26
+  - 0.409533                # β₄   iter26
+  - 49.626791               # β₅   iter26
+  - 2.7976795228174027      # β₆   frozen
+  - 169.36568163371626      # β₇   iter26
+  - 427.3                   # β₈   iter26
+  - 0.0                     # β₁ᵦ  frozen
+  - 1.2632                  # β₂ᵦ  iter26
