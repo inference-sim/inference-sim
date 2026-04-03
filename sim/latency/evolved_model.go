@@ -68,8 +68,8 @@ import (
 //   - α₁: PostDecodeFixedOverhead — fixed per-request post-decode overhead (µs)
 //   - α₂: OutputTokenProcessingTime — per-output-token overhead (µs/token)
 type EvolvedModel struct {
-	Alpha [3]float64 // [α₀, α₁, α₂]
-	Beta  []float64  // [β₁..β₁₀] — 7-10 coefficients (7→β₈=0, 8→MoE, 9→pf split, 10→dc split)
+	alpha [3]float64 // [α₀, α₁, α₂]
+	beta  []float64  // [β₁..β₁₀] — 7-10 coefficients (7→β₈=0, 8→MoE, 9→pf split, 10→dc split)
 
 	// Mode flags.
 	prefillSplit bool // true when ≥9 betas: β₁ₐ·compute + β₁ᵦ·kv instead of β₁·max
@@ -225,18 +225,18 @@ func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 	//               β₁ₐ·compute + β₁ᵦ·kv when 9 betas (prefill split).
 	var prefillTerm float64
 	if m.prefillSplit {
-		prefillTerm = m.Beta[0]*tPfCompute + m.Beta[8]*tPfKv
+		prefillTerm = m.beta[0]*tPfCompute + m.beta[8]*tPfKv
 	} else {
-		prefillTerm = m.Beta[0] * math.Max(tPfCompute, tPfKv)
+		prefillTerm = m.beta[0] * math.Max(tPfCompute, tPfKv)
 	}
 
 	// Decode term: β₂·max(compute, kv) when ≤9 betas,
 	//              β₂ₐ·compute + β₂ᵦ·kv when 10 betas (decode is memory-dominated).
 	var decodeTerm float64
 	if m.decodeSplit {
-		decodeTerm = m.Beta[1]*tDcCompute + m.Beta[9]*tDcKv
+		decodeTerm = m.beta[1]*tDcCompute + m.beta[9]*tDcKv
 	} else {
-		decodeTerm = m.Beta[1] * math.Max(tDcCompute, tDcKv)
+		decodeTerm = m.beta[1] * math.Max(tDcCompute, tDcKv)
 	}
 
 	// β₈ MoE overhead: Applies only to interleaved MoE architectures.
@@ -256,12 +256,12 @@ func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 
 	stepTime := prefillTerm +
 		decodeTerm +
-		m.Beta[2]*tWeight +
-		m.Beta[3]*tTp +
-		m.Beta[4]*L +
-		m.Beta[5]*batchSize +
-		m.Beta[6] +
-		m.Beta[7]*moeScaling*float64(m.numMoELayers) // β₈: per-MoE-layer overhead (interleaved archs only)
+		m.beta[2]*tWeight +
+		m.beta[3]*tTp +
+		m.beta[4]*L +
+		m.beta[5]*batchSize +
+		m.beta[6] +
+		m.beta[7]*moeScaling*float64(m.numMoELayers) // β₈: per-MoE-layer overhead (interleaved archs only)
 
 	return max(1, clampToInt64(stepTime))
 }
@@ -271,13 +271,13 @@ func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 //
 // α₀ = API processing overhead (HTTP parsing, request validation, queue insertion).
 func (m *EvolvedModel) QueueingTime(req *sim.Request) int64 {
-	return clampToInt64(m.Alpha[0])
+	return clampToInt64(m.alpha[0])
 }
 
 // OutputTokenProcessingTime returns per-output-token post-processing overhead.
 // α₂ = streaming detokenization cost per output token (µs/token).
 func (m *EvolvedModel) OutputTokenProcessingTime() int64 {
-	return clampToInt64(m.Alpha[2])
+	return clampToInt64(m.alpha[2])
 }
 
 // PostDecodeFixedOverhead returns fixed per-request overhead at completion.
@@ -287,7 +287,7 @@ func (m *EvolvedModel) OutputTokenProcessingTime() int64 {
 // (applied once at completion), NOT in StepTime (where it would accumulate O(N×B)
 // over N decode steps × B batch size).
 func (m *EvolvedModel) PostDecodeFixedOverhead() int64 {
-	return clampToInt64(m.Alpha[1])
+	return clampToInt64(m.alpha[1])
 }
 
 // NewEvolvedModel creates an EvolvedModel with validation.
@@ -374,13 +374,17 @@ func NewEvolvedModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (*Evo
 	// Select compute throughput: FP8 for 1-byte-per-param models on FP8-capable GPUs
 	peakFlops := hw.HWConfig.TFlopsPeak * 1e6 // TFLOPS → FLOP/µs
 	weightBPP := hw.ModelConfig.EffectiveWeightBytesPerParam()
+	if weightBPP <= 0 {
+		return nil, fmt.Errorf("latency model: evolved requires positive weight bytes per param, got WeightBytesPerParam=%v BytesPerParam=%v",
+			hw.ModelConfig.WeightBytesPerParam, hw.ModelConfig.BytesPerParam)
+	}
 	if weightBPP == 1.0 && hw.HWConfig.TFlopsFP8 > 0 {
 		peakFlops = hw.HWConfig.TFlopsFP8 * 1e6
 	}
 
 	return &EvolvedModel{
-		Alpha:             [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
-		Beta:              betaSlice,
+		alpha:             [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
+		beta:              betaSlice,
 		prefillSplit:      len(coeffs.BetaCoeffs) >= 9,
 		decodeSplit:       len(coeffs.BetaCoeffs) >= 10,
 		numLayers:         hw.ModelConfig.NumLayers,
@@ -395,7 +399,7 @@ func NewEvolvedModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (*Evo
 		dFFDense:          dFFDense,
 		kEff:              max(1, hw.ModelConfig.NumExpertsPerTok),
 		numExperts:        hw.ModelConfig.NumLocalExperts,
-		hasInterleavedMoE: hw.ModelConfig.InterleaveMoELayerStep > 0,
+		hasInterleavedMoE: hw.ModelConfig.InterleaveMoELayerStep > 0 && hw.ModelConfig.NumLocalExperts > 1,
 		isMoE:          hw.ModelConfig.NumLocalExperts > 0,
 		tp:             hw.TP,
 		weightBPP:      weightBPP,
