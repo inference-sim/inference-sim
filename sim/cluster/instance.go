@@ -7,8 +7,6 @@ package cluster
 import (
 	"fmt"
 
-	"github.com/sirupsen/logrus"
-
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/kv"
 	"github.com/inference-sim/inference-sim/sim/latency"
@@ -196,8 +194,8 @@ func (i *InstanceSimulator) SnapshotCacheQueryFn() func([]int) int {
 		return cs.SnapshotCachedBlocksFn()
 	}
 	// Fallback: live query (for KVStore implementations without snapshot support).
-	// Warn because stale-cache semantics will not be honored for this instance.
-	logrus.Warnf("[instance] %s: KVCache does not implement cacheSnapshotCapable — falling back to live query; stale-cache semantics not honored", i.id)
+	// Callers (StaleCacheIndex) are responsible for warning about stale-cache
+	// semantics not being honored — this function is intentionally side-effect-free.
 	return func(tokens []int) int {
 		return i.GetCachedBlockCount(tokens)
 	}

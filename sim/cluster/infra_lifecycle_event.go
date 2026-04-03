@@ -298,6 +298,10 @@ type drainRedirect struct{}
 
 func (d *drainRedirect) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	inst.TransitionTo(InstanceStateDraining)
+	// Note: RemoveInstance and delete(cs.cacheQueryFn, ...) are intentionally absent here.
+	// The instance remains alive while processing in-flight and late-arriving requests.
+	// Cleanup happens via the T042 drain-completion check (QueueDepth==0 && BatchSize==0)
+	// in the main event loop (cluster.go), which transitions the instance to Terminated.
 
 	// Extract queued requests from the instance WaitQ and re-inject into the cluster.
 	// Simulation simplification: re-injected at current clock (cs.clock), not original ArrivalTime.

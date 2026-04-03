@@ -7,7 +7,8 @@ import "math"
 //
 // Signal freshness (R17, INV-7):
 //
-//	Reads: KVCache.GetCachedBlocks via cacheQueryFn.
+//	Reads: cacheQueryFn closures — live KVCache.GetCachedBlocks in oracle mode;
+//	frozen HashToBlock snapshot in stale mode (delay>0).
 //	Freshness depends on --cache-signal-delay:
 //	  - delay=0: ground truth (synchronous, no staleness) — oracle mode.
 //	  - delay>0 (default 2s): Demand-triggered staleness via StaleCacheIndex snapshot refresh.

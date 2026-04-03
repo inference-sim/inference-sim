@@ -13,7 +13,8 @@ import (
 //
 // Signal freshness (R17, INV-7):
 //
-//	Reads: KVCache.SnapshotCachedBlocksFn snapshots — demand-triggered staleness.
+//	Reads: InstanceSimulator.SnapshotCacheQueryFn() snapshots (delegates to
+//	KVCacheState.SnapshotCachedBlocksFn via cacheSnapshotCapable) — demand-triggered staleness.
 //	Refresh checked at routing-decision boundaries (buildRouterState), not by an
 //	independent timer. During idle simulation periods, staleness can exceed the
 //	nominal CacheSignalDelay interval. Controlled by DeploymentConfig.CacheSignalDelay.
@@ -41,6 +42,11 @@ func NewStaleCacheIndex(instances map[InstanceID]*InstanceSimulator, interval in
 	for id, inst := range instances {
 		idx.instances[id] = inst
 		idx.staleFns[string(id)] = inst.SnapshotCacheQueryFn()
+		if inst.sim != nil {
+			if _, ok := inst.sim.KVCache.(cacheSnapshotCapable); !ok {
+				logrus.Warnf("[stale-cache] instance %s: KVCache does not implement cacheSnapshotCapable — falling back to live query; stale-cache semantics not honored", id)
+			}
+		}
 	}
 	return idx
 }
@@ -82,6 +88,11 @@ func (s *StaleCacheIndex) AddInstance(id InstanceID, inst *InstanceSimulator) {
 	}
 	s.instances[id] = inst
 	s.staleFns[string(id)] = inst.SnapshotCacheQueryFn()
+	if inst.sim != nil {
+		if _, ok := inst.sim.KVCache.(cacheSnapshotCapable); !ok {
+			logrus.Warnf("[stale-cache] instance %s: KVCache does not implement cacheSnapshotCapable — falling back to live query; stale-cache semantics not honored", id)
+		}
+	}
 }
 
 // BuildCacheQueryFn returns a cacheQueryFn map where each closure delegates to the
