@@ -158,7 +158,7 @@ There is no universal best simulator - only the best simulator *for your problem
 
 Across 38 experiments, we measured a massive accuracy spread between simulators. We evaluated on three axes: **Accuracy** (can you trust it?), **Speed** (can you explore with it?), **Coverage** (can it model your deployment?). Fast but inaccurate wastes time. Accurate but slow limits exploration. Neither matters if coverage gaps block your architecture.
 
-**For capacity planning:** LLM-Optimizer allows rapid configuration exploration, but cannot be used for tail latency-based SLO predictions. BLIS-Evolved offers the best accuracy-coverage trade-off (11.79% E2E MAPE), but TTFT prediction is weaker (22.81% MAPE). Identify promising candidates through LLM-Optimizer, then validate using BLIS-Evolved.
+**For capacity planning:** LLM-Optimizer allows rapid configuration exploration, but cannot be used for tail latency-based SLO predictions. Identify promising candidates through LLM-Optimizer, then validate using the slower and more accurate BLIS-Evolved.
 
 **For algorithm discovery:** For single-instance experiments, LLM-Optimizer wins at 0.1s per run — 8× faster than any alternative. However, for multi-instance algorithm exploration, rely on BLIS-Evolved.
 
