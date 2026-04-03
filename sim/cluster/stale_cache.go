@@ -1,5 +1,11 @@
 package cluster
 
+import (
+	"fmt"
+
+	"github.com/sirupsen/logrus"
+)
+
 // StaleCacheIndex manages per-instance frozen snapshots of KV cache hash maps.
 // When cache-signal-delay > 0, the cacheQueryFn closures delegate to this index
 // instead of querying live instance state, simulating asynchronous KV event
@@ -18,8 +24,11 @@ type StaleCacheIndex struct {
 }
 
 // NewStaleCacheIndex creates a StaleCacheIndex and takes an initial snapshot of all instances.
-// interval is the refresh interval in simulated microseconds.
+// interval is the refresh interval in simulated microseconds. Panics if interval <= 0.
 func NewStaleCacheIndex(instances map[InstanceID]*InstanceSimulator, interval int64) *StaleCacheIndex {
+	if interval <= 0 {
+		panic(fmt.Sprintf("NewStaleCacheIndex: interval must be > 0, got %d", interval))
+	}
 	idx := &StaleCacheIndex{
 		instances:   make(map[InstanceID]*InstanceSimulator),
 		staleFns:    make(map[string]func([]int) int),
@@ -51,7 +60,15 @@ func (s *StaleCacheIndex) Query(instanceID string, tokens []int) int {
 	if fn, ok := s.staleFns[instanceID]; ok {
 		return fn(tokens)
 	}
+	logrus.Warnf("[stale-cache] Query for unknown instance %q — returning 0", instanceID)
 	return 0
+}
+
+// RemoveInstance unregisters an instance (e.g., on termination) and frees its
+// snapshot closure. No-op if the instance is not registered.
+func (s *StaleCacheIndex) RemoveInstance(id InstanceID) {
+	delete(s.instances, id)
+	delete(s.staleFns, string(id))
 }
 
 // AddInstance registers a new instance (e.g., from NodeReadyEvent) and takes

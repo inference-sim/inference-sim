@@ -507,6 +507,10 @@ func (c *ClusterSimulator) Run() error {
 			if inst.State == InstanceStateDraining && inst.QueueDepth() == 0 && inst.BatchSize() == 0 {
 				inst.TransitionTo(InstanceStateTerminated)
 				c.releaseInstanceGPUs(inst)
+				if c.staleCache != nil {
+					c.staleCache.RemoveInstance(inst.ID())
+				}
+				delete(c.cacheQueryFn, string(inst.ID()))
 				// I1: a non-zero inFlightRequests at termination time indicates a bookkeeping bug.
 				// This would cause isBusy() to permanently return true, silently stranding
 				// all deferred Batch/Background requests until horizon.
