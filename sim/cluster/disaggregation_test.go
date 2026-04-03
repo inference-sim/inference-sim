@@ -1035,8 +1035,9 @@ func TestDisaggregation_TTFT_FallbackWhenDecodeDataMissing(t *testing.T) {
 	origReq := &sim.Request{ID: "orig", ArrivalTime: 0}
 
 	tests := []struct {
-		name   string
-		parent *ParentRequest
+		name            string
+		parent          *ParentRequest
+		skipPrefillTTFT bool
 	}{
 		{
 			name: "TransferCompleteTime=0",
@@ -1068,12 +1069,25 @@ func TestDisaggregation_TTFT_FallbackWhenDecodeDataMissing(t *testing.T) {
 				DecodeSubReq: nil,
 			},
 		},
+		{
+			name: "no prefill TTFT key",
+			parent: &ParentRequest{
+				ID: "p4", PrefillSubReqID: "p4_prefill", DecodeSubReqID: "p4_decode",
+				OriginalRequest: origReq,
+				ArrivalTime: 0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				TransferStartTime: 100, TransferCompleteTime: 200,
+				DecodeSubReq: &sim.Request{ITL: []int64{100}},
+			},
+			skipPrefillTTFT: true,
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			m := sim.NewMetrics()
-			m.RequestTTFTs[tc.parent.PrefillSubReqID] = prefillTTFT
+			if !tc.skipPrefillTTFT {
+				m.RequestTTFTs[tc.parent.PrefillSubReqID] = prefillTTFT
+			}
 			m.RequestTTFTs[tc.parent.DecodeSubReqID] = 999.0
 
 			cs := &ClusterSimulator{
@@ -1082,12 +1096,19 @@ func TestDisaggregation_TTFT_FallbackWhenDecodeDataMissing(t *testing.T) {
 			}
 			cs.projectPDMetrics()
 
-			got, ok := m.RequestTTFTs[tc.parent.ID]
-			if !ok {
-				t.Fatalf("R1: parent %s TTFT entry missing after fallback", tc.parent.ID)
-			}
-			if math.Abs(got-prefillTTFT) > 1e-9 {
-				t.Errorf("fallback: got TTFT=%.1f, want %.1f (prefill-only)", got, prefillTTFT)
+			if tc.skipPrefillTTFT {
+				// Branch C: completed parent with no prefill TTFT key must produce no entry.
+				if _, ok := m.RequestTTFTs[tc.parent.ID]; ok {
+					t.Errorf("Branch C: unexpected TTFT entry for parent %s (no prefill key)", tc.parent.ID)
+				}
+			} else {
+				got, ok := m.RequestTTFTs[tc.parent.ID]
+				if !ok {
+					t.Fatalf("R1: parent %s TTFT entry missing after fallback", tc.parent.ID)
+				}
+				if math.Abs(got-prefillTTFT) > 1e-9 {
+					t.Errorf("fallback: got TTFT=%.1f, want %.1f (prefill-only)", got, prefillTTFT)
+				}
 			}
 
 			// Sub-request keys must be deleted (INV-PD-6).
