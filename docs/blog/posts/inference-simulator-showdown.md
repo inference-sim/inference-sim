@@ -31,7 +31,7 @@ Imagine you are deploying Mixtral-8x7B for your AI-powered coding assistant. Fou
 
 We tested five simulators across 38 production experiments. Accuracy ranged from 1% to 76% error on identical workloads. Speed varied from milliseconds to hours. Some tools couldn't run two-thirds of our experiments.
 
-**The cost of getting it wrong?** A simulator with 50% error told one team they needed 100 H100 GPUs to meet their SLOs. The real number was 25. That's 75 wasted GPUs at $2.50/hour each—$187/hour, $4,500/day, $135,000/month in avoidable cloud costs. One accurate simulation run would have prevented that.
+**Why accuracy matters for capacity planning:** A 50% prediction error translates directly to over-provisioning or under-provisioning GPUs. At H100 cloud rates, mis-sizing a production cluster by even 20-30 GPUs costs six figures annually in wasted capacity or missed SLOs.
 
 This guide breaks down which simulator to use for capacity planning, configuration search, and algorithm discovery — backed by hard data from 38 experiments across six models, four workload types, and three GPU types.
 
