@@ -164,3 +164,15 @@ Across 38 experiments, we measured a massive accuracy spread between simulators.
 **LLM-Optimizer** dominates speed at 0.1s for rapid exploration. **Vidur** provides scheduler-level fidelity for focused research.
 
 Marketing claims are not validation. Run the simulator on *your* model, *your* hardware, *your* workload, then compare against real measurements. Test before you trust.
+
+## Limitations and Future Work
+
+This evaluation focuses on single-instance vLLM serving accuracy. What we did not test:
+
+**Multi-instance cluster dynamics:** Our 38 experiments measured single-server latency prediction. Real deployments use load balancing, request routing, and autoscaling across multiple instances. How well do simulators predict cluster-level behavior under load balancing policies? We did not test this.
+
+**Cost modeling:** Capacity planning is not just about latency—it is about cost per token, GPU utilization, and total cost of ownership. None of the simulators we tested provide built-in cost models. Future work should evaluate cost prediction accuracy alongside latency.
+
+**Production drift:** Models update, workloads shift, hardware changes. How quickly do simulators become stale? How much re-profiling or re-training is needed? We tested accuracy at a point in time, not over time.
+
+Acknowledging these gaps does not diminish the findings—it clarifies their scope. Single-instance latency prediction is the foundation, but production serving is a bigger problem.
