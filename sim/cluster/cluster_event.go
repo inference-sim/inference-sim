@@ -62,6 +62,12 @@ func (q *ClusterEventQueue) Pop() any {
 // Complexity: O(N) per call where N = number of instances. At current BLIS scale (≤32 instances)
 // this is negligible. A model→instances index could pre-partition if instance counts exceed 100.
 func buildRouterState(cs *ClusterSimulator, req *sim.Request) *sim.RouterState {
+	// Refresh stale cache snapshots if interval has elapsed (issue #919).
+	// No-op when staleCache is nil (oracle mode, BC-7).
+	if cs.staleCache != nil {
+		cs.staleCache.RefreshIfNeeded(cs.clock)
+	}
+
 	snapshots := make([]sim.RoutingSnapshot, 0, len(cs.instances))
 	for _, inst := range cs.instances {
 		// Filter by lifecycle state (T044): exclude non-routable instances

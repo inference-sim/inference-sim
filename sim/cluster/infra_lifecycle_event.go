@@ -93,9 +93,19 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 
 		// Register with cacheQueryFn for precise prefix scoring (deferred instances).
 		if cs.cacheQueryFn != nil {
-			inst := inst // capture for closure
-			cs.cacheQueryFn[string(p.id)] = func(tokens []int) int {
-				return inst.GetCachedBlockCount(tokens)
+			if cs.staleCache != nil {
+				// Stale mode: register with StaleCacheIndex and delegate to stale queries (issue #919).
+				cs.staleCache.AddInstance(p.id, inst)
+				idStr := string(p.id)
+				cs.cacheQueryFn[idStr] = func(tokens []int) int {
+					return cs.staleCache.Query(idStr, tokens)
+				}
+			} else {
+				// Oracle mode: direct live query.
+				inst := inst // capture for closure
+				cs.cacheQueryFn[string(p.id)] = func(tokens []int) int {
+					return inst.GetCachedBlockCount(tokens)
+				}
 			}
 		}
 
@@ -263,6 +273,10 @@ func (d *drainImmediate) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	inst.TransitionTo(InstanceStateTerminated)
 	if cs != nil {
 		cs.releaseInstanceGPUs(inst)
+		if cs.staleCache != nil {
+			cs.staleCache.RemoveInstance(inst.ID())
+		}
+		delete(cs.cacheQueryFn, string(inst.ID()))
 	}
 }
 
@@ -281,6 +295,10 @@ func (d *drainWait) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	if cs != nil && inst.HasSim() && inst.QueueDepth() == 0 && inst.BatchSize() == 0 {
 		inst.TransitionTo(InstanceStateTerminated)
 		cs.releaseInstanceGPUs(inst)
+		if cs.staleCache != nil {
+			cs.staleCache.RemoveInstance(inst.ID())
+		}
+		delete(cs.cacheQueryFn, string(inst.ID()))
 	}
 }
 
@@ -290,6 +308,10 @@ type drainRedirect struct{}
 
 func (d *drainRedirect) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	inst.TransitionTo(InstanceStateDraining)
+	// Note: RemoveInstance and delete(cs.cacheQueryFn, ...) are intentionally absent here.
+	// The instance remains alive while processing in-flight and late-arriving requests.
+	// Cleanup happens via the T042 drain-completion check (QueueDepth==0 && BatchSize==0)
+	// in the main event loop (cluster.go), which transitions the instance to Terminated.
 
 	// Extract queued requests from the instance WaitQ and re-inject into the cluster.
 	// Simulation simplification: re-injected at current clock (cs.clock), not original ArrivalTime.

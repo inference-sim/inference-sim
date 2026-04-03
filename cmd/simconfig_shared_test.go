@@ -110,6 +110,7 @@ func TestResolvePolicies_PolicyFlagsRegisteredInBothCommands(t *testing.T) {
 		"kv-transfer-base-latency", "snapshot-refresh-interval",
 		"admission-latency", "routing-latency", "trace-level",
 		"counterfactual-k", "summarize-trace", "policy-config",
+		"cache-signal-delay",
 	}
 	for _, name := range policyFlags {
 		assert.NotNilf(t, runCmd.Flags().Lookup(name),
@@ -165,7 +166,7 @@ func TestBothCommands_SimConfigFlagsHaveIdenticalDefaults(t *testing.T) {
 		"admission-latency", "routing-latency", "trace-level",
 		"counterfactual-k", "summarize-trace", "policy-config",
 		"num-instances", "max-num-running-reqs", "max-num-scheduled-tokens",
-		"long-prefill-token-threshold",
+		"long-prefill-token-threshold", "cache-signal-delay",
 	}
 	for _, name := range sharedFlags {
 		runFlag := runCmd.Flags().Lookup(name)
