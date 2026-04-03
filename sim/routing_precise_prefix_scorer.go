@@ -7,9 +7,15 @@ import "math"
 //
 // Signal freshness (R17, INV-7):
 //
-//	Reads: KVCache.GetCachedBlocks via cacheQueryFn — ground truth (synchronous,
-//	no staleness). Each routing decision queries the current KV cache state
-//	at the moment of routing.
+//	Reads: cacheQueryFn closures — live KVCache.GetCachedBlocks in oracle mode;
+//	frozen HashToBlock snapshot in stale mode (delay>0).
+//	Freshness depends on --cache-signal-delay:
+//	  - delay=0: ground truth (synchronous, no staleness) — oracle mode.
+//	  - delay>0 (default 2s): Demand-triggered staleness via StaleCacheIndex snapshot refresh.
+//	    Each routing decision queries a frozen copy of the HashToBlock map,
+//	    refreshed every CacheSignalDelay microseconds of sim time.
+//	    Default 2s matches production llm-d's speculative TTL — the blind spot
+//	    between routing decision and KV event arrival via ZMQ.
 func newPrecisePrefixCacheScorer(cacheFn cacheQueryFn) (scorerFunc, observerFunc) {
 	scorer := func(req *Request, snapshots []RoutingSnapshot) map[string]float64 {
 		scores := make(map[string]float64, len(snapshots))

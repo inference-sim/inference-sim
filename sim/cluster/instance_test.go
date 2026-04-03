@@ -5,6 +5,9 @@ import (
 	"math"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
@@ -455,6 +458,46 @@ func TestInstanceSimulator_InjectRequestOnline(t *testing.T) {
 	if !inst.HasPendingEvents() {
 		t.Error("expected pending events after InjectRequestOnline, got none")
 	}
+}
+
+func TestInstanceSimulator_SnapshotCacheQueryFn_FrozenView(t *testing.T) {
+	// GIVEN an instance with some cached prefix blocks
+	cfg := newTestSimConfig()
+	cfg.Horizon = 10_000_000
+	cfg.TotalKVBlocks = 100
+	cfg.BlockSizeTokens = 4
+	inst := NewInstanceSimulator("inst-0", cfg)
+
+	tokens := []int{1, 2, 3, 4, 5, 6, 7, 8}
+	req := &sim.Request{
+		ID:           "r1",
+		ArrivalTime:  0,
+		InputTokens:  tokens,
+		OutputTokens: []int{100},
+		State:        sim.StateQueued,
+	}
+	inst.InjectRequest(req)
+	inst.Run()
+
+	// Verify blocks were cached
+	require.Greater(t, inst.GetCachedBlockCount(tokens), 0, "blocks should be cached after run")
+
+	// WHEN we take a snapshot
+	snapshotFn := inst.SnapshotCacheQueryFn()
+
+	// THEN the snapshot returns the same count as the live query
+	assert.Equal(t, inst.GetCachedBlockCount(tokens), snapshotFn(tokens))
+}
+
+func TestInstanceSimulator_SnapshotCacheQueryFn_NilSim(t *testing.T) {
+	// GIVEN an InstanceSimulator with nil sim
+	inst := &InstanceSimulator{id: "nil-inst"}
+
+	// WHEN we call SnapshotCacheQueryFn
+	fn := inst.SnapshotCacheQueryFn()
+
+	// THEN it returns 0 for any input
+	assert.Equal(t, 0, fn([]int{1, 2, 3, 4}))
 }
 
 // BC-2: PostDecodeFixedOverhead() delegates to inner sim.Simulator.PostDecodeFixedOverhead().

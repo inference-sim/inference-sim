@@ -930,3 +930,32 @@ func TestTieredKVCache_PartialReload_NewRequest_Revised(t *testing.T) {
 	require.Equal(t, h0, committedBlk.Hash, "BC-5: committed block must have h0 hash")
 	require.True(t, committedBlk.InUse, "BC-5: committed block must be InUse")
 }
+
+func TestTieredKVCache_SnapshotCachedBlocksFn_FrozenView(t *testing.T) {
+	// GIVEN a TieredKVCache with some cached blocks on the GPU tier
+	gpu := NewKVCacheState(100, 4)
+	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 10)
+
+	tokens := []int{1, 2, 3, 4, 5, 6, 7, 8} // 2 blocks
+	req := &sim.Request{ID: "r1", InputTokens: tokens}
+	tiered.AllocateKVBlocks(req, 0, 8, nil)
+
+	// WHEN we take a snapshot via the TieredKVCache method
+	snapshotFn := tiered.SnapshotCachedBlocksFn()
+
+	// Snapshot should see the 2 blocks
+	assert.Equal(t, 2, snapshotFn(tokens), "snapshot should see 2 cached blocks")
+
+	// AND then allocate more blocks (extending the prefix)
+	tokens2 := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+	req2 := &sim.Request{ID: "r2", InputTokens: tokens2}
+	cached := gpu.GetCachedBlocks(tokens2)
+	tiered.AllocateKVBlocks(req2, 8, 16, cached)
+
+	// THEN the snapshot still sees only the original 2 blocks (frozen view)
+	assert.Equal(t, 2, snapshotFn(tokens2), "snapshot must be frozen — should still see only 2 blocks")
+
+	// While a fresh snapshot sees all 4 blocks
+	freshFn := tiered.SnapshotCachedBlocksFn()
+	assert.Equal(t, 4, freshFn(tokens2), "fresh snapshot should see 4 blocks")
+}

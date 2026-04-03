@@ -78,6 +78,11 @@ type ClusterSimulator struct {
 	// are added in NodeReadyEvent.Execute. Nil when no instances exist yet.
 	cacheQueryFn map[string]func([]int) int
 
+	// staleCache manages periodic snapshots of per-instance KV cache hash maps
+	// for stale prefix cache scoring (issue #919). Nil when CacheSignalDelay == 0 (oracle mode).
+	// Default CacheSignalDelay is 2s, matching llm-d's speculative TTL.
+	staleCache *StaleCacheIndex
+
 	// Flow control state (issue #882, GIE parity).
 	// When flowControlEnabled is false, these fields are nil/zero (BC-1 pass-through).
 	flowControlEnabled bool
@@ -281,12 +286,19 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	cs.snapshotProvider = NewCachedSnapshotProvider(instanceMap, newObservabilityConfig(config.SnapshotRefreshInterval))
 
 	// Build cacheQueryFn from constructed instances for precise prefix cache scoring.
-	cs.cacheQueryFn = make(map[string]func([]int) int, len(cs.instances))
-	for _, inst := range cs.instances {
-		id := string(inst.ID())
-		inst := inst // capture for closure
-		cs.cacheQueryFn[id] = func(tokens []int) int {
-			return inst.GetCachedBlockCount(tokens)
+	if config.CacheSignalDelay > 0 {
+		// Stale mode: scorers query periodically-refreshed snapshots (issue #919).
+		cs.staleCache = NewStaleCacheIndex(instanceMap, config.CacheSignalDelay)
+		cs.cacheQueryFn = cs.staleCache.BuildCacheQueryFn()
+	} else {
+		// Oracle mode (default): scorers query live KV cache state.
+		cs.cacheQueryFn = make(map[string]func([]int) int, len(cs.instances))
+		for _, inst := range cs.instances {
+			id := string(inst.ID())
+			inst := inst // capture for closure
+			cs.cacheQueryFn[id] = func(tokens []int) int {
+				return inst.GetCachedBlockCount(tokens)
+			}
 		}
 	}
 
@@ -496,6 +508,10 @@ func (c *ClusterSimulator) Run() error {
 			if inst.State == InstanceStateDraining && inst.QueueDepth() == 0 && inst.BatchSize() == 0 {
 				inst.TransitionTo(InstanceStateTerminated)
 				c.releaseInstanceGPUs(inst)
+				if c.staleCache != nil {
+					c.staleCache.RemoveInstance(inst.ID())
+				}
+				delete(c.cacheQueryFn, string(inst.ID()))
 				// I1: a non-zero inFlightRequests at termination time indicates a bookkeeping bug.
 				// This would cause isBusy() to permanently return true, silently stranding
 				// all deferred Batch/Background requests until horizon.
