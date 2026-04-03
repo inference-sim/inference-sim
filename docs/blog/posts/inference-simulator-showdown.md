@@ -22,16 +22,6 @@ Choosing the right inference simulator can save weeks of experimentation and tho
 
 <!-- more -->
 
-## Table of Contents
-1. [Why Simulator Choice Matters](#why-simulator-choice-matters)
-2. [Meet the Contenders](#meet-the-contenders)
-3. [How We Tested](#how-we-tested)
-4. [Accuracy and Coverage: Who Gets It Right?](#accuracy-and-coverage)
-5. [Speed vs. Accuracy: The Pareto Frontier](#speed-vs-accuracy-the-pareto-frontier)
-6. [Which Simulator For Your Use Case](#which-simulator-for-your-use-case)
-7. [The Bottom Line](#the-bottom-line)
-
-
 <a name="why-simulator-choice-matters"></a>
 ## Why Simulator Choice Matters
 
@@ -56,7 +46,7 @@ Five popular simulators. Five completely different bets on how to predict LLM in
 
 **[AIConfigurator](https://github.com/ai-dynamo/aiconfigurator)** uses operation-level profiling—break inference into GEMM, attention, communication ops, measure them on hardware, then compose the results. Dense models only.
 
-**[BLIS](https://github.com/inference-sim/inference-sim)** combines analytical roofline with discrete-event scheduling. Multiple latency modes available — we are comparing Roofline (analytical baseline) and Evolved (learned coefficients).
+**[BLIS](https://github.com/inference-sim/inference-sim)** combines discrete-event simulation with latency models comprising analytical physics-based basis functions and coefficient training. Multiple latency modes available — we are comparing Roofline (analytical baseline) and Evolved (learned coefficients).
 
 Let us answer the question: which approach actually delivers?
 
@@ -155,7 +145,7 @@ Median runtime and speedup relative to real GPU experiments. LLM-Optimizer is 22
 
 An exciting emerging area: using RL or automated search to *discover* better serving algorithms ([ADRS](https://sky.cs.berkeley.edu/project/adrs/)). The simulator becomes a training environment for exploring scheduling policies and batching strategies.
 
-**Speed dominates.** Training loops need many simulations. At 353 seconds per run, LLMServingSim is impractical. Even Vidur at 9.1 seconds adds up fast. You need sub-second simulation for training to complete in reasonable time.
+**Speed dominates.** Training loops need many simulations. At ~6 minutes per run, LLMServingSim is impractical. Even Vidur at 9.1 seconds adds up fast. You need sub-second simulation for training to complete in reasonable time.
 
 **LLM-Optimizer (0.1s) is the natural fit for single-instance simulation.** Fast enough for large-scale exploration when you are discovering scheduling policies or batching strategies for a single server. Misses queueing dynamics, but for discovery you are learning *relative* performance across policies, not absolute accuracy. Limited to single-instance—cannot model multi-instance features like routing.
 
