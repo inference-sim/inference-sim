@@ -309,7 +309,7 @@ class InnerLoopOptimizer:
                 "--beta-coeffs", beta_str,
                 "--blis-binary", "../blis",
                 "--data-dir", self.data_dir,
-                "--max-workers", str(max(1, 4 // self.n_jobs))
+                "--max-workers", str(max(4, 4 // self.n_jobs))
             ],
             capture_output=True,
             check=True,

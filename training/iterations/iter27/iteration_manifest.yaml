@@ -1,0 +1,21 @@
+iteration: 27
+latency_backend_name: "evolved"
+modified_files:
+  - "sim/latency/evolved_model.go"
+reasoning: |
+  Iteration 27: CMA-ES joint 6-parameter optimization from iter26 warm start.
+
+  Search parameters: β₁ₐ, β₄, β₅, β₇, β₈, β₂ᵦ (6 active; β₂ₐ/β₁ᵦ frozen=0, β₃/β₆/α frozen).
+  Sampler: CMA-ES, n_jobs=4, 500-trial budget, patience=150.
+  Best at trial 62/141: loss=34.61% (iter26 baseline: 37.42%).
+
+  Key interaction: β₄ (TP All-Reduce) joint-optimal at 0.752 — nearly 2× the isolated
+  golden-section value (0.410) — allowing β₅ (49.6→32.4) and β₇ (169→126) to retreat.
+
+  Run Command:
+    cd training && python3.11 inner_loop_optimize.py \
+      --iteration 27 --n-trials 500 --n-jobs 4 --patience 150 \
+      --timeout 200 --sampler cmaes \
+      --data-dir /path/to/trainval_data
+
+timestamp: "2026-04-03T09:00:00.000000"

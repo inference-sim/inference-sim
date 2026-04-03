@@ -1,0 +1,6 @@
+observation,trial_approx,loss,note
+first_valid,0,37.4244,warm-start (iter26 coefficients)
+generation_2,15,36.9577,CMA-ES first improvement
+generation_5,50,35.9645,further improvement
+best,62,34.6083,best found; patience clock reset
+plateau_end,141,34.6083,run stopped (user request at patience=79/150)
