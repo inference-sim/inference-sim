@@ -157,19 +157,6 @@ An exciting emerging area: using RL or AI-driven search to *discover* better ser
 
 **Use BLIS-Evolved for multi-instance algorithms** At 0.8s per run, BLIS-Evolved is 8× slower than LLM-Optimizer. If you specifically need multi-instance capabilities such as routing policy exploration and can accept the 8× slowdown, then use BLIS-Evolved for this use-case.
 
-<a name="the-bottom-line"></a>
-## The Bottom Line
-
-There is no universal best simulator - only the best simulator *for your problem*.
-
-Across 38 experiments, we measured a massive accuracy spread between simulators. We evaluated on three axes: **Accuracy** (can you trust it?), **Speed** (can you explore with it?), **Coverage** (can it model your deployment?). Fast but inaccurate wastes time. Accurate but slow limits exploration. Neither matters if coverage gaps block your architecture.
-
-**For capacity planning:** LLM-Optimizer allows rapid configuration exploration, but cannot be used for tail latency-based SLO predictions. Identify promising candidates through LLM-Optimizer, then validate using the slower and more accurate BLIS-Evolved.
-
-**For algorithm discovery:** For single-instance experiments, LLM-Optimizer wins at 0.1s per run — 8× faster than any alternative. However, for multi-instance algorithm exploration, rely on BLIS-Evolved.
-
-Marketing claims are not validation. Run the simulator on *your* model, *your* hardware, *your* workload, then compare against real measurements. Test before you trust.
-
 ## Limitations and Future Work
 
 This evaluation focuses on single-instance vLLM serving accuracy. What we did not test:
@@ -181,3 +168,16 @@ This evaluation focuses on single-instance vLLM serving accuracy. What we did no
 **Production drift:** Models update, workloads shift, hardware changes. How quickly do simulators become stale? How much re-profiling or re-training is needed? We tested accuracy at a point in time, not over time.
 
 Acknowledging these gaps does not diminish the findings — it clarifies their scope. Single-instance latency prediction is the foundation, but production serving is a bigger problem.
+
+<a name="the-bottom-line"></a>
+## The Bottom Line
+
+There is no universal best simulator - only the best simulator *for your problem*.
+
+Across 38 experiments, we measured a massive accuracy spread between simulators. We evaluated on three axes: **Accuracy** (can you trust it?), **Speed** (can you explore with it?), **Coverage** (can it model your deployment?). Fast but inaccurate wastes time. Accurate but slow limits exploration. Neither matters if coverage gaps block your architecture.
+
+**The workflow:** Use LLM-Optimizer for rapid exploration (0.1s per run), then validate promising candidates with BLIS-Evolved (0.8s per run, supports tail latency SLOs). For multi-instance algorithm discovery, use BLIS-Evolved directly.
+
+**Single-instance caveat:** Our evaluation focused on single-server latency prediction. Most simulators (LLM-Optimizer, Vidur, LLMServingSim, AIConfigurator) only support single-instance simulation. BLIS-Evolved supports multi-instance cluster modeling, but we did not evaluate cluster-level accuracy in this study.
+
+Marketing claims are not validation. Run the simulator on *your* model, *your* hardware, *your* workload, then compare against real measurements. Test before you trust.
