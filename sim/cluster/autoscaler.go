@@ -201,12 +201,14 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 		if d.Delta > 0 {
 			cooldown := cs.config.ScaleUpCooldownUs
 			if cooldown > 0 && nowUs-p.lastScaleUpAt[d.ModelID] < int64(cooldown) {
+				logrus.Debugf("[autoscaler] scale-up for model %q suppressed by cooldown (cooldown=%gμs, elapsed=%dμs)", d.ModelID, cooldown, nowUs-p.lastScaleUpAt[d.ModelID])
 				continue // suppressed by scale-up cooldown (INV-A7)
 			}
 			p.lastScaleUpAt[d.ModelID] = nowUs
 		} else {
 			cooldown := cs.config.ScaleDownCooldownUs
 			if cooldown > 0 && nowUs-p.lastScaleDownAt[d.ModelID] < int64(cooldown) {
+				logrus.Debugf("[autoscaler] scale-down for model %q suppressed by cooldown (cooldown=%gμs, elapsed=%dμs)", d.ModelID, cooldown, nowUs-p.lastScaleDownAt[d.ModelID])
 				continue // suppressed by scale-down cooldown (INV-A7)
 			}
 			p.lastScaleDownAt[d.ModelID] = nowUs
@@ -215,8 +217,11 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 	}
 
 	// Stage 5: Schedule ScaleActuationEvent (even when filtered is empty, to preserve event semantics).
-	// DelaySpec.Sample(rng) is safe with rng=nil when Stddev=0 (constant delay needs no RNG).
-	// If Stddev>0 and rng=nil, Sample will panic — that is a configuration error, not a code bug.
+	// Guard: rng is required when Stddev > 0. autoscalerPipeline always sets rng via
+	// subsystemAutoscaler; a nil rng here is a construction error caught early.
+	if p.rng == nil && cs.config.ActuationDelay.Stddev > 0 {
+		panic("[autoscaler] ActuationDelay.Stddev > 0 requires non-nil RNG — set subsystemAutoscaler in constructor")
+	}
 	actuationAt := nowUs + cs.config.ActuationDelay.Sample(p.rng)
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &ScaleActuationEvent{At: actuationAt, Decisions: filtered},

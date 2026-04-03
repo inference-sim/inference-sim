@@ -421,6 +421,7 @@ func (e *ScalingTickEvent) Priority() int     { return 8 }
 // Full orchestrator logic is wired in US1 (T009–T015).
 func (e *ScalingTickEvent) Execute(cs *ClusterSimulator) {
 	if cs.autoscaler == nil {
+		logrus.Warnf("[autoscaler] ScalingTickEvent at t=%d fired but cs.autoscaler is nil — event dropped", e.At)
 		return
 	}
 	cs.autoscaler.tick(cs, e.At)
@@ -441,6 +442,9 @@ func (e *ScaleActuationEvent) Priority() int     { return 9 }
 // Full actuator logic is wired in US3 (T019–T023).
 func (e *ScaleActuationEvent) Execute(cs *ClusterSimulator) {
 	if cs.autoscaler == nil {
+		if len(e.Decisions) > 0 {
+			logrus.Warnf("[autoscaler] ScaleActuationEvent at t=%d: %d decision(s) dropped — cs.autoscaler is nil", e.At, len(e.Decisions))
+		}
 		return
 	}
 	cs.autoscaler.actuate(cs, e.Decisions)

@@ -59,6 +59,16 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 		inst.Model = cs.config.Model
 		inst.nodeID = p.nodeID
 		inst.allocatedGPUIDs = p.gpuIDs
+		inst.TPDegree = p.tpDegree
+		// Phase 1C: look up CostPerHour for this GPU type (mirrors cluster.go startup path).
+		var poolCostPerHour float64
+		for i := range cs.config.NodePools {
+			if cs.config.NodePools[i].GPUType == p.gpuType {
+				poolCostPerHour = cs.config.NodePools[i].CostPerHour
+				break
+			}
+		}
+		inst.CostPerHour = poolCostPerHour
 		inst.warmUpRemaining = cs.config.InstanceLifecycle.WarmUpRequestCount
 		inst.TransitionTo(InstanceStateLoading)
 
