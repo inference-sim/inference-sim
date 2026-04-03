@@ -25,11 +25,9 @@ Choosing the right inference simulator can save weeks of experimentation and tho
 <a name="why-simulator-choice-matters"></a>
 ## Why Simulator Choice Matters
 
-Imagine you are deploying Mixtral-8x7B for your AI-powered coding assistant. Four GPUs or eight? Which hardware meets your SLO targets? Running real experiments could take days and cost thousands. A simulator promises answers in minutes — if you trust its predictions.
+Imagine you are deploying Mixtral-8x7B for your AI-powered coding assistant. Four GPUs or eight? Which hardware meets your SLO targets? Running real experiments could take days and cost thousands. A simulator promises answers in minutes — if you trust its predictions. The stakes are high. A 50% prediction error translates directly to over-provisioning or under-provisioning GPUs. At H100 cloud rates, mis-sizing a production cluster by even 20-30 GPUs costs six figures annually in wasted capacity or missed SLOs!
 
-We tested five simulators across 38 production experiments to find out which ones deliver. The results: accuracy ranged from 1% to 76% error on identical workloads. Speed varied from milliseconds to hours. Some tools couldn't run two-thirds of our experiments.
-
-The stakes are high. A 50% prediction error translates directly to over-provisioning or under-provisioning GPUs. At H100 cloud rates, mis-sizing a production cluster by even 20-30 GPUs costs six figures annually in wasted capacity or missed SLOs.
+We tested five simulators across 38 production experiments to find out which ones deliver. The results: accuracy ranged from 1% to 76% error on identical workloads. Speed varied from milliseconds to hours. Some tools couldn't run two-thirds of our experiments. Each simulator brings its own strengths and weaknesses.
 
 This guide breaks down which simulator to use for capacity planning, configuration search, and algorithm discovery — backed by hard data from 38 experiments across six models, four workload types, and three GPU types.
 
@@ -46,7 +44,7 @@ Five popular simulators. Five completely different bets on how to predict LLM in
 
 **[AIConfigurator](https://github.com/ai-dynamo/aiconfigurator)** uses operation-level profiling—break inference into GEMM, attention, communication ops, measure them on hardware, then compose the results. Dense models only.
 
-**[BLIS](https://github.com/inference-sim/inference-sim)** combines discrete-event simulation with latency models comprising analytical physics-based basis functions and coefficient training. Multiple latency modes available — we are comparing Roofline (analytical baseline) and Evolved (learned coefficients).
+**[BLIS](https://github.com/inference-sim/inference-sim)** combines discrete-event simulation with latency models comprising analytical physics-based basis functions and coefficient training. Multiple latency modes available, we are comparing Roofline (analytical baseline) and Evolved (learned coefficients).
 
 Let us answer the question: which approach actually delivers?
 
@@ -55,7 +53,15 @@ Let us answer the question: which approach actually delivers?
 
 We ran **38 experiments** on production hardware using vLLM v0.15.1, then asked each simulator to predict the results.
 
-The test matrix: **6 models** spanning dense and MoE architectures—Llama-3.1-8B, Qwen3-14B, CodeLlama-34B, Llama-2-70B (dense), and Mixtral-8x7B, Mixtral-8x22B (MoE). **3 GPU types:** H100, A100-80GB, L40S. Serving parameters swept: tensor parallelism (1/2/4/8), CPU offload (on/off), vLLM GPU memory utilization (0.90/0.95), vLLM chunk size (1024/2048/4096).
+The test matrix: 
+
+- **6 models** spanning dense and MoE architectures—Llama-3.1-8B, Qwen3-14B, CodeLlama-34B, Llama-2-70B (dense), and Mixtral-8x7B, Mixtral-8x22B (MoE).  
+- **3 GPU types:** H100, A100-80GB, L40S. 
+- Serving parameters swept: 
+  - tensor parallelism (1/2/4/8), 
+  - CPU offload (on/off), 
+  - LLM GPU memory utilization (0.90/0.95), 
+  - vLLM chunk size (1024/2048/4096).
 
 For workloads, we used **[ServeGen](https://github.com/alibaba/ServeGen) multi-turn traces from production logs**, split into four categories:
 
