@@ -58,7 +58,7 @@ import (
 // memory-bound (single-token bandwidth). Each uses only its bottleneck term.
 //
 // Where β₁/β₁ₐ-β₃ are dimensionless roofline corrections (analytical prior ≈ 1.0),
-// β₁ᵦ (β₉) is prefill memory correction, β₄ is TP communication correction,
+// β₁ᵦ (β₉) is prefill memory correction, β₄ is TP All-Reduce correction (absorbs NVLink/HBM bandwidth ratio; ~0.27 on H100),
 // β₅ is µs/layer, β₆ is µs/request, β₇ is µs/step,
 // β₈ is µs/MoE-layer (router gating + token permutation + EP communication overhead;
 // zero for dense models since nMoELayers=0).
@@ -215,9 +215,28 @@ func (m *EvolvedModel) StepTime(batch []*sim.Request) int64 {
 	}
 	tWeight := (bytesAttn + bytesFfn) / m.bwHbmUs
 
-	// T_tp: TP communication time (µs)
-	// Currently zeroed (β₄=0 in trained-roofline fit; TP cost absorbed into β₅·L).
-	tTp := 0.0
+	// T_tp: TP All-Reduce communication time (µs)
+	//
+	// Each transformer layer performs All-Reduces over NVLink for the attention
+	// sublayers. Dense layers also All-Reduce their FFN; MoE layers use EP
+	// All-to-All instead (captured by β₈). We count All-Reduce "units" as:
+	//   dense layer → 2 units (attention + FFN)
+	//   MoE layer   → 1 unit  (attention only; FFN replaced by EP All-to-All)
+	//
+	// Volume per unit: totalTokens × hiddenDim × 2 bytes (BF16) × 2 (ring phases)
+	// Denominator: bwHbmUs normalises to µs; β₄ absorbs NVLink/HBM ratio (~0.27 on H100)
+	//
+	// Generalisation:
+	//   TP=1 → (TP-1)/TP = 0 → tTp = 0 (no communication)
+	//   Dense-only model → numMoELayers=0 → units = 2·numDenseLayers
+	//   Mixtral (all MoE) → numDenseLayers=0 → units = numMoELayers (half of dense equivalent)
+	var tTp float64
+	if m.tp > 1 {
+		totalTokens := totalPrefillTokens + totalDecodeTokens
+		allReduceUnits := float64(2*m.numDenseLayers + m.numMoELayers)
+		tpFactor := float64(m.tp-1) / float64(m.tp)
+		tTp = allReduceUnits * totalTokens * float64(m.hiddenDim) * 2.0 * 2.0 * tpFactor / m.bwHbmUs
+	}
 
 	// ─── Step-time formula ─────────────────────────────────────────────
 	//
