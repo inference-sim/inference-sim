@@ -135,9 +135,7 @@ Accuracy tells you whether to trust a simulator. Speed tells you whether you can
 
 **Accuracy matters most.** A fast simulator with 50% error means wrong resource decisions: overprovision and waste budget, or underprovision and miss SLOs. BLIS-Evolved delivered 11.79% E2E error and 22.81% TTFT error across 38 experiments (Figure 1). Pure roofline models miss queueing delays and communication overhead—errors that compound when planning at scale.
 
-**For capacity planning with SLO targets:** Use **BLIS-Evolved** if you need broad coverage across models/GPUs/workloads at 0.8s per run. It supports vLLM arguments (chunk size, GPU memory utilization, CPU offload) and tail latency metrics (P90/P99). Analytical simulators (LLM-Optimizer, AIConfigurator) only predict mean latency and cannot validate tail latency SLOs.
-
-**Use Vidur if scheduler-level fidelity matters more than speed.** Vidur replicates vLLM's scheduling logic at the finest grain, making it the most faithful simulator for understanding queueing behavior. Trade-off: requires profiling each model upfront and runs slower (9.1s median runtime). Best for deep investigations of specific model-hardware combinations.
+**For capacity planning with SLO targets:** Use **BLIS-Evolved** if you need broad coverage across models/GPUs/workloads at 0.8s per run. It supports vLLM arguments (chunk size, GPU memory utilization, CPU offload) and tail latency metrics (P90/P99). Analytical simulators (LLM-Optimizer, AIConfigurator) only predict mean latency and cannot validate tail latency SLOs. Vidur is too slow and inaccurate for this task.
 
 **For rapid config space exploration (mean latency only):** Use **LLM-Optimizer** first, then validate with BLIS-Evolved. At 0.1 seconds per config, LLM-Optimizer sweeps 1,000 candidates in 2 minutes to eliminate obviously bad configs (wrong TP, insufficient memory). But roofline accuracy degrades on high-parallelism and MoE workloads (Figure 1) — validate final candidates with BLIS-Evolved (0.8s per config, 13 minutes for 1,000 runs) before making resource commitments.
 
