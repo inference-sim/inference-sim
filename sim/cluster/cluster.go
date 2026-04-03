@@ -1206,7 +1206,7 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		delete(m.RequestTTFTs, pfx)
 		delete(m.RequestTTFTs, dec)
 		if completed {
-			if hasPrefillTTFT && parent.TransferCompleteTime > 0 && parent.DecodeSubReq != nil && len(parent.DecodeSubReq.ITL) > 0 {
+			if hasPrefillTTFT && parent.TransferStartTime > 0 && parent.TransferCompleteTime >= parent.TransferStartTime && parent.DecodeSubReq != nil && len(parent.DecodeSubReq.ITL) > 0 {
 				transferDuration := float64(parent.TransferCompleteTime - parent.TransferStartTime)
 				firstDecodeStep := float64(parent.DecodeSubReq.ITL[0])
 				newTTFT := prefillTTFT + transferDuration + firstDecodeStep
