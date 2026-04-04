@@ -1,0 +1,19 @@
+iteration: 29
+latency_backend_name: "evolved"
+modified_files: []
+outcome: "improvement"
+reasoning: |
+  Iteration 29: Sequential golden section search over 5 coefficients.
+  Starting from iter27 best (34.6564%). Search order: β₃ → β₆ → β₅ → β₈ → β₂ᵦ.
+  β₃ and β₆ were frozen in iter27's joint search (primary targets).
+  Each phase uses --max-workers 15 to parallelize all 15 experiments per evaluation.
+
+  Key result: β₆ (per-request overhead) jumped 2.805 → 4.417 (+57%), confirming it
+  was misaligned after iter27's joint move. Final loss: 34.5675% (-0.089 vs iter27).
+  No code changes; coefficients are passed via CLI flags.
+
+  Run Command:
+    cd /Users/sri/Documents/Projects/inference-sim && \
+    python3.11 training/iter29_golden_section.py
+
+timestamp: "2026-04-04T11:33:11.000000"

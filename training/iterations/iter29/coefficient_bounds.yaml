@@ -1,0 +1,59 @@
+# Iteration 29: Sequential golden section search over 5 coefficients
+# Starting point: iter27 best (all other coefficients frozen at iter27 values)
+# Order: β₃ → β₆ → β₅ → β₈ → β₂ᵦ
+# Rationale: β₃ and β₆ were frozen in iter27's joint search;
+#   β₅/β₈/β₂ᵦ changed significantly in iter27 and may benefit from re-search
+#   with wider bounds after the joint move.
+#
+# Each search starts from the best value found by the previous search.
+# Bounds are wider than iter28 to allow genuine exploration.
+
+iter27_best:
+  alpha: [15563.199579, 777.3455, 45.907545]
+  beta:
+    - 0.152128    # β₁ₐ  index 0  frozen
+    - 0.0         # β₂ₐ  index 1  frozen=0
+    - 1.363621    # β₃   index 2  SEARCH 1
+    - 0.752037    # β₄   index 3  frozen
+    - 32.394131   # β₅   index 4  SEARCH 3
+    - 2.805128    # β₆   index 5  SEARCH 2
+    - 126.024825  # β₇   index 6  frozen
+    - 505.508488  # β₈   index 7  SEARCH 4
+    - 0.0         # β₁ᵦ  index 8  frozen=0
+    - 1.922366    # β₂ᵦ  index 9  SEARCH 5
+
+search_plan:
+  - name: "β₃_weight_loading"
+    beta_index: 2
+    lo: 0.5
+    hi: 3.0
+    tol: 0.015
+    reason: "Frozen in iter27 joint search; may be misaligned after β₄/β₅/β₇ shifted"
+
+  - name: "β₆_per_request"
+    beta_index: 5
+    lo: 0.5
+    hi: 8.0
+    tol: 0.05
+    reason: "Frozen in iter27 joint search; per-request overhead may need re-calibration"
+
+  - name: "β₅_per_layer"
+    beta_index: 4
+    lo: 5.0
+    hi: 80.0
+    tol: 0.5
+    reason: "Dropped 35% in iter27 (49.6→32.4); wider bounds may reveal a better point"
+
+  - name: "β₈_moe_overhead"
+    beta_index: 7
+    lo: 200.0
+    hi: 900.0
+    tol: 5.0
+    reason: "Rose 18% in iter27 (427→505); may push further given β₃/β₆ updates"
+
+  - name: "β₂ᵦ_decode_memory"
+    beta_index: 9
+    lo: 0.5
+    hi: 5.0
+    tol: 0.02
+    reason: "Rose 52% in iter27 (1.263→1.922); largest relative change, worth re-checking"
