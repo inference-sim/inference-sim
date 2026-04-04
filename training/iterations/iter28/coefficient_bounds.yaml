@@ -1,0 +1,37 @@
+# Iteration 28: TPE on all 8 active betas from iter27 warm start
+# Frozen: β₂ₐ=0, β₁ᵦ=0, all α (request-level, decoupled from step physics)
+# Active: β₁ₐ, β₃, β₄, β₅, β₆, β₇, β₈, β₂ᵦ
+
+alpha_bounds:
+  - [15560.0, 15567.0]    # α₀ frozen
+  - [775.0,   780.0]      # α₁ frozen
+  - [45.7,    46.2]       # α₂ frozen
+
+alpha_initial:
+  - 15563.199579
+  - 777.3455
+  - 45.907545
+
+beta_bounds:
+  - [0.05,  0.40]    # β₁ₐ  ACTIVE: prefill compute
+  - [0.0,   0.001]   # β₂ₐ  frozen=0
+  - [0.8,   2.0]     # β₃   ACTIVE: weight loading
+  - [0.3,   1.5]     # β₄   ACTIVE: TP All-Reduce (centered on 0.752)
+  - [10.0,  70.0]    # β₅   ACTIVE: per-layer (centered on 32.4)
+  - [1.0,   6.0]     # β₆   ACTIVE: per-request
+  - [40.0,  250.0]   # β₇   ACTIVE: per-step constant (centered on 126)
+  - [300.0, 700.0]   # β₈   ACTIVE: per-MoE-layer (centered on 505)
+  - [0.0,   0.001]   # β₁ᵦ  frozen=0
+  - [0.8,   3.0]     # β₂ᵦ  ACTIVE: decode memory (centered on 1.922)
+
+beta_initial:
+  - 0.152128    # β₁ₐ  iter27
+  - 0.0         # β₂ₐ  frozen
+  - 1.363621    # β₃   iter27
+  - 0.752037    # β₄   iter27
+  - 32.394131   # β₅   iter27
+  - 2.805128    # β₆   iter27
+  - 126.024825  # β₇   iter27
+  - 505.508488  # β₈   iter27
+  - 0.0         # β₁ᵦ  frozen
+  - 1.922366    # β₂ᵦ  iter27

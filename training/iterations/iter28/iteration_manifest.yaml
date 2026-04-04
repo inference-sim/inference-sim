@@ -1,0 +1,18 @@
+iteration: 28
+latency_backend_name: "evolved"
+modified_files: []
+outcome: "no_improvement"
+reasoning: |
+  Iteration 28: TPE cross-check on iter27's CMA-ES result.
+  8 active betas, tighter bounds centered on iter27 values.
+  162 trials (patience=150 fired at trial 150; 12 in-flight completed after stop).
+  Best: trial 0 (warm-start) at 34.6564% — no improvement over iter27.
+  No code changes; iter27 coefficients remain current best.
+
+  Run Command:
+    cd training && python3.11 inner_loop_optimize.py \
+      --iteration 28 --n-trials 500 --n-jobs 15 --patience 150 \
+      --timeout 200 --sampler tpe \
+      --data-dir trainval_data
+
+timestamp: "2026-04-04T10:15:30.000000"

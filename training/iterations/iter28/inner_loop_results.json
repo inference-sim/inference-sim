@@ -1,0 +1,477 @@
+{
+  "iteration": 28,
+  "backend_name": "evolved",
+  "timestamp": "2026-04-04T10:16:00.656524",
+  "optimization": {
+    "n_trials": 162,
+    "optimization_time_seconds": 1642.4227230548859,
+    "num_errors": 4
+  },
+  "best_params": {
+    "alpha": [
+      15563.199579,
+      777.3455,
+      45.907545
+    ],
+    "beta": [
+      0.152128,
+      0.0,
+      1.363621,
+      0.752037,
+      32.394131,
+      2.805128,
+      126.024825,
+      505.508488,
+      0.0,
+      1.922366
+    ]
+  },
+  "loss": {
+    "overall_loss": 34.65639761497179,
+    "ttft_rmse": 22.838759480213685,
+    "e2e_rmse": 11.817638134758102
+  },
+  "per_experiment_results": [
+    {
+      "experiment_folder": "/Users/sri/Documents/Projects/inference-sim/training/trainval_data/48-llama-4-scout-17b-16e-tp2-reasoning-lite-2-1",
+      "model": "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
+      "workload": "reasoning-lite-2-1",
+      "ttft_mean_ape": 59.3514704118312,
+      "e2e_mean_ape": 8.214568725278347,
+      "combined_loss": 67.56603913710956,
+      "wall_clock_seconds": 8.711952375015244,
+      "latency_ape": {
+        "e2e": {
+          "mean": 8.214568725278347,
+          "p90": 13.379874658426674,
+          "p99": 17.188413604185012
+        },
+        "ttft": {
+          "mean": 59.3514704118312,
+          "p90": 62.502728172529245,
+          "p99": 66.06321038860497
+        },
+        "itl": {
+          "mean": 9.824449618808746
+        }
+      },
+      "throughput_ape": {
+        "input_tokens_per_sec": 0.5443846823402774,
+        "output_tokens_per_sec": 63.828228040143465,
+        "requests_per_sec": 64.5040218976358
+      }
+    },
+    {
+      "experiment_folder": "/Users/sri/Documents/Projects/inference-sim/training/trainval_data/20260217-231439-llama-2-7b-tp1-general",
+      "model": "meta-llama/Llama-2-7b-hf",
+      "workload": "general",
+      "ttft_mean_ape": 27.35804010664602,
+      "e2e_mean_ape": 25.228899126900533,
+      "combined_loss": 52.58693923354655,
+      "wall_clock_seconds": 7.761440041940659,
+      "latency_ape": {
+        "e2e": {
+          "mean": 25.228899126900533,
+          "p90": 21.78398695088983,
+          "p99": 20.647158540580797
+        },
+        "ttft": {
+          "mean": 27.35804010664602,
+          "p90": 34.071123334516564,
+          "p99": 34.9558576701366
+        },
+        "itl": {
+          "mean": 37.018233464937616
+        }
+      },
+      "throughput_ape": {
+        "input_tokens_per_sec": 45.21387356615476,
+        "output_tokens_per_sec": 54.205753593216066,
+        "requests_per_sec": 61.24342962574041
+      }
+    },
+    {
+      "experiment_folder": "/Users/sri/Documents/Projects/inference-sim/training/trainval_data/67-llama-2-7b-hf-tp1-reasoning-lite-1-1",
+      "model": "meta-llama/Llama-2-7b-hf",
+      "workload": "reasoning-lite-1-1",
+      "ttft_mean_ape": 36.51959977923313,
+      "e2e_mean_ape": 0.849883304134076,
+      "combined_loss": 37.36948308336721,
+      "wall_clock_seconds": 18.982743790955283,
+      "latency_ape": {
+        "e2e": {
+          "mean": 0.849883304134076,
+          "p90": 13.403167720477482,
+          "p99": 18.599064270974832
+        },
+        "ttft": {
+          "mean": 36.51959977923313,
+          "p90": 37.34702043317959,
+          "p99": 46.44223438245989
+        },
+        "itl": {
+          "mean": 23.25585822459573
+        }
+      },
+      "throughput_ape": {
+        "input_tokens_per_sec": 2.2420511988259886,
+        "output_tokens_per_sec": 34.95928452010196,
+        "requests_per_sec": 49.66854722764548
+      }
+    },
+    {
+      "experiment_folder": "/Users/sri/Documents/Projects/inference-sim/training/trainval_data/20260217-162547-llama-2-7b-tp1-roleplay",
+      "model": "meta-llama/Llama-2-7b-hf",
+      "workload": "roleplay",
+      "ttft_mean_ape": 16.84086518527373,
+      "e2e_mean_ape": 16.807812078373217,
+      "combined_loss": 33.648677263646945,
+      "wall_clock_seconds": 4.91378187504597,
+      "latency_ape": {
+        "e2e": {
+          "mean": 16.807812078373217,
+          "p90": 10.676646339393322,
+          "p99": 7.598546466709491
+        },
+        "ttft": {
+          "mean": 16.84086518527373,
+          "p90": 14.489732846359868,
+          "p99": 4.047819445565552
+        },
+        "itl": {
+          "mean": 4.06657575792206
+        }
+      },
+      "throughput_ape": {
+        "input_tokens_per_sec": 4.438192437869011,
+        "output_tokens_per_sec": 22.026541807459203,
+        "requests_per_sec": 35.6279719430387
+      }
+    },
+    {
+      "experiment_folder": "/Users/sri/Documents/Projects/inference-sim/training/trainval_data/21-llama-4-scout-17b-16e-tp2-roleplay-2",
+      "model": "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
+      "workload": "roleplay-2",
+      "ttft_mean_ape": 16.198914424694756,
+      "e2e_mean_ape": 16.099580324168674,
+      "combined_loss": 32.29849474886343,
+      "wall_clock_seconds": 0.9361084590200335,
+      "latency_ape": {
+        "e2e": {
+          "mean": 16.099580324168674,
+          "p90": 11.622337027077881,
+          "p99": 7.435183013765394
+        },
+        "ttft": {
+          "mean": 16.198914424694756,
+          "p90": 12.19903654636355,
+          "p99": 39.91030478656988
+        },
+        "itl": {
+          "mean": 15.935568828544572
+        }
+      },
+      "throughput_ape": {
+        "input_tokens_per_sec": 3.2531562107888696,
+        "output_tokens_per_sec": 51.45756865774139,
+        "requests_per_sec": 51.483404018422426
+      }
+    },
+    {
+      "experiment_folder": "/Users/sri/Documents/Projects/inference-sim/training/trainval_data/17-llama-4-scout-17b-16e-tp2-general-lite-2-1",
+      "model": "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
+      "workload": "general-lite-2-1",
+      "ttft_mean_ape": 13.33207955053405,
+      "e2e_mean_ape": 15.729064165403663,
+      "combined_loss": 29.061143715937714,
+      "wall_clock_seconds": 0.4268844580510631,
+      "latency_ape": {
+        "e2e": {
+          "mean": 15.729064165403663,
+          "p90": 15.213678573846268,
+          "p99": 12.911893283325822
+        },
+        "ttft": {
+          "mean": 13.33207955053405,
+          "p90": 13.570584472869882,
+          "p99": 35.95589734934292
+        },
+        "itl": {
+          "mean": 15.584987590502045
+        }
+      },
+      "throughput_ape": {
+        "input_tokens_per_sec": 41.68907866389664,
+        "output_tokens_per_sec": 57.54280480740803,
+        "requests_per_sec": 57.546242636978285
+      }
+    },
+    {
+      "experiment_folder": "/Users/sri/Documents/Projects/inference-sim/training/trainval_data/20-llama-4-scout-17b-16e-tp2-codegen-2",
+      "model": "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
+      "workload": "codegen-2",
+      "ttft_mean_ape": 23.497741409562355,
+      "e2e_mean_ape": 5.04169537013461,
+      "combined_loss": 28.539436779696963,
+      "wall_clock_seconds": 0.7663202499970794,
+      "latency_ape": {
+        "e2e": {
+          "mean": 5.04169537013461,
+          "p90": 0.5681199242403538,
+          "p99": 1.22847351958117
+        },
+        "ttft": {
+          "mean": 23.497741409562355,
+          "p90": 24.03540912825522,
+          "p99": 37.79111888600032
+        },
+        "itl": {
+          "mean": 4.929589981815208
+        }
+      },
+      "throughput_ape": {
+        "input_tokens_per_sec": 34.39648562373236,
+        "output_tokens_per_sec": 58.45870533418237,
+        "requests_per_sec": 58.46197009717778
+      }
+    },
+    {
+      "experiment_folder": "/Users/sri/Documents/Projects/inference-sim/training/trainval_data/63-mistral-nemo-12b-tp1-codegen-1-1",
+      "model": "mistralai/Mistral-Nemo-Instruct-2407",
+      "workload": "codegen-1-1",
+      "ttft_mean_ape": 8.199565385197264,
+      "e2e_mean_ape": 18.02648775054252,
+      "combined_loss": 26.226053135739782,
+      "wall_clock_seconds": 3.392646541004069,
+      "latency_ape": {
+        "e2e": {
+          "mean": 18.02648775054252,
+          "p90": 26.158069138365303,
+          "p99": 26.28918003083659
+        },
+        "ttft": {
+          "mean": 8.199565385197264,
+          "p90": 8.093172600768309,
+          "p99": 7.801379528791823
+        },
+        "itl": {
+          "mean": 17.711086706189967
+        }
+      },
+      "throughput_ape": {
+        "input_tokens_per_sec": 34.17111518658107,
+        "output_tokens_per_sec": 52.963966781146986,
+        "requests_per_sec": 52.93726204141975
+      }
+    },
+    {
+      "experiment_folder": "/Users/sri/Documents/Projects/inference-sim/training/trainval_data/62-mistral-nemo-12b-tp2-general-lite-2-1",
+      "model": "mistralai/Mistral-Nemo-Instruct-2407",
+      "workload": "general-lite-2-1",
+      "ttft_mean_ape": 19.9386387388176,
+      "e2e_mean_ape": 5.195650299867202,
+      "combined_loss": 25.1342890386848,
+      "wall_clock_seconds": 1.60824912507087,
+      "latency_ape": {
+        "e2e": {
+          "mean": 5.195650299867202,
+          "p90": 5.314817275270851,
+          "p99": 4.979783040322566
+        },
+        "ttft": {
+          "mean": 19.9386387388176,
+          "p90": 18.467601608455865,
+          "p99": 6.560627163270367
+        },
+        "itl": {
+          "mean": 4.481915189869228
+        }
+      },
+      "throughput_ape": {
+        "input_tokens_per_sec": 41.359215829620716,
+        "output_tokens_per_sec": 54.00927203990631,
+        "requests_per_sec": 54.020699441550754
+      }
+    },
+    {
+      "experiment_folder": "/Users/sri/Documents/Projects/inference-sim/training/trainval_data/60-llama-3-1-70b-tp4-general-lite-4-1",
+      "model": "meta-llama/Llama-3.1-70B-Instruct",
+      "workload": "general-lite-4-1",
+      "ttft_mean_ape": 16.15060733639929,
+      "e2e_mean_ape": 3.208331039704751,
+      "combined_loss": 19.358938376104042,
+      "wall_clock_seconds": 1.6651473329402506,
+      "latency_ape": {
+        "e2e": {
+          "mean": 3.208331039704751,
+          "p90": 6.389568351800867,
+          "p99": 8.079497830687373
+        },
+        "ttft": {
+          "mean": 16.15060733639929,
+          "p90": 16.13169348117091,
+          "p99": 24.06306745674966
+        },
+        "itl": {
+          "mean": 4.570262106483507
+        }
+      },
+      "throughput_ape": {
+        "input_tokens_per_sec": 42.24693834004994,
+        "output_tokens_per_sec": 55.83047194349865,
+        "requests_per_sec": 56.33549195826233
+      }
+    },
+    {
+      "experiment_folder": "/Users/sri/Documents/Projects/inference-sim/training/trainval_data/66-qwen2-5-7b-instruct-tp1-reasoning-lite-1-1",
+      "model": "Qwen/Qwen2.5-7B-Instruct",
+      "workload": "reasoning-lite-1-1",
+      "ttft_mean_ape": 8.94151256017091,
+      "e2e_mean_ape": 6.964247113676036,
+      "combined_loss": 15.905759673846946,
+      "wall_clock_seconds": 8.203910749987699,
+      "latency_ape": {
+        "e2e": {
+          "mean": 6.964247113676036,
+          "p90": 9.698661850360496,
+          "p99": 16.991492229333918
+        },
+        "ttft": {
+          "mean": 8.94151256017091,
+          "p90": 24.339370048662616,
+          "p99": 47.94412718766764
+        },
+        "itl": {
+          "mean": 8.200502834082862
+        }
+      },
+      "throughput_ape": {
+        "input_tokens_per_sec": 2.7825435816720185,
+        "output_tokens_per_sec": 39.97221304336151,
+        "requests_per_sec": 40.72736564545828
+      }
+    },
+    {
+      "experiment_folder": "/Users/sri/Documents/Projects/inference-sim/training/trainval_data/65-01-ai-yi-34b-tp2-general-lite-2-1",
+      "model": "01-ai/Yi-34B",
+      "workload": "general-lite-2-1",
+      "ttft_mean_ape": 7.440844197293414,
+      "e2e_mean_ape": 6.930319103371422,
+      "combined_loss": 14.371163300664836,
+      "wall_clock_seconds": 1.6672183750197291,
+      "latency_ape": {
+        "e2e": {
+          "mean": 6.930319103371422,
+          "p90": 9.73138568733782,
+          "p99": 9.361756514915543
+        },
+        "ttft": {
+          "mean": 7.440844197293414,
+          "p90": 6.458081809896962,
+          "p99": 19.62898958926811
+        },
+        "itl": {
+          "mean": 7.178171072987366
+        }
+      },
+      "throughput_ape": {
+        "input_tokens_per_sec": 42.295869322714864,
+        "output_tokens_per_sec": 56.400766972440294,
+        "requests_per_sec": 56.18659530142772
+      }
+    },
+    {
+      "experiment_folder": "/Users/sri/Documents/Projects/inference-sim/training/trainval_data/20260217-155451-llama-2-7b-tp1-codegen",
+      "model": "meta-llama/Llama-2-7b-hf",
+      "workload": "codegen",
+      "ttft_mean_ape": 6.7759603066874785,
+      "e2e_mean_ape": 7.421885725402742,
+      "combined_loss": 14.19784603209022,
+      "wall_clock_seconds": 3.8392647500149906,
+      "latency_ape": {
+        "e2e": {
+          "mean": 7.421885725402742,
+          "p90": 22.431972633854077,
+          "p99": 32.3636773373476
+        },
+        "ttft": {
+          "mean": 6.7759603066874785,
+          "p90": 1.2015707887334253,
+          "p99": 16.523004837529015
+        },
+        "itl": {
+          "mean": 15.268602207474407
+        }
+      },
+      "throughput_ape": {
+        "input_tokens_per_sec": 35.145066403073535,
+        "output_tokens_per_sec": 38.75107471693279,
+        "requests_per_sec": 51.42650384057662
+      }
+    },
+    {
+      "experiment_folder": "/Users/sri/Documents/Projects/inference-sim/training/trainval_data/61-llama-3-1-70b-tp4-codegen-4-1",
+      "model": "meta-llama/Llama-3.1-70B-Instruct",
+      "workload": "codegen-4-1",
+      "ttft_mean_ape": 4.596679480195197,
+      "e2e_mean_ape": 7.181711593211859,
+      "combined_loss": 11.778391073407057,
+      "wall_clock_seconds": 3.423841541982256,
+      "latency_ape": {
+        "e2e": {
+          "mean": 7.181711593211859,
+          "p90": 7.524297199519295,
+          "p99": 9.188093910960413
+        },
+        "ttft": {
+          "mean": 4.596679480195197,
+          "p90": 19.328273333381564,
+          "p99": 79.12286130083396
+        },
+        "itl": {
+          "mean": 8.543871201391399
+        }
+      },
+      "throughput_ape": {
+        "input_tokens_per_sec": 35.10240055417867,
+        "output_tokens_per_sec": 54.83005398015042,
+        "requests_per_sec": 55.28646629379542
+      }
+    },
+    {
+      "experiment_folder": "/Users/sri/Documents/Projects/inference-sim/training/trainval_data/64-qwen2-5-7b-instruct-tp1-roleplay-1-1",
+      "model": "Qwen/Qwen2.5-7B-Instruct",
+      "workload": "roleplay-1-1",
+      "ttft_mean_ape": 3.9371910032646986,
+      "e2e_mean_ape": 3.192918468884164,
+      "combined_loss": 7.130109472148863,
+      "wall_clock_seconds": 4.931921583018266,
+      "latency_ape": {
+        "e2e": {
+          "mean": 3.192918468884164,
+          "p90": 4.456636917563403,
+          "p99": 7.012829309798383
+        },
+        "ttft": {
+          "mean": 3.9371910032646986,
+          "p90": 12.36389294507437,
+          "p99": 20.16414739755528
+        },
+        "itl": {
+          "mean": 3.9356500733224387
+        }
+      },
+      "throughput_ape": {
+        "input_tokens_per_sec": 4.844415377770931,
+        "output_tokens_per_sec": 31.818652639423124,
+        "requests_per_sec": 31.961454683617223
+      }
+    }
+  ],
+  "error_log": [
+    "Timeout: alpha=[15563.121408544412, 776.9134932634503, 46.16680925241436], beta=[0.09734760552310184, 0.00012311886260384542, 1.8761177767593846, 0.8413911298225343, 55.607562398480454, 3.4955434248870216, 223.3344497816809, 457.8573654807677, 0.0008371644959836079, 2.0929143822571437]",
+    "Timeout: alpha=[15561.288514354283, 778.0460443472955, 45.88541526179367], beta=[0.1417532425138322, 0.0001488897657998426, 1.282497940349561, 0.8030204547386117, 55.41674541677721, 2.5178375823786885, 66.99723167630358, 503.5339918192501, 0.0009476601433745479, 2.7108902977046965]",
+    "Timeout: alpha=[15560.11433354501, 777.2992640098339, 45.80871791945905], beta=[0.14602688076865322, 0.0005692008402292618, 1.224666750868825, 0.7738097700062289, 53.916886354100896, 5.876856053980344, 159.9375184396394, 557.9897928177775, 0.0006305933459231906, 2.6532661214535356]",
+    "Timeout: alpha=[15566.620698932858, 777.5189865161411, 46.14147389383937], beta=[0.14239378857551607, 0.00015668087584950287, 1.4319769343734703, 0.35709499296380365, 29.435767197378343, 4.869470552335956, 204.30743993429135, 313.61946812164325, 1.0069397488100651e-05, 2.768500815512949]"
+  ]
+}
