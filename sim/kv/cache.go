@@ -130,6 +130,10 @@ func (kvc *KVCacheState) removeFromFreeList(block *KVBlock) {
 // block's hash, so each iteration hashes only blockSize tokens plus a
 // fixed-length prev hash (O(K * blockSize) total, down from O(K^2 * blockSize)
 // with flat-prefix hashing). Breaks on first miss.
+//
+// CO-CHANGE: SnapshotCachedBlocksFn (same file) replicates this algorithm on a
+// frozen map[string]int64 snapshot. If this loop, the hash chain logic, or the
+// break condition changes, update SnapshotCachedBlocksFn to match.
 func (kvc *KVCacheState) GetCachedBlocks(tokens []int) (blockIDs []int64) {
 	n := util.Len64(tokens) / kvc.BlockSizeTokens
 	prevHash := ""
