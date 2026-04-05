@@ -67,6 +67,41 @@ func TestStaleCacheIndex_AddInstance(t *testing.T) {
 	assert.Equal(t, 0, idx.Query("inst-new", tokens))
 }
 
+func TestStaleCacheIndex_RefreshIfNeeded_BoundaryAtIntervalMinusOne(t *testing.T) {
+	// GIVEN a StaleCacheIndex with interval=1000 and a populated cache
+	cfg := newTestSimConfig()
+	cfg.Horizon = 10_000_000
+	cfg.TotalKVBlocks = 100
+	cfg.BlockSizeTokens = 4
+	inst := NewInstanceSimulator("inst-0", cfg)
+
+	instances := map[InstanceID]*InstanceSimulator{"inst-0": inst}
+	idx := NewStaleCacheIndex(instances, 1000) // lastRefresh=0
+
+	tokens := []int{1, 2, 3, 4, 5, 6, 7, 8}
+
+	// Populate cache
+	req := &sim.Request{
+		ID: "r1", ArrivalTime: 0, InputTokens: tokens,
+		OutputTokens: []int{100}, State: sim.StateQueued,
+	}
+	inst.InjectRequest(req)
+	inst.Run()
+	require.Greater(t, inst.GetCachedBlockCount(tokens), 0, "live cache must have blocks")
+
+	// WHEN RefreshIfNeeded is called at exactly clock = interval - 1 = 999
+	// THEN the snapshot is NOT refreshed (999 - 0 = 999 < 1000, strict < boundary)
+	idx.RefreshIfNeeded(999)
+	assert.Equal(t, 0, idx.Query("inst-0", tokens),
+		"snapshot must NOT be refreshed at clock=interval-1 (strict < boundary)")
+
+	// WHEN RefreshIfNeeded is called at clock = interval = 1000
+	// THEN the snapshot IS refreshed (1000 - 0 = 1000 >= 1000)
+	idx.RefreshIfNeeded(1000)
+	assert.Greater(t, idx.Query("inst-0", tokens), 0,
+		"snapshot must be refreshed at clock=interval (>= threshold)")
+}
+
 func TestStaleCacheIndex_AddInstance_DuplicateID_Panics(t *testing.T) {
 	// GIVEN a StaleCacheIndex with instance "inst-0" already registered
 	cfg := newTestSimConfig()
