@@ -386,8 +386,10 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 // Precondition: cs.cacheQueryFn must be non-nil (initialised before calling).
 func (cs *ClusterSimulator) registerInstanceCacheQueryFn(id InstanceID, inst *InstanceSimulator) {
 	if cs.staleCache != nil {
-		// Stale mode: register with StaleCacheIndex; the closure reads s.Query at call
-		// time, so it picks up refreshed snapshots automatically after RefreshIfNeeded.
+		// Stale mode: register with StaleCacheIndex; the closure delegates to s.Query at
+		// call time, so it picks up refreshed snapshots automatically after RefreshIfNeeded.
+		// CO-CHANGE: BuildCacheQueryFn (stale_cache.go) produces equivalent closures for
+		// the initial instance set — update both if closure semantics change.
 		cs.staleCache.AddInstance(id, inst)
 		idStr := string(id)
 		cs.cacheQueryFn[idStr] = func(tokens []int) int {
