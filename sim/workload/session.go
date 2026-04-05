@@ -27,28 +27,29 @@ const (
 // SessionBlueprint describes a session's full shape. Created during workload generation,
 // immutable after creation. Each session has its own deterministic RNG (INV-6).
 type SessionBlueprint struct {
-	SessionID       string
-	ClientID        string
-	MaxRounds       int
-	UnlimitedRounds bool   // when true, session continues past MaxRounds until budget/horizon/timeout/drop
-	ContextGrowth   string // "accumulate" or ""
-	ThinkTimeUs   int64
-	Timeout       *int64 // per-request timeout from ClientSpec (nil = default 300s)
-	Horizon       int64  // simulation horizon for BC-19 guard
-	InputSampler  LengthSampler
-	OutputSampler LengthSampler
-	RNG           *rand.Rand // per-session, seeded deterministically from client RNG
-	Prefix        []int      // shared system prompt tokens
-	TenantID      string
-	SLOClass      string
-	Model         string
+	SessionID        string
+	ClientID         string
+	MaxRounds        int
+	UnlimitedRounds  bool   // when true, session continues past MaxRounds until budget/horizon/timeout/drop
+	ContextGrowth    string // "accumulate" or ""
+	ThinkTimeUs      int64
+	Timeout          *int64 // per-request timeout from ClientSpec (nil = default 300s)
+	Horizon          int64  // simulation horizon for BC-19 guard
+	InputSampler     LengthSampler
+	OutputSampler    LengthSampler
+	RNG              *rand.Rand    // per-session, seeded deterministically from client RNG
+	ThinkTimeSampler LengthSampler // optional: per-round think time in µs; nil = use constant ThinkTimeUs
+	Prefix           []int         // shared system prompt tokens
+	TenantID         string
+	SLOClass         string
+	Model            string
 }
 
 // activeSession tracks mutable per-session lifecycle state.
 type activeSession struct {
 	blueprint     *SessionBlueprint
 	currentRound  int
-	contextTokens []int        // accumulated input + output from prior rounds
+	contextTokens []int // accumulated input + output from prior rounds
 	state         sessionState
 }
 
@@ -148,7 +149,13 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 	bp := sess.blueprint
 
 	// Horizon guard (BC-19): don't generate follow-ups past horizon
-	arrivalTime := tick + bp.ThinkTimeUs
+	var thinkTime int64
+	if bp.ThinkTimeSampler != nil {
+		thinkTime = int64(bp.ThinkTimeSampler.Sample(bp.RNG))
+	} else {
+		thinkTime = bp.ThinkTimeUs
+	}
+	arrivalTime := tick + thinkTime
 	if arrivalTime > bp.Horizon {
 		sess.state = sessionHorizonInterrupted
 		return nil
