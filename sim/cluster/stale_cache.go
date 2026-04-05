@@ -6,6 +6,13 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// instanceCacheEntry holds a live instance reference and its current stale snapshot closure.
+// The entry is owned exclusively by StaleCacheIndex.
+type instanceCacheEntry struct {
+	inst    *InstanceSimulator
+	staleFn func([]int) int
+}
+
 // StaleCacheIndex manages per-instance frozen snapshots of KV cache hash maps.
 // When cache-signal-delay > 0, the cacheQueryFn closures delegate to this index
 // instead of querying live instance state, simulating asynchronous KV event
@@ -21,31 +28,28 @@ import (
 //	When delay=0, this type is not used (oracle mode).
 //	Default delay is 2s (DefaultCacheSignalDelay), matching llm-d's speculative TTL.
 type StaleCacheIndex struct {
-	instances   map[InstanceID]*InstanceSimulator
-	staleFns    map[string]func([]int) int // instanceID → frozen snapshot closure
-	interval    int64                      // refresh interval (microseconds)
-	lastRefresh int64                      // sim clock at last refresh
+	entries     map[InstanceID]instanceCacheEntry
+	interval    int64 // refresh interval (microseconds)
+	lastRefresh int64 // sim clock at last refresh
 }
 
 // NewStaleCacheIndex creates a StaleCacheIndex and takes an initial snapshot of all instances.
 // interval is the refresh interval in simulated microseconds. Panics if interval <= 0.
+// instances may be nil or empty.
 func NewStaleCacheIndex(instances map[InstanceID]*InstanceSimulator, interval int64) *StaleCacheIndex {
 	if interval <= 0 {
 		panic(fmt.Sprintf("NewStaleCacheIndex: interval must be > 0, got %d", interval))
 	}
 	idx := &StaleCacheIndex{
-		instances:   make(map[InstanceID]*InstanceSimulator),
-		staleFns:    make(map[string]func([]int) int),
+		entries:     make(map[InstanceID]instanceCacheEntry, len(instances)),
 		interval:    interval,
 		lastRefresh: 0,
 	}
 	for id, inst := range instances {
-		idx.instances[id] = inst
-		idx.staleFns[string(id)] = inst.SnapshotCacheQueryFn()
-		if inst.sim != nil {
-			if _, ok := inst.sim.KVCache.(cacheSnapshotCapable); !ok {
-				logrus.Warnf("[stale-cache] instance %s: KVCache does not implement cacheSnapshotCapable — falling back to live query; stale-cache semantics not honored", id)
-			}
+		warnIfNotSnapshotCapable(id, inst)
+		idx.entries[id] = instanceCacheEntry{
+			inst:    inst,
+			staleFn: inst.SnapshotCacheQueryFn(),
 		}
 	}
 	return idx
@@ -57,8 +61,9 @@ func (s *StaleCacheIndex) RefreshIfNeeded(clock int64) {
 	if clock-s.lastRefresh < s.interval {
 		return
 	}
-	for id, inst := range s.instances {
-		s.staleFns[string(id)] = inst.SnapshotCacheQueryFn()
+	for id, e := range s.entries {
+		e.staleFn = e.inst.SnapshotCacheQueryFn()
+		s.entries[id] = e // re-assign: map stores value type, not pointer
 	}
 	s.lastRefresh = clock
 }
@@ -66,8 +71,8 @@ func (s *StaleCacheIndex) RefreshIfNeeded(clock int64) {
 // Query returns the cached block count for the given instance and tokens,
 // using the stale snapshot. Returns 0 if the instance is unknown.
 func (s *StaleCacheIndex) Query(instanceID string, tokens []int) int {
-	if fn, ok := s.staleFns[instanceID]; ok {
-		return fn(tokens)
+	if e, ok := s.entries[InstanceID(instanceID)]; ok {
+		return e.staleFn(tokens)
 	}
 	logrus.Warnf("[stale-cache] Query for unknown instance %q — returning 0", instanceID)
 	return 0
@@ -76,35 +81,43 @@ func (s *StaleCacheIndex) Query(instanceID string, tokens []int) int {
 // RemoveInstance unregisters an instance (e.g., on termination) and frees its
 // snapshot closure. No-op if the instance is not registered.
 func (s *StaleCacheIndex) RemoveInstance(id InstanceID) {
-	delete(s.instances, id)
-	delete(s.staleFns, string(id))
+	delete(s.entries, id)
 }
 
 // AddInstance registers a new instance (e.g., from NodeReadyEvent) and takes
 // an initial snapshot. Panics if the instance ID is already registered.
 func (s *StaleCacheIndex) AddInstance(id InstanceID, inst *InstanceSimulator) {
-	if _, exists := s.instances[id]; exists {
+	if _, exists := s.entries[id]; exists {
 		panic("StaleCacheIndex.AddInstance: instance " + string(id) + " already registered")
 	}
-	s.instances[id] = inst
-	s.staleFns[string(id)] = inst.SnapshotCacheQueryFn()
-	if inst.sim != nil {
-		if _, ok := inst.sim.KVCache.(cacheSnapshotCapable); !ok {
-			logrus.Warnf("[stale-cache] instance %s: KVCache does not implement cacheSnapshotCapable — falling back to live query; stale-cache semantics not honored", id)
-		}
+	warnIfNotSnapshotCapable(id, inst)
+	s.entries[id] = instanceCacheEntry{
+		inst:    inst,
+		staleFn: inst.SnapshotCacheQueryFn(),
 	}
 }
 
 // BuildCacheQueryFn returns a cacheQueryFn map where each closure delegates to the
-// stale snapshot. The returned closures read the current staleFns[id] at call time
-// (not a captured copy), so they automatically use the latest snapshot after refresh.
+// stale snapshot. The returned closures call s.Query at call time (not a captured copy),
+// so they automatically use the latest snapshot after RefreshIfNeeded.
 func (s *StaleCacheIndex) BuildCacheQueryFn() map[string]func([]int) int {
-	result := make(map[string]func([]int) int, len(s.instances))
-	for id := range s.instances {
+	result := make(map[string]func([]int) int, len(s.entries))
+	for id := range s.entries {
 		idStr := string(id)
 		result[idStr] = func(tokens []int) int {
 			return s.Query(idStr, tokens)
 		}
 	}
 	return result
+}
+
+// warnIfNotSnapshotCapable logs a warning if inst's KVCache does not implement
+// cacheSnapshotCapable. Called once at registration (not on every refresh) to avoid log spam.
+func warnIfNotSnapshotCapable(id InstanceID, inst *InstanceSimulator) {
+	if inst.sim == nil {
+		return
+	}
+	if _, ok := inst.sim.KVCache.(cacheSnapshotCapable); !ok {
+		logrus.Warnf("[stale-cache] instance %s: KVCache does not implement cacheSnapshotCapable — falling back to live query; stale-cache semantics not honored", id)
+	}
 }
