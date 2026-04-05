@@ -67,6 +67,25 @@ func TestStaleCacheIndex_AddInstance(t *testing.T) {
 	assert.Equal(t, 0, idx.Query("inst-new", tokens))
 }
 
+func TestStaleCacheIndex_AddInstance_DuplicateID_Panics(t *testing.T) {
+	// GIVEN a StaleCacheIndex with instance "inst-0" already registered
+	cfg := newTestSimConfig()
+	cfg.TotalKVBlocks = 100
+	cfg.BlockSizeTokens = 4
+	inst := NewInstanceSimulator("inst-0", cfg)
+	instances := map[InstanceID]*InstanceSimulator{"inst-0": inst}
+	idx := NewStaleCacheIndex(instances, 1000)
+
+	// WHEN AddInstance is called with the same ID again
+	// THEN it panics with a message containing "already registered"
+	defer func() {
+		r := recover()
+		assert.NotNil(t, r, "expected panic for duplicate instance ID")
+		assert.Contains(t, fmt.Sprintf("%v", r), "already registered")
+	}()
+	idx.AddInstance("inst-0", inst)
+}
+
 func TestStaleCacheIndex_BuildCacheQueryFn_DelegatesToStale(t *testing.T) {
 	// GIVEN a StaleCacheIndex with one instance
 	cfg := newTestSimConfig()
@@ -250,6 +269,9 @@ func TestStaleCacheIndex_RemoveInstance(t *testing.T) {
 
 	// AND refresh should not panic (no instances to snapshot)
 	idx.RefreshIfNeeded(2000)
+
+	// AND Query for the removed instance returns 0 (warn-and-return-0 path)
+	assert.Equal(t, 0, idx.Query("inst-0", tokens), "query for removed instance should return 0")
 }
 
 func TestStaleCacheIndex_RemoveInstance_Idempotent(t *testing.T) {
