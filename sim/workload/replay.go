@@ -81,6 +81,11 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 //
 // thinkTimeOverrideUs > 0: use constant think time for all sessions.
 // thinkTimeOverrideUs == 0: derive per-round think time from trace arrival gaps.
+//   NOTE: gap-derived think time = ArrivalTimeUs[i] - ArrivalTimeUs[i-1], which
+//   equals (service_time[i-1] + client_think_time) when the trace was produced by
+//   blis observe. It is NOT pure client think time. Use thinkTimeOverrideUs (i.e.
+//   --think-time-ms) to supply the actual client-side think time when replaying an
+//   observe-generated trace with accurate inter-round spacing.
 // horizon <= 0: defaults to math.MaxInt64.
 func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeOverrideUs int64, horizon int64) ([]*sim.Request, []SessionBlueprint, error) {
 	if trace == nil || len(trace.Records) == 0 {
@@ -199,6 +204,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeOverrideU
 			OutputTokens:    outputTokens,
 			MaxOutputLen:    len(outputTokens),
 			State:           sim.StateQueued,
+			// ScheduledStepIdx, FinishedStepIdx default to 0 (R4: consistent with LoadTraceV2Requests)
 			TenantID:        r0.TenantID,
 			SLOClass:        r0.SLOClass,
 			SessionID:       sessionID,

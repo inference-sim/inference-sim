@@ -94,29 +94,33 @@ Example:
 		var requests []*sim.Request
 		var sessionMgr *workload.SessionManager
 		if replaySessionMode == "closed-loop" {
-			// Closed-loop: inject only round-0 requests; SessionManager drives follow-ups
-			r0Requests, blueprints, bErr := workload.LoadTraceV2SessionBlueprints(traceData, seed, 0, 0)
+			// Closed-loop: inject only round-0 requests; SessionManager drives follow-ups.
+			// Compute the preliminary horizon from trace records directly (O(n)) so we can
+			// call LoadTraceV2SessionBlueprints exactly once with correct parameters.
+			thinkTimeUs := int64(replayThinkTimeMs) * 1000
+			replayHorizonPrelim := maxInjectedArrivalTimeUs(traceData)
+			switch {
+			case replayHorizonPrelim > math.MaxInt64/2:
+				replayHorizonPrelim = math.MaxInt64
+			case replayHorizonPrelim <= 0:
+				replayHorizonPrelim = 600_000_000
+			default:
+				replayHorizonPrelim *= 2
+			}
+			if cmd.Flags().Changed("horizon") {
+				replayHorizonPrelim = simulationHorizon
+			}
+			r0Requests, blueprints, bErr := workload.LoadTraceV2SessionBlueprints(traceData, seed, thinkTimeUs, replayHorizonPrelim)
 			if bErr != nil {
 				logrus.Fatalf("Failed to build session blueprints from trace: %v", bErr)
 			}
 			requests = r0Requests
 			if len(blueprints) == 0 {
+				// BC-12: warning path — no automated unit test (integration-level only)
 				logrus.Warnf("--session-mode closed-loop: no session records found in trace; all requests injected with fixed timing")
 			} else {
-				// Recompute blueprints with correct horizon and think-time override
-				// (horizon is derived from requests, so we must compute it now)
-				replayHorizonPrelim := computeReplayHorizon(requests)
-				if cmd.Flags().Changed("horizon") {
-					replayHorizonPrelim = simulationHorizon
-				}
-				thinkTimeUs := int64(replayThinkTimeMs) * 1000
-				r0Requests2, blueprints2, bErr2 := workload.LoadTraceV2SessionBlueprints(traceData, seed, thinkTimeUs, replayHorizonPrelim)
-				if bErr2 != nil {
-					logrus.Fatalf("Failed to build session blueprints from trace: %v", bErr2)
-				}
-				requests = r0Requests2
-				sessionMgr = workload.NewSessionManager(blueprints2)
-				logrus.Infof("Closed-loop mode: %d session blueprints, %d round-0 requests", len(blueprints2), len(requests))
+				sessionMgr = workload.NewSessionManager(blueprints)
+				logrus.Infof("Closed-loop mode: %d session blueprints, %d round-0 requests", len(blueprints), len(requests))
 			}
 		} else {
 			// Fixed mode (default): pre-baked arrivals, existing behavior (BC-8)
@@ -338,8 +342,25 @@ func init() {
 	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens) for blis calibrate consumption.")
 	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\"")
 	replayCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", `Session replay mode: "fixed" (pre-baked arrivals from trace) or "closed-loop" (load-adaptive follow-ups via SessionManager)`)
-	replayCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "Override think time between session rounds in milliseconds (0 = derive from trace inter-round gaps; requires --session-mode closed-loop)")
+	replayCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "Override think time between session rounds in milliseconds (0 = derive from trace inter-round arrival gaps, which include prior-round service time — use this flag to supply the actual client-side think time; requires --session-mode closed-loop)")
 	rootCmd.AddCommand(replayCmd)
+}
+
+// maxInjectedArrivalTimeUs returns the maximum ArrivalTimeUs among records that
+// will be injected as initial requests in closed-loop mode: session round-0 records
+// and all non-session records. Used to compute the preliminary horizon in O(n)
+// without a full LoadTraceV2SessionBlueprints call.
+func maxInjectedArrivalTimeUs(trace *workload.TraceV2) int64 {
+	var max int64
+	for _, rec := range trace.Records {
+		if rec.SessionID != "" && rec.RoundIndex != 0 {
+			continue // skip follow-up session rounds
+		}
+		if rec.ArrivalTimeUs > max {
+			max = rec.ArrivalTimeUs
+		}
+	}
+	return max
 }
 
 // computeReplayHorizon returns the simulation horizon for a trace replay.

@@ -249,6 +249,34 @@ func TestLoadTraceV2SessionBlueprints_OverrideThinkTime(t *testing.T) {
 	}
 }
 
+func TestLoadTraceV2SessionBlueprints_NonMonotoneGapClamped(t *testing.T) {
+	// GIVEN a 2-round session where round-1 has an earlier arrival than round-0
+	// (clock skew in observed trace), THEN ThinkTimeSampler returns 0 (not negative),
+	// preserving INV-3 (clock monotonicity) in the follow-up arrival computation.
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 5000},
+			{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 200, OutputTokens: 80, ArrivalTimeUs: 3000},
+		},
+	}
+
+	_, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, 0, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(blueprints) != 1 {
+		t.Fatalf("expected 1 blueprint, got %d", len(blueprints))
+	}
+	bp := blueprints[0]
+	if bp.ThinkTimeSampler == nil {
+		t.Fatal("expected ThinkTimeSampler to be set for multi-round session")
+	}
+	got := bp.ThinkTimeSampler.Sample(nil)
+	if got != 0 {
+		t.Errorf("clamped think time = %d, want 0 (negative gap must be clamped to 0)", got)
+	}
+}
+
 func TestLoadTraceV2SessionBlueprints_NonConsecutiveRoundIndex_Error(t *testing.T) {
 	trace := &TraceV2{
 		Records: []TraceRecord{
