@@ -82,21 +82,9 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 		cs.inFlightRequests[string(p.id)] = 0
 
 		// Register with cacheQueryFn for precise prefix scoring (deferred instances).
+		// registerInstanceCacheQueryFn handles both oracle and stale modes (R23).
 		if cs.cacheQueryFn != nil {
-			if cs.staleCache != nil {
-				// Stale mode: register with StaleCacheIndex and delegate to stale queries (issue #919).
-				cs.staleCache.AddInstance(p.id, inst)
-				idStr := string(p.id)
-				cs.cacheQueryFn[idStr] = func(tokens []int) int {
-					return cs.staleCache.Query(idStr, tokens)
-				}
-			} else {
-				// Oracle mode: direct live query.
-				inst := inst // capture for closure
-				cs.cacheQueryFn[string(p.id)] = func(tokens []int) int {
-					return inst.GetCachedBlockCount(tokens)
-				}
-			}
+			cs.registerInstanceCacheQueryFn(p.id, inst)
 		}
 
 		// Wire OnRequestDone callback — mirror startup path in NewClusterSimulator (R4).
