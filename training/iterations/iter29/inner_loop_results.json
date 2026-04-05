@@ -1,0 +1,86 @@
+{
+  "iteration": 29,
+  "backend_name": "evolved",
+  "timestamp": "2026-04-04T11:33:11.764500",
+  "optimization": {
+    "method": "sequential_golden_section",
+    "search_order": [
+      "\u03b2\u2083 weight_loading",
+      "\u03b2\u2086 per_request",
+      "\u03b2\u2085 per_layer",
+      "\u03b2\u2088 moe_overhead",
+      "\u03b2\u2082\u1d66 decode_memory"
+    ]
+  },
+  "best_params": {
+    "alpha": [
+      15563.199579,
+      777.3455,
+      45.907545
+    ],
+    "beta": [
+      0.152128,
+      0.0,
+      1.36252915,
+      0.752037,
+      32.09546717,
+      4.41684444,
+      126.024825,
+      481.8613888,
+      0.0,
+      1.94710771
+    ]
+  },
+  "loss": {
+    "overall_loss": 34.56751041177321,
+    "iter27_baseline": 34.6564,
+    "improvement": 0.0889
+  },
+  "phase_results": [
+    {
+      "phase": 1,
+      "coeff": "\u03b2\u2083 weight_loading",
+      "beta_index": 2,
+      "old_value": 1.363621,
+      "best_value": 1.36252915,
+      "best_loss": 34.72080270669194,
+      "elapsed_s": 313.9
+    },
+    {
+      "phase": 2,
+      "coeff": "\u03b2\u2086 per_request",
+      "beta_index": 5,
+      "old_value": 2.805128,
+      "best_value": 4.41684444,
+      "best_loss": 34.545445254382464,
+      "elapsed_s": 292.3
+    },
+    {
+      "phase": 3,
+      "coeff": "\u03b2\u2085 per_layer",
+      "beta_index": 4,
+      "old_value": 32.394131,
+      "best_value": 32.09546717,
+      "best_loss": 34.65567914520459,
+      "elapsed_s": 288.8
+    },
+    {
+      "phase": 4,
+      "coeff": "\u03b2\u2088 moe_overhead",
+      "beta_index": 7,
+      "old_value": 505.508488,
+      "best_value": 481.8613888,
+      "best_loss": 34.58821152850537,
+      "elapsed_s": 286.5
+    },
+    {
+      "phase": 5,
+      "coeff": "\u03b2\u2082\u1d66 decode_memory",
+      "beta_index": 9,
+      "old_value": 1.922366,
+      "best_value": 1.94710771,
+      "best_loss": 34.56751041177321,
+      "elapsed_s": 322.8
+    }
+  ]
+}
