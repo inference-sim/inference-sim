@@ -137,39 +137,9 @@ Runtime determines whether a simulator is practical for your workflow.
 
 *Figure 5: Speed vs accuracy Pareto frontier across all 38 experiments. LLM-Optimizer occupies the fast-but-rough corner (0.1s runtime, instant feedback, no queueing dynamics). LLMServingSim sits in the slow-but-detailed region (353s runtime, yet higher MAPE than BLIS-Evolved—fidelity alone does not guarantee accuracy). BLIS-Evolved hits the frontier elbow (0.8s runtime, 11.79% E2E MAPE), balancing accuracy and speed. Error bars show median runtime with interquartile range.*
 
-## Lessons Learned
-
-### Lesson 1: Coverage Determines Usability
-
-Before worrying about accuracy, check whether a simulator supports your deployment. MoE models, diverse GPU types, and vLLM configurations eliminated 50-90% of experiments for most tools. If a simulator can't model your architecture, accuracy is irrelevant.
-
-### Lesson 2: Speed-Accuracy Trade-Offs Are Real
-
-Analytical simulators (LLM-Optimizer, BLIS-Roofline) offer instant feedback but miss queueing dynamics and communication overhead. Discrete-event simulators (BLIS-Evolved, Vidur, LLMServingSim) capture these effects but take longer.
-
-A hybrid workflow emerged as practical: use fast analytical models for initial exploration (1,000 configs in 2 minutes with LLM-Optimizer), then validate promising candidates with discrete-event simulation (13 minutes for 1,000 configs with BLIS-Evolved).
-
-### Lesson 3: Use Case Determines Requirements
-
-**For capacity planning with tail latency SLOs:** You need discrete-event simulation to model queueing and output P90/P99 metrics. Analytical simulators only predict mean latency. Among discrete-event simulators, coverage and speed matter — you'll run many experiments.
-
-**For rapid configuration search:** Analytical models (LLM-Optimizer, BLIS-Roofline) excel at pruning obviously bad configs. Use them first, validate finalists with discrete-event simulation.
-
-**For AI-driven algorithm discovery:** Speed dominates. Training loops need sub-second simulation. LLM-Optimizer (0.1s) makes large-scale exploration feasible. BLIS-Evolved (0.8s) offers multi-instance modeling if you need it and can accept the slowdown.
-
-### Lesson 4: Learned Coefficients Help
-
-Comparing BLIS-Roofline (analytical) to BLIS-Evolved (learned coefficients) showed consistent accuracy improvements. Pure roofline models miss second-order effects — queueing delays, communication overhead, architecture-specific behavior. Training coefficients on real data captures these gaps without sacrificing generality.
-
-### Lesson 5: No Universal "Best" Simulator
-
-Each simulator offers different trade-offs. Fast but inaccurate wastes time on bad decisions. Accurate but slow limits exploration. High accuracy on limited coverage doesn't help if your architecture isn't supported.
-
-The practical answer: combine multiple simulators. Use fast analytical models for exploration, discrete-event simulation for validation, and always test on your specific model/hardware/workload before trusting predictions.
-
 ## Practical Guidance by Use Case
 
-Based on our experiments, here's what worked for different workflows:
+Based on our experiments, here's what worked for different workflows. **A critical first step:** Before evaluating accuracy, check whether a simulator supports your deployment. MoE models, diverse GPU types, and vLLM configurations eliminated 50-90% of experiments for most tools. If a simulator can't model your architecture, accuracy is irrelevant.
 
 ### Capacity Planning & Configuration Search
 
@@ -199,11 +169,11 @@ Based on our experiments, here's what worked for different workflows:
 
 This evaluation focused on single-instance vLLM serving accuracy. We did not test:
 
-**Multi-instance cluster dynamics:** Real deployments use load balancing, request routing, and autoscaling across multiple instances. How simulators predict cluster-level behavior remains open.
+- **Multi-instance cluster dynamics:** Real deployments use load balancing, request routing, and autoscaling across multiple instances. How simulators predict cluster-level behavior remains open.
 
-**Cost modeling:** Capacity planning involves cost per token and total cost of ownership, not just latency. Cost prediction accuracy is future work.
+- **Cost modeling:** Capacity planning involves cost per token and total cost of ownership, not just latency. Cost prediction accuracy is future work.
 
-**Production drift:** Models update, workloads shift, hardware changes. How quickly simulators become stale and how much re-profiling is needed remains unexplored.
+- **Production drift:** Models update, workloads shift, hardware changes. How quickly simulators become stale and how much re-profiling is needed remains unexplored.
 
 Acknowledging these gaps clarifies scope. Single-instance latency prediction is the foundation, but production serving encompasses more.
 
