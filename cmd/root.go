@@ -126,6 +126,7 @@ var (
 	kvTransferBandwidth     float64
 	kvTransferBaseLatency   int64
 	snapshotRefreshInterval int64
+	cacheSignalDelay        int64
 	gpuMemoryUtilization    float64
 
 	// PD disaggregation config
@@ -134,7 +135,6 @@ var (
 	pdDecider             string  // Disaggregation decider name
 	pdTransferBandwidth   float64 // Inter-instance KV transfer bandwidth in GB/s
 	pdTransferBaseLatency float64 // Inter-instance KV transfer base latency in ms
-	pdKVBytesPerToken        int     // KV cache bytes per token for transfer duration
 	pdTransferContention     bool    // Enable fair-share bandwidth contention model
 	pdPrefixThreshold       int    // Non-cached token threshold for prefix-threshold decider
 	pdDirectDecodeThreshold int    // Input token threshold for direct-to-decode decider
@@ -891,6 +891,9 @@ func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
 	if snapshotRefreshInterval < 0 {
 		logrus.Fatalf("--snapshot-refresh-interval must be >= 0, got %d", snapshotRefreshInterval)
 	}
+	if cacheSignalDelay < 0 {
+		logrus.Fatalf("--cache-signal-delay must be >= 0, got %d", cacheSignalDelay)
+	}
 	if admissionLatency < 0 {
 		logrus.Fatalf("--admission-latency must be >= 0, got %d", admissionLatency)
 	}
@@ -1024,6 +1027,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&kvTransferBandwidth, "kv-transfer-bandwidth", 100.0, "CPU↔GPU transfer rate in blocks per tick. Higher = faster transfers")
 	cmd.Flags().Int64Var(&kvTransferBaseLatency, "kv-transfer-base-latency", 0, "Fixed per-transfer latency in ticks for CPU↔GPU KV transfers (0 = no fixed cost)")
 	cmd.Flags().Int64Var(&snapshotRefreshInterval, "snapshot-refresh-interval", 0, "Prometheus snapshot refresh interval for all instance metrics in microseconds (0 = immediate)")
+	cmd.Flags().Int64Var(&cacheSignalDelay, "cache-signal-delay", cluster.DefaultCacheSignalDelay, "Propagation delay for prefix cache signals in microseconds. Only affects precise-prefix-cache and no-hit-lru scorers; no effect on other routing policies. Default 2s matches production llm-d speculative TTL. Set to 0 for oracle mode (live cache state).")
 	cmd.Flags().Float64Var(&gpuMemoryUtilization, "gpu-memory-utilization", 0.9, "Fraction of GPU memory to use for KV cache, in the range (0, 1.0]. Default: 0.9 (90%)")
 
 	// PD disaggregation config
@@ -1032,7 +1036,6 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&pdDecider, "pd-decider", "never", "PD disaggregation decider: never (default), always, prefix-threshold, direct-to-decode")
 	cmd.Flags().Float64Var(&pdTransferBandwidth, "pd-transfer-bandwidth", 25.0, "PD KV transfer bandwidth in GB/s (NIXL RDMA default)")
 	cmd.Flags().Float64Var(&pdTransferBaseLatency, "pd-transfer-base-latency", 0.05, "PD KV transfer base latency in ms")
-	cmd.Flags().IntVar(&pdKVBytesPerToken, "pd-kv-bytes-per-token", 512, "KV cache bytes per token for PD transfer duration computation")
 	cmd.Flags().BoolVar(&pdTransferContention, "pd-transfer-contention", false, "Enable fair-share bandwidth contention model for concurrent KV transfers (INV-P2-2)")
 	cmd.Flags().IntVar(&pdPrefixThreshold, "pd-prefix-threshold", 512, "Non-cached token threshold for prefix-threshold decider (>= 0); disaggregate when non-cached tokens exceed this value")
 	cmd.Flags().IntVar(&pdDirectDecodeThreshold, "pd-direct-decode-threshold", 256, "Input token threshold for direct-to-decode (>= 0): requests with fewer than threshold tokens go direct to decode; requests with >= threshold tokens are disaggregated")
@@ -1078,6 +1081,32 @@ var runCmd = &cobra.Command{
 
 		// Resolve latency backend configuration (single code path shared with replayCmd).
 		lr := resolveLatencyConfig(cmd)
+
+		// PD disaggregation requires ModelConfig for KV transfer duration derivation.
+		// Analytical backends populate ModelConfig from HF config.json; blackbox does not.
+		// When PD is enabled and ModelConfig is zero-valued, resolve and load it using the
+		// same resolution as analytical backends (--model-config-folder → local bundled → HuggingFace fetch → error).
+		if prefillInstances > 0 && lr.ModelConfig.NumHeads == 0 {
+			resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
+			if err != nil {
+				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing: %v", err)
+			}
+			hfPath := filepath.Join(resolved, "config.json")
+			hfConfig, parseErr := latency.ParseHFConfig(hfPath)
+			if parseErr != nil {
+				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing, but failed to parse %s: %v", hfPath, parseErr)
+			}
+			mc, mcErr := latency.GetModelConfigFromHF(hfConfig)
+			if mcErr != nil {
+				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing, but failed to extract ModelConfig: %v", mcErr)
+			}
+			applyWeightPrecisionFallback(mc, model, hfConfig.Raw)
+			if mc.BytesPerParam <= 0 {
+				logrus.Fatalf("PD disaggregation: could not determine model precision (BytesPerParam=%v) from %s — ensure torch_dtype or dtype is present in config.json", mc.BytesPerParam, hfPath)
+			}
+			lr.ModelConfig = *mc
+			logrus.Infof("PD disaggregation: loaded ModelConfig from %s for KV transfer derivation", hfPath)
+		}
 
 		// Per-pool hardware override vars. TotalKVBlocks is populated from per-pool KV
 		// auto-calc in the analytical backend block below (when applicable). TP/GPU/Backend/MaxModelLen
@@ -1371,9 +1400,6 @@ var runCmd = &cobra.Command{
 			if pdTransferBaseLatency < 0 || math.IsInf(pdTransferBaseLatency, 0) || math.IsNaN(pdTransferBaseLatency) {
 				logrus.Fatalf("--pd-transfer-base-latency must be a finite non-negative number, got %f", pdTransferBaseLatency)
 			}
-			if pdKVBytesPerToken <= 0 {
-				logrus.Fatalf("--pd-kv-bytes-per-token must be > 0, got %d", pdKVBytesPerToken)
-			}
 		}
 		if pdDecider == "prefix-threshold" && pdPrefixThreshold < 0 {
 			logrus.Fatalf("--pd-prefix-threshold must be >= 0, got %d", pdPrefixThreshold)
@@ -1502,6 +1528,7 @@ var runCmd = &cobra.Command{
 			TraceLevel:              traceLevel,
 			CounterfactualK:         counterfactualK,
 			SnapshotRefreshInterval: snapshotRefreshInterval,
+			CacheSignalDelay:        cacheSignalDelay,
 			PrefillInstances:        prefillInstances,
 			DecodeInstances:         decodeInstances,
 			PDDecider:               pdDecider,
@@ -1509,7 +1536,6 @@ var runCmd = &cobra.Command{
 			PDDirectDecodeThreshold: pdDirectDecodeThreshold,
 			PDTransferBandwidthGBps: pdTransferBandwidth,
 			PDTransferBaseLatencyMs: pdTransferBaseLatency,
-			PDKVBytesPerToken:       int64(pdKVBytesPerToken),
 			PDTransferContention:    pdTransferContention,
 			PrefillScorerConfigs:    prefillScorerCfgs,
 			DecodeScorerConfigs:     decodeScorerCfgs,

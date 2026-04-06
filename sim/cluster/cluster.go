@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/latency"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/sirupsen/logrus"
 )
@@ -66,11 +67,24 @@ type ClusterSimulator struct {
 	// Phase 1B-2a: per-tenant fair-share tracker. Nil when TenantBudgets is nil (backward-compat).
 	tenantTracker *TenantTracker
 
+	// Phase 1C: model autoscaler pipeline. Nil when ModelAutoscalerIntervalUs == 0 (backward-compat, INV-6).
+	autoscaler *autoscalerPipeline
+
 	// sessionCallback is the raw onRequestDone parameter for session follow-up
 	// generation in PD mode. Called from detectDecodeCompletions with the original
 	// request (which carries SessionID). Separate from the per-instance closure to
 	// avoid double-notifying tenantTracker (issue #884). Nil for non-session workloads.
 	sessionCallback func(*sim.Request, int64) []*sim.Request
+
+	// cacheQueryFn maps instance IDs to KV cache query functions for precise
+	// prefix cache scoring. Built after instance construction; deferred instances
+	// are added in NodeReadyEvent.Execute. Nil when no instances exist yet.
+	cacheQueryFn map[string]func([]int) int
+
+	// staleCache manages periodic snapshots of per-instance KV cache hash maps
+	// for stale prefix cache scoring (issue #919). Nil when CacheSignalDelay == 0 (oracle mode).
+	// Default CacheSignalDelay is 2s, matching llm-d's speculative TTL.
+	staleCache *StaleCacheIndex
 
 	// Flow control state (issue #882, GIE parity).
 	// When flowControlEnabled is false, these fields are nil/zero (BC-1 pass-through).
@@ -101,6 +115,17 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		}
 		if err := config.DecodeOverrides.Validate("decode pool"); err != nil {
 			panic(fmt.Sprintf("ClusterSimulator: %v", err))
+		}
+	}
+
+	// Validate KV bytes per token derivation early so KVTransferStartedEvent never
+	// encounters a configuration error at runtime (the panic there is now unreachable).
+	if config.PrefillInstances > 0 {
+		if config.EffectivePrefillTP() <= 0 {
+			panic("ClusterSimulator: PD disaggregation requires prefill TP > 0 (set --tp or --prefill-tp)")
+		}
+		if _, err := latency.KVBytesPerToken(config.ModelConfig, config.EffectivePrefillTP()); err != nil {
+			panic(fmt.Sprintf("ClusterSimulator: PD disaggregation requires valid ModelConfig for KV transfer sizing: %v", err))
 		}
 	}
 
@@ -155,8 +180,8 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		admissionLatency:     config.AdmissionLatency,
 		routingLatency:       config.RoutingLatency,
 		admissionPolicy:      admissionPolicy,
-		snapshotProvider:     nil, // set after unified construction loop below
-		routingPolicy:        sim.NewRoutingPolicy(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem(sim.SubsystemRouter)),
+		snapshotProvider: nil, // set after unified construction loop below
+		routingPolicy:    nil, // set after instance construction (needs cacheQueryFn from instances)
 		trace:                simTrace,
 		inFlightRequests:     make(map[string]int, config.NumInstances),
 		shedByTier:           make(map[string]int),
@@ -177,13 +202,8 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		cs.pendingPrefillCompletions = make(map[string]string)
 		cs.pendingDecodeCompletions = make(map[string]string)
 
-		// Per-pool routing policies (use separate RNG partitions to avoid fragile coupling)
-		if len(config.PrefillScorerConfigs) > 0 {
-			cs.prefillRoutingPolicy = sim.NewRoutingPolicy("weighted", config.PrefillScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("prefill-router"))
-		}
-		if len(config.DecodeScorerConfigs) > 0 {
-			cs.decodeRoutingPolicy = sim.NewRoutingPolicy("weighted", config.DecodeScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("decode-router"))
-		}
+		// Per-pool routing policies are created after the construction loop
+		// (need cacheQueryFn from instances).
 
 		logrus.Infof("[cluster] PD disaggregation enabled: %d prefill, %d decode instances, decider=%q",
 			config.PrefillInstances, config.DecodeInstances, config.PDDecider)
@@ -234,10 +254,20 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 				}
 				simCfg.HWConfig = hc
 			}
+			// Phase 1C: look up CostPerHour for this matched GPU type (issue #692).
+			var poolCostPerHour float64
+			for i := range config.NodePools {
+				if config.NodePools[i].GPUType == matchedGPUType {
+					poolCostPerHour = config.NodePools[i].CostPerHour
+					break
+				}
+			}
 			inst := NewInstanceSimulator(id, simCfg)
 			inst.Model = config.Model
 			inst.nodeID = nodeID
 			inst.allocatedGPUIDs = gpuIDs
+			inst.TPDegree = tpDegree
+			inst.CostPerHour = poolCostPerHour
 			inst.warmUpRemaining = config.InstanceLifecycle.WarmUpRequestCount
 			inst.TransitionTo(InstanceStateLoading)
 			cs.scheduleInstanceLoadedEvent(inst)
@@ -267,6 +297,59 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	// Deferred instances are registered via CachedSnapshotProvider.AddInstance
 	// when NodeReadyEvent.Execute constructs them (Phase 4, T017).
 	cs.snapshotProvider = NewCachedSnapshotProvider(instanceMap, newObservabilityConfig(config.SnapshotRefreshInterval))
+
+	// Build cacheQueryFn from constructed instances for precise prefix cache scoring.
+	if config.CacheSignalDelay > 0 {
+		// Stale mode: scorers query periodically-refreshed snapshots (issue #919).
+		cs.staleCache = NewStaleCacheIndex(instanceMap, config.CacheSignalDelay)
+		cs.cacheQueryFn = cs.staleCache.BuildCacheQueryFn()
+	} else {
+		// Zero delay (CacheSignalDelay=0) — oracle mode: scorers query live KV cache state.
+		cs.cacheQueryFn = make(map[string]func([]int) int, len(cs.instances))
+		for _, inst := range cs.instances {
+			cs.registerInstanceCacheQueryFn(inst.ID(), inst)
+		}
+	}
+
+	// Create routing policies now that cacheQueryFn is available.
+	cs.routingPolicy = sim.NewRoutingPolicyWithCache(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem(sim.SubsystemRouter), cs.cacheQueryFn)
+	if len(config.PrefillScorerConfigs) > 0 {
+		cs.prefillRoutingPolicy = sim.NewRoutingPolicyWithCache("weighted", config.PrefillScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("prefill-router"), cs.cacheQueryFn)
+	}
+	if len(config.DecodeScorerConfigs) > 0 {
+		cs.decodeRoutingPolicy = sim.NewRoutingPolicyWithCache("weighted", config.DecodeScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("decode-router"), cs.cacheQueryFn)
+	}
+
+	// Phase 1C: initialize autoscaler pipeline when ModelAutoscalerIntervalUs > 0 (issue #692).
+	// Zero interval disables the autoscaler entirely (INV-6 backward-compat).
+	// Concrete pipeline components (collector, analyzer, engine, actuator) are injected after
+	// construction by tests or by the wiring logic in cmd/. Until they are set, all four fields
+	// on cs.autoscaler remain nil, and ScalingTickEvent.Execute() will guard against them.
+	// R3: validate autoscaler float64 fields — NaN/Inf/negative values are configuration errors.
+	if math.IsNaN(config.ModelAutoscalerIntervalUs) || math.IsInf(config.ModelAutoscalerIntervalUs, 0) {
+		panic("ModelAutoscalerIntervalUs must not be NaN or Inf")
+	}
+	if config.ModelAutoscalerIntervalUs < 0 {
+		panic("ModelAutoscalerIntervalUs must be ≥0 (0 = disabled)")
+	}
+	if math.IsNaN(config.ScaleUpCooldownUs) || math.IsInf(config.ScaleUpCooldownUs, 0) || config.ScaleUpCooldownUs < 0 {
+		panic("ScaleUpCooldownUs must be a finite non-negative number")
+	}
+	if math.IsNaN(config.ScaleDownCooldownUs) || math.IsInf(config.ScaleDownCooldownUs, 0) || config.ScaleDownCooldownUs < 0 {
+		panic("ScaleDownCooldownUs must be a finite non-negative number")
+	}
+	if math.IsNaN(config.ActuationDelay.Mean) || math.IsInf(config.ActuationDelay.Mean, 0) || config.ActuationDelay.Mean < 0 {
+		panic("ActuationDelay.Mean must be a finite non-negative number")
+	}
+	if math.IsNaN(config.ActuationDelay.Stddev) || math.IsInf(config.ActuationDelay.Stddev, 0) || config.ActuationDelay.Stddev < 0 {
+		panic("ActuationDelay.Stddev must be a finite non-negative number")
+	}
+	if config.ModelAutoscalerIntervalUs > 0 {
+		// Interface components (collector, analyzer, engine, actuator) are injected by
+		// tests or cmd/ after construction, before Run() is called (see newAutoscalerPipeline).
+		cs.autoscaler = newAutoscalerPipeline(nil, nil, nil, nil, rng.ForSubsystem(subsystemAutoscaler))
+	}
+
 
 	// Phase 1B-2a: initialize TenantTracker when TenantBudgets is configured (issue #811).
 	// totalCapacity = NumInstances × MaxRunningReqs (batch size proxy for cluster-wide capacity).
@@ -339,6 +422,32 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	return cs
 }
 
+// registerInstanceCacheQueryFn adds a cacheQueryFn entry for a single instance,
+// choosing between stale (snapshot) and oracle (live) modes based on cs.staleCache (R23).
+// Called from two sites: oracle-mode constructor loop (NewClusterSimulator) and
+// NodeReadyEvent.Execute (deferred instances). NOT called from the stale-mode
+// constructor — that path uses the bulk NewStaleCacheIndex + BuildCacheQueryFn API.
+// Precondition: cs.cacheQueryFn must be non-nil (initialised before calling).
+func (cs *ClusterSimulator) registerInstanceCacheQueryFn(id InstanceID, inst *InstanceSimulator) {
+	if cs.staleCache != nil {
+		// Stale mode: register with StaleCacheIndex; the closure delegates to s.Query at
+		// call time, so it picks up refreshed snapshots automatically after RefreshIfNeeded.
+		// CO-CHANGE: BuildCacheQueryFn (stale_cache.go) produces equivalent closures for
+		// the initial instance set — update both if closure semantics change.
+		cs.staleCache.AddInstance(id, inst)
+		idStr := string(id)
+		cs.cacheQueryFn[idStr] = func(tokens []int) int {
+			return cs.staleCache.Query(idStr, tokens)
+		}
+	} else {
+		// Oracle mode: closure captures inst directly for live-state queries.
+		idStr := string(id)
+		cs.cacheQueryFn[idStr] = func(tokens []int) int {
+			return inst.GetCachedBlockCount(tokens)
+		}
+	}
+}
+
 // Run executes the cluster simulation using online routing pipeline:
 // generates requests centrally, schedules ClusterArrivalEvents, runs a shared-clock
 // event loop processing cluster events before instance events, then finalizes.
@@ -357,6 +466,17 @@ func (c *ClusterSimulator) Run() error {
 
 	// 2. Schedule ClusterArrivalEvents (NC-1: no pre-dispatch before event loop)
 	heap.Init(&c.clusterEvents)
+
+	// Phase 1C: schedule the first ScalingTickEvent when the autoscaler is enabled (T015).
+	// The autoscaler is enabled when ModelAutoscalerIntervalUs > 0 AND cs.autoscaler is non-nil.
+	// Zero-interval guard: no tick is ever scheduled when interval is 0 (INV-6).
+	if c.autoscaler != nil && c.config.ModelAutoscalerIntervalUs > 0 {
+		heap.Push(&c.clusterEvents, clusterEventEntry{
+			event: &ScalingTickEvent{At: c.clock},
+			seqID: c.nextSeqID(),
+		})
+	}
+
 	for _, req := range requests {
 		heap.Push(&c.clusterEvents, clusterEventEntry{
 			event: &ClusterArrivalEvent{time: req.ArrivalTime, request: req},
@@ -465,6 +585,10 @@ func (c *ClusterSimulator) Run() error {
 			if inst.State == InstanceStateDraining && inst.QueueDepth() == 0 && inst.BatchSize() == 0 {
 				inst.TransitionTo(InstanceStateTerminated)
 				c.releaseInstanceGPUs(inst)
+				if c.staleCache != nil {
+					c.staleCache.RemoveInstance(inst.ID())
+				}
+				delete(c.cacheQueryFn, string(inst.ID()))
 				// I1: a non-zero inFlightRequests at termination time indicates a bookkeeping bug.
 				// This would cause isBusy() to permanently return true, silently stranding
 				// all deferred Batch/Background requests until horizon.
@@ -844,6 +968,72 @@ func (c *ClusterSimulator) isBusy() bool {
 	return false
 }
 
+// gpuInventory computes the current GPU inventory for Engine.Optimize().
+// Phase 1C (T012): returns free GPU slots per VariantSpec.
+//
+// Free slots for a variant = total GPUs of that GPU type on Ready nodes
+//   - GPUs held by Loading instances of that GPU type
+//   - GPUs held by Active/WarmingUp instances of that GPU type
+//   - GPUs held by Draining instances of that GPU type (hold GPUs until drain completes)
+//
+// Pending (Scheduling) instances are NOT subtracted.
+// Terminated instances are NOT subtracted.
+//
+// Returns an empty inventory when cs.placement is nil (no NodePools configured, backward-compat).
+func (c *ClusterSimulator) gpuInventory() GPUInventory {
+	if c.placement == nil {
+		return GPUInventory{byVariant: make(map[VariantSpec]int)}
+	}
+
+	// Step 1: count total GPUs on Ready nodes per GPUType.
+	totalByGPUType := make(map[string]int)
+	for _, node := range c.placement.nodesByID {
+		if node.State == NodeStateReady {
+			totalByGPUType[node.GPUType] += node.TotalGPUs
+		}
+	}
+
+	// Step 2: subtract GPUs used by Loading, Active (incl. WarmingUp), and Draining instances.
+	// Also populate seenVariants so every GPU type with Ready capacity appears in the result,
+	// even when there are no active instances of that GPU type (enables scale-up from zero).
+	clusterTPDegree := c.config.TP
+	if clusterTPDegree < 1 {
+		clusterTPDegree = 1
+	}
+	usedByGPUType := make(map[string]int)
+	seenVariants := make(map[VariantSpec]struct{})
+	// Seed from Ready node GPU types so zero-instance pools appear in inventory.
+	for gpuType, total := range totalByGPUType {
+		if total > 0 {
+			seenVariants[VariantSpec{GPUType: gpuType, TPDegree: clusterTPDegree}] = struct{}{}
+		}
+	}
+	for _, inst := range c.instances {
+		switch inst.State {
+		case InstanceStateLoading, InstanceStateWarmingUp, InstanceStateActive, InstanceStateDraining:
+			if inst.GPU() != "" {
+				usedByGPUType[inst.GPU()] += inst.TPDegree
+				if inst.TPDegree > 0 {
+					seenVariants[VariantSpec{GPUType: inst.GPU(), TPDegree: inst.TPDegree}] = struct{}{}
+				}
+			}
+		}
+	}
+
+	// Step 3: build byVariant — same raw free count for each variant of the same GPUType.
+	// Callers must use Variants() to iterate (R2: map iteration is non-deterministic).
+	byVariant := make(map[VariantSpec]int, len(seenVariants))
+	for v := range seenVariants {
+		free := totalByGPUType[v.GPUType] - usedByGPUType[v.GPUType]
+		if free < 0 {
+			logrus.Warnf("[autoscaler] gpuInventory: variant %+v has negative free slots (%d) — bookkeeping inconsistency; clamping to 0", v, free)
+			free = 0
+		}
+		byVariant[v] = free
+	}
+	return GPUInventory{byVariant: byVariant}
+}
+
 // promoteDeferred injects all deferred requests as ClusterArrivalEvents at the current clock.
 // Called when isBusy() transitions to false. Truncates deferredQueue after injection.
 // INV-8: ensures work-conserving behaviour — deferred requests re-enter the pipeline
@@ -1147,19 +1337,33 @@ func (c *ClusterSimulator) projectPDMetrics() {
 			}
 		}
 
-		// TTFT: rekey from prefill sub-request ID to parent ID (value unchanged).
-		// Only prefill sub-requests record TTFT; decode sub-requests never trigger it.
+		// TTFT: user-visible time-to-first-token for PD disaggregation.
+		// In llm-d, the first token reaches the user from the decode pod, not
+		// prefill: prefill completes → KV transfers → decode pod recomputes last
+		// prompt token and samples first output token. User-visible TTFT =
+		// prefillTTFT + transferDuration + firstDecodeStep. See issue #930.
+		//
+		// Read prefill TTFT before deleting sub-request keys (R1: no silent data loss).
 		// Gate on completed: dropped-request TTFTs must not enter the distribution.
-		// Source keys are always deleted, regardless of completion status.
+		prefillTTFT, hasPrefillTTFT := m.RequestTTFTs[pfx]
+		delete(m.RequestTTFTs, pfx)
+		delete(m.RequestTTFTs, dec)
 		if completed {
-			if ttft, ok := m.RequestTTFTs[pfx]; ok {
-				m.RequestTTFTs[pid] = ttft
+			if hasPrefillTTFT && parent.TransferStartTime > 0 && parent.TransferCompleteTime >= parent.TransferStartTime && parent.DecodeSubReq != nil && len(parent.DecodeSubReq.ITL) > 0 {
+				transferDuration := float64(parent.TransferCompleteTime - parent.TransferStartTime)
+				firstDecodeStep := float64(parent.DecodeSubReq.ITL[0])
+				newTTFT := prefillTTFT + transferDuration + firstDecodeStep
+				m.RequestTTFTs[pid] = newTTFT
+				// BC-3: Keep TTFTSum consistent with the TTFT adjustment.
+				m.TTFTSum += int64(newTTFT - prefillTTFT)
+			} else if hasPrefillTTFT {
+				// Defensive fallback: use prefill-only TTFT if decode data unavailable.
+				m.RequestTTFTs[pid] = prefillTTFT
+				logrus.Warnf("[cluster] projectPDMetrics: parent %s missing decode ITL or TransferCompleteTime; using prefill TTFT", pid)
 			} else {
 				logrus.Warnf("[cluster] projectPDMetrics: completed parent %s has no prefill TTFT (key %s)", pid, pfx)
 			}
 		}
-		delete(m.RequestTTFTs, pfx)
-		delete(m.RequestTTFTs, dec)
 
 		// Scheduling delay = prefill sub-request's delay
 		// (the real user-facing delay, not the decode pipeline cumulative latency).

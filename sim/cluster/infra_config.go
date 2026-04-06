@@ -13,6 +13,7 @@ import (
 const (
 	subsystemNodeProvisioning = "node-provisioning"
 	subsystemInstanceLoading  = "instance-loading"
+	subsystemAutoscaler       = "autoscaler" // Phase 1C: partitioned RNG for actuation delay sampling
 )
 
 // DelaySpec parameterizes a duration distribution for provisioning/loading delays.
@@ -59,6 +60,7 @@ type NodePoolConfig struct {
 	MinNodes          int       `yaml:"min_nodes"`
 	MaxNodes          int       `yaml:"max_nodes"`
 	ProvisioningDelay DelaySpec `yaml:"provisioning_delay"`
+	CostPerHour       float64   `yaml:"cost_per_hour"` // $/hr per node; used for CostPerReplica in VariantCapacity; 0 = free tier
 }
 
 // IsValid validates all fields in the NodePoolConfig.
@@ -102,6 +104,12 @@ func (c *NodePoolConfig) IsValid() error {
 	}
 	if c.ProvisioningDelay.Stddev < 0 {
 		return fmt.Errorf("node pool %q: provisioning_delay.stddev must be ≥0", c.Name)
+	}
+	if math.IsNaN(c.CostPerHour) || math.IsInf(c.CostPerHour, 0) {
+		return fmt.Errorf("node pool %q: cost_per_hour must not be NaN or Inf", c.Name)
+	}
+	if c.CostPerHour < 0 {
+		return fmt.Errorf("node pool %q: cost_per_hour must be ≥0, got %g", c.Name, c.CostPerHour)
 	}
 	return nil
 }

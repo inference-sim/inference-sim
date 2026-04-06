@@ -34,6 +34,12 @@ type InstanceSimulator struct {
 	nodeID           string        // node this instance is placed on (empty = unplaced)
 	allocatedGPUIDs  []string      // GPU IDs allocated to this instance
 	gpu              string        // GPU type used for this instance (set from pool gpu_type, or config.GPU)
+
+	// Phase 1C: hardware variant fields (set at placement time in cluster.go).
+	// Used by buildRouterState() to populate RoutingSnapshot for the autoscaler Collector.
+	// GPUType is available via inst.GPU(); TPDegree and CostPerHour are autoscaler-specific.
+	TPDegree    int     // tensor-parallel degree; 0 = unplaced/unknown
+	CostPerHour float64 // $/hr from NodePool.CostPerHour; 0 = unplaced/free tier
 }
 
 // NewInstanceSimulator creates an InstanceSimulator from a SimConfig struct.
@@ -163,6 +169,42 @@ func (i *InstanceSimulator) FreeKVBlocks() int64 {
 // CacheHitRate returns the cumulative cache hit rate.
 func (i *InstanceSimulator) CacheHitRate() float64 {
 	return i.sim.KVCache.CacheHitRate()
+}
+
+// GetCachedBlockCount returns the number of consecutive cached prefix blocks
+// matching the given token sequence. Used by precise prefix cache scoring.
+func (i *InstanceSimulator) GetCachedBlockCount(tokens []int) int {
+	if i.sim == nil {
+		return 0
+	}
+	return len(i.sim.KVCache.GetCachedBlocks(tokens))
+}
+
+// cacheSnapshotCapable is satisfied by KVStore implementations that can produce
+// a frozen snapshot query function. Both KVCacheState and TieredKVCache implement this.
+// Used for stale cache signal simulation (issue #919).
+type cacheSnapshotCapable interface {
+	SnapshotCachedBlocksFn() func([]int) int
+}
+
+// SnapshotCacheQueryFn returns a function that queries a frozen copy of this
+// instance's KV cache hash map. The returned function is safe to call after
+// the live cache state has changed — it always returns results as of snapshot time.
+// Returns a zero-returning function if the simulator is nil or the KV cache
+// does not support snapshotting.
+func (i *InstanceSimulator) SnapshotCacheQueryFn() func([]int) int {
+	if i.sim == nil {
+		return func([]int) int { return 0 }
+	}
+	if cs, ok := i.sim.KVCache.(cacheSnapshotCapable); ok {
+		return cs.SnapshotCachedBlocksFn()
+	}
+	// Fallback: live query (for KVStore implementations without snapshot support).
+	// Callers (StaleCacheIndex) are responsible for warning about stale-cache
+	// semantics not being honored — this function is intentionally side-effect-free.
+	return func(tokens []int) int {
+		return i.GetCachedBlockCount(tokens)
+	}
 }
 
 // InjectRequestOnline injects a request during the event loop (online routing mode).

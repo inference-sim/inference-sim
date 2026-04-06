@@ -125,15 +125,16 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 			output.ResponsesPerSec = float64(m.CompletedRequests) / vllmRuntime
 			output.TokensPerSec = float64(m.TotalOutputTokens) / vllmRuntime
 		}
-
-		// Print to stdout (results are primary output, not log messages)
-		fmt.Println("=== Simulation Metrics ===")
-		data, err := json.MarshalIndent(output, "", "  ")
-		if err != nil {
-			return fmt.Errorf("error marshalling metrics: %w", err)
-		}
-		fmt.Println(string(data))
 	}
+
+	// Always emit the metrics section so callers can reliably parse output,
+	// even when CompletedRequests == 0 (e.g., all requests dropped as unservable).
+	fmt.Println("=== Simulation Metrics ===")
+	data, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		return fmt.Errorf("error marshalling metrics: %w", err)
+	}
+	fmt.Println(string(data))
 
 	// --- Write to JSON File ---
 	if outputFilePath != "" {

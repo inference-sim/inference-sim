@@ -59,6 +59,16 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 		inst.Model = cs.config.Model
 		inst.nodeID = p.nodeID
 		inst.allocatedGPUIDs = p.gpuIDs
+		inst.TPDegree = p.tpDegree
+		// Phase 1C: look up CostPerHour for this GPU type (mirrors cluster.go startup path).
+		var poolCostPerHour float64
+		for i := range cs.config.NodePools {
+			if cs.config.NodePools[i].GPUType == p.gpuType {
+				poolCostPerHour = cs.config.NodePools[i].CostPerHour
+				break
+			}
+		}
+		inst.CostPerHour = poolCostPerHour
 		inst.warmUpRemaining = cs.config.InstanceLifecycle.WarmUpRequestCount
 		inst.TransitionTo(InstanceStateLoading)
 
@@ -80,6 +90,12 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 		cs.scheduleInstanceLoadedEvent(inst)
 		cs.instances = append(cs.instances, inst)
 		cs.inFlightRequests[string(p.id)] = 0
+
+		// Register with cacheQueryFn for precise prefix scoring (deferred instances).
+		// registerInstanceCacheQueryFn handles both oracle and stale modes (R23).
+		if cs.cacheQueryFn != nil {
+			cs.registerInstanceCacheQueryFn(p.id, inst)
+		}
 
 		// Wire OnRequestDone callback — mirror startup path in NewClusterSimulator (R4).
 		onRequestDone := cs.sessionCallback
@@ -245,6 +261,10 @@ func (d *drainImmediate) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	inst.TransitionTo(InstanceStateTerminated)
 	if cs != nil {
 		cs.releaseInstanceGPUs(inst)
+		if cs.staleCache != nil {
+			cs.staleCache.RemoveInstance(inst.ID())
+		}
+		delete(cs.cacheQueryFn, string(inst.ID()))
 	}
 }
 
@@ -263,6 +283,10 @@ func (d *drainWait) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	if cs != nil && inst.HasSim() && inst.QueueDepth() == 0 && inst.BatchSize() == 0 {
 		inst.TransitionTo(InstanceStateTerminated)
 		cs.releaseInstanceGPUs(inst)
+		if cs.staleCache != nil {
+			cs.staleCache.RemoveInstance(inst.ID())
+		}
+		delete(cs.cacheQueryFn, string(inst.ID()))
 	}
 }
 
@@ -272,6 +296,10 @@ type drainRedirect struct{}
 
 func (d *drainRedirect) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	inst.TransitionTo(InstanceStateDraining)
+	// Note: RemoveInstance and delete(cs.cacheQueryFn, ...) are intentionally absent here.
+	// The instance remains alive while processing in-flight and late-arriving requests.
+	// Cleanup happens via the T042 drain-completion check (QueueDepth==0 && BatchSize==0)
+	// in the main event loop (cluster.go), which transitions the instance to Terminated.
 
 	// Extract queued requests from the instance WaitQ and re-inject into the cluster.
 	// Simulation simplification: re-injected at current clock (cs.clock), not original ArrivalTime.
