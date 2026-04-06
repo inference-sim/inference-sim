@@ -654,12 +654,12 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	}
 	if backend == "blackbox" && allZeros(alpha) && allZeros(beta) {
 		logrus.Fatalf("No trained coefficients found for model=%s, GPU=%s, TP=%d. "+
-			"Provide --alpha-coeffs/--beta-coeffs, use --latency-model roofline, crossmodel, trained-roofline, or evolved",
+			"Provide --alpha-coeffs/--beta-coeffs, use --latency-model roofline, crossmodel, trained-roofline, or trained-physics",
 			model, gpu, tensorParallelism)
 	}
 
 	// Analytical backends: parse HF config, extract model/hardware config, auto-calc KV blocks and max-model-len.
-	if backend == "roofline" || backend == "crossmodel" || backend == "trained-roofline" || backend == "evolved" {
+	if backend == "roofline" || backend == "crossmodel" || backend == "trained-roofline" || backend == "trained-physics" {
 		hfPath := filepath.Join(modelConfigFolder, "config.json")
 		hfConfig, err := latency.ParseHFConfig(hfPath)
 		if err != nil {
@@ -986,7 +986,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
 	cmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
 	cmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
-	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "roofline", "Latency model backend: roofline (default), blackbox, crossmodel, trained-roofline, evolved")
+	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "roofline", "Latency model backend: roofline (default), blackbox, crossmodel, trained-roofline, trained-physics")
 	cmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for roofline/crossmodel when not set.")
 
 	// Cluster config
@@ -1088,7 +1088,7 @@ var runCmd = &cobra.Command{
 		// Per-pool KV auto-calculation: when PD disaggregation is active and a pool
 		// uses different TP or GPU hardware, compute per-pool KV blocks from model + hardware.
 		// Only runs for analytical backends where hardware configs are available.
-		if lr.Backend == "roofline" || lr.Backend == "crossmodel" || lr.Backend == "trained-roofline" || lr.Backend == "evolved" {
+		if lr.Backend == "roofline" || lr.Backend == "crossmodel" || lr.Backend == "trained-roofline" || lr.Backend == "trained-physics" {
 			if prefillInstances > 0 {
 				hfPath := filepath.Join(modelConfigFolder, "config.json")
 				hfConfig, err := latency.ParseHFConfig(hfPath)

@@ -332,7 +332,7 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 }
 
 // QueueingTime computes request-level overhead (ARRIVED → QUEUED).
-// Constant per-request, matching trained-roofline convention.
+// Constant per-request.
 //
 // α₀ = API processing overhead (HTTP parsing, request validation, queue insertion).
 func (m *TrainedPhysicsModel) QueueingTime(req *sim.Request) int64 {

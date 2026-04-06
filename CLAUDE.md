@@ -230,12 +230,9 @@ For the full annotated file tree, see [`docs/reference/project-structure.md`](do
 
 ### Latency Estimation
 
-Five latency model modes (roofline, blackbox, cross-model, trained-roofline, evolved), selected via `--latency-model` flag.
+Five latency model modes (roofline, blackbox, cross-model, trained-roofline, trained-physics), selected via `--latency-model` flag. **Trained-physics** is the recommended default for new models.
 
-**Evolved model**: Physics-informed roofline basis functions with learned corrections. Architecture-aware MoE overhead scaling:
-- Interleaved MoE/dense architectures (InterleaveMoELayerStep > 0): β₈ overhead applies
-- Uniform MoE architectures (InterleaveMoELayerStep = 0): β₈ overhead skipped
-- 10-beta mode: prefill compute-only (β₁ₐ), decode memory-only (β₂ᵦ)
+**Trained-physics model**: Roofline basis functions with learned correction coefficients. Generalizes across model architectures, workloads, and TP configurations. No per-model calibration needed.
 
 See [`docs/guide/latency-models.md`](docs/guide/latency-models.md) for details.
 
