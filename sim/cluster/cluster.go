@@ -291,14 +291,10 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		cs.staleCache = NewStaleCacheIndex(instanceMap, config.CacheSignalDelay)
 		cs.cacheQueryFn = cs.staleCache.BuildCacheQueryFn()
 	} else {
-		// Oracle mode (default): scorers query live KV cache state.
+		// Zero delay (CacheSignalDelay=0) — oracle mode: scorers query live KV cache state.
 		cs.cacheQueryFn = make(map[string]func([]int) int, len(cs.instances))
 		for _, inst := range cs.instances {
-			id := string(inst.ID())
-			inst := inst // capture for closure
-			cs.cacheQueryFn[id] = func(tokens []int) int {
-				return inst.GetCachedBlockCount(tokens)
-			}
+			cs.registerInstanceCacheQueryFn(inst.ID(), inst)
 		}
 	}
 
@@ -380,6 +376,32 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	}
 
 	return cs
+}
+
+// registerInstanceCacheQueryFn adds a cacheQueryFn entry for a single instance,
+// choosing between stale (snapshot) and oracle (live) modes based on cs.staleCache (R23).
+// Called from two sites: oracle-mode constructor loop (NewClusterSimulator) and
+// NodeReadyEvent.Execute (deferred instances). NOT called from the stale-mode
+// constructor — that path uses the bulk NewStaleCacheIndex + BuildCacheQueryFn API.
+// Precondition: cs.cacheQueryFn must be non-nil (initialised before calling).
+func (cs *ClusterSimulator) registerInstanceCacheQueryFn(id InstanceID, inst *InstanceSimulator) {
+	if cs.staleCache != nil {
+		// Stale mode: register with StaleCacheIndex; the closure delegates to s.Query at
+		// call time, so it picks up refreshed snapshots automatically after RefreshIfNeeded.
+		// CO-CHANGE: BuildCacheQueryFn (stale_cache.go) produces equivalent closures for
+		// the initial instance set — update both if closure semantics change.
+		cs.staleCache.AddInstance(id, inst)
+		idStr := string(id)
+		cs.cacheQueryFn[idStr] = func(tokens []int) int {
+			return cs.staleCache.Query(idStr, tokens)
+		}
+	} else {
+		// Oracle mode: closure captures inst directly for live-state queries.
+		idStr := string(id)
+		cs.cacheQueryFn[idStr] = func(tokens []int) int {
+			return inst.GetCachedBlockCount(tokens)
+		}
+	}
 }
 
 // Run executes the cluster simulation using online routing pipeline:
