@@ -1165,6 +1165,8 @@ func TestRooflineStepTime_Scout_InterleavedMoE(t *testing.T) {
 	hw := sim.HardwareCalib{
 		TFlopsPeak: 989.0,
 		BwPeakTBs:  3.35,
+		MfuPrefill: 0.55,
+		MfuDecode:  0.30,
 	}
 
 	step := StepConfig{

@@ -129,8 +129,7 @@ type TrainedPhysicsModel struct {
 	numHeads          int
 	headDim           int     // d_h = hiddenDim / numHeads
 	dKV               int     // kvHeads * d_h (differs from hiddenDim for GQA)
-	dFF               int     // Default FFN intermediate dim
-	dFFMoE            int     // MoE expert FFN dim (may differ from dFF)
+	dFFMoE            int     // MoE expert FFN dim
 	dFFDense          int     // Dense layer FFN dim (may differ for interleaved archs)
 	kEff              int     // max(1, NumExpertsPerTok)
 	numExperts        int     // NumLocalExperts (0 for dense)
@@ -455,13 +454,12 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 		numHeads:          hw.ModelConfig.NumHeads,
 		headDim:           headDim,
 		dKV:               numKVHeads * headDim,
-		dFF:               dFF,
 		dFFMoE:            dFFMoE,
 		dFFDense:          dFFDense,
 		kEff:              max(1, hw.ModelConfig.NumExpertsPerTok),
 		numExperts:        hw.ModelConfig.NumLocalExperts,
 		hasInterleavedMoE: hw.ModelConfig.InterleaveMoELayerStep > 0,
-		isMoE:             hw.ModelConfig.NumLocalExperts > 0,
+		isMoE:             hw.ModelConfig.NumLocalExperts > 1,
 		tp:                hw.TP,
 		weightBPP:         weightBPP,
 		flopsPeakUs:       peakFlops,

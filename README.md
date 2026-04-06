@@ -13,7 +13,7 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 - **Discrete-event simulation** for prefill, decode, and request scheduling
 - **KV-cache modeling** (blocks, prefix caching, prefill chunking, tiered GPU+CPU offload)
 - **CPU-only inference cost model** via analytical roofline estimation or learned α/β coefficients
-- **Five latency estimation modes**: roofline (default, analytical), blackbox (data-driven), cross-model (physics-informed, MoE-aware), trained-roofline (roofline × learned corrections), and trained-physics (roofline × learned corrections)
+- **Five latency estimation modes**: roofline (default, analytical), trained-physics (physics-informed basis functions with architecture-aware MoE scaling), cross-model (physics-informed, MoE-aware), trained-roofline (roofline × learned corrections), and blackbox (data-driven, per-model coefficients)
 - **Multi-instance cluster simulation** with shared-clock event loop and pluggable routing (round-robin, least-loaded, weighted-scoring)
 - **Multiple workload types**: preset (`chatbot`, `contentgen`, `summarization`, `multidoc`), custom distributions, or trace replay
 
@@ -44,7 +44,7 @@ cd inference-sim
 go build -o blis main.go
 ```
 
-**Note:** On first run, BLIS auto-fetches the model's `config.json` from HuggingFace (~1 second for public models like Qwen3). Subsequent runs use the cached config in `model_configs/`. For offline use, pass `--latency-model blackbox` (uses pre-trained coefficients, no network needed).
+**Note:** On first run, BLIS auto-fetches the model's `config.json` from HuggingFace (~1 second for public models like Qwen3). Subsequent runs use the cached config in `model_configs/`. For offline use with cached configs, `--latency-model trained-physics` provides accurate predictions across model architectures without per-model calibration.
 
 **Environment setup (optional):**
 
@@ -97,13 +97,13 @@ You should see JSON output on stdout with key fields:
   --rate 100 --num-requests 500
 ```
 
-### Blackbox mode (explicit trained coefficients)
+### Trained-physics mode (architecture-aware, no per-model calibration)
 
 ```bash
-./blis run --model qwen/qwen3-14b --latency-model blackbox
+./blis run --model qwen/qwen3-14b --latency-model trained-physics
 ```
 
-See the [supported models catalog](docs/reference/models.md#blackbox-coefficient-catalog) for models with pre-trained coefficients.
+Accurate across all model architectures (dense, uniform MoE, interleaved MoE) using physics-informed basis functions with learned corrections. See the [latency models guide](docs/guide/latency-models.md) for details.
 
 ### Observe real server latency
 
