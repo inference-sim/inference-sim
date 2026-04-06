@@ -268,7 +268,14 @@ func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, s
 	}
 
 	// 3. WEIGHTS loaded once per step (single forward pass, per Sarathi-Serve/vLLM V1)
-	baseMem := calculateMemoryAccessBytes(modelConfig, 0, 0, false)
+	// For MoE models, nEff depends on batch size, so we must pass totalNewTokens
+	var totalNewTokens int64
+	for _, req := range stepConfig.PrefillRequests {
+		totalNewTokens += int64(req.NumNewPrefillTokens)
+	}
+	totalNewTokens += int64(len(stepConfig.DecodeRequests))
+
+	baseMem := calculateMemoryAccessBytes(modelConfig, 0, totalNewTokens, false)
 	weightBytes := baseMem["model_weights"] / tpFactor
 
 	totalMemoryS := (weightBytes + totalDynamicBytes) / peakBW
