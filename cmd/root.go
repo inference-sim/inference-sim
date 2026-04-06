@@ -546,9 +546,9 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		}
 	}
 
-	// --latency-model evolved: physics-informed roofline with architecture-aware MoE overhead.
-	// Uses evolved_coefficients from defaults.yaml (10-beta, 3-alpha).
-	if backend == "evolved" {
+	// --latency-model trained-physics: physics-informed roofline with architecture-aware MoE overhead.
+	// Uses trained_physics_coefficients from defaults.yaml (10-beta, 3-alpha).
+	if backend == "trained-physics" {
 		var missing []string
 		if gpu == "" {
 			missing = append(missing, "--hardware (GPU type)")
@@ -557,7 +557,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 			missing = append(missing, "--tp (tensor parallelism)")
 		}
 		if len(missing) > 0 {
-			logrus.Fatalf("--latency-model evolved requires %s. No defaults found in defaults.yaml for model=%s. "+
+			logrus.Fatalf("--latency-model trained-physics requires %s. No defaults found in defaults.yaml for model=%s. "+
 				"Provide these flags explicitly", strings.Join(missing, " and "), model)
 		}
 		resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
@@ -573,22 +573,22 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
 			data, readErr := os.ReadFile(defaultsFilePath)
 			if readErr != nil {
-				logrus.Warnf("--latency-model evolved: failed to read %s: %v", defaultsFilePath, readErr)
+				logrus.Warnf("--latency-model trained-physics: failed to read %s: %v", defaultsFilePath, readErr)
 			} else {
 				var cfg Config
 				decoder := yaml.NewDecoder(bytes.NewReader(data))
 				decoder.KnownFields(true) // R10: strict YAML parsing
 				if yamlErr := decoder.Decode(&cfg); yamlErr != nil {
-					logrus.Fatalf("--latency-model evolved: failed to parse %s: %v", defaultsFilePath, yamlErr)
+					logrus.Fatalf("--latency-model trained-physics: failed to parse %s: %v", defaultsFilePath, yamlErr)
 				}
-				if cfg.EvolvedDefaults != nil {
+				if cfg.TrainedPhysicsDefaults != nil {
 					if !cmd.Flags().Changed("beta-coeffs") {
-						beta = cfg.EvolvedDefaults.BetaCoeffs
-						logrus.Infof("--latency-model: loaded evolved beta coefficients from defaults.yaml")
+						beta = cfg.TrainedPhysicsDefaults.BetaCoeffs
+						logrus.Infof("--latency-model: loaded trained-physics beta coefficients from defaults.yaml")
 					}
 					if !cmd.Flags().Changed("alpha-coeffs") {
-						alpha = cfg.EvolvedDefaults.AlphaCoeffs
-						logrus.Infof("--latency-model: loaded evolved alpha coefficients from defaults.yaml")
+						alpha = cfg.TrainedPhysicsDefaults.AlphaCoeffs
+						logrus.Infof("--latency-model: loaded trained-physics alpha coefficients from defaults.yaml")
 					}
 				}
 			}
@@ -599,13 +599,13 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 				logrus.Infof("--latency-model: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
 			}
 		}
-		// Validate evolved coefficients: at least 7 beta required (8th+ optional).
+		// Validate trained-physics coefficients: at least 7 beta required (8th+ optional).
 		if !cmd.Flags().Changed("beta-coeffs") && (len(beta) < 7 || allZeros(beta)) {
-			logrus.Fatalf("--latency-model evolved: no evolved_coefficients found in %s and no --beta-coeffs provided. "+
-				"Add evolved_coefficients to defaults.yaml or provide --beta-coeffs explicitly", defaultsFilePath)
+			logrus.Fatalf("--latency-model trained-physics: no trained_physics_coefficients found in %s and no --beta-coeffs provided. "+
+				"Add trained_physics_coefficients to defaults.yaml or provide --beta-coeffs explicitly", defaultsFilePath)
 		}
 		if allZeros(alpha) && !cmd.Flags().Changed("alpha-coeffs") {
-			logrus.Warnf("--latency-model evolved: no evolved alpha coefficients found; " +
+			logrus.Warnf("--latency-model trained-physics: no trained-physics alpha coefficients found; " +
 				"QueueingTime, PostDecodeFixedOverhead, and OutputTokenProcessingTime will use zero alpha (may underestimate TTFT/E2E)")
 		}
 	}

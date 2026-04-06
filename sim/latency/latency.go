@@ -257,10 +257,11 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			flopsPeakUs: hw.HWConfig.TFlopsPeak * 1e6,
 			bwHbmUs:     hw.HWConfig.BwPeakTBs * 1e6,
 		}, nil
-	case "evolved":
-		// EvolvedModel: physics-informed roofline with architecture-aware MoE overhead.
+	case "trained-physics":
+		// TrainedPhysicsModel: physics-informed roofline with architecture-aware MoE overhead.
 		// Uses roofline basis functions with learned corrections and conditional β₈ scaling.
-		model, err := NewEvolvedModel(coeffs, hw)
+		// Trained coefficients from iteration 29 (loss: 34.57%).
+		model, err := NewTrainedPhysicsModel(coeffs, hw)
 		if err != nil {
 			return nil, err
 		}
