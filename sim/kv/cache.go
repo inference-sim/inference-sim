@@ -158,6 +158,10 @@ func (kvc *KVCacheState) GetCachedBlocks(tokens []int) (blockIDs []int64) {
 //
 // The snapshot captures HashToBlock at call time. Subsequent allocations/releases
 // do NOT affect the returned function's results.
+//
+// CO-CHANGE: GetCachedBlocks (same file) implements the same algorithm on live
+// HashToBlock state. If this loop, the hash chain logic, or the break condition
+// changes, update GetCachedBlocks to match.
 func (kvc *KVCacheState) SnapshotCachedBlocksFn() func([]int) int {
 	snapshot := make(map[string]int64, len(kvc.HashToBlock))
 	for k, v := range kvc.HashToBlock {

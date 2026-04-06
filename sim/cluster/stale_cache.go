@@ -56,7 +56,7 @@ func NewStaleCacheIndex(instances map[InstanceID]*InstanceSimulator, interval in
 }
 
 // RefreshIfNeeded updates all stale snapshots if the refresh interval has elapsed.
-// No-op if clock - lastRefresh < interval.
+// No-op if clock - lastRefresh < interval. Refreshes when clock - lastRefresh >= interval.
 func (s *StaleCacheIndex) RefreshIfNeeded(clock int64) {
 	if clock-s.lastRefresh < s.interval {
 		return

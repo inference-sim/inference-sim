@@ -67,6 +67,47 @@ func TestStaleCacheIndex_AddInstance(t *testing.T) {
 	assert.Equal(t, 0, idx.Query("inst-new", tokens))
 }
 
+func TestStaleCacheIndex_AddInstance_HonorsStaleBoundary(t *testing.T) {
+	// This test covers the stale-mode deferred-instance path:
+	// registerInstanceCacheQueryFn (cluster.go) calls AddInstance when a new
+	// instance becomes ready in stale mode (e.g. NodeReadyEvent). The resulting
+	// closure must honor stale semantics — snapshot frozen at registration time,
+	// updated only by RefreshIfNeeded — not query live state like oracle mode would.
+
+	// GIVEN an empty StaleCacheIndex and a new instance with empty cache
+	cfg := newTestSimConfig()
+	cfg.Horizon = 10_000_000
+	cfg.TotalKVBlocks = 100
+	cfg.BlockSizeTokens = 4
+	inst := NewInstanceSimulator("inst-deferred", cfg)
+
+	idx := NewStaleCacheIndex(nil, 1000)
+	idx.AddInstance("inst-deferred", inst) // snapshot taken here: cache empty → staleFn returns 0
+
+	tokens := []int{1, 2, 3, 4, 5, 6, 7, 8}
+	cqf := idx.BuildCacheQueryFn()
+
+	// WHEN the instance's cache is populated after registration
+	req := &sim.Request{
+		ID: "r1", ArrivalTime: 0, InputTokens: tokens,
+		OutputTokens: []int{100}, State: sim.StateQueued,
+	}
+	inst.InjectRequest(req)
+	inst.Run()
+	require.Greater(t, inst.GetCachedBlockCount(tokens), 0, "live cache must have blocks")
+
+	// THEN before RefreshIfNeeded: stale snapshot is empty — returns 0 (not live state)
+	assert.Equal(t, 0, cqf["inst-deferred"](tokens),
+		"stale semantics: snapshot was empty at AddInstance time, must not see live blocks yet")
+
+	// WHEN RefreshIfNeeded fires after interval elapses
+	idx.RefreshIfNeeded(1000)
+
+	// THEN the snapshot is updated and the closure sees the populated cache
+	assert.Greater(t, cqf["inst-deferred"](tokens), 0,
+		"after RefreshIfNeeded: snapshot updated, closure sees populated cache")
+}
+
 func TestStaleCacheIndex_RefreshIfNeeded_BoundaryAtIntervalMinusOne(t *testing.T) {
 	// GIVEN a StaleCacheIndex with interval=1000 and a populated cache
 	cfg := newTestSimConfig()
