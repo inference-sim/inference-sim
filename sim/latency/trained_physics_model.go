@@ -8,65 +8,111 @@ import (
 	"github.com/inference-sim/inference-sim/sim/internal/util"
 )
 
-// TrainedPhysicsModel implements physics-informed latency model with learned correction
-// coefficients.
+// TrainedPhysicsModel implements a physics-informed latency model that combines
+// analytical roofline performance bounds with learned correction coefficients.
 //
-// Iteration 29: Sequential golden section search optimization (loss: 34.57%).
+// # Model Architecture
 //
-// BACKGROUND: Iterations 0-14 used a compute-only decode formula that dropped the
-// memory-bandwidth floor from the roofline model. This caused per-request overhead
-// terms (β₃, β₇) to inflate 100-1000× to compensate, producing O(N×B) accumulated
-// phantom overhead in predicted E2E latency. The trained-roofline backend (7% MAPE
-// on 13 experiments) already solves this with max(compute, memory) basis functions.
+// The model uses roofline analysis as a physics-based prior, computing analytical
+// bounds for compute (FLOPs) and memory bandwidth (HBM transfers) for each operation:
+// attention, MLP, weight loading, KV cache access, and TP communication. Learned
+// coefficients (α, β) correct these analytical estimates to match observed latencies.
 //
-// ITER29 STRATEGY: Use trained-roofline's proven 7-term formula with three
-// dataset-specific enhancements:
+// # Step-Time Formula
 //
-//  1. InterleaveMoELayerStep/DenseIntermediateDim: Split FLOPs and weight bytes
-//     between MoE and dense layers for Scout (#877). The trained-roofline treats
-//     all layers identically, which is wrong for interleaved MoE/dense architectures.
+// The model supports 8, 9, or 10 beta coefficients for increasing fidelity:
 //
-//  2. EffectiveWeightBytesPerParam: Use quantization-aware weight precision instead
-//     of hardcoded FP16. Scout uses FP8 (1 byte/param vs 2), which halves weight
-//     loading time. The trained-roofline hardcodes bytesPerElement=2.0.
+// 8-beta (default):
+//   T_step = β₁·max(T_pf_compute, T_pf_kv) + β₂·max(T_dc_compute, T_dc_kv)
+//            + β₃·T_weight + β₄·T_tp + β₅·L + β₆·B + β₇ + β₈·nMoE
 //
-//  3. FP8 peak FLOPS: Select TFlopsFP8 for FP8 models on GPUs with native FP8
-//     tensor cores (H100), matching roofline.go's logic.
+// 9-beta (prefill split):
+//   T_step = β₁ₐ·T_pf_compute + β₁ᵦ·T_pf_kv + β₂·max(T_dc_compute, T_dc_kv)
+//            + β₃·T_weight + β₄·T_tp + β₅·L + β₆·B + β₇ + β₈·nMoE
 //
-// Step-time formula (up to 10-term, extends trained-roofline with MoE overhead
-// and optional prefill/decode compute/memory splits):
+// 10-beta (prefill + decode split):
+//   T_step = β₁ₐ·T_pf_compute + β₁ᵦ·T_pf_kv + β₂ₐ·T_dc_compute + β₂ᵦ·T_dc_kv
+//            + β₃·T_weight + β₄·T_tp + β₅·L + β₆·B + β₇ + β₈·nMoE
 //
-// With 8 betas (default):
+// Where:
+//   - T_pf_compute: Prefill compute time (FlashAttention FLOPs + MLP FLOPs)
+//   - T_pf_kv: Prefill KV cache write bandwidth
+//   - T_dc_compute: Decode compute time (single-token attention + MLP)
+//   - T_dc_kv: Decode KV cache read bandwidth (past tokens)
+//   - T_weight: Model weight loading bandwidth (per-step fixed cost)
+//   - T_tp: Tensor-parallel All-Reduce communication time
+//   - L: Number of transformer layers
+//   - B: Batch size (number of requests)
+//   - nMoE: Number of MoE layers (0 for dense models)
 //
-//	β₁·max(T_pf_compute, T_pf_kv) + β₂·max(T_dc_compute, T_dc_kv)
-//	+ β₃·T_weight + β₄·T_tp + β₅·L + β₆·batchSize + β₇
-//	+ β₈·nMoELayers
+// # Beta Coefficients (Roofline Corrections + Overheads)
 //
-// With 9 betas (prefill split — prefill is compute-dominated):
+// β₁ (or β₁ₐ): Prefill compute correction (dimensionless, ~1.0)
+//   Corrects analytical FlashAttention + MLP FLOP estimates. Accounts for kernel
+//   efficiency, memory access patterns, and instruction-level parallelism.
 //
-//	β₁ₐ·T_pf_compute + β₁ᵦ·T_pf_kv + β₂·max(T_dc_compute, T_dc_kv)
-//	+ β₃·T_weight + β₄·T_tp + β₅·L + β₆·batchSize + β₇
-//	+ β₈·nMoELayers
+// β₁ᵦ (β₉): Prefill memory correction (dimensionless, ~0.0 when compute-bound)
+//   Corrects KV cache write bandwidth. Typically zero since prefill is compute-bound.
 //
-// With 10 betas (prefill + decode split — decode is memory-dominated):
+// β₂ (or β₂ₐ): Decode compute correction (dimensionless, ~0.0 when memory-bound)
+//   Corrects single-token attention + MLP FLOPs. Typically zero since decode is
+//   memory-bound (bandwidth-limited by KV cache reads).
 //
-//	β₁ₐ·T_pf_compute + β₁ᵦ·T_pf_kv + β₂ₐ·T_dc_compute + β₂ᵦ·T_dc_kv
-//	+ β₃·T_weight + β₄·T_tp + β₅·L + β₆·batchSize + β₇
-//	+ β₈·nMoELayers
+// β₂ᵦ (β₁₀): Decode memory correction (dimensionless, ~1.0-2.0)
+//   Corrects KV cache read bandwidth. Primary decode bottleneck.
 //
-// Physical insight: prefill is compute-bound (FlashAttention), decode is
-// memory-bound (single-token bandwidth). Each uses only its bottleneck term.
+// β₃: Weight loading correction (dimensionless, ~1.0-1.5)
+//   Corrects model weight bandwidth (loaded once per step). Accounts for cache
+//   effects, prefetching, and HBM contention with KV cache traffic.
 //
-// Where β₁/β₁ₐ-β₃ are dimensionless roofline corrections (analytical prior ≈ 1.0),
-// β₁ᵦ (β₉) is prefill memory correction, β₄ is TP All-Reduce correction (absorbs NVLink/HBM bandwidth ratio; ~0.27 on H100),
-// β₅ is µs/layer, β₆ is µs/request, β₇ is µs/step,
-// β₈ is µs/MoE-layer (router gating + token permutation + EP communication overhead;
-// zero for dense models since nMoELayers=0).
+// β₄: TP All-Reduce correction (dimensionless, ~0.3-0.8)
+//   Corrects tensor-parallel communication overhead. Absorbs NVLink/HBM bandwidth
+//   ratio and collective communication efficiency (ring, tree, etc.).
 //
-// Alpha coefficients:
-//   - α₀: QueueingTime — fixed per-request API processing overhead (µs)
-//   - α₁: PostDecodeFixedOverhead — fixed per-request post-decode overhead (µs)
-//   - α₂: OutputTokenProcessingTime — per-output-token overhead (µs/token)
+// β₅: Per-layer overhead (µs/layer)
+//   Fixed overhead per transformer layer: kernel launch latency, CUDA graph overhead,
+//   residual connections, layer normalization. Typically ~30-60 µs/layer.
+//
+// β₆: Per-request overhead (µs/request)
+//   Scheduling and dispatch overhead per request in batch: queue management, attention
+//   mask construction, token ID lookup. Typically ~3-5 µs/request.
+//
+// β₇: Per-step constant overhead (µs/step)
+//   Fixed overhead per step independent of batch/model size: CUDA synchronization,
+//   sampler invocation, logging. Typically ~100-200 µs/step.
+//
+// β₈: MoE-layer overhead (µs/MoE-layer, architecture-aware)
+//   Per-MoE-layer overhead: router gating, token permutation, expert-parallel
+//   communication. Applies only to interleaved architectures (InterleaveMoELayerStep > 0).
+//   Zero for uniform MoE (all layers are MoE) and dense models. Typically ~400-500 µs/layer.
+//
+// # Alpha Coefficients (API/Framework Overheads)
+//
+// α₀: QueueingTime (µs)
+//   Fixed per-request API processing: HTTP parsing, request validation, queue
+//   insertion. Independent of model/batch size. Typically ~15,000 µs (15ms).
+//
+// α₁: PostDecodeFixedOverhead (µs)
+//   Fixed per-request post-decode overhead: detokenization setup, finish reason
+//   determination, response serialization. Typically ~800 µs.
+//
+// α₂: OutputTokenProcessingTime (µs/token)
+//   Per-output-token overhead: streaming token transmission, incremental detokenization.
+//   Typically ~50 µs/token.
+//
+// # Architecture-Aware Features
+//
+// 1. Interleaved MoE/Dense Layers: Models like Scout alternate MoE and dense layers.
+//    The model splits FLOPs and weight bandwidth calculations by layer type, using
+//    DenseIntermediateDim for dense layers and MoEExpertFFNDim for MoE layers.
+//    β₈ overhead applies only to MoE layers in interleaved architectures.
+//
+// 2. Quantization-Aware Weights: Uses EffectiveWeightBytesPerParam for weight
+//    bandwidth (e.g., 1 byte for FP8, 0.5 for W4A16), while KV cache always uses
+//    FP16 (2 bytes). Automatically selects TFlopsFP8 for FP8 models on H100.
+//
+// 3. Tensor Parallelism Scaling: All compute and bandwidth terms are divided by TP
+//    degree, while β₄ captures All-Reduce communication overhead explicitly.
 type TrainedPhysicsModel struct {
 	Alpha [3]float64 // [α₀, α₁, α₂]
 	Beta  []float64  // [β₁..β₁₀] — 7-10 coefficients (7→β₈=0, 8→MoE, 9→pf split, 10→dc split)

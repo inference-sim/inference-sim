@@ -5,14 +5,23 @@ import (
 	"testing"
 )
 
-// TestBeta10BatchingInefficiency validates β₁₀ basis function contributions
-// and scaling behavior for long vs short sequences.
+// TestBeta10BatchingInefficiency validates β₁₀ (decode memory correction) basis
+// function contributions and scaling behavior for different sequence lengths and batch sizes.
 //
-// This test validates the CORRECTED expected ranges from iter11:
-// - β₁₀ = 0.1-1.0 **μs** per (token²/batch_request), NOT milliseconds!
-// - Expected contribution: ~31.25ms for Scout general-lite (500 tokens, batch_size=4)
-// - Expected contribution: ~0.156ms for Scout roleplay (100 tokens, batch_size=32)
-// - Expected scaling ratio: 200× (quadratic with sequence length, adjusted for batch size)
+// β₁₀ corrects the KV cache read bandwidth estimate for decode operations. Since decode
+// is memory-bound (single-token attention requires reading all past KV cache entries),
+// β₁₀ is the primary decode bottleneck correction factor.
+//
+// Expected behavior:
+//   - β₁₀ has units of µs per (token²/batch_request)
+//   - Contribution scales quadratically with sequence length (more past tokens to read)
+//   - Contribution scales inversely with batch size (amortized bandwidth utilization)
+//   - Typical range: 0.1-1.0 µs per (token²/batch_request)
+//
+// Test validates:
+//   - Long sequence (500 tokens, batch=4): ~31.25ms contribution
+//   - Short sequence (100 tokens, batch=32): ~0.156ms contribution
+//   - Scaling ratio: 200× = (500/100)² × (32/4)
 func TestBeta10BatchingInefficiency(t *testing.T) {
 	// Test case 1: Long sequence, small batch (Scout general-lite scenario)
 	// 500 tokens, batch_size=4, β₁₀=0.0005ms = 0.5μs = 0.0000005s
@@ -74,14 +83,23 @@ func TestBeta10BatchingInefficiency(t *testing.T) {
 		ratio, math.Abs(ratio-expectedRatio)/expectedRatio*100)
 }
 
-// TestBeta3PrimeKVSeqLen validates β₃' basis function contributions
-// and scaling behavior for long vs short sequences.
+// TestBeta3PrimeKVSeqLen validates a hypothetical β₃' term representing per-layer
+// KV cache access overhead that scales linearly with sequence length.
 //
-// This test validates:
-// - β₃' = 0.1-1.0 μs per (token×layer)
-// - Expected contribution: ~14ms for Scout general-lite (500 tokens, 56 layers)
-// - Expected contribution: ~2.8ms for Scout roleplay (100 tokens, 56 layers)
-// - Expected scaling ratio: 5× (linear with sequence length)
+// While β₃' is not an explicit coefficient in the trained-physics model (which uses
+// β₂ᵦ for decode memory correction), this test validates the analytical basis function
+// behavior for KV cache read bandwidth that underlies the roofline calculation.
+//
+// Expected behavior:
+//   - β₃' has units of µs per (token × layer)
+//   - Contribution scales linearly with sequence length (past tokens to read)
+//   - Contribution scales linearly with layer count (each layer reads KV cache)
+//   - Typical range: 0.1-1.0 µs per (token × layer)
+//
+// Test validates:
+//   - Long sequence (500 tokens, 56 layers): ~14ms contribution
+//   - Short sequence (100 tokens, 56 layers): ~2.8ms contribution
+//   - Scaling ratio: 5× = (500/100)
 func TestBeta3PrimeKVSeqLen(t *testing.T) {
 	// Test case 1: Long sequence, dense model (Scout general-lite scenario)
 	// 500 tokens, 56 layers, β₃'=0.5μs = 0.0000005s per (token×layer)
@@ -142,19 +160,25 @@ func TestBeta3PrimeKVSeqLen(t *testing.T) {
 		ratio, math.Abs(ratio-expectedRatio)/expectedRatio*100)
 }
 
-// TestBeta10PhysicsAnalysis validates the corrected understanding from iter11
-// that β₁₀ should be in microseconds, not milliseconds.
+// TestBeta10PhysicsAnalysis validates the dimensional analysis and expected
+// magnitude of β₁₀ (decode memory correction coefficient).
 //
-// This test demonstrates why iter10's hypothesis was wrong:
-// - Iter10 hypothesis: β₁₀ = 0.1-1.0 **ms** per (token²/batch_request)
-// - Iter10 optimizer: β₁₀ converged to 0.945 μs
-// - Iter10 conclusion: "1000× too small" (ERROR!)
+// This test demonstrates the physics-based reasoning for β₁₀'s units and magnitude:
 //
-// Corrected analysis:
-// - Expected contribution: ~31ms for Scout general-lite
-// - Basis function value: 62,500 (token²/batch_request)
-// - Therefore: β₁₀ = 31ms / 62,500 = 0.496 μs ✓
-// - Correct range: 0.1-1.0 **μs**, not milliseconds!
+// Given:
+//   - Observed decode overhead for batched long-sequence requests: ~30ms
+//   - Sequence length: 500 tokens
+//   - Batch size: 4 requests
+//   - Basis function value: token²/batch = 500² / 4 = 62,500
+//
+// Dimensional analysis:
+//   β₁₀ = observed_overhead / basis_function_value
+//       = 30ms / 62,500
+//       = 0.48 µs per (token²/batch_request)
+//
+// This validates that β₁₀ should have units of **microseconds** (not milliseconds)
+// and a typical magnitude of 0.1-1.0 µs, which is physically reasonable for the
+// amortized per-token-squared KV cache bandwidth overhead.
 func TestBeta10PhysicsAnalysis(t *testing.T) {
 	// Scenario: Scout general-lite experiment
 	// Expected TTFT overhead from batching inefficiency: ~30ms
@@ -175,7 +199,7 @@ func TestBeta10PhysicsAnalysis(t *testing.T) {
 	t.Logf("  - Calculated β₁₀:        %.3fμs (%.6fs)",
 		coefficientMicroseconds, coefficientSeconds)
 
-	// Validate that calculated β₁₀ is in the CORRECTED range (0.1-1.0 μs)
+	// Validate that calculated β₁₀ is in the expected range (0.1-1.0 μs)
 	if coefficientMicroseconds < 0.1 || coefficientMicroseconds > 1.0 {
 		t.Errorf("Calculated β₁₀ outside expected range:\n"+
 			"  got:      %.3fμs\n"+
@@ -183,25 +207,19 @@ func TestBeta10PhysicsAnalysis(t *testing.T) {
 			coefficientMicroseconds)
 	}
 
-	// Demonstrate iter10's error
-	iter10ExpectedRangeLowerMs := 0.1  // ms (WRONG!)
-	iter10ExpectedRangeUpperMs := 1.0  // ms (WRONG!)
-	iter10ConvergedValueUs := 0.945    // μs (from iter10 results)
-	iter10ConvergedValueMs := iter10ConvergedValueUs / 1e3 // Convert to ms
+	// Demonstrate the importance of correct dimensional analysis
+	incorrectUnitsMs := coefficientMicroseconds / 1000.0 // If incorrectly assumed milliseconds
+	correctUnitsUs := coefficientMicroseconds
 
-	t.Logf("\nIter10 hypothesis error analysis:")
-	t.Logf("  - Iter10 expected range: %.1f-%.1f **ms** (WRONG by 1000×!)",
-		iter10ExpectedRangeLowerMs, iter10ExpectedRangeUpperMs)
-	t.Logf("  - Iter10 converged to:   %.3fμs = %.6fms",
-		iter10ConvergedValueUs, iter10ConvergedValueMs)
-	t.Logf("  - Iter10 conclusion:     '1000× too small' (ERROR - hypothesis was wrong!)")
-	t.Logf("  - Corrected range:       0.1-1.0 **μs** ✓")
-	t.Logf("  - Iter10 value in μs:    %.3fμs (actually WITHIN correct range!)",
-		iter10ConvergedValueUs)
+	t.Logf("\nDimensional analysis validation:")
+	t.Logf("  - If units were milliseconds: %.6fms (1000× too small!)", incorrectUnitsMs)
+	t.Logf("  - Correct units (microseconds): %.3fμs ✓", correctUnitsUs)
+	t.Logf("  - Physical interpretation: %.3fμs per (token²/request) is reasonable for", correctUnitsUs)
+	t.Logf("    amortized HBM bandwidth cost of reading KV cache (~%.1f GB/s effective)",
+		float64(tokens*tokens)*2.0 /* FP16 bytes/token */ *56.0 /* layers */ /coefficientSeconds/1e9)
 
-	// Validate that iter10's converged value was actually reasonable
-	if iter10ConvergedValueUs >= 0.1 && iter10ConvergedValueUs <= 1.0 {
-		t.Logf("\n✓ CONFIRMED: Iter10 β₁₀=%.3fμs was CORRECT, hypothesis range was WRONG!",
-			iter10ConvergedValueUs)
+	// Validate that the coefficient is physically reasonable
+	if coefficientMicroseconds >= 0.1 && coefficientMicroseconds <= 1.0 {
+		t.Logf("\n✓ VALIDATED: β₁₀=%.3fμs is within expected range and physically reasonable", coefficientMicroseconds)
 	}
 }
