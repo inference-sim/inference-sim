@@ -237,9 +237,10 @@ func TestNoOpPipelineDeterminism(t *testing.T) {
 // T011: TestNilComponentGuard
 // ---------------------------------------------------------------------------
 
-// TestNilComponentGuard verifies that a partially-wired autoscaler pipeline reschedules
-// its next tick but does NOT call Collect() when any of the four components is nil.
-// Behavioral contract: nil guard must not permanently stall the schedule.
+// TestNilComponentGuard verifies that a partially-wired autoscaler pipeline fires Errorf
+// exactly once and permanently stops the tick chain when any of the four components is nil.
+// Behavioral contract: nil guard disables the autoscaler for this run — no further ticks are scheduled.
+// Run() completing cleanly (no panic, exit 0) is itself the nil-guard correctness signal.
 func TestNilComponentGuard(t *testing.T) {
 	// Each case carries its own countingCollector so we can assert Collect() was never called.
 	// For the nil_collector case, the collector field passed to the pipeline is nil;

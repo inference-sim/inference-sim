@@ -91,8 +91,12 @@ type ScaleDecision struct {
 }
 
 // GPUInventory is a read-only view of available GPU capacity, passed to Engine.Optimize().
-// byVariant[v] = total GPU slots for v - slots held by Running instances - slots held by Loading instances.
-// Pending placements are NOT subtracted. Draining instances ARE subtracted (hold GPUs until drain completes).
+// byVariant[v] = total GPU slots for v (Ready nodes)
+//   - slots held by Loading instances
+//   - slots held by WarmingUp instances
+//   - slots held by Active instances
+//   - slots held by Draining instances (hold GPUs until drain completes)
+// Pending (Scheduling) placements are NOT subtracted. Terminated instances are NOT subtracted.
 // Callers must use FreeSlots() and Variants() to read (R2: map iteration is non-deterministic).
 type GPUInventory struct {
 	byVariant map[VariantSpec]int // free GPU slots per variant; use FreeSlots() and Variants() to read
