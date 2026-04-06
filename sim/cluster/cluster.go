@@ -67,6 +67,9 @@ type ClusterSimulator struct {
 	// Phase 1B-2a: per-tenant fair-share tracker. Nil when TenantBudgets is nil (backward-compat).
 	tenantTracker *TenantTracker
 
+	// Phase 1C: model autoscaler pipeline. Nil when ModelAutoscalerIntervalUs == 0 (backward-compat, INV-6).
+	autoscaler *autoscalerPipeline
+
 	// sessionCallback is the raw onRequestDone parameter for session follow-up
 	// generation in PD mode. Called from detectDecodeCompletions with the original
 	// request (which carries SessionID). Separate from the per-instance closure to
@@ -251,10 +254,20 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 				}
 				simCfg.HWConfig = hc
 			}
+			// Phase 1C: look up CostPerHour for this matched GPU type (issue #692).
+			var poolCostPerHour float64
+			for i := range config.NodePools {
+				if config.NodePools[i].GPUType == matchedGPUType {
+					poolCostPerHour = config.NodePools[i].CostPerHour
+					break
+				}
+			}
 			inst := NewInstanceSimulator(id, simCfg)
 			inst.Model = config.Model
 			inst.nodeID = nodeID
 			inst.allocatedGPUIDs = gpuIDs
+			inst.TPDegree = tpDegree
+			inst.CostPerHour = poolCostPerHour
 			inst.warmUpRemaining = config.InstanceLifecycle.WarmUpRequestCount
 			inst.TransitionTo(InstanceStateLoading)
 			cs.scheduleInstanceLoadedEvent(inst)
@@ -310,6 +323,37 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	if len(config.DecodeScorerConfigs) > 0 {
 		cs.decodeRoutingPolicy = sim.NewRoutingPolicyWithCache("weighted", config.DecodeScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("decode-router"), cs.cacheQueryFn)
 	}
+
+	// Phase 1C: initialize autoscaler pipeline when ModelAutoscalerIntervalUs > 0 (issue #692).
+	// Zero interval disables the autoscaler entirely (INV-6 backward-compat).
+	// Concrete pipeline components (collector, analyzer, engine, actuator) are injected after
+	// construction by tests or by the wiring logic in cmd/. Until they are set, all four fields
+	// on cs.autoscaler remain nil, and ScalingTickEvent.Execute() will guard against them.
+	// R3: validate autoscaler float64 fields — NaN/Inf/negative values are configuration errors.
+	if math.IsNaN(config.ModelAutoscalerIntervalUs) || math.IsInf(config.ModelAutoscalerIntervalUs, 0) {
+		panic("ModelAutoscalerIntervalUs must not be NaN or Inf")
+	}
+	if config.ModelAutoscalerIntervalUs < 0 {
+		panic("ModelAutoscalerIntervalUs must be ≥0 (0 = disabled)")
+	}
+	if math.IsNaN(config.ScaleUpCooldownUs) || math.IsInf(config.ScaleUpCooldownUs, 0) || config.ScaleUpCooldownUs < 0 {
+		panic("ScaleUpCooldownUs must be a finite non-negative number")
+	}
+	if math.IsNaN(config.ScaleDownCooldownUs) || math.IsInf(config.ScaleDownCooldownUs, 0) || config.ScaleDownCooldownUs < 0 {
+		panic("ScaleDownCooldownUs must be a finite non-negative number")
+	}
+	if math.IsNaN(config.ActuationDelay.Mean) || math.IsInf(config.ActuationDelay.Mean, 0) || config.ActuationDelay.Mean < 0 {
+		panic("ActuationDelay.Mean must be a finite non-negative number")
+	}
+	if math.IsNaN(config.ActuationDelay.Stddev) || math.IsInf(config.ActuationDelay.Stddev, 0) || config.ActuationDelay.Stddev < 0 {
+		panic("ActuationDelay.Stddev must be a finite non-negative number")
+	}
+	if config.ModelAutoscalerIntervalUs > 0 {
+		// Interface components (collector, analyzer, engine, actuator) are injected by
+		// tests or cmd/ after construction, before Run() is called (see newAutoscalerPipeline).
+		cs.autoscaler = newAutoscalerPipeline(nil, nil, nil, nil, rng.ForSubsystem(subsystemAutoscaler))
+	}
+
 
 	// Phase 1B-2a: initialize TenantTracker when TenantBudgets is configured (issue #811).
 	// totalCapacity = NumInstances × MaxRunningReqs (batch size proxy for cluster-wide capacity).
@@ -400,6 +444,17 @@ func (c *ClusterSimulator) Run() error {
 
 	// 2. Schedule ClusterArrivalEvents (NC-1: no pre-dispatch before event loop)
 	heap.Init(&c.clusterEvents)
+
+	// Phase 1C: schedule the first ScalingTickEvent when the autoscaler is enabled (T015).
+	// The autoscaler is enabled when ModelAutoscalerIntervalUs > 0 AND cs.autoscaler is non-nil.
+	// Zero-interval guard: no tick is ever scheduled when interval is 0 (INV-6).
+	if c.autoscaler != nil && c.config.ModelAutoscalerIntervalUs > 0 {
+		heap.Push(&c.clusterEvents, clusterEventEntry{
+			event: &ScalingTickEvent{At: c.clock},
+			seqID: c.nextSeqID(),
+		})
+	}
+
 	for _, req := range requests {
 		heap.Push(&c.clusterEvents, clusterEventEntry{
 			event: &ClusterArrivalEvent{time: req.ArrivalTime, request: req},
@@ -889,6 +944,72 @@ func (c *ClusterSimulator) isBusy() bool {
 		}
 	}
 	return false
+}
+
+// gpuInventory computes the current GPU inventory for Engine.Optimize().
+// Phase 1C (T012): returns free GPU slots per VariantSpec.
+//
+// Free slots for a variant = total GPUs of that GPU type on Ready nodes
+//   - GPUs held by Loading instances of that GPU type
+//   - GPUs held by Active/WarmingUp instances of that GPU type
+//   - GPUs held by Draining instances of that GPU type (hold GPUs until drain completes)
+//
+// Pending (Scheduling) instances are NOT subtracted.
+// Terminated instances are NOT subtracted.
+//
+// Returns an empty inventory when cs.placement is nil (no NodePools configured, backward-compat).
+func (c *ClusterSimulator) gpuInventory() GPUInventory {
+	if c.placement == nil {
+		return GPUInventory{byVariant: make(map[VariantSpec]int)}
+	}
+
+	// Step 1: count total GPUs on Ready nodes per GPUType.
+	totalByGPUType := make(map[string]int)
+	for _, node := range c.placement.nodesByID {
+		if node.State == NodeStateReady {
+			totalByGPUType[node.GPUType] += node.TotalGPUs
+		}
+	}
+
+	// Step 2: subtract GPUs used by Loading, Active (incl. WarmingUp), and Draining instances.
+	// Also populate seenVariants so every GPU type with Ready capacity appears in the result,
+	// even when there are no active instances of that GPU type (enables scale-up from zero).
+	clusterTPDegree := c.config.TP
+	if clusterTPDegree < 1 {
+		clusterTPDegree = 1
+	}
+	usedByGPUType := make(map[string]int)
+	seenVariants := make(map[VariantSpec]struct{})
+	// Seed from Ready node GPU types so zero-instance pools appear in inventory.
+	for gpuType, total := range totalByGPUType {
+		if total > 0 {
+			seenVariants[VariantSpec{GPUType: gpuType, TPDegree: clusterTPDegree}] = struct{}{}
+		}
+	}
+	for _, inst := range c.instances {
+		switch inst.State {
+		case InstanceStateLoading, InstanceStateWarmingUp, InstanceStateActive, InstanceStateDraining:
+			if inst.GPU() != "" {
+				usedByGPUType[inst.GPU()] += inst.TPDegree
+				if inst.TPDegree > 0 {
+					seenVariants[VariantSpec{GPUType: inst.GPU(), TPDegree: inst.TPDegree}] = struct{}{}
+				}
+			}
+		}
+	}
+
+	// Step 3: build byVariant — same raw free count for each variant of the same GPUType.
+	// Callers must use Variants() to iterate (R2: map iteration is non-deterministic).
+	byVariant := make(map[VariantSpec]int, len(seenVariants))
+	for v := range seenVariants {
+		free := totalByGPUType[v.GPUType] - usedByGPUType[v.GPUType]
+		if free < 0 {
+			logrus.Warnf("[autoscaler] gpuInventory: variant %+v has negative free slots (%d) — bookkeeping inconsistency; clamping to 0", v, free)
+			free = 0
+		}
+		byVariant[v] = free
+	}
+	return GPUInventory{byVariant: byVariant}
 }
 
 // promoteDeferred injects all deferred requests as ClusterArrivalEvents at the current clock.

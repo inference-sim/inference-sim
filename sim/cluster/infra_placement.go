@@ -40,11 +40,12 @@ type pendingInstance struct {
 
 // placedInstance records a successfully placed instance with its node and GPU assignments.
 type placedInstance struct {
-	id      InstanceID
-	nodeID  string
-	gpuIDs  []string
-	gpuType string         // gpu_type from the matched pool config
-	simCfg  sim.SimConfig  // per-instance simulator configuration
+	id       InstanceID
+	nodeID   string
+	gpuIDs   []string
+	gpuType  string        // gpu_type from the matched pool config
+	tpDegree int           // tensor-parallel degree from the pending instance request
+	simCfg   sim.SimConfig // per-instance simulator configuration
 }
 
 // NewPlacementManager creates a PlacementManager from the given node pool configs.
@@ -365,7 +366,7 @@ func (pm *PlacementManager) RetryPendingInstances() []placedInstance {
 		p := pm.pendingInsts[i]
 		nodeID, gpuIDs, matchedGPUType, err := pm.PlaceInstance(p.id, p.model, p.gpuType, p.tpDegree)
 		if err == nil {
-			nowPlaced = append(nowPlaced, placedInstance{id: p.id, nodeID: nodeID, gpuIDs: gpuIDs, gpuType: matchedGPUType, simCfg: p.simCfg})
+			nowPlaced = append(nowPlaced, placedInstance{id: p.id, nodeID: nodeID, gpuIDs: gpuIDs, gpuType: matchedGPUType, tpDegree: p.tpDegree, simCfg: p.simCfg})
 			// Remove from pending: swap with last and shrink (R21).
 			// Swap-remove pattern: move last element to position i, then truncate.
 			// This is O(1) removal vs O(N) for shifting all elements left.
