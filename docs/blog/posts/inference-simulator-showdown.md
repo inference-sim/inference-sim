@@ -40,9 +40,9 @@ We evaluated five open-source simulators, each taking a different approach to mo
 
 **[Vidur](https://github.com/microsoft/vidur)** uses discrete-event simulation with profiled GPU kernel times to model vLLM's scheduling decisions. High fidelity to scheduler behavior, but requires profiling each model. Pre-profiled kernels available only for vLLM v0.
 
-**[LLMServingSim](https://github.com/casys-kaist/LLMServingSim)** combines discrete-event simulation with fine-grained network modeling via [astra-sim](https://github.com/astra-sim/astra-sim). Runtime: ~6 minutes per experiment.
+**[LLMServingSim](https://github.com/casys-kaist/LLMServingSim)** combines discrete-event simulation with fine-grained network modeling via [astra-sim](https://github.com/astra-sim/astra-sim).
 
-**[LLM-Optimizer](https://github.com/bentoml/llm-optimizer)** uses analytical roofline modeling. Queries HuggingFace for model config, runs roofline calculation, returns results in 0.1 seconds. No request scheduling or queueing behavior.
+**[LLM-Optimizer](https://github.com/bentoml/llm-optimizer)** uses analytical roofline modeling. Queries HuggingFace for model config, runs extremely fast roofline calculation. No request scheduling or queueing behavior.
 
 **[AIConfigurator](https://github.com/ai-dynamo/aiconfigurator)** uses operation-level profiling — breaks inference into GEMM, attention, communication ops, measures them on hardware, composes results. Dense models only.
 
@@ -118,7 +118,7 @@ Across their supported experiments, median E2E error ranged from 7.4% (BLIS-Evol
 
 **An important nuance:** BLIS-Evolved's E2E latency prediction is strong (11.79% MAPE), but TTFT accuracy is weaker (22.81% MAPE) - nearly 2× worse. For workloads where time-to-first-token dominates user experience, this gap matters.
 
-### Speed: The Accuracy-Speed Frontier
+### The Accuracy-Speed Frontier
 
 Runtime determines whether a simulator is practical for your workflow.
 
@@ -166,6 +166,34 @@ Comparing BLIS-Roofline (analytical) to BLIS-Evolved (learned coefficients) show
 Each simulator offers different trade-offs. Fast but inaccurate wastes time on bad decisions. Accurate but slow limits exploration. High accuracy on limited coverage doesn't help if your architecture isn't supported.
 
 The practical answer: combine multiple simulators. Use fast analytical models for exploration, discrete-event simulation for validation, and always test on your specific model/hardware/workload before trusting predictions.
+
+## Practical Guidance by Use Case
+
+Based on our experiments, here's what worked for different workflows:
+
+### Capacity Planning & Configuration Search
+
+**The challenge:** You need accurate predictions to size production clusters. A fast simulator with 50% error leads to wrong resource decisions — overprovision and waste budget, or underprovision and miss SLOs.
+
+**What worked for us:**
+
+- **For tail latency SLOs (P90, P99):** Use discrete-event simulators. Analytical models (LLM-Optimizer, AIConfigurator) only predict mean latency and cannot validate tail latency requirements. Among discrete-event options, BLIS-Evolved offered the best coverage (38/38 experiments) at practical speed (0.8s per run). Vidur provides high scheduler fidelity but requires per-model profiling.
+
+- **For rapid configuration exploration:** Start with LLM-Optimizer (0.1s per config) to sweep 1,000 candidates in 2 minutes and eliminate obviously bad choices (wrong TP, insufficient memory). Then validate promising candidates with BLIS-Evolved (13 minutes for 1,000 configs). This hybrid workflow balances speed and accuracy.
+
+- **When to avoid:** LLMServingSim's ~6 minute runtime makes iterative exploration impractical.
+
+### AI-Driven Algorithm Discovery
+
+**The challenge:** Training loops for discovering better serving algorithms ([ADRS](https://sky.cs.berkeley.edu/project/adrs/)) need millions of simulations. Speed dominates — even 1 second per simulation becomes a bottleneck.
+
+**What worked for us:**
+
+- **For single-instance algorithms:** LLM-Optimizer (0.1s per run) is 8× faster than any alternative. While it misses queueing dynamics, algorithm discovery often optimizes *relative* performance across policies rather than absolute accuracy. The speed advantage enables large-scale exploration that wouldn't be feasible otherwise.
+
+- **For multi-instance algorithms:** If you need to explore routing policies across replicas, BLIS-Evolved (0.8s per run) supports multi-instance modeling. The 8× slowdown versus LLM-Optimizer is the trade-off for cluster-level features.
+
+- **When to avoid:** AIConfigurator (3.5s), Vidur (9.1s), and LLMServingSim (353s) are too slow for training loops. Better suited for validating hand-designed systems.
 
 ## What We Didn't Test
 
