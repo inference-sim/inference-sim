@@ -74,7 +74,7 @@ Contract: Engine
 
 ```
 Contract: Actuator
-  Signature:  Apply(decisions []ScaleDecision)
+  Signature:  Apply(decisions []ScaleDecision) error
   Observes:   ScaleDecision slice (post-cooldown, already filtered by orchestrator)
   Effect:     Delta > 0 → calls PlacementManager.PlaceInstance(); failure is logged, not silently dropped
   Effect:     Delta < 0 → cancels pending placements for that model; transitions instance to Draining

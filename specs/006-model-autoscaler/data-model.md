@@ -142,7 +142,7 @@ Fires the autoscaling pipeline at the configured interval. Endogenous (state-dri
 
 ```
 ScalingTickEvent
-└── At float64   // simulation timestamp (microseconds)
+└── At int64   // simulation timestamp (microseconds)
 ```
 
 **Priority**: 8 (after all request-path events at same timestamp).  
@@ -157,7 +157,7 @@ Carries scale decisions to apply after the actuation delay elapses. Separates th
 
 ```
 ScaleActuationEvent
-├── At        float64
+├── At        int64
 └── Decisions []ScaleDecision
 ```
 

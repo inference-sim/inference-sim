@@ -349,11 +349,9 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		panic("ActuationDelay.Stddev must be a finite non-negative number")
 	}
 	if config.ModelAutoscalerIntervalUs > 0 {
-		cs.autoscaler = &autoscalerPipeline{
-			lastScaleUpAt:   make(map[string]int64),
-			lastScaleDownAt: make(map[string]int64),
-			rng:             rng.ForSubsystem(subsystemAutoscaler),
-		}
+		// Interface components (collector, analyzer, engine, actuator) are injected by
+		// tests or cmd/ after construction, before Run() is called (see newAutoscalerPipeline).
+		cs.autoscaler = newAutoscalerPipeline(nil, nil, nil, nil, rng.ForSubsystem(subsystemAutoscaler))
 	}
 
 

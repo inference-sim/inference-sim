@@ -83,17 +83,10 @@ func newAutoscalerTestConfig(intervalUs float64) DeploymentConfig {
 	return cfg
 }
 
-// newTestPipeline constructs an autoscalerPipeline with the given components.
-// Canonical constructor for test helpers — satisfies R4 (single construction site).
+// newTestPipeline constructs an autoscalerPipeline for tests using the canonical constructor.
+// Passes nil rng — safe for all tests that keep ActuationDelay.Stddev == 0 (the default).
 func newTestPipeline(collector Collector, analyzer Analyzer, engine Engine, actuator Actuator) *autoscalerPipeline {
-	return &autoscalerPipeline{
-		collector:       collector,
-		analyzer:        analyzer,
-		engine:          engine,
-		actuator:        actuator,
-		lastScaleUpAt:   make(map[string]int64),
-		lastScaleDownAt: make(map[string]int64),
-	}
+	return newAutoscalerPipeline(collector, analyzer, engine, actuator, nil)
 }
 
 // wireAutoscaler attaches a countingCollector + nop pipeline to cs.autoscaler.
@@ -300,18 +293,18 @@ func TestNilComponentGuard(t *testing.T) {
 // tested — they share the same filter logic but maintain separate lastScale*At maps.
 func TestCooldownFilterSuppression(t *testing.T) {
 	// Ticks: 0, 60s, 120s, 180s, 240s, 300s, 360s = 7 ticks within 400s horizon.
-	// Cooldown = 120s. Map zero value for missing key is 0, so:
-	//   t=0:   elapsed = 0 - 0 = 0 < 120_000_000 → suppressed
-	//   t=60s: elapsed = 60_000_000 - 0 < 120_000_000 → suppressed
-	//   t=120s: elapsed = 120_000_000 - 0, NOT < 120_000_000 → passes; lastAt = 120_000_000
+	// Cooldown = 120s. Cooldown only activates after a prior scale event (hadPrior check).
+	//   t=0:   no prior event → passes; lastAt = 0
+	//   t=60s: elapsed = 60_000_000 < 120_000_000 → suppressed
+	//   t=120s: elapsed = 120_000_000, NOT < 120_000_000 → passes; lastAt = 120_000_000
 	//   t=180s: elapsed = 60_000_000 < 120_000_000 → suppressed
 	//   t=240s: elapsed = 120_000_000, NOT < 120_000_000 → passes; lastAt = 240_000_000
-	//   t=300s: suppressed; t=360s: passes → wantApplied = 3
+	//   t=300s: suppressed; t=360s: passes → wantApplied = 4
 	const (
 		cooldownUs  = 120_000_000 // 2 minutes in μs
 		intervalUs  = 60_000_000.0
 		horizonUs   = 400_000_000
-		wantApplied = 3
+		wantApplied = 4
 	)
 
 	tests := []struct {
@@ -347,7 +340,7 @@ func TestCooldownFilterSuppression(t *testing.T) {
 				t.Fatalf("Run: %v", err)
 			}
 			if applied != wantApplied {
-				t.Errorf("Apply() called %d times, want %d (ticks at 120s, 240s, 360s)", applied, wantApplied)
+				t.Errorf("Apply() called %d times, want %d (ticks at 0s, 120s, 240s, 360s)", applied, wantApplied)
 			}
 		})
 	}
@@ -375,4 +368,111 @@ func (a *countingApplyActuator) Apply(decisions []ScaleDecision) error {
 		*a.count++
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// T013: TestGPUInventory
+// ---------------------------------------------------------------------------
+
+// TestGPUInventory verifies gpuInventory() across the key logic paths (I1 criticality 9/10):
+// - Only Loading/WarmingUp/Active/Draining instances subtract GPUs; Scheduling/Terminated do not.
+// - clusterTPDegree fallback when config.TP < 1.
+// - Negative free-slot clamping (bookkeeping inconsistency path).
+// - Zero-instance pool seeding for scale-from-zero support.
+//
+// Tests manipulate cs.instances directly (same package) to inject instances in specific states
+// without going through the full construction+placement path.
+func TestGPUInventory(t *testing.T) {
+	// newPoolCfg builds a DeploymentConfig with a single A100 pool (1 node, 8 GPUs).
+	// NumInstances=1 satisfies the ≥1 constructor invariant; tests clear cs.instances as needed.
+	newPoolCfg := func(tp int) DeploymentConfig {
+		cfg := newTestDeploymentConfig(1)
+		cfg.TP = tp
+		cfg.NodePools = []NodePoolConfig{
+			{Name: "a100-pool", GPUType: "A100", GPUsPerNode: 8,
+				InitialNodes: 1, MaxNodes: 2, GPUMemoryGiB: 80, CostPerHour: 2.5},
+		}
+		return cfg
+	}
+	// newA100Inst builds an InstanceSimulator with GPU="A100" and the given state/TPDegree.
+	newA100Inst := func(id string, tp int, state InstanceState) *InstanceSimulator {
+		simCfg := newTestDeploymentConfig(1).ToSimConfig()
+		simCfg.GPU = "A100"
+		inst := NewInstanceSimulator(InstanceID(id), simCfg)
+		inst.TPDegree = tp
+		inst.State = state
+		return inst
+	}
+
+	t.Run("no_placement_returns_empty", func(t *testing.T) {
+		// Without NodePools, gpuInventory returns an empty inventory.
+		cs := NewClusterSimulator(newTestDeploymentConfig(1), nil, nil)
+		if got := cs.gpuInventory().Variants(); len(got) != 0 {
+			t.Errorf("no placement: expected empty inventory, got %v", got)
+		}
+	})
+
+	t.Run("zero_instances_seeds_from_ready_nodes", func(t *testing.T) {
+		// Pool has 1 Ready node with 8 GPUs; no active instances.
+		// Inventory must include the variant so scale-from-zero is possible.
+		cs := NewClusterSimulator(newPoolCfg(1), nil, nil)
+		cs.instances = nil // clear the 1 placed instance
+		v := NewVariantSpec("A100", 1)
+		if got := cs.gpuInventory().FreeSlots(v); got != 8 {
+			t.Errorf("zero instances: FreeSlots = %d, want 8", got)
+		}
+	})
+
+	t.Run("active_instances_subtract_gpus", func(t *testing.T) {
+		// 1 Active instance with TPDegree=2 uses 2 of 8 GPUs → 6 free.
+		cs := NewClusterSimulator(newPoolCfg(2), nil, nil)
+		cs.instances = []*InstanceSimulator{newA100Inst("inst-a", 2, InstanceStateActive)}
+		v := NewVariantSpec("A100", 2)
+		if got := cs.gpuInventory().FreeSlots(v); got != 6 {
+			t.Errorf("active instance: FreeSlots = %d, want 6 (8 - 2)", got)
+		}
+	})
+
+	t.Run("mixed_states_only_subtracting_states_count", func(t *testing.T) {
+		// Loading, WarmingUp, Active, Draining each use 1 GPU (4 total).
+		// Scheduling and Terminated do NOT subtract.
+		// Pool: 8 GPUs → 8 - 4 = 4 free.
+		cs := NewClusterSimulator(newPoolCfg(1), nil, nil)
+		cs.instances = []*InstanceSimulator{
+			newA100Inst("loading", 1, InstanceStateLoading),
+			newA100Inst("warmup", 1, InstanceStateWarmingUp),
+			newA100Inst("active", 1, InstanceStateActive),
+			newA100Inst("draining", 1, InstanceStateDraining),
+			newA100Inst("scheduling", 1, InstanceStateScheduling),   // must NOT subtract
+			newA100Inst("terminated", 1, InstanceStateTerminated),   // must NOT subtract
+		}
+		v := NewVariantSpec("A100", 1)
+		if got := cs.gpuInventory().FreeSlots(v); got != 4 {
+			t.Errorf("mixed states: FreeSlots = %d, want 4 (8 - 4 subtracting)", got)
+		}
+	})
+
+	t.Run("tp_fallback_when_config_tp_zero", func(t *testing.T) {
+		// config.TP=0 triggers clusterTPDegree=1 fallback; variant A100/TP=1 must appear.
+		cs := NewClusterSimulator(newPoolCfg(0), nil, nil)
+		cs.instances = nil // clear placed instance so all 8 GPUs are free
+		v := NewVariantSpec("A100", 1)
+		if got := cs.gpuInventory().FreeSlots(v); got != 8 {
+			t.Errorf("TP=0 fallback: FreeSlots(A100/1) = %d, want 8", got)
+		}
+	})
+
+	t.Run("negative_free_slots_clamped_to_zero", func(t *testing.T) {
+		// 10 active instances × 1 GPU, but pool only has 8 → over-subscription.
+		// gpuInventory must clamp to 0, not return negative.
+		cs := NewClusterSimulator(newPoolCfg(1), nil, nil)
+		cs.instances = nil
+		for i := 0; i < 10; i++ {
+			cs.instances = append(cs.instances, newA100Inst("over-"+string(rune('a'+i)), 1, InstanceStateActive))
+		}
+		v := NewVariantSpec("A100", 1)
+		if got := cs.gpuInventory().FreeSlots(v); got != 0 {
+			t.Errorf("over-subscription: FreeSlots = %d, want 0 (clamped from negative)", got)
+		}
+	})
 }

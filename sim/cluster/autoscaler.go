@@ -5,6 +5,7 @@ package cluster
 
 import (
 	"container/heap"
+	"fmt"
 	"math/rand"
 	"sort"
 
@@ -15,9 +16,22 @@ import (
 // VariantSpec identifies a specific hardware configuration for a replica.
 // Used as a map key in GPUInventory.byVariant and carried in ScaleDecision.Variant.
 // Both fields are comparable types (string, int) — safe for use as a Go map key.
+// Use NewVariantSpec to construct — it validates the invariants at the call site (R4).
 type VariantSpec struct {
-	GPUType  string // e.g. "A100-80GB", "H100-80GB"
+	GPUType  string // e.g. "A100-80GB", "H100-80GB"; must not be empty
 	TPDegree int    // tensor-parallel degree: 1, 2, 4, 8; must be ≥1
+}
+
+// NewVariantSpec constructs a VariantSpec and panics on invalid inputs (R4).
+// GPUType must be non-empty; TPDegree must be ≥1.
+func NewVariantSpec(gpuType string, tpDegree int) VariantSpec {
+	if gpuType == "" {
+		panic("NewVariantSpec: gpuType must not be empty")
+	}
+	if tpDegree < 1 {
+		panic(fmt.Sprintf("NewVariantSpec: tpDegree must be ≥1, got %d", tpDegree))
+	}
+	return VariantSpec{GPUType: gpuType, TPDegree: tpDegree}
 }
 
 // ReplicaMetrics is a snapshot of one replica's observable state at collection time.
@@ -153,6 +167,7 @@ type Actuator interface {
 // Owned by ClusterSimulator as an optional field (nil when autoscaler disabled).
 // tick() runs the Collect → Analyze → Optimize pipeline and schedules a ScaleActuationEvent.
 // actuate() calls Actuator.Apply() with the decisions from a ScaleActuationEvent.
+// Use newAutoscalerPipeline to construct (R4: single canonical constructor).
 type autoscalerPipeline struct {
 	collector Collector
 	analyzer  Analyzer
@@ -161,6 +176,9 @@ type autoscalerPipeline struct {
 
 	// Cooldown state (Decision 8): keyed by ModelID.
 	// Updated when a decision survives cooldown filtering and is forwarded to ScaleActuationEvent.
+	// Note: timer is recorded at decision time, not actuation time. If Actuator.Apply() later
+	// fails, the cooldown window is consumed for a decision that never took effect. This is a
+	// known tradeoff — callers should monitor actuation error logs to detect cooldown dead zones.
 	lastScaleUpAt   map[string]int64
 	lastScaleDownAt map[string]int64
 
@@ -168,14 +186,30 @@ type autoscalerPipeline struct {
 	rng *rand.Rand
 }
 
+// newAutoscalerPipeline constructs an autoscalerPipeline (R4: canonical constructor).
+// Components may be nil at construction time — they are injected by tests or cmd/ before Run().
+// rng must be non-nil when ActuationDelay.Stddev > 0; passing nil is safe when Stddev == 0.
+func newAutoscalerPipeline(collector Collector, analyzer Analyzer, engine Engine, actuator Actuator, rng *rand.Rand) *autoscalerPipeline {
+	return &autoscalerPipeline{
+		collector:       collector,
+		analyzer:        analyzer,
+		engine:          engine,
+		actuator:        actuator,
+		lastScaleUpAt:   make(map[string]int64),
+		lastScaleDownAt: make(map[string]int64),
+		rng:             rng,
+	}
+}
+
 // tick executes the autoscaling pipeline for one tick at timestamp nowUs.
 // Collect → Analyze → Optimize → cooldown filter → schedule ScaleActuationEvent → schedule next tick.
 func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
-	// Guard: all four components must be wired (nil components skip this tick).
+	// Guard: all four components must be wired. If not, log once and stop the tick chain —
+	// do NOT reschedule, so the Errorf fires exactly once rather than every tick.
+	// Components are injected before Run(); reaching this guard is a configuration error.
 	if p.collector == nil || p.analyzer == nil || p.engine == nil || p.actuator == nil {
-		logrus.Warnf("[autoscaler] tick at t=%d skipped: pipeline not fully wired (collector=%v analyzer=%v engine=%v actuator=%v)",
+		logrus.Errorf("[autoscaler] tick at t=%d: pipeline not fully wired (collector=%v analyzer=%v engine=%v actuator=%v) — autoscaler disabled for this run",
 			nowUs, p.collector != nil, p.analyzer != nil, p.engine != nil, p.actuator != nil)
-		p.scheduleNextTick(cs, nowUs)
 		return
 	}
 
@@ -202,15 +236,15 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 		}
 		if d.Delta > 0 {
 			cooldown := cs.config.ScaleUpCooldownUs
-			if cooldown > 0 && nowUs-p.lastScaleUpAt[d.ModelID] < int64(cooldown) {
-				logrus.Debugf("[autoscaler] scale-up for model %q suppressed by cooldown (cooldown=%gμs, elapsed=%dμs)", d.ModelID, cooldown, nowUs-p.lastScaleUpAt[d.ModelID])
+			if lastUp, hadPrior := p.lastScaleUpAt[d.ModelID]; hadPrior && cooldown > 0 && nowUs-lastUp < int64(cooldown) {
+				logrus.Debugf("[autoscaler] scale-up for model %q suppressed by cooldown (cooldown=%gμs, elapsed=%dμs)", d.ModelID, cooldown, nowUs-lastUp)
 				continue // suppressed by scale-up cooldown (INV-A7)
 			}
 			p.lastScaleUpAt[d.ModelID] = nowUs
 		} else {
 			cooldown := cs.config.ScaleDownCooldownUs
-			if cooldown > 0 && nowUs-p.lastScaleDownAt[d.ModelID] < int64(cooldown) {
-				logrus.Debugf("[autoscaler] scale-down for model %q suppressed by cooldown (cooldown=%gμs, elapsed=%dμs)", d.ModelID, cooldown, nowUs-p.lastScaleDownAt[d.ModelID])
+			if lastDown, hadPrior := p.lastScaleDownAt[d.ModelID]; hadPrior && cooldown > 0 && nowUs-lastDown < int64(cooldown) {
+				logrus.Debugf("[autoscaler] scale-down for model %q suppressed by cooldown (cooldown=%gμs, elapsed=%dμs)", d.ModelID, cooldown, nowUs-lastDown)
 				continue // suppressed by scale-down cooldown (INV-A7)
 			}
 			p.lastScaleDownAt[d.ModelID] = nowUs
@@ -252,7 +286,7 @@ func (p *autoscalerPipeline) scheduleNextTick(cs *ClusterSimulator, nowUs int64)
 func (p *autoscalerPipeline) actuate(_ *ClusterSimulator, decisions []ScaleDecision) {
 	if p.actuator == nil {
 		if len(decisions) > 0 {
-			logrus.Warnf("[autoscaler] actuate: %d decision(s) dropped — actuator not wired", len(decisions))
+			logrus.Errorf("[autoscaler] actuate: %d decision(s) dropped — actuator not wired (INV-A2 violation; cooldown windows already consumed)", len(decisions))
 		}
 		return
 	}

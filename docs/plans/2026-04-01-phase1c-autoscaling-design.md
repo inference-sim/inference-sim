@@ -138,11 +138,13 @@ PlacementEngine.TryPlace() / DrainPolicy
 
 **`GPUInventory` definition:**
 ```
-GPUInventory.ByVariant[v] = total GPU slots for variant v
-                          - slots held by Running instances
+GPUInventory.byVariant[v] = total GPU slots for variant v
                           - slots held by Loading instances (reserved, not yet serving)
+                          - slots held by WarmingUp instances
+                          - slots held by Active instances
+                          - slots held by Draining instances (hold GPUs until drain completes)
 ```
-Pending placements are NOT subtracted (no GPU committed yet). Draining instances ARE subtracted (they still hold their GPUs until drain completes). This is a committed-state snapshot — optimistic relative to in-flight operations.
+Pending (Scheduling) placements are NOT subtracted (no GPU committed yet). Terminated instances are NOT subtracted. This is a committed-state snapshot — optimistic relative to in-flight operations.
 
 **Zero-replica edge case:** When a model has no active replicas, `Collector` returns `ModelSignals{Replicas: []}`. `Analyzer.Analyze()` must return `AnalyzerResult{TotalSupply: 0, TotalDemand: 0, RequiredCapacity: 0, SpareCapacity: 0}` — no division by zero. Scale-from-zero is triggered by a separate path outside the `Analyzer` (see #908, deferred).
 
@@ -189,7 +191,7 @@ type Engine interface {
 ### `Actuator`
 ```go
 type Actuator interface {
-    Apply(decisions []ScaleDecision)
+    Apply(decisions []ScaleDecision) error
 }
 ```
 **Observes:** `[]ScaleDecision`.  
@@ -203,7 +205,7 @@ type Actuator interface {
 WVA delegates cooldown to Kubernetes' reconciliation stabilization window. BLIS owns the full pipeline and must implement it explicitly. Cooldown lives in `autoscalerPipeline.tick()` in `autoscaler.go`, not inside any interface — keeping `Engine` stateless:
 
 ```go
-// In ClusterConfig:
+// In DeploymentConfig:
 ScaleUpCooldownUs   float64 // min sim-time between scale-up decisions per model (0 = disabled)
 ScaleDownCooldownUs float64 // min sim-time between scale-down decisions per model (0 = disabled)
 ```
