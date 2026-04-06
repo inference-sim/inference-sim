@@ -94,15 +94,40 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 
 	if includeMLP {
 		nMat := mlpMatrixCount(config.HiddenAct)
-		dExpert := dFF
-		if config.NumLocalExperts > 1 && config.MoEExpertFFNDim > 0 {
-			dExpert = float64(config.MoEExpertFFNDim)
+
+		// Determine MoE/dense layer split for interleaved architectures (#877)
+		numMoELayers := 0
+		numDenseLayers := int(nLayers)
+		if config.InterleaveMoELayerStep > 0 && config.NumLocalExperts > 1 {
+			// Interleaved: step=1 means alternate (24 MoE + 24 dense for 48 layers)
+			step := config.InterleaveMoELayerStep
+			numMoELayers = int(nLayers) / (step + 1)
+			numDenseLayers = int(nLayers) - numMoELayers
+		} else if config.NumLocalExperts > 1 {
+			// Uniform MoE: all layers are MoE
+			numMoELayers = int(nLayers)
+			numDenseLayers = 0
 		}
-		mlpFlopsPerLayer := 2 * newT * (nMat * dModel * dExpert)
-		if config.NumLocalExperts > 1 {
-			mlpFlopsPerLayer *= float64(config.NumExpertsPerTok)
+
+		// MoE layer FLOPs: use MoEExpertFFNDim with expert routing
+		if numMoELayers > 0 {
+			dFFMoE := dFF
+			if config.MoEExpertFFNDim > 0 {
+				dFFMoE = float64(config.MoEExpertFFNDim)
+			}
+			mlpFlopsPerMoELayer := 2 * newT * (nMat * dModel * dFFMoE) * float64(config.NumExpertsPerTok)
+			flops["gemm_ops"] += mlpFlopsPerMoELayer * float64(numMoELayers)
 		}
-		flops["gemm_ops"] += mlpFlopsPerLayer * nLayers
+
+		// Dense layer FLOPs: use DenseIntermediateDim without expert routing
+		if numDenseLayers > 0 {
+			dFFDense := dFF
+			if config.DenseIntermediateDim > 0 {
+				dFFDense = float64(config.DenseIntermediateDim)
+			}
+			mlpFlopsPerDenseLayer := 2 * newT * (nMat * dModel * dFFDense)
+			flops["gemm_ops"] += mlpFlopsPerDenseLayer * float64(numDenseLayers)
+		}
 	}
 
 	flops["total"] = flops["gemm_ops"] + flops["sram_ops"]
@@ -143,12 +168,30 @@ func calculateMemoryAccessBytes(
 	attnWeightsPerLayer := dModel*(dModel+2*dKV) + (dModel * dModel)
 
 	nMat := mlpMatrixCount(config.HiddenAct)
-	dExpert := dFF
-	if config.NumLocalExperts > 1 && config.MoEExpertFFNDim > 0 {
-		dExpert = float64(config.MoEExpertFFNDim)
+
+	// Determine MoE/dense layer split for interleaved architectures (#877)
+	numMoELayers := 0
+	numDenseLayers := int(nLayers)
+	if config.InterleaveMoELayerStep > 0 && config.NumLocalExperts > 1 {
+		// Interleaved: step=1 means alternate (24 MoE + 24 dense for 48 layers)
+		step := config.InterleaveMoELayerStep
+		numMoELayers = int(nLayers) / (step + 1)
+		numDenseLayers = int(nLayers) - numMoELayers
+	} else if config.NumLocalExperts > 1 {
+		// Uniform MoE: all layers are MoE
+		numMoELayers = int(nLayers)
+		numDenseLayers = 0
 	}
-	mlpWeightsPerLayer := nMat * dModel * dExpert
-	if config.NumLocalExperts > 1 {
+
+	// MoE layer weights: apply nEff expert loading with MoEExpertFFNDim
+	var moeMLPWeights float64
+	if numMoELayers > 0 {
+		dFFMoE := dFF
+		if config.MoEExpertFFNDim > 0 {
+			dFFMoE = float64(config.MoEExpertFFNDim)
+		}
+		moeMLPWeightsPerLayer := nMat * dModel * dFFMoE
+
 		// MoE: only the expected unique experts are loaded from HBM per step.
 		// Formula: nEff = N * (1 - ((N-k)/N)^B)
 		//   N = total experts, k = active experts per token, B = tokens in this step.
@@ -166,11 +209,23 @@ func calculateMemoryAccessBytes(
 		probNotSelected := (N - k) / N
 		nEff := N * (1.0 - math.Pow(probNotSelected, B))
 
-		mlpWeightsPerLayer *= nEff
+		moeMLPWeights = moeMLPWeightsPerLayer * nEff * float64(numMoELayers)
 	}
 
-	weightsPerLayer := attnWeightsPerLayer + mlpWeightsPerLayer
-	mem["model_weights"] = weightsPerLayer * nLayers * config.EffectiveWeightBytesPerParam()
+	// Dense layer weights: no nEff, use DenseIntermediateDim
+	var denseMLPWeights float64
+	if numDenseLayers > 0 {
+		dFFDense := dFF
+		if config.DenseIntermediateDim > 0 {
+			dFFDense = float64(config.DenseIntermediateDim)
+		}
+		denseMLPWeightsPerLayer := nMat * dModel * dFFDense
+		denseMLPWeights = denseMLPWeightsPerLayer * float64(numDenseLayers)
+	}
+
+	totalMLPWeights := moeMLPWeights + denseMLPWeights
+	weightsPerLayer := (attnWeightsPerLayer * nLayers) + totalMLPWeights
+	mem["model_weights"] = weightsPerLayer * config.EffectiveWeightBytesPerParam()
 
 	if includeKVCache {
 		// KV Growth: Writing new tokens to HBM.
