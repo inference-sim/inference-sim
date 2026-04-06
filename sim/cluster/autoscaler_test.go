@@ -296,45 +296,60 @@ func TestNilComponentGuard(t *testing.T) {
 
 // TestCooldownFilterSuppression verifies INV-A7: scale decisions within the cooldown
 // window are suppressed; decisions after the window pass through.
+// Both scale-up (ScaleUpCooldownUs) and scale-down (ScaleDownCooldownUs) paths are
+// tested — they share the same filter logic but maintain separate lastScale*At maps.
 func TestCooldownFilterSuppression(t *testing.T) {
-	const cooldownUs = 120_000_000 // 2 minutes in μs
-	const intervalUs = 60_000_000.0
-	cfg := newAutoscalerTestConfig(intervalUs)
-	cfg.ScaleUpCooldownUs = cooldownUs
-	cfg.Horizon = 400_000_000 // 400s: ticks at 0, 60s, 120s, 180s, 240s, 300s, 360s
+	// Ticks: 0, 60s, 120s, 180s, 240s, 300s, 360s = 7 ticks within 400s horizon.
+	// Cooldown = 120s. Map zero value for missing key is 0, so:
+	//   t=0:   elapsed = 0 - 0 = 0 < 120_000_000 → suppressed
+	//   t=60s: elapsed = 60_000_000 - 0 < 120_000_000 → suppressed
+	//   t=120s: elapsed = 120_000_000 - 0, NOT < 120_000_000 → passes; lastAt = 120_000_000
+	//   t=180s: elapsed = 60_000_000 < 120_000_000 → suppressed
+	//   t=240s: elapsed = 120_000_000, NOT < 120_000_000 → passes; lastAt = 240_000_000
+	//   t=300s: suppressed; t=360s: passes → wantApplied = 3
+	const (
+		cooldownUs  = 120_000_000 // 2 minutes in μs
+		intervalUs  = 60_000_000.0
+		horizonUs   = 400_000_000
+		wantApplied = 3
+	)
 
-	// Use a full autoscalerPipeline with a countingCollector and an engine that always
-	// emits a scale-up decision, plus a custom actuator that counts non-empty Apply() calls.
-	applied := 0
-	alwaysUpEngine := &alwaysScaleUpEngine{}
-	countActuator := &countingApplyActuator{count: &applied}
-
-	cs := NewClusterSimulator(cfg, nil, nil)
-	cs.autoscaler = newTestPipeline(&countingCollector{}, &nopAnalyzer{}, alwaysUpEngine, countActuator)
-	if err := cs.Run(); err != nil {
-		t.Fatalf("Run: %v", err)
+	tests := []struct {
+		name   string
+		setup  func(cfg *DeploymentConfig) Engine
+	}{
+		{
+			name: "scale_up",
+			setup: func(cfg *DeploymentConfig) Engine {
+				cfg.ScaleUpCooldownUs = cooldownUs
+				return &alwaysScaleUpEngine{}
+			},
+		},
+		{
+			name: "scale_down",
+			setup: func(cfg *DeploymentConfig) Engine {
+				cfg.ScaleDownCooldownUs = cooldownUs
+				return &alwaysScaleDownEngine{}
+			},
+		},
 	}
 
-	// Ticks: 0, 60s, 120s, 180s, 240s, 300s, 360s = 7 ticks within 400s horizon.
-	// First tick (t=0): decision passes cooldown (lastScaleUpAt[model]=0, now=0, 0-0=0 < 120s → passes).
-	// Wait — when lastScaleUpAt is 0 and now is 0: 0 - 0 = 0, not < cooldown (120_000_000)?
-	// Actually: nowUs - lastScaleUpAt[model] = 0 - 0 = 0 < 120_000_000 → suppressed!
-	// Only when nowUs >= lastScaleUpAt + cooldown does a decision pass.
-	// t=0: lastScaleUpAt=0, 0-0=0 < 120_000_000 → suppressed (no prior scale, so map returns 0).
-	// This means the FIRST tick is also suppressed because map zero value is 0 and 0 - 0 = 0 < cooldown.
-	// Actually: map[string]int64 zero value for missing key is 0, so:
-	//   t=0: 0 - 0 = 0, NOT < 120_000_000 ... wait, 0 IS less than 120_000_000.
-	//   So first tick at t=0 IS suppressed if cooldown > 0!
-	// This is the correct behavior — cooldown from t=0.
-	// First passing tick: t=120s (120_000_000 - 0 = 120_000_000, NOT < 120_000_000 → passes).
-	// After t=120s: lastScaleUpAt=120_000_000.
-	// Next passing tick: t=240s (240_000_000 - 120_000_000 = 120_000_000, NOT < 120_000_000 → passes).
-	// After t=240s: lastScaleUpAt=240_000_000.
-	// Next passing tick: t=360s (360_000_000 - 240_000_000 = 120_000_000, NOT < 120_000_000 → passes).
-	// So in 7 ticks (t=0,60,120,180,240,300,360), 3 pass (t=120s, 240s, 360s).
-	wantApplied := 3
-	if applied != wantApplied {
-		t.Errorf("cooldown filter: Apply() called with non-empty decisions %d times, want %d (ticks at 120s, 240s, 360s)", applied, wantApplied)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := newAutoscalerTestConfig(intervalUs)
+			cfg.Horizon = horizonUs
+			engine := tc.setup(&cfg)
+
+			applied := 0
+			cs := NewClusterSimulator(cfg, nil, nil)
+			cs.autoscaler = newTestPipeline(&countingCollector{}, &nopAnalyzer{}, engine, &countingApplyActuator{count: &applied})
+			if err := cs.Run(); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			if applied != wantApplied {
+				t.Errorf("Apply() called %d times, want %d (ticks at 120s, 240s, 360s)", applied, wantApplied)
+			}
+		})
 	}
 }
 
@@ -343,6 +358,13 @@ type alwaysScaleUpEngine struct{}
 
 func (e *alwaysScaleUpEngine) Optimize(_ []AnalyzerResult, _ GPUInventory) []ScaleDecision {
 	return []ScaleDecision{{ModelID: "model-a", Variant: VariantSpec{GPUType: "A100", TPDegree: 1}, Delta: 1}}
+}
+
+// alwaysScaleDownEngine always emits a scale-down decision for "model-a".
+type alwaysScaleDownEngine struct{}
+
+func (e *alwaysScaleDownEngine) Optimize(_ []AnalyzerResult, _ GPUInventory) []ScaleDecision {
+	return []ScaleDecision{{ModelID: "model-a", Variant: VariantSpec{GPUType: "A100", TPDegree: 1}, Delta: -1}}
 }
 
 // countingApplyActuator increments *count each time Apply() receives non-empty decisions.

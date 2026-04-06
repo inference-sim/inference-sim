@@ -30,8 +30,8 @@ type ReplicaMetrics struct {
 	QueueDepth    int
 	InFlightCount int
 	CostPerHour   float64 // $/hr from NodePool; used for CostPerReplica in VariantCapacity
-	TTFT          float64 // μs — zero in DefaultCollector (future: QueueingModelAnalyzer)
-	DispatchRate  float64 // req/s — zero in DefaultCollector (future: QueueingModelAnalyzer)
+	TTFT          float64 // μs — zero until QueueingModelAnalyzer; Analyze() must guard against zero before dividing
+	DispatchRate  float64 // req/s — zero until QueueingModelAnalyzer; Analyze() must guard against zero before dividing
 }
 
 // ModelSignals aggregates all replica snapshots for one model.
@@ -119,6 +119,8 @@ type Collector interface {
 // Analyzer assesses capacity for one model. Name() returns a human-readable identifier.
 // Analyze() is called once per model per tick. Must not access RouterState, GPUInventory,
 // or any external state — only ModelSignals. Must not panic on empty Replicas slice.
+// Must guard against zero-valued fields (TTFT, DispatchRate) — these are intentionally
+// zero until QueueingModelAnalyzer ships; dividing by them without a guard will panic.
 // Invariants: sum(vc.Supply) == TotalSupply; sum(vc.Demand) == TotalDemand.
 type Analyzer interface {
 	Name() string
@@ -216,17 +218,22 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 		filtered = append(filtered, d)
 	}
 
-	// Stage 5: Schedule ScaleActuationEvent (even when filtered is empty, to preserve event semantics).
-	// Guard: rng is required when Stddev > 0. autoscalerPipeline always sets rng via
-	// subsystemAutoscaler; a nil rng here is a construction error caught early.
-	if p.rng == nil && cs.config.ActuationDelay.Stddev > 0 {
-		panic("[autoscaler] ActuationDelay.Stddev > 0 requires non-nil RNG — set subsystemAutoscaler in constructor")
+	// Stage 5: Schedule ScaleActuationEvent only when there are decisions to apply.
+	// Skipping empty-filtered ticks avoids unnecessary RNG consumption (INV-6: same
+	// decisions must produce identical RNG state regardless of cooldown history) and
+	// avoids no-op Apply() calls every tick.
+	if len(filtered) > 0 {
+		// Guard: rng is required when Stddev > 0. Fall back to Mean-only with an error
+		// log rather than panicking — the simulator should degrade gracefully.
+		if p.rng == nil && cs.config.ActuationDelay.Stddev > 0 {
+			logrus.Errorf("[autoscaler] ActuationDelay.Stddev=%g but rng is nil — using Mean only; set subsystemAutoscaler in constructor", cs.config.ActuationDelay.Stddev)
+		}
+		actuationAt := nowUs + cs.config.ActuationDelay.Sample(p.rng)
+		heap.Push(&cs.clusterEvents, clusterEventEntry{
+			event: &ScaleActuationEvent{At: actuationAt, Decisions: filtered},
+			seqID: cs.nextSeqID(),
+		})
 	}
-	actuationAt := nowUs + cs.config.ActuationDelay.Sample(p.rng)
-	heap.Push(&cs.clusterEvents, clusterEventEntry{
-		event: &ScaleActuationEvent{At: actuationAt, Decisions: filtered},
-		seqID: cs.nextSeqID(),
-	})
 
 	// Stage 6: Schedule next ScalingTickEvent.
 	p.scheduleNextTick(cs, nowUs)
