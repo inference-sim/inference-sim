@@ -16,51 +16,50 @@ categories:
   - Capacity Planning
 ---
 
-# The Inference Simulator Showdown: Which Tool Actually Delivers?
+# Understanding LLM Inference Simulators: Lessons from 38 Production Experiments
 
-Choosing the right inference simulator can save weeks of experimentation and thousands in compute costs. But which one actually works? We tested five popular LLM inference simulators head-to-head across 38 real-world experiments on production hardware.
+We evaluated five LLM inference simulators across 38 production experiments to understand their accuracy, speed, and coverage trade-offs. This post shares what we learned about choosing simulators for capacity planning, configuration search, and algorithm discovery.
 
 <!-- more -->
 
-<a name="why-simulator-choice-matters"></a>
-## Why Simulator Choice Matters
+## Our Goals
 
-Imagine you are deploying Mixtral-8x7B for your AI-powered coding assistant. Four GPUs or eight? Which hardware meets your SLO targets? Running real experiments could take days and cost thousands. A simulator promises answers in minutes — if you trust its predictions. The stakes are high. A 50% prediction error translates directly to over-provisioning or under-provisioning GPUs. At H100 cloud rates, mis-sizing a production cluster by even 20-30 GPUs costs six figures annually in wasted capacity or missed SLOs!
+Capacity planning for LLM inference is expensive. Running real experiments on production hardware takes days and costs thousands in GPU time. Simulators promise to accelerate this process — but how do they compare in practice?
 
-We tested five simulators across 38 production experiments to find out which ones deliver. The results: accuracy ranged from 1% to 76% error on identical workloads. Speed varied from milliseconds to hours. Some tools couldn't run two-thirds of our experiments. Each simulator brings its own strengths and weaknesses.
+We set out to answer practical questions: How accurate are simulator predictions across different models and hardware? Which simulators support the configurations teams actually deploy? What are the speed-accuracy trade-offs? When should you use analytical models versus discrete-event simulation?
 
-This guide breaks down which simulator to use for capacity planning, configuration search, and algorithm discovery — backed by hard data from 38 experiments across six models, four workload types, and three GPU types.
+The stakes matter. Deploying Mixtral-8x7B with the wrong GPU count — four instead of eight, or vice versa — can mean either blown SLO budgets or wasted capacity. At H100 cloud rates, mis-sizing a production cluster by 20-30 GPUs costs six figures annually.
 
-<a name="meet-the-contenders"></a>
-## Meet the Contenders
+Rather than declaring a "best" simulator, our goal was to understand the trade-offs each tool offers.
 
-Five popular simulators. Five completely different bets on how to predict LLM inference performance.
+## Our Approach
 
-**[Vidur](https://github.com/microsoft/vidur)** replays your exact workload through discrete-event simulation, using profiled GPU kernel times to model vLLM's scheduling decisions. High fidelity to scheduler behavior, but you need to profile each model first. Pre-profiled kernels are available only for vLLM v0.
+### The Simulators
 
-**[LLMServingSim](https://github.com/casys-kaist/LLMServingSim)** takes a different path—discrete-event simulation with fine-grained network modeling via [astra-sim](https://github.com/astra-sim/astra-sim). The catch? ~6 minutes per experiment.
+We evaluated five open-source simulators, each taking a different approach to modeling LLM inference:
 
-**[LLM-Optimizer](https://github.com/bentoml/llm-optimizer)** takes the opposite approach: analytical modeling from first principles. Query HuggingFace for LLM config, run the roofline calculation, get an answer in 0.1 seconds. No request scheduling or queueing behavior captured.
+**[Vidur](https://github.com/microsoft/vidur)** uses discrete-event simulation with profiled GPU kernel times to model vLLM's scheduling decisions. High fidelity to scheduler behavior, but requires profiling each model. Pre-profiled kernels available only for vLLM v0.
 
-**[AIConfigurator](https://github.com/ai-dynamo/aiconfigurator)** uses operation-level profiling—break inference into GEMM, attention, communication ops, measure them on hardware, then compose the results. Dense models only.
+**[LLMServingSim](https://github.com/casys-kaist/LLMServingSim)** combines discrete-event simulation with fine-grained network modeling via [astra-sim](https://github.com/astra-sim/astra-sim). Runtime: ~6 minutes per experiment.
 
-**[BLIS](https://github.com/inference-sim/inference-sim)** combines discrete-event simulation with latency models comprising analytical physics-based basis functions and coefficient training. Multiple latency modes available, we are comparing Roofline (analytical baseline) and Evolved (learned coefficients).
+**[LLM-Optimizer](https://github.com/bentoml/llm-optimizer)** uses analytical roofline modeling. Queries HuggingFace for model config, runs roofline calculation, returns results in 0.1 seconds. No request scheduling or queueing behavior.
 
-Let us answer the question: which approach actually delivers?
+**[AIConfigurator](https://github.com/ai-dynamo/aiconfigurator)** uses operation-level profiling — breaks inference into GEMM, attention, communication ops, measures them on hardware, composes results. Dense models only.
 
-<a name="how-we-tested"></a>
-## How We Tested
+**[BLIS](https://github.com/inference-sim/inference-sim)** combines discrete-event simulation with latency models using analytical physics-based basis functions and coefficient training. We evaluated two modes: Roofline (analytical baseline) and Evolved (learned coefficients).
+
+### The Experiments
 
 We ran **38 experiments** on production hardware using vLLM v0.15.1, then asked each simulator to predict the results. We selected widely-deployed models, common GPU types, and practical serving configurations that teams encounter in production.
 
-The test matrix: 
+The test matrix:
 
-- **6 models** spanning dense and MoE architectures—Llama-3.1-8B, Qwen3-14B, CodeLlama-34B, Llama-2-70B (dense), and Mixtral-8x7B, Mixtral-8x22B (MoE).  
-- **3 GPU types:** H100, A100-80GB, L40S. 
-- Serving parameters swept: 
+- **6 models** spanning dense and MoE architectures—Llama-3.1-8B, Qwen3-14B, CodeLlama-34B, Llama-2-70B (dense), and Mixtral-8x7B, Mixtral-8x22B (MoE).
+- **3 GPU types:** H100, A100-80GB, L40S.
+- Serving parameters swept:
     - tensor parallelism (1/2/4/8),
-    - CPU offload (on/off), 
-    - LLM GPU memory utilization (0.90/0.95), 
+    - CPU offload (on/off),
+    - LLM GPU memory utilization (0.90/0.95),
     - vLLM chunk size (1024/2048/4096).
 
 For workloads, we used **[ServeGen](https://github.com/alibaba/ServeGen) multi-turn traces from production logs**, split into four categories:
@@ -70,17 +69,20 @@ For workloads, we used **[ServeGen](https://github.com/alibaba/ServeGen) multi-t
 - **Role-Playing:** Conversational assistant traffic
 - **Reasoning:** Tasks with extended thinking time
 
-Every experiment tracked three latency metrics: **E2E Mean MAPE** (end-to-end latency), **TTFT Mean MAPE** (time to first token), and **ITL Mean MAPE** (inter-token latency), capturing whether a simulator gets the full user experience right, not just throughput.  
+We tracked three latency metrics: **E2E Mean MAPE** (end-to-end latency), **TTFT Mean MAPE** (time to first token), and **ITL Mean MAPE** (inter-token latency).
 
 > **What is MAPE?**
-> Mean Absolute Percentage Error measures prediction accuracy: `|predicted - actual| / actual x 100`. A simulator with 15% MAPE means its predictions are off by 15% on average. Lower is better, and even 30-40% error can derail capacity planning decisions.
+> Mean Absolute Percentage Error measures prediction accuracy: `|predicted - actual| / actual x 100`. A simulator with 15% MAPE means its predictions are off by 15% on average.
 
-<a name="accuracy-and-coverage"></a>
-## Accuracy and Coverage: Who Gets It Right?
+### Evaluation Methodology
 
-Picture this: you are deploying Mixtral-8x7B on A100 nodes with TP=4. You have read the accuracy benchmarks, picked your simulator, fired it up, and it tells you it does not support MoE models! Or A100s. Or diverse TP configurations. Before you ever question the predictions, coverage gaps have already made the decision for you.
+We evaluated each simulator as a blackbox: off-the-shelf usage with publicly available documentation, no custom profiling, no internal modifications, no advantage to any tool. This reflects how platform engineers without simulator-specific expertise would use these tools in practice.
 
-Only **BLIS** (both variants) covers all 38 experiments. We evaluate each simulator as a blackbox: off-the-shelf usage with publicly available documentation, no custom profiling, no internal modifications, no advantage to any tool. This reflects how platform engineers without simulator-specific expertise would use these tools in practice. We compare BLIS against each simulator on their natively-supported experiments.
+## Our Results
+
+### Coverage: What Can Each Simulator Model?
+
+Coverage emerged as the first major differentiator. Before evaluating accuracy, we discovered that most simulators couldn't run large portions of our test suite.
 
 | Simulator | Experiments Covered | Coverage | Key Limitations |
 |-----------|---------------------|----------|-----------------|
@@ -90,9 +92,11 @@ Only **BLIS** (both variants) covers all 38 experiments. We evaluate each simula
 | **Vidur** | 4/38 | 10.5% | Requires pre-built model profiles; only CodeLlama-34B & Llama-2-70B |
 | **LLMServingSim** | 1/38 | 2.6% | Only 1 model with profiled coefficients matching our test set (Mixtral-8x7B); supports only 2 models total on H100; prohibitive runtime limits broader testing |
 
-**Coverage gaps compound.** No MoE support eliminates Mixtral evaluations. H100-only means no cost-optimization across GPU types. Multiply those constraints and a simulator advertising "high accuracy" may only deliver it on a narrow slice of what production actually looks like.
+Coverage gaps compound. No MoE support eliminates Mixtral evaluations. H100-only restricts cost-optimization studies across GPU types.
 
-**Head-to-head accuracy comparisons on shared experiments:**
+### Accuracy: How Well Do Predictions Match Reality?
+
+We compared simulators on their natively-supported experiments:
 
 ![BLIS vs LLM-Optimizer comparison](figures/sim_comparisons/blis_vs_llm_optimizer.png)
 
@@ -110,12 +114,13 @@ Only **BLIS** (both variants) covers all 38 experiments. We evaluate each simula
 
 *Figure 4: Accuracy comparison between BLIS and LLMServingSim on 1 shared experiment (Mixtral-8x7B TP4, 2000-request cluster workload). BLIS-Evolved achieved 1.34% E2E MAPE, LLMServingSim 76%, and BLIS-Roofline 97.69%. BLIS-Evolved is 72.8× more accurate than roofline and 56.7× better than LLMServingSim on this high-TP MoE configuration.*
 
-**Accuracy varies dramatically across simulators.** Across their supported experiments, median E2E error ranges from 7.4% (BLIS-Evolved) to 619% (Vidur) - an 83× spread. TTFT error spans 12.6% (BLIS-Evolved) to 29,783% (2,355× spread). ITL error ranges 9.8% (BLIS-Evolved) to 259% (26× spread). BLIS-Evolved achieves the best accuracy overall. However, while its E2E latency prediction is strong (11.79% MAPE), TTFT accuracy is weaker (22.81% MAPE) - nearly 2× worse. This means first-token latency predictions are less reliable than overall request latency. For workloads where time-to-first-token dominates user experience, this gap matters.
+Across their supported experiments, median E2E error ranged from 7.4% (BLIS-Evolved) to 619% (Vidur). TTFT error spanned 12.6% (BLIS-Evolved) to 29,783%. ITL error ranged 9.8% (BLIS-Evolved) to 259%.
 
-<a name="speed-vs-accuracy-the-pareto-frontier"></a>
-## Speed vs. Accuracy: The Pareto Frontier
+**An important nuance:** BLIS-Evolved's E2E latency prediction is strong (11.79% MAPE), but TTFT accuracy is weaker (22.81% MAPE) - nearly 2× worse. For workloads where time-to-first-token dominates user experience, this gap matters.
 
-Accuracy tells you whether to trust a simulator. Speed tells you whether you can practically use it.
+### Speed: The Accuracy-Speed Frontier
+
+Runtime determines whether a simulator is practical for your workflow.
 
 | Simulator | Median Runtime (s) | Speedup vs. Real |
 |-----------|-------------------|------------------|
@@ -132,48 +137,54 @@ Accuracy tells you whether to trust a simulator. Speed tells you whether you can
 
 *Figure 5: Speed vs accuracy Pareto frontier across all 38 experiments. LLM-Optimizer occupies the fast-but-rough corner (0.1s runtime, instant feedback, no queueing dynamics). LLMServingSim sits in the slow-but-detailed region (353s runtime, yet higher MAPE than BLIS-Evolved—fidelity alone does not guarantee accuracy). BLIS-Evolved hits the frontier elbow (0.8s runtime, 11.79% E2E MAPE), balancing accuracy and speed. Error bars show median runtime with interquartile range.*
 
-**Pick your point on the curve.** One deployment decision? BLIS-Evolved (0.8s) once. Searching 1,000 configs? 13 minutes with BLIS-Evolved vs 98 hours with LLMServingSim. Training an RL agent? Only LLM-Optimizer (0.1s) makes millions of episodes feasible.
+## Lessons Learned
 
-<a name="which-simulator-for-your-use-case"></a>
-## Which Simulator For Your Use Case
+### Lesson 1: Coverage Determines Usability
 
-### Capacity Planning & Configuration Search
+Before worrying about accuracy, check whether a simulator supports your deployment. MoE models, diverse GPU types, and vLLM configurations eliminated 50-90% of experiments for most tools. If a simulator can't model your architecture, accuracy is irrelevant.
 
-**Accuracy matters most.** A fast simulator with 50% error means wrong resource decisions: overprovision and waste budget, or underprovision and miss SLOs. BLIS-Evolved delivered 11.79% E2E error and 22.81% TTFT error across 38 experiments (Figure 1). Pure roofline models miss queueing delays and communication overhead—errors that compound when planning at scale.
+### Lesson 2: Speed-Accuracy Trade-Offs Are Real
 
-**For capacity planning with SLO targets:** Use **BLIS-Evolved** if you need broad coverage across models/GPUs/workloads at 0.8s per run. It supports vLLM arguments (chunk size, GPU memory utilization, CPU offload) and tail latency metrics (P90/P99). Analytical simulators (LLM-Optimizer, AIConfigurator) only predict mean latency and cannot validate tail latency SLOs. Vidur is too slow and inaccurate for this task.
+Analytical simulators (LLM-Optimizer, BLIS-Roofline) offer instant feedback but miss queueing dynamics and communication overhead. Discrete-event simulators (BLIS-Evolved, Vidur, LLMServingSim) capture these effects but take longer.
 
-**For rapid config space exploration (mean latency only):** Use **LLM-Optimizer** first, then validate with BLIS-Evolved. At 0.1 seconds per config, LLM-Optimizer sweeps 1,000 candidates in 2 minutes to eliminate obviously bad configs (wrong TP, insufficient memory). But roofline accuracy degrades on high-parallelism and MoE workloads (Figure 1) — validate final candidates with BLIS-Evolved (0.8s per config, 13 minutes for 1,000 runs) before making resource commitments.
+A hybrid workflow emerged as practical: use fast analytical models for initial exploration (1,000 configs in 2 minutes with LLM-Optimizer), then validate promising candidates with discrete-event simulation (13 minutes for 1,000 configs with BLIS-Evolved).
 
-**LLMServingSim** At ~6 minutes per run, LLMServingSim is too slow for the iterative config exploration capacity planning requires.
+### Lesson 3: Use Case Determines Requirements
 
-### AI-Driven Algorithm Discovery
+**For capacity planning with tail latency SLOs:** You need discrete-event simulation to model queueing and output P90/P99 metrics. Analytical simulators only predict mean latency. Among discrete-event simulators, coverage and speed matter — you'll run many experiments.
 
-An exciting emerging area: using RL or AI-driven search to *discover* better serving algorithms ([ADRS](https://sky.cs.berkeley.edu/project/adrs/)). The simulator becomes a training environment for exploring scheduling policies and batching strategies.
+**For rapid configuration search:** Analytical models (LLM-Optimizer, BLIS-Roofline) excel at pruning obviously bad configs. Use them first, validate finalists with discrete-event simulation.
 
-**Speed dominates.** Algorithm discovery loops need many simulations. At ~6 minutes per run, LLMServingSim is impractical. **AIConfigurator and Vidur** also fall short on speed - they are better for validating hand-designed systems than training. You need sub-second simulation for algorithm discovery to complete in reasonable time.
+**For AI-driven algorithm discovery:** Speed dominates. Training loops need sub-second simulation. LLM-Optimizer (0.1s) makes large-scale exploration feasible. BLIS-Evolved (0.8s) offers multi-instance modeling if you need it and can accept the slowdown.
 
-**Use LLM-Optimizer for algorithm discovery.** At 0.1s per run, it is 8× faster than BLIS-Evolved and makes large-scale exploration feasible. Misses queueing dynamics, but for discovery you are learning *relative* performance across policies, not absolute accuracy. However, it is limited to single-instance—cannot model multi-instance features like routing.
+### Lesson 4: Learned Coefficients Help
 
-**Use BLIS-Evolved for multi-instance algorithms** At 0.8s per run, BLIS-Evolved is 8× slower than LLM-Optimizer. If you specifically need multi-instance capabilities such as routing policy exploration and can accept the 8× slowdown, then use BLIS-Evolved for this use-case.
+Comparing BLIS-Roofline (analytical) to BLIS-Evolved (learned coefficients) showed consistent accuracy improvements. Pure roofline models miss second-order effects — queueing delays, communication overhead, architecture-specific behavior. Training coefficients on real data captures these gaps without sacrificing generality.
 
-## Limitations and Future Work
+### Lesson 5: No Universal "Best" Simulator
 
-This evaluation focuses on single-instance vLLM serving accuracy. What we did not test:
+Each simulator offers different trade-offs. Fast but inaccurate wastes time on bad decisions. Accurate but slow limits exploration. High accuracy on limited coverage doesn't help if your architecture isn't supported.
 
-**Multi-instance cluster dynamics:** Our 38 experiments measured single-server latency prediction. Real deployments use load balancing, request routing, and autoscaling across multiple instances. We did not test how well simulators predict cluster-level behavior under load balancing policies.
+The practical answer: combine multiple simulators. Use fast analytical models for exploration, discrete-event simulation for validation, and always test on your specific model/hardware/workload before trusting predictions.
 
-**Cost modeling:** Capacity planning is not just about latency — it is about cost per token and total cost of ownership. Future work should evaluate cost prediction accuracy alongside latency.
+## What We Didn't Test
 
-**Production drift:** Models update, workloads shift, hardware changes. How quickly do simulators become stale? How much re-profiling or re-training is needed? We tested accuracy at a point in time, not over time.
+This evaluation focused on single-instance vLLM serving accuracy. We did not test:
 
-Acknowledging these gaps does not diminish the findings — it clarifies their scope. Single-instance latency prediction is the foundation, but production serving is a bigger problem.
+**Multi-instance cluster dynamics:** Real deployments use load balancing, request routing, and autoscaling across multiple instances. How simulators predict cluster-level behavior remains open.
 
-<a name="the-bottom-line"></a>
-## The Bottom Line
+**Cost modeling:** Capacity planning involves cost per token and total cost of ownership, not just latency. Cost prediction accuracy is future work.
 
-There is no universal best simulator - only the best simulator *for your problem*.
+**Production drift:** Models update, workloads shift, hardware changes. How quickly simulators become stale and how much re-profiling is needed remains unexplored.
 
-Across 38 experiments, we measured a massive accuracy spread between simulators. We evaluated on three axes: **Accuracy** (can you trust it?), **Speed** (can you explore with it?), **Coverage** (can it model your deployment?). Fast but inaccurate wastes time. Accurate but slow limits exploration. Neither matters if coverage gaps block your architecture. A hybrid approach combining multiple simulators may be suitable for common use-cases such as capacity planning or configuration search - use fast analytical simulators like BLIS-Roofline or LLM-Optimizer for rapid exploration, then validate using slower, more-accurate simulators like BLIS-Evolved or AIConfigurator. Of course, the stakes are different for multi-instance cluster experiments, but that is a story for another day.
+Acknowledging these gaps clarifies scope. Single-instance latency prediction is the foundation, but production serving encompasses more.
+
+## Final Thoughts
+
+There is no universal best simulator — only the best simulator for your problem.
+
+Our 38 experiments revealed massive variation in accuracy (1-76% error), speed (0.1s to 6 minutes), and coverage (10-100% of experiments). Each simulator makes different trade-offs optimized for different workflows.
+
+The key insight: a hybrid approach combining multiple simulators handles most practical use cases. Use fast analytical simulators (BLIS-Roofline, LLM-Optimizer) for rapid exploration, then validate using slower, more-accurate simulators (BLIS-Evolved, AIConfigurator). Match the tool to the problem.
 
 Marketing claims are not validation. Run the simulator on *your* model, *your* hardware, *your* workload, then compare against real measurements. Test before you trust.
