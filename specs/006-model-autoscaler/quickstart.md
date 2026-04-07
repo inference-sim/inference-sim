@@ -2,14 +2,14 @@
 
 **Branch**: `006-model-autoscaler`
 
-This guide shows how to enable and configure the model autoscaler in a BLIS simulation after the 1C-1a through 1C-1d PRs are merged.
+This guide shows how to enable and configure the model autoscaler in a BLIS simulation after the 1C-1a through 1C-1d PRs are merged. 1C-1a is already merged (PR #934).
 
 ---
 
 ## Minimal Configuration (YAML)
 
 ```yaml
-# Minimal viable pipeline: DefaultCollector → SaturationAnalyzer → UnlimitedEngine → DirectActuator
+# Minimal viable pipeline: DefaultCollector → V2SaturationAnalyzer → UnlimitedEngine → DirectActuator
 model_autoscaler_interval_us: 60000000   # 60s tick interval
 
 # No actuation delay (default): ScaleActuationEvent fires in same tick as ScalingTickEvent
@@ -56,12 +56,12 @@ cfg := cluster.DeploymentConfig{
 ## Swapping Components
 
 ```go
-// After 1C-1c (baseline analyzers):
-// - Use UtilizationAnalyzer instead of SaturationAnalyzer
-// - Configure via new field on DeploymentConfig (exact field TBD in 1C-1c micro-plan)
-
-// After 1C-1d (engines):
+// After 1C-1d (GreedyEngine):
 // - Use GreedyEngine instead of UnlimitedEngine for GPU-inventory-aware allocation
+
+// Future (#954 — QueueingModelAnalyzer):
+// - Use QueueingModelAnalyzer instead of V2SaturationAnalyzer
+// - M/M/1/K-SD queueing model with online EKF parameter learning (WVA parity)
 ```
 
 ---
@@ -106,11 +106,11 @@ Set `model_autoscaler_interval_us: 0` (or omit the field entirely — the zero v
 
 ## Dependency Chain
 
-| PR | Issues | What it adds | Required before |
-|----|--------|-------------|-----------------|
-| 1C-1a | #692 | Interfaces, types, events, wiring | Everything else |
-| 1C-1b | #905 | SaturationAnalyzer, DefaultCollector, DirectActuator | Integration test |
-| 1C-1c | #906 | UtilizationAnalyzer, QueueAnalyzer | Optional baseline experiments |
-| 1C-1d | #918 | GreedyEngine, UnlimitedEngine | GPU-inventory-aware allocation |
+| PR | Issue | What it adds | Status |
+|----|-------|-------------|--------|
+| 1C-1a | #692 | Interfaces, types, events, pipeline wiring, cooldown | ✅ Merged (#934) |
+| 1C-1b | #905 | V2SaturationAnalyzer, DefaultCollector, UnlimitedEngine, DirectActuator | Pending |
+| 1C-1d | #918 | GreedyEngine (inventory-aware allocation) | Pending |
+| Future | #954 | QueueingModelAnalyzer (M/M/1/K-SD with EKF) | Future |
 
 The minimal viable pipeline (1C-1a + 1C-1b) is the validation target for the WVA/llm-d team.
