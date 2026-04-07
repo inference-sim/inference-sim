@@ -1158,13 +1158,41 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#trained-roofline-mode-recommended-for-new-models" class="md-nav__link">
+  <a href="#trained-roofline-mode" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Trained-Roofline Mode (Recommended for New Models)
+        Trained-Roofline Mode
       
     </span>
   </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#trained-physics-mode-recommended-for-new-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trained-Physics Mode (Recommended for New Models)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Trained-Physics Mode (Recommended for New Models)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#generalization-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generalization Scope
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2787,13 +2815,41 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#trained-roofline-mode-recommended-for-new-models" class="md-nav__link">
+  <a href="#trained-roofline-mode" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Trained-Roofline Mode (Recommended for New Models)
+        Trained-Roofline Mode
       
     </span>
   </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#trained-physics-mode-recommended-for-new-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trained-Physics Mode (Recommended for New Models)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Trained-Physics Mode (Recommended for New Models)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#generalization-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generalization Scope
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2851,7 +2907,7 @@
 
 
 <h1 id="latency-models">Latency Models<a class="headerlink" href="#latency-models" title="Permanent link">&para;</a></h1>
-<p>The <code>LatencyModel</code> interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships four backends -- roofline (default, analytical), blackbox (data-driven), cross-model (physics-informed), and trained-roofline (roofline × learned corrections) -- and the pluggable architecture supports adding custom backends.</p>
+<p>The <code>LatencyModel</code> interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships five backends -- roofline (default, analytical), blackbox (data-driven), cross-model (physics-informed), trained-roofline (roofline × learned corrections), and trained-physics (roofline × learned corrections) -- and the pluggable architecture supports adding custom backends.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Roofline mode (default) — analytical estimation from model architecture</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
@@ -2870,6 +2926,11 @@
 <a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">  </span>--latency-model<span class="w"> </span>trained-roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="c1"># Trained-physics mode — roofline × architecture-aware basis functions × learned corrections</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">  </span>--latency-model<span class="w"> </span>trained-physics<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
 <h2 id="blackbox-mode">Blackbox Mode<a class="headerlink" href="#blackbox-mode" title="Permanent link">&para;</a></h2>
 <p>Blackbox mode uses trained regression coefficients from <code>defaults.yaml</code>, fit offline via Bayesian optimization against real vLLM measurements.</p>
@@ -2967,7 +3028,7 @@
 <p class="admonition-title">Automatic KV block calculation</p>
 <p>Like roofline mode, crossmodel auto-derives <code>--total-kv-blocks</code> from model architecture and GPU memory when the flag is not set. Override with <code>--total-kv-blocks &lt;N&gt;</code> for non-standard deployments. The auto-calculation uses reference constants (90% GPU utilization, standard activation/overhead budgets matching the llm-d-benchmark capacity planner) and requires SwiGLU-family activations (<code>silu</code>, <code>swiglu</code>, <code>geglu</code>).</p>
 </div>
-<h2 id="trained-roofline-mode-recommended-for-new-models">Trained-Roofline Mode (Recommended for New Models)<a class="headerlink" href="#trained-roofline-mode-recommended-for-new-models" title="Permanent link">&para;</a></h2>
+<h2 id="trained-roofline-mode">Trained-Roofline Mode<a class="headerlink" href="#trained-roofline-mode" title="Permanent link">&para;</a></h2>
 <p>Trained-roofline mode applies <strong>learned correction factors</strong> to analytical roofline basis functions, combining the physical grounding of roofline with the accuracy of data-driven fitting. Coefficients are fitted from 137K real vLLM requests across 4 architectures (Llama-2-7b, Llama-2-70b, Mixtral-8x7B, CodeLlama-34b) via non-negative least squares regression.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span>--latency-model<span class="w"> </span>trained-roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span>
@@ -3004,6 +3065,75 @@
 <p class="admonition-title">Chunked prefill limitation</p>
 <p>Trained-roofline was fitted on single-step prefill data. When used with <code>--long-prefill-token-threshold &gt; 0</code> (chunked prefill), the attention FLOPs formula uses <code>len(InputTokens)</code> (total prompt) as context for each chunk, overestimating early-chunk step times. For chunked-prefill workloads, pure roofline mode may be more accurate until coefficients are refit on chunked data.</p>
 </div>
+<h2 id="trained-physics-mode-recommended-for-new-models">Trained-Physics Mode (Recommended for New Models)<a class="headerlink" href="#trained-physics-mode-recommended-for-new-models" title="Permanent link">&para;</a></h2>
+<p>Trained-physics mode applies <strong>learned correction factors</strong> to analytical roofline basis functions, combining the physical grounding of roofline with the accuracy of data-driven fitting. Coefficients are fitted from real vLLM measurements and generalize across model architectures, workloads, and TP configurations.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span>--latency-model<span class="w"> </span>trained-physics<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span>
+</code></pre></div>
+<p>Same auto-fetch chain as roofline mode (HuggingFace config + hardware config resolution).</p>
+<p><strong>StepTime formula</strong> (10 beta coefficients in bundled defaults):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>StepTime = β₁ₐ × T_pf_compute                  # prefill compute only
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>         + β₁ᵦ × T_pf_kv                       # prefill memory (typically ~0)
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>         + β₂ₐ × T_dc_compute                  # decode compute (typically ~0)
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>         + β₂ᵦ × T_dc_kv                       # decode memory only
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>         + β₃ × T_weight                       # weight loading × correction
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>         + β₄ × T_tp                           # TP communication × correction
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>         + β₅ × L                              # per-layer overhead (µs/layer)
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>         + β₆ × batch_size                     # per-request scheduling (µs/req)
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>         + β₇                                  # per-step fixed overhead (µs)
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>         + β₈ × nMoE                           # per-MoE-layer overhead (µs/layer)
+</code></pre></div>
+<p>The model supports 7-10 beta coefficients. Bundled defaults use 10 coefficients with prefill/decode split.</p>
+<p><strong>Beta coefficients:</strong></p>
+<ul>
+<li><strong>β₁ₐ</strong> (prefill compute, ~0.15): Corrects analytical FlashAttention + MLP FLOP estimates for kernel efficiency, memory access patterns.</li>
+<li><strong>β₁ᵦ</strong> (prefill memory, ~0): Prefill KV cache write bandwidth correction (typically near zero).</li>
+<li><strong>β₂ₐ</strong> (decode compute, ~0): Decode compute correction (typically near zero, decode is memory-bound).</li>
+<li><strong>β₂ᵦ</strong> (decode memory, ~1.9): Corrects KV cache read bandwidth. Primary decode bottleneck.</li>
+<li><strong>β₃</strong> (weight loading, ~1.4): Corrects model weight bandwidth for cache effects, prefetching, HBM contention.</li>
+<li><strong>β₄</strong> (TP communication, ~0.75): Corrects tensor-parallel All-Reduce overhead.</li>
+<li><strong>β₅</strong> (per-layer, ~32 µs/layer): Fixed overhead per transformer layer: kernel launch, CUDA graph, residual connections.</li>
+<li><strong>β₆</strong> (per-request, ~4 µs/request): Scheduling overhead per request: queue management, attention mask construction.</li>
+<li><strong>β₇</strong> (per-step, ~126 µs/step): Fixed overhead per step: CUDA synchronization, sampler invocation.</li>
+<li><strong>β₈</strong> (MoE-layer, ~482 µs/layer): Per-MoE-layer overhead for router gating, token permutation. Architecture-aware: applies only to interleaved MoE architectures (InterleaveMoELayerStep &gt; 0). Zero for uniform MoE and dense models.</li>
+</ul>
+<p><strong>Alpha coefficients</strong> (3 terms, API/framework overheads in µs):</p>
+<ul>
+<li><strong>α₀</strong> (QueueingTime, ~15,563 µs): Fixed per-request API processing (HTTP parsing, request validation, queue insertion).</li>
+<li><strong>α₁</strong> (PostDecodeFixedOverhead, ~777 µs): Fixed per-request post-decode overhead (detokenization setup, finish reason determination).</li>
+<li><strong>α₂</strong> (OutputTokenProcessingTime, ~46 µs/token): Per-output-token overhead (streaming token transmission, incremental detokenization).</li>
+</ul>
+<p><strong>Pre-trained coefficients</strong> are stored in <code>trained_physics_coefficients</code> in <code>defaults.yaml</code>. No per-model calibration needed -- the model generalizes across architectures, workloads, and TP configurations.</p>
+<h3 id="generalization-scope">Generalization Scope<a class="headerlink" href="#generalization-scope" title="Permanent link">&para;</a></h3>
+<p>The trained-physics model is designed to generalize without per-model calibration:</p>
+<p><strong>Supported hardware:</strong></p>
+<ul>
+<li><strong>H100</strong> (80 GB HBM3, 989.5 TFLOPS BF16 / 1979 TFLOPS FP8, 3.35 TB/s)</li>
+<li><strong>A100-SXM</strong> (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s)</li>
+<li><strong>A100-80</strong> (alias for A100-SXM)</li>
+<li><strong>L40S</strong> (48 GB GDDR6, 362 TFLOPS BF16 / 1466 TFLOPS FP8, 0.864 TB/s)</li>
+</ul>
+<p><strong>Coefficients were trained on H100 traces</strong> but the roofline basis functions automatically scale to each GPU's compute/bandwidth specifications via hardware config. This enables the model to generalize across hardware without GPU-specific calibration.</p>
+<p><strong>Model architectures:</strong></p>
+<ul>
+<li><strong>Dense transformers</strong> (Llama-2, Qwen3, GPT, etc.): Standard attention + MLP layers</li>
+<li><strong>Uniform MoE</strong> (Mixtral): All layers are MoE with top-k expert routing</li>
+<li><strong>Interleaved MoE</strong> (Scout): Alternating MoE and dense layers with architecture-specific β₈ overhead</li>
+</ul>
+<p>The model automatically detects MoE configuration from <code>config.json</code> (<code>num_local_experts</code>, <code>num_experts_per_tok</code>, <code>interleave_moe_layer_step</code>) and adjusts basis functions accordingly.</p>
+<p><strong>Workload types:</strong></p>
+<ul>
+<li><strong>Prefill-heavy</strong> (large input, short output): Chatbot prompts, document Q&amp;A</li>
+<li><strong>Decode-heavy</strong> (small input, long output): Content generation, code completion</li>
+<li><strong>Mixed batches</strong> (concurrent prefill/decode): Production serving with heterogeneous requests</li>
+<li><strong>TP configurations</strong>: TP=1, TP=2, TP=4, TP=8 (All-Reduce overhead scales via β₄)</li>
+</ul>
+<p><strong>Why "recommended" over trained-roofline:</strong></p>
+<p>Trained-physics uses <strong>13 coefficients</strong> (10 beta: prefill compute/memory split, decode compute/memory split, weight, TP, layer overhead, batch overhead, step overhead, MoE overhead; 3 alpha: queueing, post-decode, per-token) that capture more architectural detail than trained-roofline's <strong>10 coefficients</strong> (7 beta: prefill/decode combined via max(), weight, TP, layer, batch, step; 3 alpha: same). The prefill/decode split (β₁ₐ/β₁ᵦ, β₂ₐ/β₂ᵦ) and MoE-specific overhead (β₈) enable better generalization to unseen model architectures (especially interleaved MoE) and batch compositions (mixed prefill/decode). </p>
+<div class="admonition note">
+<p class="admonition-title">MoE architecture detection</p>
+<p>β₈ applies conditionally based on <code>InterleaveMoELayerStep</code> from the model's <code>config.json</code>: 0 = uniform MoE (β₈ skipped), 1 = alternating MoE/dense (β₈ × 24 layers for Scout's 48 total), 2 = every 3rd layer is MoE, etc. This prevents over-penalizing uniform MoE models like Mixtral where expert routing overhead is amortized across all layers.</p>
+</div>
 <h2 id="when-to-use-which">When to Use Which<a class="headerlink" href="#when-to-use-which" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -3013,6 +3143,7 @@
 <th>Blackbox</th>
 <th>Cross-Model</th>
 <th>Trained-Roofline</th>
+<th>Trained-Physics</th>
 </tr>
 </thead>
 <tbody>
@@ -3021,13 +3152,15 @@
 <td>Quick analytical estimate</td>
 <td>Model has per-model coefficients in <code>defaults.yaml</code></td>
 <td>Hand-engineered physics features</td>
-<td><strong>Recommended</strong> for new models (best accuracy without per-model training)</td>
+<td>Roofline × learned corrections (7% MAPE)</td>
+<td><strong>Recommended</strong> for new models (generalizes across architectures, workloads, TP)</td>
 </tr>
 <tr>
 <td><strong>Data required</strong></td>
 <td>HF <code>config.json</code> + <code>--hardware</code> + <code>--tp</code></td>
 <td><code>defaults.yaml</code> entry for model/GPU/TP</td>
 <td>HF <code>config.json</code> + <code>--hardware</code> + <code>--tp</code></td>
+<td>HF <code>config.json</code> + <code>--hardware</code> + <code>--tp</code> (global coefficients bundled)</td>
 <td>HF <code>config.json</code> + <code>--hardware</code> + <code>--tp</code> (global coefficients bundled)</td>
 </tr>
 <tr>
@@ -3036,19 +3169,22 @@
 <td>Highest (per-model)</td>
 <td>Good (7 global params)</td>
 <td><strong>7% MAPE</strong> (10 global params, roofline × corrections)</td>
+<td>Good (13 global params, physics-informed basis functions)</td>
 </tr>
 <tr>
 <td><strong>MoE support</strong></td>
-<td>No (dense only)</td>
+<td>Yes (per-expert FLOPs + effective expert count)</td>
 <td>If trained</td>
 <td>Yes (binary indicator)</td>
 <td>Yes (per-expert FLOPs + effective expert count)</td>
+<td>Yes (per-expert FLOPs + effective expert count + β₈ per-MoE-layer overhead)</td>
 </tr>
 <tr>
 <td><strong>Alpha model</strong></td>
 <td>Same as blackbox</td>
 <td>α₀ + α₁·inputLen</td>
 <td>Same as blackbox</td>
+<td>α₀ (constant), α₁ (post-decode fixed), α₂ (per-token)</td>
 <td>α₀ (constant), α₁ (post-decode fixed), α₂ (per-token)</td>
 </tr>
 <tr>
@@ -3057,12 +3193,13 @@
 <td>0</td>
 <td>0</td>
 <td>α₁ (~1.85ms)</td>
+<td>α₁ (~777µs)</td>
 </tr>
 </tbody>
 </table>
 <div class="admonition tip">
 <p class="admonition-title">Choosing the right mode</p>
-<p><strong>Trained-roofline</strong> is the recommended default for any model with a HuggingFace <code>config.json</code> (7% MAPE GPU combined, MoE-aware, no per-model calibration needed). <strong>Blackbox</strong> for models with per-model coefficients in <code>defaults.yaml</code> (slightly higher accuracy due to per-model fitting). <strong>Cross-model</strong> for backward compatibility with existing crossmodel workflows. <strong>Roofline</strong> for pure analytical estimates when no learned corrections are desired.</p>
+<p><strong>Trained-physics</strong> is the recommended default for any model with a HuggingFace <code>config.json</code> (generalizes across architectures, workloads, and TP configurations without per-model calibration). <strong>Blackbox</strong> for models with per-model coefficients in <code>defaults.yaml</code> (highest accuracy due to per-model fitting). <strong>Trained-roofline</strong> is an alternative trained model (7% MAPE GPU combined). <strong>Cross-model</strong> for backward compatibility with existing crossmodel workflows. <strong>Roofline</strong> for pure analytical estimates when no learned corrections are desired.</p>
 </div>
 <div class="admonition warning">
 <p class="admonition-title">Current limitations</p>
