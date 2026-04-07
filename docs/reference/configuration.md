@@ -156,6 +156,8 @@ For analytical step time estimation without trained coefficients.
 | `--latency-model` | string | "roofline" | Latency model backend: `roofline` (default), `blackbox`, `crossmodel`, `trained-roofline`. When set to `roofline`, `crossmodel`, or `trained-roofline`, auto-fetches HuggingFace config.json and resolves hardware config. Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. `trained-roofline` is recommended for new models (7% MAPE GPU step time). |
 | `--model-config-folder` | string | "" | Path to folder containing HuggingFace `config.json`. Overrides `--latency-model` auto-resolution. |
 | `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. Overrides `--latency-model` auto-resolution. |
+| `--mixed-batch-penalty` | float64 | 0.0 | Roofline MFU degradation factor for mixed prefill+decode batches `[0.0, 1.0]`. Applied as `compute_time /= (1 - penalty × minority_fraction)` when both phases share a step. 0 = no penalty (backward-compatible). Overrides `hardware_config.json` value when set. |
+| `--overlap-penalty` | float64 | 0.0 | Roofline imperfect compute/memory overlap factor `[0.0, 1.0]`. Applied as `step_time = max(compute, memory) + penalty × min(compute, memory)`. 0 = perfect overlap (backward-compatible). Overrides `hardware_config.json` value when set. |
 
 See [Roofline Estimation](../concepts/roofline.md) for details on the analytical model.
 

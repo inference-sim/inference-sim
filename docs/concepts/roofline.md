@@ -101,5 +101,7 @@ Alternatively, download the `config.json` manually:
 | `mfuPrefill` | Model FLOPS Utilization for prefill phase (compute-bound) |
 | `mfuDecode` | Model FLOPS Utilization for decode phase (memory-bound) |
 | `MemoryGiB` | GPU memory capacity in GiB. Used by `CalculateKVBlocks` to auto-derive `--total-kv-blocks` when roofline or crossmodel mode is active and the flag is not explicitly set. |
+| `mixedBatchPenalty` | *(Optional, default 0.0)* MFU degradation factor `[0.0, 1.0]` for mixed prefill+decode batches. Applied as `compute_time /= (1 - penalty × minority_fraction)` when both phases share a step. 0 = no penalty (backward-compatible). |
+| `overlapPenalty` | *(Optional, default 0.0)* Imperfect compute/memory overlap factor `[0.0, 1.0]`. Applied as `step_time = max(compute, memory) + penalty × min(compute, memory)`. 0 = perfect overlap (backward-compatible). |
 
 > Note: The Peak TFLOPS and BW for a given GPU family might vary by GPU connectivity (e.g. SXM vs PCIe). We recommend a separate entry for each GPU connectivity type - e.g. A100-SXM, A100-PCIe etc in `hardware_config.json`.

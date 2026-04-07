@@ -335,10 +335,10 @@ func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, s
 		totalTokens := prefillTokens + decodeTokens
 		prefillFraction := prefillTokens / totalTokens
 		minorityFraction := math.Min(prefillFraction, 1-prefillFraction)
-		// penalty ∈ [0.5, 1.0]: minimum is 0.5 when MixedBatchPenalty=1 and split is 50/50.
-		// Dividing by penalty < 1 increases compute time to model MFU degradation.
-		penalty := 1.0 - hwConfig.MixedBatchPenalty*minorityFraction
-		totalComputeS /= penalty
+		// mfuScaleFactor ∈ [0.5, 1.0]: minimum is 0.5 when MixedBatchPenalty=1 and split is 50/50.
+		// Dividing by mfuScaleFactor < 1 increases compute time to model MFU degradation.
+		mfuScaleFactor := 1.0 - hwConfig.MixedBatchPenalty*minorityFraction
+		totalComputeS /= mfuScaleFactor
 	}
 
 	// 3. WEIGHTS loaded once per step (single forward pass, per Sarathi-Serve/vLLM V1)
