@@ -22,6 +22,19 @@ import (
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
+// Both runCmd and observeCmd use these constants so the two commands produce
+// identical defaults for distribution synthesis flags.
+const (
+	defaultPromptMean  = 512
+	defaultPromptStdev = 256
+	defaultPromptMin   = 2
+	defaultPromptMax   = 7000
+	defaultOutputMean  = 512
+	defaultOutputStdev = 256
+	defaultOutputMin   = 2
+	defaultOutputMax   = 7000
+)
+
 var (
 	// CLI flags for vllm server configs
 	seed                      int64     // Seed for random token generation
@@ -51,6 +64,7 @@ var (
 	outputTokensMax           int       // Max Output Token Count
 	latencyModelBackend       string    // CLI --latency-model flag: selects latency model backend (Cobra-bound, NEVER mutated inside Run)
 	maxModelLen               int64     // CLI --max-model-len: max total sequence length (input + output); 0 = unlimited
+	kernelProfilePath         string    // CLI --kernel-profile: path to kernel_profile.yaml for kernel-lookup backend
 	// CLI flags for model, GPU, TP, vllm version
 	model             string // LLM name
 	gpu               string // GPU type
@@ -132,8 +146,13 @@ var (
 	prefillMaxModelLen    int64
 	decodeMaxModelLen     int64
 
-	// results file path
-	resultsPath string // File to save BLIS results to
+	// results file paths
+	metricsPath string // File to write MetricsOutput JSON for blis run (--metrics-path)
+	resultsPath string // File to write []SimResult JSON for blis replay (--results-path)
+
+	// closed-loop workload config
+	concurrency int // Number of concurrent virtual users (closed-loop)
+	thinkTimeMs int // Think time between response and next request (ms)
 
 	// trace export
 	traceOutput string // File prefix for TraceV2 export (<prefix>.yaml + <prefix>.csv)
@@ -241,11 +260,12 @@ func allZeros(values []float64) bool {
 // Package-level vars (totalKVBlocks, maxModelLen, model, gpu, tensorParallelism,
 // modelConfigFolder, hwConfigPath) are mutated as side effects.
 type latencyResolution struct {
-	Backend     string           // resolved latency backend name
-	ModelConfig sim.ModelConfig  // HF-derived model architecture config (zero for blackbox)
-	HWConfig    sim.HardwareCalib // hardware calibration config (zero for blackbox)
-	AlphaCoeffs []float64        // resolved alpha coefficients (local copy, not package-level)
-	BetaCoeffs  []float64        // resolved beta coefficients (local copy, not package-level)
+	Backend           string           // resolved latency backend name
+	ModelConfig       sim.ModelConfig  // HF-derived model architecture config (zero for blackbox)
+	HWConfig          sim.HardwareCalib // hardware calibration config (zero for blackbox)
+	AlphaCoeffs       []float64        // resolved alpha coefficients (local copy, not package-level)
+	BetaCoeffs        []float64        // resolved beta coefficients (local copy, not package-level)
+	KernelProfilePath string           // non-empty only for kernel-lookup backend
 }
 
 // resolveLatencyConfig resolves the latency backend configuration from CLI flags and
@@ -287,6 +307,16 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 			latencyModelBackend, strings.Join(sim.ValidLatencyBackendNames(), ", "))
 	}
 	backend := latencyModelBackend
+
+	// kernel-lookup requires --kernel-profile
+	if backend == "kernel-lookup" {
+		if kernelProfilePath == "" {
+			logrus.Fatalf("--kernel-profile is required for --latency-model kernel-lookup")
+		}
+		if len(beta) < 10 {
+			logrus.Fatalf("--latency-model kernel-lookup requires at least 10 --beta-coeffs (γ₁-γ₁₀), got %d", len(beta))
+		}
+	}
 
 	// Alpha and beta coefficients must be provided together or not at all.
 	alphaChanged := cmd.Flags().Changed("alpha-coeffs")
@@ -740,11 +770,12 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	}
 
 	return latencyResolution{
-		Backend:     backend,
-		ModelConfig: modelConfig,
-		HWConfig:    hwConfig,
-		AlphaCoeffs: alpha,
-		BetaCoeffs:  beta,
+		Backend:           backend,
+		ModelConfig:       modelConfig,
+		HWConfig:          hwConfig,
+		AlphaCoeffs:       alpha,
+		BetaCoeffs:        beta,
+		KernelProfilePath: kernelProfilePath,
 	}
 }
 
@@ -962,6 +993,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
 	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "roofline", "Latency model backend: roofline (default), blackbox, crossmodel, trained-roofline, trained-physics")
 	cmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for roofline/crossmodel when not set.")
+	cmd.Flags().StringVar(&kernelProfilePath, "kernel-profile", "", "path to kernel_profile.yaml for --latency-model kernel-lookup")
 
 	// Cluster config
 	cmd.Flags().IntVar(&numInstances, "num-instances", 1, "Number of instances in the cluster")
@@ -1032,8 +1064,6 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&prefillMaxModelLen, "prefill-max-model-len", 0, "Max model length for prefill pool instances (0 = use global --max-model-len)")
 	cmd.Flags().Int64Var(&decodeMaxModelLen, "decode-max-model-len", 0, "Max model length for decode pool instances (0 = use global --max-model-len)")
 
-	// Results path
-	cmd.Flags().StringVar(&resultsPath, "results-path", "", "File to save BLIS results to")
 }
 
 // runCmd executes the simulation using parameters from CLI flags
@@ -1449,7 +1479,8 @@ var runCmd = &cobra.Command{
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
 				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
-				ModelHardwareConfig: sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, lr.Backend, maxModelLen),
+				ModelHardwareConfig: sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, lr.Backend, maxModelLen).
+					WithKernelProfilePath(lr.KernelProfilePath),
 				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler),
 			},
 			NumInstances:            numInstances,
@@ -1540,8 +1571,8 @@ var runCmd = &cobra.Command{
 				}
 			}
 		}
-		// Save aggregated metrics (prints to stdout + saves to file if resultsPath set)
-		if err := cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, resultsPath); err != nil {
+		// Save aggregated metrics (prints to stdout + saves to file if metricsPath set)
+		if err := cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, metricsPath); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
@@ -1797,18 +1828,23 @@ func init() {
 	runCmd.Flags().Float64Var(&rate, "rate", 1.0, "Requests arrival per second")
 	runCmd.Flags().IntVar(&numRequests, "num-requests", 100, "Number of requests to generate")
 	runCmd.Flags().IntVar(&prefixTokens, "prefix-tokens", 0, "Prefix Token Count")
-	runCmd.Flags().IntVar(&promptTokensMean, "prompt-tokens", 512, "Average Prompt Token Count")
-	runCmd.Flags().IntVar(&promptTokensStdev, "prompt-tokens-stdev", 256, "Stddev Prompt Token Count")
-	runCmd.Flags().IntVar(&promptTokensMin, "prompt-tokens-min", 2, "Min Prompt Token Count")
-	runCmd.Flags().IntVar(&promptTokensMax, "prompt-tokens-max", 7000, "Max Prompt Token Count")
-	runCmd.Flags().IntVar(&outputTokensMean, "output-tokens", 512, "Average Output Token Count")
-	runCmd.Flags().IntVar(&outputTokensStdev, "output-tokens-stdev", 256, "Stddev Output Token Count")
-	runCmd.Flags().IntVar(&outputTokensMin, "output-tokens-min", 2, "Min Output Token Count")
-	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", 7000, "Max Output Token Count")
+	runCmd.Flags().IntVar(&promptTokensMean, "prompt-tokens", defaultPromptMean, "Average Prompt Token Count")
+	runCmd.Flags().IntVar(&promptTokensStdev, "prompt-tokens-stdev", defaultPromptStdev, "Stddev Prompt Token Count")
+	runCmd.Flags().IntVar(&promptTokensMin, "prompt-tokens-min", defaultPromptMin, "Min Prompt Token Count")
+	runCmd.Flags().IntVar(&promptTokensMax, "prompt-tokens-max", defaultPromptMax, "Max Prompt Token Count")
+	runCmd.Flags().IntVar(&outputTokensMean, "output-tokens", defaultOutputMean, "Average Output Token Count")
+	runCmd.Flags().IntVar(&outputTokensStdev, "output-tokens-stdev", defaultOutputStdev, "Stddev Output Token Count")
+	runCmd.Flags().IntVar(&outputTokensMin, "output-tokens-min", defaultOutputMin, "Min Output Token Count")
+	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", defaultOutputMax, "Max Output Token Count")
 	runCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "Path to YAML workload specification file (overrides --workload)")
 
-	// Run-specific export
+	// Closed-loop workload config
+	runCmd.Flags().IntVar(&concurrency, "concurrency", 0, "Number of concurrent virtual users for closed-loop workload (0 = open-loop/rate mode)")
+	runCmd.Flags().IntVar(&thinkTimeMs, "think-time-ms", 0, "Think time between response and next request in ms (closed-loop mode)")
+
+	// Run-specific export and output
 	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")
+	runCmd.Flags().StringVar(&metricsPath, "metrics-path", "", "File to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats). Use --results-path on blis replay for per-request SimResult JSON.")
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)

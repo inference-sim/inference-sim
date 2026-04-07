@@ -167,6 +167,7 @@ func TestBothCommands_SimConfigFlagsHaveIdenticalDefaults(t *testing.T) {
 		"counterfactual-k", "summarize-trace", "policy-config",
 		"num-instances", "max-num-running-reqs", "max-num-scheduled-tokens",
 		"long-prefill-token-threshold", "cache-signal-delay",
+		"kernel-profile",
 	}
 	for _, name := range sharedFlags {
 		runFlag := runCmd.Flags().Lookup(name)

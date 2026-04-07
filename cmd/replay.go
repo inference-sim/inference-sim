@@ -138,7 +138,8 @@ Example:
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
 				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
-				ModelHardwareConfig: sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, lr.Backend, maxModelLen),
+				ModelHardwareConfig: sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, lr.Backend, maxModelLen).
+					WithKernelProfilePath(lr.KernelProfilePath),
 				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler),
 			},
 			NumInstances:            numInstances,
