@@ -1347,6 +1347,7 @@ func TestRooflineStepTime_MixedBatchPenalty_SymmetricMinority(t *testing.T) {
 	mc := testModelConfig()
 	hc := testHardwareCalib()
 	hc.MixedBatchPenalty = 0.4
+	hc.BwPeakTBs = 1e6 // Force compute-bound: eliminates memory bottleneck so penalty affects step time
 
 	// 50/50 split: 50 prefill tokens vs 50 decode tokens (50 decode requests × 1 token each)
 	step5050 := StepConfig{
@@ -1379,6 +1380,7 @@ func TestRooflineStepTime_MixedBatchPenalty_SymmetricMinority(t *testing.T) {
 	// Even accounting for different total token counts, the penalty magnitude dominates.
 	hcNoPenalty := testHardwareCalib()
 	hcNoPenalty.MixedBatchPenalty = 0.0
+	hcNoPenalty.BwPeakTBs = 1e6 // Match compute-bound regime
 	time5050NoPenalty := rooflineStepTime(mc, hcNoPenalty, step5050, 1)
 	time9010NoPenalty := rooflineStepTime(mc, hcNoPenalty, step9010, 1)
 

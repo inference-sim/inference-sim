@@ -77,6 +77,7 @@ func TestRunCmd_SimConfigFlagsParity(t *testing.T) {
 		"latency-model", "hardware", "tp", "alpha-coeffs", "beta-coeffs",
 		"total-kv-blocks", "block-size-in-tokens", "max-model-len",
 		"gpu-memory-utilization", "model-config-folder", "hardware-config",
+		"mixed-batch-penalty", "overlap-penalty",
 	}
 	for _, name := range latencyFlags {
 		runFlag := runCmd.Flags().Lookup(name)
@@ -167,6 +168,7 @@ func TestBothCommands_SimConfigFlagsHaveIdenticalDefaults(t *testing.T) {
 		"counterfactual-k", "summarize-trace", "policy-config",
 		"num-instances", "max-num-running-reqs", "max-num-scheduled-tokens",
 		"long-prefill-token-threshold", "cache-signal-delay",
+		"mixed-batch-penalty", "overlap-penalty",
 	}
 	for _, name := range sharedFlags {
 		runFlag := runCmd.Flags().Lookup(name)

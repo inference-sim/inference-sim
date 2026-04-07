@@ -20,6 +20,13 @@ For each phase:
 
 $$\text{Phase Time} = \max\left( \frac{\text{Total FLOPS}}{\text{Peak Performance}}, \frac{\text{Total Bytes Transferred}}{\text{Memory Bandwidth}} \right)$$
 
+When optional interference parameters are configured in `hardware_config.json`, two corrections are applied:
+
+- **Mixed-batch penalty** (`mixedBatchPenalty`): When prefill and decode tokens share a step, effective MFU is reduced by the minority-phase fraction: `compute_time /= (1 - mixedBatchPenalty × minority_fraction)`.
+- **Overlap penalty** (`overlapPenalty`): Replaces `max(compute, memory)` with `max(compute, memory) + overlapPenalty × min(compute, memory)`, modeling imperfect compute/memory overlap from SM scheduling contention.
+
+Both default to 0.0 (no correction). See the [hardware config fields table](#adding-new-gpus) for details.
+
 As a result, overall step time is given by:
 
 $$\text{Step Time} = \text{Prefill Phase Time} + \text{Decode Phase Time}$$
