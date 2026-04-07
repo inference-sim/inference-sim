@@ -101,7 +101,7 @@ You should see JSON output on stdout with key fields:
 
 ```bash
 ./blis run --model qwen/qwen3-14b --latency-model trained-physics \
-  --hardware H100-SXM --tp 1
+  --hardware H100 --tp 1
 ```
 
 Accurate across all model architectures (dense, uniform MoE, interleaved MoE) using physics-informed basis functions with learned corrections. Requires `--hardware` and `--tp` flags. See the [latency models guide](docs/guide/latency-models.md) for details.

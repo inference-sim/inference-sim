@@ -255,7 +255,7 @@ The trained-physics model is designed to generalize without per-model calibratio
 
 **Supported hardware:**
 
-- **H100-SXM** (80 GB HBM3, 989.5 TFLOPS BF16 / 1979 TFLOPS FP8, 3.35 TB/s)
+- **H100** (80 GB HBM3, 989.5 TFLOPS BF16 / 1979 TFLOPS FP8, 3.35 TB/s)
 - **A100-SXM** (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s)
 - **A100-80** (alias for A100-SXM)
 
