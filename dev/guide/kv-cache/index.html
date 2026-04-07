@@ -2808,11 +2808,10 @@
 </div>
 <h2 id="prefix-caching">Prefix Caching<a class="headerlink" href="#prefix-caching" title="Permanent link">&para;</a></h2>
 <p>When requests share common prefixes (e.g., system prompts in RAG), BLIS can reuse KV cache blocks from prior computations. This reduces prefill tokens and improves TTFT.</p>
-<p>Prefix caching is automatic when using the <code>prefix-affinity</code> scorer with <code>weighted</code> routing:</p>
+<p>Prefix caching is automatic when using the <code>weighted</code> routing policy. The default profile (<code>precise-prefix-cache:2, queue-depth:1, kv-utilization:1</code>) queries actual instance KV cache state to route requests to instances with cached prefix blocks:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>--routing-scorers<span class="w"> </span><span class="s2">&quot;prefix-affinity:3,queue-depth:1&quot;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span>--prefix-tokens<span class="w"> </span><span class="m">512</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>--prefix-tokens<span class="w"> </span><span class="m">512</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
 <h2 id="minimum-kv-block-requirements">Minimum KV Block Requirements<a class="headerlink" href="#minimum-kv-block-requirements" title="Permanent link">&para;</a></h2>
 <div class="admonition danger">

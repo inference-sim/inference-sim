@@ -2818,7 +2818,7 @@
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
-<p>This simulates a 4-instance cluster receiving 100 requests/second. The <code>weighted</code> routing policy uses the default scorer profile (<code>prefix-affinity:3, queue-depth:2, kv-utilization:2</code>) to distribute requests across instances.</p>
+<p>This simulates a 4-instance cluster receiving 100 requests/second. The <code>weighted</code> routing policy uses the default scorer profile (<code>precise-prefix-cache:2, queue-depth:1, kv-utilization:1</code>) to distribute requests across instances.</p>
 <div class="admonition note">
 <p class="admonition-title">Multi-instance output format</p>
 <p>In cluster mode, BLIS prints one JSON block per instance plus a cluster-level summary (5 blocks total for 4 instances). The cluster summary has <code>"instance_id": "cluster"</code>. If piping to <code>jq</code>, use <code>--slurp</code> to handle multiple JSON objects: <code>./blis run ... 2&gt;/dev/null | jq --slurp '.[] | select(.instance_id == "cluster")'</code> to extract the cluster summary.</p>
