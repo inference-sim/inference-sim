@@ -20,9 +20,9 @@ num_moe_layers: 0
 num_dense_layers: 32
 hidden_dim: 4096
 
-context_gemm:
+gemm:
   tokens: [1.0, 4.0, 16.0, 64.0, 256.0, 1024.0, 4096.0]
-  latency_us: [1.56, 1.58, 1.65, 2.06, 5.31, 16.9, 56.7]
+  latency_us: [151.6, 148.9, 157.3, 154.4, 181.4, 504.1, 2058.7]
 
 context_attention:
   batch_size: [1.0, 4.0, 16.0, 64.0]
@@ -32,10 +32,6 @@ context_attention:
     - [0.33, 0.42, 0.68, 1.38]
     - [0.41, 0.62, 1.24, 2.48]
     - [0.65, 1.14, 2.48, 5.01]
-
-generation_gemm:
-  tokens: [1.0, 4.0, 16.0, 64.0, 256.0]
-  latency_us: [1.50, 1.51, 1.55, 1.94, 5.01]
 
 generation_attention:
   tokens: [1.0, 4.0, 16.0, 64.0]
@@ -66,7 +62,7 @@ func TestLoadKernelProfile_ValidYAML(t *testing.T) {
 	assert.Equal(t, "h100_sxm", p.GPU)
 	assert.Equal(t, 1, p.TP)
 	assert.Equal(t, 32, p.NumLayers)
-	assert.Equal(t, 7, len(p.ContextGemm.Tokens))
+	assert.Equal(t, 7, len(p.Gemm.Tokens))
 	assert.Equal(t, 4, len(p.ContextAttention.BatchSize))
 	assert.Equal(t, 4, len(p.ContextAttention.ISL))
 	assert.Equal(t, 4, len(p.ContextAttention.LatencyUs))
@@ -83,16 +79,13 @@ func TestLoadKernelProfile_InvalidTP(t *testing.T) {
 	bad := `gpu: h100_sxm
 tp: 0
 num_layers: 32
-context_gemm:
+gemm:
   tokens: [1.0]
   latency_us: [1.0]
 context_attention:
   batch_size: [1.0]
   isl: [128.0]
   latency_us: [[1.0]]
-generation_gemm:
-  tokens: [1.0]
-  latency_us: [1.0]
 generation_attention:
   tokens: [1.0]
   context: [128.0]

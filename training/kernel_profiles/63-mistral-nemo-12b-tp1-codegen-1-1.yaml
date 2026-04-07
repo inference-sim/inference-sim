@@ -7,7 +7,7 @@ num_layers: 40
 num_moe_layers: 0
 num_dense_layers: 40
 hidden_dim: 5120
-context_gemm:
+gemm:
   tokens:
   - 1.0
   - 2.0
@@ -111,29 +111,6 @@ context_attention:
     - 9512.191772
     - 19536.660512
     - 39585.597992
-generation_gemm:
-  tokens:
-  - 1.0
-  - 2.0
-  - 4.0
-  - 8.0
-  - 16.0
-  - 32.0
-  - 64.0
-  - 128.0
-  - 256.0
-  - 512.0
-  latency_us:
-  - 191.242667
-  - 196.294886
-  - 190.825997
-  - 192.476226
-  - 193.445557
-  - 205.820001
-  - 203.063559
-  - 212.870672
-  - 225.991337
-  - 343.308889
 generation_attention:
   tokens:
   - 1.0

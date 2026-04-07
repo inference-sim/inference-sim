@@ -443,18 +443,17 @@ def generate_profile(
 
     gemm_mode, fmha_mode, kv_mode = get_quant_modes(model_path)
 
-    print("  Querying context GEMM...")
-    ctx_gemm = query_1d_gemm(db, gemm_dims(info, tp), CONTEXT_TOKEN_GRID, gemm_mode)
+    # Single fused GEMM table: In vLLM continuous batching, prefill and decode tokens
+    # are concatenated into the SAME GEMM call per layer. One table covers all token counts.
+    print("  Querying fused GEMM (covers prefill + decode token range)...")
+    fused_gemm = query_1d_gemm(db, gemm_dims(info, tp), CONTEXT_TOKEN_GRID, gemm_mode)
 
-    print("  Querying context attention...")
+    print("  Querying context attention (FlashAttention)...")
     ctx_attn = query_2d_context_attn(
         db, info, tp, BATCH_GRID, ISL_GRID, fmha_mode, kv_mode
     )
 
-    print("  Querying generation GEMM...")
-    gen_gemm = query_1d_gemm(db, gemm_dims(info, tp), DECODE_TOKEN_GRID, gemm_mode)
-
-    print("  Querying generation attention...")
+    print("  Querying generation attention (PagedAttention)...")
     gen_attn = query_2d_gen_attn(
         db, info, tp, DECODE_TOKEN_GRID, CTX_GRID, kv_mode
     )
@@ -482,18 +481,14 @@ def generate_profile(
         "num_moe_layers": num_moe,
         "num_dense_layers": num_dense,
         "hidden_dim": info["hidden_size"],
-        "context_gemm": {
+        "gemm": {
             "tokens": [float(t) for t in CONTEXT_TOKEN_GRID],
-            "latency_us": ctx_gemm,
+            "latency_us": fused_gemm,
         },
         "context_attention": {
             "batch_size": [float(b) for b in BATCH_GRID],
             "isl": [float(s) for s in ISL_GRID],
             "latency_us": ctx_attn,
-        },
-        "generation_gemm": {
-            "tokens": [float(t) for t in DECODE_TOKEN_GRID],
-            "latency_us": gen_gemm,
         },
         "generation_attention": {
             "tokens": [float(t) for t in DECODE_TOKEN_GRID],

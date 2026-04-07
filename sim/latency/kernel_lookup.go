@@ -10,34 +10,40 @@ import (
 // KernelLookupModel predicts step time using per-layer latency lookup tables
 // from aiconfigurator's measured GPU kernel database, corrected by learned γ factors.
 //
-// Step-time formula:
+// Step-time formula (8-term, fused GEMM):
 //
-//	γ₁·T_pf_gemm + γ₂·T_pf_attn + γ₃·T_dc_gemm + γ₄·T_dc_attn
-//	+ γ₆·T_allreduce + γ₇·T_moe
-//	+ γ₈·numLayers + γ₉·batchSize + γ₁₀
+//	γ₁·T_gemm + γ₂·T_pf_attn + γ₃·T_dc_attn
+//	+ γ₅·T_allreduce + γ₆·T_moe
+//	+ γ₇·numLayers + γ₈·batchSize + γ₉
 //
-// γ₁-γ₄ and γ₆-γ₇: dimensionless corrections (expected ~1.0 at warm start)
-// γ₅: intentionally unused (weight loading removed — double-counts GEMM memory access)
-// γ₈: µs/layer overhead; γ₉: µs/request overhead; γ₁₀: µs/step overhead
+// γ₁-γ₃ and γ₅-γ₆: dimensionless corrections (expected ~1.0 at warm start)
+// γ₄: unused (was decode GEMM before fusion; kept for coefficient index alignment)
+// γ₇: µs/layer overhead; γ₈: µs/request overhead; γ₉: µs/step overhead
+//
+// Why fused GEMM: In vLLM continuous batching, prefill and decode tokens are
+// concatenated into the SAME GEMM call per layer. Splitting them into separate
+// lookups double-counts kernel launch overhead (~150µs/layer), causing 1.5-2x
+// overestimation for mixed batches. Attention stays split because vLLM uses
+// different kernels (FlashAttention for prefill, PagedAttention for decode).
 //
 // Basis function conventions (must match Python profile generation script):
-//   - T_pf_gemm: context GEMM, interpolated by totalPrefillTokens, × numLayers
-//   - T_pf_attn: context attention, interpolated by (numPrefillRequests, avgISL), × numLayers
-//   - T_dc_gemm: generation GEMM, interpolated by totalDecodeTokens, × numLayers
-//   - T_dc_attn: generation attention, interpolated by (totalDecodeTokens, avgDecodeCtx), × numLayers
-//   - T_allreduce: per-step, interpolated by totalTokens, × allReduceUnits
-//     where allReduceUnits = 2·numDenseLayers + 1·numMoELayers
+//   - T_gemm: fused GEMM, interpolated by totalTokens (prefill + decode), × numLayers
+//   - T_pf_attn: FlashAttention, interpolated by (numPrefillRequests, avgISL), × numLayers
+//   - T_dc_attn: PagedAttention, interpolated by (totalDecodeTokens, avgDecodeCtx), × numLayers
+//   - T_allreduce: per-invocation, interpolated by totalTokens, × allReduceUnits
 //   - T_moe: expert FFN computation, interpolated by totalTokens, × numMoELayers
 type KernelLookupModel struct {
-	gamma [10]float64 // γ₁-γ₁₀ (gamma[4]=γ₅ unused, kept for index alignment)
-	alpha [3]float64  // α₀ (queueing), α₁ (post-decode), α₂ (per-output-token)
+	gamma [10]float64 // gamma[0]=γ₁(gemm), [1]=γ₂(pf_attn), [2]=γ₃(dc_attn),
+	//                   [3]=γ₄(unused), [4]=γ₅(allreduce), [5]=γ₆(moe),
+	//                   [6]=γ₇(per-layer), [7]=γ₈(per-req), [8]=γ₉(per-step)
+	//                   [9] reserved
+	alpha [3]float64 // α₀ (queueing), α₁ (post-decode), α₂ (per-output-token)
 
 	// Pre-loaded lookup tables (per-layer µs)
-	contextGemm    Lookup1D
-	contextAttn    Lookup2D
-	generationGemm Lookup1D
-	generationAttn Lookup2D
-	allreduce      Lookup1D
+	gemm           Lookup1D // fused GEMM: total tokens → per-layer latency
+	contextAttn    Lookup2D // FlashAttention: (batch_size, ISL) → per-layer latency
+	generationAttn Lookup2D // PagedAttention: (decode_tokens, context) → per-layer latency
+	allreduce      Lookup1D // AllReduce: total tokens → per-invocation latency
 	moeCompute     *Lookup1D
 
 	// Architecture (from kernel profile)
@@ -49,12 +55,6 @@ type KernelLookupModel struct {
 
 // NewKernelLookupModel creates a KernelLookupModel from BLIS config types.
 // Called by the NewLatencyModel factory when hw.Backend == "kernel-lookup".
-//
-// Requires:
-//   - hw.KernelProfilePath != ""  (set via hw.WithKernelProfilePath(path))
-//   - len(coeffs.BetaCoeffs) >= 10  (γ₁-γ₁₀; gamma[4]=γ₅ must be 0.0)
-//   - len(coeffs.AlphaCoeffs) >= 3  (α₀-α₂)
-//   - hw.TP must match profile.TP (when hw.TP > 0)
 func NewKernelLookupModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.LatencyModel, error) {
 	if hw.KernelProfilePath == "" {
 		return nil, fmt.Errorf("kernel-lookup: KernelProfilePath must be set; " +
@@ -77,8 +77,6 @@ func NewKernelLookupModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) 
 		return nil, fmt.Errorf("kernel-lookup: %w", err)
 	}
 
-	// Validate runtime TP matches profile TP.
-	// hw.TP == 0 means caller didn't specify TP (e.g., blackbox tests) — skip validation.
 	if hw.TP > 0 && hw.TP != profile.TP {
 		return nil, fmt.Errorf("kernel-lookup: runtime TP=%d does not match profile TP=%d (profile: %q)",
 			hw.TP, profile.TP, hw.KernelProfilePath)
@@ -92,15 +90,14 @@ func NewKernelLookupModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) 
 	numDense := profile.NumDenseLayers
 	numMoE := profile.NumMoELayers
 	if numDense == 0 && numMoE == 0 {
-		numDense = profile.NumLayers // dense model fallback
+		numDense = profile.NumLayers
 	}
 
 	return &KernelLookupModel{
 		gamma:          gamma,
 		alpha:          alpha,
-		contextGemm:    profile.ContextGemm,
+		gemm:           profile.Gemm,
 		contextAttn:    profile.ContextAttention,
-		generationGemm: profile.GenerationGemm,
 		generationAttn: profile.GenerationAttention,
 		allreduce:      profile.AllReduce,
 		moeCompute:     profile.MoECompute,
@@ -149,57 +146,47 @@ func (m *KernelLookupModel) StepTime(batch []*sim.Request) int64 {
 	}
 	totalTokens := totalPrefillTokens + totalDecodeTokens
 
-	// γ₁·T_pf_gemm: context GEMM latency × numLayers (table is per-layer)
-	var tPfGemm float64
-	if totalPrefillTokens > 0 {
-		tPfGemm = clampPositive(m.contextGemm.Interp1D(totalPrefillTokens)) * L
+	// γ₁·T_gemm: FUSED GEMM for all tokens (prefill + decode concatenated) × numLayers
+	// Matches vLLM continuous batching where one GEMM processes the entire token batch.
+	var tGemm float64
+	if totalTokens > 0 {
+		tGemm = clampPositive(m.gemm.Interp1D(totalTokens)) * L
 	}
 
-	// γ₂·T_pf_attn: context attention × numLayers
-	// Primary axis = numPrefillRequests (batch_size in aiconfigurator)
-	// Secondary axis = avgPrefillISL
+	// γ₂·T_pf_attn: FlashAttention for prefill tokens × numLayers
 	var tPfAttn float64
 	if numPrefillRequests > 0 {
 		tPfAttn = clampPositive(m.contextAttn.Interp2D(numPrefillRequests, avgPrefillISL)) * L
 	}
 
-	// γ₃·T_dc_gemm: generation GEMM × numLayers
-	var tDcGemm float64
-	if totalDecodeTokens > 0 {
-		tDcGemm = clampPositive(m.generationGemm.Interp1D(totalDecodeTokens)) * L
-	}
-
-	// γ₄·T_dc_attn: generation attention × numLayers
-	// Primary axis = totalDecodeTokens (== decode batch size, 1 token/request)
+	// γ₃·T_dc_attn: PagedAttention for decode tokens × numLayers
 	var tDcAttn float64
 	if totalDecodeTokens > 0 {
 		tDcAttn = clampPositive(m.generationAttn.Interp2D(totalDecodeTokens, avgDecodeCtx)) * L
 	}
 
-	// γ₅ is intentionally skipped (gamma[4] must be 0.0).
-
-	// γ₆·T_allreduce: × allReduceUnits (2·dense + 1·MoE); 0 when TP=1
+	// γ₅·T_allreduce: × allReduceUnits (2·dense + 1·MoE); 0 when TP=1
 	var tAllReduce float64
 	if m.allReduceUnits > 0 && totalTokens > 0 {
 		tAllReduce = clampPositive(m.allreduce.Interp1D(totalTokens)) * float64(m.allReduceUnits)
 	}
 
-	// γ₇·T_moe: MoE expert computation × numMoELayers
+	// γ₆·T_moe: MoE expert computation × numMoELayers
 	var tMoE float64
 	if m.moeCompute != nil && m.numMoELayers > 0 && totalTokens > 0 {
 		tMoE = clampPositive(m.moeCompute.Interp1D(totalTokens)) * float64(m.numMoELayers)
 	}
 
-	stepTime := m.gamma[0]*tPfGemm +
+	stepTime := m.gamma[0]*tGemm +
 		m.gamma[1]*tPfAttn +
-		m.gamma[2]*tDcGemm +
-		m.gamma[3]*tDcAttn +
-		// gamma[4] = γ₅ intentionally unused (set to 0.0 in training)
-		m.gamma[5]*tAllReduce +
-		m.gamma[6]*tMoE +
-		m.gamma[7]*L +
-		m.gamma[8]*batchSize +
-		m.gamma[9]
+		m.gamma[2]*tDcAttn +
+		// gamma[3] = γ₄ unused (was split decode GEMM, now fused into γ₁)
+		m.gamma[4]*tAllReduce +
+		m.gamma[5]*tMoE +
+		m.gamma[6]*L +
+		m.gamma[7]*batchSize +
+		m.gamma[8]
+		// gamma[9] reserved
 
 	return max(1, clampToInt64(stepTime))
 }

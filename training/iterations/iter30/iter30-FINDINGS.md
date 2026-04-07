@@ -31,32 +31,36 @@ Fixed and re-evaluated.
 | α₁ | 0.0 | post-decode overhead |
 | α₂ | 0.0 | per-token overhead |
 
-## Results (corrected profiles)
+## Results (corrected profiles, fused GEMM)
 
-Overall loss: **5740.20%**
-TTFT RMSE: 5689.98%
-E2E RMSE: **50.21%**
+Overall loss: **5636.77%**
+TTFT RMSE: 5587.62%
+E2E RMSE: **49.15%**
 Succeeded: 15/15
 
-## Per-Experiment Breakdown (sorted worst-to-best by combined loss)
+(Prior to GEMM fusion fix: 5740.20% loss. Fusion improved best cases significantly
+— Qwen roleplay from 933% to 747% — but overall TTFT remains dominated by the
+γ₁=1.0 overestimate.)
+
+## Per-Experiment Breakdown (sorted worst-to-best, fused GEMM)
 
 | Experiment | Model | TTFT APE | E2E APE | Combined |
 |---|---|---|---|---|
-| 66-qwen2-5-7b-tp1-reasoning-lite | Qwen2.5-7B | 17691% | 39.5% | 17731% |
-| llama-2-7b-tp1-roleplay | Llama-2-7b | 6216% | 77.7% | 6294% |
-| 62-mistral-nemo-12b-tp2-general | Mistral-Nemo-12B | 5280% | 89.0% | 5369% |
-| 65-yi-34b-tp2-general | Yi-34B | 5152% | 69.5% | 5221% |
-| 61-llama-3-1-70b-tp4-codegen | Llama-3.1-70B | 4500% | 60.5% | 4561% |
-| 67-llama-2-7b-tp1-reasoning-lite | Llama-2-7b | 4061% | **7.2%** | 4068% |
-| 63-mistral-nemo-12b-tp1-codegen | Mistral-Nemo-12B | 3949% | 56.1% | 4005% |
-| 48-scout-17b-tp2-reasoning-lite | Scout-17B-FP8 | 2245% | 60.8% | 2306% |
-| llama-2-7b-tp1-general | Llama-2-7b | 2234% | **7.7%** | 2242% |
-| 21-scout-17b-tp2-roleplay | Scout-17B-FP8 | 2185% | 34.6% | 2219% |
-| llama-2-7b-tp1-codegen | Llama-2-7b | 2152% | 30.3% | 2183% |
-| 17-scout-17b-tp2-general | Scout-17B-FP8 | 1885% | 36.0% | 1921% |
-| 60-llama-3-1-70b-tp4-general | Llama-3.1-70B | 1661% | 22.3% | 1683% |
-| 64-qwen2-5-7b-tp1-roleplay | Qwen2.5-7B | 925% | **8.0%** | 933% |
-| 20-scout-17b-tp2-codegen | Scout-17B-FP8 | 817% | 53.8% | 871% |
+| 66-qwen2-5-7b-tp1-reasoning-lite | Qwen2.5-7B | 17447% | 38.7% | 17486% |
+| llama-2-7b-tp1-roleplay | Llama-2-7b | 6028% | 75.0% | 6103% |
+| 65-yi-34b-tp2-general | Yi-34B | 5489% | 73.2% | 5562% |
+| 62-mistral-nemo-12b-tp2-general | Mistral-Nemo-12B | 4801% | 81.9% | 4882% |
+| 61-llama-3-1-70b-tp4-codegen | Llama-3.1-70B | 4178% | 57.1% | 4235% |
+| 63-mistral-nemo-12b-tp1-codegen | Mistral-Nemo-12B | 3963% | 55.7% | 4018% |
+| 67-llama-2-7b-tp1-reasoning-lite | Llama-2-7b | 3999% | **7.4%** | 4007% |
+| 48-scout-17b-tp2-reasoning-lite | Scout-17B-FP8 | 2219% | 60.9% | 2279% |
+| llama-2-7b-tp1-codegen | Llama-2-7b | 2114% | 28.7% | 2143% |
+| 21-scout-17b-tp2-roleplay | Scout-17B-FP8 | 2100% | 35.7% | 2136% |
+| 17-scout-17b-tp2-general | Scout-17B-FP8 | 1960% | 35.2% | 1996% |
+| llama-2-7b-tp1-general | Llama-2-7b | 1944% | **9.6%** | 1953% |
+| 60-llama-3-1-70b-tp4-general | Llama-3.1-70B | 1652% | 22.2% | 1674% |
+| 20-scout-17b-tp2-codegen | Scout-17B-FP8 | 755% | 54.7% | 809% |
+| 64-qwen2-5-7b-tp1-roleplay | Qwen2.5-7B | 742% | **5.1%** | 747% |
 
 ## Key Finding: Kernel Sum vs Roofline — Opposite Bounds
 
@@ -105,17 +109,45 @@ than on individual step time accuracy.
 3. **γ₁₀ (per-step overhead)**: May need to increase to absorb CUDA graph launch cost.
 4. **α₀ (queueing time)**: Needs to be non-zero to model request processing overhead.
 
+## Root Cause: Measured Kernels vs CUDA Graph Execution
+
+The 10-20x TTFT overestimate has a clear root cause: aiconfigurator's measurements
+are for **individual kernel invocations** (outside CUDA graphs), but vLLM executes
+these kernels **inside CUDA graphs** where:
+
+1. **Kernel launch overhead is amortized** — the ~150µs/layer overhead at m=1 is
+   mostly launch cost that disappears in CUDA graph mode
+2. **Kernels are pipelined** — the GPU scheduler overlaps memory transfers and
+   compute across consecutive kernels
+3. **Memory operations are coalesced** — CUDA graphs optimize memory access patterns
+
+At m=1 (one token), the 4 GEMMs cost 152µs/layer, of which ~90% is launch overhead.
+At m=4096 (large batch), the GEMMs cost 2059µs/layer, of which <10% is overhead.
+A constant γ₁ can't correct both regimes simultaneously.
+
 ## Comparison vs Iter29
 
 | Metric | Iter29 (evolved) | Iter30 (kernel-lookup γ=1.0) |
 |---|---|---|
-| Overall loss | **34.57%** | 5740.20% |
-| E2E RMSE | — | **50.21%** |
-| TTFT RMSE | — | 5689.98% |
+| Overall loss | **34.57%** | 5636.77% |
+| E2E RMSE | — | **49.15%** |
+| TTFT RMSE | — | 5587.62% |
 
-The 166x gap is entirely from TTFT. With γ₁-γ₄ fitted to ~0.1, the TTFT errors
-would collapse dramatically and overall loss would likely be competitive with the
-evolved model.
+The 163x gap is entirely from TTFT. The E2E RMSE of 49% is already in a reasonable
+range — 3 experiments have E2E APE under 10%.
+
+## Implications for Iter31
+
+The fundamental challenge: a constant γ₁ can't correct for the CUDA-graph vs
+non-CUDA-graph mismatch across different batch sizes. Options:
+
+1. **Fit γ₁ ≈ 0.05-0.15** — crude but may work if the training set has enough
+   batch size diversity that the optimizer finds a compromise value
+2. **Subtract launch overhead** — estimate CUDA graph savings and subtract from the
+   measured kernel time before γ correction. The overhead is approximately:
+   `overhead ≈ gemm(m=1) - (gemm(m=2) - gemm(m=1))` (constant part of the GEMM cost)
+3. **Token-count-dependent correction** — replace constant γ₁ with a function
+   `γ₁(m) = a + b/m` that applies larger correction at small m (more overhead)
 
 ## Training Journey
 

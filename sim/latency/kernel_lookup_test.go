@@ -23,9 +23,9 @@ num_moe_layers: 0
 num_dense_layers: 32
 hidden_dim: 4096
 
-context_gemm:
+gemm:
   tokens: [1.0, 16.0, 256.0, 4096.0]
-  latency_us: [1.5, 1.6, 4.0, 50.0]
+  latency_us: [150.0, 155.0, 180.0, 2000.0]
 
 context_attention:
   batch_size: [1.0, 4.0, 16.0]
@@ -34,10 +34,6 @@ context_attention:
     - [0.3, 0.35, 0.4]
     - [0.5, 0.6, 0.75]
     - [1.0, 1.3, 1.8]
-
-generation_gemm:
-  tokens: [1.0, 16.0, 256.0]
-  latency_us: [1.4, 1.5, 3.8]
 
 generation_attention:
   tokens: [1.0, 16.0, 256.0]
@@ -60,8 +56,9 @@ allreduce:
 func testKernelLookupModel(t *testing.T) (*KernelLookupModel, error) {
 	t.Helper()
 	profilePath := writeKernelProfile(t)
-	// Warm-start gammas: γ₁-γ₄=1, γ₅=0 (unused), γ₆=1, γ₇=0 (no MoE), γ₈=40, γ₉=3, γ₁₀=100
-	gamma := []float64{1, 1, 1, 1, 0, 1, 0, 40, 3, 100}
+	// Warm-start gammas: γ₁=1(gemm), γ₂=1(pf_attn), γ₃=1(dc_attn), γ₄=0(unused),
+	// γ₅=1(allreduce), γ₆=0(moe), γ₇=40(layer), γ₈=3(req), γ₉=100(step), γ₁₀=0
+	gamma := []float64{1, 1, 1, 0, 1, 0, 40, 3, 100, 0}
 	alpha := []float64{500, 0, 0}
 	hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "h100", 1, "kernel-lookup", 0).
 		WithKernelProfilePath(profilePath)

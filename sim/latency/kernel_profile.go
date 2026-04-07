@@ -14,12 +14,17 @@ import (
 // microseconds. Loaded from kernel_profile.yaml (generated offline by Python script).
 //
 // Conventions:
-//   - context_gemm.tokens: total prefill tokens across batch
-//   - context_attention.batch_size × isl: prefill batch_size and avg ISL
-//   - generation_gemm.tokens: decode token count (== decode batch size, 1 token/request)
-//   - generation_attention.tokens × context: decode batch_size and avg context length
+//   - gemm.tokens: total tokens (prefill + decode) — FUSED, matching vLLM continuous batching
+//   - context_attention.batch_size × isl: prefill batch_size and avg ISL (FlashAttention)
+//   - generation_attention.tokens × context: decode batch_size and avg context (PagedAttention)
 //   - allreduce.tokens: total token count (Python script converts message_size → tokens)
 //   - moe_compute.tokens: total token count (nil for dense models)
+//
+// Why one GEMM table: In vLLM continuous batching, prefill and decode tokens are
+// concatenated and processed by the SAME GEMM call per layer. Splitting them into
+// separate lookups double-counts the kernel launch overhead (~150µs/layer), causing
+// 1.5-2x overestimation for mixed batches. Attention stays split because vLLM uses
+// different kernels (FlashAttention for prefill, PagedAttention for decode).
 type KernelProfile struct {
 	GPU            string `yaml:"gpu"`
 	Backend        string `yaml:"backend"`
@@ -31,9 +36,8 @@ type KernelProfile struct {
 	NumDenseLayers int    `yaml:"num_dense_layers"`
 	HiddenDim      int    `yaml:"hidden_dim"`
 
-	ContextGemm         Lookup1D  `yaml:"context_gemm"`
+	Gemm                Lookup1D  `yaml:"gemm"`
 	ContextAttention    Lookup2D  `yaml:"context_attention"`
-	GenerationGemm      Lookup1D  `yaml:"generation_gemm"`
 	GenerationAttention Lookup2D  `yaml:"generation_attention"`
 	AllReduce           Lookup1D  `yaml:"allreduce"`
 	MoECompute          *Lookup1D `yaml:"moe_compute,omitempty"`
@@ -81,10 +85,7 @@ func (p *KernelProfile) validate() error {
 	if p.NumLayers <= 0 {
 		return fmt.Errorf("num_layers must be > 0, got %d", p.NumLayers)
 	}
-	if err := validate1D("context_gemm", p.ContextGemm); err != nil {
-		return err
-	}
-	if err := validate1D("generation_gemm", p.GenerationGemm); err != nil {
+	if err := validate1D("gemm", p.Gemm); err != nil {
 		return err
 	}
 	if err := validate1D("allreduce", p.AllReduce); err != nil {
