@@ -146,6 +146,7 @@ def build_blis_command(
     latency_model: str,
     alpha_coeffs: str | None = None,
     beta_coeffs: str | None = None,
+    kernel_profile_path: str | None = None,
 ) -> list[str]:
     """Build BLIS command-line arguments."""
     cmd = [
@@ -175,7 +176,7 @@ def build_blis_command(
         "42",
         "--workload-spec",
         workload_spec,
-        "--results-path",
+        "--metrics-path",
         results_path,
     ]
 
@@ -183,6 +184,10 @@ def build_blis_command(
     if alpha_coeffs is not None and beta_coeffs is not None:
         cmd.extend(["--alpha-coeffs", alpha_coeffs])
         cmd.extend(["--beta-coeffs", beta_coeffs])
+
+    # Add kernel profile if provided (required for kernel-lookup backend)
+    if kernel_profile_path is not None:
+        cmd.extend(["--kernel-profile", kernel_profile_path])
 
     return cmd
 
@@ -313,6 +318,7 @@ def run_blis_on_experiment(
     latency_model: str,
     alpha_coeffs: str | None = None,
     beta_coeffs: str | None = None,
+    kernel_profile_path: str | None = None,
 ) -> SimulatorResult:
     """Run BLIS binary on a single experiment and return results."""
     blis_binary_abs = os.path.abspath(blis_binary)
@@ -329,7 +335,7 @@ def run_blis_on_experiment(
         # Build command
         cmd = build_blis_command(
             blis_binary_abs, experiment, spec_path, results_path,
-            latency_model, alpha_coeffs, beta_coeffs
+            latency_model, alpha_coeffs, beta_coeffs, kernel_profile_path
         )
 
         # Run BLIS
@@ -466,14 +472,14 @@ def discover_experiment_dirs(base_dir: str) -> list[str]:
 
 
 def run_single_experiment_wrapper(
-    args: tuple[int, int, Experiment, str, str, str | None, str | None]
+    args: tuple[int, int, Experiment, str, str, str | None, str | None, str | None]
 ) -> tuple[Experiment, list[ErrorRecord], RuntimeRecord | None, SimulatorResult | None, Experiment | None, Exception | None]:
     """Wrapper for running a single experiment (used by parallel execution)."""
-    i, total, exp, blis_binary, latency_model, alpha_coeffs, beta_coeffs = args
+    i, total, exp, blis_binary, latency_model, alpha_coeffs, beta_coeffs, kernel_profile_path = args
 
     try:
         t0 = time.perf_counter()
-        result = run_blis_on_experiment(blis_binary, exp, latency_model, alpha_coeffs, beta_coeffs)
+        result = run_blis_on_experiment(blis_binary, exp, latency_model, alpha_coeffs, beta_coeffs, kernel_profile_path)
         elapsed = time.perf_counter() - t0
 
         # Compute errors
@@ -523,6 +529,7 @@ def run_evaluation(
     evaluate_per_experiment: bool = False,
     alpha_coeffs: str | None = None,
     beta_coeffs: str | None = None,
+    kernel_profiles_dir: str | None = None,
 ) -> LossOutput | None:
     """Run BLIS evaluation pipeline and return loss metrics."""
 
@@ -559,13 +566,20 @@ def run_evaluation(
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all experiments
-        futures = {
-            executor.submit(
+        futures = {}
+        for i, exp in enumerate(experiments, 1):
+            # Derive kernel profile path for this experiment
+            kernel_profile_path = None
+            if kernel_profiles_dir:
+                exp_name = os.path.basename(exp.folder)
+                candidate = os.path.join(kernel_profiles_dir, f"{exp_name}.yaml")
+                if os.path.exists(candidate):
+                    kernel_profile_path = os.path.abspath(candidate)
+
+            futures[executor.submit(
                 run_single_experiment_wrapper,
-                (i, len(experiments), exp, blis_binary, latency_model, alpha_coeffs, beta_coeffs)
-            ): exp
-            for i, exp in enumerate(experiments, 1)
-        }
+                (i, len(experiments), exp, blis_binary, latency_model, alpha_coeffs, beta_coeffs, kernel_profile_path)
+            )] = exp
 
         # Collect results as they complete
         for future in as_completed(futures):
@@ -687,6 +701,11 @@ def main():
         action="store_true",
         help="Display per-experiment loss breakdown",
     )
+    parser.add_argument(
+        "--kernel-profiles-dir",
+        default=None,
+        help="Directory containing kernel_profile.yaml files (one per experiment). Required for --latency-model kernel-lookup",
+    )
 
     args = parser.parse_args()
 
@@ -705,6 +724,7 @@ def main():
             evaluate_per_experiment=args.evaluate_per_experiment,
             alpha_coeffs=args.alpha_coeffs,
             beta_coeffs=args.beta_coeffs,
+            kernel_profiles_dir=args.kernel_profiles_dir,
         )
 
         if loss_output is None:
