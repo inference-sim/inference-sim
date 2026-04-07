@@ -1,0 +1,719 @@
+{
+  "description": "Trained-physics latency model iter29 golden values. Generated with alpha/beta coefficients from iteration 29 sequential golden section search (loss=34.5675%). Update only when the trained-physics backend is intentionally versioned (rename backend first).",
+  "backend": "trained-physics",
+  "alpha_coeffs": [
+    15563.199579,
+    777.3455,
+    45.907545
+  ],
+  "beta_coeffs": [
+    0.152128,
+    0.0,
+    1.36252915,
+    0.752037,
+    32.09546717,
+    4.41684444,
+    126.024825,
+    481.8613888,
+    0.0,
+    1.94710771
+  ],
+  "experiments": [
+    {
+      "id": "17",
+      "model": "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
+      "hardware": "H100",
+      "tp": 2,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 8253,
+      "cpu_kv_blocks": 0,
+      "workload": {
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 9,
+            "num_users_per_system_prompt": 5,
+            "output_len": 248,
+            "question_len": 447,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 600,
+              "rate": 2.5
+            },
+            {
+              "duration": 600,
+              "rate": 6.0
+            }
+          ]
+        },
+        "num_requests": 5100,
+        "seed": 42,
+        "version": "2"
+      },
+      "expected": {
+        "completed_requests": 3060,
+        "total_input_tokens": 1673820,
+        "total_output_tokens": 755820,
+        "ttft_mean_ms": 53.207617320261434,
+        "ttft_p90_ms": 63.1634,
+        "ttft_p99_ms": 68.109,
+        "e2e_mean_ms": 5955.500254901961,
+        "e2e_p90_ms": 6642.9517000000005,
+        "e2e_p99_ms": 6698.361,
+        "itl_mean_ms": 23.892775860654652
+      },
+      "model_config_dir": "model_configs/llama-4-scout-17b-16e-instruct-fp8-dynamic"
+    },
+    {
+      "id": "20",
+      "model": "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
+      "hardware": "H100",
+      "tp": 2,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 8253,
+      "cpu_kv_blocks": 0,
+      "workload": {
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 11,
+            "num_users_per_system_prompt": 4,
+            "output_len": 247,
+            "question_len": 466,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 600,
+              "rate": 5.0
+            },
+            {
+              "duration": 600,
+              "rate": 10.0
+            }
+          ]
+        },
+        "num_requests": 9000,
+        "seed": 42,
+        "version": "2"
+      },
+      "expected": {
+        "completed_requests": 6072,
+        "total_input_tokens": 3436752,
+        "total_output_tokens": 1493712,
+        "ttft_mean_ms": 54.89687467061923,
+        "ttft_p90_ms": 65.0898,
+        "ttft_p99_ms": 68.88461000000001,
+        "e2e_mean_ms": 6392.291691040843,
+        "e2e_p90_ms": 6654.7872,
+        "e2e_p99_ms": 6681.07445,
+        "itl_mean_ms": 25.758609009635055
+      },
+      "model_config_dir": "model_configs/llama-4-scout-17b-16e-instruct-fp8-dynamic"
+    },
+    {
+      "id": "20260217-155451",
+      "model": "meta-llama/Llama-2-7b-hf",
+      "hardware": "H100",
+      "tp": 1,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 7463,
+      "cpu_kv_blocks": 1023,
+      "workload": {
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 11,
+            "num_users_per_system_prompt": 4,
+            "output_len": 247,
+            "question_len": 466,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 600,
+              "rate": 5.0
+            },
+            {
+              "duration": 600,
+              "rate": 10.0
+            }
+          ]
+        },
+        "num_requests": 9000,
+        "seed": 42,
+        "version": "2"
+      },
+      "expected": {
+        "completed_requests": 6072,
+        "total_input_tokens": 3436752,
+        "total_output_tokens": 1493712,
+        "ttft_mean_ms": 29.842217226613965,
+        "ttft_p90_ms": 33.762,
+        "ttft_p99_ms": 41.14801,
+        "e2e_mean_ms": 2244.7656421277998,
+        "e2e_p90_ms": 2964.6763,
+        "e2e_p99_ms": 3422.89942,
+        "itl_mean_ms": 9.000595223175553
+      },
+      "model_config_dir": "model_configs/llama-2-7b-hf"
+    },
+    {
+      "id": "20260217-162547",
+      "model": "meta-llama/Llama-2-7b-hf",
+      "hardware": "H100",
+      "tp": 1,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 7463,
+      "cpu_kv_blocks": 1023,
+      "workload": {
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 10,
+            "num_users_per_system_prompt": 5,
+            "output_len": 251,
+            "question_len": 600,
+            "system_prompt_len": 150
+          },
+          "stages": [
+            {
+              "duration": 1200,
+              "rate": 6.0
+            }
+          ]
+        },
+        "num_requests": 7200,
+        "seed": 42,
+        "version": "2"
+      },
+      "expected": {
+        "completed_requests": 7200,
+        "total_input_tokens": 5400000,
+        "total_output_tokens": 1800000,
+        "ttft_mean_ms": 32.04119291666667,
+        "ttft_p90_ms": 36.194,
+        "ttft_p99_ms": 40.42,
+        "e2e_mean_ms": 2431.2821751388888,
+        "e2e_p90_ms": 2513.5696,
+        "e2e_p99_ms": 2601.2744000000002,
+        "itl_mean_ms": 9.593855928888889
+      },
+      "model_config_dir": "model_configs/llama-2-7b-hf"
+    },
+    {
+      "id": "20260217-231439",
+      "model": "meta-llama/Llama-2-7b-hf",
+      "hardware": "H100",
+      "tp": 1,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 7463,
+      "cpu_kv_blocks": 1023,
+      "workload": {
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 9,
+            "num_users_per_system_prompt": 5,
+            "output_len": 248,
+            "question_len": 447,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 600,
+              "rate": 8.0
+            },
+            {
+              "duration": 600,
+              "rate": 20.0
+            }
+          ]
+        },
+        "num_requests": 16800,
+        "seed": 42,
+        "version": "2"
+      },
+      "expected": {
+        "completed_requests": 9630,
+        "total_input_tokens": 5267610,
+        "total_output_tokens": 2378610,
+        "ttft_mean_ms": 32.999283281412254,
+        "ttft_p90_ms": 39.736599999999996,
+        "ttft_p99_ms": 47.939,
+        "e2e_mean_ms": 2691.387420041537,
+        "e2e_p90_ms": 3682.172,
+        "e2e_p99_ms": 4228.93366,
+        "itl_mean_ms": 10.759559258138157
+      },
+      "model_config_dir": "model_configs/llama-2-7b-hf"
+    },
+    {
+      "id": "21",
+      "model": "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
+      "hardware": "H100",
+      "tp": 2,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 8253,
+      "cpu_kv_blocks": 0,
+      "workload": {
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 10,
+            "num_users_per_system_prompt": 5,
+            "output_len": 251,
+            "question_len": 600,
+            "system_prompt_len": 150
+          },
+          "stages": [
+            {
+              "duration": 1200,
+              "rate": 6.0
+            }
+          ]
+        },
+        "num_requests": 7200,
+        "seed": 42,
+        "version": "2"
+      },
+      "expected": {
+        "completed_requests": 7200,
+        "total_input_tokens": 5400000,
+        "total_output_tokens": 1800000,
+        "ttft_mean_ms": 55.44828583333334,
+        "ttft_p90_ms": 66.054,
+        "ttft_p99_ms": 68.963,
+        "e2e_mean_ms": 6591.967125694445,
+        "e2e_p90_ms": 6669.75,
+        "e2e_p99_ms": 6682.06862,
+        "itl_mean_ms": 26.142967359444444
+      },
+      "model_config_dir": "model_configs/llama-4-scout-17b-16e-instruct-fp8-dynamic"
+    },
+    {
+      "id": "48",
+      "model": "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
+      "hardware": "H100",
+      "tp": 2,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 8253,
+      "cpu_kv_blocks": 5461,
+      "workload": {
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 23,
+            "num_users_per_system_prompt": 1,
+            "output_len": 1448,
+            "question_len": 934,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 1200,
+              "rate": 1.0
+            }
+          ]
+        },
+        "num_requests": 1200,
+        "seed": 42,
+        "version": "2"
+      },
+      "expected": {
+        "completed_requests": 1219,
+        "total_input_tokens": 1260446,
+        "total_output_tokens": 1763893,
+        "ttft_mean_ms": 55.41061607875307,
+        "ttft_p90_ms": 65.2404,
+        "ttft_p99_ms": 68.71328,
+        "e2e_mean_ms": 36567.968657916324,
+        "e2e_p90_ms": 37720.428199999995,
+        "e2e_p99_ms": 38042.018619999995,
+        "itl_mean_ms": 25.232744327462036
+      },
+      "model_config_dir": "model_configs/llama-4-scout-17b-16e-instruct-fp8-dynamic"
+    },
+    {
+      "id": "60",
+      "model": "meta-llama/Llama-3.1-70B-Instruct",
+      "hardware": "H100",
+      "tp": 4,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 8192,
+      "total_kv_blocks": 30251,
+      "cpu_kv_blocks": 6553,
+      "workload": {
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 9,
+            "num_users_per_system_prompt": 5,
+            "output_len": 248,
+            "question_len": 447,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 600,
+              "rate": 2.5
+            },
+            {
+              "duration": 600,
+              "rate": 6.0
+            }
+          ]
+        },
+        "num_requests": 5100,
+        "seed": 42,
+        "version": "2"
+      },
+      "expected": {
+        "completed_requests": 3060,
+        "total_input_tokens": 1673820,
+        "total_output_tokens": 755820,
+        "ttft_mean_ms": 45.151947385620915,
+        "ttft_p90_ms": 52.3214,
+        "ttft_p99_ms": 57.218749999999986,
+        "e2e_mean_ms": 4356.569591830065,
+        "e2e_p90_ms": 4478.1744,
+        "e2e_p99_ms": 4543.2691,
+        "itl_mean_ms": 17.451986414754835
+      },
+      "model_config_dir": "model_configs/llama-3.1-70b-instruct"
+    },
+    {
+      "id": "61",
+      "model": "meta-llama/Llama-3.1-70B-Instruct",
+      "hardware": "H100",
+      "tp": 4,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 30425,
+      "cpu_kv_blocks": 6553,
+      "workload": {
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 11,
+            "num_users_per_system_prompt": 4,
+            "output_len": 247,
+            "question_len": 466,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 600,
+              "rate": 5.0
+            },
+            {
+              "duration": 600,
+              "rate": 10.0
+            }
+          ]
+        },
+        "num_requests": 9000,
+        "seed": 42,
+        "version": "2"
+      },
+      "expected": {
+        "completed_requests": 6072,
+        "total_input_tokens": 3436752,
+        "total_output_tokens": 1493712,
+        "ttft_mean_ms": 54.02301844532279,
+        "ttft_p90_ms": 75.70850000000011,
+        "ttft_p99_ms": 136.82132,
+        "e2e_mean_ms": 4501.32222381423,
+        "e2e_p90_ms": 4737.393,
+        "e2e_p99_ms": 4812.792,
+        "itl_mean_ms": 18.075293517759782
+      },
+      "model_config_dir": "model_configs/llama-3.1-70b-instruct"
+    },
+    {
+      "id": "62",
+      "model": "mistralai/Mistral-Nemo-Instruct-2407",
+      "hardware": "H100",
+      "tp": 2,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 1024,
+      "total_kv_blocks": 48009,
+      "cpu_kv_blocks": 6553,
+      "workload": {
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 9,
+            "num_users_per_system_prompt": 5,
+            "output_len": 248,
+            "question_len": 447,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 600,
+              "rate": 2.5
+            },
+            {
+              "duration": 600,
+              "rate": 6.0
+            }
+          ]
+        },
+        "num_requests": 5100,
+        "seed": 42,
+        "version": "2"
+      },
+      "expected": {
+        "completed_requests": 3060,
+        "total_input_tokens": 1673820,
+        "total_output_tokens": 755820,
+        "ttft_mean_ms": 26.007845098039216,
+        "ttft_p90_ms": 28.6581,
+        "ttft_p99_ms": 29.61533,
+        "e2e_mean_ms": 1613.0885663398692,
+        "e2e_p90_ms": 1665.2696999999998,
+        "e2e_p99_ms": 1690.65147,
+        "itl_mean_ms": 6.4222822722341295
+      },
+      "model_config_dir": "model_configs/mistral-nemo-instruct-2407"
+    },
+    {
+      "id": "63",
+      "model": "mistralai/Mistral-Nemo-Instruct-2407",
+      "hardware": "H100",
+      "tp": 1,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 19251,
+      "cpu_kv_blocks": 3276,
+      "workload": {
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 11,
+            "num_users_per_system_prompt": 4,
+            "output_len": 247,
+            "question_len": 466,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 600,
+              "rate": 5.0
+            },
+            {
+              "duration": 600,
+              "rate": 10.0
+            }
+          ]
+        },
+        "num_requests": 9000,
+        "seed": 42,
+        "version": "2"
+      },
+      "expected": {
+        "completed_requests": 6072,
+        "total_input_tokens": 3436752,
+        "total_output_tokens": 1493712,
+        "ttft_mean_ms": 36.082093214756256,
+        "ttft_p90_ms": 41.143800000000006,
+        "ttft_p99_ms": 45.65904,
+        "e2e_mean_ms": 3042.4704375823453,
+        "e2e_p90_ms": 3427.1098,
+        "e2e_p99_ms": 3535.8278,
+        "itl_mean_ms": 12.217932294177192
+      },
+      "model_config_dir": "model_configs/mistral-nemo-instruct-2407"
+    },
+    {
+      "id": "64",
+      "model": "Qwen/Qwen2.5-7B-Instruct",
+      "hardware": "H100",
+      "tp": 1,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 65352,
+      "cpu_kv_blocks": 9362,
+      "workload": {
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 10,
+            "num_users_per_system_prompt": 5,
+            "output_len": 251,
+            "question_len": 600,
+            "system_prompt_len": 150
+          },
+          "stages": [
+            {
+              "duration": 1200,
+              "rate": 6.0
+            }
+          ]
+        },
+        "num_requests": 7200,
+        "seed": 42,
+        "version": "2"
+      },
+      "expected": {
+        "completed_requests": 7200,
+        "total_input_tokens": 5400000,
+        "total_output_tokens": 1800000,
+        "ttft_mean_ms": 27.800832361111112,
+        "ttft_p90_ms": 30.9356,
+        "ttft_p99_ms": 35.23918,
+        "e2e_mean_ms": 1720.1092315277779,
+        "e2e_p90_ms": 1748.8048999999999,
+        "e2e_p99_ms": 1773.592,
+        "itl_mean_ms": 6.766125596666667
+      },
+      "model_config_dir": "model_configs/qwen2.5-7b-instruct"
+    },
+    {
+      "id": "65",
+      "model": "01-ai/Yi-34B",
+      "hardware": "H100",
+      "tp": 2,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 20793,
+      "cpu_kv_blocks": 4369,
+      "workload": {
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 9,
+            "num_users_per_system_prompt": 5,
+            "output_len": 248,
+            "question_len": 447,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 600,
+              "rate": 2.5
+            },
+            {
+              "duration": 600,
+              "rate": 6.0
+            }
+          ]
+        },
+        "num_requests": 5100,
+        "seed": 42,
+        "version": "2"
+      },
+      "expected": {
+        "completed_requests": 3060,
+        "total_input_tokens": 1673820,
+        "total_output_tokens": 755820,
+        "ttft_mean_ms": 43.56829575163399,
+        "ttft_p90_ms": 50.3158,
+        "ttft_p99_ms": 54.14972,
+        "e2e_mean_ms": 4163.27115620915,
+        "e2e_p90_ms": 4362.1932,
+        "e2e_p99_ms": 4491.52275,
+        "itl_mean_ms": 16.67581320023286
+      },
+      "model_config_dir": "model_configs/yi-34b"
+    },
+    {
+      "id": "66",
+      "model": "Qwen/Qwen2.5-7B-Instruct",
+      "hardware": "H100",
+      "tp": 1,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 1024,
+      "total_kv_blocks": 65368,
+      "cpu_kv_blocks": 9361,
+      "workload": {
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 23,
+            "num_users_per_system_prompt": 1,
+            "output_len": 1448,
+            "question_len": 934,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 1200,
+              "rate": 1.0
+            }
+          ]
+        },
+        "num_requests": 1200,
+        "seed": 42,
+        "version": "2"
+      },
+      "expected": {
+        "completed_requests": 1219,
+        "total_input_tokens": 1260446,
+        "total_output_tokens": 1763893,
+        "ttft_mean_ms": 27.942819524200164,
+        "ttft_p90_ms": 30.708000000000002,
+        "ttft_p99_ms": 34.75876,
+        "e2e_mean_ms": 9925.427751435602,
+        "e2e_p90_ms": 10073.824799999999,
+        "e2e_p99_ms": 10131.051599999999,
+        "itl_mean_ms": 6.839466435322325
+      },
+      "model_config_dir": "model_configs/qwen2.5-7b-instruct"
+    },
+    {
+      "id": "67",
+      "model": "meta-llama/Llama-2-7b-hf",
+      "hardware": "H100",
+      "tp": 1,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 7463,
+      "cpu_kv_blocks": 1023,
+      "workload": {
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 23,
+            "num_users_per_system_prompt": 1,
+            "output_len": 1448,
+            "question_len": 934,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 1200,
+              "rate": 1.0
+            }
+          ]
+        },
+        "num_requests": 1200,
+        "seed": 42,
+        "version": "2"
+      },
+      "expected": {
+        "completed_requests": 1219,
+        "total_input_tokens": 1260446,
+        "total_output_tokens": 1763893,
+        "ttft_mean_ms": 35.12285151763741,
+        "ttft_p90_ms": 40.092000000000006,
+        "ttft_p99_ms": 42.34668,
+        "e2e_mean_ms": 17049.486731747333,
+        "e2e_p90_ms": 17354.3738,
+        "e2e_p99_ms": 17795.79558,
+        "itl_mean_ms": 11.757834747912714
+      },
+      "model_config_dir": "model_configs/llama-2-7b-hf"
+    }
+  ]
+}

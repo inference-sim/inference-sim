@@ -43,12 +43,12 @@ __pycache__/*
 # data files
 *.json
 !testdata/goldendataset.json
+!testdata/trained_physics_iter29.json
 !hardware_config.json
 data/
 *.txt
 
 # auto-fetched HuggingFace model configs (downloaded by --roofline)
-model_configs/
 
 # binaries
 blis
