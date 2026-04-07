@@ -85,7 +85,7 @@ run_experiment "weighted (queue-depth:1 — fast signal)" \
 run_experiment "weighted (kv-utilization:1 — lagging signal)" \
     --routing-policy weighted --routing-scorers "kv-utilization:1"
 
-run_experiment "weighted (default: prefix-affinity:3,queue-depth:2,kv-utilization:2)" \
+run_experiment "weighted (default: precise-prefix-cache:2,queue-depth:1,kv-utilization:1)" \
     --routing-policy weighted
 
 echo "================================================================"

@@ -95,7 +95,7 @@ You should see JSON output on stdout with key fields:
 ```bash
 ./blis run --model qwen/qwen3-14b \
   --num-instances 4 --routing-policy weighted \
-  --routing-scorers "prefix-affinity:3,queue-depth:2,kv-utilization:2" \
+  --routing-scorers "precise-prefix-cache:2,queue-depth:1,kv-utilization:1" \
   --rate 100 --num-requests 500
 ```
 

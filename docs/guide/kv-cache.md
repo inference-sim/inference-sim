@@ -26,12 +26,11 @@ KV cache is allocated in **blocks** of `--block-size-in-tokens` tokens (default:
 
 When requests share common prefixes (e.g., system prompts in RAG), BLIS can reuse KV cache blocks from prior computations. This reduces prefill tokens and improves TTFT.
 
-Prefix caching is automatic when using the `prefix-affinity` scorer with `weighted` routing:
+Prefix caching is automatic when using the `weighted` routing policy. The default profile (`precise-prefix-cache:2, queue-depth:1, kv-utilization:1`) queries actual instance KV cache state to route requests to instances with cached prefix blocks:
 
 ```bash
 ./blis run --model qwen/qwen3-14b \
   --num-instances 4 --routing-policy weighted \
-  --routing-scorers "prefix-affinity:3,queue-depth:1" \
   --prefix-tokens 512 --rate 100 --num-requests 500
 ```
 
