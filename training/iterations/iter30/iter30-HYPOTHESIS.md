@@ -81,3 +81,37 @@ top-2, interleaved with dense layers), and we may need custom profiling.
 - Overall loss < 33% (vs 34.57% baseline)
 - γ₁-γ₇ within [0.7, 1.3] (tighter than evolved β₁-β₄)
 - Scout loss < 60% (vs ~67.6% baseline)
+
+---
+
+## Outcome (post-evaluation)
+
+### H-main: REFUTED
+
+Best warm-start loss: 180% (γ₁=0.06, γ₂=γ₃=0.1). No γ configuration achieves
+< 33%. The kernel-lookup backend with constant γ corrections cannot compete with the
+trained-physics model. Root cause: aiconfigurator measures kernels outside CUDA graphs.
+The ~150µs/layer launch overhead is additive (not multiplicative), so a constant γ
+multiplier cannot correct it — it removes a fraction of both overhead AND compute.
+
+### H-correction: REFUTED
+
+γ₁-γ₃ must be 0.05-0.10 to achieve reasonable TTFT — far from 1.0, and farther from
+1.0 than the trained-physics β₁-β₄ (~0.77-1.36). The measured kernels are a worse
+starting point than the analytical roofline for this DES use case because the
+measurement methodology (outside CUDA graphs) introduces systematic overhead that
+roofline estimates don't have.
+
+### H-scout: NOT TESTED
+
+Scout MoE was not separately evaluated because the overall loss was too high for
+any model to be meaningful.
+
+### Key Learning
+
+Aiconfigurator's kernel measurements are accurate for **static single-request
+predictions** (no DES, no queueing). Using them as basis functions in a DES requires
+either: (a) offset subtraction to remove CUDA graph overhead before applying γ,
+(b) using aiconfigurator's own static prediction as a compound basis function, or
+(c) using the measurements only for cross-model/hardware transfer learning rather
+than as primary step-time predictors.

@@ -176,6 +176,20 @@ everything (including the real compute), not just the overhead.
    (which works at 34.57%) and aiconfigurator's measured data only for
    cross-model generalization or hardware transfer learning.
 
+## What Was Built (iter30 deliverables)
+
+All code is complete, tested, and merged into the training branch:
+
+- **`sim/latency/kernel_lookup.go`** — `KernelLookupModel` with fused GEMM lookup,
+  split FlashAttention/PagedAttention, AllReduce, MoE terms. 8-term formula.
+- **`sim/latency/kernel_profile.go`** — `KernelProfile` YAML loader with `Lookup1D`
+  and `Lookup2D` types, `Interp1D`/`Interp2D` linear/bilinear interpolation.
+- **CLI**: `--latency-model kernel-lookup --kernel-profile <path>` end-to-end.
+- **`training/scripts/generate_kernel_profile.py`** — queries aiconfigurator
+  PerfDatabase and produces per-model/GPU/TP kernel profile YAML files.
+- **15 kernel profiles** in `training/kernel_profiles/` for all training experiments.
+- **`sim/config.go`**: `KernelProfilePath` field + `WithKernelProfilePath()`.
+
 ## Training Journey
 
 | Iter | Loss | Key change |
@@ -185,4 +199,4 @@ everything (including the real compute), not just the overhead.
 | 26 | 37.42% | T_tp activated |
 | 27 | 34.61% | CMA-ES joint 6-param |
 | 29 | 34.57% | Sequential golden section |
-| **30** | **5740.20%** | **Kernel-lookup warm-start (γ=1.0, unoptimized)** |
+| **30** | **180%** | **Kernel-lookup backend (best manual warm-start; structural, not optimized)** |
