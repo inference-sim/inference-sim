@@ -307,3 +307,59 @@ func TestDeferredQueue_DeferredQueueLenPanicsBeforeRun(t *testing.T) {
 	}()
 	_ = cs.DeferredQueueLen() // should panic
 }
+
+// TestDeferredQueue_StandardSLONotSerialized asserts BC-2: standard-class requests
+// are NOT serialized by the deferred queue.
+//
+// Setup: 10 requests with SLOClass "standard" arriving every 10µs — dense enough
+// that most requests are in-flight simultaneously. The deferred queue intercept fires
+// only for "batch"/"background"; standard requests bypass it entirely.
+//
+// Bound derivation (plan Section F):
+//   Default config: BetaCoeffs=[1000,10,5], AlphaCoeffs=[100,1,100].
+//   Non-serialized: QueueingTime=150µs + batched prefill(500 tokens)=6000µs → ~6.2ms mean TTFT.
+//   Serialized:     each request waits for all predecessors (~21.75ms each) → ~100ms mean TTFT.
+//   Bound 15ms splits the two cases with ~2.4× margin each side.
+//
+// Regression guard for issue #965.
+func TestDeferredQueue_StandardSLONotSerialized(t *testing.T) {
+	requests := newDeferredTestRequests(10, "standard")
+	cfg := newTestDeploymentConfig(1)
+	cs := NewClusterSimulator(cfg, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	if m.CompletedRequests != 10 {
+		t.Fatalf("completed %d requests, want 10", m.CompletedRequests)
+	}
+
+	ttftMeanMs := float64(m.TTFTSum) / float64(m.CompletedRequests) / 1000.0
+	const boundMs = 15.0
+	if ttftMeanMs >= boundMs {
+		t.Errorf("mean TTFT %.2fms >= bound %.1fms: standard requests are being serialized by the deferred queue (regression: issue #965)",
+			ttftMeanMs, boundMs)
+	}
+}
+
+// TestDeferredQueue_BatchSLOIsSerializedAboveBound asserts BC-3: batch-class requests
+// ARE serialized by the deferred queue. This is the guard-validity companion to
+// TestDeferredQueue_StandardSLONotSerialized — it confirms the 15ms bound is a real
+// discriminator, not a vacuous pass.
+func TestDeferredQueue_BatchSLOIsSerializedAboveBound(t *testing.T) {
+	requests := newDeferredTestRequests(10, "batch")
+	cfg := newTestDeploymentConfig(1)
+	cs := NewClusterSimulator(cfg, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	if m.CompletedRequests != 10 {
+		t.Fatalf("completed %d requests, want 10", m.CompletedRequests)
+	}
+
+	ttftMeanMs := float64(m.TTFTSum) / float64(m.CompletedRequests) / 1000.0
+	const boundMs = 15.0
+	if ttftMeanMs < boundMs {
+		t.Errorf("mean TTFT %.2fms < bound %.1fms: batch requests are NOT being serialized — deferred queue may be broken",
+			ttftMeanMs, boundMs)
+	}
+}
