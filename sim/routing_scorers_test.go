@@ -263,6 +263,13 @@ func TestScoreActiveRequests_AllEqual_NonZero(t *testing.T) {
 	assert.False(t, math.IsNaN(scores["a"]), "score must not be NaN")
 }
 
+func TestScoreActiveRequests_SingleNonZeroInstance_ScoresZero(t *testing.T) {
+	snapshots := []RoutingSnapshot{{ID: "a", InFlightRequests: 5}}
+	scores := scoreActiveRequests(nil, snapshots)
+	assert.Equal(t, 0.0, scores["a"], "single non-zero instance: max-only normalization → 0.0")
+	assert.False(t, math.IsNaN(scores["a"]))
+}
+
 // === running-requests scorer tests (BC-3, BC-4) ===
 
 func TestScoreRunningRequests_AllEqual_AllScoreOne(t *testing.T) {
