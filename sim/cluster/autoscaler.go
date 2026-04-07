@@ -38,14 +38,16 @@ func NewVariantSpec(gpuType string, tpDegree int) VariantSpec {
 // Produced by Collector, consumed by Analyzer. All numeric invariants must hold:
 // KVUtilization ∈ [0.0, 1.0], QueueDepth ≥ 0, InFlightCount ≥ 0.
 type ReplicaMetrics struct {
-	InstanceID    string
-	Variant       VariantSpec
-	KVUtilization float64 // [0.0, 1.0]
-	QueueDepth    int
-	InFlightCount int
-	CostPerHour   float64 // $/hr from NodePool; used for CostPerReplica in VariantCapacity
-	TTFT          float64 // μs — zero until QueueingModelAnalyzer; Analyze() must guard against zero before dividing
-	DispatchRate  float64 // req/s — zero until QueueingModelAnalyzer; Analyze() must guard against zero before dividing
+	InstanceID            string
+	Variant               VariantSpec
+	KVUtilization         float64 // [0.0, 1.0]
+	QueueDepth            int
+	InFlightCount         int
+	CostPerHour           float64 // $/hr from NodePool; used for CostPerReplica in VariantCapacity
+	TTFT                  float64 // μs — zero until QueueingModelAnalyzer; Analyze() must guard against zero before dividing
+	DispatchRate          float64 // req/s — zero until QueueingModelAnalyzer; Analyze() must guard against zero before dividing
+	TotalKvCapacityTokens int64   // Total KV cache capacity in tokens; used by V2SaturationAnalyzer for k1 (memory-bound capacity)
+	KvTokensInUse         int64   // Current KV token occupancy; used by V2SaturationAnalyzer for demand computation
 }
 
 // ModelSignals aggregates all replica snapshots for one model.

@@ -171,6 +171,16 @@ func (i *InstanceSimulator) CacheHitRate() float64 {
 	return i.sim.KVCache.CacheHitRate()
 }
 
+// TotalKvCapacityTokens returns total KV cache capacity in tokens.
+func (i *InstanceSimulator) TotalKvCapacityTokens() int64 {
+	return i.sim.KVCache.TotalCapacity() * i.sim.KVCache.BlockSize()
+}
+
+// KvTokensInUse returns current KV cache occupancy in tokens.
+func (i *InstanceSimulator) KvTokensInUse() int64 {
+	return i.sim.KVCache.UsedBlocks() * i.sim.KVCache.BlockSize()
+}
+
 // GetCachedBlockCount returns the number of consecutive cached prefix blocks
 // matching the given token sequence. Used by precise prefix cache scoring.
 func (i *InstanceSimulator) GetCachedBlockCount(tokens []int) int {
