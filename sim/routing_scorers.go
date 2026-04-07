@@ -14,6 +14,8 @@ type ScorerConfig struct {
 }
 
 // scorerFunc computes per-instance scores in [0,1] for a scoring dimension.
+// Some scorers use a sub-range by design (e.g., load-aware scores in [0, 0.5]
+// per llm-d semantics); weighted combination normalizes the effective contribution.
 // The req parameter provides request metadata (e.g., InputTokens for prefix matching).
 // Stateless scorers may ignore it.
 type scorerFunc func(req *Request, snapshots []RoutingSnapshot) map[string]float64
@@ -199,8 +201,11 @@ func scoreLoadBalance(_ *Request, snapshots []RoutingSnapshot) map[string]float6
 }
 
 // scoreActiveRequests computes per-instance scores based on in-flight request count.
-// Instances with zero in-flight always score 1.0. Others use (maxCount - count) / maxCount.
-// Matches llm-d's active-request-scorer semantics (active_request.go:193-230).
+// Instances with zero in-flight always score 1.0. Non-zero instances use max-only
+// normalization: (maxCount - count) / maxCount. When all instances have the same
+// non-zero count, all score 0.0 (no differentiation) — contrast with running-requests
+// which uses min-max normalization and scores 1.0 for all-equal. This asymmetry is
+// intentional: it matches llm-d's active-request-scorer (active_request.go:193-230).
 //
 // Signal freshness (R17, INV-7):
 //
@@ -257,8 +262,9 @@ func scoreRunningRequests(_ *Request, snapshots []RoutingSnapshot) map[string]fl
 const loadAwareQueueThreshold = 128
 
 // scoreLoadAware computes per-instance scores based on waiting queue depth with a
-// linear threshold-capped formula. Empty queue = 0.5, otherwise 0.5 * (1 - queue/threshold).
-// Queue depth is clamped to threshold. Score range: [0, 0.5].
+// linear threshold-capped formula. Score range: [0, 0.5].
+// Empty queue scores 0.5 (maximum). Non-zero queue: 0.5 * (1 - queue/threshold),
+// where queue depth is clamped to loadAwareQueueThreshold. At-or-above threshold = 0.0.
 // Matches llm-d's load-aware-scorer semantics (load_aware.go:83-99).
 //
 // Signal freshness (R17, INV-7):
