@@ -313,8 +313,8 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		if kernelProfilePath == "" {
 			logrus.Fatalf("--kernel-profile is required for --latency-model kernel-lookup")
 		}
-		if len(beta) < 10 {
-			logrus.Fatalf("--latency-model kernel-lookup requires at least 10 --beta-coeffs (γ₁-γ₁₀), got %d", len(beta))
+		if len(betaCoeffs) < 10 {
+			logrus.Fatalf("--latency-model kernel-lookup requires at least 10 --beta-coeffs (γ₁-γ₁₀), got %d", len(betaCoeffs))
 		}
 	}
 
