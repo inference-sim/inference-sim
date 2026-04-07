@@ -1663,9 +1663,6 @@ func TestExpandInferencePerfSpec_WorkloadReusability(t *testing.T) {
 
 // TestInferencePerfClients_SLOClass_IsStandard asserts BC-1: no client from
 // ExpandInferencePerfSpec uses SLOClass "batch" or "background".
-// Regression guard for issue #965 (commit 8bc7a48c deferred-queue interaction).
-// TestInferencePerfClients_SLOClass_IsStandard asserts BC-1: no client from
-// ExpandInferencePerfSpec uses SLOClass "batch" or "background".
 // Table-driven to cover all three code paths in ExpandInferencePerfSpec:
 //   - single-stage, no multi-turn (line 183)
 //   - single-stage, with multi-turn (line 131)
