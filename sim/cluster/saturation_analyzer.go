@@ -152,7 +152,7 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 	// N-1 redistribution check: compute supply with one fewer replica removed
 	// from the variant with fewest replicas (conservative check).
 	// Find per-replica capacity of the variant we'd remove from.
-	var minPerReplicaSupply float64 = math.MaxFloat64
+	minPerReplicaSupply := math.MaxFloat64
 	for _, vc := range vcs {
 		if vc.ReplicaCount > 0 {
 			perReplica := vc.Supply / float64(vc.ReplicaCount)
