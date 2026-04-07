@@ -40,12 +40,12 @@ func IsValidScorer(name string) bool { return validScorerNames[name] }
 func ValidScorerNames() []string { return validNamesList(validScorerNames) }
 
 // DefaultScorerConfigs returns the default scorer configuration for weighted routing.
-// Default profile: prefix-affinity:3, queue-depth:2, kv-utilization:2 (llm-d parity).
+// Default profile: precise-prefix-cache:2, queue-depth:1, kv-utilization:1 (llm-d parity).
 func DefaultScorerConfigs() []ScorerConfig {
 	return []ScorerConfig{
-		{Name: "prefix-affinity", Weight: 3.0},
-		{Name: "queue-depth", Weight: 2.0},
-		{Name: "kv-utilization", Weight: 2.0},
+		{Name: "precise-prefix-cache", Weight: 2.0},
+		{Name: "queue-depth", Weight: 1.0},
+		{Name: "kv-utilization", Weight: 1.0},
 	}
 }
 
@@ -103,7 +103,7 @@ func normalizeScorerWeights(configs []ScorerConfig) []float64 {
 
 // newScorerWithObserver creates a scorer function and optional observer for a named scorer.
 // Returns (scorer, observer) where observer is nil for stateless scorers.
-// blockSize is used by stateful scorers (prefix-affinity) for block hash computation.
+// blockSize is used by stateful scorers (e.g., prefix-affinity) for block hash computation.
 // Panics on unknown name (validation should catch this before reaching here).
 func newScorerWithObserver(name string, blockSize int, cacheFn cacheQueryFn) (scorerFunc, observerFunc) {
 	switch name {

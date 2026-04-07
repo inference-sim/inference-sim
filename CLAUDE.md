@@ -170,7 +170,7 @@ Full details: see [`docs/contributing/standards/principles.md`](docs/contributin
 
 ### Current Implementation Focus
 
-Composable Scorer Framework completed: PR17 (scorer framework + stateless scorers) and PR18 (prefix-affinity scorer + router-side cache). Default weighted routing profile: `prefix-affinity:3,queue-depth:2,kv-utilization:2` (llm-d parity). Precise prefix scoring (#883): `precise-prefix-cache` scorer queries actual instance KV cache state with min-max normalization (llm-d production parity); `no-hit-lru` scorer distributes cold requests to least-recently-used endpoints. Valid scorer names: `prefix-affinity`, `precise-prefix-cache`, `no-hit-lru`, `queue-depth`, `kv-utilization`, `load-balance`.
+Composable Scorer Framework completed: PR17 (scorer framework + stateless scorers) and PR18 (prefix-affinity scorer + router-side cache). Default weighted routing profile: `precise-prefix-cache:2,queue-depth:1,kv-utilization:1` (llm-d parity). Precise prefix scoring (#883): `precise-prefix-cache` scorer queries actual instance KV cache state with min-max normalization (llm-d production parity); `no-hit-lru` scorer distributes cold requests to least-recently-used endpoints. Valid scorer names: `prefix-affinity`, `precise-prefix-cache`, `no-hit-lru`, `queue-depth`, `kv-utilization`, `load-balance`.
 
 Phase 0 workload unification complete (see issue #420): W0-1 (spec v2 schema + SLO tiers), W0-2 (binary rename + converters), W0-3 (cohort population dynamics), W0-4 (legacy retirement). All workload generation now flows through `sim/workload/GenerateRequests()`. SLO tiers: critical, standard, sheddable, batch, background. Arrival processes: poisson, gamma, weibull, constant. CLI binary renamed from `simulation_worker` to `blis`.
 
@@ -230,7 +230,11 @@ For the full annotated file tree, see [`docs/reference/project-structure.md`](do
 
 ### Latency Estimation
 
-Four latency model modes (roofline, blackbox, cross-model, trained-roofline), selected via `--latency-model` flag. See [`docs/guide/latency-models.md`](docs/guide/latency-models.md) for details on each mode, configuration, and auto-fetch behavior.
+Five latency model modes (roofline, blackbox, cross-model, trained-roofline, trained-physics), selected via `--latency-model` flag. **Trained-physics** is the recommended default for new models.
+
+**Trained-physics model**: Roofline basis functions with learned correction coefficients. Generalizes across model architectures, workloads, and TP configurations. No per-model calibration needed.
+
+See [`docs/guide/latency-models.md`](docs/guide/latency-models.md) for details.
 
 **Quantized model support**: Three-tier auto-detection of weight precision: (1) `quantization_config` in HF `config.json` — GPTQ/AWQ (`bits`), FP8 (implicit), compressed-tensors (`config_groups.*.weights.num_bits`); (2) model name conventions (`w4a16` → 0.5, `FP8` → 1.0 via `InferWeightBytesFromModelName`); (3) fallback to `BytesPerParam` from `torch_dtype`. Uses quantized weight precision for weight bandwidth and KV capacity calculations while keeping compute dtype for KV cache and activations. `ModelConfig.WeightBytesPerParam` (0=fallback to `BytesPerParam`) with `EffectiveWeightBytesPerParam()` accessor decouples weight storage precision from compute/KV dtype.
 

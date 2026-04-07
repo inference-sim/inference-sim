@@ -3,7 +3,8 @@
 # Simulates many concurrent multi-turn chat sessions. Each session has 5
 # rounds with context accumulation (each round prepends all prior context).
 #
-# KEY INSIGHT: With prefix-affinity routing, sessions stick to one instance,
+# KEY INSIGHT: With prefix-aware routing (the default precise-prefix-cache scorer),
+# sessions stick to one instance,
 # so the KV cache from prior rounds is reused — fewer prefill tokens → lower
 # TTFT for subsequent rounds. With load-only routing, rounds scatter across
 # instances, causing full prefill every round.
@@ -12,11 +13,10 @@
 # TRY IT
 # ============================================================================
 #
-#   # Prefix-affinity dominant (sessions cluster on instances)
+#   # Default profile — precise-prefix-cache dominant (sessions cluster on instances)
 #   ./blis run \
 #     --model meta-llama/llama-3.1-8b-instruct \
 #     --num-instances 4 --routing-policy weighted \
-#     --routing-scorers "prefix-affinity:3,queue-depth:2" \
 #     --workload-spec examples/multiturn-chat-demo.yaml \
 #     --trace-level decisions --summarize-trace
 #
@@ -28,7 +28,7 @@
 #     --workload-spec examples/multiturn-chat-demo.yaml \
 #     --trace-level decisions --summarize-trace
 #
-# Expected: prefix-affinity produces lower TTFT because later rounds in each
+# Expected: precise-prefix-cache produces lower TTFT because later rounds in each
 # session reuse the prior rounds' KV cache (fewer prefill tokens needed).
 
 version: "2"

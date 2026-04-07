@@ -232,12 +232,12 @@ Controls how admitted requests are assigned to instances. See [Cluster Architect
 When using `--routing-policy weighted`, the `--routing-scorers` flag configures which scorers are used and their relative weights:
 
 ```bash
---routing-scorers "prefix-affinity:3,queue-depth:2,kv-utilization:2"
+--routing-scorers "precise-prefix-cache:2,queue-depth:1,kv-utilization:1"
 ```
 
 Available scorers: `prefix-affinity`, `precise-prefix-cache`, `no-hit-lru`, `queue-depth`, `kv-utilization`, `load-balance`.
 
-Default (when `--routing-scorers` is empty): `prefix-affinity:3, queue-depth:2, kv-utilization:2` (llm-d parity).
+Default (when `--routing-scorers` is empty): `precise-prefix-cache:2, queue-depth:1, kv-utilization:1` (llm-d parity).
 
 See [Cluster Architecture: Scorer Composition](../concepts/architecture.md#scorer-composition) for details on each scorer.
 

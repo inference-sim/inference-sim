@@ -1430,7 +1430,7 @@ func TestClusterSimulator_AdmissionLatency_ExactOffset(t *testing.T) {
 // TestClusterSimulator_FullStackConservation verifies INV-1 conservation
 // across the full policy stack: weighted routing + admission control +
 // priority scheduling (promoted from H25 experiment, PR #372, issue #379):
-// GIVEN weighted routing (prefix-affinity:3,queue-depth:2,kv-utilization:2),
+// GIVEN weighted routing (DefaultScorerConfigs: precise-prefix-cache:2,queue-depth:1,kv-utilization:1),
 //
 //	priority-FCFS scheduling, and multiple admission/KV configurations
 //

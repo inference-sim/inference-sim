@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // makeTokens creates a sequential token slice of the given length.
@@ -146,17 +147,17 @@ func TestPrefixAffinityScorer_IsValidAndRegistered(t *testing.T) {
 	assert.True(t, found, "prefix-affinity must be in ValidScorerNames()")
 }
 
-// TestDefaultScorerConfigs_IncludesPrefixAffinity verifies BC-5.
-func TestDefaultScorerConfigs_IncludesPrefixAffinity(t *testing.T) {
+// TestDefaultScorerConfigs_MatchesLLMdProductionProfile verifies BC-1 (#952):
+// the full default profile matches llm-d's epp-precise-prefix-cache-config.yaml.
+func TestDefaultScorerConfigs_MatchesLLMdProductionProfile(t *testing.T) {
 	configs := DefaultScorerConfigs()
-	found := false
-	for _, c := range configs {
-		if c.Name == "prefix-affinity" {
-			found = true
-			assert.Equal(t, 3.0, c.Weight, "prefix-affinity default weight should be 3.0")
-		}
-	}
-	assert.True(t, found, "DefaultScorerConfigs must include prefix-affinity")
+	require.Len(t, configs, 3, "default profile must have exactly 3 scorers")
+	assert.Equal(t, "precise-prefix-cache", configs[0].Name)
+	assert.Equal(t, 2.0, configs[0].Weight)
+	assert.Equal(t, "queue-depth", configs[1].Name)
+	assert.Equal(t, 1.0, configs[1].Weight)
+	assert.Equal(t, "kv-utilization", configs[2].Name)
+	assert.Equal(t, 1.0, configs[2].Weight)
 }
 
 // TestPrefixAffinityScorer_Deterministic verifies BC-9 (INV-3):
