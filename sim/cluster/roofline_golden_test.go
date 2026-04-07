@@ -6,7 +6,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"testing"
 
@@ -36,53 +35,13 @@ type rooflineGoldenExperiment struct {
 	TotalKVBlocks       int64           `json:"total_kv_blocks"`
 	CPUKVBlocks         int64           `json:"cpu_kv_blocks"`
 	Workload            json.RawMessage `json:"workload"`
-	Expected            rfGoldenExpected `json:"expected"`
-}
-
-type rfGoldenExpected struct {
-	CompletedRequests int     `json:"completed_requests"`
-	TotalInputTokens  int     `json:"total_input_tokens"`
-	TotalOutputTokens int     `json:"total_output_tokens"`
-	TTFTMeanMs        float64 `json:"ttft_mean_ms"`
-	TTFTP90Ms         float64 `json:"ttft_p90_ms"`
-	TTFTP99Ms         float64 `json:"ttft_p99_ms"`
-	E2EMeanMs         float64 `json:"e2e_mean_ms"`
-	E2EP90Ms          float64 `json:"e2e_p90_ms"`
-	E2EP99Ms          float64 `json:"e2e_p99_ms"`
-	ITLMeanMs         float64 `json:"itl_mean_ms"`
-}
-
-// rfWorkloadSpec mirrors the workload spec structure (same as tpWorkloadSpec).
-type rfWorkloadSpec struct {
-	Version       string             `json:"version"       yaml:"version"`
-	Seed          int64              `json:"seed"          yaml:"seed"`
-	NumRequests   int                `json:"num_requests"  yaml:"num_requests"`
-	InferencePerf *rfInferencePerfWS `json:"inference_perf" yaml:"inference_perf"`
-}
-
-type rfInferencePerfWS struct {
-	Stages       []rfStage                  `json:"stages"        yaml:"stages"`
-	SharedPrefix *workload.SharedPrefixSpec `json:"shared_prefix" yaml:"shared_prefix"`
-}
-
-type rfStage struct {
-	Rate     float64 `json:"rate"     yaml:"rate"`
-	Duration int64   `json:"duration" yaml:"duration"`
-}
-
-// rfRepoRoot returns the absolute path to the repository root.
-func rfRepoRoot() string {
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		panic("runtime.Caller failed")
-	}
-	return filepath.Join(filepath.Dir(thisFile), "..", "..")
+	Expected            goldenExpected  `json:"expected"`
 }
 
 // loadRooflineGoldenDataset reads testdata/roofline_goldendataset.json.
 func loadRooflineGoldenDataset(t *testing.T) *rooflineGoldenDataset {
 	t.Helper()
-	path := filepath.Join(rfRepoRoot(), "testdata", "roofline_goldendataset.json")
+	path := filepath.Join(goldenRepoRoot(), "testdata", "roofline_goldendataset.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("loadRooflineGoldenDataset: %v", err)
@@ -119,10 +78,13 @@ func TestRoofline_GoldenDataset(t *testing.T) {
 		t.Skip("skipping roofline golden dataset test in short mode (-short flag)")
 	}
 
-	root := rfRepoRoot()
+	root := goldenRepoRoot()
 	ds := loadRooflineGoldenDataset(t)
 	if len(ds.Experiments) == 0 {
 		t.Fatal("golden dataset has no experiments")
+	}
+	if ds.Backend != "roofline" {
+		t.Fatalf("unexpected backend in dataset: got %q, want \"roofline\"", ds.Backend)
 	}
 
 	hwConfigPath := filepath.Join(root, "hardware_config.json")
@@ -156,7 +118,7 @@ func TestRoofline_GoldenDataset(t *testing.T) {
 			}
 
 			// ── Decode workload spec and generate requests ───────────────────
-			var ws rfWorkloadSpec
+			var ws goldenWorkloadSpec
 			if err := yaml.Unmarshal(exp.Workload, &ws); err != nil {
 				t.Fatalf("decode workload: %v", err)
 			}
@@ -238,8 +200,8 @@ func TestRoofline_GoldenDataset(t *testing.T) {
 			}
 
 			// ── Compute output metrics from raw Metrics struct ────────────
-			sortedTTFTs := rfSortedValues(m.RequestTTFTs)
-			sortedE2Es := rfSortedValues(m.RequestE2Es)
+			sortedTTFTs := goldenSortedValues(m.RequestTTFTs)
+			sortedE2Es := goldenSortedValues(m.RequestE2Es)
 			allITLs := make([]float64, len(m.AllITLs))
 			for i, v := range m.AllITLs {
 				allITLs[i] = float64(v)
@@ -271,43 +233,14 @@ func TestRoofline_GoldenDataset(t *testing.T) {
 			// first (e.g. "roofline-v2"). See comment on
 			// TestRoofline_GoldenDataset.
 			const relTol = 1e-9
-			rfAssertGolden(t, "ttft_mean_ms", exp.Expected.TTFTMeanMs, ttftMean, relTol)
-			rfAssertGolden(t, "ttft_p90_ms", exp.Expected.TTFTP90Ms, ttftP90, relTol)
-			rfAssertGolden(t, "ttft_p99_ms", exp.Expected.TTFTP99Ms, ttftP99, relTol)
-			rfAssertGolden(t, "e2e_mean_ms", exp.Expected.E2EMeanMs, e2eMean, relTol)
-			rfAssertGolden(t, "e2e_p90_ms", exp.Expected.E2EP90Ms, e2eP90, relTol)
-			rfAssertGolden(t, "e2e_p99_ms", exp.Expected.E2EP99Ms, e2eP99, relTol)
-			rfAssertGolden(t, "itl_mean_ms", exp.Expected.ITLMeanMs, itlMean, relTol)
+			goldenAssertApprox(t, "ttft_mean_ms", exp.Expected.TTFTMeanMs, ttftMean, relTol)
+			goldenAssertApprox(t, "ttft_p90_ms", exp.Expected.TTFTP90Ms, ttftP90, relTol)
+			goldenAssertApprox(t, "ttft_p99_ms", exp.Expected.TTFTP99Ms, ttftP99, relTol)
+			goldenAssertApprox(t, "e2e_mean_ms", exp.Expected.E2EMeanMs, e2eMean, relTol)
+			goldenAssertApprox(t, "e2e_p90_ms", exp.Expected.E2EP90Ms, e2eP90, relTol)
+			goldenAssertApprox(t, "e2e_p99_ms", exp.Expected.E2EP99Ms, e2eP99, relTol)
+			goldenAssertApprox(t, "itl_mean_ms", exp.Expected.ITLMeanMs, itlMean, relTol)
 		})
 	}
 }
 
-// rfSortedValues returns the values of a map[string]float64 sorted in ascending
-// order (same as sortedValues but with rf prefix to avoid collision).
-func rfSortedValues(m map[string]float64) []float64 {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys) // R2: deterministic iteration order
-	vals := make([]float64, len(keys))
-	for i, k := range keys {
-		vals[i] = m[k]
-	}
-	sort.Float64s(vals) // sort by value for percentile/mean computation
-	return vals
-}
-
-// rfAssertGolden asserts that got ≈ want within the given relative tolerance.
-func rfAssertGolden(t *testing.T, name string, want, got, relTol float64) {
-	t.Helper()
-	if want == 0 && got == 0 {
-		return
-	}
-	diff := math.Abs(want - got)
-	maxVal := math.Max(math.Abs(want), math.Abs(got))
-	if maxVal > 0 && diff/maxVal > relTol {
-		t.Errorf("%s: got %.10f, want %.10f (relDiff=%.2e, tolerance=%.2e)",
-			name, got, want, diff/maxVal, relTol)
-	}
-}
