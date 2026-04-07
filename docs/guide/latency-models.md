@@ -258,7 +258,7 @@ The model supports 7-10 beta coefficients. Bundled defaults use 10 coefficients 
 |--------|-------------------|----------|-------------|------------------|-----------------|
 | **When to use** | Quick analytical estimate | Model has per-model coefficients in `defaults.yaml` | Hand-engineered physics features | Roofline × learned corrections (7% MAPE) | **Recommended** for new models (generalizes across architectures, workloads, TP) |
 | **Data required** | HF `config.json` + `--hardware` + `--tp` | `defaults.yaml` entry for model/GPU/TP | HF `config.json` + `--hardware` + `--tp` | HF `config.json` + `--hardware` + `--tp` (global coefficients bundled) | HF `config.json` + `--hardware` + `--tp` (global coefficients bundled) |
-| **GPU step time accuracy** | Good (analytical) | Highest (per-model) | Good (7 global params) | **7% MAPE** (10 global params, roofline × corrections) | Good (13 global params, physics-informed basis functions, separately tested) |
+| **GPU step time accuracy** | Good (analytical) | Highest (per-model) | Good (7 global params) | **7% MAPE** (10 global params, roofline × corrections) | Good (13 global params, physics-informed basis functions) |
 | **MoE support** | Yes (per-expert FLOPs + effective expert count) | If trained | Yes (binary indicator) | Yes (per-expert FLOPs + effective expert count) | Yes (per-expert FLOPs + effective expert count + β₈ per-MoE-layer overhead) |
 | **Alpha model** | Same as blackbox | α₀ + α₁·inputLen | Same as blackbox | α₀ (constant), α₁ (post-decode fixed), α₂ (per-token) | α₀ (constant), α₁ (post-decode fixed), α₂ (per-token) |
 | **PostDecodeFixedOverhead** | 0 | 0 | 0 | α₁ (~1.85ms) | α₁ (~777µs) |
