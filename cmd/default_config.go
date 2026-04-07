@@ -54,8 +54,8 @@ type TrainedRooflineDefaults struct {
 // BetaCoeffs has 10 elements (β₁-β₁₀): roofline corrections and per-component overheads.
 // Trained from iter29 (sequential golden section search, β₆ +57%, loss 34.57%).
 type TrainedPhysicsDefaults struct {
-	AlphaCoeffs []float64 `yaml:"alpha"`
-	BetaCoeffs  []float64 `yaml:"beta"`
+	AlphaCoeffs []float64 `yaml:"alpha_coeffs"`
+	BetaCoeffs  []float64 `yaml:"beta_coeffs"`
 }
 
 // Define the inner structure for default config given model

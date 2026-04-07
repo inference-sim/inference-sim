@@ -402,6 +402,11 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 		return nil, fmt.Errorf("trained-physics model: BwPeakTBs must be valid positive, got %v", hw.HWConfig.BwPeakTBs)
 	}
 
+	// Validate MoE consistency (same check as ValidateRooflineConfig)
+	if hw.ModelConfig.NumLocalExperts > 1 && hw.ModelConfig.NumExpertsPerTok <= 0 {
+		return nil, fmt.Errorf("trained-physics model: MoE config invalid - NumLocalExperts=%d but NumExpertsPerTok must be > 0", hw.ModelConfig.NumLocalExperts)
+	}
+
 	// Validate coefficients (no NaN, Inf, or negative)
 	if err := validateCoeffs("AlphaCoeffs", coeffs.AlphaCoeffs); err != nil {
 		return nil, err

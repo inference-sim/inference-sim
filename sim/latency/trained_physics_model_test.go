@@ -272,6 +272,23 @@ func TestTrainedPhysicsModel_FactoryConstruction(t *testing.T) {
 		require.Error(t, err, "Negative coefficient must return error")
 		assert.Contains(t, err.Error(), "negative")
 	})
+
+	t.Run("invalid_moe_missing_experts_per_tok", func(t *testing.T) {
+		cfg := trainedPhysicsTestModelConfig()
+		cfg.NumLocalExperts = 8      // MoE model
+		cfg.NumExpertsPerTok = 0     // Invalid: must be > 0 for MoE
+		hw := sim.ModelHardwareConfig{
+			Backend:     "trained-physics",
+			TP:          1,
+			ModelConfig: *cfg,
+			HWConfig:    testHardwareConfig(),
+		}
+		coeffs := testCoeffs()
+
+		_, err := NewTrainedPhysicsModel(*coeffs, hw)
+		require.Error(t, err, "MoE with NumExpertsPerTok=0 must return error")
+		assert.Contains(t, err.Error(), "NumExpertsPerTok must be > 0")
+	})
 }
 
 // BC-7: Config validation (TP > 0, required fields, coefficient length errors)
