@@ -3346,13 +3346,13 @@
 <a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">      </span><span class="nt">params</span><span class="p">:</span>
 <a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">        </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">128</span>
 </code></pre></div>
-<p>Pair with prefix-affinity routing for cache reuse:</p>
+<p>Pair with weighted routing for cache-aware request distribution (the default profile uses <code>precise-prefix-cache</code>):</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--workload-spec<span class="w"> </span>chat.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span>--routing-scorers<span class="w"> </span><span class="s2">&quot;prefix-affinity:3,queue-depth:2&quot;</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted
 </code></pre></div>
 <h3 id="rag-with-shared-prefixes">RAG with Shared Prefixes<a class="headerlink" href="#rag-with-shared-prefixes" title="Permanent link">&para;</a></h3>
-<p>Retrieval-augmented generation workloads share a common document context across requests. The <code>prefix_group</code> and <code>prefix_length</code> fields model this shared context, and prefix-affinity routing ensures requests with the same prefix hit cached KV blocks on the same instance.</p>
+<p>Retrieval-augmented generation workloads share a common document context across requests. The <code>prefix_group</code> and <code>prefix_length</code> fields model this shared context, and prefix-aware routing (the default <code>precise-prefix-cache</code> scorer) ensures requests with the same prefix hit cached KV blocks on the same instance.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">clients</span><span class="p">:</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;rag-query&quot;</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">rate_fraction</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0</span>
@@ -3373,10 +3373,10 @@
 <a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="w">      </span><span class="nt">params</span><span class="p">:</span>
 <a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="w">        </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">64</span>
 </code></pre></div>
-<p>Run with aggressive prefix-affinity to maximize cache reuse:</p>
+<p>Run with weighted routing to maximize cache reuse (the default <code>precise-prefix-cache</code> scorer queries actual KV cache state):</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--workload-spec<span class="w"> </span>rag.yaml<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted<span class="w"> </span>--routing-scorers<span class="w"> </span><span class="s2">&quot;prefix-affinity:3,queue-depth:1&quot;</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--routing-policy<span class="w"> </span>weighted
 </code></pre></div>
 <h3 id="batch-offline-processing">Batch / Offline Processing<a class="headerlink" href="#batch-offline-processing" title="Permanent link">&para;</a></h3>
 <p>Non-interactive workloads (summarization, data extraction) tolerate latency and typically have higher token counts. Use <code>batch</code> or <code>background</code> SLO classes so per-class metrics track them separately from latency-sensitive traffic.</p>
@@ -3845,7 +3845,7 @@
 <li><code>multi_turn.max_rounds</code>: number of conversation rounds per session</li>
 <li><code>multi_turn.think_time_us</code>: inter-round delay (user think time, in microseconds)</li>
 <li><code>multi_turn.context_growth</code>: controls how each round's input is constructed.<ul>
-<li><code>"accumulate"</code>: round N's input = all prior rounds' inputs + all prior rounds' outputs + freshly sampled new user turn. Input length grows linearly with round index, creating expanding KV cache pressure and enabling prefix-affinity routing reuse across rounds — use this for realistic chat or reasoning sessions.</li>
+<li><code>"accumulate"</code>: round N's input = all prior rounds' inputs + all prior rounds' outputs + freshly sampled new user turn. Input length grows linearly with round index, creating expanding KV cache pressure and enabling prefix-aware routing reuse across rounds — use this for realistic chat or reasoning sessions.</li>
 <li><code>""</code> (omit): each round uses only freshly sampled tokens. Input length is stationary across rounds; no cross-round prefix sharing. Use this for agent workloads that do not maintain conversation history.</li>
 </ul>
 </li>
@@ -3959,7 +3959,7 @@
 <tbody>
 <tr>
 <td><code>multiturn-chat-demo.yaml</code></td>
-<td>Multi-turn chat with prefix-affinity routing</td>
+<td>Multi-turn chat with prefix-aware weighted routing</td>
 </tr>
 <tr>
 <td><code>prefix-affinity-demo.yaml</code></td>

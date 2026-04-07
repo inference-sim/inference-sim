@@ -3085,7 +3085,7 @@
     WG["Workload&lt;br/&gt;Generator"] --&gt;|Requests| Adm{"Admission&lt;br/&gt;Policy"}
     Adm --&gt;|rejected| Rej["Rejected&lt;br/&gt;(counted)"]
     Adm --&gt;|admitted| GQ["Gateway Queue&lt;br/&gt;(opt: --flow-control)"]
-    GQ --&gt;|dispatch| Rtr["Routing Policy&lt;br/&gt;(WeightedScoring)&lt;br/&gt;PA:3 QD:2 KV:2"]
+    GQ --&gt;|dispatch| Rtr["Routing Policy&lt;br/&gt;(WeightedScoring)&lt;br/&gt;PPC:2 QD:1 KV:1"]
 
     style GQ fill:#e7f5ff,stroke:#90caf9
 
@@ -3198,31 +3198,28 @@
 <li><strong>Sum:</strong> Weighted scores are summed across scorers for each instance</li>
 <li><strong>Select:</strong> The instance with the highest total score is chosen (argmax)</li>
 </ol>
-<p>Default weights: <code>prefix-affinity:3, queue-depth:2, kv-utilization:2</code> (llm-d parity). Note: weights are normalized to sum to 1.0 before scoring, so only weight ratios matter — <code>prefix-affinity:3,queue-depth:2</code> is identical to <code>prefix-affinity:30,queue-depth:20</code>. To add a new scorer, see <a href="../../contributing/extension-recipes/">Extension Recipes</a>.</p>
+<p>Default weights: <code>precise-prefix-cache:2, queue-depth:1, kv-utilization:1</code> (llm-d parity). Note: weights are normalized to sum to 1.0 before scoring, so only weight ratios matter — <code>precise-prefix-cache:2,queue-depth:1</code> is identical to <code>precise-prefix-cache:20,queue-depth:10</code>. To add a new scorer, see <a href="../../contributing/extension-recipes/">Extension Recipes</a>.</p>
 <pre class="mermaid"><code>flowchart TD
     Req["Request&lt;br/&gt;+ Input Tokens"] --&gt; S1
     Snap["Routing Snapshots&lt;br/&gt;(per instance)&lt;br/&gt;QD, BS, KVUtil"] --&gt; S2
     Snap --&gt; S3
 
-    S1["prefix-affinity&lt;br/&gt;(prefix overlap proportion)"] --&gt; W1["× weight (3)"]
-    S2["queue-depth&lt;br/&gt;(min-max norm of load)"] --&gt; W2["× weight (2)"]
-    S3["kv-utilization&lt;br/&gt;(1 − KVUtilization)"] --&gt; W3["× weight (2)"]
+    S1["precise-prefix-cache&lt;br/&gt;(KV cache state query, min-max norm)"] --&gt; W1["× weight (2)"]
+    S2["queue-depth&lt;br/&gt;(min-max norm of load)"] --&gt; W2["× weight (1)"]
+    S3["kv-utilization&lt;br/&gt;(1 − KVUtilization)"] --&gt; W3["× weight (1)"]
 
-    W1 --&gt; Sum["Weighted Sum&lt;br/&gt;(per instance)&lt;br/&gt;3×PA + 2×QD + 2×KV"]
+    W1 --&gt; Sum["Weighted Sum&lt;br/&gt;(per instance)&lt;br/&gt;2×PPC + 1×QD + 1×KV"]
     W2 --&gt; Sum
     W3 --&gt; Sum
 
     Sum --&gt; Sel["Argmax&lt;br/&gt;→ Selected Instance"]
-    Sel --&gt;|observer callback| Obs["Update prefix&lt;br/&gt;cache index"]
-    Obs -.-&gt;|stateful feedback| S1
 
     style Req fill:#a5d8ff
     style Snap fill:#e7f5ff
     style S1 fill:#fff3e0
     style S2 fill:#fff3e0
     style S3 fill:#fff3e0
-    style Sel fill:#c8e6c9
-    style Obs fill:#ffecb3</code></pre>
+    style Sel fill:#c8e6c9</code></pre>
 <h2 id="scorer-composition">Scorer Composition<a class="headerlink" href="#scorer-composition" title="Permanent link">&para;</a></h2>
 <p>Scorers are the building blocks of the weighted routing policy. Each scorer evaluates one signal dimension across all instances.</p>
 <h3 id="built-in-scorers">Built-in Scorers<a class="headerlink" href="#built-in-scorers" title="Permanent link">&para;</a></h3>

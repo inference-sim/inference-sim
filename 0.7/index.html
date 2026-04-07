@@ -2754,7 +2754,7 @@
 <li><strong>Chunked prefill and preemption-aware batch formation</strong></li>
 <li><strong>Pluggable latency models</strong> — roofline (default, analytical FLOPs/bandwidth), blackbox (data-driven coefficients), cross-model (physics-informed, MoE-aware), and trained-roofline (roofline × learned corrections), with an extensible interface for custom backends</li>
 <li><strong>Multi-instance cluster simulation</strong> with shared-clock event loop</li>
-<li><strong>Pluggable routing policies</strong> — round-robin, least-loaded, and composable weighted-scoring with prefix-affinity, queue-depth, and KV-utilization scorers</li>
+<li><strong>Pluggable routing policies</strong> — round-robin, least-loaded, and composable weighted-scoring with six pluggable scorers (default: precise-prefix-cache, queue-depth, kv-utilization)</li>
 <li><strong>Admission control</strong>, <strong>priority policies</strong>, and <strong>instance schedulers</strong> — each a pluggable policy axis</li>
 <li><strong>Canonical workload specification</strong> — multi-client YAML DSL with Poisson/Gamma/Weibull/constant arrival processes, 5 distribution types, SLO classes (critical/standard/sheddable/batch/background), prefix groups, cohort dynamics, multimodal, reasoning multi-turn, and composable specs via <code>blis compose</code></li>
 <li><strong>Rich metrics pipeline</strong> — per-request, per-instance, and cluster-level metrics including TTFT/ITL/E2E distributions, KV cache diagnostics, anomaly detection (priority inversions, HOL blocking), SLO attainment, Jain fairness index, and multi-objective fitness evaluation</li>

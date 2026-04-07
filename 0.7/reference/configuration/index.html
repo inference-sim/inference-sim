@@ -4118,10 +4118,10 @@
 </table>
 <h3 id="scorer-configuration">Scorer Configuration<a class="headerlink" href="#scorer-configuration" title="Permanent link">&para;</a></h3>
 <p>When using <code>--routing-policy weighted</code>, the <code>--routing-scorers</code> flag configures which scorers are used and their relative weights:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>--routing-scorers<span class="w"> </span><span class="s2">&quot;prefix-affinity:3,queue-depth:2,kv-utilization:2&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>--routing-scorers<span class="w"> </span><span class="s2">&quot;precise-prefix-cache:2,queue-depth:1,kv-utilization:1&quot;</span>
 </code></pre></div>
 <p>Available scorers: <code>prefix-affinity</code>, <code>precise-prefix-cache</code>, <code>no-hit-lru</code>, <code>queue-depth</code>, <code>kv-utilization</code>, <code>load-balance</code>.</p>
-<p>Default (when <code>--routing-scorers</code> is empty): <code>prefix-affinity:3, queue-depth:2, kv-utilization:2</code> (llm-d parity).</p>
+<p>Default (when <code>--routing-scorers</code> is empty): <code>precise-prefix-cache:2, queue-depth:1, kv-utilization:1</code> (llm-d parity).</p>
 <p>See <a href="../../concepts/architecture/#scorer-composition">Cluster Architecture: Scorer Composition</a> for details on each scorer.</p>
 <h2 id="scheduling-and-priority">Scheduling and Priority<a class="headerlink" href="#scheduling-and-priority" title="Permanent link">&para;</a></h2>
 <p>Per-instance policies that control request ordering within the wait queue. Maps to <code>PolicyConfig</code>.</p>
