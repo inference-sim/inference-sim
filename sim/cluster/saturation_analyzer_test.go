@@ -291,6 +291,7 @@ func TestV2SaturationAnalyzerConfigValidation(t *testing.T) {
 		cfg  V2SaturationAnalyzerConfig
 	}{
 		{"zero KvCacheThreshold", V2SaturationAnalyzerConfig{KvCacheThreshold: 0, ScaleUpThreshold: 0.8, ScaleDownBoundary: 0.4, AvgInputTokens: 512}},
+		{"KvCacheThreshold > 1.0", V2SaturationAnalyzerConfig{KvCacheThreshold: 1.5, ScaleUpThreshold: 0.8, ScaleDownBoundary: 0.4, AvgInputTokens: 512}},
 		{"negative ScaleUpThreshold", V2SaturationAnalyzerConfig{KvCacheThreshold: 0.8, ScaleUpThreshold: -1, ScaleDownBoundary: 0.4, AvgInputTokens: 512}},
 		{"NaN ScaleDownBoundary", V2SaturationAnalyzerConfig{KvCacheThreshold: 0.8, ScaleUpThreshold: 0.8, ScaleDownBoundary: math.NaN(), AvgInputTokens: 512}},
 		{"zero AvgInputTokens", V2SaturationAnalyzerConfig{KvCacheThreshold: 0.8, ScaleUpThreshold: 0.8, ScaleDownBoundary: 0.4, AvgInputTokens: 0}},

@@ -28,8 +28,8 @@ type V2SaturationAnalyzer struct {
 
 // NewV2SaturationAnalyzer constructs a V2SaturationAnalyzer. Panics on invalid config (R4).
 func NewV2SaturationAnalyzer(cfg V2SaturationAnalyzerConfig) *V2SaturationAnalyzer {
-	if cfg.KvCacheThreshold <= 0 || math.IsNaN(cfg.KvCacheThreshold) || math.IsInf(cfg.KvCacheThreshold, 0) {
-		panic(fmt.Sprintf("NewV2SaturationAnalyzer: KvCacheThreshold must be > 0, got %f", cfg.KvCacheThreshold))
+	if cfg.KvCacheThreshold <= 0 || cfg.KvCacheThreshold > 1.0 || math.IsNaN(cfg.KvCacheThreshold) || math.IsInf(cfg.KvCacheThreshold, 0) {
+		panic(fmt.Sprintf("NewV2SaturationAnalyzer: KvCacheThreshold must be in (0, 1.0], got %f", cfg.KvCacheThreshold))
 	}
 	if cfg.ScaleUpThreshold <= 0 || math.IsNaN(cfg.ScaleUpThreshold) || math.IsInf(cfg.ScaleUpThreshold, 0) {
 		panic(fmt.Sprintf("NewV2SaturationAnalyzer: ScaleUpThreshold must be > 0, got %f", cfg.ScaleUpThreshold))
@@ -70,6 +70,11 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 	variants := make(map[VariantSpec]*variantAgg)
 
 	for _, r := range metrics.Replicas {
+		// Skip replicas with uninitialized KV cache (e.g., still loading). Including them
+		// would produce zero supply with nonzero demand, triggering runaway scale-up.
+		if r.TotalKvCapacityTokens <= 0 {
+			continue
+		}
 		// k1: memory-bound capacity
 		k1 := float64(r.TotalKvCapacityTokens) * a.config.KvCacheThreshold
 		// k2: compute-bound capacity — falls back to k1 in initial implementation
@@ -88,7 +93,9 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 		agg.replicaCount++
 	}
 
-	// Build VariantCapacities sorted by CostPerReplica ascending (R2 determinism)
+	// Build VariantCapacities sorted by CostPerReplica ascending (R2 determinism).
+	// Float accumulation for TotalSupply/TotalDemand happens AFTER sorting to ensure
+	// deterministic addition order (R2: IEEE 754 float addition is not associative).
 	vcs := make([]VariantCapacity, 0, len(variants))
 	for v, agg := range variants {
 		vcs = append(vcs, VariantCapacity{
@@ -98,20 +105,23 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 			ReplicaCount:   agg.replicaCount,
 			CostPerReplica: agg.costPerHour,
 		})
-		result.TotalSupply += agg.supply
-		result.TotalDemand += agg.demand
 	}
 	sort.Slice(vcs, func(i, j int) bool {
 		if vcs[i].CostPerReplica != vcs[j].CostPerReplica {
 			return vcs[i].CostPerReplica < vcs[j].CostPerReplica
 		}
-		// Tie-break by GPUType then TPDegree for determinism (R2)
 		if vcs[i].Variant.GPUType != vcs[j].Variant.GPUType {
 			return vcs[i].Variant.GPUType < vcs[j].Variant.GPUType
 		}
 		return vcs[i].Variant.TPDegree < vcs[j].Variant.TPDegree
 	})
 	result.VariantCapacities = vcs
+
+	// Accumulate from sorted slice for deterministic float summation (R2, INV-6)
+	for _, vc := range vcs {
+		result.TotalSupply += vc.Supply
+		result.TotalDemand += vc.Demand
+	}
 
 	// Utilization guard (R11)
 	if result.TotalSupply > 0 {

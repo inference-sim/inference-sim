@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/sirupsen/logrus"
 )
 
 // DefaultCollector maps RoutingSnapshot fields to ReplicaMetrics, grouping by model.
@@ -20,9 +21,13 @@ func (c *DefaultCollector) Collect(state *sim.RouterState) []ModelSignals {
 		return nil
 	}
 
-	// Group snapshots by model
+	// Group snapshots by model; skip instances with empty Model (not ready for autoscaling)
 	byModel := make(map[string][]ReplicaMetrics)
 	for _, snap := range state.Snapshots {
+		if snap.Model == "" {
+			logrus.Debugf("[collector] skipping snapshot %q: empty Model field", snap.ID)
+			continue
+		}
 		rm := ReplicaMetrics{
 			InstanceID:            snap.ID,
 			Variant:               VariantSpec{GPUType: snap.GPUType, TPDegree: max(snap.TPDegree, 1)},
