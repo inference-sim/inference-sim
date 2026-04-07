@@ -82,6 +82,9 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 	if len(ds.Experiments) == 0 {
 		t.Fatal("golden dataset has no experiments")
 	}
+	if ds.Backend != "trained-physics" {
+		t.Fatalf("unexpected backend in dataset: got %q, want \"trained-physics\"", ds.Backend)
+	}
 
 	hwConfigPath := filepath.Join(root, "hardware_config.json")
 
