@@ -1664,31 +1664,82 @@ func TestExpandInferencePerfSpec_WorkloadReusability(t *testing.T) {
 // TestInferencePerfClients_SLOClass_IsStandard asserts BC-1: no client from
 // ExpandInferencePerfSpec uses SLOClass "batch" or "background".
 // Regression guard for issue #965 (commit 8bc7a48c deferred-queue interaction).
+// TestInferencePerfClients_SLOClass_IsStandard asserts BC-1: no client from
+// ExpandInferencePerfSpec uses SLOClass "batch" or "background".
+// Table-driven to cover all three code paths in ExpandInferencePerfSpec:
+//   - single-stage, no multi-turn (line 183)
+//   - single-stage, with multi-turn (line 131)
+//   - multi-stage (line 237)
+//
+// Regression guard for issue #965 (commit 8bc7a48c deferred-queue interaction).
 func TestInferencePerfClients_SLOClass_IsStandard(t *testing.T) {
-	spec := &InferencePerfSpec{
-		SharedPrefix: &SharedPrefixSpec{
-			NumUniqueSystemPrompts:  2,
-			NumUsersPerSystemPrompt: 3,
-			SystemPromptLen:         100,
-			QuestionLen:             200,
-			OutputLen:               50,
-			EnableMultiTurnChat:     false,
+	cases := []struct {
+		name string
+		spec *InferencePerfSpec
+	}{
+		{
+			name: "single_stage_no_multiturn",
+			spec: &InferencePerfSpec{
+				SharedPrefix: &SharedPrefixSpec{
+					NumUniqueSystemPrompts:  2,
+					NumUsersPerSystemPrompt: 3,
+					SystemPromptLen:         100,
+					QuestionLen:             200,
+					OutputLen:               50,
+					EnableMultiTurnChat:     false,
+				},
+				Stages: []StageSpec{{Rate: 5.0, Duration: 60}},
+			},
 		},
-		Stages: []StageSpec{
-			{Rate: 5.0, Duration: 60},
+		{
+			name: "single_stage_with_multiturn",
+			spec: &InferencePerfSpec{
+				SharedPrefix: &SharedPrefixSpec{
+					NumUniqueSystemPrompts:  2,
+					NumUsersPerSystemPrompt: 3,
+					SystemPromptLen:         100,
+					QuestionLen:             200,
+					OutputLen:               50,
+					EnableMultiTurnChat:     true,
+				},
+				Stages: []StageSpec{{Rate: 5.0, Duration: 60}},
+			},
+		},
+		{
+			name: "multi_stage",
+			spec: &InferencePerfSpec{
+				SharedPrefix: &SharedPrefixSpec{
+					NumUniqueSystemPrompts:  2,
+					NumUsersPerSystemPrompt: 3,
+					SystemPromptLen:         100,
+					QuestionLen:             200,
+					OutputLen:               50,
+					EnableMultiTurnChat:     false,
+				},
+				Stages: []StageSpec{
+					{Rate: 2.0, Duration: 30},
+					{Rate: 5.0, Duration: 30},
+				},
+			},
 		},
 	}
-	ws, err := ExpandInferencePerfSpec(spec, 42)
-	if err != nil {
-		t.Fatalf("ExpandInferencePerfSpec: %v", err)
-	}
-	if len(ws.Clients) == 0 {
-		t.Fatal("expected at least one client")
-	}
-	for _, c := range ws.Clients {
-		if c.SLOClass == "batch" || c.SLOClass == "background" {
-			t.Errorf("client %q has SLOClass %q; inference_perf must use \"standard\" (regression: issue #965)",
-				c.ID, c.SLOClass)
-		}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			ws, err := ExpandInferencePerfSpec(tc.spec, 42)
+			if err != nil {
+				t.Fatalf("ExpandInferencePerfSpec: %v", err)
+			}
+			if len(ws.Clients) == 0 {
+				t.Fatal("expected at least one client")
+			}
+			for _, c := range ws.Clients {
+				if c.SLOClass == "batch" || c.SLOClass == "background" {
+					t.Errorf("client %q has SLOClass %q; inference_perf must use \"standard\" (regression: issue #965)",
+						c.ID, c.SLOClass)
+				}
+			}
+		})
 	}
 }

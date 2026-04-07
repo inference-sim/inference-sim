@@ -118,6 +118,10 @@ func loadTrainedPhysicsGoldenDataset(t *testing.T) *trainedPhysicsGoldenDataset 
 // deferred-queue serialization, inflating TTFT 6-100× across all experiments.
 // This test will catch any recurrence of that regression pattern.
 func TestTrainedPhysics_GoldenDataset(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping trained-physics golden dataset test in short mode (-short flag)")
+	}
+
 	root := tpRepoRoot()
 	ds := loadTrainedPhysicsGoldenDataset(t)
 	if len(ds.Experiments) == 0 {
@@ -129,6 +133,7 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 	for _, exp := range ds.Experiments {
 		exp := exp // capture loop variable
 		t.Run(fmt.Sprintf("exp_%s_%s", exp.ID, exp.Model), func(t *testing.T) {
+			t.Parallel() // each sub-test owns independent state; safe to run concurrently
 			// ── Load model + hardware configuration ──────────────────────────
 			mcPath := filepath.Join(root, exp.ModelConfigDir, "config.json")
 			mc, err := latency.GetModelConfig(mcPath)
@@ -156,6 +161,9 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 			var ws tpWorkloadSpec
 			if err := yaml.Unmarshal(exp.Workload, &ws); err != nil {
 				t.Fatalf("decode workload: %v", err)
+			}
+			if ws.InferencePerf == nil {
+				t.Fatalf("experiment %s: workload JSON missing inference_perf field", exp.ID)
 			}
 
 			ipSpec := &workload.InferencePerfSpec{
@@ -209,15 +217,27 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 			m := cs.AggregatedMetrics()
 
 			// ── Invariant: request conservation (INV-1) ───────────────────
+			// Full conservation: every leakage path must be zero and the
+			// completed count must match golden. With horizon=MaxInt64 and no
+			// admission/routing rejections, all requests must complete.
 			// Catches silent-drop bugs independently of golden values.
-			if m.CompletedRequests != exp.Expected.CompletedRequests {
-				t.Errorf("completed_requests: got %d, want %d", m.CompletedRequests, exp.Expected.CompletedRequests)
+			if m.StillQueued != 0 {
+				t.Errorf("INV-1: still_queued=%d, want 0 (requests stuck in wait queue)", m.StillQueued)
+			}
+			if m.StillRunning != 0 {
+				t.Errorf("INV-1: still_running=%d, want 0 (requests stuck in running batch)", m.StillRunning)
 			}
 			if m.DroppedUnservable != 0 {
-				t.Errorf("dropped_unservable: got %d, want 0 (all requests must complete)", m.DroppedUnservable)
+				t.Errorf("INV-1: dropped_unservable=%d, want 0", m.DroppedUnservable)
 			}
 			if m.TimedOutRequests != 0 {
-				t.Errorf("timed_out_requests: got %d, want 0", m.TimedOutRequests)
+				t.Errorf("INV-1: timed_out_requests=%d, want 0", m.TimedOutRequests)
+			}
+			if cs.RejectedRequests() != 0 {
+				t.Errorf("INV-1: rejected_requests=%d, want 0", cs.RejectedRequests())
+			}
+			if m.CompletedRequests != exp.Expected.CompletedRequests {
+				t.Errorf("completed_requests: got %d, want %d", m.CompletedRequests, exp.Expected.CompletedRequests)
 			}
 
 			// ── Invariant: token conservation ────────────────────────────
@@ -273,19 +293,22 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 	}
 }
 
-// sortedValues returns the values of a map[string]float64 in sorted order.
-// Uses sorted keys for deterministic float accumulation (R2).
+// sortedValues returns the values of a map[string]float64 sorted in ascending
+// order. The key iteration is sorted first (R2: deterministic map traversal),
+// then the extracted values are sorted by value for use in percentile and mean
+// calculations. Both steps together ensure reproducible output regardless of
+// Go's non-deterministic map iteration order.
 func sortedValues(m map[string]float64) []float64 {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	sort.Strings(keys) // R2: deterministic iteration order
 	vals := make([]float64, len(keys))
 	for i, k := range keys {
 		vals[i] = m[k]
 	}
-	sort.Float64s(vals)
+	sort.Float64s(vals) // sort by value for percentile/mean computation
 	return vals
 }
 
