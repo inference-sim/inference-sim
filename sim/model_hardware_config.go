@@ -43,4 +43,9 @@ type HardwareCalib struct {
 	MfuPrefill float64 `json:"mfuPrefill"`
 	MfuDecode  float64 `json:"mfuDecode"`
 	MemoryGiB  float64 `json:"MemoryGiB"` // GPU memory capacity in GiB
+
+	// Interference penalty parameters for aggregated (colocated) prefill+decode steps.
+	// Both default to 0.0 for exact backward compatibility with pre-#949 behavior.
+	MixedBatchPenalty float64 `json:"mixedBatchPenalty"` // 0.0-1.0; MFU degradation when prefill and decode share a step; 0 = no penalty
+	OverlapPenalty    float64 `json:"overlapPenalty"`    // 0.0-1.0; imperfect compute/memory overlap; 0 = perfect overlap (max semantics)
 }

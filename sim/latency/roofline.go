@@ -322,6 +322,25 @@ func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, s
 		totalDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
 	}
 
+	// Gap 1: Mixed-batch MFU degradation — applied only when both prefill and decode
+	// tokens share a step, modeling GPU inefficiency from mixed memory-access patterns,
+	// kernel dispatch overhead, and attention tile-size mismatches (issue #949).
+	// At MixedBatchPenalty=0 (default) this block is skipped: backward-compatible behavior.
+	if hwConfig.MixedBatchPenalty > 0 && len(stepConfig.PrefillRequests) > 0 && len(stepConfig.DecodeRequests) > 0 {
+		var prefillTokens float64
+		for _, req := range stepConfig.PrefillRequests {
+			prefillTokens += float64(req.NumNewPrefillTokens)
+		}
+		decodeTokens := float64(len(stepConfig.DecodeRequests)) // 1 new token per decode request
+		totalTokens := prefillTokens + decodeTokens
+		prefillFraction := prefillTokens / totalTokens
+		minorityFraction := math.Min(prefillFraction, 1-prefillFraction)
+		// penalty ∈ [0.5, 1.0]: minimum is 0.5 when MixedBatchPenalty=1 and split is 50/50.
+		// Dividing by penalty < 1 increases compute time to model MFU degradation.
+		penalty := 1.0 - hwConfig.MixedBatchPenalty*minorityFraction
+		totalComputeS /= penalty
+	}
+
 	// 3. WEIGHTS loaded once per step (single forward pass, per Sarathi-Serve/vLLM V1)
 	// For MoE models, nEff depends on batch size, so we must pass totalNewTokens
 	var totalNewTokens int64
@@ -335,8 +354,11 @@ func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, s
 
 	totalMemoryS := (weightBytes + totalDynamicBytes) / peakBW
 
-	// 4. ROOFLINE: single crossover
-	totalMicros := math.Max(totalComputeS, totalMemoryS) * 1e6
+	// 4. ROOFLINE: single crossover with optional imperfect-overlap correction (issue #949).
+	// Gap 2: OverlapPenalty=0 reduces exactly to max(compute, memory) — backward compatible.
+	// OverlapPenalty > 0 adds a fraction of the subordinate term, modeling the fact that
+	// real GPUs cannot perfectly pipeline compute-bound prefill and memory-bound decode work.
+	totalMicros := (math.Max(totalComputeS, totalMemoryS) + hwConfig.OverlapPenalty*math.Min(totalComputeS, totalMemoryS)) * 1e6
 
 	return clampToInt64(totalMicros)
 }

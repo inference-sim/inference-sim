@@ -1186,3 +1186,117 @@ func TestValidateRooflineConfig_MoE_ValidConfig_ReturnsNil(t *testing.T) {
 		t.Errorf("expected nil error for valid MoE config, got: %v", err)
 	}
 }
+
+// BC-7: ValidateRooflineConfig rejects MixedBatchPenalty outside [0, 1].
+
+func TestValidateRooflineConfig_MixedBatchPenalty_Negative_ReturnsError(t *testing.T) {
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3, MixedBatchPenalty: -0.1}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+
+	if err == nil {
+		t.Fatal("expected error for negative MixedBatchPenalty, got nil")
+	}
+	if !strings.Contains(err.Error(), "MixedBatchPenalty") {
+		t.Errorf("error should mention MixedBatchPenalty, got: %v", err)
+	}
+}
+
+func TestValidateRooflineConfig_MixedBatchPenalty_TooLarge_ReturnsError(t *testing.T) {
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3, MixedBatchPenalty: 1.01}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+
+	if err == nil {
+		t.Fatal("expected error for MixedBatchPenalty > 1, got nil")
+	}
+	if !strings.Contains(err.Error(), "MixedBatchPenalty") {
+		t.Errorf("error should mention MixedBatchPenalty, got: %v", err)
+	}
+}
+
+func TestValidateRooflineConfig_MixedBatchPenalty_NaN_ReturnsError(t *testing.T) {
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3, MixedBatchPenalty: math.NaN()}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+
+	if err == nil {
+		t.Fatal("expected error for NaN MixedBatchPenalty, got nil")
+	}
+	if !strings.Contains(err.Error(), "MixedBatchPenalty") {
+		t.Errorf("error should mention MixedBatchPenalty, got: %v", err)
+	}
+}
+
+func TestValidateRooflineConfig_OverlapPenalty_Negative_ReturnsError(t *testing.T) {
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3, OverlapPenalty: -0.1}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+
+	if err == nil {
+		t.Fatal("expected error for negative OverlapPenalty, got nil")
+	}
+	if !strings.Contains(err.Error(), "OverlapPenalty") {
+		t.Errorf("error should mention OverlapPenalty, got: %v", err)
+	}
+}
+
+func TestValidateRooflineConfig_OverlapPenalty_TooLarge_ReturnsError(t *testing.T) {
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3, OverlapPenalty: 1.5}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+
+	if err == nil {
+		t.Fatal("expected error for OverlapPenalty > 1, got nil")
+	}
+	if !strings.Contains(err.Error(), "OverlapPenalty") {
+		t.Errorf("error should mention OverlapPenalty, got: %v", err)
+	}
+}
+
+func TestValidateRooflineConfig_OverlapPenalty_NaN_ReturnsError(t *testing.T) {
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
+	hc := sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3, OverlapPenalty: math.NaN()}
+
+	err := latency.ValidateRooflineConfig(mc, hc)
+
+	if err == nil {
+		t.Fatal("expected error for NaN OverlapPenalty, got nil")
+	}
+	if !strings.Contains(err.Error(), "OverlapPenalty") {
+		t.Errorf("error should mention OverlapPenalty, got: %v", err)
+	}
+}
+
+func TestValidateRooflineConfig_ValidPenalties_ReturnsNil(t *testing.T) {
+	// BC-7: valid penalty values (including boundary 0.0 and 1.0) should pass validation.
+	mc := sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096, BytesPerParam: 2}
+	tests := []struct {
+		name             string
+		mixedBatchPenalty float64
+		overlapPenalty   float64
+	}{
+		{"both zero (default)", 0.0, 0.0},
+		{"mixed at max boundary", 1.0, 0.0},
+		{"overlap at max boundary", 0.0, 1.0},
+		{"both mid-range", 0.3, 0.15},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hc := sim.HardwareCalib{
+				TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3,
+				MixedBatchPenalty: tc.mixedBatchPenalty,
+				OverlapPenalty:    tc.overlapPenalty,
+			}
+			if err := latency.ValidateRooflineConfig(mc, hc); err != nil {
+				t.Errorf("expected nil error for valid penalties (%v, %v), got: %v",
+					tc.mixedBatchPenalty, tc.overlapPenalty, err)
+			}
+		})
+	}
+}

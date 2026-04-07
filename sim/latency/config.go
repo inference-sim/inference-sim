@@ -419,6 +419,19 @@ func ValidateRooflineConfig(mc sim.ModelConfig, hc sim.HardwareCalib) error {
 		}
 	}
 
+	// MixedBatchPenalty and OverlapPenalty are optional (0 = no penalty, backward-compatible).
+	// When set, both must be finite values in [0, 1].
+	if hc.MixedBatchPenalty != 0 {
+		if math.IsNaN(hc.MixedBatchPenalty) || math.IsInf(hc.MixedBatchPenalty, 0) || hc.MixedBatchPenalty < 0 || hc.MixedBatchPenalty > 1 {
+			problems = append(problems, fmt.Sprintf("HardwareCalib.MixedBatchPenalty must be in [0, 1] when set, got %v", hc.MixedBatchPenalty))
+		}
+	}
+	if hc.OverlapPenalty != 0 {
+		if math.IsNaN(hc.OverlapPenalty) || math.IsInf(hc.OverlapPenalty, 0) || hc.OverlapPenalty < 0 || hc.OverlapPenalty > 1 {
+			problems = append(problems, fmt.Sprintf("HardwareCalib.OverlapPenalty must be in [0, 1] when set, got %v", hc.OverlapPenalty))
+		}
+	}
+
 	// WeightBytesPerParam is optional (0 = not set, fall back to BytesPerParam).
 	// When set, it must be a valid positive number. No upper-bound check is enforced:
 	// WeightBytesPerParam > BytesPerParam is unusual but not invalid (e.g., INT4 KV cache
