@@ -106,3 +106,6 @@ actions-runner/
 # Agent instruction files (generated, not committed)
 AGENTS.md
 .worktrees/
+
+# External tool repos (cloned locally for kernel profile generation)
+aiconfigurator/
