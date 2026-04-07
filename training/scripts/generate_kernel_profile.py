@@ -206,13 +206,12 @@ def gemm_dims(info: dict, tp: int) -> dict:
     }
 
 
-def query_1d_gemm(
-    db, dims: dict, token_grid: list, num_layers: int, quant_mode
-) -> list:
+def query_1d_gemm(db, dims: dict, token_grid: list, quant_mode) -> list:
     """Query total per-layer GEMM latency (QKV+proj+gate_up+down, per layer, us).
 
-    aiconfigurator returns milliseconds; we convert to microseconds and divide
-    by num_layers to get per-layer values.
+    aiconfigurator db.query_gemm() returns per-invocation ms for one GEMM.
+    We sum 4 GEMMs per layer and convert ms → µs.
+    Result is per-layer (Go runtime multiplies by numLayers).
     """
     out = []
     for tokens in token_grid:
@@ -235,8 +234,8 @@ def query_1d_gemm(
                     total_ms += float(r)
                 except Exception:
                     pass
-        # ms -> us, per layer
-        out.append(round(total_ms * 1000.0 / num_layers, 6))
+        # ms -> us (raw query is already per-invocation = per-layer; do NOT divide by num_layers)
+        out.append(round(total_ms * 1000.0, 6))
     return out
 
 
@@ -244,7 +243,6 @@ def query_2d_context_attn(
     db,
     info: dict,
     tp: int,
-    num_layers: int,
     batch_grid: list,
     isl_grid: list,
     fmha_mode,
@@ -276,7 +274,7 @@ def query_2d_context_attn(
                     fmha_quant_mode=fmha_mode,
                     head_size=d_h,
                 )
-                row.append(round(float(r) * 1000.0 / num_layers, 6))
+                row.append(round(float(r) * 1000.0, 6))  # per-invocation = per-layer
             except Exception:
                 row.append(0.0)
         rows.append(row)
@@ -284,7 +282,7 @@ def query_2d_context_attn(
 
 
 def query_2d_gen_attn(
-    db, info: dict, tp: int, num_layers: int, token_grid: list, ctx_grid: list, kv_mode
+    db, info: dict, tp: int, token_grid: list, ctx_grid: list, kv_mode
 ) -> list:
     """Query generation attention per layer (us).
 
@@ -309,7 +307,7 @@ def query_2d_gen_attn(
                     kvcache_quant_mode=kv_mode,
                     head_size=d_h,
                 )
-                row.append(round(float(r) * 1000.0 / num_layers, 6))
+                row.append(round(float(r) * 1000.0, 6))  # per-invocation = per-layer
             except Exception:
                 row.append(0.0)
         rows.append(row)
@@ -376,7 +374,7 @@ def query_moe(
                 workload_distribution="uniform",
                 is_context=True,
             )
-            out.append(round(float(r) * 1000.0 / num_moe_layers, 6))
+            out.append(round(float(r) * 1000.0, 6))  # per-invocation = per MoE layer
         except Exception:
             # Fallback: estimate MoE via individual expert GEMMs
             # Each expert: gate_up (2*moe_inter, h) + down (h, moe_inter)
@@ -395,7 +393,7 @@ def query_moe(
                     quant_mode=quant_mode,
                 )
                 total_ms = float(gate_up) + float(down)
-                out.append(round(total_ms * 1000.0 / num_moe_layers, 6))
+                out.append(round(total_ms * 1000.0, 6))  # per-invocation = per MoE layer
             except Exception:
                 out.append(0.0)
     return out
@@ -446,19 +444,19 @@ def generate_profile(
     gemm_mode, fmha_mode, kv_mode = get_quant_modes(model_path)
 
     print("  Querying context GEMM...")
-    ctx_gemm = query_1d_gemm(db, gemm_dims(info, tp), CONTEXT_TOKEN_GRID, num_layers, gemm_mode)
+    ctx_gemm = query_1d_gemm(db, gemm_dims(info, tp), CONTEXT_TOKEN_GRID, gemm_mode)
 
     print("  Querying context attention...")
     ctx_attn = query_2d_context_attn(
-        db, info, tp, num_layers, BATCH_GRID, ISL_GRID, fmha_mode, kv_mode
+        db, info, tp, BATCH_GRID, ISL_GRID, fmha_mode, kv_mode
     )
 
     print("  Querying generation GEMM...")
-    gen_gemm = query_1d_gemm(db, gemm_dims(info, tp), DECODE_TOKEN_GRID, num_layers, gemm_mode)
+    gen_gemm = query_1d_gemm(db, gemm_dims(info, tp), DECODE_TOKEN_GRID, gemm_mode)
 
     print("  Querying generation attention...")
     gen_attn = query_2d_gen_attn(
-        db, info, tp, num_layers, DECODE_TOKEN_GRID, CTX_GRID, kv_mode
+        db, info, tp, DECODE_TOKEN_GRID, CTX_GRID, kv_mode
     )
 
     print(f"  Querying AllReduce (tp={tp})...")
