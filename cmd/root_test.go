@@ -429,6 +429,7 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	origInstances := numInstances
 	origSeed := seed
 	origResults := resultsPath
+	origMetrics := metricsPath
 	origThreshold := longPrefillTokenThreshold
 	origKVCPU := kvCPUBlocks
 	origOffload := kvOffloadThreshold
@@ -474,6 +475,7 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 		numInstances = origInstances
 		seed = origSeed
 		resultsPath = origResults
+		metricsPath = origMetrics
 		longPrefillTokenThreshold = origThreshold
 		kvCPUBlocks = origKVCPU
 		kvOffloadThreshold = origOffload
@@ -509,7 +511,7 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	}()
 
 	// Set required run vars — runCmd.Run has logrus.Fatalf guards on zero/invalid values.
-	resultsPath = outFile
+	metricsPath = outFile
 	workloadType = "distribution" // avoids preset-path Fatalf("Undefined workload")
 	rate = 1.0                    // required by distribution rate-mode path
 	numRequests = 1               // minimal run
