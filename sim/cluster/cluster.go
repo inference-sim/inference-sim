@@ -304,14 +304,10 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		cs.staleCache = NewStaleCacheIndex(instanceMap, config.CacheSignalDelay)
 		cs.cacheQueryFn = cs.staleCache.BuildCacheQueryFn()
 	} else {
-		// Oracle mode (default): scorers query live KV cache state.
+		// Zero delay (CacheSignalDelay=0) — oracle mode: scorers query live KV cache state.
 		cs.cacheQueryFn = make(map[string]func([]int) int, len(cs.instances))
 		for _, inst := range cs.instances {
-			id := string(inst.ID())
-			inst := inst // capture for closure
-			cs.cacheQueryFn[id] = func(tokens []int) int {
-				return inst.GetCachedBlockCount(tokens)
-			}
+			cs.registerInstanceCacheQueryFn(inst.ID(), inst)
 		}
 	}
 
@@ -424,6 +420,32 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	}
 
 	return cs
+}
+
+// registerInstanceCacheQueryFn adds a cacheQueryFn entry for a single instance,
+// choosing between stale (snapshot) and oracle (live) modes based on cs.staleCache (R23).
+// Called from two sites: oracle-mode constructor loop (NewClusterSimulator) and
+// NodeReadyEvent.Execute (deferred instances). NOT called from the stale-mode
+// constructor — that path uses the bulk NewStaleCacheIndex + BuildCacheQueryFn API.
+// Precondition: cs.cacheQueryFn must be non-nil (initialised before calling).
+func (cs *ClusterSimulator) registerInstanceCacheQueryFn(id InstanceID, inst *InstanceSimulator) {
+	if cs.staleCache != nil {
+		// Stale mode: register with StaleCacheIndex; the closure delegates to s.Query at
+		// call time, so it picks up refreshed snapshots automatically after RefreshIfNeeded.
+		// CO-CHANGE: BuildCacheQueryFn (stale_cache.go) produces equivalent closures for
+		// the initial instance set — update both if closure semantics change.
+		cs.staleCache.AddInstance(id, inst)
+		idStr := string(id)
+		cs.cacheQueryFn[idStr] = func(tokens []int) int {
+			return cs.staleCache.Query(idStr, tokens)
+		}
+	} else {
+		// Oracle mode: closure captures inst directly for live-state queries.
+		idStr := string(id)
+		cs.cacheQueryFn[idStr] = func(tokens []int) int {
+			return inst.GetCachedBlockCount(tokens)
+		}
+	}
 }
 
 // Run executes the cluster simulation using online routing pipeline:
@@ -1315,19 +1337,33 @@ func (c *ClusterSimulator) projectPDMetrics() {
 			}
 		}
 
-		// TTFT: rekey from prefill sub-request ID to parent ID (value unchanged).
-		// Only prefill sub-requests record TTFT; decode sub-requests never trigger it.
+		// TTFT: user-visible time-to-first-token for PD disaggregation.
+		// In llm-d, the first token reaches the user from the decode pod, not
+		// prefill: prefill completes → KV transfers → decode pod recomputes last
+		// prompt token and samples first output token. User-visible TTFT =
+		// prefillTTFT + transferDuration + firstDecodeStep. See issue #930.
+		//
+		// Read prefill TTFT before deleting sub-request keys (R1: no silent data loss).
 		// Gate on completed: dropped-request TTFTs must not enter the distribution.
-		// Source keys are always deleted, regardless of completion status.
+		prefillTTFT, hasPrefillTTFT := m.RequestTTFTs[pfx]
+		delete(m.RequestTTFTs, pfx)
+		delete(m.RequestTTFTs, dec)
 		if completed {
-			if ttft, ok := m.RequestTTFTs[pfx]; ok {
-				m.RequestTTFTs[pid] = ttft
+			if hasPrefillTTFT && parent.TransferStartTime > 0 && parent.TransferCompleteTime >= parent.TransferStartTime && parent.DecodeSubReq != nil && len(parent.DecodeSubReq.ITL) > 0 {
+				transferDuration := float64(parent.TransferCompleteTime - parent.TransferStartTime)
+				firstDecodeStep := float64(parent.DecodeSubReq.ITL[0])
+				newTTFT := prefillTTFT + transferDuration + firstDecodeStep
+				m.RequestTTFTs[pid] = newTTFT
+				// BC-3: Keep TTFTSum consistent with the TTFT adjustment.
+				m.TTFTSum += int64(newTTFT - prefillTTFT)
+			} else if hasPrefillTTFT {
+				// Defensive fallback: use prefill-only TTFT if decode data unavailable.
+				m.RequestTTFTs[pid] = prefillTTFT
+				logrus.Warnf("[cluster] projectPDMetrics: parent %s missing decode ITL or TransferCompleteTime; using prefill TTFT", pid)
 			} else {
 				logrus.Warnf("[cluster] projectPDMetrics: completed parent %s has no prefill TTFT (key %s)", pid, pfx)
 			}
 		}
-		delete(m.RequestTTFTs, pfx)
-		delete(m.RequestTTFTs, dec)
 
 		// Scheduling delay = prefill sub-request's delay
 		// (the real user-facing delay, not the decode pipeline cumulative latency).
