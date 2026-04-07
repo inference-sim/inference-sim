@@ -33,7 +33,6 @@
 #
 #   --pd-transfer-bandwidth N   Inter-pool KV transfer bandwidth in GB/s (default: 25)
 #   --pd-transfer-base-latency N  Fixed setup latency per transfer in ms (default: 0.05)
-#   --pd-kv-bytes-per-token N   KV cache bytes per token for transfer sizing (default: 512)
 #
 # ============================================================================
 # Decider Strategies

@@ -4,7 +4,9 @@ package cluster
 
 import (
 	"container/heap"
+	"fmt"
 
+	"github.com/inference-sim/inference-sim/sim"
 	"github.com/sirupsen/logrus"
 )
 
@@ -28,6 +30,8 @@ func (e *NodeReadyEvent) Timestamp() int64 { return e.timestamp }
 func (e *NodeReadyEvent) Priority() int    { return priorityNodeLifecycle }
 
 // Execute transitions the node Provisioning → Ready and retries any pending instances.
+// Deferred construction: pending instances have no InstanceSimulator yet — construct them
+// here using the pool's GPU type (SC-003: pool-authoritative, not CLI flag).
 func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 	if cs.placement == nil {
 		return
@@ -41,17 +45,76 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 	placed := cs.placement.RetryPendingInstances()
 	for idx := range placed {
 		p := &placed[idx]
-		// Find the InstanceSimulator for this pending instance and start loading.
-		for _, inst := range cs.instances {
-			if inst.ID() == p.id {
-				// R4: mirror the initial placement path in NewClusterSimulator —
-				// set nodeID, allocatedGPUIDs, and warmUpRemaining before scheduling load.
-				inst.nodeID = p.nodeID
-				inst.allocatedGPUIDs = p.gpuIDs
-				inst.warmUpRemaining = cs.config.InstanceLifecycle.WarmUpRequestCount
-				inst.TransitionTo(InstanceStateLoading)
-				cs.scheduleInstanceLoadedEvent(inst)
+		// Deferred construction: set pool's GPU type (authoritative per SC-003) and,
+		// when HWConfigByGPU is provided, override HWConfig for roofline backends (issue #893).
+		p.simCfg.GPU = p.gpuType
+		if hc, ok := cs.config.HWConfigByGPU[p.gpuType]; ok {
+			if hc.TFlopsPeak <= 0 || hc.BwPeakTBs <= 0 {
+				panic(fmt.Sprintf("HWConfigByGPU[%q]: TFlopsPeak and BwPeakTBs must be positive, got TFlopsPeak=%v BwPeakTBs=%v",
+					p.gpuType, hc.TFlopsPeak, hc.BwPeakTBs))
+			}
+			p.simCfg.HWConfig = hc
+		}
+		inst := NewInstanceSimulator(p.id, p.simCfg)
+		inst.Model = cs.config.Model
+		inst.nodeID = p.nodeID
+		inst.allocatedGPUIDs = p.gpuIDs
+		inst.TPDegree = p.tpDegree
+		// Phase 1C: look up CostPerHour for this GPU type (mirrors cluster.go startup path).
+		var poolCostPerHour float64
+		for i := range cs.config.NodePools {
+			if cs.config.NodePools[i].GPUType == p.gpuType {
+				poolCostPerHour = cs.config.NodePools[i].CostPerHour
 				break
+			}
+		}
+		inst.CostPerHour = poolCostPerHour
+		inst.warmUpRemaining = cs.config.InstanceLifecycle.WarmUpRequestCount
+		inst.TransitionTo(InstanceStateLoading)
+
+		// Register with snapshot provider for routing (deferred instances were not
+		// in the initial instanceMap passed to NewCachedSnapshotProvider).
+		// Must happen BEFORE scheduleInstanceLoadedEvent so the instance is routable
+		// when the load event fires.
+		csp, ok := cs.snapshotProvider.(*CachedSnapshotProvider)
+		if !ok {
+			// snapshotProvider is nil or not *CachedSnapshotProvider — release GPUs and skip.
+			// R1: no silent data loss; this can occur in unit tests that bypass NewClusterSimulator.
+			// Release GPUs so they are not held by an instance that can never be routed to.
+			logrus.Warnf("[cluster] NodeReadyEvent: snapshotProvider is not *CachedSnapshotProvider for instance %s — releasing GPUs and skipping", p.id)
+			cs.releaseInstanceGPUs(inst)
+			continue
+		}
+		csp.AddInstance(p.id, inst)
+
+		cs.scheduleInstanceLoadedEvent(inst)
+		cs.instances = append(cs.instances, inst)
+		cs.inFlightRequests[string(p.id)] = 0
+
+		// Register with cacheQueryFn for precise prefix scoring (deferred instances).
+		// registerInstanceCacheQueryFn handles both oracle and stale modes (R23).
+		if cs.cacheQueryFn != nil {
+			cs.registerInstanceCacheQueryFn(p.id, inst)
+		}
+
+		// Wire OnRequestDone callback — mirror startup path in NewClusterSimulator (R4).
+		onRequestDone := cs.sessionCallback
+		if onRequestDone != nil || cs.tenantTracker != nil {
+			inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
+				if cs.tenantTracker != nil {
+					cs.tenantTracker.OnComplete(req.TenantID)
+				}
+				if onRequestDone == nil {
+					return nil
+				}
+				nextReqs := onRequestDone(req, tick)
+				for _, next := range nextReqs {
+					heap.Push(&cs.clusterEvents, clusterEventEntry{
+						event: &ClusterArrivalEvent{time: next.ArrivalTime, request: next},
+						seqID: cs.nextSeqID(),
+					})
+				}
+				return nil // don't inject locally — route through cluster pipeline
 			}
 		}
 	}
@@ -198,6 +261,10 @@ func (d *drainImmediate) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	inst.TransitionTo(InstanceStateTerminated)
 	if cs != nil {
 		cs.releaseInstanceGPUs(inst)
+		if cs.staleCache != nil {
+			cs.staleCache.RemoveInstance(inst.ID())
+		}
+		delete(cs.cacheQueryFn, string(inst.ID()))
 	}
 }
 
@@ -216,6 +283,10 @@ func (d *drainWait) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	if cs != nil && inst.HasSim() && inst.QueueDepth() == 0 && inst.BatchSize() == 0 {
 		inst.TransitionTo(InstanceStateTerminated)
 		cs.releaseInstanceGPUs(inst)
+		if cs.staleCache != nil {
+			cs.staleCache.RemoveInstance(inst.ID())
+		}
+		delete(cs.cacheQueryFn, string(inst.ID()))
 	}
 }
 
@@ -225,6 +296,10 @@ type drainRedirect struct{}
 
 func (d *drainRedirect) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	inst.TransitionTo(InstanceStateDraining)
+	// Note: RemoveInstance and delete(cs.cacheQueryFn, ...) are intentionally absent here.
+	// The instance remains alive while processing in-flight and late-arriving requests.
+	// Cleanup happens via the T042 drain-completion check (QueueDepth==0 && BatchSize==0)
+	// in the main event loop (cluster.go), which transitions the instance to Terminated.
 
 	// Extract queued requests from the instance WaitQ and re-inject into the cluster.
 	// Simulation simplification: re-injected at current clock (cs.clock), not original ArrivalTime.

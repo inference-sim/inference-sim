@@ -195,7 +195,7 @@ func TestNodeProvisioning_BlocksPlacementUntilReady(t *testing.T) {
 	})
 
 	t.Run("placement fails on Provisioning node", func(t *testing.T) {
-		_, _, err := pm.PlaceInstance("inst-0", "model-a", "H100", 4)
+		_, _, _, err := pm.PlaceInstance("inst-0", "model-a", "H100", 4)
 		if err == nil {
 			t.Error("PlaceInstance() on Provisioning node should fail, got nil error")
 		}
@@ -208,7 +208,7 @@ func TestNodeProvisioning_BlocksPlacementUntilReady(t *testing.T) {
 		if node.State != NodeStateReady {
 			t.Errorf("after MarkNodeReady, node state = %q, want Ready", node.State)
 		}
-		_, gpuIDs, err := pm.PlaceInstance("inst-0", "model-a", "H100", 4)
+		_, gpuIDs, _, err := pm.PlaceInstance("inst-0", "model-a", "H100", 4)
 		if err != nil {
 			t.Errorf("PlaceInstance() after MarkNodeReady failed: %v", err)
 		}
@@ -269,7 +269,7 @@ func TestNodeDrain_WaitsForInstanceRelease(t *testing.T) {
 	}
 
 	// Place an instance
-	_, _, err := pm.PlaceInstance("inst-0", "model-a", "H100", 4)
+	_, _, _, err := pm.PlaceInstance("inst-0", "model-a", "H100", 4)
 	if err != nil {
 		t.Fatalf("PlaceInstance: %v", err)
 	}

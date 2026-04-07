@@ -2,6 +2,14 @@ package cluster
 
 import "github.com/inference-sim/inference-sim/sim"
 
+// DefaultCacheSignalDelay is the default propagation delay for prefix cache
+// signals in microseconds (2 seconds). Only affects precise-prefix-cache and
+// no-hit-lru scorers; has no observable effect on other routing policies.
+// Matches production llm-d's defaultSpeculativeTTL — the blind spot between
+// a routing decision and KV event arrival via ZMQ.
+// Set to 0 for oracle mode (live cache state).
+const DefaultCacheSignalDelay int64 = 2_000_000
+
 // DeploymentConfig describes a cluster where all instances share identical
 // hardware and model configuration. NumInstances must be >= 1.
 type DeploymentConfig struct {
@@ -29,6 +37,17 @@ type DeploymentConfig struct {
 	// use Periodic refresh with this interval (microseconds). 0 = Immediate (default).
 	SnapshotRefreshInterval int64
 
+	// Cache signal propagation delay for precise prefix cache scoring (issue #919).
+	// Only affects routing when precise-prefix-cache or no-hit-lru scorers are active;
+	// has no observable effect on other routing policies (round-robin, least-loaded, etc.).
+	// When > 0, those scorers query a periodically-refreshed stale snapshot of each
+	// instance's KV cache block hash map instead of live state.
+	// Models the asynchronous KV event propagation delay in production llm-d.
+	// Default: DefaultCacheSignalDelay (2s), matching llm-d's speculative TTL.
+	// 0 = oracle mode (scorers read live cache state with zero delay).
+	// Units: microseconds of simulated time.
+	CacheSignalDelay int64
+
 	// Phase 1A: Node pool infrastructure (optional — empty = backward-compatible mode).
 	// When non-empty, activates PlacementManager for GPU inventory tracking.
 	NodePools []NodePoolConfig
@@ -49,7 +68,6 @@ type DeploymentConfig struct {
 	// PD KV transfer configuration (PR2)
 	PDTransferBandwidthGBps float64 // Inter-instance KV transfer bandwidth in GB/s (default 25.0)
 	PDTransferBaseLatencyMs float64 // Inter-instance KV transfer base latency in ms (default 0.05)
-	PDKVBytesPerToken       int64   // KV cache bytes per token for transfer duration (default 512)
 	PDTransferContention    bool    // Enable fair-share bandwidth contention model (--pd-transfer-contention, INV-P2-2)
 
 	// Per-pool routing scorer configuration (PR2)
@@ -62,6 +80,13 @@ type DeploymentConfig struct {
 	PrefillOverrides PoolOverrides // Hardware overrides for prefill pool instances
 	DecodeOverrides  PoolOverrides // Hardware overrides for decode pool instances
 
+	// Phase 1C: Model autoscaler pipeline (issue #692).
+	// Zero value is safe: ModelAutoscalerIntervalUs=0 disables the autoscaler entirely (INV-6).
+	ModelAutoscalerIntervalUs float64   `yaml:"model_autoscaler_interval_us,omitempty"` // tick interval in μs; 0 = autoscaler disabled
+	ActuationDelay            DelaySpec `yaml:"actuation_delay,omitempty"`              // HPA/KEDA scrape lag; zero = same-tick actuation; Mean/Stddev in seconds
+	ScaleUpCooldownUs         float64   `yaml:"scale_up_cooldown_us,omitempty"`          // min μs between scale-up decisions per model
+	ScaleDownCooldownUs       float64   `yaml:"scale_down_cooldown_us,omitempty"`        // min μs between scale-down decisions per model
+
 	// Phase 1B-1a: tier-ordered admission shedding config (issue #809).
 	// Zero value is safe: TierShedMinPriority=0 admits all tiers (same as AlwaysAdmit),
 	// but callers should explicitly set 3 (Standard) for meaningful protection.
@@ -72,6 +97,26 @@ type DeploymentConfig struct {
 	// Key: TenantID string. Value: fraction of total cluster capacity (0.0–1.0).
 	// Zero value is safe: nil = no enforcement (all tenants unlimited).
 	TenantBudgets map[string]float64 `yaml:"tenant_budgets,omitempty"`
+
+	// Flow control configuration (issue #882, GIE parity).
+	// When FlowControlEnabled is false (default), the gateway queue is bypassed
+	// and requests flow directly from admission to routing (BC-1 pass-through).
+	FlowControlEnabled              bool    `yaml:"flow_control_enabled,omitempty"`
+	FlowControlDetector             string  `yaml:"flow_control_detector,omitempty"`               // "never" (default), "utilization", "concurrency"
+	FlowControlDispatchOrder        string  `yaml:"flow_control_dispatch_order,omitempty"`          // "fifo" (default), "priority"
+	FlowControlMaxQueueDepth        int     `yaml:"flow_control_max_queue_depth,omitempty"`         // 0 = unlimited
+	FlowControlQueueDepthThreshold  float64 `yaml:"flow_control_queue_depth_threshold,omitempty"`   // for utilization detector
+	FlowControlKVCacheUtilThreshold float64 `yaml:"flow_control_kv_cache_util_threshold,omitempty"` // for utilization detector
+	FlowControlMaxConcurrency       int     `yaml:"flow_control_max_concurrency,omitempty"`         // for concurrency detector
+
+	// Issue #893: per-GPU-type hardware calibration for roofline/trained-roofline backends.
+	// Key: GPU type string (e.g., "A100", "H100"). Value: HardwareCalib for that GPU.
+	// When non-nil and a pool's gpu_type is found in the map, the matched HardwareCalib
+	// overrides simCfg.HWConfig at instance construction time (both sync and deferred paths),
+	// ensuring pool-placed instances use the correct roofline hardware coefficients
+	// (TFlopsPeak, BwPeakTBs) rather than the CLI --gpu calibration.
+	// Zero value (nil) is safe: no override, backward-compatible with all existing callers.
+	HWConfigByGPU map[string]sim.HardwareCalib `yaml:"hw_config_by_gpu,omitempty"`
 }
 
 // ToSimConfig returns the embedded SimConfig for per-instance construction.
@@ -79,6 +124,17 @@ type DeploymentConfig struct {
 // and injects requests via InjectRequestOnline.
 func (d DeploymentConfig) ToSimConfig() sim.SimConfig {
 	return d.SimConfig
+}
+
+// EffectivePrefillTP returns the tensor parallelism degree used by the prefill pool.
+// Used for KV transfer sizing in both NewClusterSimulator (upfront validation) and
+// KVTransferStartedEvent.Execute (runtime). Note: resolveConfigForRole independently
+// applies PrefillOverrides via ResolvePoolConfig.
+func (d DeploymentConfig) EffectivePrefillTP() int {
+	if d.PrefillOverrides.TP != nil {
+		return *d.PrefillOverrides.TP
+	}
+	return d.TP
 }
 
 // resolveConfigForRole returns the SimConfig appropriate for an instance in the given pool role.

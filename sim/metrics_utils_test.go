@@ -76,6 +76,28 @@ func TestNewRequestMetrics_ZeroValueFields_AreEmptyStrings(t *testing.T) {
 	}
 }
 
+func TestNewRequestMetrics_GatewayQueueDelay(t *testing.T) {
+	req := &Request{
+		ID:                  "r1",
+		InputTokens:         make([]int, 10),
+		GatewayEnqueueTime:  1000, // enqueued at 1ms
+		GatewayDispatchTime: 5000, // dispatched at 5ms
+	}
+	rm := NewRequestMetrics(req, 0.0)
+	// GatewayQueueDelay = (5000 - 1000) / 1000.0 = 4.0 ms
+	if rm.GatewayQueueDelay != 4.0 {
+		t.Errorf("GatewayQueueDelay = %f, want 4.0", rm.GatewayQueueDelay)
+	}
+}
+
+func TestNewRequestMetrics_GatewayQueueDelay_ZeroWhenNotQueued(t *testing.T) {
+	req := &Request{ID: "r1", InputTokens: make([]int, 10)}
+	rm := NewRequestMetrics(req, 0.0)
+	if rm.GatewayQueueDelay != 0.0 {
+		t.Errorf("GatewayQueueDelay = %f, want 0.0 when not queued", rm.GatewayQueueDelay)
+	}
+}
+
 // TestCalculatePercentile_EmptyInput_ReturnsZero verifies BC-6, BC-8.
 func TestCalculatePercentile_EmptyInput_ReturnsZero(t *testing.T) {
 	// GIVEN empty float64 slice

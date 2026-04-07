@@ -126,6 +126,7 @@ var (
 	kvTransferBandwidth     float64
 	kvTransferBaseLatency   int64
 	snapshotRefreshInterval int64
+	cacheSignalDelay        int64
 	gpuMemoryUtilization    float64
 
 	// PD disaggregation config
@@ -134,12 +135,20 @@ var (
 	pdDecider             string  // Disaggregation decider name
 	pdTransferBandwidth   float64 // Inter-instance KV transfer bandwidth in GB/s
 	pdTransferBaseLatency float64 // Inter-instance KV transfer base latency in ms
-	pdKVBytesPerToken        int     // KV cache bytes per token for transfer duration
 	pdTransferContention     bool    // Enable fair-share bandwidth contention model
 	pdPrefixThreshold       int    // Non-cached token threshold for prefix-threshold decider
 	pdDirectDecodeThreshold int    // Input token threshold for direct-to-decode decider
 	prefillRoutingScorers   string // Scorer weights for prefill pool routing
 	decodeRoutingScorers  string  // Scorer weights for decode pool routing
+
+	// Flow control config (issue #882, GIE parity)
+	flowControlEnabled              bool
+	flowControlDetector             string
+	flowControlDispatchOrder        string
+	flowControlMaxQueueDepth        int
+	flowControlQueueDepthThreshold  float64
+	flowControlKVCacheUtilThreshold float64
+	flowControlMaxConcurrency       int
 
 	// Per-pool hardware override config
 	prefillTP             int
@@ -818,11 +827,42 @@ func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
 	if snapshotRefreshInterval < 0 {
 		logrus.Fatalf("--snapshot-refresh-interval must be >= 0, got %d", snapshotRefreshInterval)
 	}
+	if cacheSignalDelay < 0 {
+		logrus.Fatalf("--cache-signal-delay must be >= 0, got %d", cacheSignalDelay)
+	}
 	if admissionLatency < 0 {
 		logrus.Fatalf("--admission-latency must be >= 0, got %d", admissionLatency)
 	}
 	if routingLatency < 0 {
 		logrus.Fatalf("--routing-latency must be >= 0, got %d", routingLatency)
+	}
+	// Flow control validation (R3: validate at CLI boundary before passing to library)
+	if flowControlEnabled {
+		if !sim.IsValidSaturationDetector(flowControlDetector) {
+			logrus.Fatalf("Unknown saturation detector %q. Valid: %s", flowControlDetector, strings.Join(sim.ValidSaturationDetectorNames(), ", "))
+		}
+		if flowControlDispatchOrder != "fifo" && flowControlDispatchOrder != "priority" {
+			logrus.Fatalf("--dispatch-order must be 'fifo' or 'priority', got %q", flowControlDispatchOrder)
+		}
+		if flowControlMaxQueueDepth < 0 {
+			logrus.Fatalf("--max-gateway-queue-depth must be >= 0, got %d", flowControlMaxQueueDepth)
+		}
+		// Validate only parameters consumed by the selected detector
+		switch flowControlDetector {
+		case "utilization":
+			if flowControlQueueDepthThreshold <= 0 || math.IsNaN(flowControlQueueDepthThreshold) || math.IsInf(flowControlQueueDepthThreshold, 0) {
+				logrus.Fatalf("--queue-depth-threshold must be a finite value > 0, got %v", flowControlQueueDepthThreshold)
+			}
+			if flowControlKVCacheUtilThreshold <= 0 || math.IsNaN(flowControlKVCacheUtilThreshold) || math.IsInf(flowControlKVCacheUtilThreshold, 0) {
+				logrus.Fatalf("--kv-cache-util-threshold must be a finite value > 0, got %v", flowControlKVCacheUtilThreshold)
+			}
+		case "concurrency":
+			if flowControlMaxConcurrency <= 0 {
+				logrus.Fatalf("--max-concurrency must be > 0, got %d", flowControlMaxConcurrency)
+			}
+		case "", "never":
+			logrus.Warnf("--flow-control enabled but --saturation-detector is %q (pass-through); specify 'utilization' or 'concurrency' for actual gating", flowControlDetector)
+		}
 	}
 
 	logrus.Infof("Policy config: admission=%s, routing=%s, priority=%s, scheduler=%s",
@@ -923,6 +963,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&kvTransferBandwidth, "kv-transfer-bandwidth", 100.0, "CPU↔GPU transfer rate in blocks per tick. Higher = faster transfers")
 	cmd.Flags().Int64Var(&kvTransferBaseLatency, "kv-transfer-base-latency", 0, "Fixed per-transfer latency in ticks for CPU↔GPU KV transfers (0 = no fixed cost)")
 	cmd.Flags().Int64Var(&snapshotRefreshInterval, "snapshot-refresh-interval", 0, "Prometheus snapshot refresh interval for all instance metrics in microseconds (0 = immediate)")
+	cmd.Flags().Int64Var(&cacheSignalDelay, "cache-signal-delay", cluster.DefaultCacheSignalDelay, "Propagation delay for prefix cache signals in microseconds. Only affects precise-prefix-cache and no-hit-lru scorers; no effect on other routing policies. Default 2s matches production llm-d speculative TTL. Set to 0 for oracle mode (live cache state).")
 	cmd.Flags().Float64Var(&gpuMemoryUtilization, "gpu-memory-utilization", 0.9, "Fraction of GPU memory to use for KV cache, in the range (0, 1.0]. Default: 0.9 (90%)")
 
 	// PD disaggregation config
@@ -931,12 +972,20 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&pdDecider, "pd-decider", "never", "PD disaggregation decider: never (default), always, prefix-threshold, direct-to-decode")
 	cmd.Flags().Float64Var(&pdTransferBandwidth, "pd-transfer-bandwidth", 25.0, "PD KV transfer bandwidth in GB/s (NIXL RDMA default)")
 	cmd.Flags().Float64Var(&pdTransferBaseLatency, "pd-transfer-base-latency", 0.05, "PD KV transfer base latency in ms")
-	cmd.Flags().IntVar(&pdKVBytesPerToken, "pd-kv-bytes-per-token", 512, "KV cache bytes per token for PD transfer duration computation")
 	cmd.Flags().BoolVar(&pdTransferContention, "pd-transfer-contention", false, "Enable fair-share bandwidth contention model for concurrent KV transfers (INV-P2-2)")
 	cmd.Flags().IntVar(&pdPrefixThreshold, "pd-prefix-threshold", 512, "Non-cached token threshold for prefix-threshold decider (>= 0); disaggregate when non-cached tokens exceed this value")
 	cmd.Flags().IntVar(&pdDirectDecodeThreshold, "pd-direct-decode-threshold", 256, "Input token threshold for direct-to-decode (>= 0): requests with fewer than threshold tokens go direct to decode; requests with >= threshold tokens are disaggregated")
 	cmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")
 	cmd.Flags().StringVar(&decodeRoutingScorers, "decode-routing-scorers", "", "Scorer weights for decode pool routing (e.g., queue-depth:2,kv-utilization:2)")
+
+	// Flow control config (issue #882, GIE parity)
+	cmd.Flags().BoolVar(&flowControlEnabled, "flow-control", false, "Enable gateway queue with saturation-gated dispatch (GIE flow control)")
+	cmd.Flags().StringVar(&flowControlDetector, "saturation-detector", "never", "Saturation detector: "+strings.Join(sim.ValidSaturationDetectorNames(), ", "))
+	cmd.Flags().StringVar(&flowControlDispatchOrder, "dispatch-order", "fifo", "Gateway queue dispatch order: fifo, priority")
+	cmd.Flags().IntVar(&flowControlMaxQueueDepth, "max-gateway-queue-depth", 0, "Max gateway queue depth (0=unlimited)")
+	cmd.Flags().Float64Var(&flowControlQueueDepthThreshold, "queue-depth-threshold", 5, "Queue depth threshold for utilization detector")
+	cmd.Flags().Float64Var(&flowControlKVCacheUtilThreshold, "kv-cache-util-threshold", 0.8, "KV cache utilization threshold for utilization detector")
+	cmd.Flags().IntVar(&flowControlMaxConcurrency, "max-concurrency", 100, "Max concurrency per instance for concurrency detector")
 
 	// Per-pool hardware overrides
 	cmd.Flags().IntVar(&prefillTP, "prefill-tp", 0, "Tensor parallelism degree for prefill pool instances (0 = use global --tensor-parallelism)")
@@ -968,6 +1017,32 @@ var runCmd = &cobra.Command{
 
 		// Resolve latency backend configuration (single code path shared with replayCmd).
 		lr := resolveLatencyConfig(cmd)
+
+		// PD disaggregation requires ModelConfig for KV transfer duration derivation.
+		// Analytical backends populate ModelConfig from HF config.json; blackbox does not.
+		// When PD is enabled and ModelConfig is zero-valued, resolve and load it using the
+		// same resolution as analytical backends (--model-config-folder → local bundled → HuggingFace fetch → error).
+		if prefillInstances > 0 && lr.ModelConfig.NumHeads == 0 {
+			resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
+			if err != nil {
+				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing: %v", err)
+			}
+			hfPath := filepath.Join(resolved, "config.json")
+			hfConfig, parseErr := latency.ParseHFConfig(hfPath)
+			if parseErr != nil {
+				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing, but failed to parse %s: %v", hfPath, parseErr)
+			}
+			mc, mcErr := latency.GetModelConfigFromHF(hfConfig)
+			if mcErr != nil {
+				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing, but failed to extract ModelConfig: %v", mcErr)
+			}
+			applyWeightPrecisionFallback(mc, model, hfConfig.Raw)
+			if mc.BytesPerParam <= 0 {
+				logrus.Fatalf("PD disaggregation: could not determine model precision (BytesPerParam=%v) from %s — ensure torch_dtype or dtype is present in config.json", mc.BytesPerParam, hfPath)
+			}
+			lr.ModelConfig = *mc
+			logrus.Infof("PD disaggregation: loaded ModelConfig from %s for KV transfer derivation", hfPath)
+		}
 
 		// Per-pool hardware override vars. TotalKVBlocks is populated from per-pool KV
 		// auto-calc in the analytical backend block below (when applicable). TP/GPU/Backend/MaxModelLen
@@ -1261,9 +1336,6 @@ var runCmd = &cobra.Command{
 			if pdTransferBaseLatency < 0 || math.IsInf(pdTransferBaseLatency, 0) || math.IsNaN(pdTransferBaseLatency) {
 				logrus.Fatalf("--pd-transfer-base-latency must be a finite non-negative number, got %f", pdTransferBaseLatency)
 			}
-			if pdKVBytesPerToken <= 0 {
-				logrus.Fatalf("--pd-kv-bytes-per-token must be > 0, got %d", pdKVBytesPerToken)
-			}
 		}
 		if pdDecider == "prefix-threshold" && pdPrefixThreshold < 0 {
 			logrus.Fatalf("--pd-prefix-threshold must be >= 0, got %d", pdPrefixThreshold)
@@ -1392,6 +1464,7 @@ var runCmd = &cobra.Command{
 			TraceLevel:              traceLevel,
 			CounterfactualK:         counterfactualK,
 			SnapshotRefreshInterval: snapshotRefreshInterval,
+			CacheSignalDelay:        cacheSignalDelay,
 			PrefillInstances:        prefillInstances,
 			DecodeInstances:         decodeInstances,
 			PDDecider:               pdDecider,
@@ -1399,7 +1472,6 @@ var runCmd = &cobra.Command{
 			PDDirectDecodeThreshold: pdDirectDecodeThreshold,
 			PDTransferBandwidthGBps: pdTransferBandwidth,
 			PDTransferBaseLatencyMs: pdTransferBaseLatency,
-			PDKVBytesPerToken:       int64(pdKVBytesPerToken),
 			PDTransferContention:    pdTransferContention,
 			PrefillScorerConfigs:    prefillScorerCfgs,
 			DecodeScorerConfigs:     decodeScorerCfgs,
@@ -1408,6 +1480,13 @@ var runCmd = &cobra.Command{
 			TierShedThreshold:       tierShedThreshold,
 			TierShedMinPriority:     tierShedMinPriority,
 			TenantBudgets:           tenantBudgets,
+			FlowControlEnabled:              flowControlEnabled,
+			FlowControlDetector:             flowControlDetector,
+			FlowControlDispatchOrder:        flowControlDispatchOrder,
+			FlowControlMaxQueueDepth:        flowControlMaxQueueDepth,
+			FlowControlQueueDepthThreshold:  flowControlQueueDepthThreshold,
+			FlowControlKVCacheUtilThreshold: flowControlKVCacheUtilThreshold,
+			FlowControlMaxConcurrency:       flowControlMaxConcurrency,
 		}
 		var followUpRequests []*sim.Request
 		var onRequestDone func(*sim.Request, int64) []*sim.Request
@@ -1484,6 +1563,8 @@ var runCmd = &cobra.Command{
 		)
 		rawMetrics.ShedByTier = cs.ShedByTier()                             // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
 		rawMetrics.DeferredHorizonInterrupted = cs.DeferredQueueLen()        // Phase 1B-1b: deferred queue horizon count (FR-006)
+		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth()               // Issue #882: gateway queue depth at horizon
+		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()                 // Issue #882: gateway queue shed count
 
 		if rawMetrics.PD != nil && config.PDTransferContention {
 			rawMetrics.PD.PeakConcurrentTransfers = cs.PeakConcurrentTransfers()
@@ -1513,7 +1594,7 @@ var runCmd = &cobra.Command{
 		}
 
 		// Print anomaly counters if any detected
-		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.DeferredHorizonInterrupted > 0 {
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.DeferredHorizonInterrupted > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 {
 			fmt.Println("=== Anomaly Counters ===")
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
@@ -1533,6 +1614,12 @@ var runCmd = &cobra.Command{
 			fmt.Printf("Length-Capped Requests: %d\n", rawMetrics.LengthCappedRequests)
 			if rawMetrics.DeferredHorizonInterrupted > 0 {
 				fmt.Printf("Deferred (horizon-interrupted): %d\n", rawMetrics.DeferredHorizonInterrupted)
+			}
+			if rawMetrics.GatewayQueueDepth > 0 {
+				fmt.Printf("Gateway Queue Depth (horizon): %d\n", rawMetrics.GatewayQueueDepth)
+			}
+			if rawMetrics.GatewayQueueShed > 0 {
+				fmt.Printf("Gateway Queue Shed: %d\n", rawMetrics.GatewayQueueShed)
 			}
 		}
 

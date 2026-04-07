@@ -68,6 +68,7 @@ var (
 	validSchedulers        = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
 	validLatencyBackends          = map[string]bool{"": true, "blackbox": true, "roofline": true, "crossmodel": true, "trained-roofline": true}
 	validDisaggregationDeciders   = map[string]bool{"": true, "never": true, "always": true, "prefix-threshold": true, "direct-to-decode": true}
+	validSaturationDetectors      = map[string]bool{"": true, "never": true, "utilization": true, "concurrency": true}
 )
 
 // IsValidAdmissionPolicy returns true if name is a recognized admission policy.
@@ -105,6 +106,12 @@ func IsValidDisaggregationDecider(name string) bool { return validDisaggregation
 
 // ValidDisaggregationDeciderNames returns sorted valid disaggregation decider names (excluding empty).
 func ValidDisaggregationDeciderNames() []string { return validNamesList(validDisaggregationDeciders) }
+
+// IsValidSaturationDetector returns true if name is a recognized saturation detector.
+func IsValidSaturationDetector(name string) bool { return validSaturationDetectors[name] }
+
+// ValidSaturationDetectorNames returns sorted valid saturation detector names (excluding empty).
+func ValidSaturationDetectorNames() []string { return validNamesList(validSaturationDetectors) }
 
 // validNamesList returns sorted non-empty keys from a validity map.
 func validNamesList(m map[string]bool) []string {

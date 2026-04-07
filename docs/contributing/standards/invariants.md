@@ -8,7 +8,7 @@ Invariants are properties that must hold at all times during and after simulatio
 
 **Statement:** `injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out` at simulation end (all levels).
 
-**Cluster-level extension (Phase 1B-1b):** At cluster level, the deferred queue adds a sixth bucket: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out + deferred_horizon_interrupted`. `deferred_horizon_interrupted` counts Batch/Background requests still parked in the deferred queue when the simulation horizon is reached. Single-instance simulations have no deferred queue; `deferred_horizon_interrupted` is always zero there.
+**Cluster-level extension (Phase 1B-1b, issue #882):** At cluster level, the deferred queue, routing rejections, and gateway queue add additional buckets: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out + deferred_horizon_interrupted + routing_rejections + gateway_queue_depth + gateway_queue_shed`. `deferred_horizon_interrupted` counts Batch/Background requests still parked in the deferred queue when the simulation horizon is reached. `gateway_queue_depth` counts requests still in the gateway queue at horizon. `gateway_queue_shed` counts requests shed from the gateway queue due to capacity limits. Single-instance simulations have no deferred queue or gateway queue; all three terms are always zero there.
 
 **Full pipeline:** `num_requests == injected_requests + rejected_requests` (from anomaly counters).
 
@@ -83,8 +83,11 @@ Invariants are properties that must hold at all times during and after simulatio
 | BatchSize | Instance | Immediate | Periodic | `StepEvent.Execute()` |
 | KVUtilization | Instance | Immediate | Periodic | `FormBatch()` → `AllocateKVBlocks()` |
 | CacheHitRate | Instance | Immediate | Periodic | `FormBatch()` |
+| cacheQueryFn (precise-prefix-cache, no-hit-lru) ¹ | Instance (via StaleCacheIndex) | Ground truth (synchronous) | Demand-triggered (CacheSignalDelay interval, checked at routing decisions) | `StaleCacheIndex.RefreshIfNeeded()` in `buildRouterState()` |
 
-**Design implication:** When `--snapshot-refresh-interval > 0`, all Prometheus-sourced signals (QueueDepth, BatchSize, KVUtilization) share the same scrape interval — matching real vLLM deployments where all three are exposed via the same `/metrics` endpoint. `InFlightRequests` remains synchronous (gateway-local counter, not Prometheus-sourced).
+¹ `cacheQueryFn` freshness is governed by `--cache-signal-delay` (default 2s), not `--snapshot-refresh-interval`. The "interval=0" / "interval>0" columns for this row refer to `--cache-signal-delay`.
+
+**Design implication:** When `--snapshot-refresh-interval > 0`, all Prometheus-sourced signals (QueueDepth, BatchSize, KVUtilization) share the same scrape interval — matching real vLLM deployments where all three are exposed via the same `/metrics` endpoint. `InFlightRequests` remains synchronous (gateway-local counter, not Prometheus-sourced). When `--cache-signal-delay > 0` (default: 2s), prefix cache query closures use a separate periodic snapshot of each instance's `HashToBlock` map, modeling asynchronous KV event propagation from production llm-d. The 2s default matches llm-d's `defaultSpeculativeTTL` — the blind spot between routing decision and KV event arrival via ZMQ. Set `--cache-signal-delay 0` for oracle mode (live cache state).
 
 `EffectiveLoad()` = `QueueDepth + BatchSize + InFlightRequests`. The synchronous `InFlightRequests` term compensates for Periodic staleness in the other two terms.
 

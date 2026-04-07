@@ -15,6 +15,7 @@ import (
 )
 
 // newTestDeploymentConfig creates a DeploymentConfig suitable for testing.
+// Sets DefaultCacheSignalDelay for production-fidelity defaults.
 func newTestDeploymentConfig(numInstances int) DeploymentConfig {
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
@@ -25,7 +26,8 @@ func newTestDeploymentConfig(numInstances int) DeploymentConfig {
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0),
 		},
-		NumInstances: numInstances,
+		NumInstances:     numInstances,
+		CacheSignalDelay: DefaultCacheSignalDelay,
 	}
 }
 
@@ -1666,6 +1668,586 @@ func TestClusterSimulator_MaxModelLen_DroppedUnservable(t *testing.T) {
 		}
 		if !exists && !isDropped {
 			t.Errorf("Metrics.Requests should contain fit request %s", req.ID)
+		}
+	}
+}
+
+// TestClusterSimulator_FlowControl_NeverSaturated_PassThrough verifies BC-1:
+// NeverSaturated produces identical completed request counts to no flow control.
+func TestClusterSimulator_FlowControl_NeverSaturated_PassThrough(t *testing.T) {
+	configNoFC := newTestDeploymentConfig(2)
+	configWithFC := newTestDeploymentConfig(2)
+	configWithFC.FlowControlEnabled = true
+	configWithFC.FlowControlDetector = "never"
+	configWithFC.FlowControlDispatchOrder = "fifo"
+
+	requests := newTestRequests(10)
+	// Deep copy for the second run
+	requestsCopy := make([]*sim.Request, len(requests))
+	for i, r := range requests {
+		cp := *r
+		cp.InputTokens = make([]int, len(r.InputTokens))
+		copy(cp.InputTokens, r.InputTokens)
+		cp.OutputTokens = make([]int, len(r.OutputTokens))
+		copy(cp.OutputTokens, r.OutputTokens)
+		requestsCopy[i] = &cp
+	}
+
+	csNoFC := NewClusterSimulator(configNoFC, requests, nil)
+	csWithFC := NewClusterSimulator(configWithFC, requestsCopy, nil)
+	mustRun(t, csNoFC)
+	mustRun(t, csWithFC)
+
+	mNoFC := csNoFC.AggregatedMetrics()
+	mWithFC := csWithFC.AggregatedMetrics()
+	if mNoFC.CompletedRequests != mWithFC.CompletedRequests {
+		t.Errorf("pass-through: CompletedRequests %d != %d", mNoFC.CompletedRequests, mWithFC.CompletedRequests)
+	}
+	if mNoFC.DroppedUnservable != mWithFC.DroppedUnservable {
+		t.Errorf("pass-through: DroppedUnservable %d != %d", mNoFC.DroppedUnservable, mWithFC.DroppedUnservable)
+	}
+	if mNoFC.StillQueued != mWithFC.StillQueued {
+		t.Errorf("pass-through: StillQueued %d != %d", mNoFC.StillQueued, mWithFC.StillQueued)
+	}
+	if mNoFC.StillRunning != mWithFC.StillRunning {
+		t.Errorf("pass-through: StillRunning %d != %d", mNoFC.StillRunning, mWithFC.StillRunning)
+	}
+	if mNoFC.TimedOutRequests != mWithFC.TimedOutRequests {
+		t.Errorf("pass-through: TimedOutRequests %d != %d", mNoFC.TimedOutRequests, mWithFC.TimedOutRequests)
+	}
+	// NeverSaturated pass-through must not shed or hold any requests
+	if csWithFC.GatewayQueueDepth() != 0 {
+		t.Errorf("pass-through: GatewayQueueDepth should be 0, got %d", csWithFC.GatewayQueueDepth())
+	}
+	if csWithFC.GatewayQueueShed() != 0 {
+		t.Errorf("pass-through: GatewayQueueShed should be 0, got %d", csWithFC.GatewayQueueShed())
+	}
+}
+
+// TestClusterSimulator_FlowControl_GatewayQueueDelay verifies BC-8:
+// Requests dispatched through gateway queue under saturation gating have nonzero GatewayQueueDelay.
+func TestClusterSimulator_FlowControl_GatewayQueueDelay(t *testing.T) {
+	config := newTestDeploymentConfig(1)
+	config.FlowControlEnabled = true
+	config.FlowControlDetector = "concurrency"
+	config.FlowControlDispatchOrder = "fifo"
+	config.FlowControlMaxConcurrency = 1 // only 1 in-flight at a time — forces queuing
+
+	// Stagger arrivals so that by the time later requests are admitted,
+	// earlier ones have been routed and incremented inFlightRequests.
+	// RoutingLatency=0 in test config, so routing happens at admission time.
+	// We need enough spacing that RoutingDecisionEvent fires before the next arrival.
+	requests := newTestRequests(5)
+	for i, req := range requests {
+		req.ArrivalTime = int64(i) * 100 // 100 ticks apart
+	}
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	agg := cs.AggregatedMetrics()
+	if agg.CompletedRequests == 0 {
+		t.Fatal("expected some completed requests")
+	}
+
+	// With maxConcurrency=1 and all requests arriving at once, only the first dispatches
+	// immediately. The rest must wait in the gateway queue until completions free capacity.
+	foundEnqueued := false
+	foundNonZeroDelay := false
+	for _, req := range requests {
+		if req.GatewayEnqueueTime > 0 {
+			foundEnqueued = true
+		}
+		if req.GatewayDispatchTime > req.GatewayEnqueueTime && req.GatewayEnqueueTime > 0 {
+			foundNonZeroDelay = true
+		}
+	}
+	if !foundEnqueued {
+		t.Error("BC-8: expected at least one request with GatewayEnqueueTime > 0")
+	}
+	if !foundNonZeroDelay {
+		t.Error("BC-8: expected at least one request with nonzero gateway queue delay when concurrency-gated")
+	}
+}
+
+// TestClusterSimulator_FlowControl_Conservation verifies BC-10:
+// INV-1 holds with flow control enabled.
+func TestClusterSimulator_FlowControl_Conservation(t *testing.T) {
+	config := newTestDeploymentConfig(2)
+	config.FlowControlEnabled = true
+	config.FlowControlDetector = "utilization"
+	config.FlowControlDispatchOrder = "priority"
+	config.FlowControlMaxQueueDepth = 5
+	config.FlowControlQueueDepthThreshold = 2
+	config.FlowControlKVCacheUtilThreshold = 0.5
+
+	requests := newTestRequests(20)
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	gwDepth := cs.GatewayQueueDepth()
+	gwShed := cs.GatewayQueueShed()
+
+	// INV-1: injected == completed + queued + running + dropped + timedout + deferred + routingRejections + gwDepth + gwShed
+	injected := len(requests) - cs.RejectedRequests()
+	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests + cs.DeferredQueueLen() + cs.RoutingRejections() + gwDepth + gwShed
+	if injected != accounted {
+		t.Errorf("INV-1: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d deferred=%d routingRejections=%d gwDepth=%d gwShed=%d)",
+			injected, accounted,
+			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
+			m.TimedOutRequests, cs.DeferredQueueLen(), cs.RoutingRejections(), gwDepth, gwShed)
+	}
+}
+
+// TestClusterSimulator_FlowControl_Accessors_BeforeRun verifies zero values
+// when flow control is disabled or before run.
+func TestClusterSimulator_FlowControl_Accessors_Disabled(t *testing.T) {
+	config := newTestDeploymentConfig(1)
+	// flow control NOT enabled
+	cs := NewClusterSimulator(config, newTestRequests(3), nil)
+	mustRun(t, cs)
+
+	if cs.GatewayQueueDepth() != 0 {
+		t.Errorf("GatewayQueueDepth should be 0 when disabled, got %d", cs.GatewayQueueDepth())
+	}
+	if cs.GatewayQueueShed() != 0 {
+		t.Errorf("GatewayQueueShed should be 0 when disabled, got %d", cs.GatewayQueueShed())
+	}
+}
+
+// TestNewClusterSimulator_UsesPoolGPUType verifies the observable hardware commitment:
+// when NodePools are configured, GPU() on each placed instance reflects the pool's
+// gpu_type (authoritative), not the CLI --gpu flag.
+//
+// GPU() is a public behavioral API that exposes the hardware commitment made at construction.
+// The refactor-survival test passes: any reimplementation preserving SC-004 behavior
+// ("pool gpu_type overrides CLI --gpu when NodePools are present") would produce the same
+// GPU() result. The counter-assertion (no NodePools → CLI flag preserved) confirms the
+// override is specific to the NodePools construction path, not a general override of the CLI flag.
+func TestNewClusterSimulator_UsesPoolGPUType(t *testing.T) {
+	// GIVEN: CLI --gpu flag = "H100", pool gpu_type = "A100" — they differ intentionally.
+	sharedConfig := sim.SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0),
+		KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+		BatchConfig:         sim.NewBatchConfig(4, 2048, 0),
+		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+	}
+
+	// WHEN: NodePools path — pool is authoritative (SC-004).
+	withPools := DeploymentConfig{
+		SimConfig:    sharedConfig,
+		NumInstances: 2,
+		NodePools: []NodePoolConfig{
+			{Name: "a100-pool", GPUType: "A100", GPUsPerNode: 8, InitialNodes: 2, MaxNodes: 2, GPUMemoryGiB: 80},
+		},
+		InstanceLifecycle: InstanceLifecycleConfig{},
+	}
+	cs := NewClusterSimulator(withPools, nil, nil)
+	if len(cs.instances) != 2 {
+		t.Fatalf("expected 2 placed instances, got %d", len(cs.instances))
+	}
+	// THEN: GPU() = "A100" (pool gpu_type overrides CLI --gpu flag "H100").
+	for _, inst := range cs.instances {
+		if got := inst.GPU(); got != "A100" {
+			t.Errorf("pool path: instance %s: GPU() = %q, want %q (pool gpu_type must override CLI --gpu)", inst.ID(), got, "A100")
+		}
+	}
+
+	// Counter-assertion: without NodePools, CLI --gpu flag "H100" is preserved unchanged.
+	// This confirms the pool override is specific to the NodePools construction path.
+	withoutPools := DeploymentConfig{
+		SimConfig:         sharedConfig,
+		NumInstances:      2,
+		InstanceLifecycle: InstanceLifecycleConfig{},
+	}
+	cs2 := NewClusterSimulator(withoutPools, nil, nil)
+	if len(cs2.instances) != 2 {
+		t.Fatalf("counter-assertion: expected 2 instances, got %d", len(cs2.instances))
+	}
+	for _, inst := range cs2.instances {
+		if got := inst.GPU(); got != "H100" {
+			t.Errorf("no-pools path: instance %s: GPU() = %q, want %q (CLI --gpu must be preserved when no NodePools)", inst.ID(), got, "H100")
+		}
+	}
+}
+
+// TestNewClusterSimulator_NoNodePools_DeterminismPreserved verifies INV-6:
+// when NodePools is empty, two runs with the same seed produce byte-identical scalar metrics.
+func TestNewClusterSimulator_NoNodePools_DeterminismPreserved(t *testing.T) {
+	// NodePools intentionally empty (not set in newTestDeploymentConfig)
+	config := newTestDeploymentConfig(2)
+
+	cs1 := NewClusterSimulator(config, newTestRequests(100), nil)
+	mustRun(t, cs1)
+
+	cs2 := NewClusterSimulator(config, newTestRequests(100), nil)
+	mustRun(t, cs2)
+
+	m1 := cs1.AggregatedMetrics()
+	m2 := cs2.AggregatedMetrics()
+
+	// Compare all scalar fields (INV-6: same seed must produce identical results).
+	if m1.CompletedRequests != m2.CompletedRequests {
+		t.Errorf("CompletedRequests: run1=%d, run2=%d (INV-6 violation)", m1.CompletedRequests, m2.CompletedRequests)
+	}
+	if m1.TotalInputTokens != m2.TotalInputTokens {
+		t.Errorf("TotalInputTokens: run1=%d, run2=%d (INV-6 violation)", m1.TotalInputTokens, m2.TotalInputTokens)
+	}
+	if m1.TotalOutputTokens != m2.TotalOutputTokens {
+		t.Errorf("TotalOutputTokens: run1=%d, run2=%d (INV-6 violation)", m1.TotalOutputTokens, m2.TotalOutputTokens)
+	}
+	if m1.SimEndedTime != m2.SimEndedTime {
+		t.Errorf("SimEndedTime: run1=%d, run2=%d (INV-6 violation)", m1.SimEndedTime, m2.SimEndedTime)
+	}
+	if m1.PeakKVBlocksUsed != m2.PeakKVBlocksUsed {
+		t.Errorf("PeakKVBlocksUsed: run1=%d, run2=%d (INV-6 violation)", m1.PeakKVBlocksUsed, m2.PeakKVBlocksUsed)
+	}
+	if m1.PreemptionCount != m2.PreemptionCount {
+		t.Errorf("PreemptionCount: run1=%d, run2=%d (INV-6 violation)", m1.PreemptionCount, m2.PreemptionCount)
+	}
+	if m1.KVAllocationFailures != m2.KVAllocationFailures {
+		t.Errorf("KVAllocationFailures: run1=%d, run2=%d (INV-6 violation)", m1.KVAllocationFailures, m2.KVAllocationFailures)
+	}
+	if m1.StillQueued != m2.StillQueued {
+		t.Errorf("StillQueued: run1=%d, run2=%d (INV-6 violation)", m1.StillQueued, m2.StillQueued)
+	}
+	if m1.StillRunning != m2.StillRunning {
+		t.Errorf("StillRunning: run1=%d, run2=%d (INV-6 violation)", m1.StillRunning, m2.StillRunning)
+	}
+	if m1.DroppedUnservable != m2.DroppedUnservable {
+		t.Errorf("DroppedUnservable: run1=%d, run2=%d (INV-6 violation)", m1.DroppedUnservable, m2.DroppedUnservable)
+	}
+	if m1.LengthCappedRequests != m2.LengthCappedRequests {
+		t.Errorf("LengthCappedRequests: run1=%d, run2=%d (INV-6 violation)", m1.LengthCappedRequests, m2.LengthCappedRequests)
+	}
+	if m1.TimedOutRequests != m2.TimedOutRequests {
+		t.Errorf("TimedOutRequests: run1=%d, run2=%d (INV-6 violation)", m1.TimedOutRequests, m2.TimedOutRequests)
+	}
+	if m1.TTFTSum != m2.TTFTSum {
+		t.Errorf("TTFTSum: run1=%d, run2=%d (INV-6 violation)", m1.TTFTSum, m2.TTFTSum)
+	}
+	if m1.ITLSum != m2.ITLSum {
+		t.Errorf("ITLSum: run1=%d, run2=%d (INV-6 violation)", m1.ITLSum, m2.ITLSum)
+	}
+}
+
+// T048 — SC-001 (roofline, sync path): when NodePools are configured, HWConfigByGPU must supply
+// the pool's hardware calibration to the roofline latency model. The roofline model uses
+// TFlopsPeak/BwPeakTBs from HWConfigByGPU[pool.gpu_type], not from the CLI --gpu HWConfig.
+//
+// Observable: roofline step time is proportional to hardware speed. An artificially slow A100
+// calibration (TFlopsPeak=1e-6, BwPeakTBs=1e-8) produces step times >> horizon, yielding zero
+// completions. An artificially fast H100 calibration yields step time ~1µs, completing all 5
+// requests well within the horizon. If HWConfigByGPU is ignored, both clusters use the same
+// fast H100 calibration → same completions → assertion fails.
+//
+// Refactor survival: any reimplementation that correctly applies pool hardware calibration to
+// the roofline model will produce fewer completions on the slow-calibrated cluster. The test
+// makes no assertion about internal types, field names, or construction order.
+func TestNewClusterSimulator_RooflineUsesPoolHWConfig(t *testing.T) {
+	mc := sim.ModelConfig{
+		NumLayers: 4, HiddenDim: 256, NumHeads: 4, NumKVHeads: 4,
+		BytesPerParam: 2.0, IntermediateDim: 512, VocabSize: 1000,
+	}
+	// Slow A100: artificially low TFLOPS/BW → weight-BW step time >> 1s horizon.
+	slowA100 := sim.HardwareCalib{TFlopsPeak: 1e-6, BwPeakTBs: 1e-8, MfuPrefill: 0.3, MfuDecode: 0.3}
+	// Fast H100: realistic values → step time clamps to 1µs minimum.
+	fastH100 := sim.HardwareCalib{TFlopsPeak: 312.0, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.5}
+
+	baseSimCfg := sim.SimConfig{
+		Horizon:             1_000_000, // 1 second
+		Seed:                42,
+		ModelHardwareConfig: sim.NewModelHardwareConfig(mc, fastH100, "test-model", "H100", 1, "roofline", 0),
+		KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+		BatchConfig:         sim.NewBatchConfig(8, 2048, 0),
+		LatencyCoeffs:       sim.NewLatencyCoeffs(nil, []float64{0, 0, 0}),
+	}
+
+	makeReqs := func() []*sim.Request {
+		reqs := make([]*sim.Request, 5)
+		for i := range reqs {
+			reqs[i] = &sim.Request{
+				ID:           fmt.Sprintf("req_%d", i),
+				ArrivalTime:  int64(i) * 100,
+				InputTokens:  make([]int, 50),
+				OutputTokens: make([]int, 20),
+				State:        sim.StateQueued,
+			}
+		}
+		return reqs
+	}
+
+	// Pool cluster: pool gpu_type=A100; HWConfigByGPU provides slow A100 calibration.
+	// CLI SimConfig.HWConfig is fast H100 — must be overridden by HWConfigByGPU lookup.
+	poolCfg := DeploymentConfig{
+		SimConfig:    baseSimCfg,
+		NumInstances: 1,
+		NodePools: []NodePoolConfig{
+			{Name: "a100-pool", GPUType: "A100", GPUsPerNode: 8, InitialNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80},
+		},
+		HWConfigByGPU: map[string]sim.HardwareCalib{
+			"A100": slowA100,
+			"H100": fastH100,
+		},
+	}
+	csPool := NewClusterSimulator(poolCfg, makeReqs(), nil)
+	mustRun(t, csPool)
+	completedPool := csPool.AggregatedMetrics().CompletedRequests
+
+	// No-pool cluster: uses CLI H100 calibration directly (no NodePools, no HWConfigByGPU).
+	noPoolCfg := DeploymentConfig{
+		SimConfig:    baseSimCfg,
+		NumInstances: 1,
+	}
+	csNoPool := NewClusterSimulator(noPoolCfg, makeReqs(), nil)
+	mustRun(t, csNoPool)
+	completedNoPool := csNoPool.AggregatedMetrics().CompletedRequests
+
+	// THEN: pool cluster completes fewer requests (slow A100 → ~0 completions vs fast H100 → 5).
+	// If HWConfigByGPU is ignored, both clusters use fast H100 → equal completions → fails.
+	if completedPool >= completedNoPool {
+		t.Errorf("SC-001 (roofline, sync): pool cluster completed %d requests, no-pool cluster completed %d; "+
+			"expected pool cluster to complete fewer (slow A100 calibration must be applied via HWConfigByGPU, not ignored)",
+			completedPool, completedNoPool)
+	}
+}
+
+// T049 — SC-001 (roofline, deferred path): same hardware calibration contract as T048,
+// but for instances constructed in NodeReadyEvent.Execute (InitialNodes=0).
+// The deferred construction path must also apply HWConfigByGPU[pool.gpu_type] as HWConfig.
+func TestNodeReadyEvent_RooflineUsesPoolHWConfig(t *testing.T) {
+	mc := sim.ModelConfig{
+		NumLayers: 4, HiddenDim: 256, NumHeads: 4, NumKVHeads: 4,
+		BytesPerParam: 2.0, IntermediateDim: 512, VocabSize: 1000,
+	}
+	slowA100 := sim.HardwareCalib{TFlopsPeak: 1e-6, BwPeakTBs: 1e-8, MfuPrefill: 0.3, MfuDecode: 0.3}
+	fastH100 := sim.HardwareCalib{TFlopsPeak: 312.0, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.5}
+
+	baseSimCfg := sim.SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		ModelHardwareConfig: sim.NewModelHardwareConfig(mc, fastH100, "test-model", "H100", 1, "roofline", 0),
+		KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+		BatchConfig:         sim.NewBatchConfig(8, 2048, 0),
+		LatencyCoeffs:       sim.NewLatencyCoeffs(nil, []float64{0, 0, 0}),
+	}
+
+	makeReqs := func() []*sim.Request {
+		reqs := make([]*sim.Request, 5)
+		for i := range reqs {
+			reqs[i] = &sim.Request{
+				ID:           fmt.Sprintf("req_%d", i),
+				ArrivalTime:  int64(i)*100 + 200, // arrive after node is ready (T=0)
+				InputTokens:  make([]int, 50),
+				OutputTokens: make([]int, 20),
+				State:        sim.StateQueued,
+			}
+		}
+		return reqs
+	}
+
+	// Pool cluster (deferred): InitialNodes=0 → all instances pending until NodeReadyEvent.
+	deferredCfg := DeploymentConfig{
+		SimConfig:    baseSimCfg,
+		NumInstances: 1,
+		NodePools: []NodePoolConfig{
+			{Name: "a100-pool", GPUType: "A100", GPUsPerNode: 8, InitialNodes: 0, MaxNodes: 1, GPUMemoryGiB: 80},
+		},
+		HWConfigByGPU: map[string]sim.HardwareCalib{
+			"A100": slowA100,
+			"H100": fastH100,
+		},
+	}
+	csDeferred := NewClusterSimulator(deferredCfg, makeReqs(), nil)
+	if len(csDeferred.instances) != 0 {
+		t.Fatalf("precondition: expected 0 instances before NodeReadyEvent (InitialNodes=0), got %d", len(csDeferred.instances))
+	}
+	// Trigger deferred construction via NodeReadyEvent (simulates provisioning delay elapsing).
+	node, _ := csDeferred.placement.ProvisionNode("a100-pool", 0)
+	event := &NodeReadyEvent{timestamp: 0, nodeID: node.ID}
+	event.Execute(csDeferred)
+	if len(csDeferred.instances) == 0 {
+		t.Fatal("NodeReadyEvent.Execute did not construct any deferred instances")
+	}
+	mustRun(t, csDeferred)
+	completedDeferred := csDeferred.AggregatedMetrics().CompletedRequests
+
+	// No-pool cluster uses fast H100 calibration directly.
+	noPoolCfg := DeploymentConfig{
+		SimConfig:    baseSimCfg,
+		NumInstances: 1,
+	}
+	csNoPool := NewClusterSimulator(noPoolCfg, makeReqs(), nil)
+	mustRun(t, csNoPool)
+	completedNoPool := csNoPool.AggregatedMetrics().CompletedRequests
+
+	// THEN: deferred cluster completes fewer requests (slow A100) than no-pool cluster (fast H100).
+	if completedDeferred >= completedNoPool {
+		t.Errorf("SC-001 (roofline, deferred): deferred cluster completed %d requests, no-pool cluster completed %d; "+
+			"expected deferred cluster to complete fewer (HWConfigByGPU must be applied in NodeReadyEvent path)",
+			completedDeferred, completedNoPool)
+	}
+}
+
+// T050 — E2E integration: pool hardware calibration flows through the full Run() pipeline to
+// output metrics. Closes the E2E test gap deferred from PR #892 (issue #888 test coverage).
+//
+// GIVEN NodePools with gpu_type="slow-gpu" and HWConfigByGPU providing a slow calibration
+// (BwPeakTBs=0.1 TB/s), while the CLI SimConfig carries a fast calibration (BwPeakTBs=3.0 TB/s),
+// WHEN Run() executes with realistic requests generated by testGenerateRequests,
+// THEN AggregatedMetrics().RequestTTFTs shows higher p50 TTFT for the pool cluster than for a
+// no-pool cluster using the fast calibration directly.
+//
+// This distinguishes from T048/T049 (which check CompletedRequests count only): here both clusters
+// complete requests and the assertion is on actual TTFT metric values, verifying correctness of the
+// full latency pipeline (hardware calibration → roofline model → step time → TTFT metric).
+//
+// Refactor survival: any reimplementation that correctly routes pool HWConfig to the roofline model
+// will produce higher TTFT for the slow-calibrated cluster. No internal fields are inspected.
+func TestClusterRun_E2E_NodePoolsHWConfig_TTFTReflectsPoolHardware(t *testing.T) {
+	mc := sim.ModelConfig{
+		NumLayers: 4, HiddenDim: 256, NumHeads: 4, NumKVHeads: 4,
+		BytesPerParam: 2.0, IntermediateDim: 512, VocabSize: 1000,
+	}
+	// slowGPU: low BW → weight-BW step time ~40µs per step for this model size.
+	slowGPU := sim.HardwareCalib{TFlopsPeak: 10.0, BwPeakTBs: 0.1, MfuPrefill: 0.5, MfuDecode: 0.5}
+	// fastGPU: high BW → weight-BW step time ~1µs per step — ~40x faster.
+	fastGPU := sim.HardwareCalib{TFlopsPeak: 312.0, BwPeakTBs: 3.0, MfuPrefill: 0.5, MfuDecode: 0.5}
+
+	horizon := int64(10_000_000) // 10 seconds — long enough for both configs to complete requests
+	baseSimCfg := sim.SimConfig{
+		Horizon:             horizon,
+		Seed:                42,
+		ModelHardwareConfig: sim.NewModelHardwareConfig(mc, fastGPU, "test-model", "fast-gpu", 1, "roofline", 0),
+		KVCacheConfig:       sim.NewKVCacheConfig(200, 16, 0, 0, 0, 0),
+		BatchConfig:         sim.NewBatchConfig(8, 2048, 0),
+		LatencyCoeffs:       sim.NewLatencyCoeffs(nil, []float64{0, 0, 0}),
+	}
+
+	// Low rate (1 req/s) so queuing delay is negligible; TTFT is dominated by prefill step time.
+	makeReqs := func() []*sim.Request {
+		return testGenerateRequests(42, horizon, 1.0/1e6, 8,
+			0, 100, 20, 10, 200, 50, 10, 10, 100)
+	}
+
+	// Pool cluster: pool gpu_type=slow-gpu; HWConfigByGPU overrides CLI fast-gpu with slow calibration.
+	poolCfg := DeploymentConfig{
+		SimConfig:    baseSimCfg,
+		NumInstances: 1,
+		NodePools: []NodePoolConfig{
+			{Name: "slow-pool", GPUType: "slow-gpu", GPUsPerNode: 8, InitialNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80},
+		},
+		HWConfigByGPU: map[string]sim.HardwareCalib{
+			"slow-gpu": slowGPU,
+			"fast-gpu": fastGPU,
+		},
+	}
+	csPool := NewClusterSimulator(poolCfg, makeReqs(), nil)
+	mustRun(t, csPool)
+	metricsPool := csPool.AggregatedMetrics()
+
+	// No-pool cluster: uses CLI fast-gpu calibration directly (no NodePools, no HWConfigByGPU).
+	noPoolCfg := DeploymentConfig{SimConfig: baseSimCfg, NumInstances: 1}
+	csNoPool := NewClusterSimulator(noPoolCfg, makeReqs(), nil)
+	mustRun(t, csNoPool)
+	metricsNoPool := csNoPool.AggregatedMetrics()
+
+	if metricsPool.CompletedRequests == 0 {
+		t.Fatal("E2E precondition: pool cluster (slow-gpu) completed 0 requests — horizon too short or calibration too extreme")
+	}
+	if metricsNoPool.CompletedRequests == 0 {
+		t.Fatal("E2E precondition: no-pool cluster (fast-gpu) completed 0 requests")
+	}
+
+	// THEN: p50 TTFT for pool (slow-gpu) must exceed p50 TTFT for no-pool (fast-gpu).
+	// slowGPU BW is 30x lower → prefill step time is ~30x longer → higher TTFT.
+	// If HWConfigByGPU is ignored, both use fast-gpu → equal TTFT → assertion fails.
+	p50Pool := percentile(mapValues(metricsPool.RequestTTFTs), 50)
+	p50NoPool := percentile(mapValues(metricsNoPool.RequestTTFTs), 50)
+	if p50Pool <= p50NoPool {
+		t.Errorf("E2E (T050): pool (slow-gpu) p50 TTFT = %.2fµs, no-pool (fast-gpu) p50 TTFT = %.2fµs; "+
+			"expected pool TTFT > no-pool TTFT (pool hardware calibration must flow through to TTFT metrics, not be overridden by CLI --gpu)",
+			p50Pool, p50NoPool)
+	}
+}
+
+// TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType verifies US2 deferred construction:
+// GIVEN a cluster with NodePools but InitialNodes=0 (no initial capacity), all instances start pending.
+// WHEN a NodeReadyEvent fires (node provisioned and marked ready).
+// THEN the newly constructed instance uses the pool's GPU type (SC-003: pool-authoritative).
+// THEN the instance is registered with the snapshot provider and is routable (SC-003).
+func TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType(t *testing.T) {
+	// GIVEN: CLI --gpu flag = "H100", pool gpu_type = "A100" — they differ intentionally.
+	// InitialNodes=0 means no nodes at startup → all instances deferred (pending).
+	cfg := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             1_000_000,
+			Seed:                42,
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0),
+			KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(4, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		},
+		NumInstances: 2,
+		NodePools: []NodePoolConfig{
+			{
+				Name:         "a100-pool",
+				GPUType:      "A100",
+				GPUsPerNode:  8,
+				InitialNodes: 0, // no initial capacity — all instances start pending
+				MaxNodes:     2,
+				GPUMemoryGiB: 80,
+			},
+		},
+	}
+
+	cs := NewClusterSimulator(cfg, nil, nil)
+
+	// Precondition: all instances are pending (no capacity at startup).
+	if len(cs.instances) != 0 {
+		t.Fatalf("precondition failed: expected 0 placed instances at startup (InitialNodes=0), got %d", len(cs.instances))
+	}
+	if cs.placement == nil {
+		t.Fatal("precondition failed: placement must be non-nil when NodePools are configured")
+	}
+
+	// Provision a node in the pool (sets it to Provisioning state).
+	node, _ := cs.placement.ProvisionNode("a100-pool", 0)
+
+	// Fire NodeReadyEvent directly (simulate provisioning delay elapsing).
+	event := &NodeReadyEvent{timestamp: 0, nodeID: node.ID}
+	event.Execute(cs)
+
+	// THEN: instances grew — deferred construction fired.
+	if len(cs.instances) == 0 {
+		t.Fatal("NodeReadyEvent.Execute did not construct any deferred instances")
+	}
+
+	// THEN: pool GPU type ("A100") is used, not CLI --gpu ("H100").
+	for _, inst := range cs.instances {
+		if got := inst.GPU(); got != "A100" {
+			t.Errorf("deferred instance %s: GPU() = %q, want %q (pool gpu_type must override CLI --gpu in deferred path)",
+				inst.ID(), got, "A100")
+		}
+		// Verify scheduleInstanceLoadedEvent fired and instance reached Active state
+		// (WarmUpRequestCount=0 and loading delay=0, so Loading → Active immediately).
+		if got := inst.State; got != InstanceStateActive {
+			t.Errorf("instance %s: State = %v, want InstanceStateActive (scheduleInstanceLoadedEvent must fire)", inst.ID(), got)
+		}
+	}
+
+	// THEN: instance is registered with snapshotProvider and routable (SC-003).
+	// Verify AddInstance was called by querying Snapshot — a registered instance returns
+	// a snapshot with matching ID; an unregistered instance would panic or return wrong ID.
+	if cs.snapshotProvider != nil {
+		for _, inst := range cs.instances {
+			snap := cs.snapshotProvider.Snapshot(inst.ID(), cs.clock)
+			if snap.ID != string(inst.ID()) {
+				t.Errorf("instance %s not registered with snapshotProvider: Snapshot().ID = %q, want %q (deferred instance must be routable)",
+					inst.ID(), snap.ID, string(inst.ID()))
+			}
 		}
 	}
 }

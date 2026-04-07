@@ -23,14 +23,15 @@ type RequestMetrics struct {
 	TenantID         string  `json:"tenant_id,omitempty"`  // PR10: for per-tenant fairness
 	HandledBy        string  `json:"handled_by,omitempty"` // #181: instance that processed this request
 	Model            string  `json:"model,omitempty"`      // W0-1: model tag for per-model metrics
-	LengthCapped     bool    `json:"length_capped,omitempty"` // #588: per-request indicator for BC-5 force-completion
+	LengthCapped      bool    `json:"length_capped,omitempty"`       // #588: per-request indicator for BC-5 force-completion
+	GatewayQueueDelay float64 `json:"gateway_queue_delay_ms,omitempty"` // #882: time spent in gateway queue (ms)
 }
 
 // NewRequestMetrics creates a RequestMetrics from a Request and its arrival time.
 // This is the canonical constructor — all production code MUST use this instead of
 // inline RequestMetrics{} literals. Test code may still use literals for partial construction.
 func NewRequestMetrics(req *Request, arrivedAt float64) RequestMetrics {
-	return RequestMetrics{
+	rm := RequestMetrics{
 		ID:               req.ID,
 		ArrivedAt:        arrivedAt,
 		NumPrefillTokens: len(req.InputTokens),
@@ -41,6 +42,11 @@ func NewRequestMetrics(req *Request, arrivedAt float64) RequestMetrics {
 		Model:            req.Model,
 		LengthCapped:     req.LengthCapped,
 	}
+	// Flow control: compute gateway queue delay when timestamps are set (#882)
+	if req.GatewayDispatchTime > 0 && req.GatewayEnqueueTime > 0 {
+		rm.GatewayQueueDelay = float64(req.GatewayDispatchTime-req.GatewayEnqueueTime) / 1000.0
+	}
+	return rm
 }
 
 // MetricsOutput defines the JSON structure for the saved metrics

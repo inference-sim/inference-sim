@@ -3,8 +3,10 @@ package sim
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -380,6 +382,48 @@ func TestSaveResults_DroppedUnservable_InJSON(t *testing.T) {
 	if output.InjectedRequests != 2 {
 		t.Errorf("InjectedRequests = %d, want 2 (should include dropped)", output.InjectedRequests)
 	}
+}
+
+// TestSaveResults_AlwaysEmitsHeader_ZeroCompletions verifies that the
+// === Simulation Metrics === header is written to stdout even when
+// CompletedRequests == 0 (issue #926).
+//
+// GIVEN metrics with zero completions (all requests dropped as unservable)
+// WHEN SaveResults is called
+// THEN stdout contains "=== Simulation Metrics ===" and a valid JSON block
+func TestSaveResults_AlwaysEmitsHeader_ZeroCompletions(t *testing.T) {
+	m := NewMetrics()
+	m.DroppedUnservable = 100
+	m.SimEndedTime = 1_000_000
+
+	// Capture stdout
+	origStdout := os.Stdout
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stdout = w
+
+	saveErr := m.SaveResults("test", 10_000_000, 100, "")
+
+	require.NoError(t, w.Close())
+	os.Stdout = origStdout
+
+	var buf []byte
+	buf, err = io.ReadAll(r)
+	require.NoError(t, err)
+	stdout := string(buf)
+
+	require.NoError(t, saveErr)
+	assert.Contains(t, stdout, "=== Simulation Metrics ===")
+
+	// Extract and parse the JSON block after the header
+	parts := strings.SplitN(stdout, "=== Simulation Metrics ===\n", 2)
+	require.Len(t, parts, 2, "expected header + JSON")
+
+	var out MetricsOutput
+	require.NoError(t, json.Unmarshal([]byte(strings.TrimSpace(parts[1])), &out))
+	assert.Equal(t, 0, out.CompletedRequests)
+	assert.Equal(t, 100, out.DroppedUnservable)
+	assert.Equal(t, 100, out.InjectedRequests)
 }
 
 // BC-3: LengthCappedRequests appears in JSON output

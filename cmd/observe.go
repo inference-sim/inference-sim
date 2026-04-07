@@ -142,6 +142,17 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 	if c.apiKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
+	// GIE headers for llm-d admission control.
+	// x-gateway-inference-fairness-id: tenant key for per-tenant fair-share scheduling.
+	// x-gateway-inference-objective: name of an InferenceObjective CRD on the target
+	//   cluster. GIE's EPP looks up the CRD and resolves its spec.priority integer
+	//   for queue ordering and shedding. If no matching CRD exists, defaults to 0.
+	if req.TenantID != "" {
+		httpReq.Header.Set("x-gateway-inference-fairness-id", req.TenantID)
+	}
+	if req.SLOClass != "" {
+		httpReq.Header.Set("x-gateway-inference-objective", req.SLOClass)
+	}
 
 	// Record send time
 	record.SendTimeUs = time.Now().UnixMicro()

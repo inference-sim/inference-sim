@@ -8,6 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/latency"
 	"github.com/inference-sim/inference-sim/sim/trace"
 )
 
@@ -115,11 +116,22 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 		cs.transferStartCount++
 	}
 
-	// Transfer duration: base_latency_us + (numBlocks * blockSizeTokens * bytesPerToken) / effectiveBandwidthBytesPerUs
+	// Transfer duration: base_latency_us + (numBlocks * blockSizeTokens * kvBytesPerToken) / effectiveBandwidthBytesPerUs
+	// Derive per-GPU KV bytes per token from model config using the prefill pool's TP.
+	kvBytesPerTokenF, err := latency.KVBytesPerToken(cs.config.ModelConfig, cs.config.EffectivePrefillTP())
+	if err != nil {
+		// Unreachable: NewClusterSimulator validates KVBytesPerToken at construction time
+		// when PD disaggregation is enabled. If this fires, it indicates a missing
+		// validation in the construction path.
+		panic(fmt.Sprintf("unreachable: KVTransferStartedEvent: failed to derive KV bytes per token: %v", err))
+	}
+
 	numBlocks := e.parentReq.NumKVBlocks
-	blockSizeBytes := cs.config.BlockSizeTokens * cs.config.PDKVBytesPerToken
-	// Use float64 for transferBytes to avoid int64 overflow with large blocks
-	transferBytes := float64(numBlocks) * float64(blockSizeBytes)
+	// Defer truncation: multiply float64 kvBytesPerToken by blockSize before converting,
+	// matching the CalculateKVBlocks pattern to avoid precision loss for fractional
+	// BytesPerParam (e.g., INT4=0.5 at high TP).
+	blockSizeBytesF := float64(cs.config.BlockSizeTokens) * kvBytesPerTokenF
+	transferBytes := float64(numBlocks) * blockSizeBytesF
 
 	bandwidthBytesPerUs := cs.config.PDTransferBandwidthGBps * 1000.0 // GB/s → bytes/μs
 	baseLatUs := cs.config.PDTransferBaseLatencyMs * 1000.0            // ms → μs

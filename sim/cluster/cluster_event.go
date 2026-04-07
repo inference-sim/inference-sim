@@ -14,7 +14,7 @@ import (
 // These are separate from sim.Event and processed by ClusterSimulator's control plane.
 type ClusterEvent interface {
 	Timestamp() int64
-	Priority() int // 0=Arrival, 1=Admission, 2=Routing, 3=Disaggregation, 4-7=PD events
+	Priority() int // 0=Arrival, 1=Admission, 2=Routing, 3=Disaggregation, 4-7=PD, 8=ScalingTick, 9=ScaleActuation
 	Execute(*ClusterSimulator)
 }
 
@@ -62,6 +62,12 @@ func (q *ClusterEventQueue) Pop() any {
 // Complexity: O(N) per call where N = number of instances. At current BLIS scale (≤32 instances)
 // this is negligible. A model→instances index could pre-partition if instance counts exceed 100.
 func buildRouterState(cs *ClusterSimulator, req *sim.Request) *sim.RouterState {
+	// Refresh stale cache snapshots if interval has elapsed (issue #919).
+	// No-op when staleCache is nil (oracle mode, BC-7).
+	if cs.staleCache != nil {
+		cs.staleCache.RefreshIfNeeded(cs.clock)
+	}
+
 	snapshots := make([]sim.RoutingSnapshot, 0, len(cs.instances))
 	for _, inst := range cs.instances {
 		// Filter by lifecycle state (T044): exclude non-routable instances
@@ -76,6 +82,9 @@ func buildRouterState(cs *ClusterSimulator, req *sim.Request) *sim.RouterState {
 		snap := cs.snapshotProvider.Snapshot(inst.ID(), cs.clock)
 		snap.InFlightRequests = cs.inFlightRequests[string(inst.ID())]
 		snap.Model = inst.Model
+		snap.GPUType = inst.GPU()
+		snap.TPDegree = inst.TPDegree
+		snap.CostPerHour = inst.CostPerHour
 		snapshots = append(snapshots, snap)
 	}
 	return &sim.RouterState{
@@ -201,6 +210,25 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 			Admitted:  true,
 			Reason:    reason,
 		})
+	}
+
+	// Flow control: enqueue in gateway queue instead of scheduling routing directly.
+	// When flow control is disabled (default), the original path is unchanged (BC-1).
+	if cs.flowControlEnabled {
+		e.request.GatewayEnqueueTime = cs.clock
+		shed := cs.gatewayQueue.Enqueue(e.request, cs.nextSeqID())
+		if shed {
+			// Trace gap: this request was admitted (RecordAdmission above wrote Admitted:true)
+			// but was subsequently shed from the full gateway queue. No shed trace record is
+			// emitted here. Trace consumers must not assume all Admitted:true requests have
+			// routing records when flow control is enabled.
+			e.request.GatewayEnqueueTime = 0 // clean up — request never actually queued
+			return
+		}
+		// Attempt immediate dispatch — succeeds when cluster is not saturated.
+		// NeverSaturated always dispatches; real detectors dispatch when load is below threshold.
+		cs.tryDispatchFromGatewayQueue()
+		return
 	}
 
 	// BC-PD-4: When pools are configured, schedule DisaggregationDecisionEvent
@@ -376,4 +404,54 @@ func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 		},
 		seqID: cs.nextSeqID(),
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Phase 1C: Autoscaler events
+// ---------------------------------------------------------------------------
+
+// ScalingTickEvent fires the autoscaling pipeline at the configured interval.
+// Priority 8: after all request-path events (0–7) at the same timestamp, so the
+// scaler observes a stable snapshot of completed request state.
+// Self-scheduling: Execute() schedules the next ScalingTickEvent.
+// Zero-interval guard: when ModelAutoscalerIntervalUs == 0, no tick is ever scheduled.
+type ScalingTickEvent struct {
+	At int64 // simulation timestamp in microseconds
+}
+
+func (e *ScalingTickEvent) Timestamp() int64 { return e.At }
+func (e *ScalingTickEvent) Priority() int     { return 8 }
+
+// Execute runs the autoscaling pipeline: Collect → Analyze → Optimize → cooldown filter
+// → schedule ScaleActuationEvent → schedule next ScalingTickEvent.
+// Full orchestrator logic is wired in US1 (T009–T015).
+func (e *ScalingTickEvent) Execute(cs *ClusterSimulator) {
+	if cs.autoscaler == nil {
+		logrus.Warnf("[autoscaler] ScalingTickEvent at t=%d fired but cs.autoscaler is nil — event dropped", e.At)
+		return
+	}
+	cs.autoscaler.tick(cs, e.At)
+}
+
+// ScaleActuationEvent carries scale decisions to apply after the actuation delay elapses.
+// Separates the "decide" step from the "act" step to model HPA/KEDA scrape lag.
+// Priority 9: after ScalingTickEvent at the same timestamp.
+type ScaleActuationEvent struct {
+	At        int64
+	Decisions []ScaleDecision
+}
+
+func (e *ScaleActuationEvent) Timestamp() int64 { return e.At }
+func (e *ScaleActuationEvent) Priority() int     { return 9 }
+
+// Execute calls Actuator.Apply(decisions).
+// Full actuator logic is wired in US3 (T019–T023).
+func (e *ScaleActuationEvent) Execute(cs *ClusterSimulator) {
+	if cs.autoscaler == nil {
+		if len(e.Decisions) > 0 {
+			logrus.Warnf("[autoscaler] ScaleActuationEvent at t=%d: %d decision(s) dropped — cs.autoscaler is nil", e.At, len(e.Decisions))
+		}
+		return
+	}
+	cs.autoscaler.actuate(cs, e.Decisions)
 }

@@ -7,6 +7,20 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
+// testModelHardwareConfig returns a ModelHardwareConfig that produces 512 KV bytes/token/GPU
+// at TP=1: 2 layers × 2 (K+V) × 16 headDim × 4 numKVHeads × 2.0 BytesPerParam = 512.
+func testModelHardwareConfig() sim.ModelHardwareConfig {
+	mc := sim.ModelConfig{
+		NumLayers:       2,
+		NumHeads:        4,
+		HiddenDim:       64,
+		IntermediateDim: 128,
+		BytesPerParam:   2.0,
+		// NumKVHeads=0: MHA fallback, uses NumHeads=4
+	}
+	return sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0)
+}
+
 // newContentionConfig creates a PD deployment config with transfer contention enabled.
 // Uses high bandwidth and zero base latency for predictable duration calculations.
 func newContentionConfig(numInstances, prefill, decode int, bandwidthGBps float64) DeploymentConfig {
@@ -399,11 +413,11 @@ func TestTransferContention_INVP22_N2FormulaExact(t *testing.T) {
 			PDTransferContention:    true,
 			PDTransferBandwidthGBps: 10.0,
 			PDTransferBaseLatencyMs: 0,
-			PDKVBytesPerToken:       512,
 			SimConfig: sim.SimConfig{
 				KVCacheConfig: sim.KVCacheConfig{
 					BlockSizeTokens: 16,
 				},
+				ModelHardwareConfig: testModelHardwareConfig(),
 			},
 		},
 		activeTransfers: 1, // pre-existing transfer; Execute() increments to 2
@@ -432,6 +446,53 @@ func TestTransferContention_INVP22_N2FormulaExact(t *testing.T) {
 	// Confirm activeTransfers is now 2 (both the pre-existing and this one)
 	if cs.activeTransfers != 2 {
 		t.Errorf("activeTransfers = %d after N=2 start, want 2", cs.activeTransfers)
+	}
+}
+
+// TestTransferContention_PrefillOverridesTP_AffectsTransferDuration verifies that
+// KVTransferStartedEvent.Execute uses the prefill pool's TP (PrefillOverrides.TP)
+// rather than the global TP when computing KV bytes per token for transfer sizing.
+func TestTransferContention_PrefillOverridesTP_AffectsTransferDuration(t *testing.T) {
+	// testModelHardwareConfig uses TP=1 → 512 bytes/token/GPU.
+	// With PrefillOverrides.TP=4, KVBytesPerToken should produce 128 bytes/token/GPU.
+	prefillTP := 4
+	mhc := testModelHardwareConfig() // global TP=1
+	cs := &ClusterSimulator{
+		config: DeploymentConfig{
+			PDTransferContention:    true,
+			PDTransferBandwidthGBps: 10.0,
+			PDTransferBaseLatencyMs: 0,
+			PrefillOverrides:        PoolOverrides{TP: &prefillTP},
+			SimConfig: sim.SimConfig{
+				KVCacheConfig: sim.KVCacheConfig{
+					BlockSizeTokens: 16,
+				},
+				ModelHardwareConfig: mhc,
+			},
+		},
+		activeTransfers: 0,
+		clusterEvents:   make(ClusterEventQueue, 0),
+	}
+	parentReq := &ParentRequest{ID: "test-tp-override", NumKVBlocks: 10}
+	event := &KVTransferStartedEvent{time: 0, parentReq: parentReq}
+	event.Execute(cs)
+
+	if len(cs.clusterEvents) != 1 {
+		t.Fatalf("expected 1 scheduled completion event, got %d", len(cs.clusterEvents))
+	}
+	duration := cs.clusterEvents[0].event.Timestamp() - event.time
+
+	// With prefill TP=4: 10 blocks × 16 tok/block × 128 B/tok = 20480 B
+	// BW = 10 GB/s = 10000 B/µs; duration = ceil(20480/10000) = 3 µs
+	const wantDur = int64(3)
+	if duration != wantDur {
+		t.Errorf("prefill TP=4 transfer duration = %d µs, want %d µs", duration, wantDur)
+	}
+
+	// Verify this differs from global TP=1: 10 × 16 × 512 = 81920 B → ceil(81920/10000) = 9 µs
+	// If the override was ignored, duration would be 9 instead of 3.
+	if duration == 9 {
+		t.Errorf("transfer duration matches global TP=1 (9 µs) — PrefillOverrides.TP was ignored")
 	}
 }
 
@@ -473,11 +534,11 @@ func TestTransferContention_DurationFloor_ZeroBlocks(t *testing.T) {
 			PDTransferContention:    true,
 			PDTransferBandwidthGBps: 10.0,
 			PDTransferBaseLatencyMs: 0,
-			PDKVBytesPerToken:       512,
 			SimConfig: sim.SimConfig{
 				KVCacheConfig: sim.KVCacheConfig{
 					BlockSizeTokens: 16,
 				},
+				ModelHardwareConfig: testModelHardwareConfig(),
 			},
 		},
 		activeTransfers: 0,
@@ -582,11 +643,11 @@ func TestTransferContention_INVP22_DivisorLaw(t *testing.T) {
 				PDTransferContention:    true,
 				PDTransferBandwidthGBps: 10.0,
 				PDTransferBaseLatencyMs: 0,
-				PDKVBytesPerToken:       512,
 				SimConfig: sim.SimConfig{
 					KVCacheConfig: sim.KVCacheConfig{
 						BlockSizeTokens: 16,
 					},
+					ModelHardwareConfig: testModelHardwareConfig(),
 				},
 			},
 			activeTransfers: preExisting,
@@ -653,11 +714,11 @@ func TestTransferContention_DurationFloor_ZeroBlocks_Invariant(t *testing.T) {
 				PDTransferContention:    true,
 				PDTransferBandwidthGBps: 10.0,
 				PDTransferBaseLatencyMs: 0,
-				PDKVBytesPerToken:       512,
 				SimConfig: sim.SimConfig{
 					KVCacheConfig: sim.KVCacheConfig{
 						BlockSizeTokens: 16,
 					},
+					ModelHardwareConfig: testModelHardwareConfig(),
 				},
 			},
 			activeTransfers: 0,
@@ -712,11 +773,11 @@ func TestTransferContention_ZeroBandwidth_FallsBackToBaseLatency(t *testing.T) {
 			PDTransferContention:    true,
 			PDTransferBandwidthGBps: 0, // zero bandwidth — triggers else branch
 			PDTransferBaseLatencyMs: 10.0,
-			PDKVBytesPerToken:       512,
 			SimConfig: sim.SimConfig{
 				KVCacheConfig: sim.KVCacheConfig{
 					BlockSizeTokens: 16,
 				},
+				ModelHardwareConfig: testModelHardwareConfig(),
 			},
 		},
 		activeTransfers: 0,
@@ -761,11 +822,11 @@ func TestTransferContention_ZeroBandwidth_PayloadIndependence(t *testing.T) {
 				PDTransferContention:    true,
 				PDTransferBandwidthGBps: 0,
 				PDTransferBaseLatencyMs: baseLatMs,
-				PDKVBytesPerToken:       512,
 				SimConfig: sim.SimConfig{
 					KVCacheConfig: sim.KVCacheConfig{
 						BlockSizeTokens: 16,
 					},
+					ModelHardwareConfig: testModelHardwareConfig(),
 				},
 			},
 			activeTransfers: 0,

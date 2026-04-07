@@ -3,6 +3,8 @@ package cluster
 
 import (
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 // ─── US2: Place Instances onto Nodes Using Bin-Packing ──────────────────────
@@ -17,7 +19,7 @@ func TestPlacement_TwoTP4InstancesOnEightGPUNode(t *testing.T) {
 	}
 
 	// Place first instance
-	nid1, gpus1, err := pm.PlaceInstance("inst-0", "model-a", "H100", 4)
+	nid1, gpus1, _, err := pm.PlaceInstance("inst-0", "model-a", "H100", 4)
 	if err != nil {
 		t.Fatalf("first PlaceInstance failed: %v", err)
 	}
@@ -29,7 +31,7 @@ func TestPlacement_TwoTP4InstancesOnEightGPUNode(t *testing.T) {
 	}
 
 	// Place second instance
-	nid2, gpus2, err := pm.PlaceInstance("inst-1", "model-a", "H100", 4)
+	nid2, gpus2, _, err := pm.PlaceInstance("inst-1", "model-a", "H100", 4)
 	if err != nil {
 		t.Fatalf("second PlaceInstance failed: %v", err)
 	}
@@ -70,17 +72,17 @@ func TestPlacement_FullNodeCausesError(t *testing.T) {
 	pm := newTestPM([]NodePoolConfig{newTestPool("h100", "H100", 8, 1)})
 
 	// Fill the node
-	_, _, err := pm.PlaceInstance("inst-0", "model-a", "H100", 4)
+	_, _, _, err := pm.PlaceInstance("inst-0", "model-a", "H100", 4)
 	if err != nil {
 		t.Fatalf("first PlaceInstance: %v", err)
 	}
-	_, _, err = pm.PlaceInstance("inst-1", "model-a", "H100", 4)
+	_, _, _, err = pm.PlaceInstance("inst-1", "model-a", "H100", 4)
 	if err != nil {
 		t.Fatalf("second PlaceInstance: %v", err)
 	}
 
 	// Now the node is full
-	_, _, err = pm.PlaceInstance("inst-2", "model-a", "H100", 4)
+	_, _, _, err = pm.PlaceInstance("inst-2", "model-a", "H100", 4)
 	if err == nil {
 		t.Error("PlaceInstance on full node should return error, got nil")
 	}
@@ -110,7 +112,7 @@ func TestPlacement_ReleaseReturnsGPUs(t *testing.T) {
 	}
 
 	// Place and release
-	_, _, err := pm.PlaceInstance("inst-0", "model-a", "H100", 4)
+	_, _, _, err := pm.PlaceInstance("inst-0", "model-a", "H100", 4)
 	if err != nil {
 		t.Fatalf("PlaceInstance: %v", err)
 	}
@@ -126,7 +128,7 @@ func TestPlacement_ReleaseReturnsGPUs(t *testing.T) {
 	})
 
 	t.Run("second placement succeeds after release", func(t *testing.T) {
-		_, _, err := pm.PlaceInstance("inst-1", "model-a", "H100", 4)
+		_, _, _, err := pm.PlaceInstance("inst-1", "model-a", "H100", 4)
 		if err != nil {
 			t.Errorf("PlaceInstance after release failed: %v", err)
 		}
@@ -150,7 +152,7 @@ func TestPlacement_GPUTypeConstraint(t *testing.T) {
 
 	t.Run("H100 instance placed only on H100 node", func(t *testing.T) {
 		pm := newMixedPM()
-		nodeID, _, err := pm.PlaceInstance("inst-h", "model-a", "H100", 4)
+		nodeID, _, _, err := pm.PlaceInstance("inst-h", "model-a", "H100", 4)
 		if err != nil {
 			t.Fatalf("PlaceInstance H100: %v", err)
 		}
@@ -165,7 +167,7 @@ func TestPlacement_GPUTypeConstraint(t *testing.T) {
 
 	t.Run("A100 instance placed only on A100 node", func(t *testing.T) {
 		pm := newMixedPM()
-		nodeID, _, err := pm.PlaceInstance("inst-a", "model-b", "A100", 4)
+		nodeID, _, _, err := pm.PlaceInstance("inst-a", "model-b", "A100", 4)
 		if err != nil {
 			t.Fatalf("PlaceInstance A100: %v", err)
 		}
@@ -183,16 +185,136 @@ func TestPlacement_GPUTypeConstraint(t *testing.T) {
 		// Fill all H100 slots: 2 nodes × 8 GPUs / TP=4 = 4 instances
 		for i := 0; i < 4; i++ {
 			id := InstanceID("inst-fill-h-" + string(rune('0'+i)))
-			_, _, err := pm.PlaceInstance(id, "model-a", "H100", 4)
+			_, _, _, err := pm.PlaceInstance(id, "model-a", "H100", 4)
 			if err != nil {
 				t.Fatalf("filling H100 slots, placement %d failed: %v", i, err)
 			}
 		}
-		_, _, err := pm.PlaceInstance("inst-overflow", "model-a", "H100", 4)
+		_, _, _, err := pm.PlaceInstance("inst-overflow", "model-a", "H100", 4)
 		if err == nil {
 			t.Error("PlaceInstance on full H100 pool should fail, got nil")
 		}
 	})
+}
+
+// T005: AddPending stores the simCfg field in pendingInstance.
+func TestAddPending_StoresSimCfg(t *testing.T) {
+	pm := newTestPM([]NodePoolConfig{
+		{
+			Name:         "h100-pool",
+			GPUType:      "H100",
+			GPUsPerNode:  8,
+			MaxNodes:     4,
+			GPUMemoryGiB: 80.0,
+		},
+	})
+
+	sentinel := sim.SimConfig{}
+	sentinel.MaxRunningReqs = 7 // recognizable sentinel value
+
+	pm.AddPending("inst-0", "model-a", "H100", 4, sentinel)
+
+	if len(pm.pendingInsts) != 1 {
+		t.Fatalf("expected 1 pending instance, got %d", len(pm.pendingInsts))
+	}
+
+	// Provision a node and mark it ready so RetryPendingInstances can place the instance.
+	node, _ := pm.ProvisionNode("h100-pool", 0)
+	if err := pm.MarkNodeReady(node.ID); err != nil {
+		t.Fatalf("MarkNodeReady: %v", err)
+	}
+
+	placed := pm.RetryPendingInstances()
+	if len(placed) != 1 {
+		t.Fatalf("RetryPendingInstances() placed %d instances, want 1", len(placed))
+	}
+
+	// Verify the sentinel simCfg value survives propagation through RetryPendingInstances.
+	if placed[0].simCfg.MaxRunningReqs != 7 {
+		t.Errorf("placed[0].simCfg.MaxRunningReqs = %d, want 7", placed[0].simCfg.MaxRunningReqs)
+	}
+}
+
+// T003: RetryPendingInstances populates gpuType on the placedInstance from the matched pool.
+func TestRetryPendingInstances_PlacedInstanceHasGPUType(t *testing.T) {
+	pm := newTestPM([]NodePoolConfig{
+		{
+			Name:         "h100-prov",
+			GPUType:      "H100",
+			GPUsPerNode:  8,
+			MaxNodes:     4,
+			GPUMemoryGiB: 80.0,
+		},
+	})
+
+	// Add pending instance before any node is ready
+	pm.AddPending("inst-0", "model-a", "H100", 4, sim.SimConfig{})
+
+	// Provision and ready a node
+	node, _ := pm.ProvisionNode("h100-prov", 0)
+	if err := pm.MarkNodeReady(node.ID); err != nil {
+		t.Fatalf("MarkNodeReady: %v", err)
+	}
+
+	// Retry should now place the instance
+	placed := pm.RetryPendingInstances()
+	if len(placed) != 1 {
+		t.Fatalf("RetryPendingInstances() placed %d instances, want 1", len(placed))
+	}
+
+	if placed[0].gpuType != "H100" {
+		t.Errorf("placed[0].gpuType = %q, want %q", placed[0].gpuType, "H100")
+	}
+}
+
+// T001: PlaceInstance returns matchedGPUType equal to the pool's gpu_type on success,
+// and returns "" on error (no capacity).
+func TestPlaceInstance_ReturnsMatchedPoolGPUType(t *testing.T) {
+	tests := []struct {
+		name             string
+		poolGPUType      string
+		requestGPUType   string
+		tpDegree         int
+		initialNodes     int
+		wantMatchedGPU   string
+		wantErr          bool
+	}{
+		{
+			name:           "success path returns pool gpu type",
+			poolGPUType:    "A100",
+			requestGPUType: "A100",
+			tpDegree:       4,
+			initialNodes:   1,
+			wantMatchedGPU: "A100",
+			wantErr:        false,
+		},
+		{
+			name:           "error path returns empty string",
+			poolGPUType:    "A100",
+			requestGPUType: "A100",
+			tpDegree:       4,
+			initialNodes:   0, // no nodes — no capacity
+			wantMatchedGPU: "",
+			wantErr:        true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// newTestPM creates nodes in Ready state.
+			pm := newTestPM([]NodePoolConfig{newTestPool("a100-pool", tc.poolGPUType, 8, tc.initialNodes)})
+			_, _, matchedGPUType, err := pm.PlaceInstance("inst-0", "model-a", tc.requestGPUType, tc.tpDegree)
+			if tc.wantErr && err == nil {
+				t.Errorf("expected error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if matchedGPUType != tc.wantMatchedGPU {
+				t.Errorf("matchedGPUType = %q, want %q", matchedGPUType, tc.wantMatchedGPU)
+			}
+		})
+	}
 }
 
 // T022b: RetryPendingInstances places pending instances after a node becomes ready.
@@ -209,7 +331,7 @@ func TestPlacement_RetryPendingAfterNodeReady(t *testing.T) {
 	})
 
 	// Add an instance to pending
-	pm.AddPending("inst-0", "model-a", "H100", 4)
+	pm.AddPending("inst-0", "model-a", "H100", 4, sim.SimConfig{})
 	if len(pm.pendingInsts) != 1 {
 		t.Fatalf("expected 1 pending instance, got %d", len(pm.pendingInsts))
 	}
@@ -230,4 +352,103 @@ func TestPlacement_RetryPendingAfterNodeReady(t *testing.T) {
 	if err := pm.VerifyConservation(); err != nil {
 		t.Errorf("VerifyConservation: %v", err)
 	}
+}
+
+// T023: RetryPendingInstances is segmented by pool — when capacity arrives for pool A,
+// only pool A's pending instances are placed; pool B's pending instances remain pending
+// until pool B gets a Ready node.
+func TestRetryPendingInstances_SegmentedByPool(t *testing.T) {
+	// GIVEN: two pools, both with no initial capacity (InitialNodes=0).
+	pm := newTestPM([]NodePoolConfig{
+		{
+			Name:         "h100-pool",
+			GPUType:      "H100",
+			GPUsPerNode:  8,
+			GPUMemoryGiB: 80.0,
+			MaxNodes:     4,
+		},
+		{
+			Name:         "a100-pool",
+			GPUType:      "A100",
+			GPUsPerNode:  4,
+			GPUMemoryGiB: 40.0,
+			MaxNodes:     4,
+		},
+	})
+
+	// AND: 2 pending instances per pool (4 total).
+	pm.AddPending("inst-h100-0", "model-a", "H100", 4, sim.SimConfig{})
+	pm.AddPending("inst-h100-1", "model-a", "H100", 4, sim.SimConfig{})
+	pm.AddPending("inst-a100-0", "model-b", "A100", 2, sim.SimConfig{})
+	pm.AddPending("inst-a100-1", "model-b", "A100", 2, sim.SimConfig{})
+	if len(pm.pendingInsts) != 4 {
+		t.Fatalf("precondition: expected 4 pending instances, got %d", len(pm.pendingInsts))
+	}
+
+	// WHEN: a node becomes ready ONLY in h100-pool.
+	h100Node, _ := pm.ProvisionNode("h100-pool", 0)
+	if err := pm.MarkNodeReady(h100Node.ID); err != nil {
+		t.Fatalf("MarkNodeReady h100: %v", err)
+	}
+
+	placed1 := pm.RetryPendingInstances()
+
+	t.Run("only H100 instances placed when H100 node becomes ready", func(t *testing.T) {
+		if len(placed1) != 2 {
+			t.Errorf("placed %d instances, want 2 (H100 pool only)", len(placed1))
+		}
+		for _, p := range placed1 {
+			if p.gpuType != "H100" {
+				t.Errorf("placed instance gpuType = %q, want H100", p.gpuType)
+			}
+		}
+	})
+
+	t.Run("A100 instances remain pending after H100 node ready", func(t *testing.T) {
+		if len(pm.pendingInsts) != 2 {
+			t.Errorf("pendingInsts = %d, want 2 (A100 instances must remain pending)", len(pm.pendingInsts))
+		}
+		for _, p := range pm.pendingInsts {
+			if p.gpuType != "A100" {
+				t.Errorf("remaining pending instance gpuType = %q, want A100", p.gpuType)
+			}
+		}
+	})
+
+	t.Run("INV-A holds after partial placement", func(t *testing.T) {
+		if err := pm.VerifyConservation(); err != nil {
+			t.Errorf("VerifyConservation: %v", err)
+		}
+	})
+
+	// AND WHEN: a node becomes ready in a100-pool.
+	a100Node, _ := pm.ProvisionNode("a100-pool", 0)
+	if err := pm.MarkNodeReady(a100Node.ID); err != nil {
+		t.Fatalf("MarkNodeReady a100: %v", err)
+	}
+
+	placed2 := pm.RetryPendingInstances()
+
+	t.Run("A100 instances placed after A100 node ready", func(t *testing.T) {
+		if len(placed2) != 2 {
+			t.Errorf("second retry placed %d instances, want 2 (A100 pool only)", len(placed2))
+		}
+		for _, p := range placed2 {
+			if p.gpuType != "A100" {
+				t.Errorf("second retry: placed instance gpuType = %q, want A100", p.gpuType)
+			}
+		}
+	})
+
+	t.Run("pending queue empty after both pools have capacity", func(t *testing.T) {
+		if len(pm.pendingInsts) != 0 {
+			t.Errorf("pendingInsts = %d, want 0 after all pools have capacity", len(pm.pendingInsts))
+		}
+	})
+
+	t.Run("INV-A holds after full placement", func(t *testing.T) {
+		if err := pm.VerifyConservation(); err != nil {
+			t.Errorf("VerifyConservation: %v", err)
+		}
+	})
 }
