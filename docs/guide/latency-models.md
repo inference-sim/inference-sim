@@ -249,6 +249,37 @@ The model supports 7-10 beta coefficients. Bundled defaults use 10 coefficients 
 
 **Pre-trained coefficients** are stored in `trained_physics_coefficients` in `defaults.yaml`. No per-model calibration needed -- the model generalizes across architectures, workloads, and TP configurations.
 
+### Generalization Scope
+
+The trained-physics model is designed to generalize without per-model calibration:
+
+**Supported hardware:**
+
+- **H100-SXM** (80 GB HBM3, 989.5 TFLOPS BF16 / 1979 TFLOPS FP8, 3.35 TB/s)
+- **A100-SXM** (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s)
+- **A100-80** (alias for A100-SXM)
+
+Coefficients are trained on H100 traces but the roofline basis functions automatically scale to A100's compute/bandwidth specifications via hardware config.
+
+**Model architectures:**
+
+- **Dense transformers** (Llama-2, Qwen3, GPT, etc.): Standard attention + MLP layers
+- **Uniform MoE** (Mixtral): All layers are MoE with top-k expert routing
+- **Interleaved MoE** (Scout): Alternating MoE and dense layers with architecture-specific β₈ overhead
+
+The model automatically detects MoE configuration from `config.json` (`num_local_experts`, `num_experts_per_tok`, `interleave_moe_layer_step`) and adjusts basis functions accordingly.
+
+**Workload types:**
+
+- **Prefill-heavy** (large input, short output): Chatbot prompts, document Q&A
+- **Decode-heavy** (small input, long output): Content generation, code completion
+- **Mixed batches** (concurrent prefill/decode): Production serving with heterogeneous requests
+- **TP configurations**: TP=1, TP=2, TP=4, TP=8 (All-Reduce overhead scales via β₄)
+
+**Why "recommended" over trained-roofline:**
+
+Trained-physics uses **14 basis functions** (prefill compute/memory split, decode compute/memory split, weight, TP, layer overhead, batch overhead, step overhead, MoE overhead, 3 alpha overheads) that capture more architectural detail than trained-roofline's **11 terms** (prefill/decode combined via max(), simpler overhead structure). The additional basis functions enable better generalization to unseen model architectures (especially interleaved MoE) and batch compositions (mixed prefill/decode). Both models achieve similar accuracy on H100 (trained-physics: good, trained-roofline: 7% MAPE), but trained-physics is more robust to architectural variations.
+
 !!! note "MoE architecture detection"
     β₈ applies conditionally based on `InterleaveMoELayerStep` from the model's `config.json`: 0 = uniform MoE (β₈ skipped), 1 = alternating MoE/dense (β₈ × 24 layers for Scout's 48 total), 2 = every 3rd layer is MoE, etc. This prevents over-penalizing uniform MoE models like Mixtral where expert routing overhead is amortized across all layers.
 

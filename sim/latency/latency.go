@@ -2,8 +2,9 @@
 // The LatencyModel interface is defined in sim/ (parent package).
 // This package provides BlackboxLatencyModel (alpha/beta regression),
 // RooflineLatencyModel (analytical FLOPs/bandwidth),
-// CrossModelLatencyModel (physics-informed cross-model step time), and
-// TrainedRooflineLatencyModel (roofline basis functions × learned corrections).
+// CrossModelLatencyModel (physics-informed cross-model step time),
+// TrainedRooflineLatencyModel (roofline basis functions × learned corrections), and
+// TrainedPhysicsModel (physics-informed basis functions with architecture-aware MoE scaling).
 package latency
 
 import (

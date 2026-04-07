@@ -100,10 +100,11 @@ You should see JSON output on stdout with key fields:
 ### Trained-physics mode (architecture-aware, no per-model calibration)
 
 ```bash
-./blis run --model qwen/qwen3-14b --latency-model trained-physics
+./blis run --model qwen/qwen3-14b --latency-model trained-physics \
+  --hardware H100-SXM --tp 1
 ```
 
-Accurate across all model architectures (dense, uniform MoE, interleaved MoE) using physics-informed basis functions with learned corrections. See the [latency models guide](docs/guide/latency-models.md) for details.
+Accurate across all model architectures (dense, uniform MoE, interleaved MoE) using physics-informed basis functions with learned corrections. Requires `--hardware` and `--tp` flags. See the [latency models guide](docs/guide/latency-models.md) for details.
 
 ### Observe real server latency
 

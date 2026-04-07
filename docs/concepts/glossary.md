@@ -78,7 +78,7 @@ GPU memory organized as blocks that store key-value tensors computed during atte
 
 ### Latency Model
 
-The component that predicts GPU execution time for a batch step. Four modes: *Roofline* (default; analytical FLOPs/bandwidth estimation), *Blackbox* (trained regression coefficients), *Cross-Model* (physics-informed, MoE-aware), and *Trained-Roofline* (roofline basis functions × learned corrections from real vLLM traces). See [Core Engine: Latency Models](core-engine.md#latency-models), [Roofline Estimation](roofline.md), and [Latency Models Guide](../guide/latency-models.md).
+The component that predicts GPU execution time for a batch step. Five modes: *Roofline* (default; analytical FLOPs/bandwidth estimation), *Blackbox* (trained regression coefficients), *Cross-Model* (physics-informed, MoE-aware), *Trained-Roofline* (roofline basis functions × learned corrections from real vLLM traces), and *Trained-Physics* (physics-informed basis functions with architecture-aware MoE scaling). See [Core Engine: Latency Models](core-engine.md#latency-models), [Roofline Estimation](roofline.md), and [Latency Models Guide](../guide/latency-models.md).
 
 ### MaxModelLen
 

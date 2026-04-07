@@ -133,8 +133,8 @@ type TrainedPhysicsModel struct {
 	dFFDense          int     // Dense layer FFN dim (may differ for interleaved archs)
 	kEff              int     // max(1, NumExpertsPerTok)
 	numExperts        int     // NumLocalExperts (0 for dense)
-	isMoE             bool    // NumLocalExperts > 0
-	hasInterleavedMoE bool    // InterleaveMoELayerStep > 0 (Scout-style alternating MoE/dense)
+	isMoE             bool    // NumLocalExperts > 1
+	hasInterleavedMoE bool    // InterleaveMoELayerStep > 0 && NumLocalExperts > 1 (Scout-style alternating MoE/dense)
 	tp                int     // Tensor parallelism degree
 	weightBPP         float64 // EffectiveWeightBytesPerParam (FP8-aware)
 
@@ -463,7 +463,7 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 		dFFDense:          dFFDense,
 		kEff:              max(1, hw.ModelConfig.NumExpertsPerTok),
 		numExperts:        hw.ModelConfig.NumLocalExperts,
-		hasInterleavedMoE: hw.ModelConfig.InterleaveMoELayerStep > 0,
+		hasInterleavedMoE: hw.ModelConfig.InterleaveMoELayerStep > 0 && hw.ModelConfig.NumLocalExperts > 1,
 		isMoE:             hw.ModelConfig.NumLocalExperts > 1,
 		tp:                hw.TP,
 		weightBPP:         weightBPP,
