@@ -258,8 +258,9 @@ The trained-physics model is designed to generalize without per-model calibratio
 - **H100** (80 GB HBM3, 989.5 TFLOPS BF16 / 1979 TFLOPS FP8, 3.35 TB/s)
 - **A100-SXM** (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s)
 - **A100-80** (alias for A100-SXM)
+- **L40S** (48 GB GDDR6, 362 TFLOPS BF16 / 1466 TFLOPS FP8, 0.864 TB/s)
 
-Coefficients are trained on H100 traces but the roofline basis functions automatically scale to A100's compute/bandwidth specifications via hardware config.
+**Coefficients were trained on H100 traces** but the roofline basis functions automatically scale to each GPU's compute/bandwidth specifications via hardware config. This enables the model to generalize across hardware without GPU-specific calibration.
 
 **Model architectures:**
 
