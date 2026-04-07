@@ -1104,6 +1104,39 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#cross-model-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-Model Mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trained-roofline-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trained-Roofline Mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trained-physics-mode-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trained-Physics Mode (Recommended)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#alpha-overhead" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3216,6 +3249,39 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#cross-model-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-Model Mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trained-roofline-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trained-Roofline Mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trained-physics-mode-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trained-Physics Mode (Recommended)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#alpha-overhead" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3627,7 +3693,7 @@ Dequeue requests from the wait queue:
 <li><strong>Thrashing detection:</strong> Blocks offloaded and reloaded within 1000 ticks (1ms) increment a thrashing counter</li>
 </ul>
 <h2 id="latency-models">Latency Models<a class="headerlink" href="#latency-models" title="Permanent link">&para;</a></h2>
-<p>BLIS predicts GPU step time through one of four latency model backends. The choice is made via the <code>--latency-model</code> flag or automatically based on available configuration.</p>
+<p>BLIS predicts GPU step time through one of five latency model backends. The choice is made via the <code>--latency-model</code> flag or automatically based on available configuration.</p>
 <h3 id="blackbox-model">Blackbox Model<a class="headerlink" href="#blackbox-model" title="Permanent link">&para;</a></h3>
 <p>Uses trained regression coefficients to predict step time:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>StepTime    = beta0 + beta1 * cache_miss_tokens + beta2 * decode_tokens
@@ -3653,6 +3719,39 @@ Dequeue requests from the wait queue:
 <li>No training data needed — works for any supported model immediately</li>
 </ul>
 <p>See <a href="../roofline/">Roofline Estimation</a> for implementation details.</p>
+<h3 id="cross-model-mode">Cross-Model Mode<a class="headerlink" href="#cross-model-mode" title="Permanent link">&para;</a></h3>
+<p>Uses globally-fitted coefficients with architecture features:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>stepTime = β₀ × numLayers + β₁ × dc × kvDimScaled + β₂ × (pf+dc) × isMoE + β₃ × isTP
+</code></pre></div>
+<ul>
+<li><strong>7 global coefficients</strong> (4 beta for step time + 3 alpha for CPU overhead)</li>
+<li><strong>Architecture-aware scaling</strong> from <code>config.json</code> features (layers, KV heads, MoE indicators)</li>
+<li>No per-model training needed — coefficients work across model families</li>
+</ul>
+<p>See <a href="../../guide/latency-models/#cross-model-mode-physics-informed">Latency Models Guide</a> for details.</p>
+<h3 id="trained-roofline-mode">Trained-Roofline Mode<a class="headerlink" href="#trained-roofline-mode" title="Permanent link">&para;</a></h3>
+<p>Applies learned correction factors to analytical roofline basis functions:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>StepTime = β₁ × max(T_pf_compute, T_pf_kv) + β₂ × max(T_dc_compute, T_dc_kv)
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>         + β₃ × T_weight + β₄ × T_tp + β₅ × L + β₆ × batch_size + β₇
+</code></pre></div>
+<ul>
+<li><strong>10 global coefficients</strong> (7 beta for roofline corrections + 3 alpha for CPU overhead)</li>
+<li><strong>7% MAPE</strong> on GPU combined step time (fitted from 137K real vLLM requests)</li>
+<li>Each basis function is a full analytical roofline calculation</li>
+<li>MoE-aware (per-expert FLOPs + effective expert count)</li>
+</ul>
+<p>See <a href="../../guide/latency-models/#trained-roofline-mode">Latency Models Guide</a> for details.</p>
+<h3 id="trained-physics-mode-recommended">Trained-Physics Mode (Recommended)<a class="headerlink" href="#trained-physics-mode-recommended" title="Permanent link">&para;</a></h3>
+<p>Applies learned correction factors to roofline basis functions with additional architecture-aware terms:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>StepTime = β₁ × max(T_pf_compute, T_pf_kv) + β₂ × max(T_dc_compute, T_dc_kv)
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>         + β₃ × T_weight + β₄ × T_tp + β₅ × L + β₆ × B + β₇ + β₈ × nMoE
+</code></pre></div>
+<ul>
+<li><strong>13 global coefficients</strong> (8-10 beta for roofline corrections + 3 alpha for CPU overhead)</li>
+<li><strong>Generalizes across architectures, workloads, and TP configurations</strong></li>
+<li>No per-model calibration needed</li>
+</ul>
+<p>See <a href="../../guide/latency-models/#trained-physics-mode">Latency Models Guide</a> for details.</p>
 <h3 id="alpha-overhead">Alpha Overhead<a class="headerlink" href="#alpha-overhead" title="Permanent link">&para;</a></h3>
 <p>Alpha overhead models non-GPU processing time:
 - <strong>Queueing time</strong> (<code>alpha0 + alpha1 * input_length</code>): Delays request enqueue but does not block the server. The simulation clock is not advanced by this overhead.
