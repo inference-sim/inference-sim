@@ -319,7 +319,7 @@ func TestDeferredQueue_DeferredQueueLenPanicsBeforeRun(t *testing.T) {
 //   Default config: BetaCoeffs=[1000,10,5], AlphaCoeffs=[100,1,100].
 //   Non-serialized: QueueingTime=150µs + batched prefill(500 tokens)=6000µs → ~6.2ms mean TTFT.
 //   Serialized:     each request waits for all predecessors (~21.75ms each) → ~100ms mean TTFT.
-//   Bound 15ms splits the two cases with ~2.4× margin each side.
+//   Bound 15ms: ~2.4× above non-serialized (6.2ms) and ~6.7× below serialized (100ms).
 //
 // Regression guard for issue #965.
 func TestDeferredQueue_StandardSLONotSerialized(t *testing.T) {

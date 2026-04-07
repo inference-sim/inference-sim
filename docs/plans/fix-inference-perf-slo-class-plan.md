@@ -43,7 +43,7 @@ No new types, interfaces, CLI flags, or construction sites.
 ### C. Risks
 
 - **Risk:** Other `inference_perf`-style callers relied on `"batch"` SLO class semantics. **Mitigation:** There are no such callers — the SLO class was a semantically inert label before `8bc7a48c`. All existing tests check generated request counts/distributions, not SLO class.
-- **Risk:** BC-2/BC-3 tests are fragile due to latency config assumptions. **Mitigation:** Tests use `newTestDeploymentConfig(1)` (project-standard test helper) and assert on a generous bound (5ms) that leaves a 5× margin over the expected non-serialized TTFT (~1–2ms) while staying well below the serialized TTFT (~27ms mean). See Section F for derivation.
+- **Risk:** BC-2/BC-3 tests are fragile due to latency config assumptions. **Mitigation:** Tests use `newTestDeploymentConfig(1)` (project-standard test helper) and assert on a bound of 15ms that is ~2.4× above the expected non-serialized TTFT (~6.2ms) and ~6.7× below the serialized TTFT (~100ms mean). See Section F for derivation. *(Deviation: initial draft used 5ms; corrected in Section F after finding alpha/beta coefficients were swapped in the original derivation.)*
 
 ### D. Known Follow-Up (Out of Scope)
 
@@ -143,7 +143,7 @@ Expected: all pass (no regressions).
 // Bound derivation (see plan Section F):
 //   Non-serialized mean TTFT ≈ 6ms (QueueingTime=150µs + batched prefill=6000µs).
 //   Serialized mean TTFT ≈ 100ms (requests processed one-by-one, each ~21.75ms).
-//   Bound 15ms splits these cases with ~2.4× margin each side.
+//   Bound 15ms: ~2.4× above non-serialized (6.2ms) and ~6.7× below serialized (100ms).
 //
 // Regression guard for issue #965.
 func TestDeferredQueue_StandardSLONotSerialized(t *testing.T) {
