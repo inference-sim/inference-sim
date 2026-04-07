@@ -66,6 +66,8 @@ Run BLIS for `qwen/qwen3-14b` with default configs (auto-fetches model config fr
 ./blis run --model qwen/qwen3-14b
 ```
 
+**Hardware/TP defaults:** Omitting `--hardware` and `--tp` flags will default to H100 and TP=1 with warnings. Specify explicitly for other configurations.
+
 You should see JSON output on stdout with key fields:
 
 | Field | Description |
@@ -100,11 +102,10 @@ You should see JSON output on stdout with key fields:
 ### Trained-physics mode (architecture-aware, no per-model calibration)
 
 ```bash
-./blis run --model qwen/qwen3-14b --latency-model trained-physics \
-  --hardware H100 --tp 1
+./blis run --model qwen/qwen3-14b --latency-model trained-physics 
 ```
 
-Accurate across all model architectures (dense, uniform MoE, interleaved MoE) using physics-informed basis functions with learned corrections. Requires `--hardware` and `--tp` flags. See the [latency models guide](docs/guide/latency-models.md) for details.
+Accurate across all model architectures (dense, uniform MoE, interleaved MoE) using physics-informed basis functions with learned corrections. See the [latency models guide](docs/guide/latency-models.md) for details.
 
 ### Observe real server latency
 
