@@ -136,18 +136,45 @@ A constant γ₁ can't correct both regimes simultaneously.
 The 163x gap is entirely from TTFT. The E2E RMSE of 49% is already in a reasonable
 range — 3 experiments have E2E APE under 10%.
 
+## Manual Warm-Start Sweep
+
+| γ₁(gemm) | γ₂(pf_attn) | γ₃(dc_attn) | γ₇(layer) | γ₈(req) | γ₉(step) | Loss | TTFT | E2E |
+|-----------|-------------|-------------|-----------|---------|----------|------|------|-----|
+| 1.0 | 1.0 | 1.0 | 40 | 3 | 100 | 5637% | 5588% | 49% |
+| 0.7 | 0.7 | 0.7 | 40 | 3 | 100 | 5335% | 5301% | 34% |
+| 0.15 | 0.15 | 0.15 | 20 | 1.5 | 50 | 1335% | 1255% | 80% |
+| 0.05 | 0.05 | 0.05 | 5 | 0.5 | 20 | 184% | 89% | 95% |
+| 0.06 | 0.1 | 0.1 | 5 | 0.5 | 15 | **180%** | 85% | 94% |
+
+The best manual warm-start achieves 180% loss — 5x worse than the optimized
+evolved model (34.57%). The E2E plateaus at ~94% regardless of γ tuning,
+suggesting a structural issue beyond what constant γ corrections can fix.
+
 ## Implications for Iter31
 
-The fundamental challenge: a constant γ₁ can't correct for the CUDA-graph vs
-non-CUDA-graph mismatch across different batch sizes. Options:
+The fundamental challenge: a constant γ multiplier can't correct for the
+measurement-vs-CUDA-graph gap across different batch sizes. The measured kernels
+include ~150µs/layer of launch overhead that vanishes under CUDA graphs, but
+this overhead is a fixed cost (same at m=1 and m=128), not proportional to
+the kernel's actual compute time. A multiplicative γ removes a fraction of
+everything (including the real compute), not just the overhead.
 
-1. **Fit γ₁ ≈ 0.05-0.15** — crude but may work if the training set has enough
-   batch size diversity that the optimizer finds a compromise value
-2. **Subtract launch overhead** — estimate CUDA graph savings and subtract from the
-   measured kernel time before γ correction. The overhead is approximately:
-   `overhead ≈ gemm(m=1) - (gemm(m=2) - gemm(m=1))` (constant part of the GEMM cost)
-3. **Token-count-dependent correction** — replace constant γ₁ with a function
-   `γ₁(m) = a + b/m` that applies larger correction at small m (more overhead)
+**Options for iter31:**
+
+1. **Offset subtraction** — Before applying γ, subtract estimated CUDA graph
+   savings per layer: `T_corrected = γ × (T_measured - T_overhead) + T_overhead × γ_overhead`.
+   This separates the overhead correction from the compute correction.
+   `T_overhead ≈ gemm(m=1)` (launch-overhead-dominated at m=1).
+
+2. **Use aiconfigurator's static prediction as a single term** — Instead of
+   decomposing into GEMM + attention + allreduce, use aiconfigurator's own
+   `sum(context_ops)` and `sum(generation_ops)` as two basis functions.
+   This preserves aiconfigurator's proven accuracy while letting BLIS's DES
+   handle the queueing dynamics.
+
+3. **Hybrid model** — Use the evolved model's analytical roofline for step time
+   (which works at 34.57%) and aiconfigurator's measured data only for
+   cross-model generalization or hardware transfer learning.
 
 ## Training Journey
 
