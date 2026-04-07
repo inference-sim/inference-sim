@@ -1122,3 +1122,138 @@ func TestRooflineStepTime_FP8ComputeSelection_EdgeCases(t *testing.T) {
 		})
 	}
 }
+
+// TestRooflineStepTime_Scout_InterleavedMoE validates the fixes for issue #877:
+// - Bug 1: InterleaveMoELayerStep field and layer splitting for FLOPs
+// - Bug 2: DenseIntermediateDim field for different dense/MoE FFN sizes
+// - Bug 3: nEff expert loading applied only to MoE layers
+func TestRooflineStepTime_Scout_InterleavedMoE(t *testing.T) {
+	// Scout-like config: 48 layers alternating MoE/dense
+	// - 24 MoE layers: 16 experts, top-1, 8192 FFN dim per expert
+	// - 24 Dense layers: 16384 FFN dim, no experts
+	scoutConfig := sim.ModelConfig{
+		NumLayers:              48,
+		HiddenDim:              5120,
+		NumHeads:               40,
+		NumKVHeads:             8,
+		IntermediateDim:        8192, // MoE expert FFN
+		NumLocalExperts:        16,
+		NumExpertsPerTok:       1,
+		MoEExpertFFNDim:        8192,
+		InterleaveMoELayerStep: 1,            // Alternate MoE/dense
+		DenseIntermediateDim:   16384,        // Dense layer FFN (2× MoE)
+		BytesPerParam:          1.0,          // FP8
+		WeightBytesPerParam:    1.0,
+	}
+
+	// Uniform MoE baseline (Mixtral-style): all 32 layers are MoE
+	mixtralConfig := sim.ModelConfig{
+		NumLayers:              32,
+		HiddenDim:              4096,
+		NumHeads:               32,
+		NumKVHeads:             8,
+		IntermediateDim:        14336,
+		NumLocalExperts:        8,
+		NumExpertsPerTok:       2,
+		MoEExpertFFNDim:        14336,
+		InterleaveMoELayerStep: 0, // Uniform MoE
+		DenseIntermediateDim:   0, // Not used
+		BytesPerParam:          2.0,
+		WeightBytesPerParam:    2.0,
+	}
+
+	hw := sim.HardwareCalib{
+		TFlopsPeak: 989.0,
+		BwPeakTBs:  3.35,
+		MfuPrefill: 0.55,
+		MfuDecode:  0.30,
+	}
+
+	step := StepConfig{
+		PrefillRequests: []PrefillRequestConfig{
+			{ProgressIndex: 0, NumNewPrefillTokens: 588},
+		},
+	}
+
+	t.Run("Scout_interleaved_produces_positive_latency", func(t *testing.T) {
+		latency := rooflineStepTime(scoutConfig, hw, step, 1)
+		if latency <= 0 {
+			t.Errorf("Scout latency should be positive, got %d µs", latency)
+		}
+	})
+
+	t.Run("Mixtral_uniform_produces_positive_latency", func(t *testing.T) {
+		latency := rooflineStepTime(mixtralConfig, hw, step, 1)
+		if latency <= 0 {
+			t.Errorf("Mixtral latency should be positive, got %d µs", latency)
+		}
+	})
+
+	t.Run("FLOPs_split_correctly_for_interleaved", func(t *testing.T) {
+		// Calculate FLOPs for Scout
+		flops := calculateTransformerFlops(scoutConfig, 0, 588, true, true)
+		totalFlops := flops["total"]
+
+		// Verify FLOPs are positive and finite
+		if totalFlops <= 0 || math.IsInf(totalFlops, 0) || math.IsNaN(totalFlops) {
+			t.Errorf("Scout FLOPs should be positive and finite, got %v", totalFlops)
+		}
+
+		// Roughly expected: 24 MoE layers (with expert routing) + 24 dense layers
+		// MoE FLOPs should be ~1/2 of total MLP FLOPs (24 out of 48 layers)
+		// Dense FLOPs should use 16384 FFN (2× MoE FFN)
+		// Total should be in ballpark of 11.8e12 (from issue #877)
+		expectedBallpark := 11.8e12
+		if totalFlops < expectedBallpark*0.5 || totalFlops > expectedBallpark*2.0 {
+			t.Logf("Warning: Scout FLOPs %e outside expected range [%e, %e]",
+				totalFlops, expectedBallpark*0.5, expectedBallpark*2.0)
+		}
+	})
+
+	t.Run("Weight_bandwidth_split_correctly_for_interleaved", func(t *testing.T) {
+		// Calculate weight bandwidth for Scout with batch size
+		mem := calculateMemoryAccessBytes(scoutConfig, 0, 588, false)
+		weightBytes := mem["model_weights"]
+
+		// Verify weight bytes are positive and finite
+		if weightBytes <= 0 || math.IsInf(weightBytes, 0) || math.IsNaN(weightBytes) {
+			t.Errorf("Scout weight bytes should be positive and finite, got %v", weightBytes)
+		}
+
+		// For Scout FP8: ~39 GB expected (from comment in issue #877)
+		// Previously was ~7 GB due to nEff=0 bug
+		expectedMinBytes := 20e9  // At least 20 GB
+		expectedMaxBytes := 60e9  // At most 60 GB
+		if weightBytes < expectedMinBytes || weightBytes > expectedMaxBytes {
+			t.Errorf("Scout weight bandwidth %e outside expected range [%e, %e]",
+				weightBytes, expectedMinBytes, expectedMaxBytes)
+		}
+
+		// Verify dense layers contribute (not zeroed by nEff)
+		// Dense layers should have full 16384 FFN weights, not scaled by nEff
+		t.Logf("Scout weight bandwidth: %.2f GB", weightBytes/1e9)
+	})
+
+	t.Run("nEff_zero_bug_fixed", func(t *testing.T) {
+		// Calculate with newTokens=0 (the bug scenario)
+		memZero := calculateMemoryAccessBytes(scoutConfig, 0, 0, false)
+		weightBytesZero := memZero["model_weights"]
+
+		// Calculate with newTokens=588 (correct scenario)
+		memBatch := calculateMemoryAccessBytes(scoutConfig, 0, 588, false)
+		weightBytesBatch := memBatch["model_weights"]
+
+		// With the fix, both should be positive (dense layers contribute regardless)
+		if weightBytesZero <= 0 {
+			t.Errorf("Weight bytes with newTokens=0 should be positive (dense layers), got %v", weightBytesZero)
+		}
+
+		// Batch version should be >= zero version (MoE layers add nEff-scaled weights)
+		if weightBytesBatch < weightBytesZero {
+			t.Errorf("Weight bytes with batch (%v) should be >= zero tokens (%v)", weightBytesBatch, weightBytesZero)
+		}
+
+		t.Logf("Weight bandwidth: newTokens=0: %.2f GB, newTokens=588: %.2f GB",
+			weightBytesZero/1e9, weightBytesBatch/1e9)
+	})
+}

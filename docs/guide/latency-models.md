@@ -1,6 +1,6 @@
 # Latency Models
 
-The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships four backends -- roofline (default, analytical), blackbox (data-driven), cross-model (physics-informed), and trained-roofline (roofline × learned corrections) -- and the pluggable architecture supports adding custom backends.
+The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships five backends -- roofline (default, analytical), blackbox (data-driven), cross-model (physics-informed), trained-roofline (roofline × learned corrections), and trained-physics (roofline × learned corrections) -- and the pluggable architecture supports adding custom backends.
 
 ```bash
 # Roofline mode (default) — analytical estimation from model architecture
@@ -20,6 +20,11 @@ The `LatencyModel` interface determines how BLIS estimates GPU step time for eac
 # Trained-roofline mode — roofline basis functions × learned corrections (7% MAPE)
 ./blis run --model qwen/qwen3-14b \
   --latency-model trained-roofline --hardware H100 --tp 1 \
+  --num-instances 4 --rate 100 --num-requests 500
+
+# Trained-physics mode — roofline × architecture-aware basis functions × learned corrections
+./blis run --model qwen/qwen3-14b \
+  --latency-model trained-physics --hardware H100 --tp 1 \
   --num-instances 4 --rate 100 --num-requests 500
 ```
 
@@ -150,7 +155,7 @@ Where `kvDimScaled = numLayers × numKVHeads × headDim / TP × 1e-6`, `isMoE = 
 !!! note "Automatic KV block calculation"
     Like roofline mode, crossmodel auto-derives `--total-kv-blocks` from model architecture and GPU memory when the flag is not set. Override with `--total-kv-blocks <N>` for non-standard deployments. The auto-calculation uses reference constants (90% GPU utilization, standard activation/overhead budgets matching the llm-d-benchmark capacity planner) and requires SwiGLU-family activations (`silu`, `swiglu`, `geglu`).
 
-## Trained-Roofline Mode (Recommended for New Models)
+## Trained-Roofline Mode
 
 Trained-roofline mode applies **learned correction factors** to analytical roofline basis functions, combining the physical grounding of roofline with the accuracy of data-driven fitting. Coefficients are fitted from 137K real vLLM requests across 4 architectures (Llama-2-7b, Llama-2-70b, Mixtral-8x7B, CodeLlama-34b) via non-negative least squares regression.
 
@@ -195,19 +200,103 @@ Where each basis function (T_pf_compute, T_pf_kv, etc.) is a full analytical roo
 !!! note "Chunked prefill limitation"
     Trained-roofline was fitted on single-step prefill data. When used with `--long-prefill-token-threshold > 0` (chunked prefill), the attention FLOPs formula uses `len(InputTokens)` (total prompt) as context for each chunk, overestimating early-chunk step times. For chunked-prefill workloads, pure roofline mode may be more accurate until coefficients are refit on chunked data.
 
+## Trained-Physics Mode (Recommended for New Models)
+
+Trained-physics mode applies **learned correction factors** to analytical roofline basis functions, combining the physical grounding of roofline with the accuracy of data-driven fitting. Coefficients are fitted from real vLLM measurements and generalize across model architectures, workloads, and TP configurations.
+
+```bash
+./blis run --model qwen/qwen3-14b \
+  --latency-model trained-physics --hardware H100 --tp 1
+```
+
+Same auto-fetch chain as roofline mode (HuggingFace config + hardware config resolution).
+
+**StepTime formula** (10 beta coefficients in bundled defaults):
+
+```
+StepTime = β₁ₐ × T_pf_compute                  # prefill compute only
+         + β₁ᵦ × T_pf_kv                       # prefill memory (typically ~0)
+         + β₂ₐ × T_dc_compute                  # decode compute (typically ~0)
+         + β₂ᵦ × T_dc_kv                       # decode memory only
+         + β₃ × T_weight                       # weight loading × correction
+         + β₄ × T_tp                           # TP communication × correction
+         + β₅ × L                              # per-layer overhead (µs/layer)
+         + β₆ × batch_size                     # per-request scheduling (µs/req)
+         + β₇                                  # per-step fixed overhead (µs)
+         + β₈ × nMoE                           # per-MoE-layer overhead (µs/layer)
+```
+
+The model supports 7-10 beta coefficients. Bundled defaults use 10 coefficients with prefill/decode split.
+
+**Beta coefficients:**
+
+- **β₁ₐ** (prefill compute, ~0.15): Corrects analytical FlashAttention + MLP FLOP estimates for kernel efficiency, memory access patterns.
+- **β₁ᵦ** (prefill memory, ~0): Prefill KV cache write bandwidth correction (typically near zero).
+- **β₂ₐ** (decode compute, ~0): Decode compute correction (typically near zero, decode is memory-bound).
+- **β₂ᵦ** (decode memory, ~1.9): Corrects KV cache read bandwidth. Primary decode bottleneck.
+- **β₃** (weight loading, ~1.4): Corrects model weight bandwidth for cache effects, prefetching, HBM contention.
+- **β₄** (TP communication, ~0.75): Corrects tensor-parallel All-Reduce overhead.
+- **β₅** (per-layer, ~32 µs/layer): Fixed overhead per transformer layer: kernel launch, CUDA graph, residual connections.
+- **β₆** (per-request, ~4 µs/request): Scheduling overhead per request: queue management, attention mask construction.
+- **β₇** (per-step, ~126 µs/step): Fixed overhead per step: CUDA synchronization, sampler invocation.
+- **β₈** (MoE-layer, ~482 µs/layer): Per-MoE-layer overhead for router gating, token permutation. Architecture-aware: applies only to interleaved MoE architectures (InterleaveMoELayerStep > 0). Zero for uniform MoE and dense models.
+
+**Alpha coefficients** (3 terms, API/framework overheads in µs):
+
+- **α₀** (QueueingTime, ~15,563 µs): Fixed per-request API processing (HTTP parsing, request validation, queue insertion).
+- **α₁** (PostDecodeFixedOverhead, ~777 µs): Fixed per-request post-decode overhead (detokenization setup, finish reason determination).
+- **α₂** (OutputTokenProcessingTime, ~46 µs/token): Per-output-token overhead (streaming token transmission, incremental detokenization).
+
+**Pre-trained coefficients** are stored in `trained_physics_coefficients` in `defaults.yaml`. No per-model calibration needed -- the model generalizes across architectures, workloads, and TP configurations.
+
+### Generalization Scope
+
+The trained-physics model is designed to generalize without per-model calibration:
+
+**Supported hardware:**
+
+- **H100** (80 GB HBM3, 989.5 TFLOPS BF16 / 1979 TFLOPS FP8, 3.35 TB/s)
+- **A100-SXM** (80 GB HBM2e, 312 TFLOPS BF16, 2.04 TB/s)
+- **A100-80** (alias for A100-SXM)
+- **L40S** (48 GB GDDR6, 362 TFLOPS BF16 / 1466 TFLOPS FP8, 0.864 TB/s)
+
+**Coefficients were trained on H100 traces** but the roofline basis functions automatically scale to each GPU's compute/bandwidth specifications via hardware config. This enables the model to generalize across hardware without GPU-specific calibration.
+
+**Model architectures:**
+
+- **Dense transformers** (Llama-2, Qwen3, GPT, etc.): Standard attention + MLP layers
+- **Uniform MoE** (Mixtral): All layers are MoE with top-k expert routing
+- **Interleaved MoE** (Scout): Alternating MoE and dense layers with architecture-specific β₈ overhead
+
+The model automatically detects MoE configuration from `config.json` (`num_local_experts`, `num_experts_per_tok`, `interleave_moe_layer_step`) and adjusts basis functions accordingly.
+
+**Workload types:**
+
+- **Prefill-heavy** (large input, short output): Chatbot prompts, document Q&A
+- **Decode-heavy** (small input, long output): Content generation, code completion
+- **Mixed batches** (concurrent prefill/decode): Production serving with heterogeneous requests
+- **TP configurations**: TP=1, TP=2, TP=4, TP=8 (All-Reduce overhead scales via β₄)
+
+**Why "recommended" over trained-roofline:**
+
+Trained-physics uses **13 coefficients** (10 beta: prefill compute/memory split, decode compute/memory split, weight, TP, layer overhead, batch overhead, step overhead, MoE overhead; 3 alpha: queueing, post-decode, per-token) that capture more architectural detail than trained-roofline's **10 coefficients** (7 beta: prefill/decode combined via max(), weight, TP, layer, batch, step; 3 alpha: same). The prefill/decode split (β₁ₐ/β₁ᵦ, β₂ₐ/β₂ᵦ) and MoE-specific overhead (β₈) enable better generalization to unseen model architectures (especially interleaved MoE) and batch compositions (mixed prefill/decode). 
+
+!!! note "MoE architecture detection"
+    β₈ applies conditionally based on `InterleaveMoELayerStep` from the model's `config.json`: 0 = uniform MoE (β₈ skipped), 1 = alternating MoE/dense (β₈ × 24 layers for Scout's 48 total), 2 = every 3rd layer is MoE, etc. This prevents over-penalizing uniform MoE models like Mixtral where expert routing overhead is amortized across all layers.
+
 ## When to Use Which
 
-| Aspect | Roofline (default) | Blackbox | Cross-Model | Trained-Roofline |
-|--------|-------------------|----------|-------------|------------------|
-| **When to use** | Quick analytical estimate | Model has per-model coefficients in `defaults.yaml` | Hand-engineered physics features | **Recommended** for new models (best accuracy without per-model training) |
-| **Data required** | HF `config.json` + `--hardware` + `--tp` | `defaults.yaml` entry for model/GPU/TP | HF `config.json` + `--hardware` + `--tp` | HF `config.json` + `--hardware` + `--tp` (global coefficients bundled) |
-| **GPU step time accuracy** | Good (analytical) | Highest (per-model) | Good (7 global params) | **7% MAPE** (10 global params, roofline × corrections) |
-| **MoE support** | No (dense only) | If trained | Yes (binary indicator) | Yes (per-expert FLOPs + effective expert count) |
-| **Alpha model** | Same as blackbox | α₀ + α₁·inputLen | Same as blackbox | α₀ (constant), α₁ (post-decode fixed), α₂ (per-token) |
-| **PostDecodeFixedOverhead** | 0 | 0 | 0 | α₁ (~1.85ms) |
+| Aspect | Roofline (default) | Blackbox | Cross-Model | Trained-Roofline | Trained-Physics |
+|--------|-------------------|----------|-------------|------------------|-----------------|
+| **When to use** | Quick analytical estimate | Model has per-model coefficients in `defaults.yaml` | Hand-engineered physics features | Roofline × learned corrections (7% MAPE) | **Recommended** for new models (generalizes across architectures, workloads, TP) |
+| **Data required** | HF `config.json` + `--hardware` + `--tp` | `defaults.yaml` entry for model/GPU/TP | HF `config.json` + `--hardware` + `--tp` | HF `config.json` + `--hardware` + `--tp` (global coefficients bundled) | HF `config.json` + `--hardware` + `--tp` (global coefficients bundled) |
+| **GPU step time accuracy** | Good (analytical) | Highest (per-model) | Good (7 global params) | **7% MAPE** (10 global params, roofline × corrections) | Good (13 global params, physics-informed basis functions) |
+| **MoE support** | Yes (per-expert FLOPs + effective expert count) | If trained | Yes (binary indicator) | Yes (per-expert FLOPs + effective expert count) | Yes (per-expert FLOPs + effective expert count + β₈ per-MoE-layer overhead) |
+| **Alpha model** | Same as blackbox | α₀ + α₁·inputLen | Same as blackbox | α₀ (constant), α₁ (post-decode fixed), α₂ (per-token) | α₀ (constant), α₁ (post-decode fixed), α₂ (per-token) |
+| **PostDecodeFixedOverhead** | 0 | 0 | 0 | α₁ (~1.85ms) | α₁ (~777µs) |
 
 !!! tip "Choosing the right mode"
-    **Trained-roofline** is the recommended default for any model with a HuggingFace `config.json` (7% MAPE GPU combined, MoE-aware, no per-model calibration needed). **Blackbox** for models with per-model coefficients in `defaults.yaml` (slightly higher accuracy due to per-model fitting). **Cross-model** for backward compatibility with existing crossmodel workflows. **Roofline** for pure analytical estimates when no learned corrections are desired.
+    **Trained-physics** is the recommended default for any model with a HuggingFace `config.json` (generalizes across architectures, workloads, and TP configurations without per-model calibration). **Blackbox** for models with per-model coefficients in `defaults.yaml` (highest accuracy due to per-model fitting). **Trained-roofline** is an alternative trained model (7% MAPE GPU combined). **Cross-model** for backward compatibility with existing crossmodel workflows. **Roofline** for pure analytical estimates when no learned corrections are desired.
 
 !!! warning "Current limitations"
     All analytical latency models support tensor parallelism (TP). Data parallelism (DP) and expert parallelism (EP) scheduling overhead are not yet modeled. Quantized weight precision (GPTQ, AWQ, FP8, compressed-tensors) is auto-detected from `quantization_config`, model name conventions (e.g., `w4a16`, `FP8`), or `torch_dtype` fallback, and is used for weight bandwidth and KV capacity calculations. MFU calibration values are still derived from FP16/BF16 measurements.

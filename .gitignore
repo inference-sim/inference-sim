@@ -52,6 +52,7 @@ model_configs/
 
 # binaries
 blis
+blis_iter*
 inference-sim
 
 # results
