@@ -279,6 +279,8 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			betaCoeffs:  coeffs.BetaCoeffs,
 			alphaCoeffs: coeffs.AlphaCoeffs,
 		}, nil
+	case "kernel-lookup":
+		return NewKernelLookupModel(coeffs, hw)
 	default:
 		return nil, fmt.Errorf("latency model: unknown backend %q; valid options: %s",
 			hw.Backend, strings.Join(sim.ValidLatencyBackendNames(), ", "))

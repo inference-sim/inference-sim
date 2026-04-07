@@ -329,3 +329,12 @@ func validateHardwareCalib(hw HardwareCalib) error {
 	}
 	return nil
 }
+
+func TestModelHardwareConfig_WithKernelProfilePath(t *testing.T) {
+	base := NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "m", "h100", 1, "kernel-lookup", 0)
+	assert.Equal(t, "", base.KernelProfilePath)
+	with := base.WithKernelProfilePath("/tmp/profile.yaml")
+	assert.Equal(t, "/tmp/profile.yaml", with.KernelProfilePath)
+	// Original is unchanged (value receiver)
+	assert.Equal(t, "", base.KernelProfilePath)
+}

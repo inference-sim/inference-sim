@@ -101,8 +101,9 @@ type ModelHardwareConfig struct {
 	Model       string        // model name (e.g., "meta-llama/llama-3.1-8b-instruct")
 	GPU         string        // GPU type (e.g., "H100")
 	TP          int           // tensor parallelism degree
-	Backend     string        // latency model backend: "" or "roofline" (default), "blackbox", "crossmodel", "trained-roofline"
-	MaxModelLen int64         // max total sequence length (input + output); 0 = unlimited (mirrors vLLM --max-model-len)
+	Backend           string // latency model backend: "" or "roofline" (default), "blackbox", "crossmodel", "trained-roofline"
+	MaxModelLen       int64  // max total sequence length (input + output); 0 = unlimited (mirrors vLLM --max-model-len)
+	KernelProfilePath string // path to kernel_profile.yaml; only used by Backend="kernel-lookup"
 }
 
 // NewModelHardwareConfig creates a ModelHardwareConfig with all fields explicitly set.
@@ -122,6 +123,13 @@ func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 		Backend:     backend,
 		MaxModelLen: maxModelLen,
 	}
+}
+
+// WithKernelProfilePath returns a copy of the config with KernelProfilePath set.
+// Used by the CLI when constructing a kernel-lookup model config.
+func (hw ModelHardwareConfig) WithKernelProfilePath(path string) ModelHardwareConfig {
+	hw.KernelProfilePath = path
+	return hw
 }
 
 // PolicyConfig groups scheduling and priority policy selection.
