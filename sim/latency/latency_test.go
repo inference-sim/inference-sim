@@ -579,4 +579,19 @@ func TestAllBackends_StepTime_EmptyBatch_FloorAtOne(t *testing.T) {
 	}
 	assert.GreaterOrEqual(t, crossmodel.StepTime(emptyBatch), int64(1),
 		"crossmodel with zero coefficients must still return >= 1")
+
+	// kernel-lookup: construct via factory with a valid kernel profile
+	profilePath := writeKernelProfile(t)
+	klCoeffs := sim.NewLatencyCoeffs(
+		[]float64{1, 1, 1, 1, 0, 1, 0, 40, 3, 100}, // warm-start gammas
+		[]float64{0, 0, 0},                            // zero alpha — worst case
+	)
+	klHW := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "h100", 1, "kernel-lookup", 0).
+		WithKernelProfilePath(profilePath)
+	klModel, err := NewLatencyModel(klCoeffs, klHW)
+	if err != nil {
+		t.Fatalf("NewLatencyModel(kernel-lookup): %v", err)
+	}
+	assert.GreaterOrEqual(t, klModel.StepTime(emptyBatch), int64(1),
+		"kernel-lookup must return >= 1 for empty batch")
 }
