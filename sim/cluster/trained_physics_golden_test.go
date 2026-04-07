@@ -6,7 +6,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"testing"
 
@@ -38,57 +37,13 @@ type trainedPhysicsExperiment struct {
 	TotalKVBlocks       int64           `json:"total_kv_blocks"`
 	CPUKVBlocks         int64           `json:"cpu_kv_blocks"`
 	Workload            json.RawMessage `json:"workload"`
-	Expected            tpGoldenExpected `json:"expected"`
-}
-
-type tpGoldenExpected struct {
-	CompletedRequests int     `json:"completed_requests"`
-	TotalInputTokens  int     `json:"total_input_tokens"`
-	TotalOutputTokens int     `json:"total_output_tokens"`
-	TTFTMeanMs        float64 `json:"ttft_mean_ms"`
-	TTFTP90Ms         float64 `json:"ttft_p90_ms"`
-	TTFTP99Ms         float64 `json:"ttft_p99_ms"`
-	E2EMeanMs         float64 `json:"e2e_mean_ms"`
-	E2EP90Ms          float64 `json:"e2e_p90_ms"`
-	E2EP99Ms          float64 `json:"e2e_p99_ms"`
-	ITLMeanMs         float64 `json:"itl_mean_ms"`
-}
-
-// tpWorkloadSpec mirrors the top-level keys written by the Python runner's
-// write_workload_spec (v2 inference_perf format). Fields carry both json and
-// yaml struct tags so the struct can be decoded from either format. The golden
-// JSON stores these with snake_case keys; yaml.v3 uses the yaml tag.
-type tpWorkloadSpec struct {
-	Version       string             `json:"version"       yaml:"version"`
-	Seed          int64              `json:"seed"          yaml:"seed"`
-	NumRequests   int                `json:"num_requests"  yaml:"num_requests"`
-	InferencePerf *tpInferencePerfWS `json:"inference_perf" yaml:"inference_perf"`
-}
-
-type tpInferencePerfWS struct {
-	Stages       []tpStage                 `json:"stages"        yaml:"stages"`
-	SharedPrefix *workload.SharedPrefixSpec `json:"shared_prefix" yaml:"shared_prefix"`
-}
-
-type tpStage struct {
-	Rate     float64 `json:"rate"     yaml:"rate"`
-	Duration int64   `json:"duration" yaml:"duration"`
-}
-
-// tpRepoRoot returns the absolute path to the repository root, resolved
-// relative to this source file (sim/cluster/ → ../.. → repo root).
-func tpRepoRoot() string {
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		panic("runtime.Caller failed")
-	}
-	return filepath.Join(filepath.Dir(thisFile), "..", "..")
+	Expected            goldenExpected `json:"expected"`
 }
 
 // loadTrainedPhysicsGoldenDataset reads testdata/trained_physics_iter29.json.
 func loadTrainedPhysicsGoldenDataset(t *testing.T) *trainedPhysicsGoldenDataset {
 	t.Helper()
-	path := filepath.Join(tpRepoRoot(), "testdata", "trained_physics_iter29.json")
+	path := filepath.Join(goldenRepoRoot(), "testdata", "trained_physics_iter29.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("loadTrainedPhysicsGoldenDataset: %v", err)
@@ -122,7 +77,7 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 		t.Skip("skipping trained-physics golden dataset test in short mode (-short flag)")
 	}
 
-	root := tpRepoRoot()
+	root := goldenRepoRoot()
 	ds := loadTrainedPhysicsGoldenDataset(t)
 	if len(ds.Experiments) == 0 {
 		t.Fatal("golden dataset has no experiments")
@@ -158,7 +113,7 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 			// ── Decode workload spec and generate requests ───────────────────
 			// SharedPrefixSpec uses yaml struct tags; use yaml.v3 to decode
 			// (JSON is valid YAML so this works for either format).
-			var ws tpWorkloadSpec
+			var ws goldenWorkloadSpec
 			if err := yaml.Unmarshal(exp.Workload, &ws); err != nil {
 				t.Fatalf("decode workload: %v", err)
 			}
@@ -249,8 +204,8 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 			}
 
 			// ── Compute output metrics from raw Metrics struct ────────────
-			sortedTTFTs := sortedValues(m.RequestTTFTs)
-			sortedE2Es := sortedValues(m.RequestE2Es)
+			sortedTTFTs := goldenSortedValues(m.RequestTTFTs)
+			sortedE2Es := goldenSortedValues(m.RequestE2Es)
 			allITLs := make([]float64, len(m.AllITLs))
 			for i, v := range m.AllITLs {
 				allITLs[i] = float64(v)
@@ -282,46 +237,13 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 			// renamed first (e.g. "trained-physics-v2"). See comment on
 			// TestTrainedPhysics_GoldenDataset.
 			const relTol = 1e-9
-			tpAssertGolden(t, "ttft_mean_ms", exp.Expected.TTFTMeanMs, ttftMean, relTol)
-			tpAssertGolden(t, "ttft_p90_ms", exp.Expected.TTFTP90Ms, ttftP90, relTol)
-			tpAssertGolden(t, "ttft_p99_ms", exp.Expected.TTFTP99Ms, ttftP99, relTol)
-			tpAssertGolden(t, "e2e_mean_ms", exp.Expected.E2EMeanMs, e2eMean, relTol)
-			tpAssertGolden(t, "e2e_p90_ms", exp.Expected.E2EP90Ms, e2eP90, relTol)
-			tpAssertGolden(t, "e2e_p99_ms", exp.Expected.E2EP99Ms, e2eP99, relTol)
-			tpAssertGolden(t, "itl_mean_ms", exp.Expected.ITLMeanMs, itlMean, relTol)
+			goldenAssertApprox(t, "ttft_mean_ms", exp.Expected.TTFTMeanMs, ttftMean, relTol)
+			goldenAssertApprox(t, "ttft_p90_ms", exp.Expected.TTFTP90Ms, ttftP90, relTol)
+			goldenAssertApprox(t, "ttft_p99_ms", exp.Expected.TTFTP99Ms, ttftP99, relTol)
+			goldenAssertApprox(t, "e2e_mean_ms", exp.Expected.E2EMeanMs, e2eMean, relTol)
+			goldenAssertApprox(t, "e2e_p90_ms", exp.Expected.E2EP90Ms, e2eP90, relTol)
+			goldenAssertApprox(t, "e2e_p99_ms", exp.Expected.E2EP99Ms, e2eP99, relTol)
+			goldenAssertApprox(t, "itl_mean_ms", exp.Expected.ITLMeanMs, itlMean, relTol)
 		})
-	}
-}
-
-// sortedValues returns the values of a map[string]float64 sorted in ascending
-// order. The key iteration is sorted first (R2: deterministic map traversal),
-// then the extracted values are sorted by value for use in percentile and mean
-// calculations. Both steps together ensure reproducible output regardless of
-// Go's non-deterministic map iteration order.
-func sortedValues(m map[string]float64) []float64 {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys) // R2: deterministic iteration order
-	vals := make([]float64, len(keys))
-	for i, k := range keys {
-		vals[i] = m[k]
-	}
-	sort.Float64s(vals) // sort by value for percentile/mean computation
-	return vals
-}
-
-// tpAssertGolden asserts that got ≈ want within the given relative tolerance.
-func tpAssertGolden(t *testing.T, name string, want, got, relTol float64) {
-	t.Helper()
-	if want == 0 && got == 0 {
-		return
-	}
-	diff := math.Abs(want - got)
-	maxVal := math.Max(math.Abs(want), math.Abs(got))
-	if maxVal > 0 && diff/maxVal > relTol {
-		t.Errorf("%s: got %.10f, want %.10f (relDiff=%.2e, tolerance=%.2e)",
-			name, got, want, diff/maxVal, relTol)
 	}
 }
