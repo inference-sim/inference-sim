@@ -180,6 +180,14 @@ def build_blis_command(
         results_path,
     ]
 
+    # Resolve defaults.yaml path relative to BLIS binary location.
+    # The runner's CWD is training/ but defaults.yaml is in the repo root (next to blis binary).
+    defaults_path = os.path.abspath(
+        os.path.join(os.path.dirname(os.path.abspath(blis_binary)), "defaults.yaml")
+    )
+    if os.path.exists(defaults_path):
+        cmd.extend(["--defaults-filepath", defaults_path])
+
     # Add coefficient flags if provided
     if alpha_coeffs is not None and beta_coeffs is not None:
         cmd.extend(["--alpha-coeffs", alpha_coeffs])
