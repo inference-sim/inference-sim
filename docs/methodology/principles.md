@@ -23,7 +23,7 @@ Principles extracted from 30 iterations of [Strategy Evolution](strategy-evoluti
 | RP-7 | **The optimal strategy is regime-dependent** — Normal KV: `pa:3,qd:2,kv:2`. Under pressure: `pa:3,qd:2`. At high load with admission: `pa:4,qd:3`. | Iter 8, 10 | Static default fails under KV pressure (23–25% worse than RR) |
 
 !!! info "Reconciling with BLIS Defaults"
-    The current BLIS default is `prefix-affinity:3,queue-depth:2,kv-utilization:2` (llm-d parity). Strategy Evolution discovered that `pa:4,qd:3` (no kv-util) performs better under KV pressure and at high load with admission control. The default is maintained for compatibility with the llm-d ecosystem. Users running Strategy Evolution experiments should consider the regime-dependent recommendation in RP-7 rather than assuming the default is optimal for all scenarios.
+    The current BLIS default is `precise-prefix-cache:2,queue-depth:1,kv-utilization:1` (llm-d parity). Strategy Evolution discovered that `pa:4,qd:3` (no kv-util) performs better under KV pressure and at high load with admission control. The default is maintained for compatibility with the llm-d ecosystem. Users running Strategy Evolution experiments should consider the regime-dependent recommendation in RP-7 rather than assuming the default is optimal for all scenarios.
 
 | # | Principle | Source | Evidence |
 |---|-----------|--------|----------|

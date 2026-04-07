@@ -25,7 +25,7 @@ go build -o blis main.go
 - **Chunked prefill and preemption-aware batch formation**
 - **Pluggable latency models** — roofline (default, analytical FLOPs/bandwidth), blackbox (data-driven coefficients), cross-model (physics-informed, MoE-aware), and trained-roofline (roofline × learned corrections), with an extensible interface for custom backends
 - **Multi-instance cluster simulation** with shared-clock event loop
-- **Pluggable routing policies** — round-robin, least-loaded, and composable weighted-scoring with prefix-affinity, queue-depth, and KV-utilization scorers
+- **Pluggable routing policies** — round-robin, least-loaded, and composable weighted-scoring with six pluggable scorers (default: precise-prefix-cache, queue-depth, kv-utilization)
 - **Admission control**, **priority policies**, and **instance schedulers** — each a pluggable policy axis
 - **Canonical workload specification** — multi-client YAML DSL with Poisson/Gamma/Weibull/constant arrival processes, 5 distribution types, SLO classes (critical/standard/sheddable/batch/background), prefix groups, cohort dynamics, multimodal, reasoning multi-turn, and composable specs via `blis compose`
 - **Rich metrics pipeline** — per-request, per-instance, and cluster-level metrics including TTFT/ITL/E2E distributions, KV cache diagnostics, anomaly detection (priority inversions, HOL blocking), SLO attainment, Jain fairness index, and multi-objective fitness evaluation
