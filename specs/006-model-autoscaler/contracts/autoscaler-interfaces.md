@@ -82,7 +82,7 @@ Contract: Actuator
   Must NOT:   Block; all effects are scheduled as future simulation events
   Must NOT:   Reorder or filter decisions — orchestrator already applied cooldown
   Drain semantics: WaitDrain — instance stops receiving new requests; GPUs freed after InFlightCount == 0
-  Pending cancel: Before drain, cancel any PendingPlacement for the same ModelID
+  Pending cancel: Before drain, cancel any PendingPlacement for the same ModelID (deferred to 1C-4b/specs-010; DirectActuator does not yet implement this)
 ```
 
 **Implementations**:

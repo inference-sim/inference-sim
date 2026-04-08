@@ -47,9 +47,20 @@ cfg := cluster.DeploymentConfig{
     ScaleDownCooldownUs:       300_000_000,
 }
 
-// The simulator wires the pipeline internally. No explicit interface assignment needed
-// for the default pipeline (DefaultCollector + SaturationAnalyzer + UnlimitedEngine + DirectActuator).
+// NOTE: Automatic pipeline wiring from `blis run` CLI flags is not yet implemented.
+// The autoscaler pipeline is constructed internally by NewClusterSimulator when
+// ModelAutoscalerIntervalUs > 0, but the four components (Collector, Analyzer,
+// Engine, Actuator) are initialized to nil. cmd/ wiring to inject the default
+// V2 pipeline (DefaultCollector + V2SaturationAnalyzer + UnlimitedEngine +
+// DirectActuator) is planned for a follow-up.
+//
+// For now, the pipeline is testable via internal wiring in sim/cluster/ tests:
+//   cs.autoscaler = newAutoscalerPipeline(collector, analyzer, engine, actuator, rng)
 ```
+
+> **Limitation:** The autoscaler pipeline currently runs only in tests. CLI integration
+> (e.g., `--autoscaler-analyzer v2-saturation`) will be added in a follow-up PR to
+> expose the pipeline from `blis run` and `blis replay`.
 
 ---
 
