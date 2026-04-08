@@ -2016,3 +2016,64 @@ func TestExpandInferencePerfSpec_SingleStageNonMultiTurn_FairDistribution(t *tes
 		t.Errorf("total requests = %d, want 600 (exact)", len(requests))
 	}
 }
+
+// --- Determinism regression test (Task 4) ---
+
+func TestExpandInferencePerfSpec_ExactDistribution_PreservesDeterminism(t *testing.T) {
+	// BC-5: Determinism preserved after fix (INV-6)
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 5.0, Duration: 600},
+			{Rate: 10.0, Duration: 600},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  11,
+			NumUsersPerSystemPrompt: 4,
+			SystemPromptLen:         100,
+			QuestionLen:             200,
+			OutputLen:               50,
+			EnableMultiTurnChat:     true,
+		},
+	}
+
+	// Generate twice with same seed
+	horizon := int64(1_200_000_000)
+
+	expanded1, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("expansion1 error: %v", err)
+	}
+	r1, err := GenerateRequests(expanded1, horizon, 0)
+	if err != nil {
+		t.Fatalf("generation1 error: %v", err)
+	}
+
+	expanded2, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("expansion2 error: %v", err)
+	}
+	r2, err := GenerateRequests(expanded2, horizon, 0)
+	if err != nil {
+		t.Fatalf("generation2 error: %v", err)
+	}
+
+	// Verify byte-identical output
+	if len(r1) != len(r2) {
+		t.Fatalf("different counts: %d vs %d", len(r1), len(r2))
+	}
+	for i := range r1 {
+		if r1[i].ArrivalTime != r2[i].ArrivalTime {
+			t.Errorf("request %d: arrival %d vs %d", i, r1[i].ArrivalTime, r2[i].ArrivalTime)
+			if i >= 5 {
+				t.Logf("... (stopping after 5 mismatches)")
+				break
+			}
+		}
+		if r1[i].ID != r2[i].ID {
+			t.Errorf("request %d: ID %q vs %q", i, r1[i].ID, r2[i].ID)
+			if i >= 5 {
+				break
+			}
+		}
+	}
+}
