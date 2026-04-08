@@ -220,13 +220,13 @@ go test ./sim/workload/ -count=1
 Notes:
 - The new test verifies an invariant law ("one session per client") from first principles — not a golden value.
 - BC-3 is verified by the full `go test ./sim/workload/` suite passing without regression.
-- No golden dataset regeneration needed (this fix changes session attribution, not simulation output format).
+- Golden datasets regenerated: all 15 experiments in both `roofline_goldendataset.json` and `trained_physics_iter29.json` use multi-stage multi-turn workloads affected by the bug. Correct session attribution changes `completed_requests` (3060→5130) and all latency values. Regenerated via `go test ./sim/cluster/ -update-golden` (added in same PR).
 
 ### I) Risk Analysis
 
 | Risk | Likelihood | Impact | Mitigation | Task |
 |------|-----------|--------|------------|------|
-| Single-stage regression: removing `claimedSessions` breaks single-stage multi-turn | Low | High | BC-3 covered by existing test suite; `claimedSessions` was always a no-op for single-stage (each client had unique TenantID in single-stage, so no sessions were ever double-claimed) | Task 2 |
+| Single-stage regression: removing `claimedSessions` breaks single-stage multi-turn | Low | High | BC-3 covered by existing test suite. Note: single-stage + `NumUsersPerSystemPrompt > 1` also shared `TenantID = prefixGroup` across users (inference_perf.go:125-141), so `claimedSessions` was NOT a no-op there either — the original predicate was equally broken for that case. The ClientID fix is correct for both. | Task 2 |
 | Prefix extraction returning wrong tokens for multi-stage | Low | Medium | All clients in a `prefixGroup` have identical prefix tokens (same `SystemPromptLen`); secondary fix is behavior-neutral in practice | Task 2 |
 | Non-closed-loop clients accidentally affected | None | — | The fix is inside the `isClosedLoop(client)` guard; non-session clients are untouched | — |
 
@@ -252,7 +252,7 @@ Notes:
 - [x] Each task produces working, testable code.
 - [x] Task dependencies correctly ordered (test proves bug exists → fix makes it pass).
 - [x] All contracts mapped to specific tasks (see H above).
-- [x] No golden dataset regeneration needed.
+- [x] Golden datasets regenerated (see H above; all 15 experiments in both JSONs updated via `-update-golden`).
 - [x] Construction site audit completed — no new struct fields.
 - [x] Not part of a macro plan — no macro plan update needed.
 
@@ -268,7 +268,7 @@ Notes:
 - [x] R9: No YAML fields modified.
 - [x] R10: No YAML parsing modified.
 - [x] R11: No division introduced.
-- [x] R12: No golden datasets affected.
+- [x] R12: Golden datasets affected and regenerated — all 15 experiments in `roofline_goldendataset.json` and `trained_physics_iter29.json` use multi-stage multi-turn workloads. Old values encoded the buggy session counts; new values reflect correct behavior.
 - [x] R13: No new interfaces.
 - [x] R14: No multi-concern methods modified.
 - [x] R15: No stale PR references (plan references only `#974`, which is the current issue).
