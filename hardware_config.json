@@ -6,7 +6,9 @@
 		"BwPeakTBs":   3.35,
 		"mfuPrefill":  0.45,
 		"mfuDecode":   0.30,
-		"MemoryGiB":   80.0
+		"MemoryGiB":   80.0,
+		"mixedBatchPenalty": 0.0,
+		"overlapPenalty":    0.0
 	},
 	"A100-SXM": {
 		"_comment":    "MFU values calibrated per Discussion #589: https://github.com/inference-sim/inference-sim/discussions/589",
@@ -15,7 +17,9 @@
 		"BwPeakTBs":   2.039,
 		"mfuPrefill":  0.38,
 		"mfuDecode":   0.18,
-		"MemoryGiB":   80.0
+		"MemoryGiB":   80.0,
+		"mixedBatchPenalty": 0.0,
+		"overlapPenalty":    0.0
 	},
 	"A100-80": {
 		"_comment":    "Alias for A100-SXM — defaults.yaml uses A100-80 for all A100 model entries (BC-14). MFU values calibrated per Discussion #589: https://github.com/inference-sim/inference-sim/discussions/589",
@@ -24,7 +28,9 @@
 		"BwPeakTBs":   2.039,
 		"mfuPrefill":  0.38,
 		"mfuDecode":   0.18,
-		"MemoryGiB":   80.0
+		"MemoryGiB":   80.0,
+		"mixedBatchPenalty": 0.0,
+		"overlapPenalty":    0.0
 	},
 	"L40S": {
 		"_comment":    "MFU values calibrated per Discussion #589: https://github.com/inference-sim/inference-sim/discussions/589",
@@ -33,6 +39,8 @@
 		"BwPeakTBs":   0.864,
 		"mfuPrefill":  0.32,
 		"mfuDecode":   0.08,
-		"MemoryGiB":   48.0
+		"MemoryGiB":   48.0,
+		"mixedBatchPenalty": 0.0,
+		"overlapPenalty":    0.0
 	}
 }

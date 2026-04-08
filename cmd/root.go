@@ -160,6 +160,10 @@ var (
 	prefillMaxModelLen    int64
 	decodeMaxModelLen     int64
 
+	// Roofline interference penalty overrides (issue #949)
+	mixedBatchPenalty float64 // CLI --mixed-batch-penalty; overrides hardware_config.json when explicitly set
+	overlapPenalty    float64 // CLI --overlap-penalty; overrides hardware_config.json when explicitly set
+
 	// output file paths
 	metricsPath string // File to write MetricsOutput JSON for blis run (--metrics-path)
 	resultsPath string // File to write []SimResult JSON for blis replay (--results-path)
@@ -676,6 +680,15 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		}
 		hwConfig = hc
 
+		// Apply CLI overrides for interference penalty parameters (R18: CLI takes precedence
+		// over hardware_config.json; Changed() guard prevents silent overwrite of JSON defaults).
+		if cmd.Flags().Changed("mixed-batch-penalty") {
+			hwConfig.MixedBatchPenalty = mixedBatchPenalty
+		}
+		if cmd.Flags().Changed("overlap-penalty") {
+			hwConfig.OverlapPenalty = overlapPenalty
+		}
+
 		applyWeightPrecisionFallback(&modelConfig, model, hfConfig.Raw)
 
 		if backend == "trained-roofline" {
@@ -1029,6 +1042,14 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&snapshotRefreshInterval, "snapshot-refresh-interval", 0, "Prometheus snapshot refresh interval for all instance metrics in microseconds (0 = immediate)")
 	cmd.Flags().Int64Var(&cacheSignalDelay, "cache-signal-delay", cluster.DefaultCacheSignalDelay, "Propagation delay for prefix cache signals in microseconds. Only affects precise-prefix-cache and no-hit-lru scorers; no effect on other routing policies. Default 2s matches production llm-d speculative TTL. Set to 0 for oracle mode (live cache state).")
 	cmd.Flags().Float64Var(&gpuMemoryUtilization, "gpu-memory-utilization", 0.9, "Fraction of GPU memory to use for KV cache, in the range (0, 1.0]. Default: 0.9 (90%)")
+	cmd.Flags().Float64Var(&mixedBatchPenalty, "mixed-batch-penalty", 0.0,
+		"Roofline MFU degradation factor for mixed prefill+decode batches [0.0, 1.0]. "+
+			"Applied as compute_time /= (1 - penalty * minority_fraction) when both phases share a step. "+
+			"0 = no penalty (default, backward-compatible). Overrides hardware_config.json value when set.")
+	cmd.Flags().Float64Var(&overlapPenalty, "overlap-penalty", 0.0,
+		"Roofline imperfect compute/memory overlap factor [0.0, 1.0]. "+
+			"Applied as step_time = max(compute, memory) + penalty * min(compute, memory). "+
+			"0 = perfect overlap / current behavior (default, backward-compatible). Overrides hardware_config.json value when set.")
 
 	// PD disaggregation config
 	cmd.Flags().IntVar(&prefillInstances, "prefill-instances", 0, "Number of instances dedicated to prefill (0 = disabled)")

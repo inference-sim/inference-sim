@@ -20,6 +20,13 @@ For each phase:
 
 $$\text{Phase Time} = \max\left( \frac{\text{Total FLOPS}}{\text{Peak Performance}}, \frac{\text{Total Bytes Transferred}}{\text{Memory Bandwidth}} \right)$$
 
+When optional interference parameters are configured in `hardware_config.json`, two corrections are applied:
+
+- **Mixed-batch penalty** (`mixedBatchPenalty`): When prefill and decode tokens share a step, effective MFU is reduced by the minority-phase fraction: `compute_time /= (1 - mixedBatchPenalty × minority_fraction)`.
+- **Overlap penalty** (`overlapPenalty`): Replaces `max(compute, memory)` with `max(compute, memory) + overlapPenalty × min(compute, memory)`, modeling imperfect compute/memory overlap from SM scheduling contention.
+
+Both default to 0.0 (no correction). See the [hardware config fields table](#adding-new-gpus) for details.
+
 As a result, overall step time is given by:
 
 $$\text{Step Time} = \text{Prefill Phase Time} + \text{Decode Phase Time}$$
@@ -101,5 +108,7 @@ Alternatively, download the `config.json` manually:
 | `mfuPrefill` | Model FLOPS Utilization for prefill phase (compute-bound) |
 | `mfuDecode` | Model FLOPS Utilization for decode phase (memory-bound) |
 | `MemoryGiB` | GPU memory capacity in GiB. Used by `CalculateKVBlocks` to auto-derive `--total-kv-blocks` when roofline or crossmodel mode is active and the flag is not explicitly set. |
+| `mixedBatchPenalty` | *(Optional, default 0.0)* MFU degradation factor `[0.0, 1.0]` for mixed prefill+decode batches. Applied as `compute_time /= (1 - penalty × minority_fraction)` when both phases share a step. 0 = no penalty (backward-compatible). |
+| `overlapPenalty` | *(Optional, default 0.0)* Imperfect compute/memory overlap factor `[0.0, 1.0]`. Applied as `step_time = max(compute, memory) + penalty × min(compute, memory)`. 0 = perfect overlap (backward-compatible). |
 
 > Note: The Peak TFLOPS and BW for a given GPU family might vary by GPU connectivity (e.g. SXM vs PCIe). We recommend a separate entry for each GPU connectivity type - e.g. A100-SXM, A100-PCIe etc in `hardware_config.json`.

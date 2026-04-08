@@ -1257,3 +1257,241 @@ func TestRooflineStepTime_Scout_InterleavedMoE(t *testing.T) {
 			weightBytesZero/1e9, weightBytesBatch/1e9)
 	})
 }
+
+// BC-1: MixedBatchPenalty strictly increases step time for compute-bound mixed batches.
+// Uses ultra-high bandwidth to guarantee compute-bound behavior so the penalty is observable.
+func TestRooflineStepTime_MixedBatchPenalty_IncreasesStepTime(t *testing.T) {
+	mc := testModelConfig()
+
+	// Mixed batch: equal prefill and decode token counts → 50/50 minority fraction (maximum penalty).
+	mixedStep := StepConfig{
+		PrefillRequests: []PrefillRequestConfig{
+			{ProgressIndex: 0, NumNewPrefillTokens: 64},
+		},
+		DecodeRequests: make([]DecodeRequestConfig, 64),
+	}
+	for i := range mixedStep.DecodeRequests {
+		mixedStep.DecodeRequests[i] = DecodeRequestConfig{ProgressIndex: int64(64 + i), NumNewDecodeTokens: 1}
+	}
+
+	// Force compute-bound behavior with ultra-high bandwidth (memory is never the bottleneck).
+	// This ensures the MixedBatchPenalty on compute time is directly observable.
+	hcNoPenalty := testHardwareCalib()
+	hcNoPenalty.BwPeakTBs = 1e6 // effectively infinite bandwidth
+	hcWithPenalty := testHardwareCalib()
+	hcWithPenalty.BwPeakTBs = 1e6
+	hcWithPenalty.MixedBatchPenalty = 0.4
+
+	noPenaltyTime := rooflineStepTime(mc, hcNoPenalty, mixedStep, 1)
+	withPenaltyTime := rooflineStepTime(mc, hcWithPenalty, mixedStep, 1)
+
+	// The penalty must strictly increase time for compute-bound mixed batches.
+	if withPenaltyTime <= noPenaltyTime {
+		t.Errorf("BC-1: compute-bound mixed batch with penalty (%d µs) should be > no-penalty (%d µs)",
+			withPenaltyTime, noPenaltyTime)
+	}
+}
+
+// BC-2: MixedBatchPenalty has no effect on pure-prefill batches.
+func TestRooflineStepTime_MixedBatchPenalty_NoEffectOnPurePrefill(t *testing.T) {
+	mc := testModelConfig()
+
+	prefillOnly := StepConfig{
+		PrefillRequests: []PrefillRequestConfig{
+			{ProgressIndex: 0, NumNewPrefillTokens: 256},
+			{ProgressIndex: 0, NumNewPrefillTokens: 128},
+		},
+	}
+
+	hcNoPenalty := testHardwareCalib()
+	hcWithPenalty := testHardwareCalib()
+	hcWithPenalty.MixedBatchPenalty = 0.3
+
+	noPenaltyTime := rooflineStepTime(mc, hcNoPenalty, prefillOnly, 1)
+	withPenaltyTime := rooflineStepTime(mc, hcWithPenalty, prefillOnly, 1)
+
+	if withPenaltyTime != noPenaltyTime {
+		t.Errorf("BC-2: pure-prefill batch should be unaffected by MixedBatchPenalty: no-penalty=%d µs, with-penalty=%d µs",
+			noPenaltyTime, withPenaltyTime)
+	}
+}
+
+// BC-2: MixedBatchPenalty has no effect on pure-decode batches.
+func TestRooflineStepTime_MixedBatchPenalty_NoEffectOnPureDecode(t *testing.T) {
+	mc := testModelConfig()
+
+	decodeOnly := StepConfig{
+		DecodeRequests: []DecodeRequestConfig{
+			{ProgressIndex: 512, NumNewDecodeTokens: 1},
+			{ProgressIndex: 1024, NumNewDecodeTokens: 1},
+			{ProgressIndex: 2048, NumNewDecodeTokens: 1},
+		},
+	}
+
+	hcNoPenalty := testHardwareCalib()
+	hcWithPenalty := testHardwareCalib()
+	hcWithPenalty.MixedBatchPenalty = 0.3
+
+	noPenaltyTime := rooflineStepTime(mc, hcNoPenalty, decodeOnly, 1)
+	withPenaltyTime := rooflineStepTime(mc, hcWithPenalty, decodeOnly, 1)
+
+	if withPenaltyTime != noPenaltyTime {
+		t.Errorf("BC-2: pure-decode batch should be unaffected by MixedBatchPenalty: no-penalty=%d µs, with-penalty=%d µs",
+			noPenaltyTime, withPenaltyTime)
+	}
+}
+
+// BC-3: Larger minority fraction produces greater or equal step time.
+// A 50/50 split has the maximum minority fraction (0.5); a 90/10 split has a smaller one (0.1).
+func TestRooflineStepTime_MixedBatchPenalty_SymmetricMinority(t *testing.T) {
+	mc := testModelConfig()
+	hc := testHardwareCalib()
+	hc.MixedBatchPenalty = 0.4
+	hc.BwPeakTBs = 1e6 // Force compute-bound: eliminates memory bottleneck so penalty affects step time
+
+	// 50/50 split: 50 prefill tokens vs 50 decode tokens (50 decode requests × 1 token each)
+	step5050 := StepConfig{
+		PrefillRequests: []PrefillRequestConfig{
+			{ProgressIndex: 0, NumNewPrefillTokens: 50},
+		},
+		DecodeRequests: make([]DecodeRequestConfig, 50),
+	}
+	for i := range step5050.DecodeRequests {
+		step5050.DecodeRequests[i] = DecodeRequestConfig{ProgressIndex: int64(512 + i*64), NumNewDecodeTokens: 1}
+	}
+
+	// 90/10 split: 90 prefill tokens vs 10 decode tokens
+	step9010 := StepConfig{
+		PrefillRequests: []PrefillRequestConfig{
+			{ProgressIndex: 0, NumNewPrefillTokens: 90},
+		},
+		DecodeRequests: make([]DecodeRequestConfig, 10),
+	}
+	for i := range step9010.DecodeRequests {
+		step9010.DecodeRequests[i] = DecodeRequestConfig{ProgressIndex: int64(512 + i*64), NumNewDecodeTokens: 1}
+	}
+
+	time5050 := rooflineStepTime(mc, hc, step5050, 1)
+	time9010 := rooflineStepTime(mc, hc, step9010, 1)
+
+	// 50/50 has a larger minority fraction → more penalty → should be slower or equal.
+	// Note: absolute batch sizes differ so total compute also differs; we test the penalty direction.
+	// The 50/50 minority fraction (0.5) vs 90/10 (0.1) implies the 50/50 compute penalty is 5× stronger.
+	// Even accounting for different total token counts, the penalty magnitude dominates.
+	hcNoPenalty := testHardwareCalib()
+	hcNoPenalty.MixedBatchPenalty = 0.0
+	hcNoPenalty.BwPeakTBs = 1e6 // Match compute-bound regime
+	time5050NoPenalty := rooflineStepTime(mc, hcNoPenalty, step5050, 1)
+	time9010NoPenalty := rooflineStepTime(mc, hcNoPenalty, step9010, 1)
+
+	// The ratio of (penalized / no-penalty) should be higher for the 50/50 batch.
+	ratio5050 := float64(time5050) / float64(time5050NoPenalty)
+	ratio9010 := float64(time9010) / float64(time9010NoPenalty)
+	if ratio5050 < ratio9010 {
+		t.Errorf("BC-3: 50/50 batch penalty ratio (%.4f) should be >= 90/10 ratio (%.4f): larger minority fraction → more penalty",
+			ratio5050, ratio9010)
+	}
+}
+
+// BC-4: OverlapPenalty strictly increases step time for any non-empty batch.
+// Uses a batch where both compute and memory components are non-negligible.
+func TestRooflineStepTime_OverlapPenalty_IncreasesStepTime(t *testing.T) {
+	mc := testModelConfig()
+
+	// Use a prefill-only step to keep things simple: both compute and memory are present.
+	step := StepConfig{
+		PrefillRequests: []PrefillRequestConfig{
+			{ProgressIndex: 0, NumNewPrefillTokens: 128},
+		},
+	}
+
+	hcNoPenalty := testHardwareCalib()
+	hcWithPenalty := testHardwareCalib()
+	hcWithPenalty.OverlapPenalty = 0.2
+
+	noPenaltyTime := rooflineStepTime(mc, hcNoPenalty, step, 1)
+	withPenaltyTime := rooflineStepTime(mc, hcWithPenalty, step, 1)
+
+	// OverlapPenalty adds min(compute, memory) * penalty to the result.
+	// When min > 0 and penalty > 0, the result is strictly greater.
+	if withPenaltyTime <= noPenaltyTime {
+		t.Errorf("BC-4: step with OverlapPenalty=0.2 (%d µs) should be > no-penalty (%d µs)",
+			withPenaltyTime, noPenaltyTime)
+	}
+}
+
+// BC-5: Higher OverlapPenalty produces greater or equal step time.
+func TestRooflineStepTime_OverlapPenalty_Monotonicity(t *testing.T) {
+	mc := testModelConfig()
+
+	step := StepConfig{
+		PrefillRequests: []PrefillRequestConfig{
+			{ProgressIndex: 0, NumNewPrefillTokens: 128},
+		},
+	}
+
+	hcLow := testHardwareCalib()
+	hcLow.OverlapPenalty = 0.1
+	hcHigh := testHardwareCalib()
+	hcHigh.OverlapPenalty = 0.3
+
+	lowTime := rooflineStepTime(mc, hcLow, step, 1)
+	highTime := rooflineStepTime(mc, hcHigh, step, 1)
+
+	if highTime < lowTime {
+		t.Errorf("BC-5: OverlapPenalty=0.3 (%d µs) should be >= OverlapPenalty=0.1 (%d µs)",
+			highTime, lowTime)
+	}
+}
+
+// BC-6: Zero penalties produce identical output to the pre-#949 max(compute, memory) formula.
+func TestRooflineStepTime_ZeroPenalties_BackwardCompatible(t *testing.T) {
+	mc := testModelConfig()
+
+	// Use the unmodified testHardwareCalib (both new fields are zero by default).
+	hc := testHardwareCalib()
+
+	mixedStep := StepConfig{
+		PrefillRequests: []PrefillRequestConfig{
+			{ProgressIndex: 0, NumNewPrefillTokens: 128},
+		},
+		DecodeRequests: []DecodeRequestConfig{
+			{ProgressIndex: 512, NumNewDecodeTokens: 1},
+		},
+	}
+
+	result := rooflineStepTime(mc, hc, mixedStep, 1)
+
+	// Manually compute the expected value using the original max() formula.
+	tpFactor := 1.0
+	peakFlops := hc.TFlopsPeak * 1e12
+	peakBW := hc.BwPeakTBs * 1e12
+
+	var totalComputeS float64
+	var totalDynamicBytes float64
+
+	for _, req := range mixedStep.PrefillRequests {
+		numTokens := int64(req.NumNewPrefillTokens)
+		f := calculateTransformerFlops(mc, req.ProgressIndex, numTokens, true, true)
+		totalComputeS += f["total"] / tpFactor / (peakFlops * hc.MfuPrefill)
+		m := calculateMemoryAccessBytes(mc, req.ProgressIndex, numTokens, true)
+		totalDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
+	}
+	for _, req := range mixedStep.DecodeRequests {
+		f := calculateTransformerFlops(mc, req.ProgressIndex, 1, true, true)
+		totalComputeS += f["total"] / tpFactor / (peakFlops * hc.MfuDecode)
+		m := calculateMemoryAccessBytes(mc, req.ProgressIndex, 1, true)
+		totalDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
+	}
+	baseMem := calculateMemoryAccessBytes(mc, 0, 0, false)
+	weightBytes := baseMem["model_weights"] / tpFactor
+	totalMemoryS := (weightBytes + totalDynamicBytes) / peakBW
+
+	expected := clampToInt64(math.Max(totalComputeS, totalMemoryS) * 1e6)
+
+	if result != expected {
+		t.Errorf("BC-6: zero penalties must produce identical result to max(compute, memory): got %d µs, expected %d µs",
+			result, expected)
+	}
+
+}
