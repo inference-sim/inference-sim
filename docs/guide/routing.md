@@ -33,7 +33,7 @@ The `weighted` routing policy is the most flexible. It combines multiple scoring
 | `prefix-affinity` | Proportional prefix match ratio via router-side block hash cache | prefix-scorer |
 | `precise-prefix-cache` | Actual KV cache state query with min-max normalization | precise-prefix-cache-scorer |
 | `no-hit-lru` | LRU positional scoring for cold requests (warm = 0.5) | no-hit-lru-scorer |
-| `queue-depth` | Effective load: `QueueDepth + BatchSize + InFlightRequests` (min-max normalized) | queue-scorer |
+| `queue-depth` | Queue depth: `QueueDepth` only (min-max normalized) | queue-scorer |
 | `kv-utilization` | Inverse KV utilization: `1 - KVUtilization` | kv-cache-utilization-scorer |
 | `load-balance` | Inverse transform: `1 / (1 + effectiveLoad)` | BLIS-native (no llm-d equivalent) |
 
@@ -79,7 +79,7 @@ BLIS models three signal freshness tiers:
 At high request rates, many routing decisions occur between KV utilization updates (step time varies by model — ~6ms for Qwen3-14B / H100 / TP=1 at low load, longer under batch saturation). If using `kv-utilization:1` alone, all decisions within one step see the same stale utilization — this can cause severe load imbalance.
 
 !!! tip "Safe zone for `--snapshot-refresh-interval`"
-    Below **5ms** (~1 step time): no degradation. At 10ms: 14% TTFT p99 increase. At 100ms: +354% (measured with the prior default `prefix-affinity:3, queue-depth:2, kv-utilization:2`). The default composite profile (`precise-prefix-cache:2, queue-depth:1, kv-utilization:1`) is inherently resilient — queue-depth's Immediate signal corrects stale KV signals. The exact mitigation percentage may differ from the prior profile due to different weight ratios and scorer staleness characteristics (`precise-prefix-cache` has its own staleness model via `--cache-signal-delay`).
+    Below **5ms** (~1 step time): no degradation. At 10ms: 14% TTFT p99 increase. At 100ms: +354% (measured with the prior default `prefix-affinity:3, queue-depth:2, kv-utilization:2`). The default composite profile (`precise-prefix-cache:2, queue-depth:1, kv-utilization:1`) is resilient — queue-depth's QueueDepth signal complements stale KV signals. The exact mitigation percentage may differ from the prior profile due to different weight ratios and scorer staleness characteristics (`precise-prefix-cache` has its own staleness model via `--cache-signal-delay`). For staleness-critical deployments, consider adding `load-balance` which reads EffectiveLoad (includes synchronous InFlightRequests).
 
 ## When to Use Which Policy
 
