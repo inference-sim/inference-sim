@@ -178,11 +178,12 @@ func TestPrefixAffinityRouting_ShortPrefix_NoAdvantage(t *testing.T) {
 	t.Logf("Short prefix — affinity (5:1): %v (max=%d)", affinityDist, maxValue(affinityDist))
 	t.Logf("Short prefix — load-only:      %v (max=%d)", loadDist, maxValue(loadDist))
 
-	// With a weak prefix signal (0.10), the load scorer should dominate
-	// and the distributions should be similar. Soft assertion: prefix-affinity
-	// should NOT concentrate significantly more than load-only.
-	assert.LessOrEqual(t, maxValue(affinityDist), maxValue(loadDist)+5,
-		"short prefix should not concentrate significantly more than load-only")
+	// With a weak prefix signal, queue-depth should still prevent extreme concentration.
+	// QueueDepth-only scoring (GIE parity) provides less dampening than EffectiveLoad.
+	assert.LessOrEqual(t, maxValue(affinityDist), numRequests*7/8,
+		"queue-depth should prevent pathological concentration (>87.5%)")
+	assert.LessOrEqual(t, maxValue(affinityDist), maxValue(loadDist)*3,
+		"short prefix affinity should not exceed 3x load-only concentration")
 }
 
 // TestPrefixAffinityRouting_MultiTurn_SessionAffinity verifies that

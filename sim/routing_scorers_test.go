@@ -52,6 +52,9 @@ func TestIsValidScorer_KnownNames(t *testing.T) {
 	assert.True(t, IsValidScorer("queue-depth"))
 	assert.True(t, IsValidScorer("kv-utilization"))
 	assert.True(t, IsValidScorer("load-balance"))
+	assert.True(t, IsValidScorer("active-requests"))
+	assert.True(t, IsValidScorer("running-requests"))
+	assert.True(t, IsValidScorer("load-aware"))
 	assert.False(t, IsValidScorer("unknown"))
 	assert.False(t, IsValidScorer(""))
 }
@@ -153,38 +156,58 @@ func TestLoadBalanceOnly_EquivalentToLeastLoaded(t *testing.T) {
 
 func TestScoreQueueDepth_MinMaxNormalization(t *testing.T) {
 	snapshots := []RoutingSnapshot{
-		{ID: "a", QueueDepth: 10, BatchSize: 0, InFlightRequests: 0}, // highest load
-		{ID: "b", QueueDepth: 5, BatchSize: 0, InFlightRequests: 0},  // middle load
-		{ID: "c", QueueDepth: 0, BatchSize: 0, InFlightRequests: 0},  // lowest load
+		{ID: "a", QueueDepth: 10, BatchSize: 0, InFlightRequests: 0}, // highest depth
+		{ID: "b", QueueDepth: 5, BatchSize: 0, InFlightRequests: 0},  // middle depth
+		{ID: "c", QueueDepth: 0, BatchSize: 0, InFlightRequests: 0},  // lowest depth
 	}
 	scores := scoreQueueDepth(nil, snapshots)
-	// Monotonicity: lower load → higher score
-	assert.Greater(t, scores["c"], scores["b"], "lowest load should score highest")
-	assert.Greater(t, scores["b"], scores["a"], "middle load should score higher than highest load")
-	// Boundary: max load scores 0, min load scores 1
-	assert.Equal(t, 0.0, scores["a"], "highest load should score 0.0")
-	assert.Equal(t, 1.0, scores["c"], "lowest load should score 1.0")
+	// Monotonicity: lower depth → higher score
+	assert.Greater(t, scores["c"], scores["b"], "lowest depth should score highest")
+	assert.Greater(t, scores["b"], scores["a"], "middle depth should score higher than highest")
+	// Boundary: max depth scores 0, min depth scores 1, midpoint scores 0.5
+	assert.Equal(t, 0.0, scores["a"], "highest depth should score 0.0")
+	assert.Equal(t, 0.5, scores["b"], "midpoint depth should score 0.5")
+	assert.Equal(t, 1.0, scores["c"], "lowest depth should score 1.0")
 }
 
 func TestScoreQueueDepth_UniformLoad_AllScoreOne(t *testing.T) {
 	snapshots := []RoutingSnapshot{
-		{ID: "a", QueueDepth: 5, BatchSize: 3},
-		{ID: "b", QueueDepth: 5, BatchSize: 3},
+		{ID: "a", QueueDepth: 5},
+		{ID: "b", QueueDepth: 5},
 	}
 	scores := scoreQueueDepth(nil, snapshots)
 	assert.Equal(t, 1.0, scores["a"])
 	assert.Equal(t, 1.0, scores["b"])
 }
 
-func TestScoreQueueDepth_IncludesInFlightRequests(t *testing.T) {
+func TestScoreQueueDepth_SingleInstance_ScoresOne(t *testing.T) {
 	snapshots := []RoutingSnapshot{
-		{ID: "a", QueueDepth: 0, InFlightRequests: 5}, // load=5
-		{ID: "b", QueueDepth: 5, InFlightRequests: 0}, // load=5
-		{ID: "c", QueueDepth: 0, InFlightRequests: 0}, // load=0 → best
+		{ID: "a", QueueDepth: 42},
 	}
 	scores := scoreQueueDepth(nil, snapshots)
-	assert.Equal(t, scores["a"], scores["b"], "equal effective load → equal score")
-	assert.Greater(t, scores["c"], scores["a"], "lower load → higher score")
+	assert.Equal(t, 1.0, scores["a"], "single instance always scores 1.0")
+}
+
+func TestScoreQueueDepth_AllZeroDepth_AllScoreOne(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 0},
+		{ID: "b", QueueDepth: 0},
+	}
+	scores := scoreQueueDepth(nil, snapshots)
+	assert.Equal(t, 1.0, scores["a"], "all-zero queue depths should score 1.0")
+	assert.Equal(t, 1.0, scores["b"], "all-zero queue depths should score 1.0")
+}
+
+// TestScoreQueueDepth_IgnoresBatchSizeAndInFlight verifies that scores depend
+// only on QueueDepth — BatchSize and InFlightRequests are ignored (GIE parity).
+func TestScoreQueueDepth_IgnoresBatchSizeAndInFlight(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 10, BatchSize: 0, InFlightRequests: 0},   // highest QueueDepth
+		{ID: "b", QueueDepth: 0, BatchSize: 100, InFlightRequests: 50}, // lowest QueueDepth, large batch+inflight
+	}
+	scores := scoreQueueDepth(nil, snapshots)
+	assert.Equal(t, 1.0, scores["b"], "lowest QueueDepth should score 1.0 regardless of BatchSize/InFlightRequests")
+	assert.Equal(t, 0.0, scores["a"], "highest QueueDepth should score 0.0 regardless of BatchSize/InFlightRequests")
 }
 
 func TestScoreKVUtilization_InverseUtilization(t *testing.T) {
@@ -218,6 +241,148 @@ func TestScoreLoadBalance_InverseTransform(t *testing.T) {
 	assert.Greater(t, scores["c"], 0.0, "score should always be positive")
 }
 
+// === active-requests scorer tests (BC-1, BC-2) ===
+
+func TestScoreActiveRequests_AllZero_AllScoreOne(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", InFlightRequests: 0},
+		{ID: "b", InFlightRequests: 0},
+		{ID: "c", InFlightRequests: 0},
+	}
+	scores := scoreActiveRequests(nil, snapshots)
+	for _, snap := range snapshots {
+		assert.Equal(t, 1.0, scores[snap.ID], "zero in-flight should score 1.0")
+	}
+}
+
+func TestScoreActiveRequests_Varied_MonotonicAndBoundary(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", InFlightRequests: 0},  // zero → 1.0
+		{ID: "b", InFlightRequests: 5},  // middle
+		{ID: "c", InFlightRequests: 10}, // max → 0.0
+	}
+	scores := scoreActiveRequests(nil, snapshots)
+	// BC-1: zero in-flight always scores 1.0
+	assert.Equal(t, 1.0, scores["a"], "zero in-flight should score 1.0")
+	// BC-2: max count scores 0.0
+	assert.Equal(t, 0.0, scores["c"], "max in-flight should score 0.0")
+	// BC-2: monotonicity — fewer in-flight → higher score
+	assert.Greater(t, scores["a"], scores["b"], "fewer in-flight should score higher")
+	assert.Greater(t, scores["b"], scores["c"], "fewer in-flight should score higher")
+}
+
+func TestScoreActiveRequests_AllEqual_NonZero(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", InFlightRequests: 5},
+		{ID: "b", InFlightRequests: 5},
+	}
+	scores := scoreActiveRequests(nil, snapshots)
+	// When all equal and non-zero: (max-count)/max = (5-5)/5 = 0.0 for all
+	assert.Equal(t, 0.0, scores["a"], "all at max should score 0.0")
+	assert.Equal(t, 0.0, scores["b"], "all at max should score 0.0")
+	assert.False(t, math.IsNaN(scores["a"]), "score must not be NaN")
+}
+
+func TestScoreActiveRequests_SingleNonZeroInstance_ScoresZero(t *testing.T) {
+	snapshots := []RoutingSnapshot{{ID: "a", InFlightRequests: 5}}
+	scores := scoreActiveRequests(nil, snapshots)
+	assert.Equal(t, 0.0, scores["a"], "single non-zero instance: max-only normalization → 0.0")
+	assert.False(t, math.IsNaN(scores["a"]))
+}
+
+// === running-requests scorer tests (BC-3, BC-4) ===
+
+func TestScoreRunningRequests_AllEqual_AllScoreOne(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", BatchSize: 5},
+		{ID: "b", BatchSize: 5},
+	}
+	scores := scoreRunningRequests(nil, snapshots)
+	assert.Equal(t, 1.0, scores["a"])
+	assert.Equal(t, 1.0, scores["b"])
+}
+
+func TestScoreRunningRequests_Varied_MinMaxNormalization(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", BatchSize: 0},  // min → 1.0
+		{ID: "b", BatchSize: 5},  // middle
+		{ID: "c", BatchSize: 10}, // max → 0.0
+	}
+	scores := scoreRunningRequests(nil, snapshots)
+	// BC-4: min batch scores 1.0, max scores 0.0
+	assert.Equal(t, 1.0, scores["a"], "min batch should score 1.0")
+	assert.Equal(t, 0.0, scores["c"], "max batch should score 0.0")
+	// BC-4: monotonicity
+	assert.Greater(t, scores["a"], scores["b"], "smaller batch should score higher")
+	assert.Greater(t, scores["b"], scores["c"], "smaller batch should score higher")
+	// BC-4: proportional — middle at 5/10 should score 0.5
+	assert.InDelta(t, 0.5, scores["b"], 0.001, "mid-point should score ~0.5")
+}
+
+func TestScoreRunningRequests_AllZero_AllScoreOne(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", BatchSize: 0},
+		{ID: "b", BatchSize: 0},
+	}
+	scores := scoreRunningRequests(nil, snapshots)
+	assert.Equal(t, 1.0, scores["a"])
+	assert.Equal(t, 1.0, scores["b"])
+}
+
+// === load-aware scorer tests (BC-5, BC-6, BC-7) ===
+
+func TestScoreLoadAware_EmptyQueue_ScoresHalf(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 0},
+		{ID: "b", QueueDepth: 0},
+	}
+	scores := scoreLoadAware(nil, snapshots)
+	assert.Equal(t, 0.5, scores["a"], "empty queue should score 0.5")
+	assert.Equal(t, 0.5, scores["b"], "empty queue should score 0.5")
+}
+
+func TestScoreLoadAware_PartialQueue_LinearDecrease(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 0},   // empty → 0.5
+		{ID: "b", QueueDepth: 64},  // half threshold → 0.25
+		{ID: "c", QueueDepth: 128}, // at threshold → 0.0
+	}
+	scores := scoreLoadAware(nil, snapshots)
+	// BC-5: empty = 0.5
+	assert.Equal(t, 0.5, scores["a"], "empty queue should score 0.5")
+	// BC-6: half threshold
+	assert.InDelta(t, 0.25, scores["b"], 0.001, "half-threshold should score ~0.25")
+	// BC-6: at threshold
+	assert.Equal(t, 0.0, scores["c"], "at-threshold should score 0.0")
+	// Monotonicity
+	assert.Greater(t, scores["a"], scores["b"], "less queue depth should score higher")
+	assert.Greater(t, scores["b"], scores["c"], "less queue depth should score higher")
+}
+
+func TestScoreLoadAware_AboveThreshold_ScoresZero(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 200}, // well above threshold
+		{ID: "b", QueueDepth: 128}, // exactly at threshold
+	}
+	scores := scoreLoadAware(nil, snapshots)
+	// BC-7: above threshold → clamped → 0.0
+	assert.Equal(t, 0.0, scores["a"], "above threshold should score 0.0")
+	assert.Equal(t, 0.0, scores["b"], "at threshold should score 0.0")
+}
+
+func TestScoreLoadAware_ScoreRange_MaxIsHalf(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 0},
+		{ID: "b", QueueDepth: 50},
+		{ID: "c", QueueDepth: 200},
+	}
+	scores := scoreLoadAware(nil, snapshots)
+	for _, snap := range snapshots {
+		assert.LessOrEqual(t, scores[snap.ID], 0.5, "load-aware max score should be 0.5")
+		assert.GreaterOrEqual(t, scores[snap.ID], 0.0, "load-aware min score should be 0.0")
+	}
+}
+
 func TestAllScorers_ReturnScoreForEveryInstance(t *testing.T) {
 	snapshots := []RoutingSnapshot{
 		{ID: "a", QueueDepth: 1, KVUtilization: 0.3},
@@ -238,6 +403,9 @@ func TestAllScorers_ReturnScoreForEveryInstance(t *testing.T) {
 		{"queue-depth", scoreQueueDepth},
 		{"kv-utilization", scoreKVUtilization},
 		{"load-balance", scoreLoadBalance},
+		{"active-requests", scoreActiveRequests},
+		{"running-requests", scoreRunningRequests},
+		{"load-aware", scoreLoadAware},
 		{"precise-prefix-cache", precisePrefixScorer},
 		{"no-hit-lru", noHitLRUScorer},
 	}
@@ -259,9 +427,9 @@ func TestAllScorers_ReturnScoreForEveryInstance(t *testing.T) {
 			}
 		})
 	}
-	// Verify nil-request path for original stateless scorers (queue-depth, kv-utilization, load-balance).
+	// Verify nil-request path for all stateless scorers.
 	// These scorers ignore the request parameter; this confirms they don't panic on nil.
-	for _, sf := range scorerFns[:3] {
+	for _, sf := range scorerFns[:6] {
 		t.Run(sf.name+"/nil-request", func(t *testing.T) {
 			scores := sf.fn(nil, snapshots)
 			assert.Len(t, scores, len(snapshots))
