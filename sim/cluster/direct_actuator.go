@@ -78,6 +78,7 @@ func (a *DirectActuator) scaleUp(d ScaleDecision) error {
 
 // scaleDown drains existing instance(s) for the given decision. Returns error if
 // any iteration finds no active instance to drain.
+// TODO(1C-4b): cancel pending placements for the same model before draining (specs/010).
 func (a *DirectActuator) scaleDown(d ScaleDecision) error {
 	var lastErr error
 	for i := 0; i < -d.Delta; i++ {

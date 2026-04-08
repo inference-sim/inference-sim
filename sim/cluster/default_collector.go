@@ -28,9 +28,13 @@ func (c *DefaultCollector) Collect(state *sim.RouterState) []ModelSignals {
 			logrus.Debugf("[collector] skipping snapshot %q: empty Model field", snap.ID)
 			continue
 		}
+		if snap.GPUType == "" {
+			logrus.Debugf("[collector] skipping snapshot %q: empty GPUType field", snap.ID)
+			continue
+		}
 		rm := ReplicaMetrics{
 			InstanceID:            snap.ID,
-			Variant:               VariantSpec{GPUType: snap.GPUType, TPDegree: max(snap.TPDegree, 1)},
+			Variant:               NewVariantSpec(snap.GPUType, max(snap.TPDegree, 1)),
 			KVUtilization:         snap.KVUtilization,
 			QueueDepth:            snap.QueueDepth,
 			InFlightCount:         snap.InFlightRequests,

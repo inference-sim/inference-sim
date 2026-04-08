@@ -295,6 +295,7 @@ func TestV2SaturationAnalyzerConfigValidation(t *testing.T) {
 		{"negative ScaleUpThreshold", V2SaturationAnalyzerConfig{KvCacheThreshold: 0.8, ScaleUpThreshold: -1, ScaleDownBoundary: 0.4, AvgInputTokens: 512}},
 		{"NaN ScaleDownBoundary", V2SaturationAnalyzerConfig{KvCacheThreshold: 0.8, ScaleUpThreshold: 0.8, ScaleDownBoundary: math.NaN(), AvgInputTokens: 512}},
 		{"zero AvgInputTokens", V2SaturationAnalyzerConfig{KvCacheThreshold: 0.8, ScaleUpThreshold: 0.8, ScaleDownBoundary: 0.4, AvgInputTokens: 0}},
+		{"ScaleDownBoundary >= ScaleUpThreshold", V2SaturationAnalyzerConfig{KvCacheThreshold: 0.8, ScaleUpThreshold: 0.4, ScaleDownBoundary: 0.8, AvgInputTokens: 512}},
 	}
 
 	for _, tc := range tests {

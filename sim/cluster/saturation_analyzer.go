@@ -40,6 +40,10 @@ func NewV2SaturationAnalyzer(cfg V2SaturationAnalyzerConfig) *V2SaturationAnalyz
 	if cfg.AvgInputTokens <= 0 || math.IsNaN(cfg.AvgInputTokens) || math.IsInf(cfg.AvgInputTokens, 0) {
 		panic(fmt.Sprintf("NewV2SaturationAnalyzer: AvgInputTokens must be > 0, got %f", cfg.AvgInputTokens))
 	}
+	if cfg.ScaleDownBoundary >= cfg.ScaleUpThreshold {
+		panic(fmt.Sprintf("NewV2SaturationAnalyzer: ScaleDownBoundary (%f) must be < ScaleUpThreshold (%f)",
+			cfg.ScaleDownBoundary, cfg.ScaleUpThreshold))
+	}
 	return &V2SaturationAnalyzer{config: cfg}
 }
 
@@ -137,10 +141,14 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 	}
 
 	// Scale-down signal with N-1 redistribution check:
-	// Can only scale down if we have > 1 replica AND redistributing load
+	// Can only scale down if we have > 1 initialized replica AND redistributing load
 	// across N-1 replicas still leaves supply above demand/ScaleDownBoundary.
-	totalReplicas := len(metrics.Replicas)
-	if totalReplicas <= 1 {
+	// Count only replicas that contributed to supply (TotalKvCapacityTokens > 0).
+	initReplicas := 0
+	for _, vc := range vcs {
+		initReplicas += vc.ReplicaCount
+	}
+	if initReplicas <= 1 {
 		return result
 	}
 
