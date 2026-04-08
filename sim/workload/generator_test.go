@@ -2438,4 +2438,3 @@ func TestGenerateWorkload_ZeroSessionClosedLoopClient_EmitsWarning(t *testing.T)
 		t.Errorf("expected 0 sessions (no requests generated), got %d", len(gw.Sessions))
 	}
 }
-
