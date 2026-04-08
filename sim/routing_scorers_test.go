@@ -156,38 +156,58 @@ func TestLoadBalanceOnly_EquivalentToLeastLoaded(t *testing.T) {
 
 func TestScoreQueueDepth_MinMaxNormalization(t *testing.T) {
 	snapshots := []RoutingSnapshot{
-		{ID: "a", QueueDepth: 10, BatchSize: 0, InFlightRequests: 0}, // highest load
-		{ID: "b", QueueDepth: 5, BatchSize: 0, InFlightRequests: 0},  // middle load
-		{ID: "c", QueueDepth: 0, BatchSize: 0, InFlightRequests: 0},  // lowest load
+		{ID: "a", QueueDepth: 10, BatchSize: 0, InFlightRequests: 0}, // highest depth
+		{ID: "b", QueueDepth: 5, BatchSize: 0, InFlightRequests: 0},  // middle depth
+		{ID: "c", QueueDepth: 0, BatchSize: 0, InFlightRequests: 0},  // lowest depth
 	}
 	scores := scoreQueueDepth(nil, snapshots)
-	// Monotonicity: lower load → higher score
-	assert.Greater(t, scores["c"], scores["b"], "lowest load should score highest")
-	assert.Greater(t, scores["b"], scores["a"], "middle load should score higher than highest load")
-	// Boundary: max load scores 0, min load scores 1
-	assert.Equal(t, 0.0, scores["a"], "highest load should score 0.0")
-	assert.Equal(t, 1.0, scores["c"], "lowest load should score 1.0")
+	// Monotonicity: lower depth → higher score
+	assert.Greater(t, scores["c"], scores["b"], "lowest depth should score highest")
+	assert.Greater(t, scores["b"], scores["a"], "middle depth should score higher than highest")
+	// Boundary: max depth scores 0, min depth scores 1, midpoint scores 0.5
+	assert.Equal(t, 0.0, scores["a"], "highest depth should score 0.0")
+	assert.Equal(t, 0.5, scores["b"], "midpoint depth should score 0.5")
+	assert.Equal(t, 1.0, scores["c"], "lowest depth should score 1.0")
 }
 
 func TestScoreQueueDepth_UniformLoad_AllScoreOne(t *testing.T) {
 	snapshots := []RoutingSnapshot{
-		{ID: "a", QueueDepth: 5, BatchSize: 3},
-		{ID: "b", QueueDepth: 5, BatchSize: 3},
+		{ID: "a", QueueDepth: 5},
+		{ID: "b", QueueDepth: 5},
 	}
 	scores := scoreQueueDepth(nil, snapshots)
 	assert.Equal(t, 1.0, scores["a"])
 	assert.Equal(t, 1.0, scores["b"])
 }
 
-func TestScoreQueueDepth_IncludesInFlightRequests(t *testing.T) {
+func TestScoreQueueDepth_SingleInstance_ScoresOne(t *testing.T) {
 	snapshots := []RoutingSnapshot{
-		{ID: "a", QueueDepth: 0, InFlightRequests: 5}, // load=5
-		{ID: "b", QueueDepth: 5, InFlightRequests: 0}, // load=5
-		{ID: "c", QueueDepth: 0, InFlightRequests: 0}, // load=0 → best
+		{ID: "a", QueueDepth: 42},
 	}
 	scores := scoreQueueDepth(nil, snapshots)
-	assert.Equal(t, scores["a"], scores["b"], "equal effective load → equal score")
-	assert.Greater(t, scores["c"], scores["a"], "lower load → higher score")
+	assert.Equal(t, 1.0, scores["a"], "single instance always scores 1.0")
+}
+
+func TestScoreQueueDepth_AllZeroDepth_AllScoreOne(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 0},
+		{ID: "b", QueueDepth: 0},
+	}
+	scores := scoreQueueDepth(nil, snapshots)
+	assert.Equal(t, 1.0, scores["a"], "all-zero queue depths should score 1.0")
+	assert.Equal(t, 1.0, scores["b"], "all-zero queue depths should score 1.0")
+}
+
+// TestScoreQueueDepth_IgnoresBatchSizeAndInFlight verifies that scores depend
+// only on QueueDepth — BatchSize and InFlightRequests are ignored (GIE parity).
+func TestScoreQueueDepth_IgnoresBatchSizeAndInFlight(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 10, BatchSize: 0, InFlightRequests: 0},   // highest QueueDepth
+		{ID: "b", QueueDepth: 0, BatchSize: 100, InFlightRequests: 50}, // lowest QueueDepth, large batch+inflight
+	}
+	scores := scoreQueueDepth(nil, snapshots)
+	assert.Equal(t, 1.0, scores["b"], "lowest QueueDepth should score 1.0 regardless of BatchSize/InFlightRequests")
+	assert.Equal(t, 0.0, scores["a"], "highest QueueDepth should score 0.0 regardless of BatchSize/InFlightRequests")
 }
 
 func TestScoreKVUtilization_InverseUtilization(t *testing.T) {

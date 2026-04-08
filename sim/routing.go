@@ -157,7 +157,7 @@ type observerFunc func(req *Request, targetInstance string)
 // Available scorers: prefix-affinity (proportional prefix match ratio),
 // precise-prefix-cache (min-max normalization of actual KV cache hits),
 // no-hit-lru (cold request distribution to least-recently-used instances),
-// queue-depth (min-max normalization of EffectiveLoad),
+// queue-depth (min-max normalization of QueueDepth),
 // kv-utilization (1 - KVUtilization), load-balance (1/(1 + EffectiveLoad)).
 // See sim/routing_*.go for scorer implementations.
 //
