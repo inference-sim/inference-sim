@@ -128,7 +128,7 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 					clients = append(clients, ClientSpec{
 						ID:           clientID,
 						TenantID:     prefixGroup,
-						SLOClass:     "batch",
+						SLOClass:     "standard",
 						RateFraction: rateFraction,
 						Arrival:      ArrivalSpec{Process: "poisson"},
 						InputDist:    inputDist,
@@ -180,7 +180,7 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 					clients = append(clients, ClientSpec{
 						ID:                   clientID,
 						TenantID:             prefixGroup,
-						SLOClass:             "batch",
+						SLOClass:             "standard",
 						RateFraction:         rateFraction,
 						Arrival:              ArrivalSpec{Process: "poisson"}, // Fallback for diagnostics/serialization
 						CustomSamplerFactory: factory,
@@ -234,7 +234,7 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 					clients = append(clients, ClientSpec{
 						ID:           clientID,
 						TenantID:     prefixGroup,
-						SLOClass:     "batch",
+						SLOClass:     "standard",
 						RateFraction: rateFraction,
 						Arrival:      ArrivalSpec{Process: "poisson"},
 						InputDist:    inputDist,
