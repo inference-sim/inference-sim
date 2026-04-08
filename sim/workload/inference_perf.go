@@ -315,3 +315,30 @@ func constantDist(value float64) DistSpec {
 		Params: map[string]float64{"value": value},
 	}
 }
+
+// distributeRequestsEvenly distributes totalRequests across n clients,
+// ensuring the sum equals exactly totalRequests (no ceiling inflation).
+// Returns per-client counts where max difference is 1.
+//
+// Algorithm: base = total/n (floor), remainder = total%n.
+// First 'remainder' clients get base+1, others get base.
+//
+// Example: distributeRequestsEvenly(10, 3) -> [4, 3, 3] (sum=10)
+func distributeRequestsEvenly(totalRequests, n int) []int {
+	if n <= 0 {
+		panic("distributeRequestsEvenly: n must be positive")
+	}
+	if totalRequests < 0 {
+		panic("distributeRequestsEvenly: totalRequests must be non-negative")
+	}
+	base := totalRequests / n
+	remainder := totalRequests % n
+	dist := make([]int, n)
+	for i := 0; i < n; i++ {
+		dist[i] = base
+		if i < remainder {
+			dist[i]++
+		}
+	}
+	return dist
+}

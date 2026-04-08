@@ -1740,3 +1740,64 @@ func TestInferencePerfClients_SLOClass_IsStandard(t *testing.T) {
 		})
 	}
 }
+
+func TestDistributeRequestsEvenly_ExactTotal(t *testing.T) {
+	// BC-4: Fair distribution with max difference <= 1, sum equals total
+	tests := []struct {
+		total int
+		n     int
+		want  []int
+	}{
+		{total: 100, n: 3, want: []int{34, 33, 33}}, // 34+33+33=100
+		{total: 10, n: 10, want: []int{1, 1, 1, 1, 1, 1, 1, 1, 1, 1}},
+		{total: 44, n: 7, want: []int{7, 7, 6, 6, 6, 6, 6}}, // 2x7 + 5x6 = 44
+		{total: 3000, n: 44, want: nil},                       // Just verify sum=3000
+		{total: 6000, n: 44, want: nil},                       // Issue #978 example
+		{total: 0, n: 5, want: []int{0, 0, 0, 0, 0}},         // Edge: zero requests
+		{total: 7, n: 1, want: []int{7}},                      // Edge: single client
+	}
+	for _, tt := range tests {
+		dist := distributeRequestsEvenly(tt.total, tt.n)
+		sum := 0
+		for _, count := range dist {
+			sum += count
+		}
+		if sum != tt.total {
+			t.Errorf("distributeRequestsEvenly(%d, %d): sum=%d, want %d",
+				tt.total, tt.n, sum, tt.total)
+		}
+		if tt.want != nil {
+			if !slicesEqual(dist, tt.want) {
+				t.Errorf("distributeRequestsEvenly(%d, %d) = %v, want %v",
+					tt.total, tt.n, dist, tt.want)
+			}
+		}
+		// Check fairness: max difference <= 1
+		if len(dist) > 1 {
+			min, max := dist[0], dist[0]
+			for _, v := range dist {
+				if v < min {
+					min = v
+				}
+				if v > max {
+					max = v
+				}
+			}
+			if max-min > 1 {
+				t.Errorf("unfair distribution: max-min=%d > 1", max-min)
+			}
+		}
+	}
+}
+
+func slicesEqual(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
