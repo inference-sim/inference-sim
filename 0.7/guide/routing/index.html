@@ -2910,7 +2910,7 @@
 </tr>
 <tr>
 <td><code>queue-depth</code></td>
-<td>Effective load: <code>QueueDepth + BatchSize + InFlightRequests</code> (min-max normalized)</td>
+<td>Queue depth: <code>QueueDepth</code> only (min-max normalized)</td>
 <td>queue-scorer</td>
 </tr>
 <tr>
@@ -2981,7 +2981,7 @@
 <p>At high request rates, many routing decisions occur between KV utilization updates (step time varies by model — ~6ms for Qwen3-14B / H100 / TP=1 at low load, longer under batch saturation). If using <code>kv-utilization:1</code> alone, all decisions within one step see the same stale utilization — this can cause severe load imbalance.</p>
 <div class="admonition tip">
 <p class="admonition-title">Safe zone for <code>--snapshot-refresh-interval</code></p>
-<p>Below <strong>5ms</strong> (~1 step time): no degradation. At 10ms: 14% TTFT p99 increase. At 100ms: +354% (measured with the prior default <code>prefix-affinity:3, queue-depth:2, kv-utilization:2</code>). The default composite profile (<code>precise-prefix-cache:2, queue-depth:1, kv-utilization:1</code>) is inherently resilient — queue-depth's Immediate signal corrects stale KV signals. The exact mitigation percentage may differ from the prior profile due to different weight ratios and scorer staleness characteristics (<code>precise-prefix-cache</code> has its own staleness model via <code>--cache-signal-delay</code>).</p>
+<p>Below <strong>5ms</strong> (~1 step time): no degradation. At 10ms: 14% TTFT p99 increase. At 100ms: +354% (measured with the prior default <code>prefix-affinity:3, queue-depth:2, kv-utilization:2</code>). The default composite profile (<code>precise-prefix-cache:2, queue-depth:1, kv-utilization:1</code>) is resilient — queue-depth's QueueDepth signal complements stale KV signals. The exact mitigation percentage may differ from the prior profile due to different weight ratios and scorer staleness characteristics (<code>precise-prefix-cache</code> has its own staleness model via <code>--cache-signal-delay</code>). For staleness-critical deployments, consider adding <code>load-balance</code> which reads EffectiveLoad (includes synchronous InFlightRequests).</p>
 </div>
 <h2 id="when-to-use-which-policy">When to Use Which Policy<a class="headerlink" href="#when-to-use-which-policy" title="Permanent link">&para;</a></h2>
 <table>
