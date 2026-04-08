@@ -1,0 +1,3 @@
+coeff,value,loss,elapsed_s
+γ₁ gemm+logits,0.60385072,304.501041,13.8
+γ₁ gemm+logits,0.94614928,506.926889,15.8
