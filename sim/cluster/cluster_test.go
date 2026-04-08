@@ -2254,6 +2254,7 @@ func TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType(t *testing.T) {
 	}
 }
 
+<<<<<<< HEAD
 // TestClusterSimulator_SessionTerminalStateCompleteness verifies INV-11 (BC-3):
 // every session reaches exactly one terminal state after ClusterSimulator.Run().
 // With the default blackbox latency model and a 500s horizon, all sessions
@@ -2555,5 +2556,40 @@ func TestClusterSimulator_MultiTurnSession_EndToEnd(t *testing.T) {
 	if followUpCount != expectedFollowUps {
 		t.Errorf("follow-up count = %d, want %d (%d sessions × %d follow-ups each)",
 			followUpCount, expectedFollowUps, numSessions, maxRounds-1)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Autoscaler wiring tests
+// ---------------------------------------------------------------------------
+
+func TestNewClusterSimulator_AutoscalerWiredWhenEnabled(t *testing.T) {
+	cfg := newTestDeploymentConfig(2)
+	cfg.ModelAutoscalerIntervalUs = 30_000_000
+	// AutoscalerAnalyzerConfig zero values → defaults applied inside constructor.
+	cs := NewClusterSimulator(cfg, nil, nil)
+	if cs.autoscaler == nil {
+		t.Fatal("autoscaler must not be nil when ModelAutoscalerIntervalUs > 0")
+	}
+	if cs.autoscaler.collector == nil {
+		t.Error("autoscaler.collector must not be nil")
+	}
+	if cs.autoscaler.analyzer == nil {
+		t.Error("autoscaler.analyzer must not be nil")
+	}
+	if cs.autoscaler.engine == nil {
+		t.Error("autoscaler.engine must not be nil")
+	}
+	if cs.autoscaler.actuator == nil {
+		t.Error("autoscaler.actuator must not be nil")
+	}
+}
+
+func TestNewClusterSimulator_AutoscalerNilWhenDisabled(t *testing.T) {
+	cfg := newTestDeploymentConfig(2)
+	// ModelAutoscalerIntervalUs == 0 (default) → autoscaler stays nil.
+	cs := NewClusterSimulator(cfg, nil, nil)
+	if cs.autoscaler != nil {
+		t.Error("autoscaler must be nil when ModelAutoscalerIntervalUs == 0")
 	}
 }

@@ -93,6 +93,25 @@ type ClusterSimulator struct {
 	gatewayQueue       *GatewayQueue
 }
 
+// effectiveAnalyzerConfig applies WVA reference defaults to zero-valued fields.
+// Zero values mean "not configured by caller" — fill with defaults so callers
+// only need to set ModelAutoscalerIntervalUs to enable the autoscaler.
+func effectiveAnalyzerConfig(cfg V2SaturationAnalyzerConfig) V2SaturationAnalyzerConfig {
+	if cfg.KvCacheThreshold == 0 {
+		cfg.KvCacheThreshold = 0.8
+	}
+	if cfg.ScaleUpThreshold == 0 {
+		cfg.ScaleUpThreshold = 0.8
+	}
+	if cfg.ScaleDownBoundary == 0 {
+		cfg.ScaleDownBoundary = 0.4
+	}
+	if cfg.AvgInputTokens == 0 {
+		cfg.AvgInputTokens = 512
+	}
+	return cfg
+}
+
 // NewClusterSimulator creates a ClusterSimulator with N instances.
 // All workload generation now happens externally — requests are passed in directly.
 // onRequestDone is an optional callback invoked when a request reaches a terminal state
@@ -345,9 +364,17 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		panic("ActuationDelay.Stddev must be a finite non-negative number")
 	}
 	if config.ModelAutoscalerIntervalUs > 0 {
-		// Interface components (collector, analyzer, engine, actuator) are injected by
-		// tests or cmd/ after construction, before Run() is called (see newAutoscalerPipeline).
-		cs.autoscaler = newAutoscalerPipeline(nil, nil, nil, nil, rng.ForSubsystem(subsystemAutoscaler))
+		// Wire the default WVA pipeline: DefaultCollector → V2SaturationAnalyzer → UnlimitedEngine → DirectActuator.
+		// effectiveAnalyzerConfig fills zero fields with WVA reference defaults so callers only need interval_us.
+		// Tests that need custom components (stubs, nopActuator) replace cs.autoscaler after construction (same-package access).
+		analyzerCfg := effectiveAnalyzerConfig(config.AutoscalerAnalyzerConfig)
+		cs.autoscaler = newAutoscalerPipeline(
+			&DefaultCollector{},
+			NewV2SaturationAnalyzer(analyzerCfg),
+			&UnlimitedEngine{},
+			NewDirectActuator(cs),
+			rng.ForSubsystem(subsystemAutoscaler),
+		)
 	}
 
 
