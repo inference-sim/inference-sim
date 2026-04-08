@@ -2,7 +2,6 @@ package workload
 
 import (
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1514,18 +1513,18 @@ func TestExpandInferencePerfSpec_MultiStage_KeepsPoisson(t *testing.T) {
 }
 
 func TestExpandInferencePerfSpec_SingleStage_ConservationInvariant(t *testing.T) {
-	// Invariant test: sum(per_client_requests) == total expected requests
-	// Tests the conservation law that requestsPerClient allocation sums correctly.
+	// Invariant test: sum(per_client_requests) == int(rate * duration)
+	// Tests the conservation law: exact total with fair distribution (max diff <= 1).
 	cases := []struct {
 		rate       float64
 		duration   int64
 		numPrompts int
 		numUsers   int
 	}{
-		{rate: 10.0, duration: 60, numPrompts: 3, numUsers: 2},  // 600 total / 6 clients = 100 each
-		{rate: 10.0, duration: 61, numPrompts: 2, numUsers: 2},  // 610 total / 4 clients = ceil(152.5)=153 each
-		{rate: 5.0, duration: 100, numPrompts: 1, numUsers: 7},  // 500 total / 7 clients
-		{rate: 100.0, duration: 10, numPrompts: 10, numUsers: 3}, // 1000 total / 30 clients
+		{rate: 10.0, duration: 60, numPrompts: 3, numUsers: 2},   // 600 total / 6 clients = 100 each
+		{rate: 10.0, duration: 61, numPrompts: 2, numUsers: 2},   // 610 total / 4 clients = 152 or 153
+		{rate: 5.0, duration: 100, numPrompts: 1, numUsers: 7},   // 500 total / 7 clients = 71 or 72
+		{rate: 100.0, duration: 10, numPrompts: 10, numUsers: 3}, // 1000 total / 30 clients = 33 or 34
 	}
 
 	for _, tc := range cases {
@@ -1547,7 +1546,7 @@ func TestExpandInferencePerfSpec_SingleStage_ConservationInvariant(t *testing.T)
 				t.Fatalf("expansion error: %v", err)
 			}
 
-			// Horizon = 2× duration: ensures sampler exhaustion (not horizon) stops generation.
+			// Horizon = 2x duration: ensures sampler exhaustion (not horizon) stops generation.
 			// With horizon == duration, sampler and horizon guard race, creating test fragility.
 			horizon := tc.duration * 2_000_000
 			requests, err := GenerateRequests(expanded, horizon, 0)
@@ -1561,22 +1560,26 @@ func TestExpandInferencePerfSpec_SingleStage_ConservationInvariant(t *testing.T)
 				perClientCounts[req.ClientID]++
 			}
 
-			// Expected: each client gets ceil(rate * duration / numClients) requests
-			numClients := tc.numPrompts * tc.numUsers
-			expectedPerClient := int(math.Ceil(tc.rate * float64(tc.duration) / float64(numClients)))
-
-			// Verify each client got exactly expectedPerClient requests
-			for clientID, count := range perClientCounts {
-				if count != expectedPerClient {
-					t.Errorf("client %s: got %d requests, want %d", clientID, count, expectedPerClient)
-				}
+			// Conservation: total requests == int(rate * duration) (exact, no ceiling inflation)
+			expectedTotal := int(tc.rate * float64(tc.duration))
+			if len(requests) != expectedTotal {
+				t.Errorf("total requests = %d, want %d (exact: int(rate*duration))",
+					len(requests), expectedTotal)
 			}
 
-			// Verify sum equals numClients * expectedPerClient (conservation)
-			expectedTotal := numClients * expectedPerClient
-			if len(requests) != expectedTotal {
-				t.Errorf("total requests = %d, want %d (conservation: %d clients * %d each)",
-					len(requests), expectedTotal, numClients, expectedPerClient)
+			// Fair distribution: per-client counts differ by at most 1
+			minCount, maxCount := len(requests), 0
+			for _, count := range perClientCounts {
+				if count < minCount {
+					minCount = count
+				}
+				if count > maxCount {
+					maxCount = count
+				}
+			}
+			if maxCount-minCount > 1 {
+				t.Errorf("unfair distribution: max=%d min=%d diff=%d (want diff <= 1)",
+					maxCount, minCount, maxCount-minCount)
 			}
 		})
 	}
@@ -1800,4 +1803,95 @@ func slicesEqual(a, b []int) bool {
 		}
 	}
 	return true
+}
+
+func TestExpandInferencePerfSpec_SingleStageNonMultiTurn_ExactRequestCount(t *testing.T) {
+	// BC-1: exact total request count (no ceiling inflation)
+	tests := []struct {
+		rate       float64
+		duration   int64
+		numPrompts int
+		numUsers   int
+		wantTotal  int
+	}{
+		{10.0, 60, 3, 2, 600},    // 10*60=600, 6 clients
+		{5.0, 600, 11, 4, 3000},  // Issue #978 stage 0 example
+		{10.0, 600, 11, 4, 6000}, // Issue #978 stage 1 example
+		{7.5, 100, 2, 3, 750},    // Non-integer per-client
+		{20.0, 30, 7, 3, 600},    // 600/21 = 28.57 → was 630 with ceil, now 600
+	}
+	for _, tt := range tests {
+		spec := &InferencePerfSpec{
+			Stages: []StageSpec{{Rate: tt.rate, Duration: tt.duration}},
+			SharedPrefix: &SharedPrefixSpec{
+				NumUniqueSystemPrompts:  tt.numPrompts,
+				NumUsersPerSystemPrompt: tt.numUsers,
+				SystemPromptLen:         10,
+				QuestionLen:             10,
+				OutputLen:               10,
+				EnableMultiTurnChat:     false, // non-multi-turn path
+			},
+		}
+		expanded, err := ExpandInferencePerfSpec(spec, 42)
+		if err != nil {
+			t.Fatalf("expansion error: %v", err)
+		}
+		horizon := tt.duration * 2_000_000 // 2× duration (sampler-limited)
+		requests, err := GenerateRequests(expanded, horizon, 0)
+		if err != nil {
+			t.Fatalf("generation error: %v", err)
+		}
+		if len(requests) != tt.wantTotal {
+			t.Errorf("rate=%.1f dur=%d clients=%dx%d: got %d requests, want %d (exact, no ceiling)",
+				tt.rate, tt.duration, tt.numPrompts, tt.numUsers,
+				len(requests), tt.wantTotal)
+		}
+	}
+}
+
+func TestExpandInferencePerfSpec_SingleStageNonMultiTurn_FairDistribution(t *testing.T) {
+	// BC-4: Per-client counts differ by at most 1
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{{Rate: 10.0, Duration: 60}}, // 600 requests / 7 clients
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  7,
+			NumUsersPerSystemPrompt: 1,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+			EnableMultiTurnChat:     false,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+	horizon := int64(120_000_000) // 120 seconds
+	requests, err := GenerateRequests(expanded, horizon, 0)
+	if err != nil {
+		t.Fatalf("generation error: %v", err)
+	}
+	// Count per client
+	perClient := make(map[string]int)
+	for _, req := range requests {
+		perClient[req.ClientID]++
+	}
+	// Find min and max counts
+	minCount, maxCount := 999999, 0
+	for _, count := range perClient {
+		if count < minCount {
+			minCount = count
+		}
+		if count > maxCount {
+			maxCount = count
+		}
+	}
+	if maxCount-minCount > 1 {
+		t.Errorf("unfair distribution: max=%d min=%d diff=%d (want diff <= 1)",
+			maxCount, minCount, maxCount-minCount)
+	}
+	// Verify total is exact
+	if len(requests) != 600 {
+		t.Errorf("total requests = %d, want 600 (exact)", len(requests))
+	}
 }

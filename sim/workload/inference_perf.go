@@ -140,24 +140,12 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 				}
 			}
 		} else {
-			// Single-request (language) workload: use NormalizedExponentialSampler
-			// Each client gets exactly ceil(stageRate * duration / numClients) requests
-			// over the stage duration, using normalized exponential distribution.
-			// NOTE: math.Ceil means total requests may exceed stage.Rate * stage.Duration
-			// by up to numClients-1. This matches inference-perf behavior.
-			requestsPerClient := int64(math.Ceil(stage.Rate * float64(stage.Duration) / float64(numClientsPerStage)))
+			// Single-request (language) workload: use NormalizedExponentialSampler.
+			// Distribute total requests evenly across clients using fair allocation
+			// (floor-with-remainder) to match real inference-perf exact counts.
+			totalRequests := int(stage.Rate * float64(stage.Duration))
+			perClientDist := distributeRequestsEvenly(totalRequests, numClientsPerStage)
 			durationUs := stage.Duration * 1_000_000 // seconds to microseconds
-
-			// Validate sampler parameters before construction (prevent panic on user input)
-			if requestsPerClient <= 0 {
-				return nil, fmt.Errorf("inference_perf: requestsPerClient must be positive, got %d", requestsPerClient)
-			}
-			if requestsPerClient > 10_000_000 {
-				return nil, fmt.Errorf("inference_perf: requestsPerClient %d exceeds safety limit (10M); reduce rate, duration, or increase clients", requestsPerClient)
-			}
-			if durationUs < requestsPerClient {
-				return nil, fmt.Errorf("inference_perf: durationUs (%d) < requestsPerClient (%d) produces degenerate distribution", durationUs, requestsPerClient)
-			}
 
 			// Defensive: prevent integer overflow in seed calculation (cast before multiply)
 			totalClients := int64(sp.NumUniqueSystemPrompts) * int64(sp.NumUsersPerSystemPrompt)
@@ -165,17 +153,31 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 				return nil, fmt.Errorf("total client count %d exceeds safety limit (1M)", totalClients)
 			}
 
-			// Create factory closure that captures requestsPerClient and durationUs.
-			// Each GenerateRequests call will invoke this factory with a sub-RNG,
-			// producing a fresh sampler instance (workload reusability).
-			factory := func(rng *rand.Rand) ArrivalSampler {
-				return NewNormalizedExponentialSampler(rng, requestsPerClient, durationUs)
-			}
-
+			clientIdx := 0
 			for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
 				prefixGroup := fmt.Sprintf("prompt-%d", p)
 				for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
 					clientID := fmt.Sprintf("prompt-%d-user-%d", p, u)
+					requestsPerClient := int64(perClientDist[clientIdx])
+					clientIdx++
+
+					// Validate sampler parameters before construction (prevent panic on user input)
+					if requestsPerClient <= 0 {
+						return nil, fmt.Errorf("inference_perf: requestsPerClient must be positive, got %d", requestsPerClient)
+					}
+					if requestsPerClient > 10_000_000 {
+						return nil, fmt.Errorf("inference_perf: requestsPerClient %d exceeds safety limit (10M); reduce rate, duration, or increase clients", requestsPerClient)
+					}
+					if durationUs < requestsPerClient {
+						return nil, fmt.Errorf("inference_perf: durationUs (%d) < requestsPerClient (%d) produces degenerate distribution", durationUs, requestsPerClient)
+					}
+
+					// Create factory closure that captures requestsPerClient and durationUs.
+					// Each GenerateRequests call will invoke this factory with a sub-RNG,
+					// producing a fresh sampler instance (workload reusability).
+					factory := func(rng *rand.Rand) ArrivalSampler {
+						return NewNormalizedExponentialSampler(rng, requestsPerClient, durationUs)
+					}
 
 					clients = append(clients, ClientSpec{
 						ID:                   clientID,
