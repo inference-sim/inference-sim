@@ -28,9 +28,12 @@ import (
 //
 // Basis function conventions (must match Python profile generation script):
 //   - T_gemm: fused GEMM, interpolated by totalTokens (prefill + decode), × numLayers
-//   - T_pf_attn: FlashAttention, interpolated by (numPrefillRequests, avgAttendedISL), × numLayers
-//     avgAttendedISL = mean(ProgressIndex + NumNewTokens) — the actual context each request
-//     attends at this step, not the full input length (correctly handles chunked prefill).
+//   - T_pf_attn: FlashAttention, interpolated by (numPrefillRequests, avgFullS), × numLayers,
+//     then multiplied by prefixCorrection = Σ(full_s²−prefix²)/Σ(full_s²) where
+//     full_s = ProgressIndex+NumNewTokens and prefix = ProgressIndex.
+//     Matches aiconfigurator's (full_s²−prefix²)/full_s² scaling: only the s=NumNewTokens
+//     new tokens generate attention outputs while attending the full_s KV context.
+//     For non-chunked prefill (ProgressIndex=0) correction=1; for chunked prefill < 1.
 //   - T_dc_attn: PagedAttention, interpolated by (totalDecodeTokens, avgDecodeCtx), × numLayers
 //   - T_allreduce: bandwidth-only component (overhead subtracted), × allReduceUnits; 0 when TP=1
 //     Raw measurement includes ~constant NCCL kernel launch overhead (amortized in CUDA graphs);
@@ -137,34 +140,48 @@ func (m *KernelLookupModel) StepTime(batch []*sim.Request) int64 {
 	}
 
 	var (
-		totalPrefillTokens float64
-		numPrefillRequests float64
-		sumPrefillISL      float64
-		totalDecodeTokens  float64
-		sumDecodeCtx       float64
+		totalPrefillTokens  float64
+		numPrefillRequests  float64
+		sumPrefillFullS     float64 // Σ full_s = Σ(ProgressIndex + NumNewTokens)
+		sumPrefillFullSsq   float64 // Σ full_s², denominator for prefix correction
+		sumPrefillAttended  float64 // Σ(full_s² − prefix²), numerator for prefix correction
+		totalDecodeTokens   float64
+		sumDecodeCtx        float64
 	)
 	batchSize := float64(len(batch))
 	L := float64(m.numLayers)
 
 	for _, req := range batch {
 		if req.ProgressIndex < util.Len64(req.InputTokens) {
-			totalPrefillTokens += float64(req.NumNewTokens)
+			newT := float64(req.NumNewTokens)
+			prefix := float64(req.ProgressIndex)
+			fullS := prefix + newT
+			totalPrefillTokens += newT
 			numPrefillRequests++
-			// ISL = tokens attended by FlashAttention at this step: already-cached
-			// tokens (ProgressIndex) + new tokens being processed (NumNewTokens).
-			// For non-chunked prefill ProgressIndex=0, so this equals len(InputTokens).
-			// For chunked prefill this is smaller than len(InputTokens), correctly
-			// reflecting the attended context rather than the full input length.
-			sumPrefillISL += float64(req.ProgressIndex) + float64(req.NumNewTokens)
+			sumPrefillFullS += fullS
+			sumPrefillFullSsq += fullS * fullS
+			// attended = full_s² − prefix² = NumNewTokens × (2·prefix + NumNewTokens)
+			// Matches aiconfigurator's prefix_correction = (full_s²−prefix²)/full_s²,
+			// which accounts for only the s new tokens generating attention outputs
+			// while attending to the full full_s KV context.
+			sumPrefillAttended += newT * (2*prefix + newT)
 		} else if len(req.OutputTokens) > 0 {
 			totalDecodeTokens++
 			sumDecodeCtx += float64(req.ProgressIndex)
 		}
 	}
 
-	avgPrefillISL := float64(0)
+	avgPrefillFullS := float64(0)
+	// prefixCorrection = Σ(full_s²−prefix²) / Σ(full_s²).
+	// = 1.0 for non-chunked prefill (all ProgressIndex=0), so no cost for the common case.
+	// < 1.0 for chunked prefill, discounting attention by the fraction of KV context
+	// that belongs to already-processed prefix tokens (matching aiconfigurator semantics).
+	prefixCorrection := float64(1)
 	if numPrefillRequests > 0 {
-		avgPrefillISL = sumPrefillISL / numPrefillRequests
+		avgPrefillFullS = sumPrefillFullS / numPrefillRequests
+		if sumPrefillFullSsq > 0 {
+			prefixCorrection = sumPrefillAttended / sumPrefillFullSsq
+		}
 	}
 	avgDecodeCtx := float64(0)
 	if totalDecodeTokens > 0 {
@@ -179,10 +196,13 @@ func (m *KernelLookupModel) StepTime(batch []*sim.Request) int64 {
 		tGemm = clampPositive(m.gemm.Interp1D(totalTokens)) * L
 	}
 
-	// γ₂·T_pf_attn: FlashAttention for prefill tokens × numLayers
+	// γ₂·T_pf_attn: FlashAttention for prefill tokens × numLayers, prefix-corrected.
+	// Lookup at avgPrefillFullS (= avg context length = prefix + new_tokens), then
+	// scale by prefixCorrection = Σ(full_s²−prefix²)/Σ(full_s²) to match aiconfigurator's
+	// semantics: only the s new tokens generate outputs, but they attend to full_s context.
 	var tPfAttn float64
 	if numPrefillRequests > 0 {
-		tPfAttn = clampPositive(m.contextAttn.Interp2D(numPrefillRequests, avgPrefillISL)) * L
+		tPfAttn = clampPositive(m.contextAttn.Interp2D(numPrefillRequests, avgPrefillFullS)) * L * prefixCorrection
 	}
 
 	// γ₃·T_dc_attn: PagedAttention for decode tokens × numLayers
