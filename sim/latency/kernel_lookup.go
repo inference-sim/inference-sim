@@ -2,6 +2,7 @@ package latency
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/util"
@@ -10,15 +11,17 @@ import (
 // KernelLookupModel predicts step time using per-layer latency lookup tables
 // from aiconfigurator's measured GPU kernel database, corrected by learned γ factors.
 //
-// Step-time formula (8-term, fused GEMM):
+// Step-time formula (9-term, fused GEMM):
 //
 //	γ₁·T_gemm + γ₂·T_pf_attn + γ₃·T_dc_attn
 //	+ γ₅·T_allreduce + γ₆·T_moe
-//	+ γ₇·numLayers + γ₈·batchSize + γ₉
+//	+ γ₇_pf·L·numPrefillReqs + γ₇_dc·L/√decodeReqs + γ₈·batchSize + γ₉
 //
 // γ₁-γ₃ and γ₅-γ₆: dimensionless corrections (expected ~1.0 at warm start)
 // γ₄: unused (was decode GEMM before fusion; kept for coefficient index alignment)
-// γ₇: µs/layer overhead; γ₈: µs/request overhead; γ₉: µs/step overhead
+// γ₇_pf (gamma[6]): µs/layer per prefill sequence — overhead scales with #sequences.
+// γ₇_dc (gamma[9]): µs/layer decode overhead base, amortized as base/√decodeReqs.
+// γ₈: µs/request overhead; γ₉: µs/step overhead
 //
 // Why fused GEMM: In vLLM continuous batching, prefill and decode tokens are
 // concatenated into the SAME GEMM call per layer. Splitting them into separate
@@ -29,11 +32,16 @@ import (
 // Basis function conventions (must match Python profile generation script):
 //   - T_gemm: fused GEMM, interpolated by totalTokens (prefill + decode), × numLayers
 //   - T_pf_attn: FlashAttention, interpolated by (numPrefillRequests, avgFullS), × numLayers,
-//     then multiplied by prefixCorrection = Σ(full_s²−prefix²)/Σ(full_s²) where
-//     full_s = ProgressIndex+NumNewTokens and prefix = ProgressIndex.
-//     Matches aiconfigurator's (full_s²−prefix²)/full_s² scaling: only the s=NumNewTokens
-//     new tokens generate attention outputs while attending the full_s KV context.
-//     For non-chunked prefill (ProgressIndex=0) correction=1; for chunked prefill < 1.
+//     then multiplied by prefixCorrection = Σ(full_s²−prefix²)/Σ(full_s²).
+//     full_s and prefix are step-type-dependent:
+//       First step (ProgressIndex=0): full_s = len(InputTokens) (full ISL);
+//         prefix = full_s − NumNewTokens = KV cache prefix hit length (0 for cold start).
+//       Chunked second+ step (ProgressIndex>0): full_s = ProgressIndex+NumNewTokens;
+//         prefix = ProgressIndex (prior-chunk KV context).
+//     Matches aiconfigurator's (full_s²−prefix²)/full_s² scaling: only the NumNewTokens
+//     Q tokens generate new attention outputs while attending the full full_s KV context.
+//     Correctly accounts for KV cache prefix hits: a request with 144/750 tokens cached
+//     sees full_s=750 (full attention context) and prefix=144 (correction ≈ 0.963).
 //   - T_dc_attn: PagedAttention, interpolated by (totalDecodeTokens, avgDecodeCtx), × numLayers
 //   - T_allreduce: bandwidth-only component (overhead subtracted), × allReduceUnits; 0 when TP=1
 //     Raw measurement includes ~constant NCCL kernel launch overhead (amortized in CUDA graphs);
@@ -42,8 +50,8 @@ import (
 type KernelLookupModel struct {
 	gamma [10]float64 // gamma[0]=γ₁(gemm), [1]=γ₂(pf_attn), [2]=γ₃(dc_attn),
 	//                   [3]=γ₄(unused), [4]=γ₅(allreduce), [5]=γ₆(moe),
-	//                   [6]=γ₇(per-layer), [7]=γ₈(per-req), [8]=γ₉(per-step)
-	//                   [9] reserved
+	//                   [6]=γ₇_pf(per-layer-per-prefill-seq), [7]=γ₈(per-req),
+	//                   [8]=γ₉(per-step), [9]=γ₇_dc(per-layer-decode-amortized)
 	alpha [3]float64 // α₀ (queueing), α₁ (post-decode), α₂ (per-output-token)
 
 	// Pre-loaded lookup tables (per-layer µs)
@@ -156,15 +164,40 @@ func (m *KernelLookupModel) StepTime(batch []*sim.Request) int64 {
 	for _, req := range batch {
 		if req.ProgressIndex < util.Len64(req.InputTokens) {
 			newT := float64(req.NumNewTokens)
-			prefix := float64(req.ProgressIndex)
-			fullS := prefix + newT
+
+			// Compute full KV context (full_s) and causal prefix for this step.
+			//
+			// Two cases, distinguished by ProgressIndex:
+			//
+			//   ProgressIndex == 0 (first prefill step, chunked or non-chunked):
+			//     full_s = len(InputTokens) — the total input length is always the
+			//     correct KV context for the attention kernel. KV cache blocks from
+			//     GetCachedBlocks are already allocated; Q tokens attend to ALL of
+			//     them. Prefix = full_s − NumNewTokens = cached prefix hit length
+			//     (0 for a fresh request, >0 when prefix-cache blocks were reused).
+			//     Mirrors trained_physics: si = len(req.InputTokens).
+			//
+			//   ProgressIndex > 0 (chunked prefill, second+ step):
+			//     full_s = ProgressIndex + NumNewTokens — KV context grows with each
+			//     chunk; prefix = ProgressIndex (already-computed tokens from prior
+			//     chunks). No KV cache prefix hits at this point (they were absorbed
+			//     into ProgressIndex after the first step completed).
+			var prefix, fullS float64
+			if req.ProgressIndex == 0 {
+				fullS  = float64(util.Len64(req.InputTokens))
+				prefix = fullS - newT // = 0 for no-cache; = cachedLen for prefix hit
+			} else {
+				prefix = float64(req.ProgressIndex)
+				fullS  = prefix + newT
+			}
+
 			totalPrefillTokens += newT
 			numPrefillRequests++
 			sumPrefillFullS += fullS
 			sumPrefillFullSsq += fullS * fullS
 			// attended = full_s² − prefix² = NumNewTokens × (2·prefix + NumNewTokens)
 			// Matches aiconfigurator's prefix_correction = (full_s²−prefix²)/full_s²,
-			// which accounts for only the s new tokens generating attention outputs
+			// which accounts for only the NumNewTokens Q tokens generating outputs
 			// while attending to the full full_s KV context.
 			sumPrefillAttended += newT * (2*prefix + newT)
 		} else if len(req.OutputTokens) > 0 {
@@ -175,9 +208,10 @@ func (m *KernelLookupModel) StepTime(batch []*sim.Request) int64 {
 
 	avgPrefillFullS := float64(0)
 	// prefixCorrection = Σ(full_s²−prefix²) / Σ(full_s²).
-	// = 1.0 for non-chunked prefill (all ProgressIndex=0), so no cost for the common case.
-	// < 1.0 for chunked prefill, discounting attention by the fraction of KV context
-	// that belongs to already-processed prefix tokens (matching aiconfigurator semantics).
+	// < 1.0 for any step where prefix > 0 (cache hits or chunked second+ steps),
+	// discounting attention by the fraction of KV context that Q tokens already
+	// attended to in a prior step (matches aiconfigurator semantics).
+	// = 1.0 only for the cold-start, non-chunked, no-cache-hit first step.
 	prefixCorrection := float64(1)
 	if numPrefillRequests > 0 {
 		avgPrefillFullS = sumPrefillFullS / numPrefillRequests
@@ -199,9 +233,11 @@ func (m *KernelLookupModel) StepTime(batch []*sim.Request) int64 {
 	}
 
 	// γ₂·T_pf_attn: FlashAttention for prefill tokens × numLayers, prefix-corrected.
-	// Lookup at avgPrefillFullS (= avg context length = prefix + new_tokens), then
-	// scale by prefixCorrection = Σ(full_s²−prefix²)/Σ(full_s²) to match aiconfigurator's
-	// semantics: only the s new tokens generate outputs, but they attend to full_s context.
+	// Lookup at avgPrefillFullS = average full KV context length across prefill requests,
+	// then scale by prefixCorrection = Σ(full_s²−prefix²)/Σ(full_s²).
+	// For first-step requests: full_s = len(InputTokens) so KV cache prefix hits
+	// raise full_s above NumNewTokens and set prefix = cachedLen > 0, giving
+	// correction < 1. For cold-start non-chunked prefill: prefix = 0, correction = 1.
 	var tPfAttn float64
 	if numPrefillRequests > 0 {
 		tPfAttn = clampPositive(m.contextAttn.Interp2D(numPrefillRequests, avgPrefillFullS)) * L * prefixCorrection
@@ -239,16 +275,27 @@ func (m *KernelLookupModel) StepTime(batch []*sim.Request) int64 {
 		tLogits = clampPositive(m.logitsGemm.Interp1D(totalTokens))
 	}
 
+	// γ₇_pf: per-layer overhead per prefill sequence — scales with #sequences
+	// because each sequence requires individual attention mask and KV slot setup.
+	tPfOverhead := m.gamma[6] * L * numPrefillRequests
+
+	// γ₇_dc: per-layer decode overhead amortized by √decodeReqs — zero when no
+	// decode requests in batch.
+	var tDcOverhead float64
+	if totalDecodeTokens > 0 {
+		tDcOverhead = m.gamma[9] * L / math.Sqrt(totalDecodeTokens)
+	}
+
 	stepTime := m.gamma[0]*(tGemm+tLogits) +
 		m.gamma[1]*tPfAttn +
 		m.gamma[2]*tDcAttn +
 		// gamma[3] = γ₄ unused (was split decode GEMM, now fused into γ₁)
 		m.gamma[4]*tAllReduce +
 		m.gamma[5]*tMoE +
-		m.gamma[6]*L +
+		tPfOverhead +
+		tDcOverhead +
 		m.gamma[7]*batchSize +
 		m.gamma[8]
-		// gamma[9] reserved
 
 	return max(1, clampToInt64(stepTime))
 }

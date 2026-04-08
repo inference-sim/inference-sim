@@ -1,0 +1,30 @@
+{
+  "iteration": "33-cmaes",
+  "backend_name": "kernel-lookup",
+  "timestamp": "2026-04-08T14:28:00",
+  "best_params": {
+    "alpha": [14691.7, 0.0, 14.1207],
+    "beta": [0.04603, 0.08283, 0.60661, 1.0, 0.00890702, 1.0, 15.413, 444.778, 52.373, 281.607]
+  },
+  "loss": {
+    "overall_loss": 57.481652
+  },
+  "search": {
+    "method": "CMA-ES",
+    "generations_completed": 47,
+    "total_candidates": 470,
+    "wall_time_s": 6468,
+    "wall_time_h": 1.8,
+    "best_at_gen": 46,
+    "sigma_at_stop": 0.14,
+    "warm_start": "iter33-NM best (64.26%)",
+    "prior_iter32_loss": 56.49
+  },
+  "fixed_params": {
+    "gamma3_unused": 1.0,
+    "gamma4_allreduce": 0.00890702,
+    "gamma5_moe": 1.0,
+    "alpha1_post_decode": 0.0
+  },
+  "notes": "47-gen CMA-ES over 9 free parameters with corrected FlashAttention basis (prefix cache fix). Best 57.48% at gen 46. Did not beat iter32 (56.49%, delta=0.99pp). Sigma=0.14 at stop -- not fully converged. The basis fix changes the landscape vs iter32; CMA-ES needs more gens or a different approach to beat iter32 with the corrected model."
+}
