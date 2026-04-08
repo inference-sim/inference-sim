@@ -117,7 +117,13 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 		if sp.EnableMultiTurnChat {
 			// Multi-turn: distribute total requests evenly across sessions
 			totalRequests := int(stage.Rate * float64(stage.Duration))
-			perSessionRounds := distributeRequestsEvenly(totalRequests, numClientsPerStage)
+			if totalRequests < 1 {
+				return nil, fmt.Errorf("inference_perf.stages[0]: rate %.4f × duration %d produces %d requests (< 1); increase rate or duration", stage.Rate, stage.Duration, totalRequests)
+			}
+			perSessionRounds, err := distributeRequestsEvenly(totalRequests, numClientsPerStage)
+			if err != nil {
+				return nil, fmt.Errorf("distributing requests for single-stage multi-turn: %w", err)
+			}
 
 			clientIdx := 0
 			for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
@@ -146,7 +152,13 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 			// Distribute total requests evenly across clients using fair allocation
 			// (floor-with-remainder) to match real inference-perf exact counts.
 			totalRequests := int(stage.Rate * float64(stage.Duration))
-			perClientDist := distributeRequestsEvenly(totalRequests, numClientsPerStage)
+			if totalRequests < 1 {
+				return nil, fmt.Errorf("inference_perf.stages[0]: rate %.4f × duration %d produces %d requests (< 1); increase rate or duration", stage.Rate, stage.Duration, totalRequests)
+			}
+			perClientDist, err := distributeRequestsEvenly(totalRequests, numClientsPerStage)
+			if err != nil {
+				return nil, fmt.Errorf("distributing requests for single-stage non-multi-turn: %w", err)
+			}
 			durationUs := stage.Duration * 1_000_000 // seconds to microseconds
 
 			// Defensive: prevent integer overflow in seed calculation (cast before multiply)
@@ -228,7 +240,13 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 			if sp.EnableMultiTurnChat {
 				// Multi-turn: distribute total requests evenly across sessions for this stage
 				totalRequests := int(stage.Rate * float64(stage.Duration))
-				perSessionRounds := distributeRequestsEvenly(totalRequests, numClientsPerStage)
+				if totalRequests < 1 {
+					return nil, fmt.Errorf("inference_perf.stages[%d]: rate %.4f × duration %d produces %d requests (< 1); increase rate or duration", s, stage.Rate, stage.Duration, totalRequests)
+				}
+				perSessionRounds, err := distributeRequestsEvenly(totalRequests, numClientsPerStage)
+				if err != nil {
+					return nil, fmt.Errorf("distributing requests for stage %d multi-turn: %w", s, err)
+				}
 
 				clientIdx := 0
 				for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
@@ -352,12 +370,14 @@ func constantDist(value float64) DistSpec {
 // First 'remainder' clients get base+1, others get base.
 //
 // Example: distributeRequestsEvenly(10, 3) -> [4, 3, 3] (sum=10)
-func distributeRequestsEvenly(totalRequests, n int) []int {
+//
+// Returns error if preconditions are violated (n <= 0 or totalRequests < 0).
+func distributeRequestsEvenly(totalRequests, n int) ([]int, error) {
 	if n <= 0 {
-		panic("distributeRequestsEvenly: n must be positive")
+		return nil, fmt.Errorf("distributeRequestsEvenly: n must be positive, got %d", n)
 	}
 	if totalRequests < 0 {
-		panic("distributeRequestsEvenly: totalRequests must be non-negative")
+		return nil, fmt.Errorf("distributeRequestsEvenly: totalRequests must be non-negative, got %d", totalRequests)
 	}
 	base := totalRequests / n
 	remainder := totalRequests % n
@@ -368,5 +388,5 @@ func distributeRequestsEvenly(totalRequests, n int) []int {
 			dist[i]++
 		}
 	}
-	return dist
+	return dist, nil
 }

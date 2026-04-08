@@ -1760,7 +1760,10 @@ func TestDistributeRequestsEvenly_ExactTotal(t *testing.T) {
 		{total: 7, n: 1, want: []int{7}},                      // Edge: single client
 	}
 	for _, tt := range tests {
-		dist := distributeRequestsEvenly(tt.total, tt.n)
+		dist, err := distributeRequestsEvenly(tt.total, tt.n)
+		if err != nil {
+			t.Fatalf("distributeRequestsEvenly(%d, %d) unexpected error: %v", tt.total, tt.n, err)
+		}
 		sum := 0
 		for _, count := range dist {
 			sum += count
@@ -1790,6 +1793,26 @@ func TestDistributeRequestsEvenly_ExactTotal(t *testing.T) {
 				t.Errorf("unfair distribution: max-min=%d > 1", max-min)
 			}
 		}
+	}
+}
+
+func TestDistributeRequestsEvenly_ErrorCases(t *testing.T) {
+	tests := []struct {
+		name  string
+		total int
+		n     int
+	}{
+		{"n <= 0", 10, 0},
+		{"n < 0", 10, -1},
+		{"totalRequests < 0", -5, 10},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := distributeRequestsEvenly(tt.total, tt.n)
+			if err == nil {
+				t.Errorf("distributeRequestsEvenly(%d, %d) expected error, got nil", tt.total, tt.n)
+			}
+		})
 	}
 }
 
@@ -1849,9 +1872,85 @@ func TestExpandInferencePerfSpec_SingleStageNonMultiTurn_ExactRequestCount(t *te
 	}
 }
 
+func TestExpandInferencePerfSpec_ZeroRequestsError(t *testing.T) {
+	// Test error handling when rate × duration produces zero requests.
+	// This addresses issue #978 review feedback (silent failure in multi-turn path).
+	tests := []struct {
+		name             string
+		stages           []StageSpec
+		enableMultiTurn  bool
+		expectedErrorMsg string
+	}{
+		{
+			name:             "single-stage non-multi-turn",
+			stages:           []StageSpec{{Rate: 0.5, Duration: 1}},
+			enableMultiTurn:  false,
+			expectedErrorMsg: "rate 0.5000 × duration 1 produces 0 requests",
+		},
+		{
+			name:             "single-stage multi-turn",
+			stages:           []StageSpec{{Rate: 0.001, Duration: 1}},
+			enableMultiTurn:  true,
+			expectedErrorMsg: "rate 0.0010 × duration 1 produces 0 requests",
+		},
+		{
+			name: "multi-stage multi-turn (stage 1 has zero)",
+			stages: []StageSpec{
+				{Rate: 10.0, Duration: 60},   // OK: 600 requests
+				{Rate: 0.001, Duration: 1},   // Zero requests
+			},
+			enableMultiTurn:  true,
+			expectedErrorMsg: "stages[1]: rate 0.0010 × duration 1 produces 0 requests",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := &InferencePerfSpec{
+				Stages: tt.stages,
+				SharedPrefix: &SharedPrefixSpec{
+					NumUniqueSystemPrompts:  2,
+					NumUsersPerSystemPrompt: 2,
+					SystemPromptLen:         10,
+					QuestionLen:             10,
+					OutputLen:               10,
+					EnableMultiTurnChat:     tt.enableMultiTurn,
+				},
+			}
+			_, err := ExpandInferencePerfSpec(spec, 42)
+			if err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			if !containsString(err.Error(), tt.expectedErrorMsg) {
+				t.Errorf("error message %q does not contain %q", err.Error(), tt.expectedErrorMsg)
+			}
+		})
+	}
+}
+
+func containsString(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && containsSubstring(s, substr))
+}
+
+func containsSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
 func TestExpandInferencePerfSpec_SingleStageMultiTurn_ExactRequestCount(t *testing.T) {
 	// BC-2: Single-stage multi-turn generates exact request count.
-	// Uses horizon = 2x duration so Poisson start-time stagger doesn't clip rounds.
+	//
+	// Horizon calculation: For rate=5, duration=600, sessions=44:
+	// - totalRequests = 3000, MaxRounds ≈ 68 per session (fair distribution)
+	// - ThinkTimeUs = 8,800,000 µs (sessions/rate = 44/5 * 1e6)
+	// - Last round of any session arrives at: startTime + (MaxRounds-1) × ThinkTimeUs
+	//   ≈ startTime + 67 × 8,800,000 µs = startTime + 589.6s
+	// - For seed=42 Poisson sampling, all sessions start before ~601s (duration boundary)
+	// - Horizon = 2×600 = 1200s provides ~599s margin, accommodating all rounds.
+	// This ensures no lifecycle window clipping of rounds.
 	spec := &InferencePerfSpec{
 		Stages: []StageSpec{{Rate: 5.0, Duration: 600}},
 		SharedPrefix: &SharedPrefixSpec{
