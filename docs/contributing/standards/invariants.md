@@ -89,7 +89,7 @@ Invariants are properties that must hold at all times during and after simulatio
 
 **Design implication:** When `--snapshot-refresh-interval > 0`, all Prometheus-sourced signals (QueueDepth, BatchSize, KVUtilization) share the same scrape interval — matching real vLLM deployments where all three are exposed via the same `/metrics` endpoint. `InFlightRequests` remains synchronous (gateway-local counter, not Prometheus-sourced). When `--cache-signal-delay > 0` (default: 2s), prefix cache query closures use a separate periodic snapshot of each instance's `HashToBlock` map, modeling asynchronous KV event propagation from production llm-d. The 2s default matches llm-d's `defaultSpeculativeTTL` — the blind spot between routing decision and KV event arrival via ZMQ. Set `--cache-signal-delay 0` for oracle mode (live cache state).
 
-`EffectiveLoad()` = `QueueDepth + BatchSize + InFlightRequests`. The synchronous `InFlightRequests` term compensates for Periodic staleness in the other two terms.
+`EffectiveLoad()` = `QueueDepth + BatchSize + InFlightRequests`. The synchronous `InFlightRequests` term compensates for Periodic staleness in the other two terms. The `queue-depth` scorer reads `QueueDepth` only (GIE parity); `EffectiveLoad()` is used by `load-balance`, `least-loaded`, `always-busiest`, and admission policies.
 
 **Verification:** H3 hypothesis experiment, H29 snapshot-staleness experiment (see [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive/hypotheses)).
 

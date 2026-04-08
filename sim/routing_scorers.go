@@ -125,32 +125,30 @@ func newScorerWithObserver(name string, blockSize int, cacheFn cacheQueryFn) (sc
 }
 
 // scoreQueueDepth computes per-instance queue depth scores using min-max normalization.
-// Lower effective load → higher score. All-equal loads → all score 1.0.
-// Matches llm-d's queue-scorer semantics.
+// Lower queue depth → higher score. All-equal depths → all score 1.0.
+// Matches llm-d/GIE's queue-scorer semantics: reads QueueDepth only (WaitingQueueSize).
 //
 // Signal freshness (R17, INV-7):
 //
-//	Reads: EffectiveLoad() = QueueDepth (Periodic when interval>0, else Immediate) +
-//	       BatchSize (same) + InFlightRequests (synchronous).
-//	The synchronous InFlightRequests term compensates for Periodic staleness.
+//	Reads: QueueDepth (Periodic when interval>0, else Immediate).
 func scoreQueueDepth(_ *Request, snapshots []RoutingSnapshot) map[string]float64 {
 	scores := make(map[string]float64, len(snapshots))
-	minLoad, maxLoad := math.MaxInt, 0
+	minDepth, maxDepth := math.MaxInt, 0
 	for _, snap := range snapshots {
-		load := snap.EffectiveLoad()
-		if load < minLoad {
-			minLoad = load
+		depth := snap.QueueDepth
+		if depth < minDepth {
+			minDepth = depth
 		}
-		if load > maxLoad {
-			maxLoad = load
+		if depth > maxDepth {
+			maxDepth = depth
 		}
 	}
 	for _, snap := range snapshots {
-		if maxLoad == minLoad {
+		if maxDepth == minDepth {
 			scores[snap.ID] = 1.0
 		} else {
-			load := snap.EffectiveLoad()
-			scores[snap.ID] = float64(maxLoad-load) / float64(maxLoad-minLoad)
+			depth := snap.QueueDepth
+			scores[snap.ID] = float64(maxDepth-depth) / float64(maxDepth-minDepth)
 		}
 	}
 	return scores
@@ -164,7 +162,8 @@ func scoreQueueDepth(_ *Request, snapshots []RoutingSnapshot) map[string]float64
 //
 //	Reads: KVUtilization (Periodic when interval>0, else Immediate).
 //	WARNING: At high request rates with large intervals, this signal can be significantly stale.
-//	Pair with a load-aware scorer (e.g., queue-depth) for robust routing.
+//	Pair with load-balance (reads EffectiveLoad including synchronous InFlightRequests)
+//	for staleness-critical deployments, or queue-depth for GIE parity.
 //	See H3 experiment: 200x worse distribution uniformity at rate=5000.
 func scoreKVUtilization(_ *Request, snapshots []RoutingSnapshot) map[string]float64 {
 	scores := make(map[string]float64, len(snapshots))
@@ -180,7 +179,7 @@ func scoreKVUtilization(_ *Request, snapshots []RoutingSnapshot) map[string]floa
 //
 // Signal freshness (R17, INV-7):
 //
-//	Reads: EffectiveLoad() — same as scoreQueueDepth (synchronous + Periodic composite).
+//	Reads: EffectiveLoad() = QueueDepth + BatchSize + InFlightRequests (synchronous + Periodic composite).
 func scoreLoadBalance(_ *Request, snapshots []RoutingSnapshot) map[string]float64 {
 	scores := make(map[string]float64, len(snapshots))
 	for _, snap := range snapshots {
