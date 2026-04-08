@@ -41,6 +41,9 @@ type KernelProfile struct {
 	GenerationAttention Lookup2D  `yaml:"generation_attention"`
 	AllReduce           Lookup1D  `yaml:"allreduce"`
 	MoECompute          *Lookup1D `yaml:"moe_compute,omitempty"`
+	// LogitsGemm: vocabulary projection GEMM (once per step, not per-layer).
+	// Indexed by total_tokens → per-step latency (us). Missing → zero contribution.
+	LogitsGemm          *Lookup1D `yaml:"logits_gemm,omitempty"`
 }
 
 // Lookup1D maps a token count to per-layer latency (us).

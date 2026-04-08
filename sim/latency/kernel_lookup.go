@@ -58,7 +58,8 @@ type KernelLookupModel struct {
 	numMoELayers   int
 	numDenseLayers int
 	allReduceUnits    int     // 2·numDenseLayers + 1·numMoELayers
-	allReduceOverhead float64 // per-call NCCL kernel overhead (µs), measured at tokens=1
+	allReduceOverhead float64  // per-call NCCL kernel overhead (µs), measured at tokens=1
+	logitsGemm        *Lookup1D // vocabulary projection, once per step (nil → skip)
 	// The allreduce profile includes two components:
 	//   (a) NVLink data-transfer time: scales with tokens × hidden_dim → kept
 	//   (b) NCCL kernel launch overhead: ~constant per call → subtracted
@@ -124,6 +125,7 @@ func NewKernelLookupModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) 
 		generationAttn:    profile.GenerationAttention,
 		allreduce:         profile.AllReduce,
 		moeCompute:        profile.MoECompute,
+		logitsGemm:        profile.LogitsGemm,
 		numLayers:         profile.NumLayers,
 		numMoELayers:      numMoE,
 		numDenseLayers:    numDense,
@@ -227,7 +229,17 @@ func (m *KernelLookupModel) StepTime(batch []*sim.Request) int64 {
 		tMoE = clampPositive(m.moeCompute.Interp1D(totalTokens)) * float64(m.numMoELayers)
 	}
 
-	stepTime := m.gamma[0]*tGemm +
+	// T_logits: vocabulary projection GEMM, once per step (scale=1, not per-layer).
+	// This is the largest missing term vs a raw-GEMM-only model: for vocab=152064
+	// and batch=512 tokens it adds ~1ms, closing the gap between BLIS and aiconfigurator
+	// step-time predictions at γ=1. γ₁ (the GEMM correction) also scales this term
+	// since logits_gemm is structurally the same type of compute.
+	var tLogits float64
+	if m.logitsGemm != nil && totalTokens > 0 {
+		tLogits = clampPositive(m.logitsGemm.Interp1D(totalTokens))
+	}
+
+	stepTime := m.gamma[0]*(tGemm+tLogits) +
 		m.gamma[1]*tPfAttn +
 		m.gamma[2]*tDcAttn +
 		// gamma[3] = γ₄ unused (was split decode GEMM, now fused into γ₁)

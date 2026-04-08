@@ -239,6 +239,26 @@ def query_1d_gemm(db, dims: dict, token_grid: list, quant_mode) -> list:
     return out
 
 
+def query_logits_gemm(db, info: dict, tp: int, token_grid: list, quant_mode) -> list:
+    """Query logits GEMM latency (vocab projection, once per step, us).
+
+    Logits GEMM: GEMM(m=total_tokens, n=vocab_size//tp, k=hidden_size).
+    Called once per forward pass (scale_factor=1, not per-layer).
+    Uses float16 quant mode regardless of model quantization (standard practice).
+    """
+    h = info["hidden_size"]
+    v = info["vocab_size"]
+    n = v // tp
+    out = []
+    for tokens in token_grid:
+        try:
+            r = db.query_gemm(m=int(tokens), n=n, k=h, quant_mode=GEMMQuantMode.float16)
+            out.append(round(float(r) * 1000.0, 6))  # ms → µs
+        except Exception:
+            out.append(0.0)
+    return out
+
+
 def query_2d_context_attn(
     db,
     info: dict,
@@ -458,6 +478,9 @@ def generate_profile(
         db, info, tp, DECODE_TOKEN_GRID, CTX_GRID, kv_mode
     )
 
+    print("  Querying logits GEMM (vocab projection, once per step)...")
+    logits_gemm = query_logits_gemm(db, info, tp, CONTEXT_TOKEN_GRID, gemm_mode)
+
     print(f"  Querying AllReduce (tp={tp})...")
     allreduce = query_allreduce(db, info, tp, CONTEXT_TOKEN_GRID)
 
@@ -505,6 +528,10 @@ def generate_profile(
             "tokens": [float(t) for t in CONTEXT_TOKEN_GRID],
             "latency_us": moe_compute,
         }
+    profile["logits_gemm"] = {
+        "tokens": [float(t) for t in CONTEXT_TOKEN_GRID],
+        "latency_us": logits_gemm,
+    }
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     with open(output_path, "w") as f:
