@@ -548,7 +548,7 @@ func TestExpandInferencePerfSpec_MultiTurn_MapsToReasoning(t *testing.T) {
 			t.Fatalf("client %q: MultiTurn should be set", c.ID)
 		}
 		// rate=10, duration=600, sessions=2*3=6
-		// MaxRounds = ceil(10*600/6) = 1000
+		// MaxRounds = floor(10*600/6) = 1000 (evenly divisible)
 		// ThinkTimeUs = floor(6/10 * 1e6) = 600_000
 		if mt.MaxRounds != 1000 {
 			t.Errorf("client %q: MaxRounds = %d, want 1000", c.ID, mt.MaxRounds)
@@ -648,7 +648,7 @@ func TestExpandInferencePerfSpec_MultiStageMultiTurn_Succeeds(t *testing.T) {
 func TestExpandInferencePerfSpec_MultiTurn_ComputedParameters(t *testing.T) {
 	// BC-3: MaxRounds, ThinkTimeUs, SingleSession computed from stage parameters.
 	// 1 stage, rate=10, duration=600, 2 prompts × 5 users = 10 sessions
-	// MaxRounds = ceil(10*600/10) = 600
+	// MaxRounds = floor(10*600/10) = 600 (evenly divisible)
 	// ThinkTimeUs = floor(10/10 * 1e6) = 1_000_000
 	spec := &InferencePerfSpec{
 		Stages: []StageSpec{
@@ -687,8 +687,8 @@ func TestExpandInferencePerfSpec_MultiTurn_ComputedParameters(t *testing.T) {
 func TestExpandInferencePerfSpec_MultiStageMultiTurn_PerStageParameters(t *testing.T) {
 	// BC-4: Each stage gets its own computed MaxRounds and ThinkTimeUs.
 	// 2 stages (rate=5/dur=600, rate=20/dur=300), 1 prompt × 1 user = 1 session
-	// Stage 0: MaxRounds = ceil(5*600/1) = 3000, ThinkTimeUs = floor(1/5 * 1e6) = 200_000
-	// Stage 1: MaxRounds = ceil(20*300/1) = 6000, ThinkTimeUs = floor(1/20 * 1e6) = 50_000
+	// Stage 0: MaxRounds = floor(5*600/1) = 3000, ThinkTimeUs = floor(1/5 * 1e6) = 200_000
+	// Stage 1: MaxRounds = floor(20*300/1) = 6000, ThinkTimeUs = floor(1/20 * 1e6) = 50_000
 	spec := &InferencePerfSpec{
 		Stages: []StageSpec{
 			{Rate: 5.0, Duration: 600},
@@ -1346,8 +1346,8 @@ func TestGenerateRequests_InferencePerfSpec_MultiTurnMultiStage_Integration(t *t
 
 func TestExpandInferencePerfSpec_SingleStage_NormalizedExponential(t *testing.T) {
 	// BC-2: Single-stage expansion uses normalized exponential and produces
-	// exactly ceil(rate*duration/numClients) requests per client, summing to
-	// the stage duration.
+	// floor(total/numClients) requests per client (with remainder distributed
+	// to first clients), summing to the stage total.
 	ipSpec := &InferencePerfSpec{
 		Stages: []StageSpec{
 			{Rate: 10.0, Duration: 60}, // 10 req/s for 60s = 600 total requests
@@ -1364,7 +1364,7 @@ func TestExpandInferencePerfSpec_SingleStage_NormalizedExponential(t *testing.T)
 	if err != nil {
 		t.Fatalf("expansion error: %v", err)
 	}
-	// 3*2 = 6 clients, each should get ceil(600/6) = 100 requests
+	// 3*2 = 6 clients, each should get floor(600/6) = 100 requests (evenly divisible)
 	// Horizon = 2× duration: ensures sampler exhaustion (not horizon) stops generation.
 	horizon := int64(120_000_000) // 120 seconds in µs (2× stage duration)
 	requests, err := GenerateRequests(expanded, horizon, 0)
