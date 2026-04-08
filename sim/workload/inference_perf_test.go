@@ -1849,6 +1849,127 @@ func TestExpandInferencePerfSpec_SingleStageNonMultiTurn_ExactRequestCount(t *te
 	}
 }
 
+func TestExpandInferencePerfSpec_SingleStageMultiTurn_ExactRequestCount(t *testing.T) {
+	// BC-2: Single-stage multi-turn generates exact request count.
+	// Uses horizon = 2x duration so Poisson start-time stagger doesn't clip rounds.
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{{Rate: 5.0, Duration: 600}},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  11,
+			NumUsersPerSystemPrompt: 4,
+			SystemPromptLen:         100,
+			QuestionLen:             200,
+			OutputLen:               50,
+			EnableMultiTurnChat:     true,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+	// Use 2x duration as horizon so all sessions complete their rounds
+	// (same pattern as non-multi-turn tests).
+	horizon := int64(1_200_000_000) // 1200 seconds = 2 × 600
+	requests, err := GenerateRequests(expanded, horizon, 0)
+	if err != nil {
+		t.Fatalf("generation error: %v", err)
+	}
+	// Should get exactly 3000 requests (not 3036 from ceil inflation)
+	if len(requests) != 3000 {
+		t.Errorf("multi-turn request count = %d, want 3000 (exact, issue #978 example)",
+			len(requests))
+	}
+}
+
+func TestExpandInferencePerfSpec_MultiStageMultiTurn_ExactMaxRoundsSum(t *testing.T) {
+	// BC-3: Multi-stage multi-turn: sum of per-session MaxRounds equals
+	// int(rate * duration) per stage (the expansion contract).
+	// Note: actual generated request count may be lower due to lifecycle window
+	// clipping of late-starting sessions. This test verifies the expansion math.
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 5.0, Duration: 600},
+			{Rate: 10.0, Duration: 600},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  11,
+			NumUsersPerSystemPrompt: 4,
+			SystemPromptLen:         100,
+			QuestionLen:             200,
+			OutputLen:               50,
+			EnableMultiTurnChat:     true,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+
+	numClientsPerStage := 11 * 4 // 44
+	// Stage 0 clients: first 44, Stage 1 clients: next 44
+	var stage0Sum, stage1Sum int
+	for i, client := range expanded.Clients {
+		if client.Reasoning == nil || client.Reasoning.MultiTurn == nil {
+			t.Fatalf("client %d (%s): missing Reasoning/MultiTurn", i, client.ID)
+		}
+		if i < numClientsPerStage {
+			stage0Sum += client.Reasoning.MultiTurn.MaxRounds
+		} else {
+			stage1Sum += client.Reasoning.MultiTurn.MaxRounds
+		}
+	}
+
+	// Stage 0: int(5.0 * 600) = 3000 (not 3036 from ceil)
+	if stage0Sum != 3000 {
+		t.Errorf("stage 0 MaxRounds sum = %d, want 3000 (exact)", stage0Sum)
+	}
+	// Stage 1: int(10.0 * 600) = 6000 (not 6028 from ceil)
+	if stage1Sum != 6000 {
+		t.Errorf("stage 1 MaxRounds sum = %d, want 6000 (exact)", stage1Sum)
+	}
+}
+
+func TestExpandInferencePerfSpec_MultiTurn_PerSessionFairness(t *testing.T) {
+	// BC-4: Multi-turn sessions have MaxRounds differing by at most 1.
+	// 600 requests / 7 sessions = 85 or 86 rounds per session (5 get 86, 2 get 85).
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{{Rate: 10.0, Duration: 60}}, // 600 requests / 7 sessions
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  7,
+			NumUsersPerSystemPrompt: 1,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+			EnableMultiTurnChat:     true,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+	// Check that MaxRounds varies by at most 1 across clients
+	minR, maxR := 999999, 0
+	totalRounds := 0
+	for _, client := range expanded.Clients {
+		rounds := client.Reasoning.MultiTurn.MaxRounds
+		totalRounds += rounds
+		if rounds < minR {
+			minR = rounds
+		}
+		if rounds > maxR {
+			maxR = rounds
+		}
+	}
+	if maxR-minR > 1 {
+		t.Errorf("unfair MaxRounds distribution: max=%d min=%d diff=%d (want diff <= 1)",
+			maxR, minR, maxR-minR)
+	}
+	// Sum must equal exactly int(rate * duration) = 600
+	if totalRounds != 600 {
+		t.Errorf("total MaxRounds = %d, want 600 (exact)", totalRounds)
+	}
+}
+
 func TestExpandInferencePerfSpec_SingleStageNonMultiTurn_FairDistribution(t *testing.T) {
 	// BC-4: Per-client counts differ by at most 1
 	spec := &InferencePerfSpec{

@@ -110,21 +110,23 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 		rateFraction := 1.0 / float64(numClientsPerStage)
 		clients = make([]ClientSpec, 0, numClientsPerStage)
 
-		var reasoning *ReasoningSpec
-		if sp.EnableMultiTurnChat {
-			reasoning = computeReasoningSpec(stage.Rate, stage.Duration, numClientsPerStage)
-		}
-
 		// For multi-turn (reasoning) workloads, use Poisson arrival for session start time.
 		// The rounds within each session are spaced by ThinkTimeUs (not sampled IATs).
 		// NormalizedExponentialSampler only applies to non-reasoning (language) workloads
 		// where each request is independent (not part of a multi-round session).
 		if sp.EnableMultiTurnChat {
-			// Multi-turn: use Poisson, rounds controlled by MaxRounds + ThinkTimeUs
+			// Multi-turn: distribute total requests evenly across sessions
+			totalRequests := int(stage.Rate * float64(stage.Duration))
+			perSessionRounds := distributeRequestsEvenly(totalRequests, numClientsPerStage)
+
+			clientIdx := 0
 			for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
 				prefixGroup := fmt.Sprintf("prompt-%d", p)
 				for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
 					clientID := fmt.Sprintf("prompt-%d-user-%d", p, u)
+					reasoning := computeReasoningSpec(stage.Rate, numClientsPerStage, perSessionRounds[clientIdx])
+					clientIdx++
+
 					clients = append(clients, ClientSpec{
 						ID:           clientID,
 						TenantID:     prefixGroup,
@@ -190,7 +192,6 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 						OutputDist:           outputDist,
 						PrefixGroup:          prefixGroup,
 						PrefixLength:         sp.SystemPromptLen,
-						Reasoning:            reasoning,
 					})
 				}
 			}
@@ -224,28 +225,53 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 				Windows: []ActiveWindow{windows[s]},
 			}
 
-			var reasoning *ReasoningSpec
 			if sp.EnableMultiTurnChat {
-				reasoning = computeReasoningSpec(stage.Rate, stage.Duration, numClientsPerStage)
-			}
+				// Multi-turn: distribute total requests evenly across sessions for this stage
+				totalRequests := int(stage.Rate * float64(stage.Duration))
+				perSessionRounds := distributeRequestsEvenly(totalRequests, numClientsPerStage)
 
-			for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
-				prefixGroup := fmt.Sprintf("prompt-%d", p)
-				for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
-					clientID := fmt.Sprintf("stage-%d-prompt-%d-user-%d", s, p, u)
-					clients = append(clients, ClientSpec{
-						ID:           clientID,
-						TenantID:     prefixGroup,
-						SLOClass:     "standard",
-						RateFraction: rateFraction,
-						Arrival:      ArrivalSpec{Process: "poisson"},
-						InputDist:    inputDist,
-						OutputDist:   outputDist,
-						PrefixGroup:  prefixGroup,
-						PrefixLength: sp.SystemPromptLen,
-						Reasoning:    reasoning,
-						Lifecycle:    stageLifecycle,
-					})
+				clientIdx := 0
+				for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
+					prefixGroup := fmt.Sprintf("prompt-%d", p)
+					for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
+						clientID := fmt.Sprintf("stage-%d-prompt-%d-user-%d", s, p, u)
+						reasoning := computeReasoningSpec(stage.Rate, numClientsPerStage, perSessionRounds[clientIdx])
+						clientIdx++
+
+						clients = append(clients, ClientSpec{
+							ID:           clientID,
+							TenantID:     prefixGroup,
+							SLOClass:     "standard",
+							RateFraction: rateFraction,
+							Arrival:      ArrivalSpec{Process: "poisson"},
+							InputDist:    inputDist,
+							OutputDist:   outputDist,
+							PrefixGroup:  prefixGroup,
+							PrefixLength: sp.SystemPromptLen,
+							Reasoning:    reasoning,
+							Lifecycle:    stageLifecycle,
+						})
+					}
+				}
+			} else {
+				// Non-multi-turn multi-stage: use Poisson
+				for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
+					prefixGroup := fmt.Sprintf("prompt-%d", p)
+					for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
+						clientID := fmt.Sprintf("stage-%d-prompt-%d-user-%d", s, p, u)
+						clients = append(clients, ClientSpec{
+							ID:           clientID,
+							TenantID:     prefixGroup,
+							SLOClass:     "standard",
+							RateFraction: rateFraction,
+							Arrival:      ArrivalSpec{Process: "poisson"},
+							InputDist:    inputDist,
+							OutputDist:   outputDist,
+							PrefixGroup:  prefixGroup,
+							PrefixLength: sp.SystemPromptLen,
+							Lifecycle:    stageLifecycle,
+						})
+					}
 				}
 			}
 		}
@@ -283,7 +309,8 @@ func stagesToWindows(stages []StageSpec) []ActiveWindow {
 // computeReasoningSpec builds a ReasoningSpec for inference-perf multi-turn mode.
 // It derives MaxRounds and ThinkTimeUs from stage parameters to match inference-perf's
 // round-robin cycling behavior: N sessions cycle at rate R over duration D seconds.
-// MaxRounds = ceil(R * D / N): total requests per session
+//
+// MaxRounds = roundsForThisSession (from fair distribution of total requests)
 // ThinkTimeUs = floor((N / R) * 1e6): inter-round delay in microseconds
 //
 // ContextGrowth is intentionally empty (fixed-length inputs per round) because
@@ -293,8 +320,7 @@ func stagesToWindows(stages []StageSpec) []ActiveWindow {
 // Note: ThinkTimeUs does not account for the 1µs/token output completion heuristic
 // in GenerateReasoningRequests. This is negligible for typical parameterizations
 // (e.g., OutputLen=248 adds 248µs to a ThinkTimeUs of 600,000µs = 0.04% error).
-func computeReasoningSpec(stageRate float64, stageDurationSec int64, numSessions int) *ReasoningSpec {
-	maxRounds := int(math.Ceil(stageRate * float64(stageDurationSec) / float64(numSessions)))
+func computeReasoningSpec(stageRate float64, numSessions int, roundsForThisSession int) *ReasoningSpec {
 	thinkTimeUs := int64(float64(numSessions) / stageRate * 1e6)
 	return &ReasoningSpec{
 		ReasonRatioDist: DistSpec{
@@ -302,7 +328,7 @@ func computeReasoningSpec(stageRate float64, stageDurationSec int64, numSessions
 			Params: map[string]float64{"value": 0},
 		},
 		MultiTurn: &MultiTurnSpec{
-			MaxRounds:     maxRounds,
+			MaxRounds:     roundsForThisSession,
 			ThinkTimeUs:   thinkTimeUs,
 			ContextGrowth: "", // fixed-length: matches real inference-perf behavior
 			SingleSession: true,
