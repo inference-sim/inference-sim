@@ -1,13 +1,16 @@
 package workload
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )
 
@@ -2311,5 +2314,127 @@ func TestGenerateWorkload_MultiStageMultiTurn_OneSessionPerClient(t *testing.T) 
 		if got := sessionsByClient[c.ID]; got != 1 {
 			t.Errorf("client %q: owns %d sessions, want exactly 1", c.ID, got)
 		}
+	}
+}
+
+// TestGenerateWorkload_SingleStageMultiUserMultiTurn_OneSessionPerClient is a
+// regression test for the single-stage analog of #974.
+//
+// Single-stage workloads with NumUsersPerSystemPrompt > 1 have the same
+// conflation trigger as multi-stage: all users in a prompt group share
+// TenantID = prefixGroup (e.g. "prompt-0") and SLOClass = "standard".
+// The old (TenantID, SLOClass, Model) predicate would cause user-0 to claim
+// all sessions; the ClientID predicate (fixed in #975) gives each user exactly 1.
+//
+// Invariant: each client owns exactly one SessionBlueprint.
+func TestGenerateWorkload_SingleStageMultiUserMultiTurn_OneSessionPerClient(t *testing.T) {
+	// 1 stage × 1 prompt × 4 users = 4 clients.
+	// All share TenantID="prompt-0", SLOClass="standard" — the conflation trigger.
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{{Rate: 5.0, Duration: 60}},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  1,
+			NumUsersPerSystemPrompt: 4,
+			SystemPromptLen:         10,
+			QuestionLen:             20,
+			OutputLen:               10,
+			EnableMultiTurnChat:     true,
+		},
+	}
+	ws, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("ExpandInferencePerfSpec: %v", err)
+	}
+	ws.Version = "2"
+
+	horizon := int64(60_000_000) // 60 seconds in µs
+	gw, err := GenerateWorkload(ws, horizon, 0)
+	if err != nil {
+		t.Fatalf("GenerateWorkload: %v", err)
+	}
+
+	numClients := len(ws.Clients)
+	if numClients != 4 {
+		t.Fatalf("expected 4 clients (1 prompt × 4 users × 1 stage), got %d — ExpandInferencePerfSpec must produce one client per (prompt, user, stage) tuple", numClients)
+	}
+	if len(gw.Sessions) != numClients {
+		t.Errorf("session count = %d, want %d (one per client)", len(gw.Sessions), numClients)
+	}
+
+	// Each client must own exactly one SessionBlueprint.
+	sessionsByClient := make(map[string]int)
+	for _, bp := range gw.Sessions {
+		sessionsByClient[bp.ClientID]++
+	}
+	for _, c := range ws.Clients {
+		if got := sessionsByClient[c.ID]; got != 1 {
+			t.Errorf("client %q: owns %d sessions, want exactly 1", c.ID, got)
+		}
+	}
+}
+
+// TestGenerateWorkload_ZeroSessionClosedLoopClient_EmitsWarning verifies BC-1:
+// when a closed-loop client produces no SessionBlueprints (because its round-0
+// requests are absent from the generated set), GenerateWorkload emits a logrus
+// warning and returns successfully with zero sessions for that client.
+//
+// Trigger: a reasoning client with a Lifecycle window that starts after the
+// horizon forces GenerateRequests to generate no requests for it. The session-
+// matching loop then finds no requests with that client's ClientID, firing the
+// warning. Execution continues — the empty blueprint loop is a no-op.
+func TestGenerateWorkload_ZeroSessionClosedLoopClient_EmitsWarning(t *testing.T) {
+	// Do not call t.Parallel() — this test redirects global logrus output.
+
+	const horizon = int64(1_000_000) // 1 second
+
+	// Lifecycle window starts well past the horizon, so GenerateRequests
+	// generates zero round-0 requests for this client.
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, Category: "reasoning", AggregateRate: 1.0,
+		Clients: []ClientSpec{{
+			ID: "lonely-client", SLOClass: "standard", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 5}},
+			Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{{
+					StartUs: horizon + 1_000_000,
+					EndUs:   horizon + 2_000_000,
+				}},
+			},
+			Reasoning: &ReasoningSpec{
+				ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+				MultiTurn: &MultiTurnSpec{
+					MaxRounds: 3, ThinkTimeUs: 100_000, SingleSession: true,
+				},
+			},
+		}},
+	}
+
+	// Redirect logrus to capture the warning.
+	var logBuf bytes.Buffer
+	logrus.SetOutput(&logBuf)
+	defer logrus.SetOutput(os.Stderr)
+	origLevel := logrus.GetLevel()
+	logrus.SetLevel(logrus.WarnLevel)
+	defer logrus.SetLevel(origLevel)
+
+	gw, err := GenerateWorkload(spec, horizon, 0)
+	if err != nil {
+		t.Fatalf("GenerateWorkload returned error: %v", err)
+	}
+
+	// BC-1: warning must be emitted containing the client ID.
+	logged := logBuf.String()
+	if !strings.Contains(logged, "produced no sessions") {
+		t.Errorf("expected warning containing 'produced no sessions', got: %q", logged)
+	}
+	if !strings.Contains(logged, "lonely-client") {
+		t.Errorf("expected warning to name the client %q, got: %q", "lonely-client", logged)
+	}
+
+	// Execution continues safely: zero sessions returned (blueprint loop is a no-op).
+	if len(gw.Sessions) != 0 {
+		t.Errorf("expected 0 sessions (no requests generated), got %d", len(gw.Sessions))
 	}
 }
