@@ -157,20 +157,21 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 		return result
 	}
 
-	// N-1 redistribution check: compute supply with one fewer replica removed
-	// from the variant with fewest replicas (conservative check).
-	// Find per-replica capacity of the variant we'd remove from.
-	minPerReplicaSupply := math.MaxFloat64
+	// N-1 redistribution check: simulate removing the replica with the highest
+	// per-replica capacity (conservative). This matches UnlimitedEngine's scale-down
+	// behavior which targets the most expensive variant — typically the highest-capacity one.
+	// Using max ensures the safety check holds regardless of which variant the Engine removes.
+	maxPerReplicaSupply := 0.0
 	for _, vc := range vcs {
 		if vc.ReplicaCount > 0 {
 			perReplica := vc.Supply / float64(vc.ReplicaCount)
-			if perReplica < minPerReplicaSupply {
-				minPerReplicaSupply = perReplica
+			if perReplica > maxPerReplicaSupply {
+				maxPerReplicaSupply = perReplica
 			}
 		}
 	}
 
-	supplyAfterRemoval := result.TotalSupply - minPerReplicaSupply
+	supplyAfterRemoval := result.TotalSupply - maxPerReplicaSupply
 	if supplyAfterRemoval > (result.TotalDemand / a.config.ScaleDownBoundary) {
 		result.SpareCapacity = spareCapacity
 	}

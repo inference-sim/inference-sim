@@ -284,6 +284,60 @@ func TestV2SaturationAnalyzerK1K2(t *testing.T) {
 	}
 }
 
+// TestV2SaturationAnalyzerN1MixedVariants verifies that the N-1 redistribution check
+// uses the highest-capacity variant (conservative) to match Engine's most-expensive-first
+// scale-down selection. Regression test for the min→max fix.
+func TestV2SaturationAnalyzerN1MixedVariants(t *testing.T) {
+	cfg := V2SaturationAnalyzerConfig{
+		KvCacheThreshold:  0.8,
+		ScaleUpThreshold:  0.8,
+		ScaleDownBoundary: 0.4,
+		AvgInputTokens:    512,
+	}
+	analyzer := NewV2SaturationAnalyzer(cfg)
+
+	// Scenario from review: A100 (cheap, low capacity) + H100 (expensive, high capacity).
+	// Engine will remove H100 (most expensive). N-1 check must simulate removing the
+	// highest-capacity replica (H100), not the lowest (A100).
+	//
+	// A100: 1 replica, totalKvCap=10000, k1=8000, demand=2000, supply=8000
+	// H100: 1 replica, totalKvCap=25000, k1=20000, demand=2000, supply=20000
+	// Total supply=28000, demand=4000
+	// SpareCapacity = 28000 - 4000/0.4 = 28000 - 10000 = 18000 > 0
+	//
+	// N-1 with max (correct): remove H100's 20000 → supply=8000, 8000 > 10000? NO → no spare
+	// N-1 with min (bug):     remove A100's 8000  → supply=20000, 20000 > 10000? YES → spare approved
+	//
+	// If the bug existed, Engine would remove H100, leaving only A100 (supply=8000)
+	// which violates ScaleDownBoundary (need 10000).
+	result := analyzer.Analyze(ModelSignals{
+		ModelID: "m1",
+		Replicas: []ReplicaMetrics{
+			{
+				InstanceID:            "i1",
+				Variant:               NewVariantSpec("A100", 1),
+				TotalKvCapacityTokens: 10000,
+				KvTokensInUse:         2000,
+				QueueDepth:            0,
+				CostPerHour:           10.0,
+			},
+			{
+				InstanceID:            "i2",
+				Variant:               NewVariantSpec("H100", 2),
+				TotalKvCapacityTokens: 25000,
+				KvTokensInUse:         2000,
+				QueueDepth:            0,
+				CostPerHour:           20.0,
+			},
+		},
+	})
+
+	// With conservative N-1 check (removing H100's capacity), scale-down should be blocked
+	if result.SpareCapacity > 0 {
+		t.Errorf("SpareCapacity = %f, want 0 (N-1 check should block: removing H100 leaves insufficient supply)", result.SpareCapacity)
+	}
+}
+
 // TestV2SaturationAnalyzerConfigValidation verifies constructor rejects invalid configs.
 func TestV2SaturationAnalyzerConfigValidation(t *testing.T) {
 	tests := []struct {
