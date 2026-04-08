@@ -26,31 +26,42 @@ A researcher configuring a BLIS simulation wants to enable dynamic replica manag
 
 ---
 
-### User Story 2 - Saturation-Based Scale Signal (Priority: P2)
+### User Story 2 - V2 Saturation-Based Scale Signal (Priority: P2)
 
-A researcher running a load spike experiment wants the simulator to detect when replicas are near saturation (high KV cache utilization or deep queues) and emit a scale-up signal, and to detect when replicas have excess headroom and emit a scale-down signal — matching how the llm-d WVA production autoscaler works.
+A researcher running a load spike experiment wants the simulator to detect when replicas are near saturation and emit a scale-up signal, and to detect when replicas have excess headroom and emit a scale-down signal — matching how the llm-d WVA V2 saturation analyzer works in production.
 
-**Why this priority**: The SaturationAnalyzer is the reference algorithm from WVA that the llm-d team can recognize and validate. Without it, there is no meaningful capacity signal to drive scaling decisions. It is the analytical core of the model autoscaler baseline.
+**Why this priority**: The V2SaturationAnalyzer is the reference algorithm from WVA that the llm-d team can recognize and validate. Without it, there is no meaningful capacity signal to drive scaling decisions. It is the analytical core of the model autoscaler baseline.
 
-**Independent Test**: Inject a ModelSignals snapshot with all replicas above the KV saturation threshold and verify RequiredCapacity > 0. Inject a snapshot with all replicas well below threshold with enough headroom to remove one replica and verify SpareCapacity > 0.
+**WVA V2 approach**: Capacity is measured in **token units**, not percentages. Each replica has two capacity bounds:
+- **k1 (memory-bound)**: `TotalKvCapacityTokens * KvCacheThreshold` — how many tokens the GPU memory can hold
+- **k2 (compute-bound)**: derived from observed saturated throughput, historical rolling average, analytical estimate, or k1 fallback (priority chain)
+- **Effective capacity** = `min(k1, k2)` — the tighter constraint wins
+- **Demand per replica** = `tokensInUse + (queueLength * avgInputTokens)`
+
+Model-level signals:
+- `RequiredCapacity = max(0, (totalDemand / ScaleUpThreshold) - totalAnticipatedSupply)`
+- `SpareCapacity = max(0, totalSupply - (totalDemand / ScaleDownBoundary))`
+
+**Independent Test**: Inject a ModelSignals snapshot with all replicas where demand exceeds effective capacity and verify RequiredCapacity > 0. Inject a snapshot where supply greatly exceeds demand (accounting for ScaleDownBoundary) and verify SpareCapacity > 0.
 
 **Acceptance Scenarios**:
 
-1. **Given** replicas where average spare KV capacity falls below the minimum spare threshold, **When** Analyze is called, **Then** RequiredCapacity is positive and SpareCapacity is zero.
-2. **Given** replicas where removing one replica and redistributing load still leaves adequate spare capacity, **When** Analyze is called, **Then** SpareCapacity is positive.
+1. **Given** replicas where total demand (in tokens) exceeds `totalSupply * ScaleUpThreshold`, **When** Analyze is called, **Then** RequiredCapacity is positive and SpareCapacity is zero.
+2. **Given** replicas where `totalSupply > totalDemand / ScaleDownBoundary` and removing one replica still leaves adequate supply, **When** Analyze is called, **Then** SpareCapacity is positive.
 3. **Given** a single replica, **When** Analyze is called with that replica near saturation, **Then** SpareCapacity is zero (cannot scale below one replica).
 4. **Given** a model with no active replicas, **When** Analyze is called, **Then** all output fields are zero and no division-by-zero occurs.
 5. **Given** mixed variants serving the same model, **When** Analyze is called, **Then** the sum of per-variant supply values equals TotalSupply and the sum of per-variant demand values equals TotalDemand.
+6. **Given** a replica where k1 (memory-bound) < k2 (compute-bound), **When** per-replica capacity is computed, **Then** effective capacity equals k1 (memory is the bottleneck).
 
 ---
 
-### User Story 3 - Replica Count Changes Applied to Cluster (Priority: P2)
+### User Story 3 - End-to-End WVA Loop: Collector, Actuator, and UnlimitedEngine (Priority: P2)
 
-A researcher running a scaling experiment wants the simulator to actually add or remove replicas when the autoscaler emits scale decisions, so that future requests are routed to the adjusted replica set.
+A researcher running a scaling experiment wants the simulator to actually add or remove replicas when the autoscaler emits scale decisions, so that future requests are routed to the adjusted replica set. This story delivers the complete end-to-end WVA loop: `DefaultCollector → V2SaturationAnalyzer → UnlimitedEngine → DirectActuator`.
 
-**Why this priority**: Without the Collector (to read cluster state) and the Actuator (to apply decisions), the pipeline produces signals that go nowhere. These two thin components close the loop and make the autoscaler functional end-to-end.
+**Why this priority**: Without the Collector (to read cluster state), the Engine (to convert signals to decisions), and the Actuator (to apply decisions), the pipeline produces signals that go nowhere. These components close the loop and make the autoscaler functional end-to-end. UnlimitedEngine (which ignores GPU inventory constraints) is included here because it is the simplest engine that completes the loop for fixed-node testing.
 
-**Independent Test**: Run the minimal viable pipeline (DefaultCollector → SaturationAnalyzer → UnlimitedEngine → DirectActuator) against a simulated cluster under load. Verify that a scale-up decision results in a new instance being placed, and a scale-down decision results in an existing instance entering drain state.
+**Independent Test**: Run the minimal viable pipeline (DefaultCollector → V2SaturationAnalyzer → UnlimitedEngine → DirectActuator) against a simulated cluster under load. Verify that a scale-up decision results in a new instance being placed, and a scale-down decision results in an existing instance entering drain state.
 
 **Acceptance Scenarios**:
 
@@ -58,14 +69,16 @@ A researcher running a scaling experiment wants the simulator to actually add or
 2. **Given** a ScaleDecision with Delta > 0, **When** DirectActuator.Apply is called, **Then** PlacementEngine attempts to place a new instance for the specified model and variant.
 3. **Given** a ScaleDecision with Delta < 0, **When** DirectActuator.Apply is called, **Then** the selected instance enters Draining state, stops receiving new requests, and its GPUs are freed only after all in-flight requests complete.
 4. **Given** a scale-down decision for a model that also has a pending scale-up placement, **When** DirectActuator.Apply is called, **Then** the pending placement is cancelled before drain begins.
+5. **Given** an AnalyzerResult with RequiredCapacity > 0 and sufficient capacity, **When** UnlimitedEngine.Optimize is called, **Then** it selects the cheapest variant without checking GPU inventory.
+6. **Given** the full pipeline wired end-to-end under synthetic high load, **When** two scaling ticks fire, **Then** at least one PlaceInstance call occurs (scale-up propagated through the entire pipeline).
 
 ---
 
-### User Story 4 - Variant-Aware Allocation (Priority: P3)
+### User Story 4 - GreedyEngine: Inventory-Aware Variant Allocation (Priority: P3)
 
-A researcher running a multi-variant experiment (e.g., A100 and H100 nodes in the same pool) wants the autoscaler to make cost-aware allocation decisions: preferring the cheapest available variant for scale-up and targeting the most expensive active variant for scale-down.
+A researcher running a multi-variant experiment (e.g., A100 and H100 nodes in the same pool) wants the autoscaler to make cost-aware allocation decisions that respect GPU inventory: preferring the cheapest available variant for scale-up and targeting the most expensive active variant for scale-down.
 
-**Why this priority**: This is the Engine's contribution. GreedyEngine adds GPU inventory awareness on top of UnlimitedEngine. Both engines must handle multi-model scenarios where GPU capacity may be scarce across multiple simultaneously-scaling models.
+**Why this priority**: GreedyEngine adds GPU inventory awareness on top of UnlimitedEngine (delivered in US3). It handles multi-model scenarios where GPU capacity may be scarce across multiple simultaneously-scaling models. This is also the primary Phase 2 research hook for OpenEvolve/AlphaEvolve.
 
 **Independent Test**: Configure a cluster with two variants (cheap/expensive) and trigger scale-up. Verify GreedyEngine selects the cheaper variant. Remove all capacity from the cheaper variant and verify it falls back to the more expensive one.
 
@@ -75,29 +88,10 @@ A researcher running a multi-variant experiment (e.g., A100 and H100 nodes in th
 2. **Given** the cheapest variant has no available GPU slots, **When** GreedyEngine processes a scale-up signal, **Then** it falls back to the next cheapest variant that has available slots.
 3. **Given** a scale-down signal for a model with replicas across two variants, **When** GreedyEngine processes the signal, **Then** it targets the most expensive active variant.
 4. **Given** GPU inventory is insufficient to satisfy scale-up requests for multiple models simultaneously, **When** GreedyEngine processes all results, **Then** models with higher RequiredCapacity are served before models with lower RequiredCapacity.
-5. **Given** a scale-up signal and sufficient GPU slots, **When** UnlimitedEngine processes the signal, **Then** it selects the cheapest variant without checking GPU inventory.
 
 ---
 
-### User Story 5 - Alternative Analyzer Baselines (Priority: P3)
-
-A researcher wanting to isolate the effect of a single signal (either KV utilization or queue depth alone) can substitute a simpler baseline analyzer instead of SaturationAnalyzer, making it easy to compare signal strategies without changing the rest of the pipeline.
-
-**Why this priority**: UtilizationAnalyzer and QueueAnalyzer are the baselines that make the Analyzer interface a useful research hook. They enable controlled experiments where only one signal is varied at a time.
-
-**Independent Test**: Configure the pipeline with UtilizationAnalyzer. Drive KV utilization above the target threshold. Verify RequiredCapacity > 0. Drop utilization below target × scale-down factor. Verify SpareCapacity > 0.
-
-**Acceptance Scenarios**:
-
-1. **Given** UtilizationAnalyzer configured with a target utilization of 70%, **When** aggregate KV utilization exceeds 70%, **Then** RequiredCapacity is positive.
-2. **Given** UtilizationAnalyzer, **When** aggregate KV utilization is below target × scale-down factor, **Then** SpareCapacity is positive.
-3. **Given** QueueAnalyzer configured with ConsecutiveTicks = 3, **When** queue depth exceeds the scale-up threshold for only 1 tick then drops, **Then** RequiredCapacity remains zero (single spike suppressed).
-4. **Given** QueueAnalyzer, **When** queue depth exceeds threshold for exactly 3 consecutive ticks, **Then** RequiredCapacity becomes positive on tick 3.
-5. **Given** QueueAnalyzer with consecutive count in progress, **When** queue depth drops below threshold mid-sequence, **Then** the consecutive counter resets to zero.
-
----
-
-### User Story 6 - Cooldown and Flap Prevention (Priority: P3)
+### User Story 5 - Cooldown and Flap Prevention (Priority: P3) ✅ Implemented in 1C-1a
 
 A researcher studying oscillation behavior wants to configure scale-up and scale-down cooldown windows so that the autoscaler does not immediately reverse a scaling decision, matching the stabilization window behavior in HPA/KEDA.
 
@@ -116,11 +110,12 @@ A researcher studying oscillation behavior wants to configure scale-up and scale
 ### Edge Cases
 
 - What happens when a model has zero active replicas? Collector produces empty Replicas list; Analyzer returns all-zero result; no scale-down is emitted.
-- What happens when GPU inventory is fully exhausted? GreedyEngine emits no scale-up decisions for affected models; no panic or silent failure.
+- What happens when GPU inventory is fully exhausted? GreedyEngine emits no scale-up decisions for affected models; UnlimitedEngine ignores inventory and still emits decisions. No panic or silent failure.
 - What happens when both RequiredCapacity and SpareCapacity are non-zero for the same model? Neither should be non-zero simultaneously — Analyzer implementations must ensure scale-up and scale-down signals are mutually exclusive.
 - What happens when ActuationDelay is sampled as zero? The actuation event fires in the same tick as the scaling tick; causality is preserved.
 - What happens when a Draining instance's model receives another scale-down decision? The Draining instance is already excluded from routing; the decision targets a different active instance.
 - What happens when a placement fails because capacity is unavailable? A PendingPlacement is queued; no ScaleDecision is silently dropped.
+- What happens when k2 (compute-bound) cannot be derived? V2SaturationAnalyzer falls back to k1 (memory-bound) as the effective capacity.
 
 ## Requirements *(mandatory)*
 
@@ -143,9 +138,8 @@ A researcher studying oscillation behavior wants to configure scale-up and scale
 - **FR-007**: Each Analyzer MUST produce model-level aggregate supply and demand from the per-replica snapshots it receives; it MUST NOT access cluster state directly.
 - **FR-008**: Every Analyzer MUST handle the zero-replica case by returning all-zero output without error.
 - **FR-009**: Every Analyzer result MUST satisfy: the sum of per-variant supply equals TotalSupply, and the sum of per-variant demand equals TotalDemand.
-- **FR-010**: The SaturationAnalyzer MUST block scale-down when removing one replica and redistributing its load would leave average spare capacity below the minimum threshold for either KV or queue.
-- **FR-011**: The QueueAnalyzer MUST require the queue depth threshold to be violated for a configurable number of consecutive ticks before emitting a scale-up signal; a single spike must not trigger a decision.
-- **FR-012**: An Analyzer MUST NOT emit both a positive RequiredCapacity and a positive SpareCapacity for the same model in the same call.
+- **FR-010**: The V2SaturationAnalyzer MUST compute per-replica capacity as `min(k1_memory, k2_compute)` in token units, and demand as `tokensInUse + queueLength * avgInputTokens`. Scale-up when `(totalDemand / ScaleUpThreshold) > totalSupply`; scale-down when `totalSupply > (totalDemand / ScaleDownBoundary)` with N-1 redistribution safety check.
+- **FR-011**: An Analyzer MUST NOT emit both a positive RequiredCapacity and a positive SpareCapacity for the same model in the same call.
 
 **Engine**
 
@@ -177,12 +171,12 @@ A researcher studying oscillation behavior wants to configure scale-up and scale
 
 ### Measurable Outcomes
 
-- **SC-001**: A simulation with the minimal viable pipeline (DefaultCollector → SaturationAnalyzer → UnlimitedEngine → DirectActuator) runs to completion without error on any workload configuration that runs today without the autoscaler.
+- **SC-001**: A simulation with the minimal viable pipeline (DefaultCollector → V2SaturationAnalyzer → UnlimitedEngine → DirectActuator) runs to completion without error on any workload configuration that runs today without the autoscaler.
 - **SC-002**: With `ActuationDelay = 0` and a no-op pipeline, simulation output is byte-identical to a run without the autoscaler enabled (zero regression on existing determinism).
 - **SC-003**: The full pipeline (tick → collect → analyze × N models → optimize → actuate) completes within each scaling tick without delaying the simulation clock; autoscaler overhead does not appear in simulated time.
 - **SC-004**: A controlled scale-up experiment — where load is driven above the saturation threshold — results in at least one new replica being placed within two scaling ticks of the threshold being exceeded.
 - **SC-005**: A controlled scale-down experiment — where load drops and stays below the spare capacity threshold for the required hysteresis period — results in at least one replica entering drain state.
-- **SC-006**: All four autoscaler sub-issues (1C-1a through 1C-1d) can be implemented and tested independently without requiring the others to be complete, confirming interface isolation.
+- **SC-006**: All autoscaler sub-issues (1C-1a, 1C-1b, 1C-1d) can be implemented and tested independently without requiring the others to be complete, confirming interface isolation.
 - **SC-007**: The Analyzer and Engine interfaces are independently swappable: any Analyzer implementation works with any Engine implementation without modification to either.
 - **SC-008**: Replacing the autoscaler configuration with a different Analyzer or Engine implementation requires changing only the configuration, not any simulation core code.
 
@@ -195,7 +189,7 @@ A researcher studying oscillation behavior wants to configure scale-up and scale
 - Pipeline event types: ScalingTickEvent, ScaleActuationEvent
 - Pipeline orchestration wiring: tick handler, actuation event handler, cooldown tracking
 - Configuration fields: ModelAutoscalerIntervalUs, ActuationDelay, ScaleUpCooldownUs, ScaleDownCooldownUs
-- Reference implementations: DefaultCollector, SaturationAnalyzer, UtilizationAnalyzer, QueueAnalyzer, GreedyEngine, UnlimitedEngine, DirectActuator
+- Reference implementations: DefaultCollector, V2SaturationAnalyzer, GreedyEngine, UnlimitedEngine, DirectActuator
 - Cross-cutting invariants: INV-A1 through INV-A7, INV-1 extension with drained_dropped terminal state
 - Integration test: full pipeline end-to-end with a simulated cluster
 
@@ -206,15 +200,16 @@ A researcher studying oscillation behavior wants to configure scale-up and scale
 - Full DrainPolicy interface (ImmediateDrain, WaitDrain, RedirectDrain): specs/010
 - Observability and per-model autoscaler metrics: specs/011
 - Scale-from-zero (no active replicas → first placement): deferred
-- QueueingModelAnalyzer (M/M/1 token model): deferred
+- QueueingModelAnalyzer (M/M/1/K-SD with online parameter learning): #954
+- Baseline analyzers (UtilizationAnalyzer, QueueAnalyzer): removed from scope
 - MIP solver Engine: Phase 2 OpenEvolve target
 
 ## Assumptions
 
 - GPU inventory is a committed-state snapshot: free slots = total − running − loading. Pending placements are not subtracted (no GPU committed yet). Draining instances are subtracted (they hold GPUs until drain completes).
 - WaitDrain semantics are the default for DirectActuator scale-down: the instance stops receiving new requests immediately but GPU slots are freed only after all in-flight requests complete. Full DrainPolicy selection is deferred to specs/010.
-- The Analyzer is stateless across ticks (except QueueAnalyzer which holds consecutive-tick counters). State is held in the struct, not across interface boundaries.
+- The Analyzer is stateless across ticks. State is held in the struct, not across interface boundaries.
 - Cooldown is tracked in the pipeline orchestrator (cluster.go tick handler), not inside any interface, so Engine and Analyzer remain stateless and independently testable.
 - Each Analyzer is called once per model per tick. There is no batch call across models; the Engine is the cross-model layer.
-- The minimal viable pipeline for WVA team validation is: DefaultCollector → SaturationAnalyzer → UnlimitedEngine → DirectActuator. GreedyEngine and baseline analyzers are additive.
+- The minimal viable pipeline for WVA team validation is: DefaultCollector → V2SaturationAnalyzer → UnlimitedEngine → DirectActuator. GreedyEngine is additive (1C-1d). QueueingModelAnalyzer is a future addition (#954).
 - ActuationDelay defaults to zero. This preserves byte-identical output with existing tests (INV-6 determinism) and allows the delay to be introduced explicitly for oscillation research.

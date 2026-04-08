@@ -39,13 +39,14 @@ Contract: Analyzer
   Invariant:  sum(vc.Supply for vc in VariantCapacities) == TotalSupply
   Invariant:  sum(vc.Demand for vc in VariantCapacities) == TotalDemand
   Invariant:  Utilization = TotalDemand / TotalSupply when TotalSupply > 0; else Utilization = 0
-  Determinism: Must be a pure function of ModelSignals (except QueueAnalyzer which carries consecutive-tick state)
+  Determinism: Must be a pure function of ModelSignals
 ```
 
 **Implementations**:
-- `SaturationAnalyzer{config SaturationAnalyzerConfig}` — KV+queue spare capacity; N-1 redistribution check
-- `UtilizationAnalyzer{config UtilizationAnalyzerConfig}` — KV utilization vs target threshold
-- `QueueAnalyzer{config QueueAnalyzerConfig}` — queue depth with ConsecutiveTicks hysteresis
+- `V2SaturationAnalyzer{config V2SaturationAnalyzerConfig}` — WVA V2 token-based capacity model: `min(k1_memory, k2_compute)`, demand in tokens; N-1 redistribution check for scale-down
+
+**Future**:
+- `QueueingModelAnalyzer` — M/M/1/K-SD with online EKF parameter learning (WVA parity, #954)
 
 ---
 
@@ -81,7 +82,7 @@ Contract: Actuator
   Must NOT:   Block; all effects are scheduled as future simulation events
   Must NOT:   Reorder or filter decisions — orchestrator already applied cooldown
   Drain semantics: WaitDrain — instance stops receiving new requests; GPUs freed after InFlightCount == 0
-  Pending cancel: Before drain, cancel any PendingPlacement for the same ModelID
+  Pending cancel: Before drain, cancel any PendingPlacement for the same ModelID (deferred to 1C-4b/specs-010; DirectActuator does not yet implement this)
 ```
 
 **Implementations**:

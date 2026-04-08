@@ -22,7 +22,9 @@ type RoutingSnapshot struct {
 	Model            string // Model served by this instance; used by buildRouterState() for per-model filtering
 	GPUType          string  // GPU hardware type (e.g. "A100-80GB"); populated by buildRouterState() from instance config
 	TPDegree         int     // Tensor-parallel degree; populated by buildRouterState() from instance config
-	CostPerHour      float64 // Node pool cost in $/hr; populated by buildRouterState() from NodePool.CostPerHour
+	CostPerHour           float64 // Node pool cost in $/hr; populated by buildRouterState() from NodePool.CostPerHour
+	TotalKvCapacityTokens int64   // Total KV cache capacity in tokens (TotalBlocks × BlockSizeTokens); used by V2SaturationAnalyzer
+	KvTokensInUse         int64   // Current KV cache occupancy in tokens (UsedBlocks × BlockSizeTokens); used by V2SaturationAnalyzer
 }
 
 // EffectiveLoad returns the total effective load on this instance:
