@@ -2679,9 +2679,9 @@
 </tr>
 <tr>
 <td>RP-12</td>
-<td><strong>Staleness immunity comes from signal independence</strong> — PA reads synchronous PrefixCacheIndex, QD reads Immediate EffectiveLoad</td>
+<td><strong>Staleness immunity comes from signal independence</strong> — PA reads synchronous PrefixCacheIndex, QD reads QueueDepth (Periodic when interval&gt;0). Quantitative claims measured pre-#955 when QD read EffectiveLoad (included synchronous InFlightRequests); re-verification pending.</td>
 <td>Iter 16</td>
-<td><code>pa:3,qd:2</code> produced identical 65.45ms across all staleness levels and KV pressures</td>
+<td><code>pa:3,qd:2</code> produced identical 65.45ms across all staleness levels and KV pressures (pre-#955 EffectiveLoad behavior)</td>
 </tr>
 <tr>
 <td>RP-13</td>
