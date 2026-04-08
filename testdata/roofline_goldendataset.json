@@ -1,23 +1,6 @@
 {
-  "description": "Trained-physics latency model iter29 golden values. Generated with alpha/beta coefficients from iteration 29 sequential golden section search (loss=34.5675%). Update only when the trained-physics backend is intentionally versioned (rename backend first).",
-  "backend": "trained-physics",
-  "alpha_coeffs": [
-    15563.199579,
-    777.3455,
-    45.907545
-  ],
-  "beta_coeffs": [
-    0.152128,
-    0,
-    1.36252915,
-    0.752037,
-    32.09546717,
-    4.41684444,
-    126.024825,
-    481.8613888,
-    0,
-    1.94710771
-  ],
+  "description": "Roofline latency model golden values. Generated from iter29 training experiments for regression testing.",
+  "backend": "roofline",
   "experiments": [
     {
       "id": "17",
@@ -30,6 +13,9 @@
       "total_kv_blocks": 8253,
       "cpu_kv_blocks": 0,
       "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 5100,
         "inference_perf": {
           "shared_prefix": {
             "enable_multi_turn_chat": true,
@@ -46,25 +32,22 @@
             },
             {
               "duration": 600,
-              "rate": 6.0
+              "rate": 6
             }
           ]
-        },
-        "num_requests": 5100,
-        "seed": 42,
-        "version": "2"
+        }
       },
       "expected": {
         "completed_requests": 5130,
         "total_input_tokens": 2806110,
         "total_output_tokens": 1267110,
-        "ttft_mean_ms": 54.28152339181287,
-        "ttft_p90_ms": 64.3794,
-        "ttft_p99_ms": 68.03326,
-        "e2e_mean_ms": 6268.954041325535,
-        "e2e_p90_ms": 6613.820900000001,
-        "e2e_p99_ms": 6707.64647,
-        "itl_mean_ms": 25.157471732525195
+        "ttft_mean_ms": 32.51628674463937,
+        "ttft_p90_ms": 94.666,
+        "ttft_p99_ms": 164.351,
+        "e2e_mean_ms": 1008.402364717349,
+        "e2e_p90_ms": 1753.196,
+        "e2e_p99_ms": 1753.196,
+        "itl_mean_ms": 3.9509557812660305
       }
     },
     {
@@ -78,6 +61,9 @@
       "total_kv_blocks": 8253,
       "cpu_kv_blocks": 0,
       "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 9000,
         "inference_perf": {
           "shared_prefix": {
             "enable_multi_turn_chat": true,
@@ -90,29 +76,26 @@
           "stages": [
             {
               "duration": 600,
-              "rate": 5.0
+              "rate": 5
             },
             {
               "duration": 600,
-              "rate": 10.0
+              "rate": 10
             }
           ]
-        },
-        "num_requests": 9000,
-        "seed": 42,
-        "version": "2"
+        }
       },
       "expected": {
         "completed_requests": 9064,
         "total_input_tokens": 5130224,
         "total_output_tokens": 2229744,
-        "ttft_mean_ms": 55.52767917034422,
-        "ttft_p90_ms": 65.8884,
-        "ttft_p99_ms": 69.407,
-        "e2e_mean_ms": 6517.131375110326,
-        "e2e_p90_ms": 6780.313,
-        "e2e_p99_ms": 6840.519740000001,
-        "itl_mean_ms": 26.26352315422757
+        "ttft_mean_ms": 62.941204986760816,
+        "ttft_p90_ms": 151.44,
+        "ttft_p99_ms": 166.775,
+        "e2e_mean_ms": 1450.0135584730804,
+        "e2e_p90_ms": 1743.657,
+        "e2e_p99_ms": 1825.876,
+        "itl_mean_ms": 5.638505501976909
       }
     },
     {
@@ -126,6 +109,9 @@
       "total_kv_blocks": 7463,
       "cpu_kv_blocks": 1023,
       "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 9000,
         "inference_perf": {
           "shared_prefix": {
             "enable_multi_turn_chat": true,
@@ -138,29 +124,26 @@
           "stages": [
             {
               "duration": 600,
-              "rate": 5.0
+              "rate": 5
             },
             {
               "duration": 600,
-              "rate": 10.0
+              "rate": 10
             }
           ]
-        },
-        "num_requests": 9000,
-        "seed": 42,
-        "version": "2"
+        }
       },
       "expected": {
         "completed_requests": 9064,
         "total_input_tokens": 5130224,
         "total_output_tokens": 2229744,
-        "ttft_mean_ms": 31.70683594439541,
-        "ttft_p90_ms": 36.723,
-        "ttft_p99_ms": 42.93793999999999,
-        "e2e_mean_ms": 2505.0620808693734,
-        "e2e_p90_ms": 3230.7561000000005,
-        "e2e_p99_ms": 3632.25686,
-        "itl_mean_ms": 10.051131076930805
+        "ttft_mean_ms": 190.58033208296558,
+        "ttft_p90_ms": 410.024,
+        "ttft_p99_ms": 424.898,
+        "e2e_mean_ms": 2107.7360828552514,
+        "e2e_p90_ms": 2312.299,
+        "e2e_p99_ms": 3661.16501,
+        "itl_mean_ms": 7.793316060049944
       }
     },
     {
@@ -174,6 +157,9 @@
       "total_kv_blocks": 7463,
       "cpu_kv_blocks": 1023,
       "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 7200,
         "inference_perf": {
           "shared_prefix": {
             "enable_multi_turn_chat": true,
@@ -186,25 +172,22 @@
           "stages": [
             {
               "duration": 1200,
-              "rate": 6.0
+              "rate": 6
             }
           ]
-        },
-        "num_requests": 7200,
-        "seed": 42,
-        "version": "2"
+        }
       },
       "expected": {
         "completed_requests": 7200,
         "total_input_tokens": 5400000,
         "total_output_tokens": 1800000,
-        "ttft_mean_ms": 32.04119291666667,
-        "ttft_p90_ms": 36.194,
-        "ttft_p99_ms": 40.42,
-        "e2e_mean_ms": 2431.2821751388888,
-        "e2e_p90_ms": 2513.5696,
-        "e2e_p99_ms": 2601.2744000000002,
-        "itl_mean_ms": 9.593855928888889
+        "ttft_mean_ms": 272.24331805555556,
+        "ttft_p90_ms": 563.056,
+        "ttft_p99_ms": 612.886,
+        "e2e_mean_ms": 2707.444317361111,
+        "e2e_p90_ms": 3031.549,
+        "e2e_p99_ms": 3031.549,
+        "itl_mean_ms": 9.740803997222221
       }
     },
     {
@@ -218,6 +201,9 @@
       "total_kv_blocks": 7463,
       "cpu_kv_blocks": 1023,
       "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 16800,
         "inference_perf": {
           "shared_prefix": {
             "enable_multi_turn_chat": true,
@@ -230,29 +216,26 @@
           "stages": [
             {
               "duration": 600,
-              "rate": 8.0
+              "rate": 8
             },
             {
               "duration": 600,
-              "rate": 20.0
+              "rate": 20
             }
           ]
-        },
-        "num_requests": 16800,
-        "seed": 42,
-        "version": "2"
+        }
       },
       "expected": {
         "completed_requests": 16830,
         "total_input_tokens": 9206010,
         "total_output_tokens": 4157010,
-        "ttft_mean_ms": 36.25370926916221,
-        "ttft_p90_ms": 43.7841,
-        "ttft_p99_ms": 50.73,
-        "e2e_mean_ms": 3099.3036950683304,
-        "e2e_p90_ms": 4182.973,
-        "e2e_p99_ms": 4439.55565,
-        "itl_mean_ms": 12.397866339267887
+        "ttft_mean_ms": 217.479834818776,
+        "ttft_p90_ms": 411.249,
+        "ttft_p99_ms": 493.587,
+        "e2e_mean_ms": 2348.738510160428,
+        "e2e_p90_ms": 2802.631,
+        "e2e_p99_ms": 3807.441,
+        "itl_mean_ms": 8.628577632962154
       }
     },
     {
@@ -266,6 +249,9 @@
       "total_kv_blocks": 8253,
       "cpu_kv_blocks": 0,
       "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 7200,
         "inference_perf": {
           "shared_prefix": {
             "enable_multi_turn_chat": true,
@@ -278,25 +264,22 @@
           "stages": [
             {
               "duration": 1200,
-              "rate": 6.0
+              "rate": 6
             }
           ]
-        },
-        "num_requests": 7200,
-        "seed": 42,
-        "version": "2"
+        }
       },
       "expected": {
         "completed_requests": 7200,
         "total_input_tokens": 5400000,
         "total_output_tokens": 1800000,
-        "ttft_mean_ms": 55.44828583333334,
-        "ttft_p90_ms": 66.054,
-        "ttft_p99_ms": 68.963,
-        "e2e_mean_ms": 6591.967125694445,
-        "e2e_p90_ms": 6669.75,
-        "e2e_p99_ms": 6682.06862,
-        "itl_mean_ms": 26.142967359444444
+        "ttft_mean_ms": 89.02130513888889,
+        "ttft_p90_ms": 213.569,
+        "ttft_p99_ms": 241.628,
+        "e2e_mean_ms": 1603.24187625,
+        "e2e_p90_ms": 1954.341,
+        "e2e_p99_ms": 1954.341,
+        "itl_mean_ms": 6.056882284444445
       }
     },
     {
@@ -308,8 +291,11 @@
       "max_num_seqs": 128,
       "max_num_batched_tokens": 2048,
       "total_kv_blocks": 8253,
-      "cpu_kv_blocks": 5461,
+      "cpu_kv_blocks": 0,
       "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 1200,
         "inference_perf": {
           "shared_prefix": {
             "enable_multi_turn_chat": true,
@@ -322,25 +308,22 @@
           "stages": [
             {
               "duration": 1200,
-              "rate": 1.0
+              "rate": 1
             }
           ]
-        },
-        "num_requests": 1200,
-        "seed": 42,
-        "version": "2"
+        }
       },
       "expected": {
         "completed_requests": 1219,
         "total_input_tokens": 1260446,
         "total_output_tokens": 1763893,
-        "ttft_mean_ms": 55.41061607875307,
-        "ttft_p90_ms": 65.2404,
-        "ttft_p99_ms": 68.71328,
-        "e2e_mean_ms": 36567.968657916324,
-        "e2e_p90_ms": 37720.428199999995,
-        "e2e_p99_ms": 38042.018619999995,
-        "itl_mean_ms": 25.232744327462036
+        "ttft_mean_ms": 12.20519688269073,
+        "ttft_p90_ms": 18.512200000000004,
+        "ttft_p99_ms": 21.279639999999997,
+        "e2e_mean_ms": 2961.2132953240357,
+        "e2e_p90_ms": 3527.8534000000004,
+        "e2e_p99_ms": 3712.8311,
+        "itl_mean_ms": 2.0380152719014135
       }
     },
     {
@@ -351,9 +334,12 @@
       "tp": 4,
       "max_num_seqs": 128,
       "max_num_batched_tokens": 8192,
-      "total_kv_blocks": 30251,
+      "total_kv_blocks": 30425,
       "cpu_kv_blocks": 6553,
       "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 5100,
         "inference_perf": {
           "shared_prefix": {
             "enable_multi_turn_chat": true,
@@ -370,25 +356,22 @@
             },
             {
               "duration": 600,
-              "rate": 6.0
+              "rate": 6
             }
           ]
-        },
-        "num_requests": 5100,
-        "seed": 42,
-        "version": "2"
+        }
       },
       "expected": {
         "completed_requests": 5130,
         "total_input_tokens": 2806110,
         "total_output_tokens": 1267110,
-        "ttft_mean_ms": 52.408987719298246,
-        "ttft_p90_ms": 67.786,
-        "ttft_p99_ms": 127.95749999999992,
-        "e2e_mean_ms": 4438.576400389863,
-        "e2e_p90_ms": 4614.457,
-        "e2e_p99_ms": 4685.8,
-        "itl_mean_ms": 17.75461705534642
+        "ttft_mean_ms": 569.1367302144249,
+        "ttft_p90_ms": 1109.091,
+        "ttft_p99_ms": 1331.656,
+        "e2e_mean_ms": 2866.761032553606,
+        "e2e_p90_ms": 3141.027,
+        "e2e_p99_ms": 4387.703,
+        "itl_mean_ms": 9.302122681535147
       }
     },
     {
@@ -402,6 +385,9 @@
       "total_kv_blocks": 30425,
       "cpu_kv_blocks": 6553,
       "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 9000,
         "inference_perf": {
           "shared_prefix": {
             "enable_multi_turn_chat": true,
@@ -414,29 +400,26 @@
           "stages": [
             {
               "duration": 600,
-              "rate": 5.0
+              "rate": 5
             },
             {
               "duration": 600,
-              "rate": 10.0
+              "rate": 10
             }
           ]
-        },
-        "num_requests": 9000,
-        "seed": 42,
-        "version": "2"
+        }
       },
       "expected": {
         "completed_requests": 9064,
         "total_input_tokens": 5130224,
         "total_output_tokens": 2229744,
-        "ttft_mean_ms": 67.18229931597529,
-        "ttft_p90_ms": 121.19270000000056,
-        "ttft_p99_ms": 157.512,
-        "e2e_mean_ms": 4568.813456531333,
-        "e2e_p90_ms": 4706.8615,
-        "e2e_p99_ms": 4839.07651,
-        "itl_mean_ms": 18.296155110631535
+        "ttft_mean_ms": 549.3513719108561,
+        "ttft_p90_ms": 1074.595,
+        "ttft_p99_ms": 1164.609599999999,
+        "e2e_mean_ms": 3074.265229148279,
+        "e2e_p90_ms": 3240.265,
+        "e2e_p99_ms": 4412.599,
+        "itl_mean_ms": 10.263877468444807
       }
     },
     {
@@ -450,6 +433,9 @@
       "total_kv_blocks": 48009,
       "cpu_kv_blocks": 6553,
       "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 5100,
         "inference_perf": {
           "shared_prefix": {
             "enable_multi_turn_chat": true,
@@ -466,25 +452,22 @@
             },
             {
               "duration": 600,
-              "rate": 6.0
+              "rate": 6
             }
           ]
-        },
-        "num_requests": 5100,
-        "seed": 42,
-        "version": "2"
+        }
       },
       "expected": {
         "completed_requests": 5130,
         "total_input_tokens": 2806110,
         "total_output_tokens": 1267110,
-        "ttft_mean_ms": 26.17804931773879,
-        "ttft_p90_ms": 28.773,
-        "ttft_p99_ms": 29.87497,
-        "e2e_mean_ms": 1636.4889251461989,
-        "e2e_p90_ms": 1686.775,
-        "e2e_p99_ms": 1749.4940199999999,
-        "itl_mean_ms": 6.516331481086882
+        "ttft_mean_ms": 63.33066900584795,
+        "ttft_p90_ms": 193.952,
+        "ttft_p99_ms": 328.936,
+        "e2e_mean_ms": 834.906318128655,
+        "e2e_p90_ms": 1190.078,
+        "e2e_p99_ms": 1190.078,
+        "itl_mean_ms": 3.123788053128773
       }
     },
     {
@@ -498,6 +481,9 @@
       "total_kv_blocks": 19251,
       "cpu_kv_blocks": 3276,
       "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 9000,
         "inference_perf": {
           "shared_prefix": {
             "enable_multi_turn_chat": true,
@@ -510,29 +496,26 @@
           "stages": [
             {
               "duration": 600,
-              "rate": 5.0
+              "rate": 5
             },
             {
               "duration": 600,
-              "rate": 10.0
+              "rate": 10
             }
           ]
-        },
-        "num_requests": 9000,
-        "seed": 42,
-        "version": "2"
+        }
       },
       "expected": {
         "completed_requests": 9064,
         "total_input_tokens": 5130224,
         "total_output_tokens": 2229744,
-        "ttft_mean_ms": 40.120723190644306,
-        "ttft_p90_ms": 50.776,
-        "ttft_p99_ms": 70.609,
-        "e2e_mean_ms": 3186.5229637025595,
-        "e2e_p90_ms": 3471.1354,
-        "e2e_p99_ms": 3584.469,
-        "itl_mean_ms": 12.787094473625672
+        "ttft_mean_ms": 359.8650970873786,
+        "ttft_p90_ms": 675.6151000000001,
+        "ttft_p99_ms": 747.436,
+        "e2e_mean_ms": 2362.950187886143,
+        "e2e_p90_ms": 2462.406,
+        "e2e_p99_ms": 3478.74,
+        "itl_mean_ms": 8.14262232032018
       }
     },
     {
@@ -543,9 +526,12 @@
       "tp": 1,
       "max_num_seqs": 128,
       "max_num_batched_tokens": 2048,
-      "total_kv_blocks": 65352,
-      "cpu_kv_blocks": 9362,
+      "total_kv_blocks": 65368,
+      "cpu_kv_blocks": 9361,
       "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 7200,
         "inference_perf": {
           "shared_prefix": {
             "enable_multi_turn_chat": true,
@@ -558,25 +544,22 @@
           "stages": [
             {
               "duration": 1200,
-              "rate": 6.0
+              "rate": 6
             }
           ]
-        },
-        "num_requests": 7200,
-        "seed": 42,
-        "version": "2"
+        }
       },
       "expected": {
         "completed_requests": 7200,
         "total_input_tokens": 5400000,
         "total_output_tokens": 1800000,
-        "ttft_mean_ms": 27.800832361111112,
-        "ttft_p90_ms": 30.9356,
-        "ttft_p99_ms": 35.23918,
-        "e2e_mean_ms": 1720.1092315277779,
-        "e2e_p90_ms": 1748.8048999999999,
-        "e2e_p99_ms": 1773.592,
-        "itl_mean_ms": 6.766125596666667
+        "ttft_mean_ms": 204.30150041666667,
+        "ttft_p90_ms": 452.885,
+        "ttft_p99_ms": 601.738,
+        "e2e_mean_ms": 1181.3630855555555,
+        "e2e_p90_ms": 1475.199,
+        "e2e_p99_ms": 1475.199,
+        "itl_mean_ms": 3.9082463405555554
       }
     },
     {
@@ -590,6 +573,9 @@
       "total_kv_blocks": 20793,
       "cpu_kv_blocks": 4369,
       "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 5100,
         "inference_perf": {
           "shared_prefix": {
             "enable_multi_turn_chat": true,
@@ -606,25 +592,22 @@
             },
             {
               "duration": 600,
-              "rate": 6.0
+              "rate": 6
             }
           ]
-        },
-        "num_requests": 5100,
-        "seed": 42,
-        "version": "2"
+        }
       },
       "expected": {
         "completed_requests": 5130,
         "total_input_tokens": 2806110,
         "total_output_tokens": 1267110,
-        "ttft_mean_ms": 46.9293358674464,
-        "ttft_p90_ms": 56.6159,
-        "ttft_p99_ms": 74.697,
-        "e2e_mean_ms": 4244.198876413255,
-        "e2e_p90_ms": 4404.592000000001,
-        "e2e_p99_ms": 4477.505,
-        "itl_mean_ms": 16.989848342290724
+        "ttft_mean_ms": 454.47979239766084,
+        "ttft_p90_ms": 1030.508,
+        "ttft_p99_ms": 1416.0212899999997,
+        "e2e_mean_ms": 2900.7737736842105,
+        "e2e_p90_ms": 3162.332,
+        "e2e_p99_ms": 4483.889,
+        "itl_mean_ms": 9.904024215735019
       }
     },
     {
@@ -638,6 +621,9 @@
       "total_kv_blocks": 65368,
       "cpu_kv_blocks": 9361,
       "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 1200,
         "inference_perf": {
           "shared_prefix": {
             "enable_multi_turn_chat": true,
@@ -650,25 +636,22 @@
           "stages": [
             {
               "duration": 1200,
-              "rate": 1.0
+              "rate": 1
             }
           ]
-        },
-        "num_requests": 1200,
-        "seed": 42,
-        "version": "2"
+        }
       },
       "expected": {
         "completed_requests": 1219,
         "total_input_tokens": 1260446,
         "total_output_tokens": 1763893,
-        "ttft_mean_ms": 27.942819524200164,
-        "ttft_p90_ms": 30.708000000000002,
-        "ttft_p99_ms": 34.75876,
-        "e2e_mean_ms": 9925.427751435602,
-        "e2e_p90_ms": 10073.824799999999,
-        "e2e_p99_ms": 10131.051599999999,
-        "itl_mean_ms": 6.839466435322325
+        "ttft_mean_ms": 26.21899097621001,
+        "ttft_p90_ms": 39.4448,
+        "ttft_p99_ms": 56.17658,
+        "e2e_mean_ms": 4268.60657588187,
+        "e2e_p90_ms": 4346.8832,
+        "e2e_p99_ms": 4399.650640000001,
+        "itl_mean_ms": 2.9318504387737803
       }
     },
     {
@@ -682,6 +665,9 @@
       "total_kv_blocks": 7463,
       "cpu_kv_blocks": 1023,
       "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 1200,
         "inference_perf": {
           "shared_prefix": {
             "enable_multi_turn_chat": true,
@@ -694,25 +680,22 @@
           "stages": [
             {
               "duration": 1200,
-              "rate": 1.0
+              "rate": 1
             }
           ]
-        },
-        "num_requests": 1200,
-        "seed": 42,
-        "version": "2"
+        }
       },
       "expected": {
         "completed_requests": 1219,
         "total_input_tokens": 1260446,
         "total_output_tokens": 1763893,
-        "ttft_mean_ms": 35.12285151763741,
-        "ttft_p90_ms": 40.092000000000006,
-        "ttft_p99_ms": 42.34668,
-        "e2e_mean_ms": 17049.486731747333,
-        "e2e_p90_ms": 17354.3738,
-        "e2e_p99_ms": 17795.79558,
-        "itl_mean_ms": 11.757834747912714
+        "ttft_mean_ms": 26.011490566037736,
+        "ttft_p90_ms": 27.0354,
+        "ttft_p99_ms": 62.115259999999985,
+        "e2e_mean_ms": 6549.824048400328,
+        "e2e_p90_ms": 7029.905000000001,
+        "e2e_p99_ms": 7531.5951000000005,
+        "itl_mean_ms": 4.508509024073455
       }
     }
   ]

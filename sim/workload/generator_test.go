@@ -2258,3 +2258,58 @@ func TestCustomSampler_ReasoningIntegration(t *testing.T) {
 		}
 	}
 }
+
+// TestGenerateWorkload_MultiStageMultiTurn_OneSessionPerClient is a regression test for #974.
+//
+// Bug: GenerateWorkload matched sessions to clients by (TenantID, SLOClass, Model).
+// In multi-stage workloads, all clients share TenantID (prefixGroup) and SLOClass,
+// so the first client to iterate claimed ALL sessions across all stages; subsequent
+// clients received zero blueprints.
+//
+// Invariant: each client in a multi-stage multi-turn workload owns exactly one
+// SessionBlueprint — one session per client, not N per first-client and zero elsewhere.
+func TestGenerateWorkload_MultiStageMultiTurn_OneSessionPerClient(t *testing.T) {
+	// 2 stages × 1 prompt × 3 users = 6 total clients.
+	// All share TenantID="prompt-0", SLOClass="standard" — the conflation trigger.
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 3.0, Duration: 60},
+			{Rate: 6.0, Duration: 60},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  1,
+			NumUsersPerSystemPrompt: 3,
+			SystemPromptLen:         10,
+			QuestionLen:             20,
+			OutputLen:               10,
+			EnableMultiTurnChat:     true,
+		},
+	}
+	ws, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("ExpandInferencePerfSpec: %v", err)
+	}
+	ws.Version = "2"
+
+	horizon := int64(120_000_000) // 120 seconds in µs
+	gw, err := GenerateWorkload(ws, horizon, 0)
+	if err != nil {
+		t.Fatalf("GenerateWorkload: %v", err)
+	}
+
+	numClients := len(ws.Clients) // 6: stage-0-prompt-0-user-{0,1,2} + stage-1-prompt-0-user-{0,1,2}
+	if len(gw.Sessions) != numClients {
+		t.Errorf("session count = %d, want %d (one per client)", len(gw.Sessions), numClients)
+	}
+
+	// Each client must own exactly one SessionBlueprint.
+	sessionsByClient := make(map[string]int)
+	for _, bp := range gw.Sessions {
+		sessionsByClient[bp.ClientID]++
+	}
+	for _, c := range ws.Clients {
+		if got := sessionsByClient[c.ID]; got != 1 {
+			t.Errorf("client %q: owns %d sessions, want exactly 1", c.ID, got)
+		}
+	}
+}
