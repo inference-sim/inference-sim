@@ -14,6 +14,8 @@ type ScorerConfig struct {
 }
 
 // scorerFunc computes per-instance scores in [0,1] for a scoring dimension.
+// Some scorers use a sub-range by design (e.g., load-aware scores in [0, 0.5]
+// per llm-d semantics); weighted combination normalizes the effective contribution.
 // The req parameter provides request metadata (e.g., InputTokens for prefix matching).
 // Stateless scorers may ignore it.
 type scorerFunc func(req *Request, snapshots []RoutingSnapshot) map[string]float64
@@ -31,6 +33,9 @@ var validScorerNames = map[string]bool{
 	"queue-depth":          true,
 	"kv-utilization":       true,
 	"load-balance":         true,
+	"active-requests":      true,
+	"running-requests":     true,
+	"load-aware":           true,
 }
 
 // IsValidScorer returns true if name is a recognized scorer.
@@ -119,6 +124,12 @@ func newScorerWithObserver(name string, blockSize int, cacheFn cacheQueryFn) (sc
 		return scoreKVUtilization, nil
 	case "load-balance":
 		return scoreLoadBalance, nil
+	case "active-requests":
+		return scoreActiveRequests, nil
+	case "running-requests":
+		return scoreRunningRequests, nil
+	case "load-aware":
+		return scoreLoadAware, nil
 	default:
 		panic(fmt.Sprintf("unknown scorer %q", name))
 	}
@@ -184,6 +195,92 @@ func scoreLoadBalance(_ *Request, snapshots []RoutingSnapshot) map[string]float6
 	scores := make(map[string]float64, len(snapshots))
 	for _, snap := range snapshots {
 		scores[snap.ID] = 1.0 / (1.0 + float64(snap.EffectiveLoad()))
+	}
+	return scores
+}
+
+// scoreActiveRequests computes per-instance scores based on in-flight request count.
+// Instances with zero in-flight always score 1.0. Non-zero instances use max-only
+// normalization: (maxCount - count) / maxCount. When all instances have the same
+// non-zero count, all score 0.0 (no differentiation) — contrast with running-requests
+// which uses min-max normalization and scores 1.0 for all-equal. This asymmetry is
+// intentional: it matches llm-d's active-request-scorer (active_request.go:193-230).
+//
+// Signal freshness (R17, INV-7):
+//
+//	Reads: InFlightRequests (synchronous — updated on dispatch/completion events).
+func scoreActiveRequests(_ *Request, snapshots []RoutingSnapshot) map[string]float64 {
+	scores := make(map[string]float64, len(snapshots))
+	maxCount := 0
+	for _, snap := range snapshots {
+		if snap.InFlightRequests > maxCount {
+			maxCount = snap.InFlightRequests
+		}
+	}
+	for _, snap := range snapshots {
+		if snap.InFlightRequests == 0 || maxCount == 0 {
+			scores[snap.ID] = 1.0
+		} else {
+			scores[snap.ID] = float64(maxCount-snap.InFlightRequests) / float64(maxCount)
+		}
+	}
+	return scores
+}
+
+// scoreRunningRequests computes per-instance scores based on running (in-batch) request count.
+// Uses min-max normalization: (maxBatch - batch) / (maxBatch - minBatch). All equal = 1.0.
+// Matches GIE's running-requests-size-scorer semantics (runningrequest.go:99).
+//
+// Signal freshness (R17, INV-7):
+//
+//	Reads: BatchSize (Periodic when interval>0, else Immediate).
+func scoreRunningRequests(_ *Request, snapshots []RoutingSnapshot) map[string]float64 {
+	scores := make(map[string]float64, len(snapshots))
+	minBatch, maxBatch := math.MaxInt, 0
+	for _, snap := range snapshots {
+		if snap.BatchSize < minBatch {
+			minBatch = snap.BatchSize
+		}
+		if snap.BatchSize > maxBatch {
+			maxBatch = snap.BatchSize
+		}
+	}
+	for _, snap := range snapshots {
+		if maxBatch == minBatch {
+			scores[snap.ID] = 1.0
+		} else {
+			scores[snap.ID] = float64(maxBatch-snap.BatchSize) / float64(maxBatch-minBatch)
+		}
+	}
+	return scores
+}
+
+// loadAwareQueueThreshold is the default queue depth threshold for the load-aware scorer.
+// Matches llm-d's QueueThresholdDefault (load_aware.go:42). Queue depths at or above
+// this value score 0.0.
+const loadAwareQueueThreshold = 128
+
+// scoreLoadAware computes per-instance scores based on waiting queue depth with a
+// linear threshold-capped formula. Score range: [0, 0.5].
+// Empty queue scores 0.5 (maximum). Non-zero queue: 0.5 * (1 - queue/threshold),
+// where queue depth is clamped to loadAwareQueueThreshold. At-or-above threshold = 0.0.
+// Matches llm-d's load-aware-scorer semantics (load_aware.go:83-99).
+//
+// Signal freshness (R17, INV-7):
+//
+//	Reads: QueueDepth (Periodic when interval>0, else Immediate).
+func scoreLoadAware(_ *Request, snapshots []RoutingSnapshot) map[string]float64 {
+	scores := make(map[string]float64, len(snapshots))
+	for _, snap := range snapshots {
+		if snap.QueueDepth == 0 {
+			scores[snap.ID] = 0.5
+		} else {
+			clamped := snap.QueueDepth
+			if clamped > loadAwareQueueThreshold {
+				clamped = loadAwareQueueThreshold
+			}
+			scores[snap.ID] = 0.5 * (1.0 - float64(clamped)/float64(loadAwareQueueThreshold))
+		}
 	}
 	return scores
 }
