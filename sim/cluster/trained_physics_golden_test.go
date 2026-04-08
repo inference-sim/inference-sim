@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -88,8 +89,33 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 
 	hwConfigPath := filepath.Join(root, "hardware_config.json")
 
-	for _, exp := range ds.Experiments {
-		exp := exp // capture loop variable
+	// In update mode: collect results from parallel subtests, then write JSON.
+	// t.Cleanup runs after ALL subtests (including parallel ones) complete.
+	var (
+		mu      sync.Mutex
+		updates = make(map[int]goldenExpected, len(ds.Experiments))
+	)
+	if *updateGolden {
+		t.Cleanup(func() {
+			for i, expected := range updates {
+				ds.Experiments[i].Expected = expected
+			}
+			data, err := json.MarshalIndent(ds, "", "  ")
+			if err != nil {
+				t.Errorf("marshal updated trained-physics dataset: %v", err)
+				return
+			}
+			path := filepath.Join(goldenRepoRoot(), "testdata", "trained_physics_iter29.json")
+			if err := os.WriteFile(path, append(data, '\n'), 0644); err != nil {
+				t.Errorf("write %s: %v", path, err)
+				return
+			}
+			t.Logf("updated %s (%d experiments)", path, len(updates))
+		})
+	}
+
+	for i, exp := range ds.Experiments {
+		i, exp := i, exp // capture loop variables
 		t.Run(fmt.Sprintf("exp_%s_%s", exp.ID, exp.Model), func(t *testing.T) {
 			t.Parallel() // each sub-test owns independent state; safe to run concurrently
 			// ── Load model + hardware configuration ──────────────────────────
@@ -194,24 +220,12 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 			if cs.RejectedRequests() != 0 {
 				t.Errorf("INV-1: rejected_requests=%d, want 0", cs.RejectedRequests())
 			}
-			if m.CompletedRequests != exp.Expected.CompletedRequests {
-				t.Errorf("completed_requests: got %d, want %d", m.CompletedRequests, exp.Expected.CompletedRequests)
-			}
-
-			// ── Invariant: token conservation ────────────────────────────
-			if m.TotalInputTokens != exp.Expected.TotalInputTokens {
-				t.Errorf("total_input_tokens: got %d, want %d", m.TotalInputTokens, exp.Expected.TotalInputTokens)
-			}
-			if m.TotalOutputTokens != exp.Expected.TotalOutputTokens {
-				t.Errorf("total_output_tokens: got %d, want %d", m.TotalOutputTokens, exp.Expected.TotalOutputTokens)
-			}
-
 			// ── Compute output metrics from raw Metrics struct ────────────
 			sortedTTFTs := goldenSortedValues(m.RequestTTFTs)
 			sortedE2Es := goldenSortedValues(m.RequestE2Es)
 			allITLs := make([]float64, len(m.AllITLs))
-			for i, v := range m.AllITLs {
-				allITLs[i] = float64(v)
+			for j, v := range m.AllITLs {
+				allITLs[j] = float64(v)
 			}
 			sort.Float64s(allITLs)
 
@@ -223,7 +237,7 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 			e2eP99 := sim.CalculatePercentile(sortedE2Es, 99)
 			itlMean := sim.CalculateMean(allITLs)
 
-			// ── Invariant: causality (INV-5) ──────────────────────────────
+			// ── Invariant: causality (INV-5) — always checked ─────────────
 			if ttftMean <= 0 {
 				t.Errorf("ttft_mean: got %.6f, want > 0 (every request must have a first token)", ttftMean)
 			}
@@ -231,14 +245,38 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 				t.Errorf("causality: ttft_mean %.6f > e2e_mean %.6f", ttftMean, e2eMean)
 			}
 
-			// ── Golden values: byte-for-byte identical floats ─────────────
+			// ── Update mode: record computed values, skip assertions ───────
+			if *updateGolden {
+				mu.Lock()
+				updates[i] = goldenExpected{
+					CompletedRequests: m.CompletedRequests,
+					TotalInputTokens:  m.TotalInputTokens,
+					TotalOutputTokens: m.TotalOutputTokens,
+					TTFTMeanMs:        ttftMean,
+					TTFTP90Ms:         ttftP90,
+					TTFTP99Ms:         ttftP99,
+					E2EMeanMs:         e2eMean,
+					E2EP90Ms:          e2eP90,
+					E2EP99Ms:          e2eP99,
+					ITLMeanMs:         itlMean,
+				}
+				mu.Unlock()
+				return
+			}
+
+			// ── Golden value assertions ────────────────────────────────────
+			if m.CompletedRequests != exp.Expected.CompletedRequests {
+				t.Errorf("completed_requests: got %d, want %d", m.CompletedRequests, exp.Expected.CompletedRequests)
+			}
+			if m.TotalInputTokens != exp.Expected.TotalInputTokens {
+				t.Errorf("total_input_tokens: got %d, want %d", m.TotalInputTokens, exp.Expected.TotalInputTokens)
+			}
+			if m.TotalOutputTokens != exp.Expected.TotalOutputTokens {
+				t.Errorf("total_output_tokens: got %d, want %d", m.TotalOutputTokens, exp.Expected.TotalOutputTokens)
+			}
 			// relTol=1e-9 catches floating-point rounding from platform
 			// differences while rejecting any behavioral change to the
-			// trained-physics backend or inference_perf workload generator.
-			//
-			// To update these values, the trained-physics backend MUST be
-			// renamed first (e.g. "trained-physics-v2"). See comment on
-			// TestTrainedPhysics_GoldenDataset.
+			// trained-physics backend. To update these values, run with -update-golden.
 			const relTol = 1e-9
 			goldenAssertApprox(t, "ttft_mean_ms", exp.Expected.TTFTMeanMs, ttftMean, relTol)
 			goldenAssertApprox(t, "ttft_p90_ms", exp.Expected.TTFTP90Ms, ttftP90, relTol)
