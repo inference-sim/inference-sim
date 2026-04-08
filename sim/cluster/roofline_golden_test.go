@@ -15,18 +15,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// trainedPhysicsGoldenDataset is the root structure of testdata/trained_physics_iter29.json.
-type trainedPhysicsGoldenDataset struct {
-	Description string                     `json:"description"`
-	Backend     string                     `json:"backend"`
-	AlphaCoeffs []float64                  `json:"alpha_coeffs"`
-	BetaCoeffs  []float64                  `json:"beta_coeffs"`
-	Experiments []trainedPhysicsExperiment `json:"experiments"`
+// rooflineGoldenDataset is the root structure of testdata/roofline_iter29.json.
+type rooflineGoldenDataset struct {
+	Description string                   `json:"description"`
+	Backend     string                   `json:"backend"`
+	Experiments []rooflineGoldenExperiment `json:"experiments"`
 }
 
-// trainedPhysicsExperiment holds a single iter29 experiment configuration and
-// its expected simulation outputs.
-type trainedPhysicsExperiment struct {
+// rooflineGoldenExperiment holds a single iter29 experiment configuration and
+// its expected simulation outputs using the roofline backend.
+type rooflineGoldenExperiment struct {
 	ID                  string          `json:"id"`
 	Model               string          `json:"model"`
 	ModelConfigDir      string          `json:"model_config_dir"`
@@ -37,53 +35,56 @@ type trainedPhysicsExperiment struct {
 	TotalKVBlocks       int64           `json:"total_kv_blocks"`
 	CPUKVBlocks         int64           `json:"cpu_kv_blocks"`
 	Workload            json.RawMessage `json:"workload"`
-	Expected            goldenExpected `json:"expected"`
+	Expected            goldenExpected  `json:"expected"`
 }
 
-// loadTrainedPhysicsGoldenDataset reads testdata/trained_physics_iter29.json.
-func loadTrainedPhysicsGoldenDataset(t *testing.T) *trainedPhysicsGoldenDataset {
+// loadRooflineGoldenDataset reads testdata/roofline_goldendataset.json.
+func loadRooflineGoldenDataset(t *testing.T) *rooflineGoldenDataset {
 	t.Helper()
-	path := filepath.Join(goldenRepoRoot(), "testdata", "trained_physics_iter29.json")
+	path := filepath.Join(goldenRepoRoot(), "testdata", "roofline_goldendataset.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("loadTrainedPhysicsGoldenDataset: %v", err)
+		t.Fatalf("loadRooflineGoldenDataset: %v", err)
 	}
-	var ds trainedPhysicsGoldenDataset
+	var ds rooflineGoldenDataset
 	if err := json.Unmarshal(data, &ds); err != nil {
-		t.Fatalf("loadTrainedPhysicsGoldenDataset: parse: %v", err)
+		t.Fatalf("loadRooflineGoldenDataset: parse: %v", err)
 	}
 	return &ds
 }
 
-// TestTrainedPhysics_GoldenDataset verifies that the trained-physics latency
-// backend produces byte-for-byte identical TTFT and E2E predictions to the
-// iter29 coefficients baseline (overall loss 34.5675%, derived via sequential
-// golden section search).
+// TestRoofline_GoldenDataset verifies that the roofline latency backend
+// produces byte-for-byte identical TTFT and E2E predictions to the iter29
+// roofline baseline.
+//
+// This test serves as a regression guard for the analytical roofline model.
+// Any change to roofline FLOPs/bandwidth calculations, MoE handling, or TP
+// communication modeling will be caught by this test.
 //
 // Companion invariant assertions (conservation, causality, non-zero TTFT) catch
 // bugs independently of the golden values, satisfying the "test laws not just
 // values" principle from principles.md.
 //
-// Golden values must not be regenerated in place. If the trained-physics backend
+// Golden values must not be regenerated in place. If the roofline backend
 // behavior needs to change intentionally, rename the backend (e.g.
-// "trained-physics-v2") and add a new dataset. Renaming prevents silent
-// behavioral regressions from accumulating across training iterations.
+// "roofline-v2") and add a new dataset. Renaming prevents silent behavioral
+// regressions from accumulating.
 //
-// Regression guard for issue #965: inference_perf SLOClass "batch" caused
-// deferred-queue serialization, inflating TTFT 6-100× across all experiments.
-// This test will catch any recurrence of that regression pattern.
-func TestTrainedPhysics_GoldenDataset(t *testing.T) {
+// Regression guard: This test will catch any unintended changes to roofline
+// model calculations, including Scout MoE interleaved architecture handling
+// (issue #877), weight bandwidth calculations, or TP all-reduce modeling.
+func TestRoofline_GoldenDataset(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping trained-physics golden dataset test in short mode (-short flag)")
+		t.Skip("skipping roofline golden dataset test in short mode (-short flag)")
 	}
 
 	root := goldenRepoRoot()
-	ds := loadTrainedPhysicsGoldenDataset(t)
+	ds := loadRooflineGoldenDataset(t)
 	if len(ds.Experiments) == 0 {
 		t.Fatal("golden dataset has no experiments")
 	}
-	if ds.Backend != "trained-physics" {
-		t.Fatalf("unexpected backend in dataset: got %q, want \"trained-physics\"", ds.Backend)
+	if ds.Backend != "roofline" {
+		t.Fatalf("unexpected backend in dataset: got %q, want \"roofline\"", ds.Backend)
 	}
 
 	hwConfigPath := filepath.Join(root, "hardware_config.json")
@@ -103,9 +104,12 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 				t.Fatalf("GetHWConfig(%s): %v", exp.Hardware, err)
 			}
 
-			// ── Build trained-physics latency model with iter29 coefficients ─
-			// Note: NewLatencyCoeffs(betaCoeffs, alphaCoeffs) — order matters.
-			coeffs := sim.NewLatencyCoeffs(ds.BetaCoeffs, ds.AlphaCoeffs)
+			// ── Build roofline latency model ─────────────────────────────────
+			// Roofline uses zero coefficients (pure analytical model)
+			coeffs := sim.NewLatencyCoeffs(
+				[]float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // beta coeffs (unused in roofline)
+				[]float64{0, 0, 0},                      // alpha coeffs (unused in roofline)
+			)
 			hwCfg := sim.NewModelHardwareConfig(*mc, hc, exp.Model, exp.Hardware, exp.TP, ds.Backend, 0)
 
 			// Validate that the backend is accepted; fail fast with a clear error.
@@ -114,8 +118,6 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 			}
 
 			// ── Decode workload spec and generate requests ───────────────────
-			// SharedPrefixSpec uses yaml struct tags; use yaml.v3 to decode
-			// (JSON is valid YAML so this works for either format).
 			var ws goldenWorkloadSpec
 			if err := yaml.Unmarshal(exp.Workload, &ws); err != nil {
 				t.Fatalf("decode workload: %v", err)
@@ -137,9 +139,6 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ExpandInferencePerfSpec: %v", err)
 			}
-			// Use GenerateWorkload (not GenerateRequests) so that multi-turn chat
-			// sessions are handled via SessionManager callbacks — matching the CLI
-			// pipeline exactly and producing byte-identical request counts.
 			wl, err := workload.GenerateWorkload(fullSpec, math.MaxInt64, int64(ws.NumRequests))
 			if err != nil {
 				t.Fatalf("GenerateWorkload: %v", err)
@@ -156,12 +155,10 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 			// ── Configure and run ClusterSimulator ──────────────────────────
 			cfg := DeploymentConfig{
 				SimConfig: sim.SimConfig{
-					Horizon:       math.MaxInt64,
-					Seed:          ws.Seed,
-					// KV offload/transfer parameters match the training runner's constants
-				// (--kv-offload-threshold 0.9, --kv-transfer-bandwidth 0.2).
-				KVCacheConfig: sim.NewKVCacheConfig(exp.TotalKVBlocks, 16, exp.CPUKVBlocks, 0.9, 0.2, 0),
-					BatchConfig:   sim.NewBatchConfig(int64(exp.MaxNumSeqs), int64(exp.MaxNumBatchedTokens), 0),
+					Horizon:             math.MaxInt64,
+					Seed:                ws.Seed,
+					KVCacheConfig:       sim.NewKVCacheConfig(exp.TotalKVBlocks, 16, exp.CPUKVBlocks, 0.9, 0.2, 0),
+					BatchConfig:         sim.NewBatchConfig(int64(exp.MaxNumSeqs), int64(exp.MaxNumBatchedTokens), 0),
 					LatencyCoeffs:       coeffs,
 					ModelHardwareConfig: hwCfg,
 				},
@@ -175,10 +172,6 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 			m := cs.AggregatedMetrics()
 
 			// ── Invariant: request conservation (INV-1) ───────────────────
-			// Full conservation: every leakage path must be zero and the
-			// completed count must match golden. With horizon=MaxInt64 and no
-			// admission/routing rejections, all requests must complete.
-			// Catches silent-drop bugs independently of golden values.
 			if m.StillQueued != 0 {
 				t.Errorf("INV-1: still_queued=%d, want 0 (requests stuck in wait queue)", m.StillQueued)
 			}
@@ -234,11 +227,11 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 			// ── Golden values: byte-for-byte identical floats ─────────────
 			// relTol=1e-9 catches floating-point rounding from platform
 			// differences while rejecting any behavioral change to the
-			// trained-physics backend or inference_perf workload generator.
+			// roofline backend.
 			//
-			// To update these values, the trained-physics backend MUST be
-			// renamed first (e.g. "trained-physics-v2"). See comment on
-			// TestTrainedPhysics_GoldenDataset.
+			// To update these values, the roofline backend MUST be renamed
+			// first (e.g. "roofline-v2"). See comment on
+			// TestRoofline_GoldenDataset.
 			const relTol = 1e-9
 			goldenAssertApprox(t, "ttft_mean_ms", exp.Expected.TTFTMeanMs, ttftMean, relTol)
 			goldenAssertApprox(t, "ttft_p90_ms", exp.Expected.TTFTP90Ms, ttftP90, relTol)
@@ -250,3 +243,4 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 		})
 	}
 }
+
