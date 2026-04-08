@@ -2313,3 +2313,59 @@ func TestGenerateWorkload_MultiStageMultiTurn_OneSessionPerClient(t *testing.T) 
 		}
 	}
 }
+
+// TestGenerateWorkload_SingleStageMultiUserMultiTurn_OneSessionPerClient is a
+// regression test for the single-stage analog of #974.
+//
+// Single-stage workloads with NumUsersPerSystemPrompt > 1 have the same
+// conflation trigger as multi-stage: all users in a prompt group share
+// TenantID = prefixGroup (e.g. "prompt-0") and SLOClass = "standard".
+// The old (TenantID, SLOClass, Model) predicate would cause user-0 to claim
+// all sessions; the ClientID predicate (fixed in #975) gives each user exactly 1.
+//
+// Invariant: each client owns exactly one SessionBlueprint.
+func TestGenerateWorkload_SingleStageMultiUserMultiTurn_OneSessionPerClient(t *testing.T) {
+	// 1 stage × 1 prompt × 4 users = 4 clients.
+	// All share TenantID="prompt-0", SLOClass="standard" — the conflation trigger.
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{{Rate: 5.0, Duration: 60}},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  1,
+			NumUsersPerSystemPrompt: 4,
+			SystemPromptLen:         10,
+			QuestionLen:             20,
+			OutputLen:               10,
+			EnableMultiTurnChat:     true,
+		},
+	}
+	ws, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("ExpandInferencePerfSpec: %v", err)
+	}
+	ws.Version = "2"
+
+	horizon := int64(60_000_000) // 60 seconds in µs
+	gw, err := GenerateWorkload(ws, horizon, 0)
+	if err != nil {
+		t.Fatalf("GenerateWorkload: %v", err)
+	}
+
+	numClients := len(ws.Clients)
+	if numClients != 4 {
+		t.Fatalf("expected 4 clients from ExpandInferencePerfSpec, got %d — spec changed?", numClients)
+	}
+	if len(gw.Sessions) != numClients {
+		t.Errorf("session count = %d, want %d (one per client)", len(gw.Sessions), numClients)
+	}
+
+	// Each client must own exactly one SessionBlueprint.
+	sessionsByClient := make(map[string]int)
+	for _, bp := range gw.Sessions {
+		sessionsByClient[bp.ClientID]++
+	}
+	for _, c := range ws.Clients {
+		if got := sessionsByClient[c.ID]; got != 1 {
+			t.Errorf("client %q: owns %d sessions, want exactly 1", c.ID, got)
+		}
+	}
+}

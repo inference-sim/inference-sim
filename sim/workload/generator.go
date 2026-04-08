@@ -466,6 +466,13 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 				closedLoopSessionIDs[req.SessionID] = true
 			}
 		}
+		// Warn if a closed-loop client produced no sessions. This indicates that
+		// round-0 requests for this client have ClientID unset or mismatched
+		// (e.g. a future code path that bypasses GenerateReasoningRequests).
+		// With the current implementation this should never fire.
+		if len(sessionIDsForClient) == 0 {
+			logrus.Warnf("GenerateWorkload: closed-loop client %q produced no sessions — ClientID may not be set on round-0 requests", client.ID)
+		}
 
 		// Create a blueprint per session (R2: sort map keys for deterministic RNG draws)
 		sortedSessionIDs := make([]string, 0, len(sessionIDsForClient))
