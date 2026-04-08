@@ -356,6 +356,129 @@ func TestValidSchedulerNames_ReturnsAllNames(t *testing.T) {
 	assert.Contains(t, names, "reverse-priority")
 }
 
+// ---------------------------------------------------------------------------
+// Autoscaler + NodePool bundle tests
+// ---------------------------------------------------------------------------
+
+func TestLoadPolicyBundle_AutoscalerSection(t *testing.T) {
+	yaml := `
+autoscaler:
+  interval_us: 30000000
+  scale_up_cooldown_us: 60000000
+  scale_down_cooldown_us: 180000000
+  actuation_delay:
+    mean: 10.0
+    stddev: 2.0
+  analyzer:
+    kv_cache_threshold: 0.8
+    scale_up_threshold: 0.8
+    scale_down_boundary: 0.4
+    avg_input_tokens: 512.0
+`
+	path := writeTempYAML(t, yaml)
+	bundle, err := LoadPolicyBundle(path)
+	if err != nil {
+		t.Fatalf("LoadPolicyBundle: %v", err)
+	}
+	if bundle.Autoscaler.IntervalUs != 30_000_000 {
+		t.Errorf("IntervalUs = %v, want 30000000", bundle.Autoscaler.IntervalUs)
+	}
+	if bundle.Autoscaler.Analyzer.KVCacheThreshold != 0.8 {
+		t.Errorf("KVCacheThreshold = %v, want 0.8", bundle.Autoscaler.Analyzer.KVCacheThreshold)
+	}
+	if bundle.Autoscaler.ActuationDelay.Mean != 10.0 {
+		t.Errorf("ActuationDelay.Mean = %v, want 10.0", bundle.Autoscaler.ActuationDelay.Mean)
+	}
+	if bundle.Autoscaler.ScaleUpCooldownUs != 60_000_000 {
+		t.Errorf("ScaleUpCooldownUs = %v, want 60000000", bundle.Autoscaler.ScaleUpCooldownUs)
+	}
+}
+
+func TestLoadPolicyBundle_NodePoolsSection(t *testing.T) {
+	yaml := `
+node_pools:
+  - name: h100-pool
+    gpu_type: H100
+    gpus_per_node: 8
+    gpu_memory_gib: 80.0
+    initial_nodes: 1
+    min_nodes: 1
+    max_nodes: 4
+    cost_per_hour: 32.0
+    provisioning_delay:
+      mean: 30.0
+      stddev: 5.0
+`
+	path := writeTempYAML(t, yaml)
+	bundle, err := LoadPolicyBundle(path)
+	if err != nil {
+		t.Fatalf("LoadPolicyBundle: %v", err)
+	}
+	if len(bundle.NodePools) != 1 {
+		t.Fatalf("NodePools len = %d, want 1", len(bundle.NodePools))
+	}
+	np := bundle.NodePools[0]
+	if np.Name != "h100-pool" {
+		t.Errorf("Name = %q, want h100-pool", np.Name)
+	}
+	if np.MaxNodes != 4 {
+		t.Errorf("MaxNodes = %d, want 4", np.MaxNodes)
+	}
+	if np.ProvisioningDelay.Mean != 30.0 {
+		t.Errorf("ProvisioningDelay.Mean = %v, want 30.0", np.ProvisioningDelay.Mean)
+	}
+}
+
+func TestLoadPolicyBundle_AutoscalerAbsent_IsZero(t *testing.T) {
+	// Existing policy-config files without autoscaler section must parse cleanly (backward compat).
+	yaml := `
+admission:
+  policy: always-admit
+`
+	path := writeTempYAML(t, yaml)
+	bundle, err := LoadPolicyBundle(path)
+	if err != nil {
+		t.Fatalf("LoadPolicyBundle: %v", err)
+	}
+	if bundle.Autoscaler.IntervalUs != 0 {
+		t.Errorf("IntervalUs = %v, want 0 (disabled)", bundle.Autoscaler.IntervalUs)
+	}
+	if len(bundle.NodePools) != 0 {
+		t.Errorf("NodePools len = %d, want 0", len(bundle.NodePools))
+	}
+}
+
+func TestPolicyBundle_Validate_AutoscalerNegativeInterval(t *testing.T) {
+	bundle := &PolicyBundle{
+		Autoscaler: AutoscalerBundleConfig{IntervalUs: -1},
+	}
+	if err := bundle.Validate(); err == nil {
+		t.Error("expected error for negative interval_us, got nil")
+	}
+}
+
+func TestPolicyBundle_Validate_NodePool_MissingName(t *testing.T) {
+	bundle := &PolicyBundle{
+		NodePools: []NodePoolBundleConfig{
+			{GPUType: "H100", GPUsPerNode: 8, GPUMemoryGiB: 80, MaxNodes: 2},
+		},
+	}
+	if err := bundle.Validate(); err == nil {
+		t.Error("expected error for missing node pool name, got nil")
+	}
+}
+
+func TestPolicyBundle_Validate_NodePool_MaxLessThanInitial(t *testing.T) {
+	bundle := &PolicyBundle{
+		NodePools: []NodePoolBundleConfig{
+			{Name: "p", GPUType: "H100", GPUsPerNode: 8, GPUMemoryGiB: 80, InitialNodes: 5, MaxNodes: 2},
+		},
+	}
+	if err := bundle.Validate(); err == nil {
+		t.Error("expected error for max_nodes < initial_nodes, got nil")
+	}
+}
+
 func TestIsValidLatencyBackend(t *testing.T) {
 	assert.True(t, IsValidLatencyBackend(""))
 	assert.True(t, IsValidLatencyBackend("blackbox"))
