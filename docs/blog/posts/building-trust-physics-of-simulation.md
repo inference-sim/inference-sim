@@ -30,23 +30,19 @@ A user hits enter. Fifty milliseconds later, the first token appears. What happe
 
 ### Layer 1: The Engine (vLLM)
 
-The inference engine running on a single GPU instance is vLLM. It schedules requests, manages memory, and generates tokens. Understanding how it works is critical for accurate prediction.
+The inference engine running on a single GPU instance is vLLM. It schedules requests, manages memory, and generates tokens. Understanding how it works is critical for accurate prediction—and most people get the fundamental execution model wrong.
 
-**The batch-step paradigm.** vLLM does not process requests individually. It processes batches in steps. One step = one GPU forward pass. All requests in the batch go through together. The step time is determined by the slowest operation, and everyone pays that cost.
+vLLM does not process requests individually. It processes batches in steps. One step equals one GPU forward pass. All requests in the batch go through together, and the step time is determined by the slowest operation. Consider four requests in a batch: three generate single output tokens (2ms, memory-bound), while the fourth processes a 512-token prompt (20ms, compute-bound). The step time is 20ms. All four requests wait the full duration, even though three could finish in 2ms if they ran alone.
 
-**Concrete example:** Four requests in a batch. Three generate single output tokens (2ms, memory-bound). The fourth processes a 512-token prompt (20ms, compute-bound). Step time: 20ms. All four wait the full duration.
+This is why traditional per-request models fail. They calculate `time = α + β × tokens` per request independently. But ten decode requests do not take "10 × 2ms"—they take one 2ms batch step that covers all ten simultaneously. Get this wrong, and throughput predictions can be 5-10x off.
 
-**Why per-request models fail:** Traditional models calculate `time = α + β × tokens` per request independently. But ten decode requests do not take "10 × 2ms." They take one 2ms batch step. Get this wrong, and throughput predictions can be 5-10x off.
+BLIS replicates the mechanisms that govern this behavior. Priority scheduling ensures critical requests go before batch jobs. Block-level KV cache management handles prefix reuse (massive speedup for RAG workloads) and preemption when memory fills. Continuous batching allows requests to join and leave mid-flight as they complete. All modeled with exact vLLM semantics, not approximations.
 
-**What BLIS replicates:** Priority scheduling (critical requests before batch jobs). Block-level KV cache with prefix reuse and preemption under memory pressure. Continuous batching where requests join and leave mid-flight. All modeled with exact vLLM semantics.
+For step timing, BLIS computes two bottlenecks without GPU execution: compute time (FLOPs / GPU_TFLOPS) and memory time (bytes / GPU_bandwidth). Step time equals the maximum of the two. For a 512-token prefill on H100, compute dominates at 20ms. For decode reading KV cache, memory dominates at 2ms. BLIS applies learned corrections for kernel overhead and cache effects, then predicts step time using model architecture from HuggingFace and hardware specs from datasheets. This is how the simulation runs on CPU while maintaining accuracy.
 
-**Step physics (CPU-only).** For each step, BLIS computes two bottlenecks: compute time (FLOPs / GPU_TFLOPS) and memory time (bytes / GPU_bandwidth). Step time = max(compute, memory). For a 512-token prefill on H100: compute dominates at 20ms. For decode reading KV cache: memory dominates at 2ms. BLIS applies learned corrections for kernel overhead and cache effects, then predicts step time without GPU execution—using model architecture from HuggingFace and hardware specs from datasheets.
+Batch composition evolves constantly, and step times evolve with it. A small decode-only batch runs at 2ms per token. A long prompt joins—everyone waits 20ms while it processes. The prompt finishes and switches to decode—back to 2ms. Another request completes and leaves—now 1.8ms with the smaller batch. Request latencies are coupled through batching, not independent.
 
-**Batch evolution matters.** Small decode-only batch: 2ms per token. Long prompt joins: everyone waits 20ms. Prompt finishes: back to 2ms. Request completes and leaves: 1.8ms. Batch size changes constantly, step time changes constantly. Request latencies are coupled through batching.
-
-**Takeaway:** vLLM operates in batch steps, not individual requests. BLIS simulates this through discrete-event modeling—one step event per batch operation, with membership updating after each completion. This is the foundation for accurate throughput and latency prediction.
-
-In production, a single vLLM instance is only part of the system. Clusters of instances add orchestration complexity.
+vLLM operates in batch steps, not individual requests. BLIS simulates this through discrete-event modeling—one step event per batch operation, with membership updating after each completion. This is the foundation for accurate throughput and latency prediction. In production, a single vLLM instance is only part of the system. Clusters of instances add orchestration complexity.
 
 ### Layer 2: The Data Plane (Cluster Orchestration)
 
