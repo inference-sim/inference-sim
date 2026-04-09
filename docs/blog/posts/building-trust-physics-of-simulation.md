@@ -92,7 +92,7 @@ $$
 t_{\text{step}} = \sum_{i} \beta_i \cdot \phi_i(\text{batch}, \text{LLM}, \text{hardware})
 $$
 
-where $\phi_i$ are basis functions that capture computational physics (how batch size, sequence length, and LLM architectures affect compute and memory bandwidth), and $\beta_i$ are coefficients trained on real vLLM traces that correct for hardware-specific bottlenecks. This approach generalizes across LLM architectures, hardware configurations, and tensor parallelism degrees, enabling seamless experimentation with any model-GPU-TP combination without per-configuration calibration. Accurate forward pass predictions drive accurate end-to-end latency metrics.
+where $\phi_i$ are basis functions that capture computational physics - batch (batch size and sequence lengths), LLM (model architecture), and hardware (compute and memory bandwidth) - and $\beta_i$ are coefficients trained on real vLLM traces that correct for hardware-specific bottlenecks. This approach generalizes across LLM architectures, hardware configurations, and tensor parallelism degrees, enabling seamless experimentation with any model-GPU-TP combination without per-configuration calibration. Accurate forward pass predictions drive accurate end-to-end latency metrics.
 
 ### Layer 2: The Data Plane (Cluster Orchestration)
 
@@ -129,48 +129,43 @@ Autoscaling dynamically adjusts the number of running instances to match demand,
 
 ## BLIS in Action: A Real Scenario
 
-Consider a production decision: should you enable precise prefix cache routing, which queries actual KV cache state but incurs 2-second staleness, or stick with simpler load-balanced routing that sees fresh queue depths? The trade-off matters—prefix-aware routing could reduce TTFT by 20-30% when prompts share prefixes, but stale cache signals might cause pile-on during bursts.
+Consider a configuration decision: you are deploying Qwen3-14B for chatbot workloads at 50 req/s with 8 instances. Does routing policy matter? What about hardware choice?
 
-Testing this in production is expensive. You'd need to:
-- Deploy both configurations to separate GPU pools
-- Run 30+ minutes of representative traffic per config
-- Control for workload variance (same arrival patterns, prompt distributions)
-- Repeat across multiple load levels to understand behavior under saturation
-
-With BLIS, the experiment takes seconds:
+Testing this in production means provisioning separate GPU pools, running 30+ minutes of traffic per setup and burning GPU-hours to discover the answer. With BLIS, you can test it in seconds:
 
 ```bash
-# Capture production workload characteristics
-blis observe --server-url https://prod.api --model qwen/qwen3-14b \
-  --workload chatbot --rate 50 --trace-header workload.yaml
+# Install and build BLIS
+git clone https://github.com/inference-sim/inference-sim.git
+go build -o blis main.go
 
-# Compare routing policies
-blis run --trace-header workload.yaml --model qwen/qwen3-14b \
-  --routing-policy weighted \
-  --routing-scorers "queue-depth:1,kv-utilization:1,load-balance:1"
+# H100 with round-robin routing
+./blis run --model qwen/qwen3-14b --workload chatbot --rate 50 \
+  --num-instances 8 --tp 2 --hardware H100 --routing-policy round-robin
 
-blis run --trace-header workload.yaml --model qwen/qwen3-14b \
-  --routing-policy weighted \
-  --routing-scorers "precise-prefix-cache:2,queue-depth:1,kv-utilization:1" \
-  --cache-signal-delay 2000000  # 2s staleness (µs)
+# H100 with prefix-aware routing
+./blis run --model qwen/qwen3-14b --workload chatbot --rate 50 \
+  --num-instances 8 --tp 2 --hardware H100 --routing-policy weighted \
+  --routing-scorers "prefix-affinity:2,queue-depth:1"
+
+# A100-80 with prefix-aware routing
+./blis run --model qwen/qwen3-14b --workload chatbot --rate 50 \
+  --num-instances 8 --tp 2 --hardware A100-80 --routing-policy weighted \
+  --routing-scorers "prefix-affinity:2,queue-depth:1"
 ```
 
-The simulator reveals the trade-off space: prefix-aware routing wins at moderate load (20% TTFT improvement) but degrades during bursts when stale signals cause all requests with similar prefixes to pile onto the same instance. Load-balanced routing is more robust but misses optimization opportunities when cache hits are available.
+**Results:**
 
-This insight drives an informed decision: use prefix-aware routing with a lower staleness threshold (500ms instead of 2s) or implement hybrid strategies that fall back to load balancing during detected bursts. Testing these refinements in BLIS takes minutes. Rolling them out to production without simulation could take weeks of A/B testing across GPU pools.
+| Configuration | P99 TTFT | Key Finding |
+|---------------|----------|-------------|
+| H100 (round-robin) | 12.1ms | Baseline with naive routing |
+| H100 (prefix-aware) | 11.3ms | **7% improvement** from KV cache reuse |
+| A100-80 (prefix-aware) | 45.8ms | **4× slower than H100** — hardware choice dominates |
 
-**What this enables:**
-
-- **Policy optimization** — Test 10 routing configurations in minutes, not weeks of production A/B tests
-- **Capacity planning** — Determine instance count and GPU type for target throughput before provisioning
-- **Architecture experiments** — Compare disaggregated vs. unified serving, different TP degrees, multi-model GPU sharing
-- **Algorithm discovery** — Validate novel policies (cost-aware routing, predictive autoscaling) in a safe sandbox
-
-When your simulator models engine physics (vLLM's batch-step execution), data plane coordination (routing with real-world staleness), and control plane delays (autoscaling feedback loops), you can make architectural decisions based on simulation. That's the unlock.
+**Decision:** Prefix-aware routing delivers measurable gains on H100, but hardware choice has far greater impact. BLIS tests these configurations in seconds without provisioning real GPUs.
 
 ## From Modeling to Validation
 
-We have covered building a high-fidelity simulator like BLIS requires careful modeling of the physics of engine-level batch scheduling and processing, data plane coordination, and control plane feedback loops. BLIS combines physics-based dynamics with learned corrections, running entirely on CPUs with pluggable interfaces for each component to enable extremely fast algorithm discovery and configuration search. 
+We have covered how building an end-to-end high-fidelity systems simulator like BLIS requires careful modeling of the physics of engine-level batch scheduling and processing, data plane coordination, and control plane feedback loops. BLIS combines physics-based dynamics with learned corrections, running entirely on CPUs with pluggable interfaces for each component to enable extremely fast algorithm discovery and configuration search. 
 
 But **how do we know this modeling is accurate?**
 
