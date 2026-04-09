@@ -3,6 +3,15 @@
 **Target Length:** ~3,500 words (7-min read)
 **Target Audience:** Dual audience - llm-d executives and platform engineers
 **Tone:** Product-oriented with storytelling, accessible but rigorous, conversational without being casual
+**Blog File:** `docs/blog/posts/building-trust-physics-of-simulation.md`
+
+**Blog Format (MkDocs Material):**
+- YAML frontmatter with `date`, `authors` (from `docs/blog/.authors.yml`), `categories`, and `draft: true` until ready
+- Title as H1 (`#`)
+- `<!-- more -->` tag after opening paragraphs (creates excerpt for blog list)
+- Standard markdown with H2 (`##`) for main sections, H3 (`###`) for subsections
+- Reference: `docs/blog/posts/why-simulate-before-you-scale.md`
+
 **Style Notes:**
 - Easy to read and understand
 - Avoid deep technical jargon
@@ -84,7 +93,7 @@
 
 6. **The takeaway:** Can't model with per-request equations. vLLM works in batches/steps. BLIS captures this through discrete-event simulation - one step event per batch operation.
 
-**llm-d parity notes:** vLLM is the engine in llm-d. BLIS replicates vLLM semantics exactly (scheduling, KV cache, batching).
+**llm-d parity notes:** vLLM is the primary engine in llm-d. BLIS replicates vLLM semantics exactly (scheduling, KV cache, batching).
 
 ---
 
