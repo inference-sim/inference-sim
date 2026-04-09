@@ -2,8 +2,9 @@
 // The LatencyModel interface is defined in sim/ (parent package).
 // This package provides BlackboxLatencyModel (alpha/beta regression),
 // RooflineLatencyModel (analytical FLOPs/bandwidth),
-// CrossModelLatencyModel (physics-informed cross-model step time), and
-// TrainedRooflineLatencyModel (roofline basis functions × learned corrections).
+// CrossModelLatencyModel (physics-informed cross-model step time),
+// TrainedRooflineLatencyModel (roofline basis functions × learned corrections), and
+// TrainedPhysicsModel (physics-informed basis functions with architecture-aware MoE scaling).
 package latency
 
 import (
@@ -257,6 +258,15 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			flopsPeakUs: hw.HWConfig.TFlopsPeak * 1e6,
 			bwHbmUs:     hw.HWConfig.BwPeakTBs * 1e6,
 		}, nil
+	case "trained-physics":
+		// TrainedPhysicsModel: physics-informed roofline with architecture-aware MoE overhead.
+		// Uses roofline basis functions with learned corrections and conditional β₈ scaling.
+		// Trained coefficients from iteration 29 (loss: 34.57%).
+		model, err := NewTrainedPhysicsModel(coeffs, hw)
+		if err != nil {
+			return nil, err
+		}
+		return model, nil
 	case "blackbox":
 		// BlackboxLatencyModel indexes betaCoeffs[0..2]; validate upfront.
 		if len(coeffs.BetaCoeffs) < 3 {

@@ -23,7 +23,7 @@ This guide covers how BLIS distributes incoming requests across instances in clu
 The `weighted` routing policy is the most flexible. It combines multiple scoring dimensions, each evaluating instances on a `[0, 1]` scale:
 
 ```bash
---routing-policy weighted --routing-scorers "prefix-affinity:3,queue-depth:2,kv-utilization:2"
+--routing-policy weighted --routing-scorers "precise-prefix-cache:2,queue-depth:1,kv-utilization:1"
 ```
 
 ### Available Scorers
@@ -31,9 +31,14 @@ The `weighted` routing policy is the most flexible. It combines multiple scoring
 | Scorer | What It Measures | llm-d Equivalent |
 |--------|-----------------|------------------|
 | `prefix-affinity` | Proportional prefix match ratio via router-side block hash cache | prefix-scorer |
-| `queue-depth` | Effective load: `QueueDepth + BatchSize + InFlightRequests` (min-max normalized) | queue-scorer |
+| `precise-prefix-cache` | Actual KV cache state query with min-max normalization | precise-prefix-cache-scorer |
+| `no-hit-lru` | LRU positional scoring for cold requests (warm = 0.5) | no-hit-lru-scorer |
+| `queue-depth` | Queue depth: `QueueDepth` only (min-max normalized) | queue-scorer |
 | `kv-utilization` | Inverse KV utilization: `1 - KVUtilization` | kv-cache-utilization-scorer |
 | `load-balance` | Inverse transform: `1 / (1 + effectiveLoad)` | BLIS-native (no llm-d equivalent) |
+| `active-requests` | In-flight requests: `(maxCount - count) / maxCount` | active-request-scorer |
+| `running-requests` | Batch size (min-max normalized) | running-requests-size-scorer (GIE) |
+| `load-aware` | Queue depth (linear threshold-capped, range [0, 0.5]) | load-aware-scorer |
 
 !!! note "Prefix-affinity is a scorer, not a standalone policy"
     The `prefix-affinity` scorer operates within the `weighted` routing pipeline, composed with load-balancing scorers. It uses a router-side `PrefixCacheIndex` with proportional block hash matching and LRU eviction. Always pair it with at least one load-aware scorer (queue-depth or kv-utilization) to prevent cold-start pile-on.
@@ -43,10 +48,10 @@ The `weighted` routing policy is the most flexible. It combines multiple scoring
 When `--routing-scorers` is not specified, the default profile is:
 
 ```
-prefix-affinity:3, queue-depth:2, kv-utilization:2
+precise-prefix-cache:2, queue-depth:1, kv-utilization:1
 ```
 
-This matches the llm-d Endpoint Picker scoring pipeline. Weights are relative — only ratios matter. `[3, 2, 2]` behaves identically to `[0.43, 0.29, 0.29]`.
+This matches the llm-d production scoring pipeline. Weights are relative — only ratios matter. `[2, 1, 1]` behaves identically to `[0.5, 0.25, 0.25]`.
 
 ## Signal Freshness
 
@@ -77,14 +82,14 @@ BLIS models three signal freshness tiers:
 At high request rates, many routing decisions occur between KV utilization updates (step time varies by model — ~6ms for Qwen3-14B / H100 / TP=1 at low load, longer under batch saturation). If using `kv-utilization:1` alone, all decisions within one step see the same stale utilization — this can cause severe load imbalance.
 
 !!! tip "Safe zone for `--snapshot-refresh-interval`"
-    Below **5ms** (~1 step time): no degradation. At 10ms: 14% TTFT p99 increase. At 100ms: +354%. The default composite profile (`prefix-affinity:3, queue-depth:2, kv-utilization:2`) is inherently resilient — queue-depth's Immediate signal corrects stale KV signals, mitigating ~99% of the effect.
+    Below **5ms** (~1 step time): no degradation. At 10ms: 14% TTFT p99 increase. At 100ms: +354% (measured with the prior default `prefix-affinity:3, queue-depth:2, kv-utilization:2`). The default composite profile (`precise-prefix-cache:2, queue-depth:1, kv-utilization:1`) is resilient — queue-depth's QueueDepth signal complements stale KV signals. The exact mitigation percentage may differ from the prior profile due to different weight ratios and scorer staleness characteristics (`precise-prefix-cache` has its own staleness model via `--cache-signal-delay`). For staleness-critical deployments, consider adding `load-balance` which reads EffectiveLoad (includes synchronous InFlightRequests).
 
 ## When to Use Which Policy
 
 | Workload | Recommended Policy | Why |
 |----------|-------------------|-----|
 | Uniform traffic, no prefix sharing | `least-loaded` or `weighted` with `queue-depth:1` | Load balance is the only signal that matters |
-| RAG with shared system prompts | `weighted` with `prefix-affinity:3,queue-depth:1` | Prefix affinity maximizes KV cache reuse |
+| RAG with shared system prompts | `weighted` default or `precise-prefix-cache:3,queue-depth:1` | Prefix-aware scoring maximizes KV cache reuse |
 | Mixed SLO classes | `weighted` default + [priority scheduling](scheduling.md) | Routing distributes load; scheduling prioritizes critical requests |
 | Low traffic (< 10 req/s) | Any | All policies produce equivalent results within 5% |
 

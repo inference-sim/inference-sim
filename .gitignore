@@ -43,15 +43,18 @@ __pycache__/*
 # data files
 *.json
 !testdata/goldendataset.json
+!testdata/trained_physics_iter29.json
+!testdata/roofline_goldendataset.json
+!model_configs/*/config.json
 !hardware_config.json
 data/
 *.txt
 
 # auto-fetched HuggingFace model configs (downloaded by --roofline)
-model_configs/
 
 # binaries
 blis
+blis_iter*
 inference-sim
 
 # results

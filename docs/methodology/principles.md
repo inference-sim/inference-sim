@@ -23,7 +23,7 @@ Principles extracted from 30 iterations of [Strategy Evolution](strategy-evoluti
 | RP-7 | **The optimal strategy is regime-dependent** — Normal KV: `pa:3,qd:2,kv:2`. Under pressure: `pa:3,qd:2`. At high load with admission: `pa:4,qd:3`. | Iter 8, 10 | Static default fails under KV pressure (23–25% worse than RR) |
 
 !!! info "Reconciling with BLIS Defaults"
-    The current BLIS default is `prefix-affinity:3,queue-depth:2,kv-utilization:2` (llm-d parity). Strategy Evolution discovered that `pa:4,qd:3` (no kv-util) performs better under KV pressure and at high load with admission control. The default is maintained for compatibility with the llm-d ecosystem. Users running Strategy Evolution experiments should consider the regime-dependent recommendation in RP-7 rather than assuming the default is optimal for all scenarios.
+    The current BLIS default is `precise-prefix-cache:2,queue-depth:1,kv-utilization:1` (llm-d parity). Strategy Evolution discovered that `pa:4,qd:3` (no kv-util) performs better under KV pressure and at high load with admission control. The default is maintained for compatibility with the llm-d ecosystem. Users running Strategy Evolution experiments should consider the regime-dependent recommendation in RP-7 rather than assuming the default is optimal for all scenarios.
 
 | # | Principle | Source | Evidence |
 |---|-----------|--------|----------|
@@ -31,7 +31,7 @@ Principles extracted from 30 iterations of [Strategy Evolution](strategy-evoluti
 | RP-9 | **Admission control is the 3rd lever at high load** — Neither routing nor scheduling can reduce total queue depth; admission can | Iter 11 | Compound strategy beats RR by 47% at rate=2000 (admission shedding 30%) |
 | RP-10 | **PA:QD ratio is the dominant parameter; empirical safety rule ≤1.33 for tested config** — Disproportionate PA without QD causes cascade failure. The 1.33 threshold was measured at 8 instances, 2000 req/s, 2x overload; the safe ratio will vary with cluster size, arrival rate, and prefix group cardinality. | Iter 13, 14 | `pa:4,qd:2` (ratio 2.0) → 3570ms cascade; `pa:4,qd:3` (ratio 1.33) → 132ms optimal |
 | RP-11 | **Goodput > P99 as primary optimization metric** — Fair comparison when strategies have different completion rates | Iter 14 | GPT-4o review identified metric fairness issue |
-| RP-12 | **Staleness immunity comes from signal independence** — PA reads synchronous PrefixCacheIndex, QD reads Immediate EffectiveLoad | Iter 16 | `pa:3,qd:2` produced identical 65.45ms across all staleness levels and KV pressures |
+| RP-12 | **Staleness immunity comes from signal independence** — PA reads synchronous PrefixCacheIndex, QD reads QueueDepth (Periodic when interval>0). Quantitative claims measured pre-#955 when QD read EffectiveLoad (included synchronous InFlightRequests); re-verification pending. | Iter 16 | `pa:3,qd:2` produced identical 65.45ms across all staleness levels and KV pressures (pre-#955 EffectiveLoad behavior) |
 | RP-13 | **Bursty arrivals amplify admission control benefit** — Admission shedding during gamma bursts provides outsized relief | Iter 18 | Compound achieves 174ms (+65% vs RR's 496ms) under gamma CV=2.0 |
 | RP-14 | **Compound advantage scales inversely with cluster size** — Smaller clusters see larger relative improvement | Iter 19 | N=4: +83.5%, N=8: +69.6%, N=16: +51.2% |
 

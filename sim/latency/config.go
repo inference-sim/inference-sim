@@ -284,20 +284,30 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 		}
 	}
 
+	// Interleaved MoE architecture (Scout-style): alternate MoE/dense layers
+	// 0 = uniform (all same type), 1 = alternate MoE/dense, 2 = every 3rd is MoE, etc.
+	interleaveMoELayerStep := getInt("interleave_moe_layer_step")
+
+	// Dense layer FFN dimension (for models with different dense vs MoE FFN sizes)
+	// 0 = use IntermediateDim for both MoE and dense layers
+	denseIntermediateDim := getInt("intermediate_size_mlp")
+
 	modelConfig := &sim.ModelConfig{
-		NumLayers:           getInt("num_hidden_layers"),
-		HiddenDim:           getInt("hidden_size"),
-		VocabSize:           getInt("vocab_size"),
-		IntermediateDim:     intermediateDim,
-		NumHeads:            numHeads,
-		NumKVHeads:          numKVHeads,
-		BytesPerParam:       float64(bytesPerParam),
-		NumLocalExperts:     numLocalExperts,
-		NumExpertsPerTok:    numExpertsPerTok,
-		MoEExpertFFNDim:     moeExpertFFNDim,
-		SharedExpertFFNDim:  sharedExpertFFNDim,
-		HiddenAct:           hiddenAct,
-		WeightBytesPerParam: weightBytesPerParam,
+		NumLayers:              getInt("num_hidden_layers"),
+		HiddenDim:              getInt("hidden_size"),
+		VocabSize:              getInt("vocab_size"),
+		IntermediateDim:        intermediateDim,
+		NumHeads:               numHeads,
+		NumKVHeads:             numKVHeads,
+		BytesPerParam:          float64(bytesPerParam),
+		NumLocalExperts:        numLocalExperts,
+		NumExpertsPerTok:       numExpertsPerTok,
+		MoEExpertFFNDim:        moeExpertFFNDim,
+		SharedExpertFFNDim:     sharedExpertFFNDim,
+		InterleaveMoELayerStep: interleaveMoELayerStep,
+		DenseIntermediateDim:   denseIntermediateDim,
+		HiddenAct:              hiddenAct,
+		WeightBytesPerParam:    weightBytesPerParam,
 	}
 	return modelConfig, nil
 }

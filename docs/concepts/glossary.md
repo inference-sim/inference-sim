@@ -78,7 +78,7 @@ GPU memory organized as blocks that store key-value tensors computed during atte
 
 ### Latency Model
 
-The component that predicts GPU execution time for a batch step. Four modes: *Roofline* (default; analytical FLOPs/bandwidth estimation), *Blackbox* (trained regression coefficients), *Cross-Model* (physics-informed, MoE-aware), and *Trained-Roofline* (roofline basis functions × learned corrections from real vLLM traces). See [Core Engine: Latency Models](core-engine.md#latency-models), [Roofline Estimation](roofline.md), and [Latency Models Guide](../guide/latency-models.md).
+The component that predicts GPU execution time for a batch step. Five modes: *Roofline* (default; analytical FLOPs/bandwidth estimation), *Blackbox* (trained regression coefficients), *Cross-Model* (physics-informed, MoE-aware), *Trained-Roofline* (roofline basis functions × learned corrections from real vLLM traces), and *Trained-Physics* (physics-informed basis functions with architecture-aware MoE scaling). See [Core Engine: Latency Models](core-engine.md#latency-models), [Roofline Estimation](roofline.md), and [Latency Models Guide](../guide/latency-models.md).
 
 ### MaxModelLen
 
@@ -134,7 +134,7 @@ A point-in-time view of instance state used for routing decisions. Contains queu
 
 ### Scorer
 
-A component in the weighted scoring pipeline that produces a per-instance score in [0, 1] for a specific signal dimension. Built-in scorers: `prefix-affinity`, `queue-depth`, `kv-utilization`, `load-balance`. Scores are multiplied by weights and summed. See [Cluster Architecture: Scorer Composition](architecture.md#scorer-composition).
+A component in the weighted scoring pipeline that produces a per-instance score in [0, 1] for a specific signal dimension. Built-in scorers: `precise-prefix-cache`, `prefix-affinity`, `no-hit-lru`, `queue-depth`, `kv-utilization`, `load-balance`, `active-requests`, `running-requests`, `load-aware`. Most scorers produce scores in [0, 1]; `load-aware` uses [0, 0.5] per llm-d semantics. Scores are multiplied by weights and summed. See [Cluster Architecture: Scorer Composition](architecture.md#scorer-composition).
 
 ### Seed
 

@@ -13,7 +13,7 @@ flowchart TD
     WG["Workload<br/>Generator"] -->|Requests| Adm{"Admission<br/>Policy"}
     Adm -->|rejected| Rej["Rejected<br/>(counted)"]
     Adm -->|admitted| GQ["Gateway Queue<br/>(opt: --flow-control)"]
-    GQ -->|dispatch| Rtr["Routing Policy<br/>(WeightedScoring)<br/>PA:3 QD:2 KV:2"]
+    GQ -->|dispatch| Rtr["Routing Policy<br/>(WeightedScoring)<br/>PPC:2 QD:1 KV:1"]
 
     style GQ fill:#e7f5ff,stroke:#90caf9
 
@@ -111,7 +111,7 @@ The routing decision follows this pipeline:
 4. **Sum:** Weighted scores are summed across scorers for each instance
 5. **Select:** The instance with the highest total score is chosen (argmax)
 
-Default weights: `prefix-affinity:3, queue-depth:2, kv-utilization:2` (llm-d parity). Note: weights are normalized to sum to 1.0 before scoring, so only weight ratios matter — `prefix-affinity:3,queue-depth:2` is identical to `prefix-affinity:30,queue-depth:20`. To add a new scorer, see [Extension Recipes](../contributing/extension-recipes.md).
+Default weights: `precise-prefix-cache:2, queue-depth:1, kv-utilization:1` (llm-d parity). Note: weights are normalized to sum to 1.0 before scoring, so only weight ratios matter — `precise-prefix-cache:2,queue-depth:1` is identical to `precise-prefix-cache:20,queue-depth:10`. To add a new scorer, see [Extension Recipes](../contributing/extension-recipes.md).
 
 ```mermaid
 flowchart TD
@@ -119,17 +119,15 @@ flowchart TD
     Snap["Routing Snapshots<br/>(per instance)<br/>QD, BS, KVUtil"] --> S2
     Snap --> S3
 
-    S1["prefix-affinity<br/>(prefix overlap proportion)"] --> W1["× weight (3)"]
-    S2["queue-depth<br/>(min-max norm of load)"] --> W2["× weight (2)"]
-    S3["kv-utilization<br/>(1 − KVUtilization)"] --> W3["× weight (2)"]
+    S1["precise-prefix-cache<br/>(KV cache state query, min-max norm)"] --> W1["× weight (2)"]
+    S2["queue-depth<br/>(min-max norm of load)"] --> W2["× weight (1)"]
+    S3["kv-utilization<br/>(1 − KVUtilization)"] --> W3["× weight (1)"]
 
-    W1 --> Sum["Weighted Sum<br/>(per instance)<br/>3×PA + 2×QD + 2×KV"]
+    W1 --> Sum["Weighted Sum<br/>(per instance)<br/>2×PPC + 1×QD + 1×KV"]
     W2 --> Sum
     W3 --> Sum
 
     Sum --> Sel["Argmax<br/>→ Selected Instance"]
-    Sel -->|observer callback| Obs["Update prefix<br/>cache index"]
-    Obs -.->|stateful feedback| S1
 
     style Req fill:#a5d8ff
     style Snap fill:#e7f5ff
@@ -137,7 +135,6 @@ flowchart TD
     style S2 fill:#fff3e0
     style S3 fill:#fff3e0
     style Sel fill:#c8e6c9
-    style Obs fill:#ffecb3
 ```
 
 ## Scorer Composition
@@ -151,9 +148,12 @@ Scorers are the building blocks of the weighted routing policy. Each scorer eval
 | `prefix-affinity` | Prefix cache overlap | Proportion of request's block hashes found in instance's cache index | Stateful: updates cache index after routing via observer |
 | `precise-prefix-cache` | Actual KV cache state | Min-max normalization of cached prefix block count per instance | Stateless: queries instance KV cache directly via `CacheQueryFn` |
 | `no-hit-lru` | Routing history | Cold requests (zero cache hits): LRU positional scoring; warm requests: neutral 0.5 | Stateful: observer tracks LRU order on cold routing only |
-| `queue-depth` | Instance load | Min-max normalization of effective load (lower load = higher score) | Stateless |
+| `queue-depth` | Queue depth | Min-max normalization of QueueDepth (lower depth = higher score) | Stateless |
 | `kv-utilization` | Memory pressure | `1 - KVUtilization` (lower utilization = higher score) | Stateless |
 | `load-balance` | Instance load | `1 / (1 + EffectiveLoad)` (decreasing function of load) | Stateless |
+| `active-requests` | In-flight requests | `(maxCount - count) / maxCount` (zero in-flight = 1.0; all equal non-zero = 0.0) | Stateless |
+| `running-requests` | Batch size | Min-max normalization of BatchSize (lower batch = higher score) | Stateless |
+| `load-aware` | Queue depth | `0.5 * (1 - QueueDepth/128)` clamped at threshold; score range [0, 0.5] | Stateless |
 
 ### Stateful vs. Stateless Scorers
 

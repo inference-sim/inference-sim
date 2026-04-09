@@ -110,25 +110,33 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 		rateFraction := 1.0 / float64(numClientsPerStage)
 		clients = make([]ClientSpec, 0, numClientsPerStage)
 
-		var reasoning *ReasoningSpec
-		if sp.EnableMultiTurnChat {
-			reasoning = computeReasoningSpec(stage.Rate, stage.Duration, numClientsPerStage)
-		}
-
 		// For multi-turn (reasoning) workloads, use Poisson arrival for session start time.
 		// The rounds within each session are spaced by ThinkTimeUs (not sampled IATs).
 		// NormalizedExponentialSampler only applies to non-reasoning (language) workloads
 		// where each request is independent (not part of a multi-round session).
 		if sp.EnableMultiTurnChat {
-			// Multi-turn: use Poisson, rounds controlled by MaxRounds + ThinkTimeUs
+			// Multi-turn: distribute total requests evenly across sessions
+			totalRequests := int(stage.Rate * float64(stage.Duration))
+			if totalRequests < 1 {
+				return nil, fmt.Errorf("inference_perf.stages[0]: rate %.4f × duration %d produces %d requests (< 1); increase rate or duration", stage.Rate, stage.Duration, totalRequests)
+			}
+			perSessionRounds, err := distributeRequestsEvenly(totalRequests, numClientsPerStage)
+			if err != nil {
+				return nil, fmt.Errorf("distributing requests for single-stage multi-turn: %w", err)
+			}
+
+			clientIdx := 0
 			for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
 				prefixGroup := fmt.Sprintf("prompt-%d", p)
 				for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
 					clientID := fmt.Sprintf("prompt-%d-user-%d", p, u)
+					reasoning := computeReasoningSpec(stage.Rate, numClientsPerStage, perSessionRounds[clientIdx])
+					clientIdx++
+
 					clients = append(clients, ClientSpec{
 						ID:           clientID,
 						TenantID:     prefixGroup,
-						SLOClass:     "batch",
+						SLOClass:     "standard",
 						RateFraction: rateFraction,
 						Arrival:      ArrivalSpec{Process: "poisson"},
 						InputDist:    inputDist,
@@ -140,24 +148,18 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 				}
 			}
 		} else {
-			// Single-request (language) workload: use NormalizedExponentialSampler
-			// Each client gets exactly ceil(stageRate * duration / numClients) requests
-			// over the stage duration, using normalized exponential distribution.
-			// NOTE: math.Ceil means total requests may exceed stage.Rate * stage.Duration
-			// by up to numClients-1. This matches inference-perf behavior.
-			requestsPerClient := int64(math.Ceil(stage.Rate * float64(stage.Duration) / float64(numClientsPerStage)))
+			// Single-request (language) workload: use NormalizedExponentialSampler.
+			// Distribute total requests evenly across clients using fair allocation
+			// (floor-with-remainder) to match real inference-perf exact counts.
+			totalRequests := int(stage.Rate * float64(stage.Duration))
+			if totalRequests < 1 {
+				return nil, fmt.Errorf("inference_perf.stages[0]: rate %.4f × duration %d produces %d requests (< 1); increase rate or duration", stage.Rate, stage.Duration, totalRequests)
+			}
+			perClientDist, err := distributeRequestsEvenly(totalRequests, numClientsPerStage)
+			if err != nil {
+				return nil, fmt.Errorf("distributing requests for single-stage non-multi-turn: %w", err)
+			}
 			durationUs := stage.Duration * 1_000_000 // seconds to microseconds
-
-			// Validate sampler parameters before construction (prevent panic on user input)
-			if requestsPerClient <= 0 {
-				return nil, fmt.Errorf("inference_perf: requestsPerClient must be positive, got %d", requestsPerClient)
-			}
-			if requestsPerClient > 10_000_000 {
-				return nil, fmt.Errorf("inference_perf: requestsPerClient %d exceeds safety limit (10M); reduce rate, duration, or increase clients", requestsPerClient)
-			}
-			if durationUs < requestsPerClient {
-				return nil, fmt.Errorf("inference_perf: durationUs (%d) < requestsPerClient (%d) produces degenerate distribution", durationUs, requestsPerClient)
-			}
 
 			// Defensive: prevent integer overflow in seed calculation (cast before multiply)
 			totalClients := int64(sp.NumUniqueSystemPrompts) * int64(sp.NumUsersPerSystemPrompt)
@@ -165,22 +167,36 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 				return nil, fmt.Errorf("total client count %d exceeds safety limit (1M)", totalClients)
 			}
 
-			// Create factory closure that captures requestsPerClient and durationUs.
-			// Each GenerateRequests call will invoke this factory with a sub-RNG,
-			// producing a fresh sampler instance (workload reusability).
-			factory := func(rng *rand.Rand) ArrivalSampler {
-				return NewNormalizedExponentialSampler(rng, requestsPerClient, durationUs)
-			}
-
+			clientIdx := 0
 			for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
 				prefixGroup := fmt.Sprintf("prompt-%d", p)
 				for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
 					clientID := fmt.Sprintf("prompt-%d-user-%d", p, u)
+					requestsPerClient := int64(perClientDist[clientIdx])
+					clientIdx++
+
+					// Validate sampler parameters before construction (prevent panic on user input)
+					if requestsPerClient <= 0 {
+						return nil, fmt.Errorf("inference_perf: client %s got 0 requests (totalRequests=%d < numClients=%d); increase rate or duration", clientID, totalRequests, numClientsPerStage)
+					}
+					if requestsPerClient > 10_000_000 {
+						return nil, fmt.Errorf("inference_perf: requestsPerClient %d exceeds safety limit (10M); reduce rate, duration, or increase clients", requestsPerClient)
+					}
+					if durationUs < requestsPerClient {
+						return nil, fmt.Errorf("inference_perf: durationUs (%d) < requestsPerClient (%d) produces degenerate distribution", durationUs, requestsPerClient)
+					}
+
+					// Create factory closure that captures requestsPerClient and durationUs.
+					// Each GenerateRequests call will invoke this factory with a sub-RNG,
+					// producing a fresh sampler instance (workload reusability).
+					factory := func(rng *rand.Rand) ArrivalSampler {
+						return NewNormalizedExponentialSampler(rng, requestsPerClient, durationUs)
+					}
 
 					clients = append(clients, ClientSpec{
 						ID:                   clientID,
 						TenantID:             prefixGroup,
-						SLOClass:             "batch",
+						SLOClass:             "standard",
 						RateFraction:         rateFraction,
 						Arrival:              ArrivalSpec{Process: "poisson"}, // Fallback for diagnostics/serialization
 						CustomSamplerFactory: factory,
@@ -188,7 +204,6 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 						OutputDist:           outputDist,
 						PrefixGroup:          prefixGroup,
 						PrefixLength:         sp.SystemPromptLen,
-						Reasoning:            reasoning,
 					})
 				}
 			}
@@ -222,28 +237,59 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 				Windows: []ActiveWindow{windows[s]},
 			}
 
-			var reasoning *ReasoningSpec
 			if sp.EnableMultiTurnChat {
-				reasoning = computeReasoningSpec(stage.Rate, stage.Duration, numClientsPerStage)
-			}
+				// Multi-turn: distribute total requests evenly across sessions for this stage
+				totalRequests := int(stage.Rate * float64(stage.Duration))
+				if totalRequests < 1 {
+					return nil, fmt.Errorf("inference_perf.stages[%d]: rate %.4f × duration %d produces %d requests (< 1); increase rate or duration", s, stage.Rate, stage.Duration, totalRequests)
+				}
+				perSessionRounds, err := distributeRequestsEvenly(totalRequests, numClientsPerStage)
+				if err != nil {
+					return nil, fmt.Errorf("distributing requests for stage %d multi-turn: %w", s, err)
+				}
 
-			for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
-				prefixGroup := fmt.Sprintf("prompt-%d", p)
-				for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
-					clientID := fmt.Sprintf("stage-%d-prompt-%d-user-%d", s, p, u)
-					clients = append(clients, ClientSpec{
-						ID:           clientID,
-						TenantID:     prefixGroup,
-						SLOClass:     "batch",
-						RateFraction: rateFraction,
-						Arrival:      ArrivalSpec{Process: "poisson"},
-						InputDist:    inputDist,
-						OutputDist:   outputDist,
-						PrefixGroup:  prefixGroup,
-						PrefixLength: sp.SystemPromptLen,
-						Reasoning:    reasoning,
-						Lifecycle:    stageLifecycle,
-					})
+				clientIdx := 0
+				for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
+					prefixGroup := fmt.Sprintf("prompt-%d", p)
+					for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
+						clientID := fmt.Sprintf("stage-%d-prompt-%d-user-%d", s, p, u)
+						reasoning := computeReasoningSpec(stage.Rate, numClientsPerStage, perSessionRounds[clientIdx])
+						clientIdx++
+
+						clients = append(clients, ClientSpec{
+							ID:           clientID,
+							TenantID:     prefixGroup,
+							SLOClass:     "standard",
+							RateFraction: rateFraction,
+							Arrival:      ArrivalSpec{Process: "poisson"},
+							InputDist:    inputDist,
+							OutputDist:   outputDist,
+							PrefixGroup:  prefixGroup,
+							PrefixLength: sp.SystemPromptLen,
+							Reasoning:    reasoning,
+							Lifecycle:    stageLifecycle,
+						})
+					}
+				}
+			} else {
+				// Non-multi-turn multi-stage: use Poisson
+				for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
+					prefixGroup := fmt.Sprintf("prompt-%d", p)
+					for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
+						clientID := fmt.Sprintf("stage-%d-prompt-%d-user-%d", s, p, u)
+						clients = append(clients, ClientSpec{
+							ID:           clientID,
+							TenantID:     prefixGroup,
+							SLOClass:     "standard",
+							RateFraction: rateFraction,
+							Arrival:      ArrivalSpec{Process: "poisson"},
+							InputDist:    inputDist,
+							OutputDist:   outputDist,
+							PrefixGroup:  prefixGroup,
+							PrefixLength: sp.SystemPromptLen,
+							Lifecycle:    stageLifecycle,
+						})
+					}
 				}
 			}
 		}
@@ -281,7 +327,8 @@ func stagesToWindows(stages []StageSpec) []ActiveWindow {
 // computeReasoningSpec builds a ReasoningSpec for inference-perf multi-turn mode.
 // It derives MaxRounds and ThinkTimeUs from stage parameters to match inference-perf's
 // round-robin cycling behavior: N sessions cycle at rate R over duration D seconds.
-// MaxRounds = ceil(R * D / N): total requests per session
+//
+// MaxRounds = roundsForThisSession (from fair distribution of total requests)
 // ThinkTimeUs = floor((N / R) * 1e6): inter-round delay in microseconds
 //
 // ContextGrowth is intentionally empty (fixed-length inputs per round) because
@@ -291,8 +338,7 @@ func stagesToWindows(stages []StageSpec) []ActiveWindow {
 // Note: ThinkTimeUs does not account for the 1µs/token output completion heuristic
 // in GenerateReasoningRequests. This is negligible for typical parameterizations
 // (e.g., OutputLen=248 adds 248µs to a ThinkTimeUs of 600,000µs = 0.04% error).
-func computeReasoningSpec(stageRate float64, stageDurationSec int64, numSessions int) *ReasoningSpec {
-	maxRounds := int(math.Ceil(stageRate * float64(stageDurationSec) / float64(numSessions)))
+func computeReasoningSpec(stageRate float64, numSessions int, roundsForThisSession int) *ReasoningSpec {
 	thinkTimeUs := int64(float64(numSessions) / stageRate * 1e6)
 	return &ReasoningSpec{
 		ReasonRatioDist: DistSpec{
@@ -300,7 +346,7 @@ func computeReasoningSpec(stageRate float64, stageDurationSec int64, numSessions
 			Params: map[string]float64{"value": 0},
 		},
 		MultiTurn: &MultiTurnSpec{
-			MaxRounds:     maxRounds,
+			MaxRounds:     roundsForThisSession,
 			ThinkTimeUs:   thinkTimeUs,
 			ContextGrowth: "", // fixed-length: matches real inference-perf behavior
 			SingleSession: true,
@@ -314,4 +360,33 @@ func constantDist(value float64) DistSpec {
 		Type:   "constant",
 		Params: map[string]float64{"value": value},
 	}
+}
+
+// distributeRequestsEvenly distributes totalRequests across n clients,
+// ensuring the sum equals exactly totalRequests (no ceiling inflation).
+// Returns per-client counts where max difference is 1.
+//
+// Algorithm: base = total/n (floor), remainder = total%n.
+// First 'remainder' clients get base+1, others get base.
+//
+// Example: distributeRequestsEvenly(10, 3) -> [4, 3, 3] (sum=10)
+//
+// Returns error if preconditions are violated (n <= 0 or totalRequests < 0).
+func distributeRequestsEvenly(totalRequests, n int) ([]int, error) {
+	if n <= 0 {
+		return nil, fmt.Errorf("distributeRequestsEvenly: n must be positive, got %d", n)
+	}
+	if totalRequests < 0 {
+		return nil, fmt.Errorf("distributeRequestsEvenly: totalRequests must be non-negative, got %d", totalRequests)
+	}
+	base := totalRequests / n
+	remainder := totalRequests % n
+	dist := make([]int, n)
+	for i := 0; i < n; i++ {
+		dist[i] = base
+		if i < remainder {
+			dist[i]++
+		}
+	}
+	return dist, nil
 }

@@ -51,17 +51,17 @@ clients:
         mean: 128
 ```
 
-Pair with prefix-affinity routing for cache reuse:
+Pair with weighted routing for cache-aware request distribution (the default profile uses `precise-prefix-cache`):
 
 ```bash
 ./blis run --model qwen/qwen3-14b \
   --num-instances 4 --workload-spec chat.yaml \
-  --routing-policy weighted --routing-scorers "prefix-affinity:3,queue-depth:2"
+  --routing-policy weighted
 ```
 
 ### RAG with Shared Prefixes
 
-Retrieval-augmented generation workloads share a common document context across requests. The `prefix_group` and `prefix_length` fields model this shared context, and prefix-affinity routing ensures requests with the same prefix hit cached KV blocks on the same instance.
+Retrieval-augmented generation workloads share a common document context across requests. The `prefix_group` and `prefix_length` fields model this shared context, and prefix-aware routing (the default `precise-prefix-cache` scorer) ensures requests with the same prefix hit cached KV blocks on the same instance.
 
 ```yaml
 clients:
@@ -85,12 +85,12 @@ clients:
         mean: 64
 ```
 
-Run with aggressive prefix-affinity to maximize cache reuse:
+Run with weighted routing to maximize cache reuse (the default `precise-prefix-cache` scorer queries actual KV cache state):
 
 ```bash
 ./blis run --model qwen/qwen3-14b \
   --num-instances 4 --workload-spec rag.yaml \
-  --routing-policy weighted --routing-scorers "prefix-affinity:3,queue-depth:1"
+  --routing-policy weighted
 ```
 
 ### Batch / Offline Processing
@@ -465,7 +465,7 @@ The `reasoning` field generates multi-turn conversation sessions where each roun
 - `multi_turn.max_rounds`: number of conversation rounds per session
 - `multi_turn.think_time_us`: inter-round delay (user think time, in microseconds)
 - `multi_turn.context_growth`: controls how each round's input is constructed.
-    - `"accumulate"`: round N's input = all prior rounds' inputs + all prior rounds' outputs + freshly sampled new user turn. Input length grows linearly with round index, creating expanding KV cache pressure and enabling prefix-affinity routing reuse across rounds — use this for realistic chat or reasoning sessions.
+    - `"accumulate"`: round N's input = all prior rounds' inputs + all prior rounds' outputs + freshly sampled new user turn. Input length grows linearly with round index, creating expanding KV cache pressure and enabling prefix-aware routing reuse across rounds — use this for realistic chat or reasoning sessions.
     - `""` (omit): each round uses only freshly sampled tokens. Input length is stationary across rounds; no cross-round prefix sharing. Use this for agent workloads that do not maintain conversation history.
 - `multi_turn.single_session`: if `true`, each client creates exactly one session (useful for modeling persistent chat sessions like inference-perf's `enable_multi_turn_chat`). Default: `false` (multiple independent sessions per client)
 - `closed_loop`: controls whether round scheduling adapts to actual server latency. `null` (omit): closed-loop by default for multi-turn clients — each subsequent round is generated after the prior round completes, scheduling its arrival at `completion_time + think_time_us`. `false`: open-loop — all round arrival times are pre-stamped before simulation using a `1 µs/output-token` heuristic; inter-round spacing does not adapt to server latency. Use `false` to reproduce inference-perf-style pre-generated workloads.
@@ -532,7 +532,7 @@ BLIS ships with example workload specs in `examples/`:
 
 | File | Description |
 |------|-------------|
-| `multiturn-chat-demo.yaml` | Multi-turn chat with prefix-affinity routing |
+| `multiturn-chat-demo.yaml` | Multi-turn chat with prefix-aware weighted routing |
 | `prefix-affinity-demo.yaml` | Shared-prefix workload for cache testing |
 | `servegen-language.yaml` | ServeGen-derived language workload |
 | `inference-perf-shared-prefix.yaml` | inference-perf format compatibility |

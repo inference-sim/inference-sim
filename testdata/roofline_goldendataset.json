@@ -1,0 +1,702 @@
+{
+  "description": "Roofline latency model golden values. Generated from iter29 training experiments for regression testing.",
+  "backend": "roofline",
+  "experiments": [
+    {
+      "id": "17",
+      "model": "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
+      "model_config_dir": "model_configs/llama-4-scout-17b-16e-instruct-fp8-dynamic",
+      "hardware": "H100",
+      "tp": 2,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 8253,
+      "cpu_kv_blocks": 0,
+      "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 5100,
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 9,
+            "num_users_per_system_prompt": 5,
+            "output_len": 248,
+            "question_len": 447,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 600,
+              "rate": 2.5
+            },
+            {
+              "duration": 600,
+              "rate": 6
+            }
+          ]
+        }
+      },
+      "expected": {
+        "completed_requests": 5100,
+        "total_input_tokens": 2789700,
+        "total_output_tokens": 1259700,
+        "ttft_mean_ms": 28.036537843137257,
+        "ttft_p90_ms": 75.521,
+        "ttft_p99_ms": 158.903,
+        "e2e_mean_ms": 944.6026382352942,
+        "e2e_p90_ms": 1749.715,
+        "e2e_p99_ms": 1749.715,
+        "itl_mean_ms": 3.7107939287131857
+      }
+    },
+    {
+      "id": "20",
+      "model": "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
+      "model_config_dir": "model_configs/llama-4-scout-17b-16e-instruct-fp8-dynamic",
+      "hardware": "H100",
+      "tp": 2,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 8253,
+      "cpu_kv_blocks": 0,
+      "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 9000,
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 11,
+            "num_users_per_system_prompt": 4,
+            "output_len": 247,
+            "question_len": 466,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 600,
+              "rate": 5
+            },
+            {
+              "duration": 600,
+              "rate": 10
+            }
+          ]
+        }
+      },
+      "expected": {
+        "completed_requests": 9000,
+        "total_input_tokens": 5094000,
+        "total_output_tokens": 2214000,
+        "ttft_mean_ms": 62.534974000000005,
+        "ttft_p90_ms": 146.534,
+        "ttft_p99_ms": 166.775,
+        "e2e_mean_ms": 1445.7567813333333,
+        "e2e_p90_ms": 1743.657,
+        "e2e_p99_ms": 1825.876,
+        "itl_mean_ms": 5.622852875338753
+      }
+    },
+    {
+      "id": "20260217-155451",
+      "model": "meta-llama/Llama-2-7b-hf",
+      "model_config_dir": "model_configs/llama-2-7b-hf",
+      "hardware": "H100",
+      "tp": 1,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 7463,
+      "cpu_kv_blocks": 1023,
+      "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 9000,
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 11,
+            "num_users_per_system_prompt": 4,
+            "output_len": 247,
+            "question_len": 466,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 600,
+              "rate": 5
+            },
+            {
+              "duration": 600,
+              "rate": 10
+            }
+          ]
+        }
+      },
+      "expected": {
+        "completed_requests": 9000,
+        "total_input_tokens": 5094000,
+        "total_output_tokens": 2214000,
+        "ttft_mean_ms": 190.19576333333333,
+        "ttft_p90_ms": 410.024,
+        "ttft_p99_ms": 424.898,
+        "e2e_mean_ms": 2104.335259777778,
+        "e2e_p90_ms": 2312.299,
+        "e2e_p99_ms": 3661.8837499999995,
+        "itl_mean_ms": 7.781054863595303
+      }
+    },
+    {
+      "id": "20260217-162547",
+      "model": "meta-llama/Llama-2-7b-hf",
+      "model_config_dir": "model_configs/llama-2-7b-hf",
+      "hardware": "H100",
+      "tp": 1,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 7463,
+      "cpu_kv_blocks": 1023,
+      "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 7200,
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 10,
+            "num_users_per_system_prompt": 5,
+            "output_len": 251,
+            "question_len": 600,
+            "system_prompt_len": 150
+          },
+          "stages": [
+            {
+              "duration": 1200,
+              "rate": 6
+            }
+          ]
+        }
+      },
+      "expected": {
+        "completed_requests": 7200,
+        "total_input_tokens": 5400000,
+        "total_output_tokens": 1800000,
+        "ttft_mean_ms": 272.24331805555556,
+        "ttft_p90_ms": 563.056,
+        "ttft_p99_ms": 612.886,
+        "e2e_mean_ms": 2707.444317361111,
+        "e2e_p90_ms": 3031.549,
+        "e2e_p99_ms": 3031.549,
+        "itl_mean_ms": 9.740803997222221
+      }
+    },
+    {
+      "id": "20260217-231439",
+      "model": "meta-llama/Llama-2-7b-hf",
+      "model_config_dir": "model_configs/llama-2-7b-hf",
+      "hardware": "H100",
+      "tp": 1,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 7463,
+      "cpu_kv_blocks": 1023,
+      "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 16800,
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 9,
+            "num_users_per_system_prompt": 5,
+            "output_len": 248,
+            "question_len": 447,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 600,
+              "rate": 8
+            },
+            {
+              "duration": 600,
+              "rate": 20
+            }
+          ]
+        }
+      },
+      "expected": {
+        "completed_requests": 16800,
+        "total_input_tokens": 9189600,
+        "total_output_tokens": 4149600,
+        "ttft_mean_ms": 217.3450801190476,
+        "ttft_p90_ms": 411.249,
+        "ttft_p99_ms": 493.587,
+        "e2e_mean_ms": 2346.472362857143,
+        "e2e_p90_ms": 2800.18,
+        "e2e_p99_ms": 3807.441,
+        "itl_mean_ms": 8.619948513109698
+      }
+    },
+    {
+      "id": "21",
+      "model": "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
+      "model_config_dir": "model_configs/llama-4-scout-17b-16e-instruct-fp8-dynamic",
+      "hardware": "H100",
+      "tp": 2,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 8253,
+      "cpu_kv_blocks": 0,
+      "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 7200,
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 10,
+            "num_users_per_system_prompt": 5,
+            "output_len": 251,
+            "question_len": 600,
+            "system_prompt_len": 150
+          },
+          "stages": [
+            {
+              "duration": 1200,
+              "rate": 6
+            }
+          ]
+        }
+      },
+      "expected": {
+        "completed_requests": 7200,
+        "total_input_tokens": 5400000,
+        "total_output_tokens": 1800000,
+        "ttft_mean_ms": 89.02130513888889,
+        "ttft_p90_ms": 213.569,
+        "ttft_p99_ms": 241.628,
+        "e2e_mean_ms": 1603.24187625,
+        "e2e_p90_ms": 1954.341,
+        "e2e_p99_ms": 1954.341,
+        "itl_mean_ms": 6.056882284444445
+      }
+    },
+    {
+      "id": "48",
+      "model": "RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic",
+      "model_config_dir": "model_configs/llama-4-scout-17b-16e-instruct-fp8-dynamic",
+      "hardware": "H100",
+      "tp": 2,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 8253,
+      "cpu_kv_blocks": 0,
+      "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 1200,
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 23,
+            "num_users_per_system_prompt": 1,
+            "output_len": 1448,
+            "question_len": 934,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 1200,
+              "rate": 1
+            }
+          ]
+        }
+      },
+      "expected": {
+        "completed_requests": 1200,
+        "total_input_tokens": 1240800,
+        "total_output_tokens": 1736400,
+        "ttft_mean_ms": 12.1684725,
+        "ttft_p90_ms": 18.4942,
+        "ttft_p99_ms": 21.28,
+        "e2e_mean_ms": 2959.1177025,
+        "e2e_p90_ms": 3527.8312,
+        "e2e_p99_ms": 3712.99284,
+        "itl_mean_ms": 2.036592418797512
+      }
+    },
+    {
+      "id": "60",
+      "model": "meta-llama/Llama-3.1-70B-Instruct",
+      "model_config_dir": "model_configs/llama-3.1-70b-instruct",
+      "hardware": "H100",
+      "tp": 4,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 8192,
+      "total_kv_blocks": 30425,
+      "cpu_kv_blocks": 6553,
+      "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 5100,
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 9,
+            "num_users_per_system_prompt": 5,
+            "output_len": 248,
+            "question_len": 447,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 600,
+              "rate": 2.5
+            },
+            {
+              "duration": 600,
+              "rate": 6
+            }
+          ]
+        }
+      },
+      "expected": {
+        "completed_requests": 5100,
+        "total_input_tokens": 2789700,
+        "total_output_tokens": 1259700,
+        "ttft_mean_ms": 562.622844117647,
+        "ttft_p90_ms": 1106.794,
+        "ttft_p99_ms": 1177.023,
+        "e2e_mean_ms": 2850.3926449019605,
+        "e2e_p90_ms": 3141.027,
+        "e2e_p99_ms": 4057.2552699999997,
+        "itl_mean_ms": 9.262225914106534
+      }
+    },
+    {
+      "id": "61",
+      "model": "meta-llama/Llama-3.1-70B-Instruct",
+      "model_config_dir": "model_configs/llama-3.1-70b-instruct",
+      "hardware": "H100",
+      "tp": 4,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 30425,
+      "cpu_kv_blocks": 6553,
+      "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 9000,
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 11,
+            "num_users_per_system_prompt": 4,
+            "output_len": 247,
+            "question_len": 466,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 600,
+              "rate": 5
+            },
+            {
+              "duration": 600,
+              "rate": 10
+            }
+          ]
+        }
+      },
+      "expected": {
+        "completed_requests": 9000,
+        "total_input_tokens": 5094000,
+        "total_output_tokens": 2214000,
+        "ttft_mean_ms": 548.3526712222223,
+        "ttft_p90_ms": 1074.595,
+        "ttft_p99_ms": 1172.455509999999,
+        "e2e_mean_ms": 3069.011061222222,
+        "e2e_p90_ms": 3223.6956,
+        "e2e_p99_ms": 4412.60767,
+        "itl_mean_ms": 10.246578821138211
+      }
+    },
+    {
+      "id": "62",
+      "model": "mistralai/Mistral-Nemo-Instruct-2407",
+      "model_config_dir": "model_configs/mistral-nemo-instruct-2407",
+      "hardware": "H100",
+      "tp": 2,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 1024,
+      "total_kv_blocks": 48009,
+      "cpu_kv_blocks": 6553,
+      "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 5100,
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 9,
+            "num_users_per_system_prompt": 5,
+            "output_len": 248,
+            "question_len": 447,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 600,
+              "rate": 2.5
+            },
+            {
+              "duration": 600,
+              "rate": 6
+            }
+          ]
+        }
+      },
+      "expected": {
+        "completed_requests": 5100,
+        "total_input_tokens": 2789700,
+        "total_output_tokens": 1259700,
+        "ttft_mean_ms": 63.90182843137255,
+        "ttft_p90_ms": 195.2814,
+        "ttft_p99_ms": 328.936,
+        "e2e_mean_ms": 836.13399,
+        "e2e_p90_ms": 1190.078,
+        "e2e_p99_ms": 1190.078,
+        "itl_mean_ms": 3.126445998253552
+      }
+    },
+    {
+      "id": "63",
+      "model": "mistralai/Mistral-Nemo-Instruct-2407",
+      "model_config_dir": "model_configs/mistral-nemo-instruct-2407",
+      "hardware": "H100",
+      "tp": 1,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 19251,
+      "cpu_kv_blocks": 3276,
+      "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 9000,
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 11,
+            "num_users_per_system_prompt": 4,
+            "output_len": 247,
+            "question_len": 466,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 600,
+              "rate": 5
+            },
+            {
+              "duration": 600,
+              "rate": 10
+            }
+          ]
+        }
+      },
+      "expected": {
+        "completed_requests": 9000,
+        "total_input_tokens": 5094000,
+        "total_output_tokens": 2214000,
+        "ttft_mean_ms": 358.501275,
+        "ttft_p90_ms": 675.613,
+        "ttft_p99_ms": 747.436,
+        "e2e_mean_ms": 2356.4846262222222,
+        "e2e_p90_ms": 2455.58,
+        "e2e_p99_ms": 3357.48438,
+        "itl_mean_ms": 8.121883541553748
+      }
+    },
+    {
+      "id": "64",
+      "model": "Qwen/Qwen2.5-7B-Instruct",
+      "model_config_dir": "model_configs/qwen2.5-7b-instruct",
+      "hardware": "H100",
+      "tp": 1,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 65368,
+      "cpu_kv_blocks": 9361,
+      "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 7200,
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 10,
+            "num_users_per_system_prompt": 5,
+            "output_len": 251,
+            "question_len": 600,
+            "system_prompt_len": 150
+          },
+          "stages": [
+            {
+              "duration": 1200,
+              "rate": 6
+            }
+          ]
+        }
+      },
+      "expected": {
+        "completed_requests": 7200,
+        "total_input_tokens": 5400000,
+        "total_output_tokens": 1800000,
+        "ttft_mean_ms": 204.30150041666667,
+        "ttft_p90_ms": 452.885,
+        "ttft_p99_ms": 601.738,
+        "e2e_mean_ms": 1181.3630855555555,
+        "e2e_p90_ms": 1475.199,
+        "e2e_p99_ms": 1475.199,
+        "itl_mean_ms": 3.9082463405555554
+      }
+    },
+    {
+      "id": "65",
+      "model": "01-ai/Yi-34B",
+      "model_config_dir": "model_configs/yi-34b",
+      "hardware": "H100",
+      "tp": 2,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 20793,
+      "cpu_kv_blocks": 4369,
+      "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 5100,
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 9,
+            "num_users_per_system_prompt": 5,
+            "output_len": 248,
+            "question_len": 447,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 600,
+              "rate": 2.5
+            },
+            {
+              "duration": 600,
+              "rate": 6
+            }
+          ]
+        }
+      },
+      "expected": {
+        "completed_requests": 5100,
+        "total_input_tokens": 2789700,
+        "total_output_tokens": 1259700,
+        "ttft_mean_ms": 443.61430647058825,
+        "ttft_p90_ms": 986.332,
+        "ttft_p99_ms": 1180.0557499999986,
+        "e2e_mean_ms": 2881.71704,
+        "e2e_p90_ms": 3159.683,
+        "e2e_p99_ms": 4387.571,
+        "itl_mean_ms": 9.870861269349845
+      }
+    },
+    {
+      "id": "66",
+      "model": "Qwen/Qwen2.5-7B-Instruct",
+      "model_config_dir": "model_configs/qwen2.5-7b-instruct",
+      "hardware": "H100",
+      "tp": 1,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 1024,
+      "total_kv_blocks": 65368,
+      "cpu_kv_blocks": 9361,
+      "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 1200,
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 23,
+            "num_users_per_system_prompt": 1,
+            "output_len": 1448,
+            "question_len": 934,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 1200,
+              "rate": 1
+            }
+          ]
+        }
+      },
+      "expected": {
+        "completed_requests": 1200,
+        "total_input_tokens": 1240800,
+        "total_output_tokens": 1736400,
+        "ttft_mean_ms": 26.14547166666667,
+        "ttft_p90_ms": 39.425,
+        "ttft_p99_ms": 56.1412,
+        "e2e_mean_ms": 4268.168456666667,
+        "e2e_p90_ms": 4346.5904,
+        "e2e_p99_ms": 4398.26002,
+        "itl_mean_ms": 2.931598469246717
+      }
+    },
+    {
+      "id": "67",
+      "model": "meta-llama/Llama-2-7b-hf",
+      "model_config_dir": "model_configs/llama-2-7b-hf",
+      "hardware": "H100",
+      "tp": 1,
+      "max_num_seqs": 128,
+      "max_num_batched_tokens": 2048,
+      "total_kv_blocks": 7463,
+      "cpu_kv_blocks": 1023,
+      "workload": {
+        "version": "2",
+        "seed": 42,
+        "num_requests": 1200,
+        "inference_perf": {
+          "shared_prefix": {
+            "enable_multi_turn_chat": true,
+            "num_unique_system_prompts": 23,
+            "num_users_per_system_prompt": 1,
+            "output_len": 1448,
+            "question_len": 934,
+            "system_prompt_len": 100
+          },
+          "stages": [
+            {
+              "duration": 1200,
+              "rate": 1
+            }
+          ]
+        }
+      },
+      "expected": {
+        "completed_requests": 1200,
+        "total_input_tokens": 1240800,
+        "total_output_tokens": 1736400,
+        "ttft_mean_ms": 25.939975833333335,
+        "ttft_p90_ms": 26.929000000000002,
+        "ttft_p99_ms": 62.339,
+        "e2e_mean_ms": 6547.379883333334,
+        "e2e_p90_ms": 7035.1229,
+        "e2e_p99_ms": 7532.97888,
+        "itl_mean_ms": 4.506869321008984
+      }
+    }
+  ]
+}

@@ -240,7 +240,7 @@ When `--kv-cpu-blocks` is set to a positive value, BLIS enables a two-tier cache
 
 ## Latency Models
 
-BLIS predicts GPU step time through one of four latency model backends. The choice is made via the `--latency-model` flag or automatically based on available configuration.
+BLIS predicts GPU step time through one of five latency model backends. The choice is made via the `--latency-model` flag or automatically based on available configuration.
 
 ### Blackbox Model
 
@@ -274,6 +274,51 @@ Step Time  = Prefill Phase Time + Decode Phase Time
 - No training data needed — works for any supported model immediately
 
 See [Roofline Estimation](roofline.md) for implementation details.
+
+### Cross-Model Mode
+
+Uses globally-fitted coefficients with architecture features:
+
+```
+stepTime = β₀ × numLayers + β₁ × dc × kvDimScaled + β₂ × (pf+dc) × isMoE + β₃ × isTP
+```
+
+- **7 global coefficients** (4 beta for step time + 3 alpha for CPU overhead)
+- **Architecture-aware scaling** from `config.json` features (layers, KV heads, MoE indicators)
+- No per-model training needed — coefficients work across model families
+
+See [Latency Models Guide](../guide/latency-models.md#cross-model-mode-physics-informed) for details.
+
+### Trained-Roofline Mode
+
+Applies learned correction factors to analytical roofline basis functions:
+
+```
+StepTime = β₁ × max(T_pf_compute, T_pf_kv) + β₂ × max(T_dc_compute, T_dc_kv)
+         + β₃ × T_weight + β₄ × T_tp + β₅ × L + β₆ × batch_size + β₇
+```
+
+- **10 global coefficients** (7 beta for roofline corrections + 3 alpha for CPU overhead)
+- **7% MAPE** on GPU combined step time (fitted from 137K real vLLM requests)
+- Each basis function is a full analytical roofline calculation
+- MoE-aware (per-expert FLOPs + effective expert count)
+
+See [Latency Models Guide](../guide/latency-models.md#trained-roofline-mode) for details.
+
+### Trained-Physics Mode (Recommended)
+
+Applies learned correction factors to roofline basis functions with additional architecture-aware terms:
+
+```
+StepTime = β₁ × max(T_pf_compute, T_pf_kv) + β₂ × max(T_dc_compute, T_dc_kv)
+         + β₃ × T_weight + β₄ × T_tp + β₅ × L + β₆ × B + β₇ + β₈ × nMoE
+```
+
+- **13 global coefficients** (8-10 beta for roofline corrections + 3 alpha for CPU overhead)
+- **Generalizes across architectures, workloads, and TP configurations**
+- No per-model calibration needed
+
+See [Latency Models Guide](../guide/latency-models.md#trained-physics-mode) for details.
 
 ### Alpha Overhead
 
