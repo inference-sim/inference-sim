@@ -56,9 +56,12 @@ allreduce:
 func testKernelLookupModel(t *testing.T) (*KernelLookupModel, error) {
 	t.Helper()
 	profilePath := writeKernelProfile(t)
-	// Warm-start gammas: γ₁=1(gemm), γ₂=1(pf_attn), γ₃=1(dc_attn), γ₄=0(unused),
-	// γ₅=1(allreduce), γ₆=0(moe), γ₇=40(layer), γ₈=3(req), γ₉=100(step), γ₁₀=0
-	gamma := []float64{1, 1, 1, 0, 1, 0, 40, 3, 100, 0}
+	// iter35 coefficients:
+	// gamma[0]=γ₁=1(gemm), [1]=γ₂=1(pf_attn), [2]=γ₃=1(dc_attn),
+	// [3]=reserved=0, [4]=γ₅=1(allreduce), [5]=γ₆=0(moe),
+	// [6]=γ₇_pf=40(per-layer-per-seq), [7]=γ₈=3(per-req),
+	// [8]=γ₉=100(per-step), [9]=γ₇_dc=10(per-layer-constant)
+	gamma := []float64{1, 1, 1, 0, 1, 0, 40, 3, 100, 10}
 	alpha := []float64{500, 0, 0}
 	hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "h100", 1, "kernel-lookup", 0).
 		WithKernelProfilePath(profilePath)
@@ -93,57 +96,73 @@ func TestKernelLookupModel_SinglePrefillRequest(t *testing.T) {
 		NumNewTokens:  128,
 	}
 	stepTime := model.StepTime([]*sim.Request{req})
-	// γ₇_pf·L·1 + γ₈·batchSize + γ₉ = 40*32*1 + 3*1 + 100 = 1383 at minimum
+	// γ₇_pf·L·1 + γ₈·batchSize + γ₉ = 40·32·1 + 3·1 + 100 = 1383 at minimum
 	assert.Greater(t, stepTime, int64(1000))
 }
 
-// TestKernelLookupModel_PrefixCacheHit_EqualToChunkedSecondStep verifies that
-// the FlashAttention basis function is physically consistent for prefix caching.
+// TestKernelLookupModel_Gamma9_ConstantDecodeOverhead verifies that γ₇_dc (gamma[9])
+// contributes a CONSTANT per-step overhead (γ₇_dc × L) when decode requests are present,
+// regardless of how many decode requests are in the batch.
 //
-// Invariant: a first-step request with a KV cache prefix hit and a second-step
-// chunked-prefill request must produce the SAME step time whenever they have
-// identical (full_s, prefix, NumNewTokens). Both represent Q tokens attending
-// to the same KV context with the same causal mask.
-//
-//   Cache-hit  (ProgressIndex=0, ISL=512, NumNewTokens=256, 256 cached):
-//     full_s = len(InputTokens) = 512, prefix = 512 - 256 = 256
-//
-//   Chunked-2  (ProgressIndex=256, ISL=512, NumNewTokens=256, no cache):
-//     full_s = ProgressIndex + NumNewTokens = 512, prefix = 256
-//
-// Without the fix, cache-hit would use full_s=256, prefix=0 — different from
-// chunked-2 — and the two physically identical computations would give
-// different step times.
+// This is the iter35 fix: γ₇_dc × L (constant) instead of the iter33 form
+// γ₇_dc × L / √batch (unphysical — overhead decreased with more work).
+func TestKernelLookupModel_Gamma9_ConstantDecodeOverhead(t *testing.T) {
+	profilePath := writeKernelProfile(t)
+	// Only γ₇_dc non-zero so we can isolate its contribution
+	gamma := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 10} // γ₇_dc=10µs/layer
+	hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "m", "h100", 1, "kernel-lookup", 0).
+		WithKernelProfilePath(profilePath)
+	model, err := NewKernelLookupModel(sim.NewLatencyCoeffs(gamma, []float64{0, 0, 0}), hw)
+	require.NoError(t, err)
+
+	makeDecodeReq := func() *sim.Request {
+		return &sim.Request{
+			InputTokens:   make([]int, 64),
+			OutputTokens:  make([]int, 1),
+			ProgressIndex: 64,
+			NumNewTokens:  1,
+		}
+	}
+
+	// γ₇_dc × L is constant regardless of batch size (not 1/√batch as in iter33).
+	// Both batch=1 and batch=8 pay the same overhead = γ₇_dc × L = 10 × 32 = 320µs.
+	t1 := model.StepTime([]*sim.Request{makeDecodeReq()})
+	t8 := model.StepTime([]*sim.Request{
+		makeDecodeReq(), makeDecodeReq(), makeDecodeReq(), makeDecodeReq(),
+		makeDecodeReq(), makeDecodeReq(), makeDecodeReq(), makeDecodeReq(),
+	})
+	expected := int64(10 * 32) // γ₇_dc × L = 320µs
+	assert.Equal(t, expected, t1, "γ₇_dc × L must be 320µs at decode batch=1")
+	assert.Equal(t, expected, t8, "γ₇_dc × L must be 320µs at decode batch=8 (batch-independent)")
+}
+
+// TestKernelLookupModel_PrefixCacheHit_EqualToChunkedSecondStep verifies the
+// FlashAttention prefix-cache fix (iter33, preserved in iter35).
 func TestKernelLookupModel_PrefixCacheHit_EqualToChunkedSecondStep(t *testing.T) {
 	model, err := testKernelLookupModel(t)
 	require.NoError(t, err)
 
-	// First-step with prefix cache hit: ISL=512, 256 cached, 256 new.
 	cacheHit := &sim.Request{
 		InputTokens:   make([]int, 512),
 		ProgressIndex: 0,
-		NumNewTokens:  256, // only new tokens; 256 cached
+		NumNewTokens:  256,
 	}
-	// Chunked second step: ISL=512, first 256 already done, processing next 256.
 	chunked2 := &sim.Request{
 		InputTokens:   make([]int, 512),
-		ProgressIndex: 256, // processed in prior chunk
+		ProgressIndex: 256,
 		NumNewTokens:  256,
 	}
 
-	tCacheHit := model.StepTime([]*sim.Request{cacheHit})
-	tChunked2 := model.StepTime([]*sim.Request{chunked2})
-
-	assert.Equal(t, tCacheHit, tChunked2,
-		"prefix-cache-hit first step and chunked second step with identical "+
-			"(full_s=512, prefix=256, newT=256) must produce the same step time")
+	assert.Equal(t, model.StepTime([]*sim.Request{cacheHit}),
+		model.StepTime([]*sim.Request{chunked2}),
+		"cache-hit first step and chunked second step with same (full_s, prefix, newT) must match")
 }
 
 func TestKernelLookupModel_FactoryError_NoProfile(t *testing.T) {
 	hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "m", "h100", 1, "kernel-lookup", 0)
 	coeffs := sim.NewLatencyCoeffs(make([]float64, 10), make([]float64, 3))
 	_, err := NewKernelLookupModel(coeffs, hw)
-	assert.Error(t, err, "should fail without KernelProfilePath")
+	assert.Error(t, err)
 }
 
 func TestKernelLookupModel_FactoryError_TooFewCoeffs(t *testing.T) {
@@ -152,22 +171,20 @@ func TestKernelLookupModel_FactoryError_TooFewCoeffs(t *testing.T) {
 		WithKernelProfilePath(profilePath)
 	coeffs := sim.NewLatencyCoeffs(make([]float64, 5), make([]float64, 3))
 	_, err := NewKernelLookupModel(coeffs, hw)
-	assert.Error(t, err, "should fail with fewer than 10 gamma coefficients")
+	assert.Error(t, err)
 }
 
 func TestKernelLookupModel_FactoryError_TPMismatch(t *testing.T) {
-	profilePath := writeKernelProfile(t) // profile has tp: 1
-	// runtime TP=2 should fail
+	profilePath := writeKernelProfile(t)
 	hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "m", "h100", 2, "kernel-lookup", 0).
 		WithKernelProfilePath(profilePath)
 	coeffs := sim.NewLatencyCoeffs(make([]float64, 10), make([]float64, 3))
 	_, err := NewKernelLookupModel(coeffs, hw)
-	assert.Error(t, err, "should fail when runtime TP != profile TP")
+	assert.Error(t, err)
 }
 
 func TestKernelLookupModel_PostDecodeFixedOverhead(t *testing.T) {
 	model, err := testKernelLookupModel(t)
 	require.NoError(t, err)
-	// alpha[1] = 0 in our test setup
 	assert.Equal(t, int64(0), model.PostDecodeFixedOverhead())
 }
