@@ -2437,9 +2437,12 @@ func TestClusterSimulator_SessionFollowUpCausality(t *testing.T) {
 			}
 		}
 	}
-	// Guard against vacuous pass: verify at least one round was checked.
-	if len(completionTick) == 0 {
-		t.Error("BC-4: no completionTick entries recorded — DES produced no completions")
+	// Guard against vacuous pass: verify all rounds completed (MaxInt64 horizon,
+	// no budget cap, so every round of every session must have a completion tick).
+	expectedEntries := numSessions * maxRounds
+	if len(completionTick) != expectedEntries {
+		t.Errorf("BC-4: completionTick entries = %d, want %d (not all rounds completed — causality check may be incomplete)",
+			len(completionTick), expectedEntries)
 	}
 }
 
