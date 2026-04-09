@@ -148,7 +148,7 @@ func TestObserveOrchestrator_OpenLoop_ConservationAndConcurrency(t *testing.T) {
 
 	// WHEN dispatching with max-concurrency 2 and 0 warmup
 	ctx := context.Background()
-	runObserveOrchestrator(ctx, client, recorder, nil, requests, false, 2, 0, nil, nil, false)
+	runObserveOrchestrator(ctx, client, recorder, nil, requests, false, 2, 0, nil, nil, false, false)
 
 	// THEN: BC-6 conservation: all 5 requests recorded
 	records := recorder.Records()
@@ -215,7 +215,7 @@ func TestObserveOrchestrator_SessionFollowUp_GeneratesRound2(t *testing.T) {
 	sessionMgr := workload.NewSessionManager(wl.Sessions)
 
 	ctx := context.Background()
-	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, false, 10, 0, nil, nil, false)
+	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, false, 10, 0, nil, nil, false, false)
 
 	records := recorder.Records()
 	if len(records) < 2 {
@@ -282,7 +282,7 @@ func TestObserveOrchestrator_SessionError_CancelsSession(t *testing.T) {
 	sessionMgr := workload.NewSessionManager(wl.Sessions)
 
 	ctx := context.Background()
-	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, false, 10, 0, nil, nil, false)
+	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, false, 10, 0, nil, nil, false, false)
 
 	records := recorder.Records()
 	for _, r := range records {
@@ -314,7 +314,7 @@ func TestObserveOrchestrator_WarmupExclusion(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 2, nil, nil, false)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 2, nil, nil, false, false)
 
 	records := recorder.Records()
 	if len(records) != 3 {
@@ -342,7 +342,7 @@ func TestObserveOrchestrator_WarmupExceedsTotal(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 5, nil, nil, false)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 5, nil, nil, false, false)
 
 	records := recorder.Records()
 	if len(records) != 0 {
@@ -370,7 +370,7 @@ func TestObserveOrchestrator_TimestampOrdering(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0, nil, nil, false)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0, nil, nil, false, false)
 
 	records := recorder.Records()
 	if len(records) != 1 {
@@ -410,7 +410,7 @@ func TestObserveOrchestrator_TraceV2RoundTrip(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0, nil, nil, false)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0, nil, nil, false, false)
 
 	headerPath := filepath.Join(t.TempDir(), "header.yaml")
 	dataPath := filepath.Join(t.TempDir(), "data.csv")
@@ -468,7 +468,7 @@ func TestObserveOrchestrator_ErrorStormDrain(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 5, 0, nil, nil, false)
+		runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 5, 0, nil, nil, false, false)
 		close(done)
 	}()
 
@@ -512,7 +512,7 @@ func TestObserveOrchestrator_ContextCancellation(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		runObserveOrchestrator(ctx, client, recorder, nil, requests, false, 2, 0, nil, nil, false)
+		runObserveOrchestrator(ctx, client, recorder, nil, requests, false, 2, 0, nil, nil, false, false)
 		close(done)
 	}()
 
@@ -1228,6 +1228,23 @@ func TestBuildPresetSpec_UnknownPreset_ReturnsError(t *testing.T) {
 		if !strings.Contains(errMsg, name) {
 			t.Errorf("error message should list valid preset %q, got: %q", name, errMsg)
 		}
+	}
+}
+
+func TestObserveCmd_ITLFlags_Defined(t *testing.T) {
+	// GIVEN the observe command
+	cmd := observeCmd
+
+	// WHEN checking for ITL flags
+	recordITLFlag := cmd.Flags().Lookup("record-itl")
+	itlOutputFlag := cmd.Flags().Lookup("itl-output")
+
+	// THEN both flags are defined
+	if recordITLFlag == nil {
+		t.Error("--record-itl flag not defined")
+	}
+	if itlOutputFlag == nil {
+		t.Error("--itl-output flag not defined")
 	}
 }
 
