@@ -1,15 +1,20 @@
 /* Mermaid diagram text visibility fixes */
-.mermaid text {
-  fill: currentColor !important;
-}
 
-.mermaid .node text,
-.mermaid .label {
+/* Light mode: black text */
+[data-md-color-scheme="default"] .mermaid text,
+[data-md-color-scheme="default"] .mermaid .node text,
+[data-md-color-scheme="default"] .mermaid .label,
+[data-md-color-scheme="default"] .mermaid .cluster-label text,
+[data-md-color-scheme="default"] .mermaid tspan {
   fill: #000 !important;
 }
 
+/* Dark mode: white text */
+[data-md-color-scheme="slate"] .mermaid text,
 [data-md-color-scheme="slate"] .mermaid .node text,
-[data-md-color-scheme="slate"] .mermaid .label {
+[data-md-color-scheme="slate"] .mermaid .label,
+[data-md-color-scheme="slate"] .mermaid .cluster-label text,
+[data-md-color-scheme="slate"] .mermaid tspan {
   fill: #fff !important;
 }
 
