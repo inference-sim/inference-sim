@@ -28,18 +28,18 @@ What does it take to build a simulator accurate enough to guide these decisions?
 
 [BLIS](https://github.com/inference-sim/inference-sim) (Blackbox Inference Simulator) models inference serving through discrete-event simulation, advancing from event to event rather than stepping through continuous time. This approach runs orders of magnitude faster than real-time, requires no GPUs, and evaluates hours of production traffic in seconds.
 
-The simulator achieves this fidelity by modeling the mechanisms that determine latency: requests coupling through shared batch steps, KV cache pressure triggering preemptions, and prefill-decode competition for GPU cycles. When these mechanisms are captured accurately, predictions track production behavior.
+BLIS models the mechanisms that determine latency: continuous batching, KV cache pressure, prefill-decode competition—to predict production behavior accurately. This fidelity enables **capacity planning** and **configuration search**: determining instance count, GPU type, TP degree, routing weights, and admission thresholds. Without modeling these couplings, planners predict linear scaling where production saturates or miss SLO violations from batch interference.
 
-Beyond prediction accuracy, physics-based modeling enables experimentation with mechanisms that do not yet exist in production. When the simulator captures the actual system dynamics, it becomes a testbed for innovation:
+By modeling production systems ([vLLM](https://github.com/vllm-project/vllm), [llm-d](https://llm-d.ai)) behavior, BLIS enables safe experimentation before deployment:
 
-- **Novel routing and admission control policies** — Test before writing production code
-- **Scheduling algorithms** — Explore priority schemes and batch formation
-- **Architecture experiments** — Compare serving topologies and hardware
-- **Algorithm discovery** — Iterate fast, cheap, reproducible
+- **Routing policies** — Test new scorer combinations and weights
+- **Admission control** — Explore saturation thresholds and flow control strategies
+- **Capacity planning** — Compare model/GPU/TP configurations
+- **Workload analysis** — Evaluate architecture changes against realistic traffic
 
-Physics-based models predict what could happen under new conditions and policies, while empirical models trained on historical data predict only what has been observed. BLIS enables testing new serving algorithms on a laptop in seconds without requiring production infrastructure.
+Physics-based dynamics with learnable latency components generalize across model architectures and hardware while maintaining production fidelity, meaning you can test new configurations on a laptop in seconds without needing production infrastructure. This rapid iteration enables projects like [ADRS](https://sky.cs.berkeley.edu/project/adrs/) (AI-Driven Research Systems) to develop and validate new serving policies and algorithms through fast simulation loops before production deployment.
 
-This article walks through what it takes to build that level of fidelity — from token batching physics to distributed orchestration, by following a request's 50-millisecond journey through the system to see where every millisecond of complexity originates.
+This article walks through what it takes to build that level of fidelity — from token batching physics to distributed orchestration, by following a request's end-to-end journey through the system to see where every millisecond of complexity originates.
 
 ## A Request's Journey: The Hidden Complexity
 
