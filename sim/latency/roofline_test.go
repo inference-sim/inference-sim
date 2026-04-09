@@ -2,7 +2,6 @@ package latency
 
 import (
 	"math"
-	"sort"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -19,9 +18,9 @@ func TestCalculateMemoryAccessBytes_Deterministic(t *testing.T) {
 
 		// THEN every call produces the same "total"
 		if i == 0 {
-			firstTotal = result["total"]
-		} else if result["total"] != firstTotal {
-			t.Fatalf("non-deterministic total: call 0 got %v, call %d got %v", firstTotal, i, result["total"])
+			firstTotal = result.Total
+		} else if result.Total != firstTotal {
+			t.Fatalf("non-deterministic total: call 0 got %v, call %d got %v", firstTotal, i, result.Total)
 		}
 	}
 
@@ -30,22 +29,11 @@ func TestCalculateMemoryAccessBytes_Deterministic(t *testing.T) {
 		t.Errorf("expected positive total, got %v", firstTotal)
 	}
 
-	// Verify component-sum conservation: total == sum of all non-"total" keys
-	// Sort keys for deterministic accumulation (antipattern #2)
+	// Verify component-sum conservation: total == sum of all components
 	result := calculateMemoryAccessBytes(config, 1024, 64, true)
-	keys := make([]string, 0, len(result))
-	for k := range result {
-		if k != "total" {
-			keys = append(keys, k)
-		}
-	}
-	sort.Strings(keys)
-	var componentSum float64
-	for _, k := range keys {
-		componentSum += result[k]
-	}
-	if result["total"] != componentSum {
-		t.Errorf("conservation violation: total=%v but sum of components=%v", result["total"], componentSum)
+	componentSum := result.ModelWeights + result.KVCacheGrowth + result.KVCacheAccess + result.ActivationsTokens
+	if result.Total != componentSum {
+		t.Errorf("conservation violation: total=%v but sum of components=%v", result.Total, componentSum)
 	}
 }
 
@@ -83,10 +71,10 @@ func TestCalculateTransformerFlops_Conservation_TotalEqualsSumOfComponents(t *te
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			flops := calculateTransformerFlops(mc, tt.seqLen, tt.newT, tt.attn, tt.mlp)
-			sum := flops["gemm_ops"] + flops["sram_ops"]
-			if flops["total"] != sum {
+			sum := flops.GemmOps + flops.SramOps
+			if flops.Total != sum {
 				t.Errorf("total (%g) != gemm_ops (%g) + sram_ops (%g) = %g",
-					flops["total"], flops["gemm_ops"], flops["sram_ops"], sum)
+					flops.Total, flops.GemmOps, flops.SramOps, sum)
 			}
 		})
 	}
@@ -100,14 +88,14 @@ func TestCalculateTransformerFlops_AttentionOnly_NoMLPContribution(t *testing.T)
 	both := calculateTransformerFlops(mc, 256, 64, true, true)
 
 	// With MLP disabled, gemm_ops should be less (no SwiGLU)
-	if attnOnly["gemm_ops"] >= both["gemm_ops"] {
+	if attnOnly.GemmOps >= both.GemmOps {
 		t.Errorf("attention-only gemm_ops (%g) should be less than attn+mlp gemm_ops (%g)",
-			attnOnly["gemm_ops"], both["gemm_ops"])
+			attnOnly.GemmOps, both.GemmOps)
 	}
 	// sram_ops should be the same (MLP doesn't contribute to sram_ops)
-	if attnOnly["sram_ops"] != both["sram_ops"] {
+	if attnOnly.SramOps != both.SramOps {
 		t.Errorf("sram_ops should be identical with/without MLP: got %g vs %g",
-			attnOnly["sram_ops"], both["sram_ops"])
+			attnOnly.SramOps, both.SramOps)
 	}
 }
 
@@ -117,11 +105,11 @@ func TestCalculateTransformerFlops_MLPOnly_NoAttentionContribution(t *testing.T)
 
 	mlpOnly := calculateTransformerFlops(mc, 256, 64, false, true)
 
-	if mlpOnly["sram_ops"] != 0 {
-		t.Errorf("MLP-only sram_ops should be 0, got %g", mlpOnly["sram_ops"])
+	if mlpOnly.SramOps != 0 {
+		t.Errorf("MLP-only sram_ops should be 0, got %g", mlpOnly.SramOps)
 	}
-	if mlpOnly["gemm_ops"] <= 0 {
-		t.Errorf("MLP-only gemm_ops should be > 0, got %g", mlpOnly["gemm_ops"])
+	if mlpOnly.GemmOps <= 0 {
+		t.Errorf("MLP-only gemm_ops should be > 0, got %g", mlpOnly.GemmOps)
 	}
 }
 
@@ -132,14 +120,14 @@ func TestCalculateTransformerFlops_Monotonicity_MoreTokensMoreFlops(t *testing.T
 	small := calculateTransformerFlops(mc, 512, 100, true, true)
 	large := calculateTransformerFlops(mc, 512, 200, true, true)
 
-	if large["total"] <= small["total"] {
+	if large.Total <= small.Total {
 		t.Errorf("200 tokens total FLOPs (%g) should exceed 100 tokens (%g)",
-			large["total"], small["total"])
+			large.Total, small.Total)
 	}
 	// Check component-level monotonicity too
-	if large["gemm_ops"] <= small["gemm_ops"] {
+	if large.GemmOps <= small.GemmOps {
 		t.Errorf("200 tokens gemm_ops (%g) should exceed 100 tokens (%g)",
-			large["gemm_ops"], small["gemm_ops"])
+			large.GemmOps, small.GemmOps)
 	}
 }
 
@@ -150,9 +138,9 @@ func TestCalculateMemoryAccessBytes_Monotonicity_MoreTokensMoreBytes(t *testing.
 	small := calculateMemoryAccessBytes(mc, 512, 100, true)
 	large := calculateMemoryAccessBytes(mc, 512, 200, true)
 
-	if large["total"] <= small["total"] {
+	if large.Total <= small.Total {
 		t.Errorf("200 tokens total bytes (%g) should exceed 100 tokens (%g)",
-			large["total"], small["total"])
+			large.Total, small.Total)
 	}
 }
 
@@ -162,21 +150,10 @@ func TestCalculateMemoryAccessBytes_Conservation_TotalEqualsSumOfComponents(t *t
 
 	mem := calculateMemoryAccessBytes(mc, 512, 64, true)
 
-	// Sort keys before float accumulation (antipattern #2)
-	keys := make([]string, 0, len(mem))
-	for k := range mem {
-		if k != "total" {
-			keys = append(keys, k)
-		}
-	}
-	sort.Strings(keys)
-	var sum float64
-	for _, k := range keys {
-		sum += mem[k]
-	}
-	if math.Abs(mem["total"]-sum) > 1e-6 {
+	sum := mem.ModelWeights + mem.KVCacheGrowth + mem.KVCacheAccess + mem.ActivationsTokens
+	if math.Abs(mem.Total-sum) > 1e-6 {
 		t.Errorf("total (%g) != sum of components (%g), delta=%g",
-			mem["total"], sum, mem["total"]-sum)
+			mem.Total, sum, mem.Total-sum)
 	}
 }
 
@@ -327,10 +304,10 @@ func TestCalculateTransformerFlops_MoE_TopKScaling(t *testing.T) {
 	denseFlops := calculateTransformerFlops(dense, 0, 128, false, true)
 
 	// MoE MLP FLOPs = top_k × dense MLP FLOPs
-	ratio := moeFlops["gemm_ops"] / denseFlops["gemm_ops"]
+	ratio := moeFlops.GemmOps / denseFlops.GemmOps
 	if math.Abs(ratio-float64(mc.NumExpertsPerTok)) > 0.01 {
 		t.Errorf("MoE FLOPs should be %dx dense: moe=%g, dense=%g, ratio=%g",
-			mc.NumExpertsPerTok, moeFlops["gemm_ops"], denseFlops["gemm_ops"], ratio)
+			mc.NumExpertsPerTok, moeFlops.GemmOps, denseFlops.GemmOps, ratio)
 	}
 }
 
@@ -347,9 +324,9 @@ func TestCalculateTransformerFlops_MoE_Conservation(t *testing.T) {
 	for _, cfg := range configs {
 		t.Run(cfg.name, func(t *testing.T) {
 			flops := calculateTransformerFlops(cfg.mc, 512, 64, true, true)
-			sum := flops["gemm_ops"] + flops["sram_ops"]
-			if flops["total"] != sum {
-				t.Errorf("conservation: total (%g) != gemm+sram (%g)", flops["total"], sum)
+			sum := flops.GemmOps + flops.SramOps
+			if flops.Total != sum {
+				t.Errorf("conservation: total (%g) != gemm+sram (%g)", flops.Total, sum)
 			}
 		})
 	}
@@ -361,13 +338,13 @@ func TestCalculateTransformerFlops_Dense_UnchangedAfterMoE(t *testing.T) {
 
 	flops := calculateTransformerFlops(mc, 512, 64, true, true)
 
-	if flops["total"] <= 0 {
+	if flops.Total <= 0 {
 		t.Fatal("expected positive total FLOPs for dense model")
 	}
 	// Conservation still holds
-	sum := flops["gemm_ops"] + flops["sram_ops"]
-	if flops["total"] != sum {
-		t.Errorf("dense conservation: total (%g) != gemm+sram (%g)", flops["total"], sum)
+	sum := flops.GemmOps + flops.SramOps
+	if flops.Total != sum {
+		t.Errorf("dense conservation: total (%g) != gemm+sram (%g)", flops.Total, sum)
 	}
 }
 
@@ -398,9 +375,9 @@ func TestCalculateMemoryAccessBytes_MoE_EffectiveExperts(t *testing.T) {
 			moeMem := calculateMemoryAccessBytes(mc, 512, tt.batchSize, false)
 
 			// Verify MoE weights exceed dense (attention same, MLP has nEff experts)
-			if moeMem["model_weights"] <= denseMem["model_weights"] {
+			if moeMem.ModelWeights <= denseMem.ModelWeights {
 				t.Errorf("MoE weights (%g) should exceed dense weights (%g)",
-					moeMem["model_weights"], denseMem["model_weights"])
+					moeMem.ModelWeights, denseMem.ModelWeights)
 			}
 
 			// Log expected nEff for manual validation
@@ -410,7 +387,7 @@ func TestCalculateMemoryAccessBytes_MoE_EffectiveExperts(t *testing.T) {
 			probNotSelected := (N - k) / N
 			expectedNEff := N * (1.0 - math.Pow(probNotSelected, B))
 			t.Logf("B=%d: expected nEff=%.2f, MoE weights=%.3e, dense weights=%.3e",
-				tt.batchSize, expectedNEff, moeMem["model_weights"], denseMem["model_weights"])
+				tt.batchSize, expectedNEff, moeMem.ModelWeights, denseMem.ModelWeights)
 		})
 	}
 }
@@ -492,15 +469,15 @@ func TestCalculateMemoryAccessBytes_MoE_EdgeCases(t *testing.T) {
 			dense.NumExpertsPerTok = 0
 			denseMem := calculateMemoryAccessBytes(dense, 512, tt.batchSize, false)
 
-			if mem["model_weights"] <= denseMem["model_weights"] {
+			if mem.ModelWeights <= denseMem.ModelWeights {
 				t.Errorf("%s: MoE weights (%g) should exceed dense weights (%g)",
-					tt.description, mem["model_weights"], denseMem["model_weights"])
+					tt.description, mem.ModelWeights, denseMem.ModelWeights)
 			}
 
 			// Verify the weight increase is consistent with expectedNEff (lower bound only)
 			// Upper bound is not checked because attention/other weights dilute the ratio
 			// in a model-dependent way, making a tight upper bound impractical.
-			ratio := (mem["model_weights"] - denseMem["model_weights"]) / denseMem["model_weights"]
+			ratio := (mem.ModelWeights - denseMem.ModelWeights) / denseMem.ModelWeights
 			minRatio := tt.wantNEffMin / float64(tt.N)
 			if ratio < minRatio {
 				t.Errorf("%s: weight increase ratio %.4f below minimum %.4f (nEff=%.2f)",
@@ -522,12 +499,12 @@ func TestCalculateMemoryAccessBytes_MoE_Monotonicity(t *testing.T) {
 	dense.NumLocalExperts = 0
 	dense.NumExpertsPerTok = 0
 	denseMem := calculateMemoryAccessBytes(dense, 512, 1, false)
-	denseWeights := denseMem["model_weights"]
+	denseWeights := denseMem.ModelWeights
 
 	var prevWeights float64
 	for B := int64(1); B <= 20; B++ {
 		mem := calculateMemoryAccessBytes(mc, 512, B, false)
-		moeWeights := mem["model_weights"]
+		moeWeights := mem.ModelWeights
 
 		// Extract effective expert contribution
 		// (approximation: ignoring attention component which is constant)
@@ -561,19 +538,9 @@ func TestCalculateMemoryAccessBytes_MoE_Conservation(t *testing.T) {
 	mc := testMixtralConfig()
 	mem := calculateMemoryAccessBytes(mc, 512, 64, true)
 
-	keys := make([]string, 0, len(mem))
-	for k := range mem {
-		if k != "total" {
-			keys = append(keys, k)
-		}
-	}
-	sort.Strings(keys)
-	var sum float64
-	for _, k := range keys {
-		sum += mem[k]
-	}
-	if math.Abs(mem["total"]-sum) > 1e-6 {
-		t.Errorf("conservation violation: total (%g) != components (%g)", mem["total"], sum)
+	sum := mem.ModelWeights + mem.KVCacheGrowth + mem.KVCacheAccess + mem.ActivationsTokens
+	if math.Abs(mem.Total-sum) > 1e-6 {
+		t.Errorf("conservation violation: total (%g) != components (%g)", mem.Total, sum)
 	}
 }
 
@@ -582,22 +549,12 @@ func TestCalculateMemoryAccessBytes_Dense_UnchangedAfterMoE(t *testing.T) {
 	mc := testModelConfig()
 	mem := calculateMemoryAccessBytes(mc, 512, 64, true)
 
-	if mem["model_weights"] <= 0 {
+	if mem.ModelWeights <= 0 {
 		t.Fatal("expected positive model_weights for dense config")
 	}
-	keys := make([]string, 0, len(mem))
-	for k := range mem {
-		if k != "total" {
-			keys = append(keys, k)
-		}
-	}
-	sort.Strings(keys)
-	var sum float64
-	for _, k := range keys {
-		sum += mem[k]
-	}
-	if mem["total"] != sum {
-		t.Errorf("dense conservation: total (%g) != sum (%g)", mem["total"], sum)
+	sum := mem.ModelWeights + mem.KVCacheGrowth + mem.KVCacheAccess + mem.ActivationsTokens
+	if mem.Total != sum {
+		t.Errorf("dense conservation: total (%g) != sum (%g)", mem.Total, sum)
 	}
 }
 
@@ -690,7 +647,7 @@ func TestRooflineStepTime_MoE_BandwidthReduction(t *testing.T) {
 	// Verify bandwidth reduction using actual batch sizes
 	smallMem := calculateMemoryAccessBytes(mc, 512, int64(len(smallBatch.DecodeRequests)), true)
 	largeMem := calculateMemoryAccessBytes(mc, 512, int64(len(largeBatch.DecodeRequests)), true)
-	weightReduction := 1.0 - (smallMem["model_weights"] / largeMem["model_weights"])
+	weightReduction := 1.0 - (smallMem.ModelWeights / largeMem.ModelWeights)
 	if weightReduction < 0.20 {
 		t.Errorf("Expected ≥20%% weight bandwidth reduction for small batch, got %.1f%%",
 			weightReduction*100)
@@ -720,10 +677,10 @@ func TestRooflineStepTime_SingleCrossover_MemoryBoundDecode(t *testing.T) {
 
 	baseMem := calculateMemoryAccessBytes(mc, 0, 0, false)
 	dynamicMem := calculateMemoryAccessBytes(mc, 512, 1, true)
-	totalBytes := baseMem["model_weights"] + (dynamicMem["total"] - dynamicMem["model_weights"])
+	totalBytes := baseMem.ModelWeights + (dynamicMem.Total - dynamicMem.ModelWeights)
 
 	flops := calculateTransformerFlops(mc, 512, 1, true, true)
-	totalFlops := flops["total"]
+	totalFlops := flops.Total
 
 	computeS := totalFlops / (peakFlops * hc.MfuDecode)
 	memoryS := totalBytes / peakBW
@@ -771,7 +728,7 @@ func TestRooflineStepTime_MixedBatch_WeightsLoadedOnce(t *testing.T) {
 	// twice, mixed would be roughly 2× decode-only for memory-bound steps.
 	// With single weight load, the increase should be modest (just extra dynamic bytes).
 	baseMem := calculateMemoryAccessBytes(mc, 0, 0, false)
-	weightBytes := baseMem["model_weights"]
+	weightBytes := baseMem.ModelWeights
 
 	// The mixed step should NOT double the weight bandwidth.
 	// If it did, the overhead would be approximately weightBytes/peakBW extra.
@@ -832,26 +789,26 @@ func TestCalculateMemoryAccessBytes_W4A16_WeightsReduced_KVUnchanged(t *testing.
 	w4a16Mem := calculateMemoryAccessBytes(w4a16, 512, 64, true)
 
 	// model_weights should be 1/4 of FP16 (0.5/2.0)
-	ratio := w4a16Mem["model_weights"] / fp16Mem["model_weights"]
+	ratio := w4a16Mem.ModelWeights / fp16Mem.ModelWeights
 	if math.Abs(ratio-0.25) > 1e-10 {
 		t.Errorf("W4A16 model_weights should be 0.25x FP16, got ratio=%v (fp16=%g, w4a16=%g)",
-			ratio, fp16Mem["model_weights"], w4a16Mem["model_weights"])
+			ratio, fp16Mem.ModelWeights, w4a16Mem.ModelWeights)
 	}
 
 	// KV cache components should be identical (both use BytesPerParam=2.0)
-	if w4a16Mem["kv_cache_growth"] != fp16Mem["kv_cache_growth"] {
+	if w4a16Mem.KVCacheGrowth != fp16Mem.KVCacheGrowth {
 		t.Errorf("KV cache growth should be identical: fp16=%g, w4a16=%g",
-			fp16Mem["kv_cache_growth"], w4a16Mem["kv_cache_growth"])
+			fp16Mem.KVCacheGrowth, w4a16Mem.KVCacheGrowth)
 	}
-	if w4a16Mem["kv_cache_access"] != fp16Mem["kv_cache_access"] {
+	if w4a16Mem.KVCacheAccess != fp16Mem.KVCacheAccess {
 		t.Errorf("KV cache access should be identical: fp16=%g, w4a16=%g",
-			fp16Mem["kv_cache_access"], w4a16Mem["kv_cache_access"])
+			fp16Mem.KVCacheAccess, w4a16Mem.KVCacheAccess)
 	}
 
 	// Activations should be identical (both use BytesPerParam=2.0)
-	if w4a16Mem["activations_tokens"] != fp16Mem["activations_tokens"] {
+	if w4a16Mem.ActivationsTokens != fp16Mem.ActivationsTokens {
 		t.Errorf("Activations should be identical: fp16=%g, w4a16=%g",
-			fp16Mem["activations_tokens"], w4a16Mem["activations_tokens"])
+			fp16Mem.ActivationsTokens, w4a16Mem.ActivationsTokens)
 	}
 }
 
@@ -865,13 +822,13 @@ func TestCalculateMemoryAccessBytes_NonQuantized_IdenticalToBaseline(t *testing.
 	withSentinel.WeightBytesPerParam = 0
 	sentinelMem := calculateMemoryAccessBytes(withSentinel, 512, 64, true)
 
-	if baselineMem["model_weights"] != sentinelMem["model_weights"] {
+	if baselineMem.ModelWeights != sentinelMem.ModelWeights {
 		t.Errorf("non-quantized should be identical: baseline=%g, sentinel=%g",
-			baselineMem["model_weights"], sentinelMem["model_weights"])
+			baselineMem.ModelWeights, sentinelMem.ModelWeights)
 	}
-	if baselineMem["total"] != sentinelMem["total"] {
+	if baselineMem.Total != sentinelMem.Total {
 		t.Errorf("non-quantized total should be identical: baseline=%g, sentinel=%g",
-			baselineMem["total"], sentinelMem["total"])
+			baselineMem.Total, sentinelMem.Total)
 	}
 }
 
@@ -880,19 +837,9 @@ func TestCalculateMemoryAccessBytes_W4A16_Conservation(t *testing.T) {
 	mc := testW4A16Config()
 	mem := calculateMemoryAccessBytes(mc, 512, 64, true)
 
-	keys := make([]string, 0, len(mem))
-	for k := range mem {
-		if k != "total" {
-			keys = append(keys, k)
-		}
-	}
-	sort.Strings(keys)
-	var sum float64
-	for _, k := range keys {
-		sum += mem[k]
-	}
-	if math.Abs(mem["total"]-sum) > 1e-6 {
-		t.Errorf("conservation violation: total=%g, sum=%g", mem["total"], sum)
+	sum := mem.ModelWeights + mem.KVCacheGrowth + mem.KVCacheAccess + mem.ActivationsTokens
+	if math.Abs(mem.Total-sum) > 1e-6 {
+		t.Errorf("conservation violation: total=%g, sum=%g", mem.Total, sum)
 	}
 }
 
@@ -1192,7 +1139,7 @@ func TestRooflineStepTime_Scout_InterleavedMoE(t *testing.T) {
 	t.Run("FLOPs_split_correctly_for_interleaved", func(t *testing.T) {
 		// Calculate FLOPs for Scout
 		flops := calculateTransformerFlops(scoutConfig, 0, 588, true, true)
-		totalFlops := flops["total"]
+		totalFlops := flops.Total
 
 		// Verify FLOPs are positive and finite
 		if totalFlops <= 0 || math.IsInf(totalFlops, 0) || math.IsNaN(totalFlops) {
@@ -1213,7 +1160,7 @@ func TestRooflineStepTime_Scout_InterleavedMoE(t *testing.T) {
 	t.Run("Weight_bandwidth_split_correctly_for_interleaved", func(t *testing.T) {
 		// Calculate weight bandwidth for Scout with batch size
 		mem := calculateMemoryAccessBytes(scoutConfig, 0, 588, false)
-		weightBytes := mem["model_weights"]
+		weightBytes := mem.ModelWeights
 
 		// Verify weight bytes are positive and finite
 		if weightBytes <= 0 || math.IsInf(weightBytes, 0) || math.IsNaN(weightBytes) {
@@ -1237,11 +1184,11 @@ func TestRooflineStepTime_Scout_InterleavedMoE(t *testing.T) {
 	t.Run("nEff_zero_bug_fixed", func(t *testing.T) {
 		// Calculate with newTokens=0 (the bug scenario)
 		memZero := calculateMemoryAccessBytes(scoutConfig, 0, 0, false)
-		weightBytesZero := memZero["model_weights"]
+		weightBytesZero := memZero.ModelWeights
 
 		// Calculate with newTokens=588 (correct scenario)
 		memBatch := calculateMemoryAccessBytes(scoutConfig, 0, 588, false)
-		weightBytesBatch := memBatch["model_weights"]
+		weightBytesBatch := memBatch.ModelWeights
 
 		// With the fix, both should be positive (dense layers contribute regardless)
 		if weightBytesZero <= 0 {
@@ -1256,4 +1203,26 @@ func TestRooflineStepTime_Scout_InterleavedMoE(t *testing.T) {
 		t.Logf("Weight bandwidth: newTokens=0: %.2f GB, newTokens=588: %.2f GB",
 			weightBytesZero/1e9, weightBytesBatch/1e9)
 	})
+}
+
+func BenchmarkRooflineStepTime_MixedBatch(b *testing.B) {
+	mc := testModelConfig()
+	hc := testHardwareCalib()
+	step := StepConfig{
+		PrefillRequests: []PrefillRequestConfig{
+			{ProgressIndex: 0, NumNewPrefillTokens: 512},
+			{ProgressIndex: 0, NumNewPrefillTokens: 256},
+		},
+		DecodeRequests: func() []DecodeRequestConfig {
+			reqs := make([]DecodeRequestConfig, 64)
+			for i := range reqs {
+				reqs[i] = DecodeRequestConfig{ProgressIndex: int64(512 + i*10), NumNewDecodeTokens: 1}
+			}
+			return reqs
+		}(),
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rooflineStepTime(mc, hc, step, 1)
+	}
 }

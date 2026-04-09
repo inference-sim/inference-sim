@@ -2,10 +2,28 @@ package latency
 
 import (
 	"math"
-	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
+
+// transformerFlops holds the results of calculateTransformerFlops.
+// Using a struct instead of map[string]float64 eliminates one heap allocation per call.
+type transformerFlops struct {
+	GemmOps float64
+	SramOps float64
+	Total   float64
+}
+
+// memAccessBytes holds the results of calculateMemoryAccessBytes.
+// Using a struct instead of map[string]float64 eliminates one heap allocation per call
+// and removes the sort.Strings + key-slice allocation for deterministic summation.
+type memAccessBytes struct {
+	ModelWeights      float64
+	KVCacheGrowth     float64
+	KVCacheAccess     float64
+	ActivationsTokens float64
+	Total             float64
+}
 
 // PrefillRequestConfig describes a single prefill request in a batch step.
 type PrefillRequestConfig struct {
@@ -45,7 +63,7 @@ func mlpMatrixCount(hiddenAct string) float64 {
 // Precondition: config must pass ValidateRooflineConfig (NumHeads > 0, and when
 // NumLocalExperts > 1, NumExpertsPerTok must be > 0). Violating preconditions
 // produces silently incorrect results (zero MLP FLOPs, +Inf from division).
-func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, newTokens int64, includeAttention, includeMLP bool) map[string]float64 {
+func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, newTokens int64, includeAttention, includeMLP bool) transformerFlops {
 	dModel := float64(config.HiddenDim)
 	nLayers := float64(config.NumLayers)
 	nHeads := float64(config.NumHeads)
@@ -63,7 +81,7 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 
 	seqLen := float64(sequenceLength)
 	newT := float64(newTokens)
-	flops := make(map[string]float64)
+	var flops transformerFlops
 
 	if includeAttention {
 		dKV := nKVHeads * dHead
@@ -71,7 +89,7 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 		// 1. Standard GEMMs (Weights)
 		qkvFlops := 2 * newT * (dModel*dModel + 2*dModel*dKV)
 		projFlops := 2 * newT * dModel * dModel
-		flops["gemm_ops"] = (qkvFlops + projFlops) * nLayers
+		flops.GemmOps = (qkvFlops + projFlops) * nLayers
 
 		// SRAM-local ops (FlashAttention)
 		effectiveCtx := seqLen
@@ -88,8 +106,8 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 		ropeOps := 2 * newT * dModel
 		vectorOps := (5 * nHeads * newT * effectiveCtx) + ropeOps
 
-		flops["gemm_ops"] += (attnGemmOps * nLayers)
-		flops["sram_ops"] = (vectorOps * nLayers)
+		flops.GemmOps += (attnGemmOps * nLayers)
+		flops.SramOps = (vectorOps * nLayers)
 	}
 
 	if includeMLP {
@@ -116,7 +134,7 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 				dFFMoE = float64(config.MoEExpertFFNDim)
 			}
 			mlpFlopsPerMoELayer := 2 * newT * (nMat * dModel * dFFMoE) * float64(config.NumExpertsPerTok)
-			flops["gemm_ops"] += mlpFlopsPerMoELayer * float64(numMoELayers)
+			flops.GemmOps += mlpFlopsPerMoELayer * float64(numMoELayers)
 		}
 
 		// Dense layer FLOPs: use DenseIntermediateDim without expert routing
@@ -126,11 +144,11 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 				dFFDense = float64(config.DenseIntermediateDim)
 			}
 			mlpFlopsPerDenseLayer := 2 * newT * (nMat * dModel * dFFDense)
-			flops["gemm_ops"] += mlpFlopsPerDenseLayer * float64(numDenseLayers)
+			flops.GemmOps += mlpFlopsPerDenseLayer * float64(numDenseLayers)
 		}
 	}
 
-	flops["total"] = flops["gemm_ops"] + flops["sram_ops"]
+	flops.Total = flops.GemmOps + flops.SramOps
 	return flops
 }
 
@@ -143,7 +161,7 @@ func calculateMemoryAccessBytes(
 	sequenceLength int64,
 	newTokens int64,
 	includeKVCache bool,
-) map[string]float64 {
+) memAccessBytes {
 	dModel := float64(config.HiddenDim)
 	nLayers := float64(config.NumLayers)
 	nHeads := float64(config.NumHeads)
@@ -161,7 +179,7 @@ func calculateMemoryAccessBytes(
 		dFF = float64(config.IntermediateDim)
 	}
 
-	mem := make(map[string]float64)
+	var mem memAccessBytes
 
 	// Weights: Loaded exactly once. (Static)
 	dKV := nKVHeads * dHead
@@ -225,38 +243,29 @@ func calculateMemoryAccessBytes(
 
 	totalMLPWeights := moeMLPWeights + denseMLPWeights
 	weightsPerLayer := (attnWeightsPerLayer * nLayers) + totalMLPWeights
-	mem["model_weights"] = weightsPerLayer * config.EffectiveWeightBytesPerParam()
+	mem.ModelWeights = weightsPerLayer * config.EffectiveWeightBytesPerParam()
 
 	if includeKVCache {
 		// KV Growth: Writing new tokens to HBM.
 		kvWritePerNewToken := 2 * nLayers * nKVHeads * dHead * config.BytesPerParam
-		mem["kv_cache_growth"] = kvWritePerNewToken * newT
+		mem.KVCacheGrowth = kvWritePerNewToken * newT
 
 		// KV Access: Only read PAST history.
 		// IMPORTANT: For Prefill (newT > 1), the newT tokens attend to each other in SRAM.
 		// They do NOT generate HBM read traffic for themselves.
 		kvReadPerToken := 2 * nLayers * nKVHeads * dHead * config.BytesPerParam
-		mem["kv_cache_access"] = kvReadPerToken * seq
+		mem.KVCacheAccess = kvReadPerToken * seq
 	}
 
 	// Token activations (linear)
-	mem["activations_tokens"] = nLayers * dModel * config.BytesPerParam * newT
+	mem.ActivationsTokens = nLayers * dModel * config.BytesPerParam * newT
 
 	// LOGICAL FIX: Remove attention map bytes entirely.
 	// FlashAttention fuses this; it never hits HBM.
 
-	// Sort keys before accumulation for deterministic float summation
-	// (Go map iteration order is non-deterministic — antipattern #2)
-	keys := make([]string, 0, len(mem))
-	for k := range mem {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	var total float64
-	for _, k := range keys {
-		total += mem[k]
-	}
-	mem["total"] = total
+	// Sum known fields in declaration order — deterministic by construction,
+	// no sort.Strings + key-slice allocation needed (eliminates antipattern #2).
+	mem.Total = mem.ModelWeights + mem.KVCacheGrowth + mem.KVCacheAccess + mem.ActivationsTokens
 	return mem
 }
 
@@ -307,19 +316,19 @@ func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, s
 		numTokens := int64(req.NumNewPrefillTokens)
 
 		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, numTokens, true, true)
-		totalComputeS += f["total"] / tpFactor / (peakFlops * hwConfig.MfuPrefill)
+		totalComputeS += f.Total / tpFactor / (peakFlops * hwConfig.MfuPrefill)
 
 		m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, numTokens, true)
-		totalDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
+		totalDynamicBytes += (m.Total - m.ModelWeights) / tpFactor
 	}
 
 	// 2. DECODE FLOPs + dynamic memory (KV cache, activations)
 	for _, req := range stepConfig.DecodeRequests {
 		f := calculateTransformerFlops(modelConfig, req.ProgressIndex, 1, true, true)
-		totalComputeS += f["total"] / tpFactor / (peakFlops * hwConfig.MfuDecode)
+		totalComputeS += f.Total / tpFactor / (peakFlops * hwConfig.MfuDecode)
 
 		m := calculateMemoryAccessBytes(modelConfig, req.ProgressIndex, 1, true)
-		totalDynamicBytes += (m["total"] - m["model_weights"]) / tpFactor
+		totalDynamicBytes += (m.Total - m.ModelWeights) / tpFactor
 	}
 
 	// 3. WEIGHTS loaded once per step (single forward pass, per Sarathi-Serve/vLLM V1)
@@ -331,7 +340,7 @@ func rooflineStepTime(modelConfig sim.ModelConfig, hwConfig sim.HardwareCalib, s
 	totalNewTokens += int64(len(stepConfig.DecodeRequests))
 
 	baseMem := calculateMemoryAccessBytes(modelConfig, 0, totalNewTokens, false)
-	weightBytes := baseMem["model_weights"] / tpFactor
+	weightBytes := baseMem.ModelWeights / tpFactor
 
 	totalMemoryS := (weightBytes + totalDynamicBytes) / peakBW
 
