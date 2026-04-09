@@ -2335,3 +2335,110 @@ func TestClusterSimulator_SessionTerminalStateCompleteness(t *testing.T) {
 			len(terminatedSessions), numSessions)
 	}
 }
+
+// TestClusterSimulator_SessionFollowUpCausality verifies INV-10 (BC-4):
+// round[N+1].ArrivalTime >= round[N].completionTick + ThinkTimeUs, where
+// completionTick comes from actual DES execution (not a hardcoded value).
+// Also verifies the DES clock advanced past seed arrival (catches wrong-tick bugs).
+func TestClusterSimulator_SessionFollowUpCausality(t *testing.T) {
+	inputSampler, err := workload.NewLengthSampler(workload.DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 20},
+	})
+	if err != nil {
+		t.Fatalf("NewLengthSampler (input): %v", err)
+	}
+	outputSampler, err := workload.NewLengthSampler(workload.DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 10},
+	})
+	if err != nil {
+		t.Fatalf("NewLengthSampler (output): %v", err)
+	}
+
+	const thinkTimeUs = int64(500_000) // 500ms
+	const numSessions = 3
+	const maxRounds = 3
+
+	rng := rand.New(rand.NewSource(7))
+	blueprints := make([]workload.SessionBlueprint, numSessions)
+	seeds := make([]*sim.Request, numSessions)
+	for i := 0; i < numSessions; i++ {
+		sessID := fmt.Sprintf("t22_sess_%d", i)
+		blueprints[i] = workload.SessionBlueprint{
+			SessionID:     sessID,
+			ClientID:      "test-client",
+			MaxRounds:     maxRounds,
+			ThinkTimeUs:   thinkTimeUs,
+			Horizon:       math.MaxInt64,
+			InputSampler:  inputSampler,
+			OutputSampler: outputSampler,
+			RNG:           rand.New(rand.NewSource(rng.Int63())),
+			TenantID:      "test-tenant",
+			SLOClass:      "standard",
+			Model:         "test-model",
+		}
+		seeds[i] = &sim.Request{
+			ID:           fmt.Sprintf("t22_sess_%d_r0", i),
+			ArrivalTime:  int64(i * 2_000_000),
+			InputTokens:  make([]int, 20),
+			OutputTokens: make([]int, 10),
+			MaxOutputLen: 10,
+			State:        sim.StateQueued,
+			SessionID:    sessID,
+			RoundIndex:   0,
+		}
+	}
+
+	type roundKey struct {
+		sessID string
+		round  int
+	}
+	completionTick := make(map[roundKey]int64)
+	arrivalTime := make(map[roundKey]int64)
+	for i, s := range seeds {
+		arrivalTime[roundKey{fmt.Sprintf("t22_sess_%d", i), 0}] = s.ArrivalTime
+	}
+
+	sm := workload.NewSessionManager(blueprints)
+	onDone := func(req *sim.Request, tick int64) []*sim.Request {
+		if req.SessionID != "" {
+			completionTick[roundKey{req.SessionID, req.RoundIndex}] = tick
+		}
+		followUps := sm.OnComplete(req, tick)
+		for _, fu := range followUps {
+			arrivalTime[roundKey{fu.SessionID, fu.RoundIndex}] = fu.ArrivalTime
+		}
+		return followUps
+	}
+
+	config := newTestDeploymentConfig(1)
+	cs := NewClusterSimulator(config, seeds, onDone)
+	mustRun(t, cs)
+
+	// Verify INV-10 for every consecutive round pair.
+	// Also verify DES clock advanced past seed arrival (catches wrong-tick bugs).
+	for i := 0; i < numSessions; i++ {
+		sessID := fmt.Sprintf("t22_sess_%d", i)
+		seedArrival := seeds[i].ArrivalTime
+		for n := 0; n < maxRounds-1; n++ {
+			ck, okC := completionTick[roundKey{sessID, n}]
+			arr, okA := arrivalTime[roundKey{sessID, n + 1}]
+			if !okC || !okA {
+				continue // round may not have run (horizon or budget) — skip
+			}
+			if ck <= seedArrival {
+				t.Errorf("BC-4: session %s round[%d] completionTick=%d <= seedArrival=%d (DES clock did not advance)",
+					sessID, n, ck, seedArrival)
+			}
+			if arr < ck+thinkTimeUs {
+				t.Errorf("BC-4 (INV-10): session %s round[%d].arrival=%d < round[%d].completion(%d)+thinkTime(%d)=%d",
+					sessID, n+1, arr, n, ck, thinkTimeUs, ck+thinkTimeUs)
+			}
+		}
+	}
+	// Guard against vacuous pass: verify at least one round was checked.
+	if len(completionTick) == 0 {
+		t.Error("BC-4: no completionTick entries recorded — DES produced no completions")
+	}
+}
