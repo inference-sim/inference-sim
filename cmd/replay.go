@@ -23,8 +23,9 @@ var (
 	traceHeaderPath   string
 	traceDataPath     string
 	replayTraceOutput string // File prefix for TraceV2 re-export (<prefix>.yaml + <prefix>.csv)
-	replaySessionMode string
-	replayThinkTimeMs int
+	replaySessionMode    string
+	replayThinkTimeMs    int
+	replayThinkTimeMode  string
 )
 
 var replayCmd = &cobra.Command{
@@ -89,6 +90,15 @@ Example:
 		if replayThinkTimeMs > 0 && replaySessionMode != "closed-loop" {
 			logrus.Fatalf("--think-time-ms requires --session-mode closed-loop")
 		}
+		if replayThinkTimeMode != "constant" && replayThinkTimeMode != "lognormal" {
+			logrus.Fatalf("--think-time-mode must be \"constant\" or \"lognormal\", got %q", replayThinkTimeMode)
+		}
+		if replayThinkTimeMode == "lognormal" && replaySessionMode != "closed-loop" {
+			logrus.Fatalf("--think-time-mode lognormal requires --session-mode closed-loop")
+		}
+		if replayThinkTimeMode == "lognormal" && replayThinkTimeMs != 0 {
+			logrus.Fatalf("--think-time-mode lognormal and --think-time-ms are mutually exclusive")
+		}
 
 		// Build requests from trace — mode selects pre-baked vs closed-loop (BC-8, BC-9)
 		var requests []*sim.Request
@@ -97,20 +107,28 @@ Example:
 			// Closed-loop: inject only round-0 requests; SessionManager drives follow-ups.
 			// Compute the preliminary horizon from trace records directly (O(n)) so we can
 			// call LoadTraceV2SessionBlueprints exactly once with correct parameters.
-			thinkTimeUs := int64(replayThinkTimeMs) * 1000
-			replayHorizonPrelim := maxInjectedArrivalTimeUs(traceData)
+
+			// Build the think-time sampler: lognormal (real-system params), constant, or nil
+			// (derive from trace inter-round arrival gaps).
+			var thinkTimeSampler workload.LengthSampler
 			switch {
-			case replayHorizonPrelim > math.MaxInt64/2:
-				replayHorizonPrelim = math.MaxInt64
-			case replayHorizonPrelim <= 0:
-				replayHorizonPrelim = 600_000_000
+			case replayThinkTimeMode == "lognormal":
+				// Real-system inter-turn delay: lognormal(mu=2.0, sigma=0.6) in seconds,
+				// clamped to [3s, 30s] — matches send_swe_smith_multiple_trajectory.py.
+				thinkTimeSampler = workload.NewLognormalThinkTimeSampler(2.0, 0.6, 3_000_000, 30_000_000)
+				logrus.Infof("Think-time mode: lognormal (mu=2.0, sigma=0.6, min=3s, max=30s)")
+			case replayThinkTimeMs > 0:
+				thinkTimeSampler = workload.NewConstantThinkTimeSampler(int64(replayThinkTimeMs) * 1000)
+				logrus.Infof("Think-time mode: constant %dms", replayThinkTimeMs)
 			default:
-				replayHorizonPrelim *= 2
+				logrus.Infof("Think-time mode: derive from trace inter-round arrival gaps")
 			}
+
+			replayHorizonPrelim := computeHorizonFromMaxArrival(maxInjectedArrivalTimeUs(traceData))
 			if cmd.Flags().Changed("horizon") {
 				replayHorizonPrelim = simulationHorizon
 			}
-			r0Requests, blueprints, bErr := workload.LoadTraceV2SessionBlueprints(traceData, seed, thinkTimeUs, replayHorizonPrelim)
+			r0Requests, blueprints, bErr := workload.LoadTraceV2SessionBlueprints(traceData, seed, thinkTimeSampler, replayHorizonPrelim)
 			if bErr != nil {
 				logrus.Fatalf("Failed to build session blueprints from trace: %v", bErr)
 			}
@@ -358,7 +376,8 @@ func init() {
 	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens) for blis calibrate consumption.")
 	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\"")
 	replayCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", `Session replay mode: "fixed" (pre-baked arrivals from trace) or "closed-loop" (load-adaptive follow-ups via SessionManager)`)
-	replayCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "Override think time between session rounds in milliseconds (0 = derive from trace inter-round arrival gaps, which include prior-round service time — use this flag to supply the actual client-side think time; requires --session-mode closed-loop)")
+	replayCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "Override think time between session rounds in milliseconds (0 = derive from trace inter-round arrival gaps; requires --session-mode closed-loop)")
+	replayCmd.Flags().StringVar(&replayThinkTimeMode, "think-time-mode", "constant", `Think-time distribution for closed-loop replay: "constant" (use --think-time-ms or derive from trace) or "lognormal" (lognormal(mu=2.0,sigma=0.6) clamped to [3s,30s], matching real SWE-Smith system; mutually exclusive with --think-time-ms)`)
 	rootCmd.AddCommand(replayCmd)
 }
 
@@ -379,11 +398,26 @@ func maxInjectedArrivalTimeUs(trace *workload.TraceV2) int64 {
 	return max
 }
 
-// computeReplayHorizon returns the simulation horizon for a trace replay.
-// - Empty slice → math.MaxInt64 (no requests, horizon doesn't matter)
+// computeHorizonFromMaxArrival maps a maximum arrival time to a simulation horizon.
 // - maxArrival > MaxInt64/2 → math.MaxInt64 (overflow guard for 2×)
 // - maxArrival <= 0 (all at t=0) → 600,000,000 µs (10 min buffer; MaxInt64 would hang)
 // - Otherwise → maxArrival * 2 (generous buffer for last request to complete)
+// Used by both the blueprint horizon (closed-loop path) and the simulation horizon so they
+// always apply identical logic.
+func computeHorizonFromMaxArrival(maxArrival int64) int64 {
+	switch {
+	case maxArrival > math.MaxInt64/2:
+		return math.MaxInt64
+	case maxArrival <= 0:
+		return 600_000_000
+	default:
+		return maxArrival * 2
+	}
+}
+
+// computeReplayHorizon returns the simulation horizon for a trace replay.
+// - Empty slice → math.MaxInt64 (no requests, horizon doesn't matter)
+// - Otherwise → delegated to computeHorizonFromMaxArrival
 func computeReplayHorizon(requests []*sim.Request) int64 {
 	if len(requests) == 0 {
 		return math.MaxInt64
@@ -394,16 +428,7 @@ func computeReplayHorizon(requests []*sim.Request) int64 {
 			maxArrival = req.ArrivalTime
 		}
 	}
-	// Overflow guard: if 2× would overflow int64, use MaxInt64 directly.
-	if maxArrival > math.MaxInt64/2 {
-		return math.MaxInt64
-	}
-	if maxArrival <= 0 {
-		// All requests at t=0: use a fixed generous buffer of 10 minutes (600,000,000 µs)
-		// rather than MaxInt64 (which would cause the simulation to run indefinitely).
-		return 600_000_000
-	}
-	return maxArrival * 2
+	return computeHorizonFromMaxArrival(maxArrival)
 }
 
 // extractSimResults converts Metrics to a slice of workload.SimResult for calibrate consumption.

@@ -73,7 +73,7 @@ BC-5: LoadTraceV2SessionBlueprints Groups by Session
 BC-6: LoadTraceV2SessionBlueprints Token Sequence
 - GIVEN a trace session A with round 0 (input=100, output=50) and round 1 (input=200, output=80)
 - WHEN the blueprint's InputSampler is called twice
-- THEN it returns 100 then 200
+- THEN the first call returns 200 (round-1 input count; round-0 tokens are injected directly into the request, not through the sampler)
 
 BC-7: Non-Session Records Pass Through
 - GIVEN a trace with records having empty SessionID mixed with session records
