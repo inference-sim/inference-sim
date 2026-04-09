@@ -1,23 +1,23 @@
-/* Mermaid diagram text visibility - force black text on light mode */
-.mermaid svg text,
-.mermaid svg .label,
-.mermaid svg tspan,
-.mermaid svg g.label text,
-.mermaid svg g.node text,
-.mermaid svg .cluster text,
-.mermaid svg .cluster-label text {
-  fill: #000 !important;
-  color: #000 !important;
+/* Mermaid diagram text visibility */
+
+/* Default light mode - black text on all elements */
+.mermaid text {
+  fill: #000000 !important;
 }
 
-/* Dark mode: white text */
-[data-md-color-scheme="slate"] .mermaid svg text,
-[data-md-color-scheme="slate"] .mermaid svg .label,
-[data-md-color-scheme="slate"] .mermaid svg tspan,
-[data-md-color-scheme="slate"] .mermaid svg g.label text,
-[data-md-color-scheme="slate"] .mermaid svg g.node text,
-[data-md-color-scheme="slate"] .mermaid svg .cluster text,
-[data-md-color-scheme="slate"] .mermaid svg .cluster-label text {
-  fill: #fff !important;
-  color: #fff !important;
+.mermaid .nodeLabel,
+.mermaid .edgeLabel,
+.mermaid .cluster-label {
+  color: #000000 !important;
+}
+
+/* Dark mode - white text */
+[data-md-color-scheme="slate"] .mermaid text {
+  fill: #ffffff !important;
+}
+
+[data-md-color-scheme="slate"] .mermaid .nodeLabel,
+[data-md-color-scheme="slate"] .mermaid .edgeLabel,
+[data-md-color-scheme="slate"] .mermaid .cluster-label {
+  color: #ffffff !important;
 }
