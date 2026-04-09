@@ -121,7 +121,7 @@ func TestLoadTraceV2SessionBlueprints_GroupsBySession(t *testing.T) {
 		},
 	}
 
-	requests, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	requests, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, 0, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestLoadTraceV2SessionBlueprints_NonSessionPassThrough(t *testing.T) {
 		},
 	}
 
-	requests, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	requests, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, 0, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestLoadTraceV2SessionBlueprints_ThinkTimeFromTrace(t *testing.T) {
 		},
 	}
 
-	_, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	_, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, 0, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestLoadTraceV2SessionBlueprints_SingleRoundSession(t *testing.T) {
 		},
 	}
 
-	requests, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	requests, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, 0, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -235,22 +235,17 @@ func TestLoadTraceV2SessionBlueprints_OverrideThinkTime(t *testing.T) {
 		},
 	}
 
-	_, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, NewConstantThinkTimeSampler(500_000), 0)
+	_, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, 500_000, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	bp := blueprints[0]
-	// With a sampler override, ThinkTimeSampler is set and ThinkTimeUs is 0.
-	if bp.ThinkTimeSampler == nil {
-		t.Error("expected non-nil ThinkTimeSampler when override sampler provided")
+	if bp.ThinkTimeSampler != nil {
+		t.Error("expected nil ThinkTimeSampler when override provided")
 	}
-	if bp.ThinkTimeUs != 0 {
-		t.Errorf("ThinkTimeUs = %d, want 0 (sampler drives think time)", bp.ThinkTimeUs)
-	}
-	// The sampler must return the constant value.
-	if got := bp.ThinkTimeSampler.Sample(nil); got != 500_000 {
-		t.Errorf("ThinkTimeSampler.Sample() = %d, want 500000", got)
+	if bp.ThinkTimeUs != 500_000 {
+		t.Errorf("ThinkTimeUs = %d, want 500000", bp.ThinkTimeUs)
 	}
 }
 
@@ -265,7 +260,7 @@ func TestLoadTraceV2SessionBlueprints_NonMonotoneGapClamped(t *testing.T) {
 		},
 	}
 
-	_, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	_, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, 0, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -290,7 +285,7 @@ func TestLoadTraceV2SessionBlueprints_NonConsecutiveRoundIndex_Error(t *testing.
 		},
 	}
 
-	_, _, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	_, _, err := LoadTraceV2SessionBlueprints(trace, 42, 0, 0)
 	if err == nil {
 		t.Fatal("expected error for non-consecutive round indices, got nil")
 	}
