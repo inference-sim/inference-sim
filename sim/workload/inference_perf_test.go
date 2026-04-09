@@ -2,7 +2,6 @@ package workload
 
 import (
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -549,7 +548,7 @@ func TestExpandInferencePerfSpec_MultiTurn_MapsToReasoning(t *testing.T) {
 			t.Fatalf("client %q: MultiTurn should be set", c.ID)
 		}
 		// rate=10, duration=600, sessions=2*3=6
-		// MaxRounds = ceil(10*600/6) = 1000
+		// MaxRounds = floor(10*600/6) = 1000 (evenly divisible)
 		// ThinkTimeUs = floor(6/10 * 1e6) = 600_000
 		if mt.MaxRounds != 1000 {
 			t.Errorf("client %q: MaxRounds = %d, want 1000", c.ID, mt.MaxRounds)
@@ -649,7 +648,7 @@ func TestExpandInferencePerfSpec_MultiStageMultiTurn_Succeeds(t *testing.T) {
 func TestExpandInferencePerfSpec_MultiTurn_ComputedParameters(t *testing.T) {
 	// BC-3: MaxRounds, ThinkTimeUs, SingleSession computed from stage parameters.
 	// 1 stage, rate=10, duration=600, 2 prompts × 5 users = 10 sessions
-	// MaxRounds = ceil(10*600/10) = 600
+	// MaxRounds = floor(10*600/10) = 600 (evenly divisible)
 	// ThinkTimeUs = floor(10/10 * 1e6) = 1_000_000
 	spec := &InferencePerfSpec{
 		Stages: []StageSpec{
@@ -688,8 +687,8 @@ func TestExpandInferencePerfSpec_MultiTurn_ComputedParameters(t *testing.T) {
 func TestExpandInferencePerfSpec_MultiStageMultiTurn_PerStageParameters(t *testing.T) {
 	// BC-4: Each stage gets its own computed MaxRounds and ThinkTimeUs.
 	// 2 stages (rate=5/dur=600, rate=20/dur=300), 1 prompt × 1 user = 1 session
-	// Stage 0: MaxRounds = ceil(5*600/1) = 3000, ThinkTimeUs = floor(1/5 * 1e6) = 200_000
-	// Stage 1: MaxRounds = ceil(20*300/1) = 6000, ThinkTimeUs = floor(1/20 * 1e6) = 50_000
+	// Stage 0: MaxRounds = floor(5*600/1) = 3000, ThinkTimeUs = floor(1/5 * 1e6) = 200_000
+	// Stage 1: MaxRounds = floor(20*300/1) = 6000, ThinkTimeUs = floor(1/20 * 1e6) = 50_000
 	spec := &InferencePerfSpec{
 		Stages: []StageSpec{
 			{Rate: 5.0, Duration: 600},
@@ -1347,8 +1346,8 @@ func TestGenerateRequests_InferencePerfSpec_MultiTurnMultiStage_Integration(t *t
 
 func TestExpandInferencePerfSpec_SingleStage_NormalizedExponential(t *testing.T) {
 	// BC-2: Single-stage expansion uses normalized exponential and produces
-	// exactly ceil(rate*duration/numClients) requests per client, summing to
-	// the stage duration.
+	// floor(total/numClients) requests per client (with remainder distributed
+	// to first clients), summing to the stage total.
 	ipSpec := &InferencePerfSpec{
 		Stages: []StageSpec{
 			{Rate: 10.0, Duration: 60}, // 10 req/s for 60s = 600 total requests
@@ -1365,7 +1364,7 @@ func TestExpandInferencePerfSpec_SingleStage_NormalizedExponential(t *testing.T)
 	if err != nil {
 		t.Fatalf("expansion error: %v", err)
 	}
-	// 3*2 = 6 clients, each should get ceil(600/6) = 100 requests
+	// 3*2 = 6 clients, each should get floor(600/6) = 100 requests (evenly divisible)
 	// Horizon = 2× duration: ensures sampler exhaustion (not horizon) stops generation.
 	horizon := int64(120_000_000) // 120 seconds in µs (2× stage duration)
 	requests, err := GenerateRequests(expanded, horizon, 0)
@@ -1514,18 +1513,18 @@ func TestExpandInferencePerfSpec_MultiStage_KeepsPoisson(t *testing.T) {
 }
 
 func TestExpandInferencePerfSpec_SingleStage_ConservationInvariant(t *testing.T) {
-	// Invariant test: sum(per_client_requests) == total expected requests
-	// Tests the conservation law that requestsPerClient allocation sums correctly.
+	// Invariant test: sum(per_client_requests) == int(rate * duration)
+	// Tests the conservation law: exact total with fair distribution (max diff <= 1).
 	cases := []struct {
 		rate       float64
 		duration   int64
 		numPrompts int
 		numUsers   int
 	}{
-		{rate: 10.0, duration: 60, numPrompts: 3, numUsers: 2},  // 600 total / 6 clients = 100 each
-		{rate: 10.0, duration: 61, numPrompts: 2, numUsers: 2},  // 610 total / 4 clients = ceil(152.5)=153 each
-		{rate: 5.0, duration: 100, numPrompts: 1, numUsers: 7},  // 500 total / 7 clients
-		{rate: 100.0, duration: 10, numPrompts: 10, numUsers: 3}, // 1000 total / 30 clients
+		{rate: 10.0, duration: 60, numPrompts: 3, numUsers: 2},   // 600 total / 6 clients = 100 each
+		{rate: 10.0, duration: 61, numPrompts: 2, numUsers: 2},   // 610 total / 4 clients = 152 or 153
+		{rate: 5.0, duration: 100, numPrompts: 1, numUsers: 7},   // 500 total / 7 clients = 71 or 72
+		{rate: 100.0, duration: 10, numPrompts: 10, numUsers: 3}, // 1000 total / 30 clients = 33 or 34
 	}
 
 	for _, tc := range cases {
@@ -1547,7 +1546,7 @@ func TestExpandInferencePerfSpec_SingleStage_ConservationInvariant(t *testing.T)
 				t.Fatalf("expansion error: %v", err)
 			}
 
-			// Horizon = 2× duration: ensures sampler exhaustion (not horizon) stops generation.
+			// Horizon = 2x duration: ensures sampler exhaustion (not horizon) stops generation.
 			// With horizon == duration, sampler and horizon guard race, creating test fragility.
 			horizon := tc.duration * 2_000_000
 			requests, err := GenerateRequests(expanded, horizon, 0)
@@ -1561,22 +1560,26 @@ func TestExpandInferencePerfSpec_SingleStage_ConservationInvariant(t *testing.T)
 				perClientCounts[req.ClientID]++
 			}
 
-			// Expected: each client gets ceil(rate * duration / numClients) requests
-			numClients := tc.numPrompts * tc.numUsers
-			expectedPerClient := int(math.Ceil(tc.rate * float64(tc.duration) / float64(numClients)))
-
-			// Verify each client got exactly expectedPerClient requests
-			for clientID, count := range perClientCounts {
-				if count != expectedPerClient {
-					t.Errorf("client %s: got %d requests, want %d", clientID, count, expectedPerClient)
-				}
+			// Conservation: total requests == int(rate * duration) (exact, no ceiling inflation)
+			expectedTotal := int(tc.rate * float64(tc.duration))
+			if len(requests) != expectedTotal {
+				t.Errorf("total requests = %d, want %d (exact: int(rate*duration))",
+					len(requests), expectedTotal)
 			}
 
-			// Verify sum equals numClients * expectedPerClient (conservation)
-			expectedTotal := numClients * expectedPerClient
-			if len(requests) != expectedTotal {
-				t.Errorf("total requests = %d, want %d (conservation: %d clients * %d each)",
-					len(requests), expectedTotal, numClients, expectedPerClient)
+			// Fair distribution: per-client counts differ by at most 1
+			minCount, maxCount := len(requests), 0
+			for _, count := range perClientCounts {
+				if count < minCount {
+					minCount = count
+				}
+				if count > maxCount {
+					maxCount = count
+				}
+			}
+			if maxCount-minCount > 1 {
+				t.Errorf("unfair distribution: max=%d min=%d diff=%d (want diff <= 1)",
+					maxCount, minCount, maxCount-minCount)
 			}
 		})
 	}
@@ -1738,5 +1741,425 @@ func TestInferencePerfClients_SLOClass_IsStandard(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestDistributeRequestsEvenly_ExactTotal(t *testing.T) {
+	// BC-4: Fair distribution with max difference <= 1, sum equals total
+	tests := []struct {
+		total int
+		n     int
+		want  []int
+	}{
+		{total: 100, n: 3, want: []int{34, 33, 33}}, // 34+33+33=100
+		{total: 10, n: 10, want: []int{1, 1, 1, 1, 1, 1, 1, 1, 1, 1}},
+		{total: 44, n: 7, want: []int{7, 7, 6, 6, 6, 6, 6}}, // 2x7 + 5x6 = 44
+		{total: 3000, n: 44, want: nil},                       // Just verify sum=3000
+		{total: 6000, n: 44, want: nil},                       // Issue #978 example
+		{total: 0, n: 5, want: []int{0, 0, 0, 0, 0}},         // Edge: zero requests
+		{total: 7, n: 1, want: []int{7}},                      // Edge: single client
+	}
+	for _, tt := range tests {
+		dist, err := distributeRequestsEvenly(tt.total, tt.n)
+		if err != nil {
+			t.Fatalf("distributeRequestsEvenly(%d, %d) unexpected error: %v", tt.total, tt.n, err)
+		}
+		sum := 0
+		for _, count := range dist {
+			sum += count
+		}
+		if sum != tt.total {
+			t.Errorf("distributeRequestsEvenly(%d, %d): sum=%d, want %d",
+				tt.total, tt.n, sum, tt.total)
+		}
+		if tt.want != nil {
+			if !slicesEqual(dist, tt.want) {
+				t.Errorf("distributeRequestsEvenly(%d, %d) = %v, want %v",
+					tt.total, tt.n, dist, tt.want)
+			}
+		}
+		// Check fairness: max difference <= 1
+		if len(dist) > 1 {
+			min, max := dist[0], dist[0]
+			for _, v := range dist {
+				if v < min {
+					min = v
+				}
+				if v > max {
+					max = v
+				}
+			}
+			if max-min > 1 {
+				t.Errorf("unfair distribution: max-min=%d > 1", max-min)
+			}
+		}
+	}
+}
+
+func TestDistributeRequestsEvenly_ErrorCases(t *testing.T) {
+	tests := []struct {
+		name  string
+		total int
+		n     int
+	}{
+		{"n <= 0", 10, 0},
+		{"n < 0", 10, -1},
+		{"totalRequests < 0", -5, 10},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := distributeRequestsEvenly(tt.total, tt.n)
+			if err == nil {
+				t.Errorf("distributeRequestsEvenly(%d, %d) expected error, got nil", tt.total, tt.n)
+			}
+		})
+	}
+}
+
+func slicesEqual(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestExpandInferencePerfSpec_SingleStageNonMultiTurn_ExactRequestCount(t *testing.T) {
+	// BC-1: exact total request count (no ceiling inflation)
+	tests := []struct {
+		rate       float64
+		duration   int64
+		numPrompts int
+		numUsers   int
+		wantTotal  int
+	}{
+		{10.0, 60, 3, 2, 600},    // 10*60=600, 6 clients
+		{5.0, 600, 11, 4, 3000},  // Issue #978 stage 0 example
+		{10.0, 600, 11, 4, 6000}, // Issue #978 stage 1 example
+		{7.5, 100, 2, 3, 750},    // Non-integer per-client
+		{20.0, 30, 7, 3, 600},    // 600/21 = 28.57 → was 630 with ceil, now 600
+	}
+	for _, tt := range tests {
+		spec := &InferencePerfSpec{
+			Stages: []StageSpec{{Rate: tt.rate, Duration: tt.duration}},
+			SharedPrefix: &SharedPrefixSpec{
+				NumUniqueSystemPrompts:  tt.numPrompts,
+				NumUsersPerSystemPrompt: tt.numUsers,
+				SystemPromptLen:         10,
+				QuestionLen:             10,
+				OutputLen:               10,
+				EnableMultiTurnChat:     false, // non-multi-turn path
+			},
+		}
+		expanded, err := ExpandInferencePerfSpec(spec, 42)
+		if err != nil {
+			t.Fatalf("expansion error: %v", err)
+		}
+		horizon := tt.duration * 2_000_000 // 2× duration (sampler-limited)
+		requests, err := GenerateRequests(expanded, horizon, 0)
+		if err != nil {
+			t.Fatalf("generation error: %v", err)
+		}
+		if len(requests) != tt.wantTotal {
+			t.Errorf("rate=%.1f dur=%d clients=%dx%d: got %d requests, want %d (exact, no ceiling)",
+				tt.rate, tt.duration, tt.numPrompts, tt.numUsers,
+				len(requests), tt.wantTotal)
+		}
+	}
+}
+
+func TestExpandInferencePerfSpec_ZeroRequestsError(t *testing.T) {
+	// Test error handling when rate × duration produces zero requests.
+	// This addresses issue #978 review feedback (silent failure in multi-turn path).
+	tests := []struct {
+		name             string
+		stages           []StageSpec
+		enableMultiTurn  bool
+		expectedErrorMsg string
+	}{
+		{
+			name:             "single-stage non-multi-turn",
+			stages:           []StageSpec{{Rate: 0.5, Duration: 1}},
+			enableMultiTurn:  false,
+			expectedErrorMsg: "rate 0.5000 × duration 1 produces 0 requests",
+		},
+		{
+			name:             "single-stage multi-turn",
+			stages:           []StageSpec{{Rate: 0.001, Duration: 1}},
+			enableMultiTurn:  true,
+			expectedErrorMsg: "rate 0.0010 × duration 1 produces 0 requests",
+		},
+		{
+			name: "multi-stage multi-turn (stage 1 has zero)",
+			stages: []StageSpec{
+				{Rate: 10.0, Duration: 60},   // OK: 600 requests
+				{Rate: 0.001, Duration: 1},   // Zero requests
+			},
+			enableMultiTurn:  true,
+			expectedErrorMsg: "stages[1]: rate 0.0010 × duration 1 produces 0 requests",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := &InferencePerfSpec{
+				Stages: tt.stages,
+				SharedPrefix: &SharedPrefixSpec{
+					NumUniqueSystemPrompts:  2,
+					NumUsersPerSystemPrompt: 2,
+					SystemPromptLen:         10,
+					QuestionLen:             10,
+					OutputLen:               10,
+					EnableMultiTurnChat:     tt.enableMultiTurn,
+				},
+			}
+			_, err := ExpandInferencePerfSpec(spec, 42)
+			if err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.expectedErrorMsg) {
+				t.Errorf("error message %q does not contain %q", err.Error(), tt.expectedErrorMsg)
+			}
+		})
+	}
+}
+
+func TestExpandInferencePerfSpec_SingleStageMultiTurn_ExactRequestCount(t *testing.T) {
+	// BC-2: Single-stage multi-turn generates exact request count.
+	//
+	// Horizon calculation: For rate=5, duration=600, sessions=44:
+	// - totalRequests = 3000, MaxRounds ≈ 68 per session (fair distribution)
+	// - ThinkTimeUs = 8,800,000 µs (sessions/rate = 44/5 * 1e6)
+	// - Last round of any session arrives at: startTime + (MaxRounds-1) × ThinkTimeUs
+	//   ≈ startTime + 67 × 8,800,000 µs = startTime + 589.6s
+	// - For seed=42 Poisson sampling, all sessions start before ~601s (duration boundary)
+	// - Horizon = 2×600 = 1200s provides ~599s margin, accommodating all rounds.
+	// This ensures no lifecycle window clipping of rounds.
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{{Rate: 5.0, Duration: 600}},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  11,
+			NumUsersPerSystemPrompt: 4,
+			SystemPromptLen:         100,
+			QuestionLen:             200,
+			OutputLen:               50,
+			EnableMultiTurnChat:     true,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+	// Use 2x duration as horizon so all sessions complete their rounds
+	// (same pattern as non-multi-turn tests).
+	horizon := int64(1_200_000_000) // 1200 seconds = 2 × 600
+	requests, err := GenerateRequests(expanded, horizon, 0)
+	if err != nil {
+		t.Fatalf("generation error: %v", err)
+	}
+	// Should get exactly 3000 requests (not 3036 from ceil inflation)
+	if len(requests) != 3000 {
+		t.Errorf("multi-turn request count = %d, want 3000 (exact, issue #978 example)",
+			len(requests))
+	}
+}
+
+func TestExpandInferencePerfSpec_MultiStageMultiTurn_ExactMaxRoundsSum(t *testing.T) {
+	// BC-3: Multi-stage multi-turn: sum of per-session MaxRounds equals
+	// int(rate * duration) per stage (the expansion contract).
+	// Note: actual generated request count may be lower due to lifecycle window
+	// clipping of late-starting sessions. This test verifies the expansion math.
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 5.0, Duration: 600},
+			{Rate: 10.0, Duration: 600},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  11,
+			NumUsersPerSystemPrompt: 4,
+			SystemPromptLen:         100,
+			QuestionLen:             200,
+			OutputLen:               50,
+			EnableMultiTurnChat:     true,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+
+	numClientsPerStage := 11 * 4 // 44
+	// Stage 0 clients: first 44, Stage 1 clients: next 44
+	var stage0Sum, stage1Sum int
+	for i, client := range expanded.Clients {
+		if client.Reasoning == nil || client.Reasoning.MultiTurn == nil {
+			t.Fatalf("client %d (%s): missing Reasoning/MultiTurn", i, client.ID)
+		}
+		if i < numClientsPerStage {
+			stage0Sum += client.Reasoning.MultiTurn.MaxRounds
+		} else {
+			stage1Sum += client.Reasoning.MultiTurn.MaxRounds
+		}
+	}
+
+	// Stage 0: int(5.0 * 600) = 3000 (not 3036 from ceil)
+	if stage0Sum != 3000 {
+		t.Errorf("stage 0 MaxRounds sum = %d, want 3000 (exact)", stage0Sum)
+	}
+	// Stage 1: int(10.0 * 600) = 6000 (not 6028 from ceil)
+	if stage1Sum != 6000 {
+		t.Errorf("stage 1 MaxRounds sum = %d, want 6000 (exact)", stage1Sum)
+	}
+}
+
+func TestExpandInferencePerfSpec_MultiTurn_PerSessionFairness(t *testing.T) {
+	// BC-4: Multi-turn sessions have MaxRounds differing by at most 1.
+	// 600 requests / 7 sessions = 85 or 86 rounds per session (5 get 86, 2 get 85).
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{{Rate: 10.0, Duration: 60}}, // 600 requests / 7 sessions
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  7,
+			NumUsersPerSystemPrompt: 1,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+			EnableMultiTurnChat:     true,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+	// Check that MaxRounds varies by at most 1 across clients
+	minR, maxR := 999999, 0
+	totalRounds := 0
+	for _, client := range expanded.Clients {
+		rounds := client.Reasoning.MultiTurn.MaxRounds
+		totalRounds += rounds
+		if rounds < minR {
+			minR = rounds
+		}
+		if rounds > maxR {
+			maxR = rounds
+		}
+	}
+	if maxR-minR > 1 {
+		t.Errorf("unfair MaxRounds distribution: max=%d min=%d diff=%d (want diff <= 1)",
+			maxR, minR, maxR-minR)
+	}
+	// Sum must equal exactly int(rate * duration) = 600
+	if totalRounds != 600 {
+		t.Errorf("total MaxRounds = %d, want 600 (exact)", totalRounds)
+	}
+}
+
+func TestExpandInferencePerfSpec_SingleStageNonMultiTurn_FairDistribution(t *testing.T) {
+	// BC-4: Per-client counts differ by at most 1
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{{Rate: 10.0, Duration: 60}}, // 600 requests / 7 clients
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  7,
+			NumUsersPerSystemPrompt: 1,
+			SystemPromptLen:         10,
+			QuestionLen:             10,
+			OutputLen:               10,
+			EnableMultiTurnChat:     false,
+		},
+	}
+	expanded, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+	horizon := int64(120_000_000) // 120 seconds
+	requests, err := GenerateRequests(expanded, horizon, 0)
+	if err != nil {
+		t.Fatalf("generation error: %v", err)
+	}
+	// Count per client
+	perClient := make(map[string]int)
+	for _, req := range requests {
+		perClient[req.ClientID]++
+	}
+	// Find min and max counts
+	minCount, maxCount := 999999, 0
+	for _, count := range perClient {
+		if count < minCount {
+			minCount = count
+		}
+		if count > maxCount {
+			maxCount = count
+		}
+	}
+	if maxCount-minCount > 1 {
+		t.Errorf("unfair distribution: max=%d min=%d diff=%d (want diff <= 1)",
+			maxCount, minCount, maxCount-minCount)
+	}
+	// Verify total is exact
+	if len(requests) != 600 {
+		t.Errorf("total requests = %d, want 600 (exact)", len(requests))
+	}
+}
+
+// --- Determinism regression test (Task 4) ---
+
+func TestExpandInferencePerfSpec_ExactDistribution_PreservesDeterminism(t *testing.T) {
+	// BC-5: Determinism preserved after fix (INV-6)
+	spec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 5.0, Duration: 600},
+			{Rate: 10.0, Duration: 600},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  11,
+			NumUsersPerSystemPrompt: 4,
+			SystemPromptLen:         100,
+			QuestionLen:             200,
+			OutputLen:               50,
+			EnableMultiTurnChat:     true,
+		},
+	}
+
+	// Generate twice with same seed
+	horizon := int64(1_200_000_000)
+
+	expanded1, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("expansion1 error: %v", err)
+	}
+	r1, err := GenerateRequests(expanded1, horizon, 0)
+	if err != nil {
+		t.Fatalf("generation1 error: %v", err)
+	}
+
+	expanded2, err := ExpandInferencePerfSpec(spec, 42)
+	if err != nil {
+		t.Fatalf("expansion2 error: %v", err)
+	}
+	r2, err := GenerateRequests(expanded2, horizon, 0)
+	if err != nil {
+		t.Fatalf("generation2 error: %v", err)
+	}
+
+	// Verify byte-identical output
+	if len(r1) != len(r2) {
+		t.Fatalf("different counts: %d vs %d", len(r1), len(r2))
+	}
+	for i := range r1 {
+		if r1[i].ArrivalTime != r2[i].ArrivalTime {
+			t.Errorf("request %d: arrival %d vs %d", i, r1[i].ArrivalTime, r2[i].ArrivalTime)
+			if i >= 5 {
+				t.Logf("... (stopping after 5 mismatches)")
+				break
+			}
+		}
+		if r1[i].ID != r2[i].ID {
+			t.Errorf("request %d: ID %q vs %q", i, r1[i].ID, r2[i].ID)
+			if i >= 5 {
+				break
+			}
+		}
 	}
 }
