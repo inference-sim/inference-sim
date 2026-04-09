@@ -66,9 +66,21 @@ flowchart TB
     Layer3 -.-> Layer2
     Layer1 -.->|metrics| Layer3
 
-    style Layer1 fill:#e1f5ff
-    style Layer2 fill:#fff4e1
-    style Layer3 fill:#ffe1e1
+    style Layer1 fill:#e1f5ff,color:#000
+    style Layer2 fill:#fff4e1,color:#000
+    style Layer3 fill:#ffe1e1,color:#000
+    style Sched fill:#fff,stroke:#333,color:#000
+    style KV fill:#fff,stroke:#333,color:#000
+    style Batch fill:#fff,stroke:#333,color:#000
+    style Step fill:#fff,stroke:#333,color:#000
+    style Admit fill:#fff,stroke:#333,color:#000
+    style Route fill:#fff,stroke:#333,color:#000
+    style Flow fill:#fff,stroke:#333,color:#000
+    style Monitor fill:#fff,stroke:#333,color:#000
+    style Decide fill:#fff,stroke:#333,color:#000
+    style Actuate fill:#fff,stroke:#333,color:#000
+    style Request fill:#fff,stroke:#333,color:#000
+    style Response fill:#fff,stroke:#333,color:#000
 ```
 
 ### Layer 1: The Engine (vLLM)
