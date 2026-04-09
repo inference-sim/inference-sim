@@ -46,7 +46,6 @@ This article walks through what it takes to build that level of fidelity — fro
 A user hits enter, and fifty milliseconds later the first token appears. What happened in between? Three architectural layers working together: the inference engine (vLLM), the data plane (cluster orchestration), and the control plane (autoscaling), all of which high-fidelity simulation must model.
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': {'primaryTextColor':'#000','secondaryTextColor':'#000','tertiaryTextColor':'#000','textColor':'#000','labelTextColor':'#000','nodeTextColor':'#000','edgeLabelBackground':'transparent','clusterBkg':'#a8d5ff','altBackground':'#ffd699','titleColor':'#000','nodeBorder':'#000'}}}%%
 flowchart TB
     subgraph Layer1["Layer 1: Engine (vLLM)"]
         Sched[Scheduling]
@@ -75,10 +74,6 @@ flowchart TB
     Layer1 --> Response([Response])
     Layer3 -.-> Layer2
     Layer1 -.->|metrics| Layer3
-
-    style Layer1 fill:#a8d5ff
-    style Layer2 fill:#ffd699
-    style Layer3 fill:#ffb3b3
 ```
 
 ### Layer 1: The Engine (vLLM)
@@ -99,17 +94,24 @@ where $\phi_i$ are basis functions that capture computational physics (how batch
 
 ### Layer 2: The Data Plane (Cluster Orchestration)
 
-The inference engine handles individual requests within a single vLLM instance, but production systems run multiple instances behind a routing layer. The data plane orchestrates traffic across this cluster through four sequential gates, each adding latency and complexity that determines whether your predictions match reality.
+Production systems run multiple vLLM instances behind a routing layer. BLIS models the data plane through pluggable interfaces for admission policies, saturation detectors, routing scorers, disaggregation deciders, so you can bring your own custom algorithms and test them against production workloads without writing production code or risking live traffic!
 
-**Gate 1: Admission Control.** Before requests enter the system, they pass through a rate limiter. BLIS models token bucket admission control where each request consumes tokens proportional to its prompt length. When the bucket empties, requests are rejected immediately. This matches production admission controllers that prevent queue explosion during traffic spikes. Without modeling this gate, simulated throughput overshoots reality by admitting more load than the system can handle.
+```mermaid
+graph LR
+    A[Request Arrives] --> B{Admission & Flow Control}
+    B -->|Rejected| X[Drop]
+    B -->|Queued| C[Routing]
+    C --> D{Disaggregation?}
+    D -->|No| E[vLLM Processing]
+    D -->|Yes| F[Prefill Pool]
+    F -->|KV Transfer| G[Decode Pool]
+```
 
-**Gate 2: Flow Control (Gateway Queue).** Even after admission, requests do not route immediately. They wait in a gateway queue until the cluster has capacity. BLIS holds requests when saturation exceeds a threshold — computed as the maximum of queue depth divided by a queue threshold and KV cache utilization divided by a cache threshold, averaged across all instances. When saturation drops below 1.0, the queue dispatches requests with fresh routing state. This late binding prevents pile-on: without it, ten routing decisions might see the same stale queue depth and all pick the same instance, creating a 20-40ms latency spike as that instance becomes overloaded. The gateway queue is not in production llm-d yet, but BLIS shows it reduces time-to-first-token by 20-40% under load spikes — a mechanism that could be contributed back.
+**Admission and flow control** determine whether requests enter the system and when they dispatch. BLIS models llm-d's GIE (Gateway Inference Engine) architecture: token bucket rate limiting prevents queue explosion during spikes, and a gateway queue holds requests when the cluster is saturated, releasing them only when capacity opens up. This late binding prevents pile-on where burst arrivals flood the same instance.
 
-**Gate 3: Routing.** With capacity available, the router scores each instance using a weighted combination of signals: `precise-prefix-cache:2, queue-depth:1, kv-utilization:1`. This matches llm-d's default production profile. But here is the critical complexity: **signal freshness varies by tier**. Router-local signals like in-flight request counts are always current — the router increments them synchronously on every dispatch. Instance-reported signals like queue depth and KV utilization refresh periodically (every 10ms by default), so they are slightly stale. Cache state signals have a 2-second blind spot by default, modeling llm-d's ZMQ event propagation delay. When the router scores an instance, it queries a frozen snapshot of that instance's KV cache from two seconds ago, not live state. Ten routing decisions in a row might all see the same stale cache utilization and pile onto one instance. BLIS models this staleness explicitly because that is the production reality — and it matters. Stale signals cause routing suboptimality that shows up as +1ms here, +2ms there, compounding across thousands of requests.
+**Routing** assigns each request to an instance by scoring on weighted signals—prefix cache hits, queue depth, KV utilization. The challenge: burst arrivals cause all routing decisions to see the same stale state and pick the same "best" instance. BLIS models in-flight tracking (counting already-dispatched requests) and signal staleness (cache state queries a 2-second-old snapshot, matching llm-d's ZMQ propagation delay).
 
-**Gate 4: Prefill/Decode Orchestration (if disaggregated).** When prefill and decode run on separate GPU pools, requests travel through an additional pipeline. Long prompts route to the prefill pool first, process their tokens, then transfer the KV cache over the network to a decode pool instance. BLIS models the coordinated routing decisions (prefill instance selection, decode instance selection with affinity), the KV transfer cost (base latency 15-30ms depending on configuration, plus bandwidth-limited data transfer), and transfer contention when multiple KV caches move concurrently. Time-to-first-token in disaggregated mode is prefill time + transfer time + first decode step, and every millisecond counts. Without modeling the transfer, latency predictions for disaggregated serving are simply wrong.
-
-Why does the data plane matter? Because under load, these gates compound. A request admitted at the edge might wait 2ms in the gateway queue, get routed to a suboptimal instance because cache signals were stale (+5ms queueing), then wait for KV transfer (+20ms). That is 27 milliseconds of cluster-level latency before a single token is generated. Miss any gate, and your capacity planning is off by 20-50%.
+**Prefill/decode disaggregation** separates compute-bound prefill (matrix multiplication) from memory-bound decode (loading KV cache) onto dedicated GPU pools, allowing each to be sized for its bottleneck. Requests process prefill first, then transfer their KV cache over the network to a decode instance. BLIS models the full pipeline: prefill routing, KV transfer, decode routing, and fair-share bandwidth contention when multiple transfers run concurrently.
 
 ### Layer 3: The Control Plane (Autoscaling)
 
