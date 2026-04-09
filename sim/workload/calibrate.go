@@ -66,6 +66,7 @@ type LatencyPair struct {
 type CalibrationPairs struct {
 	TTFT               LatencyPair
 	E2E                LatencyPair
+	ITL                LatencyPair
 	TokenMismatchCount int
 	ExcludedWarmUp     int
 	MatchedCount       int
@@ -145,6 +146,101 @@ func PrepareCalibrationPairs(
 	}
 
 	return pairs, nil
+}
+
+// PrepareCalibrationPairsWithITL extends PrepareCalibrationPairs with ITL data.
+// ITL is computed as per-request mean inter-chunk latency (microseconds).
+// First chunk delta is TTFT; subsequent deltas are ITL.
+func PrepareCalibrationPairsWithITL(
+	realRecords []TraceRecord,
+	simResults []SimResult,
+	itlRecords []ITLRecord,
+	config *CalibrationConfig,
+) (*CalibrationPairs, error) {
+	// Start with standard pairs
+	pairs, err := PrepareCalibrationPairs(realRecords, simResults, config)
+	if err != nil {
+		return nil, err
+	}
+
+	// Group ITL records by request ID
+	itlByRequest := make(map[int][]ITLRecord)
+	for _, rec := range itlRecords {
+		itlByRequest[rec.RequestID] = append(itlByRequest[rec.RequestID], rec)
+	}
+
+	// Index sim results by RequestID
+	simByID := make(map[int]SimResult, len(simResults))
+	for _, sr := range simResults {
+		simByID[sr.RequestID] = sr
+	}
+
+	if config == nil {
+		config = &CalibrationConfig{}
+	}
+
+	// Compute per-request ITL
+	for _, rec := range realRecords {
+		// Skip warm-up
+		if rec.RequestID < config.WarmUpRequests {
+			continue
+		}
+
+		sr, ok := simByID[rec.RequestID]
+		if !ok {
+			continue
+		}
+
+		chunks, ok := itlByRequest[rec.RequestID]
+		if !ok || len(chunks) < 2 {
+			continue // No ITL data for this request
+		}
+
+		// Sort chunks by index (defensive)
+		sortITLRecords(chunks)
+
+		// Compute real ITL: mean of chunk-to-chunk deltas (skip first, which is TTFT)
+		var realITLSum float64
+		realITLCount := 0
+		for i := 1; i < len(chunks); i++ {
+			delta := float64(chunks[i].TimestampUs - chunks[i-1].TimestampUs)
+			if delta < 0 {
+				// Clock skew or corrupt data — skip this request
+				continue
+			}
+			realITLSum += delta
+			realITLCount++
+		}
+		if realITLCount == 0 {
+			continue
+		}
+		realITL := realITLSum / float64(realITLCount)
+
+		// Compute sim ITL: (E2E - TTFT) / OutputTokens
+		// This approximates mean ITL assuming uniform token generation
+		simITL := 0.0
+		if sr.OutputTokens > 1 {
+			simITL = (sr.E2E - sr.TTFT) / float64(sr.OutputTokens-1)
+		}
+
+		pairs.ITL.Real = append(pairs.ITL.Real, realITL)
+		pairs.ITL.Sim = append(pairs.ITL.Sim, simITL)
+	}
+
+	return pairs, nil
+}
+
+func sortITLRecords(records []ITLRecord) {
+	// Simple insertion sort (small N)
+	for i := 1; i < len(records); i++ {
+		key := records[i]
+		j := i - 1
+		for j >= 0 && records[j].ChunkIndex > key.ChunkIndex {
+			records[j+1] = records[j]
+			j--
+		}
+		records[j+1] = key
+	}
 }
 
 // ComputeCalibration computes statistical comparison between real and sim latency vectors.
@@ -234,6 +330,13 @@ func BuildCalibrationReport(pairs *CalibrationPairs, configMatch *ConfigMatchInf
 			return nil, err
 		}
 		report.Metrics["e2e"] = e2e
+	}
+	if len(pairs.ITL.Real) > 0 {
+		itl, err := ComputeCalibration(pairs.ITL.Real, pairs.ITL.Sim, "itl")
+		if err != nil {
+			return nil, err
+		}
+		report.Metrics["itl"] = itl
 	}
 	return report, nil
 }

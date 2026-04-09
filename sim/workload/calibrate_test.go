@@ -214,3 +214,53 @@ func TestBuildCalibrationReport_IncludesAllAnnotations(t *testing.T) {
 		t.Errorf("matched pairs = %d, want 3", report.TraceInfo.MatchedPairs)
 	}
 }
+
+func TestCalibration_WithITL(t *testing.T) {
+	// GIVEN trace records with ITL data and matching sim results
+	traceRecords := []TraceRecord{
+		{RequestID: 0, InputTokens: 100, OutputTokens: 50, FirstChunkTimeUs: 1000, LastChunkTimeUs: 1100, SendTimeUs: 0},
+		{RequestID: 1, InputTokens: 100, OutputTokens: 50, FirstChunkTimeUs: 2000, LastChunkTimeUs: 2100, SendTimeUs: 0},
+	}
+	simResults := []SimResult{
+		{RequestID: 0, InputTokens: 100, OutputTokens: 50, TTFT: 1000, E2E: 1100},
+		{RequestID: 1, InputTokens: 100, OutputTokens: 50, TTFT: 2000, E2E: 2100},
+	}
+	itlRecords := []ITLRecord{
+		{RequestID: 0, ChunkIndex: 0, TimestampUs: 1000},
+		{RequestID: 0, ChunkIndex: 1, TimestampUs: 1020},
+		{RequestID: 0, ChunkIndex: 2, TimestampUs: 1040},
+		{RequestID: 1, ChunkIndex: 0, TimestampUs: 2000},
+		{RequestID: 1, ChunkIndex: 1, TimestampUs: 2020},
+		{RequestID: 1, ChunkIndex: 2, TimestampUs: 2040},
+	}
+
+	// WHEN preparing calibration pairs with ITL
+	config := &CalibrationConfig{}
+	pairs, err := PrepareCalibrationPairsWithITL(traceRecords, simResults, itlRecords, config)
+	if err != nil {
+		t.Fatalf("PrepareCalibrationPairsWithITL failed: %v", err)
+	}
+
+	// THEN ITL pairs are populated
+	if len(pairs.ITL.Real) == 0 {
+		t.Error("ITL.Real is empty")
+	}
+	if len(pairs.ITL.Sim) == 0 {
+		t.Error("ITL.Sim is empty")
+	}
+
+	// WHEN building calibration report
+	report, err := BuildCalibrationReport(pairs, &ConfigMatchInfo{})
+	if err != nil {
+		t.Fatalf("BuildCalibrationReport failed: %v", err)
+	}
+
+	// THEN report includes ITL metric
+	itlMetric, ok := report.Metrics["itl"]
+	if !ok {
+		t.Fatal("report.Metrics[\"itl\"] not found")
+	}
+	if itlMetric.Count == 0 {
+		t.Error("ITL metric has Count=0")
+	}
+}
