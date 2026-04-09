@@ -37,7 +37,6 @@ This article shows what it takes to build that level of fidelity—from token ge
 A user hits enter. Fifty milliseconds later, the first token appears. What happened in between? Three architectural layers working together: the inference engine (vLLM), the data plane (cluster orchestration), and the control plane (autoscaling). Model them all with fidelity, or your capacity decisions will be wrong.
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#b3d9ff','primaryTextColor':'#000','primaryBorderColor':'#333','secondaryColor':'#ffe4b3','tertiaryColor':'#ffb3b3','lineColor':'#333','textColor':'#000','fontSize':'14px'}}}%%
 flowchart TB
     subgraph Layer1["Layer 1: Engine (vLLM)"]
         Sched[Scheduling]
@@ -67,9 +66,9 @@ flowchart TB
     Layer3 -.-> Layer2
     Layer1 -.->|metrics| Layer3
 
-    style Layer1 fill:#b3d9ff,stroke:#333,color:#000
-    style Layer2 fill:#ffe4b3,stroke:#333,color:#000
-    style Layer3 fill:#ffb3b3,stroke:#333,color:#000
+    style Layer1 fill:#4a9eff,stroke:#333
+    style Layer2 fill:#ffb347,stroke:#333
+    style Layer3 fill:#ff6b6b,stroke:#333
 ```
 
 ### Layer 1: The Engine (vLLM)
