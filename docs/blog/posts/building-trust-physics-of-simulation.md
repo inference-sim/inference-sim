@@ -10,7 +10,7 @@ categories:
 
 # Building Trust: The Physics of High-Fidelity Inference Simulation
 
-Imagine testing routing policies, autoscaling strategies, and hardware configurations without touching production. No risk. No downtime. Just answers. That's the promise of simulation—but only if it's accurate enough to trust.
+Imagine testing routing policies, autoscaling strategies, and hardware configurations without touching production. No risk. No downtime. Just answers. That's the promise of simulation—but only if it is accurate enough to trust.
 
 A simple queueing model predicts 50ms time-to-first-token. Production measures 200ms. The difference reveals how much complexity hides beneath the surface. Capacity decisions are million-dollar bets—H100 vs A100, tensor parallelism 4 vs 8—and intuition fails at this scale.
 
@@ -18,7 +18,7 @@ A simple queueing model predicts 50ms time-to-first-token. Production measures 2
 
 ## The Right Physics, Not Everything
 
-Building a trustworthy simulator is not about modeling everything—it's about modeling the right physics. The batch dynamics that couple request latencies. The KV cache pressure that triggers preemption. The prefill-decode handoffs that trade network costs for throughput. Miss any of these, and your predictions diverge from reality.
+Building a trustworthy simulator is not about modeling everything — it is about modeling the right physics. The batch dynamics that couple request latencies. The KV cache pressure that triggers preemption. The prefill-decode handoffs that trade network costs for throughput. Miss any of these, and your predictions diverge from reality.
 
 BLIS achieves this by modeling the actual physics—the mechanisms that determine latency in real systems: how requests couple through shared batch steps, how KV cache pressure triggers preemption cascades, how prefill-decode disaggregation trades network transfer costs for hardware specialization. The entire simulation runs on CPU—no GPUs required. Step times come from analytical roofline models (compute vs memory bottlenecks derived from model architecture and hardware specs) corrected with coefficients trained on real vLLM production traces. The result: microsecond-scale predictions with single-digit percent accuracy. Fast enough for rapid iteration, accurate enough to trust for production decisions.
 
@@ -30,25 +30,23 @@ A user hits enter. Fifty milliseconds later, the first token appears. What happe
 
 ### Layer 1: The Engine (vLLM)
 
-Let us start at the engine level—the inference engine running on a single GPU instance. This is vLLM, the workhorse that schedules requests, manages memory, and generates tokens.
+The inference engine running on a single GPU instance is vLLM. It schedules requests, manages memory, and generates tokens. Understanding how it works is critical for accurate prediction.
 
-Here is the key thing most people miss: vLLM does not process requests one at a time. It processes batches in "steps." A step is one pass through the GPU—all requests in the batch go through together. Some are processing their prompts, others are generating tokens. The step takes as long as the slowest operation, and everyone waits.
+**The batch-step paradigm.** vLLM does not process requests individually. It processes batches in steps. One step = one GPU forward pass. All requests in the batch go through together. The step time is determined by the slowest operation, and everyone pays that cost.
 
-Picture four requests in a batch. Three are generating single output tokens—fast, memory-bound operations taking maybe 2 milliseconds. But the fourth is crunching through a 512-token prompt—a compute-heavy operation taking 20 milliseconds. The step time is dominated by that one prompt. All four requests wait the full 20 milliseconds, even though three could finish in 2.
+**Concrete example:** Four requests in a batch. Three generate single output tokens (2ms, memory-bound). The fourth processes a 512-token prompt (20ms, compute-bound). Step time: 20ms. All four wait the full duration.
 
-This is why simple per-request models fail. They calculate each request independently: time = α + β × tokens. But that's not reality. Ten requests generating tokens do not take "10 × single_request_time." They take one batch step that covers all ten. Get this wrong, and throughput predictions can be 5-10x off.
+**Why per-request models fail:** Traditional models calculate `time = α + β × tokens` per request independently. But ten decode requests do not take "10 × 2ms." They take one 2ms batch step. Get this wrong, and throughput predictions can be 5-10x off.
 
-So what does BLIS replicate from vLLM to capture this dynamic?
+**What BLIS replicates:** Priority scheduling (critical requests before batch jobs). Block-level KV cache with prefix reuse and preemption under memory pressure. Continuous batching where requests join and leave mid-flight. All modeled with exact vLLM semantics.
 
-Scheduling: Priority queues where critical requests go before batch jobs. KV cache: Block-level memory allocation where shared prompts get reused (massive speedup for RAG workloads), and running requests get evicted when memory fills. Continuous batching: Requests join and leave mid-flight as they complete. BLIS models all of this—not as approximations, but with exact vLLM semantics.
+**Step physics (CPU-only).** For each step, BLIS computes two bottlenecks: compute time (FLOPs / GPU_TFLOPS) and memory time (bytes / GPU_bandwidth). Step time = max(compute, memory). For a 512-token prefill on H100: compute dominates at 20ms. For decode reading KV cache: memory dominates at 2ms. BLIS applies learned corrections for kernel overhead and cache effects, then predicts step time without GPU execution—using model architecture from HuggingFace and hardware specs from datasheets.
 
-Now here's where the CPU-only simulation comes in. For each step, BLIS computes two bottlenecks. Compute time: FLOPs divided by GPU TFLOPS—for example, a 512-token prefill on an H100 takes about 20 milliseconds. Memory time: bytes divided by GPU bandwidth—a decode step reading KV cache takes about 2 milliseconds. The step time is the maximum of the two—whichever is slower. BLIS then applies learned corrections to account for kernel overhead, cache behavior, and other real-world effects. This is why BLIS is fast and accurate without GPUs: we are computing the same bottleneck analysis that vLLM's GPU experiences, using model architecture from HuggingFace configs and hardware specs from datasheets.
+**Batch evolution matters.** Small decode-only batch: 2ms per token. Long prompt joins: everyone waits 20ms. Prompt finishes: back to 2ms. Request completes and leaves: 1.8ms. Batch size changes constantly, step time changes constantly. Request latencies are coupled through batching.
 
-Watch what happens as batches evolve. Small batch, decode-only: fast, 2 milliseconds per token. New request joins with a long prompt: everyone waits 20 milliseconds while it processes. That request finishes and switches to decode: back to fast 2-millisecond steps. Another request completes and leaves the batch: even faster now, maybe 1.8 milliseconds. The batch size is constantly changing, and so is the step time.
+**Takeaway:** vLLM operates in batch steps, not individual requests. BLIS simulates this through discrete-event modeling—one step event per batch operation, with membership updating after each completion. This is the foundation for accurate throughput and latency prediction.
 
-You cannot model inference with per-request equations. vLLM works in batches and steps, with request latencies coupled through that batching. BLIS captures this through discrete-event simulation—one step event per batch operation, with batch membership updating after each completion.
-
-But a single vLLM instance running in isolation is only part of the story. In production, you have a cluster of instances—and that's where orchestration complexity enters.
+In production, a single vLLM instance is only part of the system. Clusters of instances add orchestration complexity.
 
 ### Layer 2: The Data Plane (Cluster Orchestration)
 
