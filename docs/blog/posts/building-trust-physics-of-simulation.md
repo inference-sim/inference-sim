@@ -87,10 +87,10 @@ Why does this matter? Consider a batch with three requests decoding single token
 **How BLIS predicts step time without GPUs.** BLIS uses a trained model that combines physics-based basis functions with learned corrections:
 
 $$
-t_{\text{step}} = \sum_{i} \beta_i \cdot \phi_i(\text{batch}, \text{model}, \text{hardware})
+t_{\text{step}} = \sum_{i} \beta_i \cdot \phi_i(\text{batch}, \text{LLM}, \text{hardware})
 $$
 
-where $\phi_i$ are basis functions that capture computational physics (how batch size, sequence length, and model parameters affect compute and memory bandwidth), and $\beta_i$ are coefficients trained on real vLLM traces that correct for hardware-specific bottlenecks. This approach generalizes across LLM architectures, hardware configurations, and tensor parallelism degrees, enabling seamless experimentation with any model-GPU-TP combination without per-configuration calibration. Accurate forward pass predictions drive accurate end-to-end latency metrics.
+where $\phi_i$ are basis functions that capture computational physics (how batch size, sequence length, and LLM architectures affect compute and memory bandwidth), and $\beta_i$ are coefficients trained on real vLLM traces that correct for hardware-specific bottlenecks. This approach generalizes across LLM architectures, hardware configurations, and tensor parallelism degrees, enabling seamless experimentation with any model-GPU-TP combination without per-configuration calibration. Accurate forward pass predictions drive accurate end-to-end latency metrics.
 
 ### Layer 2: The Data Plane (Cluster Orchestration)
 
