@@ -65,6 +65,10 @@ flowchart TB
     Layer1 --> Response([Response])
     Layer3 -.-> Layer2
     Layer1 -.->|metrics| Layer3
+
+    style Layer1 fill:#e1f5ff
+    style Layer2 fill:#fff4e1
+    style Layer3 fill:#ffe1e1
 ```
 
 ### Layer 1: The Engine (vLLM)
