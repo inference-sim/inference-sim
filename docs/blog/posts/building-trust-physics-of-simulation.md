@@ -5,12 +5,12 @@ authors:
   - dipanwita
 categories:
   - Architecture
-  - Deep Dive
+  - Deep Dives
 ---
 
 # Building Trust: The Physics of High-Fidelity Inference Simulation
 
-Imagine testing routing policies, autoscaling strategies, and hardware configurations without touching production. No risk. No downtime. Just answers. That's the promise of simulation—but only if it is accurate enough to trust.
+Imagine testing routing policies, autoscaling strategies, and hardware configurations without touching production. No risk. No downtime. Just answers. That is the promise of simulation — but only if it is accurate enough to trust.
 
 A simple queueing model predicts 50ms time-to-first-token. Production measures 200ms. The difference reveals how much complexity hides beneath the surface. Capacity decisions are million-dollar bets—H100 vs A100, tensor parallelism 4 vs 8—and intuition fails at this scale.
 
@@ -20,7 +20,7 @@ A simple queueing model predicts 50ms time-to-first-token. Production measures 2
 
 Building a trustworthy simulator is not about modeling everything — it is about modeling the right physics. The batch dynamics that couple request latencies. The KV cache pressure that triggers preemption. The prefill-decode handoffs that trade network costs for throughput. Miss any of these, and your predictions diverge from reality.
 
-BLIS achieves this by modeling the actual physics—the mechanisms that determine latency in real systems: how requests couple through shared batch steps, how KV cache pressure triggers preemption cascades, how prefill-decode disaggregation trades network transfer costs for hardware specialization. The entire simulation runs on CPU—no GPUs required. Step times come from analytical roofline models (compute vs memory bottlenecks derived from model architecture and hardware specs) corrected with coefficients trained on real vLLM production traces. The result: microsecond-scale predictions with single-digit percent accuracy. Fast enough for rapid iteration, accurate enough to trust for production decisions.
+BLIS achieves this by modeling the actual physics—the mechanisms that determine latency in real systems: how requests couple through shared batch steps, how KV cache pressure triggers preemption cascades, how prefill-decode disaggregation trades network transfer costs for hardware specialization. The entire simulation runs on CPU — no GPUs required. Step times come from analytical roofline models (compute vs memory bottlenecks derived from model architecture and hardware specs) corrected with coefficients trained on real vLLM production traces. The result: microsecond-scale predictions with single-digit percent accuracy. Fast enough for rapid iteration, accurate enough to trust for production decisions.
 
 This article shows what it takes to build that level of fidelity—from token generation physics to distributed orchestration. Let us follow a request's 50-millisecond journey through the system to see where every millisecond of that complexity lives.
 
