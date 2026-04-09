@@ -68,7 +68,8 @@ type ClusterSimulator struct {
 	tenantTracker *TenantTracker
 
 	// Phase 1C: model autoscaler pipeline. Nil when ModelAutoscalerIntervalUs == 0 (backward-compat, INV-6).
-	autoscaler *autoscalerPipeline
+	autoscaler      *autoscalerPipeline
+	pendingArrivals int // count of ClusterArrivalEvents not yet executed; used by scheduleNextTick to stop ticking when all work is done
 
 	// sessionCallback is the raw onRequestDone parameter for session follow-up
 	// generation in PD mode. Called from detectDecodeCompletions with the original
@@ -509,6 +510,7 @@ func (c *ClusterSimulator) Run() error {
 			event: &ClusterArrivalEvent{time: req.ArrivalTime, request: req},
 			seqID: c.nextSeqID(),
 		})
+		c.pendingArrivals++
 	}
 
 	// 3. Shared-clock event loop (BC-4: cluster events before instance events)
@@ -1078,6 +1080,7 @@ func (c *ClusterSimulator) promoteDeferred() {
 			event: &ClusterArrivalEvent{time: c.clock, request: req},
 			seqID: c.nextSeqID(),
 		})
+		c.pendingArrivals++ // mirror Run() — re-injected arrivals must be tracked so scheduleNextTick doesn't go negative
 	}
 	c.deferredQueue = c.deferredQueue[:0]
 }

@@ -2254,7 +2254,6 @@ func TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType(t *testing.T) {
 	}
 }
 
-<<<<<<< HEAD
 // TestClusterSimulator_SessionTerminalStateCompleteness verifies INV-11 (BC-3):
 // every session reaches exactly one terminal state after ClusterSimulator.Run().
 // With the default blackbox latency model and a 500s horizon, all sessions

@@ -105,6 +105,7 @@ func (e *ClusterArrivalEvent) Priority() int     { return 0 }
 
 // Execute schedules an AdmissionDecisionEvent with the configured admission latency.
 func (e *ClusterArrivalEvent) Execute(cs *ClusterSimulator) {
+	cs.pendingArrivals--
 	logrus.Debugf("[cluster] req %s arrived at tick %d", e.request.ID, e.time)
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &AdmissionDecisionEvent{
