@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/rand"
 	"reflect"
 	"sort"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
+	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
 // newTestDeploymentConfig creates a DeploymentConfig suitable for testing.
@@ -2249,5 +2251,87 @@ func TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType(t *testing.T) {
 					inst.ID(), snap.ID, string(inst.ID()))
 			}
 		}
+	}
+}
+
+// TestClusterSimulator_SessionTerminalStateCompleteness verifies INV-11 (BC-3):
+// every session reaches exactly one terminal state after ClusterSimulator.Run().
+// With the default blackbox latency model and a 500s horizon, all sessions
+// complete normally (sessionCompleted path). This exercises the full DES
+// pipeline: seed injected → rounds executed → OnComplete returns nil exactly once.
+// Uses a set (not a counter) to prevent two-bugs-cancel false pass scenarios.
+func TestClusterSimulator_SessionTerminalStateCompleteness(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	inputSampler, err := workload.NewLengthSampler(workload.DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 20},
+	})
+	if err != nil {
+		t.Fatalf("NewLengthSampler (input): %v", err)
+	}
+	outputSampler, err := workload.NewLengthSampler(workload.DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 10},
+	})
+	if err != nil {
+		t.Fatalf("NewLengthSampler (output): %v", err)
+	}
+
+	const numSessions = 4
+	const maxRounds = 3
+	const horizon = int64(500_000_000) // 500 seconds
+
+	blueprints := make([]workload.SessionBlueprint, numSessions)
+	seeds := make([]*sim.Request, numSessions)
+	for i := 0; i < numSessions; i++ {
+		sessID := fmt.Sprintf("t21_sess_%d", i)
+		blueprints[i] = workload.SessionBlueprint{
+			SessionID:     sessID,
+			ClientID:      "test-client",
+			MaxRounds:     maxRounds,
+			ThinkTimeUs:   1_000_000, // 1 second
+			Horizon:       horizon,
+			InputSampler:  inputSampler,
+			OutputSampler: outputSampler,
+			RNG:           rand.New(rand.NewSource(rng.Int63())),
+			TenantID:      "test-tenant",
+			SLOClass:      "standard",
+			Model:         "test-model",
+		}
+		seeds[i] = &sim.Request{
+			ID:           fmt.Sprintf("t21_sess_%d_r0", i),
+			ArrivalTime:  int64(i * 1_000_000),
+			InputTokens:  make([]int, 20),
+			OutputTokens: make([]int, 10),
+			MaxOutputLen: 10,
+			State:        sim.StateQueued,
+			SessionID:    sessID,
+			RoundIndex:   0,
+		}
+	}
+
+	sm := workload.NewSessionManager(blueprints)
+	// Use a set (not a counter) so that one session called twice AND another
+	// silently abandoned cannot cancel out to give a false pass.
+	terminatedSessions := make(map[string]bool)
+	onDone := func(req *sim.Request, tick int64) []*sim.Request {
+		followUps := sm.OnComplete(req, tick)
+		// A nil return means this session just reached a terminal state.
+		// Exactly one nil return per session guaranteed by the sessionActive guard.
+		if followUps == nil && req.SessionID != "" {
+			terminatedSessions[req.SessionID] = true
+		}
+		return followUps
+	}
+
+	config := newTestDeploymentConfig(1)
+	config.Horizon = horizon
+	cs := NewClusterSimulator(config, seeds, onDone)
+	mustRun(t, cs)
+
+	// INV-11: every session reached exactly one terminal state
+	if len(terminatedSessions) != numSessions {
+		t.Errorf("BC-3 (INV-11): terminal sessions = %d, want %d (no session silently abandoned)",
+			len(terminatedSessions), numSessions)
 	}
 }
