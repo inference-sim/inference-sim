@@ -1920,24 +1920,11 @@ func TestExpandInferencePerfSpec_ZeroRequestsError(t *testing.T) {
 			if err == nil {
 				t.Fatalf("expected error, got nil")
 			}
-			if !containsString(err.Error(), tt.expectedErrorMsg) {
+			if !strings.Contains(err.Error(), tt.expectedErrorMsg) {
 				t.Errorf("error message %q does not contain %q", err.Error(), tt.expectedErrorMsg)
 			}
 		})
 	}
-}
-
-func containsString(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && containsSubstring(s, substr))
-}
-
-func containsSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
 
 func TestExpandInferencePerfSpec_SingleStageMultiTurn_ExactRequestCount(t *testing.T) {

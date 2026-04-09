@@ -177,7 +177,7 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 
 					// Validate sampler parameters before construction (prevent panic on user input)
 					if requestsPerClient <= 0 {
-						return nil, fmt.Errorf("inference_perf: requestsPerClient must be positive, got %d", requestsPerClient)
+						return nil, fmt.Errorf("inference_perf: client %s got 0 requests (totalRequests=%d < numClients=%d); increase rate or duration", clientID, totalRequests, numClientsPerStage)
 					}
 					if requestsPerClient > 10_000_000 {
 						return nil, fmt.Errorf("inference_perf: requestsPerClient %d exceeds safety limit (10M); reduce rate, duration, or increase clients", requestsPerClient)
