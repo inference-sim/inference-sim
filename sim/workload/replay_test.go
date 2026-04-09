@@ -110,6 +110,187 @@ func TestLoadTraceV2Requests_PrefixGroup_SharedTokens(t *testing.T) {
 	}
 }
 
+// --- LoadTraceV2SessionBlueprints tests (BC-5, BC-6, BC-7) ---
+
+func TestLoadTraceV2SessionBlueprints_GroupsBySession(t *testing.T) {
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0},
+			{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 200, OutputTokens: 80, ArrivalTimeUs: 5000},
+			{RequestID: 3, SessionID: "B", RoundIndex: 0, InputTokens: 150, OutputTokens: 60, ArrivalTimeUs: 1000},
+		},
+	}
+
+	requests, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, 0, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// BC-5: 2 blueprints (one per session)
+	if len(blueprints) != 2 {
+		t.Fatalf("BC-5: got %d blueprints, want 2", len(blueprints))
+	}
+	// BC-5: 2 round-0 requests injected
+	if len(requests) != 2 {
+		t.Fatalf("BC-5: got %d requests, want 2", len(requests))
+	}
+
+	var bpA *SessionBlueprint
+	for i := range blueprints {
+		if blueprints[i].SessionID == "A" {
+			bpA = &blueprints[i]
+			break
+		}
+	}
+	if bpA == nil {
+		t.Fatal("blueprint A not found")
+	}
+	if bpA.MaxRounds != 2 {
+		t.Errorf("BC-5: session A MaxRounds = %d, want 2", bpA.MaxRounds)
+	}
+
+	// BC-6: input sampler replays round-1 token count (round 0 is injected directly)
+	got1 := bpA.InputSampler.Sample(nil)
+	if got1 != 200 {
+		t.Errorf("BC-6: input sampler first value = %d, want 200 (round 1 token count)", got1)
+	}
+}
+
+func TestLoadTraceV2SessionBlueprints_NonSessionPassThrough(t *testing.T) {
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 1, SessionID: "", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0},
+			{RequestID: 2, SessionID: "A", RoundIndex: 0, InputTokens: 200, OutputTokens: 80, ArrivalTimeUs: 1000},
+		},
+	}
+
+	requests, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, 0, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// BC-7: 1 non-session + 1 round-0 session = 2 requests total
+	if len(requests) != 2 {
+		t.Fatalf("BC-7: got %d requests, want 2", len(requests))
+	}
+	if len(blueprints) != 1 {
+		t.Errorf("BC-7: got %d blueprints, want 1", len(blueprints))
+	}
+}
+
+func TestLoadTraceV2SessionBlueprints_ThinkTimeFromTrace(t *testing.T) {
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0},
+			{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 200, OutputTokens: 80, ArrivalTimeUs: 5000},
+			{RequestID: 3, SessionID: "A", RoundIndex: 2, InputTokens: 300, OutputTokens: 90, ArrivalTimeUs: 12000},
+		},
+	}
+
+	_, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, 0, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	bp := blueprints[0]
+	// Think times derived from inter-round arrival gaps: [5000, 7000]
+	if bp.ThinkTimeSampler == nil {
+		t.Fatal("expected ThinkTimeSampler to be set for multi-round session")
+	}
+	got1 := bp.ThinkTimeSampler.Sample(nil)
+	got2 := bp.ThinkTimeSampler.Sample(nil)
+	if got1 != 5000 || got2 != 7000 {
+		t.Errorf("think times = [%d, %d], want [5000, 7000]", got1, got2)
+	}
+}
+
+func TestLoadTraceV2SessionBlueprints_SingleRoundSession(t *testing.T) {
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0},
+		},
+	}
+
+	requests, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, 0, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(requests) != 1 || len(blueprints) != 1 {
+		t.Fatalf("got %d requests, %d blueprints; want 1, 1", len(requests), len(blueprints))
+	}
+	bp := blueprints[0]
+	if bp.MaxRounds != 1 {
+		t.Errorf("MaxRounds = %d, want 1", bp.MaxRounds)
+	}
+	if bp.ThinkTimeSampler != nil {
+		t.Error("expected nil ThinkTimeSampler for single-round session")
+	}
+}
+
+func TestLoadTraceV2SessionBlueprints_OverrideThinkTime(t *testing.T) {
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0},
+			{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 200, OutputTokens: 80, ArrivalTimeUs: 5000},
+		},
+	}
+
+	_, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, 500_000, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	bp := blueprints[0]
+	if bp.ThinkTimeSampler != nil {
+		t.Error("expected nil ThinkTimeSampler when override provided")
+	}
+	if bp.ThinkTimeUs != 500_000 {
+		t.Errorf("ThinkTimeUs = %d, want 500000", bp.ThinkTimeUs)
+	}
+}
+
+func TestLoadTraceV2SessionBlueprints_NonMonotoneGapClamped(t *testing.T) {
+	// GIVEN a 2-round session where round-1 has an earlier arrival than round-0
+	// (clock skew in observed trace), THEN ThinkTimeSampler returns 0 (not negative),
+	// preserving INV-3 (clock monotonicity) in the follow-up arrival computation.
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 5000},
+			{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 200, OutputTokens: 80, ArrivalTimeUs: 3000},
+		},
+	}
+
+	_, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, 0, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(blueprints) != 1 {
+		t.Fatalf("expected 1 blueprint, got %d", len(blueprints))
+	}
+	bp := blueprints[0]
+	if bp.ThinkTimeSampler == nil {
+		t.Fatal("expected ThinkTimeSampler to be set for multi-round session")
+	}
+	got := bp.ThinkTimeSampler.Sample(nil)
+	if got != 0 {
+		t.Errorf("clamped think time = %d, want 0 (negative gap must be clamped to 0)", got)
+	}
+}
+
+func TestLoadTraceV2SessionBlueprints_NonConsecutiveRoundIndex_Error(t *testing.T) {
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0},
+			{RequestID: 2, SessionID: "A", RoundIndex: 2, InputTokens: 200, OutputTokens: 80, ArrivalTimeUs: 5000},
+		},
+	}
+
+	_, _, err := LoadTraceV2SessionBlueprints(trace, 42, 0, 0)
+	if err == nil {
+		t.Fatal("expected error for non-consecutive round indices, got nil")
+	}
+}
+
 // TestLoadTraceV2Requests_ModelAndDeadline verifies BC-3, BC-4, BC-5, BC-6, BC-7.
 func TestLoadTraceV2Requests_ModelAndDeadline(t *testing.T) {
 	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "real"}
