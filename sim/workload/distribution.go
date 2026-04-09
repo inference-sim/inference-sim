@@ -152,6 +152,24 @@ func (s *ConstantSampler) Sample(_ *rand.Rand) int {
 	return s.value
 }
 
+// SequenceSampler replays a pre-recorded sequence of values in order.
+// Used for trace replay where token counts are known per-round.
+// Wraps to the beginning when the sequence is exhausted.
+// Safe for empty sequences: returns 1 (minimum token count).
+type SequenceSampler struct {
+	values []int
+	index  int
+}
+
+func (s *SequenceSampler) Sample(_ *rand.Rand) int {
+	if len(s.values) == 0 {
+		return 1 // defensive: empty sequence returns minimum token count
+	}
+	v := s.values[s.index%len(s.values)]
+	s.index++
+	return v
+}
+
 // requireParam checks that all required keys exist in a params map.
 func requireParam(params map[string]float64, keys ...string) error {
 	for _, k := range keys {

@@ -261,6 +261,52 @@ func TestNewLengthSampler_InvalidType_ReturnsError(t *testing.T) {
 }
 
 // TestNewLengthSampler_MissingRequiredParams_ReturnsError verifies BC-10.
+// TestSequenceSampler_ReplayInOrder verifies BC-1:
+// values are returned in order on successive calls.
+func TestSequenceSampler_ReplayInOrder(t *testing.T) {
+	s := &SequenceSampler{values: []int{100, 200, 300}}
+	for i, want := range []int{100, 200, 300} {
+		got := s.Sample(nil)
+		if got != want {
+			t.Errorf("call %d: got %d, want %d", i, got, want)
+		}
+	}
+}
+
+// TestSequenceSampler_WrapsOnExhaustion verifies BC-2:
+// after exhaustion the sequence restarts from the beginning.
+func TestSequenceSampler_WrapsOnExhaustion(t *testing.T) {
+	s := &SequenceSampler{values: []int{10, 20}}
+	_ = s.Sample(nil) // 10
+	_ = s.Sample(nil) // 20
+	got := s.Sample(nil)
+	if got != 10 {
+		t.Errorf("wrap: got %d, want 10", got)
+	}
+}
+
+// TestSequenceSampler_SingleValue verifies that a single-element sampler
+// always returns the same value regardless of call count.
+func TestSequenceSampler_SingleValue(t *testing.T) {
+	s := &SequenceSampler{values: []int{42}}
+	for i := 0; i < 5; i++ {
+		got := s.Sample(nil)
+		if got != 42 {
+			t.Errorf("call %d: got %d, want 42", i, got)
+		}
+	}
+}
+
+// TestSequenceSampler_EmptyValues verifies that an empty SequenceSampler
+// returns 1 (minimum token count) without panicking.
+func TestSequenceSampler_EmptyValues(t *testing.T) {
+	s := &SequenceSampler{}
+	got := s.Sample(nil)
+	if got != 1 {
+		t.Errorf("empty sampler: got %d, want 1", got)
+	}
+}
+
 func TestNewLengthSampler_MissingRequiredParams_ReturnsError(t *testing.T) {
 	tests := []struct {
 		name    string

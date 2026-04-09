@@ -20,12 +20,20 @@ go build -o blis main.go
 # Run and export workload as TraceV2 (prefix auto-appends .yaml/.csv)
 ./blis run --model qwen/qwen3-14b --trace-output traces/run1
 
-# Replay a captured TraceV2 file through the DES
+# Replay a captured TraceV2 file through the DES (fixed timing from trace)
 ./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b
 
 # Replay and re-export trace with simulation-computed timing (mode: replayed)
 ./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
   --trace-output out
+
+# Replay with closed-loop session mode (follow-ups arrive at completion + think time)
+./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
+  --session-mode closed-loop
+
+# Replay closed-loop with explicit think-time override (500ms between rounds)
+./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
+  --session-mode closed-loop --think-time-ms 500
 
 # Observe real server latency and record timing into TraceV2
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
