@@ -24,7 +24,7 @@ A simple queueing model predicts 50ms time-to-first-token. Production measures 2
 
 <!-- more -->
 
-## The Right Physics, Not Everything
+## Modeling the Right Physics
 
 Building a trustworthy simulator is not about modeling everything — it is about modeling the right physics. The batch dynamics that couple request latencies. The KV cache pressure that triggers preemption. The prefill-decode handoffs that trade network costs for throughput. Miss any of these, and your predictions diverge from reality.
 
@@ -66,9 +66,12 @@ flowchart TB
     Layer3 -.-> Layer2
     Layer1 -.->|metrics| Layer3
 
-    style Layer1 fill:#f0f8ff
-    style Layer2 fill:#fffef0
-    style Layer3 fill:#fff0f0
+    classDef blackText color:#000,stroke:#333
+    class Sched,KV,Batch,Step,Admit,Route,Flow,Monitor,Decide,Actuate,Request,Response blackText
+
+    style Layer1 fill:#f0f8ff,stroke:#333,color:#000
+    style Layer2 fill:#fffef0,stroke:#333,color:#000
+    style Layer3 fill:#fff0f0,stroke:#333,color:#000
 ```
 
 ### Layer 1: The Engine (vLLM)
