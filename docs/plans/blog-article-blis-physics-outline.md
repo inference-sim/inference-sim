@@ -14,14 +14,14 @@
 
 ## Article Structure
 
-### **Section 1: Opening - The Simulation Trust Problem** (~300 words)
+### **Section 1: Opening - The Simulation Trust Problem** (~350 words)
 
 **Purpose:** Hook the reader and establish why this matters
 
 **Key Elements:**
 1. **Vision statement hook:** "Imagine testing routing policies, autoscaling strategies, and hardware configs without touching production. That's the promise of simulation—but only if it's accurate enough to trust."
 
-2. **The gap:** Quick story beat - "Many teams have tried. Simple queueing models predict 50ms TTFT; production hits 200ms. What went wrong?"
+2. **The gap:** "A simple queueing model predicts 50ms TTFT. Production measures 200ms. The difference reveals how much complexity hides beneath the surface."
 
 3. **The stakes:** Why this matters
    - Capacity decisions are million-dollar bets (H100 vs A100, TP=4 vs TP=8)
@@ -30,34 +30,15 @@
 
 4. **The thesis:** Building a trustworthy simulator isn't about modeling *everything* - it's about modeling the *right physics*
 
-5. **Reader promise:** "This article shows what it takes to build an inference simulator that captures the structural integrity of real systems - from token generation physics to distributed orchestration."
+5. **The BLIS approach (brief):** "BLIS achieves this through physics-informed modeling that runs entirely on CPU - no GPUs required. By combining analytical roofline models (compute vs memory bottlenecks) with learned corrections trained on real vLLM traces, it predicts GPU behavior in microseconds while maintaining single-digit percent accuracy."
 
-**Transition to Section 2:** Set up the "how can simulation be fast AND accurate?" question
+6. **Reader promise:** "This article shows what it takes to build an inference simulator that captures the structural integrity of real systems - from token generation physics to distributed orchestration."
 
----
-
-### **Section 2: The CPU-Only Simulation Breakthrough** (~150 words)
-
-**Purpose:** Establish BLIS's enabling technology - fast, accurate, CPU-only
-
-**Key Elements:**
-1. **The traditional limitation:** Need actual GPUs to predict GPU latency (doesn't scale)
-
-2. **The naive CPU approach fails:** Simple fitted equations miss batch dynamics, memory bottlenecks, KV cache pressure (3-5x error)
-
-3. **BLIS's approach:** Physics-informed basis functions + learned corrections
-   - Compute latency analytically from model architecture (HuggingFace config) + GPU specs (datasheets)
-   - Roofline: compute vs memory bottleneck for each operation
-   - Learned coefficients correct for real-world effects (kernel overhead, cache behavior)
-   - Trained on real vLLM traces
-
-4. **The result:** Fast (seconds not hours), accurate (single-digit percent error), CPU-only (no GPU required), generalizes across models/hardware/TP
-
-**Transition to Section 3:** "But speed and accuracy mean nothing if you're modeling the wrong things. Let's follow a request's journey through the system."
+**Transition to Section 2:** "Let's follow a request's 50-millisecond journey through the system to see where that complexity lives."
 
 ---
 
-### **Section 3: A Request's Journey - The Hidden Complexity** (~1500 words)
+### **Section 2: A Request's Journey - The Hidden Complexity** (~1500 words)
 
 **Purpose:** Show the three architectural layers and how they work together
 
@@ -65,7 +46,7 @@
 
 ---
 
-#### **Section 3A: Layer 1 - Engine Level (What vLLM Does)** (~450 words)
+#### **Section 2A: Layer 1 - Engine Level (What vLLM Does)** (~500 words)
 
 **Purpose:** Establish the batch-step paradigm and vLLM components
 
@@ -86,21 +67,28 @@
    - Scheduling: Priority queues (critical > standard > batch)
    - KV Cache: Block allocation, prefix caching, eviction/preemption
    - Continuous Batching: Requests join/leave mid-flight
-   - Step Physics: Roofline bottleneck (compute vs memory), learned corrections
 
-4. **Batch evolution example (brief):**
+4. **Step Physics: How BLIS computes without GPUs** (weave in the CPU-only approach here)
+   - For each step, compute two bottlenecks:
+     - Compute time: FLOPs / GPU_TFLOPS (e.g., ~20ms for 512-token prefill on H100)
+     - Memory time: Bytes / GPU_Bandwidth (e.g., ~2ms for decode reading KV cache)
+   - Step time = max(compute, memory) - the slower operation
+   - Apply learned corrections (β coefficients trained on 137K real vLLM requests)
+   - **This is why BLIS is CPU-only but accurate:** We compute the same bottleneck analysis vLLM's GPU experiences, using model architecture (from HuggingFace config) + hardware specs (from datasheets). No GPU execution needed.
+
+5. **Batch evolution example (brief):**
    - Small batch → fast (2ms/token)
    - Long prompt joins → everyone waits (20ms)
    - Prompt finishes → back to fast
    - Requests complete at different times → batch size changing
 
-5. **The takeaway:** Can't model with per-request equations. vLLM works in batches/steps. BLIS captures this.
+6. **The takeaway:** Can't model with per-request equations. vLLM works in batches/steps. BLIS captures this through discrete-event simulation - one step event per batch operation.
 
 **llm-d parity notes:** vLLM is the engine in llm-d. BLIS replicates vLLM semantics exactly (scheduling, KV cache, batching).
 
 ---
 
-#### **Section 3B: Layer 2 - Data Plane (Cluster Orchestration)** (~500 words)
+#### **Section 2B: Layer 2 - Data Plane (Cluster Orchestration)** (~500 words)
 
 **Purpose:** Show cluster-level coordination: admission, routing, P/D orchestration
 
@@ -141,7 +129,7 @@
 
 ---
 
-#### **Section 3C: Layer 3 - Control Plane (Capacity Management)** (~250 words)
+#### **Section 2C: Layer 3 - Control Plane (Capacity Management)** (~250 words)
 
 **Purpose:** Show autoscaling with feedback delays
 
@@ -172,7 +160,7 @@
 
 ---
 
-#### **Section 3D: The Complete Journey (Integration)** (~300 words)
+#### **Section 2D: The Complete Journey (Integration)** (~300 words)
 
 **Purpose:** Show all three layers working together for one request
 
@@ -196,7 +184,7 @@
 
 ---
 
-### **Section 4: BLIS in Action - A Real Scenario** (~400 words)
+### **Section 3: BLIS in Action - A Real Scenario** (~400 words)
 
 **Purpose:** Show concrete use case with real numbers
 
@@ -235,7 +223,7 @@
 
 ---
 
-### **Section 5: Closing - From Modeling to Validation** (~400 words)
+### **Section 4: Closing - From Modeling to Validation** (~400 words)
 
 **Purpose:** Recap journey, tease next article (validation), soft CTA
 
@@ -300,10 +288,9 @@
 ### Transitions Between Sections
 
 Each section should end with a sentence that sets up the next section:
-- Section 1 → 2: "But how can simulation be fast AND accurate?"
-- Section 2 → 3: "But speed and accuracy mean nothing if you're modeling the wrong things."
-- Section 3 → 4: "Let's see this in action with a real decision."
-- Section 4 → 5: "This is just the modeling story. Next comes validation."
+- Section 1 → 2: "Let's follow a request's 50-millisecond journey through the system to see where that complexity lives."
+- Section 2 → 3: "Let's see this in action with a real decision."
+- Section 3 → 4: "This is just the modeling story. Next comes validation."
 
 ### Key Messages to Hit
 
@@ -325,12 +312,12 @@ Include 1-sentence executive takeaway boxes at key points:
 
 ## Coordination Notes
 
-- **Lead writer:** Should own Section 1 (opening) and Section 5 (closing) for narrative cohesion
-- **Engine level (3A):** Needs vLLM expertise - batch-step paradigm is critical
-- **Data plane (3B):** Needs llm-d knowledge - routing, signal staleness, P/D orchestration
-- **Control plane (3C):** Needs autoscaling/Kubernetes background
-- **Integration (3D):** Lead writer should handle (ties all threads together)
-- **Example (Section 4):** Can run actual BLIS experiments to get real numbers
+- **Lead writer:** Should own Section 1 (opening) and Section 4 (closing) for narrative cohesion
+- **Engine level (2A):** Needs vLLM expertise - batch-step paradigm is critical; also weave in CPU-only approach when discussing step physics
+- **Data plane (2B):** Needs llm-d knowledge - routing, signal staleness, P/D orchestration
+- **Control plane (2C):** Needs autoscaling/Kubernetes background
+- **Integration (2D):** Lead writer should handle (ties all threads together)
+- **Example (Section 3):** Can run actual BLIS experiments to get real numbers
 
 **Review checkpoints:**
 1. Outline approval (this document)
