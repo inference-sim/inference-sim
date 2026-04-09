@@ -151,6 +151,9 @@ Scorers are the building blocks of the weighted routing policy. Each scorer eval
 | `queue-depth` | Queue depth | Min-max normalization of QueueDepth (lower depth = higher score) | Stateless |
 | `kv-utilization` | Memory pressure | `1 - KVUtilization` (lower utilization = higher score) | Stateless |
 | `load-balance` | Instance load | `1 / (1 + EffectiveLoad)` (decreasing function of load) | Stateless |
+| `active-requests` | In-flight requests | `(maxCount - count) / maxCount` (zero in-flight = 1.0; all equal non-zero = 0.0) | Stateless |
+| `running-requests` | Batch size | Min-max normalization of BatchSize (lower batch = higher score) | Stateless |
+| `load-aware` | Queue depth | `0.5 * (1 - QueueDepth/128)` clamped at threshold; score range [0, 0.5] | Stateless |
 
 ### Stateful vs. Stateless Scorers
 

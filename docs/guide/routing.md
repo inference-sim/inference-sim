@@ -36,6 +36,9 @@ The `weighted` routing policy is the most flexible. It combines multiple scoring
 | `queue-depth` | Queue depth: `QueueDepth` only (min-max normalized) | queue-scorer |
 | `kv-utilization` | Inverse KV utilization: `1 - KVUtilization` | kv-cache-utilization-scorer |
 | `load-balance` | Inverse transform: `1 / (1 + effectiveLoad)` | BLIS-native (no llm-d equivalent) |
+| `active-requests` | In-flight requests: `(maxCount - count) / maxCount` | active-request-scorer |
+| `running-requests` | Batch size (min-max normalized) | running-requests-size-scorer (GIE) |
+| `load-aware` | Queue depth (linear threshold-capped, range [0, 0.5]) | load-aware-scorer |
 
 !!! note "Prefix-affinity is a scorer, not a standalone policy"
     The `prefix-affinity` scorer operates within the `weighted` routing pipeline, composed with load-balancing scorers. It uses a router-side `PrefixCacheIndex` with proportional block hash matching and LRU eviction. Always pair it with at least one load-aware scorer (queue-depth or kv-utilization) to prevent cold-start pile-on.
