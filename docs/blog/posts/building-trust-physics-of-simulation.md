@@ -28,7 +28,7 @@ A simple queueing model predicts 50ms time-to-first-token. Production measures 2
 
 Building a trustworthy simulator is not about modeling everything — it is about modeling the right physics. The batch dynamics that couple request latencies. The KV cache pressure that triggers preemption. The prefill-decode handoffs that trade network costs for throughput. Miss any of these, and your predictions diverge from reality.
 
-BLIS achieves this through discrete-event simulation that models the actual physics—the mechanisms that determine latency in real systems: how requests couple through shared batch steps, how KV cache pressure triggers preemption cascades, how prefill-decode disaggregation trades network transfer costs for hardware specialization. Discrete-event simulation lets BLIS run orders of magnitude faster than real-time by jumping directly from event to event (request arrivals, batch completions, routing decisions) rather than ticking through every microsecond. The entire simulation runs on CPU — no GPUs required. Step times come from analytical roofline models (compute vs memory bottlenecks derived from model architecture and hardware specs) corrected with coefficients trained on real vLLM production traces. The result: evaluate hours of production traffic in seconds, with single-digit percent accuracy. Fast enough for rapid iteration, accurate enough to trust for production decisions.
+BLIS achieves this through discrete-event simulation that models the actual physics — the mechanisms that determine latency in real systems: how requests couple through shared batch steps, how KV cache pressure triggers preemption cascades, how prefill-decode disaggregation trades network transfer costs for hardware specialization. Discrete-event simulation lets BLIS run orders of magnitude faster than real-time by jumping directly from event to event (request arrivals, batch completions, routing decisions) rather than ticking through every microsecond. The entire simulation runs on CPU — no GPUs required. Step times come from analytical roofline models (compute vs memory bottlenecks derived from model architecture and hardware specs) corrected with coefficients trained on real vLLM production traces. The result: evaluate hours of production traffic in seconds, with single-digit percent accuracy. Fast enough for rapid iteration, accurate enough to trust for production decisions.
 
 This article shows what it takes to build that level of fidelity—from token generation physics to distributed orchestration. Let us follow a request's 50-millisecond journey through the system to see where every millisecond of that complexity lives.
 
@@ -37,6 +37,7 @@ This article shows what it takes to build that level of fidelity—from token ge
 A user hits enter. Fifty milliseconds later, the first token appears. What happened in between? Three architectural layers working together: the inference engine (vLLM), the data plane (cluster orchestration), and the control plane (autoscaling). Model them all with fidelity, or your capacity decisions will be wrong.
 
 ```mermaid
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#b3d9ff','primaryTextColor':'#000','primaryBorderColor':'#333','secondaryColor':'#ffe4b3','tertiaryColor':'#ffb3b3','lineColor':'#333','textColor':'#000','fontSize':'14px'}}}%%
 flowchart TB
     subgraph Layer1["Layer 1: Engine (vLLM)"]
         Sched[Scheduling]
@@ -66,9 +67,9 @@ flowchart TB
     Layer3 -.-> Layer2
     Layer1 -.->|metrics| Layer3
 
-    style Layer1 fill:#e1f5ff
-    style Layer2 fill:#fff4e1
-    style Layer3 fill:#ffe1e1
+    style Layer1 fill:#b3d9ff,stroke:#333,color:#000
+    style Layer2 fill:#ffe4b3,stroke:#333,color:#000
+    style Layer3 fill:#ffb3b3,stroke:#333,color:#000
 ```
 
 ### Layer 1: The Engine (vLLM)
