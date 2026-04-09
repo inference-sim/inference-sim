@@ -350,6 +350,58 @@ func TestObserveOrchestrator_WarmupExceedsTotal(t *testing.T) {
 	}
 }
 
+func TestObserveOrchestrator_RecordITL_CapturesChunkTimestamps(t *testing.T) {
+	// GIVEN a streaming server that returns 3 SSE chunks
+	// WHEN observeOrchestrator is called with recordITL=true
+	// THEN ITL records are captured with per-chunk timestamps
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		// Chunk 0
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"a"}}]}`)
+		flusher.Flush()
+		// Chunk 1
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"b"}}]}`)
+		flusher.Flush()
+		// Chunk 2 with usage
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"c"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":3}}`)
+		flusher.Flush()
+		fmt.Fprintf(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	requests := []*sim.Request{
+		{
+			ID: "request_0", ArrivalTime: 0,
+			InputTokens: make([]int, 10), OutputTokens: make([]int, 3),
+			MaxOutputLen: 3, State: sim.StateQueued, Streaming: true,
+		},
+	}
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	recorder := &Recorder{}
+	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0, nil, nil, false, true)
+
+	// THEN ITL records are captured
+	itlRecords := recorder.ITLRecords()
+	if len(itlRecords) != 3 {
+		t.Fatalf("expected 3 ITL records (3 chunks), got %d", len(itlRecords))
+	}
+	// Verify structure: request 0, chunk indices 0,1,2
+	for i, rec := range itlRecords {
+		if rec.RequestID != 0 {
+			t.Errorf("ITL record %d: RequestID = %d, want 0", i, rec.RequestID)
+		}
+		if rec.ChunkIndex != i {
+			t.Errorf("ITL record %d: ChunkIndex = %d, want %d", i, rec.ChunkIndex, i)
+		}
+		if rec.TimestampUs <= 0 {
+			t.Errorf("ITL record %d: TimestampUs = %d, want > 0", i, rec.TimestampUs)
+		}
+	}
+}
+
 // Task 6: Timestamp ordering and TraceV2 round-trip (OBS-INV-5, BC-5)
 
 func TestObserveOrchestrator_TimestampOrdering(t *testing.T) {

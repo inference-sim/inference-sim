@@ -241,12 +241,28 @@ func TestCalibration_WithITL(t *testing.T) {
 		t.Fatalf("PrepareCalibrationPairsWithITL failed: %v", err)
 	}
 
-	// THEN ITL pairs are populated
-	if len(pairs.ITL.Real) == 0 {
-		t.Error("ITL.Real is empty")
+	// THEN ITL pairs are populated with correct values
+	if len(pairs.ITL.Real) != 2 {
+		t.Errorf("ITL.Real length = %d, want 2", len(pairs.ITL.Real))
 	}
-	if len(pairs.ITL.Sim) == 0 {
-		t.Error("ITL.Sim is empty")
+	if len(pairs.ITL.Sim) != 2 {
+		t.Errorf("ITL.Sim length = %d, want 2", len(pairs.ITL.Sim))
+	}
+
+	// Verify real ITL: mean of deltas {1020-1000, 1040-1020} = {20, 20} = 20.0
+	if len(pairs.ITL.Real) > 0 {
+		expectedRealITL := 20.0
+		if math.Abs(pairs.ITL.Real[0]-expectedRealITL) > 0.01 {
+			t.Errorf("ITL.Real[0] = %.2f, want %.2f (mean of chunk deltas)", pairs.ITL.Real[0], expectedRealITL)
+		}
+	}
+
+	// Verify sim ITL: (E2E - TTFT) / (OutputTokens - 1) = (1100 - 1000) / (50 - 1) ≈ 2.04
+	if len(pairs.ITL.Sim) > 0 {
+		expectedSimITL := 100.0 / 49.0
+		if math.Abs(pairs.ITL.Sim[0]-expectedSimITL) > 0.01 {
+			t.Errorf("ITL.Sim[0] = %.2f, want %.2f ((E2E-TTFT)/(OutputTokens-1))", pairs.ITL.Sim[0], expectedSimITL)
+		}
 	}
 
 	// WHEN building calibration report
@@ -262,5 +278,52 @@ func TestCalibration_WithITL(t *testing.T) {
 	}
 	if itlMetric.Count == 0 {
 		t.Error("ITL metric has Count=0")
+	}
+}
+
+func TestCalibration_WithITL_NegativeDelta_ClockSkew(t *testing.T) {
+	// GIVEN trace records with ITL data containing negative deltas (clock skew)
+	traceRecords := []TraceRecord{
+		{RequestID: 0, InputTokens: 100, OutputTokens: 50, FirstChunkTimeUs: 1000, LastChunkTimeUs: 1100, SendTimeUs: 0},
+		{RequestID: 1, InputTokens: 100, OutputTokens: 50, FirstChunkTimeUs: 2000, LastChunkTimeUs: 2100, SendTimeUs: 0},
+	}
+	simResults := []SimResult{
+		{RequestID: 0, InputTokens: 100, OutputTokens: 50, TTFT: 1000, E2E: 1100},
+		{RequestID: 1, InputTokens: 100, OutputTokens: 50, TTFT: 2000, E2E: 2100},
+	}
+	itlRecords := []ITLRecord{
+		// Request 0: all negative deltas (timestamps go backward)
+		{RequestID: 0, ChunkIndex: 0, TimestampUs: 1000},
+		{RequestID: 0, ChunkIndex: 1, TimestampUs: 990},
+		{RequestID: 0, ChunkIndex: 2, TimestampUs: 980},
+		// Request 1: partial negative deltas (one valid, one negative)
+		{RequestID: 1, ChunkIndex: 0, TimestampUs: 2000},
+		{RequestID: 1, ChunkIndex: 1, TimestampUs: 1990}, // negative delta
+		{RequestID: 1, ChunkIndex: 2, TimestampUs: 2020}, // positive delta
+	}
+
+	// WHEN preparing calibration pairs with ITL
+	config := &CalibrationConfig{}
+	pairs, err := PrepareCalibrationPairsWithITL(traceRecords, simResults, itlRecords, config)
+	if err != nil {
+		t.Fatalf("PrepareCalibrationPairsWithITL failed: %v", err)
+	}
+
+	// THEN request 0 is dropped (all deltas negative)
+	if pairs.ITLDropped != 1 {
+		t.Errorf("ITLDropped = %d, want 1 (request 0 with all negative deltas)", pairs.ITLDropped)
+	}
+
+	// THEN request 1 is included with only the positive delta
+	if len(pairs.ITL.Real) != 1 {
+		t.Errorf("ITL.Real length = %d, want 1 (request 1 with one valid delta)", len(pairs.ITL.Real))
+	}
+	if len(pairs.ITL.Real) > 0 {
+		// Request 1 has one valid delta: chunk[2] - chunk[1] = 2020 - 1990 = 30
+		// (negative delta chunk[1] - chunk[0] = 1990 - 2000 = -10 is skipped)
+		expectedRealITL := 30.0
+		if math.Abs(pairs.ITL.Real[0]-expectedRealITL) > 0.01 {
+			t.Errorf("ITL.Real[0] = %.2f, want %.2f (one valid delta)", pairs.ITL.Real[0], expectedRealITL)
+		}
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"sort"
+
+	"github.com/sirupsen/logrus"
 )
 
 // MetricComparison holds statistical comparison between real and sim values.
@@ -72,6 +74,7 @@ type CalibrationPairs struct {
 	MatchedCount       int
 	UnmatchedReal      int
 	UnmatchedSim       int
+	ITLDropped         int // Requests dropped from ITL due to clock skew (all negative deltas)
 }
 
 // PrepareCalibrationPairs matches real trace records with sim results,
@@ -205,13 +208,16 @@ func PrepareCalibrationPairsWithITL(
 		for i := 1; i < len(chunks); i++ {
 			delta := float64(chunks[i].TimestampUs - chunks[i-1].TimestampUs)
 			if delta < 0 {
-				// Clock skew or corrupt data — skip this request
+				// Clock skew or corrupt data — skip this delta
 				continue
 			}
 			realITLSum += delta
 			realITLCount++
 		}
 		if realITLCount == 0 {
+			// All deltas were negative (clock skew) — drop this request from ITL (R1)
+			logrus.Warnf("calibrate: request %d ITL dropped (all %d deltas negative, likely clock skew)", rec.RequestID, len(chunks)-1)
+			pairs.ITLDropped++
 			continue
 		}
 		realITL := realITLSum / float64(realITLCount)

@@ -3,6 +3,7 @@ package workload_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim/workload"
@@ -56,22 +57,7 @@ func TestITL_LoadITL_MalformedCSV_ReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for malformed CSV, got nil")
 	}
-	if !contains(err.Error(), "timestamp_us") {
+	if !strings.Contains(err.Error(), "timestamp_us") {
 		t.Errorf("error message should mention 'timestamp_us', got: %v", err)
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) &&
-		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
-		 findSubstring(s, substr)))
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

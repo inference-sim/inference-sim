@@ -28,7 +28,6 @@ func ExportITL(records []ITLRecord, path string) error {
 	defer func() { _ = file.Close() }()
 
 	writer := csv.NewWriter(file)
-	defer writer.Flush()
 
 	// Write header
 	if err := writer.Write([]string{"request_id", "chunk_index", "timestamp_us"}); err != nil {
@@ -45,6 +44,12 @@ func ExportITL(records []ITLRecord, path string) error {
 		if err := writer.Write(row); err != nil {
 			return fmt.Errorf("writing ITL CSV row (request_id=%d): %w", r.RequestID, err)
 		}
+	}
+
+	// Flush and check for errors before returning (R1: no silent data loss)
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return fmt.Errorf("flushing ITL CSV: %w", err)
 	}
 	return nil
 }
