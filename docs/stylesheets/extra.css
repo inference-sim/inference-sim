@@ -1,24 +1,23 @@
-/* Mermaid diagram text visibility fixes */
-
-/* Light mode: black text */
-[data-md-color-scheme="default"] .mermaid text,
-[data-md-color-scheme="default"] .mermaid .node text,
-[data-md-color-scheme="default"] .mermaid .label,
-[data-md-color-scheme="default"] .mermaid .cluster-label text,
-[data-md-color-scheme="default"] .mermaid tspan {
+/* Mermaid diagram text visibility - force black text on light mode */
+.mermaid svg text,
+.mermaid svg .label,
+.mermaid svg tspan,
+.mermaid svg g.label text,
+.mermaid svg g.node text,
+.mermaid svg .cluster text,
+.mermaid svg .cluster-label text {
   fill: #000 !important;
+  color: #000 !important;
 }
 
 /* Dark mode: white text */
-[data-md-color-scheme="slate"] .mermaid text,
-[data-md-color-scheme="slate"] .mermaid .node text,
-[data-md-color-scheme="slate"] .mermaid .label,
-[data-md-color-scheme="slate"] .mermaid .cluster-label text,
-[data-md-color-scheme="slate"] .mermaid tspan {
+[data-md-color-scheme="slate"] .mermaid svg text,
+[data-md-color-scheme="slate"] .mermaid svg .label,
+[data-md-color-scheme="slate"] .mermaid svg tspan,
+[data-md-color-scheme="slate"] .mermaid svg g.label text,
+[data-md-color-scheme="slate"] .mermaid svg g.node text,
+[data-md-color-scheme="slate"] .mermaid svg .cluster text,
+[data-md-color-scheme="slate"] .mermaid svg .cluster-label text {
   fill: #fff !important;
-}
-
-/* Ensure subgraph titles are visible */
-.mermaid .cluster-label text {
-  font-weight: bold;
+  color: #fff !important;
 }
