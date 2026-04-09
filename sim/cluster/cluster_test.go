@@ -2442,3 +2442,115 @@ func TestClusterSimulator_SessionFollowUpCausality(t *testing.T) {
 		t.Error("BC-4: no completionTick entries recorded — DES produced no completions")
 	}
 }
+
+// TestClusterSimulator_MultiTurnSession_EndToEnd verifies BC-5, BC-6, BC-7:
+// INV-1 conservation holds with dynamic follow-up injection, follow-ups have
+// RoundIndex > 0, and every session generates at least one follow-up.
+// This is the first test of the standard (non-disaggregated) cluster path
+// with real multi-turn session management.
+// NOTE: assertINV1Conservation checks 5 of 9 INV-1 terms; the 4 missing terms
+// (DeferredHorizonInterrupted, RoutingRejections, GatewayQueueDepth, GatewayQueueShed)
+// are zero for this config (no gateway queue, no deferred queue, no routing rejections).
+func TestClusterSimulator_MultiTurnSession_EndToEnd(t *testing.T) {
+	inputSampler, err := workload.NewLengthSampler(workload.DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 20},
+	})
+	if err != nil {
+		t.Fatalf("NewLengthSampler (input): %v", err)
+	}
+	outputSampler, err := workload.NewLengthSampler(workload.DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 10},
+	})
+	if err != nil {
+		t.Fatalf("NewLengthSampler (output): %v", err)
+	}
+
+	const numSessions = 3
+	const maxRounds = 3
+
+	rng := rand.New(rand.NewSource(13))
+	blueprints := make([]workload.SessionBlueprint, numSessions)
+	seeds := make([]*sim.Request, numSessions)
+	for i := 0; i < numSessions; i++ {
+		sessID := fmt.Sprintf("t23_sess_%d", i)
+		blueprints[i] = workload.SessionBlueprint{
+			SessionID:     sessID,
+			ClientID:      "test-client",
+			MaxRounds:     maxRounds,
+			ThinkTimeUs:   100_000, // 100ms
+			Horizon:       math.MaxInt64,
+			InputSampler:  inputSampler,
+			OutputSampler: outputSampler,
+			RNG:           rand.New(rand.NewSource(rng.Int63())),
+			TenantID:      "test-tenant",
+			SLOClass:      "standard",
+			Model:         "test-model",
+		}
+		seeds[i] = &sim.Request{
+			ID:           fmt.Sprintf("t23_sess_%d_r0", i),
+			ArrivalTime:  int64(i * 1_000_000),
+			InputTokens:  make([]int, 20),
+			OutputTokens: make([]int, 10),
+			MaxOutputLen: 10,
+			State:        sim.StateQueued,
+			SessionID:    sessID,
+			RoundIndex:   0,
+		}
+	}
+
+	sm := workload.NewSessionManager(blueprints)
+	totalInjected := numSessions // seeds
+	followUpCount := 0
+	followUpsBySession := make(map[string][]int)
+
+	onDone := func(req *sim.Request, tick int64) []*sim.Request {
+		followUps := sm.OnComplete(req, tick)
+		for _, fu := range followUps {
+			totalInjected++
+			followUpCount++
+			if fu.SessionID != "" {
+				followUpsBySession[fu.SessionID] = append(followUpsBySession[fu.SessionID], fu.RoundIndex)
+			}
+		}
+		return followUps
+	}
+
+	config := newTestDeploymentConfig(1)
+	cs := NewClusterSimulator(config, seeds, onDone)
+	mustRun(t, cs)
+
+	metrics := cs.AggregatedMetrics()
+
+	// BC-5 (INV-1): conservation with dynamic follow-up injection
+	assertINV1Conservation(t, metrics, totalInjected, "multi-turn end-to-end")
+
+	if metrics.CompletedRequests == 0 {
+		t.Error("BC-5: CompletedRequests = 0, expected > 0 (work must be done)")
+	}
+
+	// BC-6: no follow-up has RoundIndex == 0 (only seeds are round 0)
+	for sessID, rounds := range followUpsBySession {
+		for _, ri := range rounds {
+			if ri == 0 {
+				t.Errorf("BC-6: session %s generated a follow-up with RoundIndex=0", sessID)
+			}
+		}
+	}
+
+	// BC-7: every session generated at least one follow-up
+	for i := 0; i < numSessions; i++ {
+		sessID := fmt.Sprintf("t23_sess_%d", i)
+		if len(followUpsBySession[sessID]) == 0 {
+			t.Errorf("BC-7: session %s generated 0 follow-ups, want >= 1 (MaxRounds=%d)", sessID, maxRounds)
+		}
+	}
+
+	// Sanity: exact follow-up count with MaxInt64 horizon (no interruptions)
+	expectedFollowUps := numSessions * (maxRounds - 1)
+	if followUpCount != expectedFollowUps {
+		t.Errorf("follow-up count = %d, want %d (%d sessions × %d follow-ups each)",
+			followUpCount, expectedFollowUps, numSessions, maxRounds-1)
+	}
+}
