@@ -1,1 +1,10 @@
-/* Remove all mermaid text color overrides - let mermaid handle theme-appropriate text colors */
+/* Mermaid text - force black on light backgrounds in both light and dark mode */
+.mermaid text {
+  fill: #000 !important;
+}
+
+.mermaid .nodeLabel,
+.mermaid .edgeLabel,
+.mermaid .cluster-label {
+  color: #000 !important;
+}
