@@ -1,9 +1,10 @@
-# Blog Article: Building Trust - The Physics of High-Fidelity Inference Simulation
+# Blog Article: The Physics of High-Fidelity Inference Simulation
 
 **Target Length:** ~3,500 words (7-min read)
 **Target Audience:** Dual audience - llm-d executives and platform engineers
 **Tone:** Product-oriented with storytelling, accessible but rigorous, conversational without being casual
 **Blog File:** `docs/blog/posts/building-trust-physics-of-simulation.md`
+**Focus:** What it takes to build a high-fidelity simulator, not just accuracy but enabling experimentation
 
 **Blog Format (MkDocs Material):**
 - YAML frontmatter with `date`, `authors` (from `docs/blog/.authors.yml`), `categories`, and `draft: true` until ready
@@ -43,7 +44,25 @@
 
 6. **Reader promise:** "This article shows what it takes to build an inference simulator that captures the structural integrity of real systems - from token generation physics to distributed orchestration."
 
-**Transition to Section 2:** "Let's follow a request's 50-millisecond journey through the system to see where that complexity lives."
+**Transition:** "This article shows what it takes to build that level of fidelity—from token generation physics to distributed orchestration."
+
+---
+
+### **Section 1B: Why Physics-Based Modeling Matters Beyond Accuracy** (~200 words)
+
+**Purpose:** Show that physics-based modeling enables experimentation, not just validation
+
+**Key Elements:**
+
+1. **The experimentation unlock:** Physics-based simulators enable testing mechanisms that don't exist yet in production - novel routing policies, new scheduling algorithms, different admission strategies.
+
+2. **Contrast with empirical models:** Empirical models (trained on historical data) predict what has been observed. Physics-based models predict what could happen under new conditions, new policies, new architectures.
+
+3. **Compounding value:** As production evolves, the simulator evolves by updating physics, not retraining. As research explores new algorithms, the simulator becomes the proving ground—fast, cheap, reproducible.
+
+4. **The research testbed vision:** This is how simulators drive progress in other engineering fields (aerospace, chip design). BLIS aims to serve the inference serving community the same way.
+
+**Transition to Section 2:** "Let's see what this physics-based modeling looks like in practice, following a request's journey through the system."
 
 ---
 
@@ -195,40 +214,33 @@
 
 ### **Section 3: BLIS in Action - A Real Scenario** (~400 words)
 
-**Purpose:** Show concrete use case with real numbers
+**Purpose:** Show concrete use case with validation numbers
 
 **Key Elements:**
 
-1. **Setup the decision:** "Your team is evaluating PD disaggregation for a RAG workload with shared system prompts (1024 tokens common). Should you split prefill and decode? What's the trade-off?"
+1. **Setup the decision:** Pick a scenario where we have actual validation data - routing policy comparison, capacity planning, or another architectural decision we can back with sim-vs-real numbers.
 
 2. **The experiment in BLIS:**
-   ```bash
-   # Monolithic baseline
-   ./blis run --model qwen/qwen3-14b --num-instances 4 --rate 100
+   - Show the commands used
+   - Make it reproducible
+   - Keep it simple enough to understand
 
-   # PD Disaggregated
-   ./blis run --model qwen/qwen3-14b \
-     --prefill-instances 2 --decode-instances 4 \
-     --kv-transfer-bandwidth-gbps 100
-   ```
+3. **Results comparison:**
+   - Real production numbers vs BLIS predictions
+   - Show accuracy metrics (MAPE, error %)
+   - Table or chart format
 
-3. **Results comparison table:**
-   | Metric | Monolithic | PD Disagg | Delta |
-   |--------|-----------|-----------|-------|
-   | TTFT p99 | 145ms | 167ms | +15% (transfer overhead) |
-   | ITL p99 | 28ms | 24ms | -14% (decode less burdened) |
-   | Throughput | 2,847 tok/s | 3,102 tok/s | +9% (specialization) |
-   | Cost | 4×H100 | 2×A100+4×H100 | -18% (cheaper prefill GPUs) |
-
-4. **The insight:** PD disaggregation trades TTFT for throughput + cost. For batch workloads (E2E matters), it wins. For interactive chat (TTFT critical), maybe not. BLIS quantifies the trade-off before you commit.
+4. **The insight:** Show what the simulator enabled - a decision that would have been expensive/risky to test in production, now validated cheaply and safely.
 
 5. **What this enables:**
-   - Architecture decisions (monolithic vs PD, TP configs)
+   - Architecture decisions (hardware, TP configs)
    - Policy optimization (test 10 routing configs in minutes)
-   - Capacity planning (how many instances for 500 req/s?)
+   - Capacity planning (how many instances for X req/s?)
    - Research sandbox (validate novel mechanisms before production)
 
 6. **The confidence statement:** "When your simulator models engine physics, data plane coordination, and control plane delays, you can make architectural decisions based on simulation. That's the unlock."
+
+**NOTE:** Must use an example where we have validation data. Do NOT use PD disaggregation unless we collect real comparison numbers first.
 
 ---
 

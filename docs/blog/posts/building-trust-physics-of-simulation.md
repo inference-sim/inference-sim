@@ -16,11 +16,11 @@ categories:
   - Deep Dives
 ---
 
-# Building Trust: The Physics of High-Fidelity Inference Simulation
+# The Physics of High-Fidelity Inference Simulation
 
-Imagine testing routing policies, autoscaling strategies, and hardware configurations without touching production. No risk. No downtime. Just answers. That is the promise of simulation — but only if it is accurate enough to trust.
+What does it take to build an inference simulator you can actually trust for production decisions? The gap between simple queueing models and reality is wide: a model predicts 50ms time-to-first-token, production measures 200ms. The difference reveals how much complexity hides beneath the surface.
 
-A simple queueing model predicts 50ms time-to-first-token. Production measures 200ms. The difference reveals how much complexity hides beneath the surface. Capacity decisions are million-dollar bets: H100 vs A100, tensor parallelism 4 vs 8, and intuition fails at this scale.
+Capacity decisions are million-dollar bets: H100 vs A100, tensor parallelism 4 vs 8. Testing routing policies on live traffic is risky. Building a simulator that captures the real system physics—accurately enough to inform these decisions—requires modeling the right mechanisms at every layer.
 
 <!-- more -->
 
@@ -30,7 +30,15 @@ Building a trustworthy simulator is not about modeling everything — it is abou
 
 BLIS achieves this through discrete-event simulation that models the actual physics — the mechanisms that determine latency in real systems: how requests couple through shared batch steps, how KV cache pressure triggers preemption cascades, how prefill-decode disaggregation trades network transfer costs for hardware specialization. Discrete-event simulation lets BLIS run orders of magnitude faster than real-time by jumping directly from event to event (request arrivals, batch completions, routing decisions) rather than ticking through every microsecond. The entire simulation runs on CPU — no GPUs required. Step times come from analytical roofline models (compute vs memory bottlenecks derived from model architecture and hardware specs) corrected with coefficients trained on real vLLM production traces. The result: evaluate hours of production traffic in seconds, with single-digit percent accuracy. Fast enough for rapid iteration, accurate enough to trust for production decisions.
 
-This article shows what it takes to build that level of fidelity—from token generation physics to distributed orchestration. Let us follow a request's 50-millisecond journey through the system to see where every millisecond of that complexity lives.
+This article shows what it takes to build that level of fidelity—from token generation physics to distributed orchestration.
+
+## Why Physics-Based Modeling Matters Beyond Accuracy
+
+Accuracy alone is not enough. A physics-based simulator enables experimentation with mechanisms that do not exist yet in production. Want to test a novel routing policy? A new scheduling algorithm? A different admission control strategy? With BLIS, you can implement the policy, run it against realistic workloads, and measure the impact—all without touching production infrastructure.
+
+This is fundamentally different from empirical models trained on historical data. Those models predict what has been observed. Physics-based models predict what could happen under new conditions, new policies, new architectures. When the simulator models the actual mechanisms—batch formation, KV cache pressure, queue dynamics—it becomes a testbed for innovation, not just validation.
+
+The value compounds over time. As production systems evolve, the simulator evolves with them by updating the physics, not retraining on new data. As research teams explore new serving algorithms, the simulator becomes the proving ground—fast, cheap, reproducible. This is how simulators drive progress in other engineering fields, and it is how BLIS aims to serve the inference serving community.
 
 ## A Request's Journey: The Hidden Complexity
 
@@ -66,9 +74,9 @@ flowchart TB
     Layer3 -.-> Layer2
     Layer1 -.->|metrics| Layer3
 
-    style Layer1 fill:#2874a6
-    style Layer2 fill:#d68910
-    style Layer3 fill:#c0392b
+    style Layer1 fill:#a8d5ff
+    style Layer2 fill:#ffd699
+    style Layer3 fill:#ffb3b3
 ```
 
 ### Layer 1: The Engine (vLLM)
@@ -105,7 +113,7 @@ BLIS models this through discrete-event simulation: one step event per batch ope
 
 ## BLIS in Action: A Real Scenario
 
-[To be written - PD disaggregation example with real numbers]
+[To be written - routing policy comparison or capacity planning example with validation numbers]
 
 ## From Modeling to Validation
 
