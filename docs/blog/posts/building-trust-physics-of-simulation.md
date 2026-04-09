@@ -46,7 +46,7 @@ This article walks through what it takes to build that level of fidelity — fro
 A user hits enter, and fifty milliseconds later the first token appears. What happened in between? Three architectural layers working together: the inference engine (vLLM), the data plane (cluster orchestration), and the control plane (autoscaling), all of which high-fidelity simulation must model.
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': {'primaryTextColor':'#000','secondaryTextColor':'#000','tertiaryTextColor':'#000','textColor':'#000','labelTextColor':'#000','clusterBkg':'#a8d5ff','altBackground':'#ffd699'}}}%%
+%%{init: {'theme':'base', 'themeVariables': {'primaryTextColor':'#000','secondaryTextColor':'#000','tertiaryTextColor':'#000','textColor':'#000','labelTextColor':'#000','nodeTextColor':'#000','edgeLabelBackground':'transparent','clusterBkg':'#a8d5ff','altBackground':'#ffd699','titleColor':'#000','nodeBorder':'#000'}}}%%
 flowchart TB
     subgraph Layer1["Layer 1: Engine (vLLM)"]
         Sched[Scheduling]
@@ -87,7 +87,7 @@ The inference engine does not process requests individually. It processes them i
 
 Why does this matter? Consider a batch with three requests decoding single tokens (fast, memory-bound) and one request processing a 512-token prompt (slow, compute-bound). Everyone waits for the slowest. This is not an edge case - batch composition constantly shifts as new requests arrive and completed ones leave.
 
-**What BLIS models from vLLM.** vLLM uses continuous batching where requests join and leave mid-flight and prefill and decode can execute together in the same batch, block-level KV cache management with prefix reuse and preemption, chunked prefill to break large prompts into smaller pieces, and KV cache offloading to CPU memory when GPU memory fills. BLIS models all of this: mixed prefill-decode batching, KV allocation and eviction, chunked prefill, CPU KV offloading, and dynamic batch membership.
+**What BLIS captures.** vLLM's complexity comes from continuous batching (requests join and leave mid-flight), mixed prefill-decode execution (fast decode waits for slow prefill), block-level KV cache management (prefix reuse, preemption, CPU offloading when GPU memory fills), and chunked prefill (breaking large prompts into smaller pieces). BLIS models all of these mechanisms because they determine when requests complete.
 
 **How BLIS predicts step time without GPUs.** BLIS uses a trained model that combines physics-based basis functions with learned corrections:
 
@@ -95,7 +95,7 @@ $$
 t_{\text{step}} = \sum_{i} \beta_i \cdot \phi_i(\text{batch}, \text{model}, \text{hardware})
 $$
 
-where $\phi_i$ are basis functions that depend on batch composition, model architecture, and hardware specifications, and $\beta_i$ are coefficients trained on real vLLM traces. The simulator runs on CPU and produces predictions in a fraction of the time real execution would take.
+where $\phi_i$ are basis functions that capture computational physics (how batch size, sequence length, and model parameters affect compute and memory bandwidth), and $\beta_i$ are coefficients trained on real vLLM traces that correct for hardware-specific bottlenecks. This approach generalizes across LLM architectures, hardware configurations, and tensor parallelism degrees, enabling seamless experimentation with any model-GPU-TP combination without per-configuration calibration. Accurate forward pass predictions drive accurate end-to-end latency metrics.
 
 ### Layer 2: The Data Plane (Cluster Orchestration)
 
