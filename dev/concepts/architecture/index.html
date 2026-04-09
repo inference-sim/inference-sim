@@ -3269,6 +3269,24 @@
 <td><code>1 / (1 + EffectiveLoad)</code> (decreasing function of load)</td>
 <td>Stateless</td>
 </tr>
+<tr>
+<td><code>active-requests</code></td>
+<td>In-flight requests</td>
+<td><code>(maxCount - count) / maxCount</code> (zero in-flight = 1.0; all equal non-zero = 0.0)</td>
+<td>Stateless</td>
+</tr>
+<tr>
+<td><code>running-requests</code></td>
+<td>Batch size</td>
+<td>Min-max normalization of BatchSize (lower batch = higher score)</td>
+<td>Stateless</td>
+</tr>
+<tr>
+<td><code>load-aware</code></td>
+<td>Queue depth</td>
+<td><code>0.5 * (1 - QueueDepth/128)</code> clamped at threshold; score range [0, 0.5]</td>
+<td>Stateless</td>
+</tr>
 </tbody>
 </table>
 <h3 id="stateful-vs-stateless-scorers">Stateful vs. Stateless Scorers<a class="headerlink" href="#stateful-vs-stateless-scorers" title="Permanent link">&para;</a></h3>
