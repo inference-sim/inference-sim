@@ -46,7 +46,7 @@
 
 ---
 
-#### **Section 2A: Layer 1 - Engine Level (What vLLM Does)** (~500 words)
+#### **Layer 1: The Engine (vLLM)** (~500 words)
 
 **Purpose:** Establish the batch-step paradigm and vLLM components
 
@@ -88,7 +88,7 @@
 
 ---
 
-#### **Section 2B: Layer 2 - Data Plane (Cluster Orchestration)** (~500 words)
+#### **Layer 2: The Data Plane (Cluster Orchestration)** (~500 words)
 
 **Purpose:** Show cluster-level coordination: admission, routing, P/D orchestration
 
@@ -129,7 +129,7 @@
 
 ---
 
-#### **Section 2C: Layer 3 - Control Plane (Capacity Management)** (~250 words)
+#### **Layer 3: The Control Plane (Autoscaling)** (~250 words)
 
 **Purpose:** Show autoscaling with feedback delays
 
@@ -160,7 +160,7 @@
 
 ---
 
-#### **Section 2D: The Complete Journey (Integration)** (~300 words)
+#### **The Complete Journey** (~300 words)
 
 **Purpose:** Show all three layers working together for one request
 
@@ -304,19 +304,18 @@ Each section should end with a sentence that sets up the next section:
 ### Executive Takeaway Boxes
 
 Include 1-sentence executive takeaway boxes at key points:
-- End of Section 3A (engine level)
-- End of Section 3D (complete journey)
+- End of Layer 1 (The Engine)
+- End of The Complete Journey
 - These should be bold, standalone, understandable without context
 
 ---
 
 ## Coordination Notes
 
-- **Lead writer:** Should own Section 1 (opening) and Section 4 (closing) for narrative cohesion
-- **Engine level (2A):** Needs vLLM expertise - batch-step paradigm is critical; also weave in CPU-only approach when discussing step physics
-- **Data plane (2B):** Needs llm-d knowledge - routing, signal staleness, P/D orchestration
-- **Control plane (2C):** Needs autoscaling/Kubernetes background
-- **Integration (2D):** Lead writer should handle (ties all threads together)
+- **Lead writer:** Should own Section 1 (opening), The Complete Journey, and Section 4 (closing) for narrative cohesion
+- **Layer 1 (The Engine):** Needs vLLM expertise - batch-step paradigm is critical; also weave in CPU-only approach when discussing step physics
+- **Layer 2 (The Data Plane):** Needs llm-d knowledge - routing, signal staleness, P/D orchestration
+- **Layer 3 (The Control Plane):** Needs autoscaling/Kubernetes background
 - **Example (Section 3):** Can run actual BLIS experiments to get real numbers
 
 **Review checkpoints:**
