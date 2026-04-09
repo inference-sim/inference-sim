@@ -19,7 +19,6 @@ type RoutingSnapshot struct {
 	FreeKVBlocks     int64
 	CacheHitRate     float64
 	InFlightRequests int    // Requests dispatched to this instance but not yet completed
-	PreemptionCount  int64  // Cumulative preemption events since instance start (monotonically increasing)
 	Model            string // Model served by this instance; used by buildRouterState() for per-model filtering
 	GPUType          string  // GPU hardware type (e.g. "A100-80GB"); populated by buildRouterState() from instance config
 	TPDegree         int     // Tensor-parallel degree; populated by buildRouterState() from instance config
