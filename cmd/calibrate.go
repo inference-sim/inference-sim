@@ -18,6 +18,7 @@ var (
 	calibrateWarmUpRequests       int
 	calibrateNetworkRTTUs         int64
 	calibrateNetworkBandwidthMbps float64
+	calibrateITLDataPath          string
 )
 
 var calibrateCmd = &cobra.Command{
@@ -105,8 +106,22 @@ Example:
 			BandwidthMbps:  calibrateNetworkBandwidthMbps,
 		}
 
-		// Step 5: Prepare calibration pairs
-		pairs, err := workload.PrepareCalibrationPairs(trace.Records, simResults, &config)
+		// Step 4.5: Load ITL data if provided
+		var itlRecords []workload.ITLRecord
+		if calibrateITLDataPath != "" {
+			itlRecords, err = workload.LoadITL(calibrateITLDataPath)
+			if err != nil {
+				logrus.Fatalf("Failed to load ITL data from %s: %v", calibrateITLDataPath, err)
+			}
+		}
+
+		// Step 5: Prepare calibration pairs (with or without ITL)
+		var pairs *workload.CalibrationPairs
+		if len(itlRecords) > 0 {
+			pairs, err = workload.PrepareCalibrationPairsWithITL(trace.Records, simResults, itlRecords, &config)
+		} else {
+			pairs, err = workload.PrepareCalibrationPairs(trace.Records, simResults, &config)
+		}
 		if err != nil {
 			logrus.Fatalf("Failed to prepare calibration pairs: %v", err)
 		}
@@ -150,6 +165,10 @@ Example:
 			logrus.Infof("  E2E:  MAPE=%.1f%%, PearsonR=%.3f, quality=%s",
 				e2e.MAPE*100, e2e.PearsonR, e2e.Quality)
 		}
+		if itl, ok := report.Metrics["itl"]; ok {
+			logrus.Infof("  ITL:  MAPE=%.1f%%, PearsonR=%.3f, quality=%s",
+				itl.MAPE*100, itl.PearsonR, itl.Quality)
+		}
 	},
 }
 
@@ -161,5 +180,6 @@ func init() {
 	calibrateCmd.Flags().IntVar(&calibrateWarmUpRequests, "warmup-requests", -1, "Number of initial requests to exclude (default: from trace header warm_up_requests; pass 0 to include all)")
 	calibrateCmd.Flags().Int64Var(&calibrateNetworkRTTUs, "network-rtt-us", -1, "Network RTT in microseconds added to sim-side latencies (default: from trace header network.measured_rtt_ms)")
 	calibrateCmd.Flags().Float64Var(&calibrateNetworkBandwidthMbps, "network-bandwidth-mbps", 0, "Network bandwidth in Mbps for upload/download delay calculation (default: 0 = no delay)")
+	calibrateCmd.Flags().StringVar(&calibrateITLDataPath, "itl-data", "", "Optional path to ITL CSV file (from blis observe --record-itl) to include ITL metric in calibration report")
 	rootCmd.AddCommand(calibrateCmd)
 }

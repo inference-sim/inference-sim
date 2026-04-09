@@ -369,3 +369,18 @@ network:
 		t.Errorf("TTFT MAPE = %.4f, want ~0.0 (RTT from header not applied correctly)", ttftMetric.MAPE)
 	}
 }
+
+func TestCalibrateCmd_ITLDataFlag_Defined(t *testing.T) {
+	// GIVEN the calibrate command
+	// WHEN checking for --itl-data flag
+	// THEN flag is defined and optional (BC-6, BC-11)
+	cmd := calibrateCmd
+
+	flag := cmd.Flags().Lookup("itl-data")
+	if flag == nil {
+		t.Fatal("--itl-data flag not defined")
+	}
+	if flag.DefValue != "" {
+		t.Errorf("--itl-data default should be empty (optional), got %q", flag.DefValue)
+	}
+}
