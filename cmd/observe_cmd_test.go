@@ -358,15 +358,15 @@ func TestObserveOrchestrator_RecordITL_CapturesChunkTimestamps(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
 		// Chunk 0
-		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"a"}}]}`)
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"a"}}]}`)
 		flusher.Flush()
 		// Chunk 1
-		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"b"}}]}`)
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"b"}}]}`)
 		flusher.Flush()
 		// Chunk 2 with usage
-		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"c"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":3}}`)
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"c"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":3}}`)
 		flusher.Flush()
-		fmt.Fprintf(w, "data: [DONE]\n\n")
+		_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
 		flusher.Flush()
 	}))
 	defer server.Close()
