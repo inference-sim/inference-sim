@@ -20,7 +20,7 @@ categories:
 
 Imagine testing routing policies, autoscaling strategies, and hardware configurations without touching production. No risk. No downtime. Just answers. That is the promise of simulation — but only if it is accurate enough to trust.
 
-A simple queueing model predicts 50ms time-to-first-token. Production measures 200ms. The difference reveals how much complexity hides beneath the surface. Capacity decisions are million-dollar bets—H100 vs A100, tensor parallelism 4 vs 8—and intuition fails at this scale.
+A simple queueing model predicts 50ms time-to-first-token. Production measures 200ms. The difference reveals how much complexity hides beneath the surface. Capacity decisions are million-dollar bets: H100 vs A100, tensor parallelism 4 vs 8, and intuition fails at this scale.
 
 <!-- more -->
 
@@ -66,9 +66,9 @@ flowchart TB
     Layer3 -.-> Layer2
     Layer1 -.->|metrics| Layer3
 
-    style Layer1 fill:#e1f5ff
-    style Layer2 fill:#fff4e1
-    style Layer3 fill:#ffe1e1
+    style Layer1 fill:#f0f8ff
+    style Layer2 fill:#fffef0
+    style Layer3 fill:#fff0f0
 ```
 
 ### Layer 1: The Engine (vLLM)
