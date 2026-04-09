@@ -73,25 +73,23 @@ flowchart TB
 
 ### Layer 1: The Engine (vLLM)
 
-The inference engine running on a single GPU instance is vLLM. It schedules requests, manages memory, and generates tokens. Understanding how it works is critical for accurate prediction—and most people get the fundamental execution model wrong.
+Most people misunderstand how vLLM works. It does not process requests individually—it processes batches in steps. One step equals one GPU forward pass. All requests in the batch execute together, and the step time is determined by the slowest operation.
 
-vLLM does not process requests individually. It processes batches in steps. One step equals one GPU forward pass. All requests in the batch go through together, and the step time is determined by the slowest operation. Consider four requests in a batch: three generate single output tokens (2ms, memory-bound), while the fourth processes a 512-token prompt (20ms, compute-bound). The step time is 20ms. All four requests wait the full duration, even though three could finish in 2ms if they ran alone.
+Consider four requests: three generate single output tokens (2ms, memory-bound), while one processes a 512-token prompt (20ms, compute-bound). The step time is 20ms. All four wait, even though three could finish in 2ms alone. Ten decode requests do not take "10 × 2ms"—they take one 2ms batch step. Get this wrong, and throughput predictions are 5-10x off.
 
-But ten decode requests do not take "10 × 2ms"—they take one 2ms batch step that covers all ten simultaneously. Get this wrong, and throughput predictions can be 5-10x off.
+BLIS replicates vLLM's mechanisms exactly. Priority scheduling for critical requests. Block-level KV cache with prefix reuse and preemption. Continuous batching where requests join and leave mid-flight. No approximations.
 
-BLIS replicates the mechanisms that govern this behavior. Priority scheduling ensures critical requests go before batch jobs. Block-level KV cache management handles prefix reuse (massive speedup for RAG workloads) and preemption when memory fills. Continuous batching allows requests to join and leave mid-flight as they complete. All modeled with exact vLLM semantics, not approximations.
-
-For step timing, BLIS computes two bottlenecks without GPU execution: compute time (FLOPs / GPU_TFLOPS) and memory time (bytes / GPU_bandwidth). Step time equals the maximum of the two. For a 512-token prefill on H100, compute dominates at 20ms. For decode reading KV cache, memory dominates at 2ms. BLIS applies learned corrections for kernel overhead and cache effects:
+For step timing, BLIS computes two bottlenecks: compute (FLOPs / GPU_TFLOPS) and memory (bytes / bandwidth). Step time is the maximum. A 512-token prefill on H100: compute-bound at 20ms. Decode reading KV cache: memory-bound at 2ms. BLIS applies learned corrections:
 
 $$
 t_{\text{step}} = \sum_{i} \beta_i \cdot \phi_i(\text{batch}, \text{model}, \text{hardware})
 $$
 
-where $\phi_i$ are roofline basis functions (compute and memory bottlenecks) and $\beta_i$ are learned coefficients trained on real vLLM traces. The simulator predicts step time using model architecture from HuggingFace and hardware specs from datasheets. This is how the simulation runs on CPU while maintaining accuracy.
+where $\phi_i$ are roofline basis functions and $\beta_i$ are coefficients trained on real vLLM traces. Model architecture comes from HuggingFace, hardware specs from datasheets. CPU-only, microsecond-fast, single-digit percent accurate.
 
-Batch composition evolves constantly, and step times evolve with it. A small decode-only batch runs at 2ms per token. A long prompt joins—everyone waits 20ms while it processes. The prompt finishes and switches to decode—back to 2ms. Another request completes and leaves—now 1.8ms with the smaller batch. Request latencies are coupled through batching, not independent.
+Batch composition evolves constantly. Small decode batch: 2ms per token. Long prompt joins: everyone waits 20ms. Prompt finishes: back to 2ms. Request completes: 1.8ms with smaller batch. Latencies couple through batching—not independent.
 
-vLLM operates in batch steps, not individual requests. BLIS simulates this through discrete-event modeling—one step event per batch operation, with membership updating after each completion. This is the foundation for accurate throughput and latency prediction. In production, a single vLLM instance is only part of the system. Clusters of instances add orchestration complexity.
+BLIS models this through discrete-event simulation: one step event per batch operation, membership updating after each completion. This is the foundation for accurate prediction. But a single vLLM instance is only part of production systems. Clusters add orchestration complexity.
 
 ### Layer 2: The Data Plane (Cluster Orchestration)
 
