@@ -65,13 +65,6 @@ flowchart TB
     Layer1 --> Response([Response])
     Layer3 -.-> Layer2
     Layer1 -.->|metrics| Layer3
-
-    classDef blackText color:#000,stroke:#333
-    class Sched,KV,Batch,Step,Admit,Route,Flow,Monitor,Decide,Actuate,Request,Response blackText
-
-    style Layer1 fill:#f0f8ff,stroke:#333,color:#000
-    style Layer2 fill:#fffef0,stroke:#333,color:#000
-    style Layer3 fill:#fff0f0,stroke:#333,color:#000
 ```
 
 ### Layer 1: The Engine (vLLM)
