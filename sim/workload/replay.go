@@ -79,15 +79,17 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 // Returns round-0 requests (plus all non-session requests) for initial injection,
 // and blueprints for the SessionManager.
 //
-// thinkTimeOverrideUs > 0: use constant think time for all sessions.
-// thinkTimeOverrideUs == 0: derive per-round think time from trace arrival gaps.
+// thinkTimeSamplerOverride != nil: use this sampler for all sessions (values in µs).
+//   Pass a ConstantSampler for fixed think time, LognormalThinkTimeSampler for
+//   stochastic think time matching a real system's inter-turn delay model.
+// thinkTimeSamplerOverride == nil: derive per-round think time from trace arrival gaps.
 //   NOTE: gap-derived think time = ArrivalTimeUs[i] - ArrivalTimeUs[i-1], which
 //   equals (service_time[i-1] + client_think_time) when the trace was produced by
-//   blis observe. It is NOT pure client think time. Use thinkTimeOverrideUs (i.e.
-//   --think-time-ms) to supply the actual client-side think time when replaying an
-//   observe-generated trace with accurate inter-round spacing.
+//   blis observe. It is NOT pure client think time. Use the sampler override (i.e.
+//   --think-time-ms or --think-time-mode) to supply the actual client-side think time
+//   when replaying an observe-generated trace with accurate inter-round spacing.
 // horizon <= 0: defaults to math.MaxInt64.
-func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeOverrideUs int64, horizon int64) ([]*sim.Request, []SessionBlueprint, error) {
+func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSamplerOverride LengthSampler, horizon int64) ([]*sim.Request, []SessionBlueprint, error) {
 	if trace == nil || len(trace.Records) == 0 {
 		return nil, nil, fmt.Errorf("empty trace")
 	}
@@ -159,11 +161,11 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeOverrideU
 			outputSeq[i] = rec.OutputTokens
 		}
 
-		// Build think time: override or derive from inter-round arrival gaps
+		// Build think time: override sampler, or derive from inter-round arrival gaps.
 		var thinkTimeSampler LengthSampler
 		var thinkTimeUs int64
-		if thinkTimeOverrideUs > 0 {
-			thinkTimeUs = thinkTimeOverrideUs
+		if thinkTimeSamplerOverride != nil {
+			thinkTimeSampler = thinkTimeSamplerOverride
 		} else if len(rounds) > 1 {
 			thinkTimes := make([]int, len(rounds)-1)
 			for i := 1; i < len(rounds); i++ {
@@ -192,8 +194,26 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeOverrideU
 		}
 		outputTokens := sim.GenerateRandomTokenIDs(sessionRNG, r0.OutputTokens)
 
+		// Detect growing-prefix sessions (e.g. SWE-Smith, chat traces) where each
+		// round's PrefixLength includes all prior context. In these sessions, follow-up
+		// requests must carry the full accumulated conversation, not just the static
+		// round-0 prefix. We use ContextGrowth="accumulate" so the SessionManager
+		// prepends the growing context on each OnComplete call.
+		//
+		// Detection: if round 1's PrefixLength > round 0's PrefixLength, the prefix
+		// grows across rounds. For static-prefix workloads (same prefix every round,
+		// e.g. chatbot preset), ContextGrowth stays "" and Prefix is used as before.
+		//
+		// With ContextGrowth="accumulate", Prefix must be nil: round-0's InputTokens
+		// already contains the prefix, so OnComplete accumulates it into contextTokens
+		// on the first call. Setting Prefix would double-prepend it.
+		contextGrowth := ""
 		var prefix []int
-		if r0.PrefixGroup != "" {
+		if len(rounds) > 1 && rounds[1].PrefixLength > rounds[0].PrefixLength {
+			contextGrowth = "accumulate"
+			// prefix stays nil: the prefix is embedded in round-0's inputTokens and
+			// will be carried forward by context accumulation.
+		} else if r0.PrefixGroup != "" {
 			prefix = prefixTokens[r0.PrefixGroup]
 		}
 
@@ -230,9 +250,10 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeOverrideU
 			ThinkTimeUs:      thinkTimeUs,
 			ThinkTimeSampler: thinkTimeSampler,
 			Horizon:          horizon,
-			InputSampler:     &SequenceSampler{values: inputSeq[1:]},  // rounds 1..N
+			InputSampler:     &SequenceSampler{values: inputSeq[1:]},  // rounds 1..N (suffix-only counts)
 			OutputSampler:    &SequenceSampler{values: outputSeq[1:]}, // rounds 1..N
 			RNG:              sessionRNG,
+			ContextGrowth:    contextGrowth,
 			Prefix:           prefix,
 			TenantID:         r0.TenantID,
 			SLOClass:         r0.SLOClass,

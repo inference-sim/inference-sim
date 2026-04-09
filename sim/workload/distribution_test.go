@@ -3,6 +3,7 @@ package workload
 import (
 	"math"
 	"math/rand"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -344,5 +345,90 @@ func TestNewLengthSampler_MissingRequiredParams_ReturnsError(t *testing.T) {
 				t.Errorf("error %q should mention %q", err.Error(), tt.wantErr)
 			}
 		})
+	}
+}
+
+// --- LognormalThinkTimeSampler tests ---
+
+// TestLognormalThinkTimeSampler_ClampMin verifies that samples below minUs are
+// clamped to minUs (very negative NormFloat64 → tiny lognormal value).
+func TestLognormalThinkTimeSampler_ClampMin(t *testing.T) {
+	const minUs = 3_000_000
+	s := NewLognormalThinkTimeSampler(2.0, 0.6, minUs, 30_000_000)
+
+	// Feed a very low NormFloat64 value by using a fixed source that produces -10σ.
+	// We do this indirectly: sample enough times that at least one must hit the floor.
+	rng := rand.New(rand.NewSource(42))
+	for i := 0; i < 1000; i++ {
+		v := s.Sample(rng)
+		if v < minUs {
+			t.Errorf("sample %d below minUs %d on iteration %d", v, minUs, i)
+		}
+	}
+}
+
+// TestLognormalThinkTimeSampler_ClampMax verifies that no sample exceeds maxUs.
+func TestLognormalThinkTimeSampler_ClampMax(t *testing.T) {
+	const maxUs = 30_000_000
+	s := NewLognormalThinkTimeSampler(2.0, 0.6, 3_000_000, maxUs)
+	rng := rand.New(rand.NewSource(99))
+	for i := 0; i < 1000; i++ {
+		v := s.Sample(rng)
+		if v > maxUs {
+			t.Errorf("sample %d above maxUs %d on iteration %d", v, maxUs, i)
+		}
+	}
+}
+
+// TestLognormalThinkTimeSampler_AllSamplesInRange verifies all samples lie in [minUs, maxUs].
+func TestLognormalThinkTimeSampler_AllSamplesInRange(t *testing.T) {
+	const minUs, maxUs = 3_000_000, 30_000_000
+	s := NewLognormalThinkTimeSampler(2.0, 0.6, minUs, maxUs)
+	rng := rand.New(rand.NewSource(7))
+	for i := 0; i < 10_000; i++ {
+		v := s.Sample(rng)
+		if v < minUs || v > maxUs {
+			t.Errorf("sample %d out of range [%d, %d] on iteration %d", v, minUs, maxUs, i)
+		}
+	}
+}
+
+// TestLognormalThinkTimeSampler_MedianNearExpected verifies the median of a large
+// sample set is near e^mu seconds (in µs), confirming the lognormal parameterisation.
+// With mu=2.0 the median in seconds is e^2 ≈ 7.389 → 7_389_000 µs.
+func TestLognormalThinkTimeSampler_MedianNearExpected(t *testing.T) {
+	const mu, sigma = 2.0, 0.6
+	const minUs, maxUs = 1, 1<<62 // wide clamps so clamping doesn't skew the median
+	s := NewLognormalThinkTimeSampler(mu, sigma, minUs, maxUs)
+	rng := rand.New(rand.NewSource(1234))
+
+	const n = 50_000
+	samples := make([]float64, n)
+	for i := range samples {
+		samples[i] = float64(s.Sample(rng))
+	}
+	// Median via sort
+	sort.Float64s(samples)
+	median := samples[n/2]
+
+	expectedMedianUs := math.Exp(mu) * 1e6 // e^2 * 1_000_000
+	tol := expectedMedianUs * 0.05           // 5% tolerance
+	if math.Abs(median-expectedMedianUs) > tol {
+		t.Errorf("median %.0f µs, want %.0f ± %.0f µs", median, expectedMedianUs, tol)
+	}
+}
+
+// TestLognormalThinkTimeSampler_Deterministic verifies identical seeds produce
+// identical sample sequences (INV-6 determinism).
+func TestLognormalThinkTimeSampler_Deterministic(t *testing.T) {
+	s1 := NewLognormalThinkTimeSampler(2.0, 0.6, 3_000_000, 30_000_000)
+	s2 := NewLognormalThinkTimeSampler(2.0, 0.6, 3_000_000, 30_000_000)
+	rng1 := rand.New(rand.NewSource(555))
+	rng2 := rand.New(rand.NewSource(555))
+	for i := 0; i < 100; i++ {
+		v1, v2 := s1.Sample(rng1), s2.Sample(rng2)
+		if v1 != v2 {
+			t.Errorf("iteration %d: s1=%d, s2=%d — not deterministic", i, v1, v2)
+		}
 	}
 }
