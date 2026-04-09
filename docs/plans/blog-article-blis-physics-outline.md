@@ -44,25 +44,7 @@
 
 6. **Reader promise:** "This article shows what it takes to build an inference simulator that captures the structural integrity of real systems - from token generation physics to distributed orchestration."
 
-**Transition:** "This article shows what it takes to build that level of fidelity—from token generation physics to distributed orchestration."
-
----
-
-### **Section 1B: Why Physics-Based Modeling Matters Beyond Accuracy** (~200 words)
-
-**Purpose:** Show that physics-based modeling enables experimentation, not just validation
-
-**Key Elements:**
-
-1. **The experimentation unlock:** Physics-based simulators enable testing mechanisms that don't exist yet in production - novel routing policies, new scheduling algorithms, different admission strategies.
-
-2. **Contrast with empirical models:** Empirical models (trained on historical data) predict what has been observed. Physics-based models predict what could happen under new conditions, new policies, new architectures.
-
-3. **Compounding value:** As production evolves, the simulator evolves by updating physics, not retraining. As research explores new algorithms, the simulator becomes the proving ground—fast, cheap, reproducible.
-
-4. **The research testbed vision:** This is how simulators drive progress in other engineering fields (aerospace, chip design). BLIS aims to serve the inference serving community the same way.
-
-**Transition to Section 2:** "Let's see what this physics-based modeling looks like in practice, following a request's journey through the system."
+**Transition to Section 2:** "This article shows what it takes to build that level of fidelity—from token generation physics to distributed orchestration. Let's follow a request's 50-millisecond journey through the system to see where every millisecond of that complexity lives."
 
 ---
 
