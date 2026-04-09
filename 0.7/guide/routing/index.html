@@ -2923,6 +2923,21 @@
 <td>Inverse transform: <code>1 / (1 + effectiveLoad)</code></td>
 <td>BLIS-native (no llm-d equivalent)</td>
 </tr>
+<tr>
+<td><code>active-requests</code></td>
+<td>In-flight requests: <code>(maxCount - count) / maxCount</code></td>
+<td>active-request-scorer</td>
+</tr>
+<tr>
+<td><code>running-requests</code></td>
+<td>Batch size (min-max normalized)</td>
+<td>running-requests-size-scorer (GIE)</td>
+</tr>
+<tr>
+<td><code>load-aware</code></td>
+<td>Queue depth (linear threshold-capped, range [0, 0.5])</td>
+<td>load-aware-scorer</td>
+</tr>
 </tbody>
 </table>
 <div class="admonition note">
