@@ -37,6 +37,7 @@ This article shows what it takes to build that level of fidelity—from token ge
 A user hits enter. Fifty milliseconds later, the first token appears. What happened in between? Three architectural layers working together: the inference engine (vLLM), the data plane (cluster orchestration), and the control plane (autoscaling). Model them all with fidelity, or your capacity decisions will be wrong.
 
 ```mermaid
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#e1f5ff','primaryTextColor':'#000','primaryBorderColor':'#333','lineColor':'#333','secondaryColor':'#fff4e1','tertiaryColor':'#ffe1e1','noteBkgColor':'#fff','noteTextColor':'#000','noteBorderColor':'#333','textColor':'#000','fontSize':'16px'}}}%%
 flowchart TB
     subgraph Layer1["Layer 1: Engine (vLLM)"]
         Sched[Scheduling]
@@ -66,21 +67,9 @@ flowchart TB
     Layer3 -.-> Layer2
     Layer1 -.->|metrics| Layer3
 
-    style Layer1 fill:#e1f5ff,color:#000
-    style Layer2 fill:#fff4e1,color:#000
-    style Layer3 fill:#ffe1e1,color:#000
-    style Sched fill:#fff,stroke:#333,color:#000
-    style KV fill:#fff,stroke:#333,color:#000
-    style Batch fill:#fff,stroke:#333,color:#000
-    style Step fill:#fff,stroke:#333,color:#000
-    style Admit fill:#fff,stroke:#333,color:#000
-    style Route fill:#fff,stroke:#333,color:#000
-    style Flow fill:#fff,stroke:#333,color:#000
-    style Monitor fill:#fff,stroke:#333,color:#000
-    style Decide fill:#fff,stroke:#333,color:#000
-    style Actuate fill:#fff,stroke:#333,color:#000
-    style Request fill:#fff,stroke:#333,color:#000
-    style Response fill:#fff,stroke:#333,color:#000
+    style Layer1 fill:#e1f5ff,stroke:#333
+    style Layer2 fill:#fff4e1,stroke:#333
+    style Layer3 fill:#ffe1e1,stroke:#333
 ```
 
 ### Layer 1: The Engine (vLLM)
