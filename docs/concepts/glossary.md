@@ -134,7 +134,7 @@ A point-in-time view of instance state used for routing decisions. Contains queu
 
 ### Scorer
 
-A component in the weighted scoring pipeline that produces a per-instance score in [0, 1] for a specific signal dimension. Built-in scorers: `precise-prefix-cache`, `prefix-affinity`, `no-hit-lru`, `queue-depth`, `kv-utilization`, `load-balance`. Scores are multiplied by weights and summed. See [Cluster Architecture: Scorer Composition](architecture.md#scorer-composition).
+A component in the weighted scoring pipeline that produces a per-instance score in [0, 1] for a specific signal dimension. Built-in scorers: `precise-prefix-cache`, `prefix-affinity`, `no-hit-lru`, `queue-depth`, `kv-utilization`, `load-balance`, `active-requests`, `running-requests`, `load-aware`. Most scorers produce scores in [0, 1]; `load-aware` uses [0, 0.5] per llm-d semantics. Scores are multiplied by weights and summed. See [Cluster Architecture: Scorer Composition](architecture.md#scorer-composition).
 
 ### Seed
 
