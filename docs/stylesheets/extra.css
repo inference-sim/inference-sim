@@ -1,0 +1,19 @@
+/* Mermaid diagram text visibility fixes */
+.mermaid text {
+  fill: currentColor !important;
+}
+
+.mermaid .node text,
+.mermaid .label {
+  fill: #000 !important;
+}
+
+[data-md-color-scheme="slate"] .mermaid .node text,
+[data-md-color-scheme="slate"] .mermaid .label {
+  fill: #fff !important;
+}
+
+/* Ensure subgraph titles are visible */
+.mermaid .cluster-label text {
+  font-weight: bold;
+}
