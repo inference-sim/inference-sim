@@ -66,9 +66,9 @@ flowchart TB
     Layer3 -.-> Layer2
     Layer1 -.->|metrics| Layer3
 
-    style Layer1 fill:#4a9eff
-    style Layer2 fill:#ffb347
-    style Layer3 fill:#ff6b6b
+    style Layer1 fill:#2874a6
+    style Layer2 fill:#d68910
+    style Layer3 fill:#c0392b
 ```
 
 ### Layer 1: The Engine (vLLM)
