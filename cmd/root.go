@@ -794,10 +794,12 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 // tenantBudgets package-level vars (from policy bundle).
 //
 // Returns the parsed scorer configs for weighted routing (caller uses these in
-// DeploymentConfig.RoutingScorerConfigs). Per-pool scorer configs (PD disaggregation)
-// are NOT handled here — they remain inline in runCmd.
-func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
+// DeploymentConfig.RoutingScorerConfigs) and the loaded policy bundle (nil if none).
+// Per-pool scorer configs (PD disaggregation) are NOT handled here — they remain inline
+// in runCmd.
+func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle) {
 	var bundleScorerConfigs []sim.ScorerConfig
+	var loadedBundle *sim.PolicyBundle
 
 	// Load policy bundle if specified (R18: CLI flags override YAML values)
 	if policyConfigPath != "" {
@@ -808,6 +810,7 @@ func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
 		if err := bundle.Validate(); err != nil {
 			logrus.Fatalf("Invalid policy config: %v", err)
 		}
+		loadedBundle = bundle
 		// Apply bundle values as defaults; CLI flags override via Changed().
 		if bundle.Admission.Policy != "" && !cmd.Flags().Changed("admission-policy") {
 			admissionPolicy = bundle.Admission.Policy
@@ -964,7 +967,7 @@ func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
 		logrus.Infof("Token bucket: capacity=%.0f, refill-rate=%.0f", tokenBucketCapacity, tokenBucketRefillRate)
 	}
 
-	return parsedScorerConfigs
+	return parsedScorerConfigs, loadedBundle
 }
 
 // registerSimConfigFlags registers all simulation-engine configuration flags
@@ -1381,7 +1384,7 @@ var runCmd = &cobra.Command{
 
 		// Resolve policy configuration (single code path shared with replayCmd).
 		// Per-pool scorer configs (PD disaggregation) remain inline below.
-		parsedScorerConfigs := resolvePolicies(cmd)
+		parsedScorerConfigs, bundle := resolvePolicies(cmd)
 
 		// Resolve autoscaler and node pool config from policy bundle, then apply CLI overrides.
 		var (
@@ -1393,12 +1396,7 @@ var runCmd = &cobra.Command{
 			bundleAnalyzerCfg           cluster.V2SaturationAnalyzerConfig
 			bundleNodePools             []cluster.NodePoolConfig
 		)
-		if policyConfigPath != "" {
-			// Bundle was already loaded and validated in resolvePolicies(); safe to reload here.
-			bundle, err := sim.LoadPolicyBundle(policyConfigPath)
-			if err != nil {
-				logrus.Fatalf("Failed to reload policy config for autoscaler: %v", err)
-			}
+		if bundle != nil {
 			if bundle.Autoscaler.IntervalUs > 0 {
 				bundleAutoscalerIntervalUs = bundle.Autoscaler.IntervalUs
 				bundleScaleUpCooldownUs = bundle.Autoscaler.ScaleUpCooldownUs

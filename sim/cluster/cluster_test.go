@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
@@ -2590,5 +2591,70 @@ func TestNewClusterSimulator_AutoscalerNilWhenDisabled(t *testing.T) {
 	cs := NewClusterSimulator(cfg, nil, nil)
 	if cs.autoscaler != nil {
 		t.Error("autoscaler must be nil when ModelAutoscalerIntervalUs == 0")
+	}
+}
+
+// TestAutoscaler_RequestBoundedRun_Terminates verifies that a request-bounded run
+// (Horizon == math.MaxInt64) with the autoscaler enabled terminates correctly.
+// Regression test for Bug 2: scheduleNextTick had no termination guard, causing
+// an infinite event loop on request-bounded runs.
+func TestAutoscaler_RequestBoundedRun_Terminates(t *testing.T) {
+	cfg := newTestDeploymentConfig(1)
+	cfg.ModelAutoscalerIntervalUs = 100_000 // 100 ms ticks — fires many times during test
+	reqs := newTestRequests(10)
+
+	cs := NewClusterSimulator(cfg, reqs, nil)
+
+	done := make(chan error, 1)
+	go func() { done <- cs.Run() }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run() returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run() did not terminate within 2s — autoscaler tick loop is likely infinite (Bug 2 regression)")
+	}
+}
+
+// TestAutoscaler_WithBatchRequests_Terminates verifies that a request-bounded run
+// with batch SLO-class requests and the autoscaler enabled terminates correctly.
+// Regression test for Bug 3: promoteDeferred() did not increment pendingArrivals for
+// re-injected arrivals, driving the counter negative and breaking the termination guard.
+func TestAutoscaler_WithBatchRequests_Terminates(t *testing.T) {
+	cfg := newTestDeploymentConfig(1)
+	cfg.ModelAutoscalerIntervalUs = 100_000 // 100 ms ticks
+
+	// Build a mixed workload: half critical (bypass deferred queue),
+	// half batch (go through deferredQueue and promoteDeferred path).
+	base := newTestRequests(10)
+	for i, r := range base {
+		if i%2 == 0 {
+			r.SLOClass = "batch"
+		} else {
+			r.SLOClass = "critical"
+		}
+	}
+
+	cs := NewClusterSimulator(cfg, base, nil)
+
+	done := make(chan error, 1)
+	go func() { done <- cs.Run() }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run() returned error: %v", err)
+		}
+		// Verify all requests were accounted for (INV-1).
+		m := cs.AggregatedMetrics()
+		total := m.CompletedRequests + m.StillQueued + m.StillRunning +
+			m.DroppedUnservable + m.TimedOutRequests
+		if total != len(base) {
+			t.Errorf("request conservation violated: completed+queued+running+dropped+timedout = %d, want %d", total, len(base))
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run() did not terminate within 2s — pendingArrivals likely went negative (Bug 3 regression)")
 	}
 }
