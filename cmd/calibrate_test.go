@@ -21,6 +21,7 @@ func saveRestoreCalibrateFlags() func() {
 	origWarmUp := calibrateWarmUpRequests
 	origRTT := calibrateNetworkRTTUs
 	origBW := calibrateNetworkBandwidthMbps
+	origITL := calibrateITLDataPath
 	return func() {
 		calibrateTraceHeaderPath = origHeader
 		calibrateTraceDataPath = origData
@@ -29,6 +30,7 @@ func saveRestoreCalibrateFlags() func() {
 		calibrateWarmUpRequests = origWarmUp
 		calibrateNetworkRTTUs = origRTT
 		calibrateNetworkBandwidthMbps = origBW
+		calibrateITLDataPath = origITL
 	}
 }
 
@@ -105,7 +107,7 @@ warm_up_requests: 0
 func TestCalibrateCmd_Flags_Registered(t *testing.T) {
 	// GIVEN the calibrate command
 	// WHEN we inspect its registered flags
-	// THEN all 7 flags must be present
+	// THEN all 8 flags must be present
 	flags := []string{
 		"trace-header",
 		"trace-data",
@@ -114,6 +116,7 @@ func TestCalibrateCmd_Flags_Registered(t *testing.T) {
 		"warmup-requests",
 		"network-rtt-us",
 		"network-bandwidth-mbps",
+		"itl-data",
 	}
 	for _, name := range flags {
 		f := calibrateCmd.Flags().Lookup(name)
@@ -367,5 +370,89 @@ network:
 	// RTT applied → sim+RTT = real → MAPE ≈ 0
 	if ttftMetric.MAPE > 0.001 {
 		t.Errorf("TTFT MAPE = %.4f, want ~0.0 (RTT from header not applied correctly)", ttftMetric.MAPE)
+	}
+}
+
+func TestCalibrateCmd_ITLDataFlag_Defined(t *testing.T) {
+	// GIVEN the calibrate command
+	// WHEN checking for --itl-data flag
+	// THEN flag is defined and optional (BC-6, BC-11)
+	cmd := calibrateCmd
+
+	flag := cmd.Flags().Lookup("itl-data")
+	if flag == nil {
+		t.Fatal("--itl-data flag not defined")
+	}
+	if flag.DefValue != "" {
+		t.Errorf("--itl-data default should be empty (optional), got %q", flag.DefValue)
+	}
+}
+
+func TestCalibrateCmd_WithITLData_IncludesITLMetric(t *testing.T) {
+	// GIVEN a valid trace, sim results, and ITL CSV
+	// WHEN calibrate is run with --itl-data
+	// THEN report includes ITL metric with Count > 0
+	dir := t.TempDir()
+
+	// Write trace (2 requests)
+	rows := [][4]int64{
+		{0, 1000, 5000, 10000},
+		{1, 101000, 105000, 110000},
+	}
+	headerPath, dataPath := writeTempTrace(t, dir, `trace_version: 2
+time_unit: microseconds
+mode: real
+warm_up_requests: 0
+`, rows)
+
+	// Write sim results
+	simPath := filepath.Join(dir, "results.json")
+	simResults := []workload.SimResult{
+		{RequestID: 0, TTFT: 4000, E2E: 9000, InputTokens: 10, OutputTokens: 5},
+		{RequestID: 1, TTFT: 4000, E2E: 9000, InputTokens: 10, OutputTokens: 5},
+	}
+	simData, _ := json.Marshal(simResults)
+	if err := os.WriteFile(simPath, simData, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write ITL CSV (3 chunks per request)
+	itlPath := filepath.Join(dir, "trace.itl.csv")
+	itlCSV := "request_id,chunk_index,timestamp_us\n" +
+		"0,0,5000\n0,1,5020\n0,2,5040\n" +
+		"1,0,105000\n1,1,105020\n1,2,105040\n"
+	if err := os.WriteFile(itlPath, []byte(itlCSV), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	reportPath := filepath.Join(dir, "report.json")
+	defer saveRestoreCalibrateFlags()()
+	calibrateTraceHeaderPath = headerPath
+	calibrateTraceDataPath = dataPath
+	calibrateSimResultsPath = simPath
+	calibrateReportPath = reportPath
+	calibrateITLDataPath = itlPath
+	calibrateWarmUpRequests = -1
+	calibrateNetworkRTTUs = -1
+	calibrateNetworkBandwidthMbps = 0
+
+	calibrateCmd.Run(calibrateCmd, []string{})
+
+	data, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("report not written: %v", err)
+	}
+	var report workload.CalibrationReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatalf("report is not valid JSON: %v", err)
+	}
+
+	// Assert ITL metric is present
+	itlMetric, ok := report.Metrics["itl"]
+	if !ok {
+		t.Fatal("report.Metrics[\"itl\"] not found")
+	}
+	if itlMetric.Count == 0 {
+		t.Error("ITL metric Count should be > 0")
 	}
 }

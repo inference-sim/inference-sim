@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"sort"
+
+	"github.com/sirupsen/logrus"
 )
 
 // MetricComparison holds statistical comparison between real and sim values.
@@ -26,6 +28,7 @@ type CalibrationReport struct {
 		WarmUpExcluded  int    `json:"warm_up_excluded"`
 		MatchedPairs    int    `json:"matched_pairs"`
 		TokenMismatches int    `json:"token_mismatches"`
+		ITLDropped      int    `json:"itl_dropped,omitempty"` // Requests dropped from ITL due to clock skew
 		Duration        string `json:"duration,omitempty"`
 	} `json:"trace_info"`
 	Metrics          map[string]*MetricComparison `json:"metrics"`
@@ -66,20 +69,23 @@ type LatencyPair struct {
 type CalibrationPairs struct {
 	TTFT               LatencyPair
 	E2E                LatencyPair
+	ITL                LatencyPair
 	TokenMismatchCount int
 	ExcludedWarmUp     int
 	MatchedCount       int
 	UnmatchedReal      int
 	UnmatchedSim       int
+	ITLDropped         int // Requests dropped from ITL due to clock skew (all negative deltas)
 }
 
 // PrepareCalibrationPairs matches real trace records with sim results,
 // applies network normalization, excludes warm-up, and detects token mismatches.
+// Returns the pairs and a simByID map for reuse by callers (e.g., PrepareCalibrationPairsWithITL).
 func PrepareCalibrationPairs(
 	realRecords []TraceRecord,
 	simResults []SimResult,
 	config *CalibrationConfig,
-) (*CalibrationPairs, error) {
+) (*CalibrationPairs, map[int]SimResult, error) {
 	if config == nil {
 		config = &CalibrationConfig{}
 	}
@@ -144,7 +150,99 @@ func PrepareCalibrationPairs(
 		}
 	}
 
+	return pairs, simByID, nil
+}
+
+// PrepareCalibrationPairsWithITL extends PrepareCalibrationPairs with ITL data.
+// ITL is computed as per-request mean inter-chunk latency (microseconds).
+// First chunk delta is TTFT; subsequent deltas are ITL.
+func PrepareCalibrationPairsWithITL(
+	realRecords []TraceRecord,
+	simResults []SimResult,
+	itlRecords []ITLRecord,
+	config *CalibrationConfig,
+) (*CalibrationPairs, error) {
+	// Start with standard pairs (reuse simByID map to avoid O(N) duplication)
+	pairs, simByID, err := PrepareCalibrationPairs(realRecords, simResults, config)
+	if err != nil {
+		return nil, err
+	}
+
+	// Group ITL records by request ID
+	itlByRequest := make(map[int][]ITLRecord)
+	for _, rec := range itlRecords {
+		itlByRequest[rec.RequestID] = append(itlByRequest[rec.RequestID], rec)
+	}
+
+	if config == nil {
+		config = &CalibrationConfig{}
+	}
+
+	// Compute per-request ITL
+	for _, rec := range realRecords {
+		// Skip warm-up
+		if rec.RequestID < config.WarmUpRequests {
+			continue
+		}
+
+		sr, ok := simByID[rec.RequestID]
+		if !ok {
+			continue
+		}
+
+		chunks, ok := itlByRequest[rec.RequestID]
+		if !ok || len(chunks) < 2 {
+			continue // No ITL data for this request
+		}
+
+		// Sort chunks by index (defensive)
+		sortITLRecords(chunks)
+
+		// Compute real ITL: mean of chunk-to-chunk deltas (skip first, which is TTFT)
+		var realITLSum float64
+		realITLCount := 0
+		for i := 1; i < len(chunks); i++ {
+			delta := float64(chunks[i].TimestampUs - chunks[i-1].TimestampUs)
+			if delta < 0 {
+				// Clock skew or corrupt data — skip this delta
+				continue
+			}
+			realITLSum += delta
+			realITLCount++
+		}
+		if realITLCount == 0 {
+			// All deltas were negative (clock skew) — drop this request from ITL (R1)
+			logrus.Warnf("calibrate: request %d ITL dropped (all %d deltas negative, likely clock skew)", rec.RequestID, len(chunks)-1)
+			pairs.ITLDropped++
+			continue
+		}
+		realITL := realITLSum / float64(realITLCount)
+
+		// Compute sim ITL: (E2E - TTFT) / OutputTokens
+		// This approximates mean ITL assuming uniform token generation
+		simITL := 0.0
+		if sr.OutputTokens > 1 {
+			simITL = (sr.E2E - sr.TTFT) / float64(sr.OutputTokens-1)
+		}
+
+		pairs.ITL.Real = append(pairs.ITL.Real, realITL)
+		pairs.ITL.Sim = append(pairs.ITL.Sim, simITL)
+	}
+
 	return pairs, nil
+}
+
+func sortITLRecords(records []ITLRecord) {
+	// Simple insertion sort (small N)
+	for i := 1; i < len(records); i++ {
+		key := records[i]
+		j := i - 1
+		for j >= 0 && records[j].ChunkIndex > key.ChunkIndex {
+			records[j+1] = records[j]
+			j--
+		}
+		records[j+1] = key
+	}
 }
 
 // ComputeCalibration computes statistical comparison between real and sim latency vectors.
@@ -219,6 +317,7 @@ func BuildCalibrationReport(pairs *CalibrationPairs, configMatch *ConfigMatchInf
 	report.TraceInfo.MatchedPairs = pairs.MatchedCount
 	report.TraceInfo.WarmUpExcluded = pairs.ExcludedWarmUp
 	report.TraceInfo.TokenMismatches = pairs.TokenMismatchCount
+	report.TraceInfo.ITLDropped = pairs.ITLDropped
 	report.TraceInfo.NumRequests = pairs.MatchedCount + pairs.ExcludedWarmUp + pairs.UnmatchedReal
 
 	if len(pairs.TTFT.Real) > 0 {
@@ -234,6 +333,13 @@ func BuildCalibrationReport(pairs *CalibrationPairs, configMatch *ConfigMatchInf
 			return nil, err
 		}
 		report.Metrics["e2e"] = e2e
+	}
+	if len(pairs.ITL.Real) > 0 {
+		itl, err := ComputeCalibration(pairs.ITL.Real, pairs.ITL.Sim, "itl")
+		if err != nil {
+			return nil, err
+		}
+		report.Metrics["itl"] = itl
 	}
 	return report, nil
 }

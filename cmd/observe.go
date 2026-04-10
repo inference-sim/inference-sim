@@ -79,6 +79,7 @@ type RequestRecord struct {
 	LastChunkTimeUs   int64
 	NumChunks         int
 	FinishReason      string
+	ChunkTimestamps   []int64 // per-chunk timestamps for ITL
 }
 
 // Send dispatches a single request to the server and records timing.
@@ -252,6 +253,7 @@ func (c *RealClient) handleStreamingResponse(resp *http.Response, record *Reques
 	scanner := bufio.NewScanner(resp.Body)
 	chunkCount := 0
 	var lastUsage map[string]interface{}
+	var chunkTimestamps []int64
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -265,6 +267,7 @@ func (c *RealClient) handleStreamingResponse(resp *http.Response, record *Reques
 
 		now := time.Now().UnixMicro()
 		chunkCount++
+		chunkTimestamps = append(chunkTimestamps, now)
 		if chunkCount == 1 {
 			record.FirstChunkTimeUs = now
 		}
@@ -293,10 +296,8 @@ func (c *RealClient) handleStreamingResponse(resp *http.Response, record *Reques
 		logrus.Warnf("observe: request %d: SSE scanner error: %v", record.RequestID, err)
 	}
 
-	// TODO: Per-chunk ITL timestamps not yet recorded (#655 Bug 5, deferred).
-	// Only first/last chunk times are captured. Full ITL distribution requires
-	// storing each chunk timestamp, which needs new schema support.
 	record.NumChunks = chunkCount
+	record.ChunkTimestamps = chunkTimestamps
 	if lastUsage == nil && chunkCount > 0 {
 		logrus.Warnf("observe: request %d: streaming response had %d chunks but no usage data (missing stream_options?)", record.RequestID, chunkCount)
 	}
@@ -321,8 +322,9 @@ func (c *RealClient) handleStreamingResponse(resp *http.Response, record *Reques
 
 // Recorder captures per-request timing and metrics (goroutine-safe).
 type Recorder struct {
-	mu      sync.Mutex
-	records []workload.TraceRecord
+	mu         sync.Mutex
+	records    []workload.TraceRecord
+	itlRecords []workload.ITLRecord
 }
 
 // RecordRequest captures one request-response cycle.
@@ -376,5 +378,34 @@ func (r *Recorder) Records() []workload.TraceRecord {
 // Export writes trace v2 files.
 func (r *Recorder) Export(header *workload.TraceHeader, headerPath, dataPath string) error {
 	return workload.ExportTraceV2(header, r.Records(), headerPath, dataPath)
+}
+
+// RecordITL captures per-chunk timestamps for ITL calibration.
+// Only meaningful for streaming requests (len(chunkTimestamps) >= 2).
+func (r *Recorder) RecordITL(requestID int, chunkTimestamps []int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for i, ts := range chunkTimestamps {
+		r.itlRecords = append(r.itlRecords, workload.ITLRecord{
+			RequestID:   requestID,
+			ChunkIndex:  i,
+			TimestampUs: ts,
+		})
+	}
+}
+
+// ITLRecords returns all recorded ITL records.
+func (r *Recorder) ITLRecords() []workload.ITLRecord {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	result := make([]workload.ITLRecord, len(r.itlRecords))
+	copy(result, r.itlRecords)
+	return result
+}
+
+// ExportITL writes ITL data to a CSV file.
+func (r *Recorder) ExportITL(path string) error {
+	return workload.ExportITL(r.ITLRecords(), path)
 }
 

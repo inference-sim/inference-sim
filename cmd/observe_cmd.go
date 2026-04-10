@@ -54,6 +54,8 @@ var (
 	observeThinkTimeMs         int
 	observeWorkload            string
 	observeDefaultsFilePath    string
+	observeRecordITL           bool
+	observeITLOutput           string
 )
 
 var observeCmd = &cobra.Command{
@@ -139,6 +141,10 @@ func init() {
 	observeCmd.Flags().BoolVar(&observeUnconstrainedOutput, "unconstrained-output", false, "Do not set max_tokens (let server decide output length)")
 	observeCmd.Flags().Float64Var(&observeRttMs, "rtt-ms", 0, "Measured network round-trip time in milliseconds (recorded in trace header)")
 
+	// ITL recording (optional, opt-in)
+	observeCmd.Flags().BoolVar(&observeRecordITL, "record-itl", false, "Record per-chunk timestamps for ITL calibration (streaming only)")
+	observeCmd.Flags().StringVar(&observeITLOutput, "itl-output", "", "Output path for ITL CSV file (default: <trace-data>.itl.csv if --record-itl is set)")
+
 	rootCmd.AddCommand(observeCmd)
 }
 
@@ -205,6 +211,10 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	}
 	if observeTraceData == "" {
 		logrus.Fatalf("--trace-data is required")
+	}
+	// Warn if --itl-output is set without --record-itl (no ITL data will be written)
+	if observeITLOutput != "" && !observeRecordITL {
+		logrus.Warnf("--itl-output is set but --record-itl is not enabled; no ITL data will be written")
 	}
 	// BC-7: at least one workload input mode must be provided
 	if observeWorkload == "" && observeWorkloadSpec == "" && !cmd.Flags().Changed("rate") && observeConcurrency <= 0 {
@@ -323,6 +333,23 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Warn("No requests generated — writing empty trace")
 	}
 
+	// Enable streaming on all requests when --record-itl is set (BC-6)
+	// ITL recording requires streaming responses to capture per-chunk timestamps.
+	// The inference-perf format defaults to non-streaming for parity with the real tool,
+	// so we override it here when ITL is explicitly requested.
+	if observeRecordITL {
+		streamingCount := 0
+		for i := range wl.Requests {
+			if !wl.Requests[i].Streaming {
+				wl.Requests[i].Streaming = true
+				streamingCount++
+			}
+		}
+		if streamingCount > 0 {
+			logrus.Infof("Enabled streaming on %d requests for ITL recording", streamingCount)
+		}
+	}
+
 	// Setup
 	client := NewRealClient(observeServerURL, observeAPIKey, observeModel, observeServerType, WithAPIFormat(observeAPIFormat))
 	recorder := &Recorder{}
@@ -377,7 +404,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 
 	// Run orchestrator
 	startTime := time.Now()
-	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, observeNoStreaming, observeMaxConcur, observeWarmup, prefixes, prefixLengths, observeUnconstrainedOutput)
+	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, observeNoStreaming, observeMaxConcur, observeWarmup, prefixes, prefixLengths, observeUnconstrainedOutput, observeRecordITL)
 	logrus.Infof("Observation wall-clock time: %.3fs", time.Since(startTime).Seconds())
 
 	// Export trace (BC-4)
@@ -410,6 +437,25 @@ func runObserve(cmd *cobra.Command, _ []string) {
 
 	records := recorder.Records()
 	logrus.Infof("Trace exported: %d records to %s / %s", len(records), observeTraceHeader, observeTraceData)
+
+	// Export ITL if requested (BC-5: opt-in)
+	if observeRecordITL {
+		itlPath := observeITLOutput
+		if itlPath == "" {
+			// Default: <trace-data>.itl.csv (strip .csv extension to avoid trace.csv.itl.csv)
+			itlPath = strings.TrimSuffix(observeTraceData, ".csv") + ".itl.csv"
+		}
+
+		itlRecords := recorder.ITLRecords()
+		if len(itlRecords) == 0 {
+			logrus.Warnf("--record-itl was set but no ITL data recorded (non-streaming requests?)")
+		}
+
+		if err := recorder.ExportITL(itlPath); err != nil {
+			logrus.Fatalf("Failed to export ITL data: %v", err)
+		}
+		logrus.Infof("ITL data exported: %s (%d records)", itlPath, len(itlRecords))
+	}
 }
 
 // completionEvent carries HTTP completion info to the serializer goroutine.
@@ -433,6 +479,7 @@ func runObserveOrchestrator(
 	prefixes map[string]string,
 	prefixLengths map[string]int,
 	unconstrained bool,
+	recordITL bool,
 ) {
 	if len(requests) == 0 {
 		return
@@ -498,6 +545,14 @@ func runObserveOrchestrator(
 		arrivalTimeUs := req.ArrivalTime
 		if idx >= warmupCount {
 			recorder.RecordRequest(pending, record, arrivalTimeUs, req.SessionID, req.RoundIndex)
+
+			// Record ITL if requested (BC-1, BC-2, BC-7)
+			if recordITL && record.Status == "ok" && len(record.ChunkTimestamps) > 0 {
+				recorder.RecordITL(record.RequestID, record.ChunkTimestamps)
+			} else if recordITL && !pending.Streaming {
+				// BC-2: warn if ITL requested for non-streaming
+				logrus.Warnf("request %d: --record-itl was set but request is non-streaming (NumChunks=1)", record.RequestID)
+			}
 		}
 
 		// Session completion (BC-3)

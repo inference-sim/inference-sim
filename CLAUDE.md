@@ -57,8 +57,18 @@ go build -o blis main.go
   --max-concurrency 32 --unconstrained-output \
   --trace-header trace.yaml --trace-data trace.csv
 
+# Observe with ITL (inter-token latency) recording for streaming requests
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --workload chatbot --rate 10 --num-requests 100 \
+  --record-itl --itl-output trace.itl.csv \
+  --trace-header trace.yaml --trace-data trace.csv
+
 # Compare real observed latencies against simulator predictions
 ./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json --report calibration.json
+
+# Compare with ITL metric included (requires observe --record-itl)
+./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json \
+  --itl-data trace.itl.csv --report calibration.json
 
 # Convert workload formats
 ./blis convert preset --name chatbot --rate 10 --num-requests 100
@@ -286,6 +296,7 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 - In-memory node/GPU inventory maps; no external storage
 
 ## Recent Changes
+- TraceV2 ITL timestamps (#992): `blis observe --record-itl` captures per-chunk timestamps for ITL (inter-token latency) calibration. `blis calibrate --itl-data` computes ITL metric (mean chunk-to-chunk delta) alongside TTFT and E2E. ITL data stored in separate CSV (`request_id,chunk_index,timestamp_us`). Backward compatible: ITL is opt-in, TraceV2 format unchanged.
 - fix(workload): inference_perf SLOClass regression (#965): Changed `SLOClass` from `"batch"` to `"standard"` in `ExpandInferencePerfSpec`. Commit `8bc7a48c` introduced a deferred queue that serialized all `batch`-class requests; inference_perf workloads (used by all training experiments) had `SLOClass: "batch"` as a semantically-inert legacy label, inflating TTFT 6–100× after the deferred queue was added. `model_configs/*/config.json` is now checked in for testing and documentation. Golden dataset `testdata/trained_physics_iter29.json` added with 15 iter29 experiments and `TestTrainedPhysics_GoldenDataset` in `sim/cluster/`.
 - Cache signal propagation delay (#919): `--cache-signal-delay` flag adds configurable staleness to `precise-prefix-cache` and `no-hit-lru` scorers. When > 0, scorers query periodically-refreshed stale snapshots of each instance's `HashToBlock` map via `StaleCacheIndex`, modeling asynchronous KV event propagation from production llm-d. Default 2s (2,000,000 µs), matching llm-d's `defaultSpeculativeTTL` — the blind spot between routing decision and KV event arrival via ZMQ. Set to 0 for oracle mode (live cache state). INV-7 table updated with cacheQueryFn signal freshness tier.
 - Precise prefix cache scoring (#883): `precise-prefix-cache` and `no-hit-lru` scorers query actual instance KV cache state via `CacheQueryFn` threading through `NewRoutingPolicy`. `GetCachedBlockCount` accessor on `InstanceSimulator`. Cluster layer builds `cacheQueryFn` from instances, including deferred NodePool instances.

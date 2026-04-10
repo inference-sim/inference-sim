@@ -126,6 +126,15 @@ For servers exposing `/v1/chat/completions` (most production vLLM/SGLang deploym
   --trace-header trace.yaml --trace-data trace.csv
 ```
 
+To capture per-chunk timestamps for ITL (inter-token latency) calibration, add `--record-itl`:
+
+```bash
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --workload chatbot --rate 10 --num-requests 100 \
+  --record-itl --itl-output trace.itl.csv \
+  --trace-header trace.yaml --trace-data trace.csv
+```
+
 See [Workload Specifications](docs/guide/workloads.md) for the workload spec YAML schema.
 
 ### Replay traces through simulator
@@ -150,6 +159,14 @@ Compare real observed latencies against simulator predictions (using the per-req
 ```bash
 ./blis calibrate --trace-header t.yaml --trace-data d.csv \
   --sim-results results.json --report calibration.json
+```
+
+To include ITL (inter-token latency) metric in the calibration report, add `--itl-data` (requires `blis observe --record-itl`):
+
+```bash
+./blis calibrate --trace-header t.yaml --trace-data d.csv \
+  --sim-results results.json --itl-data trace.itl.csv \
+  --report calibration.json
 ```
 
 ### Convert workload formats
