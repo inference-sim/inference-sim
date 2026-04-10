@@ -333,6 +333,23 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Warn("No requests generated — writing empty trace")
 	}
 
+	// Enable streaming on all requests when --record-itl is set (BC-6)
+	// ITL recording requires streaming responses to capture per-chunk timestamps.
+	// The inference-perf format defaults to non-streaming for parity with the real tool,
+	// so we override it here when ITL is explicitly requested.
+	if observeRecordITL {
+		streamingCount := 0
+		for i := range wl.Requests {
+			if !wl.Requests[i].Streaming {
+				wl.Requests[i].Streaming = true
+				streamingCount++
+			}
+		}
+		if streamingCount > 0 {
+			logrus.Infof("Enabled streaming on %d requests for ITL recording", streamingCount)
+		}
+	}
+
 	// Setup
 	client := NewRealClient(observeServerURL, observeAPIKey, observeModel, observeServerType, WithAPIFormat(observeAPIFormat))
 	recorder := &Recorder{}
