@@ -66,6 +66,11 @@ func TestAlwaysAdmit_BatchNotDeferred(t *testing.T) {
 			if cs.DeferredQueueLen() != 0 {
 				t.Errorf("%s request should NOT be deferred (intercept removed), got DeferredQueueLen=%d", sloClass, cs.DeferredQueueLen())
 			}
+			// Verify request actually completes (not just non-rejected)
+			m := cs.AggregatedMetrics()
+			if m.CompletedRequests < 31 {
+				t.Errorf("%s request should complete (31 total: 30 standard + 1 %s), got CompletedRequests=%d", sloClass, sloClass, m.CompletedRequests)
+			}
 		})
 	}
 }
@@ -114,9 +119,9 @@ func TestTierShed_RejectsBatchUnderOverload(t *testing.T) {
 			cs := NewClusterSimulator(cfg, requests, nil)
 			mustRun(t, cs)
 
-			// BC-2: tier-shed must reject the low-priority request under overload
-			if cs.RejectedRequests() == 0 {
-				t.Errorf("tier-shed should reject %s (priority=%d < min=2) under overload, got RejectedRequests=0", tc.sloClass, tc.priority)
+			// BC-2: tier-shed must reject exactly the low-priority request under overload
+			if cs.RejectedRequests() != 1 {
+				t.Errorf("tier-shed should reject exactly 1 %s request (priority=%d < min=2) under overload, got RejectedRequests=%d", tc.sloClass, tc.priority, cs.RejectedRequests())
 			}
 			// BC-4: deferred queue must be empty — no pre-admission intercept
 			if cs.DeferredQueueLen() != 0 {

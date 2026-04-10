@@ -1031,10 +1031,6 @@ func (c *ClusterSimulator) gpuInventory() GPUInventory {
 // INV-8: ensures work-conserving behaviour — deferred requests re-enter the pipeline
 // within the same scheduling step as the idle transition.
 //
-// Re-deferral: with non-zero admission latency, standard traffic arriving in the
-// [clock, clock+admissionLatency] window may make isBusy() return true before a
-// promoted request reaches AdmissionDecisionEvent, causing it to be re-deferred.
-// This is intentional (Decision 4 in research.md).
 // Preserved for scheduling-tier deferral (#899).
 //
 //nolint:unused
