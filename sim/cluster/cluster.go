@@ -638,11 +638,6 @@ func (c *ClusterSimulator) Run() error {
 			}
 		}
 
-		// Phase 1B-1b: after each event, promote deferred Batch/Background requests
-		// if the cluster has become idle. INV-8: ensures no stall while deferred work waits.
-		if len(c.deferredQueue) > 0 && !c.isBusy() {
-			c.promoteDeferred()
-		}
 	}
 
 	// 4. Finalize all instances (populates StillQueued/StillRunning)
@@ -735,8 +730,6 @@ func (c *ClusterSimulator) Run() error {
 			logrus.Warnf("[cluster] no requests completed — %d of %d requests timed out (client timeout exceeded, likely KV pressure)",
 				c.aggregatedMetrics.TimedOutRequests,
 				c.aggregatedMetrics.TimedOutRequests+c.aggregatedMetrics.DroppedUnservable)
-		} else if len(c.deferredQueue) > 0 {
-			logrus.Warnf("[cluster] no requests completed — %d batch/background requests remain deferred at horizon (cluster never became idle; mix in standard/critical traffic to trigger promotion)", len(c.deferredQueue))
 		} else {
 			logrus.Warnf("[cluster] no requests completed — horizon may be too short or workload too small")
 		}
@@ -941,9 +934,6 @@ func (c *ClusterSimulator) Instances() []*InstanceSimulator {
 
 // AggregatedMetrics returns the merged metrics across all instances.
 // Panics if called before Run() has completed.
-// Note (Phase 1B-1b): INV-1 conservation at cluster level requires callers to also add
-// DeferredQueueLen() for the deferred-horizon-interrupted bucket. AggregatedMetrics alone
-// does not include deferred-at-horizon requests.
 func (c *ClusterSimulator) AggregatedMetrics() *sim.Metrics {
 	if !c.hasRun {
 		panic("ClusterSimulator.AggregatedMetrics() called before Run()")
@@ -984,7 +974,9 @@ func (c *ClusterSimulator) ShedByTier() map[string]int {
 // instances must not count as load (otherwise a recently terminated instance with residual
 // accounting would permanently block deferred-queue promotion).
 // An empty instance pool returns false (not busy).
-// Called by the deferred queue pre-admission intercept and the idle-capacity promotion check.
+// Preserved for scheduling-tier deferral (#899).
+//
+//nolint:unused
 func (c *ClusterSimulator) isBusy() bool {
 	for _, inst := range c.instances {
 		if inst.State == InstanceStateTerminated {
@@ -1068,11 +1060,9 @@ func (c *ClusterSimulator) gpuInventory() GPUInventory {
 // INV-8: ensures work-conserving behaviour — deferred requests re-enter the pipeline
 // within the same scheduling step as the idle transition.
 //
-// Re-deferral: with non-zero admission latency, standard traffic arriving in the
-// [clock, clock+admissionLatency] window may make isBusy() return true before a
-// promoted request reaches AdmissionDecisionEvent, causing it to be re-deferred.
-// This is intentional (Decision 4 in research.md) but may inflate DeferredHorizonInterrupted
-// counts under continuous light standard load.
+// Preserved for scheduling-tier deferral (#899).
+//
+//nolint:unused
 func (c *ClusterSimulator) promoteDeferred() {
 	logrus.Debugf("[cluster] promoting %d deferred requests at tick %d", len(c.deferredQueue), c.clock)
 	for _, req := range c.deferredQueue {
@@ -1084,10 +1074,9 @@ func (c *ClusterSimulator) promoteDeferred() {
 	c.deferredQueue = c.deferredQueue[:0]
 }
 
-// DeferredQueueLen returns the number of Batch/Background requests still in the
-// deferred queue at simulation end (i.e., deferred_horizon_interrupted count).
+// DeferredQueueLen returns the number of requests in the deferred queue.
 // Panics if called before Run() completes.
-// Used by cmd/ to populate RawMetrics.DeferredHorizonInterrupted (Phase 1B-1b).
+// Preserved for #899 (deferred queue redesign).
 func (c *ClusterSimulator) DeferredQueueLen() int {
 	if !c.hasRun {
 		panic("ClusterSimulator.DeferredQueueLen() called before Run()")

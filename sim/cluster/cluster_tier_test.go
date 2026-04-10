@@ -115,10 +115,8 @@ func TestTierShed_NoRegressionWithDefaultPolicy(t *testing.T) {
 	}
 }
 
-// Additional: Batch and Background are never shed by tier policy at cluster level.
-func TestTierShed_BatchBackgroundNeverShed(t *testing.T) {
-	// Run batch requests under heavy overload with tier-shed.
-	// None should appear in shedByTier["batch"] or shedByTier["background"].
+// Batch and Background ARE shed by tier-shed when below MinAdmitPriority under overload.
+func TestTierShed_BatchBackgroundShedUnderOverload(t *testing.T) {
 	const n = 40
 	var requests []*sim.Request
 	for _, class := range []string{"batch", "background"} {
@@ -134,15 +132,13 @@ func TestTierShed_BatchBackgroundNeverShed(t *testing.T) {
 		}
 	}
 
-	cfg := newTierShedConfig(0, 3)
+	cfg := newTierShedConfig(0, 3) // MinAdmitPriority=3 rejects batch(1) and background(0)
 	cs := NewClusterSimulator(cfg, requests, nil)
 	mustRun(t, cs)
 
-	if shed := cs.ShedByTier()["batch"]; shed > 0 {
-		t.Errorf("batch requests should never be shed by tier-shed policy, got %d", shed)
-	}
-	if shed := cs.ShedByTier()["background"]; shed > 0 {
-		t.Errorf("background requests should never be shed by tier-shed policy, got %d", shed)
+	// With MinAdmitPriority=3, batch(priority=1) and background(priority=0) should be rejected
+	if cs.RejectedRequests() == 0 {
+		t.Errorf("batch/background should be rejected under overload with MinAdmitPriority=3, got RejectedRequests=0")
 	}
 }
 

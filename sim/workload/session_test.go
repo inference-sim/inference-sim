@@ -125,6 +125,48 @@ func TestSession_ContextAccumulation(t *testing.T) {
 	}
 }
 
+// TestSession_ContextAccumulation_MultiStep verifies BC-1:
+// context accumulation across a 3-round chain (round 0 → 1 → 2).
+// Extends TestSession_ContextAccumulation (which only tests round 0 → 1).
+// NOTE: contextTokens is append-only across ALL rounds — it grows to 15 after
+// round 0 (input10 + output5), then to 45 after round 1 (prior15 + input25 + output5).
+func TestSession_ContextAccumulation_MultiStep(t *testing.T) {
+	bp := makeTestBlueprint("sess-accum3", 3, 1000, "accumulate", 1_000_000)
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	inputR0 := sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(1)), 10)
+	outputR0 := sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(2)), 5)
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "sess-accum3", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15, // 10 input + 5 output
+		InputTokens: inputR0, OutputTokens: outputR0,
+	}
+	follow1 := sm.OnComplete(req0, 5000)
+	if len(follow1) != 1 {
+		t.Fatalf("expected 1 follow-up after round 0, got %d", len(follow1))
+	}
+	// Round 1: contextTokens(15: r0 input+output) + 10 new = 25
+	if len(follow1[0].InputTokens) != 25 {
+		t.Errorf("BC-1: round 1 input length = %d, want 25 (10+5+10)", len(follow1[0].InputTokens))
+	}
+
+	req1 := &sim.Request{
+		ID: "r1", SessionID: "sess-accum3", RoundIndex: 1,
+		State: sim.StateCompleted,
+		ProgressIndex: int64(len(follow1[0].InputTokens) + len(follow1[0].OutputTokens)), // 25 + 5 = 30
+		InputTokens: follow1[0].InputTokens, OutputTokens: follow1[0].OutputTokens,
+	}
+	follow2 := sm.OnComplete(req1, 12000)
+	if len(follow2) != 1 {
+		t.Fatalf("expected 1 follow-up after round 1, got %d", len(follow2))
+	}
+	// Round 2: contextTokens grows to 45 (prior 15 + r1 input 25 + r1 output 5),
+	// then + 10 new = 55. contextTokens is append-only across ALL rounds.
+	if len(follow2[0].InputTokens) != 55 {
+		t.Errorf("BC-1: round 2 input length = %d, want 55 (contextTokens(45)+10)", len(follow2[0].InputTokens))
+	}
+}
+
 // TestSession_BeyondHorizon_NotGenerated verifies BC-19:
 // follow-up rounds past horizon are not generated.
 func TestSession_BeyondHorizon_NotGenerated(t *testing.T) {
@@ -141,6 +183,41 @@ func TestSession_BeyondHorizon_NotGenerated(t *testing.T) {
 	follow := sm.OnComplete(req0, 5500)
 	if follow != nil {
 		t.Errorf("BC-19: expected nil (beyond horizon), got %d requests", len(follow))
+	}
+}
+
+// TestSession_HorizonInterrupted_IsTerminal verifies BC-2:
+// after horizon interruption, any further OnComplete call for the same
+// session returns nil (the session is terminal, not silently active).
+// Extends TestSession_BeyondHorizon_NotGenerated (which only checks the
+// first call, not the terminal-state idempotency required by INV-11).
+func TestSession_HorizonInterrupted_IsTerminal(t *testing.T) {
+	bp := makeTestBlueprint("sess-hz-term", 3, 1000, "", 6000) // horizon = 6000
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "sess-hz-term", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+	}
+	// Next arrival = 5500 + 1000 = 6500 > horizon → horizon-interrupted
+	follow := sm.OnComplete(req0, 5500)
+	if follow != nil {
+		t.Errorf("BC-2: expected nil (beyond horizon), got %d follow-ups", len(follow))
+	}
+
+	// BC-2: any subsequent call must also return nil (terminal, not active).
+	// This simulates an implementation bug where session state might reset —
+	// a real DES would not call OnComplete twice for the same session/round,
+	// but this guard ensures terminal state is idempotent regardless.
+	req0b := &sim.Request{
+		ID: "r0b", SessionID: "sess-hz-term", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+	}
+	follow2 := sm.OnComplete(req0b, 5500)
+	if follow2 != nil {
+		t.Errorf("BC-2: expected nil on repeat call (session must be terminal), got %d", len(follow2))
 	}
 }
 
@@ -228,6 +305,51 @@ func TestSession_NonSessionRequest_ReturnsNil(t *testing.T) {
 	follow := sm.OnComplete(req, 5000)
 	if follow != nil {
 		t.Errorf("expected nil for non-session request, got %d", len(follow))
+	}
+}
+
+// TestSession_ThinkTimeSampler_UsedWhenPresent verifies BC-3:
+// when ThinkTimeSampler is set, OnComplete uses it instead of constant ThinkTimeUs.
+func TestSession_ThinkTimeSampler_UsedWhenPresent(t *testing.T) {
+	bp := makeTestBlueprint("tts1", 3, 1000, "", 1_000_000)
+	bp.ThinkTimeSampler = &SequenceSampler{values: []int{2000, 3000}}
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "tts1", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+	}
+
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+	// Should use ThinkTimeSampler value (2000) not constant ThinkTimeUs (1000)
+	if follow[0].ArrivalTime != 7000 {
+		t.Errorf("BC-3: arrival = %d, want 7000 (5000 + 2000)", follow[0].ArrivalTime)
+	}
+}
+
+// TestSession_ThinkTimeSampler_NilFallsBack verifies BC-4:
+// when ThinkTimeSampler is nil, OnComplete falls back to constant ThinkTimeUs.
+func TestSession_ThinkTimeSampler_NilFallsBack(t *testing.T) {
+	bp := makeTestBlueprint("tts2", 3, 1000, "", 1_000_000)
+	// ThinkTimeSampler is nil by default
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "tts2", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+	}
+
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+	if follow[0].ArrivalTime != 6000 {
+		t.Errorf("BC-4: arrival = %d, want 6000 (5000 + 1000)", follow[0].ArrivalTime)
 	}
 }
 

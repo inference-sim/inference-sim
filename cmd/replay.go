@@ -23,6 +23,8 @@ var (
 	traceHeaderPath   string
 	traceDataPath     string
 	replayTraceOutput string // File prefix for TraceV2 re-export (<prefix>.yaml + <prefix>.csv)
+	replaySessionMode string
+	replayThinkTimeMs int
 )
 
 var replayCmd = &cobra.Command{
@@ -77,12 +79,50 @@ Example:
 		}
 		logrus.Infof("Loaded trace: %d records (mode=%s)", len(traceData.Records), traceData.Header.Mode)
 
-		// Build requests from trace (BC-1)
-		requests, err := workload.LoadTraceV2Requests(traceData, seed)
-		if err != nil {
-			logrus.Fatalf("Failed to build requests from trace: %v", err)
+		// Validate session mode flags (BC-11)
+		if replaySessionMode != "fixed" && replaySessionMode != "closed-loop" {
+			logrus.Fatalf("--session-mode must be \"fixed\" or \"closed-loop\", got %q", replaySessionMode)
 		}
-		logrus.Infof("Built %d requests for replay", len(requests))
+		if replayThinkTimeMs < 0 {
+			logrus.Fatalf("--think-time-ms must be non-negative, got %d", replayThinkTimeMs)
+		}
+		if replayThinkTimeMs > 0 && replaySessionMode != "closed-loop" {
+			logrus.Fatalf("--think-time-ms requires --session-mode closed-loop")
+		}
+
+		// Build requests from trace — mode selects pre-baked vs closed-loop (BC-8, BC-9)
+		var requests []*sim.Request
+		var sessionMgr *workload.SessionManager
+		if replaySessionMode == "closed-loop" {
+			// Closed-loop: inject only round-0 requests; SessionManager drives follow-ups.
+			// Compute the preliminary horizon from trace records directly (O(n)) so we can
+			// call LoadTraceV2SessionBlueprints exactly once with correct parameters.
+			thinkTimeUs := int64(replayThinkTimeMs) * 1000
+			replayHorizonPrelim := computeHorizonFromMaxArrival(maxInjectedArrivalTimeUs(traceData))
+			if cmd.Flags().Changed("horizon") {
+				replayHorizonPrelim = simulationHorizon
+			}
+			r0Requests, blueprints, bErr := workload.LoadTraceV2SessionBlueprints(traceData, seed, thinkTimeUs, replayHorizonPrelim)
+			if bErr != nil {
+				logrus.Fatalf("Failed to build session blueprints from trace: %v", bErr)
+			}
+			requests = r0Requests
+			if len(blueprints) == 0 {
+				// BC-12: warning path — no automated unit test (integration-level only)
+				logrus.Warnf("--session-mode closed-loop: no session records found in trace; all requests injected with fixed timing")
+			} else {
+				sessionMgr = workload.NewSessionManager(blueprints)
+				logrus.Infof("Closed-loop mode: %d session blueprints, %d round-0 requests", len(blueprints), len(requests))
+			}
+		} else {
+			// Fixed mode (default): pre-baked arrivals, existing behavior (BC-8)
+			var bErr error
+			requests, bErr = workload.LoadTraceV2Requests(traceData, seed)
+			if bErr != nil {
+				logrus.Fatalf("Failed to build requests from trace: %v", bErr)
+			}
+			logrus.Infof("Built %d requests for replay", len(requests))
+		}
 
 		// Compute horizon (BC-3)
 		replayHorizon := computeReplayHorizon(requests)
@@ -153,21 +193,17 @@ Example:
 			TraceLevel:              traceLevel,
 			CounterfactualK:         counterfactualK,
 			SnapshotRefreshInterval: snapshotRefreshInterval,
-			CacheSignalDelay:        cacheSignalDelay,
 			TierShedThreshold:       tierShedThreshold,
 			TierShedMinPriority:     tierShedMinPriority,
 			TenantBudgets:           tenantBudgets,
-			FlowControlEnabled:              flowControlEnabled,
-			FlowControlDetector:             flowControlDetector,
-			FlowControlDispatchOrder:        flowControlDispatchOrder,
-			FlowControlMaxQueueDepth:        flowControlMaxQueueDepth,
-			FlowControlQueueDepthThreshold:  flowControlQueueDepthThreshold,
-			FlowControlKVCacheUtilThreshold: flowControlKVCacheUtilThreshold,
-			FlowControlMaxConcurrency:       flowControlMaxConcurrency,
 		}
 
-		// Run simulation — no session manager (onRequestDone=nil: session structure encoded in trace)
-		cs := cluster.NewClusterSimulator(config, requests, nil)
+		// Run simulation — wire SessionManager for closed-loop, nil for fixed mode
+		var onRequestDone func(*sim.Request, int64) []*sim.Request
+		if sessionMgr != nil {
+			onRequestDone = sessionMgr.OnComplete
+		}
+		cs := cluster.NewClusterSimulator(config, requests, onRequestDone)
 		if err := cs.Run(); err != nil {
 			logrus.Fatalf("Replay simulation failed: %v", err)
 		}
@@ -209,12 +245,9 @@ Example:
 			cs.RoutingRejections(),
 		)
 		rawMetrics.ShedByTier = cs.ShedByTier()                             // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
-		rawMetrics.DeferredHorizonInterrupted = cs.DeferredQueueLen()        // Phase 1B-1b: deferred queue horizon count (FR-006)
-		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth()               // Issue #882: gateway queue depth at horizon
-		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()                 // Issue #882: gateway queue shed count
 
 		// Print anomaly counters if any detected
-		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.DeferredHorizonInterrupted > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 {
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 {
 			fmt.Println("=== Anomaly Counters ===")
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
@@ -232,15 +265,6 @@ Example:
 			fmt.Printf("Rejected Requests (Routing): %d\n", rawMetrics.RoutingRejections)
 			fmt.Printf("Dropped Unservable: %d\n", rawMetrics.DroppedUnservable)
 			fmt.Printf("Length-Capped Requests: %d\n", rawMetrics.LengthCappedRequests)
-			if rawMetrics.DeferredHorizonInterrupted > 0 {
-				fmt.Printf("Deferred (horizon-interrupted): %d\n", rawMetrics.DeferredHorizonInterrupted)
-			}
-			if rawMetrics.GatewayQueueDepth > 0 {
-				fmt.Printf("Gateway Queue Depth (horizon): %d\n", rawMetrics.GatewayQueueDepth)
-			}
-			if rawMetrics.GatewayQueueShed > 0 {
-				fmt.Printf("Gateway Queue Shed: %d\n", rawMetrics.GatewayQueueShed)
-			}
 		}
 
 		printKVCacheMetrics(os.Stdout, rawMetrics.PreemptionRate, rawMetrics.CacheHitRate, rawMetrics.KVThrashingRate)
@@ -306,14 +330,48 @@ func init() {
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
 	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens) for blis calibrate consumption.")
 	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\"")
+	replayCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", `Session replay mode: "fixed" (pre-baked arrivals from trace) or "closed-loop" (load-adaptive follow-ups via SessionManager)`)
+	replayCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "Override think time between session rounds in milliseconds (0 = derive from trace inter-round arrival gaps, which include prior-round service time — use this flag to supply the actual client-side think time; requires --session-mode closed-loop)")
 	rootCmd.AddCommand(replayCmd)
+}
+
+// maxInjectedArrivalTimeUs returns the maximum ArrivalTimeUs among records that
+// will be injected as initial requests in closed-loop mode: session round-0 records
+// and all non-session records. Used to compute the preliminary horizon in O(n)
+// without a full LoadTraceV2SessionBlueprints call.
+func maxInjectedArrivalTimeUs(trace *workload.TraceV2) int64 {
+	var max int64
+	for _, rec := range trace.Records {
+		if rec.SessionID != "" && rec.RoundIndex != 0 {
+			continue // skip follow-up session rounds
+		}
+		if rec.ArrivalTimeUs > max {
+			max = rec.ArrivalTimeUs
+		}
+	}
+	return max
+}
+
+// computeHorizonFromMaxArrival maps a maximum arrival time to a simulation horizon.
+// - maxArrival > MaxInt64/2 → math.MaxInt64 (overflow guard for 2×)
+// - maxArrival <= 0 (all at t=0) → 600,000,000 µs (10 min buffer; MaxInt64 would hang)
+// - Otherwise → maxArrival * 2 (generous buffer for last request to complete)
+// Used by both the blueprint horizon (closed-loop path) and the simulation horizon so they
+// always apply identical logic.
+func computeHorizonFromMaxArrival(maxArrival int64) int64 {
+	switch {
+	case maxArrival > math.MaxInt64/2:
+		return math.MaxInt64
+	case maxArrival <= 0:
+		return 600_000_000
+	default:
+		return maxArrival * 2
+	}
 }
 
 // computeReplayHorizon returns the simulation horizon for a trace replay.
 // - Empty slice → math.MaxInt64 (no requests, horizon doesn't matter)
-// - maxArrival > MaxInt64/2 → math.MaxInt64 (overflow guard for 2×)
-// - maxArrival <= 0 (all at t=0) → 600,000,000 µs (10 min buffer; MaxInt64 would hang)
-// - Otherwise → maxArrival * 2 (generous buffer for last request to complete)
+// - Otherwise → delegated to computeHorizonFromMaxArrival
 func computeReplayHorizon(requests []*sim.Request) int64 {
 	if len(requests) == 0 {
 		return math.MaxInt64
@@ -324,16 +382,7 @@ func computeReplayHorizon(requests []*sim.Request) int64 {
 			maxArrival = req.ArrivalTime
 		}
 	}
-	// Overflow guard: if 2× would overflow int64, use MaxInt64 directly.
-	if maxArrival > math.MaxInt64/2 {
-		return math.MaxInt64
-	}
-	if maxArrival <= 0 {
-		// All requests at t=0: use a fixed generous buffer of 10 minutes (600,000,000 µs)
-		// rather than MaxInt64 (which would cause the simulation to run indefinitely).
-		return 600_000_000
-	}
-	return maxArrival * 2
+	return computeHorizonFromMaxArrival(maxArrival)
 }
 
 // extractSimResults converts Metrics to a slice of workload.SimResult for calibrate consumption.

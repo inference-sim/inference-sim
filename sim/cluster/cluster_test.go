@@ -1791,14 +1791,14 @@ func TestClusterSimulator_FlowControl_Conservation(t *testing.T) {
 	gwDepth := cs.GatewayQueueDepth()
 	gwShed := cs.GatewayQueueShed()
 
-	// INV-1: injected == completed + queued + running + dropped + timedout + deferred + routingRejections + gwDepth + gwShed
+	// INV-1: injected == completed + queued + running + dropped + timedout + routingRejections + gwDepth + gwShed
 	injected := len(requests) - cs.RejectedRequests()
-	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests + cs.DeferredQueueLen() + cs.RoutingRejections() + gwDepth + gwShed
+	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() + gwDepth + gwShed
 	if injected != accounted {
-		t.Errorf("INV-1: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d deferred=%d routingRejections=%d gwDepth=%d gwShed=%d)",
+		t.Errorf("INV-1: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d routingRejections=%d gwDepth=%d gwShed=%d)",
 			injected, accounted,
 			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
-			m.TimedOutRequests, cs.DeferredQueueLen(), cs.RoutingRejections(), gwDepth, gwShed)
+			m.TimedOutRequests, cs.RoutingRejections(), gwDepth, gwShed)
 	}
 }
 
@@ -2452,8 +2452,8 @@ func TestClusterSimulator_SessionFollowUpCausality(t *testing.T) {
 // RoundIndex > 0, and every session generates at least one follow-up.
 // This is the first test of the standard (non-disaggregated) cluster path
 // with real multi-turn session management.
-// NOTE: assertINV1Conservation checks 5 of 9 INV-1 terms; the 4 missing terms
-// (DeferredHorizonInterrupted, RoutingRejections, GatewayQueueDepth, GatewayQueueShed)
+// NOTE: assertINV1Conservation checks 5 of 8 INV-1 terms; the 3 missing terms
+// (RoutingRejections, GatewayQueueDepth, GatewayQueueShed)
 // are zero for this config (no gateway queue, no deferred queue, no routing rejections).
 func TestClusterSimulator_MultiTurnSession_EndToEnd(t *testing.T) {
 	inputSampler, err := workload.NewLengthSampler(workload.DistSpec{
