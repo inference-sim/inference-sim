@@ -100,13 +100,35 @@ Why does this matter? Consider a batch with three requests decoding single token
 
 **What BLIS captures.** vLLM's complexity comes from continuous batching (requests join and leave mid-flight), mixed prefill-decode execution (fast decode waits for slow prefill), block-level KV cache management (prefix reuse, preemption, CPU offloading when GPU memory fills), and chunked prefill (breaking large prompts into smaller pieces). BLIS models all of these mechanisms because they determine when requests complete.
 
-**How BLIS predicts step time without GPUs.** BLIS uses a trained model that combines physics-based basis functions with learned corrections:
+**How BLIS predicts step time without GPUs.** BLIS combines physics-based roofline models with learned corrections:
 
-$$
-t_{\text{step}} = \sum_{i} \beta_i \cdot \phi_i(\text{batch}, \text{LLM}, \text{hardware})
-$$
+```mermaid
+flowchart LR
+    subgraph Inputs["📊 <b>Inputs</b>"]
+        Batch["Batch State<br/>(size, sequences)"]
+        LLM["Model Architecture<br/>(layers, params)"]
+        HW["Hardware Specs<br/>(TFLOPs, bandwidth)"]
+    end
 
-where $\phi_i$ are basis functions that capture computational physics - batch (batch size and sequence lengths), LLM (model architecture), and hardware (compute and memory bandwidth) - and $\beta_i$ are coefficients trained on real vLLM traces that correct for hardware-specific bottlenecks. This approach generalizes across LLM architectures, hardware configurations, and tensor parallelism degrees, enabling seamless experimentation with any model-GPU-TP combination without per-configuration calibration. Accurate forward pass predictions drive accurate end-to-end latency metrics.
+    subgraph Physics["⚡ <b>Physics-Based Roofline</b>"]
+        Compute["Compute Bound<br/>Compute Operations / GPU Speed"]
+        Memory["Memory Bound<br/>Bytes Transferred / GPU Bandwidth"]
+    end
+
+    subgraph Learned["🎯 <b>Learned Corrections</b>"]
+        Coeffs["Trained on<br/>Real vLLM Traces"]
+    end
+
+    Batch --> Physics
+    LLM --> Physics
+    HW --> Physics
+
+    Compute --> StepTime["⏱️ Predicted Step Time"]
+    Memory --> StepTime
+    Coeffs --> StepTime
+```
+
+This approach generalizes across LLM architectures, hardware configurations, and tensor parallelism degrees, enabling seamless experimentation with any model-GPU-TP combination without per-configuration calibration. Accurate forward pass predictions drive accurate end-to-end latency metrics.
 
 ### Layer 2: The Data Plane (Cluster Orchestration)
 
