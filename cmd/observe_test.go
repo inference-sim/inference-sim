@@ -646,3 +646,29 @@ func TestRealClient_GIEHeaders_OmittedWhenDefault(t *testing.T) {
 		t.Errorf("x-gateway-inference-objective should be absent, got %q", got)
 	}
 }
+
+func TestRecorder_RecordITL_StreamingRequest(t *testing.T) {
+	// GIVEN a recorder and chunk timestamps
+	rec := &Recorder{}
+	timestamps := []int64{1000000, 1008000, 1016000}
+
+	// WHEN RecordITL is called
+	rec.RecordITL(42, timestamps)
+
+	// THEN ITL records are stored
+	itl := rec.ITLRecords()
+	if len(itl) != 3 {
+		t.Fatalf("got %d ITL records, want 3", len(itl))
+	}
+	for i, ts := range timestamps {
+		if itl[i].RequestID != 42 {
+			t.Errorf("record %d: got request_id=%d, want 42", i, itl[i].RequestID)
+		}
+		if itl[i].ChunkIndex != i {
+			t.Errorf("record %d: got chunk_index=%d, want %d", i, itl[i].ChunkIndex, i)
+		}
+		if itl[i].TimestampUs != ts {
+			t.Errorf("record %d: got timestamp_us=%d, want %d", i, itl[i].TimestampUs, ts)
+		}
+	}
+}
