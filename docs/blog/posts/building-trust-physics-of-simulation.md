@@ -195,7 +195,7 @@ go build -o blis main.go
 | H100 (prefix-aware) | 11.3ms | **7% improvement** from KV cache reuse |
 | A100-80 (prefix-aware) | 45.8ms | **4× slower than H100** — hardware choice dominates |
 
-**What the simulation predicts:** Prefix-aware routing delivers measurable gains on H100, but hardware choice has far greater impact. These simulated predictions guide configuration decisions without provisioning real GPUs—validation against production systems (the topic of our next article) confirms BLIS accuracy.
+**What the simulation predicts:** Prefix-aware routing delivers measurable gains on H100, but hardware choice has far greater impact. These simulated predictions guide configuration decisions without provisioning real GPUs.
 
 ## From Modeling to Validation
 
