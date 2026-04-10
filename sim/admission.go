@@ -90,7 +90,6 @@ func SLOTierPriority(class string) int {
 
 // TierShedAdmission sheds lower-priority requests under overload.
 // Stateless: all decisions computed from RouterState at call time.
-// Batch and Background always pass through (deferred queue PR handles them).
 // Use NewTierShedAdmission to construct with validated parameters.
 type TierShedAdmission struct {
 	OverloadThreshold int // max per-instance effective load before shedding; 0 = any load triggers
@@ -114,14 +113,9 @@ func NewTierShedAdmission(overloadThreshold, minAdmitPriority int) *TierShedAdmi
 
 // Admit rejects requests whose tier priority is below MinAdmitPriority when the
 // cluster is overloaded (max effective load across instances > OverloadThreshold).
-// Batch and Background classes always return admitted=true.
 // Empty Snapshots (no instances) also returns admitted=true (safe default).
 func (t *TierShedAdmission) Admit(req *Request, state *RouterState) (bool, string) {
 	class := req.SLOClass
-	// Batch/Background bypass tier-shed (deferred queue handles them in PR-2).
-	if class == "batch" || class == "background" {
-		return true, ""
-	}
 	// Compute max effective load across all instance snapshots.
 	maxLoad := 0
 	for _, snap := range state.Snapshots {
