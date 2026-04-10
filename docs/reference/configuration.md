@@ -193,11 +193,45 @@ Controls which requests enter the routing pipeline. See [Cluster Architecture: A
 | YAML field | Type | Default | Description |
 |------------|------|---------|-------------|
 | `admission.tier_shed_threshold` | int | 0 | Per-instance in-flight threshold above which shedding activates. 0 = shed at any load. |
-| `admission.tier_shed_min_priority` | int | 3 | Minimum SLO tier priority admitted under overload. 3 = admit Standard+Critical, shed the rest. 0 = admit all tiers (same as always-admit — footgun). |
+| `admission.tier_shed_min_priority` | int | 3 | Minimum SLO tier priority admitted under overload. 3 = admit Standard+Critical, shed sheddable tiers (priority < 0). Must be >= -3. |
+| `admission.slo_priorities` | map[string]int | nil | Custom SLO class priority overrides. Merges on top of GAIE defaults. See [SLO Tier Priorities](#slo-tier-priorities) below. |
 
-SLO tier priorities: `critical`=4, `standard`=3, `sheddable`=2, `batch`=1, `background`=0.
+### SLO Tier Priorities
 
-**Per-tenant fair-share budgets** (`tenant_budgets`): A secondary admission layer that runs *after* the admission policy. If the admission policy rejects a request, tenant budgets are not consulted. If the admission policy admits a request, tenant budgets then apply: over-budget tenants have Sheddable-and-below requests (SLO class priority < 3) preferentially shed while Critical and Standard traffic is always protected. Configured via `--policy-config` YAML only (no CLI flag):
+Each SLO class has an integer priority that determines admission ordering, shedding decisions, and gateway queue dispatch. Priorities follow the GAIE (Gateway API Inference Extension) convention where **negative priority = sheddable**.
+
+**Default priorities (GAIE-compatible):**
+
+| SLO Class | Priority | Sheddable? | Description |
+|-----------|----------|------------|-------------|
+| `critical` | 4 | No | Highest priority. Never shed by tier-shed or tenant budgets. |
+| `standard` | 3 | No | Default for empty/unknown SLO class. Protected from shedding. |
+| `batch` | -1 | Yes | Offline/batch workloads. Shed under overload or tenant budget pressure. |
+| `sheddable` | -2 | Yes | Explicitly sheddable workloads. |
+| `background` | -3 | Yes | Lowest priority. First to be shed. |
+
+**Key semantic:** `IsSheddable(class) = Priority(class) < 0`. This matches llm-d's `sheddable.go` contract. Classes with priority >= 0 are protected from tenant budget shedding and are shed by tier-shed only when their priority is below `tier_shed_min_priority`.
+
+**Custom overrides:** Override specific priorities via the policy bundle YAML. Unspecified classes retain defaults.
+
+```yaml
+admission:
+  policy: "tier-shed"
+  slo_priorities:
+    batch: 0       # make batch non-sheddable (protected like standard)
+    critical: 10   # increase critical priority gap
+```
+
+**Where priorities are used in the codebase:**
+
+| Component | File | How priorities are used |
+|-----------|------|----------------------|
+| Tier-shed admission | `sim/admission.go` | Rejects requests with `Priority(class) < MinAdmitPriority` under overload |
+| Tenant budget enforcement | `sim/cluster/cluster_event.go` | Sheds over-budget requests where `IsSheddable(class)` is true (priority < 0) |
+| Gateway queue dispatch | `sim/cluster/gateway_queue.go` | Priority-ordered dispatch: higher priority dequeued first; capacity shedding evicts lowest priority |
+| Backward compatibility | `sim/admission.go` | `SLOTierPriority()` delegates to `DefaultSLOPriorityMap().Priority()` |
+
+**Per-tenant fair-share budgets** (`tenant_budgets`): A secondary admission layer that runs *after* the admission policy. If the admission policy rejects a request, tenant budgets are not consulted. If the admission policy admits a request, tenant budgets then apply: over-budget tenants have sheddable requests (`IsSheddable(class) = priority < 0`) preferentially shed, while non-sheddable traffic (critical, standard) is always protected. Configured via `--policy-config` YAML only (no CLI flag):
 
 | YAML field | Type | Default | Description |
 |------------|------|---------|-------------|
@@ -209,7 +243,9 @@ Example:
 admission:
   policy: "tier-shed"
   tier_shed_threshold: 0
-  tier_shed_min_priority: 2  # sheddable passes tier-shed; budget enforcement handles per-tenant limits
+  tier_shed_min_priority: 3  # admit standard(3) and critical(4); shed sheddable tiers (priority < 0)
+  slo_priorities:             # optional: override specific priorities
+    batch: 0                  # promote batch to non-sheddable
 
 tenant_budgets:
   alice: 0.3   # alice may use at most 30% of total cluster capacity
@@ -413,10 +449,17 @@ instance_lifecycle:
   warm_up_ttft_factor: 2.0    # TTFT multiplier applied to warm-up requests (≥ 1.0)
   drain_policy: "WAIT"        # IMMEDIATE | WAIT | REDIRECT
 
+# SLO priority overrides (optional; omit for GAIE defaults)
+# GAIE defaults: critical=4, standard=3, batch=-1, sheddable=-2, background=-3
+# Negative priority = sheddable. Override to change which classes are sheddable.
+# admission:
+#   slo_priorities:
+#     batch: 0    # make batch non-sheddable
+
 # Per-tenant fair-share budgets (Phase 1B — optional; omit for no tenant enforcement)
 # Each value is a fraction of total cluster capacity (NumInstances × MaxRunningReqs).
 # Absent key = unlimited. 0.0 = effectively zero concurrent slots (DES ordering caveat: see IsOverBudget docstring). Values must be in [0, 1].
-# Critical and Standard traffic is always protected from budget shedding.
+# Non-sheddable traffic (priority >= 0: critical, standard) is always protected from budget shedding.
 tenant_budgets:
   team-a: 0.4
   team-b: 0.4
