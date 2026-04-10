@@ -137,7 +137,6 @@ var (
 	pdTransferBaseLatency float64 // Inter-instance KV transfer base latency in ms
 	pdTransferContention     bool    // Enable fair-share bandwidth contention model
 	pdPrefixThreshold       int    // Non-cached token threshold for prefix-threshold decider
-	pdDirectDecodeThreshold int    // Input token threshold for direct-to-decode decider
 	prefillRoutingScorers   string // Scorer weights for prefill pool routing
 	decodeRoutingScorers  string  // Scorer weights for decode pool routing
 
@@ -1033,12 +1032,11 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// PD disaggregation config
 	cmd.Flags().IntVar(&prefillInstances, "prefill-instances", 0, "Number of instances dedicated to prefill (0 = disabled)")
 	cmd.Flags().IntVar(&decodeInstances, "decode-instances", 0, "Number of instances dedicated to decode (0 = disabled)")
-	cmd.Flags().StringVar(&pdDecider, "pd-decider", "never", "PD disaggregation decider: never (default), always, prefix-threshold, direct-to-decode")
+	cmd.Flags().StringVar(&pdDecider, "pd-decider", "never", "PD disaggregation decider: never (default), always, prefix-threshold")
 	cmd.Flags().Float64Var(&pdTransferBandwidth, "pd-transfer-bandwidth", 25.0, "PD KV transfer bandwidth in GB/s (NIXL RDMA default)")
 	cmd.Flags().Float64Var(&pdTransferBaseLatency, "pd-transfer-base-latency", 0.05, "PD KV transfer base latency in ms")
 	cmd.Flags().BoolVar(&pdTransferContention, "pd-transfer-contention", false, "Enable fair-share bandwidth contention model for concurrent KV transfers (INV-P2-2)")
 	cmd.Flags().IntVar(&pdPrefixThreshold, "pd-prefix-threshold", 512, "Non-cached token threshold for prefix-threshold decider (>= 0); disaggregate when non-cached tokens exceed this value")
-	cmd.Flags().IntVar(&pdDirectDecodeThreshold, "pd-direct-decode-threshold", 256, "Input token threshold for direct-to-decode (>= 0): requests with fewer than threshold tokens go direct to decode; requests with >= threshold tokens are disaggregated")
 	cmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")
 	cmd.Flags().StringVar(&decodeRoutingScorers, "decode-routing-scorers", "", "Scorer weights for decode pool routing (e.g., queue-depth:2,kv-utilization:2)")
 
@@ -1407,15 +1405,6 @@ var runCmd = &cobra.Command{
 		if pdDecider != "prefix-threshold" && cmd.Flags().Changed("pd-prefix-threshold") {
 			logrus.Warnf("--pd-prefix-threshold=%d is ignored when --pd-decider=%q (only applies to the prefix-threshold decider)", pdPrefixThreshold, pdDecider)
 		}
-		if pdDecider == "direct-to-decode" && pdDirectDecodeThreshold < 0 {
-			logrus.Fatalf("--pd-direct-decode-threshold must be >= 0, got %d", pdDirectDecodeThreshold)
-		}
-		if pdDecider == "direct-to-decode" && pdDirectDecodeThreshold == 0 {
-			logrus.Warnf("--pd-direct-decode-threshold=0 means all non-empty requests will be disaggregated (equivalent to --pd-decider=always for non-empty inputs). Did you intend a non-zero threshold?")
-		}
-		if pdDecider != "direct-to-decode" && cmd.Flags().Changed("pd-direct-decode-threshold") {
-			logrus.Warnf("--pd-direct-decode-threshold=%d is ignored when --pd-decider=%q (only applies to the direct-to-decode decider)", pdDirectDecodeThreshold, pdDecider)
-		}
 		if pdDecider != "" && pdDecider != "never" && prefillInstances == 0 {
 			logrus.Warnf("--pd-decider=%q has no effect because --prefill-instances=0 (disaggregation is disabled); set --prefill-instances and --decode-instances to enable", pdDecider)
 		}
@@ -1533,7 +1522,6 @@ var runCmd = &cobra.Command{
 			DecodeInstances:         decodeInstances,
 			PDDecider:               pdDecider,
 			PDPrefixThreshold:       pdPrefixThreshold,
-			PDDirectDecodeThreshold: pdDirectDecodeThreshold,
 			PDTransferBandwidthGBps: pdTransferBandwidth,
 			PDTransferBaseLatencyMs: pdTransferBaseLatency,
 			PDTransferContention:    pdTransferContention,
