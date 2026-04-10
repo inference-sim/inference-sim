@@ -32,6 +32,7 @@ type Config struct {
 	CrossModelDefaults       *CrossModelDefaults       `yaml:"crossmodel_defaults,omitempty"`
 	TrainedRooflineDefaults  *TrainedRooflineDefaults  `yaml:"trained_roofline_defaults,omitempty"`
 	TrainedPhysicsDefaults   *TrainedPhysicsDefaults   `yaml:"trained_physics_coefficients,omitempty"`
+	EvolvedDefaults          *EvolvedDefaults          `yaml:"evolved_coefficients,omitempty"`
 }
 
 // CrossModelDefaults holds globally-fitted physics coefficients for cross-model latency estimation.
@@ -54,6 +55,15 @@ type TrainedRooflineDefaults struct {
 // BetaCoeffs has 10 elements (β₁-β₁₀): roofline corrections and per-component overheads.
 // Trained from iter29 (sequential golden section search, β₆ +57%, loss 34.57%).
 type TrainedPhysicsDefaults struct {
+	AlphaCoeffs []float64 `yaml:"alpha_coeffs"`
+	BetaCoeffs  []float64 `yaml:"beta_coeffs"`
+}
+
+// EvolvedDefaults holds experimental latency model coefficients from the training branch.
+// AlphaCoeffs has 3 elements (α₀-α₂): API/framework overheads in µs.
+// BetaCoeffs has 10 elements (β₁-β₁₀): roofline corrections and per-component overheads.
+// Updated iteratively during training experiments.
+type EvolvedDefaults struct {
 	AlphaCoeffs []float64 `yaml:"alpha_coeffs"`
 	BetaCoeffs  []float64 `yaml:"beta_coeffs"`
 }

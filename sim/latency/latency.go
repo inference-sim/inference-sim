@@ -267,6 +267,14 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			return nil, err
 		}
 		return model, nil
+	case "evolved":
+		// EvolvedModel: experimental latency model from training branch with learned coefficients.
+		// Uses roofline basis functions with architecture-aware corrections for active training experiments.
+		model, err := NewEvolvedModel(coeffs, hw)
+		if err != nil {
+			return nil, err
+		}
+		return model, nil
 	case "blackbox":
 		// BlackboxLatencyModel indexes betaCoeffs[0..2]; validate upfront.
 		if len(coeffs.BetaCoeffs) < 3 {
