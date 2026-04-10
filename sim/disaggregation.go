@@ -42,47 +42,11 @@ func (a *AlwaysDisaggregate) Decide(_ *Request) DisaggregationDecision {
 	return DisaggregationDecision{Disaggregate: true}
 }
 
-// DirectToDecodeDecider routes short prompts directly to the decode pool (Disaggregate=false)
-// and long prompts through the full PD pipeline (Disaggregate=true).
-// Decision: len(InputTokens) >= threshold -> disaggregate; < threshold -> direct to decode.
-//
-// Boundary note: this decider uses >= (disaggregate at exactly threshold tokens), while
-// PrefixThresholdDecider uses strict > on the non-cached token count. A request with exactly
-// threshold tokens disaggregates here but would not disaggregate under PrefixThresholdDecider
-// at the same threshold value (assuming no cached tokens).
-type DirectToDecodeDecider struct {
-	threshold int
-}
-
-// NewDirectToDecodeDecider creates a DirectToDecodeDecider with the given input-length threshold.
-// threshold must be >= 0. Panics otherwise (R3).
-func NewDirectToDecodeDecider(threshold int) *DirectToDecodeDecider {
-	if threshold < 0 {
-		panic(fmt.Sprintf("NewDirectToDecodeDecider: threshold must be >= 0, got %d", threshold))
-	}
-	return &DirectToDecodeDecider{threshold: threshold}
-}
-
-// Decide returns Disaggregate=true when input length >= threshold (long prompt -> full PD pipeline),
-// Disaggregate=false when input length < threshold (short prompt -> direct to decode pool).
-// Empty inputs (len == 0) always return Disaggregate=false regardless of threshold.
-// req must be non-nil (interface contract); panics on nil req (programming error).
-func (d *DirectToDecodeDecider) Decide(req *Request) DisaggregationDecision {
-	if req == nil {
-		panic("DirectToDecodeDecider.Decide: req is nil (programming error)")
-	}
-	if len(req.InputTokens) == 0 {
-		return DisaggregationDecision{Disaggregate: false}
-	}
-	return DisaggregationDecision{Disaggregate: len(req.InputTokens) >= d.threshold}
-}
-
 // NewDisaggregationDecider creates a disaggregation decider by name.
 // Valid names are defined in validDisaggregationDeciders (bundle.go).
 // An empty string defaults to NeverDisaggregate.
-// Panics on unrecognized names, on "prefix-threshold" (use NewPrefixThresholdDecider
-// directly), or on "direct-to-decode" (use NewDirectToDecodeDecider directly).
-// Both parameterized deciders require a caller-supplied threshold.
+// Panics on unrecognized names or on "prefix-threshold" (use NewPrefixThresholdDecider
+// directly, as it requires a caller-supplied threshold).
 func NewDisaggregationDecider(name string) DisaggregationDecider {
 	if !IsValidDisaggregationDecider(name) {
 		panic(fmt.Sprintf("unknown disaggregation decider %q", name))
@@ -94,8 +58,6 @@ func NewDisaggregationDecider(name string) DisaggregationDecider {
 		return &AlwaysDisaggregate{}
 	case "prefix-threshold":
 		panic("use NewPrefixThresholdDecider(threshold, blockSize) to construct prefix-threshold decider")
-	case "direct-to-decode":
-		panic("use NewDirectToDecodeDecider(threshold) to construct direct-to-decode decider")
 	default:
 		panic(fmt.Sprintf(
 			"disaggregation decider %q is registered in validDisaggregationDeciders (bundle.go) "+
@@ -214,4 +176,3 @@ func (p *PrefixThresholdDecider) ObserveRouting(req *Request, _ string) {
 
 // Compile-time interface compliance checks.
 var _ DisaggregationObserver = (*PrefixThresholdDecider)(nil)
-var _ DisaggregationDecider = (*DirectToDecodeDecider)(nil)
