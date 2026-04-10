@@ -122,7 +122,8 @@ Example:
 		}
 
 		// Resolve policy configuration (single code path shared with runCmd).
-		parsedScorerConfigs := resolvePolicies(cmd)
+		// Replay does not use autoscaler/node-pool bundle config; ignore the returned bundle.
+		parsedScorerConfigs, _ := resolvePolicies(cmd)
 
 		logrus.Infof("Starting replay with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v",
 			totalKVBlocks, replayHorizon, lr.AlphaCoeffs, lr.BetaCoeffs)

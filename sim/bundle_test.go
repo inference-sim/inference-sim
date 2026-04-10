@@ -457,6 +457,38 @@ func TestPolicyBundle_Validate_AutoscalerNegativeInterval(t *testing.T) {
 	}
 }
 
+func TestPolicyBundle_Validate_AnalyzerThresholds(t *testing.T) {
+	cases := []struct {
+		name    string
+		cfg     AnalyzerBundleConfig
+		wantErr bool
+	}{
+		{"zero values are valid (use defaults)", AnalyzerBundleConfig{}, false},
+		{"valid explicit values", AnalyzerBundleConfig{ScaleUpThreshold: 0.8, ScaleDownBoundary: 0.4, AvgInputTokens: 512}, false},
+		{"negative scale_up_threshold", AnalyzerBundleConfig{ScaleUpThreshold: -0.1}, true},
+		{"zero scale_up_threshold treated as default, not invalid", AnalyzerBundleConfig{ScaleUpThreshold: 0}, false},
+		{"negative scale_down_boundary", AnalyzerBundleConfig{ScaleDownBoundary: -1}, true},
+		{"negative avg_input_tokens", AnalyzerBundleConfig{AvgInputTokens: -100}, true},
+		{"scale_down_boundary >= scale_up_threshold", AnalyzerBundleConfig{ScaleUpThreshold: 0.5, ScaleDownBoundary: 0.5}, true},
+		{"scale_down_boundary > scale_up_threshold", AnalyzerBundleConfig{ScaleUpThreshold: 0.4, ScaleDownBoundary: 0.8}, true},
+		{"kv_cache_threshold > 1", AnalyzerBundleConfig{KVCacheThreshold: 1.5}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bundle := &PolicyBundle{
+				Autoscaler: AutoscalerBundleConfig{Analyzer: tc.cfg},
+			}
+			err := bundle.Validate()
+			if tc.wantErr && err == nil {
+				t.Errorf("expected validation error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("unexpected validation error: %v", err)
+			}
+		})
+	}
+}
+
 func TestPolicyBundle_Validate_NodePool_MissingName(t *testing.T) {
 	bundle := &PolicyBundle{
 		NodePools: []NodePoolBundleConfig{

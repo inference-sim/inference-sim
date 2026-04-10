@@ -240,6 +240,27 @@ func (b *PolicyBundle) Validate() error {
 	if b.Autoscaler.ActuationDelay.Stddev < 0 {
 		return fmt.Errorf("autoscaler.actuation_delay.stddev must be >= 0, got %v", b.Autoscaler.ActuationDelay.Stddev)
 	}
+	// Validate analyzer thresholds (non-zero = explicitly set; zero = use default).
+	// Mirrors the panic guards in NewV2SaturationAnalyzer so invalid values are caught
+	// at the CLI boundary (R3) rather than at runtime during simulation.
+	a := b.Autoscaler.Analyzer
+	if a.KVCacheThreshold != 0 && (a.KVCacheThreshold <= 0 || a.KVCacheThreshold > 1 || math.IsNaN(a.KVCacheThreshold) || math.IsInf(a.KVCacheThreshold, 0)) {
+		return fmt.Errorf("autoscaler.analyzer.kv_cache_threshold must be in (0, 1], got %v", a.KVCacheThreshold)
+	}
+	if a.ScaleUpThreshold != 0 && (a.ScaleUpThreshold <= 0 || math.IsNaN(a.ScaleUpThreshold) || math.IsInf(a.ScaleUpThreshold, 0)) {
+		return fmt.Errorf("autoscaler.analyzer.scale_up_threshold must be > 0, got %v", a.ScaleUpThreshold)
+	}
+	if a.ScaleDownBoundary != 0 && (a.ScaleDownBoundary <= 0 || math.IsNaN(a.ScaleDownBoundary) || math.IsInf(a.ScaleDownBoundary, 0)) {
+		return fmt.Errorf("autoscaler.analyzer.scale_down_boundary must be > 0, got %v", a.ScaleDownBoundary)
+	}
+	if a.AvgInputTokens != 0 && (a.AvgInputTokens <= 0 || math.IsNaN(a.AvgInputTokens) || math.IsInf(a.AvgInputTokens, 0)) {
+		return fmt.Errorf("autoscaler.analyzer.avg_input_tokens must be > 0, got %v", a.AvgInputTokens)
+	}
+	// If both thresholds are explicitly set, scale_down_boundary must be < scale_up_threshold.
+	if a.ScaleUpThreshold != 0 && a.ScaleDownBoundary != 0 && a.ScaleDownBoundary >= a.ScaleUpThreshold {
+		return fmt.Errorf("autoscaler.analyzer.scale_down_boundary (%v) must be < scale_up_threshold (%v)",
+			a.ScaleDownBoundary, a.ScaleUpThreshold)
+	}
 	// Validate node pools: name and gpu_type required; gpus_per_node >= 1; gpu_memory_gib > 0; max_nodes >= initial_nodes.
 	for i, np := range b.NodePools {
 		if np.Name == "" {
