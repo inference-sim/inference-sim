@@ -118,20 +118,17 @@ func TestTierShedAdmission_EmptySLOClassTreatedAsStandard(t *testing.T) {
 	}
 }
 
-// T011 — Batch and Background always admitted regardless of load.
-func TestTierShedAdmission_BatchAndBackgroundAlwaysAdmitted(t *testing.T) {
+// T011 — Batch and Background are rejected under overload when below MinAdmitPriority.
+func TestTierShedAdmission_BatchAndBackgroundRejectedUnderOverload(t *testing.T) {
 	policy := &TierShedAdmission{OverloadThreshold: 0, MinAdmitPriority: 3}
 	// Extremely overloaded state
 	state := makeOverloadedState(9999)
 
 	for _, class := range []string{"batch", "background"} {
 		req := &Request{ID: "r", SLOClass: class}
-		admitted, reason := policy.Admit(req, state)
-		if !admitted {
-			t.Errorf("class=%q should always be admitted by tier-shed policy, got rejected (reason=%q)", class, reason)
-		}
-		if reason != "" {
-			t.Errorf("class=%q: expected empty reason on admission, got %q", class, reason)
+		admitted, _ := policy.Admit(req, state)
+		if admitted {
+			t.Errorf("class=%q (priority < MinAdmitPriority=3) should be rejected under overload, got admitted", class)
 		}
 	}
 }

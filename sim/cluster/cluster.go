@@ -609,11 +609,6 @@ func (c *ClusterSimulator) Run() error {
 			}
 		}
 
-		// Phase 1B-1b: after each event, promote deferred Batch/Background requests
-		// if the cluster has become idle. INV-8: ensures no stall while deferred work waits.
-		if len(c.deferredQueue) > 0 && !c.isBusy() {
-			c.promoteDeferred()
-		}
 	}
 
 	// 4. Finalize all instances (populates StillQueued/StillRunning)
@@ -706,8 +701,6 @@ func (c *ClusterSimulator) Run() error {
 			logrus.Warnf("[cluster] no requests completed — %d of %d requests timed out (client timeout exceeded, likely KV pressure)",
 				c.aggregatedMetrics.TimedOutRequests,
 				c.aggregatedMetrics.TimedOutRequests+c.aggregatedMetrics.DroppedUnservable)
-		} else if len(c.deferredQueue) > 0 {
-			logrus.Warnf("[cluster] no requests completed — %d batch/background requests remain deferred at horizon (cluster never became idle; mix in standard/critical traffic to trigger promotion)", len(c.deferredQueue))
 		} else {
 			logrus.Warnf("[cluster] no requests completed — horizon may be too short or workload too small")
 		}
