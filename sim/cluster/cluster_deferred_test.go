@@ -58,6 +58,7 @@ func TestDeferredQueue_BatchDeferredWhenBusy(t *testing.T) {
 			requests = append(requests, deferredReq)
 
 			cfg := newTestDeploymentConfig(1)
+			cfg.EnableDeferredQueue = true // explicitly enable deferral for this test
 			// Short horizon guarantees standard requests are still running when the
 			// deferred-tier request arrives and the cluster never becomes idle before
 			// horizon. This makes DeferredQueueLen() > 0 the falsifiable assertion:
@@ -137,6 +138,7 @@ func TestDeferredQueue_DeferredPromotedAfterIdle(t *testing.T) {
 			}
 
 			cfg := newTestDeploymentConfig(1)
+			cfg.EnableDeferredQueue = true
 			cs := NewClusterSimulator(cfg, requests, nil)
 			mustRun(t, cs)
 
@@ -188,6 +190,7 @@ func TestDeferredQueue_RealTimeNotCrowdedOut(t *testing.T) {
 	// Run A: standard requests only
 	reqsA := makeStandardRequests()
 	cfgA := newTestDeploymentConfig(2)
+	cfgA.EnableDeferredQueue = true
 	csA := NewClusterSimulator(cfgA, reqsA, nil)
 	mustRun(t, csA)
 
@@ -204,6 +207,7 @@ func TestDeferredQueue_RealTimeNotCrowdedOut(t *testing.T) {
 		})
 	}
 	cfgB := newTestDeploymentConfig(2)
+	cfgB.EnableDeferredQueue = true
 	csB := NewClusterSimulator(cfgB, reqsB, nil)
 	mustRun(t, csB)
 
@@ -253,6 +257,7 @@ func TestDeferredQueue_INV1_Conservation(t *testing.T) {
 	// Short horizon: cuts off before batch requests are promoted.
 	// Horizon is deliberately small to guarantee at least one batch request remains deferred.
 	cfg := newTestDeploymentConfig(1)
+	cfg.EnableDeferredQueue = true
 	cfg.Horizon = 500 // 0.5ms — short enough to cut off before all batch requests are promoted
 	cs := NewClusterSimulator(cfg, requests, nil)
 	mustRun(t, cs)
@@ -348,6 +353,7 @@ func TestDeferredQueue_StandardSLONotSerialized(t *testing.T) {
 func TestDeferredQueue_BatchSLOIsSerializedAboveBound(t *testing.T) {
 	requests := newDeferredTestRequests(10, "batch")
 	cfg := newTestDeploymentConfig(1)
+	cfg.EnableDeferredQueue = true
 	cs := NewClusterSimulator(cfg, requests, nil)
 	mustRun(t, cs)
 
@@ -361,5 +367,99 @@ func TestDeferredQueue_BatchSLOIsSerializedAboveBound(t *testing.T) {
 	if ttftMeanMs < boundMs {
 		t.Errorf("mean TTFT %.2fms < bound %.1fms: batch requests are NOT being serialized — deferred queue may be broken",
 			ttftMeanMs, boundMs)
+	}
+}
+
+// TestDeferredQueue_DisabledByDefault verifies BC-1 (issue #1008): when EnableDeferredQueue
+// is false (the default), batch/background requests are NOT deferred — they proceed directly
+// to admission. This is the inverse of TestDeferredQueue_BatchDeferredWhenBusy.
+func TestDeferredQueue_DisabledByDefault(t *testing.T) {
+	for _, sloClass := range []string{"batch", "background"} {
+		t.Run(sloClass, func(t *testing.T) {
+			var requests []*sim.Request
+			// Standard requests arriving densely to keep cluster busy
+			for i := 0; i < 30; i++ {
+				requests = append(requests, &sim.Request{
+					ID:           fmt.Sprintf("std_%d", i),
+					ArrivalTime:  int64(i) * 5,
+					SLOClass:     "standard",
+					InputTokens:  make([]int, 100),
+					OutputTokens: make([]int, 50),
+					State:        sim.StateQueued,
+				})
+			}
+			// One batch/background request arriving while cluster is busy
+			requests = append(requests, &sim.Request{
+				ID:           sloClass + "_candidate",
+				ArrivalTime:  50,
+				SLOClass:     sloClass,
+				InputTokens:  make([]int, 50),
+				OutputTokens: make([]int, 20),
+				State:        sim.StateQueued,
+			})
+
+			cfg := newTestDeploymentConfig(1)
+			// EnableDeferredQueue defaults to false — do NOT set it
+			cfg.Horizon = 5000 // long enough for requests to flow through pipeline
+			cs := NewClusterSimulator(cfg, requests, nil)
+			mustRun(t, cs)
+
+			// BC-5 / INV-1: conservation must hold even with deferral disabled.
+			// When EnableDeferredQueue=false, deferred_horizon_interrupted is always 0.
+			m := cs.AggregatedMetrics()
+			injected := len(requests)
+			rhs := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable +
+				m.TimedOutRequests + cs.RejectedRequests() + cs.RoutingRejections() +
+				cs.DeferredQueueLen() + cs.GatewayQueueDepth() + cs.GatewayQueueShed()
+			if rhs != injected {
+				t.Errorf("INV-1 violated (EnableDeferredQueue=false): completed(%d)+queued(%d)+running(%d)+dropped(%d)+timedout(%d)+rejected(%d)+routingRejected(%d)+deferred(%d)+gwDepth(%d)+gwShed(%d)=%d, want injected=%d",
+					m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
+					m.TimedOutRequests, cs.RejectedRequests(), cs.RoutingRejections(), cs.DeferredQueueLen(),
+					cs.GatewayQueueDepth(), cs.GatewayQueueShed(), rhs, injected)
+			}
+			// Confirm deferred_horizon_interrupted is 0 when deferral is disabled
+			if cs.DeferredQueueLen() != 0 {
+				t.Errorf("deferred_horizon_interrupted must be 0 when EnableDeferredQueue=false, got %d", cs.DeferredQueueLen())
+			}
+		})
+	}
+}
+
+// TestDeferredQueue_TierShedAutoEnables verifies BC-3 (issue #1008): tier-shed automatically
+// enables the deferred queue even when EnableDeferredQueue is not explicitly set.
+func TestDeferredQueue_TierShedAutoEnables(t *testing.T) {
+	var requests []*sim.Request
+	// Standard requests arriving densely to keep cluster busy
+	for i := 0; i < 30; i++ {
+		requests = append(requests, &sim.Request{
+			ID:           fmt.Sprintf("std_%d", i),
+			ArrivalTime:  int64(i) * 5,
+			SLOClass:     "standard",
+			InputTokens:  make([]int, 100),
+			OutputTokens: make([]int, 50),
+			State:        sim.StateQueued,
+		})
+	}
+	// One batch request arriving while cluster is busy
+	requests = append(requests, &sim.Request{
+		ID:           "batch_0",
+		ArrivalTime:  50,
+		SLOClass:     "batch",
+		InputTokens:  make([]int, 50),
+		OutputTokens: make([]int, 20),
+		State:        sim.StateQueued,
+	})
+
+	cfg := newTestDeploymentConfig(1)
+	cfg.Horizon = 200
+	cfg.AdmissionPolicy = "tier-shed"
+	cfg.TierShedMinPriority = 3
+	// EnableDeferredQueue NOT set — tier-shed should auto-enable it
+	cs := NewClusterSimulator(cfg, requests, nil)
+	mustRun(t, cs)
+
+	// BC-3: tier-shed auto-enables deferral; batch request should be deferred at short horizon
+	if cs.DeferredQueueLen() == 0 {
+		t.Errorf("tier-shed should auto-enable deferral: expected DeferredQueueLen > 0 at short horizon")
 	}
 }

@@ -35,6 +35,7 @@ type ClusterSimulator struct {
 	routingRejections    int                    // I13: count of requests rejected at routing (no routable instances)
 	shedByTier           map[string]int         // per-SLOClass rejection counts (Phase 1B-1a)
 	deferredQueue        []*sim.Request         // Batch/Background requests awaiting idle capacity (Phase 1B-1b)
+	enableDeferredQueue  bool                   // When false, batch/background bypass deferral (issue #1008)
 	trace                *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
 	preGeneratedRequests []*sim.Request         // Pre-generated requests (all workload paths unified)
 	inFlightRequests     map[string]int         // instance ID → dispatched-but-not-completed count (#463)
@@ -167,6 +168,9 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			logrus.Warn("[cluster] tier-shed: TierShedMinPriority=0 admits all tiers under overload — policy behaves like AlwaysAdmit; set tier_shed_min_priority: 3 for Standard-and-above protection")
 		}
 		admissionPolicy = sim.NewTierShedAdmission(config.TierShedThreshold, config.TierShedMinPriority)
+		// BC-3 (issue #1008): tier-shed depends on deferred queue for batch/background handling.
+		// Auto-enable even if the user didn't explicitly set the flag.
+		config.EnableDeferredQueue = true
 	} else {
 		admissionPolicy = sim.NewAdmissionPolicy(config.AdmissionPolicy, config.TokenBucketCapacity, config.TokenBucketRefillRate)
 	}
@@ -185,6 +189,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		trace:                simTrace,
 		inFlightRequests:     make(map[string]int, config.NumInstances),
 		shedByTier:           make(map[string]int),
+		enableDeferredQueue:  config.EnableDeferredQueue,
 	}
 
 	// PD disaggregation: set pool membership (topology already validated above)
@@ -611,7 +616,7 @@ func (c *ClusterSimulator) Run() error {
 
 		// Phase 1B-1b: after each event, promote deferred Batch/Background requests
 		// if the cluster has become idle. INV-8: ensures no stall while deferred work waits.
-		if len(c.deferredQueue) > 0 && !c.isBusy() {
+		if c.enableDeferredQueue && len(c.deferredQueue) > 0 && !c.isBusy() {
 			c.promoteDeferred()
 		}
 	}

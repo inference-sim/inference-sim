@@ -29,7 +29,8 @@ type AdmissionConfig struct {
 	TokenBucketRefillRate *float64 `yaml:"token_bucket_refill_rate"`
 	// Tier-shed options (Phase 1B): only used when policy = "tier-shed".
 	TierShedThreshold   *int `yaml:"tier_shed_threshold"`   // nil = use default (0)
-	TierShedMinPriority *int `yaml:"tier_shed_min_priority"` // nil = use default (3)
+	TierShedMinPriority *int  `yaml:"tier_shed_min_priority"` // nil = use default (3)
+	EnableDeferredQueue *bool `yaml:"enable_deferred_queue"`  // nil = use default (false)
 }
 
 // RoutingConfig holds routing policy configuration.

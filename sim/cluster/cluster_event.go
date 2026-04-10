@@ -138,7 +138,8 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 	// They bypass tier-shed admission entirely and re-enter as ClusterArrivalEvents on idle.
 	// This intercept fires BEFORE buildRouterState/Admit — deferred requests are held, not rejected.
 	// INV-9: deferral path reads only e.request.SLOClass — no oracle field access.
-	if (e.request.SLOClass == "batch" || e.request.SLOClass == "background") && cs.isBusy() {
+	// Issue #1008: gated behind enableDeferredQueue — when false (default), requests proceed to admission.
+	if cs.enableDeferredQueue && (e.request.SLOClass == "batch" || e.request.SLOClass == "background") && cs.isBusy() {
 		cs.deferredQueue = append(cs.deferredQueue, e.request)
 		logrus.Debugf("[cluster] req %s deferred (SLOClass=%q, deferredQueueLen=%d)", e.request.ID, e.request.SLOClass, len(cs.deferredQueue))
 		// Trace gap: deferred requests do not get a RecordAdmission() call here.

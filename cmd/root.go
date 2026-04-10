@@ -96,6 +96,7 @@ var (
 	tokenBucketRefillRate float64            // Token bucket refill rate (tokens/second)
 	tierShedThreshold     int                // Tier-shed overload threshold (0 = any load)
 	tierShedMinPriority   int                // Tier-shed minimum admitted priority under overload
+	enableDeferredQueue   bool               // Gate deferred queue for batch/background (issue #1008)
 	tenantBudgets         map[string]float64 // Per-tenant fraction of total capacity (nil = no enforcement)
 
 	// routing policy config (PR 6, evolved in PR17)
@@ -788,7 +789,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 //
 // Side effects: may write admissionPolicy, routingPolicy, priorityPolicy, scheduler,
 // tokenBucketCapacity, tokenBucketRefillRate, tierShedThreshold, tierShedMinPriority,
-// tenantBudgets package-level vars (from policy bundle).
+// enableDeferredQueue, tenantBudgets package-level vars (from policy bundle).
 //
 // Returns the parsed scorer configs for weighted routing (caller uses these in
 // DeploymentConfig.RoutingScorerConfigs). Per-pool scorer configs (PD disaggregation)
@@ -822,6 +823,9 @@ func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
 			tierShedMinPriority = *bundle.Admission.TierShedMinPriority
 		} else if bundle.Admission.Policy == "tier-shed" && bundle.Admission.TierShedMinPriority == nil {
 			tierShedMinPriority = 3 // default: protect Critical (4) and Standard (3)
+		}
+		if bundle.Admission.EnableDeferredQueue != nil && !cmd.Flags().Changed("enable-deferred-queue") {
+			enableDeferredQueue = *bundle.Admission.EnableDeferredQueue
 		}
 		if bundle.TenantBudgets != nil {
 			tenantBudgets = bundle.TenantBudgets
@@ -1001,6 +1005,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&routingLatency, "routing-latency", 0, "Routing latency in microseconds")
 	cmd.Flags().Float64Var(&tokenBucketCapacity, "token-bucket-capacity", 10000, "Token bucket capacity")
 	cmd.Flags().Float64Var(&tokenBucketRefillRate, "token-bucket-refill-rate", 1000, "Token bucket refill rate (tokens/second)")
+	cmd.Flags().BoolVar(&enableDeferredQueue, "enable-deferred-queue", false, "Enable deferred queue for batch/background requests (auto-enabled by tier-shed)")
 
 	// Routing policy config
 	cmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, always-busiest")
@@ -1543,6 +1548,7 @@ var runCmd = &cobra.Command{
 			DecodeOverrides:         decodeOverrides,
 			TierShedThreshold:       tierShedThreshold,
 			TierShedMinPriority:     tierShedMinPriority,
+			EnableDeferredQueue:     enableDeferredQueue,
 			TenantBudgets:           tenantBudgets,
 			FlowControlEnabled:              flowControlEnabled,
 			FlowControlDetector:             flowControlDetector,

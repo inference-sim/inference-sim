@@ -93,6 +93,13 @@ type DeploymentConfig struct {
 	TierShedThreshold   int `yaml:"tier_shed_threshold,omitempty"`
 	TierShedMinPriority int `yaml:"tier_shed_min_priority,omitempty"`
 
+	// Phase 1B-1b fix: gate deferred queue behind config (issue #1008).
+	// When false (default), batch/background requests proceed directly to admission —
+	// no silent deferral. When true, batch/background are deferred when isBusy()
+	// and promoted when the cluster becomes idle (original Phase 1B-1b behavior).
+	// tier-shed sets this to true automatically for backward compatibility.
+	EnableDeferredQueue bool `yaml:"enable_deferred_queue,omitempty"`
+
 	// Phase 1B-2a: per-tenant fair-share budgets (issue #811).
 	// Key: TenantID string. Value: fraction of total cluster capacity (0.0–1.0).
 	// Zero value is safe: nil = no enforcement (all tenants unlimited).

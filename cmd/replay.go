@@ -194,6 +194,7 @@ Example:
 			SnapshotRefreshInterval: snapshotRefreshInterval,
 			TierShedThreshold:       tierShedThreshold,
 			TierShedMinPriority:     tierShedMinPriority,
+			EnableDeferredQueue:     enableDeferredQueue,
 			TenantBudgets:           tenantBudgets,
 		}
 

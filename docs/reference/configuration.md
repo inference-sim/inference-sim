@@ -187,6 +187,7 @@ Controls which requests enter the routing pipeline. See [Cluster Architecture: A
 | `--admission-latency` | int64 | 0 | Admission decision latency in microseconds. Must be >= 0. |
 | `--token-bucket-capacity` | float64 | 10000 | Token bucket maximum capacity. Required > 0 when using `token-bucket`. |
 | `--token-bucket-refill-rate` | float64 | 1000 | Token bucket refill rate in tokens/second. Required > 0 when using `token-bucket`. |
+| `--enable-deferred-queue` | bool | false | Enable deferred queue for batch/background requests. When true, batch/background requests are held in a deferred queue when the cluster is busy and promoted when idle. Auto-enabled by `--admission-policy tier-shed`. When false (default), all requests proceed directly to admission — `always-admit` truly admits all traffic. Also configurable via `admission.enable_deferred_queue` in `--policy-config` YAML. |
 
 **Tier-shed admission** (`--admission-policy tier-shed`): Sheds lower-priority SLO tiers under overload. Configured via `--policy-config` YAML only:
 
@@ -533,7 +534,7 @@ For environments where live profiling is not feasible, the [Roofline model](../c
 | **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--vllm-version`, `--latency-model`, `--model-config-folder`, `--hardware-config`, `--max-model-len` |
 | **PolicyConfig** | `--scheduler`, `--priority-policy` |
 | **WorkloadConfig** | `--workload`, `--workload-spec`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
-| **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` | YAML-only (no CLI flag): `node_pools`, `instance_lifecycle`, `hw_config_by_gpu` |
+| **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--enable-deferred-queue`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` | YAML-only (no CLI flag): `node_pools`, `instance_lifecycle`, `hw_config_by_gpu` |
 | **Top-level** | `--seed`, `--horizon`, `--log`, `--metrics-path` (run only), `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
 
 ---
