@@ -159,9 +159,9 @@ Invariants are properties that must hold at all times during and after simulatio
 
 **Statement:** For every disaggregated request, `decode_enqueue_time >= kv_transfer_completion_time`. A decode sub-request must not be enqueued before its KV transfer completes.
 
-**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_RequestCompletesFullPath` checks DecodeEnqueueTime >= TransferCompleteTime for every parent request. Runtime defensive check in `DecodeRoutingEvent.Execute()`.
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_RequestCompletesFullPath` checks DecodeEnqueueTime >= TransferCompleteTime for every parent request.
 
-**Evidence:** By event priority ordering: KVTransferCompletedEvent (priority 6) schedules DecodeRoutingEvent (priority 7) at the same timestamp. DecodeEnqueueTime is set in DecodeRoutingEvent which fires after transfer completion.
+**Evidence:** By event priority ordering: KVTransferCompletedEvent (priority 7) schedules DecodeEnqueueEvent (priority 8) at the same timestamp. DecodeEnqueueTime is set in DecodeEnqueueEvent (disagg path) which fires after transfer completion.
 
 ### INV-PD-2: Pool Exclusivity
 
@@ -181,11 +181,13 @@ Invariants are properties that must hold at all times during and after simulatio
 
 ### INV-PD-4: Phase Causality
 
-**Statement:** For every disaggregated request: `arrival <= prefill_enqueue <= prefill_complete <= transfer_start <= transfer_complete <= decode_enqueue <= completion`.
+**Statement:** The decode-first PD pipeline enforces two causal chains:
+- **Disagg path:** `arrival ≤ decode_route ≤ disagg_decision ≤ prefill_enqueue ≤ prefill_complete ≤ transfer_start ≤ transfer_complete ≤ decode_enqueue ≤ completion`
+- **Skip path (cache hit):** `arrival ≤ decode_route ≤ disagg_decision ≤ decode_enqueue ≤ completion`
 
-**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_PhaseCausality` checks the full causal chain for every parent request.
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_PhaseCausality` checks both causal chains for every parent request (disagg and skip-path variants).
 
-**Evidence:** Each phase transition is enforced by DES event ordering: earlier phases schedule later-phase events at `time >= current_time`.
+**Evidence:** Each phase transition is enforced by DES event priority ordering: DecodeRoutingEvent (3) → DisaggregationDecisionEvent (4) → PrefillRoutingEvent/DecodeEnqueueEvent (5) → KVTransferStartedEvent (6) → KVTransferCompletedEvent (7) → DecodeEnqueueEvent (8).
 
 ### INV-PD-5: Pool Stability
 
@@ -210,6 +212,22 @@ Invariants are properties that must hold at all times during and after simulatio
 **Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_CompletionTime_IncludesNonZeroOverhead` verifies that `E2E_with_overhead − E2E_without_overhead == overhead` exactly for trained-roofline clusters (directly exercises the bug-fix site). `TestDisaggregation_CompletionTime_GeqAllPriorPhaseTimestamps` verifies `CompletionTime >= DecodeEnqueueTime` and `CompletionTime >= TransferCompleteTime` (phase causality preserved). `TestDisaggregation_E2E_IncludesOverhead_ZeroOverheadRegression` verifies `RequestE2Es[parentID] == CompletionTime − ArrivalTime` and `E2E >= TTFT` for blackbox (overhead=0) clusters.
 
 **Evidence:** `detectDecodeCompletions()` in `sim/cluster/cluster.go` stamps `parent.CompletionTime = c.clock + inst.PostDecodeFixedOverhead()`. Fixed in issue #846.
+
+### INV-PD-7: Decode-First Ordering
+
+**Statement:** For every `ParentRequest`, `DecodeRouteDecisionTime ≤ DisaggDecisionTime`. The decode instance is always selected before the disaggregation decision is made — the decision is conditioned on the chosen instance's cache state, not the reverse.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestINVPD7_DecodeFirstOrdering` verifies the invariant across ≥20 table-driven cases (varying request count, decider, pool size, flow control, transfer contention). `TestINVPD8_InstanceLocalCacheQuery` also asserts INV-PD-7 as a precondition for each INV-PD-8 case.
+
+**Evidence:** `DecodeRoutingEvent` (priority 3) creates `ParentRequest` and stamps `DecodeRouteDecisionTime`, then schedules `DisaggregationDecisionEvent` (priority 4) which stamps `DisaggDecisionTime`. By event priority, priority 3 always fires before priority 4 at the same timestamp.
+
+### INV-PD-8: Instance-Local Cache Query
+
+**Statement:** The disaggregation decision is conditioned on the selected decode instance's actual KV cache state (queried via `cacheQueryFn`). The same request may disaggregate on one decode instance (prefix not cached) but skip disaggregation on another (prefix cached). The decider has no global router-side prefix cache; each decision reflects only the chosen instance's local state.
+
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestINVPD8_InstanceLocalCacheQuery` verifies ≥20 table-driven cases: same request with varying prefix overlap against the decode instance cache produces the expected skip/disagg outcome. Uses a single decode instance per sub-test for deterministic routing. `TestPrefixThreshold_InstanceLocalCacheQuery` provides end-to-end wiring verification.
+
+**Evidence:** `DecodeRoutingEvent.Execute()` queries `cs.cacheQueryFn[targetInstance](req.InputTokens)` to get `CachedBlockCount`, which is passed to `DisaggregationDecider.Decide(req, DecodeContext{InstanceID, CachedBlockCount})`. `PrefixThresholdDecider` is stateless — it computes `nonCachedTokens = len(req.InputTokens) - ctx.CachedBlockCount * blockSize` without maintaining any internal prefix index.
 
 ### INV-P2-1: Pool-Config Consistency
 

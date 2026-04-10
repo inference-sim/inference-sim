@@ -47,9 +47,11 @@ type RoutingRecord struct {
 // matching ParentRequestID in the trace. To detect cases 2 and 3: check the
 // absence of a KVTransferRecord for a given ParentRequestID.
 type DisaggregationRecord struct {
-	RequestID    string
-	Clock        int64
-	Disaggregate bool // true = routed to prefill pool; false = standard routing
+	RequestID        string
+	Clock            int64
+	Disaggregate     bool   // true = routed to prefill pool; false = skip (direct to decode)
+	DecodeInstanceID string // ID of the decode instance selected before this decision
+	CachedBlockCount int    // KV blocks already cached on the selected decode instance
 }
 
 // PrefillRoutingRecord captures a prefill pool routing decision with optional counterfactual analysis.

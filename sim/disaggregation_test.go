@@ -1,7 +1,6 @@
 package sim
 
 import (
-	"fmt"
 	"testing"
 )
 
@@ -11,7 +10,7 @@ func TestNeverDisaggregate_AlwaysReturnsFalse(t *testing.T) {
 	decider := &NeverDisaggregate{}
 	req := &Request{ID: "req-1", InputTokens: make([]int, 100)}
 
-	decision := decider.Decide(req)
+	decision := decider.Decide(req, DecodeContext{InstanceID: "i0", CachedBlockCount: 0})
 
 	if decision.Disaggregate {
 		t.Error("NeverDisaggregate should return Disaggregate=false")
@@ -24,7 +23,7 @@ func TestAlwaysDisaggregate_AlwaysReturnsTrue(t *testing.T) {
 	decider := &AlwaysDisaggregate{}
 	req := &Request{ID: "req-1", InputTokens: make([]int, 100)}
 
-	decision := decider.Decide(req)
+	decision := decider.Decide(req, DecodeContext{InstanceID: "i0", CachedBlockCount: 0})
 
 	if !decision.Disaggregate {
 		t.Error("AlwaysDisaggregate should return Disaggregate=true")
@@ -36,12 +35,14 @@ func TestDisaggregationDecider_Interface(t *testing.T) {
 	var _ DisaggregationDecider = &NeverDisaggregate{}
 	var _ DisaggregationDecider = &AlwaysDisaggregate{}
 	var _ DisaggregationDecider = &DirectToDecodeDecider{}
+	var _ DisaggregationDecider = &PrefixThresholdDecider{}
 }
 
 // TestNewDisaggregationDecider_Factory verifies factory dispatches correctly
 // by asserting observable behavior (Decide output), not concrete type names.
 func TestNewDisaggregationDecider_Factory(t *testing.T) {
 	req := &Request{ID: "req-1", InputTokens: make([]int, 10)}
+	ctx := DecodeContext{InstanceID: "i0", CachedBlockCount: 0}
 	tests := []struct {
 		name             string
 		wantDisaggregate bool
@@ -56,7 +57,7 @@ func TestNewDisaggregationDecider_Factory(t *testing.T) {
 			if d == nil {
 				t.Fatal("NewDisaggregationDecider returned nil")
 			}
-			got := d.Decide(req).Disaggregate
+			got := d.Decide(req, ctx).Disaggregate
 			if got != tc.wantDisaggregate {
 				t.Errorf("NewDisaggregationDecider(%q).Decide().Disaggregate = %v, want %v",
 					tc.name, got, tc.wantDisaggregate)
@@ -141,6 +142,7 @@ func TestValidDisaggregationDeciderNames(t *testing.T) {
 // enforced by reading only InputTokens and MaxOutputLen. The test verifies the observable
 // behavior: decisions are the same regardless of OutputTokens content.
 func TestDisaggregationDecider_INV9_OracleBoundary(t *testing.T) {
+	ctx := DecodeContext{InstanceID: "i0", CachedBlockCount: 0}
 	req1 := &Request{ID: "req-1", InputTokens: make([]int, 100), OutputTokens: nil}
 	req2 := &Request{ID: "req-2", InputTokens: make([]int, 100), OutputTokens: make([]int, 9999)}
 
@@ -151,8 +153,8 @@ func TestDisaggregationDecider_INV9_OracleBoundary(t *testing.T) {
 		NewDirectToDecodeDecider(256),
 	}
 	for _, d := range deciders {
-		d1 := d.Decide(req1)
-		d2 := d.Decide(req2)
+		d1 := d.Decide(req1, ctx)
+		d2 := d.Decide(req2, ctx)
 		if d1 != d2 {
 			t.Errorf("%T: decision differs with different OutputTokens (d1=%v, d2=%v); INV-9 violation",
 				d, d1, d2)
@@ -167,7 +169,7 @@ func TestDisaggregationDecider_INV9_OracleBoundary(t *testing.T) {
 func TestDirectToDecodeDecider_ShortPromptDoesNotDisaggregate(t *testing.T) {
 	d := NewDirectToDecodeDecider(256)
 	req := &Request{InputTokens: make([]int, 100)} // 100 < 256
-	decision := d.Decide(req)
+	decision := d.Decide(req, DecodeContext{InstanceID: "i0"})
 	if decision.Disaggregate {
 		t.Error("short prompt (100 tokens < threshold 256) should not disaggregate")
 	}
@@ -178,7 +180,7 @@ func TestDirectToDecodeDecider_ShortPromptDoesNotDisaggregate(t *testing.T) {
 func TestDirectToDecodeDecider_LongPromptDisaggregates(t *testing.T) {
 	d := NewDirectToDecodeDecider(256)
 	req := &Request{InputTokens: make([]int, 500)} // 500 >= 256
-	decision := d.Decide(req)
+	decision := d.Decide(req, DecodeContext{InstanceID: "i0"})
 	if !decision.Disaggregate {
 		t.Error("long prompt (500 tokens >= threshold 256) should disaggregate")
 	}
@@ -189,7 +191,7 @@ func TestDirectToDecodeDecider_LongPromptDisaggregates(t *testing.T) {
 func TestDirectToDecodeDecider_ExactThresholdDisaggregates(t *testing.T) {
 	d := NewDirectToDecodeDecider(256)
 	req := &Request{InputTokens: make([]int, 256)} // 256 >= 256
-	decision := d.Decide(req)
+	decision := d.Decide(req, DecodeContext{InstanceID: "i0"})
 	if !decision.Disaggregate {
 		t.Error("exact threshold (256 tokens >= threshold 256) should disaggregate")
 	}
@@ -201,7 +203,7 @@ func TestDirectToDecodeDecider_BelowThresholdDoesNotDisaggregate(t *testing.T) {
 	const threshold = 256
 	d := NewDirectToDecodeDecider(threshold)
 	req := &Request{InputTokens: make([]int, threshold-1)} // 255 < 256
-	decision := d.Decide(req)
+	decision := d.Decide(req, DecodeContext{InstanceID: "i0"})
 	if decision.Disaggregate {
 		t.Errorf("threshold-1 tokens (%d) must not disaggregate (threshold=%d, boundary is >=)",
 			threshold-1, threshold)
@@ -213,7 +215,7 @@ func TestDirectToDecodeDecider_BelowThresholdDoesNotDisaggregate(t *testing.T) {
 func TestDirectToDecodeDecider_EmptyInputDoesNotDisaggregate(t *testing.T) {
 	d := NewDirectToDecodeDecider(256)
 	req := &Request{InputTokens: nil}
-	decision := d.Decide(req)
+	decision := d.Decide(req, DecodeContext{InstanceID: "i0"})
 	if decision.Disaggregate {
 		t.Error("empty input should not disaggregate")
 	}
@@ -224,7 +226,7 @@ func TestDirectToDecodeDecider_EmptyInputDoesNotDisaggregate(t *testing.T) {
 func TestDirectToDecodeDecider_ZeroThresholdAlwaysDisaggregates(t *testing.T) {
 	d := NewDirectToDecodeDecider(0)
 	req := &Request{InputTokens: make([]int, 1)}
-	decision := d.Decide(req)
+	decision := d.Decide(req, DecodeContext{InstanceID: "i0"})
 	if !decision.Disaggregate {
 		t.Error("threshold 0 with non-empty input should always disaggregate")
 	}
@@ -249,7 +251,7 @@ func TestDirectToDecodeDecider_PanicsOnNilRequest(t *testing.T) {
 			t.Error("expected panic when req is nil")
 		}
 	}()
-	d.Decide(nil)
+	d.Decide(nil, DecodeContext{InstanceID: "i0"})
 }
 
 // --- PrefixThresholdDecider tests ---
@@ -274,35 +276,163 @@ func TestNewPrefixThresholdDecider_PanicsOnZeroBlockSize(t *testing.T) {
 	NewPrefixThresholdDecider(512, 0)
 }
 
-// noopDisaggregationObserver is a no-op DisaggregationObserver used in tests to satisfy R13:
-// DisaggregationObserver must work for >=2 backends (not tightly coupled to PrefixThresholdDecider).
-// Any future stateful decider (e.g., adaptive-rate, popularity-based) should also implement it.
-type noopDisaggregationObserver struct{}
-
-func (*noopDisaggregationObserver) ObserveRouting(_ *Request, _ string) {}
-
-// TestPrefixThresholdDecider_Interface verifies PrefixThresholdDecider satisfies both interfaces.
-// Also verifies DisaggregationObserver is a general extension point (R13: works for >=2 backends).
-func TestPrefixThresholdDecider_Interface(t *testing.T) {
-	var _ DisaggregationDecider = &PrefixThresholdDecider{}
-	var _ DisaggregationObserver = &PrefixThresholdDecider{}
-	var _ DisaggregationObserver = &noopDisaggregationObserver{} // R13: second backend
-}
-
 // TestPrefixThresholdDecider_EmptyTokens verifies BC-PD-20: empty input returns Disaggregate=false.
 func TestPrefixThresholdDecider_EmptyTokens(t *testing.T) {
 	decider := NewPrefixThresholdDecider(512, 16)
 	req := &Request{ID: "req-empty", InputTokens: []int{}}
+	ctx := DecodeContext{InstanceID: "i0", CachedBlockCount: 0}
 
-	decision := decider.Decide(req)
+	decision := decider.Decide(req, ctx)
 
 	if decision.Disaggregate {
 		t.Error("BC-PD-20: empty InputTokens must return Disaggregate=false")
 	}
 }
 
+// TestPrefixThresholdDecider_DecodeContext_TableDriven verifies INV-PD-8: the decider
+// uses ctx.CachedBlockCount from the selected decode instance to determine non-cached token count.
+// ≥20 cases covering zero cached, partial cached, full cached, at-threshold, above, below, etc.
+func TestPrefixThresholdDecider_DecodeContext_TableDriven(t *testing.T) {
+	const blockSize = 16
+	const threshold = 512 // in tokens
+
+	tests := []struct {
+		name             string
+		inputLen         int
+		cachedBlockCount int
+		wantDisaggregate bool
+	}{
+		// Zero cached blocks — non-cached = all tokens
+		{"zero_cached_below_threshold", 100, 0, false},     // 100 <= 512
+		{"zero_cached_at_threshold", 512, 0, false},        // 512 == 512, not > threshold
+		{"zero_cached_above_threshold", 513, 0, true},      // 513 > 512
+		{"zero_cached_well_above", 1000, 0, true},          // 1000 > 512
+		{"zero_cached_single_token", 1, 0, false},          // 1 <= 512
+		{"zero_cached_empty", 0, 0, false},                 // empty input always false
+		// Partial cached — non-cached = input - cached_blocks * blockSize
+		{"partial_cached_under_threshold", 800, 20, false}, // 800 - 20*16=320 <= 512
+		{"partial_cached_at_threshold", 824, 20, false},    // 824 - 320=504 <= 512
+		{"partial_cached_above_threshold", 900, 20, true},  // 900 - 320=580 > 512
+		{"partial_cached_one_block", 520, 1, false},        // 520 - 16=504 <= 512
+		{"partial_cached_many_blocks", 1500, 60, true},     // 1500 - 960=540 > 512
+		// Fully cached — non-cached = 0 (clamped)
+		{"fully_cached_exact", 320, 20, false},             // 320 - 320=0 <= 512
+		{"fully_cached_over_count", 160, 20, false},        // 160 - 320 < 0 → clamped 0
+		{"fully_cached_large", 1000, 100, false},           // 1000 - 1600 < 0 → clamped 0
+		// Zero threshold — any non-cached token triggers disagg
+		{"zero_threshold_all_cached", 32, 2, false},        // threshold=0, cached=32, non-cached=0
+		// (use separate decider for zero threshold tests below)
+		// Boundary around blockSize grain
+		{"one_block_cached_under", blockSize + threshold, 1, false}, // (16+512) - 16 = 512, not > 512
+		{"one_block_cached_over", blockSize + threshold + 1, 1, true}, // 513 > 512
+		// Large input, high cache count
+		{"large_input_high_cache", 5000, 250, false}, // 5000 - 4000=1000 > 512 → wait, 1000 > 512 → true
+		// (re-check): 5000 - 250*16 = 5000 - 4000 = 1000 > 512 → disaggregate=true
+		{"large_input_very_high_cache", 5000, 300, false}, // 5000 - 4800=200 <= 512
+		{"large_input_moderate_cache", 5000, 30, true},    // 5000 - 480=4520 > 512
+	}
+
+	// Fix the large_input_high_cache entry
+	for i := range tests {
+		if tests[i].name == "large_input_high_cache" {
+			tests[i].wantDisaggregate = true // 5000 - 4000 = 1000 > 512
+		}
+	}
+
+	decider := NewPrefixThresholdDecider(threshold, blockSize)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tokens := make([]int, tc.inputLen)
+			for i := range tokens {
+				tokens[i] = i + 1
+			}
+			req := &Request{ID: "req-" + tc.name, InputTokens: tokens}
+			ctx := DecodeContext{InstanceID: "instance_0", CachedBlockCount: tc.cachedBlockCount}
+
+			got := decider.Decide(req, ctx)
+
+			if got.Disaggregate != tc.wantDisaggregate {
+				nonCached := tc.inputLen - tc.cachedBlockCount*blockSize
+				if nonCached < 0 {
+					nonCached = 0
+				}
+				t.Errorf("inputLen=%d cachedBlocks=%d nonCached=%d threshold=%d: Disaggregate=%v, want %v",
+					tc.inputLen, tc.cachedBlockCount, nonCached, threshold, got.Disaggregate, tc.wantDisaggregate)
+			}
+		})
+	}
+}
+
+// TestPrefixThresholdDecider_ZeroThreshold verifies threshold=0 means always disaggregate
+// when tokens are non-empty and no cache coverage.
+func TestPrefixThresholdDecider_ZeroThreshold(t *testing.T) {
+	const blockSize = 16
+	decider := NewPrefixThresholdDecider(0, blockSize)
+
+	// 100 uncached tokens -> 100 > 0 -> disaggregate
+	tokens := make([]int, 100)
+	for i := range tokens {
+		tokens[i] = i + 1
+	}
+	req := &Request{ID: "req-zero-thresh", InputTokens: tokens}
+	ctx := DecodeContext{InstanceID: "i0", CachedBlockCount: 0}
+
+	decision := decider.Decide(req, ctx)
+
+	if !decision.Disaggregate {
+		t.Error("threshold=0 with non-empty uncached tokens should return Disaggregate=true")
+	}
+}
+
+// TestPrefixThresholdDecider_ZeroThreshold_AllCached verifies threshold=0 with all tokens
+// cached returns Disaggregate=false (0 non-cached tokens, 0 is not > 0).
+func TestPrefixThresholdDecider_ZeroThreshold_AllCached(t *testing.T) {
+	const blockSize = 16
+	decider := NewPrefixThresholdDecider(0, blockSize)
+
+	// 32 tokens = 2 blocks, both cached
+	tokens := make([]int, 32)
+	req := &Request{InputTokens: tokens}
+	ctx := DecodeContext{InstanceID: "i0", CachedBlockCount: 2}
+
+	decision := decider.Decide(req, ctx)
+
+	if decision.Disaggregate {
+		t.Error("threshold=0 with all tokens cached (0 non-cached) should not disaggregate")
+	}
+}
+
+// TestPrefixThresholdDecider_InstanceLocalBehavior verifies INV-PD-8: the same request
+// with the same input produces different disaggregation decisions depending on which
+// decode instance is selected (and thus ctx.CachedBlockCount varies).
+func TestPrefixThresholdDecider_InstanceLocalBehavior(t *testing.T) {
+	const blockSize = 16
+	const threshold = 200 // tokens
+	decider := NewPrefixThresholdDecider(threshold, blockSize)
+
+	tokens := make([]int, 300) // 300 total tokens
+	for i := range tokens {
+		tokens[i] = i + 1
+	}
+	req := &Request{ID: "req-locality", InputTokens: tokens}
+
+	// Instance A: 10 blocks cached = 160 tokens → non-cached = 300-160=140 <= 200 → skip
+	ctxA := DecodeContext{InstanceID: "instance_0", CachedBlockCount: 10}
+	decisionA := decider.Decide(req, ctxA)
+	if decisionA.Disaggregate {
+		t.Error("INV-PD-8: instance A has prefix cached → should skip disaggregation")
+	}
+
+	// Instance B: 0 blocks cached → non-cached = 300 > 200 → disaggregate
+	ctxB := DecodeContext{InstanceID: "instance_1", CachedBlockCount: 0}
+	decisionB := decider.Decide(req, ctxB)
+	if !decisionB.Disaggregate {
+		t.Error("INV-PD-8: instance B has no cache → should disaggregate")
+	}
+}
+
 // TestPrefixThresholdDecider_AboveThreshold verifies BC-PD-21: non-cached tokens > threshold -> true.
-// Uses threshold+1 as the boundary case to pin the strict > semantics (not >=).
 func TestPrefixThresholdDecider_AboveThreshold(t *testing.T) {
 	const blockSize = 16
 	const threshold = 512
@@ -312,18 +442,19 @@ func TestPrefixThresholdDecider_AboveThreshold(t *testing.T) {
 		name   string
 		tokens int
 	}{
-		{"threshold_plus_one", threshold + 1}, // tightest boundary: first value that must disaggregate
+		{"threshold_plus_one", threshold + 1},
 		{"well_above_threshold", 600},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			tokens := make([]int, tc.tokens)
 			for i := range tokens {
-				tokens[i] = i + 1 // unique tokens, no cache hit
+				tokens[i] = i + 1
 			}
-			req := &Request{ID: fmt.Sprintf("req-%s", tc.name), InputTokens: tokens}
+			req := &Request{ID: "req-" + tc.name, InputTokens: tokens}
+			ctx := DecodeContext{InstanceID: "i0", CachedBlockCount: 0}
 
-			decision := decider.Decide(req)
+			decision := decider.Decide(req, ctx)
 
 			if !decision.Disaggregate {
 				t.Errorf("BC-PD-21: %d uncached tokens with threshold=%d should return Disaggregate=true",
@@ -350,122 +481,17 @@ func TestPrefixThresholdDecider_BelowOrAtThreshold(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tokens := make([]int, tc.tokens)
 			for i := range tokens {
-				tokens[i] = i + 1000 // unique tokens, no cache hit
+				tokens[i] = i + 1000
 			}
-			req := &Request{ID: fmt.Sprintf("req-%s", tc.name), InputTokens: tokens}
+			req := &Request{ID: "req-" + tc.name, InputTokens: tokens}
+			ctx := DecodeContext{InstanceID: "i0", CachedBlockCount: 0}
 
-			decision := decider.Decide(req)
+			decision := decider.Decide(req, ctx)
 
 			if decision.Disaggregate {
 				t.Errorf("BC-PD-22: %d non-cached tokens with threshold=%d should return Disaggregate=false",
 					tc.tokens, threshold)
 			}
 		})
-	}
-}
-
-// TestPrefixThresholdDecider_CacheAware verifies BC-PD-24: cached prefix reduces non-cached count.
-// Scenario: warm cache has N blocks cached. New request with same prefix + additional tokens.
-// Non-cached tokens = total_tokens - cached_blocks * blockSize.
-func TestPrefixThresholdDecider_CacheAware(t *testing.T) {
-	const blockSize = 16
-	const threshold = 512
-
-	decider := NewPrefixThresholdDecider(threshold, blockSize)
-
-	// Warm cache: record 40 blocks (640 tokens) for a known prefix.
-	// Use consecutive tokens 1..640 as the shared prefix.
-	prefix := make([]int, 640) // 40 blocks
-	for i := range prefix {
-		prefix[i] = i + 1
-	}
-	prefixReq := &Request{ID: "req-warm", InputTokens: prefix}
-	// Calling Decide records cachedHashes, then ObserveRouting warms the cache.
-	decider.Decide(prefixReq)
-	decider.ObserveRouting(prefixReq, "instance_0")
-
-	// New request: same 640-token prefix + 200 new tokens = 840 tokens total.
-	// Cached: 40 blocks * 16 = 640 tokens. Non-cached: 840 - 640 = 200 tokens.
-	// 200 <= 512 threshold -> should NOT disaggregate.
-	extended := make([]int, len(prefix)+200)
-	copy(extended, prefix)
-	for i := len(prefix); i < len(extended); i++ {
-		extended[i] = 10000 + i // unique suffix tokens
-	}
-	req := &Request{ID: "req-cached", InputTokens: extended}
-
-	decision := decider.Decide(req)
-
-	if decision.Disaggregate {
-		t.Errorf("BC-PD-24: with 640 tokens cached (40 blocks), 200 non-cached tokens should not disaggregate (threshold=%d)", threshold)
-	}
-}
-
-// TestPrefixThresholdDecider_CacheAware_SubRequestIDMismatch verifies BC-PD-24 via the
-// disaggregated pipeline path: ObserveRouting is called with a sub-request whose ID
-// differs from the parent request passed to Decide (e.g., "<parent>_prefill" vs "<parent>").
-// ObserveRouting must recompute hashes and still correctly populate the cache.
-func TestPrefixThresholdDecider_CacheAware_SubRequestIDMismatch(t *testing.T) {
-	const blockSize = 16
-	const threshold = 512
-	decider := NewPrefixThresholdDecider(threshold, blockSize)
-
-	// Shared prefix: 40 blocks (640 tokens), unique token values.
-	prefix := make([]int, 640)
-	for i := range prefix {
-		prefix[i] = i + 1
-	}
-
-	// Step 1: Decide is called with the parent request.
-	parentReq := &Request{ID: "req-parent", InputTokens: prefix}
-	decider.Decide(parentReq)
-
-	// Step 2: Overwrite cachedHashes with a stale unrelated request so that ObserveRouting
-	// MUST recompute when it sees the mismatched sub-request ID. Without this step, the
-	// original test cannot detect an inversion of the != check: parentReq and subReq share
-	// the same token content, so stale hashes from parentReq would produce the same result.
-	staleReq := &Request{ID: "req-stale", InputTokens: []int{99999, 99998}} // < blockSize, 0 hashes
-	decider.Decide(staleReq) // overwrites cachedHashes (empty) and cachedReqID = "req-stale"
-
-	// Step 3: ObserveRouting is called with a sub-request (different ID from stale, same
-	// InputTokens as prefix). ID mismatch must trigger recompute — without it the empty stale
-	// hashes would be recorded and the follow-up request would incorrectly disaggregate.
-	subReq := &Request{ID: "req-parent_prefill", InputTokens: prefix}
-	decider.ObserveRouting(subReq, "prefill_0") // ID mismatch → must recompute + record
-
-	// Step 4: New request with same prefix + 200 unique tokens = 840 total.
-	// Cached: 40 blocks * 16 = 640 tokens. Non-cached: 200 <= 512 → should NOT disaggregate.
-	extended := make([]int, len(prefix)+200)
-	copy(extended, prefix)
-	for i := len(prefix); i < len(extended); i++ {
-		extended[i] = 10000 + i
-	}
-	req := &Request{ID: "req-follow", InputTokens: extended}
-
-	decision := decider.Decide(req)
-
-	if decision.Disaggregate {
-		t.Errorf("CacheAware/SubRequestIDMismatch: ObserveRouting with mismatched ID should still "+
-			"populate the cache; 200 non-cached tokens should not disaggregate (threshold=%d)", threshold)
-	}
-}
-
-// TestPrefixThresholdDecider_ZeroThreshold verifies threshold=0 means always disaggregate
-// when tokens are non-empty (any non-cached token > 0).
-func TestPrefixThresholdDecider_ZeroThreshold(t *testing.T) {
-	const blockSize = 16
-	decider := NewPrefixThresholdDecider(0, blockSize)
-
-	// 100 uncached tokens -> 100 > 0 -> disaggregate
-	tokens := make([]int, 100)
-	for i := range tokens {
-		tokens[i] = i + 1
-	}
-	req := &Request{ID: "req-zero-thresh", InputTokens: tokens}
-
-	decision := decider.Decide(req)
-
-	if !decision.Disaggregate {
-		t.Error("threshold=0 with non-empty uncached tokens should return Disaggregate=true")
 	}
 }

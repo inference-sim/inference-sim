@@ -250,6 +250,8 @@ See [`docs/guide/latency-models.md`](docs/guide/latency-models.md) for details.
 
 Request processing pipeline: Arrival → Admission → Routing → WaitQueue → Batch Formation → Step Execution → Completion. Admission and Routing apply in cluster mode only; single-instance skips directly to WaitQueue. See [`docs/concepts/architecture.md`](docs/concepts/architecture.md) for the full diagram.
 
+**PD disaggregation pipeline (decode-first):** When P/D pools are configured, the pipeline uses a decode-first flow matching llm-d's `DisaggProfileHandler`: `Admission(1) → DecodeRouting(3) → DisaggDecision(4) → skip: DecodeEnqueue(5) | disagg: PrefillRouting(5) → KVTransferStart(6) → KVTransferComplete(7) → DecodeEnqueue(8)`. The decode instance is selected first; disaggregation is skipped when that instance already has the prefix cached (`DecodeContext.CachedBlockCount`). Event priorities: 0=Arrival, 1=Admission, 2=Routing (non-PD), 3=DecodeRouting, 4=DisaggDecision, 5=PrefillRouting/DecodeEnqueue(skip), 6=KVTransferStart, 7=KVTransferComplete, 8=DecodeEnqueue(disagg), 9=ScalingTick, 10=ScaleActuation.
+
 ## Project Governance Documents
 
 ### Standards (what rules apply)

@@ -297,10 +297,14 @@ func TestPDTrace_DroppedAtDecodeKV_NoOrphanRecords(t *testing.T) {
 		t.Fatal("expected non-nil trace with trace-level decisions")
 	}
 
-	// The cardinality law under drops: KVTransfers == DecodeRoutings (they are always co-recorded)
-	// and KVTransfers < DisaggregatedCount (dropped requests have no KV record).
-	if len(tr.KVTransfers) != len(tr.DecodeRoutings) {
-		t.Errorf("KVTransfers=%d != DecodeRoutings=%d (must be co-recorded)", len(tr.KVTransfers), len(tr.DecodeRoutings))
+	// In the decode-first flow, DecodeRoutingRecord is written at priority 3 (before
+	// disaggregation decision). KVTransferRecord is written only after a successful
+	// AllocateTransferredKV in DecodeEnqueueEvent. Under decode KV drops:
+	//   DecodeRoutings == Disaggregations (all disagg requests have both)
+	//   KVTransfers < DecodeRoutings (drops reduce KV count, not decode routing count)
+	if len(tr.DecodeRoutings) != len(tr.Disaggregations) {
+		t.Errorf("DecodeRoutings=%d != Disaggregations=%d under decode KV drops (decode routing is decode-first; all disagg requests get a record)",
+			len(tr.DecodeRoutings), len(tr.Disaggregations))
 	}
 	if len(tr.KVTransfers) >= len(tr.Disaggregations) {
 		t.Errorf("KVTransfers=%d >= Disaggregations=%d under drops (drops must reduce KV record count)", len(tr.KVTransfers), len(tr.Disaggregations))
@@ -347,19 +351,23 @@ func TestPDTrace_NeverDecider_WithPools_OnlyDisaggRecords(t *testing.T) {
 			t.Errorf("Disaggregations[%d]: RequestID empty", i)
 		}
 	}
-	// No downstream PD records emitted
+	// No prefill/KV records emitted (all requests are skip-path)
 	if len(tr.PrefillRoutings) != 0 {
 		t.Errorf("expected 0 PrefillRoutings with NeverDisaggregate, got %d", len(tr.PrefillRoutings))
 	}
 	if len(tr.KVTransfers) != 0 {
 		t.Errorf("expected 0 KVTransfers with NeverDisaggregate, got %d", len(tr.KVTransfers))
 	}
-	if len(tr.DecodeRoutings) != 0 {
-		t.Errorf("expected 0 DecodeRoutings with NeverDisaggregate, got %d", len(tr.DecodeRoutings))
+	// In the decode-first flow, DecodeRoutingRecord is always written for PD requests
+	// (decode routing happens before the disaggregation decision).
+	if len(tr.DecodeRoutings) != numRequests {
+		t.Errorf("expected %d DecodeRoutings with NeverDisaggregate (decode routing always fires in PD mode), got %d",
+			numRequests, len(tr.DecodeRoutings))
 	}
-	// Standard routing still fires for every request (BC-TRACE-COMPAT)
-	if len(tr.Routings) != numRequests {
-		t.Errorf("expected %d standard routing records with NeverDisaggregate, got %d", numRequests, len(tr.Routings))
+	// Skip-path requests go through DecodeEnqueueEvent, not RoutingDecisionEvent.
+	// Standard routing records are only written by RoutingDecisionEvent (non-PD path).
+	if len(tr.Routings) != 0 {
+		t.Errorf("expected 0 standard routing records in PD mode (skip-path uses DecodeEnqueueEvent), got %d", len(tr.Routings))
 	}
 }
 

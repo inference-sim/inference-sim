@@ -1106,10 +1106,10 @@ func (c *ClusterSimulator) tryDispatchFromGatewayQueue() bool {
 	}
 	req.GatewayDispatchTime = c.clock
 
-	// Schedule routing or disaggregation event (BC-9)
+	// Schedule decode-first PD pipeline or standard routing event (BC-9)
 	if c.poolsConfigured() {
 		heap.Push(&c.clusterEvents, clusterEventEntry{
-			event: &DisaggregationDecisionEvent{
+			event: &DecodeRoutingEvent{
 				time:    c.clock,
 				request: req,
 			},
@@ -1161,17 +1161,6 @@ func (c *ClusterSimulator) PerInstanceMetricsByID() map[string]*sim.Metrics {
 	return result
 }
 
-// notifyDisaggregationObserver calls ObserveRouting on the disaggregationDecider if it
-// implements sim.DisaggregationObserver. Called synchronously within the event loop,
-// so the prefix cache is always current at the next Decide() call.
-func (c *ClusterSimulator) notifyDisaggregationObserver(req *sim.Request, instanceID string) {
-	if c.disaggregationDecider == nil {
-		return
-	}
-	if obs, ok := c.disaggregationDecider.(sim.DisaggregationObserver); ok {
-		obs.ObserveRouting(req, instanceID)
-	}
-}
 
 // PeakConcurrentTransfers returns the maximum number of KV transfers in flight simultaneously.
 // Returns 0 when --pd-transfer-contention is disabled (backward-compat).
@@ -1316,6 +1305,14 @@ func (c *ClusterSimulator) projectPDMetrics() {
 	m := c.aggregatedMetrics
 
 	for _, parent := range c.parentRequests {
+		// Skip-path parents (cache hit, no disaggregation): the original request was
+		// injected directly via InjectRequestOnline. Instance metrics are already keyed
+		// by parent.ID and reflect correct user-facing latencies. No sub-request keys
+		// exist to clean up; no projection needed.
+		if parent.SkippedDisaggregation {
+			continue
+		}
+
 		pfx := parent.PrefillSubReqID // "req_N_prefill"
 		dec := parent.DecodeSubReqID  // "req_N_decode"
 		pid := parent.ID              // "req_N"

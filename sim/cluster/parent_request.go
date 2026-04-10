@@ -13,12 +13,14 @@ type ParentRequest struct {
 	NumKVBlocks     int64        // KV blocks to transfer (ceil(inputLen / blockSize))
 
 	// Phase timestamps (microseconds). Zero means phase not yet reached.
-	ArrivalTime          int64
-	PrefillEnqueueTime   int64
-	PrefillCompleteTime  int64
-	TransferStartTime    int64
-	TransferCompleteTime int64
-	DecodeEnqueueTime    int64
+	ArrivalTime              int64
+	DecodeRouteDecisionTime  int64 // When the decode instance was selected (decode-first step)
+	DisaggDecisionTime       int64 // When the disaggregation decision was made
+	PrefillEnqueueTime       int64
+	PrefillCompleteTime      int64
+	TransferStartTime        int64
+	TransferCompleteTime     int64
+	DecodeEnqueueTime        int64
 	// CompletionTime has three meanings depending on outcome:
 	//   - Successful decode: set by detectDecodeCompletions to
 	//     clusterClock + decodeInstance.PostDecodeFixedOverhead() when the decode
@@ -33,6 +35,12 @@ type ParentRequest struct {
 	//   - Decode timeout: set by detectDecodeCompletions to the cluster clock at
 	//     timeout detection time. The session is cancelled via sessionCallback.
 	CompletionTime int64
+
+	// SkippedDisaggregation is true when the disaggregation decider chose to serve
+	// the request locally on the selected decode instance (cache hit path).
+	// When true: no prefill sub-request is created; PrefillSubReqID/DecodeSubReqID
+	// are populated but unused; the original request is injected directly.
+	SkippedDisaggregation bool
 
 	// Instance assignment
 	PrefillInstanceID InstanceID

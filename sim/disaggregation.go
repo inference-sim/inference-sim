@@ -1,36 +1,41 @@
 package sim
 
-import (
-	"fmt"
-
-	"github.com/sirupsen/logrus"
-)
+import "fmt"
 
 // DisaggregationDecision encapsulates the prefill-decode disaggregation decision for a request.
 type DisaggregationDecision struct {
-	Disaggregate bool // true = route to prefill pool, false = route to shared/decode pool
+	Disaggregate bool // true = route to prefill pool, false = serve on selected decode instance
 }
 
-// DisaggregationDecider decides whether a request should be disaggregated
-// (sent to a dedicated prefill pool) or handled by the default routing pipeline.
+// DecodeContext carries the selected decode instance's identity and current cache state
+// to the disaggregation decider. Populated by DecodeRoutingEvent before calling Decide.
+type DecodeContext struct {
+	InstanceID       string // ID of the decode-pool instance selected by DecodeRoutingEvent
+	CachedBlockCount int    // number of complete KV blocks already cached on that instance
+}
+
+// DisaggregationDecider decides whether a request should be disaggregated (sent to a
+// dedicated prefill pool) or served locally on the already-selected decode instance.
 // Used by ClusterSimulator's event pipeline when pool topology is configured.
+//
+// In the decode-first flow, the decode instance has already been chosen by DecodeRoutingEvent
+// before Decide is called. ctx carries the instance's identity and cache state, enabling
+// per-instance disaggregation decisions: the same request may disaggregate on one decode
+// instance (prefix not cached) but skip disaggregation on another (prefix cached).
 //
 // Implementations must not read Request.OutputTokens (INV-9 oracle boundary);
 // use len(req.InputTokens) and req.MaxOutputLen only.
 //
 // req is guaranteed non-nil; implementations may assume a non-nil pointer.
-//
-// Stateful implementations may additionally implement DisaggregationObserver to
-// learn from routing outcomes (e.g., PrefixThresholdDecider).
 type DisaggregationDecider interface {
-	Decide(req *Request) DisaggregationDecision
+	Decide(req *Request, ctx DecodeContext) DisaggregationDecision
 }
 
 // NeverDisaggregate always returns Disaggregate=false.
 // Default decider when PD disaggregation is not configured.
 type NeverDisaggregate struct{}
 
-func (n *NeverDisaggregate) Decide(_ *Request) DisaggregationDecision {
+func (n *NeverDisaggregate) Decide(_ *Request, _ DecodeContext) DisaggregationDecision {
 	return DisaggregationDecision{Disaggregate: false}
 }
 
@@ -38,7 +43,7 @@ func (n *NeverDisaggregate) Decide(_ *Request) DisaggregationDecision {
 // Test-oriented decider for validating disaggregation pipeline wiring.
 type AlwaysDisaggregate struct{}
 
-func (a *AlwaysDisaggregate) Decide(_ *Request) DisaggregationDecision {
+func (a *AlwaysDisaggregate) Decide(_ *Request, _ DecodeContext) DisaggregationDecision {
 	return DisaggregationDecision{Disaggregate: true}
 }
 
@@ -67,7 +72,8 @@ func NewDirectToDecodeDecider(threshold int) *DirectToDecodeDecider {
 // Disaggregate=false when input length < threshold (short prompt -> direct to decode pool).
 // Empty inputs (len == 0) always return Disaggregate=false regardless of threshold.
 // req must be non-nil (interface contract); panics on nil req (programming error).
-func (d *DirectToDecodeDecider) Decide(req *Request) DisaggregationDecision {
+// ctx is not used: this decider is purely input-length based.
+func (d *DirectToDecodeDecider) Decide(req *Request, _ DecodeContext) DisaggregationDecision {
 	if req == nil {
 		panic("DirectToDecodeDecider.Decide: req is nil (programming error)")
 	}
@@ -104,60 +110,21 @@ func NewDisaggregationDecider(name string) DisaggregationDecider {
 	}
 }
 
-// globalVirtualInstance is the single key used in PrefixThresholdDecider's PrefixCacheIndex
-// to represent cluster-wide prefix knowledge. All requests update the same virtual instance
-// so the decider tracks the global set of recently-seen prefixes.
-// Using a single virtual key repurposes the per-instance PrefixCacheIndex structure to
-// maintain one aggregate view of cluster-wide prefix state without modifying its interface.
-// Collision with real instance IDs is not a risk: instance IDs use a numeric index (e.g.,
-// "instance_0"), whereas this sentinel uses the "__" prefix convention.
-const globalVirtualInstance = "__global__"
-
-// defaultDisaggLRUCapacity is the number of block hash slots tracked in PrefixThresholdDecider's
-// router-side prefix cache (LRU capacity). Independent of block size.
-const defaultDisaggLRUCapacity = 10000
-
-// DisaggregationObserver is an optional interface for stateful DisaggregationDeciders that need
-// to learn from routing decisions. ClusterSimulator calls ObserveRouting after each routing
-// decision that assigns a request to an instance: after standard routing (RoutingDecisionEvent
-// in cluster_event.go) and after prefill routing (PrefillRoutingEvent in pd_events.go).
-// It is not called for decode routing, because the decider's prefix knowledge is based on
-// input tokens, which are identical between prefill and decode sub-requests.
+// PrefixThresholdDecider disaggregates a request when the number of non-cached input tokens
+// on the selected decode instance exceeds the configured threshold.
 //
-// ObserveRouting is called synchronously within the event loop immediately after each
-// routing decision, so the prefix cache is always current at the next Decide() call.
-//
-// req is guaranteed non-nil. Implementations must treat req as read-only.
-// instanceID is the routing target; implementations maintaining per-instance state should
-// record it; implementations with global state (like PrefixThresholdDecider) may ignore it.
-type DisaggregationObserver interface {
-	ObserveRouting(req *Request, instanceID string)
-}
-
-// PrefixThresholdDecider disaggregates a request when its non-cached token count exceeds
-// the configured threshold. Maintains a router-side prefix cache (globalVirtualInstance)
-// to estimate how many input tokens are already cached cluster-wide.
-//
-// Non-cached token count: len(req.InputTokens) - cachedBlocks * blockSize (always >= 0,
-// because ComputeBlockHashes only produces complete-block hashes so cachedBlocks*blockSize
-// never exceeds len(InputTokens)). threshold and blockSize are in token counts, not bytes.
+// Non-cached token count: len(req.InputTokens) - ctx.CachedBlockCount * blockSize (clamped >= 0).
 // Decision: Disaggregate = (nonCachedTokens > threshold).
 //
-// The prefix cache is always current at decision time: ObserveRouting is called
-// synchronously within the event loop immediately after each routing decision.
+// Unlike the previous implementation, this decider is stateless: it does not maintain a
+// router-side prefix cache. Instead, it reads the selected decode instance's actual KV cache
+// state from ctx.CachedBlockCount, which is populated by DecodeRoutingEvent via cacheQueryFn.
+// This matches llm-d's prefix-based-pd-decider architecture (INV-PD-8).
 //
-// Threading: cachedHashes and cachedReqID are a single-use scratchpad — Decide() writes
-// them and ObserveRouting() consumes and clears them. This is safe only because the DES
-// event loop is single-threaded: no Decide() can interleave between a Decide() call and
-// its paired ObserveRouting() call. If routing is rejected after Decide() (no routable
-// instances), ObserveRouting() is not called; the stale scratchpad is harmlessly
-// overwritten by the next Decide() call.
+// threshold and blockSize are in token counts, not bytes.
 type PrefixThresholdDecider struct {
-	threshold    int
-	blockSize    int
-	idx          *PrefixCacheIndex
-	cachedHashes []string
-	cachedReqID  string
+	threshold int
+	blockSize int
 }
 
 // NewPrefixThresholdDecider creates a PrefixThresholdDecider with the given threshold and block size.
@@ -172,46 +139,23 @@ func NewPrefixThresholdDecider(threshold, blockSize int) *PrefixThresholdDecider
 	return &PrefixThresholdDecider{
 		threshold: threshold,
 		blockSize: blockSize,
-		idx:       NewPrefixCacheIndex(blockSize, defaultDisaggLRUCapacity),
 	}
 }
 
-// Decide returns Disaggregate=true when non-cached token count exceeds the threshold.
+// Decide returns Disaggregate=true when the non-cached token count exceeds the threshold.
+// Non-cached tokens = len(req.InputTokens) - ctx.CachedBlockCount * blockSize, clamped to 0.
 // Empty requests (len(InputTokens) == 0) always return Disaggregate=false.
-// Caches block hashes for reuse by ObserveRouting when the same request is routed next.
-func (p *PrefixThresholdDecider) Decide(req *Request) DisaggregationDecision {
+func (p *PrefixThresholdDecider) Decide(req *Request, ctx DecodeContext) DisaggregationDecision {
 	if len(req.InputTokens) == 0 {
 		return DisaggregationDecision{Disaggregate: false}
 	}
-	p.cachedHashes = p.idx.ComputeBlockHashes(req.InputTokens)
-	p.cachedReqID = req.ID
-	cachedBlocks := p.idx.MatchLength(p.cachedHashes, globalVirtualInstance)
-	nonCachedTokens := len(req.InputTokens) - cachedBlocks*p.blockSize
+	nonCachedTokens := len(req.InputTokens) - ctx.CachedBlockCount*p.blockSize
+	if nonCachedTokens < 0 {
+		nonCachedTokens = 0
+	}
 	return DisaggregationDecision{Disaggregate: nonCachedTokens > p.threshold}
 }
 
-// ObserveRouting updates the prefix cache after a routing decision, recording the request's
-// block hashes under globalVirtualInstance. Reuses hashes from Decide when the request ID
-// matches; otherwise recomputes. The ID mismatch case is expected in the disaggregated path:
-// notifyDisaggregationObserver is called with the prefill sub-request (ID "<parent>_prefill"),
-// which differs from the parent request evaluated by Decide.
-func (p *PrefixThresholdDecider) ObserveRouting(req *Request, _ string) {
-	if req == nil {
-		logrus.Errorf("PrefixThresholdDecider.ObserveRouting: req is nil (contract violation); skipping cache update")
-		return
-	}
-	if len(req.InputTokens) == 0 {
-		return // no complete blocks to record; consistent with Decide's early-return for empty tokens
-	}
-	hashes := p.cachedHashes
-	if req.ID != p.cachedReqID || p.cachedHashes == nil {
-		hashes = p.idx.ComputeBlockHashes(req.InputTokens)
-	}
-	p.idx.RecordBlocks(hashes, globalVirtualInstance)
-	p.cachedHashes = nil
-	p.cachedReqID = ""
-}
-
 // Compile-time interface compliance checks.
-var _ DisaggregationObserver = (*PrefixThresholdDecider)(nil)
 var _ DisaggregationDecider = (*DirectToDecodeDecider)(nil)
+var _ DisaggregationDecider = (*PrefixThresholdDecider)(nil)

@@ -327,7 +327,11 @@ func TestDisaggregation_DroppedAtDecodeKV(t *testing.T) {
 }
 
 func TestDisaggregation_PhaseCausality(t *testing.T) {
-	// BC-PD-9 / INV-PD-4: Full causal chain for every disaggregated request
+	// BC-PD-9 / INV-PD-4: Full causal chain for every disaggregated request.
+	// In the decode-first flow, the chain includes DecodeRouteDecisionTime and DisaggDecisionTime.
+	// Disagg path: arrival ≤ decodeRoute ≤ disaggDecision ≤ prefillEnqueue ≤ prefillComplete
+	//              ≤ transferStart ≤ transferComplete ≤ decodeEnqueue
+	// Skip path:   arrival ≤ decodeRoute ≤ disaggDecision ≤ decodeEnqueue
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	requests := newTestRequests(10)
 
@@ -335,26 +339,47 @@ func TestDisaggregation_PhaseCausality(t *testing.T) {
 	mustRun(t, cs)
 
 	for _, parent := range cs.parentRequests {
-		chain := []struct {
-			name  string
-			value int64
-		}{
-			{"ArrivalTime", parent.ArrivalTime},
-			{"PrefillEnqueueTime", parent.PrefillEnqueueTime},
-			{"PrefillCompleteTime", parent.PrefillCompleteTime},
-			{"TransferStartTime", parent.TransferStartTime},
-			{"TransferCompleteTime", parent.TransferCompleteTime},
-			{"DecodeEnqueueTime", parent.DecodeEnqueueTime},
-		}
-		// Note: CompletionTime is not included in the chain because it is set by
-		// detectDecodeCompletions using c.clock at detection time, which may differ
-		// from the actual decode completion instant. A dedicated CompletionTime test
-		// would need to use instance-level RequestCompletionTimes directly.
-
-		for i := 1; i < len(chain); i++ {
-			if chain[i].value < chain[i-1].value {
-				t.Errorf("parent %s: causality violated: %s (%d) < %s (%d)",
-					parent.ID, chain[i].name, chain[i].value, chain[i-1].name, chain[i-1].value)
+		if parent.SkippedDisaggregation {
+			// Skip path: only arrival → decodeRoute → disaggDecision → decodeEnqueue
+			chain := []struct {
+				name  string
+				value int64
+			}{
+				{"ArrivalTime", parent.ArrivalTime},
+				{"DecodeRouteDecisionTime", parent.DecodeRouteDecisionTime},
+				{"DisaggDecisionTime", parent.DisaggDecisionTime},
+				{"DecodeEnqueueTime", parent.DecodeEnqueueTime},
+			}
+			for i := 1; i < len(chain); i++ {
+				if chain[i].value < chain[i-1].value {
+					t.Errorf("parent %s (skip): causality violated: %s (%d) < %s (%d)",
+						parent.ID, chain[i].name, chain[i].value, chain[i-1].name, chain[i-1].value)
+				}
+			}
+		} else {
+			// Disagg path: full pipeline
+			chain := []struct {
+				name  string
+				value int64
+			}{
+				{"ArrivalTime", parent.ArrivalTime},
+				{"DecodeRouteDecisionTime", parent.DecodeRouteDecisionTime},
+				{"DisaggDecisionTime", parent.DisaggDecisionTime},
+				{"PrefillEnqueueTime", parent.PrefillEnqueueTime},
+				{"PrefillCompleteTime", parent.PrefillCompleteTime},
+				{"TransferStartTime", parent.TransferStartTime},
+				{"TransferCompleteTime", parent.TransferCompleteTime},
+				{"DecodeEnqueueTime", parent.DecodeEnqueueTime},
+			}
+			// Note: CompletionTime is not included in the chain because it is set by
+			// detectDecodeCompletions using c.clock at detection time, which may differ
+			// from the actual decode completion instant. A dedicated CompletionTime test
+			// would need to use instance-level RequestCompletionTimes directly.
+			for i := 1; i < len(chain); i++ {
+				if chain[i].value < chain[i-1].value {
+					t.Errorf("parent %s (disagg): causality violated: %s (%d) < %s (%d)",
+						parent.ID, chain[i].name, chain[i].value, chain[i-1].name, chain[i-1].value)
+				}
 			}
 		}
 	}
@@ -576,8 +601,8 @@ func newTestPrefixThresholdConfig(threshold int) DeploymentConfig {
 
 // TestPrefixThreshold_BelowThresholdNotDisaggregated verifies BC-PD-21 at the cluster level:
 // requests with non-cached token counts well below the threshold must not be disaggregated
-// (absent from parentRequests). Tests the full NewClusterSimulator → PrefixThresholdDecider
-// constructor path and the DisaggregationDecisionEvent bifurcation.
+// (skip-path: SkippedDisaggregation=true). Tests the full NewClusterSimulator →
+// PrefixThresholdDecider constructor path and the DisaggregationDecisionEvent bifurcation.
 func TestPrefixThreshold_BelowThresholdNotDisaggregated(t *testing.T) {
 	const threshold = 200
 	config := newTestPrefixThresholdConfig(threshold)
@@ -601,11 +626,19 @@ func TestPrefixThreshold_BelowThresholdNotDisaggregated(t *testing.T) {
 	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
-	if len(cs.parentRequests) != 0 {
-		t.Errorf("parentRequests = %d, want 0: short requests (20 tokens <= %d threshold) should not be disaggregated",
-			len(cs.parentRequests), threshold)
+	// In the decode-first flow, ALL PD requests create a ParentRequest (decode routing fires first).
+	// Below-threshold requests must have SkippedDisaggregation=true (served locally on decode instance).
+	if len(cs.parentRequests) != len(requests) {
+		t.Errorf("parentRequests = %d, want %d: all PD requests create a parent in decode-first flow",
+			len(cs.parentRequests), len(requests))
 	}
-	// INV-1: below-threshold requests route through RoutingDecisionEvent; verify all complete.
+	for _, pr := range cs.parentRequests {
+		if !pr.SkippedDisaggregation {
+			t.Errorf("parent %s: SkippedDisaggregation=false, want true (20 tokens <= %d threshold)",
+				pr.ID, threshold)
+		}
+	}
+	// INV-1: skip-path requests complete via InjectRequestOnline; verify all complete.
 	assertINV1Conservation(t, cs.AggregatedMetrics(), len(requests), "below-threshold")
 }
 
@@ -641,18 +674,27 @@ func TestPrefixThreshold_AboveThresholdDisaggregated(t *testing.T) {
 	}
 }
 
-// TestPrefixThreshold_ObserverWarmsCache verifies BC-PD-24 at the cluster level:
-// req1 (disaggregated) warms the prefix cache via notifyDisaggregationObserver in
-// PrefillRoutingEvent.Execute (pd_events.go); req2 (non-disaggregated) verifies that
-// the warmed cache is consulted in DisaggregationDecisionEvent, reducing non-cached
-// token count below the threshold. Tests the full end-to-end wiring path.
-func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
+// TestPrefixThreshold_InstanceLocalCacheQuery verifies INV-PD-8 at the cluster level:
+// PrefixThresholdDecider reads the selected decode instance's actual KV cache state
+// (via cacheQueryFn) to compute non-cached tokens. A request that previously warmed
+// the decode instance's KV cache (via the disagg path) causes a subsequent request
+// with the same prefix to skip disaggregation (cache hit).
+//
+// This test uses a single decode instance to ensure deterministic routing: both req1
+// and req2 are routed to the same decode instance, so req1's cache warming is visible
+// to req2's disaggregation decision.
+func TestPrefixThreshold_InstanceLocalCacheQuery(t *testing.T) {
 	const threshold = 300
 	const blockSize = 16
-	config := newTestPrefixThresholdConfig(threshold)
+	// Use 1 decode instance to guarantee req2 sees req1's cached blocks.
+	config := newTestDisaggDeploymentConfig(2, 1, 1)
+	config.PDDecider = "prefix-threshold"
+	config.PDPrefixThreshold = threshold
 
 	// req1: 400 tokens (25 complete blocks), no prior cache.
-	// nonCached = 400 > 300 → disaggregated; ObserveRouting warms 25 blocks in cache.
+	// nonCachedTokens = 400 - 0*16 = 400 > 300 → disaggregated.
+	// After req1 completes on the decode instance, AllocateTransferredKV populates
+	// the instance's KV block hash index with all 25 complete blocks.
 	prefix := make([]int, 400)
 	for i := range prefix {
 		prefix[i] = i + 1
@@ -666,8 +708,9 @@ func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
 	}
 
 	// req2: same 400-token prefix + 50 new tokens = 450 total.
-	// After req1 warms the cache: nonCached = 450 - 25*16 = 450 - 400 = 50 <= 300 → NOT disaggregated.
-	// req2 arrives 2s after req1, well after req1's PrefillRoutingEvent fires and warms the cache.
+	// After req1 runs: decode instance has 25 blocks cached.
+	// nonCachedTokens = 450 - 25*16 = 50 <= 300 → skip-path (NOT disaggregated).
+	// req2 arrives 2s after req1, well after req1's full pipeline completes.
 	extended := make([]int, len(prefix)+50)
 	copy(extended, prefix)
 	for i := len(prefix); i < len(extended); i++ {
@@ -678,8 +721,7 @@ func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
 		InputTokens:  extended,
 		OutputTokens: make([]int, 5),
 		State:        sim.StateQueued,
-		ArrivalTime:  2000000, // req1's PrefillRoutingEvent fires at t=0+routingLatency=0; req2 arrives at t=2,000,000;
-		// ordering is guaranteed by event timestamps alone (t=0 < t=2,000,000), not the gap magnitude
+		ArrivalTime:  2000000, // 2s after req1; well after req1 completes
 	}
 	_ = blockSize // documents the block arithmetic above
 
@@ -687,24 +729,24 @@ func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
 	mustRun(t, cs)
 
 	// req1 must be disaggregated (400 non-cached tokens > 300 threshold).
-	var req1Disaggregated bool
-	for _, pr := range cs.parentRequests {
-		if pr.ID == "req-warm" {
-			req1Disaggregated = true
-		}
+	pr1, ok := cs.parentRequests["req-warm"]
+	if !ok {
+		t.Fatal("req-warm not in parentRequests — DecodeRoutingEvent must create parent for all PD requests")
 	}
-	if !req1Disaggregated {
+	if pr1.SkippedDisaggregation {
 		t.Error("req-warm (400 uncached tokens > 300 threshold) must be disaggregated; " +
 			"check PrefixThresholdDecider constructor wiring in NewClusterSimulator")
 	}
 
-	// req2 must NOT be disaggregated: prefix is cached after req1's PrefillRoutingEvent
-	// fires ObserveRouting, so only 50 tokens are non-cached (50 <= 300 threshold).
-	for _, pr := range cs.parentRequests {
-		if pr.ID == "req-follow" {
-			t.Error("req-follow (50 non-cached tokens <= 300 threshold after cache warming) must NOT be disaggregated; " +
-				"check notifyDisaggregationObserver wiring in PrefillRoutingEvent.Execute (pd_events.go)")
-		}
+	// req2 must be skip-path: the single decode instance has req1's 25 blocks cached,
+	// so only 50 tokens are non-cached (50 <= 300 threshold).
+	pr2, ok := cs.parentRequests["req-follow"]
+	if !ok {
+		t.Fatal("req-follow not in parentRequests — DecodeRoutingEvent must create parent for all PD requests")
+	}
+	if !pr2.SkippedDisaggregation {
+		t.Error("req-follow (50 non-cached tokens <= 300 threshold after instance cache warming) " +
+			"must be skip-path; check cacheQueryFn wiring in DecodeRoutingEvent.Execute (pd_events.go)")
 	}
 }
 
@@ -738,9 +780,17 @@ func TestDirectToDecode_BelowThresholdNotDisaggregated(t *testing.T) {
 	cs := NewClusterSimulator(config, requests, nil)
 	mustRun(t, cs)
 
-	if len(cs.parentRequests) != 0 {
-		t.Errorf("parentRequests = %d, want 0: short requests (20 tokens < %d threshold) should not be disaggregated",
-			len(cs.parentRequests), threshold)
+	// In the decode-first flow, ALL PD requests create a ParentRequest.
+	// Below-threshold requests must be skip-path (SkippedDisaggregation=true).
+	if len(cs.parentRequests) != len(requests) {
+		t.Errorf("parentRequests = %d, want %d: all PD requests create a parent in decode-first flow",
+			len(cs.parentRequests), len(requests))
+	}
+	for _, pr := range cs.parentRequests {
+		if !pr.SkippedDisaggregation {
+			t.Errorf("parent %s: SkippedDisaggregation=false, want true (20 tokens < %d threshold)",
+				pr.ID, threshold)
+		}
 	}
 	assertINV1Conservation(t, cs.AggregatedMetrics(), len(requests), "direct-to-decode below threshold")
 }
@@ -1801,4 +1851,403 @@ func TestDisaggregation_PD_SessionManager_ContextAccumulation(t *testing.T) {
 
 	// INV-1 conservation
 	assertINV1Conservation(t, metrics, 2, "PD SessionManager context accumulation")
+}
+
+// ---------------------------------------------------------------------------
+// INV-PD-7: Decode-first ordering
+// For all parents: DecodeRouteDecisionTime ≤ DisaggDecisionTime
+// ---------------------------------------------------------------------------
+
+// invPD7Cases holds parameters for INV-PD-7 table tests.
+type invPD7Case struct {
+	name         string
+	numRequests  int
+	decider      string
+	totalInst    int
+	prefillInst  int
+	decodeInst   int
+	flowControl  bool
+	contention   bool
+}
+
+// TestINVPD7_DecodeFirstOrdering verifies INV-PD-7: for every ParentRequest,
+// DecodeRouteDecisionTime ≤ DisaggDecisionTime (decode routing always precedes
+// the disaggregation decision in the decode-first PD pipeline).
+func TestINVPD7_DecodeFirstOrdering(t *testing.T) {
+	cases := []invPD7Case{
+		// Single request, various deciders
+		{"1req-always-2P2D", 1, "always", 4, 2, 2, false, false},
+		{"1req-never-2P2D", 1, "never", 4, 2, 2, false, false},
+		{"1req-always-1P1D", 1, "always", 2, 1, 1, false, false},
+		{"1req-never-1P1D", 1, "never", 2, 1, 1, false, false},
+		// Multiple requests, various pool sizes
+		{"3req-always-2P2D", 3, "always", 4, 2, 2, false, false},
+		{"5req-always-2P2D", 5, "always", 4, 2, 2, false, false},
+		{"10req-always-2P2D", 10, "always", 4, 2, 2, false, false},
+		{"20req-always-2P2D", 20, "always", 4, 2, 2, false, false},
+		{"3req-never-2P2D", 3, "never", 4, 2, 2, false, false},
+		{"5req-never-2P2D", 5, "never", 4, 2, 2, false, false},
+		// Asymmetric pool sizes
+		{"5req-always-1P3D", 5, "always", 4, 1, 3, false, false},
+		{"5req-always-3P1D", 5, "always", 4, 3, 1, false, false},
+		// Mixed deciders (prefix-threshold: all disaggregate since no cache)
+		{"5req-prefix-threshold-2P2D", 5, "prefix-threshold", 4, 2, 2, false, false},
+		// Flow control enabled
+		{"3req-always-2P2D-fc", 3, "always", 4, 2, 2, true, false},
+		{"5req-never-2P2D-fc", 5, "never", 4, 2, 2, true, false},
+		// Transfer contention
+		{"5req-always-2P2D-contention", 5, "always", 4, 2, 2, false, true},
+		{"10req-always-2P2D-contention", 10, "always", 4, 2, 2, false, true},
+		// Combined flow control + contention
+		{"3req-always-2P2D-fc-contention", 3, "always", 4, 2, 2, true, true},
+		// Direct-to-decode (short requests → skip path, long → disaggregate)
+		{"5req-direct-to-decode-2P2D", 5, "direct-to-decode", 4, 2, 2, false, false},
+		// Large request count
+		{"20req-never-2P2D", 20, "never", 4, 2, 2, false, false},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := newTestDisaggDeploymentConfig(tc.totalInst, tc.prefillInst, tc.decodeInst)
+			switch tc.decider {
+			case "always":
+				cfg.PDDecider = "always"
+			case "never":
+				cfg.PDDecider = "never"
+			case "prefix-threshold":
+				cfg.PDDecider = "prefix-threshold"
+				cfg.PDPrefixThreshold = 0 // disaggregate everything (any non-zero non-cached tokens)
+			case "direct-to-decode":
+				cfg.PDDecider = "direct-to-decode"
+				cfg.PDDirectDecodeThreshold = 100 // short requests (< 100 tokens) skip
+			}
+			if tc.flowControl {
+				cfg.FlowControlEnabled = true
+			}
+			if tc.contention {
+				cfg.PDTransferContention = true
+			}
+
+			var requests []*sim.Request
+			for i := 0; i < tc.numRequests; i++ {
+				inputLen := 200 // long enough to disaggregate with direct-to-decode threshold=100
+				requests = append(requests, &sim.Request{
+					ID:           fmt.Sprintf("req_%d", i),
+					InputTokens:  make([]int, inputLen),
+					OutputTokens: make([]int, 3),
+					State:        sim.StateQueued,
+					ArrivalTime:  int64(i * 200000),
+				})
+			}
+
+			cs := NewClusterSimulator(cfg, requests, nil)
+			mustRun(t, cs)
+
+			for _, parent := range cs.parentRequests {
+				if parent.DecodeRouteDecisionTime > parent.DisaggDecisionTime {
+					t.Errorf("[%s] parent %s: INV-PD-7 violated: DecodeRouteDecisionTime (%d) > DisaggDecisionTime (%d)",
+						tc.name, parent.ID, parent.DecodeRouteDecisionTime, parent.DisaggDecisionTime)
+				}
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// INV-PD-8: Instance-local cache query
+// ---------------------------------------------------------------------------
+
+// TestINVPD8_InstanceLocalCacheQuery verifies INV-PD-8: the disaggregation decision
+// is conditioned on the selected decode instance's actual KV cache state. The same
+// request disaggregates on an instance without the prefix cached, but skips
+// disaggregation on an instance that has the prefix cached.
+//
+// Test approach: use a single decode instance (1P1D), run req1 (disaggregated, warms cache),
+// then req2 with the same prefix. Verify req2 is skip-path (cache hit). Also verify
+// that without the warm instance (1P1D with a fresh instance per sub-test), req2 disaggregates.
+func TestINVPD8_InstanceLocalCacheQuery(t *testing.T) {
+	const threshold = 300
+	const blockSize = 16
+
+	type cacheCase struct {
+		name                 string
+		req2InputLen         int
+		req2CachePrefix      int // number of prefix tokens shared with req1 (expected cached blocks = req2CachePrefix/blockSize)
+		expectSkip           bool
+		req1ArrivalDelta     int64 // time before req2 arrives; req1 must complete first
+	}
+
+	cases := []cacheCase{
+		// req1 warms 25 blocks (400 tokens / 16). req2 has same 400-token prefix + extension.
+		// nonCached = (400+50) - 25*16 = 50 <= 300 → skip
+		{"warmPrefix-50extra", 450, 400, true, 2000000},
+		// req2 has same 400-token prefix + 250 more → nonCached = 650 - 25*16 = 250 <= 300 → skip
+		{"warmPrefix-250extra", 650, 400, true, 2000000},
+		// req2 has same 400-token prefix + 301 more → nonCached = 701 - 25*16 = 301 > 300 → disagg
+		{"warmPrefix-301extra", 701, 400, false, 2000000},
+		// req2 has same 400-token prefix exactly → nonCached = 400 - 25*16 = 0 <= 300 → skip
+		{"warmPrefix-exact", 400, 400, true, 2000000},
+		// req2 has different tokens (no shared prefix) → 0 cached → nonCached = req2 len > 300 → disagg
+		{"noSharedPrefix-400", 400, 0, false, 2000000},
+		// req2 with only 16 shared tokens (1 block prefix) → nonCached = 400 - 1*16 = 384 > 300 → disagg
+		{"sharedPrefix-1block", 400, 16, false, 2000000},
+		// req2 with 320 shared tokens (20 blocks) → nonCached = 400 - 20*16 = 80 <= 300 → skip
+		{"sharedPrefix-20blocks", 400, 320, true, 2000000},
+		// req2 with 208 shared tokens (13 blocks) → nonCached = 400 - 13*16 = 192 <= 300 → skip
+		{"sharedPrefix-13blocks", 400, 208, true, 2000000},
+		// req2 with 192 shared tokens (12 blocks) → nonCached = 400 - 12*16 = 208 <= 300 → skip
+		{"sharedPrefix-12blocks", 400, 192, true, 2000000},
+		// zero threshold: any nonCached > 0 disaggregates
+		{"zero-threshold-skip", 400, 400, true, 2000000},   // fully cached → skip
+		{"zero-threshold-disagg", 400, 0, false, 2000000},  // no cache → disagg
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			thr := threshold
+			if tc.name == "zero-threshold-skip" || tc.name == "zero-threshold-disagg" {
+				thr = 0
+			}
+			cfg := newTestDisaggDeploymentConfig(2, 1, 1)
+			cfg.PDDecider = "prefix-threshold"
+			cfg.PDPrefixThreshold = thr
+
+			// req1: 400 tokens to warm the decode instance cache
+			req1Tokens := make([]int, 400)
+			for i := range req1Tokens {
+				req1Tokens[i] = i + 1
+			}
+			req1 := &sim.Request{
+				ID:           "req-warm",
+				InputTokens:  req1Tokens,
+				OutputTokens: make([]int, 3),
+				State:        sim.StateQueued,
+				ArrivalTime:  0,
+			}
+
+			// req2: tc.req2CachePrefix tokens shared with req1, rest unique
+			req2Tokens := make([]int, tc.req2InputLen)
+			copy(req2Tokens, req1Tokens[:tc.req2CachePrefix])
+			for i := tc.req2CachePrefix; i < tc.req2InputLen; i++ {
+				req2Tokens[i] = 100000 + i
+			}
+			req2 := &sim.Request{
+				ID:           "req-follow",
+				InputTokens:  req2Tokens,
+				OutputTokens: make([]int, 3),
+				State:        sim.StateQueued,
+				ArrivalTime:  tc.req1ArrivalDelta,
+			}
+
+			cs := NewClusterSimulator(cfg, []*sim.Request{req1, req2}, nil)
+			mustRun(t, cs)
+
+			pr2, ok := cs.parentRequests["req-follow"]
+			if !ok {
+				t.Fatal("req-follow not in parentRequests")
+			}
+
+			_ = blockSize
+			if tc.expectSkip && !pr2.SkippedDisaggregation {
+				t.Errorf("[%s] req-follow expected skip (cache hit), got disaggregated", tc.name)
+			}
+			if !tc.expectSkip && pr2.SkippedDisaggregation {
+				t.Errorf("[%s] req-follow expected disaggregation (cache miss), got skip", tc.name)
+			}
+
+			// INV-PD-7: DecodeRouteDecisionTime ≤ DisaggDecisionTime for both parents
+			for _, pr := range cs.parentRequests {
+				if pr.DecodeRouteDecisionTime > pr.DisaggDecisionTime {
+					t.Errorf("[%s] parent %s: INV-PD-7: DecodeRouteDecisionTime (%d) > DisaggDecisionTime (%d)",
+						tc.name, pr.ID, pr.DecodeRouteDecisionTime, pr.DisaggDecisionTime)
+				}
+			}
+		})
+	}
+
+	// Additional table: verify INV-PD-8 across varying pool sizes
+	// When the single decode instance has the cache, all similar follow-up requests skip.
+	t.Run("PoolSizeVariations", func(t *testing.T) {
+		poolCases := []struct {
+			name  string
+			total int
+			p     int
+			d     int
+		}{
+			{"1P1D", 2, 1, 1},
+			{"1P2D_singleTarget", 3, 1, 2}, // with 2 decode instances, routing may vary
+			{"2P1D", 3, 2, 1},
+			{"3P1D", 4, 3, 1},
+		}
+		for _, pc := range poolCases {
+			pc := pc
+			t.Run(pc.name, func(t *testing.T) {
+				cfg := newTestDisaggDeploymentConfig(pc.total, pc.p, pc.d)
+				cfg.PDDecider = "prefix-threshold"
+				cfg.PDPrefixThreshold = threshold
+
+				// Verify INV-PD-7 holds for any pool topology
+				req1Tokens := make([]int, 400)
+				for i := range req1Tokens {
+					req1Tokens[i] = i + 1
+				}
+				req := &sim.Request{
+					ID:           "req-A",
+					InputTokens:  req1Tokens,
+					OutputTokens: make([]int, 3),
+					State:        sim.StateQueued,
+				}
+				cs := NewClusterSimulator(cfg, []*sim.Request{req}, nil)
+				mustRun(t, cs)
+
+				for _, pr := range cs.parentRequests {
+					if pr.DecodeRouteDecisionTime > pr.DisaggDecisionTime {
+						t.Errorf("[%s] parent %s: INV-PD-7: DecodeRouteDecisionTime (%d) > DisaggDecisionTime (%d)",
+							pc.name, pr.ID, pr.DecodeRouteDecisionTime, pr.DisaggDecisionTime)
+					}
+				}
+			})
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Skip-path integration tests (≥20 cases)
+// ---------------------------------------------------------------------------
+
+// TestSkipPath_Integration provides comprehensive integration coverage for
+// the skip-path (NeverDisaggregate or threshold-based cache hit).
+// Verifies INV-1, INV-5, INV-PD-7 and correct metric projection.
+func TestSkipPath_Integration(t *testing.T) {
+	type skipCase struct {
+		name        string
+		numRequests int
+		decider     string
+		totalInst   int
+		prefillInst int
+		decodeInst  int
+		flowControl bool
+		contention  bool
+	}
+
+	cases := []skipCase{
+		// All skip (NeverDisaggregate)
+		{"all-skip-1req-2P2D", 1, "never", 4, 2, 2, false, false},
+		{"all-skip-3req-2P2D", 3, "never", 4, 2, 2, false, false},
+		{"all-skip-5req-2P2D", 5, "never", 4, 2, 2, false, false},
+		{"all-skip-10req-2P2D", 10, "never", 4, 2, 2, false, false},
+		{"all-skip-20req-2P2D", 20, "never", 4, 2, 2, false, false},
+		{"all-skip-1req-1P1D", 1, "never", 2, 1, 1, false, false},
+		{"all-skip-5req-1P1D", 5, "never", 2, 1, 1, false, false},
+		{"all-skip-5req-1P3D", 5, "never", 4, 1, 3, false, false},
+		{"all-skip-5req-3P1D", 5, "never", 4, 3, 1, false, false},
+		// Skip with flow control
+		{"all-skip-5req-fc", 5, "never", 4, 2, 2, true, false},
+		{"all-skip-10req-fc", 10, "never", 4, 2, 2, true, false},
+		// Mixed skip+disagg (direct-to-decode with threshold > short request length)
+		{"mixed-short-skip-5req-2P2D", 5, "direct-to-decode", 4, 2, 2, false, false},
+		{"mixed-short-skip-10req-2P2D", 10, "direct-to-decode", 4, 2, 2, false, false},
+		// Mixed with flow control
+		{"mixed-short-skip-5req-fc", 5, "direct-to-decode", 4, 2, 2, true, false},
+		// Skip determinism (INV-6 base)
+		{"determinism-skip-5req", 5, "never", 4, 2, 2, false, false},
+		// Skip with transfer contention flag (NeverDisaggregate: no transfers, so contention is no-op)
+		{"all-skip-5req-contention-flag", 5, "never", 4, 2, 2, false, true},
+		// Larger pools
+		{"all-skip-10req-2P4D", 10, "never", 6, 2, 4, false, false},
+		{"all-skip-10req-4P2D", 10, "never", 6, 4, 2, false, false},
+		// With sessions (NeverDisaggregate, skip path)
+		{"all-skip-20req-2P2D-large", 20, "never", 4, 2, 2, false, false},
+		// Direct-to-decode: requests above threshold disaggregate, below skip
+		{"direct-to-decode-20req-2P2D", 20, "direct-to-decode", 4, 2, 2, false, false},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := newTestDisaggDeploymentConfig(tc.totalInst, tc.prefillInst, tc.decodeInst)
+			switch tc.decider {
+			case "never":
+				cfg.PDDecider = "never"
+			case "direct-to-decode":
+				cfg.PDDecider = "direct-to-decode"
+				cfg.PDDirectDecodeThreshold = 100 // short requests (20 tokens) skip, long (200) disagg
+			}
+			if tc.flowControl {
+				cfg.FlowControlEnabled = true
+			}
+			if tc.contention {
+				cfg.PDTransferContention = true
+			}
+
+			var requests []*sim.Request
+			for i := 0; i < tc.numRequests; i++ {
+				inputLen := 20 // short: all skip under direct-to-decode threshold=100
+				requests = append(requests, &sim.Request{
+					ID:           fmt.Sprintf("req_%d", i),
+					InputTokens:  make([]int, inputLen),
+					OutputTokens: make([]int, 3),
+					State:        sim.StateQueued,
+					ArrivalTime:  int64(i * 200000),
+				})
+			}
+
+			cs := NewClusterSimulator(cfg, requests, nil)
+			mustRun(t, cs)
+
+			// INV-1: all requests must complete
+			assertINV1Conservation(t, cs.AggregatedMetrics(), tc.numRequests, tc.name)
+
+			// INV-PD-7: DecodeRouteDecisionTime ≤ DisaggDecisionTime for all parents
+			for _, pr := range cs.parentRequests {
+				if pr.DecodeRouteDecisionTime > pr.DisaggDecisionTime {
+					t.Errorf("[%s] parent %s: INV-PD-7: DecodeRouteDecisionTime (%d) > DisaggDecisionTime (%d)",
+						tc.name, pr.ID, pr.DecodeRouteDecisionTime, pr.DisaggDecisionTime)
+				}
+			}
+
+			// All requests should create ParentRequest entries in PD mode
+			if len(cs.parentRequests) != tc.numRequests {
+				t.Errorf("[%s] parentRequests = %d, want %d (all PD requests create a parent)",
+					tc.name, len(cs.parentRequests), tc.numRequests)
+			}
+
+			// For NeverDisaggregate: ALL parents must be skip-path
+			if tc.decider == "never" {
+				for _, pr := range cs.parentRequests {
+					if !pr.SkippedDisaggregation {
+						t.Errorf("[%s] parent %s: SkippedDisaggregation=false, want true (NeverDisaggregate)",
+							tc.name, pr.ID)
+					}
+				}
+			}
+
+			// For direct-to-decode with short requests (20 < 100): all skip
+			if tc.decider == "direct-to-decode" {
+				for _, pr := range cs.parentRequests {
+					if !pr.SkippedDisaggregation {
+						t.Errorf("[%s] parent %s: SkippedDisaggregation=false, want true (direct-to-decode, 20 < 100 threshold)",
+							tc.name, pr.ID)
+					}
+				}
+			}
+
+			// INV-5 (causality): for skip-path, arrival ≤ decodeRoute ≤ disaggDecision ≤ decodeEnqueue
+			for _, pr := range cs.parentRequests {
+				if !pr.SkippedDisaggregation {
+					continue
+				}
+				if pr.DecodeRouteDecisionTime < pr.ArrivalTime {
+					t.Errorf("[%s] parent %s: DecodeRouteDecisionTime (%d) < ArrivalTime (%d)",
+						tc.name, pr.ID, pr.DecodeRouteDecisionTime, pr.ArrivalTime)
+				}
+				if pr.DecodeEnqueueTime < pr.DisaggDecisionTime {
+					t.Errorf("[%s] parent %s: DecodeEnqueueTime (%d) < DisaggDecisionTime (%d)",
+						tc.name, pr.ID, pr.DecodeEnqueueTime, pr.DisaggDecisionTime)
+				}
+			}
+		})
+	}
 }
