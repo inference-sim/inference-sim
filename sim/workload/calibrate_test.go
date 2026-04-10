@@ -79,7 +79,7 @@ func TestPrepareCalibrationPairs_MatchesByRequestID(t *testing.T) {
 		{RequestID: 0, TTFT: 450, E2E: 950},
 	}
 
-	pairs, err := PrepareCalibrationPairs(realRecords, simResults, &CalibrationConfig{})
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, &CalibrationConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestPrepareCalibrationPairs_AppliesNetworkAdjustment(t *testing.T) {
 		{RequestID: 0, TTFT: 500, E2E: 900},
 	}
 
-	pairs, err := PrepareCalibrationPairs(realRecords, simResults, &CalibrationConfig{
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, &CalibrationConfig{
 		NetworkRTTUs: 5000,
 	})
 	if err != nil {
@@ -126,7 +126,7 @@ func TestPrepareCalibrationPairs_ExcludesWarmUp(t *testing.T) {
 		simResults[i] = SimResult{RequestID: i, TTFT: 450, E2E: 900}
 	}
 
-	pairs, err := PrepareCalibrationPairs(realRecords, simResults, &CalibrationConfig{
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, &CalibrationConfig{
 		WarmUpRequests: 2,
 	})
 	if err != nil {
@@ -152,7 +152,7 @@ func TestPrepareCalibrationPairs_UnmatchedRequests(t *testing.T) {
 		{RequestID: 1, TTFT: 480, E2E: 950},
 	}
 
-	pairs, err := PrepareCalibrationPairs(realRecords, simResults, &CalibrationConfig{})
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, &CalibrationConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestPrepareCalibrationPairs_DetectsTokenMismatch(t *testing.T) {
 		{RequestID: 0, TTFT: 450, E2E: 900, InputTokens: 500, OutputTokens: 128},
 	}
 
-	pairs, err := PrepareCalibrationPairs(realRecords, simResults, &CalibrationConfig{})
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, &CalibrationConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -120,7 +120,7 @@ Example:
 		if len(itlRecords) > 0 {
 			pairs, err = workload.PrepareCalibrationPairsWithITL(trace.Records, simResults, itlRecords, &config)
 		} else {
-			pairs, err = workload.PrepareCalibrationPairs(trace.Records, simResults, &config)
+			pairs, _, err = workload.PrepareCalibrationPairs(trace.Records, simResults, &config)
 		}
 		if err != nil {
 			logrus.Fatalf("Failed to prepare calibration pairs: %v", err)

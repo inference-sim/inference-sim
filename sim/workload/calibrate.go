@@ -28,6 +28,7 @@ type CalibrationReport struct {
 		WarmUpExcluded  int    `json:"warm_up_excluded"`
 		MatchedPairs    int    `json:"matched_pairs"`
 		TokenMismatches int    `json:"token_mismatches"`
+		ITLDropped      int    `json:"itl_dropped,omitempty"` // Requests dropped from ITL due to clock skew
 		Duration        string `json:"duration,omitempty"`
 	} `json:"trace_info"`
 	Metrics          map[string]*MetricComparison `json:"metrics"`
@@ -79,11 +80,12 @@ type CalibrationPairs struct {
 
 // PrepareCalibrationPairs matches real trace records with sim results,
 // applies network normalization, excludes warm-up, and detects token mismatches.
+// Returns the pairs and a simByID map for reuse by callers (e.g., PrepareCalibrationPairsWithITL).
 func PrepareCalibrationPairs(
 	realRecords []TraceRecord,
 	simResults []SimResult,
 	config *CalibrationConfig,
-) (*CalibrationPairs, error) {
+) (*CalibrationPairs, map[int]SimResult, error) {
 	if config == nil {
 		config = &CalibrationConfig{}
 	}
@@ -148,7 +150,7 @@ func PrepareCalibrationPairs(
 		}
 	}
 
-	return pairs, nil
+	return pairs, simByID, nil
 }
 
 // PrepareCalibrationPairsWithITL extends PrepareCalibrationPairs with ITL data.
@@ -160,8 +162,8 @@ func PrepareCalibrationPairsWithITL(
 	itlRecords []ITLRecord,
 	config *CalibrationConfig,
 ) (*CalibrationPairs, error) {
-	// Start with standard pairs
-	pairs, err := PrepareCalibrationPairs(realRecords, simResults, config)
+	// Start with standard pairs (reuse simByID map to avoid O(N) duplication)
+	pairs, simByID, err := PrepareCalibrationPairs(realRecords, simResults, config)
 	if err != nil {
 		return nil, err
 	}
@@ -170,12 +172,6 @@ func PrepareCalibrationPairsWithITL(
 	itlByRequest := make(map[int][]ITLRecord)
 	for _, rec := range itlRecords {
 		itlByRequest[rec.RequestID] = append(itlByRequest[rec.RequestID], rec)
-	}
-
-	// Index sim results by RequestID
-	simByID := make(map[int]SimResult, len(simResults))
-	for _, sr := range simResults {
-		simByID[sr.RequestID] = sr
 	}
 
 	if config == nil {
@@ -321,6 +317,7 @@ func BuildCalibrationReport(pairs *CalibrationPairs, configMatch *ConfigMatchInf
 	report.TraceInfo.MatchedPairs = pairs.MatchedCount
 	report.TraceInfo.WarmUpExcluded = pairs.ExcludedWarmUp
 	report.TraceInfo.TokenMismatches = pairs.TokenMismatchCount
+	report.TraceInfo.ITLDropped = pairs.ITLDropped
 	report.TraceInfo.NumRequests = pairs.MatchedCount + pairs.ExcludedWarmUp + pairs.UnmatchedReal
 
 	if len(pairs.TTFT.Real) > 0 {

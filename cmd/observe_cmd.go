@@ -212,6 +212,10 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	if observeTraceData == "" {
 		logrus.Fatalf("--trace-data is required")
 	}
+	// Warn if --itl-output is set without --record-itl (no ITL data will be written)
+	if observeITLOutput != "" && !observeRecordITL {
+		logrus.Warnf("--itl-output is set but --record-itl is not enabled; no ITL data will be written")
+	}
 	// BC-7: at least one workload input mode must be provided
 	if observeWorkload == "" && observeWorkloadSpec == "" && !cmd.Flags().Changed("rate") && observeConcurrency <= 0 {
 		logrus.Fatalf("Either --workload, --workload-spec, --rate, or --concurrency is required")
@@ -421,8 +425,8 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	if observeRecordITL {
 		itlPath := observeITLOutput
 		if itlPath == "" {
-			// Default: <trace-data>.itl.csv
-			itlPath = observeTraceData + ".itl.csv"
+			// Default: <trace-data>.itl.csv (strip .csv extension to avoid trace.csv.itl.csv)
+			itlPath = strings.TrimSuffix(observeTraceData, ".csv") + ".itl.csv"
 		}
 
 		itlRecords := recorder.ITLRecords()
