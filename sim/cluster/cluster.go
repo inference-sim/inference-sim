@@ -1080,6 +1080,7 @@ func (c *ClusterSimulator) promoteDeferred() {
 			event: &ClusterArrivalEvent{time: c.clock, request: req},
 			seqID: c.nextSeqID(),
 		})
+		c.pendingArrivals++ // mirror Run() — re-injected arrivals must be tracked so scheduleNextTick doesn't go negative
 	}
 	c.deferredQueue = c.deferredQueue[:0]
 }
