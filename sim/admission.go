@@ -133,10 +133,14 @@ type TierShedAdmission struct {
 }
 
 // NewTierShedAdmission creates a TierShedAdmission with validated parameters and a priority map.
-// Panics if overloadThreshold < 0 (R3). If priorityMap is nil, DefaultSLOPriorityMap() is used.
+// Panics if overloadThreshold < 0 or minAdmitPriority is out of [-100, 100] (R3).
+// If priorityMap is nil, DefaultSLOPriorityMap() is used.
 func NewTierShedAdmission(overloadThreshold, minAdmitPriority int, priorityMap *SLOPriorityMap) *TierShedAdmission {
 	if overloadThreshold < 0 {
 		panic(fmt.Sprintf("NewTierShedAdmission: overloadThreshold must be >= 0, got %d", overloadThreshold))
+	}
+	if minAdmitPriority < -100 || minAdmitPriority > 100 {
+		panic(fmt.Sprintf("NewTierShedAdmission: minAdmitPriority must be in [-100, 100], got %d", minAdmitPriority))
 	}
 	if priorityMap == nil {
 		priorityMap = DefaultSLOPriorityMap()
