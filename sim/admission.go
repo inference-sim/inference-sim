@@ -67,47 +67,84 @@ func (r *RejectAll) Admit(_ *Request, _ *RouterState) (bool, string) {
 	return false, "reject-all"
 }
 
-// SLOTierPriority maps an SLOClass string to an integer priority.
-// Higher = more important. Background=0 … Critical=4.
-// Empty or unknown string maps to Standard (3) for backward compatibility.
-// Exported so sim/cluster/ can call it without a circular import.
-func SLOTierPriority(class string) int {
-	switch class {
-	case "critical":
-		return 4
-	case "standard":
-		return 3
-	case "sheddable":
-		return 2
-	case "batch":
-		return 1
-	case "background":
-		return 0
-	default:
-		return 3 // empty or unknown → Standard
+// SLOPriorityMap maps SLOClass strings to integer priorities.
+// Higher = more important. Negative = sheddable (matches GAIE's IsSheddable contract).
+// Unexported map field prevents external mutation (R8).
+type SLOPriorityMap struct {
+	priorities map[string]int
+	defaultPri int
+}
+
+// DefaultSLOPriorityMap returns the GAIE-compatible default priority mapping.
+// critical=4, standard=3, batch=-1, sheddable=-2, background=-3.
+// Empty or unknown class → 3 (Standard).
+func DefaultSLOPriorityMap() *SLOPriorityMap {
+	return &SLOPriorityMap{
+		priorities: map[string]int{
+			"critical":   4,
+			"standard":   3,
+			"batch":      -1,
+			"sheddable":  -2,
+			"background": -3,
+		},
+		defaultPri: 3,
 	}
+}
+
+// NewSLOPriorityMap creates a priority map with defaults, then applies overrides.
+// Nil or empty overrides → pure defaults. Override keys replace defaults for those classes.
+func NewSLOPriorityMap(overrides map[string]int) *SLOPriorityMap {
+	m := DefaultSLOPriorityMap()
+	for k, v := range overrides {
+		m.priorities[k] = v
+	}
+	return m
+}
+
+// Priority returns the integer priority for the given SLO class.
+// Unknown or empty class → default priority (3 = Standard).
+func (m *SLOPriorityMap) Priority(class string) int {
+	if p, ok := m.priorities[class]; ok {
+		return p
+	}
+	return m.defaultPri
+}
+
+// IsSheddable returns true iff the class has priority < 0.
+// Matches GAIE's util/request/sheddable.go:21 contract.
+func (m *SLOPriorityMap) IsSheddable(class string) bool {
+	return m.Priority(class) < 0
+}
+
+// SLOTierPriority maps an SLOClass string to an integer priority using GAIE-compatible defaults.
+// Deprecated: use SLOPriorityMap.Priority() for configurable priorities.
+// Kept for backward compatibility — delegates to DefaultSLOPriorityMap().
+func SLOTierPriority(class string) int {
+	return DefaultSLOPriorityMap().Priority(class)
 }
 
 // TierShedAdmission sheds lower-priority requests under overload.
 // Stateless: all decisions computed from RouterState at call time.
 // Use NewTierShedAdmission to construct with validated parameters.
 type TierShedAdmission struct {
-	OverloadThreshold int // max per-instance effective load before shedding; 0 = any load triggers
-	MinAdmitPriority  int // minimum tier priority admitted under overload; 0 = admit all (footgun)
+	OverloadThreshold int             // max per-instance effective load before shedding; 0 = any load triggers
+	MinAdmitPriority  int             // minimum tier priority admitted under overload
+	PriorityMap       *SLOPriorityMap // configurable priority mapping (nil-safe: defaults used)
 }
 
-// NewTierShedAdmission creates a TierShedAdmission with validated parameters.
-// Panics if overloadThreshold < 0 or minAdmitPriority is outside [0, 4] (R3).
-func NewTierShedAdmission(overloadThreshold, minAdmitPriority int) *TierShedAdmission {
+// NewTierShedAdmission creates a TierShedAdmission with validated parameters and a priority map.
+// Panics if overloadThreshold < 0 (R3). If priorityMap is nil, DefaultSLOPriorityMap() is used.
+func NewTierShedAdmission(overloadThreshold, minAdmitPriority int, priorityMap *SLOPriorityMap) *TierShedAdmission {
 	if overloadThreshold < 0 {
 		panic(fmt.Sprintf("NewTierShedAdmission: overloadThreshold must be >= 0, got %d", overloadThreshold))
 	}
-	if minAdmitPriority < 0 || minAdmitPriority > 4 {
-		panic(fmt.Sprintf("NewTierShedAdmission: minAdmitPriority must be in [0,4], got %d", minAdmitPriority))
+	if priorityMap == nil {
+		priorityMap = DefaultSLOPriorityMap()
 	}
 	return &TierShedAdmission{
 		OverloadThreshold: overloadThreshold,
 		MinAdmitPriority:  minAdmitPriority,
+		PriorityMap:       priorityMap,
 	}
 }
 
@@ -127,7 +164,11 @@ func (t *TierShedAdmission) Admit(req *Request, state *RouterState) (bool, strin
 		return true, "" // under threshold: admit all
 	}
 	// Under overload: reject tiers below MinAdmitPriority.
-	priority := SLOTierPriority(class)
+	pm := t.PriorityMap
+	if pm == nil {
+		pm = DefaultSLOPriorityMap()
+	}
+	priority := pm.Priority(class)
 	if priority < t.MinAdmitPriority {
 		return false, fmt.Sprintf("tier-shed: class=%s priority=%d < min=%d load=%d",
 			class, priority, t.MinAdmitPriority, maxLoad)

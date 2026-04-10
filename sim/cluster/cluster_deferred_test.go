@@ -79,15 +79,15 @@ func TestAlwaysAdmit_BatchNotDeferred(t *testing.T) {
 // batch/background requests when the cluster is overloaded and their priority is
 // below MinAdmitPriority.
 //
-// Setup: tier-shed with MinAdmitPriority=2 (rejects batch=1, background=0).
+// Setup: tier-shed with MinAdmitPriority=2 (rejects batch=-1, background=-3).
 // Dense standard traffic to create overload. Batch request arrives under overload.
 func TestTierShed_RejectsBatchUnderOverload(t *testing.T) {
 	for _, tc := range []struct {
 		sloClass string
-		priority int // batch=1, background=0
+		priority int // batch=-1, background=-3 (GAIE defaults)
 	}{
-		{"batch", 1},
-		{"background", 0},
+		{"batch", -1},
+		{"background", -3},
 	} {
 		t.Run(tc.sloClass, func(t *testing.T) {
 			var requests []*sim.Request
@@ -115,7 +115,7 @@ func TestTierShed_RejectsBatchUnderOverload(t *testing.T) {
 			cfg := newTestDeploymentConfig(1)
 			cfg.AdmissionPolicy = "tier-shed"
 			cfg.TierShedThreshold = 1 // any load triggers overload
-			cfg.TierShedMinPriority = 2  // rejects batch(1) and background(0)
+			cfg.TierShedMinPriority = 2  // rejects batch(-1) and background(-3)
 			cs := NewClusterSimulator(cfg, requests, nil)
 			mustRun(t, cs)
 

@@ -88,10 +88,14 @@ type DeploymentConfig struct {
 	ScaleDownCooldownUs       float64   `yaml:"scale_down_cooldown_us,omitempty"`        // min μs between scale-down decisions per model
 
 	// Phase 1B-1a: tier-ordered admission shedding config (issue #809).
-	// Zero value is safe: TierShedMinPriority=0 admits all tiers (same as AlwaysAdmit),
-	// but callers should explicitly set 3 (Standard) for meaningful protection.
+	// TierShedMinPriority=0 rejects sheddable tiers (priority < 0) under overload.
+	// Set to 3 (Standard) for Standard-and-above protection, or -3 to admit all.
 	TierShedThreshold   int `yaml:"tier_shed_threshold,omitempty"`
 	TierShedMinPriority int `yaml:"tier_shed_min_priority,omitempty"`
+
+	// SLO priority overrides (issue #1013). Nil = GAIE-compatible defaults.
+	// Keys are SLO class names; values are integer priorities. Negative = sheddable.
+	SLOPriorityOverrides map[string]int `yaml:"slo_priority_overrides,omitempty"`
 
 	// Phase 1B-2a: per-tenant fair-share budgets (issue #811).
 	// Key: TenantID string. Value: fraction of total cluster capacity (0.0–1.0).

@@ -30,6 +30,9 @@ type AdmissionConfig struct {
 	// Tier-shed options (Phase 1B): only used when policy = "tier-shed".
 	TierShedThreshold   *int `yaml:"tier_shed_threshold"`   // nil = use default (0)
 	TierShedMinPriority *int `yaml:"tier_shed_min_priority"` // nil = use default (3)
+	// SLOPriorities overrides default SLO class → priority mappings.
+	// nil = use GAIE defaults (critical=4, standard=3, batch=-1, sheddable=-2, background=-3).
+	SLOPriorities map[string]int `yaml:"slo_priorities,omitempty"`
 }
 
 // RoutingConfig holds routing policy configuration.
@@ -155,8 +158,8 @@ func (b *PolicyBundle) Validate() error {
 	if b.Admission.TierShedThreshold != nil && *b.Admission.TierShedThreshold < 0 {
 		return fmt.Errorf("tier_shed_threshold must be >= 0, got %d", *b.Admission.TierShedThreshold)
 	}
-	if b.Admission.TierShedMinPriority != nil && (*b.Admission.TierShedMinPriority < 0 || *b.Admission.TierShedMinPriority > 4) {
-		return fmt.Errorf("tier_shed_min_priority must be in [0, 4], got %d", *b.Admission.TierShedMinPriority)
+	if b.Admission.TierShedMinPriority != nil && *b.Admission.TierShedMinPriority < -3 {
+		return fmt.Errorf("tier_shed_min_priority must be >= -3, got %d", *b.Admission.TierShedMinPriority)
 	}
 	// Validate tenant budgets: each value must be in [0, 1].
 	for tenantID, v := range b.TenantBudgets {

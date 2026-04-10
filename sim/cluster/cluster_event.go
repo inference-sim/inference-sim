@@ -158,11 +158,11 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 	}
 
 	// Phase 1B-2a: tenant budget override after admission policy (issue #811).
-	// When a tenant is over their fair-share budget, shed Sheddable-and-below requests.
-	// Critical (4) and Standard (3) are protected — budget never sheds them.
+	// When a tenant is over their fair-share budget, shed sheddable requests (priority < 0).
+	// Non-sheddable requests (critical, standard) are protected — budget never sheds them.
 	// INV-9 compliant: reads only req.SLOClass and req.TenantID (arrival-time metadata).
 	if cs.tenantTracker != nil && cs.tenantTracker.IsOverBudget(e.request.TenantID) {
-		if sim.SLOTierPriority(e.request.SLOClass) < 3 { // below Standard
+		if cs.priorityMap.IsSheddable(e.request.SLOClass) {
 			// Record as rejected by tenant budget before returning (BC-2).
 			if cs.trace != nil {
 				cs.trace.RecordAdmission(trace.AdmissionRecord{
@@ -174,8 +174,8 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 			}
 			cs.rejectedRequests++
 			tier := e.request.SLOClass
-			// Note: tier=="" is unreachable here — SLOTierPriority("")==3 so the outer
-			// if (priority<3) never fires for empty SLOClass. Defensive for future changes.
+			// Note: tier=="" is unreachable here — empty SLOClass defaults to standard(3),
+			// which is not sheddable (priority >= 0). Defensive for future changes.
 			if tier == "" {
 				tier = "standard"
 			}
