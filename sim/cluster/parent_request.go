@@ -21,19 +21,24 @@ type ParentRequest struct {
 	TransferStartTime        int64
 	TransferCompleteTime     int64
 	DecodeEnqueueTime        int64
-	// CompletionTime has three meanings depending on outcome:
-	//   - Successful decode: set by detectDecodeCompletions to
+	// CompletionTime has four meanings depending on outcome:
+	//   - Successful disagg decode: set by detectDecodeCompletions to
 	//     clusterClock + decodeInstance.PostDecodeFixedOverhead() when the decode
 	//     sub-request finishes its last step. Includes PostDecodeFixedOverhead so
 	//     that projectPDMetrics() computes the same client-visible E2E as non-PD
 	//     recordRequestCompletion (issue #846). For blackbox/roofline/cross-model
 	//     (overhead=0), equals the raw cluster clock tick.
-	//   - Dropped at decode KV allocation: set to the DecodeRoutingEvent time (the
+	//   - Dropped at decode KV allocation: set to the DecodeEnqueueEvent time (the
 	//     point when the drop was detected). Since decode never ran, this reflects
 	//     the drop-detection time, not a decode completion time.
 	//     Use DecodeInstanceID == "" to distinguish dropped requests.
 	//   - Decode timeout: set by detectDecodeCompletions to the cluster clock at
 	//     timeout detection time. The session is cancelled via sessionCallback.
+	//   - Skip-path (SkippedDisaggregation=true): CompletionTime is NOT set
+	//     (remains 0). The request completes via the decode instance's normal
+	//     completion machinery (InjectRequestOnline); instance metrics are keyed
+	//     by parent.ID directly. projectPDMetrics() early-continues for these
+	//     parents and does not read CompletionTime.
 	CompletionTime int64
 
 	// SkippedDisaggregation is true when the disaggregation decider chose to serve

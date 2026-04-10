@@ -191,10 +191,17 @@ func TestPDTrace_DisaggMode_Counterfactual(t *testing.T) {
 	}
 }
 
-// TestPDTrace_DisaggMode_Cardinality verifies the PD trace cardinality conservation law (R7):
-// with AlwaysDisaggregate, DisaggregatedCount == len(PrefillRoutings) == len(KVTransfers) == len(DecodeRoutings).
-// Note: len(Disaggregations) >= DisaggregatedCount (Disaggregations records ALL decisions, including disaggregate=false).
-// The general invariant is DisaggregatedCount == len(PrefillRoutings) == len(KVTransfers) == len(DecodeRoutings).
+// TestPDTrace_DisaggMode_Cardinality verifies PD trace cardinality with AlwaysDisaggregate.
+//
+// Decode-first cardinality invariants:
+//   - len(DecodeRoutings) == len(Disaggregations): decode routing fires once per PD request,
+//     always before the disaggregation decision, regardless of skip or disagg path.
+//   - len(PrefillRoutings) == len(KVTransfers) == DisaggregatedCount: prefill routing and KV
+//     transfer records are emitted only on the disagg path.
+//
+// This test uses AlwaysDisaggregate, so all paths are disagg and all four counts are equal.
+// For a mixed skip/disagg scenario: len(DecodeRoutings) == len(Disaggregations) == N, but
+// len(PrefillRoutings) == len(KVTransfers) == DisaggregatedCount < N.
 func TestPDTrace_DisaggMode_Cardinality(t *testing.T) {
 	// GIVEN disaggregated simulation with trace enabled
 	const numRequests = 5
@@ -221,7 +228,7 @@ func TestPDTrace_DisaggMode_Cardinality(t *testing.T) {
 	if disaggCount != len(tr.Disaggregations) {
 		t.Errorf("cardinality violation: DisaggregatedCount=%d != len(Disaggregations)=%d (AlwaysDisaggregate expects all true)", disaggCount, len(tr.Disaggregations))
 	}
-	// The general PD cardinality law: DisaggregatedCount == PrefillRoutings == KVTransfers == DecodeRoutings
+	// With AlwaysDisaggregate, all paths are disagg so all four counts are equal.
 	if np != disaggCount {
 		t.Errorf("cardinality violation: PrefillRoutings=%d != DisaggregatedCount=%d", np, disaggCount)
 	}
@@ -368,6 +375,65 @@ func TestPDTrace_NeverDecider_WithPools_OnlyDisaggRecords(t *testing.T) {
 	// Standard routing records are only written by RoutingDecisionEvent (non-PD path).
 	if len(tr.Routings) != 0 {
 		t.Errorf("expected 0 standard routing records in PD mode (skip-path uses DecodeEnqueueEvent), got %d", len(tr.Routings))
+	}
+}
+
+// TestPDTrace_SkipPath_TraceRecords verifies trace record presence for skip-path requests.
+// With NeverDisaggregate, all PD requests take the skip path (cache hit: served locally
+// on the selected decode instance). The decode-first invariant means DecodeRoutingRecord
+// and DisaggregationRecord (Disaggregate=false) are always emitted, while PrefillRoutingRecord
+// and KVTransferRecord are absent (no prefill routing, no KV transfer on skip path).
+func TestPDTrace_SkipPath_TraceRecords(t *testing.T) {
+	// GIVEN pools configured with NeverDisaggregate (all requests → skip path)
+	const numRequests = 4
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.PDDecider = "never"
+	config.TraceLevel = "decisions"
+	requests := newTestRequests(numRequests)
+	cs := NewClusterSimulator(config, requests, nil)
+
+	// WHEN run
+	mustRun(t, cs)
+
+	tr := cs.Trace()
+	if tr == nil {
+		t.Fatal("expected non-nil trace")
+	}
+
+	// THEN DecodeRoutingRecord present for every request (decode-first always records)
+	if len(tr.DecodeRoutings) != numRequests {
+		t.Errorf("DecodeRoutings=%d, want %d (decode-first: always written per PD request)", len(tr.DecodeRoutings), numRequests)
+	}
+
+	// THEN DisaggregationRecord present for every request, all Disaggregate=false
+	if len(tr.Disaggregations) != numRequests {
+		t.Errorf("Disaggregations=%d, want %d", len(tr.Disaggregations), numRequests)
+	}
+	for i, r := range tr.Disaggregations {
+		if r.Disaggregate {
+			t.Errorf("Disaggregations[%d]: Disaggregate=true, want false (NeverDisaggregate)", i)
+		}
+		if r.RequestID == "" {
+			t.Errorf("Disaggregations[%d]: RequestID empty", i)
+		}
+		if r.DecodeInstanceID == "" {
+			t.Errorf("Disaggregations[%d]: DecodeInstanceID empty (decode-first: always set before disagg decision)", i)
+		}
+	}
+
+	// THEN no PrefillRoutingRecord (skip path: no prefill routing)
+	if len(tr.PrefillRoutings) != 0 {
+		t.Errorf("PrefillRoutings=%d, want 0 (skip path)", len(tr.PrefillRoutings))
+	}
+
+	// THEN no KVTransferRecord (skip path: no KV transfer)
+	if len(tr.KVTransfers) != 0 {
+		t.Errorf("KVTransfers=%d, want 0 (skip path)", len(tr.KVTransfers))
+	}
+
+	// THEN no standard RoutingRecord (skip path uses DecodeEnqueueEvent, not RoutingDecisionEvent)
+	if len(tr.Routings) != 0 {
+		t.Errorf("Routings=%d, want 0 (PD skip path does not emit standard routing records)", len(tr.Routings))
 	}
 }
 
