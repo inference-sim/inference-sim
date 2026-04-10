@@ -193,7 +193,7 @@ Controls which requests enter the routing pipeline. See [Cluster Architecture: A
 | YAML field | Type | Default | Description |
 |------------|------|---------|-------------|
 | `admission.tier_shed_threshold` | int | 0 | Per-instance in-flight threshold above which shedding activates. 0 = shed at any load. |
-| `admission.tier_shed_min_priority` | int | 3 | Minimum SLO tier priority admitted under overload. 3 = admit Standard+Critical, shed sheddable tiers (priority < 0). Must be >= -3. |
+| `admission.tier_shed_min_priority` | int | 3 | Minimum SLO tier priority admitted under overload. 3 = admit Standard+Critical, shed sheddable tiers (priority < 0). No range constraint (GAIE priorities are arbitrary integers). |
 | `admission.slo_priorities` | map[string]int | nil | Custom SLO class priority overrides. Merges on top of GAIE defaults. See [SLO Tier Priorities](#slo-tier-priorities) below. |
 
 ### SLO Tier Priorities

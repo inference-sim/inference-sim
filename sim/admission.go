@@ -119,6 +119,8 @@ func (m *SLOPriorityMap) IsSheddable(class string) bool {
 // SLOTierPriority maps an SLOClass string to an integer priority using GAIE-compatible defaults.
 // Deprecated: use SLOPriorityMap.Priority() for configurable priorities.
 // Kept for backward compatibility — delegates to DefaultSLOPriorityMap().
+// Note: return values changed from old [0,4] scale to GAIE scale (negative = sheddable).
+// Not value-compatible with pre-#1013 code — use IsSheddable() for shedding decisions.
 func SLOTierPriority(class string) int {
 	return DefaultSLOPriorityMap().Priority(class)
 }
@@ -133,14 +135,12 @@ type TierShedAdmission struct {
 }
 
 // NewTierShedAdmission creates a TierShedAdmission with validated parameters and a priority map.
-// Panics if overloadThreshold < 0 or minAdmitPriority is out of [-100, 100] (R3).
+// Panics if overloadThreshold < 0. minAdmitPriority is unbounded (GAIE priorities are
+// arbitrary integers with no range constraint; only the sign matters for IsSheddable).
 // If priorityMap is nil, DefaultSLOPriorityMap() is used.
 func NewTierShedAdmission(overloadThreshold, minAdmitPriority int, priorityMap *SLOPriorityMap) *TierShedAdmission {
 	if overloadThreshold < 0 {
 		panic(fmt.Sprintf("NewTierShedAdmission: overloadThreshold must be >= 0, got %d", overloadThreshold))
-	}
-	if minAdmitPriority < -100 || minAdmitPriority > 100 {
-		panic(fmt.Sprintf("NewTierShedAdmission: minAdmitPriority must be in [-100, 100], got %d", minAdmitPriority))
 	}
 	if priorityMap == nil {
 		priorityMap = DefaultSLOPriorityMap()
@@ -168,11 +168,7 @@ func (t *TierShedAdmission) Admit(req *Request, state *RouterState) (bool, strin
 		return true, "" // under threshold: admit all
 	}
 	// Under overload: reject tiers below MinAdmitPriority.
-	pm := t.PriorityMap
-	if pm == nil {
-		pm = DefaultSLOPriorityMap()
-	}
-	priority := pm.Priority(class)
+	priority := t.PriorityMap.Priority(class)
 	if priority < t.MinAdmitPriority {
 		return false, fmt.Sprintf("tier-shed: class=%s priority=%d < min=%d load=%d",
 			class, priority, t.MinAdmitPriority, maxLoad)

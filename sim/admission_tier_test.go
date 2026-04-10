@@ -117,7 +117,7 @@ func TestSLOPriorityMap_CustomOverrides(t *testing.T) {
 
 // T006 — Critical and Standard are admitted under overload.
 func TestTierShedAdmission_CriticalAndStandardAdmittedUnderOverload(t *testing.T) {
-	policy := &TierShedAdmission{OverloadThreshold: 0, MinAdmitPriority: 3}
+	policy := NewTierShedAdmission(0, 3, nil)
 	state := makeOverloadedState(10) // heavily overloaded
 
 	for _, class := range []string{"critical", "standard"} {
@@ -134,7 +134,7 @@ func TestTierShedAdmission_CriticalAndStandardAdmittedUnderOverload(t *testing.T
 
 // T007 — Sheddable rejected when maxLoad > OverloadThreshold.
 func TestTierShedAdmission_SheddableRejectedWhenOverloaded(t *testing.T) {
-	policy := &TierShedAdmission{OverloadThreshold: 5, MinAdmitPriority: 3}
+	policy := NewTierShedAdmission(5, 3, nil)
 	state := makeOverloadedState(6) // load=6 > threshold=5
 
 	req := &Request{ID: "r", SLOClass: "sheddable"}
@@ -152,7 +152,7 @@ func TestTierShedAdmission_SheddableRejectedWhenOverloaded(t *testing.T) {
 
 // T008 — All tiers admitted when maxLoad <= OverloadThreshold.
 func TestTierShedAdmission_AllAdmittedUnderThreshold(t *testing.T) {
-	policy := &TierShedAdmission{OverloadThreshold: 10, MinAdmitPriority: 3}
+	policy := NewTierShedAdmission(10, 3, nil)
 	state := makeOverloadedState(5) // load=5 <= threshold=10
 
 	for _, class := range []string{"critical", "standard", "sheddable", "batch", "background"} {
@@ -166,7 +166,7 @@ func TestTierShedAdmission_AllAdmittedUnderThreshold(t *testing.T) {
 
 // T009 — Empty snapshots: no panic, all requests admitted.
 func TestTierShedAdmission_EmptySnapshotsNoPanic(t *testing.T) {
-	policy := &TierShedAdmission{OverloadThreshold: 0, MinAdmitPriority: 3}
+	policy := NewTierShedAdmission(0, 3, nil)
 	state := &RouterState{Snapshots: []RoutingSnapshot{}} // no instances
 
 	for _, class := range []string{"critical", "standard", "sheddable"} {
@@ -180,7 +180,7 @@ func TestTierShedAdmission_EmptySnapshotsNoPanic(t *testing.T) {
 
 // T010 — Empty SLOClass treated as Standard (priority 3), never shed below Standard.
 func TestTierShedAdmission_EmptySLOClassTreatedAsStandard(t *testing.T) {
-	policy := &TierShedAdmission{OverloadThreshold: 0, MinAdmitPriority: 3}
+	policy := NewTierShedAdmission(0, 3, nil)
 	state := makeOverloadedState(10)
 
 	req := &Request{ID: "r", SLOClass: ""}
@@ -192,7 +192,7 @@ func TestTierShedAdmission_EmptySLOClassTreatedAsStandard(t *testing.T) {
 
 // T011 — Batch and Background are rejected under overload when below MinAdmitPriority.
 func TestTierShedAdmission_BatchAndBackgroundRejectedUnderOverload(t *testing.T) {
-	policy := &TierShedAdmission{OverloadThreshold: 0, MinAdmitPriority: 3}
+	policy := NewTierShedAdmission(0, 3, nil)
 	// Extremely overloaded state
 	state := makeOverloadedState(9999)
 
@@ -208,7 +208,7 @@ func TestTierShedAdmission_BatchAndBackgroundRejectedUnderOverload(t *testing.T)
 // MinAdmitPriority=0 admits non-sheddable (priority >= 0) and rejects sheddable (priority < 0).
 // With GAIE defaults: critical(4), standard(3) admitted; batch(-1), sheddable(-2), background(-3) rejected.
 func TestTierShedAdmission_ZeroMinPriorityRejectsSheddable(t *testing.T) {
-	policy := &TierShedAdmission{OverloadThreshold: 0, MinAdmitPriority: 0}
+	policy := NewTierShedAdmission(0, 0, nil)
 	state := makeOverloadedState(9999)
 
 	// Non-sheddable classes admitted
@@ -231,7 +231,7 @@ func TestTierShedAdmission_ZeroMinPriorityRejectsSheddable(t *testing.T) {
 
 // MinAdmitPriority=-3 admits all tiers (lowest default priority is background=-3, -3 < -3 is false).
 func TestTierShedAdmission_NegativeMinPriorityAdmitsAll(t *testing.T) {
-	policy := &TierShedAdmission{OverloadThreshold: 0, MinAdmitPriority: -3}
+	policy := NewTierShedAdmission(0, -3, nil)
 	state := makeOverloadedState(9999)
 	for _, class := range []string{"critical", "standard", "sheddable", "batch", "background"} {
 		req := &Request{ID: "r", SLOClass: class}
@@ -244,7 +244,7 @@ func TestTierShedAdmission_NegativeMinPriorityAdmitsAll(t *testing.T) {
 
 // Additional: verify Sheddable NOT shed when exactly at threshold (strict >).
 func TestTierShedAdmission_ExactThresholdAdmits(t *testing.T) {
-	policy := &TierShedAdmission{OverloadThreshold: 5, MinAdmitPriority: 3}
+	policy := NewTierShedAdmission(5, 3, nil)
 	state := makeOverloadedState(5) // load=5 == threshold → not overloaded
 
 	req := &Request{ID: "r", SLOClass: "sheddable"}

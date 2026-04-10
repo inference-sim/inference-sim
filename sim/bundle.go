@@ -158,9 +158,9 @@ func (b *PolicyBundle) Validate() error {
 	if b.Admission.TierShedThreshold != nil && *b.Admission.TierShedThreshold < 0 {
 		return fmt.Errorf("tier_shed_threshold must be >= 0, got %d", *b.Admission.TierShedThreshold)
 	}
-	if b.Admission.TierShedMinPriority != nil && *b.Admission.TierShedMinPriority < -3 {
-		return fmt.Errorf("tier_shed_min_priority must be >= -3, got %d", *b.Admission.TierShedMinPriority)
-	}
+	// No range check on TierShedMinPriority: GAIE priorities are arbitrary integers
+	// with no bounds (InferenceObjective.spec.priority is *int, negative allowed).
+	// The only semantic boundary is priority < 0 → sheddable.
 	// Validate tenant budgets: each value must be in [0, 1].
 	for tenantID, v := range b.TenantBudgets {
 		if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > 1 {
