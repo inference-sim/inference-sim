@@ -195,6 +195,7 @@ Example:
 			TierShedThreshold:       tierShedThreshold,
 			TierShedMinPriority:     tierShedMinPriority,
 			TenantBudgets:           tenantBudgets,
+			SLOPriorityOverrides:    sloPriorityOverrides,
 		}
 
 		// Run simulation — wire SessionManager for closed-loop, nil for fixed mode

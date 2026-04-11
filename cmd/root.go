@@ -94,9 +94,10 @@ var (
 	routingLatency        int64              // Routing latency in microseconds
 	tokenBucketCapacity   float64            // Token bucket capacity
 	tokenBucketRefillRate float64            // Token bucket refill rate (tokens/second)
-	tierShedThreshold     int                // Tier-shed overload threshold (0 = any load)
-	tierShedMinPriority   int                // Tier-shed minimum admitted priority under overload
-	tenantBudgets         map[string]float64 // Per-tenant fraction of total capacity (nil = no enforcement)
+	tierShedThreshold      int                // Tier-shed overload threshold (0 = any load)
+	tierShedMinPriority    int                // Tier-shed minimum admitted priority under overload
+	tenantBudgets          map[string]float64 // Per-tenant fraction of total capacity (nil = no enforcement)
+	sloPriorityOverrides   map[string]int     // SLO class → priority overrides (nil = GAIE defaults)
 
 	// routing policy config (PR 6, evolved in PR17)
 	routingPolicy  string // Routing policy name
@@ -825,6 +826,9 @@ func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
 		if bundle.TenantBudgets != nil {
 			tenantBudgets = bundle.TenantBudgets
 		}
+		if bundle.Admission.SLOPriorities != nil {
+			sloPriorityOverrides = bundle.Admission.SLOPriorities
+		}
 		if bundle.Routing.Policy != "" && !cmd.Flags().Changed("routing-policy") {
 			routingPolicy = bundle.Routing.Policy
 		}
@@ -1532,6 +1536,7 @@ var runCmd = &cobra.Command{
 			TierShedThreshold:       tierShedThreshold,
 			TierShedMinPriority:     tierShedMinPriority,
 			TenantBudgets:           tenantBudgets,
+			SLOPriorityOverrides:    sloPriorityOverrides,
 			FlowControlEnabled:              flowControlEnabled,
 			FlowControlDetector:             flowControlDetector,
 			FlowControlDispatchOrder:        flowControlDispatchOrder,
