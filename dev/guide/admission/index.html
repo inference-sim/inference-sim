@@ -1052,6 +1052,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#slo-tier-priorities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SLO Tier Priorities
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SLO Tier Priorities">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#default-priorities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Default Priorities
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#customizing-priorities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Customizing Priorities
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-priorities-are-used" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where Priorities Are Used
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tier-shed-admission" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tier-Shed Admission
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pipeline-latency" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2665,6 +2726,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#slo-tier-priorities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SLO Tier Priorities
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SLO Tier Priorities">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#default-priorities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Default Priorities
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#customizing-priorities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Customizing Priorities
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-priorities-are-used" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where Priorities Are Used
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tier-shed-admission" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tier-Shed Admission
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pipeline-latency" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2735,6 +2857,11 @@
 <td>Rate-limiting. Each request consumes tokens equal to its input token count. Tokens refill at a constant rate. Rejects when the bucket is empty.</td>
 </tr>
 <tr>
+<td><strong>Tier-shed</strong></td>
+<td><code>--admission-policy tier-shed</code></td>
+<td>SLO-aware shedding. Under overload, rejects requests whose SLO tier priority is below <code>tier_shed_min_priority</code>. See <a href="#slo-tier-priorities">SLO Tier Priorities</a> below.</td>
+</tr>
+<tr>
 <td><strong>Reject-all</strong></td>
 <td><code>--admission-policy reject-all</code></td>
 <td>Rejects all requests unconditionally. Pathological template for testing.</td>
@@ -2781,12 +2908,97 @@
 <ul>
 <li><strong>Overload protection.</strong> When the arrival rate significantly exceeds service capacity, unbounded queues grow without limit. Admission shedding keeps queue depth manageable.</li>
 <li><strong>Cost control.</strong> Limit total token throughput to match a token budget or downstream rate limit.</li>
-<li><strong>Graceful degradation.</strong> Shed excess load to protect latency for admitted requests. Under extreme overload, routing distributes load and scheduling orders within instances, but neither can reduce total queue depth — admission is the lever that can. Note: the current admission policies are SLO-class-blind — all requests pay the same token cost regardless of <code>slo_class</code>. SLO-aware shedding (rejecting <code>batch</code> before <code>critical</code>) is not yet implemented.</li>
+<li><strong>Graceful degradation.</strong> Shed excess load to protect latency for admitted requests. Under extreme overload, routing distributes load and scheduling orders within instances, but neither can reduce total queue depth — admission is the lever that can. The <strong>tier-shed</strong> policy provides SLO-aware shedding — rejecting lower-priority classes (batch, sheddable, background) before higher-priority ones (critical, standard).</li>
 <li><strong>Testing rejection paths.</strong> The <code>reject-all</code> policy verifies that rejection counting, trace recording, and conservation invariants hold when no requests are admitted.</li>
 </ul>
 <div class="admonition tip">
 <p class="admonition-title">Admission is the third lever</p>
 <p>Routing distributes load across instances. Scheduling orders requests within each instance. But when total arrival rate exceeds total service capacity, neither routing nor scheduling can reduce the queue -- they can only redistribute it. Admission control is the mechanism that actually reduces inbound volume.</p>
+</div>
+<h2 id="slo-tier-priorities">SLO Tier Priorities<a class="headerlink" href="#slo-tier-priorities" title="Permanent link">&para;</a></h2>
+<p>Every request carries an <code>SLOClass</code> label that determines its priority throughout the admission pipeline. Priorities follow the GAIE (Gateway API Inference Extension) convention where <strong>negative priority means sheddable</strong>.</p>
+<h3 id="default-priorities">Default Priorities<a class="headerlink" href="#default-priorities" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>SLO Class</th>
+<th>Priority</th>
+<th>Sheddable?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>critical</code></td>
+<td>4</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>standard</code></td>
+<td>3</td>
+<td>No (also the default for empty/unknown classes)</td>
+</tr>
+<tr>
+<td><code>batch</code></td>
+<td>-1</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>sheddable</code></td>
+<td>-2</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>background</code></td>
+<td>-3</td>
+<td>Yes</td>
+</tr>
+</tbody>
+</table>
+<p>The sheddable/non-sheddable boundary is <code>priority &lt; 0</code>. This matches the <code>IsSheddable</code> contract from llm-d's gateway implementation.</p>
+<h3 id="customizing-priorities">Customizing Priorities<a class="headerlink" href="#customizing-priorities" title="Permanent link">&para;</a></h3>
+<p>Override specific priorities via the <code>slo_priorities</code> field in a policy bundle YAML:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">admission</span><span class="p">:</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tier-shed&quot;</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">tier_shed_min_priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">slo_priorities</span><span class="p">:</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">batch</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span><span class="w">       </span><span class="c1"># promote batch to non-sheddable</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span><span class="w">   </span><span class="c1"># widen the gap between critical and standard</span>
+</code></pre></div>
+<p>Unspecified classes retain their GAIE defaults. The <code>slo_priorities</code> map merges on top of defaults — you only need to specify the classes you want to change.</p>
+<h3 id="where-priorities-are-used">Where Priorities Are Used<a class="headerlink" href="#where-priorities-are-used" title="Permanent link">&para;</a></h3>
+<p>Priorities affect three components:</p>
+<ol>
+<li>
+<p><strong>Tier-shed admission</strong> (<code>sim/admission.go</code>): Under overload, rejects requests with <code>Priority(class) &lt; MinAdmitPriority</code>. With the default <code>tier_shed_min_priority: 3</code>, this admits critical (4) and standard (3), while rejecting batch (-1), sheddable (-2), and background (-3).</p>
+</li>
+<li>
+<p><strong>Tenant budget enforcement</strong> (<code>sim/cluster/cluster_event.go</code>): When a tenant exceeds their capacity budget, only sheddable requests (<code>IsSheddable = priority &lt; 0</code>) are shed. Critical and standard traffic is always protected regardless of budget.</p>
+</li>
+<li>
+<p><strong>Gateway queue dispatch</strong> (<code>sim/cluster/gateway_queue.go</code>): In <code>priority</code> dispatch mode, higher-priority requests are dequeued first. When the queue is at capacity, the lowest-priority request is evicted.</p>
+</li>
+</ol>
+<h2 id="tier-shed-admission">Tier-Shed Admission<a class="headerlink" href="#tier-shed-admission" title="Permanent link">&para;</a></h2>
+<p>The <code>tier-shed</code> policy sheds lower-priority SLO tiers under cluster overload. It activates when the maximum per-instance in-flight load exceeds <code>tier_shed_threshold</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">500</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">2000</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--admission-policy<span class="w"> </span>tier-shed<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span>--policy-config<span class="w"> </span>policies.yaml
+</code></pre></div>
+<p>Where <code>policies.yaml</code> contains:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">admission</span><span class="p">:</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tier-shed&quot;</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">tier_shed_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span><span class="w">        </span><span class="c1"># 0 = shed at any load level</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">tier_shed_min_priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span><span class="w">     </span><span class="c1"># admit standard(3)+critical(4), shed the rest</span>
+</code></pre></div>
+<p>Under overload, any request with <code>Priority(class) &lt; tier_shed_min_priority</code> is rejected. Under normal load (below threshold), all requests are admitted regardless of priority.</p>
+<div class="admonition tip">
+<p class="admonition-title">Choosing tier_shed_min_priority</p>
+<ul>
+<li><code>3</code> (default): Admits critical and standard. Sheds batch, sheddable, background.</li>
+<li><code>0</code>: Admits all non-sheddable classes (priority &gt;= 0). Sheds only negative-priority classes.</li>
+<li><code>-3</code>: Admits everything (effectively disables tier-shed). Useful when you want tenant budget enforcement but not tier-level shedding.</li>
+</ul>
 </div>
 <h2 id="pipeline-latency">Pipeline Latency<a class="headerlink" href="#pipeline-latency" title="Permanent link">&para;</a></h2>
 <p>The <code>--admission-latency</code> and <code>--routing-latency</code> flags model real network and processing overhead between gateway and backend (gRPC hops, service mesh serialization, queue dispatch). These are pipeline concerns that affect both admission and routing stages. See <a href="../cluster/#admission-and-routing-latency">Cluster Simulation</a> for details on configuring pipeline latency.</p>
