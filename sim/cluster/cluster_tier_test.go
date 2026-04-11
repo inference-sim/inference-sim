@@ -153,3 +153,88 @@ func TestTierShed_HighThresholdNeverSheds(t *testing.T) {
 		t.Errorf("no shedding expected with very high threshold, got %d", shed)
 	}
 }
+
+// --- GAIE-legacy admission integration tests ---
+
+// newGAIELegacyConfig creates a DeploymentConfig with gaie-legacy admission.
+// qdThreshold controls when saturation triggers shedding (lower = easier to trigger).
+func newGAIELegacyConfig(numInstances int, qdThreshold float64) DeploymentConfig {
+	cfg := newTestDeploymentConfig(numInstances)
+	cfg.AdmissionPolicy = "gaie-legacy"
+	cfg.GAIEQDThreshold = qdThreshold
+	cfg.GAIEKVThreshold = 0.8
+	return cfg
+}
+
+// INV-1: Request conservation holds under gaie-legacy admission.
+// injected == completed + still_queued + still_running + rejected + routing_rejections + gw_queue + gw_shed.
+func TestGAIELegacy_INV1_Conservation(t *testing.T) {
+	const nPerTier = 80
+	var requests []*sim.Request
+	for _, class := range []string{"critical", "standard", "sheddable", "batch", "background"} {
+		for i := 0; i < nPerTier; i++ {
+			requests = append(requests, &sim.Request{
+				ID:           fmt.Sprintf("req_%s_%d", class, i),
+				ArrivalTime:  int64(i) * 10, // dense arrivals
+				SLOClass:     class,
+				InputTokens:  make([]int, 100),
+				OutputTokens: make([]int, 50),
+				State:        sim.StateQueued,
+			})
+		}
+	}
+
+	// Use low QD threshold (1) so saturation triggers easily under queue buildup.
+	cfg := newGAIELegacyConfig(2, 1)
+	cs := NewClusterSimulator(cfg, requests, nil)
+	mustRun(t, cs)
+
+	// INV-1 conservation
+	injected := len(requests)
+	rejected := cs.RejectedRequests()
+	routingRej := cs.RoutingRejections()
+	gwDepth := cs.GatewayQueueDepth()
+	gwShed := cs.GatewayQueueShed()
+	agg := cs.AggregatedMetrics()
+	completed := agg.CompletedRequests
+	queued := agg.StillQueued
+	running := agg.StillRunning
+	dropped := agg.DroppedUnservable
+	timedOut := agg.TimedOutRequests
+
+	accounted := completed + queued + running + dropped + timedOut + rejected + routingRej + gwDepth + gwShed
+	if accounted != injected {
+		t.Errorf("INV-1 violated: injected=%d, accounted=%d (completed=%d queued=%d running=%d dropped=%d timedOut=%d rejected=%d routingRej=%d gwDepth=%d gwShed=%d)",
+			injected, accounted, completed, queued, running, dropped, timedOut, rejected, routingRej, gwDepth, gwShed)
+	}
+
+	// Verify some sheddable requests were actually shed (saturation > 1.0 under dense arrivals)
+	shedCounts := cs.ShedByTier()
+	totalShed := 0
+	for _, v := range shedCounts {
+		totalShed += v
+	}
+	if totalShed == 0 {
+		t.Error("expected some tier-based shedding under dense arrivals with gaie-legacy")
+	}
+
+	// Non-sheddable classes must not appear in shed counts
+	if shedCounts["critical"] > 0 {
+		t.Errorf("critical requests must not be shed by gaie-legacy, got %d", shedCounts["critical"])
+	}
+	if shedCounts["standard"] > 0 {
+		t.Errorf("standard requests must not be shed by gaie-legacy, got %d", shedCounts["standard"])
+	}
+}
+
+// Under light load (saturation < 1.0), gaie-legacy admits all requests including sheddable.
+func TestGAIELegacy_LightLoadAdmitsAll(t *testing.T) {
+	requests := newTierTestRequests(5, "sheddable")
+	cfg := newGAIELegacyConfig(2, 5)
+	cs := NewClusterSimulator(cfg, requests, nil)
+	mustRun(t, cs)
+
+	if rejected := cs.RejectedRequests(); rejected > 0 {
+		t.Errorf("under light load, gaie-legacy should admit all, got %d rejections", rejected)
+	}
+}

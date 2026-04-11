@@ -194,6 +194,8 @@ Example:
 			SnapshotRefreshInterval: snapshotRefreshInterval,
 			TierShedThreshold:       tierShedThreshold,
 			TierShedMinPriority:     tierShedMinPriority,
+			GAIEQDThreshold:         gaieQDThreshold,
+			GAIEKVThreshold:         gaieKVThreshold,
 			TenantBudgets:           tenantBudgets,
 			SLOPriorityOverrides:    sloPriorityOverrides,
 		}

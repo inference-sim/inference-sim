@@ -253,3 +253,104 @@ func TestTierShedAdmission_ExactThresholdAdmits(t *testing.T) {
 		t.Error("sheddable should be admitted when load == threshold (strict > required)")
 	}
 }
+
+// --- GAIELegacyAdmission tests ---
+
+// BC-1: Non-sheddable requests always admitted, even at extreme saturation.
+func TestGAIELegacy_NonSheddableAlwaysAdmitted(t *testing.T) {
+	policy := NewGAIELegacyAdmission(5, 0.8, nil)
+	// Saturated: QueueDepth=100 -> qRatio=20, KVUtil=1.0 -> kvRatio=1.25 -> sat=20 >> 1.0
+	state := &RouterState{
+		Snapshots: []RoutingSnapshot{{ID: "i0", QueueDepth: 100, KVUtilization: 1.0}},
+	}
+	for _, class := range []string{"critical", "standard", "", "unknown"} {
+		req := &Request{ID: "r", SLOClass: class}
+		admitted, _ := policy.Admit(req, state)
+		if !admitted {
+			t.Errorf("class=%q: non-sheddable must always be admitted, got rejected", class)
+		}
+	}
+}
+
+// BC-2: Sheddable requests rejected when saturation >= 1.0.
+func TestGAIELegacy_SheddableRejectedWhenSaturated(t *testing.T) {
+	policy := NewGAIELegacyAdmission(5, 0.8, nil)
+	// qRatio=5/5=1.0, kvRatio=0.8/0.8=1.0 -> sat=1.0 (exactly at boundary)
+	state := &RouterState{
+		Snapshots: []RoutingSnapshot{{ID: "i0", QueueDepth: 5, KVUtilization: 0.8}},
+	}
+	for _, class := range []string{"batch", "sheddable", "background"} {
+		req := &Request{ID: "r", SLOClass: class}
+		admitted, reason := policy.Admit(req, state)
+		if admitted {
+			t.Errorf("class=%q: sheddable must be rejected at saturation=1.0", class)
+		}
+		if !strings.Contains(reason, "gaie-saturated") {
+			t.Errorf("class=%q: reason should contain 'gaie-saturated', got %q", class, reason)
+		}
+	}
+}
+
+// BC-3: Sheddable requests admitted when saturation < 1.0.
+func TestGAIELegacy_SheddableAdmittedWhenNotSaturated(t *testing.T) {
+	policy := NewGAIELegacyAdmission(5, 0.8, nil)
+	// qRatio=2/5=0.4, kvRatio=0.3/0.8=0.375 -> sat=0.4 < 1.0
+	state := &RouterState{
+		Snapshots: []RoutingSnapshot{{ID: "i0", QueueDepth: 2, KVUtilization: 0.3}},
+	}
+	for _, class := range []string{"batch", "sheddable", "background"} {
+		req := &Request{ID: "r", SLOClass: class}
+		admitted, _ := policy.Admit(req, state)
+		if !admitted {
+			t.Errorf("class=%q: sheddable should be admitted at saturation < 1.0", class)
+		}
+	}
+}
+
+// BC-4: Saturation formula matches GAIE: avg(max(qd/qdT, kv/kvT)).
+func TestGAIELegacy_FormulaExact(t *testing.T) {
+	policy := NewGAIELegacyAdmission(5, 0.8, nil)
+	state := &RouterState{
+		Snapshots: []RoutingSnapshot{
+			{ID: "i0", QueueDepth: 10, KVUtilization: 0.4}, // max(10/5, 0.4/0.8) = max(2.0, 0.5) = 2.0
+			{ID: "i1", QueueDepth: 1, KVUtilization: 0.9},  // max(1/5, 0.9/0.8) = max(0.2, 1.125) = 1.125
+		},
+	}
+	// Expected: avg(2.0, 1.125) = 1.5625 -> sheddable rejected
+	req := &Request{ID: "r", SLOClass: "sheddable"}
+	admitted, _ := policy.Admit(req, state)
+	if admitted {
+		t.Error("sheddable should be rejected at saturation 1.5625")
+	}
+
+	// Both instances lightly loaded -> saturation < 1.0
+	state2 := &RouterState{
+		Snapshots: []RoutingSnapshot{
+			{ID: "i0", QueueDepth: 2, KVUtilization: 0.3}, // max(0.4, 0.375) = 0.4
+			{ID: "i1", QueueDepth: 1, KVUtilization: 0.2}, // max(0.2, 0.25) = 0.25
+		},
+	}
+	// Expected: avg(0.4, 0.25) = 0.325 < 1.0 -> sheddable admitted
+	admitted2, _ := policy.Admit(req, state2)
+	if !admitted2 {
+		t.Error("sheddable should be admitted at saturation 0.325")
+	}
+}
+
+// BC-5: Empty snapshots -> saturation=1.0 -> sheddable rejected, non-sheddable admitted.
+func TestGAIELegacy_EmptySnapshotsSaturated(t *testing.T) {
+	policy := NewGAIELegacyAdmission(5, 0.8, nil)
+	state := &RouterState{Snapshots: []RoutingSnapshot{}}
+
+	req := &Request{ID: "r", SLOClass: "sheddable"}
+	admitted, _ := policy.Admit(req, state)
+	if admitted {
+		t.Error("sheddable should be rejected with empty snapshots (saturation=1.0)")
+	}
+
+	reqCrit := &Request{ID: "r2", SLOClass: "critical"}
+	admitted2, _ := policy.Admit(reqCrit, state)
+	if !admitted2 {
+		t.Error("non-sheddable should still be admitted with empty snapshots")
+	}
+}

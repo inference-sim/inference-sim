@@ -171,6 +171,8 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			logrus.Warn("[cluster] tier-shed: TierShedMinPriority=0 rejects sheddable tiers (priority < 0) under overload; set tier_shed_min_priority: 3 for Standard-and-above protection")
 		}
 		admissionPolicy = sim.NewTierShedAdmission(config.TierShedThreshold, config.TierShedMinPriority, priorityMap)
+	} else if config.AdmissionPolicy == "gaie-legacy" {
+		admissionPolicy = sim.NewGAIELegacyAdmission(config.GAIEQDThreshold, config.GAIEKVThreshold, priorityMap)
 	} else {
 		admissionPolicy = sim.NewAdmissionPolicy(config.AdmissionPolicy, config.TokenBucketCapacity, config.TokenBucketRefillRate)
 	}
@@ -927,8 +929,8 @@ func (c *ClusterSimulator) RoutingRejections() int {
 	return c.routingRejections
 }
 
-// ShedByTier returns a copy of per-SLOClass rejection counts recorded during tier-shed admission.
-// The map is populated only when AdmissionPolicy is "tier-shed"; returns an empty map otherwise.
+// ShedByTier returns a copy of per-SLOClass rejection counts recorded during admission.
+// Populated for all admission policies (tier-shed, gaie-legacy, token-bucket, reject-all).
 // Returns a defensive copy so callers cannot mutate the internal counter (R8).
 // Panics if called before Run() completes.
 func (c *ClusterSimulator) ShedByTier() map[string]int {

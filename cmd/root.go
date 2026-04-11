@@ -98,6 +98,8 @@ var (
 	tierShedMinPriority    int                // Tier-shed minimum admitted priority under overload
 	tenantBudgets          map[string]float64 // Per-tenant fraction of total capacity (nil = no enforcement)
 	sloPriorityOverrides   map[string]int     // SLO class → priority overrides (nil = GAIE defaults)
+	gaieQDThreshold        float64            // GAIE-legacy queue depth threshold per instance (default 5)
+	gaieKVThreshold        float64            // GAIE-legacy KV cache utilization threshold (default 0.8)
 
 	// routing policy config (PR 6, evolved in PR17)
 	routingPolicy  string // Routing policy name
@@ -829,6 +831,12 @@ func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
 		if bundle.Admission.SLOPriorities != nil {
 			sloPriorityOverrides = bundle.Admission.SLOPriorities
 		}
+		if bundle.Admission.GAIEQDThreshold != nil {
+			gaieQDThreshold = *bundle.Admission.GAIEQDThreshold
+		}
+		if bundle.Admission.GAIEKVThreshold != nil {
+			gaieKVThreshold = *bundle.Admission.GAIEKVThreshold
+		}
 		if bundle.Routing.Policy != "" && !cmd.Flags().Changed("routing-policy") {
 			routingPolicy = bundle.Routing.Policy
 		}
@@ -841,6 +849,14 @@ func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
 		}
 	}
 
+	// Apply defaults for GAIE-legacy thresholds (not set via CLI flags, only via bundle).
+	if gaieQDThreshold == 0 {
+		gaieQDThreshold = 5
+	}
+	if gaieKVThreshold == 0 {
+		gaieKVThreshold = 0.8
+	}
+
 	// Policy name validation (R3: validate at CLI boundary before passing to library)
 	if admissionPolicy == "token-bucket" {
 		if tokenBucketCapacity <= 0 || math.IsNaN(tokenBucketCapacity) || math.IsInf(tokenBucketCapacity, 0) {
@@ -848,6 +864,14 @@ func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
 		}
 		if tokenBucketRefillRate <= 0 || math.IsNaN(tokenBucketRefillRate) || math.IsInf(tokenBucketRefillRate, 0) {
 			logrus.Fatalf("--token-bucket-refill-rate must be a finite value > 0, got %v", tokenBucketRefillRate)
+		}
+	}
+	if admissionPolicy == "gaie-legacy" {
+		if gaieQDThreshold <= 0 || math.IsNaN(gaieQDThreshold) || math.IsInf(gaieQDThreshold, 0) {
+			logrus.Fatalf("gaie_qd_threshold must be > 0, got %v", gaieQDThreshold)
+		}
+		if gaieKVThreshold <= 0 || gaieKVThreshold > 1.0 || math.IsNaN(gaieKVThreshold) || math.IsInf(gaieKVThreshold, 0) {
+			logrus.Fatalf("gaie_kv_threshold must be in (0, 1.0], got %v", gaieKVThreshold)
 		}
 	}
 	if !sim.IsValidAdmissionPolicy(admissionPolicy) {
@@ -1535,6 +1559,8 @@ var runCmd = &cobra.Command{
 			DecodeOverrides:         decodeOverrides,
 			TierShedThreshold:       tierShedThreshold,
 			TierShedMinPriority:     tierShedMinPriority,
+			GAIEQDThreshold:         gaieQDThreshold,
+			GAIEKVThreshold:         gaieKVThreshold,
 			TenantBudgets:           tenantBudgets,
 			SLOPriorityOverrides:    sloPriorityOverrides,
 			FlowControlEnabled:              flowControlEnabled,

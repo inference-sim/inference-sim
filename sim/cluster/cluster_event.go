@@ -145,15 +145,13 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 			})
 		}
 		cs.rejectedRequests++
-		// Populate per-tier shed counter only for TierShedAdmission rejections (S-1:
-		// avoids conflating token-bucket or reject-all rejections with tier-shed counts).
-		if _, ok := cs.admissionPolicy.(*sim.TierShedAdmission); ok {
-			tier := e.request.SLOClass
-			if tier == "" {
-				tier = "standard" // normalize empty → standard (matches SLOTierPriority default)
-			}
-			cs.shedByTier[tier]++
+		// Populate per-tier shed counter for all tier-aware admission rejections
+		// (tier-shed, gaie-legacy, and any future priority-based admission policies).
+		tier := e.request.SLOClass
+		if tier == "" {
+			tier = "standard" // normalize empty → standard (matches SLOPriorityMap default)
 		}
+		cs.shedByTier[tier]++
 		return
 	}
 

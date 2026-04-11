@@ -30,6 +30,9 @@ type AdmissionConfig struct {
 	// Tier-shed options (Phase 1B): only used when policy = "tier-shed".
 	TierShedThreshold   *int `yaml:"tier_shed_threshold"`   // nil = use default (0)
 	TierShedMinPriority *int `yaml:"tier_shed_min_priority"` // nil = use default (3)
+	// GAIE-legacy options: only used when policy = "gaie-legacy".
+	GAIEQDThreshold *float64 `yaml:"gaie_qd_threshold"` // nil = use default (5)
+	GAIEKVThreshold *float64 `yaml:"gaie_kv_threshold"` // nil = use default (0.8)
 	// SLOPriorities overrides default SLO class → priority mappings.
 	// nil = use GAIE defaults (critical=4, standard=3, batch=-1, sheddable=-2, background=-3).
 	SLOPriorities map[string]int `yaml:"slo_priorities,omitempty"`
@@ -65,7 +68,7 @@ func LoadPolicyBundle(path string) (*PolicyBundle, error) {
 // Valid policy name registries. Unexported to prevent external mutation.
 // Used by Validate(), factory functions, and ValidatePolicyName().
 var (
-	validAdmissionPolicies = map[string]bool{"": true, "always-admit": true, "token-bucket": true, "reject-all": true, "tier-shed": true}
+	validAdmissionPolicies = map[string]bool{"": true, "always-admit": true, "token-bucket": true, "reject-all": true, "tier-shed": true, "gaie-legacy": true}
 	validRoutingPolicies   = map[string]bool{"": true, "round-robin": true, "least-loaded": true, "weighted": true, "always-busiest": true}
 	validPriorityPolicies  = map[string]bool{"": true, "constant": true, "slo-based": true, "inverted-slo": true}
 	validSchedulers        = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
@@ -161,6 +164,13 @@ func (b *PolicyBundle) Validate() error {
 	// No range check on TierShedMinPriority: GAIE priorities are arbitrary integers
 	// with no bounds (InferenceObjective.spec.priority is *int, negative allowed).
 	// The only semantic boundary is priority < 0 → sheddable.
+	// Validate GAIE-legacy parameters when present.
+	if b.Admission.GAIEQDThreshold != nil && *b.Admission.GAIEQDThreshold <= 0 {
+		return fmt.Errorf("gaie_qd_threshold must be > 0, got %v", *b.Admission.GAIEQDThreshold)
+	}
+	if b.Admission.GAIEKVThreshold != nil && (*b.Admission.GAIEKVThreshold <= 0 || *b.Admission.GAIEKVThreshold > 1.0) {
+		return fmt.Errorf("gaie_kv_threshold must be in (0, 1.0], got %v", *b.Admission.GAIEKVThreshold)
+	}
 	// Validate tenant budgets: each value must be in [0, 1].
 	for tenantID, v := range b.TenantBudgets {
 		if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > 1 {
