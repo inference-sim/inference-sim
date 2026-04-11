@@ -163,17 +163,17 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	// Construct SLO priority map from config overrides (nil-safe: defaults used when empty).
 	priorityMap := sim.NewSLOPriorityMap(config.SLOPriorityOverrides)
 
-	// Bypass generic factory for "tier-shed": factory signature is float64-only and
-	// cannot carry the int fields TierShedAdmission requires (research.md D-2).
+	// Bypass generic factory for policies needing custom params (research.md D-2).
 	var admissionPolicy sim.AdmissionPolicy
-	if config.AdmissionPolicy == "tier-shed" {
+	switch config.AdmissionPolicy {
+	case "tier-shed":
 		if config.TierShedMinPriority == 0 {
 			logrus.Warn("[cluster] tier-shed: TierShedMinPriority=0 rejects sheddable tiers (priority < 0) under overload; set tier_shed_min_priority: 3 for Standard-and-above protection")
 		}
 		admissionPolicy = sim.NewTierShedAdmission(config.TierShedThreshold, config.TierShedMinPriority, priorityMap)
-	} else if config.AdmissionPolicy == "gaie-legacy" {
+	case "gaie-legacy":
 		admissionPolicy = sim.NewGAIELegacyAdmission(config.GAIEQDThreshold, config.GAIEKVThreshold, priorityMap)
-	} else {
+	default:
 		admissionPolicy = sim.NewAdmissionPolicy(config.AdmissionPolicy, config.TokenBucketCapacity, config.TokenBucketRefillRate)
 	}
 
