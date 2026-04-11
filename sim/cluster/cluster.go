@@ -345,9 +345,9 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 
 	// Phase 1C: initialize autoscaler pipeline when ModelAutoscalerIntervalUs > 0 (issue #692).
 	// Zero interval disables the autoscaler entirely (INV-6 backward-compat).
-	// Concrete pipeline components (collector, analyzer, engine, actuator) are injected after
-	// construction by tests or by the wiring logic in cmd/. Until they are set, all four fields
-	// on cs.autoscaler remain nil, and ScalingTickEvent.Execute() will guard against them.
+	// The default WVA pipeline (DefaultCollector → V2SaturationAnalyzer → UnlimitedEngine →
+	// DirectActuator) is wired here. Tests that need custom components replace cs.autoscaler
+	// after construction via same-package access.
 	// R3: validate autoscaler float64 fields — NaN/Inf/negative values are configuration errors.
 	if math.IsNaN(config.ModelAutoscalerIntervalUs) || math.IsInf(config.ModelAutoscalerIntervalUs, 0) {
 		panic("ModelAutoscalerIntervalUs must not be NaN or Inf")
@@ -380,7 +380,6 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			rng.ForSubsystem(subsystemAutoscaler),
 		)
 	}
-
 
 	// Phase 1B-2a: initialize TenantTracker when TenantBudgets is configured (issue #811).
 	// totalCapacity = NumInstances × MaxRunningReqs (batch size proxy for cluster-wide capacity).
@@ -444,6 +443,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 						event: &ClusterArrivalEvent{time: next.ArrivalTime, request: next},
 						seqID: cs.nextSeqID(),
 					})
+					cs.pendingArrivals++ // mirror Run() — session follow-ups must be tracked
 				}
 				return nil // don't inject locally — route through cluster pipeline
 			}
@@ -895,6 +895,7 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 					event: &ClusterArrivalEvent{time: next.ArrivalTime, request: next},
 					seqID: c.nextSeqID(),
 				})
+				c.pendingArrivals++ // mirror Run() — PD session follow-ups must be tracked
 			}
 		}
 	}
@@ -920,6 +921,7 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 					event: &ClusterArrivalEvent{time: next.ArrivalTime, request: next},
 					seqID: c.nextSeqID(),
 				})
+				c.pendingArrivals++ // mirror Run() — PD decode-timeout follow-ups must be tracked
 			}
 		}
 	}

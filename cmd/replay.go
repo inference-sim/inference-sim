@@ -162,8 +162,16 @@ Example:
 		}
 
 		// Resolve policy configuration (single code path shared with runCmd).
-		// Replay does not use autoscaler/node-pool bundle config; ignore the returned bundle.
-		parsedScorerConfigs, _ := resolvePolicies(cmd)
+		// Replay does not support autoscaler or node-pool config; warn if the bundle contains them.
+		parsedScorerConfigs, bundle := resolvePolicies(cmd)
+		if bundle != nil {
+			if bundle.Autoscaler.IntervalUs > 0 {
+				logrus.Warnf("[replay] policy bundle contains autoscaler config (interval_us=%g) — autoscaler is not supported in replay mode and will be ignored", bundle.Autoscaler.IntervalUs)
+			}
+			if len(bundle.NodePools) > 0 {
+				logrus.Warnf("[replay] policy bundle contains %d node_pools — node pools are not supported in replay mode and will be ignored", len(bundle.NodePools))
+			}
+		}
 
 		logrus.Infof("Starting replay with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v",
 			totalKVBlocks, replayHorizon, lr.AlphaCoeffs, lr.BetaCoeffs)

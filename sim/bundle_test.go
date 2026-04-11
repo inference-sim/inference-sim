@@ -471,6 +471,8 @@ func TestPolicyBundle_Validate_AnalyzerThresholds(t *testing.T) {
 		{"negative avg_input_tokens", AnalyzerBundleConfig{AvgInputTokens: -100}, true},
 		{"scale_down_boundary >= scale_up_threshold", AnalyzerBundleConfig{ScaleUpThreshold: 0.5, ScaleDownBoundary: 0.5}, true},
 		{"scale_down_boundary > scale_up_threshold", AnalyzerBundleConfig{ScaleUpThreshold: 0.4, ScaleDownBoundary: 0.8}, true},
+		{"scale_down_boundary above default scale_up_threshold (one-sided)", AnalyzerBundleConfig{ScaleDownBoundary: 0.9}, true},
+		{"scale_up_threshold below default scale_down_boundary (one-sided)", AnalyzerBundleConfig{ScaleUpThreshold: 0.3}, true},
 		{"kv_cache_threshold > 1", AnalyzerBundleConfig{KVCacheThreshold: 1.5}, true},
 	}
 	for _, tc := range cases {

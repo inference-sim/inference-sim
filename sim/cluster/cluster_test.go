@@ -2613,6 +2613,13 @@ func TestAutoscaler_RequestBoundedRun_Terminates(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Run() returned error: %v", err)
 		}
+		// INV-1: all requests must be accounted for — premature termination would
+		// silently lose requests while still passing the timeout check.
+		agg := cs.AggregatedMetrics()
+		if agg.CompletedRequests != len(reqs) {
+			t.Errorf("INV-1: expected %d completed, got %d (queued=%d, running=%d)",
+				len(reqs), agg.CompletedRequests, agg.StillQueued, agg.StillRunning)
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Run() did not terminate within 2s — autoscaler tick loop is likely infinite (Bug 2 regression)")
 	}

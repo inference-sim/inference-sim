@@ -259,12 +259,23 @@ func (b *PolicyBundle) Validate() error {
 	if a.AvgInputTokens != 0 && (a.AvgInputTokens <= 0 || math.IsNaN(a.AvgInputTokens) || math.IsInf(a.AvgInputTokens, 0)) {
 		return fmt.Errorf("autoscaler.analyzer.avg_input_tokens must be > 0, got %v", a.AvgInputTokens)
 	}
-	// If both thresholds are explicitly set, scale_down_boundary must be < scale_up_threshold.
-	if a.ScaleUpThreshold != 0 && a.ScaleDownBoundary != 0 && a.ScaleDownBoundary >= a.ScaleUpThreshold {
-		return fmt.Errorf("autoscaler.analyzer.scale_down_boundary (%v) must be < scale_up_threshold (%v)",
-			a.ScaleDownBoundary, a.ScaleUpThreshold)
+	// Cross-check scale_down_boundary < scale_up_threshold using effective (post-default) values.
+	// A one-sided override (e.g. scale_down_boundary: 0.9, scale_up_threshold unset → default 0.8)
+	// would pass individual checks but panic inside NewV2SaturationAnalyzer (R3).
+	effectiveUp := a.ScaleUpThreshold
+	if effectiveUp == 0 {
+		effectiveUp = 0.8 // WVA reference default (mirrors effectiveAnalyzerConfig)
 	}
-	// Validate node pools: name and gpu_type required; gpus_per_node >= 1; gpu_memory_gib > 0; max_nodes >= initial_nodes.
+	effectiveDown := a.ScaleDownBoundary
+	if effectiveDown == 0 {
+		effectiveDown = 0.4 // WVA reference default (mirrors effectiveAnalyzerConfig)
+	}
+	if effectiveDown >= effectiveUp {
+		return fmt.Errorf("autoscaler.analyzer.scale_down_boundary (%v) must be < effective scale_up_threshold (%v)",
+			effectiveDown, effectiveUp)
+	}
+	// Validate node pools — mirrors cluster.NodePoolConfig.IsValid() (NodePoolBundleConfig is a
+	// separate mirror type to avoid sim→sim/cluster circular import, so we inline the checks).
 	for i, np := range b.NodePools {
 		if np.Name == "" {
 			return fmt.Errorf("node_pools[%d]: name must not be empty", i)
@@ -275,11 +286,35 @@ func (b *PolicyBundle) Validate() error {
 		if np.GPUsPerNode < 1 {
 			return fmt.Errorf("node_pools[%d] %q: gpus_per_node must be >= 1, got %d", i, np.Name, np.GPUsPerNode)
 		}
+		if math.IsNaN(np.GPUMemoryGiB) || math.IsInf(np.GPUMemoryGiB, 0) {
+			return fmt.Errorf("node_pools[%d] %q: gpu_memory_gib must be finite, got %v", i, np.Name, np.GPUMemoryGiB)
+		}
 		if np.GPUMemoryGiB <= 0 {
 			return fmt.Errorf("node_pools[%d] %q: gpu_memory_gib must be > 0, got %v", i, np.Name, np.GPUMemoryGiB)
 		}
+		if np.InitialNodes < 0 {
+			return fmt.Errorf("node_pools[%d] %q: initial_nodes must be >= 0, got %d", i, np.Name, np.InitialNodes)
+		}
+		if np.MinNodes < 0 {
+			return fmt.Errorf("node_pools[%d] %q: min_nodes must be >= 0, got %d", i, np.Name, np.MinNodes)
+		}
 		if np.MaxNodes < np.InitialNodes {
 			return fmt.Errorf("node_pools[%d] %q: max_nodes (%d) must be >= initial_nodes (%d)", i, np.Name, np.MaxNodes, np.InitialNodes)
+		}
+		if np.MinNodes > np.MaxNodes {
+			return fmt.Errorf("node_pools[%d] %q: min_nodes (%d) must be <= max_nodes (%d)", i, np.Name, np.MinNodes, np.MaxNodes)
+		}
+		if math.IsNaN(np.ProvisioningDelay.Mean) || math.IsInf(np.ProvisioningDelay.Mean, 0) || np.ProvisioningDelay.Mean < 0 {
+			return fmt.Errorf("node_pools[%d] %q: provisioning_delay.mean must be finite and >= 0, got %v", i, np.Name, np.ProvisioningDelay.Mean)
+		}
+		if math.IsNaN(np.ProvisioningDelay.Stddev) || math.IsInf(np.ProvisioningDelay.Stddev, 0) || np.ProvisioningDelay.Stddev < 0 {
+			return fmt.Errorf("node_pools[%d] %q: provisioning_delay.stddev must be finite and >= 0, got %v", i, np.Name, np.ProvisioningDelay.Stddev)
+		}
+		if math.IsNaN(np.CostPerHour) || math.IsInf(np.CostPerHour, 0) {
+			return fmt.Errorf("node_pools[%d] %q: cost_per_hour must be finite, got %v", i, np.Name, np.CostPerHour)
+		}
+		if np.CostPerHour < 0 {
+			return fmt.Errorf("node_pools[%d] %q: cost_per_hour must be >= 0, got %v", i, np.Name, np.CostPerHour)
 		}
 	}
 	return nil
