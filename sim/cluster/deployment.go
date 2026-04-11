@@ -61,9 +61,8 @@ type DeploymentConfig struct {
 	// and the pipeline is unchanged (BC-PD-1).
 	PrefillInstances int    // Number of instances dedicated to prefill (0 = disabled)
 	DecodeInstances  int    // Number of instances dedicated to decode (0 = disabled)
-	PDDecider             string // Disaggregation decider: "" or "never" (default), "always", "prefix-threshold", "direct-to-decode"
-	PDPrefixThreshold     int    // Non-cached token threshold for prefix-threshold decider (PR6)
-	PDDirectDecodeThreshold int  // Input token threshold for direct-to-decode decider (>= 0, default 256 from CLI)
+	PDDecider         string // Disaggregation decider: "" or "never" (default), "always", "prefix-threshold"
+	PDPrefixThreshold int    // Non-cached token threshold for prefix-threshold decider (PR6)
 
 	// PD KV transfer configuration (PR2)
 	PDTransferBandwidthGBps float64 // Inter-instance KV transfer bandwidth in GB/s (default 25.0)
@@ -92,10 +91,14 @@ type DeploymentConfig struct {
 	AutoscalerAnalyzerConfig  V2SaturationAnalyzerConfig `yaml:"autoscaler_analyzer,omitempty"`
 
 	// Phase 1B-1a: tier-ordered admission shedding config (issue #809).
-	// Zero value is safe: TierShedMinPriority=0 admits all tiers (same as AlwaysAdmit),
-	// but callers should explicitly set 3 (Standard) for meaningful protection.
+	// TierShedMinPriority=0 rejects sheddable tiers (priority < 0) under overload.
+	// Set to 3 (Standard) for Standard-and-above protection, or -3 to admit all.
 	TierShedThreshold   int `yaml:"tier_shed_threshold,omitempty"`
 	TierShedMinPriority int `yaml:"tier_shed_min_priority,omitempty"`
+
+	// SLO priority overrides (issue #1013). Nil = GAIE-compatible defaults.
+	// Keys are SLO class names; values are integer priorities. Negative = sheddable.
+	SLOPriorityOverrides map[string]int `yaml:"slo_priority_overrides,omitempty"`
 
 	// Phase 1B-2a: per-tenant fair-share budgets (issue #811).
 	// Key: TenantID string. Value: fraction of total cluster capacity (0.0–1.0).

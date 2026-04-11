@@ -132,11 +132,11 @@ func TestTierShed_BatchBackgroundShedUnderOverload(t *testing.T) {
 		}
 	}
 
-	cfg := newTierShedConfig(0, 3) // MinAdmitPriority=3 rejects batch(1) and background(0)
+	cfg := newTierShedConfig(0, 3) // MinAdmitPriority=3 rejects batch(-1) and background(-3)
 	cs := NewClusterSimulator(cfg, requests, nil)
 	mustRun(t, cs)
 
-	// With MinAdmitPriority=3, batch(priority=1) and background(priority=0) should be rejected
+	// With MinAdmitPriority=3, batch(priority=-1) and background(priority=-3) should be rejected
 	if cs.RejectedRequests() == 0 {
 		t.Errorf("batch/background should be rejected under overload with MinAdmitPriority=3, got RejectedRequests=0")
 	}

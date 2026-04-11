@@ -29,6 +29,7 @@ type ClusterSimulator struct {
 	admissionLatency     int64
 	routingLatency       int64
 	admissionPolicy      sim.AdmissionPolicy
+	priorityMap          *sim.SLOPriorityMap
 	snapshotProvider     SnapshotProvider
 	routingPolicy        sim.RoutingPolicy
 	rejectedRequests     int                    // EC-2: count of requests rejected by admission policy
@@ -179,14 +180,17 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	// cs.rng.ForSubsystem(SubsystemRouter) elsewhere to avoid interleaving RNG draws.
 	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(config.Seed))
 
+	// Construct SLO priority map from config overrides (nil-safe: defaults used when empty).
+	priorityMap := sim.NewSLOPriorityMap(config.SLOPriorityOverrides)
+
 	// Bypass generic factory for "tier-shed": factory signature is float64-only and
 	// cannot carry the int fields TierShedAdmission requires (research.md D-2).
 	var admissionPolicy sim.AdmissionPolicy
 	if config.AdmissionPolicy == "tier-shed" {
 		if config.TierShedMinPriority == 0 {
-			logrus.Warn("[cluster] tier-shed: TierShedMinPriority=0 admits all tiers under overload — policy behaves like AlwaysAdmit; set tier_shed_min_priority: 3 for Standard-and-above protection")
+			logrus.Warn("[cluster] tier-shed: TierShedMinPriority=0 rejects sheddable tiers (priority < 0) under overload; set tier_shed_min_priority: 3 for Standard-and-above protection")
 		}
-		admissionPolicy = sim.NewTierShedAdmission(config.TierShedThreshold, config.TierShedMinPriority)
+		admissionPolicy = sim.NewTierShedAdmission(config.TierShedThreshold, config.TierShedMinPriority, priorityMap)
 	} else {
 		admissionPolicy = sim.NewAdmissionPolicy(config.AdmissionPolicy, config.TokenBucketCapacity, config.TokenBucketRefillRate)
 	}
@@ -200,6 +204,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		admissionLatency:     config.AdmissionLatency,
 		routingLatency:       config.RoutingLatency,
 		admissionPolicy:      admissionPolicy,
+		priorityMap:          priorityMap,
 		snapshotProvider: nil, // set after unified construction loop below
 		routingPolicy:    nil, // set after instance construction (needs cacheQueryFn from instances)
 		trace:                simTrace,
@@ -213,8 +218,6 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		switch config.PDDecider {
 		case "prefix-threshold":
 			cs.disaggregationDecider = sim.NewPrefixThresholdDecider(config.PDPrefixThreshold, int(config.BlockSizeTokens))
-		case "direct-to-decode":
-			cs.disaggregationDecider = sim.NewDirectToDecodeDecider(config.PDDirectDecodeThreshold)
 		default:
 			cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
 		}
@@ -399,7 +402,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			dispatchOrder = "fifo"
 		}
 		cs.flowControlEnabled = true
-		cs.gatewayQueue = NewGatewayQueue(dispatchOrder, config.FlowControlMaxQueueDepth)
+		cs.gatewayQueue = NewGatewayQueue(dispatchOrder, config.FlowControlMaxQueueDepth, cs.priorityMap)
 		cs.saturationDetector = sim.NewSaturationDetector(
 			config.FlowControlDetector,
 			config.FlowControlQueueDepthThreshold,

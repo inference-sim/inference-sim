@@ -7,7 +7,7 @@ import (
 )
 
 func TestGatewayQueue_FIFO_DequeueOrder(t *testing.T) {
-	q := NewGatewayQueue("fifo", 0) // unlimited
+	q := NewGatewayQueue("fifo", 0, nil) // unlimited
 	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "critical"}, 1)
 	q.Enqueue(&sim.Request{ID: "r2", SLOClass: "background"}, 2)
 	q.Enqueue(&sim.Request{ID: "r3", SLOClass: "standard"}, 3)
@@ -25,8 +25,8 @@ func TestGatewayQueue_FIFO_DequeueOrder(t *testing.T) {
 }
 
 func TestGatewayQueue_Priority_DequeueOrder(t *testing.T) {
-	q := NewGatewayQueue("priority", 0) // unlimited
-	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "background"}, 1) // priority 0
+	q := NewGatewayQueue("priority", 0, nil) // unlimited
+	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "background"}, 1) // priority -3
 	q.Enqueue(&sim.Request{ID: "r2", SLOClass: "critical"}, 2)   // priority 4
 	q.Enqueue(&sim.Request{ID: "r3", SLOClass: "standard"}, 3)   // priority 3
 
@@ -46,7 +46,7 @@ func TestGatewayQueue_Priority_DequeueOrder(t *testing.T) {
 }
 
 func TestGatewayQueue_Priority_SamePriority_FIFO(t *testing.T) {
-	q := NewGatewayQueue("priority", 0)
+	q := NewGatewayQueue("priority", 0, nil)
 	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "standard"}, 10)
 	q.Enqueue(&sim.Request{ID: "r2", SLOClass: "standard"}, 20)
 	q.Enqueue(&sim.Request{ID: "r3", SLOClass: "standard"}, 30)
@@ -61,7 +61,7 @@ func TestGatewayQueue_Priority_SamePriority_FIFO(t *testing.T) {
 }
 
 func TestGatewayQueue_CapacityShed_LowestPriority(t *testing.T) {
-	q := NewGatewayQueue("priority", 2) // max 2
+	q := NewGatewayQueue("priority", 2, nil) // max 2
 	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "standard"}, 1)
 	q.Enqueue(&sim.Request{ID: "r2", SLOClass: "critical"}, 2)
 
@@ -98,7 +98,7 @@ func TestGatewayQueue_CapacityShed_LowestPriority(t *testing.T) {
 }
 
 func TestGatewayQueue_DequeueEmpty_ReturnsNil(t *testing.T) {
-	q := NewGatewayQueue("fifo", 0)
+	q := NewGatewayQueue("fifo", 0, nil)
 	if got := q.Dequeue(); got != nil {
 		t.Errorf("expected nil from empty queue, got %v", got)
 	}
@@ -110,7 +110,7 @@ func TestGatewayQueue_InvalidDispatchOrder_Panics(t *testing.T) {
 			t.Error("expected panic for invalid dispatch order")
 		}
 	}()
-	NewGatewayQueue("bogus", 0)
+	NewGatewayQueue("bogus", 0, nil)
 }
 
 func TestGatewayQueue_NegativeMaxDepth_Panics(t *testing.T) {
@@ -119,5 +119,5 @@ func TestGatewayQueue_NegativeMaxDepth_Panics(t *testing.T) {
 			t.Error("expected panic for negative maxDepth")
 		}
 	}()
-	NewGatewayQueue("fifo", -1)
+	NewGatewayQueue("fifo", -1, nil)
 }

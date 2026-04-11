@@ -10,7 +10,7 @@ import (
 // gatewayQueueEntry holds a request in the gateway queue with ordering metadata.
 type gatewayQueueEntry struct {
 	request  *sim.Request
-	priority int   // SLOTierPriority(request.SLOClass)
+	priority int   // priorityMap.Priority(request.SLOClass)
 	seqID    int64 // monotonic sequence for FIFO tie-breaking
 }
 
@@ -53,26 +53,32 @@ func (h *gatewayQueueHeap) Pop() any {
 // GatewayQueue is a priority-ordered queue for holding admitted requests before routing.
 // Implements saturation-gated dispatch for GIE flow control parity.
 type GatewayQueue struct {
-	heap      gatewayQueueHeap
-	maxDepth  int // 0 = unlimited
-	shedCount int // number of requests shed due to capacity
+	heap        gatewayQueueHeap
+	maxDepth    int // 0 = unlimited
+	shedCount   int // number of requests shed due to capacity
+	priorityMap *sim.SLOPriorityMap
 }
 
 // NewGatewayQueue creates a gateway queue with the given dispatch order and max depth.
 // dispatchOrder: "fifo" or "priority". maxDepth: 0 = unlimited.
+// If priorityMap is nil, DefaultSLOPriorityMap() is used.
 // Panics if dispatchOrder is invalid or maxDepth < 0.
-func NewGatewayQueue(dispatchOrder string, maxDepth int) *GatewayQueue {
+func NewGatewayQueue(dispatchOrder string, maxDepth int, priorityMap *sim.SLOPriorityMap) *GatewayQueue {
 	if dispatchOrder != "fifo" && dispatchOrder != "priority" {
 		panic(fmt.Sprintf("GatewayQueue: unknown dispatch order %q (must be fifo or priority)", dispatchOrder))
 	}
 	if maxDepth < 0 {
 		panic(fmt.Sprintf("GatewayQueue: maxDepth must be >= 0, got %d", maxDepth))
 	}
+	if priorityMap == nil {
+		priorityMap = sim.DefaultSLOPriorityMap()
+	}
 	q := &GatewayQueue{
 		heap: gatewayQueueHeap{
 			priorityMode: dispatchOrder == "priority",
 		},
-		maxDepth: maxDepth,
+		maxDepth:    maxDepth,
+		priorityMap: priorityMap,
 	}
 	heap.Init(&q.heap)
 	return q
@@ -82,7 +88,7 @@ func NewGatewayQueue(dispatchOrder string, maxDepth int) *GatewayQueue {
 // (queue at capacity and request has lower or equal priority to all queued items).
 // When the queue is at capacity, the lowest-priority request is shed (R1: counted, not silent).
 func (q *GatewayQueue) Enqueue(req *sim.Request, seqID int64) (shed bool) {
-	priority := sim.SLOTierPriority(req.SLOClass)
+	priority := q.priorityMap.Priority(req.SLOClass)
 	entry := gatewayQueueEntry{request: req, priority: priority, seqID: seqID}
 
 	if q.maxDepth > 0 && q.heap.Len() >= q.maxDepth {

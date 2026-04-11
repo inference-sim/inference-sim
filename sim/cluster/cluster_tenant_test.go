@@ -27,7 +27,7 @@ func newTenantConfig(numInstances int, tenantBudgets map[string]float64) Deploym
 	cfg := newTestDeploymentConfig(numInstances)
 	cfg.AdmissionPolicy = "tier-shed"
 	cfg.TierShedThreshold = 0
-	cfg.TierShedMinPriority = 2 // shed only background (0) and batch (1); sheddable (2) passes unless over budget
+	cfg.TierShedMinPriority = -3 // admit all tiers at tier-shed level; tenant budget catches over-budget sheddable
 	cfg.TenantBudgets = tenantBudgets
 	return cfg
 }
@@ -293,7 +293,7 @@ func TestTenantAdmission_PDMode_BudgetEnforced(t *testing.T) {
 	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
 	cfg.AdmissionPolicy = "tier-shed"
 	cfg.TierShedThreshold = 0
-	cfg.TierShedMinPriority = 2 // sheddable passes tier-shed; budget catches over-budget alice
+	cfg.TierShedMinPriority = -3 // admit all tiers at tier-shed; budget catches over-budget alice
 	cfg.TenantBudgets = map[string]float64{"alice": 0.1}
 	cfg.BatchConfig = sim.NewBatchConfig(10, 2048, 0) // totalCapacity=40; alice limit=4 slots
 
