@@ -98,6 +98,9 @@ actions-runner/
 # Convergence review state (session-local, not committed)
 .claude/convergence-state/
 
+# Superpowers specs/plans (agent-local, not committed)
+docs/superpowers/
+
 # Bob-Shell notes (session-local, not committed)
 .bob/notes
 

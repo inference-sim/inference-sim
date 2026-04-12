@@ -6,6 +6,7 @@ package cluster
 import (
 	"container/heap"
 	"fmt"
+	"math"
 	"math/rand"
 	"sort"
 
@@ -280,7 +281,18 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 }
 
 // scheduleNextTick pushes the next ScalingTickEvent to the cluster event queue.
+// In request-bounded runs (horizon == math.MaxInt64), it stops ticking once all
+// arrivals are processed and all instances are idle — preventing an infinite loop.
 func (p *autoscalerPipeline) scheduleNextTick(cs *ClusterSimulator, nowUs int64) {
+	if cs.config.Horizon == math.MaxInt64 && cs.pendingArrivals == 0 {
+		var inFlight int
+		for _, v := range cs.inFlightRequests {
+			inFlight += v
+		}
+		if inFlight == 0 {
+			return // no more work; don't self-schedule
+		}
+	}
 	nextAt := nowUs + int64(cs.config.ModelAutoscalerIntervalUs)
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &ScalingTickEvent{At: nextAt},

@@ -141,6 +141,9 @@ var (
 	prefillRoutingScorers   string // Scorer weights for prefill pool routing
 	decodeRoutingScorers  string  // Scorer weights for decode pool routing
 
+	// Autoscaler config (Phase 1C)
+	modelAutoscalerIntervalUs float64 // tick interval in μs; 0 = disabled
+
 	// Flow control config (issue #882, GIE parity)
 	flowControlEnabled              bool
 	flowControlDetector             string
@@ -791,10 +794,12 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 // tenantBudgets package-level vars (from policy bundle).
 //
 // Returns the parsed scorer configs for weighted routing (caller uses these in
-// DeploymentConfig.RoutingScorerConfigs). Per-pool scorer configs (PD disaggregation)
-// are NOT handled here — they remain inline in runCmd.
-func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
+// DeploymentConfig.RoutingScorerConfigs) and the loaded policy bundle (nil if none).
+// Per-pool scorer configs (PD disaggregation) are NOT handled here — they remain inline
+// in runCmd.
+func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle) {
 	var bundleScorerConfigs []sim.ScorerConfig
+	var loadedBundle *sim.PolicyBundle
 
 	// Load policy bundle if specified (R18: CLI flags override YAML values)
 	if policyConfigPath != "" {
@@ -805,6 +810,7 @@ func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
 		if err := bundle.Validate(); err != nil {
 			logrus.Fatalf("Invalid policy config: %v", err)
 		}
+		loadedBundle = bundle
 		// Apply bundle values as defaults; CLI flags override via Changed().
 		if bundle.Admission.Policy != "" && !cmd.Flags().Changed("admission-policy") {
 			admissionPolicy = bundle.Admission.Policy
@@ -964,7 +970,7 @@ func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
 		logrus.Infof("Token bucket: capacity=%.0f, refill-rate=%.0f", tokenBucketCapacity, tokenBucketRefillRate)
 	}
 
-	return parsedScorerConfigs
+	return parsedScorerConfigs, loadedBundle
 }
 
 // registerSimConfigFlags registers all simulation-engine configuration flags
@@ -1031,6 +1037,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&kvTransferBaseLatency, "kv-transfer-base-latency", 0, "Fixed per-transfer latency in ticks for CPU↔GPU KV transfers (0 = no fixed cost)")
 	cmd.Flags().Int64Var(&snapshotRefreshInterval, "snapshot-refresh-interval", 0, "Prometheus snapshot refresh interval for all instance metrics in microseconds (0 = immediate)")
 	cmd.Flags().Int64Var(&cacheSignalDelay, "cache-signal-delay", cluster.DefaultCacheSignalDelay, "Propagation delay for prefix cache signals in microseconds. Only affects precise-prefix-cache and no-hit-lru scorers; no effect on other routing policies. Default 2s matches production llm-d speculative TTL. Set to 0 for oracle mode (live cache state).")
+	cmd.Flags().Float64Var(&modelAutoscalerIntervalUs, "model-autoscaler-interval-us", 0, "Autoscaler tick interval in microseconds (0 = disabled). Overrides policy-config autoscaler.interval_us when non-zero.")
 	cmd.Flags().Float64Var(&gpuMemoryUtilization, "gpu-memory-utilization", 0.9, "Fraction of GPU memory to use for KV cache, in the range (0, 1.0]. Default: 0.9 (90%)")
 
 	// PD disaggregation config
@@ -1379,7 +1386,53 @@ var runCmd = &cobra.Command{
 
 		// Resolve policy configuration (single code path shared with replayCmd).
 		// Per-pool scorer configs (PD disaggregation) remain inline below.
-		parsedScorerConfigs := resolvePolicies(cmd)
+		parsedScorerConfigs, bundle := resolvePolicies(cmd)
+
+		// Resolve autoscaler and node pool config from policy bundle, then apply CLI overrides.
+		var (
+			bundleAutoscalerIntervalUs  float64
+			bundleScaleUpCooldownUs     float64
+			bundleScaleDownCooldownUs   float64
+			bundleActuationDelayMean    float64
+			bundleActuationDelayStddev  float64
+			bundleAnalyzerCfg           cluster.V2SaturationAnalyzerConfig
+			bundleNodePools             []cluster.NodePoolConfig
+		)
+		if bundle != nil {
+			if bundle.Autoscaler.IntervalUs > 0 {
+				bundleAutoscalerIntervalUs = bundle.Autoscaler.IntervalUs
+				bundleScaleUpCooldownUs = bundle.Autoscaler.ScaleUpCooldownUs
+				bundleScaleDownCooldownUs = bundle.Autoscaler.ScaleDownCooldownUs
+				bundleActuationDelayMean = bundle.Autoscaler.ActuationDelay.Mean
+				bundleActuationDelayStddev = bundle.Autoscaler.ActuationDelay.Stddev
+				bundleAnalyzerCfg = cluster.V2SaturationAnalyzerConfig{
+					KvCacheThreshold:  bundle.Autoscaler.Analyzer.KVCacheThreshold,
+					ScaleUpThreshold:  bundle.Autoscaler.Analyzer.ScaleUpThreshold,
+					ScaleDownBoundary: bundle.Autoscaler.Analyzer.ScaleDownBoundary,
+					AvgInputTokens:    bundle.Autoscaler.Analyzer.AvgInputTokens,
+				}
+			}
+			for _, np := range bundle.NodePools {
+				bundleNodePools = append(bundleNodePools, cluster.NodePoolConfig{
+					Name:         np.Name,
+					GPUType:      np.GPUType,
+					GPUsPerNode:  np.GPUsPerNode,
+					GPUMemoryGiB: np.GPUMemoryGiB,
+					InitialNodes: np.InitialNodes,
+					MinNodes:     np.MinNodes,
+					MaxNodes:     np.MaxNodes,
+					ProvisioningDelay: cluster.DelaySpec{
+						Mean:   np.ProvisioningDelay.Mean,
+						Stddev: np.ProvisioningDelay.Stddev,
+					},
+					CostPerHour: np.CostPerHour,
+				})
+			}
+		}
+		// CLI flag overrides bundle value when explicitly set.
+		if cmd.Flags().Changed("model-autoscaler-interval-us") {
+			bundleAutoscalerIntervalUs = modelAutoscalerIntervalUs
+		}
 
 		// PD disaggregation validation (R3: validate at CLI boundary)
 		if prefillInstances < 0 {
@@ -1544,6 +1597,12 @@ var runCmd = &cobra.Command{
 			FlowControlQueueDepthThreshold:  flowControlQueueDepthThreshold,
 			FlowControlKVCacheUtilThreshold: flowControlKVCacheUtilThreshold,
 			FlowControlMaxConcurrency:       flowControlMaxConcurrency,
+			ModelAutoscalerIntervalUs:       bundleAutoscalerIntervalUs,
+			ScaleUpCooldownUs:               bundleScaleUpCooldownUs,
+			ScaleDownCooldownUs:             bundleScaleDownCooldownUs,
+			ActuationDelay:                  cluster.DelaySpec{Mean: bundleActuationDelayMean, Stddev: bundleActuationDelayStddev},
+			AutoscalerAnalyzerConfig:        bundleAnalyzerCfg,
+			NodePools:                       bundleNodePools,
 		}
 		var followUpRequests []*sim.Request
 		var onRequestDone func(*sim.Request, int64) []*sim.Request
