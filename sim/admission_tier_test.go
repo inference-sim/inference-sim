@@ -353,6 +353,31 @@ func TestGAIELegacy_FormulaExact(t *testing.T) {
 	}
 }
 
+// BC-4b: KV-dominated saturation — QD is zero but KV alone triggers shedding.
+// Guards against regression where kvRatio is removed from the max() formula.
+func TestGAIELegacy_KVDominatedSaturation(t *testing.T) {
+	policy := NewGAIELegacyAdmission(5, 0.8, nil)
+	// qRatio=0/5=0.0, kvRatio=0.9/0.8=1.125 -> max(0, 1.125)=1.125 >= 1.0 -> reject
+	// Without kvRatio: max(0, 0)=0 < 1.0 -> would wrongly admit
+	state := &RouterState{
+		Snapshots: []RoutingSnapshot{{ID: "i0", QueueDepth: 0, KVUtilization: 0.9}},
+	}
+	req := &Request{ID: "r", SLOClass: "sheddable"}
+	admitted, _ := policy.Admit(req, state)
+	if admitted {
+		t.Error("sheddable should be rejected when KV alone (0.9/0.8=1.125) causes saturation >= 1.0")
+	}
+
+	// Just below KV boundary: kvRatio=0.79/0.8=0.9875 < 1.0 -> admit
+	state2 := &RouterState{
+		Snapshots: []RoutingSnapshot{{ID: "i0", QueueDepth: 0, KVUtilization: 0.79}},
+	}
+	admitted2, _ := policy.Admit(req, state2)
+	if !admitted2 {
+		t.Error("sheddable should be admitted when KV alone (0.79/0.8=0.9875) is below 1.0")
+	}
+}
+
 // BC-5: Empty snapshots -> saturation=1.0 -> sheddable rejected, non-sheddable admitted.
 func TestGAIELegacy_EmptySnapshotsSaturated(t *testing.T) {
 	policy := NewGAIELegacyAdmission(5, 0.8, nil)

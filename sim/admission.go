@@ -186,7 +186,7 @@ func (t *TierShedAdmission) Admit(req *Request, state *RouterState) (bool, strin
 //	saturationdetector/utilization/detector.go:115-137 (computeUtilization).
 //
 // Empty snapshots -> saturation=1.0 (conservative, matches GAIE detector.go:116-118
-// where stale/missing metrics are treated as fully saturated).
+// where an empty candidate list returns 1.0).
 type GAIELegacyAdmission struct {
 	// Per-instance queue depth at which the QD component reaches 1.0.
 	// Default: 5 — from GAIE DefaultQueueDepthThreshold
