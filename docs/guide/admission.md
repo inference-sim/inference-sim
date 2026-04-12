@@ -40,7 +40,7 @@ How it works:
 !!! example "Sizing the bucket"
     With `--token-bucket-capacity 10000 --token-bucket-refill-rate 1000` and requests averaging 512 input tokens, the sustained admission rate is roughly `1000 / 512 ~ 1.95 req/s`. The bucket's capacity of 10000 tokens allows a burst of up to `10000 / 512 ~ 19` requests before rate-limiting kicks in.
 
-Rejected requests are counted in the output anomaly counters (`Rejected Requests`) and in the full pipeline conservation formula (`num_requests == injected_requests + rejected_requests`), but they never enter the routing stage or any instance queue.
+Rejected requests are counted in the output anomaly counters (`Rejected Requests`) and in the full pipeline conservation formula (`num_requests == injected_requests + rejected_requests`), but they never enter the routing stage or any instance queue. Every rejection — regardless of admission policy — is also recorded in the per-SLO-class `ShedByTier` counter, so you can see which request classes are being rejected (e.g., `{"batch": 12, "sheddable": 8}`).
 
 ## When to Use Admission Control
 
@@ -171,7 +171,7 @@ Both defaults come directly from the GAIE production source code:
     GAIE production treats stale per-pod metrics (older than `MetricsStalenessThreshold`, default 200ms) as score=1.0. BLIS does not model per-snapshot staleness — signal freshness is controlled globally via `--snapshot-refresh-interval` (INV-7). This is a deliberate simplification: BLIS controls the simulator clock, so signal freshness is deterministic.
 
 !!! tip "Choosing thresholds"
-    The default thresholds (QD=5, KV=0.8) match production llm-d. Lower `gaie_qd_threshold` makes the policy more aggressive about shedding under queue buildup. Lower `gaie_kv_threshold` makes it more sensitive to KV cache pressure. Both thresholds follow the same validation as GAIE: `QD > 0` (strictly positive), `KV in (0, 1.0]`.
+    The default thresholds (QD=5, KV=0.8) match production llm-d. Lower `gaie_qd_threshold` makes the policy more aggressive about shedding under queue buildup. Lower `gaie_kv_threshold` makes it more sensitive to KV cache pressure. Both thresholds follow the same validation as GAIE: `QD > 0` (strictly positive), `KV in (0, 1.0]`. Extreme values (e.g., `gaie_qd_threshold: 0.001`) are accepted as long as they pass validation — BLIS does not clamp or warn. Use the GAIE defaults unless you have a specific reason to change them.
 
 ### Comparison with Tier-Shed
 
