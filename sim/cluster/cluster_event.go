@@ -145,8 +145,7 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 			})
 		}
 		cs.rejectedRequests++
-		// Populate per-tier shed counter for all tier-aware admission rejections
-		// (tier-shed, gaie-legacy, and any future priority-based admission policies).
+		// Populate per-tier shed counter for every admission rejection, regardless of policy.
 		tier := e.request.SLOClass
 		if tier == "" {
 			tier = "standard" // normalize empty → standard (matches SLOPriorityMap default)

@@ -930,7 +930,7 @@ func (c *ClusterSimulator) RoutingRejections() int {
 }
 
 // ShedByTier returns a copy of per-SLOClass rejection counts recorded during admission.
-// Populated for all admission policies (tier-shed, gaie-legacy, token-bucket, reject-all).
+// Populated unconditionally for every admission rejection, regardless of policy.
 // Returns a defensive copy so callers cannot mutate the internal counter (R8).
 // Panics if called before Run() completes.
 func (c *ClusterSimulator) ShedByTier() map[string]int {

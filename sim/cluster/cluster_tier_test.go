@@ -238,3 +238,27 @@ func TestGAIELegacy_LightLoadAdmitsAll(t *testing.T) {
 		t.Errorf("under light load, gaie-legacy should admit all, got %d rejections", rejected)
 	}
 }
+
+// ShedByTier is populated for non-tier-aware policies (reject-all rejects everything,
+// so every request's SLO class should appear in the per-tier counter).
+func TestShedByTier_RejectAll_PopulatesTierCounts(t *testing.T) {
+	requests := []*sim.Request{
+		{ID: "r1", ArrivalTime: 0, SLOClass: "critical", InputTokens: make([]int, 10), OutputTokens: make([]int, 5), State: sim.StateQueued},
+		{ID: "r2", ArrivalTime: 10, SLOClass: "standard", InputTokens: make([]int, 10), OutputTokens: make([]int, 5), State: sim.StateQueued},
+		{ID: "r3", ArrivalTime: 20, SLOClass: "batch", InputTokens: make([]int, 10), OutputTokens: make([]int, 5), State: sim.StateQueued},
+	}
+	cfg := newTestDeploymentConfig(2)
+	cfg.AdmissionPolicy = "reject-all"
+	cs := NewClusterSimulator(cfg, requests, nil)
+	mustRun(t, cs)
+
+	if cs.RejectedRequests() != 3 {
+		t.Fatalf("expected 3 rejections, got %d", cs.RejectedRequests())
+	}
+	shed := cs.ShedByTier()
+	for _, class := range []string{"critical", "standard", "batch"} {
+		if shed[class] != 1 {
+			t.Errorf("ShedByTier[%q] = %d, want 1", class, shed[class])
+		}
+	}
+}

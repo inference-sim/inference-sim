@@ -165,11 +165,19 @@ func (b *PolicyBundle) Validate() error {
 	// with no bounds (InferenceObjective.spec.priority is *int, negative allowed).
 	// The only semantic boundary is priority < 0 → sheddable.
 	// Validate GAIE-legacy parameters when present.
-	if b.Admission.GAIEQDThreshold != nil && *b.Admission.GAIEQDThreshold <= 0 {
-		return fmt.Errorf("gaie_qd_threshold must be > 0, got %v", *b.Admission.GAIEQDThreshold)
+	// NaN/Inf checks are required because IEEE 754 NaN comparisons always return false
+	// (e.g., NaN <= 0 is false), so NaN would silently pass the <= 0 guard.
+	if b.Admission.GAIEQDThreshold != nil {
+		v := *b.Admission.GAIEQDThreshold
+		if v <= 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+			return fmt.Errorf("gaie_qd_threshold must be a finite value > 0, got %v", v)
+		}
 	}
-	if b.Admission.GAIEKVThreshold != nil && (*b.Admission.GAIEKVThreshold <= 0 || *b.Admission.GAIEKVThreshold > 1.0) {
-		return fmt.Errorf("gaie_kv_threshold must be in (0, 1.0], got %v", *b.Admission.GAIEKVThreshold)
+	if b.Admission.GAIEKVThreshold != nil {
+		v := *b.Admission.GAIEKVThreshold
+		if v <= 0 || v > 1.0 || math.IsNaN(v) || math.IsInf(v, 0) {
+			return fmt.Errorf("gaie_kv_threshold must be a finite value in (0, 1.0], got %v", v)
+		}
 	}
 	// Validate tenant budgets: each value must be in [0, 1].
 	for tenantID, v := range b.TenantBudgets {

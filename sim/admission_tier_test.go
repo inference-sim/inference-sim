@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -352,5 +353,57 @@ func TestGAIELegacy_EmptySnapshotsSaturated(t *testing.T) {
 	admitted2, _ := policy.Admit(reqCrit, state)
 	if !admitted2 {
 		t.Error("non-sheddable should still be admitted with empty snapshots")
+	}
+}
+
+// BC-6: Custom SLOPriorityMap changes sheddability for GAIELegacyAdmission.
+func TestGAIELegacy_CustomPriorityMapMakesBatchNonSheddable(t *testing.T) {
+	// Make batch non-sheddable (priority=0 instead of default -1).
+	customMap := NewSLOPriorityMap(map[string]int{"batch": 0})
+	policy := NewGAIELegacyAdmission(5, 0.8, customMap)
+	// Saturated state: sat=1.0
+	state := &RouterState{
+		Snapshots: []RoutingSnapshot{{ID: "i0", QueueDepth: 5, KVUtilization: 0.8}},
+	}
+	// batch is now non-sheddable (priority=0 >= 0), so it should be admitted even at sat=1.0.
+	req := &Request{ID: "r", SLOClass: "batch"}
+	admitted, _ := policy.Admit(req, state)
+	if !admitted {
+		t.Error("batch with custom priority=0 should be non-sheddable and admitted at saturation=1.0")
+	}
+	// sheddable still has priority=-2, so it should be rejected.
+	reqShed := &Request{ID: "r2", SLOClass: "sheddable"}
+	admitted2, _ := policy.Admit(reqShed, state)
+	if admitted2 {
+		t.Error("sheddable should still be rejected at saturation=1.0 with custom map")
+	}
+}
+
+// Constructor validation: NewGAIELegacyAdmission panics on invalid parameters (R3).
+func TestGAIELegacy_ConstructorPanics(t *testing.T) {
+	cases := []struct {
+		name string
+		qd   float64
+		kv   float64
+	}{
+		{"zero qd", 0, 0.8},
+		{"negative qd", -1, 0.8},
+		{"NaN qd", math.NaN(), 0.8},
+		{"Inf qd", math.Inf(1), 0.8},
+		{"zero kv", 5, 0},
+		{"negative kv", 5, -0.5},
+		{"kv above 1.0", 5, 1.1},
+		{"NaN kv", 5, math.NaN()},
+		{"Inf kv", 5, math.Inf(1)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("expected panic for qd=%v kv=%v, got none", tc.qd, tc.kv)
+				}
+			}()
+			NewGAIELegacyAdmission(tc.qd, tc.kv, nil)
+		})
 	}
 }
