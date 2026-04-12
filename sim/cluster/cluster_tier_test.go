@@ -167,7 +167,7 @@ func newGAIELegacyConfig(numInstances int, qdThreshold float64) DeploymentConfig
 }
 
 // INV-1: Request conservation holds under gaie-legacy admission.
-// injected == completed + still_queued + still_running + rejected + routing_rejections + gw_queue + gw_shed.
+// Full pipeline: numRequests == completed + queued + running + dropped + timedOut + rejected + routingRej + gwDepth + gwShed.
 func TestGAIELegacy_INV1_Conservation(t *testing.T) {
 	const nPerTier = 80
 	var requests []*sim.Request
@@ -189,8 +189,9 @@ func TestGAIELegacy_INV1_Conservation(t *testing.T) {
 	cs := NewClusterSimulator(cfg, requests, nil)
 	mustRun(t, cs)
 
-	// INV-1 conservation
-	injected := len(requests)
+	// Full-pipeline INV-1 conservation: num_requests == injected_requests + rejected_requests,
+	// where injected_requests == completed + queued + running + dropped + timedOut + routingRej + gwDepth + gwShed.
+	numRequests := len(requests)
 	rejected := cs.RejectedRequests()
 	routingRej := cs.RoutingRejections()
 	gwDepth := cs.GatewayQueueDepth()
@@ -203,9 +204,9 @@ func TestGAIELegacy_INV1_Conservation(t *testing.T) {
 	timedOut := agg.TimedOutRequests
 
 	accounted := completed + queued + running + dropped + timedOut + rejected + routingRej + gwDepth + gwShed
-	if accounted != injected {
-		t.Errorf("INV-1 violated: injected=%d, accounted=%d (completed=%d queued=%d running=%d dropped=%d timedOut=%d rejected=%d routingRej=%d gwDepth=%d gwShed=%d)",
-			injected, accounted, completed, queued, running, dropped, timedOut, rejected, routingRej, gwDepth, gwShed)
+	if accounted != numRequests {
+		t.Errorf("INV-1 violated: numRequests=%d, accounted=%d (completed=%d queued=%d running=%d dropped=%d timedOut=%d rejected=%d routingRej=%d gwDepth=%d gwShed=%d)",
+			numRequests, accounted, completed, queued, running, dropped, timedOut, rejected, routingRej, gwDepth, gwShed)
 	}
 
 	// Verify some sheddable requests were actually shed (saturation > 1.0 under dense arrivals)

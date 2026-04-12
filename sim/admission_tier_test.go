@@ -308,6 +308,21 @@ func TestGAIELegacy_SheddableAdmittedWhenNotSaturated(t *testing.T) {
 	}
 }
 
+// BC-3b: Sheddable admitted just below boundary (saturation=0.9875 < 1.0).
+// Guards against off-by-epsilon error in the >= 1.0 comparison.
+func TestGAIELegacy_SheddableAdmittedJustBelowBoundary(t *testing.T) {
+	policy := NewGAIELegacyAdmission(5, 0.8, nil)
+	// qRatio=4/5=0.8, kvRatio=0.79/0.8=0.9875 -> sat=max(0.8, 0.9875)=0.9875 < 1.0
+	state := &RouterState{
+		Snapshots: []RoutingSnapshot{{ID: "i0", QueueDepth: 4, KVUtilization: 0.79}},
+	}
+	req := &Request{ID: "r", SLOClass: "sheddable"}
+	admitted, _ := policy.Admit(req, state)
+	if !admitted {
+		t.Error("sheddable should be admitted at saturation=0.9875 (just below 1.0)")
+	}
+}
+
 // BC-4: Saturation formula matches GAIE: avg(max(qd/qdT, kv/kvT)).
 func TestGAIELegacy_FormulaExact(t *testing.T) {
 	policy := NewGAIELegacyAdmission(5, 0.8, nil)
