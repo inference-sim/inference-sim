@@ -17,6 +17,7 @@ Admission control is the first gate in the cluster pipeline. It decides whether 
 | **Always-admit** | `--admission-policy always-admit` (default) | Accepts all requests unconditionally. No filtering. |
 | **Token-bucket** | `--admission-policy token-bucket` | Rate-limiting. Each request consumes tokens equal to its input token count. Tokens refill at a constant rate. Rejects when the bucket is empty. |
 | **Tier-shed** | `--admission-policy tier-shed` | SLO-aware shedding. Under overload, rejects requests whose SLO tier priority is below `tier_shed_min_priority`. See [SLO Tier Priorities](#slo-tier-priorities) below. |
+| **GAIE-legacy** | `--admission-policy gaie-legacy` | Saturation-based shedding matching production llm-d/GAIE behavior. Non-sheddable requests always pass; sheddable requests (priority < 0) rejected when pool-average saturation >= 1.0. See [GAIE-Legacy Admission](#gaie-legacy-admission) below. |
 | **Reject-all** | `--admission-policy reject-all` | Rejects all requests unconditionally. Pathological template for testing. |
 
 ## Token Bucket Mechanics
@@ -118,6 +119,68 @@ Under overload, any request with `Priority(class) < tier_shed_min_priority` is r
     - `3` (default): Admits critical and standard. Sheds batch, sheddable, background.
     - `0`: Admits all non-sheddable classes (priority >= 0). Sheds only negative-priority classes.
     - `-3`: Admits everything (effectively disables tier-shed). Useful when you want tenant budget enforcement but not tier-level shedding.
+
+## GAIE-Legacy Admission
+
+The `gaie-legacy` policy replicates the saturation-based admission behavior from production llm-d's [Gateway API Inference Extension (GAIE)](https://github.com/kubernetes-sigs/gateway-api-inference-extension). It uses a two-tier decision tree:
+
+1. **Non-sheddable requests** (priority >= 0: critical, standard) are **always admitted**, regardless of cluster saturation.
+2. **Sheddable requests** (priority < 0: batch, sheddable, background) are rejected when pool-average saturation >= 1.0.
+
+### Saturation Formula
+
+The saturation formula averages per-instance utilization ratios across the cluster, taking the most constrained resource (compute queue or memory) for each instance:
+
+```
+saturation = avg across instances of max(queueDepth / qdThreshold, kvUtilization / kvThreshold)
+```
+
+This matches the production GAIE implementation in `gateway-api-inference-extension/pkg/epp/framework/plugins/flowcontrol/saturationdetector/utilization/detector.go:115-137`.
+
+When saturation >= 1.0, the cluster is considered overloaded and sheddable traffic is rejected. When saturation < 1.0, all requests pass.
+
+### Configuration
+
+Configure via `--policy-config` YAML (no CLI flags for thresholds, consistent with tier-shed):
+
+```yaml
+admission:
+  policy: "gaie-legacy"
+  gaie_qd_threshold: 5     # queue depth threshold per instance (default: 5)
+  gaie_kv_threshold: 0.8   # KV cache utilization threshold, in (0, 1.0] (default: 0.8)
+```
+
+| YAML Field | Type | Default | Description |
+|------------|------|---------|-------------|
+| `gaie_qd_threshold` | float | 5 | Per-instance queue depth at which the QD component reaches 1.0. Must be > 0. |
+| `gaie_kv_threshold` | float | 0.8 | Per-instance KV cache utilization at which the KV component reaches 1.0. Must be in (0, 1.0]. |
+
+### Default Justification
+
+Both defaults come directly from the GAIE production source code:
+
+- **`gaie_qd_threshold = 5`**: From `DefaultQueueDepthThreshold` in `saturationdetector/utilization/config.go:31`. Represents the "ideal" queue capacity for a single endpoint — at 5 queued requests per instance, the compute resource is considered at capacity.
+- **`gaie_kv_threshold = 0.8`**: From `DefaultKVCacheUtilThreshold` in `saturationdetector/utilization/config.go:33`. At 80% KV cache utilization, the memory resource is considered at capacity, leaving 20% headroom for continuous batching dynamics.
+
+### Edge Cases
+
+!!! note "Empty cluster"
+    When there are no instance snapshots (e.g., all instances are still loading), saturation defaults to 1.0 — a conservative choice matching GAIE's behavior where stale or missing metrics are treated as fully saturated (`detector.go:116-118`). Non-sheddable requests still pass; sheddable requests are rejected.
+
+!!! note "Stale metrics"
+    GAIE production treats stale per-pod metrics (older than `MetricsStalenessThreshold`, default 200ms) as score=1.0. BLIS does not model per-snapshot staleness — signal freshness is controlled globally via `--snapshot-refresh-interval` (INV-7). This is a deliberate simplification: BLIS controls the simulator clock, so signal freshness is deterministic.
+
+!!! tip "Choosing thresholds"
+    The default thresholds (QD=5, KV=0.8) match production llm-d. Lower `gaie_qd_threshold` makes the policy more aggressive about shedding under queue buildup. Lower `gaie_kv_threshold` makes it more sensitive to KV cache pressure. Both thresholds follow the same validation as GAIE: `QD > 0` (strictly positive), `KV in (0, 1.0]`.
+
+### Comparison with Tier-Shed
+
+| Aspect | `tier-shed` | `gaie-legacy` |
+|--------|-------------|---------------|
+| **Signal** | Max per-instance effective load (QueueDepth + BatchSize) | Pool-average saturation (QD and KV ratios) |
+| **Granularity** | Configurable priority threshold (`tier_shed_min_priority`) | Binary: sheddable (priority < 0) vs non-sheddable |
+| **Activation** | When any instance exceeds `tier_shed_threshold` | When pool-average saturation >= 1.0 |
+| **Production parity** | BLIS-specific | Matches llm-d/GAIE |
 
 ## Pipeline Latency
 

@@ -79,9 +79,15 @@ Admission is the first gate in the online routing pipeline. Every incoming reque
 |--------|----------|
 | `always-admit` | Accept all requests (default) |
 | `token-bucket` | Rate-limiting via a token bucket with configurable capacity and refill rate |
+| `tier-shed` | SLO-aware shedding: rejects low-priority tiers under overload (configurable threshold) |
+| `gaie-legacy` | Production llm-d/GAIE parity: saturation-based shedding of sheddable requests (priority < 0) |
 | `reject-all` | Reject all requests (for pathological testing) |
 
 **Token bucket** rate-limits by consuming tokens proportional to input length: each request consumes tokens equal to its input token count, tokens refill at a constant rate, and requests are rejected when the bucket has insufficient tokens. Capacity and refill rate are configured via `--token-bucket-capacity` and `--token-bucket-refill-rate`.
+
+**Tier-shed** rejects requests whose SLO tier priority falls below a configurable `tier_shed_min_priority` when any instance's effective load exceeds `tier_shed_threshold`. Non-sheddable tiers (critical, standard) are protected.
+
+**GAIE-legacy** replicates the saturation-based admission from production llm-d's Gateway API Inference Extension. It computes pool-average saturation as `avg(max(qd/qdThreshold, kv/kvThreshold))` across instances. Non-sheddable requests (priority >= 0) always pass; sheddable requests are rejected when saturation >= 1.0. Defaults match GAIE production: `qdThreshold=5`, `kvThreshold=0.8`. See the [Admission Guide](../guide/admission.md#gaie-legacy-admission) for details.
 
 Rejected requests are counted in the output metrics but do not enter the routing pipeline. To add a new admission policy, see [Extension Recipes](../contributing/extension-recipes.md). See [Configuration Reference](../reference/configuration.md#admission-policy) for flag details.
 

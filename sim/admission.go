@@ -179,17 +179,32 @@ func (t *TierShedAdmission) Admit(req *Request, state *RouterState) (bool, strin
 // GAIELegacyAdmission simulates production llm-d/GAIE admission behavior.
 // Non-sheddable requests (priority >= 0) always pass. Sheddable requests
 // (priority < 0) are rejected when pool-average saturation >= 1.0.
+//
 // Saturation formula: avg across instances of max(qd/qdThreshold, kvUtil/kvThreshold).
-// Empty snapshots -> saturation=1.0 (conservative, matches GAIE stale-metrics behavior).
+// Source: gateway-api-inference-extension/pkg/epp/framework/plugins/flowcontrol/
+//
+//	saturationdetector/utilization/detector.go:115-137 (computeUtilization).
+//
+// Empty snapshots -> saturation=1.0 (conservative, matches GAIE detector.go:116-118
+// where stale/missing metrics are treated as fully saturated).
 type GAIELegacyAdmission struct {
-	QDThreshold float64         // queue depth threshold (GAIE default: 5)
-	KVThreshold float64         // KV cache utilization threshold (GAIE default: 0.8)
+	// Per-instance queue depth at which the QD component reaches 1.0.
+	// Default: 5 — from GAIE DefaultQueueDepthThreshold
+	// (saturationdetector/utilization/config.go:31).
+	QDThreshold float64
+
+	// Per-instance KV cache utilization at which the KV component reaches 1.0.
+	// Default: 0.8 — from GAIE DefaultKVCacheUtilThreshold
+	// (saturationdetector/utilization/config.go:33).
+	KVThreshold float64
+
 	PriorityMap *SLOPriorityMap // priority mapping for IsSheddable check
 }
 
 // NewGAIELegacyAdmission creates a GAIELegacyAdmission with validated parameters.
 // Panics if qdThreshold <= 0, NaN, or Inf, or if kvThreshold is not in (0, 1.0] (R3).
-// Validation matches GAIE: qdThreshold must be strictly positive, kvThreshold in (0, 1.0].
+// Validation matches GAIE saturationdetector/utilization/config.go:150-154:
+// qdThreshold must be strictly positive, kvThreshold in (0, 1.0].
 // If priorityMap is nil, DefaultSLOPriorityMap() is used.
 func NewGAIELegacyAdmission(qdThreshold, kvThreshold float64, priorityMap *SLOPriorityMap) *GAIELegacyAdmission {
 	if qdThreshold <= 0 || math.IsNaN(qdThreshold) || math.IsInf(qdThreshold, 0) {
