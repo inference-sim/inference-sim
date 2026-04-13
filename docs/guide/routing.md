@@ -31,7 +31,7 @@ The `weighted` routing policy is the most flexible. It combines multiple scoring
 | Scorer | What It Measures | llm-d Equivalent |
 |--------|-----------------|------------------|
 | `prefix-affinity` | Proportional prefix match ratio via router-side block hash cache | prefix-scorer |
-| `precise-prefix-cache` | Actual KV cache state query with min-max normalization | precise-prefix-cache-scorer |
+| `precise-prefix-cache` | Actual KV cache state query with min-max normalization; all-equal (including all-zero) → 1.0 (llm-d parity) | precise-prefix-cache-scorer |
 | `no-hit-lru` | LRU positional scoring for cold requests (warm = 0.5) | no-hit-lru-scorer |
 | `queue-depth` | Queue depth: `QueueDepth` only (min-max normalized) | queue-scorer |
 | `kv-utilization` | Inverse KV utilization: `1 - KVUtilization` | kv-cache-utilization-scorer |
