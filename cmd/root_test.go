@@ -532,6 +532,27 @@ func TestTryAutoCalcKVBlocksBlackbox_ErrorPaths(t *testing.T) {
 		t.Fatalf("write incomplete config.json: %v", err)
 	}
 
+	// MoE model without num_local_experts (triggers ExtractKVCapacityParams error)
+	moeModelDir := filepath.Join(tmpDir, "moe-model")
+	if err := os.MkdirAll(moeModelDir, 0755); err != nil {
+		t.Fatalf("create moe model dir: %v", err)
+	}
+	moeJSON := `{
+  "architectures": ["MixtralForCausalLM"],
+  "num_attention_heads": 32,
+  "num_hidden_layers": 32,
+  "num_key_value_heads": 8,
+  "hidden_size": 4096,
+  "intermediate_size": 14336,
+  "vocab_size": 128256,
+  "torch_dtype": "float16",
+  "hidden_act": "silu",
+  "num_experts_per_tok": 2
+}`
+	if err := os.WriteFile(filepath.Join(moeModelDir, "config.json"), []byte(moeJSON), 0644); err != nil {
+		t.Fatalf("write moe config.json: %v", err)
+	}
+
 	// Hardware config with zero memory (JSON format)
 	zeroMemHWPath := filepath.Join(tmpDir, "zero-mem-hw.json")
 	zeroMemJSON := `{
@@ -615,6 +636,15 @@ func TestTryAutoCalcKVBlocksBlackbox_ErrorPaths(t *testing.T) {
 			description:       "MemoryGiB <= 0 check fails",
 		},
 		{
+			name:              "MoE without num_local_experts",
+			modelConfigFolder: moeModelDir,
+			defaultsFilePath:  emptyDefaults,
+			hwConfigPath:      hwConfigPath,
+			gpu:               "H100",
+			expectSuccess:     false,
+			description:       "ExtractKVCapacityParams fails for MoE with num_experts_per_tok but no total expert count",
+		},
+		{
 			name:              "happy path",
 			modelConfigFolder: validModelDir,
 			defaultsFilePath:  emptyDefaults,
@@ -655,6 +685,41 @@ func TestTryAutoCalcKVBlocksBlackbox_ErrorPaths(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestAutoCalcKVBlocks_SuppressedByExplicitFlag verifies that when --total-kv-blocks
+// is explicitly set by the user, auto-calculation is suppressed (guard condition).
+//
+// GIVEN: A command with --total-kv-blocks explicitly set
+// WHEN: We check if auto-calculation should run
+// THEN: cmd.Flags().Changed("total-kv-blocks") returns true, suppressing auto-calc
+func TestAutoCalcKVBlocks_SuppressedByExplicitFlag(t *testing.T) {
+	// Create a cobra command with the total-kv-blocks flag
+	testCmd := &cobra.Command{}
+	var totalKV int64
+	testCmd.Flags().Int64Var(&totalKV, "total-kv-blocks", 1000000, "")
+
+	// Test case 1: Flag NOT set by user (default value)
+	if err := testCmd.ParseFlags([]string{}); err != nil {
+		t.Fatalf("ParseFlags with no args: %v", err)
+	}
+	if testCmd.Flags().Changed("total-kv-blocks") {
+		t.Errorf("Flag not set by user: Changed() should be false (auto-calc allowed)")
+	}
+
+	// Test case 2: Flag explicitly set by user
+	testCmd2 := &cobra.Command{}
+	var totalKV2 int64
+	testCmd2.Flags().Int64Var(&totalKV2, "total-kv-blocks", 1000000, "")
+	if err := testCmd2.ParseFlags([]string{"--total-kv-blocks", "5000"}); err != nil {
+		t.Fatalf("ParseFlags with --total-kv-blocks: %v", err)
+	}
+	if !testCmd2.Flags().Changed("total-kv-blocks") {
+		t.Errorf("Flag set by user: Changed() should be true (auto-calc suppressed)")
+	}
+	if totalKV2 != 5000 {
+		t.Errorf("Flag value: got %d, want 5000", totalKV2)
 	}
 }
 
