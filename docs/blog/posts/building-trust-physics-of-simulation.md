@@ -75,17 +75,17 @@ flowchart TB
         Monitor --> Decide --> Actuate
     end
 
-    Request([Request]) --> Layer2
-    PD -->|Aggregate| Layer1
-    PD -->|Disaggregated| PrefillPool
-    PrefillPool -->|KV Transfer| DecodePool
-    Layer1 --> Response([Response])
-    DecodePool --> Response
-    Layer3 -.-> Layer2
-    Layer3 -.-> Layer1
-    Layer1 -.->|metrics| Layer3
-    PrefillPool -.->|metrics| Layer3
-    DecodePool -.->|metrics| Layer3
+    Request([Request]) --> Admit
+    PD -->|Aggregate| Sched
+    PD -->|Disaggregated| PF
+    PF -->|KV Transfer| Dec
+    Step --> Response([Response])
+    Dec --> Response
+    Actuate -.-> Admit
+    Actuate -.-> Sched
+    Step -.->|metrics| Monitor
+    PF -.->|metrics| Monitor
+    Dec -.->|metrics| Monitor
 ```
 
 ### Layer 1: The Engine (vLLM)
