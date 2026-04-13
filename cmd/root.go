@@ -291,8 +291,8 @@ type latencyResolution struct {
 //   - For roofline/crossmodel/trained-roofline: resolves model config folder and
 //     hardware config, loads coefficients from defaults.yaml, auto-calculates
 //     total-kv-blocks and max-model-len from the HF config
-//   - For blackbox: loads coefficients and KV blocks from defaults.yaml, then
-//     attempts auto-calculation from cached model config as a best-effort fallback
+//   - For blackbox: loads coefficients from defaults.yaml, then auto-calculates
+//     total-kv-blocks and max-model-len via resolveModelConfig (downloads HF config if needed)
 //
 // Side effects (package-level vars mutated):
 //

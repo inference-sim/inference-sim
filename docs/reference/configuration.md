@@ -86,6 +86,8 @@ All internal timestamps in the DES (arrival time, schedule time, completion time
 
 **`enable_multi_turn_chat` semantic mismatch (issue #517).** inference-perf's `enable_multi_turn_chat` creates one persistent session per virtual user. BLIS's closest equivalent is `multi_turn.single_session: true` in the workload YAML, but the session mechanics differ. When converting inference-perf specs, verify that the converted multi-turn behavior matches your intent.
 
+**Custom `defaults.yaml` files must remove `total_kv_blocks` entries (migration note).** BLIS uses strict YAML parsing (`KnownFields(true)`) to catch typos and invalid fields. As of issue #1035, `total_kv_blocks` is no longer a recognized field in `defaults.yaml` — KV capacity is now always auto-calculated from model architecture and GPU memory. If you maintain a custom `defaults.yaml` file, remove all `total_kv_blocks` entries or BLIS will exit with a parse error: `field total_kv_blocks not found`. To override auto-calculation, use the `--total-kv-blocks` CLI flag instead.
+
 ## Simulation Control
 
 Top-level settings that control the simulation run.
