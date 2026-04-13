@@ -8,11 +8,11 @@ Invariants are properties that must hold at all times during and after simulatio
 
 **Statement:** `injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out` at simulation end (all levels).
 
-**Cluster-level extension (Phase 1B-1b, issue #882):** At cluster level, the deferred queue, routing rejections, and gateway queue add additional buckets: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out + deferred_horizon_interrupted + routing_rejections + gateway_queue_depth + gateway_queue_shed`. `deferred_horizon_interrupted` counts Batch/Background requests still parked in the deferred queue when the simulation horizon is reached. `gateway_queue_depth` counts requests still in the gateway queue at horizon. `gateway_queue_shed` counts requests shed from the gateway queue due to capacity limits. Single-instance simulations have no deferred queue or gateway queue; all three terms are always zero there.
+**Cluster-level extension (issue #882):** At cluster level, routing rejections and gateway queue add additional buckets: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out + routing_rejections + gateway_queue_depth + gateway_queue_shed`. `gateway_queue_depth` counts requests still in the gateway queue at horizon. `gateway_queue_shed` counts requests shed from the gateway queue due to capacity limits. Single-instance simulations have no gateway queue; both terms are always zero there.
 
 **Full pipeline:** `num_requests == injected_requests + rejected_requests` (from anomaly counters).
 
-**Verification:** `sim/cluster/cluster_test.go` and `sim/cluster/cluster_deferred_test.go` — conservation tests. Conservation fields (`still_queued`, `still_running`, `injected_requests`) are included in CLI JSON output. `DeferredHorizonInterrupted` is included in `RawMetrics` and printed by the CLI anomaly block when non-zero.
+**Verification:** `sim/cluster/cluster_test.go` and `sim/cluster/cluster_deferred_test.go` — conservation tests. Conservation fields (`still_queued`, `still_running`, `injected_requests`) are included in CLI JSON output.
 
 **Evidence:** Issue #183 — a silently-dropped request violated conservation for months.
 

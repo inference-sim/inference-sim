@@ -94,9 +94,12 @@ var (
 	routingLatency        int64              // Routing latency in microseconds
 	tokenBucketCapacity   float64            // Token bucket capacity
 	tokenBucketRefillRate float64            // Token bucket refill rate (tokens/second)
-	tierShedThreshold     int                // Tier-shed overload threshold (0 = any load)
-	tierShedMinPriority   int                // Tier-shed minimum admitted priority under overload
-	tenantBudgets         map[string]float64 // Per-tenant fraction of total capacity (nil = no enforcement)
+	tierShedThreshold      int                // Tier-shed overload threshold (0 = any load)
+	tierShedMinPriority    int                // Tier-shed minimum admitted priority under overload
+	tenantBudgets          map[string]float64 // Per-tenant fraction of total capacity (nil = no enforcement)
+	sloPriorityOverrides   map[string]int     // SLO class → priority overrides (nil = GAIE defaults)
+	gaieQDThreshold        float64            // GAIE-legacy queue depth threshold per instance (default 5)
+	gaieKVThreshold        float64            // GAIE-legacy KV cache utilization threshold (default 0.8)
 
 	// routing policy config (PR 6, evolved in PR17)
 	routingPolicy  string // Routing policy name
@@ -137,7 +140,6 @@ var (
 	pdTransferBaseLatency float64 // Inter-instance KV transfer base latency in ms
 	pdTransferContention     bool    // Enable fair-share bandwidth contention model
 	pdPrefixThreshold       int    // Non-cached token threshold for prefix-threshold decider
-	pdDirectDecodeThreshold int    // Input token threshold for direct-to-decode decider
 	prefillRoutingScorers   string // Scorer weights for prefill pool routing
 	decodeRoutingScorers  string  // Scorer weights for decode pool routing
 
@@ -826,6 +828,15 @@ func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
 		if bundle.TenantBudgets != nil {
 			tenantBudgets = bundle.TenantBudgets
 		}
+		if bundle.Admission.SLOPriorities != nil {
+			sloPriorityOverrides = bundle.Admission.SLOPriorities
+		}
+		if bundle.Admission.GAIEQDThreshold != nil {
+			gaieQDThreshold = *bundle.Admission.GAIEQDThreshold
+		}
+		if bundle.Admission.GAIEKVThreshold != nil {
+			gaieKVThreshold = *bundle.Admission.GAIEKVThreshold
+		}
 		if bundle.Routing.Policy != "" && !cmd.Flags().Changed("routing-policy") {
 			routingPolicy = bundle.Routing.Policy
 		}
@@ -838,6 +849,14 @@ func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
 		}
 	}
 
+	// Apply defaults for GAIE-legacy thresholds (not set via CLI flags, only via bundle).
+	if gaieQDThreshold == 0 {
+		gaieQDThreshold = 5
+	}
+	if gaieKVThreshold == 0 {
+		gaieKVThreshold = 0.8
+	}
+
 	// Policy name validation (R3: validate at CLI boundary before passing to library)
 	if admissionPolicy == "token-bucket" {
 		if tokenBucketCapacity <= 0 || math.IsNaN(tokenBucketCapacity) || math.IsInf(tokenBucketCapacity, 0) {
@@ -845,6 +864,14 @@ func resolvePolicies(cmd *cobra.Command) []sim.ScorerConfig {
 		}
 		if tokenBucketRefillRate <= 0 || math.IsNaN(tokenBucketRefillRate) || math.IsInf(tokenBucketRefillRate, 0) {
 			logrus.Fatalf("--token-bucket-refill-rate must be a finite value > 0, got %v", tokenBucketRefillRate)
+		}
+	}
+	if admissionPolicy == "gaie-legacy" {
+		if gaieQDThreshold <= 0 || math.IsNaN(gaieQDThreshold) || math.IsInf(gaieQDThreshold, 0) {
+			logrus.Fatalf("gaie_qd_threshold must be > 0, got %v", gaieQDThreshold)
+		}
+		if gaieKVThreshold <= 0 || gaieKVThreshold > 1.0 || math.IsNaN(gaieKVThreshold) || math.IsInf(gaieKVThreshold, 0) {
+			logrus.Fatalf("gaie_kv_threshold must be in (0, 1.0], got %v", gaieKVThreshold)
 		}
 	}
 	if !sim.IsValidAdmissionPolicy(admissionPolicy) {
@@ -1033,12 +1060,11 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// PD disaggregation config
 	cmd.Flags().IntVar(&prefillInstances, "prefill-instances", 0, "Number of instances dedicated to prefill (0 = disabled)")
 	cmd.Flags().IntVar(&decodeInstances, "decode-instances", 0, "Number of instances dedicated to decode (0 = disabled)")
-	cmd.Flags().StringVar(&pdDecider, "pd-decider", "never", "PD disaggregation decider: never (default), always, prefix-threshold, direct-to-decode")
+	cmd.Flags().StringVar(&pdDecider, "pd-decider", "never", "PD disaggregation decider: never (default), always, prefix-threshold")
 	cmd.Flags().Float64Var(&pdTransferBandwidth, "pd-transfer-bandwidth", 25.0, "PD KV transfer bandwidth in GB/s (NIXL RDMA default)")
 	cmd.Flags().Float64Var(&pdTransferBaseLatency, "pd-transfer-base-latency", 0.05, "PD KV transfer base latency in ms")
 	cmd.Flags().BoolVar(&pdTransferContention, "pd-transfer-contention", false, "Enable fair-share bandwidth contention model for concurrent KV transfers (INV-P2-2)")
 	cmd.Flags().IntVar(&pdPrefixThreshold, "pd-prefix-threshold", 512, "Non-cached token threshold for prefix-threshold decider (>= 0); disaggregate when non-cached tokens exceed this value")
-	cmd.Flags().IntVar(&pdDirectDecodeThreshold, "pd-direct-decode-threshold", 256, "Input token threshold for direct-to-decode (>= 0): requests with fewer than threshold tokens go direct to decode; requests with >= threshold tokens are disaggregated")
 	cmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")
 	cmd.Flags().StringVar(&decodeRoutingScorers, "decode-routing-scorers", "", "Scorer weights for decode pool routing (e.g., queue-depth:2,kv-utilization:2)")
 
@@ -1407,15 +1433,6 @@ var runCmd = &cobra.Command{
 		if pdDecider != "prefix-threshold" && cmd.Flags().Changed("pd-prefix-threshold") {
 			logrus.Warnf("--pd-prefix-threshold=%d is ignored when --pd-decider=%q (only applies to the prefix-threshold decider)", pdPrefixThreshold, pdDecider)
 		}
-		if pdDecider == "direct-to-decode" && pdDirectDecodeThreshold < 0 {
-			logrus.Fatalf("--pd-direct-decode-threshold must be >= 0, got %d", pdDirectDecodeThreshold)
-		}
-		if pdDecider == "direct-to-decode" && pdDirectDecodeThreshold == 0 {
-			logrus.Warnf("--pd-direct-decode-threshold=0 means all non-empty requests will be disaggregated (equivalent to --pd-decider=always for non-empty inputs). Did you intend a non-zero threshold?")
-		}
-		if pdDecider != "direct-to-decode" && cmd.Flags().Changed("pd-direct-decode-threshold") {
-			logrus.Warnf("--pd-direct-decode-threshold=%d is ignored when --pd-decider=%q (only applies to the direct-to-decode decider)", pdDirectDecodeThreshold, pdDecider)
-		}
 		if pdDecider != "" && pdDecider != "never" && prefillInstances == 0 {
 			logrus.Warnf("--pd-decider=%q has no effect because --prefill-instances=0 (disaggregation is disabled); set --prefill-instances and --decode-instances to enable", pdDecider)
 		}
@@ -1533,7 +1550,6 @@ var runCmd = &cobra.Command{
 			DecodeInstances:         decodeInstances,
 			PDDecider:               pdDecider,
 			PDPrefixThreshold:       pdPrefixThreshold,
-			PDDirectDecodeThreshold: pdDirectDecodeThreshold,
 			PDTransferBandwidthGBps: pdTransferBandwidth,
 			PDTransferBaseLatencyMs: pdTransferBaseLatency,
 			PDTransferContention:    pdTransferContention,
@@ -1543,7 +1559,10 @@ var runCmd = &cobra.Command{
 			DecodeOverrides:         decodeOverrides,
 			TierShedThreshold:       tierShedThreshold,
 			TierShedMinPriority:     tierShedMinPriority,
+			GAIEQDThreshold:         gaieQDThreshold,
+			GAIEKVThreshold:         gaieKVThreshold,
 			TenantBudgets:           tenantBudgets,
+			SLOPriorityOverrides:    sloPriorityOverrides,
 			FlowControlEnabled:              flowControlEnabled,
 			FlowControlDetector:             flowControlDetector,
 			FlowControlDispatchOrder:        flowControlDispatchOrder,
@@ -1626,7 +1645,6 @@ var runCmd = &cobra.Command{
 			cs.PerInstanceMetricsByID(),
 		)
 		rawMetrics.ShedByTier = cs.ShedByTier()                             // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
-		rawMetrics.DeferredHorizonInterrupted = cs.DeferredQueueLen()        // Phase 1B-1b: deferred queue horizon count (FR-006)
 		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth()               // Issue #882: gateway queue depth at horizon
 		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()                 // Issue #882: gateway queue shed count
 
@@ -1658,7 +1676,7 @@ var runCmd = &cobra.Command{
 		}
 
 		// Print anomaly counters if any detected
-		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.DeferredHorizonInterrupted > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 {
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 {
 			fmt.Println("=== Anomaly Counters ===")
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
@@ -1676,9 +1694,6 @@ var runCmd = &cobra.Command{
 			fmt.Printf("Rejected Requests (Routing): %d\n", rawMetrics.RoutingRejections)
 			fmt.Printf("Dropped Unservable: %d\n", rawMetrics.DroppedUnservable)
 			fmt.Printf("Length-Capped Requests: %d\n", rawMetrics.LengthCappedRequests)
-			if rawMetrics.DeferredHorizonInterrupted > 0 {
-				fmt.Printf("Deferred (horizon-interrupted): %d\n", rawMetrics.DeferredHorizonInterrupted)
-			}
 			if rawMetrics.GatewayQueueDepth > 0 {
 				fmt.Printf("Gateway Queue Depth (horizon): %d\n", rawMetrics.GatewayQueueDepth)
 			}

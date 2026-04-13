@@ -67,61 +67,96 @@ func (r *RejectAll) Admit(_ *Request, _ *RouterState) (bool, string) {
 	return false, "reject-all"
 }
 
-// SLOTierPriority maps an SLOClass string to an integer priority.
-// Higher = more important. Background=0 … Critical=4.
-// Empty or unknown string maps to Standard (3) for backward compatibility.
-// Exported so sim/cluster/ can call it without a circular import.
-func SLOTierPriority(class string) int {
-	switch class {
-	case "critical":
-		return 4
-	case "standard":
-		return 3
-	case "sheddable":
-		return 2
-	case "batch":
-		return 1
-	case "background":
-		return 0
-	default:
-		return 3 // empty or unknown → Standard
+// SLOPriorityMap maps SLOClass strings to integer priorities.
+// Higher = more important. Negative = sheddable (matches GAIE's IsSheddable contract).
+// Unexported map field prevents external mutation (R8).
+type SLOPriorityMap struct {
+	priorities map[string]int
+	defaultPri int
+}
+
+// DefaultSLOPriorityMap returns the GAIE-compatible default priority mapping.
+// critical=4, standard=3, batch=-1, sheddable=-2, background=-3.
+// Empty or unknown class → 3 (Standard).
+func DefaultSLOPriorityMap() *SLOPriorityMap {
+	return &SLOPriorityMap{
+		priorities: map[string]int{
+			"critical":   4,
+			"standard":   3,
+			"batch":      -1,
+			"sheddable":  -2,
+			"background": -3,
+		},
+		defaultPri: 3,
 	}
+}
+
+// NewSLOPriorityMap creates a priority map with defaults, then applies overrides.
+// Nil or empty overrides → pure defaults. Override keys replace defaults for those classes.
+func NewSLOPriorityMap(overrides map[string]int) *SLOPriorityMap {
+	m := DefaultSLOPriorityMap()
+	for k, v := range overrides {
+		m.priorities[k] = v
+	}
+	return m
+}
+
+// Priority returns the integer priority for the given SLO class.
+// Unknown or empty class → default priority (3 = Standard).
+func (m *SLOPriorityMap) Priority(class string) int {
+	if p, ok := m.priorities[class]; ok {
+		return p
+	}
+	return m.defaultPri
+}
+
+// IsSheddable returns true iff the class has priority < 0.
+// Matches GAIE's util/request/sheddable.go:21 contract.
+func (m *SLOPriorityMap) IsSheddable(class string) bool {
+	return m.Priority(class) < 0
+}
+
+// SLOTierPriority maps an SLOClass string to an integer priority using GAIE-compatible defaults.
+// Deprecated: use SLOPriorityMap.Priority() for configurable priorities.
+// Kept for backward compatibility — delegates to DefaultSLOPriorityMap().
+// Note: return values changed from old [0,4] scale to GAIE scale (negative = sheddable).
+// Not value-compatible with pre-#1013 code — use IsSheddable() for shedding decisions.
+func SLOTierPriority(class string) int {
+	return DefaultSLOPriorityMap().Priority(class)
 }
 
 // TierShedAdmission sheds lower-priority requests under overload.
 // Stateless: all decisions computed from RouterState at call time.
-// Batch and Background always pass through (deferred queue PR handles them).
 // Use NewTierShedAdmission to construct with validated parameters.
 type TierShedAdmission struct {
-	OverloadThreshold int // max per-instance effective load before shedding; 0 = any load triggers
-	MinAdmitPriority  int // minimum tier priority admitted under overload; 0 = admit all (footgun)
+	OverloadThreshold int             // max per-instance effective load before shedding; 0 = any load triggers
+	MinAdmitPriority  int             // minimum tier priority admitted under overload
+	PriorityMap       *SLOPriorityMap // configurable priority mapping (nil-safe: defaults used)
 }
 
-// NewTierShedAdmission creates a TierShedAdmission with validated parameters.
-// Panics if overloadThreshold < 0 or minAdmitPriority is outside [0, 4] (R3).
-func NewTierShedAdmission(overloadThreshold, minAdmitPriority int) *TierShedAdmission {
+// NewTierShedAdmission creates a TierShedAdmission with validated parameters and a priority map.
+// Panics if overloadThreshold < 0. minAdmitPriority is unbounded (GAIE priorities are
+// arbitrary integers with no range constraint; only the sign matters for IsSheddable).
+// If priorityMap is nil, DefaultSLOPriorityMap() is used.
+func NewTierShedAdmission(overloadThreshold, minAdmitPriority int, priorityMap *SLOPriorityMap) *TierShedAdmission {
 	if overloadThreshold < 0 {
 		panic(fmt.Sprintf("NewTierShedAdmission: overloadThreshold must be >= 0, got %d", overloadThreshold))
 	}
-	if minAdmitPriority < 0 || minAdmitPriority > 4 {
-		panic(fmt.Sprintf("NewTierShedAdmission: minAdmitPriority must be in [0,4], got %d", minAdmitPriority))
+	if priorityMap == nil {
+		priorityMap = DefaultSLOPriorityMap()
 	}
 	return &TierShedAdmission{
 		OverloadThreshold: overloadThreshold,
 		MinAdmitPriority:  minAdmitPriority,
+		PriorityMap:       priorityMap,
 	}
 }
 
 // Admit rejects requests whose tier priority is below MinAdmitPriority when the
 // cluster is overloaded (max effective load across instances > OverloadThreshold).
-// Batch and Background classes always return admitted=true.
 // Empty Snapshots (no instances) also returns admitted=true (safe default).
 func (t *TierShedAdmission) Admit(req *Request, state *RouterState) (bool, string) {
 	class := req.SLOClass
-	// Batch/Background bypass tier-shed (deferred queue handles them in PR-2).
-	if class == "batch" || class == "background" {
-		return true, ""
-	}
 	// Compute max effective load across all instance snapshots.
 	maxLoad := 0
 	for _, snap := range state.Snapshots {
@@ -133,12 +168,88 @@ func (t *TierShedAdmission) Admit(req *Request, state *RouterState) (bool, strin
 		return true, "" // under threshold: admit all
 	}
 	// Under overload: reject tiers below MinAdmitPriority.
-	priority := SLOTierPriority(class)
+	priority := t.PriorityMap.Priority(class)
 	if priority < t.MinAdmitPriority {
 		return false, fmt.Sprintf("tier-shed: class=%s priority=%d < min=%d load=%d",
 			class, priority, t.MinAdmitPriority, maxLoad)
 	}
 	return true, ""
+}
+
+// GAIELegacyAdmission simulates production llm-d/GAIE admission behavior.
+// Non-sheddable requests (priority >= 0) always pass. Sheddable requests
+// (priority < 0) are rejected when pool-average saturation >= 1.0.
+//
+// Saturation formula: avg across instances of max(qd/qdThreshold, kvUtil/kvThreshold).
+// Source: gateway-api-inference-extension/pkg/epp/framework/plugins/flowcontrol/
+//
+//	saturationdetector/utilization/detector.go:115-137 (computeUtilization).
+//
+// Empty snapshots -> saturation=1.0 (conservative, matches GAIE detector.go:116-118
+// where an empty candidate list returns 1.0).
+type GAIELegacyAdmission struct {
+	// Per-instance queue depth at which the QD component reaches 1.0.
+	// Default: 5 — from GAIE DefaultQueueDepthThreshold
+	// (saturationdetector/utilization/config.go:31).
+	QDThreshold float64
+
+	// Per-instance KV cache utilization at which the KV component reaches 1.0.
+	// Default: 0.8 — from GAIE DefaultKVCacheUtilThreshold
+	// (saturationdetector/utilization/config.go:33).
+	KVThreshold float64
+
+	PriorityMap *SLOPriorityMap // priority mapping for IsSheddable check
+}
+
+// NewGAIELegacyAdmission creates a GAIELegacyAdmission with validated parameters.
+// Panics if qdThreshold <= 0, NaN, or Inf, or if kvThreshold is not in (0, 1.0] (R3).
+// Validation matches GAIE saturationdetector/utilization/config.go:150-154:
+// qdThreshold must be strictly positive, kvThreshold in (0, 1.0].
+// If priorityMap is nil, DefaultSLOPriorityMap() is used.
+func NewGAIELegacyAdmission(qdThreshold, kvThreshold float64, priorityMap *SLOPriorityMap) *GAIELegacyAdmission {
+	if qdThreshold <= 0 || math.IsNaN(qdThreshold) || math.IsInf(qdThreshold, 0) {
+		panic(fmt.Sprintf("NewGAIELegacyAdmission: qdThreshold must be > 0, got %v", qdThreshold))
+	}
+	if kvThreshold <= 0 || kvThreshold > 1.0 || math.IsNaN(kvThreshold) || math.IsInf(kvThreshold, 0) {
+		panic(fmt.Sprintf("NewGAIELegacyAdmission: kvThreshold must be in (0, 1.0], got %v", kvThreshold))
+	}
+	if priorityMap == nil {
+		priorityMap = DefaultSLOPriorityMap()
+	}
+	return &GAIELegacyAdmission{
+		QDThreshold: qdThreshold,
+		KVThreshold: kvThreshold,
+		PriorityMap: priorityMap,
+	}
+}
+
+// Admit implements AdmissionPolicy. Non-sheddable requests always pass.
+// Sheddable requests are rejected when pool-average saturation >= 1.0.
+func (g *GAIELegacyAdmission) Admit(req *Request, state *RouterState) (bool, string) {
+	if !g.PriorityMap.IsSheddable(req.SLOClass) {
+		return true, ""
+	}
+	sat := g.saturation(state.Snapshots)
+	if sat >= 1.0 {
+		return false, fmt.Sprintf("gaie-saturated: class=%s saturation=%.2f", req.SLOClass, sat)
+	}
+	return true, ""
+}
+
+// saturation computes pool-average saturation per GAIE formula:
+// avg across instances of max(queueDepth/qdThreshold, kvUtil/kvThreshold).
+// Empty snapshots -> 1.0 (conservative).
+func (g *GAIELegacyAdmission) saturation(snapshots []RoutingSnapshot) float64 {
+	if len(snapshots) == 0 {
+		return 1.0
+	}
+	var total float64
+	for _, snap := range snapshots {
+		qRatio := float64(snap.QueueDepth) / g.QDThreshold
+		kvRatio := snap.KVUtilization / g.KVThreshold
+		total += max(qRatio, kvRatio)
+	}
+	return total / float64(len(snapshots))
 }
 
 // NewAdmissionPolicy creates an admission policy by name.
@@ -157,6 +268,10 @@ func NewAdmissionPolicy(name string, capacity, refillRate float64) AdmissionPoli
 		return NewTokenBucket(capacity, refillRate)
 	case "reject-all":
 		return &RejectAll{}
+	case "tier-shed":
+		panic("tier-shed requires NewTierShedAdmission; cannot use generic factory")
+	case "gaie-legacy":
+		panic("gaie-legacy requires NewGAIELegacyAdmission; cannot use generic factory")
 	default:
 		panic(fmt.Sprintf("unhandled admission policy %q", name))
 	}

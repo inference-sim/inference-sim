@@ -126,28 +126,10 @@ func (e *AdmissionDecisionEvent) Timestamp() int64 { return e.time }
 func (e *AdmissionDecisionEvent) Priority() int     { return 1 }
 
 // Execute processes the admission decision for an incoming request.
-// For Batch/Background SLO-class requests when the cluster is busy, defers to
-// cs.deferredQueue and returns early (Phase 1B-1b). No admission decision is made
-// and no trace record is emitted for deferred requests.
-// For all other requests (and Batch/Background when the cluster is idle):
-// checks admission policy with full RouterState (BC-8: includes snapshots).
+// Checks admission policy with full RouterState (BC-8: includes snapshots).
 // If admitted, schedules a RoutingDecisionEvent.
 // If rejected, increments cs.rejectedRequests counter (EC-2).
 func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
-	// Phase 1B-1b: Batch and Background requests are deferred when the cluster is busy.
-	// They bypass tier-shed admission entirely and re-enter as ClusterArrivalEvents on idle.
-	// This intercept fires BEFORE buildRouterState/Admit — deferred requests are held, not rejected.
-	// INV-9: deferral path reads only e.request.SLOClass — no oracle field access.
-	if (e.request.SLOClass == "batch" || e.request.SLOClass == "background") && cs.isBusy() {
-		cs.deferredQueue = append(cs.deferredQueue, e.request)
-		logrus.Debugf("[cluster] req %s deferred (SLOClass=%q, deferredQueueLen=%d)", e.request.ID, e.request.SLOClass, len(cs.deferredQueue))
-		// Trace gap: deferred requests do not get a RecordAdmission() call here.
-		// When promoted, they re-enter as ClusterArrivalEvents and receive an admission
-		// record at promotion time (not original arrival time). Trace consumers should
-		// not assume TotalDecisions == injected_requests in cluster mode.
-		return
-	}
-
 	state := buildRouterState(cs, e.request)
 	admitted, reason := cs.admissionPolicy.Admit(e.request, state)
 	logrus.Debugf("[cluster] req %s: admitted=%v reason=%q", e.request.ID, admitted, reason)
@@ -163,24 +145,21 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 			})
 		}
 		cs.rejectedRequests++
-		// Populate per-tier shed counter only for TierShedAdmission rejections (S-1:
-		// avoids conflating token-bucket or reject-all rejections with tier-shed counts).
-		if _, ok := cs.admissionPolicy.(*sim.TierShedAdmission); ok {
-			tier := e.request.SLOClass
-			if tier == "" {
-				tier = "standard" // normalize empty → standard (matches SLOTierPriority default)
-			}
-			cs.shedByTier[tier]++
+		// Populate per-tier shed counter for every admission rejection, regardless of policy.
+		tier := e.request.SLOClass
+		if tier == "" {
+			tier = "standard" // normalize empty → standard (matches SLOPriorityMap default)
 		}
+		cs.shedByTier[tier]++
 		return
 	}
 
 	// Phase 1B-2a: tenant budget override after admission policy (issue #811).
-	// When a tenant is over their fair-share budget, shed Sheddable-and-below requests.
-	// Critical (4) and Standard (3) are protected — budget never sheds them.
+	// When a tenant is over their fair-share budget, shed sheddable requests (priority < 0).
+	// Non-sheddable requests (critical, standard) are protected — budget never sheds them.
 	// INV-9 compliant: reads only req.SLOClass and req.TenantID (arrival-time metadata).
 	if cs.tenantTracker != nil && cs.tenantTracker.IsOverBudget(e.request.TenantID) {
-		if sim.SLOTierPriority(e.request.SLOClass) < 3 { // below Standard
+		if cs.priorityMap.IsSheddable(e.request.SLOClass) {
 			// Record as rejected by tenant budget before returning (BC-2).
 			if cs.trace != nil {
 				cs.trace.RecordAdmission(trace.AdmissionRecord{
@@ -192,8 +171,8 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 			}
 			cs.rejectedRequests++
 			tier := e.request.SLOClass
-			// Note: tier=="" is unreachable here — SLOTierPriority("")==3 so the outer
-			// if (priority<3) never fires for empty SLOClass. Defensive for future changes.
+			// Note: tier=="" is unreachable here — empty SLOClass defaults to standard(3),
+			// which is not sheddable (priority >= 0). Defensive for future changes.
 			if tier == "" {
 				tier = "standard"
 			}

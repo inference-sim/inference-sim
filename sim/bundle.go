@@ -30,6 +30,12 @@ type AdmissionConfig struct {
 	// Tier-shed options (Phase 1B): only used when policy = "tier-shed".
 	TierShedThreshold   *int `yaml:"tier_shed_threshold"`   // nil = use default (0)
 	TierShedMinPriority *int `yaml:"tier_shed_min_priority"` // nil = use default (3)
+	// GAIE-legacy options: only used when policy = "gaie-legacy".
+	GAIEQDThreshold *float64 `yaml:"gaie_qd_threshold"` // nil = use default (5)
+	GAIEKVThreshold *float64 `yaml:"gaie_kv_threshold"` // nil = use default (0.8)
+	// SLOPriorities overrides default SLO class → priority mappings.
+	// nil = use GAIE defaults (critical=4, standard=3, batch=-1, sheddable=-2, background=-3).
+	SLOPriorities map[string]int `yaml:"slo_priorities,omitempty"`
 }
 
 // RoutingConfig holds routing policy configuration.
@@ -62,12 +68,12 @@ func LoadPolicyBundle(path string) (*PolicyBundle, error) {
 // Valid policy name registries. Unexported to prevent external mutation.
 // Used by Validate(), factory functions, and ValidatePolicyName().
 var (
-	validAdmissionPolicies = map[string]bool{"": true, "always-admit": true, "token-bucket": true, "reject-all": true, "tier-shed": true}
+	validAdmissionPolicies = map[string]bool{"": true, "always-admit": true, "token-bucket": true, "reject-all": true, "tier-shed": true, "gaie-legacy": true}
 	validRoutingPolicies   = map[string]bool{"": true, "round-robin": true, "least-loaded": true, "weighted": true, "always-busiest": true}
 	validPriorityPolicies  = map[string]bool{"": true, "constant": true, "slo-based": true, "inverted-slo": true}
 	validSchedulers        = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
 	validLatencyBackends          = map[string]bool{"": true, "blackbox": true, "roofline": true, "crossmodel": true, "trained-roofline": true, "trained-physics": true}
-	validDisaggregationDeciders   = map[string]bool{"": true, "never": true, "always": true, "prefix-threshold": true, "direct-to-decode": true}
+	validDisaggregationDeciders   = map[string]bool{"": true, "never": true, "always": true, "prefix-threshold": true}
 	validSaturationDetectors      = map[string]bool{"": true, "never": true, "utilization": true, "concurrency": true}
 )
 
@@ -155,8 +161,23 @@ func (b *PolicyBundle) Validate() error {
 	if b.Admission.TierShedThreshold != nil && *b.Admission.TierShedThreshold < 0 {
 		return fmt.Errorf("tier_shed_threshold must be >= 0, got %d", *b.Admission.TierShedThreshold)
 	}
-	if b.Admission.TierShedMinPriority != nil && (*b.Admission.TierShedMinPriority < 0 || *b.Admission.TierShedMinPriority > 4) {
-		return fmt.Errorf("tier_shed_min_priority must be in [0, 4], got %d", *b.Admission.TierShedMinPriority)
+	// No range check on TierShedMinPriority: GAIE priorities are arbitrary integers
+	// with no bounds (InferenceObjective.spec.priority is *int, negative allowed).
+	// The only semantic boundary is priority < 0 → sheddable.
+	// Validate GAIE-legacy parameters when present.
+	// NaN/Inf checks are required because IEEE 754 NaN comparisons always return false
+	// (e.g., NaN <= 0 is false), so NaN would silently pass the <= 0 guard.
+	if b.Admission.GAIEQDThreshold != nil {
+		v := *b.Admission.GAIEQDThreshold
+		if v <= 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+			return fmt.Errorf("gaie_qd_threshold must be a finite value > 0, got %v", v)
+		}
+	}
+	if b.Admission.GAIEKVThreshold != nil {
+		v := *b.Admission.GAIEKVThreshold
+		if v <= 0 || v > 1.0 || math.IsNaN(v) || math.IsInf(v, 0) {
+			return fmt.Errorf("gaie_kv_threshold must be a finite value in (0, 1.0], got %v", v)
+		}
 	}
 	// Validate tenant budgets: each value must be in [0, 1].
 	for tenantID, v := range b.TenantBudgets {

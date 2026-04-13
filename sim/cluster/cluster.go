@@ -29,6 +29,7 @@ type ClusterSimulator struct {
 	admissionLatency     int64
 	routingLatency       int64
 	admissionPolicy      sim.AdmissionPolicy
+	priorityMap          *sim.SLOPriorityMap
 	snapshotProvider     SnapshotProvider
 	routingPolicy        sim.RoutingPolicy
 	rejectedRequests     int                    // EC-2: count of requests rejected by admission policy
@@ -159,15 +160,28 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	// cs.rng.ForSubsystem(SubsystemRouter) elsewhere to avoid interleaving RNG draws.
 	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(config.Seed))
 
-	// Bypass generic factory for "tier-shed": factory signature is float64-only and
-	// cannot carry the int fields TierShedAdmission requires (research.md D-2).
+	// Construct SLO priority map from config overrides (nil-safe: defaults used when empty).
+	priorityMap := sim.NewSLOPriorityMap(config.SLOPriorityOverrides)
+
+	// Bypass generic factory for policies needing custom params (research.md D-2).
 	var admissionPolicy sim.AdmissionPolicy
-	if config.AdmissionPolicy == "tier-shed" {
+	switch config.AdmissionPolicy {
+	case "tier-shed":
 		if config.TierShedMinPriority == 0 {
-			logrus.Warn("[cluster] tier-shed: TierShedMinPriority=0 admits all tiers under overload — policy behaves like AlwaysAdmit; set tier_shed_min_priority: 3 for Standard-and-above protection")
+			logrus.Warn("[cluster] tier-shed: TierShedMinPriority=0 rejects sheddable tiers (priority < 0) under overload; set tier_shed_min_priority: 3 for Standard-and-above protection")
 		}
-		admissionPolicy = sim.NewTierShedAdmission(config.TierShedThreshold, config.TierShedMinPriority)
-	} else {
+		admissionPolicy = sim.NewTierShedAdmission(config.TierShedThreshold, config.TierShedMinPriority, priorityMap)
+	case "gaie-legacy":
+		qdThreshold := config.GAIEQDThreshold
+		if qdThreshold == 0 {
+			qdThreshold = 5.0 // GAIE DefaultQueueDepthThreshold (config.go:31)
+		}
+		kvThreshold := config.GAIEKVThreshold
+		if kvThreshold == 0 {
+			kvThreshold = 0.8 // GAIE DefaultKVCacheUtilThreshold (config.go:33)
+		}
+		admissionPolicy = sim.NewGAIELegacyAdmission(qdThreshold, kvThreshold, priorityMap)
+	default:
 		admissionPolicy = sim.NewAdmissionPolicy(config.AdmissionPolicy, config.TokenBucketCapacity, config.TokenBucketRefillRate)
 	}
 
@@ -180,6 +194,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		admissionLatency:     config.AdmissionLatency,
 		routingLatency:       config.RoutingLatency,
 		admissionPolicy:      admissionPolicy,
+		priorityMap:          priorityMap,
 		snapshotProvider: nil, // set after unified construction loop below
 		routingPolicy:    nil, // set after instance construction (needs cacheQueryFn from instances)
 		trace:                simTrace,
@@ -193,8 +208,6 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		switch config.PDDecider {
 		case "prefix-threshold":
 			cs.disaggregationDecider = sim.NewPrefixThresholdDecider(config.PDPrefixThreshold, int(config.BlockSizeTokens))
-		case "direct-to-decode":
-			cs.disaggregationDecider = sim.NewDirectToDecodeDecider(config.PDDirectDecodeThreshold)
 		default:
 			cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
 		}
@@ -371,7 +384,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			dispatchOrder = "fifo"
 		}
 		cs.flowControlEnabled = true
-		cs.gatewayQueue = NewGatewayQueue(dispatchOrder, config.FlowControlMaxQueueDepth)
+		cs.gatewayQueue = NewGatewayQueue(dispatchOrder, config.FlowControlMaxQueueDepth, cs.priorityMap)
 		cs.saturationDetector = sim.NewSaturationDetector(
 			config.FlowControlDetector,
 			config.FlowControlQueueDepthThreshold,
@@ -609,11 +622,6 @@ func (c *ClusterSimulator) Run() error {
 			}
 		}
 
-		// Phase 1B-1b: after each event, promote deferred Batch/Background requests
-		// if the cluster has become idle. INV-8: ensures no stall while deferred work waits.
-		if len(c.deferredQueue) > 0 && !c.isBusy() {
-			c.promoteDeferred()
-		}
 	}
 
 	// 4. Finalize all instances (populates StillQueued/StillRunning)
@@ -706,8 +714,6 @@ func (c *ClusterSimulator) Run() error {
 			logrus.Warnf("[cluster] no requests completed — %d of %d requests timed out (client timeout exceeded, likely KV pressure)",
 				c.aggregatedMetrics.TimedOutRequests,
 				c.aggregatedMetrics.TimedOutRequests+c.aggregatedMetrics.DroppedUnservable)
-		} else if len(c.deferredQueue) > 0 {
-			logrus.Warnf("[cluster] no requests completed — %d batch/background requests remain deferred at horizon (cluster never became idle; mix in standard/critical traffic to trigger promotion)", len(c.deferredQueue))
 		} else {
 			logrus.Warnf("[cluster] no requests completed — horizon may be too short or workload too small")
 		}
@@ -912,9 +918,6 @@ func (c *ClusterSimulator) Instances() []*InstanceSimulator {
 
 // AggregatedMetrics returns the merged metrics across all instances.
 // Panics if called before Run() has completed.
-// Note (Phase 1B-1b): INV-1 conservation at cluster level requires callers to also add
-// DeferredQueueLen() for the deferred-horizon-interrupted bucket. AggregatedMetrics alone
-// does not include deferred-at-horizon requests.
 func (c *ClusterSimulator) AggregatedMetrics() *sim.Metrics {
 	if !c.hasRun {
 		panic("ClusterSimulator.AggregatedMetrics() called before Run()")
@@ -934,8 +937,8 @@ func (c *ClusterSimulator) RoutingRejections() int {
 	return c.routingRejections
 }
 
-// ShedByTier returns a copy of per-SLOClass rejection counts recorded during tier-shed admission.
-// The map is populated only when AdmissionPolicy is "tier-shed"; returns an empty map otherwise.
+// ShedByTier returns a copy of per-SLOClass rejection counts recorded during admission.
+// Populated unconditionally for every admission rejection, regardless of policy.
 // Returns a defensive copy so callers cannot mutate the internal counter (R8).
 // Panics if called before Run() completes.
 func (c *ClusterSimulator) ShedByTier() map[string]int {
@@ -955,7 +958,9 @@ func (c *ClusterSimulator) ShedByTier() map[string]int {
 // instances must not count as load (otherwise a recently terminated instance with residual
 // accounting would permanently block deferred-queue promotion).
 // An empty instance pool returns false (not busy).
-// Called by the deferred queue pre-admission intercept and the idle-capacity promotion check.
+// Preserved for scheduling-tier deferral (#899).
+//
+//nolint:unused
 func (c *ClusterSimulator) isBusy() bool {
 	for _, inst := range c.instances {
 		if inst.State == InstanceStateTerminated {
@@ -1039,11 +1044,9 @@ func (c *ClusterSimulator) gpuInventory() GPUInventory {
 // INV-8: ensures work-conserving behaviour — deferred requests re-enter the pipeline
 // within the same scheduling step as the idle transition.
 //
-// Re-deferral: with non-zero admission latency, standard traffic arriving in the
-// [clock, clock+admissionLatency] window may make isBusy() return true before a
-// promoted request reaches AdmissionDecisionEvent, causing it to be re-deferred.
-// This is intentional (Decision 4 in research.md) but may inflate DeferredHorizonInterrupted
-// counts under continuous light standard load.
+// Preserved for scheduling-tier deferral (#899).
+//
+//nolint:unused
 func (c *ClusterSimulator) promoteDeferred() {
 	logrus.Debugf("[cluster] promoting %d deferred requests at tick %d", len(c.deferredQueue), c.clock)
 	for _, req := range c.deferredQueue {
@@ -1055,10 +1058,9 @@ func (c *ClusterSimulator) promoteDeferred() {
 	c.deferredQueue = c.deferredQueue[:0]
 }
 
-// DeferredQueueLen returns the number of Batch/Background requests still in the
-// deferred queue at simulation end (i.e., deferred_horizon_interrupted count).
+// DeferredQueueLen returns the number of requests in the deferred queue.
 // Panics if called before Run() completes.
-// Used by cmd/ to populate RawMetrics.DeferredHorizonInterrupted (Phase 1B-1b).
+// Preserved for #899 (deferred queue redesign).
 func (c *ClusterSimulator) DeferredQueueLen() int {
 	if !c.hasRun {
 		panic("ClusterSimulator.DeferredQueueLen() called before Run()")
