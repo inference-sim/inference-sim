@@ -44,14 +44,10 @@ func newPrecisePrefixCacheScorer(cacheFn cacheQueryFn) (scorerFunc, observerFunc
 		// Pass 2: min-max normalize (higher cached → higher score)
 		for _, snap := range snapshots {
 			if maxRaw == minRaw {
-				// All-equal: 1.0 when there is actual cache affinity, 0.5 (neutral)
-				// when no instance has any cached blocks — avoids inflating the cache
-				// scorer's contribution when there is no cache data to differentiate.
-				if maxRaw == 0 {
-					scores[snap.ID] = 0.5
-				} else {
-					scores[snap.ID] = 1.0
-				}
+				// All-equal (including all-zero): 1.0. Matches llm-d's
+				// indexedScoresToNormalizedScoredPods which returns 1.0
+				// unconditionally when minScore == maxScore.
+				scores[snap.ID] = 1.0
 			} else {
 				scores[snap.ID] = float64(raw[snap.ID]-minRaw) / float64(maxRaw-minRaw)
 			}
