@@ -133,7 +133,7 @@ This approach is intended to generalize across LLM architectures, hardware confi
 > **TL;DR:** Production clusters run multiple vLLM instances behind a routing gateway. BLIS models saturation-based admission control, composable weighted routing with in-flight tracking, configurable cache signal staleness, and prefill/decode disaggregation. Pluggable interfaces enable algorithm discovery—test new serving policies without writing production code.
 
 ```mermaid
-graph LR
+graph TB
     A[Request Arrives] --> B{Admission Control}
     B -->|Rejected| X[Drop]
     B -->|Admitted| C[Routing]
