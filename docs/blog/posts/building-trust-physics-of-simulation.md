@@ -199,7 +199,7 @@ go build -o blis main.go
 
 We have covered what it takes to build a high-fidelity distributed platform simulator—modeling engine physics, data plane coordination, and control plane feedback loops. But **how do we know this modeling is accurate?**
 
-We have validated BLIS against production workloads and compared its accuracy to commercial simulators. The methodology and results—cross-system benchmarks and achievable accuracy without per-configuration tuning—deserve their own article.
+We have validated BLIS against production workloads and compared its accuracy to commercial simulators. The methodology and results—cross-system benchmarks and achievable accuracy without per-configuration tuning—is covered in a subsequent article.
 
 ---
 
