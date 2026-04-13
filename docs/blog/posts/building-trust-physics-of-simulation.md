@@ -19,7 +19,7 @@ categories:
 
 Production LLM inference platforms are distributed systems where routing policies, admission control, autoscaling, and engine-level scheduling all interact to determine latencies and throughput. How do you explore how different policies and configurations affect these KPIs before deploying to production? Testing a new routing policy or autoscaling threshold on live traffic risks cascading bugs across the fleet, while building separate test environments burns GPU-hours and still cannot predict interactions between cluster-level policies and engine-level batch dynamics.
 
-The answer is **end-to-end simulation**: model the entire distributed inference stack to explore how policies and configurations affect latencies and throughput for your workloads. *What does it take to build a simulator accurate enough to guide these decisions?* The challenge lies in capturing the right mechanisms across all three layers. At the engine level, batches process together — all requests wait for the slowest operation to finish, so KV cache fills trigger preemptions and long prompts stall short decodes. At the cluster level, routing policies operate on stale cache state, admission control gates overload, and prefill/decode disaggregation trades utilization for latency. At the control plane, autoscalers react to lagged metrics, creating oscillations. When these couplings are not modeled, predictions diverge: a back-of-the-envelope model might predict 50ms time-to-first-token while production measures 200ms.
+The answer is **end-to-end simulation**: model the entire distributed inference stack to explore how policies and configurations affect latencies and throughput for your workloads. *What does it take to build a simulator accurate enough to guide these decisions?* The challenge lies in capturing the right mechanisms. At the engine level, batches process together — all requests wait for the slowest operation to finish, so KV cache fills trigger preemptions and long prompts stall short decodes. At the cluster level, routing policies operate on stale cache state, admission control gates overload, and prefill/decode disaggregation trades utilization for latency. At the control plane, autoscalers react to lagged metrics, creating oscillations. When these couplings are not modeled, predictions diverge: a back-of-the-envelope model might predict 50ms time-to-first-token while production measures 200ms.
 
 <!-- more -->
 
@@ -27,7 +27,7 @@ The answer is **end-to-end simulation**: model the entire distributed inference 
 
 [BLIS](https://github.com/inference-sim/inference-sim) (Blackbox Inference Simulator) models inference serving through discrete-event simulation, advancing from event to event rather than stepping through continuous time. This approach runs orders of magnitude faster than real-time, requires no GPUs, and evaluates hours of production traffic in seconds.
 
-BLIS uses discrete-event simulation to model all three layers. This full-stack fidelity enables **capacity planning** (instance count, GPU type, TP degree) and **configuration search** (routing weights, admission thresholds). Without modeling distributed system couplings, planners predict linear scaling where production saturates, miss SLO violations from routing pile-on, or deploy autoscalers that oscillate.
+BLIS uses discrete-event simulation to model the full stack. This full-stack fidelity enables **capacity planning** (instance count, GPU type, TP degree) and **configuration search** (routing weights, admission thresholds). Without modeling distributed system couplings, planners predict linear scaling where production saturates, miss SLO violations from routing pile-on, or deploy autoscalers that oscillate.
 
 By modeling the behavior of production systems at the server ([vLLM](https://github.com/vllm-project/vllm)) and platform ([llm-d](https://llm-d.ai)) layers, BLIS enables safe experimentation before deployment:
 
@@ -44,13 +44,7 @@ A user hits enter, and 50ms later the first token appears. What happened in betw
 
 ```mermaid
 flowchart TB
-    subgraph Layer1["Layer 1: Engine (vLLM)"]
-        Sched[Scheduling]
-        KV[KV Cache]
-        Batch[Prefill+Decode Batch Formation]
-        Step[Forward Pass]
-        Sched --> KV --> Batch --> Step
-    end
+    Request([Request])
 
     subgraph Layer2["Layer 2: Data Plane"]
         Admit[Admission]
@@ -60,32 +54,34 @@ flowchart TB
         Route --> PD
     end
 
-    subgraph PrefillPool["Prefill Pool"]
-        PF[Prefill Processing]
+    subgraph Layer1["Layer 1: Engine"]
+        Sched[Scheduling]
+        KV[KV Cache]
+        Batch[Batch Formation]
+        Step[Forward Pass]
+        Sched --> KV --> Batch --> Step
     end
 
-    subgraph DecodePool["Decode Pool"]
-        Dec[Decode Processing]
+    subgraph Disagg["Prefill/Decode Disaggregation"]
+        PF[Prefill Pool]
+        Dec[Decode Pool]
+        PF -->|KV Transfer| Dec
     end
+
+    Response([Response])
 
     subgraph Layer3["Layer 3: Control Plane"]
         Monitor[Monitor Metrics]
-        Decide[Scale Decision]
-        Actuate[Add/Remove Instances]
-        Monitor --> Decide --> Actuate
+        Scale[Autoscaling Decisions]
+        Monitor --> Scale
     end
 
-    Request([Request]) --> Admit
+    Request --> Admit
     PD -->|Aggregate| Sched
     PD -->|Disaggregated| PF
-    PF -->|KV Transfer| Dec
-    Step --> Response([Response])
+    Step --> Response
     Dec --> Response
-    Actuate -.-> Admit
-    Actuate -.-> Sched
-    Step -.->|metrics| Monitor
-    PF -.->|metrics| Monitor
-    Dec -.->|metrics| Monitor
+    Scale -.->|add/remove instances| Admit
 ```
 
 ### Layer 1: The Engine (vLLM)
@@ -94,7 +90,7 @@ flowchart TB
 
 The inference engine does not process requests individually. It processes them in continuously evolving batches. A **step** is one GPU forward pass that advances every request in the batch, either processing prompt tokens (prefill) or generating the next output token (decode). The slowest operation determines when the step completes.
 
-Why does this matter? Consider a batch with three requests decoding single tokens (fast, memory-bound) and one request processing a 512-token prompt (slow, compute-bound). Everyone waits for the slowest. This is not an edge case - batch composition constantly shifts as new requests arrive and completed ones leave.
+Why does this matter? Consider a batch with three requests decoding single tokens (fast, memory-bound) and one request processing a 512-token prompt (slow, compute-bound). Everyone waits for the slowest. This is not an edge case — batch composition constantly shifts as new requests arrive and completed ones leave.
 
 **What BLIS captures.** vLLM's complexity: continuous batching (requests join and leave mid-flight), mixed prefill-decode execution, block-level KV cache management (prefix reuse, preemption, CPU offloading), and chunked prefill. BLIS models these mechanisms because they determine when requests complete.
 
@@ -133,14 +129,23 @@ This approach is intended to generalize across LLM architectures, hardware confi
 > **TL;DR:** Production clusters run multiple vLLM instances behind a routing gateway. BLIS models saturation-based admission control, composable weighted routing with in-flight tracking, configurable cache signal staleness, and prefill/decode disaggregation. Pluggable interfaces enable algorithm discovery — test new serving policies without writing production code.
 
 ```mermaid
-graph TB
-    A[Request Arrives] --> B{Admission Control}
-    B -->|Rejected| X[Drop]
-    B -->|Admitted| C[Routing]
-    C --> D{Disaggregation?}
-    D -->|No| E[Aggregated vLLM Processing]
-    D -->|Yes| F[Prefill Pool]
-    F -->|KV Transfer| G[Decode Pool]
+flowchart TB
+    A[Request Arrives]
+    B{Admission Control}
+    C[Routing]
+    D{Disaggregation?}
+    E[Aggregated vLLM Processing]
+    F[Prefill Pool]
+    G[Decode Pool]
+    X[Drop]
+
+    A --> B
+    B -- Rejected --> X
+    B -- Admitted --> C
+    C --> D
+    D -- No --> E
+    D -- Yes --> F
+    F -- KV Transfer --> G
 ```
 
 **Admission control** determines whether requests enter the system. BLIS models saturation-based admit/reject decisions, the default behavior in llm-d: when cluster load exceeds thresholds, incoming requests are rejected or queued rather than overwhelming instances. This prevents queue explosion during traffic spikes and avoids pile-on where burst arrivals flood the same "best" instance.
@@ -199,7 +204,7 @@ go build -o blis main.go
 
 We have covered what it takes to build a high-fidelity distributed platform simulator: modeling engine physics, data plane coordination, and control plane feedback loops. But **how do we know this modeling is accurate?**
 
-We have validated BLIS against production workloads and compared its accuracy to commercial simulators. The methodology and results — cross-system benchmarks and achievable accuracy without per-configuration tuning is covered in a subsequent article.
+We have validated BLIS against production workloads and compared its accuracy to commercial simulators. The methodology and results — cross-system benchmarks and achievable accuracy without per-configuration tuning — are covered in a subsequent article.
 
 ---
 
