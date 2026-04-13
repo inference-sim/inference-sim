@@ -997,6 +997,14 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		origTraceData := traceDataPath
 		origSimHorizon := simulationHorizon
 		origTraceOutput := replayTraceOutput
+		origCacheSignalDelay := cacheSignalDelay
+		origFlowControlEnabled := flowControlEnabled
+		origFlowControlDetector := flowControlDetector
+		origFlowControlDispatchOrder := flowControlDispatchOrder
+		origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
+		origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
+		origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
+		origFlowControlMaxConcurrency := flowControlMaxConcurrency
 		defer func() {
 			model = origModel
 			latencyModelBackend = origBackend
@@ -1027,6 +1035,14 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 			traceDataPath = origTraceData
 			simulationHorizon = origSimHorizon
 			replayTraceOutput = origTraceOutput
+			cacheSignalDelay = origCacheSignalDelay
+			flowControlEnabled = origFlowControlEnabled
+			flowControlDetector = origFlowControlDetector
+			flowControlDispatchOrder = origFlowControlDispatchOrder
+			flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
+			flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
+			flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
+			flowControlMaxConcurrency = origFlowControlMaxConcurrency
 		}()
 
 		model = "test-model"
