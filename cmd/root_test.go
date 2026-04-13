@@ -15,6 +15,7 @@ import (
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
+	"github.com/inference-sim/inference-sim/sim/latency"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -376,6 +377,79 @@ func TestRunCmdDistributionDefaults_UseSharedConstants(t *testing.T) {
 	}
 }
 
+// TestAutoCalcKVBlocks_RespectsBlockSizeAndGPUMemUtil verifies the behavioral contract
+// from issue #1035: when --total-kv-blocks is NOT provided, auto-calculation MUST
+// respect --block-size and --gpu-memory-utilization flags.
+//
+// GIVEN: Different block-size or gpu-memory-utilization values
+// WHEN: KV blocks are auto-calculated (--total-kv-blocks NOT set)
+// THEN: The calculated block counts MUST differ accordingly
+func TestAutoCalcKVBlocks_RespectsBlockSizeAndGPUMemUtil(t *testing.T) {
+	// Representative model config (similar to Llama-3-8B)
+	mc := sim.ModelConfig{
+		NumLayers:       32,
+		NumHeads:        32,
+		NumKVHeads:      8,  // GQA
+		HiddenDim:       4096,
+		IntermediateDim: 14336,
+		VocabSize:       128256,
+		BytesPerParam:   2.0, // FP16
+	}
+
+	// Representative GPU hardware config (H100-like)
+	hc := sim.HardwareCalib{
+		MemoryGiB:  80.0,
+		TFlopsPeak: 1000.0,
+		BwPeakTBs:  3.35,
+	}
+
+	// KV capacity params for dense SwiGLU model
+	params := latency.NewKVCapacityParams(
+		false, // isMoE
+		0,     // numLocalExperts
+		false, // tieWordEmbeddings
+		"silu", // hiddenAct
+		0,     // moeExpertFFNDim
+		0,     // sharedExpertFFNDim
+	)
+
+	const tp = 1
+
+	// Test BC-1: Different block-size values produce different block counts
+	blocks64, err := latency.CalculateKVBlocks(mc, hc, tp, 64, 0.9, params)
+	if err != nil {
+		t.Fatalf("CalculateKVBlocks with block-size=64: %v", err)
+	}
+
+	blocks128, err := latency.CalculateKVBlocks(mc, hc, tp, 128, 0.9, params)
+	if err != nil {
+		t.Fatalf("CalculateKVBlocks with block-size=128: %v", err)
+	}
+
+	// Larger block size → fewer blocks fit in memory
+	if blocks64 <= blocks128 {
+		t.Errorf("block-size sensitivity: blocks64=%d must be > blocks128=%d (larger blocks → fewer fit)",
+			blocks64, blocks128)
+	}
+
+	// Test BC-2: Different gpu-memory-utilization values produce different block counts
+	blocks85pct, err := latency.CalculateKVBlocks(mc, hc, tp, 64, 0.85, params)
+	if err != nil {
+		t.Fatalf("CalculateKVBlocks with gpu-util=0.85: %v", err)
+	}
+
+	blocks95pct, err := latency.CalculateKVBlocks(mc, hc, tp, 64, 0.95, params)
+	if err != nil {
+		t.Fatalf("CalculateKVBlocks with gpu-util=0.95: %v", err)
+	}
+
+	// Higher utilization → more blocks fit in memory
+	if blocks95pct <= blocks85pct {
+		t.Errorf("gpu-memory-utilization sensitivity: blocks95pct=%d must be > blocks85pct=%d (more memory → more blocks)",
+			blocks95pct, blocks85pct)
+	}
+}
+
 // TestRunCmd_HasMetricsPathFlag verifies BC-1: blis run exposes --metrics-path,
 // not --results-path.
 func TestRunCmd_HasMetricsPathFlag(t *testing.T) {
@@ -395,6 +469,257 @@ func TestReplayCmd_HasResultsPathFlag(t *testing.T) {
 	}
 	if replayCmd.Flags().Lookup("metrics-path") != nil {
 		t.Error("BC-2: replayCmd must NOT have --metrics-path flag")
+	}
+}
+
+// TestTryAutoCalcKVBlocksBlackbox_ErrorPaths tests all error paths in
+// tryAutoCalcKVBlocksBlackbox. Each error path should return (0, false) and
+// emit a warning (not tested here — warnings go to logrus stderr).
+func TestTryAutoCalcKVBlocksBlackbox_ErrorPaths(t *testing.T) {
+	// Create temporary test fixtures
+	tmpDir := t.TempDir()
+
+	// Valid hardware config file (JSON format)
+	hwConfigPath := filepath.Join(tmpDir, "hw.json")
+	hwJSON := `{
+  "H100": {
+    "MemoryGiB": 80.0,
+    "TFlopsPeak": 1000.0,
+    "BwPeakTBs": 3.35
+  }
+}`
+	if err := os.WriteFile(hwConfigPath, []byte(hwJSON), 0644); err != nil {
+		t.Fatalf("write hw config: %v", err)
+	}
+
+	// Valid model config.json file (minimal Llama-like)
+	validConfigJSON := `{
+  "architectures": ["LlamaForCausalLM"],
+  "num_attention_heads": 32,
+  "num_hidden_layers": 32,
+  "num_key_value_heads": 8,
+  "hidden_size": 4096,
+  "intermediate_size": 14336,
+  "vocab_size": 128256,
+  "torch_dtype": "float16",
+  "hidden_act": "silu"
+}`
+
+	validModelDir := filepath.Join(tmpDir, "valid-model")
+	if err := os.MkdirAll(validModelDir, 0755); err != nil {
+		t.Fatalf("create valid model dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(validModelDir, "config.json"), []byte(validConfigJSON), 0644); err != nil {
+		t.Fatalf("write valid config.json: %v", err)
+	}
+
+	// Invalid model config.json (malformed JSON)
+	invalidModelDir := filepath.Join(tmpDir, "invalid-model")
+	if err := os.MkdirAll(invalidModelDir, 0755); err != nil {
+		t.Fatalf("create invalid model dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(invalidModelDir, "config.json"), []byte("{invalid json}"), 0644); err != nil {
+		t.Fatalf("write invalid config.json: %v", err)
+	}
+
+	// Incomplete model config.json (missing required fields)
+	incompleteModelDir := filepath.Join(tmpDir, "incomplete-model")
+	if err := os.MkdirAll(incompleteModelDir, 0755); err != nil {
+		t.Fatalf("create incomplete model dir: %v", err)
+	}
+	incompleteJSON := `{"architectures": ["LlamaForCausalLM"]}`
+	if err := os.WriteFile(filepath.Join(incompleteModelDir, "config.json"), []byte(incompleteJSON), 0644); err != nil {
+		t.Fatalf("write incomplete config.json: %v", err)
+	}
+
+	// MoE model without num_local_experts (triggers ExtractKVCapacityParams error)
+	moeModelDir := filepath.Join(tmpDir, "moe-model")
+	if err := os.MkdirAll(moeModelDir, 0755); err != nil {
+		t.Fatalf("create moe model dir: %v", err)
+	}
+	moeJSON := `{
+  "architectures": ["MixtralForCausalLM"],
+  "num_attention_heads": 32,
+  "num_hidden_layers": 32,
+  "num_key_value_heads": 8,
+  "hidden_size": 4096,
+  "intermediate_size": 14336,
+  "vocab_size": 128256,
+  "torch_dtype": "float16",
+  "hidden_act": "silu",
+  "num_experts_per_tok": 2
+}`
+	if err := os.WriteFile(filepath.Join(moeModelDir, "config.json"), []byte(moeJSON), 0644); err != nil {
+		t.Fatalf("write moe config.json: %v", err)
+	}
+
+	// Hardware config with zero memory (JSON format)
+	zeroMemHWPath := filepath.Join(tmpDir, "zero-mem-hw.json")
+	zeroMemJSON := `{
+  "H100": {
+    "MemoryGiB": 0,
+    "TFlopsPeak": 1000.0,
+    "BwPeakTBs": 3.35
+  }
+}`
+	if err := os.WriteFile(zeroMemHWPath, []byte(zeroMemJSON), 0644); err != nil {
+		t.Fatalf("write zero-mem hw config: %v", err)
+	}
+
+	// Empty defaults.yaml for tests that don't need it
+	emptyDefaults := filepath.Join(tmpDir, "defaults.yaml")
+	if err := os.WriteFile(emptyDefaults, []byte("version: \"1.0\"\n"), 0644); err != nil {
+		t.Fatalf("write empty defaults: %v", err)
+	}
+
+	tests := []struct {
+		name                string
+		modelConfigFolder   string
+		defaultsFilePath    string
+		hwConfigPath        string
+		gpu                 string
+		expectSuccess       bool
+		description         string
+	}{
+		{
+			name:              "nonexistent model path",
+			modelConfigFolder: filepath.Join(tmpDir, "nonexistent"),
+			defaultsFilePath:  emptyDefaults,
+			hwConfigPath:      hwConfigPath,
+			gpu:               "H100",
+			expectSuccess:     false,
+			description:       "resolveModelConfig fails when path doesn't exist",
+		},
+		{
+			name:              "malformed config.json",
+			modelConfigFolder: invalidModelDir,
+			defaultsFilePath:  emptyDefaults,
+			hwConfigPath:      hwConfigPath,
+			gpu:               "H100",
+			expectSuccess:     false,
+			description:       "ParseHFConfig fails on invalid JSON",
+		},
+		{
+			name:              "incomplete config.json",
+			modelConfigFolder: incompleteModelDir,
+			defaultsFilePath:  emptyDefaults,
+			hwConfigPath:      hwConfigPath,
+			gpu:               "H100",
+			expectSuccess:     false,
+			description:       "GetModelConfigFromHF fails when required fields missing",
+		},
+		{
+			name:              "missing hardware config",
+			modelConfigFolder: validModelDir,
+			defaultsFilePath:  emptyDefaults,
+			hwConfigPath:      filepath.Join(tmpDir, "nonexistent-hw.json"),
+			gpu:               "H100",
+			expectSuccess:     false,
+			description:       "resolveHardwareConfig fails when file doesn't exist",
+		},
+		{
+			name:              "unknown GPU type",
+			modelConfigFolder: validModelDir,
+			defaultsFilePath:  emptyDefaults,
+			hwConfigPath:      hwConfigPath,
+			gpu:               "UnknownGPU",
+			expectSuccess:     false,
+			description:       "GetHWConfig fails when GPU not in hardware config",
+		},
+		{
+			name:              "zero GPU memory",
+			modelConfigFolder: validModelDir,
+			defaultsFilePath:  emptyDefaults,
+			hwConfigPath:      zeroMemHWPath,
+			gpu:               "H100",
+			expectSuccess:     false,
+			description:       "MemoryGiB <= 0 check fails",
+		},
+		{
+			name:              "MoE without num_local_experts",
+			modelConfigFolder: moeModelDir,
+			defaultsFilePath:  emptyDefaults,
+			hwConfigPath:      hwConfigPath,
+			gpu:               "H100",
+			expectSuccess:     false,
+			description:       "ExtractKVCapacityParams fails for MoE with num_experts_per_tok but no total expert count",
+		},
+		{
+			name:              "happy path",
+			modelConfigFolder: validModelDir,
+			defaultsFilePath:  emptyDefaults,
+			hwConfigPath:      hwConfigPath,
+			gpu:               "H100",
+			expectSuccess:     true,
+			description:       "All steps succeed, returns calculated blocks",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			blocks, ok := tryAutoCalcKVBlocksBlackbox(
+				"test-model",
+				tc.modelConfigFolder,
+				tc.defaultsFilePath,
+				tc.hwConfigPath,
+				tc.gpu,
+				1,    // tp
+				16,   // blockSize
+				0.9,  // gpuMemUtil
+				1000, // currentBlocks (fallback value)
+			)
+
+			if tc.expectSuccess {
+				if !ok {
+					t.Errorf("%s: expected success but got failure", tc.description)
+				}
+				if blocks <= 0 {
+					t.Errorf("%s: expected positive block count, got %d", tc.description, blocks)
+				}
+			} else {
+				if ok {
+					t.Errorf("%s: expected failure but got success with blocks=%d", tc.description, blocks)
+				}
+				if blocks != 0 {
+					t.Errorf("%s: expected blocks=0 on failure, got %d", tc.description, blocks)
+				}
+			}
+		})
+	}
+}
+
+// TestAutoCalcKVBlocks_SuppressedByExplicitFlag verifies that when --total-kv-blocks
+// is explicitly set by the user, auto-calculation is suppressed (guard condition).
+//
+// GIVEN: A command with --total-kv-blocks explicitly set
+// WHEN: We check if auto-calculation should run
+// THEN: cmd.Flags().Changed("total-kv-blocks") returns true, suppressing auto-calc
+func TestAutoCalcKVBlocks_SuppressedByExplicitFlag(t *testing.T) {
+	// Create a cobra command with the total-kv-blocks flag
+	testCmd := &cobra.Command{}
+	var totalKV int64
+	testCmd.Flags().Int64Var(&totalKV, "total-kv-blocks", 1000000, "")
+
+	// Test case 1: Flag NOT set by user (default value)
+	if err := testCmd.ParseFlags([]string{}); err != nil {
+		t.Fatalf("ParseFlags with no args: %v", err)
+	}
+	if testCmd.Flags().Changed("total-kv-blocks") {
+		t.Errorf("Flag not set by user: Changed() should be false (auto-calc allowed)")
+	}
+
+	// Test case 2: Flag explicitly set by user
+	testCmd2 := &cobra.Command{}
+	var totalKV2 int64
+	testCmd2.Flags().Int64Var(&totalKV2, "total-kv-blocks", 1000000, "")
+	if err := testCmd2.ParseFlags([]string{"--total-kv-blocks", "5000"}); err != nil {
+		t.Fatalf("ParseFlags with --total-kv-blocks: %v", err)
+	}
+	if !testCmd2.Flags().Changed("total-kv-blocks") {
+		t.Errorf("Flag set by user: Changed() should be true (auto-calc suppressed)")
+	}
+	if totalKV2 != 5000 {
+		t.Errorf("Flag value: got %d, want 5000", totalKV2)
 	}
 }
 

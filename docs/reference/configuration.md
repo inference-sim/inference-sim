@@ -33,7 +33,7 @@ The general precedence (CLI → YAML → hardcoded) applies everywhere, but each
 2. `defaults.yaml` `defaults[]` entry — matched by `--model`
 3. Error — roofline/crossmodel/trained-roofline require these values; blackbox fails at coefficient lookup
 
-**KV cache blocks** (`--total-kv-blocks`): See the detailed [Resolution Process](#resolution-process) below — four layers including auto-calculation from GPU memory.
+**KV cache blocks** (`--total-kv-blocks`): See the detailed [Resolution Process](#resolution-process) below — three layers: CLI flag, auto-calculation, or 1M default.
 
 **Workload parameters** (`--rate`, `--num-requests`, `--prompt-tokens`, etc.):
 
@@ -82,9 +82,11 @@ All internal timestamps in the DES (arrival time, schedule time, completion time
 
 **`aggregate_rate` override for inference-perf specs.** When converting inference-perf specs via `blis convert infperf`, per-stage rates in the spec override a user-specified `aggregate_rate`. If the sum of stage rates differs from `aggregate_rate`, BLIS logs a warning and uses the stage-rate sum. This prevents silent rate scaling errors.
 
-**`--total-kv-blocks` phantom default.** The CLI default is 1,000,000 blocks, but this value almost never takes effect. In roofline/crossmodel mode, auto-calculation from GPU memory supersedes it. In blackbox mode, `defaults.yaml` provides a per-model value (e.g., 17,600 for qwen3-14b/H100/TP=1). The 1M default is a last-resort fallback — if your simulation uses it, check whether your model/hardware combination has a `defaults.yaml` entry or whether auto-calculation is failing.
+**`--total-kv-blocks` phantom default.** The CLI default is 1,000,000 blocks, but this value almost never takes effect. For all latency backends (roofline, crossmodel, trained-roofline, trained-physics, blackbox), auto-calculation from model architecture and GPU memory supersedes it when a HuggingFace `config.json` is available and the hardware config specifies `MemoryGiB`. The 1M default is a last-resort fallback — if your simulation uses it, check whether auto-calculation is failing (missing `config.json`, missing `MemoryGiB`, or unsupported model architecture).
 
 **`enable_multi_turn_chat` semantic mismatch (issue #517).** inference-perf's `enable_multi_turn_chat` creates one persistent session per virtual user. BLIS's closest equivalent is `multi_turn.single_session: true` in the workload YAML, but the session mechanics differ. When converting inference-perf specs, verify that the converted multi-turn behavior matches your intent.
+
+**Custom `defaults.yaml` files must remove `total_kv_blocks` entries (migration note).** BLIS uses strict YAML parsing (`KnownFields(true)`) to catch typos and invalid fields. As of issue #1035, `total_kv_blocks` is no longer a recognized field in `defaults.yaml` — KV capacity is now always auto-calculated from model architecture and GPU memory. If you maintain a custom `defaults.yaml` file, remove all `total_kv_blocks` entries or BLIS will exit with a parse error: `field total_kv_blocks not found`. To override auto-calculation, use the `--total-kv-blocks` CLI flag instead.
 
 ## Simulation Control
 
@@ -110,7 +112,7 @@ Controls GPU and CPU memory simulation for key-value cache blocks. Maps to `KVCa
 | `--kv-transfer-bandwidth` | float64 | 100.0 | GPU-CPU transfer rate in blocks/tick. Required > 0 when CPU blocks > 0. |
 | `--kv-transfer-base-latency` | int64 | 0 | Fixed per-transfer latency in ticks. |
 
-\* The effective value of `--total-kv-blocks` depends on the latency backend — see [Resolution Process](#resolution-process) for the full priority chain. In blackbox mode, `defaults.yaml` overrides the 1,000,000 CLI default per model (e.g., `qwen3-14b/H100/TP=1` uses 17,600 blocks). In roofline or crossmodel mode, the value is auto-calculated from model architecture and GPU memory via `CalculateKVBlocks`, which supersedes the `defaults.yaml` value. Explicit `--total-kv-blocks` always takes precedence.
+\* The effective value of `--total-kv-blocks` follows a 3-layer resolution: (1) explicit `--total-kv-blocks` CLI flag, (2) auto-calculation from model architecture and GPU memory via `CalculateKVBlocks` (for all backends when `config.json` and `MemoryGiB` are available), (3) hardcoded default of 1,000,000 blocks. See [Resolution Process](#resolution-process) for details.
 
 ## Batch Formation
 
@@ -153,7 +155,7 @@ For analytical step time estimation without trained coefficients.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--latency-model` | string | "roofline" | Latency model backend: `roofline` (default), `blackbox`, `crossmodel`, `trained-roofline`. When set to `roofline`, `crossmodel`, or `trained-roofline`, auto-fetches HuggingFace config.json and resolves hardware config. Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. `trained-roofline` is recommended for new models (7% MAPE GPU step time). |
+| `--latency-model` | string | "roofline" | Latency model backend: `roofline` (default), `blackbox`, `crossmodel`, `trained-roofline`, `trained-physics`. All backends auto-fetch HuggingFace config.json for KV block auto-calculation (may require network access). Analytical backends (`roofline`, `crossmodel`, `trained-roofline`, `trained-physics`) require `config.json` for latency estimation and KV sizing. `blackbox` uses `config.json` only for KV sizing (falls back to 1M blocks if unavailable). Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. `trained-physics` is recommended for new models. |
 | `--model-config-folder` | string | "" | Path to folder containing HuggingFace `config.json`. Overrides `--latency-model` auto-resolution. |
 | `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. Overrides `--latency-model` auto-resolution. |
 
@@ -526,7 +528,6 @@ models:
     vllm_version: vllm/vllm-openai:v0.11.0
     alpha_coeffs: [8888.09, 0.18, 0.0]
     beta_coeffs: [13578.19, 39.44, 27.32]
-    total_kv_blocks: 17600
 ```
 
 ### Resolution Process
@@ -550,15 +551,15 @@ Before any backend-specific logic runs, BLIS loads hardware/TP/vLLM-version defa
    - Look up the model in `defaults.yaml` using `--model`, `--hardware`, `--tp`, `--vllm-version`
    - Load alpha/beta coefficients from the matching entry
    - If no matching entry is found, exit with error suggesting roofline, crossmodel, or trained-roofline
+   - **Behavioral change:** Blackbox mode now auto-downloads model configs from HuggingFace for KV block auto-calculation (same as analytical backends). Previously, blackbox only used cached configs. This means blackbox runs may make network requests when `config.json` is not cached locally. Set `HF_TOKEN` for gated models.
 3. If `--alpha-coeffs` and `--beta-coeffs` are explicitly provided via CLI:
    - Use them directly, no `defaults.yaml` lookup
 
 **`--total-kv-blocks` resolution** (highest priority wins):
 
 1. **Explicit CLI flag** — if `--total-kv-blocks` is set, that value is used regardless of backend
-2. **Auto-calculation** (roofline/crossmodel only) — when `MemoryGiB > 0` in the hardware config, `CalculateKVBlocks` derives the block count from model architecture and GPU memory, superseding the `defaults.yaml` value. Three failure modes: (a) if `MemoryGiB` is missing from `hardware_config.json`, BLIS warns and falls back to the `defaults.yaml` value (layer 3) or hardcoded default (layer 4); (b) if model architecture params cannot be extracted from `config.json`, BLIS exits with an error; (c) if the calculation itself fails (e.g., unsupported activation function), BLIS exits with an error. Only the `MemoryGiB`-missing case is a graceful fallback — other failures are fatal. Auto-calculation currently requires SwiGLU-family activations (`silu`, `swiglu`, `geglu`); models with other activations (e.g., Falcon's `gelu`) should set `--total-kv-blocks` explicitly
-3. **`defaults.yaml`** — per-model block count loaded for the model/GPU/TP combination (e.g., 17,600 for qwen3-14b/H100/TP=1). For roofline/crossmodel with `MemoryGiB > 0`, this value is superseded by auto-calculation (layer 2). It remains the effective value only for blackbox mode or when `MemoryGiB` is unavailable in the hardware config
-4. **Hardcoded default** — 1,000,000 (CLI flag default, used only when no other source provides a value)
+2. **Auto-calculation** (all backends) — when `MemoryGiB > 0` in the hardware config and `config.json` is available, `CalculateKVBlocks` derives the block count from model architecture and GPU memory. BLIS attempts to resolve `config.json` by checking `--model-config-folder`, then `model_configs/` (cached/bundled), then fetching from HuggingFace (set `HF_TOKEN` for gated models). Failure modes: (a) if `MemoryGiB` is missing from `hardware_config.json`, BLIS warns and falls back to the hardcoded default (layer 3); (b) if model architecture params cannot be extracted from `config.json`, BLIS warns and falls back to the hardcoded default; (c) if the calculation itself fails (e.g., unsupported activation function), BLIS warns and falls back to the hardcoded default. Auto-calculation currently requires SwiGLU-family activations (`silu`, `swiglu`, `geglu`); models with other activations (e.g., Falcon's `gelu`) will fall back to the hardcoded default unless `--total-kv-blocks` is explicitly set
+3. **Hardcoded default** — 1,000,000 (CLI flag default, used when auto-calculation is unavailable or fails)
 
 ## Coefficient Calibration
 
