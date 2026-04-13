@@ -378,8 +378,6 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		}
 	}
 
-	kvBlocksFromDefaults := false
-
 	// --latency-model roofline
 	if backend == "roofline" {
 		var missing []string
@@ -417,14 +415,6 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 			logrus.Fatalf("%v", err)
 		}
 		hwConfigPath = resolvedHW
-		if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
-			_, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
-			if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
-				totalKVBlocks = kvBlocks
-				kvBlocksFromDefaults = true
-				logrus.Infof("--latency-model: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
-			}
-		}
 	}
 
 	// --latency-model crossmodel
@@ -471,12 +461,6 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 						logrus.Infof("--latency-model: loaded crossmodel alpha coefficients from defaults.yaml")
 					}
 				}
-			}
-			_, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
-			if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
-				totalKVBlocks = kvBlocks
-				kvBlocksFromDefaults = true
-				logrus.Infof("--latency-model: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
 			}
 		}
 		if !cmd.Flags().Changed("beta-coeffs") && (len(beta) < 4 || allZeros(beta)) {
@@ -529,12 +513,6 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 						logrus.Infof("--latency-model: loaded trained-roofline alpha coefficients from defaults.yaml")
 					}
 				}
-			}
-			_, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
-			if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
-				totalKVBlocks = kvBlocks
-				kvBlocksFromDefaults = true
-				logrus.Infof("--latency-model: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
 			}
 		}
 		// Validate trained-roofline coefficients.
@@ -594,12 +572,6 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 					}
 				}
 			}
-			_, _, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
-			if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
-				totalKVBlocks = kvBlocks
-				kvBlocksFromDefaults = true
-				logrus.Infof("--latency-model: loaded total-kv-blocks=%d from defaults.yaml", kvBlocks)
-			}
 		}
 		// Validate trained-physics coefficients: at least 7 beta required (8th+ optional).
 		if !cmd.Flags().Changed("beta-coeffs") && (len(beta) < 7 || allZeros(beta)) {
@@ -612,40 +584,49 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		}
 	}
 
-	// --latency-model blackbox: load coefficients and KV blocks from defaults.yaml.
+	// --latency-model blackbox: load coefficients from defaults.yaml.
 	if backend == "blackbox" && !cmd.Flags().Changed("alpha-coeffs") && !cmd.Flags().Changed("beta-coeffs") {
-		newAlpha, newBeta, kvBlocks := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
+		newAlpha, newBeta := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
 		alpha, beta = newAlpha, newBeta
-		if !cmd.Flags().Changed("total-kv-blocks") && kvBlocks > 0 {
-			totalKVBlocks = kvBlocks
-			kvBlocksFromDefaults = true
-		}
 	}
-	// Blackbox: best-effort KV-block auto-calculation from cached model config when
-	// neither CLI flag nor defaults.yaml provided a value. Falls through silently if
-	// configs unavailable — totalKVBlocks validation catches 0.
-	if backend == "blackbox" && !cmd.Flags().Changed("total-kv-blocks") && !kvBlocksFromDefaults {
-		baseDir := filepath.Dir(defaultsFilePath)
-		cachedDir, dirErr := bundledModelConfigDir(model, baseDir)
-		if dirErr == nil {
-			hfPath := filepath.Join(cachedDir, "config.json")
-			if _, statErr := os.Stat(hfPath); statErr == nil {
-				hfCfg, parseErr := latency.ParseHFConfig(hfPath)
-				if parseErr == nil {
-					mc, mcErr := latency.GetModelConfigFromHF(hfCfg)
-					if mcErr == nil {
-						applyWeightPrecisionFallback(mc, model, hfCfg.Raw)
-					}
-					resolvedHW, hwPathErr := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
-					if mcErr == nil && hwPathErr == nil {
+	// Blackbox: KV-block auto-calculation using same resolution as analytical backends.
+	// Resolves config.json (--model-config-folder → cached → HuggingFace download), then auto-calculates.
+	if backend == "blackbox" && !cmd.Flags().Changed("total-kv-blocks") {
+		resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
+		if err != nil {
+			logrus.Warnf("--latency-model blackbox: could not resolve model config for KV auto-calculation: %v. "+
+				"Using total-kv-blocks=%d. Set --total-kv-blocks explicitly to override", err, totalKVBlocks)
+		} else {
+			hfPath := filepath.Join(resolved, "config.json")
+			hfCfg, parseErr := latency.ParseHFConfig(hfPath)
+			if parseErr != nil {
+				logrus.Warnf("--latency-model blackbox: failed to parse %s: %v. Using total-kv-blocks=%d", hfPath, parseErr, totalKVBlocks)
+			} else {
+				mc, mcErr := latency.GetModelConfigFromHF(hfCfg)
+				if mcErr != nil {
+					logrus.Warnf("--latency-model blackbox: failed to extract model config: %v. Using total-kv-blocks=%d", mcErr, totalKVBlocks)
+				} else {
+					applyWeightPrecisionFallback(mc, model, hfCfg.Raw)
+					resolvedHW, hwErr := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
+					if hwErr != nil {
+						logrus.Warnf("--latency-model blackbox: could not resolve hardware config: %v. Using total-kv-blocks=%d", hwErr, totalKVBlocks)
+					} else {
 						hc, hcErr := latency.GetHWConfig(resolvedHW, gpu)
-						if hcErr == nil && hc.MemoryGiB > 0 {
+						if hcErr != nil {
+							logrus.Warnf("--latency-model blackbox: failed to load hardware config: %v. Using total-kv-blocks=%d", hcErr, totalKVBlocks)
+						} else if hc.MemoryGiB <= 0 {
+							logrus.Warnf("--latency-model blackbox: GPU memory not available in hardware config. Using total-kv-blocks=%d", totalKVBlocks)
+						} else {
 							kvParams, kvErr := latency.ExtractKVCapacityParams(hfCfg)
-							if kvErr == nil {
+							if kvErr != nil {
+								logrus.Warnf("--latency-model blackbox: could not extract KV capacity params: %v. Using total-kv-blocks=%d", kvErr, totalKVBlocks)
+							} else {
 								autoBlocks, calcErr := latency.CalculateKVBlocks(*mc, hc, tensorParallelism, blockSizeTokens, gpuMemoryUtilization, kvParams)
-								if calcErr == nil {
+								if calcErr != nil {
+									logrus.Warnf("--latency-model blackbox: KV capacity auto-calculation failed: %v. Using total-kv-blocks=%d", calcErr, totalKVBlocks)
+								} else {
 									totalKVBlocks = autoBlocks
-									logrus.Infof("--latency-model blackbox: auto-calculated total-kv-blocks=%d from cached model config", totalKVBlocks)
+									logrus.Infof("--latency-model blackbox: auto-calculated total-kv-blocks=%d", totalKVBlocks)
 								}
 							}
 						}
@@ -690,8 +671,8 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		}
 
 		// KV capacity auto-calculation. Precedence: (1) --total-kv-blocks CLI flag,
-		// (2) defaults.yaml match, (3) auto-calculate from model architecture + GPU memory.
-		if !cmd.Flags().Changed("total-kv-blocks") && !kvBlocksFromDefaults {
+		// (2) auto-calculate from model architecture + GPU memory, (3) default value.
+		if !cmd.Flags().Changed("total-kv-blocks") {
 			kvParams, kvParamsErr := latency.ExtractKVCapacityParams(hfConfig)
 			if kvParamsErr != nil {
 				logrus.Warnf("--latency-model: could not extract KV capacity params: %v. "+

@@ -73,7 +73,6 @@ type Model struct {
 	ID                string    `yaml:"id"`
 	TensorParallelism int       `yaml:"tensor_parallelism"`
 	VLLMVersion       string    `yaml:"vllm_version"`
-	TotalKVBlocks     int64     `yaml:"total_kv_blocks"`
 	BestLoss          float64   `yaml:"best_loss"` // Calibration metric from coefficient fitting; not used at runtime
 }
 
@@ -135,7 +134,7 @@ func GetHFRepo(modelName string, defaultsFile string) (string, error) {
 	return "", nil
 }
 
-func GetCoefficients(LLM string, tp int, GPU string, vllmVersion string, defaultsFilePath string) ([]float64, []float64, int64) {
+func GetCoefficients(LLM string, tp int, GPU string, vllmVersion string, defaultsFilePath string) ([]float64, []float64) {
 	data, err := os.ReadFile(defaultsFilePath)
 	if err != nil {
 		logrus.Fatalf("Failed to read defaults file %s: %v", defaultsFilePath, err)
@@ -151,8 +150,8 @@ func GetCoefficients(LLM string, tp int, GPU string, vllmVersion string, default
 
 	for _, model := range cfg.Models {
 		if model.ID == LLM && model.TensorParallelism == tp && model.GPU == GPU && model.VLLMVersion == vllmVersion {
-			return model.AlphaCoeffs, model.BetaCoeffs, model.TotalKVBlocks
+			return model.AlphaCoeffs, model.BetaCoeffs
 		}
 	}
-	return nil, nil, 0
+	return nil, nil
 }
