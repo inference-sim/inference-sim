@@ -288,7 +288,7 @@ type latencyResolution struct {
 //   - Validates gpuMemoryUtilization and blockSizeTokens (used in KV auto-calc)
 //   - Applies defaults.yaml for GPU, TP, and vllmVersion when not set via CLI
 //   - Validates alpha/beta coefficients and auto-detects blackbox mode
-//   - For roofline/crossmodel/trained-roofline: resolves model config folder and
+//   - For roofline/crossmodel/trained-roofline/trained-physics: resolves model config folder and
 //     hardware config, loads coefficients from defaults.yaml, auto-calculates
 //     total-kv-blocks and max-model-len from the HF config
 //   - For blackbox: loads coefficients from defaults.yaml, then auto-calculates
