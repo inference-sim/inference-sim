@@ -14,7 +14,7 @@
         <link rel="prev" href="../contributing/templates/hypothesis/">
       
       
-        <link rel="next" href="category/capacity-planning/">
+        <link rel="next" href="category/architecture/">
       
       
         
@@ -2386,6 +2386,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2445,6 +2449,36 @@
   
   
     <li class="md-nav__item">
+      <a href="category/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
       <a href="category/capacity-planning/" class="md-nav__link">
         
   
@@ -2453,6 +2487,36 @@
     
   
     Capacity Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="category/deep-dives/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deep Dives
   
 
     
@@ -2558,6 +2622,57 @@
     <div class="md-post__meta md-meta">
       <ul class="md-meta__list">
         <li class="md-meta__item">
+          <time datetime="2026-04-09 00:00:00+00:00">April 9, 2026</time></li>
+        
+          <li class="md-meta__item">
+            in
+            
+              <a href="category/architecture/" class="md-meta__link">Architecture</a>, 
+              <a href="category/deep-dives/" class="md-meta__link">Deep Dives</a></li>
+        
+        
+          
+          <li class="md-meta__item">
+            
+              7 min read
+            
+          </li>
+        
+        
+      </ul>
+      
+    </div>
+  </header>
+  <div class="md-post__content md-typeset">
+    <h2 id="the-physics-of-high-fidelity-distributed-inference-platform-simulation"><a class="toclink" href="2026/04/09/the-physics-of-high-fidelity-distributed-inference-platform-simulation/">The Physics of High-Fidelity Distributed Inference Platform Simulation</a></h2>
+<p>Production LLM inference platforms are distributed systems where routing policies, admission control, autoscaling, and engine-level scheduling all interact to determine latencies and throughput. How do you explore how different policies and configurations affect these KPIs before deploying to production? Testing a new routing scorer or autoscaling threshold on live traffic risks cascading bugs across the fleet, while building separate test environments burns GPU-hours and still cannot predict interactions between cluster-level policies and engine-level batch dynamics.</p>
+<p>The answer is <strong>end-to-end simulation</strong>: model the entire distributed inference stack to explore how policies and configurations affect latencies and throughput for your workloads. <em>What does it take to build a simulator accurate enough to guide these decisions?</em> The challenge lies in capturing the right mechanisms across all three layers. At the engine level, batches process together — all requests wait for the slowest operation to finish, so KV cache fills trigger preemptions and long prompts stall short decodes. At the cluster level, routing policies operate on stale cache state, admission control gates overload, and prefill/decode disaggregation trades utilization for latency. At the control plane, autoscalers react to lagged metrics, creating oscillations. When these couplings are not modeled, predictions diverge: a back-of-the-envelope model might predict 50ms time-to-first-token while production measures 200ms.</p>
+
+    
+      <nav class="md-post__action">
+        <a href="2026/04/09/the-physics-of-high-fidelity-distributed-inference-platform-simulation/">
+          Continue reading
+        </a>
+      </nav>
+    
+    
+  </div>
+</article>
+      
+        <article class="md-post md-post--excerpt">
+  <header class="md-post__header">
+    
+      <nav class="md-post__authors md-typeset">
+        
+          <span class="md-author">
+            <img src="https://github.com/susiejojo.png" alt="Dipanwita Guhathakurta">
+          </span>
+        
+      </nav>
+    
+    <div class="md-post__meta md-meta">
+      <ul class="md-meta__list">
+        <li class="md-meta__item">
           <time datetime="2026-03-05 00:00:00+00:00">March 5, 2026</time></li>
         
           <li class="md-meta__item">
@@ -2645,13 +2760,13 @@
         
         
           
-          <a href="category/capacity-planning/" class="md-footer__link md-footer__link--next" aria-label="Next: Capacity Planning">
+          <a href="category/architecture/" class="md-footer__link md-footer__link--next" aria-label="Next: Architecture">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Capacity Planning
+                Architecture
               </div>
             </div>
             <div class="md-footer__button md-icon">
