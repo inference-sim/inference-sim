@@ -3066,7 +3066,7 @@
 <p>When choosing between TP and replication (more instances): TP reduces per-request latency, replication increases throughput. For capacity planning, simulate both configurations.</p>
 <div class="admonition note">
 <p class="admonition-title">Automatic KV block calculation</p>
-<p>When using roofline or crossmodel mode, <code>--total-kv-blocks</code> is automatically derived from model architecture and GPU memory if not explicitly set. The auto-calculated value accounts for TP (KV heads are sharded across ranks; total GPU memory scales with GPU count). Override with <code>--total-kv-blocks &lt;N&gt;</code> for non-standard deployments. The auto-calculation uses reference constants (90% GPU utilization, standard activation/overhead budgets matching the llm-d-benchmark capacity planner) and requires SwiGLU-family activations.</p>
+<p>For all latency backends (roofline, crossmodel, trained-roofline, trained-physics, blackbox), <code>--total-kv-blocks</code> is automatically derived from model architecture and GPU memory if not explicitly set. The auto-calculated value accounts for TP (KV heads are sharded across ranks; total GPU memory scales with GPU count). Override with <code>--total-kv-blocks &lt;N&gt;</code> for non-standard deployments. The auto-calculation uses reference constants (90% GPU utilization, standard activation/overhead budgets matching the llm-d-benchmark capacity planner) and requires SwiGLU-family activations.</p>
 </div>
 <div class="admonition note">
 <p class="admonition-title">Automatic MaxModelLen derivation</p>
@@ -3224,7 +3224,7 @@
 <tr>
 <td><strong>Data required</strong></td>
 <td>HF <code>config.json</code> + <code>--hardware</code> + <code>--tp</code></td>
-<td><code>defaults.yaml</code> entry for model/GPU/TP</td>
+<td><code>defaults.yaml</code> entry for model/GPU/TP (alpha/beta coefficients). HF <code>config.json</code> + <code>MemoryGiB</code> optional for KV block auto-calc (falls back to 1M default)</td>
 <td>HF <code>config.json</code> + <code>--hardware</code> + <code>--tp</code></td>
 <td>HF <code>config.json</code> + <code>--hardware</code> + <code>--tp</code> (global coefficients bundled)</td>
 <td>HF <code>config.json</code> + <code>--hardware</code> + <code>--tp</code> (global coefficients bundled)</td>
