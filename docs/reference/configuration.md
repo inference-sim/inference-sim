@@ -183,7 +183,7 @@ Controls which requests enter the routing pipeline. See [Cluster Architecture: A
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--admission-policy` | string | "always-admit" | Policy name: `always-admit`, `token-bucket`, `reject-all`, `tier-shed`. |
+| `--admission-policy` | string | "always-admit" | Policy name: `always-admit`, `token-bucket`, `reject-all`, `tier-shed`, `gaie-legacy`. |
 | `--admission-latency` | int64 | 0 | Admission decision latency in microseconds. Must be >= 0. |
 | `--token-bucket-capacity` | float64 | 10000 | Token bucket maximum capacity. Required > 0 when using `token-bucket`. |
 | `--token-bucket-refill-rate` | float64 | 1000 | Token bucket refill rate in tokens/second. Required > 0 when using `token-bucket`. |
@@ -195,6 +195,14 @@ Controls which requests enter the routing pipeline. See [Cluster Architecture: A
 | `admission.tier_shed_threshold` | int | 0 | Per-instance in-flight threshold above which shedding activates. 0 = shed at any load. |
 | `admission.tier_shed_min_priority` | int | 3 | Minimum SLO tier priority admitted under overload. 3 = admit Standard+Critical, shed sheddable tiers (priority < 0). No range constraint (GAIE priorities are arbitrary integers). |
 | `admission.slo_priorities` | map[string]int | nil | Custom SLO class priority overrides. Merges on top of GAIE defaults. See [SLO Tier Priorities](#slo-tier-priorities) below. |
+
+**GAIE-legacy admission** (`--admission-policy gaie-legacy`): Saturation-based shedding matching production llm-d/GAIE. Non-sheddable requests always pass; sheddable requests rejected when pool-average saturation >= 1.0. Saturation = `avg(max(qd/qdThreshold, kvUtil/kvThreshold))` across instances. Configured via `--policy-config` YAML only:
+
+| YAML field | Type | Default | Source | Description |
+|------------|------|---------|--------|-------------|
+| `admission.gaie_qd_threshold` | float64 | 5 | GAIE `DefaultQueueDepthThreshold` (`config.go:31`) | Per-instance queue depth threshold. Must be > 0. |
+| `admission.gaie_kv_threshold` | float64 | 0.8 | GAIE `DefaultKVCacheUtilThreshold` (`config.go:33`) | Per-instance KV cache utilization threshold. Must be in (0, 1.0]. |
+| `admission.slo_priorities` | map[string]int | nil | — | Custom SLO class priority overrides (shared with tier-shed). |
 
 ### SLO Tier Priorities
 

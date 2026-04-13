@@ -163,15 +163,25 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	// Construct SLO priority map from config overrides (nil-safe: defaults used when empty).
 	priorityMap := sim.NewSLOPriorityMap(config.SLOPriorityOverrides)
 
-	// Bypass generic factory for "tier-shed": factory signature is float64-only and
-	// cannot carry the int fields TierShedAdmission requires (research.md D-2).
+	// Bypass generic factory for policies needing custom params (research.md D-2).
 	var admissionPolicy sim.AdmissionPolicy
-	if config.AdmissionPolicy == "tier-shed" {
+	switch config.AdmissionPolicy {
+	case "tier-shed":
 		if config.TierShedMinPriority == 0 {
 			logrus.Warn("[cluster] tier-shed: TierShedMinPriority=0 rejects sheddable tiers (priority < 0) under overload; set tier_shed_min_priority: 3 for Standard-and-above protection")
 		}
 		admissionPolicy = sim.NewTierShedAdmission(config.TierShedThreshold, config.TierShedMinPriority, priorityMap)
-	} else {
+	case "gaie-legacy":
+		qdThreshold := config.GAIEQDThreshold
+		if qdThreshold == 0 {
+			qdThreshold = 5.0 // GAIE DefaultQueueDepthThreshold (config.go:31)
+		}
+		kvThreshold := config.GAIEKVThreshold
+		if kvThreshold == 0 {
+			kvThreshold = 0.8 // GAIE DefaultKVCacheUtilThreshold (config.go:33)
+		}
+		admissionPolicy = sim.NewGAIELegacyAdmission(qdThreshold, kvThreshold, priorityMap)
+	default:
 		admissionPolicy = sim.NewAdmissionPolicy(config.AdmissionPolicy, config.TokenBucketCapacity, config.TokenBucketRefillRate)
 	}
 
@@ -927,8 +937,8 @@ func (c *ClusterSimulator) RoutingRejections() int {
 	return c.routingRejections
 }
 
-// ShedByTier returns a copy of per-SLOClass rejection counts recorded during tier-shed admission.
-// The map is populated only when AdmissionPolicy is "tier-shed"; returns an empty map otherwise.
+// ShedByTier returns a copy of per-SLOClass rejection counts recorded during admission.
+// Populated unconditionally for every admission rejection, regardless of policy.
 // Returns a defensive copy so callers cannot mutate the internal counter (R8).
 // Panics if called before Run() completes.
 func (c *ClusterSimulator) ShedByTier() map[string]int {

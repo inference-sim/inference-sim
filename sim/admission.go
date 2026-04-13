@@ -176,6 +176,82 @@ func (t *TierShedAdmission) Admit(req *Request, state *RouterState) (bool, strin
 	return true, ""
 }
 
+// GAIELegacyAdmission simulates production llm-d/GAIE admission behavior.
+// Non-sheddable requests (priority >= 0) always pass. Sheddable requests
+// (priority < 0) are rejected when pool-average saturation >= 1.0.
+//
+// Saturation formula: avg across instances of max(qd/qdThreshold, kvUtil/kvThreshold).
+// Source: gateway-api-inference-extension/pkg/epp/framework/plugins/flowcontrol/
+//
+//	saturationdetector/utilization/detector.go:115-137 (computeUtilization).
+//
+// Empty snapshots -> saturation=1.0 (conservative, matches GAIE detector.go:116-118
+// where an empty candidate list returns 1.0).
+type GAIELegacyAdmission struct {
+	// Per-instance queue depth at which the QD component reaches 1.0.
+	// Default: 5 — from GAIE DefaultQueueDepthThreshold
+	// (saturationdetector/utilization/config.go:31).
+	QDThreshold float64
+
+	// Per-instance KV cache utilization at which the KV component reaches 1.0.
+	// Default: 0.8 — from GAIE DefaultKVCacheUtilThreshold
+	// (saturationdetector/utilization/config.go:33).
+	KVThreshold float64
+
+	PriorityMap *SLOPriorityMap // priority mapping for IsSheddable check
+}
+
+// NewGAIELegacyAdmission creates a GAIELegacyAdmission with validated parameters.
+// Panics if qdThreshold <= 0, NaN, or Inf, or if kvThreshold is not in (0, 1.0] (R3).
+// Validation matches GAIE saturationdetector/utilization/config.go:150-154:
+// qdThreshold must be strictly positive, kvThreshold in (0, 1.0].
+// If priorityMap is nil, DefaultSLOPriorityMap() is used.
+func NewGAIELegacyAdmission(qdThreshold, kvThreshold float64, priorityMap *SLOPriorityMap) *GAIELegacyAdmission {
+	if qdThreshold <= 0 || math.IsNaN(qdThreshold) || math.IsInf(qdThreshold, 0) {
+		panic(fmt.Sprintf("NewGAIELegacyAdmission: qdThreshold must be > 0, got %v", qdThreshold))
+	}
+	if kvThreshold <= 0 || kvThreshold > 1.0 || math.IsNaN(kvThreshold) || math.IsInf(kvThreshold, 0) {
+		panic(fmt.Sprintf("NewGAIELegacyAdmission: kvThreshold must be in (0, 1.0], got %v", kvThreshold))
+	}
+	if priorityMap == nil {
+		priorityMap = DefaultSLOPriorityMap()
+	}
+	return &GAIELegacyAdmission{
+		QDThreshold: qdThreshold,
+		KVThreshold: kvThreshold,
+		PriorityMap: priorityMap,
+	}
+}
+
+// Admit implements AdmissionPolicy. Non-sheddable requests always pass.
+// Sheddable requests are rejected when pool-average saturation >= 1.0.
+func (g *GAIELegacyAdmission) Admit(req *Request, state *RouterState) (bool, string) {
+	if !g.PriorityMap.IsSheddable(req.SLOClass) {
+		return true, ""
+	}
+	sat := g.saturation(state.Snapshots)
+	if sat >= 1.0 {
+		return false, fmt.Sprintf("gaie-saturated: class=%s saturation=%.2f", req.SLOClass, sat)
+	}
+	return true, ""
+}
+
+// saturation computes pool-average saturation per GAIE formula:
+// avg across instances of max(queueDepth/qdThreshold, kvUtil/kvThreshold).
+// Empty snapshots -> 1.0 (conservative).
+func (g *GAIELegacyAdmission) saturation(snapshots []RoutingSnapshot) float64 {
+	if len(snapshots) == 0 {
+		return 1.0
+	}
+	var total float64
+	for _, snap := range snapshots {
+		qRatio := float64(snap.QueueDepth) / g.QDThreshold
+		kvRatio := snap.KVUtilization / g.KVThreshold
+		total += max(qRatio, kvRatio)
+	}
+	return total / float64(len(snapshots))
+}
+
 // NewAdmissionPolicy creates an admission policy by name.
 // Valid names are defined in ValidAdmissionPolicies (bundle.go).
 // An empty string defaults to AlwaysAdmit (for CLI flag default compatibility).
@@ -192,6 +268,10 @@ func NewAdmissionPolicy(name string, capacity, refillRate float64) AdmissionPoli
 		return NewTokenBucket(capacity, refillRate)
 	case "reject-all":
 		return &RejectAll{}
+	case "tier-shed":
+		panic("tier-shed requires NewTierShedAdmission; cannot use generic factory")
+	case "gaie-legacy":
+		panic("gaie-legacy requires NewGAIELegacyAdmission; cannot use generic factory")
 	default:
 		panic(fmt.Sprintf("unhandled admission policy %q", name))
 	}
