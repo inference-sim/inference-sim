@@ -592,47 +592,9 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	// Blackbox: KV-block auto-calculation using same resolution as analytical backends.
 	// Resolves config.json (--model-config-folder → cached → HuggingFace download), then auto-calculates.
 	if backend == "blackbox" && !cmd.Flags().Changed("total-kv-blocks") {
-		resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
-		if err != nil {
-			logrus.Warnf("--latency-model blackbox: could not resolve model config for KV auto-calculation: %v. "+
-				"Using total-kv-blocks=%d. Set --total-kv-blocks explicitly to override", err, totalKVBlocks)
-		} else {
-			hfPath := filepath.Join(resolved, "config.json")
-			hfCfg, parseErr := latency.ParseHFConfig(hfPath)
-			if parseErr != nil {
-				logrus.Warnf("--latency-model blackbox: failed to parse %s: %v. Using total-kv-blocks=%d", hfPath, parseErr, totalKVBlocks)
-			} else {
-				mc, mcErr := latency.GetModelConfigFromHF(hfCfg)
-				if mcErr != nil {
-					logrus.Warnf("--latency-model blackbox: failed to extract model config: %v. Using total-kv-blocks=%d", mcErr, totalKVBlocks)
-				} else {
-					applyWeightPrecisionFallback(mc, model, hfCfg.Raw)
-					resolvedHW, hwErr := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
-					if hwErr != nil {
-						logrus.Warnf("--latency-model blackbox: could not resolve hardware config: %v. Using total-kv-blocks=%d", hwErr, totalKVBlocks)
-					} else {
-						hc, hcErr := latency.GetHWConfig(resolvedHW, gpu)
-						if hcErr != nil {
-							logrus.Warnf("--latency-model blackbox: failed to load hardware config: %v. Using total-kv-blocks=%d", hcErr, totalKVBlocks)
-						} else if hc.MemoryGiB <= 0 {
-							logrus.Warnf("--latency-model blackbox: GPU memory not available in hardware config. Using total-kv-blocks=%d", totalKVBlocks)
-						} else {
-							kvParams, kvErr := latency.ExtractKVCapacityParams(hfCfg)
-							if kvErr != nil {
-								logrus.Warnf("--latency-model blackbox: could not extract KV capacity params: %v. Using total-kv-blocks=%d", kvErr, totalKVBlocks)
-							} else {
-								autoBlocks, calcErr := latency.CalculateKVBlocks(*mc, hc, tensorParallelism, blockSizeTokens, gpuMemoryUtilization, kvParams)
-								if calcErr != nil {
-									logrus.Warnf("--latency-model blackbox: KV capacity auto-calculation failed: %v. Using total-kv-blocks=%d", calcErr, totalKVBlocks)
-								} else {
-									totalKVBlocks = autoBlocks
-									logrus.Infof("--latency-model blackbox: auto-calculated total-kv-blocks=%d", totalKVBlocks)
-								}
-							}
-						}
-					}
-				}
-			}
+		if autoBlocks, ok := tryAutoCalcKVBlocksBlackbox(model, modelConfigFolder, defaultsFilePath, hwConfigPath, gpu, tensorParallelism, blockSizeTokens, gpuMemoryUtilization, totalKVBlocks); ok {
+			totalKVBlocks = autoBlocks
+			logrus.Infof("--latency-model blackbox: auto-calculated total-kv-blocks=%d", totalKVBlocks)
 		}
 	}
 	if backend == "blackbox" && allZeros(alpha) && allZeros(beta) {
@@ -1068,6 +1030,61 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&prefillMaxModelLen, "prefill-max-model-len", 0, "Max model length for prefill pool instances (0 = use global --max-model-len)")
 	cmd.Flags().Int64Var(&decodeMaxModelLen, "decode-max-model-len", 0, "Max model length for decode pool instances (0 = use global --max-model-len)")
 
+}
+
+// tryAutoCalcKVBlocksBlackbox attempts to auto-calculate KV blocks for blackbox mode.
+// Returns (blocks, true) on success, (0, false) on any failure.
+// Logs warnings for each failure case so the caller can use the fallback value silently.
+func tryAutoCalcKVBlocksBlackbox(model, modelConfigFolder, defaultsFilePath, hwConfigPath, gpu string, tp int, blockSize int64, gpuMemUtil float64, currentBlocks int64) (int64, bool) {
+	resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
+	if err != nil {
+		logrus.Warnf("--latency-model blackbox: could not resolve model config for KV auto-calculation: %v. Using total-kv-blocks=%d", err, currentBlocks)
+		return 0, false
+	}
+
+	hfPath := filepath.Join(resolved, "config.json")
+	hfCfg, parseErr := latency.ParseHFConfig(hfPath)
+	if parseErr != nil {
+		logrus.Warnf("--latency-model blackbox: failed to parse %s: %v. Using total-kv-blocks=%d", hfPath, parseErr, currentBlocks)
+		return 0, false
+	}
+
+	mc, mcErr := latency.GetModelConfigFromHF(hfCfg)
+	if mcErr != nil {
+		logrus.Warnf("--latency-model blackbox: failed to extract model config: %v. Using total-kv-blocks=%d", mcErr, currentBlocks)
+		return 0, false
+	}
+	applyWeightPrecisionFallback(mc, model, hfCfg.Raw)
+
+	resolvedHW, hwErr := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
+	if hwErr != nil {
+		logrus.Warnf("--latency-model blackbox: could not resolve hardware config: %v. Using total-kv-blocks=%d", hwErr, currentBlocks)
+		return 0, false
+	}
+
+	hc, hcErr := latency.GetHWConfig(resolvedHW, gpu)
+	if hcErr != nil {
+		logrus.Warnf("--latency-model blackbox: failed to load hardware config: %v. Using total-kv-blocks=%d", hcErr, currentBlocks)
+		return 0, false
+	}
+	if hc.MemoryGiB <= 0 {
+		logrus.Warnf("--latency-model blackbox: GPU memory not available in hardware config. Using total-kv-blocks=%d", currentBlocks)
+		return 0, false
+	}
+
+	kvParams, kvErr := latency.ExtractKVCapacityParams(hfCfg)
+	if kvErr != nil {
+		logrus.Warnf("--latency-model blackbox: could not extract KV capacity params: %v. Using total-kv-blocks=%d", kvErr, currentBlocks)
+		return 0, false
+	}
+
+	autoBlocks, calcErr := latency.CalculateKVBlocks(*mc, hc, tp, blockSize, gpuMemUtil, kvParams)
+	if calcErr != nil {
+		logrus.Warnf("--latency-model blackbox: KV capacity auto-calculation failed: %v. Using total-kv-blocks=%d", calcErr, currentBlocks)
+		return 0, false
+	}
+
+	return autoBlocks, true
 }
 
 // runCmd executes the simulation using parameters from CLI flags
