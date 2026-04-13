@@ -130,7 +130,7 @@ This approach is intended to generalize across LLM architectures, hardware confi
 
 ### Layer 2: The Data Plane (Cluster Orchestration)
 
-> **TL;DR:** Production clusters run multiple vLLM instances behind a routing gateway. BLIS models saturation-based admission control, composable weighted routing with in-flight tracking, configurable cache signal staleness, and prefill/decode disaggregation. Pluggable interfaces enable algorithm discovery—test new serving policies without writing production code.
+> **TL;DR:** Production clusters run multiple vLLM instances behind a routing gateway. BLIS models saturation-based admission control, composable weighted routing with in-flight tracking, configurable cache signal staleness, and prefill/decode disaggregation. Pluggable interfaces enable algorithm discovery — test new serving policies without writing production code.
 
 ```mermaid
 graph TB
@@ -157,7 +157,7 @@ Autoscaling dynamically adjusts instance count to match demand. In production, t
 
 **What BLIS captures.** BLIS models llm-d's [WVA](https://github.com/inference-sim/llm-d-workload-variant-autoscaler) (Workload Variant Autoscaler) four-stage pipeline — Collect, Analyze, Optimize, Actuate, with pluggable interfaces. **Collector** observes per-replica metrics, **Analyzer** detects saturation and emits scaling signals, **Optimizer** decides which GPU types to add/remove respecting multi-model inventory constraints, and **Actuator** applies decisions with configurable delay.
 
-**What BLIS enables.** Researchers can sweep scaling thresholds, compare analyzer strategies under identical workloads, and test multi-model scenarios where scaling one model steals GPUs from another. Each pluggable interface becomes a research hook—swap in a cost-aware Optimizer or an Analyzer that predicts load spikes. The result: discover and validate better autoscaling policies before deployment, with full control over feedback delays and provisioning latencies.
+**What BLIS enables.** Researchers can sweep scaling thresholds, compare analyzer strategies under identical workloads, and test multi-model scenarios where scaling one model steals GPUs from another. Each pluggable interface becomes a research hook: swap in a cost-aware Optimizer or an Analyzer that predicts load spikes. The result: discover and validate better autoscaling policies before deployment, with full control over feedback delays and provisioning latencies.
 
 ## BLIS in Action: Simulating a Configuration Decision
 
@@ -197,9 +197,9 @@ go build -o blis main.go
 
 ## From Modeling to Validation
 
-We have covered what it takes to build a high-fidelity distributed platform simulator—modeling engine physics, data plane coordination, and control plane feedback loops. But **how do we know this modeling is accurate?**
+We have covered what it takes to build a high-fidelity distributed platform simulator: modeling engine physics, data plane coordination, and control plane feedback loops. But **how do we know this modeling is accurate?**
 
-We have validated BLIS against production workloads and compared its accuracy to commercial simulators. The methodology and results—cross-system benchmarks and achievable accuracy without per-configuration tuning—is covered in a subsequent article.
+We have validated BLIS against production workloads and compared its accuracy to commercial simulators. The methodology and results — cross-system benchmarks and achievable accuracy without per-configuration tuning is covered in a subsequent article.
 
 ---
 
