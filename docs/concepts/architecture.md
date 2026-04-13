@@ -152,7 +152,7 @@ Scorers are the building blocks of the weighted routing policy. Each scorer eval
 | Scorer | Signal | Score Computation | Notes |
 |--------|--------|-------------------|-------|
 | `prefix-affinity` | Prefix cache overlap | Proportion of request's block hashes found in instance's cache index | Stateful: updates cache index after routing via observer |
-| `precise-prefix-cache` | Actual KV cache state | Min-max normalization of cached prefix block count per instance | Stateless: queries instance KV cache directly via `CacheQueryFn` |
+| `precise-prefix-cache` | Actual KV cache state | Min-max normalization of cached prefix block count per instance; all-equal (including all-zero) → 1.0 (llm-d parity) | Stateless: queries instance KV cache directly via `CacheQueryFn` |
 | `no-hit-lru` | Routing history | Cold requests (zero cache hits): LRU positional scoring; warm requests: neutral 0.5 | Stateful: observer tracks LRU order on cold routing only |
 | `queue-depth` | Queue depth | Min-max normalization of QueueDepth (lower depth = higher score) | Stateless |
 | `kv-utilization` | Memory pressure | `1 - KVUtilization` (lower utilization = higher score) | Stateless |
