@@ -549,6 +549,7 @@ Before any backend-specific logic runs, BLIS loads hardware/TP/vLLM-version defa
    - Look up the model in `defaults.yaml` using `--model`, `--hardware`, `--tp`, `--vllm-version`
    - Load alpha/beta coefficients from the matching entry
    - If no matching entry is found, exit with error suggesting roofline, crossmodel, or trained-roofline
+   - **Behavioral change:** Blackbox mode now auto-downloads model configs from HuggingFace for KV block auto-calculation (same as analytical backends). Previously, blackbox only used cached configs. This means blackbox runs may make network requests when `config.json` is not cached locally. Set `HF_TOKEN` for gated models.
 3. If `--alpha-coeffs` and `--beta-coeffs` are explicitly provided via CLI:
    - Use them directly, no `defaults.yaml` lookup
 
