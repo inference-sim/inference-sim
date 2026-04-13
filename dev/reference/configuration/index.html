@@ -4035,7 +4035,7 @@
 <td><code>--admission-policy</code></td>
 <td>string</td>
 <td>"always-admit"</td>
-<td>Policy name: <code>always-admit</code>, <code>token-bucket</code>, <code>reject-all</code>, <code>tier-shed</code>.</td>
+<td>Policy name: <code>always-admit</code>, <code>token-bucket</code>, <code>reject-all</code>, <code>tier-shed</code>, <code>gaie-legacy</code>.</td>
 </tr>
 <tr>
 <td><code>--admission-latency</code></td>
@@ -4085,6 +4085,41 @@
 <td>map[string]int</td>
 <td>nil</td>
 <td>Custom SLO class priority overrides. Merges on top of GAIE defaults. See <a href="#slo-tier-priorities">SLO Tier Priorities</a> below.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>GAIE-legacy admission</strong> (<code>--admission-policy gaie-legacy</code>): Saturation-based shedding matching production llm-d/GAIE. Non-sheddable requests always pass; sheddable requests rejected when pool-average saturation &gt;= 1.0. Saturation = <code>avg(max(qd/qdThreshold, kvUtil/kvThreshold))</code> across instances. Configured via <code>--policy-config</code> YAML only:</p>
+<table>
+<thead>
+<tr>
+<th>YAML field</th>
+<th>Type</th>
+<th>Default</th>
+<th>Source</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>admission.gaie_qd_threshold</code></td>
+<td>float64</td>
+<td>5</td>
+<td>GAIE <code>DefaultQueueDepthThreshold</code> (<code>config.go:31</code>)</td>
+<td>Per-instance queue depth threshold. Must be &gt; 0.</td>
+</tr>
+<tr>
+<td><code>admission.gaie_kv_threshold</code></td>
+<td>float64</td>
+<td>0.8</td>
+<td>GAIE <code>DefaultKVCacheUtilThreshold</code> (<code>config.go:33</code>)</td>
+<td>Per-instance KV cache utilization threshold. Must be in (0, 1.0].</td>
+</tr>
+<tr>
+<td><code>admission.slo_priorities</code></td>
+<td>map[string]int</td>
+<td>nil</td>
+<td>—</td>
+<td>Custom SLO class priority overrides (shared with tier-shed).</td>
 </tr>
 </tbody>
 </table>
