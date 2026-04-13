@@ -36,8 +36,6 @@ By modeling the behavior of production systems at the server ([vLLM](https://git
 - **Capacity planning** — Compare model/GPU/TP configurations
 - **Workload analysis** — Test how switching from TP=2 to TP=4 affects tail latency under production traffic patterns
 
-Physics-based dynamics with learnable latency components generalize across model architectures and hardware while maintaining production fidelity. Test new configurations on a laptop in seconds without needing production infrastructure. This enables frameworks like [ADRS](https://sky.cs.berkeley.edu/project/adrs/) (AI-Driven Research Systems) to develop and validate serving policies through fast simulation loops.
-
 This article walks through what it takes to build that level of fidelity — from token batching physics to distributed orchestration, by following a request's end-to-end journey through the system to see where every millisecond of complexity originates.
 
 ## A Request's Journey: The Hidden Complexity
