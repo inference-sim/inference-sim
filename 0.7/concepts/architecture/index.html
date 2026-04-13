@@ -51,6 +51,8 @@
       
     
     
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
     <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
@@ -2667,6 +2669,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2723,6 +2729,36 @@
   
   
     <li class="md-nav__item">
+      <a href="../../blog/category/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
       <a href="../../blog/category/capacity-planning/" class="md-nav__link">
         
   
@@ -2731,6 +2767,36 @@
     
   
     Capacity Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/category/deep-dives/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deep Dives
   
 
     
@@ -3155,12 +3221,22 @@
 <td>Rate-limiting via a token bucket with configurable capacity and refill rate</td>
 </tr>
 <tr>
+<td><code>tier-shed</code></td>
+<td>SLO-aware shedding: rejects low-priority tiers under overload (configurable threshold)</td>
+</tr>
+<tr>
+<td><code>gaie-legacy</code></td>
+<td>Production llm-d/GAIE parity: saturation-based shedding of sheddable requests (priority &lt; 0)</td>
+</tr>
+<tr>
 <td><code>reject-all</code></td>
 <td>Reject all requests (for pathological testing)</td>
 </tr>
 </tbody>
 </table>
 <p><strong>Token bucket</strong> rate-limits by consuming tokens proportional to input length: each request consumes tokens equal to its input token count, tokens refill at a constant rate, and requests are rejected when the bucket has insufficient tokens. Capacity and refill rate are configured via <code>--token-bucket-capacity</code> and <code>--token-bucket-refill-rate</code>.</p>
+<p><strong>Tier-shed</strong> rejects requests whose SLO tier priority falls below a configurable <code>tier_shed_min_priority</code> when any instance's effective load exceeds <code>tier_shed_threshold</code>. Non-sheddable tiers (critical, standard) are protected.</p>
+<p><strong>GAIE-legacy</strong> replicates the saturation-based admission from production llm-d's Gateway API Inference Extension. It computes pool-average saturation as <code>avg(max(qd/qdThreshold, kv/kvThreshold))</code> across instances. Non-sheddable requests (priority &gt;= 0) always pass; sheddable requests are rejected when saturation &gt;= 1.0. Defaults match GAIE production: <code>qdThreshold=5</code>, <code>kvThreshold=0.8</code>. See the <a href="../../guide/admission/#gaie-legacy-admission">Admission Guide</a> for details.</p>
 <p>Rejected requests are counted in the output metrics but do not enter the routing pipeline. To add a new admission policy, see <a href="../../contributing/extension-recipes/">Extension Recipes</a>. See <a href="../../reference/configuration/#admission-policy">Configuration Reference</a> for flag details.</p>
 <h2 id="routing-pipeline">Routing Pipeline<a class="headerlink" href="#routing-pipeline" title="Permanent link">&para;</a></h2>
 <p>Routing selects which instance receives an admitted request. The routing policy sees a <code>RouterState</code> containing routing snapshots for all instances and the current simulation clock.</p>
@@ -3242,7 +3318,7 @@
 <tr>
 <td><code>precise-prefix-cache</code></td>
 <td>Actual KV cache state</td>
-<td>Min-max normalization of cached prefix block count per instance</td>
+<td>Min-max normalization of cached prefix block count per instance; all-equal (including all-zero) → 1.0 (llm-d parity)</td>
 <td>Stateless: queries instance KV cache directly via <code>CacheQueryFn</code></td>
 </tr>
 <tr>
@@ -3526,6 +3602,12 @@
     
     
       <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../javascripts/mermaid-text-fix.js"></script>
+      
+        <script src="../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
       
     
   </body>

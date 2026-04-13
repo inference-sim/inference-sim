@@ -51,6 +51,8 @@
       
     
     
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
     <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
@@ -2561,6 +2563,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2617,6 +2623,36 @@
   
   
     <li class="md-nav__item">
+      <a href="../../blog/category/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
       <a href="../../blog/category/capacity-planning/" class="md-nav__link">
         
   
@@ -2625,6 +2661,36 @@
     
   
     Capacity Planning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../../blog/category/deep-dives/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deep Dives
   
 
     
@@ -2877,14 +2943,14 @@
 <h2 id="2-core-methodology-the-roofline-model">2. Core Methodology: The Roofline Model<a class="headerlink" href="#2-core-methodology-the-roofline-model" title="Permanent link">&para;</a></h2>
 <p>The simulator predicts execution time by identifying whether a phase (prefill/decode) is <strong>Compute-Bound</strong> or <strong>Memory-Bound</strong>. </p>
 <p>For each phase:</p>
-<p>$$\text{Phase Time} = \max\left( \frac{\text{Total FLOPS}}{\text{Peak Performance}}, \frac{\text{Total Bytes Transferred}}{\text{Memory Bandwidth}} \right)$$</p>
+<div class="arithmatex">\[\text{Phase Time} = \max\left( \frac{\text{Total FLOPS}}{\text{Peak Performance}}, \frac{\text{Total Bytes Transferred}}{\text{Memory Bandwidth}} \right)\]</div>
 <p>As a result, overall step time is given by:</p>
-<p>$$\text{Step Time} = \text{Prefill Phase Time} + \text{Decode Phase Time}$$</p>
+<div class="arithmatex">\[\text{Step Time} = \text{Prefill Phase Time} + \text{Decode Phase Time}\]</div>
 <hr />
 <h2 id="3-calculation-phases">3. Calculation Phases<a class="headerlink" href="#3-calculation-phases" title="Permanent link">&para;</a></h2>
 <h3 id="a-flops-calculation-calculatetransformerflops">A. FLOPs Calculation (<code>calculateTransformerFlops</code>)<a class="headerlink" href="#a-flops-calculation-calculatetransformerflops" title="Permanent link">&para;</a></h3>
 <p>We track two types of operations:
-* <strong>GEMM Ops:</strong> Matrix multiplications for QKV projections, Attention Output, and MLP (SwiGLU) layers. Includes $QK^T$ and $AV$ operations.
+* <strong>GEMM Ops:</strong> Matrix multiplications for QKV projections, Attention Output, and MLP (SwiGLU) layers. Includes <span class="arithmatex">\(QK^T\)</span> and <span class="arithmatex">\(AV\)</span> operations.
 * <strong>Vector Ops:</strong> Non-tensor core operations like Softmax, RoPE (rotary embeddings), and normalization.</p>
 <h3 id="b-memory-access-calculatememoryaccessbytes">B. Memory Access (<code>calculateMemoryAccessBytes</code>)<a class="headerlink" href="#b-memory-access-calculatememoryaccessbytes" title="Permanent link">&para;</a></h3>
 <p>We calculate the data movement between HBM (High Bandwidth Memory) and the processor:
@@ -2897,7 +2963,7 @@
 <ol>
 <li><strong>Prefill Phase:</strong> Calculated for the initial prompt processing chunk.</li>
 <li><strong>Decode Phase:</strong> Calculated for generating new tokens (usually memory-bound).</li>
-<li><strong>Communication Overhead:</strong> If using Tensor Parallelism ($TP &gt; 1$), adds All-Reduce latency per layer.</li>
+<li><strong>Communication Overhead:</strong> If using Tensor Parallelism (<span class="arithmatex">\(TP &gt; 1\)</span>), adds All-Reduce latency per layer.</li>
 <li><strong>Hardware Overheads:</strong> Static kernel launch times and layer-by-layer overhead constants.</li>
 </ol>
 <hr />
@@ -3067,6 +3133,12 @@
     
     
       <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../javascripts/mermaid-text-fix.js"></script>
+      
+        <script src="../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
       
     
   </body>
