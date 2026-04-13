@@ -33,7 +33,7 @@ The general precedence (CLI → YAML → hardcoded) applies everywhere, but each
 2. `defaults.yaml` `defaults[]` entry — matched by `--model`
 3. Error — roofline/crossmodel/trained-roofline require these values; blackbox fails at coefficient lookup
 
-**KV cache blocks** (`--total-kv-blocks`): See the detailed [Resolution Process](#resolution-process) below — four layers including auto-calculation from GPU memory.
+**KV cache blocks** (`--total-kv-blocks`): See the detailed [Resolution Process](#resolution-process) below — three layers: CLI flag, auto-calculation, or 1M default.
 
 **Workload parameters** (`--rate`, `--num-requests`, `--prompt-tokens`, etc.):
 
@@ -153,7 +153,7 @@ For analytical step time estimation without trained coefficients.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--latency-model` | string | "roofline" | Latency model backend: `roofline` (default), `blackbox`, `crossmodel`, `trained-roofline`. When set to `roofline`, `crossmodel`, or `trained-roofline`, auto-fetches HuggingFace config.json and resolves hardware config. Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. `trained-roofline` is recommended for new models (7% MAPE GPU step time). |
+| `--latency-model` | string | "roofline" | Latency model backend: `roofline` (default), `blackbox`, `crossmodel`, `trained-roofline`, `trained-physics`. All backends auto-fetch HuggingFace config.json for KV block auto-calculation (may require network access). Analytical backends (`roofline`, `crossmodel`, `trained-roofline`, `trained-physics`) require `config.json` for latency estimation and KV sizing. `blackbox` uses `config.json` only for KV sizing (falls back to 1M blocks if unavailable). Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. `trained-physics` is recommended for new models. |
 | `--model-config-folder` | string | "" | Path to folder containing HuggingFace `config.json`. Overrides `--latency-model` auto-resolution. |
 | `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. Overrides `--latency-model` auto-resolution. |
 
