@@ -29,20 +29,20 @@ The answer is **end-to-end simulation**: model the entire distributed inference 
 
 BLIS uses discrete-event simulation to model all three layers. This full-stack fidelity enables **capacity planning** (instance count, GPU type, TP degree) and **configuration search** (routing weights, admission thresholds). Without modeling distributed system couplings, planners predict linear scaling where production saturates, miss SLO violations from routing pile-on, or deploy autoscalers that oscillate.
 
-By modeling production systems ([vLLM](https://github.com/vllm-project/vllm), [llm-d](https://llm-d.ai)) behavior, BLIS enables safe experimentation before deployment:
+By modeling the behavior of production systems at the server ([vLLM](https://github.com/vllm-project/vllm)) and platform ([llm-d](https://llm-d.ai)) layers, BLIS enables safe experimentation before deployment:
 
 - **Routing policies** — Test new scorer combinations and weights
 - **Admission control** — Explore saturation thresholds and flow control strategies
 - **Capacity planning** — Compare model/GPU/TP configurations
 - **Workload analysis** — Test how switching from TP=2 to TP=4 affects tail latency under production traffic patterns
 
-Physics-based dynamics with learnable latency components generalize across model architectures and hardware while maintaining production fidelity. Test new configurations on a laptop in seconds without needing production infrastructure. This enables projects like [ADRS](https://sky.cs.berkeley.edu/project/adrs/) (AI-Driven Research Systems) to develop and validate serving policies through fast simulation loops.
+Physics-based dynamics with learnable latency components generalize across model architectures and hardware while maintaining production fidelity. Test new configurations on a laptop in seconds without needing production infrastructure. This enables frameworks like [ADRS](https://sky.cs.berkeley.edu/project/adrs/) (AI-Driven Research Systems) to develop and validate serving policies through fast simulation loops.
 
 This article walks through what it takes to build that level of fidelity — from token batching physics to distributed orchestration, by following a request's end-to-end journey through the system to see where every millisecond of complexity originates.
 
 ## A Request's Journey: The Hidden Complexity
 
-A user hits enter, and fifty milliseconds later the first token appears. What happened in between? Three architectural layers working together: the inference engine (vLLM), the data plane (cluster orchestration), and the control plane (autoscaling), all of which high-fidelity simulation must model.
+A user hits enter, and 50ms later the first token appears. What happened in between? Three architectural layers working together: the inference engine (vLLM), the data plane (cluster orchestration), and the control plane (autoscaling), all of which high-fidelity simulation must model.
 
 ```mermaid
 flowchart TB
@@ -78,12 +78,13 @@ flowchart TB
     end
 
     Request([Request]) --> Layer2
-    PD -->|Unified| Layer1
+    PD -->|Aggregate| Layer1
     PD -->|Disaggregated| PrefillPool
     PrefillPool -->|KV Transfer| DecodePool
     Layer1 --> Response([Response])
     DecodePool --> Response
     Layer3 -.-> Layer2
+    Layer3 -.-> Layer1
     Layer1 -.->|metrics| Layer3
     PrefillPool -.->|metrics| Layer3
     DecodePool -.->|metrics| Layer3
@@ -144,7 +145,7 @@ graph LR
     F -->|KV Transfer| G[Decode Pool]
 ```
 
-**Admission control** determines whether requests enter the system. BLIS models saturation-based admit/reject decisions: when cluster load exceeds thresholds, incoming requests are rejected or queued rather than overwhelming instances. This prevents queue explosion during traffic spikes and avoids pile-on where burst arrivals flood the same "best" instance.
+**Admission control** determines whether requests enter the system. BLIS models saturation-based admit/reject decisions, the default behavior in llm-d: when cluster load exceeds thresholds, incoming requests are rejected or queued rather than overwhelming instances. This prevents queue explosion during traffic spikes and avoids pile-on where burst arrivals flood the same "best" instance.
 
 **Routing** assigns each request to an instance by scoring on weighted signals - prefix cache hits, queue depth, KV utilization. The challenge: burst arrivals cause all routing decisions to see the same stale state and pick the same "best" instance. BLIS models in-flight tracking (counting already-dispatched requests) and signal staleness (cache state queries a 2-second-old snapshot, matching llm-d's ZMQ propagation delay).
 
@@ -152,11 +153,11 @@ graph LR
 
 ### Layer 3: The Control Plane (Autoscaling)
 
-> **TL;DR:** Real autoscaling experiments are expensive—feedback loops spanning minutes (HPA scrapes, pod scheduling, VM provisioning, model loading) require 30+ minutes and 10+ GPU replicas per test. BLIS models llm-d's WVA (Workload Variant Autoscaler) four-stage pipeline with pluggable Collector/Analyzer/Optimizer/Actuator interfaces, compressing experiments to seconds on a laptop.
+> **TL;DR:** Real autoscaling experiments are expensive—feedback loops spanning minutes (HPA scrapes, pod scheduling, VM provisioning, model loading) require 30+ minutes and 10+ GPU replicas per test. BLIS models llm-d's [WVA](https://github.com/inference-sim/llm-d-workload-variant-autoscaler) (Workload Variant Autoscaler) four-stage pipeline with pluggable Collector/Analyzer/Optimizer/Actuator interfaces, compressing experiments to seconds on a laptop.
 
 Autoscaling dynamically adjusts instance count to match demand. In production, this happens through feedback loops where HPA scrapes, Kubernetes scheduling, VM provisioning, and model loading all add latency before a new replica serves traffic.
 
-**What BLIS captures.** BLIS models llm-d's WVA four-stage pipeline — Collect, Analyze, Optimize, Actuate, with pluggable interfaces. **Collector** observes per-replica metrics, **Analyzer** detects saturation and emits scaling signals, **Optimizer** decides which GPU types to add/remove respecting multi-model inventory constraints, and **Actuator** applies decisions with configurable delay.
+**What BLIS captures.** BLIS models llm-d's [WVA](https://github.com/inference-sim/llm-d-workload-variant-autoscaler) (Workload Variant Autoscaler) four-stage pipeline — Collect, Analyze, Optimize, Actuate, with pluggable interfaces. **Collector** observes per-replica metrics, **Analyzer** detects saturation and emits scaling signals, **Optimizer** decides which GPU types to add/remove respecting multi-model inventory constraints, and **Actuator** applies decisions with configurable delay.
 
 **What BLIS enables.** Researchers can sweep scaling thresholds, compare analyzer strategies under identical workloads, and test multi-model scenarios where scaling one model steals GPUs from another. Each pluggable interface becomes a research hook—swap in a cost-aware Optimizer or an Analyzer that predicts load spikes. The result: discover and validate better autoscaling policies before deployment, with full control over feedback delays and provisioning latencies.
 
