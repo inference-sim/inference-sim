@@ -126,7 +126,7 @@ flowchart LR
     Coeffs --> StepTime
 ```
 
-This approach generalizes across LLM architectures, hardware configurations, and tensor parallelism degrees, enabling seamless experimentation with any model-GPU-TP combination without per-configuration calibration. Accurate forward pass predictions drive accurate end-to-end latency metrics.
+This approach is intended to generalize across LLM architectures, hardware configurations, and tensor parallelism degrees, enabling seamless experimentation with any model-GPU-TP combination without per-configuration calibration. Accurate forward pass predictions drive accurate end-to-end latency metrics.
 
 ### Layer 2: The Data Plane (Cluster Orchestration)
 
