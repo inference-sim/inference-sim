@@ -58,6 +58,14 @@ func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
 		"kv-transfer-bandwidth", "kv-transfer-base-latency",
 		"snapshot-refresh-interval",
 
+		// registerSimConfigFlags: cache signal delay
+		"cache-signal-delay",
+
+		// registerSimConfigFlags: flow control
+		"flow-control", "saturation-detector", "dispatch-order",
+		"max-gateway-queue-depth", "queue-depth-threshold",
+		"kv-cache-util-threshold", "max-concurrency",
+
 		// replay-specific: results
 		"results-path",
 
@@ -412,6 +420,14 @@ warm_up_requests: 0
 	origTraceData := traceDataPath
 	origSimHorizon := simulationHorizon
 	origTraceOutput := replayTraceOutput
+	origCacheSignalDelay := cacheSignalDelay
+	origFlowControlEnabled := flowControlEnabled
+	origFlowControlDetector := flowControlDetector
+	origFlowControlDispatchOrder := flowControlDispatchOrder
+	origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
+	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
+	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
+	origFlowControlMaxConcurrency := flowControlMaxConcurrency
 	defer func() {
 		model = origModel
 		latencyModelBackend = origBackend
@@ -442,6 +458,14 @@ warm_up_requests: 0
 		traceDataPath = origTraceData
 		simulationHorizon = origSimHorizon
 		replayTraceOutput = origTraceOutput
+		cacheSignalDelay = origCacheSignalDelay
+		flowControlEnabled = origFlowControlEnabled
+		flowControlDetector = origFlowControlDetector
+		flowControlDispatchOrder = origFlowControlDispatchOrder
+		flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
+		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
+		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
+		flowControlMaxConcurrency = origFlowControlMaxConcurrency
 	}()
 
 	// Set package-level vars
@@ -601,6 +625,14 @@ warm_up_requests: 0
 	origTraceData := traceDataPath
 	origSimHorizon := simulationHorizon
 	origTraceOutput := replayTraceOutput
+	origCacheSignalDelay := cacheSignalDelay
+	origFlowControlEnabled := flowControlEnabled
+	origFlowControlDetector := flowControlDetector
+	origFlowControlDispatchOrder := flowControlDispatchOrder
+	origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
+	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
+	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
+	origFlowControlMaxConcurrency := flowControlMaxConcurrency
 	defer func() {
 		model = origModel
 		latencyModelBackend = origBackend
@@ -631,6 +663,14 @@ warm_up_requests: 0
 		traceDataPath = origTraceData
 		simulationHorizon = origSimHorizon
 		replayTraceOutput = origTraceOutput
+		cacheSignalDelay = origCacheSignalDelay
+		flowControlEnabled = origFlowControlEnabled
+		flowControlDetector = origFlowControlDetector
+		flowControlDispatchOrder = origFlowControlDispatchOrder
+		flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
+		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
+		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
+		flowControlMaxConcurrency = origFlowControlMaxConcurrency
 	}()
 
 	// Library-level BC-1 verification: trace loads correctly and requests are correct
@@ -804,6 +844,14 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	origTraceData := traceDataPath
 	origSimHorizon := simulationHorizon
 	origTraceOutput := replayTraceOutput
+	origCacheSignalDelay := cacheSignalDelay
+	origFlowControlEnabled := flowControlEnabled
+	origFlowControlDetector := flowControlDetector
+	origFlowControlDispatchOrder := flowControlDispatchOrder
+	origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
+	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
+	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
+	origFlowControlMaxConcurrency := flowControlMaxConcurrency
 	defer func() {
 		model = origModel
 		latencyModelBackend = origBackend
@@ -834,6 +882,14 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 		traceDataPath = origTraceData
 		simulationHorizon = origSimHorizon
 		replayTraceOutput = origTraceOutput
+		cacheSignalDelay = origCacheSignalDelay
+		flowControlEnabled = origFlowControlEnabled
+		flowControlDetector = origFlowControlDetector
+		flowControlDispatchOrder = origFlowControlDispatchOrder
+		flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
+		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
+		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
+		flowControlMaxConcurrency = origFlowControlMaxConcurrency
 	}()
 
 	model = "test-model"
@@ -941,6 +997,14 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		origTraceData := traceDataPath
 		origSimHorizon := simulationHorizon
 		origTraceOutput := replayTraceOutput
+		origCacheSignalDelay := cacheSignalDelay
+		origFlowControlEnabled := flowControlEnabled
+		origFlowControlDetector := flowControlDetector
+		origFlowControlDispatchOrder := flowControlDispatchOrder
+		origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
+		origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
+		origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
+		origFlowControlMaxConcurrency := flowControlMaxConcurrency
 		defer func() {
 			model = origModel
 			latencyModelBackend = origBackend
@@ -971,6 +1035,14 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 			traceDataPath = origTraceData
 			simulationHorizon = origSimHorizon
 			replayTraceOutput = origTraceOutput
+			cacheSignalDelay = origCacheSignalDelay
+			flowControlEnabled = origFlowControlEnabled
+			flowControlDetector = origFlowControlDetector
+			flowControlDispatchOrder = origFlowControlDispatchOrder
+			flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
+			flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
+			flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
+			flowControlMaxConcurrency = origFlowControlMaxConcurrency
 		}()
 
 		model = "test-model"
