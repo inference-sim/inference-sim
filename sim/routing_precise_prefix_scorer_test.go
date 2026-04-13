@@ -36,7 +36,7 @@ func TestPrecisePrefixCache_MinMaxNormalization(t *testing.T) {
 	}
 }
 
-// TestPrecisePrefixCache_AllEqual verifies BC-2: all-equal cached blocks produce uniform scores.
+// TestPrecisePrefixCache_AllEqual verifies all-equal cached blocks produce uniform 1.0 scores.
 // All-zero → 1.0 (llm-d parity: all-equal always returns 1.0).
 // All-equal nonzero → 1.0 (all instances equally good).
 func TestPrecisePrefixCache_AllEqual(t *testing.T) {
