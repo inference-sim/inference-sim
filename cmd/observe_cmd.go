@@ -354,6 +354,13 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	client := NewRealClient(observeServerURL, observeAPIKey, observeModel, observeServerType, WithAPIFormat(observeAPIFormat))
 	recorder := &Recorder{}
 
+	// Calibrate tokens-per-word ratio for the server's tokenizer (BC-6).
+	// Used for both prefix string building and non-prefix prompt scaling.
+	calibCtx, calibCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer calibCancel()
+	tokensPerWord := calibratePrefixTokenRatio(calibCtx, client)
+	logrus.Infof("Calibrated tokens-per-word ratio: %.3f", tokensPerWord)
+
 	// Build prefix strings for prefix-group clients (BC-5)
 	var prefixes map[string]string
 	var prefixLengths map[string]int
@@ -369,11 +376,8 @@ func runObserve(cmd *cobra.Command, _ []string) {
 			}
 		}
 		if len(groups) > 0 {
-			calibCtx, calibCancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer calibCancel()
-			tokensPerWord := calibratePrefixTokenRatio(calibCtx, client)
 			prefixes, prefixLengths = buildPrefixStrings(groups, spec.Seed, tokensPerWord)
-			logrus.Infof("Built prefix strings for %d prefix groups (%.3f tokens/word)", len(groups), tokensPerWord)
+			logrus.Infof("Built prefix strings for %d prefix groups", len(groups))
 		}
 	}
 
@@ -404,7 +408,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 
 	// Run orchestrator
 	startTime := time.Now()
-	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, observeNoStreaming, observeMaxConcur, observeWarmup, prefixes, prefixLengths, observeUnconstrainedOutput, observeRecordITL)
+	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, observeNoStreaming, observeMaxConcur, observeWarmup, prefixes, prefixLengths, observeUnconstrainedOutput, observeRecordITL, tokensPerWord)
 	logrus.Infof("Observation wall-clock time: %.3fs", time.Since(startTime).Seconds())
 
 	// Export trace (BC-4)
@@ -480,6 +484,7 @@ func runObserveOrchestrator(
 	prefixLengths map[string]int,
 	unconstrained bool,
 	recordITL bool,
+	tokensPerWord float64,
 ) {
 	if len(requests) == 0 {
 		return
@@ -535,7 +540,7 @@ func runObserveOrchestrator(
 		defer wg.Done()
 		defer func() { <-semaphore }() // release concurrency slot
 
-		pending := requestToPending(req, idx, noStreaming, unconstrained, prefixes, prefixLengths)
+		pending := requestToPending(req, idx, noStreaming, unconstrained, prefixes, prefixLengths, tokensPerWord)
 		record, sendErr := client.Send(ctx, pending)
 		if sendErr != nil {
 			logrus.Warnf("request %d: Send returned error: %v", idx, sendErr)
@@ -695,14 +700,38 @@ func adaptForSessionManager(original *sim.Request, record *RequestRecord) *sim.R
 	return adapted
 }
 
+// tokensToPrompt converts token IDs into a diverse prompt string using
+// prefixVocabulary. Each token ID selects a vocabulary word via modular
+// indexing, ensuring different token arrays produce different prompts.
+func tokensToPrompt(tokens []int, wordCount int) string {
+	vocabLen := len(prefixVocabulary)
+	var b strings.Builder
+	b.Grow(wordCount * 8) // average word ~7 chars + space
+	for i := 0; i < wordCount; i++ {
+		var idx int
+		if i < len(tokens) {
+			idx = tokens[i]
+		} else {
+			idx = i
+		}
+		b.WriteString(prefixVocabulary[((idx%vocabLen)+vocabLen)%vocabLen])
+		b.WriteByte(' ')
+	}
+	return b.String()
+}
+
 // requestToPending converts a sim.Request to a PendingRequest for HTTP dispatch.
 // prefixes maps prefix-group name to a pre-built prefix string; prefixLengths maps
 // prefix-group name to the target token count for the prefix (not word count;
 // see buildPrefixStrings). Both may be nil if no prefix groups exist.
-func requestToPending(req *sim.Request, reqIndex int, noStreaming, unconstrained bool, prefixes map[string]string, prefixLengths map[string]int) *PendingRequest {
-	// Generate proportional prompt: ~N words for N InputTokens.
-	// Actual token count varies by tokenizer; ServerInputTokens provides ground truth.
-	wordCount := len(req.InputTokens)
+// tokensPerWord is the calibrated ratio from calibratePrefixTokenRatio; it scales
+// word count so the server tokenizes the prompt to approximately len(InputTokens) tokens.
+func requestToPending(req *sim.Request, reqIndex int, noStreaming, unconstrained bool, prefixes map[string]string, prefixLengths map[string]int, tokensPerWord float64) *PendingRequest {
+	// Scale token count to word count using calibrated ratio (BC-3, BC-6).
+	if tokensPerWord <= 0 {
+		tokensPerWord = 1.0
+	}
+	wordCount := int(math.Round(float64(len(req.InputTokens)) / tokensPerWord))
 	if wordCount <= 0 {
 		wordCount = 1
 	}
@@ -711,16 +740,27 @@ func requestToPending(req *sim.Request, reqIndex int, noStreaming, unconstrained
 	if req.PrefixGroup != "" && prefixes != nil {
 		if prefix, ok := prefixes[req.PrefixGroup]; ok {
 			prefixLen := prefixLengths[req.PrefixGroup]
-			suffixWords := wordCount - prefixLen
+			suffixTokens := len(req.InputTokens) - prefixLen
+			if suffixTokens < 1 {
+				suffixTokens = 1
+			}
+			suffixWords := int(math.Round(float64(suffixTokens) / tokensPerWord))
 			if suffixWords < 1 {
 				suffixWords = 1
 			}
-			prompt = prefix + strings.Repeat("hello ", suffixWords)
+			suffixStart := len(req.InputTokens) - suffixTokens
+			if suffixStart < 0 {
+				suffixStart = 0
+			}
+			if suffixStart > len(req.InputTokens) {
+				suffixStart = len(req.InputTokens)
+			}
+			prompt = prefix + tokensToPrompt(req.InputTokens[suffixStart:], suffixWords)
 		} else {
-			prompt = strings.Repeat("hello ", wordCount)
+			prompt = tokensToPrompt(req.InputTokens, wordCount)
 		}
 	} else {
-		prompt = strings.Repeat("hello ", wordCount)
+		prompt = tokensToPrompt(req.InputTokens, wordCount)
 	}
 
 	return &PendingRequest{
