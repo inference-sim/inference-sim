@@ -758,6 +758,82 @@ func (c *ClusterSimulator) nextSeqID() int64 {
 	return id
 }
 
+// addLiveInstance constructs, registers, and activates an InstanceSimulator for a
+// placement that succeeded while the cluster is already running.
+// Called from NodeReadyEvent.Execute (deferred placement) and DirectActuator.scaleUp
+// (autoscaler direct placement). NOT used by the NewClusterSimulator startup path,
+// which bulk-initialises the snapshot provider with a full instance map.
+//
+// simCfg must already have GPU and HWConfig set (pool-authoritative, SC-004).
+// Returns true on success. On false, GPU allocations have been released — callers
+// must not touch the instance and should skip/continue.
+//
+// Maintenance note: if you add a new field to instance initialisation here, also
+// check NewClusterSimulator's construction loop (which does NOT call this method).
+func (cs *ClusterSimulator) addLiveInstance(
+	id InstanceID,
+	model string,
+	simCfg sim.SimConfig,
+	nodeID string,
+	gpuIDs []string,
+	tpDegree int,
+	costPerHour float64,
+) bool {
+	inst := NewInstanceSimulator(id, simCfg)
+	inst.Model = model
+	inst.nodeID = nodeID
+	inst.allocatedGPUIDs = gpuIDs
+	inst.TPDegree = tpDegree
+	inst.CostPerHour = costPerHour
+	inst.warmUpRemaining = cs.config.InstanceLifecycle.WarmUpRequestCount
+	inst.TransitionTo(InstanceStateLoading)
+
+	csp, ok := cs.snapshotProvider.(*CachedSnapshotProvider)
+	if !ok {
+		// snapshotProvider is nil or not *CachedSnapshotProvider — can only happen in unit
+		// tests that bypass NewClusterSimulator. Release GPUs so they are not held by a
+		// phantom instance (R1: no silent data loss).
+		logrus.Warnf("[cluster] addLiveInstance: snapshotProvider is not *CachedSnapshotProvider for instance %s — releasing GPUs and skipping", id)
+		cs.releaseInstanceGPUs(inst)
+		return false
+	}
+	csp.AddInstance(id, inst)
+
+	cs.scheduleInstanceLoadedEvent(inst)
+	cs.instances = append(cs.instances, inst)
+	cs.inFlightRequests[string(id)] = 0
+
+	// Register with cacheQueryFn for precise prefix scoring.
+	// registerInstanceCacheQueryFn handles both oracle and stale modes (R23).
+	if cs.cacheQueryFn != nil {
+		cs.registerInstanceCacheQueryFn(id, inst)
+	}
+
+	// Wire OnRequestDone callback — mirrors startup path in NewClusterSimulator (R4).
+	onRequestDone := cs.sessionCallback
+	if onRequestDone != nil || cs.tenantTracker != nil {
+		inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
+			if cs.tenantTracker != nil {
+				cs.tenantTracker.OnComplete(req.TenantID)
+			}
+			if onRequestDone == nil {
+				return nil
+			}
+			nextReqs := onRequestDone(req, tick)
+			for _, next := range nextReqs {
+				heap.Push(&cs.clusterEvents, clusterEventEntry{
+					event: &ClusterArrivalEvent{time: next.ArrivalTime, request: next},
+					seqID: cs.nextSeqID(),
+				})
+				cs.pendingArrivals++ // mirror Run() — session follow-ups must be tracked
+			}
+			return nil // don't inject locally — route through cluster pipeline
+		}
+	}
+
+	return true
+}
+
 // poolsConfigured returns true if PD disaggregation pool topology is active.
 func (c *ClusterSimulator) poolsConfigured() bool {
 	return c.poolMembership != nil

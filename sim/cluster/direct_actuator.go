@@ -62,16 +62,46 @@ func (a *DirectActuator) scaleUp(d ScaleDecision) error {
 		a.nextInstSeq++
 		id := InstanceID(fmt.Sprintf("autoscale-%s-%06d", d.ModelID, a.nextInstSeq))
 
+		// Reserve GPU slots. GPUType comes from the scale decision (variant-authoritative).
 		nodeID, gpuIDs, matchedGPU, err := a.cluster.placement.PlaceInstance(
 			id, d.ModelID, d.Variant.GPUType, d.Variant.TPDegree,
 		)
 		if err != nil {
-			logrus.Errorf("[actuator] scale-up for model %q variant %v failed: %v (INV-A2)", d.ModelID, d.Variant, err)
+			logrus.Errorf("[actuator] scale-up for model %q variant %v: PlaceInstance failed: %v (INV-A2)", d.ModelID, d.Variant, err)
 			lastErr = err
 			continue
 		}
-		logrus.Infof("[actuator] scale-up: placed instance %s for model %q on node %s (gpus=%v, matchedGPU=%s)",
-			id, d.ModelID, nodeID, gpuIDs, matchedGPU)
+
+		// Build simCfg: start from the cluster default, then apply pool-authoritative GPU
+		// type and HWConfig override (SC-004, mirrors NewClusterSimulator startup path).
+		simCfg := a.cluster.config.resolveConfigForRole(PoolRole(0))
+		simCfg.GPU = matchedGPU
+		if hc, ok := a.cluster.config.HWConfigByGPU[matchedGPU]; ok {
+			if hc.TFlopsPeak <= 0 || hc.BwPeakTBs <= 0 {
+				panic(fmt.Sprintf("HWConfigByGPU[%q]: TFlopsPeak and BwPeakTBs must be positive, got TFlopsPeak=%v BwPeakTBs=%v",
+					matchedGPU, hc.TFlopsPeak, hc.BwPeakTBs))
+			}
+			simCfg.HWConfig = hc
+		}
+
+		// Look up CostPerHour for this GPU type (mirrors NodeReadyEvent and startup path).
+		var costPerHour float64
+		for i := range a.cluster.config.NodePools {
+			if a.cluster.config.NodePools[i].GPUType == matchedGPU {
+				costPerHour = a.cluster.config.NodePools[i].CostPerHour
+				break
+			}
+		}
+
+		// Construct, register, and activate the instance. GPU release on snapshotProvider
+		// failure is handled inside addLiveInstance.
+		if !a.cluster.addLiveInstance(id, d.ModelID, simCfg, nodeID, gpuIDs, d.Variant.TPDegree, costPerHour) {
+			lastErr = fmt.Errorf("scale-up for model %q: instance %s could not be registered (snapshotProvider type mismatch)", d.ModelID, id)
+			continue
+		}
+
+		logrus.Infof("[actuator] scale-up: placed instance %s for model %q on node %s (gpu=%s, tp=%d)",
+			id, d.ModelID, nodeID, matchedGPU, d.Variant.TPDegree)
 	}
 	return lastErr
 }
