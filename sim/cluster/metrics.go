@@ -101,7 +101,7 @@ type RawMetrics struct {
 	PriorityInversions   int
 	HOLBlockingEvents    int
 	RejectedRequests     int            // admission rejections
-	ShedByTier                map[string]int // per-SLOClass breakdown of tier-shed rejections (Phase 1B-1a); nil when not using tier-shed
+	ShedByTier                map[string]int // per-SLOClass breakdown of all admission rejections (unconditional)
 	// INV-1 extended: injected == completed + running + queued + shed + dropped + timed_out + gw_depth + gw_shed
 	GatewayQueueDepth          int           // Requests still in gateway queue at horizon (issue #882)
 	GatewayQueueShed           int           // Requests shed from gateway queue due to capacity (issue #882)

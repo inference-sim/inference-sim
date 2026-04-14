@@ -36,8 +36,8 @@ func TestPrecisePrefixCache_MinMaxNormalization(t *testing.T) {
 	}
 }
 
-// TestPrecisePrefixCache_AllEqual verifies BC-2: all-equal cached blocks produce uniform scores.
-// All-zero → 0.5 (neutral, no cache data to differentiate).
+// TestPrecisePrefixCache_AllEqual verifies all-equal cached blocks produce uniform 1.0 scores.
+// All-zero → 1.0 (llm-d parity: all-equal always returns 1.0).
 // All-equal nonzero → 1.0 (all instances equally good).
 func TestPrecisePrefixCache_AllEqual(t *testing.T) {
 	tests := []struct {
@@ -45,7 +45,7 @@ func TestPrecisePrefixCache_AllEqual(t *testing.T) {
 		counts map[string]int
 		want   float64
 	}{
-		{"all zero", map[string]int{"a": 0, "b": 0, "c": 0}, 0.5},
+		{"all zero", map[string]int{"a": 0, "b": 0, "c": 0}, 1.0},
 		{"all equal nonzero", map[string]int{"a": 4, "b": 4, "c": 4}, 1.0},
 	}
 	for _, tt := range tests {
