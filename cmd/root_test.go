@@ -874,3 +874,11 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 		t.Error("BC-3: InstanceID empty — wrong schema or SaveResults not called")
 	}
 }
+
+func TestRunCmd_ModelAutoscalerIntervalUs_FlagRegistered(t *testing.T) {
+	flag := runCmd.Flags().Lookup("model-autoscaler-interval-us")
+	assert.NotNil(t, flag, "model-autoscaler-interval-us flag must be registered")
+	defVal, err := strconv.ParseFloat(flag.DefValue, 64)
+	assert.NoError(t, err, "default must be a valid float64")
+	assert.Equal(t, 0.0, defVal, "default must be 0 (disabled)")
+}

@@ -6,6 +6,7 @@ package cluster
 import (
 	"container/heap"
 	"fmt"
+	"math"
 	"math/rand"
 	"sort"
 
@@ -193,7 +194,7 @@ type autoscalerPipeline struct {
 }
 
 // newAutoscalerPipeline constructs an autoscalerPipeline (R4: canonical constructor).
-// Components may be nil at construction time — they are injected by tests or cmd/ before Run().
+// All components must be non-nil; NewClusterSimulator always passes the default WVA pipeline.
 // rng must be non-nil when ActuationDelay.Stddev > 0; passing nil is safe when Stddev == 0.
 func newAutoscalerPipeline(collector Collector, analyzer Analyzer, engine Engine, actuator Actuator, rng *rand.Rand) *autoscalerPipeline {
 	return &autoscalerPipeline{
@@ -280,7 +281,21 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 }
 
 // scheduleNextTick pushes the next ScalingTickEvent to the cluster event queue.
+// In request-bounded runs (horizon == math.MaxInt64), it stops ticking once all
+// arrivals are processed and all instances are idle — preventing an infinite loop.
+// The guard uses <= 0 rather than == 0 as a safety net: session follow-ups, PD
+// callbacks, and drain redirects all increment pendingArrivals before pushing, but
+// <= 0 ensures the guard fires even if a future push site is missed.
 func (p *autoscalerPipeline) scheduleNextTick(cs *ClusterSimulator, nowUs int64) {
+	if cs.config.Horizon == math.MaxInt64 && cs.pendingArrivals <= 0 {
+		var inFlight int
+		for _, v := range cs.inFlightRequests {
+			inFlight += v
+		}
+		if inFlight == 0 {
+			return // no more work; don't self-schedule
+		}
+	}
 	nextAt := nowUs + int64(cs.config.ModelAutoscalerIntervalUs)
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &ScalingTickEvent{At: nextAt},

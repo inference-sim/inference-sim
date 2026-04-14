@@ -69,7 +69,8 @@ type ClusterSimulator struct {
 	tenantTracker *TenantTracker
 
 	// Phase 1C: model autoscaler pipeline. Nil when ModelAutoscalerIntervalUs == 0 (backward-compat, INV-6).
-	autoscaler *autoscalerPipeline
+	autoscaler      *autoscalerPipeline
+	pendingArrivals int // count of ClusterArrivalEvents not yet executed; used by scheduleNextTick to stop ticking when all work is done
 
 	// sessionCallback is the raw onRequestDone parameter for session follow-up
 	// generation in PD mode. Called from detectDecodeCompletions with the original
@@ -92,6 +93,25 @@ type ClusterSimulator struct {
 	flowControlEnabled bool
 	saturationDetector sim.SaturationDetector
 	gatewayQueue       *GatewayQueue
+}
+
+// effectiveAnalyzerConfig applies WVA reference defaults to zero-valued fields.
+// Zero values mean "not configured by caller" — fill with defaults so callers
+// only need to set ModelAutoscalerIntervalUs to enable the autoscaler.
+func effectiveAnalyzerConfig(cfg V2SaturationAnalyzerConfig) V2SaturationAnalyzerConfig {
+	if cfg.KvCacheThreshold == 0 {
+		cfg.KvCacheThreshold = 0.8
+	}
+	if cfg.ScaleUpThreshold == 0 {
+		cfg.ScaleUpThreshold = 0.8
+	}
+	if cfg.ScaleDownBoundary == 0 {
+		cfg.ScaleDownBoundary = 0.4
+	}
+	if cfg.AvgInputTokens == 0 {
+		cfg.AvgInputTokens = 512
+	}
+	return cfg
 }
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
@@ -335,9 +355,9 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 
 	// Phase 1C: initialize autoscaler pipeline when ModelAutoscalerIntervalUs > 0 (issue #692).
 	// Zero interval disables the autoscaler entirely (INV-6 backward-compat).
-	// Concrete pipeline components (collector, analyzer, engine, actuator) are injected after
-	// construction by tests or by the wiring logic in cmd/. Until they are set, all four fields
-	// on cs.autoscaler remain nil, and ScalingTickEvent.Execute() will guard against them.
+	// The default WVA pipeline (DefaultCollector → V2SaturationAnalyzer → UnlimitedEngine →
+	// DirectActuator) is wired here. Tests that need custom components replace cs.autoscaler
+	// after construction via same-package access.
 	// R3: validate autoscaler float64 fields — NaN/Inf/negative values are configuration errors.
 	if math.IsNaN(config.ModelAutoscalerIntervalUs) || math.IsInf(config.ModelAutoscalerIntervalUs, 0) {
 		panic("ModelAutoscalerIntervalUs must not be NaN or Inf")
@@ -358,11 +378,18 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		panic("ActuationDelay.Stddev must be a finite non-negative number")
 	}
 	if config.ModelAutoscalerIntervalUs > 0 {
-		// Interface components (collector, analyzer, engine, actuator) are injected by
-		// tests or cmd/ after construction, before Run() is called (see newAutoscalerPipeline).
-		cs.autoscaler = newAutoscalerPipeline(nil, nil, nil, nil, rng.ForSubsystem(subsystemAutoscaler))
+		// Wire the default WVA pipeline: DefaultCollector → V2SaturationAnalyzer → UnlimitedEngine → DirectActuator.
+		// effectiveAnalyzerConfig fills zero fields with WVA reference defaults so callers only need interval_us.
+		// Tests that need custom components (stubs, nopActuator) replace cs.autoscaler after construction (same-package access).
+		analyzerCfg := effectiveAnalyzerConfig(config.AutoscalerAnalyzerConfig)
+		cs.autoscaler = newAutoscalerPipeline(
+			&DefaultCollector{},
+			NewV2SaturationAnalyzer(analyzerCfg),
+			&UnlimitedEngine{},
+			NewDirectActuator(cs),
+			rng.ForSubsystem(subsystemAutoscaler),
+		)
 	}
-
 
 	// Phase 1B-2a: initialize TenantTracker when TenantBudgets is configured (issue #811).
 	// totalCapacity = NumInstances × MaxRunningReqs (batch size proxy for cluster-wide capacity).
@@ -426,6 +453,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 						event: &ClusterArrivalEvent{time: next.ArrivalTime, request: next},
 						seqID: cs.nextSeqID(),
 					})
+					cs.pendingArrivals++ // mirror Run() — session follow-ups must be tracked
 				}
 				return nil // don't inject locally — route through cluster pipeline
 			}
@@ -495,6 +523,7 @@ func (c *ClusterSimulator) Run() error {
 			event: &ClusterArrivalEvent{time: req.ArrivalTime, request: req},
 			seqID: c.nextSeqID(),
 		})
+		c.pendingArrivals++
 	}
 
 	// 3. Shared-clock event loop (BC-4: cluster events before instance events)
@@ -876,6 +905,7 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 					event: &ClusterArrivalEvent{time: next.ArrivalTime, request: next},
 					seqID: c.nextSeqID(),
 				})
+				c.pendingArrivals++ // mirror Run() — PD session follow-ups must be tracked
 			}
 		}
 	}
@@ -901,6 +931,7 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 					event: &ClusterArrivalEvent{time: next.ArrivalTime, request: next},
 					seqID: c.nextSeqID(),
 				})
+				c.pendingArrivals++ // mirror Run() — PD decode-timeout follow-ups must be tracked
 			}
 		}
 	}
