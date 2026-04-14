@@ -6,7 +6,6 @@ import (
 	"container/heap"
 	"fmt"
 
-	"github.com/inference-sim/inference-sim/sim"
 	"github.com/sirupsen/logrus"
 )
 
@@ -55,11 +54,7 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 			}
 			p.simCfg.HWConfig = hc
 		}
-		inst := NewInstanceSimulator(p.id, p.simCfg)
-		inst.Model = cs.config.Model
-		inst.nodeID = p.nodeID
-		inst.allocatedGPUIDs = p.gpuIDs
-		inst.TPDegree = p.tpDegree
+
 		// Phase 1C: look up CostPerHour for this GPU type (mirrors cluster.go startup path).
 		var poolCostPerHour float64
 		for i := range cs.config.NodePools {
@@ -68,55 +63,9 @@ func (e *NodeReadyEvent) Execute(cs *ClusterSimulator) {
 				break
 			}
 		}
-		inst.CostPerHour = poolCostPerHour
-		inst.warmUpRemaining = cs.config.InstanceLifecycle.WarmUpRequestCount
-		inst.TransitionTo(InstanceStateLoading)
 
-		// Register with snapshot provider for routing (deferred instances were not
-		// in the initial instanceMap passed to NewCachedSnapshotProvider).
-		// Must happen BEFORE scheduleInstanceLoadedEvent so the instance is routable
-		// when the load event fires.
-		csp, ok := cs.snapshotProvider.(*CachedSnapshotProvider)
-		if !ok {
-			// snapshotProvider is nil or not *CachedSnapshotProvider — release GPUs and skip.
-			// R1: no silent data loss; this can occur in unit tests that bypass NewClusterSimulator.
-			// Release GPUs so they are not held by an instance that can never be routed to.
-			logrus.Warnf("[cluster] NodeReadyEvent: snapshotProvider is not *CachedSnapshotProvider for instance %s — releasing GPUs and skipping", p.id)
-			cs.releaseInstanceGPUs(inst)
-			continue
-		}
-		csp.AddInstance(p.id, inst)
-
-		cs.scheduleInstanceLoadedEvent(inst)
-		cs.instances = append(cs.instances, inst)
-		cs.inFlightRequests[string(p.id)] = 0
-
-		// Register with cacheQueryFn for precise prefix scoring (deferred instances).
-		// registerInstanceCacheQueryFn handles both oracle and stale modes (R23).
-		if cs.cacheQueryFn != nil {
-			cs.registerInstanceCacheQueryFn(p.id, inst)
-		}
-
-		// Wire OnRequestDone callback — mirror startup path in NewClusterSimulator (R4).
-		onRequestDone := cs.sessionCallback
-		if onRequestDone != nil || cs.tenantTracker != nil {
-			inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
-				if cs.tenantTracker != nil {
-					cs.tenantTracker.OnComplete(req.TenantID)
-				}
-				if onRequestDone == nil {
-					return nil
-				}
-				nextReqs := onRequestDone(req, tick)
-				for _, next := range nextReqs {
-					heap.Push(&cs.clusterEvents, clusterEventEntry{
-						event: &ClusterArrivalEvent{time: next.ArrivalTime, request: next},
-						seqID: cs.nextSeqID(),
-					})
-					cs.pendingArrivals++ // mirror Run() — session follow-ups must be tracked
-				}
-				return nil // don't inject locally — route through cluster pipeline
-			}
+		if !cs.addLiveInstance(p.id, cs.config.Model, p.simCfg, p.nodeID, p.gpuIDs, p.tpDegree, poolCostPerHour) {
+			continue // GPU release already handled by addLiveInstance
 		}
 	}
 }
