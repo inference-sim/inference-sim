@@ -714,7 +714,7 @@ func tokensToPrompt(tokens []int, wordCount int) string {
 		} else {
 			idx = i
 		}
-		b.WriteString(prefixVocabulary[idx%vocabLen])
+		b.WriteString(prefixVocabulary[((idx%vocabLen)+vocabLen)%vocabLen])
 		b.WriteByte(' ')
 	}
 	return b.String()
@@ -728,6 +728,9 @@ func tokensToPrompt(tokens []int, wordCount int) string {
 // word count so the server tokenizes the prompt to approximately len(InputTokens) tokens.
 func requestToPending(req *sim.Request, reqIndex int, noStreaming, unconstrained bool, prefixes map[string]string, prefixLengths map[string]int, tokensPerWord float64) *PendingRequest {
 	// Scale token count to word count using calibrated ratio (BC-3, BC-6).
+	if tokensPerWord <= 0 {
+		tokensPerWord = 1.0
+	}
 	wordCount := int(math.Round(float64(len(req.InputTokens)) / tokensPerWord))
 	if wordCount <= 0 {
 		wordCount = 1
@@ -748,6 +751,9 @@ func requestToPending(req *sim.Request, reqIndex int, noStreaming, unconstrained
 			suffixStart := len(req.InputTokens) - suffixTokens
 			if suffixStart < 0 {
 				suffixStart = 0
+			}
+			if suffixStart > len(req.InputTokens) {
+				suffixStart = len(req.InputTokens)
 			}
 			prompt = prefix + tokensToPrompt(req.InputTokens[suffixStart:], suffixWords)
 		} else {

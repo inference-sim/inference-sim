@@ -994,6 +994,38 @@ func TestTokensToPrompt_EmptyTokens(t *testing.T) {
 	}
 }
 
+func TestTokensToPrompt_NegativeTokenIDs(t *testing.T) {
+	// Negative token IDs should not panic (Go % preserves sign).
+	tokens := []int{-1, -100, -50, 7}
+	result := tokensToPrompt(tokens, 4)
+	words := strings.Fields(result)
+	if len(words) != 4 {
+		t.Fatalf("word count = %d, want 4", len(words))
+	}
+	vocabSet := make(map[string]bool)
+	for _, w := range prefixVocabulary {
+		vocabSet[w] = true
+	}
+	for i, w := range words {
+		if !vocabSet[w] {
+			t.Errorf("word[%d] = %q, not in prefixVocabulary", i, w)
+		}
+	}
+}
+
+func TestRequestToPending_WordCountClampedToOne(t *testing.T) {
+	// 1 token with tokensPerWord=2.0 → round(0.5)=0 → clamped to 1
+	req := &sim.Request{
+		ID:          "tiny",
+		InputTokens: []int{42},
+	}
+	pending := requestToPending(req, 0, false, false, nil, nil, 2.0)
+	words := strings.Fields(pending.Prompt)
+	if len(words) != 1 {
+		t.Errorf("word count = %d, want 1 (clamped minimum)", len(words))
+	}
+}
+
 func TestBuildPrefixStrings_EmptyGroupsNoWork(t *testing.T) {
 	// BC-5: no prefix groups → no prefix strings, no calibration needed
 	groups := map[string]int{}
