@@ -727,7 +727,7 @@ func tokensToPrompt(tokens []int, wordCount int) string {
 // tokensPerWord is the calibrated ratio from calibratePrefixTokenRatio; it scales
 // word count so the server tokenizes the prompt to approximately len(InputTokens) tokens.
 func requestToPending(req *sim.Request, reqIndex int, noStreaming, unconstrained bool, prefixes map[string]string, prefixLengths map[string]int, tokensPerWord float64) *PendingRequest {
-	// Scale token count to word count using calibrated ratio (BC-5).
+	// Scale token count to word count using calibrated ratio (BC-3, BC-6).
 	wordCount := int(math.Round(float64(len(req.InputTokens)) / tokensPerWord))
 	if wordCount <= 0 {
 		wordCount = 1

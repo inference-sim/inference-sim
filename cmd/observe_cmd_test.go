@@ -851,9 +851,13 @@ func TestRequestToPending_SuffixUsesTokenCountNotWordCount(t *testing.T) {
 		t.Fatalf("prefix word count = %d, want 50", len(prefixWords))
 	}
 
+	suffixTokens := make([]int, 200)
+	for i := range suffixTokens {
+		suffixTokens[i] = i * 3
+	}
 	req := &sim.Request{
 		ID:          "test",
-		InputTokens: make([]int, 200),
+		InputTokens: suffixTokens,
 		PrefixGroup: "scaled",
 	}
 	pending := requestToPending(req, 0, false, false, prefixes, prefixLengths, 1.0)
@@ -914,6 +918,32 @@ func TestRequestToPending_WordCountScaledByTokensPerWord(t *testing.T) {
 	words := strings.Fields(pending.Prompt)
 	if len(words) != 50 {
 		t.Errorf("word count = %d, want 50 (100 tokens / 2.0 tokensPerWord)", len(words))
+	}
+}
+
+func TestRequestToPending_UnknownPrefixGroupFallback(t *testing.T) {
+	// When PrefixGroup is set but not found in prefixes map, the prompt
+	// should fall back to tokensToPrompt (diverse vocabulary), not "hello".
+	prefixes := map[string]string{"groupA": "some prefix "}
+	prefixLengths := map[string]int{"groupA": 5}
+
+	req := &sim.Request{
+		ID:          "fallback",
+		InputTokens: []int{3, 17, 42, 88, 61},
+		PrefixGroup: "unknownGroup",
+	}
+	pending := requestToPending(req, 0, false, false, prefixes, prefixLengths, 1.0)
+
+	if strings.Contains(pending.Prompt, "hello") {
+		t.Error("unknown prefix group fallback should use vocabulary words, not 'hello'")
+	}
+	words := strings.Fields(pending.Prompt)
+	if len(words) != 5 {
+		t.Errorf("word count = %d, want 5", len(words))
+	}
+	// Should NOT start with groupA's prefix
+	if strings.HasPrefix(pending.Prompt, "some prefix") {
+		t.Error("unknown group should not use another group's prefix")
 	}
 }
 
