@@ -2913,32 +2913,25 @@
 
 
 <h1 id="the-physics-of-high-fidelity-distributed-inference-platform-simulation">The Physics of High-Fidelity Distributed Inference Platform Simulation<a class="headerlink" href="#the-physics-of-high-fidelity-distributed-inference-platform-simulation" title="Permanent link">&para;</a></h1>
-<p>Production LLM inference platforms are distributed systems where routing policies, admission control, autoscaling, and engine-level scheduling all interact to determine latencies and throughput. How do you explore how different policies and configurations affect these KPIs before deploying to production? Testing a new routing scorer or autoscaling threshold on live traffic risks cascading bugs across the fleet, while building separate test environments burns GPU-hours and still cannot predict interactions between cluster-level policies and engine-level batch dynamics.</p>
-<p>The answer is <strong>end-to-end simulation</strong>: model the entire distributed inference stack to explore how policies and configurations affect latencies and throughput for your workloads. <em>What does it take to build a simulator accurate enough to guide these decisions?</em> The challenge lies in capturing the right mechanisms across all three layers. At the engine level, batches process together — all requests wait for the slowest operation to finish, so KV cache fills trigger preemptions and long prompts stall short decodes. At the cluster level, routing policies operate on stale cache state, admission control gates overload, and prefill/decode disaggregation trades utilization for latency. At the control plane, autoscalers react to lagged metrics, creating oscillations. When these couplings are not modeled, predictions diverge: a back-of-the-envelope model might predict 50ms time-to-first-token while production measures 200ms.</p>
+<p>Production LLM inference platforms are distributed systems where routing policies, admission control, autoscaling, and engine-level scheduling all interact to determine latencies and throughput. How do you explore how different policies and configurations affect these KPIs before deploying to production? Testing a new routing policy or autoscaling threshold on live traffic risks cascading bugs across the fleet, while building separate test environments burns GPU-hours and still cannot predict interactions between cluster-level policies and engine-level batch dynamics.</p>
+<p>The answer is <strong>end-to-end simulation</strong>: model the entire distributed inference stack to explore how policies and configurations affect latencies and throughput for your workloads. <em>What does it take to build a simulator accurate enough to guide these decisions?</em> The challenge lies in capturing the right mechanisms. At the engine level, batches process together — all requests wait for the slowest operation to finish, so KV cache fills trigger preemptions and long prompts stall short decodes. At the cluster level, routing policies operate on stale cache state, admission control gates overload, and prefill/decode disaggregation trades utilization for latency. At the control plane, autoscalers react to lagged metrics, creating oscillations. When these couplings are not modeled, predictions diverge: a back-of-the-envelope model might predict 50ms time-to-first-token while production measures 200ms.</p>
 <!-- more -->
 
 <h2 id="building-fidelity-from-first-principles">Building Fidelity from First Principles<a class="headerlink" href="#building-fidelity-from-first-principles" title="Permanent link">&para;</a></h2>
 <p><a href="https://github.com/inference-sim/inference-sim">BLIS</a> (Blackbox Inference Simulator) models inference serving through discrete-event simulation, advancing from event to event rather than stepping through continuous time. This approach runs orders of magnitude faster than real-time, requires no GPUs, and evaluates hours of production traffic in seconds.</p>
-<p>BLIS uses discrete-event simulation to model all three layers. This full-stack fidelity enables <strong>capacity planning</strong> (instance count, GPU type, TP degree) and <strong>configuration search</strong> (routing weights, admission thresholds). Without modeling distributed system couplings, planners predict linear scaling where production saturates, miss SLO violations from routing pile-on, or deploy autoscalers that oscillate.</p>
-<p>By modeling production systems (<a href="https://github.com/vllm-project/vllm">vLLM</a>, <a href="https://llm-d.ai">llm-d</a>) behavior, BLIS enables safe experimentation before deployment:</p>
+<p>BLIS uses discrete-event simulation to model the full stack. This full-stack fidelity enables <strong>capacity planning</strong> (instance count, GPU type, TP degree) and <strong>configuration search</strong> (routing weights, admission thresholds). Without modeling distributed system couplings, planners predict linear scaling where production saturates, miss SLO violations from routing pile-on, or deploy autoscalers that oscillate.</p>
+<p>By modeling the behavior of production systems at the server (<a href="https://github.com/vllm-project/vllm">vLLM</a>) and platform (<a href="https://llm-d.ai">llm-d</a>) layers, BLIS enables safe experimentation before deployment:</p>
 <ul>
 <li><strong>Routing policies</strong> — Test new scorer combinations and weights</li>
 <li><strong>Admission control</strong> — Explore saturation thresholds and flow control strategies</li>
 <li><strong>Capacity planning</strong> — Compare model/GPU/TP configurations</li>
 <li><strong>Workload analysis</strong> — Test how switching from TP=2 to TP=4 affects tail latency under production traffic patterns</li>
 </ul>
-<p>Physics-based dynamics with learnable latency components generalize across model architectures and hardware while maintaining production fidelity. Test new configurations on a laptop in seconds without needing production infrastructure. This enables projects like <a href="https://sky.cs.berkeley.edu/project/adrs/">ADRS</a> (AI-Driven Research Systems) to develop and validate serving policies through fast simulation loops.</p>
 <p>This article walks through what it takes to build that level of fidelity — from token batching physics to distributed orchestration, by following a request's end-to-end journey through the system to see where every millisecond of complexity originates.</p>
 <h2 id="a-requests-journey-the-hidden-complexity">A Request's Journey: The Hidden Complexity<a class="headerlink" href="#a-requests-journey-the-hidden-complexity" title="Permanent link">&para;</a></h2>
-<p>A user hits enter, and fifty milliseconds later the first token appears. What happened in between? Three architectural layers working together: the inference engine (vLLM), the data plane (cluster orchestration), and the control plane (autoscaling), all of which high-fidelity simulation must model.</p>
+<p>A user hits enter, and 50ms later the first token appears. What happened in between? Three architectural layers working together: the inference engine (vLLM), the data plane (cluster orchestration), and the control plane (autoscaling), all of which high-fidelity simulation must model.</p>
 <pre class="mermaid"><code>flowchart TB
-    subgraph Layer1["Layer 1: Engine (vLLM)"]
-        Sched[Scheduling]
-        KV[KV Cache]
-        Batch[Prefill+Decode Batch Formation]
-        Step[Forward Pass]
-        Sched --&gt; KV --&gt; Batch --&gt; Step
-    end
+    Request([Request])
 
     subgraph Layer2["Layer 2: Data Plane"]
         Admit[Admission]
@@ -2948,37 +2941,40 @@
         Route --&gt; PD
     end
 
-    subgraph PrefillPool["Prefill Pool"]
-        PF[Prefill Processing]
+    subgraph Layer1["Layer 1: Engine"]
+        Sched[Scheduling]
+        KV[KV Cache]
+        Batch[Batch Formation]
+        Step[Forward Pass]
+        Sched --&gt; KV --&gt; Batch --&gt; Step
     end
 
-    subgraph DecodePool["Decode Pool"]
-        Dec[Decode Processing]
+    subgraph Disagg["Prefill/Decode Disaggregation"]
+        PF[Prefill Pool]
+        Dec[Decode Pool]
+        PF --&gt;|KV Transfer| Dec
     end
+
+    Response([Response])
 
     subgraph Layer3["Layer 3: Control Plane"]
         Monitor[Monitor Metrics]
-        Decide[Scale Decision]
-        Actuate[Add/Remove Instances]
-        Monitor --&gt; Decide --&gt; Actuate
+        Scale[Autoscaling Decisions]
+        Monitor --&gt; Scale
     end
 
-    Request([Request]) --&gt; Layer2
-    PD --&gt;|Unified| Layer1
-    PD --&gt;|Disaggregated| PrefillPool
-    PrefillPool --&gt;|KV Transfer| DecodePool
-    Layer1 --&gt; Response([Response])
-    DecodePool --&gt; Response
-    Layer3 -.-&gt; Layer2
-    Layer1 -.-&gt;|metrics| Layer3
-    PrefillPool -.-&gt;|metrics| Layer3
-    DecodePool -.-&gt;|metrics| Layer3</code></pre>
+    Request --&gt; Admit
+    PD --&gt;|Aggregate| Sched
+    PD --&gt;|Disaggregated| PF
+    Step --&gt; Response
+    Dec --&gt; Response
+    Scale -.-&gt;|add/remove instances| Admit</code></pre>
 <h3 id="layer-1-the-engine-vllm">Layer 1: The Engine (vLLM)<a class="headerlink" href="#layer-1-the-engine-vllm" title="Permanent link">&para;</a></h3>
 <blockquote>
 <p><strong>TL;DR:</strong> Batched execution couples requests together - a heavy prompt in the batch slows down fast decodes running alongside it. BLIS models the full vLLM pipeline (continuous batching, request scheduling and preemption, KV cache pressure, chunked prefill) and predicts forward pass timing using a generalizable model that runs on CPUs without needing real GPUs.</p>
 </blockquote>
 <p>The inference engine does not process requests individually. It processes them in continuously evolving batches. A <strong>step</strong> is one GPU forward pass that advances every request in the batch, either processing prompt tokens (prefill) or generating the next output token (decode). The slowest operation determines when the step completes.</p>
-<p>Why does this matter? Consider a batch with three requests decoding single tokens (fast, memory-bound) and one request processing a 512-token prompt (slow, compute-bound). Everyone waits for the slowest. This is not an edge case - batch composition constantly shifts as new requests arrive and completed ones leave.</p>
+<p>Why does this matter? Consider a batch with three requests decoding single tokens (fast, memory-bound) and one request processing a 512-token prompt (slow, compute-bound). Everyone waits for the slowest. This is not an edge case — batch composition constantly shifts as new requests arrive and completed ones leave.</p>
 <p><strong>What BLIS captures.</strong> vLLM's complexity: continuous batching (requests join and leave mid-flight), mixed prefill-decode execution, block-level KV cache management (prefix reuse, preemption, CPU offloading), and chunked prefill. BLIS models these mechanisms because they determine when requests complete.</p>
 <p><strong>How BLIS predicts step time without GPUs.</strong> BLIS combines physics-based latency models with learned corrections:</p>
 <pre class="mermaid"><code>flowchart LR
@@ -3004,29 +3000,38 @@
     Compute --&gt; StepTime["⏱️ Predicted Step Time"]
     Memory --&gt; StepTime
     Coeffs --&gt; StepTime</code></pre>
-<p>This approach generalizes across LLM architectures, hardware configurations, and tensor parallelism degrees, enabling seamless experimentation with any model-GPU-TP combination without per-configuration calibration. Accurate forward pass predictions drive accurate end-to-end latency metrics.</p>
+<p>This approach is intended to generalize across LLM architectures, hardware configurations, and tensor parallelism degrees, enabling seamless experimentation with any model-GPU-TP combination without per-configuration calibration. Accurate forward pass predictions drive accurate end-to-end latency metrics.</p>
 <h3 id="layer-2-the-data-plane-cluster-orchestration">Layer 2: The Data Plane (Cluster Orchestration)<a class="headerlink" href="#layer-2-the-data-plane-cluster-orchestration" title="Permanent link">&para;</a></h3>
 <blockquote>
-<p><strong>TL;DR:</strong> Production clusters run multiple vLLM instances behind a routing gateway. BLIS models saturation-based admission control, composable weighted routing with in-flight tracking, configurable cache signal staleness, and prefill/decode disaggregation. Pluggable interfaces enable algorithm discovery—test new serving policies without writing production code.</p>
+<p><strong>TL;DR:</strong> Production clusters run multiple vLLM instances behind a routing gateway. BLIS models saturation-based admission control, composable weighted routing with in-flight tracking, configurable cache signal staleness, and prefill/decode disaggregation. Pluggable interfaces enable algorithm discovery — test new serving policies without writing production code.</p>
 </blockquote>
-<pre class="mermaid"><code>graph LR
-    A[Request Arrives] --&gt; B{Admission Control}
-    B --&gt;|Rejected| X[Drop]
-    B --&gt;|Admitted| C[Routing]
-    C --&gt; D{Disaggregation?}
-    D --&gt;|No| E[Aggregated vLLM Processing]
-    D --&gt;|Yes| F[Prefill Pool]
-    F --&gt;|KV Transfer| G[Decode Pool]</code></pre>
-<p><strong>Admission control</strong> determines whether requests enter the system. BLIS models saturation-based admit/reject decisions: when cluster load exceeds thresholds, incoming requests are rejected or queued rather than overwhelming instances. This prevents queue explosion during traffic spikes and avoids pile-on where burst arrivals flood the same "best" instance.</p>
+<pre class="mermaid"><code>flowchart TB
+    A[Request Arrives]
+    B{Admission Control}
+    C[Routing]
+    D{Disaggregation?}
+    E[Aggregated vLLM Processing]
+    F[Prefill Pool]
+    G[Decode Pool]
+    X[Drop]
+
+    A --&gt; B
+    B -- Rejected --&gt; X
+    B -- Admitted --&gt; C
+    C --&gt; D
+    D -- No --&gt; E
+    D -- Yes --&gt; F
+    F -- KV Transfer --&gt; G</code></pre>
+<p><strong>Admission control</strong> determines whether requests enter the system. BLIS models saturation-based admit/reject decisions, the default behavior in llm-d: when cluster load exceeds thresholds, incoming requests are rejected or queued rather than overwhelming instances. This prevents queue explosion during traffic spikes and avoids pile-on where burst arrivals flood the same "best" instance.</p>
 <p><strong>Routing</strong> assigns each request to an instance by scoring on weighted signals - prefix cache hits, queue depth, KV utilization. The challenge: burst arrivals cause all routing decisions to see the same stale state and pick the same "best" instance. BLIS models in-flight tracking (counting already-dispatched requests) and signal staleness (cache state queries a 2-second-old snapshot, matching llm-d's ZMQ propagation delay).</p>
 <p><strong>Prefill/decode disaggregation</strong> separates compute-bound prefill from memory-bound decode onto dedicated GPU pools, allowing each to be sized for its bottleneck. Requests process prefill first, then transfer their KV cache over the network to a decode instance. BLIS models the full pipeline: prefill routing, KV transfer, decode routing, and fair-share bandwidth contention when multiple transfers run concurrently.</p>
 <h3 id="layer-3-the-control-plane-autoscaling">Layer 3: The Control Plane (Autoscaling)<a class="headerlink" href="#layer-3-the-control-plane-autoscaling" title="Permanent link">&para;</a></h3>
 <blockquote>
-<p><strong>TL;DR:</strong> Real autoscaling experiments are expensive—feedback loops spanning minutes (HPA scrapes, pod scheduling, VM provisioning, model loading) require 30+ minutes and 10+ GPU replicas per test. BLIS models llm-d's WVA (Workload Variant Autoscaler) four-stage pipeline with pluggable Collector/Analyzer/Optimizer/Actuator interfaces, compressing experiments to seconds on a laptop.</p>
+<p><strong>TL;DR:</strong> Real autoscaling experiments are expensive—feedback loops spanning minutes (HPA scrapes, pod scheduling, VM provisioning, model loading) require 30+ minutes and 10+ GPU replicas per test. BLIS models llm-d's <a href="https://github.com/inference-sim/llm-d-workload-variant-autoscaler">WVA</a> (Workload Variant Autoscaler) four-stage pipeline with pluggable Collector/Analyzer/Optimizer/Actuator interfaces, compressing experiments to seconds on a laptop.</p>
 </blockquote>
 <p>Autoscaling dynamically adjusts instance count to match demand. In production, this happens through feedback loops where HPA scrapes, Kubernetes scheduling, VM provisioning, and model loading all add latency before a new replica serves traffic.</p>
-<p><strong>What BLIS captures.</strong> BLIS models llm-d's WVA four-stage pipeline — Collect, Analyze, Optimize, Actuate, with pluggable interfaces. <strong>Collector</strong> observes per-replica metrics, <strong>Analyzer</strong> detects saturation and emits scaling signals, <strong>Optimizer</strong> decides which GPU types to add/remove respecting multi-model inventory constraints, and <strong>Actuator</strong> applies decisions with configurable delay.</p>
-<p><strong>What BLIS enables.</strong> Researchers can sweep scaling thresholds, compare analyzer strategies under identical workloads, and test multi-model scenarios where scaling one model steals GPUs from another. Each pluggable interface becomes a research hook—swap in a cost-aware Optimizer or an Analyzer that predicts load spikes. The result: discover and validate better autoscaling policies before deployment, with full control over feedback delays and provisioning latencies.</p>
+<p><strong>What BLIS captures.</strong> BLIS models llm-d's <a href="https://github.com/inference-sim/llm-d-workload-variant-autoscaler">WVA</a> (Workload Variant Autoscaler) four-stage pipeline — Collect, Analyze, Optimize, Actuate, with pluggable interfaces. <strong>Collector</strong> observes per-replica metrics, <strong>Analyzer</strong> detects saturation and emits scaling signals, <strong>Optimizer</strong> decides which GPU types to add/remove respecting multi-model inventory constraints, and <strong>Actuator</strong> applies decisions with configurable delay.</p>
+<p><strong>What BLIS enables.</strong> Researchers can sweep scaling thresholds, compare analyzer strategies under identical workloads, and test multi-model scenarios where scaling one model steals GPUs from another. Each pluggable interface becomes a research hook: swap in a cost-aware Optimizer or an Analyzer that predicts load spikes. The result: discover and validate better autoscaling policies before deployment, with full control over feedback delays and provisioning latencies.</p>
 <h2 id="blis-in-action-simulating-a-configuration-decision">BLIS in Action: Simulating a Configuration Decision<a class="headerlink" href="#blis-in-action-simulating-a-configuration-decision" title="Permanent link">&para;</a></h2>
 <p>Consider a configuration decision: you are deploying Qwen3-14B for chatbot workloads at 50 req/s with 8 instances. Does routing policy matter? What about hardware choice?</p>
 <p>Testing this in production means provisioning separate GPU pools, running 30+ minutes of traffic per setup and burning GPU-hours to discover the answer. With BLIS, you can simulate these configurations in seconds on a laptop:</p>
@@ -3077,8 +3082,8 @@
 </table>
 <p><strong>What the simulation predicts:</strong> Prefix-aware routing delivers measurable gains on H100, but hardware choice has far greater impact. These simulated predictions guide configuration decisions without provisioning real GPUs.</p>
 <h2 id="from-modeling-to-validation">From Modeling to Validation<a class="headerlink" href="#from-modeling-to-validation" title="Permanent link">&para;</a></h2>
-<p>We have covered what it takes to build a high-fidelity distributed platform simulator—modeling engine physics, data plane coordination, and control plane feedback loops. But <strong>how do we know this modeling is accurate?</strong></p>
-<p>We have validated BLIS against production workloads and compared its accuracy to commercial simulators. The methodology and results—cross-system benchmarks and achievable accuracy without per-configuration tuning—deserve their own article.</p>
+<p>We have covered what it takes to build a high-fidelity distributed platform simulator: modeling engine physics, data plane coordination, and control plane feedback loops. But <strong>how do we know this modeling is accurate?</strong></p>
+<p>We have validated BLIS against production workloads and compared its accuracy to commercial simulators. The methodology and results — cross-system benchmarks and achievable accuracy without per-configuration tuning — are covered in a subsequent article.</p>
 <hr />
 <p><em>Next in this series: </em><em>Validating Against Ground Truth</em><em> — Quantifying BLIS accuracy on real workloads, how validation catches regressions, and the methodology behind single-digit percent error.</em></p>
 
