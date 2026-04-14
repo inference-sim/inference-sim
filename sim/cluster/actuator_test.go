@@ -186,11 +186,7 @@ func TestDirectActuatorApply(t *testing.T) {
 		}
 
 		// THEN: instance registered with snapshotProvider so it is routable.
-		csp, ok := cs.snapshotProvider.(*CachedSnapshotProvider)
-		if !ok {
-			t.Fatal("snapshotProvider is not *CachedSnapshotProvider")
-		}
-		if _, registered := csp.instances[inst.ID()]; !registered {
+		if !cs.snapshotProvider.HasInstance(inst.ID()) {
 			t.Errorf("instance %q not registered with snapshotProvider (routing blind spot)", inst.ID())
 		}
 	})
@@ -217,10 +213,9 @@ func TestDirectActuatorApply(t *testing.T) {
 		if len(cs.instances) != 2 {
 			t.Fatalf("len(cs.instances) = %d, want 2", len(cs.instances))
 		}
-		csp, _ := cs.snapshotProvider.(*CachedSnapshotProvider)
 		for _, inst := range cs.instances {
-			if _, ok := csp.instances[inst.ID()]; !ok {
-				t.Errorf("instance %q not in snapshotProvider", inst.ID())
+			if !cs.snapshotProvider.HasInstance(inst.ID()) {
+				t.Errorf("instance %q not registered with snapshotProvider", inst.ID())
 			}
 		}
 	})

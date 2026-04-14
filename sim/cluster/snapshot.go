@@ -59,6 +59,8 @@ func newObservabilityConfig(refreshInterval int64) ObservabilityConfig {
 type SnapshotProvider interface {
 	Snapshot(id InstanceID, clock int64) sim.RoutingSnapshot
 	RefreshAll(clock int64)
+	// HasInstance returns true if the given ID is registered and routable.
+	HasInstance(id InstanceID) bool
 }
 
 // fieldTimestamps tracks the last refresh time per field per instance.
@@ -156,6 +158,13 @@ func (p *CachedSnapshotProvider) AddInstance(id InstanceID, inst *InstanceSimula
 	p.instances[id] = inst
 	p.cache[id] = sim.NewRoutingSnapshot(string(id))
 	p.lastRefresh[id] = fieldTimestamps{}
+}
+
+// HasInstance returns true if the given instance ID is registered with this provider.
+// Used by tests to verify routability without accessing internal fields.
+func (p *CachedSnapshotProvider) HasInstance(id InstanceID) bool {
+	_, ok := p.instances[id]
+	return ok
 }
 
 // shouldRefresh returns true if a field should be refreshed based on its config.

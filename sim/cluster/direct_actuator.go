@@ -74,6 +74,9 @@ func (a *DirectActuator) scaleUp(d ScaleDecision) error {
 
 		// Build simCfg: start from the cluster default, then apply pool-authoritative GPU
 		// type and HWConfig override (SC-004, mirrors NewClusterSimulator startup path).
+		// PoolRole(0) returns the global SimConfig unchanged — autoscaler does not yet
+		// support PD disaggregation. If PD + autoscaler are combined in future, this
+		// will need to resolve the correct prefill/decode role for the pool.
 		simCfg := a.cluster.config.resolveConfigForRole(PoolRole(0))
 		simCfg.GPU = matchedGPU
 		if hc, ok := a.cluster.config.HWConfigByGPU[matchedGPU]; ok {
