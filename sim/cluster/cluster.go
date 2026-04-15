@@ -1056,7 +1056,6 @@ func (c *ClusterSimulator) ShedByTier() map[string]int {
 	return result
 }
 
-
 // gpuInventory computes the current GPU inventory for Engine.Optimize().
 // Phase 1C (T012): returns free GPU slots per VariantSpec.
 //
@@ -1122,7 +1121,6 @@ func (c *ClusterSimulator) gpuInventory() GPUInventory {
 	}
 	return GPUInventory{byVariant: byVariant}
 }
-
 
 // GatewayQueueDepth returns the number of requests still in the gateway queue
 // at simulation end. Returns 0 when flow control is disabled.

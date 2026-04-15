@@ -2696,26 +2696,30 @@ func newBatchTestRequests(n int, sloClass string) []*sim.Request {
 	return reqs
 }
 
-// TestBatchRequestsNotSerialized verifies that batch requests are NOT serialized —
-// they flow through admission like standard requests.
+// TestBatchRequestsNotSerialized verifies that batch and background requests are
+// NOT serialized — they flow through admission like standard requests.
 // This is a regression guard for issue #965.
 func TestBatchRequestsNotSerialized(t *testing.T) {
-	requests := newBatchTestRequests(10, "batch")
-	cfg := newTestDeploymentConfig(1)
-	cs := NewClusterSimulator(cfg, requests, nil)
-	mustRun(t, cs)
+	for _, sloClass := range []string{"batch", "background"} {
+		t.Run(sloClass, func(t *testing.T) {
+			requests := newBatchTestRequests(10, sloClass)
+			cfg := newTestDeploymentConfig(1)
+			cs := NewClusterSimulator(cfg, requests, nil)
+			mustRun(t, cs)
 
-	m := cs.AggregatedMetrics()
-	if m.CompletedRequests != 10 {
-		t.Fatalf("completed %d requests, want 10", m.CompletedRequests)
-	}
+			m := cs.AggregatedMetrics()
+			if m.CompletedRequests != 10 {
+				t.Fatalf("completed %d requests, want 10", m.CompletedRequests)
+			}
 
-	// Batch requests must flow through admission concurrently (not serialized).
-	// 15ms bound ensures mean TTFT stays in the concurrent processing range.
-	ttftMeanMs := float64(m.TTFTSum) / float64(m.CompletedRequests) / 1000.0
-	const boundMs = 15.0
-	if ttftMeanMs >= boundMs {
-		t.Errorf("mean TTFT %.2fms >= bound %.1fms: batch requests are being serialized (regression: #965)", ttftMeanMs, boundMs)
+			// Batch/background requests must flow through admission concurrently (not serialized).
+			// 15ms bound ensures mean TTFT stays in the concurrent processing range.
+			ttftMeanMs := float64(m.TTFTSum) / float64(m.CompletedRequests) / 1000.0
+			const boundMs = 15.0
+			if ttftMeanMs >= boundMs {
+				t.Errorf("mean TTFT %.2fms >= bound %.1fms: %s requests are being serialized (regression: #965)", ttftMeanMs, boundMs, sloClass)
+			}
+		})
 	}
 }
 
