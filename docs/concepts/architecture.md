@@ -184,6 +184,7 @@ Routing decisions depend on instance state signals with different freshness guar
 | Tier | Signals | Update Mechanism | Staleness |
 |------|---------|------------------|-----------|
 | **Synchronous** (router-local) | InFlightRequests, prefix cache index | Router increments InFlightRequests at dispatch, decrements at completion; prefix cache updated after each routing decision | None — router owns this state |
+| **Always Immediate** (instance-reported) | PreemptionCount | Read unconditionally in `CachedSnapshotProvider.Snapshot()` regardless of `--snapshot-refresh-interval`; monotonically-increasing counter | None — always current |
 | **Immediate/Periodic** (instance-reported) | QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate | When `--snapshot-refresh-interval=0`: Immediate (read from instance at routing time). When `>0`: all Prometheus-sourced signals share the same Periodic refresh interval, matching real vLLM's single `/metrics` endpoint (#463). | Immediate: current within tick. Periodic: stale up to interval. |
 
 The `--snapshot-refresh-interval` flag controls how frequently Prometheus-sourced signals (QueueDepth, BatchSize, KVUtilization) are re-read from instances. Setting it to 0 (default) makes all signals Immediate. Non-zero values introduce realistic staleness matching real vLLM Prometheus scrape intervals.
