@@ -2,7 +2,6 @@ package cluster
 
 import (
 	"bytes"
-	"container/heap"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -2626,54 +2625,57 @@ func TestAutoscaler_RequestBoundedRun_Terminates(t *testing.T) {
 	}
 }
 
-// TestClusterSimulator_PushArrival_EnqueuesEvent verifies that pushArrival
-// enqueues exactly one ClusterArrivalEvent with the correct request and
-// timestamp, and increments pendingArrivals by exactly one.
-func TestClusterSimulator_PushArrival_EnqueuesEvent(t *testing.T) {
-	config := newTestDeploymentConfig(1)
-	cs := NewClusterSimulator(config, nil, nil)
-	req := &sim.Request{ID: "test-req", ArrivalTime: 999}
-	const wantTime = int64(5000)
+// TestPushArrival_CoInvariant_SessionFollowUpsProcessed verifies the
+// pendingArrivals co-invariant end-to-end: session follow-up requests
+// injected via pushArrival (inside the OnRequestDone callback) are fully
+// processed by the cluster simulation.
+//
+// If pushArrival failed to increment pendingArrivals for follow-ups, the
+// autoscaler's scheduleNextTick termination guard (pendingArrivals <= 0)
+// would fire prematurely, causing Run() to return before follow-ups complete
+// and breaking INV-1 conservation.
+func TestPushArrival_CoInvariant_SessionFollowUpsProcessed(t *testing.T) {
+	cfg := newTestDeploymentConfig(1)
+	cfg.ModelAutoscalerIntervalUs = 100_000 // enable autoscaler to exercise termination guard
 
-	heapBefore := len(cs.clusterEvents)
-	pendingBefore := cs.pendingArrivals
+	const initial = 3
+	reqs := newTestRequests(initial)
 
-	cs.pushArrival(req, wantTime)
+	// Each initial request generates exactly one follow-up; follow-ups generate none.
+	followUpsIssued := 0
+	onDone := func(req *sim.Request, tick int64) []*sim.Request {
+		if followUpsIssued >= initial {
+			return nil
+		}
+		followUpsIssued++
+		return []*sim.Request{{
+			ID:           fmt.Sprintf("followup-%d", followUpsIssued),
+			ArrivalTime:  tick,
+			InputTokens:  make([]int, 50),
+			OutputTokens: make([]int, 20),
+			MaxOutputLen: 20,
+			State:        sim.StateQueued,
+		}}
+	}
 
-	if got, want := len(cs.clusterEvents)-heapBefore, 1; got != want {
-		t.Errorf("heap size delta = %d, want %d", got, want)
-	}
-	if got, want := cs.pendingArrivals-pendingBefore, 1; got != want {
-		t.Errorf("pendingArrivals delta = %d, want %d", got, want)
-	}
-	top := heap.Pop(&cs.clusterEvents).(clusterEventEntry)
-	arr, ok := top.event.(*ClusterArrivalEvent)
-	if !ok {
-		t.Fatalf("top event is %T, want *ClusterArrivalEvent", top.event)
-	}
-	if arr.request != req {
-		t.Errorf("enqueued request = %p, want %p", arr.request, req)
-	}
-	if arr.time != wantTime {
-		t.Errorf("enqueued time = %d, want %d", arr.time, wantTime)
-	}
-}
+	cs := NewClusterSimulator(cfg, reqs, onDone)
 
-// TestClusterSimulator_PushArrival_MultipleCallsAccumulate verifies that N
-// calls to pushArrival result in pendingArrivals increasing by N and N events
-// on the heap — the co-invariant is maintained across repeated calls.
-func TestClusterSimulator_PushArrival_MultipleCallsAccumulate(t *testing.T) {
-	config := newTestDeploymentConfig(1)
-	cs := NewClusterSimulator(config, nil, nil)
-	const n = 5
-	for i := 0; i < n; i++ {
-		cs.pushArrival(&sim.Request{ID: fmt.Sprintf("r%d", i)}, int64(i*1000))
-	}
-	if got, want := cs.pendingArrivals, n; got != want {
-		t.Errorf("pendingArrivals = %d after %d calls, want %d", got, n, n)
-	}
-	if got, want := len(cs.clusterEvents), n; got != want {
-		t.Errorf("heap size = %d after %d calls, want %d", got, n, n)
+	done := make(chan error, 1)
+	go func() { done <- cs.Run() }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run() returned error: %v", err)
+		}
+		agg := cs.AggregatedMetrics()
+		want := initial * 2 // initial + one follow-up each
+		if agg.CompletedRequests != want {
+			t.Errorf("completed = %d, want %d — follow-up requests not tracked by pendingArrivals co-invariant",
+				agg.CompletedRequests, want)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run() timed out — autoscaler terminated early, pendingArrivals co-invariant likely broken for follow-up requests")
 	}
 }
 
