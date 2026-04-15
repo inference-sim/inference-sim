@@ -128,8 +128,15 @@ func TestSession_ContextAccumulation(t *testing.T) {
 // TestSession_ContextAccumulation_MultiStep verifies BC-1:
 // context accumulation across a 3-round chain (round 0 → 1 → 2).
 // Extends TestSession_ContextAccumulation (which only tests round 0 → 1).
-// NOTE: contextTokens is append-only across ALL rounds — it grows to 15 after
-// round 0 (input10 + output5), then to 45 after round 1 (prior15 + input25 + output5).
+//
+// contextTokens tracks the full conversation history without double-counting:
+//   - After round 0: contextTokens = r0_input(10) + r0_output(5) = 15 tokens
+//   - After round 1: contextTokens += new_suffix_of_r1(10) + r1_output(5) = 30 tokens
+//   - Round 2 input = contextTokens(30) + r2_new(10) = 40 tokens
+//
+// The fix prevents quadratic growth: req.InputTokens already contains the
+// accumulated context, so only the new suffix (req.InputTokens[len(contextTokens):])
+// is appended — not the full req.InputTokens, which would double-count prior context.
 func TestSession_ContextAccumulation_MultiStep(t *testing.T) {
 	bp := makeTestBlueprint("sess-accum3", 3, 1000, "accumulate", 1_000_000)
 	sm := NewSessionManager([]SessionBlueprint{bp})
@@ -160,10 +167,11 @@ func TestSession_ContextAccumulation_MultiStep(t *testing.T) {
 	if len(follow2) != 1 {
 		t.Fatalf("expected 1 follow-up after round 1, got %d", len(follow2))
 	}
-	// Round 2: contextTokens grows to 45 (prior 15 + r1 input 25 + r1 output 5),
-	// then + 10 new = 55. contextTokens is append-only across ALL rounds.
-	if len(follow2[0].InputTokens) != 55 {
-		t.Errorf("BC-1: round 2 input length = %d, want 55 (contextTokens(45)+10)", len(follow2[0].InputTokens))
+	// Round 2: contextTokens grows to 30 (prior 15 + r1 new suffix 10 + r1 output 5),
+	// then + 10 new = 40. Only the new suffix is appended — not the full req.InputTokens
+	// which already contains the accumulated context.
+	if len(follow2[0].InputTokens) != 40 {
+		t.Errorf("BC-1: round 2 input length = %d, want 40 (contextTokens(30)+10)", len(follow2[0].InputTokens))
 	}
 }
 
