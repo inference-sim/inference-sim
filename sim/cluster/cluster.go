@@ -491,6 +491,11 @@ func (cs *ClusterSimulator) registerInstanceCacheQueryFn(id InstanceID, inst *In
 // co-invariant used by scheduleNextTick (autoscaler.go). Direct heap.Push of
 // ClusterArrivalEvent outside this method is prohibited.
 // The paired decrement occurs in ClusterArrivalEvent.Execute (cluster_event.go).
+//
+// NOTE: When ClusterSubsystem hooks are introduced (see discussion #1033 PR D),
+// OnRequestDone hooks that generate follow-ups should return them to the
+// coordinator rather than calling pushArrival directly, preserving this method
+// as the single enforcement point. See also issue #1041.
 func (cs *ClusterSimulator) pushArrival(req *sim.Request, timeUs int64) {
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &ClusterArrivalEvent{time: timeUs, request: req},
