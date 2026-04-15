@@ -14,7 +14,7 @@ import (
 // These are separate from sim.Event and processed by ClusterSimulator's control plane.
 type ClusterEvent interface {
 	Timestamp() int64
-	Priority() int // 0=Arrival, 1=Admission, 2=Routing, 3=Disaggregation, 4-7=PD, 8=ScalingTick, 9=ScaleActuation
+	Priority() int // 0=Arrival, 1=Admission, 2=Routing, 3=Disaggregation, 4-7=PD, 8=ScalingTick, 9=ScaleActuation, 10=CacheEvent
 	Execute(*ClusterSimulator)
 }
 
@@ -62,11 +62,8 @@ func (q *ClusterEventQueue) Pop() any {
 // Complexity: O(N) per call where N = number of instances. At current BLIS scale (≤32 instances)
 // this is negligible. A model→instances index could pre-partition if instance counts exceed 100.
 func buildRouterState(cs *ClusterSimulator, req *sim.Request) *sim.RouterState {
-	// Refresh stale cache snapshots if interval has elapsed (issue #919).
-	// No-op when staleCache is nil (oracle mode, BC-7).
-	if cs.staleCache != nil {
-		cs.staleCache.RefreshIfNeeded(cs.clock)
-	}
+	// Cache snapshots are now refreshed event-driven via CacheEventArrivalEvent (issue #1029).
+	// No periodic refresh needed here — removed RefreshIfNeeded call (BC-3).
 
 	snapshots := make([]sim.RoutingSnapshot, 0, len(cs.instances))
 	for _, inst := range cs.instances {

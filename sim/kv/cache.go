@@ -44,6 +44,7 @@ type KVCacheState struct {
 	UsedBlockCnt    int64              // Total number of used blocks (tracked incrementally)
 	CacheHits       int64              // blocks found via prefix cache (PR12)
 	CacheMisses     int64              // blocks not found, allocated fresh (PR12)
+	allocationEpoch int64              // Monotonic counter incremented on each successful AllocateKVBlocks call.
 }
 
 // NewKVCacheState initializes the KVCacheState and places all blocks in the free list in order.
@@ -335,8 +336,13 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 		}
 	}
 
+	kvc.allocationEpoch++
 	return true
 }
+
+// AllocationEpoch returns a monotonic counter incremented on each successful AllocateKVBlocks call.
+// Used by the cluster layer to detect when an instance's cache state has changed.
+func (kvc *KVCacheState) AllocationEpoch() int64 { return kvc.allocationEpoch }
 
 // popFreeBlock evicts a block from the free list and prepares it for reuse.
 func (kvc *KVCacheState) popFreeBlock() *KVBlock {

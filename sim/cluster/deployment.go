@@ -2,13 +2,19 @@ package cluster
 
 import "github.com/inference-sim/inference-sim/sim"
 
-// DefaultCacheSignalDelay is the default propagation delay for prefix cache
-// signals in microseconds (2 seconds). Only affects precise-prefix-cache and
-// no-hit-lru scorers; has no observable effect on other routing policies.
-// Matches production llm-d's defaultSpeculativeTTL — the blind spot between
-// a routing decision and KV event arrival via ZMQ.
+// DefaultCacheEventDelay is the default per-event propagation delay for prefix cache
+// signals in microseconds (50 milliseconds). Models ZMQ transport from vLLM to the
+// router's KVBlockIndex in production llm-d.
+//
+// This differs from the old DefaultCacheSignalDelay (2s) which modeled a global periodic
+// poll. The new event-driven model fires per-instance after each step that allocates
+// KV blocks, matching llm-d's event-driven ZMQ propagation.
+//
 // Set to 0 for oracle mode (live cache state).
-const DefaultCacheSignalDelay int64 = 2_000_000
+const DefaultCacheEventDelay int64 = 50_000
+
+// Deprecated: Use DefaultCacheEventDelay instead. Kept for backward compatibility.
+const DefaultCacheSignalDelay = DefaultCacheEventDelay
 
 // DeploymentConfig describes a cluster where all instances share identical
 // hardware and model configuration. NumInstances must be >= 1.
@@ -37,16 +43,14 @@ type DeploymentConfig struct {
 	// use Periodic refresh with this interval (microseconds). 0 = Immediate (default).
 	SnapshotRefreshInterval int64
 
-	// Cache signal propagation delay for precise prefix cache scoring (issue #919).
-	// Only affects routing when precise-prefix-cache or no-hit-lru scorers are active;
-	// has no observable effect on other routing policies (round-robin, least-loaded, etc.).
-	// When > 0, those scorers query a periodically-refreshed stale snapshot of each
-	// instance's KV cache block hash map instead of live state.
-	// Models the asynchronous KV event propagation delay in production llm-d.
-	// Default: DefaultCacheSignalDelay (2s), matching llm-d's speculative TTL.
+	// CacheEventDelay is the per-event propagation delay for prefix cache signals
+	// in microseconds. When > 0, after each step that allocates KV blocks, a
+	// CacheEventArrivalEvent is scheduled at now + CacheEventDelay to refresh
+	// that instance's stale snapshot. Models ZMQ transport delay from vLLM to
+	// the router's KVBlockIndex in production llm-d.
+	// Default: DefaultCacheEventDelay (50ms).
 	// 0 = oracle mode (scorers read live cache state with zero delay).
-	// Units: microseconds of simulated time.
-	CacheSignalDelay int64
+	CacheEventDelay int64
 
 	// Phase 1A: Node pool infrastructure (optional — empty = backward-compatible mode).
 	// When non-empty, activates PlacementManager for GPU inventory tracking.

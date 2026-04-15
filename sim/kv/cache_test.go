@@ -739,3 +739,47 @@ func TestKVCacheState_SnapshotCachedBlocksFn_FrozenView(t *testing.T) {
 	// AND the live query sees all 4 blocks
 	assert.Equal(t, 4, len(kvc.GetCachedBlocks(tokens2)), "live query should see 4 blocks")
 }
+
+func TestAllocationEpoch_IncrementsOnSuccessfulAllocate(t *testing.T) {
+	// GIVEN a KV cache with enough capacity
+	kvc := NewKVCacheState(10, 4)
+
+	// WHEN no allocations have occurred
+	// THEN epoch is 0
+	assert.Equal(t, int64(0), kvc.AllocationEpoch())
+
+	// WHEN a successful allocation occurs
+	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	ok := kvc.AllocateKVBlocks(req, 0, 4, nil)
+	assert.True(t, ok)
+
+	// THEN epoch increments to 1
+	assert.Equal(t, int64(1), kvc.AllocationEpoch())
+
+	// WHEN another allocation occurs (decode token)
+	req.ProgressIndex = 4
+	req.OutputTokens = []int{99}
+	ok = kvc.AllocateKVBlocks(req, 4, 5, nil)
+	assert.True(t, ok)
+
+	// THEN epoch increments to 2
+	assert.Equal(t, int64(2), kvc.AllocationEpoch())
+}
+
+func TestAllocationEpoch_DoesNotIncrementOnFailedAllocate(t *testing.T) {
+	// GIVEN a KV cache with only 1 block of size 2
+	kvc := NewKVCacheState(1, 2)
+
+	// Fill the cache
+	req1 := &sim.Request{ID: "r1", InputTokens: []int{1, 2}}
+	kvc.AllocateKVBlocks(req1, 0, 2, nil)
+	epochAfterFill := kvc.AllocationEpoch()
+
+	// WHEN an allocation fails (no free blocks)
+	req2 := &sim.Request{ID: "r2", InputTokens: []int{3, 4, 5, 6}}
+	ok := kvc.AllocateKVBlocks(req2, 0, 4, nil)
+
+	// THEN epoch does NOT increment
+	assert.False(t, ok)
+	assert.Equal(t, epochAfterFill, kvc.AllocationEpoch())
+}
