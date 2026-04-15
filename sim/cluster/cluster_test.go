@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"bytes"
+	"container/heap"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -2622,6 +2623,57 @@ func TestAutoscaler_RequestBoundedRun_Terminates(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Run() did not terminate within 2s — autoscaler tick loop is likely infinite (Bug 2 regression)")
+	}
+}
+
+// TestClusterSimulator_PushArrival_EnqueuesEvent verifies that pushArrival
+// enqueues exactly one ClusterArrivalEvent with the correct request and
+// timestamp, and increments pendingArrivals by exactly one.
+func TestClusterSimulator_PushArrival_EnqueuesEvent(t *testing.T) {
+	config := newTestDeploymentConfig(1)
+	cs := NewClusterSimulator(config, nil, nil)
+	req := &sim.Request{ID: "test-req", ArrivalTime: 999}
+	const wantTime = int64(5000)
+
+	heapBefore := len(cs.clusterEvents)
+	pendingBefore := cs.pendingArrivals
+
+	cs.pushArrival(req, wantTime)
+
+	if got, want := len(cs.clusterEvents)-heapBefore, 1; got != want {
+		t.Errorf("heap size delta = %d, want %d", got, want)
+	}
+	if got, want := cs.pendingArrivals-pendingBefore, 1; got != want {
+		t.Errorf("pendingArrivals delta = %d, want %d", got, want)
+	}
+	top := heap.Pop(&cs.clusterEvents).(clusterEventEntry)
+	arr, ok := top.event.(*ClusterArrivalEvent)
+	if !ok {
+		t.Fatalf("top event is %T, want *ClusterArrivalEvent", top.event)
+	}
+	if arr.request != req {
+		t.Errorf("enqueued request = %p, want %p", arr.request, req)
+	}
+	if arr.time != wantTime {
+		t.Errorf("enqueued time = %d, want %d", arr.time, wantTime)
+	}
+}
+
+// TestClusterSimulator_PushArrival_MultipleCallsAccumulate verifies that N
+// calls to pushArrival result in pendingArrivals increasing by N and N events
+// on the heap — the co-invariant is maintained across repeated calls.
+func TestClusterSimulator_PushArrival_MultipleCallsAccumulate(t *testing.T) {
+	config := newTestDeploymentConfig(1)
+	cs := NewClusterSimulator(config, nil, nil)
+	const n = 5
+	for i := 0; i < n; i++ {
+		cs.pushArrival(&sim.Request{ID: fmt.Sprintf("r%d", i)}, int64(i*1000))
+	}
+	if got, want := cs.pendingArrivals, n; got != want {
+		t.Errorf("pendingArrivals = %d after %d calls, want %d", got, n, n)
+	}
+	if got, want := len(cs.clusterEvents), n; got != want {
+		t.Errorf("heap size = %d after %d calls, want %d", got, n, n)
 	}
 }
 

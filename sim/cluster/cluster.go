@@ -489,6 +489,19 @@ func (cs *ClusterSimulator) registerInstanceCacheQueryFn(id InstanceID, inst *In
 	}
 }
 
+// pushArrival enqueues a ClusterArrivalEvent and increments pendingArrivals
+// atomically. All ClusterArrivalEvent pushes MUST go through this method —
+// it is the single enforcement point for the pendingArrivals co-invariant
+// used by scheduleNextTick (autoscaler.go). Direct heap.Push of
+// ClusterArrivalEvent outside this method is prohibited.
+func (cs *ClusterSimulator) pushArrival(req *sim.Request, timeUs int64) {
+	heap.Push(&cs.clusterEvents, clusterEventEntry{
+		event: &ClusterArrivalEvent{time: timeUs, request: req},
+		seqID: cs.nextSeqID(),
+	})
+	cs.pendingArrivals++
+}
+
 // Run executes the cluster simulation using online routing pipeline:
 // generates requests centrally, schedules ClusterArrivalEvents, runs a shared-clock
 // event loop processing cluster events before instance events, then finalizes.
