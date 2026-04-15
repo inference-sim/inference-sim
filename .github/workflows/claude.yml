@@ -56,37 +56,8 @@ jobs:
       id-token: write
 
     steps:
-      - name: Resolve PR head for fork PRs
-        id: pr-info
-        if: github.event_name == 'issue_comment' && github.event.issue.pull_request
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number
-            });
-            if (!pr.head.repo) {
-              core.setFailed('Source fork repository has been deleted; cannot check out PR head.');
-              return;
-            }
-            core.setOutput('pr_head_sha', pr.head.sha);
-            core.setOutput('pr_head_repo', pr.head.repo.full_name);
-            core.info(`PR #${context.issue.number}: head_repo=${pr.head.repo.full_name}, head_sha=${pr.head.sha}`);
-
-      - name: Validate PR info
-        if: github.event_name == 'issue_comment' && github.event.issue.pull_request
-        run: |
-          if [ -z "${{ steps.pr-info.outputs.pr_head_sha }}" ]; then
-            echo "::error::pr-info step failed to resolve PR head SHA"
-            exit 1
-          fi
-
       - uses: actions/checkout@v5
         with:
-          repository: ${{ steps.pr-info.outputs.pr_head_repo || github.repository }}
-          ref: ${{ steps.pr-info.outputs.pr_head_sha || github.sha }}
           fetch-depth: 0
 
       - uses: anthropics/claude-code-action@v1
