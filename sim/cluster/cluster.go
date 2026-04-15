@@ -449,11 +449,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 				}
 				nextReqs := onRequestDone(req, tick)
 				for _, next := range nextReqs {
-					heap.Push(&cs.clusterEvents, clusterEventEntry{
-						event: &ClusterArrivalEvent{time: next.ArrivalTime, request: next},
-						seqID: cs.nextSeqID(),
-					})
-					cs.pendingArrivals++ // mirror Run() — session follow-ups must be tracked
+					cs.pushArrival(next, next.ArrivalTime)
 				}
 				return nil // don't inject locally — route through cluster pipeline
 			}
@@ -532,11 +528,7 @@ func (c *ClusterSimulator) Run() error {
 	}
 
 	for _, req := range requests {
-		heap.Push(&c.clusterEvents, clusterEventEntry{
-			event: &ClusterArrivalEvent{time: req.ArrivalTime, request: req},
-			seqID: c.nextSeqID(),
-		})
-		c.pendingArrivals++
+		c.pushArrival(req, req.ArrivalTime)
 	}
 
 	// 3. Shared-clock event loop (BC-4: cluster events before instance events)
@@ -834,11 +826,7 @@ func (cs *ClusterSimulator) addLiveInstance(
 			}
 			nextReqs := onRequestDone(req, tick)
 			for _, next := range nextReqs {
-				heap.Push(&cs.clusterEvents, clusterEventEntry{
-					event: &ClusterArrivalEvent{time: next.ArrivalTime, request: next},
-					seqID: cs.nextSeqID(),
-				})
-				cs.pendingArrivals++ // mirror Run() — session follow-ups must be tracked
+				cs.pushArrival(next, next.ArrivalTime)
 			}
 			return nil // don't inject locally — route through cluster pipeline
 		}
@@ -990,11 +978,7 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 			origCopy.ProgressIndex = parent.DecodeSubReq.ProgressIndex
 			nextReqs := c.sessionCallback(&origCopy, parent.CompletionTime)
 			for _, next := range nextReqs {
-				heap.Push(&c.clusterEvents, clusterEventEntry{
-					event: &ClusterArrivalEvent{time: next.ArrivalTime, request: next},
-					seqID: c.nextSeqID(),
-				})
-				c.pendingArrivals++ // mirror Run() — PD session follow-ups must be tracked
+				c.pushArrival(next, next.ArrivalTime)
 			}
 		}
 	}
@@ -1016,11 +1000,7 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 			// No follow-ups expected, but handle defensively.
 			nextReqs := c.sessionCallback(&origCopy, parent.CompletionTime)
 			for _, next := range nextReqs {
-				heap.Push(&c.clusterEvents, clusterEventEntry{
-					event: &ClusterArrivalEvent{time: next.ArrivalTime, request: next},
-					seqID: c.nextSeqID(),
-				})
-				c.pendingArrivals++ // mirror Run() — PD decode-timeout follow-ups must be tracked
+				c.pushArrival(next, next.ArrivalTime)
 			}
 		}
 	}
@@ -1170,10 +1150,7 @@ func (c *ClusterSimulator) gpuInventory() GPUInventory {
 func (c *ClusterSimulator) promoteDeferred() {
 	logrus.Debugf("[cluster] promoting %d deferred requests at tick %d", len(c.deferredQueue), c.clock)
 	for _, req := range c.deferredQueue {
-		heap.Push(&c.clusterEvents, clusterEventEntry{
-			event: &ClusterArrivalEvent{time: c.clock, request: req},
-			seqID: c.nextSeqID(),
-		})
+		c.pushArrival(req, c.clock)
 	}
 	c.deferredQueue = c.deferredQueue[:0]
 }

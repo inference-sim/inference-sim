@@ -280,11 +280,7 @@ func (d *drainRedirect) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 			delete(inst.sim.Metrics.Requests, req.ID)
 		}
 		req.Redirected = true
-		heap.Push(&cs.clusterEvents, clusterEventEntry{
-			event: &ClusterArrivalEvent{time: cs.clock, request: req},
-			seqID: cs.nextSeqID(),
-		})
-		cs.pendingArrivals++ // mirror Run() — drain-redirected requests must be tracked
+		cs.pushArrival(req, cs.clock)
 	}
 
 	// I5 (known edge case): Arrival events already in the instance event queue for
