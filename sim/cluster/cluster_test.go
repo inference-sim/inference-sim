@@ -2679,3 +2679,43 @@ func TestPushArrival_CoInvariant_SessionFollowUpsProcessed(t *testing.T) {
 	}
 }
 
+// newBatchTestRequests creates n requests with the given SLOClass,
+// arriving every 10µs starting at t=0, with 50 input tokens and 20 output tokens.
+func newBatchTestRequests(n int, sloClass string) []*sim.Request {
+	reqs := make([]*sim.Request, n)
+	for i := range reqs {
+		reqs[i] = &sim.Request{
+			ID:           fmt.Sprintf("req_%s_%d", sloClass, i),
+			ArrivalTime:  int64(i) * 10,
+			SLOClass:     sloClass,
+			InputTokens:  make([]int, 50),
+			OutputTokens: make([]int, 20),
+			State:        sim.StateQueued,
+		}
+	}
+	return reqs
+}
+
+// TestBatchRequestsNotSerialized verifies that batch requests are NOT serialized —
+// they flow through admission like standard requests.
+// This is a regression guard for issue #965.
+func TestBatchRequestsNotSerialized(t *testing.T) {
+	requests := newBatchTestRequests(10, "batch")
+	cfg := newTestDeploymentConfig(1)
+	cs := NewClusterSimulator(cfg, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	if m.CompletedRequests != 10 {
+		t.Fatalf("completed %d requests, want 10", m.CompletedRequests)
+	}
+
+	// After intercept removal, batch requests should have similar TTFT to standard
+	// (not serialized). Using the same 15ms bound from the old test.
+	ttftMeanMs := float64(m.TTFTSum) / float64(m.CompletedRequests) / 1000.0
+	const boundMs = 15.0
+	if ttftMeanMs >= boundMs {
+		t.Errorf("mean TTFT %.2fms >= bound %.1fms: batch requests are being serialized (regression: #965)", ttftMeanMs, boundMs)
+	}
+}
+
