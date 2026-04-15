@@ -3,6 +3,7 @@ package workload
 import (
 	"math"
 	"math/rand"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -304,6 +305,197 @@ func TestSequenceSampler_EmptyValues(t *testing.T) {
 	got := s.Sample(nil)
 	if got != 1 {
 		t.Errorf("empty sampler: got %d, want 1", got)
+	}
+}
+
+// --- LognormalSampler tests ---
+
+// TestLognormalSampler_MeanMatchesParams verifies BC-1:
+// E[X] = exp(mu + sigma²/2); empirical mean within 10%.
+func TestLognormalSampler_MeanMatchesParams(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	mu, sigma := 6.0, 0.5
+	s := &LognormalSampler{mu: mu, sigma: sigma}
+	expectedMean := math.Exp(mu + sigma*sigma/2)
+
+	n := 50_000
+	sum := 0
+	for i := 0; i < n; i++ {
+		sum += s.Sample(rng)
+	}
+	got := float64(sum) / float64(n)
+	if math.Abs(got-expectedMean)/expectedMean > 0.10 {
+		t.Errorf("lognormal mean = %.1f, want ≈ %.1f (within 10%%)", got, expectedMean)
+	}
+}
+
+// TestLognormalSampler_ClampedToRange verifies BC-2: all samples within [min, max].
+func TestLognormalSampler_ClampedToRange(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	s := &LognormalSampler{mu: 6.0, sigma: 2.0, min: 100, max: 2000}
+	for i := 0; i < 10_000; i++ {
+		v := s.Sample(rng)
+		if v < 100 || v > 2000 {
+			t.Errorf("sample %d: %d outside [100, 2000]", i, v)
+			break
+		}
+	}
+}
+
+// TestLognormalSampler_AlwaysPositive verifies that samples are always >= 1.
+func TestLognormalSampler_AlwaysPositive(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	s := &LognormalSampler{mu: 0.0, sigma: 0.1}
+	for i := 0; i < 10_000; i++ {
+		if v := s.Sample(rng); v < 1 {
+			t.Errorf("sample %d: got %d, want >= 1", i, v)
+			break
+		}
+	}
+}
+
+// TestLognormalSampler_ViaNewLengthSampler verifies the factory path.
+func TestLognormalSampler_ViaNewLengthSampler(t *testing.T) {
+	s, err := NewLengthSampler(DistSpec{
+		Type:   "lognormal",
+		Params: map[string]float64{"mu": 6.0, "sigma": 0.5, "min": 50, "max": 5000},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rng := rand.New(rand.NewSource(42))
+	for i := 0; i < 1000; i++ {
+		v := s.Sample(rng)
+		if v < 50 || v > 5000 {
+			t.Errorf("sample %d: %d outside [50, 5000]", i, v)
+			break
+		}
+	}
+}
+
+// TestNewLengthSampler_Lognormal_MissingMu_ReturnsError verifies required param check.
+func TestNewLengthSampler_Lognormal_MissingMu_ReturnsError(t *testing.T) {
+	_, err := NewLengthSampler(DistSpec{
+		Type:   "lognormal",
+		Params: map[string]float64{"sigma": 0.5},
+	})
+	if err == nil {
+		t.Fatal("expected error for missing mu")
+	}
+	if !strings.Contains(err.Error(), "mu") {
+		t.Errorf("error %q should mention \"mu\"", err.Error())
+	}
+}
+
+// --- ParseThinkTimeDist tests ---
+
+// TestParseThinkTimeDist_Lognormal_ProducesCorrectRange verifies BC-3:
+// samples fall within [min, max] and represent µs values.
+func TestParseThinkTimeDist_Lognormal_ProducesCorrectRange(t *testing.T) {
+	s, err := ParseThinkTimeDist("lognormal:mu=2.0,sigma=0.6,min=3s,max=30s")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rng := rand.New(rand.NewSource(42))
+	const minUs = 3_000_000
+	const maxUs = 30_000_000
+	for i := 0; i < 10_000; i++ {
+		v := s.Sample(rng)
+		if v < minUs || v > maxUs {
+			t.Errorf("sample %d: %d µs outside [%d, %d]", i, v, minUs, maxUs)
+			break
+		}
+	}
+}
+
+// TestParseThinkTimeDist_Lognormal_MedianMatchesExpected verifies the µs conversion:
+// mu=2.0 in seconds → median ≈ exp(2.0)*1e6 µs ≈ 7,389,056 µs.
+func TestParseThinkTimeDist_Lognormal_MedianMatchesExpected(t *testing.T) {
+	s, err := ParseThinkTimeDist("lognormal:mu=2.0,sigma=0.3")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rng := rand.New(rand.NewSource(42))
+	// With small sigma, empirical median ≈ exp(mu_us) = exp(2.0+ln(1e6)) µs = exp(2.0)*1e6 µs
+	expectedMedianUs := math.Exp(2.0) * 1e6
+	n := 50_000
+	samples := make([]int, n)
+	for i := range samples {
+		samples[i] = s.Sample(rng)
+	}
+	// Sort and take middle
+	sortedSamples := make([]int, n)
+	copy(sortedSamples, samples)
+	sort.Ints(sortedSamples)
+	median := float64(sortedSamples[n/2])
+	if math.Abs(median-expectedMedianUs)/expectedMedianUs > 0.05 {
+		t.Errorf("lognormal median = %.0f µs, want ≈ %.0f µs (within 5%%)", median, expectedMedianUs)
+	}
+}
+
+// TestParseThinkTimeDist_Constant_Ms verifies BC-4: constant:value=500ms → 500_000 µs.
+func TestParseThinkTimeDist_Constant_Ms(t *testing.T) {
+	s, err := ParseThinkTimeDist("constant:value=500ms")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rng := rand.New(rand.NewSource(42))
+	for i := 0; i < 10; i++ {
+		if got := s.Sample(rng); got != 500_000 {
+			t.Errorf("sample %d: got %d µs, want 500000 µs", i, got)
+		}
+	}
+}
+
+// TestParseThinkTimeDist_Constant_S verifies constant:value=2s → 2_000_000 µs.
+func TestParseThinkTimeDist_Constant_S(t *testing.T) {
+	s, err := ParseThinkTimeDist("constant:value=2s")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := s.Sample(nil); got != 2_000_000 {
+		t.Errorf("got %d µs, want 2000000 µs", got)
+	}
+}
+
+// TestParseThinkTimeDist_Constant_Us verifies constant:value=100us → 100 µs.
+func TestParseThinkTimeDist_Constant_Us(t *testing.T) {
+	s, err := ParseThinkTimeDist("constant:value=100us")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := s.Sample(nil); got != 100 {
+		t.Errorf("got %d µs, want 100 µs", got)
+	}
+}
+
+// TestParseThinkTimeDist_InvalidType_ReturnsError verifies unknown type is rejected.
+func TestParseThinkTimeDist_InvalidType_ReturnsError(t *testing.T) {
+	_, err := ParseThinkTimeDist("uniform:min=1s,max=10s")
+	if err == nil {
+		t.Fatal("expected error for unknown type")
+	}
+	if !strings.Contains(err.Error(), "uniform") {
+		t.Errorf("error %q should mention type name", err.Error())
+	}
+}
+
+// TestParseThinkTimeDist_MissingColon_ReturnsError verifies format validation.
+func TestParseThinkTimeDist_MissingColon_ReturnsError(t *testing.T) {
+	_, err := ParseThinkTimeDist("lognormal-mu=2.0")
+	if err == nil {
+		t.Fatal("expected error for missing colon")
+	}
+}
+
+// TestParseThinkTimeDist_MissingMu_ReturnsError verifies required param for lognormal.
+func TestParseThinkTimeDist_MissingMu_ReturnsError(t *testing.T) {
+	_, err := ParseThinkTimeDist("lognormal:sigma=0.6")
+	if err == nil {
+		t.Fatal("expected error for missing mu")
+	}
+	if !strings.Contains(err.Error(), "mu") {
+		t.Errorf("error %q should mention \"mu\"", err.Error())
 	}
 }
 

@@ -5,6 +5,8 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+	"strconv"
+	"strings"
 )
 
 // LengthSampler generates token count samples.
@@ -75,6 +77,39 @@ func (s *ParetoLogNormalSampler) Sample(rng *rand.Rand) int {
 		return 1
 	}
 	result := int(math.Round(val))
+	if result < 1 {
+		return 1
+	}
+	return result
+}
+
+// LognormalSampler produces lognormally-distributed samples.
+// X = exp(mu + sigma*Z), where Z ~ N(0,1).
+// mu and sigma are the mean and std dev of ln(X) — the caller selects the
+// natural unit (tokens for length distributions; µs for think-time distributions,
+// with mu adjusted by ln(1e6) to shift from seconds to µs).
+// Optional min/max clamp (0 = no bound). Output is always >= 1.
+type LognormalSampler struct {
+	mu, sigma float64
+	min, max  int // 0 = no bound; applied after rounding
+}
+
+func (s *LognormalSampler) Sample(rng *rand.Rand) int {
+	z := rng.NormFloat64()
+	val := math.Exp(s.mu + s.sigma*z)
+	if math.IsInf(val, 0) || math.IsNaN(val) {
+		if s.min > 0 {
+			return s.min
+		}
+		return 1
+	}
+	result := int(math.Round(val))
+	if s.min > 0 && result < s.min {
+		result = s.min
+	}
+	if s.max > 0 && result > s.max {
+		result = s.max
+	}
 	if result < 1 {
 		return 1
 	}
@@ -214,6 +249,22 @@ func NewLengthSampler(spec DistSpec) (LengthSampler, error) {
 			mixWeight: spec.Params["mix_weight"],
 		}, nil
 
+	case "lognormal":
+		if err := requireParam(spec.Params, "mu", "sigma"); err != nil {
+			return nil, err
+		}
+		s := &LognormalSampler{
+			mu:    spec.Params["mu"],
+			sigma: spec.Params["sigma"],
+		}
+		if v, ok := spec.Params["min"]; ok {
+			s.min = int(v)
+		}
+		if v, ok := spec.Params["max"]; ok {
+			s.max = int(v)
+		}
+		return s, nil
+
 	case "constant":
 		if err := requireParam(spec.Params, "value"); err != nil {
 			return nil, err
@@ -242,5 +293,135 @@ func NewLengthSampler(spec DistSpec) (LengthSampler, error) {
 
 	default:
 		return nil, fmt.Errorf("unknown distribution type %q", spec.Type)
+	}
+}
+
+// ParseThinkTimeDist parses a think-time distribution spec string into a LengthSampler
+// that produces values in microseconds.
+//
+// Supported formats:
+//
+//	lognormal:mu=2.0,sigma=0.6
+//	lognormal:mu=2.0,sigma=0.6,min=3s,max=30s
+//	constant:value=500ms
+//
+// For lognormal, mu and sigma parameterize ln(X) where X is in seconds.
+// The sampler internally adjusts mu by ln(1e6) so output is in microseconds.
+// min/max accept time suffixes s, ms, us; bare numbers are treated as milliseconds.
+// For constant, value accepts the same time suffixes.
+func ParseThinkTimeDist(spec string) (LengthSampler, error) {
+	colon := strings.IndexByte(spec, ':')
+	if colon < 0 {
+		return nil, fmt.Errorf("think-time-dist must have format type:key=value,...; got %q", spec)
+	}
+	distType := spec[:colon]
+	params, err := parseKVParams(spec[colon+1:])
+	if err != nil {
+		return nil, fmt.Errorf("think-time-dist %q: %w", distType, err)
+	}
+
+	switch distType {
+	case "lognormal":
+		muStr, ok := params["mu"]
+		if !ok {
+			return nil, fmt.Errorf("think-time-dist lognormal requires parameter \"mu\"")
+		}
+		sigmaStr, ok := params["sigma"]
+		if !ok {
+			return nil, fmt.Errorf("think-time-dist lognormal requires parameter \"sigma\"")
+		}
+		mu, err := strconv.ParseFloat(muStr, 64)
+		if err != nil {
+			return nil, fmt.Errorf("think-time-dist lognormal: invalid mu %q: %w", muStr, err)
+		}
+		sigma, err := strconv.ParseFloat(sigmaStr, 64)
+		if err != nil {
+			return nil, fmt.Errorf("think-time-dist lognormal: invalid sigma %q: %w", sigmaStr, err)
+		}
+		// mu/sigma are in log-space of seconds; shift to µs: mu_us = mu_s + ln(1e6)
+		muUs := mu + math.Log(1e6)
+		s := &LognormalSampler{mu: muUs, sigma: sigma}
+		if v, ok := params["min"]; ok {
+			minUs, err := parseTimeToMicros(v)
+			if err != nil {
+				return nil, fmt.Errorf("think-time-dist lognormal: invalid min %q: %w", v, err)
+			}
+			s.min = int(minUs)
+		}
+		if v, ok := params["max"]; ok {
+			maxUs, err := parseTimeToMicros(v)
+			if err != nil {
+				return nil, fmt.Errorf("think-time-dist lognormal: invalid max %q: %w", v, err)
+			}
+			s.max = int(maxUs)
+		}
+		return s, nil
+
+	case "constant":
+		valStr, ok := params["value"]
+		if !ok {
+			return nil, fmt.Errorf("think-time-dist constant requires parameter \"value\"")
+		}
+		valueUs, err := parseTimeToMicros(valStr)
+		if err != nil {
+			return nil, fmt.Errorf("think-time-dist constant: invalid value %q: %w", valStr, err)
+		}
+		return &ConstantSampler{value: int(valueUs)}, nil
+
+	default:
+		return nil, fmt.Errorf("unsupported think-time-dist type %q; supported: lognormal, constant", distType)
+	}
+}
+
+// parseKVParams splits "k=v,k=v,..." into a map. Empty string returns empty map.
+func parseKVParams(s string) (map[string]string, error) {
+	result := make(map[string]string)
+	if strings.TrimSpace(s) == "" {
+		return result, nil
+	}
+	for _, kv := range strings.Split(s, ",") {
+		kv = strings.TrimSpace(kv)
+		if kv == "" {
+			continue
+		}
+		eq := strings.IndexByte(kv, '=')
+		if eq < 0 {
+			return nil, fmt.Errorf("invalid parameter %q: expected key=value", kv)
+		}
+		result[kv[:eq]] = kv[eq+1:]
+	}
+	return result, nil
+}
+
+// parseTimeToMicros converts a time string to microseconds.
+// Supported suffixes: s (seconds), ms (milliseconds), us (microseconds).
+// Bare numbers (no suffix) are treated as milliseconds.
+func parseTimeToMicros(s string) (int64, error) {
+	switch {
+	case strings.HasSuffix(s, "us"):
+		v, err := strconv.ParseFloat(strings.TrimSuffix(s, "us"), 64)
+		if err != nil {
+			return 0, err
+		}
+		return int64(v), nil
+	case strings.HasSuffix(s, "ms"):
+		v, err := strconv.ParseFloat(strings.TrimSuffix(s, "ms"), 64)
+		if err != nil {
+			return 0, err
+		}
+		return int64(v * 1_000), nil
+	case strings.HasSuffix(s, "s"):
+		v, err := strconv.ParseFloat(strings.TrimSuffix(s, "s"), 64)
+		if err != nil {
+			return 0, err
+		}
+		return int64(v * 1_000_000), nil
+	default:
+		// bare number → milliseconds (consistent with --think-time-ms convention)
+		v, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return 0, err
+		}
+		return int64(v * 1_000), nil
 	}
 }
