@@ -420,7 +420,7 @@ warm_up_requests: 0
 	origTraceData := traceDataPath
 	origSimHorizon := simulationHorizon
 	origTraceOutput := replayTraceOutput
-	origCacheSignalDelay := cacheSignalDelay
+	origCacheEventDelay := cacheEventDelay
 	origFlowControlEnabled := flowControlEnabled
 	origFlowControlDetector := flowControlDetector
 	origFlowControlDispatchOrder := flowControlDispatchOrder
@@ -458,7 +458,7 @@ warm_up_requests: 0
 		traceDataPath = origTraceData
 		simulationHorizon = origSimHorizon
 		replayTraceOutput = origTraceOutput
-		cacheSignalDelay = origCacheSignalDelay
+		cacheEventDelay = origCacheEventDelay
 		flowControlEnabled = origFlowControlEnabled
 		flowControlDetector = origFlowControlDetector
 		flowControlDispatchOrder = origFlowControlDispatchOrder
@@ -625,7 +625,7 @@ warm_up_requests: 0
 	origTraceData := traceDataPath
 	origSimHorizon := simulationHorizon
 	origTraceOutput := replayTraceOutput
-	origCacheSignalDelay := cacheSignalDelay
+	origCacheEventDelay := cacheEventDelay
 	origFlowControlEnabled := flowControlEnabled
 	origFlowControlDetector := flowControlDetector
 	origFlowControlDispatchOrder := flowControlDispatchOrder
@@ -663,7 +663,7 @@ warm_up_requests: 0
 		traceDataPath = origTraceData
 		simulationHorizon = origSimHorizon
 		replayTraceOutput = origTraceOutput
-		cacheSignalDelay = origCacheSignalDelay
+		cacheEventDelay = origCacheEventDelay
 		flowControlEnabled = origFlowControlEnabled
 		flowControlDetector = origFlowControlDetector
 		flowControlDispatchOrder = origFlowControlDispatchOrder
@@ -844,7 +844,7 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	origTraceData := traceDataPath
 	origSimHorizon := simulationHorizon
 	origTraceOutput := replayTraceOutput
-	origCacheSignalDelay := cacheSignalDelay
+	origCacheEventDelay := cacheEventDelay
 	origFlowControlEnabled := flowControlEnabled
 	origFlowControlDetector := flowControlDetector
 	origFlowControlDispatchOrder := flowControlDispatchOrder
@@ -882,7 +882,7 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 		traceDataPath = origTraceData
 		simulationHorizon = origSimHorizon
 		replayTraceOutput = origTraceOutput
-		cacheSignalDelay = origCacheSignalDelay
+		cacheEventDelay = origCacheEventDelay
 		flowControlEnabled = origFlowControlEnabled
 		flowControlDetector = origFlowControlDetector
 		flowControlDispatchOrder = origFlowControlDispatchOrder
@@ -997,7 +997,7 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		origTraceData := traceDataPath
 		origSimHorizon := simulationHorizon
 		origTraceOutput := replayTraceOutput
-		origCacheSignalDelay := cacheSignalDelay
+		origCacheEventDelay := cacheEventDelay
 		origFlowControlEnabled := flowControlEnabled
 		origFlowControlDetector := flowControlDetector
 		origFlowControlDispatchOrder := flowControlDispatchOrder
@@ -1035,7 +1035,7 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 			traceDataPath = origTraceData
 			simulationHorizon = origSimHorizon
 			replayTraceOutput = origTraceOutput
-			cacheSignalDelay = origCacheSignalDelay
+			cacheEventDelay = origCacheEventDelay
 			flowControlEnabled = origFlowControlEnabled
 			flowControlDetector = origFlowControlDetector
 			flowControlDispatchOrder = origFlowControlDispatchOrder

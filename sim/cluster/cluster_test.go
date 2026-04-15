@@ -18,7 +18,7 @@ import (
 )
 
 // newTestDeploymentConfig creates a DeploymentConfig suitable for testing.
-// Sets DefaultCacheSignalDelay for production-fidelity defaults.
+// Sets DefaultCacheEventDelay for production-fidelity defaults.
 func newTestDeploymentConfig(numInstances int) DeploymentConfig {
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
@@ -29,8 +29,8 @@ func newTestDeploymentConfig(numInstances int) DeploymentConfig {
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0),
 		},
-		NumInstances:     numInstances,
-		CacheSignalDelay: DefaultCacheSignalDelay,
+		NumInstances:    numInstances,
+		CacheEventDelay: DefaultCacheEventDelay,
 	}
 }
 

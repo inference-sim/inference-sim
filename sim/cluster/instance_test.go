@@ -509,3 +509,34 @@ func TestInstanceSimulator_PostDecodeFixedOverhead_DelegatesToSim(t *testing.T) 
 		t.Errorf("PostDecodeFixedOverhead() = %d, want 0 for blackbox model", got)
 	}
 }
+
+func TestInstanceSimulator_AllocationEpoch_DelegatesToKVStore(t *testing.T) {
+	// GIVEN an instance with a KV cache
+	cfg := newTestSimConfig()
+	inst := NewInstanceSimulator("test-inst", cfg)
+
+	// WHEN no allocations have occurred
+	// THEN epoch is 0
+	assert.Equal(t, int64(0), inst.AllocationEpoch())
+
+	// WHEN we allocate blocks via a request
+	tokens := []int{1, 2, 3, 4}
+	req := &sim.Request{
+		ID: "r1", ArrivalTime: 0, InputTokens: tokens,
+		OutputTokens: []int{100}, State: sim.StateQueued,
+	}
+	inst.InjectRequest(req)
+	inst.Run()
+
+	// THEN epoch is > 0 (allocations happened during run)
+	assert.Greater(t, inst.AllocationEpoch(), int64(0))
+}
+
+func TestInstanceSimulator_AllocationEpoch_NilSim(t *testing.T) {
+	// GIVEN an InstanceSimulator with nil sim
+	inst := &InstanceSimulator{id: "nil-inst"}
+
+	// WHEN we call AllocationEpoch
+	// THEN it returns 0 (with a warning)
+	assert.Equal(t, int64(0), inst.AllocationEpoch())
+}

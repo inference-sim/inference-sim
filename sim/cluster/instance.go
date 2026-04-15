@@ -7,6 +7,8 @@ package cluster
 import (
 	"fmt"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/kv"
 	"github.com/inference-sim/inference-sim/sim/latency"
@@ -223,6 +225,17 @@ func (i *InstanceSimulator) SnapshotCacheQueryFn() func([]int) int {
 	return func(tokens []int) int {
 		return i.GetCachedBlockCount(tokens)
 	}
+}
+
+// AllocationEpoch returns the KV cache allocation epoch counter.
+// Increments on each successful AllocateKVBlocks call. Used by the cluster
+// main loop to detect when this instance's cache state changed.
+func (i *InstanceSimulator) AllocationEpoch() int64 {
+	if i.sim == nil || i.sim.KVCache == nil {
+		logrus.Warnf("[cluster] instance %s: nil sim or KVCache in AllocationEpoch — cache events disabled for this instance", i.id)
+		return 0
+	}
+	return i.sim.KVCache.AllocationEpoch()
 }
 
 // InjectRequestOnline injects a request during the event loop (online routing mode).

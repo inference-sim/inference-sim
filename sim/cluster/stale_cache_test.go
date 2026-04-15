@@ -200,13 +200,13 @@ func TestStaleCacheIndex_BuildCacheQueryFn_DelegatesToStale(t *testing.T) {
 	assert.Greater(t, cqf["inst-0"](tokens), 0, "should see blocks after refresh via same closure")
 }
 
-func TestCluster_CacheSignalDelay_StaleRouting(t *testing.T) {
+func TestCluster_CacheEventDelay_StaleRouting(t *testing.T) {
 	// GIVEN two identical clusters — one oracle (delay=0), one stale (delay=very large)
 	// — both using precise-prefix-cache as the sole scorer with shared-prefix requests.
 	//
 	// With oracle mode, r2 should see r1's cached blocks and prefer the same instance.
-	// With stale mode (delay > r2 arrival), r2 cannot see r1's cached blocks because
-	// the snapshot hasn't refreshed yet, so routing decisions may differ.
+	// With stale mode (delay >> inter-arrival), cache events haven't fired yet so
+	// r2 cannot see r1's cached blocks, routing decisions may differ.
 	makeConfig := func(delay int64) DeploymentConfig {
 		return DeploymentConfig{
 			SimConfig: sim.SimConfig{
@@ -218,7 +218,7 @@ func TestCluster_CacheSignalDelay_StaleRouting(t *testing.T) {
 				ModelHardwareConfig: sim.ModelHardwareConfig{Backend: "blackbox"},
 			},
 			NumInstances:     2,
-			CacheSignalDelay: delay,
+			CacheEventDelay: delay,
 			RoutingPolicy:    "weighted",
 			RoutingScorerConfigs: []sim.ScorerConfig{
 				{Name: "precise-prefix-cache", Weight: 1.0},
@@ -283,8 +283,8 @@ func TestCluster_CacheSignalDelay_StaleRouting(t *testing.T) {
 		oracleMax, staleMax)
 }
 
-func TestCluster_CacheSignalDelay_Zero_OracleBehavior(t *testing.T) {
-	// GIVEN a cluster with cache-signal-delay = 0 (oracle mode)
+func TestCluster_CacheEventDelay_Zero_OracleBehavior(t *testing.T) {
+	// GIVEN a cluster with cache-event-delay = 0 (oracle mode, BC-4)
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
 			Horizon:             5_000_000,
@@ -357,6 +357,58 @@ func TestStaleCacheIndex_RemoveInstance_Idempotent(t *testing.T) {
 	// WHEN we remove a non-existent instance
 	// THEN it should not panic (no-op)
 	idx.RemoveInstance("nonexistent")
+}
+
+func TestStaleCacheIndex_RefreshInstance_OnlyRefreshesTargetInstance(t *testing.T) {
+	// GIVEN two instances with stale cache
+	cfg := newTestSimConfig()
+	cfg.Horizon = 10_000_000
+	cfg.TotalKVBlocks = 100
+	cfg.BlockSizeTokens = 4
+	inst1 := NewInstanceSimulator("inst-1", cfg)
+	inst2 := NewInstanceSimulator("inst-2", cfg)
+
+	instances := map[InstanceID]*InstanceSimulator{
+		"inst-1": inst1,
+		"inst-2": inst2,
+	}
+	idx := NewStaleCacheIndex(instances, 2_000_000)
+
+	tokens := []int{1, 2, 3, 4, 5, 6, 7, 8}
+
+	// Populate cache on inst-1 by running a request
+	req := &sim.Request{
+		ID: "r1", ArrivalTime: 0, InputTokens: tokens,
+		OutputTokens: []int{100}, State: sim.StateQueued,
+	}
+	inst1.InjectRequest(req)
+	inst1.Run()
+	require.Greater(t, inst1.GetCachedBlockCount(tokens), 0, "inst-1 live cache should have blocks")
+
+	// WHEN RefreshInstance is called for inst-1 only
+	idx.RefreshInstance("inst-1")
+
+	// THEN inst-1's snapshot sees the new blocks
+	result1 := idx.Query("inst-1", tokens)
+	assert.Greater(t, result1, 0, "inst-1 should see cached blocks after RefreshInstance")
+
+	// AND inst-2's snapshot is unchanged (still sees initial empty state)
+	result2 := idx.Query("inst-2", tokens)
+	assert.Equal(t, 0, result2, "inst-2 should NOT see any blocks (not refreshed)")
+}
+
+func TestStaleCacheIndex_RefreshInstance_UnknownID_NoOp(t *testing.T) {
+	// GIVEN a StaleCacheIndex with one instance
+	cfg := newTestSimConfig()
+	cfg.TotalKVBlocks = 100
+	cfg.BlockSizeTokens = 4
+	inst := NewInstanceSimulator("inst-0", cfg)
+	instances := map[InstanceID]*InstanceSimulator{"inst-0": inst}
+	idx := NewStaleCacheIndex(instances, 1000)
+
+	// WHEN RefreshInstance is called with an unknown ID
+	// THEN it should not panic (no-op)
+	idx.RefreshInstance("unknown-instance")
 }
 
 func TestNewStaleCacheIndex_ZeroInterval_Panics(t *testing.T) {

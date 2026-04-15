@@ -201,7 +201,7 @@ Example:
 			TraceLevel:              traceLevel,
 			CounterfactualK:         counterfactualK,
 			SnapshotRefreshInterval:          snapshotRefreshInterval,
-			CacheSignalDelay:                 cacheSignalDelay,
+			CacheEventDelay:                  cacheEventDelay,
 			FlowControlEnabled:               flowControlEnabled,
 			FlowControlDetector:              flowControlDetector,
 			FlowControlDispatchOrder:         flowControlDispatchOrder,

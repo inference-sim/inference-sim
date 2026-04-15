@@ -83,9 +83,9 @@ type ClusterSimulator struct {
 	// are added in NodeReadyEvent.Execute. Nil when no instances exist yet.
 	cacheQueryFn map[string]func([]int) int
 
-	// staleCache manages periodic snapshots of per-instance KV cache hash maps
-	// for stale prefix cache scoring (issue #919). Nil when CacheSignalDelay == 0 (oracle mode).
-	// Default CacheSignalDelay is 2s, matching llm-d's speculative TTL.
+	// staleCache manages per-instance stale snapshots of KV cache hash maps
+	// for prefix cache scoring (issue #919, #1029). Nil when CacheEventDelay == 0 (oracle mode).
+	// Updated event-driven via CacheEventArrivalEvent (issue #1029).
 	staleCache *StaleCacheIndex
 
 	// Flow control state (issue #882, GIE parity).
@@ -332,12 +332,12 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	cs.snapshotProvider = NewCachedSnapshotProvider(instanceMap, newObservabilityConfig(config.SnapshotRefreshInterval))
 
 	// Build cacheQueryFn from constructed instances for precise prefix cache scoring.
-	if config.CacheSignalDelay > 0 {
-		// Stale mode: scorers query periodically-refreshed snapshots (issue #919).
-		cs.staleCache = NewStaleCacheIndex(instanceMap, config.CacheSignalDelay)
+	if config.CacheEventDelay > 0 {
+		// Stale mode: scorers query event-driven stale snapshots (issue #1029).
+		cs.staleCache = NewStaleCacheIndex(instanceMap, config.CacheEventDelay)
 		cs.cacheQueryFn = cs.staleCache.BuildCacheQueryFn()
 	} else {
-		// Zero delay (CacheSignalDelay=0) — oracle mode: scorers query live KV cache state.
+		// Zero delay (CacheEventDelay=0) — oracle mode: scorers query live KV cache state.
 		cs.cacheQueryFn = make(map[string]func([]int) int, len(cs.instances))
 		for _, inst := range cs.instances {
 			cs.registerInstanceCacheQueryFn(inst.ID(), inst)
@@ -569,6 +569,9 @@ func (c *ClusterSimulator) Run() error {
 			inst := c.instances[instanceIdx]
 			instID := string(inst.ID())
 
+			// Snapshot epoch BEFORE processing the event for cache signal detection (BC-1).
+			epochBefore := inst.AllocationEpoch()
+
 			// Snapshot counters BEFORE processing the event
 			completedBefore := inst.Metrics().CompletedRequests
 			droppedBefore := inst.Metrics().DroppedUnservable
@@ -618,6 +621,23 @@ func (c *ClusterSimulator) Run() error {
 							break // saturated — no point rebuilding state for remaining iterations
 						}
 					}
+				}
+			}
+
+			// BC-1: event-driven cache signal propagation (issue #1029).
+			// When an instance's KV cache allocation epoch changes, a step ran AllocateKVBlocks
+			// (prefill or decode). Schedule a CacheEventArrivalEvent to refresh that instance's
+			// stale snapshot after the configured propagation delay.
+			if c.staleCache != nil {
+				epochAfter := inst.AllocationEpoch()
+				if epochAfter > epochBefore {
+					heap.Push(&c.clusterEvents, clusterEventEntry{
+						event: &CacheEventArrivalEvent{
+							time:       c.clock + c.config.CacheEventDelay,
+							instanceID: inst.ID(),
+						},
+						seqID: c.nextSeqID(),
+					})
 				}
 			}
 

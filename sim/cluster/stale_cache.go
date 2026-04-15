@@ -14,22 +14,23 @@ type instanceCacheEntry struct {
 }
 
 // StaleCacheIndex manages per-instance frozen snapshots of KV cache hash maps.
-// When cache-signal-delay > 0, the cacheQueryFn closures delegate to this index
+// When cache-event-delay > 0, the cacheQueryFn closures delegate to this index
 // instead of querying live instance state, simulating asynchronous KV event
-// propagation from production llm-d (issue #919).
+// propagation from production llm-d (issues #919, #1029).
 //
 // Signal freshness (R17, INV-7):
 //
 //	Reads: InstanceSimulator.SnapshotCacheQueryFn() snapshots (delegates to
-//	KVCacheState.SnapshotCachedBlocksFn via cacheSnapshotCapable) — demand-triggered staleness.
-//	Refresh checked at routing-decision boundaries (buildRouterState), not by an
-//	independent timer. During idle simulation periods, staleness can exceed the
-//	nominal CacheSignalDelay interval. Controlled by DeploymentConfig.CacheSignalDelay.
+//	KVCacheState.SnapshotCachedBlocksFn via cacheSnapshotCapable).
+//	Primary refresh path: event-driven via RefreshInstance(id), called by
+//	CacheEventArrivalEvent after each step that allocates KV blocks (issue #1029).
+//	Legacy refresh path: RefreshIfNeeded() (periodic, retained for test use).
+//	Controlled by DeploymentConfig.CacheEventDelay.
 //	When delay=0, this type is not used (oracle mode).
-//	Default delay is 2s (DefaultCacheSignalDelay), matching llm-d's speculative TTL.
+//	Default delay is 50ms (DefaultCacheEventDelay).
 type StaleCacheIndex struct {
 	entries     map[InstanceID]instanceCacheEntry
-	interval    int64 // refresh interval (microseconds)
+	interval    int64 // refresh interval (microseconds). Used by RefreshIfNeeded() only (deprecated path). Event-driven refresh via RefreshInstance() does not use this value.
 	lastRefresh int64 // sim clock at last refresh
 }
 
@@ -66,6 +67,17 @@ func (s *StaleCacheIndex) RefreshIfNeeded(clock int64) {
 		s.entries[id] = e // re-assign: map stores value type, not pointer
 	}
 	s.lastRefresh = clock
+}
+
+// RefreshInstance updates the stale snapshot for a single instance.
+// No-op if the instance ID is not registered. Does not affect other instances' snapshots.
+func (s *StaleCacheIndex) RefreshInstance(id InstanceID) {
+	e, ok := s.entries[id]
+	if !ok {
+		return
+	}
+	e.staleFn = e.inst.SnapshotCacheQueryFn()
+	s.entries[id] = e
 }
 
 // Query returns the cached block count for the given instance and tokens,

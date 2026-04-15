@@ -337,6 +337,9 @@ func (t *TieredKVCache) ReleaseKVBlocks(req *sim.Request) {
 	// Hashes are cleared only when popFreeBlock() reuses the slot.
 }
 
+// AllocationEpoch delegates to the GPU tier's allocation epoch counter.
+func (t *TieredKVCache) AllocationEpoch() int64 { return t.gpu.AllocationEpoch() }
+
 func (t *TieredKVCache) BlockSize() int64    { return t.gpu.BlockSize() }
 func (t *TieredKVCache) UsedBlocks() int64   { return t.gpu.UsedBlocks() }
 func (t *TieredKVCache) TotalCapacity() int64 { return t.gpu.TotalCapacity() }
