@@ -283,9 +283,10 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 // scheduleNextTick pushes the next ScalingTickEvent to the cluster event queue.
 // In request-bounded runs (horizon == math.MaxInt64), it stops ticking once all
 // arrivals are processed and all instances are idle — preventing an infinite loop.
-// The guard uses <= 0 rather than == 0 as a safety net: session follow-ups, PD
-// callbacks, and drain redirects all increment pendingArrivals before pushing, but
-// <= 0 ensures the guard fires even if a future push site is missed.
+// The guard uses <= 0 rather than == 0 as a safety net: all ClusterArrivalEvent
+// pushes go through pushArrival (cluster.go), which pairs the push with
+// pendingArrivals++ as a single operation. <= 0 ensures the guard fires even
+// if a future push site bypasses pushArrival and misses the increment.
 func (p *autoscalerPipeline) scheduleNextTick(cs *ClusterSimulator, nowUs int64) {
 	if cs.config.Horizon == math.MaxInt64 && cs.pendingArrivals <= 0 {
 		var inFlight int
