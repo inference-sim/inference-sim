@@ -25,19 +25,21 @@ type FieldConfig struct {
 
 // ObservabilityConfig configures refresh behavior for all snapshot fields.
 type ObservabilityConfig struct {
-	QueueDepth    FieldConfig
-	BatchSize     FieldConfig
-	KVUtilization FieldConfig
-	CacheBlocks   FieldConfig // cache block hash map staleness (precise-prefix-cache, no-hit-lru)
+	QueueDepth      FieldConfig
+	BatchSize       FieldConfig
+	KVUtilization   FieldConfig
+	CacheBlocks     FieldConfig // cache block hash map staleness (precise-prefix-cache, no-hit-lru)
+	PreemptionCount FieldConfig
 }
 
 // DefaultObservabilityConfig returns a config where all fields use Immediate mode.
 func DefaultObservabilityConfig() ObservabilityConfig {
 	return ObservabilityConfig{
-		QueueDepth:    FieldConfig{Mode: Immediate},
-		BatchSize:     FieldConfig{Mode: Immediate},
-		KVUtilization: FieldConfig{Mode: Immediate},
-		CacheBlocks:   FieldConfig{Mode: Immediate},
+		QueueDepth:      FieldConfig{Mode: Immediate},
+		BatchSize:       FieldConfig{Mode: Immediate},
+		KVUtilization:   FieldConfig{Mode: Immediate},
+		CacheBlocks:     FieldConfig{Mode: Immediate},
+		PreemptionCount: FieldConfig{Mode: Immediate},
 	}
 }
 
@@ -51,6 +53,7 @@ func newObservabilityConfig(refreshInterval int64, cacheDelay int64) Observabili
 		config.QueueDepth = periodic
 		config.BatchSize = periodic
 		config.KVUtilization = periodic
+		config.PreemptionCount = periodic
 	}
 	if cacheDelay > 0 {
 		config.CacheBlocks = FieldConfig{Mode: Periodic, Interval: cacheDelay}
@@ -69,9 +72,10 @@ type SnapshotProvider interface {
 
 // fieldTimestamps tracks the last refresh time per field per instance.
 type fieldTimestamps struct {
-	QueueDepth    int64
-	BatchSize     int64
-	KVUtilization int64
+	QueueDepth      int64
+	BatchSize       int64
+	KVUtilization   int64
+	PreemptionCount int64
 }
 
 // cacheEntry holds a live instance reference and its current stale snapshot closure.
@@ -140,8 +144,11 @@ func (p *CachedSnapshotProvider) Snapshot(id InstanceID, clock int64) sim.Routin
 	lr := p.lastRefresh[id]
 
 	snap.ID = string(id)
-	snap.PreemptionCount = inst.PreemptionCount() // always Immediate — monotonically increasing counter
 
+	if p.shouldRefresh(p.config.PreemptionCount, lr.PreemptionCount, clock) {
+		snap.PreemptionCount = inst.PreemptionCount()
+		lr.PreemptionCount = clock
+	}
 	if p.shouldRefresh(p.config.QueueDepth, lr.QueueDepth, clock) {
 		snap.QueueDepth = inst.QueueDepth()
 		lr.QueueDepth = clock
@@ -168,6 +175,7 @@ func (p *CachedSnapshotProvider) Snapshot(id InstanceID, clock int64) sim.Routin
 func (p *CachedSnapshotProvider) RefreshAll(clock int64) {
 	for id, inst := range p.instances {
 		snap := sim.NewRoutingSnapshot(string(id))
+		snap.PreemptionCount = inst.PreemptionCount()
 		snap.QueueDepth = inst.QueueDepth()
 		snap.BatchSize = inst.BatchSize()
 		snap.KVUtilization = inst.KVUtilization()
@@ -177,9 +185,10 @@ func (p *CachedSnapshotProvider) RefreshAll(clock int64) {
 		snap.KvTokensInUse = inst.KvTokensInUse()
 		p.cache[id] = snap
 		p.lastRefresh[id] = fieldTimestamps{
-			QueueDepth:    clock,
-			BatchSize:     clock,
-			KVUtilization: clock,
+			PreemptionCount: clock,
+			QueueDepth:      clock,
+			BatchSize:       clock,
+			KVUtilization:   clock,
 		}
 	}
 }
