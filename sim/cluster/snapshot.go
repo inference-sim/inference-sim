@@ -140,6 +140,7 @@ func (p *CachedSnapshotProvider) Snapshot(id InstanceID, clock int64) sim.Routin
 	lr := p.lastRefresh[id]
 
 	snap.ID = string(id)
+	snap.PreemptionCount = inst.PreemptionCount() // always Immediate — monotonically increasing counter
 
 	if p.shouldRefresh(p.config.QueueDepth, lr.QueueDepth, clock) {
 		snap.QueueDepth = inst.QueueDepth()

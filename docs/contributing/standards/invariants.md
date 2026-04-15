@@ -79,6 +79,7 @@ Invariants are properties that must hold at all times during and after simulatio
 | Signal | Owner | Freshness (interval=0) | Freshness (interval>0) | Updated By |
 |--------|-------|------------------------|------------------------|------------|
 | InFlightRequests | Cluster | Synchronous | Synchronous | `RoutingDecisionEvent.Execute()` (increment), completion detection (decrement) |
+| PreemptionCount | Instance | Always Immediate | Always Immediate | `CachedSnapshotProvider.Snapshot()` — unconditional, not gated by refresh interval |
 | QueueDepth | Instance | Immediate | Periodic | `QueuedEvent.Execute()` |
 | BatchSize | Instance | Immediate | Periodic | `StepEvent.Execute()` |
 | KVUtilization | Instance | Immediate | Periodic | `FormBatch()` → `AllocateKVBlocks()` |

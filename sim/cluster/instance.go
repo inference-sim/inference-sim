@@ -189,6 +189,11 @@ func (i *InstanceSimulator) KvTokensInUse() int64 {
 	return i.sim.KVCache.UsedBlocks() * i.sim.KVCache.BlockSize()
 }
 
+// PreemptionCount returns the cumulative number of preemption events on this instance.
+func (i *InstanceSimulator) PreemptionCount() int64 {
+	return i.sim.Metrics.PreemptionCount
+}
+
 // GetCachedBlockCount returns the number of consecutive cached prefix blocks
 // matching the given token sequence. Used by precise prefix cache scoring.
 func (i *InstanceSimulator) GetCachedBlockCount(tokens []int) int {
