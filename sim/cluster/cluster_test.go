@@ -2707,13 +2707,19 @@ func TestBatchRequestsNotSerialized(t *testing.T) {
 			cs := NewClusterSimulator(cfg, requests, nil)
 			mustRun(t, cs)
 
+			// Always-admit must not reject batch/background requests.
+			if cs.RejectedRequests() != 0 {
+				t.Errorf("expected 0 rejections under always-admit, got %d", cs.RejectedRequests())
+			}
+
 			m := cs.AggregatedMetrics()
 			if m.CompletedRequests != 10 {
 				t.Fatalf("completed %d requests, want 10", m.CompletedRequests)
 			}
 
 			// Batch/background requests must flow through admission concurrently (not serialized).
-			// 15ms bound ensures mean TTFT stays in the concurrent processing range.
+			// With beta=[1000,10,5]: concurrent mean ~6.6ms, serialized mean ~99ms.
+			// 15ms gives ~8ms margin above the concurrent ceiling.
 			ttftMeanMs := float64(m.TTFTSum) / float64(m.CompletedRequests) / 1000.0
 			const boundMs = 15.0
 			if ttftMeanMs >= boundMs {
