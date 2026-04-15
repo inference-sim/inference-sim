@@ -16,6 +16,12 @@ const PriorityCacheEvent = 10
 // within the same propagation window, and evictions only happen inside AllocateKVBlocks.
 // The behavioral difference from per-block events is negligible.
 //
+// Known gap: TieredKVCache.reloadPrefixFromCPU modifies gpu.HashToBlock directly
+// without going through AllocateKVBlocks, so full-reload successes (where the entire
+// requested range is satisfied from CPU cache) do not increment AllocationEpoch and
+// therefore do not trigger a CacheEventArrivalEvent. This is a rare tiered-cache-only
+// path with negligible routing impact. See issue #1056.
+//
 // Scheduled by ClusterSimulator's main loop when it detects AllocationEpoch() changed
 // after ProcessNextEvent(). Fires CacheEventDelay µs later.
 type CacheEventArrivalEvent struct {

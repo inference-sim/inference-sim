@@ -111,7 +111,7 @@ func (s *StaleCacheIndex) AddInstance(id InstanceID, inst *InstanceSimulator) {
 
 // BuildCacheQueryFn returns a cacheQueryFn map where each closure delegates to the
 // stale snapshot. The returned closures call s.Query at call time (not a captured copy),
-// so they automatically use the latest snapshot after RefreshIfNeeded.
+// so they automatically use the latest snapshot after RefreshInstance or RefreshIfNeeded.
 func (s *StaleCacheIndex) BuildCacheQueryFn() map[string]func([]int) int {
 	result := make(map[string]func([]int) int, len(s.entries))
 	for id := range s.entries {
