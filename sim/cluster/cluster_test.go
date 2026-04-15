@@ -2710,8 +2710,8 @@ func TestBatchRequestsNotSerialized(t *testing.T) {
 		t.Fatalf("completed %d requests, want 10", m.CompletedRequests)
 	}
 
-	// After intercept removal, batch requests should have similar TTFT to standard
-	// (not serialized). Using the same 15ms bound from the old test.
+	// Batch requests must flow through admission concurrently (not serialized).
+	// 15ms bound ensures mean TTFT stays in the concurrent processing range.
 	ttftMeanMs := float64(m.TTFTSum) / float64(m.CompletedRequests) / 1000.0
 	const boundMs = 15.0
 	if ttftMeanMs >= boundMs {
