@@ -256,6 +256,9 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	if observeRttMs < 0 || math.IsNaN(observeRttMs) || math.IsInf(observeRttMs, 0) {
 		logrus.Fatalf("--rtt-ms must be a finite value >= 0, got %v", observeRttMs)
 	}
+	if observeMinTokens < 0 {
+		logrus.Fatalf("--min-tokens must be >= 0, got %d", observeMinTokens)
+	}
 
 	// Generate workload
 	var spec *workload.WorkloadSpec

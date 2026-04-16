@@ -102,6 +102,7 @@ Four input modes are available. At least one must be provided per invocation:
 | `--think-time-ms` | `int` | `0` | Think time in ms between response and next request (concurrency mode only) |
 | `--api-format` | `string` | `"completions"` | API format: `completions` or `chat` |
 | `--unconstrained-output` | `bool` | `false` | Do not set `max_tokens` (let server decide output length) |
+| `--min-tokens` | `int` | `0` | Set `min_tokens` in request body; forces server to generate at least N tokens before EOS. Set equal to `--output-tokens` for exact output length control (0 = omit) |
 | `--rtt-ms` | `float64` | `0` | Measured network round-trip time in milliseconds |
 | `--defaults-filepath` | `string` | `"defaults.yaml"` | Path to `defaults.yaml` containing preset definitions (preset mode only) |
 
