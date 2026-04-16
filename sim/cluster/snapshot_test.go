@@ -127,40 +127,49 @@ func TestCachedSnapshotProvider_RefreshBehavior(t *testing.T) {
 }
 
 // TestCachedSnapshotProvider_PeriodicInterval verifies that Periodic mode
-// only refreshes when the configured interval has elapsed.
+// only refreshes when the configured interval has elapsed, using CacheHitRate
+// as the observable signal (persists after request completion unlike QueueDepth).
 func TestCachedSnapshotProvider_PeriodicInterval(t *testing.T) {
-	inst := newTestInstance("periodic-test", 100)
+	cfg := newTestSimConfig()
+	cfg.Horizon = 10_000_000
+	cfg.TotalKVBlocks = 100
+	cfg.BlockSizeTokens = 4
+	inst := NewInstanceSimulator("periodic-test", cfg)
 	instances := map[InstanceID]*InstanceSimulator{"periodic-test": inst}
 
 	config := ObservabilityConfig{
-		QueueDepth:    FieldConfig{Mode: Periodic, Interval: 100},
+		QueueDepth:    FieldConfig{Mode: Immediate},
 		BatchSize:     FieldConfig{Mode: Immediate},
-		KVUtilization: FieldConfig{Mode: Immediate},
+		KVUtilization: FieldConfig{Mode: Periodic, Interval: 100},
+		CacheBlocks:   FieldConfig{Mode: Immediate},
 	}
 	provider := NewCachedSnapshotProvider(instances, config)
 
-	// Initial snapshot at clock=0 — should read (0 - 0 >= 100 is false, but first read is 0-0=0 >= 100 false)
-	// Actually at clock=0, lastRefresh is 0, so 0-0=0 < 100, should NOT refresh
+	// Initial Periodic snapshot at clock=0: lastRefresh=0, 0-0=0 < 100, so NOT refreshed.
+	// CacheHitRate is 0.0 (default).
 	snap0 := provider.Snapshot("periodic-test", 0)
-	if snap0.QueueDepth != 0 {
-		t.Errorf("QueueDepth at clock=0 = %d, want 0", snap0.QueueDepth)
+	assert.Equal(t, 0.0, snap0.CacheHitRate, "CacheHitRate at clock=0 should be 0.0 (not yet refreshed)")
+
+	// Run a request to produce a non-zero CacheHitRate. After the request completes,
+	// the instance's CacheHitRate() reflects prefix block cache hits from processing.
+	tokens := []int{1, 2, 3, 4, 5, 6, 7, 8}
+	req := &sim.Request{
+		ID: "r1", ArrivalTime: 0, InputTokens: tokens,
+		OutputTokens: []int{100}, State: sim.StateQueued,
 	}
+	inst.InjectRequest(req)
+	inst.Run()
+	liveCHR := inst.CacheHitRate()
 
-	// At clock=99 — still should NOT refresh (99-0 < 100)
+	// At clock=99: should NOT refresh (99-0 < 100) — still sees stale default 0.0.
 	snap99 := provider.Snapshot("periodic-test", 99)
-	_ = snap99
+	assert.Equal(t, 0.0, snap99.CacheHitRate,
+		"CacheHitRate at clock=99 should still be 0.0 (interval not elapsed)")
 
-	// At clock=100 — should refresh (100-0 >= 100)
+	// At clock=100: should refresh (100-0 >= 100) — reads live CacheHitRate.
 	snap100 := provider.Snapshot("periodic-test", 100)
-	_ = snap100
-
-	// At clock=150 — should NOT refresh (150-100 < 100)
-	snap150 := provider.Snapshot("periodic-test", 150)
-	_ = snap150
-
-	// At clock=200 — should refresh (200-100 >= 100)
-	snap200 := provider.Snapshot("periodic-test", 200)
-	_ = snap200
+	assert.Equal(t, liveCHR, snap100.CacheHitRate,
+		"CacheHitRate at clock=100 should match live value (interval elapsed, first real refresh)")
 }
 
 // TestSnapshotProvider_DefaultConfig_AllImmediate verifies BC-7:
@@ -176,6 +185,7 @@ func TestSnapshotProvider_DefaultConfig_AllImmediate(t *testing.T) {
 		{"QueueDepth", config.QueueDepth},
 		{"BatchSize", config.BatchSize},
 		{"KVUtilization", config.KVUtilization},
+		{"CacheBlocks", config.CacheBlocks},
 	}
 
 	for _, tc := range tests {
@@ -411,6 +421,14 @@ func TestCachedSnapshotProvider_AddRemoveCacheInstance(t *testing.T) {
 
 	provider.RemoveCacheInstance("inst-new")
 	assert.Equal(t, 0, provider.CacheQuery("inst-new", tokens)) // returns 0 for unknown
+}
+
+func TestCachedSnapshotProvider_IsStaleCacheMode(t *testing.T) {
+	// IsStaleCacheMode gates the stale vs oracle dispatch in registerInstanceCacheQueryFn.
+	assert.False(t, NewCachedSnapshotProvider(nil, newObservabilityConfig(0, 0)).IsStaleCacheMode(),
+		"oracle mode (cacheDelay=0) should return false")
+	assert.True(t, NewCachedSnapshotProvider(nil, newObservabilityConfig(0, 1000)).IsStaleCacheMode(),
+		"stale mode (cacheDelay>0) should return true")
 }
 
 // --- Ported tests from StaleCacheIndex (stale cache management on CachedSnapshotProvider) ---
