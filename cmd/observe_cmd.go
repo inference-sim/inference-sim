@@ -79,8 +79,10 @@ API format: Use --api-format=chat for servers that expose /v1/chat/completions
 which uses /v1/completions with a "prompt" field.
 
 Output control: Use --unconstrained-output to let the server decide output length
-(omits max_tokens for chat, sends large value for completions). Default constrains
-output to the workload spec's sampled MaxOutputTokens.
+(omits max_tokens for chat, sends large value for completions). Use --min-tokens N
+to force the server to generate at least N tokens before EOS (set equal to
+--output-tokens for exact token counts). Default constrains output to the workload
+spec's sampled MaxOutputTokens.
 
 Network calibration: Use --rtt-ms to record measured network round-trip time
 in the trace header for calibration normalization.
@@ -333,6 +335,19 @@ func runObserve(cmd *cobra.Command, _ []string) {
 
 	if len(wl.Requests) == 0 {
 		logrus.Warn("No requests generated — writing empty trace")
+	}
+
+	// Warn if --min-tokens exceeds max_tokens for any request: vLLM rejects such requests.
+	if observeMinTokens > 0 && !observeUnconstrainedOutput {
+		mismatch := 0
+		for _, r := range wl.Requests {
+			if observeMinTokens > r.MaxOutputLen {
+				mismatch++
+			}
+		}
+		if mismatch > 0 {
+			logrus.Warnf("--min-tokens=%d exceeds max_tokens for %d/%d requests; those requests will likely be rejected by the server", observeMinTokens, mismatch, len(wl.Requests))
+		}
 	}
 
 	// Enable streaming on all requests when --record-itl is set (BC-6)
