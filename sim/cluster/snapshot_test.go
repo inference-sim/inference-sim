@@ -342,6 +342,54 @@ func TestObservabilityConfig_CacheBlocks_IndependentOfSnapshot(t *testing.T) {
 	}
 }
 
+// TestCachedSnapshotProvider_DualTimers_IndependentRefresh verifies that
+// SnapshotRefreshInterval and CacheSignalDelay fire on independent schedules.
+// Snapshot() refreshes KVUtilization-group fields on one timer; RefreshCacheIfNeeded
+// refreshes cache block snapshots on a separate timer.
+func TestCachedSnapshotProvider_DualTimers_IndependentRefresh(t *testing.T) {
+	cfg := newTestSimConfig()
+	cfg.Horizon = 10_000_000
+	cfg.TotalKVBlocks = 100
+	cfg.BlockSizeTokens = 4
+	inst := NewInstanceSimulator("inst-0", cfg)
+	instances := map[InstanceID]*InstanceSimulator{"inst-0": inst}
+
+	// Snapshot interval = 200µs, cache interval = 500µs.
+	obsConfig := newObservabilityConfig(200, 500)
+	provider := NewCachedSnapshotProvider(instances, obsConfig)
+
+	tokens := []int{1, 2, 3, 4, 5, 6, 7, 8}
+
+	// Run a request to populate both cache and change CacheHitRate.
+	req := &sim.Request{
+		ID: "r1", ArrivalTime: 0, InputTokens: tokens,
+		OutputTokens: []int{100}, State: sim.StateQueued,
+	}
+	inst.InjectRequest(req)
+	inst.Run()
+	require.Greater(t, inst.GetCachedBlockCount(tokens), 0, "live cache must have blocks")
+	liveCHR := inst.CacheHitRate()
+
+	// At clock=200: snapshot interval elapsed (200-0 >= 200), cache interval NOT (200-0 < 500).
+	// KVUtilization-group (CacheHitRate) should refresh; cache blocks should NOT.
+	provider.RefreshCacheIfNeeded(200)
+	snap200 := provider.Snapshot("inst-0", 200)
+	assert.Equal(t, liveCHR, snap200.CacheHitRate,
+		"CacheHitRate should refresh at clock=200 (snapshot interval elapsed)")
+	assert.Equal(t, 0, provider.CacheQuery("inst-0", tokens),
+		"cache blocks should NOT refresh at clock=200 (cache interval not elapsed)")
+
+	// At clock=499: snapshot fires again (499-200 >= 200), cache still NOT (499-0 < 500).
+	provider.RefreshCacheIfNeeded(499)
+	assert.Equal(t, 0, provider.CacheQuery("inst-0", tokens),
+		"cache blocks should NOT refresh at clock=499 (cache interval not elapsed)")
+
+	// At clock=500: cache interval elapsed (500-0 >= 500), cache blocks should refresh.
+	provider.RefreshCacheIfNeeded(500)
+	assert.Greater(t, provider.CacheQuery("inst-0", tokens), 0,
+		"cache blocks should refresh at clock=500 (cache interval elapsed)")
+}
+
 // --- Task 2 tests (BC-1, BC-3, BC-4) ---
 
 func TestCachedSnapshotProvider_CacheQuery_StaleUntilRefresh(t *testing.T) {
