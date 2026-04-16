@@ -281,8 +281,8 @@ func (p *CachedSnapshotProvider) RemoveCacheInstance(id InstanceID) {
 	delete(p.cacheEntries, id)
 }
 
-// HasCacheEntries returns true when stale cache mode is active (CacheBlocks.Mode == Periodic).
-func (p *CachedSnapshotProvider) HasCacheEntries() bool {
+// IsStaleCacheMode returns true when stale cache mode is active (CacheBlocks.Mode == Periodic).
+func (p *CachedSnapshotProvider) IsStaleCacheMode() bool {
 	return p.config.CacheBlocks.Mode == Periodic
 }
 

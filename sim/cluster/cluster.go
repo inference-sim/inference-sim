@@ -455,7 +455,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 // Precondition: cs.cacheQueryFn must be non-nil (initialised before calling).
 func (cs *ClusterSimulator) registerInstanceCacheQueryFn(id InstanceID, inst *InstanceSimulator) {
 	csp := cs.snapshotProvider.(*CachedSnapshotProvider)
-	if csp.HasCacheEntries() {
+	if csp.IsStaleCacheMode() {
 		// Stale mode: register with CachedSnapshotProvider; the closure delegates
 		// to CacheQuery at call time, picking up refreshed snapshots automatically.
 		csp.AddCacheInstance(id, inst)
