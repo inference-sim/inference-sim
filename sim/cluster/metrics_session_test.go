@@ -8,10 +8,18 @@ import (
 
 // buildSessionTestMetrics is a test helper that builds a minimal *sim.Metrics
 // with the given RequestMetrics entries and completion times.
+// TTFT values on RequestMetrics are treated as ms and mirrored into m.RequestTTFTs
+// as µs (× 1000), matching how ComputeSessionMetrics reads them in production.
+// ArrivedAt values are passed as-is (seconds in production; tests use 0 or small
+// integers which represent seconds — duration arithmetic is in ms, so ArrivedAt
+// is multiplied by 1000.0 inside ComputeSessionMetrics).
 func buildSessionTestMetrics(reqs []sim.RequestMetrics, completionTimes map[string]float64) *sim.Metrics {
 	m := sim.NewMetrics()
 	for _, r := range reqs {
 		m.Requests[r.ID] = r
+		if r.TTFT > 0 {
+			m.RequestTTFTs[r.ID] = r.TTFT * 1000.0 // ms → µs
+		}
 	}
 	for id, t := range completionTimes {
 		m.RequestCompletionTimes[id] = t
@@ -70,7 +78,7 @@ func TestComputeSessionMetrics_TTFTPartition(t *testing.T) {
 
 // BC-3: SessionDuration = max_completion_ms - round0_arrival_ms
 func TestComputeSessionMetrics_SessionDuration(t *testing.T) {
-	// Round-0 arrives at ArrivedAt=0ms; final round completes at 700,000 µs = 700ms.
+	// Round-0 arrives at ArrivedAt=0s (0s × 1000 = 0ms); final round completes at 700,000 µs = 700ms.
 	// Session duration = 700ms - 0ms = 700ms.
 	m := buildSessionTestMetrics([]sim.RequestMetrics{
 		{ID: "r0", SessionID: "s1", RoundIndex: 0, TTFT: 50.0, ArrivedAt: 0},

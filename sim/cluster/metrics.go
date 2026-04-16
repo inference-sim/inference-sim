@@ -683,10 +683,13 @@ func ComputeSessionMetrics(m *sim.Metrics) *SessionMetrics {
 			continue // BC-4: skip non-session requests
 		}
 
+		// RequestTTFTs is in µs ticks; convert to ms for consistency with other output.
+		// rm.TTFT is only populated when writing the JSON file, not in-memory aggregation.
+		ttftMs := m.RequestTTFTs[id] / 1000.0
 		if rm.RoundIndex == 0 {
-			coldTTFTs = append(coldTTFTs, rm.TTFT)
+			coldTTFTs = append(coldTTFTs, ttftMs)
 		} else {
-			warmTTFTs = append(warmTTFTs, rm.TTFT)
+			warmTTFTs = append(warmTTFTs, ttftMs)
 		}
 
 		sd, ok := sessions[rm.SessionID]
@@ -695,7 +698,8 @@ func ComputeSessionMetrics(m *sim.Metrics) *SessionMetrics {
 			sessions[rm.SessionID] = sd
 		}
 		if rm.RoundIndex == 0 {
-			sd.round0ArrivalMs = rm.ArrivedAt
+			// rm.ArrivedAt is in seconds (set as ArrivalTime/1e6); convert to ms
+			sd.round0ArrivalMs = rm.ArrivedAt * 1000.0
 			sd.hasRound0 = true
 		}
 		// Track max completion time across all rounds (RequestCompletionTimes is in µs)
