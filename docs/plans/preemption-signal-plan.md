@@ -13,14 +13,19 @@ BC-1: Accessor surfaces instance metric
 - WHEN `PreemptionCount()` is called on it
 - THEN it returns N
 
-BC-2: Snapshot injection is always-Immediate
-- GIVEN a CachedSnapshotProvider with any ObservabilityConfig
-- WHEN `Snapshot(id, clock)` is called for any clock value
-- THEN `snap.PreemptionCount` equals `inst.PreemptionCount()` — unconditional, not gated by any refresh interval
+BC-2: Snapshot injection respects ObservabilityConfig
+- GIVEN a CachedSnapshotProvider with `ObservabilityConfig.PreemptionCount = Immediate`
+- WHEN `Snapshot(id, clock)` is called at the same clock tick where other Periodic fields are stale
+- THEN `snap.PreemptionCount` equals `inst.PreemptionCount()` — updated because its own FieldConfig is Immediate
+
+BC-2b: Periodic mode goes stale correctly
+- GIVEN a CachedSnapshotProvider with `ObservabilityConfig.PreemptionCount = Periodic`
+- WHEN `Snapshot(id, clock)` is called before the interval elapses
+- THEN `snap.PreemptionCount` returns the cached (stale) value
 
 ## Deviation Log
 
-No clarifications needed. Issue is unambiguous.
+**DEV-1 (post-review):** BC-2 behavioral contract revised. Original design had `PreemptionCount` hardcoded as "always Immediate" outside `ObservabilityConfig`. Post-review feedback required full integration into the `ObservabilityConfig`/`fieldTimestamps`/`shouldRefresh()` framework so the signal gets the same treatment as `QueueDepth`, `BatchSize`, and `KVUtilization`. When `--snapshot-refresh-interval > 0`, `PreemptionCount` is now Periodic (matching production Prometheus scrape behavior). `DefaultObservabilityConfig()` and `newObservabilityConfig(0)` preserve Immediate behavior. The invariants.md INV-7 table and architecture.md freshness tier table updated accordingly.
 
 ## Tasks
 
@@ -89,7 +94,7 @@ go test ./sim/cluster/... -run TestPreemptionCount
 
 `sim/routing.go` — add after `InFlightRequests`:
 ```go
-PreemptionCount  int64  // Cumulative preemption events since instance start (monotonically increasing, always Immediate)
+PreemptionCount  int64  // Cumulative preemption events since instance start (monotonically increasing; Immediate by default, Periodic when --snapshot-refresh-interval > 0)
 ```
 
 `sim/cluster/instance.go` — add after `KvTokensInUse()`:
@@ -100,10 +105,7 @@ func (i *InstanceSimulator) PreemptionCount() int64 {
 }
 ```
 
-`sim/cluster/snapshot.go` — in `Snapshot()`, add immediately after `snap.ID = string(id)`:
-```go
-snap.PreemptionCount = inst.PreemptionCount() // always Immediate — monotonically increasing counter
-```
+`sim/cluster/snapshot.go` — add `PreemptionCount FieldConfig` to `ObservabilityConfig` and `fieldTimestamps`; route through `shouldRefresh()` in `Snapshot()`; set in `RefreshAll()`. See DEV-1 in Deviation Log.
 
 **Verify passes:**
 ```bash
@@ -127,8 +129,10 @@ golangci-lint run ./sim/... ./sim/cluster/...
 Add row to the INV-7 signal freshness table after the `InFlightRequests` row:
 
 ```
-| PreemptionCount | Instance (`InstanceSimulator.sim.Metrics.PreemptionCount`) | Always Immediate | Always Immediate | `CachedSnapshotProvider.Snapshot()` and `RefreshAll()` |
+| PreemptionCount | Instance (`InstanceSimulator.sim.Metrics.PreemptionCount`) | Immediate | Periodic | `CachedSnapshotProvider.Snapshot()` and `RefreshAll()` |
 ```
+
+*(Updated per DEV-1: row now shows Immediate/Periodic tiers, not "Always Immediate".)*
 
 **Verify:**
 ```bash

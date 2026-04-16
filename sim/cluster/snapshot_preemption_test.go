@@ -16,9 +16,9 @@ func TestPreemptionCount_Accessor_SurfacesMetric(t *testing.T) {
 }
 
 // TestPreemptionCount_Snapshot_AlwaysImmediate verifies BC-2:
-// Snapshot() injects PreemptionCount unconditionally regardless of ObservabilityConfig.
-// Uses a Periodic config for other fields so the test proves PreemptionCount stays
-// Immediate even when the other fields would be stale.
+// When ObservabilityConfig.PreemptionCount is configured as Immediate,
+// Snapshot() re-reads it on every call — even at the same clock tick
+// where other Periodic fields would not refresh.
 func TestPreemptionCount_Snapshot_AlwaysImmediate(t *testing.T) {
 	inst := newTestInstance("inst_0", 100)
 	inst.sim.Metrics.PreemptionCount = 5
@@ -40,28 +40,79 @@ func TestPreemptionCount_Snapshot_AlwaysImmediate(t *testing.T) {
 		t.Errorf("Snapshot PreemptionCount = %d, want 5", snap.PreemptionCount)
 	}
 
-	// Advance count — must reflect on next call at same clock (Periodic fields would be stale)
+	// Advance count — must reflect on next call at same clock (Periodic interval not elapsed)
 	inst.sim.Metrics.PreemptionCount = 12
-	snap2 := provider.Snapshot("inst_0", 0) // same clock, Periodic interval not elapsed
+	snap2 := provider.Snapshot("inst_0", 0)
 	if snap2.PreemptionCount != 12 {
 		t.Errorf("Snapshot PreemptionCount after increment = %d, want 12 (must be Immediate)", snap2.PreemptionCount)
 	}
 }
 
+// TestPreemptionCount_Snapshot_Periodic_GoesStale verifies BC-2b:
+// When ObservabilityConfig.PreemptionCount is configured as Periodic,
+// Snapshot() returns the cached value until the interval elapses.
+func TestPreemptionCount_Snapshot_Periodic_GoesStale(t *testing.T) {
+	inst := newTestInstance("inst_0", 100)
+	inst.sim.Metrics.PreemptionCount = 5
+
+	instances := map[InstanceID]*InstanceSimulator{"inst_0": inst}
+	config := newObservabilityConfig(1_000_000) // all fields Periodic with 1s interval
+	provider := NewCachedSnapshotProvider(instances, config)
+
+	// Advance clock to interval boundary — triggers the first read (1_000_000 - 0 >= 1_000_000)
+	snap1 := provider.Snapshot("inst_0", 1_000_000)
+	if snap1.PreemptionCount != 5 {
+		t.Errorf("first Periodic read Snapshot PreemptionCount = %d, want 5", snap1.PreemptionCount)
+	}
+
+	// Advance counter — interval has not elapsed yet (same clock), so value should be stale
+	inst.sim.Metrics.PreemptionCount = 12
+	snap2 := provider.Snapshot("inst_0", 1_000_000)
+	if snap2.PreemptionCount != 5 {
+		t.Errorf("Periodic stale Snapshot PreemptionCount = %d, want 5 (interval not elapsed)", snap2.PreemptionCount)
+	}
+
+	// Advance clock past the next interval boundary — should now refresh
+	snap3 := provider.Snapshot("inst_0", 2_000_000)
+	if snap3.PreemptionCount != 12 {
+		t.Errorf("Snapshot PreemptionCount after interval elapsed = %d, want 12", snap3.PreemptionCount)
+	}
+}
+
 // TestPreemptionCount_RefreshAll_SnapshotRecovery verifies BC-3:
-// After RefreshAll(), the next Snapshot() call returns the correct PreemptionCount.
+// RefreshAll() writes the live PreemptionCount into the cache, and
+// Snapshot() returns it even when ObservabilityConfig.PreemptionCount is OnDemand.
 func TestPreemptionCount_RefreshAll_SnapshotRecovery(t *testing.T) {
 	inst := newTestInstance("inst_0", 100)
 	inst.sim.Metrics.PreemptionCount = 5
 
 	instances := map[InstanceID]*InstanceSimulator{"inst_0": inst}
-	provider := NewCachedSnapshotProvider(instances, DefaultObservabilityConfig())
+	config := ObservabilityConfig{
+		QueueDepth:      FieldConfig{Mode: Immediate},
+		BatchSize:       FieldConfig{Mode: Immediate},
+		KVUtilization:   FieldConfig{Mode: Immediate},
+		PreemptionCount: FieldConfig{Mode: OnDemand}, // only updated via RefreshAll
+	}
+	provider := NewCachedSnapshotProvider(instances, config)
 
+	// Before RefreshAll: OnDemand field starts at zero (never read yet)
+	snap0 := provider.Snapshot("inst_0", 0)
+	if snap0.PreemptionCount != 0 {
+		t.Errorf("OnDemand PreemptionCount before RefreshAll = %d, want 0", snap0.PreemptionCount)
+	}
+
+	// After RefreshAll: live value should be written to cache
 	provider.RefreshAll(0)
+	snap1 := provider.Snapshot("inst_0", 0)
+	if snap1.PreemptionCount != 5 {
+		t.Errorf("Snapshot PreemptionCount after RefreshAll = %d, want 5", snap1.PreemptionCount)
+	}
 
-	snap := provider.Snapshot("inst_0", 0)
-	if snap.PreemptionCount != 5 {
-		t.Errorf("Snapshot PreemptionCount after RefreshAll = %d, want 5", snap.PreemptionCount)
+	// Advance counter without RefreshAll — OnDemand stays stale
+	inst.sim.Metrics.PreemptionCount = 10
+	snap2 := provider.Snapshot("inst_0", 0)
+	if snap2.PreemptionCount != 5 {
+		t.Errorf("OnDemand Snapshot PreemptionCount without RefreshAll = %d, want 5 (stale)", snap2.PreemptionCount)
 	}
 }
 
