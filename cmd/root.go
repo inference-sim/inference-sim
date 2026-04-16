@@ -1669,6 +1669,10 @@ var runCmd = &cobra.Command{
 		perTenantMetrics := cluster.ComputePerTenantMetrics(cs.AggregatedMetrics())
 		printPerTenantMetrics(os.Stdout, perTenantMetrics)
 
+		// Print session metrics if any request carries a session label (#1058)
+		sessionMetrics := cluster.ComputeSessionMetrics(cs.AggregatedMetrics())
+		printSessionMetrics(os.Stdout, sessionMetrics)
+
 		// Print PD disaggregation metrics if disaggregation was active (PR4)
 		printPDMetrics(os.Stdout, rawMetrics.PD, config.PDTransferContention)
 
@@ -1779,6 +1783,28 @@ func printPerTenantMetrics(w io.Writer, perTenantMetrics map[string]*cluster.Ten
 	}
 	jain := cluster.JainFairnessIndex(tokenMap)
 	_, _ = fmt.Fprintf(w, "  Jain Fairness Index: %.4f\n", jain)
+}
+
+// printSessionMetrics writes the session metrics section to w.
+// No-op when sm is nil (single-turn workloads produce no session output).
+func printSessionMetrics(w io.Writer, sm *cluster.SessionMetrics) {
+	if sm == nil {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "=== Session Metrics ===")
+	_, _ = fmt.Fprintf(w, "  Sessions: %d\n", sm.SessionCount)
+	if sm.TTFTCold.Count > 0 {
+		_, _ = fmt.Fprintf(w, "  TTFT cold (round 0): mean=%.2f p50=%.2f p95=%.2f p99=%.2f ms (n=%d)\n",
+			sm.TTFTCold.Mean, sm.TTFTCold.P50, sm.TTFTCold.P95, sm.TTFTCold.P99, sm.TTFTCold.Count)
+	}
+	if sm.TTFTWarm.Count > 0 {
+		_, _ = fmt.Fprintf(w, "  TTFT warm (round≥1): mean=%.2f p50=%.2f p95=%.2f p99=%.2f ms (n=%d)\n",
+			sm.TTFTWarm.Mean, sm.TTFTWarm.P50, sm.TTFTWarm.P95, sm.TTFTWarm.P99, sm.TTFTWarm.Count)
+	}
+	if sm.SessionDuration.Count > 0 {
+		_, _ = fmt.Fprintf(w, "  Session duration:    mean=%.2f p50=%.2f p95=%.2f p99=%.2f ms (n=%d)\n",
+			sm.SessionDuration.Mean, sm.SessionDuration.P50, sm.SessionDuration.P95, sm.SessionDuration.P99, sm.SessionDuration.Count)
+	}
 }
 
 // printPDMetrics prints the PD disaggregation metrics section when disaggregation was active.

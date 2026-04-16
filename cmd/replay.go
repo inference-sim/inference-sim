@@ -323,6 +323,10 @@ Example:
 		perTenantMetrics := cluster.ComputePerTenantMetrics(cs.AggregatedMetrics())
 		printPerTenantMetrics(os.Stdout, perTenantMetrics)
 
+		// Print session metrics if any request carries a session label (#1058)
+		sessionMetrics := cluster.ComputeSessionMetrics(cs.AggregatedMetrics())
+		printSessionMetrics(os.Stdout, sessionMetrics)
+
 		if cs.Trace() != nil && summarizeTrace {
 			traceSummary := trace.Summarize(cs.Trace())
 			fmt.Println("=== Trace Summary ===")
