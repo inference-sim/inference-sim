@@ -730,6 +730,51 @@ func TestAllocateKVBlocks_PreCheck_CatchesCachedBlockBudgetExhaustion(t *testing
 	assertBlockConservation(t, kvc)
 }
 
+func TestPreemptForTokens_RetryPreservesRequestMap(t *testing.T) {
+	// Reproduces #1061 leak path 1: decode failure -> eviction -> retry.
+	// Under the old rollback, the retry would orphan blocks.
+	kvc := NewKVCacheState(4, 4)
+
+	r1 := &sim.Request{
+		ID:           "r1",
+		InputTokens:  []int{1, 2, 3, 4, 5, 6, 7, 8},
+		OutputTokens: []int{100},
+	}
+	ok := kvc.AllocateKVBlocks(r1, 0, 8, []int64{})
+	r1.ProgressIndex = 8 // now past prefill, in decode
+	require.True(t, ok)
+	require.Len(t, kvc.RequestMap["r1"], 2)
+
+	r2 := &sim.Request{
+		ID:          "r2",
+		InputTokens: []int{10, 20, 30, 40, 50, 60, 70, 80},
+	}
+	ok = kvc.AllocateKVBlocks(r2, 0, 8, []int64{})
+	require.True(t, ok)
+	require.Equal(t, int64(0), kvc.countFreeBlocks())
+
+	// Decode for r1 fails (last block full, 0 free)
+	ok = kvc.AllocateKVBlocks(r1, 8, 9, []int64{})
+	assert.False(t, ok)
+
+	// RequestMap["r1"] still has 2 blocks (not deleted by rollback)
+	assert.Len(t, kvc.RequestMap["r1"], 2,
+		"decode failure must not delete RequestMap — this was the #1061 bug")
+
+	// Simulate eviction: release r2
+	kvc.ReleaseKVBlocks(r2)
+	require.Equal(t, int64(2), kvc.countFreeBlocks())
+
+	// Retry succeeds
+	ok = kvc.AllocateKVBlocks(r1, 8, 9, []int64{})
+	assert.True(t, ok, "retry after eviction should succeed")
+
+	// r1 has 3 blocks: 2 original + 1 new decode block
+	assert.Len(t, kvc.RequestMap["r1"], 3,
+		"retry must see original 2 blocks + 1 new decode block")
+	assertBlockConservation(t, kvc)
+}
+
 func TestVerifyBlockConservation_DetectsOrphanedBlocks(t *testing.T) {
 	kvc := NewKVCacheState(10, 4)
 	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
