@@ -752,6 +752,38 @@ func TestAllocateKVBlocks_Failure_NoWarnOutput(t *testing.T) {
 	assert.Empty(t, buf.String(), "no Warn-level log output expected (BC-1: vLLM returns None silently)")
 }
 
+func TestFreeBlockCnt_DirectCounter_MatchesFreeListLength(t *testing.T) {
+	kvc := NewKVCacheState(10, 4)
+
+	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
+	ok := kvc.AllocateKVBlocks(req, 0, 8, []int64{})
+	require.True(t, ok)
+
+	actualFree := int64(0)
+	node := kvc.FreeHead
+	for node != nil {
+		actualFree++
+		node = node.NextFree
+	}
+	assert.Equal(t, actualFree, kvc.countFreeBlocks(),
+		"countFreeBlocks() must match physical free list length")
+	assert.Equal(t, kvc.TotalBlocks, kvc.countFreeBlocks()+kvc.UsedBlocks(),
+		"INV-4: free + used must equal total")
+
+	kvc.ReleaseKVBlocks(req)
+
+	actualFree = 0
+	node = kvc.FreeHead
+	for node != nil {
+		actualFree++
+		node = node.NextFree
+	}
+	assert.Equal(t, kvc.TotalBlocks, kvc.countFreeBlocks(),
+		"all blocks should be free after release")
+	assert.Equal(t, actualFree, kvc.countFreeBlocks(),
+		"countFreeBlocks() must match physical free list length after release")
+}
+
 func TestKVCacheState_SnapshotCachedBlocksFn_FrozenView(t *testing.T) {
 	// GIVEN a KVCacheState with some cached blocks
 	kvc := NewKVCacheState(100, 4)

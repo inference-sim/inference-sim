@@ -473,17 +473,17 @@ func TestTieredKVCache_Conservation_MirrorReloadCycle(t *testing.T) {
 
 	checkINV4 := func(label string) {
 		t.Helper()
-		// Walk the free list independently of UsedBlockCnt to avoid tautology.
-		// INV-4: UsedBlockCnt + (free list length) == TotalBlocks
+		// Walk the free list independently of FreeBlockCnt to avoid tautology.
+		// INV-4: UsedBlocks() + (free list length) == TotalBlocks
 		actualFree := int64(0)
 		blk := gpu.FreeHead
 		for blk != nil {
 			actualFree++
 			blk = blk.NextFree
 		}
-		assert.Equal(t, total, gpu.UsedBlockCnt+actualFree,
-			"INV-4 %s: UsedBlockCnt(%d) + freeListLen(%d) != total(%d)",
-			label, gpu.UsedBlockCnt, actualFree, total)
+		assert.Equal(t, total, gpu.UsedBlocks()+actualFree,
+			"INV-4 %s: UsedBlocks(%d) + freeListLen(%d) != total(%d)",
+			label, gpu.UsedBlocks(), actualFree, total)
 	}
 
 	// Allocate, mirror, release — check INV-4 at every step

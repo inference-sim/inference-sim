@@ -1,7 +1,7 @@
 // Package kv implements block-based KV cache management for the BLIS simulator.
 // It provides single-tier GPU (KVCacheState) and two-tier GPU+CPU (TieredKVCache)
 // implementations of the sim.KVStore interface. Both support prefix caching with
-// SHA256-based block hashing, LRU eviction, and transactional allocation with rollback.
+// SHA256-based block hashing, LRU eviction, and check-then-act allocation (vLLM parity).
 package kv
 
 import (
@@ -32,7 +32,9 @@ type KVBlock struct {
 }
 
 // KVCacheState maintains global KV cache status across all requests.
-// It implements prefix caching, reverse-order LRU eviction, and tracks the number of used blocks.
+// It implements prefix caching, reverse-order LRU eviction, and tracks free blocks
+// via a direct counter on the free list (FreeBlockCnt), mirroring vLLM's
+// FreeKVCacheBlockQueue.num_free_blocks.
 type KVCacheState struct {
 	TotalBlocks     int64              // Total KV blocks available on GPU
 	BlockSizeTokens int64              // Tokens per block
@@ -41,7 +43,7 @@ type KVCacheState struct {
 	HashToBlock     map[string]int64   // Hash -> block ID
 	FreeHead        *KVBlock           // Head of free list
 	FreeTail        *KVBlock           // Tail of free list
-	UsedBlockCnt    int64              // Total number of used blocks (tracked incrementally)
+	FreeBlockCnt    int64              // Direct count of blocks in free list (vLLM parity)
 	CacheHits       int64              // blocks found via prefix cache (PR12)
 	CacheMisses     int64              // blocks not found, allocated fresh (PR12)
 }
@@ -71,6 +73,7 @@ func NewKVCacheState(totalBlocks int64, blockSizeTokens int64) *KVCacheState {
 
 // appendToFreeList inserts a block at the tail of the free list.
 func (kvc *KVCacheState) appendToFreeList(block *KVBlock) {
+	kvc.FreeBlockCnt++
 	block.NextFree = nil
 	// in a doubly linked list, either both head and tail will be nil, or neither or nil
 	if kvc.FreeTail != nil {
@@ -90,6 +93,7 @@ func (kvc *KVCacheState) appendToFreeList(block *KVBlock) {
 // Used by rollbackAllocation to restore blocks to their original position
 // (blocks were popped from the head, so rollback prepends them back).
 func (kvc *KVCacheState) prependToFreeList(block *KVBlock) {
+	kvc.FreeBlockCnt++
 	block.PrevFree = nil
 	block.NextFree = kvc.FreeHead
 	if kvc.FreeHead != nil {
@@ -103,6 +107,7 @@ func (kvc *KVCacheState) prependToFreeList(block *KVBlock) {
 
 // removeFromFreeList detaches a block from the LRU free list.
 func (kvc *KVCacheState) removeFromFreeList(block *KVBlock) {
+	kvc.FreeBlockCnt--
 	if block.PrevFree != nil {
 		// a - b - block - c => a - b - c
 		block.PrevFree.NextFree = block.NextFree
@@ -248,7 +253,6 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				blk.RefCount++
 				if !blk.InUse {
 					blk.InUse = true
-					kvc.UsedBlockCnt++
 					kvc.removeFromFreeList(blk)
 				}
 				cachedMutations = append(cachedMutations, cachedBlockMutation{block: blk, wasInUse: wasInUse})
@@ -315,7 +319,6 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				blk.Tokens = append([]int{}, tok...) // copy tokens
 				blk.RefCount = 1
 				blk.InUse = true
-				kvc.UsedBlockCnt++
 				kvc.CacheMisses++
 
 				if util.Len64(blk.Tokens) == kvc.BlockSizeTokens && req.ProgressIndex < util.Len64(req.InputTokens) {
@@ -354,8 +357,9 @@ func (kvc *KVCacheState) popFreeBlock() *KVBlock {
 }
 
 // countFreeBlocks returns the number of blocks not currently in use.
+// This is a direct read of the free list counter (vLLM parity), not arithmetic derivation.
 func (kvc *KVCacheState) countFreeBlocks() int64 {
-	return kvc.TotalBlocks - kvc.UsedBlockCnt
+	return kvc.FreeBlockCnt
 }
 
 // cachedBlockMutation tracks a cached block's state before mutation for rollback.
@@ -371,7 +375,7 @@ type newBlockMutation struct {
 }
 
 // rollbackAllocation undoes all mutations from a failed AllocateKVBlocks call.
-// Restores UsedBlockCnt, CacheMisses, CacheHits, RefCount, InUse, free list, HashToBlock, and RequestMap.
+// Restores CacheMisses, CacheHits, RefCount, InUse, free list, HashToBlock, and RequestMap.
 // Also restores prefix hashes that were destroyed by popFreeBlock during allocation.
 func (kvc *KVCacheState) rollbackAllocation(reqID string, cachedMutations []cachedBlockMutation, newlyAllocated []newBlockMutation) {
 	// Undo new block allocations (reverse order so first-popped block
@@ -391,7 +395,6 @@ func (kvc *KVCacheState) rollbackAllocation(reqID string, cachedMutations []cach
 		blk.InUse = false
 		blk.RefCount = 0
 		blk.Tokens = nil
-		kvc.UsedBlockCnt--
 		kvc.CacheMisses--
 		kvc.prependToFreeList(blk)
 	}
@@ -404,7 +407,6 @@ func (kvc *KVCacheState) rollbackAllocation(reqID string, cachedMutations []cach
 		kvc.CacheHits--
 		if !cm.wasInUse && cm.block.RefCount == 0 {
 			cm.block.InUse = false
-			kvc.UsedBlockCnt--
 			kvc.appendToFreeList(cm.block)
 		}
 	}
@@ -440,7 +442,6 @@ func (kvc *KVCacheState) commitCachedBlocks(reqID string, cachedBlocks []int64) 
 		blk.RefCount++
 		if !blk.InUse {
 			blk.InUse = true
-			kvc.UsedBlockCnt++
 			kvc.removeFromFreeList(blk)
 		}
 		kvc.CacheHits++
@@ -464,7 +465,6 @@ func (kvc *KVCacheState) ReleaseKVBlocks(req *sim.Request) {
 		blk.RefCount--
 		if blk.RefCount == 0 {
 			blk.InUse = false
-			kvc.UsedBlockCnt--
 			kvc.appendToFreeList(blk)
 		}
 	}
@@ -474,7 +474,8 @@ func (kvc *KVCacheState) ReleaseKVBlocks(req *sim.Request) {
 func (kvc *KVCacheState) BlockSize() int64 { return kvc.BlockSizeTokens }
 
 // UsedBlocks returns the number of blocks currently in use.
-func (kvc *KVCacheState) UsedBlocks() int64 { return kvc.UsedBlockCnt }
+// Derived from TotalBlocks - FreeBlockCnt (read-only for callers).
+func (kvc *KVCacheState) UsedBlocks() int64 { return kvc.TotalBlocks - kvc.FreeBlockCnt }
 
 // TotalCapacity returns the total number of blocks.
 func (kvc *KVCacheState) TotalCapacity() int64 { return kvc.TotalBlocks }
