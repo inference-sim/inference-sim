@@ -224,6 +224,17 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 	} else {
 		// request is in decode
 		newTokens = append(newTokens, req.OutputTokens[startIndex-util.Len64(req.InputTokens)])
+
+		// Decode pre-check (vLLM parity, issue #1061): if the request's last block
+		// is full and no free blocks are available, fail fast without entering the
+		// allocation loop. This avoids triggering rollbackAllocation for continuing
+		// requests, matching vLLM's check-then-act design (kv_cache_manager.py:334-336).
+		if ids, hasBlocks := kvc.RequestMap[reqID]; hasBlocks && len(ids) > 0 {
+			lastBlk := kvc.Blocks[ids[len(ids)-1]]
+			if util.Len64(lastBlk.Tokens) == kvc.BlockSizeTokens && kvc.countFreeBlocks() == 0 {
+				return false
+			}
+		}
 	}
 	// Rollback tracking: if allocation fails mid-way, undo all mutations
 	var cachedMutations []cachedBlockMutation
@@ -408,8 +419,22 @@ func (kvc *KVCacheState) rollbackAllocation(reqID string, cachedMutations []cach
 			kvc.appendToFreeList(cm.block)
 		}
 	}
-	// Clean up RequestMap
-	delete(kvc.RequestMap, reqID)
+	// Clean up RequestMap: only remove blocks added during THIS allocation call.
+	// For continuing requests (e.g., decode after prefill), preserve pre-existing
+	// block references to prevent orphaning blocks (issue #1061).
+	//
+	// Both cached blocks and newly allocated blocks are appended to
+	// RequestMap[reqID] during allocation, so the entries from this call
+	// are the last rollbackCount items in the slice.
+	rollbackCount := len(newlyAllocated) + len(cachedMutations)
+	ids := kvc.RequestMap[reqID]
+	if rollbackCount >= len(ids) {
+		// All blocks in RequestMap are from this call (new request) — delete entirely.
+		delete(kvc.RequestMap, reqID)
+	} else {
+		// Continuing request: trim only the blocks appended during this call.
+		kvc.RequestMap[reqID] = ids[:len(ids)-rollbackCount]
+	}
 }
 
 // commitCachedBlocks registers a slice of cached blocks into a request's RequestMap.
@@ -503,3 +528,35 @@ func (kvc *KVCacheState) ConsumePendingTransferLatency() int64 { return 0 }
 
 // MirrorToCPU is a no-op for single-tier KV cache (no CPU tier).
 func (kvc *KVCacheState) MirrorToCPU(_ []*sim.Request) {}
+
+// VerifyBlockConservation cross-checks UsedBlockCnt against the actual count of
+// in-use blocks and verifies that every block referenced by RequestMap is marked InUse.
+// Returns (true, "") if conservation holds, or (false, description) on violation.
+// Intended for debug-mode assertions at step boundaries (issue #1061, P2).
+func (kvc *KVCacheState) VerifyBlockConservation() (bool, string) {
+	// Check 1: UsedBlockCnt matches actual InUse count
+	actualUsed := int64(0)
+	for _, blk := range kvc.Blocks {
+		if blk.InUse {
+			actualUsed++
+		}
+	}
+	if actualUsed != kvc.UsedBlockCnt {
+		return false, fmt.Sprintf("block conservation violated: InUse count %d != UsedBlockCnt %d", actualUsed, kvc.UsedBlockCnt)
+	}
+
+	// Check 2: Every block in RequestMap is InUse with RefCount > 0
+	for reqID, blockIDs := range kvc.RequestMap {
+		for _, id := range blockIDs {
+			blk := kvc.Blocks[id]
+			if !blk.InUse {
+				return false, fmt.Sprintf("block %d referenced by request %s is not InUse", id, reqID)
+			}
+			if blk.RefCount <= 0 {
+				return false, fmt.Sprintf("block %d referenced by request %s has RefCount %d", id, reqID, blk.RefCount)
+			}
+		}
+	}
+
+	return true, ""
+}

@@ -686,8 +686,9 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 				}
 			}
 			// ReleaseKVBlocks is safe even when the final-token allocation failed:
-			// AllocateKVBlocks only modifies RequestMap on success, so Release
-			// frees exactly the blocks from prior successful allocations.
+			// rollbackAllocation preserves pre-existing blocks for continuing
+			// requests (issue #1061 fix), so Release frees exactly the blocks
+			// from prior successful allocations.
 			sim.KVCache.ReleaseKVBlocks(req)
 			req.FinishedStepIdx = sim.stepCount
 			sim.Schedule(&RequestLeftEvent{
