@@ -868,10 +868,9 @@ func TestPreemptForTokens_RetryDoesNotOrphanBlocks(t *testing.T) {
 	require.True(t, ok)
 	blocksAfterDecode1 := len(kvc.RequestMap["r1"])
 
-	// Fill remaining cache with a second request
+	// Fill remaining cache with a second request (may partially succeed)
 	r2 := &sim.Request{ID: "r2", InputTokens: []int{50, 60, 70, 80, 90, 99}}
-	ok = kvc.AllocateKVBlocks(r2, 0, 6, []int64{})
-	// May partially succeed depending on remaining blocks
+	_ = kvc.AllocateKVBlocks(r2, 0, 6, []int64{})
 	usedBefore := kvc.UsedBlocks()
 
 	// Release r2 to make some blocks available for the next decode
