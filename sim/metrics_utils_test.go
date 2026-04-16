@@ -8,14 +8,16 @@ import "testing"
 func TestNewRequestMetrics_PropagatesAllFields(t *testing.T) {
 	// GIVEN a request with all metadata fields populated
 	req := &Request{
-		ID:              "test_req_1",
-		ArrivalTime:     2000000, // 2 seconds in ticks
-		InputTokens:     make([]int, 128),
-		OutputTokens:    make([]int, 64),
-		SLOClass:        "critical",
-		TenantID:        "tenant_alpha",
+		ID:               "test_req_1",
+		ArrivalTime:      2000000, // 2 seconds in ticks
+		InputTokens:      make([]int, 128),
+		OutputTokens:     make([]int, 64),
+		SLOClass:         "critical",
+		TenantID:         "tenant_alpha",
 		AssignedInstance: "instance_3",
-		Model:           "llama-3.1-8b",
+		Model:            "llama-3.1-8b",
+		SessionID:        "session_xyz", // #1058
+		RoundIndex:       3,             // #1058
 	}
 	arrivedAt := float64(req.ArrivalTime) / 1e6
 
@@ -46,6 +48,12 @@ func TestNewRequestMetrics_PropagatesAllFields(t *testing.T) {
 	}
 	if rm.Model != "llama-3.1-8b" {
 		t.Errorf("Model: got %q, want %q", rm.Model, "llama-3.1-8b")
+	}
+	if rm.SessionID != "session_xyz" {
+		t.Errorf("SessionID: got %q, want %q", rm.SessionID, "session_xyz")
+	}
+	if rm.RoundIndex != 3 {
+		t.Errorf("RoundIndex: got %d, want 3", rm.RoundIndex)
 	}
 }
 

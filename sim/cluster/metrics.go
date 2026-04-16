@@ -638,7 +638,11 @@ func ParseFitnessWeights(s string) (map[string]float64, error) {
 // SessionMetrics holds aggregated metrics for multi-turn session workloads.
 // Returned by ComputeSessionMetrics; nil when no session requests are present.
 type SessionMetrics struct {
-	SessionCount    int          // distinct SessionIDs observed in completed requests
+	// SessionCount is the number of distinct SessionIDs seen in m.Requests.
+	// Note: sessions whose round-0 timed out before injection are not in m.Requests
+	// and therefore not counted here. This reflects sessions with at least one
+	// injected request, not necessarily all sessions that were attempted.
+	SessionCount    int
 	TTFTCold        Distribution // TTFT for round-0 requests (first-turn, cache cold)
 	TTFTWarm        Distribution // TTFT for round≥1 requests (follow-up turns, cache warm)
 	SessionDuration Distribution // max_completion - round0_arrival per session (ms)
@@ -668,7 +672,8 @@ func ComputeSessionMetrics(m *sim.Metrics) *SessionMetrics {
 	sort.Strings(ids)
 
 	// Partition TTFT by round index; collect per-session data for duration
-	var coldTTFTs, warmTTFTs []float64
+	coldTTFTs := make([]float64, 0, len(m.Requests))
+	warmTTFTs := make([]float64, 0, len(m.Requests))
 
 	type sessionData struct {
 		round0ArrivalMs float64
@@ -724,7 +729,9 @@ func ComputeSessionMetrics(m *sim.Metrics) *SessionMetrics {
 			continue // BC-6: no round-0 reference point
 		}
 		dur := sd.maxCompMs - sd.round0ArrivalMs
-		if dur >= 0 {
+		if dur > 0 {
+			// Exclude zero-duration entries: maxCompMs=0 means no completed request was
+			// recorded in RequestCompletionTimes (e.g., all rounds still running at horizon).
 			durationMs = append(durationMs, dur)
 		}
 	}

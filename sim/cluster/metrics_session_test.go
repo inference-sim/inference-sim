@@ -146,8 +146,39 @@ func TestComputeSessionMetrics_MissingRound0(t *testing.T) {
 	if got.SessionDuration.Count != 0 {
 		t.Errorf("SessionDuration.Count: got %d, want 0 (no round-0 entry)", got.SessionDuration.Count)
 	}
+	if got.TTFTCold.Count != 0 {
+		t.Errorf("TTFTCold.Count: got %d, want 0 (no round-0 request present)", got.TTFTCold.Count)
+	}
 	if got.TTFTWarm.Count != 2 {
 		t.Errorf("TTFTWarm.Count: got %d, want 2", got.TTFTWarm.Count)
+	}
+}
+
+// BC-3 multi-session: SessionDuration distribution is computed per-session and averaged
+func TestComputeSessionMetrics_MultiSessionDuration(t *testing.T) {
+	// s1: round0 arrives at 0s, completes at 300ms → duration 300ms
+	// s2: round0 arrives at 0s, completes at 700ms → duration 700ms
+	// mean = 500ms
+	m := buildSessionTestMetrics([]sim.RequestMetrics{
+		{ID: "s1r0", SessionID: "s1", RoundIndex: 0, TTFT: 10.0, ArrivedAt: 0},
+		{ID: "s1r1", SessionID: "s1", RoundIndex: 1, TTFT: 8.0, ArrivedAt: 50},
+		{ID: "s2r0", SessionID: "s2", RoundIndex: 0, TTFT: 12.0, ArrivedAt: 0},
+		{ID: "s2r1", SessionID: "s2", RoundIndex: 1, TTFT: 9.0, ArrivedAt: 100},
+	}, map[string]float64{
+		"s1r0": 100e3, "s1r1": 300e3, // s1 max completion = 300ms
+		"s2r0": 200e3, "s2r1": 700e3, // s2 max completion = 700ms
+	})
+
+	got := ComputeSessionMetrics(m)
+	if got == nil {
+		t.Fatal("expected non-nil")
+	}
+	if got.SessionDuration.Count != 2 {
+		t.Errorf("SessionDuration.Count: got %d, want 2", got.SessionDuration.Count)
+	}
+	const wantMean = 500.0
+	if got.SessionDuration.Mean != wantMean {
+		t.Errorf("SessionDuration.Mean: got %.2f, want %.2f", got.SessionDuration.Mean, wantMean)
 	}
 }
 
