@@ -1,9 +1,12 @@
 package kv
 
 import (
+	"bytes"
 	"fmt"
+	"os"
 	"testing"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -714,6 +717,39 @@ func TestAllocateKVBlocks_ChunkedPrefill_NoPhantomBlocks(t *testing.T) {
 			t.Errorf("block %d has empty Tokens (phantom block)", blk.ID)
 		}
 	}
+}
+
+// BC-1 (#963): AllocateKVBlocks failure must not produce Warn-level output.
+// vLLM proof: kv_cache_manager.py:334-336 returns None silently.
+func TestAllocateKVBlocks_Failure_NoWarnOutput(t *testing.T) {
+	// GIVEN a KV cache with 1 block (16 tokens) that is fully occupied
+	kvc := NewKVCacheState(1, 16)
+	filler := &sim.Request{
+		ID:          "filler",
+		InputTokens: make([]int, 16),
+	}
+	ok := kvc.AllocateKVBlocks(filler, 0, 16, nil)
+	require.True(t, ok, "setup: filler allocation must succeed")
+
+	// Capture log output at Warn level
+	var buf bytes.Buffer
+	logrus.SetOutput(&buf)
+	logrus.SetLevel(logrus.WarnLevel)
+	defer func() {
+		logrus.SetOutput(os.Stderr)
+		logrus.SetLevel(logrus.InfoLevel)
+	}()
+
+	// WHEN a second request tries to allocate and fails
+	victim := &sim.Request{
+		ID:          "victim",
+		InputTokens: make([]int, 16),
+	}
+	ok = kvc.AllocateKVBlocks(victim, 0, 16, nil)
+
+	// THEN allocation fails but no Warn-level output is produced
+	assert.False(t, ok, "allocation must fail (cache full)")
+	assert.Empty(t, buf.String(), "no Warn-level log output expected (BC-1: vLLM returns None silently)")
 }
 
 func TestKVCacheState_SnapshotCachedBlocksFn_FrozenView(t *testing.T) {

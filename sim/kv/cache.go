@@ -218,7 +218,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 
 		// Cannot allocate enough KV cache blocks
 		if numNewBlocks > kvc.countFreeBlocks() {
-			logrus.Warnf("KV cache full: cannot allocate %d new blocks for req %s", numNewBlocks, req.ID)
+			logrus.Debugf("KV cache full: cannot allocate %d new blocks for req %s", numNewBlocks, req.ID)
 			return false
 		}
 	} else {
