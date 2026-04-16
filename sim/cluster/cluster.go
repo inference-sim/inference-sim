@@ -30,7 +30,7 @@ type ClusterSimulator struct {
 	routingLatency       int64
 	admissionPolicy      sim.AdmissionPolicy
 	priorityMap          *sim.SLOPriorityMap
-	snapshotProvider     SnapshotProvider
+	snapshotProvider     *CachedSnapshotProvider
 	routingPolicy        sim.RoutingPolicy
 	rejectedRequests     int                    // EC-2: count of requests rejected by admission policy
 	routingRejections    int                    // I13: count of requests rejected at routing (no routable instances)
@@ -331,7 +331,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	// Build cacheQueryFn from the unified snapshot provider (#1060).
 	// When CacheSignalDelay > 0, CachedSnapshotProvider manages stale snapshots.
 	// When CacheSignalDelay == 0, oracle mode: closures query live instance state.
-	cs.cacheQueryFn = cs.snapshotProvider.(*CachedSnapshotProvider).BuildCacheQueryFn()
+	cs.cacheQueryFn = cs.snapshotProvider.BuildCacheQueryFn()
 
 	// Create routing policies now that cacheQueryFn is available.
 	cs.routingPolicy = sim.NewRoutingPolicyWithCache(config.RoutingPolicy, config.RoutingScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem(sim.SubsystemRouter), cs.cacheQueryFn)
@@ -454,14 +454,13 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 // Called from NodeReadyEvent.Execute (deferred instances).
 // Precondition: cs.cacheQueryFn must be non-nil (initialised before calling).
 func (cs *ClusterSimulator) registerInstanceCacheQueryFn(id InstanceID, inst *InstanceSimulator) {
-	csp := cs.snapshotProvider.(*CachedSnapshotProvider)
-	if csp.IsStaleCacheMode() {
+	if cs.snapshotProvider.IsStaleCacheMode() {
 		// Stale mode: register with CachedSnapshotProvider; the closure delegates
 		// to CacheQuery at call time, picking up refreshed snapshots automatically.
-		csp.AddCacheInstance(id, inst)
+		cs.snapshotProvider.AddCacheInstance(id, inst)
 		idStr := string(id)
 		cs.cacheQueryFn[idStr] = func(tokens []int) int {
-			return csp.CacheQuery(idStr, tokens)
+			return cs.snapshotProvider.CacheQuery(idStr, tokens)
 		}
 	} else {
 		// Oracle mode: closure captures inst directly for live-state queries.
@@ -625,9 +624,7 @@ func (c *ClusterSimulator) Run() error {
 			if inst.State == InstanceStateDraining && inst.QueueDepth() == 0 && inst.BatchSize() == 0 {
 				inst.TransitionTo(InstanceStateTerminated)
 				c.releaseInstanceGPUs(inst)
-				if csp, ok := c.snapshotProvider.(*CachedSnapshotProvider); ok {
-					csp.RemoveCacheInstance(inst.ID())
-				}
+				c.snapshotProvider.RemoveCacheInstance(inst.ID())
 				delete(c.cacheQueryFn, string(inst.ID()))
 				// I1: a non-zero inFlightRequests at termination time indicates a bookkeeping bug —
 				// a missing completion event or an early-termination race.
@@ -785,16 +782,15 @@ func (cs *ClusterSimulator) addLiveInstance(
 	inst.warmUpRemaining = cs.config.InstanceLifecycle.WarmUpRequestCount
 	inst.TransitionTo(InstanceStateLoading)
 
-	csp, ok := cs.snapshotProvider.(*CachedSnapshotProvider)
-	if !ok {
-		// snapshotProvider is nil or not *CachedSnapshotProvider — can only happen in unit
-		// tests that bypass NewClusterSimulator. Release GPUs so they are not held by a
-		// phantom instance (R1: no silent data loss).
-		logrus.Warnf("[cluster] addLiveInstance: snapshotProvider is not *CachedSnapshotProvider for instance %s — releasing GPUs and skipping", id)
+	if cs.snapshotProvider == nil {
+		// snapshotProvider is nil — can only happen in unit tests that bypass
+		// NewClusterSimulator. Release GPUs so they are not held by a phantom
+		// instance (R1: no silent data loss).
+		logrus.Warnf("[cluster] addLiveInstance: snapshotProvider is nil for instance %s — releasing GPUs and skipping", id)
 		cs.releaseInstanceGPUs(inst)
 		return false
 	}
-	csp.AddInstance(id, inst)
+	cs.snapshotProvider.AddInstance(id, inst)
 
 	cs.scheduleInstanceLoadedEvent(inst)
 	cs.instances = append(cs.instances, inst)

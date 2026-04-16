@@ -64,9 +64,7 @@ func (q *ClusterEventQueue) Pop() any {
 func buildRouterState(cs *ClusterSimulator, req *sim.Request) *sim.RouterState {
 	// Refresh stale cache snapshots if interval has elapsed (#919, #1060).
 	// No-op when CacheBlocks.Mode != Periodic (oracle mode).
-	if csp, ok := cs.snapshotProvider.(*CachedSnapshotProvider); ok {
-		csp.RefreshCacheIfNeeded(cs.clock)
-	}
+	cs.snapshotProvider.RefreshCacheIfNeeded(cs.clock)
 
 	snapshots := make([]sim.RoutingSnapshot, 0, len(cs.instances))
 	for _, inst := range cs.instances {

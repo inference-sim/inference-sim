@@ -74,67 +74,70 @@ func TestSnapshot_Immutability(t *testing.T) {
 // GIVEN a CachedSnapshotProvider with mixed Immediate/Periodic/OnDemand fields
 // WHEN Snapshot() is called at different clock times
 // THEN Immediate re-reads every time, Periodic respects interval, OnDemand only via RefreshAll
+//
+// Uses TotalKvCapacityTokens (always non-zero from instance, zero in default snapshot) as the
+// Periodic observable to avoid vacuous 0==0 assertions.
 func TestCachedSnapshotProvider_RefreshBehavior(t *testing.T) {
-	inst := newTestInstance("refresh-test", 100)
+	inst := newTestInstance("refresh-test", 100) // 100 blocks × 16 tokens/block = 1600
 
 	instances := map[InstanceID]*InstanceSimulator{"refresh-test": inst}
 
 	config := ObservabilityConfig{
 		QueueDepth:    FieldConfig{Mode: Immediate},
-		BatchSize:     FieldConfig{Mode: Periodic, Interval: 1000},
-		KVUtilization: FieldConfig{Mode: OnDemand},
+		BatchSize:     FieldConfig{Mode: OnDemand},
+		KVUtilization: FieldConfig{Mode: Periodic, Interval: 1000},
+		CacheBlocks:   FieldConfig{Mode: Immediate},
 	}
 	provider := NewCachedSnapshotProvider(instances, config)
 
-	// Inject a request so we have observable state
-	req := &sim.Request{
-		ID:           "req_0",
-		ArrivalTime:  0,
-		InputTokens:  make([]int, 50),
-		OutputTokens: make([]int, 10),
-		State:        sim.StateQueued,
-	}
-	inst.InjectRequest(req)
+	// Verify live TotalKvCapacityTokens is non-zero so Periodic assertions are non-vacuous.
+	liveCapacity := inst.TotalKvCapacityTokens()
+	require.Greater(t, liveCapacity, int64(0),
+		"need non-zero TotalKvCapacityTokens to distinguish stale from live")
 
-	// First snapshot at clock=0
-	snap := provider.Snapshot("refresh-test", 0)
+	// First snapshot at clock=0: Periodic NOT refreshed (0-0 < 1000).
+	snap0 := provider.Snapshot("refresh-test", 0)
 
-	// Immediate field (QueueDepth) should be populated
-	// The request was injected as an ArrivalEvent, not directly to WaitQ,
-	// so QueueDepth is 0 until the event is processed
-	_ = snap.QueueDepth // just verify it's accessible
+	// Immediate field (QueueDepth) always reads live (QueueDepth=0 for idle instance).
+	assert.Equal(t, 0, snap0.QueueDepth, "Immediate QueueDepth at clock=0")
 
-	// KVUtilization (OnDemand) should be 0 (initial default, never refreshed)
-	if snap.KVUtilization != 0 {
-		t.Errorf("OnDemand KVUtilization = %f at clock=0 before any RefreshAll, want 0", snap.KVUtilization)
-	}
+	// Periodic field (KVUtilization group) NOT refreshed — TotalKvCapacityTokens is default 0.
+	assert.Equal(t, int64(0), snap0.TotalKvCapacityTokens,
+		"Periodic TotalKvCapacityTokens at clock=0 should be 0 (not yet refreshed)")
 
-	// Snapshot at clock=500 — BatchSize (Periodic, interval=1000) should NOT refresh
+	// OnDemand field (BatchSize) NOT refreshed — stays at default 0.
+	assert.Equal(t, 0, snap0.BatchSize,
+		"OnDemand BatchSize at clock=0 should be 0 (never refreshed)")
+
+	// Snapshot at clock=500 — Periodic should NOT refresh (500-0 < 1000).
 	snap500 := provider.Snapshot("refresh-test", 500)
-	_ = snap500
+	assert.Equal(t, int64(0), snap500.TotalKvCapacityTokens,
+		"Periodic TotalKvCapacityTokens at clock=500 should still be 0 (interval not elapsed)")
 
-	// Snapshot at clock=1000 — BatchSize should refresh (interval elapsed)
+	// Snapshot at clock=1000 — Periodic should refresh (1000-0 >= 1000).
 	snap1000 := provider.Snapshot("refresh-test", 1000)
-	_ = snap1000
+	assert.Equal(t, liveCapacity, snap1000.TotalKvCapacityTokens,
+		"Periodic TotalKvCapacityTokens at clock=1000 should match live value (interval elapsed)")
 
-	// After RefreshAll, OnDemand fields should be updated
+	// OnDemand (BatchSize) should still be 0 — not refreshed by Snapshot().
+	assert.Equal(t, 0, snap1000.BatchSize,
+		"OnDemand BatchSize at clock=1000 should still be 0 (only RefreshAll updates it)")
+
+	// After RefreshAll, OnDemand fields should be updated.
 	provider.RefreshAll(2000)
 	snapAfterRefresh := provider.Snapshot("refresh-test", 2000)
-	// KVUtilization should now reflect actual state (0.0 since no blocks allocated via events)
-	if snapAfterRefresh.KVUtilization != 0 {
-		t.Errorf("KVUtilization after RefreshAll = %f, want 0", snapAfterRefresh.KVUtilization)
-	}
+	assert.Equal(t, liveCapacity, snapAfterRefresh.TotalKvCapacityTokens,
+		"TotalKvCapacityTokens after RefreshAll should match live value")
+	// BatchSize reads live after RefreshAll (0 for idle instance — but now it was actually read).
+	assert.Equal(t, 0, snapAfterRefresh.BatchSize,
+		"BatchSize after RefreshAll should reflect live state (0 for idle instance)")
 }
 
 // TestCachedSnapshotProvider_PeriodicInterval verifies that Periodic mode
-// only refreshes when the configured interval has elapsed, using CacheHitRate
-// as the observable signal (persists after request completion unlike QueueDepth).
+// only refreshes when the configured interval has elapsed, using TotalKvCapacityTokens
+// as the observable signal (constant non-zero value from instance, zero in default snapshot).
 func TestCachedSnapshotProvider_PeriodicInterval(t *testing.T) {
-	cfg := newTestSimConfig()
-	cfg.Horizon = 10_000_000
-	cfg.TotalKVBlocks = 100
-	cfg.BlockSizeTokens = 4
-	inst := NewInstanceSimulator("periodic-test", cfg)
+	inst := newTestInstance("periodic-test", 100) // 100 blocks × 16 tokens/block = 1600
 	instances := map[InstanceID]*InstanceSimulator{"periodic-test": inst}
 
 	config := ObservabilityConfig{
@@ -145,31 +148,26 @@ func TestCachedSnapshotProvider_PeriodicInterval(t *testing.T) {
 	}
 	provider := NewCachedSnapshotProvider(instances, config)
 
+	// Verify the live value is non-zero so our assertions are non-vacuous.
+	liveCapacity := inst.TotalKvCapacityTokens()
+	require.Greater(t, liveCapacity, int64(0),
+		"need non-zero TotalKvCapacityTokens to distinguish stale from live")
+
 	// Initial Periodic snapshot at clock=0: lastRefresh=0, 0-0=0 < 100, so NOT refreshed.
-	// CacheHitRate is 0.0 (default).
+	// TotalKvCapacityTokens stays at default 0.
 	snap0 := provider.Snapshot("periodic-test", 0)
-	assert.Equal(t, 0.0, snap0.CacheHitRate, "CacheHitRate at clock=0 should be 0.0 (not yet refreshed)")
+	assert.Equal(t, int64(0), snap0.TotalKvCapacityTokens,
+		"TotalKvCapacityTokens at clock=0 should be 0 (not yet refreshed)")
 
-	// Run a request to produce a non-zero CacheHitRate. After the request completes,
-	// the instance's CacheHitRate() reflects prefix block cache hits from processing.
-	tokens := []int{1, 2, 3, 4, 5, 6, 7, 8}
-	req := &sim.Request{
-		ID: "r1", ArrivalTime: 0, InputTokens: tokens,
-		OutputTokens: []int{100}, State: sim.StateQueued,
-	}
-	inst.InjectRequest(req)
-	inst.Run()
-	liveCHR := inst.CacheHitRate()
-
-	// At clock=99: should NOT refresh (99-0 < 100) — still sees stale default 0.0.
+	// At clock=99: should NOT refresh (99-0 < 100) — still sees stale default 0.
 	snap99 := provider.Snapshot("periodic-test", 99)
-	assert.Equal(t, 0.0, snap99.CacheHitRate,
-		"CacheHitRate at clock=99 should still be 0.0 (interval not elapsed)")
+	assert.Equal(t, int64(0), snap99.TotalKvCapacityTokens,
+		"TotalKvCapacityTokens at clock=99 should still be 0 (interval not elapsed)")
 
-	// At clock=100: should refresh (100-0 >= 100) — reads live CacheHitRate.
+	// At clock=100: should refresh (100-0 >= 100) — reads live TotalKvCapacityTokens.
 	snap100 := provider.Snapshot("periodic-test", 100)
-	assert.Equal(t, liveCHR, snap100.CacheHitRate,
-		"CacheHitRate at clock=100 should match live value (interval elapsed, first real refresh)")
+	assert.Equal(t, liveCapacity, snap100.TotalKvCapacityTokens,
+		"TotalKvCapacityTokens at clock=100 should match live value (interval elapsed)")
 }
 
 // TestSnapshotProvider_DefaultConfig_AllImmediate verifies BC-7:
@@ -212,6 +210,7 @@ func TestNewObservabilityConfig_ZeroAndNegativeInterval_AllImmediate(t *testing.
 				{"QueueDepth", config.QueueDepth},
 				{"BatchSize", config.BatchSize},
 				{"KVUtilization", config.KVUtilization},
+				{"CacheBlocks", config.CacheBlocks},
 			} {
 				if f.fc.Mode != Immediate {
 					t.Errorf("%s: Mode = %d, want Immediate (%d)", f.name, f.fc.Mode, Immediate)
@@ -346,6 +345,9 @@ func TestObservabilityConfig_CacheBlocks_IndependentOfSnapshot(t *testing.T) {
 // SnapshotRefreshInterval and CacheSignalDelay fire on independent schedules.
 // Snapshot() refreshes KVUtilization-group fields on one timer; RefreshCacheIfNeeded
 // refreshes cache block snapshots on a separate timer.
+//
+// Uses TotalKvCapacityTokens (constant non-zero from instance, zero in default snapshot)
+// for the scalar timer, and CacheQuery for the cache timer.
 func TestCachedSnapshotProvider_DualTimers_IndependentRefresh(t *testing.T) {
 	cfg := newTestSimConfig()
 	cfg.Horizon = 10_000_000
@@ -360,7 +362,7 @@ func TestCachedSnapshotProvider_DualTimers_IndependentRefresh(t *testing.T) {
 
 	tokens := []int{1, 2, 3, 4, 5, 6, 7, 8}
 
-	// Run a request to populate both cache and change CacheHitRate.
+	// Run a request to populate cache blocks.
 	req := &sim.Request{
 		ID: "r1", ArrivalTime: 0, InputTokens: tokens,
 		OutputTokens: []int{100}, State: sim.StateQueued,
@@ -368,14 +370,18 @@ func TestCachedSnapshotProvider_DualTimers_IndependentRefresh(t *testing.T) {
 	inst.InjectRequest(req)
 	inst.Run()
 	require.Greater(t, inst.GetCachedBlockCount(tokens), 0, "live cache must have blocks")
-	liveCHR := inst.CacheHitRate()
+
+	// Verify live TotalKvCapacityTokens is non-zero so scalar assertions are non-vacuous.
+	liveCapacity := inst.TotalKvCapacityTokens()
+	require.Greater(t, liveCapacity, int64(0),
+		"need non-zero TotalKvCapacityTokens to distinguish stale from live")
 
 	// At clock=200: snapshot interval elapsed (200-0 >= 200), cache interval NOT (200-0 < 500).
-	// KVUtilization-group (CacheHitRate) should refresh; cache blocks should NOT.
+	// KVUtilization-group (TotalKvCapacityTokens) should refresh; cache blocks should NOT.
 	provider.RefreshCacheIfNeeded(200)
 	snap200 := provider.Snapshot("inst-0", 200)
-	assert.Equal(t, liveCHR, snap200.CacheHitRate,
-		"CacheHitRate should refresh at clock=200 (snapshot interval elapsed)")
+	assert.Equal(t, liveCapacity, snap200.TotalKvCapacityTokens,
+		"TotalKvCapacityTokens should refresh at clock=200 (snapshot interval elapsed)")
 	assert.Equal(t, 0, provider.CacheQuery("inst-0", tokens),
 		"cache blocks should NOT refresh at clock=200 (cache interval not elapsed)")
 
