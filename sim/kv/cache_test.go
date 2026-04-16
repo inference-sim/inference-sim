@@ -245,95 +245,6 @@ func TestAllocateKVBlocks_ChunkedPrefill_HierarchicalHashChaining(t *testing.T) 
 	}
 }
 
-func TestAllocateKVBlocks_MidLoopFailure_RollsBackNewBlocks(t *testing.T) {
-	// GIVEN a KV cache with only 2 free blocks but a request needing 3 new blocks
-	kvc := NewKVCacheState(5, 2) // 5 total blocks, 2 tokens per block
-	// Consume 3 blocks with a dummy request, leaving 2 free
-	dummy := &sim.Request{ID: "dummy", InputTokens: []int{1, 2, 3, 4, 5, 6}}
-	kvc.AllocateKVBlocks(dummy, 0, 6, []int64{})
-
-	usedBefore := kvc.UsedBlocks()
-	freeBefore := kvc.TotalCapacity() - usedBefore
-
-	// WHEN we try to allocate 3 blocks (6 tokens / 2 per block) but only 2 are free
-	req := &sim.Request{ID: "r_fail", InputTokens: []int{10, 20, 30, 40, 50, 60}}
-	ok := kvc.AllocateKVBlocks(req, 0, 6, []int64{})
-
-	// THEN allocation fails and block conservation is maintained
-	if ok {
-		t.Fatal("allocation should fail (not enough free blocks)")
-	}
-
-	// BC-6: Conservation invariant
-	usedAfter := kvc.UsedBlocks()
-	freeAfter := kvc.TotalCapacity() - usedAfter
-	if usedAfter != usedBefore {
-		t.Errorf("UsedBlockCnt changed: before=%d, after=%d (should be unchanged after rollback)", usedBefore, usedAfter)
-	}
-	if freeAfter != freeBefore {
-		t.Errorf("free blocks changed: before=%d, after=%d (should be unchanged after rollback)", freeBefore, freeAfter)
-	}
-
-	// EC-1: No partial RequestMap entries
-	if _, exists := kvc.RequestMap["r_fail"]; exists {
-		t.Error("RequestMap should not contain entry for failed allocation")
-	}
-}
-
-func TestAllocateKVBlocks_CachedBlockRollback_OnNewBlockFailure(t *testing.T) {
-	// GIVEN: 4 total blocks (blockSize=2), a cached prefix, and tight free-block budget.
-	// After cached blocks are claimed, not enough free blocks remain for new allocation.
-	kvc := NewKVCacheState(4, 2)
-
-	// Step 1: Create and release a request to populate prefix cache
-	req1 := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
-	kvc.AllocateKVBlocks(req1, 0, 4, []int64{})
-	kvc.ReleaseKVBlocks(req1)
-	// Now: 4 free blocks, 2 with hashes for prefix [1,2,3,4]
-
-	// Step 2: Consume 1 free block with a filler, leaving 3 free
-	filler := &sim.Request{ID: "filler", InputTokens: []int{90, 91}}
-	kvc.AllocateKVBlocks(filler, 0, 2, []int64{})
-	// Now: 1 used (filler), 3 free (2 with cached hashes)
-
-	usedBefore := kvc.UsedBlocks() // 1
-	missesBefore := kvc.CacheMisses
-
-	// Step 3: Try to allocate with cached prefix + new tokens
-	// Request needs [1,2,3,4,5,6,7,8]: 2 cached blocks + 2 new blocks
-	req2 := &sim.Request{ID: "r2", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
-	cached := kvc.GetCachedBlocks(req2.InputTokens)
-	if len(cached) != 2 {
-		t.Fatalf("expected 2 cached blocks, got %d", len(cached))
-	}
-
-	// Caller computes: startIndex=4 (after cached), endIndex=8
-	// newTokens = [5,6,7,8], numNewBlocks = 2
-	// Pre-check: 2 > countFreeBlocks(3) → false, passes
-	// Cached block processing: claims 2 blocks → free drops to 1
-	// New block loop: needs 2, only 1 available → mid-loop failure!
-	ok := kvc.AllocateKVBlocks(req2, 4, 8, cached)
-
-	// WHEN the allocation fails mid-loop
-	if ok {
-		t.Fatal("allocation should fail (cached blocks consume free budget)")
-	}
-
-	// THEN all mutations are rolled back: UsedBlockCnt, CacheMisses, RequestMap
-	if kvc.UsedBlocks() != usedBefore {
-		t.Errorf("UsedBlockCnt: got %d, want %d (should be unchanged after rollback)", kvc.UsedBlocks(), usedBefore)
-	}
-	if kvc.CacheMisses != missesBefore {
-		t.Errorf("CacheMisses: got %d, want %d (should be unchanged after rollback)", kvc.CacheMisses, missesBefore)
-	}
-	if _, exists := kvc.RequestMap["r2"]; exists {
-		t.Error("RequestMap should not contain entry for failed allocation")
-	}
-
-	// BC-6: Conservation invariant (independent free-list walk, not derived from UsedBlockCnt)
-	assertBlockConservation(t, kvc)
-}
-
 func TestAllocateKVBlocks_BlockConservation_AfterAllocateReleaseCycles(t *testing.T) {
 	// BC-6: After any sequence of operations, conservation holds
 	kvc := NewKVCacheState(10, 4)
@@ -450,7 +361,7 @@ func TestAllocateKVBlocks_CachedPrefixReuse_IncreasesHitRate(t *testing.T) {
 	}
 }
 
-func TestAllocateKVBlocks_FailedAllocation_CacheHitRateUnchanged(t *testing.T) {
+func TestAllocateKVBlocks_PreCheckRejection_CacheHitRateUnchanged(t *testing.T) {
 	// GIVEN a KV cache with 2 cached prefix blocks and tight free-block budget
 	kvc := NewKVCacheState(4, 2)
 	req1 := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
@@ -468,61 +379,13 @@ func TestAllocateKVBlocks_FailedAllocation_CacheHitRateUnchanged(t *testing.T) {
 	cached := kvc.GetCachedBlocks(req2.InputTokens)
 	ok := kvc.AllocateKVBlocks(req2, 4, 8, cached)
 
-	// THEN allocation fails AND CacheHitRate is unchanged (rollback undoes all mutations)
+	// THEN allocation fails at pre-check AND CacheHitRate is unchanged (no mutations occurred)
 	if ok {
 		t.Fatal("allocation should fail")
 	}
 	rateAfter := kvc.CacheHitRate()
 	if rateAfter != rateBefore {
-		t.Errorf("CacheHitRate changed from %f to %f after failed allocation (rollback should restore)", rateBefore, rateAfter)
-	}
-}
-
-func TestAllocateKVBlocks_Rollback_PreservesFreeListOrder(t *testing.T) {
-	// GIVEN: 4 blocks (BlockSize=2), a cached prefix, tight free budget.
-	// This triggers mid-loop rollback via the cached-block path (same as
-	// TestAllocateKVBlocks_CachedBlockRollback_OnNewBlockFailure).
-	kvc := NewKVCacheState(4, 2)
-
-	// Create and release to populate prefix cache
-	req1 := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
-	kvc.AllocateKVBlocks(req1, 0, 4, []int64{})
-	kvc.ReleaseKVBlocks(req1)
-	// 4 free blocks, 2 with cached hashes
-
-	// Consume 1 with filler → 3 free
-	filler := &sim.Request{ID: "filler", InputTokens: []int{90, 91}}
-	kvc.AllocateKVBlocks(filler, 0, 2, []int64{})
-
-	// Record free list order before the failed allocation
-	freeHeadBefore := kvc.FreeHead.ID
-	secondFreeBlockBefore := kvc.FreeHead.NextFree.ID
-
-	// WHEN mid-loop allocation fails (cached blocks consume free budget)
-	req2 := &sim.Request{ID: "r2", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
-	cached := kvc.GetCachedBlocks(req2.InputTokens)
-	ok := kvc.AllocateKVBlocks(req2, 4, 8, cached)
-	if ok {
-		t.Fatal("allocation should fail (cached blocks consume free budget)")
-	}
-
-	// THEN the free list order should be restored to its pre-allocation state.
-	// Before allocation: free list was [3, 0, 1] (head=3, next=0).
-	// With appendToFreeList (bug): rollback produces [3, 1, 0] (next=1, WRONG).
-	// With prependToFreeList (fix): rollback produces [3, 0, 1] (next=0, CORRECT).
-	if kvc.FreeHead == nil {
-		t.Fatal("FreeHead should not be nil after rollback")
-	}
-	if kvc.FreeHead.ID != freeHeadBefore {
-		t.Errorf("rollback should restore free head to block %d, got block %d",
-			freeHeadBefore, kvc.FreeHead.ID)
-	}
-	if kvc.FreeHead.NextFree == nil {
-		t.Fatal("FreeHead.Next should not be nil (3 blocks should be free)")
-	}
-	if kvc.FreeHead.NextFree.ID != secondFreeBlockBefore {
-		t.Errorf("rollback should restore second free block to %d, got %d (append to tail instead of prepend to head)",
-			secondFreeBlockBefore, kvc.FreeHead.NextFree.ID)
+		t.Errorf("CacheHitRate changed from %f to %f after pre-check rejection (should be unchanged)", rateBefore, rateAfter)
 	}
 }
 
@@ -838,6 +701,32 @@ func TestAllocateKVBlocks_DecodePreCheck_SucceedsWhenLastBlockHasSpare(t *testin
 
 	// THEN succeeds even with 0 free blocks (token fits in existing partial block)
 	assert.True(t, ok, "decode should succeed when last block has spare capacity")
+	assertBlockConservation(t, kvc)
+}
+
+func TestAllocateKVBlocks_PreCheck_CatchesCachedBlockBudgetExhaustion(t *testing.T) {
+	// Previously: cached blocks consumed free budget mid-loop, triggering rollback.
+	// Now: pre-check accounts for cached blocks and rejects upfront.
+	kvc := NewKVCacheState(4, 2)
+	req1 := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	kvc.AllocateKVBlocks(req1, 0, 4, []int64{})
+	kvc.ReleaseKVBlocks(req1)
+
+	filler := &sim.Request{ID: "filler", InputTokens: []int{90, 91}}
+	kvc.AllocateKVBlocks(filler, 0, 2, []int64{})
+
+	req2 := &sim.Request{ID: "r2", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
+	cached := kvc.GetCachedBlocks(req2.InputTokens)
+	require.Len(t, cached, 2)
+
+	freeBefore := kvc.countFreeBlocks()
+	ok := kvc.AllocateKVBlocks(req2, 4, 8, cached)
+
+	assert.False(t, ok)
+	assert.Equal(t, freeBefore, kvc.countFreeBlocks(),
+		"free block count must be unchanged after pre-check rejection")
+	assert.Empty(t, kvc.RequestMap["r2"],
+		"no RequestMap entry should exist after pre-check rejection")
 	assertBlockConservation(t, kvc)
 }
 
