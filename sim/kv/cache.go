@@ -453,3 +453,35 @@ func (kvc *KVCacheState) ConsumePendingTransferLatency() int64 { return 0 }
 
 // MirrorToCPU is a no-op for single-tier KV cache (no CPU tier).
 func (kvc *KVCacheState) MirrorToCPU(_ []*sim.Request) {}
+
+// verifyBlockConservation walks the free list and block InUse flags independently
+// to verify INV-4: freeListLen + inUseCount == TotalBlocks.
+// Returns nil if conservation holds, or an error describing the violation.
+// Intended for debug-mode step-boundary assertions.
+func (kvc *KVCacheState) verifyBlockConservation() error {
+	freeListLen := int64(0)
+	node := kvc.FreeHead
+	for node != nil {
+		freeListLen++
+		node = node.NextFree
+	}
+
+	inUseCount := int64(0)
+	for _, blk := range kvc.Blocks {
+		if blk.InUse {
+			inUseCount++
+		}
+	}
+
+	if freeListLen+inUseCount != kvc.TotalBlocks {
+		return fmt.Errorf("block conservation violated: freeList=%d + inUse=%d != total=%d",
+			freeListLen, inUseCount, kvc.TotalBlocks)
+	}
+
+	if freeListLen != kvc.FreeBlockCnt {
+		return fmt.Errorf("FreeBlockCnt drift: counter=%d, actual free list=%d",
+			kvc.FreeBlockCnt, freeListLen)
+	}
+
+	return nil
+}

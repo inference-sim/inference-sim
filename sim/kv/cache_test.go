@@ -730,6 +730,22 @@ func TestAllocateKVBlocks_PreCheck_CatchesCachedBlockBudgetExhaustion(t *testing
 	assertBlockConservation(t, kvc)
 }
 
+func TestVerifyBlockConservation_DetectsOrphanedBlocks(t *testing.T) {
+	kvc := NewKVCacheState(10, 4)
+	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	kvc.AllocateKVBlocks(req, 0, 4, []int64{})
+
+	err := kvc.verifyBlockConservation()
+	assert.NoError(t, err)
+
+	// Artificially orphan a block (simulate the old bug)
+	kvc.FreeBlockCnt--
+
+	err = kvc.verifyBlockConservation()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "drift")
+}
+
 func TestKVCacheState_SnapshotCachedBlocksFn_FrozenView(t *testing.T) {
 	// GIVEN a KVCacheState with some cached blocks
 	kvc := NewKVCacheState(100, 4)

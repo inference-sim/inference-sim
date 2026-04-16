@@ -378,6 +378,11 @@ func (t *TieredKVCache) KVThrashingRate() float64 {
 	return float64(t.cpu.evictionCount) / float64(t.mirrorCount)
 }
 
+// verifyBlockConservation delegates to the GPU tier's conservation check.
+func (t *TieredKVCache) verifyBlockConservation() error {
+	return t.gpu.verifyBlockConservation()
+}
+
 // SetClock is a no-op in vLLM v1 model (thrashing detection removed).
 func (t *TieredKVCache) SetClock(_ int64) {}
 
