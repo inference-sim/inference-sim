@@ -634,3 +634,101 @@ func ParseFitnessWeights(s string) (map[string]float64, error) {
 	}
 	return weights, nil
 }
+
+// SessionMetrics holds aggregated metrics for multi-turn session workloads.
+// Returned by ComputeSessionMetrics; nil when no session requests are present.
+type SessionMetrics struct {
+	SessionCount    int          // distinct SessionIDs observed in completed requests
+	TTFTCold        Distribution // TTFT for round-0 requests (first-turn, cache cold)
+	TTFTWarm        Distribution // TTFT for round≥1 requests (follow-up turns, cache warm)
+	SessionDuration Distribution // max_completion - round0_arrival per session (ms)
+}
+
+// ComputeSessionMetrics computes session-level metrics from aggregated simulation metrics.
+// Returns nil when no completed requests carry a non-empty SessionID (BC-1).
+// Session duration excludes sessions whose round-0 request is not in m.Requests (BC-6).
+func ComputeSessionMetrics(m *sim.Metrics) *SessionMetrics {
+	// Gate: scan for any session request (BC-1)
+	hasSession := false
+	for _, rm := range m.Requests {
+		if rm.SessionID != "" {
+			hasSession = true
+			break
+		}
+	}
+	if !hasSession {
+		return nil
+	}
+
+	// Build a sorted slice of request IDs for deterministic iteration (R2, INV-6)
+	ids := make([]string, 0, len(m.Requests))
+	for id := range m.Requests {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	// Partition TTFT by round index; collect per-session data for duration
+	var coldTTFTs, warmTTFTs []float64
+
+	type sessionData struct {
+		round0ArrivalMs float64
+		hasRound0       bool
+		maxCompMs       float64
+	}
+	sessions := make(map[string]*sessionData)
+
+	for _, id := range ids {
+		rm := m.Requests[id]
+		if rm.SessionID == "" {
+			continue // BC-4: skip non-session requests
+		}
+
+		if rm.RoundIndex == 0 {
+			coldTTFTs = append(coldTTFTs, rm.TTFT)
+		} else {
+			warmTTFTs = append(warmTTFTs, rm.TTFT)
+		}
+
+		sd, ok := sessions[rm.SessionID]
+		if !ok {
+			sd = &sessionData{}
+			sessions[rm.SessionID] = sd
+		}
+		if rm.RoundIndex == 0 {
+			sd.round0ArrivalMs = rm.ArrivedAt
+			sd.hasRound0 = true
+		}
+		// Track max completion time across all rounds (RequestCompletionTimes is in µs)
+		if compUs, exists := m.RequestCompletionTimes[id]; exists {
+			compMs := compUs / 1000.0
+			if compMs > sd.maxCompMs {
+				sd.maxCompMs = compMs
+			}
+		}
+	}
+
+	// Compute per-session durations; skip sessions missing round-0 (BC-6)
+	sessionIDs := make([]string, 0, len(sessions))
+	for sid := range sessions {
+		sessionIDs = append(sessionIDs, sid)
+	}
+	sort.Strings(sessionIDs) // R2
+	var durationMs []float64
+	for _, sid := range sessionIDs {
+		sd := sessions[sid]
+		if !sd.hasRound0 {
+			continue // BC-6: no round-0 reference point
+		}
+		dur := sd.maxCompMs - sd.round0ArrivalMs
+		if dur >= 0 {
+			durationMs = append(durationMs, dur)
+		}
+	}
+
+	return &SessionMetrics{
+		SessionCount:    len(sessions),
+		TTFTCold:        NewDistribution(coldTTFTs),
+		TTFTWarm:        NewDistribution(warmTTFTs),
+		SessionDuration: NewDistribution(durationMs),
+	}
+}
