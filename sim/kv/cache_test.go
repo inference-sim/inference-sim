@@ -846,54 +846,59 @@ func TestAllocateKVBlocks_DecodePreCheck_FailsFastWithoutRollback(t *testing.T) 
 
 func TestPreemptForTokens_RetryDoesNotOrphanBlocks(t *testing.T) {
 	// Reproduces the primary leak path from issue #1061:
-	// preemptForTokens first call fails (rollback), evicts tail, retries and succeeds.
-	// Before the fix, the first failure would delete RequestMap[reqID], orphaning all
-	// prior blocks. The retry then creates a new entry with only 1 block.
-	kvc := NewKVCacheState(6, 2) // 6 blocks, blockSize=2
+	// 1. r1 has prefill blocks
+	// 2. Decode attempt FAILS (cache full) → rollback fires
+	// 3. Before fix: rollback deletes RequestMap[r1], orphaning prefill blocks
+	// 4. Competing request freed (simulates preemptForTokens eviction)
+	// 5. Decode retry succeeds
+	// 6. Before fix: new RequestMap[r1] has only 1 decode block, prefill orphaned
+	//    After fix: RequestMap[r1] preserved through rollback, has prefill + decode
+	kvc := NewKVCacheState(4, 2) // 4 blocks, blockSize=2
 
-	// Request with 4 input tokens (2 blocks) + decode phase
 	req := &sim.Request{
 		ID:           "r1",
-		InputTokens:  []int{10, 20, 30, 40},
-		OutputTokens: []int{100, 200, 300},
+		InputTokens:  []int{10, 20, 30, 40}, // 2 blocks
+		OutputTokens: []int{100, 200},
 	}
 
 	// Prefill: 2 blocks for r1
 	ok := kvc.AllocateKVBlocks(req, 0, 4, []int64{})
 	require.True(t, ok)
 
-	// First decode token: fits in partial block or allocates 1 new block
+	// Fill remaining 2 blocks with r2
+	r2 := &sim.Request{ID: "r2", InputTokens: []int{50, 60, 70, 80}}
+	ok = kvc.AllocateKVBlocks(r2, 0, 4, []int64{})
+	require.True(t, ok)
+	assert.Equal(t, int64(4), kvc.UsedBlocks()) // cache full
+
+	// Decode attempt 1: FAILS (cache full) — triggers rollback
 	req.ProgressIndex = 4
 	ok = kvc.AllocateKVBlocks(req, 4, 5, []int64{})
-	require.True(t, ok)
-	blocksAfterDecode1 := len(kvc.RequestMap["r1"])
+	assert.False(t, ok, "decode must fail to trigger the bug path")
 
-	// Fill remaining cache with a second request (may partially succeed)
-	r2 := &sim.Request{ID: "r2", InputTokens: []int{50, 60, 70, 80, 90, 99}}
-	_ = kvc.AllocateKVBlocks(r2, 0, 6, []int64{})
-	usedBefore := kvc.UsedBlocks()
+	// Verify r1's prefill blocks are PRESERVED after the failed decode rollback
+	ids, exists := kvc.RequestMap["r1"]
+	assert.True(t, exists, "RequestMap[r1] must survive the failed decode rollback")
+	assert.Equal(t, 2, len(ids), "r1 must still have 2 prefill blocks after rollback")
 
-	// Release r2 to make some blocks available for the next decode
+	// Simulate eviction (preemptForTokens path): release r2's blocks
 	kvc.ReleaseKVBlocks(r2)
 
-	// Second decode for r1: should succeed (blocks freed from r2)
-	req.ProgressIndex = 5
-	ok = kvc.AllocateKVBlocks(req, 5, 6, []int64{})
-	require.True(t, ok, "second decode should succeed after freeing r2's blocks")
+	// Decode attempt 2: should SUCCEED now that r2's blocks are free
+	ok = kvc.AllocateKVBlocks(req, 4, 5, []int64{})
+	require.True(t, ok, "decode retry must succeed after eviction")
 
-	// Verify r1 still has all its blocks (prefill + both decode)
-	ids := kvc.RequestMap["r1"]
-	assert.GreaterOrEqual(t, len(ids), blocksAfterDecode1,
-		"r1 should have at least as many blocks as after first decode (no orphaning)")
+	// CRITICAL: r1 must have prefill blocks + decode block (not just decode block)
+	ids = kvc.RequestMap["r1"]
+	assert.Equal(t, 3, len(ids), "r1 must have 2 prefill + 1 decode block (no orphaning)")
 
 	// Verify conservation
 	ok2, msg := kvc.VerifyBlockConservation()
 	assert.True(t, ok2, "block conservation violated: %s", msg)
 
-	// Full cleanup: release r1 and verify all blocks freed
+	// Full cleanup
 	kvc.ReleaseKVBlocks(req)
-	assert.Equal(t, int64(0), kvc.UsedBlocks(),
-		"all blocks should be free after releasing all requests (was %d before r2 release)", usedBefore)
+	assert.Equal(t, int64(0), kvc.UsedBlocks(), "all blocks should be free after releasing r1")
 }
 
 func TestProcessCompletions_FinalTokenFailure_ReleasesAllBlocks(t *testing.T) {

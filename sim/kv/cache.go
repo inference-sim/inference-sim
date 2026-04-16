@@ -532,7 +532,9 @@ func (kvc *KVCacheState) MirrorToCPU(_ []*sim.Request) {}
 // VerifyBlockConservation cross-checks UsedBlockCnt against the actual count of
 // in-use blocks and verifies that every block referenced by RequestMap is marked InUse.
 // Returns (true, "") if conservation holds, or (false, description) on violation.
-// Intended for debug-mode assertions at step boundaries (issue #1061, P2).
+// Test-only infrastructure for issue #1061 regression coverage (not wired into
+// production code). Note: cannot detect orphaned blocks (InUse but not in any
+// RequestMap) — see TestVerifyBlockConservation_DetectsOrphanedBlocks.
 func (kvc *KVCacheState) VerifyBlockConservation() (bool, string) {
 	// Check 1: UsedBlockCnt matches actual InUse count
 	actualUsed := int64(0)
