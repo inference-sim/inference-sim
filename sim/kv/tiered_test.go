@@ -473,17 +473,17 @@ func TestTieredKVCache_Conservation_MirrorReloadCycle(t *testing.T) {
 
 	checkINV4 := func(label string) {
 		t.Helper()
-		// Walk the free list independently of UsedBlockCnt to avoid tautology.
-		// INV-4: UsedBlockCnt + (free list length) == TotalBlocks
+		// Walk the free list independently of FreeBlockCnt to avoid tautology.
+		// INV-4: UsedBlocks() + (free list length) == TotalBlocks
 		actualFree := int64(0)
 		blk := gpu.FreeHead
 		for blk != nil {
 			actualFree++
 			blk = blk.NextFree
 		}
-		assert.Equal(t, total, gpu.UsedBlockCnt+actualFree,
-			"INV-4 %s: UsedBlockCnt(%d) + freeListLen(%d) != total(%d)",
-			label, gpu.UsedBlockCnt, actualFree, total)
+		assert.Equal(t, total, gpu.UsedBlocks()+actualFree,
+			"INV-4 %s: UsedBlocks(%d) + freeListLen(%d) != total(%d)",
+			label, gpu.UsedBlocks(), actualFree, total)
 	}
 
 	// Allocate, mirror, release — check INV-4 at every step
@@ -869,18 +869,18 @@ func TestTieredKVCache_PartialReload_RunningRequest_BlocksCommitted(t *testing.T
 
 // TestTieredKVCache_PartialReload_NewRequest_Revised tests BC-5: new request partial reload.
 //
-// Without the fix: the reloaded block h0 is committed inline inside AllocateKVBlocks but
-// rolled back when the tail allocation fails — RequestMap["newreq"] is deleted (len==0).
-// With the fix: commitCachedBlocks commits h0 outside rollback tracking; when the tail
-// allocation fails at pre-check (no rollback triggered), the committed block persists
-// in RequestMap["newreq"] (len==1) — BC-5.
+// When TieredKVCache reloads a prefix block from CPU and commits it via commitCachedBlocks,
+// the committed block persists in RequestMap even if the subsequent tail allocation fails
+// at the pre-check. This is correct: commitCachedBlocks is a stable commit (not speculative),
+// and the check-then-act pre-check returns false without mutating any state. The committed
+// block stays in RequestMap["newreq"] (len==1) — BC-5.
 func TestTieredKVCache_PartialReload_NewRequest_Revised(t *testing.T) {
 	// 7-block GPU, blockSize=4, 10-block CPU
 	// Fill 5 blocks → 2 free [5,6]
 	// New request needs 3 blocks (tokens 0..11)
 	// First attempt: need 3, have 2 → fails. Reload h0 → newStart=4, partial improvement.
-	// With fix: commit block5 (h0) → 1 free; need 2 for tail → pre-check fails → ok=false.
-	// RequestMap["newreq"]=[5] survives (committed outside rollback tracking).
+	// Commit block5 (h0) → 1 free; need 2 for tail → pre-check fails → ok=false.
+	// RequestMap["newreq"]=[5] persists (commitCachedBlocks is a stable commit).
 	blockSize := int64(4)
 	totalBlocks := int64(7)
 	gpu := NewKVCacheState(totalBlocks, blockSize)
@@ -906,9 +906,8 @@ func TestTieredKVCache_PartialReload_NewRequest_Revised(t *testing.T) {
 	req := &sim.Request{ID: "newreq", InputTokens: tokens}
 
 	// WHEN allocating tokens 0..12 (3 blocks needed, 2 free → fails → reload h0 → commit(1) → 1 free for tail needing 2 → fails)
-	// Note: the fix changes NEW-REQUEST behavior: without fix, block h0 is committed inline
-	// inside AllocateKVBlocks but rolled back when tail allocation fails; with fix,
-	// commitCachedBlocks commits h0 outside rollback tracking — it stays committed (BC-5).
+	// commitCachedBlocks commits h0 as a stable operation; the inner AllocateKVBlocks
+	// pre-check sees the reduced FreeBlockCnt and rejects without mutating state (BC-5).
 	ok := tiered.AllocateKVBlocks(req, 0, 12, nil)
 
 	// THEN overall allocation fails (tail needs 2 blocks, only 1 free after commit)
@@ -921,9 +920,9 @@ func TestTieredKVCache_PartialReload_NewRequest_Revised(t *testing.T) {
 	_, found := gpu.HashToBlock[h0]
 	require.True(t, found, "BC-5: h0 block must be preserved in HashToBlock")
 
-	// THEN BC-5: with fix, the reloaded block is committed in RequestMap (not rolled back)
-	// Without fix: rollbackAllocation deletes RequestMap["newreq"] entirely (0 blocks).
-	// With fix: commitCachedBlocks commits block outside rollback — RequestMap["newreq"] has 1 block.
+	// THEN BC-5: the reloaded block persists in RequestMap after tail failure.
+	// commitCachedBlocks is a stable commit; the check-then-act pre-check in the
+	// inner AllocateKVBlocks returns false without touching RequestMap.
 	require.Equal(t, 1, len(gpu.RequestMap["newreq"]), "BC-5: with fix, committed block stays in RequestMap even on tail failure")
 	committedID := gpu.RequestMap["newreq"][0]
 	committedBlk := gpu.Blocks[committedID]

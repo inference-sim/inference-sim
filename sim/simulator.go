@@ -686,8 +686,9 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 				}
 			}
 			// ReleaseKVBlocks is safe even when the final-token allocation failed:
-			// AllocateKVBlocks only modifies RequestMap on success, so Release
-			// frees exactly the blocks from prior successful allocations.
+			// the decode pre-check returns false before any state mutation (check-then-act
+			// pattern, matching vLLM kv_cache_manager.py:334-336), so RequestMap is
+			// preserved and Release frees all blocks from prior successful allocations.
 			sim.KVCache.ReleaseKVBlocks(req)
 			req.FinishedStepIdx = sim.stepCount
 			sim.Schedule(&RequestLeftEvent{

@@ -73,15 +73,15 @@ Before adding a field to a struct, find every place that struct is constructed a
 
 ---
 
-### R5: Transactional state mutation
+### R5: Resource allocation must not leave partial state on failure
 
-Any loop that allocates resources (blocks, slots, counters) must handle mid-loop failure by rolling back all mutations from previous iterations. A partial allocation that returns `false` without cleanup violates conservation invariants.
+Any code that allocates resources (blocks, slots, counters) must ensure no partial mutations remain on failure. Two strategies are valid: (a) **check-then-act** — verify capacity before any mutation, so failure returns before state is touched (preferred; used by KV cache `AllocateKVBlocks`, matching vLLM's `kv_cache_manager.py:334-336`); (b) **rollback** — undo all mutations from prior iterations on mid-loop failure.
 
-**Evidence:** KV block allocation (`AllocateKVBlocks`) had a mid-loop failure path that didn't roll back previously allocated blocks, violating KV conservation (INV-4).
+**Evidence:** KV block allocation originally used rollback, but `rollbackAllocation` had a bug (#1061) that deleted `RequestMap` for continuing requests, orphaning blocks and causing deadlocks. The check-then-act refactor eliminates this bug class entirely.
 
 **Additional evidence:** H12 hypothesis experiment — preemption loop in `sim/simulator.go:383` accesses `RunningBatch.Requests[len-1]` without bounds check. When all running requests are evicted and the batch is empty, the code panics with index out of range (bug #293).
 
-**Check:** For every loop that mutates state, verify the failure path rolls back all mutations.
+**Check:** For every loop that mutates state, verify either: (a) a pre-check gate prevents entry when capacity is insufficient, or (b) the failure path rolls back all mutations.
 
 **Enforced:** PR template, micro-plan Phase 8, self-audit dimension 9.
 
@@ -323,7 +323,7 @@ For PR authors — check each rule before submitting:
 - [ ] **R2:** Map keys sorted before float accumulation or ordered output
 - [ ] **R3:** Every new numeric parameter validated (CLI flags AND library constructors)
 - [ ] **R4:** All struct construction sites audited for new fields
-- [ ] **R5:** Resource allocation loops handle mid-loop failure with rollback
+- [ ] **R5:** Resource allocation uses check-then-act pre-check or rollback on failure
 - [ ] **R6:** No `logrus.Fatalf` or `os.Exit` in `sim/` packages
 - [ ] **R7:** Invariant tests alongside any golden tests
 - [ ] **R8:** No exported mutable maps
