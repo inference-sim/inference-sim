@@ -1139,7 +1139,7 @@ func TestCountMinTokensMismatch(t *testing.T) {
 		want      int
 	}{
 		{
-			name:      "minTokens=0 skips check",
+			name:      "minTokens=0 never exceeds effective max",
 			minTokens: 0,
 			requests:  makeReqs(100, 200),
 			want:      0,
@@ -1167,6 +1167,12 @@ func TestCountMinTokensMismatch(t *testing.T) {
 			minTokens: 3000,
 			requests:  makeReqs(0, 4000),
 			want:      1,
+		},
+		{
+			name:      "minTokens equal to effectiveMax is not a mismatch",
+			minTokens: 2048,
+			requests:  makeReqs(0), // effectiveMax=2048, minTokens=2048: not strictly greater
+			want:      0,
 		},
 	}
 

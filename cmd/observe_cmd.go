@@ -81,8 +81,8 @@ which uses /v1/completions with a "prompt" field.
 Output control: Use --unconstrained-output to let the server decide output length
 (omits max_tokens for chat, sends large value for completions). Use --min-tokens N
 to force the server to generate at least N tokens before EOS (set equal to
---output-tokens with --output-tokens-stdev 0 for exact token counts). Default constrains output to the workload
-spec's sampled MaxOutputTokens.
+--output-tokens with --output-tokens-stdev 0 for exact token counts).
+Default constrains output to the workload spec's sampled MaxOutputTokens.
 
 Network calibration: Use --rtt-ms to record measured network round-trip time
 in the trace header for calibration normalization.

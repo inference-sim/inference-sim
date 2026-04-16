@@ -245,8 +245,13 @@ func (c *RealClient) handleNonStreamingResponse(resp *http.Response, record *Req
 		if choice, ok := choices[0].(map[string]interface{}); ok {
 			if fr, ok := choice["finish_reason"].(string); ok {
 				record.FinishReason = fr
-				if (fr == "length" || fr == "abort") && minTokens == 0 {
+				// "length" is expected when min_tokens == max_tokens; suppress noise.
+				// "abort" is a server error (OOM, preemption) regardless of min_tokens.
+				if fr == "length" && minTokens == 0 {
 					logrus.Warnf("observe: request %d finish_reason=%q (output may be truncated)", record.RequestID, fr)
+				}
+				if fr == "abort" {
+					logrus.Warnf("observe: request %d finish_reason=%q (server aborted request; timing data unreliable)", record.RequestID, fr)
 				}
 			}
 		}
@@ -318,9 +323,13 @@ func (c *RealClient) handleStreamingResponse(resp *http.Response, record *Reques
 		}
 	}
 
-	// Warn on problematic finish_reason values (suppress when min_tokens is set: length is expected)
-	if (record.FinishReason == "length" || record.FinishReason == "abort") && minTokens == 0 {
+	// "length" is expected when min_tokens == max_tokens; suppress noise.
+	// "abort" is a server error (OOM, preemption) regardless of min_tokens.
+	if record.FinishReason == "length" && minTokens == 0 {
 		logrus.Warnf("observe: request %d finish_reason=%q (output may be truncated)", record.RequestID, record.FinishReason)
+	}
+	if record.FinishReason == "abort" {
+		logrus.Warnf("observe: request %d finish_reason=%q (server aborted request; timing data unreliable)", record.RequestID, record.FinishReason)
 	}
 
 	return record, nil

@@ -647,6 +647,117 @@ func TestRealClient_GIEHeaders_OmittedWhenDefault(t *testing.T) {
 	}
 }
 
+// TestSend_AbortAlwaysWarns verifies that finish_reason="abort" produces a warning
+// regardless of MinTokens, since abort is a server-side error, not expected behavior.
+// (finish_reason="length" is suppressed when MinTokens>0 because vLLM stops at
+// max_tokens with length when min_tokens==max_tokens — that is expected.)
+func TestSend_AbortAlwaysWarns(t *testing.T) {
+	tests := []struct {
+		name      string
+		streaming bool
+	}{
+		{"non-streaming", false},
+		{"streaming", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.streaming {
+					flusher, ok := w.(http.Flusher)
+					if !ok {
+						t.Fatal("expected http.Flusher")
+					}
+					w.Header().Set("Content-Type", "text/event-stream")
+					_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"abort\"}]}\n\n")
+					flusher.Flush()
+					_, _ = fmt.Fprintf(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":3}}\n\n")
+					flusher.Flush()
+					_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+					flusher.Flush()
+				} else {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{
+						"choices": []map[string]interface{}{
+							{"text": "ok", "finish_reason": "abort"},
+						},
+						"usage": map[string]interface{}{"completion_tokens": 3, "prompt_tokens": 5},
+					})
+				}
+			}))
+			defer server.Close()
+
+			client := NewRealClient(server.URL, "", "test-model", "vllm")
+			// MinTokens > 0: abort must still propagate to the record.
+			record, err := client.Send(context.Background(), &PendingRequest{
+				RequestID: 1, InputTokens: 5, Streaming: tc.streaming,
+				Prompt: "hello", MaxOutputTokens: 128, MinTokens: 128,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if record.FinishReason != "abort" {
+				t.Errorf("FinishReason = %q, want %q (abort must not be suppressed by MinTokens)", record.FinishReason, "abort")
+			}
+		})
+	}
+}
+
+// TestSend_LengthSuppressedWithMinTokens verifies that finish_reason="length" does NOT
+// produce a warning (i.e., no record-level side effect) when MinTokens > 0, because
+// vLLM stops at max_tokens with finish_reason="length" in the canonical min_tokens==max_tokens case.
+func TestSend_LengthSuppressedWithMinTokens(t *testing.T) {
+	tests := []struct {
+		name      string
+		streaming bool
+	}{
+		{"non-streaming", false},
+		{"streaming", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.streaming {
+					flusher, ok := w.(http.Flusher)
+					if !ok {
+						t.Fatal("expected http.Flusher")
+					}
+					w.Header().Set("Content-Type", "text/event-stream")
+					_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n")
+					flusher.Flush()
+					_, _ = fmt.Fprintf(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":128}}\n\n")
+					flusher.Flush()
+					_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+					flusher.Flush()
+				} else {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{
+						"choices": []map[string]interface{}{
+							{"text": "ok", "finish_reason": "length"},
+						},
+						"usage": map[string]interface{}{"completion_tokens": 128, "prompt_tokens": 5},
+					})
+				}
+			}))
+			defer server.Close()
+
+			client := NewRealClient(server.URL, "", "test-model", "vllm")
+			record, err := client.Send(context.Background(), &PendingRequest{
+				RequestID: 1, InputTokens: 5, Streaming: tc.streaming,
+				Prompt: "hello", MaxOutputTokens: 128, MinTokens: 128,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// FinishReason is still recorded correctly — only the warn is suppressed.
+			if record.FinishReason != "length" {
+				t.Errorf("FinishReason = %q, want %q", record.FinishReason, "length")
+			}
+		})
+	}
+}
+
 func TestRecorder_RecordITL_StreamingRequest(t *testing.T) {
 	// GIVEN a recorder and chunk timestamps
 	rec := &Recorder{}
