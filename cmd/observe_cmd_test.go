@@ -148,7 +148,7 @@ func TestObserveOrchestrator_OpenLoop_ConservationAndConcurrency(t *testing.T) {
 
 	// WHEN dispatching with max-concurrency 2 and 0 warmup
 	ctx := context.Background()
-	runObserveOrchestrator(ctx, client, recorder, nil, requests, false, 2, 0, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(ctx, client, recorder, nil, requests, false, 2, 0, nil, nil, false, 0, false, 1.0)
 
 	// THEN: BC-6 conservation: all 5 requests recorded
 	records := recorder.Records()
@@ -215,7 +215,7 @@ func TestObserveOrchestrator_SessionFollowUp_GeneratesRound2(t *testing.T) {
 	sessionMgr := workload.NewSessionManager(wl.Sessions)
 
 	ctx := context.Background()
-	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, false, 10, 0, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, false, 10, 0, nil, nil, false, 0, false, 1.0)
 
 	records := recorder.Records()
 	if len(records) < 2 {
@@ -282,7 +282,7 @@ func TestObserveOrchestrator_SessionError_CancelsSession(t *testing.T) {
 	sessionMgr := workload.NewSessionManager(wl.Sessions)
 
 	ctx := context.Background()
-	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, false, 10, 0, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, false, 10, 0, nil, nil, false, 0, false, 1.0)
 
 	records := recorder.Records()
 	for _, r := range records {
@@ -314,7 +314,7 @@ func TestObserveOrchestrator_WarmupExclusion(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 2, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 2, nil, nil, false, 0, false, 1.0)
 
 	records := recorder.Records()
 	if len(records) != 3 {
@@ -342,7 +342,7 @@ func TestObserveOrchestrator_WarmupExceedsTotal(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 5, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 5, nil, nil, false, 0, false, 1.0)
 
 	records := recorder.Records()
 	if len(records) != 0 {
@@ -381,7 +381,7 @@ func TestObserveOrchestrator_RecordITL_CapturesChunkTimestamps(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0, nil, nil, false, true, 1.0)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0, nil, nil, false, 0, true, 1.0)
 
 	// THEN ITL records are captured
 	itlRecords := recorder.ITLRecords()
@@ -422,7 +422,7 @@ func TestObserveOrchestrator_TimestampOrdering(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0, nil, nil, false, 0, false, 1.0)
 
 	records := recorder.Records()
 	if len(records) != 1 {
@@ -462,7 +462,7 @@ func TestObserveOrchestrator_TraceV2RoundTrip(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0, nil, nil, false, 0, false, 1.0)
 
 	headerPath := filepath.Join(t.TempDir(), "header.yaml")
 	dataPath := filepath.Join(t.TempDir(), "data.csv")
@@ -520,7 +520,7 @@ func TestObserveOrchestrator_ErrorStormDrain(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 5, 0, nil, nil, false, false, 1.0)
+		runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 5, 0, nil, nil, false, 0, false, 1.0)
 		close(done)
 	}()
 
@@ -564,7 +564,7 @@ func TestObserveOrchestrator_ContextCancellation(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		runObserveOrchestrator(ctx, client, recorder, nil, requests, false, 2, 0, nil, nil, false, false, 1.0)
+		runObserveOrchestrator(ctx, client, recorder, nil, requests, false, 2, 0, nil, nil, false, 0, false, 1.0)
 		close(done)
 	}()
 
@@ -667,7 +667,7 @@ func TestRequestToPending_PrependsPrefixString(t *testing.T) {
 		PrefixLength: 64,
 	}
 
-	pending := requestToPending(req, 0, false, false, prefixes, prefixLengths, 1.0)
+	pending := requestToPending(req, 0, false, false, 0, prefixes, prefixLengths, 1.0)
 
 	// PrefixGroup and PrefixLength propagated to PendingRequest
 	if pending.PrefixGroup != "shared" {
@@ -693,7 +693,7 @@ func TestRequestToPending_PrependsPrefixString(t *testing.T) {
 		ID:          "test2",
 		InputTokens: []int{5, 15, 25, 35, 45, 55, 65, 75, 85, 95},
 	}
-	pendingNoPrefix := requestToPending(reqNoPrefix, 1, false, false, prefixes, prefixLengths, 1.0)
+	pendingNoPrefix := requestToPending(reqNoPrefix, 1, false, false, 0, prefixes, prefixLengths, 1.0)
 	// Without prefix group, prompt should not start with the group prefix string
 	if strings.HasPrefix(pendingNoPrefix.Prompt, "alpha bravo charlie ") {
 		t.Error("request without prefix group should not have prefix group's prefix string")
@@ -713,17 +713,17 @@ func TestRequestToPending_UsesPerRequestStreaming(t *testing.T) {
 	}
 
 	// BC-1 / BC-3: without global override, per-request value propagates
-	p1 := requestToPending(streamingReq, 0, false, false, nil, nil, 1.0)
+	p1 := requestToPending(streamingReq, 0, false, false, 0, nil, nil, 1.0)
 	if !p1.Streaming {
 		t.Error("expected Streaming=true for streaming request when noStreaming=false")
 	}
-	p2 := requestToPending(nonStreamingReq, 1, false, false, nil, nil, 1.0)
+	p2 := requestToPending(nonStreamingReq, 1, false, false, 0, nil, nil, 1.0)
 	if p2.Streaming {
 		t.Error("expected Streaming=false for non-streaming request when noStreaming=false")
 	}
 
 	// BC-2: --no-streaming overrides per-request value to false
-	p3 := requestToPending(streamingReq, 2, true, false, nil, nil, 1.0)
+	p3 := requestToPending(streamingReq, 2, true, false, 0, nil, nil, 1.0)
 	if p3.Streaming {
 		t.Error("expected Streaming=false when noStreaming=true overrides req.Streaming=true")
 	}
@@ -860,7 +860,7 @@ func TestRequestToPending_SuffixUsesTokenCountNotWordCount(t *testing.T) {
 		InputTokens: suffixTokens,
 		PrefixGroup: "scaled",
 	}
-	pending := requestToPending(req, 0, false, false, prefixes, prefixLengths, 1.0)
+	pending := requestToPending(req, 0, false, false, 0, prefixes, prefixLengths, 1.0)
 
 	// Suffix should have 100 words (200 total tokens - 100 prefix tokens at ratio 1.0),
 	// NOT 150 (which would happen if word count leaked into prefixLengths)
@@ -883,8 +883,8 @@ func TestRequestToPending_NoPrefixDiversePrompt(t *testing.T) {
 	}
 
 	// tokensPerWord=1.0 for direct word-to-token mapping
-	p1 := requestToPending(req1, 0, false, false, nil, nil, 1.0)
-	p2 := requestToPending(req2, 1, false, false, nil, nil, 1.0)
+	p1 := requestToPending(req1, 0, false, false, 0, nil, nil, 1.0)
+	p2 := requestToPending(req2, 1, false, false, 0, nil, nil, 1.0)
 
 	// BC-2: different token IDs -> different prompts
 	if p1.Prompt == p2.Prompt {
@@ -914,7 +914,7 @@ func TestRequestToPending_WordCountScaledByTokensPerWord(t *testing.T) {
 		InputTokens: tokens,
 	}
 
-	pending := requestToPending(req, 0, false, false, nil, nil, 2.0)
+	pending := requestToPending(req, 0, false, false, 0, nil, nil, 2.0)
 	words := strings.Fields(pending.Prompt)
 	if len(words) != 50 {
 		t.Errorf("word count = %d, want 50 (100 tokens / 2.0 tokensPerWord)", len(words))
@@ -932,7 +932,7 @@ func TestRequestToPending_UnknownPrefixGroupFallback(t *testing.T) {
 		InputTokens: []int{3, 17, 42, 88, 61},
 		PrefixGroup: "unknownGroup",
 	}
-	pending := requestToPending(req, 0, false, false, prefixes, prefixLengths, 1.0)
+	pending := requestToPending(req, 0, false, false, 0, prefixes, prefixLengths, 1.0)
 
 	if strings.Contains(pending.Prompt, "hello") {
 		t.Error("unknown prefix group fallback should use vocabulary words, not 'hello'")
@@ -1019,7 +1019,7 @@ func TestRequestToPending_WordCountClampedToOne(t *testing.T) {
 		ID:          "tiny",
 		InputTokens: []int{42},
 	}
-	pending := requestToPending(req, 0, false, false, nil, nil, 2.0)
+	pending := requestToPending(req, 0, false, false, 0, nil, nil, 2.0)
 	words := strings.Fields(pending.Prompt)
 	if len(words) != 1 {
 		t.Errorf("word count = %d, want 1 (clamped minimum)", len(words))
@@ -1065,6 +1065,61 @@ func TestObserveCmd_UnconstrainedOutputFlag_Exists(t *testing.T) {
 	}
 	if f.DefValue != "false" {
 		t.Errorf("--unconstrained-output default: got %q, want %q", f.DefValue, "false")
+	}
+}
+
+func TestObserveCmd_MinTokensFlag_Exists(t *testing.T) {
+	f := observeCmd.Flags().Lookup("min-tokens")
+	if f == nil {
+		t.Fatal("missing expected flag --min-tokens")
+	}
+	if f.DefValue != "0" {
+		t.Errorf("--min-tokens default: got %q, want %q", f.DefValue, "0")
+	}
+}
+
+func TestRequestToPending_MinTokensPropagated(t *testing.T) {
+	req := &sim.Request{
+		ID:          "min-tok",
+		InputTokens: make([]int, 5),
+	}
+	p := requestToPending(req, 0, false, false, 128, nil, nil, 1.0)
+	if p.MinTokens != 128 {
+		t.Errorf("MinTokens = %d, want 128", p.MinTokens)
+	}
+}
+
+func TestSend_MinTokensInBody(t *testing.T) {
+	var receivedBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&receivedBody)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"text": "ok", "finish_reason": "length"},
+			},
+			"usage": map[string]interface{}{"completion_tokens": 10, "prompt_tokens": 5},
+		})
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+
+	// min_tokens > 0: included in body
+	req := &PendingRequest{Prompt: "hello", MaxOutputTokens: 256, MinTokens: 128}
+	_, _ = client.Send(context.Background(), req)
+	if v, ok := receivedBody["min_tokens"]; !ok {
+		t.Error("min_tokens not found in request body")
+	} else if int(v.(float64)) != 128 {
+		t.Errorf("min_tokens = %v, want 128", v)
+	}
+
+	// min_tokens = 0: omitted from body
+	receivedBody = nil
+	req2 := &PendingRequest{Prompt: "hello", MaxOutputTokens: 256, MinTokens: 0}
+	_, _ = client.Send(context.Background(), req2)
+	if _, ok := receivedBody["min_tokens"]; ok {
+		t.Error("min_tokens should be omitted when 0")
 	}
 }
 

@@ -64,6 +64,7 @@ type PendingRequest struct {
 	PrefixLength    int
 	Prompt          string
 	Unconstrained   bool
+	MinTokens       int
 	DeadlineUs      int64
 }
 
@@ -110,6 +111,11 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 		body["max_tokens"] = math.MaxInt32
 	}
 	// chat + unconstrained: omit max_tokens entirely (server uses model default)
+
+	if req.MinTokens > 0 {
+		body["min_tokens"] = req.MinTokens
+	}
+
 	// Set prompt/messages and endpoint based on API format.
 	var endpoint string
 	switch c.apiFormat {
