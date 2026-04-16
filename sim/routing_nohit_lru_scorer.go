@@ -11,8 +11,8 @@ package sim
 //	frozen HashToBlock snapshot in stale mode (delay>0) — for warm/cold detection.
 //	Freshness depends on --cache-signal-delay:
 //	  - delay=0: ground truth (synchronous, no staleness) — oracle mode.
-//	  - delay>0 (default 2s): Demand-triggered staleness via StaleCacheIndex snapshot refresh.
-//	    Default 2s matches production llm-d's speculative TTL.
+//	  - delay>0 (default 50ms): Demand-triggered staleness via CachedSnapshotProvider cache refresh.
+//	    Default 50ms models aggregate signal staleness from production llm-d.
 //	LRU state is deterministic (updated by observer on cold routing only).
 func newNoHitLRUScorer(cacheFn cacheQueryFn) (scorerFunc, observerFunc) {
 	// LRU tracking: ordered list of instance IDs, most-recently-used first.

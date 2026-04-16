@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -191,7 +194,7 @@ func TestSnapshotProvider_DefaultConfig_AllImmediate(t *testing.T) {
 func TestNewObservabilityConfig_ZeroAndNegativeInterval_AllImmediate(t *testing.T) {
 	for _, interval := range []int64{0, -1, -100} {
 		t.Run(fmt.Sprintf("interval=%d", interval), func(t *testing.T) {
-			config := newObservabilityConfig(interval)
+			config := newObservabilityConfig(interval, 0)
 			for _, f := range []struct {
 				name string
 				fc   FieldConfig
@@ -214,7 +217,7 @@ func TestNewObservabilityConfig_ZeroAndNegativeInterval_AllImmediate(t *testing.
 // THEN all three fields (QueueDepth, BatchSize, KVUtilization) use Periodic mode
 // with the same interval.
 func TestNewObservabilityConfig_NonZeroInterval_AllFieldsPeriodic(t *testing.T) {
-	config := newObservabilityConfig(5000) // 5ms
+	config := newObservabilityConfig(5000, 0) // 5ms
 
 	fields := []struct {
 		name string
@@ -289,4 +292,123 @@ func TestCachedSnapshotProvider_ImmediateAlwaysReadsLive(t *testing.T) {
 	if snap2.FreeKVBlocks != 100 {
 		t.Errorf("FreeKVBlocks at clock=1000 = %d, want 100", snap2.FreeKVBlocks)
 	}
+}
+
+// --- Task 1 tests (BC-1, BC-2, BC-3) ---
+
+func TestObservabilityConfig_CacheBlocks_DefaultImmediate(t *testing.T) {
+	// BC-3: When cache delay is 0, CacheBlocks uses Immediate mode.
+	config := newObservabilityConfig(0, 0)
+	if config.CacheBlocks.Mode != Immediate {
+		t.Errorf("CacheBlocks.Mode = %d, want Immediate (%d)", config.CacheBlocks.Mode, Immediate)
+	}
+}
+
+func TestObservabilityConfig_CacheBlocks_Periodic(t *testing.T) {
+	// BC-1: When cache delay > 0, CacheBlocks uses Periodic mode with given interval.
+	config := newObservabilityConfig(0, 50_000)
+	if config.CacheBlocks.Mode != Periodic {
+		t.Errorf("CacheBlocks.Mode = %d, want Periodic (%d)", config.CacheBlocks.Mode, Periodic)
+	}
+	if config.CacheBlocks.Interval != 50_000 {
+		t.Errorf("CacheBlocks.Interval = %d, want 50000", config.CacheBlocks.Interval)
+	}
+}
+
+func TestObservabilityConfig_CacheBlocks_IndependentOfSnapshot(t *testing.T) {
+	// BC-1: CacheBlocks interval is independent of snapshot refresh interval.
+	config := newObservabilityConfig(10_000, 50_000)
+	if config.QueueDepth.Mode != Periodic {
+		t.Errorf("QueueDepth.Mode = %d, want Periodic", config.QueueDepth.Mode)
+	}
+	if config.QueueDepth.Interval != 10_000 {
+		t.Errorf("QueueDepth.Interval = %d, want 10000", config.QueueDepth.Interval)
+	}
+	if config.CacheBlocks.Mode != Periodic {
+		t.Errorf("CacheBlocks.Mode = %d, want Periodic", config.CacheBlocks.Mode)
+	}
+	if config.CacheBlocks.Interval != 50_000 {
+		t.Errorf("CacheBlocks.Interval = %d, want 50000", config.CacheBlocks.Interval)
+	}
+}
+
+// --- Task 2 tests (BC-1, BC-3, BC-4) ---
+
+func TestCachedSnapshotProvider_CacheQuery_StaleUntilRefresh(t *testing.T) {
+	// BC-1: Cache queries return stale data until refresh interval elapses.
+	cfg := newTestSimConfig()
+	cfg.Horizon = 10_000_000
+	cfg.TotalKVBlocks = 100
+	cfg.BlockSizeTokens = 4
+	inst := NewInstanceSimulator("inst-0", cfg)
+	instances := map[InstanceID]*InstanceSimulator{"inst-0": inst}
+
+	obsConfig := newObservabilityConfig(0, 1000) // cache delay 1000µs
+	provider := NewCachedSnapshotProvider(instances, obsConfig)
+
+	tokens := []int{1, 2, 3, 4, 5, 6, 7, 8}
+
+	// Initial snapshot — empty cache
+	assert.Equal(t, 0, provider.CacheQuery("inst-0", tokens))
+
+	// Populate cache via request
+	req := &sim.Request{
+		ID: "r1", ArrivalTime: 0, InputTokens: tokens,
+		OutputTokens: []int{100}, State: sim.StateQueued,
+	}
+	inst.InjectRequest(req)
+	inst.Run()
+	require.Greater(t, inst.GetCachedBlockCount(tokens), 0)
+
+	// Before refresh interval: still stale
+	provider.RefreshCacheIfNeeded(500) // 500 < 1000
+	assert.Equal(t, 0, provider.CacheQuery("inst-0", tokens))
+
+	// After refresh interval: sees new data
+	provider.RefreshCacheIfNeeded(1000) // 1000 >= 1000
+	assert.Greater(t, provider.CacheQuery("inst-0", tokens), 0)
+}
+
+func TestCachedSnapshotProvider_CacheQuery_OracleMode(t *testing.T) {
+	// BC-3: When CacheBlocks is Immediate, queries return live data.
+	cfg := newTestSimConfig()
+	cfg.Horizon = 10_000_000
+	cfg.TotalKVBlocks = 100
+	cfg.BlockSizeTokens = 4
+	inst := NewInstanceSimulator("inst-0", cfg)
+	instances := map[InstanceID]*InstanceSimulator{"inst-0": inst}
+
+	obsConfig := newObservabilityConfig(0, 0) // oracle mode
+	provider := NewCachedSnapshotProvider(instances, obsConfig)
+
+	tokens := []int{1, 2, 3, 4, 5, 6, 7, 8}
+	req := &sim.Request{
+		ID: "r1", ArrivalTime: 0, InputTokens: tokens,
+		OutputTokens: []int{100}, State: sim.StateQueued,
+	}
+	inst.InjectRequest(req)
+	inst.Run()
+
+	// Oracle mode: sees live data immediately without refresh
+	assert.Greater(t, provider.CacheQuery("inst-0", tokens), 0)
+}
+
+func TestCachedSnapshotProvider_AddRemoveCacheInstance(t *testing.T) {
+	// BC-4: Dynamic instance add/remove for cache queries.
+	obsConfig := newObservabilityConfig(0, 1000)
+	provider := NewCachedSnapshotProvider(nil, obsConfig)
+
+	cfg := newTestSimConfig()
+	cfg.TotalKVBlocks = 100
+	cfg.BlockSizeTokens = 4
+	inst := NewInstanceSimulator("inst-new", cfg)
+
+	// AddInstance registers for scalar snapshots; AddCacheInstance for cache tracking.
+	provider.AddInstance("inst-new", inst)
+	provider.AddCacheInstance("inst-new", inst)
+	tokens := []int{1, 2, 3, 4}
+	assert.Equal(t, 0, provider.CacheQuery("inst-new", tokens)) // empty cache
+
+	provider.RemoveCacheInstance("inst-new")
+	assert.Equal(t, 0, provider.CacheQuery("inst-new", tokens)) // returns 0 for unknown
 }

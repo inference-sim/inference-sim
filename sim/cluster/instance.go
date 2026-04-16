@@ -218,7 +218,7 @@ func (i *InstanceSimulator) SnapshotCacheQueryFn() func([]int) int {
 		return cs.SnapshotCachedBlocksFn()
 	}
 	// Fallback: live query (for KVStore implementations without snapshot support).
-	// Callers (StaleCacheIndex) are responsible for warning about stale-cache
+	// Callers (CachedSnapshotProvider) are responsible for warning about stale-cache
 	// semantics not being honored — this function is intentionally side-effect-free.
 	return func(tokens []int) int {
 		return i.GetCachedBlockCount(tokens)

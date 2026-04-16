@@ -10,84 +10,29 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-func TestStaleCacheIndex_StaleUntilRefresh(t *testing.T) {
-	// GIVEN a StaleCacheIndex with one instance and interval=1000
-	cfg := newTestSimConfig()
-	cfg.Horizon = 10_000_000
-	cfg.TotalKVBlocks = 100
-	cfg.BlockSizeTokens = 4
-	inst := NewInstanceSimulator("inst-0", cfg)
+// --- Unit tests for CachedSnapshotProvider cache management (ported from StaleCacheIndex) ---
 
-	instances := map[InstanceID]*InstanceSimulator{"inst-0": inst}
-	idx := NewStaleCacheIndex(instances, 1000)
+func TestCachedSnapshotProvider_AddCacheInstance_HonorsStaleBoundary(t *testing.T) {
+	// Ported from TestStaleCacheIndex_AddInstance_HonorsStaleBoundary.
+	// The stale-mode deferred-instance path: AddCacheInstance registers an instance
+	// with a frozen snapshot. The resulting closure must honor stale semantics — snapshot
+	// frozen at registration time, updated only by RefreshCacheIfNeeded.
 
-	tokens := []int{1, 2, 3, 4, 5, 6, 7, 8}
-
-	// Initial snapshot at clock=0 — empty cache
-	assert.Equal(t, 0, idx.Query("inst-0", tokens), "initial snapshot should see 0 blocks")
-
-	// Inject and run a request to populate cache
-	req := &sim.Request{
-		ID:           "r1",
-		ArrivalTime:  0,
-		InputTokens:  tokens,
-		OutputTokens: []int{100},
-		State:        sim.StateQueued,
-	}
-	inst.InjectRequest(req)
-	inst.Run()
-
-	// Live query confirms blocks exist
-	require.Greater(t, inst.GetCachedBlockCount(tokens), 0)
-
-	// WHEN we query the stale index before refresh interval elapses
-	idx.RefreshIfNeeded(500) // clock=500 < interval=1000
-	// THEN stale index still returns 0
-	assert.Equal(t, 0, idx.Query("inst-0", tokens), "stale: should NOT see blocks before refresh")
-
-	// WHEN we query after refresh interval elapses
-	idx.RefreshIfNeeded(1000) // clock=1000 >= interval=1000
-	// THEN stale index sees the blocks
-	assert.Greater(t, idx.Query("inst-0", tokens), 0, "after refresh: should see blocks")
-}
-
-func TestStaleCacheIndex_AddInstance(t *testing.T) {
-	// GIVEN an empty StaleCacheIndex
-	idx := NewStaleCacheIndex(nil, 1000)
-
-	// WHEN we add an instance
-	cfg := newTestSimConfig()
-	cfg.TotalKVBlocks = 100
-	cfg.BlockSizeTokens = 4
-	inst := NewInstanceSimulator("inst-new", cfg)
-	idx.AddInstance("inst-new", inst)
-
-	// THEN it's queryable (returns 0 for empty cache)
-	tokens := []int{1, 2, 3, 4}
-	assert.Equal(t, 0, idx.Query("inst-new", tokens))
-}
-
-func TestStaleCacheIndex_AddInstance_HonorsStaleBoundary(t *testing.T) {
-	// This test covers the stale-mode deferred-instance path:
-	// registerInstanceCacheQueryFn (cluster.go) calls AddInstance when a new
-	// instance becomes ready in stale mode (e.g. NodeReadyEvent). The resulting
-	// closure must honor stale semantics — snapshot frozen at registration time,
-	// updated only by RefreshIfNeeded — not query live state like oracle mode would.
-
-	// GIVEN an empty StaleCacheIndex and a new instance with empty cache
 	cfg := newTestSimConfig()
 	cfg.Horizon = 10_000_000
 	cfg.TotalKVBlocks = 100
 	cfg.BlockSizeTokens = 4
 	inst := NewInstanceSimulator("inst-deferred", cfg)
 
-	idx := NewStaleCacheIndex(nil, 1000)
-	idx.AddInstance("inst-deferred", inst) // snapshot taken here: cache empty → staleFn returns 0
+	obsConfig := newObservabilityConfig(0, 1000) // stale mode, interval=1000
+	provider := NewCachedSnapshotProvider(nil, obsConfig)
+	provider.AddInstance("inst-deferred", inst)
+	provider.AddCacheInstance("inst-deferred", inst) // snapshot taken here: cache empty
 
 	tokens := []int{1, 2, 3, 4, 5, 6, 7, 8}
-	cqf := idx.BuildCacheQueryFn()
+	cqf := provider.BuildCacheQueryFn()
 
-	// WHEN the instance's cache is populated after registration
+	// Populate cache after registration
 	req := &sim.Request{
 		ID: "r1", ArrivalTime: 0, InputTokens: tokens,
 		OutputTokens: []int{100}, State: sim.StateQueued,
@@ -96,20 +41,20 @@ func TestStaleCacheIndex_AddInstance_HonorsStaleBoundary(t *testing.T) {
 	inst.Run()
 	require.Greater(t, inst.GetCachedBlockCount(tokens), 0, "live cache must have blocks")
 
-	// THEN before RefreshIfNeeded: stale snapshot is empty — returns 0 (not live state)
+	// Before RefreshCacheIfNeeded: stale snapshot is empty — returns 0 (not live state)
 	assert.Equal(t, 0, cqf["inst-deferred"](tokens),
-		"stale semantics: snapshot was empty at AddInstance time, must not see live blocks yet")
+		"stale semantics: snapshot was empty at AddCacheInstance time, must not see live blocks yet")
 
-	// WHEN RefreshIfNeeded fires after interval elapses
-	idx.RefreshIfNeeded(1000)
+	// After RefreshCacheIfNeeded fires
+	provider.RefreshCacheIfNeeded(1000)
 
-	// THEN the snapshot is updated and the closure sees the populated cache
+	// The snapshot is updated and the closure sees the populated cache
 	assert.Greater(t, cqf["inst-deferred"](tokens), 0,
-		"after RefreshIfNeeded: snapshot updated, closure sees populated cache")
+		"after RefreshCacheIfNeeded: snapshot updated, closure sees populated cache")
 }
 
-func TestStaleCacheIndex_RefreshIfNeeded_BoundaryAtIntervalMinusOne(t *testing.T) {
-	// GIVEN a StaleCacheIndex with interval=1000 and a populated cache
+func TestCachedSnapshotProvider_RefreshCacheIfNeeded_BoundaryAtIntervalMinusOne(t *testing.T) {
+	// Ported from TestStaleCacheIndex_RefreshIfNeeded_BoundaryAtIntervalMinusOne.
 	cfg := newTestSimConfig()
 	cfg.Horizon = 10_000_000
 	cfg.TotalKVBlocks = 100
@@ -117,7 +62,8 @@ func TestStaleCacheIndex_RefreshIfNeeded_BoundaryAtIntervalMinusOne(t *testing.T
 	inst := NewInstanceSimulator("inst-0", cfg)
 
 	instances := map[InstanceID]*InstanceSimulator{"inst-0": inst}
-	idx := NewStaleCacheIndex(instances, 1000) // lastRefresh=0
+	obsConfig := newObservabilityConfig(0, 1000) // stale mode, interval=1000
+	provider := NewCachedSnapshotProvider(instances, obsConfig)
 
 	tokens := []int{1, 2, 3, 4, 5, 6, 7, 8}
 
@@ -130,40 +76,38 @@ func TestStaleCacheIndex_RefreshIfNeeded_BoundaryAtIntervalMinusOne(t *testing.T
 	inst.Run()
 	require.Greater(t, inst.GetCachedBlockCount(tokens), 0, "live cache must have blocks")
 
-	// WHEN RefreshIfNeeded is called at exactly clock = interval - 1 = 999
-	// THEN the snapshot is NOT refreshed (999 - 0 = 999 < 1000, strict < boundary)
-	idx.RefreshIfNeeded(999)
-	assert.Equal(t, 0, idx.Query("inst-0", tokens),
+	// At clock = interval - 1 = 999: NOT refreshed (999 - 0 = 999 < 1000)
+	provider.RefreshCacheIfNeeded(999)
+	assert.Equal(t, 0, provider.CacheQuery("inst-0", tokens),
 		"snapshot must NOT be refreshed at clock=interval-1 (strict < boundary)")
 
-	// WHEN RefreshIfNeeded is called at clock = interval = 1000
-	// THEN the snapshot IS refreshed (1000 - 0 = 1000 >= 1000)
-	idx.RefreshIfNeeded(1000)
-	assert.Greater(t, idx.Query("inst-0", tokens), 0,
+	// At clock = interval = 1000: IS refreshed (1000 - 0 = 1000 >= 1000)
+	provider.RefreshCacheIfNeeded(1000)
+	assert.Greater(t, provider.CacheQuery("inst-0", tokens), 0,
 		"snapshot must be refreshed at clock=interval (>= threshold)")
 }
 
-func TestStaleCacheIndex_AddInstance_DuplicateID_Panics(t *testing.T) {
-	// GIVEN a StaleCacheIndex with instance "inst-0" already registered
+func TestCachedSnapshotProvider_AddCacheInstance_DuplicateID_Panics(t *testing.T) {
+	// Ported from TestStaleCacheIndex_AddInstance_DuplicateID_Panics.
 	cfg := newTestSimConfig()
 	cfg.TotalKVBlocks = 100
 	cfg.BlockSizeTokens = 4
 	inst := NewInstanceSimulator("inst-0", cfg)
-	instances := map[InstanceID]*InstanceSimulator{"inst-0": inst}
-	idx := NewStaleCacheIndex(instances, 1000)
 
-	// WHEN AddInstance is called with the same ID again
-	// THEN it panics with a message containing "already registered"
+	instances := map[InstanceID]*InstanceSimulator{"inst-0": inst}
+	obsConfig := newObservabilityConfig(0, 1000)
+	provider := NewCachedSnapshotProvider(instances, obsConfig)
+
 	defer func() {
 		r := recover()
 		assert.NotNil(t, r, "expected panic for duplicate instance ID")
 		assert.Contains(t, fmt.Sprintf("%v", r), "already registered")
 	}()
-	idx.AddInstance("inst-0", inst)
+	provider.AddCacheInstance("inst-0", inst)
 }
 
-func TestStaleCacheIndex_BuildCacheQueryFn_DelegatesToStale(t *testing.T) {
-	// GIVEN a StaleCacheIndex with one instance
+func TestCachedSnapshotProvider_BuildCacheQueryFn_DelegatesToStale(t *testing.T) {
+	// Ported from TestStaleCacheIndex_BuildCacheQueryFn_DelegatesToStale.
 	cfg := newTestSimConfig()
 	cfg.Horizon = 10_000_000
 	cfg.TotalKVBlocks = 100
@@ -171,11 +115,10 @@ func TestStaleCacheIndex_BuildCacheQueryFn_DelegatesToStale(t *testing.T) {
 	inst := NewInstanceSimulator("inst-0", cfg)
 
 	instances := map[InstanceID]*InstanceSimulator{"inst-0": inst}
-	idx := NewStaleCacheIndex(instances, 1000)
+	obsConfig := newObservabilityConfig(0, 1000)
+	provider := NewCachedSnapshotProvider(instances, obsConfig)
 
-	// Build the cacheQueryFn map
-	cqf := idx.BuildCacheQueryFn()
-
+	cqf := provider.BuildCacheQueryFn()
 	tokens := []int{1, 2, 3, 4, 5, 6, 7, 8}
 
 	// Initially returns 0 (empty cache in snapshot)
@@ -183,11 +126,8 @@ func TestStaleCacheIndex_BuildCacheQueryFn_DelegatesToStale(t *testing.T) {
 
 	// Populate cache
 	req := &sim.Request{
-		ID:           "r1",
-		ArrivalTime:  0,
-		InputTokens:  tokens,
-		OutputTokens: []int{100},
-		State:        sim.StateQueued,
+		ID: "r1", ArrivalTime: 0, InputTokens: tokens,
+		OutputTokens: []int{100}, State: sim.StateQueued,
 	}
 	inst.InjectRequest(req)
 	inst.Run()
@@ -195,10 +135,59 @@ func TestStaleCacheIndex_BuildCacheQueryFn_DelegatesToStale(t *testing.T) {
 	// Still stale before refresh
 	assert.Equal(t, 0, cqf["inst-0"](tokens), "should be stale before refresh")
 
-	// After refresh, the SAME closure sees the new data (reads staleFns at call time)
-	idx.RefreshIfNeeded(1000)
+	// After refresh, the SAME closure sees the new data
+	provider.RefreshCacheIfNeeded(1000)
 	assert.Greater(t, cqf["inst-0"](tokens), 0, "should see blocks after refresh via same closure")
 }
+
+func TestCachedSnapshotProvider_RemoveCacheInstance_Basic(t *testing.T) {
+	// Ported from TestStaleCacheIndex_RemoveInstance.
+	cfg := newTestSimConfig()
+	cfg.TotalKVBlocks = 100
+	cfg.BlockSizeTokens = 4
+	inst := NewInstanceSimulator("inst-0", cfg)
+
+	instances := map[InstanceID]*InstanceSimulator{"inst-0": inst}
+	obsConfig := newObservabilityConfig(0, 1000)
+	provider := NewCachedSnapshotProvider(instances, obsConfig)
+
+	tokens := []int{1, 2, 3, 4}
+
+	// Sanity: instance is queryable
+	assert.Equal(t, 0, provider.CacheQuery("inst-0", tokens))
+
+	// Remove the instance
+	provider.RemoveCacheInstance("inst-0")
+
+	// BuildCacheQueryFn no longer includes the instance
+	cqf := provider.BuildCacheQueryFn()
+	_, exists := cqf["inst-0"]
+	assert.False(t, exists, "removed instance should not appear in BuildCacheQueryFn")
+
+	// Refresh should not panic (no instances to snapshot)
+	provider.RefreshCacheIfNeeded(2000)
+
+	// CacheQuery for the removed instance returns 0
+	assert.Equal(t, 0, provider.CacheQuery("inst-0", tokens), "query for removed instance should return 0")
+}
+
+func TestCachedSnapshotProvider_RemoveCacheInstance_Idempotent(t *testing.T) {
+	// Ported from TestStaleCacheIndex_RemoveInstance_Idempotent.
+	obsConfig := newObservabilityConfig(0, 1000)
+	provider := NewCachedSnapshotProvider(nil, obsConfig)
+
+	// Remove a non-existent instance — should not panic (no-op)
+	provider.RemoveCacheInstance("nonexistent")
+}
+
+// --- Task 5 tests (BC-2) ---
+
+func TestDefaultCacheSignalDelay_Is50ms(t *testing.T) {
+	// BC-2: Default cache signal delay is 50ms (50,000 µs).
+	assert.Equal(t, int64(50_000), DefaultCacheSignalDelay)
+}
+
+// --- Integration tests (unchanged behavioral contracts) ---
 
 func TestCluster_CacheSignalDelay_StaleRouting(t *testing.T) {
 	// GIVEN two identical clusters — one oracle (delay=0), one stale (delay=very large)
@@ -232,8 +221,6 @@ func TestCluster_CacheSignalDelay_StaleRouting(t *testing.T) {
 	}
 
 	// Generate N requests: r0 warms the cache, r1..r(N-1) share the same prefix.
-	// With oracle, r1+ see r0's cached blocks on inst-X and concentrate there.
-	// With stale (delay >> inter-arrival), r1+ see no cache anywhere → ties → spread.
 	numRequests := 10
 	makeRequests := func() []*sim.Request {
 		reqs := make([]*sim.Request, numRequests)
@@ -266,7 +253,7 @@ func TestCluster_CacheSignalDelay_StaleRouting(t *testing.T) {
 	assert.Equal(t, numRequests, staleAgg.CompletedRequests, "stale: all requests should complete")
 
 	// Oracle mode: precise-prefix-cache strongly attracts all requests to the instance
-	// that cached the first request's prefix. The max-loaded instance should have most requests.
+	// that cached the first request's prefix.
 	oracleMax := oraclePerInst[0].CompletedRequests
 	if oraclePerInst[1].CompletedRequests > oracleMax {
 		oracleMax = oraclePerInst[1].CompletedRequests
@@ -318,61 +305,4 @@ func TestCluster_CacheSignalDelay_Zero_OracleBehavior(t *testing.T) {
 	// Backward-compatibility smoke test
 	m := cs.aggregateMetrics()
 	assert.Greater(t, m.CompletedRequests, 0, "requests should complete")
-}
-
-func TestStaleCacheIndex_RemoveInstance(t *testing.T) {
-	// GIVEN a StaleCacheIndex with one instance
-	cfg := newTestSimConfig()
-	cfg.TotalKVBlocks = 100
-	cfg.BlockSizeTokens = 4
-	inst := NewInstanceSimulator("inst-0", cfg)
-
-	instances := map[InstanceID]*InstanceSimulator{"inst-0": inst}
-	idx := NewStaleCacheIndex(instances, 1000)
-
-	tokens := []int{1, 2, 3, 4}
-
-	// Sanity: instance is queryable
-	assert.Equal(t, 0, idx.Query("inst-0", tokens))
-
-	// WHEN we remove the instance
-	idx.RemoveInstance("inst-0")
-
-	// THEN BuildCacheQueryFn no longer includes the instance
-	cqf := idx.BuildCacheQueryFn()
-	_, exists := cqf["inst-0"]
-	assert.False(t, exists, "removed instance should not appear in BuildCacheQueryFn")
-
-	// AND refresh should not panic (no instances to snapshot)
-	idx.RefreshIfNeeded(2000)
-
-	// AND Query for the removed instance returns 0 (warn-and-return-0 path)
-	assert.Equal(t, 0, idx.Query("inst-0", tokens), "query for removed instance should return 0")
-}
-
-func TestStaleCacheIndex_RemoveInstance_Idempotent(t *testing.T) {
-	// GIVEN an empty StaleCacheIndex
-	idx := NewStaleCacheIndex(nil, 1000)
-
-	// WHEN we remove a non-existent instance
-	// THEN it should not panic (no-op)
-	idx.RemoveInstance("nonexistent")
-}
-
-func TestNewStaleCacheIndex_ZeroInterval_Panics(t *testing.T) {
-	defer func() {
-		r := recover()
-		assert.NotNil(t, r, "expected panic for interval=0")
-		assert.Contains(t, r, "interval must be > 0")
-	}()
-	NewStaleCacheIndex(nil, 0)
-}
-
-func TestNewStaleCacheIndex_NegativeInterval_Panics(t *testing.T) {
-	defer func() {
-		r := recover()
-		assert.NotNil(t, r, "expected panic for negative interval")
-		assert.Contains(t, r, "interval must be > 0")
-	}()
-	NewStaleCacheIndex(nil, -100)
 }
