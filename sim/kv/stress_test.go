@@ -10,15 +10,11 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-// assertFullConservation verifies INV-4 using both the public API and the
-// internal verifyBlockConservation (free-list walk + InUse scan).
+// assertFullConservation verifies INV-4 via independent free-list walk + InUse scan.
+// Delegates to assertBlockConservation which calls verifyBlockConservation internally.
 func assertFullConservation(t *testing.T, kvc *KVCacheState) {
 	t.Helper()
 	assertBlockConservation(t, kvc)
-	err := kvc.verifyBlockConservation()
-	if err != nil {
-		t.Errorf("verifyBlockConservation: %v", err)
-	}
 }
 
 // assertAllBlocksFree verifies that UsedBlocks == 0 and countFreeBlocks == TotalBlocks.

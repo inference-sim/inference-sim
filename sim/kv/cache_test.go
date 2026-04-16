@@ -807,3 +807,63 @@ func TestKVCacheState_SnapshotCachedBlocksFn_FrozenView(t *testing.T) {
 	// AND the live query sees all 4 blocks
 	assert.Equal(t, 4, len(kvc.GetCachedBlocks(tokens2)), "live query should see 4 blocks")
 }
+
+func TestAllocateKVBlocks_DecodeNoExistingBlocks_FailsWhenCacheFull(t *testing.T) {
+	// GIVEN a request in decode with no RequestMap entry (simulates a preempted request
+	// whose blocks were released but ProgressIndex was not reset). This exercises the
+	// else-branch of the decode pre-check (cache.go:247-252).
+	kvc := NewKVCacheState(2, 4)
+
+	// Fill the cache completely
+	filler := &sim.Request{ID: "filler", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
+	ok := kvc.AllocateKVBlocks(filler, 0, 8, []int64{})
+	require.True(t, ok)
+	require.Equal(t, int64(0), kvc.countFreeBlocks())
+
+	// Create a request that appears to be in decode (ProgressIndex past input)
+	// but has no RequestMap entry (blocks were released during preemption)
+	req := &sim.Request{
+		ID:            "preempted",
+		InputTokens:   []int{10, 20, 30, 40},
+		OutputTokens:  []int{100},
+		ProgressIndex: 4, // past prefill
+	}
+	// Note: no AllocateKVBlocks call for prefill — RequestMap["preempted"] does not exist
+
+	// WHEN decode allocation is attempted with 0 free blocks
+	ok = kvc.AllocateKVBlocks(req, 4, 5, []int64{})
+
+	// THEN fails without panic (pre-check catches it)
+	assert.False(t, ok, "decode with no existing blocks and 0 free should fail cleanly")
+	assert.Empty(t, kvc.RequestMap["preempted"],
+		"no RequestMap entry should be created for failed allocation")
+	assertBlockConservation(t, kvc)
+}
+
+func TestAllocateKVBlocks_DecodeNoExistingBlocks_SucceedsWhenFreeAvailable(t *testing.T) {
+	// GIVEN a request in decode with no RequestMap entry but free blocks available.
+	// This exercises the else-branch passing through to the allocation loop.
+	kvc := NewKVCacheState(3, 4)
+
+	// Fill 2 of 3 blocks
+	filler := &sim.Request{ID: "filler", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
+	ok := kvc.AllocateKVBlocks(filler, 0, 8, []int64{})
+	require.True(t, ok)
+	require.Equal(t, int64(1), kvc.countFreeBlocks())
+
+	req := &sim.Request{
+		ID:            "preempted",
+		InputTokens:   []int{10, 20, 30, 40},
+		OutputTokens:  []int{100},
+		ProgressIndex: 4,
+	}
+
+	// WHEN decode allocation is attempted with 1 free block available
+	ok = kvc.AllocateKVBlocks(req, 4, 5, []int64{})
+
+	// THEN succeeds — allocates 1 new block for the decode token
+	assert.True(t, ok, "decode with no existing blocks but free available should succeed")
+	assert.Len(t, kvc.RequestMap["preempted"], 1,
+		"should have 1 block allocated for the decode token")
+	assertBlockConservation(t, kvc)
+}
