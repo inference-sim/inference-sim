@@ -98,6 +98,38 @@ func TestNewRequestMetrics_GatewayQueueDelay_ZeroWhenNotQueued(t *testing.T) {
 	}
 }
 
+func TestNewRequestMetrics_SessionFields(t *testing.T) {
+	// GIVEN a session request with non-empty SessionID and RoundIndex=2
+	req := &Request{
+		ID:               "req-1",
+		SessionID:        "sess-abc",
+		RoundIndex:       2,
+		InputTokens:      []int{1, 2, 3},
+		OutputTokens:     []int{4, 5},
+		SLOClass:         "standard",
+		TenantID:         "tenant-x",
+		AssignedInstance: "inst-0",
+		Model:            "model-a",
+	}
+	rm := NewRequestMetrics(req, 1000.0)
+	if rm.SessionID != "sess-abc" {
+		t.Errorf("SessionID: got %q, want %q", rm.SessionID, "sess-abc")
+	}
+	if rm.RoundIndex != 2 {
+		t.Errorf("RoundIndex: got %d, want 2", rm.RoundIndex)
+	}
+
+	// GIVEN a non-session request
+	req2 := &Request{ID: "req-2", InputTokens: []int{1}, OutputTokens: []int{2}}
+	rm2 := NewRequestMetrics(req2, 500.0)
+	if rm2.SessionID != "" {
+		t.Errorf("non-session SessionID: got %q, want empty", rm2.SessionID)
+	}
+	if rm2.RoundIndex != 0 {
+		t.Errorf("non-session RoundIndex: got %d, want 0", rm2.RoundIndex)
+	}
+}
+
 // TestCalculatePercentile_EmptyInput_ReturnsZero verifies BC-6, BC-8.
 func TestCalculatePercentile_EmptyInput_ReturnsZero(t *testing.T) {
 	// GIVEN empty float64 slice
