@@ -42,7 +42,7 @@ Invariants are properties that must hold at all times during and after simulatio
 
 **Statement:** `allocated_blocks + free_blocks = total_blocks` at all times.
 
-**Verification:** Checked after every allocation/deallocation. Transactional allocation with rollback on mid-loop failure (R5).
+**Verification:** Checked after every allocation/deallocation. Check-then-act pre-check gate before any state mutation (vLLM parity); post-pre-check `popFreeBlock() == nil` panics (structurally unreachable in single-threaded DES). `FreeBlockCnt` maintained in lockstep by `appendToFreeList`/`removeFromFreeList`. `verifyBlockConservation()` provides independent free-list walk for debug-mode assertions.
 
 **Operational note (H8):** KV cache pressure exhibits a sharp cliff, not gradual degradation. In H8's workload, performance was identical above ~2200 blocks and collapsed below it (4.7x TTFT P99 increase with just 4.5% fewer blocks). Below ~1000 blocks, the preempt-requeue cycle can livelock (see R19). Capacity planning formula: `threshold ≈ rate / num_instances × (input_tokens + output_tokens) / block_size`.
 

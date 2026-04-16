@@ -15,21 +15,14 @@ import (
 )
 
 // assertBlockConservation verifies the KV block conservation invariant (INV-4)
-// using only public API methods.
+// via an independent free-list walk and InUse scan (not derived from FreeBlockCnt).
 func assertBlockConservation(t *testing.T, kvc *KVCacheState) {
 	t.Helper()
-	used := kvc.UsedBlocks()
-	total := kvc.TotalCapacity()
-	free := total - used
-	if used+free != total {
-		t.Errorf("block conservation violated: UsedBlocks=%d + free=%d != TotalCapacity=%d",
-			used, free, total)
+	if err := kvc.verifyBlockConservation(); err != nil {
+		t.Errorf("INV-4 block conservation violated: %v", err)
 	}
-	if used < 0 {
-		t.Errorf("UsedBlocks = %d, must be >= 0", used)
-	}
-	if free < 0 {
-		t.Errorf("free blocks = %d, must be >= 0", free)
+	if used := kvc.UsedBlocks(); used < 0 {
+		t.Errorf("UsedBlocks() = %d, must be >= 0", used)
 	}
 }
 
@@ -267,12 +260,12 @@ func TestAllocateKVBlocks_BlockConservation_AfterAllocateReleaseCycles(t *testin
 		kvc.ReleaseKVBlocks(req)
 	}
 
-	// Verify conservation (independent free-list walk, not derived from UsedBlockCnt)
+	// Verify conservation via independent free-list walk
 	assertBlockConservation(t, kvc)
 
 	// Expected: 2 requests still hold 1 block each = 2 used, 8 free
 	if kvc.UsedBlocks() != 2 {
-		t.Errorf("UsedBlockCnt = %d, want 2 (2 requests with 1 block each)", kvc.UsedBlocks())
+		t.Errorf("UsedBlocks() = %d, want 2 (2 requests with 1 block each)", kvc.UsedBlocks())
 	}
 }
 
