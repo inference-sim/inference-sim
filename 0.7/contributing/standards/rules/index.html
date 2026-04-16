@@ -2027,10 +2027,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#r5-transactional-state-mutation" class="md-nav__link">
+  <a href="#r5-resource-allocation-must-not-leave-partial-state-on-failure" class="md-nav__link">
     <span class="md-ellipsis">
       
-        R5: Transactional state mutation
+        R5: Resource allocation must not leave partial state on failure
       
     </span>
   </a>
@@ -3069,10 +3069,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#r5-transactional-state-mutation" class="md-nav__link">
+  <a href="#r5-resource-allocation-must-not-leave-partial-state-on-failure" class="md-nav__link">
     <span class="md-ellipsis">
       
-        R5: Transactional state mutation
+        R5: Resource allocation must not leave partial state on failure
       
     </span>
   </a>
@@ -3436,11 +3436,11 @@
 <p><strong>Check:</strong> <code>grep 'StructName{' across the codebase</code>. List every site. Update all or refactor to canonical constructor.</p>
 <p><strong>Enforced:</strong> PR template, micro-plan Phase 0 + Phase 8, self-audit dimension 8.</p>
 <hr />
-<h3 id="r5-transactional-state-mutation">R5: Transactional state mutation<a class="headerlink" href="#r5-transactional-state-mutation" title="Permanent link">&para;</a></h3>
-<p>Any loop that allocates resources (blocks, slots, counters) must handle mid-loop failure by rolling back all mutations from previous iterations. A partial allocation that returns <code>false</code> without cleanup violates conservation invariants.</p>
-<p><strong>Evidence:</strong> KV block allocation (<code>AllocateKVBlocks</code>) had a mid-loop failure path that didn't roll back previously allocated blocks, violating KV conservation (INV-4).</p>
+<h3 id="r5-resource-allocation-must-not-leave-partial-state-on-failure">R5: Resource allocation must not leave partial state on failure<a class="headerlink" href="#r5-resource-allocation-must-not-leave-partial-state-on-failure" title="Permanent link">&para;</a></h3>
+<p>Any code that allocates resources (blocks, slots, counters) must ensure no partial mutations remain on failure. Two strategies are valid: (a) <strong>check-then-act</strong> — verify capacity before any mutation, so failure returns before state is touched (preferred; used by KV cache <code>AllocateKVBlocks</code>, matching vLLM's <code>kv_cache_manager.py:334-336</code>); (b) <strong>rollback</strong> — undo all mutations from prior iterations on mid-loop failure.</p>
+<p><strong>Evidence:</strong> KV block allocation originally used rollback, but <code>rollbackAllocation</code> had a bug (#1061) that deleted <code>RequestMap</code> for continuing requests, orphaning blocks and causing deadlocks. The check-then-act refactor eliminates this bug class entirely.</p>
 <p><strong>Additional evidence:</strong> H12 hypothesis experiment — preemption loop in <code>sim/simulator.go:383</code> accesses <code>RunningBatch.Requests[len-1]</code> without bounds check. When all running requests are evicted and the batch is empty, the code panics with index out of range (bug #293).</p>
-<p><strong>Check:</strong> For every loop that mutates state, verify the failure path rolls back all mutations.</p>
+<p><strong>Check:</strong> For every loop that mutates state, verify either: (a) a pre-check gate prevents entry when capacity is insufficient, or (b) the failure path rolls back all mutations.</p>
 <p><strong>Enforced:</strong> PR template, micro-plan Phase 8, self-audit dimension 9.</p>
 <hr />
 <h3 id="r6-no-logrusfatalf-in-library-code">R6: No logrus.Fatalf in library code<a class="headerlink" href="#r6-no-logrusfatalf-in-library-code" title="Permanent link">&para;</a></h3>
@@ -3565,7 +3565,7 @@
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R2:</strong> Map keys sorted before float accumulation or ordered output</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R3:</strong> Every new numeric parameter validated (CLI flags AND library constructors)</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R4:</strong> All struct construction sites audited for new fields</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R5:</strong> Resource allocation loops handle mid-loop failure with rollback</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R5:</strong> Resource allocation uses check-then-act pre-check or rollback on failure</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R6:</strong> No <code>logrus.Fatalf</code> or <code>os.Exit</code> in <code>sim/</code> packages</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R7:</strong> Invariant tests alongside any golden tests</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled/><span class="task-list-indicator"></span></label> <strong>R8:</strong> No exported mutable maps</li>
