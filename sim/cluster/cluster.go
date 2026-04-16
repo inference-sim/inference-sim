@@ -35,7 +35,6 @@ type ClusterSimulator struct {
 	rejectedRequests     int                    // EC-2: count of requests rejected by admission policy
 	routingRejections    int                    // I13: count of requests rejected at routing (no routable instances)
 	shedByTier           map[string]int         // per-SLOClass rejection counts (Phase 1B-1a)
-	deferredQueue        []*sim.Request         // Batch/Background requests awaiting idle capacity (Phase 1B-1b)
 	trace                *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
 	preGeneratedRequests []*sim.Request         // Pre-generated requests (all workload paths unified)
 	inFlightRequests     map[string]int         // instance ID → dispatched-but-not-completed count (#463)
@@ -642,11 +641,10 @@ func (c *ClusterSimulator) Run() error {
 					c.staleCache.RemoveInstance(inst.ID())
 				}
 				delete(c.cacheQueryFn, string(inst.ID()))
-				// I1: a non-zero inFlightRequests at termination time indicates a bookkeeping bug.
-				// This would cause isBusy() to permanently return true, silently stranding
-				// all deferred Batch/Background requests until horizon.
+				// I1: a non-zero inFlightRequests at termination time indicates a bookkeeping bug —
+				// a missing completion event or an early-termination race.
 				if c.inFlightRequests[instID] != 0 {
-					logrus.Warnf("[cluster] instance %s terminated with inFlightRequests=%d — bookkeeping bug; deferred queue may stall",
+					logrus.Warnf("[cluster] instance %s terminated with inFlightRequests=%d — bookkeeping bug",
 						instID, c.inFlightRequests[instID])
 				}
 			}
@@ -1058,27 +1056,6 @@ func (c *ClusterSimulator) ShedByTier() map[string]int {
 	return result
 }
 
-// isBusy returns true when any non-terminated instance has non-zero effective load.
-// Uses the three-component definition: QueueDepth + BatchSize + InFlightRequests > 0.
-// Skips instances in InstanceStateTerminated state — stale inFlightRequests on terminated
-// instances must not count as load (otherwise a recently terminated instance with residual
-// accounting would permanently block deferred-queue promotion).
-// An empty instance pool returns false (not busy).
-// Preserved for scheduling-tier deferral (#899).
-//
-//nolint:unused
-func (c *ClusterSimulator) isBusy() bool {
-	for _, inst := range c.instances {
-		if inst.State == InstanceStateTerminated {
-			continue // stale inFlightRequests on terminated instances must not count as load
-		}
-		if inst.QueueDepth()+inst.BatchSize()+c.inFlightRequests[string(inst.ID())] > 0 {
-			return true
-		}
-	}
-	return false
-}
-
 // gpuInventory computes the current GPU inventory for Engine.Optimize().
 // Phase 1C (T012): returns free GPU slots per VariantSpec.
 //
@@ -1143,32 +1120,6 @@ func (c *ClusterSimulator) gpuInventory() GPUInventory {
 		byVariant[v] = free
 	}
 	return GPUInventory{byVariant: byVariant}
-}
-
-// promoteDeferred injects all deferred requests as ClusterArrivalEvents at the current clock.
-// Called when isBusy() transitions to false. Truncates deferredQueue after injection.
-// INV-8: ensures work-conserving behaviour — deferred requests re-enter the pipeline
-// within the same scheduling step as the idle transition.
-//
-// Preserved for scheduling-tier deferral (#899).
-//
-//nolint:unused
-func (c *ClusterSimulator) promoteDeferred() {
-	logrus.Debugf("[cluster] promoting %d deferred requests at tick %d", len(c.deferredQueue), c.clock)
-	for _, req := range c.deferredQueue {
-		c.pushArrival(req, c.clock)
-	}
-	c.deferredQueue = c.deferredQueue[:0]
-}
-
-// DeferredQueueLen returns the number of requests in the deferred queue.
-// Panics if called before Run() completes.
-// Preserved for #899 (deferred queue redesign).
-func (c *ClusterSimulator) DeferredQueueLen() int {
-	if !c.hasRun {
-		panic("ClusterSimulator.DeferredQueueLen() called before Run()")
-	}
-	return len(c.deferredQueue)
 }
 
 // GatewayQueueDepth returns the number of requests still in the gateway queue

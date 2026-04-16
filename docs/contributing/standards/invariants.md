@@ -12,7 +12,7 @@ Invariants are properties that must hold at all times during and after simulatio
 
 **Full pipeline:** `num_requests == injected_requests + rejected_requests` (from anomaly counters).
 
-**Verification:** `sim/cluster/cluster_test.go` and `sim/cluster/cluster_deferred_test.go` — conservation tests. Conservation fields (`still_queued`, `still_running`, `injected_requests`) are included in CLI JSON output.
+**Verification:** `sim/cluster/cluster_test.go` — conservation tests. Conservation fields (`still_queued`, `still_running`, `injected_requests`) are included in CLI JSON output.
 
 **Evidence:** Issue #183 — a silently-dropped request violated conservation for months.
 
