@@ -587,8 +587,22 @@ func (sim *Simulator) scheduleBatch(now int64) {
 // executeBatchStep handles Phase 2: model execution (prefill + decode) for all requests
 // in the running batch. Returns the step time advance in ticks.
 func (sim *Simulator) executeBatchStep(now int64) int64 {
-	// Estimate step time via LatencyModel (blackbox or roofline, selected at construction)
-	currStepAdvance := sim.latencyModel.StepTime(sim.RunningBatch.Requests)
+	// Match vLLM's scheduled_running_reqs: only requests that were allocated
+	// tokens by FormBatch participate in the forward pass latency computation.
+	// Requests with NumNewTokens=0 (past Phase 1 break point, token budget
+	// exhaustion, or MaxModelLen boundary) retain their KV blocks and remain
+	// in RunningBatch for the next step, but do not contribute to this step's
+	// compute time. See vllm/v1/core/sched/scheduler.py scheduled_running_reqs.
+	// Note: scheduled may be empty when all requests are idle (e.g., after
+	// Phase 1 preemption cascade). All StepTime backends handle empty batches
+	// correctly (return >= 1), and the max(1, ...) floor below guarantees INV-3.
+	scheduled := make([]*Request, 0, len(sim.RunningBatch.Requests))
+	for _, req := range sim.RunningBatch.Requests {
+		if req.NumNewTokens > 0 {
+			scheduled = append(scheduled, req)
+		}
+	}
+	currStepAdvance := sim.latencyModel.StepTime(scheduled)
 
 	// Add transfer latency from CPU→GPU reloads (0 for single-tier)
 	currStepAdvance += sim.KVCache.ConsumePendingTransferLatency()

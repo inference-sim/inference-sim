@@ -23,6 +23,110 @@ func (m *fixedOverheadModel) QueueingTime(req *Request) int64      { return 0 }
 func (m *fixedOverheadModel) OutputTokenProcessingTime() int64     { return 0 }
 func (m *fixedOverheadModel) PostDecodeFixedOverhead() int64       { return m.overhead }
 
+// spyLatencyModel records the batch passed to StepTime for inspection.
+// Used by BC-2/BC-3 tests to verify idle request filtering.
+type spyLatencyModel struct {
+	lastBatch []*Request
+}
+
+func (m *spyLatencyModel) StepTime(batch []*Request) int64 {
+	m.lastBatch = batch
+	return 1
+}
+func (m *spyLatencyModel) QueueingTime(req *Request) int64  { return 0 }
+func (m *spyLatencyModel) OutputTokenProcessingTime() int64 { return 0 }
+func (m *spyLatencyModel) PostDecodeFixedOverhead() int64   { return 0 }
+
+// BC-2 (#963): StepTime receives only requests with NumNewTokens > 0.
+// vLLM proof: scheduler.py:870 adds to scheduled_running_reqs only on
+// successful allocation; scheduler.py:1236-1242 builds SchedulerOutput
+// from scheduled_running_reqs, NOT self.running.
+func TestExecuteBatchStep_FiltersIdleRequests_BC2(t *testing.T) {
+	// GIVEN a running batch with 3 requests: 2 active (NumNewTokens > 0), 1 idle (NumNewTokens = 0)
+	spy := &spyLatencyModel{}
+	cfg := SimConfig{
+		KVCacheConfig: NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:   NewBatchConfig(256, 2048, 0),
+		Seed:          42,
+	}
+	kvStore := MustNewKVStoreFromConfig(cfg.KVCacheConfig)
+	s, err := NewSimulator(cfg, kvStore, spy)
+	if err != nil {
+		t.Fatalf("NewSimulator: %v", err)
+	}
+
+	active1 := &Request{ID: "active1", InputTokens: make([]int, 32), OutputTokens: make([]int, 10),
+		ProgressIndex: 32, NumNewTokens: 1, State: StateRunning}
+	active2 := &Request{ID: "active2", InputTokens: make([]int, 16), OutputTokens: make([]int, 5),
+		ProgressIndex: 16, NumNewTokens: 1, State: StateRunning}
+	idle := &Request{ID: "idle", InputTokens: make([]int, 64), OutputTokens: make([]int, 20),
+		ProgressIndex: 64, NumNewTokens: 0, State: StateRunning}
+
+	s.RunningBatch = &Batch{Requests: []*Request{active1, active2, idle}}
+	s.reqNumComputedTokens = map[string]int64{
+		"active1": 32, "active2": 16, "idle": 64,
+	}
+
+	// WHEN executeBatchStep runs
+	s.executeBatchStep(0)
+
+	// THEN StepTime was called with only the 2 active requests (BC-2)
+	if len(spy.lastBatch) != 2 {
+		t.Fatalf("StepTime must receive only active requests, got %d", len(spy.lastBatch))
+	}
+	ids := map[string]bool{}
+	for _, r := range spy.lastBatch {
+		ids[r.ID] = true
+	}
+	if !ids["active1"] || !ids["active2"] {
+		t.Errorf("StepTime batch missing active requests: got %v", ids)
+	}
+	if ids["idle"] {
+		t.Errorf("StepTime batch should NOT contain idle request")
+	}
+}
+
+// BC-3 (#963): Idle requests persist in RunningBatch after executeBatchStep.
+func TestExecuteBatchStep_IdleRequestsPersist_BC3(t *testing.T) {
+	// GIVEN a running batch with 1 active and 1 idle request
+	spy := &spyLatencyModel{}
+	cfg := SimConfig{
+		KVCacheConfig: NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:   NewBatchConfig(256, 2048, 0),
+		Seed:          42,
+	}
+	kvStore := MustNewKVStoreFromConfig(cfg.KVCacheConfig)
+	s, err := NewSimulator(cfg, kvStore, spy)
+	if err != nil {
+		t.Fatalf("NewSimulator: %v", err)
+	}
+
+	active := &Request{ID: "active", InputTokens: make([]int, 32), OutputTokens: make([]int, 10),
+		ProgressIndex: 32, NumNewTokens: 1, State: StateRunning}
+	idle := &Request{ID: "idle", InputTokens: make([]int, 64), OutputTokens: make([]int, 20),
+		ProgressIndex: 64, NumNewTokens: 0, State: StateRunning}
+
+	s.RunningBatch = &Batch{Requests: []*Request{active, idle}}
+	s.reqNumComputedTokens = map[string]int64{"active": 32, "idle": 64}
+
+	// WHEN executeBatchStep runs
+	s.executeBatchStep(0)
+
+	// THEN both requests are still in RunningBatch (idle was not dropped) (BC-3)
+	if len(s.RunningBatch.Requests) != 2 {
+		t.Fatalf("idle requests must persist in RunningBatch, got %d requests", len(s.RunningBatch.Requests))
+	}
+	found := false
+	for _, r := range s.RunningBatch.Requests {
+		if r.ID == "idle" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("idle request was dropped from RunningBatch (BC-3 violation)")
+	}
+}
+
 // BC-1: Simulator.PostDecodeFixedOverhead() delegates to the underlying LatencyModel.
 func TestSimulator_PostDecodeFixedOverhead_DelegatesToModel(t *testing.T) {
 	tests := []struct {
