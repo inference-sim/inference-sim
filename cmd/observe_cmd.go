@@ -81,7 +81,7 @@ which uses /v1/completions with a "prompt" field.
 Output control: Use --unconstrained-output to let the server decide output length
 (omits max_tokens for chat, sends large value for completions). Use --min-tokens N
 to force the server to generate at least N tokens before EOS (set equal to
---output-tokens for exact token counts). Default constrains output to the workload
+--output-tokens with --output-tokens-stdev 0 for exact token counts). Default constrains output to the workload
 spec's sampled MaxOutputTokens.
 
 Network calibration: Use --rtt-ms to record measured network round-trip time
@@ -142,7 +142,7 @@ func init() {
 	observeCmd.Flags().IntVar(&observePrefixTokens, "prefix-tokens", 0, "Shared prefix token count (distribution mode)")
 	observeCmd.Flags().StringVar(&observeAPIFormat, "api-format", "completions", "API format: 'completions' (/v1/completions) or 'chat' (/v1/chat/completions)")
 	observeCmd.Flags().BoolVar(&observeUnconstrainedOutput, "unconstrained-output", false, "Do not set max_tokens (let server decide output length)")
-	observeCmd.Flags().IntVar(&observeMinTokens, "min-tokens", 0, "Set min_tokens in request body (forces server to generate at least N tokens before EOS)")
+	observeCmd.Flags().IntVar(&observeMinTokens, "min-tokens", 0, "Set min_tokens in request body (forces server to generate at least N tokens before EOS; 0 = omit field)")
 	observeCmd.Flags().Float64Var(&observeRttMs, "rtt-ms", 0, "Measured network round-trip time in milliseconds (recorded in trace header)")
 
 	// ITL recording (optional, opt-in)
@@ -340,16 +340,10 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Warn("No requests generated — writing empty trace")
 	}
 
-	// Warn if --min-tokens exceeds max_tokens for any request: vLLM rejects such requests.
+	// Warn if --min-tokens exceeds the effective max_tokens for any request.
 	if observeMinTokens > 0 && !observeUnconstrainedOutput {
-		mismatch := 0
-		for _, r := range wl.Requests {
-			if observeMinTokens > r.MaxOutputLen {
-				mismatch++
-			}
-		}
-		if mismatch > 0 {
-			logrus.Warnf("--min-tokens=%d exceeds max_tokens for %d/%d requests; those requests will likely be rejected by the server", observeMinTokens, mismatch, len(wl.Requests))
+		if n := countMinTokensMismatch(observeMinTokens, wl.Requests); n > 0 {
+			logrus.Warnf("--min-tokens=%d exceeds max_tokens for %d/%d requests; those requests will likely be rejected by the server", observeMinTokens, n, len(wl.Requests))
 		}
 	}
 
@@ -719,6 +713,23 @@ func adaptForSessionManager(original *sim.Request, record *RequestRecord) *sim.R
 	}
 
 	return adapted
+}
+
+// countMinTokensMismatch returns the number of requests whose effective max_tokens
+// is less than minTokens. Mirrors Send()'s MaxOutputTokens<=0 → 2048 fallback so
+// the warning fires only for requests that will actually be rejected.
+func countMinTokensMismatch(minTokens int, requests []*sim.Request) int {
+	n := 0
+	for _, r := range requests {
+		effectiveMax := r.MaxOutputLen
+		if effectiveMax <= 0 {
+			effectiveMax = 2048
+		}
+		if minTokens > effectiveMax {
+			n++
+		}
+	}
+	return n
 }
 
 // tokensToPrompt converts token IDs into a diverse prompt string using

@@ -57,7 +57,7 @@ go build -o blis main.go
   --max-concurrency 32 --unconstrained-output \
   --trace-header trace.yaml --trace-data trace.csv
 
-# Observe with exact output length control (min_tokens=output_tokens forces vLLM to suppress EOS)
+# Observe with exact output length control (min_tokens=output_tokens defers EOS to target length; vLLM/compatible servers only)
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --rate 10 --num-requests 100 --output-tokens 2048 --min-tokens 2048 \
   --trace-header trace.yaml --trace-data trace.csv

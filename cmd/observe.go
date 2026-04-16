@@ -180,9 +180,9 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 	}
 
 	if req.Streaming {
-		return c.handleStreamingResponse(resp, record)
+		return c.handleStreamingResponse(resp, record, req.MinTokens)
 	}
-	return c.handleNonStreamingResponse(resp, record)
+	return c.handleNonStreamingResponse(resp, record, req.MinTokens)
 }
 
 // firstByteReader wraps an io.Reader and captures the timestamp when the first byte is received.
@@ -199,7 +199,7 @@ func (f *firstByteReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func (c *RealClient) handleNonStreamingResponse(resp *http.Response, record *RequestRecord) (*RequestRecord, error) {
+func (c *RealClient) handleNonStreamingResponse(resp *http.Response, record *RequestRecord, minTokens int) (*RequestRecord, error) {
 	// Wrap body to capture first-byte timing (BC-2).
 	// Note: for non-streaming HTTP, real servers send the entire response after generation
 	// completes, so FirstChunkTimeUs approximates "server finished + transfer started,"
@@ -245,7 +245,7 @@ func (c *RealClient) handleNonStreamingResponse(resp *http.Response, record *Req
 		if choice, ok := choices[0].(map[string]interface{}); ok {
 			if fr, ok := choice["finish_reason"].(string); ok {
 				record.FinishReason = fr
-				if fr == "length" || fr == "abort" {
+				if (fr == "length" || fr == "abort") && minTokens == 0 {
 					logrus.Warnf("observe: request %d finish_reason=%q (output may be truncated)", record.RequestID, fr)
 				}
 			}
@@ -255,7 +255,7 @@ func (c *RealClient) handleNonStreamingResponse(resp *http.Response, record *Req
 	return record, nil
 }
 
-func (c *RealClient) handleStreamingResponse(resp *http.Response, record *RequestRecord) (*RequestRecord, error) {
+func (c *RealClient) handleStreamingResponse(resp *http.Response, record *RequestRecord, minTokens int) (*RequestRecord, error) {
 	scanner := bufio.NewScanner(resp.Body)
 	chunkCount := 0
 	var lastUsage map[string]interface{}
@@ -318,8 +318,8 @@ func (c *RealClient) handleStreamingResponse(resp *http.Response, record *Reques
 		}
 	}
 
-	// Warn on problematic finish_reason values
-	if record.FinishReason == "length" || record.FinishReason == "abort" {
+	// Warn on problematic finish_reason values (suppress when min_tokens is set: length is expected)
+	if (record.FinishReason == "length" || record.FinishReason == "abort") && minTokens == 0 {
 		logrus.Warnf("observe: request %d finish_reason=%q (output may be truncated)", record.RequestID, record.FinishReason)
 	}
 

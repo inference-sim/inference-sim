@@ -1123,6 +1123,63 @@ func TestSend_MinTokensInBody(t *testing.T) {
 	}
 }
 
+func TestCountMinTokensMismatch(t *testing.T) {
+	makeReqs := func(maxLens ...int) []*sim.Request {
+		reqs := make([]*sim.Request, len(maxLens))
+		for i, m := range maxLens {
+			reqs[i] = &sim.Request{MaxOutputLen: m}
+		}
+		return reqs
+	}
+
+	tests := []struct {
+		name      string
+		minTokens int
+		requests  []*sim.Request
+		want      int
+	}{
+		{
+			name:      "minTokens=0 skips check",
+			minTokens: 0,
+			requests:  makeReqs(100, 200),
+			want:      0,
+		},
+		{
+			name:      "no mismatch",
+			minTokens: 100,
+			requests:  makeReqs(200, 300, 400),
+			want:      0,
+		},
+		{
+			name:      "some mismatch",
+			minTokens: 150,
+			requests:  makeReqs(100, 200, 300),
+			want:      1,
+		},
+		{
+			name:      "MaxOutputLen=0 uses 2048 fallback, no mismatch",
+			minTokens: 100,
+			requests:  makeReqs(0, 0),
+			want:      0,
+		},
+		{
+			name:      "MaxOutputLen=0 uses 2048 fallback, triggers mismatch",
+			minTokens: 3000,
+			requests:  makeReqs(0, 4000),
+			want:      1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := countMinTokensMismatch(tc.minTokens, tc.requests)
+			if got != tc.want {
+				t.Errorf("countMinTokensMismatch(%d, ...) = %d, want %d", tc.minTokens, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestObserveDistributionDefaults_MatchRunDefaults verifies that observeCmd's eight
 // distribution flag defaults are identical to runCmd's defaults (BC-1).
 //
