@@ -229,6 +229,24 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 	} else {
 		// request is in decode
 		newTokens = append(newTokens, req.OutputTokens[startIndex-util.Len64(req.InputTokens)])
+
+		// Decode pre-check: if the last block is full and no free blocks exist,
+		// fail fast without any state mutation. Mirrors vLLM's universal pre-check
+		// (kv_cache_manager.py:334-336 / single_type_kv_cache_manager.py:95-101).
+		//
+		// For decode, get_num_blocks_to_allocate returns max(cdiv(tokens, blockSize) - len(blocks), 0).
+		// This simplifies to: last block full → need 1 new block; last block has spare → need 0.
+		// Note: !hasBlocks or len(ids)==0 for a decode request is structurally
+		// unreachable — ProgressIndex >= len(InputTokens) requires a prior
+		// successful prefill allocation that populated RequestMap. If it occurs,
+		// the allocation loop's popFreeBlock panic will fire with a clear message.
+		if ids, hasBlocks := kvc.RequestMap[reqID]; hasBlocks && len(ids) > 0 {
+			lastBlk := kvc.Blocks[ids[len(ids)-1]]
+			if util.Len64(lastBlk.Tokens) == kvc.BlockSizeTokens && kvc.countFreeBlocks() == 0 {
+				logrus.Debugf("KV cache full: cannot allocate decode block for req %s (last block full, 0 free)", reqID)
+				return false
+			}
+		}
 	}
 	// Rollback tracking: if allocation fails mid-way, undo all mutations
 	var cachedMutations []cachedBlockMutation

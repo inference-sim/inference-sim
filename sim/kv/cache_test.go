@@ -784,6 +784,63 @@ func TestFreeBlockCnt_DirectCounter_MatchesFreeListLength(t *testing.T) {
 		"countFreeBlocks() must match physical free list length after release")
 }
 
+func TestAllocateKVBlocks_DecodeFailure_PreservesExistingBlocks(t *testing.T) {
+	// GIVEN a request that completed prefill and has 2 blocks allocated
+	kvc := NewKVCacheState(3, 4) // 3 blocks total
+	req := &sim.Request{
+		ID:           "r1",
+		InputTokens:  []int{1, 2, 3, 4, 5, 6, 7, 8},
+		OutputTokens: []int{100, 200},
+	}
+	// Allocate prefill (2 blocks for 8 tokens, blockSize=4)
+	ok := kvc.AllocateKVBlocks(req, 0, 8, []int64{})
+	req.ProgressIndex = 8 // now past prefill, in decode
+	require.True(t, ok)
+	require.Len(t, kvc.RequestMap["r1"], 2)
+
+	// Consume the last free block with a filler
+	filler := &sim.Request{ID: "filler", InputTokens: []int{90, 91, 92, 93}}
+	ok = kvc.AllocateKVBlocks(filler, 0, 4, []int64{})
+	require.True(t, ok)
+	require.Equal(t, int64(0), kvc.countFreeBlocks())
+
+	// WHEN decode allocation fails (last block is full, 0 free blocks)
+	ok = kvc.AllocateKVBlocks(req, 8, 9, []int64{})
+
+	// THEN allocation returns false AND RequestMap is PRESERVED (not deleted)
+	assert.False(t, ok, "decode allocation should fail")
+	assert.Len(t, kvc.RequestMap["r1"], 2,
+		"RequestMap must preserve existing blocks on decode failure (bug #1061: rollback deleted them)")
+	assertBlockConservation(t, kvc)
+}
+
+func TestAllocateKVBlocks_DecodePreCheck_SucceedsWhenLastBlockHasSpare(t *testing.T) {
+	// GIVEN a request in decode whose last block has spare capacity
+	kvc := NewKVCacheState(2, 4)
+	req := &sim.Request{
+		ID:           "r1",
+		InputTokens:  []int{1, 2, 3}, // 3 tokens = 1 partial block (3/4)
+		OutputTokens: []int{100},
+	}
+	ok := kvc.AllocateKVBlocks(req, 0, 3, []int64{})
+	req.ProgressIndex = 3 // now past prefill, in decode
+	require.True(t, ok)
+	require.Equal(t, int64(1), kvc.countFreeBlocks())
+
+	// Consume the last free block
+	filler := &sim.Request{ID: "filler", InputTokens: []int{90, 91, 92, 93}}
+	ok = kvc.AllocateKVBlocks(filler, 0, 4, []int64{})
+	require.True(t, ok)
+	require.Equal(t, int64(0), kvc.countFreeBlocks())
+
+	// WHEN decode allocates 1 token into the partial block (spare=1, no new block needed)
+	ok = kvc.AllocateKVBlocks(req, 3, 4, []int64{})
+
+	// THEN succeeds even with 0 free blocks (token fits in existing partial block)
+	assert.True(t, ok, "decode should succeed when last block has spare capacity")
+	assertBlockConservation(t, kvc)
+}
+
 func TestKVCacheState_SnapshotCachedBlocksFn_FrozenView(t *testing.T) {
 	// GIVEN a KVCacheState with some cached blocks
 	kvc := NewKVCacheState(100, 4)
