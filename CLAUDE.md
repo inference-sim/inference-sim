@@ -238,15 +238,17 @@ When asked to update the macro implementation plan, directly edit the document. 
 
 ### Issue Filing
 
+<!-- Keep in sync with .github/ISSUE_TEMPLATE/ — update when templates change -->
+
 When filing a GitHub issue, pick the template that matches your situation:
 
-1. **Found a bug or wrong simulation result?** → `.github/ISSUE_TEMPLATE/bug_report.md`
-2. **Porting a feature from an external repo (llmd, gaie, vllm, sglang)?** → `.github/ISSUE_TEMPLATE/cross_repo_feature.md` — requires GitHub permalinks to source code
-3. **Proposing a new BLIS-native capability?** → `.github/ISSUE_TEMPLATE/feature_request.md`
-4. **Testing a hypothesis or running an experiment?** → `.github/ISSUE_TEMPLATE/hypothesis.md`
-5. **Fixing an antipattern, hardening, or refactoring?** → `.github/ISSUE_TEMPLATE/custom.md`
+1. **Found a bug or wrong simulation result?** → `Bug report` (`.github/ISSUE_TEMPLATE/bug_report.md`)
+2. **Porting a feature from an external repo (llmd, gaie, vllm, sglang)?** → `Cross-repo feature` (`.github/ISSUE_TEMPLATE/cross_repo_feature.md`) — requires GitHub permalinks to source code
+3. **Proposing a new BLIS-native capability?** → `Feature request` (`.github/ISSUE_TEMPLATE/feature_request.md`)
+4. **Testing a hypothesis or running an experiment?** → `Hypothesis Proposal` (`.github/ISSUE_TEMPLATE/hypothesis.md`)
+5. **Fixing an antipattern, hardening, or refactoring?** → `Hardening / refactoring` (`.github/ISSUE_TEMPLATE/custom.md`)
 
-Every issue must have at least one label. Use `gh issue create --template <filename>` to pre-fill the template.
+Every issue must have at least one label. Use `gh issue create --template "Template name"` to pre-fill the template.
 
 ## Speckit Feature-Development Toolkit
 
