@@ -257,27 +257,12 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 		ids, ok := kvc.RequestMap[reqID]
 		latestBlk := &KVBlock{}
 		if ok {
-			// KV cache has already seen this request before. The latest block needs to be filled first,
-			// followed by new blocks.
+			// Running request path: KV cache has already seen this request before.
+			// The latest block needs to be filled first, followed by new blocks.
+			// Note: Running requests do NOT re-claim cached blocks (vLLM parity).
+			// Preempted requests reset ProgressIndex to 0 and re-enter via the !ok
+			// path, where they claim all cached blocks upfront.
 			latestBlk = kvc.Blocks[ids[len(ids)-1]]
-
-			// Bug 1 fix (issue #1057): Enable incremental cache claiming for running requests.
-			// During chunked prefill, running requests may still be within a shared prefix region.
-			// Claim any cached blocks beyond the request's current allocation (vLLM parity).
-			numAllocatedBlocks := int64(len(ids))
-			for i := numAllocatedBlocks; i < int64(len(cachedBlocks)); i++ {
-				blockId := cachedBlocks[i]
-				blk := kvc.Blocks[blockId]
-				blk.RefCount++
-				if !blk.InUse {
-					blk.InUse = true
-					kvc.removeFromFreeList(blk)
-				}
-				kvc.CacheHits++
-				logrus.Debugf("Hit KV Cache (incremental) for req: %s block %d", req.ID, i)
-				kvc.RequestMap[reqID] = append(kvc.RequestMap[reqID], blockId)
-			}
-
 		} else {
 			// KV cache is seeing this request for the first time (beginning of prefill)
 			// append the cached blocks to this request's ID map

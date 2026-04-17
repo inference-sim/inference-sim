@@ -199,24 +199,8 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 // evicting from the batch tail if needed. Returns false if allocation is
 // impossible (cache too small or request was itself evicted).
 func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, result *BatchResult, ctx BatchContext, tokenBudget *int64) bool {
-	// Bug 1 fix (issue #1057): Check if running request is still within cached prefix.
-	// Running requests doing chunked prefill may be continuing within a shared prefix
-	// region. Without this, they try to allocate fresh blocks that are already cached,
-	// causing unnecessary allocation failures under tight KV capacity.
-	cachedBlocks := ctx.KVCache.GetCachedBlocks(req.InputTokens)
-	cachedLen := int64(len(cachedBlocks)) * ctx.KVCache.BlockSize()
-
-	// Only pass cached blocks if request is still within the cached prefix region.
-	// Once beyond the cached prefix (ProgressIndex >= cachedLen), pass empty slice.
-	var blocksToPass []int64
-	if req.ProgressIndex < cachedLen {
-		blocksToPass = cachedBlocks
-	} else {
-		blocksToPass = []int64{}
-	}
-
 	for {
-		if ok := ctx.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, blocksToPass); !ok {
+		if ok := ctx.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, nil); !ok {
 			// Circuit breaker: empty batch means cache is too small (R19)
 			if len(result.RunningBatch.Requests) == 0 {
 				logrus.Warnf("[tick %07d] preemption: KV cache too small for request %s (need %d tokens, no running requests to evict)",
