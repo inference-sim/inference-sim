@@ -406,6 +406,7 @@ func TestAllScorers_ReturnScoreForEveryInstance(t *testing.T) {
 		{"active-requests", scoreActiveRequests},
 		{"running-requests", scoreRunningRequests},
 		{"load-aware", scoreLoadAware},
+		{"vllm-dp", scoreVLLMDP},
 		{"precise-prefix-cache", precisePrefixScorer},
 		{"no-hit-lru", noHitLRUScorer},
 	}
