@@ -63,6 +63,7 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
+          CLAUDE_CODE_DISABLE_THINKING: "1"
         with:
           anthropic_api_key: ${{ secrets.LITELLM_API_KEY }}
           claude_args: '--model aws/claude-sonnet-4-6 --allowed-tools Skill Agent Bash'
