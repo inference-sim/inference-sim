@@ -7,9 +7,51 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
+
+// testLogHook captures logrus warn/error entries for test assertions.
+type testLogHook struct {
+	mu      sync.Mutex
+	entries []string
+}
+
+func (h *testLogHook) Levels() []logrus.Level {
+	return []logrus.Level{logrus.WarnLevel, logrus.ErrorLevel}
+}
+
+func (h *testLogHook) Fire(e *logrus.Entry) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.entries = append(h.entries, e.Message)
+	return nil
+}
+
+func (h *testLogHook) hasEntry(substr string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, msg := range h.entries {
+		if strings.Contains(msg, substr) {
+			return true
+		}
+	}
+	return false
+}
+
+// installLogHook replaces logrus hooks for the test duration and returns the hook.
+func installLogHook(t *testing.T) *testLogHook {
+	t.Helper()
+	h := &testLogHook{}
+	orig := logrus.StandardLogger().Hooks
+	logrus.StandardLogger().Hooks = logrus.LevelHooks{}
+	logrus.AddHook(h)
+	t.Cleanup(func() { logrus.StandardLogger().Hooks = orig })
+	return h
+}
 
 func TestRealClient_NonStreaming_RecordsTokenCounts(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -644,6 +686,376 @@ func TestRealClient_GIEHeaders_OmittedWhenDefault(t *testing.T) {
 	}
 	if got := capturedHeaders.Get("x-gateway-inference-objective"); got != "" {
 		t.Errorf("x-gateway-inference-objective should be absent, got %q", got)
+	}
+}
+
+// TestSend_AbortAlwaysWarns verifies that finish_reason="abort" produces a warning
+// regardless of MinTokens, since abort is a server-side error (preemption, client
+// disconnect, engine cancellation), not expected behavior.
+func TestSend_AbortAlwaysWarns(t *testing.T) {
+	tests := []struct {
+		name      string
+		streaming bool
+	}{
+		{"non-streaming", false},
+		{"streaming", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hook := installLogHook(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.streaming {
+					flusher, ok := w.(http.Flusher)
+					if !ok {
+						t.Fatal("expected http.Flusher")
+					}
+					w.Header().Set("Content-Type", "text/event-stream")
+					_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"abort\"}]}\n\n")
+					flusher.Flush()
+					_, _ = fmt.Fprintf(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":3}}\n\n")
+					flusher.Flush()
+					_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+					flusher.Flush()
+				} else {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{
+						"choices": []map[string]interface{}{
+							{"text": "ok", "finish_reason": "abort"},
+						},
+						"usage": map[string]interface{}{"completion_tokens": 3, "prompt_tokens": 5},
+					})
+				}
+			}))
+			defer server.Close()
+
+			client := NewRealClient(server.URL, "", "test-model", "vllm")
+			// MinTokens > 0: abort must still produce a warning.
+			record, err := client.Send(context.Background(), &PendingRequest{
+				RequestID: 1, InputTokens: 5, Streaming: tc.streaming,
+				Prompt: "hello", MaxOutputTokens: 128, MinTokens: 128,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if record.FinishReason != "abort" {
+				t.Errorf("FinishReason = %q, want %q (abort must not be suppressed by MinTokens)", record.FinishReason, "abort")
+			}
+			if !hook.hasEntry("server aborted request") {
+				t.Error("expected abort warning to be logged, but no matching entry found")
+			}
+		})
+	}
+}
+
+// TestSend_LengthSuppressedWithMinTokens verifies that finish_reason="length" does NOT
+// produce a warning in exact-length mode (MinTokens == MaxOutputTokens), because
+// vLLM stops at max_tokens as intended in the canonical min_tokens==max_tokens case.
+func TestSend_LengthSuppressedWithMinTokens(t *testing.T) {
+	tests := []struct {
+		name      string
+		streaming bool
+	}{
+		{"non-streaming", false},
+		{"streaming", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hook := installLogHook(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.streaming {
+					flusher, ok := w.(http.Flusher)
+					if !ok {
+						t.Fatal("expected http.Flusher")
+					}
+					w.Header().Set("Content-Type", "text/event-stream")
+					_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n")
+					flusher.Flush()
+					_, _ = fmt.Fprintf(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":128}}\n\n")
+					flusher.Flush()
+					_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+					flusher.Flush()
+				} else {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{
+						"choices": []map[string]interface{}{
+							{"text": "ok", "finish_reason": "length"},
+						},
+						"usage": map[string]interface{}{"completion_tokens": 128, "prompt_tokens": 5},
+					})
+				}
+			}))
+			defer server.Close()
+
+			client := NewRealClient(server.URL, "", "test-model", "vllm")
+			record, err := client.Send(context.Background(), &PendingRequest{
+				RequestID: 1, InputTokens: 5, Streaming: tc.streaming,
+				Prompt: "hello", MaxOutputTokens: 128, MinTokens: 128,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// FinishReason is still recorded correctly — only the warn is suppressed.
+			if record.FinishReason != "length" {
+				t.Errorf("FinishReason = %q, want %q", record.FinishReason, "length")
+			}
+			if hook.hasEntry("output may be truncated") {
+				t.Error("expected no truncation warning in exact-length mode, but warning was logged")
+			}
+		})
+	}
+}
+
+// TestSend_MinTokens_ChatFormat verifies that min_tokens is included in the request body
+// for the chat API format, not just the completions format.
+func TestSend_MinTokens_ChatFormat(t *testing.T) {
+	var receivedBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&receivedBody)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]string{"content": "ok"}, "finish_reason": "stop"},
+			},
+			"usage": map[string]interface{}{"completion_tokens": 10, "prompt_tokens": 5},
+		})
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm", WithAPIFormat("chat"))
+
+	req := &PendingRequest{Prompt: "hello", MaxOutputTokens: 256, MinTokens: 64}
+	_, _ = client.Send(context.Background(), req)
+	if v, ok := receivedBody["min_tokens"]; !ok {
+		t.Error("min_tokens not found in chat API request body")
+	} else if int(v.(float64)) != 64 {
+		t.Errorf("min_tokens = %v, want 64", v)
+	}
+}
+
+// TestSend_LengthWarnsWhenMinTokensNotSet verifies that the original truncation warning
+// behaviour is preserved: finish_reason="length" without --min-tokens still fires.
+func TestSend_LengthWarnsWhenMinTokensNotSet(t *testing.T) {
+	tests := []struct {
+		name      string
+		streaming bool
+	}{
+		{"non-streaming", false},
+		{"streaming", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hook := installLogHook(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.streaming {
+					flusher, ok := w.(http.Flusher)
+					if !ok {
+						t.Fatal("expected http.Flusher")
+					}
+					w.Header().Set("Content-Type", "text/event-stream")
+					_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n")
+					flusher.Flush()
+					_, _ = fmt.Fprintf(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":50}}\n\n")
+					flusher.Flush()
+					_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+					flusher.Flush()
+				} else {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{
+						"choices": []map[string]interface{}{
+							{"text": "ok", "finish_reason": "length"},
+						},
+						"usage": map[string]interface{}{"completion_tokens": 50, "prompt_tokens": 5},
+					})
+				}
+			}))
+			defer server.Close()
+
+			client := NewRealClient(server.URL, "", "test-model", "vllm")
+			// MinTokens=0: truncation warning must still fire.
+			record, err := client.Send(context.Background(), &PendingRequest{
+				RequestID: 1, InputTokens: 5, Streaming: tc.streaming,
+				Prompt: "hello", MaxOutputTokens: 256, MinTokens: 0,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if record.FinishReason != "length" {
+				t.Errorf("FinishReason = %q, want %q", record.FinishReason, "length")
+			}
+			if !hook.hasEntry("output may be truncated") {
+				t.Error("expected truncation warning to be logged, but no matching entry found")
+			}
+		})
+	}
+}
+
+// TestSend_LengthWarnsWhenMinTokensBelowMax verifies that the truncation warning fires
+// when min_tokens is set but below max_tokens — the output might still be truncated.
+func TestSend_LengthWarnsWhenMinTokensBelowMax(t *testing.T) {
+	tests := []struct {
+		name      string
+		streaming bool
+	}{
+		{"non-streaming", false},
+		{"streaming", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hook := installLogHook(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.streaming {
+					flusher, ok := w.(http.Flusher)
+					if !ok {
+						t.Fatal("expected http.Flusher")
+					}
+					w.Header().Set("Content-Type", "text/event-stream")
+					_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n")
+					flusher.Flush()
+					_, _ = fmt.Fprintf(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":50}}\n\n")
+					flusher.Flush()
+					_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+					flusher.Flush()
+				} else {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{
+						"choices": []map[string]interface{}{
+							{"text": "ok", "finish_reason": "length"},
+						},
+						"usage": map[string]interface{}{"completion_tokens": 50, "prompt_tokens": 5},
+					})
+				}
+			}))
+			defer server.Close()
+
+			client := NewRealClient(server.URL, "", "test-model", "vllm")
+			// MinTokens=10, MaxOutputTokens=256: not exact-length mode, warning must fire.
+			record, err := client.Send(context.Background(), &PendingRequest{
+				RequestID: 1, InputTokens: 5, Streaming: tc.streaming,
+				Prompt: "hello", MaxOutputTokens: 256, MinTokens: 10,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if record.FinishReason != "length" {
+				t.Errorf("FinishReason = %q, want %q", record.FinishReason, "length")
+			}
+			if !hook.hasEntry("output may be truncated") {
+				t.Error("expected truncation warning to be logged, but no matching entry found")
+			}
+		})
+	}
+}
+
+// TestSend_StopWarnsWhenBelowMinTokens verifies that finish_reason="stop" with
+// outputTokens < minTokens triggers the "server may not support min_tokens" warning.
+// This detects servers that silently ignore the min_tokens parameter.
+func TestSend_StopWarnsWhenBelowMinTokens(t *testing.T) {
+	tests := []struct {
+		name      string
+		streaming bool
+	}{
+		{"non-streaming", false},
+		{"streaming", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hook := installLogHook(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.streaming {
+					flusher, ok := w.(http.Flusher)
+					if !ok {
+						t.Fatal("expected http.Flusher")
+					}
+					w.Header().Set("Content-Type", "text/event-stream")
+					_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n")
+					flusher.Flush()
+					_, _ = fmt.Fprintf(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":5}}\n\n")
+					flusher.Flush()
+					_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+					flusher.Flush()
+				} else {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{
+						"choices": []map[string]interface{}{
+							{"text": "ok", "finish_reason": "stop"},
+						},
+						"usage": map[string]interface{}{"completion_tokens": 5, "prompt_tokens": 5},
+					})
+				}
+			}))
+			defer server.Close()
+
+			client := NewRealClient(server.URL, "", "test-model", "vllm")
+			// minTokens=128 but server returns only 5 tokens with stop: silent non-support.
+			_, err := client.Send(context.Background(), &PendingRequest{
+				RequestID: 1, InputTokens: 5, Streaming: tc.streaming,
+				Prompt: "hello", MaxOutputTokens: 256, MinTokens: 128,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !hook.hasEntry("server may not support min_tokens") {
+				t.Error("expected min_tokens non-support warning, but no matching entry found")
+			}
+		})
+	}
+}
+
+// TestSend_Unconstrained_MinTokensStop_Warns verifies that the stop+outputTokens<minTokens
+// warning fires even in unconstrained mode (both completions and chat formats).
+func TestSend_Unconstrained_MinTokensStop_Warns(t *testing.T) {
+	tests := []struct {
+		name      string
+		apiFormat string
+	}{
+		{"completions", "completions"},
+		{"chat", "chat"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hook := installLogHook(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				var choices interface{}
+				if tc.apiFormat == "chat" {
+					choices = []map[string]interface{}{
+						{"message": map[string]string{"content": "ok"}, "finish_reason": "stop"},
+					}
+				} else {
+					choices = []map[string]interface{}{
+						{"text": "ok", "finish_reason": "stop"},
+					}
+				}
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"choices": choices,
+					"usage":   map[string]interface{}{"completion_tokens": 5, "prompt_tokens": 5},
+				})
+			}))
+			defer server.Close()
+
+			opts := []RealClientOption{}
+			if tc.apiFormat == "chat" {
+				opts = append(opts, WithAPIFormat("chat"))
+			}
+			client := NewRealClient(server.URL, "", "test-model", "vllm", opts...)
+			// Unconstrained + minTokens=128, server returns only 5 tokens: silent non-support.
+			_, err := client.Send(context.Background(), &PendingRequest{
+				RequestID: 1, InputTokens: 5, Streaming: false,
+				Prompt: "hello", Unconstrained: true, MinTokens: 128,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !hook.hasEntry("server may not support min_tokens") {
+				t.Error("expected min_tokens non-support warning, but no matching entry found")
+			}
+		})
 	}
 }
 

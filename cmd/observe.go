@@ -16,6 +16,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const defaultMaxOutputTokens = 2048
+
 // RealClient sends requests to an OpenAI-compatible inference server.
 type RealClient struct {
 	baseURL    string
@@ -64,6 +66,7 @@ type PendingRequest struct {
 	PrefixLength    int
 	Prompt          string
 	Unconstrained   bool
+	MinTokens       int
 	DeadlineUs      int64
 }
 
@@ -99,10 +102,10 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 	if !req.Unconstrained {
 		maxTokens := req.MaxOutputTokens
 		if maxTokens < 0 {
-			logrus.Warnf("PendingRequest.MaxOutputTokens is negative (%d), using default 2048", maxTokens)
+			logrus.Warnf("PendingRequest.MaxOutputTokens is negative (%d), using default %d", maxTokens, defaultMaxOutputTokens)
 		}
 		if maxTokens <= 0 {
-			maxTokens = 2048
+			maxTokens = defaultMaxOutputTokens
 		}
 		body["max_tokens"] = maxTokens
 	} else if c.apiFormat == "completions" {
@@ -110,6 +113,11 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 		body["max_tokens"] = math.MaxInt32
 	}
 	// chat + unconstrained: omit max_tokens entirely (server uses model default)
+
+	if req.MinTokens > 0 {
+		body["min_tokens"] = req.MinTokens
+	}
+
 	// Set prompt/messages and endpoint based on API format.
 	var endpoint string
 	switch c.apiFormat {
@@ -173,10 +181,39 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 		return record, nil
 	}
 
-	if req.Streaming {
-		return c.handleStreamingResponse(resp, record)
+	// Compute effective max_tokens for warning suppression in handlers.
+	effectiveMax := 0
+	if !req.Unconstrained {
+		effectiveMax = req.MaxOutputTokens
+		if effectiveMax <= 0 {
+			effectiveMax = defaultMaxOutputTokens
+		}
+	} else if c.apiFormat == "completions" {
+		effectiveMax = math.MaxInt32
 	}
-	return c.handleNonStreamingResponse(resp, record)
+	// unconstrained chat: effectiveMax=0 (no max_tokens sent; warn on length if it occurs)
+
+	if req.Streaming {
+		return c.handleStreamingResponse(resp, record, req.MinTokens, effectiveMax)
+	}
+	return c.handleNonStreamingResponse(resp, record, req.MinTokens, effectiveMax)
+}
+
+// warnOnFinishReason emits diagnostic warnings for notable finish_reason values.
+// It suppresses the "length" truncation warning in exact-length mode (min_tokens >= max_tokens),
+// always warns on "abort" (server-side error regardless of intent), and warns when
+// finish_reason="stop" but outputTokens < minTokens (silent min_tokens non-support detection).
+func warnOnFinishReason(requestID int, finishReason string, minTokens, effectiveMax, outputTokens int) {
+	exactLengthMode := minTokens > 0 && effectiveMax > 0 && minTokens >= effectiveMax
+	if finishReason == "length" && !exactLengthMode {
+		logrus.Warnf("observe: request %d finish_reason=%q (output may be truncated)", requestID, finishReason)
+	}
+	if finishReason == "abort" {
+		logrus.Warnf("observe: request %d finish_reason=%q (server aborted request; timing data unreliable)", requestID, finishReason)
+	}
+	if minTokens > 0 && finishReason == "stop" && outputTokens > 0 && outputTokens < minTokens {
+		logrus.Warnf("observe: request %d generated %d tokens (< min_tokens=%d); server may not support min_tokens", requestID, outputTokens, minTokens)
+	}
 }
 
 // firstByteReader wraps an io.Reader and captures the timestamp when the first byte is received.
@@ -193,7 +230,7 @@ func (f *firstByteReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func (c *RealClient) handleNonStreamingResponse(resp *http.Response, record *RequestRecord) (*RequestRecord, error) {
+func (c *RealClient) handleNonStreamingResponse(resp *http.Response, record *RequestRecord, minTokens, effectiveMax int) (*RequestRecord, error) {
 	// Wrap body to capture first-byte timing (BC-2).
 	// Note: for non-streaming HTTP, real servers send the entire response after generation
 	// completes, so FirstChunkTimeUs approximates "server finished + transfer started,"
@@ -239,17 +276,15 @@ func (c *RealClient) handleNonStreamingResponse(resp *http.Response, record *Req
 		if choice, ok := choices[0].(map[string]interface{}); ok {
 			if fr, ok := choice["finish_reason"].(string); ok {
 				record.FinishReason = fr
-				if fr == "length" || fr == "abort" {
-					logrus.Warnf("observe: request %d finish_reason=%q (output may be truncated)", record.RequestID, fr)
-				}
 			}
 		}
 	}
 
+	warnOnFinishReason(record.RequestID, record.FinishReason, minTokens, effectiveMax, record.OutputTokens)
 	return record, nil
 }
 
-func (c *RealClient) handleStreamingResponse(resp *http.Response, record *RequestRecord) (*RequestRecord, error) {
+func (c *RealClient) handleStreamingResponse(resp *http.Response, record *RequestRecord, minTokens, effectiveMax int) (*RequestRecord, error) {
 	scanner := bufio.NewScanner(resp.Body)
 	chunkCount := 0
 	var lastUsage map[string]interface{}
@@ -312,11 +347,7 @@ func (c *RealClient) handleStreamingResponse(resp *http.Response, record *Reques
 		}
 	}
 
-	// Warn on problematic finish_reason values
-	if record.FinishReason == "length" || record.FinishReason == "abort" {
-		logrus.Warnf("observe: request %d finish_reason=%q (output may be truncated)", record.RequestID, record.FinishReason)
-	}
-
+	warnOnFinishReason(record.RequestID, record.FinishReason, minTokens, effectiveMax, record.OutputTokens)
 	return record, nil
 }
 
