@@ -7,9 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,10 +22,54 @@ jobs:
       - name: Build
         run: go build -v ./...
 
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "cluster (heavy)"
+            packages: "./sim/cluster"
+            timeout: "15m"
+          - name: "core packages"
+            packages: "./sim ./sim/kv ./sim/trace"
+            timeout: "10m"
+          - name: "latency models"
+            packages: "./sim/latency"
+            timeout: "10m"
+          - name: "workload & cmd"
+            packages: "./sim/workload ./cmd"
+            timeout: "10m"
+          - name: "root & internals"
+            packages: ". ./sim/internal/..."
+            timeout: "5m"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Test ${{ matrix.name }}
+        run: go test -v -timeout ${{ matrix.timeout }} ${{ matrix.packages }}
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
       - name: Lint
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.9.0
-
-      - name: Test
-        run: go test -v ./...
