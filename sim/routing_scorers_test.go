@@ -485,3 +485,26 @@ func TestScoreVLLMDP_AllEqual(t *testing.T) {
 	assert.Equal(t, 1.0, scores["a"], "all equal loads should score 1.0")
 	assert.Equal(t, 1.0, scores["b"], "all equal loads should score 1.0")
 }
+
+func TestScoreVLLMDP_MonotonicityAndBoundaries(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 0, BatchSize: 0},  // 0 (min)
+		{ID: "b", QueueDepth: 3, BatchSize: 2},  // 14
+		{ID: "c", QueueDepth: 5, BatchSize: 10}, // 30 (max)
+	}
+	scores := scoreVLLMDP(nil, snapshots)
+
+	// Boundaries
+	assert.Equal(t, 1.0, scores["a"], "min load should score 1.0")
+	assert.Equal(t, 0.0, scores["c"], "max load should score 0.0")
+
+	// Monotonicity: lower load → higher score
+	assert.Greater(t, scores["a"], scores["b"], "lower load should score higher")
+	assert.Greater(t, scores["b"], scores["c"], "lower load should score higher")
+
+	// No NaN/Inf (BC-17-9)
+	for id, score := range scores {
+		assert.False(t, math.IsNaN(score), "score for %s must not be NaN", id)
+		assert.False(t, math.IsInf(score, 0), "score for %s must not be Inf", id)
+	}
+}
