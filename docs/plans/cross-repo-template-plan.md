@@ -3,7 +3,7 @@
 **Goal:** Add a GitHub issue template that requires code proofs (GitHub permalinks) when porting features from external repos into BLIS.
 **Source:** [#1053](https://github.com/inference-sim/inference-sim/issues/1053), [#1071](https://github.com/inference-sim/inference-sim/issues/1071)
 **Closes:** `Fixes #1053`
-**PR Size Tier:** Small (1 new template file, no Go code, no behavioral logic changes)
+**PR Size Tier:** Small (1 new template file + this plan, no Go code, no behavioral logic changes)
 
 ## Behavioral Contracts
 

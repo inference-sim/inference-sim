@@ -1,6 +1,6 @@
 ---
 name: Cross-repo feature
-about: Port a feature or behavior from an external platform (llmd, gaie, vllm, sglang) into BLIS
+about: Port a feature or behavior from an external platform (llmd, gaie, vllm, sglang) into the simulator
 title: ''
 labels: 'enhancement, cross-repo'
 assignees: ''
@@ -39,18 +39,19 @@ GitHub permalinks are the preferred format — they encode repo, commit, file, a
 <!-- Paste as many permalinks as needed. Each must point to real code, not pseudocode. -->
 
 Permalink 1:
-`https://github.com/org/repo/blob/<commit-sha>/path/to/file.go#L42-L68`
+https://github.com/org/repo/blob/abc1234/path/to/file.go#L42-L68
 
 Permalink 2 (if applicable):
-`https://github.com/org/repo/blob/<commit-sha>/path/to/file.go#L100-L120`
+https://github.com/org/repo/blob/abc1234/path/to/file.py#L100-L120
 
-<!-- For non-GitHub repos, fall back to manual attribution with a pasted code block:
-Source: <repo>/<file>@<commit> (lines X-Y) -->
+<!-- For non-GitHub repos, fall back to manual attribution:
+Source: <repo>/<file>@<commit> (lines X-Y)
+followed by a fenced code block containing the actual source code. -->
 
 **Key behaviors to preserve**
 List the specific behaviors from the reference code that BLIS must match exactly:
-- [ ] Behavior 1 (reference: permalink 1, line N)
-- [ ] Behavior 2 (reference: permalink 2, line N)
+- [ ] Behavior 1 (reference: permalink 1)
+- [ ] Behavior 2 (reference: permalink 2)
 
 **Known intentional deviations**
 List any places where BLIS should deliberately differ from the reference, and why:
