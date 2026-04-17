@@ -25,6 +25,53 @@ type scorerFunc func(req *Request, snapshots []RoutingSnapshot) map[string]float
 // prefix cache scoring. Nil for sim-level tests without cluster instances.
 type cacheQueryFn map[string]func([]int) int
 
+// scoreVLLMDP computes per-instance scores using vLLM's data-parallel formula.
+// Formula: raw = QueueDepth × 4 + BatchSize, then inverted min-max normalization.
+// Matches vLLM's DPLBAsyncMPClient.get_core_engine_for_request() (core_client.py:1219).
+//
+// Signal freshness (R17, INV-7):
+//
+//	Reads: QueueDepth (Periodic when --snapshot-refresh-interval>0, else Immediate)
+//	       BatchSize (Periodic when --snapshot-refresh-interval>0, else Immediate)
+//
+// For realistic vLLM parity, use --snapshot-refresh-interval=100000 (100ms) to match
+// vLLM's default coordinator stats update interval (min_stats_update_interval_ms=100).
+// The default interval=0 (Immediate mode) represents oracle routing with no signal staleness.
+func scoreVLLMDP(_ *Request, snapshots []RoutingSnapshot) map[string]float64 {
+	// Step 1: Compute raw scores using vLLM formula (waiting×4 + running)
+	rawScores := make(map[string]int, len(snapshots))
+	minRaw, maxRaw := math.MaxInt, 0
+
+	for _, snap := range snapshots {
+		raw := snap.QueueDepth*4 + snap.BatchSize
+		rawScores[snap.ID] = raw
+		if raw < minRaw {
+			minRaw = raw
+		}
+		if raw > maxRaw {
+			maxRaw = raw
+		}
+	}
+
+	// Step 2: Inverted min-max normalization
+	// Lowest load (minRaw) → 1.0 (highest score, preferred by argmax)
+	// Highest load (maxRaw) → 0.0 (lowest score, avoided)
+	scores := make(map[string]float64, len(snapshots))
+	if maxRaw == minRaw {
+		// All equal → all score 1.0 (no differentiation)
+		for _, snap := range snapshots {
+			scores[snap.ID] = 1.0
+		}
+	} else {
+		for _, snap := range snapshots {
+			raw := rawScores[snap.ID]
+			scores[snap.ID] = float64(maxRaw-raw) / float64(maxRaw-minRaw)
+		}
+	}
+
+	return scores
+}
+
 // validScorerNames maps scorer names to validity. Unexported to prevent mutation (antipattern rule 8).
 var validScorerNames = map[string]bool{
 	"prefix-affinity":      true,
@@ -36,6 +83,7 @@ var validScorerNames = map[string]bool{
 	"active-requests":      true,
 	"running-requests":     true,
 	"load-aware":           true,
+	"vllm-dp":              true,
 }
 
 // IsValidScorer returns true if name is a recognized scorer.
@@ -130,6 +178,8 @@ func newScorerWithObserver(name string, blockSize int, cacheFn cacheQueryFn) (sc
 		return scoreRunningRequests, nil
 	case "load-aware":
 		return scoreLoadAware, nil
+	case "vllm-dp":
+		return scoreVLLMDP, nil
 	default:
 		panic(fmt.Sprintf("unknown scorer %q", name))
 	}

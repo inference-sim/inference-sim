@@ -406,6 +406,7 @@ func TestAllScorers_ReturnScoreForEveryInstance(t *testing.T) {
 		{"active-requests", scoreActiveRequests},
 		{"running-requests", scoreRunningRequests},
 		{"load-aware", scoreLoadAware},
+		{"vllm-dp", scoreVLLMDP},
 		{"precise-prefix-cache", precisePrefixScorer},
 		{"no-hit-lru", noHitLRUScorer},
 	}
@@ -429,7 +430,9 @@ func TestAllScorers_ReturnScoreForEveryInstance(t *testing.T) {
 	}
 	// Verify nil-request path for all stateless scorers.
 	// These scorers ignore the request parameter; this confirms they don't panic on nil.
-	for _, sf := range scorerFns[:6] {
+	// Indices 0-6: queue-depth, kv-utilization, load-balance, active-requests,
+	// running-requests, load-aware, vllm-dp (all use _ *Request).
+	for _, sf := range scorerFns[:7] {
 		t.Run(sf.name+"/nil-request", func(t *testing.T) {
 			scores := sf.fn(nil, snapshots)
 			assert.Len(t, scores, len(snapshots))
@@ -456,4 +459,118 @@ func TestNewScorerFactory_PrecisePrefixAndNoHitLRU(t *testing.T) {
 	decision := policy.Route(req, state)
 	// Instance "a" has 5 cached blocks, "b" has 0 → "a" should win
 	assert.Equal(t, "a", decision.TargetInstance, "precise-prefix-cache should prefer instance with more cached blocks")
+}
+
+// === vllm-dp scorer tests ===
+
+func TestScoreVLLMDP_BasicFormula(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 10, BatchSize: 5},  // 10×4 + 5 = 45
+		{ID: "b", QueueDepth: 5, BatchSize: 10},  // 5×4 + 10 = 30
+		{ID: "c", QueueDepth: 2, BatchSize: 2},   // 2×4 + 2 = 10 (min)
+	}
+	scores := scoreVLLMDP(nil, snapshots)
+
+	// c has lowest raw score (10) → should score 1.0
+	assert.Equal(t, 1.0, scores["c"], "lowest load should score 1.0")
+	// a has highest raw score (45) → should score 0.0
+	assert.Equal(t, 0.0, scores["a"], "highest load should score 0.0")
+	// b is midpoint: (45-30)/(45-10) = 15/35 ≈ 0.428
+	assert.InDelta(t, 0.428, scores["b"], 0.01, "midpoint should score ~0.43")
+}
+
+func TestScoreVLLMDP_AllEqual(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 5, BatchSize: 3}, // 5×4 + 3 = 23
+		{ID: "b", QueueDepth: 5, BatchSize: 3}, // 5×4 + 3 = 23
+	}
+	scores := scoreVLLMDP(nil, snapshots)
+	assert.Equal(t, 1.0, scores["a"], "all equal loads should score 1.0")
+	assert.Equal(t, 1.0, scores["b"], "all equal loads should score 1.0")
+}
+
+func TestScoreVLLMDP_MonotonicityAndBoundaries(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 0, BatchSize: 0},  // 0 (min)
+		{ID: "b", QueueDepth: 3, BatchSize: 2},  // 14
+		{ID: "c", QueueDepth: 5, BatchSize: 10}, // 30 (max)
+	}
+	scores := scoreVLLMDP(nil, snapshots)
+
+	// Boundaries
+	assert.Equal(t, 1.0, scores["a"], "min load should score 1.0")
+	assert.Equal(t, 0.0, scores["c"], "max load should score 0.0")
+
+	// Monotonicity: lower load → higher score
+	assert.Greater(t, scores["a"], scores["b"], "lower load should score higher")
+	assert.Greater(t, scores["b"], scores["c"], "lower load should score higher")
+
+	// No NaN/Inf (BC-17-9)
+	for id, score := range scores {
+		assert.False(t, math.IsNaN(score), "score for %s must not be NaN", id)
+		assert.False(t, math.IsInf(score, 0), "score for %s must not be Inf", id)
+	}
+}
+
+func TestScoreVLLMDP_SingleInstance(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 42, BatchSize: 17}, // 42×4 + 17 = 185
+	}
+	scores := scoreVLLMDP(nil, snapshots)
+	assert.Equal(t, 1.0, scores["a"], "single instance always scores 1.0")
+	assert.False(t, math.IsNaN(scores["a"]), "score must not be NaN")
+}
+
+func TestScoreVLLMDP_WeightEquivalence(t *testing.T) {
+	// BC-VLLM-1: The 4:1 weighting means +1 QueueDepth ≡ -4 BatchSize in routing preference.
+	// Two instances with QD_x=QD_y+1 and BS_x=BS_y-4 should have equal raw scores.
+	snapshots := []RoutingSnapshot{
+		{ID: "x", QueueDepth: 3, BatchSize: 10}, // 3×4 + 10 = 22
+		{ID: "y", QueueDepth: 2, BatchSize: 14}, // 2×4 + 14 = 22 (equal raw score)
+		{ID: "z", QueueDepth: 5, BatchSize: 2},  // 5×4 + 2 = 22 (also equal)
+	}
+	scores := scoreVLLMDP(nil, snapshots)
+
+	// All three instances have equal raw scores (22), so all should score 1.0 (tie)
+	assert.Equal(t, 1.0, scores["x"], "BC-VLLM-1: equal raw score should score 1.0")
+	assert.Equal(t, 1.0, scores["y"], "BC-VLLM-1: equal raw score should score 1.0")
+	assert.Equal(t, 1.0, scores["z"], "BC-VLLM-1: equal raw score should score 1.0")
+
+	// Verify the 4:1 law with different values: QD+1 and BS-4 should preserve score equality
+	snapshots2 := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 10, BatchSize: 8}, // 10×4 + 8 = 48
+		{ID: "b", QueueDepth: 11, BatchSize: 4}, // 11×4 + 4 = 48 (QD+1, BS-4)
+		{ID: "c", QueueDepth: 0, BatchSize: 100}, // 0×4 + 100 = 100 (different)
+	}
+	scores2 := scoreVLLMDP(nil, snapshots2)
+
+	// a and b have equal raw scores → should have equal normalized scores
+	assert.InDelta(t, scores2["a"], scores2["b"], 1e-9, "BC-VLLM-1: +1 QD = -4 BS in routing preference")
+	// c has higher load → lower score
+	assert.Less(t, scores2["c"], scores2["a"], "higher load should score lower")
+}
+
+func TestScoreVLLMDP_PileOnInPeriodicMode(t *testing.T) {
+	// Documents a known difference from real vLLM: vLLM's DPLBAsyncMPClient
+	// speculatively increments the cached waiting count after routing
+	// (core_client.py:1225), spreading subsequent requests within the 100ms
+	// coordinator update window. BLIS does not model this — with a stale
+	// snapshot, N requests in the same window all route to the same instance.
+
+	// Stale snapshot: instance A looks empty, B and C are loaded.
+	snapshot := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 0, BatchSize: 0},  // raw=0, scores 1.0
+		{ID: "b", QueueDepth: 2, BatchSize: 3},  // raw=11, scores lower
+		{ID: "c", QueueDepth: 5, BatchSize: 1},  // raw=21, scores lowest
+	}
+
+	// All three requests in the same snapshot window see the same stale counts.
+	// BLIS routes all three to "a" — vLLM would spread them after the first.
+	for i := 0; i < 3; i++ {
+		scores := scoreVLLMDP(nil, snapshot) // snapshot not updated between calls
+		assert.Equal(t, 1.0, scores["a"],
+			"request %d: BLIS routes to 'a' (known divergence from vLLM's speculative increment)", i)
+		// In vLLM, only the first request would pick "a"; subsequent ones would
+		// see incremented counts and potentially route to "b" or "c".
+	}
 }
