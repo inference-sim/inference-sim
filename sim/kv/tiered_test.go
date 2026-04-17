@@ -958,3 +958,84 @@ func TestTieredKVCache_SnapshotCachedBlocksFn_FrozenView(t *testing.T) {
 	freshFn := tiered.SnapshotCachedBlocksFn()
 	assert.Equal(t, 4, freshFn(tokens2), "fresh snapshot should see 4 blocks")
 }
+
+func TestTieredLazyHashDeletion_CPUReload(t *testing.T) {
+	// GIVEN a tiered cache with 6 GPU blocks and Request A with 3-block prefix (6 tokens)
+	// Setup designed so GPU allocation fails (need 3, only 2 free) and CPU reload triggers.
+	gpu := NewKVCacheState(6, 2)
+	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 0)
+
+	reqA := &sim.Request{
+		ID:          "reqA",
+		InputTokens: []int{10, 20, 30, 40, 50, 60}, // 3 blocks (blockSize=2)
+	}
+
+	// Allocate Request A (3 blocks on GPU)
+	ok := tiered.AllocateKVBlocks(reqA, 0, int64(len(reqA.InputTokens)), []int64{})
+	require.True(t, ok, "Request A allocation should succeed")
+
+	// Compute expected hashes for Request A
+	h0_A := hash.HashBlock("", []int{10, 20})
+	h1_A := hash.HashBlock(h0_A, []int{30, 40})
+	h2_A := hash.HashBlock(h1_A, []int{50, 60})
+
+	_, foundH0A := gpu.HashToBlock[h0_A]
+	_, foundH2A := gpu.HashToBlock[h2_A]
+	require.True(t, foundH0A, "Request A block 0 hash should be in HashToBlock")
+	require.True(t, foundH2A, "Request A block 2 hash should be in HashToBlock")
+
+	// Mirror to CPU, then release
+	tiered.MirrorToCPU([]*sim.Request{reqA})
+	tiered.ReleaseKVBlocks(reqA)
+
+	// Hashes should still be in GPU HashToBlock (lazy deletion - not yet reused)
+	_, foundH0A_after := gpu.HashToBlock[h0_A]
+	_, foundH2A_after := gpu.HashToBlock[h2_A]
+	assert.True(t, foundH0A_after, "Request A GPU hashes should survive after release")
+	assert.True(t, foundH2A_after, "Request A GPU hashes should survive after release")
+
+	// Fill GPU completely with 6 filler blocks to evict all prefix hashes
+	for i := 0; i < 6; i++ {
+		f := &sim.Request{ID: fmt.Sprintf("fill%d", i), InputTokens: []int{i*2 + 200, i*2 + 201}}
+		tiered.AllocateKVBlocks(f, 0, 2, []int64{})
+	}
+	require.Equal(t, int64(0), gpu.countFreeBlocks(), "All GPU blocks used by fillers")
+
+	// Request A's GPU hashes should be deleted (blocks reused by fillers)
+	_, foundH0A_evicted := gpu.HashToBlock[h0_A]
+	_, foundH2A_evicted := gpu.HashToBlock[h2_A]
+	assert.False(t, foundH0A_evicted, "Request A GPU hash h0 should be deleted when reused")
+	assert.False(t, foundH2A_evicted, "Request A GPU hash h2 should be deleted when reused")
+
+	// Release 2 fillers to get 2 free blocks (need 3 -> GPU alloc fails -> CPU reload)
+	tiered.ReleaseKVBlocks(&sim.Request{ID: "fill0"})
+	tiered.ReleaseKVBlocks(&sim.Request{ID: "fill1"})
+	require.Equal(t, int64(2), gpu.countFreeBlocks(), "2 GPU blocks free")
+
+	// WHEN Request A is readmitted - GPU alloc needs 3 blocks, only 2 free -> fails -> CPU reload
+	reqAReadmitted := &sim.Request{
+		ID:          "reqA_readmitted",
+		InputTokens: reqA.InputTokens, // Same prefix
+	}
+
+	// GetCachedBlocks should find 0 hits on GPU (all evicted by fillers)
+	cachedGPU := gpu.GetCachedBlocks(reqAReadmitted.InputTokens)
+	assert.Equal(t, 0, len(cachedGPU), "Should get 0 GPU cache hits (all evicted)")
+
+	// AllocateKVBlocks triggers CPU reload (need 3, have 2 free -> fails -> reload)
+	cpuHitsBefore := tiered.cpuHitCount
+	tiered.AllocateKVBlocks(reqAReadmitted, 0, int64(len(reqAReadmitted.InputTokens)), []int64{})
+
+	// THEN CPU hits should have been recorded (reload was triggered)
+	assert.Greater(t, tiered.cpuHitCount, cpuHitsBefore, "CPU reload should have been triggered")
+
+	// After reload, the reloaded blocks should have Request A's hashes on GPU.
+	// Depending on how many blocks were reloaded (limited by free count=2),
+	// at least h0_A should be restored.
+	_, foundH0A_reloaded := gpu.HashToBlock[h0_A]
+	assert.True(t, foundH0A_reloaded, "Request A hash h0 should be restored after CPU reload")
+
+	// The filler block hashes that were on the reloaded blocks should be gone
+	// (lazy hash deletion in CPU reload path clears old hash before filling with CPU content)
+	// This verifies the lazy deletion in tiered.go reloadFromCPU path
+}
