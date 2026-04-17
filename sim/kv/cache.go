@@ -317,6 +317,17 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				if blk == nil {
 					panic(fmt.Sprintf("popFreeBlock returned nil after pre-check passed for req %s: INV-4 violation", reqID))
 				}
+
+				// Lazy hash deletion (vLLM parity): clear old hash before filling
+				// with new content. Matches vLLM's _maybe_evict_cached_block
+				// semantics (block_pool.py:331-356). Hash was preserved in
+				// popFreeBlock so preempted requests could find their cached
+				// prefix blocks on readmission.
+				if blk.Hash != "" {
+					delete(kvc.HashToBlock, blk.Hash)
+					blk.Hash = ""
+				}
+
 				// start and end are the range of tokens in blk
 				start := newTokenProgressIndex
 				end := newTokenProgressIndex + kvc.BlockSizeTokens
