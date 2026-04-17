@@ -343,6 +343,9 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	// Warn if --min-tokens exceeds the effective max_tokens for any request.
 	if observeMinTokens > 0 && !observeUnconstrainedOutput {
 		if n := countMinTokensMismatch(observeMinTokens, wl.Requests); n > 0 {
+			if n == len(wl.Requests) {
+				logrus.Fatalf("--min-tokens=%d exceeds max_tokens for all %d requests; all requests will be rejected by the server", observeMinTokens, n)
+			}
 			logrus.Warnf("--min-tokens=%d exceeds max_tokens for %d/%d requests; those requests will likely be rejected by the server", observeMinTokens, n, len(wl.Requests))
 		}
 	}
@@ -723,7 +726,7 @@ func countMinTokensMismatch(minTokens int, requests []*sim.Request) int {
 	for _, r := range requests {
 		effectiveMax := r.MaxOutputLen
 		if effectiveMax <= 0 {
-			effectiveMax = 2048
+			effectiveMax = defaultMaxOutputTokens
 		}
 		if minTokens > effectiveMax {
 			n++
