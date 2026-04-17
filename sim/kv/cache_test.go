@@ -941,3 +941,63 @@ func TestLazyHashDeletion_PreemptedRequestFindsCache(t *testing.T) {
 	// INV-4: block conservation must hold throughout
 	assertBlockConservation(t, kvc)
 }
+
+func TestLazyHashDeletion_HashClearedOnReuse(t *testing.T) {
+	// GIVEN a KV cache with exactly 2 blocks (so B must reuse A's physical blocks)
+	// and Request A allocates 2 blocks with specific tokens
+	kvc := NewKVCacheState(2, 4) // blockSize=4, only 2 blocks total
+	reqA := &sim.Request{
+		ID:          "reqA",
+		InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}, // 2 blocks
+	}
+
+	// Allocate Request A
+	ok := kvc.AllocateKVBlocks(reqA, 0, int64(len(reqA.InputTokens)), []int64{})
+	require.True(t, ok, "Request A allocation should succeed")
+
+	// Compute expected hashes for Request A's blocks
+	h1_A := hash.HashBlock("", []int{1, 2, 3, 4})
+	h2_A := hash.HashBlock(h1_A, []int{5, 6, 7, 8})
+
+	// Verify Request A's hashes are in HashToBlock
+	_, foundH1A := kvc.HashToBlock[h1_A]
+	_, foundH2A := kvc.HashToBlock[h2_A]
+	require.True(t, foundH1A, "Request A block 0 hash should be in HashToBlock")
+	require.True(t, foundH2A, "Request A block 1 hash should be in HashToBlock")
+
+	// Release Request A blocks
+	kvc.ReleaseKVBlocks(reqA)
+
+	// Hashes should still be in HashToBlock (lazy deletion - not yet reused)
+	_, foundH1A_after := kvc.HashToBlock[h1_A]
+	_, foundH2A_after := kvc.HashToBlock[h2_A]
+	assert.True(t, foundH1A_after, "Request A hashes should survive in HashToBlock after release")
+	assert.True(t, foundH2A_after, "Request A hashes should survive in HashToBlock after release")
+
+	// WHEN Request B allocates same physical blocks with different tokens
+	// (only 2 blocks exist, so B must reuse A's released blocks)
+	reqB := &sim.Request{
+		ID:          "reqB",
+		InputTokens: []int{100, 200, 300, 400, 500, 600, 700, 800}, // 2 blocks, different tokens
+	}
+	ok = kvc.AllocateKVBlocks(reqB, 0, int64(len(reqB.InputTokens)), []int64{})
+	require.True(t, ok, "Request B allocation should succeed")
+
+	// Compute expected hashes for Request B's blocks
+	h1_B := hash.HashBlock("", []int{100, 200, 300, 400})
+	h2_B := hash.HashBlock(h1_B, []int{500, 600, 700, 800})
+
+	// THEN Request A's hashes should be deleted (replaced by B's hashes)
+	_, foundH1A_final := kvc.HashToBlock[h1_A]
+	_, foundH2A_final := kvc.HashToBlock[h2_A]
+	assert.False(t, foundH1A_final, "Request A hash h1 should be deleted when block is reused")
+	assert.False(t, foundH2A_final, "Request A hash h2 should be deleted when block is reused")
+
+	// AND Request B's hashes should exist
+	_, foundH1B := kvc.HashToBlock[h1_B]
+	_, foundH2B := kvc.HashToBlock[h2_B]
+	assert.True(t, foundH1B, "Request B hash h1 should be in HashToBlock")
+	assert.True(t, foundH2B, "Request B hash h2 should be in HashToBlock")
+
+	assertBlockConservation(t, kvc)
+}
