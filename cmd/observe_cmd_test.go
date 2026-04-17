@@ -1123,69 +1123,6 @@ func TestSend_MinTokensInBody(t *testing.T) {
 	}
 }
 
-func TestCountMinTokensMismatch(t *testing.T) {
-	makeReqs := func(maxLens ...int) []*sim.Request {
-		reqs := make([]*sim.Request, len(maxLens))
-		for i, m := range maxLens {
-			reqs[i] = &sim.Request{MaxOutputLen: m}
-		}
-		return reqs
-	}
-
-	tests := []struct {
-		name      string
-		minTokens int
-		requests  []*sim.Request
-		want      int
-	}{
-		{
-			name:      "minTokens=0 never exceeds effective max",
-			minTokens: 0,
-			requests:  makeReqs(100, 200),
-			want:      0,
-		},
-		{
-			name:      "no mismatch",
-			minTokens: 100,
-			requests:  makeReqs(200, 300, 400),
-			want:      0,
-		},
-		{
-			name:      "some mismatch",
-			minTokens: 150,
-			requests:  makeReqs(100, 200, 300),
-			want:      1,
-		},
-		{
-			name:      "MaxOutputLen=0 uses 2048 fallback, no mismatch",
-			minTokens: 100,
-			requests:  makeReqs(0, 0),
-			want:      0,
-		},
-		{
-			name:      "MaxOutputLen=0 uses 2048 fallback, triggers mismatch",
-			minTokens: 3000,
-			requests:  makeReqs(0, 4000),
-			want:      1,
-		},
-		{
-			name:      "minTokens equal to effectiveMax is not a mismatch",
-			minTokens: 2048,
-			requests:  makeReqs(0), // effectiveMax=2048, minTokens=2048: not strictly greater
-			want:      0,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := countMinTokensMismatch(tc.minTokens, tc.requests)
-			if got != tc.want {
-				t.Errorf("countMinTokensMismatch(%d, ...) = %d, want %d", tc.minTokens, got, tc.want)
-			}
-		})
-	}
-}
-
 // TestObserveDistributionDefaults_MatchRunDefaults verifies that observeCmd's eight
 // distribution flag defaults are identical to runCmd's defaults (BC-1).
 //
@@ -1575,6 +1512,183 @@ func TestObserveCmd_ITLFlags_Defined(t *testing.T) {
 	}
 	if itlOutputFlag == nil {
 		t.Error("--itl-output flag not defined")
+	}
+}
+
+func TestValidateMinTokensMean(t *testing.T) {
+	tests := []struct {
+		name      string
+		minTokens int
+		outputMean int
+		wantEmpty bool
+	}{
+		{
+			name:       "min_tokens below mean is valid",
+			minTokens:  100,
+			outputMean: 512,
+			wantEmpty:  true,
+		},
+		{
+			name:       "min_tokens equal to mean is valid",
+			minTokens:  128,
+			outputMean: 128,
+			wantEmpty:  true,
+		},
+		{
+			name:       "min_tokens above mean is invalid",
+			minTokens:  200,
+			outputMean: 100,
+			wantEmpty:  false,
+		},
+		{
+			name:       "min_tokens=0 always valid",
+			minTokens:  0,
+			outputMean: 0,
+			wantEmpty:  true,
+		},
+		{
+			name:       "min_tokens=0 with nonzero mean is valid",
+			minTokens:  0,
+			outputMean: 512,
+			wantEmpty:  true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := validateMinTokensMean(tc.minTokens, tc.outputMean)
+			if tc.wantEmpty && msg != "" {
+				t.Errorf("expected empty message, got %q", msg)
+			}
+			if !tc.wantEmpty && msg == "" {
+				t.Error("expected non-empty error message, got empty string")
+			}
+		})
+	}
+}
+
+func TestClampRequestsToMinTokens(t *testing.T) {
+	tests := []struct {
+		name       string
+		minTokens  int
+		inputLens  []int
+		wantLens   []int
+		wantCount  int
+	}{
+		{
+			name:      "clamps values below min",
+			minTokens: 128,
+			inputLens: []int{64, 128, 256},
+			wantLens:  []int{128, 128, 256},
+			wantCount: 1,
+		},
+		{
+			name:      "zero MaxOutputLen below default 2048 is unchanged",
+			minTokens: 128,
+			inputLens: []int{0, 64},
+			wantLens:  []int{0, 128},
+			wantCount: 1,
+		},
+		{
+			name:      "zero MaxOutputLen exceeding default 2048 is clamped",
+			minTokens: 3000,
+			inputLens: []int{0},
+			wantLens:  []int{3000},
+			wantCount: 1,
+		},
+		{
+			name:      "all values above min unchanged",
+			minTokens: 50,
+			inputLens: []int{100, 200, 300},
+			wantLens:  []int{100, 200, 300},
+			wantCount: 0,
+		},
+		{
+			name:      "minTokens=0 no change",
+			minTokens: 0,
+			inputLens: []int{10, 20, 30},
+			wantLens:  []int{10, 20, 30},
+			wantCount: 0,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			reqs := make([]*sim.Request, len(tc.inputLens))
+			for i, l := range tc.inputLens {
+				reqs[i] = &sim.Request{MaxOutputLen: l}
+			}
+			got := clampRequestsToMinTokens(reqs, tc.minTokens)
+			if got != tc.wantCount {
+				t.Errorf("clampRequestsToMinTokens returned %d, want %d", got, tc.wantCount)
+			}
+			for i, r := range reqs {
+				if r.MaxOutputLen != tc.wantLens[i] {
+					t.Errorf("request[%d]: MaxOutputLen = %d, want %d", i, r.MaxOutputLen, tc.wantLens[i])
+				}
+			}
+			// Invariant: no request with a positive MaxOutputLen has MaxOutputLen < minTokens.
+			for i, r := range reqs {
+				if r.MaxOutputLen > 0 && r.MaxOutputLen < tc.minTokens {
+					t.Errorf("invariant violated: request[%d].MaxOutputLen = %d < minTokens = %d",
+						i, r.MaxOutputLen, tc.minTokens)
+				}
+			}
+		})
+	}
+}
+
+// TestSend_UnconstrainedOutput_MaxTokensNeverBelowMinTokens verifies the assumption that
+// clampRequestsToMinTokens is correctly bypassed when --unconstrained-output is set:
+// Send() either omits max_tokens (chat format) or sets it to math.MaxInt32 (completions
+// format), so vLLM never sees max_tokens < min_tokens regardless of MaxOutputLen values.
+func TestSend_UnconstrainedOutput_MaxTokensNeverBelowMinTokens(t *testing.T) {
+	for _, apiFormat := range []string{"completions", "chat"} {
+		t.Run(apiFormat, func(t *testing.T) {
+			var receivedBody map[string]interface{}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewDecoder(r.Body).Decode(&receivedBody)
+				w.Header().Set("Content-Type", "application/json")
+				if apiFormat == "chat" {
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{
+						"choices": []map[string]interface{}{
+							{"message": map[string]string{"content": "ok"}, "finish_reason": "stop"},
+						},
+						"usage": map[string]interface{}{"completion_tokens": 10, "prompt_tokens": 5},
+					})
+				} else {
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{
+						"choices": []map[string]interface{}{
+							{"text": "ok", "finish_reason": "stop"},
+						},
+						"usage": map[string]interface{}{"completion_tokens": 10, "prompt_tokens": 5},
+					})
+				}
+			}))
+			defer server.Close()
+
+			client := NewRealClient(server.URL, "", "test-model", "vllm", WithAPIFormat(apiFormat))
+			req := &PendingRequest{
+				Prompt:          "hello",
+				MaxOutputTokens: 64, // would be below any reasonable min_tokens
+				MinTokens:       128,
+				Unconstrained:   true,
+			}
+			_, _ = client.Send(context.Background(), req)
+
+			if v, ok := receivedBody["max_tokens"]; ok {
+				// If max_tokens is present, it must never be less than min_tokens.
+				maxTokens := int(v.(float64))
+				if maxTokens < req.MinTokens {
+					t.Errorf("max_tokens=%d < min_tokens=%d in unconstrained mode; vLLM would reject this",
+						maxTokens, req.MinTokens)
+				}
+			}
+			// chat format must omit max_tokens entirely (server uses model default).
+			if apiFormat == "chat" {
+				if _, ok := receivedBody["max_tokens"]; ok {
+					t.Error("max_tokens must be absent for chat format with Unconstrained=true")
+				}
+			}
+		})
 	}
 }
 
