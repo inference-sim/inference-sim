@@ -403,10 +403,7 @@ func (kvc *KVCacheState) popFreeBlock() *KVBlock {
 		return nil
 	}
 	kvc.removeFromFreeList(head)
-	if head.Hash != "" {
-		delete(kvc.HashToBlock, head.Hash)
-		head.Hash = ""
-	}
+	// Hash stays intact - will be cleared when block is filled with new content (vLLM parity)
 	head.Tokens = nil
 	return head
 }
