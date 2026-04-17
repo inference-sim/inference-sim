@@ -867,3 +867,77 @@ func TestAllocateKVBlocks_DecodeNoExistingBlocks_SucceedsWhenFreeAvailable(t *te
 		"should have 1 block allocated for the decode token")
 	assertBlockConservation(t, kvc)
 }
+
+func TestLazyHashDeletion_PreemptedRequestFindsCache(t *testing.T) {
+	// Verifies issue #1057: preempted requests can find their cached prefix
+	// blocks on readmission because popFreeBlock preserves hashes (lazy
+	// deletion). Hashes are only cleared when blocks are filled with new
+	// content in the allocation loop.
+	//
+	// Scenario:
+	//   1. r1 allocates 1024 blocks (fills entire cache), then is preempted.
+	//   2. r2 allocates 128 blocks, reusing 128 of r1's freed blocks.
+	//      ReleaseKVBlocks adds blocks in reverse order (last block first),
+	//      so popFreeBlock takes r1's LAST 128 blocks (blocks 896-1023).
+	//      Lazy deletion clears those 128 old hashes when r2 fills them.
+	//   3. GetCachedBlocks for r1's tokens finds the first 896 blocks
+	//      (contiguous prefix with intact hash chain).
+	const (
+		totalBlocks = 1024
+		blockSize   = 16
+		prefixLen   = 1024 * 16 // 16384 tokens = 1024 blocks
+		reuseBlocks = 128       // blocks reused by r2
+	)
+	kvc := NewKVCacheState(totalBlocks, blockSize)
+
+	// Build input tokens for r1 (16384 tokens => 1024 full blocks)
+	inputTokens := make([]int, prefixLen)
+	for i := range inputTokens {
+		inputTokens[i] = i + 1
+	}
+	r1 := &sim.Request{ID: "r1", InputTokens: inputTokens}
+	ok := kvc.AllocateKVBlocks(r1, 0, int64(prefixLen), []int64{})
+	require.True(t, ok, "r1 prefill allocation must succeed")
+	require.Len(t, kvc.RequestMap["r1"], 1024, "r1 should own 1024 blocks")
+
+	// WHEN r1 is preempted (blocks released to free list, hashes preserved)
+	kvc.ReleaseKVBlocks(r1)
+	require.Equal(t, int64(totalBlocks), kvc.countFreeBlocks(),
+		"all blocks should be free after preemption")
+
+	// Verify all 1024 prefix blocks are findable immediately after preemption
+	// (no blocks reused yet, all hashes intact)
+	allCached := kvc.GetCachedBlocks(inputTokens)
+	require.Equal(t, 1024, len(allCached),
+		"all 1024 prefix blocks should be findable immediately after preemption")
+
+	// AND a second request r2 allocates 128 blocks (2048 tokens), consuming
+	// the first 128 blocks popped from the free list. ReleaseKVBlocks added
+	// r1's blocks in reverse order (block 1023 first -> head), so popFreeBlock
+	// takes r1's blocks 1023, 1022, ..., 896. Lazy deletion clears those hashes
+	// when r2 fills the blocks with new content.
+	r2Tokens := make([]int, reuseBlocks*blockSize)
+	for i := range r2Tokens {
+		r2Tokens[i] = 90000 + i // distinct tokens so hashes differ from r1
+	}
+	r2 := &sim.Request{ID: "r2", InputTokens: r2Tokens}
+	ok = kvc.AllocateKVBlocks(r2, 0, int64(len(r2Tokens)), []int64{})
+	require.True(t, ok, "r2 allocation must succeed")
+
+	// THEN r1's first 896 prefix blocks (0-895) are still findable via
+	// GetCachedBlocks because their hashes were preserved by lazy deletion.
+	// Blocks 896-1023 were reused by r2 (different tokens), so their old
+	// hashes were cleared and the hierarchical hash chain breaks at block 896.
+	cached := kvc.GetCachedBlocks(inputTokens)
+	assert.Equal(t, 1024-reuseBlocks, len(cached),
+		"preempted request should find 896 of 1024 prefix blocks cached (128 reused by r2)")
+
+	// Verify the cached blocks form a contiguous prefix (all have intact hashes)
+	for i, blockID := range cached {
+		blk := kvc.Blocks[blockID]
+		assert.NotEmpty(t, blk.Hash, "cached block %d should have a hash", i)
+	}
+
+	// INV-4: block conservation must hold throughout
+	assertBlockConservation(t, kvc)
+}
