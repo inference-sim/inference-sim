@@ -3231,15 +3231,15 @@
 </tr>
 <tr>
 <td>cacheQueryFn (precise-prefix-cache, no-hit-lru) ¹</td>
-<td>Instance (via StaleCacheIndex)</td>
+<td>Instance (via CachedSnapshotProvider)</td>
 <td>Ground truth (synchronous)</td>
-<td>Demand-triggered (CacheSignalDelay interval, checked at routing decisions)</td>
-<td><code>StaleCacheIndex.RefreshIfNeeded()</code> in <code>buildRouterState()</code></td>
+<td>Periodic (CacheBlocks interval, default 50ms)</td>
+<td><code>CachedSnapshotProvider.RefreshCacheIfNeeded()</code> in <code>buildRouterState()</code></td>
 </tr>
 </tbody>
 </table>
-<p>¹ <code>cacheQueryFn</code> freshness is governed by <code>--cache-signal-delay</code> (default 2s), not <code>--snapshot-refresh-interval</code>. The "interval=0" / "interval&gt;0" columns for this row refer to <code>--cache-signal-delay</code>.</p>
-<p><strong>Design implication:</strong> When <code>--snapshot-refresh-interval &gt; 0</code>, all Prometheus-sourced signals (QueueDepth, BatchSize, KVUtilization) share the same scrape interval — matching real vLLM deployments where all three are exposed via the same <code>/metrics</code> endpoint. <code>InFlightRequests</code> remains synchronous (gateway-local counter, not Prometheus-sourced). When <code>--cache-signal-delay &gt; 0</code> (default: 2s), prefix cache query closures use a separate periodic snapshot of each instance's <code>HashToBlock</code> map, modeling asynchronous KV event propagation from production llm-d. The 2s default matches llm-d's <code>defaultSpeculativeTTL</code> — the blind spot between routing decision and KV event arrival via ZMQ. Set <code>--cache-signal-delay 0</code> for oracle mode (live cache state).</p>
+<p>¹ <code>cacheQueryFn</code> freshness is governed by <code>--cache-signal-delay</code> (default 50ms), which maps to <code>ObservabilityConfig.CacheBlocks</code>. The "interval=0" / "interval&gt;0" columns for this row refer to <code>--cache-signal-delay</code>. Cache block staleness is now managed by <code>CachedSnapshotProvider</code> alongside other signals (#1060).</p>
+<p><strong>Design implication:</strong> When <code>--snapshot-refresh-interval &gt; 0</code>, all Prometheus-sourced signals (QueueDepth, BatchSize, KVUtilization) share the same scrape interval — matching real vLLM deployments where all three are exposed via the same <code>/metrics</code> endpoint. <code>InFlightRequests</code> remains synchronous (gateway-local counter, not Prometheus-sourced). When <code>--cache-signal-delay &gt; 0</code> (default: 50ms), prefix cache query closures use periodic snapshots of each instance's <code>HashToBlock</code> map, managed by <code>CachedSnapshotProvider</code> alongside other signal snapshots. The 50ms default models aggregate signal staleness from production llm-d. Set <code>--cache-signal-delay 0</code> for oracle mode (live cache state).</p>
 <p><code>EffectiveLoad()</code> = <code>QueueDepth + BatchSize + InFlightRequests</code>. The synchronous <code>InFlightRequests</code> term compensates for Periodic staleness in the other two terms. The <code>queue-depth</code> scorer reads <code>QueueDepth</code> only (GIE parity); <code>EffectiveLoad()</code> is used by <code>load-balance</code>, <code>least-loaded</code>, <code>always-busiest</code>, and admission policies. The <code>active-requests</code> scorer reads <code>InFlightRequests</code> only (synchronous). The <code>running-requests</code> scorer reads <code>BatchSize</code> (Periodic/Immediate). The <code>load-aware</code> scorer reads <code>QueueDepth</code> only (Periodic/Immediate), with a linear threshold at 128.</p>
 <p><strong>Verification:</strong> H3 hypothesis experiment, H29 snapshot-staleness experiment (see <a href="https://github.com/inference-sim/inference-sim/tree/hypothesis-archive/hypotheses"><code>hypothesis-archive</code> branch</a>).</p>
 <p><strong>Evidence:</strong> Issues #282, #283. At rate=5000, kv-utilization-only routing produces 200x worse distribution uniformity than queue-depth. Issue #463: unified Prometheus staleness model.</p>
