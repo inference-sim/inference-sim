@@ -2598,3 +2598,77 @@ func TestEnqueueDecodeSubRequest_SimClockAhead_StepEventAtSimClock(t *testing.T)
 			got, simClock, clusterTime)
 	}
 }
+
+// TestSimulator_ActiveRequests_TracksInjectionToTerminal verifies that
+// activeRequests is incremented on injection and decremented at terminal states.
+func TestSimulator_ActiveRequests_TracksInjectionToTerminal(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             math.MaxInt64,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0),
+	}
+	s := mustNewSimulator(t, cfg)
+
+	req := &Request{
+		ID:           "req_0",
+		ArrivalTime:  0,
+		InputTokens:  make([]int, 50),
+		OutputTokens: make([]int, 20),
+		MaxOutputLen: 20,
+		State:        StateQueued,
+	}
+	s.InjectArrival(req)
+
+	if s.activeRequests != 1 {
+		t.Fatalf("after InjectArrival: activeRequests = %d, want 1", s.activeRequests)
+	}
+
+	s.Run()
+
+	if s.activeRequests != 0 {
+		t.Fatalf("after Run: activeRequests = %d, want 0", s.activeRequests)
+	}
+}
+
+// TestSimulator_OrphanedTimeout_DoesNotInflateSimEndedTime verifies that
+// orphaned TimeoutEvents (for already-completed requests) do not inflate
+// SimEndedTime beyond the actual last completion time.
+// Regression test for github.com/inference-sim/inference-sim#1085.
+func TestSimulator_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             math.MaxInt64,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0),
+	}
+	s := mustNewSimulator(t, cfg)
+
+	deadline := int64(300_000_000) // 300s in µs
+	for i := 0; i < 3; i++ {
+		req := &Request{
+			ID:           fmt.Sprintf("req_%d", i),
+			ArrivalTime:  int64(i) * 1000,
+			InputTokens:  make([]int, 50),
+			OutputTokens: make([]int, 20),
+			MaxOutputLen: 20,
+			Deadline:     int64(i)*1000 + deadline,
+			State:        StateQueued,
+		}
+		s.InjectArrival(req)
+	}
+
+	s.Run()
+
+	if s.Metrics.SimEndedTime > 1_000_000 {
+		t.Errorf("SimEndedTime = %d µs (%.1fs), want < 1s — orphaned TimeoutEvents inflated the clock",
+			s.Metrics.SimEndedTime, float64(s.Metrics.SimEndedTime)/1e6)
+	}
+	if s.Metrics.CompletedRequests != 3 {
+		t.Errorf("CompletedRequests = %d, want 3", s.Metrics.CompletedRequests)
+	}
+}

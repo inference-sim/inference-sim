@@ -105,6 +105,17 @@ type Simulator struct {
 	// state (completed, length-capped, or timed out). Returns follow-up requests to inject.
 	// Set by the caller (cmd/root.go or ClusterSimulator). Nil = no callback.
 	OnRequestDone func(req *Request, tick int64) []*Request
+
+	// activeRequests tracks the number of requests currently in the system
+	// (from injection to terminal state). Incremented by InjectArrival/InjectArrivalAt,
+	// decremented at terminal states (completed, timed out, dropped-unservable).
+	// Used by isAllWorkDone() to detect when the event loop can exit early.
+	activeRequests int
+
+	// hasTimeouts is set when any request with a non-zero deadline is injected.
+	// The isAllWorkDone() early-exit only activates when timeouts exist, preserving
+	// exact behavior for rate-based workloads without deadlines.
+	hasTimeouts bool
 }
 
 // NewSimulator creates a Simulator from a SimConfig struct and pre-built dependencies.
@@ -231,6 +242,10 @@ func (sim *Simulator) InjectArrival(req *Request) {
 			"ArrivalEvent will not fire (INV-1 conservation may be affected)",
 			req.ID, req.ArrivalTime, sim.Horizon)
 	}
+	sim.activeRequests++
+	if req.Deadline > 0 {
+		sim.hasTimeouts = true
+	}
 	sim.Schedule(&ArrivalEvent{time: req.ArrivalTime, Request: req})
 	sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, float64(req.ArrivalTime)/1e6)
 }
@@ -239,14 +254,30 @@ func (sim *Simulator) InjectArrival(req *Request) {
 // Metrics.Requests uses req.ArrivalTime for ArrivedAt to preserve original arrival time.
 // Used by cluster-mode online routing where event time differs from original arrival.
 func (sim *Simulator) InjectArrivalAt(req *Request, eventTime int64) {
+	sim.activeRequests++
+	if req.Deadline > 0 {
+		sim.hasTimeouts = true
+	}
 	sim.Schedule(&ArrivalEvent{time: eventTime, Request: req})
 	sim.Metrics.Requests[req.ID] = NewRequestMetrics(req, float64(req.ArrivalTime)/1e6)
+}
+
+// isAllWorkDone returns true when no requests remain in the system
+// (all injected requests have reached a terminal state: completed, timed out,
+// or dropped) AND timeout events were scheduled. The hasTimeouts guard ensures
+// this only activates for workloads with deadlines (concurrency mode), preserving
+// exact behavior for rate-based workloads without deadlines.
+func (sim *Simulator) isAllWorkDone() bool {
+	return sim.hasTimeouts && sim.activeRequests == 0
 }
 
 func (sim *Simulator) Run() {
 	for sim.HasPendingEvents() {
 		sim.ProcessNextEvent()
 		if sim.Clock > sim.Horizon {
+			break
+		}
+		if sim.isAllWorkDone() {
 			break
 		}
 	}
@@ -325,6 +356,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 	if r.MaxOutputLen < 0 {
 		logrus.Warnf("dropping request %s: MaxOutputLen %d is negative",
 			r.ID, r.MaxOutputLen)
+		sim.activeRequests--
 		sim.Metrics.DroppedUnservable++
 		delete(sim.Metrics.Requests, r.ID)
 		// Callback for dropped requests (R1: don't silently discard, BC-17)
@@ -341,6 +373,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 		if int64(len(r.InputTokens)) >= sim.maxModelLen {
 			logrus.Warnf("dropping request %s: input length %d >= MaxModelLen %d (no room for output)",
 				r.ID, len(r.InputTokens), sim.maxModelLen)
+			sim.activeRequests--
 			sim.Metrics.DroppedUnservable++
 			delete(sim.Metrics.Requests, r.ID)
 			if sim.OnRequestDone != nil {
@@ -355,6 +388,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 			if totalSeqLen > sim.maxModelLen {
 				logrus.Warnf("dropping request %s: total sequence length %d (input=%d + budget=%d) exceeds MaxModelLen %d",
 					r.ID, totalSeqLen, len(r.InputTokens), r.MaxOutputLen, sim.maxModelLen)
+				sim.activeRequests--
 				sim.Metrics.DroppedUnservable++
 				delete(sim.Metrics.Requests, r.ID)
 				if sim.OnRequestDone != nil {
@@ -372,6 +406,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 	if blocksNeeded > sim.KVCache.TotalCapacity() {
 		logrus.Warnf("dropping request %s: input requires %d KV blocks but cache has only %d total",
 			r.ID, blocksNeeded, sim.KVCache.TotalCapacity())
+		sim.activeRequests--
 		sim.Metrics.DroppedUnservable++
 		delete(sim.Metrics.Requests, r.ID)
 		if sim.OnRequestDone != nil {
@@ -388,6 +423,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 	// Past-due guard (EC-2): check BEFORE enqueue to avoid enqueue-then-remove.
 	// Request is counted as timed_out, not dropped_unservable.
 	if r.Deadline > 0 && r.Deadline <= sim.Clock {
+		sim.activeRequests--
 		r.State = StateTimedOut
 		sim.Metrics.TimedOutRequests++
 		if sim.OnRequestDone != nil {
@@ -467,6 +503,7 @@ func (sim *Simulator) recordKVUsageMetrics(stepDuration int64) {
 // response serialization) is non-blocking but still contributes to client-perceived latency.
 // For trained-roofline, PostDecodeFixedOverhead adds ~1.85ms to E2E; for other backends it's 0.
 func (sim *Simulator) recordRequestCompletion(req *Request) {
+	sim.activeRequests--
 	// INV-1 conservation: Always increment CompletedRequests.
 	// For redirected requests: the source instance drained the request from its WaitQ
 	// (StillQueued=0 at end), so source contributes 0 to InjectedRequests.

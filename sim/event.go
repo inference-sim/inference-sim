@@ -140,6 +140,7 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 	if e.Request.State == StateCompleted || e.Request.State == StateTimedOut {
 		return
 	}
+	sim.activeRequests--
 	wasRunning := e.Request.State == StateRunning
 	e.Request.State = StateTimedOut
 	sim.Metrics.TimedOutRequests++

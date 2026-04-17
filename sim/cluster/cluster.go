@@ -90,6 +90,11 @@ type ClusterSimulator struct {
 	flowControlEnabled bool
 	saturationDetector sim.SaturationDetector
 	gatewayQueue       *GatewayQueue
+
+	// hasTimeouts is set when any request with a non-zero deadline is injected.
+	// The isAllWorkDone() early-exit only activates when timeouts exist, preserving
+	// exact behavior for rate-based workloads without deadlines (#1085).
+	hasTimeouts bool
 }
 
 // effectiveAnalyzerConfig applies WVA reference defaults to zero-valued fields.
@@ -483,6 +488,9 @@ func (cs *ClusterSimulator) registerInstanceCacheQueryFn(id InstanceID, inst *In
 // coordinator rather than calling pushArrival directly, preserving this method
 // as the single enforcement point. See also issue #1041.
 func (cs *ClusterSimulator) pushArrival(req *sim.Request, timeUs int64) {
+	if req.Deadline > 0 {
+		cs.hasTimeouts = true
+	}
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &ClusterArrivalEvent{time: timeUs, request: req},
 		seqID: cs.nextSeqID(),
@@ -645,6 +653,9 @@ func (c *ClusterSimulator) Run() error {
 			}
 		}
 
+		if c.isAllWorkDone() {
+			break
+		}
 	}
 
 	// 4. Finalize all instances (populates StillQueued/StillRunning)
@@ -743,6 +754,38 @@ func (c *ClusterSimulator) Run() error {
 	}
 
 	return nil
+}
+
+// isAllWorkDone returns true when all simulation work has completed:
+// no pending arrivals, no in-flight requests on any instance, no work-carrying
+// cluster events, and no gateway queue items. When true, remaining events are
+// orphaned TimeoutEvents, observational instance events, and ScalingTickEvents
+// — none of which carry useful work. This allows the event loop to exit early
+// instead of draining orphaned events that would inflate SimEndedTime (#1085).
+func (c *ClusterSimulator) isAllWorkDone() bool {
+	if !c.hasTimeouts {
+		return false
+	}
+	if c.pendingArrivals > 0 {
+		return false
+	}
+	for _, v := range c.inFlightRequests {
+		if v > 0 {
+			return false
+		}
+	}
+	for i := range c.clusterEvents {
+		switch c.clusterEvents[i].event.(type) {
+		case *ScalingTickEvent, *ScaleActuationEvent:
+			continue
+		default:
+			return false
+		}
+	}
+	if c.flowControlEnabled && c.gatewayQueue != nil && c.gatewayQueue.Len() > 0 {
+		return false
+	}
+	return true
 }
 
 // nextSeqID returns the next monotonically increasing sequence ID for event ordering.
