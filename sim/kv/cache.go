@@ -361,6 +361,9 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 }
 
 // popFreeBlock evicts a block from the free list and prepares it for reuse.
+// Hash entries are preserved (lazy deletion) - they will be cleared when the
+// block is filled with new content in AllocateKVBlocks allocation loop.
+// Matches vLLM's block_pool.py:313-318 + _maybe_evict_cached_block semantics.
 func (kvc *KVCacheState) popFreeBlock() *KVBlock {
 	head := kvc.FreeHead
 	if head == nil {
