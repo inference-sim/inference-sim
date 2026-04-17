@@ -2763,6 +2763,10 @@ func TestCluster_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.T) {
 func TestCluster_OrphanedTimeout_SessionFollowUps_StillProcessed(t *testing.T) {
 	config := newTestDeploymentConfig(1)
 
+	// Hang guard: protects against infinite loops in isAllWorkDone(), not a
+	// performance requirement — the simulation finishes well under this limit.
+	const hangGuard = 5 * time.Second
+
 	deadline := int64(300_000_000)
 	const numInitial = 3
 	reqs := newTestRequests(numInitial)
@@ -2806,7 +2810,7 @@ func TestCluster_OrphanedTimeout_SessionFollowUps_StillProcessed(t *testing.T) {
 		if agg.SimEndedTime > 10_000_000 {
 			t.Errorf("SimEndedTime = %d µs (%.1fs), want < 10s", agg.SimEndedTime, float64(agg.SimEndedTime)/1e6)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(hangGuard):
 		t.Fatal("Run() timed out — early exit may have broken session follow-up processing")
 	}
 }

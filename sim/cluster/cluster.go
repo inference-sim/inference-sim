@@ -778,6 +778,8 @@ func (c *ClusterSimulator) isAllWorkDone() bool {
 		switch c.clusterEvents[i].event.(type) {
 		case *ScalingTickEvent, *ScaleActuationEvent:
 			continue
+		// NOTE: Do NOT add KVTransferStartedEvent, KVTransferCompletedEvent, or DecodeRoutingEvent
+		// to the exemption list — they carry active PD disaggregation work and must block early exit.
 		default:
 			return false
 		}
