@@ -258,8 +258,25 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 		latestBlk := &KVBlock{}
 		if ok {
 			// KV cache has already seen this request before. The latest block needs to be filled first,
-			// followed by new blocks. Caching cannot happen here.
+			// followed by new blocks.
 			latestBlk = kvc.Blocks[ids[len(ids)-1]]
+
+			// Bug 1 fix (issue #1057): Enable incremental cache claiming for running requests.
+			// During chunked prefill, running requests may still be within a shared prefix region.
+			// Claim any cached blocks beyond the request's current allocation (vLLM parity).
+			numAllocatedBlocks := int64(len(ids))
+			for i := numAllocatedBlocks; i < int64(len(cachedBlocks)); i++ {
+				blockId := cachedBlocks[i]
+				blk := kvc.Blocks[blockId]
+				blk.RefCount++
+				if !blk.InUse {
+					blk.InUse = true
+					kvc.removeFromFreeList(blk)
+				}
+				kvc.CacheHits++
+				logrus.Debugf("Hit KV Cache (incremental) for req: %s block %d", req.ID, i)
+				kvc.RequestMap[reqID] = append(kvc.RequestMap[reqID], blockId)
+			}
 
 		} else {
 			// KV cache is seeing this request for the first time (beginning of prefill)
@@ -275,6 +292,22 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				kvc.CacheHits++
 				logrus.Debugf("Hit KV Cache for req: %s of length: %d", req.ID, util.Len64(cachedBlocks)*kvc.BlockSizeTokens)
 				kvc.RequestMap[reqID] = append(kvc.RequestMap[reqID], blockId)
+			}
+
+			// After claiming cached blocks, update latestBlk and advance newTokenProgressIndex
+			// by the tokens those blocks represent that overlap with newTokens.
+			// Cached blocks cover tokens[0:len(cachedBlocks)*blockSize] of InputTokens.
+			// newTokens covers tokens[startIndex:endIndex].
+			// Overlap = max(0, min(len(cachedBlocks)*blockSize, endIndex) - startIndex)
+			if len(cachedBlocks) > 0 {
+				ids = kvc.RequestMap[reqID] // Refresh ids after appending cached blocks
+				latestBlk = kvc.Blocks[ids[len(ids)-1]]
+				cachedEnd := int64(len(cachedBlocks)) * kvc.BlockSizeTokens
+				overlapEnd := min(cachedEnd, endIndex)
+				if overlapEnd > startIndex {
+					// Cached blocks overlap with newTokens, advance by the overlap
+					newTokenProgressIndex = overlapEnd - startIndex
+				}
 			}
 		}
 		if len(latestBlk.Tokens) > 0 && util.Len64(latestBlk.Tokens) < kvc.BlockSizeTokens {

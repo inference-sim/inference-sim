@@ -1051,3 +1051,75 @@ func TestLazyHashDeletion_PartialEviction(t *testing.T) {
 	// block. The surviving prefix (blocks 0-511) forms a contiguous chain.
 	assertBlockConservation(t, kvc)
 }
+
+// TestIncrementalCacheClaiming_RunningRequests verifies that running requests
+// doing chunked prefill can incrementally claim cached blocks beyond their
+// current allocation (Bug 1 fix for issue #1057).
+func TestIncrementalCacheClaiming_RunningRequests(t *testing.T) {
+	logrus.SetOutput(os.Stderr)
+
+	// GIVEN a KV cache with a shared prefix
+	totalBlocks := int64(200)
+	blockSize := int64(16)
+	kvc := NewKVCacheState(totalBlocks, blockSize)
+
+	// Shared prefix: 128 blocks (2048 tokens)
+	sharedPrefix := make([]int, 2048)
+	for i := range sharedPrefix {
+		sharedPrefix[i] = i + 10000
+	}
+
+	// WHEN request A fully allocates the shared prefix
+	reqA := &sim.Request{
+		ID:          "reqA",
+		InputTokens: append([]int{}, sharedPrefix...),
+	}
+	ok := kvc.AllocateKVBlocks(reqA, 0, int64(len(reqA.InputTokens)), nil)
+	require.True(t, ok, "Initial allocation should succeed")
+	assert.Equal(t, 128, len(kvc.RequestMap[reqA.ID]), "Should have 128 blocks")
+
+	// AND releases its blocks (simulating completion)
+	kvc.ReleaseKVBlocks(reqA)
+	initialFreeBlocks := kvc.countFreeBlocks()
+	assertBlockConservation(t, kvc)
+
+	// WHEN request B starts with the same prefix, allocates first chunk, gets preempted
+	reqB := &sim.Request{
+		ID:          "reqB",
+		InputTokens: append([]int{}, sharedPrefix...),
+	}
+
+	// Step 1: B allocates first 512 tokens (32 blocks) and stops (simulating chunked prefill)
+	cachedBlocks := kvc.GetCachedBlocks(reqB.InputTokens)
+	require.Equal(t, 128, len(cachedBlocks), "Should find 128 cached blocks")
+
+	ok = kvc.AllocateKVBlocks(reqB, 0, 512, cachedBlocks)
+	require.True(t, ok, "First chunk allocation should succeed")
+	// First-time request claims ALL cached blocks upfront (vLLM behavior)
+	require.Equal(t, 128, len(kvc.RequestMap[reqB.ID]), "Should claim all 128 cached blocks")
+
+	// Step 2: Simulate that B gets preempted and releases blocks
+	kvc.ReleaseKVBlocks(reqB)
+	assert.Equal(t, initialFreeBlocks, kvc.countFreeBlocks(), "Free blocks restored after release")
+
+	// Step 3: B gets readmitted and tries to allocate next chunk (512-1024)
+	// This is the Bug 1 scenario: running request trying to allocate within cached prefix
+	// WITHOUT the fix, it would pass []int64{} and try to allocate fresh blocks
+	// WITH the fix (batch_formation.go), it passes cachedBlocks
+	cachedBlocksAgain := kvc.GetCachedBlocks(reqB.InputTokens)
+	require.Equal(t, 128, len(cachedBlocksAgain), "Cache still has all 128 blocks")
+
+	// Simulate readmission: B already processed first 512 tokens (32 blocks)
+	ok = kvc.AllocateKVBlocks(reqB, 0, 512, cachedBlocksAgain)
+	require.True(t, ok, "Readmission first chunk should succeed")
+
+	// Bug 1 fix verification: Running request (RequestMap[reqB.ID] now exists)
+	// continues to second chunk within cached prefix
+	ok = kvc.AllocateKVBlocks(reqB, 512, 1024, cachedBlocksAgain)
+	require.True(t, ok, "Second chunk should succeed with incremental cache claiming")
+
+	// Verify cache hits counter increased (blocks were claimed from cache, not allocated fresh)
+	assert.Greater(t, kvc.CacheHits, int64(128), "Should have cache hits from readmission")
+
+	assertBlockConservation(t, kvc)
+}
