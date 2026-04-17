@@ -79,6 +79,7 @@ var validScorerNames = map[string]bool{
 	"active-requests":      true,
 	"running-requests":     true,
 	"load-aware":           true,
+	"vllm-dp":              true,
 }
 
 // IsValidScorer returns true if name is a recognized scorer.
@@ -173,6 +174,8 @@ func newScorerWithObserver(name string, blockSize int, cacheFn cacheQueryFn) (sc
 		return scoreRunningRequests, nil
 	case "load-aware":
 		return scoreLoadAware, nil
+	case "vllm-dp":
+		return scoreVLLMDP, nil
 	default:
 		panic(fmt.Sprintf("unknown scorer %q", name))
 	}
