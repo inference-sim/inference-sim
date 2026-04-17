@@ -298,6 +298,17 @@ func (t *TieredKVCache) reloadPrefixFromCPU(tokens []int) bool {
 		if gpuBlk == nil {
 			break
 		}
+
+		// Lazy hash deletion (vLLM parity): clear old hash before filling
+		// with CPU content. Maintains consistency with main allocation path
+		// (cache.go lazy deletion). Without this, HashToBlock retains a stale
+		// entry mapping the old hash to this block's ID even though the block
+		// is about to be overwritten with different content.
+		if gpuBlk.Hash != "" {
+			delete(t.gpu.HashToBlock, gpuBlk.Hash)
+			gpuBlk.Hash = ""
+		}
+
 		gpuBlk.Tokens = append(gpuBlk.Tokens[:0], cpuBlk.tokens...)
 		gpuBlk.Hash = h
 		gpuBlk.RefCount = 0
