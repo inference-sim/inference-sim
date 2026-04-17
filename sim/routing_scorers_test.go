@@ -508,3 +508,12 @@ func TestScoreVLLMDP_MonotonicityAndBoundaries(t *testing.T) {
 		assert.False(t, math.IsInf(score, 0), "score for %s must not be Inf", id)
 	}
 }
+
+func TestScoreVLLMDP_SingleInstance(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 42, BatchSize: 17}, // 42×4 + 17 = 185
+	}
+	scores := scoreVLLMDP(nil, snapshots)
+	assert.Equal(t, 1.0, scores["a"], "single instance always scores 1.0")
+	assert.False(t, math.IsNaN(scores["a"]), "score must not be NaN")
+}
