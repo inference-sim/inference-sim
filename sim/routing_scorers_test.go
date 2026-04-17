@@ -475,3 +475,13 @@ func TestScoreVLLMDP_BasicFormula(t *testing.T) {
 	// b is midpoint: (45-30)/(45-10) = 15/35 ≈ 0.428
 	assert.InDelta(t, 0.428, scores["b"], 0.01, "midpoint should score ~0.43")
 }
+
+func TestScoreVLLMDP_AllEqual(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 5, BatchSize: 3}, // 5×4 + 3 = 23
+		{ID: "b", QueueDepth: 5, BatchSize: 3}, // 5×4 + 3 = 23
+	}
+	scores := scoreVLLMDP(nil, snapshots)
+	assert.Equal(t, 1.0, scores["a"], "all equal loads should score 1.0")
+	assert.Equal(t, 1.0, scores["b"], "all equal loads should score 1.0")
+}
