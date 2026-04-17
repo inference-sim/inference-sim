@@ -266,6 +266,33 @@ python validate_vllm_parity.py --trace validation.csv
 - Example: Instances with loads [10q+5b, 5q+10b, 2q+2b] have raw scores [45, 30, 10] but independent min-max on each dimension produces incorrect composite rankings
 - Issue #1075 explicitly notes this limitation
 
+## Known Limitations
+
+### Speculative Increment Not Modeled
+
+**What vLLM does:** After routing to an engine, vLLM's `DPLBAsyncMPClient` speculatively increments the local cached waiting count:
+
+```python
+# vllm/v1/engine/core_client.py:1223-1225
+# Increment local waiting count for better balancing between stats
+# updates from the coordinator (which happen every 100ms).
+current_counts[eng_index][0] += self.client_count
+```
+
+**Why:** vLLM's coordinator publishes fresh stats every 100ms. Between updates, multiple requests arrive and read the same stale `lb_engines` cache. Without the increment, they all pile onto the same "least loaded" instance. The increment prevents this — after routing to engine X, that engine's cached waiting count increases, making it look more loaded to the next request.
+
+**BLIS behavior:** BLIS does not replicate this because BLIS's DES is sequential — requests are routed one at a time, so the concurrent-routing scenario does not arise. In periodic-snapshot mode (`--snapshot-refresh-interval > 0`), BLIS will concentrate more traffic per snapshot window than real vLLM would.
+
+**Impact:** Oracle mode (`--snapshot-refresh-interval 0`) is unaffected and provides the cleanest comparison baseline for algorithmic studies. Staleness-matched mode (100ms interval) will show more traffic concentration than real vLLM.
+
+### Tie-Breaking Differs
+
+**What vLLM does:** When scores are tied, vLLM's `if score < min_score` (strict less-than) means the first engine encountered in the scan wins. The scan starts from `eng_start_index`, which is derived from `client_index`, so multiple co-located API servers start at different offsets, spreading ties round-robin.
+
+**BLIS behavior:** BLIS uses random tie-breaking in `WeightedScoring` (introduced in #574 to fix pile-ons). When `vllm-dp` gives all instances equal scores (e.g., all zero load), BLIS picks randomly; vLLM picks deterministically.
+
+**Impact:** Under perfectly balanced load, tie-breaking determines all routing decisions. For reproducibility studies comparing BLIS vs. vLLM routing traces, tie-breaking divergence will cause systematic differences. This is a minor issue for most workloads since ties are rare under realistic load distributions.
+
 ## Documentation Updates
 
 ### User-Facing

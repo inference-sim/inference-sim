@@ -59,17 +59,19 @@ This matches the llm-d production scoring pipeline. Weights are relative — onl
 BLIS supports vLLM's internal load-balancing algorithm via the `vllm-dp` scorer:
 
 ```bash
-# Oracle mode (immediate signals, default):
+# Oracle mode (immediate signals, default — best for algorithmic studies):
 ./blis run --model qwen/qwen3-14b --routing-scorers "vllm-dp:1"
 
-# Realistic vLLM parity (100ms coordinator staleness):
+# Staleness-matched mode (matches vLLM's 100ms coordinator interval):
 ./blis run --model qwen/qwen3-14b --routing-scorers "vllm-dp:1" \
   --snapshot-refresh-interval 100000
 ```
 
-This replicates vLLM's `DPLBAsyncMPClient` behavior: selecting the instance with the lowest `waiting × 4 + running` score. The scorer applies inverted min-max normalization to convert vLLM's argmin selection to BLIS's argmax routing framework.
+This replicates vLLM's `DPLBAsyncMPClient` formula: selecting the instance with the lowest `waiting × 4 + running` score. The scorer applies inverted min-max normalization to convert vLLM's argmin selection to BLIS's argmax routing framework.
 
-**Signal staleness:** vLLM's coordinator publishes instance stats every 100ms by default (`min_stats_update_interval_ms`). For realistic parity studies, use `--snapshot-refresh-interval 100000` (100ms in microseconds). The default `0` (immediate mode) represents oracle routing with no signal staleness.
+**Signal staleness:** vLLM's coordinator publishes instance stats every 100ms by default (`min_stats_update_interval_ms`). Using `--snapshot-refresh-interval 100000` matches this staleness interval. The default `0` (immediate mode) represents oracle routing with no signal staleness — this is the cleanest baseline for algorithmic comparisons.
+
+**Known limitation:** vLLM's client speculatively increments its cached waiting count after each routing decision (`current_counts[eng_index][0] += client_count`, `core_client.py:1225`) to spread traffic within the 100ms window. BLIS does not model this because BLIS's DES is sequential — requests route one at a time, so the concurrent-routing scenario doesn't arise. In staleness-matched mode, BLIS will concentrate more traffic per snapshot window than real vLLM would.
 
 **Note:** Do not compose `vllm-dp` with other scorers unless comparing hybrid strategies. For vLLM parity, use `vllm-dp:1` alone — composing with other scorers double-normalizes dimensions and breaks vLLM fidelity.
 

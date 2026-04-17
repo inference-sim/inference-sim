@@ -549,3 +549,28 @@ func TestScoreVLLMDP_WeightEquivalence(t *testing.T) {
 	// c has higher load → lower score
 	assert.Less(t, scores2["c"], scores2["a"], "higher load should score lower")
 }
+
+func TestScoreVLLMDP_PileOnInPeriodicMode(t *testing.T) {
+	// Documents a known difference from real vLLM: vLLM's DPLBAsyncMPClient
+	// speculatively increments the cached waiting count after routing
+	// (core_client.py:1225), spreading subsequent requests within the 100ms
+	// coordinator update window. BLIS does not model this — with a stale
+	// snapshot, N requests in the same window all route to the same instance.
+
+	// Stale snapshot: instance A looks empty, B and C are loaded.
+	snapshot := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 0, BatchSize: 0},  // raw=0, scores 1.0
+		{ID: "b", QueueDepth: 2, BatchSize: 3},  // raw=11, scores lower
+		{ID: "c", QueueDepth: 5, BatchSize: 1},  // raw=21, scores lowest
+	}
+
+	// All three requests in the same snapshot window see the same stale counts.
+	// BLIS routes all three to "a" — vLLM would spread them after the first.
+	for i := 0; i < 3; i++ {
+		scores := scoreVLLMDP(nil, snapshot) // snapshot not updated between calls
+		assert.Equal(t, 1.0, scores["a"],
+			"request %d: BLIS routes to 'a' (known divergence from vLLM's speculative increment)", i)
+		// In vLLM, only the first request would pick "a"; subsequent ones would
+		// see incremented counts and potentially route to "b" or "c".
+	}
+}
