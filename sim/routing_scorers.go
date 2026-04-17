@@ -31,8 +31,12 @@ type cacheQueryFn map[string]func([]int) int
 //
 // Signal freshness (R17, INV-7):
 //
-//	Reads: QueueDepth (Periodic when interval>0, else Immediate)
-//	       BatchSize (Periodic when interval>0, else Immediate)
+//	Reads: QueueDepth (Periodic when --snapshot-refresh-interval>0, else Immediate)
+//	       BatchSize (Periodic when --snapshot-refresh-interval>0, else Immediate)
+//
+// For realistic vLLM parity, use --snapshot-refresh-interval=100000 (100ms) to match
+// vLLM's default coordinator stats update interval (min_stats_update_interval_ms=100).
+// The default interval=0 (Immediate mode) represents oracle routing with no signal staleness.
 func scoreVLLMDP(_ *Request, snapshots []RoutingSnapshot) map[string]float64 {
 	// Step 1: Compute raw scores using vLLM formula (waiting×4 + running)
 	rawScores := make(map[string]int, len(snapshots))

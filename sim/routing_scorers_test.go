@@ -517,3 +517,32 @@ func TestScoreVLLMDP_SingleInstance(t *testing.T) {
 	assert.Equal(t, 1.0, scores["a"], "single instance always scores 1.0")
 	assert.False(t, math.IsNaN(scores["a"]), "score must not be NaN")
 }
+
+func TestScoreVLLMDP_WeightEquivalence(t *testing.T) {
+	// BC-VLLM-1: The 4:1 weighting means +1 QueueDepth ≡ -4 BatchSize in routing preference.
+	// Two instances with QD_x=QD_y+1 and BS_x=BS_y-4 should have equal raw scores.
+	snapshots := []RoutingSnapshot{
+		{ID: "x", QueueDepth: 3, BatchSize: 10}, // 3×4 + 10 = 22
+		{ID: "y", QueueDepth: 2, BatchSize: 14}, // 2×4 + 14 = 22 (equal raw score)
+		{ID: "z", QueueDepth: 5, BatchSize: 2},  // 5×4 + 2 = 22 (also equal)
+	}
+	scores := scoreVLLMDP(nil, snapshots)
+
+	// All three instances have equal raw scores (22), so all should score 1.0 (tie)
+	assert.Equal(t, 1.0, scores["x"], "BC-VLLM-1: equal raw score should score 1.0")
+	assert.Equal(t, 1.0, scores["y"], "BC-VLLM-1: equal raw score should score 1.0")
+	assert.Equal(t, 1.0, scores["z"], "BC-VLLM-1: equal raw score should score 1.0")
+
+	// Verify the 4:1 law with different values: QD+1 and BS-4 should preserve score equality
+	snapshots2 := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 10, BatchSize: 8}, // 10×4 + 8 = 48
+		{ID: "b", QueueDepth: 11, BatchSize: 4}, // 11×4 + 4 = 48 (QD+1, BS-4)
+		{ID: "c", QueueDepth: 0, BatchSize: 100}, // 0×4 + 100 = 100 (different)
+	}
+	scores2 := scoreVLLMDP(nil, snapshots2)
+
+	// a and b have equal raw scores → should have equal normalized scores
+	assert.InDelta(t, scores2["a"], scores2["b"], 1e-9, "BC-VLLM-1: +1 QD = -4 BS in routing preference")
+	// c has higher load → lower score
+	assert.Less(t, scores2["c"], scores2["a"], "higher load should score lower")
+}

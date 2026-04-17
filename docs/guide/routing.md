@@ -39,6 +39,7 @@ The `weighted` routing policy is the most flexible. It combines multiple scoring
 | `active-requests` | In-flight requests: `(maxCount - count) / maxCount` | active-request-scorer |
 | `running-requests` | Batch size (min-max normalized) | running-requests-size-scorer (GIE) |
 | `load-aware` | Queue depth (linear threshold-capped, range [0, 0.5]) | load-aware-scorer |
+| `vllm-dp` | vLLM data-parallel routing: `waiting × 4 + running` (inverted min-max) | DPLBAsyncMPClient.get_core_engine_for_request |
 
 !!! note "Prefix-affinity is a scorer, not a standalone policy"
     The `prefix-affinity` scorer operates within the `weighted` routing pipeline, composed with load-balancing scorers. It uses a router-side `PrefixCacheIndex` with proportional block hash matching and LRU eviction. Always pair it with at least one load-aware scorer (queue-depth or kv-utilization) to prevent cold-start pile-on.
@@ -52,6 +53,25 @@ precise-prefix-cache:2, queue-depth:1, kv-utilization:1
 ```
 
 This matches the llm-d production scoring pipeline. Weights are relative — only ratios matter. `[2, 1, 1]` behaves identically to `[0.5, 0.25, 0.25]`.
+
+## vLLM Data-Parallel Routing
+
+BLIS supports vLLM's internal load-balancing algorithm via the `vllm-dp` scorer:
+
+```bash
+# Oracle mode (immediate signals, default):
+./blis run --model qwen/qwen3-14b --routing-scorers "vllm-dp:1"
+
+# Realistic vLLM parity (100ms coordinator staleness):
+./blis run --model qwen/qwen3-14b --routing-scorers "vllm-dp:1" \
+  --snapshot-refresh-interval 100000
+```
+
+This replicates vLLM's `DPLBAsyncMPClient` behavior: selecting the instance with the lowest `waiting × 4 + running` score. The scorer applies inverted min-max normalization to convert vLLM's argmin selection to BLIS's argmax routing framework.
+
+**Signal staleness:** vLLM's coordinator publishes instance stats every 100ms by default (`min_stats_update_interval_ms`). For realistic parity studies, use `--snapshot-refresh-interval 100000` (100ms in microseconds). The default `0` (immediate mode) represents oracle routing with no signal staleness.
+
+**Note:** Do not compose `vllm-dp` with other scorers unless comparing hybrid strategies. For vLLM parity, use `vllm-dp:1` alone — composing with other scorers double-normalizes dimensions and breaks vLLM fidelity.
 
 ## Signal Freshness
 

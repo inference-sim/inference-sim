@@ -104,12 +104,20 @@ Both fields are **Periodic** signals (Immediate when `--snapshot-refresh-interva
 
 ### CLI Usage
 
-**Primary usage (vLLM parity):**
+**Oracle mode (default, immediate signals):**
 ```bash
 ./blis run --model qwen/qwen3-14b --routing-scorers "vllm-dp:1"
 ```
 
-**Hybrid composition (not recommended):**
+**Realistic vLLM parity (100ms coordinator staleness):**
+```bash
+./blis run --model qwen/qwen3-14b --routing-scorers "vllm-dp:1" \
+  --snapshot-refresh-interval 100000
+```
+
+vLLM's coordinator publishes instance stats every 100ms by default (`min_stats_update_interval_ms=100`). For realistic parity studies, use `--snapshot-refresh-interval 100000` (100ms in microseconds). The default `0` represents oracle routing with no signal staleness.
+
+**Hybrid composition (not recommended for vLLM parity):**
 ```bash
 # Experimental: blend vLLM load-balancing with prefix-cache awareness
 ./blis run --routing-scorers "vllm-dp:0.5,precise-prefix-cache:1"
