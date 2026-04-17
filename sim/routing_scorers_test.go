@@ -430,7 +430,9 @@ func TestAllScorers_ReturnScoreForEveryInstance(t *testing.T) {
 	}
 	// Verify nil-request path for all stateless scorers.
 	// These scorers ignore the request parameter; this confirms they don't panic on nil.
-	for _, sf := range scorerFns[:6] {
+	// Indices 0-6: queue-depth, kv-utilization, load-balance, active-requests,
+	// running-requests, load-aware, vllm-dp (all use _ *Request).
+	for _, sf := range scorerFns[:7] {
 		t.Run(sf.name+"/nil-request", func(t *testing.T) {
 			scores := sf.fn(nil, snapshots)
 			assert.Len(t, scores, len(snapshots))

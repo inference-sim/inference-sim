@@ -207,7 +207,7 @@ func TestScoreVLLMDP_SingleInstance(t *testing.T) {
 
 The `vllm-dp` scorer must satisfy:
 
-- **BC-VLLM-1 (4:1 weighting):** For any two instances A, B where `QD_A = QD_B + 4` and `BS_A = BS_B - 1`, their raw scores must be equal
+- **BC-VLLM-1 (4:1 weighting):** For any two instances A, B where `QD_A = QD_B + 1` and `BS_A = BS_B - 4`, their raw scores must be equal (the 4:1 ratio means +1 queue depth ≡ -4 batch size in routing preference)
 - **BC-VLLM-2 (inversion):** Instance with lowest raw score must score 1.0; instance with highest raw score must score 0.0
 - **BC-VLLM-3 (monotonicity):** For raw scores R_A < R_B, normalized scores S_A > S_B
 - **BC-17-9 (no NaN/Inf):** All scores must be finite (inherited from scorer contract)
