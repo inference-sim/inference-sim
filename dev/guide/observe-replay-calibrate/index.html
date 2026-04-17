@@ -3528,6 +3528,12 @@
 <td>Do not set <code>max_tokens</code> (let server decide output length)</td>
 </tr>
 <tr>
+<td><code>--min-tokens</code></td>
+<td><code>int</code></td>
+<td><code>0</code></td>
+<td>Set <code>min_tokens</code> in request body; requests server to generate at least N tokens before EOS. Set equal to <code>--output-tokens</code> for exact output length control (0 = omit). Compatible with <code>--unconstrained-output</code>: <code>min_tokens</code> is still sent, <code>max_tokens</code> is still omitted</td>
+</tr>
+<tr>
 <td><code>--rtt-ms</code></td>
 <td><code>float64</code></td>
 <td><code>0</code></td>
