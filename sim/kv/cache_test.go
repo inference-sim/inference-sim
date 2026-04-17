@@ -1001,3 +1001,53 @@ func TestLazyHashDeletion_HashClearedOnReuse(t *testing.T) {
 
 	assertBlockConservation(t, kvc)
 }
+
+func TestLazyHashDeletion_PartialEviction(t *testing.T) {
+	// GIVEN a KV cache with 1024 blocks and Request A with 1024-block prefix
+	kvc := NewKVCacheState(1024, 16)
+	reqA := &sim.Request{
+		ID:          "reqA",
+		InputTokens: make([]int, 16384), // 1024 blocks * 16 tokens/block
+	}
+	for i := range reqA.InputTokens {
+		reqA.InputTokens[i] = i + 1000
+	}
+
+	// Allocate and release Request A
+	ok := kvc.AllocateKVBlocks(reqA, 0, int64(len(reqA.InputTokens)), []int64{})
+	require.True(t, ok, "Request A allocation should succeed")
+	kvc.ReleaseKVBlocks(reqA)
+	require.Equal(t, int64(1024), kvc.countFreeBlocks(), "All blocks should be free")
+
+	// WHEN Request B allocates 512 blocks with different content.
+	// ReleaseKVBlocks adds A's blocks in reverse order (block 1023 at head),
+	// so popFreeBlock gives B the tail half of A's prefix (blocks 1023..512).
+	// After B allocates, blocks 0-511 still have A's hashes (contiguous prefix
+	// from block 0), while blocks 512-1023 are overwritten with B's content.
+	reqB := &sim.Request{
+		ID:          "reqB",
+		InputTokens: make([]int, 8192), // 512 blocks * 16 tokens/block
+	}
+	for i := range reqB.InputTokens {
+		reqB.InputTokens[i] = i + 50000 // Different tokens
+	}
+	ok = kvc.AllocateKVBlocks(reqB, 0, int64(len(reqB.InputTokens)), []int64{})
+	require.True(t, ok, "Request B allocation should succeed")
+	require.Equal(t, int64(512), kvc.UsedBlocks(), "Request B uses 512 blocks")
+	require.Equal(t, int64(512), kvc.countFreeBlocks(), "512 blocks remain free")
+
+	// THEN Request C with original prefix should get 512 cache hits
+	// (GetCachedBlocks finds contiguous prefix from block 0 through block 511;
+	// chain breaks at block 512 which was overwritten by B).
+	reqC := &sim.Request{
+		ID:          "reqC",
+		InputTokens: reqA.InputTokens, // Same prefix as A
+	}
+	cached := kvc.GetCachedBlocks(reqC.InputTokens)
+	assert.Equal(t, 512, len(cached),
+		"Should get 512 cache hits (first half of prefix intact, chain breaks at block 512)")
+
+	// Verify vLLM parity: hierarchical hash chain breaks at the first evicted
+	// block. The surviving prefix (blocks 0-511) forms a contiguous chain.
+	assertBlockConservation(t, kvc)
+}
