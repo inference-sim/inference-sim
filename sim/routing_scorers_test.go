@@ -457,3 +457,21 @@ func TestNewScorerFactory_PrecisePrefixAndNoHitLRU(t *testing.T) {
 	// Instance "a" has 5 cached blocks, "b" has 0 → "a" should win
 	assert.Equal(t, "a", decision.TargetInstance, "precise-prefix-cache should prefer instance with more cached blocks")
 }
+
+// === vllm-dp scorer tests ===
+
+func TestScoreVLLMDP_BasicFormula(t *testing.T) {
+	snapshots := []RoutingSnapshot{
+		{ID: "a", QueueDepth: 10, BatchSize: 5},  // 10×4 + 5 = 45
+		{ID: "b", QueueDepth: 5, BatchSize: 10},  // 5×4 + 10 = 30
+		{ID: "c", QueueDepth: 2, BatchSize: 2},   // 2×4 + 2 = 10 (min)
+	}
+	scores := scoreVLLMDP(nil, snapshots)
+
+	// c has lowest raw score (10) → should score 1.0
+	assert.Equal(t, 1.0, scores["c"], "lowest load should score 1.0")
+	// a has highest raw score (45) → should score 0.0
+	assert.Equal(t, 0.0, scores["a"], "highest load should score 0.0")
+	// b is midpoint: (45-30)/(45-10) = 15/35 ≈ 0.428
+	assert.InDelta(t, 0.428, scores["b"], 0.01, "midpoint should score ~0.43")
+}
