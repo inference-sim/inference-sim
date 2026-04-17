@@ -211,8 +211,8 @@ func (d *drainImmediate) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	inst.TransitionTo(InstanceStateTerminated)
 	if cs != nil {
 		cs.releaseInstanceGPUs(inst)
-		if cs.staleCache != nil {
-			cs.staleCache.RemoveInstance(inst.ID())
+		if cs.snapshotProvider != nil {
+			cs.snapshotProvider.RemoveCacheInstance(inst.ID())
 		}
 		delete(cs.cacheQueryFn, string(inst.ID()))
 	}
@@ -233,8 +233,8 @@ func (d *drainWait) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	if cs != nil && inst.HasSim() && inst.QueueDepth() == 0 && inst.BatchSize() == 0 {
 		inst.TransitionTo(InstanceStateTerminated)
 		cs.releaseInstanceGPUs(inst)
-		if cs.staleCache != nil {
-			cs.staleCache.RemoveInstance(inst.ID())
+		if cs.snapshotProvider != nil {
+			cs.snapshotProvider.RemoveCacheInstance(inst.ID())
 		}
 		delete(cs.cacheQueryFn, string(inst.ID()))
 	}

@@ -99,7 +99,7 @@ func (a *DirectActuator) scaleUp(d ScaleDecision) error {
 		// Construct, register, and activate the instance. GPU release on snapshotProvider
 		// failure is handled inside addLiveInstance.
 		if !a.cluster.addLiveInstance(id, d.ModelID, simCfg, nodeID, gpuIDs, d.Variant.TPDegree, costPerHour) {
-			lastErr = fmt.Errorf("scale-up for model %q: instance %s could not be registered (snapshotProvider type mismatch)", d.ModelID, id)
+			lastErr = fmt.Errorf("scale-up for model %q: instance %s could not be registered (snapshotProvider nil)", d.ModelID, id)
 			continue
 		}
 
