@@ -260,7 +260,8 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Fatalf("--min-tokens must be >= 0, got %d", observeMinTokens)
 	}
 	if observeMinTokens > 0 && !observeUnconstrainedOutput &&
-		observeWorkloadSpec == "" && observeWorkload == "" {
+		observeWorkloadSpec == "" && observeWorkload == "" &&
+		cmd.Flags().Changed("output-tokens") {
 		if msg := validateMinTokensMean(observeMinTokens, observeOutputTokens); msg != "" {
 			logrus.Fatalf("%s", msg)
 		}
@@ -349,7 +350,10 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	// Clamp each request's MaxOutputLen to min_tokens so no request reaches the server
 	// with max_tokens < min_tokens (which vLLM rejects with HTTP 400).
 	if observeMinTokens > 0 && !observeUnconstrainedOutput {
-		clampRequestsToMinTokens(wl.Requests, observeMinTokens)
+		if n := clampRequestsToMinTokens(wl.Requests, observeMinTokens); n > 0 {
+			logrus.Infof("Clamped max_tokens floor to min_tokens=%d on %d/%d requests (distribution left tail truncated)",
+				observeMinTokens, n, len(wl.Requests))
+		}
 	}
 
 	// Enable streaming on all requests when --record-itl is set (BC-6)
@@ -732,14 +736,23 @@ func validateMinTokensMean(minTokens, outputMean int) string {
 	return ""
 }
 
-// clampRequestsToMinTokens raises each request's MaxOutputLen to minTokens when it
-// falls below. Zero-valued MaxOutputLen is left unchanged (it means "no budget").
-func clampRequestsToMinTokens(requests []*sim.Request, minTokens int) {
+// clampRequestsToMinTokens raises each request's MaxOutputLen to minTokens when the
+// effective max_tokens falls below minTokens. Applies the same defaultMaxOutputTokens
+// fallback as Send() so that zero-valued MaxOutputLen (→ 2048 on the wire) is also
+// clamped when minTokens > 2048. Returns the count of requests modified.
+func clampRequestsToMinTokens(requests []*sim.Request, minTokens int) int {
+	n := 0
 	for _, r := range requests {
-		if r.MaxOutputLen > 0 && r.MaxOutputLen < minTokens {
+		effectiveMax := r.MaxOutputLen
+		if effectiveMax <= 0 {
+			effectiveMax = defaultMaxOutputTokens
+		}
+		if effectiveMax < minTokens {
 			r.MaxOutputLen = minTokens
+			n++
 		}
 	}
+	return n
 }
 
 // tokensToPrompt converts token IDs into a diverse prompt string using

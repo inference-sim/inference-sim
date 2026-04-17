@@ -1546,6 +1546,12 @@ func TestValidateMinTokensMean(t *testing.T) {
 			outputMean: 0,
 			wantEmpty:  true,
 		},
+		{
+			name:       "min_tokens=0 with nonzero mean is valid",
+			minTokens:  0,
+			outputMean: 512,
+			wantEmpty:  true,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1566,30 +1572,42 @@ func TestClampRequestsToMinTokens(t *testing.T) {
 		minTokens  int
 		inputLens  []int
 		wantLens   []int
+		wantCount  int
 	}{
 		{
 			name:      "clamps values below min",
 			minTokens: 128,
 			inputLens: []int{64, 128, 256},
 			wantLens:  []int{128, 128, 256},
+			wantCount: 1,
 		},
 		{
-			name:      "zero MaxOutputLen is unchanged",
+			name:      "zero MaxOutputLen below default 2048 is unchanged",
 			minTokens: 128,
 			inputLens: []int{0, 64},
 			wantLens:  []int{0, 128},
+			wantCount: 1,
+		},
+		{
+			name:      "zero MaxOutputLen exceeding default 2048 is clamped",
+			minTokens: 3000,
+			inputLens: []int{0},
+			wantLens:  []int{3000},
+			wantCount: 1,
 		},
 		{
 			name:      "all values above min unchanged",
 			minTokens: 50,
 			inputLens: []int{100, 200, 300},
 			wantLens:  []int{100, 200, 300},
+			wantCount: 0,
 		},
 		{
 			name:      "minTokens=0 no change",
 			minTokens: 0,
 			inputLens: []int{10, 20, 30},
 			wantLens:  []int{10, 20, 30},
+			wantCount: 0,
 		},
 	}
 	for _, tc := range tests {
@@ -1598,10 +1616,76 @@ func TestClampRequestsToMinTokens(t *testing.T) {
 			for i, l := range tc.inputLens {
 				reqs[i] = &sim.Request{MaxOutputLen: l}
 			}
-			clampRequestsToMinTokens(reqs, tc.minTokens)
+			got := clampRequestsToMinTokens(reqs, tc.minTokens)
+			if got != tc.wantCount {
+				t.Errorf("clampRequestsToMinTokens returned %d, want %d", got, tc.wantCount)
+			}
 			for i, r := range reqs {
 				if r.MaxOutputLen != tc.wantLens[i] {
 					t.Errorf("request[%d]: MaxOutputLen = %d, want %d", i, r.MaxOutputLen, tc.wantLens[i])
+				}
+			}
+			// Invariant: no request with a positive MaxOutputLen has MaxOutputLen < minTokens.
+			for i, r := range reqs {
+				if r.MaxOutputLen > 0 && r.MaxOutputLen < tc.minTokens {
+					t.Errorf("invariant violated: request[%d].MaxOutputLen = %d < minTokens = %d",
+						i, r.MaxOutputLen, tc.minTokens)
+				}
+			}
+		})
+	}
+}
+
+// TestSend_UnconstrainedOutput_MaxTokensNeverBelowMinTokens verifies the assumption that
+// clampRequestsToMinTokens is correctly bypassed when --unconstrained-output is set:
+// Send() either omits max_tokens (chat format) or sets it to math.MaxInt32 (completions
+// format), so vLLM never sees max_tokens < min_tokens regardless of MaxOutputLen values.
+func TestSend_UnconstrainedOutput_MaxTokensNeverBelowMinTokens(t *testing.T) {
+	for _, apiFormat := range []string{"completions", "chat"} {
+		t.Run(apiFormat, func(t *testing.T) {
+			var receivedBody map[string]interface{}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewDecoder(r.Body).Decode(&receivedBody)
+				w.Header().Set("Content-Type", "application/json")
+				if apiFormat == "chat" {
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{
+						"choices": []map[string]interface{}{
+							{"message": map[string]string{"content": "ok"}, "finish_reason": "stop"},
+						},
+						"usage": map[string]interface{}{"completion_tokens": 10, "prompt_tokens": 5},
+					})
+				} else {
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{
+						"choices": []map[string]interface{}{
+							{"text": "ok", "finish_reason": "stop"},
+						},
+						"usage": map[string]interface{}{"completion_tokens": 10, "prompt_tokens": 5},
+					})
+				}
+			}))
+			defer server.Close()
+
+			client := NewRealClient(server.URL, "", "test-model", "vllm", WithAPIFormat(apiFormat))
+			req := &PendingRequest{
+				Prompt:          "hello",
+				MaxOutputTokens: 64, // would be below any reasonable min_tokens
+				MinTokens:       128,
+				Unconstrained:   true,
+			}
+			_, _ = client.Send(context.Background(), req)
+
+			if v, ok := receivedBody["max_tokens"]; ok {
+				// If max_tokens is present, it must never be less than min_tokens.
+				maxTokens := int(v.(float64))
+				if maxTokens < req.MinTokens {
+					t.Errorf("max_tokens=%d < min_tokens=%d in unconstrained mode; vLLM would reject this",
+						maxTokens, req.MinTokens)
+				}
+			}
+			// chat format must omit max_tokens entirely (server uses model default).
+			if apiFormat == "chat" {
+				if _, ok := receivedBody["max_tokens"]; ok {
+					t.Error("max_tokens must be absent for chat format with Unconstrained=true")
 				}
 			}
 		})
