@@ -648,9 +648,8 @@ func TestRealClient_GIEHeaders_OmittedWhenDefault(t *testing.T) {
 }
 
 // TestSend_AbortAlwaysWarns verifies that finish_reason="abort" produces a warning
-// regardless of MinTokens, since abort is a server-side error, not expected behavior.
-// (finish_reason="length" is suppressed when MinTokens>0 because vLLM stops at
-// max_tokens with length when min_tokens==max_tokens — that is expected.)
+// regardless of MinTokens, since abort is a server-side error (preemption, client
+// disconnect, engine cancellation), not expected behavior.
 func TestSend_AbortAlwaysWarns(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -704,8 +703,8 @@ func TestSend_AbortAlwaysWarns(t *testing.T) {
 }
 
 // TestSend_LengthSuppressedWithMinTokens verifies that finish_reason="length" does NOT
-// produce a warning (i.e., no record-level side effect) when MinTokens > 0, because
-// vLLM stops at max_tokens with finish_reason="length" in the canonical min_tokens==max_tokens case.
+// produce a warning in exact-length mode (MinTokens == MaxOutputTokens), because
+// vLLM stops at max_tokens as intended in the canonical min_tokens==max_tokens case.
 func TestSend_LengthSuppressedWithMinTokens(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -755,6 +754,115 @@ func TestSend_LengthSuppressedWithMinTokens(t *testing.T) {
 				t.Errorf("FinishReason = %q, want %q", record.FinishReason, "length")
 			}
 		})
+	}
+}
+
+// TestSend_MinTokens_ChatFormat verifies that min_tokens is included in the request body
+// for the chat API format, not just the completions format.
+func TestSend_MinTokens_ChatFormat(t *testing.T) {
+	var receivedBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&receivedBody)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]string{"content": "ok"}, "finish_reason": "stop"},
+			},
+			"usage": map[string]interface{}{"completion_tokens": 10, "prompt_tokens": 5},
+		})
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm", WithAPIFormat("chat"))
+
+	req := &PendingRequest{Prompt: "hello", MaxOutputTokens: 256, MinTokens: 64}
+	_, _ = client.Send(context.Background(), req)
+	if v, ok := receivedBody["min_tokens"]; !ok {
+		t.Error("min_tokens not found in chat API request body")
+	} else if int(v.(float64)) != 64 {
+		t.Errorf("min_tokens = %v, want 64", v)
+	}
+}
+
+// TestSend_LengthWarnsWhenMinTokensNotSet verifies that the original truncation warning
+// behaviour is preserved: finish_reason="length" without --min-tokens still fires.
+func TestSend_LengthWarnsWhenMinTokensNotSet(t *testing.T) {
+	tests := []struct {
+		name      string
+		streaming bool
+	}{
+		{"non-streaming", false},
+		{"streaming", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tc.streaming {
+					flusher, ok := w.(http.Flusher)
+					if !ok {
+						t.Fatal("expected http.Flusher")
+					}
+					w.Header().Set("Content-Type", "text/event-stream")
+					_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n")
+					flusher.Flush()
+					_, _ = fmt.Fprintf(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":50}}\n\n")
+					flusher.Flush()
+					_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+					flusher.Flush()
+				} else {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{
+						"choices": []map[string]interface{}{
+							{"text": "ok", "finish_reason": "length"},
+						},
+						"usage": map[string]interface{}{"completion_tokens": 50, "prompt_tokens": 5},
+					})
+				}
+			}))
+			defer server.Close()
+
+			client := NewRealClient(server.URL, "", "test-model", "vllm")
+			// MinTokens=0: truncation warning must still fire.
+			record, err := client.Send(context.Background(), &PendingRequest{
+				RequestID: 1, InputTokens: 5, Streaming: tc.streaming,
+				Prompt: "hello", MaxOutputTokens: 256, MinTokens: 0,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if record.FinishReason != "length" {
+				t.Errorf("FinishReason = %q, want %q", record.FinishReason, "length")
+			}
+		})
+	}
+}
+
+// TestSend_LengthWarnsWhenMinTokensBelowMax verifies that the truncation warning fires
+// when min_tokens is set but below max_tokens — the output might still be truncated.
+func TestSend_LengthWarnsWhenMinTokensBelowMax(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"text": "ok", "finish_reason": "length"},
+			},
+			"usage": map[string]interface{}{"completion_tokens": 50, "prompt_tokens": 5},
+		})
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	// MinTokens=10, MaxOutputTokens=256: not exact-length mode, warning must fire.
+	record, err := client.Send(context.Background(), &PendingRequest{
+		RequestID: 1, InputTokens: 5, Streaming: false,
+		Prompt: "hello", MaxOutputTokens: 256, MinTokens: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.FinishReason != "length" {
+		t.Errorf("FinishReason = %q, want %q", record.FinishReason, "length")
 	}
 }
 

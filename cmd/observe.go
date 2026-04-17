@@ -179,10 +179,22 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 		return record, nil
 	}
 
-	if req.Streaming {
-		return c.handleStreamingResponse(resp, record, req.MinTokens)
+	// Compute effective max_tokens for warning suppression in handlers.
+	effectiveMax := 0
+	if !req.Unconstrained {
+		effectiveMax = req.MaxOutputTokens
+		if effectiveMax <= 0 {
+			effectiveMax = 2048
+		}
+	} else if c.apiFormat == "completions" {
+		effectiveMax = math.MaxInt32
 	}
-	return c.handleNonStreamingResponse(resp, record, req.MinTokens)
+	// unconstrained chat: effectiveMax=0 (no max_tokens sent; warn on length if it occurs)
+
+	if req.Streaming {
+		return c.handleStreamingResponse(resp, record, req.MinTokens, effectiveMax)
+	}
+	return c.handleNonStreamingResponse(resp, record, req.MinTokens, effectiveMax)
 }
 
 // firstByteReader wraps an io.Reader and captures the timestamp when the first byte is received.
@@ -199,7 +211,7 @@ func (f *firstByteReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func (c *RealClient) handleNonStreamingResponse(resp *http.Response, record *RequestRecord, minTokens int) (*RequestRecord, error) {
+func (c *RealClient) handleNonStreamingResponse(resp *http.Response, record *RequestRecord, minTokens, effectiveMax int) (*RequestRecord, error) {
 	// Wrap body to capture first-byte timing (BC-2).
 	// Note: for non-streaming HTTP, real servers send the entire response after generation
 	// completes, so FirstChunkTimeUs approximates "server finished + transfer started,"
@@ -245,9 +257,13 @@ func (c *RealClient) handleNonStreamingResponse(resp *http.Response, record *Req
 		if choice, ok := choices[0].(map[string]interface{}); ok {
 			if fr, ok := choice["finish_reason"].(string); ok {
 				record.FinishReason = fr
-				// "length" is expected when min_tokens == max_tokens; suppress noise.
-				// "abort" is a server error (OOM, preemption) regardless of min_tokens.
-				if fr == "length" && minTokens == 0 {
+				// Suppress "length" warning only in exact-length mode (min_tokens >= max_tokens):
+				// vLLM stops at max_tokens as intended. If min_tokens < max_tokens, truncation
+				// is still unexpected and should be flagged.
+				// "abort" is a server error (preemption, client disconnect, engine cancellation)
+				// — always warn regardless of min_tokens.
+				exactLengthMode := minTokens > 0 && effectiveMax > 0 && minTokens >= effectiveMax
+				if fr == "length" && !exactLengthMode {
 					logrus.Warnf("observe: request %d finish_reason=%q (output may be truncated)", record.RequestID, fr)
 				}
 				if fr == "abort" {
@@ -260,7 +276,7 @@ func (c *RealClient) handleNonStreamingResponse(resp *http.Response, record *Req
 	return record, nil
 }
 
-func (c *RealClient) handleStreamingResponse(resp *http.Response, record *RequestRecord, minTokens int) (*RequestRecord, error) {
+func (c *RealClient) handleStreamingResponse(resp *http.Response, record *RequestRecord, minTokens, effectiveMax int) (*RequestRecord, error) {
 	scanner := bufio.NewScanner(resp.Body)
 	chunkCount := 0
 	var lastUsage map[string]interface{}
@@ -323,9 +339,13 @@ func (c *RealClient) handleStreamingResponse(resp *http.Response, record *Reques
 		}
 	}
 
-	// "length" is expected when min_tokens == max_tokens; suppress noise.
-	// "abort" is a server error (OOM, preemption) regardless of min_tokens.
-	if record.FinishReason == "length" && minTokens == 0 {
+	// Suppress "length" warning only in exact-length mode (min_tokens >= max_tokens):
+	// vLLM stops at max_tokens as intended. If min_tokens < max_tokens, truncation
+	// is still unexpected and should be flagged.
+	// "abort" is a server error (preemption, client disconnect, engine cancellation)
+	// — always warn regardless of min_tokens.
+	exactLengthMode := minTokens > 0 && effectiveMax > 0 && minTokens >= effectiveMax
+	if record.FinishReason == "length" && !exactLengthMode {
 		logrus.Warnf("observe: request %d finish_reason=%q (output may be truncated)", record.RequestID, record.FinishReason)
 	}
 	if record.FinishReason == "abort" {
