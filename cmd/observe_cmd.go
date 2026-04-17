@@ -259,6 +259,12 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	if observeMinTokens < 0 {
 		logrus.Fatalf("--min-tokens must be >= 0, got %d", observeMinTokens)
 	}
+	if observeMinTokens > 0 && !observeUnconstrainedOutput &&
+		observeWorkloadSpec == "" && observeWorkload == "" {
+		if msg := validateMinTokensMean(observeMinTokens, observeOutputTokens); msg != "" {
+			logrus.Fatalf("%s", msg)
+		}
+	}
 
 	// Generate workload
 	var spec *workload.WorkloadSpec
@@ -340,14 +346,10 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Warn("No requests generated — writing empty trace")
 	}
 
-	// Warn if --min-tokens exceeds the effective max_tokens for any request.
+	// Clamp each request's MaxOutputLen to min_tokens so no request reaches the server
+	// with max_tokens < min_tokens (which vLLM rejects with HTTP 400).
 	if observeMinTokens > 0 && !observeUnconstrainedOutput {
-		if n := countMinTokensMismatch(observeMinTokens, wl.Requests); n > 0 {
-			if n == len(wl.Requests) {
-				logrus.Fatalf("--min-tokens=%d exceeds max_tokens for all %d requests; all requests will be rejected by the server", observeMinTokens, n)
-			}
-			logrus.Warnf("--min-tokens=%d exceeds max_tokens for %d/%d requests; those requests will likely be rejected by the server", observeMinTokens, n, len(wl.Requests))
-		}
+		clampRequestsToMinTokens(wl.Requests, observeMinTokens)
 	}
 
 	// Enable streaming on all requests when --record-itl is set (BC-6)
@@ -718,21 +720,26 @@ func adaptForSessionManager(original *sim.Request, record *RequestRecord) *sim.R
 	return adapted
 }
 
-// countMinTokensMismatch returns the number of requests whose effective max_tokens
-// is less than minTokens. Mirrors Send()'s MaxOutputTokens<=0 → 2048 fallback so
-// the warning fires only for requests that will actually be rejected.
-func countMinTokensMismatch(minTokens int, requests []*sim.Request) int {
-	n := 0
+// validateMinTokensMean returns a non-empty error message when minTokens exceeds
+// outputMean in distribution synthesis mode. Used only in that mode — spec/preset
+// modes don't use --output-tokens as a distribution mean.
+func validateMinTokensMean(minTokens, outputMean int) string {
+	if minTokens > outputMean {
+		return fmt.Sprintf(
+			"--min-tokens (%d) exceeds --output-tokens (%d); min_tokens must be <= the output-token mean",
+			minTokens, outputMean)
+	}
+	return ""
+}
+
+// clampRequestsToMinTokens raises each request's MaxOutputLen to minTokens when it
+// falls below. Zero-valued MaxOutputLen is left unchanged (it means "no budget").
+func clampRequestsToMinTokens(requests []*sim.Request, minTokens int) {
 	for _, r := range requests {
-		effectiveMax := r.MaxOutputLen
-		if effectiveMax <= 0 {
-			effectiveMax = defaultMaxOutputTokens
-		}
-		if minTokens > effectiveMax {
-			n++
+		if r.MaxOutputLen > 0 && r.MaxOutputLen < minTokens {
+			r.MaxOutputLen = minTokens
 		}
 	}
-	return n
 }
 
 // tokensToPrompt converts token IDs into a diverse prompt string using
