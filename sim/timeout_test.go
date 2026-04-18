@@ -315,13 +315,23 @@ func TestTimeout_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.T) {
 	if r1.State != StateCompleted {
 		t.Fatalf("r1 state: got %s, want %s", r1.State, StateCompleted)
 	}
+	// INV-1: the skipped orphaned timeout must not corrupt conservation counters.
+	if sim.Metrics.CompletedRequests != 1 {
+		t.Errorf("CompletedRequests: got %d, want 1", sim.Metrics.CompletedRequests)
+	}
+	if sim.Metrics.TimedOutRequests != 0 {
+		t.Errorf("TimedOutRequests: got %d, want 0 (orphaned timeout must not count as timed-out)", sim.Metrics.TimedOutRequests)
+	}
 
 	// SimEndedTime must reflect actual work completion, not the orphaned timeout.
-	// With beta0=1000, beta1=10, beta2=5 and a small request, completion is well
-	// under 1s (1_000_000 µs). If SimEndedTime exceeds 1s, the orphaned timeout
-	// inflated the clock.
-	if sim.Metrics.SimEndedTime > 1_000_000 {
-		t.Errorf("SimEndedTime inflated by orphaned timeout: got %d µs (%.1fs), want < 1_000_000 µs (1s)",
-			sim.Metrics.SimEndedTime, float64(sim.Metrics.SimEndedTime)/1e6)
+	// With beta=[1000,10,5] (µs), 1 prefill step + 5 decode steps:
+	//   prefill  ≈ beta0 + beta1*10 = 1100 µs
+	//   decode×5 ≈ 5 × (beta0 + beta1*1 + beta2*1) ≈ 5×1015 = 5075 µs
+	//   total    ≈ 6175 µs — well under 100_000 µs threshold
+	// If SimEndedTime exceeds the threshold, the orphaned 300s timeout inflated Clock.
+	const simEndedThreshold = 100_000 // 100 ms — 3000× above expected, 3000× below orphaned timeout
+	if sim.Metrics.SimEndedTime > simEndedThreshold {
+		t.Errorf("SimEndedTime inflated by orphaned timeout: got %d µs (%.1fs), want < %d µs",
+			sim.Metrics.SimEndedTime, float64(sim.Metrics.SimEndedTime)/1e6, simEndedThreshold)
 	}
 }

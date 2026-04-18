@@ -200,6 +200,12 @@ func (sim *Simulator) PeekNextEventTime() int64 {
 // pending-request tracking) without maintaining fragile before/after heuristics.
 // Caller MUST check HasPendingEvents() first. Panics on empty queue.
 // Does NOT check horizon — caller is responsible.
+//
+// Special case — lazy cancellation: if the popped event is a TimeoutEvent for a
+// request that has already completed (State == StateCompleted), the event is
+// returned immediately without advancing Clock or calling Execute(). This models
+// real-world client behavior where a deadline timer is cancelled the moment a
+// response arrives, preventing orphaned timeouts from inflating SimEndedTime.
 func (sim *Simulator) ProcessNextEvent() Event {
 	entry := heap.Pop(&sim.eventQueue).(eventEntry)
 	ev := entry.event

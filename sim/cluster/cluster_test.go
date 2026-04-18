@@ -2729,3 +2729,67 @@ func TestBatchRequestsNotSerialized(t *testing.T) {
 	}
 }
 
+// TestClusterSimulator_OrphanedTimeout_DoesNotInflateSimEndedTime verifies that
+// the cluster path's prevClusterClock save/restore (cluster.go) prevents orphaned
+// TimeoutEvents from inflating AggregatedMetrics().SimEndedTime. This is the
+// cluster-mode companion to TestTimeout_OrphanedTimeout_DoesNotInflateSimEndedTime
+// in sim/timeout_test.go.
+//
+// Scenario: 5 requests complete quickly but each bears a 300s Deadline
+// (mimicking DefaultTimeoutUs). Without the c.clock restore in the cluster loop,
+// c.clock would advance to arrival+300s for the last request, inflating SimEndedTime.
+func TestClusterSimulator_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.T) {
+	const deadline = int64(300_000_000) // 300s — mimics workload.DefaultTimeoutUs
+
+	config := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             500_000_000, // 500s — beyond the 300s deadline
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+		},
+		NumInstances: 2,
+	}
+
+	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(42))
+	workloadRNG := rng.ForSubsystem(sim.SubsystemWorkload)
+
+	requests := make([]*sim.Request, 5)
+	for i := 0; i < 5; i++ {
+		arrivalTime := int64(i * 100_000) // stagger arrivals by 100ms
+		requests[i] = &sim.Request{
+			ID:          fmt.Sprintf("r%d", i),
+			ArrivalTime: arrivalTime,
+			InputTokens: sim.GenerateRandomTokenIDs(workloadRNG, 10),
+			OutputTokens: sim.GenerateRandomTokenIDs(workloadRNG, 5),
+			State:       sim.StateQueued,
+			MaxOutputLen: 5,
+			Deadline:    arrivalTime + deadline,
+		}
+	}
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+
+	if m.CompletedRequests != 5 {
+		t.Fatalf("CompletedRequests: got %d, want 5", m.CompletedRequests)
+	}
+	if m.TimedOutRequests != 0 {
+		t.Errorf("TimedOutRequests: got %d, want 0 (orphaned timeouts must not fire)", m.TimedOutRequests)
+	}
+
+	// SimEndedTime must reflect actual completion, not the last orphaned timeout.
+	// Last arrival at 400_000 µs; with beta=[1000,10,5] total execution is ~6ms,
+	// so SimEndedTime should be well under 1_000_000 µs (1s). The orphaned timeout
+	// would have placed it at 400_000 + 300_000_000 = ~300.4s without the fix.
+	const simEndedThreshold = int64(1_000_000) // 1s — 300× below orphaned timeout
+	if m.SimEndedTime > simEndedThreshold {
+		t.Errorf("SimEndedTime inflated by orphaned timeout in cluster path: got %d µs (%.1fs), want < %d µs",
+			m.SimEndedTime, float64(m.SimEndedTime)/1e6, simEndedThreshold)
+	}
+}
+
