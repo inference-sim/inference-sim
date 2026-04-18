@@ -281,3 +281,47 @@ func TestTimeout_PreemptThenTimeout_SafeNoOp(t *testing.T) {
 			completed, queued, running, dropped, timedOut, sum, injected)
 	}
 }
+
+// TestTimeout_OrphanedTimeout_DoesNotInflateSimEndedTime verifies that a
+// completed request's orphaned TimeoutEvent does not advance the simulation
+// clock. The real-world equivalent: a client cancels its deadline timer when
+// the response arrives.
+//
+// Scenario: one request completes quickly, but its Deadline is 300s in the
+// future. Without lazy cancellation, SimEndedTime would be ~300s (the orphaned
+// timeout fires and advances the clock). With the fix, SimEndedTime reflects
+// the actual completion time.
+func TestTimeout_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             500_000_000, // 500s — well beyond the 300s deadline
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	r1 := &Request{
+		ID: "r1", ArrivalTime: 0,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+		State: StateQueued, MaxOutputLen: 5,
+		Deadline: 300_000_000, // 300s — mimics DefaultTimeoutUs
+	}
+
+	sim.InjectArrival(r1)
+	sim.Run()
+
+	if r1.State != StateCompleted {
+		t.Fatalf("r1 state: got %s, want %s", r1.State, StateCompleted)
+	}
+
+	// SimEndedTime must reflect actual work completion, not the orphaned timeout.
+	// With beta0=1000, beta1=10, beta2=5 and a small request, completion is well
+	// under 1s (1_000_000 µs). If SimEndedTime exceeds 1s, the orphaned timeout
+	// inflated the clock.
+	if sim.Metrics.SimEndedTime > 1_000_000 {
+		t.Errorf("SimEndedTime inflated by orphaned timeout: got %d µs (%.1fs), want < 1_000_000 µs (1s)",
+			sim.Metrics.SimEndedTime, float64(sim.Metrics.SimEndedTime)/1e6)
+	}
+}

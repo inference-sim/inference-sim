@@ -203,6 +203,16 @@ func (sim *Simulator) PeekNextEventTime() int64 {
 func (sim *Simulator) ProcessNextEvent() Event {
 	entry := heap.Pop(&sim.eventQueue).(eventEntry)
 	ev := entry.event
+
+	// Lazy cancellation: a TimeoutEvent whose request already completed is an
+	// orphan — the real-world equivalent of a client cancelling its deadline
+	// timer when the response arrives. Skip it before advancing the clock so
+	// Finalize() captures SimEndedTime from the last real-work event, not from
+	// an orphaned no-op timeout 300s in the future.
+	if te, ok := ev.(*TimeoutEvent); ok && te.Request.State == StateCompleted {
+		return ev
+	}
+
 	sim.Clock = ev.Timestamp()
 	logrus.Debugf("[tick %07d] Executing %T", sim.Clock, ev)
 	ev.Execute(sim)
