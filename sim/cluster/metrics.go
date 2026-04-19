@@ -689,12 +689,15 @@ func ComputeSessionMetrics(m *sim.Metrics) *SessionMetrics {
 		}
 
 		// RequestTTFTs is in µs ticks; convert to ms for consistency with other output.
-		// rm.TTFT is only populated when writing the JSON file, not in-memory aggregation.
-		ttftMs := m.RequestTTFTs[id] / 1000.0
-		if rm.RoundIndex == 0 {
-			coldTTFTs = append(coldTTFTs, ttftMs)
-		} else {
-			warmTTFTs = append(warmTTFTs, ttftMs)
+		// Guard against map miss (R1): requests that timed out before first token are absent
+		// from RequestTTFTs — Go returns 0.0 on miss, which would silently corrupt distributions.
+		if ttftUs, hasTTFT := m.RequestTTFTs[id]; hasTTFT {
+			ttftMs := ttftUs / 1000.0
+			if rm.RoundIndex == 0 {
+				coldTTFTs = append(coldTTFTs, ttftMs)
+			} else {
+				warmTTFTs = append(warmTTFTs, ttftMs)
+			}
 		}
 
 		sd, ok := sessions[rm.SessionID]

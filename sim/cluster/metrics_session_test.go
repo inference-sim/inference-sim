@@ -183,6 +183,29 @@ func TestComputeSessionMetrics_MultiSessionDuration(t *testing.T) {
 }
 
 // Invariant: SessionCount equals number of distinct SessionIDs
+// TestComputeSessionMetrics_TimedOutBeforeFirstToken_NotCountedInTTFT verifies the R1 guard:
+// a session request that is admitted but times out before producing its first token is absent
+// from RequestTTFTs. It must not contribute a spurious 0.0ms entry to cold/warm distributions.
+func TestComputeSessionMetrics_TimedOutBeforeFirstToken_NotCountedInTTFT(t *testing.T) {
+	m := sim.NewMetrics()
+	// round-0 request admitted (in Requests) but no TTFT entry (timed out before first token)
+	m.Requests["r0"] = sim.RequestMetrics{ID: "r0", SessionID: "s1", RoundIndex: 0, ArrivedAt: 0}
+	// round-1 request with a valid TTFT
+	m.Requests["r1"] = sim.RequestMetrics{ID: "r1", SessionID: "s1", RoundIndex: 1, ArrivedAt: 100_000}
+	m.RequestTTFTs["r1"] = 5_000.0 // 5ms
+
+	got := ComputeSessionMetrics(m)
+	if got == nil {
+		t.Fatal("expected non-nil SessionMetrics (session request exists)")
+	}
+	if got.TTFTCold.Count != 0 {
+		t.Errorf("TTFTCold.Count: got %d, want 0 (timed-out round-0 must not inject 0ms entry)", got.TTFTCold.Count)
+	}
+	if got.TTFTWarm.Count != 1 {
+		t.Errorf("TTFTWarm.Count: got %d, want 1 (round-1 with valid TTFT must be counted)", got.TTFTWarm.Count)
+	}
+}
+
 func TestComputeSessionMetrics_SessionCount(t *testing.T) {
 	m := buildSessionTestMetrics([]sim.RequestMetrics{
 		{ID: "a0", SessionID: "s1", RoundIndex: 0, TTFT: 10.0, ArrivedAt: 0},
