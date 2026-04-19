@@ -94,7 +94,7 @@ BLIS models three signal freshness tiers:
 | Tier | Signals | Source | Freshness |
 |------|---------|--------|-----------|
 | **Router-local** | InFlightRequests, prefix cache index | Router increments InFlightRequests at dispatch, decrements at completion; prefix cache updated after each routing decision | Always fresh — router owns this state |
-| **Instance-reported (Immediate/Periodic)** | QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate | Instance-internal state (scheduler queue, running batch, KV cache) | When `--snapshot-refresh-interval=0` (default): Immediate (read from instance at routing time). When `>0`: all Prometheus-sourced signals share the same Periodic refresh interval, matching real vLLM's single `/metrics` endpoint. |
+| **Instance-reported (Immediate/Periodic)** | QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate, PreemptionCount | Instance-internal state (scheduler queue, running batch, KV cache) | When `--snapshot-refresh-interval=0` (default): Immediate (read from instance at routing time). When `>0`: all Prometheus-sourced signals share the same Periodic refresh interval, matching real vLLM's single `/metrics` endpoint. |
 
 !!! info "DES semantics of 'Immediate' mode"
     "Immediate" means "re-read from the instance object at query time" — NOT "perfectly synchronized with the simulation clock." At the same clock tick, cluster events are processed before instance events (determinism rule). So a routing decision at time T sees QueueDepth that hasn't yet processed instance events at time T. This is a determinism mechanism (INV-6), not a freshness guarantee.

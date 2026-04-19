@@ -60,20 +60,30 @@ func TestPreemptionCount_Accessor_SurfacesMetric(t *testing.T) {
 }
 
 // TestPreemptionCount_Snapshot_AlwaysImmediate verifies BC-2:
-// Snapshot() injects PreemptionCount unconditionally regardless of ObservabilityConfig.
+// When ObservabilityConfig.PreemptionCount is configured as Immediate,
+// Snapshot() re-reads it on every call — even at the same clock tick
+// where other Periodic fields would not refresh.
+// NOTE (DEV-1): original design was unconditional; post-fix it is routed through
+// shouldRefresh() like other signals, with Immediate as the default.
 func TestPreemptionCount_Snapshot_AlwaysImmediate(t *testing.T) {
 	inst := newTestInstance("inst_0", 100)
 	inst.sim.Metrics.PreemptionCount = 5
 
 	instances := map[InstanceID]*InstanceSimulator{"inst_0": inst}
-	provider := NewCachedSnapshotProvider(instances, DefaultObservabilityConfig())
+	config := ObservabilityConfig{
+		QueueDepth:      FieldConfig{Mode: Periodic, Interval: 1_000_000},
+		BatchSize:       FieldConfig{Mode: Periodic, Interval: 1_000_000},
+		KVUtilization:   FieldConfig{Mode: Periodic, Interval: 1_000_000},
+		PreemptionCount: FieldConfig{Mode: Immediate},
+	}
+	provider := NewCachedSnapshotProvider(instances, config)
 
 	snap := provider.Snapshot("inst_0", 0)
 	if snap.PreemptionCount != 5 {
 		t.Errorf("Snapshot PreemptionCount = %d, want 5", snap.PreemptionCount)
 	}
 
-	// Advance count — must reflect on next call regardless of clock
+	// Advance count — must reflect on next call regardless of clock (other Periodic fields are stale)
 	inst.sim.Metrics.PreemptionCount = 12
 	snap2 := provider.Snapshot("inst_0", 0) // same clock, Periodic fields would be stale
 	if snap2.PreemptionCount != 12 {
@@ -153,7 +163,7 @@ go build ./... && go test ./... -count=1 && golangci-lint run ./...
 git commit -m "feat(routing): expose PreemptionCount as a routing signal
 
 - Add PreemptionCount() accessor on InstanceSimulator (BC-1)
-- Inject PreemptionCount unconditionally in Snapshot() — always Immediate (BC-2)
+- Integrate PreemptionCount into ObservabilityConfig/shouldRefresh() — Immediate by default, Periodic when --snapshot-refresh-interval > 0 (BC-2, DEV-1)
 - Update INV-7 signal freshness table
 
 Closes #1044
@@ -172,7 +182,7 @@ gh pr create --title "feat(routing): expose PreemptionCount as a routing signal"
 - [x] No breaking changes — `RoutingSnapshot` field addition uses named fields throughout
 - [x] No hidden global state
 - [x] R1: No silent continue/return
-- [x] R4: Construction sites audited — `Snapshot()` (sets PreemptionCount unconditionally); `RefreshAll()` and `AddInstance()` intentionally omit it, consistent with `InFlightRequests` which is also always-Immediate and injected at a higher level
+- [x] R4: Construction sites audited — `Snapshot()` routes PreemptionCount through `shouldRefresh()`; `RefreshAll()` sets and timestamps it; `AddInstance()` zero-initializes it (recovered on first `Snapshot()` call)
 - [x] R6: No logrus.Fatalf in sim/ packages
 - [x] R7: Invariant test — `TestPreemptionCount_Snapshot_AlwaysImmediate` verifies Immediate contract
 - [x] R8: No exported mutable maps
