@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 func TestGaussianSampler_MeanMatchesParam(t *testing.T) {
@@ -496,6 +498,103 @@ func TestParseThinkTimeDist_MissingMu_ReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "mu") {
 		t.Errorf("error %q should mention \"mu\"", err.Error())
+	}
+}
+
+// TestParseThinkTimeDist_Constant_BareNumber verifies that bare numbers (no suffix)
+// are treated as milliseconds — the same convention as --think-time-ms.
+func TestParseThinkTimeDist_Constant_BareNumber(t *testing.T) {
+	s, err := ParseThinkTimeDist("constant:value=500")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := s.Sample(nil); got != 500_000 {
+		t.Errorf("bare number: got %d µs, want 500000 µs (500ms)", got)
+	}
+}
+
+// TestParseThinkTimeDist_Lognormal_MinZero verifies that min=0 is treated as
+// "no lower bound" (s.min sentinel), not as an active clamp.
+// All samples must be >= 1 (the floor) and <= max when max is set.
+func TestParseThinkTimeDist_Lognormal_MinZero(t *testing.T) {
+	s, err := ParseThinkTimeDist("lognormal:mu=2.0,sigma=0.5,min=0s,max=30s")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rng := rand.New(rand.NewSource(99))
+	maxUs := 30_000_000
+	for i := 0; i < 1000; i++ {
+		v := s.Sample(rng)
+		if v < 1 {
+			t.Errorf("sample %d: got %d, want >= 1", i, v)
+		}
+		if v > maxUs {
+			t.Errorf("sample %d: got %d, want <= %d (30s)", i, v, maxUs)
+		}
+	}
+}
+
+// TestParseThinkTimeDist_ValidationErrors verifies that invalid inputs are
+// rejected with errors rather than silently producing degenerate samplers.
+func TestParseThinkTimeDist_ValidationErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		spec    string
+		wantErr string
+	}{
+		{"negative time value", "constant:value=-5s", "non-negative"},
+		{"infinite time value", "constant:value=Infs", "non-negative finite"},
+		{"lognormal infinite mu", "lognormal:mu=+Inf,sigma=0.6", "finite"},
+		{"lognormal NaN sigma", "lognormal:mu=2.0,sigma=NaN", "finite positive"},
+		{"lognormal negative sigma", "lognormal:mu=2.0,sigma=-0.5", "finite positive"},
+		{"lognormal zero sigma", "lognormal:mu=2.0,sigma=0", "finite positive"},
+		{"lognormal min > max", "lognormal:mu=2.0,sigma=0.6,min=30s,max=3s", "min"},
+		{"duplicate key", "lognormal:mu=2.0,sigma=0.6,mu=5.0", "duplicate key"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseThinkTimeDist(tt.spec)
+			if err == nil {
+				t.Fatalf("expected error for %q, got nil", tt.spec)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error %q should contain %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestParseThinkTimeDist_Lognormal_INV10_SessionCausality verifies that the
+// lognormal sampler always returns a positive think time, preserving INV-10:
+// round[N+1].ArrivalTime >= round[N].CompletionTime + ThinkTimeUs.
+func TestParseThinkTimeDist_Lognormal_INV10_SessionCausality(t *testing.T) {
+	s, err := ParseThinkTimeDist("lognormal:mu=2.0,sigma=0.6")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sm := NewSessionManager([]SessionBlueprint{{
+		SessionID:        "inv10-test",
+		MaxRounds:        3,
+		ThinkTimeSampler: s,
+		RNG:              rand.New(rand.NewSource(42)),
+		InputSampler:     &constantSampler{value: 10},
+		OutputSampler:    &constantSampler{value: 5},
+		Horizon:          1_000_000_000,
+	}})
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "inv10-test", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+	}
+	completionTick := int64(100_000)
+	follow := sm.OnComplete(req0, completionTick)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+	// INV-10: follow-up arrival must be >= completion + think time (>= 1 µs)
+	if follow[0].ArrivalTime < completionTick+1 {
+		t.Errorf("INV-10 violated: follow-up arrival %d < completion %d + 1",
+			follow[0].ArrivalTime, completionTick)
 	}
 }
 

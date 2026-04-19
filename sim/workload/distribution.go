@@ -334,9 +334,15 @@ func ParseThinkTimeDist(spec string) (LengthSampler, error) {
 		if err != nil {
 			return nil, fmt.Errorf("think-time-dist lognormal: invalid mu %q: %w", muStr, err)
 		}
+		if math.IsNaN(mu) || math.IsInf(mu, 0) {
+			return nil, fmt.Errorf("think-time-dist lognormal: mu must be a finite number, got %q", muStr)
+		}
 		sigma, err := strconv.ParseFloat(sigmaStr, 64)
 		if err != nil {
 			return nil, fmt.Errorf("think-time-dist lognormal: invalid sigma %q: %w", sigmaStr, err)
+		}
+		if math.IsNaN(sigma) || math.IsInf(sigma, 0) || sigma <= 0 {
+			return nil, fmt.Errorf("think-time-dist lognormal: sigma must be a finite positive number, got %q", sigmaStr)
 		}
 		// mu/sigma are in log-space of seconds; shift to µs: mu_us = mu_s + ln(1e6)
 		muUs := mu + math.Log(1e6)
@@ -354,6 +360,9 @@ func ParseThinkTimeDist(spec string) (LengthSampler, error) {
 				return nil, fmt.Errorf("think-time-dist lognormal: invalid max %q: %w", v, err)
 			}
 			s.max = int(maxUs)
+		}
+		if s.min > 0 && s.max > 0 && s.min > s.max {
+			return nil, fmt.Errorf("think-time-dist lognormal: min (%d µs) must be <= max (%d µs)", s.min, s.max)
 		}
 		return s, nil
 
@@ -374,6 +383,7 @@ func ParseThinkTimeDist(spec string) (LengthSampler, error) {
 }
 
 // parseKVParams splits "k=v,k=v,..." into a map. Empty string returns empty map.
+// Duplicate keys are rejected to prevent silent user-intent loss (R1).
 func parseKVParams(s string) (map[string]string, error) {
 	result := make(map[string]string)
 	if strings.TrimSpace(s) == "" {
@@ -388,7 +398,11 @@ func parseKVParams(s string) (map[string]string, error) {
 		if eq < 0 {
 			return nil, fmt.Errorf("invalid parameter %q: expected key=value", kv)
 		}
-		result[kv[:eq]] = kv[eq+1:]
+		key := kv[:eq]
+		if _, exists := result[key]; exists {
+			return nil, fmt.Errorf("invalid parameter string: duplicate key %q", key)
+		}
+		result[key] = kv[eq+1:]
 	}
 	return result, nil
 }
@@ -396,11 +410,21 @@ func parseKVParams(s string) (map[string]string, error) {
 // parseTimeToMicros converts a time string to microseconds.
 // Supported suffixes: s (seconds), ms (milliseconds), us (microseconds).
 // Bare numbers (no suffix) are treated as milliseconds.
+// Negative and non-finite values are rejected (R3).
 func parseTimeToMicros(s string) (int64, error) {
+	validateFiniteNonNegative := func(v float64, raw string) error {
+		if v < 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+			return fmt.Errorf("time value must be a non-negative finite number, got %q", raw)
+		}
+		return nil
+	}
 	switch {
 	case strings.HasSuffix(s, "us"):
 		v, err := strconv.ParseFloat(strings.TrimSuffix(s, "us"), 64)
 		if err != nil {
+			return 0, err
+		}
+		if err := validateFiniteNonNegative(v, s); err != nil {
 			return 0, err
 		}
 		return int64(v), nil
@@ -409,10 +433,16 @@ func parseTimeToMicros(s string) (int64, error) {
 		if err != nil {
 			return 0, err
 		}
+		if err := validateFiniteNonNegative(v, s); err != nil {
+			return 0, err
+		}
 		return int64(v * 1_000), nil
 	case strings.HasSuffix(s, "s"):
 		v, err := strconv.ParseFloat(strings.TrimSuffix(s, "s"), 64)
 		if err != nil {
+			return 0, err
+		}
+		if err := validateFiniteNonNegative(v, s); err != nil {
 			return 0, err
 		}
 		return int64(v * 1_000_000), nil
@@ -420,6 +450,9 @@ func parseTimeToMicros(s string) (int64, error) {
 		// bare number → milliseconds (consistent with --think-time-ms convention)
 		v, err := strconv.ParseFloat(s, 64)
 		if err != nil {
+			return 0, err
+		}
+		if err := validateFiniteNonNegative(v, s); err != nil {
 			return 0, err
 		}
 		return int64(v * 1_000), nil
