@@ -66,10 +66,10 @@ if len(req.InputTokens) > len(sess.contextTokens) {
 
 ## Sanity Checklist
 
-- [ ] R1 (silent continue): no new error paths with silent `continue`
-- [ ] R4 (construction sites): no struct fields added; no construction sites to audit
-- [ ] R7 (golden tests): `TestSession_ContextAccumulation_MultiStep` expected values (25, 40) independently verified by the BC-2 invariant (not just "because the code produced them")
-- [ ] R12 (behavioral tests): all THEN clauses check observable output lengths, not internal struct fields
-- [ ] INV-6 (determinism): fix is deterministic — no map iteration, no float accumulation
-- [ ] INV-10 (session causality): arrival times unaffected by this fix
-- [ ] Non-accumulate path: `else` branch returns only `newInputTokens`; unmodified
+- [x] R1 (silent continue): no new error paths with silent `continue`
+- [x] R4 (construction sites): no struct fields added; no construction sites to audit
+- [x] R7 (golden tests): `TestSession_ContextAccumulation_MultiStep` expected values (25, 40) independently verified by the BC-2 invariant (not just "because the code produced them")
+- [x] R12 (behavioral tests): all THEN clauses check observable output lengths, not internal struct fields
+- [x] INV-6 (determinism): fix is deterministic — no map iteration, no float accumulation
+- [x] INV-10 (session causality): arrival times unaffected by this fix
+- [x] Non-accumulate path: `else` branch returns only `newInputTokens`; unmodified

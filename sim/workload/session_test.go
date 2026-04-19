@@ -175,6 +175,30 @@ func TestSession_ContextAccumulation_MultiStep(t *testing.T) {
 	}
 }
 
+// TestSession_ContextAccumulation_ZeroSuffix verifies the guard in accumulate mode
+// when InputSampler returns 0: contextTokens grows only by output tokens and the
+// follow-up is still generated (no panic, no state corruption).
+func TestSession_ContextAccumulation_ZeroSuffix(t *testing.T) {
+	bp := makeTestBlueprint("sess-zero-suffix", 3, 1000, "accumulate", 1_000_000)
+	bp.InputSampler = &constantSampler{value: 0}
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	outputR0 := sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(1)), 5)
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "sess-zero-suffix", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 5,
+		InputTokens: []int{}, OutputTokens: outputR0,
+	}
+	follow1 := sm.OnComplete(req0, 5000)
+	if len(follow1) != 1 {
+		t.Fatalf("expected 1 follow-up after zero-suffix round 0, got %d", len(follow1))
+	}
+	// contextTokens = 0 input + 5 output = 5; next input = 5 context + 0 new = 5
+	if len(follow1[0].InputTokens) != 5 {
+		t.Errorf("round 1 input length = %d, want 5 (contextTokens only, zero new suffix)", len(follow1[0].InputTokens))
+	}
+}
+
 // TestSession_BeyondHorizon_NotGenerated verifies BC-19:
 // follow-up rounds past horizon are not generated.
 func TestSession_BeyondHorizon_NotGenerated(t *testing.T) {
