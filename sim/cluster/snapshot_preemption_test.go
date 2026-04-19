@@ -56,7 +56,7 @@ func TestPreemptionCount_Snapshot_Periodic_GoesStale(t *testing.T) {
 	inst.sim.Metrics.PreemptionCount = 5
 
 	instances := map[InstanceID]*InstanceSimulator{"inst_0": inst}
-	config := newObservabilityConfig(1_000_000) // all fields Periodic with 1s interval
+	config := newObservabilityConfig(1_000_000, 0) // all fields Periodic with 1s interval; no cache delay
 	provider := NewCachedSnapshotProvider(instances, config)
 
 	// Advance clock to interval boundary — triggers the first read (1_000_000 - 0 >= 1_000_000)
