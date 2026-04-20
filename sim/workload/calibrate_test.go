@@ -281,6 +281,33 @@ func TestCalibration_WithITL(t *testing.T) {
 	}
 }
 
+func TestComputeCalibration_PopulatesMeanAndMedian(t *testing.T) {
+	// GIVEN real and sim vectors where mean ≠ median (skewed distribution)
+	real := []float64{100, 200, 300, 400, 1000} // mean=400, median=300
+	sim := []float64{110, 210, 310, 410, 1100}  // mean=428, median=310
+
+	// WHEN computing calibration
+	report, err := ComputeCalibration(real, sim, "ttft")
+
+	// THEN mean and median are correctly computed
+	if err != nil {
+		t.Fatalf("ComputeCalibration failed: %v", err)
+	}
+	if report.RealMean != 400.0 {
+		t.Errorf("RealMean = %f, want 400.0", report.RealMean)
+	}
+	if report.SimMean != 428.0 {
+		t.Errorf("SimMean = %f, want 428.0", report.SimMean)
+	}
+	// Median is P50 (3rd element in sorted 5-element array)
+	if report.RealMedian != 300.0 {
+		t.Errorf("RealMedian = %f, want 300.0", report.RealMedian)
+	}
+	if report.SimMedian != 310.0 {
+		t.Errorf("SimMedian = %f, want 310.0", report.SimMedian)
+	}
+}
+
 func TestCalibration_WithITL_NegativeDelta_ClockSkew(t *testing.T) {
 	// GIVEN trace records with ITL data containing negative deltas (clock skew)
 	traceRecords := []TraceRecord{
