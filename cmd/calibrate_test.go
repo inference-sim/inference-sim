@@ -370,8 +370,8 @@ network:
 		t.Fatal("report missing metrics.ttft")
 	}
 	// RTT applied → sim+RTT = real → MAPE ≈ 0
-	if ttftMetric.MAPE > 0.001 {
-		t.Errorf("TTFT MAPE = %.4f, want ~0.0 (RTT from header not applied correctly)", ttftMetric.MAPE)
+	if ttftMetric.RequestLevel.MAPE > 0.001 {
+		t.Errorf("TTFT RequestLevel.MAPE = %.4f, want ~0.0 (RTT from header not applied correctly)", ttftMetric.RequestLevel.MAPE)
 	}
 }
 
