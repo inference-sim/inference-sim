@@ -9,26 +9,34 @@ import (
 )
 
 // MetricComparison holds statistical comparison between real and sim values.
+// Fields are organized into workload-level (distribution shape) and request-level (prediction quality).
 type MetricComparison struct {
-	RealP50, SimP50 float64
-	RealP90, SimP90 float64
-	RealP95, SimP95 float64
-	RealP99, SimP99 float64
-	MAPE            float64
-	PearsonR        float64
-	BiasDirection   string // "over-predict", "under-predict", "neutral"
-	Quality         string // "excellent", "good", "fair", "poor"
-	Count           int
-
-	// Workload-level aggregate metrics (issue #1084)
+	// Workload-level aggregate metrics: describe the latency distribution shape
 	RealMean           float64 `json:"real_mean"`
 	SimMean            float64 `json:"sim_mean"`
-	RealMedian         float64 `json:"real_median"`
-	SimMedian          float64 `json:"sim_median"`
 	MeanError          float64 `json:"mean_error"`           // SimMean - RealMean
 	MeanPercentError   float64 `json:"mean_percent_error"`   // |MeanError| / RealMean
+	RealMedian         float64 `json:"real_median"`
+	SimMedian          float64 `json:"sim_median"`
 	MedianError        float64 `json:"median_error"`         // SimMedian - RealMedian
 	MedianPercentError float64 `json:"median_percent_error"` // |MedianError| / RealMedian
+	RealP50            float64 `json:"real_p50"`
+	SimP50             float64 `json:"sim_p50"`
+	RealP90            float64 `json:"real_p90"`
+	SimP90             float64 `json:"sim_p90"`
+	RealP95            float64 `json:"real_p95"`
+	SimP95             float64 `json:"sim_p95"`
+	RealP99            float64 `json:"real_p99"`
+	SimP99             float64 `json:"sim_p99"`
+
+	// Request-level prediction quality: how accurately sim predicts each individual request
+	MAPE          float64 `json:"mape"`
+	PearsonR      float64 `json:"pearson_r"`
+	BiasDirection string  `json:"bias_direction"` // "over-predict", "under-predict", "neutral"
+	Quality       string  `json:"quality"`        // "excellent", "good", "fair", "poor"
+
+	// Metadata
+	Count int `json:"count"`
 }
 
 // CalibrationReport holds the complete calibration result.
