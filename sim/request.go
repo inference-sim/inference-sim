@@ -83,6 +83,10 @@ type Request struct {
 	// Do NOT skip completion accounting for redirected requests.
 	Redirected bool
 
+	// PreemptionCount tracks the number of times this request has been preempted
+	// (vLLM parity: request.num_preemptions). Used for observability and diagnostics.
+	PreemptionCount int
+
 	// IsDecodeSubRequest is true when this request was created by PD disaggregation
 	// after KV transfer from a prefill instance. It enters the decode instance with
 	// ProgressIndex already set to len(InputTokens) and KV blocks pre-allocated.

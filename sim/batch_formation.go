@@ -134,6 +134,58 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		reqIndex++
 	}
 
+	// Phase 1.5: Re-admit preempted requests from this step.
+	// In real vLLM, a preempted request's freed blocks (with hashes preserved via
+	// lazy deletion) are available within the same scheduling context — the next
+	// schedule() call happens before any other allocation can consume them (one
+	// forward pass between schedule calls). In BLIS's DES, Phase 1's preemption
+	// guard (!result.PreemptionHappened) would otherwise create a 1-step delay
+	// during which running requests consume freed prefix blocks via popFreeBlock,
+	// destroying shared prefix hashes and causing infinite preemption cycles
+	// (issue #1087). Phase 1.5 closes this timing window for preempted requests
+	// only — Phase 2's guard remains intact for new requests.
+	// Iterate in reverse: preemptForTokens prepends each victim to WaitQ front,
+	// so the LAST evicted request is at WaitQ[0], second-to-last at WaitQ[1], etc.
+	// result.Preempted is in eviction order (first evicted at index 0).
+	for i := len(result.Preempted) - 1; i >= 0 && len(result.RunningBatch.Requests) < int(ctx.MaxRunningReqs) && tokenBudget > 0; i-- {
+		preempted := result.Preempted[i].Request
+
+		// The preempted request is at the front of WaitQ (placed there by preemptForTokens).
+		// Verify it's actually at the front before dequeuing — defensive guard.
+		if ctx.WaitQ.Len() == 0 || ctx.WaitQ.Peek() != preempted {
+			break
+		}
+
+		cachedBlocks := ctx.KVCache.GetCachedBlocks(preempted.InputTokens)
+		numNewTokens := util.Len64(preempted.InputTokens) - util.Len64(cachedBlocks)*ctx.KVCache.BlockSize()
+
+		if 0 < ctx.PrefillTokenThreshold && ctx.PrefillTokenThreshold < numNewTokens {
+			numNewTokens = ctx.PrefillTokenThreshold
+		}
+		numNewTokens = min(numNewTokens, tokenBudget)
+		startIndex := util.Len64(cachedBlocks) * ctx.KVCache.BlockSize()
+		if ctx.MaxModelLen > 0 {
+			maxAllowed := max(ctx.MaxModelLen-1-startIndex, 0)
+			numNewTokens = min(numNewTokens, maxAllowed)
+		}
+		endIndex := startIndex + numNewTokens
+
+		if ok := ctx.KVCache.AllocateKVBlocks(preempted, startIndex, endIndex, cachedBlocks); !ok {
+			// Cannot re-admit this preempted request — leave it and remaining
+			// preempted requests in WaitQ for the next step.
+			break
+		}
+
+		ctx.WaitQ.DequeueBatch()
+		result.RunningBatch.Requests = append(result.RunningBatch.Requests, preempted)
+		preempted.ScheduledStepIdx = ctx.StepCount
+		result.NewlyScheduled = append(result.NewlyScheduled, ScheduledRequest{Request: preempted})
+		tokenBudget -= numNewTokens
+		preempted.State = StateRunning
+		preempted.NumNewTokens = int(numNewTokens)
+		ctx.ComputedTokens[preempted.ID] = numNewTokens + util.Len64(cachedBlocks)*ctx.KVCache.BlockSize()
+	}
+
 	// Phase 2: Dequeue new requests from wait queue
 	for len(result.RunningBatch.Requests) < int(ctx.MaxRunningReqs) && ctx.WaitQ.Len() > 0 && tokenBudget > 0 && !result.PreemptionHappened {
 		next := ctx.WaitQ.Peek()
@@ -210,7 +262,9 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 
 			result.PreemptionHappened = true
 			preemptedRequest := result.RunningBatch.Requests[len(result.RunningBatch.Requests)-1]
-			logrus.Warnf("[tick %07d] preemption: evicting %s to make room", ctx.Now, preemptedRequest.ID)
+			preemptedRequest.PreemptionCount++
+			logrus.Warnf("[tick %07d] preemption: evicting %s to make room (preemption #%d)",
+				ctx.Now, preemptedRequest.ID, preemptedRequest.PreemptionCount)
 			result.RunningBatch.Requests = result.RunningBatch.Requests[:len(result.RunningBatch.Requests)-1]
 
 			result.Preempted = append(result.Preempted, PreemptedRequest{
