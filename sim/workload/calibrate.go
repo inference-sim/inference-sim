@@ -42,28 +42,6 @@ type MetricComparison struct {
 	WorkloadLevel WorkloadAggregates `json:"workload_level"`
 	RequestLevel  PredictionQuality  `json:"request_level"`
 	Count         int                `json:"count"`
-
-	// Deprecated: Direct field access maintained for backward compatibility.
-	// These fields mirror WorkloadLevel and RequestLevel for legacy callers.
-	// Will be removed in a future version. Use WorkloadLevel.RealMean instead.
-	RealP50, SimP50 float64
-	RealP90, SimP90 float64
-	RealP95, SimP95 float64
-	RealP99, SimP99 float64
-	MAPE            float64
-	PearsonR        float64
-	BiasDirection   string // "over-predict", "under-predict", "neutral"
-	Quality         string // "excellent", "good", "fair", "poor"
-
-	// Workload-level aggregate metrics (issue #1084) - deprecated, use WorkloadLevel instead
-	RealMean           float64 `json:"-"` // omitted from JSON, use WorkloadLevel.RealMean
-	SimMean            float64 `json:"-"`
-	RealMedian         float64 `json:"-"`
-	SimMedian          float64 `json:"-"`
-	MeanError          float64 `json:"-"`
-	MeanPercentError   float64 `json:"-"`
-	MedianError        float64 `json:"-"`
-	MedianPercentError float64 `json:"-"`
 }
 
 // CalibrationReport holds the complete calibration result.
@@ -370,28 +348,6 @@ func ComputeCalibration(real, sim []float64, metricName string) (*MetricComparis
 
 	// Quality rating
 	comp.RequestLevel.Quality = qualityRating(comp.RequestLevel.MAPE, comp.RequestLevel.PearsonR)
-
-	// Populate deprecated fields for backward compatibility
-	comp.RealP50 = comp.WorkloadLevel.RealP50
-	comp.SimP50 = comp.WorkloadLevel.SimP50
-	comp.RealP90 = comp.WorkloadLevel.RealP90
-	comp.SimP90 = comp.WorkloadLevel.SimP90
-	comp.RealP95 = comp.WorkloadLevel.RealP95
-	comp.SimP95 = comp.WorkloadLevel.SimP95
-	comp.RealP99 = comp.WorkloadLevel.RealP99
-	comp.SimP99 = comp.WorkloadLevel.SimP99
-	comp.MAPE = comp.RequestLevel.MAPE
-	comp.PearsonR = comp.RequestLevel.PearsonR
-	comp.BiasDirection = comp.RequestLevel.BiasDirection
-	comp.Quality = comp.RequestLevel.Quality
-	comp.RealMean = comp.WorkloadLevel.RealMean
-	comp.SimMean = comp.WorkloadLevel.SimMean
-	comp.RealMedian = comp.WorkloadLevel.RealMedian
-	comp.SimMedian = comp.WorkloadLevel.SimMedian
-	comp.MeanError = comp.WorkloadLevel.MeanError
-	comp.MeanPercentError = comp.WorkloadLevel.MeanPercentError
-	comp.MedianError = comp.WorkloadLevel.MedianError
-	comp.MedianPercentError = comp.WorkloadLevel.MedianPercentError
 
 	return comp, nil
 }

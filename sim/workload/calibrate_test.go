@@ -15,14 +15,14 @@ func TestComputeCalibration_PerfectMatch_ZeroMAPE(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.MAPE != 0.0 {
-		t.Errorf("MAPE = %f, want 0.0", report.MAPE)
+	if report.RequestLevel.MAPE != 0.0 {
+		t.Errorf("RequestLevel.MAPE = %f, want 0.0", report.RequestLevel.MAPE)
 	}
-	if report.PearsonR != 1.0 {
-		t.Errorf("PearsonR = %f, want 1.0", report.PearsonR)
+	if report.RequestLevel.PearsonR != 1.0 {
+		t.Errorf("RequestLevel.PearsonR = %f, want 1.0", report.RequestLevel.PearsonR)
 	}
-	if report.Quality != "excellent" {
-		t.Errorf("quality = %q, want excellent", report.Quality)
+	if report.RequestLevel.Quality != "excellent" {
+		t.Errorf("RequestLevel.Quality = %q, want excellent", report.RequestLevel.Quality)
 	}
 }
 
@@ -34,11 +34,11 @@ func TestComputeCalibration_KnownError_CorrectMAPE(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if math.Abs(report.MAPE-0.10) > 0.001 {
-		t.Errorf("MAPE = %f, want 0.10", report.MAPE)
+	if math.Abs(report.RequestLevel.MAPE-0.10) > 0.001 {
+		t.Errorf("RequestLevel.MAPE = %f, want 0.10", report.RequestLevel.MAPE)
 	}
-	if report.BiasDirection != "over-predict" {
-		t.Errorf("bias = %q, want over-predict", report.BiasDirection)
+	if report.RequestLevel.BiasDirection != "over-predict" {
+		t.Errorf("RequestLevel.BiasDirection = %q, want over-predict", report.RequestLevel.BiasDirection)
 	}
 }
 
@@ -66,8 +66,8 @@ func TestComputeCalibration_RealZero_SkippedInMAPE(t *testing.T) {
 		t.Fatal(err)
 	}
 	// MAPE computed only on 200→220 and 300→330 (10% each)
-	if math.Abs(report.MAPE-0.10) > 0.001 {
-		t.Errorf("MAPE = %f, want 0.10 (skipping real=0)", report.MAPE)
+	if math.Abs(report.RequestLevel.MAPE-0.10) > 0.001 {
+		t.Errorf("RequestLevel.MAPE = %f, want 0.10 (skipping real=0)", report.RequestLevel.MAPE)
 	}
 }
 
@@ -291,22 +291,22 @@ func TestComputeCalibration_PopulatesMeanAndMedian(t *testing.T) {
 	// WHEN computing calibration
 	report, err := ComputeCalibration(real, sim, "ttft")
 
-	// THEN mean and median are correctly computed
+	// THEN mean and median are correctly computed (BC-1, BC-2)
 	if err != nil {
 		t.Fatalf("ComputeCalibration failed: %v", err)
 	}
-	if report.RealMean != 400.0 {
-		t.Errorf("RealMean = %f, want 400.0", report.RealMean)
+	if report.WorkloadLevel.RealMean != 400.0 {
+		t.Errorf("WorkloadLevel.RealMean = %f, want 400.0", report.WorkloadLevel.RealMean)
 	}
-	if report.SimMean != 428.0 {
-		t.Errorf("SimMean = %f, want 428.0", report.SimMean)
+	if report.WorkloadLevel.SimMean != 428.0 {
+		t.Errorf("WorkloadLevel.SimMean = %f, want 428.0", report.WorkloadLevel.SimMean)
 	}
 	// Median is P50 (3rd element in sorted 5-element array)
-	if report.RealMedian != 300.0 {
-		t.Errorf("RealMedian = %f, want 300.0", report.RealMedian)
+	if report.WorkloadLevel.RealMedian != 300.0 {
+		t.Errorf("WorkloadLevel.RealMedian = %f, want 300.0", report.WorkloadLevel.RealMedian)
 	}
-	if report.SimMedian != 310.0 {
-		t.Errorf("SimMedian = %f, want 310.0", report.SimMedian)
+	if report.WorkloadLevel.SimMedian != 310.0 {
+		t.Errorf("WorkloadLevel.SimMedian = %f, want 310.0", report.WorkloadLevel.SimMedian)
 	}
 }
 
@@ -362,17 +362,17 @@ func TestComputeCalibration_ErrorFields_CorrectSignAndMagnitude(t *testing.T) {
 			}
 
 			// THEN error fields match expected values (BC-3 through BC-6)
-			if math.Abs(report.MeanError-tt.wantMeanError) > tt.tolerance {
-				t.Errorf("MeanError = %f, want %f", report.MeanError, tt.wantMeanError)
+			if math.Abs(report.WorkloadLevel.MeanError-tt.wantMeanError) > tt.tolerance {
+				t.Errorf("WorkloadLevel.MeanError = %f, want %f", report.WorkloadLevel.MeanError, tt.wantMeanError)
 			}
-			if math.Abs(report.MeanPercentError-tt.wantMeanPctError) > tt.tolerance {
-				t.Errorf("MeanPercentError = %f, want %f", report.MeanPercentError, tt.wantMeanPctError)
+			if math.Abs(report.WorkloadLevel.MeanPercentError-tt.wantMeanPctError) > tt.tolerance {
+				t.Errorf("WorkloadLevel.MeanPercentError = %f, want %f", report.WorkloadLevel.MeanPercentError, tt.wantMeanPctError)
 			}
-			if math.Abs(report.MedianError-tt.wantMedianError) > tt.tolerance {
-				t.Errorf("MedianError = %f, want %f", report.MedianError, tt.wantMedianError)
+			if math.Abs(report.WorkloadLevel.MedianError-tt.wantMedianError) > tt.tolerance {
+				t.Errorf("WorkloadLevel.MedianError = %f, want %f", report.WorkloadLevel.MedianError, tt.wantMedianError)
 			}
-			if math.Abs(report.MedianPercentError-tt.wantMedianPctError) > tt.tolerance {
-				t.Errorf("MedianPercentError = %f, want %f", report.MedianPercentError, tt.wantMedianPctError)
+			if math.Abs(report.WorkloadLevel.MedianPercentError-tt.wantMedianPctError) > tt.tolerance {
+				t.Errorf("WorkloadLevel.MedianPercentError = %f, want %f", report.WorkloadLevel.MedianPercentError, tt.wantMedianPctError)
 			}
 		})
 	}
@@ -437,15 +437,15 @@ func TestComputeCalibration_ZeroRealMean_GuardsDivision(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ComputeCalibration failed: %v", err)
 	}
-	if report.RealMean != 0.0 {
-		t.Errorf("RealMean = %f, want 0.0", report.RealMean)
+	if report.WorkloadLevel.RealMean != 0.0 {
+		t.Errorf("WorkloadLevel.RealMean = %f, want 0.0", report.WorkloadLevel.RealMean)
 	}
-	if report.MeanPercentError != 0.0 {
-		t.Errorf("MeanPercentError = %f, want 0.0 (guarded division)", report.MeanPercentError)
+	if report.WorkloadLevel.MeanPercentError != 0.0 {
+		t.Errorf("WorkloadLevel.MeanPercentError = %f, want 0.0 (guarded division)", report.WorkloadLevel.MeanPercentError)
 	}
 	// MeanError should still be computed (not guarded)
-	if report.MeanError != 20.0 {
-		t.Errorf("MeanError = %f, want 20.0", report.MeanError)
+	if report.WorkloadLevel.MeanError != 20.0 {
+		t.Errorf("WorkloadLevel.MeanError = %f, want 20.0", report.WorkloadLevel.MeanError)
 	}
 }
 
@@ -461,15 +461,15 @@ func TestComputeCalibration_ZeroRealMedian_GuardsDivision(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ComputeCalibration failed: %v", err)
 	}
-	if report.RealMedian != 0.0 {
-		t.Errorf("RealMedian = %f, want 0.0", report.RealMedian)
+	if report.WorkloadLevel.RealMedian != 0.0 {
+		t.Errorf("WorkloadLevel.RealMedian = %f, want 0.0", report.WorkloadLevel.RealMedian)
 	}
-	if report.MedianPercentError != 0.0 {
-		t.Errorf("MedianPercentError = %f, want 0.0 (guarded division)", report.MedianPercentError)
+	if report.WorkloadLevel.MedianPercentError != 0.0 {
+		t.Errorf("WorkloadLevel.MedianPercentError = %f, want 0.0 (guarded division)", report.WorkloadLevel.MedianPercentError)
 	}
 	// MedianError should still be computed (not guarded)
-	if report.MedianError != 10.0 {
-		t.Errorf("MedianError = %f, want 10.0", report.MedianError)
+	if report.WorkloadLevel.MedianError != 10.0 {
+		t.Errorf("WorkloadLevel.MedianError = %f, want 10.0", report.WorkloadLevel.MedianError)
 	}
 }
 
@@ -554,5 +554,22 @@ func TestMetricComparison_JSONRoundTrip_IncludesNewFields(t *testing.T) {
 		if !strings.Contains(jsonStr, key) {
 			t.Errorf("JSON missing key %q: %s", key, jsonStr)
 		}
+	}
+
+	// THEN only canonical nested keys exist at top level (no flat deprecated keys)
+	// Parse into map to check top-level keys
+	var topLevel map[string]interface{}
+	if err := json.Unmarshal(data, &topLevel); err != nil {
+		t.Fatalf("Failed to unmarshal for top-level key check: %v", err)
+	}
+	// Verify only canonical keys exist at top level
+	expectedTopLevelKeys := map[string]bool{"workload_level": true, "request_level": true, "count": true}
+	for key := range topLevel {
+		if !expectedTopLevelKeys[key] {
+			t.Errorf("JSON contains unexpected top-level key %q (only workload_level, request_level, count should exist): %s", key, jsonStr)
+		}
+	}
+	if len(topLevel) != 3 {
+		t.Errorf("JSON should have exactly 3 top-level keys (workload_level, request_level, count), got %d: %v", len(topLevel), topLevel)
 	}
 }
