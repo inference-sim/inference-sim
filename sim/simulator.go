@@ -640,8 +640,10 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
 	// similar to vLLM's execute_model()
-	// Note: TotalOutputTokens++ and TTFT metrics are recorded inline (not extracted to helpers)
-	// because they are tightly coupled to the prefill/decode state transitions in this loop.
+	// Note: TTFT metrics are recorded inline because they are tightly coupled to the
+	// prefill/decode state transitions in this loop. TotalOutputTokens is computed at
+	// completion time in recordRequestCompletion (not inline) to avoid double-counting
+	// tokens when a preempted request re-runs from ProgressIndex=0.
 	for _, req := range sim.RunningBatch.Requests {
 		if req.ProgressIndex < util.Len64(req.InputTokens) {
 			req.ProgressIndex = sim.reqNumComputedTokens[req.ID]
