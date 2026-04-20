@@ -512,13 +512,17 @@ warm_up_requests: 0
 
 	calibrateCmd.Run(calibrateCmd, []string{})
 
-	// THEN CLI output includes MeanError= formatted field (not just substring in path)
+	// THEN CLI output includes Workload-level section with mean error
 	logOutput := logBuf.String()
-	if !strings.Contains(logOutput, "MeanError=") {
-		t.Errorf("CLI output missing MeanError= field:\n%s", logOutput)
+	if !strings.Contains(logOutput, "Workload-level aggregate metrics") {
+		t.Errorf("CLI output missing 'Workload-level aggregate metrics' section:\n%s", logOutput)
 	}
-	if !strings.Contains(logOutput, "MeanError=+200") {
-		t.Errorf("CLI output missing expected MeanError=+200:\n%s", logOutput)
+	if !strings.Contains(logOutput, "Error=+200") {
+		t.Errorf("CLI output missing expected Error=+200 in workload-level section:\n%s", logOutput)
+	}
+	// AND includes Request-level prediction quality section
+	if !strings.Contains(logOutput, "Request-level prediction quality") {
+		t.Errorf("CLI output missing 'Request-level prediction quality' section:\n%s", logOutput)
 	}
 
 	// THEN JSON report includes new aggregate fields
