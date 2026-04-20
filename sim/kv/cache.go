@@ -279,20 +279,10 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				kvc.RequestMap[reqID] = append(kvc.RequestMap[reqID], blockId)
 			}
 
-			// After claiming cached blocks, update latestBlk and advance newTokenProgressIndex
-			// by the tokens those blocks represent that overlap with newTokens.
-			// Cached blocks cover tokens[0:len(cachedBlocks)*blockSize] of InputTokens.
-			// newTokens covers tokens[startIndex:endIndex].
-			// Overlap = max(0, min(len(cachedBlocks)*blockSize, endIndex) - startIndex)
+			// Update latestBlk to the last claimed block if we claimed any
 			if len(cachedBlocks) > 0 {
 				ids = kvc.RequestMap[reqID] // Refresh ids after appending cached blocks
 				latestBlk = kvc.Blocks[ids[len(ids)-1]]
-				cachedEnd := int64(len(cachedBlocks)) * kvc.BlockSizeTokens
-				overlapEnd := min(cachedEnd, endIndex)
-				if overlapEnd > startIndex {
-					// Cached blocks overlap with newTokens, advance by the overlap
-					newTokenProgressIndex = overlapEnd - startIndex
-				}
 			}
 		}
 		if len(latestBlk.Tokens) > 0 && util.Len64(latestBlk.Tokens) < kvc.BlockSizeTokens {

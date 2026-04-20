@@ -158,10 +158,10 @@ func TestPreemptionCycle_With16KPrefixes(t *testing.T) {
 	}
 
 	// AND preempted requests should have gotten cache hits (lazy deletion success)
-	if len(preemptionCounts) > 0 {
-		assert.Greater(t, cacheHitsAfterPreemption, 0,
-			"Preempted requests should get cache hits on readmission (lazy deletion)")
-	}
+	require.NotEmpty(t, preemptionCounts,
+		"Test must trigger at least one preemption to validate lazy hash deletion")
+	assert.Greater(t, cacheHitsAfterPreemption, 0,
+		"Preempted requests should get cache hits on readmission (lazy deletion)")
 
 	t.Logf("Integration test passed - lazy hash deletion prevents infinite preemption cycle")
 	t.Logf("Total preemptions: %v, cache hits after preemption: %d",
