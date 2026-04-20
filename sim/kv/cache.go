@@ -257,10 +257,12 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 		ids, ok := kvc.RequestMap[reqID]
 		latestBlk := &KVBlock{}
 		if ok {
-			// KV cache has already seen this request before. The latest block needs to be filled first,
-			// followed by new blocks. Caching cannot happen here.
+			// Running request path: KV cache has already seen this request before.
+			// The latest block needs to be filled first, followed by new blocks.
+			// Note: Running requests do NOT re-claim cached blocks (vLLM parity).
+			// Preempted requests reset ProgressIndex to 0 and re-enter via the !ok
+			// path, where they claim all cached blocks upfront.
 			latestBlk = kvc.Blocks[ids[len(ids)-1]]
-
 		} else {
 			// KV cache is seeing this request for the first time (beginning of prefill)
 			// append the cached blocks to this request's ID map
@@ -275,6 +277,12 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				kvc.CacheHits++
 				logrus.Debugf("Hit KV Cache for req: %s of length: %d", req.ID, util.Len64(cachedBlocks)*kvc.BlockSizeTokens)
 				kvc.RequestMap[reqID] = append(kvc.RequestMap[reqID], blockId)
+			}
+
+			// Update latestBlk to the last claimed block if we claimed any
+			if len(cachedBlocks) > 0 {
+				ids = kvc.RequestMap[reqID] // Refresh ids after appending cached blocks
+				latestBlk = kvc.Blocks[ids[len(ids)-1]]
 			}
 		}
 		if len(latestBlk.Tokens) > 0 && util.Len64(latestBlk.Tokens) < kvc.BlockSizeTokens {
@@ -317,6 +325,17 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				if blk == nil {
 					panic(fmt.Sprintf("popFreeBlock returned nil after pre-check passed for req %s: INV-4 violation", reqID))
 				}
+
+				// Lazy hash deletion (vLLM parity): clear old hash before filling
+				// with new content. Matches vLLM's _maybe_evict_cached_block
+				// semantics (block_pool.py:331-356). Hash was preserved in
+				// popFreeBlock so preempted requests could find their cached
+				// prefix blocks on readmission.
+				if blk.Hash != "" {
+					delete(kvc.HashToBlock, blk.Hash)
+					blk.Hash = ""
+				}
+
 				// start and end are the range of tokens in blk
 				start := newTokenProgressIndex
 				end := newTokenProgressIndex + kvc.BlockSizeTokens
@@ -350,16 +369,16 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 }
 
 // popFreeBlock evicts a block from the free list and prepares it for reuse.
+// Hash entries are preserved (lazy deletion) - they will be cleared when the
+// block is filled with new content in AllocateKVBlocks allocation loop.
+// Matches vLLM's block_pool.py:313-318 + _maybe_evict_cached_block semantics.
 func (kvc *KVCacheState) popFreeBlock() *KVBlock {
 	head := kvc.FreeHead
 	if head == nil {
 		return nil
 	}
 	kvc.removeFromFreeList(head)
-	if head.Hash != "" {
-		delete(kvc.HashToBlock, head.Hash)
-		head.Hash = ""
-	}
+	// Hash stays intact - will be cleared when block is filled with new content (vLLM parity)
 	head.Tokens = nil
 	return head
 }

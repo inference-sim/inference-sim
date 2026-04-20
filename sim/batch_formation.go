@@ -200,7 +200,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 // impossible (cache too small or request was itself evicted).
 func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, result *BatchResult, ctx BatchContext, tokenBudget *int64) bool {
 	for {
-		if ok := ctx.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, []int64{}); !ok {
+		if ok := ctx.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, nil); !ok {
 			// Circuit breaker: empty batch means cache is too small (R19)
 			if len(result.RunningBatch.Requests) == 0 {
 				logrus.Warnf("[tick %07d] preemption: KV cache too small for request %s (need %d tokens, no running requests to evict)",
