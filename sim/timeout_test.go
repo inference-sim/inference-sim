@@ -348,9 +348,10 @@ func TestTimeout_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.T) {
 }
 
 // TestTimeout_OrphanedTimeout_MultipleOrphans_NoneInflateClock verifies that
-// N > 1 completed requests each with an orphaned timeout do not inflate
-// SimEndedTime. A loop bug where sim.Run() exits after the first non-advancing
-// pop would leave later orphaned timeouts unprocessed; this test catches that.
+// N > 1 completed requests each with an orphaned timeout do not cumulatively
+// inflate SimEndedTime. Each orphaned pop must be skipped without advancing
+// sim.Clock, so draining N orphaned timeouts leaves Clock at the last
+// real-work timestamp rather than the last orphaned timestamp.
 func TestTimeout_OrphanedTimeout_MultipleOrphans_NoneInflateClock(t *testing.T) {
 	cfg := SimConfig{
 		Horizon:             500_000_000,

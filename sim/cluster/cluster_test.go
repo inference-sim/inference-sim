@@ -2858,14 +2858,92 @@ func TestClusterSimulator_MixedOrphanedAndGenuineTimeout_CorrectMetrics(t *testi
 		t.Errorf("conservation: CompletedRequests(%d) + TimedOutRequests(%d) = %d, want 3",
 			m.CompletedRequests, m.TimedOutRequests, got)
 	}
-	// r1 completes after r0 (~12ms); SimEndedTime should reflect r1's completion,
-	// not r0/r1's orphaned 300s timeouts. Lower bound > 5_000 (past genuine timeout).
-	if m.SimEndedTime <= 5_000 {
-		t.Errorf("SimEndedTime too low: got %d µs, want > 5_000 µs", m.SimEndedTime)
+	// r1 completes after r0 (~12ms total); SimEndedTime should reflect r1's
+	// completion, not r0/r1's orphaned 300s timeouts.
+	// Lower bound > 10_000: r0 takes ~6ms and r1 runs after, so SimEndedTime
+	// must exceed 10ms — verifying both requests actually ran, not just r2's timeout.
+	if m.SimEndedTime <= 10_000 {
+		t.Errorf("SimEndedTime too low: got %d µs, want > 10_000 µs (r0+r1 must both complete)", m.SimEndedTime)
 	}
 	if m.SimEndedTime > 100_000 {
 		t.Errorf("SimEndedTime inflated by orphaned timeout: got %d µs (%.1fs), want < 100_000 µs",
 			m.SimEndedTime, float64(m.SimEndedTime)/1e6)
+	}
+}
+
+// TestClusterSimulator_PD_OrphanedTimeout_TimingNotInflated verifies that with
+// PD disaggregation, orphaned TimeoutEvents on the prefill instance do not
+// inflate per-request phase timestamps set by detectPrefillCompletions via
+// c.clock. If c.clock were not restored after a skipped orphaned timeout,
+// KVTransferStartedEvent.time and parent.PrefillCompleteTime could be set to
+// the orphaned timestamp (~300s) rather than the actual prefill completion time.
+//
+// Scenario: 4 requests through a 2P+2D cluster, each with a workload.DefaultTimeoutUs
+// deadline. All complete well before the deadline. Assert that PrefillCompleteTime,
+// TransferStartTime, and the causality chain are bounded by actual work time.
+func TestClusterSimulator_PD_OrphanedTimeout_TimingNotInflated(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.SimConfig.Horizon = 500_000_000 // 500s — beyond workload.DefaultTimeoutUs
+
+	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(42))
+	workloadRNG := rng.ForSubsystem(sim.SubsystemWorkload)
+
+	const n = 4
+	requests := make([]*sim.Request, n)
+	for i := 0; i < n; i++ {
+		arrivalTime := int64(i * 10_000)
+		requests[i] = &sim.Request{
+			ID:           fmt.Sprintf("pd_r%d", i),
+			ArrivalTime:  arrivalTime,
+			InputTokens:  sim.GenerateRandomTokenIDs(workloadRNG, 10),
+			OutputTokens: sim.GenerateRandomTokenIDs(workloadRNG, 5),
+			State:        sim.StateQueued,
+			MaxOutputLen: 5,
+			Deadline:     arrivalTime + workload.DefaultTimeoutUs,
+		}
+	}
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	if m.CompletedRequests != n {
+		t.Fatalf("CompletedRequests: got %d, want %d", m.CompletedRequests, n)
+	}
+	if m.TimedOutRequests != 0 {
+		t.Errorf("TimedOutRequests: got %d, want 0", m.TimedOutRequests)
+	}
+
+	// Phase timestamps set by detectPrefillCompletions/detectDecodeCompletions
+	// use c.clock. If c.clock were not restored after an orphaned timeout skip,
+	// these would be inflated to ~300s. Assert all are bounded well below 1s.
+	const phaseThreshold = int64(1_000_000) // 1s
+	for _, parent := range cs.parentRequests {
+		if parent.PrefillCompleteTime > phaseThreshold {
+			t.Errorf("parent %s: PrefillCompleteTime inflated: %d µs (%.1fs), want < %d µs",
+				parent.ID, parent.PrefillCompleteTime, float64(parent.PrefillCompleteTime)/1e6, phaseThreshold)
+		}
+		if parent.TransferStartTime > phaseThreshold {
+			t.Errorf("parent %s: TransferStartTime inflated: %d µs (%.1fs), want < %d µs",
+				parent.ID, parent.TransferStartTime, float64(parent.TransferStartTime)/1e6, phaseThreshold)
+		}
+		// Causality: each phase must not precede the prior one.
+		chain := []struct {
+			name  string
+			value int64
+		}{
+			{"ArrivalTime", parent.ArrivalTime},
+			{"PrefillCompleteTime", parent.PrefillCompleteTime},
+			{"TransferStartTime", parent.TransferStartTime},
+			{"TransferCompleteTime", parent.TransferCompleteTime},
+			{"DecodeEnqueueTime", parent.DecodeEnqueueTime},
+		}
+		for i := 1; i < len(chain); i++ {
+			if chain[i].value < chain[i-1].value {
+				t.Errorf("parent %s causality: %s (%d) < %s (%d)",
+					parent.ID, chain[i].name, chain[i].value, chain[i-1].name, chain[i-1].value)
+			}
+		}
 	}
 }
 
