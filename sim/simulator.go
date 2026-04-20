@@ -490,6 +490,16 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	// would cause the request to vanish from conservation accounting entirely.
 	sim.Metrics.CompletedRequests++
 
+	// Count decode tokens at completion time, not inline during each decode step.
+	// Inline counting double-counts when a request is preempted (ProgressIndex reset
+	// to 0) and re-runs: tokens from the aborted run are counted a second time.
+	// At completion: PI = InputLen + OutputLen - 1 (normal) or maxModelLen - 1 (capped),
+	// so PI - InputLen is always the exact number of decode tokens generated.
+	decodeTokens := int(req.ProgressIndex) - len(req.InputTokens)
+	if decodeTokens > 0 {
+		sim.Metrics.TotalOutputTokens += decodeTokens
+	}
+
 	var itlSum int64
 	for _, v := range req.ITL {
 		itlSum += v
@@ -644,7 +654,6 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 			// Also prevents phantom tokens from token budget exhaustion (pre-existing edge case).
 			if req.NumNewTokens > 0 {
 				req.ProgressIndex++
-				sim.Metrics.TotalOutputTokens++
 				req.ITL = append(req.ITL, currStepAdvance+sim.latencyModel.OutputTokenProcessingTime())
 			}
 		}

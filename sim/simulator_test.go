@@ -2598,3 +2598,79 @@ func TestEnqueueDecodeSubRequest_SimClockAhead_StepEventAtSimClock(t *testing.T)
 			got, simClock, clusterTime)
 	}
 }
+
+// TestSimulator_TotalOutputTokens_NoDoubleCountAfterPreemption verifies that
+// TotalOutputTokens is not inflated when a request is preempted and re-runs.
+//
+// Scenario: 4 KV blocks × 16 tokens/block = 64 total capacity.
+// B (32 input, 5 output) injected first → head of running batch.
+// A (16 input, 5 output) injected second → tail of running batch (eviction candidate).
+//
+// Token slices use distinct non-zero values to prevent prefix-cache sharing
+// between A and B, ensuring separate block allocations.
+//
+// Block layout at peak concurrency (before B's second decode):
+//   B: block0(B-input-0..15) + block1(B-input-16..31) + block2(B-decode-0) = 3 blocks
+//   A: block3(A-input-0..15) = 1 block (decode needs new block when block3 is full)
+//
+// B's second decode step (PI=33) needs a 4th block for its output token; all 4
+// blocks are taken at that point, so A (tail) is evicted.  A is re-queued with
+// ProgressIndex=0, re-prefills, and eventually completes normally.
+//
+// Without the fix: TotalOutputTokens counts A's pre-eviction decode step AND
+// A's full post-eviction run (one extra).
+// With the fix: TotalOutputTokens = 8 (4 per request: PI_final - InputLen).
+func TestSimulator_TotalOutputTokens_NoDoubleCountAfterPreemption(t *testing.T) {
+	// beta=[0,1,0]: StepTime = cacheMissTokens (min 1 µs).
+	// Decode steps cost 0 µs → clamped to 1; prefill costs inputTokens µs.
+	cfg := SimConfig{
+		Horizon:             1_000_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(4, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(10, 10_000, 16),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 1, 0}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+	}
+	s := mustNewSimulator(t, cfg)
+
+	// Distinct non-zero token slices prevent prefix-cache sharing between A and B.
+	bInput := make([]int, 32)
+	for i := range bInput {
+		bInput[i] = i + 1
+	}
+	aInput := make([]int, 16)
+	for i := range aInput {
+		aInput[i] = 1000 + i
+	}
+
+	// B injected first → WaitQ front → running batch head (index 0), never evicted.
+	// A injected second → running batch tail (index 1), eviction candidate.
+	s.InjectArrival(&Request{ID: "B", ArrivalTime: 0, InputTokens: bInput, OutputTokens: make([]int, 5)})
+	s.InjectArrival(&Request{ID: "A", ArrivalTime: 0, InputTokens: aInput, OutputTokens: make([]int, 5)})
+
+	for s.HasPendingEvents() {
+		s.ProcessNextEvent()
+	}
+
+	// Both requests must complete; verify preemption was exercised.
+	if s.Metrics.PreemptionCount == 0 {
+		t.Fatal("precondition violated: expected at least one preemption, got 0 — scenario does not test the bug")
+	}
+
+	// At normal completion: PI_final = InputLen + OutputLen - 1.
+	// decode tokens per request = PI_final - InputLen = OutputLen - 1 = 4.
+	// Total = 4 (B) + 4 (A) = 8.
+	want := 8
+	got := s.Metrics.TotalOutputTokens
+	if got != want {
+		t.Errorf("TotalOutputTokens = %d, want %d (extra %d indicates double-count after preemption)",
+			got, want, got-want)
+	}
+
+	// INV-1: all requests must be accounted for.
+	total := s.Metrics.CompletedRequests + s.Metrics.StillQueued + s.Metrics.StillRunning +
+		s.Metrics.DroppedUnservable + s.Metrics.TimedOutRequests
+	if total != 2 {
+		t.Errorf("INV-1 violated: accounted = %d, want 2", total)
+	}
+}
