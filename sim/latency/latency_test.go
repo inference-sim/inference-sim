@@ -649,17 +649,68 @@ func TestAllBackends_StepTime_EmptyBatch_FloorAtOne(t *testing.T) {
 	}
 	assert.GreaterOrEqual(t, blackbox.StepTime(emptyBatch), int64(1),
 		"blackbox with zero coefficients must still return >= 1")
+}
 
-	crossmodel := &CrossModelLatencyModel{
-		betaCoeffs:  []float64{0, 0, 0, 0}, // zero coefficients — worst case
-		alphaCoeffs: []float64{0, 0, 0},
-		numLayers:   1,
-		kvDimScaled: 0.0,
-		isMoE:       0.0,
-		isTP:        0.0,
+// TestNewLatencyModel_RemainingBackendsWork verifies BC-7: deleting deprecated
+// backend implementations does not break the remaining valid backends.
+// GIVEN minimal valid hardware config and coefficients
+// WHEN constructing each remaining backend via NewLatencyModel
+// THEN construction succeeds AND the model computes positive step time.
+func TestNewLatencyModel_RemainingBackendsWork(t *testing.T) {
+	validBackends := []string{"blackbox", "roofline", "trained-physics"}
+
+	for _, backend := range validBackends {
+		t.Run(backend, func(t *testing.T) {
+			// GIVEN minimal valid hardware config (includes BytesPerParam, MfuPrefill,
+			// MfuDecode required by roofline validation)
+			hw := sim.NewModelHardwareConfig(
+				sim.ModelConfig{
+					NumLayers:       32,
+					NumHeads:        32,
+					NumKVHeads:      8,
+					HiddenDim:       4096,
+					IntermediateDim: 11008,
+					BytesPerParam:   2.0,
+				},
+				sim.HardwareCalib{
+					TFlopsPeak: 989.0,
+					BwPeakTBs:  3.35,
+					MfuPrefill: 0.55,
+					MfuDecode:  0.30,
+					MemoryGiB:  80.0,
+				},
+				"", "", 1, backend, 0,
+			)
+			coeffs := sim.NewLatencyCoeffs(
+				[]float64{1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0},
+				[]float64{1.0, 1.0, 1.0},
+			)
+
+			// WHEN constructing a valid backend
+			model, err := NewLatencyModel(coeffs, hw)
+
+			// THEN construction must succeed
+			if err != nil {
+				t.Fatalf("NewLatencyModel(%q) failed: %v", backend, err)
+			}
+			if model == nil {
+				t.Errorf("NewLatencyModel(%q) returned nil model with no error", backend)
+			}
+
+			// AND the model must compute positive step time
+			batch := []*sim.Request{
+				{
+					InputTokens:   make([]int, 100),
+					ProgressIndex: 0,
+					NumNewTokens:  10,
+				},
+			}
+			stepTime := model.StepTime(batch)
+			if stepTime <= 0 {
+				t.Errorf("StepTime with 100 input, 10 new tokens = %v; want > 0", stepTime)
+			}
+		})
 	}
-	assert.GreaterOrEqual(t, crossmodel.StepTime(emptyBatch), int64(1),
-		"crossmodel with zero coefficients must still return >= 1")
 }
 
 // TestNewLatencyModel_Blackbox_EmitsDeprecationWarning verifies BC-1:
