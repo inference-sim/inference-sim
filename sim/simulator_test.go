@@ -134,7 +134,7 @@ func TestSimulator_PostDecodeFixedOverhead_DelegatesToModel(t *testing.T) {
 		overhead int64
 	}{
 		{"zero (blackbox/roofline)", 0},
-		{"positive (trained-roofline)", 1850},
+		{"positive (trained-physics)", 1850},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

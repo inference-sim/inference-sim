@@ -119,7 +119,7 @@ type DeploymentConfig struct {
 	FlowControlKVCacheUtilThreshold float64 `yaml:"flow_control_kv_cache_util_threshold,omitempty"` // for utilization detector
 	FlowControlMaxConcurrency       int     `yaml:"flow_control_max_concurrency,omitempty"`         // for concurrency detector
 
-	// Issue #893: per-GPU-type hardware calibration for roofline/trained-roofline backends.
+	// Issue #893: per-GPU-type hardware calibration for roofline/trained-physics backends.
 	// Key: GPU type string (e.g., "A100", "H100"). Value: HardwareCalib for that GPU.
 	// When non-nil and a pool's gpu_type is found in the map, the matched HardwareCalib
 	// overrides simCfg.HWConfig at instance construction time (both sync and deferred paths),
