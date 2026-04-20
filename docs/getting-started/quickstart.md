@@ -78,9 +78,9 @@ This simulates a 4-instance cluster receiving 100 requests/second. The `weighted
   --num-instances 4 --rate 100 --num-requests 500 \
   --trace-level decisions --summarize-trace
 
-# With trained-roofline mode (recommended for new models, 7% MAPE)
+# With trained-physics mode (recommended for new models)
 ./blis run --model qwen/qwen3-14b \
-  --latency-model trained-roofline --hardware H100 --tp 1 \
+  --latency-model trained-physics --hardware H100 --tp 1 \
   --num-instances 4 --rate 100 --num-requests 500
 
 # With pure roofline mode (analytical, no learned corrections)

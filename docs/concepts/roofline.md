@@ -2,8 +2,8 @@
 
 This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. Roofline is the default latency model in BLIS — it requires no training and works off-the-shelf for any Huggingface LLM whose `config.json` is saved under `model_configs/` (auto-fetched from HuggingFace on first use).
 
-!!! tip "Trained-Roofline: higher accuracy"
-    For higher accuracy (7% MAPE GPU combined), use `--latency-model trained-roofline` which applies learned correction factors to these roofline basis functions. See [Trained-Roofline Mode](../guide/latency-models.md#trained-roofline-mode-recommended-for-new-models). For legacy MoE workflows, `--latency-model crossmodel` is also available — see [Cross-Model Mode](../guide/latency-models.md#cross-model-mode-physics-informed).
+!!! tip "Trained-Physics: higher accuracy"
+    For higher accuracy, use `--latency-model trained-physics` which applies learned correction factors to roofline basis functions with architecture-aware MoE scaling. See [Trained-Physics Mode](../guide/latency-models.md#trained-physics-mode-recommended-for-new-models).
 
 
 !!! note "Scope: TP-only, quantized weight memory supported"
@@ -100,6 +100,6 @@ Alternatively, download the `config.json` manually:
 | `BwPeakTBs` | Peak HBM bandwidth in TB/s from GPU datasheet |
 | `mfuPrefill` | Model FLOPS Utilization for prefill phase (compute-bound) |
 | `mfuDecode` | Model FLOPS Utilization for decode phase (memory-bound) |
-| `MemoryGiB` | GPU memory capacity in GiB. Used by `CalculateKVBlocks` to auto-derive `--total-kv-blocks` when roofline or crossmodel mode is active and the flag is not explicitly set. |
+| `MemoryGiB` | GPU memory capacity in GiB. Used by `CalculateKVBlocks` to auto-derive `--total-kv-blocks` when roofline or trained-physics mode is active and the flag is not explicitly set. |
 
 > Note: The Peak TFLOPS and BW for a given GPU family might vary by GPU connectivity (e.g. SXM vs PCIe). We recommend a separate entry for each GPU connectivity type - e.g. A100-SXM, A100-PCIe etc in `hardware_config.json`.
