@@ -517,8 +517,6 @@ func TestIsValidLatencyBackend(t *testing.T) {
 	assert.True(t, IsValidLatencyBackend(""))
 	assert.True(t, IsValidLatencyBackend("blackbox"))
 	assert.True(t, IsValidLatencyBackend("roofline"))
-	assert.True(t, IsValidLatencyBackend("crossmodel"))
-	assert.True(t, IsValidLatencyBackend("trained-roofline"))
 	assert.True(t, IsValidLatencyBackend("trained-physics"))
 	assert.False(t, IsValidLatencyBackend("nonexistent"))
 }
@@ -527,8 +525,56 @@ func TestValidLatencyBackendNames(t *testing.T) {
 	names := ValidLatencyBackendNames()
 	assert.Contains(t, names, "blackbox")
 	assert.Contains(t, names, "roofline")
-	assert.Contains(t, names, "crossmodel")
-	assert.Contains(t, names, "trained-roofline")
 	assert.Contains(t, names, "trained-physics")
 	assert.NotContains(t, names, "")
+}
+
+func TestIsValidLatencyBackend_RemovedBackends(t *testing.T) {
+	// GIVEN removed backend names
+	removedBackends := []string{"crossmodel", "trained-roofline"}
+
+	for _, backend := range removedBackends {
+		t.Run(backend, func(t *testing.T) {
+			// WHEN checking if backend is valid
+			valid := IsValidLatencyBackend(backend)
+
+			// THEN it must return false
+			if valid {
+				t.Errorf("IsValidLatencyBackend(%q) = true; want false (backend was removed)", backend)
+			}
+		})
+	}
+}
+
+func TestValidLatencyBackendNames_ExcludesRemoved(t *testing.T) {
+	// GIVEN the list of valid backend names
+	names := ValidLatencyBackendNames()
+
+	// WHEN checking for removed backends
+	removedBackends := []string{"crossmodel", "trained-roofline"}
+	for _, removed := range removedBackends {
+		for _, name := range names {
+			// THEN removed backends must not appear in the list
+			if name == removed {
+				t.Errorf("ValidLatencyBackendNames() contains removed backend %q; want excluded", removed)
+			}
+		}
+	}
+
+	// AND the list must contain exactly 3 backends
+	expected := []string{"blackbox", "roofline", "trained-physics"}
+	if len(names) != len(expected) {
+		t.Errorf("ValidLatencyBackendNames() returned %d backends; want %d: %v", len(names), len(expected), expected)
+	}
+
+	// AND they must be the correct backends
+	nameSet := make(map[string]bool)
+	for _, name := range names {
+		nameSet[name] = true
+	}
+	for _, exp := range expected {
+		if !nameSet[exp] {
+			t.Errorf("ValidLatencyBackendNames() missing expected backend %q", exp)
+		}
+	}
 }
