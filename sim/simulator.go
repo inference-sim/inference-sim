@@ -494,9 +494,10 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	// Inline counting double-counts when a request is preempted (ProgressIndex reset
 	// to 0) and re-runs: tokens from the aborted run are counted a second time.
 	// At completion: PI = InputLen + OutputLen - 1 (normal) or maxModelLen - 1 (capped),
-	// so PI - InputLen is always the exact number of decode tokens generated.
+	// so PI - InputLen counts decode-step increments (= OutputLen - 1; the first output
+	// token is generated at prefill completion, not as a decode-step increment).
 	decodeTokens := int(req.ProgressIndex) - len(req.InputTokens)
-	if decodeTokens > 0 {
+	if decodeTokens > 0 { // zero-output-token requests complete with PI == InputLen → decodeTokens == 0
 		sim.Metrics.TotalOutputTokens += decodeTokens
 	}
 

@@ -2609,13 +2609,14 @@ func TestEnqueueDecodeSubRequest_SimClockAhead_StepEventAtSimClock(t *testing.T)
 // Token slices use distinct non-zero values to prevent prefix-cache sharing
 // between A and B, ensuring separate block allocations.
 //
-// Block layout at peak concurrency (before B's second decode):
+// Block layout at peak concurrency (after B's first prefill chunk + A's full prefill):
 //   B: block0(B-input-0..15) + block1(B-input-16..31) + block2(B-decode-0) = 3 blocks
-//   A: block3(A-input-0..15) = 1 block (decode needs new block when block3 is full)
+//   A: block3(A-input-0..15) = 1 block (block3 is full after prefill)
 //
-// B's second decode step (PI=33) needs a 4th block for its output token; all 4
-// blocks are taken at that point, so A (tail) is evicted.  A is re-queued with
-// ProgressIndex=0, re-prefills, and eventually completes normally.
+// The eviction is triggered by A, not B: when A needs its first decode token at
+// position 16, block3 (covering positions 0-15) is full and all 4 blocks are
+// occupied by B (3) + A (1).  A is at the batch tail, so A is evicted, re-queued
+// with ProgressIndex=0, re-prefills, and eventually completes normally.
 //
 // Without the fix: TotalOutputTokens counts A's pre-eviction decode step AND
 // A's full post-eviction run (one extra).
