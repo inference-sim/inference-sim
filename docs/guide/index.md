@@ -9,7 +9,7 @@ Task-oriented guides for using BLIS effectively. Each guide covers a specific fe
 | [Routing Policies](routing.md) | Choosing and configuring how requests are distributed across instances |
 | [Admission Control](admission.md) | Rate-limiting and traffic shaping at the cluster gateway |
 | [Scheduling & Priority](scheduling.md) | Controlling request processing order within each instance |
-| [Latency Models](latency-models.md) | Choosing between roofline (default, analytical), blackbox (data-driven), and cross-model (physics-informed) step time estimation |
+| [Latency Models](latency-models.md) | Choosing between roofline (default, analytical), blackbox (data-driven), and trained-physics (physics-informed) step time estimation |
 | [KV Cache & Memory](kv-cache.md) | Tuning GPU/CPU memory allocation, prefix caching, and chunked prefill |
 | [Workload Specifications](workloads.md) | Defining multi-client traffic patterns with YAML |
 | [Cluster Simulation](cluster.md) | Running multi-instance simulations with the full pipeline |

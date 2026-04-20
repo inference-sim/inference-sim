@@ -2,7 +2,7 @@
 
 The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships three backends -- roofline (analytical), blackbox (data-driven), and trained-physics (physics-informed roofline with MoE-aware corrections) -- and the pluggable architecture supports adding custom backends.
 
-**Migration note:** The deprecated `crossmodel` and `trained-roofline` backends have been removed as of v0.x.x. Existing configurations using these backends should migrate to `--latency-model trained-physics`, which supersedes both with improved accuracy and MoE support.
+**Migration note:** Two legacy backends have been removed. Use `--latency-model trained-physics` instead, which supersedes both with improved accuracy and MoE support.
 
 ```bash
 # Roofline mode (default) — analytical estimation from model architecture
