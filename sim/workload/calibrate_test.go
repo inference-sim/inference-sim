@@ -308,6 +308,74 @@ func TestComputeCalibration_PopulatesMeanAndMedian(t *testing.T) {
 	}
 }
 
+func TestComputeCalibration_ErrorFields_CorrectSignAndMagnitude(t *testing.T) {
+	tests := []struct {
+		name               string
+		real               []float64
+		sim                []float64
+		wantMeanError      float64
+		wantMeanPctError   float64
+		wantMedianError    float64
+		wantMedianPctError float64
+		tolerance          float64
+	}{
+		{
+			name:               "over-predict",
+			real:               []float64{100, 200, 300},
+			sim:                []float64{110, 220, 330},
+			wantMeanError:      20.0, // 220 - 200
+			wantMeanPctError:   0.10, // 20 / 200
+			wantMedianError:    20.0, // 220 - 200
+			wantMedianPctError: 0.10, // 20 / 200
+			tolerance:          0.01,
+		},
+		{
+			name:               "under-predict",
+			real:               []float64{100, 200, 300},
+			sim:                []float64{90, 180, 270},
+			wantMeanError:      -20.0, // 180 - 200
+			wantMeanPctError:   0.10,  // | -20 | / 200
+			wantMedianError:    -20.0, // 180 - 200
+			wantMedianPctError: 0.10,  // | -20 | / 200
+			tolerance:          0.01,
+		},
+		{
+			name:               "perfect-match",
+			real:               []float64{100, 200, 300},
+			sim:                []float64{100, 200, 300},
+			wantMeanError:      0.0,
+			wantMeanPctError:   0.0,
+			wantMedianError:    0.0,
+			wantMedianPctError: 0.0,
+			tolerance:          0.001,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// WHEN computing calibration
+			report, err := ComputeCalibration(tt.real, tt.sim, "test")
+			if err != nil {
+				t.Fatalf("ComputeCalibration failed: %v", err)
+			}
+
+			// THEN error fields match expected values (BC-3 through BC-6)
+			if math.Abs(report.MeanError-tt.wantMeanError) > tt.tolerance {
+				t.Errorf("MeanError = %f, want %f", report.MeanError, tt.wantMeanError)
+			}
+			if math.Abs(report.MeanPercentError-tt.wantMeanPctError) > tt.tolerance {
+				t.Errorf("MeanPercentError = %f, want %f", report.MeanPercentError, tt.wantMeanPctError)
+			}
+			if math.Abs(report.MedianError-tt.wantMedianError) > tt.tolerance {
+				t.Errorf("MedianError = %f, want %f", report.MedianError, tt.wantMedianError)
+			}
+			if math.Abs(report.MedianPercentError-tt.wantMedianPctError) > tt.tolerance {
+				t.Errorf("MedianPercentError = %f, want %f", report.MedianPercentError, tt.wantMedianPctError)
+			}
+		})
+	}
+}
+
 func TestCalibration_WithITL_NegativeDelta_ClockSkew(t *testing.T) {
 	// GIVEN trace records with ITL data containing negative deltas (clock skew)
 	traceRecords := []TraceRecord{
