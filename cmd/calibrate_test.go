@@ -517,6 +517,9 @@ warm_up_requests: 0
 	if !strings.Contains(logOutput, "MeanError=") {
 		t.Errorf("CLI output missing MeanError= field:\n%s", logOutput)
 	}
+	if !strings.Contains(logOutput, "MeanError=+200") {
+		t.Errorf("CLI output missing expected MeanError=+200:\n%s", logOutput)
+	}
 
 	// THEN JSON report includes new aggregate fields
 	reportData, err := os.ReadFile(reportPath)
@@ -524,13 +527,13 @@ warm_up_requests: 0
 		t.Fatal(err)
 	}
 	reportStr := string(reportData)
-	if !strings.Contains(reportStr, "real_mean") {
+	if !strings.Contains(reportStr, "\"real_mean\":") {
 		t.Errorf("JSON report missing real_mean field:\n%s", reportStr)
 	}
-	if !strings.Contains(reportStr, "mean_error") {
+	if !strings.Contains(reportStr, "\"mean_error\":") {
 		t.Errorf("JSON report missing mean_error field:\n%s", reportStr)
 	}
-	if !strings.Contains(reportStr, "sim_mean") {
+	if !strings.Contains(reportStr, "\"sim_mean\":") {
 		t.Errorf("JSON report missing sim_mean field:\n%s", reportStr)
 	}
 }
