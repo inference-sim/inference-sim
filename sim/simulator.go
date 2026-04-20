@@ -490,6 +490,17 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	// would cause the request to vanish from conservation accounting entirely.
 	sim.Metrics.CompletedRequests++
 
+	// Count decode tokens at completion time, not inline during each decode step.
+	// Inline counting double-counts when a request is preempted (ProgressIndex reset
+	// to 0) and re-runs: tokens from the aborted run are counted a second time.
+	// At completion: PI = InputLen + OutputLen - 1 (normal) or maxModelLen - 1 (capped),
+	// so PI - InputLen counts decode-step increments (= OutputLen - 1; the first output
+	// token is generated at prefill completion, not as a decode-step increment).
+	decodeTokens := int(req.ProgressIndex) - len(req.InputTokens)
+	if decodeTokens > 0 { // zero-output-token requests complete with PI == InputLen → decodeTokens == 0
+		sim.Metrics.TotalOutputTokens += decodeTokens
+	}
+
 	var itlSum int64
 	for _, v := range req.ITL {
 		itlSum += v
@@ -630,8 +641,10 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
 	// similar to vLLM's execute_model()
-	// Note: TotalOutputTokens++ and TTFT metrics are recorded inline (not extracted to helpers)
-	// because they are tightly coupled to the prefill/decode state transitions in this loop.
+	// Note: TTFT metrics are recorded inline because they are tightly coupled to the
+	// prefill/decode state transitions in this loop. TotalOutputTokens is computed at
+	// completion time in recordRequestCompletion (not inline) to avoid double-counting
+	// tokens when a preempted request re-runs from ProgressIndex=0.
 	for _, req := range sim.RunningBatch.Requests {
 		if req.ProgressIndex < util.Len64(req.InputTokens) {
 			req.ProgressIndex = sim.reqNumComputedTokens[req.ID]
@@ -644,7 +657,6 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 			// Also prevents phantom tokens from token budget exhaustion (pre-existing edge case).
 			if req.NumNewTokens > 0 {
 				req.ProgressIndex++
-				sim.Metrics.TotalOutputTokens++
 				req.ITL = append(req.ITL, currStepAdvance+sim.latencyModel.OutputTokenProcessingTime())
 			}
 		}
