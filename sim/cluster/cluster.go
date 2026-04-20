@@ -559,6 +559,7 @@ func (c *ClusterSimulator) Run() error {
 			}
 			entry.event.Execute(c)
 		} else {
+			prevClusterClock := c.clock
 			c.clock = instanceTime
 			if c.clock > c.config.Horizon {
 				break
@@ -572,7 +573,13 @@ func (c *ClusterSimulator) Run() error {
 			timedOutBefore := inst.Metrics().TimedOutRequests
 
 			ev := inst.ProcessNextEvent()
-			_ = ev // Event type no longer used for decrement
+
+			// If ProcessNextEvent() skipped a cancelled TimeoutEvent (lazy
+			// cancellation — inst.Clock was not advanced), restore c.clock.
+			// A no-op orphaned timeout must not advance the cluster clock.
+			if te, ok := ev.(*sim.TimeoutEvent); ok && te.Request.State == sim.StateCompleted {
+				c.clock = prevClusterClock
+			}
 
 			// Completion-based decrement (#463, BC-3, BC-7): InFlightRequests tracks the full
 			// dispatch-to-completion window. Decrement by the number of newly completed,

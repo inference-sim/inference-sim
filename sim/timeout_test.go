@@ -2,8 +2,13 @@ package sim
 
 import (
 	"container/heap"
+	"fmt"
 	"testing"
 )
+
+// testDefaultTimeoutUs mirrors workload.DefaultTimeoutUs (300s).
+// Cannot import workload directly — that package imports sim (circular).
+const testDefaultTimeoutUs = 300_000_000
 
 // TestEventQueue_SameTimestamp_PriorityOrder verifies BC-12: at equal timestamps,
 // events fire in priority order (lower priority number first).
@@ -279,5 +284,121 @@ func TestTimeout_PreemptThenTimeout_SafeNoOp(t *testing.T) {
 	if sum != injected {
 		t.Errorf("BC-15 conservation: completed(%d) + queued(%d) + running(%d) + dropped(%d) + timedOut(%d) = %d, want %d",
 			completed, queued, running, dropped, timedOut, sum, injected)
+	}
+}
+
+// TestTimeout_OrphanedTimeout_DoesNotInflateSimEndedTime verifies that a
+// completed request's orphaned TimeoutEvent does not advance the simulation
+// clock. The real-world equivalent: a client cancels its deadline timer when
+// the response arrives.
+//
+// Scenario: one request completes quickly, but its Deadline is 300s in the
+// future. Without lazy cancellation, SimEndedTime would be ~300s (the orphaned
+// timeout fires and advances the clock). With the fix, SimEndedTime reflects
+// the actual completion time.
+func TestTimeout_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             500_000_000, // 500s — well beyond the 300s deadline
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	r1 := &Request{
+		ID: "r1", ArrivalTime: 0,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+		State: StateQueued, MaxOutputLen: 5,
+		Deadline: testDefaultTimeoutUs,
+	}
+
+	sim.InjectArrival(r1)
+	sim.Run()
+
+	if r1.State != StateCompleted {
+		t.Fatalf("r1 state: got %s, want %s", r1.State, StateCompleted)
+	}
+	// INV-1: the skipped orphaned timeout must not corrupt conservation counters.
+	if sim.Metrics.CompletedRequests != 1 {
+		t.Errorf("CompletedRequests: got %d, want 1", sim.Metrics.CompletedRequests)
+	}
+	if sim.Metrics.TimedOutRequests != 0 {
+		t.Errorf("TimedOutRequests: got %d, want 0 (orphaned timeout must not count as timed-out)", sim.Metrics.TimedOutRequests)
+	}
+
+	// SimEndedTime must reflect actual work completion, not the orphaned timeout.
+	// With beta=[1000,10,5] (µs), beta0=base, beta1=cache-miss tokens (prefill only),
+	// beta2=decode tokens. For 10 inputs + 5 outputs:
+	//   prefill  = beta0 + beta1*10 = 1000 + 100 = 1100 µs
+	//   decode×5 = 5 × (beta0 + beta2*1) = 5 × 1005 = 5025 µs
+	//   total    ≈ 6125 µs
+	// Lower bound (> 5_000): catches a regression where Clock is never advanced.
+	// Upper bound (< 100_000): 3000× below testDefaultTimeoutUs, catches clock inflation.
+	if sim.Metrics.SimEndedTime <= 5_000 {
+		t.Errorf("SimEndedTime too low: got %d µs, want > 5_000 µs (Clock must advance for real work)",
+			sim.Metrics.SimEndedTime)
+	}
+	const simEndedThreshold = 100_000 // 100 ms — 3000× above expected, 3000× below orphaned timeout
+	if sim.Metrics.SimEndedTime > simEndedThreshold {
+		t.Errorf("SimEndedTime inflated by orphaned timeout: got %d µs (%.1fs), want < %d µs",
+			sim.Metrics.SimEndedTime, float64(sim.Metrics.SimEndedTime)/1e6, simEndedThreshold)
+	}
+}
+
+// TestTimeout_OrphanedTimeout_MultipleOrphans_NoneInflateClock verifies that
+// N > 1 completed requests each with an orphaned timeout do not cumulatively
+// inflate SimEndedTime. Each orphaned pop must be skipped without advancing
+// sim.Clock, so draining N orphaned timeouts leaves Clock at the last
+// real-work timestamp rather than the last orphaned timestamp.
+func TestTimeout_OrphanedTimeout_MultipleOrphans_NoneInflateClock(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             500_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	const n = 3
+	requests := make([]*Request, n)
+	for i := 0; i < n; i++ {
+		arrivalTime := int64(i * 50_000) // stagger by 50ms
+		requests[i] = &Request{
+			ID:           fmt.Sprintf("r%d", i),
+			ArrivalTime:  arrivalTime,
+			InputTokens:  make([]int, 10),
+			OutputTokens: make([]int, 5),
+			State:        StateQueued,
+			MaxOutputLen: 5,
+			Deadline:     arrivalTime + testDefaultTimeoutUs,
+		}
+		sim.InjectArrival(requests[i])
+	}
+	sim.Run()
+
+	for i, r := range requests {
+		if r.State != StateCompleted {
+			t.Errorf("requests[%d] state: got %s, want %s", i, r.State, StateCompleted)
+		}
+	}
+	// INV-1: n completed, 0 timed-out
+	if sim.Metrics.CompletedRequests != n {
+		t.Errorf("CompletedRequests: got %d, want %d", sim.Metrics.CompletedRequests, n)
+	}
+	if sim.Metrics.TimedOutRequests != 0 {
+		t.Errorf("TimedOutRequests: got %d, want 0", sim.Metrics.TimedOutRequests)
+	}
+	// Last arrival at 100_000 µs; after processing all 3 requests SimEndedTime
+	// should be > 100_000 (last arrival advanced the clock) and well under
+	// testDefaultTimeoutUs (orphaned timeouts are all skipped).
+	if sim.Metrics.SimEndedTime <= 100_000 {
+		t.Errorf("SimEndedTime too low: got %d µs, want > 100_000 µs", sim.Metrics.SimEndedTime)
+	}
+	if sim.Metrics.SimEndedTime > 500_000 {
+		t.Errorf("SimEndedTime inflated: got %d µs, want < 500_000 µs", sim.Metrics.SimEndedTime)
 	}
 }
