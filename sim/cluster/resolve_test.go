@@ -63,7 +63,7 @@ func TestResolvePoolConfig_AllOverrides_Applied(t *testing.T) {
 	overrides := PoolOverrides{
 		TP:             &tp,
 		GPU:            "A100",
-		LatencyBackend: "crossmodel",
+		LatencyBackend: "trained-physics",
 		MaxModelLen:    &maxLen,
 		TotalKVBlocks:  &kvBlocks,
 	}
@@ -76,8 +76,8 @@ func TestResolvePoolConfig_AllOverrides_Applied(t *testing.T) {
 	if resolved.GPU != "A100" {
 		t.Errorf("GPU = %q, want %q", resolved.GPU, "A100")
 	}
-	if resolved.Backend != "crossmodel" {
-		t.Errorf("Backend = %q, want %q", resolved.Backend, "crossmodel")
+	if resolved.Backend != "trained-physics" {
+		t.Errorf("Backend = %q, want %q", resolved.Backend, "trained-physics")
 	}
 	if resolved.MaxModelLen != 4096 {
 		t.Errorf("MaxModelLen = %d, want 4096", resolved.MaxModelLen)
@@ -374,7 +374,7 @@ func TestResolvePoolConfig_Idempotent(t *testing.T) {
 	overrides := PoolOverrides{
 		TP:             &tp,
 		GPU:            "A100",
-		LatencyBackend: "crossmodel",
+		LatencyBackend: "trained-physics",
 		MaxModelLen:    &maxLen,
 		TotalKVBlocks:  &kvBlocks,
 	}

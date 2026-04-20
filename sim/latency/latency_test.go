@@ -559,6 +559,85 @@ func TestBlackbox_OutputTokenProcessingTime_ExtremeAlpha_SaturatesAtMaxInt64(t *
 	assert.Equal(t, int64(math.MaxInt64), result)
 }
 
+// TestNewLatencyModel_RemovedBackendError verifies BC-1, BC-2, BC-9:
+// GIVEN a backend name that was removed ("crossmodel" or "trained-roofline")
+// WHEN NewLatencyModel is called
+// THEN it returns an error containing the backend name and valid options.
+func TestNewLatencyModel_RemovedBackendError(t *testing.T) {
+	tests := []struct {
+		name            string
+		backend         string
+		wantErrContains []string // Error must contain all these substrings
+	}{
+		{
+			name:    "crossmodel removed",
+			backend: "crossmodel",
+			wantErrContains: []string{
+				"unknown backend",
+				"crossmodel",
+				"valid options:",
+				"blackbox",
+				"roofline",
+				"trained-physics",
+			},
+		},
+		{
+			name:    "trained-roofline removed",
+			backend: "trained-roofline",
+			wantErrContains: []string{
+				"unknown backend",
+				"trained-roofline",
+				"valid options:",
+				"blackbox",
+				"roofline",
+				"trained-physics",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// GIVEN minimal valid config with removed backend
+			coeffs := sim.NewLatencyCoeffs(
+				[]float64{1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0},
+				[]float64{1.0, 1.0, 1.0},
+			)
+			hw := sim.NewModelHardwareConfig(
+				sim.ModelConfig{
+					NumLayers:       32,
+					NumHeads:        32,
+					HiddenDim:       4096,
+					IntermediateDim: 11008,
+				},
+				sim.HardwareCalib{
+					TFlopsPeak: 989.0,
+					BwPeakTBs:  3.35,
+				},
+				"", "", 1, tt.backend, 0,
+			)
+
+			// WHEN attempting to construct the model
+			model, err := NewLatencyModel(coeffs, hw)
+
+			// THEN construction must fail
+			if err == nil {
+				t.Fatalf("NewLatencyModel(%q) succeeded; want error for removed backend", tt.backend)
+			}
+			if model != nil {
+				t.Errorf("NewLatencyModel(%q) returned non-nil model with error; want nil", tt.backend)
+			}
+
+			// AND the error message must contain all expected substrings
+			errMsg := err.Error()
+			for _, substr := range tt.wantErrContains {
+				if !strings.Contains(errMsg, substr) {
+					t.Errorf("error message missing substring %q\nGot: %s", substr, errMsg)
+				}
+			}
+		})
+	}
+}
+
 // TestAllBackends_StepTime_EmptyBatch_FloorAtOne verifies the LatencyModel
 // interface contract: all backends must return >= 1 for empty batch, even with zero coefficients.
 func TestAllBackends_StepTime_EmptyBatch_FloorAtOne(t *testing.T) {

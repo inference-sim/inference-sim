@@ -50,13 +50,13 @@ func TestParentRequest_ZeroInputTokens(t *testing.T) {
 // --- Integration and invariant tests ---
 
 // newTestDisaggDeploymentConfigWithOverhead creates a 4-instance (2 prefill, 2 decode)
-// disaggregated DeploymentConfig using trained-roofline with the given post-decode
+// disaggregated DeploymentConfig using trained-physics with the given post-decode
 // overhead (µs). alpha[1] = overhead, so PostDecodeFixedOverhead() == overhead.
 // Used to test that detectDecodeCompletions stamps parent.CompletionTime correctly
 // when overhead > 0 (issue #846).
 func newTestDisaggDeploymentConfigWithOverhead(overhead float64) DeploymentConfig {
-	// Minimal trained-roofline model: 2-layer, 4-head, 64-dim with positive HW numbers.
-	// beta[4] = 100 µs/layer gives finite step times; remaining betas zero.
+	// Minimal trained-physics model: 2-layer, 4-head, 64-dim with positive HW numbers.
+	// beta[5] = 100 µs/layer gives finite step times; remaining betas zero.
 	// NumKVHeads=0 triggers MHA fallback (uses NumHeads), divisible by TP=1.
 	modelCfg := sim.ModelConfig{
 		NumLayers:       2,
@@ -75,7 +75,7 @@ func newTestDisaggDeploymentConfigWithOverhead(overhead float64) DeploymentConfi
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs(betas, alphas),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(modelCfg, hwCfg, "test-model", "H100", 1, "trained-roofline", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(modelCfg, hwCfg, "test-model", "H100", 1, "trained-physics", 0),
 		},
 		NumInstances:            4,
 		PrefillInstances:        2,

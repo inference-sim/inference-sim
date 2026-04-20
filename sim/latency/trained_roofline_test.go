@@ -315,105 +315,16 @@ func TestTrainedRoofline_PostDecodeFixedOverhead_WithRealCoeffs(t *testing.T) {
 	assert.Equal(t, int64(1849), model.PostDecodeFixedOverhead())
 }
 
-// --- BC-2: Factory construction ---
+// NOTE: Factory-path tests for trained-roofline (TestNewLatencyModel_TrainedRoofline_ReturnsModel,
+// TestNewLatencyModel_TrainedRoofline_TooFewBetas_Error, TestNewLatencyModel_TrainedRoofline_InvalidConfig_Error)
+// were removed as part of #940: the trained-roofline backend is no longer registered in the factory.
+// Factory rejection is verified by TestNewLatencyModel_RemovedBackendError in latency_test.go.
+// Direct struct-literal tests above remain until the implementation files are deleted (Task 3).
 
-func TestNewLatencyModel_TrainedRoofline_ReturnsModel(t *testing.T) {
-	coeffs := sim.NewLatencyCoeffs(trainingFittedBetas, trainingFittedAlphas)
-	hw := sim.ModelHardwareConfig{
-		Backend: "trained-roofline",
-		ModelConfig: sim.ModelConfig{
-			NumLayers: 32, HiddenDim: 4096, NumHeads: 32, NumKVHeads: 32,
-			IntermediateDim: 11008, BytesPerParam: 2,
-		},
-		HWConfig: sim.HardwareCalib{TFlopsPeak: 989.5, BwPeakTBs: 3.35, MfuPrefill: 0.45, MfuDecode: 0.30, MemoryGiB: 80.0},
-		TP:      1,
-	}
-	model, err := NewLatencyModel(coeffs, hw)
-	assert.NoError(t, err)
-	assert.NotNil(t, model)
-
-	// Verify it produces positive step times
-	batch := []*sim.Request{makePrefillRequest(512, 512)}
-	assert.Greater(t, model.StepTime(batch), int64(1))
-}
-
-// --- BC-13: Coefficient length validation ---
-
-func TestNewLatencyModel_TrainedRoofline_TooFewBetas_Error(t *testing.T) {
-	coeffs := sim.NewLatencyCoeffs([]float64{1, 2, 3, 4, 5, 6}, trainingFittedAlphas)
-	hw := sim.ModelHardwareConfig{
-		Backend: "trained-roofline",
-		ModelConfig: sim.ModelConfig{
-			NumLayers: 32, HiddenDim: 4096, NumHeads: 32, NumKVHeads: 32,
-			IntermediateDim: 11008, BytesPerParam: 2,
-		},
-		HWConfig: sim.HardwareCalib{TFlopsPeak: 989.5, BwPeakTBs: 3.35, MfuPrefill: 0.45, MfuDecode: 0.30, MemoryGiB: 80.0},
-		TP:      1,
-	}
-	_, err := NewLatencyModel(coeffs, hw)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "7 elements")
-}
-
-// --- BC-14: Config validation ---
-
-func TestNewLatencyModel_TrainedRoofline_InvalidConfig_Error(t *testing.T) {
-	coeffs := sim.NewLatencyCoeffs(trainingFittedBetas, trainingFittedAlphas)
-
-	baseHW := func() sim.ModelHardwareConfig {
-		return sim.ModelHardwareConfig{
-			Backend: "trained-roofline",
-			ModelConfig: sim.ModelConfig{
-				NumLayers: 32, HiddenDim: 4096, NumHeads: 32, NumKVHeads: 32,
-				IntermediateDim: 11008, BytesPerParam: 2,
-			},
-			HWConfig: sim.HardwareCalib{TFlopsPeak: 989.5, BwPeakTBs: 3.35, MfuPrefill: 0.45, MfuDecode: 0.30, MemoryGiB: 80.0},
-			TP:      1,
-		}
-	}
-
-	tests := []struct {
-		name   string
-		modify func(*sim.ModelHardwareConfig)
-		errMsg string
-	}{
-		{"zero TP", func(hw *sim.ModelHardwareConfig) { hw.TP = 0 }, "TP > 0"},
-		{"zero NumLayers", func(hw *sim.ModelHardwareConfig) { hw.ModelConfig.NumLayers = 0 }, "NumLayers > 0"},
-		{"zero NumHeads", func(hw *sim.ModelHardwareConfig) { hw.ModelConfig.NumHeads = 0 }, "NumHeads > 0"},
-		{"zero HiddenDim", func(hw *sim.ModelHardwareConfig) { hw.ModelConfig.HiddenDim = 0 }, "HiddenDim > 0"},
-		{"zero IntermediateDim", func(hw *sim.ModelHardwareConfig) { hw.ModelConfig.IntermediateDim = 0 }, "IntermediateDim > 0"},
-		{"zero TFlopsPeak", func(hw *sim.ModelHardwareConfig) { hw.HWConfig.TFlopsPeak = 0 }, "TFlopsPeak"},
-		{"zero BwPeakTBs", func(hw *sim.ModelHardwareConfig) { hw.HWConfig.BwPeakTBs = 0 }, "BwPeakTBs"},
-		{"NumHeads not divisible by TP", func(hw *sim.ModelHardwareConfig) { hw.TP = 3 }, "divisible"},
-		{"NumKVHeads not divisible by TP", func(hw *sim.ModelHardwareConfig) { hw.ModelConfig.NumKVHeads = 5; hw.TP = 2 }, "divisible"},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			hw := baseHW()
-			tc.modify(&hw)
-			_, err := NewLatencyModel(coeffs, hw)
-			assert.Error(t, err)
-			assert.Contains(t, err.Error(), tc.errMsg)
-		})
-	}
-}
-
-// --- BC-4: Prefill monotonicity ---
+// --- BC-4: Prefill monotonicity (uses direct struct construction) ---
 
 func TestTrainedRoofline_PrefillMonotonicity(t *testing.T) {
-	coeffs := sim.NewLatencyCoeffs(trainingFittedBetas, trainingFittedAlphas)
-	hw := sim.ModelHardwareConfig{
-		Backend: "trained-roofline",
-		ModelConfig: sim.ModelConfig{
-			NumLayers: 32, HiddenDim: 4096, NumHeads: 32, NumKVHeads: 32,
-			IntermediateDim: 11008, BytesPerParam: 2,
-		},
-		HWConfig: sim.HardwareCalib{TFlopsPeak: 989.5, BwPeakTBs: 3.35, MfuPrefill: 0.45, MfuDecode: 0.30, MemoryGiB: 80.0},
-		TP:      1,
-	}
-	model, err := NewLatencyModel(coeffs, hw)
-	assert.NoError(t, err)
+	model := newLlama7bModel()
 
 	tokenCounts := []int{64, 128, 256, 512, 1024}
 	var prevTime int64
@@ -426,21 +337,10 @@ func TestTrainedRoofline_PrefillMonotonicity(t *testing.T) {
 	}
 }
 
-// --- BC-5: Decode monotonicity ---
+// --- BC-5: Decode monotonicity (uses direct struct construction) ---
 
 func TestTrainedRoofline_DecodeMonotonicity(t *testing.T) {
-	coeffs := sim.NewLatencyCoeffs(trainingFittedBetas, trainingFittedAlphas)
-	hw := sim.ModelHardwareConfig{
-		Backend: "trained-roofline",
-		ModelConfig: sim.ModelConfig{
-			NumLayers: 32, HiddenDim: 4096, NumHeads: 32, NumKVHeads: 32,
-			IntermediateDim: 11008, BytesPerParam: 2,
-		},
-		HWConfig: sim.HardwareCalib{TFlopsPeak: 989.5, BwPeakTBs: 3.35, MfuPrefill: 0.45, MfuDecode: 0.30, MemoryGiB: 80.0},
-		TP:      1,
-	}
-	model, err := NewLatencyModel(coeffs, hw)
-	assert.NoError(t, err)
+	model := newLlama7bModel()
 
 	var prevTime int64
 	for nReqs := 1; nReqs <= 16; nReqs *= 2 {
