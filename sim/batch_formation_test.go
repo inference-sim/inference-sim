@@ -804,8 +804,10 @@ func TestVLLMBatchFormation_ZeroInputRequest_SkipsDecodeOnlyPath(t *testing.T) {
 // must re-admit it using cached prefix blocks.
 func TestVLLMBatchFormation_Phase1_5_PreemptedReadmission(t *testing.T) {
 	// 129 blocks: exactly fits A+B with sharing (128) + 1 slack block for A's decode.
-	// After B is preempted and A allocates 1 decode block, 32 blocks remain free,
-	// which is exactly enough for Phase 1.5 to re-admit B (31 cached-from-free + 1 new).
+	// After B is preempted, B's 32 unique blocks return to the free list. The 64 shared
+	// prefix blocks are still held by req-A (refcount ≥ 1). Phase 1.5 re-admits B by:
+	// (1) GetCachedBlocks finds all 64 shared prefix blocks (A still holds them),
+	// (2) Allocating B's 32 unique blocks from the free list.
 	blockSize := int64(16)
 	totalBlocks := int64(129)
 	kvCache := MustNewKVCacheState(totalBlocks, blockSize)
@@ -919,6 +921,12 @@ func TestVLLMBatchFormation_Phase1_5_PreemptedReadmission(t *testing.T) {
 	// AND the WaitQ must be empty (preempted request was dequeued by Phase 1.5)
 	if ctx.WaitQ.Len() != 0 {
 		t.Errorf("WaitQ should be empty after Phase 1.5 re-admission, got %d", ctx.WaitQ.Len())
+	}
+
+	// AND ComputedTokens must equal full input length for re-admitted prefill requests
+	wantComputed := int64(len(reqB.InputTokens))
+	if got := ctx.ComputedTokens[reqB.ID]; got != wantComputed {
+		t.Errorf("Phase 1.5: ComputedTokens[req-B] = %d, want %d (must equal full input length for re-admitted prefill)", got, wantComputed)
 	}
 
 	// AND KV conservation must hold (INV-4)
