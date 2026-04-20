@@ -885,10 +885,7 @@ func TestVLLMBatchFormation_Phase1_5_PreemptedReadmission(t *testing.T) {
 	// Check if preemption actually happened — if the cache has enough room for
 	// A's decode without eviction, the test setup needs adjustment
 	if !result.PreemptionHappened {
-		// No preemption means the cache was big enough — that's fine too,
-		// the fix doesn't break non-preemption cases
-		t.Logf("No preemption occurred (cache had room) — Phase 1.5 not activated")
-		return
+		t.Fatal("precondition: preemption was not triggered — review block boundary math")
 	}
 
 	// THEN Phase 1.5 should have re-admitted preempted requests
@@ -935,6 +932,10 @@ func TestVLLMBatchFormation_Phase1_5_PreemptedReadmission(t *testing.T) {
 // Run a multi-step simulation where prefix-sharing requests compete under tight
 // KV cache. Preemption count per request must be bounded (no infinite loop).
 func TestVLLMBatchFormation_Phase1_5_BoundedPreemptions(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
 	blockSize := int64(16)
 	// Tight cache: enough for 2 requests with sharing but not 3 without sharing.
 	// Each request needs 96 blocks (1536 tokens). With sharing: 64 + 32*N unique.
