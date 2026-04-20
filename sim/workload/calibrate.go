@@ -8,10 +8,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// MetricComparison holds statistical comparison between real and sim values.
-// Fields are organized into workload-level (distribution shape) and request-level (prediction quality).
-type MetricComparison struct {
-	// Workload-level aggregate metrics: describe the latency distribution shape
+// WorkloadAggregates describes the latency distribution shape across the entire workload.
+type WorkloadAggregates struct {
 	RealMean           float64 `json:"real_mean"`
 	SimMean            float64 `json:"sim_mean"`
 	MeanError          float64 `json:"mean_error"`           // SimMean - RealMean
@@ -28,15 +26,44 @@ type MetricComparison struct {
 	SimP95             float64 `json:"sim_p95"`
 	RealP99            float64 `json:"real_p99"`
 	SimP99             float64 `json:"sim_p99"`
+}
 
-	// Request-level prediction quality: how accurately sim predicts each individual request
+// PredictionQuality describes how accurately the simulator predicts each individual request.
+type PredictionQuality struct {
 	MAPE          float64 `json:"mape"`
 	PearsonR      float64 `json:"pearson_r"`
 	BiasDirection string  `json:"bias_direction"` // "over-predict", "under-predict", "neutral"
 	Quality       string  `json:"quality"`        // "excellent", "good", "fair", "poor"
+}
 
-	// Metadata
-	Count int `json:"count"`
+// MetricComparison holds statistical comparison between real and sim values.
+// Organized into workload-level aggregates and request-level prediction quality.
+type MetricComparison struct {
+	WorkloadLevel WorkloadAggregates `json:"workload_level"`
+	RequestLevel  PredictionQuality  `json:"request_level"`
+	Count         int                `json:"count"`
+
+	// Deprecated: Direct field access maintained for backward compatibility.
+	// These fields mirror WorkloadLevel and RequestLevel for legacy callers.
+	// Will be removed in a future version. Use WorkloadLevel.RealMean instead.
+	RealP50, SimP50 float64
+	RealP90, SimP90 float64
+	RealP95, SimP95 float64
+	RealP99, SimP99 float64
+	MAPE            float64
+	PearsonR        float64
+	BiasDirection   string // "over-predict", "under-predict", "neutral"
+	Quality         string // "excellent", "good", "fair", "poor"
+
+	// Workload-level aggregate metrics (issue #1084) - deprecated, use WorkloadLevel instead
+	RealMean           float64 `json:"-"` // omitted from JSON, use WorkloadLevel.RealMean
+	SimMean            float64 `json:"-"`
+	RealMedian         float64 `json:"-"`
+	SimMedian          float64 `json:"-"`
+	MeanError          float64 `json:"-"`
+	MeanPercentError   float64 `json:"-"`
+	MedianError        float64 `json:"-"`
+	MedianPercentError float64 `json:"-"`
 }
 
 // CalibrationReport holds the complete calibration result.
@@ -281,35 +308,35 @@ func ComputeCalibration(real, sim []float64, metricName string) (*MetricComparis
 		simSum += sim[i]
 	}
 	n := float64(len(real))
-	comp.RealMean = realSum / n
-	comp.SimMean = simSum / n
+	comp.WorkloadLevel.RealMean = realSum / n
+	comp.WorkloadLevel.SimMean = simSum / n
 
 	// Percentiles
 	realSorted := sortedCopy(real)
 	simSorted := sortedCopy(sim)
-	comp.RealP50 = percentileFromSorted(realSorted, 50)
-	comp.SimP50 = percentileFromSorted(simSorted, 50)
-	comp.RealP90 = percentileFromSorted(realSorted, 90)
-	comp.SimP90 = percentileFromSorted(simSorted, 90)
-	comp.RealP95 = percentileFromSorted(realSorted, 95)
-	comp.SimP95 = percentileFromSorted(simSorted, 95)
-	comp.RealP99 = percentileFromSorted(realSorted, 99)
-	comp.SimP99 = percentileFromSorted(simSorted, 99)
+	comp.WorkloadLevel.RealP50 = percentileFromSorted(realSorted, 50)
+	comp.WorkloadLevel.SimP50 = percentileFromSorted(simSorted, 50)
+	comp.WorkloadLevel.RealP90 = percentileFromSorted(realSorted, 90)
+	comp.WorkloadLevel.SimP90 = percentileFromSorted(simSorted, 90)
+	comp.WorkloadLevel.RealP95 = percentileFromSorted(realSorted, 95)
+	comp.WorkloadLevel.SimP95 = percentileFromSorted(simSorted, 95)
+	comp.WorkloadLevel.RealP99 = percentileFromSorted(realSorted, 99)
+	comp.WorkloadLevel.SimP99 = percentileFromSorted(simSorted, 99)
 
 	// Median aliases P50
-	comp.RealMedian = comp.RealP50
-	comp.SimMedian = comp.SimP50
+	comp.WorkloadLevel.RealMedian = comp.WorkloadLevel.RealP50
+	comp.WorkloadLevel.SimMedian = comp.WorkloadLevel.SimP50
 
 	// Mean error and percent error (with division guards, R11)
-	comp.MeanError = comp.SimMean - comp.RealMean
-	if comp.RealMean != 0 {
-		comp.MeanPercentError = math.Abs(comp.MeanError) / comp.RealMean
+	comp.WorkloadLevel.MeanError = comp.WorkloadLevel.SimMean - comp.WorkloadLevel.RealMean
+	if comp.WorkloadLevel.RealMean != 0 {
+		comp.WorkloadLevel.MeanPercentError = math.Abs(comp.WorkloadLevel.MeanError) / comp.WorkloadLevel.RealMean
 	}
 
 	// Median error and percent error (with division guards, R11)
-	comp.MedianError = comp.SimMedian - comp.RealMedian
-	if comp.RealMedian != 0 {
-		comp.MedianPercentError = math.Abs(comp.MedianError) / comp.RealMedian
+	comp.WorkloadLevel.MedianError = comp.WorkloadLevel.SimMedian - comp.WorkloadLevel.RealMedian
+	if comp.WorkloadLevel.RealMedian != 0 {
+		comp.WorkloadLevel.MedianPercentError = math.Abs(comp.WorkloadLevel.MedianError) / comp.WorkloadLevel.RealMedian
 	}
 
 	// MAPE (skip where real == 0)
@@ -326,23 +353,45 @@ func ComputeCalibration(real, sim []float64, metricName string) (*MetricComparis
 		biasSum += sim[i] - real[i]
 	}
 	if mapeCount > 0 {
-		comp.MAPE = mapeSum / float64(mapeCount)
+		comp.RequestLevel.MAPE = mapeSum / float64(mapeCount)
 		if biasSum > 0 {
-			comp.BiasDirection = "over-predict"
+			comp.RequestLevel.BiasDirection = "over-predict"
 		} else if biasSum < 0 {
-			comp.BiasDirection = "under-predict"
+			comp.RequestLevel.BiasDirection = "under-predict"
 		} else {
-			comp.BiasDirection = "neutral"
+			comp.RequestLevel.BiasDirection = "neutral"
 		}
 	}
 
 	// Pearson r (requires N >= 3)
 	if len(real) >= 3 {
-		comp.PearsonR = pearsonCorrelation(real, sim)
+		comp.RequestLevel.PearsonR = pearsonCorrelation(real, sim)
 	}
 
 	// Quality rating
-	comp.Quality = qualityRating(comp.MAPE, comp.PearsonR)
+	comp.RequestLevel.Quality = qualityRating(comp.RequestLevel.MAPE, comp.RequestLevel.PearsonR)
+
+	// Populate deprecated fields for backward compatibility
+	comp.RealP50 = comp.WorkloadLevel.RealP50
+	comp.SimP50 = comp.WorkloadLevel.SimP50
+	comp.RealP90 = comp.WorkloadLevel.RealP90
+	comp.SimP90 = comp.WorkloadLevel.SimP90
+	comp.RealP95 = comp.WorkloadLevel.RealP95
+	comp.SimP95 = comp.WorkloadLevel.SimP95
+	comp.RealP99 = comp.WorkloadLevel.RealP99
+	comp.SimP99 = comp.WorkloadLevel.SimP99
+	comp.MAPE = comp.RequestLevel.MAPE
+	comp.PearsonR = comp.RequestLevel.PearsonR
+	comp.BiasDirection = comp.RequestLevel.BiasDirection
+	comp.Quality = comp.RequestLevel.Quality
+	comp.RealMean = comp.WorkloadLevel.RealMean
+	comp.SimMean = comp.WorkloadLevel.SimMean
+	comp.RealMedian = comp.WorkloadLevel.RealMedian
+	comp.SimMedian = comp.WorkloadLevel.SimMedian
+	comp.MeanError = comp.WorkloadLevel.MeanError
+	comp.MeanPercentError = comp.WorkloadLevel.MeanPercentError
+	comp.MedianError = comp.WorkloadLevel.MedianError
+	comp.MedianPercentError = comp.WorkloadLevel.MedianPercentError
 
 	return comp, nil
 }
