@@ -422,3 +422,51 @@ func TestCalibration_WithITL_NegativeDelta_ClockSkew(t *testing.T) {
 		}
 	}
 }
+
+func TestComputeCalibration_ZeroRealMean_GuardsDivision(t *testing.T) {
+	// GIVEN real values are all zero (degenerate input)
+	real := []float64{0, 0, 0}
+	sim := []float64{10, 20, 30}
+
+	// WHEN computing calibration
+	report, err := ComputeCalibration(real, sim, "test")
+
+	// THEN MeanPercentError is set to 0 (BC-11, R11)
+	if err != nil {
+		t.Fatalf("ComputeCalibration failed: %v", err)
+	}
+	if report.RealMean != 0.0 {
+		t.Errorf("RealMean = %f, want 0.0", report.RealMean)
+	}
+	if report.MeanPercentError != 0.0 {
+		t.Errorf("MeanPercentError = %f, want 0.0 (guarded division)", report.MeanPercentError)
+	}
+	// MeanError should still be computed (not guarded)
+	if report.MeanError != 20.0 {
+		t.Errorf("MeanError = %f, want 20.0", report.MeanError)
+	}
+}
+
+func TestComputeCalibration_ZeroRealMedian_GuardsDivision(t *testing.T) {
+	// GIVEN real median is zero (degenerate distribution: 0 at P50)
+	real := []float64{0, 0, 100} // median = 0 (middle value)
+	sim := []float64{10, 10, 110}
+
+	// WHEN computing calibration
+	report, err := ComputeCalibration(real, sim, "test")
+
+	// THEN MedianPercentError is set to 0 (BC-12, R11)
+	if err != nil {
+		t.Fatalf("ComputeCalibration failed: %v", err)
+	}
+	if report.RealMedian != 0.0 {
+		t.Errorf("RealMedian = %f, want 0.0", report.RealMedian)
+	}
+	if report.MedianPercentError != 0.0 {
+		t.Errorf("MedianPercentError = %f, want 0.0 (guarded division)", report.MedianPercentError)
+	}
+	// MedianError should still be computed (not guarded)
+	if report.MedianError != 10.0 {
+		t.Errorf("MedianError = %f, want 10.0", report.MedianError)
+	}
+}
