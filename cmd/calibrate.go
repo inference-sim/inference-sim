@@ -157,17 +157,47 @@ Example:
 		logrus.Infof("Calibration report written to %s", calibrateReportPath)
 		logrus.Infof("  Matched pairs: %d (warm-up excluded: %d, unmatched real: %d, unmatched sim: %d)",
 			pairs.MatchedCount, pairs.ExcludedWarmUp, pairs.UnmatchedReal, pairs.UnmatchedSim)
+
+		// Workload-level distribution statistics
+		logrus.Infof("Workload-level aggregate metrics:")
 		if ttft, ok := report.Metrics["ttft"]; ok {
-			logrus.Infof("  TTFT: MAPE=%.1f%%, PearsonR=%.3f, quality=%s, MeanError=%+.0fµs (%.1f%%)",
-				ttft.MAPE*100, ttft.PearsonR, ttft.Quality, ttft.MeanError, ttft.MeanPercentError*100)
+			logrus.Infof("  TTFT: Real mean=%.0fµs, Sim mean=%.0fµs, Error=%+.0fµs (%.1f%%)",
+				ttft.RealMean, ttft.SimMean, ttft.MeanError, ttft.MeanPercentError*100)
+			logrus.Infof("        Real P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
+				ttft.RealP50, ttft.RealP90, ttft.RealP99)
+			logrus.Infof("        Sim  P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
+				ttft.SimP50, ttft.SimP90, ttft.SimP99)
 		}
 		if e2e, ok := report.Metrics["e2e"]; ok {
-			logrus.Infof("  E2E:  MAPE=%.1f%%, PearsonR=%.3f, quality=%s, MeanError=%+.0fµs (%.1f%%)",
-				e2e.MAPE*100, e2e.PearsonR, e2e.Quality, e2e.MeanError, e2e.MeanPercentError*100)
+			logrus.Infof("  E2E:  Real mean=%.0fµs, Sim mean=%.0fµs, Error=%+.0fµs (%.1f%%)",
+				e2e.RealMean, e2e.SimMean, e2e.MeanError, e2e.MeanPercentError*100)
+			logrus.Infof("        Real P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
+				e2e.RealP50, e2e.RealP90, e2e.RealP99)
+			logrus.Infof("        Sim  P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
+				e2e.SimP50, e2e.SimP90, e2e.SimP99)
 		}
 		if itl, ok := report.Metrics["itl"]; ok {
-			logrus.Infof("  ITL:  MAPE=%.1f%%, PearsonR=%.3f, quality=%s, MeanError=%+.0fµs (%.1f%%)",
-				itl.MAPE*100, itl.PearsonR, itl.Quality, itl.MeanError, itl.MeanPercentError*100)
+			logrus.Infof("  ITL:  Real mean=%.0fµs, Sim mean=%.0fµs, Error=%+.0fµs (%.1f%%)",
+				itl.RealMean, itl.SimMean, itl.MeanError, itl.MeanPercentError*100)
+			logrus.Infof("        Real P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
+				itl.RealP50, itl.RealP90, itl.RealP99)
+			logrus.Infof("        Sim  P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
+				itl.SimP50, itl.SimP90, itl.SimP99)
+		}
+
+		// Request-level prediction quality
+		logrus.Infof("Request-level prediction quality:")
+		if ttft, ok := report.Metrics["ttft"]; ok {
+			logrus.Infof("  TTFT: MAPE=%.1f%%, PearsonR=%.3f, Bias=%s, Quality=%s",
+				ttft.MAPE*100, ttft.PearsonR, ttft.BiasDirection, ttft.Quality)
+		}
+		if e2e, ok := report.Metrics["e2e"]; ok {
+			logrus.Infof("  E2E:  MAPE=%.1f%%, PearsonR=%.3f, Bias=%s, Quality=%s",
+				e2e.MAPE*100, e2e.PearsonR, e2e.BiasDirection, e2e.Quality)
+		}
+		if itl, ok := report.Metrics["itl"]; ok {
+			logrus.Infof("  ITL:  MAPE=%.1f%%, PearsonR=%.3f, Bias=%s, Quality=%s",
+				itl.MAPE*100, itl.PearsonR, itl.BiasDirection, itl.Quality)
 		}
 	},
 }
