@@ -2739,11 +2739,9 @@ func TestBatchRequestsNotSerialized(t *testing.T) {
 // (mimicking DefaultTimeoutUs). Without the c.clock restore in the cluster loop,
 // c.clock would advance to arrival+300s for the last request, inflating SimEndedTime.
 func TestClusterSimulator_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.T) {
-	const deadline = int64(300_000_000) // 300s — mimics workload.DefaultTimeoutUs
-
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:             500_000_000, // 500s — beyond the 300s deadline
+			Horizon:             500_000_000, // 500s — beyond workload.DefaultTimeoutUs (300s)
 			Seed:                42,
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
@@ -2760,13 +2758,13 @@ func TestClusterSimulator_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.
 	for i := 0; i < 5; i++ {
 		arrivalTime := int64(i * 100_000) // stagger arrivals by 100ms
 		requests[i] = &sim.Request{
-			ID:          fmt.Sprintf("r%d", i),
-			ArrivalTime: arrivalTime,
-			InputTokens: sim.GenerateRandomTokenIDs(workloadRNG, 10),
+			ID:           fmt.Sprintf("r%d", i),
+			ArrivalTime:  arrivalTime,
+			InputTokens:  sim.GenerateRandomTokenIDs(workloadRNG, 10),
 			OutputTokens: sim.GenerateRandomTokenIDs(workloadRNG, 5),
-			State:       sim.StateQueued,
+			State:        sim.StateQueued,
 			MaxOutputLen: 5,
-			Deadline:    arrivalTime + deadline,
+			Deadline:     arrivalTime + workload.DefaultTimeoutUs,
 		}
 	}
 
@@ -2783,13 +2781,91 @@ func TestClusterSimulator_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.
 	}
 
 	// SimEndedTime must reflect actual completion, not the last orphaned timeout.
-	// Last arrival at 400_000 µs; with beta=[1000,10,5] total execution is ~6ms,
-	// so SimEndedTime should be well under 1_000_000 µs (1s). The orphaned timeout
-	// would have placed it at 400_000 + 300_000_000 = ~300.4s without the fix.
-	const simEndedThreshold = int64(1_000_000) // 1s — 300× below orphaned timeout
-	if m.SimEndedTime > simEndedThreshold {
-		t.Errorf("SimEndedTime inflated by orphaned timeout in cluster path: got %d µs (%.1fs), want < %d µs",
-			m.SimEndedTime, float64(m.SimEndedTime)/1e6, simEndedThreshold)
+	// Last arrival at 400_000 µs; with beta=[1000,10,5] per-request completion is ~6ms.
+	// Lower bound (> 400_000): last arrival advanced the clock past 400ms.
+	// Upper bound (< 1_000_000): 300× below workload.DefaultTimeoutUs; catches inflation.
+	if m.SimEndedTime <= 400_000 {
+		t.Errorf("SimEndedTime too low: got %d µs, want > 400_000 µs", m.SimEndedTime)
+	}
+	if m.SimEndedTime > 1_000_000 {
+		t.Errorf("SimEndedTime inflated by orphaned timeout in cluster path: got %d µs (%.1fs), want < 1_000_000 µs",
+			m.SimEndedTime, float64(m.SimEndedTime)/1e6)
+	}
+}
+
+// TestClusterSimulator_MixedOrphanedAndGenuineTimeout_CorrectMetrics verifies that
+// the lazy-cancellation guard skips only completed-request (orphaned) TimeoutEvents
+// and does not suppress genuine timeouts for still-queued requests.
+//
+// Scenario (1 instance, batch-size 1):
+//   - r0: arrives at 0, 300s deadline → completes normally (~6ms), orphaned timeout skipped
+//   - r1: arrives at 0, 300s deadline → queued behind r0, completes normally (~12ms), orphaned timeout skipped
+//   - r2: arrives at 0, 5000µs deadline → queued behind r0; r0 takes ~6ms so r2 times out while waiting
+//
+// Expected: CompletedRequests=2, TimedOutRequests=1, SimEndedTime reflects r1's
+// completion time (~12ms), not r0/r1's orphaned 300s timeouts.
+func TestClusterSimulator_MixedOrphanedAndGenuineTimeout_CorrectMetrics(t *testing.T) {
+	config := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             500_000_000,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(1, 2048, 0), // max 1 running — forces queuing
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+		},
+		NumInstances: 1,
+	}
+
+	// r0 and r1 complete before their 300s deadline (orphaned TimeoutEvents).
+	// r2 has a 5000µs deadline — shorter than the time r0 takes to complete (~6ms),
+	// so r2 times out while queued. This verifies the guard uses State==StateCompleted
+	// (not a broader condition) and does not suppress genuine timeouts.
+	requests := []*sim.Request{
+		{
+			ID: "r0", ArrivalTime: 0,
+			InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+			State: sim.StateQueued, MaxOutputLen: 5,
+			Deadline: workload.DefaultTimeoutUs,
+		},
+		{
+			ID: "r1", ArrivalTime: 0,
+			InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+			State: sim.StateQueued, MaxOutputLen: 5,
+			Deadline: workload.DefaultTimeoutUs,
+		},
+		{
+			ID: "r2", ArrivalTime: 0,
+			InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+			State: sim.StateQueued, MaxOutputLen: 5,
+			Deadline: 5_000, // 5ms — r0 takes ~6ms, so r2 times out while queued
+		},
+	}
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+
+	if m.CompletedRequests != 2 {
+		t.Errorf("CompletedRequests: got %d, want 2", m.CompletedRequests)
+	}
+	if m.TimedOutRequests != 1 {
+		t.Errorf("TimedOutRequests: got %d, want 1 (r2 must genuinely time out)", m.TimedOutRequests)
+	}
+	// INV-1: 3 injected = 2 completed + 1 timed-out
+	if got := m.CompletedRequests + m.TimedOutRequests; got != 3 {
+		t.Errorf("conservation: CompletedRequests(%d) + TimedOutRequests(%d) = %d, want 3",
+			m.CompletedRequests, m.TimedOutRequests, got)
+	}
+	// r1 completes after r0 (~12ms); SimEndedTime should reflect r1's completion,
+	// not r0/r1's orphaned 300s timeouts. Lower bound > 5_000 (past genuine timeout).
+	if m.SimEndedTime <= 5_000 {
+		t.Errorf("SimEndedTime too low: got %d µs, want > 5_000 µs", m.SimEndedTime)
+	}
+	if m.SimEndedTime > 100_000 {
+		t.Errorf("SimEndedTime inflated by orphaned timeout: got %d µs (%.1fs), want < 100_000 µs",
+			m.SimEndedTime, float64(m.SimEndedTime)/1e6)
 	}
 }
 
