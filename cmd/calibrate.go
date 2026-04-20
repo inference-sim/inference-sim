@@ -162,42 +162,42 @@ Example:
 		logrus.Infof("Workload-level aggregate metrics:")
 		if ttft, ok := report.Metrics["ttft"]; ok {
 			logrus.Infof("  TTFT: Real mean=%.0fµs, Sim mean=%.0fµs, Error=%+.0fµs (%.1f%%)",
-				ttft.RealMean, ttft.SimMean, ttft.MeanError, ttft.MeanPercentError*100)
+				ttft.WorkloadLevel.RealMean, ttft.WorkloadLevel.SimMean, ttft.WorkloadLevel.MeanError, ttft.WorkloadLevel.MeanPercentError*100)
 			logrus.Infof("        Real P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
-				ttft.RealP50, ttft.RealP90, ttft.RealP99)
+				ttft.WorkloadLevel.RealP50, ttft.WorkloadLevel.RealP90, ttft.WorkloadLevel.RealP99)
 			logrus.Infof("        Sim  P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
-				ttft.SimP50, ttft.SimP90, ttft.SimP99)
+				ttft.WorkloadLevel.SimP50, ttft.WorkloadLevel.SimP90, ttft.WorkloadLevel.SimP99)
 		}
 		if e2e, ok := report.Metrics["e2e"]; ok {
 			logrus.Infof("  E2E:  Real mean=%.0fµs, Sim mean=%.0fµs, Error=%+.0fµs (%.1f%%)",
-				e2e.RealMean, e2e.SimMean, e2e.MeanError, e2e.MeanPercentError*100)
+				e2e.WorkloadLevel.RealMean, e2e.WorkloadLevel.SimMean, e2e.WorkloadLevel.MeanError, e2e.WorkloadLevel.MeanPercentError*100)
 			logrus.Infof("        Real P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
-				e2e.RealP50, e2e.RealP90, e2e.RealP99)
+				e2e.WorkloadLevel.RealP50, e2e.WorkloadLevel.RealP90, e2e.WorkloadLevel.RealP99)
 			logrus.Infof("        Sim  P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
-				e2e.SimP50, e2e.SimP90, e2e.SimP99)
+				e2e.WorkloadLevel.SimP50, e2e.WorkloadLevel.SimP90, e2e.WorkloadLevel.SimP99)
 		}
 		if itl, ok := report.Metrics["itl"]; ok {
 			logrus.Infof("  ITL:  Real mean=%.0fµs, Sim mean=%.0fµs, Error=%+.0fµs (%.1f%%)",
-				itl.RealMean, itl.SimMean, itl.MeanError, itl.MeanPercentError*100)
+				itl.WorkloadLevel.RealMean, itl.WorkloadLevel.SimMean, itl.WorkloadLevel.MeanError, itl.WorkloadLevel.MeanPercentError*100)
 			logrus.Infof("        Real P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
-				itl.RealP50, itl.RealP90, itl.RealP99)
+				itl.WorkloadLevel.RealP50, itl.WorkloadLevel.RealP90, itl.WorkloadLevel.RealP99)
 			logrus.Infof("        Sim  P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
-				itl.SimP50, itl.SimP90, itl.SimP99)
+				itl.WorkloadLevel.SimP50, itl.WorkloadLevel.SimP90, itl.WorkloadLevel.SimP99)
 		}
 
 		// Request-level prediction quality
 		logrus.Infof("Request-level prediction quality:")
 		if ttft, ok := report.Metrics["ttft"]; ok {
 			logrus.Infof("  TTFT: MAPE=%.1f%%, PearsonR=%.3f, Bias=%s, Quality=%s",
-				ttft.MAPE*100, ttft.PearsonR, ttft.BiasDirection, ttft.Quality)
+				ttft.RequestLevel.MAPE*100, ttft.RequestLevel.PearsonR, ttft.RequestLevel.BiasDirection, ttft.RequestLevel.Quality)
 		}
 		if e2e, ok := report.Metrics["e2e"]; ok {
 			logrus.Infof("  E2E:  MAPE=%.1f%%, PearsonR=%.3f, Bias=%s, Quality=%s",
-				e2e.MAPE*100, e2e.PearsonR, e2e.BiasDirection, e2e.Quality)
+				e2e.RequestLevel.MAPE*100, e2e.RequestLevel.PearsonR, e2e.RequestLevel.BiasDirection, e2e.RequestLevel.Quality)
 		}
 		if itl, ok := report.Metrics["itl"]; ok {
 			logrus.Infof("  ITL:  MAPE=%.1f%%, PearsonR=%.3f, Bias=%s, Quality=%s",
-				itl.MAPE*100, itl.PearsonR, itl.BiasDirection, itl.Quality)
+				itl.RequestLevel.MAPE*100, itl.RequestLevel.PearsonR, itl.RequestLevel.BiasDirection, itl.RequestLevel.Quality)
 		}
 	},
 }

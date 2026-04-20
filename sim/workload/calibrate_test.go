@@ -474,29 +474,33 @@ func TestComputeCalibration_ZeroRealMedian_GuardsDivision(t *testing.T) {
 }
 
 func TestMetricComparison_JSONRoundTrip_IncludesNewFields(t *testing.T) {
-	// GIVEN a MetricComparison with all fields populated
+	// GIVEN a MetricComparison with nested workload-level and request-level structs
 	original := &MetricComparison{
-		RealP50:            5000,
-		SimP50:             5100,
-		RealP90:            8000,
-		SimP90:             8200,
-		RealP95:            9000,
-		SimP95:             9100,
-		RealP99:            11000,
-		SimP99:             10800,
-		MAPE:               0.12,
-		PearsonR:           0.92,
-		BiasDirection:      "over-predict",
-		Quality:            "good",
-		Count:              100,
-		RealMean:           5200,
-		SimMean:            5400,
-		RealMedian:         5000,
-		SimMedian:          5100,
-		MeanError:          200,
-		MeanPercentError:   0.038,
-		MedianError:        100,
-		MedianPercentError: 0.020,
+		WorkloadLevel: WorkloadAggregates{
+			RealP50:            5000,
+			SimP50:             5100,
+			RealP90:            8000,
+			SimP90:             8200,
+			RealP95:            9000,
+			SimP95:             9100,
+			RealP99:            11000,
+			SimP99:             10800,
+			RealMean:           5200,
+			SimMean:            5400,
+			RealMedian:         5000,
+			SimMedian:          5100,
+			MeanError:          200,
+			MeanPercentError:   0.038,
+			MedianError:        100,
+			MedianPercentError: 0.020,
+		},
+		RequestLevel: PredictionQuality{
+			MAPE:          0.12,
+			PearsonR:      0.92,
+			BiasDirection: "over-predict",
+			Quality:       "good",
+		},
+		Count: 100,
 	}
 
 	// WHEN marshaling to JSON and back
@@ -510,36 +514,42 @@ func TestMetricComparison_JSONRoundTrip_IncludesNewFields(t *testing.T) {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
 
-	// THEN all fields round-trip correctly (BC-7)
-	if decoded.RealMean != original.RealMean {
-		t.Errorf("RealMean = %f, want %f", decoded.RealMean, original.RealMean)
+	// THEN all workload-level fields round-trip correctly (BC-7)
+	if decoded.WorkloadLevel.RealMean != original.WorkloadLevel.RealMean {
+		t.Errorf("WorkloadLevel.RealMean = %f, want %f", decoded.WorkloadLevel.RealMean, original.WorkloadLevel.RealMean)
 	}
-	if decoded.SimMean != original.SimMean {
-		t.Errorf("SimMean = %f, want %f", decoded.SimMean, original.SimMean)
+	if decoded.WorkloadLevel.SimMean != original.WorkloadLevel.SimMean {
+		t.Errorf("WorkloadLevel.SimMean = %f, want %f", decoded.WorkloadLevel.SimMean, original.WorkloadLevel.SimMean)
 	}
-	if decoded.MeanError != original.MeanError {
-		t.Errorf("MeanError = %f, want %f", decoded.MeanError, original.MeanError)
+	if decoded.WorkloadLevel.MeanError != original.WorkloadLevel.MeanError {
+		t.Errorf("WorkloadLevel.MeanError = %f, want %f", decoded.WorkloadLevel.MeanError, original.WorkloadLevel.MeanError)
 	}
-	if decoded.MeanPercentError != original.MeanPercentError {
-		t.Errorf("MeanPercentError = %f, want %f", decoded.MeanPercentError, original.MeanPercentError)
+	if decoded.WorkloadLevel.MeanPercentError != original.WorkloadLevel.MeanPercentError {
+		t.Errorf("WorkloadLevel.MeanPercentError = %f, want %f", decoded.WorkloadLevel.MeanPercentError, original.WorkloadLevel.MeanPercentError)
 	}
-	if decoded.MedianError != original.MedianError {
-		t.Errorf("MedianError = %f, want %f", decoded.MedianError, original.MedianError)
+	if decoded.WorkloadLevel.MedianError != original.WorkloadLevel.MedianError {
+		t.Errorf("WorkloadLevel.MedianError = %f, want %f", decoded.WorkloadLevel.MedianError, original.WorkloadLevel.MedianError)
 	}
-	if decoded.MedianPercentError != original.MedianPercentError {
-		t.Errorf("MedianPercentError = %f, want %f", decoded.MedianPercentError, original.MedianPercentError)
+	if decoded.WorkloadLevel.MedianPercentError != original.WorkloadLevel.MedianPercentError {
+		t.Errorf("WorkloadLevel.MedianPercentError = %f, want %f", decoded.WorkloadLevel.MedianPercentError, original.WorkloadLevel.MedianPercentError)
 	}
-	// Verify existing fields unchanged (BC-9)
-	if decoded.MAPE != original.MAPE {
-		t.Errorf("MAPE changed after round-trip: %f -> %f", original.MAPE, decoded.MAPE)
+	// Verify request-level fields (BC-9)
+	if decoded.RequestLevel.MAPE != original.RequestLevel.MAPE {
+		t.Errorf("RequestLevel.MAPE = %f, want %f", decoded.RequestLevel.MAPE, original.RequestLevel.MAPE)
 	}
-	if decoded.PearsonR != original.PearsonR {
-		t.Errorf("PearsonR changed after round-trip: %f -> %f", original.PearsonR, decoded.PearsonR)
+	if decoded.RequestLevel.PearsonR != original.RequestLevel.PearsonR {
+		t.Errorf("RequestLevel.PearsonR = %f, want %f", decoded.RequestLevel.PearsonR, original.RequestLevel.PearsonR)
 	}
 
-	// THEN JSON includes expected keys
+	// THEN JSON includes expected nested structure
 	jsonStr := string(data)
-	expectedKeys := []string{"real_mean", "sim_mean", "mean_error", "mean_percent_error", "median_error", "median_percent_error"}
+	if !strings.Contains(jsonStr, "\"workload_level\"") {
+		t.Errorf("JSON missing workload_level object: %s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, "\"request_level\"") {
+		t.Errorf("JSON missing request_level object: %s", jsonStr)
+	}
+	expectedKeys := []string{"real_mean", "sim_mean", "mean_error", "mean_percent_error", "median_error", "median_percent_error", "mape", "pearson_r"}
 	for _, key := range expectedKeys {
 		if !strings.Contains(jsonStr, key) {
 			t.Errorf("JSON missing key %q: %s", key, jsonStr)
