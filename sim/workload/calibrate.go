@@ -16,9 +16,19 @@ type MetricComparison struct {
 	RealP99, SimP99 float64
 	MAPE            float64
 	PearsonR        float64
-	BiasDirection   string  // "over-predict", "under-predict", "neutral"
-	Quality         string  // "excellent", "good", "fair", "poor"
+	BiasDirection   string // "over-predict", "under-predict", "neutral"
+	Quality         string // "excellent", "good", "fair", "poor"
 	Count           int
+
+	// Workload-level aggregate metrics (issue #1084)
+	RealMean           float64 `json:"real_mean"`
+	SimMean            float64 `json:"sim_mean"`
+	RealMedian         float64 `json:"real_median"`
+	SimMedian          float64 `json:"sim_median"`
+	MeanError          float64 `json:"mean_error"`           // SimMean - RealMean
+	MeanPercentError   float64 `json:"mean_percent_error"`   // |MeanError| / RealMean
+	MedianError        float64 `json:"median_error"`         // SimMedian - RealMedian
+	MedianPercentError float64 `json:"median_percent_error"` // |MedianError| / RealMedian
 }
 
 // CalibrationReport holds the complete calibration result.
@@ -256,6 +266,16 @@ func ComputeCalibration(real, sim []float64, metricName string) (*MetricComparis
 
 	comp := &MetricComparison{Count: len(real)}
 
+	// Mean (single-pass sum before percentile sort)
+	realSum, simSum := 0.0, 0.0
+	for i := range real {
+		realSum += real[i]
+		simSum += sim[i]
+	}
+	n := float64(len(real))
+	comp.RealMean = realSum / n
+	comp.SimMean = simSum / n
+
 	// Percentiles
 	realSorted := sortedCopy(real)
 	simSorted := sortedCopy(sim)
@@ -267,6 +287,22 @@ func ComputeCalibration(real, sim []float64, metricName string) (*MetricComparis
 	comp.SimP95 = percentileFromSorted(simSorted, 95)
 	comp.RealP99 = percentileFromSorted(realSorted, 99)
 	comp.SimP99 = percentileFromSorted(simSorted, 99)
+
+	// Median aliases P50
+	comp.RealMedian = comp.RealP50
+	comp.SimMedian = comp.SimP50
+
+	// Mean error and percent error (with division guards, R11)
+	comp.MeanError = comp.SimMean - comp.RealMean
+	if comp.RealMean != 0 {
+		comp.MeanPercentError = math.Abs(comp.MeanError) / comp.RealMean
+	}
+
+	// Median error and percent error (with division guards, R11)
+	comp.MedianError = comp.SimMedian - comp.RealMedian
+	if comp.RealMedian != 0 {
+		comp.MedianPercentError = math.Abs(comp.MedianError) / comp.RealMedian
+	}
 
 	// MAPE (skip where real == 0)
 	mapeSum := 0.0
