@@ -454,8 +454,8 @@ warm_up_requests: 0
 	if !ok {
 		t.Fatal("report.Metrics[\"itl\"] not found")
 	}
-	if itlMetric.Count == 0 {
-		t.Error("ITL metric Count should be > 0")
+	if itlMetric.NumRequests == 0 {
+		t.Error("ITL metric NumRequests should be > 0")
 	}
 }
 

@@ -41,7 +41,7 @@ type PredictionQuality struct {
 type MetricComparison struct {
 	WorkloadLevel WorkloadAggregates `json:"workload_level"`
 	RequestLevel  PredictionQuality  `json:"request_level"`
-	Count         int                `json:"count"`
+	NumRequests   int                `json:"num_requests"` // Number of matched request pairs in this comparison
 }
 
 // CalibrationReport holds the complete calibration result.
@@ -277,7 +277,7 @@ func ComputeCalibration(real, sim []float64, metricName string) (*MetricComparis
 		return nil, fmt.Errorf("mismatched vector lengths for %s: real=%d sim=%d", metricName, len(real), len(sim))
 	}
 
-	comp := &MetricComparison{Count: len(real)}
+	comp := &MetricComparison{NumRequests: len(real)}
 
 	// Mean (single-pass sum before percentile sort)
 	realSum, simSum := 0.0, 0.0

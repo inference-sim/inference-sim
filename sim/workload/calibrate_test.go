@@ -278,8 +278,8 @@ func TestCalibration_WithITL(t *testing.T) {
 	if !ok {
 		t.Fatal("report.Metrics[\"itl\"] not found")
 	}
-	if itlMetric.Count == 0 {
-		t.Error("ITL metric has Count=0")
+	if itlMetric.NumRequests == 0 {
+		t.Error("ITL metric has NumRequests=0")
 	}
 }
 
@@ -500,7 +500,7 @@ func TestMetricComparison_JSONRoundTrip_IncludesNewFields(t *testing.T) {
 			BiasDirection: "over-predict",
 			Quality:       "good",
 		},
-		Count: 100,
+		NumRequests: 100,
 	}
 
 	// WHEN marshaling to JSON and back
@@ -563,7 +563,7 @@ func TestMetricComparison_JSONRoundTrip_IncludesNewFields(t *testing.T) {
 		t.Fatalf("Failed to unmarshal for top-level key check: %v", err)
 	}
 	// Verify only canonical keys exist at top level
-	expectedTopLevelKeys := map[string]bool{"workload_level": true, "request_level": true, "count": true}
+	expectedTopLevelKeys := map[string]bool{"workload_level": true, "request_level": true, "num_requests": true}
 	for key := range topLevel {
 		if !expectedTopLevelKeys[key] {
 			t.Errorf("JSON contains unexpected top-level key %q (only workload_level, request_level, count should exist): %s", key, jsonStr)
