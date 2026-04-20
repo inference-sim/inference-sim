@@ -1,7 +1,9 @@
 package workload
 
 import (
+	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -468,5 +470,79 @@ func TestComputeCalibration_ZeroRealMedian_GuardsDivision(t *testing.T) {
 	// MedianError should still be computed (not guarded)
 	if report.MedianError != 10.0 {
 		t.Errorf("MedianError = %f, want 10.0", report.MedianError)
+	}
+}
+
+func TestMetricComparison_JSONRoundTrip_IncludesNewFields(t *testing.T) {
+	// GIVEN a MetricComparison with all fields populated
+	original := &MetricComparison{
+		RealP50:            5000,
+		SimP50:             5100,
+		RealP90:            8000,
+		SimP90:             8200,
+		RealP95:            9000,
+		SimP95:             9100,
+		RealP99:            11000,
+		SimP99:             10800,
+		MAPE:               0.12,
+		PearsonR:           0.92,
+		BiasDirection:      "over-predict",
+		Quality:            "good",
+		Count:              100,
+		RealMean:           5200,
+		SimMean:            5400,
+		RealMedian:         5000,
+		SimMedian:          5100,
+		MeanError:          200,
+		MeanPercentError:   0.038,
+		MedianError:        100,
+		MedianPercentError: 0.020,
+	}
+
+	// WHEN marshaling to JSON and back
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+
+	var decoded MetricComparison
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+
+	// THEN all fields round-trip correctly (BC-7)
+	if decoded.RealMean != original.RealMean {
+		t.Errorf("RealMean = %f, want %f", decoded.RealMean, original.RealMean)
+	}
+	if decoded.SimMean != original.SimMean {
+		t.Errorf("SimMean = %f, want %f", decoded.SimMean, original.SimMean)
+	}
+	if decoded.MeanError != original.MeanError {
+		t.Errorf("MeanError = %f, want %f", decoded.MeanError, original.MeanError)
+	}
+	if decoded.MeanPercentError != original.MeanPercentError {
+		t.Errorf("MeanPercentError = %f, want %f", decoded.MeanPercentError, original.MeanPercentError)
+	}
+	if decoded.MedianError != original.MedianError {
+		t.Errorf("MedianError = %f, want %f", decoded.MedianError, original.MedianError)
+	}
+	if decoded.MedianPercentError != original.MedianPercentError {
+		t.Errorf("MedianPercentError = %f, want %f", decoded.MedianPercentError, original.MedianPercentError)
+	}
+	// Verify existing fields unchanged (BC-9)
+	if decoded.MAPE != original.MAPE {
+		t.Errorf("MAPE changed after round-trip: %f -> %f", original.MAPE, decoded.MAPE)
+	}
+	if decoded.PearsonR != original.PearsonR {
+		t.Errorf("PearsonR changed after round-trip: %f -> %f", original.PearsonR, decoded.PearsonR)
+	}
+
+	// THEN JSON includes expected keys
+	jsonStr := string(data)
+	expectedKeys := []string{"real_mean", "sim_mean", "mean_error", "mean_percent_error", "median_error", "median_percent_error"}
+	for _, key := range expectedKeys {
+		if !strings.Contains(jsonStr, key) {
+			t.Errorf("JSON missing key %q: %s", key, jsonStr)
+		}
 	}
 }
