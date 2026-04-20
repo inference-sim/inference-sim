@@ -2883,7 +2883,7 @@ func TestClusterSimulator_MixedOrphanedAndGenuineTimeout_CorrectMetrics(t *testi
 // TransferStartTime, and the causality chain are bounded by actual work time.
 func TestClusterSimulator_PD_OrphanedTimeout_TimingNotInflated(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
-	config.SimConfig.Horizon = 500_000_000 // 500s — beyond workload.DefaultTimeoutUs
+	config.Horizon = 500_000_000 // 500s — beyond workload.DefaultTimeoutUs
 
 	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(42))
 	workloadRNG := rng.ForSubsystem(sim.SubsystemWorkload)
