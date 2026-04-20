@@ -158,16 +158,16 @@ Example:
 		logrus.Infof("  Matched pairs: %d (warm-up excluded: %d, unmatched real: %d, unmatched sim: %d)",
 			pairs.MatchedCount, pairs.ExcludedWarmUp, pairs.UnmatchedReal, pairs.UnmatchedSim)
 		if ttft, ok := report.Metrics["ttft"]; ok {
-			logrus.Infof("  TTFT: MAPE=%.1f%%, PearsonR=%.3f, quality=%s",
-				ttft.MAPE*100, ttft.PearsonR, ttft.Quality)
+			logrus.Infof("  TTFT: MAPE=%.1f%%, PearsonR=%.3f, quality=%s, MeanError=%+.0fµs (%+.1f%%)",
+				ttft.MAPE*100, ttft.PearsonR, ttft.Quality, ttft.MeanError, ttft.MeanPercentError*100)
 		}
 		if e2e, ok := report.Metrics["e2e"]; ok {
-			logrus.Infof("  E2E:  MAPE=%.1f%%, PearsonR=%.3f, quality=%s",
-				e2e.MAPE*100, e2e.PearsonR, e2e.Quality)
+			logrus.Infof("  E2E:  MAPE=%.1f%%, PearsonR=%.3f, quality=%s, MeanError=%+.0fµs (%+.1f%%)",
+				e2e.MAPE*100, e2e.PearsonR, e2e.Quality, e2e.MeanError, e2e.MeanPercentError*100)
 		}
 		if itl, ok := report.Metrics["itl"]; ok {
-			logrus.Infof("  ITL:  MAPE=%.1f%%, PearsonR=%.3f, quality=%s",
-				itl.MAPE*100, itl.PearsonR, itl.Quality)
+			logrus.Infof("  ITL:  MAPE=%.1f%%, PearsonR=%.3f, quality=%s, MeanError=%+.0fµs (%+.1f%%)",
+				itl.MAPE*100, itl.PearsonR, itl.Quality, itl.MeanError, itl.MeanPercentError*100)
 		}
 	},
 }

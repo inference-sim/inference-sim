@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim/workload"
+	"github.com/sirupsen/logrus"
 )
 
 // saveRestoreCalibrateFlags saves all calibrate flag vars and returns a restore func.
@@ -454,5 +456,81 @@ warm_up_requests: 0
 	}
 	if itlMetric.Count == 0 {
 		t.Error("ITL metric Count should be > 0")
+	}
+}
+
+func TestCalibrateCmd_LogsIncludeMeanError(t *testing.T) {
+	// GIVEN a calibration run with known real and sim latencies
+	// WHEN blis calibrate is run
+	// THEN CLI output includes MeanError summary (BC-8)
+	// AND JSON report includes real_mean, sim_mean, mean_error fields
+
+	dir := t.TempDir()
+	// 3 requests: real TTFT=4000, sim TTFT=4200 → mean error = +200µs
+	rows := [][4]int64{
+		{0, 1000, 5000, 10000},   // realTTFT = 5000-1000 = 4000
+		{1, 101000, 105000, 110000}, // realTTFT = 105000-101000 = 4000
+		{2, 201000, 205000, 210000}, // realTTFT = 205000-201000 = 4000
+	}
+	headerPath, dataPath := writeTempTrace(t, dir, `trace_version: 2
+time_unit: microseconds
+mode: real
+warm_up_requests: 0
+`, rows)
+
+	simPath := filepath.Join(dir, "results.json")
+	simResults := []workload.SimResult{
+		{RequestID: 0, TTFT: 4200, E2E: 9200, InputTokens: 10, OutputTokens: 5},
+		{RequestID: 1, TTFT: 4200, E2E: 9200, InputTokens: 10, OutputTokens: 5},
+		{RequestID: 2, TTFT: 4200, E2E: 9200, InputTokens: 10, OutputTokens: 5},
+	}
+	simData, _ := json.Marshal(simResults)
+	if err := os.WriteFile(simPath, simData, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	reportPath := filepath.Join(dir, "report.json")
+	defer saveRestoreCalibrateFlags()()
+	calibrateTraceHeaderPath = headerPath
+	calibrateTraceDataPath = dataPath
+	calibrateSimResultsPath = simPath
+	calibrateReportPath = reportPath
+	calibrateWarmUpRequests = -1
+	calibrateNetworkRTTUs = -1
+	calibrateNetworkBandwidthMbps = 0
+	calibrateITLDataPath = ""
+
+	// Capture logrus output to check CLI format
+	var logBuf bytes.Buffer
+	logrus.SetOutput(&logBuf)
+	origLevel := logrus.GetLevel()
+	logrus.SetLevel(logrus.InfoLevel)
+	defer func() {
+		logrus.SetOutput(os.Stderr)
+		logrus.SetLevel(origLevel)
+	}()
+
+	calibrateCmd.Run(calibrateCmd, []string{})
+
+	// THEN CLI output includes MeanError= formatted field (not just substring in path)
+	logOutput := logBuf.String()
+	if !strings.Contains(logOutput, "MeanError=") {
+		t.Errorf("CLI output missing MeanError= field:\n%s", logOutput)
+	}
+
+	// THEN JSON report includes new aggregate fields
+	reportData, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportStr := string(reportData)
+	if !strings.Contains(reportStr, "real_mean") {
+		t.Errorf("JSON report missing real_mean field:\n%s", reportStr)
+	}
+	if !strings.Contains(reportStr, "mean_error") {
+		t.Errorf("JSON report missing mean_error field:\n%s", reportStr)
+	}
+	if !strings.Contains(reportStr, "sim_mean") {
+		t.Errorf("JSON report missing sim_mean field:\n%s", reportStr)
 	}
 }
