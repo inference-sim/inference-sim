@@ -141,13 +141,15 @@ func TestParseServeGenTrace_NonNumericFields_SkippedAndWarned(t *testing.T) {
 // TestLoadServeGenDataset_EmptyDictWindows_SkippedUntilValid tests that the loader
 // skips time windows with empty PDF dictionaries (serialized as "{}") and finds the first
 // window with actual traffic data, matching ServeGen Python library behavior.
+// Keys are chosen for lexicographic sort order ("100" < "200" < "300") to ensure
+// asymmetric partial-empty windows (window 200: input="{}", output=valid) are evaluated.
 func TestLoadServeGenDataset_EmptyDictWindows_SkippedUntilValid(t *testing.T) {
 	// GIVEN a dataset with empty dict windows followed by a valid window
 	dir := t.TempDir()
 	datasetJSON := `{
-		"0": {"input_tokens": "{}", "output_tokens": "{}"},
-		"600": {"input_tokens": "{}", "output_tokens": "{50: 1.0}"},
-		"1200": {"input_tokens": "{100: 0.5, 200: 0.5}", "output_tokens": "{50: 0.7, 100: 0.3}"}
+		"100": {"input_tokens": "{}", "output_tokens": "{}"},
+		"200": {"input_tokens": "{}", "output_tokens": "{50: 1.0}"},
+		"300": {"input_tokens": "{100: 0.5, 200: 0.5}", "output_tokens": "{50: 0.7, 100: 0.3}"}
 	}`
 	path := filepath.Join(dir, "dataset.json")
 	require.NoError(t, os.WriteFile(path, []byte(datasetJSON), 0644))
@@ -155,10 +157,11 @@ func TestLoadServeGenDataset_EmptyDictWindows_SkippedUntilValid(t *testing.T) {
 	// WHEN loading the dataset
 	inputPDF, outputPDF, err := loadServeGenDataset(path, &ServeGenDataSpec{})
 
-	// THEN the function succeeds and uses the first valid window (timestamp 1200)
+	// THEN the function succeeds and uses the first valid window (timestamp 300)
+	// Windows 100 (both empty) and 200 (input empty, output valid) are skipped
 	require.NoError(t, err, "should skip empty dict windows and find valid window")
-	assert.Len(t, inputPDF, 2, "input PDF should have 2 bins from window 1200")
-	assert.Len(t, outputPDF, 2, "output PDF should have 2 bins from window 1200")
+	assert.Len(t, inputPDF, 2, "input PDF should have 2 bins from window 300")
+	assert.Len(t, outputPDF, 2, "output PDF should have 2 bins from window 300")
 	assert.Equal(t, 0.5, inputPDF[100])
 	assert.Equal(t, 0.5, inputPDF[200])
 	assert.Equal(t, 0.7, outputPDF[50])
