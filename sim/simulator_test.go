@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
@@ -178,7 +179,22 @@ func TestSimulator_GoldenDataset(t *testing.T) {
 		t.Fatal("Golden dataset contains no test cases")
 	}
 
-	for _, tc := range dataset.Tests {
+	var (
+		mu      sync.Mutex
+		updates = make(map[int]testutil.GoldenMetrics, len(dataset.Tests))
+	)
+	if *testutil.UpdateGolden {
+		t.Cleanup(func() {
+			for i, m := range updates {
+				m.SimulationDurationS = dataset.Tests[i].Metrics.SimulationDurationS // wall-clock; not regenerated
+				dataset.Tests[i].Metrics = m
+			}
+			testutil.SaveGoldenDataset(t, dataset)
+		})
+	}
+
+	for i, tc := range dataset.Tests {
+		i, tc := i, tc
 		t.Run(tc.Model, func(t *testing.T) {
 			sim := mustNewSimulator(t, SimConfig{
 				Horizon:             math.MaxInt64,
@@ -262,6 +278,33 @@ func TestSimulator_GoldenDataset(t *testing.T) {
 				sortedSchedulingDelays = append(sortedSchedulingDelays, float64(v))
 			}
 			sort.Float64s(sortedSchedulingDelays)
+
+			if *testutil.UpdateGolden {
+				mu.Lock()
+				updates[i] = testutil.GoldenMetrics{
+					CompletedRequests:      sim.Metrics.CompletedRequests,
+					TotalInputTokens:       sim.Metrics.TotalInputTokens,
+					TotalOutputTokens:      sim.Metrics.TotalOutputTokens,
+					VllmEstimatedDurationS: vllmRuntime,
+					ResponsesPerSec:        responsesPerSec,
+					TokensPerSec:           tokensPerSec,
+					E2EMeanMs:              CalculateMean(sortedE2Es),
+					E2EP90Ms:               CalculatePercentile(sortedE2Es, 90),
+					E2EP95Ms:               CalculatePercentile(sortedE2Es, 95),
+					E2EP99Ms:               CalculatePercentile(sortedE2Es, 99),
+					TTFTMeanMs:             CalculateMean(sortedTTFTs),
+					TTFTP90Ms:              CalculatePercentile(sortedTTFTs, 90),
+					TTFTP95Ms:              CalculatePercentile(sortedTTFTs, 95),
+					TTFTP99Ms:              CalculatePercentile(sortedTTFTs, 99),
+					ITLMeanMs:              CalculateMean(sim.Metrics.AllITLs),
+					ITLP90Ms:               CalculatePercentile(sim.Metrics.AllITLs, 90),
+					ITLP95Ms:               CalculatePercentile(sim.Metrics.AllITLs, 95),
+					ITLP99Ms:               CalculatePercentile(sim.Metrics.AllITLs, 99),
+					SchedulingDelayP99Ms:   CalculatePercentile(sortedSchedulingDelays, 99),
+				}
+				mu.Unlock()
+				return
+			}
 
 			const relTol = 1e-9
 
