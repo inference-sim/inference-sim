@@ -57,7 +57,7 @@
       "expected": {
         "completed_requests": 5100,
         "total_input_tokens": 2789700,
-        "total_output_tokens": 1259700,
+"total_output_tokens": 1264800,
         "ttft_sum_us": 278003676,
         "ttft_mean_ms": 54.510524705882354,
         "ttft_p90_ms": 64.30810000000001,
@@ -106,7 +106,7 @@
       "expected": {
         "completed_requests": 9000,
         "total_input_tokens": 5094000,
-        "total_output_tokens": 2214000,
+"total_output_tokens": 2223000,
         "ttft_sum_us": 499729650,
         "ttft_mean_ms": 55.52551666666667,
         "ttft_p90_ms": 65.9966,
@@ -155,7 +155,7 @@
       "expected": {
         "completed_requests": 9000,
         "total_input_tokens": 5094000,
-        "total_output_tokens": 2214000,
+"total_output_tokens": 2223000,
         "ttft_sum_us": 285259473,
         "ttft_mean_ms": 31.695497,
         "ttft_p90_ms": 36.603,
@@ -200,7 +200,7 @@
       "expected": {
         "completed_requests": 7200,
         "total_input_tokens": 5400000,
-        "total_output_tokens": 1800000,
+"total_output_tokens": 1807200,
         "ttft_sum_us": 230696589,
         "ttft_mean_ms": 32.04119291666667,
         "ttft_p90_ms": 36.194,
@@ -249,7 +249,7 @@
       "expected": {
         "completed_requests": 16800,
         "total_input_tokens": 9189600,
-        "total_output_tokens": 4149600,
+"total_output_tokens": 4166400,
         "ttft_sum_us": 609439992,
         "ttft_mean_ms": 36.27619,
         "ttft_p90_ms": 43.7603,
@@ -294,7 +294,7 @@
       "expected": {
         "completed_requests": 7200,
         "total_input_tokens": 5400000,
-        "total_output_tokens": 1800000,
+"total_output_tokens": 1807200,
         "ttft_sum_us": 399227658,
         "ttft_mean_ms": 55.44828583333334,
         "ttft_p90_ms": 66.054,
@@ -339,7 +339,7 @@
       "expected": {
         "completed_requests": 1200,
         "total_input_tokens": 1240800,
-        "total_output_tokens": 1736400,
+"total_output_tokens": 1737600,
         "ttft_sum_us": 66473993,
         "ttft_mean_ms": 55.39499416666666,
         "ttft_p90_ms": 65.2502,
@@ -388,7 +388,7 @@
       "expected": {
         "completed_requests": 5100,
         "total_input_tokens": 2789700,
-        "total_output_tokens": 1259700,
+"total_output_tokens": 1264800,
         "ttft_sum_us": 258630842,
         "ttft_mean_ms": 50.71192980392157,
         "ttft_p90_ms": 70.271,
@@ -437,7 +437,7 @@
       "expected": {
         "completed_requests": 9000,
         "total_input_tokens": 5094000,
-        "total_output_tokens": 2214000,
+"total_output_tokens": 2223000,
         "ttft_sum_us": 604411508,
         "ttft_mean_ms": 67.15683422222223,
         "ttft_p90_ms": 119.301,
@@ -486,7 +486,7 @@
       "expected": {
         "completed_requests": 5100,
         "total_input_tokens": 2789700,
-        "total_output_tokens": 1259700,
+"total_output_tokens": 1264800,
         "ttft_sum_us": 133543553,
         "ttft_mean_ms": 26.18501039215686,
         "ttft_p90_ms": 28.808,
@@ -535,7 +535,7 @@
       "expected": {
         "completed_requests": 9000,
         "total_input_tokens": 5094000,
-        "total_output_tokens": 2214000,
+"total_output_tokens": 2223000,
         "ttft_sum_us": 353698720,
         "ttft_mean_ms": 39.299857777777774,
         "ttft_p90_ms": 47.791,
@@ -580,7 +580,7 @@
       "expected": {
         "completed_requests": 7200,
         "total_input_tokens": 5400000,
-        "total_output_tokens": 1800000,
+"total_output_tokens": 1807200,
         "ttft_sum_us": 200165993,
         "ttft_mean_ms": 27.800832361111112,
         "ttft_p90_ms": 30.9356,
@@ -629,7 +629,7 @@
       "expected": {
         "completed_requests": 5100,
         "total_input_tokens": 2789700,
-        "total_output_tokens": 1259700,
+"total_output_tokens": 1264800,
         "ttft_sum_us": 237418787,
         "ttft_mean_ms": 46.55270333333333,
         "ttft_p90_ms": 55.51,
@@ -674,7 +674,7 @@
       "expected": {
         "completed_requests": 1200,
         "total_input_tokens": 1240800,
-        "total_output_tokens": 1736400,
+"total_output_tokens": 1737600,
         "ttft_sum_us": 33535120,
         "ttft_mean_ms": 27.945933333333333,
         "ttft_p90_ms": 30.6613,
@@ -719,7 +719,7 @@
       "expected": {
         "completed_requests": 1200,
         "total_input_tokens": 1240800,
-        "total_output_tokens": 1736400,
+"total_output_tokens": 1737600,
         "ttft_sum_us": 42155660,
         "ttft_mean_ms": 35.12971666666667,
         "ttft_p90_ms": 40.125,

@@ -491,14 +491,16 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	sim.Metrics.CompletedRequests++
 	sim.Metrics.TTFTSum += req.FirstTokenTime
 
-	// Count decode tokens at completion time, not inline during each decode step.
-	// Inline counting double-counts when a request is preempted (ProgressIndex reset
-	// to 0) and re-runs: tokens from the aborted run are counted a second time.
-	// At completion: PI = InputLen + OutputLen - 1 (normal) or maxModelLen - 1 (capped),
-	// so PI - InputLen counts decode-step increments (= OutputLen - 1; the first output
-	// token is generated at prefill completion, not as a decode-step increment).
+	// Count output tokens at completion time (not inline per step) to avoid
+	// double-counting under preemption (ProgressIndex reset to 0 on eviction).
+	// PI - InputLen counts decode-step increments (= OutputLen - 1).
+	// Add 1 for the first output token generated at prefill completion (#1097).
+	// Zero-output requests complete with PI == InputLen → decodeTokens == 0, no +1.
 	decodeTokens := int(req.ProgressIndex) - len(req.InputTokens)
-	if decodeTokens > 0 { // zero-output-token requests complete with PI == InputLen → decodeTokens == 0
+	if len(req.OutputTokens) > 0 {
+		decodeTokens++ // prefill-generated first token (vLLM parity)
+	}
+	if decodeTokens > 0 {
 		sim.Metrics.TotalOutputTokens += decodeTokens
 	}
 
@@ -666,6 +668,12 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
 			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)
+			// Count the first output token generated at prefill completion.
+			// The decode branch (above) only fires on decode steps, missing this token.
+			// Zero-output requests complete at prefill end without generating any token.
+			if len(req.OutputTokens) > 0 {
+				sim.Metrics.TotalOutputTokens++
+			}
 		}
 	}
 
