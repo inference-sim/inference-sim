@@ -232,6 +232,7 @@ Compares real observed latencies (from `blis observe`) against simulator predict
 | `--warmup-requests` | `int` | `-1` | Requests to exclude from comparison (-1 = use trace header value, 0 = include all) |
 | `--network-rtt-us` | `int64` | `-1` | Network RTT in microseconds added to sim-side latencies (-1 = use trace header value) |
 | `--network-bandwidth-mbps` | `float64` | `0` | Network bandwidth in Mbps for upload/download delay (0 = no delay) |
+| `--itl-data` | `string` | `""` | Path to ITL CSV from `blis observe --record-itl` to include ITL metric in the calibration report |
 
 !!! info "Sentinel defaults"
     The `--warmup-requests` and `--network-rtt-us` flags use `-1` as a sentinel meaning "read the value from the trace header." This allows the calibration to automatically use the warmup count and RTT recorded during observation. Pass `0` explicitly to override (include all requests or apply no RTT correction).
@@ -248,40 +249,75 @@ The calibration report JSON contains four sections:
   "warm_up_excluded": 5,
   "matched_pairs": 95,
   "token_mismatches": 2,
+  "itl_dropped": 3,
   "duration": "2m30s"
 }
 ```
 
 - `matched_pairs`: Requests matched by ID between trace and sim results
 - `token_mismatches`: Pairs where observed and simulated token counts differ (indicates potential data quality issues)
+- `itl_dropped`: ITL chunks dropped due to missing request pairing (only present when `--itl-data` is supplied)
 
-**`metrics`** — Per-metric comparison (TTFT and E2E latency):
+**`metrics`** — Per-metric comparison. Keys are `ttft`, `e2e`, and (if `--itl-data` was supplied) `itl`. Each entry has two sub-objects and a top-level `count`:
 
 ```json
 {
   "ttft": {
-    "RealP50": 1234.5,
-    "SimP50": 1200.0,
-    "RealP99": 4567.8,
-    "SimP99": 4500.0,
-    "MAPE": 0.05,
-    "PearsonR": 0.95,
-    "BiasDirection": "over-predict",
-    "Quality": "good",
-    "Count": 95
+    "workload_level": {
+      "real_mean": 1534.2,
+      "sim_mean": 1498.0,
+      "mean_error": -36.2,
+      "mean_percent_error": 0.024,
+      "real_median": 1234.5,
+      "sim_median": 1200.0,
+      "median_error": -34.5,
+      "median_percent_error": 0.028,
+      "real_p50": 1234.5,
+      "sim_p50": 1200.0,
+      "real_p90": 3200.0,
+      "sim_p90": 3150.0,
+      "real_p95": 4000.0,
+      "sim_p95": 3950.0,
+      "real_p99": 4567.8,
+      "sim_p99": 4500.0
+    },
+    "request_level": {
+      "mape": 0.05,
+      "pearson_r": 0.95,
+      "bias_direction": "under-predict",
+      "quality": "good"
+    },
+    "count": 95
   },
   "e2e": { ... }
 }
 ```
 
+The report uses two levels of analysis because they catch different problems. **Workload-level** aggregates (mean, median, percentiles) reveal systematic bias — the simulator consistently over- or under-predicting. **Request-level** prediction quality (MAPE, Pearson) captures per-request variance — how tightly the simulator tracks individual latencies regardless of any overall offset.
+
+**`workload_level` fields:**
+
 | Field | Meaning |
 |-------|---------|
-| `RealP50/P90/P95/P99` | Real (observed) latency percentiles in microseconds |
-| `SimP50/P90/P95/P99` | Simulated latency percentiles in microseconds |
-| `MAPE` | Mean Absolute Percentage Error (lower is better) |
-| `PearsonR` | Pearson correlation coefficient (closer to 1.0 is better) |
-| `BiasDirection` | `over-predict`, `under-predict`, or `neutral` |
-| `Quality` | Rating: `excellent`, `good`, `fair`, or `poor` |
+| `real_mean` / `sim_mean` | Arithmetic mean of observed / simulated latencies (µs) |
+| `mean_error` | `sim_mean - real_mean` — positive = over-predict, negative = under-predict |
+| `mean_percent_error` | `|mean_error| / real_mean` — absolute relative error on the mean |
+| `real_median` / `sim_median` | Median latency aliased from P50 (µs) |
+| `median_error` | `sim_median - real_median` |
+| `median_percent_error` | `|median_error| / real_median` |
+| `real_p50/p90/p95/p99` | Real (observed) latency percentiles (µs) |
+| `sim_p50/p90/p95/p99` | Simulated latency percentiles (µs) |
+
+**`request_level` fields:**
+
+| Field | Meaning |
+|-------|---------|
+| `mape` | Mean Absolute Percentage Error across matched request pairs (lower is better) |
+| `pearson_r` | Pearson correlation coefficient (closer to 1.0 is better) |
+| `bias_direction` | `over-predict`, `under-predict`, or `neutral` |
+| `quality` | Rating: `excellent`, `good`, `fair`, or `poor` |
+
+**Top-level:** `count` — number of matched request pairs used for this metric.
 
 **`config_match`** — Tracks which simulator config parameters matched the observed server config (currently reports `matched` and `defaulted` arrays).
 
@@ -369,10 +405,13 @@ cat calibration.json | python3 -m json.tool
 
 Look for:
 
-- **MAPE < 0.10** and **Quality = "good" or "excellent"** → simulator is well-calibrated for this workload
-- **BiasDirection = "over-predict"** → simulator latencies are higher than reality (conservative)
-- **BiasDirection = "under-predict"** → simulator latencies are lower than reality (optimistic — may need latency model tuning)
-- **High token_mismatches** → data quality issue; check if the server truncated outputs
+- **`request_level.mape` < 0.10** and **`request_level.quality` = `"good"` or `"excellent"`** → simulator tracks individual request latencies well
+- **`workload_level.mean_percent_error` < 0.05** → no systematic bias; mean prediction is within 5% of reality
+- **`request_level.bias_direction` = `"over-predict"`** → simulator latencies are higher than reality (conservative)
+- **`request_level.bias_direction` = `"under-predict"`** → simulator latencies are lower than reality (optimistic — may need latency model tuning)
+- **High `token_mismatches`** → data quality issue; check if the server truncated outputs
+
+Low MAPE with high `mean_percent_error` indicates high per-request variance but no systematic offset. High `mean_percent_error` with low MAPE is unusual and suggests a distributional shift rather than a per-request accuracy problem.
 
 If calibration quality is poor, try:
 
