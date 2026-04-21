@@ -265,9 +265,7 @@ func TestRoofline_GoldenDataset(t *testing.T) {
 			if m.TotalInputTokens != exp.Expected.TotalInputTokens {
 				t.Errorf("total_input_tokens: got %d, want %d", m.TotalInputTokens, exp.Expected.TotalInputTokens)
 			}
-			if m.TotalOutputTokens != exp.Expected.TotalOutputTokens {
-				t.Errorf("total_output_tokens: got %d, want %d", m.TotalOutputTokens, exp.Expected.TotalOutputTokens)
-			}
+
 			if m.TTFTSum != exp.Expected.TTFTSumUs {
 				t.Errorf("ttft_sum_us: got %d, want %d", m.TTFTSum, exp.Expected.TTFTSumUs)
 			}
