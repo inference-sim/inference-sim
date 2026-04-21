@@ -518,10 +518,145 @@ func TestStepTime_AtLeastOne(t *testing.T) {
 		"crossmodel with zero coefficients must still return >= 1")
 }
 
-// NOTE: Deprecation warning emission tests (BC-1, BC-2, BC-3) removed because
-// sync.Once makes test execution order-dependent (warnings only emit on first
-// call per backend). The negative case (BC-5: roofline and trained-physics
-// emit no warnings) IS tested below. Positive cases verified via manual testing.
+func TestNewLatencyModel_Blackbox_EmitsDeprecationWarning(t *testing.T) {
+	resetDeprecationWarningsForTest()
+
+	// GIVEN a valid blackbox latency model config
+	coeffs := sim.LatencyCoeffs{
+		AlphaCoeffs: []float64{1.0, 2.0, 3.0},
+		BetaCoeffs:  []float64{10.0, 20.0, 30.0},
+	}
+	hw := sim.ModelHardwareConfig{
+		Backend: "blackbox",
+		TP:      1,
+		ModelConfig: sim.ModelConfig{
+			NumLayers:       32,
+			NumHeads:        32,
+			HiddenDim:       4096,
+			IntermediateDim: 11008,
+		},
+		HWConfig: sim.HardwareCalib{
+			TFlopsPeak: 989.5,
+			BwPeakTBs:  3.35,
+		},
+	}
+
+	// WHEN constructing the blackbox latency model
+	// Capture logrus output
+	var logBuf bytes.Buffer
+	oldOut := logrus.StandardLogger().Out
+	logrus.SetOutput(&logBuf)
+	defer logrus.SetOutput(oldOut)
+
+	model, err := NewLatencyModel(coeffs, hw)
+
+	// THEN no error is returned (backend is functional)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if model == nil {
+		t.Fatal("expected non-nil model")
+	}
+
+	// AND deprecation warning is logged
+	logOutput := logBuf.String()
+	if !strings.Contains(logOutput, "deprecated") {
+		t.Errorf("expected deprecation warning in log output, but got: %s", logOutput)
+	}
+}
+
+func TestNewLatencyModel_Crossmodel_EmitsDeprecationWarning(t *testing.T) {
+	resetDeprecationWarningsForTest()
+
+	// GIVEN a valid crossmodel latency model config
+	coeffs := sim.LatencyCoeffs{
+		AlphaCoeffs: []float64{1.0, 2.0, 3.0},
+		BetaCoeffs:  []float64{10.0, 20.0, 30.0, 40.0},
+	}
+	hw := sim.ModelHardwareConfig{
+		Backend: "crossmodel",
+		TP:      1,
+		ModelConfig: sim.ModelConfig{
+			NumLayers:  32,
+			NumHeads:   32,
+			HiddenDim:  4096,
+			NumKVHeads: 8,
+		},
+		HWConfig: sim.HardwareCalib{
+			TFlopsPeak: 989.5,
+			BwPeakTBs:  3.35,
+		},
+	}
+
+	// WHEN constructing the crossmodel latency model
+	var logBuf bytes.Buffer
+	oldOut := logrus.StandardLogger().Out
+	logrus.SetOutput(&logBuf)
+	defer logrus.SetOutput(oldOut)
+
+	model, err := NewLatencyModel(coeffs, hw)
+
+	// THEN no error is returned (backend is functional)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if model == nil {
+		t.Fatal("expected non-nil model")
+	}
+
+	// AND deprecation warning is logged
+	logOutput := logBuf.String()
+	if !strings.Contains(logOutput, "deprecated") {
+		t.Errorf("expected deprecation warning in log output, but got: %s", logOutput)
+	}
+}
+
+func TestNewLatencyModel_TrainedRoofline_EmitsDeprecationWarning(t *testing.T) {
+	resetDeprecationWarningsForTest()
+
+	// GIVEN a valid trained-roofline latency model config
+	coeffs := sim.LatencyCoeffs{
+		AlphaCoeffs: []float64{1.0, 2.0, 3.0},
+		BetaCoeffs:  []float64{10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0},
+	}
+	hw := sim.ModelHardwareConfig{
+		Backend: "trained-roofline",
+		TP:      1,
+		ModelConfig: sim.ModelConfig{
+			NumLayers:       32,
+			NumHeads:        32,
+			HiddenDim:       4096,
+			IntermediateDim: 11008,
+			NumKVHeads:      32,
+		},
+		HWConfig: sim.HardwareCalib{
+			TFlopsPeak: 989.5,
+			BwPeakTBs:  3.35,
+		},
+	}
+
+	// WHEN constructing the trained-roofline latency model
+	var logBuf bytes.Buffer
+	oldOut := logrus.StandardLogger().Out
+	logrus.SetOutput(&logBuf)
+	defer logrus.SetOutput(oldOut)
+
+	model, err := NewLatencyModel(coeffs, hw)
+
+	// THEN no error is returned (backend is functional)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if model == nil {
+		t.Fatal("expected non-nil model")
+	}
+
+	// AND deprecation warning is logged
+	logOutput := logBuf.String()
+	if !strings.Contains(logOutput, "deprecated") {
+		t.Errorf("expected deprecation warning in log output, but got: %s", logOutput)
+	}
+}
 
 func TestNewLatencyModel_Roofline_NoDeprecationWarning(t *testing.T) {
 	// GIVEN a valid roofline latency model config
@@ -750,28 +885,62 @@ func TestNewLatencyModel_UnknownBackend_ReturnsError(t *testing.T) {
 }
 
 // TestNewLatencyModel_NegativeCoefficients_ReturnsError verifies:
-// GIVEN coefficients with negative values
+// GIVEN coefficients with negative values at various positions
 // WHEN NewLatencyModel is called
 // THEN an error MUST be returned rejecting negative coefficients.
 func TestNewLatencyModel_NegativeCoefficients_ReturnsError(t *testing.T) {
-	coeffs := sim.LatencyCoeffs{
-		AlphaCoeffs: []float64{1.0, -2.0, 3.0}, // alpha1 is negative
-		BetaCoeffs:  []float64{10.0, 20.0, 30.0},
-	}
-	hw := sim.ModelHardwareConfig{
-		Backend: "blackbox",
-		TP:      1,
+	tests := []struct {
+		name   string
+		coeffs sim.LatencyCoeffs
+	}{
+		{
+			name: "alpha[0] negative",
+			coeffs: sim.LatencyCoeffs{
+				AlphaCoeffs: []float64{-1.0, 2.0, 3.0},
+				BetaCoeffs:  []float64{10.0, 20.0, 30.0},
+			},
+		},
+		{
+			name: "alpha[2] negative",
+			coeffs: sim.LatencyCoeffs{
+				AlphaCoeffs: []float64{1.0, 2.0, -5.0},
+				BetaCoeffs:  []float64{10.0, 20.0, 30.0},
+			},
+		},
+		{
+			name: "beta[0] negative",
+			coeffs: sim.LatencyCoeffs{
+				AlphaCoeffs: []float64{1.0, 2.0, 3.0},
+				BetaCoeffs:  []float64{-100.0, 20.0, 30.0},
+			},
+		},
+		{
+			name: "beta[1] negative",
+			coeffs: sim.LatencyCoeffs{
+				AlphaCoeffs: []float64{1.0, 2.0, 3.0},
+				BetaCoeffs:  []float64{10.0, -1.0, 30.0},
+			},
+		},
 	}
 
-	model, err := NewLatencyModel(coeffs, hw)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hw := sim.ModelHardwareConfig{
+				Backend: "blackbox",
+				TP:      1,
+			}
 
-	if err == nil {
-		t.Fatal("expected error for negative coefficients, got nil")
-	}
-	if model != nil {
-		t.Errorf("expected nil model on error, got %T", model)
-	}
-	if !strings.Contains(err.Error(), "negative") && !strings.Contains(err.Error(), "AlphaCoeffs") {
-		t.Errorf("expected error message about negative coefficients, got: %v", err)
+			model, err := NewLatencyModel(tt.coeffs, hw)
+
+			if err == nil {
+				t.Fatal("expected error for negative coefficients, got nil")
+			}
+			if model != nil {
+				t.Errorf("expected nil model on error, got %T", model)
+			}
+			if !strings.Contains(err.Error(), "negative") {
+				t.Errorf("expected error message to contain 'negative', got: %v", err)
+			}
+		})
 	}
 }

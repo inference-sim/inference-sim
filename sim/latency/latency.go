@@ -25,6 +25,15 @@ var (
 	warnBlackboxOnce    sync.Once
 )
 
+// resetDeprecationWarningsForTest resets all deprecation warning sync.Once vars.
+// This function exists solely for test isolation and must only be called from
+// package latency tests (not production code).
+func resetDeprecationWarningsForTest() {
+	warnCrossmodelOnce = sync.Once{}
+	warnTrainedRoofOnce = sync.Once{}
+	warnBlackboxOnce = sync.Once{}
+}
+
 // clampToInt64 converts a float64 to int64, clamping values that would cause
 // undefined behavior in Go's float64→int64 conversion. Specifically:
 //   - NaN → math.MaxInt64 (NaN comparisons are always false in IEEE 754)
