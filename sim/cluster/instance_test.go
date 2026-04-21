@@ -75,7 +75,10 @@ func TestInstanceSimulator_GoldenDataset_Equivalence(t *testing.T) {
 				t.Errorf("total_input_tokens: got %d, want %d",
 					instance.Metrics().TotalInputTokens, tc.Metrics.TotalInputTokens)
 			}
-
+			if instance.Metrics().TotalOutputTokens != tc.Metrics.TotalOutputTokens {
+				t.Errorf("total_output_tokens: got %d, want %d",
+					instance.Metrics().TotalOutputTokens, tc.Metrics.TotalOutputTokens)
+			}
 
 			const relTol = 1e-9
 			vllmRuntime := float64(instance.Metrics().SimEndedTime) / 1e6

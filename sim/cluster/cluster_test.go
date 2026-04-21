@@ -165,6 +165,10 @@ func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
 				t.Errorf("total_input_tokens: got %d, want %d",
 					m.TotalInputTokens, tc.Metrics.TotalInputTokens)
 			}
+			if m.TotalOutputTokens != tc.Metrics.TotalOutputTokens {
+				t.Errorf("total_output_tokens: got %d, want %d",
+					m.TotalOutputTokens, tc.Metrics.TotalOutputTokens)
+			}
 			// Verify timing: SimEndedTime must match golden vllm_estimated_duration_s
 			vllmRuntime := float64(m.SimEndedTime) / 1e6
 			testutil.AssertFloat64Equal(t,"vllm_estimated_duration_s",
