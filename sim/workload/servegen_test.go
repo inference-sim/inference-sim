@@ -138,6 +138,31 @@ func TestParseServeGenTrace_NonNumericFields_SkippedAndWarned(t *testing.T) {
 }
 
 // TestLoadServeGenDataset_NonNumericKey_SkippedWithWarning verifies BC-3.
+// TestLoadServeGenDataset_EmptyDictWindows_SkippedUntilValid tests that the loader
+// skips time windows with empty PDF dictionaries (serialized as "{}") and finds the first
+// window with actual traffic data, matching ServeGen Python library behavior.
+func TestLoadServeGenDataset_EmptyDictWindows_SkippedUntilValid(t *testing.T) {
+	// GIVEN a dataset with empty dict windows followed by a valid window
+	dir := t.TempDir()
+	datasetJSON := `{
+		"0": {"input_tokens": "{}", "output_tokens": "{}"},
+		"600": {"input_tokens": "{}", "output_tokens": "{50: 1.0}"},
+		"1200": {"input_tokens": "{100: 0.5, 200: 0.5}", "output_tokens": "{50: 0.7, 100: 0.3}"}
+	}`
+	path := filepath.Join(dir, "dataset.json")
+	require.NoError(t, os.WriteFile(path, []byte(datasetJSON), 0644))
+
+	// WHEN loading the dataset
+	inputPDF, outputPDF, err := loadServeGenDataset(path, &ServeGenDataSpec{})
+
+	// THEN the function succeeds and uses the first valid window (timestamp 1200)
+	require.NoError(t, err, "should skip empty dict windows and find valid window")
+	assert.Len(t, inputPDF, 2, "input PDF should have 2 bins from window 1200")
+	assert.Len(t, outputPDF, 2, "output PDF should have 2 bins from window 1200")
+	assert.Equal(t, 0.5, inputPDF[100])
+	assert.Equal(t, 0.5, inputPDF[200])
+}
+
 // JSON keys that are not valid floats are skipped with a warning.
 // When ALL keys are non-numeric, the function returns an error after warning.
 func TestLoadServeGenDataset_NonNumericKey_SkippedWithWarning(t *testing.T) {

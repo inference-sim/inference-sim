@@ -276,7 +276,10 @@ func loadServeGenDataset(path string, sgConfig *ServeGenDataSpec) (map[int]float
 		}
 		inputPDFStr = window["input_tokens"]
 		outputPDFStr = window["output_tokens"]
-		if inputPDFStr != "" && outputPDFStr != "" {
+		// Skip empty dicts (represented as "{}" string) and truly empty strings
+		// Matches ServeGen Python library behavior (clientpool.py:166-168)
+		if inputPDFStr != "" && inputPDFStr != "{}" &&
+			outputPDFStr != "" && outputPDFStr != "{}" {
 			break
 		}
 	}
