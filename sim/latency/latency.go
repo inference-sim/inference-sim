@@ -202,6 +202,9 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			isTP:        isTP,
 		}, nil
 	case "trained-roofline":
+		// Emit deprecation warning
+		logrus.Warn("latency model \"trained-roofline\" is deprecated and will be removed in a future version. Use --latency-model trained-physics instead.")
+
 		// TrainedRooflineLatencyModel: roofline basis functions × learned corrections.
 		// Requires model architecture (config.json) and hardware specs for basis functions.
 		if hw.TP <= 0 {
