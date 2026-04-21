@@ -402,3 +402,107 @@ func TestTimeout_OrphanedTimeout_MultipleOrphans_NoneInflateClock(t *testing.T) 
 		t.Errorf("SimEndedTime inflated: got %d µs, want < 500_000 µs", sim.Metrics.SimEndedTime)
 	}
 }
+
+// TestTimeout_CascadeDoesNotCreateOrphanedStepEvents verifies that simultaneous
+// TimeoutEvents for running requests do not trigger the INV-8 guard and cascade
+// into orphaned StepEvents (issue #1096).
+//
+// Without the fix, TimeoutEvent.Execute nil'd sim.stepEvent when emptying
+// RunningBatch. The INV-8 guard then created a new StepEvent at the current tick,
+// which (priority 2 < timeout priority 5) fired before remaining TimeoutEvents,
+// pulling a queued seed that was immediately timed out. Each iteration left an
+// orphaned StepEvent at the scheduled future tick. These orphans fired in lock-step
+// with subsequent legitimate StepEvents, processing the batch N+1 times per tick
+// and collapsing SimEndedTime by ~2x.
+//
+// GIVEN: 8 requests sharing the same arrival time; 6 with a short deadline (50ms),
+//
+//	2 with no deadline. KV cache: 4 blocks × 16 tokens, each request needs 2
+//	blocks (InputLen=16 fills block0; first decode token at PI=16 needs block1).
+//	This fits exactly 2 requests, leaving 6 to queue.
+//
+// WHEN: The simulation runs to completion.
+//
+// THEN: The 6 deadline requests time out, the 2 no-deadline requests complete
+//
+//	normally, and SimEndedTime reflects realistic per-step latency (~130ms),
+//	not collapsed cascade timing (~70ms).
+func TestTimeout_CascadeDoesNotCreateOrphanedStepEvents(t *testing.T) {
+	const (
+		deadlineTicks = int64(50_000) // 50ms — requests will not complete in time
+		stepTimeTicks = int64(10_000) // 10ms per step (alpha[0]=10000)
+		inputLen      = 16            // tokens per request — fills exactly 1 KV block (positions 0-15)
+		outputLen     = 8             // needs 1 decode block (positions 16-23); total 2 blocks
+		numDeadline   = 6             // requests that will time out
+		numSurviving  = 2             // requests with no deadline (will complete)
+		numRequests   = numDeadline + numSurviving
+	)
+	// KV cache: 4 blocks × 16 tokens.
+	// Each request needs 2 blocks (input block + first decode block), so 2 fit simultaneously.
+	// r0–r5 carry deadline=50ms; r6–r7 carry no deadline (Deadline==0 → no TimeoutEvent).
+	cfg := SimConfig{
+		Horizon:             500_000, // 500ms — well beyond the ~130ms expected completion
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(4, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(10, 10_000, 16),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{float64(stepTimeTicks), 0, 0}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	for i := 0; i < numRequests; i++ {
+		deadline := deadlineTicks
+		if i >= numDeadline {
+			deadline = 0
+		}
+		sim.InjectArrival(&Request{
+			ID:           fmt.Sprintf("r%d", i),
+			ArrivalTime:  0,
+			InputTokens:  make([]int, inputLen),
+			OutputTokens: make([]int, outputLen),
+			MaxOutputLen: outputLen,
+			State:        StateQueued,
+			Deadline:     deadline,
+		})
+	}
+	sim.Run()
+
+	// THEN: all deadline requests timed out, no-deadline requests completed.
+	if sim.Metrics.TimedOutRequests != numDeadline {
+		t.Errorf("TimedOutRequests: got %d, want %d", sim.Metrics.TimedOutRequests, numDeadline)
+	}
+	if sim.Metrics.CompletedRequests != numSurviving {
+		t.Errorf("CompletedRequests: got %d, want %d", sim.Metrics.CompletedRequests, numSurviving)
+	}
+
+	// INV-1: conservation across all terminal states.
+	total := sim.Metrics.CompletedRequests + sim.Metrics.TimedOutRequests +
+		sim.Metrics.StillQueued + sim.Metrics.StillRunning + sim.Metrics.DroppedUnservable
+	if total != numRequests {
+		t.Errorf("INV-1 violated: total %d != injected %d", total, numRequests)
+	}
+
+	// THEN: SimEndedTime must reflect realistic per-step latency for the surviving
+	// requests, not the collapsed timing caused by cascading orphaned StepEvents.
+	//
+	// With the fix: SimEndedTime ≈ 140ms (measured: 140,000 µs).
+	//   Cascade at t=50ms: r0/r1 timeout, r2–r5 queue timeout, r6/r7 survive.
+	//   Surviving requests admitted at ~t=60ms; 1 prefill + 7 decode = 8 steps
+	//   at 10ms/step → complete at t=140ms.
+	//
+	// Without the fix (cascade): SimEndedTime ≈ 100ms (measured: 100,000 µs).
+	//   Orphaned StepEvents fire alongside the legitimate ones, advancing the
+	//   surviving requests faster than real step timing allows, collapsing
+	//   SimEndedTime by ~30%.
+	const (
+		simEndedMin = int64(120_000) // 120ms: midpoint between fixed (140ms) and buggy (100ms)
+		simEndedMax = int64(250_000) // 250ms: generous upper bound for slow environments
+	)
+	if sim.Metrics.SimEndedTime < simEndedMin {
+		t.Errorf("SimEndedTime collapsed by cascade: got %d µs, want >= %d µs (orphaned StepEvents suspected)",
+			sim.Metrics.SimEndedTime, simEndedMin)
+	}
+	if sim.Metrics.SimEndedTime > simEndedMax {
+		t.Errorf("SimEndedTime too high: got %d µs, want <= %d µs", sim.Metrics.SimEndedTime, simEndedMax)
+	}
+}
