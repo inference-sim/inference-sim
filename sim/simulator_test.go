@@ -1595,9 +1595,9 @@ func TestSimulator_RuntimeLengthCap_E2E(t *testing.T) {
 	if sim.Metrics.TotalOutputTokens == 0 {
 		t.Error("TotalOutputTokens = 0, want > 0 (some decode work should have happened)")
 	}
-	// Regression anchor: proactive cap stops at MaxModelLen(100)-1-input(50) = 49 decode tokens
-	if sim.Metrics.TotalOutputTokens != 49 {
-		t.Errorf("TotalOutputTokens = %d, want 49 (regression anchor)", sim.Metrics.TotalOutputTokens)
+	// Regression anchor: proactive cap stops at MaxModelLen(100)-1-input(50) = 49 decode tokens + 1 prefill-generated = 50
+	if sim.Metrics.TotalOutputTokens != 50 {
+		t.Errorf("TotalOutputTokens = %d, want 50 (regression anchor)", sim.Metrics.TotalOutputTokens)
 	}
 	// KV blocks released
 	if sim.KVCache.UsedBlocks() != 0 {
@@ -2070,10 +2070,10 @@ func TestSimulator_ChunkedPrefill_MaxModelLen_NoSpuriousCap(t *testing.T) {
 		t.Errorf("TTFT not recorded (hasTTFT=%v, ttft=%v); expected positive TTFT after chunked prefill", hasTTFT, ttft)
 	}
 
-	// TotalOutputTokens: decode runs PI 201→249 = 49 tokens.
+	// TotalOutputTokens: prefill-generated token (PI 200→200) + decode PI 201→249 = 1 + 49 = 50.
 	// Normal completion fires at PI == 200 + max(50,1) - 1 = 249.
-	if sim.Metrics.TotalOutputTokens != 49 {
-		t.Errorf("TotalOutputTokens = %d, want 49 (decode PI 201→249)", sim.Metrics.TotalOutputTokens)
+	if sim.Metrics.TotalOutputTokens != 50 {
+		t.Errorf("TotalOutputTokens = %d, want 50 (prefill-generated + decode PI 201→249)", sim.Metrics.TotalOutputTokens)
 	}
 
 	// INV-1 conservation
@@ -2200,9 +2200,9 @@ func TestSimulator_ProactiveCap_EliminatesOvershoot(t *testing.T) {
 	if sim.Metrics.CompletedRequests != 1 {
 		t.Fatalf("CompletedRequests = %d, want 1", sim.Metrics.CompletedRequests)
 	}
-	// Key: 49 tokens (MaxModelLen-1-input = 100-1-50), not 50 (old behavior)
-	if sim.Metrics.TotalOutputTokens != 49 {
-		t.Errorf("TotalOutputTokens = %d, want 49 (proactive cap: 100-1-50=49)", sim.Metrics.TotalOutputTokens)
+	// Key: 50 tokens (49 decode from proactive cap + 1 prefill-generated)
+	if sim.Metrics.TotalOutputTokens != 50 {
+		t.Errorf("TotalOutputTokens = %d, want 50 (proactive cap: 100-1-50=49 decode + 1 prefill-generated)", sim.Metrics.TotalOutputTokens)
 	}
 	// BC-5 fires at shifted boundary (PI >= maxModelLen-1)
 	if sim.Metrics.LengthCappedRequests != 1 {
@@ -2239,9 +2239,9 @@ func TestSimulator_ProactiveCap_MaxModelLen2_ZeroOutput(t *testing.T) {
 	sim.InjectArrival(req)
 	sim.Run()
 
-	// MaxModelLen=2, input=1: proactive cap allows max(0, 2-1-1)=0 decode tokens
-	if sim.Metrics.TotalOutputTokens != 0 {
-		t.Errorf("TotalOutputTokens = %d, want 0 (MaxModelLen=2, input=1)", sim.Metrics.TotalOutputTokens)
+	// MaxModelLen=2, input=1: proactive cap allows 0 decode tokens, but prefill still generates 1 token
+	if sim.Metrics.TotalOutputTokens != 1 {
+		t.Errorf("TotalOutputTokens = %d, want 1 (MaxModelLen=2, input=1: 0 decode + 1 prefill-generated)", sim.Metrics.TotalOutputTokens)
 	}
 	if sim.Metrics.LengthCappedRequests != 1 {
 		t.Errorf("LengthCappedRequests = %d, want 1", sim.Metrics.LengthCappedRequests)
@@ -2619,7 +2619,7 @@ func TestEnqueueDecodeSubRequest_SimClockAhead_StepEventAtSimClock(t *testing.T)
 //
 // Without the fix: TotalOutputTokens counts A's pre-eviction decode step AND
 // A's full post-eviction run (one extra).
-// With the fix: TotalOutputTokens = 8 (4 per request: PI_final - InputLen).
+// With the fix: TotalOutputTokens = 10 (5 per request: OutputLen).
 func TestSimulator_TotalOutputTokens_NoDoubleCountAfterPreemption(t *testing.T) {
 	// beta=[0,1,0]: StepTime = cacheMissTokens (min 1 µs).
 	// Decode steps cost 0 µs → clamped to 1; prefill costs inputTokens µs.
@@ -2657,10 +2657,10 @@ func TestSimulator_TotalOutputTokens_NoDoubleCountAfterPreemption(t *testing.T) 
 		t.Fatal("precondition violated: expected at least one preemption, got 0 — scenario does not test the bug")
 	}
 
-	// At normal completion: PI_final = InputLen + OutputLen - 1.
-	// decode tokens per request = PI_final - InputLen = OutputLen - 1 = 4.
-	// Total = 4 (B) + 4 (A) = 8.
-	want := 8
+	// At normal completion: TotalOutputTokens counts all OutputLen tokens per request
+	// (decode-step increments + 1 prefill-generated token each).
+	// Total = 5 (B) + 5 (A) = 10.
+	want := 10
 	got := s.Metrics.TotalOutputTokens
 	if got != want {
 		t.Errorf("TotalOutputTokens = %d, want %d (extra %d indicates double-count after preemption)",
@@ -2776,5 +2776,33 @@ func TestSimulator_TTFTSum_NoDoubleCountAfterPreemption(t *testing.T) {
 	if float64(s.Metrics.TTFTSum) != manualTTFTSum {
 		t.Errorf("TTFTSum = %d, want %.0f (sum of RequestTTFTs); delta %.0f indicates double-count after preemption",
 			s.Metrics.TTFTSum, manualTTFTSum, float64(s.Metrics.TTFTSum)-manualTTFTSum)
+	}
+}
+
+// TestTotalOutputTokens_Conservation verifies that TotalOutputTokens equals the sum of
+// output token lengths across all completed requests. This invariant catches off-by-one
+// errors (like the prefill-generated-token undercount fixed in issue #1097) and double-
+// counting regressions simultaneously.
+func TestTotalOutputTokens_Conservation(t *testing.T) {
+	cfg := newTestSimConfig()
+	cfg.Horizon = 10_000_000
+	sim := mustNewSimulator(t, cfg)
+
+	requests := testGenerateRequests(42, math.MaxInt64, 5.0/1e6, 20,
+		0, 100, 10, 10, 200, 50, 5, 1, 100)
+	injectRequests(sim, requests)
+	sim.Run()
+
+	// Compute expected total from completed requests
+	expected := 0
+	for _, req := range requests {
+		if req.State == StateCompleted {
+			expected += len(req.OutputTokens)
+		}
+	}
+
+	if sim.Metrics.TotalOutputTokens != expected {
+		t.Errorf("TotalOutputTokens conservation violated: got %d, want %d (sum of completed request output lengths)",
+			sim.Metrics.TotalOutputTokens, expected)
 	}
 }
