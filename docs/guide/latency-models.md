@@ -308,7 +308,7 @@ Trained-physics uses **13 coefficients** (10 beta: prefill compute/memory split,
 | **PostDecodeFixedOverhead** | 0 | 0 | 0 | α₁ (~1.85ms) | α₁ (~777µs) |
 
 !!! tip "Choosing the right mode"
-    **Trained-physics** is the recommended default for any model with a HuggingFace `config.json` (generalizes across architectures, workloads, and TP configurations without per-model calibration). **Roofline** for pure analytical estimates when no learned corrections are desired.
+    **Roofline** is the default (analytical FLOPs/bandwidth estimation). **Trained-physics** is recommended for any model with a HuggingFace `config.json` (generalizes across architectures, workloads, and TP configurations without per-model calibration using physics-informed basis functions with learned corrections).
 
     **Deprecated backends (migration to trained-physics recommended):** **Blackbox**, **trained-roofline**, and **crossmodel** are deprecated and will be removed in a future version. Existing workflows using these backends should migrate to `--latency-model trained-physics`. See individual sections above for backend-specific details.
 
