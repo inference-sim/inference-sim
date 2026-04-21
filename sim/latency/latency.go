@@ -18,17 +18,13 @@ import (
 
 // Package-level sync.Once to emit deprecation warnings only once per process.
 var (
-	warnCrossmodelOnce  sync.Once
-	warnTrainedRoofOnce sync.Once
-	warnBlackboxOnce    sync.Once
+	warnBlackboxOnce sync.Once
 )
 
 // resetDeprecationWarningsForTest resets all deprecation warning sync.Once vars.
 // This function exists solely for test isolation and must only be called from
 // package latency tests (not production code).
 func resetDeprecationWarningsForTest() {
-	warnCrossmodelOnce = sync.Once{}
-	warnTrainedRoofOnce = sync.Once{}
 	warnBlackboxOnce = sync.Once{}
 }
 
