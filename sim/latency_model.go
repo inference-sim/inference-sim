@@ -1,8 +1,9 @@
 package sim
 
 // LatencyModel estimates execution times for the DES step loop.
-// Three implementations exist in sim/latency/: BlackboxLatencyModel (alpha/beta regression),
-// RooflineLatencyModel (analytical FLOPs/bandwidth),
+// Five implementations exist in sim/latency/: BlackboxLatencyModel (alpha/beta regression),
+// RooflineLatencyModel (analytical FLOPs/bandwidth), CrossModelLatencyModel (physics-informed
+// cross-model), TrainedRooflineLatencyModel (roofline basis functions × learned corrections),
 // and TrainedPhysicsModel (physics-informed basis functions with architecture-aware MoE scaling).
 // All time estimates are in microseconds (ticks).
 type LatencyModel interface {
@@ -20,8 +21,8 @@ type LatencyModel interface {
 
 	// PostDecodeFixedOverhead estimates the fixed per-request post-decode overhead (µs).
 	// This is the constant overhead at request completion (e.g., response setup, final API
-	// processing) that is NOT per-token. TrainedPhysicsModel uses α₁ = fixed post-decode
-	// overhead per request. BlackboxLatencyModel and RooflineLatencyModel return 0.
+	// processing) that is NOT per-token. Added for the trained-roofline alpha model where
+	// α₁ = fixed post-decode overhead per request. Existing backends return 0.
 	// Used by recordRequestCompletion to add to E2E without affecting TTFT.
 	PostDecodeFixedOverhead() int64
 }

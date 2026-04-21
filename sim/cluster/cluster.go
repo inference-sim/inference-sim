@@ -275,7 +275,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			}
 			// Placement succeeded: use pool's GPU type (SC-004: pool-authoritative, not CLI flag).
 			// Set GPU label and, when HWConfigByGPU is provided, override HWConfig so that
-			// roofline/trained-physics backends use the pool's hardware coefficients (issue #893).
+			// roofline/trained-roofline backends use the pool's hardware coefficients (issue #893).
 			simCfg.GPU = matchedGPUType
 			if hc, ok := config.HWConfigByGPU[matchedGPUType]; ok {
 				if hc.TFlopsPeak <= 0 || hc.BwPeakTBs <= 0 {
@@ -949,7 +949,7 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 		parent := c.parentRequests[c.pendingDecodeCompletions[subReqID]]
 		// Include PostDecodeFixedOverhead so parent.CompletionTime represents the
 		// client-visible completion time, matching non-PD E2E semantics (issue #846).
-		// For blackbox/roofline (overhead=0), value is byte-identical to before.
+		// For blackbox/roofline/cross-model (overhead=0), value is byte-identical to before.
 		// No zero-output guard needed: decode sub-requests always carry the full
 		// output token list from the original request (set in KVTransferCompletedEvent.Execute).
 		parent.CompletionTime = c.clock + inst.PostDecodeFixedOverhead()

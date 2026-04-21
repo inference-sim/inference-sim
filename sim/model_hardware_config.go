@@ -1,7 +1,7 @@
 package sim
 
 // ModelConfig holds model architecture parameters parsed from a HuggingFace config.json.
-// Used by the roofline and trained-physics latency models for step time estimation.
+// Used by the roofline and cross-model latency models for step time estimation.
 // Parsing functions are in sim/latency/config.go.
 type ModelConfig struct {
 	NumLayers           int     `json:"num_hidden_layers"`

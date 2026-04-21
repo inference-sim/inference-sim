@@ -91,7 +91,7 @@ To add a new latency estimation backend (e.g., SGLang RadixAttention, TensorRT-L
    - `PostDecodeFixedOverhead() int64` — fixed per-request completion overhead (return 0 if not applicable)
    - **All `float64 → int64` conversions MUST use `clampToInt64(v)` (defined in `sim/latency/latency.go`).** Direct `int64(v)` casts on float64 values are undefined behavior in Go when the value is out of range. `clampToInt64` handles NaN and positive overflow correctly.
 2. **Register the backend name** in `sim/bundle.go`: add `"your-backend": true` to `validLatencyBackends` map.
-3. **Register in `NewLatencyModel` factory** in `sim/latency/latency.go`: add a `case` branch in the `switch hw.Backend` block. The backend string (e.g., `"trained-physics"`) is set by the `--latency-model` CLI flag and stored in `ModelHardwareConfig.Backend`. The factory signature is `NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)`.
+3. **Register in `NewLatencyModel` factory** in `sim/latency/latency.go`: add a `case` branch in the `switch hw.Backend` block. The backend string (e.g., `"trained-roofline"`) is set by the `--latency-model` CLI flag and stored in `ModelHardwareConfig.Backend`. The factory signature is `NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)`.
 4. **Add CLI wiring** (if needed) in `cmd/root.go`: add a loading block for your backend's coefficients from `defaults.yaml`. If your backend needs a custom defaults section, add a struct to `cmd/default_config.go`.
 5. **Add behavioral tests** in `sim/latency/` — monotonicity (more tokens → longer step time), positive output, boundary cases (empty batch)
 6. Extension friction: **3-5 touch points** (implementation + bundle map + factory branch; optionally CLI wiring + defaults struct)
@@ -99,7 +99,8 @@ To add a new latency estimation backend (e.g., SGLang RadixAttention, TensorRT-L
 Examples:
 - See `BlackboxLatencyModel` in `sim/latency/latency.go` for a simple stateless model (alpha/beta regression)
 - See `RooflineLatencyModel` in `sim/latency/latency.go` for a model that uses hardware config (FLOPs/bandwidth)
-- See `TrainedPhysicsModel` in `sim/latency/trained_physics_model.go` for a physics-informed model with roofline basis functions × learned corrections (MoE-aware, zero-allocation hot path)
+- See `CrossModelLatencyModel` in `sim/latency/crossmodel.go` for a physics-informed model that derives step time from HuggingFace architecture features (MoE-aware)
+- See `TrainedRooflineLatencyModel` in `sim/latency/trained_roofline.go` for a data-driven model with roofline basis functions × learned corrections (zero-allocation hot path, 7% MAPE)
 
 ## Adding New Batch Formation Strategies
 

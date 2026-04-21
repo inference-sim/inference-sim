@@ -35,17 +35,17 @@ Red Hat AI (`redhatai/`) provides FP8, W4A16, and W8A8 quantized variants for ma
 
 ## Validated Architectures
 
-The analytical modes (roofline, trained-physics) have been validated against real vLLM measurements on these architectures:
+The analytical modes (roofline, cross-model, trained-roofline) have been validated against real vLLM measurements on these architectures:
 
 - Qwen 2.5 1.5B/3B, Qwen 3 14B
 - LLaMA 2 7B/70B
 - CodeLlama 34B
 - Mixtral 8x7B (MoE)
 
-**Trained-physics** achieves 7% MAPE GPU combined step time across these architectures. Any other model with a HuggingFace `config.json` will work — it just hasn't been formally validated.
+**Trained-roofline** achieves 7% MAPE GPU combined step time across these architectures. Any other model with a HuggingFace `config.json` will work — it just hasn't been formally validated.
 
 !!! note "Parallelism and quantization"
-    The analytical latency models (roofline, trained-physics) model tensor parallelism (TP). Data parallelism (DP) and expert parallelism (EP) are not yet modeled. Quantized weight precision is auto-detected and used for weight bandwidth and KV capacity calculations in all analytical backends. Supported formats: GPTQ, AWQ, FP8, and compressed-tensors (via `quantization_config`), plus model name conventions (e.g., `w4a16`, `FP8`).
+    The analytical latency models (roofline, cross-model, trained-roofline) model tensor parallelism (TP). Data parallelism (DP) and expert parallelism (EP) are not yet modeled. Quantized weight precision is auto-detected and used for weight bandwidth and KV capacity calculations in all analytical backends. Supported formats: GPTQ, AWQ, FP8, and compressed-tensors (via `quantization_config`), plus model name conventions (e.g., `w4a16`, `FP8`).
 
 !!! info "MFU Calibration (Updated March 2026)"
     Hardware MFU (Model FLOPs Utilization) values in `hardware_config.json` were recalibrated based on empirical measurements and roofline theory. The updated values (H100: prefill=0.45/decode=0.30, A100: prefill=0.38/decode=0.18, L40S: prefill=0.32/decode=0.08) reflect conservative estimates for capacity planning. For detailed justification including evidence from FlashAttention-3, NVIDIA MLPerf, and production deployments, see [Discussion #589](https://github.com/inference-sim/inference-sim/discussions/589). If you have existing capacity planning results, consider re-running simulations with the updated values for more accurate estimates.

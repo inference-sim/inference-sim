@@ -96,12 +96,12 @@ func NewLatencyCoeffs(betaCoeffs, alphaCoeffs []float64) LatencyCoeffs {
 
 // ModelHardwareConfig groups model identity and hardware specification.
 type ModelHardwareConfig struct {
-	ModelConfig ModelConfig   // HuggingFace model parameters (for roofline/trained-physics modes)
-	HWConfig    HardwareCalib // GPU specifications (for roofline/trained-physics modes)
+	ModelConfig ModelConfig   // HuggingFace model parameters (for roofline/crossmodel modes)
+	HWConfig    HardwareCalib // GPU specifications (for roofline/crossmodel modes)
 	Model       string        // model name (e.g., "meta-llama/llama-3.1-8b-instruct")
 	GPU         string        // GPU type (e.g., "H100")
 	TP          int           // tensor parallelism degree
-	Backend     string        // latency model backend: "" or "roofline" (default), "blackbox", "trained-physics"
+	Backend     string        // latency model backend: "" or "roofline" (default), "blackbox", "crossmodel", "trained-roofline"
 	MaxModelLen int64         // max total sequence length (input + output); 0 = unlimited (mirrors vLLM --max-model-len)
 }
 
