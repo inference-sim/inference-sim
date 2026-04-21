@@ -496,7 +496,7 @@ func TestTimeout_CascadeDoesNotCreateOrphanedStepEvents(t *testing.T) {
 	//   SimEndedTime by ~30%.
 	const (
 		simEndedMin = int64(120_000) // 120ms: midpoint between fixed (140ms) and buggy (100ms)
-		simEndedMax = int64(250_000) // 250ms: generous upper bound for slow environments
+		simEndedMax = int64(200_000) // 200ms: 1.43× expected 140ms, catches step-time regressions
 	)
 	if sim.Metrics.SimEndedTime < simEndedMin {
 		t.Errorf("SimEndedTime collapsed by cascade: got %d µs, want >= %d µs (orphaned StepEvents suspected)",
