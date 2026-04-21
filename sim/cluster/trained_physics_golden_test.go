@@ -252,6 +252,7 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 					CompletedRequests: m.CompletedRequests,
 					TotalInputTokens:  m.TotalInputTokens,
 					TotalOutputTokens: m.TotalOutputTokens,
+					TTFTSumUs:         m.TTFTSum,
 					TTFTMeanMs:        ttftMean,
 					TTFTP90Ms:         ttftP90,
 					TTFTP99Ms:         ttftP99,
@@ -273,6 +274,9 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 			}
 			if m.TotalOutputTokens != exp.Expected.TotalOutputTokens {
 				t.Errorf("total_output_tokens: got %d, want %d", m.TotalOutputTokens, exp.Expected.TotalOutputTokens)
+			}
+			if m.TTFTSum != exp.Expected.TTFTSumUs {
+				t.Errorf("ttft_sum_us: got %d, want %d", m.TTFTSum, exp.Expected.TTFTSumUs)
 			}
 			// relTol=1e-9 catches floating-point rounding from platform
 			// differences while rejecting any behavioral change to the

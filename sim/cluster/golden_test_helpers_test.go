@@ -30,6 +30,7 @@ type goldenExpected struct {
 	CompletedRequests int     `json:"completed_requests"`
 	TotalInputTokens  int     `json:"total_input_tokens"`
 	TotalOutputTokens int     `json:"total_output_tokens"`
+	TTFTSumUs         int64   `json:"ttft_sum_us"`
 	TTFTMeanMs        float64 `json:"ttft_mean_ms"`
 	TTFTP90Ms         float64 `json:"ttft_p90_ms"`
 	TTFTP99Ms         float64 `json:"ttft_p99_ms"`
