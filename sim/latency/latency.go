@@ -11,10 +11,18 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/util"
 	"github.com/sirupsen/logrus"
+)
+
+// Package-level sync.Once to emit deprecation warnings only once per process.
+var (
+	warnCrossmodelOnce  sync.Once
+	warnTrainedRoofOnce sync.Once
+	warnBlackboxOnce    sync.Once
 )
 
 // clampToInt64 converts a float64 to int64, clamping values that would cause
@@ -156,8 +164,10 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			alphaCoeffs: coeffs.AlphaCoeffs,
 		}, nil
 	case "crossmodel":
-		// Emit deprecation warning
-		logrus.Warn("latency model \"crossmodel\" is deprecated and will be removed in a future version. Use --latency-model trained-physics instead.")
+		// Emit deprecation warning (once per process)
+		warnCrossmodelOnce.Do(func() {
+			logrus.Warn("latency model \"crossmodel\" is deprecated and will be removed in a future version. Use --latency-model trained-physics instead.")
+		})
 
 		// Validate required fields BEFORE computing derived features (R11: guard division)
 		if hw.TP <= 0 {
@@ -202,8 +212,10 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			isTP:        isTP,
 		}, nil
 	case "trained-roofline":
-		// Emit deprecation warning
-		logrus.Warn("latency model \"trained-roofline\" is deprecated and will be removed in a future version. Use --latency-model trained-physics instead.")
+		// Emit deprecation warning (once per process)
+		warnTrainedRoofOnce.Do(func() {
+			logrus.Warn("latency model \"trained-roofline\" is deprecated and will be removed in a future version. Use --latency-model trained-physics instead.")
+		})
 
 		// TrainedRooflineLatencyModel: roofline basis functions × learned corrections.
 		// Requires model architecture (config.json) and hardware specs for basis functions.
@@ -275,8 +287,10 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 		}
 		return model, nil
 	case "blackbox":
-		// Emit deprecation warning
-		logrus.Warn("latency model \"blackbox\" is deprecated and will be removed in a future version. Use --latency-model trained-physics instead.")
+		// Emit deprecation warning (once per process)
+		warnBlackboxOnce.Do(func() {
+			logrus.Warn("latency model \"blackbox\" is deprecated and will be removed in a future version. Use --latency-model trained-physics instead.")
+		})
 
 		// BlackboxLatencyModel indexes betaCoeffs[0..2]; validate upfront.
 		if len(coeffs.BetaCoeffs) < 3 {

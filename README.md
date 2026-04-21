@@ -260,7 +260,7 @@ inference-sim/
 │   └── register.go         # NewKVStore factory + init()-based registration into sim/
 ├── sim/latency/            # Latency model implementations
 │   ├── latency.go          # RooflineLatencyModel, BlackboxLatencyModel, CrossModelLatencyModel, NewLatencyModel factory
-│   ├── trained_roofline.go # TrainedRooflineLatencyModel: roofline basis functions × learned corrections
+│   ├── trained_roofline.go # TrainedRooflineLatencyModel: roofline basis functions × learned corrections (DEPRECATED — use trained-physics)
 │   ├── trained_physics_model.go # TrainedPhysicsLatencyModel: physics-informed basis functions with architecture-aware scaling
 │   ├── crossmodel.go       # CrossModelLatencyModel: physics-informed step time (DEPRECATED — use trained-physics)
 │   ├── roofline.go         # Analytical FLOPs/bandwidth latency estimation

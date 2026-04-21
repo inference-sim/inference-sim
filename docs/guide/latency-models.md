@@ -1,9 +1,9 @@
 # Latency Models
 
-The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships five backends -- roofline (default, analytical), trained-physics (recommended for new work), and three deprecated backends (blackbox, cross-model, trained-roofline) -- and the pluggable architecture supports adding custom backends.
+The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships five backends -- roofline (default, analytical), trained-physics (recommended for new work), and three deprecated backends (blackbox, crossmodel, trained-roofline) -- and the pluggable architecture supports adding custom backends.
 
 !!! warning "Deprecated Backends"
-    **blackbox**, **cross-model**, and **trained-roofline** are deprecated and will be removed in a future version. Use `--latency-model trained-physics` for new work. Existing configs using deprecated backends will continue to function but will emit deprecation warnings.
+    **blackbox** (`--latency-model blackbox`), **crossmodel** (`--latency-model crossmodel`), and **trained-roofline** (`--latency-model trained-roofline`) are deprecated and will be removed in a future version. Use `--latency-model trained-physics` for new work. Existing configs using deprecated backends will continue to function but will emit deprecation warnings.
 
 ```bash
 # Roofline mode (default) — analytical estimation from model architecture
