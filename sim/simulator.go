@@ -493,11 +493,13 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 
 	// Count output tokens at completion time (not inline per step) to avoid
 	// double-counting under preemption (ProgressIndex reset to 0 on eviction).
-	// PI - InputLen counts decode-step increments (= OutputLen - 1).
-	// Add 1 for the first output token generated at prefill completion (#1097).
-	// Zero-output requests complete with PI == InputLen → decodeTokens == 0, no +1.
+	// PI - InputLen counts decode-step increments (= OutputLen - 1 for normal completion).
+	// Add 1 for the prefill-generated first token (#1097) when decodeTokens falls short
+	// of OutputLen. PD 1-output decode sub-requests are the exception: their PI_final
+	// lands at InputLen+1 (one step past the InputLen threshold), so decodeTokens==OutputLen
+	// already — the guard prevents double-counting in that case.
 	decodeTokens := int(req.ProgressIndex) - len(req.InputTokens)
-	if len(req.OutputTokens) > 0 {
+	if decodeTokens < len(req.OutputTokens) {
 		decodeTokens++ // prefill-generated first token (vLLM parity)
 	}
 	if decodeTokens > 0 {
@@ -664,16 +666,13 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 				req.ITL = append(req.ITL, currStepAdvance+sim.latencyModel.OutputTokenProcessingTime())
 			}
 		}
-		if req.ProgressIndex == util.Len64(req.InputTokens) { // prefill complete, first token is generated
+		// !req.TTFTSet guard: fires exactly once per request lifetime.
+		// On preemption, ProgressIndex resets to 0 (batch_formation.go) but TTFTSet is
+		// preserved, preventing TTFT double-counting on re-prefill.
+		if req.ProgressIndex == util.Len64(req.InputTokens) && !req.TTFTSet {
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
 			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)
-			// Count the first output token generated at prefill completion.
-			// The decode branch (above) only fires on decode steps, missing this token.
-			// Zero-output requests complete at prefill end without generating any token.
-			if len(req.OutputTokens) > 0 {
-				sim.Metrics.TotalOutputTokens++
-			}
 		}
 	}
 

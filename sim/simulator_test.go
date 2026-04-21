@@ -2793,6 +2793,10 @@ func TestTotalOutputTokens_Conservation(t *testing.T) {
 	injectRequests(sim, requests)
 	sim.Run()
 
+	if sim.Metrics.CompletedRequests == 0 {
+		t.Fatal("precondition violated: no requests completed — conservation check is vacuous")
+	}
+
 	// Compute expected total from completed requests
 	expected := 0
 	for _, req := range requests {
@@ -2803,6 +2807,59 @@ func TestTotalOutputTokens_Conservation(t *testing.T) {
 
 	if sim.Metrics.TotalOutputTokens != expected {
 		t.Errorf("TotalOutputTokens conservation violated: got %d, want %d (sum of completed request output lengths)",
+			sim.Metrics.TotalOutputTokens, expected)
+	}
+}
+
+// TestTotalOutputTokens_Conservation_WithPreemption verifies TotalOutputTokens conservation
+// when preemption occurs. Preemption resets ProgressIndex to 0, so re-prefill must not
+// double-count the first output token. Uses a tiny KV cache to guarantee preemption.
+func TestTotalOutputTokens_Conservation_WithPreemption(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             50_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(4, 16, 0, 0, 0, 0), // 4 blocks × 16 = 64 tokens: forces preemption
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0),
+	}
+	sim := mustNewSimulator(t, cfg)
+
+	// Two requests sized to force preemption: B fills cache during prefill, evicting A.
+	reqA := &Request{
+		ID:          "A",
+		InputTokens: GenerateRandomTokenIDs(sim.WorkloadRNG(), 16),
+		OutputTokens: GenerateRandomTokenIDs(sim.WorkloadRNG(), 5),
+		ArrivalTime: 0,
+		State:       StateQueued,
+	}
+	reqB := &Request{
+		ID:          "B",
+		InputTokens: GenerateRandomTokenIDs(sim.WorkloadRNG(), 32),
+		OutputTokens: GenerateRandomTokenIDs(sim.WorkloadRNG(), 5),
+		ArrivalTime: 0,
+		State:       StateQueued,
+	}
+	sim.InjectArrival(reqA)
+	sim.InjectArrival(reqB)
+	sim.Run()
+
+	if sim.Metrics.PreemptionCount == 0 {
+		t.Fatal("precondition violated: no preemption occurred — test is not exercising the double-count path")
+	}
+	if sim.Metrics.CompletedRequests == 0 {
+		t.Fatal("precondition violated: no requests completed — conservation check is vacuous")
+	}
+
+	expected := 0
+	for _, req := range []*Request{reqA, reqB} {
+		if req.State == StateCompleted {
+			expected += len(req.OutputTokens)
+		}
+	}
+
+	if sim.Metrics.TotalOutputTokens != expected {
+		t.Errorf("TotalOutputTokens conservation violated under preemption: got %d, want %d",
 			sim.Metrics.TotalOutputTokens, expected)
 	}
 }
