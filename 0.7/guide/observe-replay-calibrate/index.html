@@ -3528,6 +3528,12 @@
 <td>Do not set <code>max_tokens</code> (let server decide output length)</td>
 </tr>
 <tr>
+<td><code>--min-tokens</code></td>
+<td><code>int</code></td>
+<td><code>0</code></td>
+<td>Set <code>min_tokens</code> in request body; requests server to generate at least N tokens before EOS. Set equal to <code>--output-tokens</code> for exact output length control (0 = omit). Compatible with <code>--unconstrained-output</code>: <code>min_tokens</code> is still sent, <code>max_tokens</code> is still omitted</td>
+</tr>
+<tr>
 <td><code>--rtt-ms</code></td>
 <td><code>float64</code></td>
 <td><code>0</code></td>
@@ -3538,6 +3544,18 @@
 <td><code>string</code></td>
 <td><code>"defaults.yaml"</code></td>
 <td>Path to <code>defaults.yaml</code> containing preset definitions (preset mode only)</td>
+</tr>
+<tr>
+<td><code>--record-itl</code></td>
+<td><code>bool</code></td>
+<td><code>false</code></td>
+<td>Record per-chunk timestamps for ITL calibration (streaming only; use with <code>--itl-output</code>)</td>
+</tr>
+<tr>
+<td><code>--itl-output</code></td>
+<td><code>string</code></td>
+<td><code>""</code></td>
+<td>Output path for ITL CSV file (default: <code>&lt;trace-data&gt;.itl.csv</code> when <code>--record-itl</code> is set)</td>
 </tr>
 </tbody>
 </table>
@@ -3806,6 +3824,12 @@
 <td><code>0</code></td>
 <td>Network bandwidth in Mbps for upload/download delay (0 = no delay)</td>
 </tr>
+<tr>
+<td><code>--itl-data</code></td>
+<td><code>string</code></td>
+<td><code>""</code></td>
+<td>Path to ITL CSV from <code>blis observe --record-itl</code> to include ITL metric in the calibration report</td>
+</tr>
 </tbody>
 </table>
 <div class="admonition info">
@@ -3820,29 +3844,49 @@
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span><span class="nt">&quot;warm_up_excluded&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
 <a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span><span class="nt">&quot;matched_pairs&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">95</span><span class="p">,</span>
 <a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">  </span><span class="nt">&quot;token_mismatches&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
-<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">  </span><span class="nt">&quot;duration&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2m30s&quot;</span>
-<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="p">}</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">  </span><span class="nt">&quot;itl_dropped&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">  </span><span class="nt">&quot;duration&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2m30s&quot;</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="p">}</span>
 </code></pre></div>
 <ul>
 <li><code>matched_pairs</code>: Requests matched by ID between trace and sim results</li>
 <li><code>token_mismatches</code>: Pairs where observed and simulated token counts differ (indicates potential data quality issues)</li>
+<li><code>itl_dropped</code>: Requests dropped from ITL computation because all inter-chunk deltas were negative (clock skew); only present when greater than 0</li>
 </ul>
-<p><strong><code>metrics</code></strong> — Per-metric comparison (TTFT and E2E latency):</p>
+<p><strong><code>metrics</code></strong> — Per-metric comparison. Keys are <code>ttft</code>, <code>e2e</code>, and (if <code>--itl-data</code> was supplied) <code>itl</code>. Each entry has two sub-objects and a top-level <code>count</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="p">{</span>
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">&quot;ttft&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">    </span><span class="nt">&quot;RealP50&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1234.5</span><span class="p">,</span>
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">    </span><span class="nt">&quot;SimP50&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1200.0</span><span class="p">,</span>
-<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">    </span><span class="nt">&quot;RealP99&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">4567.8</span><span class="p">,</span>
-<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">    </span><span class="nt">&quot;SimP99&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">4500.0</span><span class="p">,</span>
-<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">    </span><span class="nt">&quot;MAPE&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.05</span><span class="p">,</span>
-<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">    </span><span class="nt">&quot;PearsonR&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.95</span><span class="p">,</span>
-<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">    </span><span class="nt">&quot;BiasDirection&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;over-predict&quot;</span><span class="p">,</span>
-<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">    </span><span class="nt">&quot;Quality&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;good&quot;</span><span class="p">,</span>
-<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="w">    </span><span class="nt">&quot;Count&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">95</span>
-<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="w">  </span><span class="p">},</span>
-<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="w">  </span><span class="nt">&quot;e2e&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="err">...</span><span class="w"> </span><span class="p">}</span>
-<a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a><span class="p">}</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">    </span><span class="nt">&quot;workload_level&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">      </span><span class="nt">&quot;real_mean&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1534.2</span><span class="p">,</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">      </span><span class="nt">&quot;sim_mean&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1498.0</span><span class="p">,</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">      </span><span class="nt">&quot;mean_error&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">-36.2</span><span class="p">,</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">      </span><span class="nt">&quot;mean_percent_error&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.024</span><span class="p">,</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">      </span><span class="nt">&quot;real_median&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1234.5</span><span class="p">,</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">      </span><span class="nt">&quot;sim_median&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1200.0</span><span class="p">,</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">      </span><span class="nt">&quot;median_error&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">-34.5</span><span class="p">,</span>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="w">      </span><span class="nt">&quot;median_percent_error&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.028</span><span class="p">,</span>
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="w">      </span><span class="nt">&quot;real_p50&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1234.5</span><span class="p">,</span>
+<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="w">      </span><span class="nt">&quot;sim_p50&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1200.0</span><span class="p">,</span>
+<a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a><span class="w">      </span><span class="nt">&quot;real_p90&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3200.0</span><span class="p">,</span>
+<a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a><span class="w">      </span><span class="nt">&quot;sim_p90&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3150.0</span><span class="p">,</span>
+<a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a><span class="w">      </span><span class="nt">&quot;real_p95&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">4000.0</span><span class="p">,</span>
+<a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a><span class="w">      </span><span class="nt">&quot;sim_p95&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3950.0</span><span class="p">,</span>
+<a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a><span class="w">      </span><span class="nt">&quot;real_p99&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">4567.8</span><span class="p">,</span>
+<a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a><span class="w">      </span><span class="nt">&quot;sim_p99&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">4500.0</span>
+<a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a><span class="w">    </span><span class="p">},</span>
+<a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a><span class="w">    </span><span class="nt">&quot;request_level&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a><span class="w">      </span><span class="nt">&quot;mape&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.05</span><span class="p">,</span>
+<a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a><span class="w">      </span><span class="nt">&quot;pearson_r&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.95</span><span class="p">,</span>
+<a id="__codelineno-9-24" name="__codelineno-9-24" href="#__codelineno-9-24"></a><span class="w">      </span><span class="nt">&quot;bias_direction&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;under-predict&quot;</span><span class="p">,</span>
+<a id="__codelineno-9-25" name="__codelineno-9-25" href="#__codelineno-9-25"></a><span class="w">      </span><span class="nt">&quot;quality&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;good&quot;</span>
+<a id="__codelineno-9-26" name="__codelineno-9-26" href="#__codelineno-9-26"></a><span class="w">    </span><span class="p">},</span>
+<a id="__codelineno-9-27" name="__codelineno-9-27" href="#__codelineno-9-27"></a><span class="w">    </span><span class="nt">&quot;count&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">95</span>
+<a id="__codelineno-9-28" name="__codelineno-9-28" href="#__codelineno-9-28"></a><span class="w">  </span><span class="p">},</span>
+<a id="__codelineno-9-29" name="__codelineno-9-29" href="#__codelineno-9-29"></a><span class="w">  </span><span class="nt">&quot;e2e&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="err">...</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-9-30" name="__codelineno-9-30" href="#__codelineno-9-30"></a><span class="p">}</span>
 </code></pre></div>
+<p>The report uses two levels of analysis because they catch different problems. <strong>Workload-level</strong> aggregates (mean, median, percentiles) reveal systematic bias — the simulator consistently over- or under-predicting. <strong>Request-level</strong> prediction quality (MAPE, Pearson) captures per-request variance — how tightly the simulator tracks individual latencies regardless of any overall offset.</p>
+<p><strong><code>workload_level</code> fields:</strong></p>
 <table>
 <thead>
 <tr>
@@ -3852,31 +3896,67 @@
 </thead>
 <tbody>
 <tr>
-<td><code>RealP50/P90/P95/P99</code></td>
-<td>Real (observed) latency percentiles in microseconds</td>
+<td><code>real_mean</code> / <code>sim_mean</code></td>
+<td>Arithmetic mean of observed / simulated latencies (µs)</td>
 </tr>
 <tr>
-<td><code>SimP50/P90/P95/P99</code></td>
-<td>Simulated latency percentiles in microseconds</td>
+<td><code>mean_error</code></td>
+<td><code>sim_mean - real_mean</code> — positive = over-predict, negative = under-predict</td>
 </tr>
 <tr>
-<td><code>MAPE</code></td>
-<td>Mean Absolute Percentage Error (lower is better)</td>
+<td><code>mean_percent_error</code></td>
+<td><code>|mean_error| / real_mean</code> — absolute relative error on the mean</td>
 </tr>
 <tr>
-<td><code>PearsonR</code></td>
+<td><code>real_median</code> / <code>sim_median</code></td>
+<td>Median latency aliased from P50 (µs)</td>
+</tr>
+<tr>
+<td><code>median_error</code></td>
+<td><code>sim_median - real_median</code></td>
+</tr>
+<tr>
+<td><code>median_percent_error</code></td>
+<td><code>|median_error| / real_median</code></td>
+</tr>
+<tr>
+<td><code>real_p50/p90/p95/p99</code></td>
+<td>Real (observed) latency percentiles (µs)</td>
+</tr>
+<tr>
+<td><code>sim_p50/p90/p95/p99</code></td>
+<td>Simulated latency percentiles (µs)</td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>request_level</code> fields:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mape</code></td>
+<td>Mean Absolute Percentage Error across matched request pairs (lower is better)</td>
+</tr>
+<tr>
+<td><code>pearson_r</code></td>
 <td>Pearson correlation coefficient (closer to 1.0 is better)</td>
 </tr>
 <tr>
-<td><code>BiasDirection</code></td>
+<td><code>bias_direction</code></td>
 <td><code>over-predict</code>, <code>under-predict</code>, or <code>neutral</code></td>
 </tr>
 <tr>
-<td><code>Quality</code></td>
+<td><code>quality</code></td>
 <td>Rating: <code>excellent</code>, <code>good</code>, <code>fair</code>, or <code>poor</code></td>
 </tr>
 </tbody>
 </table>
+<p><strong>Top-level:</strong> <code>count</code> — number of matched request pairs used for this metric.</p>
 <p><strong><code>config_match</code></strong> — Tracks which simulator config parameters matched the observed server config (currently reports <code>matched</code> and <code>defaulted</code> arrays).</p>
 <p><strong><code>known_limitations</code></strong> — Documents known sources of sim/real divergence (batch step granularity, synthetic prefix tokens, speculative decoding).</p>
 <hr />
@@ -3939,11 +4019,13 @@
 </code></pre></div>
 <p>Look for:</p>
 <ul>
-<li><strong>MAPE &lt; 0.10</strong> and <strong>Quality = "good" or "excellent"</strong> → simulator is well-calibrated for this workload</li>
-<li><strong>BiasDirection = "over-predict"</strong> → simulator latencies are higher than reality (conservative)</li>
-<li><strong>BiasDirection = "under-predict"</strong> → simulator latencies are lower than reality (optimistic — may need latency model tuning)</li>
-<li><strong>High token_mismatches</strong> → data quality issue; check if the server truncated outputs</li>
+<li><strong><code>request_level.mape</code> &lt; 0.10</strong> and <strong><code>request_level.quality</code> = <code>"good"</code> or <code>"excellent"</code></strong> → simulator tracks individual request latencies well</li>
+<li><strong><code>workload_level.mean_percent_error</code> &lt; 0.05</strong> → no systematic bias; mean prediction is within 5% of reality</li>
+<li><strong><code>request_level.bias_direction</code> = <code>"over-predict"</code></strong> → simulator latencies are higher than reality (conservative)</li>
+<li><strong><code>request_level.bias_direction</code> = <code>"under-predict"</code></strong> → simulator latencies are lower than reality (optimistic — may need latency model tuning)</li>
+<li><strong>High <code>token_mismatches</code></strong> → data quality issue; check if the server truncated outputs</li>
 </ul>
+<p>Low MAPE with high <code>mean_percent_error</code> indicates low per-request variance but a systematic offset — the simulator is consistently biased in one direction on every request. High MAPE with high <code>mean_percent_error</code> suggests widespread per-request inaccuracy with an additional systematic component; consider switching latency models.</p>
 <p>If calibration quality is poor, try:</p>
 <ol>
 <li><strong>Different latency model:</strong> Switch from <code>roofline</code> to <code>blackbox</code> or <code>crossmodel</code> (see <a href="../latency-models/">Latency Models</a>)</li>

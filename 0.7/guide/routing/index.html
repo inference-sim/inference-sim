@@ -1043,6 +1043,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#vllm-data-parallel-routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        vLLM Data-Parallel Routing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#signal-freshness" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2815,6 +2826,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#vllm-data-parallel-routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        vLLM Data-Parallel Routing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#signal-freshness" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3004,6 +3026,11 @@
 <td>Queue depth (linear threshold-capped, range [0, 0.5])</td>
 <td>load-aware-scorer</td>
 </tr>
+<tr>
+<td><code>vllm-dp</code></td>
+<td>vLLM data-parallel routing: <code>waiting × 4 + running</code> (inverted min-max)</td>
+<td>DPLBAsyncMPClient.get_core_engine_for_request</td>
+</tr>
 </tbody>
 </table>
 <div class="admonition note">
@@ -3015,6 +3042,19 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>precise-prefix-cache:2, queue-depth:1, kv-utilization:1
 </code></pre></div>
 <p>This matches the llm-d production scoring pipeline. Weights are relative — only ratios matter. <code>[2, 1, 1]</code> behaves identically to <code>[0.5, 0.25, 0.25]</code>.</p>
+<h2 id="vllm-data-parallel-routing">vLLM Data-Parallel Routing<a class="headerlink" href="#vllm-data-parallel-routing" title="Permanent link">&para;</a></h2>
+<p>BLIS supports vLLM's internal load-balancing algorithm via the <code>vllm-dp</code> scorer:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Oracle mode (immediate signals, default — best for algorithmic studies):</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--routing-scorers<span class="w"> </span><span class="s2">&quot;vllm-dp:1&quot;</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Staleness-matched mode (matches vLLM&#39;s 100ms coordinator interval):</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--routing-scorers<span class="w"> </span><span class="s2">&quot;vllm-dp:1&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span>--snapshot-refresh-interval<span class="w"> </span><span class="m">100000</span>
+</code></pre></div>
+<p>This replicates vLLM's <code>DPLBAsyncMPClient</code> formula: selecting the instance with the lowest <code>waiting × 4 + running</code> score. The scorer applies inverted min-max normalization to convert vLLM's argmin selection to BLIS's argmax routing framework.</p>
+<p><strong>Signal staleness:</strong> vLLM's coordinator publishes instance stats every 100ms by default (<code>min_stats_update_interval_ms</code>). Using <code>--snapshot-refresh-interval 100000</code> matches this staleness interval. The default <code>0</code> (immediate mode) represents oracle routing with no signal staleness — this is the cleanest baseline for algorithmic comparisons.</p>
+<p><strong>Known limitation:</strong> vLLM's client speculatively increments its cached waiting count after each routing decision (<code>current_counts[eng_index][0] += client_count</code>, <code>core_client.py:1225</code>) to spread traffic within the 100ms window. BLIS does not model this because BLIS's DES is sequential — requests route one at a time, so the concurrent-routing scenario doesn't arise. In staleness-matched mode, BLIS will concentrate more traffic per snapshot window than real vLLM would.</p>
+<p><strong>Note:</strong> Do not compose <code>vllm-dp</code> with other scorers unless comparing hybrid strategies. For vLLM parity, use <code>vllm-dp:1</code> alone — composing with other scorers double-normalizes dimensions and breaks vLLM fidelity.</p>
 <h2 id="signal-freshness">Signal Freshness<a class="headerlink" href="#signal-freshness" title="Permanent link">&para;</a></h2>
 <blockquote>
 <p><strong>Canonical source:</strong> Signal freshness tiers are specified in <a href="../../contributing/standards/invariants/"><code>docs/contributing/standards/invariants.md</code></a> (INV-7). The descriptions below provide additional user-facing context; <code>invariants.md</code> is authoritative if they diverge.</p>
@@ -3098,8 +3138,8 @@
 </table>
 <h2 id="example-comparing-policies">Example: Comparing Policies<a class="headerlink" href="#example-comparing-policies" title="Permanent link">&para;</a></h2>
 <p>BLIS includes a routing comparison script:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>chmod<span class="w"> </span>+x<span class="w"> </span>examples/routing-comparison.sh
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>./examples/routing-comparison.sh
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>chmod<span class="w"> </span>+x<span class="w"> </span>examples/routing-comparison.sh
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>./examples/routing-comparison.sh
 </code></pre></div>
 <p>This runs 5 configurations and shows TTFT p99, target distribution, and throughput for each. See <code>examples/routing-comparison.sh</code> for the full script.</p>
 <h2 id="further-reading">Further Reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>

@@ -1077,10 +1077,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#blackbox-mode" class="md-nav__link">
+  <a href="#blackbox-mode-deprecated" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Blackbox Mode
+        Blackbox Mode (DEPRECATED)
       
     </span>
   </a>
@@ -1149,10 +1149,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#cross-model-mode-physics-informed" class="md-nav__link">
+  <a href="#cross-model-mode-deprecated" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Cross-Model Mode (Physics-Informed)
+        Cross-Model Mode (DEPRECATED)
       
     </span>
   </a>
@@ -1160,10 +1160,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#trained-roofline-mode" class="md-nav__link">
+  <a href="#trained-roofline-mode-deprecated" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Trained-Roofline Mode
+        Trained-Roofline Mode (DEPRECATED)
       
     </span>
   </a>
@@ -2798,10 +2798,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#blackbox-mode" class="md-nav__link">
+  <a href="#blackbox-mode-deprecated" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Blackbox Mode
+        Blackbox Mode (DEPRECATED)
       
     </span>
   </a>
@@ -2870,10 +2870,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#cross-model-mode-physics-informed" class="md-nav__link">
+  <a href="#cross-model-mode-deprecated" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Cross-Model Mode (Physics-Informed)
+        Cross-Model Mode (DEPRECATED)
       
     </span>
   </a>
@@ -2881,10 +2881,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#trained-roofline-mode" class="md-nav__link">
+  <a href="#trained-roofline-mode-deprecated" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Trained-Roofline Mode
+        Trained-Roofline Mode (DEPRECATED)
       
     </span>
   </a>
@@ -2973,7 +2973,11 @@
 
 
 <h1 id="latency-models">Latency Models<a class="headerlink" href="#latency-models" title="Permanent link">&para;</a></h1>
-<p>The <code>LatencyModel</code> interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships five backends -- roofline (default, analytical), blackbox (data-driven), cross-model (physics-informed), trained-roofline (roofline × learned corrections), and trained-physics (roofline × learned corrections) -- and the pluggable architecture supports adding custom backends.</p>
+<p>The <code>LatencyModel</code> interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships five backends -- roofline (default, analytical), trained-physics (recommended for new work), and three deprecated backends (blackbox, crossmodel, trained-roofline) -- and the pluggable architecture supports adding custom backends.</p>
+<div class="admonition warning">
+<p class="admonition-title">Deprecated Backends</p>
+<p><strong>blackbox</strong> (<code>--latency-model blackbox</code>), <strong>crossmodel</strong> (<code>--latency-model crossmodel</code>), and <strong>trained-roofline</strong> (<code>--latency-model trained-roofline</code>) are deprecated and will be removed in a future version. Use <code>--latency-model trained-physics</code> for new work. Existing configs using deprecated backends will continue to function but will emit deprecation warnings.</p>
+</div>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Roofline mode (default) — analytical estimation from model architecture</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
@@ -2998,7 +3002,11 @@
 <a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">  </span>--latency-model<span class="w"> </span>trained-physics<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
-<h2 id="blackbox-mode">Blackbox Mode<a class="headerlink" href="#blackbox-mode" title="Permanent link">&para;</a></h2>
+<h2 id="blackbox-mode-deprecated">Blackbox Mode (DEPRECATED)<a class="headerlink" href="#blackbox-mode-deprecated" title="Permanent link">&para;</a></h2>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Blackbox mode is deprecated. Use <code>--latency-model trained-physics</code> instead. This backend will be removed in a future version.</p>
+</div>
 <p>Blackbox mode uses trained regression coefficients from <code>defaults.yaml</code>, fit offline via Bayesian optimization against real vLLM measurements.</p>
 <p><strong>Beta coefficients</strong> <code>[beta0, beta1, beta2]</code> estimate GPU step time:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>StepTime = beta0 + beta1 * cache_miss_tokens + beta2 * decode_tokens
@@ -3072,7 +3080,11 @@
 <p class="admonition-title">Automatic MaxModelLen derivation</p>
 <p>When using roofline or crossmodel mode and <code>--max-model-len</code> is not explicitly set, BLIS auto-derives it from <code>max_position_embeddings</code> in the HuggingFace <code>config.json</code>. For models with <code>rope_scaling</code>, the scaling factor is applied based on vLLM's blacklist approach: types <code>linear</code>, <code>dynamic</code>, <code>yarn</code>, <code>default</code>, and <code>mrope</code> apply the factor; types <code>su</code>, <code>longrope</code>, and <code>llama3</code> are excluded (these encode the full context in <code>max_position_embeddings</code>). For <code>yarn</code>, <code>original_max_position_embeddings</code> is used as the base when present. <code>gemma3</code> models skip <code>rope_scaling</code> entirely (<code>max_position_embeddings</code> is pre-scaled). The derived value is then capped at the KV-feasible maximum (<code>total_kv_blocks * block_size</code>) to prevent context windows from exceeding GPU memory capacity. Override with <code>--max-model-len &lt;N&gt;</code> when needed.</p>
 </div>
-<h2 id="cross-model-mode-physics-informed">Cross-Model Mode (Physics-Informed)<a class="headerlink" href="#cross-model-mode-physics-informed" title="Permanent link">&para;</a></h2>
+<h2 id="cross-model-mode-deprecated">Cross-Model Mode (DEPRECATED)<a class="headerlink" href="#cross-model-mode-deprecated" title="Permanent link">&para;</a></h2>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Cross-model mode is deprecated. Use <code>--latency-model trained-physics</code> instead. This backend will be removed in a future version.</p>
+</div>
 <p>Cross-model mode estimates step time using 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) that work across model architectures. Unlike blackbox (per-model coefficients) or roofline (no MoE awareness), cross-model uses architecture features from <code>config.json</code> to scale a single coefficient set.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--latency-model<span class="w"> </span>crossmodel<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">1</span>
@@ -3088,13 +3100,17 @@
 <p><strong>MoE support:</strong> Cross-model correctly handles Mixture-of-Experts models. The <code>β₂</code> term captures the per-token routing and expert dispatch overhead, activated when <code>num_local_experts &gt; 0</code> in the model's HuggingFace config.json. The MoE indicator is binary (MoE vs dense); the specific active expert count (<code>num_experts_per_tok</code>) is parsed for future refinement but not yet used in the formula.</p>
 <div class="admonition warning">
 <p class="admonition-title">Dense model prefill limitation</p>
-<p>For dense models (non-MoE), step time does not scale with prefill token count — prefill compute cost is absorbed into the per-layer overhead (β₀). A batch prefilling 1 token costs the same as 2048 tokens. This is a known approximation from the training methodology (prefill KV writes overlap with compute on H100). For prefill-heavy dense-model workloads, <strong>blackbox mode with trained coefficients</strong> provides more accurate estimates because its <code>β₁</code> term explicitly models per-prefill-token cost.</p>
+<p>For dense models (non-MoE), step time does not scale with prefill token count — prefill compute cost is absorbed into the per-layer overhead (β₀). A batch prefilling 1 token costs the same as 2048 tokens. This is a known approximation from the training methodology (prefill KV writes overlap with compute on H100). For prefill-heavy dense-model workloads, use <code>--latency-model trained-physics</code> which provides learned corrections on top of roofline physics without this limitation.</p>
 </div>
 <div class="admonition note">
 <p class="admonition-title">Automatic KV block calculation</p>
 <p>Like roofline mode, crossmodel auto-derives <code>--total-kv-blocks</code> from model architecture and GPU memory when the flag is not set. Override with <code>--total-kv-blocks &lt;N&gt;</code> for non-standard deployments. The auto-calculation uses reference constants (90% GPU utilization, standard activation/overhead budgets matching the llm-d-benchmark capacity planner) and requires SwiGLU-family activations (<code>silu</code>, <code>swiglu</code>, <code>geglu</code>).</p>
 </div>
-<h2 id="trained-roofline-mode">Trained-Roofline Mode<a class="headerlink" href="#trained-roofline-mode" title="Permanent link">&para;</a></h2>
+<h2 id="trained-roofline-mode-deprecated">Trained-Roofline Mode (DEPRECATED)<a class="headerlink" href="#trained-roofline-mode-deprecated" title="Permanent link">&para;</a></h2>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Trained-roofline mode is deprecated. Use <code>--latency-model trained-physics</code> instead. This backend will be removed in a future version.</p>
+</div>
 <p>Trained-roofline mode applies <strong>learned correction factors</strong> to analytical roofline basis functions, combining the physical grounding of roofline with the accuracy of data-driven fitting. Coefficients are fitted from 137K real vLLM requests across 4 architectures (Llama-2-7b, Llama-2-70b, Mixtral-8x7B, CodeLlama-34b) via non-negative least squares regression.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>meta-llama/llama-3.1-8b-instruct<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span>--latency-model<span class="w"> </span>trained-roofline<span class="w"> </span>--hardware<span class="w"> </span>H100<span class="w"> </span>--tp<span class="w"> </span><span class="m">2</span>
@@ -3265,7 +3281,8 @@
 </table>
 <div class="admonition tip">
 <p class="admonition-title">Choosing the right mode</p>
-<p><strong>Trained-physics</strong> is the recommended default for any model with a HuggingFace <code>config.json</code> (generalizes across architectures, workloads, and TP configurations without per-model calibration). <strong>Blackbox</strong> for models with per-model coefficients in <code>defaults.yaml</code> (highest accuracy due to per-model fitting). <strong>Trained-roofline</strong> is an alternative trained model (7% MAPE GPU combined). <strong>Cross-model</strong> for backward compatibility with existing crossmodel workflows. <strong>Roofline</strong> for pure analytical estimates when no learned corrections are desired.</p>
+<p><strong>Roofline</strong> is the default (analytical FLOPs/bandwidth estimation). <strong>Trained-physics</strong> is recommended for any model with a HuggingFace <code>config.json</code> (generalizes across architectures, workloads, and TP configurations without per-model calibration using physics-informed basis functions with learned corrections).</p>
+<p><strong>Deprecated backends (migration to trained-physics recommended):</strong> <strong>Blackbox</strong>, <strong>trained-roofline</strong>, and <strong>crossmodel</strong> are deprecated and will be removed in a future version. Existing workflows using these backends should migrate to <code>--latency-model trained-physics</code>. See individual sections above for backend-specific details.</p>
 </div>
 <div class="admonition warning">
 <p class="admonition-title">Current limitations</p>
