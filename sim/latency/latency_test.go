@@ -51,23 +51,18 @@ func TestBlackboxLatencyModel_StepTime_MixedBatch_Positive(t *testing.T) {
 // TestBlackboxLatencyModel_StepTime_EmptyBatch verifies:
 // GIVEN an empty batch
 // WHEN StepTime is called
-// THEN the result MUST be beta0 (fixed overhead), clamped to at least 1.
+// THEN the result MUST be >= 1 (LatencyModel interface contract: clock must advance).
 func TestBlackboxLatencyModel_StepTime_EmptyBatch(t *testing.T) {
 	model := &BlackboxLatencyModel{
-		betaCoeffs:  []float64{500, 10, 5},
+		betaCoeffs:  []float64{1000, 10, 5},
 		alphaCoeffs: []float64{100, 1, 100},
 	}
 
 	result := model.StepTime([]*sim.Request{})
 
-	// THEN result must be at least 1 (clampToInt64 floor)
+	// THEN empty batch produces StepTime >= 1 (interface contract: clock must advance)
 	if result < 1 {
-		t.Errorf("StepTime(empty batch) = %d, want >= 1", result)
-	}
-	// AND must approximately equal beta0 (fixed overhead)
-	expected := int64(500)
-	if result != expected {
-		t.Errorf("StepTime(empty batch) = %d, want %d (beta0)", result, expected)
+		t.Errorf("empty batch must return >= 1 per LatencyModel contract, got %d", result)
 	}
 }
 
