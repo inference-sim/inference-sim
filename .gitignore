@@ -98,6 +98,9 @@ actions-runner/
 # Convergence review state (session-local, not committed)
 .claude/convergence-state/
 
+# Claude Code worktrees (created by EnterWorktree tool, not committed)
+.claude/worktrees/
+
 # Superpowers specs/plans (agent-local, not committed)
 docs/superpowers/
 
