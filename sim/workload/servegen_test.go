@@ -161,6 +161,30 @@ func TestLoadServeGenDataset_EmptyDictWindows_SkippedUntilValid(t *testing.T) {
 	assert.Len(t, outputPDF, 2, "output PDF should have 2 bins from window 1200")
 	assert.Equal(t, 0.5, inputPDF[100])
 	assert.Equal(t, 0.5, inputPDF[200])
+	assert.Equal(t, 0.7, outputPDF[50])
+	assert.Equal(t, 0.3, outputPDF[100])
+}
+
+// TestLoadServeGenDataset_AllEmptyDictWindows_ReturnsError tests that when ALL windows
+// contain empty dicts ("{}"), the loader returns the correct "no valid PDF windows" error
+// rather than falling through to the parser with misleading "empty PDF dictionary" error.
+func TestLoadServeGenDataset_AllEmptyDictWindows_ReturnsError(t *testing.T) {
+	// GIVEN a dataset where every window has empty dicts
+	dir := t.TempDir()
+	datasetJSON := `{
+		"0": {"input_tokens": "{}", "output_tokens": "{}"},
+		"600": {"input_tokens": "{}", "output_tokens": "{}"},
+		"1200": {"input_tokens": "{}", "output_tokens": "{}"}
+	}`
+	path := filepath.Join(dir, "dataset.json")
+	require.NoError(t, os.WriteFile(path, []byte(datasetJSON), 0644))
+
+	// WHEN loading the dataset
+	_, _, err := loadServeGenDataset(path, &ServeGenDataSpec{})
+
+	// THEN the function returns an error indicating no valid windows were found
+	require.Error(t, err, "should fail when all windows are empty dicts")
+	assert.Contains(t, err.Error(), "no valid PDF windows", "error should indicate no valid windows, not parser error")
 }
 
 // JSON keys that are not valid floats are skipped with a warning.

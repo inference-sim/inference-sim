@@ -282,9 +282,12 @@ func loadServeGenDataset(path string, sgConfig *ServeGenDataSpec) (map[int]float
 			outputPDFStr != "" && outputPDFStr != "{}" {
 			break
 		}
+		// Log skipped windows for debugging (common in real ServeGen data warm-up periods)
+		logrus.Debugf("loadServeGenDataset: skipping window %q: input=%q output=%q (empty dict or missing)", k, inputPDFStr, outputPDFStr)
 	}
 
-	if inputPDFStr == "" || outputPDFStr == "" {
+	if inputPDFStr == "" || inputPDFStr == "{}" ||
+		outputPDFStr == "" || outputPDFStr == "{}" {
 		return nil, nil, fmt.Errorf("no valid PDF windows found in dataset")
 	}
 
