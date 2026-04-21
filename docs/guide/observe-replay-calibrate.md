@@ -105,6 +105,8 @@ Four input modes are available. At least one must be provided per invocation:
 | `--min-tokens` | `int` | `0` | Set `min_tokens` in request body; requests server to generate at least N tokens before EOS. Set equal to `--output-tokens` for exact output length control (0 = omit). Compatible with `--unconstrained-output`: `min_tokens` is still sent, `max_tokens` is still omitted |
 | `--rtt-ms` | `float64` | `0` | Measured network round-trip time in milliseconds |
 | `--defaults-filepath` | `string` | `"defaults.yaml"` | Path to `defaults.yaml` containing preset definitions (preset mode only) |
+| `--record-itl` | `bool` | `false` | Record per-chunk timestamps for ITL calibration (streaming only; use with `--itl-output`) |
+| `--itl-output` | `string` | `""` | Output path for ITL CSV file (default: `<trace-data>.itl.csv` when `--record-itl` is set) |
 
 ### Distribution Synthesis Flags
 
@@ -256,7 +258,7 @@ The calibration report JSON contains four sections:
 
 - `matched_pairs`: Requests matched by ID between trace and sim results
 - `token_mismatches`: Pairs where observed and simulated token counts differ (indicates potential data quality issues)
-- `itl_dropped`: ITL chunks dropped due to missing request pairing (only present when `--itl-data` is supplied)
+- `itl_dropped`: Requests dropped from ITL computation because all inter-chunk deltas were negative (clock skew); only present when greater than 0
 
 **`metrics`** — Per-metric comparison. Keys are `ttft`, `e2e`, and (if `--itl-data` was supplied) `itl`. Each entry has two sub-objects and a top-level `count`:
 
@@ -411,7 +413,7 @@ Look for:
 - **`request_level.bias_direction` = `"under-predict"`** → simulator latencies are lower than reality (optimistic — may need latency model tuning)
 - **High `token_mismatches`** → data quality issue; check if the server truncated outputs
 
-Low MAPE with high `mean_percent_error` indicates high per-request variance but no systematic offset. High `mean_percent_error` with low MAPE is unusual and suggests a distributional shift rather than a per-request accuracy problem.
+Low MAPE with high `mean_percent_error` indicates low per-request variance but a systematic offset — the simulator is consistently biased in one direction on every request. High MAPE with high `mean_percent_error` suggests widespread per-request inaccuracy with an additional systematic component; consider switching latency models.
 
 If calibration quality is poor, try:
 
