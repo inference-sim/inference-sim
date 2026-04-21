@@ -2674,3 +2674,107 @@ func TestSimulator_TotalOutputTokens_NoDoubleCountAfterPreemption(t *testing.T) 
 		t.Errorf("INV-1 violated: accounted = %d, want 2", total)
 	}
 }
+
+// TestSimulator_ITL_NoDuplicateEntriesAfterPreemption verifies that AllITLs contains
+// exactly one entry per decode step across all completed requests — no phantom entries
+// from aborted runs before preemption.
+//
+// GIVEN a 4-block KV cache that forces eviction when two requests run concurrently,
+// WHEN both requests complete after at least one preemption,
+// THEN len(AllITLs) == sum(OutputLen - 1) for each request (8 total for 2×5-output requests).
+func TestSimulator_ITL_NoDuplicateEntriesAfterPreemption(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(4, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(10, 10_000, 16),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 1, 0}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+	}
+	s := mustNewSimulator(t, cfg)
+
+	bInput := make([]int, 32)
+	for i := range bInput {
+		bInput[i] = i + 1
+	}
+	aInput := make([]int, 16)
+	for i := range aInput {
+		aInput[i] = 1000 + i
+	}
+
+	bOutput := make([]int, 5)
+	aOutput := make([]int, 5)
+	s.InjectArrival(&Request{ID: "B", ArrivalTime: 0, InputTokens: bInput, OutputTokens: bOutput})
+	s.InjectArrival(&Request{ID: "A", ArrivalTime: 0, InputTokens: aInput, OutputTokens: aOutput})
+
+	for s.HasPendingEvents() {
+		s.ProcessNextEvent()
+	}
+
+	if s.Metrics.PreemptionCount == 0 {
+		t.Fatal("precondition violated: expected at least one preemption, got 0 — scenario does not test the bug")
+	}
+
+	// Each completed request contributes exactly (OutputLen - 1) ITL entries.
+	// Stale ITL entries from aborted runs before preemption would inflate this count.
+	wantITLCount := (len(bOutput) - 1) + (len(aOutput) - 1) // = 4 + 4 = 8
+	gotITLCount := len(s.Metrics.AllITLs)
+	if gotITLCount != wantITLCount {
+		t.Errorf("len(AllITLs) = %d, want %d (extra %d indicates stale ITL entries from preempted run)",
+			gotITLCount, wantITLCount, gotITLCount-wantITLCount)
+	}
+}
+
+// TestSimulator_TTFTSum_NoDoubleCountAfterPreemption verifies that TTFTSum equals
+// the sum of individual RequestTTFTs values — each request's TTFT counted exactly once.
+//
+// GIVEN a 4-block KV cache that forces eviction when two requests run concurrently,
+// WHEN both requests complete after at least one preemption,
+// THEN TTFTSum == sum(RequestTTFTs.values()) with no double-counts from re-prefill.
+func TestSimulator_TTFTSum_NoDoubleCountAfterPreemption(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(4, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(10, 10_000, 16),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 1, 0}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+	}
+	s := mustNewSimulator(t, cfg)
+
+	bInput := make([]int, 32)
+	for i := range bInput {
+		bInput[i] = i + 1
+	}
+	aInput := make([]int, 16)
+	for i := range aInput {
+		aInput[i] = 1000 + i
+	}
+
+	s.InjectArrival(&Request{ID: "B", ArrivalTime: 0, InputTokens: bInput, OutputTokens: make([]int, 5)})
+	s.InjectArrival(&Request{ID: "A", ArrivalTime: 0, InputTokens: aInput, OutputTokens: make([]int, 5)})
+
+	for s.HasPendingEvents() {
+		s.ProcessNextEvent()
+	}
+
+	if s.Metrics.PreemptionCount == 0 {
+		t.Fatal("precondition violated: expected at least one preemption, got 0 — scenario does not test the bug")
+	}
+
+	// TTFTSum must equal the sum of per-request TTFTs. Sort keys first (R2: deterministic
+	// float accumulation requires sorted map iteration).
+	ids := make([]string, 0, len(s.Metrics.RequestTTFTs))
+	for id := range s.Metrics.RequestTTFTs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	var manualTTFTSum float64
+	for _, id := range ids {
+		manualTTFTSum += s.Metrics.RequestTTFTs[id]
+	}
+	if float64(s.Metrics.TTFTSum) != manualTTFTSum {
+		t.Errorf("TTFTSum = %d, want %.0f (sum of RequestTTFTs); delta %.0f indicates double-count after preemption",
+			s.Metrics.TTFTSum, manualTTFTSum, float64(s.Metrics.TTFTSum)-manualTTFTSum)
+	}
+}

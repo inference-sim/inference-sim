@@ -230,6 +230,7 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 
 			preemptedRequest.State = StateQueued
 			preemptedRequest.ProgressIndex = 0
+			preemptedRequest.ITL = nil
 			ctx.KVCache.ReleaseKVBlocks(preemptedRequest)
 			delete(ctx.ComputedTokens, preemptedRequest.ID)
 			ctx.WaitQ.PrependFront(preemptedRequest)
