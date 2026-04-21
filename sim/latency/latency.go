@@ -147,8 +147,10 @@ func validateCoeffs(name string, coeffs []float64) error {
 }
 
 // NewLatencyModel creates the appropriate LatencyModel based on config.
-// Dispatches on hw.Backend: "" or "roofline" → RooflineLatencyModel, "crossmodel" → CrossModelLatencyModel,
-// "blackbox" → BlackboxLatencyModel, "trained-roofline" → TrainedRooflineLatencyModel.
+// Dispatches on hw.Backend: "" or "roofline" → RooflineLatencyModel, "trained-physics" → TrainedPhysicsLatencyModel,
+// "crossmodel" → CrossModelLatencyModel (DEPRECATED, emits logrus.Warn once per process),
+// "blackbox" → BlackboxLatencyModel (DEPRECATED, emits logrus.Warn once per process),
+// "trained-roofline" → TrainedRooflineLatencyModel (DEPRECATED, emits logrus.Warn once per process).
 // Returns error if coefficient slices are too short, contain NaN/Inf, or config validation fails.
 func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.LatencyModel, error) {
 	// All implementations index alphaCoeffs[0..2]; validate upfront.
