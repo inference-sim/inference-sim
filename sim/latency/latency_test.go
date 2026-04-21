@@ -518,9 +518,10 @@ func TestStepTime_AtLeastOne(t *testing.T) {
 		"crossmodel with zero coefficients must still return >= 1")
 }
 
-// NOTE: Deprecation warning emission tests removed. sync.Once ensures warnings
-// are emitted at most once per process, making test execution order-dependent.
-// Warnings are verified via manual testing and visible in other test output.
+// NOTE: Deprecation warning emission tests (BC-1, BC-2, BC-3) removed because
+// sync.Once makes test execution order-dependent (warnings only emit on first
+// call per backend). The negative case (BC-5: roofline and trained-physics
+// emit no warnings) IS tested below. Positive cases verified via manual testing.
 
 func TestNewLatencyModel_Roofline_NoDeprecationWarning(t *testing.T) {
 	// GIVEN a valid roofline latency model config
