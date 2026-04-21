@@ -332,10 +332,13 @@ func TestNewLatencyModel_Roofline_Success(t *testing.T) {
 			NumKVHeads:      8,
 			HiddenDim:       4096,
 			IntermediateDim: 11008,
+			BytesPerParam:   2.0,
 		},
 		HWConfig: sim.HardwareCalib{
 			TFlopsPeak: 989.5,
 			BwPeakTBs:  3.35,
+			MfuPrefill: 0.5,
+			MfuDecode:  0.3,
 		},
 	}
 
