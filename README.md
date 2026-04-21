@@ -13,7 +13,7 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 - **Discrete-event simulation** for prefill, decode, and request scheduling
 - **KV-cache modeling** (blocks, prefix caching, prefill chunking, tiered GPU+CPU offload)
 - **CPU-only inference cost model** via analytical roofline estimation or learned α/β coefficients
-- **Five latency estimation modes**: roofline (default, analytical), trained-physics (physics-informed basis functions with architecture-aware MoE scaling), cross-model (physics-informed, MoE-aware), trained-roofline (roofline × learned corrections), and blackbox (data-driven, per-model coefficients)
+- **Five latency estimation modes**: roofline (default, analytical), trained-physics (physics-informed basis functions with architecture-aware MoE scaling), ~~cross-model~~ (deprecated), ~~trained-roofline~~ (deprecated), and ~~blackbox~~ (deprecated, data-driven, per-model coefficients). **Use trained-physics for new work.**
 - **Multi-instance cluster simulation** with shared-clock event loop and pluggable routing (round-robin, least-loaded, weighted-scoring)
 - **Multiple workload types**: preset (`chatbot`, `contentgen`, `summarization`, `multidoc`), custom distributions, or trace replay
 
@@ -262,7 +262,7 @@ inference-sim/
 │   ├── latency.go          # RooflineLatencyModel, BlackboxLatencyModel, CrossModelLatencyModel, NewLatencyModel factory
 │   ├── trained_roofline.go # TrainedRooflineLatencyModel: roofline basis functions × learned corrections
 │   ├── trained_physics_model.go # TrainedPhysicsLatencyModel: physics-informed basis functions with architecture-aware scaling
-│   ├── crossmodel.go       # CrossModelLatencyModel: physics-informed step time from architecture features (MoE-aware)
+│   ├── crossmodel.go       # CrossModelLatencyModel: physics-informed step time (DEPRECATED — use trained-physics)
 │   ├── roofline.go         # Analytical FLOPs/bandwidth latency estimation
 │   ├── config.go           # HFConfig, GetHWConfig, GetModelConfig, ValidateRooflineConfig
 │   ├── kv_capacity.go      # KV cache block auto-calculation from model architecture + GPU memory
