@@ -2,8 +2,8 @@
 
 This document describes the analytical approach used to estimate the GPU latency for a single inference step using a roofline model. Roofline is the default latency model in BLIS — it requires no training and works off-the-shelf for any Huggingface LLM whose `config.json` is saved under `model_configs/` (auto-fetched from HuggingFace on first use).
 
-!!! tip "Trained-Roofline: higher accuracy"
-    For higher accuracy (7% MAPE GPU combined), use `--latency-model trained-roofline` which applies learned correction factors to these roofline basis functions. See [Trained-Roofline Mode](../guide/latency-models.md#trained-roofline-mode-recommended-for-new-models). For legacy MoE workflows, `--latency-model crossmodel` is also available — see [Cross-Model Mode](../guide/latency-models.md#cross-model-mode-physics-informed).
+!!! tip "Trained-Physics: higher accuracy"
+    For higher accuracy, use `--latency-model trained-physics` which applies learned correction factors to these roofline basis functions with MoE support. See [Trained-Physics Mode](../guide/latency-models.md#trained-physics-mode).
 
 
 !!! note "Scope: TP-only, quantized weight memory supported"
