@@ -14,6 +14,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/util"
+	"github.com/sirupsen/logrus"
 )
 
 // clampToInt64 converts a float64 to int64, clamping values that would cause
@@ -268,6 +269,9 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 		}
 		return model, nil
 	case "blackbox":
+		// Emit deprecation warning
+		logrus.Warn("latency model \"blackbox\" is deprecated and will be removed in a future version. Use --latency-model trained-physics instead.")
+
 		// BlackboxLatencyModel indexes betaCoeffs[0..2]; validate upfront.
 		if len(coeffs.BetaCoeffs) < 3 {
 			return nil, fmt.Errorf("latency model: BetaCoeffs requires at least 3 elements, got %d", len(coeffs.BetaCoeffs))
