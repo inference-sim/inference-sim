@@ -11,10 +11,28 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/util"
+	"github.com/sirupsen/logrus"
 )
+
+// Package-level sync.Once to emit deprecation warnings only once per process.
+var (
+	warnCrossmodelOnce  sync.Once
+	warnTrainedRoofOnce sync.Once
+	warnBlackboxOnce    sync.Once
+)
+
+// resetDeprecationWarningsForTest resets all deprecation warning sync.Once vars.
+// This function exists solely for test isolation and must only be called from
+// package latency tests (not production code).
+func resetDeprecationWarningsForTest() {
+	warnCrossmodelOnce = sync.Once{}
+	warnTrainedRoofOnce = sync.Once{}
+	warnBlackboxOnce = sync.Once{}
+}
 
 // clampToInt64 converts a float64 to int64, clamping values that would cause
 // undefined behavior in Go's float64→int64 conversion. Specifically:
@@ -129,8 +147,10 @@ func validateCoeffs(name string, coeffs []float64) error {
 }
 
 // NewLatencyModel creates the appropriate LatencyModel based on config.
-// Dispatches on hw.Backend: "" or "roofline" → RooflineLatencyModel, "crossmodel" → CrossModelLatencyModel,
-// "blackbox" → BlackboxLatencyModel, "trained-roofline" → TrainedRooflineLatencyModel.
+// Dispatches on hw.Backend: "" or "roofline" → RooflineLatencyModel, "trained-physics" → TrainedPhysicsLatencyModel,
+// "crossmodel" → CrossModelLatencyModel (DEPRECATED, emits logrus.Warn once per process),
+// "blackbox" → BlackboxLatencyModel (DEPRECATED, emits logrus.Warn once per process),
+// "trained-roofline" → TrainedRooflineLatencyModel (DEPRECATED, emits logrus.Warn once per process).
 // Returns error if coefficient slices are too short, contain NaN/Inf, or config validation fails.
 func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.LatencyModel, error) {
 	// All implementations index alphaCoeffs[0..2]; validate upfront.
@@ -155,6 +175,11 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			alphaCoeffs: coeffs.AlphaCoeffs,
 		}, nil
 	case "crossmodel":
+		// Emit deprecation warning (once per process)
+		warnCrossmodelOnce.Do(func() {
+			logrus.Warn("latency model \"crossmodel\" is deprecated and will be removed in a future version. Use --latency-model trained-physics instead.")
+		})
+
 		// Validate required fields BEFORE computing derived features (R11: guard division)
 		if hw.TP <= 0 {
 			return nil, fmt.Errorf("latency model: crossmodel requires TP > 0, got %d", hw.TP)
@@ -198,6 +223,11 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			isTP:        isTP,
 		}, nil
 	case "trained-roofline":
+		// Emit deprecation warning (once per process)
+		warnTrainedRoofOnce.Do(func() {
+			logrus.Warn("latency model \"trained-roofline\" is deprecated and will be removed in a future version. Use --latency-model trained-physics instead.")
+		})
+
 		// TrainedRooflineLatencyModel: roofline basis functions × learned corrections.
 		// Requires model architecture (config.json) and hardware specs for basis functions.
 		if hw.TP <= 0 {
@@ -268,6 +298,11 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 		}
 		return model, nil
 	case "blackbox":
+		// Emit deprecation warning (once per process)
+		warnBlackboxOnce.Do(func() {
+			logrus.Warn("latency model \"blackbox\" is deprecated and will be removed in a future version. Use --latency-model trained-physics instead.")
+		})
+
 		// BlackboxLatencyModel indexes betaCoeffs[0..2]; validate upfront.
 		if len(coeffs.BetaCoeffs) < 3 {
 			return nil, fmt.Errorf("latency model: BetaCoeffs requires at least 3 elements, got %d", len(coeffs.BetaCoeffs))

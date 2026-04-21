@@ -1,11 +1,13 @@
 package latency
 
 import (
+	"bytes"
 	"math"
 	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -579,4 +581,156 @@ func TestAllBackends_StepTime_EmptyBatch_FloorAtOne(t *testing.T) {
 	}
 	assert.GreaterOrEqual(t, crossmodel.StepTime(emptyBatch), int64(1),
 		"crossmodel with zero coefficients must still return >= 1")
+}
+
+// TestNewLatencyModel_Blackbox_EmitsDeprecationWarning verifies BC-1:
+// GIVEN a valid blackbox latency model config
+// WHEN NewLatencyModel is called
+// THEN a deprecation warning MUST be emitted.
+func TestNewLatencyModel_Blackbox_EmitsDeprecationWarning(t *testing.T) {
+	resetDeprecationWarningsForTest()
+
+	coeffs := sim.NewLatencyCoeffs([]float64{10.0, 20.0, 30.0}, []float64{1.0, 2.0, 3.0})
+	hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 1, "blackbox", 0)
+
+	var logBuf bytes.Buffer
+	oldOut := logrus.StandardLogger().Out
+	logrus.SetOutput(&logBuf)
+	defer logrus.SetOutput(oldOut)
+
+	model, err := NewLatencyModel(coeffs, hw)
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if model == nil {
+		t.Fatal("expected non-nil model")
+	}
+
+	logOutput := logBuf.String()
+	if !strings.Contains(logOutput, "deprecated") {
+		t.Errorf("expected deprecation warning in log output, but got: %s", logOutput)
+	}
+}
+
+// TestNewLatencyModel_Crossmodel_EmitsDeprecationWarning verifies BC-2:
+// GIVEN a valid crossmodel latency model config
+// WHEN NewLatencyModel is called
+// THEN a deprecation warning MUST be emitted.
+func TestNewLatencyModel_Crossmodel_EmitsDeprecationWarning(t *testing.T) {
+	resetDeprecationWarningsForTest()
+
+	coeffs := sim.NewLatencyCoeffs([]float64{10.0, 20.0, 30.0, 40.0}, []float64{1.0, 2.0, 3.0})
+	hw := sim.NewModelHardwareConfig(
+		sim.ModelConfig{NumLayers: 32, NumHeads: 32, HiddenDim: 4096, NumKVHeads: 8},
+		sim.HardwareCalib{TFlopsPeak: 989.5, BwPeakTBs: 3.35},
+		"", "", 1, "crossmodel", 0)
+
+	var logBuf bytes.Buffer
+	oldOut := logrus.StandardLogger().Out
+	logrus.SetOutput(&logBuf)
+	defer logrus.SetOutput(oldOut)
+
+	model, err := NewLatencyModel(coeffs, hw)
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if model == nil {
+		t.Fatal("expected non-nil model")
+	}
+
+	logOutput := logBuf.String()
+	if !strings.Contains(logOutput, "deprecated") {
+		t.Errorf("expected deprecation warning in log output, but got: %s", logOutput)
+	}
+}
+
+// TestNewLatencyModel_TrainedRoofline_EmitsDeprecationWarning verifies BC-3:
+// GIVEN a valid trained-roofline latency model config
+// WHEN NewLatencyModel is called
+// THEN a deprecation warning MUST be emitted.
+func TestNewLatencyModel_TrainedRoofline_EmitsDeprecationWarning(t *testing.T) {
+	resetDeprecationWarningsForTest()
+
+	coeffs := sim.NewLatencyCoeffs([]float64{10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0}, []float64{1.0, 2.0, 3.0})
+	hw := sim.NewModelHardwareConfig(
+		sim.ModelConfig{NumLayers: 32, NumHeads: 32, HiddenDim: 4096, IntermediateDim: 11008, NumKVHeads: 32},
+		sim.HardwareCalib{TFlopsPeak: 989.5, BwPeakTBs: 3.35},
+		"", "", 1, "trained-roofline", 0)
+
+	var logBuf bytes.Buffer
+	oldOut := logrus.StandardLogger().Out
+	logrus.SetOutput(&logBuf)
+	defer logrus.SetOutput(oldOut)
+
+	model, err := NewLatencyModel(coeffs, hw)
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if model == nil {
+		t.Fatal("expected non-nil model")
+	}
+
+	logOutput := logBuf.String()
+	if !strings.Contains(logOutput, "deprecated") {
+		t.Errorf("expected deprecation warning in log output, but got: %s", logOutput)
+	}
+}
+
+// TestNewLatencyModel_Roofline_NoDeprecationWarning verifies BC-5:
+// GIVEN a valid roofline latency model config
+// WHEN NewLatencyModel is called
+// THEN no deprecation warning MUST be emitted.
+func TestNewLatencyModel_Roofline_NoDeprecationWarning(t *testing.T) {
+	coeffs := sim.NewLatencyCoeffs(nil, []float64{1.0, 2.0, 3.0})
+	hw := sim.NewModelHardwareConfig(testModelConfig(), testHardwareCalib(), "", "", 2, "roofline", 0)
+
+	var logBuf bytes.Buffer
+	oldOut := logrus.StandardLogger().Out
+	logrus.SetOutput(&logBuf)
+	defer logrus.SetOutput(oldOut)
+
+	model, err := NewLatencyModel(coeffs, hw)
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if model == nil {
+		t.Fatal("expected non-nil model")
+	}
+
+	logOutput := logBuf.String()
+	if strings.Contains(logOutput, "deprecated") {
+		t.Errorf("expected no deprecation warning for roofline, but got: %s", logOutput)
+	}
+}
+
+// TestNewLatencyModel_TrainedPhysics_NoDeprecationWarning verifies BC-5:
+// GIVEN a valid trained-physics latency model config
+// WHEN NewLatencyModel is called
+// THEN no deprecation warning MUST be emitted.
+func TestNewLatencyModel_TrainedPhysics_NoDeprecationWarning(t *testing.T) {
+	coeffs := sim.NewLatencyCoeffs([]float64{1, 2, 3, 4, 5, 6, 7, 8}, []float64{1.0, 2.0, 3.0})
+	hw := sim.NewModelHardwareConfig(testModelConfig(), testHardwareCalib(), "", "", 2, "trained-physics", 0)
+
+	var logBuf bytes.Buffer
+	oldOut := logrus.StandardLogger().Out
+	logrus.SetOutput(&logBuf)
+	defer logrus.SetOutput(oldOut)
+
+	model, err := NewLatencyModel(coeffs, hw)
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if model == nil {
+		t.Fatal("expected non-nil model")
+	}
+
+	logOutput := logBuf.String()
+	if strings.Contains(logOutput, "deprecated") {
+		t.Errorf("expected no deprecation warning for trained-physics, but got: %s", logOutput)
+	}
 }

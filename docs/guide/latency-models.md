@@ -1,6 +1,9 @@
 # Latency Models
 
-The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships five backends -- roofline (default, analytical), blackbox (data-driven), cross-model (physics-informed), trained-roofline (roofline × learned corrections), and trained-physics (roofline × learned corrections) -- and the pluggable architecture supports adding custom backends.
+The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships five backends -- roofline (default, analytical), trained-physics (recommended for new work), and three deprecated backends (blackbox, crossmodel, trained-roofline) -- and the pluggable architecture supports adding custom backends.
+
+!!! warning "Deprecated Backends"
+    **blackbox** (`--latency-model blackbox`), **crossmodel** (`--latency-model crossmodel`), and **trained-roofline** (`--latency-model trained-roofline`) are deprecated and will be removed in a future version. Use `--latency-model trained-physics` for new work. Existing configs using deprecated backends will continue to function but will emit deprecation warnings.
 
 ```bash
 # Roofline mode (default) — analytical estimation from model architecture
@@ -28,7 +31,10 @@ The `LatencyModel` interface determines how BLIS estimates GPU step time for eac
   --num-instances 4 --rate 100 --num-requests 500
 ```
 
-## Blackbox Mode
+## Blackbox Mode (DEPRECATED)
+
+!!! warning
+    Blackbox mode is deprecated. Use `--latency-model trained-physics` instead. This backend will be removed in a future version.
 
 Blackbox mode uses trained regression coefficients from `defaults.yaml`, fit offline via Bayesian optimization against real vLLM measurements.
 
@@ -125,7 +131,10 @@ When choosing between TP and replication (more instances): TP reduces per-reques
 !!! note "Automatic MaxModelLen derivation"
     When using roofline or crossmodel mode and `--max-model-len` is not explicitly set, BLIS auto-derives it from `max_position_embeddings` in the HuggingFace `config.json`. For models with `rope_scaling`, the scaling factor is applied based on vLLM's blacklist approach: types `linear`, `dynamic`, `yarn`, `default`, and `mrope` apply the factor; types `su`, `longrope`, and `llama3` are excluded (these encode the full context in `max_position_embeddings`). For `yarn`, `original_max_position_embeddings` is used as the base when present. `gemma3` models skip `rope_scaling` entirely (`max_position_embeddings` is pre-scaled). The derived value is then capped at the KV-feasible maximum (`total_kv_blocks * block_size`) to prevent context windows from exceeding GPU memory capacity. Override with `--max-model-len <N>` when needed.
 
-## Cross-Model Mode (Physics-Informed)
+## Cross-Model Mode (DEPRECATED)
+
+!!! warning
+    Cross-model mode is deprecated. Use `--latency-model trained-physics` instead. This backend will be removed in a future version.
 
 Cross-model mode estimates step time using 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) that work across model architectures. Unlike blackbox (per-model coefficients) or roofline (no MoE awareness), cross-model uses architecture features from `config.json` to scale a single coefficient set.
 
@@ -150,12 +159,15 @@ Where `kvDimScaled = numLayers × numKVHeads × headDim / TP × 1e-6`, `isMoE = 
 **MoE support:** Cross-model correctly handles Mixture-of-Experts models. The `β₂` term captures the per-token routing and expert dispatch overhead, activated when `num_local_experts > 0` in the model's HuggingFace config.json. The MoE indicator is binary (MoE vs dense); the specific active expert count (`num_experts_per_tok`) is parsed for future refinement but not yet used in the formula.
 
 !!! warning "Dense model prefill limitation"
-    For dense models (non-MoE), step time does not scale with prefill token count — prefill compute cost is absorbed into the per-layer overhead (β₀). A batch prefilling 1 token costs the same as 2048 tokens. This is a known approximation from the training methodology (prefill KV writes overlap with compute on H100). For prefill-heavy dense-model workloads, **blackbox mode with trained coefficients** provides more accurate estimates because its `β₁` term explicitly models per-prefill-token cost.
+    For dense models (non-MoE), step time does not scale with prefill token count — prefill compute cost is absorbed into the per-layer overhead (β₀). A batch prefilling 1 token costs the same as 2048 tokens. This is a known approximation from the training methodology (prefill KV writes overlap with compute on H100). For prefill-heavy dense-model workloads, use `--latency-model trained-physics` which provides learned corrections on top of roofline physics without this limitation.
 
 !!! note "Automatic KV block calculation"
     Like roofline mode, crossmodel auto-derives `--total-kv-blocks` from model architecture and GPU memory when the flag is not set. Override with `--total-kv-blocks <N>` for non-standard deployments. The auto-calculation uses reference constants (90% GPU utilization, standard activation/overhead budgets matching the llm-d-benchmark capacity planner) and requires SwiGLU-family activations (`silu`, `swiglu`, `geglu`).
 
-## Trained-Roofline Mode
+## Trained-Roofline Mode (DEPRECATED)
+
+!!! warning
+    Trained-roofline mode is deprecated. Use `--latency-model trained-physics` instead. This backend will be removed in a future version.
 
 Trained-roofline mode applies **learned correction factors** to analytical roofline basis functions, combining the physical grounding of roofline with the accuracy of data-driven fitting. Coefficients are fitted from 137K real vLLM requests across 4 architectures (Llama-2-7b, Llama-2-70b, Mixtral-8x7B, CodeLlama-34b) via non-negative least squares regression.
 
@@ -296,7 +308,9 @@ Trained-physics uses **13 coefficients** (10 beta: prefill compute/memory split,
 | **PostDecodeFixedOverhead** | 0 | 0 | 0 | α₁ (~1.85ms) | α₁ (~777µs) |
 
 !!! tip "Choosing the right mode"
-    **Trained-physics** is the recommended default for any model with a HuggingFace `config.json` (generalizes across architectures, workloads, and TP configurations without per-model calibration). **Blackbox** for models with per-model coefficients in `defaults.yaml` (highest accuracy due to per-model fitting). **Trained-roofline** is an alternative trained model (7% MAPE GPU combined). **Cross-model** for backward compatibility with existing crossmodel workflows. **Roofline** for pure analytical estimates when no learned corrections are desired.
+    **Roofline** is the default (analytical FLOPs/bandwidth estimation). **Trained-physics** is recommended for any model with a HuggingFace `config.json` (generalizes across architectures, workloads, and TP configurations without per-model calibration using physics-informed basis functions with learned corrections).
+
+    **Deprecated backends (migration to trained-physics recommended):** **Blackbox**, **trained-roofline**, and **crossmodel** are deprecated and will be removed in a future version. Existing workflows using these backends should migrate to `--latency-model trained-physics`. See individual sections above for backend-specific details.
 
 !!! warning "Current limitations"
     All analytical latency models support tensor parallelism (TP). Data parallelism (DP) and expert parallelism (EP) scheduling overhead are not yet modeled. Quantized weight precision (GPTQ, AWQ, FP8, compressed-tensors) is auto-detected from `quantization_config`, model name conventions (e.g., `w4a16`, `FP8`), or `torch_dtype` fallback, and is used for weight bandwidth and KV capacity calculations. MFU calibration values are still derived from FP16/BF16 measurements.
