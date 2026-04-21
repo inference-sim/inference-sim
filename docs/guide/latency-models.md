@@ -1,6 +1,9 @@
 # Latency Models
 
-The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships five backends -- roofline (default, analytical), blackbox (data-driven), cross-model (physics-informed), trained-roofline (roofline × learned corrections), and trained-physics (roofline × learned corrections) -- and the pluggable architecture supports adding custom backends.
+The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships five backends -- roofline (default, analytical), trained-physics (recommended for new work), and three deprecated backends (blackbox, cross-model, trained-roofline) -- and the pluggable architecture supports adding custom backends.
+
+!!! warning "Deprecated Backends"
+    **blackbox**, **cross-model**, and **trained-roofline** are deprecated and will be removed in a future version. Use `--latency-model trained-physics` for new work. Existing configs using deprecated backends will continue to function but will emit deprecation warnings.
 
 ```bash
 # Roofline mode (default) — analytical estimation from model architecture
@@ -28,7 +31,10 @@ The `LatencyModel` interface determines how BLIS estimates GPU step time for eac
   --num-instances 4 --rate 100 --num-requests 500
 ```
 
-## Blackbox Mode
+## Blackbox Mode (DEPRECATED)
+
+!!! warning
+    Blackbox mode is deprecated. Use `--latency-model trained-physics` instead. This backend will be removed in a future version.
 
 Blackbox mode uses trained regression coefficients from `defaults.yaml`, fit offline via Bayesian optimization against real vLLM measurements.
 
@@ -125,7 +131,10 @@ When choosing between TP and replication (more instances): TP reduces per-reques
 !!! note "Automatic MaxModelLen derivation"
     When using roofline or crossmodel mode and `--max-model-len` is not explicitly set, BLIS auto-derives it from `max_position_embeddings` in the HuggingFace `config.json`. For models with `rope_scaling`, the scaling factor is applied based on vLLM's blacklist approach: types `linear`, `dynamic`, `yarn`, `default`, and `mrope` apply the factor; types `su`, `longrope`, and `llama3` are excluded (these encode the full context in `max_position_embeddings`). For `yarn`, `original_max_position_embeddings` is used as the base when present. `gemma3` models skip `rope_scaling` entirely (`max_position_embeddings` is pre-scaled). The derived value is then capped at the KV-feasible maximum (`total_kv_blocks * block_size`) to prevent context windows from exceeding GPU memory capacity. Override with `--max-model-len <N>` when needed.
 
-## Cross-Model Mode (Physics-Informed)
+## Cross-Model Mode (DEPRECATED)
+
+!!! warning
+    Cross-model mode is deprecated. Use `--latency-model trained-physics` instead. This backend will be removed in a future version.
 
 Cross-model mode estimates step time using 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) that work across model architectures. Unlike blackbox (per-model coefficients) or roofline (no MoE awareness), cross-model uses architecture features from `config.json` to scale a single coefficient set.
 
@@ -155,7 +164,10 @@ Where `kvDimScaled = numLayers × numKVHeads × headDim / TP × 1e-6`, `isMoE = 
 !!! note "Automatic KV block calculation"
     Like roofline mode, crossmodel auto-derives `--total-kv-blocks` from model architecture and GPU memory when the flag is not set. Override with `--total-kv-blocks <N>` for non-standard deployments. The auto-calculation uses reference constants (90% GPU utilization, standard activation/overhead budgets matching the llm-d-benchmark capacity planner) and requires SwiGLU-family activations (`silu`, `swiglu`, `geglu`).
 
-## Trained-Roofline Mode
+## Trained-Roofline Mode (DEPRECATED)
+
+!!! warning
+    Trained-roofline mode is deprecated. Use `--latency-model trained-physics` instead. This backend will be removed in a future version.
 
 Trained-roofline mode applies **learned correction factors** to analytical roofline basis functions, combining the physical grounding of roofline with the accuracy of data-driven fitting. Coefficients are fitted from 137K real vLLM requests across 4 architectures (Llama-2-7b, Llama-2-70b, Mixtral-8x7B, CodeLlama-34b) via non-negative least squares regression.
 
