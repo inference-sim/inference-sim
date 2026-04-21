@@ -489,6 +489,7 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	// The destination is the sole completion site. Skipping CompletedRequests++ here
 	// would cause the request to vanish from conservation accounting entirely.
 	sim.Metrics.CompletedRequests++
+	sim.Metrics.TTFTSum += req.FirstTokenTime
 
 	// Count decode tokens at completion time, not inline during each decode step.
 	// Inline counting double-counts when a request is preempted (ProgressIndex reset
@@ -641,10 +642,11 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 
 	// Subprocess: Model Execution - this could be prefill or decode depending on the request.
 	// similar to vLLM's execute_model()
-	// Note: TTFT metrics are recorded inline because they are tightly coupled to the
-	// prefill/decode state transitions in this loop. TotalOutputTokens is computed at
-	// completion time in recordRequestCompletion (not inline) to avoid double-counting
-	// tokens when a preempted request re-runs from ProgressIndex=0.
+	// Note: Per-request TTFT fields (FirstTokenTime, RequestTTFTs) are recorded inline
+	// because they are tightly coupled to the prefill/decode state transitions in this
+	// loop (scalar/map overwrites, safe across preemption). TTFTSum and TotalOutputTokens
+	// are computed at completion time in recordRequestCompletion to avoid double-counting
+	// when a preempted request re-runs from ProgressIndex=0.
 	for _, req := range sim.RunningBatch.Requests {
 		if req.ProgressIndex < util.Len64(req.InputTokens) {
 			req.ProgressIndex = sim.reqNumComputedTokens[req.ID]
@@ -663,7 +665,6 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 		if req.ProgressIndex == util.Len64(req.InputTokens) { // prefill complete, first token is generated
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
-			sim.Metrics.TTFTSum += req.FirstTokenTime // in microsec
 			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)
 		}
 	}
