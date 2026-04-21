@@ -156,6 +156,9 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			alphaCoeffs: coeffs.AlphaCoeffs,
 		}, nil
 	case "crossmodel":
+		// Emit deprecation warning
+		logrus.Warn("latency model \"crossmodel\" is deprecated and will be removed in a future version. Use --latency-model trained-physics instead.")
+
 		// Validate required fields BEFORE computing derived features (R11: guard division)
 		if hw.TP <= 0 {
 			return nil, fmt.Errorf("latency model: crossmodel requires TP > 0, got %d", hw.TP)
