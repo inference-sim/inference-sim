@@ -392,6 +392,9 @@ autoscaler:
 	if bundle.Autoscaler.ScaleUpStabilizationWindowUs != 60_000_000 {
 		t.Errorf("ScaleUpStabilizationWindowUs = %v, want 60000000", bundle.Autoscaler.ScaleUpStabilizationWindowUs)
 	}
+	if bundle.Autoscaler.ScaleDownStabilizationWindowUs != 180_000_000 {
+		t.Errorf("ScaleDownStabilizationWindowUs = %v, want 180000000", bundle.Autoscaler.ScaleDownStabilizationWindowUs)
+	}
 }
 
 func TestLoadPolicyBundle_NodePoolsSection(t *testing.T) {
