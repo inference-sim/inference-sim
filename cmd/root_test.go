@@ -486,12 +486,12 @@ func TestRunCmd_TimeoutFlag_RegisteredWithDefaultZero(t *testing.T) {
 	}
 }
 
-// TestRunCmd_TimeoutFlag_NotOnReplayOrObserve verifies that --timeout is NOT registered
-// on replayCmd or observeCmd. Those commands target real-server interactions and
-// retain the 300s client timeout baked into their HTTP clients (#1127).
-func TestRunCmd_TimeoutFlag_NotOnReplayOrObserve(t *testing.T) {
+// TestRunCmd_TimeoutFlag_NotOnReplay verifies that --timeout is NOT registered on replayCmd.
+// blis replay replays a pre-captured trace and has no HTTP client; timeouts for replay
+// are expressed via the workload spec's deadline_us field (#1127).
+func TestRunCmd_TimeoutFlag_NotOnReplay(t *testing.T) {
 	if replayCmd.Flags().Lookup("timeout") != nil {
-		t.Error("replayCmd must NOT have --timeout flag; replay retains 300s HTTP client timeout")
+		t.Error("replayCmd must NOT have --timeout flag; replay has no HTTP client and uses workload spec deadlines")
 	}
 }
 
