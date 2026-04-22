@@ -275,7 +275,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			}
 			// Placement succeeded: use pool's GPU type (SC-004: pool-authoritative, not CLI flag).
 			// Set GPU label and, when HWConfigByGPU is provided, override HWConfig so that
-			// roofline/trained-roofline backends use the pool's hardware coefficients (issue #893).
+			// roofline and trained-physics backends use the pool's hardware coefficients (issue #893).
 			simCfg.GPU = matchedGPUType
 			if hc, ok := config.HWConfigByGPU[matchedGPUType]; ok {
 				if hc.TFlopsPeak <= 0 || hc.BwPeakTBs <= 0 {

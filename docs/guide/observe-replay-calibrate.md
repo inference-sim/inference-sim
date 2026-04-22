@@ -216,7 +216,7 @@ Replay also accepts all shared simulation config flags (`--latency-model`, `--to
 | **Trace export** | `--trace-output` (header `mode: "generated"`) | `--trace-output` (header `mode: "replayed"`) |
 
 !!! warning "Latency model matters"
-    The replay command simulates token generation using the configured latency model. For accurate calibration, choose the latency model that best matches the server's behavior. See [Latency Models](latency-models.md) for guidance on selecting between roofline, blackbox, cross-model, and trained-roofline modes.
+    The replay command simulates token generation using the configured latency model. For accurate calibration, choose the latency model that best matches the server's behavior. See [Latency Models](latency-models.md) for guidance on selecting between roofline, blackbox, and trained-physics modes.
 
 ---
 
@@ -418,7 +418,7 @@ Low MAPE with high `mean_percent_error` indicates low per-request variance but a
 
 If calibration quality is poor, try:
 
-1. **Different latency model:** Switch from `roofline` to `blackbox` or `crossmodel` (see [Latency Models](latency-models.md))
+1. **Different latency model:** Switch from `roofline` to `blackbox` or `trained-physics` (see [Latency Models](latency-models.md))
 2. **Adjust server config flags:** Match `--max-num-running-reqs` and `--max-num-scheduled-tokens` to the real server's settings
 3. **Increase sample size:** Use more requests (`--num-requests`) for statistical stability
 
