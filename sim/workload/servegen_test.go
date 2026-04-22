@@ -137,7 +137,6 @@ func TestParseServeGenTrace_NonNumericFields_SkippedAndWarned(t *testing.T) {
 	assert.Contains(t, buf.String(), "2 rows", "should warn about 2 skipped rows")
 }
 
-// TestLoadServeGenDataset_NonNumericKey_SkippedWithWarning verifies BC-3.
 // TestLoadServeGenDataset_EmptyDictWindows_SkippedUntilValid tests that the loader
 // skips time windows with empty PDF dictionaries (serialized as "{}") and finds the first
 // window with actual traffic data, matching ServeGen Python library behavior.
@@ -190,6 +189,7 @@ func TestLoadServeGenDataset_AllEmptyDictWindows_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "no valid PDF windows", "error should indicate no valid windows, not parser error")
 }
 
+// TestLoadServeGenDataset_NonNumericKey_SkippedWithWarning verifies BC-3.
 // JSON keys that are not valid floats are skipped with a warning.
 // When ALL keys are non-numeric, the function returns an error after warning.
 func TestLoadServeGenDataset_NonNumericKey_SkippedWithWarning(t *testing.T) {
