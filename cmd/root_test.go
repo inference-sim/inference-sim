@@ -473,16 +473,17 @@ func TestReplayCmd_HasResultsPathFlag(t *testing.T) {
 	}
 }
 
-// TestRunCmd_TimeoutFlag_RegisteredWithDefaultZero verifies that --timeout is registered
-// on runCmd with a default of 0 (no timeout). Default 0 means synthetic workloads do not
-// silently time out and inflate throughput metrics (#1127).
-func TestRunCmd_TimeoutFlag_RegisteredWithDefaultZero(t *testing.T) {
+// TestRunCmd_TimeoutFlag_RegisteredWithDefaultMinusOne verifies that --timeout is registered
+// on runCmd with a default of -1 (disabled). Default -1 means synthetic workloads do not
+// silently time out and inflate throughput metrics. Consistent with blis observe: both
+// commands reject 0 as an invalid timeout value (#1127).
+func TestRunCmd_TimeoutFlag_RegisteredWithDefaultMinusOne(t *testing.T) {
 	f := runCmd.Flags().Lookup("timeout")
 	if f == nil {
 		t.Fatal("flag --timeout not found on runCmd")
 	}
-	if f.DefValue != "0" {
-		t.Errorf("--timeout default: got %q, want \"0\" (no timeout for synthetic workloads)", f.DefValue)
+	if f.DefValue != "-1" {
+		t.Errorf("--timeout default: got %q, want \"-1\" (disabled; use negative value to disable timeout)", f.DefValue)
 	}
 }
 
@@ -519,26 +520,27 @@ func TestApplyTimeoutToSpec_SynthesizedSpec(t *testing.T) {
 	}
 }
 
-// TestApplyTimeoutToSpec_ZeroMeansNoTimeout verifies that timeout=0 results in an
-// explicit no-timeout pointer (*int64 pointing to 0), not nil.
-// nil Timeout for session clients would trigger the 300s default in computeDeadline,
-// defeating the intent of --timeout 0 (#1127).
+// TestApplyTimeoutToSpec_NonPositiveMeansDisabled verifies that timeout<=0 results in an
+// explicit no-timeout pointer (*int64 pointing to 0), not nil. Both 0 and negative values
+// disable the deadline. The CLI rejects 0 before calling this function (matching blis observe),
+// but the function itself treats all non-positive values identically: explicit *0 disables
+// the deadline and suppresses the 300s session default in computeDeadline (#1127).
 //
 // GIVEN a synthesized spec
-// WHEN applyTimeoutToSpec is called with timeout=0
+// WHEN applyTimeoutToSpec is called with timeout=0 or timeout=-1
 // THEN all clients have a non-nil Timeout pointer pointing to 0
-func TestApplyTimeoutToSpec_ZeroMeansNoTimeout(t *testing.T) {
-	spec := buildSynthesizedSpec()
-
-	applyTimeoutToSpec(spec, 0)
-
-	for i, c := range spec.Clients {
-		if c.Timeout == nil {
-			t.Errorf("client[%d] Timeout is nil after applyTimeoutToSpec(0); want explicit *0 to suppress 300s default", i)
-			continue
-		}
-		if *c.Timeout != 0 {
-			t.Errorf("client[%d] Timeout = %d, want 0 (explicit no-timeout)", i, *c.Timeout)
+func TestApplyTimeoutToSpec_NonPositiveMeansDisabled(t *testing.T) {
+	for _, secs := range []int{0, -1, -300} {
+		spec := buildSynthesizedSpec()
+		applyTimeoutToSpec(spec, secs)
+		for i, c := range spec.Clients {
+			if c.Timeout == nil {
+				t.Errorf("secs=%d client[%d] Timeout is nil; want explicit *0 to suppress 300s default", secs, i)
+				continue
+			}
+			if *c.Timeout != 0 {
+				t.Errorf("secs=%d client[%d] Timeout = %d, want 0 (disabled)", secs, i, *c.Timeout)
+			}
 		}
 	}
 }
@@ -564,29 +566,27 @@ func TestApplyTimeoutToSpec_CohortSpec(t *testing.T) {
 	}
 }
 
-// TestApplyTimeoutToSpec_NegativeIsRejected verifies R3: negative --timeout values must
-// be caught by the caller before applyTimeoutToSpec is invoked, preventing a deadline
-// before arrival time (INV-5 violation). This test documents the precondition contract
-// rather than the guard itself (the guard lives in runCmd, which calls logrus.Fatalf).
+// TestApplyTimeoutToSpec_NegativeMeansDisabled verifies that a negative timeoutSecs (the
+// way to disable the timeout via --timeout -1) produces an explicit *int64(0), not a
+// negative microsecond value. A negative µs deadline would violate INV-5 (causality:
+// deadline < arrival). Using negative as the "disabled" sentinel while mapping to *0
+// ensures backward-compatible behavior with computeDeadline (#1127).
 //
 // GIVEN a timeout of -1 seconds
-// WHEN applyTimeoutToSpec is called (bypassing the CLI guard, as in a unit test)
-// THEN the resulting Timeout pointer holds a negative microsecond value
-//
-// This test exists to make the invariant visible: callers MUST validate timeoutSecs >= 0
-// before calling applyTimeoutToSpec. The CLI guard at runCmd prevents this in production.
-func TestApplyTimeoutToSpec_NegativeProducesNegativeUs(t *testing.T) {
+// WHEN applyTimeoutToSpec is called
+// THEN all clients have a non-nil Timeout pointer pointing to 0 (not negative µs)
+func TestApplyTimeoutToSpec_NegativeMeansDisabled(t *testing.T) {
 	spec := buildSynthesizedSpec()
 
 	applyTimeoutToSpec(spec, -1)
 
 	for i, c := range spec.Clients {
 		if c.Timeout == nil {
-			t.Errorf("client[%d] Timeout is nil", i)
+			t.Errorf("client[%d] Timeout is nil; want explicit *0", i)
 			continue
 		}
-		if *c.Timeout >= 0 {
-			t.Errorf("client[%d] Timeout = %d; expected negative (documents why CLI must guard against negative input)", i, *c.Timeout)
+		if *c.Timeout != 0 {
+			t.Errorf("client[%d] Timeout = %d; want 0 (negative input maps to disabled, not negative µs)", i, *c.Timeout)
 		}
 	}
 }
@@ -708,6 +708,49 @@ func TestApplyTimeoutToRequests_NonZeroSetsSessionBlueprintTimeout(t *testing.T)
 		want := int64(120_000_000)
 		if *bp.Timeout != want {
 			t.Errorf("session[%d] Timeout = %d; want %d (120s in µs)", i, *bp.Timeout, want)
+		}
+	}
+}
+
+// TestApplyTimeoutToRequests_NegativeSetsDeadlineZero verifies that a negative timeoutSecs
+// (the "disabled" sentinel, e.g. default -1) sets req.Deadline=0 on all requests.
+// Negative must not produce a negative deadline (INV-5 violation: deadline < arrival).
+func TestApplyTimeoutToRequests_NegativeSetsDeadlineZero(t *testing.T) {
+	wl := &workload.GeneratedWorkload{
+		Requests: []*sim.Request{
+			{ID: "r0", ArrivalTime: 0, Deadline: 300_000_000},
+			{ID: "r1", ArrivalTime: 1_000_000, Deadline: 301_000_000},
+		},
+	}
+
+	applyTimeoutToRequests(wl, -1)
+
+	for i, req := range wl.Requests {
+		if req.Deadline != 0 {
+			t.Errorf("request[%d] Deadline = %d; want 0 (negative input means disabled, not negative deadline)", i, req.Deadline)
+		}
+	}
+}
+
+// TestApplyTimeoutToRequests_NegativeSetsSessionBlueprintExplicitZero verifies that a
+// negative timeoutSecs sets session blueprint Timeout to *int64(0), not nil and not negative.
+// nil would trigger the 300s default for follow-up rounds; negative would violate INV-5.
+func TestApplyTimeoutToRequests_NegativeSetsSessionBlueprintExplicitZero(t *testing.T) {
+	wl := &workload.GeneratedWorkload{
+		Sessions: []workload.SessionBlueprint{
+			{SessionID: "s0"},
+		},
+	}
+
+	applyTimeoutToRequests(wl, -1)
+
+	for i, bp := range wl.Sessions {
+		if bp.Timeout == nil {
+			t.Errorf("session[%d] Timeout is nil; want explicit *0 (negative = disabled, not nil)", i)
+			continue
+		}
+		if *bp.Timeout != 0 {
+			t.Errorf("session[%d] Timeout = %d; want 0 (negative maps to disabled)", i, *bp.Timeout)
 		}
 	}
 }

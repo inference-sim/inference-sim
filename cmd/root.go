@@ -986,10 +986,14 @@ func tryAutoCalcKVBlocksBlackbox(model, modelConfigFolder, defaultsFilePath, hwC
 }
 
 // applyTimeoutToSpec sets ClientSpec.Timeout and CohortSpec.Timeout on every entry in spec.
-// timeoutSecs=0 sets an explicit *int64(0) (no deadline); timeoutSecs>0 converts to µs.
-// Explicit zero is required so computeDeadline does not fall back to the 300s session default.
+// timeoutSecs>0 converts to µs and sets a deadline; timeoutSecs<=0 sets an explicit *int64(0)
+// (disabled). Explicit zero is required so computeDeadline does not fall back to the 300s
+// session default. Callers must reject timeoutSecs==0 before calling (use negative to disable).
 func applyTimeoutToSpec(spec *workload.WorkloadSpec, timeoutSecs int) {
-	us := int64(timeoutSecs) * 1_000_000
+	var us int64
+	if timeoutSecs > 0 {
+		us = int64(timeoutSecs) * 1_000_000
+	}
 	for i := range spec.Clients {
 		t := us
 		spec.Clients[i].Timeout = &t
@@ -1004,8 +1008,12 @@ func applyTimeoutToSpec(spec *workload.WorkloadSpec, timeoutSecs int) {
 // blueprints. This corrects deadlines for inference_perf specs: spec.Clients is empty
 // when applyTimeoutToSpec runs and is populated inside GenerateWorkload, so the initial
 // deadlines are computed from nil Timeout. Safe to call for all spec types.
+// timeoutSecs>0 sets deadline=ArrivalTime+timeout; timeoutSecs<=0 sets deadline=0 (disabled).
 func applyTimeoutToRequests(wl *workload.GeneratedWorkload, timeoutSecs int) {
-	timeoutUs := int64(timeoutSecs) * 1_000_000
+	var timeoutUs int64
+	if timeoutSecs > 0 {
+		timeoutUs = int64(timeoutSecs) * 1_000_000
+	}
 	for _, req := range wl.Requests {
 		if timeoutUs == 0 {
 			req.Deadline = 0
@@ -1285,10 +1293,10 @@ var runCmd = &cobra.Command{
 		}
 
 		// Apply per-request timeout to all clients.
-		// For synthesized specs, always apply (default 0 = no timeout).
+		// For synthesized specs, always apply (negative default = no timeout).
 		// For file-loaded specs, only apply when the flag is explicitly set.
-		if requestTimeoutSecs < 0 {
-			logrus.Fatalf("--timeout must be >= 0, got %d", requestTimeoutSecs)
+		if requestTimeoutSecs == 0 {
+			logrus.Fatalf("--timeout must be positive (seconds) or negative to disable; got 0")
 		}
 		if workloadSpecPath == "" || cmd.Flags().Changed("timeout") {
 			applyTimeoutToSpec(spec, requestTimeoutSecs)
@@ -1660,14 +1668,13 @@ var runCmd = &cobra.Command{
 			injected := agg.CompletedRequests + agg.StillQueued + agg.StillRunning + agg.DroppedUnservable + agg.TimedOutRequests +
 				rawMetrics.RoutingRejections + rawMetrics.GatewayQueueDepth + rawMetrics.GatewayQueueShed
 			if requestTimeoutSecs > 0 {
-				logrus.Warnf("%d of %d injected requests timed out (%ds deadline). Throughput metric (tokens_per_sec) may be inflated. Use --timeout 0 to disable, or increase the deadline.",
+				logrus.Warnf("%d of %d injected requests timed out (%ds deadline). Throughput metric (tokens_per_sec) may be inflated. Use a negative --timeout to disable, or increase the deadline.",
 					rawMetrics.TimedOutRequests, injected, requestTimeoutSecs)
 			} else {
-				// requestTimeoutSecs == 0 with timed-out requests: the post-generation pass
-				// ensures synthesized specs (including inference_perf) always get explicit *0
-				// deadlines, so this branch is only reached when --workload-spec is set
-				// without an explicit --timeout override.
-				logrus.Warnf("%d of %d injected requests timed out (deadline from workload spec). Throughput metric (tokens_per_sec) may be inflated. Use --timeout 0 to disable spec timeouts, or increase them in the spec.",
+				// requestTimeoutSecs <= 0 (disabled by default or negative): the post-generation
+				// pass ensures synthesized specs always get explicit *0 deadlines, so this branch
+				// is only reached when --workload-spec is set without an explicit --timeout override.
+				logrus.Warnf("%d of %d injected requests timed out (deadline from workload spec). Throughput metric (tokens_per_sec) may be inflated. Use a negative --timeout to disable spec timeouts, or increase them in the spec.",
 					rawMetrics.TimedOutRequests, injected)
 			}
 		}
@@ -1907,7 +1914,7 @@ func init() {
 	runCmd.Flags().IntVar(&outputTokensMin, "output-tokens-min", defaultOutputMin, "Min Output Token Count")
 	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", defaultOutputMax, "Max Output Token Count")
 	runCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "Path to YAML workload specification file (overrides --workload)")
-	runCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 0, "Per-request timeout in seconds (0 = no timeout). When non-zero, requests exceeding this deadline are counted as timed out. Default 0 avoids silently inflating throughput metrics in synthetic workloads.")
+	runCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", -1, "Per-request deadline in seconds (negative = disabled, positive = deadline). 0 is rejected; use a negative value to disable. Consistent with blis observe: both commands reject 0.")
 
 	// Run-specific export
 	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")
