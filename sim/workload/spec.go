@@ -143,6 +143,12 @@ type ClientSpec struct {
 type ArrivalSpec struct {
 	Process string   `yaml:"process"`
 	CV      *float64 `yaml:"cv,omitempty"`
+
+	// Optional MLE-fitted distribution parameters (ServeGen compatibility).
+	// When present, these override CV-based derivation in NewArrivalSampler.
+	// Only populated by `blis convert servegen` from trace columns 5-6.
+	Shape *float64 `yaml:"shape,omitempty"` // Gamma α or Weibull k
+	Scale *float64 `yaml:"scale,omitempty"` // Gamma θ or Weibull λ (in microseconds)
 }
 
 // DistSpec parameterizes a token length distribution.
