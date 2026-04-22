@@ -167,6 +167,33 @@ func TestLoadServeGenDataset_EmptyDictWindows_SkippedUntilValid(t *testing.T) {
 	assert.Equal(t, 0.3, outputPDF[100])
 }
 
+// TestLoadServeGenDataset_OutputEmptyDictWindow_Skipped tests the mirror asymmetric case:
+// when the output field is "{}" but input is valid, the window is correctly skipped.
+// This independently verifies the outputPDFStr != "{}" clause of the break condition.
+func TestLoadServeGenDataset_OutputEmptyDictWindow_Skipped(t *testing.T) {
+	// GIVEN a dataset with output="{}" followed by a valid window
+	dir := t.TempDir()
+	datasetJSON := `{
+		"100": {"input_tokens": "{100: 1.0}", "output_tokens": "{}"},
+		"200": {"input_tokens": "{100: 0.5, 200: 0.5}", "output_tokens": "{50: 0.7, 100: 0.3}"}
+	}`
+	path := filepath.Join(dir, "dataset.json")
+	require.NoError(t, os.WriteFile(path, []byte(datasetJSON), 0644))
+
+	// WHEN loading the dataset
+	inputPDF, outputPDF, err := loadServeGenDataset(path, &ServeGenDataSpec{})
+
+	// THEN the function succeeds and uses the first valid window (timestamp 200)
+	// Window 100 (input valid, output empty) is skipped
+	require.NoError(t, err, "should skip window with output={}")
+	assert.Len(t, inputPDF, 2, "input PDF should have 2 bins from window 200")
+	assert.Len(t, outputPDF, 2, "output PDF should have 2 bins from window 200")
+	assert.Equal(t, 0.5, inputPDF[100])
+	assert.Equal(t, 0.5, inputPDF[200])
+	assert.Equal(t, 0.7, outputPDF[50])
+	assert.Equal(t, 0.3, outputPDF[100])
+}
+
 // TestLoadServeGenDataset_AllEmptyDictWindows_ReturnsError tests that when ALL windows
 // contain empty dicts ("{}"), the loader returns the correct "no valid PDF windows" error
 // rather than falling through to the parser with misleading "empty PDF dictionary" error.
@@ -174,9 +201,9 @@ func TestLoadServeGenDataset_AllEmptyDictWindows_ReturnsError(t *testing.T) {
 	// GIVEN a dataset where every window has empty dicts
 	dir := t.TempDir()
 	datasetJSON := `{
-		"0": {"input_tokens": "{}", "output_tokens": "{}"},
-		"600": {"input_tokens": "{}", "output_tokens": "{}"},
-		"1200": {"input_tokens": "{}", "output_tokens": "{}"}
+		"100": {"input_tokens": "{}", "output_tokens": "{}"},
+		"200": {"input_tokens": "{}", "output_tokens": "{}"},
+		"300": {"input_tokens": "{}", "output_tokens": "{}"}
 	}`
 	path := filepath.Join(dir, "dataset.json")
 	require.NoError(t, os.WriteFile(path, []byte(datasetJSON), 0644))
