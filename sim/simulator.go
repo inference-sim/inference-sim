@@ -491,14 +491,18 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	sim.Metrics.CompletedRequests++
 	sim.Metrics.TTFTSum += req.FirstTokenTime
 
-	// Count decode tokens at completion time, not inline during each decode step.
-	// Inline counting double-counts when a request is preempted (ProgressIndex reset
-	// to 0) and re-runs: tokens from the aborted run are counted a second time.
-	// At completion: PI = InputLen + OutputLen - 1 (normal) or maxModelLen - 1 (capped),
-	// so PI - InputLen counts decode-step increments (= OutputLen - 1; the first output
-	// token is generated at prefill completion, not as a decode-step increment).
+	// Count output tokens at completion time (not inline per step) to avoid
+	// double-counting under preemption (ProgressIndex reset to 0 on eviction).
+	// PI - InputLen counts decode-step increments (= OutputLen - 1 for normal completion).
+	// Add 1 for the prefill-generated first token (#1097) when decodeTokens falls short
+	// of OutputLen. PD 1-output decode sub-requests are the exception: their PI_final
+	// lands at InputLen+1 (one step past the InputLen threshold), so decodeTokens==OutputLen
+	// already — the guard prevents double-counting in that case.
 	decodeTokens := int(req.ProgressIndex) - len(req.InputTokens)
-	if decodeTokens > 0 { // zero-output-token requests complete with PI == InputLen → decodeTokens == 0
+	if decodeTokens < len(req.OutputTokens) {
+		decodeTokens++ // prefill-generated first token (vLLM parity)
+	}
+	if decodeTokens > 0 {
 		sim.Metrics.TotalOutputTokens += decodeTokens
 	}
 
@@ -664,7 +668,10 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 				req.ITL = append(req.ITL, currStepAdvance+sim.latencyModel.OutputTokenProcessingTime())
 			}
 		}
-		if req.ProgressIndex == util.Len64(req.InputTokens) { // prefill complete, first token is generated
+		// !req.TTFTSet guard: fires exactly once per request lifetime.
+		// On preemption, ProgressIndex resets to 0 (batch_formation.go) but TTFTSet is
+		// preserved, preventing TTFT double-counting on re-prefill.
+		if req.ProgressIndex == util.Len64(req.InputTokens) && !req.TTFTSet {
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
 			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)

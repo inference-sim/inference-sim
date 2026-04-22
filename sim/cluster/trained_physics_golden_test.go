@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 	"github.com/inference-sim/inference-sim/sim/latency"
 	"github.com/inference-sim/inference-sim/sim/workload"
 	"gopkg.in/yaml.v3"
@@ -95,7 +96,7 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 		mu      sync.Mutex
 		updates = make(map[int]goldenExpected, len(ds.Experiments))
 	)
-	if *updateGolden {
+	if *testutil.UpdateGolden {
 		t.Cleanup(func() {
 			for i, expected := range updates {
 				ds.Experiments[i].Expected = expected
@@ -246,7 +247,7 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 			}
 
 			// ── Update mode: record computed values, skip assertions ───────
-			if *updateGolden {
+			if *testutil.UpdateGolden {
 				mu.Lock()
 				updates[i] = goldenExpected{
 					CompletedRequests: m.CompletedRequests,
