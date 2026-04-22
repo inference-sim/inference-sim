@@ -16,6 +16,7 @@ import (
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/latency"
+	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -472,6 +473,97 @@ func TestReplayCmd_HasResultsPathFlag(t *testing.T) {
 	}
 }
 
+// TestRunCmd_TimeoutFlag_RegisteredWithDefaultZero verifies that --timeout is registered
+// on runCmd with a default of 0 (no timeout). Default 0 means synthetic workloads do not
+// silently time out and inflate throughput metrics (#1127).
+func TestRunCmd_TimeoutFlag_RegisteredWithDefaultZero(t *testing.T) {
+	f := runCmd.Flags().Lookup("timeout")
+	if f == nil {
+		t.Fatal("flag --timeout not found on runCmd")
+	}
+	if f.DefValue != "0" {
+		t.Errorf("--timeout default: got %q, want \"0\" (no timeout for synthetic workloads)", f.DefValue)
+	}
+}
+
+// TestRunCmd_TimeoutFlag_NotOnReplayOrObserve verifies that --timeout is NOT registered
+// on replayCmd or observeCmd. Those commands target real-server interactions and
+// retain the 300s client timeout baked into their HTTP clients (#1127).
+func TestRunCmd_TimeoutFlag_NotOnReplayOrObserve(t *testing.T) {
+	if replayCmd.Flags().Lookup("timeout") != nil {
+		t.Error("replayCmd must NOT have --timeout flag; replay retains 300s HTTP client timeout")
+	}
+}
+
+// TestApplyTimeoutToSpec_SynthesizedSpec verifies the core behavioral contract of
+// applyTimeoutToSpec: all ClientSpec.Timeout fields are set to the specified value,
+// and a zero value sets an explicit no-timeout pointer (not nil).
+//
+// GIVEN a synthesized spec with clients having nil Timeout
+// WHEN applyTimeoutToSpec is called with a non-zero timeout
+// THEN all clients receive a Timeout pointer with the converted microsecond value
+func TestApplyTimeoutToSpec_SynthesizedSpec(t *testing.T) {
+	spec := buildSynthesizedSpec()
+
+	applyTimeoutToSpec(spec, 60)
+
+	for i, c := range spec.Clients {
+		if c.Timeout == nil {
+			t.Errorf("client[%d] Timeout is nil after applyTimeoutToSpec; want non-nil", i)
+			continue
+		}
+		want := int64(60_000_000)
+		if *c.Timeout != want {
+			t.Errorf("client[%d] Timeout = %d, want %d (60s in µs)", i, *c.Timeout, want)
+		}
+	}
+}
+
+// TestApplyTimeoutToSpec_ZeroMeansNoTimeout verifies that timeout=0 results in an
+// explicit no-timeout pointer (*int64 pointing to 0), not nil.
+// nil Timeout for session clients would trigger the 300s default in computeDeadline,
+// defeating the intent of --timeout 0 (#1127).
+//
+// GIVEN a synthesized spec
+// WHEN applyTimeoutToSpec is called with timeout=0
+// THEN all clients have a non-nil Timeout pointer pointing to 0
+func TestApplyTimeoutToSpec_ZeroMeansNoTimeout(t *testing.T) {
+	spec := buildSynthesizedSpec()
+
+	applyTimeoutToSpec(spec, 0)
+
+	for i, c := range spec.Clients {
+		if c.Timeout == nil {
+			t.Errorf("client[%d] Timeout is nil after applyTimeoutToSpec(0); want explicit *0 to suppress 300s default", i)
+			continue
+		}
+		if *c.Timeout != 0 {
+			t.Errorf("client[%d] Timeout = %d, want 0 (explicit no-timeout)", i, *c.Timeout)
+		}
+	}
+}
+
+// TestApplyTimeoutToSpec_CohortSpec verifies that applyTimeoutToSpec also sets
+// Timeout on CohortSpec entries (cohorts are expanded to clients during generation).
+func TestApplyTimeoutToSpec_CohortSpec(t *testing.T) {
+	spec := buildSynthesizedSpec()
+	// Add a cohort to simulate a spec with cohort-based clients.
+	spec.Cohorts = append(spec.Cohorts, buildTestCohort())
+
+	applyTimeoutToSpec(spec, 120)
+
+	wantUs := int64(120_000_000)
+	for i, coh := range spec.Cohorts {
+		if coh.Timeout == nil {
+			t.Errorf("cohort[%d] Timeout is nil; want non-nil", i)
+			continue
+		}
+		if *coh.Timeout != wantUs {
+			t.Errorf("cohort[%d] Timeout = %d, want %d", i, *coh.Timeout, wantUs)
+		}
+	}
+}
+
 // TestTryAutoCalcKVBlocksBlackbox_ErrorPaths tests all error paths in
 // tryAutoCalcKVBlocksBlackbox. Each error path should return (0, false) and
 // emit a warning (not tested here — warnings go to logrus stderr).
@@ -881,4 +973,21 @@ func TestRunCmd_ModelAutoscalerIntervalUs_FlagRegistered(t *testing.T) {
 	defVal, err := strconv.ParseFloat(flag.DefValue, 64)
 	assert.NoError(t, err, "default must be a valid float64")
 	assert.Equal(t, 0.0, defVal, "default must be 0 (disabled)")
+}
+
+// buildSynthesizedSpec returns a minimal WorkloadSpec as produced by SynthesizeFromDistribution,
+// with two clients and no cohorts, for use in applyTimeoutToSpec tests.
+func buildSynthesizedSpec() *workload.WorkloadSpec {
+	return &workload.WorkloadSpec{
+		Version: "2",
+		Clients: []workload.ClientSpec{
+			{ID: "client-0"},
+			{ID: "client-1"},
+		},
+	}
+}
+
+// buildTestCohort returns a minimal CohortSpec with no Timeout set.
+func buildTestCohort() workload.CohortSpec {
+	return workload.CohortSpec{ID: "cohort-0"}
 }

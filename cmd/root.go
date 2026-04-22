@@ -165,6 +165,9 @@ var (
 	prefillMaxModelLen    int64
 	decodeMaxModelLen     int64
 
+	// per-request timeout override for blis run (seconds; 0 = no timeout)
+	requestTimeoutSecs int
+
 	// output file paths
 	metricsPath string // File to write MetricsOutput JSON for blis run (--metrics-path)
 	resultsPath string // File to write []SimResult JSON for blis replay (--results-path)
@@ -982,6 +985,21 @@ func tryAutoCalcKVBlocksBlackbox(model, modelConfigFolder, defaultsFilePath, hwC
 	return autoBlocks, true
 }
 
+// applyTimeoutToSpec sets ClientSpec.Timeout and CohortSpec.Timeout on every entry in spec.
+// timeoutSecs=0 sets an explicit *int64(0) (no deadline); timeoutSecs>0 converts to µs.
+// Explicit zero is required so computeDeadline does not fall back to the 300s session default.
+func applyTimeoutToSpec(spec *workload.WorkloadSpec, timeoutSecs int) {
+	us := int64(timeoutSecs) * 1_000_000
+	for i := range spec.Clients {
+		t := us
+		spec.Clients[i].Timeout = &t
+	}
+	for i := range spec.Cohorts {
+		t := us
+		spec.Cohorts[i].Timeout = &t
+	}
+}
+
 // runCmd executes the simulation using parameters from CLI flags
 var runCmd = &cobra.Command{
 	Use:   "run",
@@ -1245,6 +1263,13 @@ var runCmd = &cobra.Command{
 				OutputTokensMin: wl.OutputTokensMin, OutputTokensMax: wl.OutputTokensMax,
 			}, rate, numRequests)
 			spec.Seed = seed
+		}
+
+		// Apply per-request timeout to all clients.
+		// For synthesized specs, always apply (default 0 = no timeout).
+		// For file-loaded specs, only apply when the flag is explicitly set.
+		if workloadSpecPath == "" || cmd.Flags().Changed("timeout") {
+			applyTimeoutToSpec(spec, requestTimeoutSecs)
 		}
 
 		// Resolve maxRequests: spec.NumRequests as default, CLI --num-requests overrides
@@ -1598,6 +1623,20 @@ var runCmd = &cobra.Command{
 			rawMetrics.PD.MeanTransferQueueDepth = cs.MeanTransferQueueDepth()
 		}
 
+		// Warn when any requests timed out: a deadline shorter than queue wait
+		// compresses SimEndedTime and inflates tokens_per_sec (#1127).
+		if rawMetrics.TimedOutRequests > 0 {
+			agg := cs.AggregatedMetrics()
+			injected := agg.CompletedRequests + agg.StillQueued + agg.StillRunning + agg.DroppedUnservable + agg.TimedOutRequests
+			if requestTimeoutSecs > 0 {
+				logrus.Warnf("%d of %d requests timed out (%ds deadline). Throughput metric (tokens_per_sec) may be inflated. Use --timeout 0 to disable, or increase the deadline.",
+					rawMetrics.TimedOutRequests, injected, requestTimeoutSecs)
+			} else {
+				logrus.Warnf("%d of %d requests timed out. Throughput metric (tokens_per_sec) may be inflated.",
+					rawMetrics.TimedOutRequests, injected)
+			}
+		}
+
 		if fitnessWeights != "" {
 			weights, err := cluster.ParseFitnessWeights(fitnessWeights)
 			if err != nil {
@@ -1833,6 +1872,7 @@ func init() {
 	runCmd.Flags().IntVar(&outputTokensMin, "output-tokens-min", defaultOutputMin, "Min Output Token Count")
 	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", defaultOutputMax, "Max Output Token Count")
 	runCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "Path to YAML workload specification file (overrides --workload)")
+	runCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 0, "Per-request timeout in seconds (0 = no timeout). When non-zero, requests exceeding this deadline are counted as timed out. Default 0 avoids silently inflating throughput metrics in synthetic workloads.")
 
 	// Run-specific export
 	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")
