@@ -406,9 +406,9 @@ func TestStabilizationWindowFilter(t *testing.T) {
 		if err := cs.Run(); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
-		// t=0: scale-up timer set, suppressed. t=60s: scale-up timer cleared (direction flip).
-		// t=120s: scale-down timer set, suppressed. t=180s: elapsed=60s<120s, suppressed.
-		// t=240s: scale-down elapsed=120s → passed, timer reset.
+		// t=0: scale-up timer set, suppressed. t=60s: elapsed=60s<120s, suppressed.
+		// t=120s: scale-up timer cleared (direction flip); scale-down timer set, suppressed.
+		// t=180s: scale-down elapsed=60s<120s, suppressed. t=240s: elapsed=120s → passed.
 		// t=300s: scale-down timer set, suppressed. t=360s: suppressed.
 		// → 0 scale-up Apply(), 1 scale-down Apply() (at 240s).
 		if scaleUpApplied != 0 {

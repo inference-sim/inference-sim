@@ -113,7 +113,7 @@ A researcher studying oscillation behavior wants to configure HPA-aligned stabil
 - What happens when a model has zero active replicas? Collector produces empty Replicas list; Analyzer returns all-zero result; no scale-down is emitted.
 - What happens when GPU inventory is fully exhausted? GreedyEngine emits no scale-up decisions for affected models; UnlimitedEngine ignores inventory and still emits decisions. No panic or silent failure.
 - What happens when both RequiredCapacity and SpareCapacity are non-zero for the same model? Neither should be non-zero simultaneously — Analyzer implementations must ensure scale-up and scale-down signals are mutually exclusive.
-- What happens when ActuationDelay is sampled as zero? The actuation event fires in the same tick as the scaling tick; causality is preserved.
+- What happens when HPAScrapeDelay is sampled as zero? The actuation event fires in the same tick as the scaling tick; causality is preserved.
 - What happens when a Draining instance's model receives another scale-down decision? The Draining instance is already excluded from routing; the decision targets a different active instance.
 - What happens when a placement fails because capacity is unavailable? A PendingPlacement is queued; no ScaleDecision is silently dropped.
 - What happens when k2 (compute-bound) cannot be derived? V2SaturationAnalyzer falls back to k1 (memory-bound) as the effective capacity.
