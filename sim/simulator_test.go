@@ -2077,7 +2077,7 @@ func TestNewSimulator_NonRooflineZeroNumHeads_Succeeds(t *testing.T) {
 // WHEN the request undergoes multi-chunk prefill (4 chunks: 64,64,64,8)
 // THEN the request completes normally (peak ProgressIndex=249 < 500),
 //
-//	LengthCappedRequests==0, TTFT recorded, TotalOutputTokens==49.
+//	LengthCappedRequests==0, TTFT recorded, TotalOutputTokens==50.
 func TestSimulator_ChunkedPrefill_MaxModelLen_NoSpuriousCap(t *testing.T) {
 	cfg := SimConfig{
 		Horizon:             10_000_000,
@@ -2868,7 +2868,7 @@ func TestTotalOutputTokens_Conservation_WithPreemption(t *testing.T) {
 	}
 	sim := mustNewSimulator(t, cfg)
 
-	// Two requests sized to force preemption: B fills cache during prefill, evicting A.
+	// Two requests sized to force preemption: A fills cache during prefill, evicting B.
 	reqA := &Request{
 		ID:          "A",
 		InputTokens: GenerateRandomTokenIDs(sim.WorkloadRNG(), 16),
