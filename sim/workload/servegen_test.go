@@ -165,6 +165,43 @@ func TestLoadServeGenDataset_NonNumericKey_SkippedWithWarning(t *testing.T) {
 	assert.Contains(t, buf.String(), "metadata", "should warn about non-numeric key 'metadata'")
 }
 
+func TestParseServeGenTrace_WithShapeScale(t *testing.T) {
+	// GIVEN a trace CSV with 6 columns including shape/scale
+	tmpfile, err := os.CreateTemp("", "trace-*.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	// Write test data with high CV and fitted shape/scale
+	content := "199200,22.46,173.81,Weibull,0.0575,0.000573\n"
+	if _, err := tmpfile.Write([]byte(content)); err != nil {
+		t.Fatal(err)
+	}
+	tmpfile.Close()
+
+	// WHEN parsing the trace
+	rows, err := parseServeGenTrace(tmpfile.Name())
+
+	// THEN shape and scale are parsed correctly
+	if err != nil {
+		t.Fatalf("parseServeGenTrace failed: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	row := rows[0]
+	if row.cv != 173.81 {
+		t.Errorf("expected cv=173.81, got %f", row.cv)
+	}
+	if row.shapeParam != 0.0575 {
+		t.Errorf("expected shapeParam=0.0575, got %f", row.shapeParam)
+	}
+	if row.scaleParam != 0.000573 {
+		t.Errorf("expected scaleParam=0.000573, got %f", row.scaleParam)
+	}
+}
+
 func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 	dir := t.TempDir()
 	// Create chunk-0-trace.csv

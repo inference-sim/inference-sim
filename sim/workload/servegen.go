@@ -76,6 +76,8 @@ type serveGenTraceRow struct {
 	rate         float64
 	cv           float64
 	pattern      string // "Gamma", "Weibull", or empty
+	shapeParam   float64
+	scaleParam   float64
 }
 
 // loadServeGenData loads ServeGen data files and populates the spec's Clients list.
@@ -227,11 +229,30 @@ func parseServeGenTrace(path string) ([]serveGenTraceRow, error) {
 		}
 		pattern := strings.TrimSpace(record[3])
 
+		// Parse shape and scale parameters (columns 5-6)
+		var shapeParam, scaleParam float64
+		if len(record) >= 6 {
+			shape, err := strconv.ParseFloat(strings.TrimSpace(record[4]), 64)
+			if err != nil {
+				skippedRows++
+				continue
+			}
+			scale, err := strconv.ParseFloat(strings.TrimSpace(record[5]), 64)
+			if err != nil {
+				skippedRows++
+				continue
+			}
+			shapeParam = shape
+			scaleParam = scale
+		}
+
 		rows = append(rows, serveGenTraceRow{
 			startTimeSec: startTime,
 			rate:         rate,
 			cv:           cv,
 			pattern:      pattern,
+			shapeParam:   shapeParam,
+			scaleParam:   scaleParam,
 		})
 	}
 	if skippedRows > 0 {
