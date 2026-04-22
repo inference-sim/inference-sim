@@ -230,7 +230,11 @@ func NewArrivalSampler(spec ArrivalSpec, ratePerMicrosecond float64) ArrivalSamp
 	case "gamma":
 		// Priority 1: Use explicit MLE-fitted parameters if provided (ServeGen)
 		if spec.Shape != nil && spec.Scale != nil {
-			return &GammaSampler{shape: *spec.Shape, scale: *spec.Scale}
+			if *spec.Shape <= 0 || *spec.Scale <= 0 {
+				logrus.Warnf("NewArrivalSampler: explicit shape/scale must be positive (shape=%.4f, scale=%.4f); deriving from CV instead", *spec.Shape, *spec.Scale)
+			} else {
+				return &GammaSampler{shape: *spec.Shape, scale: *spec.Scale}
+			}
 		}
 		// Priority 2: Derive from CV (existing logic)
 		cv := 1.0
@@ -253,7 +257,11 @@ func NewArrivalSampler(spec ArrivalSpec, ratePerMicrosecond float64) ArrivalSamp
 	case "weibull":
 		// Priority 1: Use explicit MLE-fitted parameters if provided (ServeGen)
 		if spec.Shape != nil && spec.Scale != nil {
-			return &WeibullSampler{shape: *spec.Shape, scale: *spec.Scale}
+			if *spec.Shape <= 0 || *spec.Scale <= 0 {
+				logrus.Warnf("NewArrivalSampler: explicit shape/scale must be positive (shape=%.4f, scale=%.4f); deriving from CV instead", *spec.Shape, *spec.Scale)
+			} else {
+				return &WeibullSampler{shape: *spec.Shape, scale: *spec.Scale}
+			}
 		}
 		// Priority 2: Derive from CV (existing logic)
 		cv := 1.0
