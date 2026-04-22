@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +19,7 @@ import (
 )
 
 const defaultMaxOutputTokens = 2048
+const defaultHTTPTimeoutSeconds = 300
 
 // RealClient sends requests to an OpenAI-compatible inference server.
 type RealClient struct {
@@ -36,6 +39,19 @@ func WithAPIFormat(format string) RealClientOption {
 	return func(c *RealClient) { c.apiFormat = format }
 }
 
+// WithHTTPTimeout sets the HTTP client timeout for requests.
+func WithHTTPTimeout(d time.Duration) RealClientOption {
+	return func(c *RealClient) { c.httpClient.Timeout = d }
+}
+
+// isTimeoutError returns true if err is a timeout or deadline-exceeded error.
+func isTimeoutError(err error) bool {
+	if os.IsTimeout(err) {
+		return true
+	}
+	return errors.Is(err, context.DeadlineExceeded)
+}
+
 // NewRealClient creates a new real mode HTTP client.
 func NewRealClient(baseURL, apiKey, modelName, serverType string, opts ...RealClientOption) *RealClient {
 	c := &RealClient{
@@ -44,7 +60,7 @@ func NewRealClient(baseURL, apiKey, modelName, serverType string, opts ...RealCl
 		modelName:  modelName,
 		serverType: serverType,
 		apiFormat:  "completions",
-		httpClient: &http.Client{Timeout: 5 * time.Minute},
+		httpClient: &http.Client{Timeout: defaultHTTPTimeoutSeconds * time.Second},
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -168,8 +184,13 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		record.Status = "error"
-		record.ErrorMessage = fmt.Sprintf("HTTP error: %v", err)
+		if isTimeoutError(err) {
+			record.Status = "timeout"
+			record.ErrorMessage = fmt.Sprintf("HTTP timeout: %v", err)
+		} else {
+			record.Status = "error"
+			record.ErrorMessage = fmt.Sprintf("HTTP error: %v", err)
+		}
 		return record, nil
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -238,8 +259,13 @@ func (c *RealClient) handleNonStreamingResponse(resp *http.Response, record *Req
 	fbr := &firstByteReader{r: resp.Body}
 	bodyData, err := io.ReadAll(fbr)
 	if err != nil {
-		record.Status = "error"
-		record.ErrorMessage = fmt.Sprintf("read error: %v", err)
+		if isTimeoutError(err) {
+			record.Status = "timeout"
+			record.ErrorMessage = fmt.Sprintf("read timeout: %v", err)
+		} else {
+			record.Status = "error"
+			record.ErrorMessage = fmt.Sprintf("read error: %v", err)
+		}
 		return record, nil
 	}
 	now := time.Now().UnixMicro()
@@ -328,6 +354,13 @@ func (c *RealClient) handleStreamingResponse(resp *http.Response, record *Reques
 	}
 
 	if err := scanner.Err(); err != nil {
+		if isTimeoutError(err) {
+			record.Status = "timeout"
+			record.ErrorMessage = fmt.Sprintf("streaming timeout: %v", err)
+		} else {
+			record.Status = "error"
+			record.ErrorMessage = fmt.Sprintf("streaming error: %v", err)
+		}
 		logrus.Warnf("observe: request %d: SSE scanner error: %v", record.RequestID, err)
 	}
 

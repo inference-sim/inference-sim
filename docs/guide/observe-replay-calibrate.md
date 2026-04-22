@@ -103,6 +103,7 @@ Four input modes are available. At least one must be provided per invocation:
 | `--api-format` | `string` | `"completions"` | API format: `completions` or `chat` |
 | `--unconstrained-output` | `bool` | `false` | Do not set `max_tokens` (let server decide output length) |
 | `--min-tokens` | `int` | `0` | Set `min_tokens` in request body; requests server to generate at least N tokens before EOS. Set equal to `--output-tokens` for exact output length control (0 = omit). Compatible with `--unconstrained-output`: `min_tokens` is still sent, `max_tokens` is still omitted |
+| `--timeout` | `int` | `300` | HTTP request timeout in seconds (per request); increase for slow servers or large-prefill workloads |
 | `--rtt-ms` | `float64` | `0` | Measured network round-trip time in milliseconds |
 | `--defaults-filepath` | `string` | `"defaults.yaml"` | Path to `defaults.yaml` containing preset definitions (preset mode only) |
 | `--record-itl` | `bool` | `false` | Record per-chunk timestamps for ITL calibration (streaming only; use with `--itl-output`) |
