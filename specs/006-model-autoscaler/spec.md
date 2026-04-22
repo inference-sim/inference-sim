@@ -21,8 +21,8 @@ A researcher configuring a BLIS simulation wants to enable dynamic replica manag
 1. **Given** a simulation with `ModelAutoscalerIntervalUs = 0`, **When** the simulation runs, **Then** no scaling tick is ever scheduled and no autoscaler logic executes.
 2. **Given** a simulation with `ModelAutoscalerIntervalUs = T`, **When** the simulation runs past time T, **Then** a scaling tick fires at `t=0`, `t=T`, `t=2T`.
 3. **Given** a no-op pipeline where all interfaces return empty/zero results, **When** the simulation runs, **Then** the output is byte-identical to a run without the autoscaler (determinism preserved).
-4. **Given** `ActuationDelay = constant(0)`, **When** a tick fires, **Then** the actuation event fires in the same simulation tick.
-5. **Given** `ActuationDelay = constant(30s)`, **When** a tick fires at time T, **Then** the actuation event fires at time T+30s.
+4. **Given** `HPAScrapeDelay = constant(0)`, **When** a tick fires, **Then** the actuation event fires in the same simulation tick.
+5. **Given** `HPAScrapeDelay = constant(30s)`, **When** a tick fires at time T, **Then** the actuation event fires at time T+30s.
 
 ---
 
@@ -91,19 +91,20 @@ A researcher running a multi-variant experiment (e.g., A100 and H100 nodes in th
 
 ---
 
-### User Story 5 - Cooldown and Flap Prevention (Priority: P3) ✅ Implemented in 1C-1a
+### User Story 5 - Stabilization Window / Flap Prevention (Priority: P3) ✅ Implemented in 1C-1a
 
-A researcher studying oscillation behavior wants to configure scale-up and scale-down cooldown windows so that the autoscaler does not immediately reverse a scaling decision, matching the stabilization window behavior in HPA/KEDA.
+A researcher studying oscillation behavior wants to configure HPA-aligned stabilization windows so that the autoscaler only acts once a scaling signal has been consistently present — preventing premature action on transient load spikes, matching the stabilization window behavior in Kubernetes HPA.
 
-**Why this priority**: Without cooldown, the pipeline may oscillate rapidly. Cooldown is the primary mechanism for preventing flapping and is required for any meaningful scaling experiment.
+**Why this priority**: Without a stabilization window, the pipeline acts on the first tick a signal appears, which can cause oscillation under bursty load. The stabilization window is the primary mechanism for preventing flapping.
 
-**Independent Test**: Configure ScaleUpCooldownUs = 60s. Trigger two consecutive scale-up signals for the same model within 60s. Verify only the first results in a ScaleDecision forwarded to the Actuator.
+**Independent Test**: Configure ScaleUpStabilizationWindowUs = 60s with a 30s tick interval. Signal present at ticks T=0, T=30s, T=60s. Verify: no ScaleDecision forwarded at T=0 or T=30s (window not elapsed); ScaleDecision forwarded at T=60s (elapsed == window).
 
 **Acceptance Scenarios**:
 
-1. **Given** a scale-up decision was applied for model M at time T, **When** the next tick fires at T + 30s with ScaleUpCooldownUs = 60s, **Then** the scale-up decision is suppressed even if RequiredCapacity > 0.
-2. **Given** a scale-up decision was applied for model M at time T, **When** the next tick fires at T + 90s with ScaleUpCooldownUs = 60s, **Then** a new scale-up decision is forwarded if RequiredCapacity > 0.
-3. **Given** ScaleUpCooldownUs = 0, **When** consecutive ticks produce scale-up signals, **Then** all decisions are forwarded without suppression.
+1. **Given** scale-up signal first appears for model M at time T with ScaleUpStabilizationWindowUs = 60s, **When** the next tick fires at T + 30s and signal is still present, **Then** the decision is suppressed (elapsed 30s < 60s window).
+2. **Given** scale-up signal first appeared for model M at time T with ScaleUpStabilizationWindowUs = 60s, **When** the tick fires at T + 60s and signal is still present, **Then** a scale-up ScaleDecision is forwarded (elapsed == window).
+3. **Given** scale-up signal first appears at T, disappears at T+30s, and reappears at T+60s with ScaleUpStabilizationWindowUs = 60s, **Then** the timer resets at T+30s; the decision is not forwarded until T+120s.
+4. **Given** ScaleUpStabilizationWindowUs = 0, **When** consecutive ticks produce scale-up signals, **Then** all decisions are forwarded without suppression.
 
 ---
 
@@ -124,9 +125,9 @@ A researcher studying oscillation behavior wants to configure scale-up and scale
 **Pipeline Orchestration**
 
 - **FR-001**: The simulator MUST fire the autoscaling pipeline at a configurable interval (`ModelAutoscalerIntervalUs`); when the interval is zero, no tick is ever scheduled.
-- **FR-002**: The pipeline MUST execute in order: Collector → Analyzer (per model) → Engine → schedule actuation event after `ActuationDelay` → Actuator applies decisions.
+- **FR-002**: The pipeline MUST execute in order: Collector → Analyzer (per model) → Engine → schedule actuation event after `HPAScrapeDelay` → Actuator applies decisions.
 - **FR-003**: The pipeline MUST support per-model scale-up and scale-down cooldown windows; a decision suppressed by cooldown is discarded silently (not forwarded to Actuator).
-- **FR-004**: The actuation step MUST be separated from the decision step by a configurable delay (`ActuationDelay`), which defaults to zero for determinism compatibility.
+- **FR-004**: The actuation step MUST be separated from the decision step by a configurable delay (`HPAScrapeDelay`), which defaults to zero for determinism compatibility.
 
 **Collector**
 
@@ -172,7 +173,7 @@ A researcher studying oscillation behavior wants to configure scale-up and scale
 ### Measurable Outcomes
 
 - **SC-001**: A simulation with the minimal viable pipeline (DefaultCollector → V2SaturationAnalyzer → UnlimitedEngine → DirectActuator) runs to completion without error on any workload configuration that runs today without the autoscaler.
-- **SC-002**: With `ActuationDelay = 0` and a no-op pipeline, simulation output is byte-identical to a run without the autoscaler enabled (zero regression on existing determinism).
+- **SC-002**: With `HPAScrapeDelay = 0` and a no-op pipeline, simulation output is byte-identical to a run without the autoscaler enabled (zero regression on existing determinism).
 - **SC-003**: The full pipeline (tick → collect → analyze × N models → optimize → actuate) completes within each scaling tick without delaying the simulation clock; autoscaler overhead does not appear in simulated time.
 - **SC-004**: A controlled scale-up experiment — where load is driven above the saturation threshold — results in at least one new replica being placed within two scaling ticks of the threshold being exceeded.
 - **SC-005**: A controlled scale-down experiment — where load drops and stays below the spare capacity threshold for the required hysteresis period — results in at least one replica entering drain state.
@@ -187,8 +188,8 @@ A researcher studying oscillation behavior wants to configure scale-up and scale
 - Four interfaces: Collector, Analyzer, Engine, Actuator
 - All shared data types: ModelSignals, ReplicaMetrics, AnalyzerResult, VariantCapacity, ScaleDecision, GPUInventory, VariantSpec
 - Pipeline event types: ScalingTickEvent, ScaleActuationEvent
-- Pipeline orchestration wiring: tick handler, actuation event handler, cooldown tracking
-- Configuration fields: ModelAutoscalerIntervalUs, ActuationDelay, ScaleUpCooldownUs, ScaleDownCooldownUs
+- Pipeline orchestration wiring: tick handler, actuation event handler, stabilization window tracking
+- Configuration fields: ModelAutoscalerIntervalUs, HPAScrapeDelay, ScaleUpStabilizationWindowUs, ScaleDownStabilizationWindowUs
 - Reference implementations: DefaultCollector, V2SaturationAnalyzer, GreedyEngine, UnlimitedEngine, DirectActuator
 - Cross-cutting invariants: INV-A1 through INV-A7, INV-1 extension with drained_dropped terminal state
 - Integration test: full pipeline end-to-end with a simulated cluster
@@ -212,4 +213,4 @@ A researcher studying oscillation behavior wants to configure scale-up and scale
 - Cooldown is tracked in the pipeline orchestrator (cluster.go tick handler), not inside any interface, so Engine and Analyzer remain stateless and independently testable.
 - Each Analyzer is called once per model per tick. There is no batch call across models; the Engine is the cross-model layer.
 - The minimal viable pipeline for WVA team validation is: DefaultCollector → V2SaturationAnalyzer → UnlimitedEngine → DirectActuator. GreedyEngine is additive (1C-1d). QueueingModelAnalyzer is a future addition (#954).
-- ActuationDelay defaults to zero. This preserves byte-identical output with existing tests (INV-6 determinism) and allows the delay to be introduced explicitly for oscillation research.
+- HPAScrapeDelay defaults to zero. This preserves byte-identical output with existing tests (INV-6 determinism) and allows the delay to be introduced explicitly for oscillation research.

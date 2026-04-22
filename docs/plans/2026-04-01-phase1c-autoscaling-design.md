@@ -58,7 +58,7 @@ BLIS can simulate a multi-instance cluster with admission control, routing, and 
               └────────────┬────────────┘
                            │  []ScaleDecision
                            │
-              ActuationDelay elapsed
+              HPAScrapeDelay elapsed
                            │
                            ▼
               ┌─────────────────────────┐
@@ -127,7 +127,7 @@ AnalyzerResult                   // per model, aggregated from replica states
   Variant  VariantSpec
   Delta    int          // +N = add replicas, -N = remove replicas
     │
-    │ (ActuationDelay elapses)
+    │ (HPAScrapeDelay elapses)
     │
     │ Actuator.Apply()
     ▼
@@ -206,8 +206,8 @@ WVA delegates cooldown to Kubernetes' reconciliation stabilization window. BLIS 
 
 ```go
 // In DeploymentConfig:
-ScaleUpCooldownUs   float64 // min sim-time between scale-up decisions per model (0 = disabled)
-ScaleDownCooldownUs float64 // min sim-time between scale-down decisions per model (0 = disabled)
+ScaleUpStabilizationWindowUs   float64 // HPA scale-up stabilization window in μs; 0 = pass immediately
+ScaleDownStabilizationWindowUs float64 // HPA scale-down stabilization window in μs; 0 = pass immediately
 ```
 
 The handler tracks `lastScaleUpAt[modelID]` and `lastScaleDownAt[modelID]`. A `ScaleDecision` from the Engine is suppressed (not forwarded to Actuator) if `now - lastScaleAt[modelID] < CooldownUs`. The cooldown timestamp is recorded when the decision passes the cooldown filter and is forwarded to ScaleActuationEvent (not on actuation).
@@ -220,7 +220,7 @@ WVA's actuator emits a Prometheus metric; HPA/KEDA reads it and calls the Kubern
 
 | Field | Models | Typical range |
 |-------|--------|---------------|
-| `ActuationDelay` | HPA/KEDA scrape + eval lag (WVA → scale API) | 15s–90s |
+| `HPAScrapeDelay` | HPA/KEDA scrape + eval lag (WVA → scale API) | 15s–90s |
 | `NodeProvisioningDelayUs` | VM boot time (Karpenter) | 30s–5min |
 | `InstanceLoadingDelayUs` | Model weight load onto GPU | 10s–2min |
 
@@ -229,7 +229,7 @@ ScalingTickEvent
   → Collector.Collect()
   → Analyzer.Analyze() per model
   → Engine.Optimize()
-  → ScaleActuationEvent scheduled at (now + ActuationDelay)
+  → ScaleActuationEvent scheduled at (now + HPAScrapeDelay)
 
 ScaleActuationEvent
   → Actuator.Apply()
@@ -240,8 +240,8 @@ ScaleActuationEvent
                 → placement retried
 ```
 
-`ActuationDelay = 0` (default) preserves all existing test output (INV-6).  
-`ActuationDelay > 0` enables oscillation research (H-Oscillation in Phase 1D).
+`HPAScrapeDelay = 0` (default) preserves all existing test output (INV-6).  
+`HPAScrapeDelay > 0` enables oscillation research (H-Oscillation in Phase 1D).
 
 ---
 
@@ -252,10 +252,10 @@ ScaleActuationEvent
 | **INV-A1** (instance conservation) | `active + draining + loading == sum(ScaleDecisions applied) - terminated` at all times |
 | **INV-A2** (no silent drops) | Every `PlacementEngine.TryPlace()` failure produces a `PendingPlacement`. No `ScaleDecision` is silently discarded. |
 | **INV-A3** (GPU conservation) | INV-4: `free + allocated == total` per node after every add, remove, place, and drain. |
-| **INV-A4** (actuation ordering) | With `ActuationDelay > 0`, no placement fires before `decision_time + sampled_delay`. INV-5 (causality) is preserved. |
+| **INV-A4** (actuation ordering) | With `HPAScrapeDelay > 0`, no placement fires before `decision_time + sampled_delay`. INV-5 (causality) is preserved. |
 | **INV-A5** (drain completeness) | Every instance that enters `Draining` eventually reaches `Terminated`. No instance stranded. Pairs with INV-11. |
 | **INV-A6** (analyzer aggregation) | `sum(VariantCapacity.Supply) == AnalyzerResult.TotalSupply` and `sum(VariantCapacity.Demand) == AnalyzerResult.TotalDemand` for every result. |
-| **INV-A7** (cooldown ordering) | No scale-up `ScaleDecision` is forwarded to the Actuator for model M within `ScaleUpCooldownUs` of the previous scale-up for M. Same for scale-down. |
+| **INV-A7** (stabilization window gate) | A scale-up `ScaleDecision` for model M is forwarded to the Actuator only after the scale-up signal has been continuously present for `ScaleUpStabilizationWindowUs`. Timer resets if the signal disappears. Window=0 passes on first signal. Same semantics for scale-down with `ScaleDownStabilizationWindowUs`. |
 
 **INV-1 interaction with drain policies:**
 
@@ -284,7 +284,7 @@ Two drain policies add new terms:
 | `pkg/solver/solver.go` SolveUnlimited — separable greedy | `UnlimitedEngine` (#new) |
 | `pkg/solver` TODO: MIP solver | Future `Engine` implementation — Phase 2 OpenEvolve target |
 | `internal/actuator/direct_actuator.go` — calls K8s scale subresource | `DirectActuator` (calls `PlacementEngine` directly) |
-| HPA/KEDA scrape + eval lag | `ActuationDelay` distribution (#742) |
+| HPA/KEDA scrape + eval lag | `HPAScrapeDelay` distribution (#742) |
 | K8s `terminationGracePeriodSeconds` | `WaitDrain` (#910) |
 | Pod preStop / service mesh drain | `RedirectDrain` (#911) |
 | SIGKILL | `ImmediateDrain` (#910) |

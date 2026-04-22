@@ -42,9 +42,9 @@
 
 ---
 
-## Decision 4: ActuationDelay uses existing DelaySpec
+## Decision 4: HPAScrapeDelay uses existing DelaySpec
 
-**Decision**: `DeploymentConfig.ActuationDelay` is of type `DelaySpec` (existing, in `infra_config.go`), not a new `DistributionSpec` type.
+**Decision**: `DeploymentConfig.HPAScrapeDelay` is of type `DelaySpec` (existing, in `infra_config.go`), not a new `DistributionSpec` type.
 
 **Rationale**: The design doc uses "DistributionSpec" as a conceptual name for a configurable delay distribution. The existing `DelaySpec{Mean, Stddev}` with Gaussian sampling already serves this purpose and is used for `NodePoolConfig.ProvisioningDelay` and `InstanceLifecycleConfig.LoadingDelay`. Introducing a new type would be duplicate code. `DelaySpec.IsZero()` directly implements the "zero = deterministic no-delay" semantic needed for INV-6 compatibility.
 

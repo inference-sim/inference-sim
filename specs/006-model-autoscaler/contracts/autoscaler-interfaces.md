@@ -98,7 +98,7 @@ The pipeline orchestrator is NOT an interface — the pipeline orchestration log
 2. Calls `Analyzer.Analyze(m)` for each `m` in metrics → `[]AnalyzerResult`
 3. Calls `Engine.Optimize(results, gpuInventory())` → `[]ScaleDecision`
 4. Applies cooldown filter: suppresses decisions within cooldown window per model
-5. Schedules `ScaleActuationEvent{At: now + ActuationDelay.Sample(rng), Decisions: filtered}`
+5. Schedules `ScaleActuationEvent{At: now + HPAScrapeDelay.Sample(rng), Decisions: filtered}`
 6. Schedules next `ScalingTickEvent{At: now + ModelAutoscalerIntervalUs}`
 
 The `ScaleActuationEvent.Execute()` method calls `Actuator.Apply(decisions)`.

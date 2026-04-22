@@ -299,6 +299,9 @@ func TestNilComponentGuard(t *testing.T) {
 // Scenario D (scale-up, window=120s, signal absent at t=60s):
 //   t=0 suppressed; t=60s absent → timer reset; t=120s new timer; t=180s suppressed;
 //   t=240s passes → 1 application.
+// Scenario E (direction flip): scale-up signal ticks 0–1, then scale-down from tick 2.
+//   Scale-up timer cleared on direction flip; scale-down timer starts fresh at t=120s.
+//   → 0 scale-up Apply(), 1 scale-down Apply() (at t=240s).
 func TestStabilizationWindowFilter(t *testing.T) {
 	const (
 		windowUs   = 120_000_000 // 2 minutes in μs
@@ -384,6 +387,37 @@ func TestStabilizationWindowFilter(t *testing.T) {
 			t.Errorf("interrupted signal: Apply() called %d times, want 1 (at 240s)", applied)
 		}
 	})
+
+	t.Run("e_direction_flip_clears_scale_up_timer", func(t *testing.T) {
+		cfg := newAutoscalerTestConfig(intervalUs)
+		cfg.Horizon = horizonUs
+		cfg.ScaleUpStabilizationWindowUs = windowUs
+		cfg.ScaleDownStabilizationWindowUs = windowUs
+
+		// directionFlipEngine: scale-up at ticks 0–1, then scale-down from tick 2 onward.
+		engine := &directionFlipEngine{flipAtTick: 2}
+
+		scaleUpApplied, scaleDownApplied := 0, 0
+		cs := NewClusterSimulator(cfg, nil, nil)
+		cs.autoscaler = newTestPipeline(
+			&countingCollector{}, &nopAnalyzer{}, engine,
+			&splitCountingActuator{scaleUp: &scaleUpApplied, scaleDown: &scaleDownApplied},
+		)
+		if err := cs.Run(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		// t=0: scale-up timer set, suppressed. t=60s: scale-up timer cleared (direction flip).
+		// t=120s: scale-down timer set, suppressed. t=180s: elapsed=60s<120s, suppressed.
+		// t=240s: scale-down elapsed=120s → passed, timer reset.
+		// t=300s: scale-down timer set, suppressed. t=360s: suppressed.
+		// → 0 scale-up Apply(), 1 scale-down Apply() (at 240s).
+		if scaleUpApplied != 0 {
+			t.Errorf("direction flip: scale-up Apply() called %d times, want 0", scaleUpApplied)
+		}
+		if scaleDownApplied != 1 {
+			t.Errorf("direction flip: scale-down Apply() called %d times, want 1 (at 240s)", scaleDownApplied)
+		}
+	})
 }
 
 // alwaysScaleUpEngine always emits a scale-up decision for "model-a".
@@ -414,6 +448,39 @@ func (e *interruptAtTickEngine) Optimize(_ []AnalyzerResult, _ GPUInventory) []S
 		return nil
 	}
 	return []ScaleDecision{{ModelID: "model-a", Variant: VariantSpec{GPUType: "A100", TPDegree: 1}, Delta: e.delta}}
+}
+
+// directionFlipEngine emits scale-up for ticks < flipAtTick, then scale-down from flipAtTick onward.
+type directionFlipEngine struct {
+	tick      int
+	flipAtTick int
+}
+
+func (e *directionFlipEngine) Optimize(_ []AnalyzerResult, _ GPUInventory) []ScaleDecision {
+	current := e.tick
+	e.tick++
+	delta := 1
+	if current >= e.flipAtTick {
+		delta = -1
+	}
+	return []ScaleDecision{{ModelID: "model-a", Variant: VariantSpec{GPUType: "A100", TPDegree: 1}, Delta: delta}}
+}
+
+// splitCountingActuator counts scale-up and scale-down Apply() calls separately.
+type splitCountingActuator struct {
+	scaleUp   *int
+	scaleDown *int
+}
+
+func (a *splitCountingActuator) Apply(decisions []ScaleDecision) error {
+	for _, d := range decisions {
+		if d.Delta > 0 {
+			*a.scaleUp++
+		} else if d.Delta < 0 {
+			*a.scaleDown++
+		}
+	}
+	return nil
 }
 
 // countingApplyActuator increments *count each time Apply() receives non-empty decisions.
