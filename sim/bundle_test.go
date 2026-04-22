@@ -133,6 +133,19 @@ routing:
   cache_weight: 0.6
   load_weight: 0.4
 `},
+		{"old_scale_up_cooldown_us", `
+autoscaler:
+  scale_up_cooldown_us: 60000000
+`},
+		{"old_scale_down_cooldown_us", `
+autoscaler:
+  scale_down_cooldown_us: 60000000
+`},
+		{"old_actuation_delay", `
+autoscaler:
+  actuation_delay:
+    mean: 5.0
+`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -388,6 +401,9 @@ autoscaler:
 	}
 	if bundle.Autoscaler.HPAScrapeDelay.Mean != 10.0 {
 		t.Errorf("HPAScrapeDelay.Mean = %v, want 10.0", bundle.Autoscaler.HPAScrapeDelay.Mean)
+	}
+	if bundle.Autoscaler.HPAScrapeDelay.Stddev != 2.0 {
+		t.Errorf("HPAScrapeDelay.Stddev = %v, want 2.0", bundle.Autoscaler.HPAScrapeDelay.Stddev)
 	}
 	if bundle.Autoscaler.ScaleUpStabilizationWindowUs != 60_000_000 {
 		t.Errorf("ScaleUpStabilizationWindowUs = %v, want 60000000", bundle.Autoscaler.ScaleUpStabilizationWindowUs)
