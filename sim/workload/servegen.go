@@ -161,11 +161,16 @@ func loadServeGenChunk(chunkID, tracePath, datasetPath string, sgConfig *ServeGe
 			arrivalSpec.Process = process
 			cv := bestRow.cv
 			arrivalSpec.CV = &cv
-			// Store MLE-fitted parameters from ServeGen trace columns 5-6
-			shape := bestRow.shapeParam
-			scale := bestRow.scaleParam
-			arrivalSpec.Shape = &shape
-			arrivalSpec.Scale = &scale
+			// Store MLE-fitted parameters from ServeGen trace columns 5-6.
+			// Only set when both values are positive — zero means the trace
+			// had only 4 columns or the parse fell back to defaults.  Nil
+			// pointers signal "derive from CV" downstream.
+			if bestRow.shapeParam > 0 && bestRow.scaleParam > 0 {
+				shape := bestRow.shapeParam
+				scale := bestRow.scaleParam
+				arrivalSpec.Shape = &shape
+				arrivalSpec.Scale = &scale
+			}
 		}
 	}
 

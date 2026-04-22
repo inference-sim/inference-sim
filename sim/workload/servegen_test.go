@@ -300,6 +300,72 @@ func TestLoadServeGenChunk_PopulatesShapeScale(t *testing.T) {
 	}
 }
 
+func TestLoadServeGenChunk_FourColumnTrace_ShapeScaleRemainNil(t *testing.T) {
+	// GIVEN a ServeGen chunk with only 4 columns (no shape/scale)
+	dir := t.TempDir()
+
+	// Write trace file with 4-column format (no shape/scale columns)
+	tracePath := filepath.Join(dir, "chunk-0-trace.csv")
+	traceContent := "0,5.0,3.2,Gamma\n"
+	require.NoError(t, os.WriteFile(tracePath, []byte(traceContent), 0644))
+
+	// Write dataset file
+	datasetPath := filepath.Join(dir, "chunk-0-dataset.json")
+	datasetContent := `{"0": {"input_tokens": "{256: 1.0}", "output_tokens": "{100: 1.0}"}}`
+	require.NoError(t, os.WriteFile(datasetPath, []byte(datasetContent), 0644))
+
+	sgConfig := &ServeGenDataSpec{}
+
+	// WHEN loading the chunk
+	client, err := loadServeGenChunk("0", tracePath, datasetPath, sgConfig)
+
+	// THEN no error and client is non-nil
+	require.NoError(t, err)
+	require.NotNil(t, client)
+
+	// AND process and CV are set from the trace
+	assert.Equal(t, "gamma", client.Arrival.Process)
+	require.NotNil(t, client.Arrival.CV)
+	assert.InDelta(t, 3.2, *client.Arrival.CV, 0.001)
+
+	// AND Shape/Scale remain nil (not non-nil pointers to 0.0)
+	// This preserves the pointer-nil idiom: nil means "derive from CV"
+	assert.Nil(t, client.Arrival.Shape, "Shape must be nil for 4-column trace (no MLE params)")
+	assert.Nil(t, client.Arrival.Scale, "Scale must be nil for 4-column trace (no MLE params)")
+}
+
+func TestLoadServeGenChunk_BadShapeScale_ShapeScaleRemainNil(t *testing.T) {
+	// GIVEN a ServeGen chunk with 6 columns but non-numeric shape/scale
+	dir := t.TempDir()
+
+	// Write trace file with non-numeric shape/scale (falls back to 0)
+	tracePath := filepath.Join(dir, "chunk-0-trace.csv")
+	traceContent := "0,5.0,3.2,Weibull,BAD,BAD\n"
+	require.NoError(t, os.WriteFile(tracePath, []byte(traceContent), 0644))
+
+	// Write dataset file
+	datasetPath := filepath.Join(dir, "chunk-0-dataset.json")
+	datasetContent := `{"0": {"input_tokens": "{256: 1.0}", "output_tokens": "{100: 1.0}"}}`
+	require.NoError(t, os.WriteFile(datasetPath, []byte(datasetContent), 0644))
+
+	sgConfig := &ServeGenDataSpec{}
+
+	// WHEN loading the chunk
+	client, err := loadServeGenChunk("0", tracePath, datasetPath, sgConfig)
+
+	// THEN no error and client is non-nil
+	require.NoError(t, err)
+	require.NotNil(t, client)
+
+	// AND process and CV are set
+	assert.Equal(t, "weibull", client.Arrival.Process)
+	require.NotNil(t, client.Arrival.CV)
+
+	// AND Shape/Scale remain nil (parse-failure fallback produced zeros)
+	assert.Nil(t, client.Arrival.Shape, "Shape must be nil when parse falls back to 0")
+	assert.Nil(t, client.Arrival.Scale, "Scale must be nil when parse falls back to 0")
+}
+
 func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 	dir := t.TempDir()
 	// Create chunk-0-trace.csv
