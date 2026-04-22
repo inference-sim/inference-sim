@@ -1659,26 +1659,6 @@ var runCmd = &cobra.Command{
 			rawMetrics.PD.MeanTransferQueueDepth = cs.MeanTransferQueueDepth()
 		}
 
-		// Warn when any requests timed out: a deadline shorter than queue wait
-		// compresses SimEndedTime and inflates tokens_per_sec (#1127).
-		if rawMetrics.TimedOutRequests > 0 {
-			agg := cs.AggregatedMetrics()
-			// INV-1 (cluster level): injected = completed + queued + running + dropped + timed_out
-			//   + routing_rejections + gateway_queue_depth + gateway_queue_shed
-			injected := agg.CompletedRequests + agg.StillQueued + agg.StillRunning + agg.DroppedUnservable + agg.TimedOutRequests +
-				rawMetrics.RoutingRejections + rawMetrics.GatewayQueueDepth + rawMetrics.GatewayQueueShed
-			if requestTimeoutSecs > 0 {
-				logrus.Warnf("%d of %d injected requests timed out (%ds deadline). Throughput metric (tokens_per_sec) may be inflated. Use a negative --timeout to disable, or increase the deadline.",
-					rawMetrics.TimedOutRequests, injected, requestTimeoutSecs)
-			} else {
-				// requestTimeoutSecs <= 0 (disabled by default or negative): the post-generation
-				// pass ensures synthesized specs always get explicit *0 deadlines, so this branch
-				// is only reached when --workload-spec is set without an explicit --timeout override.
-				logrus.Warnf("%d of %d injected requests timed out (deadline from workload spec). Throughput metric (tokens_per_sec) may be inflated. Use a negative --timeout to disable spec timeouts, or increase them in the spec.",
-					rawMetrics.TimedOutRequests, injected)
-			}
-		}
-
 		if fitnessWeights != "" {
 			weights, err := cluster.ParseFitnessWeights(fitnessWeights)
 			if err != nil {
