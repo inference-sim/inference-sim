@@ -264,7 +264,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Fatalf("--min-tokens must be >= 0, got %d", observeMinTokens)
 	}
 	if observeTimeout <= 0 || observeTimeout > 86400 {
-		logrus.Fatalf("--timeout must be between 1 and 86400 (1 day), got %d", observeTimeout)
+		logrus.Fatalf("--timeout must be between 1 and 86400 seconds (1 day), got %d", observeTimeout)
 	}
 	if observeMinTokens > 0 && !observeUnconstrainedOutput &&
 		observeWorkloadSpec == "" && observeWorkload == "" &&

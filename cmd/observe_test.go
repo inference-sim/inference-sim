@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -1072,6 +1073,7 @@ func TestIsTimeoutError(t *testing.T) {
 	}{
 		{"nil", nil, false},
 		{"generic error", errors.New("something broke"), false},
+		{"io.EOF", io.EOF, false},
 		{"context.DeadlineExceeded", context.DeadlineExceeded, true},
 		{"wrapped DeadlineExceeded", fmt.Errorf("outer: %w", context.DeadlineExceeded), true},
 		{"context.Canceled", context.Canceled, false},
