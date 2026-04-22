@@ -595,33 +595,119 @@ func TestApplyTimeoutToSpec_NegativeProducesNegativeUs(t *testing.T) {
 // when a workload spec is loaded from a file and --timeout is not explicitly set,
 // applyTimeoutToSpec must NOT be called (client-defined timeouts in the spec are preserved).
 //
-// GIVEN a spec with a client that has a positive Timeout already set
-// WHEN the guard condition (workloadSpecPath == "" || cmd.Flags().Changed("timeout")) is
-//      evaluated for a file-loaded spec without --timeout set
+// GIVEN the package-level workloadSpecPath is non-empty and --timeout was not explicitly set
+// WHEN the real guard condition (workloadSpecPath == "" || cmd.Flags().Changed("timeout"))
+//      is evaluated
 // THEN the client Timeout is unchanged (applyTimeoutToSpec was not called)
-//
-// This test exercises the conditional logic by calling applyTimeoutToSpec only when the
-// condition passes, mirroring the runCmd dispatch path without running the full command.
 func TestApplyTimeoutToSpec_NotCalledForSpecFile(t *testing.T) {
+	origPath := workloadSpecPath
+	defer func() { workloadSpecPath = origPath }()
+	workloadSpecPath = "/path/to/workload.yaml"
+
 	spec := buildSynthesizedSpec()
-	want := int64(120_000_000) // 120s, set by the spec
+	want := int64(120_000_000) // 120s, already set in the spec
 	for i := range spec.Clients {
 		v := want
 		spec.Clients[i].Timeout = &v
 	}
 
-	// Simulate: workloadSpecPath != "" and flag not changed → guard is false → skip.
-	specPathSet := true
-	flagChanged := false
-	if specPathSet && !flagChanged {
-		// applyTimeoutToSpec intentionally not called
-	} else {
-		applyTimeoutToSpec(spec, 0)
+	// Exercise the actual guard condition — mirrors runCmd dispatch path.
+	// workloadSpecPath != "" and --timeout not set → guard is false → skip.
+	if workloadSpecPath == "" || runCmd.Flags().Changed("timeout") {
+		applyTimeoutToSpec(spec, requestTimeoutSecs)
 	}
 
 	for i, c := range spec.Clients {
 		if c.Timeout == nil || *c.Timeout != want {
 			t.Errorf("client[%d] Timeout = %v; want %d (spec timeout preserved)", i, c.Timeout, want)
+		}
+	}
+}
+
+// TestApplyTimeoutToRequests_ZeroSetsDeadlineZero verifies that applyTimeoutToRequests
+// with timeoutSecs=0 sets Deadline=0 on all requests regardless of ArrivalTime.
+// Zero disables the deadline; a nil Timeout for session clients would trigger the 300s
+// default in computeDeadline, so the explicit-zero post-pass is required (#1127).
+func TestApplyTimeoutToRequests_ZeroSetsDeadlineZero(t *testing.T) {
+	wl := &workload.GeneratedWorkload{
+		Requests: []*sim.Request{
+			{ID: "r0", ArrivalTime: 0, Deadline: 300_000_000},
+			{ID: "r1", ArrivalTime: 1_000_000, Deadline: 301_000_000},
+		},
+	}
+
+	applyTimeoutToRequests(wl, 0)
+
+	for i, req := range wl.Requests {
+		if req.Deadline != 0 {
+			t.Errorf("request[%d] Deadline = %d; want 0 (no timeout)", i, req.Deadline)
+		}
+	}
+}
+
+// TestApplyTimeoutToRequests_NonZeroSetsDeadlineFromArrival verifies that a positive
+// timeout sets Deadline = ArrivalTime + timeoutUs on each request.
+func TestApplyTimeoutToRequests_NonZeroSetsDeadlineFromArrival(t *testing.T) {
+	wl := &workload.GeneratedWorkload{
+		Requests: []*sim.Request{
+			{ID: "r0", ArrivalTime: 0},
+			{ID: "r1", ArrivalTime: 500_000},
+		},
+	}
+
+	applyTimeoutToRequests(wl, 60)
+
+	for i, req := range wl.Requests {
+		want := req.ArrivalTime + 60_000_000
+		if req.Deadline != want {
+			t.Errorf("request[%d] Deadline = %d; want %d (ArrivalTime + 60s)", i, req.Deadline, want)
+		}
+	}
+}
+
+// TestApplyTimeoutToRequests_ZeroSetsSessionBlueprintExplicitZero verifies that
+// applyTimeoutToRequests with timeoutSecs=0 sets session blueprint Timeout to an
+// explicit *int64(0), not nil. nil would trigger the 300s default for follow-up rounds.
+func TestApplyTimeoutToRequests_ZeroSetsSessionBlueprintExplicitZero(t *testing.T) {
+	wl := &workload.GeneratedWorkload{
+		Sessions: []workload.SessionBlueprint{
+			{SessionID: "s0"},
+			{SessionID: "s1"},
+		},
+	}
+
+	applyTimeoutToRequests(wl, 0)
+
+	for i, bp := range wl.Sessions {
+		if bp.Timeout == nil {
+			t.Errorf("session[%d] Timeout is nil; want explicit *0 to suppress 300s default", i)
+			continue
+		}
+		if *bp.Timeout != 0 {
+			t.Errorf("session[%d] Timeout = %d; want 0", i, *bp.Timeout)
+		}
+	}
+}
+
+// TestApplyTimeoutToRequests_NonZeroSetsSessionBlueprintTimeout verifies that a positive
+// timeout is propagated to session blueprints so follow-up round deadlines match.
+func TestApplyTimeoutToRequests_NonZeroSetsSessionBlueprintTimeout(t *testing.T) {
+	wl := &workload.GeneratedWorkload{
+		Sessions: []workload.SessionBlueprint{
+			{SessionID: "s0"},
+		},
+	}
+
+	applyTimeoutToRequests(wl, 120)
+
+	for i, bp := range wl.Sessions {
+		if bp.Timeout == nil {
+			t.Errorf("session[%d] Timeout is nil; want 120s in µs", i)
+			continue
+		}
+		want := int64(120_000_000)
+		if *bp.Timeout != want {
+			t.Errorf("session[%d] Timeout = %d; want %d (120s in µs)", i, *bp.Timeout, want)
 		}
 	}
 }

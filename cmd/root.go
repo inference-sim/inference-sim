@@ -1000,6 +1000,25 @@ func applyTimeoutToSpec(spec *workload.WorkloadSpec, timeoutSecs int) {
 	}
 }
 
+// applyTimeoutToRequests re-applies timeout to already-generated requests and session
+// blueprints. This corrects deadlines for inference_perf specs: spec.Clients is empty
+// when applyTimeoutToSpec runs and is populated inside GenerateWorkload, so the initial
+// deadlines are computed from nil Timeout. Safe to call for all spec types.
+func applyTimeoutToRequests(wl *workload.GeneratedWorkload, timeoutSecs int) {
+	timeoutUs := int64(timeoutSecs) * 1_000_000
+	for _, req := range wl.Requests {
+		if timeoutUs == 0 {
+			req.Deadline = 0
+		} else {
+			req.Deadline = req.ArrivalTime + timeoutUs
+		}
+	}
+	for i := range wl.Sessions {
+		t := timeoutUs
+		wl.Sessions[i].Timeout = &t
+	}
+}
+
 // runCmd executes the simulation using parameters from CLI flags
 var runCmd = &cobra.Command{
 	Use:   "run",
@@ -1289,6 +1308,12 @@ var runCmd = &cobra.Command{
 		wl, err := workload.GenerateWorkload(spec, simulationHorizon, maxRequests)
 		if err != nil {
 			logrus.Fatalf("Failed to generate workload: %v", err)
+		}
+		// Re-apply timeout to generated requests and session blueprints.
+		// For inference_perf specs, spec.Clients was empty at applyTimeoutToSpec time
+		// and populated inside GenerateWorkload — deadlines need correction here.
+		if workloadSpecPath == "" || cmd.Flags().Changed("timeout") {
+			applyTimeoutToRequests(wl, requestTimeoutSecs)
 		}
 		preGeneratedRequests = wl.Requests
 		if len(wl.Sessions) > 0 {
@@ -1638,9 +1663,10 @@ var runCmd = &cobra.Command{
 				logrus.Warnf("%d of %d injected requests timed out (%ds deadline). Throughput metric (tokens_per_sec) may be inflated. Use --timeout 0 to disable, or increase the deadline.",
 					rawMetrics.TimedOutRequests, injected, requestTimeoutSecs)
 			} else {
-				// requestTimeoutSecs == 0 with timed-out requests means deadlines came from
-				// the --workload-spec file; synthesized specs always get explicit *0 from
-				// applyTimeoutToSpec, making this path unreachable for non-spec runs.
+				// requestTimeoutSecs == 0 with timed-out requests: the post-generation pass
+				// ensures synthesized specs (including inference_perf) always get explicit *0
+				// deadlines, so this branch is only reached when --workload-spec is set
+				// without an explicit --timeout override.
 				logrus.Warnf("%d of %d injected requests timed out (deadline from workload spec). Throughput metric (tokens_per_sec) may be inflated. Use --timeout 0 to disable spec timeouts, or increase them in the spec.",
 					rawMetrics.TimedOutRequests, injected)
 			}
