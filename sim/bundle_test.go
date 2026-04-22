@@ -562,23 +562,23 @@ func TestPolicyBundle_Validate_NodePool_MaxLessThanInitial(t *testing.T) {
 
 func TestIsValidLatencyBackend(t *testing.T) {
 	assert.True(t, IsValidLatencyBackend(""))
-	assert.True(t, IsValidLatencyBackend("blackbox"))
 	assert.True(t, IsValidLatencyBackend("roofline"))
 	assert.True(t, IsValidLatencyBackend("trained-physics"))
+	assert.False(t, IsValidLatencyBackend("blackbox"))
 	assert.False(t, IsValidLatencyBackend("nonexistent"))
 }
 
 func TestValidLatencyBackendNames(t *testing.T) {
 	names := ValidLatencyBackendNames()
-	assert.Contains(t, names, "blackbox")
 	assert.Contains(t, names, "roofline")
 	assert.Contains(t, names, "trained-physics")
+	assert.NotContains(t, names, "blackbox")
 	assert.NotContains(t, names, "")
 }
 
 func TestIsValidLatencyBackend_RemovedBackends(t *testing.T) {
 	// GIVEN removed backend names
-	removedBackends := []string{"crossmodel", "trained-roofline"}
+	removedBackends := []string{"blackbox", "crossmodel", "trained-roofline"}
 
 	for _, backend := range removedBackends {
 		t.Run(backend, func(t *testing.T) {
@@ -598,7 +598,7 @@ func TestValidLatencyBackendNames_ExcludesRemoved(t *testing.T) {
 	names := ValidLatencyBackendNames()
 
 	// WHEN checking for removed backends
-	removedBackends := []string{"crossmodel", "trained-roofline"}
+	removedBackends := []string{"blackbox", "crossmodel", "trained-roofline"}
 	for _, removed := range removedBackends {
 		for _, name := range names {
 			// THEN removed backends must not appear in the list
@@ -608,8 +608,8 @@ func TestValidLatencyBackendNames_ExcludesRemoved(t *testing.T) {
 		}
 	}
 
-	// AND the list must contain exactly 3 backends
-	expected := []string{"blackbox", "roofline", "trained-physics"}
+	// AND the list must contain exactly 2 backends
+	expected := []string{"roofline", "trained-physics"}
 	if len(names) != len(expected) {
 		t.Errorf("ValidLatencyBackendNames() returned %d backends; want %d: %v", len(names), len(expected), expected)
 	}
