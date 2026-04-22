@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -1054,6 +1055,31 @@ func TestSend_Unconstrained_MinTokensStop_Warns(t *testing.T) {
 			}
 			if !hook.hasEntry("server may not support min_tokens") {
 				t.Error("expected min_tokens non-support warning, but no matching entry found")
+			}
+		})
+	}
+}
+
+// TestIsTimeoutError verifies the isTimeoutError helper covers both detection
+// branches: os.IsTimeout (net.Error Timeout() interface) and errors.Is for
+// context.DeadlineExceeded. Also verifies that non-timeout errors (generic,
+// context.Canceled, io.EOF) return false.
+func TestIsTimeoutError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"generic error", errors.New("something broke"), false},
+		{"context.DeadlineExceeded", context.DeadlineExceeded, true},
+		{"wrapped DeadlineExceeded", fmt.Errorf("outer: %w", context.DeadlineExceeded), true},
+		{"context.Canceled", context.Canceled, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isTimeoutError(tc.err); got != tc.want {
+				t.Errorf("isTimeoutError(%v) = %v, want %v", tc.err, got, tc.want)
 			}
 		})
 	}

@@ -71,7 +71,7 @@ BC-4: Default timeout unchanged
 
 BC-5: Timeout flag validation
 - GIVEN a user running `blis observe`
-- WHEN `--timeout` is set to 0 or a negative value
+- WHEN `--timeout` is set to 0, a negative value, or greater than 86400
 - THEN `blis observe` exits with a fatal error message
 
 BC-6: Partial timestamps preserved on timeout
@@ -367,8 +367,8 @@ In `cmd/observe_cmd.go`:
 2. Register flag in `init()`: `observeCmd.Flags().IntVar(&observeTimeout, "timeout", 300, "HTTP request timeout in seconds (per request)")`.
 3. Add validation in `runObserve()` after existing numeric validations:
    ```go
-   if observeTimeout <= 0 {
-       logrus.Fatalf("--timeout must be > 0, got %d", observeTimeout)
+   if observeTimeout <= 0 || observeTimeout > 86400 {
+       logrus.Fatalf("--timeout must be between 1 and 86400 (1 day), got %d", observeTimeout)
    }
    ```
 4. Wire to client construction: change the `NewRealClient` call to include `WithHTTPTimeout(time.Duration(observeTimeout) * time.Second)`.
@@ -546,7 +546,7 @@ In `CLAUDE.md`, update the `## Recent Changes` section to add a bullet for this 
 
 1. Add `observeTimeout int` variable.
 2. Register flag: `observeCmd.Flags().IntVar(&observeTimeout, "timeout", 300, "HTTP request timeout in seconds (per request)")`.
-3. Validate: `if observeTimeout <= 0 { logrus.Fatalf(...) }`.
+3. Validate: `if observeTimeout <= 0 || observeTimeout > 86400 { logrus.Fatalf(...) }`.
 4. Wire: add `WithHTTPTimeout(time.Duration(observeTimeout) * time.Second)` to the `NewRealClient` call.
 
 ### File: `cmd/observe_test.go`
