@@ -3733,14 +3733,14 @@
 <ol>
 <li>Explicit CLI flags — if passed, used directly (no <code>defaults.yaml</code> lookup)</li>
 <li><code>defaults.yaml</code> <code>models[]</code> entry — matched by model/GPU/TP/vllm-version (blackbox mode)</li>
-<li>Analytical computation — roofline, crossmodel, or trained-roofline backends compute from architecture + hardware specs</li>
+<li>Analytical computation — roofline or trained-physics backends compute from architecture + hardware specs</li>
 <li>Error — blackbox mode with no matching entry exits with an error</li>
 </ol>
 <p><strong>Hardware and TP</strong> (<code>--hardware</code>, <code>--tp</code>, <code>--vllm-version</code>):</p>
 <ol>
 <li>Explicit CLI flags</li>
 <li><code>defaults.yaml</code> <code>defaults[]</code> entry — matched by <code>--model</code></li>
-<li>Error — roofline/crossmodel/trained-roofline require these values; blackbox fails at coefficient lookup</li>
+<li>Error — roofline/trained-physics require these values; blackbox fails at coefficient lookup</li>
 </ol>
 <p><strong>KV cache blocks</strong> (<code>--total-kv-blocks</code>): See the detailed <a href="#resolution-process">Resolution Process</a> below — three layers: CLI flag, auto-calculation, or 1M default.</p>
 <p><strong>Workload parameters</strong> (<code>--rate</code>, <code>--num-requests</code>, <code>--prompt-tokens</code>, etc.):</p>
@@ -3828,7 +3828,7 @@
 <p><strong>Capacity estimate mismatch (issue #390).</strong> CLI distribution mode defaults to <code>--prompt-tokens 512, --output-tokens 512</code>. If you estimate per-instance capacity using CLI mode, then run a workload-spec YAML with shorter sequences (e.g., mean 256/128), the YAML workload will achieve ~1.5x higher throughput than the CLI estimate predicted. Always derive capacity estimates from the actual workload you plan to run, not from CLI defaults.</p>
 <p><strong><code>--rate</code> does NOT override workload-spec YAML.</strong> The <code>--rate</code> flag only applies in CLI distribution mode. When <code>--workload-spec</code> is set, request rate comes from <code>aggregate_rate</code> in the YAML file — the <code>--rate</code> flag is ignored. To change the rate for a YAML workload, edit the <code>aggregate_rate</code> field in the spec.</p>
 <p><strong><code>aggregate_rate</code> override for inference-perf specs.</strong> When converting inference-perf specs via <code>blis convert infperf</code>, per-stage rates in the spec override a user-specified <code>aggregate_rate</code>. If the sum of stage rates differs from <code>aggregate_rate</code>, BLIS logs a warning and uses the stage-rate sum. This prevents silent rate scaling errors.</p>
-<p><strong><code>--total-kv-blocks</code> phantom default.</strong> The CLI default is 1,000,000 blocks, but this value almost never takes effect. For all latency backends (roofline, crossmodel, trained-roofline, trained-physics, blackbox), auto-calculation from model architecture and GPU memory supersedes it when a HuggingFace <code>config.json</code> is available and the hardware config specifies <code>MemoryGiB</code>. The 1M default is a last-resort fallback — if your simulation uses it, check whether auto-calculation is failing (missing <code>config.json</code>, missing <code>MemoryGiB</code>, or unsupported model architecture).</p>
+<p><strong><code>--total-kv-blocks</code> phantom default.</strong> The CLI default is 1,000,000 blocks, but this value almost never takes effect. For all latency backends (roofline, trained-physics, blackbox), auto-calculation from model architecture and GPU memory supersedes it when a HuggingFace <code>config.json</code> is available and the hardware config specifies <code>MemoryGiB</code>. The 1M default is a last-resort fallback — if your simulation uses it, check whether auto-calculation is failing (missing <code>config.json</code>, missing <code>MemoryGiB</code>, or unsupported model architecture).</p>
 <p><strong><code>enable_multi_turn_chat</code> semantic mismatch (issue #517).</strong> inference-perf's <code>enable_multi_turn_chat</code> creates one persistent session per virtual user. BLIS's closest equivalent is <code>multi_turn.single_session: true</code> in the workload YAML, but the session mechanics differ. When converting inference-perf specs, verify that the converted multi-turn behavior matches your intent.</p>
 <p><strong>Custom <code>defaults.yaml</code> files must remove <code>total_kv_blocks</code> entries (migration note).</strong> BLIS uses strict YAML parsing (<code>KnownFields(true)</code>) to catch typos and invalid fields. As of issue #1035, <code>total_kv_blocks</code> is no longer a recognized field in <code>defaults.yaml</code> — KV capacity is now always auto-calculated from model architecture and GPU memory. If you maintain a custom <code>defaults.yaml</code> file, remove all <code>total_kv_blocks</code> entries or BLIS will exit with a parse error: <code>field total_kv_blocks not found</code>. To override auto-calculation, use the <code>--total-kv-blocks</code> CLI flag instead.</p>
 <h2 id="simulation-control">Simulation Control<a class="headerlink" href="#simulation-control" title="Permanent link">&para;</a></h2>
@@ -4020,7 +4020,7 @@
 <td><code>--max-model-len</code></td>
 <td>int64</td>
 <td>0</td>
-<td>Max total sequence length (input + output) in tokens. 0 = unlimited. Mirrors vLLM's <code>--max-model-len</code>. Auto-derived from <code>max_position_embeddings</code> in HuggingFace <code>config.json</code> for roofline/crossmodel backends. Applies <code>rope_scaling</code> factor for types <code>linear</code>, <code>dynamic</code>, <code>yarn</code>, <code>default</code>, <code>mrope</code>; excludes <code>su</code>, <code>longrope</code>, <code>llama3</code>; skips entirely for <code>gemma3</code> models. Capped at KV-feasible maximum.</td>
+<td>Max total sequence length (input + output) in tokens. 0 = unlimited. Mirrors vLLM's <code>--max-model-len</code>. Auto-derived from <code>max_position_embeddings</code> in HuggingFace <code>config.json</code> for roofline/trained-physics backends. Applies <code>rope_scaling</code> factor for types <code>linear</code>, <code>dynamic</code>, <code>yarn</code>, <code>default</code>, <code>mrope</code>; excludes <code>su</code>, <code>longrope</code>, <code>llama3</code>; skips entirely for <code>gemma3</code> models. Capped at KV-feasible maximum.</td>
 </tr>
 </tbody>
 </table>
@@ -4040,7 +4040,7 @@
 <td><code>--latency-model</code></td>
 <td>string</td>
 <td>"roofline"</td>
-<td>Latency model backend: <code>roofline</code> (default), <code>blackbox</code>, <code>crossmodel</code>, <code>trained-roofline</code>, <code>trained-physics</code>. All backends auto-fetch HuggingFace config.json for KV block auto-calculation (may require network access). Analytical backends (<code>roofline</code>, <code>crossmodel</code>, <code>trained-roofline</code>, <code>trained-physics</code>) require <code>config.json</code> for latency estimation and KV sizing. <code>blackbox</code> uses <code>config.json</code> only for KV sizing (falls back to 1M blocks if unavailable). Requires <code>--hardware</code> and <code>--tp</code>. Set <code>HF_TOKEN</code> for gated models. <code>trained-physics</code> is recommended for new models.</td>
+<td>Latency model backend: <code>roofline</code> (default), <code>blackbox</code>, <code>trained-physics</code>. All backends auto-fetch HuggingFace config.json for KV block auto-calculation (may require network access). Analytical backends (<code>roofline</code>, <code>trained-physics</code>) require <code>config.json</code> for latency estimation and KV sizing. <code>blackbox</code> uses <code>config.json</code> only for KV sizing (falls back to 1M blocks if unavailable). Requires <code>--hardware</code> and <code>--tp</code>. Set <code>HF_TOKEN</code> for gated models. <code>trained-physics</code> is recommended for new models.</td>
 </tr>
 <tr>
 <td><code>--model-config-folder</code></td>
@@ -4062,8 +4062,7 @@
 <ol>
 <li><strong>Roofline mode</strong> (default): Auto-resolves model config from HuggingFace and hardware config from bundled <code>hardware_config.json</code>. Requires <code>--hardware</code> and <code>--tp</code> (loaded from <code>defaults.yaml</code> when available).</li>
 <li><strong>Blackbox mode</strong>: If <code>--latency-model blackbox</code> is set. Uses trained alpha/beta coefficients from <code>defaults.yaml</code>. Requires a matching entry for the model/GPU/TP combination.</li>
-<li><strong>Cross-model mode</strong>: If <code>--latency-model crossmodel</code> is set with <code>--hardware</code> and <code>--tp</code>. Uses 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) from <code>crossmodel_defaults</code> in <code>defaults.yaml</code>. Architecture features derived from HuggingFace config.json. MoE-aware.</li>
-<li><strong>Trained-roofline mode</strong>: If <code>--latency-model trained-roofline</code> is set with <code>--hardware</code> and <code>--tp</code>. Uses 10 globally-fitted coefficients (7 beta for roofline corrections + 3 alpha for CPU overhead) from <code>trained_roofline_defaults</code> in <code>defaults.yaml</code>. Achieves 7% MAPE on GPU combined step time.</li>
+<li><strong>Trained-physics mode</strong> (recommended for new models): If <code>--latency-model trained-physics</code> is set with <code>--hardware</code> and <code>--tp</code>. Uses 13 globally-fitted coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from <code>trained_physics_coefficients</code> in <code>defaults.yaml</code>. Physics-informed basis functions with learned corrections.</li>
 <li><strong>Error</strong>: If blackbox mode is selected and no coefficients can be resolved for the model/GPU/TP combination</li>
 </ol>
 <h2 id="cluster-configuration">Cluster Configuration<a class="headerlink" href="#cluster-configuration" title="Permanent link">&para;</a></h2>
@@ -4592,7 +4591,7 @@
 <a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="c1"># Node pool infrastructure (Phase 1A — optional; omit for backward-compatible single-pool mode)</span>
 <a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="nt">node_pools</span><span class="p">:</span>
 <a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;gpu-pool-1&quot;</span>
-<a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="w">    </span><span class="nt">gpu_type</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;H100&quot;</span><span class="w">      </span><span class="c1"># pool-authoritative: overrides --gpu flag for GPU label (all backends) and hardware calibration (roofline/trained-roofline backends); see issues #892/#893</span>
+<a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="w">    </span><span class="nt">gpu_type</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;H100&quot;</span><span class="w">      </span><span class="c1"># pool-authoritative: overrides --gpu flag for GPU label (all backends) and hardware calibration (roofline/trained-physics backends); see issues #892/#893</span>
 <a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="w">    </span><span class="nt">gpus_per_node</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8</span>
 <a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="w">    </span><span class="nt">gpu_memory_gib</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">80.0</span>
 <a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a><span class="w">    </span><span class="nt">initial_nodes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
@@ -4602,7 +4601,7 @@
 <a id="__codelineno-5-31" name="__codelineno-5-31" href="#__codelineno-5-31"></a><span class="w">      </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30.0</span><span class="w">   </span><span class="c1"># seconds</span>
 <a id="__codelineno-5-32" name="__codelineno-5-32" href="#__codelineno-5-32"></a><span class="w">      </span><span class="nt">stddev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5.0</span><span class="w">  </span><span class="c1"># 0 = constant delay</span>
 <a id="__codelineno-5-33" name="__codelineno-5-33" href="#__codelineno-5-33"></a>
-<a id="__codelineno-5-34" name="__codelineno-5-34" href="#__codelineno-5-34"></a><span class="c1"># Per-GPU hardware calibration overrides for roofline/trained-roofline backends (issue #893 — optional)</span>
+<a id="__codelineno-5-34" name="__codelineno-5-34" href="#__codelineno-5-34"></a><span class="c1"># Per-GPU hardware calibration overrides for roofline/trained-physics backends (issue #893 — optional)</span>
 <a id="__codelineno-5-35" name="__codelineno-5-35" href="#__codelineno-5-35"></a><span class="c1"># Key: GPU type string matching a pool&#39;s gpu_type. Value: HardwareCalib for that GPU.</span>
 <a id="__codelineno-5-36" name="__codelineno-5-36" href="#__codelineno-5-36"></a><span class="c1"># When a pool&#39;s gpu_type is found in this map, the matched calibration overrides the CLI</span>
 <a id="__codelineno-5-37" name="__codelineno-5-37" href="#__codelineno-5-37"></a><span class="c1"># --gpu calibration at instance construction time (both sync and deferred/NodeReadyEvent paths),</span>
@@ -4734,20 +4733,19 @@
 <h3 id="resolution-process">Resolution Process<a class="headerlink" href="#resolution-process" title="Permanent link">&para;</a></h3>
 <p>When BLIS starts, it resolves latency configuration through a layered process. Explicit CLI flags always take precedence (R18).</p>
 <p><strong>Hardware and TP defaults resolution (all backends):</strong></p>
-<p>Before any backend-specific logic runs, BLIS loads hardware/TP/vLLM-version defaults from <code>defaults.yaml</code> for the specified <code>--model</code> when those flags are not explicitly provided. This ensures analytical backends (roofline, crossmodel, trained-roofline) can auto-resolve without requiring explicit <code>--hardware</code> and <code>--tp</code> for models listed in <code>defaults.yaml</code>.</p>
+<p>Before any backend-specific logic runs, BLIS loads hardware/TP/vLLM-version defaults from <code>defaults.yaml</code> for the specified <code>--model</code> when those flags are not explicitly provided. This ensures analytical backends (roofline, trained-physics) can auto-resolve without requiring explicit <code>--hardware</code> and <code>--tp</code> for models listed in <code>defaults.yaml</code>.</p>
 <p><strong>Backend-specific resolution:</strong></p>
 <ol>
-<li>If <code>--latency-model roofline</code> (default), <code>crossmodel</code>, or <code>trained-roofline</code>:</li>
+<li>If <code>--latency-model roofline</code> (default) or <code>trained-physics</code>:</li>
 <li>Auto-resolve model config: check <code>model_configs/</code> for existing <code>config.json</code>, fetch from HuggingFace on miss (set <code>HF_TOKEN</code> for gated models)</li>
 <li>Auto-resolve hardware config from bundled <code>hardware_config.json</code></li>
 <li>For roofline: beta coefficients are computed analytically from model architecture and hardware specs</li>
-<li>For crossmodel: load global alpha + beta coefficients from <code>crossmodel_defaults</code> in <code>defaults.yaml</code></li>
-<li>For trained-roofline: load global correction coefficients from <code>trained_roofline_defaults</code> in <code>defaults.yaml</code></li>
+<li>For trained-physics: load 13 global coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from <code>trained_physics_coefficients</code> in <code>defaults.yaml</code></li>
 <li><code>--model-config-folder</code> and <code>--hardware-config</code> override auto-resolution when explicitly set</li>
 <li>If <code>--latency-model blackbox</code>:</li>
 <li>Look up the model in <code>defaults.yaml</code> using <code>--model</code>, <code>--hardware</code>, <code>--tp</code>, <code>--vllm-version</code></li>
 <li>Load alpha/beta coefficients from the matching entry</li>
-<li>If no matching entry is found, exit with error suggesting roofline, crossmodel, or trained-roofline</li>
+<li>If no matching entry is found, exit with error suggesting roofline or trained-physics</li>
 <li><strong>Behavioral change:</strong> Blackbox mode now auto-downloads model configs from HuggingFace for KV block auto-calculation (same as analytical backends). Previously, blackbox only used cached configs. This means blackbox runs may make network requests when <code>config.json</code> is not cached locally. Set <code>HF_TOKEN</code> for gated models.</li>
 <li>If <code>--alpha-coeffs</code> and <code>--beta-coeffs</code> are explicitly provided via CLI:</li>
 <li>Use them directly, no <code>defaults.yaml</code> lookup</li>

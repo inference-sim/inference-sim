@@ -1106,28 +1106,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#cross-model-mode" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Cross-Model Mode
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#trained-roofline-mode" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Trained-Roofline Mode
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#trained-physics-mode-recommended" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3315,28 +3293,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#cross-model-mode" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Cross-Model Mode
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#trained-roofline-mode" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Trained-Roofline Mode
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#trained-physics-mode-recommended" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3785,32 +3741,10 @@ Dequeue requests from the wait queue:
 <li>No training data needed — works for any supported model immediately</li>
 </ul>
 <p>See <a href="../roofline/">Roofline Estimation</a> for implementation details.</p>
-<h3 id="cross-model-mode">Cross-Model Mode<a class="headerlink" href="#cross-model-mode" title="Permanent link">&para;</a></h3>
-<p>Uses globally-fitted coefficients with architecture features:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>stepTime = β₀ × numLayers + β₁ × dc × kvDimScaled + β₂ × (pf+dc) × isMoE + β₃ × isTP
-</code></pre></div>
-<ul>
-<li><strong>7 global coefficients</strong> (4 beta for step time + 3 alpha for CPU overhead)</li>
-<li><strong>Architecture-aware scaling</strong> from <code>config.json</code> features (layers, KV heads, MoE indicators)</li>
-<li>No per-model training needed — coefficients work across model families</li>
-</ul>
-<p>See <a href="../../guide/latency-models/#cross-model-mode-physics-informed">Latency Models Guide</a> for details.</p>
-<h3 id="trained-roofline-mode">Trained-Roofline Mode<a class="headerlink" href="#trained-roofline-mode" title="Permanent link">&para;</a></h3>
-<p>Applies learned correction factors to analytical roofline basis functions:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>StepTime = β₁ × max(T_pf_compute, T_pf_kv) + β₂ × max(T_dc_compute, T_dc_kv)
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>         + β₃ × T_weight + β₄ × T_tp + β₅ × L + β₆ × batch_size + β₇
-</code></pre></div>
-<ul>
-<li><strong>10 global coefficients</strong> (7 beta for roofline corrections + 3 alpha for CPU overhead)</li>
-<li><strong>7% MAPE</strong> on GPU combined step time (fitted from 137K real vLLM requests)</li>
-<li>Each basis function is a full analytical roofline calculation</li>
-<li>MoE-aware (per-expert FLOPs + effective expert count)</li>
-</ul>
-<p>See <a href="../../guide/latency-models/#trained-roofline-mode">Latency Models Guide</a> for details.</p>
 <h3 id="trained-physics-mode-recommended">Trained-Physics Mode (Recommended)<a class="headerlink" href="#trained-physics-mode-recommended" title="Permanent link">&para;</a></h3>
 <p>Applies learned correction factors to roofline basis functions with additional architecture-aware terms:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>StepTime = β₁ × max(T_pf_compute, T_pf_kv) + β₂ × max(T_dc_compute, T_dc_kv)
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>         + β₃ × T_weight + β₄ × T_tp + β₅ × L + β₆ × B + β₇ + β₈ × nMoE
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>StepTime = β₁ × max(T_pf_compute, T_pf_kv) + β₂ × max(T_dc_compute, T_dc_kv)
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>         + β₃ × T_weight + β₄ × T_tp + β₅ × L + β₆ × B + β₇ + β₈ × nMoE
 </code></pre></div>
 <ul>
 <li><strong>13 global coefficients</strong> (8-10 beta for roofline corrections + 3 alpha for CPU overhead)</li>
