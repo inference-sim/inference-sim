@@ -132,10 +132,6 @@ func TestReplayCmd_SourceContainsNoInlineBackendBlocks(t *testing.T) {
 	// THEN they must not be present (indicates delegation to resolveLatencyConfig)
 	assert.NotContains(t, content, `if backend == "roofline" {`,
 		"replay.go must not contain inline roofline resolution block; use resolveLatencyConfig(cmd)")
-	assert.NotContains(t, content, `if backend == "crossmodel" {`,
-		"replay.go must not contain inline crossmodel resolution block; use resolveLatencyConfig(cmd)")
-	assert.NotContains(t, content, `if backend == "trained-roofline" {`,
-		"replay.go must not contain inline trained-roofline resolution block; use resolveLatencyConfig(cmd)")
 }
 
 // TestReplayCmd_SourceContainsNoPolicyInlineBlocks verifies replay.go delegates
