@@ -252,6 +252,54 @@ func TestParseServeGenTrace_BadShapeScale_FallsBackToZero(t *testing.T) {
 	assert.Equal(t, "Gamma", rows[0].pattern)
 }
 
+func TestLoadServeGenChunk_PopulatesShapeScale(t *testing.T) {
+	// GIVEN a ServeGen chunk with high CV and fitted parameters
+	traceDir, err := os.MkdirTemp("", "servegen-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(traceDir)
+
+	// Write trace file
+	tracePath := filepath.Join(traceDir, "chunk-0-trace.csv")
+	traceContent := "0,22.46,173.81,Weibull,0.0575,0.000573\n"
+	if err := os.WriteFile(tracePath, []byte(traceContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write dataset file
+	datasetPath := filepath.Join(traceDir, "chunk-0-dataset.json")
+	datasetContent := `{"0": {"input_tokens": "{256: 1.0}", "output_tokens": "{100: 1.0}"}}`
+	if err := os.WriteFile(datasetPath, []byte(datasetContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sgConfig := &ServeGenDataSpec{}
+
+	// WHEN loading the chunk
+	client, err := loadServeGenChunk("0", tracePath, datasetPath, sgConfig)
+
+	// THEN ArrivalSpec contains shape and scale
+	if err != nil {
+		t.Fatalf("loadServeGenChunk failed: %v", err)
+	}
+	if client == nil {
+		t.Fatal("expected non-nil client")
+	}
+	if client.Arrival.Process != "weibull" {
+		t.Errorf("expected process=weibull, got %s", client.Arrival.Process)
+	}
+	if client.Arrival.CV == nil || *client.Arrival.CV != 173.81 {
+		t.Errorf("expected cv=173.81, got %v", client.Arrival.CV)
+	}
+	if client.Arrival.Shape == nil || *client.Arrival.Shape != 0.0575 {
+		t.Errorf("expected shape=0.0575, got %v", client.Arrival.Shape)
+	}
+	if client.Arrival.Scale == nil || *client.Arrival.Scale != 0.000573 {
+		t.Errorf("expected scale=0.000573, got %v", client.Arrival.Scale)
+	}
+}
+
 func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 	dir := t.TempDir()
 	// Create chunk-0-trace.csv
