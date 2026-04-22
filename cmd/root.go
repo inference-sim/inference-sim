@@ -1268,6 +1268,9 @@ var runCmd = &cobra.Command{
 		// Apply per-request timeout to all clients.
 		// For synthesized specs, always apply (default 0 = no timeout).
 		// For file-loaded specs, only apply when the flag is explicitly set.
+		if requestTimeoutSecs < 0 {
+			logrus.Fatalf("--timeout must be >= 0, got %d", requestTimeoutSecs)
+		}
 		if workloadSpecPath == "" || cmd.Flags().Changed("timeout") {
 			applyTimeoutToSpec(spec, requestTimeoutSecs)
 		}
@@ -1627,7 +1630,10 @@ var runCmd = &cobra.Command{
 		// compresses SimEndedTime and inflates tokens_per_sec (#1127).
 		if rawMetrics.TimedOutRequests > 0 {
 			agg := cs.AggregatedMetrics()
-			injected := agg.CompletedRequests + agg.StillQueued + agg.StillRunning + agg.DroppedUnservable + agg.TimedOutRequests
+			// INV-1 (cluster level): injected = completed + queued + running + dropped + timed_out
+			//   + routing_rejections + gateway_queue_depth + gateway_queue_shed
+			injected := agg.CompletedRequests + agg.StillQueued + agg.StillRunning + agg.DroppedUnservable + agg.TimedOutRequests +
+				rawMetrics.RoutingRejections + rawMetrics.GatewayQueueDepth + rawMetrics.GatewayQueueShed
 			if requestTimeoutSecs > 0 {
 				logrus.Warnf("%d of %d requests timed out (%ds deadline). Throughput metric (tokens_per_sec) may be inflated. Use --timeout 0 to disable, or increase the deadline.",
 					rawMetrics.TimedOutRequests, injected, requestTimeoutSecs)

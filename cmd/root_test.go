@@ -564,6 +564,33 @@ func TestApplyTimeoutToSpec_CohortSpec(t *testing.T) {
 	}
 }
 
+// TestApplyTimeoutToSpec_NegativeIsRejected verifies R3: negative --timeout values must
+// be caught by the caller before applyTimeoutToSpec is invoked, preventing a deadline
+// before arrival time (INV-5 violation). This test documents the precondition contract
+// rather than the guard itself (the guard lives in runCmd, which calls logrus.Fatalf).
+//
+// GIVEN a timeout of -1 seconds
+// WHEN applyTimeoutToSpec is called (bypassing the CLI guard, as in a unit test)
+// THEN the resulting Timeout pointer holds a negative microsecond value
+//
+// This test exists to make the invariant visible: callers MUST validate timeoutSecs >= 0
+// before calling applyTimeoutToSpec. The CLI guard at runCmd prevents this in production.
+func TestApplyTimeoutToSpec_NegativeProducesNegativeUs(t *testing.T) {
+	spec := buildSynthesizedSpec()
+
+	applyTimeoutToSpec(spec, -1)
+
+	for i, c := range spec.Clients {
+		if c.Timeout == nil {
+			t.Errorf("client[%d] Timeout is nil", i)
+			continue
+		}
+		if *c.Timeout >= 0 {
+			t.Errorf("client[%d] Timeout = %d; expected negative (documents why CLI must guard against negative input)", i, *c.Timeout)
+		}
+	}
+}
+
 // TestTryAutoCalcKVBlocksBlackbox_ErrorPaths tests all error paths in
 // tryAutoCalcKVBlocksBlackbox. Each error path should return (0, false) and
 // emit a warning (not tested here — warnings go to logrus stderr).
