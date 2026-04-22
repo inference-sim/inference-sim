@@ -47,20 +47,20 @@ func TestNoR23CommentSyncMarkersInReplay(t *testing.T) {
 	}
 }
 
-// TestTrainedRooflineBetaCoeffGuard_UsesCorrectMinimum verifies the shared function
-// uses len < 7 for trained-roofline (BC-4), matching the 7-coefficient model.
-// Verifiable from first principles: trained_roofline.go uses betaCoeffs[0..6].
-func TestTrainedRooflineBetaCoeffGuard_UsesCorrectMinimum(t *testing.T) {
+// TestTrainedPhysicsBetaCoeffGuard_UsesCorrectMinimum verifies the shared function
+// uses len < 7 for trained-physics (BC-4), matching the 7-coefficient model.
+// The guard prevents insufficient coefficients for the trained-physics backend.
+func TestTrainedPhysicsBetaCoeffGuard_UsesCorrectMinimum(t *testing.T) {
 	// GIVEN the source of cmd/root.go (where the shared guard lives after Task 1)
 	data, err := os.ReadFile("root.go")
 	assert.NoError(t, err)
 
 	content := string(data)
 
-	// THEN: the guard uses < 7 (not < 10) for trained-roofline (BC-4)
+	// THEN: the guard uses < 7 (not < 10) for trained-physics (BC-4)
 	// The local variable in resolveLatencyConfig is named "beta" (not "betaCoeffs")
 	assert.Contains(t, content, `len(beta) < 7`,
-		"trained-roofline guard must use < 7 (model uses indices 0-6); local var is 'beta' in resolveLatencyConfig")
+		"trained-physics guard must use < 7 (model uses indices 0-6); local var is 'beta' in resolveLatencyConfig")
 
 	// THEN: the wrong value < 10 must not appear in root.go
 	assert.NotContains(t, content, `len(beta) < 10`,

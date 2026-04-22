@@ -559,6 +559,85 @@ func TestBlackbox_OutputTokenProcessingTime_ExtremeAlpha_SaturatesAtMaxInt64(t *
 	assert.Equal(t, int64(math.MaxInt64), result)
 }
 
+// TestNewLatencyModel_RemovedBackendError verifies BC-1, BC-2, BC-9:
+// GIVEN a backend name that was removed ("crossmodel" or "trained-roofline")
+// WHEN NewLatencyModel is called
+// THEN it returns an error containing the backend name and valid options.
+func TestNewLatencyModel_RemovedBackendError(t *testing.T) {
+	tests := []struct {
+		name            string
+		backend         string
+		wantErrContains []string // Error must contain all these substrings
+	}{
+		{
+			name:    "crossmodel removed",
+			backend: "crossmodel",
+			wantErrContains: []string{
+				"unknown backend",
+				"crossmodel",
+				"valid options:",
+				"blackbox",
+				"roofline",
+				"trained-physics",
+			},
+		},
+		{
+			name:    "trained-roofline removed",
+			backend: "trained-roofline",
+			wantErrContains: []string{
+				"unknown backend",
+				"trained-roofline",
+				"valid options:",
+				"blackbox",
+				"roofline",
+				"trained-physics",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// GIVEN minimal valid config with removed backend
+			coeffs := sim.NewLatencyCoeffs(
+				[]float64{1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0},
+				[]float64{1.0, 1.0, 1.0},
+			)
+			hw := sim.NewModelHardwareConfig(
+				sim.ModelConfig{
+					NumLayers:       32,
+					NumHeads:        32,
+					HiddenDim:       4096,
+					IntermediateDim: 11008,
+				},
+				sim.HardwareCalib{
+					TFlopsPeak: 989.0,
+					BwPeakTBs:  3.35,
+				},
+				"", "", 1, tt.backend, 0,
+			)
+
+			// WHEN attempting to construct the model
+			model, err := NewLatencyModel(coeffs, hw)
+
+			// THEN construction must fail
+			if err == nil {
+				t.Fatalf("NewLatencyModel(%q) succeeded; want error for removed backend", tt.backend)
+			}
+			if model != nil {
+				t.Errorf("NewLatencyModel(%q) returned non-nil model with error; want nil", tt.backend)
+			}
+
+			// AND the error message must contain all expected substrings
+			errMsg := err.Error()
+			for _, substr := range tt.wantErrContains {
+				if !strings.Contains(errMsg, substr) {
+					t.Errorf("error message missing substring %q\nGot: %s", substr, errMsg)
+				}
+			}
+		})
+	}
+}
+
 // TestAllBackends_StepTime_EmptyBatch_FloorAtOne verifies the LatencyModel
 // interface contract: all backends must return >= 1 for empty batch, even with zero coefficients.
 func TestAllBackends_StepTime_EmptyBatch_FloorAtOne(t *testing.T) {
@@ -570,17 +649,68 @@ func TestAllBackends_StepTime_EmptyBatch_FloorAtOne(t *testing.T) {
 	}
 	assert.GreaterOrEqual(t, blackbox.StepTime(emptyBatch), int64(1),
 		"blackbox with zero coefficients must still return >= 1")
+}
 
-	crossmodel := &CrossModelLatencyModel{
-		betaCoeffs:  []float64{0, 0, 0, 0}, // zero coefficients — worst case
-		alphaCoeffs: []float64{0, 0, 0},
-		numLayers:   1,
-		kvDimScaled: 0.0,
-		isMoE:       0.0,
-		isTP:        0.0,
+// TestNewLatencyModel_RemainingBackendsWork verifies BC-7: deleting deprecated
+// backend implementations does not break the remaining valid backends.
+// GIVEN minimal valid hardware config and coefficients
+// WHEN constructing each remaining backend via NewLatencyModel
+// THEN construction succeeds AND the model computes positive step time.
+func TestNewLatencyModel_RemainingBackendsWork(t *testing.T) {
+	validBackends := []string{"blackbox", "roofline", "trained-physics"}
+
+	for _, backend := range validBackends {
+		t.Run(backend, func(t *testing.T) {
+			// GIVEN minimal valid hardware config (includes BytesPerParam, MfuPrefill,
+			// MfuDecode required by roofline validation)
+			hw := sim.NewModelHardwareConfig(
+				sim.ModelConfig{
+					NumLayers:       32,
+					NumHeads:        32,
+					NumKVHeads:      8,
+					HiddenDim:       4096,
+					IntermediateDim: 11008,
+					BytesPerParam:   2.0,
+				},
+				sim.HardwareCalib{
+					TFlopsPeak: 989.0,
+					BwPeakTBs:  3.35,
+					MfuPrefill: 0.55,
+					MfuDecode:  0.30,
+					MemoryGiB:  80.0,
+				},
+				"", "", 1, backend, 0,
+			)
+			coeffs := sim.NewLatencyCoeffs(
+				[]float64{1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0},
+				[]float64{1.0, 1.0, 1.0},
+			)
+
+			// WHEN constructing a valid backend
+			model, err := NewLatencyModel(coeffs, hw)
+
+			// THEN construction must succeed
+			if err != nil {
+				t.Fatalf("NewLatencyModel(%q) failed: %v", backend, err)
+			}
+			if model == nil {
+				t.Errorf("NewLatencyModel(%q) returned nil model with no error", backend)
+			}
+
+			// AND the model must compute positive step time
+			batch := []*sim.Request{
+				{
+					InputTokens:   make([]int, 100),
+					ProgressIndex: 0,
+					NumNewTokens:  10,
+				},
+			}
+			stepTime := model.StepTime(batch)
+			if stepTime <= 0 {
+				t.Errorf("StepTime with 100 input, 10 new tokens = %v; want > 0", stepTime)
+			}
+		})
 	}
-	assert.GreaterOrEqual(t, crossmodel.StepTime(emptyBatch), int64(1),
-		"crossmodel with zero coefficients must still return >= 1")
 }
 
 // TestNewLatencyModel_Blackbox_EmitsDeprecationWarning verifies BC-1:
@@ -592,72 +722,6 @@ func TestNewLatencyModel_Blackbox_EmitsDeprecationWarning(t *testing.T) {
 
 	coeffs := sim.NewLatencyCoeffs([]float64{10.0, 20.0, 30.0}, []float64{1.0, 2.0, 3.0})
 	hw := sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "", "", 1, "blackbox", 0)
-
-	var logBuf bytes.Buffer
-	oldOut := logrus.StandardLogger().Out
-	logrus.SetOutput(&logBuf)
-	defer logrus.SetOutput(oldOut)
-
-	model, err := NewLatencyModel(coeffs, hw)
-
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if model == nil {
-		t.Fatal("expected non-nil model")
-	}
-
-	logOutput := logBuf.String()
-	if !strings.Contains(logOutput, "deprecated") {
-		t.Errorf("expected deprecation warning in log output, but got: %s", logOutput)
-	}
-}
-
-// TestNewLatencyModel_Crossmodel_EmitsDeprecationWarning verifies BC-2:
-// GIVEN a valid crossmodel latency model config
-// WHEN NewLatencyModel is called
-// THEN a deprecation warning MUST be emitted.
-func TestNewLatencyModel_Crossmodel_EmitsDeprecationWarning(t *testing.T) {
-	resetDeprecationWarningsForTest()
-
-	coeffs := sim.NewLatencyCoeffs([]float64{10.0, 20.0, 30.0, 40.0}, []float64{1.0, 2.0, 3.0})
-	hw := sim.NewModelHardwareConfig(
-		sim.ModelConfig{NumLayers: 32, NumHeads: 32, HiddenDim: 4096, NumKVHeads: 8},
-		sim.HardwareCalib{TFlopsPeak: 989.5, BwPeakTBs: 3.35},
-		"", "", 1, "crossmodel", 0)
-
-	var logBuf bytes.Buffer
-	oldOut := logrus.StandardLogger().Out
-	logrus.SetOutput(&logBuf)
-	defer logrus.SetOutput(oldOut)
-
-	model, err := NewLatencyModel(coeffs, hw)
-
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if model == nil {
-		t.Fatal("expected non-nil model")
-	}
-
-	logOutput := logBuf.String()
-	if !strings.Contains(logOutput, "deprecated") {
-		t.Errorf("expected deprecation warning in log output, but got: %s", logOutput)
-	}
-}
-
-// TestNewLatencyModel_TrainedRoofline_EmitsDeprecationWarning verifies BC-3:
-// GIVEN a valid trained-roofline latency model config
-// WHEN NewLatencyModel is called
-// THEN a deprecation warning MUST be emitted.
-func TestNewLatencyModel_TrainedRoofline_EmitsDeprecationWarning(t *testing.T) {
-	resetDeprecationWarningsForTest()
-
-	coeffs := sim.NewLatencyCoeffs([]float64{10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0}, []float64{1.0, 2.0, 3.0})
-	hw := sim.NewModelHardwareConfig(
-		sim.ModelConfig{NumLayers: 32, NumHeads: 32, HiddenDim: 4096, IntermediateDim: 11008, NumKVHeads: 32},
-		sim.HardwareCalib{TFlopsPeak: 989.5, BwPeakTBs: 3.35},
-		"", "", 1, "trained-roofline", 0)
 
 	var logBuf bytes.Buffer
 	oldOut := logrus.StandardLogger().Out
