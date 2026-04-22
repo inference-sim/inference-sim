@@ -23,7 +23,7 @@ go build -o blis main.go
 - **Deterministic execution** — same seed produces byte-identical output across runs
 - **KV-cache modeling** with prefix caching and tiered GPU+CPU offload
 - **Chunked prefill and preemption-aware batch formation**
-- **Pluggable latency models** — roofline (default, analytical FLOPs/bandwidth), blackbox (data-driven coefficients), cross-model (physics-informed, MoE-aware), and trained-roofline (roofline × learned corrections), with an extensible interface for custom backends
+- **Pluggable latency models** — roofline (default, analytical FLOPs/bandwidth), blackbox (data-driven coefficients), and trained-physics (physics-informed basis functions with MoE-aware scaling), with an extensible interface for custom backends
 - **Multi-instance cluster simulation** with shared-clock event loop
 - **Pluggable routing policies** — round-robin, least-loaded, and composable weighted-scoring with six pluggable scorers (default: precise-prefix-cache, queue-depth, kv-utilization)
 - **Admission control**, **priority policies**, and **instance schedulers** — each a pluggable policy axis

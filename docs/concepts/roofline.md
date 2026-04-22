@@ -100,6 +100,6 @@ Alternatively, download the `config.json` manually:
 | `BwPeakTBs` | Peak HBM bandwidth in TB/s from GPU datasheet |
 | `mfuPrefill` | Model FLOPS Utilization for prefill phase (compute-bound) |
 | `mfuDecode` | Model FLOPS Utilization for decode phase (memory-bound) |
-| `MemoryGiB` | GPU memory capacity in GiB. Used by `CalculateKVBlocks` to auto-derive `--total-kv-blocks` when roofline or crossmodel mode is active and the flag is not explicitly set. |
+| `MemoryGiB` | GPU memory capacity in GiB. Used by `CalculateKVBlocks` to auto-derive `--total-kv-blocks` when roofline or trained-physics mode is active and the flag is not explicitly set. |
 
 > Note: The Peak TFLOPS and BW for a given GPU family might vary by GPU connectivity (e.g. SXM vs PCIe). We recommend a separate entry for each GPU connectivity type - e.g. A100-SXM, A100-PCIe etc in `hardware_config.json`.
