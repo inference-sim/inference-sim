@@ -305,9 +305,9 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 	}
 
 	// Stage 5: Schedule ScaleActuationEvent only when there are decisions to apply.
-	// Skipping empty-filtered ticks avoids unnecessary RNG consumption (INV-6: same
-	// decisions must produce identical RNG state regardless of stabilization window history)
-	// and avoids no-op Apply() calls every tick.
+	// Skipping suppressed ticks avoids unnecessary RNG consumption (INV-6: RNG is consumed
+	// only when decisions pass the gate, so two runs with identical gate outcomes advance
+	// RNG identically) and avoids no-op Apply() calls every tick.
 	if len(filtered) > 0 {
 		// Guard: rng is required when Stddev > 0. Fall back to Mean-only with an error
 		// log rather than panicking — the simulator should degrade gracefully.
