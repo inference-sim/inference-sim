@@ -1635,10 +1635,13 @@ var runCmd = &cobra.Command{
 			injected := agg.CompletedRequests + agg.StillQueued + agg.StillRunning + agg.DroppedUnservable + agg.TimedOutRequests +
 				rawMetrics.RoutingRejections + rawMetrics.GatewayQueueDepth + rawMetrics.GatewayQueueShed
 			if requestTimeoutSecs > 0 {
-				logrus.Warnf("%d of %d requests timed out (%ds deadline). Throughput metric (tokens_per_sec) may be inflated. Use --timeout 0 to disable, or increase the deadline.",
+				logrus.Warnf("%d of %d injected requests timed out (%ds deadline). Throughput metric (tokens_per_sec) may be inflated. Use --timeout 0 to disable, or increase the deadline.",
 					rawMetrics.TimedOutRequests, injected, requestTimeoutSecs)
 			} else {
-				logrus.Warnf("%d of %d requests timed out. Throughput metric (tokens_per_sec) may be inflated.",
+				// requestTimeoutSecs == 0 with timed-out requests means deadlines came from
+				// the --workload-spec file; synthesized specs always get explicit *0 from
+				// applyTimeoutToSpec, making this path unreachable for non-spec runs.
+				logrus.Warnf("%d of %d injected requests timed out (deadline from workload spec). Throughput metric (tokens_per_sec) may be inflated. Use --timeout 0 to disable spec timeouts, or increase them in the spec.",
 					rawMetrics.TimedOutRequests, injected)
 			}
 		}

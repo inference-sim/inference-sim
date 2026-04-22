@@ -1427,6 +1427,46 @@ func TestGenerateWorkload_Deadline_SessionDefaultTimeout(t *testing.T) {
 	}
 }
 
+// TestGenerateWorkload_Deadline_SessionExplicitZeroNoTimeout verifies that a session
+// client with Timeout=*int64(0) gets Deadline=0 (no deadline) rather than the 300s
+// default that applies when Timeout is nil. This is the mechanism that makes
+// --timeout 0 in blis run meaningful for concurrency/session workloads (#1127).
+//
+// GIVEN a session (multi-turn) client with Timeout set to an explicit pointer to zero
+// WHEN GenerateWorkload generates requests
+// THEN every request has Deadline=0 (arrival + 0 = no deadline, not arrival + 300s)
+func TestGenerateWorkload_Deadline_SessionExplicitZeroNoTimeout(t *testing.T) {
+	zero := int64(0)
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 42, Category: "language", AggregateRate: 5.0,
+		Clients: []ClientSpec{
+			{
+				ID: "session-zero-timeout", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
+				Arrival:   ArrivalSpec{Process: "poisson"},
+				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
+				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+				Timeout: &zero,
+				Reasoning: &ReasoningSpec{
+					ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+					MultiTurn:       &MultiTurnSpec{MaxRounds: 2, ThinkTimeUs: 1000, ContextGrowth: ""},
+				},
+			},
+		},
+	}
+
+	wl, err := GenerateWorkload(spec, 10_000_000, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, req := range wl.Requests {
+		if req.Deadline != 0 {
+			t.Errorf("session request %s with Timeout=*0: Deadline=%d, want 0 (explicit zero suppresses 300s default)",
+				req.ID, req.Deadline)
+		}
+	}
+}
+
 // TestGenerateWorkload_SessionManager_Integration verifies that GenerateWorkload
 // blueprints work correctly with SessionManager end-to-end: round-0 requests
 // are generated, blueprints produce valid follow-up rounds via OnComplete.
