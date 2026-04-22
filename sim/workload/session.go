@@ -173,8 +173,16 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 
 	var inputTokens []int
 	if bp.ContextGrowth == "accumulate" {
-		// Accumulate: prepend prior context + this round's actual input/output
-		sess.contextTokens = append(sess.contextTokens, req.InputTokens...)
+		// Extend contextTokens by only the NEW suffix (the part of req.InputTokens that
+		// was not already in contextTokens), then append the actual output.
+		//
+		// req.InputTokens was built as: append(contextTokens, newSuffix...), so
+		// req.InputTokens[len(contextTokens):] is exactly the new suffix without any
+		// double-counting. Appending req.InputTokens in full causes quadratic growth
+		// (~2× per round) because it re-includes the accumulated context.
+		if len(req.InputTokens) > len(sess.contextTokens) {
+			sess.contextTokens = append(sess.contextTokens, req.InputTokens[len(sess.contextTokens):]...)
+		}
 		if actualOutputLen > 0 && len(req.OutputTokens) > 0 {
 			outTokens := req.OutputTokens
 			if actualOutputLen < len(outTokens) {
