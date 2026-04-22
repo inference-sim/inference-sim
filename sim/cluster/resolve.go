@@ -61,7 +61,7 @@ func (o PoolOverrides) IsEmpty() bool {
 // model-based backends (roofline, trained-physics) share the same model
 // architecture (HFConfig) and LatencyCoeffs. Mixing model-based and blackbox backends
 // across pools is supported but note that LatencyCoeffs are global — they are only
-// meaningful for the blackbox backend and are ignored by analytical backends.
+// meaningful for the blackbox backend and are ignored by model-based backends.
 func ResolvePoolConfig(global sim.SimConfig, overrides PoolOverrides) sim.SimConfig {
 	resolved := global // struct copy
 

@@ -94,7 +94,7 @@ import (
 //
 // α₁: PostDecodeFixedOverhead (µs)
 //   Fixed per-request post-decode overhead: detokenization setup, finish reason
-//   determination, response serialization. Typically ~800 µs.
+//   determination, response serialization. Typically ~777 µs.
 //
 // α₂: OutputTokenProcessingTime (µs/token)
 //   Per-output-token overhead: streaming token transmission, incremental detokenization.
