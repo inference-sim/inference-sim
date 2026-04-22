@@ -239,6 +239,8 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 	// Window=0 passes immediately on first signal. For scale-up this matches the HPA default (0s).
 	// For scale-down, the HPA default is 300s (300,000,000µs); window=0 is backward-compatible
 	// but not HPA-aligned — set ScaleDownStabilizationWindowUs=300_000_000 for HPA parity.
+	// Mechanism for window=0: when !seen, `first` is assigned nowUs before the elapsed check,
+	// making elapsed=0 which satisfies NOT (0 < 0), so the decision passes immediately.
 	//
 	// Build sets of models that have a scale-up or scale-down decision this tick.
 	// Any model absent from these sets has lost its signal → reset its timer.

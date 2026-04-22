@@ -252,17 +252,17 @@ func (b *PolicyBundle) Validate() error {
 	if b.Autoscaler.IntervalUs < 0 {
 		return fmt.Errorf("autoscaler.interval_us must be >= 0 (0 = disabled), got %v", b.Autoscaler.IntervalUs)
 	}
-	if b.Autoscaler.ScaleUpStabilizationWindowUs < 0 {
-		return fmt.Errorf("autoscaler.scale_up_stabilization_window_us must be >= 0, got %v", b.Autoscaler.ScaleUpStabilizationWindowUs)
+	if math.IsNaN(b.Autoscaler.ScaleUpStabilizationWindowUs) || math.IsInf(b.Autoscaler.ScaleUpStabilizationWindowUs, 0) || b.Autoscaler.ScaleUpStabilizationWindowUs < 0 {
+		return fmt.Errorf("autoscaler.scale_up_stabilization_window_us must be a finite non-negative number, got %v", b.Autoscaler.ScaleUpStabilizationWindowUs)
 	}
-	if b.Autoscaler.ScaleDownStabilizationWindowUs < 0 {
-		return fmt.Errorf("autoscaler.scale_down_stabilization_window_us must be >= 0, got %v", b.Autoscaler.ScaleDownStabilizationWindowUs)
+	if math.IsNaN(b.Autoscaler.ScaleDownStabilizationWindowUs) || math.IsInf(b.Autoscaler.ScaleDownStabilizationWindowUs, 0) || b.Autoscaler.ScaleDownStabilizationWindowUs < 0 {
+		return fmt.Errorf("autoscaler.scale_down_stabilization_window_us must be a finite non-negative number, got %v", b.Autoscaler.ScaleDownStabilizationWindowUs)
 	}
-	if b.Autoscaler.HPAScrapeDelay.Mean < 0 {
-		return fmt.Errorf("autoscaler.hpa_scrape_delay.mean must be >= 0, got %v", b.Autoscaler.HPAScrapeDelay.Mean)
+	if math.IsNaN(b.Autoscaler.HPAScrapeDelay.Mean) || math.IsInf(b.Autoscaler.HPAScrapeDelay.Mean, 0) || b.Autoscaler.HPAScrapeDelay.Mean < 0 {
+		return fmt.Errorf("autoscaler.hpa_scrape_delay.mean must be a finite non-negative number, got %v", b.Autoscaler.HPAScrapeDelay.Mean)
 	}
-	if b.Autoscaler.HPAScrapeDelay.Stddev < 0 {
-		return fmt.Errorf("autoscaler.hpa_scrape_delay.stddev must be >= 0, got %v", b.Autoscaler.HPAScrapeDelay.Stddev)
+	if math.IsNaN(b.Autoscaler.HPAScrapeDelay.Stddev) || math.IsInf(b.Autoscaler.HPAScrapeDelay.Stddev, 0) || b.Autoscaler.HPAScrapeDelay.Stddev < 0 {
+		return fmt.Errorf("autoscaler.hpa_scrape_delay.stddev must be a finite non-negative number, got %v", b.Autoscaler.HPAScrapeDelay.Stddev)
 	}
 	// Validate analyzer thresholds (non-zero = explicitly set; zero = use default).
 	// Mirrors the panic guards in NewV2SaturationAnalyzer so invalid values are caught
