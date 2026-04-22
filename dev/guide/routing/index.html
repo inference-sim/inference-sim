@@ -3088,7 +3088,7 @@
 </tr>
 <tr>
 <td><strong>Instance-reported (Immediate/Periodic)</strong></td>
-<td>QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate</td>
+<td>QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate, PreemptionCount</td>
 <td>Instance-internal state (scheduler queue, running batch, KV cache)</td>
 <td>When <code>--snapshot-refresh-interval=0</code> (default): Immediate (read from instance at routing time). When <code>&gt;0</code>: all Prometheus-sourced signals share the same Periodic refresh interval, matching real vLLM's single <code>/metrics</code> endpoint.</td>
 </tr>
