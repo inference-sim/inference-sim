@@ -82,6 +82,9 @@ type AnalyzerBundleConfig struct {
 
 // AutoscalerBundleConfig holds autoscaler pipeline configuration.
 // IntervalUs == 0 disables the autoscaler (default).
+// Note: ScaleDownStabilizationWindowUs = 0 (the Go zero value, used when the field is
+// absent from YAML) means no stabilization — scale-down acts on the first signal. To match
+// the Kubernetes HPA default scale-down behavior, set it to 300,000,000 (5 min) explicitly.
 type AutoscalerBundleConfig struct {
 	IntervalUs                     float64              `yaml:"interval_us"`
 	ScaleUpStabilizationWindowUs   float64              `yaml:"scale_up_stabilization_window_us"`

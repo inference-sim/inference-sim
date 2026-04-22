@@ -126,7 +126,7 @@ A researcher studying oscillation behavior wants to configure HPA-aligned stabil
 
 - **FR-001**: The simulator MUST fire the autoscaling pipeline at a configurable interval (`ModelAutoscalerIntervalUs`); when the interval is zero, no tick is ever scheduled.
 - **FR-002**: The pipeline MUST execute in order: Collector → Analyzer (per model) → Engine → schedule actuation event after `HPAScrapeDelay` → Actuator applies decisions.
-- **FR-003**: The pipeline MUST support per-model scale-up and scale-down cooldown windows; a decision suppressed by cooldown is discarded silently (not forwarded to Actuator).
+- **FR-003**: The pipeline MUST support per-model HPA-aligned stabilization windows (`ScaleUpStabilizationWindowUs`, `ScaleDownStabilizationWindowUs`); a decision is forwarded only after the signal has been continuously present for the window duration; signal loss resets the timer; window=0 passes on first signal.
 - **FR-004**: The actuation step MUST be separated from the decision step by a configurable delay (`HPAScrapeDelay`), which defaults to zero for determinism compatibility.
 
 **Collector**
@@ -210,7 +210,7 @@ A researcher studying oscillation behavior wants to configure HPA-aligned stabil
 - GPU inventory is a committed-state snapshot: free slots = total − running − loading. Pending placements are not subtracted (no GPU committed yet). Draining instances are subtracted (they hold GPUs until drain completes).
 - WaitDrain semantics are the default for DirectActuator scale-down: the instance stops receiving new requests immediately but GPU slots are freed only after all in-flight requests complete. Full DrainPolicy selection is deferred to specs/010.
 - The Analyzer is stateless across ticks. State is held in the struct, not across interface boundaries.
-- Cooldown is tracked in the pipeline orchestrator (cluster.go tick handler), not inside any interface, so Engine and Analyzer remain stateless and independently testable.
+- Stabilization window state (`scaleUpFirstSignalAt`, `scaleDownFirstSignalAt` maps keyed by ModelID) is tracked in the pipeline orchestrator (`autoscalerPipeline` in `autoscaler.go`), not inside any interface, so Engine and Analyzer remain stateless and independently testable.
 - Each Analyzer is called once per model per tick. There is no batch call across models; the Engine is the cross-model layer.
 - The minimal viable pipeline for WVA team validation is: DefaultCollector → V2SaturationAnalyzer → UnlimitedEngine → DirectActuator. GreedyEngine is additive (1C-1d). QueueingModelAnalyzer is a future addition (#954).
 - HPAScrapeDelay defaults to zero. This preserves byte-identical output with existing tests (INV-6 determinism) and allows the delay to be introduced explicitly for oscillation research.

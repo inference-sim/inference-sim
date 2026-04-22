@@ -236,7 +236,9 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 
 	// Stage 4: Stabilization window gate — pass a decision only once its signal has been
 	// continuously present for ScaleUp/DownStabilizationWindowUs. Reset timer on signal loss.
-	// Window=0 passes immediately on first signal (HPA scale-up default; backward-compatible).
+	// Window=0 passes immediately on first signal. For scale-up this matches the HPA default (0s).
+	// For scale-down, the HPA default is 300s (300,000,000µs); window=0 is backward-compatible
+	// but not HPA-aligned — set ScaleDownStabilizationWindowUs=300_000_000 for HPA parity.
 	//
 	// Build sets of models that have a scale-up or scale-down decision this tick.
 	// Any model absent from these sets has lost its signal → reset its timer.

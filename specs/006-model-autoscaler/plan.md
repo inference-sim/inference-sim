@@ -65,7 +65,7 @@ sim/cluster/
 ├── direct_actuator.go         ← NEW (1C-1b): DirectActuator
 ├── engine.go                  ← NEW (1C-1b): UnlimitedEngine; (1C-1d): GreedyEngine
 ├── cluster_event.go           ← MODIFIED: add ScalingTickEvent + ScaleActuationEvent
-├── cluster.go                 ← MODIFIED: tick handler, actuation handler, cooldown tracking, gpuInventory()
+├── cluster.go                 ← MODIFIED: tick handler, actuation handler, stabilization window tracking, gpuInventory()
 ├── deployment.go              ← MODIFIED: 4 autoscaler config fields
 └── infra_config.go            ← MODIFIED: add CostPerHour to NodePoolConfig
 
