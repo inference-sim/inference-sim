@@ -232,18 +232,14 @@ func parseServeGenTrace(path string) ([]serveGenTraceRow, error) {
 		// Parse shape and scale parameters (columns 5-6)
 		var shapeParam, scaleParam float64
 		if len(record) >= 6 {
-			shape, err := strconv.ParseFloat(strings.TrimSpace(record[4]), 64)
-			if err != nil {
-				skippedRows++
-				continue
+			shape, shapeErr := strconv.ParseFloat(strings.TrimSpace(record[4]), 64)
+			scale, scaleErr := strconv.ParseFloat(strings.TrimSpace(record[5]), 64)
+			if shapeErr != nil || scaleErr != nil {
+				logrus.Debugf("parseServeGenTrace: row at t=%.0f has non-numeric shape/scale, falling back to 0", startTime)
+			} else {
+				shapeParam = shape
+				scaleParam = scale
 			}
-			scale, err := strconv.ParseFloat(strings.TrimSpace(record[5]), 64)
-			if err != nil {
-				skippedRows++
-				continue
-			}
-			shapeParam = shape
-			scaleParam = scale
 		}
 
 		rows = append(rows, serveGenTraceRow{

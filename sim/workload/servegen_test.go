@@ -202,6 +202,56 @@ func TestParseServeGenTrace_WithShapeScale(t *testing.T) {
 	}
 }
 
+func TestParseServeGenTrace_FourColumnsBackwardCompat(t *testing.T) {
+	// GIVEN a trace CSV with only 4 columns (no shape/scale)
+	dir := t.TempDir()
+	csvContent := "0,1.5,2.5,Gamma\n600,0.8,1.2,Weibull\n"
+	path := filepath.Join(dir, "trace.csv")
+	require.NoError(t, os.WriteFile(path, []byte(csvContent), 0644))
+
+	// WHEN parsing the trace
+	rows, err := parseServeGenTrace(path)
+
+	// THEN both rows are parsed successfully
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+
+	// AND shapeParam and scaleParam default to zero for both rows
+	assert.Equal(t, float64(0), rows[0].shapeParam, "4-column row should have shapeParam=0")
+	assert.Equal(t, float64(0), rows[0].scaleParam, "4-column row should have scaleParam=0")
+	assert.Equal(t, float64(0), rows[1].shapeParam, "4-column row should have shapeParam=0")
+	assert.Equal(t, float64(0), rows[1].scaleParam, "4-column row should have scaleParam=0")
+
+	// AND the core fields are parsed correctly
+	assert.InDelta(t, 1.5, rows[0].rate, 0.001)
+	assert.InDelta(t, 2.5, rows[0].cv, 0.001)
+	assert.Equal(t, "Gamma", rows[0].pattern)
+}
+
+func TestParseServeGenTrace_BadShapeScale_FallsBackToZero(t *testing.T) {
+	// GIVEN a trace CSV with 6 columns where columns 5-6 are non-numeric
+	dir := t.TempDir()
+	csvContent := "0,1.0,2.5,Gamma,BAD,BAD\n"
+	path := filepath.Join(dir, "trace.csv")
+	require.NoError(t, os.WriteFile(path, []byte(csvContent), 0644))
+
+	// WHEN parsing the trace
+	rows, err := parseServeGenTrace(path)
+
+	// THEN the row is still parsed (not skipped)
+	require.NoError(t, err)
+	require.Len(t, rows, 1, "row with bad shape/scale should not be skipped")
+
+	// AND shapeParam and scaleParam fall back to zero
+	assert.Equal(t, float64(0), rows[0].shapeParam, "bad shape should fall back to 0")
+	assert.Equal(t, float64(0), rows[0].scaleParam, "bad scale should fall back to 0")
+
+	// AND core fields are still parsed correctly
+	assert.InDelta(t, 1.0, rows[0].rate, 0.001)
+	assert.InDelta(t, 2.5, rows[0].cv, 0.001)
+	assert.Equal(t, "Gamma", rows[0].pattern)
+}
+
 func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 	dir := t.TempDir()
 	// Create chunk-0-trace.csv
