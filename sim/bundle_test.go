@@ -364,9 +364,9 @@ func TestLoadPolicyBundle_AutoscalerSection(t *testing.T) {
 	yaml := `
 autoscaler:
   interval_us: 30000000
-  scale_up_cooldown_us: 60000000
-  scale_down_cooldown_us: 180000000
-  actuation_delay:
+  scale_up_stabilization_window_us: 60000000
+  scale_down_stabilization_window_us: 180000000
+  hpa_scrape_delay:
     mean: 10.0
     stddev: 2.0
   analyzer:
@@ -386,11 +386,11 @@ autoscaler:
 	if bundle.Autoscaler.Analyzer.KVCacheThreshold != 0.8 {
 		t.Errorf("KVCacheThreshold = %v, want 0.8", bundle.Autoscaler.Analyzer.KVCacheThreshold)
 	}
-	if bundle.Autoscaler.ActuationDelay.Mean != 10.0 {
-		t.Errorf("ActuationDelay.Mean = %v, want 10.0", bundle.Autoscaler.ActuationDelay.Mean)
+	if bundle.Autoscaler.HPAScrapeDelay.Mean != 10.0 {
+		t.Errorf("HPAScrapeDelay.Mean = %v, want 10.0", bundle.Autoscaler.HPAScrapeDelay.Mean)
 	}
-	if bundle.Autoscaler.ScaleUpCooldownUs != 60_000_000 {
-		t.Errorf("ScaleUpCooldownUs = %v, want 60000000", bundle.Autoscaler.ScaleUpCooldownUs)
+	if bundle.Autoscaler.ScaleUpStabilizationWindowUs != 60_000_000 {
+		t.Errorf("ScaleUpStabilizationWindowUs = %v, want 60000000", bundle.Autoscaler.ScaleUpStabilizationWindowUs)
 	}
 }
 

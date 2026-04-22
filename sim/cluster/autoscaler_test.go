@@ -84,7 +84,7 @@ func newAutoscalerTestConfig(intervalUs float64) DeploymentConfig {
 }
 
 // newTestPipeline constructs an autoscalerPipeline for tests using the canonical constructor.
-// Passes nil rng — safe for all tests that keep ActuationDelay.Stddev == 0 (the default).
+// Passes nil rng — safe for all tests that keep HPAScrapeDelay.Stddev == 0 (the default).
 func newTestPipeline(collector Collector, analyzer Analyzer, engine Engine, actuator Actuator) *autoscalerPipeline {
 	return newAutoscalerPipeline(collector, analyzer, engine, actuator, nil)
 }
@@ -105,8 +105,8 @@ func wireAutoscaler(cs *ClusterSimulator) *countingCollector {
 // Sub-tests:
 //   (a) ModelAutoscalerIntervalUs=0 → no ScalingTickEvent fires (autoscaler disabled).
 //   (b) interval=60s, horizon=200s → ticks fire at t=0, 60s, 120s, 180s (4 total).
-//   (c) ActuationDelay={Mean:0} → Actuator.Apply() called with At == ScalingTickEvent.At.
-//   (d) ActuationDelay={Mean:30s} → Actuator.Apply() called with At == tick.At + 30_000_000.
+//   (c) HPAScrapeDelay={Mean:0} → Actuator.Apply() called with At == ScalingTickEvent.At.
+//   (d) HPAScrapeDelay={Mean:30s} → Actuator.Apply() called with At == tick.At + 30_000_000.
 //
 // Tests (a) and (b) fail before T015 (first tick scheduling) is implemented.
 // Tests (c) and (d) fail before T013 (ScaleActuationEvent scheduling) is implemented.
@@ -139,13 +139,13 @@ func TestScalingTickScheduling(t *testing.T) {
 		}
 	})
 
-	t.Run("c_zero_actuation_delay_actuation_same_tick", func(t *testing.T) {
+	t.Run("c_zero_hpa_scrape_delay_actuation_same_tick", func(t *testing.T) {
 		// Observable behavior: with zero delay, Apply() must be called at the same
 		// time as the tick. We use a recordingActuator to capture the call time.
 		const intervalUs = 60_000_000.0
 		cfg := newAutoscalerTestConfig(intervalUs)
 		cfg.Horizon = 1 // 1µs horizon: only first tick at t=0 fires
-		cfg.ActuationDelay = DelaySpec{Mean: 0, Stddev: 0}
+		cfg.HPAScrapeDelay = DelaySpec{Mean: 0, Stddev: 0}
 		cs := NewClusterSimulator(cfg, nil, nil)
 
 		actuator := newRecordingActuator()
@@ -161,14 +161,14 @@ func TestScalingTickScheduling(t *testing.T) {
 		}
 	})
 
-	t.Run("d_30s_actuation_delay_shifts_actuation", func(t *testing.T) {
-		// Observable behavior: with a 30s actuation delay and a 200s horizon,
+	t.Run("d_30s_hpa_scrape_delay_shifts_actuation", func(t *testing.T) {
+		// Observable behavior: with a 30s HPA scrape delay and a 200s horizon,
 		// Apply() must be called. The tick fires at t=0, actuation fires at t=30s.
 		const intervalUs = 60_000_000.0
 		const horizonUs = 200_000_000 // 200s — enough for tick at t=0, actuation at t=30s
 		cfg := newAutoscalerTestConfig(intervalUs)
 		cfg.Horizon = horizonUs
-		cfg.ActuationDelay = DelaySpec{Mean: 30, Stddev: 0} // 30s deterministic delay
+		cfg.HPAScrapeDelay = DelaySpec{Mean: 30, Stddev: 0} // 30s deterministic delay
 		cs := NewClusterSimulator(cfg, nil, nil)
 
 		actuator := newRecordingActuator()
@@ -290,7 +290,7 @@ func TestNilComponentGuard(t *testing.T) {
 
 // TestCooldownFilterSuppression verifies INV-A7: scale decisions within the cooldown
 // window are suppressed; decisions after the window pass through.
-// Both scale-up (ScaleUpCooldownUs) and scale-down (ScaleDownCooldownUs) paths are
+// Both scale-up (ScaleUpStabilizationWindowUs) and scale-down (ScaleDownStabilizationWindowUs) paths are
 // tested — they share the same filter logic but maintain separate lastScale*At maps.
 func TestCooldownFilterSuppression(t *testing.T) {
 	// Ticks: 0, 60s, 120s, 180s, 240s, 300s, 360s = 7 ticks within 400s horizon.
@@ -315,14 +315,14 @@ func TestCooldownFilterSuppression(t *testing.T) {
 		{
 			name: "scale_up",
 			setup: func(cfg *DeploymentConfig) Engine {
-				cfg.ScaleUpCooldownUs = cooldownUs
+				cfg.ScaleUpStabilizationWindowUs = cooldownUs
 				return &alwaysScaleUpEngine{}
 			},
 		},
 		{
 			name: "scale_down",
 			setup: func(cfg *DeploymentConfig) Engine {
-				cfg.ScaleDownCooldownUs = cooldownUs
+				cfg.ScaleDownStabilizationWindowUs = cooldownUs
 				return &alwaysScaleDownEngine{}
 			},
 		},

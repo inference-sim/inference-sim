@@ -82,12 +82,14 @@ type AnalyzerBundleConfig struct {
 
 // AutoscalerBundleConfig holds autoscaler pipeline configuration.
 // IntervalUs == 0 disables the autoscaler (default).
+// ScaleDownStabilizationWindowUs defaults to 300,000,000 µs (5 min) when unset,
+// matching the Kubernetes HPA default scale-down stabilization window.
 type AutoscalerBundleConfig struct {
-	IntervalUs          float64              `yaml:"interval_us"`
-	ScaleUpCooldownUs   float64              `yaml:"scale_up_cooldown_us"`
-	ScaleDownCooldownUs float64              `yaml:"scale_down_cooldown_us"`
-	ActuationDelay      DelayBundleSpec      `yaml:"actuation_delay"`
-	Analyzer            AnalyzerBundleConfig `yaml:"analyzer"`
+	IntervalUs                     float64              `yaml:"interval_us"`
+	ScaleUpStabilizationWindowUs   float64              `yaml:"scale_up_stabilization_window_us"`
+	ScaleDownStabilizationWindowUs float64              `yaml:"scale_down_stabilization_window_us"`
+	HPAScrapeDelay                 DelayBundleSpec      `yaml:"hpa_scrape_delay"`
+	Analyzer                       AnalyzerBundleConfig `yaml:"analyzer"`
 }
 
 // LoadPolicyBundle reads and parses a YAML policy configuration file.
@@ -249,17 +251,17 @@ func (b *PolicyBundle) Validate() error {
 	if b.Autoscaler.IntervalUs < 0 {
 		return fmt.Errorf("autoscaler.interval_us must be >= 0 (0 = disabled), got %v", b.Autoscaler.IntervalUs)
 	}
-	if b.Autoscaler.ScaleUpCooldownUs < 0 {
-		return fmt.Errorf("autoscaler.scale_up_cooldown_us must be >= 0, got %v", b.Autoscaler.ScaleUpCooldownUs)
+	if b.Autoscaler.ScaleUpStabilizationWindowUs < 0 {
+		return fmt.Errorf("autoscaler.scale_up_stabilization_window_us must be >= 0, got %v", b.Autoscaler.ScaleUpStabilizationWindowUs)
 	}
-	if b.Autoscaler.ScaleDownCooldownUs < 0 {
-		return fmt.Errorf("autoscaler.scale_down_cooldown_us must be >= 0, got %v", b.Autoscaler.ScaleDownCooldownUs)
+	if b.Autoscaler.ScaleDownStabilizationWindowUs < 0 {
+		return fmt.Errorf("autoscaler.scale_down_stabilization_window_us must be >= 0, got %v", b.Autoscaler.ScaleDownStabilizationWindowUs)
 	}
-	if b.Autoscaler.ActuationDelay.Mean < 0 {
-		return fmt.Errorf("autoscaler.actuation_delay.mean must be >= 0, got %v", b.Autoscaler.ActuationDelay.Mean)
+	if b.Autoscaler.HPAScrapeDelay.Mean < 0 {
+		return fmt.Errorf("autoscaler.hpa_scrape_delay.mean must be >= 0, got %v", b.Autoscaler.HPAScrapeDelay.Mean)
 	}
-	if b.Autoscaler.ActuationDelay.Stddev < 0 {
-		return fmt.Errorf("autoscaler.actuation_delay.stddev must be >= 0, got %v", b.Autoscaler.ActuationDelay.Stddev)
+	if b.Autoscaler.HPAScrapeDelay.Stddev < 0 {
+		return fmt.Errorf("autoscaler.hpa_scrape_delay.stddev must be >= 0, got %v", b.Autoscaler.HPAScrapeDelay.Stddev)
 	}
 	// Validate analyzer thresholds (non-zero = explicitly set; zero = use default).
 	// Mirrors the panic guards in NewV2SaturationAnalyzer so invalid values are caught

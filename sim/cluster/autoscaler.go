@@ -161,7 +161,7 @@ type Engine interface {
 // Delta < 0 transitions the instance to Draining (WaitDrain semantics). Must not block.
 // Failure on PlaceInstance is logged, not silently dropped (INV-A2).
 // Pending placements for the model must be cancelled before applying scale-down.
-// Orchestrator has already applied cooldown filtering before calling Apply().
+// Orchestrator has already applied stabilization window filtering before calling Apply().
 type Actuator interface {
 	Apply(decisions []ScaleDecision) error
 }
@@ -170,7 +170,7 @@ type Actuator interface {
 // autoscalerPipeline — internal orchestrator (not a public interface)
 // ---------------------------------------------------------------------------
 
-// autoscalerPipeline holds the four interface components and cooldown state.
+// autoscalerPipeline holds the four interface components and stabilization window state.
 // Owned by ClusterSimulator as an optional field (nil when autoscaler disabled).
 // tick() runs the Collect → Analyze → Optimize pipeline and schedules a ScaleActuationEvent.
 // actuate() calls Actuator.Apply() with the decisions from a ScaleActuationEvent.
@@ -181,35 +181,35 @@ type autoscalerPipeline struct {
 	engine    Engine
 	actuator  Actuator
 
-	// Cooldown state (Decision 8): keyed by ModelID.
-	// Updated when a decision survives cooldown filtering and is forwarded to ScaleActuationEvent.
-	// Note: timer is recorded at decision time, not actuation time. If Actuator.Apply() later
-	// fails, the cooldown window is consumed for a decision that never took effect. This is a
-	// known tradeoff — callers should monitor actuation error logs to detect cooldown dead zones.
-	lastScaleUpAt   map[string]int64
-	lastScaleDownAt map[string]int64
+	// Stabilization window state (Decision 8): keyed by ModelID.
+	// scaleUpFirstSignalAt records the timestamp of the first consecutive tick that
+	// recommended scale-up for a model. Cleared when the signal disappears or after
+	// a decision passes (so the next signal starts a fresh window).
+	// Symmetric fields for scale-down.
+	scaleUpFirstSignalAt   map[string]int64
+	scaleDownFirstSignalAt map[string]int64
 
-	// rng is used to sample ActuationDelay (Decision 4).
+	// rng is used to sample HPAScrapeDelay (Decision 4).
 	rng *rand.Rand
 }
 
 // newAutoscalerPipeline constructs an autoscalerPipeline (R4: canonical constructor).
 // All components must be non-nil; NewClusterSimulator always passes the default WVA pipeline.
-// rng must be non-nil when ActuationDelay.Stddev > 0; passing nil is safe when Stddev == 0.
+// rng must be non-nil when HPAScrapeDelay.Stddev > 0; passing nil is safe when Stddev == 0.
 func newAutoscalerPipeline(collector Collector, analyzer Analyzer, engine Engine, actuator Actuator, rng *rand.Rand) *autoscalerPipeline {
 	return &autoscalerPipeline{
-		collector:       collector,
-		analyzer:        analyzer,
-		engine:          engine,
-		actuator:        actuator,
-		lastScaleUpAt:   make(map[string]int64),
-		lastScaleDownAt: make(map[string]int64),
-		rng:             rng,
+		collector:              collector,
+		analyzer:               analyzer,
+		engine:                 engine,
+		actuator:               actuator,
+		scaleUpFirstSignalAt:   make(map[string]int64),
+		scaleDownFirstSignalAt: make(map[string]int64),
+		rng:                    rng,
 	}
 }
 
 // tick executes the autoscaling pipeline for one tick at timestamp nowUs.
-// Collect → Analyze → Optimize → cooldown filter → schedule ScaleActuationEvent → schedule next tick.
+// Collect → Analyze → Optimize → stabilization window gate → schedule ScaleActuationEvent → schedule next tick.
 func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 	// Guard: all four components must be wired. If not, log once and stop the tick chain —
 	// do NOT reschedule, so the Errorf fires exactly once rather than every tick.
@@ -234,7 +234,33 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 	inventory := cs.gpuInventory()
 	decisions := p.engine.Optimize(results, inventory)
 
-	// Stage 4: Cooldown filter — suppress decisions within cooldown window per model.
+	// Stage 4: Stabilization window gate — pass a decision only once its signal has been
+	// continuously present for ScaleUp/DownStabilizationWindowUs. Reset timer on signal loss.
+	// Window=0 passes immediately on first signal (HPA scale-up default; backward-compatible).
+	//
+	// Build sets of models that have a scale-up or scale-down decision this tick.
+	// Any model absent from these sets has lost its signal → reset its timer.
+	modelsWithScaleUp := make(map[string]struct{}, len(decisions))
+	modelsWithScaleDown := make(map[string]struct{}, len(decisions))
+	for _, d := range decisions {
+		if d.Delta > 0 {
+			modelsWithScaleUp[d.ModelID] = struct{}{}
+		} else if d.Delta < 0 {
+			modelsWithScaleDown[d.ModelID] = struct{}{}
+		}
+	}
+	// Reset timers for models whose signal disappeared this tick.
+	for modelID := range p.scaleUpFirstSignalAt {
+		if _, present := modelsWithScaleUp[modelID]; !present {
+			delete(p.scaleUpFirstSignalAt, modelID)
+		}
+	}
+	for modelID := range p.scaleDownFirstSignalAt {
+		if _, present := modelsWithScaleDown[modelID]; !present {
+			delete(p.scaleDownFirstSignalAt, modelID)
+		}
+	}
+
 	filtered := make([]ScaleDecision, 0, len(decisions))
 	for _, d := range decisions {
 		if d.Delta == 0 {
@@ -242,34 +268,53 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 			continue
 		}
 		if d.Delta > 0 {
-			cooldown := cs.config.ScaleUpCooldownUs
-			if lastUp, hadPrior := p.lastScaleUpAt[d.ModelID]; hadPrior && cooldown > 0 && nowUs-lastUp < int64(cooldown) {
-				logrus.Debugf("[autoscaler] scale-up for model %q suppressed by cooldown (cooldown=%gμs, elapsed=%dμs)", d.ModelID, cooldown, nowUs-lastUp)
-				continue // suppressed by scale-up cooldown (INV-A7)
+			window := cs.config.ScaleUpStabilizationWindowUs
+			first, seen := p.scaleUpFirstSignalAt[d.ModelID]
+			if !seen {
+				p.scaleUpFirstSignalAt[d.ModelID] = nowUs
+				if window > 0 {
+					logrus.Debugf("[autoscaler] scale-up for model %q: stabilization window started (window=%gμs)", d.ModelID, window)
+					continue
+				}
+				first = nowUs
 			}
-			p.lastScaleUpAt[d.ModelID] = nowUs
+			if nowUs-first < int64(window) {
+				logrus.Debugf("[autoscaler] scale-up for model %q suppressed by stabilization window (window=%gμs, elapsed=%dμs)", d.ModelID, window, nowUs-first)
+				continue
+			}
+			// Window elapsed (or zero): pass and reset so next signal starts a fresh window.
+			delete(p.scaleUpFirstSignalAt, d.ModelID)
 		} else {
-			cooldown := cs.config.ScaleDownCooldownUs
-			if lastDown, hadPrior := p.lastScaleDownAt[d.ModelID]; hadPrior && cooldown > 0 && nowUs-lastDown < int64(cooldown) {
-				logrus.Debugf("[autoscaler] scale-down for model %q suppressed by cooldown (cooldown=%gμs, elapsed=%dμs)", d.ModelID, cooldown, nowUs-lastDown)
-				continue // suppressed by scale-down cooldown (INV-A7)
+			window := cs.config.ScaleDownStabilizationWindowUs
+			first, seen := p.scaleDownFirstSignalAt[d.ModelID]
+			if !seen {
+				p.scaleDownFirstSignalAt[d.ModelID] = nowUs
+				if window > 0 {
+					logrus.Debugf("[autoscaler] scale-down for model %q: stabilization window started (window=%gμs)", d.ModelID, window)
+					continue
+				}
+				first = nowUs
 			}
-			p.lastScaleDownAt[d.ModelID] = nowUs
+			if nowUs-first < int64(window) {
+				logrus.Debugf("[autoscaler] scale-down for model %q suppressed by stabilization window (window=%gμs, elapsed=%dμs)", d.ModelID, window, nowUs-first)
+				continue
+			}
+			delete(p.scaleDownFirstSignalAt, d.ModelID)
 		}
 		filtered = append(filtered, d)
 	}
 
 	// Stage 5: Schedule ScaleActuationEvent only when there are decisions to apply.
 	// Skipping empty-filtered ticks avoids unnecessary RNG consumption (INV-6: same
-	// decisions must produce identical RNG state regardless of cooldown history) and
-	// avoids no-op Apply() calls every tick.
+	// decisions must produce identical RNG state regardless of stabilization window history)
+	// and avoids no-op Apply() calls every tick.
 	if len(filtered) > 0 {
 		// Guard: rng is required when Stddev > 0. Fall back to Mean-only with an error
 		// log rather than panicking — the simulator should degrade gracefully.
-		if p.rng == nil && cs.config.ActuationDelay.Stddev > 0 {
-			logrus.Errorf("[autoscaler] ActuationDelay.Stddev=%g but rng is nil — using Mean only; set subsystemAutoscaler in constructor", cs.config.ActuationDelay.Stddev)
+		if p.rng == nil && cs.config.HPAScrapeDelay.Stddev > 0 {
+			logrus.Errorf("[autoscaler] HPAScrapeDelay.Stddev=%g but rng is nil — using Mean only; set subsystemAutoscaler in constructor", cs.config.HPAScrapeDelay.Stddev)
 		}
-		actuationAt := nowUs + cs.config.ActuationDelay.Sample(p.rng)
+		actuationAt := nowUs + cs.config.HPAScrapeDelay.Sample(p.rng)
 		heap.Push(&cs.clusterEvents, clusterEventEntry{
 			event: &ScaleActuationEvent{At: actuationAt, Decisions: filtered},
 			seqID: cs.nextSeqID(),
@@ -308,7 +353,7 @@ func (p *autoscalerPipeline) scheduleNextTick(cs *ClusterSimulator, nowUs int64)
 func (p *autoscalerPipeline) actuate(_ *ClusterSimulator, decisions []ScaleDecision) {
 	if p.actuator == nil {
 		if len(decisions) > 0 {
-			logrus.Errorf("[autoscaler] actuate: %d decision(s) dropped — actuator not wired (INV-A2 violation; cooldown windows already consumed)", len(decisions))
+			logrus.Errorf("[autoscaler] actuate: %d decision(s) dropped — actuator not wired (INV-A2 violation; stabilization windows already consumed)", len(decisions))
 		}
 		return
 	}

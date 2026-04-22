@@ -1412,21 +1412,21 @@ var runCmd = &cobra.Command{
 
 		// Resolve autoscaler and node pool config from policy bundle, then apply CLI overrides.
 		var (
-			bundleAutoscalerIntervalUs  float64
-			bundleScaleUpCooldownUs     float64
-			bundleScaleDownCooldownUs   float64
-			bundleActuationDelayMean    float64
-			bundleActuationDelayStddev  float64
-			bundleAnalyzerCfg           cluster.V2SaturationAnalyzerConfig
-			bundleNodePools             []cluster.NodePoolConfig
+			bundleAutoscalerIntervalUs              float64
+			bundleScaleUpStabilizationWindowUs      float64
+			bundleScaleDownStabilizationWindowUs    float64
+			bundleHPAScrapeDelayMean                float64
+			bundleHPAScrapeDelayStddev              float64
+			bundleAnalyzerCfg                       cluster.V2SaturationAnalyzerConfig
+			bundleNodePools                         []cluster.NodePoolConfig
 		)
 		if bundle != nil {
 			if bundle.Autoscaler.IntervalUs > 0 {
-				bundleAutoscalerIntervalUs = bundle.Autoscaler.IntervalUs
-				bundleScaleUpCooldownUs = bundle.Autoscaler.ScaleUpCooldownUs
-				bundleScaleDownCooldownUs = bundle.Autoscaler.ScaleDownCooldownUs
-				bundleActuationDelayMean = bundle.Autoscaler.ActuationDelay.Mean
-				bundleActuationDelayStddev = bundle.Autoscaler.ActuationDelay.Stddev
+				bundleAutoscalerIntervalUs             = bundle.Autoscaler.IntervalUs
+				bundleScaleUpStabilizationWindowUs     = bundle.Autoscaler.ScaleUpStabilizationWindowUs
+				bundleScaleDownStabilizationWindowUs   = bundle.Autoscaler.ScaleDownStabilizationWindowUs
+				bundleHPAScrapeDelayMean               = bundle.Autoscaler.HPAScrapeDelay.Mean
+				bundleHPAScrapeDelayStddev             = bundle.Autoscaler.HPAScrapeDelay.Stddev
 				bundleAnalyzerCfg = cluster.V2SaturationAnalyzerConfig{
 					KvCacheThreshold:  bundle.Autoscaler.Analyzer.KVCacheThreshold,
 					ScaleUpThreshold:  bundle.Autoscaler.Analyzer.ScaleUpThreshold,
@@ -1621,10 +1621,10 @@ var runCmd = &cobra.Command{
 			FlowControlQueueDepthThreshold:  flowControlQueueDepthThreshold,
 			FlowControlKVCacheUtilThreshold: flowControlKVCacheUtilThreshold,
 			FlowControlMaxConcurrency:       flowControlMaxConcurrency,
-			ModelAutoscalerIntervalUs:       bundleAutoscalerIntervalUs,
-			ScaleUpCooldownUs:               bundleScaleUpCooldownUs,
-			ScaleDownCooldownUs:             bundleScaleDownCooldownUs,
-			ActuationDelay:                  cluster.DelaySpec{Mean: bundleActuationDelayMean, Stddev: bundleActuationDelayStddev},
+			ModelAutoscalerIntervalUs:              bundleAutoscalerIntervalUs,
+			ScaleUpStabilizationWindowUs:           bundleScaleUpStabilizationWindowUs,
+			ScaleDownStabilizationWindowUs:         bundleScaleDownStabilizationWindowUs,
+			HPAScrapeDelay:                         cluster.DelaySpec{Mean: bundleHPAScrapeDelayMean, Stddev: bundleHPAScrapeDelayStddev},
 			AutoscalerAnalyzerConfig:        bundleAnalyzerCfg,
 			NodePools:                       bundleNodePools,
 		}
