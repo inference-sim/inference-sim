@@ -590,6 +590,35 @@ func TestWorkloadSpec_Validate_WeibullCVOutOfRange_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestWorkloadSpec_Validate_WeibullHighCV_WithExplicitShapeScale_Passes(t *testing.T) {
+	// GIVEN a Weibull arrival with CV far exceeding [0.01, 10.4] but
+	// explicit MLE-fitted shape/scale provided (ServeGen pattern).
+	// CV is informational only when shape/scale are present.
+	cv := 173.81
+	shape := 0.0575
+	scale := 0.000573
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID:           "c1",
+			RateFraction: 1.0,
+			Arrival: ArrivalSpec{
+				Process: "weibull",
+				CV:      &cv,
+				Shape:   &shape,
+				Scale:   &scale,
+			},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	err := spec.Validate()
+	if err != nil {
+		t.Errorf("expected no error for high-CV Weibull with explicit shape/scale, got: %v", err)
+	}
+}
+
 func TestValidate_ConcurrencyClient_AcceptsZeroRateFraction(t *testing.T) {
 	spec := &WorkloadSpec{
 		Version:  "2",

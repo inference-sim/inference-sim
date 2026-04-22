@@ -3,6 +3,7 @@ package workload
 import (
 	"bytes"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"
@@ -364,6 +365,71 @@ func TestLoadServeGenChunk_BadShapeScale_ShapeScaleRemainNil(t *testing.T) {
 	// AND Shape/Scale remain nil (parse-failure fallback produced zeros)
 	assert.Nil(t, client.Arrival.Shape, "Shape must be nil when parse falls back to 0")
 	assert.Nil(t, client.Arrival.Scale, "Scale must be nil when parse falls back to 0")
+}
+
+// TestServeGenConversion_HighCVTrace verifies the end-to-end flow from a
+// ServeGen trace CSV with extreme CV (173.81) through workload generation.
+// This exercises the critical path: parse 6-column trace -> populate ArrivalSpec
+// with MLE-fitted shape/scale -> validation passes despite high CV ->
+// sampler uses explicit params -> IAT generation produces valid values.
+//
+// Behavioral contract:
+//
+//	GIVEN a ServeGen trace CSV with high-CV window (CV=173.81, shape=0.0575, scale=0.000573)
+//	WHEN GenerateRequests processes the trace
+//	THEN conversion succeeds, the chunk uses weibull with explicit shape/scale,
+//	     validation passes, and sampled IATs are finite and positive.
+func TestServeGenConversion_HighCVTrace(t *testing.T) {
+	// GIVEN a ServeGen directory with high-CV trace and dataset
+	dir := t.TempDir()
+
+	// ServeGen 6-column trace: timestamp, rate, cv, pattern, shape, scale
+	// CV=173.81 exceeds the normal Weibull CV validator bound of [0.01, 10.4]
+	// but MLE-fitted shape=0.0575, scale=0.000573 are used directly.
+	traceCSV := "0.0,22.46,173.81,Weibull,0.0575,0.000573\n1.0,22.46,173.81,Weibull,0.0575,0.000573\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "chunk-0-trace.csv"), []byte(traceCSV), 0644))
+
+	// Minimal dataset with empirical PDFs
+	datasetJSON := `{"0": {"input_tokens": "{256: 1.0}", "output_tokens": "{100: 1.0}"}}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "chunk-0-dataset.json"), []byte(datasetJSON), 0644))
+
+	// WHEN generating requests through the full pipeline
+	spec := &WorkloadSpec{
+		Version:      "2",
+		Seed:         42,
+		Category:     "language",
+		AggregateRate: 22.46,
+		ServeGenData: &ServeGenDataSpec{Path: dir},
+	}
+	requests, err := GenerateRequests(spec, 1e6, 0)
+
+	// THEN conversion succeeds despite high CV
+	require.NoError(t, err, "GenerateRequests should succeed with high-CV trace when shape/scale are provided")
+	require.NotEmpty(t, requests, "Should generate requests from ServeGen data")
+
+	// AND the loaded client has weibull process with MLE-fitted parameters
+	require.NotEmpty(t, spec.Clients, "ServeGen should populate clients")
+	client := spec.Clients[0]
+	assert.Equal(t, "weibull", client.Arrival.Process)
+	require.NotNil(t, client.Arrival.Shape, "Shape should be populated from trace column 5")
+	require.NotNil(t, client.Arrival.Scale, "Scale should be populated from trace column 6")
+	assert.InDelta(t, 0.0575, *client.Arrival.Shape, 0.0001, "Shape should match trace value")
+	assert.InDelta(t, 0.000573, *client.Arrival.Scale, 0.000001, "Scale should match trace value")
+
+	// AND the CV is preserved as informational metadata
+	require.NotNil(t, client.Arrival.CV, "CV should be preserved from trace")
+	assert.InDelta(t, 173.81, *client.Arrival.CV, 0.01, "CV should match trace value")
+
+	// AND sampled IATs are finite and positive (behavioral verification)
+	ratePerMicros := client.RateFraction / 1e6
+	sampler := NewArrivalSampler(client.Arrival, ratePerMicros)
+	require.NotNil(t, sampler, "Sampler should be created")
+
+	rng := rand.New(rand.NewSource(42))
+	for i := 0; i < 100; i++ {
+		iat := sampler.SampleIAT(rng)
+		assert.Greater(t, iat, int64(0), "IAT should be positive (iteration %d)", i)
+	}
 }
 
 func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
