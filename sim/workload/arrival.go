@@ -228,6 +228,11 @@ func NewArrivalSampler(spec ArrivalSpec, ratePerMicrosecond float64) ArrivalSamp
 		return &PoissonSampler{rateMicros: ratePerMicrosecond}
 
 	case "gamma":
+		// Priority 1: Use explicit MLE-fitted parameters if provided (ServeGen)
+		if spec.Shape != nil && spec.Scale != nil {
+			return &GammaSampler{shape: *spec.Shape, scale: *spec.Scale}
+		}
+		// Priority 2: Derive from CV (existing logic)
 		cv := 1.0
 		if spec.CV != nil {
 			cv = *spec.CV
@@ -246,6 +251,11 @@ func NewArrivalSampler(spec ArrivalSpec, ratePerMicrosecond float64) ArrivalSamp
 		return &GammaSampler{shape: shape, scale: scale}
 
 	case "weibull":
+		// Priority 1: Use explicit MLE-fitted parameters if provided (ServeGen)
+		if spec.Shape != nil && spec.Scale != nil {
+			return &WeibullSampler{shape: *spec.Shape, scale: *spec.Scale}
+		}
+		// Priority 2: Derive from CV (existing logic)
 		cv := 1.0
 		if spec.CV != nil {
 			cv = *spec.CV

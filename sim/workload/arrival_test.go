@@ -188,6 +188,80 @@ func TestConstantArrivalSampler_MinimumOneUs(t *testing.T) {
 	}
 }
 
+func TestNewArrivalSampler_GammaExplicitParams(t *testing.T) {
+	// GIVEN an ArrivalSpec with explicit shape/scale (ServeGen-style)
+	shape := 0.5
+	scale := 0.04
+	spec := ArrivalSpec{
+		Process: "gamma",
+		Shape:   &shape,
+		Scale:   &scale,
+	}
+
+	// WHEN creating a sampler
+	sampler := NewArrivalSampler(spec, 0.00001) // 10 req/s
+
+	// THEN sampler uses explicit parameters
+	gammaSampler, ok := sampler.(*GammaSampler)
+	if !ok {
+		t.Fatalf("expected *GammaSampler, got %T", sampler)
+	}
+	if gammaSampler.shape != 0.5 {
+		t.Errorf("expected shape=0.5, got %f", gammaSampler.shape)
+	}
+	if gammaSampler.scale != 0.04 {
+		t.Errorf("expected scale=0.04, got %f", gammaSampler.scale)
+	}
+}
+
+func TestNewArrivalSampler_WeibullExplicitParams(t *testing.T) {
+	// GIVEN an ArrivalSpec with explicit shape/scale (ServeGen high-CV)
+	shape := 0.0575
+	scale := 0.000573
+	spec := ArrivalSpec{
+		Process: "weibull",
+		Shape:   &shape,
+		Scale:   &scale,
+	}
+
+	// WHEN creating a sampler
+	sampler := NewArrivalSampler(spec, 0.00001) // 10 req/s
+
+	// THEN sampler uses explicit parameters
+	weibullSampler, ok := sampler.(*WeibullSampler)
+	if !ok {
+		t.Fatalf("expected *WeibullSampler, got %T", sampler)
+	}
+	if weibullSampler.shape != 0.0575 {
+		t.Errorf("expected shape=0.0575, got %f", weibullSampler.shape)
+	}
+	if weibullSampler.scale != 0.000573 {
+		t.Errorf("expected scale=0.000573, got %f", weibullSampler.scale)
+	}
+}
+
+func TestNewArrivalSampler_GammaCVFallback(t *testing.T) {
+	// GIVEN an ArrivalSpec with CV but no explicit params (existing behavior)
+	cv := 2.5
+	spec := ArrivalSpec{
+		Process: "gamma",
+		CV:      &cv,
+	}
+
+	// WHEN creating a sampler
+	sampler := NewArrivalSampler(spec, 0.00001) // 10 req/s
+
+	// THEN sampler derives shape/scale from CV
+	gammaSampler, ok := sampler.(*GammaSampler)
+	if !ok {
+		t.Fatalf("expected *GammaSampler, got %T", sampler)
+	}
+	// expectedShape = 1/(2.5*2.5) = 0.16
+	if gammaSampler.shape < 0.15 || gammaSampler.shape > 0.17 {
+		t.Errorf("expected shape~0.16 (from CV), got %f", gammaSampler.shape)
+	}
+}
+
 // TestNormalizedExponentialSampler_Normalized verifies BC-1:
 // Sampler generates exactly count intervals with sum ≈ duration.
 func TestNormalizedExponentialSampler_Normalized(t *testing.T) {
