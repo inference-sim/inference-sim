@@ -1,7 +1,6 @@
 // Package latency provides latency model implementations for the BLIS simulator.
 // The LatencyModel interface is defined in sim/ (parent package).
-// This package provides BlackboxLatencyModel (alpha/beta regression),
-// RooflineLatencyModel (analytical FLOPs/bandwidth), and
+// This package provides RooflineLatencyModel (analytical FLOPs/bandwidth) and
 // TrainedPhysicsModel (physics-informed basis functions with architecture-aware MoE scaling).
 package latency
 
@@ -9,24 +8,10 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"sync"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/util"
-	"github.com/sirupsen/logrus"
 )
-
-// Package-level sync.Once to emit deprecation warnings only once per process.
-var (
-	warnBlackboxOnce sync.Once
-)
-
-// resetDeprecationWarningsForTest resets all deprecation warning sync.Once vars.
-// This function exists solely for test isolation and must only be called from
-// package latency tests (not production code).
-func resetDeprecationWarningsForTest() {
-	warnBlackboxOnce = sync.Once{}
-}
 
 // clampToInt64 converts a float64 to int64, clamping values that would cause
 // undefined behavior in Go's float64→int64 conversion. Specifically:
@@ -41,45 +26,6 @@ func clampToInt64(v float64) int64 {
 	}
 	return int64(v)
 }
-
-// BlackboxLatencyModel estimates latency using trained alpha/beta regression coefficients.
-// Beta coefficients estimate step time: beta0 + beta1*cacheMissTokens + beta2*decodeTokens.
-// Alpha coefficients estimate overheads: alpha0 + alpha1*inputLen (queueing), alpha2 (output processing).
-type BlackboxLatencyModel struct {
-	betaCoeffs  []float64
-	alphaCoeffs []float64
-}
-
-func (m *BlackboxLatencyModel) StepTime(batch []*sim.Request) int64 {
-	var totalCacheMissTokens, totalDecodeTokens int64
-	for _, req := range batch {
-		if req.ProgressIndex < util.Len64(req.InputTokens) {
-			// Prefill phase: NumNewTokens are cache-miss tokens
-			totalCacheMissTokens += int64(req.NumNewTokens)
-		} else if len(req.OutputTokens) > 0 {
-			// Decode phase: NumNewTokens is 1 (set by FormBatch)
-			totalDecodeTokens += int64(req.NumNewTokens)
-		}
-	}
-	var totalStepTime float64
-	totalStepTime += m.betaCoeffs[0]
-	totalStepTime += m.betaCoeffs[1] * float64(totalCacheMissTokens)
-	totalStepTime += m.betaCoeffs[2] * float64(totalDecodeTokens)
-	return max(1, clampToInt64(totalStepTime))
-}
-
-func (m *BlackboxLatencyModel) QueueingTime(req *sim.Request) int64 {
-	var totalProcessingTime float64
-	totalProcessingTime += m.alphaCoeffs[0]
-	totalProcessingTime += m.alphaCoeffs[1] * float64(len(req.InputTokens))
-	return clampToInt64(totalProcessingTime)
-}
-
-func (m *BlackboxLatencyModel) OutputTokenProcessingTime() int64 {
-	return clampToInt64(m.alphaCoeffs[2])
-}
-
-func (m *BlackboxLatencyModel) PostDecodeFixedOverhead() int64 { return 0 }
 
 // RooflineLatencyModel estimates latency using analytical FLOPs/bandwidth roofline model.
 // Step time is computed via rooflineStepTime(); overhead estimates use alpha coefficients.
@@ -142,7 +88,7 @@ func validateCoeffs(name string, coeffs []float64) error {
 
 // NewLatencyModel creates the appropriate LatencyModel based on config.
 // Dispatches on hw.Backend: "" or "roofline" → RooflineLatencyModel,
-// "trained-physics" → TrainedPhysicsModel, "blackbox" → BlackboxLatencyModel.
+// "trained-physics" → TrainedPhysicsModel.
 // Returns error if coefficient slices are too short, contain NaN/Inf, or config validation fails.
 func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.LatencyModel, error) {
 	// All implementations index alphaCoeffs[0..2]; validate upfront.
@@ -175,23 +121,6 @@ func NewLatencyModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig) (sim.
 			return nil, err
 		}
 		return model, nil
-	case "blackbox":
-		// Emit deprecation warning (once per process)
-		warnBlackboxOnce.Do(func() {
-			logrus.Warn("latency model \"blackbox\" is deprecated and will be removed in a future version. Use --latency-model trained-physics instead.")
-		})
-
-		// BlackboxLatencyModel indexes betaCoeffs[0..2]; validate upfront.
-		if len(coeffs.BetaCoeffs) < 3 {
-			return nil, fmt.Errorf("latency model: BetaCoeffs requires at least 3 elements, got %d", len(coeffs.BetaCoeffs))
-		}
-		if err := validateCoeffs("BetaCoeffs", coeffs.BetaCoeffs); err != nil {
-			return nil, err
-		}
-		return &BlackboxLatencyModel{
-			betaCoeffs:  coeffs.BetaCoeffs,
-			alphaCoeffs: coeffs.AlphaCoeffs,
-		}, nil
 	default:
 		return nil, fmt.Errorf("latency model: unknown backend %q; valid options: %s",
 			hw.Backend, strings.Join(sim.ValidLatencyBackendNames(), ", "))
