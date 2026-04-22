@@ -1059,6 +1059,128 @@ func TestSend_Unconstrained_MinTokensStop_Warns(t *testing.T) {
 	}
 }
 
+// TestObserveTimeoutFlagDefault verifies BC-4: default timeout is 300 seconds.
+func TestObserveTimeoutFlagDefault(t *testing.T) {
+	if observeTimeout != defaultHTTPTimeoutSeconds {
+		t.Errorf("default observeTimeout = %d, want %d", observeTimeout, defaultHTTPTimeoutSeconds)
+	}
+}
+
+// TestRealClient_WithHTTPTimeout_CustomValue verifies BC-3: WithHTTPTimeout
+// sets a custom timeout on the HTTP client.
+func TestRealClient_WithHTTPTimeout_CustomValue(t *testing.T) {
+	client := NewRealClient("http://localhost", "", "m", "vllm",
+		WithHTTPTimeout(42*time.Second))
+	if client.httpClient.Timeout != 42*time.Second {
+		t.Errorf("Timeout = %v, want 42s", client.httpClient.Timeout)
+	}
+}
+
+// TestRealClient_NonStreaming_Timeout_SetsTimeoutStatus verifies BC-2: when the
+// HTTP client timeout fires during response body read, record.Status is "timeout".
+func TestRealClient_NonStreaming_Timeout_SetsTimeoutStatus(t *testing.T) {
+	// Server sends partial body then hangs.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("expected http.Flusher")
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"text":"hel`))
+		flusher.Flush()
+		time.Sleep(2 * time.Second)
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm",
+		WithHTTPTimeout(200*time.Millisecond))
+	record, err := client.Send(context.Background(), &PendingRequest{
+		RequestID: 0, InputTokens: 10, Streaming: false,
+		Prompt: strings.Repeat("hello ", 10),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Status != "timeout" {
+		t.Errorf("Status = %q, want %q", record.Status, "timeout")
+	}
+	if record.ErrorMessage == "" {
+		t.Error("ErrorMessage should contain timeout error details")
+	}
+}
+
+// TestRealClient_HTTPLevel_Timeout_SetsTimeoutStatus verifies BC-8: when the
+// HTTP round-trip itself times out (before response headers arrive),
+// record.Status is "timeout" not generic "error".
+func TestRealClient_HTTPLevel_Timeout_SetsTimeoutStatus(t *testing.T) {
+	// Server accepts connection but never responds.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(2 * time.Second)
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm",
+		WithHTTPTimeout(200*time.Millisecond))
+	record, err := client.Send(context.Background(), &PendingRequest{
+		RequestID: 0, InputTokens: 10, Streaming: false,
+		Prompt: strings.Repeat("hello ", 10),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Status != "timeout" {
+		t.Errorf("Status = %q, want %q", record.Status, "timeout")
+	}
+	if record.ErrorMessage == "" {
+		t.Error("ErrorMessage should contain timeout error details")
+	}
+}
+
+// TestRealClient_Streaming_Timeout_SetsTimeoutStatus verifies BC-1: when the
+// HTTP client timeout fires during SSE streaming, record.Status is "timeout"
+// and record.ErrorMessage contains error details, not silent "ok".
+// BC-6: partial timestamps from chunks received before timeout are preserved.
+func TestRealClient_Streaming_Timeout_SetsTimeoutStatus(t *testing.T) {
+	// Server sends one SSE chunk then hangs until client timeout.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("expected http.Flusher")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		// Send one chunk so FirstChunkTimeUs is set (BC-6)
+		_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":\"tok\"}}]}\n\n")
+		flusher.Flush()
+		// Hang until client gives up (sleep > timeout so client times out first)
+		time.Sleep(2 * time.Second)
+	}))
+	defer server.Close()
+
+	// Use a short timeout; server sleeps 2s so timeout fires well before server finishes
+	client := NewRealClient(server.URL, "", "test-model", "vllm",
+		WithHTTPTimeout(200*time.Millisecond))
+	record, err := client.Send(context.Background(), &PendingRequest{
+		RequestID: 0, InputTokens: 10, Streaming: true,
+		Prompt: strings.Repeat("hello ", 10),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Status != "timeout" {
+		t.Errorf("Status = %q, want %q", record.Status, "timeout")
+	}
+	if record.ErrorMessage == "" {
+		t.Error("ErrorMessage should contain timeout error details")
+	}
+	// BC-6: partial timestamps preserved
+	if record.FirstChunkTimeUs == 0 {
+		t.Error("FirstChunkTimeUs should be set from the chunk received before timeout")
+	}
+	if record.NumChunks != 1 {
+		t.Errorf("NumChunks = %d, want 1 (one chunk before timeout)", record.NumChunks)
+	}
+}
+
 func TestRecorder_RecordITL_StreamingRequest(t *testing.T) {
 	// GIVEN a recorder and chunk timestamps
 	rec := &Recorder{}

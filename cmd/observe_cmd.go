@@ -57,6 +57,7 @@ var (
 	observeRecordITL           bool
 	observeITLOutput           string
 	observeMinTokens           int
+	observeTimeout             int
 )
 
 var observeCmd = &cobra.Command{
@@ -144,6 +145,9 @@ func init() {
 	observeCmd.Flags().BoolVar(&observeUnconstrainedOutput, "unconstrained-output", false, "Do not set max_tokens (let server decide output length)")
 	observeCmd.Flags().IntVar(&observeMinTokens, "min-tokens", 0, "Set min_tokens in request body (requests server to generate at least N tokens before EOS; 0 = omit field)")
 	observeCmd.Flags().Float64Var(&observeRttMs, "rtt-ms", 0, "Measured network round-trip time in milliseconds (recorded in trace header)")
+
+	// HTTP client tuning
+	observeCmd.Flags().IntVar(&observeTimeout, "timeout", defaultHTTPTimeoutSeconds, "HTTP request timeout in seconds (per request)")
 
 	// ITL recording (optional, opt-in)
 	observeCmd.Flags().BoolVar(&observeRecordITL, "record-itl", false, "Record per-chunk timestamps for ITL calibration (streaming only)")
@@ -258,6 +262,9 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	}
 	if observeMinTokens < 0 {
 		logrus.Fatalf("--min-tokens must be >= 0, got %d", observeMinTokens)
+	}
+	if observeTimeout <= 0 || observeTimeout > 86400 {
+		logrus.Fatalf("--timeout must be between 1 and 86400 (1 day), got %d", observeTimeout)
 	}
 	if observeMinTokens > 0 && !observeUnconstrainedOutput &&
 		observeWorkloadSpec == "" && observeWorkload == "" &&
@@ -374,7 +381,9 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	}
 
 	// Setup
-	client := NewRealClient(observeServerURL, observeAPIKey, observeModel, observeServerType, WithAPIFormat(observeAPIFormat))
+	client := NewRealClient(observeServerURL, observeAPIKey, observeModel, observeServerType,
+		WithAPIFormat(observeAPIFormat),
+		WithHTTPTimeout(time.Duration(observeTimeout)*time.Second))
 	recorder := &Recorder{}
 
 	// Calibrate tokens-per-word ratio for the server's tokenizer (BC-6).
