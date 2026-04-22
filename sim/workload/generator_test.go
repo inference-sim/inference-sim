@@ -1430,7 +1430,7 @@ func TestGenerateWorkload_Deadline_SessionDefaultTimeout(t *testing.T) {
 // TestGenerateWorkload_Deadline_SessionExplicitZeroNoTimeout verifies that a session
 // client with Timeout=*int64(0) gets Deadline=0 (no deadline) rather than the 300s
 // default that applies when Timeout is nil. This is the mechanism that makes
-// --timeout 0 in blis run meaningful for concurrency/session workloads (#1127).
+// --timeout -1 (the disabled default) in blis run produce no deadline for session workloads (#1127).
 //
 // GIVEN a session (multi-turn) client with Timeout set to an explicit pointer to zero
 // WHEN GenerateWorkload generates requests
