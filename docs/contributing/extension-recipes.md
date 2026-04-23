@@ -97,7 +97,7 @@ To add a new latency estimation backend (e.g., SGLang RadixAttention, TensorRT-L
 6. Extension friction: **3-5 touch points** (implementation + bundle map + factory branch; optionally CLI wiring + defaults struct)
 
 Examples:
-- See `BlackboxLatencyModel` in `sim/latency/latency.go` for a simple stateless model (alpha/beta regression)
+- See `RooflineLatencyModel` in `sim/latency/roofline_model.go` for a simple stateless analytical model
 - See `RooflineLatencyModel` in `sim/latency/latency.go` for a model that uses hardware config (FLOPs/bandwidth)
 - See `TrainedPhysicsModel` in `sim/latency/trained_physics_model.go` for a physics-informed model with roofline basis functions, learned corrections, and MoE-aware overhead modeling
 

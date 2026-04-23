@@ -54,7 +54,7 @@ inference-sim/
 │   ├── tiered.go              # TieredKVCache (GPU+CPU mirror/reload, vLLM v1 model)
 │   └── register.go            # NewKVStore factory + init()-based registration into sim/
 ├── sim/latency/               # Latency model implementations (PKG-2)
-│   ├── latency.go             # RooflineLatencyModel (default, analytical FLOPs/bandwidth), BlackboxLatencyModel (alpha/beta regression), TrainedPhysicsLatencyModel (physics-informed), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
+│   ├── latency.go             # RooflineLatencyModel (default, analytical FLOPs/bandwidth), TrainedPhysicsLatencyModel (physics-informed), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
 │   ├── trained_physics.go     # TrainedPhysicsLatencyModel: physics-informed basis functions with learned corrections
 │   ├── roofline.go            # rooflineStepTime(), calculateTransformerFlops(), calculateMemoryAccessBytes(), StepConfig/PrefillRequestConfig/DecodeRequestConfig types
 │   ├── kv_capacity.go         # CalculateKVBlocks: auto-derive total KV cache blocks from model architecture + GPU memory; KVCapacityParams, ExtractKVCapacityParams, computeModelWeightBytes
@@ -108,7 +108,7 @@ inference-sim/
 │   │   ├── routing.md         # Routing policies
 │   │   ├── admission.md       # Admission control
 │   │   ├── scheduling.md      # Scheduling & priority
-│   │   ├── latency-models.md  # Latency models (roofline + blackbox)
+│   │   ├── latency-models.md  # Latency models (roofline + trained-physics)
 │   │   ├── kv-cache.md        # KV cache & memory management
 │   │   ├── workloads.md       # Workload specifications
 │   │   ├── cluster.md         # Cluster simulation
@@ -125,7 +125,7 @@ inference-sim/
 │   │   ├── index.md           # Reference overview
 │   │   ├── project-structure.md # Project file organization (this file)
 │   │   ├── configuration.md   # Configuration reference
-│   │   ├── models.md          # Supported models catalog
+│   │   ├── models.md          # Model compatibility and validation
 │   │   └── workload-spec.md   # Workload spec YAML schema
 │   ├── methodology/           # Research methodology documentation
 │   │   ├── index.md           # Methodology overview

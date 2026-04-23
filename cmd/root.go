@@ -517,9 +517,6 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		}
 	}
 
-	// Note: the deprecated "blackbox" backend has been removed. Coefficient-based
-	// estimation is now handled by --latency-model trained-physics.
-
 	// Analytical backends: parse HF config, extract model/hardware config, auto-calc KV blocks and max-model-len.
 	if backend == "roofline" || backend == "trained-physics" {
 		hfPath := filepath.Join(modelConfigFolder, "config.json")

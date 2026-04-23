@@ -23,15 +23,13 @@ The general precedence (CLI → YAML → hardcoded) applies everywhere, but each
 **Latency coefficients** (`--alpha-coeffs`, `--beta-coeffs`):
 
 1. Explicit CLI flags — if passed, used directly (no `defaults.yaml` lookup)
-2. `defaults.yaml` `models[]` entry — matched by model/GPU/TP/vllm-version (blackbox mode)
-3. Analytical computation — roofline or trained-physics backends compute from architecture + hardware specs
-4. Error — blackbox mode with no matching entry exits with an error
+2. Analytical computation — roofline or trained-physics backends compute from architecture + hardware specs
 
 **Hardware and TP** (`--hardware`, `--tp`, `--vllm-version`):
 
 1. Explicit CLI flags
 2. `defaults.yaml` `defaults[]` entry — matched by `--model`
-3. Error — roofline/trained-physics require these values; blackbox fails at coefficient lookup
+3. Error — roofline/trained-physics require these values
 
 **KV cache blocks** (`--total-kv-blocks`): See the detailed [Resolution Process](#resolution-process) below — three layers: CLI flag, auto-calculation, or 1M default.
 
@@ -82,7 +80,7 @@ All internal timestamps in the DES (arrival time, schedule time, completion time
 
 **`aggregate_rate` override for inference-perf specs.** When converting inference-perf specs via `blis convert infperf`, per-stage rates in the spec override a user-specified `aggregate_rate`. If the sum of stage rates differs from `aggregate_rate`, BLIS logs a warning and uses the stage-rate sum. This prevents silent rate scaling errors.
 
-**`--total-kv-blocks` phantom default.** The CLI default is 1,000,000 blocks, but this value almost never takes effect. For all latency backends (roofline, trained-physics, blackbox), auto-calculation from model architecture and GPU memory supersedes it when a HuggingFace `config.json` is available and the hardware config specifies `MemoryGiB`. The 1M default is a last-resort fallback — if your simulation uses it, check whether auto-calculation is failing (missing `config.json`, missing `MemoryGiB`, or unsupported model architecture).
+**`--total-kv-blocks` phantom default.** The CLI default is 1,000,000 blocks, but this value almost never takes effect. For all latency backends (roofline, trained-physics), auto-calculation from model architecture and GPU memory supersedes it when a HuggingFace `config.json` is available and the hardware config specifies `MemoryGiB`. The 1M default is a last-resort fallback — if your simulation uses it, check whether auto-calculation is failing (missing `config.json`, missing `MemoryGiB`, or unsupported model architecture).
 
 **`enable_multi_turn_chat` semantic mismatch (issue #517).** inference-perf's `enable_multi_turn_chat` creates one persistent session per virtual user. BLIS's closest equivalent is `multi_turn.single_session: true` in the workload YAML, but the session mechanics differ. When converting inference-perf specs, verify that the converted multi-turn behavior matches your intent.
 
@@ -128,7 +126,7 @@ Controls how requests are selected for the running batch. Maps to `BatchConfig`.
 
 ### Regression Coefficients
 
-Trained coefficients for the blackbox latency model. Maps to `LatencyCoeffs`.
+Trained coefficients for physics-informed latency estimation. Maps to `LatencyCoeffs`.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -155,7 +153,7 @@ For analytical step time estimation without trained coefficients.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--latency-model` | string | "roofline" | Latency model backend: `roofline` (default), `blackbox`, `trained-physics`. All backends auto-fetch HuggingFace config.json for KV block auto-calculation (may require network access). Analytical backends (`roofline`, `trained-physics`) require `config.json` for latency estimation and KV sizing. `blackbox` uses `config.json` only for KV sizing (falls back to 1M blocks if unavailable). Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. `trained-physics` is recommended for new models. |
+| `--latency-model` | string | "roofline" | Latency model backend: `roofline` (default), `trained-physics`. Both backends auto-fetch HuggingFace config.json for KV block auto-calculation (may require network access). Both require `config.json` for latency estimation and KV sizing. Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. `trained-physics` is recommended for new models. |
 | `--model-config-folder` | string | "" | Path to folder containing HuggingFace `config.json`. Overrides `--latency-model` auto-resolution. |
 | `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. Overrides `--latency-model` auto-resolution. |
 
@@ -166,9 +164,7 @@ See [Roofline Estimation](../concepts/roofline.md) for details on the analytical
 The latency model mode is selected based on available configuration:
 
 1. **Roofline mode** (default): Auto-resolves model config from HuggingFace and hardware config from bundled `hardware_config.json`. Requires `--hardware` and `--tp` (loaded from `defaults.yaml` when available).
-2. **Blackbox mode**: If `--latency-model blackbox` is set. Uses trained alpha/beta coefficients from `defaults.yaml`. Requires a matching entry for the model/GPU/TP combination.
-3. **Trained-physics mode** (recommended for new models): If `--latency-model trained-physics` is set with `--hardware` and `--tp`. Uses 13 globally-fitted coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from `trained_physics_coefficients` in `defaults.yaml`. Physics-informed basis functions with learned corrections.
-4. **Error**: If blackbox mode is selected and no coefficients can be resolved for the model/GPU/TP combination
+2. **Trained-physics mode** (recommended for new models): If `--latency-model trained-physics` is set with `--hardware` and `--tp`. Uses 13 globally-fitted coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from `trained_physics_coefficients` in `defaults.yaml`. Physics-informed basis functions with learned corrections.
 
 ## Cluster Configuration
 
@@ -435,7 +431,6 @@ node_pools:
 # --gpu calibration at instance construction time (both sync and deferred/NodeReadyEvent paths),
 # ensuring pool-placed instances use the correct TFlopsPeak/BwPeakTBs for roofline math.
 # Omitting this field (zero value) is safe: no override, backward-compatible with all callers.
-# The blackbox backend does not use HWConfig and is unaffected by this field.
 # Keys must exactly match the gpu_type strings used in the node_pools entries above.
 hw_config_by_gpu:
   H100:
@@ -545,12 +540,7 @@ Before any backend-specific logic runs, BLIS loads hardware/TP/vLLM-version defa
    - For roofline: beta coefficients are computed analytically from model architecture and hardware specs
    - For trained-physics: load 13 global coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from `trained_physics_coefficients` in `defaults.yaml`
    - `--model-config-folder` and `--hardware-config` override auto-resolution when explicitly set
-2. If `--latency-model blackbox`:
-   - Look up the model in `defaults.yaml` using `--model`, `--hardware`, `--tp`, `--vllm-version`
-   - Load alpha/beta coefficients from the matching entry
-   - If no matching entry is found, exit with error suggesting roofline or trained-physics
-   - **Behavioral change:** Blackbox mode now auto-downloads model configs from HuggingFace for KV block auto-calculation (same as analytical backends). Previously, blackbox only used cached configs. This means blackbox runs may make network requests when `config.json` is not cached locally. Set `HF_TOKEN` for gated models.
-3. If `--alpha-coeffs` and `--beta-coeffs` are explicitly provided via CLI:
+2. If `--alpha-coeffs` and `--beta-coeffs` are explicitly provided via CLI:
    - Use them directly, no `defaults.yaml` lookup
 
 **`--total-kv-blocks` resolution** (highest priority wins):

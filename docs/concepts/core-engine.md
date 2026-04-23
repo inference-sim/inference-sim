@@ -240,24 +240,7 @@ When `--kv-cpu-blocks` is set to a positive value, BLIS enables a two-tier cache
 
 ## Latency Models
 
-BLIS predicts GPU step time through one of five latency model backends. The choice is made via the `--latency-model` flag or automatically based on available configuration.
-
-### Blackbox Model
-
-Uses trained regression coefficients to predict step time:
-
-```
-StepTime    = beta0 + beta1 * cache_miss_tokens + beta2 * decode_tokens
-QueueingTime = alpha0 + alpha1 * input_length
-OutputTokenProcessingTime = alpha2
-```
-
-- **Beta coefficients** model GPU execution time as a linear function of batch composition
-- **Alpha coefficients** model non-GPU overhead (tokenization, API serialization, output processing)
-- Coefficients are trained offline via Bayesian optimization against real vLLM measurements
-- Pre-trained coefficients for common model/GPU combinations are shipped in `defaults.yaml`
-
-See [Configuration Reference: Coefficient Calibration](../reference/configuration.md#coefficient-calibration) for the training process.
+BLIS predicts GPU step time through two latency model backends. The choice is made via the `--latency-model` flag or automatically based on available configuration.
 
 ### Roofline Model (Default)
 
