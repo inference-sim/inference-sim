@@ -509,3 +509,38 @@ func TestInstanceSimulator_PostDecodeFixedOverhead_DelegatesToSim(t *testing.T) 
 		t.Errorf("PostDecodeFixedOverhead() = %d, want 0 for roofline model", got)
 	}
 }
+
+func TestInstanceSimulatorLatencyStats_Empty(t *testing.T) {
+	inst := NewInstanceSimulator("test", newTestSimConfig())
+	stats := inst.LatencyStats()
+	if stats.TTFT != 0 || stats.ITL != 0 || stats.DispatchRate != 0 || stats.AvgInTokens != 0 || stats.AvgOutTokens != 0 {
+		t.Errorf("expected all-zero stats on fresh instance, got %+v", stats)
+	}
+}
+
+func TestInstanceSimulatorLatencyStats_AfterRun(t *testing.T) {
+	cfg := newTestDeploymentConfig(1).ToSimConfig()
+	inst := NewInstanceSimulator("test", cfg)
+
+	reqs := testGenerateRequests(42, cfg.Horizon, 0.0005,
+		3, 0, 512, 50, 100, 1024, 128, 20, 32, 256,
+	)
+	for _, r := range reqs {
+		inst.InjectRequest(r)
+	}
+	inst.Run()
+
+	if inst.Metrics().CompletedRequests == 0 {
+		t.Skip("no completed requests in test sim; check horizon/rate")
+	}
+	stats := inst.LatencyStats()
+	if stats.DispatchRate <= 0 {
+		t.Errorf("DispatchRate should be > 0 after completing requests, got %v", stats.DispatchRate)
+	}
+	if stats.AvgInTokens <= 0 {
+		t.Errorf("AvgInTokens should be > 0, got %v", stats.AvgInTokens)
+	}
+	if stats.AvgOutTokens <= 0 {
+		t.Errorf("AvgOutTokens should be > 0, got %v", stats.AvgOutTokens)
+	}
+}
