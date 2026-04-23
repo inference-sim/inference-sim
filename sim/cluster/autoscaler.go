@@ -47,6 +47,10 @@ type ReplicaMetrics struct {
 	CostPerHour           float64 // $/hr from NodePool; used for CostPerReplica in VariantCapacity
 	TTFT                  float64 // μs — zero until QueueingModelAnalyzer; Analyze() must guard against zero before dividing
 	DispatchRate          float64 // req/s — zero until QueueingModelAnalyzer; Analyze() must guard against zero before dividing
+	ITL                   float64 // μs — zero until QueueingModelAnalyzer
+	AvgInTokens           float64 // average input tokens per completed request; zero until QueueingModelAnalyzer
+	AvgOutTokens          float64 // average output tokens per completed request; zero until QueueingModelAnalyzer
+	MaxBatchSize          float64 // server-configured max batch size; zero means use DefaultMaxBatchSize
 	TotalKvCapacityTokens int64   // Total KV cache capacity in tokens; used by V2SaturationAnalyzer for k1 (memory-bound capacity)
 	KvTokensInUse         int64   // Current KV token occupancy; used by V2SaturationAnalyzer for demand computation
 }
