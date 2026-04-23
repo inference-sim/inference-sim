@@ -274,7 +274,7 @@ func TestRegenGoldenDataset(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 	goldenPath := testutil.GoldenDatasetPath(t)
-	if err := os.WriteFile(goldenPath, out, 0644); err != nil {
+	if err := os.WriteFile(goldenPath, append(out, '\n'), 0644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	t.Logf("Wrote %s", goldenPath)

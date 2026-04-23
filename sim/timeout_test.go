@@ -133,14 +133,17 @@ func TestTimeout_CompletedRequest_NoOp(t *testing.T) {
 // and TimeoutEvent fire at the same tick, the step event fires first (priority ordering).
 func TestTimeout_CompletionWinsAtEqualTimestamp(t *testing.T) {
 	cfg := SimConfig{
-		Horizon:             1_000_000,
-		Seed:                42,
-		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
-		BatchConfig:         NewBatchConfig(256, 2048, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 0, 0}, []float64{0, 0, 0}), // step time = beta0 = 1000µs, no per-token cost
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, "roofline", 0),
+		Horizon:       1_000_000,
+		Seed:          42,
+		KVCacheConfig: NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+		BatchConfig:   NewBatchConfig(256, 2048, 0),
 	}
-	sim := mustNewSimulator(t, cfg)
+	kvStore := MustNewKVStoreFromConfig(cfg.KVCacheConfig)
+	latencyModel := &fixedStepModel{stepTime: 1000}
+	sim, err := NewSimulator(cfg, kvStore, latencyModel)
+	if err != nil {
+		t.Fatalf("NewSimulator: %v", err)
+	}
 
 	// Request with 1 input token, 1 output token. Step time = 1000µs.
 	// Prefill step at t=0 completes at t=1000. Decode step at t=1000 completes at t=2000.
@@ -329,13 +332,8 @@ func TestTimeout_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.T) {
 	}
 
 	// SimEndedTime must reflect actual work completion, not the orphaned timeout.
-	// With beta=[1000,10,5] (µs), beta0=base, beta1=cache-miss tokens (prefill only),
-	// beta2=decode tokens. For 10 inputs + 5 outputs:
-	//   prefill  = beta0 + beta1*10 = 1000 + 100 = 1100 µs
-	//   decode×5 = 5 × (beta0 + beta2*1) = 5 × 1005 = 5025 µs
-	//   total    ≈ 6125 µs
 	// Lower bound (> 5_000): catches a regression where Clock is never advanced.
-	// Upper bound (< 100_000): 3000× below testDefaultTimeoutUs, catches clock inflation.
+	// Upper bound (< 100_000): far below testDefaultTimeoutUs (300s), catches clock inflation.
 	if sim.Metrics.SimEndedTime <= 5_000 {
 		t.Errorf("SimEndedTime too low: got %d µs, want > 5_000 µs (Clock must advance for real work)",
 			sim.Metrics.SimEndedTime)
