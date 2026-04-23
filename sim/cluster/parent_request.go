@@ -24,8 +24,8 @@ type ParentRequest struct {
 	//     clusterClock + decodeInstance.PostDecodeFixedOverhead() when the decode
 	//     sub-request finishes its last step. Includes PostDecodeFixedOverhead so
 	//     that projectPDMetrics() computes the same client-visible E2E as non-PD
-	//     recordRequestCompletion (issue #846). For blackbox/roofline/cross-model
-	//     (overhead=0), equals the raw cluster clock tick.
+	//     recordRequestCompletion (issue #846). For roofline (overhead=0), equals
+	//     the raw cluster clock tick.
 	//   - Dropped at decode KV allocation: set to the DecodeRoutingEvent time (the
 	//     point when the drop was detected). Since decode never ran, this reflects
 	//     the drop-detection time, not a decode completion time.

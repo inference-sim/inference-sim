@@ -755,10 +755,10 @@ func TestApplyTimeoutToRequests_NegativeSetsSessionBlueprintExplicitZero(t *test
 	}
 }
 
-// TestTryAutoCalcKVBlocksBlackbox_ErrorPaths tests all error paths in
-// tryAutoCalcKVBlocksBlackbox. Each error path should return (0, false) and
+// TestTryAutoCalcKVBlocks_ErrorPaths tests all error paths in
+// tryAutoCalcKVBlocks. Each error path should return (0, false) and
 // emit a warning (not tested here — warnings go to logrus stderr).
-func TestTryAutoCalcKVBlocksBlackbox_ErrorPaths(t *testing.T) {
+func TestTryAutoCalcKVBlocks_ErrorPaths(t *testing.T) {
 	// Create temporary test fixtures
 	tmpDir := t.TempDir()
 
@@ -940,7 +940,7 @@ func TestTryAutoCalcKVBlocksBlackbox_ErrorPaths(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			blocks, ok := tryAutoCalcKVBlocksBlackbox(
+			blocks, ok := tryAutoCalcKVBlocks(
 				"test-model",
 				tc.modelConfigFolder,
 				tc.defaultsFilePath,
@@ -1012,8 +1012,10 @@ func TestAutoCalcKVBlocks_SuppressedByExplicitFlag(t *testing.T) {
 func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	outFile := filepath.Join(t.TempDir(), "metrics.json")
 
+	mcFolder, hwPath := setupTrainedPhysicsTestFixtures(t)
+
 	// Save and restore all package-level flag vars mutated by runCmd.Run.
-	// Base list copied from TestReplayCmd_EndToEnd_BlackboxMode:377-434;
+	// Base list copied from TestReplayCmd_EndToEnd_TrainedPhysicsMode;
 	// run-only workload vars and metricsPath added on top.
 	origMetrics := metricsPath
 	origModel := model
@@ -1061,6 +1063,10 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	origRequestTimeout := requestTimeoutSecs
 	origTraceOut := traceOutput
 	origLogLevel := logLevel
+	origModelConfigFolder := modelConfigFolder
+	origHwConfigPath := hwConfigPath
+	origGPU := gpu
+	origTP := tensorParallelism
 	defer func() {
 		metricsPath = origMetrics
 		model = origModel
@@ -1107,6 +1113,10 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 		requestTimeoutSecs = origRequestTimeout
 		traceOutput = origTraceOut
 		logLevel = origLogLevel
+		modelConfigFolder = origModelConfigFolder
+		hwConfigPath = origHwConfigPath
+		gpu = origGPU
+		tensorParallelism = origTP
 	}()
 
 	// Set required run vars — runCmd.Run has logrus.Fatalf guards on zero/invalid values.
@@ -1132,9 +1142,13 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	testCmd.Flags().StringVar(&workloadType, "workload", "", "")
 	if err := testCmd.ParseFlags([]string{
 		"--model", "qwen/qwen3-14b",
-		"--latency-model", "blackbox", // avoids roofline HF config fetch
-		"--beta-coeffs", "10000.0,1.0,1.0",
-		"--alpha-coeffs", "0.0,0.0,0.0",
+		"--latency-model", "trained-physics",
+		"--beta-coeffs", "0.0,0.0,0.0,0.0,100.0,0.0,0.0",
+		"--alpha-coeffs", "100.0,1.0,100.0",
+		"--model-config-folder", mcFolder,
+		"--hardware-config", hwPath,
+		"--hardware", "H100",
+		"--tp", "1",
 		"--total-kv-blocks", "1000",
 		"--num-requests", "1",
 		"--seed", "42",

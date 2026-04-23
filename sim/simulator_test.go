@@ -274,7 +274,7 @@ func TestRegenGoldenDataset(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 	goldenPath := testutil.GoldenDatasetPath(t)
-	if err := os.WriteFile(goldenPath, append(out, '\n'), 0644); err != nil {
+	if err := os.WriteFile(goldenPath, out, 0644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	t.Logf("Wrote %s", goldenPath)
@@ -2154,7 +2154,7 @@ func TestStep_ZeroOutputTokens_TTFTBeforeE2E(t *testing.T) {
 }
 
 // TestNewLatencyModel_ZeroNumHeads_Fails verifies that roofline mode rejects
-// ModelConfig with NumHeads=0 (roofline validates model config fields).
+// ModelConfig with NumHeads=0 (all backends validate model config fields).
 func TestNewLatencyModel_ZeroNumHeads_Fails(t *testing.T) {
 	// GIVEN a ModelHardwareConfig with NumHeads=0 (invalid for roofline)
 	hw := NewModelHardwareConfig(ModelConfig{NumHeads: 0}, rooflineHWCalib(), "", "", 1, "roofline", 0)
@@ -2961,7 +2961,7 @@ func TestTotalOutputTokens_Conservation_WithPreemption(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(4, 16, 0, 0, 0, 0), // 4 blocks × 16 = 64 tokens: forces preemption
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-model", "H100", 1, "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 

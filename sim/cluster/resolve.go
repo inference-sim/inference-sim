@@ -58,10 +58,9 @@ func (o PoolOverrides) IsEmpty() bool {
 // deep-copy the slices here.
 //
 // Latency backend constraint: when using per-pool LatencyBackend overrides, all
-// model-based backends (roofline, trained-physics) share the same model
-// architecture (HFConfig) and LatencyCoeffs. Mixing model-based and blackbox backends
-// across pools is supported but note that LatencyCoeffs are global — they are only
-// meaningful for the blackbox backend and are ignored by model-based backends.
+// backends (roofline, trained-physics) share the same model architecture (HFConfig)
+// and LatencyCoeffs. LatencyCoeffs are global and used by trained-physics;
+// roofline ignores them.
 func ResolvePoolConfig(global sim.SimConfig, overrides PoolOverrides) sim.SimConfig {
 	resolved := global // struct copy
 

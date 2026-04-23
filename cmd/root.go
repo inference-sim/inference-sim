@@ -279,8 +279,8 @@ func allZeros(values []float64) bool {
 // modelConfigFolder, hwConfigPath) are mutated as side effects.
 type latencyResolution struct {
 	Backend     string           // resolved latency backend name
-	ModelConfig sim.ModelConfig  // HF-derived model architecture config (zero for blackbox)
-	HWConfig    sim.HardwareCalib // hardware calibration config (zero for blackbox)
+	ModelConfig sim.ModelConfig  // HF-derived model architecture config
+	HWConfig    sim.HardwareCalib // hardware calibration config
 	AlphaCoeffs []float64        // resolved alpha coefficients (local copy, not package-level)
 	BetaCoeffs  []float64        // resolved beta coefficients (local copy, not package-level)
 }
@@ -293,12 +293,10 @@ type latencyResolution struct {
 //   - Normalizes model name to lowercase
 //   - Validates gpuMemoryUtilization and blockSizeTokens (used in KV auto-calc)
 //   - Applies defaults.yaml for GPU, TP, and vllmVersion when not set via CLI
-//   - Validates alpha/beta coefficients and auto-detects blackbox mode
+//   - Validates alpha/beta coefficients and auto-detects trained-physics mode when coefficients are provided
 //   - For roofline/trained-physics: resolves model config folder and
 //     hardware config, loads coefficients from defaults.yaml, auto-calculates
 //     total-kv-blocks and max-model-len from the HF config
-//   - For blackbox: loads coefficients from defaults.yaml, then auto-calculates
-//     total-kv-blocks and max-model-len via resolveModelConfig (downloads HF config if needed)
 //
 // Side effects (package-level vars mutated):
 //
@@ -330,9 +328,9 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	betaChanged := cmd.Flags().Changed("beta-coeffs")
 	if alphaChanged != betaChanged {
 		if alphaChanged {
-			logrus.Fatalf("--alpha-coeffs requires --beta-coeffs. Both coefficient sets are needed for blackbox mode")
+			logrus.Fatalf("--alpha-coeffs requires --beta-coeffs. Both coefficient sets are needed for coefficient-based estimation")
 		}
-		logrus.Fatalf("--beta-coeffs requires --alpha-coeffs. Both coefficient sets are needed for blackbox mode")
+		logrus.Fatalf("--beta-coeffs requires --alpha-coeffs. Both coefficient sets are needed for coefficient-based estimation")
 	}
 	for i, c := range alpha {
 		if math.IsNaN(c) || math.IsInf(c, 0) || c < 0 {
@@ -345,8 +343,8 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		}
 	}
 	if !cmd.Flags().Changed("latency-model") && alphaChanged && betaChanged {
-		backend = "blackbox"
-		logrus.Infof("--alpha-coeffs and --beta-coeffs provided; using blackbox mode")
+		backend = "trained-physics"
+		logrus.Infof("--alpha-coeffs and --beta-coeffs provided; using trained-physics mode")
 	}
 
 	// Validate flags consumed inside this function before any KV auto-calc.
@@ -395,7 +393,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		}
 		if len(missing) > 0 {
 			logrus.Fatalf("Roofline mode (the default) requires %s. No defaults found in defaults.yaml for model=%s. "+
-				"Provide these flags explicitly, or use --latency-model blackbox for offline coefficient-based estimation",
+				"Provide these flags explicitly, or use --latency-model trained-physics for coefficient-based estimation",
 				strings.Join(missing, " and "), model)
 		}
 		// alphaChanged == betaChanged is guaranteed by the "both or neither" check above,
@@ -403,7 +401,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		if cmd.Flags().Changed("latency-model") && betaChanged {
 			logrus.Fatalf("--alpha-coeffs/--beta-coeffs cannot be used with --latency-model roofline. " +
 				"Roofline computes step time analytically. " +
-				"Use --latency-model blackbox if you want coefficient-based estimation")
+				"Use --latency-model trained-physics if you want coefficient-based estimation")
 		}
 		if modelConfigFolder != "" {
 			logrus.Infof("--latency-model: explicit --model-config-folder takes precedence over auto-resolution")
@@ -481,24 +479,8 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		}
 	}
 
-	// --latency-model blackbox: load coefficients from defaults.yaml.
-	if backend == "blackbox" && !cmd.Flags().Changed("alpha-coeffs") && !cmd.Flags().Changed("beta-coeffs") {
-		newAlpha, newBeta := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
-		alpha, beta = newAlpha, newBeta
-	}
-	// Blackbox: KV-block auto-calculation using same resolution as analytical backends.
-	// Resolves config.json (--model-config-folder → cached → HuggingFace download), then auto-calculates.
-	if backend == "blackbox" && !cmd.Flags().Changed("total-kv-blocks") {
-		if autoBlocks, ok := tryAutoCalcKVBlocksBlackbox(model, modelConfigFolder, defaultsFilePath, hwConfigPath, gpu, tensorParallelism, blockSizeTokens, gpuMemoryUtilization, totalKVBlocks); ok {
-			totalKVBlocks = autoBlocks
-			logrus.Infof("--latency-model blackbox: auto-calculated total-kv-blocks=%d", totalKVBlocks)
-		}
-	}
-	if backend == "blackbox" && allZeros(alpha) && allZeros(beta) {
-		logrus.Fatalf("No trained coefficients found for model=%s, GPU=%s, TP=%d. "+
-			"Provide --alpha-coeffs/--beta-coeffs, use --latency-model roofline or trained-physics",
-			model, gpu, tensorParallelism)
-	}
+	// Note: the deprecated "blackbox" backend has been removed. Coefficient-based
+	// estimation is now handled by --latency-model trained-physics.
 
 	// Analytical backends: parse HF config, extract model/hardware config, auto-calc KV blocks and max-model-len.
 	if backend == "roofline" || backend == "trained-physics" {
@@ -856,7 +838,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
 	cmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
 	cmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
-	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "roofline", "Latency model backend: roofline (default), blackbox, trained-physics")
+	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "roofline", "Latency model backend: roofline (default), trained-physics")
 	cmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for analytical backends when not set.")
 
 	// Cluster config
@@ -930,55 +912,55 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 
 }
 
-// tryAutoCalcKVBlocksBlackbox attempts to auto-calculate KV blocks for blackbox mode.
+// tryAutoCalcKVBlocks attempts to auto-calculate KV blocks from model/hardware config.
 // Returns (blocks, true) on success, (0, false) on any failure.
 // Logs warnings for each failure case so the caller can use the fallback value silently.
-func tryAutoCalcKVBlocksBlackbox(model, modelConfigFolder, defaultsFilePath, hwConfigPath, gpu string, tp int, blockSize int64, gpuMemUtil float64, currentBlocks int64) (int64, bool) {
+func tryAutoCalcKVBlocks(model, modelConfigFolder, defaultsFilePath, hwConfigPath, gpu string, tp int, blockSize int64, gpuMemUtil float64, currentBlocks int64) (int64, bool) {
 	resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
 	if err != nil {
-		logrus.Warnf("--latency-model blackbox: could not resolve model config for KV auto-calculation: %v. Using total-kv-blocks=%d", err, currentBlocks)
+		logrus.Warnf("KV auto-calc: could not resolve model config for KV auto-calculation: %v. Using total-kv-blocks=%d", err, currentBlocks)
 		return 0, false
 	}
 
 	hfPath := filepath.Join(resolved, "config.json")
 	hfCfg, parseErr := latency.ParseHFConfig(hfPath)
 	if parseErr != nil {
-		logrus.Warnf("--latency-model blackbox: failed to parse %s: %v. Using total-kv-blocks=%d", hfPath, parseErr, currentBlocks)
+		logrus.Warnf("KV auto-calc: failed to parse %s: %v. Using total-kv-blocks=%d", hfPath, parseErr, currentBlocks)
 		return 0, false
 	}
 
 	mc, mcErr := latency.GetModelConfigFromHF(hfCfg)
 	if mcErr != nil {
-		logrus.Warnf("--latency-model blackbox: failed to extract model config: %v. Using total-kv-blocks=%d", mcErr, currentBlocks)
+		logrus.Warnf("KV auto-calc: failed to extract model config: %v. Using total-kv-blocks=%d", mcErr, currentBlocks)
 		return 0, false
 	}
 	applyWeightPrecisionFallback(mc, model, hfCfg.Raw)
 
 	resolvedHW, hwErr := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
 	if hwErr != nil {
-		logrus.Warnf("--latency-model blackbox: could not resolve hardware config: %v. Using total-kv-blocks=%d", hwErr, currentBlocks)
+		logrus.Warnf("KV auto-calc: could not resolve hardware config: %v. Using total-kv-blocks=%d", hwErr, currentBlocks)
 		return 0, false
 	}
 
 	hc, hcErr := latency.GetHWConfig(resolvedHW, gpu)
 	if hcErr != nil {
-		logrus.Warnf("--latency-model blackbox: failed to load hardware config: %v. Using total-kv-blocks=%d", hcErr, currentBlocks)
+		logrus.Warnf("KV auto-calc: failed to load hardware config: %v. Using total-kv-blocks=%d", hcErr, currentBlocks)
 		return 0, false
 	}
 	if hc.MemoryGiB <= 0 {
-		logrus.Warnf("--latency-model blackbox: GPU memory not available in hardware config. Using total-kv-blocks=%d", currentBlocks)
+		logrus.Warnf("KV auto-calc: GPU memory not available in hardware config. Using total-kv-blocks=%d", currentBlocks)
 		return 0, false
 	}
 
 	kvParams, kvErr := latency.ExtractKVCapacityParams(hfCfg)
 	if kvErr != nil {
-		logrus.Warnf("--latency-model blackbox: could not extract KV capacity params: %v. Using total-kv-blocks=%d", kvErr, currentBlocks)
+		logrus.Warnf("KV auto-calc: could not extract KV capacity params: %v. Using total-kv-blocks=%d", kvErr, currentBlocks)
 		return 0, false
 	}
 
 	autoBlocks, calcErr := latency.CalculateKVBlocks(*mc, hc, tp, blockSize, gpuMemUtil, kvParams)
 	if calcErr != nil {
-		logrus.Warnf("--latency-model blackbox: KV capacity auto-calculation failed: %v. Using total-kv-blocks=%d", calcErr, currentBlocks)
+		logrus.Warnf("KV auto-calc: KV capacity auto-calculation failed: %v. Using total-kv-blocks=%d", calcErr, currentBlocks)
 		return 0, false
 	}
 
@@ -1047,7 +1029,7 @@ var runCmd = &cobra.Command{
 		lr := resolveLatencyConfig(cmd)
 
 		// PD disaggregation requires ModelConfig for KV transfer duration derivation.
-		// Analytical backends populate ModelConfig from HF config.json; blackbox does not.
+		// Analytical backends populate ModelConfig from HF config.json.
 		// When PD is enabled and ModelConfig is zero-valued, resolve and load it using the
 		// same resolution as analytical backends (--model-config-folder → local bundled → HuggingFace fetch → error).
 		if prefillInstances > 0 && lr.ModelConfig.NumHeads == 0 {
