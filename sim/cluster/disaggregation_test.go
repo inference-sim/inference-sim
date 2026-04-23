@@ -306,11 +306,11 @@ func newShortRequests(n int) []*sim.Request {
 	requests := make([]*sim.Request, n)
 	for i := 0; i < n; i++ {
 		requests[i] = &sim.Request{
-			ID:          fmt.Sprintf("request_%d", i),
-			InputTokens: make([]int, 20), // 2 blocks at blockSize=16
+			ID:           fmt.Sprintf("request_%d", i),
+			InputTokens:  make([]int, 20), // 2 blocks at blockSize=16
 			OutputTokens: make([]int, 10),
-			State:       sim.StateQueued,
-			ArrivalTime: int64(i * 100), // 100μs apart
+			State:        sim.StateQueued,
+			ArrivalTime:  int64(i * 100), // 100μs apart
 		}
 	}
 	return requests

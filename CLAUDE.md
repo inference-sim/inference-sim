@@ -273,9 +273,9 @@ For the full annotated file tree, see [`docs/reference/project-structure.md`](do
 
 ### Latency Estimation
 
-Three latency model modes (roofline, blackbox, trained-physics), selected via `--latency-model` flag. **Trained-physics** is the recommended default for new models.
+Two latency model modes (roofline, trained-physics), selected via `--latency-model` flag. **Trained-physics** is the recommended default for new models.
 
-**Migration note:** The deprecated `crossmodel` and `trained-roofline` backends have been removed. Use `--latency-model trained-physics` for modern physics-informed estimation with MoE-aware overhead modeling.
+**Migration note:** The deprecated `blackbox`, `crossmodel`, and `trained-roofline` backends have been removed. Use `--latency-model trained-physics` for modern physics-informed estimation with MoE-aware overhead modeling.
 
 **Trained-physics model**: Roofline basis functions with learned correction coefficients. Generalizes across model architectures, workloads, and TP configurations. No per-model calibration needed.
 

@@ -473,7 +473,6 @@ func TestGetHFRepo_ValidModel(t *testing.T) {
     vllm_version: vllm/vllm-openai:v0.8.4
     hf_repo: TestOrg/Test-Model
 workloads: {}
-models: []
 version: "0.0.1"
 `
 	if err := os.WriteFile(defaultsPath, []byte(content), 0o644); err != nil {
@@ -498,7 +497,6 @@ func TestGetHFRepo_ModelWithoutHFRepo(t *testing.T) {
     tensor_parallelism: 2
     vllm_version: vllm/vllm-openai:v0.8.4
 workloads: {}
-models: []
 version: "0.0.1"
 `
 	if err := os.WriteFile(defaultsPath, []byte(content), 0o644); err != nil {
@@ -523,7 +521,6 @@ func TestGetHFRepo_ModelNotFound(t *testing.T) {
     tensor_parallelism: 2
     vllm_version: vllm/vllm-openai:v0.8.4
 workloads: {}
-models: []
 version: "0.0.1"
 `
 	if err := os.WriteFile(defaultsPath, []byte(content), 0o644); err != nil {

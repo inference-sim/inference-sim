@@ -905,222 +905,6 @@ func TestApplyTimeoutToRequests_NegativeSetsSessionBlueprintExplicitZero(t *test
 	}
 }
 
-// TestTryAutoCalcKVBlocksBlackbox_ErrorPaths tests all error paths in
-// tryAutoCalcKVBlocksBlackbox. Each error path should return (0, false) and
-// emit a warning (not tested here — warnings go to logrus stderr).
-func TestTryAutoCalcKVBlocksBlackbox_ErrorPaths(t *testing.T) {
-	// Create temporary test fixtures
-	tmpDir := t.TempDir()
-
-	// Valid hardware config file (JSON format)
-	hwConfigPath := filepath.Join(tmpDir, "hw.json")
-	hwJSON := `{
-  "H100": {
-    "MemoryGiB": 80.0,
-    "TFlopsPeak": 1000.0,
-    "BwPeakTBs": 3.35
-  }
-}`
-	if err := os.WriteFile(hwConfigPath, []byte(hwJSON), 0644); err != nil {
-		t.Fatalf("write hw config: %v", err)
-	}
-
-	// Valid model config.json file (minimal Llama-like)
-	validConfigJSON := `{
-  "architectures": ["LlamaForCausalLM"],
-  "num_attention_heads": 32,
-  "num_hidden_layers": 32,
-  "num_key_value_heads": 8,
-  "hidden_size": 4096,
-  "intermediate_size": 14336,
-  "vocab_size": 128256,
-  "torch_dtype": "float16",
-  "hidden_act": "silu"
-}`
-
-	validModelDir := filepath.Join(tmpDir, "valid-model")
-	if err := os.MkdirAll(validModelDir, 0755); err != nil {
-		t.Fatalf("create valid model dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(validModelDir, "config.json"), []byte(validConfigJSON), 0644); err != nil {
-		t.Fatalf("write valid config.json: %v", err)
-	}
-
-	// Invalid model config.json (malformed JSON)
-	invalidModelDir := filepath.Join(tmpDir, "invalid-model")
-	if err := os.MkdirAll(invalidModelDir, 0755); err != nil {
-		t.Fatalf("create invalid model dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(invalidModelDir, "config.json"), []byte("{invalid json}"), 0644); err != nil {
-		t.Fatalf("write invalid config.json: %v", err)
-	}
-
-	// Incomplete model config.json (missing required fields)
-	incompleteModelDir := filepath.Join(tmpDir, "incomplete-model")
-	if err := os.MkdirAll(incompleteModelDir, 0755); err != nil {
-		t.Fatalf("create incomplete model dir: %v", err)
-	}
-	incompleteJSON := `{"architectures": ["LlamaForCausalLM"]}`
-	if err := os.WriteFile(filepath.Join(incompleteModelDir, "config.json"), []byte(incompleteJSON), 0644); err != nil {
-		t.Fatalf("write incomplete config.json: %v", err)
-	}
-
-	// MoE model without num_local_experts (triggers ExtractKVCapacityParams error)
-	moeModelDir := filepath.Join(tmpDir, "moe-model")
-	if err := os.MkdirAll(moeModelDir, 0755); err != nil {
-		t.Fatalf("create moe model dir: %v", err)
-	}
-	moeJSON := `{
-  "architectures": ["MixtralForCausalLM"],
-  "num_attention_heads": 32,
-  "num_hidden_layers": 32,
-  "num_key_value_heads": 8,
-  "hidden_size": 4096,
-  "intermediate_size": 14336,
-  "vocab_size": 128256,
-  "torch_dtype": "float16",
-  "hidden_act": "silu",
-  "num_experts_per_tok": 2
-}`
-	if err := os.WriteFile(filepath.Join(moeModelDir, "config.json"), []byte(moeJSON), 0644); err != nil {
-		t.Fatalf("write moe config.json: %v", err)
-	}
-
-	// Hardware config with zero memory (JSON format)
-	zeroMemHWPath := filepath.Join(tmpDir, "zero-mem-hw.json")
-	zeroMemJSON := `{
-  "H100": {
-    "MemoryGiB": 0,
-    "TFlopsPeak": 1000.0,
-    "BwPeakTBs": 3.35
-  }
-}`
-	if err := os.WriteFile(zeroMemHWPath, []byte(zeroMemJSON), 0644); err != nil {
-		t.Fatalf("write zero-mem hw config: %v", err)
-	}
-
-	// Empty defaults.yaml for tests that don't need it
-	emptyDefaults := filepath.Join(tmpDir, "defaults.yaml")
-	if err := os.WriteFile(emptyDefaults, []byte("version: \"1.0\"\n"), 0644); err != nil {
-		t.Fatalf("write empty defaults: %v", err)
-	}
-
-	tests := []struct {
-		name                string
-		modelConfigFolder   string
-		defaultsFilePath    string
-		hwConfigPath        string
-		gpu                 string
-		expectSuccess       bool
-		description         string
-	}{
-		{
-			name:              "nonexistent model path",
-			modelConfigFolder: filepath.Join(tmpDir, "nonexistent"),
-			defaultsFilePath:  emptyDefaults,
-			hwConfigPath:      hwConfigPath,
-			gpu:               "H100",
-			expectSuccess:     false,
-			description:       "resolveModelConfig fails when path doesn't exist",
-		},
-		{
-			name:              "malformed config.json",
-			modelConfigFolder: invalidModelDir,
-			defaultsFilePath:  emptyDefaults,
-			hwConfigPath:      hwConfigPath,
-			gpu:               "H100",
-			expectSuccess:     false,
-			description:       "ParseHFConfig fails on invalid JSON",
-		},
-		{
-			name:              "incomplete config.json",
-			modelConfigFolder: incompleteModelDir,
-			defaultsFilePath:  emptyDefaults,
-			hwConfigPath:      hwConfigPath,
-			gpu:               "H100",
-			expectSuccess:     false,
-			description:       "GetModelConfigFromHF fails when required fields missing",
-		},
-		{
-			name:              "missing hardware config",
-			modelConfigFolder: validModelDir,
-			defaultsFilePath:  emptyDefaults,
-			hwConfigPath:      filepath.Join(tmpDir, "nonexistent-hw.json"),
-			gpu:               "H100",
-			expectSuccess:     false,
-			description:       "resolveHardwareConfig fails when file doesn't exist",
-		},
-		{
-			name:              "unknown GPU type",
-			modelConfigFolder: validModelDir,
-			defaultsFilePath:  emptyDefaults,
-			hwConfigPath:      hwConfigPath,
-			gpu:               "UnknownGPU",
-			expectSuccess:     false,
-			description:       "GetHWConfig fails when GPU not in hardware config",
-		},
-		{
-			name:              "zero GPU memory",
-			modelConfigFolder: validModelDir,
-			defaultsFilePath:  emptyDefaults,
-			hwConfigPath:      zeroMemHWPath,
-			gpu:               "H100",
-			expectSuccess:     false,
-			description:       "MemoryGiB <= 0 check fails",
-		},
-		{
-			name:              "MoE without num_local_experts",
-			modelConfigFolder: moeModelDir,
-			defaultsFilePath:  emptyDefaults,
-			hwConfigPath:      hwConfigPath,
-			gpu:               "H100",
-			expectSuccess:     false,
-			description:       "ExtractKVCapacityParams fails for MoE with num_experts_per_tok but no total expert count",
-		},
-		{
-			name:              "happy path",
-			modelConfigFolder: validModelDir,
-			defaultsFilePath:  emptyDefaults,
-			hwConfigPath:      hwConfigPath,
-			gpu:               "H100",
-			expectSuccess:     true,
-			description:       "All steps succeed, returns calculated blocks",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			blocks, ok := tryAutoCalcKVBlocksBlackbox(
-				"test-model",
-				tc.modelConfigFolder,
-				tc.defaultsFilePath,
-				tc.hwConfigPath,
-				tc.gpu,
-				1,    // tp
-				16,   // blockSize
-				0.9,  // gpuMemUtil
-				1000, // currentBlocks (fallback value)
-			)
-
-			if tc.expectSuccess {
-				if !ok {
-					t.Errorf("%s: expected success but got failure", tc.description)
-				}
-				if blocks <= 0 {
-					t.Errorf("%s: expected positive block count, got %d", tc.description, blocks)
-				}
-			} else {
-				if ok {
-					t.Errorf("%s: expected failure but got success with blocks=%d", tc.description, blocks)
-				}
-				if blocks != 0 {
-					t.Errorf("%s: expected blocks=0 on failure, got %d", tc.description, blocks)
-				}
-			}
-		})
-	}
-}
-
 // TestAutoCalcKVBlocks_SuppressedByExplicitFlag verifies that when --total-kv-blocks
 // is explicitly set by the user, auto-calculation is suppressed (guard condition).
 //
@@ -1162,8 +946,10 @@ func TestAutoCalcKVBlocks_SuppressedByExplicitFlag(t *testing.T) {
 func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	outFile := filepath.Join(t.TempDir(), "metrics.json")
 
+	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
 	// Save and restore all package-level flag vars mutated by runCmd.Run.
-	// Base list copied from TestReplayCmd_EndToEnd_BlackboxMode:377-434;
+	// Base list copied from TestReplayCmd_EndToEnd_TrainedPhysicsMode;
 	// run-only workload vars and metricsPath added on top.
 	origMetrics := metricsPath
 	origModel := model
@@ -1211,6 +997,10 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	origRequestTimeout := requestTimeoutSecs
 	origTraceOut := traceOutput
 	origLogLevel := logLevel
+	origModelConfigFolder := modelConfigFolder
+	origHwConfigPath := hwConfigPath
+	origGPU := gpu
+	origTP := tensorParallelism
 	defer func() {
 		metricsPath = origMetrics
 		model = origModel
@@ -1257,6 +1047,10 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 		requestTimeoutSecs = origRequestTimeout
 		traceOutput = origTraceOut
 		logLevel = origLogLevel
+		modelConfigFolder = origModelConfigFolder
+		hwConfigPath = origHwConfigPath
+		gpu = origGPU
+		tensorParallelism = origTP
 	}()
 
 	// Set required run vars — runCmd.Run has logrus.Fatalf guards on zero/invalid values.
@@ -1282,9 +1076,12 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	testCmd.Flags().StringVar(&workloadType, "workload", "", "")
 	if err := testCmd.ParseFlags([]string{
 		"--model", "qwen/qwen3-14b",
-		"--latency-model", "blackbox", // avoids roofline HF config fetch
-		"--beta-coeffs", "10000.0,1.0,1.0",
-		"--alpha-coeffs", "0.0,0.0,0.0",
+		"--latency-model", "trained-physics",
+		"--defaults-filepath", defaultsPath,
+		"--model-config-folder", mcFolder,
+		"--hardware-config", hwPath,
+		"--hardware", "H100",
+		"--tp", "1",
 		"--total-kv-blocks", "1000",
 		"--num-requests", "1",
 		"--seed", "42",
