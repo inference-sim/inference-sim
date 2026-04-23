@@ -2973,7 +2973,7 @@ func TestSimulator_TTFT_UpdatedAfterPreemption(t *testing.T) {
 	}
 
 	e2eB := s.Metrics.RequestE2Es["B"]
-	if e2eB < ttftB {
-		t.Errorf("E2E_B = %.0f < TTFT_B = %.0f: causality violated for preempted request", e2eB, ttftB)
+	if e2eB <= ttftB {
+		t.Errorf("E2E_B = %.0f <= TTFT_B = %.0f: expected E2E_B > TTFT_B for a request with 5 output tokens", e2eB, ttftB)
 	}
 }

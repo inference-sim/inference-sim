@@ -668,9 +668,11 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 				req.ITL = append(req.ITL, currStepAdvance+sim.latencyModel.OutputTokenProcessingTime())
 			}
 		}
-		// !req.TTFTSet guard: fires exactly once per request lifetime.
-		// On preemption, ProgressIndex resets to 0 (batch_formation.go) but TTFTSet is
-		// preserved, preventing TTFT double-counting on re-prefill.
+		// !req.TTFTSet guard: fires once per prefill completion (including re-prefill after
+		// preemption). TTFTSet is reset to false on preemption (batch_formation.go) so that
+		// re-prefill overwrites FirstTokenTime with the correct post-preemption TTFT.
+		// TTFTSum double-counting is prevented by accumulating req.FirstTokenTime once at
+		// completion time in recordRequestCompletion, not inline here.
 		if req.ProgressIndex == util.Len64(req.InputTokens) && !req.TTFTSet {
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
