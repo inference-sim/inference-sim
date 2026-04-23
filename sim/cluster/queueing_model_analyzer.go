@@ -61,7 +61,7 @@ type QMConfig struct {
 	InitFitThreshold float64
 
 	// WarmUpCycles is the number of EKF update cycles during which the NIS gate is disabled.
-	// Default: 5.
+	// 0 = NIS always active (no warm-up). Positive N = warm-up for N cycles.
 	WarmUpCycles int
 }
 
@@ -104,9 +104,6 @@ func NewQueueingModelAnalyzer(cfg QMConfig) *QueueingModelAnalyzer {
 	}
 	if cfg.ResidualThreshold == 0 {
 		cfg.ResidualThreshold = 0.3
-	}
-	if cfg.WarmUpCycles == 0 {
-		cfg.WarmUpCycles = 5
 	}
 	return &QueueingModelAnalyzer{
 		cfg:          cfg,
