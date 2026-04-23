@@ -18,7 +18,7 @@ func newTestInstance(id InstanceID, totalKVBlocks int64) *InstanceSimulator {
 		KVCacheConfig:       sim.NewKVCacheConfig(totalKVBlocks, 16, 0, 0, 0, 0),
 		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, "roofline", 0),
 	}
 	return NewInstanceSimulator(id, cfg)
 }
@@ -682,7 +682,7 @@ func TestCluster_CacheSignalDelay_StaleRouting(t *testing.T) {
 				KVCacheConfig:       sim.NewKVCacheConfig(100, 4, 0, 0, 0, 0),
 				BatchConfig:         sim.NewBatchConfig(10, 2048, 0),
 				LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
-				ModelHardwareConfig: sim.ModelHardwareConfig{Backend: "blackbox"},
+				ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "", "", 1, "roofline", 0),
 			},
 			NumInstances:     2,
 			CacheSignalDelay: delay,
@@ -757,7 +757,7 @@ func TestCluster_CacheSignalDelay_Zero_OracleBehavior(t *testing.T) {
 			KVCacheConfig:       sim.NewKVCacheConfig(100, 4, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(10, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
-			ModelHardwareConfig: sim.ModelHardwareConfig{Backend: "blackbox"},
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "", "", 1, "roofline", 0),
 		},
 		NumInstances:  2,
 		RoutingPolicy: "weighted",

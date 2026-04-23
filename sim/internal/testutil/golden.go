@@ -138,6 +138,21 @@ func SaveGoldenDataset(t *testing.T, ds *GoldenDataset) {
 	t.Logf("updated %s (%d tests)", path, len(ds.Tests))
 }
 
+// GoldenDatasetPath returns the absolute path to testdata/goldendataset.json.
+func GoldenDatasetPath(t *testing.T) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("Failed to get current file path")
+	}
+	return filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "testdata", "goldendataset.json")
+}
+
+// MarshalGoldenDataset serializes a GoldenDataset to indented JSON.
+func MarshalGoldenDataset(dataset *GoldenDataset) ([]byte, error) {
+	return json.MarshalIndent(dataset, "", "    ")
+}
+
 // AssertFloat64Equal compares two float64 values with relative tolerance.
 func AssertFloat64Equal(t *testing.T, name string, want, got, relTol float64) {
 	t.Helper()
