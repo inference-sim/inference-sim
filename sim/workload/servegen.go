@@ -76,6 +76,8 @@ type serveGenTraceRow struct {
 	rate         float64
 	cv           float64
 	pattern      string // "Gamma", "Weibull", or empty
+	shapeParam   float64
+	scaleParam   float64
 }
 
 // loadServeGenData loads ServeGen data files and populates the spec's Clients list.
@@ -159,6 +161,11 @@ func loadServeGenChunk(chunkID, tracePath, datasetPath string, sgConfig *ServeGe
 			arrivalSpec.Process = process
 			cv := bestRow.cv
 			arrivalSpec.CV = &cv
+			// Store MLE-fitted parameters from ServeGen trace columns 5-6
+			shape := bestRow.shapeParam
+			scale := bestRow.scaleParam
+			arrivalSpec.Shape = &shape
+			arrivalSpec.Scale = &scale
 		}
 	}
 
@@ -227,11 +234,26 @@ func parseServeGenTrace(path string) ([]serveGenTraceRow, error) {
 		}
 		pattern := strings.TrimSpace(record[3])
 
+		// Parse shape and scale parameters (columns 5-6)
+		var shapeParam, scaleParam float64
+		if len(record) >= 6 {
+			shape, shapeErr := strconv.ParseFloat(strings.TrimSpace(record[4]), 64)
+			scale, scaleErr := strconv.ParseFloat(strings.TrimSpace(record[5]), 64)
+			if shapeErr != nil || scaleErr != nil {
+				logrus.Debugf("parseServeGenTrace: row at t=%.0f has non-numeric shape/scale, falling back to 0", startTime)
+			} else {
+				shapeParam = shape
+				scaleParam = scale
+			}
+		}
+
 		rows = append(rows, serveGenTraceRow{
 			startTimeSec: startTime,
 			rate:         rate,
 			cv:           cv,
 			pattern:      pattern,
+			shapeParam:   shapeParam,
+			scaleParam:   scaleParam,
 		})
 	}
 	if skippedRows > 0 {

@@ -2947,3 +2947,60 @@ func TestClusterSimulator_PD_OrphanedTimeout_TimingNotInflated(t *testing.T) {
 	}
 }
 
+// TestClusterSimulator_ProjectPDMetrics_NoOpWhenEmpty is the definitive evidence test
+// for issue #962. It runs a single-instance (non-PD) simulation, captures TTFT values,
+// then directly calls projectPDMetrics() (bypassing the poolsConfigured guard) and
+// verifies that TTFT values are byte-identical before and after.
+//
+// If projectPDMetrics corrupted non-PD metrics, TTFTs would differ after the call.
+// This test proves the internal guard (len(parentRequests)==0) already prevents corruption.
+func TestClusterSimulator_ProjectPDMetrics_NoOpWhenEmpty(t *testing.T) {
+	config := newTestDeploymentConfig(1) // single instance, no PD
+	requests := newTestRequests(5)
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	metrics := cs.AggregatedMetrics()
+
+	// Snapshot TTFT values before calling projectPDMetrics directly
+	ttftBefore := make(map[string]float64, len(metrics.RequestTTFTs))
+	for k, v := range metrics.RequestTTFTs {
+		ttftBefore[k] = v
+	}
+
+	// Print TTFT values for evidence
+	t.Logf("parentRequests count: %d", len(cs.parentRequests))
+	t.Logf("poolsConfigured: %v", cs.poolsConfigured())
+	for reqID, ttft := range metrics.RequestTTFTs {
+		t.Logf("BEFORE projectPDMetrics: %s TTFT = %.2f us (%.4f ms)", reqID, ttft, ttft/1000)
+	}
+
+	// Directly call projectPDMetrics WITHOUT the poolsConfigured guard
+	cs.projectPDMetrics()
+
+	// Compare TTFT values after the call
+	for reqID, ttft := range metrics.RequestTTFTs {
+		t.Logf("AFTER  projectPDMetrics: %s TTFT = %.2f us (%.4f ms)", reqID, ttft, ttft/1000)
+	}
+
+	// Verify no change
+	if len(metrics.RequestTTFTs) != len(ttftBefore) {
+		t.Errorf("TTFT map size changed: before=%d, after=%d", len(ttftBefore), len(metrics.RequestTTFTs))
+	}
+	for reqID, before := range ttftBefore {
+		after, ok := metrics.RequestTTFTs[reqID]
+		if !ok {
+			t.Errorf("TTFT for %s disappeared after projectPDMetrics", reqID)
+			continue
+		}
+		if before != after {
+			t.Errorf("TTFT for %s changed: before=%.2f, after=%.2f (diff=%.2f)", reqID, before, after, after-before)
+		}
+	}
+	for reqID := range metrics.RequestTTFTs {
+		if _, ok := ttftBefore[reqID]; !ok {
+			t.Errorf("new TTFT key %s appeared after projectPDMetrics", reqID)
+		}
+	}
+}

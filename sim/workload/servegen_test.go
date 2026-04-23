@@ -165,6 +165,141 @@ func TestLoadServeGenDataset_NonNumericKey_SkippedWithWarning(t *testing.T) {
 	assert.Contains(t, buf.String(), "metadata", "should warn about non-numeric key 'metadata'")
 }
 
+func TestParseServeGenTrace_WithShapeScale(t *testing.T) {
+	// GIVEN a trace CSV with 6 columns including shape/scale
+	tmpfile, err := os.CreateTemp("", "trace-*.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	// Write test data with high CV and fitted shape/scale
+	content := "199200,22.46,173.81,Weibull,0.0575,0.000573\n"
+	if _, err := tmpfile.Write([]byte(content)); err != nil {
+		t.Fatal(err)
+	}
+	tmpfile.Close()
+
+	// WHEN parsing the trace
+	rows, err := parseServeGenTrace(tmpfile.Name())
+
+	// THEN shape and scale are parsed correctly
+	if err != nil {
+		t.Fatalf("parseServeGenTrace failed: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	row := rows[0]
+	if row.cv != 173.81 {
+		t.Errorf("expected cv=173.81, got %f", row.cv)
+	}
+	if row.shapeParam != 0.0575 {
+		t.Errorf("expected shapeParam=0.0575, got %f", row.shapeParam)
+	}
+	if row.scaleParam != 0.000573 {
+		t.Errorf("expected scaleParam=0.000573, got %f", row.scaleParam)
+	}
+}
+
+func TestParseServeGenTrace_FourColumnsBackwardCompat(t *testing.T) {
+	// GIVEN a trace CSV with only 4 columns (no shape/scale)
+	dir := t.TempDir()
+	csvContent := "0,1.5,2.5,Gamma\n600,0.8,1.2,Weibull\n"
+	path := filepath.Join(dir, "trace.csv")
+	require.NoError(t, os.WriteFile(path, []byte(csvContent), 0644))
+
+	// WHEN parsing the trace
+	rows, err := parseServeGenTrace(path)
+
+	// THEN both rows are parsed successfully
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+
+	// AND shapeParam and scaleParam default to zero for both rows
+	assert.Equal(t, float64(0), rows[0].shapeParam, "4-column row should have shapeParam=0")
+	assert.Equal(t, float64(0), rows[0].scaleParam, "4-column row should have scaleParam=0")
+	assert.Equal(t, float64(0), rows[1].shapeParam, "4-column row should have shapeParam=0")
+	assert.Equal(t, float64(0), rows[1].scaleParam, "4-column row should have scaleParam=0")
+
+	// AND the core fields are parsed correctly
+	assert.InDelta(t, 1.5, rows[0].rate, 0.001)
+	assert.InDelta(t, 2.5, rows[0].cv, 0.001)
+	assert.Equal(t, "Gamma", rows[0].pattern)
+}
+
+func TestParseServeGenTrace_BadShapeScale_FallsBackToZero(t *testing.T) {
+	// GIVEN a trace CSV with 6 columns where columns 5-6 are non-numeric
+	dir := t.TempDir()
+	csvContent := "0,1.0,2.5,Gamma,BAD,BAD\n"
+	path := filepath.Join(dir, "trace.csv")
+	require.NoError(t, os.WriteFile(path, []byte(csvContent), 0644))
+
+	// WHEN parsing the trace
+	rows, err := parseServeGenTrace(path)
+
+	// THEN the row is still parsed (not skipped)
+	require.NoError(t, err)
+	require.Len(t, rows, 1, "row with bad shape/scale should not be skipped")
+
+	// AND shapeParam and scaleParam fall back to zero
+	assert.Equal(t, float64(0), rows[0].shapeParam, "bad shape should fall back to 0")
+	assert.Equal(t, float64(0), rows[0].scaleParam, "bad scale should fall back to 0")
+
+	// AND core fields are still parsed correctly
+	assert.InDelta(t, 1.0, rows[0].rate, 0.001)
+	assert.InDelta(t, 2.5, rows[0].cv, 0.001)
+	assert.Equal(t, "Gamma", rows[0].pattern)
+}
+
+func TestLoadServeGenChunk_PopulatesShapeScale(t *testing.T) {
+	// GIVEN a ServeGen chunk with high CV and fitted parameters
+	traceDir, err := os.MkdirTemp("", "servegen-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(traceDir)
+
+	// Write trace file
+	tracePath := filepath.Join(traceDir, "chunk-0-trace.csv")
+	traceContent := "0,22.46,173.81,Weibull,0.0575,0.000573\n"
+	if err := os.WriteFile(tracePath, []byte(traceContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write dataset file
+	datasetPath := filepath.Join(traceDir, "chunk-0-dataset.json")
+	datasetContent := `{"0": {"input_tokens": "{256: 1.0}", "output_tokens": "{100: 1.0}"}}`
+	if err := os.WriteFile(datasetPath, []byte(datasetContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sgConfig := &ServeGenDataSpec{}
+
+	// WHEN loading the chunk
+	client, err := loadServeGenChunk("0", tracePath, datasetPath, sgConfig)
+
+	// THEN ArrivalSpec contains shape and scale
+	if err != nil {
+		t.Fatalf("loadServeGenChunk failed: %v", err)
+	}
+	if client == nil {
+		t.Fatal("expected non-nil client")
+	}
+	if client.Arrival.Process != "weibull" {
+		t.Errorf("expected process=weibull, got %s", client.Arrival.Process)
+	}
+	if client.Arrival.CV == nil || *client.Arrival.CV != 173.81 {
+		t.Errorf("expected cv=173.81, got %v", client.Arrival.CV)
+	}
+	if client.Arrival.Shape == nil || *client.Arrival.Shape != 0.0575 {
+		t.Errorf("expected shape=0.0575, got %v", client.Arrival.Shape)
+	}
+	if client.Arrival.Scale == nil || *client.Arrival.Scale != 0.000573 {
+		t.Errorf("expected scale=0.000573, got %v", client.Arrival.Scale)
+	}
+}
+
 func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 	dir := t.TempDir()
 	// Create chunk-0-trace.csv

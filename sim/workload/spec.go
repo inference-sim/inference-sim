@@ -143,6 +143,8 @@ type ClientSpec struct {
 type ArrivalSpec struct {
 	Process string   `yaml:"process"`
 	CV      *float64 `yaml:"cv,omitempty"`
+	Shape   *float64 `yaml:"shape,omitempty"`
+	Scale   *float64 `yaml:"scale,omitempty"`
 }
 
 // DistSpec parameterizes a token length distribution.
