@@ -1012,7 +1012,7 @@ func TestAutoCalcKVBlocks_SuppressedByExplicitFlag(t *testing.T) {
 func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	outFile := filepath.Join(t.TempDir(), "metrics.json")
 
-	mcFolder, hwPath := setupTrainedPhysicsTestFixtures(t)
+	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
 
 	// Save and restore all package-level flag vars mutated by runCmd.Run.
 	// Base list copied from TestReplayCmd_EndToEnd_TrainedPhysicsMode;
@@ -1143,8 +1143,7 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	if err := testCmd.ParseFlags([]string{
 		"--model", "qwen/qwen3-14b",
 		"--latency-model", "trained-physics",
-		"--beta-coeffs", "0.0,0.0,0.0,0.0,100.0,0.0,0.0",
-		"--alpha-coeffs", "100.0,1.0,100.0",
+		"--defaults-filepath", defaultsPath,
 		"--model-config-folder", mcFolder,
 		"--hardware-config", hwPath,
 		"--hardware", "H100",

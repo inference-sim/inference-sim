@@ -56,6 +56,26 @@ func setupTrainedPhysicsTestFixtures(t *testing.T) (mcFolder, hwPath string) {
 	return mcDir, hwFile
 }
 
+// setupTrainedPhysicsTestFixturesWithDefaults extends setupTrainedPhysicsTestFixtures
+// by also creating a defaults.yaml with trained_physics_coefficients.
+// Returns model config folder, hardware config path, and defaults file path.
+func setupTrainedPhysicsTestFixturesWithDefaults(t *testing.T) (mcFolder, hwPath, defaultsPath string) {
+	t.Helper()
+	mcFolder, hwPath = setupTrainedPhysicsTestFixtures(t)
+
+	// Create minimal defaults.yaml with trained_physics_coefficients
+	defaultsPath = filepath.Join(filepath.Dir(hwPath), "defaults.yaml")
+	defaultsYAML := `trained_physics_coefficients:
+  alpha_coeffs: [100.0, 1.0, 100.0]
+  beta_coeffs: [0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+`
+	if err := os.WriteFile(defaultsPath, []byte(defaultsYAML), 0644); err != nil {
+		t.Fatalf("write defaults.yaml: %v", err)
+	}
+
+	return mcFolder, hwPath, defaultsPath
+}
+
 // TestReplayCmd_SimConfigFlags_Registered verifies BC-4:
 // all sim config flags registered on replayCmd.
 func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
