@@ -172,14 +172,16 @@ func TestParseServeGenTrace_WithShapeScale(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpfile.Name())
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
 
 	// Write test data with high CV and fitted shape/scale
 	content := "199200,22.46,173.81,Weibull,0.0575,0.000573\n"
 	if _, err := tmpfile.Write([]byte(content)); err != nil {
 		t.Fatal(err)
 	}
-	tmpfile.Close()
+	if err := tmpfile.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	// WHEN parsing the trace
 	rows, err := parseServeGenTrace(tmpfile.Name())
@@ -259,7 +261,7 @@ func TestLoadServeGenChunk_PopulatesShapeScale(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(traceDir)
+	defer func() { _ = os.RemoveAll(traceDir) }()
 
 	// Write trace file
 	tracePath := filepath.Join(traceDir, "chunk-0-trace.csv")
