@@ -795,6 +795,62 @@ func TestValidate_ConcurrencyClient_NoArrivalField_Accepted(t *testing.T) {
 	}
 }
 
+func TestWorkloadSpec_Validate_InfShape_ReturnsError(t *testing.T) {
+	// BC-11: +Inf shape bypasses > 0 check but creates degenerate samplers (R3 compliance)
+	infShape := math.Inf(1)
+	scale := 0.5
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID:           "c1",
+			RateFraction: 1.0,
+			Arrival: ArrivalSpec{
+				Process: "gamma",
+				Shape:   &infShape,
+				Scale:   &scale,
+			},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected error for +Inf shape parameter")
+	}
+	if !strings.Contains(err.Error(), "shape") && !strings.Contains(err.Error(), "finite") {
+		t.Errorf("error should mention shape and finite: %v", err)
+	}
+}
+
+func TestWorkloadSpec_Validate_InfScale_ReturnsError(t *testing.T) {
+	// BC-11: +Inf scale bypasses > 0 check but creates degenerate samplers (R3 compliance)
+	shape := 1.5
+	infScale := math.Inf(1)
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID:           "c1",
+			RateFraction: 1.0,
+			Arrival: ArrivalSpec{
+				Process: "weibull",
+				Shape:   &shape,
+				Scale:   &infScale,
+			},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected error for +Inf scale parameter")
+	}
+	if !strings.Contains(err.Error(), "scale") && !strings.Contains(err.Error(), "finite") {
+		t.Errorf("error should mention scale and finite: %v", err)
+	}
+}
+
 func TestExampleWorkloadFiles_AllValid(t *testing.T) {
 	// Validate all example workload specs load and pass validation.
 	// Only files that parse as WorkloadSpec are tested — examples/

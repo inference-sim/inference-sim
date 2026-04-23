@@ -348,6 +348,17 @@ func validateClient(c *ClientSpec, idx int) error {
 			return err
 		}
 	}
+	// Validate explicit shape/scale parameters if provided (ServeGen MLE-fitted params)
+	if c.Arrival.Shape != nil {
+		if err := validateFinitePositive(prefix+".arrival.shape", *c.Arrival.Shape); err != nil {
+			return err
+		}
+	}
+	if c.Arrival.Scale != nil {
+		if err := validateFinitePositive(prefix+".arrival.scale", *c.Arrival.Scale); err != nil {
+			return err
+		}
+	}
 	if c.PrefixLength < 0 {
 		return fmt.Errorf("%s: prefix_length must be non-negative, got %d", prefix, c.PrefixLength)
 	}
@@ -414,6 +425,17 @@ func validateCohort(c *CohortSpec, idx int) error {
 	}
 	if c.Arrival.CV != nil {
 		if err := validateFinitePositive(prefix+".cv", *c.Arrival.CV); err != nil {
+			return err
+		}
+	}
+	// Validate explicit shape/scale parameters if provided (ServeGen MLE-fitted params)
+	if c.Arrival.Shape != nil {
+		if err := validateFinitePositive(prefix+".arrival.shape", *c.Arrival.Shape); err != nil {
+			return err
+		}
+	}
+	if c.Arrival.Scale != nil {
+		if err := validateFinitePositive(prefix+".arrival.scale", *c.Arrival.Scale); err != nil {
 			return err
 		}
 	}
