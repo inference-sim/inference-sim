@@ -165,6 +165,9 @@ var (
 	prefillMaxModelLen    int64
 	decodeMaxModelLen     int64
 
+	// per-request timeout override for blis run (seconds; negative = disabled, 0 is rejected)
+	requestTimeoutSecs int
+
 	// output file paths
 	metricsPath string // File to write MetricsOutput JSON for blis run (--metrics-path)
 	resultsPath string // File to write []SimResult JSON for blis replay (--results-path)
@@ -982,6 +985,48 @@ func tryAutoCalcKVBlocksBlackbox(model, modelConfigFolder, defaultsFilePath, hwC
 	return autoBlocks, true
 }
 
+// applyTimeoutToSpec sets ClientSpec.Timeout and CohortSpec.Timeout on every entry in spec.
+// timeoutSecs>0 converts to µs and sets a deadline; timeoutSecs<=0 sets an explicit *int64(0)
+// (disabled). Explicit zero is required so computeDeadline does not fall back to the 300s
+// session default. Callers must reject timeoutSecs==0 before calling (use negative to disable).
+func applyTimeoutToSpec(spec *workload.WorkloadSpec, timeoutSecs int) {
+	var us int64
+	if timeoutSecs > 0 {
+		us = int64(timeoutSecs) * 1_000_000
+	}
+	for i := range spec.Clients {
+		t := us
+		spec.Clients[i].Timeout = &t
+	}
+	for i := range spec.Cohorts {
+		t := us
+		spec.Cohorts[i].Timeout = &t
+	}
+}
+
+// applyTimeoutToRequests re-applies timeout to already-generated requests and session
+// blueprints. This corrects deadlines for inference_perf specs: spec.Clients is empty
+// when applyTimeoutToSpec runs and is populated inside GenerateWorkload, so the initial
+// deadlines are computed from nil Timeout. Safe to call for all spec types.
+// timeoutSecs>0 sets deadline=ArrivalTime+timeout; timeoutSecs<=0 sets deadline=0 (disabled).
+func applyTimeoutToRequests(wl *workload.GeneratedWorkload, timeoutSecs int) {
+	var timeoutUs int64
+	if timeoutSecs > 0 {
+		timeoutUs = int64(timeoutSecs) * 1_000_000
+	}
+	for _, req := range wl.Requests {
+		if timeoutUs == 0 {
+			req.Deadline = 0
+		} else {
+			req.Deadline = req.ArrivalTime + timeoutUs
+		}
+	}
+	for i := range wl.Sessions {
+		t := timeoutUs
+		wl.Sessions[i].Timeout = &t
+	}
+}
+
 // runCmd executes the simulation using parameters from CLI flags
 var runCmd = &cobra.Command{
 	Use:   "run",
@@ -1247,6 +1292,16 @@ var runCmd = &cobra.Command{
 			spec.Seed = seed
 		}
 
+		// Apply per-request timeout to all clients.
+		// For synthesized specs, always apply (default 300s matches the session-client default).
+		// For file-loaded specs, only apply when the flag is explicitly set.
+		if requestTimeoutSecs == 0 {
+			logrus.Fatalf("--timeout must be positive (seconds) or negative to disable; got 0")
+		}
+		if workloadSpecPath == "" || cmd.Flags().Changed("timeout") {
+			applyTimeoutToSpec(spec, requestTimeoutSecs)
+		}
+
 		// Resolve maxRequests: spec.NumRequests as default, CLI --num-requests overrides
 		maxRequests := spec.NumRequests
 		if cmd.Flags().Changed("num-requests") {
@@ -1261,6 +1316,12 @@ var runCmd = &cobra.Command{
 		wl, err := workload.GenerateWorkload(spec, simulationHorizon, maxRequests)
 		if err != nil {
 			logrus.Fatalf("Failed to generate workload: %v", err)
+		}
+		// Re-apply timeout to generated requests and session blueprints.
+		// For inference_perf specs, spec.Clients was empty at applyTimeoutToSpec time
+		// and populated inside GenerateWorkload — deadlines need correction here.
+		if workloadSpecPath == "" || cmd.Flags().Changed("timeout") {
+			applyTimeoutToRequests(wl, requestTimeoutSecs)
 		}
 		preGeneratedRequests = wl.Requests
 		if len(wl.Sessions) > 0 {
@@ -1621,7 +1682,7 @@ var runCmd = &cobra.Command{
 		}
 
 		// Print anomaly counters if any detected
-		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 {
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 || rawMetrics.TimedOutRequests > 0 {
 			fmt.Println("=== Anomaly Counters ===")
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
@@ -1638,6 +1699,7 @@ var runCmd = &cobra.Command{
 			}
 			fmt.Printf("Rejected Requests (Routing): %d\n", rawMetrics.RoutingRejections)
 			fmt.Printf("Dropped Unservable: %d\n", rawMetrics.DroppedUnservable)
+			fmt.Printf("Timed Out Requests: %d\n", rawMetrics.TimedOutRequests)
 			fmt.Printf("Length-Capped Requests: %d\n", rawMetrics.LengthCappedRequests)
 			if rawMetrics.GatewayQueueDepth > 0 {
 				fmt.Printf("Gateway Queue Depth (horizon): %d\n", rawMetrics.GatewayQueueDepth)
@@ -1833,6 +1895,7 @@ func init() {
 	runCmd.Flags().IntVar(&outputTokensMin, "output-tokens-min", defaultOutputMin, "Min Output Token Count")
 	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", defaultOutputMax, "Max Output Token Count")
 	runCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "Path to YAML workload specification file (overrides --workload)")
+	runCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "Per-request deadline in seconds (default 300s matches the session-client default in computeDeadline). Negative = disabled; 0 is rejected. Consistent with blis observe: both commands reject 0.")
 
 	// Run-specific export
 	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")

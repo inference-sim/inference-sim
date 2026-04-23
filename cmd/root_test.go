@@ -16,6 +16,7 @@ import (
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/latency"
+	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -472,6 +473,288 @@ func TestReplayCmd_HasResultsPathFlag(t *testing.T) {
 	}
 }
 
+// TestRunCmd_TimeoutFlag_RegisteredWithDefault300s verifies that --timeout is registered
+// on runCmd with a default of 300s. Default 300s matches the session-client default in
+// computeDeadline (DefaultTimeoutUs), preserving termination for UnlimitedRounds sessions
+// and providing consistent behavior for synthesized workloads (#1127).
+func TestRunCmd_TimeoutFlag_RegisteredWithDefault300s(t *testing.T) {
+	f := runCmd.Flags().Lookup("timeout")
+	if f == nil {
+		t.Fatal("flag --timeout not found on runCmd")
+	}
+	if f.DefValue != "300" {
+		t.Errorf("--timeout default: got %q, want \"300\" (matches 300s session-client default in computeDeadline)", f.DefValue)
+	}
+}
+
+// TestRunCmd_TimeoutFlag_NotOnReplay verifies that --timeout is NOT registered on replayCmd.
+// blis replay replays a pre-captured trace and has no HTTP client; timeouts for replay
+// are expressed via the workload spec's deadline_us field (#1127).
+func TestRunCmd_TimeoutFlag_NotOnReplay(t *testing.T) {
+	if replayCmd.Flags().Lookup("timeout") != nil {
+		t.Error("replayCmd must NOT have --timeout flag; replay has no HTTP client and uses workload spec deadlines")
+	}
+}
+
+// TestApplyTimeoutToSpec_SynthesizedSpec verifies the core behavioral contract of
+// applyTimeoutToSpec: all ClientSpec.Timeout fields are set to the specified value,
+// and a zero value sets an explicit no-timeout pointer (not nil).
+//
+// GIVEN a synthesized spec with clients having nil Timeout
+// WHEN applyTimeoutToSpec is called with a non-zero timeout
+// THEN all clients receive a Timeout pointer with the converted microsecond value
+func TestApplyTimeoutToSpec_SynthesizedSpec(t *testing.T) {
+	spec := buildSynthesizedSpec()
+
+	applyTimeoutToSpec(spec, 60)
+
+	for i, c := range spec.Clients {
+		if c.Timeout == nil {
+			t.Errorf("client[%d] Timeout is nil after applyTimeoutToSpec; want non-nil", i)
+			continue
+		}
+		want := int64(60_000_000)
+		if *c.Timeout != want {
+			t.Errorf("client[%d] Timeout = %d, want %d (60s in µs)", i, *c.Timeout, want)
+		}
+	}
+}
+
+// TestApplyTimeoutToSpec_NonPositiveMeansDisabled verifies that timeout<=0 results in an
+// explicit no-timeout pointer (*int64 pointing to 0), not nil. Both 0 and negative values
+// disable the deadline. The CLI rejects 0 before calling this function (matching blis observe),
+// but the function itself treats all non-positive values identically: explicit *0 disables
+// the deadline and suppresses the 300s session default in computeDeadline (#1127).
+//
+// GIVEN a synthesized spec
+// WHEN applyTimeoutToSpec is called with timeout=0 or timeout=-1
+// THEN all clients have a non-nil Timeout pointer pointing to 0
+func TestApplyTimeoutToSpec_NonPositiveMeansDisabled(t *testing.T) {
+	for _, secs := range []int{0, -1, -300} {
+		spec := buildSynthesizedSpec()
+		applyTimeoutToSpec(spec, secs)
+		for i, c := range spec.Clients {
+			if c.Timeout == nil {
+				t.Errorf("secs=%d client[%d] Timeout is nil; want explicit *0 to suppress 300s default", secs, i)
+				continue
+			}
+			if *c.Timeout != 0 {
+				t.Errorf("secs=%d client[%d] Timeout = %d, want 0 (disabled)", secs, i, *c.Timeout)
+			}
+		}
+	}
+}
+
+// TestApplyTimeoutToSpec_CohortSpec verifies that applyTimeoutToSpec also sets
+// Timeout on CohortSpec entries (cohorts are expanded to clients during generation).
+func TestApplyTimeoutToSpec_CohortSpec(t *testing.T) {
+	spec := buildSynthesizedSpec()
+	// Add a cohort to simulate a spec with cohort-based clients.
+	spec.Cohorts = append(spec.Cohorts, buildTestCohort())
+
+	applyTimeoutToSpec(spec, 120)
+
+	wantUs := int64(120_000_000)
+	for i, coh := range spec.Cohorts {
+		if coh.Timeout == nil {
+			t.Errorf("cohort[%d] Timeout is nil; want non-nil", i)
+			continue
+		}
+		if *coh.Timeout != wantUs {
+			t.Errorf("cohort[%d] Timeout = %d, want %d", i, *coh.Timeout, wantUs)
+		}
+	}
+}
+
+// TestApplyTimeoutToSpec_NegativeMeansDisabled verifies that a negative timeoutSecs (the
+// way to disable the timeout via --timeout -1) produces an explicit *int64(0), not a
+// negative microsecond value. A negative µs deadline would violate INV-5 (causality:
+// deadline < arrival). Using negative as the "disabled" sentinel while mapping to *0
+// ensures backward-compatible behavior with computeDeadline (#1127).
+//
+// GIVEN a timeout of -1 seconds
+// WHEN applyTimeoutToSpec is called
+// THEN all clients have a non-nil Timeout pointer pointing to 0 (not negative µs)
+func TestApplyTimeoutToSpec_NegativeMeansDisabled(t *testing.T) {
+	spec := buildSynthesizedSpec()
+
+	applyTimeoutToSpec(spec, -1)
+
+	for i, c := range spec.Clients {
+		if c.Timeout == nil {
+			t.Errorf("client[%d] Timeout is nil; want explicit *0", i)
+			continue
+		}
+		if *c.Timeout != 0 {
+			t.Errorf("client[%d] Timeout = %d; want 0 (negative input maps to disabled, not negative µs)", i, *c.Timeout)
+		}
+	}
+}
+
+// TestApplyTimeoutToSpec_NotCalledForSpecFile verifies the dispatch guard:
+// when a workload spec is loaded from a file and --timeout is not explicitly set,
+// applyTimeoutToSpec must NOT be called (client-defined timeouts in the spec are preserved).
+//
+// GIVEN the package-level workloadSpecPath is non-empty and --timeout was not explicitly set
+// WHEN the real guard condition (workloadSpecPath == "" || cmd.Flags().Changed("timeout"))
+//      is evaluated
+// THEN the client Timeout is unchanged (applyTimeoutToSpec was not called)
+func TestApplyTimeoutToSpec_NotCalledForSpecFile(t *testing.T) {
+	origPath := workloadSpecPath
+	defer func() { workloadSpecPath = origPath }()
+	workloadSpecPath = "/path/to/workload.yaml"
+
+	spec := buildSynthesizedSpec()
+	want := int64(120_000_000) // 120s, already set in the spec
+	for i := range spec.Clients {
+		v := want
+		spec.Clients[i].Timeout = &v
+	}
+
+	// Exercise the actual guard condition — mirrors runCmd dispatch path.
+	// workloadSpecPath != "" and --timeout not set → guard is false → skip.
+	if workloadSpecPath == "" || runCmd.Flags().Changed("timeout") {
+		applyTimeoutToSpec(spec, requestTimeoutSecs)
+	}
+
+	for i, c := range spec.Clients {
+		if c.Timeout == nil || *c.Timeout != want {
+			t.Errorf("client[%d] Timeout = %v; want %d (spec timeout preserved)", i, c.Timeout, want)
+		}
+	}
+}
+
+// TestApplyTimeoutToRequests_ZeroSetsDeadlineZero verifies that applyTimeoutToRequests
+// with timeoutSecs=0 sets Deadline=0 on all requests regardless of ArrivalTime.
+// Zero disables the deadline; a nil Timeout for session clients would trigger the 300s
+// default in computeDeadline, so the explicit-zero post-pass is required (#1127).
+func TestApplyTimeoutToRequests_ZeroSetsDeadlineZero(t *testing.T) {
+	wl := &workload.GeneratedWorkload{
+		Requests: []*sim.Request{
+			{ID: "r0", ArrivalTime: 0, Deadline: 300_000_000},
+			{ID: "r1", ArrivalTime: 1_000_000, Deadline: 301_000_000},
+		},
+	}
+
+	applyTimeoutToRequests(wl, 0)
+
+	for i, req := range wl.Requests {
+		if req.Deadline != 0 {
+			t.Errorf("request[%d] Deadline = %d; want 0 (no timeout)", i, req.Deadline)
+		}
+	}
+}
+
+// TestApplyTimeoutToRequests_NonZeroSetsDeadlineFromArrival verifies that a positive
+// timeout sets Deadline = ArrivalTime + timeoutUs on each request.
+func TestApplyTimeoutToRequests_NonZeroSetsDeadlineFromArrival(t *testing.T) {
+	wl := &workload.GeneratedWorkload{
+		Requests: []*sim.Request{
+			{ID: "r0", ArrivalTime: 0},
+			{ID: "r1", ArrivalTime: 500_000},
+		},
+	}
+
+	applyTimeoutToRequests(wl, 60)
+
+	for i, req := range wl.Requests {
+		want := req.ArrivalTime + 60_000_000
+		if req.Deadline != want {
+			t.Errorf("request[%d] Deadline = %d; want %d (ArrivalTime + 60s)", i, req.Deadline, want)
+		}
+	}
+}
+
+// TestApplyTimeoutToRequests_ZeroSetsSessionBlueprintExplicitZero verifies that
+// applyTimeoutToRequests with timeoutSecs=0 sets session blueprint Timeout to an
+// explicit *int64(0), not nil. nil would trigger the 300s default for follow-up rounds.
+func TestApplyTimeoutToRequests_ZeroSetsSessionBlueprintExplicitZero(t *testing.T) {
+	wl := &workload.GeneratedWorkload{
+		Sessions: []workload.SessionBlueprint{
+			{SessionID: "s0"},
+			{SessionID: "s1"},
+		},
+	}
+
+	applyTimeoutToRequests(wl, 0)
+
+	for i, bp := range wl.Sessions {
+		if bp.Timeout == nil {
+			t.Errorf("session[%d] Timeout is nil; want explicit *0 to suppress 300s default", i)
+			continue
+		}
+		if *bp.Timeout != 0 {
+			t.Errorf("session[%d] Timeout = %d; want 0", i, *bp.Timeout)
+		}
+	}
+}
+
+// TestApplyTimeoutToRequests_NonZeroSetsSessionBlueprintTimeout verifies that a positive
+// timeout is propagated to session blueprints so follow-up round deadlines match.
+func TestApplyTimeoutToRequests_NonZeroSetsSessionBlueprintTimeout(t *testing.T) {
+	wl := &workload.GeneratedWorkload{
+		Sessions: []workload.SessionBlueprint{
+			{SessionID: "s0"},
+		},
+	}
+
+	applyTimeoutToRequests(wl, 120)
+
+	for i, bp := range wl.Sessions {
+		if bp.Timeout == nil {
+			t.Errorf("session[%d] Timeout is nil; want 120s in µs", i)
+			continue
+		}
+		want := int64(120_000_000)
+		if *bp.Timeout != want {
+			t.Errorf("session[%d] Timeout = %d; want %d (120s in µs)", i, *bp.Timeout, want)
+		}
+	}
+}
+
+// TestApplyTimeoutToRequests_NegativeSetsDeadlineZero verifies that a negative timeoutSecs
+// (the "disabled" sentinel, e.g. default -1) sets req.Deadline=0 on all requests.
+// Negative must not produce a negative deadline (INV-5 violation: deadline < arrival).
+func TestApplyTimeoutToRequests_NegativeSetsDeadlineZero(t *testing.T) {
+	wl := &workload.GeneratedWorkload{
+		Requests: []*sim.Request{
+			{ID: "r0", ArrivalTime: 0, Deadline: 300_000_000},
+			{ID: "r1", ArrivalTime: 1_000_000, Deadline: 301_000_000},
+		},
+	}
+
+	applyTimeoutToRequests(wl, -1)
+
+	for i, req := range wl.Requests {
+		if req.Deadline != 0 {
+			t.Errorf("request[%d] Deadline = %d; want 0 (negative input means disabled, not negative deadline)", i, req.Deadline)
+		}
+	}
+}
+
+// TestApplyTimeoutToRequests_NegativeSetsSessionBlueprintExplicitZero verifies that a
+// negative timeoutSecs sets session blueprint Timeout to *int64(0), not nil and not negative.
+// nil would trigger the 300s default for follow-up rounds; negative would violate INV-5.
+func TestApplyTimeoutToRequests_NegativeSetsSessionBlueprintExplicitZero(t *testing.T) {
+	wl := &workload.GeneratedWorkload{
+		Sessions: []workload.SessionBlueprint{
+			{SessionID: "s0"},
+		},
+	}
+
+	applyTimeoutToRequests(wl, -1)
+
+	for i, bp := range wl.Sessions {
+		if bp.Timeout == nil {
+			t.Errorf("session[%d] Timeout is nil; want explicit *0 (negative = disabled, not nil)", i)
+			continue
+		}
+		if *bp.Timeout != 0 {
+			t.Errorf("session[%d] Timeout = %d; want 0 (negative maps to disabled)", i, *bp.Timeout)
+		}
+	}
+}
+
 // TestTryAutoCalcKVBlocksBlackbox_ErrorPaths tests all error paths in
 // tryAutoCalcKVBlocksBlackbox. Each error path should return (0, false) and
 // emit a warning (not tested here — warnings go to logrus stderr).
@@ -775,6 +1058,7 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	origOutputMin := outputTokensMin
 	origOutputMax := outputTokensMax
 	origWorkloadSpec := workloadSpecPath
+	origRequestTimeout := requestTimeoutSecs
 	origTraceOut := traceOutput
 	origLogLevel := logLevel
 	defer func() {
@@ -820,6 +1104,7 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 		outputTokensMin = origOutputMin
 		outputTokensMax = origOutputMax
 		workloadSpecPath = origWorkloadSpec
+		requestTimeoutSecs = origRequestTimeout
 		traceOutput = origTraceOut
 		logLevel = origLogLevel
 	}()
@@ -881,4 +1166,21 @@ func TestRunCmd_ModelAutoscalerIntervalUs_FlagRegistered(t *testing.T) {
 	defVal, err := strconv.ParseFloat(flag.DefValue, 64)
 	assert.NoError(t, err, "default must be a valid float64")
 	assert.Equal(t, 0.0, defVal, "default must be 0 (disabled)")
+}
+
+// buildSynthesizedSpec returns a minimal WorkloadSpec as produced by SynthesizeFromDistribution,
+// with two clients and no cohorts, for use in applyTimeoutToSpec tests.
+func buildSynthesizedSpec() *workload.WorkloadSpec {
+	return &workload.WorkloadSpec{
+		Version: "2",
+		Clients: []workload.ClientSpec{
+			{ID: "client-0"},
+			{ID: "client-1"},
+		},
+	}
+}
+
+// buildTestCohort returns a minimal CohortSpec with no Timeout set.
+func buildTestCohort() workload.CohortSpec {
+	return workload.CohortSpec{ID: "cohort-0"}
 }
