@@ -76,11 +76,11 @@ Contract: Engine
 ```
 Contract: Actuator
   Signature:  Apply(decisions []ScaleDecision) error
-  Observes:   ScaleDecision slice (post-cooldown, already filtered by orchestrator)
+  Observes:   ScaleDecision slice (post-stabilization-window, already filtered by orchestrator)
   Effect:     Delta > 0 → calls PlacementManager.PlaceInstance(); failure is logged, not silently dropped
   Effect:     Delta < 0 → cancels pending placements for that model; transitions instance to Draining
   Must NOT:   Block; all effects are scheduled as future simulation events
-  Must NOT:   Reorder or filter decisions — orchestrator already applied cooldown
+  Must NOT:   Reorder or filter decisions — orchestrator already applied stabilization window filtering
   Drain semantics: WaitDrain — instance stops receiving new requests; GPUs freed after InFlightCount == 0
   Pending cancel: Before drain, cancel any PendingPlacement for the same ModelID (deferred to 1C-4b/specs-010; DirectActuator does not yet implement this)
 ```
@@ -97,13 +97,15 @@ The pipeline orchestrator is NOT an interface — the pipeline orchestration log
 1. Calls `Collector.Collect(routerState)` → `[]ModelSignals`
 2. Calls `Analyzer.Analyze(m)` for each `m` in metrics → `[]AnalyzerResult`
 3. Calls `Engine.Optimize(results, gpuInventory())` → `[]ScaleDecision`
-4. Applies cooldown filter: suppresses decisions within cooldown window per model
-5. Schedules `ScaleActuationEvent{At: now + ActuationDelay.Sample(rng), Decisions: filtered}`
+4. Applies stabilization window gate: passes a ScaleDecision only after its signal has been continuously present for `ScaleUp/DownStabilizationWindowUs`; resets per-model timer on signal loss
+5. Schedules `ScaleActuationEvent{At: now + HPAScrapeDelay.Sample(rng), Decisions: filtered}`
 6. Schedules next `ScalingTickEvent{At: now + ModelAutoscalerIntervalUs}`
 
 The `ScaleActuationEvent.Execute()` method calls `Actuator.Apply(decisions)`.
 
-**Cooldown state** (on ClusterSimulator):
-- `lastScaleUpAt map[string]int64` — keyed by ModelID; updated when scale-up decision is forwarded
-- `lastScaleDownAt map[string]int64` — keyed by ModelID; updated when scale-down decision is forwarded
-- Suppression rule: `now - lastScaleAt[modelID] < CooldownUs → discard`
+**Stabilization window state** (on `autoscalerPipeline`, not ClusterSimulator):
+- `scaleUpFirstSignalAt map[string]int64` — keyed by ModelID; timestamp of first consecutive scale-up tick
+- `scaleDownFirstSignalAt map[string]int64` — symmetric for scale-down
+- Pass rule: `now - scaleUpFirstSignalAt[modelID] >= ScaleUpStabilizationWindowUs → forward; delete entry`
+- Reset rule: signal absent for model in a tick → `delete(scaleUpFirstSignalAt, modelID)`
+- Window=0: passes on first signal (entry inserted and deleted in same tick)

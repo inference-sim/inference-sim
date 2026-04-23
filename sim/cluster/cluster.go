@@ -354,17 +354,17 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	if config.ModelAutoscalerIntervalUs < 0 {
 		panic("ModelAutoscalerIntervalUs must be ≥0 (0 = disabled)")
 	}
-	if math.IsNaN(config.ScaleUpCooldownUs) || math.IsInf(config.ScaleUpCooldownUs, 0) || config.ScaleUpCooldownUs < 0 {
-		panic("ScaleUpCooldownUs must be a finite non-negative number")
+	if math.IsNaN(config.ScaleUpStabilizationWindowUs) || math.IsInf(config.ScaleUpStabilizationWindowUs, 0) || config.ScaleUpStabilizationWindowUs < 0 {
+		panic("ScaleUpStabilizationWindowUs must be a finite non-negative number")
 	}
-	if math.IsNaN(config.ScaleDownCooldownUs) || math.IsInf(config.ScaleDownCooldownUs, 0) || config.ScaleDownCooldownUs < 0 {
-		panic("ScaleDownCooldownUs must be a finite non-negative number")
+	if math.IsNaN(config.ScaleDownStabilizationWindowUs) || math.IsInf(config.ScaleDownStabilizationWindowUs, 0) || config.ScaleDownStabilizationWindowUs < 0 {
+		panic("ScaleDownStabilizationWindowUs must be a finite non-negative number")
 	}
-	if math.IsNaN(config.ActuationDelay.Mean) || math.IsInf(config.ActuationDelay.Mean, 0) || config.ActuationDelay.Mean < 0 {
-		panic("ActuationDelay.Mean must be a finite non-negative number")
+	if math.IsNaN(config.HPAScrapeDelay.Mean) || math.IsInf(config.HPAScrapeDelay.Mean, 0) || config.HPAScrapeDelay.Mean < 0 {
+		panic("HPAScrapeDelay.Mean must be a finite non-negative number")
 	}
-	if math.IsNaN(config.ActuationDelay.Stddev) || math.IsInf(config.ActuationDelay.Stddev, 0) || config.ActuationDelay.Stddev < 0 {
-		panic("ActuationDelay.Stddev must be a finite non-negative number")
+	if math.IsNaN(config.HPAScrapeDelay.Stddev) || math.IsInf(config.HPAScrapeDelay.Stddev, 0) || config.HPAScrapeDelay.Stddev < 0 {
+		panic("HPAScrapeDelay.Stddev must be a finite non-negative number")
 	}
 	if config.ModelAutoscalerIntervalUs > 0 {
 		// Wire the default WVA pipeline: DefaultCollector → V2SaturationAnalyzer → UnlimitedEngine → DirectActuator.

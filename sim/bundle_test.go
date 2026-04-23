@@ -133,6 +133,19 @@ routing:
   cache_weight: 0.6
   load_weight: 0.4
 `},
+		{"old_scale_up_cooldown_us", `
+autoscaler:
+  scale_up_cooldown_us: 60000000
+`},
+		{"old_scale_down_cooldown_us", `
+autoscaler:
+  scale_down_cooldown_us: 60000000
+`},
+		{"old_actuation_delay", `
+autoscaler:
+  actuation_delay:
+    mean: 5.0
+`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -364,9 +377,9 @@ func TestLoadPolicyBundle_AutoscalerSection(t *testing.T) {
 	yaml := `
 autoscaler:
   interval_us: 30000000
-  scale_up_cooldown_us: 60000000
-  scale_down_cooldown_us: 180000000
-  actuation_delay:
+  scale_up_stabilization_window_us: 60000000
+  scale_down_stabilization_window_us: 180000000
+  hpa_scrape_delay:
     mean: 10.0
     stddev: 2.0
   analyzer:
@@ -386,11 +399,17 @@ autoscaler:
 	if bundle.Autoscaler.Analyzer.KVCacheThreshold != 0.8 {
 		t.Errorf("KVCacheThreshold = %v, want 0.8", bundle.Autoscaler.Analyzer.KVCacheThreshold)
 	}
-	if bundle.Autoscaler.ActuationDelay.Mean != 10.0 {
-		t.Errorf("ActuationDelay.Mean = %v, want 10.0", bundle.Autoscaler.ActuationDelay.Mean)
+	if bundle.Autoscaler.HPAScrapeDelay.Mean != 10.0 {
+		t.Errorf("HPAScrapeDelay.Mean = %v, want 10.0", bundle.Autoscaler.HPAScrapeDelay.Mean)
 	}
-	if bundle.Autoscaler.ScaleUpCooldownUs != 60_000_000 {
-		t.Errorf("ScaleUpCooldownUs = %v, want 60000000", bundle.Autoscaler.ScaleUpCooldownUs)
+	if bundle.Autoscaler.HPAScrapeDelay.Stddev != 2.0 {
+		t.Errorf("HPAScrapeDelay.Stddev = %v, want 2.0", bundle.Autoscaler.HPAScrapeDelay.Stddev)
+	}
+	if bundle.Autoscaler.ScaleUpStabilizationWindowUs != 60_000_000 {
+		t.Errorf("ScaleUpStabilizationWindowUs = %v, want 60000000", bundle.Autoscaler.ScaleUpStabilizationWindowUs)
+	}
+	if bundle.Autoscaler.ScaleDownStabilizationWindowUs != 180_000_000 {
+		t.Errorf("ScaleDownStabilizationWindowUs = %v, want 180000000", bundle.Autoscaler.ScaleDownStabilizationWindowUs)
 	}
 }
 
@@ -454,6 +473,34 @@ func TestPolicyBundle_Validate_AutoscalerNegativeInterval(t *testing.T) {
 	}
 	if err := bundle.Validate(); err == nil {
 		t.Error("expected error for negative interval_us, got nil")
+	}
+}
+
+func TestPolicyBundle_Validate_AutoscalerNewFields(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  AutoscalerBundleConfig
+	}{
+		{"negative scale_up_stabilization_window_us", AutoscalerBundleConfig{ScaleUpStabilizationWindowUs: -1}},
+		{"NaN scale_up_stabilization_window_us", AutoscalerBundleConfig{ScaleUpStabilizationWindowUs: math.NaN()}},
+		{"Inf scale_up_stabilization_window_us", AutoscalerBundleConfig{ScaleUpStabilizationWindowUs: math.Inf(1)}},
+		{"negative scale_down_stabilization_window_us", AutoscalerBundleConfig{ScaleDownStabilizationWindowUs: -1}},
+		{"NaN scale_down_stabilization_window_us", AutoscalerBundleConfig{ScaleDownStabilizationWindowUs: math.NaN()}},
+		{"Inf scale_down_stabilization_window_us", AutoscalerBundleConfig{ScaleDownStabilizationWindowUs: math.Inf(1)}},
+		{"negative hpa_scrape_delay.mean", AutoscalerBundleConfig{HPAScrapeDelay: DelayBundleSpec{Mean: -1}}},
+		{"NaN hpa_scrape_delay.mean", AutoscalerBundleConfig{HPAScrapeDelay: DelayBundleSpec{Mean: math.NaN()}}},
+		{"Inf hpa_scrape_delay.mean", AutoscalerBundleConfig{HPAScrapeDelay: DelayBundleSpec{Mean: math.Inf(1)}}},
+		{"negative hpa_scrape_delay.stddev", AutoscalerBundleConfig{HPAScrapeDelay: DelayBundleSpec{Stddev: -1}}},
+		{"NaN hpa_scrape_delay.stddev", AutoscalerBundleConfig{HPAScrapeDelay: DelayBundleSpec{Stddev: math.NaN()}}},
+		{"Inf hpa_scrape_delay.stddev", AutoscalerBundleConfig{HPAScrapeDelay: DelayBundleSpec{Stddev: math.Inf(1)}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bundle := &PolicyBundle{Autoscaler: tc.cfg}
+			if err := bundle.Validate(); err == nil {
+				t.Errorf("expected validation error for %q, got nil", tc.name)
+			}
+		})
 	}
 }
 

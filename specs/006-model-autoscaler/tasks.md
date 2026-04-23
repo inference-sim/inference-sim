@@ -36,7 +36,7 @@ Includes US1 (pipeline wiring) and US5 (cooldown/flap prevention).
 - [X] T009 [US1] `TestScalingTickScheduling` — interval=0, multi-tick, same-tick actuation, delayed actuation
 - [X] T010 [US1] `TestNoOpPipelineDeterminism` — INV-6 byte-identical output
 - [X] T011 [US1] `TestNilComponentGuard` — nil component → pipeline disables, no panic
-- [X] T012 [US5] `TestCooldownFilterSuppression` — per-model scale-up/down cooldown
+- [X] T012 [US5] `TestStabilizationWindowFilter` — per-model stabilization window gate (scenarios a–e)
 - [X] T013 [US1] `TestGPUInventory` — free slot computation, TP fallback, negative clamping
 - [X] T014 [US1] Implement `autoscalerPipeline` struct + `tick()` + `actuate()` + `gpuInventory()`
 - [X] T015 [US1] First `ScalingTickEvent` pushed in `Run()` when autoscaler enabled

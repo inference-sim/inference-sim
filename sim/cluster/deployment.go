@@ -81,9 +81,9 @@ type DeploymentConfig struct {
 	// Phase 1C: Model autoscaler pipeline (issue #692).
 	// Zero value is safe: ModelAutoscalerIntervalUs=0 disables the autoscaler entirely (INV-6).
 	ModelAutoscalerIntervalUs float64                    `yaml:"model_autoscaler_interval_us,omitempty"` // tick interval in μs; 0 = autoscaler disabled
-	ActuationDelay            DelaySpec                  `yaml:"actuation_delay,omitempty"`              // HPA/KEDA scrape lag; zero = same-tick actuation; Mean/Stddev in seconds
-	ScaleUpCooldownUs         float64                    `yaml:"scale_up_cooldown_us,omitempty"`          // min μs between scale-up decisions per model
-	ScaleDownCooldownUs       float64                    `yaml:"scale_down_cooldown_us,omitempty"`        // min μs between scale-down decisions per model
+	HPAScrapeDelay                 DelaySpec                  `yaml:"hpa_scrape_delay,omitempty"`                    // HPA scrape lag: time from WVA metric emission to HPA acting; zero = same-tick actuation; Mean/Stddev in seconds
+	ScaleUpStabilizationWindowUs   float64                    `yaml:"scale_up_stabilization_window_us,omitempty"`    // HPA scale-up stabilization window in μs; 0 = act on first signal (HPA default)
+	ScaleDownStabilizationWindowUs float64                    `yaml:"scale_down_stabilization_window_us,omitempty"`  // HPA scale-down stabilization window in μs; 0 = no stabilization (pass immediately). Set to 300,000,000 (= 5 minutes) to match the Kubernetes HPA default.
 	// AutoscalerAnalyzerConfig holds V2SaturationAnalyzer thresholds.
 	// Zero values are safe: NewClusterSimulator applies WVA reference defaults
 	// (KvCacheThreshold=0.8, ScaleUpThreshold=0.8, ScaleDownBoundary=0.4, AvgInputTokens=512).

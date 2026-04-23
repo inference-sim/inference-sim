@@ -84,7 +84,7 @@ func newAutoscalerTestConfig(intervalUs float64) DeploymentConfig {
 }
 
 // newTestPipeline constructs an autoscalerPipeline for tests using the canonical constructor.
-// Passes nil rng — safe for all tests that keep ActuationDelay.Stddev == 0 (the default).
+// Passes nil rng — safe for all tests that keep HPAScrapeDelay.Stddev == 0 (the default).
 func newTestPipeline(collector Collector, analyzer Analyzer, engine Engine, actuator Actuator) *autoscalerPipeline {
 	return newAutoscalerPipeline(collector, analyzer, engine, actuator, nil)
 }
@@ -105,8 +105,8 @@ func wireAutoscaler(cs *ClusterSimulator) *countingCollector {
 // Sub-tests:
 //   (a) ModelAutoscalerIntervalUs=0 → no ScalingTickEvent fires (autoscaler disabled).
 //   (b) interval=60s, horizon=200s → ticks fire at t=0, 60s, 120s, 180s (4 total).
-//   (c) ActuationDelay={Mean:0} → Actuator.Apply() called with At == ScalingTickEvent.At.
-//   (d) ActuationDelay={Mean:30s} → Actuator.Apply() called with At == tick.At + 30_000_000.
+//   (c) HPAScrapeDelay={Mean:0} → Actuator.Apply() called with At == ScalingTickEvent.At.
+//   (d) HPAScrapeDelay={Mean:30s} → Actuator.Apply() called with At == tick.At + 30_000_000.
 //
 // Tests (a) and (b) fail before T015 (first tick scheduling) is implemented.
 // Tests (c) and (d) fail before T013 (ScaleActuationEvent scheduling) is implemented.
@@ -139,13 +139,13 @@ func TestScalingTickScheduling(t *testing.T) {
 		}
 	})
 
-	t.Run("c_zero_actuation_delay_actuation_same_tick", func(t *testing.T) {
+	t.Run("c_zero_hpa_scrape_delay_actuation_same_tick", func(t *testing.T) {
 		// Observable behavior: with zero delay, Apply() must be called at the same
 		// time as the tick. We use a recordingActuator to capture the call time.
 		const intervalUs = 60_000_000.0
 		cfg := newAutoscalerTestConfig(intervalUs)
 		cfg.Horizon = 1 // 1µs horizon: only first tick at t=0 fires
-		cfg.ActuationDelay = DelaySpec{Mean: 0, Stddev: 0}
+		cfg.HPAScrapeDelay = DelaySpec{Mean: 0, Stddev: 0}
 		cs := NewClusterSimulator(cfg, nil, nil)
 
 		actuator := newRecordingActuator()
@@ -161,14 +161,14 @@ func TestScalingTickScheduling(t *testing.T) {
 		}
 	})
 
-	t.Run("d_30s_actuation_delay_shifts_actuation", func(t *testing.T) {
-		// Observable behavior: with a 30s actuation delay and a 200s horizon,
+	t.Run("d_30s_hpa_scrape_delay_shifts_actuation", func(t *testing.T) {
+		// Observable behavior: with a 30s HPA scrape delay and a 200s horizon,
 		// Apply() must be called. The tick fires at t=0, actuation fires at t=30s.
 		const intervalUs = 60_000_000.0
 		const horizonUs = 200_000_000 // 200s — enough for tick at t=0, actuation at t=30s
 		cfg := newAutoscalerTestConfig(intervalUs)
 		cfg.Horizon = horizonUs
-		cfg.ActuationDelay = DelaySpec{Mean: 30, Stddev: 0} // 30s deterministic delay
+		cfg.HPAScrapeDelay = DelaySpec{Mean: 30, Stddev: 0} // 30s deterministic delay
 		cs := NewClusterSimulator(cfg, nil, nil)
 
 		actuator := newRecordingActuator()
@@ -285,66 +285,139 @@ func TestNilComponentGuard(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// T012: TestCooldownFilterSuppression
+// T012: TestStabilizationWindowFilter
 // ---------------------------------------------------------------------------
 
-// TestCooldownFilterSuppression verifies INV-A7: scale decisions within the cooldown
-// window are suppressed; decisions after the window pass through.
-// Both scale-up (ScaleUpCooldownUs) and scale-down (ScaleDownCooldownUs) paths are
-// tested — they share the same filter logic but maintain separate lastScale*At maps.
-func TestCooldownFilterSuppression(t *testing.T) {
-	// Ticks: 0, 60s, 120s, 180s, 240s, 300s, 360s = 7 ticks within 400s horizon.
-	// Cooldown = 120s. Cooldown only activates after a prior scale event (hadPrior check).
-	//   t=0:   no prior event → passes; lastAt = 0
-	//   t=60s: elapsed = 60_000_000 < 120_000_000 → suppressed
-	//   t=120s: elapsed = 120_000_000, NOT < 120_000_000 → passes; lastAt = 120_000_000
-	//   t=180s: elapsed = 60_000_000 < 120_000_000 → suppressed
-	//   t=240s: elapsed = 120_000_000, NOT < 120_000_000 → passes; lastAt = 240_000_000
-	//   t=300s: suppressed; t=360s: passes → wantApplied = 4
+// TestStabilizationWindowFilter verifies the HPA-aligned stabilization window gate:
+// a scale decision is only forwarded after the signal has been continuously present
+// for ScaleUp/DownStabilizationWindowUs. Signal loss resets the timer.
+//
+// Scenario A (window=0): passes on first signal — backward-compatible with default.
+// Scenario B (scale-up, window=120s, always-signal): ticks 0,60s,120s,180s,240s,300s,360s
+//   → 2 applications (at 120s and 300s).
+// Scenario C (scale-down, window=120s, always-signal): symmetric to B → 2 applications.
+// Scenario D (scale-up, window=120s, signal absent at t=60s):
+//   t=0 suppressed; t=60s absent → timer reset; t=120s new timer; t=180s suppressed;
+//   t=240s passes → 1 application.
+// Scenario E (direction flip): scale-up signal ticks 0–1, then scale-down from tick 2.
+//   Scale-up timer cleared on direction flip; scale-down timer starts fresh at t=120s.
+//   → 0 scale-up Apply(), 1 scale-down Apply() (at t=240s).
+func TestStabilizationWindowFilter(t *testing.T) {
 	const (
-		cooldownUs  = 120_000_000 // 2 minutes in μs
-		intervalUs  = 60_000_000.0
-		horizonUs   = 400_000_000
-		wantApplied = 4
+		windowUs   = 120_000_000 // 2 minutes in μs
+		intervalUs = 60_000_000.0
+		horizonUs  = 400_000_000
 	)
 
-	tests := []struct {
-		name   string
-		setup  func(cfg *DeploymentConfig) Engine
-	}{
-		{
-			name: "scale_up",
-			setup: func(cfg *DeploymentConfig) Engine {
-				cfg.ScaleUpCooldownUs = cooldownUs
-				return &alwaysScaleUpEngine{}
-			},
-		},
-		{
-			name: "scale_down",
-			setup: func(cfg *DeploymentConfig) Engine {
-				cfg.ScaleDownCooldownUs = cooldownUs
-				return &alwaysScaleDownEngine{}
-			},
-		},
-	}
+	t.Run("a_window_zero_passes_on_first_signal", func(t *testing.T) {
+		cfg := newAutoscalerTestConfig(intervalUs)
+		cfg.Horizon = horizonUs
+		cfg.ScaleUpStabilizationWindowUs = 0 // zero window: immediate
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := newAutoscalerTestConfig(intervalUs)
-			cfg.Horizon = horizonUs
-			engine := tc.setup(&cfg)
+		applied := 0
+		cs := NewClusterSimulator(cfg, nil, nil)
+		cs.autoscaler = newTestPipeline(&countingCollector{}, &nopAnalyzer{}, &alwaysScaleUpEngine{}, &countingApplyActuator{count: &applied})
+		if err := cs.Run(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		// Window=0: every tick passes. 7 ticks in 400s horizon (0,60,120,180,240,300,360).
+		if applied != 7 {
+			t.Errorf("window=0: Apply() called %d times, want 7 (every tick passes)", applied)
+		}
+	})
 
-			applied := 0
-			cs := NewClusterSimulator(cfg, nil, nil)
-			cs.autoscaler = newTestPipeline(&countingCollector{}, &nopAnalyzer{}, engine, &countingApplyActuator{count: &applied})
-			if err := cs.Run(); err != nil {
-				t.Fatalf("Run: %v", err)
-			}
-			if applied != wantApplied {
-				t.Errorf("Apply() called %d times, want %d (ticks at 0s, 120s, 240s, 360s)", applied, wantApplied)
-			}
-		})
-	}
+	t.Run("b_scale_up_window_120s_always_signal", func(t *testing.T) {
+		cfg := newAutoscalerTestConfig(intervalUs)
+		cfg.Horizon = horizonUs
+		cfg.ScaleUpStabilizationWindowUs = windowUs
+
+		applied := 0
+		cs := NewClusterSimulator(cfg, nil, nil)
+		cs.autoscaler = newTestPipeline(&countingCollector{}, &nopAnalyzer{}, &alwaysScaleUpEngine{}, &countingApplyActuator{count: &applied})
+		if err := cs.Run(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		// t=0: timer set, suppressed. t=60s: elapsed=60s<120s, suppressed.
+		// t=120s: elapsed=120s, passed, timer reset.
+		// t=180s: timer set, suppressed. t=240s: suppressed. t=300s: passed, timer reset.
+		// t=360s: timer set, suppressed.
+		// → 2 applications (at 120s and 300s).
+		if applied != 2 {
+			t.Errorf("scale-up window=120s: Apply() called %d times, want 2 (at 120s, 300s)", applied)
+		}
+	})
+
+	t.Run("c_scale_down_window_120s_always_signal", func(t *testing.T) {
+		cfg := newAutoscalerTestConfig(intervalUs)
+		cfg.Horizon = horizonUs
+		cfg.ScaleDownStabilizationWindowUs = windowUs
+
+		applied := 0
+		cs := NewClusterSimulator(cfg, nil, nil)
+		cs.autoscaler = newTestPipeline(&countingCollector{}, &nopAnalyzer{}, &alwaysScaleDownEngine{}, &countingApplyActuator{count: &applied})
+		if err := cs.Run(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		// Symmetric to scenario B → 2 applications.
+		if applied != 2 {
+			t.Errorf("scale-down window=120s: Apply() called %d times, want 2 (at 120s, 300s)", applied)
+		}
+	})
+
+	t.Run("d_scale_up_window_120s_signal_interrupted", func(t *testing.T) {
+		cfg := newAutoscalerTestConfig(intervalUs)
+		cfg.Horizon = horizonUs
+		cfg.ScaleUpStabilizationWindowUs = windowUs
+
+		// interruptAtTickEngine emits a scale decision on every tick except skipTick (0-indexed).
+		engine := &interruptAtTickEngine{skipTick: 1, delta: 1} // skip second tick (t=60s)
+
+		applied := 0
+		cs := NewClusterSimulator(cfg, nil, nil)
+		cs.autoscaler = newTestPipeline(&countingCollector{}, &nopAnalyzer{}, engine, &countingApplyActuator{count: &applied})
+		if err := cs.Run(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		// t=0: timer set, suppressed. t=60s: no signal → timer reset.
+		// t=120s: new timer, suppressed. t=180s: elapsed=60s<120s, suppressed.
+		// t=240s: elapsed=120s → passed, timer reset.
+		// t=300s: timer set, suppressed. t=360s: elapsed=60s<120s, suppressed.
+		// → 1 application (at 240s).
+		if applied != 1 {
+			t.Errorf("interrupted signal: Apply() called %d times, want 1 (at 240s)", applied)
+		}
+	})
+
+	t.Run("e_direction_flip_clears_scale_up_timer", func(t *testing.T) {
+		cfg := newAutoscalerTestConfig(intervalUs)
+		cfg.Horizon = horizonUs
+		cfg.ScaleUpStabilizationWindowUs = windowUs
+		cfg.ScaleDownStabilizationWindowUs = windowUs
+
+		// directionFlipEngine: scale-up at ticks 0–1, then scale-down from tick 2 onward.
+		engine := &directionFlipEngine{flipAtTick: 2}
+
+		scaleUpApplied, scaleDownApplied := 0, 0
+		cs := NewClusterSimulator(cfg, nil, nil)
+		cs.autoscaler = newTestPipeline(
+			&countingCollector{}, &nopAnalyzer{}, engine,
+			&splitCountingActuator{scaleUp: &scaleUpApplied, scaleDown: &scaleDownApplied},
+		)
+		if err := cs.Run(); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		// t=0: scale-up timer set, suppressed. t=60s: elapsed=60s<120s, suppressed.
+		// t=120s: scale-up timer cleared (direction flip); scale-down timer set, suppressed.
+		// t=180s: scale-down elapsed=60s<120s, suppressed. t=240s: elapsed=120s → passed.
+		// t=300s: scale-down timer set, suppressed. t=360s: suppressed.
+		// → 0 scale-up Apply(), 1 scale-down Apply() (at 240s).
+		if scaleUpApplied != 0 {
+			t.Errorf("direction flip: scale-up Apply() called %d times, want 0", scaleUpApplied)
+		}
+		if scaleDownApplied != 1 {
+			t.Errorf("direction flip: scale-down Apply() called %d times, want 1 (at 240s)", scaleDownApplied)
+		}
+	})
 }
 
 // alwaysScaleUpEngine always emits a scale-up decision for "model-a".
@@ -359,6 +432,55 @@ type alwaysScaleDownEngine struct{}
 
 func (e *alwaysScaleDownEngine) Optimize(_ []AnalyzerResult, _ GPUInventory) []ScaleDecision {
 	return []ScaleDecision{{ModelID: "model-a", Variant: VariantSpec{GPUType: "A100", TPDegree: 1}, Delta: -1}}
+}
+
+// interruptAtTickEngine emits a scale decision on every tick except skipTick (0-indexed).
+type interruptAtTickEngine struct {
+	tick     int
+	skipTick int
+	delta    int
+}
+
+func (e *interruptAtTickEngine) Optimize(_ []AnalyzerResult, _ GPUInventory) []ScaleDecision {
+	current := e.tick
+	e.tick++
+	if current == e.skipTick {
+		return nil
+	}
+	return []ScaleDecision{{ModelID: "model-a", Variant: VariantSpec{GPUType: "A100", TPDegree: 1}, Delta: e.delta}}
+}
+
+// directionFlipEngine emits scale-up for ticks < flipAtTick, then scale-down from flipAtTick onward.
+type directionFlipEngine struct {
+	tick      int
+	flipAtTick int
+}
+
+func (e *directionFlipEngine) Optimize(_ []AnalyzerResult, _ GPUInventory) []ScaleDecision {
+	current := e.tick
+	e.tick++
+	delta := 1
+	if current >= e.flipAtTick {
+		delta = -1
+	}
+	return []ScaleDecision{{ModelID: "model-a", Variant: VariantSpec{GPUType: "A100", TPDegree: 1}, Delta: delta}}
+}
+
+// splitCountingActuator counts scale-up and scale-down Apply() calls separately.
+type splitCountingActuator struct {
+	scaleUp   *int
+	scaleDown *int
+}
+
+func (a *splitCountingActuator) Apply(decisions []ScaleDecision) error {
+	for _, d := range decisions {
+		if d.Delta > 0 {
+			*a.scaleUp++
+		} else if d.Delta < 0 {
+			*a.scaleDown++
+		}
+	}
+	return nil
 }
 
 // countingApplyActuator increments *count each time Apply() receives non-empty decisions.
