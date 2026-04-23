@@ -2818,7 +2818,7 @@
 <li><strong>Deterministic execution</strong> — same seed produces byte-identical output across runs</li>
 <li><strong>KV-cache modeling</strong> with prefix caching and tiered GPU+CPU offload</li>
 <li><strong>Chunked prefill and preemption-aware batch formation</strong></li>
-<li><strong>Pluggable latency models</strong> — roofline (default, analytical FLOPs/bandwidth), blackbox (data-driven coefficients), cross-model (physics-informed, MoE-aware), and trained-roofline (roofline × learned corrections), with an extensible interface for custom backends</li>
+<li><strong>Pluggable latency models</strong> — roofline (default, analytical FLOPs/bandwidth), blackbox (data-driven coefficients), and trained-physics (physics-informed basis functions with MoE-aware scaling), with an extensible interface for custom backends</li>
 <li><strong>Multi-instance cluster simulation</strong> with shared-clock event loop</li>
 <li><strong>Pluggable routing policies</strong> — round-robin, least-loaded, and composable weighted-scoring with six pluggable scorers (default: precise-prefix-cache, queue-depth, kv-utilization)</li>
 <li><strong>Admission control</strong>, <strong>priority policies</strong>, and <strong>instance schedulers</strong> — each a pluggable policy axis</li>

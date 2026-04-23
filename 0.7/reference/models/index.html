@@ -2887,17 +2887,17 @@
 <h3 id="quantized-variants">Quantized Variants<a class="headerlink" href="#quantized-variants" title="Permanent link">&para;</a></h3>
 <p>Red Hat AI (<code>redhatai/</code>) provides FP8, W4A16, and W8A8 quantized variants for many of the above models, including LLaMA 3.1/3.3/4, Mistral Small 3.1, Phi-4, Qwen 2.5, and SmolLM3 3B (FP8 only). See <a href="https://github.com/inference-sim/inference-sim/blob/main/defaults.yaml"><code>defaults.yaml</code></a> for the full list.</p>
 <h2 id="validated-architectures">Validated Architectures<a class="headerlink" href="#validated-architectures" title="Permanent link">&para;</a></h2>
-<p>The analytical modes (roofline, cross-model, trained-roofline) have been validated against real vLLM measurements on these architectures:</p>
+<p>The latency models (roofline, trained-physics) have been validated against real vLLM measurements on these architectures:</p>
 <ul>
 <li>Qwen 2.5 1.5B/3B, Qwen 3 14B</li>
 <li>LLaMA 2 7B/70B</li>
 <li>CodeLlama 34B</li>
 <li>Mixtral 8x7B (MoE)</li>
 </ul>
-<p><strong>Trained-roofline</strong> achieves 7% MAPE GPU combined step time across these architectures. Any other model with a HuggingFace <code>config.json</code> will work — it just hasn't been formally validated.</p>
+<p><strong>Trained-physics</strong> achieves 7% MAPE GPU combined step time across these architectures. Any other model with a HuggingFace <code>config.json</code> will work — it just hasn't been formally validated.</p>
 <div class="admonition note">
 <p class="admonition-title">Parallelism and quantization</p>
-<p>The analytical latency models (roofline, cross-model, trained-roofline) model tensor parallelism (TP). Data parallelism (DP) and expert parallelism (EP) are not yet modeled. Quantized weight precision is auto-detected and used for weight bandwidth and KV capacity calculations in all analytical backends. Supported formats: GPTQ, AWQ, FP8, and compressed-tensors (via <code>quantization_config</code>), plus model name conventions (e.g., <code>w4a16</code>, <code>FP8</code>).</p>
+<p>The analytical latency models (roofline, trained-physics) model tensor parallelism (TP). Data parallelism (DP) and expert parallelism (EP) are not yet modeled. Quantized weight precision is auto-detected and used for weight bandwidth and KV capacity calculations in all analytical backends. Supported formats: GPTQ, AWQ, FP8, and compressed-tensors (via <code>quantization_config</code>), plus model name conventions (e.g., <code>w4a16</code>, <code>FP8</code>).</p>
 </div>
 <div class="admonition info">
 <p class="admonition-title">MFU Calibration (Updated March 2026)</p>

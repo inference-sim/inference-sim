@@ -3395,13 +3395,13 @@
 </tr>
 <tr>
 <td><strong>Immediate/Periodic</strong> (instance-reported)</td>
-<td>QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate</td>
-<td>When <code>--snapshot-refresh-interval=0</code>: Immediate (read from instance at routing time). When <code>&gt;0</code>: all Prometheus-sourced signals share the same Periodic refresh interval, matching real vLLM's single <code>/metrics</code> endpoint (#463).</td>
+<td>QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate, PreemptionCount</td>
+<td>When <code>--snapshot-refresh-interval=0</code>: Immediate (read from instance at routing time). When <code>&gt;0</code>: all instance-reported signals share the same Periodic refresh interval, matching real vLLM's single <code>/metrics</code> endpoint (#463).</td>
 <td>Immediate: current within tick. Periodic: stale up to interval.</td>
 </tr>
 </tbody>
 </table>
-<p>The <code>--snapshot-refresh-interval</code> flag controls how frequently Prometheus-sourced signals (QueueDepth, BatchSize, KVUtilization) are re-read from instances. Setting it to 0 (default) makes all signals Immediate. Non-zero values introduce realistic staleness matching real vLLM Prometheus scrape intervals.</p>
+<p>The <code>--snapshot-refresh-interval</code> flag controls how frequently instance-reported signals (QueueDepth, BatchSize, KVUtilization, PreemptionCount, etc.) are re-read from instances. Setting it to 0 (default) makes all signals Immediate. Non-zero values introduce realistic staleness matching real vLLM Prometheus scrape intervals.</p>
 <h2 id="counterfactual-regret">Counterfactual Regret<a class="headerlink" href="#counterfactual-regret" title="Permanent link">&para;</a></h2>
 <p>When decision tracing is enabled (<code>--trace-level decisions</code>), BLIS computes counterfactual regret for each routing decision. This measures how much better an alternative routing choice could have been.</p>
 <p><strong>Computation:</strong>

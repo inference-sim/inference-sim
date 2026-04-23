@@ -2660,7 +2660,7 @@
 <a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>│   ├── metrics.go             # TTFT, TPOT, E2E collection and SaveResults()
 <a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>│   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor
 <a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>│   ├── rng.go                 # PartitionedRNG for deterministic multi-subsystem simulation
-<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>│   ├── model_hardware_config.go # ModelConfig, HardwareCalib structs (config types stay in sim/); HardwareCalib includes MemoryGiB (used by KV capacity auto-calculation in roofline/crossmodel modes). ModelConfig.WeightBytesPerParam (0=fallback to BytesPerParam) with EffectiveWeightBytesPerParam() accessor decouples weight storage precision from compute/KV dtype. Note: MaxModelLen is int64 (aligned with ProgressIndex, TotalKVBlocks, BlockSizeTokens).
+<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>│   ├── model_hardware_config.go # ModelConfig, HardwareCalib structs (config types stay in sim/); HardwareCalib includes MemoryGiB (used by KV capacity auto-calculation in roofline and trained-physics modes). ModelConfig.WeightBytesPerParam (0=fallback to BytesPerParam) with EffectiveWeightBytesPerParam() accessor decouples weight storage precision from compute/KV dtype. Note: MaxModelLen is int64 (aligned with ProgressIndex, TotalKVBlocks, BlockSizeTokens).
 <a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a>│   └── internal/              # Shared internal packages
 <a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a>│       ├── hash/              # Block-level hashing for prefix cache
 <a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a>│       ├── testutil/          # Shared test infrastructure (golden dataset loading)
@@ -2670,105 +2670,104 @@
 <a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a>│   ├── tiered.go              # TieredKVCache (GPU+CPU mirror/reload, vLLM v1 model)
 <a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a>│   └── register.go            # NewKVStore factory + init()-based registration into sim/
 <a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a>├── sim/latency/               # Latency model implementations (PKG-2)
-<a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a>│   ├── latency.go             # RooflineLatencyModel (default, analytical FLOPs/bandwidth), BlackboxLatencyModel (alpha/beta regression), CrossModelLatencyModel (physics-informed cross-model), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
-<a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a>│   ├── trained_roofline.go    # TrainedRooflineLatencyModel: roofline basis functions × learned corrections (7β + 3α from training pipeline)
-<a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a>│   ├── crossmodel.go          # CrossModelLatencyModel: physics-informed step time from architecture features (MoE-aware)
-<a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a>│   ├── roofline.go            # rooflineStepTime(), calculateTransformerFlops(), calculateMemoryAccessBytes(), StepConfig/PrefillRequestConfig/DecodeRequestConfig types
-<a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a>│   ├── kv_capacity.go         # CalculateKVBlocks: auto-derive total KV cache blocks from model architecture + GPU memory; KVCapacityParams, ExtractKVCapacityParams, computeModelWeightBytes
-<a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a>│   ├── config.go              # HFConfig, GetHWConfig(), GetModelConfig(), ValidateRooflineConfig(), parseHWConfig(), ParseHFConfig()
-<a id="__codelineno-0-58" name="__codelineno-0-58" href="#__codelineno-0-58"></a>│   └── register.go            # init()-based registration of NewLatencyModelFunc into sim/
-<a id="__codelineno-0-59" name="__codelineno-0-59" href="#__codelineno-0-59"></a>├── sim/cluster/               # Multi-replica cluster simulation
-<a id="__codelineno-0-60" name="__codelineno-0-60" href="#__codelineno-0-60"></a>│   ├── instance.go            # InstanceSimulator wraps sim.Simulator via NewInstanceSimulator(id, SimConfig) with run-once guard; delegates to Simulator observation methods (QueueDepth(), BatchSize(), etc.)
-<a id="__codelineno-0-61" name="__codelineno-0-61" href="#__codelineno-0-61"></a>│   ├── cluster.go             # ClusterSimulator orchestrates N instances with shared-clock event loop, online routing pipeline, and metrics aggregation; Run() returns error
-<a id="__codelineno-0-62" name="__codelineno-0-62" href="#__codelineno-0-62"></a>│   ├── cluster_event.go       # ClusterArrivalEvent, AdmissionDecisionEvent, RoutingDecisionEvent
-<a id="__codelineno-0-63" name="__codelineno-0-63" href="#__codelineno-0-63"></a>│   ├── counterfactual.go      # computeCounterfactual() for top-k candidate ranking and regret computation
-<a id="__codelineno-0-64" name="__codelineno-0-64" href="#__codelineno-0-64"></a>│   ├── snapshot.go            # CachedSnapshotProvider (returns sim.RoutingSnapshot), ObservabilityConfig
-<a id="__codelineno-0-65" name="__codelineno-0-65" href="#__codelineno-0-65"></a>│   ├── metrics.go             # RawMetrics, Distribution, FitnessResult, CollectRawMetrics (accepts priorityPolicy), ComputeFitness (returns (FitnessResult, error)), anomaly detection, ParseFitnessWeights with NaN/Inf validation, per-SLO-class metrics, JainFairnessIndex
-<a id="__codelineno-0-66" name="__codelineno-0-66" href="#__codelineno-0-66"></a>│   ├── deployment.go          # DeploymentConfig embeds sim.SimConfig + cluster-only fields; ToSimConfig() returns the embedded config
-<a id="__codelineno-0-67" name="__codelineno-0-67" href="#__codelineno-0-67"></a>│   └── evaluation.go          # EvaluationResult wrapper (RawMetrics + FitnessResult + trace + summary)
-<a id="__codelineno-0-68" name="__codelineno-0-68" href="#__codelineno-0-68"></a>├── sim/workload/              # ServeGen-informed workload generation
-<a id="__codelineno-0-69" name="__codelineno-0-69" href="#__codelineno-0-69"></a>│   ├── spec.go                # WorkloadSpec v2, ClientSpec (with Model field), ArrivalSpec, DistSpec, YAML loading, v1→v2 auto-upgrade (UpgradeV1ToV2), IsValidSLOClass accessor
-<a id="__codelineno-0-70" name="__codelineno-0-70" href="#__codelineno-0-70"></a>│   ├── arrival.go             # ArrivalSampler: Poisson, Gamma (Marsaglia-Tsang), Weibull (bisection), Constant (fixed-interval)
-<a id="__codelineno-0-71" name="__codelineno-0-71" href="#__codelineno-0-71"></a>│   ├── distribution.go        # LengthSampler: Gaussian, Exponential, ParetoLogNormal, EmpiricalPDF, Constant
-<a id="__codelineno-0-72" name="__codelineno-0-72" href="#__codelineno-0-72"></a>│   ├── client.go              # Rate normalization, prefix group management
-<a id="__codelineno-0-73" name="__codelineno-0-73" href="#__codelineno-0-73"></a>│   ├── generator.go           # GenerateRequests pipeline with client decomposition
-<a id="__codelineno-0-74" name="__codelineno-0-74" href="#__codelineno-0-74"></a>│   ├── servegen.go            # Native ServeGen data file loading (chunk-*-trace.csv + dataset.json)
-<a id="__codelineno-0-75" name="__codelineno-0-75" href="#__codelineno-0-75"></a>│   ├── tracev2.go             # Trace v2 format (YAML header + CSV data); 26-column schema including finish_reason (backward-compat with 25-column pre-finish_reason traces)
-<a id="__codelineno-0-76" name="__codelineno-0-76" href="#__codelineno-0-76"></a>│   ├── replay.go              # Trace v2 → sim.Request with synthetic token IDs
-<a id="__codelineno-0-77" name="__codelineno-0-77" href="#__codelineno-0-77"></a>│   ├── calibrate.go           # CalibrationReport, PrepareCalibrationPairs, MAPE/Pearson r
-<a id="__codelineno-0-78" name="__codelineno-0-78" href="#__codelineno-0-78"></a>│   ├── multimodal.go          # Multimodal token generation (text+image+audio+video)
-<a id="__codelineno-0-79" name="__codelineno-0-79" href="#__codelineno-0-79"></a>│   ├── reasoning.go           # Reasoning multi-turn with context accumulation
-<a id="__codelineno-0-80" name="__codelineno-0-80" href="#__codelineno-0-80"></a>│   ├── session.go             # SessionManager: closed-loop session tracking, follow-up round generation on completion
-<a id="__codelineno-0-81" name="__codelineno-0-81" href="#__codelineno-0-81"></a>│   ├── network.go             # Client-perspective latency (RTT + bandwidth)
-<a id="__codelineno-0-82" name="__codelineno-0-82" href="#__codelineno-0-82"></a>│   ├── inference_perf.go      # inference-perf format: InferencePerfSpec, expansion, validation
-<a id="__codelineno-0-83" name="__codelineno-0-83" href="#__codelineno-0-83"></a>│   ├── scenarios.go           # Built-in presets (bursty, unfair, prefix-heavy, mixed-slo)
-<a id="__codelineno-0-84" name="__codelineno-0-84" href="#__codelineno-0-84"></a>│   ├── convert.go             # Format converters: ConvertServeGen, ConvertPreset, ComposeSpecs
-<a id="__codelineno-0-85" name="__codelineno-0-85" href="#__codelineno-0-85"></a>│   ├── cohort.go              # CohortSpec expansion: diurnal, spike, drain patterns → lifecycle windows
-<a id="__codelineno-0-86" name="__codelineno-0-86" href="#__codelineno-0-86"></a>│   └── synthesis.go           # Flag-to-spec synthesis: SynthesizeFromDistribution, SynthesizeFromPreset
-<a id="__codelineno-0-87" name="__codelineno-0-87" href="#__codelineno-0-87"></a>├── sim/trace/                 # Decision trace recording
-<a id="__codelineno-0-88" name="__codelineno-0-88" href="#__codelineno-0-88"></a>│   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods
-<a id="__codelineno-0-89" name="__codelineno-0-89" href="#__codelineno-0-89"></a>│   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore (pure data types, no sim/ dependency)
-<a id="__codelineno-0-90" name="__codelineno-0-90" href="#__codelineno-0-90"></a>│   └── summary.go             # TraceSummary, Summarize()
-<a id="__codelineno-0-91" name="__codelineno-0-91" href="#__codelineno-0-91"></a>├── model_configs/             # Auto-fetched HuggingFace config.json files (gitignored)
-<a id="__codelineno-0-92" name="__codelineno-0-92" href="#__codelineno-0-92"></a>├── defaults.yaml              # Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
-<a id="__codelineno-0-93" name="__codelineno-0-93" href="#__codelineno-0-93"></a>├── hardware_config.json       # GPU specifications
-<a id="__codelineno-0-94" name="__codelineno-0-94" href="#__codelineno-0-94"></a>├── examples/                  # Example configuration files
-<a id="__codelineno-0-95" name="__codelineno-0-95" href="#__codelineno-0-95"></a>├── testdata/goldendataset.json # Golden dataset for regression tests
-<a id="__codelineno-0-96" name="__codelineno-0-96" href="#__codelineno-0-96"></a>├── docs/
-<a id="__codelineno-0-97" name="__codelineno-0-97" href="#__codelineno-0-97"></a>│   ├── getting-started/       # New user onboarding
-<a id="__codelineno-0-98" name="__codelineno-0-98" href="#__codelineno-0-98"></a>│   │   ├── index.md           # What is BLIS?
-<a id="__codelineno-0-99" name="__codelineno-0-99" href="#__codelineno-0-99"></a>│   │   ├── installation.md    # Build from source
-<a id="__codelineno-0-100" name="__codelineno-0-100" href="#__codelineno-0-100"></a>│   │   ├── quickstart.md      # First simulation
-<a id="__codelineno-0-101" name="__codelineno-0-101" href="#__codelineno-0-101"></a>│   │   └── tutorial.md        # Capacity planning walkthrough
-<a id="__codelineno-0-102" name="__codelineno-0-102" href="#__codelineno-0-102"></a>│   ├── guide/                 # Task-oriented user guides
-<a id="__codelineno-0-103" name="__codelineno-0-103" href="#__codelineno-0-103"></a>│   │   ├── index.md           # Guide overview
-<a id="__codelineno-0-104" name="__codelineno-0-104" href="#__codelineno-0-104"></a>│   │   ├── routing.md         # Routing policies
-<a id="__codelineno-0-105" name="__codelineno-0-105" href="#__codelineno-0-105"></a>│   │   ├── admission.md       # Admission control
-<a id="__codelineno-0-106" name="__codelineno-0-106" href="#__codelineno-0-106"></a>│   │   ├── scheduling.md      # Scheduling &amp; priority
-<a id="__codelineno-0-107" name="__codelineno-0-107" href="#__codelineno-0-107"></a>│   │   ├── latency-models.md  # Latency models (roofline + blackbox)
-<a id="__codelineno-0-108" name="__codelineno-0-108" href="#__codelineno-0-108"></a>│   │   ├── kv-cache.md        # KV cache &amp; memory management
-<a id="__codelineno-0-109" name="__codelineno-0-109" href="#__codelineno-0-109"></a>│   │   ├── workloads.md       # Workload specifications
-<a id="__codelineno-0-110" name="__codelineno-0-110" href="#__codelineno-0-110"></a>│   │   ├── cluster.md         # Cluster simulation
-<a id="__codelineno-0-111" name="__codelineno-0-111" href="#__codelineno-0-111"></a>│   │   ├── results.md         # Metrics &amp; results
-<a id="__codelineno-0-112" name="__codelineno-0-112" href="#__codelineno-0-112"></a>│   │   ├── experimentation.md # Hypothesis-driven experimentation
-<a id="__codelineno-0-113" name="__codelineno-0-113" href="#__codelineno-0-113"></a>│   │   └── skills-and-plugins.md # Claude Code skills &amp; plugins
-<a id="__codelineno-0-114" name="__codelineno-0-114" href="#__codelineno-0-114"></a>│   ├── concepts/              # Architecture and design documentation
-<a id="__codelineno-0-115" name="__codelineno-0-115" href="#__codelineno-0-115"></a>│   │   ├── index.md           # Concepts overview
-<a id="__codelineno-0-116" name="__codelineno-0-116" href="#__codelineno-0-116"></a>│   │   ├── glossary.md        # Concepts glossary
-<a id="__codelineno-0-117" name="__codelineno-0-117" href="#__codelineno-0-117"></a>│   │   ├── architecture.md    # Cluster architecture
-<a id="__codelineno-0-118" name="__codelineno-0-118" href="#__codelineno-0-118"></a>│   │   ├── core-engine.md     # Core DES engine
-<a id="__codelineno-0-119" name="__codelineno-0-119" href="#__codelineno-0-119"></a>│   │   └── roofline.md        # Roofline step time estimation
-<a id="__codelineno-0-120" name="__codelineno-0-120" href="#__codelineno-0-120"></a>│   ├── reference/             # Configuration and model reference
-<a id="__codelineno-0-121" name="__codelineno-0-121" href="#__codelineno-0-121"></a>│   │   ├── index.md           # Reference overview
-<a id="__codelineno-0-122" name="__codelineno-0-122" href="#__codelineno-0-122"></a>│   │   ├── project-structure.md # Project file organization (this file)
-<a id="__codelineno-0-123" name="__codelineno-0-123" href="#__codelineno-0-123"></a>│   │   ├── configuration.md   # Configuration reference
-<a id="__codelineno-0-124" name="__codelineno-0-124" href="#__codelineno-0-124"></a>│   │   ├── models.md          # Supported models catalog
-<a id="__codelineno-0-125" name="__codelineno-0-125" href="#__codelineno-0-125"></a>│   │   └── workload-spec.md   # Workload spec YAML schema
-<a id="__codelineno-0-126" name="__codelineno-0-126" href="#__codelineno-0-126"></a>│   ├── methodology/           # Research methodology documentation
-<a id="__codelineno-0-127" name="__codelineno-0-127" href="#__codelineno-0-127"></a>│   │   ├── index.md           # Methodology overview
-<a id="__codelineno-0-128" name="__codelineno-0-128" href="#__codelineno-0-128"></a>│   │   ├── strategy-evolution.md # Strategy Evolution methodology guide
-<a id="__codelineno-0-129" name="__codelineno-0-129" href="#__codelineno-0-129"></a>│   │   ├── hypothesis-bundles.md # Hypothesis bundle examples and writing guide
-<a id="__codelineno-0-130" name="__codelineno-0-130" href="#__codelineno-0-130"></a>│   │   └── principles.md     # Discovered principles catalog (30 principles)
-<a id="__codelineno-0-131" name="__codelineno-0-131" href="#__codelineno-0-131"></a>│   ├── contributing/          # Contributor documentation
-<a id="__codelineno-0-132" name="__codelineno-0-132" href="#__codelineno-0-132"></a>│   │   ├── index.md           # Contributing landing page
-<a id="__codelineno-0-133" name="__codelineno-0-133" href="#__codelineno-0-133"></a>│   │   ├── extension-recipes.md # Step-by-step extension guides
-<a id="__codelineno-0-134" name="__codelineno-0-134" href="#__codelineno-0-134"></a>│   │   ├── pr-workflow.md     # PR development workflow
-<a id="__codelineno-0-135" name="__codelineno-0-135" href="#__codelineno-0-135"></a>│   │   ├── design-process.md  # Design document process
-<a id="__codelineno-0-136" name="__codelineno-0-136" href="#__codelineno-0-136"></a>│   │   ├── macro-planning.md  # Macro-level planning process
-<a id="__codelineno-0-137" name="__codelineno-0-137" href="#__codelineno-0-137"></a>│   │   ├── hypothesis.md      # Hypothesis experiment process
-<a id="__codelineno-0-138" name="__codelineno-0-138" href="#__codelineno-0-138"></a>│   │   ├── convergence.md     # Universal Convergence Protocol
-<a id="__codelineno-0-139" name="__codelineno-0-139" href="#__codelineno-0-139"></a>│   │   ├── standards/         # Canonical rules, invariants, principles, experiment standards
-<a id="__codelineno-0-140" name="__codelineno-0-140" href="#__codelineno-0-140"></a>│   │   └── templates/         # Artifact templates + agent prompts
-<a id="__codelineno-0-141" name="__codelineno-0-141" href="#__codelineno-0-141"></a>│   │       ├── design-guidelines.md  # DES foundations, module architecture
-<a id="__codelineno-0-142" name="__codelineno-0-142" href="#__codelineno-0-142"></a>│   │       ├── macro-plan.md         # Multi-PR template (human-readable)
-<a id="__codelineno-0-143" name="__codelineno-0-143" href="#__codelineno-0-143"></a>│   │       ├── macro-plan-prompt.md  # Agent preamble for macro planning
-<a id="__codelineno-0-144" name="__codelineno-0-144" href="#__codelineno-0-144"></a>│   │       ├── micro-plan.md         # Single-PR template (human-readable)
-<a id="__codelineno-0-145" name="__codelineno-0-145" href="#__codelineno-0-145"></a>│   │       ├── micro-plan-prompt.md  # Agent preamble for writing-plans skill
-<a id="__codelineno-0-146" name="__codelineno-0-146" href="#__codelineno-0-146"></a>│   │       └── hypothesis.md         # Experiment FINDINGS.md template
-<a id="__codelineno-0-147" name="__codelineno-0-147" href="#__codelineno-0-147"></a>│   └── plans/                 # Active implementation plans (excluded from MkDocs)
-<a id="__codelineno-0-148" name="__codelineno-0-148" href="#__codelineno-0-148"></a>│       └── archive/           # Completed design docs (architectural reference)
-<a id="__codelineno-0-149" name="__codelineno-0-149" href="#__codelineno-0-149"></a>├── CONTRIBUTING.md            # Contributor guide (references docs/contributing/standards/)
-<a id="__codelineno-0-150" name="__codelineno-0-150" href="#__codelineno-0-150"></a>└── mkdocs.yml                 # MkDocs Material site configuration
+<a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a>│   ├── latency.go             # RooflineLatencyModel (default, analytical FLOPs/bandwidth), BlackboxLatencyModel (alpha/beta regression), TrainedPhysicsLatencyModel (physics-informed), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
+<a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a>│   ├── trained_physics.go     # TrainedPhysicsLatencyModel: physics-informed basis functions with learned corrections
+<a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a>│   ├── roofline.go            # rooflineStepTime(), calculateTransformerFlops(), calculateMemoryAccessBytes(), StepConfig/PrefillRequestConfig/DecodeRequestConfig types
+<a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a>│   ├── kv_capacity.go         # CalculateKVBlocks: auto-derive total KV cache blocks from model architecture + GPU memory; KVCapacityParams, ExtractKVCapacityParams, computeModelWeightBytes
+<a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a>│   ├── config.go              # HFConfig, GetHWConfig(), GetModelConfig(), ValidateRooflineConfig(), parseHWConfig(), ParseHFConfig()
+<a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a>│   └── register.go            # init()-based registration of NewLatencyModelFunc into sim/
+<a id="__codelineno-0-58" name="__codelineno-0-58" href="#__codelineno-0-58"></a>├── sim/cluster/               # Multi-replica cluster simulation
+<a id="__codelineno-0-59" name="__codelineno-0-59" href="#__codelineno-0-59"></a>│   ├── instance.go            # InstanceSimulator wraps sim.Simulator via NewInstanceSimulator(id, SimConfig) with run-once guard; delegates to Simulator observation methods (QueueDepth(), BatchSize(), etc.)
+<a id="__codelineno-0-60" name="__codelineno-0-60" href="#__codelineno-0-60"></a>│   ├── cluster.go             # ClusterSimulator orchestrates N instances with shared-clock event loop, online routing pipeline, and metrics aggregation; Run() returns error
+<a id="__codelineno-0-61" name="__codelineno-0-61" href="#__codelineno-0-61"></a>│   ├── cluster_event.go       # ClusterArrivalEvent, AdmissionDecisionEvent, RoutingDecisionEvent
+<a id="__codelineno-0-62" name="__codelineno-0-62" href="#__codelineno-0-62"></a>│   ├── counterfactual.go      # computeCounterfactual() for top-k candidate ranking and regret computation
+<a id="__codelineno-0-63" name="__codelineno-0-63" href="#__codelineno-0-63"></a>│   ├── snapshot.go            # CachedSnapshotProvider (returns sim.RoutingSnapshot), ObservabilityConfig
+<a id="__codelineno-0-64" name="__codelineno-0-64" href="#__codelineno-0-64"></a>│   ├── metrics.go             # RawMetrics, Distribution, FitnessResult, CollectRawMetrics (accepts priorityPolicy), ComputeFitness (returns (FitnessResult, error)), anomaly detection, ParseFitnessWeights with NaN/Inf validation, per-SLO-class metrics, JainFairnessIndex
+<a id="__codelineno-0-65" name="__codelineno-0-65" href="#__codelineno-0-65"></a>│   ├── deployment.go          # DeploymentConfig embeds sim.SimConfig + cluster-only fields; ToSimConfig() returns the embedded config
+<a id="__codelineno-0-66" name="__codelineno-0-66" href="#__codelineno-0-66"></a>│   └── evaluation.go          # EvaluationResult wrapper (RawMetrics + FitnessResult + trace + summary)
+<a id="__codelineno-0-67" name="__codelineno-0-67" href="#__codelineno-0-67"></a>├── sim/workload/              # ServeGen-informed workload generation
+<a id="__codelineno-0-68" name="__codelineno-0-68" href="#__codelineno-0-68"></a>│   ├── spec.go                # WorkloadSpec v2, ClientSpec (with Model field), ArrivalSpec, DistSpec, YAML loading, v1→v2 auto-upgrade (UpgradeV1ToV2), IsValidSLOClass accessor
+<a id="__codelineno-0-69" name="__codelineno-0-69" href="#__codelineno-0-69"></a>│   ├── arrival.go             # ArrivalSampler: Poisson, Gamma (Marsaglia-Tsang), Weibull (bisection), Constant (fixed-interval)
+<a id="__codelineno-0-70" name="__codelineno-0-70" href="#__codelineno-0-70"></a>│   ├── distribution.go        # LengthSampler: Gaussian, Exponential, ParetoLogNormal, EmpiricalPDF, Constant
+<a id="__codelineno-0-71" name="__codelineno-0-71" href="#__codelineno-0-71"></a>│   ├── client.go              # Rate normalization, prefix group management
+<a id="__codelineno-0-72" name="__codelineno-0-72" href="#__codelineno-0-72"></a>│   ├── generator.go           # GenerateRequests pipeline with client decomposition
+<a id="__codelineno-0-73" name="__codelineno-0-73" href="#__codelineno-0-73"></a>│   ├── servegen.go            # Native ServeGen data file loading (chunk-*-trace.csv + dataset.json)
+<a id="__codelineno-0-74" name="__codelineno-0-74" href="#__codelineno-0-74"></a>│   ├── tracev2.go             # Trace v2 format (YAML header + CSV data); 26-column schema including finish_reason (backward-compat with 25-column pre-finish_reason traces)
+<a id="__codelineno-0-75" name="__codelineno-0-75" href="#__codelineno-0-75"></a>│   ├── replay.go              # Trace v2 → sim.Request with synthetic token IDs
+<a id="__codelineno-0-76" name="__codelineno-0-76" href="#__codelineno-0-76"></a>│   ├── calibrate.go           # CalibrationReport, PrepareCalibrationPairs, MAPE/Pearson r
+<a id="__codelineno-0-77" name="__codelineno-0-77" href="#__codelineno-0-77"></a>│   ├── multimodal.go          # Multimodal token generation (text+image+audio+video)
+<a id="__codelineno-0-78" name="__codelineno-0-78" href="#__codelineno-0-78"></a>│   ├── reasoning.go           # Reasoning multi-turn with context accumulation
+<a id="__codelineno-0-79" name="__codelineno-0-79" href="#__codelineno-0-79"></a>│   ├── session.go             # SessionManager: closed-loop session tracking, follow-up round generation on completion
+<a id="__codelineno-0-80" name="__codelineno-0-80" href="#__codelineno-0-80"></a>│   ├── network.go             # Client-perspective latency (RTT + bandwidth)
+<a id="__codelineno-0-81" name="__codelineno-0-81" href="#__codelineno-0-81"></a>│   ├── inference_perf.go      # inference-perf format: InferencePerfSpec, expansion, validation
+<a id="__codelineno-0-82" name="__codelineno-0-82" href="#__codelineno-0-82"></a>│   ├── scenarios.go           # Built-in presets (bursty, unfair, prefix-heavy, mixed-slo)
+<a id="__codelineno-0-83" name="__codelineno-0-83" href="#__codelineno-0-83"></a>│   ├── convert.go             # Format converters: ConvertServeGen, ConvertPreset, ComposeSpecs
+<a id="__codelineno-0-84" name="__codelineno-0-84" href="#__codelineno-0-84"></a>│   ├── cohort.go              # CohortSpec expansion: diurnal, spike, drain patterns → lifecycle windows
+<a id="__codelineno-0-85" name="__codelineno-0-85" href="#__codelineno-0-85"></a>│   └── synthesis.go           # Flag-to-spec synthesis: SynthesizeFromDistribution, SynthesizeFromPreset
+<a id="__codelineno-0-86" name="__codelineno-0-86" href="#__codelineno-0-86"></a>├── sim/trace/                 # Decision trace recording
+<a id="__codelineno-0-87" name="__codelineno-0-87" href="#__codelineno-0-87"></a>│   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods
+<a id="__codelineno-0-88" name="__codelineno-0-88" href="#__codelineno-0-88"></a>│   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore (pure data types, no sim/ dependency)
+<a id="__codelineno-0-89" name="__codelineno-0-89" href="#__codelineno-0-89"></a>│   └── summary.go             # TraceSummary, Summarize()
+<a id="__codelineno-0-90" name="__codelineno-0-90" href="#__codelineno-0-90"></a>├── model_configs/             # Auto-fetched HuggingFace config.json files (gitignored)
+<a id="__codelineno-0-91" name="__codelineno-0-91" href="#__codelineno-0-91"></a>├── defaults.yaml              # Pre-trained coefficients, default GPU/TP/vLLM mappings, workload presets
+<a id="__codelineno-0-92" name="__codelineno-0-92" href="#__codelineno-0-92"></a>├── hardware_config.json       # GPU specifications
+<a id="__codelineno-0-93" name="__codelineno-0-93" href="#__codelineno-0-93"></a>├── examples/                  # Example configuration files
+<a id="__codelineno-0-94" name="__codelineno-0-94" href="#__codelineno-0-94"></a>├── testdata/goldendataset.json # Golden dataset for regression tests
+<a id="__codelineno-0-95" name="__codelineno-0-95" href="#__codelineno-0-95"></a>├── docs/
+<a id="__codelineno-0-96" name="__codelineno-0-96" href="#__codelineno-0-96"></a>│   ├── getting-started/       # New user onboarding
+<a id="__codelineno-0-97" name="__codelineno-0-97" href="#__codelineno-0-97"></a>│   │   ├── index.md           # What is BLIS?
+<a id="__codelineno-0-98" name="__codelineno-0-98" href="#__codelineno-0-98"></a>│   │   ├── installation.md    # Build from source
+<a id="__codelineno-0-99" name="__codelineno-0-99" href="#__codelineno-0-99"></a>│   │   ├── quickstart.md      # First simulation
+<a id="__codelineno-0-100" name="__codelineno-0-100" href="#__codelineno-0-100"></a>│   │   └── tutorial.md        # Capacity planning walkthrough
+<a id="__codelineno-0-101" name="__codelineno-0-101" href="#__codelineno-0-101"></a>│   ├── guide/                 # Task-oriented user guides
+<a id="__codelineno-0-102" name="__codelineno-0-102" href="#__codelineno-0-102"></a>│   │   ├── index.md           # Guide overview
+<a id="__codelineno-0-103" name="__codelineno-0-103" href="#__codelineno-0-103"></a>│   │   ├── routing.md         # Routing policies
+<a id="__codelineno-0-104" name="__codelineno-0-104" href="#__codelineno-0-104"></a>│   │   ├── admission.md       # Admission control
+<a id="__codelineno-0-105" name="__codelineno-0-105" href="#__codelineno-0-105"></a>│   │   ├── scheduling.md      # Scheduling &amp; priority
+<a id="__codelineno-0-106" name="__codelineno-0-106" href="#__codelineno-0-106"></a>│   │   ├── latency-models.md  # Latency models (roofline + blackbox)
+<a id="__codelineno-0-107" name="__codelineno-0-107" href="#__codelineno-0-107"></a>│   │   ├── kv-cache.md        # KV cache &amp; memory management
+<a id="__codelineno-0-108" name="__codelineno-0-108" href="#__codelineno-0-108"></a>│   │   ├── workloads.md       # Workload specifications
+<a id="__codelineno-0-109" name="__codelineno-0-109" href="#__codelineno-0-109"></a>│   │   ├── cluster.md         # Cluster simulation
+<a id="__codelineno-0-110" name="__codelineno-0-110" href="#__codelineno-0-110"></a>│   │   ├── results.md         # Metrics &amp; results
+<a id="__codelineno-0-111" name="__codelineno-0-111" href="#__codelineno-0-111"></a>│   │   ├── experimentation.md # Hypothesis-driven experimentation
+<a id="__codelineno-0-112" name="__codelineno-0-112" href="#__codelineno-0-112"></a>│   │   └── skills-and-plugins.md # Claude Code skills &amp; plugins
+<a id="__codelineno-0-113" name="__codelineno-0-113" href="#__codelineno-0-113"></a>│   ├── concepts/              # Architecture and design documentation
+<a id="__codelineno-0-114" name="__codelineno-0-114" href="#__codelineno-0-114"></a>│   │   ├── index.md           # Concepts overview
+<a id="__codelineno-0-115" name="__codelineno-0-115" href="#__codelineno-0-115"></a>│   │   ├── glossary.md        # Concepts glossary
+<a id="__codelineno-0-116" name="__codelineno-0-116" href="#__codelineno-0-116"></a>│   │   ├── architecture.md    # Cluster architecture
+<a id="__codelineno-0-117" name="__codelineno-0-117" href="#__codelineno-0-117"></a>│   │   ├── core-engine.md     # Core DES engine
+<a id="__codelineno-0-118" name="__codelineno-0-118" href="#__codelineno-0-118"></a>│   │   └── roofline.md        # Roofline step time estimation
+<a id="__codelineno-0-119" name="__codelineno-0-119" href="#__codelineno-0-119"></a>│   ├── reference/             # Configuration and model reference
+<a id="__codelineno-0-120" name="__codelineno-0-120" href="#__codelineno-0-120"></a>│   │   ├── index.md           # Reference overview
+<a id="__codelineno-0-121" name="__codelineno-0-121" href="#__codelineno-0-121"></a>│   │   ├── project-structure.md # Project file organization (this file)
+<a id="__codelineno-0-122" name="__codelineno-0-122" href="#__codelineno-0-122"></a>│   │   ├── configuration.md   # Configuration reference
+<a id="__codelineno-0-123" name="__codelineno-0-123" href="#__codelineno-0-123"></a>│   │   ├── models.md          # Supported models catalog
+<a id="__codelineno-0-124" name="__codelineno-0-124" href="#__codelineno-0-124"></a>│   │   └── workload-spec.md   # Workload spec YAML schema
+<a id="__codelineno-0-125" name="__codelineno-0-125" href="#__codelineno-0-125"></a>│   ├── methodology/           # Research methodology documentation
+<a id="__codelineno-0-126" name="__codelineno-0-126" href="#__codelineno-0-126"></a>│   │   ├── index.md           # Methodology overview
+<a id="__codelineno-0-127" name="__codelineno-0-127" href="#__codelineno-0-127"></a>│   │   ├── strategy-evolution.md # Strategy Evolution methodology guide
+<a id="__codelineno-0-128" name="__codelineno-0-128" href="#__codelineno-0-128"></a>│   │   ├── hypothesis-bundles.md # Hypothesis bundle examples and writing guide
+<a id="__codelineno-0-129" name="__codelineno-0-129" href="#__codelineno-0-129"></a>│   │   └── principles.md     # Discovered principles catalog (30 principles)
+<a id="__codelineno-0-130" name="__codelineno-0-130" href="#__codelineno-0-130"></a>│   ├── contributing/          # Contributor documentation
+<a id="__codelineno-0-131" name="__codelineno-0-131" href="#__codelineno-0-131"></a>│   │   ├── index.md           # Contributing landing page
+<a id="__codelineno-0-132" name="__codelineno-0-132" href="#__codelineno-0-132"></a>│   │   ├── extension-recipes.md # Step-by-step extension guides
+<a id="__codelineno-0-133" name="__codelineno-0-133" href="#__codelineno-0-133"></a>│   │   ├── pr-workflow.md     # PR development workflow
+<a id="__codelineno-0-134" name="__codelineno-0-134" href="#__codelineno-0-134"></a>│   │   ├── design-process.md  # Design document process
+<a id="__codelineno-0-135" name="__codelineno-0-135" href="#__codelineno-0-135"></a>│   │   ├── macro-planning.md  # Macro-level planning process
+<a id="__codelineno-0-136" name="__codelineno-0-136" href="#__codelineno-0-136"></a>│   │   ├── hypothesis.md      # Hypothesis experiment process
+<a id="__codelineno-0-137" name="__codelineno-0-137" href="#__codelineno-0-137"></a>│   │   ├── convergence.md     # Universal Convergence Protocol
+<a id="__codelineno-0-138" name="__codelineno-0-138" href="#__codelineno-0-138"></a>│   │   ├── standards/         # Canonical rules, invariants, principles, experiment standards
+<a id="__codelineno-0-139" name="__codelineno-0-139" href="#__codelineno-0-139"></a>│   │   └── templates/         # Artifact templates + agent prompts
+<a id="__codelineno-0-140" name="__codelineno-0-140" href="#__codelineno-0-140"></a>│   │       ├── design-guidelines.md  # DES foundations, module architecture
+<a id="__codelineno-0-141" name="__codelineno-0-141" href="#__codelineno-0-141"></a>│   │       ├── macro-plan.md         # Multi-PR template (human-readable)
+<a id="__codelineno-0-142" name="__codelineno-0-142" href="#__codelineno-0-142"></a>│   │       ├── macro-plan-prompt.md  # Agent preamble for macro planning
+<a id="__codelineno-0-143" name="__codelineno-0-143" href="#__codelineno-0-143"></a>│   │       ├── micro-plan.md         # Single-PR template (human-readable)
+<a id="__codelineno-0-144" name="__codelineno-0-144" href="#__codelineno-0-144"></a>│   │       ├── micro-plan-prompt.md  # Agent preamble for writing-plans skill
+<a id="__codelineno-0-145" name="__codelineno-0-145" href="#__codelineno-0-145"></a>│   │       └── hypothesis.md         # Experiment FINDINGS.md template
+<a id="__codelineno-0-146" name="__codelineno-0-146" href="#__codelineno-0-146"></a>│   └── plans/                 # Active implementation plans (excluded from MkDocs)
+<a id="__codelineno-0-147" name="__codelineno-0-147" href="#__codelineno-0-147"></a>│       └── archive/           # Completed design docs (architectural reference)
+<a id="__codelineno-0-148" name="__codelineno-0-148" href="#__codelineno-0-148"></a>├── CONTRIBUTING.md            # Contributor guide (references docs/contributing/standards/)
+<a id="__codelineno-0-149" name="__codelineno-0-149" href="#__codelineno-0-149"></a>└── mkdocs.yml                 # MkDocs Material site configuration
 </code></pre></div>
 
 

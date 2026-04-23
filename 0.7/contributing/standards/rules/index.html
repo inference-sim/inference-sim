@@ -3517,7 +3517,7 @@
 <p><strong>Evidence:</strong> H3 hypothesis experiment (#279) — kv-utilization scorer produced 200x worse distribution uniformity than queue-depth at rate=5000. See issues #282, #283.</p>
 <p><strong>Freshness hierarchy:</strong>
 - <strong>Synchronous (cluster-owned):</strong> InFlightRequests — always fresh (gateway counter)
-- <strong>Immediate/Periodic (instance-owned):</strong> QueueDepth, BatchSize, KVUtilization, CacheHitRate — Immediate when <code>--snapshot-refresh-interval=0</code>, Periodic when <code>&gt;0</code></p>
+- <strong>Immediate/Periodic (instance-owned):</strong> QueueDepth, BatchSize, KVUtilization, CacheHitRate, PreemptionCount — Immediate when <code>--snapshot-refresh-interval=0</code>, Periodic when <code>&gt;0</code></p>
 <p><strong>Check:</strong> When writing a new scorer, identify which snapshot fields it reads and their freshness. If using only Periodic signals, document why or combine with a synchronous scorer (InFlightRequests via EffectiveLoad). The <code>queue-depth</code> scorer reads only QueueDepth (Periodic) for GIE parity; the <code>load-balance</code> scorer reads EffectiveLoad (includes synchronous InFlightRequests).</p>
 <p><strong>Enforced:</strong> Design review, scorer implementation review.</p>
 <hr />
