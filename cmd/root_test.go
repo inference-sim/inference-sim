@@ -425,6 +425,31 @@ func TestValidateDistributionParams(t *testing.T) {
 			promptMean: validMean, outputMean: 50,
 			wantErr: true,
 		},
+		// stdev=0 is a valid deterministic distribution; lower-bound check must be skipped
+		{
+			name:        "prompt stdev 0 with min 1 is accepted",
+			promptMin: 1, promptMax: validMax,
+			outputMin: validOMin, outputMax: validOMax,
+			promptStdev: 0, outputStdev: validOStdev,
+			promptMean: validMean, outputMean: validOMean,
+			wantErr: false,
+		},
+		{
+			name:        "output stdev 0 with min 1 is accepted",
+			promptMin: validMin, promptMax: validMax,
+			outputMin: 1, outputMax: validOMax,
+			promptStdev: validStdev, outputStdev: 0,
+			promptMean: validMean, outputMean: validOMean,
+			wantErr: false,
+		},
+		{
+			name:        "both stddevs 0 with large mins are accepted",
+			promptMin: 100, promptMax: 1024,
+			outputMin: 50, outputMax: 512,
+			promptStdev: 0, outputStdev: 0,
+			promptMean: 512, outputMean: 128,
+			wantErr: false,
+		},
 	}
 
 	for _, tc := range tests {
@@ -1334,3 +1359,4 @@ func buildSynthesizedSpec() *workload.WorkloadSpec {
 func buildTestCohort() workload.CohortSpec {
 	return workload.CohortSpec{ID: "cohort-0"}
 }
+
