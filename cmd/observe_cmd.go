@@ -321,6 +321,11 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		spec.Seed = observeSeed
 	} else {
 		// Distribution or concurrency synthesis
+		// R3: Validate distribution token bounds before synthesis.
+		if msg := validateDistributionParams(observePromptMin, observePromptMax, observeOutputMin, observeOutputMax,
+			observePromptStdDev, observeOutputStdDev, observePromptTokens, observeOutputTokens); msg != "" {
+			logrus.Fatalf("%s", msg)
+		}
 		spec = workload.SynthesizeFromDistribution(workload.DistributionParams{
 			Rate:               observeRate,
 			Concurrency:        observeConcurrency,
