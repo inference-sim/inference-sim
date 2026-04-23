@@ -231,7 +231,7 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 			preemptedRequest.State = StateQueued
 			preemptedRequest.ProgressIndex = 0
 			preemptedRequest.ITL = nil
-			preemptedRequest.TTFTSet = false // re-prefill must update FirstTokenTime (#1122)
+			preemptedRequest.TTFTSet = false // lets the !TTFTSet guard in executeBatchStep fire on re-prefill, updating FirstTokenTime (#1122)
 			ctx.KVCache.ReleaseKVBlocks(preemptedRequest)
 			delete(ctx.ComputedTokens, preemptedRequest.ID)
 			ctx.WaitQ.PrependFront(preemptedRequest)
