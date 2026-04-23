@@ -3003,3 +3003,77 @@ func TestTotalOutputTokens_Conservation_WithPreemption(t *testing.T) {
 			sim.Metrics.TotalOutputTokens, expected)
 	}
 }
+
+// TestSimulator_TTFT_UpdatedAfterPreemption verifies that TTFT reflects the re-prefill
+// completion time, not the original (pre-preemption) prefill time (#1122).
+//
+// GIVEN a 4-block KV cache that forces preemption of request B (32 tokens, 5 output)
+// while A (16 tokens, 5 output) continues decoding uninterrupted,
+// WHEN both complete after B's preemption and re-prefill,
+// THEN TTFT_B > TTFT_A (B's first token arrives later because it waited in queue and
+// re-prefilled after A finished — TTFTSet not reset on preemption would freeze TTFT_B
+// at the pre-preemption value, making it equal to TTFT_A).
+func TestSimulator_TTFT_UpdatedAfterPreemption(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(4, 16, 0, 0, 0, 0), // 4 blocks × 16 = 64 tokens: forces preemption
+		BatchConfig:         NewBatchConfig(256, 10_000, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 1, 0}, []float64{0, 0, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+	}
+	s := mustNewSimulator(t, cfg)
+
+	// A (16 tokens) injected first → at front of WaitQ → stays in batch during decode.
+	// B (32 tokens) injected second → at tail of WaitQ → becomes tail of RunningBatch,
+	// gets preempted when decode needs a new KV block and none are free.
+	reqA := &Request{
+		ID:           "A",
+		ArrivalTime:  0,
+		InputTokens:  GenerateRandomTokenIDs(s.WorkloadRNG(), 16),
+		OutputTokens: make([]int, 5),
+		State:        StateQueued,
+	}
+	reqB := &Request{
+		ID:           "B",
+		ArrivalTime:  0,
+		InputTokens:  GenerateRandomTokenIDs(s.WorkloadRNG(), 32),
+		OutputTokens: make([]int, 5),
+		State:        StateQueued,
+	}
+	s.InjectArrival(reqA)
+	s.InjectArrival(reqB)
+
+	for s.HasPendingEvents() {
+		s.ProcessNextEvent()
+	}
+
+	if s.Metrics.PreemptionCount == 0 {
+		t.Fatal("precondition violated: expected at least one preemption — scenario does not exercise the bug path")
+	}
+	if s.Metrics.CompletedRequests != 2 {
+		t.Fatalf("expected both requests to complete, got %d completed", s.Metrics.CompletedRequests)
+	}
+
+	ttftA, okA := s.Metrics.RequestTTFTs["A"]
+	ttftB, okB := s.Metrics.RequestTTFTs["B"]
+	if !okA || !okB {
+		t.Fatalf("missing TTFT entry: A=%v B=%v", okA, okB)
+	}
+	if ttftA <= 0 {
+		t.Errorf("TTFT_A = %.0f: A's TTFT should be positive (unaffected by B's preemption)", ttftA)
+	}
+
+	// B was preempted during decode and had to re-prefill after A finished.
+	// Its TTFT must reflect the re-prefill completion time, which is >> A's TTFT.
+	// The bug (TTFTSet not reset) would leave TTFT_B == TTFT_A.
+	if ttftB <= ttftA {
+		t.Errorf("TTFT_B = %.0f, TTFT_A = %.0f: expected TTFT_B > TTFT_A because B was preempted and re-prefilled after A completed",
+			ttftB, ttftA)
+	}
+
+	e2eB := s.Metrics.RequestE2Es["B"]
+	if e2eB <= ttftB {
+		t.Errorf("E2E_B = %.0f <= TTFT_B = %.0f: expected E2E_B > TTFT_B for a request with 5 output tokens", e2eB, ttftB)
+	}
+}
