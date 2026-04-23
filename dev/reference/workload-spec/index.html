@@ -1624,6 +1624,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#lifecycle-normalization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lifecycle Normalization
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3042,6 +3053,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#lifecycle-normalization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lifecycle Normalization
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3266,7 +3288,7 @@
 <td><code>rate_fraction</code></td>
 <td>float64</td>
 <td><strong>Yes</strong></td>
-<td>Fraction of <code>aggregate_rate</code> for this client (must be positive)</td>
+<td>Fraction of <code>aggregate_rate</code> for this client (must be positive). When lifecycle windows are present, fractions are normalized per-phase (see <a href="#lifecycle-normalization">Lifecycle Normalization</a>)</td>
 </tr>
 <tr>
 <td><code>arrival</code></td>
@@ -3682,6 +3704,17 @@
 </tr>
 </tbody>
 </table>
+<h3 id="lifecycle-normalization">Lifecycle Normalization<a class="headerlink" href="#lifecycle-normalization" title="Permanent link">&para;</a></h3>
+<p>When clients have lifecycle windows, <code>rate_fraction</code> values are normalized <strong>per-phase</strong> rather than globally. For each client, the simulator sums the <code>rate_fraction</code> of all <strong>co-active</strong> clients (those whose lifecycle windows overlap) and divides by that sum. This ensures <code>aggregate_rate</code> is achieved during every active phase.</p>
+<p>Clients without lifecycle windows are "always-on" and are counted as co-active with every phase.</p>
+<p><strong>Example:</strong> A two-phase workload with <code>aggregate_rate: 40</code>:</p>
+<ul>
+<li>Phase 1 (0–50s): clients A (<code>rate_fraction: 0.7</code>) and B (<code>rate_fraction: 0.3</code>)</li>
+<li>Phase 2 (50–100s): client C (<code>rate_fraction: 1.0</code>)</li>
+</ul>
+<p>Each phase's fractions are normalized independently: A gets <code>40 × 0.7/1.0 = 28 req/s</code>, B gets <code>40 × 0.3/1.0 = 12 req/s</code>, C gets <code>40 × 1.0/1.0 = 40 req/s</code>. Both phases produce the full 40 req/s.</p>
+<p>Without per-phase normalization, the global sum would be 2.0, and every client's rate would be halved.</p>
+<p><strong>Limitation:</strong> Always-on clients compute a single rate using co-active sums across all phases they overlap with. When an always-on client coexists with multiple non-overlapping phased clients, per-phase totals may be less than <code>aggregate_rate</code>. For predictable results, use either all-phased or all-always-on clients.</p>
 <h2 id="multimodal-specification">Multimodal Specification<a class="headerlink" href="#multimodal-specification" title="Permanent link">&para;</a></h2>
 <p>Configures multimodal request generation (used in the <code>multimodal</code> field of Client Specification). Each distribution follows the same <a href="#distribution-specification">Distribution Specification</a> format.</p>
 <table>
