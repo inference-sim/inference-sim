@@ -1293,7 +1293,7 @@ var runCmd = &cobra.Command{
 		}
 
 		// Apply per-request timeout to all clients.
-		// For synthesized specs, always apply (negative default = no timeout).
+		// For synthesized specs, always apply (default 300s matches the session-client default).
 		// For file-loaded specs, only apply when the flag is explicitly set.
 		if requestTimeoutSecs == 0 {
 			logrus.Fatalf("--timeout must be positive (seconds) or negative to disable; got 0")
@@ -1895,7 +1895,7 @@ func init() {
 	runCmd.Flags().IntVar(&outputTokensMin, "output-tokens-min", defaultOutputMin, "Min Output Token Count")
 	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", defaultOutputMax, "Max Output Token Count")
 	runCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "Path to YAML workload specification file (overrides --workload)")
-	runCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", -1, "Per-request deadline in seconds (negative = disabled, positive = deadline). 0 is rejected; use a negative value to disable. Consistent with blis observe: both commands reject 0.")
+	runCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "Per-request deadline in seconds (default 300s matches the session-client default in computeDeadline). Negative = disabled; 0 is rejected. Consistent with blis observe: both commands reject 0.")
 
 	// Run-specific export
 	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")

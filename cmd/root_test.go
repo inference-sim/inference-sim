@@ -473,17 +473,17 @@ func TestReplayCmd_HasResultsPathFlag(t *testing.T) {
 	}
 }
 
-// TestRunCmd_TimeoutFlag_RegisteredWithDefaultMinusOne verifies that --timeout is registered
-// on runCmd with a default of -1 (disabled). Default -1 means synthetic workloads do not
-// silently time out and inflate throughput metrics. Consistent with blis observe: both
-// commands reject 0 as an invalid timeout value (#1127).
-func TestRunCmd_TimeoutFlag_RegisteredWithDefaultMinusOne(t *testing.T) {
+// TestRunCmd_TimeoutFlag_RegisteredWithDefault300s verifies that --timeout is registered
+// on runCmd with a default of 300s. Default 300s matches the session-client default in
+// computeDeadline (DefaultTimeoutUs), preserving termination for UnlimitedRounds sessions
+// and providing consistent behavior for synthesized workloads (#1127).
+func TestRunCmd_TimeoutFlag_RegisteredWithDefault300s(t *testing.T) {
 	f := runCmd.Flags().Lookup("timeout")
 	if f == nil {
 		t.Fatal("flag --timeout not found on runCmd")
 	}
-	if f.DefValue != "-1" {
-		t.Errorf("--timeout default: got %q, want \"-1\" (disabled; use negative value to disable timeout)", f.DefValue)
+	if f.DefValue != "300" {
+		t.Errorf("--timeout default: got %q, want \"300\" (matches 300s session-client default in computeDeadline)", f.DefValue)
 	}
 }
 
