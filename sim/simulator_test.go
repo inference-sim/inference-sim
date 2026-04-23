@@ -2961,7 +2961,7 @@ func TestTotalOutputTokens_Conservation_WithPreemption(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(4, 16, 0, 0, 0, 0), // 4 blocks × 16 = 64 tokens: forces preemption
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 1, 1}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-model", "H100", 1, "roofline", 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 

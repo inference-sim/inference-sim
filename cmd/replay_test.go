@@ -574,6 +574,7 @@ warm_up_requests: 0
 		"--trace-header", headerPath,
 		"--trace-data", dataPath,
 		"--trace-output", outputPrefix,
+		"--defaults-filepath", "../defaults.yaml",
 	}); err != nil {
 		t.Fatalf("ParseFlags failed: %v", err)
 	}
@@ -829,6 +830,7 @@ warm_up_requests: 0
 		"--hardware-config", hwCfgPath,
 		"--trace-header", headerPath,
 		"--trace-data", dataPath,
+		"--defaults-filepath", "../defaults.yaml",
 	}); err != nil {
 		t.Fatalf("ParseFlags failed: %v", err)
 	}
@@ -1028,6 +1030,7 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 		"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
 		"--model-config-folder", mcFolder3, "--hardware-config", hwPath3,
 		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--defaults-filepath", "../defaults.yaml",
 	}); err != nil {
 		t.Fatalf("ParseFlags failed: %v", err)
 	}
@@ -1199,6 +1202,7 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 			"--model-config-folder", mcFolder4, "--hardware-config", hwPath4,
 			"--trace-header", headerPath,
 			"--trace-data", dataPath, "--trace-output", prefix,
+			"--defaults-filepath", "../defaults.yaml",
 		}); err != nil {
 			t.Fatalf("ParseFlags failed: %v", err)
 		}
