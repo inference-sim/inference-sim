@@ -912,61 +912,6 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 
 }
 
-// tryAutoCalcKVBlocks attempts to auto-calculate KV blocks from model/hardware config.
-// Returns (blocks, true) on success, (0, false) on any failure.
-// Logs warnings for each failure case so the caller can use the fallback value silently.
-func tryAutoCalcKVBlocks(model, modelConfigFolder, defaultsFilePath, hwConfigPath, gpu string, tp int, blockSize int64, gpuMemUtil float64, currentBlocks int64) (int64, bool) {
-	resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
-	if err != nil {
-		logrus.Warnf("KV auto-calc: could not resolve model config for KV auto-calculation: %v. Using total-kv-blocks=%d", err, currentBlocks)
-		return 0, false
-	}
-
-	hfPath := filepath.Join(resolved, "config.json")
-	hfCfg, parseErr := latency.ParseHFConfig(hfPath)
-	if parseErr != nil {
-		logrus.Warnf("KV auto-calc: failed to parse %s: %v. Using total-kv-blocks=%d", hfPath, parseErr, currentBlocks)
-		return 0, false
-	}
-
-	mc, mcErr := latency.GetModelConfigFromHF(hfCfg)
-	if mcErr != nil {
-		logrus.Warnf("KV auto-calc: failed to extract model config: %v. Using total-kv-blocks=%d", mcErr, currentBlocks)
-		return 0, false
-	}
-	applyWeightPrecisionFallback(mc, model, hfCfg.Raw)
-
-	resolvedHW, hwErr := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
-	if hwErr != nil {
-		logrus.Warnf("KV auto-calc: could not resolve hardware config: %v. Using total-kv-blocks=%d", hwErr, currentBlocks)
-		return 0, false
-	}
-
-	hc, hcErr := latency.GetHWConfig(resolvedHW, gpu)
-	if hcErr != nil {
-		logrus.Warnf("KV auto-calc: failed to load hardware config: %v. Using total-kv-blocks=%d", hcErr, currentBlocks)
-		return 0, false
-	}
-	if hc.MemoryGiB <= 0 {
-		logrus.Warnf("KV auto-calc: GPU memory not available in hardware config. Using total-kv-blocks=%d", currentBlocks)
-		return 0, false
-	}
-
-	kvParams, kvErr := latency.ExtractKVCapacityParams(hfCfg)
-	if kvErr != nil {
-		logrus.Warnf("KV auto-calc: could not extract KV capacity params: %v. Using total-kv-blocks=%d", kvErr, currentBlocks)
-		return 0, false
-	}
-
-	autoBlocks, calcErr := latency.CalculateKVBlocks(*mc, hc, tp, blockSize, gpuMemUtil, kvParams)
-	if calcErr != nil {
-		logrus.Warnf("KV auto-calc: KV capacity auto-calculation failed: %v. Using total-kv-blocks=%d", calcErr, currentBlocks)
-		return 0, false
-	}
-
-	return autoBlocks, true
-}
-
 // applyTimeoutToSpec sets ClientSpec.Timeout and CohortSpec.Timeout on every entry in spec.
 // timeoutSecs>0 converts to µs and sets a deadline; timeoutSecs<=0 sets an explicit *int64(0)
 // (disabled). Explicit zero is required so computeDeadline does not fall back to the 300s
