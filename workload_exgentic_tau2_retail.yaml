@@ -1,351 +1,345 @@
-version: "2"
+# Exact replay of exgentic tau2_retail_10 benchmark execution
+# Generated from actual trace data
+#
+# IMPORTANT NOTES:
+# - think_time_us values are INTER-REQUEST TIMES (includes inference + actual think time)
+# - For closed-loop replay, set think_time_us=0 and let simulator compute inference latency
+# - prefix_length: Minimum prompt tokens (cacheable system prompt + task). Real traces show
+#   cache misses, but BLIS should know the cacheable prefix size for simulation.
+# - Output distributions are Gaussian (CV≈0.38), not exponential
+
+version: '2'
 seed: 300
 category: reasoning
-aggregate_rate: 1.0  # Not used - lifecycle windows control timing
-horizon: 478335016  # Last session end + 10% buffer
-
-# Exact replay of exgentic tau2_retail_10 benchmark execution
-# Each session has its own token distributions and think times based on observed behavior
-# Corrected to match real trace data (2026-04-23 analysis)
-# Output distributions are Gaussian (CV≈0.38), not exponential (CV≈1.0)
-
+aggregate_rate: 1.0
 clients:
-  - id: "tau2-session-1"
-    tenant_id: "retail-benchmark"
-    slo_class: "standard"
-    rate_fraction: 0.1
-    streaming: true
-    arrival:
-      process: poisson
-    input_distribution:  # Task 10: 6 rounds, mean=914±359
-      type: gaussian
-      params:
-        mean: 914
-        std_dev: 359
-        min: 447
-        max: 1375
-    output_distribution:  # Task 10: mean=20±14, range=7-44, CV=0.67
-      type: gaussian
-      params:
-        mean: 20
-        std_dev: 14
-        min: 7
-        max: 44
-    prefix_length: 0
-    reasoning:
-      multi_turn:
-        max_rounds: 6  # Observed: 6 rounds
-        think_time_us: 1640074  # Observed: 1.6s (corrected from 7.0s)
-        context_growth: accumulate
-    closed_loop: true
-    timeout: 300000000
-    lifecycle:
-      windows:
-        - start_us: 0
-          end_us: 36426365
-
-  - id: "tau2-session-2"
-    tenant_id: "retail-benchmark"
-    slo_class: "standard"
-    rate_fraction: 0.1
-    streaming: true
-    arrival:
-      process: poisson
-    input_distribution:  # Task 24: 5 rounds, mean=798±281
-      type: gaussian
-      params:
-        mean: 798
-        std_dev: 281
-        min: 436
-        max: 1227
-    output_distribution:  # Task 24: mean=75±17, range=48-100, CV=0.23
-      type: gaussian
-      params:
-        mean: 75
-        std_dev: 17
-        min: 48
-        max: 100
-    prefix_length: 0
-    reasoning:
-      multi_turn:
-        max_rounds: 5  # Observed: 5 rounds
-        think_time_us: 1869534  # Observed: 1.9s (corrected from 6.5s)
-        context_growth: accumulate
-    closed_loop: true
-    timeout: 300000000
-    lifecycle:
-      windows:
-        - start_us: 39665574
-          end_us: 67550066
-
-  - id: "tau2-session-3"
-    tenant_id: "retail-benchmark"
-    slo_class: "standard"
-    rate_fraction: 0.1
-    streaming: true
-    arrival:
-      process: poisson
-    input_distribution:  # Task 78: 7 rounds, mean=1479±770
-      type: gaussian
-      params:
-        mean: 1479
-        std_dev: 770
-        min: 493
-        max: 2598
-    output_distribution:  # Task 78: mean=110±52, range=39-187, CV=0.48
-      type: gaussian
-      params:
-        mean: 110
-        std_dev: 52
-        min: 39
-        max: 187
-    prefix_length: 0
-    reasoning:
-      multi_turn:
-        max_rounds: 7  # Observed: 7 rounds
-        think_time_us: 2142866  # Observed: 2.1s (corrected from 8.5s)
-        context_growth: accumulate
-    closed_loop: true
-    timeout: 300000000
-    lifecycle:
-      windows:
-        - start_us: 70510484
-          end_us: 123757323
-
-  - id: "tau2-session-4"
-    tenant_id: "retail-benchmark"
-    slo_class: "standard"
-    rate_fraction: 0.1
-    streaming: true
-    arrival:
-      process: poisson
-    input_distribution:  # Task 72: 8 rounds, mean=1492±723
-      type: gaussian
-      params:
-        mean: 1492
-        std_dev: 723
-        min: 552
-        max: 2655
-    output_distribution:  # Task 72: mean=92±32, range=56-154, CV=0.35
-      type: gaussian
-      params:
-        mean: 92
-        std_dev: 32
-        min: 56
-        max: 154
-    prefix_length: 0
-    reasoning:
-      multi_turn:
-        max_rounds: 8  # Observed: 8 rounds
-        think_time_us: 2375576  # Observed: 2.4s (corrected from 8.3s)
-        context_growth: accumulate
-    closed_loop: true
-    timeout: 300000000
-    lifecycle:
-      windows:
-        - start_us: 126822467
-          end_us: 187057176
-
-  - id: "tau2-session-5"
-    tenant_id: "retail-benchmark"
-    slo_class: "standard"
-    rate_fraction: 0.1
-    streaming: true
-    arrival:
-      process: poisson
-    input_distribution:  # Task 91: 7 rounds, mean=1310±618
-      type: gaussian
-      params:
-        mean: 1310
-        std_dev: 618
-        min: 479
-        max: 2204
-    output_distribution:  # Task 91: mean=80±36, range=27-145, CV=0.45
-      type: gaussian
-      params:
-        mean: 80
-        std_dev: 36
-        min: 27
-        max: 145
-    prefix_length: 0
-    reasoning:
-      multi_turn:
-        max_rounds: 7  # Observed: 7 rounds
-        think_time_us: 2031245  # Observed: 2.0s (corrected from 7.5s)
-        context_growth: accumulate
-    closed_loop: true
-    timeout: 300000000
-    lifecycle:
-      windows:
-        - start_us: 189813967
-          end_us: 236656674
-
-  - id: "tau2-session-6"
-    tenant_id: "retail-benchmark"
-    slo_class: "standard"
-    rate_fraction: 0.1
-    streaming: true
-    arrival:
-      process: poisson
-    input_distribution:  # Task 39: 5 rounds, mean=1217±575
-      type: gaussian
-      params:
-        mean: 1217
-        std_dev: 575
-        min: 484
-        max: 2026
-    output_distribution:  # Task 39: mean=171±36, range=135-239, CV=0.21
-      type: gaussian
-      params:
-        mean: 171
-        std_dev: 36
-        min: 135
-        max: 239
-    prefix_length: 0
-    reasoning:
-      multi_turn:
-        max_rounds: 5  # Observed: 5 rounds
-        think_time_us: 2586696  # Observed: 2.6s (corrected from 9.8s)
-        context_growth: accumulate
-    closed_loop: true
-    timeout: 300000000
-    lifecycle:
-      windows:
-        - start_us: 239882696
-          end_us: 281433423
-
-  - id: "tau2-session-7"
-    tenant_id: "retail-benchmark"
-    slo_class: "standard"
-    rate_fraction: 0.1
-    streaming: true
-    arrival:
-      process: poisson
-    input_distribution:  # Task 43: 6 rounds, mean=1213±533
-      type: gaussian
-      params:
-        mean: 1213
-        std_dev: 533
-        min: 488
-        max: 2004
-    output_distribution:  # Task 43: mean=149±51, range=77-222, CV=0.34
-      type: gaussian
-      params:
-        mean: 149
-        std_dev: 51
-        min: 77
-        max: 222
-    prefix_length: 0
-    reasoning:
-      multi_turn:
-        max_rounds: 6  # Observed: 6 rounds
-        think_time_us: 2231966  # Observed: 2.2s (corrected from 8.3s)
-        context_growth: accumulate
-    closed_loop: true
-    timeout: 300000000
-    lifecycle:
-      windows:
-        - start_us: 284406962
-          end_us: 327931865
-
-  - id: "tau2-session-8"
-    tenant_id: "retail-benchmark"
-    slo_class: "standard"
-    rate_fraction: 0.1
-    streaming: true
-    arrival:
-      process: poisson
-    input_distribution:  # Task 68: 4 rounds, mean=688±209
-      type: gaussian
-      params:
-        mean: 688
-        std_dev: 209
-        min: 441
-        max: 1005
-    output_distribution:  # Task 68: mean=70±18, range=48-94, CV=0.26
-      type: gaussian
-      params:
-        mean: 70
-        std_dev: 18
-        min: 48
-        max: 94
-    prefix_length: 0
-    reasoning:
-      multi_turn:
-        max_rounds: 4  # Observed: 4 rounds
-        think_time_us: 1418329  # Observed: 1.4s (corrected from 7.8s)
-        context_growth: accumulate
-    closed_loop: true
-    timeout: 300000000
-    lifecycle:
-      windows:
-        - start_us: 331219155
-          end_us: 355993353
-
-  - id: "tau2-session-9"
-    tenant_id: "retail-benchmark"
-    slo_class: "standard"
-    rate_fraction: 0.1
-    streaming: true
-    arrival:
-      process: poisson
-    input_distribution:  # Task 14: 5 rounds, mean=916±391
-      type: gaussian
-      params:
-        mean: 916
-        std_dev: 391
-        min: 416
-        max: 1480
-    output_distribution:  # Task 14: mean=74±35, range=28-134, CV=0.47
-      type: gaussian
-      params:
-        mean: 74
-        std_dev: 35
-        min: 28
-        max: 134
-    prefix_length: 0
-    reasoning:
-      multi_turn:
-        max_rounds: 5  # Observed: 5 rounds
-        think_time_us: 1817143  # Observed: 1.8s (corrected from 8.8s)
-        context_growth: accumulate
-    closed_loop: true
-    timeout: 300000000
-    lifecycle:
-      windows:
-        - start_us: 358856889
-          end_us: 395832000
-
-  - id: "tau2-session-10"
-    tenant_id: "retail-benchmark"
-    slo_class: "standard"
-    rate_fraction: 0.1
-    streaming: true
-    arrival:
-      process: poisson
-    input_distribution:  # Task 84: 6 rounds, mean=1001±438
-      type: gaussian
-      params:
-        mean: 1001
-        std_dev: 438
-        min: 434
-        max: 1653
-    output_distribution:  # Task 84: mean=75±22, range=47-107, CV=0.30
-      type: gaussian
-      params:
-        mean: 75
-        std_dev: 22
-        min: 47
-        max: 107
-    prefix_length: 0
-    reasoning:
-      multi_turn:
-        max_rounds: 6  # Observed: 6 rounds
-        think_time_us: 2004012  # Observed: 2.0s (corrected from 6.8s)
-        context_growth: accumulate
-    closed_loop: true
-    timeout: 300000000
-    lifecycle:
-      windows:
-        - start_us: 399166902
-          end_us: 434850015
+- id: tau2-session-1
+  tenant_id: retail-benchmark
+  slo_class: standard
+  rate_fraction: 0.1
+  streaming: true
+  arrival:
+    process: poisson
+  input_distribution:
+    type: gaussian
+    params:
+      mean: 785
+      std_dev: 459
+      min: 8
+      max: 1375
+  output_distribution:
+    type: gaussian
+    params:
+      mean: 18
+      std_dev: 14
+      min: 1
+      max: 44
+  prefix_length: 1436
+  reasoning:
+    multi_turn:
+      max_rounds: 7
+      think_time_us: 6087091
+      context_growth: accumulate
+  closed_loop: true
+  timeout: 300000000
+  lifecycle:
+    windows:
+    - start_us: 0
+      end_us: 36522551
+- id: tau2-session-2
+  tenant_id: retail-benchmark
+  slo_class: standard
+  rate_fraction: 0.1
+  streaming: true
+  arrival:
+    process: poisson
+  input_distribution:
+    type: gaussian
+    params:
+      mean: 667
+      std_dev: 391
+      min: 8
+      max: 1227
+  output_distribution:
+    type: gaussian
+    params:
+      mean: 63
+      std_dev: 32
+      min: 1
+      max: 100
+  prefix_length: 1436
+  reasoning:
+    multi_turn:
+      max_rounds: 6
+      think_time_us: 5594298
+      context_growth: accumulate
+  closed_loop: true
+  timeout: 300000000
+  lifecycle:
+    windows:
+    - start_us: 39674678
+      end_us: 67646168
+- id: tau2-session-3
+  tenant_id: retail-benchmark
+  slo_class: standard
+  rate_fraction: 0.1
+  streaming: true
+  arrival:
+    process: poisson
+  input_distribution:
+    type: gaussian
+    params:
+      mean: 1296
+      std_dev: 869
+      min: 8
+      max: 2598
+  output_distribution:
+    type: gaussian
+    params:
+      mean: 96
+      std_dev: 61
+      min: 1
+      max: 187
+  prefix_length: 1436
+  reasoning:
+    multi_turn:
+      max_rounds: 8
+      think_time_us: 7620376
+      context_growth: accumulate
+  closed_loop: true
+  timeout: 300000000
+  lifecycle:
+    windows:
+    - start_us: 70510376
+      end_us: 123853009
+- id: tau2-session-4
+  tenant_id: retail-benchmark
+  slo_class: standard
+  rate_fraction: 0.1
+  streaming: true
+  arrival:
+    process: poisson
+  input_distribution:
+    type: gaussian
+    params:
+      mean: 1328
+      std_dev: 826
+      min: 8
+      max: 2655
+  output_distribution:
+    type: gaussian
+    params:
+      mean: 81
+      std_dev: 42
+      min: 1
+      max: 154
+  prefix_length: 1436
+  reasoning:
+    multi_turn:
+      max_rounds: 9
+      think_time_us: 7540304
+      context_growth: accumulate
+  closed_loop: true
+  timeout: 300000000
+  lifecycle:
+    windows:
+    - start_us: 126831183
+      end_us: 187153618
+- id: tau2-session-5
+  tenant_id: retail-benchmark
+  slo_class: standard
+  rate_fraction: 0.1
+  streaming: true
+  arrival:
+    process: poisson
+  input_distribution:
+    type: gaussian
+    params:
+      mean: 1148
+      std_dev: 722
+      min: 8
+      max: 2204
+  output_distribution:
+    type: gaussian
+    params:
+      mean: 70
+      std_dev: 43
+      min: 1
+      max: 145
+  prefix_length: 1436
+  reasoning:
+    multi_turn:
+      max_rounds: 8
+      think_time_us: 6705030
+      context_growth: accumulate
+  closed_loop: true
+  timeout: 300000000
+  lifecycle:
+    windows:
+    - start_us: 189817130
+      end_us: 236752340
+- id: tau2-session-6
+  tenant_id: retail-benchmark
+  slo_class: standard
+  rate_fraction: 0.1
+  streaming: true
+  arrival:
+    process: poisson
+  input_distribution:
+    type: gaussian
+    params:
+      mean: 1016
+      std_dev: 692
+      min: 8
+      max: 2026
+  output_distribution:
+    type: gaussian
+    params:
+      mean: 142
+      std_dev: 71
+      min: 1
+      max: 239
+  prefix_length: 1436
+  reasoning:
+    multi_turn:
+      max_rounds: 6
+      think_time_us: 8329689
+      context_growth: accumulate
+  closed_loop: true
+  timeout: 300000000
+  lifecycle:
+    windows:
+    - start_us: 239881349
+      end_us: 281529797
+- id: tau2-session-7
+  tenant_id: retail-benchmark
+  slo_class: standard
+  rate_fraction: 0.1
+  streaming: true
+  arrival:
+    process: poisson
+  input_distribution:
+    type: gaussian
+    params:
+      mean: 1041
+      std_dev: 649
+      min: 8
+      max: 2004
+  output_distribution:
+    type: gaussian
+    params:
+      mean: 128
+      std_dev: 70
+      min: 1
+      max: 222
+  prefix_length: 1436
+  reasoning:
+    multi_turn:
+      max_rounds: 7
+      think_time_us: 7267571
+      context_growth: accumulate
+  closed_loop: true
+  timeout: 300000000
+  lifecycle:
+    windows:
+    - start_us: 284422325
+      end_us: 328027754
+- id: tau2-session-8
+  tenant_id: retail-benchmark
+  slo_class: standard
+  rate_fraction: 0.1
+  streaming: true
+  arrival:
+    process: poisson
+  input_distribution:
+    type: gaussian
+    params:
+      mean: 553
+      std_dev: 330
+      min: 8
+      max: 1005
+  output_distribution:
+    type: gaussian
+    params:
+      mean: 56
+      std_dev: 32
+      min: 1
+      max: 94
+  prefix_length: 1436
+  reasoning:
+    multi_turn:
+      max_rounds: 5
+      think_time_us: 6216719
+      context_growth: accumulate
+  closed_loop: true
+  timeout: 300000000
+  lifecycle:
+    windows:
+    - start_us: 331223179
+      end_us: 356090057
+- id: tau2-session-9
+  tenant_id: retail-benchmark
+  slo_class: standard
+  rate_fraction: 0.1
+  streaming: true
+  arrival:
+    process: poisson
+  input_distribution:
+    type: gaussian
+    params:
+      mean: 765
+      std_dev: 493
+      min: 8
+      max: 1480
+  output_distribution:
+    type: gaussian
+    params:
+      mean: 62
+      std_dev: 42
+      min: 1
+      max: 134
+  prefix_length: 1436
+  reasoning:
+    multi_turn:
+      max_rounds: 6
+      think_time_us: 7413487
+      context_growth: accumulate
+  closed_loop: true
+  timeout: 300000000
+  lifecycle:
+    windows:
+    - start_us: 358860219
+      end_us: 395927658
+- id: tau2-session-10
+  tenant_id: retail-benchmark
+  slo_class: standard
+  rate_fraction: 0.1
+  streaming: true
+  arrival:
+    process: poisson
+  input_distribution:
+    type: gaussian
+    params:
+      mean: 859
+      std_dev: 535
+      min: 8
+      max: 1653
+  output_distribution:
+    type: gaussian
+    params:
+      mean: 65
+      std_dev: 33
+      min: 1
+      max: 107
+  prefix_length: 1436
+  reasoning:
+    multi_turn:
+      max_rounds: 7
+      think_time_us: 5960040
+      context_growth: accumulate
+  closed_loop: true
+  timeout: 300000000
+  lifecycle:
+    windows:
+    - start_us: 399186207
+      end_us: 434946448
