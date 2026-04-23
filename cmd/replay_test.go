@@ -476,6 +476,7 @@ warm_up_requests: 0
 	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
+	origDefaultsFilePath := defaultsFilePath
 	defer func() {
 		model = origModel
 		latencyModelBackend = origBackend
@@ -518,13 +519,13 @@ warm_up_requests: 0
 		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
+		defaultsFilePath = origDefaultsFilePath
 	}()
 
 	// Set package-level vars
 	model = "test-model"
 	latencyModelBackend = "trained-physics"
-	betaCoeffs = []float64{0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0}
-	alphaCoeffs = []float64{0.0, 0.0, 0.0}
+	// Note: betaCoeffs and alphaCoeffs NOT set → auto-loads from defaults.yaml trained_physics_coefficients
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
 	maxRunningReqs = 64
@@ -554,6 +555,7 @@ warm_up_requests: 0
 	hwConfigPath = hwPath
 	gpu = "H100"
 	tensorParallelism = 1
+	defaultsFilePath = "../defaults.yaml" // Load trained-physics coefficients (relative to cmd/ test dir)
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
@@ -563,8 +565,7 @@ warm_up_requests: 0
 	if err := testCmd.ParseFlags([]string{
 		"--model", "test-model",
 		"--latency-model", "trained-physics",
-		"--beta-coeffs", "0.0,0.0,0.0,0.0,100.0,0.0,0.0",
-		"--alpha-coeffs", "0.0,0.0,0.0",
+		// Note: --beta-coeffs and --alpha-coeffs omitted → auto-loads from defaults.yaml
 		"--total-kv-blocks", "1000",
 		"--hardware", "H100",
 		"--tp", "1",
@@ -699,6 +700,7 @@ warm_up_requests: 0
 	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
+	origDefaultsFilePath := defaultsFilePath
 	defer func() {
 		model = origModel
 		latencyModelBackend = origBackend
@@ -741,6 +743,7 @@ warm_up_requests: 0
 		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
+		defaultsFilePath = origDefaultsFilePath
 	}()
 
 	// Library-level BC-1 verification: trace loads correctly and requests are correct
@@ -779,8 +782,7 @@ warm_up_requests: 0
 	// Full simulation via replayCmd.Run (BC-2: verifies SimResult JSON output)
 	model = "test-model"
 	latencyModelBackend = "trained-physics"
-	betaCoeffs = []float64{0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0}
-	alphaCoeffs = []float64{0.0, 0.0, 0.0}
+	// Note: betaCoeffs and alphaCoeffs NOT set → auto-loads from defaults.yaml
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
 	maxRunningReqs = 64
@@ -819,8 +821,7 @@ warm_up_requests: 0
 	if err := testCmd.ParseFlags([]string{
 		"--model", "test-model",
 		"--latency-model", "trained-physics",
-		"--beta-coeffs", "0.0,0.0,0.0,0.0,100.0,0.0,0.0",
-		"--alpha-coeffs", "0.0,0.0,0.0",
+		// Note: --beta-coeffs and --alpha-coeffs omitted → auto-loads from defaults.yaml
 		"--total-kv-blocks", "1000",
 		"--hardware", "H100",
 		"--tp", "1",
@@ -937,6 +938,7 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	origHwConfigPath := hwConfigPath
 	origGPU := gpu
 	origTP := tensorParallelism
+	origDefaultsFilePath := defaultsFilePath
 	defer func() {
 		model = origModel
 		latencyModelBackend = origBackend
@@ -979,12 +981,12 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 		hwConfigPath = origHwConfigPath
 		gpu = origGPU
 		tensorParallelism = origTP
+		defaultsFilePath = origDefaultsFilePath
 	}()
 
 	model = "test-model"
 	latencyModelBackend = "trained-physics"
-	betaCoeffs = []float64{0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0}
-	alphaCoeffs = []float64{0.0, 0.0, 0.0}
+	// Note: betaCoeffs and alphaCoeffs NOT set → auto-loads from defaults.yaml
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
 	maxRunningReqs = 64
@@ -1014,6 +1016,7 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	hwConfigPath = hwPath3
 	gpu = "H100"
 	tensorParallelism = 1
+	defaultsFilePath = "../defaults.yaml" // Load trained-physics coefficients (relative to cmd/ test dir)
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
@@ -1021,7 +1024,7 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 	if err := testCmd.ParseFlags([]string{
 		"--model", "test-model", "--latency-model", "trained-physics",
-		"--beta-coeffs", "0.0,0.0,0.0,0.0,100.0,0.0,0.0", "--alpha-coeffs", "0.0,0.0,0.0",
+		// Note: --beta-coeffs and --alpha-coeffs omitted → auto-loads from defaults.yaml
 		"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
 		"--model-config-folder", mcFolder3, "--hardware-config", hwPath3,
 		"--trace-header", headerPath, "--trace-data", dataPath,
@@ -1152,8 +1155,7 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 
 		model = "test-model"
 		latencyModelBackend = "trained-physics"
-		betaCoeffs = []float64{0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0}
-		alphaCoeffs = []float64{0.0, 0.0, 0.0}
+		// Note: betaCoeffs and alphaCoeffs NOT set → auto-loads from defaults.yaml
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
 		maxRunningReqs = 64
@@ -1183,6 +1185,7 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		hwConfigPath = hwPath4
 		gpu = "H100"
 		tensorParallelism = 1
+		defaultsFilePath = "../defaults.yaml" // Load trained-physics coefficients (relative to cmd/ test dir)
 
 		testCmd := &cobra.Command{}
 		registerSimConfigFlags(testCmd)
@@ -1191,7 +1194,7 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		testCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "")
 		if err := testCmd.ParseFlags([]string{
 			"--model", "test-model", "--latency-model", "trained-physics",
-			"--beta-coeffs", "0.0,0.0,0.0,0.0,100.0,0.0,0.0", "--alpha-coeffs", "0.0,0.0,0.0",
+			// Note: --beta-coeffs and --alpha-coeffs omitted → auto-loads from defaults.yaml
 			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
 			"--model-config-folder", mcFolder4, "--hardware-config", hwPath4,
 			"--trace-header", headerPath,
