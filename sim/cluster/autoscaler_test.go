@@ -455,7 +455,9 @@ func TestGPUInventory(t *testing.T) {
 
 	t.Run("tp_fallback_when_config_tp_zero", func(t *testing.T) {
 		// config.TP=0 triggers clusterTPDegree=1 fallback; variant A100/TP=1 must appear.
-		cs := NewClusterSimulator(newPoolCfg(0), nil, nil)
+		// Construct with TP=1 (roofline requires TP > 0), then override to test fallback.
+		cs := NewClusterSimulator(newPoolCfg(1), nil, nil)
+		cs.config.TP = 0
 		cs.instances = nil // clear placed instance so all 8 GPUs are free
 		v := NewVariantSpec("A100", 1)
 		if got := cs.gpuInventory().FreeSlots(v); got != 8 {
