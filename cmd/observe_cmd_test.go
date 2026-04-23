@@ -1702,10 +1702,9 @@ func TestObserveCmd_ThinkTimeDist_FlagExists(t *testing.T) {
 	}
 }
 
-// TestObserveCmd_ThinkTimeDist_BlueprintOverrideApplied verifies that when a
-// LengthSampler is provided, it is set on all session blueprints.
-// This exercises the override loop in runObserve (the inner logic, not the full command).
-func TestObserveCmd_ThinkTimeDist_BlueprintOverrideApplied(t *testing.T) {
+// TestApplyThinkTimeSampler_SetsOnAllBlueprints verifies that applyThinkTimeSampler
+// (the production helper called by runObserve) sets the sampler on every blueprint.
+func TestApplyThinkTimeSampler_SetsOnAllBlueprints(t *testing.T) {
 	sampler, err := workload.ParseThinkTimeDist("constant:value=500ms")
 	if err != nil {
 		t.Fatalf("ParseThinkTimeDist: %v", err)
@@ -1724,7 +1723,7 @@ func TestObserveCmd_ThinkTimeDist_BlueprintOverrideApplied(t *testing.T) {
 		OutputTokensMin:    16,
 		OutputTokensMax:    16,
 	})
-	wl, err := workload.GenerateWorkload(spec, 1<<60, 4)
+	wl, err := workload.GenerateWorkload(spec, 1_000_000, 4)
 	if err != nil {
 		t.Fatalf("GenerateWorkload: %v", err)
 	}
@@ -1732,15 +1731,36 @@ func TestObserveCmd_ThinkTimeDist_BlueprintOverrideApplied(t *testing.T) {
 		t.Skip("no sessions generated — cannot test blueprint override")
 	}
 
-	// Apply sampler (mirrors the loop in runObserve)
-	for i := range wl.Sessions {
-		wl.Sessions[i].ThinkTimeSampler = sampler
-	}
+	applyThinkTimeSampler(wl.Sessions, sampler)
 
-	// Invariant: all blueprints now have the sampler set
 	for i, bp := range wl.Sessions {
 		if bp.ThinkTimeSampler == nil {
-			t.Errorf("blueprint[%d]: ThinkTimeSampler is nil after override", i)
+			t.Errorf("blueprint[%d]: ThinkTimeSampler is nil after applyThinkTimeSampler", i)
+		}
+	}
+}
+
+// TestApplyThinkTimeSampler_NilSamplerIsNoOp verifies that passing nil leaves
+// existing ThinkTimeSampler values unchanged.
+func TestApplyThinkTimeSampler_NilSamplerIsNoOp(t *testing.T) {
+	spec := workload.SynthesizeFromDistribution(workload.DistributionParams{
+		Concurrency: 2, NumRequests: 4,
+		PromptTokensMean: 64, PromptTokensMin: 64, PromptTokensMax: 64,
+		OutputTokensMean: 16, OutputTokensMin: 16, OutputTokensMax: 16,
+	})
+	wl, err := workload.GenerateWorkload(spec, 1_000_000, 4)
+	if err != nil {
+		t.Fatalf("GenerateWorkload: %v", err)
+	}
+	if len(wl.Sessions) == 0 {
+		t.Skip("no sessions generated")
+	}
+
+	applyThinkTimeSampler(wl.Sessions, nil)
+
+	for i, bp := range wl.Sessions {
+		if bp.ThinkTimeSampler != nil {
+			t.Errorf("blueprint[%d]: ThinkTimeSampler unexpectedly set after nil applyThinkTimeSampler", i)
 		}
 	}
 }

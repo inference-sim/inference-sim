@@ -370,11 +370,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	}
 
 	// Apply --think-time-dist sampler to all session blueprints (overrides constant ThinkTimeUs).
-	if observeThinkTimeSampler != nil {
-		for i := range wl.Sessions {
-			wl.Sessions[i].ThinkTimeSampler = observeThinkTimeSampler
-		}
-	}
+	applyThinkTimeSampler(wl.Sessions, observeThinkTimeSampler)
 
 	if len(wl.Requests) == 0 {
 		logrus.Warn("No requests generated — writing empty trace")
@@ -982,4 +978,15 @@ func buildPrefixStrings(groups map[string]int, seed int64, tokensPerWord float64
 		prefixLengths[group] = length
 	}
 	return prefixes, prefixLengths
+}
+
+// applyThinkTimeSampler sets s on every blueprint in sessions.
+// No-op when s is nil. Extracted for unit testability.
+func applyThinkTimeSampler(sessions []workload.SessionBlueprint, s workload.LengthSampler) {
+	if s == nil {
+		return
+	}
+	for i := range sessions {
+		sessions[i].ThinkTimeSampler = s
+	}
 }
