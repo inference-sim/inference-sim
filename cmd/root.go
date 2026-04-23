@@ -165,7 +165,7 @@ var (
 	prefillMaxModelLen    int64
 	decodeMaxModelLen     int64
 
-	// per-request timeout override for blis run (seconds; 0 = no timeout)
+	// per-request timeout override for blis run (seconds; negative = disabled, 0 is rejected)
 	requestTimeoutSecs int
 
 	// output file paths
