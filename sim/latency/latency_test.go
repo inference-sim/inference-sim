@@ -311,6 +311,9 @@ func TestNewLatencyModel_RemovedBackendError(t *testing.T) {
 			wantErrContains: []string{
 				"unknown backend",
 				"blackbox",
+				"valid options:",
+				"roofline",
+				"trained-physics",
 			},
 		},
 		{
@@ -319,6 +322,9 @@ func TestNewLatencyModel_RemovedBackendError(t *testing.T) {
 			wantErrContains: []string{
 				"unknown backend",
 				"crossmodel",
+				"valid options:",
+				"roofline",
+				"trained-physics",
 			},
 		},
 		{
@@ -327,6 +333,9 @@ func TestNewLatencyModel_RemovedBackendError(t *testing.T) {
 			wantErrContains: []string{
 				"unknown backend",
 				"trained-roofline",
+				"valid options:",
+				"roofline",
+				"trained-physics",
 			},
 		},
 	}

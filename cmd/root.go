@@ -1009,6 +1009,7 @@ func applyTimeoutToRequests(wl *workload.GeneratedWorkload, timeoutSecs int) {
 	}
 }
 
+
 // runCmd executes the simulation using parameters from CLI flags
 var runCmd = &cobra.Command{
 	Use:   "run",
