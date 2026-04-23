@@ -218,7 +218,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				if currentTime >= horizon {
 					break
 				}
-				// Check lifecycle windows (bug fix: reasoning path was missing this)
+				// Check lifecycle windows
 				if client.Lifecycle != nil && !isInActiveWindow(currentTime, client.Lifecycle) {
 					if currentTime >= lastWindowEndUs(client.Lifecycle) {
 						break

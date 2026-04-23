@@ -6,22 +6,22 @@
 
 ## Behavioral Contracts
 
-**BC-1: Early exit when past all lifecycle windows (standard client path)**
+**BC-1131-1: Early exit when past all lifecycle windows (standard client path)**
 - GIVEN a client with `lifecycle.windows` and the default `horizon=math.MaxInt64`
 - WHEN `currentTime` exceeds the last window's `EndUs`
 - THEN the generator stops producing requests for that client in bounded time (no hang)
 
-**BC-2: Early exit when past all lifecycle windows (multi-session reasoning path)**
+**BC-1131-2: Early exit when past all lifecycle windows (multi-session reasoning path)**
 - GIVEN a multi-session reasoning client with `lifecycle.windows` and `horizon=math.MaxInt64`
 - WHEN `currentTime` exceeds the last window's `EndUs`
 - THEN the generator stops producing requests for that client in bounded time (no hang)
 
-**BC-3: Gap windows still work**
+**BC-1131-3: Gap windows still work**
 - GIVEN a client with multiple non-contiguous lifecycle windows (e.g., `[0, 1s)` and `[3s, 4s)`)
 - WHEN generating requests with a horizon that covers all windows
 - THEN requests are produced in both windows, with no requests in the gap between them
 
-**BC-4: Behavioral equivalence with explicit horizon**
+**BC-1131-4: Behavioral equivalence with explicit horizon**
 - GIVEN a client with lifecycle windows ending at time T
 - WHEN generating with `horizon=MaxInt64` (implicit) versus `horizon=2*T` (explicit, well beyond last window)
 - THEN both produce the same requests (same count, same arrival times)
@@ -39,7 +39,7 @@ Add a table-driven test `TestGenerateRequests_LifecycleWindow_NoHang` that exerc
 
 ```go
 func TestGenerateRequests_LifecycleWindow_NoHang(t *testing.T) {
-	// BC-1: Generator must exit in bounded time when lifecycle windows
+	// BC-1131-1: Generator must exit in bounded time when lifecycle windows
 	// end well before MaxInt64 horizon. Before the fix, this hangs forever.
 	spec := &WorkloadSpec{
 		Version: "2", Seed: 42, AggregateRate: 10.0,
@@ -123,7 +123,7 @@ Add `TestGenerateRequests_LifecycleWindow_MultipleWindows` verifying requests ap
 
 ```go
 func TestGenerateRequests_LifecycleWindow_MultipleWindows(t *testing.T) {
-	// BC-3: Multiple non-contiguous windows must all produce requests,
+	// BC-1131-3: Multiple non-contiguous windows must all produce requests,
 	// with no requests in gaps between windows.
 	spec := &WorkloadSpec{
 		Version: "2", Seed: 42, AggregateRate: 50.0,
@@ -190,7 +190,7 @@ Add `TestGenerateRequests_LifecycleWindow_EquivalentWithExplicitHorizon` verifyi
 
 ```go
 func TestGenerateRequests_LifecycleWindow_EquivalentWithExplicitHorizon(t *testing.T) {
-	// BC-4: MaxInt64 horizon must produce the same requests as an explicit
+	// BC-1131-4: MaxInt64 horizon must produce the same requests as an explicit
 	// horizon well beyond the last window. This proves the early-exit is
 	// a pure optimization, not a behavioral change.
 	spec := &WorkloadSpec{
@@ -247,7 +247,7 @@ Add `TestGenerateRequests_ReasoningMultiSession_LifecycleNoHang` covering the re
 
 ```go
 func TestGenerateRequests_ReasoningMultiSession_LifecycleNoHang(t *testing.T) {
-	// BC-2: Multi-session reasoning path must also exit when past all windows.
+	// BC-1131-2: Multi-session reasoning path must also exit when past all windows.
 	spec := &WorkloadSpec{
 		Version: "2", Seed: 42, AggregateRate: 10.0,
 		Clients: []ClientSpec{{
