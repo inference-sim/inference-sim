@@ -646,6 +646,61 @@ func TestValidate_NegativeConcurrency_Rejects(t *testing.T) {
 	}
 }
 
+func TestValidate_LifecycleNoWindows_Rejects(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version: "2", AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID: "bad", RateFraction: 1.0,
+			Arrival:   ArrivalSpec{Process: "poisson"},
+			InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+			Lifecycle:  &LifecycleSpec{Windows: []ActiveWindow{}},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Error("expected error for lifecycle with no windows")
+	}
+}
+
+func TestValidate_LifecycleNegativeStartUs_Rejects(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version: "2", AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID: "bad", RateFraction: 1.0,
+			Arrival:   ArrivalSpec{Process: "poisson"},
+			InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+			Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{{StartUs: -1, EndUs: 1_000_000}},
+			},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Error("expected error for lifecycle window with negative start_us")
+	}
+}
+
+func TestValidate_LifecycleEndUsNotGreaterThanStartUs_Rejects(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version: "2", AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID: "bad", RateFraction: 1.0,
+			Arrival:   ArrivalSpec{Process: "poisson"},
+			InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+			Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{{StartUs: 1_000_000, EndUs: 1_000_000}},
+			},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Error("expected error for lifecycle window with end_us == start_us")
+	}
+}
+
 func TestValidate_NegativeThinkTimeUs_Rejects(t *testing.T) {
 	spec := &WorkloadSpec{
 		Version:  "2",

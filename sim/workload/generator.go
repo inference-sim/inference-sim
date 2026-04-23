@@ -675,6 +675,7 @@ func isInActiveWindow(timeUs int64, lifecycle *LifecycleSpec) bool {
 }
 
 // lastWindowEndUs returns the maximum EndUs across all lifecycle windows.
+// Returns 0 if Windows is empty; callers must ensure the lifecycle is validated.
 func lastWindowEndUs(lifecycle *LifecycleSpec) int64 {
 	var maxEnd int64
 	for _, w := range lifecycle.Windows {

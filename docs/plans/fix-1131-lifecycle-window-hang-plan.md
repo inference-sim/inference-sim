@@ -100,7 +100,7 @@ if client.Lifecycle != nil && !isInActiveWindow(currentTime, client.Lifecycle) {
 And apply the same fix to the multi-session reasoning loop (line ~222):
 
 ```go
-// Check lifecycle windows (bug fix: reasoning path was missing this)
+// Check lifecycle windows
 if client.Lifecycle != nil && !isInActiveWindow(currentTime, client.Lifecycle) {
 	if currentTime >= lastWindowEndUs(client.Lifecycle) {
 		break

@@ -352,7 +352,8 @@ func validateClient(c *ClientSpec, idx int) error {
 	if c.Reasoning != nil && c.Reasoning.MultiTurn != nil && c.Reasoning.MultiTurn.MaxRounds < 1 {
 		return fmt.Errorf("%s: reasoning.multi_turn.max_rounds must be >= 1, got %d", prefix, c.Reasoning.MultiTurn.MaxRounds)
 	}
-	// Validate lifecycle windows (#1131: empty/degenerate windows cause silent zero-request generation)
+	// Validate lifecycle windows (#1131): empty or degenerate windows would cause
+	// the generator to loop indefinitely against a MaxInt64 horizon.
 	if c.Lifecycle != nil {
 		if len(c.Lifecycle.Windows) == 0 {
 			return fmt.Errorf("%s: lifecycle specified with no windows", prefix)
