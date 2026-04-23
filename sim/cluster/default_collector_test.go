@@ -6,6 +6,51 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
+func TestDefaultCollectorMapsLatencyFields(t *testing.T) {
+	state := &sim.RouterState{
+		Snapshots: []sim.RoutingSnapshot{
+			{
+				ID:           "i1",
+				Model:        "llama",
+				GPUType:      "A100",
+				TPDegree:     1,
+				TTFT:         200_000, // 200ms in μs
+				ITL:          10_000,  // 10ms in μs
+				DispatchRate: 2.5,
+				AvgInTokens:  512,
+				AvgOutTokens: 128,
+				MaxBatchSize: 256,
+			},
+		},
+	}
+
+	collector := &DefaultCollector{}
+	signals := collector.Collect(state)
+
+	if len(signals) != 1 || len(signals[0].Replicas) != 1 {
+		t.Fatalf("expected 1 model with 1 replica, got %+v", signals)
+	}
+	rm := signals[0].Replicas[0]
+	if rm.TTFT != 200_000 {
+		t.Errorf("TTFT: want 200000 got %v", rm.TTFT)
+	}
+	if rm.ITL != 10_000 {
+		t.Errorf("ITL: want 10000 got %v", rm.ITL)
+	}
+	if rm.DispatchRate != 2.5 {
+		t.Errorf("DispatchRate: want 2.5 got %v", rm.DispatchRate)
+	}
+	if rm.AvgInTokens != 512 {
+		t.Errorf("AvgInTokens: want 512 got %v", rm.AvgInTokens)
+	}
+	if rm.AvgOutTokens != 128 {
+		t.Errorf("AvgOutTokens: want 128 got %v", rm.AvgOutTokens)
+	}
+	if rm.MaxBatchSize != 256 {
+		t.Errorf("MaxBatchSize: want 256 got %v", rm.MaxBatchSize)
+	}
+}
+
 func TestDefaultCollectorCollect(t *testing.T) {
 	collector := &DefaultCollector{}
 
