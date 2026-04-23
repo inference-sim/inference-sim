@@ -40,6 +40,10 @@ type InstanceSimulator struct {
 	// GPUType is available via inst.GPU(); TPDegree and CostPerHour are autoscaler-specific.
 	TPDegree    int     // tensor-parallel degree; 0 = unplaced/unknown
 	CostPerHour float64 // $/hr from NodePool.CostPerHour; 0 = unplaced/free tier
+
+	// maxRunningReqs stores cfg.BatchConfig.MaxRunningReqs at construction time.
+	// Exposed via MaxBatchSize() for the autoscaler pipeline (Task 3).
+	maxRunningReqs int64
 }
 
 // NewInstanceSimulator creates an InstanceSimulator from a SimConfig struct.
@@ -58,9 +62,10 @@ func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 		panic(fmt.Sprintf("NewInstanceSimulator(%s): %v", id, err))
 	}
 	return &InstanceSimulator{
-		id:  id,
-		sim: s,
-		gpu: cfg.GPU,
+		id:             id,
+		sim:            s,
+		gpu:            cfg.GPU,
+		maxRunningReqs: cfg.MaxRunningReqs,
 	}
 }
 
@@ -187,6 +192,50 @@ func (i *InstanceSimulator) KvTokensInUse() int64 {
 		return 0
 	}
 	return i.sim.KVCache.UsedBlocks() * i.sim.KVCache.BlockSize()
+}
+
+// InstanceLatencyStats holds rolling-window averages of per-instance latency and throughput.
+// Units: TTFT and ITL are in microseconds (ticks = µs in the simulator clock).
+// DispatchRate is in req/s; AvgInTokens and AvgOutTokens are per-request averages.
+// All fields are zero when no requests have completed.
+type InstanceLatencyStats struct {
+	TTFT         float64 // µs
+	ITL          float64 // µs
+	DispatchRate float64 // req/s
+	AvgInTokens  float64
+	AvgOutTokens float64
+}
+
+// LatencyStats returns aggregate latency and throughput statistics from completed requests.
+// All fields are 0 when no requests have completed.
+// TTFT and ITL are in microseconds; DispatchRate is in req/s.
+func (i *InstanceSimulator) LatencyStats() InstanceLatencyStats {
+	m := i.sim.Metrics
+	if m == nil || m.CompletedRequests == 0 {
+		return InstanceLatencyStats{}
+	}
+	n := float64(m.CompletedRequests)
+	clockUs := i.Clock()
+	var dispatchRate float64
+	if clockUs > 0 {
+		dispatchRate = n / (float64(clockUs) / 1e6)
+	}
+	return InstanceLatencyStats{
+		TTFT:         float64(m.TTFTSum) / n,
+		ITL:          float64(m.ITLSum) / n,
+		DispatchRate: dispatchRate,
+		AvgInTokens:  float64(m.TotalInputTokens) / n,
+		AvgOutTokens: float64(m.TotalOutputTokens) / n,
+	}
+}
+
+// MaxBatchSize returns the simulator's configured maximum number of concurrent requests
+// (BatchConfig.MaxRunningReqs). Returns 0 when the instance has no underlying simulator.
+func (i *InstanceSimulator) MaxBatchSize() int {
+	if i.sim == nil {
+		return 0
+	}
+	return int(i.maxRunningReqs)
 }
 
 // GetCachedBlockCount returns the number of consecutive cached prefix blocks
