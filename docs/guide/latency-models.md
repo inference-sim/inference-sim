@@ -1,50 +1,19 @@
 # Latency Models
 
-The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships three backends -- roofline (analytical), blackbox (data-driven), and trained-physics (physics-informed roofline with MoE-aware corrections) -- and the pluggable architecture supports adding custom backends.
+The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships two backends -- roofline (analytical) and trained-physics (physics-informed roofline with MoE-aware corrections) -- and the pluggable architecture supports adding custom backends.
 
-**Migration note:** Two legacy backends have been removed. Use `--latency-model trained-physics` instead, which supersedes both with improved accuracy and MoE support.
+**Migration note:** Three legacy backends have been removed (`blackbox`, `crossmodel`, `trained-roofline`). Use `--latency-model trained-physics` instead, which supersedes all three with improved accuracy and MoE support.
 
 ```bash
 # Roofline mode (default) — analytical estimation from model architecture
 ./blis run --model qwen/qwen3-14b \
   --num-instances 4 --rate 100 --num-requests 500
 
-# Blackbox mode — uses pre-trained per-model coefficients
-./blis run --model qwen/qwen3-14b \
-  --latency-model blackbox \
-  --num-instances 4 --rate 100 --num-requests 500
-
-# Trained-physics mode — roofline × architecture-aware basis functions × learned corrections
+# Trained-physics mode (recommended) — roofline × architecture-aware basis functions × learned corrections
 ./blis run --model qwen/qwen3-14b \
   --latency-model trained-physics --hardware H100 --tp 1 \
   --num-instances 4 --rate 100 --num-requests 500
 ```
-
-## Blackbox Mode
-
-Blackbox mode uses trained regression coefficients from `defaults.yaml`, fit offline via Bayesian optimization against real vLLM measurements.
-
-**Beta coefficients** `[beta0, beta1, beta2]` estimate GPU step time:
-
-```
-StepTime = beta0 + beta1 * cache_miss_tokens + beta2 * decode_tokens
-```
-
-- `beta0` -- fixed per-step overhead (microseconds)
-- `beta1` -- cost per prefill token (cache miss)
-- `beta2` -- cost per decode token
-
-**Alpha coefficients** `[alpha0, alpha1, alpha2]` estimate CPU-side overhead:
-
-```
-QueueingTime           = alpha0 + alpha1 * input_length
-OutputTokenProcessingTime = alpha2
-```
-
-All alpha and beta coefficients must be non-negative. Negative values are rejected at construction time (INV-5: causality). Pre-trained coefficient sets exist in `defaults.yaml` for common model/GPU/TP combinations (e.g., `qwen/qwen3-14b` on H100 with TP=1).
-
-!!! note "Alpha overhead is non-blocking"
-    Alpha coefficients model CPU post-processing (tokenization, output serialization) that runs concurrently with GPU execution. Alpha time inflates TTFT and ITL metrics but does **not** block step scheduling -- the next batch step is scheduled at `now + stepTime` regardless of alpha overhead. This matches real vLLM's asynchronous post-processing pipeline.
 
 ## Roofline Mode (Default)
 
@@ -194,26 +163,26 @@ The model automatically detects MoE configuration from `config.json` (`num_local
 - **Mixed batches** (concurrent prefill/decode): Production serving with heterogeneous requests
 - **TP configurations**: TP=1, TP=2, TP=4, TP=8 (All-Reduce overhead scales via β₄)
 
-**Why "recommended" over roofline and blackbox:**
+**Why "recommended" over roofline:**
 
-Trained-physics uses **13 coefficients** (10 beta: prefill compute/memory split, decode compute/memory split, weight, TP, layer overhead, batch overhead, step overhead, MoE overhead; 3 alpha: queueing, post-decode, per-token) that capture more architectural detail than pure roofline (no learned corrections) or blackbox (per-model only, no physics grounding). The prefill/decode split (β₁ₐ/β₁ᵦ, β₂ₐ/β₂ᵦ) and MoE-specific overhead (β₈) enable better generalization to unseen model architectures (especially interleaved MoE) and batch compositions (mixed prefill/decode).
+Trained-physics uses **13 coefficients** (10 beta: prefill compute/memory split, decode compute/memory split, weight, TP, layer overhead, batch overhead, step overhead, MoE overhead; 3 alpha: queueing, post-decode, per-token) that capture more architectural detail than pure roofline (no learned corrections). The prefill/decode split (β₁ₐ/β₁ᵦ, β₂ₐ/β₂ᵦ) and MoE-specific overhead (β₈) enable better generalization to unseen model architectures (especially interleaved MoE) and batch compositions (mixed prefill/decode).
 
 !!! note "MoE architecture detection"
     β₈ applies conditionally based on `InterleaveMoELayerStep` from the model's `config.json`: 0 = uniform MoE (β₈ skipped), 1 = alternating MoE/dense (β₈ × 24 layers for Scout's 48 total), 2 = every 3rd layer is MoE, etc. This prevents over-penalizing uniform MoE models like Mixtral where expert routing overhead is amortized across all layers.
 
 ## When to Use Which
 
-| Aspect | Roofline (default) | Blackbox | Trained-Physics |
-|--------|-------------------|----------|-----------------|
-| **When to use** | Quick analytical estimate | Model has per-model coefficients in `defaults.yaml` | **Recommended** for new models (generalizes across architectures, workloads, TP) |
-| **Data required** | HF `config.json` + `--hardware` + `--tp` | `defaults.yaml` entry for model/GPU/TP (alpha/beta coefficients). HF `config.json` + `MemoryGiB` optional for KV block auto-calc (falls back to 1M default) | HF `config.json` + `--hardware` + `--tp` (global coefficients bundled) |
-| **GPU step time accuracy** | Good (analytical) | Highest (per-model) | Good (13 global params, physics-informed basis functions) |
-| **MoE support** | Yes (per-expert FLOPs + effective expert count) | If trained | Yes (per-expert FLOPs + effective expert count + β₈ per-MoE-layer overhead) |
-| **Alpha model** | Same as blackbox | α₀ + α₁·inputLen | α₀ (constant), α₁ (post-decode fixed), α₂ (per-token) |
-| **PostDecodeFixedOverhead** | 0 | 0 | α₁ (~777µs) |
+| Aspect | Roofline (default) | Trained-Physics (recommended) |
+|--------|-------------------|-------------------------------|
+| **When to use** | Quick analytical estimate | **Recommended** for new models (generalizes across architectures, workloads, TP) |
+| **Data required** | HF `config.json` + `--hardware` + `--tp` | HF `config.json` + `--hardware` + `--tp` (global coefficients bundled) |
+| **GPU step time accuracy** | Good (analytical) | Better (13 global params, physics-informed basis functions) |
+| **MoE support** | Yes (per-expert FLOPs + effective expert count) | Yes (per-expert FLOPs + effective expert count + β₈ per-MoE-layer overhead) |
+| **Alpha model** | α₀ + α₁·inputLen (constant + per-token queueing) | α₀ (constant), α₁ (post-decode fixed), α₂ (per-token) |
+| **PostDecodeFixedOverhead** | 0 | α₁ (~777µs) |
 
 !!! tip "Choosing the right mode"
-    **Trained-physics** is the recommended default for any model with a HuggingFace `config.json` (generalizes across architectures, workloads, and TP configurations without per-model calibration). **Blackbox** for models with per-model coefficients in `defaults.yaml` (highest accuracy due to per-model fitting). **Roofline** for pure analytical estimates when no learned corrections are desired.
+    **Trained-physics** is the recommended default for any model with a HuggingFace `config.json` (generalizes across architectures, workloads, and TP configurations without per-model calibration). **Roofline** for pure analytical estimates when no learned corrections are desired.
 
 !!! warning "Current limitations"
     All analytical latency models support tensor parallelism (TP). Data parallelism (DP) and expert parallelism (EP) scheduling overhead are not yet modeled. Quantized weight precision (GPTQ, AWQ, FP8, compressed-tensors) is auto-detected from `quantization_config`, model name conventions (e.g., `w4a16`, `FP8`), or `torch_dtype` fallback, and is used for weight bandwidth and KV capacity calculations. MFU calibration values are still derived from FP16/BF16 measurements.
@@ -227,7 +196,7 @@ The `LatencyModel` interface (defined in `sim/latency_model.go`) has four method
 | `StepTime(batch)` | Duration of one batch step given the running batch |
 | `QueueingTime(req)` | Arrival-to-queue delay for a request |
 | `OutputTokenProcessingTime()` | Per-token post-processing time |
-| `PostDecodeFixedOverhead()` | Fixed per-request overhead at completion (0 for blackbox/roofline) |
+| `PostDecodeFixedOverhead()` | Fixed per-request overhead at completion (0 for roofline, non-zero for trained-physics) |
 
 All time estimates are in microseconds (ticks).
 

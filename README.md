@@ -13,7 +13,7 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 - **Discrete-event simulation** for prefill, decode, and request scheduling
 - **KV-cache modeling** (blocks, prefix caching, prefill chunking, tiered GPU+CPU offload)
 - **CPU-only inference cost model** via analytical roofline estimation or learned α/β coefficients
-- **Three latency estimation modes**: roofline (analytical), trained-physics (physics-informed basis functions with architecture-aware MoE scaling), and blackbox (data-driven, per-model coefficients). The deprecated `crossmodel` and `trained-roofline` backends have been removed; use `trained-physics` for modern physics-informed estimation.
+- **Two latency estimation modes**: roofline (analytical) and trained-physics (physics-informed basis functions with architecture-aware MoE scaling). The deprecated `blackbox`, `crossmodel`, and `trained-roofline` backends have been removed; use `trained-physics` for modern physics-informed estimation.
 - **Multi-instance cluster simulation** with shared-clock event loop and pluggable routing (round-robin, least-loaded, weighted-scoring)
 - **Multiple workload types**: preset (`chatbot`, `contentgen`, `summarization`, `multidoc`), custom distributions, or trace replay
 
@@ -44,7 +44,7 @@ cd inference-sim
 go build -o blis main.go
 ```
 
-**Note:** On first run, BLIS auto-fetches the model's `config.json` from HuggingFace (~1 second for public models like Qwen3). Subsequent runs use the cached config in `model_configs/`. For offline use with cached configs, `--latency-model trained-physics` provides accurate predictions across model architectures without per-model calibration.
+**Note:** On first run, BLIS auto-fetches the model's `config.json` from HuggingFace (~1 second for public models like Qwen3). Subsequent runs use the cached config in `model_configs/`. For offline use with cached configs, both roofline and trained-physics modes work without network access.
 
 **Environment setup (optional):**
 
