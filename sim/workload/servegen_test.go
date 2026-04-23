@@ -296,8 +296,10 @@ func TestLoadServeGenChunk_PopulatesShapeScale(t *testing.T) {
 	if client.Arrival.Shape == nil || *client.Arrival.Shape != 0.0575 {
 		t.Errorf("expected shape=0.0575, got %v", client.Arrival.Shape)
 	}
-	if client.Arrival.Scale == nil || *client.Arrival.Scale != 0.000573 {
-		t.Errorf("expected scale=0.000573, got %v", client.Arrival.Scale)
+	// Scale is converted from seconds (0.000573) to microseconds (573.0)
+	expectedScale := 0.000573 * 1e6
+	if client.Arrival.Scale == nil || *client.Arrival.Scale != expectedScale {
+		t.Errorf("expected scale=%f microseconds, got %v", expectedScale, client.Arrival.Scale)
 	}
 }
 
@@ -414,7 +416,8 @@ func TestServeGenConversion_HighCVTrace(t *testing.T) {
 	require.NotNil(t, client.Arrival.Shape, "Shape should be populated from trace column 5")
 	require.NotNil(t, client.Arrival.Scale, "Scale should be populated from trace column 6")
 	assert.InDelta(t, 0.0575, *client.Arrival.Shape, 0.0001, "Shape should match trace value")
-	assert.InDelta(t, 0.000573, *client.Arrival.Scale, 0.000001, "Scale should match trace value")
+	// Scale converted from seconds (0.000573) to microseconds (573.0)
+	assert.InDelta(t, 0.000573*1e6, *client.Arrival.Scale, 0.001, "Scale should be in microseconds")
 
 	// AND the CV is preserved as informational metadata
 	require.NotNil(t, client.Arrival.CV, "CV should be preserved from trace")
@@ -435,7 +438,8 @@ func TestServeGenConversion_HighCVTrace(t *testing.T) {
 func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 	dir := t.TempDir()
 	// Create chunk-0-trace.csv
-	traceCSV := "0,1.0,2.5,Gamma,0.16,6.25\n600,0.5,1.0,Weibull,1.0,2000000\n"
+	// Scale parameters in seconds: Gamma(shape=0.16, scale=6.25s), Weibull(shape=1.0, scale=2.0s)
+	traceCSV := "0,1.0,2.5,Gamma,0.16,6.25\n600,0.5,1.0,Weibull,1.0,2.0\n"
 	if err := os.WriteFile(filepath.Join(dir, "chunk-0-trace.csv"), []byte(traceCSV), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +453,8 @@ func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 		Version: "1", Seed: 42, Category: "language", AggregateRate: 10.0,
 		ServeGenData: &ServeGenDataSpec{Path: dir},
 	}
-	requests, err := GenerateRequests(spec, 1e6, 0)
+	// Use 10 second horizon to ensure we get requests (rate=1.0 req/sec -> ~10 requests)
+	requests, err := GenerateRequests(spec, 10e6, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

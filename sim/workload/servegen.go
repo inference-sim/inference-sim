@@ -167,7 +167,8 @@ func loadServeGenChunk(chunkID, tracePath, datasetPath string, sgConfig *ServeGe
 			// pointers signal "derive from CV" downstream.
 			if bestRow.shapeParam > 0 && bestRow.scaleParam > 0 {
 				shape := bestRow.shapeParam
-				scale := bestRow.scaleParam
+				// Convert scale from seconds (ServeGen units) to microseconds (BLIS units)
+				scale := bestRow.scaleParam * 1e6
 				arrivalSpec.Shape = &shape
 				arrivalSpec.Scale = &scale
 			}
