@@ -146,7 +146,7 @@ type ArrivalSpec struct {
 
 	// Optional MLE-fitted distribution parameters (ServeGen compatibility).
 	// When present, these override CV-based derivation in NewArrivalSampler.
-	// Only populated by `blis convert servegen` from trace columns 5-6.
+	// Populated by `blis convert servegen` (trace columns 5-6) or set directly in YAML for manual calibration.
 	Shape *float64 `yaml:"shape,omitempty"` // Gamma α or Weibull k
 	Scale *float64 `yaml:"scale,omitempty"` // Gamma θ or Weibull λ (in microseconds)
 }

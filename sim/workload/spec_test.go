@@ -909,6 +909,91 @@ func TestWorkloadSpec_YAML_ShapeScaleRoundTrip(t *testing.T) {
 	}
 }
 
+func TestValidateCohort_ShapeScaleValidation(t *testing.T) {
+	// Exercise the cohort path (Cohorts field) for the new shape/scale validation logic.
+	// Ensures validateCohort applies the same guards as validateClient.
+	tests := []struct {
+		name      string
+		process   string
+		cv        *float64
+		shape     *float64
+		scale     *float64
+		wantError bool
+		errorText string
+	}{
+		{
+			name:      "weibull_high_cv_with_both_params_passes",
+			process:   "weibull",
+			cv:        ptrFloat64(173.81),
+			shape:     ptrFloat64(0.05),
+			scale:     ptrFloat64(1000000.0),
+			wantError: false,
+		},
+		{
+			name:      "weibull_high_cv_shape_only_cv_check_fires",
+			process:   "weibull",
+			cv:        ptrFloat64(173.81),
+			shape:     ptrFloat64(0.05),
+			scale:     nil, // Missing scale → CV check applies
+			wantError: true,
+			errorText: "CV",
+		},
+		{
+			name:      "inf_shape_in_cohort_returns_error",
+			process:   "gamma",
+			cv:        ptrFloat64(2.5),
+			shape:     ptrFloat64(math.Inf(1)),
+			scale:     ptrFloat64(50000.0),
+			wantError: true,
+			errorText: "finite",
+		},
+		{
+			name:      "inf_scale_in_cohort_returns_error",
+			process:   "weibull",
+			cv:        ptrFloat64(1.5),
+			shape:     ptrFloat64(1.5),
+			scale:     ptrFloat64(math.Inf(1)),
+			wantError: true,
+			errorText: "finite",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := &WorkloadSpec{
+				Version:       "2",
+				AggregateRate: 100.0,
+				Cohorts: []CohortSpec{{
+					ID:           "cohort1",
+					RateFraction: 1.0,
+					Population:   100,
+					Arrival: ArrivalSpec{
+						Process: tc.process,
+						CV:      tc.cv,
+						Shape:   tc.shape,
+						Scale:   tc.scale,
+					},
+					InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+					OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+				}},
+			}
+			err := spec.Validate()
+			if tc.wantError {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", tc.errorText)
+				}
+				if !strings.Contains(err.Error(), tc.errorText) {
+					t.Errorf("error should contain %q: %v", tc.errorText, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
 func TestExampleWorkloadFiles_AllValid(t *testing.T) {
 	// Validate all example workload specs load and pass validation.
 	// Only files that parse as WorkloadSpec are tested — examples/
@@ -968,4 +1053,9 @@ func TestExampleWorkloadFiles_CanonicalSLOClasses(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ptrInt64 returns a pointer to the given int64 value.
+func ptrInt64(v int64) *int64 {
+	return &v
 }
