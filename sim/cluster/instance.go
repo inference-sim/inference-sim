@@ -210,6 +210,9 @@ type InstanceLatencyStats struct {
 // All fields are 0 when no requests have completed.
 // TTFT and ITL are in microseconds; DispatchRate is in req/s.
 func (i *InstanceSimulator) LatencyStats() InstanceLatencyStats {
+	if i.sim == nil {
+		return InstanceLatencyStats{}
+	}
 	m := i.sim.Metrics
 	if m == nil || m.CompletedRequests == 0 {
 		return InstanceLatencyStats{}
@@ -220,9 +223,15 @@ func (i *InstanceSimulator) LatencyStats() InstanceLatencyStats {
 	if clockUs > 0 {
 		dispatchRate = n / (float64(clockUs) / 1e6)
 	}
+	// Compute ITL from RequestITLs (per-request average ITL in µs).
+	// ITLSum is never populated by the simulator; RequestITLs is the authoritative source.
+	var itlSum float64
+	for _, v := range m.RequestITLs {
+		itlSum += v
+	}
 	return InstanceLatencyStats{
 		TTFT:         float64(m.TTFTSum) / n,
-		ITL:          float64(m.ITLSum) / n,
+		ITL:          itlSum / n,
 		DispatchRate: dispatchRate,
 		AvgInTokens:  float64(m.TotalInputTokens) / n,
 		AvgOutTokens: float64(m.TotalOutputTokens) / n,
