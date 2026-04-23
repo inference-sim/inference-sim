@@ -77,8 +77,10 @@ func validateInferencePerfSpec(spec *InferencePerfSpec) error {
 //
 // Single-stage: N*M clients with no lifecycle windows, aggregateRate = stage rate.
 // Multi-stage: N*M clients per stage, each active only during its stage's window.
-// aggregateRate = sum of stage rates; each client's rateFraction = stageRate / (N*M).
-// This ensures each stage emits at its configured rate during its time window.
+// aggregateRate = peak stage rate (stages don't overlap); each client's
+// rateFraction = stageRate / (N*M). The peak-overlap normalization in
+// normalizeRateFractions then yields per-client rate = stageRate/(N*M), so
+// each stage emits exactly at its configured rate during its window.
 //
 // Returns error if the spec is invalid.
 func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec, error) {
@@ -226,8 +228,16 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 		// See BC-4 in plan for full details.
 		windows := stagesToWindows(spec.Stages)
 
+		// aggregateRate is the peak concurrent rate across all active
+		// clients. Multi-stage inference_perf has non-overlapping stage
+		// windows, so the peak is the single largest stage rate; pairing
+		// that with the per-stage rateFraction gives each client its
+		// intended stage rate after normalizeRateFractions divides by
+		// the peak-overlap fraction sum (issue #1144).
 		for _, stage := range spec.Stages {
-			aggregateRate += stage.Rate
+			if stage.Rate > aggregateRate {
+				aggregateRate = stage.Rate
+			}
 		}
 
 		clients = make([]ClientSpec, 0, numClientsPerStage*len(spec.Stages))

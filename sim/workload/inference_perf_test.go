@@ -417,9 +417,11 @@ func TestExpandInferencePerfSpec_TwoStages_PerStageClients(t *testing.T) {
 }
 
 func TestExpandInferencePerfSpec_TwoStages_AggregateRate(t *testing.T) {
-	// BC-2: aggregate rate is sum of stage rates (not time-weighted average).
-	// Each stage's clients emit at the stage rate during their window;
-	// aggregateRate = sum ensures normalizeRateFractions produces correct per-client rates.
+	// BC-2: aggregate rate is the peak concurrent rate across stages
+	// (i.e. the largest single-stage rate), not the sum. Stage windows
+	// are non-overlapping, so per-stage clients emit at their stage
+	// rate during the stage's window after the peak-overlap
+	// normalization in normalizeRateFractions (issue #1144).
 	spec := &InferencePerfSpec{
 		Stages: []StageSpec{
 			{Rate: 8.0, Duration: 600},
@@ -437,8 +439,8 @@ func TestExpandInferencePerfSpec_TwoStages_AggregateRate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Sum of stage rates: 8.0 + 20.0 = 28.0
-	expectedRate := 28.0
+	// Peak stage rate: max(8.0, 20.0) = 20.0
+	expectedRate := 20.0
 	if ws.AggregateRate != expectedRate {
 		t.Errorf("aggregate rate = %f, want %f", ws.AggregateRate, expectedRate)
 	}
@@ -493,9 +495,9 @@ func TestExpandInferencePerfSpec_ThreeStages_PerStageClients(t *testing.T) {
 	if len(ws.Clients) != 3 {
 		t.Fatalf("client count = %d, want 3 (1 per stage)", len(ws.Clients))
 	}
-	// aggregateRate = 5 + 10 + 15 = 30
-	if ws.AggregateRate != 30.0 {
-		t.Errorf("aggregate rate = %f, want 30.0", ws.AggregateRate)
+	// aggregateRate = max(5, 10, 15) = 15 (peak stage rate).
+	if ws.AggregateRate != 15.0 {
+		t.Errorf("aggregate rate = %f, want 15.0", ws.AggregateRate)
 	}
 
 	// Each client has exactly one lifecycle window matching its stage
@@ -1031,7 +1033,7 @@ func TestGenerateRequests_InferencePerfSpec_AggregateRateOverridden(t *testing.T
 	spec := &WorkloadSpec{
 		Version:       "2",
 		Seed:          42,
-		AggregateRate: 10.0, // wrong — should be 28.0 (sum of stage rates)
+		AggregateRate: 10.0, // wrong — should be 20.0 (peak stage rate)
 		InferencePerf: ipSpec,
 	}
 	horizon := int64(10_000_000) // 10 seconds
@@ -1039,9 +1041,9 @@ func TestGenerateRequests_InferencePerfSpec_AggregateRateOverridden(t *testing.T
 	if err != nil {
 		t.Fatalf("generation error: %v", err)
 	}
-	// After expansion, AggregateRate must be overridden to sum of stage rates.
-	if spec.AggregateRate != 28.0 {
-		t.Errorf("AggregateRate = %f, want 28.0 (sum of 8+20)", spec.AggregateRate)
+	// After expansion, AggregateRate must be overridden to the peak stage rate.
+	if spec.AggregateRate != 20.0 {
+		t.Errorf("AggregateRate = %f, want 20.0 (peak of 8, 20)", spec.AggregateRate)
 	}
 }
 
