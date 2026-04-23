@@ -297,6 +297,9 @@ func (a *QueueingModelAnalyzer) updateVariantParameters(state *perVariantState, 
 			}
 		} else {
 			state.swe.AddObservation(env)
+			if !state.swe.IsReady() {
+				return
+			}
 			fitted, err := state.swe.Fit()
 			if err == nil && len(fitted) == 3 && fitted[0] > 0 && fitted[1] > 0 && fitted[2] > 0 {
 				state.alpha, state.beta, state.gamma = fitted[0], fitted[1], fitted[2]
@@ -410,7 +413,7 @@ func (a *QueueingModelAnalyzer) maxRPSFromQueueAnalysis(state *perVariantState, 
 	if err != nil || targetRate == nil {
 		return 0
 	}
-	maxRPS := float64(minFloat32(targetRate.RateTargetTTFT, targetRate.RateTargetITL))
+	maxRPS := float64(min32(targetRate.RateTargetTTFT, targetRate.RateTargetITL))
 	if maxRPS < 0 {
 		return 0
 	}
@@ -509,8 +512,8 @@ func sortedModelVariantKeys[V any](groups map[modelVariantKey]V) []modelVariantK
 	return keys
 }
 
-// minFloat32 returns the smaller of two float32 values.
-func minFloat32(a, b float32) float32 {
+// min32 returns the smaller of two float32 values.
+func min32(a, b float32) float32 {
 	if a < b {
 		return a
 	}
