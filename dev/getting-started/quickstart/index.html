@@ -2795,7 +2795,7 @@
 <p>This runs 100 requests through a single inference instance using roofline mode (analytical estimation) for Qwen3 14B on an H100 GPU with TP=1.</p>
 <div class="admonition note">
 <p class="admonition-title">First-run HuggingFace fetch</p>
-<p>On first use, BLIS auto-fetches the model's <code>config.json</code> from HuggingFace (~1 second for public models). Subsequent runs use the cached config in <code>model_configs/</code>. If you are offline, use <code>--latency-model blackbox</code> instead (no network needed).</p>
+<p>On first use, BLIS auto-fetches the model's <code>config.json</code> from HuggingFace (~1 second for public models). Subsequent runs use the cached config in <code>model_configs/</code>. For air-gapped environments, pre-populate <code>model_configs/&lt;model&gt;/config.json</code> and use <code>--model-config-folder</code>.</p>
 </div>
 <h3 id="reading-the-output">Reading the Output<a class="headerlink" href="#reading-the-output" title="Permanent link">&para;</a></h3>
 <p>BLIS prints diagnostic logs to stderr and results to stdout. You'll see log lines (prefixed with <code>INFO</code> or <code>WARN</code>) followed by a <code>=== Simulation Metrics ===</code> header and pretty-printed JSON:</p>

@@ -2836,8 +2836,8 @@
 <p class="admonition-title">Air-gapped / offline environments</p>
 <p>The default roofline mode requires network access to HuggingFace on first run (configs are cached in <code>model_configs/</code> after that). For environments without internet access:</p>
 <ul>
-<li>Use <strong>blackbox mode</strong>: <code>./blis run --model &lt;name&gt; --latency-model blackbox</code> (uses pre-trained coefficients from <code>defaults.yaml</code>, no network needed)</li>
-<li>Or <strong>pre-populate</strong> <code>model_configs/&lt;model&gt;/config.json</code> and use <code>--model-config-folder</code></li>
+<li><strong>Pre-populate</strong> <code>model_configs/&lt;model&gt;/config.json</code> from a machine with internet access and use <code>--model-config-folder</code></li>
+<li>Or use <code>--latency-model roofline</code> with explicit <code>--hardware</code> and <code>--tp</code> flags (bypasses model config requirements)</li>
 </ul>
 <p>For CI pipelines, set <code>HF_TOKEN</code> in your environment secrets to avoid rate limits on gated models.</p>
 </div>
