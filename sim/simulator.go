@@ -650,9 +650,12 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 	// similar to vLLM's execute_model()
 	// Note: Per-request TTFT fields (FirstTokenTime, RequestTTFTs) are recorded inline
 	// because they are tightly coupled to the prefill/decode state transitions in this
-	// loop (scalar/map overwrites, safe across preemption). TTFTSum and TotalOutputTokens
-	// are computed at completion time in recordRequestCompletion to avoid double-counting
-	// when a preempted request re-runs from ProgressIndex=0.
+	// loop. Safety across preemption comes from the !req.TTFTSet guard below (TTFTSet is
+	// reset to false on preemption by batch_formation.go), not from overwrite idempotency —
+	// the guard ensures the block fires exactly once per prefill completion so FirstTokenTime
+	// always reflects the final re-prefill. TTFTSum and TotalOutputTokens are computed at
+	// completion time in recordRequestCompletion to avoid double-counting when a preempted
+	// request re-runs from ProgressIndex=0.
 	for _, req := range sim.RunningBatch.Requests {
 		if req.ProgressIndex < util.Len64(req.InputTokens) {
 			req.ProgressIndex = sim.reqNumComputedTokens[req.ID]

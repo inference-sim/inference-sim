@@ -2963,6 +2963,9 @@ func TestSimulator_TTFT_UpdatedAfterPreemption(t *testing.T) {
 	if !okA || !okB {
 		t.Fatalf("missing TTFT entry: A=%v B=%v", okA, okB)
 	}
+	if ttftA <= 0 {
+		t.Errorf("TTFT_A = %.0f: A's TTFT should be positive (unaffected by B's preemption)", ttftA)
+	}
 
 	// B was preempted during decode and had to re-prefill after A finished.
 	// Its TTFT must reflect the re-prefill completion time, which is >> A's TTFT.
