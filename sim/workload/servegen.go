@@ -251,6 +251,9 @@ func parseServeGenTrace(path string) ([]serveGenTraceRow, error) {
 				shapeParam = shape
 				scaleParam = scale
 			}
+		} else if len(record) == 5 {
+			// Anomalous case: 5 columns means one of shape/scale is missing
+			logrus.Warnf("parseServeGenTrace: row at t=%.0f has 5 columns (expected 4 or 6); shape/scale will be derived from CV", startTime)
 		}
 
 		rows = append(rows, serveGenTraceRow{

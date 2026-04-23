@@ -851,6 +851,64 @@ func TestWorkloadSpec_Validate_InfScale_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestWorkloadSpec_YAML_ShapeScaleRoundTrip(t *testing.T) {
+	// BC-12: Shape and Scale fields round-trip through YAML with KnownFields(true)
+	cv := 2.5
+	shape := 0.16
+	scale := 6250000.0 // microseconds
+	original := &WorkloadSpec{
+		Version:       "2",
+		Category:      "language",
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID:           "c1",
+			RateFraction: 1.0,
+			Arrival: ArrivalSpec{
+				Process: "gamma",
+				CV:      &cv,
+				Shape:   &shape,
+				Scale:   &scale,
+			},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+
+	// Marshal to YAML
+	var buf bytes.Buffer
+	encoder := yaml.NewEncoder(&buf)
+	if err := encoder.Encode(original); err != nil {
+		t.Fatalf("encode error: %v", err)
+	}
+	yamlBytes := buf.Bytes()
+
+	// Unmarshal with KnownFields(true) to catch typos
+	var decoded WorkloadSpec
+	decoder := yaml.NewDecoder(bytes.NewReader(yamlBytes))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&decoded); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+
+	// Verify Shape and Scale round-tripped correctly
+	if decoded.Clients[0].Arrival.Shape == nil {
+		t.Fatal("Shape not round-tripped")
+	}
+	if decoded.Clients[0].Arrival.Scale == nil {
+		t.Fatal("Scale not round-tripped")
+	}
+	if *decoded.Clients[0].Arrival.Shape != shape {
+		t.Errorf("Shape = %f, want %f", *decoded.Clients[0].Arrival.Shape, shape)
+	}
+	if *decoded.Clients[0].Arrival.Scale != scale {
+		t.Errorf("Scale = %f, want %f", *decoded.Clients[0].Arrival.Scale, scale)
+	}
+	// Verify CV also round-tripped
+	if decoded.Clients[0].Arrival.CV == nil || *decoded.Clients[0].Arrival.CV != cv {
+		t.Errorf("CV = %v, want %f", decoded.Clients[0].Arrival.CV, cv)
+	}
+}
+
 func TestExampleWorkloadFiles_AllValid(t *testing.T) {
 	// Validate all example workload specs load and pass validation.
 	// Only files that parse as WorkloadSpec are tested — examples/

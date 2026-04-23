@@ -455,6 +455,23 @@ func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 		Version: "1", Seed: 42, Category: "language", AggregateRate: 10.0,
 		ServeGenData: &ServeGenDataSpec{Path: dir},
 	}
+	// Load to verify client creation with shape/scale parameters
+	if err := loadServeGenData(spec); err != nil {
+		t.Fatalf("loadServeGenData failed: %v", err)
+	}
+	if len(spec.Clients) != 1 {
+		t.Fatalf("expected 1 client, got %d", len(spec.Clients))
+	}
+	client := spec.Clients[0]
+	// Verify MLE-fitted shape/scale parameters were populated from 6-column trace
+	require.NotNil(t, client.Arrival.Shape, "Shape should be populated from trace column 5")
+	require.NotNil(t, client.Arrival.Scale, "Scale should be populated from trace column 6")
+	// Scale converted from seconds (6.25) to microseconds (6.25 * 1e6)
+	assert.Equal(t, 0.16, *client.Arrival.Shape, "Shape should match trace value")
+	assert.Equal(t, 6.25e6, *client.Arrival.Scale, "Scale should be converted to microseconds")
+
+	// Clear ServeGenData since clients are now populated
+	spec.ServeGenData = nil
 	// Use 10 second horizon to ensure we get requests (rate=1.0 req/sec -> ~10 requests)
 	requests, err := GenerateRequests(spec, 10e6, 0)
 	if err != nil {
