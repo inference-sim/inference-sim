@@ -433,6 +433,37 @@ cohorts:
 
 > **Note:** Do not combine `spike` (which creates a short lifecycle window) with multi-turn `reasoning` (which generates rounds seconds apart). Rounds whose arrival times fall outside the spike window are silently filtered by the lifecycle window filter. Use diurnal or drain patterns — or no lifecycle modifier — with multi-turn cohorts.
 
+### Phased Workloads
+
+Use lifecycle windows to model workloads that change over time — for example, switching between prompt types or scaling request rates across stages.
+
+```yaml
+aggregate_rate: 40        # Target rate during each active phase
+clients:
+  - id: "summarization"
+    rate_fraction: 0.7
+    lifecycle:
+      windows:
+        - { start_us: 0, end_us: 50000000 }          # Active 0–50s
+    # ... arrival, distributions
+  - id: "qa"
+    rate_fraction: 0.3
+    lifecycle:
+      windows:
+        - { start_us: 0, end_us: 50000000 }          # Active 0–50s
+    # ... arrival, distributions
+  - id: "contentgen"
+    rate_fraction: 1.0
+    lifecycle:
+      windows:
+        - { start_us: 50000000, end_us: 100000000 }  # Active 50–100s
+    # ... arrival, distributions
+```
+
+Rate fractions are normalized **per-phase**: during 0–50s the co-active fractions are 0.7 + 0.3 = 1.0, so summarization gets 28 req/s and qa gets 12 req/s. During 50–100s, contentgen's fraction (1.0) is the only one active and gets the full 40 req/s. Clients without lifecycle windows are "always-on" and overlap with every phase.
+
+See [Lifecycle Normalization](../reference/workload-spec.md#lifecycle-normalization) for details.
+
 ## Advanced Features
 
 ### Multimodal Requests
