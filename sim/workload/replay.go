@@ -79,15 +79,17 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 // Returns round-0 requests (plus all non-session requests) for initial injection,
 // and blueprints for the SessionManager.
 //
-// thinkTimeOverrideUs > 0: use constant think time for all sessions.
-// thinkTimeOverrideUs == 0: derive per-round think time from trace arrival gaps.
-//   NOTE: gap-derived think time = ArrivalTimeUs[i] - ArrivalTimeUs[i-1], which
-//   equals (service_time[i-1] + client_think_time) when the trace was produced by
-//   blis observe. It is NOT pure client think time. Use thinkTimeOverrideUs (i.e.
-//   --think-time-ms) to supply the actual client-side think time when replaying an
-//   observe-generated trace with accurate inter-round spacing.
+// thinkTimeSampler != nil: use this sampler for all sessions' think-time draws.
+// thinkTimeSampler == nil: derive per-round think time from trace arrival gaps.
+//
+//	NOTE: gap-derived think time = ArrivalTimeUs[i] - ArrivalTimeUs[i-1], which
+//	equals (service_time[i-1] + client_think_time) when the trace was produced by
+//	blis observe. It is NOT pure client think time. Pass a sampler built via
+//	ParseThinkTimeDist to supply the actual client-side think time when replaying
+//	an observe-generated trace with accurate inter-round spacing.
+//
 // horizon <= 0: defaults to math.MaxInt64.
-func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeOverrideUs int64, horizon int64) ([]*sim.Request, []SessionBlueprint, error) {
+func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler LengthSampler, horizon int64) ([]*sim.Request, []SessionBlueprint, error) {
 	if trace == nil || len(trace.Records) == 0 {
 		return nil, nil, fmt.Errorf("empty trace")
 	}
@@ -159,11 +161,10 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeOverrideU
 			outputSeq[i] = rec.OutputTokens
 		}
 
-		// Build think time: override or derive from inter-round arrival gaps
-		var thinkTimeSampler LengthSampler
-		var thinkTimeUs int64
-		if thinkTimeOverrideUs > 0 {
-			thinkTimeUs = thinkTimeOverrideUs
+		// Build think time: use provided sampler or derive from inter-round arrival gaps.
+		var sessionThinkTimeSampler LengthSampler
+		if thinkTimeSampler != nil {
+			sessionThinkTimeSampler = thinkTimeSampler // stateless: safe to share across sessions
 		} else if len(rounds) > 1 {
 			thinkTimes := make([]int, len(rounds)-1)
 			for i := 1; i < len(rounds); i++ {
@@ -176,7 +177,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeOverrideU
 				}
 				thinkTimes[i-1] = int(gap)
 			}
-			thinkTimeSampler = &SequenceSampler{values: thinkTimes}
+			sessionThinkTimeSampler = &SequenceSampler{values: thinkTimes}
 		}
 
 		// Per-session RNG for deterministic token ID generation (INV-6)
@@ -227,8 +228,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeOverrideU
 			SessionID:        sessionID,
 			ClientID:         r0.ClientID,
 			MaxRounds:        len(rounds),
-			ThinkTimeUs:      thinkTimeUs,
-			ThinkTimeSampler: thinkTimeSampler,
+			ThinkTimeSampler: sessionThinkTimeSampler,
 			Horizon:          horizon,
 			InputSampler:     &SequenceSampler{values: inputSeq[1:]},  // rounds 1..N
 			OutputSampler:    &SequenceSampler{values: outputSeq[1:]}, // rounds 1..N

@@ -62,6 +62,12 @@ go build -o blis main.go
   --rate 10 --num-requests 100 --output-tokens 2048 --min-tokens 2048 \
   --trace-header trace.yaml --trace-data trace.csv
 
+# Observe closed-loop with lognormal think-time distribution (requires --concurrency)
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --concurrency 10 --num-requests 100 \
+  --think-time-dist "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s" \
+  --trace-header trace.yaml --trace-data trace.csv
+
 # Observe with ITL (inter-token latency) recording for streaming requests
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --workload chatbot --rate 10 --num-requests 100 \
