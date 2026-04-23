@@ -260,6 +260,44 @@ var rootCmd = &cobra.Command{
 	Short: "BLIS — Blackbox Inference Simulator for LLM serving systems",
 }
 
+// validateDistributionParams checks token distribution bounds common to both the
+// concurrency and distribution synthesis paths (R3). Returns a non-empty error
+// string if any parameter violates a bound, empty string if all are valid.
+// Extracted for unit testability (R14).
+func validateDistributionParams(promptMin, promptMax, outputMin, outputMax, promptStdev, outputStdev, promptMean, outputMean int) string {
+	if promptMin < 1 {
+		return fmt.Sprintf("--prompt-tokens-min must be >= 1, got %d", promptMin)
+	}
+	if promptMax < 1 {
+		return fmt.Sprintf("--prompt-tokens-max must be >= 1, got %d", promptMax)
+	}
+	if outputMin < 1 {
+		return fmt.Sprintf("--output-tokens-min must be >= 1, got %d", outputMin)
+	}
+	if outputMax < 1 {
+		return fmt.Sprintf("--output-tokens-max must be >= 1, got %d", outputMax)
+	}
+	if promptStdev < 0 {
+		return fmt.Sprintf("--prompt-tokens-stdev must be >= 0, got %d", promptStdev)
+	}
+	if outputStdev < 0 {
+		return fmt.Sprintf("--output-tokens-stdev must be >= 0, got %d", outputStdev)
+	}
+	if promptMin > promptMax {
+		return fmt.Sprintf("--prompt-tokens-min (%d) must be <= --prompt-tokens-max (%d)", promptMin, promptMax)
+	}
+	if outputMin > outputMax {
+		return fmt.Sprintf("--output-tokens-min (%d) must be <= --output-tokens-max (%d)", outputMin, outputMax)
+	}
+	if promptMean > promptMax || promptMean < promptMin || promptStdev > promptMax || promptStdev < promptMin {
+		return "prompt-tokens and prompt-tokens-stdev should be in range [prompt-tokens-min, prompt-tokens-max]"
+	}
+	if outputMean > outputMax || outputMean < outputMin || outputStdev > outputMax || outputStdev < outputMin {
+		return "output-tokens and output-tokens-stdev should be in range [output-tokens-min, output-tokens-max]"
+	}
+	return ""
+}
+
 // allZeros reports whether all values in the coefficients slice are 0 (default).
 func allZeros(values []float64) bool {
 	for _, v := range values {
@@ -1283,6 +1321,11 @@ var runCmd = &cobra.Command{
 			// If the user did not explicitly set it, leave it at 0 (unbounded) and
 			// require --horizon to bound the run. The existing unbounded-generation
 			// guard will fire with a clear message if neither is provided.
+			// R3: Validate distribution token bounds (shared with distribution mode).
+			if msg := validateDistributionParams(promptTokensMin, promptTokensMax, outputTokensMin, outputTokensMax,
+				promptTokensStdev, outputTokensStdev, promptTokensMean, outputTokensMean); msg != "" {
+				logrus.Fatalf("%s", msg)
+			}
 			concurrencyNumRequests := 0
 			if cmd.Flags().Changed("num-requests") {
 				concurrencyNumRequests = numRequests
@@ -1301,36 +1344,10 @@ var runCmd = &cobra.Command{
 			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
 				logrus.Fatalf("--rate must be a finite value > 0, got %v", rate)
 			}
-			// R3: Standalone validation for distribution token bounds (BC-1, BC-2)
-			if promptTokensMin < 1 {
-				logrus.Fatalf("--prompt-tokens-min must be >= 1, got %d", promptTokensMin)
-			}
-			if promptTokensMax < 1 {
-				logrus.Fatalf("--prompt-tokens-max must be >= 1, got %d", promptTokensMax)
-			}
-			if outputTokensMin < 1 {
-				logrus.Fatalf("--output-tokens-min must be >= 1, got %d", outputTokensMin)
-			}
-			if outputTokensMax < 1 {
-				logrus.Fatalf("--output-tokens-max must be >= 1, got %d", outputTokensMax)
-			}
-			if promptTokensStdev < 0 {
-				logrus.Fatalf("--prompt-tokens-stdev must be >= 0, got %d", promptTokensStdev)
-			}
-			if outputTokensStdev < 0 {
-				logrus.Fatalf("--output-tokens-stdev must be >= 0, got %d", outputTokensStdev)
-			}
-			if promptTokensMin > promptTokensMax {
-				logrus.Fatalf("--prompt-tokens-min (%d) must be <= --prompt-tokens-max (%d)", promptTokensMin, promptTokensMax)
-			}
-			if outputTokensMin > outputTokensMax {
-				logrus.Fatalf("--output-tokens-min (%d) must be <= --output-tokens-max (%d)", outputTokensMin, outputTokensMax)
-			}
-			if promptTokensMean > promptTokensMax || promptTokensMean < promptTokensMin || promptTokensStdev > promptTokensMax || promptTokensStdev < promptTokensMin {
-				logrus.Fatalf("prompt-tokens and prompt-tokens-stdev should be in range [prompt-tokens-min, prompt-tokens-max]")
-			}
-			if outputTokensMean > outputTokensMax || outputTokensMean < outputTokensMin || outputTokensStdev > outputTokensMax || outputTokensStdev < outputTokensMin {
-				logrus.Fatalf("output-tokens and output-tokens-stdev should be in range [output-tokens-min, output-tokens-max]")
+			// R3: Validate distribution token bounds (shared with concurrency mode).
+			if msg := validateDistributionParams(promptTokensMin, promptTokensMax, outputTokensMin, outputTokensMax,
+				promptTokensStdev, outputTokensStdev, promptTokensMean, outputTokensMean); msg != "" {
+				logrus.Fatalf("%s", msg)
 			}
 			spec = workload.SynthesizeFromDistribution(workload.DistributionParams{
 				Rate: rate, NumRequests: numRequests, PrefixTokens: prefixTokens,

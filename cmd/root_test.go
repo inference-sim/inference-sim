@@ -294,6 +294,156 @@ func TestPrintPDMetrics_NilPD_ProducesNoOutput(t *testing.T) {
 	assert.Empty(t, buf.String(), "printPDMetrics with nil pd must produce no output")
 }
 
+// TestValidateDistributionParams verifies the behavioral contract of the extracted
+// distribution-parameter validation helper (R3, R14).
+//
+// Contract: validateDistributionParams returns an empty string for valid inputs and
+// a non-empty string describing the violation for any invalid input.
+//
+// GIVEN distribution token parameters
+// WHEN validateDistributionParams is called
+// THEN it returns empty string iff all parameters satisfy the bounds invariants
+func TestValidateDistributionParams(t *testing.T) {
+	// valid baseline — all defaults from the shared constants
+	const (
+		validMin    = defaultPromptMin
+		validMax    = defaultPromptMax
+		validMean   = defaultPromptMean
+		validStdev  = defaultPromptStdev
+		validOMin   = defaultOutputMin
+		validOMax   = defaultOutputMax
+		validOMean  = defaultOutputMean
+		validOStdev = defaultOutputStdev
+	)
+
+	tests := []struct {
+		name      string
+		promptMin int
+		promptMax int
+		outputMin int
+		outputMax int
+		promptStdev int
+		outputStdev int
+		promptMean  int
+		outputMean  int
+		wantErr     bool
+	}{
+		{
+			name:        "valid defaults produce no error",
+			promptMin: validMin, promptMax: validMax,
+			outputMin: validOMin, outputMax: validOMax,
+			promptStdev: validStdev, outputStdev: validOStdev,
+			promptMean: validMean, outputMean: validOMean,
+			wantErr: false,
+		},
+		{
+			name:        "prompt-tokens-min zero is rejected",
+			promptMin: 0, promptMax: validMax,
+			outputMin: validOMin, outputMax: validOMax,
+			promptStdev: validStdev, outputStdev: validOStdev,
+			promptMean: validMean, outputMean: validOMean,
+			wantErr: true,
+		},
+		{
+			name:        "prompt-tokens-min negative is rejected",
+			promptMin: -5, promptMax: validMax,
+			outputMin: validOMin, outputMax: validOMax,
+			promptStdev: validStdev, outputStdev: validOStdev,
+			promptMean: validMean, outputMean: validOMean,
+			wantErr: true,
+		},
+		{
+			name:        "prompt-tokens-max zero is rejected",
+			promptMin: validMin, promptMax: 0,
+			outputMin: validOMin, outputMax: validOMax,
+			promptStdev: validStdev, outputStdev: validOStdev,
+			promptMean: validMean, outputMean: validOMean,
+			wantErr: true,
+		},
+		{
+			name:        "output-tokens-min zero is rejected",
+			promptMin: validMin, promptMax: validMax,
+			outputMin: 0, outputMax: validOMax,
+			promptStdev: validStdev, outputStdev: validOStdev,
+			promptMean: validMean, outputMean: validOMean,
+			wantErr: true,
+		},
+		{
+			name:        "output-tokens-max zero is rejected",
+			promptMin: validMin, promptMax: validMax,
+			outputMin: validOMin, outputMax: 0,
+			promptStdev: validStdev, outputStdev: validOStdev,
+			promptMean: validMean, outputMean: validOMean,
+			wantErr: true,
+		},
+		{
+			name:        "negative prompt stdev is rejected",
+			promptMin: validMin, promptMax: validMax,
+			outputMin: validOMin, outputMax: validOMax,
+			promptStdev: -1, outputStdev: validOStdev,
+			promptMean: validMean, outputMean: validOMean,
+			wantErr: true,
+		},
+		{
+			name:        "negative output stdev is rejected",
+			promptMin: validMin, promptMax: validMax,
+			outputMin: validOMin, outputMax: validOMax,
+			promptStdev: validStdev, outputStdev: -1,
+			promptMean: validMean, outputMean: validOMean,
+			wantErr: true,
+		},
+		{
+			name:        "prompt min greater than max is rejected",
+			promptMin: 500, promptMax: 100,
+			outputMin: validOMin, outputMax: validOMax,
+			promptStdev: 50, outputStdev: validOStdev,
+			promptMean: 100, outputMean: validOMean,
+			wantErr: true,
+		},
+		{
+			name:        "output min greater than max is rejected",
+			promptMin: validMin, promptMax: validMax,
+			outputMin: 500, outputMax: 100,
+			promptStdev: validStdev, outputStdev: 50,
+			promptMean: validMean, outputMean: 100,
+			wantErr: true,
+		},
+		{
+			name:        "prompt mean above max is rejected",
+			promptMin: 10, promptMax: 100,
+			outputMin: validOMin, outputMax: validOMax,
+			promptStdev: 10, outputStdev: validOStdev,
+			promptMean: 200, outputMean: validOMean,
+			wantErr: true,
+		},
+		{
+			name:        "output mean below min is rejected",
+			promptMin: validMin, promptMax: validMax,
+			outputMin: 100, outputMax: 500,
+			promptStdev: validStdev, outputStdev: 50,
+			promptMean: validMean, outputMean: 50,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := validateDistributionParams(
+				tc.promptMin, tc.promptMax,
+				tc.outputMin, tc.outputMax,
+				tc.promptStdev, tc.outputStdev,
+				tc.promptMean, tc.outputMean,
+			)
+			if tc.wantErr && got == "" {
+				t.Errorf("expected a non-empty error string, got empty")
+			}
+			if !tc.wantErr && got != "" {
+				t.Errorf("expected no error, got %q", got)
+			}
+		})
+	}
+}
+
 // TestRunCmdDistributionDefaults_NoHardcodedLiterals verifies that none of the distDefaults
 // constant values appear as hardcoded literals in root.go's distribution flag IntVar calls
 // (BC-2: single source of truth).
