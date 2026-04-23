@@ -25,11 +25,10 @@ type Workload struct {
 // Config represents the full defaults.yaml structure.
 // All top-level sections must be listed to satisfy KnownFields(true) strict parsing (R10).
 type Config struct {
-	Models             []Model                  `yaml:"models"`
-	Defaults           map[string]DefaultConfig `yaml:"defaults"`
-	Version            string                   `yaml:"version"`
-	Workloads          map[string]Workload      `yaml:"workloads"`
-	TrainedPhysicsDefaults *TrainedPhysicsDefaults `yaml:"trained_physics_coefficients,omitempty"`
+	Defaults               map[string]DefaultConfig `yaml:"defaults"`
+	Version                string                   `yaml:"version"`
+	Workloads              map[string]Workload      `yaml:"workloads"`
+	TrainedPhysicsDefaults *TrainedPhysicsDefaults  `yaml:"trained_physics_coefficients,omitempty"`
 }
 
 // TrainedPhysicsDefaults holds physics-informed roofline + learned correction coefficients.
@@ -47,16 +46,6 @@ type DefaultConfig struct {
 	TensorParallelism int    `yaml:"tensor_parallelism"`
 	VLLMVersion       string `yaml:"vllm_version"`
 	HFRepo            string `yaml:"hf_repo,omitempty"`
-}
-
-type Model struct {
-	GPU               string    `yaml:"GPU"`
-	AlphaCoeffs       []float64 `yaml:"alpha_coeffs"`
-	BetaCoeffs        []float64 `yaml:"beta_coeffs"`
-	ID                string    `yaml:"id"`
-	TensorParallelism int       `yaml:"tensor_parallelism"`
-	VLLMVersion       string    `yaml:"vllm_version"`
-	BestLoss          float64   `yaml:"best_loss"` // Calibration metric from coefficient fitting; not used at runtime
 }
 
 func GetDefaultSpecs(LLM string) (GPU string, TensorParallelism int, VLLMVersion string) {
@@ -117,24 +106,3 @@ func GetHFRepo(modelName string, defaultsFile string) (string, error) {
 	return "", nil
 }
 
-func GetCoefficients(LLM string, tp int, GPU string, vllmVersion string, defaultsFilePath string) ([]float64, []float64) {
-	data, err := os.ReadFile(defaultsFilePath)
-	if err != nil {
-		logrus.Fatalf("Failed to read defaults file %s: %v", defaultsFilePath, err)
-	}
-
-	// Parse YAML with strict field checking (R10: typos must cause errors)
-	var cfg Config
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&cfg); err != nil {
-		logrus.Fatalf("Failed to parse defaults YAML: %v", err)
-	}
-
-	for _, model := range cfg.Models {
-		if model.ID == LLM && model.TensorParallelism == tp && model.GPU == GPU && model.VLLMVersion == vllmVersion {
-			return model.AlphaCoeffs, model.BetaCoeffs
-		}
-	}
-	return nil, nil
-}
