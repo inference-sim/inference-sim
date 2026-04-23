@@ -52,6 +52,7 @@ var (
 	observeRttMs               float64
 	observeConcurrency         int
 	observeThinkTimeMs         int
+	observeThinkTimeDist       string
 	observeWorkload            string
 	observeDefaultsFilePath    string
 	observeRecordITL           bool
@@ -128,7 +129,8 @@ func init() {
 	observeCmd.Flags().Int64Var(&observeHorizon, "horizon", 0, "Observation horizon in microseconds (0 = from spec or unlimited)")
 	observeCmd.Flags().IntVar(&observeNumRequests, "num-requests", 0, "Maximum requests to generate (0 = from spec or unlimited; differs from blis run default of 100)")
 	observeCmd.Flags().IntVar(&observeConcurrency, "concurrency", 0, "Number of concurrent virtual users (closed-loop, mutually exclusive with --rate)")
-	observeCmd.Flags().IntVar(&observeThinkTimeMs, "think-time-ms", 0, "Think time in ms between response and next request (concurrency mode)")
+	observeCmd.Flags().IntVar(&observeThinkTimeMs, "think-time-ms", 0, "Think time in ms between response and next request (concurrency mode; mutually exclusive with --think-time-dist)")
+	observeCmd.Flags().StringVar(&observeThinkTimeDist, "think-time-dist", "", `Think-time distribution spec for closed-loop observe (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s" or "constant:value=500ms"). Mutually exclusive with --think-time-ms. Requires --concurrency.`)
 
 	// Distribution synthesis flags — same names AND defaults as blis run.
 	// Default values are defined in root.go (distDefaults const block).
@@ -243,6 +245,23 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	if observeThinkTimeMs < 0 {
 		logrus.Fatalf("--think-time-ms must be >= 0, got %d", observeThinkTimeMs)
 	}
+	if cmd.Flags().Changed("think-time-ms") && cmd.Flags().Changed("think-time-dist") {
+		logrus.Fatalf("--think-time-ms and --think-time-dist are mutually exclusive")
+	}
+	if observeThinkTimeDist != "" && observeConcurrency <= 0 {
+		logrus.Fatalf("--think-time-dist requires --concurrency")
+	}
+
+	// Resolve think-time distribution sampler (nil when --think-time-dist is not set;
+	// --think-time-ms is applied via DistributionParams.ThinkTimeMs below).
+	var observeThinkTimeSampler workload.LengthSampler
+	if cmd.Flags().Changed("think-time-dist") {
+		var err error
+		observeThinkTimeSampler, err = workload.ParseThinkTimeDist(observeThinkTimeDist)
+		if err != nil {
+			logrus.Fatalf("--think-time-dist: %v", err)
+		}
+	}
 
 	// BC-14: Numeric flag validation (R3)
 	if observeMaxConcur <= 0 {
@@ -348,6 +367,13 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	logrus.Infof("Generated %d requests", len(wl.Requests))
 	if len(wl.Sessions) > 0 {
 		logrus.Infof("Generated %d session blueprints (closed-loop)", len(wl.Sessions))
+	}
+
+	// Apply --think-time-dist sampler to all session blueprints (overrides constant ThinkTimeUs).
+	if observeThinkTimeSampler != nil {
+		for i := range wl.Sessions {
+			wl.Sessions[i].ThinkTimeSampler = observeThinkTimeSampler
+		}
 	}
 
 	if len(wl.Requests) == 0 {

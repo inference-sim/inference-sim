@@ -1692,3 +1692,56 @@ func TestSend_UnconstrainedOutput_MaxTokensNeverBelowMinTokens(t *testing.T) {
 	}
 }
 
+func TestObserveCmd_ThinkTimeDist_FlagExists(t *testing.T) {
+	f := observeCmd.Flags().Lookup("think-time-dist")
+	if f == nil {
+		t.Fatal("missing expected flag --think-time-dist on observeCmd")
+	}
+	if f.DefValue != "" {
+		t.Errorf("--think-time-dist default: got %q, want %q (empty — no default distribution)", f.DefValue, "")
+	}
+}
+
+// TestObserveCmd_ThinkTimeDist_BlueprintOverrideApplied verifies that when a
+// LengthSampler is provided, it is set on all session blueprints.
+// This exercises the override loop in runObserve (the inner logic, not the full command).
+func TestObserveCmd_ThinkTimeDist_BlueprintOverrideApplied(t *testing.T) {
+	sampler, err := workload.ParseThinkTimeDist("constant:value=500ms")
+	if err != nil {
+		t.Fatalf("ParseThinkTimeDist: %v", err)
+	}
+
+	spec := workload.SynthesizeFromDistribution(workload.DistributionParams{
+		Concurrency:        2,
+		ThinkTimeMs:        100,
+		NumRequests:        4,
+		PromptTokensMean:   64,
+		PromptTokensStdDev: 0,
+		PromptTokensMin:    64,
+		PromptTokensMax:    64,
+		OutputTokensMean:   16,
+		OutputTokensStdDev: 0,
+		OutputTokensMin:    16,
+		OutputTokensMax:    16,
+	})
+	wl, err := workload.GenerateWorkload(spec, 1<<60, 4)
+	if err != nil {
+		t.Fatalf("GenerateWorkload: %v", err)
+	}
+	if len(wl.Sessions) == 0 {
+		t.Skip("no sessions generated — cannot test blueprint override")
+	}
+
+	// Apply sampler (mirrors the loop in runObserve)
+	for i := range wl.Sessions {
+		wl.Sessions[i].ThinkTimeSampler = sampler
+	}
+
+	// Invariant: all blueprints now have the sampler set
+	for i, bp := range wl.Sessions {
+		if bp.ThinkTimeSampler == nil {
+			t.Errorf("blueprint[%d]: ThinkTimeSampler is nil after override", i)
+		}
+	}
+}
+
