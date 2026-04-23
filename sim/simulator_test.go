@@ -2154,7 +2154,7 @@ func TestStep_ZeroOutputTokens_TTFTBeforeE2E(t *testing.T) {
 }
 
 // TestNewLatencyModel_ZeroNumHeads_Fails verifies that roofline mode rejects
-// ModelConfig with NumHeads=0 (all backends validate model config fields).
+// ModelConfig with NumHeads=0 (roofline validates model config fields).
 func TestNewLatencyModel_ZeroNumHeads_Fails(t *testing.T) {
 	// GIVEN a ModelHardwareConfig with NumHeads=0 (invalid for roofline)
 	hw := NewModelHardwareConfig(ModelConfig{NumHeads: 0}, rooflineHWCalib(), "", "", 1, "roofline", 0)
