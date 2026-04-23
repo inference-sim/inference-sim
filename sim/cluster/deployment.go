@@ -89,6 +89,11 @@ type DeploymentConfig struct {
 	// (KvCacheThreshold=0.8, ScaleUpThreshold=0.8, ScaleDownBoundary=0.4, AvgInputTokens=512).
 	AutoscalerAnalyzerConfig  V2SaturationAnalyzerConfig `yaml:"autoscaler_analyzer,omitempty"`
 
+	// QMConfig configures QueueingModelAnalyzer when it is selected as the autoscaler analyzer.
+	// Zero value is safe: NewQueueingModelAnalyzer applies numeric defaults.
+	// TuningEnabled and UseSliding must be set explicitly (zero value = disabled).
+	QMConfig QMConfig `yaml:"qm_config,omitempty"`
+
 	// Phase 1B-1a: tier-ordered admission shedding config (issue #809).
 	// TierShedMinPriority=0 rejects sheddable tiers (priority < 0) under overload.
 	// Set to 3 (Standard) for Standard-and-above protection, or -3 to admit all.
