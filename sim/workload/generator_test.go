@@ -2629,3 +2629,130 @@ func TestGenerateRequests_LifecycleWindow_NoHang(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateRequests_PhasedWorkload_CorrectRatePerPhase(t *testing.T) {
+	// BC-1: Two non-overlapping phases with different fractions, each should
+	// produce requests at the full aggregate_rate during its active window.
+	// Phase 1: 0-50s, clients a (0.7) + b (0.3) → 40 req/s total
+	// Phase 2: 50-100s, client c (1.0) → 40 req/s total
+	const aggregateRate = 40.0
+	const phase1End = 50_000_000   // 50s in µs
+	const phase2End = 100_000_000  // 100s in µs
+
+	spec := &WorkloadSpec{
+		Version:       "2",
+		Seed:          42,
+		AggregateRate: aggregateRate,
+		Clients: []ClientSpec{
+			{
+				ID: "p1a", RateFraction: 0.7,
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				Lifecycle:  &LifecycleSpec{Windows: []ActiveWindow{{StartUs: 0, EndUs: phase1End}}},
+			},
+			{
+				ID: "p1b", RateFraction: 0.3,
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				Lifecycle:  &LifecycleSpec{Windows: []ActiveWindow{{StartUs: 0, EndUs: phase1End}}},
+			},
+			{
+				ID: "p2", RateFraction: 1.0,
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				Lifecycle:  &LifecycleSpec{Windows: []ActiveWindow{{StartUs: phase1End, EndUs: phase2End}}},
+			},
+		},
+	}
+
+	requests, err := GenerateRequests(spec, math.MaxInt64, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Count requests per phase.
+	var phase1Count, phase2Count int
+	for _, req := range requests {
+		if req.ArrivalTime < phase1End {
+			phase1Count++
+		} else if req.ArrivalTime < phase2End {
+			phase2Count++
+		}
+	}
+
+	// Expected: ~40 req/s × 50s = ~2000 requests per phase.
+	// Accept ±15% tolerance for Poisson variance.
+	wantPerPhase := aggregateRate * 50.0 // 2000
+	for _, tc := range []struct {
+		name  string
+		count int
+	}{
+		{"phase1", phase1Count},
+		{"phase2", phase2Count},
+	} {
+		ratio := float64(tc.count) / wantPerPhase
+		if ratio < 0.85 || ratio > 1.15 {
+			t.Errorf("%s: got %d requests, want ~%.0f (ratio=%.2f, outside ±15%%)",
+				tc.name, tc.count, wantPerPhase, ratio)
+		}
+	}
+}
+
+func TestGenerateRequests_InferencePerfMultiStage_CorrectRatePerStage(t *testing.T) {
+	// BC-5: inference-perf multi-stage produces correct rate per stage via
+	// CustomSamplerFactory, independent of normalizeRateFractions.
+	ipSpec := &InferencePerfSpec{
+		Stages: []StageSpec{
+			{Rate: 8.0, Duration: 30},
+			{Rate: 20.0, Duration: 30},
+		},
+		SharedPrefix: &SharedPrefixSpec{
+			NumUniqueSystemPrompts:  1,
+			NumUsersPerSystemPrompt: 2,
+			SystemPromptLen:         10,
+			QuestionLen:             100,
+			OutputLen:               50,
+		},
+	}
+
+	expanded, err := ExpandInferencePerfSpec(ipSpec, 42)
+	if err != nil {
+		t.Fatalf("expansion error: %v", err)
+	}
+
+	requests, err := GenerateRequests(expanded, math.MaxInt64, 0)
+	if err != nil {
+		t.Fatalf("generation error: %v", err)
+	}
+
+	// Stage 1: 0-30s at 8 req/s → ~240 requests
+	// Stage 2: 30-60s at 20 req/s → ~600 requests
+	stage1End := int64(30_000_000) // 30s in µs
+	stage2End := int64(60_000_000) // 60s in µs
+	var stage1Count, stage2Count int
+	for _, req := range requests {
+		if req.ArrivalTime < stage1End {
+			stage1Count++
+		} else if req.ArrivalTime < stage2End {
+			stage2Count++
+		}
+	}
+
+	for _, tc := range []struct {
+		name string
+		got  int
+		want float64
+	}{
+		{"stage1", stage1Count, 8.0 * 30},
+		{"stage2", stage2Count, 20.0 * 30},
+	} {
+		ratio := float64(tc.got) / tc.want
+		if ratio < 0.80 || ratio > 1.20 {
+			t.Errorf("%s: got %d requests, want ~%.0f (ratio=%.2f, outside ±20%%)",
+				tc.name, tc.got, tc.want, ratio)
+		}
+	}
+}

@@ -29,7 +29,7 @@ Each entry in the `clients` list defines a traffic source:
 | `tenant_id` | string | No | Tenant identifier |
 | `slo_class` | string | No | SLO tier: `critical`, `standard`, `sheddable`, `batch`, `background`, or empty |
 | `model` | string | No | Model name override (for multi-model workloads) |
-| `rate_fraction` | float64 | **Yes** | Fraction of `aggregate_rate` for this client (must be positive) |
+| `rate_fraction` | float64 | **Yes** | Fraction of `aggregate_rate` for this client (must be positive). When lifecycle windows are present, fractions are normalized per-phase (see [Lifecycle Normalization](#lifecycle-normalization)) |
 | `arrival` | object | **Yes** | Arrival process configuration |
 | `input_distribution` | object | **Yes** | Input token length distribution |
 | `output_distribution` | object | **Yes** | Output token length distribution |
@@ -142,6 +142,23 @@ Activity window configuration for clients (used in the `lifecycle` field of Clie
 |-------|------|-------------|
 | `start_us` | int64 | Window start time in microseconds |
 | `end_us` | int64 | Window end time in microseconds |
+
+### Lifecycle Normalization
+
+When clients have lifecycle windows, `rate_fraction` values are normalized **per-phase** rather than globally. For each client, the simulator sums the `rate_fraction` of all **co-active** clients (those whose lifecycle windows overlap) and divides by that sum. This ensures `aggregate_rate` is achieved during every active phase.
+
+Clients without lifecycle windows are "always-on" and are counted as co-active with every phase.
+
+**Example:** A two-phase workload with `aggregate_rate: 40`:
+
+- Phase 1 (0–50s): clients A (`rate_fraction: 0.7`) and B (`rate_fraction: 0.3`)
+- Phase 2 (50–100s): client C (`rate_fraction: 1.0`)
+
+Each phase's fractions are normalized independently: A gets `40 × 0.7/1.0 = 28 req/s`, B gets `40 × 0.3/1.0 = 12 req/s`, C gets `40 × 1.0/1.0 = 40 req/s`. Both phases produce the full 40 req/s.
+
+Without per-phase normalization, the global sum would be 2.0, and every client's rate would be halved.
+
+**Limitation:** Always-on clients compute a single rate using co-active sums across all phases they overlap with. When an always-on client coexists with multiple non-overlapping phased clients, per-phase totals may be less than `aggregate_rate`. For predictable results, use either all-phased or all-always-on clients.
 
 ## Multimodal Specification
 
