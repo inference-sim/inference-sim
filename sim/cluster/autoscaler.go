@@ -47,7 +47,7 @@ type ReplicaMetrics struct {
 	CostPerHour           float64 // $/hr from NodePool; used for CostPerReplica in VariantCapacity
 	TTFT                  float64 // μs — zero until QueueingModelAnalyzer; Analyze() must guard against zero before dividing
 	DispatchRate          float64 // req/s — zero until QueueingModelAnalyzer; Analyze() must guard against zero before dividing
-	ITL                   float64 // μs — zero until QueueingModelAnalyzer
+	ITL                   float64 // μs — zero until QueueingModelAnalyzer; Analyze() must guard against zero before dividing
 	AvgInTokens           float64 // average input tokens per completed request; zero until QueueingModelAnalyzer
 	AvgOutTokens          float64 // average output tokens per completed request; zero until QueueingModelAnalyzer
 	MaxBatchSize          float64 // server-configured max batch size; zero means use DefaultMaxBatchSize
