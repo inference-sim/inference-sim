@@ -1,0 +1,287 @@
+version: "2"
+seed: 400
+category: agentic-tool-use
+aggregate_rate: 1.0  # Not used - lifecycle windows control timing
+horizon: 550000000  # ~9 minutes (last session end + buffer)
+
+# AppWorld agentic tool-use workload
+# Derived from exgentic appworld_test_normal_10 benchmark execution
+# Data source: exgentic/outputs/appworld_test_normal_10/sessions/*/agent/litellm/trace.jsonl
+#
+# Note: Prompt tokens are very high (~95k) due to extensive tool schemas (Venmo, Gmail, Spotify APIs)
+# Sessions excluded: 17b6ecba, 399c7732 (back-to-back API calls, not representative of normal think time)
+#
+# Token distributions (8 normal sessions):
+#   Prompt: Gaussian (mean=94k, stdev=2-5k) - includes full tool API schemas
+#   Completion: Mixed distributions based on CV (coefficient of variation):
+#     - Gaussian (CV<0.6): Sessions with consistent response lengths
+#     - Exponential (CV>1.2): Sessions with rare long responses (tool output dumps)
+#   Think time: 4.7-10s (includes tool execution + LLM reasoning)
+#
+# Sessions ordered chronologically by actual execution time
+
+clients:
+  # Session 1db23ac7: 7 rounds, heavy-tailed completions (CV=1.87)
+  - id: "appworld-session-1"
+    tenant_id: "appworld-benchmark"
+    slo_class: "standard"
+    rate_fraction: 0.125
+    streaming: true
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 95675
+        std_dev: 3300
+        min: 92435
+        max: 99354
+    output_distribution:
+      type: exponential
+      params:
+        mean: 728
+    prefix_length: 0
+    reasoning:
+      multi_turn:
+        max_rounds: 9  # Observed: 7 rounds
+        think_time_us: 7589671  # 7.6s
+        context_growth: accumulate
+    closed_loop: true
+    timeout: 300000000
+    lifecycle:
+      windows:
+        - start_us: 11460943
+          end_us: 56998972
+
+  # Session 35255c2b: 9 rounds, gaussian completions (CV=0.41)
+  - id: "appworld-session-2"
+    tenant_id: "appworld-benchmark"
+    slo_class: "standard"
+    rate_fraction: 0.125
+    streaming: true
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 93525
+        std_dev: 740
+        min: 92460
+        max: 94572
+    output_distribution:
+      type: gaussian
+      params:
+        mean: 194
+        std_dev: 79
+        min: 51
+        max: 361
+    prefix_length: 0
+    reasoning:
+      multi_turn:
+        max_rounds: 11  # Observed: 9 rounds
+        think_time_us: 7585450  # 7.6s
+        context_growth: accumulate
+    closed_loop: true
+    timeout: 300000000
+    lifecycle:
+      windows:
+        - start_us: 69253740
+          end_us: 129937340
+
+  # Session 7de1fdeb: 6 rounds, gaussian completions (CV=0.53)
+  - id: "appworld-session-3"
+    tenant_id: "appworld-benchmark"
+    slo_class: "standard"
+    rate_fraction: 0.125
+    streaming: true
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 93008
+        std_dev: 568
+        min: 92431
+        max: 93815
+    output_distribution:
+      type: gaussian
+      params:
+        mean: 145
+        std_dev: 77
+        min: 55
+        max: 276
+    prefix_length: 0
+    reasoning:
+      multi_turn:
+        max_rounds: 8  # Observed: 6 rounds
+        think_time_us: 4655637  # 4.7s (faster)
+        context_growth: accumulate
+    closed_loop: true
+    timeout: 300000000
+    lifecycle:
+      windows:
+        - start_us: 141711722
+          end_us: 164989910
+
+  # Session e34af832: 10 rounds, heavy-tailed completions (CV=1.61)
+  - id: "appworld-session-4"
+    tenant_id: "appworld-benchmark"
+    slo_class: "standard"
+    rate_fraction: 0.125
+    streaming: true
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 97134
+        std_dev: 5178
+        min: 92479
+        max: 104957
+    output_distribution:
+      type: exponential
+      params:
+        mean: 1010
+    prefix_length: 0
+    reasoning:
+      multi_turn:
+        max_rounds: 12  # Observed: 10 rounds
+        think_time_us: 9985008  # 10.0s (slowest)
+        context_growth: accumulate
+    closed_loop: true
+    timeout: 300000000
+    lifecycle:
+      windows:
+        - start_us: 182875785
+          end_us: 272740857
+
+  # Session a48ae8a6: 16 rounds, gaussian completions (CV=0.65)
+  - id: "appworld-session-5"
+    tenant_id: "appworld-benchmark"
+    slo_class: "standard"
+    rate_fraction: 0.125
+    streaming: true
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 95182
+        std_dev: 2698
+        min: 92443
+        max: 101336
+    output_distribution:
+      type: gaussian
+      params:
+        mean: 235
+        std_dev: 188
+        min: 52
+        max: 713
+    prefix_length: 0
+    reasoning:
+      multi_turn:
+        max_rounds: 18  # Observed: 16 rounds
+        think_time_us: 5358960  # 5.4s
+        context_growth: accumulate
+    closed_loop: true
+    timeout: 300000000
+    lifecycle:
+      windows:
+        - start_us: 283226222
+          end_us: 363610631
+
+  # Session 77974272: 7 rounds, heavy-tailed completions (CV=1.38)
+  - id: "appworld-session-6"
+    tenant_id: "appworld-benchmark"
+    slo_class: "standard"
+    rate_fraction: 0.125
+    streaming: true
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 94998
+        std_dev: 3174
+        min: 92479
+        max: 100566
+    output_distribution:
+      type: exponential
+      params:
+        mean: 737
+    prefix_length: 0
+    reasoning:
+      multi_turn:
+        max_rounds: 9  # Observed: 7 rounds
+        think_time_us: 7116677  # 7.1s
+        context_growth: accumulate
+    closed_loop: true
+    timeout: 300000000
+    lifecycle:
+      windows:
+        - start_us: 373849797
+          end_us: 416549863
+
+  # Session d8d29015: 13 rounds, heavy-tailed completions (CV=1.24)
+  - id: "appworld-session-7"
+    tenant_id: "appworld-benchmark"
+    slo_class: "standard"
+    rate_fraction: 0.125
+    streaming: true
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 94856
+        std_dev: 2786
+        min: 92466
+        max: 100063
+    output_distribution:
+      type: exponential
+      params:
+        mean: 314
+    prefix_length: 0
+    reasoning:
+      multi_turn:
+        max_rounds: 15  # Observed: 13 rounds
+        think_time_us: 4912235  # 4.9s
+        context_growth: accumulate
+    closed_loop: true
+    timeout: 300000000
+    lifecycle:
+      windows:
+        - start_us: 428974806
+          end_us: 487921627
+
+  # Session 67bc5a4b: 6 rounds, heavy-tailed completions (CV=2.07)
+  - id: "appworld-session-8"
+    tenant_id: "appworld-benchmark"
+    slo_class: "standard"
+    rate_fraction: 0.125
+    streaming: true
+    arrival:
+      process: poisson
+    input_distribution:
+      type: gaussian
+      params:
+        mean: 94425
+        std_dev: 3645
+        min: 92427
+        max: 101759
+    output_distribution:
+      type: exponential
+      params:
+        mean: 1160
+    prefix_length: 0
+    reasoning:
+      multi_turn:
+        max_rounds: 8  # Observed: 6 rounds
+        think_time_us: 8634308  # 8.6s
+        context_growth: accumulate
+    closed_loop: true
+    timeout: 300000000
+    lifecycle:
+      windows:
+        - start_us: 498164147
+          end_us: 541335687
