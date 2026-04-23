@@ -530,10 +530,13 @@ func TestInstanceSimulatorLatencyStats_AfterRun(t *testing.T) {
 	}
 	inst.Run()
 
+	stats := inst.LatencyStats()
 	if inst.Metrics().CompletedRequests == 0 {
 		t.Skip("no completed requests in test sim; check horizon/rate")
 	}
-	stats := inst.LatencyStats()
+	if stats.ITL <= 0 {
+		t.Errorf("ITL should be > 0 after completing requests, got %v", stats.ITL)
+	}
 	if stats.DispatchRate <= 0 {
 		t.Errorf("DispatchRate should be > 0 after completing requests, got %v", stats.DispatchRate)
 	}
