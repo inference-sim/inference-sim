@@ -352,6 +352,21 @@ func validateClient(c *ClientSpec, idx int) error {
 	if c.Reasoning != nil && c.Reasoning.MultiTurn != nil && c.Reasoning.MultiTurn.MaxRounds < 1 {
 		return fmt.Errorf("%s: reasoning.multi_turn.max_rounds must be >= 1, got %d", prefix, c.Reasoning.MultiTurn.MaxRounds)
 	}
+	// Validate lifecycle windows (#1131): empty or degenerate windows would cause
+	// the generator to loop indefinitely against a MaxInt64 horizon.
+	if c.Lifecycle != nil {
+		if len(c.Lifecycle.Windows) == 0 {
+			return fmt.Errorf("%s: lifecycle specified with no windows", prefix)
+		}
+		for j, w := range c.Lifecycle.Windows {
+			if w.StartUs < 0 {
+				return fmt.Errorf("%s: lifecycle.windows[%d] has negative start_us (%d)", prefix, j, w.StartUs)
+			}
+			if w.EndUs <= w.StartUs {
+				return fmt.Errorf("%s: lifecycle.windows[%d] has end_us (%d) <= start_us (%d)", prefix, j, w.EndUs, w.StartUs)
+			}
+		}
+	}
 	return nil
 }
 
