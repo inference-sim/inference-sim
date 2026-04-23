@@ -1,0 +1,34 @@
+{"method": "post", "url": "/spotify/auth/token", "data": {"username": "as_moore@gmail.com", "password": "supervisor_password"}}
+{"method": "get", "url": "/supervisor/account_passwords", "data": {}}
+{"method": "post", "url": "/spotify/auth/token", "data": {"username": "as_moore@gmail.com", "password": "%oxCE]q"}}
+{"method": "get", "url": "/spotify/library/playlists", "data": {"query": "", "page_index": 0, "page_limit": 100, "is_public": null, "sort_by": null, "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzcG90aWZ5K2FzX21vb3JlQGdtYWlsLmNvbSIsImV4cCI6MTY4NDQxMjA5OH0.Ry-dT0WNVUiSCQYSD3KUYzl-EGoNtS5NB0ssm2lBGNQ"}}
+{"method": "get", "url": "/spotify/library/playlists", "data": {"query": "", "page_index": 0, "page_limit": 20, "is_public": null, "sort_by": null, "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzcG90aWZ5K2FzX21vb3JlQGdtYWlsLmNvbSIsImV4cCI6MTY4NDQxMjA5OH0.Ry-dT0WNVUiSCQYSD3KUYzl-EGoNtS5NB0ssm2lBGNQ"}}
+{"method": "get", "url": "/spotify/library/playlists", "data": {"query": "", "page_index": 0, "page_limit": 5, "is_public": null, "sort_by": null, "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzcG90aWZ5K2FzX21vb3JlQGdtYWlsLmNvbSIsImV4cCI6MTY4NDQxMjA5OH0.Ry-dT0WNVUiSCQYSD3KUYzl-EGoNtS5NB0ssm2lBGNQ"}}
+{"method": "get", "url": "/spotify/playlists", "data": {"query": "", "min_like_count": 0, "max_like_count": 9223372036854775807, "min_rating": 0.0, "max_rating": 5.0, "owner_email": null, "page_index": 0, "page_limit": 20, "sort_by": null, "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzcG90aWZ5K2FzX21vb3JlQGdtYWlsLmNvbSIsImV4cCI6MTY4NDQxMjA5OH0.Ry-dT0WNVUiSCQYSD3KUYzl-EGoNtS5NB0ssm2lBGNQ"}}
+{"method": "get", "url": "/spotify/playlists", "data": {"query": "", "min_like_count": 0, "max_like_count": 9223372036854775807, "min_rating": 0.0, "max_rating": 5.0, "owner_email": "as_moore@gmail.com", "page_index": 0, "page_limit": 20, "sort_by": null, "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzcG90aWZ5K2FzX21vb3JlQGdtYWlsLmNvbSIsImV4cCI6MTY4NDQxMjA5OH0.Ry-dT0WNVUiSCQYSD3KUYzl-EGoNtS5NB0ssm2lBGNQ"}}
+{"method": "get", "url": "/spotify/songs/28", "data": {}}
+{"method": "get", "url": "/spotify/songs/95", "data": {}}
+{"method": "get", "url": "/spotify/songs/122", "data": {}}
+{"method": "get", "url": "/spotify/songs/225", "data": {}}
+{"method": "get", "url": "/spotify/songs/251", "data": {}}
+{"method": "get", "url": "/spotify/songs/1", "data": {}}
+{"method": "get", "url": "/spotify/songs/117", "data": {}}
+{"method": "get", "url": "/spotify/songs/192", "data": {}}
+{"method": "get", "url": "/spotify/songs/211", "data": {}}
+{"method": "get", "url": "/spotify/songs/231", "data": {}}
+{"method": "get", "url": "/spotify/songs/307", "data": {}}
+{"method": "get", "url": "/spotify/songs/40", "data": {}}
+{"method": "get", "url": "/spotify/songs/86", "data": {}}
+{"method": "get", "url": "/spotify/songs/159", "data": {}}
+{"method": "get", "url": "/spotify/songs/206", "data": {}}
+{"method": "get", "url": "/spotify/songs/239", "data": {}}
+{"method": "get", "url": "/spotify/songs/249", "data": {}}
+{"method": "get", "url": "/spotify/songs/31", "data": {}}
+{"method": "get", "url": "/spotify/songs/53", "data": {}}
+{"method": "get", "url": "/spotify/songs/254", "data": {}}
+{"method": "patch", "url": "/spotify/playlists/324", "data": {"title": "Popcorn & Pop Hits: Movie Night | EDM", "is_public": null, "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzcG90aWZ5K2FzX21vb3JlQGdtYWlsLmNvbSIsImV4cCI6MTY4NDQxMjA5OH0.Ry-dT0WNVUiSCQYSD3KUYzl-EGoNtS5NB0ssm2lBGNQ"}}
+{"method": "patch", "url": "/spotify/playlists/326", "data": {"title": "Yesteryear Yule: Vintage Christmas | EDM", "is_public": null, "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzcG90aWZ5K2FzX21vb3JlQGdtYWlsLmNvbSIsImV4cCI6MTY4NDQxMjA5OH0.Ry-dT0WNVUiSCQYSD3KUYzl-EGoNtS5NB0ssm2lBGNQ"}}
+{"method": "patch", "url": "/spotify/playlists/325", "data": {"title": "Electro Euphoria: Dance Till Dawn | R&B", "is_public": null, "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzcG90aWZ5K2FzX21vb3JlQGdtYWlsLmNvbSIsImV4cCI6MTY4NDQxMjA5OH0.Ry-dT0WNVUiSCQYSD3KUYzl-EGoNtS5NB0ssm2lBGNQ"}}
+{"method": "patch", "url": "/spotify/playlists/327", "data": {"title": "Campfire Chronicles: Acoustic Essentials | EDM", "is_public": null, "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzcG90aWZ5K2FzX21vb3JlQGdtYWlsLmNvbSIsImV4cCI6MTY4NDQxMjA5OH0.Ry-dT0WNVUiSCQYSD3KUYzl-EGoNtS5NB0ssm2lBGNQ"}}
+{"method": "post", "url": "/spotify/auth/logout", "data": {"access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzcG90aWZ5K2FzX21vb3JlQGdtYWlsLmNvbSIsImV4cCI6MTY4NDQxMjA5OH0.Ry-dT0WNVUiSCQYSD3KUYzl-EGoNtS5NB0ssm2lBGNQ"}}
+{"method": "post", "url": "/supervisor/message", "data": {"answer": null, "status": "success"}}

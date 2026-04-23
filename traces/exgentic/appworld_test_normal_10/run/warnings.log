@@ -1,0 +1,4 @@
+WARNING | /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/.venv/lib/python3.13/site-packages/pydantic/main.py:528: UserWarning: Pydantic serializer warnings:
+  PydanticSerializationUnexpectedValue(Expected `BaseModel` - serialized value may not be as expected [field_name='arguments', input_value={'access_token': 'eyJhbGc...zl-EGoNtS5NB0ssm2lBGNQ'}, input_type=dict])
+  return self.__pydantic_serializer__.to_json(
+

@@ -1,0 +1,172 @@
+INFO | ==== Exgentic Run 91ba980044c6 ====
+INFO | Agent: LiteLLM Tool Calling (claude-haiku-4-5) | Benchmark: Tau Bench 2
+INFO | Session selection: total=10 to_run=10 skipped=0
+INFO | Overwriting incomplete session 2647b516 (task=10)
+INFO | ▶️  Starting Session 1 (logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/2647b516)
+INFO | ⏺️  Recorded Start Session 1
+INFO | ⏩ Recorded Step 1 Session 1
+INFO | ⏩ Recorded Step 2 Session 1
+INFO | ⏩ Recorded Step 3 Session 1
+INFO | ⏩ Recorded Step 4 Session 1
+INFO | ⏩ Recorded Step 5 Session 1
+INFO | ⏩ Recorded Step 6 Session 1
+INFO | ⏩ Recorded Step 7 Session 1
+INFO | ⏩ Recorded Step 8 Session 1
+INFO | ⏩ Recorded Step 9 Session 1
+INFO | ⏳ Scoring Session 1 (logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/2647b516)
+INFO | ⏹️  Session 1 ended by benchmark.
+INFO | ✅ Completed Session 1 | status: success | score: 1.0 | steps: 9 | time: 34.1s | task_id: 10
+logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/2647b516
+INFO | Overwriting incomplete session b8eae4da (task=24)
+INFO | ▶️  Starting Session 2 (logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/b8eae4da)
+INFO | ⏺️  Recorded Start Session 2
+INFO | ⏩ Recorded Step 1 Session 2
+INFO | ⏩ Recorded Step 2 Session 2
+INFO | ⏩ Recorded Step 3 Session 2
+INFO | ⏩ Recorded Step 4 Session 2
+INFO | ⏩ Recorded Step 5 Session 2
+INFO | ⏩ Recorded Step 6 Session 2
+INFO | ⏩ Recorded Step 7 Session 2
+INFO | ⏳ Scoring Session 2 (logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/b8eae4da)
+INFO | ⏹️  Session 2 ended by benchmark.
+INFO | ✅ Completed Session 2 | status: success | score: 1.0 | steps: 7 | time: 25.6s | task_id: 24
+logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/b8eae4da
+INFO | Overwriting incomplete session 59e8af0a (task=78)
+INFO | ▶️  Starting Session 3 (logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/59e8af0a)
+INFO | ⏺️  Recorded Start Session 3
+INFO | ⏩ Recorded Step 1 Session 3
+INFO | ⏩ Recorded Step 2 Session 3
+INFO | ⏩ Recorded Step 3 Session 3
+INFO | ⏩ Recorded Step 4 Session 3
+INFO | ⏩ Recorded Step 5 Session 3
+INFO | ⏩ Recorded Step 6 Session 3
+INFO | ⏩ Recorded Step 7 Session 3
+INFO | ⏩ Recorded Step 8 Session 3
+INFO | ⏩ Recorded Step 9 Session 3
+INFO | ⏩ Recorded Step 10 Session 3
+INFO | ⏩ Recorded Step 11 Session 3
+INFO | ⏳ Scoring Session 3 (logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/59e8af0a)
+INFO | ⏹️  Session 3 ended by benchmark.
+INFO | ✅ Completed Session 3 | status: success | score: 1.0 | steps: 11 | time: 50.9s | task_id: 78
+logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/59e8af0a
+INFO | Overwriting incomplete session c537d644 (task=72)
+INFO | ▶️  Starting Session 4 (logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/c537d644)
+INFO | ⏺️  Recorded Start Session 4
+INFO | ⏩ Recorded Step 1 Session 4
+INFO | ⏩ Recorded Step 2 Session 4
+INFO | ⏩ Recorded Step 3 Session 4
+INFO | ⏩ Recorded Step 4 Session 4
+INFO | ⏩ Recorded Step 5 Session 4
+INFO | ⏩ Recorded Step 6 Session 4
+INFO | ⏩ Recorded Step 7 Session 4
+INFO | ⏩ Recorded Step 8 Session 4
+INFO | ⏩ Recorded Step 9 Session 4
+INFO | ⏩ Recorded Step 10 Session 4
+INFO | ⏩ Recorded Step 11 Session 4
+INFO | ⏩ Recorded Step 12 Session 4
+INFO | ⏳ Scoring Session 4 (logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/c537d644)
+INFO | ⏹️  Session 4 ended by benchmark.
+INFO | ☑️  Completed Session 4 | status: unsuccessful | score: 0.0 | steps: 12 | time: 58.0s | task_id: 72
+logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/c537d644
+INFO | Overwriting incomplete session e3fba9c4 (task=91)
+INFO | ▶️  Starting Session 5 (logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/e3fba9c4)
+INFO | ⏺️  Recorded Start Session 5
+INFO | ⏩ Recorded Step 1 Session 5
+INFO | ⏩ Recorded Step 2 Session 5
+INFO | ⏩ Recorded Step 3 Session 5
+INFO | ⏩ Recorded Step 4 Session 5
+INFO | ⏩ Recorded Step 5 Session 5
+INFO | ⏩ Recorded Step 6 Session 5
+INFO | ⏩ Recorded Step 7 Session 5
+INFO | ⏩ Recorded Step 8 Session 5
+INFO | ⏩ Recorded Step 9 Session 5
+INFO | ⏩ Recorded Step 10 Session 5
+INFO | ⏩ Recorded Step 11 Session 5
+INFO | ⏳ Scoring Session 5 (logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/e3fba9c4)
+INFO | ⏹️  Session 5 ended by benchmark.
+INFO | ☑️  Completed Session 5 | status: unsuccessful | score: 0.0 | steps: 11 | time: 44.2s | task_id: 91
+logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/e3fba9c4
+INFO | Overwriting incomplete session 620d60a3 (task=39)
+INFO | ▶️  Starting Session 6 (logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/620d60a3)
+INFO | ⏺️  Recorded Start Session 6
+INFO | ⏩ Recorded Step 1 Session 6
+INFO | ⏩ Recorded Step 2 Session 6
+INFO | ⏩ Recorded Step 3 Session 6
+INFO | ⏩ Recorded Step 4 Session 6
+INFO | ⏩ Recorded Step 5 Session 6
+INFO | ⏩ Recorded Step 6 Session 6
+INFO | ⏩ Recorded Step 7 Session 6
+INFO | ⏩ Recorded Step 8 Session 6
+INFO | ⏩ Recorded Step 9 Session 6
+INFO | ⏳ Scoring Session 6 (logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/620d60a3)
+INFO | ⏹️  Session 6 ended by benchmark.
+INFO | ☑️  Completed Session 6 | status: unsuccessful | score: 0.0 | steps: 9 | time: 39.2s | task_id: 39
+logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/620d60a3
+INFO | Overwriting incomplete session 3e6a1106 (task=43)
+INFO | ▶️  Starting Session 7 (logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/3e6a1106)
+INFO | ⏺️  Recorded Start Session 7
+INFO | ⏩ Recorded Step 1 Session 7
+INFO | ⏩ Recorded Step 2 Session 7
+INFO | ⏩ Recorded Step 3 Session 7
+INFO | ⏩ Recorded Step 4 Session 7
+INFO | ⏩ Recorded Step 5 Session 7
+INFO | ⏩ Recorded Step 6 Session 7
+INFO | ⏩ Recorded Step 7 Session 7
+INFO | ⏩ Recorded Step 8 Session 7
+INFO | ⏩ Recorded Step 9 Session 7
+INFO | ⏳ Scoring Session 7 (logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/3e6a1106)
+INFO | ⏹️  Session 7 ended by benchmark.
+INFO | ✅ Completed Session 7 | status: success | score: 1.0 | steps: 9 | time: 39.7s | task_id: 43
+logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/3e6a1106
+INFO | Overwriting incomplete session 2473490a (task=68)
+INFO | ▶️  Starting Session 8 (logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/2473490a)
+INFO | ⏺️  Recorded Start Session 8
+INFO | ⏩ Recorded Step 1 Session 8
+INFO | ⏩ Recorded Step 2 Session 8
+INFO | ⏩ Recorded Step 3 Session 8
+INFO | ⏩ Recorded Step 4 Session 8
+INFO | ⏩ Recorded Step 5 Session 8
+INFO | ⏩ Recorded Step 6 Session 8
+INFO | ⏩ Recorded Step 7 Session 8
+INFO | ⏳ Scoring Session 8 (logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/2473490a)
+INFO | ⏹️  Session 8 ended by benchmark.
+INFO | ✅ Completed Session 8 | status: success | score: 1.0 | steps: 7 | time: 22.7s | task_id: 68
+logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/2473490a
+INFO | Overwriting incomplete session 0e1f2eca (task=14)
+INFO | ▶️  Starting Session 9 (logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/0e1f2eca)
+INFO | ⏺️  Recorded Start Session 9
+INFO | ⏩ Recorded Step 1 Session 9
+INFO | ⏩ Recorded Step 2 Session 9
+INFO | ⏩ Recorded Step 3 Session 9
+INFO | ⏩ Recorded Step 4 Session 9
+INFO | ⏩ Recorded Step 5 Session 9
+INFO | ⏩ Recorded Step 6 Session 9
+INFO | ⏩ Recorded Step 7 Session 9
+INFO | ⏩ Recorded Step 8 Session 9
+INFO | ⏳ Scoring Session 9 (logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/0e1f2eca)
+INFO | ⏹️  Session 9 ended by benchmark.
+INFO | ✅ Completed Session 9 | status: success | score: 1.0 | steps: 8 | time: 34.8s | task_id: 14
+logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/0e1f2eca
+INFO | Overwriting incomplete session 24be3438 (task=84)
+INFO | ▶️  Starting Session 10 (logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/24be3438)
+INFO | ⏺️  Recorded Start Session 10
+INFO | ⏩ Recorded Step 1 Session 10
+INFO | ⏩ Recorded Step 2 Session 10
+INFO | ⏩ Recorded Step 3 Session 10
+INFO | ⏩ Recorded Step 4 Session 10
+INFO | ⏩ Recorded Step 5 Session 10
+INFO | ⏩ Recorded Step 6 Session 10
+INFO | ⏩ Recorded Step 7 Session 10
+INFO | ⏩ Recorded Step 8 Session 10
+INFO | ⏩ Recorded Step 9 Session 10
+INFO | ⏳ Scoring Session 10 (logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/24be3438)
+INFO | ⏹️  Session 10 ended by benchmark.
+INFO | ✅ Completed Session 10 | status: success | score: 1.0 | steps: 9 | time: 33.8s | task_id: 84
+logs: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/sessions/24be3438
+INFO | 💾 Saving results to /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6
+INFO | 📊 Sessions: 10 | Successes: 7 | Success%: 70.00% | Finished: 10
+🏁 Scores: Final=0.7 | Avg=0.7
+💰 Costs: Run=$0.8152 | Avg Agent=$0.0720 | Agent Total=$0.7205 | Benchmark Total=$0.0947
+🐾 Average number of steps=9.2
+🕐 Total execution time=0:07:19.313502
+📄 Results: /Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/exgentic/outputs/91ba980044c6/results.json

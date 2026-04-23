@@ -1,0 +1,19 @@
+INFO | Task ID: 31dc501_2
+INFO | Task: Set my weekend wake up alarm snooze to 15 minutes.
+INFO | session_start id=7de1fdeb task_id=31dc501_2
+INFO | Task: Set my weekend wake up alarm snooze to 15 minutes.
+INFO | App: phone, Function: login, Arguments: {'username': '3155673041', 'password': 'joyce-weav@gmail.com'}
+INFO | Output: Error: Invalid credentials
+INFO | App: supervisor, Function: show_account_passwords, Arguments: {}
+INFO | Output: [{'account_name': 'amazon', 'password': 'FJRd9=B'}, {'account_name': 'file_system', 'password': 'DqE8={8'}, {'account_name': 'gmail', 'password': 'r^2p&]H'}, {'account_name': 'phone', 'password': 'QAEZ+BF'}, {'account_name': 'simple_note', 'password': 'RluCyXn'}, {'account_name': 'splitwise', 'password': 'u4uIy!w'}, {'account_name': 'spotify', 'password': 'qge1k1L'}, {'account_name': 'todoist', 'password': '&Jf9F11'}, {'account_name': 'venmo', 'password': 'I!)k(T8'}]
+INFO | App: phone, Function: login, Arguments: {'username': '3155673041', 'password': 'QAEZ+BF'}
+INFO | Output: {'access_token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJwaG9uZSszMTU1NjczMDQxIiwiZXhwIjoxNjg0NDEyMDk4fQ.C4KErOnI83mCYHyUSFRYk8pcOkI8p7yl0OoQOvMJ1Uk', 'token_type': 'Bearer'}
+INFO | App: phone, Function: show_alarms, Arguments: {'page_index': 0, 'page_limit': 5, 'access_token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJwaG9uZSszMTU1NjczMDQxIiwiZXhwIjoxNjg0NDEyMDk4fQ.C4KErOnI83mCYHyUSFRYk8pcOkI8p7yl0OoQOvMJ1Uk'}
+INFO | Output: [{'alarm_id': 393, 'time': '08:30', 'repeat_days': ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'], 'label': 'Wake Up', 'enabled': True, 'snooze_minutes': 10, 'vibration': True, 'created_at': '2023-05-18T12:00:00', 'user': {'name': 'Joyce Weaver', 'phone_number': '3155673041'}}, {'alarm_id': 394, 'time': '09:30', 'repeat_days': ['saturday', 'sunday'], 'label': 'Wake Up', 'enabled': True, 'snooze_minutes': 10, 'vibration': True, 'created_at': '2023-05-18T12:00:00', 'user': {'name': 'Joyce Weaver', 'phone_number': '3155673041'}}, {'alarm_id': 396, 'time': '11:30', 'repeat_days': ['monday'], 'label': 'Weekly Work Standup Meeting', 'enabled': True, 'snooze_minutes': 0, 'vibration': True, 'created_at': '2023-05-18T12:00:00', 'user': {'name': 'Joyce Weaver', 'phone_number': '3155673041'}}, {'alarm_id': 397, 'time': '12:00', 'repeat_days': ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'], 'label': 'Water Plants', 'enabled': True, 'snooze_minutes': 0, 'vibration': True, 'created_at': '2023-05-18T12:00:00', 'user': {'name': 'Joyce Weaver', 'phone_number': '3155673041'}}, {'alarm_id': 398, 'time': '15:00', 'repeat_days': ['saturday'], 'label': 'Clean the House', 'enabled': True, 'snooze_minutes': 0, 'vibration': True, 'created_at': '2023-05-18T12:00:00', 'user': {'name': 'Joyce Weaver', 'phone_number': '3155673041'}}]
+INFO | App: phone, Function: update_alarm, Arguments: {'time': None, 'repeat_days': None, 'label': None, 'enabled': None, 'snooze_minutes': 15, 'vibration': None, 'alarm_id': 394, 'access_token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJwaG9uZSszMTU1NjczMDQxIiwiZXhwIjoxNjg0NDEyMDk4fQ.C4KErOnI83mCYHyUSFRYk8pcOkI8p7yl0OoQOvMJ1Uk'}
+INFO | Output: {'message': 'Alarm updated successfully.'}
+INFO | App: supervisor, Function: complete_task, Arguments: {'answer': None, 'status': 'success'}
+INFO | Output: {'message': 'Marked the active task complete.'}
+INFO | Evaluation results: pass_percentage=83.3 pass_count=5 fail_count=1 num_tests=6 success=False
+INFO | Closing AppWorld session: steps=6 done=True world_closed=False
+INFO | Session Finished | Success: True, steps=6, score=0.833
