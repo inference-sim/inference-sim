@@ -137,6 +137,85 @@ func TestParseServeGenTrace_NonNumericFields_SkippedAndWarned(t *testing.T) {
 	assert.Contains(t, buf.String(), "2 rows", "should warn about 2 skipped rows")
 }
 
+// TestLoadServeGenDataset_EmptyDictWindows_SkippedUntilValid tests that the loader
+// skips time windows with empty PDF dictionaries (serialized as "{}") and finds the first
+// window with actual traffic data, matching ServeGen Python library behavior.
+// Keys are chosen for lexicographic sort order ("100" < "200" < "300") to ensure
+// asymmetric partial-empty windows (window 200: input="{}", output=valid) are evaluated.
+func TestLoadServeGenDataset_EmptyDictWindows_SkippedUntilValid(t *testing.T) {
+	// GIVEN a dataset with empty dict windows followed by a valid window
+	dir := t.TempDir()
+	datasetJSON := `{
+		"100": {"input_tokens": "{}", "output_tokens": "{}"},
+		"200": {"input_tokens": "{}", "output_tokens": "{50: 1.0}"},
+		"300": {"input_tokens": "{100: 0.5, 200: 0.5}", "output_tokens": "{50: 0.7, 100: 0.3}"}
+	}`
+	path := filepath.Join(dir, "dataset.json")
+	require.NoError(t, os.WriteFile(path, []byte(datasetJSON), 0644))
+
+	// WHEN loading the dataset
+	inputPDF, outputPDF, err := loadServeGenDataset(path, &ServeGenDataSpec{})
+
+	// THEN the function succeeds and uses the first valid window (timestamp 300)
+	// Windows 100 (both empty) and 200 (input empty, output valid) are skipped
+	require.NoError(t, err, "should skip empty dict windows and find valid window")
+	assert.Len(t, inputPDF, 2, "input PDF should have 2 bins from window 300")
+	assert.Len(t, outputPDF, 2, "output PDF should have 2 bins from window 300")
+	assert.Equal(t, 0.5, inputPDF[100])
+	assert.Equal(t, 0.5, inputPDF[200])
+	assert.Equal(t, 0.7, outputPDF[50])
+	assert.Equal(t, 0.3, outputPDF[100])
+}
+
+// TestLoadServeGenDataset_OutputEmptyDictWindow_Skipped tests the mirror asymmetric case:
+// when the output field is "{}" but input is valid, the window is correctly skipped.
+// This independently verifies the outputPDFStr != "{}" clause of the break condition.
+func TestLoadServeGenDataset_OutputEmptyDictWindow_Skipped(t *testing.T) {
+	// GIVEN a dataset with output="{}" followed by a valid window
+	dir := t.TempDir()
+	datasetJSON := `{
+		"100": {"input_tokens": "{100: 1.0}", "output_tokens": "{}"},
+		"200": {"input_tokens": "{100: 0.5, 200: 0.5}", "output_tokens": "{50: 0.7, 100: 0.3}"}
+	}`
+	path := filepath.Join(dir, "dataset.json")
+	require.NoError(t, os.WriteFile(path, []byte(datasetJSON), 0644))
+
+	// WHEN loading the dataset
+	inputPDF, outputPDF, err := loadServeGenDataset(path, &ServeGenDataSpec{})
+
+	// THEN the function succeeds and uses the first valid window (timestamp 200)
+	// Window 100 (input valid, output empty) is skipped
+	require.NoError(t, err, "should skip window with output={}")
+	assert.Len(t, inputPDF, 2, "input PDF should have 2 bins from window 200")
+	assert.Len(t, outputPDF, 2, "output PDF should have 2 bins from window 200")
+	assert.Equal(t, 0.5, inputPDF[100])
+	assert.Equal(t, 0.5, inputPDF[200])
+	assert.Equal(t, 0.7, outputPDF[50])
+	assert.Equal(t, 0.3, outputPDF[100])
+}
+
+// TestLoadServeGenDataset_AllEmptyDictWindows_ReturnsError tests that when ALL windows
+// contain empty dicts ("{}"), the loader returns the correct "no valid PDF windows" error
+// rather than falling through to the parser with misleading "empty PDF dictionary" error.
+func TestLoadServeGenDataset_AllEmptyDictWindows_ReturnsError(t *testing.T) {
+	// GIVEN a dataset where every window has empty dicts
+	dir := t.TempDir()
+	datasetJSON := `{
+		"100": {"input_tokens": "{}", "output_tokens": "{}"},
+		"200": {"input_tokens": "{}", "output_tokens": "{}"},
+		"300": {"input_tokens": "{}", "output_tokens": "{}"}
+	}`
+	path := filepath.Join(dir, "dataset.json")
+	require.NoError(t, os.WriteFile(path, []byte(datasetJSON), 0644))
+
+	// WHEN loading the dataset
+	_, _, err := loadServeGenDataset(path, &ServeGenDataSpec{})
+
+	// THEN the function returns an error indicating no valid windows were found
+	require.Error(t, err, "should fail when all windows are empty dicts")
+	assert.Contains(t, err.Error(), "no valid PDF windows", "error should indicate no valid windows, not parser error")
+}
+
 // TestLoadServeGenDataset_NonNumericKey_SkippedWithWarning verifies BC-3.
 // JSON keys that are not valid floats are skipped with a warning.
 // When ALL keys are non-numeric, the function returns an error after warning.
