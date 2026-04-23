@@ -2,12 +2,11 @@
 # Generated from exgentic appworld trace data
 #
 # IMPORTANT NOTES:
+# - input_distribution samples INCREMENTAL new input per round (not cumulative context)
+# - context_growth: accumulate → BLIS automatically builds cumulative context internally
 # - think_time_us values are INTER-REQUEST TIMES (includes tool execution + inference + think time)
-# - For closed-loop replay, set think_time_us=0 and let simulator compute inference latency
-# - prefix_length: Minimum prompt tokens (cacheable system prompt + task + tool schemas).
-#   Real traces show cache misses, but BLIS should know the cacheable prefix size for simulation.
-# - Input tokens are very high (~95k) due to extensive tool schemas (Venmo, Gmail, Spotify APIs)
-# - Output distributions vary by session:
+# - prefix_length: Cacheable system prompt + task + tool API schemas (separate from per-round input)
+# - Output distributions vary by session (chosen by coefficient of variation):
 #   - Gaussian (CV<0.6): Consistent response lengths
 #   - Exponential (CV>1.2): Heavy-tailed with rare long tool output dumps
 
@@ -26,10 +25,10 @@ clients:
   input_distribution:
     type: gaussian
     params:
-      mean: 94630
-      std_dev: 1295
-      min: 92465
-      max: 96633
+      mean: 5846
+      std_dev: 22365
+      min: 1
+      max: 92465
   output_distribution:
     type: gaussian
     params:
@@ -59,10 +58,10 @@ clients:
   input_distribution:
     type: gaussian
     params:
-      mean: 95675
-      std_dev: 3055
-      min: 92435
-      max: 99354
+      mean: 13518
+      std_dev: 32220
+      min: 23
+      max: 92435
   output_distribution:
     type: exponential
     params:
@@ -89,10 +88,10 @@ clients:
   input_distribution:
     type: gaussian
     params:
-      mean: 93525
-      std_dev: 698
-      min: 92460
-      max: 94572
+      mean: 10354
+      std_dev: 29029
+      min: 19
+      max: 92460
   output_distribution:
     type: gaussian
     params:
@@ -122,10 +121,10 @@ clients:
   input_distribution:
     type: gaussian
     params:
-      mean: 93008
-      std_dev: 519
-      min: 92431
-      max: 93815
+      mean: 15526
+      std_dev: 34393
+      min: 1
+      max: 92431
   output_distribution:
     type: gaussian
     params:
@@ -155,10 +154,10 @@ clients:
   input_distribution:
     type: gaussian
     params:
-      mean: 95092
-      std_dev: 2211
-      min: 92440
-      max: 100302
+      mean: 6816
+      std_dev: 23750
+      min: 1
+      max: 92440
   output_distribution:
     type: exponential
     params:
@@ -185,10 +184,10 @@ clients:
   input_distribution:
     type: gaussian
     params:
-      mean: 97134
-      std_dev: 4913
-      min: 92479
-      max: 104957
+      mean: 9605
+      std_dev: 27628
+      min: 1
+      max: 92479
   output_distribution:
     type: exponential
     params:
@@ -215,10 +214,10 @@ clients:
   input_distribution:
     type: gaussian
     params:
-      mean: 95182
-      std_dev: 2612
-      min: 92443
-      max: 101336
+      mean: 6068
+      std_dev: 22304
+      min: 1
+      max: 92443
   output_distribution:
     type: gaussian
     params:
@@ -248,10 +247,10 @@ clients:
   input_distribution:
     type: gaussian
     params:
-      mean: 94998
-      std_dev: 2938
-      min: 92479
-      max: 100566
+      mean: 13666
+      std_dev: 32185
+      min: 1
+      max: 92479
   output_distribution:
     type: exponential
     params:
@@ -278,10 +277,10 @@ clients:
   input_distribution:
     type: gaussian
     params:
-      mean: 94856
-      std_dev: 2677
-      min: 92466
-      max: 100063
+      mean: 7414
+      std_dev: 24565
+      min: 1
+      max: 92466
   output_distribution:
     type: gaussian
     params:
@@ -311,10 +310,10 @@ clients:
   input_distribution:
     type: gaussian
     params:
-      mean: 94425
-      std_dev: 3328
-      min: 92427
-      max: 101759
+      mean: 15869
+      std_dev: 34242
+      min: 1
+      max: 92427
   output_distribution:
     type: exponential
     params:

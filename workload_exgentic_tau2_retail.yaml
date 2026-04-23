@@ -2,11 +2,10 @@
 # Generated from actual trace data
 #
 # IMPORTANT NOTES:
+# - input_distribution samples INCREMENTAL new input per round (not cumulative context)
+# - context_growth: accumulate → BLIS automatically builds cumulative context internally
 # - think_time_us values are INTER-REQUEST TIMES (includes inference + actual think time)
-# - For closed-loop replay, set think_time_us=0 and let simulator compute inference latency
-# - prefix_length: Minimum prompt tokens (cacheable system prompt + task). Real traces show
-#   cache misses, but BLIS should know the cacheable prefix size for simulation.
-# - Output distributions are Gaussian (CV≈0.38), not exponential
+# - prefix_length: Cacheable system prompt + task (separate from per-round input)
 
 version: '2'
 seed: 300
@@ -23,10 +22,10 @@ clients:
   input_distribution:
     type: gaussian
     params:
-      mean: 785
-      std_dev: 459
+      mean: 180
+      std_dev: 144
       min: 8
-      max: 1375
+      max: 438
   output_distribution:
     type: gaussian
     params:
@@ -56,10 +55,10 @@ clients:
   input_distribution:
     type: gaussian
     params:
-      mean: 667
-      std_dev: 391
+      mean: 153
+      std_dev: 136
       min: 8
-      max: 1227
+      max: 427
   output_distribution:
     type: gaussian
     params:
@@ -89,10 +88,10 @@ clients:
   input_distribution:
     type: gaussian
     params:
-      mean: 1296
-      std_dev: 869
+      mean: 240
+      std_dev: 156
       min: 8
-      max: 2598
+      max: 484
   output_distribution:
     type: gaussian
     params:
@@ -122,10 +121,10 @@ clients:
   input_distribution:
     type: gaussian
     params:
-      mean: 1328
-      std_dev: 826
+      mean: 220
+      std_dev: 146
       min: 8
-      max: 2655
+      max: 543
   output_distribution:
     type: gaussian
     params:
@@ -155,10 +154,10 @@ clients:
   input_distribution:
     type: gaussian
     params:
-      mean: 1148
-      std_dev: 722
+      mean: 212
+      std_dev: 132
       min: 8
-      max: 2204
+      max: 470
   output_distribution:
     type: gaussian
     params:
@@ -188,10 +187,10 @@ clients:
   input_distribution:
     type: gaussian
     params:
-      mean: 1016
-      std_dev: 692
+      mean: 220
+      std_dev: 150
       min: 8
-      max: 2026
+      max: 475
   output_distribution:
     type: gaussian
     params:
@@ -221,10 +220,10 @@ clients:
   input_distribution:
     type: gaussian
     params:
-      mean: 1041
-      std_dev: 649
+      mean: 183
+      std_dev: 142
       min: 8
-      max: 2004
+      max: 479
   output_distribution:
     type: gaussian
     params:
@@ -254,10 +253,10 @@ clients:
   input_distribution:
     type: gaussian
     params:
-      mean: 553
-      std_dev: 330
+      mean: 161
+      std_dev: 146
       min: 8
-      max: 1005
+      max: 432
   output_distribution:
     type: gaussian
     params:
@@ -287,10 +286,10 @@ clients:
   input_distribution:
     type: gaussian
     params:
-      mean: 765
-      std_dev: 493
+      mean: 198
+      std_dev: 125
       min: 8
-      max: 1480
+      max: 407
   output_distribution:
     type: gaussian
     params:
@@ -320,10 +319,10 @@ clients:
   input_distribution:
     type: gaussian
     params:
-      mean: 859
-      std_dev: 535
+      mean: 181
+      std_dev: 121
       min: 8
-      max: 1653
+      max: 425
   output_distribution:
     type: gaussian
     params:
