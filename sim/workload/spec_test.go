@@ -1054,8 +1054,3 @@ func TestExampleWorkloadFiles_CanonicalSLOClasses(t *testing.T) {
 		})
 	}
 }
-
-// ptrInt64 returns a pointer to the given int64 value.
-func ptrInt64(v int64) *int64 {
-	return &v
-}
