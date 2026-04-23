@@ -111,7 +111,9 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 		clientSeed := workloadRNG.Int63()
 		clientRNG := newRandFromSeed(clientSeed)
 
-		// Create samplers
+		// Create samplers.
+		// When CustomSamplerFactory is set, clientRate is only used for the
+		// skip guard above (line 106); the factory overrides the actual arrival rate.
 		var arrivalSampler ArrivalSampler
 		if client.CustomSamplerFactory != nil {
 			// Derive sub-RNG for factory with single entropy draw from clientRNG.

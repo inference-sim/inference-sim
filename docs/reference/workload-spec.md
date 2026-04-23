@@ -158,6 +158,8 @@ Each phase's fractions are normalized independently: A gets `40 × 0.7/1.0 = 28 
 
 Without per-phase normalization, the global sum would be 2.0, and every client's rate would be halved.
 
+**Limitation:** Always-on clients compute a single rate using co-active sums across all phases they overlap with. When an always-on client coexists with multiple non-overlapping phased clients, per-phase totals may be less than `aggregate_rate`. For predictable results, use either all-phased or all-always-on clients.
+
 ## Multimodal Specification
 
 Configures multimodal request generation (used in the `multimodal` field of Client Specification). Each distribution follows the same [Distribution Specification](#distribution-specification) format.

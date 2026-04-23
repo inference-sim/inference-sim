@@ -71,6 +71,24 @@ func TestNormalizeRateFractions(t *testing.T) {
 			wantRates: []float64{50.0, 50.0},
 		},
 		{
+			name: "known-limitation: always-on + two non-overlapping phases — per-phase total < aggregate_rate",
+			clients: []ClientSpec{
+				{ID: "always", RateFraction: 0.5}, // always-on, overlaps both phases
+				{ID: "p1", RateFraction: 0.5, Lifecycle: &LifecycleSpec{
+					Windows: []ActiveWindow{{StartUs: 0, EndUs: 50_000_000}},
+				}},
+				{ID: "p2", RateFraction: 0.5, Lifecycle: &LifecycleSpec{
+					Windows: []ActiveWindow{{StartUs: 50_000_000, EndUs: 100_000_000}},
+				}},
+			},
+			// always-on coActiveSum = 0.5+0.5+0.5 = 1.5 → rate = 100*0.5/1.5 ≈ 33.33
+			// p1 coActiveSum = 0.5+0.5 = 1.0 → rate = 100*0.5/1.0 = 50
+			// p2 coActiveSum = 0.5+0.5 = 1.0 → rate = 100*0.5/1.0 = 50
+			// Per-phase total ≈ 83.33, not 100. This is a known limitation of
+			// per-client normalization; a fully phase-aware algorithm would fix it.
+			wantRates: []float64{100.0 / 3, 50.0, 50.0},
+		},
+		{
 			name: "edge: all zero fractions",
 			clients: []ClientSpec{
 				{ID: "a", RateFraction: 0},

@@ -20,6 +20,13 @@ const defaultPrefixLength = 50
 // during every active phase, not diluted by clients in non-overlapping phases.
 //
 // Clients without lifecycle windows are "always-on" and overlap with everything.
+//
+// Limitation: always-on clients compute a single rate using co-active sums across
+// ALL phases they overlap with. When combined with multiple non-overlapping phased
+// clients, the always-on client's rate is diluted by the union of all phases, so
+// per-phase totals may be less than aggregate_rate. A fully phase-aware algorithm
+// (computing separate rates per discrete time interval) would fix this but is
+// significantly more complex.
 func normalizeRateFractions(clients []ClientSpec, aggregateRate float64) []float64 {
 	// Fast path: no lifecycle windows → global normalization (original behavior).
 	hasLifecycle := false
