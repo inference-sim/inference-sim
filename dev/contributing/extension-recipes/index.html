@@ -1385,7 +1385,7 @@
   <span class="md-ellipsis">
     
   
-    Supported Models
+    Model Compatibility
   
 
     
@@ -2940,8 +2940,7 @@
 <li>Extension friction: <strong>3-5 touch points</strong> (implementation + bundle map + factory branch; optionally CLI wiring + defaults struct)</li>
 </ol>
 <p>Examples:
-- See <code>BlackboxLatencyModel</code> in <code>sim/latency/latency.go</code> for a simple stateless model (alpha/beta regression)
-- See <code>RooflineLatencyModel</code> in <code>sim/latency/latency.go</code> for a model that uses hardware config (FLOPs/bandwidth)
+- See <code>RooflineLatencyModel</code> in <code>sim/latency/latency.go</code> for a simple stateless analytical model (FLOPs/bandwidth roofline)
 - See <code>TrainedPhysicsModel</code> in <code>sim/latency/trained_physics_model.go</code> for a physics-informed model with roofline basis functions, learned corrections, and MoE-aware overhead modeling</p>
 <h2 id="adding-new-batch-formation-strategies">Adding New Batch Formation Strategies<a class="headerlink" href="#adding-new-batch-formation-strategies" title="Permanent link">&para;</a></h2>
 <p>To add a new batch formation strategy (e.g., disaggregated prefill/decode, speculative decoding, continuous batching without preemption):</p>

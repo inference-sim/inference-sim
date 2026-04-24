@@ -1398,7 +1398,7 @@
   <span class="md-ellipsis">
     
   
-    Supported Models
+    Model Compatibility
   
 
     
@@ -2670,7 +2670,7 @@
 <a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a>│   ├── tiered.go              # TieredKVCache (GPU+CPU mirror/reload, vLLM v1 model)
 <a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a>│   └── register.go            # NewKVStore factory + init()-based registration into sim/
 <a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a>├── sim/latency/               # Latency model implementations (PKG-2)
-<a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a>│   ├── latency.go             # RooflineLatencyModel (default, analytical FLOPs/bandwidth), BlackboxLatencyModel (alpha/beta regression), TrainedPhysicsLatencyModel (physics-informed), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
+<a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a>│   ├── latency.go             # RooflineLatencyModel (default, analytical FLOPs/bandwidth), TrainedPhysicsLatencyModel (physics-informed), NewLatencyModel(LatencyCoeffs, ModelHardwareConfig) factory
 <a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a>│   ├── trained_physics.go     # TrainedPhysicsLatencyModel: physics-informed basis functions with learned corrections
 <a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a>│   ├── roofline.go            # rooflineStepTime(), calculateTransformerFlops(), calculateMemoryAccessBytes(), StepConfig/PrefillRequestConfig/DecodeRequestConfig types
 <a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a>│   ├── kv_capacity.go         # CalculateKVBlocks: auto-derive total KV cache blocks from model architecture + GPU memory; KVCapacityParams, ExtractKVCapacityParams, computeModelWeightBytes
@@ -2724,7 +2724,7 @@
 <a id="__codelineno-0-103" name="__codelineno-0-103" href="#__codelineno-0-103"></a>│   │   ├── routing.md         # Routing policies
 <a id="__codelineno-0-104" name="__codelineno-0-104" href="#__codelineno-0-104"></a>│   │   ├── admission.md       # Admission control
 <a id="__codelineno-0-105" name="__codelineno-0-105" href="#__codelineno-0-105"></a>│   │   ├── scheduling.md      # Scheduling &amp; priority
-<a id="__codelineno-0-106" name="__codelineno-0-106" href="#__codelineno-0-106"></a>│   │   ├── latency-models.md  # Latency models (roofline + blackbox)
+<a id="__codelineno-0-106" name="__codelineno-0-106" href="#__codelineno-0-106"></a>│   │   ├── latency-models.md  # Latency models (roofline + trained-physics)
 <a id="__codelineno-0-107" name="__codelineno-0-107" href="#__codelineno-0-107"></a>│   │   ├── kv-cache.md        # KV cache &amp; memory management
 <a id="__codelineno-0-108" name="__codelineno-0-108" href="#__codelineno-0-108"></a>│   │   ├── workloads.md       # Workload specifications
 <a id="__codelineno-0-109" name="__codelineno-0-109" href="#__codelineno-0-109"></a>│   │   ├── cluster.md         # Cluster simulation
@@ -2741,7 +2741,7 @@
 <a id="__codelineno-0-120" name="__codelineno-0-120" href="#__codelineno-0-120"></a>│   │   ├── index.md           # Reference overview
 <a id="__codelineno-0-121" name="__codelineno-0-121" href="#__codelineno-0-121"></a>│   │   ├── project-structure.md # Project file organization (this file)
 <a id="__codelineno-0-122" name="__codelineno-0-122" href="#__codelineno-0-122"></a>│   │   ├── configuration.md   # Configuration reference
-<a id="__codelineno-0-123" name="__codelineno-0-123" href="#__codelineno-0-123"></a>│   │   ├── models.md          # Supported models catalog
+<a id="__codelineno-0-123" name="__codelineno-0-123" href="#__codelineno-0-123"></a>│   │   ├── models.md          # Model compatibility and validation
 <a id="__codelineno-0-124" name="__codelineno-0-124" href="#__codelineno-0-124"></a>│   │   └── workload-spec.md   # Workload spec YAML schema
 <a id="__codelineno-0-125" name="__codelineno-0-125" href="#__codelineno-0-125"></a>│   ├── methodology/           # Research methodology documentation
 <a id="__codelineno-0-126" name="__codelineno-0-126" href="#__codelineno-0-126"></a>│   │   ├── index.md           # Methodology overview

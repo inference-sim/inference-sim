@@ -1962,7 +1962,7 @@
   <span class="md-ellipsis">
     
   
-    Supported Models
+    Model Compatibility
   
 
     
@@ -3732,15 +3732,13 @@
 <p><strong>Latency coefficients</strong> (<code>--alpha-coeffs</code>, <code>--beta-coeffs</code>):</p>
 <ol>
 <li>Explicit CLI flags — if passed, used directly (no <code>defaults.yaml</code> lookup)</li>
-<li><code>defaults.yaml</code> <code>models[]</code> entry — matched by model/GPU/TP/vllm-version (blackbox mode)</li>
 <li>Analytical computation — roofline or trained-physics backends compute from architecture + hardware specs</li>
-<li>Error — blackbox mode with no matching entry exits with an error</li>
 </ol>
 <p><strong>Hardware and TP</strong> (<code>--hardware</code>, <code>--tp</code>, <code>--vllm-version</code>):</p>
 <ol>
 <li>Explicit CLI flags</li>
 <li><code>defaults.yaml</code> <code>defaults[]</code> entry — matched by <code>--model</code></li>
-<li>Error — roofline/trained-physics require these values; blackbox fails at coefficient lookup</li>
+<li>Error — roofline/trained-physics require these values</li>
 </ol>
 <p><strong>KV cache blocks</strong> (<code>--total-kv-blocks</code>): See the detailed <a href="#resolution-process">Resolution Process</a> below — three layers: CLI flag, auto-calculation, or 1M default.</p>
 <p><strong>Workload parameters</strong> (<code>--rate</code>, <code>--num-requests</code>, <code>--prompt-tokens</code>, etc.):</p>
@@ -3828,7 +3826,7 @@
 <p><strong>Capacity estimate mismatch (issue #390).</strong> CLI distribution mode defaults to <code>--prompt-tokens 512, --output-tokens 512</code>. If you estimate per-instance capacity using CLI mode, then run a workload-spec YAML with shorter sequences (e.g., mean 256/128), the YAML workload will achieve ~1.5x higher throughput than the CLI estimate predicted. Always derive capacity estimates from the actual workload you plan to run, not from CLI defaults.</p>
 <p><strong><code>--rate</code> does NOT override workload-spec YAML.</strong> The <code>--rate</code> flag only applies in CLI distribution mode. When <code>--workload-spec</code> is set, request rate comes from <code>aggregate_rate</code> in the YAML file — the <code>--rate</code> flag is ignored. To change the rate for a YAML workload, edit the <code>aggregate_rate</code> field in the spec.</p>
 <p><strong><code>aggregate_rate</code> override for inference-perf specs.</strong> When converting inference-perf specs via <code>blis convert infperf</code>, per-stage rates in the spec override a user-specified <code>aggregate_rate</code>. If the sum of stage rates differs from <code>aggregate_rate</code>, BLIS logs a warning and uses the stage-rate sum. This prevents silent rate scaling errors.</p>
-<p><strong><code>--total-kv-blocks</code> phantom default.</strong> The CLI default is 1,000,000 blocks, but this value almost never takes effect. For all latency backends (roofline, trained-physics, blackbox), auto-calculation from model architecture and GPU memory supersedes it when a HuggingFace <code>config.json</code> is available and the hardware config specifies <code>MemoryGiB</code>. The 1M default is a last-resort fallback — if your simulation uses it, check whether auto-calculation is failing (missing <code>config.json</code>, missing <code>MemoryGiB</code>, or unsupported model architecture).</p>
+<p><strong><code>--total-kv-blocks</code> phantom default.</strong> The CLI default is 1,000,000 blocks, but this value almost never takes effect. For all latency backends (roofline, trained-physics), auto-calculation from model architecture and GPU memory supersedes it when a HuggingFace <code>config.json</code> is available and the hardware config specifies <code>MemoryGiB</code>. The 1M default is a last-resort fallback — if your simulation uses it, check whether auto-calculation is failing (missing <code>config.json</code>, missing <code>MemoryGiB</code>, or unsupported model architecture).</p>
 <p><strong><code>enable_multi_turn_chat</code> semantic mismatch (issue #517).</strong> inference-perf's <code>enable_multi_turn_chat</code> creates one persistent session per virtual user. BLIS's closest equivalent is <code>multi_turn.single_session: true</code> in the workload YAML, but the session mechanics differ. When converting inference-perf specs, verify that the converted multi-turn behavior matches your intent.</p>
 <p><strong>Custom <code>defaults.yaml</code> files must remove <code>total_kv_blocks</code> entries (migration note).</strong> BLIS uses strict YAML parsing (<code>KnownFields(true)</code>) to catch typos and invalid fields. As of issue #1035, <code>total_kv_blocks</code> is no longer a recognized field in <code>defaults.yaml</code> — KV capacity is now always auto-calculated from model architecture and GPU memory. If you maintain a custom <code>defaults.yaml</code> file, remove all <code>total_kv_blocks</code> entries or BLIS will exit with a parse error: <code>field total_kv_blocks not found</code>. To override auto-calculation, use the <code>--total-kv-blocks</code> CLI flag instead.</p>
 <h2 id="simulation-control">Simulation Control<a class="headerlink" href="#simulation-control" title="Permanent link">&para;</a></h2>
@@ -3954,7 +3952,7 @@
 </table>
 <h2 id="latency-model">Latency Model<a class="headerlink" href="#latency-model" title="Permanent link">&para;</a></h2>
 <h3 id="regression-coefficients">Regression Coefficients<a class="headerlink" href="#regression-coefficients" title="Permanent link">&para;</a></h3>
-<p>Trained coefficients for the blackbox latency model. Maps to <code>LatencyCoeffs</code>.</p>
+<p>Trained coefficients for physics-informed latency estimation. Maps to <code>LatencyCoeffs</code>.</p>
 <table>
 <thead>
 <tr>
@@ -4040,7 +4038,7 @@
 <td><code>--latency-model</code></td>
 <td>string</td>
 <td>"roofline"</td>
-<td>Latency model backend: <code>roofline</code> (default), <code>blackbox</code>, <code>trained-physics</code>. All backends auto-fetch HuggingFace config.json for KV block auto-calculation (may require network access). Analytical backends (<code>roofline</code>, <code>trained-physics</code>) require <code>config.json</code> for latency estimation and KV sizing. <code>blackbox</code> uses <code>config.json</code> only for KV sizing (falls back to 1M blocks if unavailable). Requires <code>--hardware</code> and <code>--tp</code>. Set <code>HF_TOKEN</code> for gated models. <code>trained-physics</code> is recommended for new models.</td>
+<td>Latency model backend: <code>roofline</code> (default), <code>trained-physics</code>. Both backends auto-fetch HuggingFace config.json for KV block auto-calculation (may require network access). Both require <code>config.json</code> for latency estimation and KV sizing. Requires <code>--hardware</code> and <code>--tp</code>. Set <code>HF_TOKEN</code> for gated models. <code>trained-physics</code> is recommended for new models.</td>
 </tr>
 <tr>
 <td><code>--model-config-folder</code></td>
@@ -4061,9 +4059,7 @@
 <p>The latency model mode is selected based on available configuration:</p>
 <ol>
 <li><strong>Roofline mode</strong> (default): Auto-resolves model config from HuggingFace and hardware config from bundled <code>hardware_config.json</code>. Requires <code>--hardware</code> and <code>--tp</code> (loaded from <code>defaults.yaml</code> when available).</li>
-<li><strong>Blackbox mode</strong>: If <code>--latency-model blackbox</code> is set. Uses trained alpha/beta coefficients from <code>defaults.yaml</code>. Requires a matching entry for the model/GPU/TP combination.</li>
 <li><strong>Trained-physics mode</strong> (recommended for new models): If <code>--latency-model trained-physics</code> is set with <code>--hardware</code> and <code>--tp</code>. Uses 13 globally-fitted coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from <code>trained_physics_coefficients</code> in <code>defaults.yaml</code>. Physics-informed basis functions with learned corrections.</li>
-<li><strong>Error</strong>: If blackbox mode is selected and no coefficients can be resolved for the model/GPU/TP combination</li>
 </ol>
 <h2 id="cluster-configuration">Cluster Configuration<a class="headerlink" href="#cluster-configuration" title="Permanent link">&para;</a></h2>
 <p>With <code>--num-instances 1</code> (the default), BLIS runs a single-instance simulation — requests go directly to the wait queue with no admission or routing layer. With <code>--num-instances N</code> (N &gt; 1), the cluster simulation activates: requests pass through the admission and routing pipeline before reaching per-instance wait queues. See <a href="../../concepts/architecture/">Cluster Architecture</a> for the multi-instance pipeline and <a href="../../concepts/core-engine/">Core Engine</a> for single-instance internals.</p>
@@ -4607,43 +4603,42 @@
 <a id="__codelineno-5-37" name="__codelineno-5-37" href="#__codelineno-5-37"></a><span class="c1"># --gpu calibration at instance construction time (both sync and deferred/NodeReadyEvent paths),</span>
 <a id="__codelineno-5-38" name="__codelineno-5-38" href="#__codelineno-5-38"></a><span class="c1"># ensuring pool-placed instances use the correct TFlopsPeak/BwPeakTBs for roofline math.</span>
 <a id="__codelineno-5-39" name="__codelineno-5-39" href="#__codelineno-5-39"></a><span class="c1"># Omitting this field (zero value) is safe: no override, backward-compatible with all callers.</span>
-<a id="__codelineno-5-40" name="__codelineno-5-40" href="#__codelineno-5-40"></a><span class="c1"># The blackbox backend does not use HWConfig and is unaffected by this field.</span>
-<a id="__codelineno-5-41" name="__codelineno-5-41" href="#__codelineno-5-41"></a><span class="c1"># Keys must exactly match the gpu_type strings used in the node_pools entries above.</span>
-<a id="__codelineno-5-42" name="__codelineno-5-42" href="#__codelineno-5-42"></a><span class="nt">hw_config_by_gpu</span><span class="p">:</span>
-<a id="__codelineno-5-43" name="__codelineno-5-43" href="#__codelineno-5-43"></a><span class="w">  </span><span class="nt">H100</span><span class="p">:</span>
-<a id="__codelineno-5-44" name="__codelineno-5-44" href="#__codelineno-5-44"></a><span class="w">    </span><span class="nt">tflops_peak</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1979.0</span><span class="w">    </span><span class="c1"># FP16 TFLOPS</span>
-<a id="__codelineno-5-45" name="__codelineno-5-45" href="#__codelineno-5-45"></a><span class="w">    </span><span class="nt">bw_peak_tbs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3.35</span><span class="w">      </span><span class="c1"># HBM bandwidth in TB/s</span>
-<a id="__codelineno-5-46" name="__codelineno-5-46" href="#__codelineno-5-46"></a><span class="w">    </span><span class="nt">mfu_prefill</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
-<a id="__codelineno-5-47" name="__codelineno-5-47" href="#__codelineno-5-47"></a><span class="w">    </span><span class="nt">mfu_decode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
-<a id="__codelineno-5-48" name="__codelineno-5-48" href="#__codelineno-5-48"></a><span class="w">  </span><span class="nt">A100</span><span class="p">:</span>
-<a id="__codelineno-5-49" name="__codelineno-5-49" href="#__codelineno-5-49"></a><span class="w">    </span><span class="nt">tflops_peak</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1248.0</span>
-<a id="__codelineno-5-50" name="__codelineno-5-50" href="#__codelineno-5-50"></a><span class="w">    </span><span class="nt">bw_peak_tbs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
-<a id="__codelineno-5-51" name="__codelineno-5-51" href="#__codelineno-5-51"></a><span class="w">    </span><span class="nt">mfu_prefill</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
-<a id="__codelineno-5-52" name="__codelineno-5-52" href="#__codelineno-5-52"></a><span class="w">    </span><span class="nt">mfu_decode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
-<a id="__codelineno-5-53" name="__codelineno-5-53" href="#__codelineno-5-53"></a>
-<a id="__codelineno-5-54" name="__codelineno-5-54" href="#__codelineno-5-54"></a><span class="c1"># Instance lifecycle (Phase 1A — all zero/empty = backward-compatible defaults)</span>
-<a id="__codelineno-5-55" name="__codelineno-5-55" href="#__codelineno-5-55"></a><span class="nt">instance_lifecycle</span><span class="p">:</span>
-<a id="__codelineno-5-56" name="__codelineno-5-56" href="#__codelineno-5-56"></a><span class="w">  </span><span class="nt">loading_delay</span><span class="p">:</span>
-<a id="__codelineno-5-57" name="__codelineno-5-57" href="#__codelineno-5-57"></a><span class="w">    </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0</span><span class="w">    </span><span class="c1"># seconds to load model weights onto GPU</span>
-<a id="__codelineno-5-58" name="__codelineno-5-58" href="#__codelineno-5-58"></a><span class="w">    </span><span class="nt">stddev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0</span><span class="w">   </span><span class="c1"># 0 = constant delay</span>
-<a id="__codelineno-5-59" name="__codelineno-5-59" href="#__codelineno-5-59"></a><span class="w">  </span><span class="nt">warm_up_request_count</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span><span class="w">    </span><span class="c1"># requests served before leaving WarmingUp state</span>
-<a id="__codelineno-5-60" name="__codelineno-5-60" href="#__codelineno-5-60"></a><span class="w">  </span><span class="nt">warm_up_ttft_factor</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span><span class="w">    </span><span class="c1"># TTFT multiplier applied to warm-up requests (≥ 1.0)</span>
-<a id="__codelineno-5-61" name="__codelineno-5-61" href="#__codelineno-5-61"></a><span class="w">  </span><span class="nt">drain_policy</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;WAIT&quot;</span><span class="w">        </span><span class="c1"># IMMEDIATE | WAIT | REDIRECT</span>
-<a id="__codelineno-5-62" name="__codelineno-5-62" href="#__codelineno-5-62"></a>
-<a id="__codelineno-5-63" name="__codelineno-5-63" href="#__codelineno-5-63"></a><span class="c1"># SLO priority overrides (optional; omit for GAIE defaults)</span>
-<a id="__codelineno-5-64" name="__codelineno-5-64" href="#__codelineno-5-64"></a><span class="c1"># GAIE defaults: critical=4, standard=3, batch=-1, sheddable=-2, background=-3</span>
-<a id="__codelineno-5-65" name="__codelineno-5-65" href="#__codelineno-5-65"></a><span class="c1"># Negative priority = sheddable. Override to change which classes are sheddable.</span>
-<a id="__codelineno-5-66" name="__codelineno-5-66" href="#__codelineno-5-66"></a><span class="c1"># admission:</span>
-<a id="__codelineno-5-67" name="__codelineno-5-67" href="#__codelineno-5-67"></a><span class="c1">#   slo_priorities:</span>
-<a id="__codelineno-5-68" name="__codelineno-5-68" href="#__codelineno-5-68"></a><span class="c1">#     batch: 0    # make batch non-sheddable</span>
-<a id="__codelineno-5-69" name="__codelineno-5-69" href="#__codelineno-5-69"></a>
-<a id="__codelineno-5-70" name="__codelineno-5-70" href="#__codelineno-5-70"></a><span class="c1"># Per-tenant fair-share budgets (Phase 1B — optional; omit for no tenant enforcement)</span>
-<a id="__codelineno-5-71" name="__codelineno-5-71" href="#__codelineno-5-71"></a><span class="c1"># Each value is a fraction of total cluster capacity (NumInstances × MaxRunningReqs).</span>
-<a id="__codelineno-5-72" name="__codelineno-5-72" href="#__codelineno-5-72"></a><span class="c1"># Absent key = unlimited. 0.0 = effectively zero concurrent slots (DES ordering caveat: see IsOverBudget docstring). Values must be in [0, 1].</span>
-<a id="__codelineno-5-73" name="__codelineno-5-73" href="#__codelineno-5-73"></a><span class="c1"># Non-sheddable traffic (priority &gt;= 0: critical, standard) is always protected from budget shedding.</span>
-<a id="__codelineno-5-74" name="__codelineno-5-74" href="#__codelineno-5-74"></a><span class="nt">tenant_budgets</span><span class="p">:</span>
-<a id="__codelineno-5-75" name="__codelineno-5-75" href="#__codelineno-5-75"></a><span class="w">  </span><span class="nt">team-a</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.4</span>
-<a id="__codelineno-5-76" name="__codelineno-5-76" href="#__codelineno-5-76"></a><span class="w">  </span><span class="nt">team-b</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.4</span>
+<a id="__codelineno-5-40" name="__codelineno-5-40" href="#__codelineno-5-40"></a><span class="c1"># Keys must exactly match the gpu_type strings used in the node_pools entries above.</span>
+<a id="__codelineno-5-41" name="__codelineno-5-41" href="#__codelineno-5-41"></a><span class="nt">hw_config_by_gpu</span><span class="p">:</span>
+<a id="__codelineno-5-42" name="__codelineno-5-42" href="#__codelineno-5-42"></a><span class="w">  </span><span class="nt">H100</span><span class="p">:</span>
+<a id="__codelineno-5-43" name="__codelineno-5-43" href="#__codelineno-5-43"></a><span class="w">    </span><span class="nt">tflops_peak</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1979.0</span><span class="w">    </span><span class="c1"># FP16 TFLOPS</span>
+<a id="__codelineno-5-44" name="__codelineno-5-44" href="#__codelineno-5-44"></a><span class="w">    </span><span class="nt">bw_peak_tbs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3.35</span><span class="w">      </span><span class="c1"># HBM bandwidth in TB/s</span>
+<a id="__codelineno-5-45" name="__codelineno-5-45" href="#__codelineno-5-45"></a><span class="w">    </span><span class="nt">mfu_prefill</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
+<a id="__codelineno-5-46" name="__codelineno-5-46" href="#__codelineno-5-46"></a><span class="w">    </span><span class="nt">mfu_decode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
+<a id="__codelineno-5-47" name="__codelineno-5-47" href="#__codelineno-5-47"></a><span class="w">  </span><span class="nt">A100</span><span class="p">:</span>
+<a id="__codelineno-5-48" name="__codelineno-5-48" href="#__codelineno-5-48"></a><span class="w">    </span><span class="nt">tflops_peak</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1248.0</span>
+<a id="__codelineno-5-49" name="__codelineno-5-49" href="#__codelineno-5-49"></a><span class="w">    </span><span class="nt">bw_peak_tbs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
+<a id="__codelineno-5-50" name="__codelineno-5-50" href="#__codelineno-5-50"></a><span class="w">    </span><span class="nt">mfu_prefill</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
+<a id="__codelineno-5-51" name="__codelineno-5-51" href="#__codelineno-5-51"></a><span class="w">    </span><span class="nt">mfu_decode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
+<a id="__codelineno-5-52" name="__codelineno-5-52" href="#__codelineno-5-52"></a>
+<a id="__codelineno-5-53" name="__codelineno-5-53" href="#__codelineno-5-53"></a><span class="c1"># Instance lifecycle (Phase 1A — all zero/empty = backward-compatible defaults)</span>
+<a id="__codelineno-5-54" name="__codelineno-5-54" href="#__codelineno-5-54"></a><span class="nt">instance_lifecycle</span><span class="p">:</span>
+<a id="__codelineno-5-55" name="__codelineno-5-55" href="#__codelineno-5-55"></a><span class="w">  </span><span class="nt">loading_delay</span><span class="p">:</span>
+<a id="__codelineno-5-56" name="__codelineno-5-56" href="#__codelineno-5-56"></a><span class="w">    </span><span class="nt">mean</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0</span><span class="w">    </span><span class="c1"># seconds to load model weights onto GPU</span>
+<a id="__codelineno-5-57" name="__codelineno-5-57" href="#__codelineno-5-57"></a><span class="w">    </span><span class="nt">stddev</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0</span><span class="w">   </span><span class="c1"># 0 = constant delay</span>
+<a id="__codelineno-5-58" name="__codelineno-5-58" href="#__codelineno-5-58"></a><span class="w">  </span><span class="nt">warm_up_request_count</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span><span class="w">    </span><span class="c1"># requests served before leaving WarmingUp state</span>
+<a id="__codelineno-5-59" name="__codelineno-5-59" href="#__codelineno-5-59"></a><span class="w">  </span><span class="nt">warm_up_ttft_factor</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span><span class="w">    </span><span class="c1"># TTFT multiplier applied to warm-up requests (≥ 1.0)</span>
+<a id="__codelineno-5-60" name="__codelineno-5-60" href="#__codelineno-5-60"></a><span class="w">  </span><span class="nt">drain_policy</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;WAIT&quot;</span><span class="w">        </span><span class="c1"># IMMEDIATE | WAIT | REDIRECT</span>
+<a id="__codelineno-5-61" name="__codelineno-5-61" href="#__codelineno-5-61"></a>
+<a id="__codelineno-5-62" name="__codelineno-5-62" href="#__codelineno-5-62"></a><span class="c1"># SLO priority overrides (optional; omit for GAIE defaults)</span>
+<a id="__codelineno-5-63" name="__codelineno-5-63" href="#__codelineno-5-63"></a><span class="c1"># GAIE defaults: critical=4, standard=3, batch=-1, sheddable=-2, background=-3</span>
+<a id="__codelineno-5-64" name="__codelineno-5-64" href="#__codelineno-5-64"></a><span class="c1"># Negative priority = sheddable. Override to change which classes are sheddable.</span>
+<a id="__codelineno-5-65" name="__codelineno-5-65" href="#__codelineno-5-65"></a><span class="c1"># admission:</span>
+<a id="__codelineno-5-66" name="__codelineno-5-66" href="#__codelineno-5-66"></a><span class="c1">#   slo_priorities:</span>
+<a id="__codelineno-5-67" name="__codelineno-5-67" href="#__codelineno-5-67"></a><span class="c1">#     batch: 0    # make batch non-sheddable</span>
+<a id="__codelineno-5-68" name="__codelineno-5-68" href="#__codelineno-5-68"></a>
+<a id="__codelineno-5-69" name="__codelineno-5-69" href="#__codelineno-5-69"></a><span class="c1"># Per-tenant fair-share budgets (Phase 1B — optional; omit for no tenant enforcement)</span>
+<a id="__codelineno-5-70" name="__codelineno-5-70" href="#__codelineno-5-70"></a><span class="c1"># Each value is a fraction of total cluster capacity (NumInstances × MaxRunningReqs).</span>
+<a id="__codelineno-5-71" name="__codelineno-5-71" href="#__codelineno-5-71"></a><span class="c1"># Absent key = unlimited. 0.0 = effectively zero concurrent slots (DES ordering caveat: see IsOverBudget docstring). Values must be in [0, 1].</span>
+<a id="__codelineno-5-72" name="__codelineno-5-72" href="#__codelineno-5-72"></a><span class="c1"># Non-sheddable traffic (priority &gt;= 0: critical, standard) is always protected from budget shedding.</span>
+<a id="__codelineno-5-73" name="__codelineno-5-73" href="#__codelineno-5-73"></a><span class="nt">tenant_budgets</span><span class="p">:</span>
+<a id="__codelineno-5-74" name="__codelineno-5-74" href="#__codelineno-5-74"></a><span class="w">  </span><span class="nt">team-a</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.4</span>
+<a id="__codelineno-5-75" name="__codelineno-5-75" href="#__codelineno-5-75"></a><span class="w">  </span><span class="nt">team-b</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.4</span>
 </code></pre></div>
 <p>CLI flags override policy bundle values when explicitly set. For example, <code>--routing-policy least-loaded</code> overrides the bundle's <code>routing.policy</code> setting.</p>
 <div class="admonition note">
@@ -4742,11 +4737,6 @@
 <li>For roofline: beta coefficients are computed analytically from model architecture and hardware specs</li>
 <li>For trained-physics: load 13 global coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from <code>trained_physics_coefficients</code> in <code>defaults.yaml</code></li>
 <li><code>--model-config-folder</code> and <code>--hardware-config</code> override auto-resolution when explicitly set</li>
-<li>If <code>--latency-model blackbox</code>:</li>
-<li>Look up the model in <code>defaults.yaml</code> using <code>--model</code>, <code>--hardware</code>, <code>--tp</code>, <code>--vllm-version</code></li>
-<li>Load alpha/beta coefficients from the matching entry</li>
-<li>If no matching entry is found, exit with error suggesting roofline or trained-physics</li>
-<li><strong>Behavioral change:</strong> Blackbox mode now auto-downloads model configs from HuggingFace for KV block auto-calculation (same as analytical backends). Previously, blackbox only used cached configs. This means blackbox runs may make network requests when <code>config.json</code> is not cached locally. Set <code>HF_TOKEN</code> for gated models.</li>
 <li>If <code>--alpha-coeffs</code> and <code>--beta-coeffs</code> are explicitly provided via CLI:</li>
 <li>Use them directly, no <code>defaults.yaml</code> lookup</li>
 </ol>
@@ -5268,13 +5258,13 @@
         
         
           
-          <a href="../models/" class="md-footer__link md-footer__link--next" aria-label="Next: Supported Models">
+          <a href="../models/" class="md-footer__link md-footer__link--next" aria-label="Next: Model Compatibility">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Supported Models
+                Model Compatibility
               </div>
             </div>
             <div class="md-footer__button md-icon">

@@ -1568,7 +1568,7 @@
   <span class="md-ellipsis">
     
   
-    Supported Models
+    Model Compatibility
   
 
     
@@ -2939,7 +2939,7 @@
 <p>The roofline model accounts for tensor parallelism (TP) but does not model data parallelism (DP) or expert parallelism (EP) scheduling overhead. Quantized weight precision is auto-detected from HuggingFace <code>quantization_config</code> (GPTQ, AWQ, FP8, compressed-tensors), model name conventions (e.g., <code>w4a16</code>, <code>FP8</code>), or <code>torch_dtype</code> fallback, and is used for weight bandwidth and KV capacity calculations. KV cache and activation memory continue to use the compute dtype (<code>BytesPerParam</code> from <code>torch_dtype</code>).</p>
 </div>
 <h2 id="1-why-roofline">1. Why Roofline?<a class="headerlink" href="#1-why-roofline" title="Permanent link">&para;</a></h2>
-<p>The Blackbox optimization approach outlined in <a href="../../reference/configuration/#coefficient-calibration">Configuration: Coefficient Calibration</a> requires training over ground-truth workload metrics obtained by running live vLLM instances over GPUs. In practice, collecting this ground-truth data and training the GPU latency model for each LLM can take several hours. For a faster approximation of GPU latencies without actually ever running vLLM, we recommend the roofline approach. This technique only requires the Huggingface LLM config (<code>config.json</code>) and hardware specifications (e.g. GPU Peak TFLOPS/Peak BW from NVIDIA datasheets) in <code>hardware_config.json</code>. It allows BLIS to generalize across diverse LLMs, TP values and workloads, while preserving TTFT/ITL/E2E accuracy.</p>
+<p>Training latency models via coefficient calibration (see <a href="../../reference/configuration/#coefficient-calibration">Configuration: Coefficient Calibration</a>) requires ground-truth workload metrics obtained by running live vLLM instances over GPUs. In practice, collecting this ground-truth data and training the GPU latency model for each LLM can take several hours. For a faster approximation of GPU latencies without actually ever running vLLM, we recommend the roofline approach. This technique only requires the Huggingface LLM config (<code>config.json</code>) and hardware specifications (e.g. GPU Peak TFLOPS/Peak BW from NVIDIA datasheets) in <code>hardware_config.json</code>. It allows BLIS to generalize across diverse LLMs, TP values and workloads, while preserving TTFT/ITL/E2E accuracy.</p>
 <h2 id="2-core-methodology-the-roofline-model">2. Core Methodology: The Roofline Model<a class="headerlink" href="#2-core-methodology-the-roofline-model" title="Permanent link">&para;</a></h2>
 <p>The simulator predicts execution time by identifying whether a phase (prefill/decode) is <strong>Compute-Bound</strong> or <strong>Memory-Bound</strong>. </p>
 <p>For each phase:</p>

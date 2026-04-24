@@ -1729,7 +1729,7 @@
   <span class="md-ellipsis">
     
   
-    Supported Models
+    Model Compatibility
   
 
     
@@ -3772,7 +3772,7 @@
 </table>
 <div class="admonition warning">
 <p class="admonition-title">Latency model matters</p>
-<p>The replay command simulates token generation using the configured latency model. For accurate calibration, choose the latency model that best matches the server's behavior. See <a href="../latency-models/">Latency Models</a> for guidance on selecting between roofline, blackbox, and trained-physics modes.</p>
+<p>The replay command simulates token generation using the configured latency model. For accurate calibration, choose the latency model that best matches the server's behavior. See <a href="../latency-models/">Latency Models</a> for guidance on selecting between roofline and trained-physics modes.</p>
 </div>
 <hr />
 <h2 id="blis-calibrate"><code>blis calibrate</code><a class="headerlink" href="#blis-calibrate" title="Permanent link">&para;</a></h2>
@@ -4034,7 +4034,7 @@
 <p>Low MAPE with high <code>mean_percent_error</code> indicates low per-request variance but a systematic offset — the simulator is consistently biased in one direction on every request. High MAPE with high <code>mean_percent_error</code> suggests widespread per-request inaccuracy with an additional systematic component; consider switching latency models.</p>
 <p>If calibration quality is poor, try:</p>
 <ol>
-<li><strong>Different latency model:</strong> Switch from <code>roofline</code> to <code>blackbox</code> or <code>trained-physics</code> (see <a href="../latency-models/">Latency Models</a>)</li>
+<li><strong>Different latency model:</strong> Switch from <code>roofline</code> to <code>trained-physics</code> (see <a href="../latency-models/">Latency Models</a>)</li>
 <li><strong>Adjust server config flags:</strong> Match <code>--max-num-running-reqs</code> and <code>--max-num-scheduled-tokens</code> to the real server's settings</li>
 <li><strong>Increase sample size:</strong> Use more requests (<code>--num-requests</code>) for statistical stability</li>
 </ol>
