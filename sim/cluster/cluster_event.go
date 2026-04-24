@@ -14,7 +14,7 @@ import (
 // These are separate from sim.Event and processed by ClusterSimulator's control plane.
 type ClusterEvent interface {
 	Timestamp() int64
-	Priority() int // 0=Arrival, 1=Admission, 2=Routing, 3=Disaggregation, 4-7=PD, 8=ScalingTick, 9=ScaleActuation
+	Priority() int // 0=Arrival, 1=Admission, 2=Routing, 3=Disaggregation, 4-6=PD, 8=ScalingTick, 9=ScaleActuation
 	Execute(*ClusterSimulator)
 }
 
@@ -327,36 +327,101 @@ type DisaggregationDecisionEvent struct {
 func (e *DisaggregationDecisionEvent) Timestamp() int64 { return e.time }
 func (e *DisaggregationDecisionEvent) Priority() int     { return 3 }
 
-// Execute calls the disaggregation decider and bifurcates the request flow.
-// disaggregate=true: splits request into prefill sub-request, schedules PrefillRoutingEvent.
-// disaggregate=false: schedules standard RoutingDecisionEvent (unchanged path).
+// Execute implements the llm-d decode-first routing order:
+// 1. Select a decode pod first (via decode pool routing).
+// 2. Decide disaggregation with the decode pod known.
+// 3a. disaggregate=false: inject directly to the selected decode pod.
+// 3b. disaggregate=true: store decode pod in ParentRequest upfront, route prefill,
+//
+//	KV-transfer, then inject directly to the pre-selected decode pod (no second
+//	routing decision).
 func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
-	decision := cs.disaggregationDecider.Decide(e.request)
-	logrus.Debugf("[cluster] req %s: disaggregate=%v", e.request.ID, decision.Disaggregate)
+	// Step 1: route to decode pool first (llm-d parity: decode pod always selected first).
+	filteredSnapshots := cs.buildPoolFilteredSnapshots(PoolRoleDecode)
+	if len(filteredSnapshots) == 0 {
+		logrus.Warnf("[cluster] req %s: no routable instances in decode pool — request rejected at routing", e.request.ID)
+		cs.routingRejections++
+		return
+	}
+	state := &sim.RouterState{Snapshots: filteredSnapshots, Clock: cs.clock}
+	policy := cs.decodeRoutingPolicy
+	if policy == nil {
+		policy = cs.routingPolicy
+	}
+	decodeDecision := policy.Route(e.request, state)
+	logrus.Debugf("[cluster] req %s: decode pod pre-selected → %s", e.request.ID, decodeDecision.TargetInstance)
 
-	// Record disaggregation decision if tracing is enabled (BC-PD-17)
+	// Step 2: disaggregation decision with decode pod known.
+	disaggDecision := cs.disaggregationDecider.Decide(e.request)
+	logrus.Debugf("[cluster] req %s: disaggregate=%v", e.request.ID, disaggDecision.Disaggregate)
+
+	// Record disaggregation decision if tracing is enabled (BC-PD-17).
 	if cs.trace != nil {
 		cs.trace.RecordDisaggregation(trace.DisaggregationRecord{
 			RequestID:    e.request.ID,
 			Clock:        cs.clock,
-			Disaggregate: decision.Disaggregate,
+			Disaggregate: disaggDecision.Disaggregate,
 		})
 	}
 
-	if !decision.Disaggregate {
-		// Local path: standard routing (unchanged)
-		heap.Push(&cs.clusterEvents, clusterEventEntry{
-			event: &RoutingDecisionEvent{
-				time:    e.time + cs.routingLatency,
-				request: e.request,
-			},
-			seqID: cs.nextSeqID(),
-		})
+	// Find the target decode instance object (used in both paths below).
+	var decodeInst *InstanceSimulator
+	for _, inst := range cs.instances {
+		if string(inst.ID()) == decodeDecision.TargetInstance {
+			decodeInst = inst
+			break
+		}
+	}
+	if decodeInst == nil {
+		// R6: routing policy must return a valid target from the provided snapshot set.
+		panic(fmt.Sprintf("DisaggregationDecisionEvent: invalid decode TargetInstance %q returned by routing policy", decodeDecision.TargetInstance))
+	}
+
+	if !disaggDecision.Disaggregate {
+		// Step 3a: local path — inject directly to the selected decode pod.
+		// This fixes P3: non-disaggregated requests are now routed exclusively to the decode
+		// pool, not to all instances via buildRouterState().
+		e.request.AssignedInstance = decodeDecision.TargetInstance
+		if decodeDecision.Priority != 0 {
+			e.request.Priority = decodeDecision.Priority
+		}
+
+		// Record standard routing trace for BC-TRACE-COMPAT: consumers (e.g.
+		// TestPDTrace_NeverDecider_WithPools) expect len(tr.Routings) == numRequests.
+		if cs.trace != nil {
+			record := trace.RoutingRecord{
+				RequestID:      e.request.ID,
+				Clock:          cs.clock,
+				ChosenInstance: decodeDecision.TargetInstance,
+				Reason:         decodeDecision.Reason,
+				Scores:         copyScores(decodeDecision.Scores),
+			}
+			if cs.trace.Config.CounterfactualK > 0 {
+				record.Candidates, record.Regret = computeCounterfactual(
+					decodeDecision.TargetInstance, decodeDecision.Scores,
+					filteredSnapshots, cs.trace.Config.CounterfactualK,
+				)
+			}
+			cs.trace.RecordRouting(record)
+		}
+
+		cs.inFlightRequests[decodeDecision.TargetInstance]++
+		if cs.tenantTracker != nil {
+			cs.tenantTracker.OnStart(e.request.TenantID)
+		}
+		warmUpCount := cs.config.InstanceLifecycle.WarmUpRequestCount
+		if warmUpCount > 0 && len(decodeInst.WarmUpRequestIDs()) < warmUpCount {
+			decodeInst.RecordWarmUpRequest(e.request.ID)
+		}
+		decodeInst.InjectRequestOnline(e.request, e.time+cs.routingLatency)
+		cs.notifyDisaggregationObserver(e.request, decodeDecision.TargetInstance)
 		return
 	}
 
-	// Disaggregated path: split request and route to prefill pool
+	// Step 3b: disaggregated path — decode pod pre-selected, route prefill next.
+	// This fixes P1: decode pod is stored upfront in ParentRequest before prefill routing.
 	parent := NewParentRequest(e.request, cs.config.BlockSizeTokens)
+	parent.DecodeInstanceID = InstanceID(decodeDecision.TargetInstance)
 	cs.parentRequests[parent.ID] = parent
 
 	// Create prefill sub-request: same input, no output (completes after prefill).
