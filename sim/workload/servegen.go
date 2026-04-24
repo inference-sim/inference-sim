@@ -113,7 +113,6 @@ func loadServeGenData(spec *WorkloadSpec) error {
 	// Track aggregate rate at each timestamp for peak calculation
 	// Map[timestamp] -> sum of rates from all chunks at that timestamp
 	aggregateRateAtTime := make(map[int64]float64)
-	var chunkRates []float64 // For rate normalization
 
 	for _, tracePath := range traceFiles {
 		// Derive chunk ID from filename
@@ -132,18 +131,13 @@ func loadServeGenData(spec *WorkloadSpec) error {
 		if client != nil {
 			spec.Clients = append(spec.Clients, *client)
 
-			// Accumulate this chunk's rate at each timestamp
-			var chunkPeakRate float64
+			// Accumulate this chunk's rate at each timestamp for peak calculation
 			for _, window := range client.Lifecycle.Windows {
 				if window.TraceRate != nil {
 					timestamp := window.StartUs / 1e6 // Convert to seconds
 					aggregateRateAtTime[timestamp] += *window.TraceRate
-					if *window.TraceRate > chunkPeakRate {
-						chunkPeakRate = *window.TraceRate
-					}
 				}
 			}
-			chunkRates = append(chunkRates, chunkPeakRate)
 		}
 	}
 
@@ -286,7 +280,7 @@ func findNearestDataset(queryTimestamp int, datasetByTimestamp map[int]datasetWi
 	}
 
 	// Find largest dataset timestamp <= queryTimestamp
-	var bestTimestamp int = -1
+	var bestTimestamp = -1
 	for dsTimestamp := range datasetByTimestamp {
 		if dsTimestamp <= queryTimestamp && dsTimestamp > bestTimestamp {
 			bestTimestamp = dsTimestamp
