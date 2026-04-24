@@ -532,8 +532,12 @@ func runObserve(cmd *cobra.Command, _ []string) {
 			logrus.Warnf("--record-itl was set but no ITL data recorded (non-streaming requests?)")
 		}
 
-		if err := recorder.ExportITL(itlPath); err != nil {
-			logrus.Fatalf("Failed to export ITL data: %v", err)
+		var itlExportErr error
+		itlExportOnce.Do(func() {
+			itlExportErr = recorder.ExportITL(itlPath)
+		})
+		if itlExportErr != nil {
+			logrus.Fatalf("Failed to export ITL data: %v", itlExportErr)
 		}
 		logrus.Infof("ITL data exported: %s (%d records)", itlPath, len(itlRecords))
 	}
