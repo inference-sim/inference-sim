@@ -458,8 +458,10 @@ func TestCalculateKVBlocks_InsufficientMemory_SuggestsMinTP(t *testing.T) {
 	}
 
 	// AND minimum GPU count is mathematically correct
-	// Model overhead ≈ 656 GiB (671B × 1 byte FP8), H100 = 80 GiB × 0.9 util = 72 GiB
-	// minGPUs = ceil(656 / 72) = 10
+	// Formula: ceil((modelWeightGiB + activationGiB) / (memGiB × util - nonTorchMultiGiB))
+	// = ceil((656.51 + 8.00) / (80.0 × 0.9 - 0.6))
+	// = ceil(664.51 / 71.40)
+	// = ceil(9.30) = 10
 	if !strings.Contains(errMsg, "Minimum GPUs required per instance: 10") {
 		t.Errorf("expected 'Minimum GPUs required per instance: 10' in error, got: %v", err)
 	}
@@ -1352,12 +1354,12 @@ func TestCalculateKVBlocks_GpuMemoryUtilization_HigherUtilProducesMoreBlocks(t *
 //    $ ./blis run --model deepseek-ai/DeepSeek-V3 --tp 2 --hardware H100
 //    => FATAL: "model overhead (665.71 GiB = 656.51 weights + 8.00 activation + 1.20 non-torch)
 //       exceeds available GPU memory (144.00 GiB = 80.0 GiB × 90% util × 2 GPUs).
-//       Minimum TP required: 10"
+//       Minimum GPUs required per instance: 10"
 //
 // 2. TP=8 (128 KV heads divisible, but still insufficient memory):
 //    $ ./blis run --model deepseek-ai/DeepSeek-V3 --tp 8 --hardware H100
 //    => FATAL: "model overhead (669.31 GiB) exceeds available GPU memory (576.00 GiB).
-//       Minimum TP required: 10"
+//       Minimum GPUs required per instance: 10"
 //
 // 3. TP=10 (sufficient memory but 128 KV heads not divisible by 10):
 //    $ ./blis run --model deepseek-ai/DeepSeek-V3 --tp 10 --hardware H100
