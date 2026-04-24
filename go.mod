@@ -21,8 +21,3 @@ require (
 	golang.org/x/tools v0.38.0 // indirect
 	gonum.org/v1/gonum v0.16.0 // indirect
 )
-
-replace (
-	github.com/llm-inferno/model-tuner => ../../llm-inferno/model-tuner
-	github.com/llm-inferno/queue-analysis => ../../llm-inferno/queue-analysis
-)
