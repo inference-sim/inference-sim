@@ -22,6 +22,11 @@ import (
 )
 
 var (
+	traceExportOnce sync.Once
+	itlExportOnce   sync.Once
+)
+
+var (
 	observeServerURL    string
 	observeAPIKey       string
 	observeServerType   string
