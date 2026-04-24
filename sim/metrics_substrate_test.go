@@ -52,7 +52,7 @@ func msConfig(horizon int64) SimConfig {
 		BatchConfig:         NewBatchConfig(256, 100000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs(msBeta(), msAlpha()),
 		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-model", "test-gpu", 1, "roofline", 0),
-		PolicyConfig:        NewPolicyConfig("constant", "fcfs"),
+		PolicyConfig:        NewPolicyConfig("constant", "fcfs", ""),
 		WorkloadConfig:      NewWorkloadConfig(),
 	}
 }

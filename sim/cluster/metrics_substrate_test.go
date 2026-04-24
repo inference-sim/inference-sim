@@ -26,7 +26,7 @@ func msClusterConfig(numInstances int) DeploymentConfig {
 			BatchConfig:         sim.NewBatchConfig(256, 100000, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{5000, 10, 3}, []float64{1000, 2, 500}),
 			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "test-gpu", 1, "roofline", 0),
-			PolicyConfig:        sim.NewPolicyConfig("constant", "fcfs"),
+			PolicyConfig:        sim.NewPolicyConfig("constant", "fcfs", ""),
 		},
 		NumInstances:    numInstances,
 		RoutingPolicy:   "round-robin",

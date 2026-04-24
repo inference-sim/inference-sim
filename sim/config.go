@@ -126,16 +126,18 @@ func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 
 // PolicyConfig groups scheduling and priority policy selection.
 type PolicyConfig struct {
-	PriorityPolicy string // "constant" (default) or "slo-based"
-	Scheduler      string // "fcfs" (default), "priority-fcfs", "sjf", "reverse-priority"
+	PriorityPolicy   string // "constant" (default) or "slo-based"
+	Scheduler        string // "fcfs" (default), "priority-fcfs", "sjf", "reverse-priority"
+	PreemptionPolicy string // "fcfs" (default) or "priority"
 }
 
 // NewPolicyConfig creates a PolicyConfig with all fields explicitly set.
 // This is the canonical constructor — all construction sites must use it (R4).
-func NewPolicyConfig(priorityPolicy, scheduler string) PolicyConfig {
+func NewPolicyConfig(priorityPolicy, scheduler, preemptionPolicy string) PolicyConfig {
 	return PolicyConfig{
-		PriorityPolicy: priorityPolicy,
-		Scheduler:      scheduler,
+		PriorityPolicy:   priorityPolicy,
+		Scheduler:        scheduler,
+		PreemptionPolicy: preemptionPolicy,
 	}
 }
 

@@ -1473,7 +1473,7 @@ var runCmd = &cobra.Command{
 				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
 				ModelHardwareConfig: sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, lr.Backend, maxModelLen),
-				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler),
+				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler, preemptionPolicy),
 			},
 			NumInstances:            numInstances,
 			AdmissionPolicy:         admissionPolicy,
