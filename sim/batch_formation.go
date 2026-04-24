@@ -51,6 +51,21 @@ type BatchResult struct {
 	PreemptionHappened bool
 }
 
+// PreemptionPolicy controls how preemption selects a victim from the running batch.
+type PreemptionPolicy string
+
+const (
+	// PreemptionFCFS evicts the last request in the running batch (tail).
+	// Matches vLLM's FCFS scheduling mode (self.running.pop()).
+	PreemptionFCFS PreemptionPolicy = "fcfs"
+
+	// PreemptionPriority evicts the least-urgent request based on SLO tier priority.
+	// Selects min(SLOPriority) with max(ArrivalTime) tiebreak.
+	// Matches vLLM's PRIORITY scheduling mode (scheduler.py:827-829)
+	// but using BLIS's inverted convention (BLIS: higher=more urgent; vLLM: lower=more urgent).
+	PreemptionPriority PreemptionPolicy = "priority"
+)
+
 // VLLMBatchFormation implements the vLLM FCFS + chunked-prefill + preemption strategy.
 type VLLMBatchFormation struct{}
 

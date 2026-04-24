@@ -19,6 +19,7 @@ type PolicyBundle struct {
 	Routing       RoutingConfig          `yaml:"routing"`
 	Priority      PriorityConfig         `yaml:"priority"`
 	Scheduler     string                 `yaml:"scheduler"`
+	Preemption    PreemptionConfig       `yaml:"preemption"`
 	TenantBudgets map[string]float64     `yaml:"tenant_budgets"`  // nil = no tenant enforcement
 	NodePools     []NodePoolBundleConfig `yaml:"node_pools"`      // nil = no node pools
 	Autoscaler    AutoscalerBundleConfig `yaml:"autoscaler"`      // IntervalUs=0 = disabled
@@ -48,6 +49,11 @@ type RoutingConfig struct {
 
 // PriorityConfig holds priority policy configuration.
 type PriorityConfig struct {
+	Policy string `yaml:"policy"`
+}
+
+// PreemptionConfig holds preemption policy configuration.
+type PreemptionConfig struct {
 	Policy string `yaml:"policy"`
 }
 
@@ -114,8 +120,9 @@ func LoadPolicyBundle(path string) (*PolicyBundle, error) {
 var (
 	validAdmissionPolicies = map[string]bool{"": true, "always-admit": true, "token-bucket": true, "reject-all": true, "tier-shed": true, "gaie-legacy": true}
 	validRoutingPolicies   = map[string]bool{"": true, "round-robin": true, "least-loaded": true, "weighted": true, "always-busiest": true}
-	validPriorityPolicies  = map[string]bool{"": true, "constant": true, "slo-based": true, "inverted-slo": true}
-	validSchedulers        = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
+	validPriorityPolicies    = map[string]bool{"": true, "constant": true, "slo-based": true, "inverted-slo": true}
+	validSchedulers          = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
+	validPreemptionPolicies  = map[string]bool{"": true, "fcfs": true, "priority": true}
 	validLatencyBackends          = map[string]bool{"": true, "roofline": true, "trained-physics": true}
 	validDisaggregationDeciders   = map[string]bool{"": true, "never": true, "always": true, "prefix-threshold": true}
 	validSaturationDetectors      = map[string]bool{"": true, "never": true, "utilization": true, "concurrency": true}
@@ -144,6 +151,12 @@ func ValidPriorityPolicyNames() []string { return validNamesList(validPriorityPo
 
 // ValidSchedulerNames returns sorted valid scheduler names (excluding empty).
 func ValidSchedulerNames() []string { return validNamesList(validSchedulers) }
+
+// IsValidPreemptionPolicy returns true if name is a recognized preemption policy.
+func IsValidPreemptionPolicy(name string) bool { return validPreemptionPolicies[name] }
+
+// ValidPreemptionPolicyNames returns sorted valid preemption policy names (excluding empty).
+func ValidPreemptionPolicyNames() []string { return validNamesList(validPreemptionPolicies) }
 
 // IsValidLatencyBackend returns true if name is a recognized latency model backend.
 func IsValidLatencyBackend(name string) bool { return validLatencyBackends[name] }
@@ -193,6 +206,9 @@ func (b *PolicyBundle) Validate() error {
 	}
 	if !validSchedulers[b.Scheduler] {
 		return fmt.Errorf("unknown scheduler %q; valid options: %s", b.Scheduler, validNames(validSchedulers))
+	}
+	if !validPreemptionPolicies[b.Preemption.Policy] {
+		return fmt.Errorf("unknown preemption policy %q; valid options: %s", b.Preemption.Policy, validNames(validPreemptionPolicies))
 	}
 	// Parameter range validation (reject negative, NaN, and Inf)
 	if err := validateFloat("token_bucket_capacity", b.Admission.TokenBucketCapacity); err != nil {
