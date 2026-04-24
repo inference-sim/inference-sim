@@ -502,7 +502,7 @@ func TestCalculateKVBlocks_InsufficientMemory_SucceedsAtSuggestedTP(t *testing.T
 	}
 }
 
-func TestCalculateKVBlocks_ZeroMemoryBudget_NoMinTPSuggestion(t *testing.T) {
+func TestCalculateKVBlocks_ZeroGPUMemory_RejectsInput(t *testing.T) {
 	// GIVEN a model with zero GPU memory (degenerate config)
 	mc := validDenseModelConfig()
 	hc := validHWConfig()
@@ -517,7 +517,7 @@ func TestCalculateKVBlocks_ZeroMemoryBudget_NoMinTPSuggestion(t *testing.T) {
 		t.Fatal("expected error for zero GPU memory, got nil")
 	}
 
-	// AND error mentions invalid GPU memory (caught by earlier validation)
+	// AND error mentions invalid GPU memory (caught by earlier validation, not minTP logic)
 	errMsg := err.Error()
 	if !strings.Contains(errMsg, "GPU memory") {
 		t.Errorf("expected error mentioning 'GPU memory', got: %v", err)
