@@ -166,11 +166,13 @@ func TestDefaultCollector_PendingReplicaCount_FromLoadingSnapshots(t *testing.T)
 	tests := []struct {
 		name                        string
 		state                       *sim.RouterState
+		wantModels                  int
 		wantPendingCount            map[string]int
 		wantPendingKvCapacityTokens map[string]int64
 	}{
 		{
-			name: "one loading replica alongside active replica",
+			name:       "one loading replica alongside active replica",
+			wantModels: 1,
 			state: &sim.RouterState{
 				Snapshots: []sim.RoutingSnapshot{
 					{ID: "active-1", Model: "modelA", GPUType: "A100", TPDegree: 1,
@@ -185,7 +187,8 @@ func TestDefaultCollector_PendingReplicaCount_FromLoadingSnapshots(t *testing.T)
 			wantPendingKvCapacityTokens: map[string]int64{"modelA": 10000},
 		},
 		{
-			name: "two loading replicas accumulate capacity",
+			name:       "two loading replicas accumulate capacity",
+			wantModels: 1,
 			state: &sim.RouterState{
 				Snapshots: []sim.RoutingSnapshot{
 					{ID: "active-1", Model: "modelA", GPUType: "A100", TPDegree: 1,
@@ -202,7 +205,8 @@ func TestDefaultCollector_PendingReplicaCount_FromLoadingSnapshots(t *testing.T)
 			wantPendingKvCapacityTokens: map[string]int64{"modelA": 20000},
 		},
 		{
-			name: "loading replicas for different models bucketed separately",
+			name:       "loading replicas for different models bucketed separately",
+			wantModels: 2,
 			state: &sim.RouterState{
 				Snapshots: []sim.RoutingSnapshot{
 					{ID: "a1", Model: "modelA", GPUType: "A100", TPDegree: 1,
@@ -221,7 +225,8 @@ func TestDefaultCollector_PendingReplicaCount_FromLoadingSnapshots(t *testing.T)
 			wantPendingKvCapacityTokens: map[string]int64{"modelA": 10000, "modelB": 20000},
 		},
 		{
-			name: "nil LoadingSnapshots — pending fields are zero",
+			name:       "nil LoadingSnapshots — pending fields are zero",
+			wantModels: 1,
 			state: &sim.RouterState{
 				Snapshots: []sim.RoutingSnapshot{
 					{ID: "a1", Model: "modelA", GPUType: "A100", TPDegree: 1,
@@ -237,6 +242,10 @@ func TestDefaultCollector_PendingReplicaCount_FromLoadingSnapshots(t *testing.T)
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			result := collector.Collect(tc.state)
+
+			if len(result) != tc.wantModels {
+				t.Fatalf("got %d ModelSignals, want %d", len(result), tc.wantModels)
+			}
 
 			for _, ms := range result {
 				wantCount := tc.wantPendingCount[ms.ModelID]
