@@ -9,7 +9,7 @@ Every hypothesis falls into one of three VV&UQ categories. This determines what 
 | Category | Question | Evidence required | Examples |
 |----------|----------|-------------------|---------|
 | **Verification** | Does the code implement the intended math/logic? | Exact invariant checks. Failure = bug. | H12 (conservation), H13 (determinism), H22 (input validation) |
-| **Validation** | Does the model match expected system behavior? | Statistical comparison against analytical baselines or real data within a pre-specified accuracy interval. | Cross-validation against M/M/k; H19 (roofline vs blackbox) |
+| **Validation** | Does the model match expected system behavior? | Statistical comparison against analytical baselines or real data within a pre-specified accuracy interval. | Cross-validation against M/M/k |
 | **Uncertainty Quantification** | How confident are we in the region where a finding holds? | Confidence intervals on thresholds; probability statements on properties. | H8 (preemption cliff at 2100±? blocks); H10 (28% improvement at this operating point — what about others?) |
 
 Most current experiments are **Verification** (invariant checking) or informal **Validation** (metric comparison). Future experiments should increasingly incorporate **UQ** — every threshold finding should include a confidence interval, every "confirmed" result should quantify the probability of holding under parameter variation.

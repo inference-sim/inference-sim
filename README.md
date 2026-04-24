@@ -259,7 +259,7 @@ inference-sim/
 │   ├── tiered.go           # TieredKVCache (GPU+CPU)
 │   └── register.go         # NewKVStore factory + init()-based registration into sim/
 ├── sim/latency/            # Latency model implementations
-│   ├── latency.go          # RooflineLatencyModel, BlackboxLatencyModel, NewLatencyModel factory
+│   ├── latency.go          # RooflineLatencyModel, TrainedPhysicsLatencyModel, NewLatencyModel factory
 │   ├── trained_physics_model.go # TrainedPhysicsLatencyModel: physics-informed basis functions with architecture-aware scaling
 │   ├── roofline.go         # Analytical FLOPs/bandwidth latency estimation
 │   ├── config.go           # HFConfig, GetHWConfig, GetModelConfig, ValidateRooflineConfig
