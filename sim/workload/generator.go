@@ -940,6 +940,13 @@ func computeProportionalRate(
 	// Get this window's trace rate (resolveWindowParameters falls back to client.RateFraction)
 	_, _, _, traceRate := resolveWindowParameters(client, window)
 
+	// Absolute rate mode: when aggregate_rate is 0, use trace_rate directly.
+	// This signals "use per-window rates verbatim, don't scale" (ServeGen temporal parity).
+	// ServeGen workloads have time-varying aggregate load that cannot be represented
+	// by a single scalar aggregate_rate, so we use trace_rate as the absolute rate.
+	if aggregateRate == 0 && window.TraceRate != nil {
+		return traceRate
+	}
 	// Sum trace rates of all co-active windows
 	totalTraceRate := 0.0
 

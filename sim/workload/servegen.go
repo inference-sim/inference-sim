@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -82,8 +83,21 @@ type serveGenTraceRow struct {
 
 // loadServeGenData loads ServeGen data files and populates the spec's Clients list.
 // Scans for chunk-*-trace.csv and chunk-*-dataset.json files.
+// If TimeWindow is specified, applies 30-minute temporal filtering and computes
+// aggregate rate as peak within the window.
 func loadServeGenData(spec *WorkloadSpec) error {
 	dataDir := spec.ServeGenData.Path
+
+	// Apply time window filtering if specified
+	if spec.ServeGenData.TimeWindow != "" {
+		start, end := getTimeWindowBounds(spec.ServeGenData.TimeWindow)
+		if start == 0 && end == 0 {
+			return fmt.Errorf("invalid time window %q (must be midnight, morning, or afternoon)", spec.ServeGenData.TimeWindow)
+		}
+		spec.ServeGenData.SpanStart = start
+		spec.ServeGenData.SpanEnd = end
+		logrus.Infof("loadServeGenData: applying time window %q (%ds - %ds)", spec.ServeGenData.TimeWindow, start, end)
+	}
 
 	// Find all chunk trace files
 	traceFiles, err := filepath.Glob(filepath.Join(dataDir, "chunk-*-trace.csv"))
@@ -95,6 +109,11 @@ func loadServeGenData(spec *WorkloadSpec) error {
 	if len(traceFiles) == 0 {
 		return fmt.Errorf("no chunk-*-trace.csv files found in %s", dataDir)
 	}
+
+	// Track aggregate rate at each timestamp for peak calculation
+	// Map[timestamp] -> sum of rates from all chunks at that timestamp
+	aggregateRateAtTime := make(map[int64]float64)
+	var chunkRates []float64 // For rate normalization
 
 	for _, tracePath := range traceFiles {
 		// Derive chunk ID from filename
@@ -112,12 +131,43 @@ func loadServeGenData(spec *WorkloadSpec) error {
 		}
 		if client != nil {
 			spec.Clients = append(spec.Clients, *client)
+
+			// Accumulate this chunk's rate at each timestamp
+			var chunkPeakRate float64
+			for _, window := range client.Lifecycle.Windows {
+				if window.TraceRate != nil {
+					timestamp := window.StartUs / 1e6 // Convert to seconds
+					aggregateRateAtTime[timestamp] += *window.TraceRate
+					if *window.TraceRate > chunkPeakRate {
+						chunkPeakRate = *window.TraceRate
+					}
+				}
+			}
+			chunkRates = append(chunkRates, chunkPeakRate)
 		}
 	}
 
 	if len(spec.Clients) == 0 {
 		return fmt.Errorf("no valid chunks found in %s", dataDir)
 	}
+
+	// Set aggregate_rate to 0 to signal absolute rate mode (ServeGen temporal parity).
+	// ServeGen workloads have time-varying aggregate load encoded in per-window trace_rate.
+	// Setting aggregate_rate=0 tells the generator to use trace_rate as absolute rates
+	// instead of proportional weights, preserving temporal variation.
+	spec.AggregateRate = 0
+
+	// Log the peak for informational purposes
+	if spec.ServeGenData.TimeWindow != "" {
+		var peakAggregate float64
+		for _, rate := range aggregateRateAtTime {
+			if rate > peakAggregate {
+				peakAggregate = rate
+			}
+		}
+		logrus.Infof("loadServeGenData: using absolute rate mode (aggregate_rate=0); peak rate was %.2f within %s window", peakAggregate, spec.ServeGenData.TimeWindow)
+	}
+
 	return nil
 }
 
@@ -157,10 +207,9 @@ func loadServeGenDatasetAllWindows(path string, sgConfig *ServeGenDataSpec) (map
 			timestamp = int(tsFloat)
 		}
 
-		// Filter by span
-		if sgConfig.SpanStart > 0 && int64(timestamp) < sgConfig.SpanStart {
-			continue
-		}
+		// Filter dataset entries that are after the span end.
+		// Keep entries before span start - they may be needed for nearest-preceding lookup.
+		// Example: Hour 8 trace windows (28800-30600) need Hour 6 dataset (21600).
 		if sgConfig.SpanEnd > 0 && int64(timestamp) >= sgConfig.SpanEnd {
 			continue
 		}
@@ -198,6 +247,60 @@ func loadServeGenDatasetAllWindows(path string, sgConfig *ServeGenDataSpec) (map
 // serveGenWindowDurationSec is the standard ServeGen window duration (10 minutes).
 const serveGenWindowDurationSec = 600
 
+// getTimeWindowBounds converts a time window name to (start, end) bounds in seconds.
+// Uses 30-minute windows aligned with ServeGen's diurnal analysis.
+// Note: ServeGen datasets contain token distributions at 6-hour intervals (0, 21600, 43200, 64800...),
+// while trace files have 10-minute granularity. Trace windows use nearest-preceding dataset entry.
+// Returns (0, 0) if the window name is empty/invalid.
+func getTimeWindowBounds(window string) (int64, int64) {
+	switch window {
+	case "midnight":
+		// Hour 0:00-0:30 (0s - 1800s)
+		// Trace windows at 0s, 600s, 1200s all use dataset entry at timestamp 0
+		return 0, 1800
+	case "morning":
+		// Hour 8:00-8:30 (28800s - 30600s)
+		// Trace windows at 28800s, 29400s, 30000s all use dataset entry at timestamp 21600 (Hour 6)
+		return 28800, 30600
+	case "afternoon":
+		// Hour 14:00-14:30 (50400s - 52200s)
+		// Trace windows at 50400s, 51000s, 51600s all use dataset entry at timestamp 43200 (Hour 12)
+		return 50400, 52200
+	default:
+		return 0, 0
+	}
+}
+
+// findNearestDataset finds the dataset entry for the given timestamp.
+// If an exact match exists, returns it. Otherwise, returns the nearest-preceding
+// dataset entry (largest timestamp <= queryTimestamp).
+// Returns (datasetWindow{}, false) if no dataset entry exists at or before the timestamp.
+//
+// This handles ServeGen's dataset granularity mismatch: datasets have 6-hour intervals
+// (0, 21600, 43200, 64800...) while traces have 10-minute intervals.
+// Example: trace window at 28800s (Hour 8) uses dataset at 21600s (Hour 6).
+func findNearestDataset(queryTimestamp int, datasetByTimestamp map[int]datasetWindow) (datasetWindow, bool) {
+	// Try exact match first (fast path for timestamps like 0, 21600, 43200...)
+	if dataset, ok := datasetByTimestamp[queryTimestamp]; ok {
+		return dataset, true
+	}
+
+	// Find largest dataset timestamp <= queryTimestamp
+	var bestTimestamp int = -1
+	for dsTimestamp := range datasetByTimestamp {
+		if dsTimestamp <= queryTimestamp && dsTimestamp > bestTimestamp {
+			bestTimestamp = dsTimestamp
+		}
+	}
+
+	if bestTimestamp >= 0 {
+		return datasetByTimestamp[bestTimestamp], true
+	}
+
+	// No dataset entry at or before this timestamp
+	return datasetWindow{}, false
+}
+
 // loadServeGenChunk loads a single chunk's trace + dataset into a ClientSpec
 // with per-window temporal parameters. Each active trace row (rate > 0) that has
 // a matching dataset entry becomes a lifecycle window with per-window arrival
@@ -221,7 +324,17 @@ func loadServeGenChunk(chunkID, tracePath, datasetPath string, sgConfig *ServeGe
 	}
 
 	// Build lifecycle windows from trace rows + matching dataset windows.
+	// Track unique datasets used across all windows to determine if we can
+	// deduplicate distributions at client-level vs per-window.
 	var windows []ActiveWindow
+	datasetTimestampsUsed := make(map[int]bool)
+
+	// First pass: collect windows and track which unique datasets are used
+	type windowInfo struct {
+		window     ActiveWindow
+		datasetKey int
+	}
+	var windowInfos []windowInfo
 
 	for _, row := range rows {
 		// Filter by time span if configured.
@@ -237,12 +350,25 @@ func loadServeGenChunk(chunkID, tracePath, datasetPath string, sgConfig *ServeGe
 			continue
 		}
 
-		// Get distributions for this timestamp.
-		dataset, ok := datasetByTimestamp[int(row.startTimeSec)]
+		// Find which dataset this window will use (nearest-preceding).
+		// ServeGen datasets have 6-hour granularity while traces have 10-minute granularity.
+		// A trace window at Hour 8 uses the dataset from Hour 6, etc.
+		_, ok := findNearestDataset(int(row.startTimeSec), datasetByTimestamp)
 		if !ok {
-			logrus.Debugf("loadServeGenChunk: no dataset for chunk %s at t=%.0f, skipping window", chunkID, row.startTimeSec)
+			logrus.Debugf("loadServeGenChunk: no dataset for chunk %s at or before t=%.0f, skipping window", chunkID, row.startTimeSec)
 			continue
 		}
+
+		// Find the actual dataset key (not the query timestamp)
+		var datasetKey int
+		for ts := range datasetByTimestamp {
+			if ts <= int(row.startTimeSec) && (datasetKey == 0 || ts > datasetKey) {
+				datasetKey = ts
+			}
+		}
+
+		// Track which unique dataset this window uses
+		datasetTimestampsUsed[datasetKey] = true
 
 		// Build per-window arrival spec.
 		arrivalSpec := buildArrivalSpecFromRow(row)
@@ -250,31 +376,99 @@ func loadServeGenChunk(chunkID, tracePath, datasetPath string, sgConfig *ServeGe
 		// Build per-window trace rate (copy to avoid pointer aliasing across loop iterations).
 		traceRate := row.rate
 
-		// Build window with per-window parameters.
+		// Build window. Distributions will be set either at client-level or per-window
+		// depending on whether all windows share the same dataset.
 		window := ActiveWindow{
 			StartUs:   int64(row.startTimeSec * 1e6),
 			EndUs:     int64((row.startTimeSec + serveGenWindowDurationSec) * 1e6),
 			TraceRate: &traceRate,
 			Arrival:   &arrivalSpec,
-			InputDist: &DistSpec{
-				Type:   "empirical",
-				Params: intMapToStringMap(dataset.inputPDF),
-			},
-			OutputDist: &DistSpec{
-				Type:   "empirical",
-				Params: intMapToStringMap(dataset.outputPDF),
-			},
+			// InputDist/OutputDist set below after deduplication check
 		}
 
-		windows = append(windows, window)
+		windowInfos = append(windowInfos, windowInfo{
+			window:     window,
+			datasetKey: datasetKey,
+		})
 	}
 
-	if len(windows) == 0 {
+	if len(windowInfos) == 0 {
 		return nil, nil // Inactive chunk: no active windows found.
 	}
 
+	// Determine if all windows use the same dataset.
+	// If yes, fit distributions once at client-level and don't include in windows.
+	// If no, fit per-window (rare for time-window extractions but possible for full-day).
+	var clientInputDist, clientOutputDist DistSpec
+
+	// Find the unique dataset timestamp(s) used
+	uniqueDatasets := make([]int, 0, len(datasetTimestampsUsed))
+	for ts := range datasetTimestampsUsed {
+		uniqueDatasets = append(uniqueDatasets, ts)
+	}
+
+	if len(uniqueDatasets) == 1 {
+		// All windows use the same dataset - fit once at client level
+		datasetKey := uniqueDatasets[0]
+		dataset := datasetByTimestamp[datasetKey]
+
+		inputDist, err := fitLognormalFromPDF(dataset.inputPDF)
+		if err != nil {
+			return nil, fmt.Errorf("fitting input distribution: %w", err)
+		}
+		outputDist, err := fitLognormalFromPDF(dataset.outputPDF)
+		if err != nil {
+			return nil, fmt.Errorf("fitting output distribution: %w", err)
+		}
+
+		clientInputDist = inputDist
+		clientOutputDist = outputDist
+
+		// Build windows WITHOUT distribution overrides (use client-level)
+		for _, info := range windowInfos {
+			windows = append(windows, info.window)
+		}
+	} else {
+		// Multiple datasets used - need per-window distributions
+		// Fit each unique dataset once and cache it
+		fittedDists := make(map[int]struct {
+			input  DistSpec
+			output DistSpec
+		})
+
+		for datasetKey := range datasetTimestampsUsed {
+			dataset := datasetByTimestamp[datasetKey]
+
+			inputDist, err := fitLognormalFromPDF(dataset.inputPDF)
+			if err != nil {
+				return nil, fmt.Errorf("fitting input distribution for dataset t=%d: %w", datasetKey, err)
+			}
+			outputDist, err := fitLognormalFromPDF(dataset.outputPDF)
+			if err != nil {
+				return nil, fmt.Errorf("fitting output distribution for dataset t=%d: %w", datasetKey, err)
+			}
+
+			fittedDists[datasetKey] = struct {
+				input  DistSpec
+				output DistSpec
+			}{inputDist, outputDist}
+		}
+
+		// Build windows WITH distribution overrides from cache
+		for _, info := range windowInfos {
+			w := info.window
+			dists := fittedDists[info.datasetKey]
+			w.InputDist = &dists.input
+			w.OutputDist = &dists.output
+			windows = append(windows, w)
+		}
+
+		// Fallback client-level distributions (unused but required for validation)
+		clientInputDist = DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 512, "stddev": 128}}
+		clientOutputDist = DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 128, "stddev": 32}}
+	}
+
 	// Build ClientSpec with per-window lifecycle.
-	// Client-level fields are fallback defaults; all windows have full overrides.
 	client := &ClientSpec{
 		ID:           fmt.Sprintf("servegen-chunk-%s", chunkID),
 		TenantID:     fmt.Sprintf("chunk-%s", chunkID),
@@ -286,10 +480,11 @@ func loadServeGenChunk(chunkID, tracePath, datasetPath string, sgConfig *ServeGe
 			Windows: windows,
 		},
 
-		// Client-level defaults (fallback only; each window has full overrides).
+		// Client-level distributions: either the single shared distribution
+		// (if all windows use same dataset) or fallback defaults (if per-window).
 		Arrival:    ArrivalSpec{Process: "poisson"},
-		InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 512, "stddev": 128}},
-		OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 128, "stddev": 32}},
+		InputDist:  clientInputDist,
+		OutputDist: clientOutputDist,
 	}
 
 	return client, nil
@@ -333,12 +528,58 @@ func buildArrivalSpecFromRow(row serveGenTraceRow) ArrivalSpec {
 	return spec
 }
 
-func intMapToStringMap(m map[int]float64) map[string]float64 {
-	result := make(map[string]float64, len(m))
-	for k, v := range m {
-		result[strconv.Itoa(k)] = v
+// fitLognormalFromPDF fits a lognormal distribution to an empirical PMF.
+// Returns a DistSpec with type "lognormal" and parameters mu, sigma.
+// Lognormal is appropriate for strictly positive, right-skewed distributions
+// like token counts. Zero and negative values are filtered out automatically.
+func fitLognormalFromPDF(pdf map[int]float64) (DistSpec, error) {
+	if len(pdf) == 0 {
+		return DistSpec{}, fmt.Errorf("empty PDF")
 	}
-	return result
+
+	// Compute weighted mean and variance of log(tokens)
+	// Filter out zero/negative values (lognormal requires positive domain)
+	var sumProb, sumLogX, sumLogXSq float64
+	for value, prob := range pdf {
+		if value <= 0 {
+			continue // skip zero/negative tokens
+		}
+		if prob < 0 {
+			return DistSpec{}, fmt.Errorf("negative probability %f for value %d", prob, value)
+		}
+		if prob == 0 {
+			continue // skip zero-probability values
+		}
+		logX := math.Log(float64(value))
+		sumProb += prob
+		sumLogX += prob * logX
+		sumLogXSq += prob * logX * logX
+	}
+
+	// Normalize if needed (R11: division guard)
+	if sumProb <= 0 {
+		return DistSpec{}, fmt.Errorf("sum of probabilities is zero or negative")
+	}
+	mu := sumLogX / sumProb
+	variance := (sumLogXSq / sumProb) - (mu * mu)
+
+	// Variance must be non-negative (guard against numerical errors)
+	if variance < 0 {
+		if variance > -1e-10 {
+			variance = 0 // numerical error
+		} else {
+			return DistSpec{}, fmt.Errorf("negative variance %f (numerical instability)", variance)
+		}
+	}
+	sigma := math.Sqrt(variance)
+
+	return DistSpec{
+		Type: "lognormal",
+		Params: map[string]float64{
+			"mu":    mu,
+			"sigma": sigma,
+		},
+	}, nil
 }
 
 func parseServeGenTrace(path string) ([]serveGenTraceRow, error) {

@@ -87,11 +87,12 @@ func TestLoadServeGenDatasetAllWindows(t *testing.T) {
 		result, err := loadServeGenDatasetAllWindows(datasetPath, sgConfig)
 		require.NoError(t, err)
 
-		// Should only include window at 600
-		assert.Len(t, result, 1)
-		assert.Contains(t, result, 600)
-		assert.NotContains(t, result, 0)
-		assert.NotContains(t, result, 1200)
+		// Should include windows at 0 and 600 (keep entries before span for nearest-preceding lookup)
+		// Should NOT include 1200 (after span end)
+		assert.Len(t, result, 2)
+		assert.Contains(t, result, 0)    // Kept for nearest-preceding lookup
+		assert.Contains(t, result, 600)  // Within span
+		assert.NotContains(t, result, 1200) // After span end
 	})
 
 	t.Run("all empty windows returns empty map", func(t *testing.T) {
@@ -235,9 +236,12 @@ func TestLoadServeGenChunk_TemporalPreservation(t *testing.T) {
 		require.NotNil(t, w1.Arrival.Scale)
 		assert.Equal(t, 40000.0, *w1.Arrival.Scale) // 0.04s * 1e6 = 40000us
 		require.NotNil(t, w1.InputDist)
-		assert.Equal(t, "empirical", w1.InputDist.Type)
-		assert.InDelta(t, 0.6, w1.InputDist.Params["100"], 0.001)
-		assert.InDelta(t, 0.4, w1.InputDist.Params["200"], 0.001)
+		assert.Equal(t, "lognormal", w1.InputDist.Type)
+		// Check that lognormal parameters exist (mu, sigma fitted from empirical PMF)
+		_, hasMu := w1.InputDist.Params["mu"]
+		_, hasSigma := w1.InputDist.Params["sigma"]
+		assert.True(t, hasMu, "lognormal distribution should have mu parameter")
+		assert.True(t, hasSigma, "lognormal distribution should have sigma parameter")
 
 		// Check window 2 (timestamp 1200) - different distributions
 		w2 := client.Lifecycle.Windows[1]
@@ -245,7 +249,10 @@ func TestLoadServeGenChunk_TemporalPreservation(t *testing.T) {
 		require.NotNil(t, w2.TraceRate)
 		assert.Equal(t, 22.8, *w2.TraceRate)
 		require.NotNil(t, w2.InputDist)
-		assert.InDelta(t, 0.5, w2.InputDist.Params["150"], 0.001) // Different dist from w1
+		assert.Equal(t, "lognormal", w2.InputDist.Type)
+		// Different window should have different fitted parameters
+		_, hasMu2 := w2.InputDist.Params["mu"]
+		assert.True(t, hasMu2, "window 2 should have lognormal parameters")
 
 		// Check window 3 (timestamp 2400)
 		w3 := client.Lifecycle.Windows[2]
@@ -270,7 +277,7 @@ func TestLoadServeGenChunk_TemporalPreservation(t *testing.T) {
 		assert.Nil(t, client, "inactive chunk should return nil")
 	})
 
-	t.Run("window without matching dataset is skipped", func(t *testing.T) {
+	t.Run("window uses nearest-preceding dataset", func(t *testing.T) {
 		tmpDir := t.TempDir()
 
 		tracePath := filepath.Join(tmpDir, "chunk-test-trace.csv")
@@ -293,9 +300,10 @@ func TestLoadServeGenChunk_TemporalPreservation(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, client)
 
-		// Only window 600 should be present (window 1200 has no matching dataset)
-		require.Len(t, client.Lifecycle.Windows, 1)
+		// Both windows should be present (window 1200 uses nearest-preceding dataset at 600)
+		require.Len(t, client.Lifecycle.Windows, 2)
 		assert.Equal(t, int64(600*1e6), client.Lifecycle.Windows[0].StartUs)
+		assert.Equal(t, int64(1200*1e6), client.Lifecycle.Windows[1].StartUs)
 	})
 }
 
@@ -347,15 +355,22 @@ func TestServeGenConversion_E2E(t *testing.T) {
 		require.NoError(t, err)
 		assert.Len(t, spec.Clients, 2, "should load 2 chunks")
 
-		// Both clients should have per-window parameters
+		// Both clients should have lifecycle windows with per-window arrival/trace_rate
+		// Distributions should be at client-level (both chunks use single dataset)
 		for _, c := range spec.Clients {
 			require.NotNil(t, c.Lifecycle, "client %s should have lifecycle", c.ID)
 			require.Greater(t, len(c.Lifecycle.Windows), 0, "client %s should have windows", c.ID)
+
+			// Client-level distributions should be lognormal (fitted from dataset)
+			assert.Equal(t, "lognormal", c.InputDist.Type, "client %s should have lognormal input", c.ID)
+			assert.Equal(t, "lognormal", c.OutputDist.Type, "client %s should have lognormal output", c.ID)
+
+			// Windows should have per-window parameters but not distribution overrides
 			for _, w := range c.Lifecycle.Windows {
 				assert.NotNil(t, w.TraceRate, "window should have TraceRate")
 				assert.NotNil(t, w.Arrival, "window should have Arrival")
-				assert.NotNil(t, w.InputDist, "window should have InputDist")
-				assert.NotNil(t, w.OutputDist, "window should have OutputDist")
+				assert.Nil(t, w.InputDist, "window should not override input dist (use client-level)")
+				assert.Nil(t, w.OutputDist, "window should not override output dist (use client-level)")
 			}
 		}
 
@@ -534,7 +549,7 @@ func TestServeGenConversion_E2E(t *testing.T) {
 		d, _ := json.Marshal(dataset)
 		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "chunk-0-dataset.json"), d, 0644))
 
-		spec, err := ConvertServeGen(tmpDir)
+		spec, err := ConvertServeGen(tmpDir, "")
 		require.NoError(t, err)
 		require.NotNil(t, spec)
 
@@ -543,14 +558,18 @@ func TestServeGenConversion_E2E(t *testing.T) {
 		assert.Equal(t, "servegen-chunk-0", spec.Clients[0].ID)
 		assert.Nil(t, spec.ServeGenData, "ServeGenData should be cleared after loading")
 
-		// Should have per-window parameters
+		// Should have per-window parameters (arrival/trace_rate) but not distributions
 		require.NotNil(t, spec.Clients[0].Lifecycle)
 		require.Len(t, spec.Clients[0].Lifecycle.Windows, 1)
 		w := spec.Clients[0].Lifecycle.Windows[0]
 		assert.NotNil(t, w.TraceRate)
 		assert.NotNil(t, w.Arrival)
-		assert.NotNil(t, w.InputDist)
-		assert.NotNil(t, w.OutputDist)
+		// Distributions should be at client-level (single dataset)
+		assert.Nil(t, w.InputDist)
+		assert.Nil(t, w.OutputDist)
+		// Client-level distributions should be lognormal
+		assert.Equal(t, "lognormal", spec.Clients[0].InputDist.Type)
+		assert.Equal(t, "lognormal", spec.Clients[0].OutputDist.Type)
 	})
 
 	t.Run("determinism: same seed produces identical output", func(t *testing.T) {

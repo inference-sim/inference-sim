@@ -7,15 +7,17 @@ import (
 
 // ConvertServeGen converts a ServeGen data directory (containing chunk-*-trace.csv
 // and dataset.json files) into a v2 WorkloadSpec.
+// If timeWindow is specified ("midnight", "morning", or "afternoon"), extracts a 30-minute
+// snapshot from Day 1 and includes only chunks with active windows in that range.
 // Returns error if the directory is empty or contains invalid data (R6: never Fatalf).
-func ConvertServeGen(path string) (*WorkloadSpec, error) {
+func ConvertServeGen(path string, timeWindow string) (*WorkloadSpec, error) {
 	if path == "" {
 		return nil, fmt.Errorf("ServeGen path must not be empty")
 	}
 	spec := &WorkloadSpec{
 		Version:       "2",
 		AggregateRate: 1.0, // placeholder; loadServeGenData derives rates from trace data
-		ServeGenData:  &ServeGenDataSpec{Path: path},
+		ServeGenData:  &ServeGenDataSpec{Path: path, TimeWindow: timeWindow},
 	}
 	if err := loadServeGenData(spec); err != nil {
 		return nil, fmt.Errorf("loading ServeGen data from %s: %w", path, err)
