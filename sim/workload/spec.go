@@ -173,6 +173,13 @@ type LifecycleSpec struct {
 type ActiveWindow struct {
 	StartUs int64 `yaml:"start_us"`
 	EndUs   int64 `yaml:"end_us"`
+
+	// Per-window parameters for time-varying workloads (ServeGen compatibility).
+	// When set, these override the client-level parameters during this window.
+	TraceRate  *float64     `yaml:"trace_rate,omitempty"`          // Weight for proportional rate allocation
+	Arrival    *ArrivalSpec `yaml:"arrival,omitempty"`             // Arrival pattern (shape/scale for CV)
+	InputDist  *DistSpec    `yaml:"input_distribution,omitempty"`  // Input token distribution
+	OutputDist *DistSpec    `yaml:"output_distribution,omitempty"` // Output token distribution
 }
 
 // MultimodalSpec configures multimodal request generation.
