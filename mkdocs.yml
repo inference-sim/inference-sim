@@ -119,7 +119,7 @@ nav:
       - reference/index.md
       - Project Structure: reference/project-structure.md
       - Configuration: reference/configuration.md
-      - Supported Models: reference/models.md
+      - Model Compatibility: reference/models.md
       - Workload Spec Schema: reference/workload-spec.md
   - Methodology:
       - methodology/index.md

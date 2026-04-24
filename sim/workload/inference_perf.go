@@ -213,17 +213,14 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 		// Each stage's N*M clients are active only during that stage's window
 		// and emit at that stage's rate.
 		//
-		// Math: aggregateRate = sum(stageRates), rateFraction = stageRate/numClientsPerStage.
-		// After normalization, each client's rate = stageRate/numClientsPerStage.
-		// During a stage, N*M clients are active → total rate = stageRate.
+		// Each client uses a CustomSamplerFactory with a Poisson sampler at the
+		// exact per-client rate (stage.Rate / numClients), bypassing fraction
+		// normalization entirely. This avoids interaction with per-phase
+		// normalization in normalizeRateFractions.
 		//
-		// NOTE: Multi-stage workloads use Poisson (not NormalizedExponentialSampler).
-		// Rationale: NormalizedExponentialSampler pre-generates intervals spanning the
-		// full workload duration, but per-stage clients are only active during their
-		// stage's window (a subset of the full duration). This mismatch would waste
-		// intervals or require complex windowing. Poisson generates incrementally
-		// during the active window, matching the per-stage lifecycle architecture.
-		// See BC-4 in plan for full details.
+		// RateFraction is set to 1.0 as a dummy (must be positive to pass the
+		// clientRate <= 0 skip check in generator.go). The factory overrides
+		// the normalized rate.
 		windows := stagesToWindows(spec.Stages)
 
 		for _, stage := range spec.Stages {
@@ -232,7 +229,10 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 
 		clients = make([]ClientSpec, 0, numClientsPerStage*len(spec.Stages))
 		for s, stage := range spec.Stages {
-			rateFraction := stage.Rate / float64(numClientsPerStage)
+			perClientRate := stage.Rate / float64(numClientsPerStage) / 1e6 // req/µs
+			factory := func(rng *rand.Rand) ArrivalSampler {
+				return &PoissonSampler{rateMicros: perClientRate}
+			}
 			stageLifecycle := &LifecycleSpec{
 				Windows: []ActiveWindow{windows[s]},
 			}
@@ -257,37 +257,39 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 						clientIdx++
 
 						clients = append(clients, ClientSpec{
-							ID:           clientID,
-							TenantID:     prefixGroup,
-							SLOClass:     "standard",
-							RateFraction: rateFraction,
-							Arrival:      ArrivalSpec{Process: "poisson"},
-							InputDist:    inputDist,
-							OutputDist:   outputDist,
-							PrefixGroup:  prefixGroup,
-							PrefixLength: sp.SystemPromptLen,
-							Reasoning:    reasoning,
-							Lifecycle:    stageLifecycle,
+							ID:                  clientID,
+							TenantID:            prefixGroup,
+							SLOClass:            "standard",
+							RateFraction:         1.0,
+							Arrival:              ArrivalSpec{Process: "poisson"},
+							CustomSamplerFactory: factory,
+							InputDist:            inputDist,
+							OutputDist:           outputDist,
+							PrefixGroup:          prefixGroup,
+							PrefixLength:         sp.SystemPromptLen,
+							Reasoning:            reasoning,
+							Lifecycle:            stageLifecycle,
 						})
 					}
 				}
 			} else {
-				// Non-multi-turn multi-stage: use Poisson
+				// Non-multi-turn multi-stage: use Poisson via CustomSamplerFactory
 				for p := 0; p < sp.NumUniqueSystemPrompts; p++ {
 					prefixGroup := fmt.Sprintf("prompt-%d", p)
 					for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
 						clientID := fmt.Sprintf("stage-%d-prompt-%d-user-%d", s, p, u)
 						clients = append(clients, ClientSpec{
-							ID:           clientID,
-							TenantID:     prefixGroup,
-							SLOClass:     "standard",
-							RateFraction: rateFraction,
-							Arrival:      ArrivalSpec{Process: "poisson"},
-							InputDist:    inputDist,
-							OutputDist:   outputDist,
-							PrefixGroup:  prefixGroup,
-							PrefixLength: sp.SystemPromptLen,
-							Lifecycle:    stageLifecycle,
+							ID:                  clientID,
+							TenantID:            prefixGroup,
+							SLOClass:            "standard",
+							RateFraction:         1.0,
+							Arrival:              ArrivalSpec{Process: "poisson"},
+							CustomSamplerFactory: factory,
+							InputDist:            inputDist,
+							OutputDist:           outputDist,
+							PrefixGroup:          prefixGroup,
+							PrefixLength:         sp.SystemPromptLen,
+							Lifecycle:            stageLifecycle,
 						})
 					}
 				}

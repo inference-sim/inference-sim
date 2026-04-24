@@ -163,12 +163,17 @@ func (e *TimeoutEvent) Execute(sim *Simulator) {
 			}
 		}
 		sim.RunningBatch.Requests = remaining
-		// If batch is now empty, clear state so the stale stepEvent doesn't
-		// fire Step() on an empty batch (which could crash in StepTime).
-		// This also enables the INV-8 guard below to reschedule if needed.
+		// If batch is now empty, clear RunningBatch. Do NOT nil sim.stepEvent:
+		// leaving it pointing to the already-scheduled StepEvent prevents the
+		// INV-8 guard below from creating a duplicate StepEvent at the current
+		// tick. At the same tick, StepEvents fire before TimeoutEvents (priority
+		// 2 < 5), so a newly-created StepEvent would pull a queued request and
+		// then its same-deadline TimeoutEvent would immediately time it out —
+		// cascading once per queued seed and leaving N orphaned StepEvents.
+		// The already-scheduled StepEvent fires at the correct future time and
+		// the Step() orphan guard handles the empty-batch case.
 		if len(remaining) == 0 {
 			sim.RunningBatch = nil
-			sim.stepEvent = nil
 		}
 	} else {
 		sim.WaitQ.Remove(e.Request)

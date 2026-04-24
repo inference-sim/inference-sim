@@ -42,9 +42,9 @@
 
 ---
 
-## Decision 4: ActuationDelay uses existing DelaySpec
+## Decision 4: HPAScrapeDelay uses existing DelaySpec
 
-**Decision**: `DeploymentConfig.ActuationDelay` is of type `DelaySpec` (existing, in `infra_config.go`), not a new `DistributionSpec` type.
+**Decision**: `DeploymentConfig.HPAScrapeDelay` is of type `DelaySpec` (existing, in `infra_config.go`), not a new `DistributionSpec` type.
 
 **Rationale**: The design doc uses "DistributionSpec" as a conceptual name for a configurable delay distribution. The existing `DelaySpec{Mean, Stddev}` with Gaussian sampling already serves this purpose and is used for `NodePoolConfig.ProvisioningDelay` and `InstanceLifecycleConfig.LoadingDelay`. Introducing a new type would be duplicate code. `DelaySpec.IsZero()` directly implements the "zero = deterministic no-delay" semantic needed for INV-6 compatibility.
 
@@ -84,11 +84,13 @@
 
 ---
 
-## Decision 8: Cooldown tracking location
+## Decision 8: Stabilization window gate location
 
-**Decision**: Cooldown is tracked in two maps on `ClusterSimulator`: `lastScaleUpAt map[string]int64` and `lastScaleDownAt map[string]int64` (keyed by ModelID). These are initialized to empty maps when the autoscaler is enabled. The tick handler in `cluster.go` suppresses a `ScaleDecision` if `now - lastScaleAt[modelID] < CooldownUs` before forwarding to Actuator.
+_Supersedes earlier cooldown design. Implemented in PR #1117 (issue #1108)._
 
-**Rationale**: Cooldown is an orchestrator concern, not an Engine or Analyzer concern. Keeping it in the tick handler means Engine and Analyzer remain stateless and independently testable. This matches the design doc's explicit statement: "cooldown lives in the ScalingTickEvent handler in cluster.go, not inside any interface."
+**Decision**: Stabilization window state is tracked in two maps on `autoscalerPipeline`: `scaleUpFirstSignalAt map[string]int64` and `scaleDownFirstSignalAt map[string]int64` (keyed by ModelID). A `ScaleDecision` from the Engine is forwarded to the Actuator only once the signal has been continuously present for `ScaleUpStabilizationWindowUs` (or `ScaleDownStabilizationWindowUs`). If the signal disappears for any tick, the timer is reset. Window=0 passes on first signal.
+
+**Rationale**: Stabilization window semantics match the Kubernetes HPA pre-event consistency gate — HPA waits until the recommendation has been stable for the window duration before acting, preventing premature action on transient load spikes. This replaced the original post-event cooldown (which locked out subsequent decisions for N µs after a decision fired) because cooldowns cannot suppress the first premature scale-up, only subsequent ones. Keeping gate state in `autoscalerPipeline` (not `ClusterSimulator`) keeps Engine and Analyzer stateless and independently testable.
 
 ---
 

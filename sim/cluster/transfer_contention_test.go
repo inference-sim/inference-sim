@@ -18,7 +18,7 @@ func testModelHardwareConfig() sim.ModelHardwareConfig {
 		BytesPerParam:   2.0,
 		// NumKVHeads=0: MHA fallback, uses NumHeads=4
 	}
-	return sim.NewModelHardwareConfig(mc, sim.HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0)
+	return sim.NewModelHardwareConfig(mc, testRooflineHWCalib(), "test-model", "H100", 1, "roofline", 0)
 }
 
 // newContentionConfig creates a PD deployment config with transfer contention enabled.

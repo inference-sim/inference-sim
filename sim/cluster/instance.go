@@ -115,7 +115,7 @@ func (i *InstanceSimulator) Horizon() int64 {
 // PostDecodeFixedOverhead returns the fixed per-request post-decode overhead (µs)
 // from the instance's underlying latency model. Used by detectDecodeCompletions
 // to stamp parent.CompletionTime with the correct client-visible completion time.
-// Returns 0 for blackbox/roofline/cross-model; non-zero for trained-roofline (BC-2, #846).
+// Returns 0 for roofline; non-zero for trained-physics (BC-2, #846).
 func (i *InstanceSimulator) PostDecodeFixedOverhead() int64 {
 	return i.sim.PostDecodeFixedOverhead()
 }
@@ -272,6 +272,9 @@ func (i *InstanceSimulator) MaxBatchSize() int {
 		return 0
 	}
 	return int(i.maxRunningReqs)
+// PreemptionCount returns the cumulative number of preemption events on this instance.
+func (i *InstanceSimulator) PreemptionCount() int64 {
+	return i.sim.Metrics.PreemptionCount
 }
 
 // GetCachedBlockCount returns the number of consecutive cached prefix blocks

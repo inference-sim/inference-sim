@@ -21,7 +21,7 @@ func newTestSimConfig() sim.SimConfig {
 		KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, "roofline", 0),
 	}
 }
 
@@ -53,7 +53,7 @@ func TestInstanceSimulator_GoldenDataset_Equivalence(t *testing.T) {
 					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
 					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
 					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
-					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, "blackbox", tc.MaxModelLen),
+					ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, "roofline", tc.MaxModelLen),
 				},
 			)
 
@@ -107,7 +107,7 @@ func TestInstanceSimulator_GoldenDataset_Invariants(t *testing.T) {
 					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
 					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
 					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
-					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, "blackbox", tc.MaxModelLen),
+					ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, "roofline", tc.MaxModelLen),
 				},
 			)
 
@@ -501,12 +501,12 @@ func TestInstanceSimulator_SnapshotCacheQueryFn_NilSim(t *testing.T) {
 }
 
 // BC-2: PostDecodeFixedOverhead() delegates to inner sim.Simulator.PostDecodeFixedOverhead().
-// Uses blackbox config (overhead=0) to verify the delegation path exists and returns 0.
+// Uses roofline config (overhead=0) to verify the delegation path exists and returns 0.
 func TestInstanceSimulator_PostDecodeFixedOverhead_DelegatesToSim(t *testing.T) {
-	cfg := newTestSimConfig() // blackbox model → PostDecodeFixedOverhead() = 0
+	cfg := newTestSimConfig() // roofline model → PostDecodeFixedOverhead() = 0
 	inst := NewInstanceSimulator("instance_0", cfg)
 	if got := inst.PostDecodeFixedOverhead(); got != 0 {
-		t.Errorf("PostDecodeFixedOverhead() = %d, want 0 for blackbox model", got)
+		t.Errorf("PostDecodeFixedOverhead() = %d, want 0 for roofline model", got)
 	}
 }
 

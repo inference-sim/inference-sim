@@ -34,8 +34,8 @@ func (s *PoissonSampler) SampleIAT(rng *rand.Rand) int64 {
 // Implemented using Marsaglia-Tsang's method for shape >= 1,
 // with transformation for shape < 1.
 type GammaSampler struct {
-	shape float64 // 1/CV² (alpha parameter)
-	scale float64 // CV²/rate in microseconds (beta parameter)
+	shape float64 // shape parameter (alpha)
+	scale float64 // scale parameter in microseconds
 }
 
 func (s *GammaSampler) SampleIAT(rng *rand.Rand) int64 {
@@ -228,6 +228,17 @@ func NewArrivalSampler(spec ArrivalSpec, ratePerMicrosecond float64) ArrivalSamp
 		return &PoissonSampler{rateMicros: ratePerMicrosecond}
 
 	case "gamma":
+		// Priority 1: Use explicit MLE-fitted parameters if provided (ServeGen)
+		if spec.Shape != nil && spec.Scale != nil {
+			if *spec.Shape <= 0 || *spec.Scale <= 0 {
+				logrus.Warnf("NewArrivalSampler: explicit shape/scale must be positive (shape=%.4f, scale=%.4f); deriving from CV instead", *spec.Shape, *spec.Scale)
+			} else {
+				// Note: rate is ignored when explicit shape/scale are provided;
+				// mean IAT is encoded in the scale parameter.
+				return &GammaSampler{shape: *spec.Shape, scale: *spec.Scale}
+			}
+		}
+		// Priority 2: Derive from CV (existing logic)
 		cv := 1.0
 		if spec.CV != nil {
 			cv = *spec.CV
@@ -246,6 +257,17 @@ func NewArrivalSampler(spec ArrivalSpec, ratePerMicrosecond float64) ArrivalSamp
 		return &GammaSampler{shape: shape, scale: scale}
 
 	case "weibull":
+		// Priority 1: Use explicit MLE-fitted parameters if provided (ServeGen)
+		if spec.Shape != nil && spec.Scale != nil {
+			if *spec.Shape <= 0 || *spec.Scale <= 0 {
+				logrus.Warnf("NewArrivalSampler: explicit shape/scale must be positive (shape=%.4f, scale=%.4f); deriving from CV instead", *spec.Shape, *spec.Scale)
+			} else {
+				// Note: rate is ignored when explicit shape/scale are provided;
+				// mean IAT is encoded in the scale parameter.
+				return &WeibullSampler{shape: *spec.Shape, scale: *spec.Scale}
+			}
+		}
+		// Priority 2: Derive from CV (existing logic)
 		cv := 1.0
 		if spec.CV != nil {
 			cv = *spec.CV

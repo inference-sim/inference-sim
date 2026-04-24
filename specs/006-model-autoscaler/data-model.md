@@ -162,7 +162,7 @@ ScaleActuationEvent
 ```
 
 **Priority**: 9 (after ScalingTickEvent).  
-**Delay**: Scheduled at `now + ActuationDelay.Sample(rng)`. With `ActuationDelay = {Mean:0, Stddev:0}` (default), fires in the same tick.
+**Delay**: Scheduled at `now + HPAScrapeDelay.Sample(rng)`. With `HPAScrapeDelay = {Mean:0, Stddev:0}` (default), fires in the same tick.
 
 ---
 
@@ -215,9 +215,9 @@ ScaleActuationEvent
 ```diff
  // Autoscaler pipeline (Phase 1C)
 +ModelAutoscalerIntervalUs float64   // tick interval in μs; 0 = autoscaler disabled
-+ActuationDelay            DelaySpec // HPA/KEDA scrape lag; zero = same-tick actuation
-+ScaleUpCooldownUs         float64   // min μs between scale-up decisions per model
-+ScaleDownCooldownUs       float64   // min μs between scale-down decisions per model
++HPAScrapeDelay                 DelaySpec // HPA scrape lag; zero = same-tick actuation
++ScaleUpStabilizationWindowUs   float64   // HPA scale-up stabilization window in μs; 0 = pass immediately
++ScaleDownStabilizationWindowUs float64   // HPA scale-down stabilization window in μs; 0 = pass immediately
 ```
 
 **Wiring guards**: If `ModelAutoscalerIntervalUs == 0`, no ScalingTickEvent is ever scheduled. All four new fields go in `DeploymentConfig`, not `SimConfig` (R16).
@@ -245,7 +245,7 @@ AnalyzerResult.VariantCapacities[].{Variant, Supply, Demand, ReplicaCount, CostP
         ▼ Engine.Optimize() — all models + GPUInventory
 ScaleDecision[].{ModelID, Variant, Delta}
         │
-        ▼ (ActuationDelay elapses — ScaleActuationEvent)
+        ▼ (HPAScrapeDelay elapses — ScaleActuationEvent)
         ▼ Actuator.Apply()
 PlacementManager.PlaceInstance() / instance state → Draining
 ```

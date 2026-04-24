@@ -18,7 +18,7 @@ func newTestInstance(id InstanceID, totalKVBlocks int64) *InstanceSimulator {
 		KVCacheConfig:       sim.NewKVCacheConfig(totalKVBlocks, 16, 0, 0, 0, 0),
 		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, "roofline", 0),
 	}
 	return NewInstanceSimulator(id, cfg)
 }
@@ -184,6 +184,7 @@ func TestSnapshotProvider_DefaultConfig_AllImmediate(t *testing.T) {
 		{"BatchSize", config.BatchSize},
 		{"KVUtilization", config.KVUtilization},
 		{"CacheBlocks", config.CacheBlocks},
+		{"PreemptionCount", config.PreemptionCount},
 	}
 
 	for _, tc := range tests {
@@ -211,6 +212,7 @@ func TestNewObservabilityConfig_ZeroAndNegativeInterval_AllImmediate(t *testing.
 				{"BatchSize", config.BatchSize},
 				{"KVUtilization", config.KVUtilization},
 				{"CacheBlocks", config.CacheBlocks},
+				{"PreemptionCount", config.PreemptionCount},
 			} {
 				if f.fc.Mode != Immediate {
 					t.Errorf("%s: Mode = %d, want Immediate (%d)", f.name, f.fc.Mode, Immediate)
@@ -235,6 +237,7 @@ func TestNewObservabilityConfig_NonZeroInterval_AllFieldsPeriodic(t *testing.T) 
 		{"QueueDepth", config.QueueDepth},
 		{"BatchSize", config.BatchSize},
 		{"KVUtilization", config.KVUtilization},
+		{"PreemptionCount", config.PreemptionCount},
 	}
 	for _, f := range fields {
 		t.Run(f.name, func(t *testing.T) {
@@ -679,7 +682,7 @@ func TestCluster_CacheSignalDelay_StaleRouting(t *testing.T) {
 				KVCacheConfig:       sim.NewKVCacheConfig(100, 4, 0, 0, 0, 0),
 				BatchConfig:         sim.NewBatchConfig(10, 2048, 0),
 				LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
-				ModelHardwareConfig: sim.ModelHardwareConfig{Backend: "blackbox"},
+				ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "", "", 1, "roofline", 0),
 			},
 			NumInstances:     2,
 			CacheSignalDelay: delay,
@@ -754,7 +757,7 @@ func TestCluster_CacheSignalDelay_Zero_OracleBehavior(t *testing.T) {
 			KVCacheConfig:       sim.NewKVCacheConfig(100, 4, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(10, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
-			ModelHardwareConfig: sim.ModelHardwareConfig{Backend: "blackbox"},
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "", "", 1, "roofline", 0),
 		},
 		NumInstances:  2,
 		RoutingPolicy: "weighted",

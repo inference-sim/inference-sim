@@ -81,9 +81,9 @@ type DeploymentConfig struct {
 	// Phase 1C: Model autoscaler pipeline (issue #692).
 	// Zero value is safe: ModelAutoscalerIntervalUs=0 disables the autoscaler entirely (INV-6).
 	ModelAutoscalerIntervalUs float64                    `yaml:"model_autoscaler_interval_us,omitempty"` // tick interval in μs; 0 = autoscaler disabled
-	ActuationDelay            DelaySpec                  `yaml:"actuation_delay,omitempty"`              // HPA/KEDA scrape lag; zero = same-tick actuation; Mean/Stddev in seconds
-	ScaleUpCooldownUs         float64                    `yaml:"scale_up_cooldown_us,omitempty"`          // min μs between scale-up decisions per model
-	ScaleDownCooldownUs       float64                    `yaml:"scale_down_cooldown_us,omitempty"`        // min μs between scale-down decisions per model
+	HPAScrapeDelay                 DelaySpec                  `yaml:"hpa_scrape_delay,omitempty"`                    // HPA scrape lag: time from WVA metric emission to HPA acting; zero = same-tick actuation; Mean/Stddev in seconds
+	ScaleUpStabilizationWindowUs   float64                    `yaml:"scale_up_stabilization_window_us,omitempty"`    // HPA scale-up stabilization window in μs; 0 = act on first signal (HPA default)
+	ScaleDownStabilizationWindowUs float64                    `yaml:"scale_down_stabilization_window_us,omitempty"`  // HPA scale-down stabilization window in μs; 0 = no stabilization (pass immediately). Set to 300,000,000 (= 5 minutes) to match the Kubernetes HPA default.
 	// AutoscalerAnalyzerConfig holds V2SaturationAnalyzer thresholds.
 	// Zero values are safe: NewClusterSimulator applies WVA reference defaults
 	// (KvCacheThreshold=0.8, ScaleUpThreshold=0.8, ScaleDownBoundary=0.4, AvgInputTokens=512).
@@ -124,7 +124,7 @@ type DeploymentConfig struct {
 	FlowControlKVCacheUtilThreshold float64 `yaml:"flow_control_kv_cache_util_threshold,omitempty"` // for utilization detector
 	FlowControlMaxConcurrency       int     `yaml:"flow_control_max_concurrency,omitempty"`         // for concurrency detector
 
-	// Issue #893: per-GPU-type hardware calibration for roofline/trained-roofline backends.
+	// Issue #893: per-GPU-type hardware calibration for roofline and trained-physics backends.
 	// Key: GPU type string (e.g., "A100", "H100"). Value: HardwareCalib for that GPU.
 	// When non-nil and a pool's gpu_type is found in the map, the matched HardwareCalib
 	// overrides simCfg.HWConfig at instance construction time (both sync and deferred paths),

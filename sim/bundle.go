@@ -82,12 +82,15 @@ type AnalyzerBundleConfig struct {
 
 // AutoscalerBundleConfig holds autoscaler pipeline configuration.
 // IntervalUs == 0 disables the autoscaler (default).
+// Note: ScaleDownStabilizationWindowUs = 0 (the Go zero value, used when the field is
+// absent from YAML) means no stabilization — scale-down acts on the first signal. To match
+// the Kubernetes HPA default scale-down behavior, set it to 300,000,000 (5 min) explicitly.
 type AutoscalerBundleConfig struct {
-	IntervalUs          float64              `yaml:"interval_us"`
-	ScaleUpCooldownUs   float64              `yaml:"scale_up_cooldown_us"`
-	ScaleDownCooldownUs float64              `yaml:"scale_down_cooldown_us"`
-	ActuationDelay      DelayBundleSpec      `yaml:"actuation_delay"`
-	Analyzer            AnalyzerBundleConfig `yaml:"analyzer"`
+	IntervalUs                     float64              `yaml:"interval_us"`
+	ScaleUpStabilizationWindowUs   float64              `yaml:"scale_up_stabilization_window_us"`
+	ScaleDownStabilizationWindowUs float64              `yaml:"scale_down_stabilization_window_us"`
+	HPAScrapeDelay                 DelayBundleSpec      `yaml:"hpa_scrape_delay"`
+	Analyzer                       AnalyzerBundleConfig `yaml:"analyzer"`
 }
 
 // LoadPolicyBundle reads and parses a YAML policy configuration file.
@@ -113,7 +116,7 @@ var (
 	validRoutingPolicies   = map[string]bool{"": true, "round-robin": true, "least-loaded": true, "weighted": true, "always-busiest": true}
 	validPriorityPolicies  = map[string]bool{"": true, "constant": true, "slo-based": true, "inverted-slo": true}
 	validSchedulers        = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
-	validLatencyBackends          = map[string]bool{"": true, "blackbox": true, "roofline": true, "crossmodel": true, "trained-roofline": true, "trained-physics": true}
+	validLatencyBackends          = map[string]bool{"": true, "roofline": true, "trained-physics": true}
 	validDisaggregationDeciders   = map[string]bool{"": true, "never": true, "always": true, "prefix-threshold": true}
 	validSaturationDetectors      = map[string]bool{"": true, "never": true, "utilization": true, "concurrency": true}
 )
@@ -249,17 +252,17 @@ func (b *PolicyBundle) Validate() error {
 	if b.Autoscaler.IntervalUs < 0 {
 		return fmt.Errorf("autoscaler.interval_us must be >= 0 (0 = disabled), got %v", b.Autoscaler.IntervalUs)
 	}
-	if b.Autoscaler.ScaleUpCooldownUs < 0 {
-		return fmt.Errorf("autoscaler.scale_up_cooldown_us must be >= 0, got %v", b.Autoscaler.ScaleUpCooldownUs)
+	if math.IsNaN(b.Autoscaler.ScaleUpStabilizationWindowUs) || math.IsInf(b.Autoscaler.ScaleUpStabilizationWindowUs, 0) || b.Autoscaler.ScaleUpStabilizationWindowUs < 0 {
+		return fmt.Errorf("autoscaler.scale_up_stabilization_window_us must be a finite non-negative number, got %v", b.Autoscaler.ScaleUpStabilizationWindowUs)
 	}
-	if b.Autoscaler.ScaleDownCooldownUs < 0 {
-		return fmt.Errorf("autoscaler.scale_down_cooldown_us must be >= 0, got %v", b.Autoscaler.ScaleDownCooldownUs)
+	if math.IsNaN(b.Autoscaler.ScaleDownStabilizationWindowUs) || math.IsInf(b.Autoscaler.ScaleDownStabilizationWindowUs, 0) || b.Autoscaler.ScaleDownStabilizationWindowUs < 0 {
+		return fmt.Errorf("autoscaler.scale_down_stabilization_window_us must be a finite non-negative number, got %v", b.Autoscaler.ScaleDownStabilizationWindowUs)
 	}
-	if b.Autoscaler.ActuationDelay.Mean < 0 {
-		return fmt.Errorf("autoscaler.actuation_delay.mean must be >= 0, got %v", b.Autoscaler.ActuationDelay.Mean)
+	if math.IsNaN(b.Autoscaler.HPAScrapeDelay.Mean) || math.IsInf(b.Autoscaler.HPAScrapeDelay.Mean, 0) || b.Autoscaler.HPAScrapeDelay.Mean < 0 {
+		return fmt.Errorf("autoscaler.hpa_scrape_delay.mean must be a finite non-negative number, got %v", b.Autoscaler.HPAScrapeDelay.Mean)
 	}
-	if b.Autoscaler.ActuationDelay.Stddev < 0 {
-		return fmt.Errorf("autoscaler.actuation_delay.stddev must be >= 0, got %v", b.Autoscaler.ActuationDelay.Stddev)
+	if math.IsNaN(b.Autoscaler.HPAScrapeDelay.Stddev) || math.IsInf(b.Autoscaler.HPAScrapeDelay.Stddev, 0) || b.Autoscaler.HPAScrapeDelay.Stddev < 0 {
+		return fmt.Errorf("autoscaler.hpa_scrape_delay.stddev must be a finite non-negative number, got %v", b.Autoscaler.HPAScrapeDelay.Stddev)
 	}
 	// Validate analyzer thresholds (non-zero = explicitly set; zero = use default).
 	// Mirrors the panic guards in NewV2SaturationAnalyzer so invalid values are caught

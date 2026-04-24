@@ -133,6 +133,19 @@ routing:
   cache_weight: 0.6
   load_weight: 0.4
 `},
+		{"old_scale_up_cooldown_us", `
+autoscaler:
+  scale_up_cooldown_us: 60000000
+`},
+		{"old_scale_down_cooldown_us", `
+autoscaler:
+  scale_down_cooldown_us: 60000000
+`},
+		{"old_actuation_delay", `
+autoscaler:
+  actuation_delay:
+    mean: 5.0
+`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -364,9 +377,9 @@ func TestLoadPolicyBundle_AutoscalerSection(t *testing.T) {
 	yaml := `
 autoscaler:
   interval_us: 30000000
-  scale_up_cooldown_us: 60000000
-  scale_down_cooldown_us: 180000000
-  actuation_delay:
+  scale_up_stabilization_window_us: 60000000
+  scale_down_stabilization_window_us: 180000000
+  hpa_scrape_delay:
     mean: 10.0
     stddev: 2.0
   analyzer:
@@ -386,11 +399,17 @@ autoscaler:
 	if bundle.Autoscaler.Analyzer.KVCacheThreshold != 0.8 {
 		t.Errorf("KVCacheThreshold = %v, want 0.8", bundle.Autoscaler.Analyzer.KVCacheThreshold)
 	}
-	if bundle.Autoscaler.ActuationDelay.Mean != 10.0 {
-		t.Errorf("ActuationDelay.Mean = %v, want 10.0", bundle.Autoscaler.ActuationDelay.Mean)
+	if bundle.Autoscaler.HPAScrapeDelay.Mean != 10.0 {
+		t.Errorf("HPAScrapeDelay.Mean = %v, want 10.0", bundle.Autoscaler.HPAScrapeDelay.Mean)
 	}
-	if bundle.Autoscaler.ScaleUpCooldownUs != 60_000_000 {
-		t.Errorf("ScaleUpCooldownUs = %v, want 60000000", bundle.Autoscaler.ScaleUpCooldownUs)
+	if bundle.Autoscaler.HPAScrapeDelay.Stddev != 2.0 {
+		t.Errorf("HPAScrapeDelay.Stddev = %v, want 2.0", bundle.Autoscaler.HPAScrapeDelay.Stddev)
+	}
+	if bundle.Autoscaler.ScaleUpStabilizationWindowUs != 60_000_000 {
+		t.Errorf("ScaleUpStabilizationWindowUs = %v, want 60000000", bundle.Autoscaler.ScaleUpStabilizationWindowUs)
+	}
+	if bundle.Autoscaler.ScaleDownStabilizationWindowUs != 180_000_000 {
+		t.Errorf("ScaleDownStabilizationWindowUs = %v, want 180000000", bundle.Autoscaler.ScaleDownStabilizationWindowUs)
 	}
 }
 
@@ -457,6 +476,34 @@ func TestPolicyBundle_Validate_AutoscalerNegativeInterval(t *testing.T) {
 	}
 }
 
+func TestPolicyBundle_Validate_AutoscalerNewFields(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  AutoscalerBundleConfig
+	}{
+		{"negative scale_up_stabilization_window_us", AutoscalerBundleConfig{ScaleUpStabilizationWindowUs: -1}},
+		{"NaN scale_up_stabilization_window_us", AutoscalerBundleConfig{ScaleUpStabilizationWindowUs: math.NaN()}},
+		{"Inf scale_up_stabilization_window_us", AutoscalerBundleConfig{ScaleUpStabilizationWindowUs: math.Inf(1)}},
+		{"negative scale_down_stabilization_window_us", AutoscalerBundleConfig{ScaleDownStabilizationWindowUs: -1}},
+		{"NaN scale_down_stabilization_window_us", AutoscalerBundleConfig{ScaleDownStabilizationWindowUs: math.NaN()}},
+		{"Inf scale_down_stabilization_window_us", AutoscalerBundleConfig{ScaleDownStabilizationWindowUs: math.Inf(1)}},
+		{"negative hpa_scrape_delay.mean", AutoscalerBundleConfig{HPAScrapeDelay: DelayBundleSpec{Mean: -1}}},
+		{"NaN hpa_scrape_delay.mean", AutoscalerBundleConfig{HPAScrapeDelay: DelayBundleSpec{Mean: math.NaN()}}},
+		{"Inf hpa_scrape_delay.mean", AutoscalerBundleConfig{HPAScrapeDelay: DelayBundleSpec{Mean: math.Inf(1)}}},
+		{"negative hpa_scrape_delay.stddev", AutoscalerBundleConfig{HPAScrapeDelay: DelayBundleSpec{Stddev: -1}}},
+		{"NaN hpa_scrape_delay.stddev", AutoscalerBundleConfig{HPAScrapeDelay: DelayBundleSpec{Stddev: math.NaN()}}},
+		{"Inf hpa_scrape_delay.stddev", AutoscalerBundleConfig{HPAScrapeDelay: DelayBundleSpec{Stddev: math.Inf(1)}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bundle := &PolicyBundle{Autoscaler: tc.cfg}
+			if err := bundle.Validate(); err == nil {
+				t.Errorf("expected validation error for %q, got nil", tc.name)
+			}
+		})
+	}
+}
+
 func TestPolicyBundle_Validate_AnalyzerThresholds(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -515,20 +562,66 @@ func TestPolicyBundle_Validate_NodePool_MaxLessThanInitial(t *testing.T) {
 
 func TestIsValidLatencyBackend(t *testing.T) {
 	assert.True(t, IsValidLatencyBackend(""))
-	assert.True(t, IsValidLatencyBackend("blackbox"))
 	assert.True(t, IsValidLatencyBackend("roofline"))
-	assert.True(t, IsValidLatencyBackend("crossmodel"))
-	assert.True(t, IsValidLatencyBackend("trained-roofline"))
 	assert.True(t, IsValidLatencyBackend("trained-physics"))
+	assert.False(t, IsValidLatencyBackend("blackbox"))
 	assert.False(t, IsValidLatencyBackend("nonexistent"))
 }
 
 func TestValidLatencyBackendNames(t *testing.T) {
 	names := ValidLatencyBackendNames()
-	assert.Contains(t, names, "blackbox")
 	assert.Contains(t, names, "roofline")
-	assert.Contains(t, names, "crossmodel")
-	assert.Contains(t, names, "trained-roofline")
 	assert.Contains(t, names, "trained-physics")
+	assert.NotContains(t, names, "blackbox")
 	assert.NotContains(t, names, "")
+}
+
+func TestIsValidLatencyBackend_RemovedBackends(t *testing.T) {
+	// GIVEN removed backend names
+	removedBackends := []string{"blackbox", "crossmodel", "trained-roofline"}
+
+	for _, backend := range removedBackends {
+		t.Run(backend, func(t *testing.T) {
+			// WHEN checking if backend is valid
+			valid := IsValidLatencyBackend(backend)
+
+			// THEN it must return false
+			if valid {
+				t.Errorf("IsValidLatencyBackend(%q) = true; want false (backend was removed)", backend)
+			}
+		})
+	}
+}
+
+func TestValidLatencyBackendNames_ExcludesRemoved(t *testing.T) {
+	// GIVEN the list of valid backend names
+	names := ValidLatencyBackendNames()
+
+	// WHEN checking for removed backends
+	removedBackends := []string{"blackbox", "crossmodel", "trained-roofline"}
+	for _, removed := range removedBackends {
+		for _, name := range names {
+			// THEN removed backends must not appear in the list
+			if name == removed {
+				t.Errorf("ValidLatencyBackendNames() contains removed backend %q; want excluded", removed)
+			}
+		}
+	}
+
+	// AND the list must contain exactly 2 backends
+	expected := []string{"roofline", "trained-physics"}
+	if len(names) != len(expected) {
+		t.Errorf("ValidLatencyBackendNames() returned %d backends; want %d: %v", len(names), len(expected), expected)
+	}
+
+	// AND they must be the correct backends
+	nameSet := make(map[string]bool)
+	for _, name := range names {
+		nameSet[name] = true
+	}
+	for _, exp := range expected {
+		if !nameSet[exp] {
+			t.Errorf("ValidLatencyBackendNames() missing expected backend %q", exp)
+		}
+	}
 }

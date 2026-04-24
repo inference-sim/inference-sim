@@ -111,7 +111,9 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 		clientSeed := workloadRNG.Int63()
 		clientRNG := newRandFromSeed(clientSeed)
 
-		// Create samplers
+		// Create samplers.
+		// When CustomSamplerFactory is set, clientRate is only used for the
+		// skip guard above (line 106); the factory overrides the actual arrival rate.
 		var arrivalSampler ArrivalSampler
 		if client.CustomSamplerFactory != nil {
 			// Derive sub-RNG for factory with single entropy draw from clientRNG.
@@ -218,8 +220,11 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				if currentTime >= horizon {
 					break
 				}
-				// Check lifecycle windows (bug fix: reasoning path was missing this)
+				// Check lifecycle windows
 				if client.Lifecycle != nil && !isInActiveWindow(currentTime, client.Lifecycle) {
+					if currentTime >= lastWindowEndUs(client.Lifecycle) {
+						break
+					}
 					continue
 				}
 				reasoningReqs, err := GenerateReasoningRequests(
@@ -282,6 +287,9 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 
 			// Check lifecycle windows
 			if client.Lifecycle != nil && !isInActiveWindow(currentTime, client.Lifecycle) {
+				if currentTime >= lastWindowEndUs(client.Lifecycle) {
+					break
+				}
 				continue
 			}
 
@@ -666,6 +674,18 @@ func isInActiveWindow(timeUs int64, lifecycle *LifecycleSpec) bool {
 		}
 	}
 	return false
+}
+
+// lastWindowEndUs returns the maximum EndUs across all lifecycle windows.
+// Returns 0 if Windows is empty; callers must ensure the lifecycle is validated.
+func lastWindowEndUs(lifecycle *LifecycleSpec) int64 {
+	var maxEnd int64
+	for _, w := range lifecycle.Windows {
+		if w.EndUs > maxEnd {
+			maxEnd = w.EndUs
+		}
+	}
+	return maxEnd
 }
 
 // newRandFromSeed creates a new *rand.Rand from a seed (avoids importing math/rand in callers).

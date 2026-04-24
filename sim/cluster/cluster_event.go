@@ -410,7 +410,7 @@ type ScalingTickEvent struct {
 func (e *ScalingTickEvent) Timestamp() int64 { return e.At }
 func (e *ScalingTickEvent) Priority() int     { return 8 }
 
-// Execute runs the autoscaling pipeline: Collect → Analyze → Optimize → cooldown filter
+// Execute runs the autoscaling pipeline: Collect → Analyze → Optimize → stabilization window gate
 // → schedule ScaleActuationEvent → schedule next ScalingTickEvent.
 // Full orchestrator logic is wired in US1 (T009–T015).
 func (e *ScalingTickEvent) Execute(cs *ClusterSimulator) {
