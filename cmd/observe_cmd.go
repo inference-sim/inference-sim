@@ -507,15 +507,16 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	var traceExportErr error
 	traceExportOnce.Do(func() {
 		traceExportErr = recorder.Export(header, observeTraceHeader, observeTraceData)
+		if traceExportErr == nil {
+			logrus.Infof("Trace exported: %d records to %s / %s", len(recorder.Records()), observeTraceHeader, observeTraceData)
+		}
 	})
 	if traceExportErr != nil {
 		logrus.Fatalf("Failed to export trace: %v", traceExportErr)
 	}
 
-	records := recorder.Records()
-	logrus.Infof("Trace exported: %d records to %s / %s", len(records), observeTraceHeader, observeTraceData)
-
 	// Print session metrics if any record carries a session label (#1058)
+	records := recorder.Records()
 	sessionMetrics := computeSessionMetricsFromTrace(records)
 	printSessionMetrics(os.Stdout, sessionMetrics)
 
@@ -535,11 +536,13 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		var itlExportErr error
 		itlExportOnce.Do(func() {
 			itlExportErr = recorder.ExportITL(itlPath)
+			if itlExportErr == nil {
+				logrus.Infof("ITL data exported: %s (%d records)", itlPath, len(itlRecords))
+			}
 		})
 		if itlExportErr != nil {
 			logrus.Fatalf("Failed to export ITL data: %v", itlExportErr)
 		}
-		logrus.Infof("ITL data exported: %s (%d records)", itlPath, len(itlRecords))
 	}
 }
 
