@@ -725,3 +725,34 @@ func isClosedLoop(client *ClientSpec) bool {
 	// Default: true for reasoning/multi-turn clients
 	return client.Reasoning != nil && client.Reasoning.MultiTurn != nil
 }
+
+// resolveWindowParameters resolves per-window parameters with fallback to client-level defaults.
+// Returns the effective arrival spec, input distribution, output distribution, and trace rate.
+// When a window field is nil, the corresponding client-level value is used.
+func resolveWindowParameters(client ClientSpec, window ActiveWindow) (ArrivalSpec, DistSpec, DistSpec, float64) {
+	// Resolve arrival spec
+	arrival := client.Arrival
+	if window.Arrival != nil {
+		arrival = *window.Arrival
+	}
+
+	// Resolve input distribution
+	inputDist := client.InputDist
+	if window.InputDist != nil {
+		inputDist = *window.InputDist
+	}
+
+	// Resolve output distribution
+	outputDist := client.OutputDist
+	if window.OutputDist != nil {
+		outputDist = *window.OutputDist
+	}
+
+	// Resolve trace rate (falls back to client RateFraction)
+	traceRate := client.RateFraction
+	if window.TraceRate != nil {
+		traceRate = *window.TraceRate
+	}
+
+	return arrival, inputDist, outputDist, traceRate
+}
