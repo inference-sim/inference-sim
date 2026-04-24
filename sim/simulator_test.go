@@ -3020,7 +3020,7 @@ func TestSimulator_TTFT_UpdatedAfterPreemption(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(4, 16, 0, 0, 0, 0), // 4 blocks × 16 = 64 tokens: forces preemption
 		BatchConfig:         NewBatchConfig(256, 10_000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 1, 0}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, "roofline", 0),
 	}
 	s := mustNewSimulator(t, cfg)
 

@@ -501,6 +501,10 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	records := recorder.Records()
 	logrus.Infof("Trace exported: %d records to %s / %s", len(records), observeTraceHeader, observeTraceData)
 
+	// Print session metrics if any record carries a session label (#1058)
+	sessionMetrics := computeSessionMetricsFromTrace(records)
+	printSessionMetrics(os.Stdout, sessionMetrics)
+
 	// Export ITL if requested (BC-5: opt-in)
 	if observeRecordITL {
 		itlPath := observeITLOutput
