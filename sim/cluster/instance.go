@@ -272,6 +272,8 @@ func (i *InstanceSimulator) MaxBatchSize() int {
 		return 0
 	}
 	return int(i.maxRunningReqs)
+}
+
 // PreemptionCount returns the cumulative number of preemption events on this instance.
 func (i *InstanceSimulator) PreemptionCount() int64 {
 	return i.sim.Metrics.PreemptionCount
