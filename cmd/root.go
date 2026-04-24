@@ -266,6 +266,7 @@ var rootCmd = &cobra.Command{
 // validateDistributionParams checks token distribution bounds common to both the
 // concurrency and distribution synthesis paths (R3). Returns a non-empty error
 // string if any parameter violates a bound, empty string if all are valid.
+// A stdev of 0 is always valid — it produces a constant (deterministic) distribution.
 // Extracted for unit testability (R14).
 func validateDistributionParams(promptMin, promptMax, outputMin, outputMax, promptStdev, outputStdev, promptMean, outputMean int) string {
 	if promptMin < 1 {
@@ -292,10 +293,10 @@ func validateDistributionParams(promptMin, promptMax, outputMin, outputMax, prom
 	if outputMin > outputMax {
 		return fmt.Sprintf("--output-tokens-min (%d) must be <= --output-tokens-max (%d)", outputMin, outputMax)
 	}
-	if promptMean > promptMax || promptMean < promptMin || promptStdev > promptMax || promptStdev < promptMin {
+	if promptMean > promptMax || promptMean < promptMin || promptStdev > promptMax || (promptStdev != 0 && promptStdev < promptMin) {
 		return "prompt-tokens and prompt-tokens-stdev should be in range [prompt-tokens-min, prompt-tokens-max]"
 	}
-	if outputMean > outputMax || outputMean < outputMin || outputStdev > outputMax || outputStdev < outputMin {
+	if outputMean > outputMax || outputMean < outputMin || outputStdev > outputMax || (outputStdev != 0 && outputStdev < outputMin) {
 		return "output-tokens and output-tokens-stdev should be in range [output-tokens-min, output-tokens-max]"
 	}
 	return ""
