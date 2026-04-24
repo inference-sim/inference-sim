@@ -143,6 +143,12 @@ type ClientSpec struct {
 type ArrivalSpec struct {
 	Process string   `yaml:"process"`
 	CV      *float64 `yaml:"cv,omitempty"`
+
+	// Optional MLE-fitted distribution parameters (ServeGen compatibility).
+	// When present, these override CV-based derivation in NewArrivalSampler.
+	// Populated by `blis convert servegen` (trace columns 5-6) or set directly in YAML for manual calibration.
+	Shape *float64 `yaml:"shape,omitempty"` // Gamma α or Weibull k
+	Scale *float64 `yaml:"scale,omitempty"` // Gamma θ or Weibull λ (in microseconds)
 }
 
 // DistSpec parameterizes a token length distribution.
@@ -324,14 +330,32 @@ func validateClient(c *ClientSpec, idx int) error {
 			return fmt.Errorf("%s: unknown arrival process %q; valid: poisson, gamma, weibull, constant", prefix, c.Arrival.Process)
 		}
 		if c.Arrival.Process == "weibull" && c.Arrival.CV != nil {
-			cv := *c.Arrival.CV
-			if cv < 0.01 || cv > 10.4 {
-				return fmt.Errorf("%s: weibull CV must be in [0.01, 10.4], got %f", prefix, cv)
+			// Skip CV bounds check when explicit MLE-fitted shape/scale are
+			// provided. In that case CV is informational metadata from the
+			// ServeGen trace and is not used for distribution derivation.
+			hasExplicitParams := c.Arrival.Shape != nil && c.Arrival.Scale != nil &&
+				*c.Arrival.Shape > 0 && *c.Arrival.Scale > 0
+			if !hasExplicitParams {
+				cv := *c.Arrival.CV
+				if cv < 0.01 || cv > 10.4 {
+					return fmt.Errorf("%s: weibull CV must be in [0.01, 10.4], got %f", prefix, cv)
+				}
 			}
 		}
 	}
 	if c.Concurrency == 0 && c.Arrival.CV != nil {
 		if err := validateFinitePositive(prefix+".cv", *c.Arrival.CV); err != nil {
+			return err
+		}
+	}
+	// Validate explicit shape/scale parameters if provided (ServeGen MLE-fitted params)
+	if c.Arrival.Shape != nil {
+		if err := validateFinitePositive(prefix+".arrival.shape", *c.Arrival.Shape); err != nil {
+			return err
+		}
+	}
+	if c.Arrival.Scale != nil {
+		if err := validateFinitePositive(prefix+".arrival.scale", *c.Arrival.Scale); err != nil {
 			return err
 		}
 	}
@@ -403,13 +427,30 @@ func validateCohort(c *CohortSpec, idx int) error {
 		return fmt.Errorf("%s: unknown arrival process %q; valid: poisson, gamma, weibull, constant", prefix, c.Arrival.Process)
 	}
 	if c.Arrival.Process == "weibull" && c.Arrival.CV != nil {
-		cv := *c.Arrival.CV
-		if cv < 0.01 || cv > 10.4 {
-			return fmt.Errorf("%s: weibull CV must be in [0.01, 10.4], got %f", prefix, cv)
+		// Skip CV bounds check when explicit MLE-fitted shape/scale are
+		// provided (same logic as validateClient).
+		hasExplicitParams := c.Arrival.Shape != nil && c.Arrival.Scale != nil &&
+			*c.Arrival.Shape > 0 && *c.Arrival.Scale > 0
+		if !hasExplicitParams {
+			cv := *c.Arrival.CV
+			if cv < 0.01 || cv > 10.4 {
+				return fmt.Errorf("%s: weibull CV must be in [0.01, 10.4], got %f", prefix, cv)
+			}
 		}
 	}
 	if c.Arrival.CV != nil {
 		if err := validateFinitePositive(prefix+".cv", *c.Arrival.CV); err != nil {
+			return err
+		}
+	}
+	// Validate explicit shape/scale parameters if provided (ServeGen MLE-fitted params)
+	if c.Arrival.Shape != nil {
+		if err := validateFinitePositive(prefix+".arrival.shape", *c.Arrival.Shape); err != nil {
+			return err
+		}
+	}
+	if c.Arrival.Scale != nil {
+		if err := validateFinitePositive(prefix+".arrival.scale", *c.Arrival.Scale); err != nil {
 			return err
 		}
 	}
