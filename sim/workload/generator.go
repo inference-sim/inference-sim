@@ -726,6 +726,47 @@ func isClosedLoop(client *ClientSpec) bool {
 	return client.Reasoning != nil && client.Reasoning.MultiTurn != nil
 }
 
+// rescaleIATsToMatchDuration rescales inter-arrival times to sum exactly to
+// targetDuration, preserving relative ratios (CV). Implements ServeGen's
+// post-hoc IAT scaling for exact rate matching (construct.py:46-48).
+//
+// Each IAT is multiplied by (targetDuration / sumIATs). A rounding residual
+// from int64 truncation is applied to the last element so the sum is exact.
+// Returns nil for empty input; returns the original slice unchanged if all
+// IATs are zero (no scaling possible).
+func rescaleIATsToMatchDuration(iats []int64, targetDuration int64) []int64 {
+	if len(iats) == 0 {
+		return nil
+	}
+
+	// Compute sum of original IATs.
+	sumIATs := int64(0)
+	for _, iat := range iats {
+		sumIATs += iat
+	}
+
+	// Guard against zero sum: scaling undefined, return original values.
+	if sumIATs == 0 {
+		return iats
+	}
+
+	// Scale factor preserves relative ratios (CV).
+	scaleFactor := float64(targetDuration) / float64(sumIATs)
+
+	// Rescale all IATs, tracking the accumulated sum for residual correction.
+	rescaled := make([]int64, len(iats))
+	rescaledSum := int64(0)
+	for i, iat := range iats {
+		rescaled[i] = int64(float64(iat) * scaleFactor)
+		rescaledSum += rescaled[i]
+	}
+
+	// Distribute rounding residual to the last element so sum is exact.
+	rescaled[len(rescaled)-1] += targetDuration - rescaledSum
+
+	return rescaled
+}
+
 // resolveWindowParameters resolves per-window parameters with fallback to client-level defaults.
 // Returns the effective arrival spec, input distribution, output distribution, and trace rate.
 // When a window field is nil, the corresponding client-level value is used.
