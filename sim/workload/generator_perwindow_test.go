@@ -1,9 +1,11 @@
 package workload
 
 import (
+	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRescaleIATsToMatchDuration(t *testing.T) {
@@ -299,5 +301,228 @@ func TestComputeProportionalRate(t *testing.T) {
 		// Only count clientA once (first overlapping window): totalRate = 10.0 + 30.0 = 40.0
 		// allocatedRate = 100 * (30.0 / 40.0) = 75.0
 		assert.InDelta(t, 75.0, allocatedRate, 0.01)
+	})
+}
+
+func TestGenerateRequestsForWindow(t *testing.T) {
+	t.Run("single window with per-window distributions", func(t *testing.T) {
+		// Single client with window-level overrides for arrival, input, and output.
+		// The function should use the window distributions, not client-level.
+		clients := []ClientSpec{
+			{
+				ID:           "test-client",
+				TenantID:     "tenant-1",
+				SLOClass:     "standard",
+				RateFraction: 1.0,
+				Streaming:    true,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+				OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				Lifecycle: &LifecycleSpec{
+					Windows: []ActiveWindow{
+						{
+							StartUs:    0,
+							EndUs:      10000000, // 10 seconds
+							TraceRate:  ptrFloat64(100.0),
+							Arrival:    &ArrivalSpec{Process: "gamma", Shape: ptrFloat64(2.0), Scale: ptrFloat64(50000.0)},
+							InputDist:  &DistSpec{Type: "constant", Params: map[string]float64{"value": 200}},
+							OutputDist: &DistSpec{Type: "constant", Params: map[string]float64{"value": 75}},
+						},
+					},
+				},
+			},
+		}
+
+		aggregateRate := 100.0
+		rng := rand.New(rand.NewSource(42))
+
+		window := clients[0].Lifecycle.Windows[0]
+		requests := generateRequestsForWindow(clients[0], window, clients, aggregateRate, rng)
+
+		// Should generate requests
+		require.Greater(t, len(requests), 0, "should generate requests")
+
+		// Check window-specific distributions were used (constant 200 input, 75 output)
+		for _, req := range requests {
+			assert.Len(t, req.InputTokens, 200, "should use window's input dist (200 tokens)")
+			assert.Len(t, req.OutputTokens, 75, "should use window's output dist (75 tokens)")
+		}
+
+		// Check all requests within window bounds
+		for _, req := range requests {
+			assert.GreaterOrEqual(t, req.ArrivalTime, window.StartUs,
+				"request arrival must be >= window start")
+			assert.Less(t, req.ArrivalTime, window.EndUs,
+				"request arrival must be < window end")
+		}
+
+		// Check client metadata propagated
+		assert.Equal(t, "test-client", requests[0].ClientID)
+		assert.Equal(t, "tenant-1", requests[0].TenantID)
+		assert.Equal(t, "standard", requests[0].SLOClass)
+		assert.True(t, requests[0].Streaming)
+	})
+
+	t.Run("IAT rescaling achieves target rate", func(t *testing.T) {
+		// Single client with 10s window at 50 req/s = ~500 requests expected.
+		clients := []ClientSpec{
+			{
+				ID:           "rate-client",
+				RateFraction: 1.0,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+				OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+				Lifecycle: &LifecycleSpec{
+					Windows: []ActiveWindow{
+						{
+							StartUs:   0,
+							EndUs:     10000000, // 10 seconds
+							TraceRate: ptrFloat64(50.0),
+						},
+					},
+				},
+			},
+		}
+
+		aggregateRate := 50.0
+		rng := rand.New(rand.NewSource(123))
+
+		window := clients[0].Lifecycle.Windows[0]
+		requests := generateRequestsForWindow(clients[0], window, clients, aggregateRate, rng)
+
+		// Check achieved rate is close to target (50 req/s for 10s = 500 requests)
+		windowDurationSec := float64(window.EndUs-window.StartUs) / 1e6
+		expectedRequests := int(aggregateRate * windowDurationSec)
+
+		// Allow +/- 5% tolerance due to rounding and edge effects
+		assert.InDelta(t, expectedRequests, len(requests), float64(expectedRequests)*0.05,
+			"request count should be within 5%% of expected %d", expectedRequests)
+	})
+
+	t.Run("zero allocated rate produces no requests", func(t *testing.T) {
+		// Two clients, both with trace_rate=0 -> allocated rate = 0
+		clients := []ClientSpec{
+			{
+				ID:           "zero-rate",
+				RateFraction: 1.0,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+				OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+				Lifecycle: &LifecycleSpec{
+					Windows: []ActiveWindow{
+						{
+							StartUs:   0,
+							EndUs:     10000000,
+							TraceRate: ptrFloat64(0.0),
+						},
+					},
+				},
+			},
+		}
+
+		rng := rand.New(rand.NewSource(42))
+		window := clients[0].Lifecycle.Windows[0]
+		requests := generateRequestsForWindow(clients[0], window, clients, 100.0, rng)
+
+		assert.Empty(t, requests, "zero trace_rate should produce no requests")
+	})
+
+	t.Run("arrival times are monotonically increasing", func(t *testing.T) {
+		clients := []ClientSpec{
+			{
+				ID:           "mono-client",
+				RateFraction: 1.0,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+				OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+				Lifecycle: &LifecycleSpec{
+					Windows: []ActiveWindow{
+						{
+							StartUs:   5000000,
+							EndUs:     15000000,
+							TraceRate: ptrFloat64(20.0),
+						},
+					},
+				},
+			},
+		}
+
+		rng := rand.New(rand.NewSource(99))
+		window := clients[0].Lifecycle.Windows[0]
+		requests := generateRequestsForWindow(clients[0], window, clients, 20.0, rng)
+
+		require.Greater(t, len(requests), 1, "need multiple requests for monotonicity check")
+
+		for i := 1; i < len(requests); i++ {
+			assert.LessOrEqual(t, requests[i-1].ArrivalTime, requests[i].ArrivalTime,
+				"arrival times must be monotonically non-decreasing (index %d)", i)
+		}
+	})
+
+	t.Run("non-zero start window offsets arrivals correctly", func(t *testing.T) {
+		// Window starts at 5s, not 0.
+		clients := []ClientSpec{
+			{
+				ID:           "offset-client",
+				RateFraction: 1.0,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+				OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
+				Lifecycle: &LifecycleSpec{
+					Windows: []ActiveWindow{
+						{
+							StartUs:   5000000,  // 5 seconds
+							EndUs:     15000000, // 15 seconds
+							TraceRate: ptrFloat64(10.0),
+						},
+					},
+				},
+			},
+		}
+
+		rng := rand.New(rand.NewSource(42))
+		window := clients[0].Lifecycle.Windows[0]
+		requests := generateRequestsForWindow(clients[0], window, clients, 10.0, rng)
+
+		require.Greater(t, len(requests), 0)
+
+		// All arrivals should be >= 5s and < 15s
+		for _, req := range requests {
+			assert.GreaterOrEqual(t, req.ArrivalTime, int64(5000000),
+				"all arrivals must be >= window start (5s)")
+			assert.Less(t, req.ArrivalTime, int64(15000000),
+				"all arrivals must be < window end (15s)")
+		}
+	})
+
+	t.Run("MaxOutputLen matches output token count", func(t *testing.T) {
+		clients := []ClientSpec{
+			{
+				ID:           "maxout-client",
+				RateFraction: 1.0,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 30}},
+				Lifecycle: &LifecycleSpec{
+					Windows: []ActiveWindow{
+						{
+							StartUs:   0,
+							EndUs:     5000000,
+							TraceRate: ptrFloat64(20.0),
+						},
+					},
+				},
+			},
+		}
+
+		rng := rand.New(rand.NewSource(42))
+		window := clients[0].Lifecycle.Windows[0]
+		requests := generateRequestsForWindow(clients[0], window, clients, 20.0, rng)
+
+		require.Greater(t, len(requests), 0)
+		for _, req := range requests {
+			assert.Equal(t, len(req.OutputTokens), req.MaxOutputLen,
+				"MaxOutputLen must equal len(OutputTokens)")
+		}
 	})
 }

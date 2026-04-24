@@ -726,6 +726,108 @@ func isClosedLoop(client *ClientSpec) bool {
 	return client.Reasoning != nil && client.Reasoning.MultiTurn != nil
 }
 
+// generateRequestsForWindow generates requests for a single lifecycle window
+// with ServeGen-compatible proportional rate allocation and IAT rescaling.
+//
+// Steps:
+//  1. Resolve parameters with fallback to client-level defaults.
+//  2. Compute allocated rate via proportional allocation across co-active windows.
+//  3. Sample IATs from the resolved arrival process.
+//  4. Rescale IATs to match the target window duration (exact rate matching).
+//  5. Generate requests with window-specific token distributions.
+//
+// Requests are returned in arrival-time order. IDs are left empty (assigned by caller
+// after merging requests from all windows).
+func generateRequestsForWindow(
+	client ClientSpec,
+	window ActiveWindow,
+	allClients []ClientSpec,
+	aggregateRate float64,
+	rng *rand.Rand,
+) []*sim.Request {
+	// Step 1: Resolve parameters with fallback to client-level defaults.
+	arrival, inputDist, outputDist, _ := resolveWindowParameters(client, window)
+
+	// Step 2: Compute allocated rate for this window via proportional allocation.
+	windowTargetRate := computeProportionalRate(client, window, allClients, aggregateRate)
+	if windowTargetRate <= 0 {
+		return nil
+	}
+
+	windowDurationUs := window.EndUs - window.StartUs
+	windowDurationSec := float64(windowDurationUs) / 1e6
+
+	// Step 3: Determine number of requests from allocated rate and window duration.
+	expectedRequests := windowTargetRate * windowDurationSec
+	numRequests := int(math.Ceil(expectedRequests))
+	if numRequests == 0 {
+		return nil
+	}
+
+	// Step 4: Create samplers from resolved parameters.
+	// The rate passed to NewArrivalSampler is in requests/microsecond; it
+	// affects the mean IAT of the underlying distribution. Post-hoc rescaling
+	// (step 6) ensures the sum of IATs matches the window duration exactly.
+	arrivalSampler := NewArrivalSampler(arrival, windowTargetRate/1e6)
+	inputSampler, err := NewLengthSampler(inputDist)
+	if err != nil {
+		logrus.Warnf("generateRequestsForWindow: client %q input dist: %v", client.ID, err)
+		return nil
+	}
+	outputSampler, err := NewLengthSampler(outputDist)
+	if err != nil {
+		logrus.Warnf("generateRequestsForWindow: client %q output dist: %v", client.ID, err)
+		return nil
+	}
+
+	// Step 5: Sample IATs using the resolved arrival process (shape/scale for CV).
+	iats := make([]int64, numRequests)
+	for i := 0; i < numRequests; i++ {
+		iats[i] = arrivalSampler.SampleIAT(rng)
+	}
+
+	// Step 6: Rescale IATs to match target window duration (ServeGen parity).
+	// This preserves relative ratios (CV) while ensuring total span equals windowDurationUs.
+	iats = rescaleIATsToMatchDuration(iats, windowDurationUs)
+
+	// Step 7: Generate requests with window-specific distributions.
+	requests := make([]*sim.Request, 0, numRequests)
+	currentTime := window.StartUs
+
+	for i := 0; i < numRequests; i++ {
+		currentTime += iats[i]
+
+		// Stop if we exceed window boundary.
+		if currentTime >= window.EndUs {
+			break
+		}
+
+		// Sample token lengths from resolved distributions.
+		inputLen := inputSampler.Sample(rng)
+		outputLen := outputSampler.Sample(rng)
+		inputTokens := sim.GenerateRandomTokenIDs(rng, inputLen)
+		outputTokens := sim.GenerateRandomTokenIDs(rng, outputLen)
+
+		req := &sim.Request{
+			ID:           "", // Assigned later after merge+sort across all windows.
+			ArrivalTime:  currentTime,
+			InputTokens:  inputTokens,
+			OutputTokens: outputTokens,
+			MaxOutputLen: outputLen,
+			State:        sim.StateQueued,
+			TenantID:     client.TenantID,
+			SLOClass:     client.SLOClass,
+			Model:        client.Model,
+			ClientID:     client.ID,
+			Streaming:    client.Streaming,
+			Deadline:     0, // Set by caller if needed.
+		}
+		requests = append(requests, req)
+	}
+
+	return requests
+}
+
 // computeProportionalRate computes the allocated rate for a window using
 // ServeGen's proportional allocation semantics (construct.py:190-207).
 // Returns: target_aggregate_rate * (window_trace_rate / sum_of_co_active_trace_rates)
