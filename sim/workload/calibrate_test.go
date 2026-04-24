@@ -573,3 +573,206 @@ func TestMetricComparison_JSONRoundTrip_IncludesNewFields(t *testing.T) {
 		t.Errorf("JSON should have exactly 3 top-level keys (workload_level, request_level, count), got %d: %v", len(topLevel), topLevel)
 	}
 }
+
+func TestPrepareCalibrationPairs_PrefixCached_UsesServerInputTokens(t *testing.T) {
+	// GIVEN a prefix-cached trace record with client-side InputTokens (268, new tokens only)
+	// and server-side ServerInputTokens (16652, full prompt tokens including prefix)
+	realRecords := []TraceRecord{
+		{
+			RequestID:         0,
+			InputTokens:       268,   // client-side count (new tokens only)
+			ServerInputTokens: 16652, // server-reported full prompt tokens
+			OutputTokens:      100,
+			FirstChunkTimeUs:  1000,
+			LastChunkTimeUs:   5000,
+			SendTimeUs:        0,
+		},
+	}
+
+	// WHEN simulator reports full tokens (16652, includes prefix)
+	simResults := []SimResult{
+		{
+			RequestID:    0,
+			InputTokens:  16652, // full tokens including prefix
+			OutputTokens: 100,
+			TTFT:         800,
+			E2E:          4500,
+		},
+	}
+
+	config := &CalibrationConfig{WarmUpRequests: 0}
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, config)
+
+	// THEN no error and token mismatch count should be 0
+	// Without this fix, rec.InputTokens (268) != sr.InputTokens (16652) would
+	// cause a false mismatch; using ServerInputTokens (16652) matches correctly
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pairs.TokenMismatchCount != 0 {
+		t.Errorf("expected TokenMismatchCount=0 for prefix-cached request, got %d", pairs.TokenMismatchCount)
+	}
+	if pairs.MatchedCount != 1 {
+		t.Errorf("expected MatchedCount=1, got %d", pairs.MatchedCount)
+	}
+}
+
+func TestPrepareCalibrationPairs_LegacyTrace_FallsBackToInputTokens(t *testing.T) {
+	// GIVEN a legacy trace without ServerInputTokens (0 = not recorded)
+	realRecords := []TraceRecord{
+		{
+			RequestID:         0,
+			InputTokens:       512,
+			ServerInputTokens: 0, // not recorded (legacy trace)
+			OutputTokens:      100,
+			FirstChunkTimeUs:  1000,
+			LastChunkTimeUs:   5000,
+			SendTimeUs:        0,
+		},
+	}
+
+	// WHEN simulator reports matching InputTokens
+	simResults := []SimResult{
+		{
+			RequestID:    0,
+			InputTokens:  512,
+			OutputTokens: 100,
+			TTFT:         800,
+			E2E:          4500,
+		},
+	}
+
+	config := &CalibrationConfig{WarmUpRequests: 0}
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, config)
+
+	// THEN no token mismatch (legacy path works)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pairs.TokenMismatchCount != 0 {
+		t.Errorf("expected TokenMismatchCount=0 for legacy trace, got %d", pairs.TokenMismatchCount)
+	}
+	if pairs.MatchedCount != 1 {
+		t.Errorf("expected MatchedCount=1, got %d", pairs.MatchedCount)
+	}
+}
+
+func TestPrepareCalibrationPairs_NonPrefixCached_UsesServerInputTokens(t *testing.T) {
+	// GIVEN a non-prefix-cached request where ServerInputTokens == InputTokens
+	realRecords := []TraceRecord{
+		{
+			RequestID:         0,
+			InputTokens:       264,
+			ServerInputTokens: 264, // no prefix caching
+			OutputTokens:      100,
+			FirstChunkTimeUs:  1000,
+			LastChunkTimeUs:   5000,
+			SendTimeUs:        0,
+		},
+	}
+
+	// WHEN simulator reports slightly different token count (genuine mismatch)
+	simResults := []SimResult{
+		{
+			RequestID:    0,
+			InputTokens:  263,
+			OutputTokens: 100,
+			TTFT:         800,
+			E2E:          4500,
+		},
+	}
+
+	config := &CalibrationConfig{WarmUpRequests: 0}
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, config)
+
+	// THEN token mismatch is flagged
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pairs.TokenMismatchCount != 1 {
+		t.Errorf("expected TokenMismatchCount=1 for genuine mismatch, got %d", pairs.TokenMismatchCount)
+	}
+	if pairs.MatchedCount != 1 {
+		t.Errorf("expected MatchedCount=1, got %d", pairs.MatchedCount)
+	}
+}
+
+func TestPrepareCalibrationPairs_OutputTokenMismatch_StillDetected(t *testing.T) {
+	// GIVEN a request with correct input tokens but mismatched output
+	realRecords := []TraceRecord{
+		{
+			RequestID:         0,
+			InputTokens:       512,
+			ServerInputTokens: 512,
+			OutputTokens:      128,
+			FirstChunkTimeUs:  1000,
+			LastChunkTimeUs:   5000,
+			SendTimeUs:        0,
+		},
+	}
+
+	// WHEN simulator reports different output token count
+	simResults := []SimResult{
+		{
+			RequestID:    0,
+			InputTokens:  512,
+			OutputTokens: 130,
+			TTFT:         800,
+			E2E:          4500,
+		},
+	}
+
+	config := &CalibrationConfig{WarmUpRequests: 0}
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, config)
+
+	// THEN output token mismatch is flagged
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pairs.TokenMismatchCount != 1 {
+		t.Errorf("expected TokenMismatchCount=1 for output mismatch, got %d", pairs.TokenMismatchCount)
+	}
+}
+
+func TestPrepareCalibrationPairs_PrefixCached_TokenizerRounding(t *testing.T) {
+	// GIVEN a prefix-cached trace with ServerInputTokens=16638 and sim reports 16652
+	// (14-token difference due to tokenizer boundary rounding - real-world scenario)
+	realRecords := []TraceRecord{
+		{
+			RequestID:         0,
+			InputTokens:       268,   // client-side count (new tokens only)
+			ServerInputTokens: 16638, // server-reported full prompt tokens
+			OutputTokens:      100,
+			FirstChunkTimeUs:  1000,
+			LastChunkTimeUs:   5000,
+			SendTimeUs:        0,
+		},
+	}
+
+	// WHEN simulator reports slightly different full tokens (tokenizer rounding)
+	simResults := []SimResult{
+		{
+			RequestID:    0,
+			InputTokens:  16652, // sim's full token count (14-token diff from server)
+			OutputTokens: 100,
+			TTFT:         800,
+			E2E:          4500,
+		},
+	}
+
+	config := &CalibrationConfig{WarmUpRequests: 0}
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, config)
+
+	// THEN token mismatch is correctly flagged (genuine tokenizer boundary difference)
+	// Without the fix, this would compare InputTokens=268 vs 16652 (false positive)
+	// With the fix, it compares ServerInputTokens=16638 vs 16652 (genuine 14-token diff)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pairs.TokenMismatchCount != 1 {
+		t.Errorf("expected TokenMismatchCount=1 for tokenizer rounding (14-token diff), got %d", pairs.TokenMismatchCount)
+	}
+	if pairs.MatchedCount != 1 {
+		t.Errorf("expected MatchedCount=1, got %d", pairs.MatchedCount)
+	}
+}
