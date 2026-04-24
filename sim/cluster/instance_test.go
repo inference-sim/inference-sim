@@ -510,6 +510,64 @@ func TestInstanceSimulator_PostDecodeFixedOverhead_DelegatesToSim(t *testing.T) 
 	}
 }
 
+// TestLatencyStatsITLSortedMean verifies that LatencyStats().ITL equals the arithmetic mean
+// of all values in RequestITLs, exercising the R2-compliant sorted-key accumulation path.
+func TestLatencyStatsITLSortedMean(t *testing.T) {
+	inst := NewInstanceSimulator("test", newTestSimConfig())
+	m := inst.sim.Metrics
+	m.CompletedRequests = 3
+	m.RequestITLs["req-a"] = 100.0
+	m.RequestITLs["req-b"] = 200.0
+	m.RequestITLs["req-c"] = 300.0
+
+	stats := inst.LatencyStats()
+	const wantITL = 200.0 // (100+200+300)/3
+	if stats.ITL != wantITL {
+		t.Errorf("ITL = %v, want %v", stats.ITL, wantITL)
+	}
+}
+
+// TestLatencyStatsDispatchRateUsesCompletionWindow verifies that DispatchRate is computed
+// from the span between first and last completion time, not from total elapsed simulation time.
+// When completions span a 9s window, DispatchRate should reflect ~10/9 req/s, not 0 (which
+// the old implementation produces when the sim clock has not advanced).
+func TestLatencyStatsDispatchRateUsesCompletionWindow(t *testing.T) {
+	inst := NewInstanceSimulator("test", newTestSimConfig())
+	m := inst.sim.Metrics
+	const n = 10
+	m.CompletedRequests = n
+	// Completions span from 1s to 10s (1e6 µs to 10e6 µs).
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("req-%d", i)
+		m.RequestCompletionTimes[id] = float64((i + 1) * 1_000_000) // µs
+	}
+
+	stats := inst.LatencyStats()
+	// span = 10s - 1s = 9s → rate ≈ 10/9 ≈ 1.111 req/s
+	wantRate := float64(n) / 9.0
+	if math.Abs(stats.DispatchRate-wantRate) > 0.01 {
+		t.Errorf("DispatchRate = %.4f, want %.4f (completion-window rate)", stats.DispatchRate, wantRate)
+	}
+}
+
+func TestLatencyStatsDispatchRateFallsBackToClockWhenSingleCompletion(t *testing.T) {
+	inst := NewInstanceSimulator("test", newTestSimConfig())
+	m := inst.sim.Metrics
+	m.CompletedRequests = 1
+	m.RequestCompletionTimes["req-0"] = 5_000_000 // 5s in µs
+
+	// Single completion: span = 0, so rate cannot be computed from window.
+	// DispatchRate should be 0 (clock hasn't advanced in the fresh sim).
+	stats := inst.LatencyStats()
+	if stats.DispatchRate != 0 {
+		// If the clock somehow advanced, DispatchRate will be n/clockUs which is fine.
+		// We only check it's not NaN/Inf.
+		if math.IsNaN(stats.DispatchRate) || math.IsInf(stats.DispatchRate, 0) {
+			t.Errorf("DispatchRate is NaN or Inf with single completion: %v", stats.DispatchRate)
+		}
+	}
+}
+
 func TestInstanceSimulatorLatencyStats_Empty(t *testing.T) {
 	inst := NewInstanceSimulator("test", newTestSimConfig())
 	stats := inst.LatencyStats()

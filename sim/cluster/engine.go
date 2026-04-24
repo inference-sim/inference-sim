@@ -68,10 +68,12 @@ func (e *GreedyEngine) Optimize(results []AnalyzerResult, inventory GPUInventory
 
 	for _, r := range results {
 		if r.RequiredCapacity > 0 {
-			// Scale up: pick cheapest variant that has enough free GPU slots
+			// Scale up: pick cheapest variant that has enough free GPU slots.
+			// n is computed per-variant using that variant's own per-replica capacity
+			// so that a more capable fallback variant does not get overscaled.
 			vcs := sortedByAscCost(r.VariantCapacities)
-			n := scaleUpN(r.RequiredCapacity, vcs)
 			for _, vc := range vcs {
+				n := scaleUpN(r.RequiredCapacity, []VariantCapacity{vc})
 				needed := n * vc.Variant.TPDegree
 				if needed < 1 {
 					needed = 1

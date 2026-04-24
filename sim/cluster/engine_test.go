@@ -295,3 +295,41 @@ func TestGreedyEngineOptimize(t *testing.T) {
 		})
 	}
 }
+
+// TestGreedyEngineScaleUpUsesChosenVariantCapacity verifies that when the cheapest
+// variant has no free GPU slots and the engine falls back to a more expensive variant,
+// it computes n using the chosen variant's own per-replica capacity — not the cheapest
+// variant's capacity. Failing to do so overestimates n (scales too many replicas).
+func TestGreedyEngineScaleUpUsesChosenVariantCapacity(t *testing.T) {
+	engine := &GreedyEngine{}
+
+	// Cheap (A100): 2 active replicas, 10 total supply → 5 RPS/replica.
+	// Expensive (H100): 2 active replicas, 20 total supply → 10 RPS/replica.
+	// Required = 20 RPS.
+	// A100 has 0 free GPU slots → engine falls back to H100.
+	// Correct n for H100 = ceil(20/10) = 2 (not ceil(20/5) = 4).
+	results := []AnalyzerResult{{
+		ModelID:          "m1",
+		RequiredCapacity: 20,
+		VariantCapacities: []VariantCapacity{
+			{Variant: NewVariantSpec("A100", 1), CostPerReplica: 5, Supply: 10, ReplicaCount: 2},
+			{Variant: NewVariantSpec("H100", 1), CostPerReplica: 20, Supply: 20, ReplicaCount: 2},
+		},
+	}}
+	inventory := newTestGPUInventory(map[VariantSpec]int{
+		NewVariantSpec("A100", 1): 0,  // full
+		NewVariantSpec("H100", 1): 10, // plenty of room
+	})
+
+	decisions := engine.Optimize(results, inventory)
+	if len(decisions) != 1 {
+		t.Fatalf("want 1 decision, got %d: %+v", len(decisions), decisions)
+	}
+	d := decisions[0]
+	if d.Variant.GPUType != "H100" {
+		t.Errorf("GPUType: want H100, got %q", d.Variant.GPUType)
+	}
+	if d.Delta != 2 {
+		t.Errorf("Delta: want 2 (ceil(20/10)), got %d — engine used cheapest variant's prc instead of chosen variant's", d.Delta)
+	}
+}

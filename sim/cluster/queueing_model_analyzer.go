@@ -91,8 +91,20 @@ type QueueingModelAnalyzer struct {
 }
 
 // NewQueueingModelAnalyzer constructs a QueueingModelAnalyzer with the given config.
-// Zero-valued fields are replaced with defaults.
+// Zero-valued fields are replaced with defaults. Panics on invalid (negative) numeric fields (R3).
 func NewQueueingModelAnalyzer(cfg QMConfig) *QueueingModelAnalyzer {
+	if cfg.SLOMultiplier < 0 {
+		panic("NewQueueingModelAnalyzer: SLOMultiplier must be >= 0")
+	}
+	if cfg.InitObs < 0 {
+		panic("NewQueueingModelAnalyzer: InitObs must be >= 0")
+	}
+	if cfg.WindowSize < 0 {
+		panic("NewQueueingModelAnalyzer: WindowSize must be >= 0")
+	}
+	if cfg.ResidualThreshold < 0 {
+		panic("NewQueueingModelAnalyzer: ResidualThreshold must be >= 0")
+	}
 	if cfg.SLOMultiplier == 0 {
 		cfg.SLOMultiplier = DefaultSLOMultiplier
 	}
@@ -342,8 +354,12 @@ func (a *QueueingModelAnalyzer) getSLOTarget(modelID string, replicas []ReplicaM
 	// Priority 2: derive from fitted parameters.
 	wm := computeWorkloadMetrics(replicas)
 	var bestTTFT, bestITL float64
-	for k, state := range a.variantState {
-		if k.ModelID != modelID || state.alpha <= 0 {
+	for _, k := range sortedModelVariantKeys(a.variantState) {
+		if k.ModelID != modelID {
+			continue
+		}
+		state := a.variantState[k]
+		if state.alpha <= 0 {
 			continue
 		}
 		k2 := a.cfg.SLOMultiplier
