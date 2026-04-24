@@ -733,3 +733,46 @@ func TestPrepareCalibrationPairs_OutputTokenMismatch_StillDetected(t *testing.T)
 		t.Errorf("expected TokenMismatchCount=1 for output mismatch, got %d", pairs.TokenMismatchCount)
 	}
 }
+
+func TestPrepareCalibrationPairs_PrefixCached_TokenizerRounding(t *testing.T) {
+	// GIVEN a prefix-cached trace with ServerInputTokens=16638 and sim reports 16652
+	// (14-token difference due to tokenizer boundary rounding - real-world scenario)
+	realRecords := []TraceRecord{
+		{
+			RequestID:         0,
+			InputTokens:       268,   // client-side count (new tokens only)
+			ServerInputTokens: 16638, // server-reported full prompt tokens
+			OutputTokens:      100,
+			FirstChunkTimeUs:  1000,
+			LastChunkTimeUs:   5000,
+			SendTimeUs:        0,
+		},
+	}
+
+	// WHEN simulator reports slightly different full tokens (tokenizer rounding)
+	simResults := []SimResult{
+		{
+			RequestID:    0,
+			InputTokens:  16652, // sim's full token count (14-token diff from server)
+			OutputTokens: 100,
+			TTFT:         800,
+			E2E:          4500,
+		},
+	}
+
+	config := &CalibrationConfig{WarmUpRequests: 0}
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, config)
+
+	// THEN token mismatch is correctly flagged (genuine tokenizer boundary difference)
+	// Without the fix, this would compare InputTokens=268 vs 16652 (false positive)
+	// With the fix, it compares ServerInputTokens=16638 vs 16652 (genuine 14-token diff)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pairs.TokenMismatchCount != 1 {
+		t.Errorf("expected TokenMismatchCount=1 for tokenizer rounding (14-token diff), got %d", pairs.TokenMismatchCount)
+	}
+	if pairs.MatchedCount != 1 {
+		t.Errorf("expected MatchedCount=1, got %d", pairs.MatchedCount)
+	}
+}

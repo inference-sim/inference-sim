@@ -367,6 +367,7 @@ func BuildCalibrationReport(pairs *CalibrationPairs, configMatch *ConfigMatchInf
 			"BLIS models discrete batch steps. Real servers use iteration-level continuous batching. This may cause systematic TTFT prediction error under high load.",
 			"Sim constructs synthetic prefix token IDs. Prefix cache hit rates may differ from real server, especially after evictions.",
 			"If the real server uses speculative decoding, actual token generation patterns differ from sim's sequential model.",
+			"Token mismatch detection uses ServerInputTokens (server-reported prompt_tokens) when available. Non-zero token_mismatches on observe-generated traces typically represent genuine tokenizer boundary differences (~10-20 tokens), not data corruption. This is expected behavior.",
 		},
 	}
 	report.TraceInfo.MatchedPairs = pairs.MatchedCount
