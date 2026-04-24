@@ -223,6 +223,8 @@ func (i *InstanceSimulator) LatencyStats() InstanceLatencyStats {
 	// DispatchRate: use the span between first and last completion time so that
 	// idle time at simulation start does not dilute the rate (rolling-window approximation).
 	// Falls back to total-elapsed-time when all completions share the same tick.
+	// INV-6 note: min/max reduction is order-independent (unlike float sums), so this map
+	// range is exempt from the R2 sort requirement.
 	var minCT, maxCT float64
 	first := true
 	for _, ct := range m.RequestCompletionTimes {

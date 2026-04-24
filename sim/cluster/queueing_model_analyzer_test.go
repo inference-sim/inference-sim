@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"math"
 	"testing"
 )
 
@@ -42,6 +41,24 @@ func TestNewQueueingModelAnalyzerPanicsOnNegativeSLOMultiplier(t *testing.T) {
 		}
 	}()
 	NewQueueingModelAnalyzer(QMConfig{SLOMultiplier: -1.0})
+}
+
+func TestNewQueueingModelAnalyzerPanicsOnNegativeWarmUpCycles(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for negative WarmUpCycles, got none")
+		}
+	}()
+	NewQueueingModelAnalyzer(QMConfig{WarmUpCycles: -1})
+}
+
+func TestNewQueueingModelAnalyzerPanicsOnNegativeInitFitThreshold(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for negative InitFitThreshold, got none")
+		}
+	}()
+	NewQueueingModelAnalyzer(QMConfig{InitFitThreshold: -0.1})
 }
 
 // TestGetSLOTargetDeterministicWithTwoVariants verifies that getSLOTarget (Priority 2 path)
@@ -168,6 +185,11 @@ func TestQueueingModelAnalyzerExplicitSLOTarget(t *testing.T) {
 	}
 }
 
+// TestQueueingModelAnalyzerObservationBasedSLO exercises the path where no explicit SLO
+// is configured (Priority 3 fallback in getSLOTarget). With InitObs=2 and two identical
+// observations, Nelder-Mead fitting may or may not converge. If fitting succeeds (alpha>0),
+// supply is computable and TotalDemand must be positive. If fitting does not converge,
+// TotalSupply=0 and the test skips rather than failing.
 func TestQueueingModelAnalyzerObservationBasedSLO(t *testing.T) {
 	cfg := QMConfig{
 		TuningEnabled: true,
@@ -190,8 +212,14 @@ func TestQueueingModelAnalyzerObservationBasedSLO(t *testing.T) {
 	}
 	a.Analyze(ModelSignals{ModelID: "m1", Replicas: []ReplicaMetrics{obs}})
 	result := a.Analyze(ModelSignals{ModelID: "m1", Replicas: []ReplicaMetrics{obs}})
-	if result.TotalSupply <= 0 {
-		t.Logf("TotalSupply=%v (fit may not have converged)", result.TotalSupply)
+
+	if result.ModelID != "m1" {
+		t.Errorf("ModelID = %q, want %q", result.ModelID, "m1")
 	}
-	_ = math.MaxFloat64
+	if result.TotalSupply <= 0 {
+		t.Skipf("TotalSupply=%v: Nelder-Mead did not converge with 2 identical observations; supply requires fitted parameters", result.TotalSupply)
+	}
+	if result.TotalDemand <= 0 {
+		t.Errorf("TotalDemand = %v, want > 0 (DispatchRate=0.5 should yield positive demand)", result.TotalDemand)
+	}
 }

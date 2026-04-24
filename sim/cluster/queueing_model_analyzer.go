@@ -105,6 +105,12 @@ func NewQueueingModelAnalyzer(cfg QMConfig) *QueueingModelAnalyzer {
 	if cfg.ResidualThreshold < 0 {
 		panic("NewQueueingModelAnalyzer: ResidualThreshold must be >= 0")
 	}
+	if cfg.WarmUpCycles < 0 {
+		panic("NewQueueingModelAnalyzer: WarmUpCycles must be >= 0")
+	}
+	if cfg.InitFitThreshold < 0 {
+		panic("NewQueueingModelAnalyzer: InitFitThreshold must be >= 0")
+	}
 	if cfg.SLOMultiplier == 0 {
 		cfg.SLOMultiplier = DefaultSLOMultiplier
 	}
@@ -162,7 +168,7 @@ func (a *QueueingModelAnalyzer) Analyze(ms ModelSignals) AnalyzerResult {
 				}
 				// TTFT and ITL are in μs; environment expects ms.
 				env := core.NewEnvironmentPrefillDecode(
-					float32(rm.DispatchRate*60), // req/min
+					float32(rm.DispatchRate*60), // req/s → req/min (environment expects req/min)
 					0,                           // batchSize (0 = let model compute)
 					0,                           // avgQueueTime (ms)
 					maxBatch,
