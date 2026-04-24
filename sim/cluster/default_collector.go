@@ -17,11 +17,11 @@ type DefaultCollector struct{}
 // Collect produces one ModelSignals per active model from the current RouterState.
 // Models are sorted alphabetically for determinism (R2).
 func (c *DefaultCollector) Collect(state *sim.RouterState) []ModelSignals {
-	if state == nil || len(state.Snapshots) == 0 {
+	if state == nil {
 		return nil
 	}
 
-	// Group snapshots by model; skip instances with empty Model (not ready for autoscaling)
+	// Group routable snapshots by model; skip instances with empty Model or GPUType.
 	byModel := make(map[string][]ReplicaMetrics)
 	for _, snap := range state.Snapshots {
 		if snap.Model == "" {
@@ -45,19 +45,53 @@ func (c *DefaultCollector) Collect(state *sim.RouterState) []ModelSignals {
 		byModel[snap.Model] = append(byModel[snap.Model], rm)
 	}
 
-	// Sort model keys for determinism (R2)
-	models := make([]string, 0, len(byModel))
+	// Group Loading instance capacity by model for pending supply estimation.
+	type pendingAgg struct {
+		count    int
+		capacity int64
+	}
+	pendingByModel := make(map[string]pendingAgg)
+	for _, snap := range state.LoadingSnapshots {
+		if snap.Model == "" || snap.GPUType == "" {
+			continue
+		}
+		p := pendingByModel[snap.Model]
+		p.count++
+		p.capacity += snap.TotalKvCapacityTokens
+		pendingByModel[snap.Model] = p
+	}
+
+	// Collect all model keys from both routable and loading snapshots.
+	allModels := make(map[string]struct{}, len(byModel)+len(pendingByModel))
 	for m := range byModel {
+		allModels[m] = struct{}{}
+	}
+	for m := range pendingByModel {
+		allModels[m] = struct{}{}
+	}
+
+	if len(allModels) == 0 {
+		return nil
+	}
+
+	// Sort model keys for determinism (R2).
+	models := make([]string, 0, len(allModels))
+	for m := range allModels {
 		models = append(models, m)
 	}
 	sort.Strings(models)
 
 	result := make([]ModelSignals, 0, len(models))
 	for _, m := range models {
-		result = append(result, ModelSignals{
+		ms := ModelSignals{
 			ModelID:  m,
 			Replicas: byModel[m],
-		})
+		}
+		if p, ok := pendingByModel[m]; ok {
+			ms.PendingReplicaCount = p.count
+			ms.PendingTotalKvCapacityTokens = p.capacity
+		}
+		result = append(result, ms)
 	}
 	return result
 }

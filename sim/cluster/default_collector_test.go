@@ -111,3 +111,100 @@ func TestDefaultCollectorCollect(t *testing.T) {
 		})
 	}
 }
+
+// TestDefaultCollector_PendingReplicaCount_FromLoadingSnapshots verifies that
+// DefaultCollector populates PendingReplicaCount and PendingTotalKvCapacityTokens
+// from RouterState.LoadingSnapshots.
+func TestDefaultCollector_PendingReplicaCount_FromLoadingSnapshots(t *testing.T) {
+	collector := &DefaultCollector{}
+
+	tests := []struct {
+		name                        string
+		state                       *sim.RouterState
+		wantPendingCount            map[string]int
+		wantPendingKvCapacityTokens map[string]int64
+	}{
+		{
+			name: "one loading replica alongside active replica",
+			state: &sim.RouterState{
+				Snapshots: []sim.RoutingSnapshot{
+					{ID: "active-1", Model: "modelA", GPUType: "A100", TPDegree: 1,
+						TotalKvCapacityTokens: 10000, CostPerHour: 10.0},
+				},
+				LoadingSnapshots: []sim.RoutingSnapshot{
+					{ID: "loading-1", Model: "modelA", GPUType: "A100", TPDegree: 1,
+						TotalKvCapacityTokens: 10000, CostPerHour: 10.0},
+				},
+			},
+			wantPendingCount:            map[string]int{"modelA": 1},
+			wantPendingKvCapacityTokens: map[string]int64{"modelA": 10000},
+		},
+		{
+			name: "two loading replicas accumulate capacity",
+			state: &sim.RouterState{
+				Snapshots: []sim.RoutingSnapshot{
+					{ID: "active-1", Model: "modelA", GPUType: "A100", TPDegree: 1,
+						TotalKvCapacityTokens: 10000, CostPerHour: 10.0},
+				},
+				LoadingSnapshots: []sim.RoutingSnapshot{
+					{ID: "loading-1", Model: "modelA", GPUType: "A100", TPDegree: 1,
+						TotalKvCapacityTokens: 10000, CostPerHour: 10.0},
+					{ID: "loading-2", Model: "modelA", GPUType: "A100", TPDegree: 1,
+						TotalKvCapacityTokens: 10000, CostPerHour: 10.0},
+				},
+			},
+			wantPendingCount:            map[string]int{"modelA": 2},
+			wantPendingKvCapacityTokens: map[string]int64{"modelA": 20000},
+		},
+		{
+			name: "loading replicas for different models bucketed separately",
+			state: &sim.RouterState{
+				Snapshots: []sim.RoutingSnapshot{
+					{ID: "a1", Model: "modelA", GPUType: "A100", TPDegree: 1,
+						TotalKvCapacityTokens: 10000, CostPerHour: 10.0},
+					{ID: "b1", Model: "modelB", GPUType: "H100", TPDegree: 2,
+						TotalKvCapacityTokens: 20000, CostPerHour: 20.0},
+				},
+				LoadingSnapshots: []sim.RoutingSnapshot{
+					{ID: "loading-a", Model: "modelA", GPUType: "A100", TPDegree: 1,
+						TotalKvCapacityTokens: 10000, CostPerHour: 10.0},
+					{ID: "loading-b", Model: "modelB", GPUType: "H100", TPDegree: 2,
+						TotalKvCapacityTokens: 20000, CostPerHour: 20.0},
+				},
+			},
+			wantPendingCount:            map[string]int{"modelA": 1, "modelB": 1},
+			wantPendingKvCapacityTokens: map[string]int64{"modelA": 10000, "modelB": 20000},
+		},
+		{
+			name: "nil LoadingSnapshots — pending fields are zero",
+			state: &sim.RouterState{
+				Snapshots: []sim.RoutingSnapshot{
+					{ID: "a1", Model: "modelA", GPUType: "A100", TPDegree: 1,
+						TotalKvCapacityTokens: 10000, CostPerHour: 10.0},
+				},
+				LoadingSnapshots: nil,
+			},
+			wantPendingCount:            map[string]int{"modelA": 0},
+			wantPendingKvCapacityTokens: map[string]int64{"modelA": 0},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := collector.Collect(tc.state)
+
+			for _, ms := range result {
+				wantCount := tc.wantPendingCount[ms.ModelID]
+				if ms.PendingReplicaCount != wantCount {
+					t.Errorf("model %q: PendingReplicaCount = %d, want %d",
+						ms.ModelID, ms.PendingReplicaCount, wantCount)
+				}
+				wantCap := tc.wantPendingKvCapacityTokens[ms.ModelID]
+				if ms.PendingTotalKvCapacityTokens != wantCap {
+					t.Errorf("model %q: PendingTotalKvCapacityTokens = %d, want %d",
+						ms.ModelID, ms.PendingTotalKvCapacityTokens, wantCap)
+				}
+			}
+		})
+	}
+}
