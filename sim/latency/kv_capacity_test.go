@@ -424,6 +424,106 @@ func TestCalculateKVBlocks_BudgetExceeded_ReturnError(t *testing.T) {
 	}
 }
 
+func TestCalculateKVBlocks_InsufficientMemory_SuggestsMinTP(t *testing.T) {
+	// GIVEN a DeepSeek-V3-like MoE model (671B) with insufficient TP
+	mc := sim.ModelConfig{
+		NumLayers:          61,
+		HiddenDim:          7168,
+		NumHeads:           128,
+		NumKVHeads:         128,
+		VocabSize:          129280,
+		BytesPerParam:      1.0, // FP8
+		IntermediateDim:    18432,
+		NumLocalExperts:    256,
+		NumExpertsPerTok:   8,
+		MoEExpertFFNDim:    2048,
+		SharedExpertFFNDim: 2048,
+	}
+	hc := validHWConfig() // H100-80GB
+	params := latency.NewKVCapacityParams(true, 256, false, "silu", 2048, 2048)
+	tp := 2
+
+	// WHEN CalculateKVBlocks is called with TP=2 (insufficient)
+	_, err := latency.CalculateKVBlocks(mc, hc, tp, 16, 0.9, params)
+
+	// THEN error is returned
+	if err == nil {
+		t.Fatal("expected error for insufficient memory, got nil")
+	}
+
+	// AND error message contains "Minimum GPUs required per instance"
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "Minimum GPUs required per instance") {
+		t.Errorf("error should contain 'Minimum GPUs required per instance', got: %v", err)
+	}
+
+	// AND minimum GPU count is mathematically correct
+	// Model overhead ≈ 656 GiB (671B × 1 byte FP8), H100 = 80 GiB × 0.9 util = 72 GiB
+	// minGPUs = ceil(656 / 72) = 10
+	if !strings.Contains(errMsg, "Minimum GPUs required per instance: 10") {
+		t.Errorf("expected 'Minimum GPUs required per instance: 10' in error, got: %v", err)
+	}
+}
+
+func TestCalculateKVBlocks_InsufficientMemory_SucceedsAtSuggestedTP(t *testing.T) {
+	// GIVEN a DeepSeek-V3-like MoE model (671B) with insufficient TP=2
+	mc := sim.ModelConfig{
+		NumLayers:          61,
+		HiddenDim:          7168,
+		NumHeads:           128,
+		NumKVHeads:         128,
+		VocabSize:          129280,
+		BytesPerParam:      1.0, // FP8
+		IntermediateDim:    18432,
+		NumLocalExperts:    256,
+		NumExpertsPerTok:   8,
+		MoEExpertFFNDim:    2048,
+		SharedExpertFFNDim: 2048,
+	}
+	hc := validHWConfig() // H100-80GB
+	params := latency.NewKVCapacityParams(true, 256, false, "silu", 2048, 2048)
+
+	// WHEN CalculateKVBlocks fails with TP=2, it should suggest minTP=10
+	_, err := latency.CalculateKVBlocks(mc, hc, 2, 16, 0.9, params)
+	if err == nil {
+		t.Fatal("expected error for insufficient memory with TP=2, got nil")
+	}
+	if !strings.Contains(err.Error(), "Minimum GPUs required per instance: 10") {
+		t.Errorf("expected minTP=10 suggestion, got: %v", err)
+	}
+
+	// AND CalculateKVBlocks should succeed at TP=16 (next valid TP >= 10 that divides num_kv_heads=128)
+	blocks, err := latency.CalculateKVBlocks(mc, hc, 16, 16, 0.9, params)
+	if err != nil {
+		t.Errorf("expected success at TP=16 (next valid TP >= suggested minTP=10), got error: %v", err)
+	}
+	if blocks == 0 {
+		t.Errorf("expected non-zero KV blocks at TP=16, got: %d", blocks)
+	}
+}
+
+func TestCalculateKVBlocks_ZeroMemoryBudget_NoMinTPSuggestion(t *testing.T) {
+	// GIVEN a model with zero GPU memory (degenerate config)
+	mc := validDenseModelConfig()
+	hc := validHWConfig()
+	hc.MemoryGiB = 0.0
+	params := validDenseKVParams()
+
+	// WHEN CalculateKVBlocks is called
+	_, err := latency.CalculateKVBlocks(mc, hc, 1, 16, 0.9, params)
+
+	// THEN error is returned
+	if err == nil {
+		t.Fatal("expected error for zero GPU memory, got nil")
+	}
+
+	// AND error mentions invalid GPU memory (caught by earlier validation)
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "GPU memory") {
+		t.Errorf("expected error mentioning 'GPU memory', got: %v", err)
+	}
+}
+
 func TestCalculateKVBlocks_FloorZero_ReturnError(t *testing.T) {
 	// Use the standard model/GPU config but set an enormous block size so
 	// that a single block exceeds the allocatable KV space. This exercises
@@ -1245,3 +1345,25 @@ func TestCalculateKVBlocks_GpuMemoryUtilization_HigherUtilProducesMoreBlocks(t *
 		t.Errorf("util=0.95 should yield more blocks than util=0.90: got %d <= %d", blocks95, blocks90)
 	}
 }
+
+// Manual verification (issue #624):
+//
+// 1. Insufficient TP — error with actionable guidance:
+//    $ ./blis run --model deepseek-ai/DeepSeek-V3 --tp 2 --hardware H100
+//    => FATAL: "model overhead (665.71 GiB = 656.51 weights + 8.00 activation + 1.20 non-torch)
+//       exceeds available GPU memory (144.00 GiB = 80.0 GiB × 90% util × 2 GPUs).
+//       Minimum TP required: 10"
+//
+// 2. TP=8 (128 KV heads divisible, but still insufficient memory):
+//    $ ./blis run --model deepseek-ai/DeepSeek-V3 --tp 8 --hardware H100
+//    => FATAL: "model overhead (669.31 GiB) exceeds available GPU memory (576.00 GiB).
+//       Minimum TP required: 10"
+//
+// 3. TP=10 (sufficient memory but 128 KV heads not divisible by 10):
+//    $ ./blis run --model deepseek-ai/DeepSeek-V3 --tp 10 --hardware H100
+//    => FATAL: "num_kv_heads (128) must be evenly divisible by TP (10)"
+//
+// 4. Sufficient TP — simulation succeeds:
+//    $ ./blis run --model deepseek-ai/DeepSeek-V3 --tp 16 --hardware H100 --num-requests 10
+//    => SUCCESS: auto-calculated total-kv-blocks=293387 (GPU=80 GiB, TP=16, block_size=16, MoE=true)
+//    => Completed 10 requests successfully
