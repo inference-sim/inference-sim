@@ -215,9 +215,9 @@ func buildPresetSpec(preset, defaultsPath string, rate float64, numRequests int)
 
 func runObserve(cmd *cobra.Command, _ []string) {
 	invocationID := fmt.Sprintf("%d-%d", time.Now().UnixNano(), os.Getpid())
-	logrus.Infof("[DIAG] runObserve entered (invocation=%s, trace_data=%s)",
+	logrus.Debugf("[DIAG] runObserve entered (invocation=%s, trace_data=%s)",
 		invocationID, observeTraceData)
-	defer logrus.Infof("[DIAG] runObserve exited (invocation=%s)", invocationID)
+	defer logrus.Debugf("[DIAG] runObserve exited (invocation=%s)", invocationID)
 
 	// BC-13: Required flag validation
 	if observeServerURL == "" {
