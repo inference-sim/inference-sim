@@ -370,9 +370,9 @@ func (a *QueueingModelAnalyzer) getSLOTarget(modelID string, replicas []ReplicaM
 		}
 		k2 := a.cfg.SLOMultiplier
 		α, β, γ := state.alpha, state.beta, state.gamma
-		// Base TTFT: prefill time at single-token batch ≈ α + (β+γ)*n_in
+		// TargetTTFT = k×α + (β+γ)×AvgInTokens  (design doc §Priority 2)
 		ttft := k2*α + (β+γ)*wm.AvgInTokens
-		// Base ITL: decode time ≈ α + β + γ*(n_in + n_out/2)
+		// TargetITL  = k×α + β + γ×(AvgInTokens + (AvgOutTokens+1)/2)
 		itl := k2*α + β + γ*(wm.AvgInTokens+(wm.AvgOutTokens+1)/2)
 		if ttft > bestTTFT {
 			bestTTFT = ttft

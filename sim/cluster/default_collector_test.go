@@ -146,10 +146,10 @@ func TestDefaultCollectorCollect(t *testing.T) {
 						t.Errorf("KvTokensInUse = %d, want 14000", r.KvTokensInUse)
 					}
 					if r.TTFT != 0 {
-						t.Errorf("TTFT = %f, want 0 (future QueueingModelAnalyzer)", r.TTFT)
+						t.Errorf("TTFT = %f, want 0 (no latency data in test snapshot)", r.TTFT)
 					}
 					if r.DispatchRate != 0 {
-						t.Errorf("DispatchRate = %f, want 0 (future QueueingModelAnalyzer)", r.DispatchRate)
+						t.Errorf("DispatchRate = %f, want 0 (no latency data in test snapshot)", r.DispatchRate)
 					}
 				}
 			}

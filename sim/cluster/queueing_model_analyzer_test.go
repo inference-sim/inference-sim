@@ -185,6 +185,44 @@ func TestQueueingModelAnalyzerExplicitSLOTarget(t *testing.T) {
 	}
 }
 
+// TestGetSLOTargetPriority2Formula verifies that the theory-based SLO path (Priority 2)
+// produces TargetTTFT = k×α + (β+γ)×AvgInTokens and TargetITL = k×α + β + γ×(AvgInTokens+(AvgOutTokens+1)/2)
+// for known fitted parameters, matching the formula in the design doc.
+func TestGetSLOTargetPriority2Formula(t *testing.T) {
+	const (
+		k2    = DefaultSLOMultiplier // 3.0
+		alpha = 10.0
+		beta  = 0.02
+		gamma = 0.001
+		avgIn = 512.0
+		avgOut = 128.0
+	)
+	wantTTFT := float32(k2*alpha + (beta+gamma)*avgIn)
+	wantITL  := float32(k2*alpha + beta + gamma*(avgIn+(avgOut+1)/2))
+
+	a := NewQueueingModelAnalyzer(QMConfig{TuningEnabled: false, SLOMultiplier: k2})
+	k := modelVariantKey{ModelID: "m1", Variant: NewVariantSpec("A100", 1)}
+	a.variantState[k] = &perVariantState{alpha: alpha, beta: beta, gamma: gamma}
+
+	replicas := []ReplicaMetrics{{
+		InstanceID:   "i1",
+		Variant:      NewVariantSpec("A100", 1),
+		DispatchRate: 1.0, // non-zero so computeWorkloadMetrics uses this replica's tokens
+		AvgInTokens:  avgIn,
+		AvgOutTokens: avgOut,
+	}}
+	slo, ok := a.getSLOTarget("m1", replicas)
+	if !ok {
+		t.Fatal("getSLOTarget: Priority 2 should succeed with fitted parameters, got ok=false")
+	}
+	if slo.TargetTTFT != wantTTFT {
+		t.Errorf("TargetTTFT = %v, want %v (k×α + (β+γ)×AvgInTokens)", slo.TargetTTFT, wantTTFT)
+	}
+	if slo.TargetITL != wantITL {
+		t.Errorf("TargetITL = %v, want %v (k×α + β + γ×(AvgInTokens+(AvgOutTokens+1)/2))", slo.TargetITL, wantITL)
+	}
+}
+
 // TestQueueingModelAnalyzerObservationBasedSLO exercises the path where no explicit SLO
 // is configured (Priority 3 fallback in getSLOTarget). With InitObs=2 and two identical
 // observations, Nelder-Mead fitting may or may not converge. If fitting succeeds (alpha>0),
