@@ -138,7 +138,13 @@ func PrepareCalibrationPairs(
 		pairs.MatchedCount++
 
 		// Check token count mismatch
-		if rec.InputTokens != sr.InputTokens || rec.OutputTokens != sr.OutputTokens {
+		// Use ServerInputTokens when available (handles prefix caching correctly)
+		realInputTokens := rec.InputTokens
+		if rec.ServerInputTokens > 0 {
+			realInputTokens = rec.ServerInputTokens
+		}
+
+		if realInputTokens != sr.InputTokens || rec.OutputTokens != sr.OutputTokens {
 			pairs.TokenMismatchCount++
 		}
 
