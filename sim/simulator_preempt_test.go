@@ -15,7 +15,7 @@ func TestPreempt_EmptyBatch_ReturnsFalse(t *testing.T) {
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
 	}
-	bf := NewBatchFormation()
+	bf := NewBatchFormation("", nil)
 	kvCache := MustNewKVCacheState(config.TotalKVBlocks, config.BlockSizeTokens)
 
 	// AND the running batch is empty
@@ -70,7 +70,7 @@ func TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse(t *testing.T) {
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
 	}
-	bf := NewBatchFormation()
+	bf := NewBatchFormation("", nil)
 	kvCache := MustNewKVCacheState(config.TotalKVBlocks, config.BlockSizeTokens)
 
 	// AND one small request in the running batch with KV blocks allocated
