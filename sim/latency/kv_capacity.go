@@ -207,11 +207,30 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSi
 
 	overheadGiB := modelWeightGiB + activationGiB + nonTorchGiB
 	if overheadGiB >= totalAvailableGiB {
+		perGPUAvailable := hc.MemoryGiB * gpuMemoryUtilization
+
+		// Calculate minimum TP needed: use TP-independent overhead (weights + activation)
+		// and subtract per-GPU non-torch overhead from available capacity.
+		// For TP>1, use nonTorchMemoryTPMultiGiB (0.6 GiB/GPU) to account for NCCL/CUDA overhead.
+		nonTorchPerGPUForMinTP := nonTorchMemoryTPMultiGiB
+		perGPUCapacity := perGPUAvailable - nonTorchPerGPUForMinTP
+
+		if perGPUCapacity <= 0 {
+			return 0, fmt.Errorf(
+				"CalculateKVBlocks: insufficient per-GPU capacity (%.2f GiB available - %.2f GiB non-torch overhead = %.2f GiB). "+
+					"Cannot fit model even with increased TP",
+				perGPUAvailable, nonTorchPerGPUForMinTP, perGPUCapacity)
+		}
+
+		tpIndependentOverhead := modelWeightGiB + activationGiB
+		minTP := int(math.Ceil(tpIndependentOverhead / perGPUCapacity))
+
 		return 0, fmt.Errorf(
 			"CalculateKVBlocks: model overhead (%.2f GiB = %.2f weights + %.2f activation + %.2f non-torch) "+
-				"exceeds available GPU memory (%.2f GiB = %.1f GiB × %.0f%% util × %d GPUs)",
+				"exceeds available GPU memory (%.2f GiB = %.1f GiB × %.0f%% util × %d GPUs). "+
+				"Minimum GPUs required per instance: %d",
 			overheadGiB, modelWeightGiB, activationGiB, nonTorchGiB,
-			totalAvailableGiB, hc.MemoryGiB, gpuMemoryUtilization*100, tp)
+			totalAvailableGiB, hc.MemoryGiB, gpuMemoryUtilization*100, tp, minTP)
 	}
 
 	allocatableGiB := totalAvailableGiB - overheadGiB
