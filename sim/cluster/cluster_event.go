@@ -413,7 +413,7 @@ func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 		if warmUpCount > 0 && len(decodeInst.WarmUpRequestIDs()) < warmUpCount {
 			decodeInst.RecordWarmUpRequest(e.request.ID)
 		}
-		decodeInst.InjectRequestOnline(e.request, e.time)
+		decodeInst.InjectRequestOnline(e.request, e.time+cs.routingLatency)
 		cs.notifyDisaggregationObserver(e.request, decodeDecision.TargetInstance)
 		return
 	}

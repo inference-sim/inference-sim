@@ -1797,11 +1797,12 @@ func TestDisaggregation_DecodeInstancePreSelected(t *testing.T) {
 	mustRun(t, cs)
 
 	// THEN: every parent request has a non-empty DecodeInstanceID in the decode pool,
-	// and the instance is actually in the decode pool (not prefill)
-	if len(cs.parentRequests) == 0 {
+	// and the instance is actually in the decode pool (not prefill).
+	parents := cs.ParentRequests()
+	if len(parents) == 0 {
 		t.Fatal("expected disaggregated parent requests, got none")
 	}
-	for _, parent := range cs.parentRequests {
+	for _, parent := range parents {
 		if parent.DecodeInstanceID == "" {
 			t.Errorf("parent %s: DecodeInstanceID is empty — decode instance was not pre-selected", parent.ID)
 			continue

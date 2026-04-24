@@ -71,7 +71,7 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 			cs.inFlightRequests[decision.TargetInstance]++
 			// Phase 1B-2a: track tenant in-flight count for fair-share enforcement in PD mode.
 			// PD disaggregation semantics: OnStart is called once here (prefill) and once in
-			// DecodeRoutingEvent (decode), so one parent request consumes 2 capacity slots —
+			// KVTransferCompletedEvent (decode), so one parent request consumes 2 capacity slots —
 			// one on the prefill pool, one on the decode pool. IsOverBudget reflects actual
 			// resource occupancy across both pools. OnComplete fires symmetrically via
 			// OnRequestDone when each sub-request finishes.

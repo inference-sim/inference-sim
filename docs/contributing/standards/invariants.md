@@ -160,9 +160,9 @@ Invariants are properties that must hold at all times during and after simulatio
 
 **Statement:** For every disaggregated request, `decode_enqueue_time >= kv_transfer_completion_time`. A decode sub-request must not be enqueued before its KV transfer completes.
 
-**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_RequestCompletesFullPath` checks DecodeEnqueueTime >= TransferCompleteTime for every parent request. Runtime defensive check in `DecodeRoutingEvent.Execute()`.
+**Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_RequestCompletesFullPath` checks DecodeEnqueueTime >= TransferCompleteTime for every parent request. Runtime defensive check in `KVTransferCompletedEvent.Execute()`.
 
-**Evidence:** By event priority ordering: KVTransferCompletedEvent (priority 6) schedules DecodeRoutingEvent (priority 7) at the same timestamp. DecodeEnqueueTime is set in DecodeRoutingEvent which fires after transfer completion.
+**Evidence:** Both `TransferCompleteTime` and `DecodeEnqueueTime` are set in `KVTransferCompletedEvent.Execute()` at the same simulation tick (`e.time`), so the invariant holds by construction.
 
 ### INV-PD-2: Pool Exclusivity
 

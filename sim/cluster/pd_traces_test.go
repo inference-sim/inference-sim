@@ -285,10 +285,10 @@ func TestPDTrace_DroppedAtDecodeKV_NoOrphanRecords(t *testing.T) {
 	if len(tr.KVTransfers) >= len(tr.Disaggregations) {
 		t.Errorf("KVTransfers=%d >= Disaggregations=%d under drops (drops must reduce KV record count)", len(tr.KVTransfers), len(tr.Disaggregations))
 	}
-	// For decode-side drops (cases 2/3), PrefillRoutings == Disaggregations because
+	// For decode-side drops (case 2), PrefillRoutings == Disaggregations because
 	// prefill routing succeeds before the drop. This equality does NOT hold for case 1
 	// (no routable prefill instances), where PrefillRoutings < Disaggregations.
-	// This test exercises cases 2/3 exclusively (decode KV OOM via AllocateTransferredKV).
+	// This test exercises case 2 exclusively (decode pod non-routable or KV OOM).
 	if len(tr.PrefillRoutings) != len(tr.Disaggregations) {
 		t.Errorf("PrefillRoutings=%d != Disaggregations=%d (prefill routing unaffected by decode KV drop)", len(tr.PrefillRoutings), len(tr.Disaggregations))
 	}
