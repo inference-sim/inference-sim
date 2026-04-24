@@ -66,7 +66,7 @@ func TestDeploymentConfig_ToSimConfig_ReturnsEmbeddedSimConfig(t *testing.T) {
 			BatchConfig:         sim.NewBatchConfig(128, 4096, 512),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
 			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 2, "roofline", 0),
-			PolicyConfig:        sim.NewPolicyConfig("slo-based", "priority-fcfs"),
+			PolicyConfig:        sim.NewPolicyConfig("slo-based", "priority-fcfs", ""),
 		},
 		NumInstances:    3,
 		AdmissionPolicy: "token-bucket",
