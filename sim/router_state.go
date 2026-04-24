@@ -11,6 +11,7 @@ package sim
 // (PriorityPolicy, InstanceScheduler) receive parameters directly.
 // This prevents import cycles: sim/cluster/ imports sim/, not the reverse.
 type RouterState struct {
-	Snapshots []RoutingSnapshot // One per instance, same order as ClusterSimulator.instances
-	Clock     int64             // Current simulation clock in microseconds
+	Snapshots        []RoutingSnapshot // One per routable instance (Active + WarmingUp)
+	LoadingSnapshots []RoutingSnapshot // One per Loading instance; carry TotalKvCapacityTokens for pending supply
+	Clock            int64             // Current simulation clock in microseconds
 }

@@ -222,3 +222,56 @@ func TestRoutingDecisionEvent_PriorityHint_ZeroDoesNotOverride(t *testing.T) {
 		t.Fatal("expected at least one completed request")
 	}
 }
+
+// TestBuildRouterState_LoadingSnapshot_PopulatedNotInSnapshots verifies that:
+// (a) a Loading instance does NOT appear in RouterState.Snapshots (IsRoutable guard preserved)
+// (b) a Loading instance DOES appear in RouterState.LoadingSnapshots
+// (c) LoadingSnapshot.TotalKvCapacityTokens is populated from the instance's KV store
+func TestBuildRouterState_LoadingSnapshot_PopulatedNotInSnapshots(t *testing.T) {
+	// newTestDeploymentConfig(1) creates one instance that starts Active (no NodePools).
+	// We manually force it to Loading state to simulate an in-flight scale-up.
+	cs := NewClusterSimulator(newTestDeploymentConfig(1), nil, nil)
+	for _, inst := range cs.instances {
+		inst.State = InstanceStateLoading
+	}
+
+	state := buildRouterState(cs, nil)
+
+	// Loading instance must NOT be routable (IsRoutable contract unchanged)
+	if len(state.Snapshots) != 0 {
+		t.Errorf("Snapshots: got %d, want 0 (loading instance must not be routable)", len(state.Snapshots))
+	}
+	// Loading instance MUST appear in LoadingSnapshots
+	if len(state.LoadingSnapshots) != 1 {
+		t.Fatalf("LoadingSnapshots: got %d, want 1", len(state.LoadingSnapshots))
+	}
+	ls := state.LoadingSnapshots[0]
+	// TotalKvCapacityTokens is set from KV store (10000 blocks × 16 tokens = 160000)
+	if ls.TotalKvCapacityTokens <= 0 {
+		t.Errorf("LoadingSnapshot.TotalKvCapacityTokens = %d, want > 0", ls.TotalKvCapacityTokens)
+	}
+	if ls.Model == "" {
+		t.Errorf("LoadingSnapshot.Model must not be empty")
+	}
+	if ls.GPUType == "" {
+		t.Errorf("LoadingSnapshot.GPUType must not be empty")
+	}
+}
+
+// TestBuildRouterState_ActiveAndLoadingMixed_SeparateBuckets verifies that when a cluster
+// has both Active and Loading instances, they appear in the correct slices.
+func TestBuildRouterState_ActiveAndLoadingMixed_SeparateBuckets(t *testing.T) {
+	// Start with 2 instances, force one to Loading and leave the other Active.
+	cs := NewClusterSimulator(newTestDeploymentConfig(2), nil, nil)
+	cs.instances[0].State = InstanceStateActive
+	cs.instances[1].State = InstanceStateLoading
+
+	state := buildRouterState(cs, nil)
+
+	if len(state.Snapshots) != 1 {
+		t.Errorf("Snapshots: got %d, want 1 (only Active instance)", len(state.Snapshots))
+	}
+	if len(state.LoadingSnapshots) != 1 {
+		t.Errorf("LoadingSnapshots: got %d, want 1 (only Loading instance)", len(state.LoadingSnapshots))
+	}
+}
