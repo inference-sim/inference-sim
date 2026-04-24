@@ -8,7 +8,7 @@ type TraceSummary struct {
 	MeanRegret         float64
 	MaxRegret          float64
 	UniqueTargets      int
-	TargetDistribution map[string]int // instance ID → count of requests routed via standard routing only (not PD pool routing); use PrefillRoutings/DecodeRoutings for per-pool counts
+	TargetDistribution map[string]int // instance ID → count of requests routed via standard routing only (not PD pool routing); use PrefillRoutings for prefill-pool counts
 
 	// PD disaggregation summary (zero when disaggregation is not configured)
 	DisaggregationCount  int     // number of disaggregation decisions recorded (true and false combined)

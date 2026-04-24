@@ -9,7 +9,7 @@ type ParentRequest struct {
 	OriginalRequest *sim.Request // Pointer to the original request (for metadata)
 	PrefillSubReqID string
 	DecodeSubReqID  string
-	DecodeSubReq    *sim.Request // Pointer to the decode sub-request (set by DecodeRoutingEvent)
+	DecodeSubReq    *sim.Request // Pointer to the decode sub-request (set by KVTransferCompletedEvent)
 	NumKVBlocks     int64        // KV blocks to transfer (ceil(inputLen / blockSize))
 
 	// Phase timestamps (microseconds). Zero means phase not yet reached.
@@ -26,7 +26,7 @@ type ParentRequest struct {
 	//     that projectPDMetrics() computes the same client-visible E2E as non-PD
 	//     recordRequestCompletion (issue #846). For roofline (overhead=0), equals
 	//     the raw cluster clock tick.
-	//   - Dropped at decode KV allocation: set to the DecodeRoutingEvent time (the
+	//   - Dropped at decode KV allocation: set to the KVTransferCompletedEvent time (the
 	//     point when the drop was detected). Since decode never ran, this reflects
 	//     the drop-detection time, not a decode completion time.
 	//     Use DecodeInstanceID == "" to distinguish dropped requests.
@@ -34,7 +34,9 @@ type ParentRequest struct {
 	//     timeout detection time. The session is cancelled via sessionCallback.
 	CompletionTime int64
 
-	// Instance assignment
+	// Instance assignment.
+	// DecodeInstanceID is set upfront at DisaggregationDecisionEvent time (decode-first routing),
+	// before prefill routing begins. PrefillInstanceID is set by PrefillRoutingEvent.
 	PrefillInstanceID InstanceID
 	DecodeInstanceID  InstanceID
 }

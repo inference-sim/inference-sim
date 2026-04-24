@@ -1747,3 +1747,109 @@ func TestDisaggregation_PD_SessionManager_ContextAccumulation(t *testing.T) {
 	// INV-1 conservation
 	assertINV1Conservation(t, metrics, 2, "PD SessionManager context accumulation")
 }
+
+// TestDisaggregation_NonDisaggRoutedToDecodePoolOnly verifies P3 fix: when PDDecider="never"
+// (no disaggregation), all requests must be routed exclusively to decode pool instances.
+// Before the fix, DisaggregationDecisionEvent scheduled RoutingDecisionEvent which called
+// buildRouterState() including ALL instances (prefill + decode).
+func TestDisaggregation_NonDisaggRoutedToDecodePoolOnly(t *testing.T) {
+	// GIVEN: pool topology configured but disaggregation never triggered
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.PDDecider = "never"
+	const numRequests = 8
+	requests := newTestRequests(numRequests)
+	cs := NewClusterSimulator(config, requests, nil)
+
+	// WHEN: simulation runs
+	mustRun(t, cs)
+
+	// THEN: every routed request is assigned to a decode-pool instance
+	for _, req := range requests {
+		if req.AssignedInstance == "" {
+			continue // not yet routed (e.g., still queued at horizon) — skip
+		}
+		role, ok := cs.poolMembership[req.AssignedInstance]
+		if !ok {
+			t.Errorf("req %s assigned to instance %q which has no pool membership", req.ID, req.AssignedInstance)
+			continue
+		}
+		if role != PoolRoleDecode {
+			t.Errorf("req %s assigned to instance %q (role=%v), want PoolRoleDecode — non-disaggregated requests must not land on prefill pods",
+				req.ID, req.AssignedInstance, role)
+		}
+	}
+
+	// INV-1 conservation still holds
+	assertINV1Conservation(t, cs.AggregatedMetrics(), numRequests, "non-disagg decode-only routing")
+}
+
+// TestDisaggregation_DecodeInstancePreSelected verifies P1 fix: the decode instance is
+// selected during DisaggregationDecisionEvent (before prefill routing), not after KV transfer.
+// Before the fix, DecodeInstanceID was set by DecodeRoutingEvent after KV transfer completed.
+func TestDisaggregation_DecodeInstancePreSelected(t *testing.T) {
+	// GIVEN: always-disaggregate pool topology
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	const numRequests = 5
+	requests := newTestRequests(numRequests)
+	cs := NewClusterSimulator(config, requests, nil)
+
+	// WHEN: simulation runs
+	mustRun(t, cs)
+
+	// THEN: every parent request has a non-empty DecodeInstanceID in the decode pool,
+	// and the instance is actually in the decode pool (not prefill)
+	if len(cs.parentRequests) == 0 {
+		t.Fatal("expected disaggregated parent requests, got none")
+	}
+	for _, parent := range cs.parentRequests {
+		if parent.DecodeInstanceID == "" {
+			t.Errorf("parent %s: DecodeInstanceID is empty — decode instance was not pre-selected", parent.ID)
+			continue
+		}
+		role, ok := cs.poolMembership[string(parent.DecodeInstanceID)]
+		if !ok {
+			t.Errorf("parent %s: DecodeInstanceID %q not in pool membership", parent.ID, parent.DecodeInstanceID)
+			continue
+		}
+		if role != PoolRoleDecode {
+			t.Errorf("parent %s: DecodeInstanceID %q has role=%v, want PoolRoleDecode",
+				parent.ID, parent.DecodeInstanceID, role)
+		}
+	}
+}
+
+// TestDisaggregation_NoDecodeRoutingEvent verifies P2 fix: no DecodeRoutingRecord is emitted
+// in the trace because the second routing decision (DecodeRoutingEvent) is eliminated.
+// The decode pod is pre-selected at DisaggregationDecisionEvent time; KVTransferCompletedEvent
+// injects directly to the pre-selected pod.
+func TestDisaggregation_NoDecodeRoutingEvent(t *testing.T) {
+	// GIVEN: always-disaggregate with trace enabled
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.TraceLevel = "decisions"
+	const numRequests = 4
+	requests := newTestRequests(numRequests)
+	cs := NewClusterSimulator(config, requests, nil)
+
+	// WHEN: simulation runs
+	mustRun(t, cs)
+
+	// THEN: no DecodeRoutingRecord emitted (no second routing decision)
+	tr := cs.Trace()
+	if tr == nil {
+		t.Fatal("expected non-nil trace with trace-level decisions")
+	}
+	if len(tr.DecodeRoutings) != 0 {
+		t.Errorf("expected 0 DecodeRoutingRecords (decode pod pre-selected, no second routing), got %d",
+			len(tr.DecodeRoutings))
+	}
+	// Disaggregation, prefill routing, and KV transfers still recorded
+	if len(tr.Disaggregations) != numRequests {
+		t.Errorf("expected %d disaggregation records, got %d", numRequests, len(tr.Disaggregations))
+	}
+	if len(tr.PrefillRoutings) != numRequests {
+		t.Errorf("expected %d prefill routing records, got %d", numRequests, len(tr.PrefillRoutings))
+	}
+	if len(tr.KVTransfers) != numRequests {
+		t.Errorf("expected %d KV transfer records, got %d", numRequests, len(tr.KVTransfers))
+	}
+}

@@ -34,22 +34,22 @@ type RoutingRecord struct {
 
 // DisaggregationRecord captures a PD disaggregation decision.
 // When Disaggregate=true, the request follows the disaggregated path. Paired
-// PrefillRoutingRecord, KVTransferRecord, and DecodeRoutingRecord are recorded
-// for the same RequestID except in three drop scenarios:
+// PrefillRoutingRecord and KVTransferRecord are recorded for the same RequestID
+// except in two drop scenarios:
 //
 //  1. No routable prefill pool instances (routingRejections++): no downstream records.
-//  2. No routable decode pool instances (droppedAtDecodeKV++): PrefillRoutingRecord
-//     exists but KVTransferRecord and DecodeRoutingRecord are absent.
-//  3. AllocateTransferredKV fails on the decode instance (droppedAtDecodeKV++):
-//     same as case 2.
+//  2. Pre-selected decode pod became non-routable or AllocateTransferredKV fails
+//     (droppedAtDecodeKV++): PrefillRoutingRecord exists but KVTransferRecord is absent.
 //
 // To detect case 1: check for the absence of a PrefillRoutingRecord with a
-// matching ParentRequestID in the trace. To detect cases 2 and 3: check the
+// matching ParentRequestID in the trace. To detect case 2: check the
 // absence of a KVTransferRecord for a given ParentRequestID.
+// Note: DecodeRoutingRecord is never emitted; the decode pod is pre-selected at
+// DisaggregationDecisionEvent time (no second routing decision).
 type DisaggregationRecord struct {
 	RequestID    string
 	Clock        int64
-	Disaggregate bool // true = routed to prefill pool; false = standard routing
+	Disaggregate bool // true = routed to prefill pool; false = standard routing to decode pool
 }
 
 // PrefillRoutingRecord captures a prefill pool routing decision with optional counterfactual analysis.
@@ -80,7 +80,7 @@ type DecodeRoutingRecord struct {
 
 // KVTransferRecord captures a KV cache transfer event between prefill and decode instances.
 // TransferDuration is always >= 0; negative values are clamped to 0 with a warning in
-// DecodeRoutingEvent.Execute() (sim/cluster/pd_events.go) if INV-PD-4 is ever violated.
+// KVTransferCompletedEvent.Execute() (sim/cluster/pd_events.go) if INV-PD-4 is ever violated.
 type KVTransferRecord struct {
 	ParentRequestID   string
 	TransferStartTime int64 // microseconds (sim clock)

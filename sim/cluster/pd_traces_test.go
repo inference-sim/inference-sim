@@ -81,8 +81,10 @@ func TestPDTrace_DisaggMode_AllRecordTypesPresent(t *testing.T) {
 	if len(tr.KVTransfers) != numRequests {
 		t.Errorf("KVTransfers: expected %d, got %d", numRequests, len(tr.KVTransfers))
 	}
-	if len(tr.DecodeRoutings) != numRequests {
-		t.Errorf("DecodeRoutings: expected %d, got %d", numRequests, len(tr.DecodeRoutings))
+	// DecodeRoutings is always empty: the decode pod is pre-selected at DisaggregationDecisionEvent
+	// time; KVTransferCompletedEvent injects directly without a second routing decision (P2 fix).
+	if len(tr.DecodeRoutings) != 0 {
+		t.Errorf("DecodeRoutings: expected 0 (no second routing decision), got %d", len(tr.DecodeRoutings))
 	}
 
 	// Verify KVTransfer records have both instance IDs and non-zero duration
@@ -113,15 +115,6 @@ func TestPDTrace_DisaggMode_AllRecordTypesPresent(t *testing.T) {
 			t.Errorf("PrefillRoutings[%d]: ParentRequestID empty", i)
 		}
 	}
-	for i, r := range tr.DecodeRoutings {
-		if r.ChosenInstance == "" {
-			t.Errorf("DecodeRoutings[%d]: ChosenInstance empty", i)
-		}
-		if r.ParentRequestID == "" {
-			t.Errorf("DecodeRoutings[%d]: ParentRequestID empty", i)
-		}
-	}
-
 	// Verify cross-record ID linkage: every downstream ParentRequestID must appear
 	// in Disaggregations[*].RequestID (the contract stated in DisaggregationRecord doc).
 	disaggIDs := make(map[string]struct{}, len(tr.Disaggregations))
@@ -136,11 +129,6 @@ func TestPDTrace_DisaggMode_AllRecordTypesPresent(t *testing.T) {
 	for i, kv := range tr.KVTransfers {
 		if _, ok := disaggIDs[kv.ParentRequestID]; !ok {
 			t.Errorf("KVTransfers[%d]: ParentRequestID %q not found in Disaggregations", i, kv.ParentRequestID)
-		}
-	}
-	for i, r := range tr.DecodeRoutings {
-		if _, ok := disaggIDs[r.ParentRequestID]; !ok {
-			t.Errorf("DecodeRoutings[%d]: ParentRequestID %q not found in Disaggregations", i, r.ParentRequestID)
 		}
 	}
 }
@@ -176,25 +164,17 @@ func TestPDTrace_DisaggMode_Counterfactual(t *testing.T) {
 			t.Errorf("PrefillRoutings[%d]: Regret=%f, want ≥0", i, r.Regret)
 		}
 	}
-
-	// THEN decode routing records have candidates (BC-PD-19)
-	for i, r := range tr.DecodeRoutings {
-		if len(r.Candidates) == 0 {
-			t.Errorf("DecodeRoutings[%d]: expected candidates with k=2, got none", i)
-		}
-		if len(r.Candidates) > 2 {
-			t.Errorf("DecodeRoutings[%d]: expected ≤2 candidates, got %d", i, len(r.Candidates))
-		}
-		if r.Regret < 0 {
-			t.Errorf("DecodeRoutings[%d]: Regret=%f, want ≥0", i, r.Regret)
-		}
+	// DecodeRoutings is empty (no second routing decision); counterfactual not applicable.
+	if len(tr.DecodeRoutings) != 0 {
+		t.Errorf("expected 0 DecodeRoutings (no second routing decision), got %d", len(tr.DecodeRoutings))
 	}
 }
 
 // TestPDTrace_DisaggMode_Cardinality verifies the PD trace cardinality conservation law (R7):
-// with AlwaysDisaggregate, DisaggregatedCount == len(PrefillRoutings) == len(KVTransfers) == len(DecodeRoutings).
+// with AlwaysDisaggregate, DisaggregatedCount == len(PrefillRoutings) == len(KVTransfers).
+// DecodeRoutings is always 0 because the decode pod is pre-selected at DisaggregationDecisionEvent
+// time; there is no second routing decision.
 // Note: len(Disaggregations) >= DisaggregatedCount (Disaggregations records ALL decisions, including disaggregate=false).
-// The general invariant is DisaggregatedCount == len(PrefillRoutings) == len(KVTransfers) == len(DecodeRoutings).
 func TestPDTrace_DisaggMode_Cardinality(t *testing.T) {
 	// GIVEN disaggregated simulation with trace enabled
 	const numRequests = 5
@@ -207,7 +187,7 @@ func TestPDTrace_DisaggMode_Cardinality(t *testing.T) {
 	mustRun(t, cs)
 
 	// THEN trace record counts satisfy the cardinality conservation law.
-	// With AlwaysDisaggregate: DisaggregatedCount == len(Disaggregations) == len(PrefillRoutings) == len(KVTransfers) == len(DecodeRoutings)
+	// With AlwaysDisaggregate: DisaggregatedCount == len(Disaggregations) == len(PrefillRoutings) == len(KVTransfers)
 	tr := cs.Trace()
 	if tr == nil {
 		t.Fatal("expected non-nil trace")
@@ -216,20 +196,20 @@ func TestPDTrace_DisaggMode_Cardinality(t *testing.T) {
 	disaggCount := summary.DisaggregatedCount
 	np := len(tr.PrefillRoutings)
 	nk := len(tr.KVTransfers)
-	nd2 := len(tr.DecodeRoutings)
 	// With AlwaysDisaggregate, DisaggregatedCount == len(Disaggregations)
 	if disaggCount != len(tr.Disaggregations) {
 		t.Errorf("cardinality violation: DisaggregatedCount=%d != len(Disaggregations)=%d (AlwaysDisaggregate expects all true)", disaggCount, len(tr.Disaggregations))
 	}
-	// The general PD cardinality law: DisaggregatedCount == PrefillRoutings == KVTransfers == DecodeRoutings
+	// The PD cardinality law: DisaggregatedCount == PrefillRoutings == KVTransfers
 	if np != disaggCount {
 		t.Errorf("cardinality violation: PrefillRoutings=%d != DisaggregatedCount=%d", np, disaggCount)
 	}
 	if nk != np {
 		t.Errorf("cardinality violation: KVTransfers=%d != PrefillRoutings=%d", nk, np)
 	}
-	if nd2 != nk {
-		t.Errorf("cardinality violation: DecodeRoutings=%d != KVTransfers=%d", nd2, nk)
+	// DecodeRoutings is always empty after P2 fix (no second routing decision)
+	if len(tr.DecodeRoutings) != 0 {
+		t.Errorf("cardinality violation: DecodeRoutings=%d, want 0 (no second routing decision)", len(tr.DecodeRoutings))
 	}
 }
 
@@ -297,10 +277,10 @@ func TestPDTrace_DroppedAtDecodeKV_NoOrphanRecords(t *testing.T) {
 		t.Fatal("expected non-nil trace with trace-level decisions")
 	}
 
-	// The cardinality law under drops: KVTransfers == DecodeRoutings (they are always co-recorded)
-	// and KVTransfers < DisaggregatedCount (dropped requests have no KV record).
-	if len(tr.KVTransfers) != len(tr.DecodeRoutings) {
-		t.Errorf("KVTransfers=%d != DecodeRoutings=%d (must be co-recorded)", len(tr.KVTransfers), len(tr.DecodeRoutings))
+	// The cardinality law under drops: KVTransfers < DisaggregatedCount (dropped requests have no KV record).
+	// DecodeRoutings is always 0 (no second routing decision).
+	if len(tr.DecodeRoutings) != 0 {
+		t.Errorf("DecodeRoutings=%d, want 0 (no second routing decision)", len(tr.DecodeRoutings))
 	}
 	if len(tr.KVTransfers) >= len(tr.Disaggregations) {
 		t.Errorf("KVTransfers=%d >= Disaggregations=%d under drops (drops must reduce KV record count)", len(tr.KVTransfers), len(tr.Disaggregations))
