@@ -175,6 +175,138 @@ func TestSession_ContextAccumulation_MultiStep(t *testing.T) {
 	}
 }
 
+// TestSession_ContextAccumulation_WithPrefix verifies BC-1:
+// when ContextGrowth="accumulate" and Prefix is non-empty, the prefix appears
+// exactly once in the follow-up input — not twice (once absorbed into contextTokens
+// from round-0's InputTokens, and once from the prefix-prepend block).
+//
+// Invariant: len(round1.InputTokens) == len(prefix) + len(input0) + len(output0) + len(newInput1)
+//            = 5 + 10 + 5 + 10 = 30, not 35.
+func TestSession_ContextAccumulation_WithPrefix(t *testing.T) {
+	bp := makeTestBlueprint("sess-prefix", 3, 1000, "accumulate", 1_000_000)
+	bp.Prefix = sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(7)), 5) // 5 prefix tokens
+
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	// Round 0: InputTokens = [prefix(5) | content(10)] = 15 tokens, actual output = 5
+	content0 := sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(8)), 10)
+	inputR0 := append(append([]int{}, bp.Prefix...), content0...)
+	outputR0 := sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(9)), 5)
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "sess-prefix", RoundIndex: 0,
+		State:         sim.StateCompleted,
+		ProgressIndex: int64(len(inputR0) + len(outputR0)), // 15 + 5 = 20
+		InputTokens:   inputR0,
+		OutputTokens:  outputR0,
+	}
+
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+
+	r1 := follow[0]
+	// prefix(5) + content0(10) + output0(5) + newInput(10) = 30
+	wantLen := 5 + 10 + 5 + 10
+	if len(r1.InputTokens) != wantLen {
+		t.Errorf("BC-1: round 1 input length = %d, want %d (prefix appears once, not twice)",
+			len(r1.InputTokens), wantLen)
+	}
+
+	// Verify prefix appears at position 0
+	for i, tok := range bp.Prefix {
+		if i >= len(r1.InputTokens) || r1.InputTokens[i] != tok {
+			t.Errorf("BC-1: round 1 token[%d] = %v, want prefix token %v", i, r1.InputTokens[i], tok)
+		}
+	}
+}
+
+// TestSession_ContextAccumulation_WithPrefix_MultiStep verifies BC-2:
+// corruption does not compound across rounds — round 2 has the correct token
+// count and contextTokens remains prefix-free throughout.
+//
+// Invariant: len(round2.InputTokens) == prefix(5) + contextTokens(30) + newInput(10) = 45,
+// where contextTokens = content0(10) + output0(5) + newInput1(10) + output1(5) = 30 (prefix-free).
+func TestSession_ContextAccumulation_WithPrefix_MultiStep(t *testing.T) {
+	bp := makeTestBlueprint("sess-prefix-multi", 4, 1000, "accumulate", 1_000_000)
+	bp.Prefix = sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(10)), 5) // 5 prefix tokens
+
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	// Round 0: [prefix(5) | content(10)] = 15 tokens, actual output = 5
+	inputR0 := append(append([]int{}, bp.Prefix...), sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(11)), 10)...)
+	outputR0 := sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(12)), 5)
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "sess-prefix-multi", RoundIndex: 0,
+		State:         sim.StateCompleted,
+		ProgressIndex: int64(len(inputR0) + len(outputR0)), // 15 + 5 = 20
+		InputTokens:   inputR0, OutputTokens: outputR0,
+	}
+	follow1 := sm.OnComplete(req0, 5000)
+	if len(follow1) != 1 {
+		t.Fatalf("round 0: expected 1 follow-up, got %d", len(follow1))
+	}
+	// Round 1 must be 30 tokens: prefix(5) + content0(10) + output0(5) + newInput1(10)
+	if len(follow1[0].InputTokens) != 30 {
+		t.Errorf("BC-2: round 1 input length = %d, want 30", len(follow1[0].InputTokens))
+	}
+
+	// Round 1 completion
+	req1 := &sim.Request{
+		ID: "r1", SessionID: "sess-prefix-multi", RoundIndex: 1,
+		State:         sim.StateCompleted,
+		ProgressIndex: int64(len(follow1[0].InputTokens) + len(follow1[0].OutputTokens)), // 30 + 5 = 35
+		InputTokens:   follow1[0].InputTokens, OutputTokens: follow1[0].OutputTokens,
+	}
+	follow2 := sm.OnComplete(req1, 10000)
+	if len(follow2) != 1 {
+		t.Fatalf("round 1: expected 1 follow-up, got %d", len(follow2))
+	}
+	// Round 2: prefix(5) + contextTokens(30) + newInput2(10) = 45
+	// contextTokens = content0(10) + output0(5) + newInput1(10) + output1(5) = 30 (prefix-free)
+	if len(follow2[0].InputTokens) != 45 {
+		t.Errorf("BC-2: round 2 input length = %d, want 45 (no compounding corruption)", len(follow2[0].InputTokens))
+	}
+}
+
+// TestSession_ContextAccumulation_WithPrefix_PrefixOnly verifies the bounds guard:
+// when round-0 InputTokens equals the prefix exactly (zero conversation content),
+// no panic occurs and the follow-up includes only prior output as accumulated context.
+func TestSession_ContextAccumulation_WithPrefix_PrefixOnly(t *testing.T) {
+	bp := makeTestBlueprint("sess-prefix-only", 3, 1000, "accumulate", 1_000_000)
+	bp.Prefix = sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(13)), 5) // 5 prefix tokens
+
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	// Round 0: InputTokens = prefix only (no conversation content), actual output = 5
+	// This exercises the edge case where len(rawConversation) == 0.
+	inputR0 := append([]int{}, bp.Prefix...) // InputTokens == Prefix exactly
+	outputR0 := sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(14)), 5)
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "sess-prefix-only", RoundIndex: 0,
+		State:         sim.StateCompleted,
+		ProgressIndex: int64(len(inputR0) + len(outputR0)), // 5 + 5 = 10
+		InputTokens:   inputR0,
+		OutputTokens:  outputR0,
+	}
+
+	// Must not panic regardless of prefix/input relationship.
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+
+	r1 := follow[0]
+	// contextTokens = output0(5) (no conversation to accumulate)
+	// round 1 = prefix(5) + contextTokens(5) + newInput(10) = 20
+	wantLen := 5 + 5 + 10
+	if len(r1.InputTokens) != wantLen {
+		t.Errorf("bounds guard: round 1 input length = %d, want %d", len(r1.InputTokens), wantLen)
+	}
+}
+
 // TestSession_ContextAccumulation_ZeroSuffix verifies the guard in accumulate mode
 // when InputSampler returns 0: contextTokens grows only by output tokens and the
 // follow-up is still generated (no panic, no state corruption).

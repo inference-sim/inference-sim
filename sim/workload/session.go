@@ -173,15 +173,26 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 
 	var inputTokens []int
 	if bp.ContextGrowth == "accumulate" {
-		// Extend contextTokens by only the NEW suffix (the part of req.InputTokens that
-		// was not already in contextTokens), then append the actual output.
+		// contextTokens is prefix-free (invariant: GenerateReasoningRequests accumulates
+		// raw newInputTokens, never the prefix; generator.go warns about double-prepend).
+		// req.InputTokens = [prefix... | conversation...], so
+		// strip the prefix before computing the new suffix to avoid double-counting
+		// the prefix block in contextTokens. When bp.Prefix is nil/empty, rawConversation
+		// equals req.InputTokens and behavior is identical to the no-prefix path.
 		//
-		// req.InputTokens was built as: append(contextTokens, newSuffix...), so
-		// req.InputTokens[len(contextTokens):] is exactly the new suffix without any
-		// double-counting. Appending req.InputTokens in full causes quadratic growth
+		// Only the NEW suffix is appended (req.InputTokens[len(contextTokens):] in the
+		// no-prefix case). Appending rawConversation in full would cause quadratic growth
 		// (~2× per round) because it re-includes the accumulated context.
-		if len(req.InputTokens) > len(sess.contextTokens) {
-			sess.contextTokens = append(sess.contextTokens, req.InputTokens[len(sess.contextTokens):]...)
+		//
+		// Guard: if req.InputTokens is shorter than bp.Prefix (defensive — e.g. malformed
+		// trace replay or zero-length sampler), treat the entire input as conversation
+		// to avoid a slice-bounds panic.
+		rawConversation := req.InputTokens
+		if len(bp.Prefix) <= len(req.InputTokens) {
+			rawConversation = req.InputTokens[len(bp.Prefix):]
+		}
+		if len(rawConversation) > len(sess.contextTokens) {
+			sess.contextTokens = append(sess.contextTokens, rawConversation[len(sess.contextTokens):]...)
 		}
 		if actualOutputLen > 0 && len(req.OutputTokens) > 0 {
 			outTokens := req.OutputTokens
