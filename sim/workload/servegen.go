@@ -533,8 +533,16 @@ func fitLognormalFromPDF(pdf map[int]float64) (DistSpec, error) {
 
 	// Compute weighted mean and variance of log(tokens)
 	// Filter out zero/negative values (lognormal requires positive domain)
+	// Sort keys for deterministic float accumulation (R2)
+	keys := make([]int, 0, len(pdf))
+	for k := range pdf {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+
 	var sumProb, sumLogX, sumLogXSq float64
-	for value, prob := range pdf {
+	for _, value := range keys {
+		prob := pdf[value]
 		if value <= 0 {
 			continue // skip zero/negative tokens
 		}

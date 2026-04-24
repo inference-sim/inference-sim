@@ -796,9 +796,13 @@ func generateTimeVaryingRequests(
 				effectiveWindow.EndUs = horizon
 			}
 
-			windowRequests := generateRequestsForWindow(
+			windowRequests, err := generateRequestsForWindow(
 				*client, effectiveWindow, allClients, spec.AggregateRate, clientRNG,
 			)
+			if err != nil {
+				return nil, fmt.Errorf("generating window [%d-%d] for client %q: %w",
+					effectiveWindow.StartUs, effectiveWindow.EndUs, client.ID, err)
+			}
 			allRequests = append(allRequests, windowRequests...)
 		}
 	}
@@ -839,14 +843,14 @@ func generateRequestsForWindow(
 	allClients []ClientSpec,
 	aggregateRate float64,
 	rng *rand.Rand,
-) []*sim.Request {
+) ([]*sim.Request, error) {
 	// Step 1: Resolve parameters with fallback to client-level defaults.
 	arrival, inputDist, outputDist, _ := resolveWindowParameters(client, window)
 
 	// Step 2: Compute allocated rate for this window via proportional allocation.
 	windowTargetRate := computeProportionalRate(client, window, allClients, aggregateRate)
 	if windowTargetRate <= 0 {
-		return nil
+		return nil, nil
 	}
 
 	windowDurationUs := window.EndUs - window.StartUs
@@ -856,7 +860,7 @@ func generateRequestsForWindow(
 	expectedRequests := windowTargetRate * windowDurationSec
 	numRequests := int(math.Ceil(expectedRequests))
 	if numRequests == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// Step 4: Create samplers from resolved parameters.
@@ -866,13 +870,11 @@ func generateRequestsForWindow(
 	arrivalSampler := NewArrivalSampler(arrival, windowTargetRate/1e6)
 	inputSampler, err := NewLengthSampler(inputDist)
 	if err != nil {
-		logrus.Warnf("generateRequestsForWindow: client %q input dist: %v", client.ID, err)
-		return nil
+		return nil, fmt.Errorf("client %q input dist: %w", client.ID, err)
 	}
 	outputSampler, err := NewLengthSampler(outputDist)
 	if err != nil {
-		logrus.Warnf("generateRequestsForWindow: client %q output dist: %v", client.ID, err)
-		return nil
+		return nil, fmt.Errorf("client %q output dist: %w", client.ID, err)
 	}
 
 	// Step 5: Sample IATs using the resolved arrival process (shape/scale for CV).
@@ -920,7 +922,7 @@ func generateRequestsForWindow(
 		requests = append(requests, req)
 	}
 
-	return requests
+	return requests, nil
 }
 
 // computeProportionalRate computes the allocated rate for a window using
@@ -971,6 +973,8 @@ func computeProportionalRate(
 	}
 
 	if totalTraceRate == 0 {
+		logrus.Warnf("computeProportionalRate: totalTraceRate is zero for client %q window [%d-%d] (no co-active windows with non-zero rates)",
+			client.ID, window.StartUs, window.EndUs)
 		return 0
 	}
 

@@ -622,8 +622,8 @@ func TestGenerateRequestsForWindow(t *testing.T) {
 		rng := rand.New(rand.NewSource(42))
 
 		window := clients[0].Lifecycle.Windows[0]
-		requests := generateRequestsForWindow(clients[0], window, clients, aggregateRate, rng)
-
+		requests, err := generateRequestsForWindow(clients[0], window, clients, aggregateRate, rng)
+		require.NoError(t, err)
 		// Should generate requests
 		require.Greater(t, len(requests), 0, "should generate requests")
 
@@ -673,8 +673,8 @@ func TestGenerateRequestsForWindow(t *testing.T) {
 		rng := rand.New(rand.NewSource(123))
 
 		window := clients[0].Lifecycle.Windows[0]
-		requests := generateRequestsForWindow(clients[0], window, clients, aggregateRate, rng)
-
+		requests, err := generateRequestsForWindow(clients[0], window, clients, aggregateRate, rng)
+		require.NoError(t, err)
 		// Check achieved rate is close to target (50 req/s for 10s = 500 requests)
 		windowDurationSec := float64(window.EndUs-window.StartUs) / 1e6
 		expectedRequests := int(aggregateRate * windowDurationSec)
@@ -707,8 +707,8 @@ func TestGenerateRequestsForWindow(t *testing.T) {
 
 		rng := rand.New(rand.NewSource(42))
 		window := clients[0].Lifecycle.Windows[0]
-		requests := generateRequestsForWindow(clients[0], window, clients, 100.0, rng)
-
+		requests, err := generateRequestsForWindow(clients[0], window, clients, 100.0, rng)
+		require.NoError(t, err)
 		assert.Empty(t, requests, "zero trace_rate should produce no requests")
 	})
 
@@ -734,8 +734,8 @@ func TestGenerateRequestsForWindow(t *testing.T) {
 
 		rng := rand.New(rand.NewSource(99))
 		window := clients[0].Lifecycle.Windows[0]
-		requests := generateRequestsForWindow(clients[0], window, clients, 20.0, rng)
-
+		requests, err := generateRequestsForWindow(clients[0], window, clients, 20.0, rng)
+		require.NoError(t, err)
 		require.Greater(t, len(requests), 1, "need multiple requests for monotonicity check")
 
 		for i := 1; i < len(requests); i++ {
@@ -767,8 +767,8 @@ func TestGenerateRequestsForWindow(t *testing.T) {
 
 		rng := rand.New(rand.NewSource(42))
 		window := clients[0].Lifecycle.Windows[0]
-		requests := generateRequestsForWindow(clients[0], window, clients, 10.0, rng)
-
+		requests, err := generateRequestsForWindow(clients[0], window, clients, 10.0, rng)
+		require.NoError(t, err)
 		require.Greater(t, len(requests), 0)
 
 		// All arrivals should be >= 5s and < 15s
@@ -802,8 +802,8 @@ func TestGenerateRequestsForWindow(t *testing.T) {
 
 		rng := rand.New(rand.NewSource(42))
 		window := clients[0].Lifecycle.Windows[0]
-		requests := generateRequestsForWindow(clients[0], window, clients, 20.0, rng)
-
+		requests, err := generateRequestsForWindow(clients[0], window, clients, 20.0, rng)
+		require.NoError(t, err)
 		require.Greater(t, len(requests), 0)
 		for _, req := range requests {
 			assert.Equal(t, len(req.OutputTokens), req.MaxOutputLen,
