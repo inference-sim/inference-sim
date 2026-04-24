@@ -181,3 +181,123 @@ func TestResolveWindowParameters(t *testing.T) {
 		assert.Equal(t, 8.5, traceRate)
 	})
 }
+
+func TestComputeProportionalRate(t *testing.T) {
+	t.Run("three co-active clients with trace rates", func(t *testing.T) {
+		// ServeGen scenario from spec: chunk-2 (15.2), chunk-8 (22.5), chunk-20 (5.3)
+		// At timestamp 0-10s, all three overlap
+		clients := []ClientSpec{
+			{ID: "chunk-2", RateFraction: 1.0, Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{{StartUs: 0, EndUs: 10000000, TraceRate: ptrFloat64(15.2)}},
+			}},
+			{ID: "chunk-8", RateFraction: 1.0, Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{{StartUs: 0, EndUs: 10000000, TraceRate: ptrFloat64(22.5)}},
+			}},
+			{ID: "chunk-20", RateFraction: 1.0, Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{{StartUs: 0, EndUs: 10000000, TraceRate: ptrFloat64(5.3)}},
+			}},
+		}
+
+		aggregateRate := 150.0
+		window := clients[1].Lifecycle.Windows[0] // chunk-8's window
+
+		allocatedRate := computeProportionalRate(clients[1], window, clients, aggregateRate)
+
+		// Expected: 150 * (22.5 / (15.2+22.5+5.3)) = 150 * (22.5 / 43.0) = 78.49
+		assert.InDelta(t, 78.49, allocatedRate, 0.01)
+	})
+
+	t.Run("non-overlapping windows", func(t *testing.T) {
+		// chunk-2 active 0-10s, chunk-8 active 20-30s
+		clients := []ClientSpec{
+			{ID: "chunk-2", RateFraction: 1.0, Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{{StartUs: 0, EndUs: 10000000, TraceRate: ptrFloat64(15.2)}},
+			}},
+			{ID: "chunk-8", RateFraction: 1.0, Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{{StartUs: 20000000, EndUs: 30000000, TraceRate: ptrFloat64(22.5)}},
+			}},
+		}
+
+		aggregateRate := 150.0
+		window := clients[1].Lifecycle.Windows[0] // chunk-8's window (20-30s)
+
+		allocatedRate := computeProportionalRate(clients[1], window, clients, aggregateRate)
+
+		// Expected: 150 * (22.5 / 22.5) = 150 (only chunk-8 active)
+		assert.InDelta(t, 150.0, allocatedRate, 0.01)
+	})
+
+	t.Run("always-on client (no lifecycle)", func(t *testing.T) {
+		// chunk-8 has lifecycle, background client always-on
+		clients := []ClientSpec{
+			{ID: "background", RateFraction: 10.0, Lifecycle: nil}, // Always-on
+			{ID: "chunk-8", RateFraction: 1.0, Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{{StartUs: 0, EndUs: 10000000, TraceRate: ptrFloat64(22.5)}},
+			}},
+		}
+
+		aggregateRate := 150.0
+		window := clients[1].Lifecycle.Windows[0]
+
+		allocatedRate := computeProportionalRate(clients[1], window, clients, aggregateRate)
+
+		// Expected: 150 * (22.5 / (10.0+22.5)) = 150 * (22.5 / 32.5) = 103.85
+		assert.InDelta(t, 103.85, allocatedRate, 0.01)
+	})
+
+	t.Run("zero total trace rate returns zero", func(t *testing.T) {
+		clients := []ClientSpec{
+			{ID: "chunk-1", RateFraction: 0.0, Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{{StartUs: 0, EndUs: 10000000, TraceRate: ptrFloat64(0.0)}},
+			}},
+		}
+
+		allocatedRate := computeProportionalRate(clients[0], clients[0].Lifecycle.Windows[0], clients, 150.0)
+
+		assert.Equal(t, 0.0, allocatedRate)
+	})
+
+	t.Run("single client gets full rate", func(t *testing.T) {
+		clients := []ClientSpec{
+			{ID: "chunk-1", RateFraction: 1.0, Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{{StartUs: 0, EndUs: 10000000, TraceRate: ptrFloat64(42.0)}},
+			}},
+		}
+
+		aggregateRate := 200.0
+		allocatedRate := computeProportionalRate(clients[0], clients[0].Lifecycle.Windows[0], clients, aggregateRate)
+
+		// Single client: 200 * (42.0 / 42.0) = 200
+		assert.InDelta(t, 200.0, allocatedRate, 0.01)
+	})
+
+	t.Run("multiple windows per client partial overlap", func(t *testing.T) {
+		// Client A has two windows: 0-10s and 20-30s
+		// Client B has one window: 5-25s (overlaps with both A windows)
+		// Query: Client B's window rate when overlapping with both A windows
+		clients := []ClientSpec{
+			{ID: "clientA", RateFraction: 1.0, Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{
+					{StartUs: 0, EndUs: 10000000, TraceRate: ptrFloat64(10.0)},
+					{StartUs: 20000000, EndUs: 30000000, TraceRate: ptrFloat64(20.0)},
+				},
+			}},
+			{ID: "clientB", RateFraction: 1.0, Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{
+					{StartUs: 5000000, EndUs: 25000000, TraceRate: ptrFloat64(30.0)},
+				},
+			}},
+		}
+
+		aggregateRate := 100.0
+		window := clients[1].Lifecycle.Windows[0] // clientB's window (5-25s)
+
+		allocatedRate := computeProportionalRate(clients[1], window, clients, aggregateRate)
+
+		// clientA's first window (0-10s) overlaps with clientB's (5-25s): traceRate=10.0
+		// clientA's second window (20-30s) overlaps with clientB's (5-25s): traceRate=20.0
+		// Only count clientA once (first overlapping window): totalRate = 10.0 + 30.0 = 40.0
+		// allocatedRate = 100 * (30.0 / 40.0) = 75.0
+		assert.InDelta(t, 75.0, allocatedRate, 0.01)
+	})
+}

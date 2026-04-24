@@ -726,6 +726,54 @@ func isClosedLoop(client *ClientSpec) bool {
 	return client.Reasoning != nil && client.Reasoning.MultiTurn != nil
 }
 
+// computeProportionalRate computes the allocated rate for a window using
+// ServeGen's proportional allocation semantics (construct.py:190-207).
+// Returns: target_aggregate_rate * (window_trace_rate / sum_of_co_active_trace_rates)
+//
+// For each co-active client (any client whose window overlaps the queried window),
+// the first overlapping window's trace rate is summed into totalTraceRate. Always-on
+// clients (no lifecycle) contribute their RateFraction. If totalTraceRate is zero,
+// returns zero to avoid division by zero (R11).
+func computeProportionalRate(
+	client ClientSpec,
+	window ActiveWindow,
+	allClients []ClientSpec,
+	aggregateRate float64,
+) float64 {
+	// Get this window's trace rate (resolveWindowParameters falls back to client.RateFraction)
+	_, _, _, traceRate := resolveWindowParameters(client, window)
+
+	// Sum trace rates of all co-active windows
+	totalTraceRate := 0.0
+
+	for _, otherClient := range allClients {
+		// Always-on clients (no lifecycle) contribute their RateFraction
+		if otherClient.Lifecycle == nil || len(otherClient.Lifecycle.Windows) == 0 {
+			totalTraceRate += otherClient.RateFraction
+			continue
+		}
+
+		// Check if any of otherClient's windows overlap with the current window.
+		// Only count each client once (first overlapping window) to avoid
+		// double-counting a client that has multiple overlapping windows.
+		for _, otherWindow := range otherClient.Lifecycle.Windows {
+			// Time-based overlap: windows overlap iff start_a < end_b AND start_b < end_a
+			if otherWindow.StartUs < window.EndUs && window.StartUs < otherWindow.EndUs {
+				_, _, _, otherRate := resolveWindowParameters(otherClient, otherWindow)
+				totalTraceRate += otherRate
+				break // Only count each client once per query window
+			}
+		}
+	}
+
+	if totalTraceRate == 0 {
+		return 0
+	}
+
+	// Proportional allocation
+	return aggregateRate * (traceRate / totalTraceRate)
+}
+
 // rescaleIATsToMatchDuration rescales inter-arrival times to sum exactly to
 // targetDuration, preserving relative ratios (CV). Implements ServeGen's
 // post-hoc IAT scaling for exact rate matching (construct.py:46-48).
