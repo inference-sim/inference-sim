@@ -889,3 +889,38 @@ RoundIndex int    `json:"round_index"`
 - **Wire-up location for `replay`:** Locate the equivalent `printPerTenantMetrics` call in the replay handler and add the same two lines after it.
 - **Import:** `sim/cluster` already imported.
 - **Format:** All latency values printed in ms (consistent with rest of BLIS output). `p95` included alongside `p50`/`p99` for consistency with existing `printPerSLOMetrics` format.
+
+---
+
+## Phase 2: Observe Extension (`cmd/session_metrics_trace.go`)
+
+This phase was added after the initial plan to complete cross-path parity. `blis observe` does not run a DES — it dispatches to a real HTTP server and writes a TraceV2 CSV. `ComputeSessionMetrics` cannot be reused because it reads from `sim.Metrics` (a DES-internal structure), not from trace records.
+
+### Why a separate function
+
+`computeSessionMetricsFromTrace` lives in `cmd/` (unexported) rather than `sim/cluster/` for two reasons:
+
+1. **Dependency direction.** It imports both `sim/cluster` (for `SessionMetrics`, `NewDistribution`) and `sim/workload` (for `TraceRecord`). Placing it in `sim/cluster/` would require `sim/cluster/` to import `sim/workload/`, violating the `cmd/ → sim/cluster/ → sim/` chain.
+2. **Different input type.** The function operates on `[]workload.TraceRecord` (wall-clock timestamps from real HTTP exchanges), not on `sim.Metrics` (simulation-internal counters). The separation reflects the real boundary between observed and simulated data.
+
+### TTFT formula
+
+| Path | Formula | Units |
+|------|---------|-------|
+| DES (`ComputeSessionMetrics`) | `RequestTTFTs[id] / 1000.0` | µs → ms |
+| Trace (`computeSessionMetricsFromTrace`) | `(FirstChunkTimeUs − SendTimeUs) / 1000.0` | µs → ms |
+
+For a DES-exported trace, `SendTimeUs = req.ArrivalTime` and `FirstChunkTimeUs = ArrivalTime + FirstTokenTime`, so both formulas produce the same value. The semantic alignment is intentional.
+
+### Behavioral contracts (trace path)
+
+- **BC-T1 (self-gating):** Returns `nil` when no record has a non-empty `SessionID`. Session Metrics section is absent for non-session workloads.
+- **BC-T2 (status guard):** Only records with `status == "ok"` and `FirstChunkTimeUs > 0` and `SendTimeUs > 0` contribute to TTFT. Error and timeout records are excluded, preventing 0ms contamination (R1 analog of I-1).
+- **BC-T3 (cold/warm split):** `RoundIndex == 0` → cold TTFT; `RoundIndex > 0` → warm TTFT. Same semantics as the DES path.
+- **BC-T4 (session duration):** `max(LastChunkTimeUs) − SendTimeUs[round=0]`, in ms, per session. `LastChunkTimeUs == 0` records are excluded from the max (timeout/error rounds do not inflate duration).
+- **BC-T5 (BC-6 analog — missing round-0 excluded):** Sessions without a `round=0` record with `SendTimeUs > 0` are excluded from `SessionDuration`. Count of sessions contributing to duration may be less than `SessionCount`.
+- **BC-T6 (determinism):** Records sorted by `RequestID` before iteration (R2, INV-6).
+
+### Wiring
+
+`computeSessionMetricsFromTrace(records)` is called in `observe_cmd.go` after `ExportTraceV2`, passing the recorder's records. `printSessionMetrics` (shared with the DES path) formats output. The section is absent when the function returns `nil`.
