@@ -121,76 +121,216 @@ func loadServeGenData(spec *WorkloadSpec) error {
 	return nil
 }
 
-// loadServeGenChunk loads a single chunk's trace + dataset into a ClientSpec.
+// datasetWindow holds parsed PDFs for a single timestamp window.
+type datasetWindow struct {
+	inputPDF  map[int]float64
+	outputPDF map[int]float64
+}
+
+// loadServeGenDatasetAllWindows loads per-window token distributions from
+// a ServeGen dataset JSON file. Returns map[timestamp] -> {inputPDF, outputPDF}.
+// Skips empty windows (represented as "{}" in JSON) and applies span filtering.
+// Non-numeric keys are skipped with a warning.
+func loadServeGenDatasetAllWindows(path string, sgConfig *ServeGenDataSpec) (map[int]datasetWindow, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading dataset: %w", err)
+	}
+
+	// Parse JSON: map[timestamp_str] -> {input_tokens: "...", output_tokens: "..."}
+	var raw map[string]map[string]string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("parsing dataset JSON: %w", err)
+	}
+
+	result := make(map[int]datasetWindow)
+
+	for tsStr, window := range raw {
+		timestamp, parseErr := strconv.Atoi(tsStr)
+		if parseErr != nil {
+			// Try float parse for keys like "600.0"
+			tsFloat, floatErr := strconv.ParseFloat(tsStr, 64)
+			if floatErr != nil {
+				logrus.Warnf("loadServeGenDatasetAllWindows: skipping non-numeric key %q", tsStr)
+				continue
+			}
+			timestamp = int(tsFloat)
+		}
+
+		// Filter by span
+		if sgConfig.SpanStart > 0 && int64(timestamp) < sgConfig.SpanStart {
+			continue
+		}
+		if sgConfig.SpanEnd > 0 && int64(timestamp) >= sgConfig.SpanEnd {
+			continue
+		}
+
+		// Parse PDFs
+		inputPDFStr := window["input_tokens"]
+		outputPDFStr := window["output_tokens"]
+
+		// Skip empty windows
+		if inputPDFStr == "" || inputPDFStr == "{}" ||
+			outputPDFStr == "" || outputPDFStr == "{}" {
+			logrus.Debugf("loadServeGenDatasetAllWindows: skipping empty window at t=%d", timestamp)
+			continue
+		}
+
+		inputPDF, parseInputErr := parseServeGenPDF(inputPDFStr)
+		if parseInputErr != nil {
+			return nil, fmt.Errorf("parsing input PDF at timestamp %d: %w", timestamp, parseInputErr)
+		}
+
+		outputPDF, parseOutputErr := parseServeGenPDF(outputPDFStr)
+		if parseOutputErr != nil {
+			return nil, fmt.Errorf("parsing output PDF at timestamp %d: %w", timestamp, parseOutputErr)
+		}
+
+		result[timestamp] = datasetWindow{
+			inputPDF:  inputPDF,
+			outputPDF: outputPDF,
+		}
+	}
+
+	return result, nil
+}
+
+// serveGenWindowDurationSec is the standard ServeGen window duration (10 minutes).
+const serveGenWindowDurationSec = 600
+
+// loadServeGenChunk loads a single chunk's trace + dataset into a ClientSpec
+// with per-window temporal parameters. Each active trace row (rate > 0) that has
+// a matching dataset entry becomes a lifecycle window with per-window arrival
+// parameters, token distributions, and trace rate. Inactive windows (rate=0) and
+// windows without matching dataset entries are skipped.
+//
+// The resulting ClientSpec uses per-window overrides on ActiveWindow, triggering
+// the time-varying generator path in GenerateRequests. Client-level fields
+// provide fallback defaults (used only if a window lacks overrides).
 func loadServeGenChunk(chunkID, tracePath, datasetPath string, sgConfig *ServeGenDataSpec) (*ClientSpec, error) {
-	// Parse trace CSV for arrival pattern
+	// Parse all trace rows.
 	rows, err := parseServeGenTrace(tracePath)
 	if err != nil {
 		return nil, err
 	}
 
-	// Find the best (highest rate) window for arrival parameters
-	var bestRow serveGenTraceRow
+	// Load per-window distributions from dataset JSON.
+	datasetByTimestamp, err := loadServeGenDatasetAllWindows(datasetPath, sgConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build lifecycle windows from trace rows + matching dataset windows.
+	var windows []ActiveWindow
+
 	for _, row := range rows {
-		// Filter by time span if configured
+		// Filter by time span if configured.
 		if sgConfig.SpanStart > 0 && row.startTimeSec < float64(sgConfig.SpanStart) {
 			continue
 		}
 		if sgConfig.SpanEnd > 0 && row.startTimeSec >= float64(sgConfig.SpanEnd) {
 			continue
 		}
-		if row.rate > bestRow.rate {
-			bestRow = row
+
+		// Skip inactive windows (rate = 0).
+		if row.rate <= 0 {
+			continue
 		}
-	}
-	if bestRow.rate <= 0 {
-		return nil, nil // skip inactive chunks
-	}
 
-	// Load dataset JSON for empirical PDFs
-	inputPDF, outputPDF, err := loadServeGenDataset(datasetPath, sgConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	// Build ArrivalSpec from trace pattern
-	arrivalSpec := ArrivalSpec{Process: "poisson"} // default
-	if bestRow.pattern != "" {
-		process := strings.ToLower(bestRow.pattern)
-		if process == "gamma" || process == "weibull" {
-			arrivalSpec.Process = process
-			cv := bestRow.cv
-			arrivalSpec.CV = &cv
-			// Store MLE-fitted parameters from ServeGen trace columns 5-6.
-			// Only set when both values are positive — zero means the trace
-			// had only 4 columns or the parse fell back to defaults.  Nil
-			// pointers signal "derive from CV" downstream.
-			if bestRow.shapeParam > 0 && bestRow.scaleParam > 0 {
-				shape := bestRow.shapeParam
-				// Convert scale from seconds (ServeGen units) to microseconds (BLIS units)
-				scale := bestRow.scaleParam * 1e6
-				arrivalSpec.Shape = &shape
-				arrivalSpec.Scale = &scale
-			}
+		// Get distributions for this timestamp.
+		dataset, ok := datasetByTimestamp[int(row.startTimeSec)]
+		if !ok {
+			logrus.Debugf("loadServeGenChunk: no dataset for chunk %s at t=%.0f, skipping window", chunkID, row.startTimeSec)
+			continue
 		}
+
+		// Build per-window arrival spec.
+		arrivalSpec := buildArrivalSpecFromRow(row)
+
+		// Build per-window trace rate (copy to avoid pointer aliasing across loop iterations).
+		traceRate := row.rate
+
+		// Build window with per-window parameters.
+		window := ActiveWindow{
+			StartUs:   int64(row.startTimeSec * 1e6),
+			EndUs:     int64((row.startTimeSec + serveGenWindowDurationSec) * 1e6),
+			TraceRate: &traceRate,
+			Arrival:   &arrivalSpec,
+			InputDist: &DistSpec{
+				Type:   "empirical",
+				Params: intMapToStringMap(dataset.inputPDF),
+			},
+			OutputDist: &DistSpec{
+				Type:   "empirical",
+				Params: intMapToStringMap(dataset.outputPDF),
+			},
+		}
+
+		windows = append(windows, window)
 	}
 
-	// Build ClientSpec
+	if len(windows) == 0 {
+		return nil, nil // Inactive chunk: no active windows found.
+	}
+
+	// Build ClientSpec with per-window lifecycle.
+	// Client-level fields are fallback defaults; all windows have full overrides.
 	client := &ClientSpec{
 		ID:           fmt.Sprintf("servegen-chunk-%s", chunkID),
 		TenantID:     fmt.Sprintf("chunk-%s", chunkID),
-		RateFraction: bestRow.rate, // will be normalized later
-		Arrival:      arrivalSpec,
-		InputDist:    DistSpec{Type: "empirical"},
-		OutputDist:   DistSpec{Type: "empirical"},
+		RateFraction: 1.0, // Normalized by proportional allocation in the generator.
+		SLOClass:     "standard",
+		Streaming:    true,
+
+		Lifecycle: &LifecycleSpec{
+			Windows: windows,
+		},
+
+		// Client-level defaults (fallback only; each window has full overrides).
+		Arrival:    ArrivalSpec{Process: "poisson"},
+		InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 512, "stddev": 128}},
+		OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 128, "stddev": 32}},
 	}
 
-	// Store PDFs — we need to convert map[int]float64 to EmpiricalPDFSampler later.
-	// For now, store in Params as string-keyed map (matching DistSpec.Params type).
-	client.InputDist.Params = intMapToStringMap(inputPDF)
-	client.OutputDist.Params = intMapToStringMap(outputPDF)
-
 	return client, nil
+}
+
+// buildArrivalSpecFromRow constructs an ArrivalSpec from a ServeGen trace row.
+// Maps the pattern field (Gamma, Weibull) to the corresponding process name,
+// sets CV from the trace row, and populates MLE-fitted shape/scale when
+// positive values are present (columns 5-6). Scale is converted from
+// ServeGen seconds to BLIS microseconds.
+func buildArrivalSpecFromRow(row serveGenTraceRow) ArrivalSpec {
+	spec := ArrivalSpec{Process: "poisson"} // default
+
+	if row.pattern == "" {
+		return spec
+	}
+
+	process := strings.ToLower(row.pattern)
+	if process != "gamma" && process != "weibull" {
+		return spec
+	}
+
+	spec.Process = process
+	if row.cv > 0 {
+		cv := row.cv
+		spec.CV = &cv
+	}
+
+	// Store MLE-fitted parameters from ServeGen trace columns 5-6.
+	// Only set when both values are positive -- zero means the trace
+	// had only 4 columns or the parse fell back to defaults. Nil
+	// pointers signal "derive from CV" downstream.
+	if row.shapeParam > 0 && row.scaleParam > 0 {
+		shape := row.shapeParam
+		// Convert scale from seconds (ServeGen units) to microseconds (BLIS units).
+		scale := row.scaleParam * 1e6
+		spec.Shape = &shape
+		spec.Scale = &scale
+	}
+
+	return spec
 }
 
 func intMapToStringMap(m map[int]float64) map[string]float64 {

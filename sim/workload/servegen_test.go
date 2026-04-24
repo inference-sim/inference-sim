@@ -361,27 +361,28 @@ func TestLoadServeGenChunk_PopulatesShapeScale(t *testing.T) {
 	// WHEN loading the chunk
 	client, err := loadServeGenChunk("0", tracePath, datasetPath, sgConfig)
 
-	// THEN ArrivalSpec contains shape and scale
+	// THEN per-window ArrivalSpec contains shape and scale
 	if err != nil {
 		t.Fatalf("loadServeGenChunk failed: %v", err)
 	}
 	if client == nil {
 		t.Fatal("expected non-nil client")
 	}
-	if client.Arrival.Process != "weibull" {
-		t.Errorf("expected process=weibull, got %s", client.Arrival.Process)
-	}
-	if client.Arrival.CV == nil || *client.Arrival.CV != 173.81 {
-		t.Errorf("expected cv=173.81, got %v", client.Arrival.CV)
-	}
-	if client.Arrival.Shape == nil || *client.Arrival.Shape != 0.0575 {
-		t.Errorf("expected shape=0.0575, got %v", client.Arrival.Shape)
-	}
+	// With temporal preservation, parameters are per-window, not client-level.
+	// Client-level Arrival is the fallback default (poisson).
+	require.NotNil(t, client.Lifecycle)
+	require.Len(t, client.Lifecycle.Windows, 1)
+	w := client.Lifecycle.Windows[0]
+	require.NotNil(t, w.Arrival)
+	assert.Equal(t, "weibull", w.Arrival.Process)
+	require.NotNil(t, w.Arrival.CV)
+	assert.Equal(t, 173.81, *w.Arrival.CV)
+	require.NotNil(t, w.Arrival.Shape)
+	assert.Equal(t, 0.0575, *w.Arrival.Shape)
 	// Scale is converted from seconds (0.000573) to microseconds (573.0)
 	expectedScale := 0.000573 * 1e6
-	if client.Arrival.Scale == nil || *client.Arrival.Scale != expectedScale {
-		t.Errorf("expected scale=%f microseconds, got %v", expectedScale, client.Arrival.Scale)
-	}
+	require.NotNil(t, w.Arrival.Scale)
+	assert.Equal(t, expectedScale, *w.Arrival.Scale)
 }
 
 func TestLoadServeGenChunk_FourColumnTrace_ShapeScaleRemainNil(t *testing.T) {
@@ -407,15 +408,21 @@ func TestLoadServeGenChunk_FourColumnTrace_ShapeScaleRemainNil(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, client)
 
-	// AND process and CV are set from the trace
-	assert.Equal(t, "gamma", client.Arrival.Process)
-	require.NotNil(t, client.Arrival.CV)
-	assert.InDelta(t, 3.2, *client.Arrival.CV, 0.001)
+	// With temporal preservation, parameters are per-window.
+	require.NotNil(t, client.Lifecycle)
+	require.Len(t, client.Lifecycle.Windows, 1)
+	w := client.Lifecycle.Windows[0]
+	require.NotNil(t, w.Arrival)
+
+	// AND process and CV are set from the trace (on the window, not client-level)
+	assert.Equal(t, "gamma", w.Arrival.Process)
+	require.NotNil(t, w.Arrival.CV)
+	assert.InDelta(t, 3.2, *w.Arrival.CV, 0.001)
 
 	// AND Shape/Scale remain nil (not non-nil pointers to 0.0)
 	// This preserves the pointer-nil idiom: nil means "derive from CV"
-	assert.Nil(t, client.Arrival.Shape, "Shape must be nil for 4-column trace (no MLE params)")
-	assert.Nil(t, client.Arrival.Scale, "Scale must be nil for 4-column trace (no MLE params)")
+	assert.Nil(t, w.Arrival.Shape, "Shape must be nil for 4-column trace (no MLE params)")
+	assert.Nil(t, w.Arrival.Scale, "Scale must be nil for 4-column trace (no MLE params)")
 }
 
 func TestLoadServeGenChunk_BadShapeScale_ShapeScaleRemainNil(t *testing.T) {
@@ -441,13 +448,19 @@ func TestLoadServeGenChunk_BadShapeScale_ShapeScaleRemainNil(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, client)
 
-	// AND process and CV are set
-	assert.Equal(t, "weibull", client.Arrival.Process)
-	require.NotNil(t, client.Arrival.CV)
+	// With temporal preservation, parameters are per-window.
+	require.NotNil(t, client.Lifecycle)
+	require.Len(t, client.Lifecycle.Windows, 1)
+	w := client.Lifecycle.Windows[0]
+	require.NotNil(t, w.Arrival)
+
+	// AND process and CV are set (on the window)
+	assert.Equal(t, "weibull", w.Arrival.Process)
+	require.NotNil(t, w.Arrival.CV)
 
 	// AND Shape/Scale remain nil (parse-failure fallback produced zeros)
-	assert.Nil(t, client.Arrival.Shape, "Shape must be nil when parse falls back to 0")
-	assert.Nil(t, client.Arrival.Scale, "Scale must be nil when parse falls back to 0")
+	assert.Nil(t, w.Arrival.Shape, "Shape must be nil when parse falls back to 0")
+	assert.Nil(t, w.Arrival.Scale, "Scale must be nil when parse falls back to 0")
 }
 
 // TestServeGenConversion_HighCVTrace verifies the end-to-end flow from a
@@ -490,23 +503,28 @@ func TestServeGenConversion_HighCVTrace(t *testing.T) {
 	require.NoError(t, err, "GenerateRequests should succeed with high-CV trace when shape/scale are provided")
 	require.NotEmpty(t, requests, "Should generate requests from ServeGen data")
 
-	// AND the loaded client has weibull process with MLE-fitted parameters
+	// AND the loaded client has per-window weibull with MLE-fitted parameters
 	require.NotEmpty(t, spec.Clients, "ServeGen should populate clients")
 	client := spec.Clients[0]
-	assert.Equal(t, "weibull", client.Arrival.Process)
-	require.NotNil(t, client.Arrival.Shape, "Shape should be populated from trace column 5")
-	require.NotNil(t, client.Arrival.Scale, "Scale should be populated from trace column 6")
-	assert.InDelta(t, 0.0575, *client.Arrival.Shape, 0.0001, "Shape should match trace value")
+	// With temporal preservation, arrival params are per-window.
+	require.NotNil(t, client.Lifecycle)
+	require.Greater(t, len(client.Lifecycle.Windows), 0)
+	w := client.Lifecycle.Windows[0]
+	require.NotNil(t, w.Arrival)
+	assert.Equal(t, "weibull", w.Arrival.Process)
+	require.NotNil(t, w.Arrival.Shape, "Shape should be populated from trace column 5")
+	require.NotNil(t, w.Arrival.Scale, "Scale should be populated from trace column 6")
+	assert.InDelta(t, 0.0575, *w.Arrival.Shape, 0.0001, "Shape should match trace value")
 	// Scale converted from seconds (0.000573) to microseconds (573.0)
-	assert.InDelta(t, 0.000573*1e6, *client.Arrival.Scale, 0.001, "Scale should be in microseconds")
+	assert.InDelta(t, 0.000573*1e6, *w.Arrival.Scale, 0.001, "Scale should be in microseconds")
 
 	// AND the CV is preserved as informational metadata
-	require.NotNil(t, client.Arrival.CV, "CV should be preserved from trace")
-	assert.InDelta(t, 173.81, *client.Arrival.CV, 0.01, "CV should match trace value")
+	require.NotNil(t, w.Arrival.CV, "CV should be preserved from trace")
+	assert.InDelta(t, 173.81, *w.Arrival.CV, 0.01, "CV should match trace value")
 
 	// AND sampled IATs are finite and positive (behavioral verification)
-	ratePerMicros := client.RateFraction / 1e6
-	sampler := NewArrivalSampler(client.Arrival, ratePerMicros)
+	ratePerMicros := 22.46 / 1e6 // Use trace rate directly
+	sampler := NewArrivalSampler(*w.Arrival, ratePerMicros)
 	require.NotNil(t, sampler, "Sampler should be created")
 
 	rng := rand.New(rand.NewSource(42))
@@ -524,8 +542,8 @@ func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "chunk-0-trace.csv"), []byte(traceCSV), 0644); err != nil {
 		t.Fatal(err)
 	}
-	// Create chunk-0-dataset.json
-	datasetJSON := `{"0": {"input_tokens": "{100: 0.5, 200: 0.5}", "output_tokens": "{50: 0.7, 100: 0.3}"}}`
+	// Create chunk-0-dataset.json - needs entries for both trace timestamps
+	datasetJSON := `{"0": {"input_tokens": "{100: 0.5, 200: 0.5}", "output_tokens": "{50: 0.7, 100: 0.3}"}, "600": {"input_tokens": "{100: 0.5, 200: 0.5}", "output_tokens": "{50: 0.7, 100: 0.3}"}}`
 	if err := os.WriteFile(filepath.Join(dir, "chunk-0-dataset.json"), []byte(datasetJSON), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -534,7 +552,7 @@ func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 		Version: "1", Seed: 42, Category: "language", AggregateRate: 10.0,
 		ServeGenData: &ServeGenDataSpec{Path: dir},
 	}
-	// Load to verify client creation with shape/scale parameters
+	// Load to verify client creation with per-window shape/scale parameters
 	if err := loadServeGenData(spec); err != nil {
 		t.Fatalf("loadServeGenData failed: %v", err)
 	}
@@ -542,16 +560,22 @@ func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 		t.Fatalf("expected 1 client, got %d", len(spec.Clients))
 	}
 	client := spec.Clients[0]
+	// With temporal preservation, parameters are per-window.
+	require.NotNil(t, client.Lifecycle, "Client should have lifecycle with windows")
+	require.Greater(t, len(client.Lifecycle.Windows), 0, "Client should have at least one window")
+	w := client.Lifecycle.Windows[0]
+	require.NotNil(t, w.Arrival, "Window should have arrival spec")
 	// Verify MLE-fitted shape/scale parameters were populated from 6-column trace
-	require.NotNil(t, client.Arrival.Shape, "Shape should be populated from trace column 5")
-	require.NotNil(t, client.Arrival.Scale, "Scale should be populated from trace column 6")
+	require.NotNil(t, w.Arrival.Shape, "Shape should be populated from trace column 5")
+	require.NotNil(t, w.Arrival.Scale, "Scale should be populated from trace column 6")
 	// Scale converted from seconds (6.25) to microseconds (6.25 * 1e6)
-	assert.Equal(t, 0.16, *client.Arrival.Shape, "Shape should match trace value")
-	assert.Equal(t, 6.25e6, *client.Arrival.Scale, "Scale should be converted to microseconds")
+	assert.Equal(t, 0.16, *w.Arrival.Shape, "Shape should match trace value")
+	assert.Equal(t, 6.25e6, *w.Arrival.Scale, "Scale should be converted to microseconds")
 
 	// Clear ServeGenData since clients are now populated
 	spec.ServeGenData = nil
-	// Use 10 second horizon to ensure we get requests (rate=1.0 req/sec -> ~10 requests)
+	// Use a 10-second horizon; the time-varying generator uses per-window
+	// distributions from the lifecycle windows.
 	requests, err := GenerateRequests(spec, 10e6, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

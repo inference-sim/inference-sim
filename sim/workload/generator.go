@@ -88,6 +88,13 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 	// Generate shared prefix tokens per prefix group
 	prefixes := generatePrefixTokens(allClients, workloadRNG)
 
+	// Route to time-varying generator when any client has per-window parameter
+	// overrides (TraceRate, Arrival, InputDist, OutputDist on ActiveWindow).
+	// This path uses ServeGen-compatible proportional allocation and IAT rescaling.
+	if hasPerWindowParameters(allClients) {
+		return generateTimeVaryingRequests(spec, horizon, maxRequests, allClients, workloadRNG)
+	}
+
 	// Per-client generation cap: prevent OOM when horizon >> maxRequests.
 	// Each client generates at most 2x maxRequests, then post-merge truncation finalizes.
 	perClientCap := int64(0)
@@ -724,6 +731,94 @@ func isClosedLoop(client *ClientSpec) bool {
 	}
 	// Default: true for reasoning/multi-turn clients
 	return client.Reasoning != nil && client.Reasoning.MultiTurn != nil
+}
+
+// hasPerWindowParameters checks if any client has per-window parameter overrides
+// (TraceRate, Arrival, InputDist, or OutputDist set on any ActiveWindow).
+// Returns true when time-varying generation should be used instead of static generation.
+func hasPerWindowParameters(clients []ClientSpec) bool {
+	for _, client := range clients {
+		if client.Lifecycle == nil {
+			continue
+		}
+		for _, window := range client.Lifecycle.Windows {
+			if window.TraceRate != nil || window.Arrival != nil ||
+				window.InputDist != nil || window.OutputDist != nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// generateTimeVaryingRequests generates requests for workloads with per-window
+// parameters, using ServeGen-compatible proportional allocation and IAT rescaling.
+// Each client's lifecycle windows are iterated, generating requests per window
+// using window-specific distributions and proportional rate allocation.
+//
+// Windows beyond the horizon are skipped. Requests from all clients and windows
+// are merged, sorted by arrival time, truncated to maxRequests, and assigned
+// sequential IDs.
+func generateTimeVaryingRequests(
+	spec *WorkloadSpec,
+	horizon int64,
+	maxRequests int64,
+	allClients []ClientSpec,
+	rng *rand.Rand,
+) ([]*sim.Request, error) {
+	var allRequests []*sim.Request
+
+	// Generate requests for each client's windows.
+	for i := range allClients {
+		client := &allClients[i]
+
+		if client.Lifecycle == nil || len(client.Lifecycle.Windows) == 0 {
+			// Client has no lifecycle windows - skip.
+			// Always-on clients mixed with windowed clients are handled
+			// by computeProportionalRate (contributes RateFraction to denominator).
+			continue
+		}
+
+		// Create per-client RNG for determinism (isolates client entropy).
+		clientSeed := rng.Int63()
+		clientRNG := newRandFromSeed(clientSeed)
+
+		// Generate requests for each window.
+		for _, window := range client.Lifecycle.Windows {
+			// Skip windows that start beyond the simulation horizon.
+			if window.StartUs >= horizon {
+				continue
+			}
+
+			// Clamp window end to horizon to avoid generating requests beyond it.
+			effectiveWindow := window
+			if effectiveWindow.EndUs > horizon {
+				effectiveWindow.EndUs = horizon
+			}
+
+			windowRequests := generateRequestsForWindow(
+				*client, effectiveWindow, allClients, spec.AggregateRate, clientRNG,
+			)
+			allRequests = append(allRequests, windowRequests...)
+		}
+	}
+
+	// Sort all requests by arrival time (stable sort preserves client order for ties).
+	sort.SliceStable(allRequests, func(i, j int) bool {
+		return allRequests[i].ArrivalTime < allRequests[j].ArrivalTime
+	})
+
+	// Apply maxRequests cap if specified.
+	if maxRequests > 0 && int64(len(allRequests)) > maxRequests {
+		allRequests = allRequests[:maxRequests]
+	}
+
+	// Assign sequential IDs.
+	for i, req := range allRequests {
+		req.ID = fmt.Sprintf("request_%d", i)
+	}
+
+	return allRequests, nil
 }
 
 // generateRequestsForWindow generates requests for a single lifecycle window
