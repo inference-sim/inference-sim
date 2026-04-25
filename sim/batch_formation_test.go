@@ -814,3 +814,129 @@ func TestPreemption_FCFS_EvictsTail(t *testing.T) {
 		t.Errorf("FCFS preemption: evicted %q, want \"third\" (tail)", result.Preempted[0].Request.ID)
 	}
 }
+
+// makeRunningRequest creates a running request with prefill fully allocated.
+// Allocates inputLen tokens (ceil(inputLen/blockSize) blocks) then sets ProgressIndex.
+// blockSize matches the kvCache blockSize (16 for MustNewKVCacheState(N, 16)).
+func makeRunningRequest(id, sloClass string, arrival int64, inputLen int, kvCache KVStore) *Request {
+	req := &Request{
+		ID:           id,
+		SLOClass:     sloClass,
+		ArrivalTime:  arrival,
+		State:        StateRunning,
+		InputTokens:  make([]int, inputLen),
+		OutputTokens: make([]int, 10),
+	}
+	kvCache.AllocateKVBlocks(req, 0, int64(inputLen), nil)
+	req.ProgressIndex = int64(inputLen)
+	return req
+}
+
+func TestPreemption_Priority_EvictsLeastUrgent(t *testing.T) {
+	// Table-driven: victim position varies to prove selection is priority-based, not positional.
+	// All scenarios: bg (background=-3) must be evicted before crit (critical=4) and std (standard=3).
+	tests := []struct {
+		name    string
+		order   []string // order of requests in batch: [sloClass, ...]
+		wantID  string
+	}{
+		{"victim at head", []string{"background", "critical", "standard"}, "bg"},
+		{"victim in middle", []string{"critical", "background", "standard"}, "bg"},
+		{"victim at tail", []string{"critical", "standard", "background"}, "bg"},
+	}
+
+	ids := map[string]string{
+		"background": "bg",
+		"critical":   "crit",
+		"standard":   "std",
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// 10 blocks × 16 tokens. 3 running requests × 3 blocks each = 9 used, 1 free.
+			// Phase 1 decode for first request uses the 1 free block.
+			// Phase 1 decode for second request triggers preemption.
+			kvCache := MustNewKVCacheState(10, 16)
+			var running []*Request
+			for i, slo := range tt.order {
+				req := makeRunningRequest(ids[slo], slo, int64(100*(i+1)), 48, kvCache)
+				running = append(running, req)
+			}
+
+			wq := &WaitQueue{}
+			wq.Enqueue(&Request{ID: "new", InputTokens: make([]int, 16), OutputTokens: make([]int, 1), State: StateQueued})
+
+			bf := NewBatchFormation("priority", nil)
+			ctx := BatchContext{
+				RunningBatch:       &Batch{Requests: running},
+				WaitQ:              wq,
+				KVCache:            kvCache,
+				MaxScheduledTokens: 10000,
+				MaxRunningReqs:     10,
+				Now:                1000,
+				ComputedTokens:     make(map[string]int64),
+			}
+
+			result := bf.FormBatch(ctx)
+
+			if len(result.Preempted) == 0 {
+				t.Fatal("expected preemption but got none")
+			}
+			// Priority mode must evict bg regardless of its position in the batch.
+			if result.Preempted[0].Request.ID != tt.wantID {
+				t.Errorf("priority preemption: evicted %q, want %q (background = least urgent, SLO=-3)",
+					result.Preempted[0].Request.ID, tt.wantID)
+			}
+		})
+	}
+}
+
+func TestPreemption_Priority_SelfPreemption(t *testing.T) {
+	// NC-3: When the request being processed (Phase 1) is itself the least urgent,
+	// selectPriorityVictim selects it as victim. The preemptedRequest==req guard fires,
+	// returning (false, adj). Phase 1 breaks. The request goes to WaitQ.
+	// Setup: all 10 blocks used (bg=4, crit=3, std=3). Cache fully saturated.
+	// Phase 1 processes bg first (index 0). bg needs a decode block.
+	// Cache is full → preemption: selectPriorityVictim returns bg (background=-3, least urgent).
+	// victimIdx=0 == reqIndex=0 → self-eviction fires. bg goes to WaitQ.
+	kvCache := MustNewKVCacheState(10, 16)
+	bg := makeRunningRequest("bg", "background", 100, 64, kvCache)   // 4 blocks
+	crit := makeRunningRequest("crit", "critical", 200, 48, kvCache)  // 3 blocks
+	dummy := makeRunningRequest("dummy", "standard", 300, 48, kvCache) // 3 blocks → total 10
+
+	wq := &WaitQueue{}
+	wq.Enqueue(&Request{ID: "new", InputTokens: make([]int, 16), OutputTokens: make([]int, 1), State: StateQueued})
+
+	bf := NewBatchFormation("priority", nil)
+	ctx := BatchContext{
+		RunningBatch:       &Batch{Requests: []*Request{bg, crit, dummy}},
+		WaitQ:              wq,
+		KVCache:            kvCache,
+		MaxScheduledTokens: 10000,
+		MaxRunningReqs:     10,
+		Now:                1000,
+		ComputedTokens:     make(map[string]int64),
+	}
+
+	result := bf.FormBatch(ctx)
+
+	// bg must be preempted (least urgent; also the first to trigger decode allocation)
+	preemptedIDs := make(map[string]bool)
+	for _, p := range result.Preempted {
+		preemptedIDs[p.Request.ID] = true
+	}
+	if !preemptedIDs["bg"] {
+		t.Errorf("expected bg to be preempted; got preempted: %v", preemptedIDs)
+	}
+	// bg must be in WaitQ
+	found := false
+	for _, r := range ctx.WaitQ.Items() {
+		if r.ID == "bg" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("bg was preempted but not found in WaitQ")
+	}
+}
