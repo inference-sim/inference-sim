@@ -106,8 +106,9 @@ var (
 	routingScorers string // Comma-separated name:weight pairs for weighted routing
 
 	// Priority and scheduler config (PR7)
-	priorityPolicy string // Priority policy name
-	scheduler      string // Scheduler name
+	priorityPolicy   string // Priority policy name
+	scheduler        string // Scheduler name
+	preemptionPolicy string // Preemption victim selection policy
 
 	// Policy bundle config
 	policyConfigPath string // Path to YAML policy configuration file
@@ -703,6 +704,9 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		if bundle.Scheduler != "" && !cmd.Flags().Changed("scheduler") {
 			scheduler = bundle.Scheduler
 		}
+		if bundle.Preemption.Policy != "" && !cmd.Flags().Changed("preemption-policy") {
+			preemptionPolicy = bundle.Preemption.Policy
+		}
 	}
 
 	// Apply defaults for GAIE-legacy thresholds (not set via CLI flags, only via bundle).
@@ -741,6 +745,9 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 	}
 	if !sim.IsValidScheduler(scheduler) {
 		logrus.Fatalf("Unknown scheduler %q. Valid: %s", scheduler, strings.Join(sim.ValidSchedulerNames(), ", "))
+	}
+	if !sim.IsValidPreemptionPolicy(preemptionPolicy) {
+		logrus.Fatalf("Unknown preemption policy %q. Valid: %s", preemptionPolicy, strings.Join(sim.ValidPreemptionPolicyNames(), ", "))
 	}
 	if !trace.IsValidTraceLevel(traceLevel) {
 		logrus.Fatalf("Unknown trace level %q. Valid: none, decisions", traceLevel)
@@ -812,8 +819,8 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		}
 	}
 
-	logrus.Infof("Policy config: admission=%s, routing=%s, priority=%s, scheduler=%s",
-		admissionPolicy, routingPolicy, priorityPolicy, scheduler)
+	logrus.Infof("Policy config: admission=%s, routing=%s, priority=%s, scheduler=%s, preemption=%s",
+		admissionPolicy, routingPolicy, priorityPolicy, scheduler, preemptionPolicy)
 
 	// Parse scorer configuration for weighted routing
 	var parsedScorerConfigs []sim.ScorerConfig
@@ -889,9 +896,10 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, always-busiest")
 	cmd.Flags().StringVar(&routingScorers, "routing-scorers", "", "Scorer weights for weighted routing (e.g., queue-depth:2,kv-utilization:2,load-balance:1). Default: precise-prefix-cache:2,queue-depth:1,kv-utilization:1")
 
-	// Priority and scheduler config (PR7)
+	// Priority, scheduler, and preemption config
 	cmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based, inverted-slo")
 	cmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf, reverse-priority")
+	cmd.Flags().StringVar(&preemptionPolicy, "preemption-policy", "fcfs", "Preemption victim selection: fcfs (tail-of-batch), priority (least-urgent SLO tier)")
 
 	// Policy bundle config
 	cmd.Flags().StringVar(&policyConfigPath, "policy-config", "", "Path to YAML policy configuration file")
