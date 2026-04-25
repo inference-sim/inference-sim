@@ -811,3 +811,43 @@ func TestGenerateRequestsForWindow(t *testing.T) {
 		}
 	})
 }
+
+func TestGenerateRequestsForWindow_Determinism_AbsoluteRateMode(t *testing.T) {
+	// INV-6: Same seed → same request IDs/arrivals/tokens, even in absolute rate mode.
+	// This test directly constructs a spec with AggregateRate=0 (bypassing loadServeGenData).
+
+	traceRate := 10.0
+	clients := []ClientSpec{
+		{
+			ID:           "chunk-0",
+			Concurrency:  0,
+			RateFraction: 1.0, // Not used in absolute mode, but required by validation
+			Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{
+					{StartUs: 0, EndUs: 5_000_000, TraceRate: &traceRate},
+				},
+			},
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+		},
+	}
+
+	seed := int64(42)
+	rng1 := rand.New(rand.NewSource(seed))
+	rng2 := rand.New(rand.NewSource(seed))
+
+	window := clients[0].Lifecycle.Windows[0]
+
+	requests1, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng1) // AggregateRate=0
+	require.NoError(t, err)
+	requests2, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng2)
+	require.NoError(t, err)
+
+	require.Equal(t, len(requests1), len(requests2), "request count must be deterministic")
+	for i := range requests1 {
+		assert.Equal(t, requests1[i].ArrivalTime, requests2[i].ArrivalTime, "arrival time mismatch at index %d", i)
+		assert.Equal(t, requests1[i].InputTokens, requests2[i].InputTokens, "input tokens mismatch at index %d", i)
+		assert.Equal(t, requests1[i].OutputTokens, requests2[i].OutputTokens, "output tokens mismatch at index %d", i)
+	}
+}

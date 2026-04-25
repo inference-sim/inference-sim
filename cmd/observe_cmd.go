@@ -209,7 +209,6 @@ func buildPresetSpec(preset, defaultsPath string, rate float64, numRequests int)
 }
 
 func runObserve(cmd *cobra.Command, _ []string) {
-
 	// BC-13: Required flag validation
 	if observeServerURL == "" {
 		logrus.Fatalf("--server-url is required")

@@ -273,10 +273,10 @@ func getTimeWindowBounds(window string) (int64, int64) {
 // This handles ServeGen's dataset granularity mismatch: datasets have 6-hour intervals
 // (0, 21600, 43200, 64800...) while traces have 10-minute intervals.
 // Example: trace window at 28800s (Hour 8) uses dataset at 21600s (Hour 6).
-func findNearestDataset(queryTimestamp int, datasetByTimestamp map[int]datasetWindow) (datasetWindow, bool) {
+func findNearestDataset(queryTimestamp int, datasetByTimestamp map[int]datasetWindow) (datasetWindow, int, bool) {
 	// Try exact match first (fast path for timestamps like 0, 21600, 43200...)
 	if dataset, ok := datasetByTimestamp[queryTimestamp]; ok {
-		return dataset, true
+		return dataset, queryTimestamp, true
 	}
 
 	// Find largest dataset timestamp <= queryTimestamp
@@ -288,11 +288,11 @@ func findNearestDataset(queryTimestamp int, datasetByTimestamp map[int]datasetWi
 	}
 
 	if bestTimestamp >= 0 {
-		return datasetByTimestamp[bestTimestamp], true
+		return datasetByTimestamp[bestTimestamp], bestTimestamp, true
 	}
 
 	// No dataset entry at or before this timestamp
-	return datasetWindow{}, false
+	return datasetWindow{}, 0, false
 }
 
 // loadServeGenChunk loads a single chunk's trace + dataset into a ClientSpec
@@ -347,18 +347,10 @@ func loadServeGenChunk(chunkID, tracePath, datasetPath string, sgConfig *ServeGe
 		// Find which dataset this window will use (nearest-preceding).
 		// ServeGen datasets have 6-hour granularity while traces have 10-minute granularity.
 		// A trace window at Hour 8 uses the dataset from Hour 6, etc.
-		_, ok := findNearestDataset(int(row.startTimeSec), datasetByTimestamp)
+		_, datasetKey, ok := findNearestDataset(int(row.startTimeSec), datasetByTimestamp)
 		if !ok {
 			logrus.Debugf("loadServeGenChunk: no dataset for chunk %s at or before t=%.0f, skipping window", chunkID, row.startTimeSec)
 			continue
-		}
-
-		// Find the actual dataset key (not the query timestamp)
-		var datasetKey int
-		for ts := range datasetByTimestamp {
-			if ts <= int(row.startTimeSec) && (datasetKey == 0 || ts > datasetKey) {
-				datasetKey = ts
-			}
 		}
 
 		// Track which unique dataset this window uses
