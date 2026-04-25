@@ -940,3 +940,39 @@ func TestPreemption_Priority_SelfPreemption(t *testing.T) {
 		t.Error("bg was preempted but not found in WaitQ")
 	}
 }
+
+func TestPreemption_Priority_TiebreakByLatestArrival(t *testing.T) {
+	// BC-3: Among running requests with equal SLO tier priority, the most
+	// recently arrived (highest ArrivalTime) is evicted first.
+	// Matches vLLM scheduler.py:829: key=lambda r: (r.priority, r.arrival_time)
+	// Three standard requests (SLO=3), arrival times 100/200/300.
+	// "new" (arrival=300) should be evicted before "mid" (200) and "old" (100).
+	kvCache := MustNewKVCacheState(10, 16)
+	old := makeRunningRequest("old", "standard", 100, 48, kvCache) // 3 blocks
+	mid := makeRunningRequest("mid", "standard", 200, 48, kvCache) // 3 blocks
+	new_ := makeRunningRequest("new", "standard", 300, 48, kvCache) // 3 blocks → 9 used, 1 free
+
+	wq := &WaitQueue{}
+	wq.Enqueue(&Request{ID: "trigger", InputTokens: make([]int, 16), OutputTokens: make([]int, 1), State: StateQueued})
+
+	bf := NewBatchFormation("priority", nil)
+	ctx := BatchContext{
+		RunningBatch:       &Batch{Requests: []*Request{old, mid, new_}},
+		WaitQ:              wq,
+		KVCache:            kvCache,
+		MaxScheduledTokens: 10000,
+		MaxRunningReqs:     10,
+		Now:                1000,
+		ComputedTokens:     make(map[string]int64),
+	}
+
+	result := bf.FormBatch(ctx)
+
+	if len(result.Preempted) == 0 {
+		t.Fatal("expected preemption but got none")
+	}
+	// "new" has the latest arrival (300) — must be evicted first among equal-priority requests.
+	if result.Preempted[0].Request.ID != "new" {
+		t.Errorf("tiebreak: evicted %q, want \"new\" (latest arrival ArrivalTime=300)", result.Preempted[0].Request.ID)
+	}
+}
