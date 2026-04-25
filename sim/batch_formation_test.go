@@ -976,3 +976,71 @@ func TestPreemption_Priority_TiebreakByLatestArrival(t *testing.T) {
 		t.Errorf("tiebreak: evicted %q, want \"new\" (latest arrival ArrivalTime=300)", result.Preempted[0].Request.ID)
 	}
 }
+
+func TestPreemption_Priority_KVConservation(t *testing.T) {
+	// BC-7: KV blocks must not exceed total capacity after priority preemption.
+	// Setup: bg=6 blocks, crit=3 blocks → 9 used, 1 free.
+	// Phase 1: bg decode uses the 1 free block (now 10/10 used).
+	// Phase 1: crit decode → cache full → preemption: evict bg (background=-3, least urgent).
+	// bg loses 6+1 blocks (its prefill + the just-allocated decode block), crit gains 1.
+	// usedAfter < usedBefore confirms blocks were freed.
+	kvCache := MustNewKVCacheState(10, 16)
+	bg := makeRunningRequest("bg", "background", 100, 96, kvCache)   // 6 blocks
+	crit := makeRunningRequest("crit", "critical", 200, 48, kvCache)  // 3 blocks → 9 used, 1 free
+
+	usedBefore := kvCache.UsedBlocks()
+
+	wq := &WaitQueue{}
+	wq.Enqueue(&Request{ID: "new", InputTokens: make([]int, 48), OutputTokens: make([]int, 1), State: StateQueued})
+
+	bf := NewBatchFormation("priority", nil)
+	ctx := BatchContext{
+		RunningBatch:       &Batch{Requests: []*Request{bg, crit}},
+		WaitQ:              wq,
+		KVCache:            kvCache,
+		MaxScheduledTokens: 10000,
+		MaxRunningReqs:     10,
+		Now:                1000,
+		ComputedTokens:     make(map[string]int64),
+	}
+
+	bf.FormBatch(ctx)
+
+	usedAfter := kvCache.UsedBlocks()
+
+	// INV-4: used blocks must not exceed total capacity at any point
+	if usedAfter > kvCache.TotalCapacity() {
+		t.Errorf("INV-4 violated: used=%d > capacity=%d", usedAfter, kvCache.TotalCapacity())
+	}
+	// bg was evicted: its 3 blocks should be freed
+	if usedAfter >= usedBefore {
+		t.Errorf("expected blocks freed after priority preemption: before=%d, after=%d",
+			usedBefore, usedAfter)
+	}
+}
+
+func TestPreemption_Priority_EmptyBatch_NoPanic(t *testing.T) {
+	// NC-2: priority mode with empty running batch must not panic.
+	// Circuit breaker at batch_formation.go returns (false, 0) immediately.
+	kvCache := MustNewKVCacheState(2, 16)
+	wq := &WaitQueue{}
+	wq.Enqueue(&Request{ID: "large", InputTokens: make([]int, 200), OutputTokens: make([]int, 1), State: StateQueued})
+
+	bf := NewBatchFormation("priority", nil)
+	ctx := BatchContext{
+		RunningBatch:       &Batch{Requests: []*Request{}},
+		WaitQ:              wq,
+		KVCache:            kvCache,
+		MaxScheduledTokens: 10000,
+		MaxRunningReqs:     10,
+		Now:                0,
+		ComputedTokens:     make(map[string]int64),
+	}
+
+	result := bf.FormBatch(ctx) // must not panic
+	for _, r := range result.RunningBatch.Requests {
+		if r.ID == "large" {
+			t.Error("large request should not be in batch with only 2 blocks available")
+		}
+	}
+}
