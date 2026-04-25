@@ -110,3 +110,8 @@ docs/superpowers/
 # Agent instruction files (generated, not committed)
 AGENTS.md
 .worktrees/
+
+# External codebases checked out locally for parity analysis (not part of repo)
+ServeGen/
+aiconfigurator/
+vllm/
