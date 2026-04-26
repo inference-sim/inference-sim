@@ -102,7 +102,7 @@ A YAML configuration file (`--policy-config`) that specifies admission, routing,
 
 ### Preemption
 
-KV cache eviction under memory pressure. When the batch formation algorithm cannot allocate blocks for a continuing request, it evicts requests from the batch tail, frees their blocks, and re-enqueues them at the front of the wait queue. See [Core Engine: Batch Formation](core-engine.md#batch-formation).
+KV cache eviction under memory pressure. When the batch formation algorithm cannot allocate blocks for a continuing request, it evicts requests from the batch, frees their blocks, and re-enqueues them at the front of the wait queue. By default (`--preemption-policy fcfs`), BLIS evicts from the batch tail. With `--preemption-policy priority`, the least-urgent SLO tier is evicted first. See [Core Engine: Batch Formation](core-engine.md#batch-formation).
 
 ### Prefill Phase
 

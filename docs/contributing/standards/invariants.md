@@ -154,6 +154,20 @@ Invariants are properties that must hold at all times during and after simulatio
 
 ---
 
+## INV-12: Phase 1 Completeness Under Priority Preemption
+
+**Statement:** After Phase 1 of `FormBatch` completes, every non-preempted running request in decode phase has `NumNewTokens > 0`, provided the token budget was not exhausted and `MaxModelLen` did not cap the request. No running request is silently skipped due to index drift from non-tail eviction.
+
+**Context:** With `--preemption-policy priority`, the preemption victim may be at any index in the running batch (not just the tail). Removing an element at index `i < reqIndex` shifts subsequent elements left by one. Without the `reqIndex -= adjustment` correction (analog of vLLM `scheduler.py:853` `req_index -= 1`), the Phase 1 loop skips the shifted element.
+
+**Verification:** `sim/batch_formation_test.go` — `TestPreemption_Priority_Phase1Completeness`: verifies that after non-tail eviction where `victimIdx < reqIndex`, ALL remaining running requests receive decode tokens (NumNewTokens > 0). The index adjustment is tested with [bg, crit, std] batch where bg is evicted at index 0 while processing crit at index 1.
+
+**Trivially satisfied for FCFS:** With `--preemption-policy fcfs` (default), victims are always at the batch tail (`victimIdx == len-1 >= reqIndex`), so `adjustment == 0` and no element skipping is possible.
+
+**Hypothesis family:** Structural model (same as INV-4, INV-7, INV-8, INV-9).
+
+---
+
 ## PD Disaggregation Invariants
 
 ### INV-PD-1: KV Completeness

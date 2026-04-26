@@ -12,7 +12,7 @@ inference-sim/
 ├── .github/workflows/         # CI configuration (build, lint, test)
 ├── main.go                    # CLI entry point (Cobra)
 ├── cmd/
-│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --latency-model, --max-model-len, --trace-output)
+│   ├── root.go                # CLI commands and flags (--num-instances, --policy-config, --routing-scorers, --workload-spec, --trace-level, --fitness-weights, --kv-cpu-blocks, --kv-offload-threshold, --kv-transfer-bandwidth, --kv-transfer-base-latency, --snapshot-refresh-interval, --latency-model, --max-model-len, --trace-output, --preemption-policy)
 │   ├── replay.go              # `blis replay` command: replays TraceV2 file through DES; flags: --trace-header, --trace-data (required), all sim config flags shared via registerSimConfigFlags(); --results-path writes []workload.SimResult (integer request_id, ttft_us/e2e_us in µs); SimResult type lives in sim/workload/calibrate.go
 │   ├── calibrate.go           # `blis calibrate` command: compares real observed latencies (TraceV2 from blis observe) against sim predictions ([]SimResult JSON from blis replay --results-path); flags: --trace-header, --trace-data, --sim-results, --report (required), --warmup-requests (default: from header, sentinel -1), --network-rtt-us (default: from header, sentinel -1), --network-bandwidth-mbps; writes CalibrationReport JSON with MAPE/PearsonR/percentiles per metric
 │   ├── observe.go             # Real mode HTTP client (RealClient with functional options: WithAPIFormat for completions/chat, stream_options for streaming usage, finish_reason extraction, configurable max_tokens); Recorder for TraceV2 output
@@ -39,7 +39,7 @@ inference-sim/
 │   ├── request.go             # RequestState typed constants (StateQueued, StateRunning, StateCompleted, StateTimedOut), Request lifecycle and state machine, Deadline field for client timeout, Priority field for scheduler-aware ordering, AssignedInstance for cluster routing provenance (#181), workload metadata (TenantID, SLOClass, etc.), MaxOutputLen (client output budget for enqueue guard)
 │   ├── kv_store.go            # KVStore interface (12 methods: +SetClock, +ConsumePendingTransferLatency, +MirrorToCPU), NewKVStoreFromConfig registration variable, MustNewKVCacheState/MustNewKVStoreFromConfig nil-guarded wrappers
 │   ├── batch.go               # Batch struct
-│   ├── batch_formation.go     # BatchFormation interface, BatchContext/BatchResult types, VLLMBatchFormation (FCFS + chunked-prefill + preemption), NewBatchFormation() factory
+│   ├── batch_formation.go     # BatchFormation interface, BatchContext/BatchResult types, VLLMBatchFormation (fcfs/priority preemption + chunked-prefill), NewBatchFormation(PreemptionPolicy, SLOPriorityMap) factory
 │   ├── queue.go               # FIFO wait queue
 │   ├── metrics.go             # TTFT, TPOT, E2E collection and SaveResults()
 │   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor
