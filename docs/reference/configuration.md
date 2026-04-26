@@ -43,7 +43,7 @@ The general precedence (CLI → YAML → hardcoded) applies everywhere, but each
 !!! note
     `--seed`, `--horizon`, and `--num-requests` are exceptions — they override the workload-spec YAML values even when `--workload-spec` is set. `--rate` does NOT override `aggregate_rate` in the YAML (see [Common Pitfalls](#common-pitfalls)).
 
-**Routing, admission, and scheduling** (`--routing-policy`, `--admission-policy`, `--scheduler`, etc.):
+**Routing, admission, scheduling, and preemption** (`--routing-policy`, `--admission-policy`, `--scheduler`, `--preemption-policy`, etc.):
 
 1. Explicit CLI flags
 2. `--policy-config` YAML bundle — loads all policy settings from one file
@@ -121,6 +121,7 @@ Controls how requests are selected for the running batch. Maps to `BatchConfig`.
 | `--max-num-running-reqs` | int64 | 256 | Maximum requests in the running batch simultaneously. |
 | `--max-num-scheduled-tokens` | int64 | 2048 | Maximum total new tokens across all running requests per step (token budget). |
 | `--long-prefill-token-threshold` | int64 | 0 | Prefill length threshold for chunked prefill. 0 = disabled (all prefill in one step). |
+| `--preemption-policy` | string | "fcfs" | Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). |
 
 ## Latency Model
 
@@ -290,6 +291,7 @@ Per-instance policies that control request ordering within the wait queue. Maps 
 |------|------|---------|-------------|
 | `--scheduler` | string | "fcfs" | Scheduler: `fcfs`, `priority-fcfs`, `sjf`, `reverse-priority`. |
 | `--priority-policy` | string | "constant" | Priority policy: `constant`, `slo-based`, `inverted-slo`. |
+| `--preemption-policy` | string | "fcfs" | Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). |
 
 See [Core Engine: Scheduling](../concepts/core-engine.md#scheduling-policies) for policy details.
 
@@ -411,6 +413,9 @@ priority:
   policy: "constant"
 
 scheduler: "fcfs"
+
+preemption:
+  policy: "priority"    # fcfs (default) or priority (least-urgent SLO tier evicted first)
 
 # Node pool infrastructure (Phase 1A — optional; omit for backward-compatible single-pool mode)
 node_pools:

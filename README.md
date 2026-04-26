@@ -22,6 +22,7 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 - **Any HuggingFace model**: dense (Llama-2, Qwen3, etc.) and MoE (Mixtral, etc.) — auto-fetches model config on first run
 - **vLLM deployment configuration** (TP, chunk size, batch limits)
 - **Priority policies and instance schedulers**: constant, slo-based; fcfs, priority-fcfs, sjf
+- **Preemption policies**: fcfs (tail-of-batch), priority (least-urgent SLO tier evicted first)
 - **Admission control**: always-admit or token-bucket rate limiting
 - **YAML policy configuration**: define all policies in a single config file (`--policy-config`)
 - **ServeGen-informed workload generation**: multi-client specs with Poisson/Gamma/Weibull/Constant arrivals (`--workload-spec`)
