@@ -1044,3 +1044,135 @@ func TestPreemption_Priority_EmptyBatch_NoPanic(t *testing.T) {
 		}
 	}
 }
+
+// TestPreemption_Priority_Phase1Completeness verifies INV-12 (Phase 1 Completeness):
+// After priority preemption where the victim is at a LOWER index than the current
+// request (reqIndex adjustment fires), ALL remaining non-preempted running requests
+// must still receive their decode tokens. No request may be silently skipped.
+//
+// This is the critical test for BC-8 (Phase 1 index adjustment). Without the
+// reqIndex -= adj correction (analog of vLLM scheduler.py:853 req_index -= 1),
+// the request at the position that shifted into the victim's slot would be skipped.
+func TestPreemption_Priority_Phase1Completeness(t *testing.T) {
+	// Setup: [bg(0), crit(1), std(2)], 9 blocks used, 1 free.
+	// Phase 1 trace:
+	//   reqIndex=0: bg gets decode block (uses the 1 free). 0 free.
+	//   reqIndex=1: crit needs decode → preemption → evicts bg (index 0, SLO=-3).
+	//     victimIdx=0 < reqIndex=1 → adjustment=1.
+	//     bg's blocks freed (3). Budget restored (bg.NumNewTokens was 1).
+	//     Allocation succeeds for crit. Returns (true, 1).
+	//     Phase 1: reqIndex -= 1 → 0. Set crit tokens. reqIndex++ → 1.
+	//   reqIndex=1: std at index 1. Needs decode → succeeds. reqIndex++ → 2.
+	//   2 < len([crit,std])=2 → exit.
+	//
+	// Without adjustment: reqIndex stays at 1 after eviction. crit gets tokens.
+	// reqIndex++ → 2. 2 < 2 → exit. std is NEVER visited. std.NumNewTokens=0.
+	kvCache := MustNewKVCacheState(10, 16)
+	bg := makeRunningRequest("bg", "background", 100, 48, kvCache)   // 3 blocks
+	crit := makeRunningRequest("crit", "critical", 200, 48, kvCache)  // 3 blocks
+	std := makeRunningRequest("std", "standard", 300, 48, kvCache)    // 3 blocks → 9 used, 1 free
+
+	wq := &WaitQueue{}
+	wq.Enqueue(&Request{ID: "new", InputTokens: make([]int, 16), OutputTokens: make([]int, 1), State: StateQueued})
+
+	bf := NewBatchFormation("priority", nil)
+	ctx := BatchContext{
+		RunningBatch:       &Batch{Requests: []*Request{bg, crit, std}},
+		WaitQ:              wq,
+		KVCache:            kvCache,
+		MaxScheduledTokens: 10000,
+		MaxRunningReqs:     10,
+		Now:                1000,
+		ComputedTokens:     make(map[string]int64),
+	}
+
+	result := bf.FormBatch(ctx)
+
+	// INVARIANT: bg was preempted (correct victim, least urgent)
+	if len(result.Preempted) == 0 {
+		t.Fatal("expected preemption but got none")
+	}
+	if result.Preempted[0].Request.ID != "bg" {
+		t.Fatalf("wrong victim: got %q, want bg", result.Preempted[0].Request.ID)
+	}
+
+	// INV-12: ALL non-preempted running requests must have received decode tokens.
+	// This is the Phase 1 Completeness invariant: no request was skipped due to
+	// index drift from non-tail eviction.
+	for _, req := range result.RunningBatch.Requests {
+		if req.NumNewTokens == 0 {
+			t.Errorf("INV-12 violated: running request %q has NumNewTokens=0 — was it skipped after index adjustment?", req.ID)
+		}
+	}
+
+	// Verify both crit and std are still running (not preempted)
+	runningIDs := make(map[string]bool)
+	for _, req := range result.RunningBatch.Requests {
+		runningIDs[req.ID] = true
+	}
+	if !runningIDs["crit"] {
+		t.Error("crit should still be in running batch")
+	}
+	if !runningIDs["std"] {
+		t.Error("std should still be in running batch (must NOT be skipped by index drift)")
+	}
+}
+
+// TestPreemption_Priority_MultiEvictionOrdering verifies that when multiple
+// preemptions are needed in one preemptForTokens call, victims are selected
+// in non-decreasing urgency order (least urgent first).
+func TestPreemption_Priority_MultiEvictionOrdering(t *testing.T) {
+	// Setup: 4 blocks × 16 tokens = 64 token capacity.
+	// [crit(0, prefilling, needs 4 blocks), bg(1, decode, 1 block), shed(2, decode, 1 block)]
+	// crit is still prefilling (ProgressIndex=0, InputTokens=64 → needs 4 blocks).
+	// bg and shed each have 1 block (fully prefilled 16-token requests in decode).
+	// Total: 2/4 used, 2 free. crit needs 4 blocks, only 2 free → cascading preemption.
+	//   1st: evict bg (background=-3, 1 block freed → 3 free, still < 4)
+	//   2nd: evict shed (sheddable=-2, 1 block freed → 4 free = 4 needed → success!)
+	kvCache := MustNewKVCacheState(4, 16)
+	// bg and shed are small decode-phase requests
+	bg := makeRunningRequest("bg", "background", 100, 16, kvCache)    // 1 block
+	shed := makeRunningRequest("shed", "sheddable", 200, 16, kvCache)  // 1 block → 2/4 used
+	// crit is still in prefill: ProgressIndex=0, needs all 64 tokens allocated
+	crit := &Request{
+		ID: "crit", SLOClass: "critical", ArrivalTime: 300, State: StateRunning,
+		InputTokens: make([]int, 64), OutputTokens: make([]int, 10),
+		ProgressIndex: 0, // still prefilling
+	}
+
+	wq := &WaitQueue{}
+	wq.Enqueue(&Request{ID: "new", InputTokens: make([]int, 16), OutputTokens: make([]int, 1), State: StateQueued})
+
+	bf := NewBatchFormation("priority", nil)
+	ctx := BatchContext{
+		RunningBatch:       &Batch{Requests: []*Request{crit, bg, shed}},
+		WaitQ:              wq,
+		KVCache:            kvCache,
+		MaxScheduledTokens: 10000,
+		MaxRunningReqs:     10,
+		Now:                1000,
+		ComputedTokens:     make(map[string]int64),
+	}
+
+	result := bf.FormBatch(ctx)
+
+	// Cascading preemption: bg first (background=-3), then shed (sheddable=-2).
+	if len(result.Preempted) < 2 {
+		t.Fatalf("expected at least 2 preemptions, got %d", len(result.Preempted))
+	}
+	if result.Preempted[0].Request.ID != "bg" {
+		t.Errorf("1st preemption: got %q, want bg (background=-3)", result.Preempted[0].Request.ID)
+	}
+	if result.Preempted[1].Request.ID != "shed" {
+		t.Errorf("2nd preemption: got %q, want shed (sheddable=-2)", result.Preempted[1].Request.ID)
+	}
+
+	// crit must remain as the sole running request
+	if len(result.RunningBatch.Requests) != 1 || result.RunningBatch.Requests[0].ID != "crit" {
+		ids := make([]string, len(result.RunningBatch.Requests))
+		for i, r := range result.RunningBatch.Requests {
+			ids[i] = r.ID
+		}
+		t.Errorf("expected [crit] in running batch, got %v", ids)
+	}
+}
