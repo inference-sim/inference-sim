@@ -192,6 +192,22 @@ func TestDefaultCollector_PendingReplicaCount_FromLoadingSnapshots(t *testing.T)
 			wantPendingCount:            map[string]int{"modelA": 0},
 			wantPendingKvCapacityTokens: map[string]int64{"modelA": 0},
 		},
+		{
+			// Loading-only model: no active snapshots, only loading snapshots.
+			// Verifies the pendingByModel → allModels union produces a ModelSignals entry
+			// for a model that has never had a routable replica.
+			name:       "loading-only model — no active snapshots",
+			wantModels: 1,
+			state: &sim.RouterState{
+				Snapshots: nil,
+				LoadingSnapshots: []sim.RoutingSnapshot{
+					{ID: "loading-1", Model: "modelA", GPUType: "A100", TPDegree: 1,
+						TotalKvCapacityTokens: 10000, CostPerHour: 10.0},
+				},
+			},
+			wantPendingCount:            map[string]int{"modelA": 1},
+			wantPendingKvCapacityTokens: map[string]int64{"modelA": 10000},
+		},
 	}
 
 	for _, tc := range tests {

@@ -14,7 +14,7 @@ import (
 // TTFT and DispatchRate are set to zero (future: QueueingModelAnalyzer).
 type DefaultCollector struct{}
 
-// Collect produces one ModelSignals per active model from the current RouterState.
+// Collect produces one ModelSignals per model present in either routable or loading snapshots.
 // Models are sorted alphabetically for determinism (R2).
 func (c *DefaultCollector) Collect(state *sim.RouterState) []ModelSignals {
 	if state == nil {
@@ -52,7 +52,12 @@ func (c *DefaultCollector) Collect(state *sim.RouterState) []ModelSignals {
 	}
 	pendingByModel := make(map[string]pendingAgg)
 	for _, snap := range state.LoadingSnapshots {
-		if snap.Model == "" || snap.GPUType == "" {
+		if snap.Model == "" {
+			logrus.Debugf("[collector] skipping loading snapshot %q: empty Model field", snap.ID)
+			continue
+		}
+		if snap.GPUType == "" {
+			logrus.Debugf("[collector] skipping loading snapshot %q: empty GPUType field", snap.ID)
 			continue
 		}
 		p := pendingByModel[snap.Model]

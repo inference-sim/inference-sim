@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"math"
 	"sort"
+
+	"github.com/sirupsen/logrus"
 )
 
 // V2SaturationAnalyzerConfig configures the V2 token-based saturation analyzer.
@@ -61,6 +63,10 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 	result := AnalyzerResult{ModelID: metrics.ModelID}
 
 	if len(metrics.Replicas) == 0 {
+		if metrics.PendingReplicaCount > 0 {
+			logrus.Debugf("[analyzer] model %q: no routable replicas, %d pending — demand is zero (no ready replicas to measure from); pending supply not evaluated",
+				metrics.ModelID, metrics.PendingReplicaCount)
+		}
 		return result
 	}
 
@@ -137,7 +143,10 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 	// Only affects RequiredCapacity — TotalSupply, Utilization, and SpareCapacity are
 	// based on ready replicas only (no premature scale-down risk from unstarted instances).
 	// Matches WVA saturation_v2 anticipatedSupply semantics.
-	pendingSupply := float64(metrics.PendingTotalKvCapacityTokens) * a.config.KvCacheThreshold
+	var pendingSupply float64
+	if metrics.PendingTotalKvCapacityTokens > 0 {
+		pendingSupply = float64(metrics.PendingTotalKvCapacityTokens) * a.config.KvCacheThreshold
+	}
 	totalSupplyForScaleUp := result.TotalSupply + pendingSupply
 	requiredCapacity := (result.TotalDemand / a.config.ScaleUpThreshold) - totalSupplyForScaleUp
 	if requiredCapacity > 0 {

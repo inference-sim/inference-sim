@@ -88,7 +88,7 @@ func buildRouterState(cs *ClusterSimulator, req *sim.Request) *sim.RouterState {
 	// Collect Loading instances as pending supply information for the autoscaler.
 	// Uses inst accessors directly (not snapshotProvider) — TotalKvCapacityTokens is
 	// provisioned at NewInstanceSimulator and does not change over the instance lifetime.
-	loadingSnapshots := make([]sim.RoutingSnapshot, 0)
+	loadingSnapshots := make([]sim.RoutingSnapshot, 0, len(cs.instances))
 	for _, inst := range cs.instances {
 		if inst.State != InstanceStateLoading {
 			continue

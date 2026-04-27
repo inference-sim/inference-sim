@@ -139,7 +139,7 @@ A researcher studying oscillation behavior wants to configure HPA-aligned stabil
 - **FR-007**: Each Analyzer MUST produce model-level aggregate supply and demand from the per-replica snapshots it receives; it MUST NOT access cluster state directly.
 - **FR-008**: Every Analyzer MUST handle the zero-replica case by returning all-zero output without error.
 - **FR-009**: Every Analyzer result MUST satisfy: the sum of per-variant supply equals TotalSupply, and the sum of per-variant demand equals TotalDemand.
-- **FR-010**: The V2SaturationAnalyzer MUST compute per-replica capacity as `min(k1_memory, k2_compute)` in token units, and demand as `tokensInUse + queueLength * avgInputTokens`. Scale-up when `(totalDemand / ScaleUpThreshold) > totalSupply`; scale-down when `totalSupply > (totalDemand / ScaleDownBoundary)` with N-1 redistribution safety check.
+- **FR-010**: The V2SaturationAnalyzer MUST compute per-replica capacity as `min(k1_memory, k2_compute)` in token units, and demand as `tokensInUse + queueLength * avgInputTokens`. Scale-up signal: `requiredCapacity = (totalDemand / ScaleUpThreshold) - (totalReadySupply + pendingSupply)` where `pendingSupply = PendingTotalKvCapacityTokens * KvCacheThreshold` (Loading instances count as anticipated supply, matching WVA `saturation_v2`). `TotalSupply`, `Utilization`, and `SpareCapacity` are based on ready replicas only. Scale-down when `totalReadySupply > (totalDemand / ScaleDownBoundary)` with N-1 redistribution safety check.
 - **FR-011**: An Analyzer MUST NOT emit both a positive RequiredCapacity and a positive SpareCapacity for the same model in the same call.
 
 **Engine**
