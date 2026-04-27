@@ -13,7 +13,8 @@ package sim
 type RouterState struct {
 	Snapshots        []RoutingSnapshot // One per routable instance (Active + WarmingUp)
 	// One per Loading instance. Populated fields: Model, GPUType, TPDegree, CostPerHour,
-	// TotalKvCapacityTokens. QueueDepth, KVUtilization, InFlightRequests, KvTokensInUse remain zero.
+	// TotalKvCapacityTokens. QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate,
+	// InFlightRequests, KvTokensInUse remain zero.
 	LoadingSnapshots []RoutingSnapshot
 	Clock            int64             // Current simulation clock in microseconds
 }
