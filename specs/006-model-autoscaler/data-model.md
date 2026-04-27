@@ -35,9 +35,11 @@ ReplicaMetrics
 ├── KVUtilization float64    // [0.0, 1.0] — from RoutingSnapshot.KVUtilization
 ├── QueueDepth    int        // from RoutingSnapshot.QueueDepth
 ├── InFlightCount int        // from RoutingSnapshot.InFlightRequests
-├── CostPerHour   float64    // from RoutingSnapshot.CostPerHour (NodePool cost)
-├── TTFT          float64    // μs — zero in DefaultCollector (future: QueueingModelAnalyzer)
-└── DispatchRate  float64    // req/s — zero in DefaultCollector (future: QueueingModelAnalyzer)
+├── CostPerHour            float64    // from RoutingSnapshot.CostPerHour (NodePool cost)
+├── TotalKvCapacityTokens  int64      // total KV cache capacity in tokens; used by V2SaturationAnalyzer for k1
+├── KvTokensInUse          int64      // current KV token occupancy; used by V2SaturationAnalyzer for demand
+├── TTFT                   float64    // μs — zero in DefaultCollector (future: QueueingModelAnalyzer)
+└── DispatchRate           float64    // req/s — zero in DefaultCollector (future: QueueingModelAnalyzer)
 ```
 
 **Note on CostPerHour**: This field extends the issue spec's 7-field ReplicaMetrics. See research.md Decision 3.  
@@ -53,11 +55,15 @@ Named `ModelSignals` (not `ModelMetrics`) to avoid collision with the existing `
 
 ```
 ModelSignals
-├── ModelID  string
-└── Replicas []ReplicaMetrics   // may be empty (zero-replica model)
+├── ModelID                       string
+├── Replicas                      []ReplicaMetrics   // may be empty (zero-replica model)
+├── PendingReplicaCount           int                // Loading instances not yet routable
+└── PendingTotalKvCapacityTokens  int64              // sum of TotalKvCapacityTokens for all Loading instances of this model
 ```
 
 **Zero-replica invariant**: When `len(Replicas) == 0`, `Analyzer.Analyze()` must return all-zero `AnalyzerResult` without error.
+
+**Pending supply**: `PendingReplicaCount` and `PendingTotalKvCapacityTokens` are populated from Loading instances by `DefaultCollector`. `V2SaturationAnalyzer` uses `PendingTotalKvCapacityTokens` only in the scale-up formula (`requiredCapacity`); `TotalSupply`, `Utilization`, and `SpareCapacity` are based on ready replicas only.
 
 ---
 

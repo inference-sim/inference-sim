@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"math"
 	"sort"
+
+	"github.com/sirupsen/logrus"
 )
 
 // V2SaturationAnalyzerConfig configures the V2 token-based saturation analyzer.
 type V2SaturationAnalyzerConfig struct {
 	KvCacheThreshold  float64 // Fraction of KV capacity considered usable (0,1]; k1 = totalKvCapTokens * this
-	ScaleUpThreshold  float64 // Utilization fraction triggering scale-up; RequiredCapacity = max(0, totalDemand/this - totalSupply)
+	ScaleUpThreshold  float64 // Utilization fraction triggering scale-up; RequiredCapacity = max(0, totalDemand/this - (totalReadySupply + pendingSupply)) where pendingSupply = PendingTotalKvCapacityTokens * KvCacheThreshold
 	ScaleDownBoundary float64 // Utilization fraction below which scale-down is safe; SpareCapacity = max(0, totalSupply - totalDemand/this)
 	AvgInputTokens    float64 // Average input tokens per request; used to convert queue depth to token demand
 }
@@ -61,6 +63,10 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 	result := AnalyzerResult{ModelID: metrics.ModelID}
 
 	if len(metrics.Replicas) == 0 {
+		if metrics.PendingReplicaCount > 0 {
+			logrus.Debugf("[analyzer] model %q: no routable replicas, %d pending — demand is zero (no ready replicas to measure from); pending supply not evaluated",
+				metrics.ModelID, metrics.PendingReplicaCount)
+		}
 		return result
 	}
 
@@ -132,8 +138,17 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 		result.Utilization = result.TotalDemand / result.TotalSupply
 	}
 
-	// Scale-up signal: RequiredCapacity = max(0, totalDemand/ScaleUpThreshold - totalSupply)
-	requiredCapacity := (result.TotalDemand / a.config.ScaleUpThreshold) - result.TotalSupply
+	// Scale-up signal: include pending (Loading instance) capacity alongside ready supply.
+	// Pending supply covers anticipated capacity once Loading instances finish loading.
+	// Only affects RequiredCapacity — TotalSupply, Utilization, and SpareCapacity are
+	// based on ready replicas only (no premature scale-down risk from unstarted instances).
+	// Matches WVA saturation_v2 anticipatedSupply semantics.
+	var pendingSupply float64
+	if metrics.PendingTotalKvCapacityTokens > 0 {
+		pendingSupply = float64(metrics.PendingTotalKvCapacityTokens) * a.config.KvCacheThreshold
+	}
+	totalSupplyForScaleUp := result.TotalSupply + pendingSupply
+	requiredCapacity := (result.TotalDemand / a.config.ScaleUpThreshold) - totalSupplyForScaleUp
 	if requiredCapacity > 0 {
 		result.RequiredCapacity = requiredCapacity
 		// Mutual exclusivity: if scaling up, no spare capacity
