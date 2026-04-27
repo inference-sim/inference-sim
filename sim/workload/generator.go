@@ -776,6 +776,7 @@ func generateTimeVaryingRequests(
 			// Client has no lifecycle windows - skip.
 			// Always-on clients mixed with windowed clients are handled
 			// by computeProportionalRate (contributes RateFraction to denominator).
+			logrus.Warnf("generateTimeVaryingRequests: client %q has no lifecycle windows and will generate no requests (mixed always-on + windowed clients are not supported)", client.ID)
 			continue
 		}
 

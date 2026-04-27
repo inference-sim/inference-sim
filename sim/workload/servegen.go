@@ -138,6 +138,8 @@ func loadServeGenData(spec *WorkloadSpec) error {
 					aggregateRateAtTime[timestamp] += *window.TraceRate
 				}
 			}
+		} else {
+			logrus.Warnf("loadServeGenData: chunk %s produced no active windows (no matching dataset entries)", chunkID)
 		}
 	}
 
@@ -450,8 +452,8 @@ func loadServeGenChunk(chunkID, tracePath, datasetPath string, sgConfig *ServeGe
 		}
 
 		// Fallback client-level distributions (never used for sampling when per-window overrides exist)
-		clientInputDist = DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 512, "std_dev": 128}}
-		clientOutputDist = DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 128, "std_dev": 32}}
+		clientInputDist = DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 512, "std_dev": 128, "min": 1, "max": 32768}}
+		clientOutputDist = DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 128, "std_dev": 32, "min": 1, "max": 32768}}
 	}
 
 	// Build ClientSpec with per-window lifecycle.
