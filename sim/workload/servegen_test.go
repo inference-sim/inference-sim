@@ -3,6 +3,7 @@ package workload
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -544,6 +545,270 @@ func TestNormalizeLifecycleTimestamps_EmptyClientList(t *testing.T) {
 	// THEN it completes without panic and leaves list unchanged
 	if len(clients) != 0 {
 		t.Errorf("expected empty list to remain empty, got %d clients", len(clients))
+	}
+}
+
+func TestNormalizeLifecycleTimestamps_Scenarios(t *testing.T) {
+	tests := []struct {
+		name    string
+		clients []ClientSpec
+		want    []ClientSpec
+		checkFn func(t *testing.T, original, normalized []ClientSpec)
+	}{
+		{
+			name: "single client with single window at non-zero time",
+			clients: []ClientSpec{
+				{
+					ID: "client1",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 28800000000, EndUs: 29400000000}, // 8:00-8:10 AM
+						},
+					},
+				},
+			},
+			want: []ClientSpec{
+				{
+					ID: "client1",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 0, EndUs: 600000000}, // 0:00-0:10 (10 min duration preserved)
+						},
+					},
+				},
+			},
+			checkFn: func(t *testing.T, original, normalized []ClientSpec) {
+				// BC-1: earliest window starts at 0
+				if normalized[0].Lifecycle.Windows[0].StartUs != 0 {
+					t.Errorf("BC-1 violation: expected StartUs=0, got %d", normalized[0].Lifecycle.Windows[0].StartUs)
+				}
+				// BC-6: duration preserved
+				origDuration := original[0].Lifecycle.Windows[0].EndUs - original[0].Lifecycle.Windows[0].StartUs
+				normDuration := normalized[0].Lifecycle.Windows[0].EndUs - normalized[0].Lifecycle.Windows[0].StartUs
+				if origDuration != normDuration {
+					t.Errorf("BC-6 violation: duration changed from %d to %d", origDuration, normDuration)
+				}
+			},
+		},
+		{
+			name: "multiple clients with different start times",
+			clients: []ClientSpec{
+				{
+					ID: "clientA",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 100000000, EndUs: 200000000}, // starts at 100s
+						},
+					},
+				},
+				{
+					ID: "clientB",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 50000000, EndUs: 150000000}, // starts at 50s (earlier)
+						},
+					},
+				},
+			},
+			want: []ClientSpec{
+				{
+					ID: "clientA",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 50000000, EndUs: 150000000}, // shifted by -50s
+						},
+					},
+				},
+				{
+					ID: "clientB",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 0, EndUs: 100000000}, // shifted by -50s
+						},
+					},
+				},
+			},
+			checkFn: func(t *testing.T, original, normalized []ClientSpec) {
+				// BC-5: global minimum across all clients
+				minStart := int64(math.MaxInt64)
+				for _, c := range normalized {
+					if c.Lifecycle != nil {
+						for _, w := range c.Lifecycle.Windows {
+							if w.StartUs < minStart {
+								minStart = w.StartUs
+							}
+						}
+					}
+				}
+				if minStart != 0 {
+					t.Errorf("BC-5 violation: global minimum is %d, expected 0", minStart)
+				}
+			},
+		},
+		{
+			name: "consecutive windows preserve relative timing",
+			clients: []ClientSpec{
+				{
+					ID: "client1",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 1000, EndUs: 2000}, // window 1
+							{StartUs: 3000, EndUs: 4000}, // window 2 (2000us gap)
+						},
+					},
+				},
+			},
+			want: []ClientSpec{
+				{
+					ID: "client1",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 0, EndUs: 1000},
+							{StartUs: 2000, EndUs: 3000}, // 2000us gap preserved
+						},
+					},
+				},
+			},
+			checkFn: func(t *testing.T, original, normalized []ClientSpec) {
+				// BC-2: relative timing preserved
+				origGap := original[0].Lifecycle.Windows[1].StartUs - original[0].Lifecycle.Windows[0].EndUs
+				normGap := normalized[0].Lifecycle.Windows[1].StartUs - normalized[0].Lifecycle.Windows[0].EndUs
+				if origGap != normGap {
+					t.Errorf("BC-2 violation: gap changed from %d to %d", origGap, normGap)
+				}
+			},
+		},
+		{
+			name: "client with nil lifecycle is skipped safely",
+			clients: []ClientSpec{
+				{ID: "client1", Lifecycle: nil},
+				{
+					ID: "client2",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 1000, EndUs: 2000},
+						},
+					},
+				},
+			},
+			want: []ClientSpec{
+				{ID: "client1", Lifecycle: nil}, // unchanged
+				{
+					ID: "client2",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 0, EndUs: 1000}, // normalized
+						},
+					},
+				},
+			},
+			checkFn: func(t *testing.T, original, normalized []ClientSpec) {
+				// Verify nil lifecycle wasn't touched
+				if normalized[0].Lifecycle != nil {
+					t.Error("nil Lifecycle was unexpectedly modified")
+				}
+			},
+		},
+		{
+			name: "client with empty windows slice is skipped safely",
+			clients: []ClientSpec{
+				{
+					ID:        "client1",
+					Lifecycle: &LifecycleSpec{Windows: []ActiveWindow{}},
+				},
+				{
+					ID: "client2",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 5000, EndUs: 6000},
+						},
+					},
+				},
+			},
+			want: []ClientSpec{
+				{
+					ID:        "client1",
+					Lifecycle: &LifecycleSpec{Windows: []ActiveWindow{}}, // unchanged
+				},
+				{
+					ID: "client2",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 0, EndUs: 1000},
+						},
+					},
+				},
+			},
+			checkFn: nil, // structural check via want comparison is sufficient
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Make a deep copy of original for checkFn comparison
+			// (shallow copy is insufficient: ClientSpec.Lifecycle is a pointer,
+			// so mutations via normalizeLifecycleTimestamps would be visible
+			// through both originalCopy and tt.clients, making BC-2/BC-6 checks vacuous)
+			originalCopy := make([]ClientSpec, len(tt.clients))
+			for i, c := range tt.clients {
+				originalCopy[i] = c
+				if c.Lifecycle != nil {
+					lc := *c.Lifecycle
+					lc.Windows = make([]ActiveWindow, len(c.Lifecycle.Windows))
+					copy(lc.Windows, c.Lifecycle.Windows)
+					originalCopy[i].Lifecycle = &lc
+				}
+			}
+
+			// WHEN normalization is called
+			normalizeLifecycleTimestamps(&tt.clients)
+
+			// THEN structural expectations match
+			if len(tt.clients) != len(tt.want) {
+				t.Fatalf("client count mismatch: got %d, want %d", len(tt.clients), len(tt.want))
+			}
+
+			for i := range tt.clients {
+				gotClient := tt.clients[i]
+				wantClient := tt.want[i]
+
+				if gotClient.ID != wantClient.ID {
+					t.Errorf("client[%d] ID mismatch: got %q, want %q", i, gotClient.ID, wantClient.ID)
+				}
+
+				if (gotClient.Lifecycle == nil) != (wantClient.Lifecycle == nil) {
+					t.Errorf("client[%d] Lifecycle nil mismatch", i)
+					continue
+				}
+
+				if gotClient.Lifecycle != nil {
+					if len(gotClient.Lifecycle.Windows) != len(wantClient.Lifecycle.Windows) {
+						t.Errorf("client[%d] window count mismatch: got %d, want %d",
+							i, len(gotClient.Lifecycle.Windows), len(wantClient.Lifecycle.Windows))
+						continue
+					}
+
+					for j := range gotClient.Lifecycle.Windows {
+						gotWindow := gotClient.Lifecycle.Windows[j]
+						wantWindow := wantClient.Lifecycle.Windows[j]
+
+						if gotWindow.StartUs != wantWindow.StartUs {
+							t.Errorf("client[%d] window[%d] StartUs: got %d, want %d",
+								i, j, gotWindow.StartUs, wantWindow.StartUs)
+						}
+						if gotWindow.EndUs != wantWindow.EndUs {
+							t.Errorf("client[%d] window[%d] EndUs: got %d, want %d",
+								i, j, gotWindow.EndUs, wantWindow.EndUs)
+						}
+					}
+				}
+			}
+
+			// THEN behavioral contracts verified by custom check function
+			if tt.checkFn != nil {
+				tt.checkFn(t, originalCopy, tt.clients)
+			}
+		})
 	}
 }
 
