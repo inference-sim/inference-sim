@@ -3391,7 +3391,7 @@
 <tr>
 <td><code>type</code></td>
 <td>string</td>
-<td><code>gaussian</code>, <code>exponential</code>, <code>pareto_lognormal</code>, <code>constant</code>, <code>empirical</code></td>
+<td><code>gaussian</code>, <code>exponential</code>, <code>pareto_lognormal</code>, <code>lognormal</code>, <code>constant</code>, <code>empirical</code></td>
 </tr>
 <tr>
 <td><code>params</code></td>
@@ -3425,6 +3425,10 @@
 <tr>
 <td><code>pareto_lognormal</code></td>
 <td><code>alpha</code>, <code>xm</code>, <code>mu</code>, <code>sigma</code>, <code>mix_weight</code></td>
+</tr>
+<tr>
+<td><code>lognormal</code></td>
+<td><code>mu</code>, <code>sigma</code> (mean and standard deviation of log-transformed values; fitted via method of moments)</td>
 </tr>
 <tr>
 <td><code>constant</code></td>
@@ -3702,10 +3706,31 @@
 <td>int64</td>
 <td>Window end time in microseconds</td>
 </tr>
+<tr>
+<td><code>trace_rate</code></td>
+<td>float64</td>
+<td>Per-window rate override. In absolute rate mode (<code>aggregate_rate: 0</code>), this is the absolute arrival rate (req/s). In proportional mode, this is a weight for rate allocation.</td>
+</tr>
+<tr>
+<td><code>arrival</code></td>
+<td>ArrivalSpec</td>
+<td>Per-window arrival process override (overrides client-level <code>arrival</code>)</td>
+</tr>
+<tr>
+<td><code>input_distribution</code></td>
+<td>DistSpec</td>
+<td>Per-window input token distribution override (overrides client-level <code>input_distribution</code>)</td>
+</tr>
+<tr>
+<td><code>output_distribution</code></td>
+<td>DistSpec</td>
+<td>Per-window output token distribution override (overrides client-level <code>output_distribution</code>)</td>
+</tr>
 </tbody>
 </table>
 <h3 id="lifecycle-normalization">Lifecycle Normalization<a class="headerlink" href="#lifecycle-normalization" title="Permanent link">&para;</a></h3>
-<p>When clients have lifecycle windows, <code>rate_fraction</code> values are normalized <strong>per-phase</strong> rather than globally. For each client, the simulator sums the <code>rate_fraction</code> of all <strong>co-active</strong> clients (those whose lifecycle windows overlap) and divides by that sum. This ensures <code>aggregate_rate</code> is achieved during every active phase.</p>
+<p><strong>Proportional mode (aggregate_rate &gt; 0):</strong> When clients have lifecycle windows, <code>rate_fraction</code> values are normalized <strong>per-phase</strong> rather than globally. For each client, the simulator sums the <code>rate_fraction</code> of all <strong>co-active</strong> clients (those whose lifecycle windows overlap) and divides by that sum. This ensures <code>aggregate_rate</code> is achieved during every active phase.</p>
+<p><strong>Absolute rate mode (aggregate_rate = 0):</strong> Each window's <code>trace_rate</code> is used directly as the arrival rate (requests/second) for that window, without scaling or normalization. This mode preserves time-varying aggregate load patterns from traces (e.g., ServeGen workloads) where the aggregate rate varies over time. Validation requires all rate-based clients to have explicit <code>trace_rate</code> on every window.</p>
 <p>Clients without lifecycle windows are "always-on" and are counted as co-active with every phase.</p>
 <p><strong>Example:</strong> A two-phase workload with <code>aggregate_rate: 40</code>:</p>
 <ul>
@@ -3780,6 +3805,12 @@
 <td>string</td>
 <td><strong>Yes</strong></td>
 <td>Path to ServeGen data directory (containing <code>chunk-*-trace.csv</code> and <code>dataset.json</code>)</td>
+</tr>
+<tr>
+<td><code>time_window</code></td>
+<td>string</td>
+<td>No</td>
+<td>Temporal snapshot extraction: <code>midnight</code> (0:00-0:30), <code>morning</code> (8:00-8:30), or <code>afternoon</code> (14:00-14:30). Filters chunks to the specified 30-minute window.</td>
 </tr>
 <tr>
 <td><code>span_start</code></td>
