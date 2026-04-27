@@ -496,11 +496,11 @@ func TestV2SaturationAnalyzer_PendingSupply_StillScalesUpForDelta(t *testing.T) 
 
 	result := a.Analyze(metrics)
 
-	if result.RequiredCapacity <= 0 {
-		t.Errorf("RequiredCapacity = %g, want > 0 (demand exceeds ready+pending supply)", result.RequiredCapacity)
+	// demand/threshold = 18000/0.8 = 22500; totalSupplyForScaleUp = 10000+10000 = 20000; delta = 2500.
+	if result.RequiredCapacity != 2500 {
+		t.Errorf("RequiredCapacity = %g, want 2500 (demand exceeds ready+pending supply by exactly 2500)", result.RequiredCapacity)
 	}
-	// The ready-only supply (10000) minus demand does NOT change — TotalSupply is ready replicas only.
-	// The pending supply only affects the scale-up formula, not TotalSupply in the result.
+	// The ready-only supply (10000) must not be inflated by pending.
 	if result.TotalSupply != 10000 {
 		t.Errorf("TotalSupply = %g, want 10000 (ready supply only; pending does not inflate TotalSupply)", result.TotalSupply)
 	}

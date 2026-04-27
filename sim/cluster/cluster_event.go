@@ -94,6 +94,8 @@ func buildRouterState(cs *ClusterSimulator, req *sim.Request) *sim.RouterState {
 			continue
 		}
 		if inst.Model == "" || inst.GPU() == "" {
+			logrus.Debugf("[cluster] buildRouterState: loading instance %q has empty Model=%q or GPU=%q — excluded from LoadingSnapshots",
+				inst.ID(), inst.Model, inst.GPU())
 			continue
 		}
 		snap := sim.NewRoutingSnapshot(string(inst.ID()))

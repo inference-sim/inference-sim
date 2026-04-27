@@ -124,6 +124,7 @@ func TestDefaultCollector_PendingReplicaCount_FromLoadingSnapshots(t *testing.T)
 		wantModels                  int
 		wantPendingCount            map[string]int
 		wantPendingKvCapacityTokens map[string]int64
+		wantEmptyReplicas           map[string]bool // models expected to have nil/empty Replicas slice
 	}{
 		{
 			name:       "one loading replica alongside active replica",
@@ -207,6 +208,7 @@ func TestDefaultCollector_PendingReplicaCount_FromLoadingSnapshots(t *testing.T)
 			},
 			wantPendingCount:            map[string]int{"modelA": 1},
 			wantPendingKvCapacityTokens: map[string]int64{"modelA": 10000},
+			wantEmptyReplicas:           map[string]bool{"modelA": true},
 		},
 	}
 
@@ -228,6 +230,10 @@ func TestDefaultCollector_PendingReplicaCount_FromLoadingSnapshots(t *testing.T)
 				if ms.PendingTotalKvCapacityTokens != wantCap {
 					t.Errorf("model %q: PendingTotalKvCapacityTokens = %d, want %d",
 						ms.ModelID, ms.PendingTotalKvCapacityTokens, wantCap)
+				}
+				if tc.wantEmptyReplicas[ms.ModelID] && len(ms.Replicas) != 0 {
+					t.Errorf("model %q: len(Replicas) = %d, want 0 (loading-only model must not leak into Replicas)",
+						ms.ModelID, len(ms.Replicas))
 				}
 			}
 		})
