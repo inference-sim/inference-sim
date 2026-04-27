@@ -90,7 +90,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 
 	// Route to time-varying generator when any client has per-window parameter
 	// overrides (TraceRate, Arrival, InputDist, OutputDist on ActiveWindow).
-	// This path uses ServeGen-compatible proportional allocation and IAT rescaling.
+	// This path uses per-window proportional allocation and IAT rescaling.
 	if hasPerWindowParameters(allClients) {
 		return generateTimeVaryingRequests(spec, horizon, maxRequests, allClients, workloadRNG)
 	}
@@ -883,7 +883,7 @@ func generateRequestsForWindow(
 		iats[i] = arrivalSampler.SampleIAT(rng)
 	}
 
-	// Step 6: Rescale IATs to match target window duration (ServeGen parity).
+	// Step 6: Rescale IATs to match target window duration.
 	// This preserves relative ratios (CV) while ensuring total span equals windowDurationUs.
 	iats = rescaleIATsToMatchDuration(iats, windowDurationUs)
 

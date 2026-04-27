@@ -65,7 +65,7 @@ Used for `input_distribution` and `output_distribution`:
 | `gaussian` | `mean`, `std_dev`, `min`, `max` |
 | `exponential` | `mean` |
 | `pareto_lognormal` | `alpha`, `xm`, `mu`, `sigma`, `mix_weight` |
-| `lognormal` | `mu`, `sigma` (fitted via method of moments from ServeGen empirical PDFs) |
+| `lognormal` | `mu`, `sigma` (mean and standard deviation of log-transformed values; fitted via method of moments) |
 | `constant` | `value` |
 | `empirical` | inline `params` map (key=token count, value=probability) |
 

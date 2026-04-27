@@ -496,7 +496,8 @@ func TestGenerateRequests_TimeVaryingWorkload(t *testing.T) {
 		require.Equal(t, len(reqs1), len(reqs2), "same seed must produce same count")
 		for i := range reqs1 {
 			assert.Equal(t, reqs1[i].ArrivalTime, reqs2[i].ArrivalTime, "arrival times must match at index %d", i)
-			assert.Equal(t, len(reqs1[i].InputTokens), len(reqs2[i].InputTokens), "input token counts must match at index %d", i)
+			assert.Equal(t, reqs1[i].InputTokens, reqs2[i].InputTokens, "input tokens must match at index %d", i)
+			assert.Equal(t, reqs1[i].OutputTokens, reqs2[i].OutputTokens, "output tokens must match at index %d", i)
 		}
 	})
 
@@ -844,6 +845,8 @@ func TestGenerateRequestsForWindow_Determinism_AbsoluteRateMode(t *testing.T) {
 	requests2, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng2)
 	require.NoError(t, err)
 
+	// Verify requests are actually generated (not zero due to misconfiguration)
+	require.Greater(t, len(requests1), 0, "absolute rate mode must generate requests")
 	require.Equal(t, len(requests1), len(requests2), "request count must be deterministic")
 	for i := range requests1 {
 		assert.Equal(t, requests1[i].ArrivalTime, requests2[i].ArrivalTime, "arrival time mismatch at index %d", i)

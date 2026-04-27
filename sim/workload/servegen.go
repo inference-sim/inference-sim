@@ -449,9 +449,9 @@ func loadServeGenChunk(chunkID, tracePath, datasetPath string, sgConfig *ServeGe
 			windows = append(windows, w)
 		}
 
-		// Fallback client-level distributions (unused but required for validation)
-		clientInputDist = DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 512, "stddev": 128}}
-		clientOutputDist = DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 128, "stddev": 32}}
+		// Fallback client-level distributions (never used for sampling when per-window overrides exist)
+		clientInputDist = DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 512, "std_dev": 128}}
+		clientOutputDist = DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 128, "std_dev": 32}}
 	}
 
 	// Build ClientSpec with per-window lifecycle.

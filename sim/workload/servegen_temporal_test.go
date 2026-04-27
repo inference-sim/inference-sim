@@ -609,10 +609,10 @@ func TestServeGenConversion_E2E(t *testing.T) {
 		for i := range reqs1 {
 			assert.Equal(t, reqs1[i].ArrivalTime, reqs2[i].ArrivalTime,
 				"INV-6: arrival times must match at index %d", i)
-			assert.Equal(t, len(reqs1[i].InputTokens), len(reqs2[i].InputTokens),
-				"INV-6: input token counts must match at index %d", i)
-			assert.Equal(t, len(reqs1[i].OutputTokens), len(reqs2[i].OutputTokens),
-				"INV-6: output token counts must match at index %d", i)
+			assert.Equal(t, reqs1[i].InputTokens, reqs2[i].InputTokens,
+				"INV-6: input tokens must match at index %d", i)
+			assert.Equal(t, reqs1[i].OutputTokens, reqs2[i].OutputTokens,
+				"INV-6: output tokens must match at index %d", i)
 		}
 	})
 }
