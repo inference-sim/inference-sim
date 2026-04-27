@@ -54,7 +54,7 @@ Used for `input_distribution` and `output_distribution`:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `type` | string | `gaussian`, `exponential`, `pareto_lognormal`, `constant`, `empirical` |
+| `type` | string | `gaussian`, `exponential`, `pareto_lognormal`, `lognormal`, `constant`, `empirical` |
 | `params` | map | Type-specific parameters (see below) |
 | `file` | string | Reserved for future use (file-based loading not yet implemented). Use inline `params` instead. |
 
@@ -65,6 +65,7 @@ Used for `input_distribution` and `output_distribution`:
 | `gaussian` | `mean`, `std_dev`, `min`, `max` |
 | `exponential` | `mean` |
 | `pareto_lognormal` | `alpha`, `xm`, `mu`, `sigma`, `mix_weight` |
+| `lognormal` | `mu`, `sigma` (mean and standard deviation of log-transformed values; fitted via method of moments) |
 | `constant` | `value` |
 | `empirical` | inline `params` map (key=token count, value=probability) |
 
@@ -142,10 +143,16 @@ Activity window configuration for clients (used in the `lifecycle` field of Clie
 |-------|------|-------------|
 | `start_us` | int64 | Window start time in microseconds |
 | `end_us` | int64 | Window end time in microseconds |
+| `trace_rate` | float64 | Per-window rate override. In absolute rate mode (`aggregate_rate: 0`), this is the absolute arrival rate (req/s). In proportional mode, this is a weight for rate allocation. |
+| `arrival` | ArrivalSpec | Per-window arrival process override (overrides client-level `arrival`) |
+| `input_distribution` | DistSpec | Per-window input token distribution override (overrides client-level `input_distribution`) |
+| `output_distribution` | DistSpec | Per-window output token distribution override (overrides client-level `output_distribution`) |
 
 ### Lifecycle Normalization
 
-When clients have lifecycle windows, `rate_fraction` values are normalized **per-phase** rather than globally. For each client, the simulator sums the `rate_fraction` of all **co-active** clients (those whose lifecycle windows overlap) and divides by that sum. This ensures `aggregate_rate` is achieved during every active phase.
+**Proportional mode (aggregate_rate > 0):** When clients have lifecycle windows, `rate_fraction` values are normalized **per-phase** rather than globally. For each client, the simulator sums the `rate_fraction` of all **co-active** clients (those whose lifecycle windows overlap) and divides by that sum. This ensures `aggregate_rate` is achieved during every active phase.
+
+**Absolute rate mode (aggregate_rate = 0):** Each window's `trace_rate` is used directly as the arrival rate (requests/second) for that window, without scaling or normalization. This mode preserves time-varying aggregate load patterns from traces (e.g., ServeGen workloads) where the aggregate rate varies over time. Validation requires all rate-based clients to have explicit `trace_rate` on every window.
 
 Clients without lifecycle windows are "always-on" and are counted as co-active with every phase.
 
@@ -181,6 +188,7 @@ Native ServeGen data file loading (used in the `servegen_data` top-level field):
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `path` | string | **Yes** | Path to ServeGen data directory (containing `chunk-*-trace.csv` and `dataset.json`) |
+| `time_window` | string | No | Temporal snapshot extraction: `midnight` (0:00-0:30), `morning` (8:00-8:30), or `afternoon` (14:00-14:30). Filters chunks to the specified 30-minute window. |
 | `span_start` | int64 | No | Trace span start filter (microseconds) |
 | `span_end` | int64 | No | Trace span end filter (microseconds) |
 

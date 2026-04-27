@@ -1049,6 +1049,148 @@ func TestValidateCohort_ShapeScaleValidation(t *testing.T) {
 	}
 }
 
+func TestActiveWindow_PerWindowParameters(t *testing.T) {
+	yamlData := `
+version: "2"
+aggregate_rate: 100
+clients:
+  - id: "test-client"
+    rate_fraction: 1.0
+    arrival:
+      process: "poisson"
+    input_distribution:
+      type: "constant"
+      params: {value: 100}
+    output_distribution:
+      type: "constant"
+      params: {value: 50}
+    lifecycle:
+      windows:
+        - start_us: 0
+          end_us: 10000000
+          trace_rate: 15.2
+          arrival:
+            process: "gamma"
+            shape: 1.5
+            scale: 50000
+          input_distribution:
+            type: "constant"
+            params: {value: 200}
+          output_distribution:
+            type: "constant"
+            params: {value: 75}
+`
+	var spec WorkloadSpec
+	err := yaml.Unmarshal([]byte(yamlData), &spec)
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+
+	if len(spec.Clients) != 1 {
+		t.Fatalf("clients count = %d, want 1", len(spec.Clients))
+	}
+	if spec.Clients[0].Lifecycle == nil {
+		t.Fatal("lifecycle is nil")
+	}
+	if len(spec.Clients[0].Lifecycle.Windows) != 1 {
+		t.Fatalf("windows count = %d, want 1", len(spec.Clients[0].Lifecycle.Windows))
+	}
+
+	window := spec.Clients[0].Lifecycle.Windows[0]
+	if window.StartUs != 0 {
+		t.Errorf("StartUs = %d, want 0", window.StartUs)
+	}
+	if window.EndUs != 10000000 {
+		t.Errorf("EndUs = %d, want 10000000", window.EndUs)
+	}
+
+	// TraceRate
+	if window.TraceRate == nil {
+		t.Fatal("TraceRate is nil, want 15.2")
+	}
+	if *window.TraceRate != 15.2 {
+		t.Errorf("TraceRate = %f, want 15.2", *window.TraceRate)
+	}
+
+	// Arrival
+	if window.Arrival == nil {
+		t.Fatal("Arrival is nil")
+	}
+	if window.Arrival.Process != "gamma" {
+		t.Errorf("Arrival.Process = %q, want %q", window.Arrival.Process, "gamma")
+	}
+	if window.Arrival.Shape == nil {
+		t.Fatal("Arrival.Shape is nil")
+	}
+	if *window.Arrival.Shape != 1.5 {
+		t.Errorf("Arrival.Shape = %f, want 1.5", *window.Arrival.Shape)
+	}
+
+	// InputDist
+	if window.InputDist == nil {
+		t.Fatal("InputDist is nil")
+	}
+	if window.InputDist.Type != "constant" {
+		t.Errorf("InputDist.Type = %q, want %q", window.InputDist.Type, "constant")
+	}
+	if window.InputDist.Params["value"] != 200.0 {
+		t.Errorf("InputDist.Params[value] = %f, want 200.0", window.InputDist.Params["value"])
+	}
+
+	// OutputDist
+	if window.OutputDist == nil {
+		t.Fatal("OutputDist is nil")
+	}
+	if window.OutputDist.Type != "constant" {
+		t.Errorf("OutputDist.Type = %q, want %q", window.OutputDist.Type, "constant")
+	}
+	if window.OutputDist.Params["value"] != 75.0 {
+		t.Errorf("OutputDist.Params[value] = %f, want 75.0", window.OutputDist.Params["value"])
+	}
+}
+
+func TestActiveWindow_PerWindowParameters_OmittedFieldsAreNil(t *testing.T) {
+	// When per-window parameters are omitted, they should be nil (use client-level).
+	yamlData := `
+version: "2"
+aggregate_rate: 100
+clients:
+  - id: "test-client"
+    rate_fraction: 1.0
+    arrival:
+      process: "poisson"
+    input_distribution:
+      type: "constant"
+      params: {value: 100}
+    output_distribution:
+      type: "constant"
+      params: {value: 50}
+    lifecycle:
+      windows:
+        - start_us: 0
+          end_us: 5000000
+`
+	var spec WorkloadSpec
+	err := yaml.Unmarshal([]byte(yamlData), &spec)
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+
+	window := spec.Clients[0].Lifecycle.Windows[0]
+	if window.TraceRate != nil {
+		t.Errorf("TraceRate = %v, want nil for omitted field", window.TraceRate)
+	}
+	if window.Arrival != nil {
+		t.Errorf("Arrival = %v, want nil for omitted field", window.Arrival)
+	}
+	if window.InputDist != nil {
+		t.Errorf("InputDist = %v, want nil for omitted field", window.InputDist)
+	}
+	if window.OutputDist != nil {
+		t.Errorf("OutputDist = %v, want nil for omitted field", window.OutputDist)
+	}
+}
+
 func TestExampleWorkloadFiles_AllValid(t *testing.T) {
 	// Validate all example workload specs load and pass validation.
 	// Only files that parse as WorkloadSpec are tested — examples/

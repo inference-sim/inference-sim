@@ -19,13 +19,16 @@ var convertCmd = &cobra.Command{
 
 // --- blis convert servegen ---
 
-var serveGenPath string
+var (
+	serveGenPath       string
+	serveGenTimeWindow string
+)
 
 var convertServeGenCmd = &cobra.Command{
 	Use:   "servegen",
 	Short: "Convert ServeGen data directory to v2 spec",
 	Run: func(cmd *cobra.Command, args []string) {
-		spec, err := workload.ConvertServeGen(serveGenPath)
+		spec, err := workload.ConvertServeGen(serveGenPath, serveGenTimeWindow)
 		if err != nil {
 			logrus.Fatalf("ServeGen conversion failed: %v", err)
 		}
@@ -116,6 +119,7 @@ func loadPresetWorkload(defaultsPath, name string) *Workload {
 
 func init() {
 	convertServeGenCmd.Flags().StringVar(&serveGenPath, "path", "", "Path to ServeGen data directory")
+	convertServeGenCmd.Flags().StringVar(&serveGenTimeWindow, "time", "", "Time window: midnight (0:00-0:30), morning (8:00-8:30), or afternoon (14:00-14:30)")
 	_ = convertServeGenCmd.MarkFlagRequired("path")
 
 	convertPresetCmd.Flags().StringVar(&presetName, "name", "", "Preset name (e.g., chatbot, summarization)")

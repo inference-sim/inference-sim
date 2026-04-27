@@ -130,14 +130,14 @@ func TestWindowsOverlap(t *testing.T) {
 		want bool
 	}{
 		{"both nil", nil, nil, true},
-		{"a nil b has windows", nil, &LifecycleSpec{Windows: []ActiveWindow{{0, 100}}}, true},
-		{"a has windows b nil", &LifecycleSpec{Windows: []ActiveWindow{{0, 100}}}, nil, true},
-		{"a empty windows", &LifecycleSpec{}, &LifecycleSpec{Windows: []ActiveWindow{{0, 100}}}, true},
-		{"overlapping", &LifecycleSpec{Windows: []ActiveWindow{{0, 100}}}, &LifecycleSpec{Windows: []ActiveWindow{{50, 150}}}, true},
-		{"adjacent no overlap", &LifecycleSpec{Windows: []ActiveWindow{{0, 100}}}, &LifecycleSpec{Windows: []ActiveWindow{{100, 200}}}, false},
-		{"disjoint", &LifecycleSpec{Windows: []ActiveWindow{{0, 50}}}, &LifecycleSpec{Windows: []ActiveWindow{{100, 200}}}, false},
-		{"multi-window one overlaps", &LifecycleSpec{Windows: []ActiveWindow{{0, 50}, {200, 300}}}, &LifecycleSpec{Windows: []ActiveWindow{{250, 350}}}, true},
-		{"multi-window none overlap", &LifecycleSpec{Windows: []ActiveWindow{{0, 50}, {200, 250}}}, &LifecycleSpec{Windows: []ActiveWindow{{100, 150}}}, false},
+		{"a nil b has windows", nil, &LifecycleSpec{Windows: []ActiveWindow{{StartUs: 0, EndUs: 100}}}, true},
+		{"a has windows b nil", &LifecycleSpec{Windows: []ActiveWindow{{StartUs: 0, EndUs: 100}}}, nil, true},
+		{"a empty windows", &LifecycleSpec{}, &LifecycleSpec{Windows: []ActiveWindow{{StartUs: 0, EndUs: 100}}}, true},
+		{"overlapping", &LifecycleSpec{Windows: []ActiveWindow{{StartUs: 0, EndUs: 100}}}, &LifecycleSpec{Windows: []ActiveWindow{{StartUs: 50, EndUs: 150}}}, true},
+		{"adjacent no overlap", &LifecycleSpec{Windows: []ActiveWindow{{StartUs: 0, EndUs: 100}}}, &LifecycleSpec{Windows: []ActiveWindow{{StartUs: 100, EndUs: 200}}}, false},
+		{"disjoint", &LifecycleSpec{Windows: []ActiveWindow{{StartUs: 0, EndUs: 50}}}, &LifecycleSpec{Windows: []ActiveWindow{{StartUs: 100, EndUs: 200}}}, false},
+		{"multi-window one overlaps", &LifecycleSpec{Windows: []ActiveWindow{{StartUs: 0, EndUs: 50}, {StartUs: 200, EndUs: 300}}}, &LifecycleSpec{Windows: []ActiveWindow{{StartUs: 250, EndUs: 350}}}, true},
+		{"multi-window none overlap", &LifecycleSpec{Windows: []ActiveWindow{{StartUs: 0, EndUs: 50}, {StartUs: 200, EndUs: 250}}}, &LifecycleSpec{Windows: []ActiveWindow{{StartUs: 100, EndUs: 150}}}, false},
 	}
 
 	for _, tt := range tests {

@@ -173,6 +173,13 @@ type LifecycleSpec struct {
 type ActiveWindow struct {
 	StartUs int64 `yaml:"start_us"`
 	EndUs   int64 `yaml:"end_us"`
+
+	// Per-window parameters for time-varying workloads (ServeGen compatibility).
+	// When set, these override the client-level parameters during this window.
+	TraceRate  *float64     `yaml:"trace_rate,omitempty"`          // Weight for proportional rate allocation
+	Arrival    *ArrivalSpec `yaml:"arrival,omitempty"`             // Arrival pattern (shape/scale for CV)
+	InputDist  *DistSpec    `yaml:"input_distribution,omitempty"`  // Input token distribution
+	OutputDist *DistSpec    `yaml:"output_distribution,omitempty"` // Output token distribution
 }
 
 // MultimodalSpec configures multimodal request generation.
@@ -202,9 +209,10 @@ type MultiTurnSpec struct {
 
 // ServeGenDataSpec configures native ServeGen data file loading.
 type ServeGenDataSpec struct {
-	Path      string `yaml:"path"`
-	SpanStart int64  `yaml:"span_start,omitempty"`
-	SpanEnd   int64  `yaml:"span_end,omitempty"`
+	Path       string `yaml:"path"`
+	SpanStart  int64  `yaml:"span_start,omitempty"`
+	SpanEnd    int64  `yaml:"span_end,omitempty"`
+	TimeWindow string `yaml:"time_window,omitempty"` // "midnight", "morning", or "afternoon"
 }
 
 // Valid value registries.
@@ -213,7 +221,7 @@ var (
 		"poisson": true, "gamma": true, "weibull": true, "constant": true,
 	}
 	validDistTypes = map[string]bool{
-		"gaussian": true, "exponential": true, "pareto_lognormal": true, "empirical": true, "constant": true,
+		"gaussian": true, "exponential": true, "pareto_lognormal": true, "lognormal": true, "empirical": true, "constant": true,
 	}
 	validCategories = map[string]bool{
 		"": true, "language": true, "multimodal": true, "reasoning": true,
@@ -259,8 +267,32 @@ func (s *WorkloadSpec) Validate() error {
 		hasRateBasedClient = true
 	}
 	if hasRateBasedClient {
-		if err := validateFinitePositive("aggregate_rate", s.AggregateRate); err != nil {
-			return err
+		// aggregate_rate can be 0 in absolute rate mode. In this mode, each window
+		// must have an explicit trace_rate that is used directly instead of being
+		// scaled by aggregate_rate. Useful for time-varying workloads.
+		if s.AggregateRate == 0 {
+			// Verify all rate-based clients have windows with trace_rate
+			for i, c := range s.Clients {
+				if c.Concurrency == 0 { // rate-based
+					if c.Lifecycle == nil || len(c.Lifecycle.Windows) == 0 {
+						return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but client %d has no lifecycle windows with trace_rate", i)
+					}
+					for j, w := range c.Lifecycle.Windows {
+						if w.TraceRate == nil {
+							return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but client %d window %d has no trace_rate", i, j)
+						}
+					}
+				}
+			}
+			// Cohorts not supported in absolute rate mode
+			if len(s.Cohorts) > 0 {
+				return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but cohorts are present (cohorts require proportional allocation)")
+			}
+		} else {
+			// Normal proportional mode: aggregate_rate must be positive
+			if err := validateFinitePositive("aggregate_rate", s.AggregateRate); err != nil {
+				return err
+			}
 		}
 	}
 	if len(s.Clients) == 0 && s.ServeGenData == nil && len(s.Cohorts) == 0 {
@@ -396,7 +428,7 @@ func validateClient(c *ClientSpec, idx int) error {
 
 func validateDistSpec(prefix string, d *DistSpec) error {
 	if !validDistTypes[d.Type] {
-		return fmt.Errorf("%s: unknown distribution type %q; valid: gaussian, exponential, pareto_lognormal, empirical, constant", prefix, d.Type)
+		return fmt.Errorf("%s: unknown distribution type %q; valid: gaussian, exponential, pareto_lognormal, empirical, constant, lognormal", prefix, d.Type)
 	}
 	for name, val := range d.Params {
 		if math.IsNaN(val) || math.IsInf(val, 0) {
