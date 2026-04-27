@@ -35,9 +35,11 @@ ReplicaMetrics
 ├── KVUtilization float64    // [0.0, 1.0] — from RoutingSnapshot.KVUtilization
 ├── QueueDepth    int        // from RoutingSnapshot.QueueDepth
 ├── InFlightCount int        // from RoutingSnapshot.InFlightRequests
-├── CostPerHour   float64    // from RoutingSnapshot.CostPerHour (NodePool cost)
-├── TTFT          float64    // μs — zero in DefaultCollector (future: QueueingModelAnalyzer)
-└── DispatchRate  float64    // req/s — zero in DefaultCollector (future: QueueingModelAnalyzer)
+├── CostPerHour            float64    // from RoutingSnapshot.CostPerHour (NodePool cost)
+├── TotalKvCapacityTokens  int64      // total KV cache capacity in tokens; used by V2SaturationAnalyzer for k1
+├── KvTokensInUse          int64      // current KV token occupancy; used by V2SaturationAnalyzer for demand
+├── TTFT                   float64    // μs — zero in DefaultCollector (future: QueueingModelAnalyzer)
+└── DispatchRate           float64    // req/s — zero in DefaultCollector (future: QueueingModelAnalyzer)
 ```
 
 **Note on CostPerHour**: This field extends the issue spec's 7-field ReplicaMetrics. See research.md Decision 3.  

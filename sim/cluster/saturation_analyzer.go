@@ -15,7 +15,7 @@ import (
 // V2SaturationAnalyzerConfig configures the V2 token-based saturation analyzer.
 type V2SaturationAnalyzerConfig struct {
 	KvCacheThreshold  float64 // Fraction of KV capacity considered usable (0,1]; k1 = totalKvCapTokens * this
-	ScaleUpThreshold  float64 // Utilization fraction triggering scale-up; RequiredCapacity = max(0, totalDemand/this - totalSupply)
+	ScaleUpThreshold  float64 // Utilization fraction triggering scale-up; RequiredCapacity = max(0, totalDemand/this - (totalReadySupply + pendingSupply)) where pendingSupply = PendingTotalKvCapacityTokens * KvCacheThreshold
 	ScaleDownBoundary float64 // Utilization fraction below which scale-down is safe; SpareCapacity = max(0, totalSupply - totalDemand/this)
 	AvgInputTokens    float64 // Average input tokens per request; used to convert queue depth to token demand
 }
