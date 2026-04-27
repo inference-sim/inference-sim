@@ -2,7 +2,7 @@
 
 Reference file for the convergence-review skill. Contains exact prompts for the 27 PR review perspectives across plan review, code review, and docs review gates.
 
-**Canonical source:** `docs/contributing/pr-workflow.md` (v4.0). After the human-first rewrite, pr-workflow.md contains the same checklist content in human-readable format; this file preserves the agent dispatch format. Content is aligned; format differs intentionally. If checklist *content* diverges, pr-workflow.md is authoritative.
+**Canonical source:** `docs/contributing/pr-workflow.md` (v4.2). After the human-first rewrite, pr-workflow.md contains the same checklist content in human-readable format; this file preserves the agent dispatch format. Content is aligned; format differs intentionally. If checklist *content* diverges, pr-workflow.md is authoritative. **Section C (pr-docs perspectives) has no counterpart in pr-workflow.md** — this file is the sole source for Section C prompt text.
 
 **Dispatch pattern:** All perspectives are passed to a single foreground agent in one call. The artifact is sent once; each perspective appears as a `## [<ID>] <Name>` section. See SKILL.md Phase A Step 3 for the full assembly specification. Model selection is controlled by the `--model` flag in the convergence-review skill (default: `haiku`).
 
