@@ -60,7 +60,7 @@ func (c *DefaultCollector) Collect(state *sim.RouterState) []ModelSignals {
 			logrus.Debugf("[collector] skipping loading snapshot %q: empty GPUType field", snap.ID)
 			continue
 		}
-		if snap.TotalKvCapacityTokens == 0 {
+		if snap.TotalKvCapacityTokens <= 0 {
 			logrus.Debugf("[collector] loading snapshot %q model %q has zero TotalKvCapacityTokens — contributes to PendingReplicaCount but not PendingTotalKvCapacityTokens",
 				snap.ID, snap.Model)
 		}
