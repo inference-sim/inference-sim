@@ -90,6 +90,10 @@ type ClusterSimulator struct {
 	flowControlEnabled bool
 	saturationDetector sim.SaturationDetector
 	gatewayQueue       *GatewayQueue
+
+	progressHook       sim.ProgressHook
+	progressIntervalUs int64
+	nextSnapshotTime   int64
 }
 
 // effectiveAnalyzerConfig applies WVA reference defaults to zero-valued fields.
@@ -652,7 +656,10 @@ func (c *ClusterSimulator) Run() error {
 			}
 		}
 
+		c.maybeDeliverProgressSnapshot(false)
 	}
+
+	c.maybeDeliverProgressSnapshot(true)
 
 	// 4. Finalize all instances (populates StillQueued/StillRunning)
 	for _, inst := range c.instances {
@@ -757,6 +764,136 @@ func (c *ClusterSimulator) nextSeqID() int64 {
 	id := c.seqCounter
 	c.seqCounter++
 	return id
+}
+
+// SetProgressHook registers an optional hook that receives periodic state
+// snapshots during cluster simulation execution. Must be called before Run().
+// When hook is nil (default), there is zero behavioral or performance impact.
+// intervalUs controls the minimum clock interval between periodic snapshots.
+// If intervalUs <= 0, only the final snapshot is delivered.
+func (c *ClusterSimulator) SetProgressHook(hook sim.ProgressHook, intervalUs int64) {
+	c.progressHook = hook
+	if intervalUs > 0 {
+		c.progressIntervalUs = intervalUs
+		c.nextSnapshotTime = intervalUs
+	}
+}
+
+func (c *ClusterSimulator) maybeDeliverProgressSnapshot(isFinal bool) {
+	if c.progressHook == nil {
+		return
+	}
+	if !isFinal && (c.progressIntervalUs <= 0 || c.clock < c.nextSnapshotTime) {
+		return
+	}
+
+	activeCount := 0
+	instanceSnaps := make([]sim.InstanceSnapshot, 0, len(c.instances))
+	for _, inst := range c.instances {
+		if inst.State == InstanceStateTerminated {
+			continue
+		}
+		if inst.State == InstanceStateActive || inst.State == InstanceStateWarmingUp {
+			activeCount++
+		}
+		instanceSnaps = append(instanceSnaps, sim.InstanceSnapshot{
+			ID:                string(inst.ID()),
+			QueueDepth:        inst.QueueDepth(),
+			BatchSize:         inst.BatchSize(),
+			KVUtilization:     inst.KVUtilization(),
+			KVFreeBlocks:      inst.FreeKVBlocks(),
+			KVTotalBlocks:     inst.TotalKVBlocks(),
+			CacheHitRate:      inst.CacheHitRate(),
+			PreemptionCount:   inst.PreemptionCount(),
+			CompletedRequests: inst.Metrics().CompletedRequests,
+			InFlightRequests:  c.inFlightRequests[string(inst.ID())],
+			TimedOutRequests:  inst.Metrics().TimedOutRequests,
+			State:             string(inst.State),
+			Model:             inst.Model,
+		})
+	}
+
+	var gatewayQueueDepth, gatewayQueueShed int
+	if c.gatewayQueue != nil {
+		gatewayQueueDepth = c.gatewayQueue.Len()
+		gatewayQueueShed = c.gatewayQueue.ShedCount()
+	}
+
+	clock := c.clock
+	if isFinal {
+		clock = min(c.clock, c.config.Horizon)
+	}
+
+	snap := sim.ProgressSnapshot{
+		Clock:             clock,
+		TotalCompleted:    c.completedRequestsTotal(),
+		TotalTimedOut:     c.timedOutRequestsTotal(),
+		TotalDropped:      c.droppedRequestsTotal(),
+		TotalInputTokens:  c.inputTokensTotal(),
+		TotalOutputTokens: c.outputTokensTotal(),
+		TotalPreemptions:  c.preemptionsTotal(),
+		InstanceSnapshots: instanceSnaps,
+		RejectedRequests:  c.rejectedRequests,
+		RoutingRejections: c.routingRejections,
+		GatewayQueueDepth: gatewayQueueDepth,
+		GatewayQueueShed:  gatewayQueueShed,
+		ActivePDTransfers: c.activeTransfers,
+		ActiveInstances:   activeCount,
+		TotalInstances:    len(c.instances),
+		IsFinal:           isFinal,
+	}
+	c.progressHook.OnProgress(snap)
+	if !isFinal {
+		c.nextSnapshotTime += c.progressIntervalUs
+	}
+}
+
+func (c *ClusterSimulator) completedRequestsTotal() int {
+	total := 0
+	for _, inst := range c.instances {
+		total += inst.Metrics().CompletedRequests
+	}
+	return total
+}
+
+func (c *ClusterSimulator) timedOutRequestsTotal() int {
+	total := 0
+	for _, inst := range c.instances {
+		total += inst.Metrics().TimedOutRequests
+	}
+	return total
+}
+
+func (c *ClusterSimulator) droppedRequestsTotal() int {
+	total := 0
+	for _, inst := range c.instances {
+		total += inst.Metrics().DroppedUnservable
+	}
+	return total
+}
+
+func (c *ClusterSimulator) inputTokensTotal() int {
+	total := 0
+	for _, inst := range c.instances {
+		total += inst.Metrics().TotalInputTokens
+	}
+	return total
+}
+
+func (c *ClusterSimulator) outputTokensTotal() int {
+	total := 0
+	for _, inst := range c.instances {
+		total += inst.Metrics().TotalOutputTokens
+	}
+	return total
+}
+
+func (c *ClusterSimulator) preemptionsTotal() int64 {
+	var total int64
+	for _, inst := range c.instances {
+		total += inst.Metrics().PreemptionCount
+	}
+	return total
 }
 
 // addLiveInstance constructs, registers, and activates an InstanceSimulator for a

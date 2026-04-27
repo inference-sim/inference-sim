@@ -111,6 +111,10 @@ type Simulator struct {
 	// state (completed, length-capped, or timed out). Returns follow-up requests to inject.
 	// Set by the caller (cmd/root.go or ClusterSimulator). Nil = no callback.
 	OnRequestDone func(req *Request, tick int64) []*Request
+
+	progressHook       ProgressHook
+	progressIntervalUs int64
+	nextSnapshotTime   int64
 }
 
 // NewSimulator creates a Simulator from a SimConfig struct and pre-built dependencies.
@@ -271,8 +275,69 @@ func (sim *Simulator) Run() {
 		if sim.Clock > sim.Horizon {
 			break
 		}
+		sim.maybeDeliverProgressSnapshot(false)
 	}
+	sim.maybeDeliverProgressSnapshot(true)
 	sim.Finalize()
+}
+
+// SetProgressHook registers an optional hook that receives periodic state
+// snapshots during simulation execution. Must be called before Run().
+// When hook is nil (default), there is zero behavioral or performance impact.
+// intervalUs controls the minimum clock interval between periodic snapshots.
+// If intervalUs <= 0, only the final snapshot is delivered.
+func (sim *Simulator) SetProgressHook(hook ProgressHook, intervalUs int64) {
+	sim.progressHook = hook
+	if intervalUs > 0 {
+		sim.progressIntervalUs = intervalUs
+		sim.nextSnapshotTime = intervalUs
+	}
+}
+
+func (sim *Simulator) maybeDeliverProgressSnapshot(isFinal bool) {
+	if sim.progressHook == nil {
+		return
+	}
+	if !isFinal && (sim.progressIntervalUs <= 0 || sim.Clock < sim.nextSnapshotTime) {
+		return
+	}
+	clock := sim.Clock
+	if isFinal {
+		clock = min(sim.Clock, sim.Horizon)
+	}
+	snap := ProgressSnapshot{
+		Clock:             clock,
+		TotalCompleted:    sim.Metrics.CompletedRequests,
+		TotalTimedOut:     sim.Metrics.TimedOutRequests,
+		TotalDropped:      sim.Metrics.DroppedUnservable,
+		TotalInputTokens:  sim.Metrics.TotalInputTokens,
+		TotalOutputTokens: sim.Metrics.TotalOutputTokens,
+		TotalPreemptions:  sim.Metrics.PreemptionCount,
+		InstanceSnapshots: []InstanceSnapshot{sim.buildInstanceSnapshot()},
+		TotalInstances:    1,
+		ActiveInstances:   1,
+		IsFinal:           isFinal,
+	}
+	sim.progressHook.OnProgress(snap)
+	if !isFinal {
+		sim.nextSnapshotTime += sim.progressIntervalUs
+	}
+}
+
+func (sim *Simulator) buildInstanceSnapshot() InstanceSnapshot {
+	return InstanceSnapshot{
+		ID:                "instance-0",
+		Model:             sim.model,
+		QueueDepth:        sim.QueueDepth(),
+		BatchSize:         sim.BatchSize(),
+		KVUtilization:     float64(sim.KVCache.UsedBlocks()) / float64(max(sim.KVCache.TotalCapacity(), 1)),
+		KVFreeBlocks:      sim.KVCache.TotalCapacity() - sim.KVCache.UsedBlocks(),
+		KVTotalBlocks:     sim.KVCache.TotalCapacity(),
+		CacheHitRate:      sim.KVCache.CacheHitRate(),
+		PreemptionCount:   sim.Metrics.PreemptionCount,
+		CompletedRequests: sim.Metrics.CompletedRequests,
+		TimedOutRequests:  sim.Metrics.TimedOutRequests,
+	}
 }
 
 // QueueDepth returns the number of requests in the wait queue.
