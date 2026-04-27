@@ -53,11 +53,15 @@ Named `ModelSignals` (not `ModelMetrics`) to avoid collision with the existing `
 
 ```
 ModelSignals
-├── ModelID  string
-└── Replicas []ReplicaMetrics   // may be empty (zero-replica model)
+├── ModelID                       string
+├── Replicas                      []ReplicaMetrics   // may be empty (zero-replica model)
+├── PendingReplicaCount           int                // Loading instances not yet routable
+└── PendingTotalKvCapacityTokens  int64              // sum of TotalKvCapacityTokens for all Loading instances of this model
 ```
 
 **Zero-replica invariant**: When `len(Replicas) == 0`, `Analyzer.Analyze()` must return all-zero `AnalyzerResult` without error.
+
+**Pending supply**: `PendingReplicaCount` and `PendingTotalKvCapacityTokens` are populated from Loading instances by `DefaultCollector`. `V2SaturationAnalyzer` uses `PendingTotalKvCapacityTokens` only in the scale-up formula (`requiredCapacity`); `TotalSupply`, `Utilization`, and `SpareCapacity` are based on ready replicas only.
 
 ---
 
