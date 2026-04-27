@@ -338,6 +338,139 @@ func TestV2SaturationAnalyzerN1MixedVariants(t *testing.T) {
 	}
 }
 
+// TestV2SaturationAnalyzer_PendingSupply_SuppressesScaleUp verifies the core fix for #1109:
+// when a Loading instance's capacity covers the demand gap, no further scale-up is emitted.
+func TestV2SaturationAnalyzer_PendingSupply_SuppressesScaleUp(t *testing.T) {
+	// Configuration: ScaleUpThreshold=0.8 means scale-up fires when demand > 0.8 * supply.
+	// Active replica: capacity=10000, current demand=9000 → demand/threshold=11250 > 10000 → scale-up.
+	// After fix: 1 Loading replica adds 10000 pending capacity.
+	// totalSupplyForScaleUp = 10000 + 10000 = 20000 → demand/threshold=11250 < 20000 → no scale-up.
+	cfg := V2SaturationAnalyzerConfig{
+		KvCacheThreshold:  1.0,
+		ScaleUpThreshold:  0.8,
+		ScaleDownBoundary: 0.3,
+		AvgInputTokens:    100,
+	}
+	a := NewV2SaturationAnalyzer(cfg)
+
+	metrics := ModelSignals{
+		ModelID: "test-model",
+		Replicas: []ReplicaMetrics{
+			{
+				InstanceID:            "active-1",
+				Variant:               NewVariantSpec("A100", 1),
+				KvTokensInUse:         9000,
+				QueueDepth:            0,
+				TotalKvCapacityTokens: 10000,
+				CostPerHour:           10.0,
+			},
+		},
+		PendingReplicaCount:          1,
+		PendingTotalKvCapacityTokens: 10000,
+	}
+
+	result := a.Analyze(metrics)
+
+	if result.RequiredCapacity != 0 {
+		t.Errorf("RequiredCapacity = %g, want 0 (loading replica covers demand gap)", result.RequiredCapacity)
+	}
+}
+
+// TestV2SaturationAnalyzer_PendingSupply_StillScalesUpForDelta verifies that when
+// demand has grown beyond what the Loading instance covers, scale-up still fires for the delta.
+func TestV2SaturationAnalyzer_PendingSupply_StillScalesUpForDelta(t *testing.T) {
+	// Active: capacity=10000, demand=18000 → demand/threshold(0.8)=22500.
+	// 1 Loading replica: pending capacity=10000.
+	// totalSupplyForScaleUp = 10000 + 10000 = 20000 → requiredCapacity = 22500-20000 = 2500 > 0.
+	cfg := V2SaturationAnalyzerConfig{
+		KvCacheThreshold:  1.0,
+		ScaleUpThreshold:  0.8,
+		ScaleDownBoundary: 0.3,
+		AvgInputTokens:    100,
+	}
+	a := NewV2SaturationAnalyzer(cfg)
+
+	metrics := ModelSignals{
+		ModelID: "test-model",
+		Replicas: []ReplicaMetrics{
+			{
+				InstanceID:            "active-1",
+				Variant:               NewVariantSpec("A100", 1),
+				KvTokensInUse:         18000,
+				QueueDepth:            0,
+				TotalKvCapacityTokens: 10000,
+				CostPerHour:           10.0,
+			},
+		},
+		PendingReplicaCount:          1,
+		PendingTotalKvCapacityTokens: 10000,
+	}
+
+	result := a.Analyze(metrics)
+
+	if result.RequiredCapacity <= 0 {
+		t.Errorf("RequiredCapacity = %g, want > 0 (demand exceeds ready+pending supply)", result.RequiredCapacity)
+	}
+	// The ready-only supply (10000) minus demand does NOT change — TotalSupply is ready replicas only.
+	// The pending supply only affects the scale-up formula, not TotalSupply in the result.
+	if result.TotalSupply != 10000 {
+		t.Errorf("TotalSupply = %g, want 10000 (ready supply only; pending does not inflate TotalSupply)", result.TotalSupply)
+	}
+}
+
+// TestV2SaturationAnalyzer_PendingSupply_DoesNotAffectScaleDown verifies that pending
+// supply does NOT inflate TotalSupply used for SpareCapacity (no premature scale-down).
+func TestV2SaturationAnalyzer_PendingSupply_DoesNotAffectScaleDown(t *testing.T) {
+	// 2 Active replicas with low utilization → spare capacity signal.
+	// 1 Loading replica: pending capacity=10000.
+	// TotalSupply must be the ready-only value (20000), not 30000.
+	cfg := V2SaturationAnalyzerConfig{
+		KvCacheThreshold:  1.0,
+		ScaleUpThreshold:  0.8,
+		ScaleDownBoundary: 0.3,
+		AvgInputTokens:    100,
+	}
+	a := NewV2SaturationAnalyzer(cfg)
+
+	metrics := ModelSignals{
+		ModelID: "test-model",
+		Replicas: []ReplicaMetrics{
+			{
+				InstanceID:            "active-1",
+				Variant:               NewVariantSpec("A100", 1),
+				KvTokensInUse:         1000,
+				QueueDepth:            0,
+				TotalKvCapacityTokens: 10000,
+				CostPerHour:           10.0,
+			},
+			{
+				InstanceID:            "active-2",
+				Variant:               NewVariantSpec("A100", 1),
+				KvTokensInUse:         1000,
+				QueueDepth:            0,
+				TotalKvCapacityTokens: 10000,
+				CostPerHour:           10.0,
+			},
+		},
+		PendingReplicaCount:          1,
+		PendingTotalKvCapacityTokens: 10000,
+	}
+
+	result := a.Analyze(metrics)
+
+	// TotalSupply must be ready-only (20000). Pending (10000) must not be included.
+	if result.TotalSupply != 20000 {
+		t.Errorf("TotalSupply = %g, want 20000 (ready-only; pending must not inflate)", result.TotalSupply)
+	}
+	// SpareCapacity must be based on ready-only supply (no premature scale-down risk from pending).
+	// demand=2000, ScaleDownBoundary=0.3, supply=20000:
+	// spareCapacity = 20000 - (2000/0.3) = 20000 - 6667 = 13333 > 0
+	// N-1 check: supplyAfterRemoval=10000 > 2000/0.3=6667 → SpareCapacity is set.
+	if result.SpareCapacity <= 0 {
+		t.Errorf("SpareCapacity = %g, want > 0 (low utilization with 2 ready replicas)", result.SpareCapacity)
+	}
+}
+
 // TestV2SaturationAnalyzerConfigValidation verifies constructor rejects invalid configs.
 func TestV2SaturationAnalyzerConfigValidation(t *testing.T) {
 	tests := []struct {
