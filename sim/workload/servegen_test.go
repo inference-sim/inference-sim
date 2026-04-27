@@ -741,6 +741,99 @@ func TestNormalizeLifecycleTimestamps_Scenarios(t *testing.T) {
 			},
 			checkFn: nil, // structural check via want comparison is sufficient
 		},
+		{
+			name: "idempotency: normalizing twice equals normalizing once",
+			clients: []ClientSpec{
+				{
+					ID: "client1",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 28800000000, EndUs: 29400000000}, // 8:00-8:10 AM
+							{StartUs: 29400000000, EndUs: 30000000000}, // 8:10-8:20 AM
+						},
+					},
+				},
+				{
+					ID: "client2",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 30000000000, EndUs: 30600000000}, // 8:20-8:30 AM
+						},
+					},
+				},
+			},
+			want: []ClientSpec{
+				{
+					ID: "client1",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 0, EndUs: 600000000},
+							{StartUs: 600000000, EndUs: 1200000000},
+						},
+					},
+				},
+				{
+					ID: "client2",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 1200000000, EndUs: 1800000000},
+						},
+					},
+				},
+			},
+			checkFn: func(t *testing.T, _, normalized []ClientSpec) {
+				// Snapshot the state after the first normalization
+				snapshotWindows := make([][]ActiveWindow, len(normalized))
+				for i, c := range normalized {
+					if c.Lifecycle != nil {
+						ws := make([]ActiveWindow, len(c.Lifecycle.Windows))
+						copy(ws, c.Lifecycle.Windows)
+						snapshotWindows[i] = ws
+					}
+				}
+
+				// Apply normalization a second time
+				normalizeLifecycleTimestamps(&normalized)
+
+				// Verify all timestamps are identical after the second call
+				for i, c := range normalized {
+					if c.Lifecycle == nil {
+						continue
+					}
+					for j, w := range c.Lifecycle.Windows {
+						if w.StartUs != snapshotWindows[i][j].StartUs || w.EndUs != snapshotWindows[i][j].EndUs {
+							t.Errorf("idempotency violation: client[%d] window[%d] changed on second normalize: "+
+								"StartUs %d->%d, EndUs %d->%d",
+								i, j,
+								snapshotWindows[i][j].StartUs, w.StartUs,
+								snapshotWindows[i][j].EndUs, w.EndUs)
+						}
+					}
+				}
+			},
+		},
+		{
+			name: "all clients with nil lifecycle: no-op (exercises MaxInt64 guard)",
+			clients: []ClientSpec{
+				{ID: "client1", Lifecycle: nil},
+				{ID: "client2", Lifecycle: nil},
+				{ID: "client3", Lifecycle: nil},
+			},
+			want: []ClientSpec{
+				{ID: "client1", Lifecycle: nil},
+				{ID: "client2", Lifecycle: nil},
+				{ID: "client3", Lifecycle: nil},
+			},
+			checkFn: func(t *testing.T, _, normalized []ClientSpec) {
+				// All lifecycles must remain nil — the MaxInt64 guard
+				// at line 744 must prevent any modification.
+				for i, c := range normalized {
+					if c.Lifecycle != nil {
+						t.Errorf("client[%d] Lifecycle was unexpectedly modified from nil", i)
+					}
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -872,33 +965,46 @@ func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 }
 
 func TestConvertServeGen_NormalizesTimestamps(t *testing.T) {
-	// This test verifies that ConvertServeGen calls normalizeLifecycleTimestamps
-	// so that the production path produces zero-based timestamps.
+	// This test verifies end-to-end that ConvertServeGen produces zero-based
+	// timestamps. It creates real ServeGen files with non-zero absolute clock
+	// times and calls ConvertServeGen, ensuring a future developer cannot remove
+	// the normalization call from loadServeGenData without breaking this test.
 
-	// GIVEN a WorkloadSpec with clients at non-zero start times
-	// (simulating what loadServeGenData would produce)
-	clients := []ClientSpec{
-		{
-			ID: "servegen-chunk-0",
-			Lifecycle: &LifecycleSpec{
-				Windows: []ActiveWindow{
-					{StartUs: 28800000000, EndUs: 29400000000}, // 8:00 AM start
-				},
-			},
-		},
-	}
+	dir := t.TempDir()
 
-	// WHEN normalization is applied (as ConvertServeGen does)
-	normalizeLifecycleTimestamps(&clients)
+	// GIVEN a ServeGen chunk with absolute clock timestamps starting at 8:00 AM (28800s).
+	// Two consecutive 10-minute windows: 28800-29400, 29400-30000.
+	traceCSV := "28800,5.0,2.5,Gamma,0.16,6.25\n29400,3.0,1.5,Gamma,0.16,6.25\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "chunk-0-trace.csv"), []byte(traceCSV), 0644))
 
-	// THEN timestamps start at zero
-	if clients[0].Lifecycle.Windows[0].StartUs != 0 {
-		t.Errorf("expected normalized StartUs=0, got %d", clients[0].Lifecycle.Windows[0].StartUs)
-	}
+	// Dataset entry at timestamp 21600 (Hour 6) — nearest-preceding for Hour 8 windows.
+	datasetJSON := `{"21600": {"input_tokens": "{256: 1.0}", "output_tokens": "{100: 1.0}"}}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "chunk-0-dataset.json"), []byte(datasetJSON), 0644))
 
-	expectedDuration := int64(600000000) // 10 minutes in microseconds
-	actualDuration := clients[0].Lifecycle.Windows[0].EndUs - clients[0].Lifecycle.Windows[0].StartUs
-	if actualDuration != expectedDuration {
-		t.Errorf("expected duration %d, got %d", expectedDuration, actualDuration)
+	// WHEN ConvertServeGen processes these files
+	spec, err := ConvertServeGen(dir, "")
+
+	// THEN conversion succeeds
+	require.NoError(t, err)
+	require.NotNil(t, spec)
+	require.Len(t, spec.Clients, 1, "expected 1 client from chunk-0")
+
+	client := spec.Clients[0]
+	require.NotNil(t, client.Lifecycle)
+	require.Len(t, client.Lifecycle.Windows, 2, "expected 2 windows from trace rows")
+
+	// AND the earliest window starts at zero (normalization applied)
+	assert.Equal(t, int64(0), client.Lifecycle.Windows[0].StartUs,
+		"first window StartUs should be normalized to 0")
+
+	// AND the second window is offset by 600s (preserving relative timing)
+	assert.Equal(t, int64(600000000), client.Lifecycle.Windows[1].StartUs,
+		"second window StartUs should be 600s after first")
+
+	// AND window durations are preserved (10 minutes = 600,000,000 us each)
+	for i, w := range client.Lifecycle.Windows {
+		duration := w.EndUs - w.StartUs
+		assert.Equal(t, int64(600000000), duration,
+			"window[%d] duration should be 600s (10 min)", i)
 	}
 }
