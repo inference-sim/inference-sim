@@ -60,7 +60,7 @@ When the `requests` array is non-empty, each entry contains:
 | Field | Unit | Description |
 |-------|------|-------------|
 | `requestID` | string | Unique request identifier |
-| `arrived_at` | ticks | Arrival timestamp in simulation ticks |
+| `arrived_at` | s | Arrival timestamp in simulation seconds (`ArrivalTime / 1,000,000`) |
 | `num_prefill_tokens` | count | Input (prompt) token count |
 | `num_decode_tokens` | count | Output token count |
 | `ttft_ms` | ms | Time To First Token for this request |
