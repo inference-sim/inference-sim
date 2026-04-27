@@ -56,6 +56,8 @@ func (o PoolOverrides) IsEmpty() bool {
 // mutates slice elements, and (2) slices are written once at CLI time and never
 // modified during simulation. If future code needs to mutate per-pool coefficients,
 // deep-copy the slices here.
+// SLOPriorityOverrides is a map[string]int that shares its backing map across copies.
+// Safe for the same reason: NewSLOPriorityMap only reads the map (for range), never mutates.
 //
 // Latency backend constraint: when using per-pool LatencyBackend overrides, all
 // backends (roofline, trained-physics) share the same model architecture (HFConfig)

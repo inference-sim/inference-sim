@@ -682,6 +682,43 @@ func TestResolveConfigForRole_CrossPoolIsolation(t *testing.T) {
 	}
 }
 
+// TestResolveConfigForRole_SLOPriorityOverrides_Propagates verifies BC-3:
+// SLOPriorityOverrides set on the DeploymentConfig's SimConfig must survive
+// resolveConfigForRole for all three roles so that NewInstanceSimulator receives them.
+func TestResolveConfigForRole_SLOPriorityOverrides_Propagates(t *testing.T) {
+	overrides := map[string]int{"background": 10, "batch": 0}
+	dc := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			KVCacheConfig:        sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
+			BatchConfig:          sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:        sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
+			ModelHardwareConfig:  sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 4, "", 0),
+			SLOPriorityOverrides: overrides,
+		},
+	}
+
+	for _, tc := range []struct {
+		name string
+		role PoolRole
+	}{
+		{"default", PoolRole(0)},
+		{"prefill", PoolRolePrefill},
+		{"decode", PoolRoleDecode},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := dc.resolveConfigForRole(tc.role)
+			if cfg.SLOPriorityOverrides["background"] != 10 {
+				t.Errorf("role %s: SLOPriorityOverrides[background] = %d, want 10",
+					tc.name, cfg.SLOPriorityOverrides["background"])
+			}
+			if cfg.SLOPriorityOverrides["batch"] != 0 {
+				t.Errorf("role %s: SLOPriorityOverrides[batch] = %d, want 0",
+					tc.name, cfg.SLOPriorityOverrides["batch"])
+			}
+		})
+	}
+}
+
 // TestNewClusterSimulator_PanicsOnInvalidPrefillOverrides verifies that NewClusterSimulator
 // panics with a descriptive message when PrefillOverrides contains an invalid field,
 // rather than allowing TP=0 to silently propagate to instance construction.
