@@ -121,7 +121,7 @@ Controls how requests are selected for the running batch. Maps to `BatchConfig`.
 | `--max-num-running-reqs` | int64 | 256 | Maximum requests in the running batch simultaneously. |
 | `--max-num-scheduled-tokens` | int64 | 2048 | Maximum total new tokens across all running requests per step (token budget). |
 | `--long-prefill-token-threshold` | int64 | 0 | Prefill length threshold for chunked prefill. 0 = disabled (all prefill in one step). |
-| `--preemption-policy` | string | "fcfs" | Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). |
+| `--preemption-policy` | string | "fcfs" | Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode uses `slo_priorities` from the policy bundle when set (shared with admission). |
 
 ## Latency Model
 
@@ -204,7 +204,9 @@ Controls which requests enter the routing pipeline. See [Cluster Architecture: A
 
 ### SLO Tier Priorities
 
-Each SLO class has an integer priority that determines admission ordering, shedding decisions, and gateway queue dispatch. Priorities follow the GAIE (Gateway API Inference Extension) convention where **negative priority = sheddable**.
+Each SLO class has an integer priority that determines admission ordering, shedding decisions, gateway queue dispatch, and (with `--preemption-policy priority`) preemption victim selection. Priorities follow the GAIE (Gateway API Inference Extension) convention where **negative priority = sheddable**.
+
+`slo_priorities` overrides affect both admission (tier-shed, GAIE-legacy) and preemption (`--preemption-policy priority`). Both subsystems share the same priority mapping.
 
 **Default priorities (GAIE-compatible):**
 
@@ -291,7 +293,7 @@ Per-instance policies that control request ordering within the wait queue. Maps 
 |------|------|---------|-------------|
 | `--scheduler` | string | "fcfs" | Scheduler: `fcfs`, `priority-fcfs`, `sjf`, `reverse-priority`. |
 | `--priority-policy` | string | "constant" | Priority policy: `constant`, `slo-based`, `inverted-slo`. |
-| `--preemption-policy` | string | "fcfs" | Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). |
+| `--preemption-policy` | string | "fcfs" | Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode uses `slo_priorities` from the policy bundle when set (shared with admission). |
 
 See [Core Engine: Scheduling](../concepts/core-engine.md#scheduling-policies) for policy details.
 
