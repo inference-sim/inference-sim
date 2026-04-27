@@ -129,3 +129,77 @@ func TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse(t *testing.T) {
 		}
 	}
 }
+
+func TestNewSimulator_CustomSLOPriorityMap_AffectsPreemption(t *testing.T) {
+	// BC-1: Custom slo_priorities override default preemption victim selection.
+	// Default GAIE priorities: batch=-1, background=-3, critical=4.
+	// Override: batch=0 (promoted from -1 to non-sheddable).
+	// Setup: 10 blocks × 16 tokens = 160 capacity. 3 running × 48 tokens = 3 blocks each = 9/10 used, 1 free.
+	// Phase 1: crit decode uses the 1 free block (10/10 used).
+	// Phase 1: batch decode → full → preemption. With override: background(-3) < batch(0) → bg evicted.
+	cfg := SimConfig{
+		Horizon:             100_000_000,
+		KVCacheConfig:       NewKVCacheConfig(10, 16, 0, 0.0, 0.0, 0.0),
+		BatchConfig:         NewBatchConfig(10, 10000, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 0, 0}, []float64{100, 1, 0}),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
+		PolicyConfig:        NewPolicyConfig("constant", "fcfs", "priority"),
+		SLOPriorityOverrides: map[string]int{"batch": 0},
+	}
+	s := mustNewSimulator(t, cfg)
+
+	// Inject three running requests to saturate cache (9/10 blocks used).
+	// Distinct input tokens prevent prefix cache sharing across requests.
+	critTokens := make([]int, 48)
+	for i := range critTokens {
+		critTokens[i] = i + 1
+	}
+	batchTokens := make([]int, 48)
+	for i := range batchTokens {
+		batchTokens[i] = i + 101
+	}
+	bgTokens := make([]int, 48)
+	for i := range bgTokens {
+		bgTokens[i] = i + 201
+	}
+	critReq := &Request{ID: "crit", SLOClass: "critical", ArrivalTime: 100, State: StateRunning,
+		InputTokens: critTokens, OutputTokens: make([]int, 10)}
+	batchReq := &Request{ID: "batch-req", SLOClass: "batch", ArrivalTime: 200, State: StateRunning,
+		InputTokens: batchTokens, OutputTokens: make([]int, 10)}
+	bgReq := &Request{ID: "bg-req", SLOClass: "background", ArrivalTime: 300, State: StateRunning,
+		InputTokens: bgTokens, OutputTokens: make([]int, 10)}
+
+	for _, req := range []*Request{critReq, batchReq, bgReq} {
+		s.KVCache.AllocateKVBlocks(req, 0, 48, nil)
+		req.ProgressIndex = 48
+	}
+	s.RunningBatch = &Batch{Requests: []*Request{critReq, batchReq, bgReq}}
+	s.WaitQ.Enqueue(&Request{ID: "new", InputTokens: make([]int, 16), OutputTokens: make([]int, 1), State: StateQueued})
+
+	result := s.batchFormation.FormBatch(BatchContext{
+		RunningBatch:       s.RunningBatch,
+		WaitQ:              s.WaitQ,
+		KVCache:            s.KVCache,
+		MaxScheduledTokens: 10000,
+		MaxRunningReqs:     10,
+		Now:                1000,
+		ComputedTokens:     make(map[string]int64),
+	})
+
+	// With batch=0 override: background(-3) is least urgent → must be evicted.
+	if len(result.Preempted) == 0 {
+		t.Fatal("expected preemption but got none")
+	}
+	if result.Preempted[0].Request.ID != "bg-req" {
+		t.Errorf("expected bg-req evicted (background=-3 < batch=0 with override), got %q",
+			result.Preempted[0].Request.ID)
+	}
+	// batch-req must still be running (priority=0 with override > background=-3)
+	runningIDs := make(map[string]bool)
+	for _, r := range result.RunningBatch.Requests {
+		runningIDs[r.ID] = true
+	}
+	if !runningIDs["batch-req"] {
+		t.Error("batch-req should still be running (priority=0 with override, more urgent than background=-3)")
+	}
+}
