@@ -534,6 +534,19 @@ func TestServeGenConversion_HighCVTrace(t *testing.T) {
 	}
 }
 
+func TestNormalizeLifecycleTimestamps_EmptyClientList(t *testing.T) {
+	// GIVEN an empty client list
+	clients := []ClientSpec{}
+
+	// WHEN normalization is called
+	normalizeLifecycleTimestamps(&clients)
+
+	// THEN it completes without panic and leaves list unchanged
+	if len(clients) != 0 {
+		t.Errorf("expected empty list to remain empty, got %d clients", len(clients))
+	}
+}
+
 func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 	dir := t.TempDir()
 	// Create chunk-0-trace.csv
