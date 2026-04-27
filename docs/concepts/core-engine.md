@@ -160,7 +160,7 @@ These are the conceptual timestamps in a request's lifecycle. Some are stored as
 ### Preemption
 
 When KV cache pressure forces eviction, running requests are preempted:
-1. Request is removed from the running batch (tail-first eviction)
+1. Request is removed from the running batch. By default (`--preemption-policy fcfs`), the tail of the batch is evicted. With `--preemption-policy priority`, the running request with the lowest SLO tier priority is evicted first (background before sheddable before batch before standard before critical); among equal-priority requests, the most recently arrived is evicted.
 2. Its KV blocks are freed
 3. It is re-enqueued at the front of the wait queue (not the back)
 4. A debug log is emitted and `PreemptionCount` is incremented
@@ -205,8 +205,8 @@ Dequeue requests from the wait queue:
 ### Preemption Strategy
 
 When KV allocation fails for a continuing request:
-1. Evict requests from the batch tail (reverse order of admission)
-2. Free their KV blocks
+1. Select a victim: by default (`--preemption-policy fcfs`), evict from the batch tail (reverse order of admission). With `--preemption-policy priority`, evict the running request with the lowest SLO tier priority (background before sheddable before batch before standard before critical); among equal-priority requests, the most recently arrived is evicted first. This matches vLLM's `--scheduling-policy priority` preemption behavior.
+2. Free the victim's KV blocks
 3. Re-enqueue evicted requests at the front of the wait queue
 4. Retry allocation for the original request
 5. **Circuit breaker:** Stop if allocation still fails after exhausting the batch, or if the request itself is unservable

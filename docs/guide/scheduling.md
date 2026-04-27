@@ -61,6 +61,8 @@ BLIS models vLLM's two-queue architecture (WaitQ + RunningBatch), simplifying vL
 
 This means preempted requests get implicit priority over fresh arrivals in FCFS mode. With priority-fcfs + slo-based, the preempted request's age still determines its position relative to other waiting requests.
 
+By default (`--preemption-policy fcfs`), the tail of the running batch is evicted. When `--preemption-policy priority` is set, the least-urgent running request is evicted based on SLO tier priority (background=-3, sheddable=-2, batch=-1, standard=3, critical=4). Among requests with equal SLO tier priority, the most recently arrived is evicted first. This matches vLLM's `--scheduling-policy priority` preemption behavior.
+
 ## When to Use Which
 
 | Workload | Recommended Configuration | Why |

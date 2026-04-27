@@ -67,7 +67,10 @@ const (
 )
 
 // VLLMBatchFormation implements the vLLM FCFS + chunked-prefill + preemption strategy.
-type VLLMBatchFormation struct{}
+type VLLMBatchFormation struct {
+	preemptionPolicy PreemptionPolicy
+	sloMap           *SLOPriorityMap
+}
 
 func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 	if ctx.RunningBatch == nil {
@@ -89,10 +92,10 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 
 	// Phase 1: Process continuing requests (chunked prefill + decode).
 	// Index-based loop: re-evaluates len() each iteration so evicted requests
-	// (removed by preemptForTokens tail eviction) are never visited.
-	// This achieves the same behavioral property as vLLM v1 (evicted requests
-	// are never revisited within a scheduling pass), though through a different
-	// mechanism (vLLM uses deque popleft/pop; BLIS uses index bounds re-evaluation).
+	// are never visited. In priority mode, non-tail eviction shifts elements
+	// left; the reqAdjustment returned by preemptForTokens compensates by
+	// decrementing reqIndex, preventing element skipping.
+	// Analog of vLLM v1 req_index -= 1 (scheduler.py:853).
 	reqIndex := 0
 	for reqIndex < len(result.RunningBatch.Requests) {
 		if tokenBudget <= 0 {
@@ -117,7 +120,9 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 				numNewTokens = min(numNewTokens, maxAllowed)
 			}
 
-			if canSchedule := v.preemptForTokens(req, numNewTokens, &result, ctx, &tokenBudget); !canSchedule {
+			canSchedule, adj := v.preemptForTokens(req, numNewTokens, &result, ctx, &tokenBudget, reqIndex)
+			reqIndex -= adj
+			if !canSchedule {
 				break
 			}
 
@@ -138,7 +143,9 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 				decodeTokens = 0
 			}
 			if decodeTokens > 0 {
-				if canSchedule := v.preemptForTokens(req, decodeTokens, &result, ctx, &tokenBudget); !canSchedule {
+				canSchedule, adj := v.preemptForTokens(req, decodeTokens, &result, ctx, &tokenBudget, reqIndex)
+				reqIndex -= adj
+				if !canSchedule {
 					break
 				}
 				tokenBudget--
@@ -211,33 +218,70 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 }
 
 // preemptForTokens tries to allocate numNewTokens of KV blocks for req,
-// evicting from the batch tail if needed. Returns false if allocation is
-// impossible (cache too small or request was itself evicted).
-func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, result *BatchResult, ctx BatchContext, tokenBudget *int64) bool {
+// evicting victims if needed. Returns (canSchedule, reqAdjustment) where
+// reqAdjustment counts evictions at indices below reqIndex.
+// The caller must apply reqIndex -= reqAdjustment after each call to prevent
+// element skipping when non-tail removal shifts elements left.
+// Analog of vLLM scheduler.py:853 (req_index -= 1).
+func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, result *BatchResult, ctx BatchContext, tokenBudget *int64, reqIndex int) (bool, int) {
+	adjustment := 0
 	for {
 		if ok := ctx.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+numNewTokens, nil); !ok {
 			// Circuit breaker: empty batch means cache is too small (R19)
 			if len(result.RunningBatch.Requests) == 0 {
 				logrus.Warnf("[tick %07d] preemption: KV cache too small for request %s (need %d tokens, no running requests to evict)",
 					ctx.Now, req.ID, numNewTokens)
-				return false
+				return false, adjustment
 			}
 
 			result.PreemptionHappened = true
-			preemptedRequest := result.RunningBatch.Requests[len(result.RunningBatch.Requests)-1]
+
+			var victimIdx int
+			switch v.preemptionPolicy {
+			case PreemptionPriority:
+				victimIdx = v.selectPriorityVictim(result.RunningBatch.Requests)
+			default:
+				victimIdx = len(result.RunningBatch.Requests) - 1
+			}
+
+			preemptedRequest := result.RunningBatch.Requests[victimIdx]
 			logrus.Warnf("[tick %07d] preemption: evicting %s to make room", ctx.Now, preemptedRequest.ID)
-			result.RunningBatch.Requests = result.RunningBatch.Requests[:len(result.RunningBatch.Requests)-1]
+
+			// Remove by index (supports non-tail eviction in priority mode).
+			result.RunningBatch.Requests = append(
+				result.RunningBatch.Requests[:victimIdx],
+				result.RunningBatch.Requests[victimIdx+1:]...,
+			)
+
+			// Track Phase 1 index adjustment: if the victim was before the
+			// caller's current position, elements shifted left under the cursor.
+			// The caller must decrement reqIndex by the returned adjustment.
+			// Analog of vLLM scheduler.py:853 (req_index -= 1 when preempted
+			// request was in scheduled_running_reqs).
+			// For FCFS, victimIdx is always the tail (>= reqIndex), so adjustment
+			// is always 0 — preserving current FCFS behavior exactly.
+			//
+			// Divergence from vLLM: vLLM's req_index -= 1 is conditional on
+			// preempted_req in scheduled_running_reqs. BLIS fires unconditionally
+			// for any victim below reqIndex. This is correct because BLIS's Phase 1
+			// loop can leave a MaxModelLen-capped request (decodeTokens=0) in the
+			// batch below reqIndex without calling preemptForTokens. In vLLM, all
+			// skip paths (lines 743/759/808) increment req_index before continue,
+			// so unscheduled requests are never below req_index when preemption fires.
+			if victimIdx < reqIndex-adjustment {
+				adjustment++
+			}
 
 			result.Preempted = append(result.Preempted, PreemptedRequest{
 				Request: preemptedRequest,
 			})
 
-			// Defensive: restore token budget if preempted request was already
-			// scheduled in this step. Currently unreachable with head-to-tail
-			// iteration + tail-only eviction (evicted requests are always
-			// unvisited, so NumNewTokens is 0 from the FormBatch entry zeroing).
-			// Guards against future iteration order changes (e.g., priority-based
-			// eviction that could evict an already-visited request).
+			// Restore token budget if preempted request was already scheduled
+			// in this step (visited earlier in Phase 1, NumNewTokens > 0).
+			// Reachable in priority mode when victim was at index < reqIndex
+			// (already visited and allocated tokens this step).
+			// With FCFS (tail-only eviction), unreachable because evicted
+			// requests are always unvisited (beyond reqIndex).
 			if preemptedRequest.NumNewTokens > 0 {
 				*tokenBudget += int64(preemptedRequest.NumNewTokens)
 				preemptedRequest.NumNewTokens = 0
@@ -252,16 +296,50 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 			ctx.WaitQ.PrependFront(preemptedRequest)
 
 			if preemptedRequest == req {
-				return false
+				return false, adjustment
 			}
 		} else {
-			return true
+			return true, adjustment
 		}
 	}
 }
 
+// selectPriorityVictim returns the index of the least-urgent running request.
+// Least urgent = lowest SLOPriorityMap value (BLIS convention: higher = more urgent).
+// Ties broken by latest ArrivalTime (most recently arrived evicted first).
+//
+// This is the BLIS equivalent of vLLM's max(priority, arrival_time) (scheduler.py:827-829).
+// The conventions are inverted: vLLM uses lower=more-urgent so max() selects least urgent;
+// BLIS uses higher=more-urgent so min() selects least urgent. Both tiebreak by max(ArrivalTime).
+func (v *VLLMBatchFormation) selectPriorityVictim(requests []*Request) int {
+	victimIdx := len(requests) - 1
+	victimPri := v.sloMap.Priority(requests[victimIdx].SLOClass)
+	victimArrival := requests[victimIdx].ArrivalTime
+
+	for i := len(requests) - 2; i >= 0; i-- {
+		pri := v.sloMap.Priority(requests[i].SLOClass)
+		if pri < victimPri || (pri == victimPri && requests[i].ArrivalTime > victimArrival) {
+			victimIdx = i
+			victimPri = pri
+			victimArrival = requests[i].ArrivalTime
+		}
+	}
+	return victimIdx
+}
+
 // NewBatchFormation creates the default BatchFormation.
-// Currently returns VLLMBatchFormation (the only implementation).
-func NewBatchFormation() BatchFormation {
-	return &VLLMBatchFormation{}
+// preemptionPolicy selects victim strategy: "fcfs" (tail-of-batch) or "priority" (least-urgent SLO tier).
+// sloMap provides SLO class → priority mapping for "priority" mode; nil uses GAIE defaults.
+func NewBatchFormation(preemptionPolicy string, sloMap *SLOPriorityMap) BatchFormation {
+	policy := PreemptionPolicy(preemptionPolicy)
+	if policy == "" {
+		policy = PreemptionFCFS
+	}
+	if sloMap == nil {
+		sloMap = DefaultSLOPriorityMap()
+	}
+	return &VLLMBatchFormation{
+		preemptionPolicy: policy,
+		sloMap:           sloMap,
+	}
 }
