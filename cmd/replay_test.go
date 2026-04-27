@@ -103,8 +103,8 @@ func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
 		// registerSimConfigFlags: routing policy
 		"routing-policy", "routing-scorers",
 
-		// registerSimConfigFlags: priority and scheduler
-		"priority-policy", "scheduler",
+		// registerSimConfigFlags: priority, scheduler, and preemption
+		"priority-policy", "scheduler", "preemption-policy",
 
 		// registerSimConfigFlags: policy bundle
 		"policy-config",

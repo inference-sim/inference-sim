@@ -190,6 +190,7 @@ func TestPolicyBundle_Validate_InvalidPolicy(t *testing.T) {
 		{"bad routing", PolicyBundle{Routing: RoutingConfig{Policy: "invalid"}}},
 		{"bad priority", PolicyBundle{Priority: PriorityConfig{Policy: "invalid"}}},
 		{"bad scheduler", PolicyBundle{Scheduler: "invalid"}},
+		{"bad preemption", PolicyBundle{Preemption: PreemptionConfig{Policy: "random"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -623,5 +624,16 @@ func TestValidLatencyBackendNames_ExcludesRemoved(t *testing.T) {
 		if !nameSet[exp] {
 			t.Errorf("ValidLatencyBackendNames() missing expected backend %q", exp)
 		}
+	}
+}
+
+func TestPreemptionPolicy_ValidNames(t *testing.T) {
+	for _, name := range []string{"", "fcfs", "priority"} {
+		if !IsValidPreemptionPolicy(name) {
+			t.Errorf("IsValidPreemptionPolicy(%q) = false, want true", name)
+		}
+	}
+	if IsValidPreemptionPolicy("random") {
+		t.Error("IsValidPreemptionPolicy(\"random\") = true, want false")
 	}
 }

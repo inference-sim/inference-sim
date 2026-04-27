@@ -558,7 +558,7 @@ func TestVLLMBatchFormation_LivelockResolution(t *testing.T) {
 			[]float64{232.46191091038054, 1.752360364195244, 3357.4400353290152}, // alpha
 		),
 		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
-		PolicyConfig:        NewPolicyConfig("constant", "fcfs"),
+		PolicyConfig:        NewPolicyConfig("constant", "fcfs", ""),
 	}
 
 	sim := mustNewSimulator(t, cfg)

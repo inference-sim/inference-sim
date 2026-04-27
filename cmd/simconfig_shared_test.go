@@ -104,7 +104,7 @@ func TestResolvePolicies_InvalidAdmissionPolicy_Fatal(t *testing.T) {
 // consumed by resolvePolicies are registered in both runCmd and replayCmd (BC-2).
 func TestResolvePolicies_PolicyFlagsRegisteredInBothCommands(t *testing.T) {
 	policyFlags := []string{
-		"admission-policy", "routing-policy", "priority-policy", "scheduler",
+		"admission-policy", "routing-policy", "priority-policy", "scheduler", "preemption-policy",
 		"routing-scorers", "token-bucket-capacity", "token-bucket-refill-rate",
 		"kv-cpu-blocks", "kv-offload-threshold", "kv-transfer-bandwidth",
 		"kv-transfer-base-latency", "snapshot-refresh-interval",
@@ -155,7 +155,7 @@ func TestBothCommands_SimConfigFlagsHaveIdenticalDefaults(t *testing.T) {
 		"latency-model", "hardware", "tp", "alpha-coeffs", "beta-coeffs",
 		"total-kv-blocks", "block-size-in-tokens", "max-model-len",
 		"gpu-memory-utilization", "model-config-folder", "hardware-config",
-		"admission-policy", "routing-policy", "priority-policy", "scheduler",
+		"admission-policy", "routing-policy", "priority-policy", "scheduler", "preemption-policy",
 		"routing-scorers", "token-bucket-capacity", "token-bucket-refill-rate",
 		"kv-cpu-blocks", "kv-offload-threshold", "kv-transfer-bandwidth",
 		"kv-transfer-base-latency", "snapshot-refresh-interval",
