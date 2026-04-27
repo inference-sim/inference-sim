@@ -1,6 +1,6 @@
 ---
 name: convergence-review
-description: Dispatch parallel review perspectives and enforce convergence via persistent state file and automatic Phase A/B loop. Supports 7 gate types — design doc (8), macro plan (8), PR plan (10), PR code (10), hypothesis design (5), hypothesis code (5), hypothesis FINDINGS (10). Automatically loops through Phase A (review/tally) and Phase B (fix/verify) until 0 CRITICAL + 0 IMPORTANT or round limit.
+description: Dispatch parallel review perspectives and enforce convergence via persistent state file and automatic Phase A/B loop. Supports 8 gate types — design doc (8), macro plan (8), PR plan (10), PR code (10), pr-docs (7), hypothesis design (5), hypothesis code (5), hypothesis FINDINGS (10). Automatically loops through Phase A (review/tally) and Phase B (fix/verify) until 0 CRITICAL + 0 IMPORTANT or round limit.
 argument-hint: <gate-type> [artifact-path] [--model opus|sonnet|haiku]
 ---
 
@@ -30,6 +30,7 @@ The skill accepts an optional `--model` flag that selects the review model. Vali
 | `macro-plan` | File | Macro plan at `$1` | Disabled | Link check | 8 | [design-prompts.md](design-prompts.md) Section B |
 | `pr-plan` | File | Micro plan at `$1` | Disabled | Link check | 10 | [pr-prompts.md](pr-prompts.md) Section A |
 | `pr-code` | Diff | `git diff HEAD` output | File-change heuristic | Build/test/lint | 10 | [pr-prompts.md](pr-prompts.md) Section B |
+| `pr-docs` | Diff | `git diff HEAD` output | File-change heuristic | Link check | 7 | [pr-prompts.md](pr-prompts.md) Section C |
 | `h-design` | Context | Conversation context | Disabled | None | 5 | `.claude/skills/hypothesis-experiment/review-prompts.md` Section A |
 | `h-code` | File | `run.sh` + `analyze.py` at `$1` | Change-recommending | Build/test/lint | 5 | `.claude/skills/hypothesis-experiment/review-prompts.md` Section B |
 | `h-findings` | File | FINDINGS.md at `$1` | Change-recommending | Link check | 10 | `.claude/skills/hypothesis-experiment/review-prompts.md` Section C |
@@ -96,7 +97,7 @@ The artifact ID is derived from the gate's anchor category (see gate table). Beh
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `perspective` | string | Perspective ID (e.g., "PC-1", "PP-3", "DD-2") |
+| `perspective` | string | Perspective ID (e.g., "PC-1", "PP-3", "DD-2", "PD-1") |
 | `severity` | string | One of: `CRITICAL`, `IMPORTANT`, `SUGGESTION` |
 | `location` | string | File:line reference, section heading, or "unknown" if not parseable |
 | `description` | string | What is wrong (specific, not vague) |
@@ -190,7 +191,7 @@ The skill MUST maintain these properties (SK-INV = skill invariant, separate fro
 
    **Why single agent:** Background task IDs are session-local and can become invalid mid-session (producing "No task found with ID" errors). A single foreground call is reliable and sends the artifact once instead of N times (lower token cost for large diffs/files).
 
-   - **Exception:** The structural validation perspective in PR plan reviews (PP-5) is performed directly by the skill — not delegated. For `pr-plan` gates, the agent receives 9 prompts (PP-1 through PP-4, PP-6 through PP-10); PP-5 findings from direct evaluation are added to the findings array in step 4 alongside sections parsed from the agent's output. For all other gates, the agent receives all N prompts.
+   - **Exception:** The structural validation perspective in PR plan reviews (PP-5) is performed directly by the skill — not delegated. For `pr-plan` and `pr-docs` gates, the agent receives a reduced set of prompts — `pr-plan` omits PP-5 (agent receives PP-1–PP-4, PP-6–PP-10); `pr-docs` omits PD-5 (agent receives PD-1–PD-4, PD-6–PD-7). Direct evaluation findings for PP-5 and PD-5 are added to the findings array in step 4 alongside sections parsed from the agent's output. For all other gates, the agent receives all N prompts.
 
    - **Empty-diff precondition (diff-anchored gates only):** If `git diff HEAD` produces no output, emit warning ("No changes detected since last commit — nothing to review") and skip dispatch. Stage new files or commit before invoking.
 
@@ -207,7 +208,7 @@ The skill MUST maintain these properties (SK-INV = skill invariant, separate fro
         ```
         Context payload per gate type:
         - File-anchored gates (`design`, `macro-plan`, `pr-plan`, `h-code`, `h-findings`): paste the file contents of `$1`.
-        - Diff-anchored gates (`pr-code`): paste `git diff HEAD` output.
+        - Diff-anchored gates (`pr-code`, `pr-docs`): paste `git diff HEAD` output.
         - Context-anchored gates (`h-design`): paste the hypothesis sentence, classification, and experiment design from the current conversation context.
      3. Perspective sections (one per prompt, in ID order):
         ```
@@ -221,7 +222,7 @@ The skill MUST maintain these properties (SK-INV = skill invariant, separate fro
    - **Missing section handling:** After the agent completes, collect all `## [<ID>]` headers that appear in the output. For each expected perspective ID that is absent, emit `"WARNING: No section found for <ID> in agent output — recording 0 findings for this perspective"` and proceed. Do NOT treat a missing section as convergence-clean evidence.
 
 4. **Collect, extract, and tally independently.** Parse the single agent's output by section header:
-   a. Split the output on `## [<ID>]` headers (lines matching `^## \[`) to isolate each perspective's section. For each section, extract individual findings. For each finding, record: `perspective` (the ID from the section header, e.g., "PP-1"), `severity`, `location` (file:line or best available reference), `description`. For `pr-plan` gates, also include findings from the direct PP-5 evaluation in this same array.
+   a. Split the output on `## [<ID>]` headers (lines matching `^## \[`) to isolate each perspective's section. For each section, extract individual findings. For each finding, record: `perspective` (the ID from the section header, e.g., "PP-1"), `severity`, `location` (file:line or best available reference), `description`. For `pr-plan` gates, also include findings from the direct PP-5 evaluation in this same array. For `pr-docs` gates, also include findings from the direct PD-5 evaluation in this same array.
    b. If a finding lacks a parseable location, set `location` to `"unknown"` and emit a warning: `"Finding from <perspective> has no location — recorded as 'unknown'."` (BC-7)
    c. Set initial `disposition` to `"fix"` for all findings. (Triage in step 6 may update some to `"filed"`.)
    d. Count CRITICAL and IMPORTANT yourself. **Never trust agent-reported totals** (per #390).
@@ -340,4 +341,11 @@ No re-run triggered. Suggestions are cosmetic by definition.
 /convergence-review h-design
 /convergence-review h-code hypotheses/h-<name>/
 /convergence-review h-findings hypotheses/h-<name>/FINDINGS.md
+```
+
+### From PR workflow — docs-only PRs (Step 4.5)
+
+Use `pr-docs` instead of `pr-code` when the branch contains only documentation changes (.md files).
+```
+/convergence-review pr-docs
 ```
