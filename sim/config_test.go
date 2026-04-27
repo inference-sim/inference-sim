@@ -58,7 +58,7 @@ func TestNewModelHardwareConfig_FieldEquivalence(t *testing.T) {
 
 func TestNewPolicyConfig_FieldEquivalence(t *testing.T) {
 	got := NewPolicyConfig("slo-based", "priority-fcfs", "")
-	want := PolicyConfig{PriorityPolicy: "slo-based", Scheduler: "priority-fcfs"}
+	want := PolicyConfig{PriorityPolicy: "slo-based", Scheduler: "priority-fcfs", PreemptionPolicy: ""}
 	assert.Equal(t, want, got)
 }
 
