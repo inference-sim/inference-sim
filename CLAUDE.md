@@ -172,6 +172,7 @@ Full details (verification strategies, evidence): see [`docs/contributing/standa
 - **INV-9 Oracle knowledge boundary**: Servability decisions (enqueue guard, admission, routing, priority) must not read `Request.OutputTokens`. The control plane uses `MaxOutputLen` (client budget) or input-only checks. Only the execution engine may access `OutputTokens` for token generation and completion detection. See `docs/contributing/standards/invariants.md`.
 - **INV-10 Session causality**: For all rounds N in a closed-loop session: `round[N+1].ArrivalTime >= round[N].CompletionTime + ThinkTimeUs`. See `docs/contributing/standards/invariants.md`.
 - **INV-11 Session completeness**: Every session reaches exactly one terminal state: completed, cancelled, horizon-interrupted, or budget-exhausted (concurrency mode: global request cap reached). No session is silently abandoned. See `docs/contributing/standards/invariants.md`.
+- **INV-12 Phase 1 Completeness**: After Phase 1 of `FormBatch`, every non-preempted running request in decode phase has `NumNewTokens > 0`. No request silently skipped due to index drift from non-tail eviction. Trivially satisfied for FCFS. See `docs/contributing/standards/invariants.md`.
 
 ### Engineering Principles
 
@@ -292,7 +293,7 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 ### Standards (what rules apply)
 
 - `docs/contributing/standards/rules.md`: **23 antipattern rules** (R1-R23) — each with evidence, checks, enforcement locations
-- `docs/contributing/standards/invariants.md`: **11 system invariants** (INV-1 through INV-11) — with verification strategies
+- `docs/contributing/standards/invariants.md`: **12 system invariants** (INV-1 through INV-12) — with verification strategies
 - `docs/contributing/standards/principles.md`: **Engineering principles** — separation of concerns, interface design, BDD/TDD
 - `docs/contributing/standards/experiments.md`: **Experiment standards** — hypothesis families (6 families × type classification), rigor requirements, root cause verification (RCV-1 through RCV-6), iterative review protocol (summary; see `docs/contributing/convergence.md`), findings classification
 - `docs/contributing/standards/agent-trust.md`: **Agent trust boundaries** — three trust tiers (Trusted, Verify-after, Never-trust) for agent operations, with known failure modes
@@ -323,6 +324,7 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 - In-memory node/GPU inventory maps; no external storage
 
 ## Recent Changes
+- Priority preemption mode (#1169): `--preemption-policy priority` evicts the least-urgent running request (min SLOPriorityMap value) under KV pressure instead of the batch tail. `selectPriorityVictim()`: `min(SLOPriority)` with `max(ArrivalTime)` tiebreak — analog of vLLM `scheduler.py:827-829` `max(priority, arrival_time)` with inverted convention. Phase 1 index adjustment (`reqIndex -= adj`) prevents element skipping after non-tail eviction (INV-12, analog of vLLM `scheduler.py:853` `req_index -= 1`). `NewBatchFormation(preemptionPolicy, sloMap)` 2-arg constructor; `nil` sloMap → `DefaultSLOPriorityMap()`.
 - --preemption-policy flag (#1168): `--preemption-policy` (default `fcfs`) selects preemption victim strategy. Valid: `fcfs` (tail-of-batch, matches vLLM FCFS), `priority` (least-urgent SLO tier; wired in #1169). Registered on both `blis run` and `blis replay`. Bundle `preemption.policy` field overrides CLI default when flag not explicitly set. `PreemptionPolicy` type (`sim/batch_formation.go`) + `PreemptionConfig` (`sim/bundle.go`); `PolicyConfig.PreemptionPolicy` field + 3-arg `NewPolicyConfig()` in `sim/config.go`.
 - blis run --timeout flag (#1127): `--timeout` (seconds, default `300`) overrides per-request deadline for all synthesized clients. Default 300s matches the session-client default in `computeDeadline` (preserves `UnlimitedRounds` termination). Negative value disables the deadline (explicit `*0` suppresses the 300s fallback); `0` is rejected as invalid — consistent with `blis observe` which also rejects `<= 0`. File-loaded `--workload-spec` clients are only overridden when `--timeout` is explicitly set. `blis observe` has its own `--timeout` (HTTP client timeout, default 300s, configurable via #1118; rejects `<= 0`). `blis replay` has no HTTP client and no `--timeout` flag.
 - fix(observe): streaming timeout status + configurable timeout (#1118): `blis observe` now correctly sets `status=timeout` (not silent `ok`) when HTTP client timeout fires during streaming, non-streaming body read, or HTTP round-trip. New `--timeout` flag (seconds, default 300) configures per-request HTTP timeout. `isTimeoutError()` helper checks both `os.IsTimeout()` and `context.DeadlineExceeded` for robust detection. Three error paths fixed: `httpClient.Do`, `handleStreamingResponse` scanner error, `handleNonStreamingResponse` body read.

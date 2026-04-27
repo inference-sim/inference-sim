@@ -260,6 +260,14 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 			// request was in scheduled_running_reqs).
 			// For FCFS, victimIdx is always the tail (>= reqIndex), so adjustment
 			// is always 0 — preserving current FCFS behavior exactly.
+			//
+			// Divergence from vLLM: vLLM's req_index -= 1 is conditional on
+			// preempted_req in scheduled_running_reqs. BLIS fires unconditionally
+			// for any victim below reqIndex. This is correct because BLIS's Phase 1
+			// loop can leave a MaxModelLen-capped request (decodeTokens=0) in the
+			// batch below reqIndex without calling preemptForTokens. In vLLM, all
+			// skip paths (lines 743/759/808) increment req_index before continue,
+			// so unscheduled requests are never below req_index when preemption fires.
 			if victimIdx < reqIndex-adjustment {
 				adjustment++
 			}

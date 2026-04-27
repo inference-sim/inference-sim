@@ -110,11 +110,11 @@ To add a new batch formation strategy (e.g., disaggregated prefill/decode, specu
    - The implementation MUST update `ctx.ComputedTokens[req.ID]` for each request that receives new tokens (Phase 2 of `Step()` reads this map to advance `ProgressIndex`)
    - The implementation may mutate `WaitQ` (dequeue/prepend) and `KVCache` (allocate/release) during batch formation
    - The implementation MUST NOT schedule events or record metrics — return decisions in `BatchResult`, the Simulator applies them
-2. **Register in `NewBatchFormation` factory** in `sim/batch_formation.go`: add a selection branch. The factory signature is `NewBatchFormation()` — a future PR will add a strategy selection parameter (e.g., a string field in `PolicyConfig` or `BatchConfig`)
+2. **Register in `NewBatchFormation` factory** in `sim/batch_formation.go`: add a selection branch. The factory signature is `NewBatchFormation(preemptionPolicy string, sloMap *SLOPriorityMap)`. For a new batch formation *strategy* (not just a preemption variant), add a `BatchFormation string` field to `PolicyConfig` and a selection branch in `NewBatchFormation`
 3. **Add behavioral tests** — token budget enforcement, batch size limits, KV conservation, preemption behavior (if applicable), FCFS ordering
 4. Extension friction: **2 touch points** (implementation + factory registration)
 
-**Note:** Currently only `VLLMBatchFormation` exists. Adding a second strategy will also require: (a) a `BatchFormation string` field in `PolicyConfig` or `BatchConfig` (in `sim/config.go`), (b) a CLI flag in `cmd/root.go`, (c) validation in `sim/bundle.go`, (d) selection logic in `NewBatchFormation`.
+**Note:** Currently only `VLLMBatchFormation` exists (with configurable preemption via `--preemption-policy fcfs|priority`). Adding a second batch formation strategy will also require: (a) a `BatchFormation string` field in `PolicyConfig` or `BatchConfig` (in `sim/config.go`), (b) a CLI flag in `cmd/root.go`, (c) validation in `sim/bundle.go`, (d) selection logic in `NewBatchFormation`. For adding a new *preemption* variant (not a new strategy), add a constant to `batch_formation.go`, a case to the `switch` in `preemptForTokens`, and an entry in `validPreemptionPolicies` in `bundle.go`.
 
 Examples:
 - See `VLLMBatchFormation` in `sim/batch_formation.go` for the vLLM FCFS + chunked-prefill + preemption strategy
