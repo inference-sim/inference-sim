@@ -132,8 +132,14 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 		result.Utilization = result.TotalDemand / result.TotalSupply
 	}
 
-	// Scale-up signal: RequiredCapacity = max(0, totalDemand/ScaleUpThreshold - totalSupply)
-	requiredCapacity := (result.TotalDemand / a.config.ScaleUpThreshold) - result.TotalSupply
+	// Scale-up signal: include pending (Loading instance) capacity alongside ready supply.
+	// Pending supply covers anticipated capacity once Loading instances finish loading.
+	// Only affects RequiredCapacity — TotalSupply, Utilization, and SpareCapacity are
+	// based on ready replicas only (no premature scale-down risk from unstarted instances).
+	// Matches WVA saturation_v2 anticipatedSupply semantics.
+	pendingSupply := float64(metrics.PendingTotalKvCapacityTokens) * a.config.KvCacheThreshold
+	totalSupplyForScaleUp := result.TotalSupply + pendingSupply
+	requiredCapacity := (result.TotalDemand / a.config.ScaleUpThreshold) - totalSupplyForScaleUp
 	if requiredCapacity > 0 {
 		result.RequiredCapacity = requiredCapacity
 		// Mutual exclusivity: if scaling up, no spare capacity
