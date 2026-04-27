@@ -70,7 +70,7 @@ type SimConfig struct {
 	// SLO priority overrides for preemption victim selection (--preemption-policy priority).
 	// nil = use GAIE defaults (critical=4, standard=3, batch=-1, sheddable=-2, background=-3).
 	// Shared with admission: same overrides flow from policy bundle slo_priorities.
-	// Set programmatically from DeploymentConfig.SLOPriorityOverrides — no YAML tag needed.
+	// Set programmatically in cmd/root.go and cmd/replay.go from parsed bundle/CLI overrides — no YAML tag needed.
 	SLOPriorityOverrides map[string]int
 }
 

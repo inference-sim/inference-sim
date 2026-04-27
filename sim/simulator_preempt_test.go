@@ -195,8 +195,8 @@ func TestNewSimulator_CustomSLOPriorityMap_AffectsPreemption(t *testing.T) {
 
 	// With background=10 override: batch(-1) is least urgent → batch-req must be evicted.
 	// Without override: background(-3) would be evicted instead → test would fail proving override matters.
-	if len(result.Preempted) == 0 {
-		t.Fatal("expected preemption but got none")
+	if len(result.Preempted) != 1 {
+		t.Fatalf("expected exactly 1 preemption, got %d", len(result.Preempted))
 	}
 	if result.Preempted[0].Request.ID != "batch-req" {
 		t.Errorf("expected batch-req evicted (batch=-1 < bg=10 with override), got %q",
