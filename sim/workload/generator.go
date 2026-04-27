@@ -752,9 +752,9 @@ func hasPerWindowParameters(clients []ClientSpec) bool {
 }
 
 // generateTimeVaryingRequests generates requests for workloads with per-window
-// parameters, using ServeGen-compatible proportional allocation and IAT rescaling.
-// Each client's lifecycle windows are iterated, generating requests per window
-// using window-specific distributions and proportional rate allocation.
+// parameters, using proportional rate allocation and IAT rescaling to match
+// window durations. Each client's lifecycle windows are iterated, generating
+// requests per window using window-specific distributions and rates.
 //
 // Windows beyond the horizon are skipped. Requests from all clients and windows
 // are merged, sorted by arrival time, truncated to maxRequests, and assigned
@@ -826,7 +826,7 @@ func generateTimeVaryingRequests(
 }
 
 // generateRequestsForWindow generates requests for a single lifecycle window
-// with ServeGen-compatible proportional rate allocation and IAT rescaling.
+// with proportional rate allocation and IAT rescaling to match the window duration.
 //
 // Steps:
 //  1. Resolve parameters with fallback to client-level defaults.
@@ -926,8 +926,9 @@ func generateRequestsForWindow(
 }
 
 // computeProportionalRate computes the allocated rate for a window using
-// ServeGen's proportional allocation semantics (construct.py:190-207).
-// Returns: target_aggregate_rate * (window_trace_rate / sum_of_co_active_trace_rates)
+// proportional allocation across co-active clients. When aggregate_rate > 0,
+// returns: target_aggregate_rate * (window_trace_rate / sum_of_co_active_trace_rates).
+// When aggregate_rate is 0 (absolute rate mode), returns window.TraceRate directly.
 //
 // For each co-active client (any client whose window overlaps the queried window),
 // the first overlapping window's trace rate is summed into totalTraceRate. Always-on
@@ -943,9 +944,9 @@ func computeProportionalRate(
 	_, _, _, traceRate := resolveWindowParameters(client, window)
 
 	// Absolute rate mode: when aggregate_rate is 0, use trace_rate directly.
-	// This signals "use per-window rates verbatim, don't scale" (ServeGen temporal parity).
-	// ServeGen workloads have time-varying aggregate load that cannot be represented
-	// by a single scalar aggregate_rate, so we use trace_rate as the absolute rate.
+	// This signals "use per-window rates verbatim, don't scale". Useful for
+	// workloads with time-varying aggregate load that cannot be represented
+	// by a single scalar aggregate_rate.
 	if aggregateRate == 0 && window.TraceRate != nil {
 		return traceRate
 	}
@@ -983,8 +984,8 @@ func computeProportionalRate(
 }
 
 // rescaleIATsToMatchDuration rescales inter-arrival times to sum exactly to
-// targetDuration, preserving relative ratios (CV). Implements ServeGen's
-// post-hoc IAT scaling for exact rate matching (construct.py:46-48).
+// targetDuration, preserving relative ratios (CV). This ensures that N requests
+// generated with a given rate will fill exactly the specified window duration.
 //
 // Each IAT is multiplied by (targetDuration / sumIATs). A rounding residual
 // from int64 truncation is applied to the last element so the sum is exact.

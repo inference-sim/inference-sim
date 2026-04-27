@@ -267,9 +267,9 @@ func (s *WorkloadSpec) Validate() error {
 		hasRateBasedClient = true
 	}
 	if hasRateBasedClient {
-		// aggregate_rate can be 0 in absolute rate mode (ServeGen temporal parity).
-		// In this mode, each window must have an explicit trace_rate that is used
-		// directly instead of being scaled by aggregate_rate.
+		// aggregate_rate can be 0 in absolute rate mode. In this mode, each window
+		// must have an explicit trace_rate that is used directly instead of being
+		// scaled by aggregate_rate. Useful for time-varying workloads.
 		if s.AggregateRate == 0 {
 			// Verify all rate-based clients have windows with trace_rate
 			for i, c := range s.Clients {
