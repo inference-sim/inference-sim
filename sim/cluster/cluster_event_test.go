@@ -256,6 +256,21 @@ func TestBuildRouterState_LoadingSnapshot_PopulatedNotInSnapshots(t *testing.T) 
 	if ls.GPUType == "" {
 		t.Errorf("LoadingSnapshot.GPUType must not be empty")
 	}
+	// Demand fields must be zero — the saturation analyzer depends on this contract.
+	// A regression that copied demand fields from a loading instance would cause phantom
+	// demand and break the scale-up suppression logic.
+	if ls.QueueDepth != 0 {
+		t.Errorf("LoadingSnapshot.QueueDepth = %d, want 0 (demand fields must be zero)", ls.QueueDepth)
+	}
+	if ls.KVUtilization != 0 {
+		t.Errorf("LoadingSnapshot.KVUtilization = %f, want 0", ls.KVUtilization)
+	}
+	if ls.InFlightRequests != 0 {
+		t.Errorf("LoadingSnapshot.InFlightRequests = %d, want 0", ls.InFlightRequests)
+	}
+	if ls.KvTokensInUse != 0 {
+		t.Errorf("LoadingSnapshot.KvTokensInUse = %d, want 0", ls.KvTokensInUse)
+	}
 }
 
 // TestBuildRouterState_ActiveAndLoadingMixed_SeparateBuckets verifies that when a cluster
