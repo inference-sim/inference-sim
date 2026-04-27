@@ -11,7 +11,8 @@ import (
 
 // DefaultCollector maps RoutingSnapshot fields to ReplicaMetrics, grouping by model.
 // Pure function: no filtering, no thresholding, no modification of signals.
-// TTFT and DispatchRate are set to zero (future: QueueingModelAnalyzer).
+// Latency fields (TTFT, ITL, DispatchRate, AvgInTokens, AvgOutTokens, MaxBatchSize) are
+// populated from the snapshot when available (set by buildRouterState via LatencyStats).
 type DefaultCollector struct{}
 
 // Collect produces one ModelSignals per active model from the current RouterState.
@@ -39,6 +40,12 @@ func (c *DefaultCollector) Collect(state *sim.RouterState) []ModelSignals {
 			QueueDepth:            snap.QueueDepth,
 			InFlightCount:         snap.InFlightRequests,
 			CostPerHour:           snap.CostPerHour,
+			TTFT:                  snap.TTFT,
+			ITL:                   snap.ITL,
+			DispatchRate:          snap.DispatchRate,
+			AvgInTokens:           snap.AvgInTokens,
+			AvgOutTokens:          snap.AvgOutTokens,
+			MaxBatchSize:          snap.MaxBatchSize,
 			TotalKvCapacityTokens: snap.TotalKvCapacityTokens,
 			KvTokensInUse:         snap.KvTokensInUse,
 		}
