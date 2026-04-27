@@ -189,6 +189,14 @@ func (i *InstanceSimulator) KvTokensInUse() int64 {
 	return i.sim.KVCache.UsedBlocks() * i.sim.KVCache.BlockSize()
 }
 
+// TotalKVBlocks returns the total number of KV cache blocks for this instance.
+func (i *InstanceSimulator) TotalKVBlocks() int64 {
+	if i.sim == nil || i.sim.KVCache == nil {
+		return 0
+	}
+	return i.sim.KVCache.TotalCapacity()
+}
+
 // PreemptionCount returns the cumulative number of preemption events on this instance.
 func (i *InstanceSimulator) PreemptionCount() int64 {
 	return i.sim.Metrics.PreemptionCount
