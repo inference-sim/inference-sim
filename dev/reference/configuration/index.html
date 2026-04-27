@@ -3952,7 +3952,7 @@
 <td><code>--preemption-policy</code></td>
 <td>string</td>
 <td>"fcfs"</td>
-<td>Preemption victim selection: <code>fcfs</code> (tail-of-batch, default) or <code>priority</code> (least-urgent SLO tier evicted first, matching vLLM <code>--scheduling-policy priority</code>).</td>
+<td>Preemption victim selection: <code>fcfs</code> (tail-of-batch, default) or <code>priority</code> (least-urgent SLO tier evicted first, matching vLLM <code>--scheduling-policy priority</code>). Priority mode uses <code>slo_priorities</code> from the policy bundle when set (shared with admission).</td>
 </tr>
 </tbody>
 </table>
@@ -4192,7 +4192,8 @@
 </tbody>
 </table>
 <h3 id="slo-tier-priorities">SLO Tier Priorities<a class="headerlink" href="#slo-tier-priorities" title="Permanent link">&para;</a></h3>
-<p>Each SLO class has an integer priority that determines admission ordering, shedding decisions, and gateway queue dispatch. Priorities follow the GAIE (Gateway API Inference Extension) convention where <strong>negative priority = sheddable</strong>.</p>
+<p>Each SLO class has an integer priority that determines admission ordering, shedding decisions, gateway queue dispatch, and (with <code>--preemption-policy priority</code>) preemption victim selection. Priorities follow the GAIE (Gateway API Inference Extension) convention where <strong>negative priority = sheddable</strong>.</p>
+<p><code>slo_priorities</code> overrides affect both admission (tier-shed, GAIE-legacy) and preemption (<code>--preemption-policy priority</code>). Both subsystems share the same priority mapping.</p>
 <p><strong>Default priorities (GAIE-compatible):</strong></p>
 <table>
 <thead>
@@ -4380,7 +4381,7 @@
 <td><code>--preemption-policy</code></td>
 <td>string</td>
 <td>"fcfs"</td>
-<td>Preemption victim selection: <code>fcfs</code> (tail-of-batch, default) or <code>priority</code> (least-urgent SLO tier evicted first, matching vLLM <code>--scheduling-policy priority</code>).</td>
+<td>Preemption victim selection: <code>fcfs</code> (tail-of-batch, default) or <code>priority</code> (least-urgent SLO tier evicted first, matching vLLM <code>--scheduling-policy priority</code>). Priority mode uses <code>slo_priorities</code> from the policy bundle when set (shared with admission).</td>
 </tr>
 </tbody>
 </table>
