@@ -22,7 +22,6 @@ func ConvertServeGen(path string, timeWindow string) (*WorkloadSpec, error) {
 	if err := loadServeGenData(spec); err != nil {
 		return nil, fmt.Errorf("loading ServeGen data from %s: %w", path, err)
 	}
-
 	spec.ServeGenData = nil // clear after loading; clients are now populated
 	return spec, nil
 }

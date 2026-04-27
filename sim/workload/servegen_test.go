@@ -905,6 +905,9 @@ func TestNormalizeLifecycleTimestamps_Scenarios(t *testing.T) {
 	}
 }
 
+// This test uses trace data starting at t=0, so normalization is a no-op.
+// The test validates per-window shape/scale parameter population from trace columns 5-6,
+// not normalization behavior (which is thoroughly covered by other tests).
 func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 	dir := t.TempDir()
 	// Create chunk-0-trace.csv
