@@ -452,19 +452,21 @@ func TestServeGenConversion_E2E(t *testing.T) {
 				i, requests[i-1].ArrivalTime, requests[i].ArrivalTime)
 		}
 
-		// Check requests span multiple windows (from both 600s and 1200s windows)
+		// Check requests span multiple windows.
+		// After normalization (loadServeGenData normalizes to zero-origin),
+		// the original 600s and 1200s windows become 0s and 600s respectively.
 		hasWindow1 := false
 		hasWindow2 := false
 		for _, req := range requests {
-			if req.ArrivalTime >= 600*1e6 && req.ArrivalTime < 1200*1e6 {
+			if req.ArrivalTime >= 0 && req.ArrivalTime < 600*1e6 {
 				hasWindow1 = true
 			}
-			if req.ArrivalTime >= 1200*1e6 && req.ArrivalTime < 1800*1e6 {
+			if req.ArrivalTime >= 600*1e6 && req.ArrivalTime < 1200*1e6 {
 				hasWindow2 = true
 			}
 		}
-		assert.True(t, hasWindow1, "should have requests in window 1 (600-1200s)")
-		assert.True(t, hasWindow2, "should have requests in window 2 (1200-1800s)")
+		assert.True(t, hasWindow1, "should have requests in window 1 (0-600s, normalized from 600-1200s)")
+		assert.True(t, hasWindow2, "should have requests in window 2 (600-1200s, normalized from 1200-1800s)")
 
 		// Check both chunks contributed (interleaved requests)
 		clientIDs := make(map[string]bool)

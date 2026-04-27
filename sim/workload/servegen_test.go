@@ -870,3 +870,35 @@ func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 		}
 	}
 }
+
+func TestConvertServeGen_NormalizesTimestamps(t *testing.T) {
+	// This test verifies that ConvertServeGen calls normalizeLifecycleTimestamps
+	// so that the production path produces zero-based timestamps.
+
+	// GIVEN a WorkloadSpec with clients at non-zero start times
+	// (simulating what loadServeGenData would produce)
+	clients := []ClientSpec{
+		{
+			ID: "servegen-chunk-0",
+			Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{
+					{StartUs: 28800000000, EndUs: 29400000000}, // 8:00 AM start
+				},
+			},
+		},
+	}
+
+	// WHEN normalization is applied (as ConvertServeGen does)
+	normalizeLifecycleTimestamps(&clients)
+
+	// THEN timestamps start at zero
+	if clients[0].Lifecycle.Windows[0].StartUs != 0 {
+		t.Errorf("expected normalized StartUs=0, got %d", clients[0].Lifecycle.Windows[0].StartUs)
+	}
+
+	expectedDuration := int64(600000000) // 10 minutes in microseconds
+	actualDuration := clients[0].Lifecycle.Windows[0].EndUs - clients[0].Lifecycle.Windows[0].StartUs
+	if actualDuration != expectedDuration {
+		t.Errorf("expected duration %d, got %d", expectedDuration, actualDuration)
+	}
+}

@@ -164,6 +164,12 @@ func loadServeGenData(spec *WorkloadSpec) error {
 		logrus.Infof("loadServeGenData: using absolute rate mode (aggregate_rate=0); peak rate was %.2f within %s window", peakAggregate, spec.ServeGenData.TimeWindow)
 	}
 
+	// Normalize lifecycle window timestamps to start from zero.
+	// ServeGen traces contain absolute clock times (e.g., 8:00 AM = 28800s).
+	// Without normalization, the generator waits for simulated time to reach
+	// those absolute timestamps before dispatching requests.
+	normalizeLifecycleTimestamps(&spec.Clients)
+
 	return nil
 }
 
