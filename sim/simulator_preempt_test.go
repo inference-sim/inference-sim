@@ -131,12 +131,13 @@ func TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse(t *testing.T) {
 }
 
 func TestNewSimulator_CustomSLOPriorityMap_AffectsPreemption(t *testing.T) {
-	// BC-1: Custom slo_priorities override default preemption victim selection.
-	// Default GAIE priorities: batch=-1, background=-3, critical=4.
-	// Override: batch=0 (promoted from -1 to non-sheddable).
+	// BC-1: Custom slo_priorities override changes which request is evicted.
+	// Default GAIE priorities: batch=-1, background=-3 → background is least urgent → bg evicted.
+	// Override: background=10 (promoted above batch=-1) → batch becomes least urgent → batch-req evicted.
+	// This test WOULD FAIL if the override were ignored (bg-req would be evicted under defaults).
 	// Setup: 10 blocks × 16 tokens = 160 capacity. 3 running × 48 tokens = 3 blocks each = 9/10 used, 1 free.
 	// Phase 1: crit decode uses the 1 free block (10/10 used).
-	// Phase 1: batch decode → full → preemption. With override: background(-3) < batch(0) → bg evicted.
+	// Phase 1: bg decode → full → preemption. With override: batch(-1) < bg(10) → batch-req evicted.
 	cfg := SimConfig{
 		Horizon:             100_000_000,
 		KVCacheConfig:       NewKVCacheConfig(10, 16, 0, 0.0, 0.0, 0.0),
@@ -144,7 +145,7 @@ func TestNewSimulator_CustomSLOPriorityMap_AffectsPreemption(t *testing.T) {
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 0, 0}, []float64{100, 1, 0}),
 		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
 		PolicyConfig:        NewPolicyConfig("constant", "fcfs", "priority"),
-		SLOPriorityOverrides: map[string]int{"batch": 0},
+		SLOPriorityOverrides: map[string]int{"background": 10}, // promote background above batch(-1)
 	}
 	s := mustNewSimulator(t, cfg)
 
@@ -173,7 +174,13 @@ func TestNewSimulator_CustomSLOPriorityMap_AffectsPreemption(t *testing.T) {
 		s.KVCache.AllocateKVBlocks(req, 0, 48, nil)
 		req.ProgressIndex = 48
 	}
-	s.RunningBatch = &Batch{Requests: []*Request{critReq, batchReq, bgReq}}
+	// Order: [crit, bg, batch]. Phase 1 trace with background=10 override:
+	//   index=0 crit: decode allocates the 1 free block (10/10 full).
+	//   index=1 bg: decode → full → preemption. Victim = batch(-1, least urgent). bg is NOT the victim.
+	//     batch-req evicted (idx=2 >= reqIndex=1, no adjustment). bg gets decode. Returns (true,0).
+	//   index=2: empty (batch-req removed). Loop exits at len=2.
+	// Without override: victim = background(-3, GAIE default least urgent). bg-req evicted instead.
+	s.RunningBatch = &Batch{Requests: []*Request{critReq, bgReq, batchReq}}
 	s.WaitQ.Enqueue(&Request{ID: "new", InputTokens: make([]int, 16), OutputTokens: make([]int, 1), State: StateQueued})
 
 	result := s.batchFormation.FormBatch(BatchContext{
@@ -186,20 +193,21 @@ func TestNewSimulator_CustomSLOPriorityMap_AffectsPreemption(t *testing.T) {
 		ComputedTokens:     make(map[string]int64),
 	})
 
-	// With batch=0 override: background(-3) is least urgent → must be evicted.
+	// With background=10 override: batch(-1) is least urgent → batch-req must be evicted.
+	// Without override: background(-3) would be evicted instead → test would fail proving override matters.
 	if len(result.Preempted) == 0 {
 		t.Fatal("expected preemption but got none")
 	}
-	if result.Preempted[0].Request.ID != "bg-req" {
-		t.Errorf("expected bg-req evicted (background=-3 < batch=0 with override), got %q",
+	if result.Preempted[0].Request.ID != "batch-req" {
+		t.Errorf("expected batch-req evicted (batch=-1 < bg=10 with override), got %q",
 			result.Preempted[0].Request.ID)
 	}
-	// batch-req must still be running (priority=0 with override > background=-3)
+	// bg-req must still be running (background=10 with override, more urgent than batch=-1)
 	runningIDs := make(map[string]bool)
 	for _, r := range result.RunningBatch.Requests {
 		runningIDs[r.ID] = true
 	}
-	if !runningIDs["batch-req"] {
-		t.Error("batch-req should still be running (priority=0 with override, more urgent than background=-3)")
+	if !runningIDs["bg-req"] {
+		t.Error("bg-req should still be running (background=10 with override, more urgent than batch=-1)")
 	}
 }
