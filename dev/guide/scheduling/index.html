@@ -2927,6 +2927,7 @@
 <li>On the next step, the scheduler reorders the full queue including the preempted request.</li>
 </ul>
 <p>This means preempted requests get implicit priority over fresh arrivals in FCFS mode. With priority-fcfs + slo-based, the preempted request's age still determines its position relative to other waiting requests.</p>
+<p>By default (<code>--preemption-policy fcfs</code>), the tail of the running batch is evicted. When <code>--preemption-policy priority</code> is set, the least-urgent running request is evicted based on SLO tier priority (background=-3, sheddable=-2, batch=-1, standard=3, critical=4). Among requests with equal SLO tier priority, the most recently arrived is evicted first. This matches vLLM's <code>--scheduling-policy priority</code> preemption behavior.</p>
 <h2 id="when-to-use-which">When to Use Which<a class="headerlink" href="#when-to-use-which" title="Permanent link">&para;</a></h2>
 <table>
 <thead>

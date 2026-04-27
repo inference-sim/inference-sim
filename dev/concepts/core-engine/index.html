@@ -3611,7 +3611,7 @@
 <p><strong>Causality invariant (INV-5):</strong> <code>arrival_time &lt;= enqueue_time &lt;= schedule_time &lt;= completion_time</code></p>
 <h3 id="preemption">Preemption<a class="headerlink" href="#preemption" title="Permanent link">&para;</a></h3>
 <p>When KV cache pressure forces eviction, running requests are preempted:
-1. Request is removed from the running batch (tail-first eviction)
+1. Request is removed from the running batch. By default (<code>--preemption-policy fcfs</code>), the tail of the batch is evicted. With <code>--preemption-policy priority</code>, the running request with the lowest SLO tier priority is evicted first (background before sheddable before batch before standard before critical); among equal-priority requests, the most recently arrived is evicted.
 2. Its KV blocks are freed
 3. It is re-enqueued at the front of the wait queue (not the back)
 4. A debug log is emitted and <code>PreemptionCount</code> is incremented</p>
@@ -3665,8 +3665,8 @@ Dequeue requests from the wait queue:
 </table>
 <h3 id="preemption-strategy">Preemption Strategy<a class="headerlink" href="#preemption-strategy" title="Permanent link">&para;</a></h3>
 <p>When KV allocation fails for a continuing request:
-1. Evict requests from the batch tail (reverse order of admission)
-2. Free their KV blocks
+1. Select a victim: by default (<code>--preemption-policy fcfs</code>), evict from the batch tail (reverse order of admission). With <code>--preemption-policy priority</code>, evict the running request with the lowest SLO tier priority (background before sheddable before batch before standard before critical); among equal-priority requests, the most recently arrived is evicted first. This matches vLLM's <code>--scheduling-policy priority</code> preemption behavior.
+2. Free the victim's KV blocks
 3. Re-enqueue evicted requests at the front of the wait queue
 4. Retry allocation for the original request
 5. <strong>Circuit breaker:</strong> Stop if allocation still fails after exhausting the batch, or if the request itself is unservable</p>

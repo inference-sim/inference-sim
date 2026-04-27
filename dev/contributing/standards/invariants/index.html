@@ -2109,6 +2109,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#inv-12-phase-1-completeness-under-priority-preemption" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-12: Phase 1 Completeness Under Priority Preemption
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pd-disaggregation-invariants" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3007,6 +3018,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#inv-12-phase-1-completeness-under-priority-preemption" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-12: Phase 1 Completeness Under Priority Preemption
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pd-disaggregation-invariants" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3278,6 +3300,13 @@
 <p><strong>Verification:</strong> <code>sim/workload/session_test.go</code> — tests cover all terminal paths: <code>TestSession_TimeoutCancels_NoMoreRounds</code> (cancelled), <code>TestSession_FinalRound_Completes</code> (completed), <code>TestSession_BeyondHorizon_NotGenerated</code> (horizon-interrupted), <code>TestSession_DroppedFollowUp_CancelsSession</code> (cancelled via drop). Budget-exhausted path verified via <code>TestConcurrencyMode_EndToEnd_SessionFollowUps</code> (budget exhaustion stops follow-up generation).</p>
 <p><strong>Evidence:</strong> Design doc INV-11 definition. The <code>SessionManager.OnComplete</code> method transitions sessions to exactly one terminal state before returning nil. The <code>budget_exhausted</code> state is reached when the shared follow-up budget (set via <code>SetFollowUpBudget</code> for <code>--concurrency</code> mode) is depleted — the session's unlimited-rounds flag would otherwise continue generating follow-ups, but the global cap takes precedence.</p>
 <p><strong>Hypothesis family:</strong> Structural model — session lifecycle completeness.</p>
+<hr />
+<h2 id="inv-12-phase-1-completeness-under-priority-preemption">INV-12: Phase 1 Completeness Under Priority Preemption<a class="headerlink" href="#inv-12-phase-1-completeness-under-priority-preemption" title="Permanent link">&para;</a></h2>
+<p><strong>Statement:</strong> After Phase 1 of <code>FormBatch</code> completes, every non-preempted running request in decode phase has <code>NumNewTokens &gt; 0</code>, provided the token budget was not exhausted and <code>MaxModelLen</code> did not cap the request. No running request is silently skipped due to index drift from non-tail eviction.</p>
+<p><strong>Context:</strong> With <code>--preemption-policy priority</code>, the preemption victim may be at any index in the running batch (not just the tail). Removing an element at index <code>i &lt; reqIndex</code> shifts subsequent elements left by one. Without the <code>reqIndex -= adjustment</code> correction (analog of vLLM <code>scheduler.py:853</code> <code>req_index -= 1</code>), the Phase 1 loop skips the shifted element.</p>
+<p><strong>Verification:</strong> <code>sim/batch_formation_test.go</code> — <code>TestPreemption_Priority_Phase1Completeness</code>: verifies that after non-tail eviction where <code>victimIdx &lt; reqIndex</code>, ALL remaining running requests receive decode tokens (NumNewTokens &gt; 0). The index adjustment is tested with [bg, crit, std] batch where bg is evicted at index 0 while processing crit at index 1.</p>
+<p><strong>Trivially satisfied for FCFS:</strong> With <code>--preemption-policy fcfs</code> (default), victims are always at the batch tail (<code>victimIdx == len-1 &gt;= reqIndex</code>), so <code>adjustment == 0</code> and no element skipping is possible.</p>
+<p><strong>Hypothesis family:</strong> Structural model (same as INV-4, INV-7, INV-8, INV-9).</p>
 <hr />
 <h2 id="pd-disaggregation-invariants">PD Disaggregation Invariants<a class="headerlink" href="#pd-disaggregation-invariants" title="Permanent link">&para;</a></h2>
 <h3 id="inv-pd-1-kv-completeness">INV-PD-1: KV Completeness<a class="headerlink" href="#inv-pd-1-kv-completeness" title="Permanent link">&para;</a></h3>
