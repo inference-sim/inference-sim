@@ -104,7 +104,7 @@ func buildRouterState(cs *ClusterSimulator, req *sim.Request) *sim.RouterState {
 		snap.TPDegree = inst.TPDegree
 		snap.CostPerHour = inst.CostPerHour
 		snap.TotalKvCapacityTokens = inst.TotalKvCapacityTokens()
-		// QueueDepth, KVUtilization, InFlightRequests, KvTokensInUse remain zero.
+		// QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate, InFlightRequests, KvTokensInUse remain zero.
 		loadingSnapshots = append(loadingSnapshots, snap)
 	}
 	return &sim.RouterState{

@@ -271,6 +271,12 @@ func TestBuildRouterState_LoadingSnapshot_PopulatedNotInSnapshots(t *testing.T) 
 	if ls.KvTokensInUse != 0 {
 		t.Errorf("LoadingSnapshot.KvTokensInUse = %d, want 0", ls.KvTokensInUse)
 	}
+	if ls.BatchSize != 0 {
+		t.Errorf("LoadingSnapshot.BatchSize = %d, want 0 (demand fields must be zero)", ls.BatchSize)
+	}
+	if ls.FreeKVBlocks != 0 {
+		t.Errorf("LoadingSnapshot.FreeKVBlocks = %d, want 0 (demand fields must be zero)", ls.FreeKVBlocks)
+	}
 }
 
 // TestBuildRouterState_ActiveAndLoadingMixed_SeparateBuckets verifies that when a cluster
