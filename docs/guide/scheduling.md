@@ -63,6 +63,8 @@ This means preempted requests get implicit priority over fresh arrivals in FCFS 
 
 By default (`--preemption-policy fcfs`), the tail of the running batch is evicted. When `--preemption-policy priority` is set, the least-urgent running request is evicted based on SLO tier priority (background=-3, sheddable=-2, batch=-1, standard=3, critical=4). Among requests with equal SLO tier priority, the most recently arrived is evicted first. This matches vLLM's `--scheduling-policy priority` preemption behavior.
 
+The SLO tier priority mapping is shared between admission and preemption. If `slo_priorities` overrides are set in the policy bundle (e.g., `admission: { slo_priorities: { batch: 0 } }`), those overrides apply to both admission shedding and priority preemption victim selection.
+
 ## When to Use Which
 
 | Workload | Recommended Configuration | Why |

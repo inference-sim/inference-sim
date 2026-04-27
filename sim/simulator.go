@@ -66,6 +66,12 @@ type SimConfig struct {
 	ModelHardwareConfig
 	PolicyConfig
 	WorkloadConfig
+
+	// SLO priority overrides for preemption victim selection (--preemption-policy priority).
+	// nil = use GAIE defaults (critical=4, standard=3, batch=-1, sheddable=-2, background=-3).
+	// Shared with admission: same overrides flow from policy bundle slo_priorities.
+	// Set programmatically in cmd/root.go and cmd/replay.go from parsed bundle/CLI overrides — no YAML tag needed.
+	SLOPriorityOverrides map[string]int
 }
 
 // Simulator is the core object that holds simulation time, system state, and the event loop.
@@ -142,7 +148,7 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 				blocksForMaxLen, cfg.MaxModelLen, cfg.BlockSizeTokens, cfg.TotalKVBlocks)
 		}
 	}
-	batchFormation := NewBatchFormation(cfg.PreemptionPolicy, nil)
+	batchFormation := NewBatchFormation(cfg.PreemptionPolicy, NewSLOPriorityMap(cfg.SLOPriorityOverrides))
 
 	s := &Simulator{
 		Clock:                     0,

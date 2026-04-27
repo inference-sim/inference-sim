@@ -213,6 +213,7 @@ Example:
 				LatencyCoeffs:       sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
 				ModelHardwareConfig: sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, lr.Backend, maxModelLen),
 				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler, preemptionPolicy),
+				SLOPriorityOverrides: sloPriorityOverrides,
 			},
 			NumInstances:            numInstances,
 			AdmissionPolicy:         admissionPolicy,
@@ -238,7 +239,6 @@ Example:
 			GAIEQDThreshold:                  gaieQDThreshold,
 			GAIEKVThreshold:                  gaieKVThreshold,
 			TenantBudgets:                    tenantBudgets,
-			SLOPriorityOverrides:             sloPriorityOverrides,
 		}
 
 		// Run simulation — wire SessionManager for closed-loop, nil for fixed mode
