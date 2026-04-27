@@ -164,6 +164,12 @@ func loadServeGenData(spec *WorkloadSpec) error {
 		logrus.Infof("loadServeGenData: using absolute rate mode (aggregate_rate=0); peak rate was %.2f within %s window", peakAggregate, spec.ServeGenData.TimeWindow)
 	}
 
+	// Normalize lifecycle window timestamps to start from zero.
+	// ServeGen traces contain absolute clock times (e.g., 8:00 AM = 28800s).
+	// Without normalization, the generator waits for simulated time to reach
+	// those absolute timestamps before dispatching requests.
+	normalizeLifecycleTimestamps(&spec.Clients)
+
 	return nil
 }
 
@@ -709,4 +715,45 @@ func loadServeGenDataset(path string, sgConfig *ServeGenDataSpec) (map[int]float
 	}
 
 	return inputPDF, outputPDF, nil
+}
+
+// normalizeLifecycleTimestamps shifts all lifecycle window timestamps to start
+// from zero while preserving relative timing. Finds the minimum StartUs across
+// all clients' lifecycle windows and subtracts it from every StartUs and EndUs.
+// No-op if clients list is empty or no clients have lifecycle windows.
+func normalizeLifecycleTimestamps(clients *[]ClientSpec) {
+	if len(*clients) == 0 {
+		return
+	}
+
+	// Pass 1: Find global minimum StartUs across all clients and windows.
+	minStartUs := int64(math.MaxInt64)
+	for i := range *clients {
+		client := &(*clients)[i]
+		if client.Lifecycle == nil || len(client.Lifecycle.Windows) == 0 {
+			continue
+		}
+		for _, window := range client.Lifecycle.Windows {
+			if window.StartUs < minStartUs {
+				minStartUs = window.StartUs
+			}
+		}
+	}
+
+	// If no windows found, nothing to normalize.
+	if minStartUs == math.MaxInt64 {
+		return
+	}
+
+	// Pass 2: Shift all timestamps by subtracting the minimum.
+	for i := range *clients {
+		client := &(*clients)[i]
+		if client.Lifecycle == nil {
+			continue
+		}
+		for j := range client.Lifecycle.Windows {
+			client.Lifecycle.Windows[j].StartUs -= minStartUs
+			client.Lifecycle.Windows[j].EndUs -= minStartUs
+		}
+	}
 }

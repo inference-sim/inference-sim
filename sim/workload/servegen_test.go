@@ -3,6 +3,7 @@ package workload
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -534,6 +535,379 @@ func TestServeGenConversion_HighCVTrace(t *testing.T) {
 	}
 }
 
+func TestNormalizeLifecycleTimestamps_EmptyClientList(t *testing.T) {
+	// GIVEN an empty client list
+	clients := []ClientSpec{}
+
+	// WHEN normalization is called
+	normalizeLifecycleTimestamps(&clients)
+
+	// THEN it completes without panic and leaves list unchanged
+	if len(clients) != 0 {
+		t.Errorf("expected empty list to remain empty, got %d clients", len(clients))
+	}
+}
+
+func TestNormalizeLifecycleTimestamps_Scenarios(t *testing.T) {
+	tests := []struct {
+		name    string
+		clients []ClientSpec
+		want    []ClientSpec
+		checkFn func(t *testing.T, original, normalized []ClientSpec)
+	}{
+		{
+			name: "single client with single window at non-zero time",
+			clients: []ClientSpec{
+				{
+					ID: "client1",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 28800000000, EndUs: 29400000000}, // 8:00-8:10 AM
+						},
+					},
+				},
+			},
+			want: []ClientSpec{
+				{
+					ID: "client1",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 0, EndUs: 600000000}, // 0:00-0:10 (10 min duration preserved)
+						},
+					},
+				},
+			},
+			checkFn: func(t *testing.T, original, normalized []ClientSpec) {
+				// BC-1: earliest window starts at 0
+				if normalized[0].Lifecycle.Windows[0].StartUs != 0 {
+					t.Errorf("BC-1 violation: expected StartUs=0, got %d", normalized[0].Lifecycle.Windows[0].StartUs)
+				}
+				// BC-6: duration preserved
+				origDuration := original[0].Lifecycle.Windows[0].EndUs - original[0].Lifecycle.Windows[0].StartUs
+				normDuration := normalized[0].Lifecycle.Windows[0].EndUs - normalized[0].Lifecycle.Windows[0].StartUs
+				if origDuration != normDuration {
+					t.Errorf("BC-6 violation: duration changed from %d to %d", origDuration, normDuration)
+				}
+			},
+		},
+		{
+			name: "multiple clients with different start times",
+			clients: []ClientSpec{
+				{
+					ID: "clientA",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 100000000, EndUs: 200000000}, // starts at 100s
+						},
+					},
+				},
+				{
+					ID: "clientB",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 50000000, EndUs: 150000000}, // starts at 50s (earlier)
+						},
+					},
+				},
+			},
+			want: []ClientSpec{
+				{
+					ID: "clientA",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 50000000, EndUs: 150000000}, // shifted by -50s
+						},
+					},
+				},
+				{
+					ID: "clientB",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 0, EndUs: 100000000}, // shifted by -50s
+						},
+					},
+				},
+			},
+			checkFn: func(t *testing.T, original, normalized []ClientSpec) {
+				// BC-5: global minimum across all clients
+				minStart := int64(math.MaxInt64)
+				for _, c := range normalized {
+					if c.Lifecycle != nil {
+						for _, w := range c.Lifecycle.Windows {
+							if w.StartUs < minStart {
+								minStart = w.StartUs
+							}
+						}
+					}
+				}
+				if minStart != 0 {
+					t.Errorf("BC-5 violation: global minimum is %d, expected 0", minStart)
+				}
+			},
+		},
+		{
+			name: "consecutive windows preserve relative timing",
+			clients: []ClientSpec{
+				{
+					ID: "client1",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 1000, EndUs: 2000}, // window 1
+							{StartUs: 3000, EndUs: 4000}, // window 2 (2000us gap)
+						},
+					},
+				},
+			},
+			want: []ClientSpec{
+				{
+					ID: "client1",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 0, EndUs: 1000},
+							{StartUs: 2000, EndUs: 3000}, // 2000us gap preserved
+						},
+					},
+				},
+			},
+			checkFn: func(t *testing.T, original, normalized []ClientSpec) {
+				// BC-2: relative timing preserved
+				origGap := original[0].Lifecycle.Windows[1].StartUs - original[0].Lifecycle.Windows[0].EndUs
+				normGap := normalized[0].Lifecycle.Windows[1].StartUs - normalized[0].Lifecycle.Windows[0].EndUs
+				if origGap != normGap {
+					t.Errorf("BC-2 violation: gap changed from %d to %d", origGap, normGap)
+				}
+			},
+		},
+		{
+			name: "client with nil lifecycle is skipped safely",
+			clients: []ClientSpec{
+				{ID: "client1", Lifecycle: nil},
+				{
+					ID: "client2",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 1000, EndUs: 2000},
+						},
+					},
+				},
+			},
+			want: []ClientSpec{
+				{ID: "client1", Lifecycle: nil}, // unchanged
+				{
+					ID: "client2",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 0, EndUs: 1000}, // normalized
+						},
+					},
+				},
+			},
+			checkFn: func(t *testing.T, original, normalized []ClientSpec) {
+				// Verify nil lifecycle wasn't touched
+				if normalized[0].Lifecycle != nil {
+					t.Error("nil Lifecycle was unexpectedly modified")
+				}
+			},
+		},
+		{
+			name: "client with empty windows slice is skipped safely",
+			clients: []ClientSpec{
+				{
+					ID:        "client1",
+					Lifecycle: &LifecycleSpec{Windows: []ActiveWindow{}},
+				},
+				{
+					ID: "client2",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 5000, EndUs: 6000},
+						},
+					},
+				},
+			},
+			want: []ClientSpec{
+				{
+					ID:        "client1",
+					Lifecycle: &LifecycleSpec{Windows: []ActiveWindow{}}, // unchanged
+				},
+				{
+					ID: "client2",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 0, EndUs: 1000},
+						},
+					},
+				},
+			},
+			checkFn: nil, // structural check via want comparison is sufficient
+		},
+		{
+			name: "idempotency: normalizing twice equals normalizing once",
+			clients: []ClientSpec{
+				{
+					ID: "client1",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 28800000000, EndUs: 29400000000}, // 8:00-8:10 AM
+							{StartUs: 29400000000, EndUs: 30000000000}, // 8:10-8:20 AM
+						},
+					},
+				},
+				{
+					ID: "client2",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 30000000000, EndUs: 30600000000}, // 8:20-8:30 AM
+						},
+					},
+				},
+			},
+			want: []ClientSpec{
+				{
+					ID: "client1",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 0, EndUs: 600000000},
+							{StartUs: 600000000, EndUs: 1200000000},
+						},
+					},
+				},
+				{
+					ID: "client2",
+					Lifecycle: &LifecycleSpec{
+						Windows: []ActiveWindow{
+							{StartUs: 1200000000, EndUs: 1800000000},
+						},
+					},
+				},
+			},
+			checkFn: func(t *testing.T, _, normalized []ClientSpec) {
+				// Snapshot the state after the first normalization
+				snapshotWindows := make([][]ActiveWindow, len(normalized))
+				for i, c := range normalized {
+					if c.Lifecycle != nil {
+						ws := make([]ActiveWindow, len(c.Lifecycle.Windows))
+						copy(ws, c.Lifecycle.Windows)
+						snapshotWindows[i] = ws
+					}
+				}
+
+				// Apply normalization a second time
+				normalizeLifecycleTimestamps(&normalized)
+
+				// Verify all timestamps are identical after the second call
+				for i, c := range normalized {
+					if c.Lifecycle == nil {
+						continue
+					}
+					for j, w := range c.Lifecycle.Windows {
+						if w.StartUs != snapshotWindows[i][j].StartUs || w.EndUs != snapshotWindows[i][j].EndUs {
+							t.Errorf("idempotency violation: client[%d] window[%d] changed on second normalize: "+
+								"StartUs %d->%d, EndUs %d->%d",
+								i, j,
+								snapshotWindows[i][j].StartUs, w.StartUs,
+								snapshotWindows[i][j].EndUs, w.EndUs)
+						}
+					}
+				}
+			},
+		},
+		{
+			name: "all clients with nil lifecycle: no-op (exercises MaxInt64 guard)",
+			clients: []ClientSpec{
+				{ID: "client1", Lifecycle: nil},
+				{ID: "client2", Lifecycle: nil},
+				{ID: "client3", Lifecycle: nil},
+			},
+			want: []ClientSpec{
+				{ID: "client1", Lifecycle: nil},
+				{ID: "client2", Lifecycle: nil},
+				{ID: "client3", Lifecycle: nil},
+			},
+			checkFn: func(t *testing.T, _, normalized []ClientSpec) {
+				// All lifecycles must remain nil — the MaxInt64 guard
+				// at line 744 must prevent any modification.
+				for i, c := range normalized {
+					if c.Lifecycle != nil {
+						t.Errorf("client[%d] Lifecycle was unexpectedly modified from nil", i)
+					}
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Make a deep copy of original for checkFn comparison
+			// (shallow copy is insufficient: ClientSpec.Lifecycle is a pointer,
+			// so mutations via normalizeLifecycleTimestamps would be visible
+			// through both originalCopy and tt.clients, making BC-2/BC-6 checks vacuous)
+			originalCopy := make([]ClientSpec, len(tt.clients))
+			for i, c := range tt.clients {
+				originalCopy[i] = c
+				if c.Lifecycle != nil {
+					lc := *c.Lifecycle
+					lc.Windows = make([]ActiveWindow, len(c.Lifecycle.Windows))
+					copy(lc.Windows, c.Lifecycle.Windows)
+					originalCopy[i].Lifecycle = &lc
+				}
+			}
+
+			// WHEN normalization is called
+			normalizeLifecycleTimestamps(&tt.clients)
+
+			// THEN structural expectations match
+			if len(tt.clients) != len(tt.want) {
+				t.Fatalf("client count mismatch: got %d, want %d", len(tt.clients), len(tt.want))
+			}
+
+			for i := range tt.clients {
+				gotClient := tt.clients[i]
+				wantClient := tt.want[i]
+
+				if gotClient.ID != wantClient.ID {
+					t.Errorf("client[%d] ID mismatch: got %q, want %q", i, gotClient.ID, wantClient.ID)
+				}
+
+				if (gotClient.Lifecycle == nil) != (wantClient.Lifecycle == nil) {
+					t.Errorf("client[%d] Lifecycle nil mismatch", i)
+					continue
+				}
+
+				if gotClient.Lifecycle != nil {
+					if len(gotClient.Lifecycle.Windows) != len(wantClient.Lifecycle.Windows) {
+						t.Errorf("client[%d] window count mismatch: got %d, want %d",
+							i, len(gotClient.Lifecycle.Windows), len(wantClient.Lifecycle.Windows))
+						continue
+					}
+
+					for j := range gotClient.Lifecycle.Windows {
+						gotWindow := gotClient.Lifecycle.Windows[j]
+						wantWindow := wantClient.Lifecycle.Windows[j]
+
+						if gotWindow.StartUs != wantWindow.StartUs {
+							t.Errorf("client[%d] window[%d] StartUs: got %d, want %d",
+								i, j, gotWindow.StartUs, wantWindow.StartUs)
+						}
+						if gotWindow.EndUs != wantWindow.EndUs {
+							t.Errorf("client[%d] window[%d] EndUs: got %d, want %d",
+								i, j, gotWindow.EndUs, wantWindow.EndUs)
+						}
+					}
+				}
+			}
+
+			// THEN behavioral contracts verified by custom check function
+			if tt.checkFn != nil {
+				tt.checkFn(t, originalCopy, tt.clients)
+			}
+		})
+	}
+}
+
+// This test uses trace data starting at t=0, so normalization is a no-op.
+// The test validates per-window shape/scale parameter population from trace columns 5-6,
+// not normalization behavior (which is thoroughly covered by other tests).
 func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 	dir := t.TempDir()
 	// Create chunk-0-trace.csv
@@ -590,5 +964,50 @@ func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 		if l < 50 || l > 350 {
 			t.Errorf("input length %d outside expected range [50, 350]", l)
 		}
+	}
+}
+
+func TestConvertServeGen_NormalizesTimestamps(t *testing.T) {
+	// This test verifies end-to-end that ConvertServeGen produces zero-based
+	// timestamps. It creates real ServeGen files with non-zero absolute clock
+	// times and calls ConvertServeGen, ensuring a future developer cannot remove
+	// the normalization call from loadServeGenData without breaking this test.
+
+	dir := t.TempDir()
+
+	// GIVEN a ServeGen chunk with absolute clock timestamps starting at 8:00 AM (28800s).
+	// Two consecutive 10-minute windows: 28800-29400, 29400-30000.
+	traceCSV := "28800,5.0,2.5,Gamma,0.16,6.25\n29400,3.0,1.5,Gamma,0.16,6.25\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "chunk-0-trace.csv"), []byte(traceCSV), 0644))
+
+	// Dataset entry at timestamp 21600 (Hour 6) — nearest-preceding for Hour 8 windows.
+	datasetJSON := `{"21600": {"input_tokens": "{256: 1.0}", "output_tokens": "{100: 1.0}"}}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "chunk-0-dataset.json"), []byte(datasetJSON), 0644))
+
+	// WHEN ConvertServeGen processes these files
+	spec, err := ConvertServeGen(dir, "")
+
+	// THEN conversion succeeds
+	require.NoError(t, err)
+	require.NotNil(t, spec)
+	require.Len(t, spec.Clients, 1, "expected 1 client from chunk-0")
+
+	client := spec.Clients[0]
+	require.NotNil(t, client.Lifecycle)
+	require.Len(t, client.Lifecycle.Windows, 2, "expected 2 windows from trace rows")
+
+	// AND the earliest window starts at zero (normalization applied)
+	assert.Equal(t, int64(0), client.Lifecycle.Windows[0].StartUs,
+		"first window StartUs should be normalized to 0")
+
+	// AND the second window is offset by 600s (preserving relative timing)
+	assert.Equal(t, int64(600000000), client.Lifecycle.Windows[1].StartUs,
+		"second window StartUs should be 600s after first")
+
+	// AND window durations are preserved (10 minutes = 600,000,000 us each)
+	for i, w := range client.Lifecycle.Windows {
+		duration := w.EndUs - w.StartUs
+		assert.Equal(t, int64(600000000), duration,
+			"window[%d] duration should be 600s (10 min)", i)
 	}
 }
