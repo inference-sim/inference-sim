@@ -99,7 +99,7 @@ When KV cache activity is nonzero, BLIS prints `=== KV Cache Metrics ===`:
 
 | Metric | Meaning | Concern Threshold |
 |--------|---------|-------------------|
-| **Preemption Rate** | Fraction of requests that were preempted (KV evicted) | > 5% indicates KV pressure |
+| **Preemption Rate** | Ratio of preemption events to completed requests — a single request can be preempted more than once | > 5% indicates KV pressure |
 | **Cache Hit Rate** | Fraction of blocks served from prefix cache | Higher is better — indicates prefix reuse |
 | **KV Thrashing Rate** | Repeated preemption-reallocation cycles | > 0 indicates severe memory pressure |
 
@@ -165,7 +165,7 @@ When PD disaggregation is active (`--prefill-instances > 0`), BLIS prints a `===
 
 | Field | What It Means |
 |-------|--------------|
-| **Disaggregated Requests** | Requests routed through the prefill→KV transfer→decode path |
+| **Disaggregated Requests** | Requests that completed KV transfer through the prefill→decode path |
 | **Dropped at Decode KV** | Requests whose transferred KV blocks could not be accepted by the decode instance |
 | **Prefill Throughput** | Sub-request completion rate on prefill instances (sub-req/s) |
 | **Decode Throughput** | Sub-request completion rate on decode instances (sub-req/s) |
