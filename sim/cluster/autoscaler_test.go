@@ -602,10 +602,3 @@ func TestGPUInventory(t *testing.T) {
 	})
 }
 
-func TestReplicaMetricsHasLatencyFields(t *testing.T) {
-	rm := ReplicaMetrics{}
-	_ = rm.ITL
-	_ = rm.AvgInTokens
-	_ = rm.AvgOutTokens
-	_ = rm.MaxBatchSize
-}

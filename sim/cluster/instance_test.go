@@ -527,16 +527,38 @@ func TestLatencyStatsITLSortedMean(t *testing.T) {
 	}
 }
 
-// TestLatencyStatsDispatchRateUsesCompletionWindow verifies that DispatchRate is computed
-// from the span between first and last completion time, not from total elapsed simulation time.
-// When completions span a 9s window, DispatchRate should reflect ~10/9 req/s, not 0 (which
-// the old implementation produces when the sim clock has not advanced).
+// TestLatencyStatsDispatchRateUsesSimEndedTime verifies that when SimEndedTime > 0
+// (simulation has ended), DispatchRate uses SimEndedTime as the denominator rather than
+// the completion-window span, matching ResponsesPerSec in metrics.go:SaveResults.
+func TestLatencyStatsDispatchRateUsesSimEndedTime(t *testing.T) {
+	inst := NewInstanceSimulator("test", newTestSimConfig())
+	m := inst.sim.Metrics
+	const n = 10
+	m.CompletedRequests = n
+	m.SimEndedTime = 10_000_000 // 10s in µs
+	// Completion window spans 9s (1s to 10s) — SimEndedTime should take precedence.
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("req-%d", i)
+		m.RequestCompletionTimes[id] = float64((i + 1) * 1_000_000) // µs
+	}
+
+	stats := inst.LatencyStats()
+	// SimEndedTime = 10s → rate = 10/10 = 1.0 req/s (not 10/9 window rate)
+	wantRate := float64(n) / 10.0
+	if math.Abs(stats.DispatchRate-wantRate) > 0.01 {
+		t.Errorf("DispatchRate = %.4f, want %.4f (SimEndedTime rate)", stats.DispatchRate, wantRate)
+	}
+}
+
+// TestLatencyStatsDispatchRateUsesCompletionWindow verifies that when SimEndedTime == 0
+// (mid-simulation), DispatchRate falls back to the completion-window span so that idle
+// ramp-up time does not dilute the rate.
 func TestLatencyStatsDispatchRateUsesCompletionWindow(t *testing.T) {
 	inst := NewInstanceSimulator("test", newTestSimConfig())
 	m := inst.sim.Metrics
 	const n = 10
 	m.CompletedRequests = n
-	// Completions span from 1s to 10s (1e6 µs to 10e6 µs).
+	// Completions span from 1s to 10s (1e6 µs to 10e6 µs); SimEndedTime left at 0.
 	for i := 0; i < n; i++ {
 		id := fmt.Sprintf("req-%d", i)
 		m.RequestCompletionTimes[id] = float64((i + 1) * 1_000_000) // µs

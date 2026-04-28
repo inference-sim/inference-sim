@@ -43,7 +43,7 @@ type InstanceSimulator struct {
 	CostPerHour float64 // $/hr from NodePool.CostPerHour; 0 = unplaced/free tier
 
 	// maxRunningReqs stores cfg.BatchConfig.MaxRunningReqs at construction time.
-	// Exposed via MaxBatchSize() for the autoscaler pipeline (Task 3).
+	// Exposed via MaxBatchSize() for the autoscaler pipeline.
 	maxRunningReqs int64
 }
 
@@ -225,9 +225,10 @@ func (i *InstanceSimulator) LatencyStats() InstanceLatencyStats {
 	}
 	n := float64(m.CompletedRequests)
 
-	// DispatchRate: use the span between first and last completion time so that
-	// idle time at simulation start does not dilute the rate (rolling-window approximation).
-	// Falls back to total-elapsed-time when all completions share the same tick.
+	// DispatchRate: when simulation has ended, use SimEndedTime as the denominator
+	// (exact throughput, matches ResponsesPerSec in metrics.go:SaveResults).
+	// Mid-simulation fallback: span between first and last completion time excludes
+	// idle ramp-up time (rolling-window approximation). Final fallback: current clock.
 	// INV-6 note: min/max reduction is order-independent (unlike float sums), so this map
 	// range is exempt from the R2 sort requirement.
 	var minCT, maxCT float64
@@ -242,7 +243,9 @@ func (i *InstanceSimulator) LatencyStats() InstanceLatencyStats {
 		first = false
 	}
 	var dispatchRate float64
-	if span := maxCT - minCT; span > 0 {
+	if m.SimEndedTime > 0 {
+		dispatchRate = n / (float64(m.SimEndedTime) / 1e6)
+	} else if span := maxCT - minCT; span > 0 {
 		dispatchRate = n / (span / 1e6)
 	} else if clockUs := i.Clock(); clockUs > 0 {
 		dispatchRate = n / (float64(clockUs) / 1e6)
