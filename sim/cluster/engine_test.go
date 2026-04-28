@@ -184,6 +184,18 @@ func TestUnlimitedEngineExactN(t *testing.T) {
 			}},
 			wantDelta: -1,
 		},
+		{
+			name: "scale-up falls back to Delta=1 when cheapest variant is inactive but a more-expensive one is active",
+			results: []AnalyzerResult{{
+				ModelID:          "m1",
+				RequiredCapacity: 50,
+				VariantCapacities: []VariantCapacity{
+					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 5, Supply: 0, ReplicaCount: 0},    // cheapest, inactive
+					{Variant: NewVariantSpec("H100", 1), CostPerReplica: 20, Supply: 30, ReplicaCount: 3}, // active
+				},
+			}},
+			wantDelta: 1, // A100 selected; its prc=0 → fallback to 1; does not borrow H100's prc
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -274,6 +286,35 @@ func TestGreedyEngineOptimize(t *testing.T) {
 			wantLen:   1,
 			wantDelta: -2, // floor(20/10)=2, using H100 perReplicaCapacity=30/3=10
 			wantGPU:   "H100",
+		},
+		{
+			name: "scale down: no active replicas anywhere → no decision",
+			results: []AnalyzerResult{{
+				ModelID:       "m1",
+				SpareCapacity: 20,
+				VariantCapacities: []VariantCapacity{
+					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10, Supply: 0, ReplicaCount: 0},
+					{Variant: NewVariantSpec("H100", 1), CostPerReplica: 20, Supply: 0, ReplicaCount: 0},
+				},
+			}},
+			inventory: newTestGPUInventory(map[VariantSpec]int{}),
+			wantLen:   0,
+		},
+		{
+			name: "scale up: TPDegree=2 requires n*TPDegree free GPU slots",
+			results: []AnalyzerResult{{
+				ModelID:          "m1",
+				RequiredCapacity: 20, // ceil(20/10)=2 replicas; needed = 2*2 = 4 slots
+				VariantCapacities: []VariantCapacity{
+					{Variant: NewVariantSpec("A100", 2), CostPerReplica: 10, Supply: 10, ReplicaCount: 1},
+				},
+			}},
+			inventory: newTestGPUInventory(map[VariantSpec]int{
+				NewVariantSpec("A100", 2): 4, // exactly 2 replicas * 2 GPUs each
+			}),
+			wantLen:   1,
+			wantDelta: 2,
+			wantGPU:   "A100",
 		},
 	}
 	for _, tt := range tests {

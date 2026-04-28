@@ -25,7 +25,7 @@ func (e *UnlimitedEngine) Optimize(results []AnalyzerResult, _ GPUInventory) []S
 				decisions = append(decisions, ScaleDecision{
 					ModelID: r.ModelID,
 					Variant: vcs[0].Variant,
-					Delta:   scaleUpN(r.RequiredCapacity, vcs),
+					Delta:   scaleUpN(r.RequiredCapacity, vcs[0:1]),
 				})
 			}
 			continue
