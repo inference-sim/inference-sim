@@ -1,4 +1,4 @@
-// default_collector.go implements DefaultCollector — the standard Collector that maps
+// default_collector.go implements DefaultCollector â the standard Collector that maps
 // RouterState snapshots into per-model ModelSignals for the autoscaler pipeline.
 package cluster
 
@@ -10,7 +10,8 @@ import (
 )
 
 // DefaultCollector maps RoutingSnapshot fields to ReplicaMetrics, grouping by model.
-// Pure function: no filtering, no thresholding, no modification of signals.
+// Filters structurally incomplete snapshots (empty Model or GPUType) with a Debugf log;
+// all valid signals pass through unmodified — no thresholding, no business-logic suppression.
 // Latency fields (TTFT, ITL, DispatchRate, AvgInTokens, AvgOutTokens, MaxBatchSize) are
 // populated from the snapshot when available (set by buildRouterState via LatencyStats).
 type DefaultCollector struct{}
@@ -68,7 +69,7 @@ func (c *DefaultCollector) Collect(state *sim.RouterState) []ModelSignals {
 			continue
 		}
 		if snap.TotalKvCapacityTokens <= 0 {
-			logrus.Debugf("[collector] loading snapshot %q model %q has zero TotalKvCapacityTokens — contributes to PendingReplicaCount but not PendingTotalKvCapacityTokens",
+			logrus.Debugf("[collector] loading snapshot %q model %q has zero TotalKvCapacityTokens â contributes to PendingReplicaCount but not PendingTotalKvCapacityTokens",
 				snap.ID, snap.Model)
 		}
 		p := pendingByModel[snap.Model]
