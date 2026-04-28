@@ -91,8 +91,26 @@ type QueueingModelAnalyzer struct {
 }
 
 // NewQueueingModelAnalyzer constructs a QueueingModelAnalyzer with the given config.
-// Zero-valued fields are replaced with defaults.
+// Zero-valued fields are replaced with defaults. Panics on invalid (negative) numeric fields (R3).
 func NewQueueingModelAnalyzer(cfg QMConfig) *QueueingModelAnalyzer {
+	if cfg.SLOMultiplier < 0 {
+		panic("NewQueueingModelAnalyzer: SLOMultiplier must be >= 0")
+	}
+	if cfg.InitObs < 0 {
+		panic("NewQueueingModelAnalyzer: InitObs must be >= 0")
+	}
+	if cfg.WindowSize < 0 {
+		panic("NewQueueingModelAnalyzer: WindowSize must be >= 0")
+	}
+	if cfg.ResidualThreshold < 0 {
+		panic("NewQueueingModelAnalyzer: ResidualThreshold must be >= 0")
+	}
+	if cfg.WarmUpCycles < 0 {
+		panic("NewQueueingModelAnalyzer: WarmUpCycles must be >= 0")
+	}
+	if cfg.InitFitThreshold < 0 {
+		panic("NewQueueingModelAnalyzer: InitFitThreshold must be >= 0")
+	}
 	if cfg.SLOMultiplier == 0 {
 		cfg.SLOMultiplier = DefaultSLOMultiplier
 	}
@@ -150,7 +168,7 @@ func (a *QueueingModelAnalyzer) Analyze(ms ModelSignals) AnalyzerResult {
 				}
 				// TTFT and ITL are in μs; environment expects ms.
 				env := core.NewEnvironmentPrefillDecode(
-					float32(rm.DispatchRate*60), // req/min
+					float32(rm.DispatchRate*60), // req/s → req/min (environment expects req/min)
 					0,                           // batchSize (0 = let model compute)
 					0,                           // avgQueueTime (ms)
 					maxBatch,
@@ -342,15 +360,19 @@ func (a *QueueingModelAnalyzer) getSLOTarget(modelID string, replicas []ReplicaM
 	// Priority 2: derive from fitted parameters.
 	wm := computeWorkloadMetrics(replicas)
 	var bestTTFT, bestITL float64
-	for k, state := range a.variantState {
-		if k.ModelID != modelID || state.alpha <= 0 {
+	for _, k := range sortedModelVariantKeys(a.variantState) {
+		if k.ModelID != modelID {
+			continue
+		}
+		state := a.variantState[k]
+		if state.alpha <= 0 {
 			continue
 		}
 		k2 := a.cfg.SLOMultiplier
 		α, β, γ := state.alpha, state.beta, state.gamma
-		// Base TTFT: prefill time at single-token batch ≈ α + (β+γ)*n_in
+		// TargetTTFT = k×α + (β+γ)×AvgInTokens  (design doc §Priority 2)
 		ttft := k2*α + (β+γ)*wm.AvgInTokens
-		// Base ITL: decode time ≈ α + β + γ*(n_in + n_out/2)
+		// TargetITL  = k×α + β + γ×(AvgInTokens + (AvgOutTokens+1)/2)
 		itl := k2*α + β + γ*(wm.AvgInTokens+(wm.AvgOutTokens+1)/2)
 		if ttft > bestTTFT {
 			bestTTFT = ttft
