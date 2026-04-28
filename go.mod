@@ -3,8 +3,8 @@ module github.com/inference-sim/inference-sim
 go 1.25.0
 
 require (
-	github.com/llm-inferno/model-tuner v0.5.1
-	github.com/llm-inferno/queue-analysis v0.5.0
+	github.com/llm-inferno/model-tuner v0.5.2
+	github.com/llm-inferno/queue-analysis v0.6.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0

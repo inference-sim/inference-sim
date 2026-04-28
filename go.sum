@@ -6,10 +6,10 @@ github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/llm-inferno/kalman-filter v0.1.2 h1:ALAs+ubQwyYAPBnkhMPC/QPd/p/Zo2LU+zYaGKCC49g=
 github.com/llm-inferno/kalman-filter v0.1.2/go.mod h1:dMqmiUHAJch+UvgnAROf1j3Wlw0t7Flgy3uXsUwHmVk=
-github.com/llm-inferno/model-tuner v0.5.1 h1:MaKnAHNdAThFM9/mLGoB3Fe4HfJ3ssVrfxOVSsRmpg4=
-github.com/llm-inferno/model-tuner v0.5.1/go.mod h1:vD1hZHMyxJii4K2xNqczb/UeiyN52jFVWzrhyf++Oys=
-github.com/llm-inferno/queue-analysis v0.5.0 h1:tdVJIrCrikod5e5ARgpBlOdJmDSvXPoukUEkNMdY7CM=
-github.com/llm-inferno/queue-analysis v0.5.0/go.mod h1:18cK7006sgMuEci090V6kbCJVwQ7kf82UeRMcDr/cxQ=
+github.com/llm-inferno/model-tuner v0.5.2 h1:QWab3UB9TsT9R9KUHy+azu3eT6QpQrk0tQ8hvEUSxuE=
+github.com/llm-inferno/model-tuner v0.5.2/go.mod h1:gxyzTVj//lO1GqXxR2AF3/sNFoyAHsGSIAbt2EXwzPg=
+github.com/llm-inferno/queue-analysis v0.6.0 h1:oCIXmFC9ILXFCw+ZdbkCZ9TYW5GNL9ml5Pan/KJFiXw=
+github.com/llm-inferno/queue-analysis v0.6.0/go.mod h1:18cK7006sgMuEci090V6kbCJVwQ7kf82UeRMcDr/cxQ=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
