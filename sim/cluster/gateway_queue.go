@@ -56,7 +56,7 @@ type EnqueueOutcome int
 const (
 	Enqueued   EnqueueOutcome = iota // request accepted into queue
 	ShedVictim                       // request accepted, a sheddable victim was evicted
-	Rejected                         // queue full, no displaceable victim — incoming request not enqueued
+	Rejected                         // queue full, incoming request cannot displace any entry — not enqueued
 )
 
 // String returns a human-readable name for the outcome.
@@ -79,7 +79,7 @@ type GatewayQueue struct {
 	heap          gatewayQueueHeap
 	maxDepth      int // 0 = unlimited
 	shedCount     int // number of requests shed (evicted victims only)
-	rejectedCount int // number of requests rejected (queue full, no displaceable victim)
+	rejectedCount int // number of requests rejected (queue full, incoming could not displace any entry)
 	priorityMap   *sim.SLOPriorityMap
 }
 
@@ -148,7 +148,7 @@ func (q *GatewayQueue) Enqueue(req *sim.Request, seqID int64) (EnqueueOutcome, *
 			return ShedVictim, victim
 		}
 
-		// Incoming has lower/equal priority — reject it.
+		// Incoming cannot outpriority any sheddable entry — reject it.
 		q.rejectedCount++
 		return Rejected, nil
 	}
@@ -177,7 +177,7 @@ func (q *GatewayQueue) ShedCount() int {
 	return q.shedCount
 }
 
-// RejectedCount returns the number of requests rejected (queue full, no displaceable victim).
+// RejectedCount returns the number of requests rejected (queue full, incoming could not displace any entry).
 func (q *GatewayQueue) RejectedCount() int {
 	return q.rejectedCount
 }

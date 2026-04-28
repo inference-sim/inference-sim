@@ -295,7 +295,7 @@ type TenantBudgetAdmission struct {
 }
 
 // NewTenantBudgetAdmission creates a TenantBudgetAdmission decorator.
-// Panics if inner or tracker is nil (R3: validate at construction).
+// Panics if inner or tracker is nil.
 func NewTenantBudgetAdmission(inner AdmissionPolicy, tracker TenantBudgetTracker, pm *SLOPriorityMap) *TenantBudgetAdmission {
 	if inner == nil {
 		panic("TenantBudgetAdmission: inner policy must not be nil")

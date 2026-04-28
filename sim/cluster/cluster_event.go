@@ -153,7 +153,7 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 		return
 	}
 
-	// Record admission (BC-2): tenant budget is now handled by TenantBudgetAdmission decorator.
+	// Record admission (BC-2): tenant budget enforcement is in the TenantBudgetAdmission decorator.
 	if cs.trace != nil {
 		cs.trace.RecordAdmission(trace.AdmissionRecord{
 			RequestID: e.request.ID,
@@ -170,12 +170,12 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 		outcome, victim := cs.gatewayQueue.Enqueue(e.request, cs.nextSeqID())
 		switch outcome {
 		case Rejected:
-			logrus.Debugf("[cluster] req %s: admitted but rejected by gateway queue (full, no displaceable victim)", e.request.ID)
+			logrus.Debugf("[cluster] req %s: admitted but rejected by gateway queue (full, incoming could not displace any entry)", e.request.ID)
 			e.request.GatewayEnqueueTime = 0 // not enqueued — clear timestamp
 			// INV-1 accounting: flows into gw_rejected via gatewayQueue.rejectedCount.
 			// NOT added to cs.rejectedRequests — that tracks admission rejections only.
 			// Gateway rejections are a separate INV-1 bucket (mutual exclusivity: the
-			// !admitted path returns at line 153 before reaching this block).
+			// !admitted path returns early before reaching this flow-control block).
 			return
 		case ShedVictim:
 			if victim == nil {
