@@ -6,6 +6,7 @@ package cluster
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/kv"
@@ -223,17 +224,43 @@ func (i *InstanceSimulator) LatencyStats() InstanceLatencyStats {
 		return InstanceLatencyStats{}
 	}
 	n := float64(m.CompletedRequests)
-	clockUs := i.Clock()
+
+	// DispatchRate: use the span between first and last completion time so that
+	// idle time at simulation start does not dilute the rate (rolling-window approximation).
+	// Falls back to total-elapsed-time when all completions share the same tick.
+	// INV-6 note: min/max reduction is order-independent (unlike float sums), so this map
+	// range is exempt from the R2 sort requirement.
+	var minCT, maxCT float64
+	first := true
+	for _, ct := range m.RequestCompletionTimes {
+		if first || ct < minCT {
+			minCT = ct
+		}
+		if first || ct > maxCT {
+			maxCT = ct
+		}
+		first = false
+	}
 	var dispatchRate float64
-	if clockUs > 0 {
+	if span := maxCT - minCT; span > 0 {
+		dispatchRate = n / (span / 1e6)
+	} else if clockUs := i.Clock(); clockUs > 0 {
 		dispatchRate = n / (float64(clockUs) / 1e6)
 	}
+
 	// Compute ITL from RequestITLs (per-request average ITL in µs).
+	// Sort keys before accumulating to satisfy INV-6 determinism (R2).
 	// ITLSum is never populated by the simulator; RequestITLs is the authoritative source.
-	var itlSum float64
-	for _, v := range m.RequestITLs {
-		itlSum += v
+	reqIDs := make([]string, 0, len(m.RequestITLs))
+	for id := range m.RequestITLs {
+		reqIDs = append(reqIDs, id)
 	}
+	sort.Strings(reqIDs)
+	var itlSum float64
+	for _, id := range reqIDs {
+		itlSum += m.RequestITLs[id]
+	}
+
 	return InstanceLatencyStats{
 		TTFT:         float64(m.TTFTSum) / n,
 		ITL:          itlSum / n,
