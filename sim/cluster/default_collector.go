@@ -10,7 +10,8 @@ import (
 )
 
 // DefaultCollector maps RoutingSnapshot fields to ReplicaMetrics, grouping by model.
-// Pure function: no filtering, no thresholding, no modification of signals.
+// Filters structurally incomplete snapshots (empty Model or GPUType) with a Debugf log;
+// all valid signals pass through unmodified — no thresholding, no business-logic suppression.
 // TTFT and DispatchRate are set to zero (future: QueueingModelAnalyzer).
 type DefaultCollector struct{}
 
