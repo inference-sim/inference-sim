@@ -276,3 +276,46 @@ func NewAdmissionPolicy(name string, capacity, refillRate float64) AdmissionPoli
 		panic(fmt.Sprintf("unhandled admission policy %q", name))
 	}
 }
+
+// TenantBudgetTracker is the interface needed by TenantBudgetAdmission to check
+// per-tenant budget status. Implemented by cluster.TenantTracker.
+// Defined here (in sim/) to avoid an import cycle with sim/cluster/.
+type TenantBudgetTracker interface {
+	IsOverBudget(tenantID string) bool
+}
+
+// TenantBudgetAdmission wraps an inner AdmissionPolicy and applies per-tenant
+// budget enforcement after the inner policy admits the request.
+// Only sheddable requests (priority < 0) are rejected when over budget.
+// Non-sheddable requests always pass the budget check.
+type TenantBudgetAdmission struct {
+	inner       AdmissionPolicy
+	tracker     TenantBudgetTracker
+	priorityMap *SLOPriorityMap
+}
+
+// NewTenantBudgetAdmission creates a TenantBudgetAdmission decorator.
+// Panics if inner or tracker is nil (R3: validate at construction).
+func NewTenantBudgetAdmission(inner AdmissionPolicy, tracker TenantBudgetTracker, pm *SLOPriorityMap) *TenantBudgetAdmission {
+	if inner == nil {
+		panic("TenantBudgetAdmission: inner policy must not be nil")
+	}
+	if tracker == nil {
+		panic("TenantBudgetAdmission: tracker must not be nil")
+	}
+	if pm == nil {
+		pm = DefaultSLOPriorityMap()
+	}
+	return &TenantBudgetAdmission{inner: inner, tracker: tracker, priorityMap: pm}
+}
+
+func (t *TenantBudgetAdmission) Admit(req *Request, state *RouterState) (bool, string) {
+	admitted, reason := t.inner.Admit(req, state)
+	if !admitted {
+		return false, reason
+	}
+	if t.tracker.IsOverBudget(req.TenantID) && t.priorityMap.IsSheddable(req.SLOClass) {
+		return false, "tenant-budget-shed"
+	}
+	return true, ""
+}

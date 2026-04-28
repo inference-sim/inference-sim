@@ -1791,14 +1791,15 @@ func TestClusterSimulator_FlowControl_Conservation(t *testing.T) {
 	gwDepth := cs.GatewayQueueDepth()
 	gwShed := cs.GatewayQueueShed()
 
-	// INV-1: injected == completed + queued + running + dropped + timedout + routingRejections + gwDepth + gwShed
+	// INV-1: injected == completed + queued + running + dropped + timedout + routingRejections + gwDepth + gwShed + gwRejected
+	gwRejected := cs.GatewayQueueRejected()
 	injected := len(requests) - cs.RejectedRequests()
-	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() + gwDepth + gwShed
+	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() + gwDepth + gwShed + gwRejected
 	if injected != accounted {
-		t.Errorf("INV-1: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d routingRejections=%d gwDepth=%d gwShed=%d)",
+		t.Errorf("INV-1: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d routingRejections=%d gwDepth=%d gwShed=%d gwRejected=%d)",
 			injected, accounted,
 			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
-			m.TimedOutRequests, cs.RoutingRejections(), gwDepth, gwShed)
+			m.TimedOutRequests, cs.RoutingRejections(), gwDepth, gwShed, gwRejected)
 	}
 }
 
@@ -1815,6 +1816,9 @@ func TestClusterSimulator_FlowControl_Accessors_Disabled(t *testing.T) {
 	}
 	if cs.GatewayQueueShed() != 0 {
 		t.Errorf("GatewayQueueShed should be 0 when disabled, got %d", cs.GatewayQueueShed())
+	}
+	if cs.GatewayQueueRejected() != 0 {
+		t.Errorf("GatewayQueueRejected should be 0 when disabled, got %d", cs.GatewayQueueRejected())
 	}
 }
 

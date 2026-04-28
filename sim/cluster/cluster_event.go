@@ -153,34 +153,7 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 		return
 	}
 
-	// Phase 1B-2a: tenant budget override after admission policy (issue #811).
-	// When a tenant is over their fair-share budget, shed sheddable requests (priority < 0).
-	// Non-sheddable requests (critical, standard) are protected — budget never sheds them.
-	// INV-9 compliant: reads only req.SLOClass and req.TenantID (arrival-time metadata).
-	if cs.tenantTracker != nil && cs.tenantTracker.IsOverBudget(e.request.TenantID) {
-		if cs.priorityMap.IsSheddable(e.request.SLOClass) {
-			// Record as rejected by tenant budget before returning (BC-2).
-			if cs.trace != nil {
-				cs.trace.RecordAdmission(trace.AdmissionRecord{
-					RequestID: e.request.ID,
-					Clock:     cs.clock,
-					Admitted:  false,
-					Reason:    "tenant-budget-shed",
-				})
-			}
-			cs.rejectedRequests++
-			tier := e.request.SLOClass
-			// Note: tier=="" is unreachable here — empty SLOClass defaults to standard(3),
-			// which is not sheddable (priority >= 0). Defensive for future changes.
-			if tier == "" {
-				tier = "standard"
-			}
-			cs.shedByTier[tier]++
-			return
-		}
-	}
-
-	// Record admission (BC-2): trace recorded here so tenant override above is reflected.
+	// Record admission (BC-2): tenant budget is now handled by TenantBudgetAdmission decorator.
 	if cs.trace != nil {
 		cs.trace.RecordAdmission(trace.AdmissionRecord{
 			RequestID: e.request.ID,
@@ -194,17 +167,20 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 	// When flow control is disabled (default), the original path is unchanged (BC-1).
 	if cs.flowControlEnabled {
 		e.request.GatewayEnqueueTime = cs.clock
-		shed := cs.gatewayQueue.Enqueue(e.request, cs.nextSeqID())
-		if shed {
-			// Trace gap: this request was admitted (RecordAdmission above wrote Admitted:true)
-			// but was subsequently shed from the full gateway queue. No shed trace record is
-			// emitted here. Trace consumers must not assume all Admitted:true requests have
-			// routing records when flow control is enabled.
-			e.request.GatewayEnqueueTime = 0 // clean up — request never actually queued
+		outcome, victim := cs.gatewayQueue.Enqueue(e.request, cs.nextSeqID())
+		switch outcome {
+		case Rejected:
+			e.request.GatewayEnqueueTime = 0 // not enqueued — clear timestamp
+			// INV-1 accounting: flows into gw_rejected via gatewayQueue.rejectedCount.
 			return
+		case ShedVictim:
+			if victim != nil {
+				victim.GatewayEnqueueTime = 0 // evicted — clear stale timestamp
+			}
+			// INV-1 accounting: victim flows into gw_shed via gatewayQueue.shedCount.
+		case Enqueued:
+			// nothing extra
 		}
-		// Attempt immediate dispatch — succeeds when cluster is not saturated.
-		// NeverSaturated always dispatches; real detectors dispatch when load is below threshold.
 		cs.tryDispatchFromGatewayQueue()
 		return
 	}

@@ -102,9 +102,10 @@ type RawMetrics struct {
 	HOLBlockingEvents    int
 	RejectedRequests     int            // admission rejections
 	ShedByTier                map[string]int // per-SLOClass breakdown of all admission rejections (unconditional)
-	// INV-1 extended: injected == completed + running + queued + shed + dropped + timed_out + gw_depth + gw_shed
+	// INV-1 extended: injected == completed + running + queued + shed + dropped + timed_out + gw_depth + gw_shed + gw_rejected
 	GatewayQueueDepth          int           // Requests still in gateway queue at horizon (issue #882)
-	GatewayQueueShed           int           // Requests shed from gateway queue due to capacity (issue #882)
+	GatewayQueueShed           int           // Requests shed (evicted victims) from gateway queue (issue #882)
+	GatewayQueueRejected       int           // Requests rejected from gateway queue — no sheddable victim (#1190)
 	RoutingRejections    int            // I13: routing rejections (no routable instances)
 	DroppedUnservable    int
 	LengthCappedRequests int
