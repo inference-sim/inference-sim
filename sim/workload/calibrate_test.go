@@ -215,6 +215,33 @@ func TestBuildCalibrationReport_IncludesAllAnnotations(t *testing.T) {
 	if report.TraceInfo.MatchedPairs != 3 {
 		t.Errorf("matched pairs = %d, want 3", report.TraceInfo.MatchedPairs)
 	}
+
+	// THEN tail percentile error fields are populated (non-zero when inputs differ)
+	ttft := report.Metrics["ttft"]
+	if ttft.WorkloadLevel.P50Error == 0.0 {
+		t.Error("P50Error should be non-zero when real and sim differ")
+	}
+	if ttft.WorkloadLevel.P50PercentError == 0.0 {
+		t.Error("P50PercentError should be non-zero when real and sim differ")
+	}
+	if ttft.WorkloadLevel.P90Error == 0.0 {
+		t.Error("P90Error should be non-zero when real and sim differ")
+	}
+	if ttft.WorkloadLevel.P90PercentError == 0.0 {
+		t.Error("P90PercentError should be non-zero when real and sim differ")
+	}
+	if ttft.WorkloadLevel.P95Error == 0.0 {
+		t.Error("P95Error should be non-zero when real and sim differ")
+	}
+	if ttft.WorkloadLevel.P95PercentError == 0.0 {
+		t.Error("P95PercentError should be non-zero when real and sim differ")
+	}
+	if ttft.WorkloadLevel.P99Error == 0.0 {
+		t.Error("P99Error should be non-zero when real and sim differ")
+	}
+	if ttft.WorkloadLevel.P99PercentError == 0.0 {
+		t.Error("P99PercentError should be non-zero when real and sim differ")
+	}
 }
 
 func TestCalibration_WithITL(t *testing.T) {
@@ -806,6 +833,8 @@ func TestComputeCalibration_TailPercentileErrors_CorrectSignAndMagnitude(t *test
 		name                string
 		real                []float64
 		sim                 []float64
+		wantP50Error        float64
+		wantP50PercentError float64
 		wantP90Error        float64
 		wantP90PercentError float64
 		wantP95Error        float64
@@ -817,11 +846,14 @@ func TestComputeCalibration_TailPercentileErrors_CorrectSignAndMagnitude(t *test
 		{
 			name: "over-predict-tail",
 			// Distribution where sim consistently over-predicts by 10%
+			// P50: real[4..5] = 500..600 → 550, sim[4..5] = 550..660 → 605 → error=55
 			// P90: real[8..9] = 900..1000 → 910, sim[8..9] = 990..1100 → 1001 → error=91
 			// P95: real[8..9] = 900..1000 → 955, sim[8..9] = 990..1100 → 1050.5 → error=95.5
 			// P99: real[8..9] = 900..1000 → 991, sim[8..9] = 990..1100 → 1090.1 → error=99.1
 			real:                []float64{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000},
 			sim:                 []float64{110, 220, 330, 440, 550, 660, 770, 880, 990, 1100},
+			wantP50Error:        55.0,  // 605 - 550
+			wantP50PercentError: 0.100, // 55 / 550
 			wantP90Error:        91.0,  // 1001 - 910
 			wantP90PercentError: 0.100, // 91 / 910
 			wantP95Error:        95.5,  // 1050.5 - 955
@@ -834,6 +866,8 @@ func TestComputeCalibration_TailPercentileErrors_CorrectSignAndMagnitude(t *test
 			name:                "under-predict-tail",
 			real:                []float64{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000},
 			sim:                 []float64{90, 180, 270, 360, 450, 540, 630, 720, 810, 900},
+			wantP50Error:        -55.0, // 495 - 550
+			wantP50PercentError: 0.100, // | -55 | / 550
 			wantP90Error:        -91.0, // 819 - 910
 			wantP90PercentError: 0.100, // | -91 | / 910
 			wantP95Error:        -95.5, // 859.5 - 955
@@ -846,6 +880,8 @@ func TestComputeCalibration_TailPercentileErrors_CorrectSignAndMagnitude(t *test
 			name:                "perfect-match-tail",
 			real:                []float64{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000},
 			sim:                 []float64{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000},
+			wantP50Error:        0.0,
+			wantP50PercentError: 0.0,
 			wantP90Error:        0.0,
 			wantP90PercentError: 0.0,
 			wantP95Error:        0.0,
@@ -865,6 +901,12 @@ func TestComputeCalibration_TailPercentileErrors_CorrectSignAndMagnitude(t *test
 			}
 
 			// THEN tail percentile error fields match expected values
+			if math.Abs(report.WorkloadLevel.P50Error-tt.wantP50Error) > tt.tolerance {
+				t.Errorf("WorkloadLevel.P50Error = %f, want %f", report.WorkloadLevel.P50Error, tt.wantP50Error)
+			}
+			if math.Abs(report.WorkloadLevel.P50PercentError-tt.wantP50PercentError) > tt.tolerance {
+				t.Errorf("WorkloadLevel.P50PercentError = %f, want %f", report.WorkloadLevel.P50PercentError, tt.wantP50PercentError)
+			}
 			if math.Abs(report.WorkloadLevel.P90Error-tt.wantP90Error) > tt.tolerance {
 				t.Errorf("WorkloadLevel.P90Error = %f, want %f", report.WorkloadLevel.P90Error, tt.wantP90Error)
 			}
@@ -913,12 +955,8 @@ func TestComputeCalibration_ZeroRealP90_GuardsDivision(t *testing.T) {
 
 func TestComputeCalibration_ZeroRealP95_GuardsDivision(t *testing.T) {
 	// GIVEN real values where P95 is exactly zero (all values are zero)
-	real := make([]float64, 20)
-	sim := make([]float64, 20)
-	for i := 0; i < 20; i++ {
-		real[i] = 0
-		sim[i] = 10
-	}
+	real := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	sim := []float64{10, 10, 10, 10, 10, 10, 10, 10, 10, 10}
 
 	// WHEN computing calibration
 	report, err := ComputeCalibration(real, sim, "test")
@@ -941,12 +979,8 @@ func TestComputeCalibration_ZeroRealP95_GuardsDivision(t *testing.T) {
 
 func TestComputeCalibration_ZeroRealP99_GuardsDivision(t *testing.T) {
 	// GIVEN real values where P99 is exactly zero (all values are zero)
-	real := make([]float64, 100)
-	sim := make([]float64, 100)
-	for i := 0; i < 100; i++ {
-		real[i] = 0
-		sim[i] = 10
-	}
+	real := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	sim := []float64{10, 10, 10, 10, 10, 10, 10, 10, 10, 10}
 
 	// WHEN computing calibration
 	report, err := ComputeCalibration(real, sim, "test")
