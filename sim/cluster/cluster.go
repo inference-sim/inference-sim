@@ -91,9 +91,9 @@ type ClusterSimulator struct {
 	saturationDetector sim.SaturationDetector
 	gatewayQueue       *GatewayQueue
 
-	progressHook       sim.ProgressHook
-	progressIntervalUs int64
-	nextSnapshotTime   int64
+	progressHook                sim.ProgressHook
+	simClockProgressIntervalUs int64
+	nextSnapshotClockUs        int64
 }
 
 // effectiveAnalyzerConfig applies WVA reference defaults to zero-valued fields.
@@ -769,13 +769,14 @@ func (c *ClusterSimulator) nextSeqID() int64 {
 // SetProgressHook registers an optional hook that receives periodic state
 // snapshots during cluster simulation execution. Must be called before Run().
 // When hook is nil (default), there is zero behavioral or performance impact.
-// intervalUs controls the minimum clock interval between periodic snapshots.
-// If intervalUs <= 0, only the final snapshot is delivered.
-func (c *ClusterSimulator) SetProgressHook(hook sim.ProgressHook, intervalUs int64) {
+// simClockIntervalUs controls the minimum simulation-clock interval (microseconds)
+// between periodic snapshots. If simClockIntervalUs <= 0, only the final snapshot
+// is delivered.
+func (c *ClusterSimulator) SetProgressHook(hook sim.ProgressHook, simClockIntervalUs int64) {
 	c.progressHook = hook
-	if intervalUs > 0 {
-		c.progressIntervalUs = intervalUs
-		c.nextSnapshotTime = intervalUs
+	if simClockIntervalUs > 0 {
+		c.simClockProgressIntervalUs = simClockIntervalUs
+		c.nextSnapshotClockUs = simClockIntervalUs
 	}
 }
 
@@ -783,7 +784,7 @@ func (c *ClusterSimulator) maybeDeliverProgressSnapshot(isFinal bool) {
 	if c.progressHook == nil {
 		return
 	}
-	if !isFinal && (c.progressIntervalUs <= 0 || c.clock < c.nextSnapshotTime) {
+	if !isFinal && (c.simClockProgressIntervalUs <= 0 || c.clock < c.nextSnapshotClockUs) {
 		return
 	}
 
@@ -844,7 +845,7 @@ func (c *ClusterSimulator) maybeDeliverProgressSnapshot(isFinal bool) {
 	}
 	c.progressHook.OnProgress(snap)
 	if !isFinal {
-		c.nextSnapshotTime += c.progressIntervalUs
+		c.nextSnapshotClockUs += c.simClockProgressIntervalUs
 	}
 }
 

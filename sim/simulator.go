@@ -106,9 +106,9 @@ type Simulator struct {
 	// Set by the caller (cmd/root.go or ClusterSimulator). Nil = no callback.
 	OnRequestDone func(req *Request, tick int64) []*Request
 
-	progressHook       ProgressHook
-	progressIntervalUs int64
-	nextSnapshotTime   int64
+	progressHook                ProgressHook
+	simClockProgressIntervalUs int64
+	nextSnapshotClockUs        int64
 }
 
 // NewSimulator creates a Simulator from a SimConfig struct and pre-built dependencies.
@@ -278,13 +278,14 @@ func (sim *Simulator) Run() {
 // SetProgressHook registers an optional hook that receives periodic state
 // snapshots during simulation execution. Must be called before Run().
 // When hook is nil (default), there is zero behavioral or performance impact.
-// intervalUs controls the minimum clock interval between periodic snapshots.
-// If intervalUs <= 0, only the final snapshot is delivered.
-func (sim *Simulator) SetProgressHook(hook ProgressHook, intervalUs int64) {
+// simClockIntervalUs controls the minimum simulation-clock interval (microseconds)
+// between periodic snapshots. If simClockIntervalUs <= 0, only the final snapshot
+// is delivered.
+func (sim *Simulator) SetProgressHook(hook ProgressHook, simClockIntervalUs int64) {
 	sim.progressHook = hook
-	if intervalUs > 0 {
-		sim.progressIntervalUs = intervalUs
-		sim.nextSnapshotTime = intervalUs
+	if simClockIntervalUs > 0 {
+		sim.simClockProgressIntervalUs = simClockIntervalUs
+		sim.nextSnapshotClockUs = simClockIntervalUs
 	}
 }
 
@@ -292,7 +293,7 @@ func (sim *Simulator) maybeDeliverProgressSnapshot(isFinal bool) {
 	if sim.progressHook == nil {
 		return
 	}
-	if !isFinal && (sim.progressIntervalUs <= 0 || sim.Clock < sim.nextSnapshotTime) {
+	if !isFinal && (sim.simClockProgressIntervalUs <= 0 || sim.Clock < sim.nextSnapshotClockUs) {
 		return
 	}
 	clock := sim.Clock
@@ -314,7 +315,7 @@ func (sim *Simulator) maybeDeliverProgressSnapshot(isFinal bool) {
 	}
 	sim.progressHook.OnProgress(snap)
 	if !isFinal {
-		sim.nextSnapshotTime += sim.progressIntervalUs
+		sim.nextSnapshotClockUs += sim.simClockProgressIntervalUs
 	}
 }
 
@@ -322,6 +323,7 @@ func (sim *Simulator) buildInstanceSnapshot() InstanceSnapshot {
 	return InstanceSnapshot{
 		ID:                "instance-0",
 		Model:             sim.model,
+		State:             "Active",
 		QueueDepth:        sim.QueueDepth(),
 		BatchSize:         sim.BatchSize(),
 		KVUtilization:     float64(sim.KVCache.UsedBlocks()) / float64(max(sim.KVCache.TotalCapacity(), 1)),

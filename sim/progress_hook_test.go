@@ -31,6 +31,14 @@ func TestProgressSnapshot_IsValueType(t *testing.T) {
 	if snap.TotalCompleted == 99 {
 		t.Error("ProgressSnapshot scalar fields are not value-copied")
 	}
+
+	// Slice backing array IS shared on simple assignment (expected Go behavior).
+	// The real safety guarantee is fresh allocation per callback (BC-7, tested
+	// in FreshSlicePerCall).
+	copied.InstanceSnapshots[0].QueueDepth = 999
+	if snap.InstanceSnapshots[0].QueueDepth != 999 {
+		t.Error("slice backing array should be shared on simple assignment")
+	}
 }
 
 func newTestSimulatorForHook(t *testing.T) *Simulator {
@@ -187,23 +195,22 @@ func TestSimulator_ProgressHook_IntervalBoundaries(t *testing.T) {
 		))
 	}
 	var snapshots []ProgressSnapshot
-	s.SetProgressHook(&collectingHook{snapshots: &snapshots}, 2_000_000)
+	intervalUs := int64(2_000_000)
+	s.SetProgressHook(&collectingHook{snapshots: &snapshots}, intervalUs)
 
 	s.Run()
 
-	for i := 1; i < len(snapshots)-1; i++ {
-		if snapshots[i].IsFinal {
-			t.Errorf("snapshot %d should not be final", i)
-		}
-		if snapshots[i].Clock <= snapshots[i-1].Clock {
-			t.Errorf("snapshot clocks not monotonically increasing: %d <= %d",
-				snapshots[i].Clock, snapshots[i-1].Clock)
-		}
-	}
 	nonFinal := 0
-	for _, s := range snapshots {
-		if !s.IsFinal {
-			nonFinal++
+	for i, snap := range snapshots {
+		if snap.IsFinal {
+			continue
+		}
+		nonFinal++
+		if i > 0 && !snapshots[i-1].IsFinal {
+			gap := snap.Clock - snapshots[i-1].Clock
+			if gap < intervalUs {
+				t.Errorf("snapshot %d fired too soon: gap=%d < interval=%d", i, gap, intervalUs)
+			}
 		}
 	}
 	if nonFinal > 10 {
@@ -212,8 +219,15 @@ func TestSimulator_ProgressHook_IntervalBoundaries(t *testing.T) {
 }
 
 func TestSimulator_ProgressHook_FreshSlicePerCall(t *testing.T) {
-	s := newTestSimulatorForHook(t)
-	s.InjectArrival(newTestRequest("req-1", 0, 100, 50))
+	s := mustNewSimulator(t, SimConfig{
+		Horizon:             10_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(100, 4, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(10, 1000, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 0.5, 0.5}, []float64{100, 0.1, 50}),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-model", "", 1, "roofline", 0),
+	})
+	s.InjectArrival(newTestRequest("req-1", 0, 100, int(math.MaxInt16)))
 
 	var snapshots []ProgressSnapshot
 	s.SetProgressHook(&collectingHook{snapshots: &snapshots}, 100_000)
@@ -221,7 +235,7 @@ func TestSimulator_ProgressHook_FreshSlicePerCall(t *testing.T) {
 	s.Run()
 
 	if len(snapshots) < 2 {
-		t.Skip("need at least 2 snapshots to test slice independence")
+		t.Fatalf("expected at least 2 snapshots, got %d", len(snapshots))
 	}
 	snapshots[0].InstanceSnapshots[0].QueueDepth = 999999
 	if snapshots[1].InstanceSnapshots[0].QueueDepth == 999999 {

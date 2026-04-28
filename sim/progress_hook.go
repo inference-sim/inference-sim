@@ -14,42 +14,71 @@ type ProgressHook interface {
 }
 
 // ProgressSnapshot captures simulation state at a point in time.
-// Value type — fully copied, safe to hold indefinitely.
+// Scalar fields are independently copied on assignment. InstanceSnapshots is a
+// slice — do not mutate elements after receipt. Each OnProgress callback receives
+// a freshly allocated slice (BC-7).
 type ProgressSnapshot struct {
-	Clock             int64
-	TotalCompleted    int
-	TotalTimedOut     int
-	TotalDropped      int
-	TotalInputTokens  int
+	Clock int64
+
+	// TotalCompleted is the raw sum of CompletedRequests across all instances.
+	// In PD (prefill/decode disaggregation) mode, this value is inflated for
+	// non-final snapshots because the PD correction (subtracting prefill-only
+	// completions) is applied only during post-simulation aggregation.
+	TotalCompleted int
+
+	TotalTimedOut   int
+	TotalDropped    int
+	TotalInputTokens int
+
+	// TotalOutputTokens is incremented at request completion, not per decode step.
+	// During long decode runs it stays flat until completion, then jumps. This is
+	// intentional to avoid double-counting under preemption.
 	TotalOutputTokens int
+
 	TotalPreemptions  int64
 	InstanceSnapshots []InstanceSnapshot
+
+	// Cluster-mode only; always 0 in single-instance mode.
 	RejectedRequests  int
 	RoutingRejections int
 	GatewayQueueDepth int
 	GatewayQueueShed  int
 	ActivePDTransfers int
-	ActiveInstances   int
-	TotalInstances    int
-	IsFinal           bool
+
+	// ActiveInstances counts instances in Active or WarmingUp state.
+	// Loading and Draining instances appear in InstanceSnapshots but are excluded
+	// from this count.
+	ActiveInstances int
+
+	// TotalInstances includes all instances (including Terminated).
+	// len(InstanceSnapshots) excludes Terminated instances and may be smaller.
+	TotalInstances int
+
+	IsFinal bool
 }
 
 // InstanceSnapshot captures per-instance state at a point in time.
-// Value type — fully copied, safe to hold indefinitely.
-// In single-instance mode, ID is "instance-0" and InFlightRequests is 0
-// (the concept only applies in cluster mode).
+// All fields are value types — safe to hold indefinitely.
 type InstanceSnapshot struct {
-	ID                string
-	QueueDepth        int
-	BatchSize         int
-	KVUtilization     float64
-	KVFreeBlocks      int64
-	KVTotalBlocks     int64
-	CacheHitRate      float64
+	ID        string
+	QueueDepth int
+	BatchSize  int
+	KVUtilization float64
+	KVFreeBlocks  int64
+	KVTotalBlocks int64
+	CacheHitRate  float64
 	PreemptionCount   int64
 	CompletedRequests int
-	InFlightRequests  int
-	TimedOutRequests  int
-	State             string
-	Model             string
+
+	// InFlightRequests is always 0 in single-instance mode (no dispatch layer);
+	// use QueueDepth + BatchSize for an equivalent in-flight count.
+	InFlightRequests int
+
+	TimedOutRequests int
+
+	// State matches InstanceState string constants defined in sim/cluster
+	// (e.g. "Active", "Loading", "Draining"). Always "Active" in single-instance mode.
+	State string
+
+	Model string
 }
