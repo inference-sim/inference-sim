@@ -132,7 +132,7 @@ A researcher studying oscillation behavior wants to configure HPA-aligned stabil
 **Collector**
 
 - **FR-005**: The Collector MUST produce exactly one ModelSignals per model present in either active (routable) or Loading snapshots from the current RouterState, grouping all routable replicas for that model together. Models with only Loading instances produce a ModelSignals entry with empty Replicas and non-zero PendingReplicaCount.
-- **FR-006**: The Collector MUST NOT filter, threshold, or modify the raw per-replica signals it collects.
+- **FR-006**: The Collector MUST NOT filter, threshold, or modify the raw per-replica signals it collects. Structurally incomplete snapshots (empty Model or GPUType) may be skipped with a diagnostic log.
 
 **Analyzer**
 
