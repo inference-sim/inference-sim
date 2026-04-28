@@ -20,6 +20,8 @@ type WorkloadAggregates struct {
 	MedianPercentError float64 `json:"median_percent_error"` // |MedianError| / RealMedian
 	RealP50            float64 `json:"real_p50"`
 	SimP50             float64 `json:"sim_p50"`
+	P50Error           float64 `json:"p50_error"`           // SimP50 - RealP50
+	P50PercentError    float64 `json:"p50_percent_error"`   // |P50Error| / RealP50
 	RealP90            float64 `json:"real_p90"`
 	SimP90             float64 `json:"sim_p90"`
 	P90Error           float64 `json:"p90_error"`           // SimP90 - RealP90
@@ -319,31 +321,37 @@ func ComputeCalibration(real, sim []float64, metricName string) (*MetricComparis
 
 	// Mean error and percent error (with division guards, R11)
 	comp.WorkloadLevel.MeanError = comp.WorkloadLevel.SimMean - comp.WorkloadLevel.RealMean
-	if comp.WorkloadLevel.RealMean != 0 {
+	if comp.WorkloadLevel.RealMean > 0 {
 		comp.WorkloadLevel.MeanPercentError = math.Abs(comp.WorkloadLevel.MeanError) / comp.WorkloadLevel.RealMean
 	}
 
 	// Median error and percent error (with division guards, R11)
 	comp.WorkloadLevel.MedianError = comp.WorkloadLevel.SimMedian - comp.WorkloadLevel.RealMedian
-	if comp.WorkloadLevel.RealMedian != 0 {
+	if comp.WorkloadLevel.RealMedian > 0 {
 		comp.WorkloadLevel.MedianPercentError = math.Abs(comp.WorkloadLevel.MedianError) / comp.WorkloadLevel.RealMedian
+	}
+
+	// P50 error and percent error (with division guards, R11)
+	comp.WorkloadLevel.P50Error = comp.WorkloadLevel.SimP50 - comp.WorkloadLevel.RealP50
+	if comp.WorkloadLevel.RealP50 > 0 {
+		comp.WorkloadLevel.P50PercentError = math.Abs(comp.WorkloadLevel.P50Error) / comp.WorkloadLevel.RealP50
 	}
 
 	// P90 error and percent error (with division guards, R11)
 	comp.WorkloadLevel.P90Error = comp.WorkloadLevel.SimP90 - comp.WorkloadLevel.RealP90
-	if comp.WorkloadLevel.RealP90 != 0 {
+	if comp.WorkloadLevel.RealP90 > 0 {
 		comp.WorkloadLevel.P90PercentError = math.Abs(comp.WorkloadLevel.P90Error) / comp.WorkloadLevel.RealP90
 	}
 
 	// P95 error and percent error (with division guards, R11)
 	comp.WorkloadLevel.P95Error = comp.WorkloadLevel.SimP95 - comp.WorkloadLevel.RealP95
-	if comp.WorkloadLevel.RealP95 != 0 {
+	if comp.WorkloadLevel.RealP95 > 0 {
 		comp.WorkloadLevel.P95PercentError = math.Abs(comp.WorkloadLevel.P95Error) / comp.WorkloadLevel.RealP95
 	}
 
 	// P99 error and percent error (with division guards, R11)
 	comp.WorkloadLevel.P99Error = comp.WorkloadLevel.SimP99 - comp.WorkloadLevel.RealP99
-	if comp.WorkloadLevel.RealP99 != 0 {
+	if comp.WorkloadLevel.RealP99 > 0 {
 		comp.WorkloadLevel.P99PercentError = math.Abs(comp.WorkloadLevel.P99Error) / comp.WorkloadLevel.RealP99
 	}
 

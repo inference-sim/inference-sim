@@ -433,7 +433,7 @@ func TestComputeCalibration_ZeroRealMean_GuardsDivision(t *testing.T) {
 	// WHEN computing calibration
 	report, err := ComputeCalibration(real, sim, "test")
 
-	// THEN MeanPercentError is set to 0 (BC-11, R11)
+	// THEN MeanPercentError is set to 0 (BC-11, R11, guard: > 0)
 	if err != nil {
 		t.Fatalf("ComputeCalibration failed: %v", err)
 	}
@@ -457,7 +457,7 @@ func TestComputeCalibration_ZeroRealMedian_GuardsDivision(t *testing.T) {
 	// WHEN computing calibration
 	report, err := ComputeCalibration(real, sim, "test")
 
-	// THEN MedianPercentError is set to 0 (BC-12, R11)
+	// THEN MedianPercentError is set to 0 (BC-12, R11, guard: > 0)
 	if err != nil {
 		t.Fatalf("ComputeCalibration failed: %v", err)
 	}
@@ -470,6 +470,30 @@ func TestComputeCalibration_ZeroRealMedian_GuardsDivision(t *testing.T) {
 	// MedianError should still be computed (not guarded)
 	if report.WorkloadLevel.MedianError != 10.0 {
 		t.Errorf("WorkloadLevel.MedianError = %f, want 10.0", report.WorkloadLevel.MedianError)
+	}
+}
+
+func TestComputeCalibration_ZeroRealP50_GuardsDivision(t *testing.T) {
+	// GIVEN real values where P50 is exactly zero (all values are zero)
+	real := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	sim := []float64{10, 10, 10, 10, 10, 10, 10, 10, 10, 10}
+
+	// WHEN computing calibration
+	report, err := ComputeCalibration(real, sim, "test")
+
+	// THEN P50PercentError is set to 0 (R11, guard: > 0)
+	if err != nil {
+		t.Fatalf("ComputeCalibration failed: %v", err)
+	}
+	if report.WorkloadLevel.RealP50 != 0.0 {
+		t.Errorf("WorkloadLevel.RealP50 = %f, want 0.0", report.WorkloadLevel.RealP50)
+	}
+	if report.WorkloadLevel.P50PercentError != 0.0 {
+		t.Errorf("WorkloadLevel.P50PercentError = %f, want 0.0 (guarded division)", report.WorkloadLevel.P50PercentError)
+	}
+	// P50Error should still be computed (not guarded)
+	if report.WorkloadLevel.P50Error != 10.0 {
+		t.Errorf("WorkloadLevel.P50Error = %f, want 10.0", report.WorkloadLevel.P50Error)
 	}
 }
 
@@ -871,7 +895,7 @@ func TestComputeCalibration_ZeroRealP90_GuardsDivision(t *testing.T) {
 	// WHEN computing calibration
 	report, err := ComputeCalibration(real, sim, "test")
 
-	// THEN P90PercentError is set to 0 (R11 division guard)
+	// THEN P90PercentError is set to 0 (R11, guard: > 0)
 	if err != nil {
 		t.Fatalf("ComputeCalibration failed: %v", err)
 	}
@@ -899,7 +923,7 @@ func TestComputeCalibration_ZeroRealP95_GuardsDivision(t *testing.T) {
 	// WHEN computing calibration
 	report, err := ComputeCalibration(real, sim, "test")
 
-	// THEN P95PercentError is set to 0 (R11 division guard)
+	// THEN P95PercentError is set to 0 (R11, guard: > 0)
 	if err != nil {
 		t.Fatalf("ComputeCalibration failed: %v", err)
 	}
@@ -927,7 +951,7 @@ func TestComputeCalibration_ZeroRealP99_GuardsDivision(t *testing.T) {
 	// WHEN computing calibration
 	report, err := ComputeCalibration(real, sim, "test")
 
-	// THEN P99PercentError is set to 0 (R11 division guard)
+	// THEN P99PercentError is set to 0 (R11, guard: > 0)
 	if err != nil {
 		t.Fatalf("ComputeCalibration failed: %v", err)
 	}
@@ -949,6 +973,8 @@ func TestMetricComparison_JSONRoundTrip_IncludesTailPercentileErrors(t *testing.
 		WorkloadLevel: WorkloadAggregates{
 			RealP50:            5000,
 			SimP50:             5100,
+			P50Error:           100,
+			P50PercentError:    0.020,
 			RealP90:            8000,
 			SimP90:             8200,
 			P90Error:           200,
@@ -991,6 +1017,12 @@ func TestMetricComparison_JSONRoundTrip_IncludesTailPercentileErrors(t *testing.
 	}
 
 	// THEN tail percentile error fields round-trip correctly
+	if decoded.WorkloadLevel.P50Error != original.WorkloadLevel.P50Error {
+		t.Errorf("WorkloadLevel.P50Error = %f, want %f", decoded.WorkloadLevel.P50Error, original.WorkloadLevel.P50Error)
+	}
+	if decoded.WorkloadLevel.P50PercentError != original.WorkloadLevel.P50PercentError {
+		t.Errorf("WorkloadLevel.P50PercentError = %f, want %f", decoded.WorkloadLevel.P50PercentError, original.WorkloadLevel.P50PercentError)
+	}
 	if decoded.WorkloadLevel.P90Error != original.WorkloadLevel.P90Error {
 		t.Errorf("WorkloadLevel.P90Error = %f, want %f", decoded.WorkloadLevel.P90Error, original.WorkloadLevel.P90Error)
 	}
@@ -1012,7 +1044,7 @@ func TestMetricComparison_JSONRoundTrip_IncludesTailPercentileErrors(t *testing.
 
 	// THEN JSON includes expected keys
 	jsonStr := string(data)
-	expectedKeys := []string{"p90_error", "p90_percent_error", "p95_error", "p95_percent_error", "p99_error", "p99_percent_error"}
+	expectedKeys := []string{"p50_error", "p50_percent_error", "p90_error", "p90_percent_error", "p95_error", "p95_percent_error", "p99_error", "p99_percent_error"}
 	for _, key := range expectedKeys {
 		if !strings.Contains(jsonStr, key) {
 			t.Errorf("JSON missing key %q: %s", key, jsonStr)

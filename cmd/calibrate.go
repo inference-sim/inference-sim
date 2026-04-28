@@ -164,7 +164,7 @@ Example:
 			logrus.Infof("  TTFT: Real mean=%.0fµs, Sim mean=%.0fµs, Error=%+.0fµs (%.1f%%)",
 				ttft.WorkloadLevel.RealMean, ttft.WorkloadLevel.SimMean, ttft.WorkloadLevel.MeanError, ttft.WorkloadLevel.MeanPercentError*100)
 			logrus.Infof("        P50: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
-				ttft.WorkloadLevel.RealP50, ttft.WorkloadLevel.SimP50, ttft.WorkloadLevel.MedianError, ttft.WorkloadLevel.MedianPercentError*100)
+				ttft.WorkloadLevel.RealP50, ttft.WorkloadLevel.SimP50, ttft.WorkloadLevel.P50Error, ttft.WorkloadLevel.P50PercentError*100)
 			logrus.Infof("        P90: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
 				ttft.WorkloadLevel.RealP90, ttft.WorkloadLevel.SimP90, ttft.WorkloadLevel.P90Error, ttft.WorkloadLevel.P90PercentError*100)
 			logrus.Infof("        P95: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
@@ -176,7 +176,7 @@ Example:
 			logrus.Infof("  E2E:  Real mean=%.0fµs, Sim mean=%.0fµs, Error=%+.0fµs (%.1f%%)",
 				e2e.WorkloadLevel.RealMean, e2e.WorkloadLevel.SimMean, e2e.WorkloadLevel.MeanError, e2e.WorkloadLevel.MeanPercentError*100)
 			logrus.Infof("        P50: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
-				e2e.WorkloadLevel.RealP50, e2e.WorkloadLevel.SimP50, e2e.WorkloadLevel.MedianError, e2e.WorkloadLevel.MedianPercentError*100)
+				e2e.WorkloadLevel.RealP50, e2e.WorkloadLevel.SimP50, e2e.WorkloadLevel.P50Error, e2e.WorkloadLevel.P50PercentError*100)
 			logrus.Infof("        P90: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
 				e2e.WorkloadLevel.RealP90, e2e.WorkloadLevel.SimP90, e2e.WorkloadLevel.P90Error, e2e.WorkloadLevel.P90PercentError*100)
 			logrus.Infof("        P95: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
@@ -188,7 +188,7 @@ Example:
 			logrus.Infof("  ITL:  Real mean=%.0fµs, Sim mean=%.0fµs, Error=%+.0fµs (%.1f%%)",
 				itl.WorkloadLevel.RealMean, itl.WorkloadLevel.SimMean, itl.WorkloadLevel.MeanError, itl.WorkloadLevel.MeanPercentError*100)
 			logrus.Infof("        P50: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
-				itl.WorkloadLevel.RealP50, itl.WorkloadLevel.SimP50, itl.WorkloadLevel.MedianError, itl.WorkloadLevel.MedianPercentError*100)
+				itl.WorkloadLevel.RealP50, itl.WorkloadLevel.SimP50, itl.WorkloadLevel.P50Error, itl.WorkloadLevel.P50PercentError*100)
 			logrus.Infof("        P90: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
 				itl.WorkloadLevel.RealP90, itl.WorkloadLevel.SimP90, itl.WorkloadLevel.P90Error, itl.WorkloadLevel.P90PercentError*100)
 			logrus.Infof("        P95: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
