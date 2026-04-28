@@ -10,6 +10,8 @@ BC-1: ReadAll failure warning
 - GIVEN a server returns a non-200 HTTP status code AND the response body read fails (e.g., connection reset mid-error-response)
 - WHEN `RealClient.Send` processes the response
 - THEN a `logrus.Warn` message is emitted containing "failed to read error response body" AND `record.Status` is `"error"` AND `record.ErrorMessage` contains the HTTP status code and a note that the body read failed
+- WHEN the body read failure is specifically a timeout (isTimeoutError returns true)
+- THEN `record.Status` is `"timeout"` (not `"error"`) AND `record.ErrorMessage` contains "body read timed out", consistent with success-path handlers
 
 BC-2: ReadAll success preserves existing behavior
 - GIVEN a server returns a non-200 HTTP status code AND the response body reads successfully
