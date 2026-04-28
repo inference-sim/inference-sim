@@ -1133,7 +1133,7 @@ func (c *ClusterSimulator) GatewayQueueShed() int {
 }
 
 // GatewayQueueRejected returns the number of requests rejected from the gateway queue
-// (queue full, no sheddable victim). Returns 0 when flow control is disabled.
+// (queue full, no displaceable victim). Returns 0 when flow control is disabled.
 func (c *ClusterSimulator) GatewayQueueRejected() int {
 	if c.gatewayQueue == nil {
 		return 0

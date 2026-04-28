@@ -56,8 +56,22 @@ type EnqueueOutcome int
 const (
 	Enqueued   EnqueueOutcome = iota // request accepted into queue
 	ShedVictim                       // request accepted, a sheddable victim was evicted
-	Rejected                         // queue full, no sheddable victim — incoming request not enqueued
+	Rejected                         // queue full, no displaceable victim — incoming request not enqueued
 )
+
+// String returns a human-readable name for the outcome.
+func (o EnqueueOutcome) String() string {
+	switch o {
+	case Enqueued:
+		return "Enqueued"
+	case ShedVictim:
+		return "ShedVictim"
+	case Rejected:
+		return "Rejected"
+	default:
+		return fmt.Sprintf("EnqueueOutcome(%d)", int(o))
+	}
+}
 
 // GatewayQueue is a priority-ordered queue for holding admitted requests before routing.
 // Implements saturation-gated dispatch for GIE flow control parity.
@@ -65,7 +79,7 @@ type GatewayQueue struct {
 	heap          gatewayQueueHeap
 	maxDepth      int // 0 = unlimited
 	shedCount     int // number of requests shed (evicted victims only)
-	rejectedCount int // number of requests rejected (queue full, no sheddable victim)
+	rejectedCount int // number of requests rejected (queue full, no displaceable victim)
 	priorityMap   *sim.SLOPriorityMap
 }
 
@@ -96,7 +110,8 @@ func NewGatewayQueue(dispatchOrder string, maxDepth int, priorityMap *sim.SLOPri
 
 // Enqueue adds a request to the gateway queue.
 // When the queue is at capacity, only sheddable (priority < 0) entries are eviction candidates.
-// If no sheddable candidate exists, the incoming request is rejected.
+// If no sheddable candidate exists, or the incoming request cannot displace the lowest sheddable
+// entry (lower or equal priority), the incoming request is rejected.
 // Returns the outcome and the evicted victim (non-nil only for ShedVictim).
 func (q *GatewayQueue) Enqueue(req *sim.Request, seqID int64) (EnqueueOutcome, *sim.Request) {
 	priority := q.priorityMap.Priority(req.SLOClass)
@@ -162,7 +177,7 @@ func (q *GatewayQueue) ShedCount() int {
 	return q.shedCount
 }
 
-// RejectedCount returns the number of requests rejected (queue full, no sheddable victim).
+// RejectedCount returns the number of requests rejected (queue full, no displaceable victim).
 func (q *GatewayQueue) RejectedCount() int {
 	return q.rejectedCount
 }

@@ -254,3 +254,29 @@ func TestTenantBudgetAdmission_NonSheddableOverBudgetAdmitted(t *testing.T) {
 		t.Error("non-sheddable request should be admitted even when over budget")
 	}
 }
+
+func TestTenantBudgetAdmission_SheddableUnderBudgetAdmitted(t *testing.T) {
+	policy := NewTenantBudgetAdmission(&AlwaysAdmit{}, &stubTracker{overBudget: false}, DefaultSLOPriorityMap())
+	admitted, _ := policy.Admit(&Request{ID: "r1", TenantID: "t1", SLOClass: "batch"}, &RouterState{})
+	if !admitted {
+		t.Error("sheddable under-budget request should be admitted")
+	}
+}
+
+func TestNewTenantBudgetAdmission_NilInner_Panics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for nil inner policy")
+		}
+	}()
+	NewTenantBudgetAdmission(nil, &stubTracker{}, DefaultSLOPriorityMap())
+}
+
+func TestNewTenantBudgetAdmission_NilTracker_Panics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for nil tracker")
+		}
+	}()
+	NewTenantBudgetAdmission(&AlwaysAdmit{}, nil, DefaultSLOPriorityMap())
+}
