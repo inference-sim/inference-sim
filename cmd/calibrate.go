@@ -163,26 +163,38 @@ Example:
 		if ttft, ok := report.Metrics["ttft"]; ok {
 			logrus.Infof("  TTFT: Real mean=%.0fµs, Sim mean=%.0fµs, Error=%+.0fµs (%.1f%%)",
 				ttft.WorkloadLevel.RealMean, ttft.WorkloadLevel.SimMean, ttft.WorkloadLevel.MeanError, ttft.WorkloadLevel.MeanPercentError*100)
-			logrus.Infof("        Real P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
-				ttft.WorkloadLevel.RealP50, ttft.WorkloadLevel.RealP90, ttft.WorkloadLevel.RealP99)
-			logrus.Infof("        Sim  P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
-				ttft.WorkloadLevel.SimP50, ttft.WorkloadLevel.SimP90, ttft.WorkloadLevel.SimP99)
+			logrus.Infof("        P50: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
+				ttft.WorkloadLevel.RealP50, ttft.WorkloadLevel.SimP50, ttft.WorkloadLevel.P50Error, ttft.WorkloadLevel.P50PercentError*100)
+			logrus.Infof("        P90: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
+				ttft.WorkloadLevel.RealP90, ttft.WorkloadLevel.SimP90, ttft.WorkloadLevel.P90Error, ttft.WorkloadLevel.P90PercentError*100)
+			logrus.Infof("        P95: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
+				ttft.WorkloadLevel.RealP95, ttft.WorkloadLevel.SimP95, ttft.WorkloadLevel.P95Error, ttft.WorkloadLevel.P95PercentError*100)
+			logrus.Infof("        P99: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
+				ttft.WorkloadLevel.RealP99, ttft.WorkloadLevel.SimP99, ttft.WorkloadLevel.P99Error, ttft.WorkloadLevel.P99PercentError*100)
 		}
 		if e2e, ok := report.Metrics["e2e"]; ok {
 			logrus.Infof("  E2E:  Real mean=%.0fµs, Sim mean=%.0fµs, Error=%+.0fµs (%.1f%%)",
 				e2e.WorkloadLevel.RealMean, e2e.WorkloadLevel.SimMean, e2e.WorkloadLevel.MeanError, e2e.WorkloadLevel.MeanPercentError*100)
-			logrus.Infof("        Real P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
-				e2e.WorkloadLevel.RealP50, e2e.WorkloadLevel.RealP90, e2e.WorkloadLevel.RealP99)
-			logrus.Infof("        Sim  P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
-				e2e.WorkloadLevel.SimP50, e2e.WorkloadLevel.SimP90, e2e.WorkloadLevel.SimP99)
+			logrus.Infof("        P50: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
+				e2e.WorkloadLevel.RealP50, e2e.WorkloadLevel.SimP50, e2e.WorkloadLevel.P50Error, e2e.WorkloadLevel.P50PercentError*100)
+			logrus.Infof("        P90: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
+				e2e.WorkloadLevel.RealP90, e2e.WorkloadLevel.SimP90, e2e.WorkloadLevel.P90Error, e2e.WorkloadLevel.P90PercentError*100)
+			logrus.Infof("        P95: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
+				e2e.WorkloadLevel.RealP95, e2e.WorkloadLevel.SimP95, e2e.WorkloadLevel.P95Error, e2e.WorkloadLevel.P95PercentError*100)
+			logrus.Infof("        P99: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
+				e2e.WorkloadLevel.RealP99, e2e.WorkloadLevel.SimP99, e2e.WorkloadLevel.P99Error, e2e.WorkloadLevel.P99PercentError*100)
 		}
 		if itl, ok := report.Metrics["itl"]; ok {
 			logrus.Infof("  ITL:  Real mean=%.0fµs, Sim mean=%.0fµs, Error=%+.0fµs (%.1f%%)",
 				itl.WorkloadLevel.RealMean, itl.WorkloadLevel.SimMean, itl.WorkloadLevel.MeanError, itl.WorkloadLevel.MeanPercentError*100)
-			logrus.Infof("        Real P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
-				itl.WorkloadLevel.RealP50, itl.WorkloadLevel.RealP90, itl.WorkloadLevel.RealP99)
-			logrus.Infof("        Sim  P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
-				itl.WorkloadLevel.SimP50, itl.WorkloadLevel.SimP90, itl.WorkloadLevel.SimP99)
+			logrus.Infof("        P50: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
+				itl.WorkloadLevel.RealP50, itl.WorkloadLevel.SimP50, itl.WorkloadLevel.P50Error, itl.WorkloadLevel.P50PercentError*100)
+			logrus.Infof("        P90: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
+				itl.WorkloadLevel.RealP90, itl.WorkloadLevel.SimP90, itl.WorkloadLevel.P90Error, itl.WorkloadLevel.P90PercentError*100)
+			logrus.Infof("        P95: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
+				itl.WorkloadLevel.RealP95, itl.WorkloadLevel.SimP95, itl.WorkloadLevel.P95Error, itl.WorkloadLevel.P95PercentError*100)
+			logrus.Infof("        P99: Real=%.0fµs, Sim=%.0fµs, Error=%+.0fµs (%.1f%%)",
+				itl.WorkloadLevel.RealP99, itl.WorkloadLevel.SimP99, itl.WorkloadLevel.P99Error, itl.WorkloadLevel.P99PercentError*100)
 		}
 
 		// Request-level prediction quality
