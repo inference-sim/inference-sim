@@ -183,6 +183,17 @@ func TestQueueingModelAnalyzerExplicitSLOTarget(t *testing.T) {
 	if result.TotalDemand <= 0 {
 		t.Errorf("TotalDemand = %v, want > 0 (DispatchRate=0.5 should yield positive demand)", result.TotalDemand)
 	}
+	// INV: RequiredCapacity and SpareCapacity are mutually exclusive.
+	if result.RequiredCapacity > 0 && result.SpareCapacity > 0 {
+		t.Errorf("mutual exclusivity violated: RequiredCapacity=%v SpareCapacity=%v both > 0", result.RequiredCapacity, result.SpareCapacity)
+	}
+	// INV: VariantCapacities sorted by CostPerReplica ascending (R2, AnalyzerResult contract).
+	for i := 1; i < len(result.VariantCapacities); i++ {
+		if result.VariantCapacities[i].CostPerReplica < result.VariantCapacities[i-1].CostPerReplica {
+			t.Errorf("VariantCapacities not sorted: index %d cost %v < index %d cost %v",
+				i, result.VariantCapacities[i].CostPerReplica, i-1, result.VariantCapacities[i-1].CostPerReplica)
+		}
+	}
 }
 
 // TestGetSLOTargetPriority2Formula verifies that the theory-based SLO path (Priority 2)

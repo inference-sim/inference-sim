@@ -240,6 +240,16 @@ func (a *QueueingModelAnalyzer) Analyze(ms ModelSignals) AnalyzerResult {
 		totalDemand += variantDemand
 	}
 
+	// Sort by CostPerReplica ascending for determinism (R2, matches V2SaturationAnalyzer contract).
+	sort.Slice(variantCapacities, func(i, j int) bool {
+		if variantCapacities[i].CostPerReplica != variantCapacities[j].CostPerReplica {
+			return variantCapacities[i].CostPerReplica < variantCapacities[j].CostPerReplica
+		}
+		if variantCapacities[i].Variant.GPUType != variantCapacities[j].Variant.GPUType {
+			return variantCapacities[i].Variant.GPUType < variantCapacities[j].Variant.GPUType
+		}
+		return variantCapacities[i].Variant.TPDegree < variantCapacities[j].Variant.TPDegree
+	})
 	result.TotalSupply = totalSupply
 	result.TotalDemand = totalDemand
 	result.VariantCapacities = variantCapacities
@@ -352,8 +362,9 @@ func (a *QueueingModelAnalyzer) updateVariantParameters(state *perVariantState, 
 // 2. Derived from fitted model parameters using SLOMultiplier.
 // 3. Fallback: headroom over observed TTFT/ITL.
 func (a *QueueingModelAnalyzer) getSLOTarget(modelID string, replicas []ReplicaMetrics) (SLOTarget, bool) {
-	// Priority 1: explicit config override.
-	if t, ok := a.cfg.SLOTargets[modelID]; ok {
+	// Priority 1: explicit config override. Skip entries with zero fields (R9: zero
+	// is indistinguishable from "not set" for float32 YAML fields; fall through to derived).
+	if t, ok := a.cfg.SLOTargets[modelID]; ok && t.TargetTTFT > 0 && t.TargetITL > 0 {
 		return t, true
 	}
 
