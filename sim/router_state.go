@@ -12,7 +12,7 @@ package sim
 // This prevents import cycles: sim/cluster/ imports sim/, not the reverse.
 type RouterState struct {
 	Snapshots        []RoutingSnapshot // One per routable instance (Active + WarmingUp)
-	// One per Loading instance. Populated fields: Model, GPUType, TPDegree, CostPerHour,
+	// One per Loading instance. Populated fields: ID, Model, GPUType, TPDegree, CostPerHour,
 	// TotalKvCapacityTokens. QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate,
 	// InFlightRequests, KvTokensInUse remain zero.
 	LoadingSnapshots []RoutingSnapshot

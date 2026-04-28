@@ -464,6 +464,45 @@ func TestV2SaturationAnalyzer_PendingSupply_SuppressesScaleUp(t *testing.T) {
 	}
 }
 
+// TestV2SaturationAnalyzer_PendingSupply_ZeroCapacityLoading verifies that a Loading instance
+// with PendingReplicaCount=1 but PendingTotalKvCapacityTokens=0 contributes no pending supply.
+// The analyzer guards on PendingTotalKvCapacityTokens > 0, not PendingReplicaCount > 0.
+// A regression that checked PendingReplicaCount instead would incorrectly suppress scale-up.
+func TestV2SaturationAnalyzer_PendingSupply_ZeroCapacityLoading(t *testing.T) {
+	// Active replica: capacity=10000, demand=9000 → demand/threshold(0.8)=11250 > 10000 → scale-up needed.
+	// Loading replica: PendingReplicaCount=1 but PendingTotalKvCapacityTokens=0 (zero-KV node).
+	// pendingSupply must be 0 → RequiredCapacity = 11250 - 10000 = 1250 > 0.
+	cfg := V2SaturationAnalyzerConfig{
+		KvCacheThreshold:  1.0,
+		ScaleUpThreshold:  0.8,
+		ScaleDownBoundary: 0.3,
+		AvgInputTokens:    100,
+	}
+	a := NewV2SaturationAnalyzer(cfg)
+
+	metrics := ModelSignals{
+		ModelID: "test-model",
+		Replicas: []ReplicaMetrics{
+			{
+				InstanceID:            "active-1",
+				Variant:               NewVariantSpec("A100", 1),
+				KvTokensInUse:         9000,
+				QueueDepth:            0,
+				TotalKvCapacityTokens: 10000,
+				CostPerHour:           10.0,
+			},
+		},
+		PendingReplicaCount:          1,
+		PendingTotalKvCapacityTokens: 0, // zero-KV loading instance — contributes no pending supply
+	}
+
+	result := a.Analyze(metrics)
+
+	if result.RequiredCapacity <= 0 {
+		t.Errorf("RequiredCapacity = %g, want > 0 (zero-KV loading instance must not suppress scale-up)", result.RequiredCapacity)
+	}
+}
+
 // TestV2SaturationAnalyzer_PendingSupply_StillScalesUpForDelta verifies that when
 // demand has grown beyond what the Loading instance covers, scale-up still fires for the delta.
 func TestV2SaturationAnalyzer_PendingSupply_StillScalesUpForDelta(t *testing.T) {
