@@ -1209,6 +1209,89 @@ func TestRealClient_Streaming_Timeout_SetsTimeoutStatus(t *testing.T) {
 	}
 }
 
+// TestRealClient_ServerError_BodyReadFailure verifies BC-1: when a non-200
+// response body read fails (e.g., connection reset), a warning is logged
+// and the error message notes the incomplete body.
+func TestRealClient_ServerError_BodyReadFailure(t *testing.T) {
+	hook := installLogHook(t)
+
+	// Server sends a non-200 status code then abruptly closes the connection
+	// mid-body, causing io.ReadAll to return an error.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("expected http.Hijacker")
+		}
+		conn, buf, err := hijacker.Hijack()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Write a partial HTTP response with Content-Length mismatch to force read error.
+		_, _ = buf.WriteString("HTTP/1.1 500 Internal Server Error\r\n")
+		_, _ = buf.WriteString("Content-Length: 1000\r\n")
+		_, _ = buf.WriteString("\r\n")
+		_, _ = buf.WriteString("partial error bo")
+		_ = buf.Flush()
+		_ = conn.Close()
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	record, err := client.Send(context.Background(), &PendingRequest{
+		RequestID: 3, InputTokens: 10, Streaming: false,
+		Prompt: strings.Repeat("hello ", 10),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Status != "error" {
+		t.Errorf("status = %q, want error", record.Status)
+	}
+	if !strings.Contains(record.ErrorMessage, "HTTP 500") {
+		t.Errorf("ErrorMessage should contain HTTP status code, got %q", record.ErrorMessage)
+	}
+	if !strings.Contains(record.ErrorMessage, "body read failed") {
+		t.Errorf("ErrorMessage should note body read failure, got %q", record.ErrorMessage)
+	}
+	if !hook.hasEntry("failed to read error response body") {
+		t.Error("expected warning about failed body read, but no matching log entry found")
+	}
+}
+
+// TestRealClient_ServerError_BodyReadSuccess verifies BC-2: when a non-200
+// response body reads successfully, the full body is included in ErrorMessage
+// and no body-read-failure warning is logged.
+func TestRealClient_ServerError_BodyReadSuccess(t *testing.T) {
+	hook := installLogHook(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = fmt.Fprint(w, "upstream timeout")
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	record, err := client.Send(context.Background(), &PendingRequest{
+		RequestID: 4, InputTokens: 10, Streaming: false,
+		Prompt: strings.Repeat("hello ", 10),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Status != "error" {
+		t.Errorf("status = %q, want error", record.Status)
+	}
+	if !strings.Contains(record.ErrorMessage, "HTTP 502") {
+		t.Errorf("ErrorMessage should contain HTTP 502, got %q", record.ErrorMessage)
+	}
+	if !strings.Contains(record.ErrorMessage, "upstream timeout") {
+		t.Errorf("ErrorMessage should contain body text, got %q", record.ErrorMessage)
+	}
+	if hook.hasEntry("failed to read error response body") {
+		t.Error("no body-read-failure warning expected when body reads successfully")
+	}
+}
+
 func TestRecorder_RecordITL_StreamingRequest(t *testing.T) {
 	// GIVEN a recorder and chunk timestamps
 	rec := &Recorder{}

@@ -196,9 +196,14 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyData, _ := io.ReadAll(resp.Body)
+		bodyData, readErr := io.ReadAll(resp.Body)
 		record.Status = "error"
-		record.ErrorMessage = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(bodyData))
+		if readErr != nil {
+			logrus.Warnf("observe: request %d: failed to read error response body: %v", record.RequestID, readErr)
+			record.ErrorMessage = fmt.Sprintf("HTTP %d: (body read failed: %v)", resp.StatusCode, readErr)
+		} else {
+			record.ErrorMessage = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(bodyData))
+		}
 		return record, nil
 	}
 
