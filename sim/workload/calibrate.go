@@ -22,10 +22,16 @@ type WorkloadAggregates struct {
 	SimP50             float64 `json:"sim_p50"`
 	RealP90            float64 `json:"real_p90"`
 	SimP90             float64 `json:"sim_p90"`
+	P90Error           float64 `json:"p90_error"`           // SimP90 - RealP90
+	P90PercentError    float64 `json:"p90_percent_error"`   // |P90Error| / RealP90
 	RealP95            float64 `json:"real_p95"`
 	SimP95             float64 `json:"sim_p95"`
+	P95Error           float64 `json:"p95_error"`           // SimP95 - RealP95
+	P95PercentError    float64 `json:"p95_percent_error"`   // |P95Error| / RealP95
 	RealP99            float64 `json:"real_p99"`
 	SimP99             float64 `json:"sim_p99"`
+	P99Error           float64 `json:"p99_error"`           // SimP99 - RealP99
+	P99PercentError    float64 `json:"p99_percent_error"`   // |P99Error| / RealP99
 }
 
 // PredictionQuality describes how accurately the simulator predicts each individual request.
@@ -321,6 +327,24 @@ func ComputeCalibration(real, sim []float64, metricName string) (*MetricComparis
 	comp.WorkloadLevel.MedianError = comp.WorkloadLevel.SimMedian - comp.WorkloadLevel.RealMedian
 	if comp.WorkloadLevel.RealMedian != 0 {
 		comp.WorkloadLevel.MedianPercentError = math.Abs(comp.WorkloadLevel.MedianError) / comp.WorkloadLevel.RealMedian
+	}
+
+	// P90 error and percent error (with division guards, R11)
+	comp.WorkloadLevel.P90Error = comp.WorkloadLevel.SimP90 - comp.WorkloadLevel.RealP90
+	if comp.WorkloadLevel.RealP90 != 0 {
+		comp.WorkloadLevel.P90PercentError = math.Abs(comp.WorkloadLevel.P90Error) / comp.WorkloadLevel.RealP90
+	}
+
+	// P95 error and percent error (with division guards, R11)
+	comp.WorkloadLevel.P95Error = comp.WorkloadLevel.SimP95 - comp.WorkloadLevel.RealP95
+	if comp.WorkloadLevel.RealP95 != 0 {
+		comp.WorkloadLevel.P95PercentError = math.Abs(comp.WorkloadLevel.P95Error) / comp.WorkloadLevel.RealP95
+	}
+
+	// P99 error and percent error (with division guards, R11)
+	comp.WorkloadLevel.P99Error = comp.WorkloadLevel.SimP99 - comp.WorkloadLevel.RealP99
+	if comp.WorkloadLevel.RealP99 != 0 {
+		comp.WorkloadLevel.P99PercentError = math.Abs(comp.WorkloadLevel.P99Error) / comp.WorkloadLevel.RealP99
 	}
 
 	// MAPE (skip where real == 0)

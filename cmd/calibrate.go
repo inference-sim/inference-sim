@@ -167,6 +167,10 @@ Example:
 				ttft.WorkloadLevel.RealP50, ttft.WorkloadLevel.RealP90, ttft.WorkloadLevel.RealP99)
 			logrus.Infof("        Sim  P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
 				ttft.WorkloadLevel.SimP50, ttft.WorkloadLevel.SimP90, ttft.WorkloadLevel.SimP99)
+			logrus.Infof("        P90 Error=%+.0fµs (%.1f%%), P95 Error=%+.0fµs (%.1f%%), P99 Error=%+.0fµs (%.1f%%)",
+				ttft.WorkloadLevel.P90Error, ttft.WorkloadLevel.P90PercentError*100,
+				ttft.WorkloadLevel.P95Error, ttft.WorkloadLevel.P95PercentError*100,
+				ttft.WorkloadLevel.P99Error, ttft.WorkloadLevel.P99PercentError*100)
 		}
 		if e2e, ok := report.Metrics["e2e"]; ok {
 			logrus.Infof("  E2E:  Real mean=%.0fµs, Sim mean=%.0fµs, Error=%+.0fµs (%.1f%%)",
@@ -175,6 +179,10 @@ Example:
 				e2e.WorkloadLevel.RealP50, e2e.WorkloadLevel.RealP90, e2e.WorkloadLevel.RealP99)
 			logrus.Infof("        Sim  P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
 				e2e.WorkloadLevel.SimP50, e2e.WorkloadLevel.SimP90, e2e.WorkloadLevel.SimP99)
+			logrus.Infof("        P90 Error=%+.0fµs (%.1f%%), P95 Error=%+.0fµs (%.1f%%), P99 Error=%+.0fµs (%.1f%%)",
+				e2e.WorkloadLevel.P90Error, e2e.WorkloadLevel.P90PercentError*100,
+				e2e.WorkloadLevel.P95Error, e2e.WorkloadLevel.P95PercentError*100,
+				e2e.WorkloadLevel.P99Error, e2e.WorkloadLevel.P99PercentError*100)
 		}
 		if itl, ok := report.Metrics["itl"]; ok {
 			logrus.Infof("  ITL:  Real mean=%.0fµs, Sim mean=%.0fµs, Error=%+.0fµs (%.1f%%)",
@@ -183,6 +191,10 @@ Example:
 				itl.WorkloadLevel.RealP50, itl.WorkloadLevel.RealP90, itl.WorkloadLevel.RealP99)
 			logrus.Infof("        Sim  P50=%.0fµs, P90=%.0fµs, P99=%.0fµs",
 				itl.WorkloadLevel.SimP50, itl.WorkloadLevel.SimP90, itl.WorkloadLevel.SimP99)
+			logrus.Infof("        P90 Error=%+.0fµs (%.1f%%), P95 Error=%+.0fµs (%.1f%%), P99 Error=%+.0fµs (%.1f%%)",
+				itl.WorkloadLevel.P90Error, itl.WorkloadLevel.P90PercentError*100,
+				itl.WorkloadLevel.P95Error, itl.WorkloadLevel.P95PercentError*100,
+				itl.WorkloadLevel.P99Error, itl.WorkloadLevel.P99PercentError*100)
 		}
 
 		// Request-level prediction quality
