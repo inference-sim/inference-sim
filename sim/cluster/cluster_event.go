@@ -175,9 +175,15 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 			// INV-1 accounting: flows into gw_rejected via gatewayQueue.rejectedCount.
 			return
 		case ShedVictim:
-			if victim != nil {
-				victim.GatewayEnqueueTime = 0 // evicted — clear stale timestamp
+			if victim == nil {
+				panic(fmt.Sprintf("AdmissionDecisionEvent: ShedVictim with nil victim for req %s", e.request.ID))
 			}
+			victim.GatewayEnqueueTime = 0 // evicted — clear stale timestamp
+			tier := victim.SLOClass
+			if tier == "" {
+				tier = "standard"
+			}
+			cs.shedByTier[tier]++
 			// INV-1 accounting: victim flows into gw_shed via gatewayQueue.shedCount.
 		case Enqueued:
 			// nothing extra

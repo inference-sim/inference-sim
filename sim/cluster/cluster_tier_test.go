@@ -167,7 +167,7 @@ func newGAIELegacyConfig(numInstances int, qdThreshold float64) DeploymentConfig
 }
 
 // INV-1: Request conservation holds under gaie-legacy admission.
-// Full pipeline: numRequests == completed + queued + running + dropped + timedOut + rejected + routingRej + gwDepth + gwShed.
+// Full pipeline: numRequests == completed + queued + running + dropped + timedOut + rejected + routingRej + gwDepth + gwShed + gwRejected.
 func TestGAIELegacy_INV1_Conservation(t *testing.T) {
 	const nPerTier = 80
 	var requests []*sim.Request
@@ -190,12 +190,13 @@ func TestGAIELegacy_INV1_Conservation(t *testing.T) {
 	mustRun(t, cs)
 
 	// Full-pipeline INV-1 conservation: num_requests == injected_requests + rejected_requests,
-	// where injected_requests == completed + queued + running + dropped + timedOut + routingRej + gwDepth + gwShed.
+	// where injected_requests == completed + queued + running + dropped + timedOut + routingRej + gwDepth + gwShed + gwRejected.
 	numRequests := len(requests)
 	rejected := cs.RejectedRequests()
 	routingRej := cs.RoutingRejections()
 	gwDepth := cs.GatewayQueueDepth()
 	gwShed := cs.GatewayQueueShed()
+	gwRejected := cs.GatewayQueueRejected()
 	agg := cs.AggregatedMetrics()
 	completed := agg.CompletedRequests
 	queued := agg.StillQueued
@@ -203,10 +204,10 @@ func TestGAIELegacy_INV1_Conservation(t *testing.T) {
 	dropped := agg.DroppedUnservable
 	timedOut := agg.TimedOutRequests
 
-	accounted := completed + queued + running + dropped + timedOut + rejected + routingRej + gwDepth + gwShed
+	accounted := completed + queued + running + dropped + timedOut + rejected + routingRej + gwDepth + gwShed + gwRejected
 	if accounted != numRequests {
-		t.Errorf("INV-1 violated: numRequests=%d, accounted=%d (completed=%d queued=%d running=%d dropped=%d timedOut=%d rejected=%d routingRej=%d gwDepth=%d gwShed=%d)",
-			numRequests, accounted, completed, queued, running, dropped, timedOut, rejected, routingRej, gwDepth, gwShed)
+		t.Errorf("INV-1 violated: numRequests=%d, accounted=%d (completed=%d queued=%d running=%d dropped=%d timedOut=%d rejected=%d routingRej=%d gwDepth=%d gwShed=%d gwRejected=%d)",
+			numRequests, accounted, completed, queued, running, dropped, timedOut, rejected, routingRej, gwDepth, gwShed, gwRejected)
 	}
 
 	// Verify some sheddable requests were actually shed (saturation > 1.0 under dense arrivals)
