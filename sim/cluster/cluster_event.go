@@ -170,6 +170,7 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 		outcome, victim := cs.gatewayQueue.Enqueue(e.request, cs.nextSeqID())
 		switch outcome {
 		case Rejected:
+			logrus.Debugf("[cluster] req %s: admitted but rejected by gateway queue (full, no sheddable victim)", e.request.ID)
 			e.request.GatewayEnqueueTime = 0 // not enqueued — clear timestamp
 			// INV-1 accounting: flows into gw_rejected via gatewayQueue.rejectedCount.
 			return
@@ -180,6 +181,8 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 			// INV-1 accounting: victim flows into gw_shed via gatewayQueue.shedCount.
 		case Enqueued:
 			// nothing extra
+		default:
+			panic(fmt.Sprintf("AdmissionDecisionEvent: unhandled EnqueueOutcome %d for request %s", outcome, e.request.ID))
 		}
 		cs.tryDispatchFromGatewayQueue()
 		return
