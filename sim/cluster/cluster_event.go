@@ -92,7 +92,7 @@ func buildRouterState(cs *ClusterSimulator, req *sim.Request) *sim.RouterState {
 			snap.AvgInTokens = ls.AvgInTokens
 			snap.AvgOutTokens = ls.AvgOutTokens
 		}
-		snap.MaxBatchSize = float64(inst.MaxBatchSize())
+		snap.MaxBatchSize = float64(inst.MaxBatchSize()) // float64: QueueingModelAnalyzer uses it in float arithmetic
 		snapshots = append(snapshots, snap)
 	}
 	return &sim.RouterState{
