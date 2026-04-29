@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/sirupsen/logrus"
 )
@@ -148,6 +149,14 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 	// Request usage data in streaming responses (required for token count extraction).
 	if req.Streaming {
 		body["stream_options"] = map[string]interface{}{"include_usage": true}
+	}
+
+	// Inject vLLM priority field when SLO class is set (dual delivery: header + body).
+	// vLLM priority scheduling (--scheduling-policy priority) uses lower integers for
+	// higher urgency. BLIS/llm-d use higher integers. InvertForVLLM converts.
+	if req.SLOClass != "" {
+		sloMap := sim.DefaultSLOPriorityMap()
+		body["priority"] = sloMap.InvertForVLLM(req.SLOClass)
 	}
 
 	bodyBytes, err := json.Marshal(body)

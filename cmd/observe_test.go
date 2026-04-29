@@ -1336,6 +1336,127 @@ func TestRealClient_ServerError_BodyReadSuccess(t *testing.T) {
 	}
 }
 
+func TestRealClient_Send_InjectsPriorityWhenSLOClassSet(t *testing.T) {
+	tests := []struct {
+		name            string
+		sloClass        string
+		expectHeader    bool
+		expectHeaderVal string
+		expectBodyField bool
+		expectBodyVal   int
+	}{
+		{
+			name:            "critical class",
+			sloClass:        "critical",
+			expectHeader:    true,
+			expectHeaderVal: "critical",
+			expectBodyField: true,
+			expectBodyVal:   0, // 4 - 4 = 0
+		},
+		{
+			name:            "standard class",
+			sloClass:        "standard",
+			expectHeader:    true,
+			expectHeaderVal: "standard",
+			expectBodyField: true,
+			expectBodyVal:   1, // 4 - 3 = 1
+		},
+		{
+			name:            "batch class",
+			sloClass:        "batch",
+			expectHeader:    true,
+			expectHeaderVal: "batch",
+			expectBodyField: true,
+			expectBodyVal:   5, // 4 - (-1) = 5
+		},
+		{
+			name:            "empty slo_class",
+			sloClass:        "",
+			expectHeader:    false,
+			expectHeaderVal: "",
+			expectBodyField: false,
+			expectBodyVal:   0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Mock server that captures the request
+			var capturedHeader string
+			var capturedBody map[string]interface{}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				capturedHeader = r.Header.Get("x-gateway-inference-objective")
+				decoder := json.NewDecoder(r.Body)
+				_ = decoder.Decode(&capturedBody)
+				// Return minimal valid response
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"id":"test","choices":[{"text":"output"}],"usage":{"prompt_tokens":10,"completion_tokens":20}}`))
+			}))
+			defer server.Close()
+
+			client := &RealClient{
+				httpClient: &http.Client{Timeout: 5 * time.Second},
+				baseURL:    server.URL,
+				modelName:  "test-model",
+				apiFormat:  "completions",
+			}
+
+			req := &PendingRequest{
+				RequestID:       1,
+				InputTokens:     10,
+				MaxOutputTokens: 20,
+				Model:           "test-model",
+				Streaming:       false,
+				SLOClass:        tt.sloClass,
+				Prompt:          "test prompt",
+			}
+
+			ctx := context.Background()
+			_, err := client.Send(ctx, req)
+			if err != nil {
+				t.Fatalf("Send() error = %v", err)
+			}
+
+			// Verify header
+			if tt.expectHeader {
+				if capturedHeader != tt.expectHeaderVal {
+					t.Errorf("header x-gateway-inference-objective = %q, want %q", capturedHeader, tt.expectHeaderVal)
+				}
+			} else {
+				if capturedHeader != "" {
+					t.Errorf("header x-gateway-inference-objective should be empty, got %q", capturedHeader)
+				}
+			}
+
+			// Verify body priority field
+			if tt.expectBodyField {
+				priority, ok := capturedBody["priority"]
+				if !ok {
+					t.Errorf("body missing 'priority' field")
+				} else {
+					// JSON numbers decode as float64
+					priorityInt := int(priority.(float64))
+					if priorityInt != tt.expectBodyVal {
+						t.Errorf("body['priority'] = %d, want %d", priorityInt, tt.expectBodyVal)
+					}
+				}
+			} else {
+				if _, ok := capturedBody["priority"]; ok {
+					t.Errorf("body should not contain 'priority' field when SLOClass is empty")
+				}
+			}
+
+			// Verify other body fields are not disturbed (BC-7)
+			if capturedBody["model"] != "test-model" {
+				t.Errorf("body['model'] was disturbed: got %v", capturedBody["model"])
+			}
+			if capturedBody["stream"] != false {
+				t.Errorf("body['stream'] was disturbed: got %v", capturedBody["stream"])
+			}
+		})
+	}
+}
+
 func TestRecorder_RecordITL_StreamingRequest(t *testing.T) {
 	// GIVEN a recorder and chunk timestamps
 	rec := &Recorder{}
