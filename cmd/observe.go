@@ -46,6 +46,12 @@ func WithHTTPTimeout(d time.Duration) RealClientOption {
 	return func(c *RealClient) { c.httpClient.Timeout = d }
 }
 
+// WithSLOPriorityMap sets a custom SLO priority map for vLLM priority translation.
+// If not set, uses DefaultSLOPriorityMap().
+func WithSLOPriorityMap(m *sim.SLOPriorityMap) RealClientOption {
+	return func(c *RealClient) { c.sloMap = m }
+}
+
 // isTimeoutError returns true if err is a timeout or deadline-exceeded error.
 func isTimeoutError(err error) bool {
 	if os.IsTimeout(err) {

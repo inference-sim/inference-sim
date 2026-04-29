@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/inference-sim/inference-sim/sim"
 	"github.com/sirupsen/logrus"
 )
 
@@ -1475,5 +1476,66 @@ func TestRecorder_RecordITL_StreamingRequest(t *testing.T) {
 		if itl[i].TimestampUs != ts {
 			t.Errorf("record %d: got timestamp_us=%d, want %d", i, itl[i].TimestampUs, ts)
 		}
+	}
+}
+
+func TestRealClient_Send_CustomSLOPriorities(t *testing.T) {
+	// Mock server that captures the request body
+	var capturedBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		decoder := json.NewDecoder(r.Body)
+		_ = decoder.Decode(&capturedBody)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"test","choices":[{"text":"output"}],"usage":{"prompt_tokens":10,"completion_tokens":20}}`))
+	}))
+	defer server.Close()
+
+	// Custom SLO priorities: critical=10 (ultra-high), batch=0 (non-sheddable)
+	customMap := sim.NewSLOPriorityMap(map[string]int{
+		"critical": 10,
+		"batch":    0,
+	})
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm",
+		WithSLOPriorityMap(customMap))
+
+	tests := []struct {
+		name          string
+		sloClass      string
+		expectedPrio  int
+	}{
+		{"critical with custom override", "critical", 0},  // 10 - 10 = 0
+		{"standard with default", "standard", 7},          // 10 - 3 = 7 (max is now 10)
+		{"batch with custom override", "batch", 10},       // 10 - 0 = 10
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &PendingRequest{
+				RequestID:       1,
+				InputTokens:     10,
+				MaxOutputTokens: 20,
+				Model:           "test-model",
+				Streaming:       false,
+				SLOClass:        tt.sloClass,
+				Prompt:          "test prompt",
+			}
+
+			ctx := context.Background()
+			_, err := client.Send(ctx, req)
+			if err != nil {
+				t.Fatalf("Send() error = %v", err)
+			}
+
+			priority, ok := capturedBody["priority"]
+			if !ok {
+				t.Errorf("body missing 'priority' field")
+			} else {
+				priorityInt := int(priority.(float64))
+				if priorityInt != tt.expectedPrio {
+					t.Errorf("body['priority'] = %d, want %d (custom slo_priorities not applied)", priorityInt, tt.expectedPrio)
+				}
+			}
+		})
 	}
 }
