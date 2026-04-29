@@ -173,6 +173,31 @@ func TestGatewayQueue_CriticalityProtection_LowerSheddableDoesNotEvictHigherShed
 	}
 }
 
+// TestGatewayQueue_CriticalityProtection_HigherSheddableDisplacesLowerSheddable verifies that
+// a sheddable incoming with higher priority displaces a lower-priority sheddable victim.
+func TestGatewayQueue_CriticalityProtection_HigherSheddableDisplacesLowerSheddable(t *testing.T) {
+	pm := sim.DefaultSLOPriorityMap()
+	q := NewGatewayQueue("priority", 2, pm)
+
+	_, _ = q.Enqueue(&sim.Request{ID: "r1", SLOClass: "background"}, 1) // priority=-3 (sheddable)
+	_, _ = q.Enqueue(&sim.Request{ID: "r2", SLOClass: "standard"}, 2)   // priority=3 (non-sheddable)
+
+	// Queue full. Incoming batch (priority=-1, sheddable) should displace background (priority=-3, sheddable).
+	outcome, victim := q.Enqueue(&sim.Request{ID: "r3", SLOClass: "batch"}, 3)
+	if outcome != ShedVictim {
+		t.Errorf("higher-priority sheddable should displace lower-priority sheddable, got %v", outcome)
+	}
+	if victim == nil || victim.ID != "r1" {
+		t.Errorf("background (r1) should be the victim, got %v", victim)
+	}
+	if q.Len() != 2 {
+		t.Errorf("queue depth should remain 2, got %d", q.Len())
+	}
+	if q.ShedCount() != 1 {
+		t.Errorf("expected 1 shed, got %d", q.ShedCount())
+	}
+}
+
 // TestGatewayQueue_CriticalityProtection_EqualPrioritySheddableTieBreak verifies that
 // when incoming and victim have equal sheddable priority, FIFO (earlier seqID wins) applies.
 func TestGatewayQueue_CriticalityProtection_EqualPrioritySheddableTieBreak(t *testing.T) {

@@ -1801,6 +1801,12 @@ func TestClusterSimulator_FlowControl_Conservation(t *testing.T) {
 			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
 			m.TimedOutRequests, cs.RoutingRejections(), gwDepth, gwShed, gwRejected)
 	}
+	// Note: gwRejected is included in the conservation formula but may be 0 here.
+	// The rejection path (queue full + no sheddable victim) is exercised at the unit level
+	// in TestGatewayQueue_CriticalityProtection_NonSheddableNeverEvicted and related tests.
+	// Triggering it in an integration test requires the saturation detector to hold requests
+	// in the queue long enough for overflow, which depends on DES event ordering and timing
+	// that this configuration does not guarantee.
 }
 
 // TestClusterSimulator_FlowControl_Accessors_BeforeRun verifies zero values
