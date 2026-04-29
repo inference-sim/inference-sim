@@ -491,7 +491,7 @@ golangci-lint run ./sim/cluster/...
 
 **Files:** modify `sim/cluster/metrics.go`, modify `sim/cluster/cluster.go`, modify `cmd/root.go`, test `sim/cluster/cluster_test.go`
 
-**Accounting note:** `ShedVictim` is covered by the existing `gw_shed` bucket (incremented by `q.shedCount`). `Rejected` is covered by the new `gw_rejected` bucket (incremented by `q.rejectedCount`). Both flow through `rejectedRequests` at the cluster level for the full pipeline count.
+**Accounting note:** `ShedVictim` is covered by the existing `gw_shed` bucket (incremented by `q.shedCount`). `Rejected` is covered by the new `gw_rejected` bucket (incremented by `q.rejectedCount`). Neither flows through `cs.rejectedRequests` — they are separate INV-1 buckets within `injected_requests`, not part of the admission-rejection pipeline count.
 
 **Step 1 — Write failing test:**
 

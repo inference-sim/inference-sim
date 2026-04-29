@@ -111,7 +111,7 @@ func NewGatewayQueue(dispatchOrder string, maxDepth int, priorityMap *sim.SLOPri
 // Enqueue adds a request to the gateway queue.
 // When the queue is at capacity, only sheddable (priority < 0) entries are eviction candidates.
 // If no sheddable candidate exists, or the incoming request cannot displace the lowest sheddable
-// entry (lower or equal priority), the incoming request is rejected.
+// entry (strictly lower priority, or equal priority with later arrival), the incoming request is rejected.
 // Returns the outcome and the evicted victim (non-nil only for ShedVictim).
 func (q *GatewayQueue) Enqueue(req *sim.Request, seqID int64) (EnqueueOutcome, *sim.Request) {
 	priority := q.priorityMap.Priority(req.SLOClass)
