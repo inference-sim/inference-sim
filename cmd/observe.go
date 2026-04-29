@@ -30,6 +30,7 @@ type RealClient struct {
 	serverType string
 	apiFormat  string // "completions" or "chat" (default: "completions")
 	httpClient *http.Client
+	sloMap     *sim.SLOPriorityMap
 }
 
 // RealClientOption configures optional RealClient behavior.
@@ -62,6 +63,7 @@ func NewRealClient(baseURL, apiKey, modelName, serverType string, opts ...RealCl
 		serverType: serverType,
 		apiFormat:  "completions",
 		httpClient: &http.Client{Timeout: defaultHTTPTimeoutSeconds * time.Second},
+		sloMap:     sim.DefaultSLOPriorityMap(),
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -155,8 +157,7 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 	// vLLM priority scheduling (--scheduling-policy priority) uses lower integers for
 	// higher urgency. BLIS/llm-d use higher integers. InvertForVLLM converts.
 	if req.SLOClass != "" {
-		sloMap := sim.DefaultSLOPriorityMap()
-		body["priority"] = sloMap.InvertForVLLM(req.SLOClass)
+		body["priority"] = c.sloMap.InvertForVLLM(req.SLOClass)
 	}
 
 	bodyBytes, err := json.Marshal(body)

@@ -1394,12 +1394,7 @@ func TestRealClient_Send_InjectsPriorityWhenSLOClassSet(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := &RealClient{
-				httpClient: &http.Client{Timeout: 5 * time.Second},
-				baseURL:    server.URL,
-				modelName:  "test-model",
-				apiFormat:  "completions",
-			}
+			client := NewRealClient(server.URL, "", "test-model", "vllm")
 
 			req := &PendingRequest{
 				RequestID:       1,
