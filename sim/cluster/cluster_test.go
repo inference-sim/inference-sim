@@ -2236,8 +2236,8 @@ func TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType(t *testing.T) {
 		}
 		// Verify scheduleInstanceLoadedEvent fired and instance reached Active state
 		// (WarmUpRequestCount=0 and loading delay=0, so Loading → Active immediately).
-		if got := inst.State; got != InstanceStateActive {
-			t.Errorf("instance %s: State = %v, want InstanceStateActive (scheduleInstanceLoadedEvent must fire)", inst.ID(), got)
+		if got := inst.State; got != sim.InstanceStateActive {
+			t.Errorf("instance %s: State = %v, want sim.InstanceStateActive (scheduleInstanceLoadedEvent must fire)", inst.ID(), got)
 		}
 	}
 

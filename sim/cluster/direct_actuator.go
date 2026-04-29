@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/inference-sim/inference-sim/sim"
 	"github.com/sirupsen/logrus"
 )
 
@@ -122,7 +123,7 @@ func (a *DirectActuator) scaleDown(d ScaleDecision) error {
 			lastErr = err
 			continue // keep trying remaining iterations (next iteration may find different variant match)
 		}
-		inst.TransitionTo(InstanceStateDraining)
+		inst.TransitionTo(sim.InstanceStateDraining)
 		logrus.Infof("[actuator] scale-down: draining instance %s for model %q", inst.ID(), d.ModelID)
 	}
 	return lastErr
@@ -136,7 +137,7 @@ func (a *DirectActuator) findOldestActive(model string, variant VariantSpec) *In
 		if inst.Model != model {
 			continue
 		}
-		if inst.State != InstanceStateActive {
+		if inst.State != sim.InstanceStateActive {
 			continue
 		}
 		gpuType := inst.GPU()

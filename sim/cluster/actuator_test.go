@@ -3,6 +3,8 @@ package cluster
 import (
 	"fmt"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 // TestDirectActuatorApply verifies DirectActuator behavior for scale-up and scale-down.
@@ -15,7 +17,7 @@ func TestDirectActuatorApply(t *testing.T) {
 		inst := NewInstanceSimulator(InstanceID(id), simCfg)
 		inst.Model = model
 		inst.TPDegree = tp
-		inst.State = InstanceStateActive
+		inst.State = sim.InstanceStateActive
 		return inst
 	}
 
@@ -36,10 +38,10 @@ func TestDirectActuatorApply(t *testing.T) {
 		}
 
 		// inst-a sorts before inst-b — inst-a should be drained
-		if inst2.State != InstanceStateDraining {
+		if inst2.State != sim.InstanceStateDraining {
 			t.Errorf("inst-a State = %q, want Draining (oldest by ID)", inst2.State)
 		}
-		if inst1.State != InstanceStateActive {
+		if inst1.State != sim.InstanceStateActive {
 			t.Errorf("inst-b State = %q, want Active (not selected)", inst1.State)
 		}
 	})
@@ -63,7 +65,7 @@ func TestDirectActuatorApply(t *testing.T) {
 		// One Draining instance, one Active — should only drain the Active one.
 		cs := NewClusterSimulator(newTestDeploymentConfig(1), nil, nil)
 		draining := newActiveInst("inst-a", "m1", "A100", 1)
-		draining.State = InstanceStateDraining
+		draining.State = sim.InstanceStateDraining
 		active := newActiveInst("inst-b", "m1", "A100", 1)
 		cs.instances = []*InstanceSimulator{draining, active}
 
@@ -74,7 +76,7 @@ func TestDirectActuatorApply(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Apply returned error: %v", err)
 		}
-		if active.State != InstanceStateDraining {
+		if active.State != sim.InstanceStateDraining {
 			t.Errorf("active inst State = %q, want Draining", active.State)
 		}
 	})
@@ -108,7 +110,7 @@ func TestDirectActuatorApply(t *testing.T) {
 		if err == nil {
 			t.Error("Apply should return error for partial scale-down failure")
 		}
-		if inst.State != InstanceStateDraining {
+		if inst.State != sim.InstanceStateDraining {
 			t.Errorf("inst State = %q, want Draining (first iteration should succeed)", inst.State)
 		}
 	})
@@ -165,7 +167,7 @@ func TestDirectActuatorApply(t *testing.T) {
 		inst := cs.instances[0]
 
 		// THEN: instance is past Scheduling (Loading if delay>0, WarmingUp/Active if delay==0).
-		if inst.State == InstanceStateScheduling {
+		if inst.State == sim.InstanceStateScheduling {
 			t.Errorf("instance State = %q: must be past Scheduling after scaleUp (Loading/WarmingUp/Active expected)", inst.State)
 		}
 

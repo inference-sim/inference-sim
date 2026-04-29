@@ -518,7 +518,7 @@ func TestGPUInventory(t *testing.T) {
 		return cfg
 	}
 	// newA100Inst builds an InstanceSimulator with GPU="A100" and the given state/TPDegree.
-	newA100Inst := func(id string, tp int, state InstanceState) *InstanceSimulator {
+	newA100Inst := func(id string, tp int, state sim.InstanceState) *InstanceSimulator {
 		simCfg := newTestDeploymentConfig(1).ToSimConfig()
 		simCfg.GPU = "A100"
 		inst := NewInstanceSimulator(InstanceID(id), simCfg)
@@ -549,7 +549,7 @@ func TestGPUInventory(t *testing.T) {
 	t.Run("active_instances_subtract_gpus", func(t *testing.T) {
 		// 1 Active instance with TPDegree=2 uses 2 of 8 GPUs → 6 free.
 		cs := NewClusterSimulator(newPoolCfg(2), nil, nil)
-		cs.instances = []*InstanceSimulator{newA100Inst("inst-a", 2, InstanceStateActive)}
+		cs.instances = []*InstanceSimulator{newA100Inst("inst-a", 2, sim.InstanceStateActive)}
 		v := NewVariantSpec("A100", 2)
 		if got := cs.gpuInventory().FreeSlots(v); got != 6 {
 			t.Errorf("active instance: FreeSlots = %d, want 6 (8 - 2)", got)
@@ -562,12 +562,12 @@ func TestGPUInventory(t *testing.T) {
 		// Pool: 8 GPUs → 8 - 4 = 4 free.
 		cs := NewClusterSimulator(newPoolCfg(1), nil, nil)
 		cs.instances = []*InstanceSimulator{
-			newA100Inst("loading", 1, InstanceStateLoading),
-			newA100Inst("warmup", 1, InstanceStateWarmingUp),
-			newA100Inst("active", 1, InstanceStateActive),
-			newA100Inst("draining", 1, InstanceStateDraining),
-			newA100Inst("scheduling", 1, InstanceStateScheduling),   // must NOT subtract
-			newA100Inst("terminated", 1, InstanceStateTerminated),   // must NOT subtract
+			newA100Inst("loading", 1, sim.InstanceStateLoading),
+			newA100Inst("warmup", 1, sim.InstanceStateWarmingUp),
+			newA100Inst("active", 1, sim.InstanceStateActive),
+			newA100Inst("draining", 1, sim.InstanceStateDraining),
+			newA100Inst("scheduling", 1, sim.InstanceStateScheduling),   // must NOT subtract
+			newA100Inst("terminated", 1, sim.InstanceStateTerminated),   // must NOT subtract
 		}
 		v := NewVariantSpec("A100", 1)
 		if got := cs.gpuInventory().FreeSlots(v); got != 4 {
@@ -593,7 +593,7 @@ func TestGPUInventory(t *testing.T) {
 		cs := NewClusterSimulator(newPoolCfg(1), nil, nil)
 		cs.instances = nil
 		for i := 0; i < 10; i++ {
-			cs.instances = append(cs.instances, newA100Inst("over-"+string(rune('a'+i)), 1, InstanceStateActive))
+			cs.instances = append(cs.instances, newA100Inst("over-"+string(rune('a'+i)), 1, sim.InstanceStateActive))
 		}
 		v := NewVariantSpec("A100", 1)
 		if got := cs.gpuInventory().FreeSlots(v); got != 0 {

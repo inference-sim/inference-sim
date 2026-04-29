@@ -83,7 +83,7 @@ func TestMultiModel_BuildRouterState_EmptyWhenNonActive(t *testing.T) {
 	// Mark all instances as Draining (not routable)
 	for _, inst := range cs.instances {
 		inst.Model = "model-m"
-		inst.TransitionTo(InstanceStateDraining)
+		inst.TransitionTo(sim.InstanceStateDraining)
 	}
 
 	req := newModelRequest("req-1", "model-m", 0)
@@ -203,7 +203,7 @@ func TestWarmUpTTFTFactor_AppliedInAggregateMetrics(t *testing.T) {
 
 	// Manually set instance to WarmingUp and record two warm-up requests
 	inst := cs.instances[0]
-	inst.State = InstanceStateWarmingUp
+	inst.State = sim.InstanceStateWarmingUp
 	inst.warmUpRemaining = 2
 	inst.RecordWarmUpRequest(requests[0].ID)
 	inst.RecordWarmUpRequest(requests[1].ID)

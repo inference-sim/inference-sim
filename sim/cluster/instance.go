@@ -28,7 +28,7 @@ type InstanceSimulator struct {
 	// Phase 1A: lifecycle and placement fields.
 	// All zero-value safe (backward-compatible with no-node-pool mode).
 	Model            string        // target model identifier (empty = default/single-model)
-	State            InstanceState // lifecycle state; empty = untracked (backward-compat)
+	State            sim.InstanceState // lifecycle state; empty = untracked (backward-compat)
 	warmUpRemaining  int           // requests remaining in warm-up phase; 0 = no warm-up
 	warmUpRequestIDs []string      // IDs of requests served during warm-up (for TTFT factor)
 	nodeID           string        // node this instance is placed on (empty = unplaced)
@@ -250,7 +250,7 @@ func (i *InstanceSimulator) InjectRequestOnline(req *sim.Request, eventTime int6
 // for backward compatibility with pre-Phase-1A cluster tests.
 func (i *InstanceSimulator) IsRoutable() bool {
 	switch i.State {
-	case InstanceStateActive, InstanceStateWarmingUp:
+	case sim.InstanceStateActive, sim.InstanceStateWarmingUp:
 		return true
 	case "": // untracked — backward-compat
 		return true
@@ -266,7 +266,7 @@ func (i *InstanceSimulator) HasSim() bool {
 
 // IsWarmingUp returns true if the warm-up TTFT penalty should be applied.
 func (i *InstanceSimulator) IsWarmingUp() bool {
-	return i.State == InstanceStateWarmingUp && i.warmUpRemaining > 0
+	return i.State == sim.InstanceStateWarmingUp && i.warmUpRemaining > 0
 }
 
 // RecordWarmUpRequest marks a request ID as having been served during warm-up.
@@ -294,25 +294,25 @@ func (i *InstanceSimulator) ConsumeWarmUpRequest() {
 		return
 	}
 	i.warmUpRemaining--
-	if i.warmUpRemaining == 0 && i.State == InstanceStateWarmingUp {
-		i.TransitionTo(InstanceStateActive)
+	if i.warmUpRemaining == 0 && i.State == sim.InstanceStateWarmingUp {
+		i.TransitionTo(sim.InstanceStateActive)
 	}
 }
 
 // validInstanceTransitions maps valid source → target pairs for instance lifecycle.
-var validInstanceTransitions = map[InstanceState]map[InstanceState]struct{}{
-	InstanceStateScheduling: {InstanceStateLoading: {}, InstanceStateTerminated: {}},
-	InstanceStateLoading:    {InstanceStateWarmingUp: {}, InstanceStateActive: {}, InstanceStateTerminated: {}},
-	InstanceStateWarmingUp:  {InstanceStateActive: {}, InstanceStateDraining: {}, InstanceStateTerminated: {}},
-	InstanceStateActive:     {InstanceStateDraining: {}, InstanceStateTerminated: {}},
-	InstanceStateDraining:   {InstanceStateTerminated: {}},
-	InstanceStateTerminated: {},
+var validInstanceTransitions = map[sim.InstanceState]map[sim.InstanceState]struct{}{
+	sim.InstanceStateScheduling: {sim.InstanceStateLoading: {}, sim.InstanceStateTerminated: {}},
+	sim.InstanceStateLoading:    {sim.InstanceStateWarmingUp: {}, sim.InstanceStateActive: {}, sim.InstanceStateTerminated: {}},
+	sim.InstanceStateWarmingUp:  {sim.InstanceStateActive: {}, sim.InstanceStateDraining: {}, sim.InstanceStateTerminated: {}},
+	sim.InstanceStateActive:     {sim.InstanceStateDraining: {}, sim.InstanceStateTerminated: {}},
+	sim.InstanceStateDraining:   {sim.InstanceStateTerminated: {}},
+	sim.InstanceStateTerminated: {},
 }
 
 // TransitionTo validates and applies an instance state transition.
 // Panics on invalid transition (invariant violation per Principle V).
 // No-op when State is empty (backward-compat: lifecycle not tracked).
-func (i *InstanceSimulator) TransitionTo(state InstanceState) {
+func (i *InstanceSimulator) TransitionTo(state sim.InstanceState) {
 	if i.State == "" {
 		// Lifecycle tracking not enabled — silently accept transition to initialize state.
 		i.State = state

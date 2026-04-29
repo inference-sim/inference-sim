@@ -76,9 +76,8 @@ type InstanceSnapshot struct {
 
 	TimedOutRequests int
 
-	// State matches InstanceState string constants defined in sim/cluster
-	// (e.g. "Active", "Loading", "Draining"). Always "Active" in single-instance mode.
-	State string
+	// State is the instance lifecycle state. Always InstanceStateActive in single-instance mode.
+	State InstanceState
 
 	Model string
 }

@@ -86,7 +86,7 @@ func TestInstanceLifecycle_WarmUpTTFTPenalty(t *testing.T) {
 func TestInstanceLifecycle_WaitDrainExcludesRouting(t *testing.T) {
 	// GIVEN an instance in Draining state with WAIT policy
 	inst := &InstanceSimulator{id: "wait-inst"}
-	inst.TransitionTo(InstanceStateActive)
+	inst.TransitionTo(sim.InstanceStateActive)
 
 	policy := &drainWait{}
 	policy.Drain(inst, nil)
@@ -97,7 +97,7 @@ func TestInstanceLifecycle_WaitDrainExcludesRouting(t *testing.T) {
 	}
 
 	// AND instance is in Draining state
-	if inst.State != InstanceStateDraining {
+	if inst.State != sim.InstanceStateDraining {
 		t.Errorf("instance state = %q, want Draining", inst.State)
 	}
 }
@@ -105,7 +105,7 @@ func TestInstanceLifecycle_WaitDrainExcludesRouting(t *testing.T) {
 func TestInstanceLifecycle_ImmediateDrain(t *testing.T) {
 	// GIVEN an Active instance
 	inst := &InstanceSimulator{id: "imm-inst"}
-	inst.TransitionTo(InstanceStateActive)
+	inst.TransitionTo(sim.InstanceStateActive)
 
 	// drainImmediate needs releaseInstanceGPUs which needs a cluster — use a mock cs
 	// that has nil placement (no-op release)
@@ -114,7 +114,7 @@ func TestInstanceLifecycle_ImmediateDrain(t *testing.T) {
 	policy.Drain(inst, cs)
 
 	t.Run("instance terminates immediately", func(t *testing.T) {
-		if inst.State != InstanceStateTerminated {
+		if inst.State != sim.InstanceStateTerminated {
 			t.Errorf("instance state = %q, want Terminated after IMMEDIATE drain", inst.State)
 		}
 	})
@@ -203,18 +203,18 @@ func TestInstanceLifecycle_RedirectDrainPreservesConservation(t *testing.T) {
 func TestInstanceStateMachine_ValidTransitions(t *testing.T) {
 	cases := []struct {
 		name   string
-		from   InstanceState
-		to     InstanceState
+		from   sim.InstanceState
+		to     sim.InstanceState
 		wantOK bool
 	}{
-		{"Scheduling→Loading", InstanceStateScheduling, InstanceStateLoading, true},
-		{"Loading→WarmingUp", InstanceStateLoading, InstanceStateWarmingUp, true},
-		{"Loading→Active", InstanceStateLoading, InstanceStateActive, true},
-		{"WarmingUp→Active", InstanceStateWarmingUp, InstanceStateActive, true},
-		{"Active→Draining", InstanceStateActive, InstanceStateDraining, true},
-		{"Draining→Terminated", InstanceStateDraining, InstanceStateTerminated, true},
-		{"Active→Loading (invalid)", InstanceStateActive, InstanceStateLoading, false},
-		{"Terminated→Active (invalid)", InstanceStateTerminated, InstanceStateActive, false},
+		{"Scheduling→Loading", sim.InstanceStateScheduling, sim.InstanceStateLoading, true},
+		{"Loading→WarmingUp", sim.InstanceStateLoading, sim.InstanceStateWarmingUp, true},
+		{"Loading→Active", sim.InstanceStateLoading, sim.InstanceStateActive, true},
+		{"WarmingUp→Active", sim.InstanceStateWarmingUp, sim.InstanceStateActive, true},
+		{"Active→Draining", sim.InstanceStateActive, sim.InstanceStateDraining, true},
+		{"Draining→Terminated", sim.InstanceStateDraining, sim.InstanceStateTerminated, true},
+		{"Active→Loading (invalid)", sim.InstanceStateActive, sim.InstanceStateLoading, false},
+		{"Terminated→Active (invalid)", sim.InstanceStateTerminated, sim.InstanceStateActive, false},
 	}
 
 	for _, tc := range cases {
@@ -236,17 +236,17 @@ func TestInstanceStateMachine_ValidTransitions(t *testing.T) {
 	}
 }
 
-// ─── InstanceState enums ─────────────────────────────────────────────────────
+// ─── sim.InstanceState enums ─────────────────────────────────────────────────────
 
 func TestInstanceState_IsValidInstanceState(t *testing.T) {
 	valid := []string{"Scheduling", "Loading", "WarmingUp", "Active", "Draining", "Terminated"}
 	for _, s := range valid {
-		if !IsValidInstanceState(s) {
-			t.Errorf("IsValidInstanceState(%q) = false, want true", s)
+		if !sim.IsValidInstanceState(s) {
+			t.Errorf("sim.IsValidInstanceState(%q) = false, want true", s)
 		}
 	}
-	if IsValidInstanceState("unknown") {
-		t.Error("IsValidInstanceState(unknown) = true, want false")
+	if sim.IsValidInstanceState("unknown") {
+		t.Error("sim.IsValidInstanceState(unknown) = true, want false")
 	}
 }
 
@@ -269,15 +269,15 @@ func TestNodeState_IsValidNodeState(t *testing.T) {
 // This is a system-law test (R7 companion to all lifecycle golden tests).
 func TestInstanceStateMachine_NoBackwardTransitions(t *testing.T) {
 	// Define the forward order — each state can only transition to a higher-index state.
-	forwardOrder := []InstanceState{
-		InstanceStateScheduling,
-		InstanceStateLoading,
-		InstanceStateWarmingUp,
-		InstanceStateActive,
-		InstanceStateDraining,
-		InstanceStateTerminated,
+	forwardOrder := []sim.InstanceState{
+		sim.InstanceStateScheduling,
+		sim.InstanceStateLoading,
+		sim.InstanceStateWarmingUp,
+		sim.InstanceStateActive,
+		sim.InstanceStateDraining,
+		sim.InstanceStateTerminated,
 	}
-	indexOf := make(map[InstanceState]int, len(forwardOrder))
+	indexOf := make(map[sim.InstanceState]int, len(forwardOrder))
 	for i, s := range forwardOrder {
 		indexOf[s] = i
 	}
