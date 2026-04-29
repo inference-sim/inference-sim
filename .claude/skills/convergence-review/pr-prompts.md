@@ -1,8 +1,8 @@
 # PR Review Perspective Prompts
 
-Reference file for the convergence-review skill. Contains exact prompts for the 20 PR review perspectives across plan review and code review gates.
+Reference file for the convergence-review skill. Contains exact prompts for the 27 PR review perspectives across plan review, code review, and docs review gates.
 
-**Canonical source:** `docs/contributing/pr-workflow.md` (v4.0). After the human-first rewrite, pr-workflow.md contains the same checklist content in human-readable format; this file preserves the agent dispatch format. Content is aligned; format differs intentionally. If checklist *content* diverges, pr-workflow.md is authoritative.
+**Canonical source:** `docs/contributing/pr-workflow.md` (v4.2). After the human-first rewrite, pr-workflow.md contains the same checklist content in human-readable format; this file preserves the agent dispatch format. Content is aligned; format differs intentionally. If checklist *content* diverges, pr-workflow.md is authoritative. **Section C (pr-docs perspectives) has no counterpart in pr-workflow.md** — this file is the sole source for Section C prompt text.
 
 **Dispatch pattern:** All perspectives are passed to a single foreground agent in one call. The artifact is sent once; each perspective appears as a `## [<ID>] <Name>` section. See SKILL.md Phase A Step 3 for the full assembly specification. Model selection is controlled by the `--model` flag in the convergence-review skill (default: `haiku`).
 
@@ -483,6 +483,172 @@ Review this diff as a security and robustness reviewer. Check for:
 - Degenerate input handling (empty, zero, NaN, Inf)
 - Configuration injection risks
 - Silent data loss in error paths
+
+DIFF:
+<paste git diff output>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+---
+
+## Section C: PR Docs Review (7 perspectives) — Step 4.5 (docs-only PRs)
+
+### PD-1: Substance & Accuracy
+
+```
+Review this diff for substance and factual accuracy. Check for:
+- Factual claims that are wrong (wrong issue numbers, wrong PR citations, wrong counts)
+- File paths that don't exist or have been renamed
+- Rule or invariant references that are stale (e.g., "R1-R20" when the current range is R1-R23)
+- Count claims that don't match the actual count (e.g., "7 gate types" when there are 8)
+- Procedure steps that describe behavior not matching the current implementation
+
+DIFF:
+<paste git diff output>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PD-2: Cross-Document Consistency
+
+```
+Review this diff for cross-document consistency. Check for:
+- Working copies not updated when their canonical source was changed (check the source-of-truth map in docs/contributing/standards/principles.md)
+- CLAUDE.md sections that reference file paths, rules, or counts that this diff changes
+- Stale references in one document to content in another document that was modified
+- Scope mismatch: did this change touch a canonical source but miss one or more of its working copies?
+
+DIFF:
+<paste git diff output>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PD-3: Canonical Source Integrity
+
+```
+Review this diff for canonical source integrity. Check for:
+- A canonical source losing its "canonical" designation (e.g., a "canonical source" header removed)
+- Contradictions introduced between two canonical sources (e.g., two files that should agree but now say different things)
+- A working copy claiming authority it shouldn't have (e.g., "If this section diverges, THIS FILE is authoritative" when it should be the canonical source)
+- A document that previously deferred to a canonical source now stating its own version of the truth
+
+DIFF:
+<paste git diff output>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PD-4: Completeness
+
+```
+Review this diff for completeness. Check for:
+- Structured documents (tables, checklists, numbered lists) where a new entry was added but a parallel list elsewhere wasn't updated
+- Count references that are now off by one (e.g., "8 perspectives" in the table of contents but only 7 in the list)
+- Acceptance criteria or checklist items that are referenced but not fulfilled by the diff
+- Link targets that are mentioned in the new/changed text but don't exist in the repo
+- Section references (e.g., "see Section C") that now point to the wrong section number after a renumbering
+
+DIFF:
+<paste git diff output>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PD-5: Structural Validation (perform directly, no agent)
+
+> **For Claude:** Perform these 4 checks directly. Do NOT dispatch an agent.
+
+**Check 1 — Template Compliance:**
+For each modified document, verify it follows its stated template or structure. If it's a table, all columns present. If it's a Gherkin-style contract, GIVEN/WHEN/THEN all present. If it's a checklist, all items have checkboxes.
+
+**Check 2 — Internal Link Validity:**
+For each internal link or file reference added or changed in the diff, verify the target file or section exists. Pay particular attention to links using the `[text](path)` format — check that the path resolves from the document's location.
+
+**Check 3 — Source-of-Truth Map Consistency:**
+Check `docs/contributing/standards/principles.md` for the source-of-truth map. For each canonical source modified in this diff, verify all listed working copies are also updated in this diff (or are provably unaffected).
+
+**Check 4 — Parallel Structure Preservation:**
+If the modified document uses parallel structure (e.g., all gate types have the same columns, all perspectives have the same footer), verify the new content preserves that parallel structure exactly.
+
+### PD-6: Getting-Started Experience
+
+```
+Review this diff from the perspective of a new contributor. Simulate two journeys:
+(1) A new contributor reading the docs to understand BLIS workflow for the first time
+(2) An experienced contributor using updated docs to execute a specific workflow step
+
+Check for:
+- Instructions that are now inconsistent with each other (step A says one thing, step B contradicts it)
+- A new contributor following instructions exactly and getting stuck because a prerequisite step was removed or changed
+- Examples that illustrate the old behavior but haven't been updated to show the new behavior
+- Terminology introduced without definition (jargon added without a "means X" explanation)
+
+DIFF:
+<paste git diff output>
+
+For each finding, you MUST provide:
+- Severity: CRITICAL, IMPORTANT, or SUGGESTION
+- Location: exact file:line (for code) or section heading + line (for docs/plans)
+- Issue: what is wrong (specific, not vague)
+- Expected: what the correct behavior should be
+
+Findings without a specific location will be DISCARDED as unverifiable.
+
+Report: (1) numbered list of findings with severity and location, (2) total CRITICAL count, (3) total IMPORTANT count.
+```
+
+### PD-7: DRY Compliance
+
+```
+Review this diff for DRY (Don't Repeat Yourself) violations. Focus on STRUCTURAL duplication — do not re-report cross-document sync issues already covered by PD-2 (Cross-Document Consistency). PD-2 checks "did this diff update all working copies?" — PD-7 checks "does this diff introduce new duplication or orphan a copy?"
+
+Check for:
+- Content duplicated in two or more places without a "canonical source" header on one of them (new duplication introduced by this diff)
+- A fact stated in multiple documents that could diverge — is there a clear canonical source that others defer to? (structural question about the repo's doc architecture)
+- New content added that is already stated elsewhere — should it be a link/reference instead of a copy?
+- Content removed from one place but not removed from its copies, creating a shadow/orphaned version
 
 DIFF:
 <paste git diff output>
