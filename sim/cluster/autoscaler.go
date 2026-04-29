@@ -57,8 +57,8 @@ type ReplicaMetrics struct {
 type ModelSignals struct {
 	ModelID                      string
 	Replicas                     []ReplicaMetrics // may be empty
-	PendingReplicaCount          int              // Loading instances not yet routable
-	PendingTotalKvCapacityTokens int64            // sum of TotalKvCapacityTokens for all Loading instances of this model
+	PendingReplicaCount          int              // Loading instances with positive KV capacity, not yet routable
+	PendingTotalKvCapacityTokens int64            // sum of TotalKvCapacityTokens for all Loading instances of this model (zero-capacity instances excluded)
 }
 
 // VariantCapacity is one variant's share of a model's total supply and demand.

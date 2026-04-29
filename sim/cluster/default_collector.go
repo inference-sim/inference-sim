@@ -62,8 +62,9 @@ func (c *DefaultCollector) Collect(state *sim.RouterState) []ModelSignals {
 			continue
 		}
 		if snap.TotalKvCapacityTokens <= 0 {
-			logrus.Debugf("[collector] loading snapshot %q model %q has zero TotalKvCapacityTokens — contributes to PendingReplicaCount but not PendingTotalKvCapacityTokens",
+			logrus.Debugf("[collector] skipping loading snapshot %q model %q: TotalKvCapacityTokens <= 0",
 				snap.ID, snap.Model)
+			continue
 		}
 		p := pendingByModel[snap.Model]
 		p.count++
