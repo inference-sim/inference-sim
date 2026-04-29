@@ -1791,15 +1791,22 @@ func TestClusterSimulator_FlowControl_Conservation(t *testing.T) {
 	gwDepth := cs.GatewayQueueDepth()
 	gwShed := cs.GatewayQueueShed()
 
-	// INV-1: injected == completed + queued + running + dropped + timedout + routingRejections + gwDepth + gwShed
+	// INV-1: injected == completed + queued + running + dropped + timedout + routingRejections + gwDepth + gwShed + gwRejected
+	gwRejected := cs.GatewayQueueRejected()
 	injected := len(requests) - cs.RejectedRequests()
-	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() + gwDepth + gwShed
+	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() + gwDepth + gwShed + gwRejected
 	if injected != accounted {
-		t.Errorf("INV-1: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d routingRejections=%d gwDepth=%d gwShed=%d)",
+		t.Errorf("INV-1: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d routingRejections=%d gwDepth=%d gwShed=%d gwRejected=%d)",
 			injected, accounted,
 			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
-			m.TimedOutRequests, cs.RoutingRejections(), gwDepth, gwShed)
+			m.TimedOutRequests, cs.RoutingRejections(), gwDepth, gwShed, gwRejected)
 	}
+	// Note: gwRejected is included in the conservation formula but may be 0 here.
+	// The rejection path (queue full + no sheddable victim) is exercised at the unit level
+	// in TestGatewayQueue_CriticalityProtection_NonSheddableNeverEvicted and related tests.
+	// Triggering it in an integration test requires the saturation detector to hold requests
+	// in the queue long enough for overflow, which depends on DES event ordering and timing
+	// that this configuration does not guarantee.
 }
 
 // TestClusterSimulator_FlowControl_Accessors_BeforeRun verifies zero values
@@ -1815,6 +1822,9 @@ func TestClusterSimulator_FlowControl_Accessors_Disabled(t *testing.T) {
 	}
 	if cs.GatewayQueueShed() != 0 {
 		t.Errorf("GatewayQueueShed should be 0 when disabled, got %d", cs.GatewayQueueShed())
+	}
+	if cs.GatewayQueueRejected() != 0 {
+		t.Errorf("GatewayQueueRejected should be 0 when disabled, got %d", cs.GatewayQueueRejected())
 	}
 }
 

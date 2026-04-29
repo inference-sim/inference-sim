@@ -50,13 +50,37 @@ func (h *gatewayQueueHeap) Pop() any {
 	return entry
 }
 
+// EnqueueOutcome represents the result of enqueuing a request.
+type EnqueueOutcome int
+
+const (
+	Enqueued   EnqueueOutcome = iota // request accepted into queue
+	ShedVictim                       // request accepted, a sheddable victim was evicted
+	Rejected                         // queue full, incoming request cannot displace any entry — not enqueued
+)
+
+// String returns a human-readable name for the outcome.
+func (o EnqueueOutcome) String() string {
+	switch o {
+	case Enqueued:
+		return "Enqueued"
+	case ShedVictim:
+		return "ShedVictim"
+	case Rejected:
+		return "Rejected"
+	default:
+		return fmt.Sprintf("EnqueueOutcome(%d)", int(o))
+	}
+}
+
 // GatewayQueue is a priority-ordered queue for holding admitted requests before routing.
 // Implements saturation-gated dispatch for GIE flow control parity.
 type GatewayQueue struct {
-	heap        gatewayQueueHeap
-	maxDepth    int // 0 = unlimited
-	shedCount   int // number of requests shed due to capacity
-	priorityMap *sim.SLOPriorityMap
+	heap          gatewayQueueHeap
+	maxDepth      int // 0 = unlimited
+	shedCount     int // number of requests shed (evicted victims only)
+	rejectedCount int // number of requests rejected (queue full, incoming could not displace any entry)
+	priorityMap   *sim.SLOPriorityMap
 }
 
 // NewGatewayQueue creates a gateway queue with the given dispatch order and max depth.
@@ -84,40 +108,53 @@ func NewGatewayQueue(dispatchOrder string, maxDepth int, priorityMap *sim.SLOPri
 	return q
 }
 
-// Enqueue adds a request to the gateway queue. Returns true if the request was shed
-// (queue at capacity and request has lower or equal priority to all queued items).
-// When the queue is at capacity, the lowest-priority request is shed (R1: counted, not silent).
-func (q *GatewayQueue) Enqueue(req *sim.Request, seqID int64) (shed bool) {
+// Enqueue adds a request to the gateway queue.
+// When the queue is at capacity, only sheddable (priority < 0) entries are eviction candidates.
+// If no sheddable candidate exists, or the incoming request cannot displace the lowest sheddable
+// entry (strictly lower priority, or equal priority with later arrival), the incoming request is rejected.
+// Returns the outcome and the evicted victim (non-nil only for ShedVictim).
+func (q *GatewayQueue) Enqueue(req *sim.Request, seqID int64) (EnqueueOutcome, *sim.Request) {
 	priority := q.priorityMap.Priority(req.SLOClass)
 	entry := gatewayQueueEntry{request: req, priority: priority, seqID: seqID}
 
 	if q.maxDepth > 0 && q.heap.Len() >= q.maxDepth {
-		// Find the lowest-priority entry for shedding.
-		// The heap is max-priority ordered, so the min is not necessarily at the root.
-		minIdx := 0
-		for i := 1; i < q.heap.Len(); i++ {
-			if q.heap.entries[i].priority < q.heap.entries[minIdx].priority ||
+		// Find the lowest-priority sheddable entry (priority < 0 only).
+		minIdx := -1
+		for i := 0; i < q.heap.Len(); i++ {
+			if q.heap.entries[i].priority >= 0 {
+				continue // non-sheddable — skip
+			}
+			if minIdx == -1 ||
+				q.heap.entries[i].priority < q.heap.entries[minIdx].priority ||
 				(q.heap.entries[i].priority == q.heap.entries[minIdx].priority &&
 					q.heap.entries[i].seqID > q.heap.entries[minIdx].seqID) {
 				minIdx = i
 			}
 		}
-		minEntry := q.heap.entries[minIdx]
 
-		// If new request has higher priority (or same priority but earlier), shed the min
+		if minIdx == -1 {
+			// No sheddable candidate — reject the incoming request.
+			q.rejectedCount++
+			return Rejected, nil
+		}
+
+		// Only displace if incoming has higher priority (or same priority + earlier arrival).
+		minEntry := q.heap.entries[minIdx]
 		if priority > minEntry.priority || (priority == minEntry.priority && seqID < minEntry.seqID) {
+			victim := minEntry.request
 			heap.Remove(&q.heap, minIdx)
 			q.shedCount++
 			heap.Push(&q.heap, entry)
-			return false // new request kept, old one shed
+			return ShedVictim, victim
 		}
-		// New request is shed
-		q.shedCount++
-		return true
+
+		// Incoming cannot outpriority any sheddable entry — reject it.
+		q.rejectedCount++
+		return Rejected, nil
 	}
 
 	heap.Push(&q.heap, entry)
-	return false
+	return Enqueued, nil
 }
 
 // Dequeue removes and returns the highest-priority (or earliest for FIFO) request.
@@ -135,7 +172,12 @@ func (q *GatewayQueue) Len() int {
 	return q.heap.Len()
 }
 
-// ShedCount returns the number of requests shed due to capacity.
+// ShedCount returns the number of requests shed (evicted victims) due to capacity.
 func (q *GatewayQueue) ShedCount() int {
 	return q.shedCount
+}
+
+// RejectedCount returns the number of requests rejected (queue full, incoming could not displace any entry).
+func (q *GatewayQueue) RejectedCount() int {
+	return q.rejectedCount
 }

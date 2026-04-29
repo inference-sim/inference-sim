@@ -393,6 +393,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 				config.NumInstances, config.MaxRunningReqs)
 		}
 		cs.tenantTracker = NewTenantTracker(config.TenantBudgets, totalCapacity)
+		cs.admissionPolicy = sim.NewTenantBudgetAdmission(cs.admissionPolicy, cs.tenantTracker, cs.priorityMap)
 	}
 
 	// Flow control: gateway queue with saturation-gated dispatch (issue #882).
@@ -1260,13 +1261,22 @@ func (c *ClusterSimulator) GatewayQueueDepth() int {
 	return c.gatewayQueue.Len()
 }
 
-// GatewayQueueShed returns the number of requests shed from the gateway queue
+// GatewayQueueShed returns the number of requests shed (evicted victims) from the gateway queue
 // due to capacity limits. Returns 0 when flow control is disabled.
 func (c *ClusterSimulator) GatewayQueueShed() int {
 	if c.gatewayQueue == nil {
 		return 0
 	}
 	return c.gatewayQueue.ShedCount()
+}
+
+// GatewayQueueRejected returns the number of requests rejected from the gateway queue
+// (queue full, incoming could not displace any entry). Returns 0 when flow control is disabled.
+func (c *ClusterSimulator) GatewayQueueRejected() int {
+	if c.gatewayQueue == nil {
+		return 0
+	}
+	return c.gatewayQueue.RejectedCount()
 }
 
 // tryDispatchFromGatewayQueue attempts to dispatch one request from the gateway queue.

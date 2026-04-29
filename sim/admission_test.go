@@ -219,3 +219,64 @@ func TestRejectAll_RejectsAll(t *testing.T) {
 		})
 	}
 }
+
+// stubTracker is a test double implementing TenantBudgetTracker.
+type stubTracker struct{ overBudget bool }
+
+func (s *stubTracker) IsOverBudget(string) bool { return s.overBudget }
+
+func TestTenantBudgetAdmission_DelegatesToInnerPolicy(t *testing.T) {
+	policy := NewTenantBudgetAdmission(&RejectAll{}, &stubTracker{overBudget: false}, DefaultSLOPriorityMap())
+	admitted, reason := policy.Admit(&Request{ID: "r1", TenantID: "t1", SLOClass: "standard"}, &RouterState{})
+	if admitted {
+		t.Error("inner policy rejection should stand")
+	}
+	if reason == "" {
+		t.Error("should have rejection reason from inner policy")
+	}
+}
+
+func TestTenantBudgetAdmission_SheddableOverBudgetRejected(t *testing.T) {
+	policy := NewTenantBudgetAdmission(&AlwaysAdmit{}, &stubTracker{overBudget: true}, DefaultSLOPriorityMap())
+	admitted, reason := policy.Admit(&Request{ID: "r1", TenantID: "t1", SLOClass: "batch"}, &RouterState{})
+	if admitted {
+		t.Error("sheddable over-budget request should be rejected")
+	}
+	if reason != "tenant-budget-shed" {
+		t.Errorf("expected reason 'tenant-budget-shed', got %q", reason)
+	}
+}
+
+func TestTenantBudgetAdmission_NonSheddableOverBudgetAdmitted(t *testing.T) {
+	policy := NewTenantBudgetAdmission(&AlwaysAdmit{}, &stubTracker{overBudget: true}, DefaultSLOPriorityMap())
+	admitted, _ := policy.Admit(&Request{ID: "r1", TenantID: "t1", SLOClass: "standard"}, &RouterState{})
+	if !admitted {
+		t.Error("non-sheddable request should be admitted even when over budget")
+	}
+}
+
+func TestTenantBudgetAdmission_SheddableUnderBudgetAdmitted(t *testing.T) {
+	policy := NewTenantBudgetAdmission(&AlwaysAdmit{}, &stubTracker{overBudget: false}, DefaultSLOPriorityMap())
+	admitted, _ := policy.Admit(&Request{ID: "r1", TenantID: "t1", SLOClass: "batch"}, &RouterState{})
+	if !admitted {
+		t.Error("sheddable under-budget request should be admitted")
+	}
+}
+
+func TestNewTenantBudgetAdmission_NilInner_Panics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for nil inner policy")
+		}
+	}()
+	NewTenantBudgetAdmission(nil, &stubTracker{}, DefaultSLOPriorityMap())
+}
+
+func TestNewTenantBudgetAdmission_NilTracker_Panics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for nil tracker")
+		}
+	}()
+	NewTenantBudgetAdmission(&AlwaysAdmit{}, nil, DefaultSLOPriorityMap())
+}
