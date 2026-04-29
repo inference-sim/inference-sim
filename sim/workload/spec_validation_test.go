@@ -328,6 +328,38 @@ func TestWorkloadSpec_Validate_SLOClassConsistency(t *testing.T) {
 		}
 	})
 
+	t.Run("BC-5: ServeGen expansion exempt from SLO class check", func(t *testing.T) {
+		// GIVEN a spec with ServeGenData set (which will auto-generate clients with explicit SLOClass)
+		// AND user-authored cohorts with empty SLOClass
+		spec := &WorkloadSpec{
+			Version:       "2",
+			AggregateRate: 10.0,
+			Cohorts: []CohortSpec{
+				{
+					ID:           "cohort-1",
+					Population:   5,
+					RateFraction: 1.0,
+					SLOClass:     "", // empty - would normally conflict with ServeGen's "standard"
+					Arrival:      ArrivalSpec{Process: "poisson"},
+					InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+					OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				},
+			},
+			ServeGenData: &ServeGenDataSpec{
+				// ServeGen expansion will create clients with SLOClass="standard"
+				// But since ServeGenData is non-nil, the guard should skip checking spec.Clients
+				Path: "dummy",
+			},
+		}
+		// WHEN Validate is called
+		err := spec.Validate()
+		// THEN it should NOT return mixed specification error (ServeGen clients are exempt)
+		// (it may fail with other errors like missing ServeGen files, which is fine)
+		if err != nil && strings.Contains(err.Error(), "mixed slo_class specification") {
+			t.Errorf("BC-5 violation: ServeGen should be exempt from SLO class check, but got mixed spec error: %v", err)
+		}
+	})
+
 	t.Run("BC-8: pre-existing validation error takes precedence", func(t *testing.T) {
 		// GIVEN a spec with BOTH a pre-existing error (invalid slo_class value)
 		// AND a mixed specification (one explicit, one empty)
