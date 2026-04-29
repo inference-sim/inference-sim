@@ -499,6 +499,9 @@ warm_up_requests: 0
 	origGPU := gpu
 	origTP := tensorParallelism
 	origDefaultsFilePath := defaultsFilePath
+	origSessionMode := replaySessionMode
+	origThinkTimeMs := replayThinkTimeMs
+	origThinkTimeDist := replayThinkTimeDist
 	defer func() {
 		model = origModel
 		latencyModelBackend = origBackend
@@ -542,6 +545,9 @@ warm_up_requests: 0
 		gpu = origGPU
 		tensorParallelism = origTP
 		defaultsFilePath = origDefaultsFilePath
+		replaySessionMode = origSessionMode
+		replayThinkTimeMs = origThinkTimeMs
+		replayThinkTimeDist = origThinkTimeDist
 	}()
 
 	// Set package-level vars
@@ -724,6 +730,9 @@ warm_up_requests: 0
 	origGPU := gpu
 	origTP := tensorParallelism
 	origDefaultsFilePath := defaultsFilePath
+	origSessionMode := replaySessionMode
+	origThinkTimeMs := replayThinkTimeMs
+	origThinkTimeDist := replayThinkTimeDist
 	defer func() {
 		model = origModel
 		latencyModelBackend = origBackend
@@ -767,6 +776,9 @@ warm_up_requests: 0
 		gpu = origGPU
 		tensorParallelism = origTP
 		defaultsFilePath = origDefaultsFilePath
+		replaySessionMode = origSessionMode
+		replayThinkTimeMs = origThinkTimeMs
+		replayThinkTimeDist = origThinkTimeDist
 	}()
 
 	// Library-level BC-1 verification: trace loads correctly and requests are correct
@@ -963,6 +975,9 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	origGPU := gpu
 	origTP := tensorParallelism
 	origDefaultsFilePath := defaultsFilePath
+	origSessionMode := replaySessionMode
+	origThinkTimeMs := replayThinkTimeMs
+	origThinkTimeDist := replayThinkTimeDist
 	defer func() {
 		model = origModel
 		latencyModelBackend = origBackend
@@ -1006,6 +1021,9 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 		gpu = origGPU
 		tensorParallelism = origTP
 		defaultsFilePath = origDefaultsFilePath
+		replaySessionMode = origSessionMode
+		replayThinkTimeMs = origThinkTimeMs
+		replayThinkTimeDist = origThinkTimeDist
 	}()
 
 	model = "test-model"
@@ -1134,6 +1152,9 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		origHwConfigPath := hwConfigPath
 		origGPU := gpu
 		origTP := tensorParallelism
+		origSessionMode := replaySessionMode
+		origThinkTimeMs := replayThinkTimeMs
+		origThinkTimeDist := replayThinkTimeDist
 		defer func() {
 			model = origModel
 			latencyModelBackend = origBackend
@@ -1176,6 +1197,9 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 			hwConfigPath = origHwConfigPath
 			gpu = origGPU
 			tensorParallelism = origTP
+			replaySessionMode = origSessionMode
+			replayThinkTimeMs = origThinkTimeMs
+			replayThinkTimeDist = origThinkTimeDist
 		}()
 
 		model = "test-model"
@@ -1319,6 +1343,9 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	origGPU := gpu
 	origTP := tensorParallelism
 	origDefaultsFilePath := defaultsFilePath
+	origSessionMode := replaySessionMode
+	origThinkTimeMs := replayThinkTimeMs
+	origThinkTimeDist := replayThinkTimeDist
 	defer func() {
 		model = origModel
 		latencyModelBackend = origBackend
@@ -1362,6 +1389,9 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 		gpu = origGPU
 		tensorParallelism = origTP
 		defaultsFilePath = origDefaultsFilePath
+		replaySessionMode = origSessionMode
+		replayThinkTimeMs = origThinkTimeMs
+		replayThinkTimeDist = origThinkTimeDist
 	}()
 
 	model = "test-model"
