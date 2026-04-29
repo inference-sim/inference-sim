@@ -116,6 +116,27 @@ func (m *SLOPriorityMap) IsSheddable(class string) bool {
 	return m.Priority(class) < 0
 }
 
+// InvertForVLLM converts a BLIS SLO class to a vLLM priority value.
+// vLLM uses lower integers for higher urgency (min-heap), opposite of BLIS/llm-d.
+// Returns maxPriority - Priority(class), where maxPriority is the highest value
+// across all configured priorities and defaultPri.
+//
+// Example with defaults (maxPriority=4):
+//
+//	critical (4) → 0, standard (3) → 1, batch (-1) → 5, sheddable (-2) → 6, background (-3) → 7
+//
+// Handles custom overrides: if an override sets critical=10, maxPriority becomes 10
+// and all inversions adjust accordingly.
+func (m *SLOPriorityMap) InvertForVLLM(class string) int {
+	maxPriority := m.defaultPri
+	for _, p := range m.priorities {
+		if p > maxPriority {
+			maxPriority = p
+		}
+	}
+	return maxPriority - m.Priority(class)
+}
+
 // SLOTierPriority maps an SLOClass string to an integer priority using GAIE-compatible defaults.
 // Deprecated: use SLOPriorityMap.Priority() for configurable priorities.
 // Kept for backward compatibility — delegates to DefaultSLOPriorityMap().
