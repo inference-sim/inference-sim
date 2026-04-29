@@ -55,8 +55,10 @@ type ReplicaMetrics struct {
 // Output of Collector.Collect(). Input to Analyzer.Analyze() (one call per model).
 // Replicas may be empty (zero-replica model); Analyzer must handle this without panic.
 type ModelSignals struct {
-	ModelID  string
-	Replicas []ReplicaMetrics // may be empty
+	ModelID                      string
+	Replicas                     []ReplicaMetrics // may be empty
+	PendingReplicaCount          int              // Loading instances with positive KV capacity, not yet routable
+	PendingTotalKvCapacityTokens int64            // sum of TotalKvCapacityTokens for all Loading instances of this model (zero-capacity instances excluded)
 }
 
 // VariantCapacity is one variant's share of a model's total supply and demand.

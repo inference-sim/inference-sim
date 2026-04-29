@@ -172,7 +172,10 @@ func (i *InstanceSimulator) CacheHitRate() float64 {
 }
 
 // TotalKvCapacityTokens returns total KV cache capacity in tokens.
-// Returns 0 when the KV cache is not yet initialized (e.g., instance still loading).
+// Returns 0 if i.sim or i.sim.KVCache is nil (construction defect), or if
+// TotalCapacity() * BlockSize() is zero (misconfigured KV store).
+// Loading instances have correct non-zero capacity from construction —
+// NewInstanceSimulator always initializes the KV store before any lifecycle transition.
 func (i *InstanceSimulator) TotalKvCapacityTokens() int64 {
 	if i.sim == nil || i.sim.KVCache == nil {
 		return 0

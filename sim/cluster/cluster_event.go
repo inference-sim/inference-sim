@@ -85,9 +85,32 @@ func buildRouterState(cs *ClusterSimulator, req *sim.Request) *sim.RouterState {
 		snap.CostPerHour = inst.CostPerHour
 		snapshots = append(snapshots, snap)
 	}
+	// Collect Loading instances as pending supply information for the autoscaler.
+	// Uses inst accessors directly (not snapshotProvider) — TotalKvCapacityTokens is
+	// provisioned at NewInstanceSimulator and does not change over the instance lifetime.
+	loadingSnapshots := make([]sim.RoutingSnapshot, 0, len(cs.instances))
+	for _, inst := range cs.instances {
+		if inst.State != InstanceStateLoading {
+			continue
+		}
+		if inst.Model == "" || inst.GPU() == "" {
+			logrus.Debugf("[cluster] buildRouterState: loading instance %q has empty Model=%q or GPU=%q — excluded from LoadingSnapshots",
+				inst.ID(), inst.Model, inst.GPU())
+			continue
+		}
+		snap := sim.NewRoutingSnapshot(string(inst.ID()))
+		snap.Model = inst.Model
+		snap.GPUType = inst.GPU()
+		snap.TPDegree = inst.TPDegree
+		snap.CostPerHour = inst.CostPerHour
+		snap.TotalKvCapacityTokens = inst.TotalKvCapacityTokens()
+		// QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate, InFlightRequests, KvTokensInUse remain zero.
+		loadingSnapshots = append(loadingSnapshots, snap)
+	}
 	return &sim.RouterState{
-		Snapshots: snapshots,
-		Clock:     cs.clock,
+		Snapshots:        snapshots,
+		LoadingSnapshots: loadingSnapshots,
+		Clock:            cs.clock,
 	}
 }
 

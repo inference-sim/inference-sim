@@ -12,11 +12,11 @@
 Contract: Collector
   Signature:  Collect(state *RouterState) []ModelSignals
   Observes:   RouterState — per-instance signals, fully populated before each tick
-  Produces:   One ModelSignals per active model, all replicas grouped by ModelID
-  Must NOT:   Modify state; filter or threshold signals; return fewer models than are active
+  Produces:   One ModelSignals per model present in active (routable) or Loading snapshots
+  Must NOT:   Modify state; filter or threshold valid signals; return fewer models than are active or loading (structurally incomplete snapshots with empty Model/GPUType, or loading snapshots with TotalKvCapacityTokens <= 0, may be skipped with a diagnostic log)
   Must NOT:   Access GPUInventory, AnalyzerResult, or ScaleDecision
-  Invariant:  len(result) == number of distinct ModelIDs in active instances
-  Zero state: Returns empty slice when no active instances exist
+  Invariant:  len(result) == number of distinct ModelIDs across routable and loading instances
+  Zero state: Returns empty slice when no instances exist (active or loading)
   Determinism: Pure function — same RouterState always produces same output
 ```
 

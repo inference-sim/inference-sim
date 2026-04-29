@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"math"
 	"sort"
+
+	"github.com/sirupsen/logrus"
 )
 
 // V2SaturationAnalyzerConfig configures the V2 token-based saturation analyzer.
 type V2SaturationAnalyzerConfig struct {
 	KvCacheThreshold  float64 // Fraction of KV capacity considered usable (0,1]; k1 = totalKvCapTokens * this
-	ScaleUpThreshold  float64 // Utilization fraction triggering scale-up; RequiredCapacity = max(0, totalDemand/this - totalSupply)
+	ScaleUpThreshold  float64 // Utilization fraction triggering scale-up; RequiredCapacity = max(0, totalDemand/this - (totalReadySupply + pendingSupply)) where pendingSupply = PendingTotalKvCapacityTokens * KvCacheThreshold
 	ScaleDownBoundary float64 // Utilization fraction below which scale-down is safe; SpareCapacity = max(0, totalSupply - totalDemand/this)
 	AvgInputTokens    float64 // Average input tokens per request; used to convert queue depth to token demand
 }
@@ -61,6 +63,10 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 	result := AnalyzerResult{ModelID: metrics.ModelID}
 
 	if len(metrics.Replicas) == 0 {
+		if metrics.PendingReplicaCount > 0 {
+			logrus.Debugf("[analyzer] model %q: no routable replicas, %d pending — demand is zero (no ready replicas to measure from); pending supply not evaluated",
+				metrics.ModelID, metrics.PendingReplicaCount)
+		}
 		return result
 	}
 
@@ -74,9 +80,13 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 	variants := make(map[VariantSpec]*variantAgg)
 
 	for _, r := range metrics.Replicas {
-		// Skip replicas with uninitialized KV cache (e.g., still loading). Including them
-		// would produce zero supply with nonzero demand, triggering runaway scale-up.
+		// Skip replicas with uninitialized KV cache. Including them would produce zero supply
+		// with nonzero demand, triggering runaway scale-up. This should not occur for routable
+		// replicas — Loading instances never appear in metrics.Replicas; they are collected into
+		// RouterState.LoadingSnapshots and surfaced as PendingReplicaCount/PendingTotalKvCapacityTokens.
 		if r.TotalKvCapacityTokens <= 0 {
+			logrus.Warnf("[analyzer] model %q: routable replica %q has zero TotalKvCapacityTokens — excluded from supply/demand; check KV cache initialization",
+				metrics.ModelID, r.InstanceID)
 			continue
 		}
 		// k1: memory-bound capacity
@@ -132,8 +142,17 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 		result.Utilization = result.TotalDemand / result.TotalSupply
 	}
 
-	// Scale-up signal: RequiredCapacity = max(0, totalDemand/ScaleUpThreshold - totalSupply)
-	requiredCapacity := (result.TotalDemand / a.config.ScaleUpThreshold) - result.TotalSupply
+	// Scale-up signal: include pending (Loading instance) capacity alongside ready supply.
+	// Pending supply covers anticipated capacity once Loading instances finish loading.
+	// Only affects RequiredCapacity — TotalSupply, Utilization, and SpareCapacity are
+	// based on ready replicas only (no premature scale-down risk from unstarted instances).
+	// Matches WVA saturation_v2 anticipatedSupply semantics.
+	var pendingSupply float64
+	if metrics.PendingTotalKvCapacityTokens > 0 {
+		pendingSupply = float64(metrics.PendingTotalKvCapacityTokens) * a.config.KvCacheThreshold
+	}
+	totalSupplyForScaleUp := result.TotalSupply + pendingSupply
+	requiredCapacity := (result.TotalDemand / a.config.ScaleUpThreshold) - totalSupplyForScaleUp
 	if requiredCapacity > 0 {
 		result.RequiredCapacity = requiredCapacity
 		// Mutual exclusivity: if scaling up, no spare capacity
