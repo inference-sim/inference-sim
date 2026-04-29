@@ -329,6 +329,57 @@ func (s *WorkloadSpec) Validate() error {
 			return err
 		}
 	}
+
+	// All-or-nothing SLO class consistency check (issue #1210).
+	// If ANY client/cohort specifies slo_class, then ALL must specify it.
+	// Prevents ambiguous metrics where empty classes normalize to "standard".
+	// BC-5: Only scan user-authored Clients and Cohorts — skip when clients were
+	// populated from InferencePerf or ServeGen expansion (auto-generated SLO classes).
+	hasExplicitSLO := false
+	hasEmptySLO := false
+	var explicitIDs []string
+	var emptyIDs []string
+
+	if s.InferencePerf == nil && s.ServeGenData == nil {
+		for i, c := range s.Clients {
+			if c.SLOClass != "" {
+				hasExplicitSLO = true
+				explicitIDs = append(explicitIDs, fmt.Sprintf("clients[%d]", i))
+			} else {
+				hasEmptySLO = true
+				emptyIDs = append(emptyIDs, fmt.Sprintf("clients[%d]", i))
+			}
+		}
+	}
+
+	for i, c := range s.Cohorts {
+		if c.SLOClass != "" {
+			hasExplicitSLO = true
+			explicitIDs = append(explicitIDs, fmt.Sprintf("cohorts[%d]", i))
+		} else {
+			hasEmptySLO = true
+			emptyIDs = append(emptyIDs, fmt.Sprintf("cohorts[%d]", i))
+		}
+	}
+
+	if hasExplicitSLO && hasEmptySLO {
+		// Show up to 3 examples of each category for diagnosis
+		explicitSample := explicitIDs
+		if len(explicitSample) > 3 {
+			explicitSample = explicitSample[:3]
+		}
+		emptySample := emptyIDs
+		if len(emptySample) > 3 {
+			emptySample = emptySample[:3]
+		}
+		return fmt.Errorf(
+			"mixed slo_class specification: if any client/cohort specifies slo_class, all must specify it; "+
+				"%d have explicit values %v, %d are empty %v",
+			len(explicitIDs), explicitSample,
+			len(emptyIDs), emptySample,
+		)
+	}
+
 	return nil
 }
 
