@@ -464,10 +464,13 @@ func TestV2SaturationAnalyzer_PendingSupply_SuppressesScaleUp(t *testing.T) {
 	}
 }
 
-// TestV2SaturationAnalyzer_PendingSupply_ZeroCapacityLoading verifies that a Loading instance
-// with PendingReplicaCount=1 but PendingTotalKvCapacityTokens=0 contributes no pending supply.
-// The analyzer guards on PendingTotalKvCapacityTokens > 0, not PendingReplicaCount > 0.
-// A regression that checked PendingReplicaCount instead would incorrectly suppress scale-up.
+// TestV2SaturationAnalyzer_PendingSupply_ZeroCapacityLoading verifies the analyzer's > 0 guard
+// on PendingTotalKvCapacityTokens: a ModelSignals with PendingReplicaCount=1 but
+// PendingTotalKvCapacityTokens=0 must contribute no pending supply.
+// Note: DefaultCollector now skips zero-capacity loading snapshots entirely, so this state is
+// only reachable via direct ModelSignals construction (e.g., future Collector implementations).
+// The test pins the analyzer's own guard to prevent a regression where PendingReplicaCount > 0
+// is checked instead of PendingTotalKvCapacityTokens > 0.
 func TestV2SaturationAnalyzer_PendingSupply_ZeroCapacityLoading(t *testing.T) {
 	// Active replica: capacity=10000, demand=9000 → demand/threshold(0.8)=11250 > 10000 → scale-up needed.
 	// Loading replica: PendingReplicaCount=1 but PendingTotalKvCapacityTokens=0 (zero-KV node).
