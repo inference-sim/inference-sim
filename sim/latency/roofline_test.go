@@ -1205,6 +1205,42 @@ func TestRooflineStepTime_Scout_InterleavedMoE(t *testing.T) {
 	})
 }
 
+// BC-3: GQA (NumKVHeads < NumHeads) reduces step time vs MHA for the roofline backend.
+// Fewer KV heads → smaller dKV → lower KV cache bandwidth and QKV projection FLOPs.
+// Decode-only step is memory-bound on H100, so KV bandwidth differences dominate.
+func TestRooflineStepTime_GQA_ReducesKVBandwidth(t *testing.T) {
+	hc := testHardwareCalib()
+
+	// MHA: NumKVHeads == NumHeads (full KV bandwidth)
+	mcMHA := testModelConfig()
+	mcMHA.NumKVHeads = mcMHA.NumHeads // 32
+
+	// GQA: NumKVHeads = 8 (4x fewer KV heads → lower KV bandwidth)
+	mcGQA := testModelConfig()
+	mcGQA.NumKVHeads = 8
+
+	// Decode-only: memory-bound on H100, so KV bandwidth differences dominate
+	step := StepConfig{
+		DecodeRequests: []DecodeRequestConfig{
+			{ProgressIndex: 512, NumNewDecodeTokens: 1},
+		},
+	}
+
+	mhaTime := rooflineStepTime(mcMHA, hc, step, 1)
+	gqaTime := rooflineStepTime(mcGQA, hc, step, 1)
+
+	if mhaTime <= 0 {
+		t.Fatalf("MHA step time must be positive, got %d µs", mhaTime)
+	}
+	if gqaTime <= 0 {
+		t.Fatalf("GQA step time must be positive, got %d µs", gqaTime)
+	}
+	if gqaTime >= mhaTime {
+		t.Errorf("GQA step time (%d µs) must be less than MHA (%d µs): fewer KV heads → lower KV bandwidth",
+			gqaTime, mhaTime)
+	}
+}
+
 func BenchmarkRooflineStepTime_MixedBatch(b *testing.B) {
 	mc := testModelConfig()
 	hc := testHardwareCalib()
