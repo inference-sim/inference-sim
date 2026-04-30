@@ -3747,6 +3747,21 @@
 </tr>
 </tbody>
 </table>
+<div class="admonition warning">
+<p class="admonition-title">All-or-nothing SLO class specification</p>
+<p>If ANY client or cohort specifies <code>slo_class</code>, then ALL clients and cohorts must specify it. Mixed specifications (some explicit, some empty) are rejected during validation.</p>
+<p><strong>Why:</strong> Empty <code>slo_class</code> normalizes to <code>"standard"</code> in metrics, making it ambiguous whether operators intended standard-tier behavior or forgot to specify a class. This corrupts per-tier capacity planning signals.</p>
+<p><strong>Valid:</strong></p>
+<ul>
+<li>All clients/cohorts have <code>slo_class: ""</code>  (legacy/unclassified workload)</li>
+<li>All clients/cohorts have explicit values  (e.g., <code>"critical"</code>, <code>"standard"</code>, <code>"batch"</code>)</li>
+</ul>
+<p><strong>Invalid:</strong></p>
+<ul>
+<li>Some clients have <code>slo_class: "critical"</code>, others have <code>slo_class: ""</code> (mixed)</li>
+</ul>
+<p><strong>To fix:</strong> Add explicit <code>slo_class: "standard"</code> to all clients/cohorts with empty values.</p>
+</div>
 <h2 id="estimating-capacity-for-your-workload">Estimating Capacity for Your Workload<a class="headerlink" href="#estimating-capacity-for-your-workload" title="Permanent link">&para;</a></h2>
 <div class="admonition warning">
 <p class="admonition-title">CLI mode and YAML mode have different defaults</p>
