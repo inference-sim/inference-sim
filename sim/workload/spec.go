@@ -329,6 +329,52 @@ func (s *WorkloadSpec) Validate() error {
 			return err
 		}
 	}
+
+	// Empty slo_class normalizes to "standard" in metrics; mixed specs corrupt per-tier capacity planning signals.
+	hasExplicitSLO := false
+	hasEmptySLO := false
+	var explicitIDs []string
+	var emptyIDs []string
+
+	if s.InferencePerf == nil && s.ServeGenData == nil {
+		for i, c := range s.Clients {
+			if c.SLOClass != "" {
+				hasExplicitSLO = true
+				explicitIDs = append(explicitIDs, fmt.Sprintf("clients[%d]", i))
+			} else {
+				hasEmptySLO = true
+				emptyIDs = append(emptyIDs, fmt.Sprintf("clients[%d]", i))
+			}
+		}
+	}
+
+	for i, c := range s.Cohorts {
+		if c.SLOClass != "" {
+			hasExplicitSLO = true
+			explicitIDs = append(explicitIDs, fmt.Sprintf("cohorts[%d]", i))
+		} else {
+			hasEmptySLO = true
+			emptyIDs = append(emptyIDs, fmt.Sprintf("cohorts[%d]", i))
+		}
+	}
+
+	if hasExplicitSLO && hasEmptySLO {
+		explicitSample := explicitIDs
+		if len(explicitSample) > 3 {
+			explicitSample = explicitSample[:3]
+		}
+		emptySample := emptyIDs
+		if len(emptySample) > 3 {
+			emptySample = emptySample[:3]
+		}
+		return fmt.Errorf(
+			"mixed slo_class specification: if any client/cohort specifies slo_class, all must specify it; "+
+				"%d have explicit values %v, %d are empty %v",
+			len(explicitIDs), explicitSample,
+			len(emptyIDs), emptySample,
+		)
+	}
+
 	return nil
 }
 

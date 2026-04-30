@@ -311,6 +311,22 @@ Requests can be tagged with SLO classes for per-class metric tracking:
 | `batch` | Offline processing, latency-tolerant |
 | `background` | Lowest priority |
 
+!!! warning "All-or-nothing SLO class specification"
+    If ANY client or cohort specifies `slo_class`, then ALL clients and cohorts must specify it. Mixed specifications (some explicit, some empty) are rejected during validation.
+
+    **Why:** Empty `slo_class` normalizes to `"standard"` in metrics, making it ambiguous whether operators intended standard-tier behavior or forgot to specify a class. This corrupts per-tier capacity planning signals.
+
+    **Valid:**
+
+    - All clients/cohorts have `slo_class: ""`  (legacy/unclassified workload)
+    - All clients/cohorts have explicit values  (e.g., `"critical"`, `"standard"`, `"batch"`)
+
+    **Invalid:**
+
+    - Some clients have `slo_class: "critical"`, others have `slo_class: ""` (mixed)
+
+    **To fix:** Add explicit `slo_class: "standard"` to all clients/cohorts with empty values.
+
 ## Estimating Capacity for Your Workload
 
 !!! warning "CLI mode and YAML mode have different defaults"
