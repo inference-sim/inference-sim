@@ -45,6 +45,9 @@ type ReplicaMetrics struct {
 	QueueDepth            int
 	InFlightCount         int
 	CostPerHour           float64 // $/hr from NodePool; used for CostPerReplica in VariantCapacity
+	// Latency fields are live observability signals populated by buildRouterState() on every
+	// admission, routing, autoscaler, and flow-control tick via LatencyStats(). They are zero
+	// until the first request on this replica completes; any consumer must guard against zero.
 	TTFT                  float64 // μs — zero until first completion; Analyze() must guard against zero before dividing
 	DispatchRate          float64 // req/s — zero until first completion; Analyze() must guard against zero before dividing
 	ITL                   float64 // μs — zero until first completion; Analyze() must guard against zero before dividing
