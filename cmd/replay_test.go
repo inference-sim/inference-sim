@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -497,6 +499,9 @@ warm_up_requests: 0
 	origGPU := gpu
 	origTP := tensorParallelism
 	origDefaultsFilePath := defaultsFilePath
+	origSessionMode := replaySessionMode
+	origThinkTimeMs := replayThinkTimeMs
+	origThinkTimeDist := replayThinkTimeDist
 	defer func() {
 		model = origModel
 		latencyModelBackend = origBackend
@@ -540,6 +545,9 @@ warm_up_requests: 0
 		gpu = origGPU
 		tensorParallelism = origTP
 		defaultsFilePath = origDefaultsFilePath
+		replaySessionMode = origSessionMode
+		replayThinkTimeMs = origThinkTimeMs
+		replayThinkTimeDist = origThinkTimeDist
 	}()
 
 	// Set package-level vars
@@ -722,6 +730,9 @@ warm_up_requests: 0
 	origGPU := gpu
 	origTP := tensorParallelism
 	origDefaultsFilePath := defaultsFilePath
+	origSessionMode := replaySessionMode
+	origThinkTimeMs := replayThinkTimeMs
+	origThinkTimeDist := replayThinkTimeDist
 	defer func() {
 		model = origModel
 		latencyModelBackend = origBackend
@@ -765,6 +776,9 @@ warm_up_requests: 0
 		gpu = origGPU
 		tensorParallelism = origTP
 		defaultsFilePath = origDefaultsFilePath
+		replaySessionMode = origSessionMode
+		replayThinkTimeMs = origThinkTimeMs
+		replayThinkTimeDist = origThinkTimeDist
 	}()
 
 	// Library-level BC-1 verification: trace loads correctly and requests are correct
@@ -961,6 +975,9 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	origGPU := gpu
 	origTP := tensorParallelism
 	origDefaultsFilePath := defaultsFilePath
+	origSessionMode := replaySessionMode
+	origThinkTimeMs := replayThinkTimeMs
+	origThinkTimeDist := replayThinkTimeDist
 	defer func() {
 		model = origModel
 		latencyModelBackend = origBackend
@@ -1004,6 +1021,9 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 		gpu = origGPU
 		tensorParallelism = origTP
 		defaultsFilePath = origDefaultsFilePath
+		replaySessionMode = origSessionMode
+		replayThinkTimeMs = origThinkTimeMs
+		replayThinkTimeDist = origThinkTimeDist
 	}()
 
 	model = "test-model"
@@ -1132,6 +1152,9 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		origHwConfigPath := hwConfigPath
 		origGPU := gpu
 		origTP := tensorParallelism
+		origSessionMode := replaySessionMode
+		origThinkTimeMs := replayThinkTimeMs
+		origThinkTimeDist := replayThinkTimeDist
 		defer func() {
 			model = origModel
 			latencyModelBackend = origBackend
@@ -1174,6 +1197,9 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 			hwConfigPath = origHwConfigPath
 			gpu = origGPU
 			tensorParallelism = origTP
+			replaySessionMode = origSessionMode
+			replayThinkTimeMs = origThinkTimeMs
+			replayThinkTimeDist = origThinkTimeDist
 		}()
 
 		model = "test-model"
@@ -1251,5 +1277,199 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 	}
 	if string(csv1) != string(csv2) {
 		t.Error("BC-5: CSV output is non-deterministic across runs with same seed")
+	}
+}
+
+// TestReplayCmd_AnomalyBlock_TimedOutRequests verifies BC-1:
+// when replay produces TimedOutRequests > 0, the anomaly block includes "Timed Out Requests: N".
+func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
+	// GIVEN a trace with deadline_us=1 — request deadline expires at t=1µs, before any execution step
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+
+	headerContent := "trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"
+	if err := os.WriteFile(headerPath, []byte(headerContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,1,0,0,0,0,0,0,ok,,\n"
+	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	mcFolder, hwPath := setupTrainedPhysicsTestFixtures(t)
+
+	// Save and restore package-level vars (same pattern as TestReplayCmd_EndToEnd_TrainedPhysicsMode)
+	origModel := model
+	origBackend := latencyModelBackend
+	origBeta := betaCoeffs
+	origAlpha := alphaCoeffs
+	origTotalKV := totalKVBlocks
+	origBlockSize := blockSizeTokens
+	origMaxRunning := maxRunningReqs
+	origMaxSched := maxScheduledTokens
+	origInstances := numInstances
+	origSeed := seed
+	origResults := resultsPath
+	origThreshold := longPrefillTokenThreshold
+	origKVCPU := kvCPUBlocks
+	origOffload := kvOffloadThreshold
+	origBandwidth := kvTransferBandwidth
+	origBaseLatency := kvTransferBaseLatency
+	origSnapRefresh := snapshotRefreshInterval
+	origAdmission := admissionPolicy
+	origRouting := routingPolicy
+	origPriority := priorityPolicy
+	origScheduler := scheduler
+	origPolicyConfig := policyConfigPath
+	origMaxModelLen := maxModelLen
+	origTraceLevel := traceLevel
+	origCounterfactualK := counterfactualK
+	origTraceHeader := traceHeaderPath
+	origTraceData := traceDataPath
+	origSimHorizon := simulationHorizon
+	origTraceOutput := replayTraceOutput
+	origCacheSignalDelay := cacheSignalDelay
+	origFlowControlEnabled := flowControlEnabled
+	origFlowControlDetector := flowControlDetector
+	origFlowControlDispatchOrder := flowControlDispatchOrder
+	origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
+	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
+	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
+	origFlowControlMaxConcurrency := flowControlMaxConcurrency
+	origModelConfigFolder := modelConfigFolder
+	origHwConfigPath := hwConfigPath
+	origGPU := gpu
+	origTP := tensorParallelism
+	origDefaultsFilePath := defaultsFilePath
+	origSessionMode := replaySessionMode
+	origThinkTimeMs := replayThinkTimeMs
+	origThinkTimeDist := replayThinkTimeDist
+	defer func() {
+		model = origModel
+		latencyModelBackend = origBackend
+		betaCoeffs = origBeta
+		alphaCoeffs = origAlpha
+		totalKVBlocks = origTotalKV
+		blockSizeTokens = origBlockSize
+		maxRunningReqs = origMaxRunning
+		maxScheduledTokens = origMaxSched
+		numInstances = origInstances
+		seed = origSeed
+		resultsPath = origResults
+		longPrefillTokenThreshold = origThreshold
+		kvCPUBlocks = origKVCPU
+		kvOffloadThreshold = origOffload
+		kvTransferBandwidth = origBandwidth
+		kvTransferBaseLatency = origBaseLatency
+		snapshotRefreshInterval = origSnapRefresh
+		admissionPolicy = origAdmission
+		routingPolicy = origRouting
+		priorityPolicy = origPriority
+		scheduler = origScheduler
+		policyConfigPath = origPolicyConfig
+		maxModelLen = origMaxModelLen
+		traceLevel = origTraceLevel
+		counterfactualK = origCounterfactualK
+		traceHeaderPath = origTraceHeader
+		traceDataPath = origTraceData
+		simulationHorizon = origSimHorizon
+		replayTraceOutput = origTraceOutput
+		cacheSignalDelay = origCacheSignalDelay
+		flowControlEnabled = origFlowControlEnabled
+		flowControlDetector = origFlowControlDetector
+		flowControlDispatchOrder = origFlowControlDispatchOrder
+		flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
+		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
+		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
+		flowControlMaxConcurrency = origFlowControlMaxConcurrency
+		modelConfigFolder = origModelConfigFolder
+		hwConfigPath = origHwConfigPath
+		gpu = origGPU
+		tensorParallelism = origTP
+		defaultsFilePath = origDefaultsFilePath
+		replaySessionMode = origSessionMode
+		replayThinkTimeMs = origThinkTimeMs
+		replayThinkTimeDist = origThinkTimeDist
+	}()
+
+	model = "test-model"
+	latencyModelBackend = "trained-physics"
+	totalKVBlocks = 1000
+	blockSizeTokens = 16
+	maxRunningReqs = 64
+	maxScheduledTokens = 2048
+	numInstances = 1
+	seed = 42
+	resultsPath = ""
+	longPrefillTokenThreshold = 0
+	kvCPUBlocks = 0
+	kvOffloadThreshold = 0.9
+	kvTransferBandwidth = 100.0
+	kvTransferBaseLatency = 0
+	snapshotRefreshInterval = 0
+	admissionPolicy = "always-admit"
+	routingPolicy = "round-robin"
+	priorityPolicy = "constant"
+	scheduler = "fcfs"
+	policyConfigPath = ""
+	maxModelLen = 0
+	traceLevel = "none"
+	counterfactualK = 0
+	traceHeaderPath = headerPath
+	traceDataPath = dataPath
+	simulationHorizon = math.MaxInt64
+	replayTraceOutput = ""
+	modelConfigFolder = mcFolder
+	hwConfigPath = hwPath
+	gpu = "H100"
+	tensorParallelism = 1
+	defaultsFilePath = "../defaults.yaml"
+	cacheSignalDelay = 0
+	flowControlEnabled = false
+	flowControlDetector = "utilization"
+	flowControlDispatchOrder = "fifo"
+	flowControlMaxQueueDepth = 0
+	flowControlQueueDepthThreshold = 5.0
+	flowControlKVCacheUtilThreshold = 0.8
+	flowControlMaxConcurrency = 0
+
+	testCmd := &cobra.Command{}
+	registerSimConfigFlags(testCmd)
+	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+	if err := testCmd.ParseFlags([]string{
+		"--model", "test-model",
+		"--latency-model", "trained-physics",
+		"--total-kv-blocks", "1000",
+		"--hardware", "H100",
+		"--tp", "1",
+		"--model-config-folder", mcFolder,
+		"--hardware-config", hwPath,
+		"--trace-header", headerPath,
+		"--trace-data", dataPath,
+		"--defaults-filepath", "../defaults.yaml",
+	}); err != nil {
+		t.Fatalf("ParseFlags failed: %v", err)
+	}
+
+	// Capture stdout (same pattern as root_test.go)
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	replayCmd.Run(testCmd, nil)
+	_ = w.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	out := buf.String()
+
+	// THEN: anomaly block fires and "Timed Out Requests: 1" appears (BC-1)
+	if !strings.Contains(out, "=== Anomaly Counters ===") {
+		t.Errorf("BC-1: expected anomaly block header in output:\n%s", out)
+	}
+	if !strings.Contains(out, "Timed Out Requests: 1") {
+		t.Errorf("BC-1: expected 'Timed Out Requests: 1' in anomaly block, got:\n%s", out)
 	}
 }
