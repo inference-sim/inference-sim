@@ -330,7 +330,7 @@ func (s *WorkloadSpec) Validate() error {
 		}
 	}
 
-	// All-or-nothing SLO class consistency check (issue #1210).
+	// All-or-nothing SLO class consistency check.
 	// If ANY client/cohort specifies slo_class, then ALL must specify it.
 	// Prevents ambiguous metrics where empty classes normalize to "standard".
 	// Only scan user-authored Clients and Cohorts — skip when clients were

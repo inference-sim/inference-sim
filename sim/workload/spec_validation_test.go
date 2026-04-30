@@ -226,9 +226,9 @@ func TestWorkloadSpec_Validate_SLOClassConsistency(t *testing.T) {
 	})
 
 	t.Run("BC-4: mixed cohorts rejected with diagnostic error", func(t *testing.T) {
-		// GIVEN all clients empty, one cohort explicit and one empty
+		// GIVEN no clients (empty slice), one cohort explicit and one empty
 		spec := validBaseSpec()
-		spec.Clients[0].SLOClass = ""
+		spec.Clients = []ClientSpec{} // no clients to avoid count confusion
 		spec.Cohorts = []CohortSpec{
 			{
 				ID:           "cohort-1",
@@ -258,6 +258,12 @@ func TestWorkloadSpec_Validate_SLOClassConsistency(t *testing.T) {
 		errMsg := err.Error()
 		if !strings.Contains(errMsg, "mixed slo_class specification") {
 			t.Errorf("error missing 'mixed slo_class specification' phrase: %v", errMsg)
+		}
+		if !strings.Contains(errMsg, "1 have explicit values") {
+			t.Errorf("error missing count of explicit cohorts: %v", errMsg)
+		}
+		if !strings.Contains(errMsg, "1 are empty") {
+			t.Errorf("error missing count of empty cohorts: %v", errMsg)
 		}
 		if !strings.Contains(errMsg, "cohorts[0]") {
 			t.Errorf("error missing identifier for explicit cohort: %v", errMsg)
@@ -294,6 +300,80 @@ func TestWorkloadSpec_Validate_SLOClassConsistency(t *testing.T) {
 		}
 		if !strings.Contains(errMsg, "cohorts[0]") {
 			t.Errorf("error missing cohort identifier: %v", errMsg)
+		}
+	})
+
+	t.Run("BC-4: error message truncates to 3 examples per category", func(t *testing.T) {
+		// GIVEN 5 clients with explicit SLOClass and 4 cohorts with empty SLOClass
+		spec := validBaseSpec()
+		spec.Clients[0].SLOClass = "critical"
+		// Add 4 more clients with explicit SLOClass
+		for i := 1; i < 5; i++ {
+			spec.Clients = append(spec.Clients, ClientSpec{
+				ID:           "client-" + string(rune('0'+i)),
+				RateFraction: 1.0,
+				SLOClass:     "standard",
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+				OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+			})
+		}
+		// Add 4 cohorts with empty SLOClass
+		for i := 0; i < 4; i++ {
+			spec.Cohorts = append(spec.Cohorts, CohortSpec{
+				ID:           "cohort-" + string(rune('0'+i)),
+				Population:   5,
+				RateFraction: 1.0,
+				SLOClass:     "", // empty
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+				OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+			})
+		}
+		// WHEN Validate is called
+		err := spec.Validate()
+		// THEN error shows at most 3 examples per category
+		if err == nil {
+			t.Fatal("expected error for mixed slo_class, got nil")
+		}
+		errMsg := err.Error()
+		// Should show 5 explicit and 4 empty in counts
+		if !strings.Contains(errMsg, "5 have explicit values") {
+			t.Errorf("error should show count of 5 explicit: %v", errMsg)
+		}
+		if !strings.Contains(errMsg, "4 are empty") {
+			t.Errorf("error should show count of 4 empty: %v", errMsg)
+		}
+		// Should show first 3 explicit examples: clients[0], clients[1], clients[2]
+		if !strings.Contains(errMsg, "clients[0]") {
+			t.Errorf("error should include clients[0] in explicit examples: %v", errMsg)
+		}
+		if !strings.Contains(errMsg, "clients[1]") {
+			t.Errorf("error should include clients[1] in explicit examples: %v", errMsg)
+		}
+		if !strings.Contains(errMsg, "clients[2]") {
+			t.Errorf("error should include clients[2] in explicit examples: %v", errMsg)
+		}
+		// Should NOT show clients[3] or clients[4] (truncated after 3)
+		if strings.Contains(errMsg, "clients[3]") {
+			t.Errorf("error should truncate explicit examples after 3, but found clients[3]: %v", errMsg)
+		}
+		if strings.Contains(errMsg, "clients[4]") {
+			t.Errorf("error should truncate explicit examples after 3, but found clients[4]: %v", errMsg)
+		}
+		// Should show first 3 empty examples: cohorts[0], cohorts[1], cohorts[2]
+		if !strings.Contains(errMsg, "cohorts[0]") {
+			t.Errorf("error should include cohorts[0] in empty examples: %v", errMsg)
+		}
+		if !strings.Contains(errMsg, "cohorts[1]") {
+			t.Errorf("error should include cohorts[1] in empty examples: %v", errMsg)
+		}
+		if !strings.Contains(errMsg, "cohorts[2]") {
+			t.Errorf("error should include cohorts[2] in empty examples: %v", errMsg)
+		}
+		// Should NOT show cohorts[3] (truncated after 3)
+		if strings.Contains(errMsg, "cohorts[3]") {
+			t.Errorf("error should truncate empty examples after 3, but found cohorts[3]: %v", errMsg)
 		}
 	})
 
@@ -357,6 +437,48 @@ func TestWorkloadSpec_Validate_SLOClassConsistency(t *testing.T) {
 		// (it may fail with other errors like missing ServeGen files, which is fine)
 		if err != nil && strings.Contains(err.Error(), "mixed slo_class specification") {
 			t.Errorf("BC-5 violation: ServeGen should be exempt from SLO class check, but got mixed spec error: %v", err)
+		}
+	})
+
+	t.Run("BC-5: ServeGen set does not exempt cohorts from SLO consistency check", func(t *testing.T) {
+		// GIVEN a spec with ServeGenData set (clients exempted by guard)
+		// AND user-authored cohorts with mixed SLOClass (one explicit, one empty)
+		spec := &WorkloadSpec{
+			Version:       "2",
+			AggregateRate: 10.0,
+			Cohorts: []CohortSpec{
+				{
+					ID:           "cohort-1",
+					Population:   5,
+					RateFraction: 1.0,
+					SLOClass:     "standard", // explicit
+					Arrival:      ArrivalSpec{Process: "poisson"},
+					InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+					OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				},
+				{
+					ID:           "cohort-2",
+					Population:   5,
+					RateFraction: 1.0,
+					SLOClass:     "", // empty
+					Arrival:      ArrivalSpec{Process: "poisson"},
+					InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+					OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				},
+			},
+			ServeGenData: &ServeGenDataSpec{
+				Path: "dummy",
+			},
+		}
+		// WHEN Validate is called
+		err := spec.Validate()
+		// THEN it MUST return mixed specification error (cohorts are ALWAYS checked)
+		// This documents the asymmetry: clients guarded by expansion check, cohorts always scanned
+		if err == nil {
+			t.Fatal("expected error for mixed cohort slo_class even with ServeGenData set, got nil")
+		}
+		if !strings.Contains(err.Error(), "mixed slo_class specification") {
+			t.Errorf("expected 'mixed slo_class specification' error, got: %v", err)
 		}
 	})
 
