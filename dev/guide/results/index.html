@@ -1211,6 +1211,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#per-request-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Request Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1265,6 +1276,28 @@
     <span class="md-ellipsis">
       
         Per-Tenant Metrics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#session-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Session Metrics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pd-disaggregation-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PD Disaggregation Metrics
       
     </span>
   </a>
@@ -2870,6 +2903,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#per-request-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Request Fields
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2924,6 +2968,28 @@
     <span class="md-ellipsis">
       
         Per-Tenant Metrics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#session-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Session Metrics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pd-disaggregation-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PD Disaggregation Metrics
       
     </span>
   </a>
@@ -3081,7 +3147,7 @@
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span>--fitness-weights<span class="w"> </span><span class="s2">&quot;p99_ttft:3,mean_e2e:1,throughput:2&quot;</span>
 </code></pre></div>
 <h2 id="primary-metrics-json-output">Primary Metrics (JSON Output)<a class="headerlink" href="#primary-metrics-json-output" title="Permanent link">&para;</a></h2>
-<p>The JSON output on stdout contains:</p>
+<p>The JSON output on stdout (and in the <code>--metrics-path</code> file when set) contains:</p>
 <table>
 <thead>
 <tr>
@@ -3091,6 +3157,76 @@
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><code>instance_id</code></td>
+<td>string</td>
+<td>Instance identifier (<code>"cluster"</code> for aggregate output)</td>
+</tr>
+<tr>
+<td><code>completed_requests</code></td>
+<td>count</td>
+<td>Requests that finished before horizon</td>
+</tr>
+<tr>
+<td><code>still_queued</code></td>
+<td>count</td>
+<td>Requests in the wait queue at horizon end</td>
+</tr>
+<tr>
+<td><code>still_running</code></td>
+<td>count</td>
+<td>Requests in the running batch at horizon end</td>
+</tr>
+<tr>
+<td><code>injected_requests</code></td>
+<td>count</td>
+<td>Total requests that entered the simulator</td>
+</tr>
+<tr>
+<td><code>total_input_tokens</code></td>
+<td>count</td>
+<td>Sum of input tokens across all completed requests</td>
+</tr>
+<tr>
+<td><code>total_output_tokens</code></td>
+<td>count</td>
+<td>Sum of output tokens across all completed requests</td>
+</tr>
+<tr>
+<td><code>vllm_estimated_duration_s</code></td>
+<td>s</td>
+<td>Estimated vLLM wall-clock duration for the workload</td>
+</tr>
+<tr>
+<td><code>responses_per_sec</code></td>
+<td>req/s</td>
+<td>Throughput (completed requests / effective duration)</td>
+</tr>
+<tr>
+<td><code>tokens_per_sec</code></td>
+<td>tok/s</td>
+<td>Output token throughput</td>
+</tr>
+<tr>
+<td><code>e2e_mean_ms</code></td>
+<td>ms</td>
+<td>Mean End-to-End latency</td>
+</tr>
+<tr>
+<td><code>e2e_p90_ms</code></td>
+<td>ms</td>
+<td>90th percentile E2E</td>
+</tr>
+<tr>
+<td><code>e2e_p95_ms</code></td>
+<td>ms</td>
+<td>95th percentile E2E</td>
+</tr>
+<tr>
+<td><code>e2e_p99_ms</code></td>
+<td>ms</td>
+<td>99th percentile E2E — tail latency</td>
+</tr>
 <tr>
 <td><code>ttft_mean_ms</code></td>
 <td>ms</td>
@@ -3102,19 +3238,14 @@
 <td>90th percentile TTFT</td>
 </tr>
 <tr>
+<td><code>ttft_p95_ms</code></td>
+<td>ms</td>
+<td>95th percentile TTFT</td>
+</tr>
+<tr>
 <td><code>ttft_p99_ms</code></td>
 <td>ms</td>
 <td>99th percentile TTFT — tail latency</td>
-</tr>
-<tr>
-<td><code>e2e_mean_ms</code></td>
-<td>ms</td>
-<td>Mean End-to-End latency — average total request time</td>
-</tr>
-<tr>
-<td><code>e2e_p99_ms</code></td>
-<td>ms</td>
-<td>99th percentile E2E</td>
 </tr>
 <tr>
 <td><code>itl_mean_ms</code></td>
@@ -3122,19 +3253,54 @@
 <td>Mean Inter-Token Latency — streaming smoothness</td>
 </tr>
 <tr>
+<td><code>itl_p90_ms</code></td>
+<td>ms</td>
+<td>90th percentile ITL</td>
+</tr>
+<tr>
+<td><code>itl_p95_ms</code></td>
+<td>ms</td>
+<td>95th percentile ITL</td>
+</tr>
+<tr>
+<td><code>itl_p99_ms</code></td>
+<td>ms</td>
+<td>99th percentile ITL</td>
+</tr>
+<tr>
 <td><code>scheduling_delay_p99_ms</code></td>
 <td>ms</td>
 <td>99th percentile scheduling delay — queue wait time</td>
 </tr>
 <tr>
-<td><code>responses_per_sec</code></td>
-<td>req/s</td>
-<td>Throughput</td>
+<td><code>kv_allocation_failures</code></td>
+<td>count</td>
+<td>KV cache allocation failures (omitted when zero)</td>
 </tr>
 <tr>
-<td><code>completed_requests</code></td>
+<td><code>preemption_count</code></td>
 <td>count</td>
-<td>Requests that finished before horizon</td>
+<td>Total preemption events (integer; see also KV Cache Metrics for the rate)</td>
+</tr>
+<tr>
+<td><code>dropped_unservable</code></td>
+<td>count</td>
+<td>Requests dropped at enqueue due to context limit violations</td>
+</tr>
+<tr>
+<td><code>length_capped_requests</code></td>
+<td>count</td>
+<td>Requests force-completed at <code>MaxModelLen</code></td>
+</tr>
+<tr>
+<td><code>timed_out_requests</code></td>
+<td>count</td>
+<td>Requests that exceeded their deadline</td>
+</tr>
+<tr>
+<td><code>requests</code></td>
+<td>array</td>
+<td>Per-request detail records (omitted when empty; see <a href="#per-request-fields">Per-Request Fields</a>)</td>
 </tr>
 </tbody>
 </table>
@@ -3144,6 +3310,99 @@
 <p class="admonition-title">Per-request units</p>
 <p>All per-request latency fields (<code>ttft_ms</code>, <code>e2e_ms</code>, <code>itl_ms</code>, <code>scheduling_delay_ms</code>) are in <strong>milliseconds</strong> — converted from internal ticks by dividing by 1,000. Aggregate metrics (<code>scheduling_delay_p99_ms</code>, etc.) are also in milliseconds. See <a href="../../reference/configuration/#known-unit-gotchas">Known Unit Gotchas</a> for the full unit reference. Note: hypothesis scripts written before BC-14 may divide <code>scheduling_delay_ms</code> by 1,000 unnecessarily — that field is now already in ms.</p>
 </div>
+<h3 id="per-request-fields">Per-Request Fields<a class="headerlink" href="#per-request-fields" title="Permanent link">&para;</a></h3>
+<p>When the <code>requests</code> array is non-empty, each entry contains:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Unit</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>requestID</code></td>
+<td>string</td>
+<td>Unique request identifier</td>
+</tr>
+<tr>
+<td><code>arrived_at</code></td>
+<td>s</td>
+<td>Arrival timestamp in simulation seconds (<code>ArrivalTime / 1,000,000</code>)</td>
+</tr>
+<tr>
+<td><code>num_prefill_tokens</code></td>
+<td>count</td>
+<td>Input (prompt) token count</td>
+</tr>
+<tr>
+<td><code>num_decode_tokens</code></td>
+<td>count</td>
+<td>Output token count</td>
+</tr>
+<tr>
+<td><code>ttft_ms</code></td>
+<td>ms</td>
+<td>Time To First Token for this request</td>
+</tr>
+<tr>
+<td><code>itl_ms</code></td>
+<td>ms</td>
+<td>Mean Inter-Token Latency for this request</td>
+</tr>
+<tr>
+<td><code>e2e_ms</code></td>
+<td>ms</td>
+<td>End-to-End latency for this request</td>
+</tr>
+<tr>
+<td><code>scheduling_delay_ms</code></td>
+<td>ms</td>
+<td>Time spent in the wait queue before first scheduling</td>
+</tr>
+<tr>
+<td><code>slo_class</code></td>
+<td>string</td>
+<td>SLO class (<code>critical</code>, <code>standard</code>, <code>batch</code>, etc.) — omitted if empty</td>
+</tr>
+<tr>
+<td><code>tenant_id</code></td>
+<td>string</td>
+<td>Tenant label — omitted if empty</td>
+</tr>
+<tr>
+<td><code>handled_by</code></td>
+<td>string</td>
+<td>Instance ID that processed the request — omitted if empty</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td>string</td>
+<td>Model tag — omitted if empty</td>
+</tr>
+<tr>
+<td><code>length_capped</code></td>
+<td>bool</td>
+<td><code>true</code> if request was force-completed at <code>MaxModelLen</code> — omitted when <code>false</code></td>
+</tr>
+<tr>
+<td><code>gateway_queue_delay_ms</code></td>
+<td>ms</td>
+<td>Time spent in the gateway queue — omitted when flow control is disabled</td>
+</tr>
+<tr>
+<td><code>session_id</code></td>
+<td>string</td>
+<td>Multi-turn session link — omitted for single-turn requests</td>
+</tr>
+<tr>
+<td><code>round_index</code></td>
+<td>int</td>
+<td>Round within session (<code>0</code> = first turn); always present, defaults to <code>0</code> for non-session requests</td>
+</tr>
+</tbody>
+</table>
 <h2 id="anomaly-counters">Anomaly Counters<a class="headerlink" href="#anomaly-counters" title="Permanent link">&para;</a></h2>
 <p>When anomalies are detected, BLIS prints <code>=== Anomaly Counters ===</code>:</p>
 <table>
@@ -3167,8 +3426,13 @@
 </tr>
 <tr>
 <td><strong>Rejected Requests (Admission)</strong></td>
-<td>Admission policy rejected the request</td>
+<td>Admission policy rejected the request at cluster ingress</td>
 <td>Check token bucket capacity or admission policy</td>
+</tr>
+<tr>
+<td><strong>Shed (tier)</strong></td>
+<td>Per-SLO-class breakdown of admission rejections under overload — printed as indented sub-items beneath Rejected Requests (Admission)</td>
+<td>Adjust <code>slo_priorities</code> in the policy bundle or raise admission thresholds</td>
 </tr>
 <tr>
 <td><strong>Rejected Requests (Routing)</strong></td>
@@ -3180,8 +3444,37 @@
 <td>Request exceeds <code>--max-model-len</code> context window or needs more KV blocks than exist</td>
 <td>Check <code>--max-model-len</code> setting; increase <code>--total-kv-blocks</code> or reduce max input tokens</td>
 </tr>
+<tr>
+<td><strong>Timed Out Requests</strong></td>
+<td>Request exceeded its client deadline before completing</td>
+<td>Increase <code>--timeout</code> or reduce load</td>
+</tr>
+<tr>
+<td><strong>Length-Capped Requests</strong></td>
+<td>Request was force-completed when it reached <code>MaxModelLen</code> tokens during decode</td>
+<td>Expected if workloads push against <code>--max-model-len</code>; set <code>--max-model-len 0</code> (unlimited) to disable the cap</td>
+</tr>
+<tr>
+<td><strong>Gateway Queue Depth (horizon)</strong></td>
+<td>Requests still waiting in the gateway queue when the simulation ended — printed only when <code>&gt; 0</code></td>
+<td>Reduce arrival rate or increase cluster capacity</td>
+</tr>
+<tr>
+<td><strong>Gateway Queue Shed</strong></td>
+<td>Requests shed from the gateway queue because it was full — printed only when <code>&gt; 0</code></td>
+<td>Increase <code>--max-gateway-queue-depth</code> or enable <code>--flow-control</code> with a saturation detector</td>
+</tr>
 </tbody>
 </table>
+<div class="admonition note">
+<p class="admonition-title">Stdout-only vs JSON counters</p>
+<p><strong>Dropped Unservable</strong>, <strong>Timed Out Requests</strong>, and <strong>Length-Capped Requests</strong> also appear as fields in the <code>--metrics-path</code> JSON output (see <a href="#primary-metrics-json-output">Primary Metrics</a>: <code>dropped_unservable</code>, <code>timed_out_requests</code>, <code>length_capped_requests</code>).</p>
+<p>All other counters in this table — including <strong>Shed (tier)</strong>, <strong>Gateway Queue Depth (horizon)</strong>, and <strong>Gateway Queue Shed</strong> — are <strong>stdout-only</strong> and do not appear in the JSON file.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">blis replay anomaly block</p>
+<p><code>blis replay</code> produces a subset of this output: <strong>Timed Out Requests</strong>, <strong>Gateway Queue Depth (horizon)</strong>, and <strong>Gateway Queue Shed</strong> are currently missing from the <code>blis replay</code> anomaly block even when non-zero (tracked in issue #1184). <strong>PD Disaggregation Metrics</strong> are not supported in replay at all.</p>
+</div>
 <h2 id="kv-cache-metrics">KV Cache Metrics<a class="headerlink" href="#kv-cache-metrics" title="Permanent link">&para;</a></h2>
 <p>When KV cache activity is nonzero, BLIS prints <code>=== KV Cache Metrics ===</code>:</p>
 <table>
@@ -3195,7 +3488,7 @@
 <tbody>
 <tr>
 <td><strong>Preemption Rate</strong></td>
-<td>Fraction of requests that were preempted (KV evicted)</td>
+<td>Ratio of preemption events to completed requests — a single request can be preempted more than once</td>
 <td>&gt; 5% indicates KV pressure</td>
 </tr>
 <tr>
@@ -3220,48 +3513,7 @@
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    E2E:  p50=9876.54 p99=12345.67 (n=250)
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    Throughput: 50.00 req/s, 6400.00 tok/s
 </code></pre></div>
-<p>When <code>--metrics-path</code> is set, the JSON output includes a <code>per_model</code> key (omitted when no requests carry model tags). Each entry has:</p>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>model</code></td>
-<td>string</td>
-<td>Model name</td>
-</tr>
-<tr>
-<td><code>ttft</code></td>
-<td>Distribution</td>
-<td>TTFT distribution (p50, p99, mean, count)</td>
-</tr>
-<tr>
-<td><code>e2e</code></td>
-<td>Distribution</td>
-<td>E2E latency distribution</td>
-</tr>
-<tr>
-<td><code>throughput_rps</code></td>
-<td>float64</td>
-<td>Requests per second for this model</td>
-</tr>
-<tr>
-<td><code>tokens_per_sec</code></td>
-<td>float64</td>
-<td>Output tokens per second for this model</td>
-</tr>
-<tr>
-<td><code>total_requests</code></td>
-<td>int</td>
-<td>Number of completed requests for this model</td>
-</tr>
-</tbody>
-</table>
+<p>Per-model metrics appear on stdout only. The <code>--metrics-path</code> JSON file (see <a href="#primary-metrics-json-output">Primary Metrics</a>) contains only the aggregate <code>MetricsOutput</code> fields. The same applies to per-tenant, session, and PD metrics — all are stdout-only sections.</p>
 <h2 id="per-tenant-metrics">Per-Tenant Metrics<a class="headerlink" href="#per-tenant-metrics" title="Permanent link">&para;</a></h2>
 <p>When requests carry <code>tenant_id</code> labels, BLIS prints per-tenant request counts, total output tokens served, and a <a href="https://en.wikipedia.org/wiki/Fairness_measure">Jain Fairness Index</a> over the token distribution. This section appears automatically and is omitted when no requests carry tenant labels (backward-compatible with legacy and untenanted workloads). A workload with a single named tenant shows the section with Jain=1.0 (trivially fair).</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>=== Per-Tenant Metrics ===
@@ -3279,6 +3531,87 @@
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">    </span><span class="nt">tenant_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bob</span>
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">...</span>
 </code></pre></div>
+<h2 id="session-metrics">Session Metrics<a class="headerlink" href="#session-metrics" title="Permanent link">&para;</a></h2>
+<p>When a workload contains multi-turn sessions (requests with <code>session_id</code>), BLIS prints a <code>=== Session Metrics ===</code> block:</p>
+<table>
+<thead>
+<tr>
+<th>Line</th>
+<th>What It Means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Sessions</strong></td>
+<td>Number of distinct multi-turn sessions in the workload</td>
+</tr>
+<tr>
+<td><strong>TTFT cold (round 0)</strong></td>
+<td>TTFT distribution for the first round of each session — no KV cache warmth from prior context</td>
+</tr>
+<tr>
+<td><strong>TTFT warm (round≥1)</strong></td>
+<td>TTFT distribution for follow-up rounds — benefits from cached context</td>
+</tr>
+<tr>
+<td><strong>Session duration</strong></td>
+<td>End-to-end duration from session start (first round arrival) to last round completion</td>
+</tr>
+</tbody>
+</table>
+<p>Cold vs. warm TTFT split reveals prefix cache effectiveness: if <code>TTFT warm</code> ≈ <code>TTFT cold</code>, prefix caching is not activating for continuations — check <code>--cache-signal-delay</code> and scorer configuration.</p>
+<h2 id="pd-disaggregation-metrics">PD Disaggregation Metrics<a class="headerlink" href="#pd-disaggregation-metrics" title="Permanent link">&para;</a></h2>
+<p>When PD disaggregation is active (<code>--prefill-instances &gt; 0</code>), BLIS prints a <code>=== PD Metrics ===</code> block:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>What It Means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Disaggregated Requests</strong></td>
+<td>Requests that completed KV transfer through the prefill→decode path</td>
+</tr>
+<tr>
+<td><strong>Dropped at Decode KV</strong></td>
+<td>Requests whose transferred KV blocks could not be accepted by the decode instance</td>
+</tr>
+<tr>
+<td><strong>Prefill Throughput</strong></td>
+<td>Sub-request completion rate on prefill instances (sub-req/s)</td>
+</tr>
+<tr>
+<td><strong>Decode Throughput</strong></td>
+<td>Sub-request completion rate on decode instances (sub-req/s)</td>
+</tr>
+<tr>
+<td><strong>Load Imbalance Ratio</strong></td>
+<td><code>max(prefill_load, decode_load) / min(...)</code> — <code>1.0</code> = perfectly balanced; <code>inf</code> = one pool has no completions</td>
+</tr>
+<tr>
+<td><strong>Parent TTFT</strong></td>
+<td>Client-visible TTFT (prefill TTFT + KV transfer duration + first decode step); distribution in microseconds</td>
+</tr>
+<tr>
+<td><strong>KV Transfer Duration</strong></td>
+<td>Time to transfer KV blocks from prefill to decode instance; distribution in microseconds</td>
+</tr>
+<tr>
+<td><strong>Peak Concurrent Transfers</strong></td>
+<td>Maximum simultaneous in-flight KV transfers (only with <code>--pd-transfer-contention</code>)</td>
+</tr>
+<tr>
+<td><strong>Mean Transfer Queue Depth</strong></td>
+<td>Average queue depth at the transfer bandwidth bottleneck (only with <code>--pd-transfer-contention</code>)</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">blis run only</p>
+<p>PD Disaggregation Metrics are produced by <code>blis run</code> only. <code>blis replay</code> does not support PD disaggregation (a warning is logged if PD flags are passed to replay). <code>blis observe</code> dispatches to real servers and produces no DES output.</p>
+</div>
 <h2 id="fitness-evaluation">Fitness Evaluation<a class="headerlink" href="#fitness-evaluation" title="Permanent link">&para;</a></h2>
 <p>For automated multi-configuration comparison:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>--fitness-weights<span class="w"> </span><span class="s2">&quot;p99_ttft:3,mean_e2e:1,throughput:2&quot;</span>
