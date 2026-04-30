@@ -47,9 +47,15 @@ func WithHTTPTimeout(d time.Duration) RealClientOption {
 }
 
 // WithSLOPriorityMap sets a custom SLO priority map for vLLM priority translation.
-// If not set, uses DefaultSLOPriorityMap().
+// If m is nil, uses DefaultSLOPriorityMap().
 func WithSLOPriorityMap(m *sim.SLOPriorityMap) RealClientOption {
-	return func(c *RealClient) { c.sloMap = m }
+	return func(c *RealClient) {
+		if m == nil {
+			c.sloMap = sim.DefaultSLOPriorityMap()
+		} else {
+			c.sloMap = m
+		}
+	}
 }
 
 // isTimeoutError returns true if err is a timeout or deadline-exceeded error.
@@ -159,9 +165,7 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 		body["stream_options"] = map[string]interface{}{"include_usage": true}
 	}
 
-	// Inject vLLM priority field when SLO class is set (dual delivery: header + body).
-	// vLLM priority scheduling (--scheduling-policy priority) uses lower integers for
-	// higher urgency. BLIS/llm-d use higher integers. InvertForVLLM converts.
+	// Dual delivery: priority body for vLLM, x-gateway-inference-objective header for llm-d.
 	if req.SLOClass != "" {
 		body["priority"] = c.sloMap.InvertForVLLM(req.SLOClass)
 	}

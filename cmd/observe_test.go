@@ -1371,6 +1371,22 @@ func TestRealClient_Send_InjectsPriorityWhenSLOClassSet(t *testing.T) {
 			expectBodyVal:   5, // 4 - (-1) = 5
 		},
 		{
+			name:            "sheddable class",
+			sloClass:        "sheddable",
+			expectHeader:    true,
+			expectHeaderVal: "sheddable",
+			expectBodyField: true,
+			expectBodyVal:   6, // 4 - (-2) = 6
+		},
+		{
+			name:            "background class",
+			sloClass:        "background",
+			expectHeader:    true,
+			expectHeaderVal: "background",
+			expectBodyField: true,
+			expectBodyVal:   7, // 4 - (-3) = 7
+		},
+		{
 			name:            "empty slo_class",
 			sloClass:        "",
 			expectHeader:    false,
@@ -1537,5 +1553,48 @@ func TestRealClient_Send_CustomSLOPriorities(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRealClient_WithSLOPriorityMap_NilUsesDefaults(t *testing.T) {
+	// Mock server that captures the request body
+	var capturedBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		decoder := json.NewDecoder(r.Body)
+		_ = decoder.Decode(&capturedBody)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"test","choices":[{"text":"output"}],"usage":{"prompt_tokens":10,"completion_tokens":20}}`))
+	}))
+	defer server.Close()
+
+	// Pass nil to WithSLOPriorityMap — should fallback to defaults
+	client := NewRealClient(server.URL, "", "test-model", "vllm",
+		WithSLOPriorityMap(nil))
+
+	req := &PendingRequest{
+		RequestID:       1,
+		InputTokens:     10,
+		MaxOutputTokens: 20,
+		Model:           "test-model",
+		Streaming:       false,
+		SLOClass:        "critical",
+		Prompt:          "test prompt",
+	}
+
+	ctx := context.Background()
+	_, err := client.Send(ctx, req)
+	if err != nil {
+		t.Fatalf("Send() error = %v", err)
+	}
+
+	// Verify default priority is used: critical=4, max=4, inverted=0
+	priority, ok := capturedBody["priority"]
+	if !ok {
+		t.Errorf("body missing 'priority' field")
+	} else {
+		priorityInt := int(priority.(float64))
+		if priorityInt != 0 {
+			t.Errorf("body['priority'] = %d, want 0 (default critical priority)", priorityInt)
+		}
 	}
 }

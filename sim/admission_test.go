@@ -282,7 +282,8 @@ func TestNewTenantBudgetAdmission_NilTracker_Panics(t *testing.T) {
 }
 
 func TestSLOPriorityMap_InvertForVLLM_DefaultPriorities(t *testing.T) {
-	m := DefaultSLOPriorityMap()
+	// Verify NewSLOPriorityMap(nil) uses defaults (BC-9)
+	m := NewSLOPriorityMap(nil)
 	tests := []struct {
 		class    string
 		expected int
