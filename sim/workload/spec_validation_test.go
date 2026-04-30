@@ -130,7 +130,7 @@ func TestWorkloadSpec_Validate_SLOClassConsistency(t *testing.T) {
 		}
 	}
 
-	t.Run("BC-1: all-empty slo_class validates", func(t *testing.T) {
+	t.Run("all-empty slo_class validates", func(t *testing.T) {
 		// GIVEN all clients and cohorts have empty slo_class
 		spec := validBaseSpec()
 		spec.Clients[0].SLOClass = ""
@@ -153,7 +153,7 @@ func TestWorkloadSpec_Validate_SLOClassConsistency(t *testing.T) {
 		}
 	})
 
-	t.Run("BC-2: all-explicit slo_class validates", func(t *testing.T) {
+	t.Run("all-explicit slo_class validates", func(t *testing.T) {
 		// GIVEN all clients and cohorts have non-empty slo_class
 		spec := validBaseSpec()
 		spec.Clients[0].SLOClass = "critical"
@@ -176,7 +176,7 @@ func TestWorkloadSpec_Validate_SLOClassConsistency(t *testing.T) {
 		}
 	})
 
-	t.Run("BC-3: zero cohorts with explicit clients validates", func(t *testing.T) {
+	t.Run("zero cohorts with explicit clients validates", func(t *testing.T) {
 		// GIVEN zero cohorts and all clients have explicit slo_class
 		spec := validBaseSpec()
 		spec.Clients[0].SLOClass = "critical"
@@ -189,7 +189,7 @@ func TestWorkloadSpec_Validate_SLOClassConsistency(t *testing.T) {
 		}
 	})
 
-	t.Run("BC-4: mixed clients rejected with diagnostic error", func(t *testing.T) {
+	t.Run("mixed clients rejected with diagnostic error", func(t *testing.T) {
 		// GIVEN one client with explicit slo_class and one with empty
 		spec := validBaseSpec()
 		spec.Clients[0].SLOClass = "critical"
@@ -225,7 +225,7 @@ func TestWorkloadSpec_Validate_SLOClassConsistency(t *testing.T) {
 		}
 	})
 
-	t.Run("BC-4: mixed cohorts rejected with diagnostic error", func(t *testing.T) {
+	t.Run("mixed cohorts rejected with diagnostic error", func(t *testing.T) {
 		// GIVEN no clients (empty slice), one cohort explicit and one empty
 		spec := validBaseSpec()
 		spec.Clients = []ClientSpec{} // no clients to avoid count confusion
@@ -273,7 +273,7 @@ func TestWorkloadSpec_Validate_SLOClassConsistency(t *testing.T) {
 		}
 	})
 
-	t.Run("BC-4: mixed clients and cohorts rejected", func(t *testing.T) {
+	t.Run("mixed clients and cohorts rejected", func(t *testing.T) {
 		// GIVEN one client explicit, one cohort empty
 		spec := validBaseSpec()
 		spec.Clients[0].SLOClass = "critical"
@@ -303,7 +303,7 @@ func TestWorkloadSpec_Validate_SLOClassConsistency(t *testing.T) {
 		}
 	})
 
-	t.Run("BC-4: error message truncates to 3 examples per category", func(t *testing.T) {
+	t.Run("error message truncates to 3 examples per category", func(t *testing.T) {
 		// GIVEN 5 clients with explicit SLOClass and 4 cohorts with empty SLOClass
 		spec := validBaseSpec()
 		spec.Clients[0].SLOClass = "critical"
@@ -377,7 +377,7 @@ func TestWorkloadSpec_Validate_SLOClassConsistency(t *testing.T) {
 		}
 	})
 
-	t.Run("BC-5: InferencePerf expansion exempt from SLO class check", func(t *testing.T) {
+	t.Run("InferencePerf expansion exempt from SLO class check", func(t *testing.T) {
 		// GIVEN a spec with InferencePerf set (which will auto-generate clients with explicit SLOClass)
 		// AND user-authored cohorts with empty SLOClass
 		spec := &WorkloadSpec{
@@ -404,11 +404,11 @@ func TestWorkloadSpec_Validate_SLOClassConsistency(t *testing.T) {
 		// THEN it should NOT return mixed specification error (InferencePerf clients are exempt)
 		// (it may fail with other errors like missing InferencePerf fields, which is fine)
 		if err != nil && strings.Contains(err.Error(), "mixed slo_class specification") {
-			t.Errorf("BC-5 violation: InferencePerf should be exempt from SLO class check, but got mixed spec error: %v", err)
+			t.Errorf("expected no mixed slo_class error when InferencePerf is set; got: %v", err)
 		}
 	})
 
-	t.Run("BC-5: ServeGen expansion exempt from SLO class check", func(t *testing.T) {
+	t.Run("ServeGen expansion exempt from SLO class check", func(t *testing.T) {
 		// GIVEN a spec with ServeGenData set (which will auto-generate clients with explicit SLOClass)
 		// AND user-authored cohorts with empty SLOClass
 		spec := &WorkloadSpec{
@@ -436,11 +436,51 @@ func TestWorkloadSpec_Validate_SLOClassConsistency(t *testing.T) {
 		// THEN it should NOT return mixed specification error (ServeGen clients are exempt)
 		// (it may fail with other errors like missing ServeGen files, which is fine)
 		if err != nil && strings.Contains(err.Error(), "mixed slo_class specification") {
-			t.Errorf("BC-5 violation: ServeGen should be exempt from SLO class check, but got mixed spec error: %v", err)
+			t.Errorf("expected no mixed slo_class error when ServeGen is set; got: %v", err)
 		}
 	})
 
-	t.Run("BC-5: ServeGen set does not exempt cohorts from SLO consistency check", func(t *testing.T) {
+	t.Run("InferencePerf set does not exempt cohorts from SLO consistency check", func(t *testing.T) {
+		// GIVEN a spec with InferencePerf set (clients exempted by guard)
+		// AND user-authored cohorts with mixed SLOClass (one explicit, one empty)
+		spec := &WorkloadSpec{
+			Version:       "2",
+			AggregateRate: 10.0,
+			Cohorts: []CohortSpec{
+				{
+					ID:           "cohort-1",
+					Population:   5,
+					RateFraction: 1.0,
+					SLOClass:     "standard", // explicit
+					Arrival:      ArrivalSpec{Process: "poisson"},
+					InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+					OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				},
+				{
+					ID:           "cohort-2",
+					Population:   5,
+					RateFraction: 1.0,
+					SLOClass:     "", // empty
+					Arrival:      ArrivalSpec{Process: "poisson"},
+					InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+					OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				},
+			},
+			InferencePerf: &InferencePerfSpec{},
+		}
+		// WHEN Validate is called
+		err := spec.Validate()
+		// THEN it MUST return mixed specification error (cohorts are ALWAYS checked)
+		// This documents the asymmetry: clients guarded by expansion check, cohorts always scanned
+		if err == nil {
+			t.Fatal("expected error for mixed cohort slo_class even with InferencePerf set, got nil")
+		}
+		if !strings.Contains(err.Error(), "mixed slo_class specification") {
+			t.Errorf("expected 'mixed slo_class specification' error, got: %v", err)
+		}
+	})
+
+	t.Run("ServeGen set does not exempt cohorts from SLO consistency check", func(t *testing.T) {
 		// GIVEN a spec with ServeGenData set (clients exempted by guard)
 		// AND user-authored cohorts with mixed SLOClass (one explicit, one empty)
 		spec := &WorkloadSpec{
@@ -482,7 +522,7 @@ func TestWorkloadSpec_Validate_SLOClassConsistency(t *testing.T) {
 		}
 	})
 
-	t.Run("BC-8: pre-existing validation error takes precedence", func(t *testing.T) {
+	t.Run("pre-existing validation error takes precedence", func(t *testing.T) {
 		// GIVEN a spec with BOTH a pre-existing error (invalid slo_class value)
 		// AND a mixed specification (one explicit, one empty)
 		spec := validBaseSpec()
@@ -503,10 +543,10 @@ func TestWorkloadSpec_Validate_SLOClassConsistency(t *testing.T) {
 		}
 		errMsg := err.Error()
 		if !strings.Contains(errMsg, "unknown slo_class") {
-			t.Errorf("BC-8 violation: expected pre-existing error (unknown slo_class) to fire first, got: %v", errMsg)
+			t.Errorf("expected pre-existing error to fire first, not mixed spec error; got: %v", errMsg)
 		}
 		if strings.Contains(errMsg, "mixed slo_class specification") {
-			t.Errorf("BC-8 violation: mixed spec error should not appear when pre-existing error exists, got: %v", errMsg)
+			t.Errorf("expected pre-existing error to fire first, not mixed spec error; got: %v", errMsg)
 		}
 	})
 }

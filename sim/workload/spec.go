@@ -330,11 +330,7 @@ func (s *WorkloadSpec) Validate() error {
 		}
 	}
 
-	// All-or-nothing SLO class consistency check.
-	// If ANY client/cohort specifies slo_class, then ALL must specify it.
-	// Prevents ambiguous metrics where empty classes normalize to "standard".
-	// Only scan user-authored Clients and Cohorts — skip when clients were
-	// populated from InferencePerf or ServeGen expansion (auto-generated SLO classes).
+	// Empty slo_class normalizes to "standard" in metrics; mixed specs corrupt per-tier capacity planning signals.
 	hasExplicitSLO := false
 	hasEmptySLO := false
 	var explicitIDs []string
@@ -363,7 +359,6 @@ func (s *WorkloadSpec) Validate() error {
 	}
 
 	if hasExplicitSLO && hasEmptySLO {
-		// Show up to 3 examples of each category for diagnosis
 		explicitSample := explicitIDs
 		if len(explicitSample) > 3 {
 			explicitSample = explicitSample[:3]
