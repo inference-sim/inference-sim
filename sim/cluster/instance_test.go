@@ -627,3 +627,13 @@ func TestInstanceSimulatorLatencyStats_AfterRun(t *testing.T) {
 		t.Errorf("AvgOutTokens should be > 0, got %v", stats.AvgOutTokens)
 	}
 }
+
+func TestInstanceSimulator_MaxBatchSize_ReturnsConstructorValue(t *testing.T) {
+	cfg := newTestSimConfig()
+	cfg.BatchConfig = sim.NewBatchConfig(128, 2048, 0)
+	inst := NewInstanceSimulator(InstanceID("test"), cfg)
+
+	if got := inst.MaxBatchSize(); got != 128 {
+		t.Errorf("MaxBatchSize() = %d, want 128", got)
+	}
+}

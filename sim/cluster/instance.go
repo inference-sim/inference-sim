@@ -200,7 +200,7 @@ func (i *InstanceSimulator) PreemptionCount() int64 {
 	return i.sim.Metrics.PreemptionCount
 }
 
-// InstanceLatencyStats holds rolling-window averages of per-instance latency and throughput.
+// InstanceLatencyStats holds cumulative averages of per-instance latency and throughput from completed requests.
 // Units: TTFT and ITL are in microseconds (ticks = µs in the simulator clock).
 // DispatchRate is in req/s; AvgInTokens and AvgOutTokens are per-request averages.
 // All fields are zero when no requests have completed.
@@ -227,8 +227,8 @@ func (i *InstanceSimulator) LatencyStats() InstanceLatencyStats {
 
 	// DispatchRate: when simulation has ended, use SimEndedTime as the denominator
 	// (exact throughput, matches ResponsesPerSec in metrics.go:SaveResults).
-	// Mid-simulation fallback: span between first and last completion time excludes
-	// idle ramp-up time (rolling-window approximation). Final fallback: current clock.
+	// Mid-simulation fallback: span between first and last completion time (growing window —
+	// rate decreases over time even at steady throughput). Final fallback: current clock.
 	// INV-6 note: min/max reduction is order-independent (unlike float sums), so this map
 	// range is exempt from the R2 sort requirement.
 	var minCT, maxCT float64

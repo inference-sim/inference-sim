@@ -39,12 +39,12 @@ func NewVariantSpec(gpuType string, tpDegree int) VariantSpec {
 // Produced by Collector, consumed by Analyzer. All numeric invariants must hold:
 // KVUtilization ∈ [0.0, 1.0], QueueDepth ≥ 0, InFlightCount ≥ 0.
 type ReplicaMetrics struct {
-	InstanceID            string
-	Variant               VariantSpec
-	KVUtilization         float64 // [0.0, 1.0]
-	QueueDepth            int
-	InFlightCount         int
-	CostPerHour           float64 // $/hr from NodePool; used for CostPerReplica in VariantCapacity
+	InstanceID    string
+	Variant       VariantSpec
+	KVUtilization float64 // [0.0, 1.0]
+	QueueDepth    int
+	InFlightCount int
+	CostPerHour   float64 // $/hr from NodePool; used for CostPerReplica in VariantCapacity
 	// Latency fields are live observability signals populated by buildRouterState() on every
 	// admission, routing, autoscaler, and flow-control tick via LatencyStats(). They are zero
 	// until the first request on this replica completes; any consumer must guard against zero.
@@ -106,6 +106,7 @@ type ScaleDecision struct {
 //   - slots held by WarmingUp instances
 //   - slots held by Active instances
 //   - slots held by Draining instances (hold GPUs until drain completes)
+//
 // Pending (Scheduling) placements are NOT subtracted. Terminated instances are NOT subtracted.
 // Callers must use FreeSlots() and Variants() to read (R2: map iteration is non-deterministic).
 type GPUInventory struct {
