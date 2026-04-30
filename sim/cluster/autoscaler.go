@@ -45,11 +45,11 @@ type ReplicaMetrics struct {
 	QueueDepth            int
 	InFlightCount         int
 	CostPerHour           float64 // $/hr from NodePool; used for CostPerReplica in VariantCapacity
-	TTFT                  float64 // μs — zero until QueueingModelAnalyzer; Analyze() must guard against zero before dividing
-	DispatchRate          float64 // req/s — zero until QueueingModelAnalyzer; Analyze() must guard against zero before dividing
-	ITL                   float64 // μs — zero until QueueingModelAnalyzer; Analyze() must guard against zero before dividing
-	AvgInTokens           float64 // average input tokens per completed request; zero until QueueingModelAnalyzer
-	AvgOutTokens          float64 // average output tokens per completed request; zero until QueueingModelAnalyzer
+	TTFT                  float64 // μs — zero until first completion; Analyze() must guard against zero before dividing
+	DispatchRate          float64 // req/s — zero until first completion; Analyze() must guard against zero before dividing
+	ITL                   float64 // μs — zero until first completion; Analyze() must guard against zero before dividing
+	AvgInTokens           float64 // average input tokens per completed request; zero until first completion
+	AvgOutTokens          float64 // average output tokens per completed request; zero until first completion
 	MaxBatchSize          float64 // server-configured max batch size; zero means use DefaultMaxBatchSize
 	TotalKvCapacityTokens int64   // Total KV cache capacity in tokens; used by V2SaturationAnalyzer for k1 (memory-bound capacity)
 	KvTokensInUse         int64   // Current KV token occupancy; used by V2SaturationAnalyzer for demand computation
@@ -144,8 +144,8 @@ type Collector interface {
 // Analyzer assesses capacity for one model. Name() returns a human-readable identifier.
 // Analyze() is called once per model per tick. Must not access RouterState, GPUInventory,
 // or any external state — only ModelSignals. Must not panic on empty Replicas slice.
-// Must guard against zero-valued fields (TTFT, DispatchRate) — these are intentionally
-// zero until QueueingModelAnalyzer ships; dividing by them without a guard will panic.
+// Must guard against zero-valued fields (TTFT, DispatchRate) — these are zero until
+// first request completion; dividing by them without a guard will panic.
 // Invariants: sum(vc.Supply) == TotalSupply; sum(vc.Demand) == TotalDemand.
 type Analyzer interface {
 	Name() string

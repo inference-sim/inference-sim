@@ -83,7 +83,7 @@ func buildRouterState(cs *ClusterSimulator, req *sim.Request) *sim.RouterState {
 		snap.GPUType = inst.GPU()
 		snap.TPDegree = inst.TPDegree
 		snap.CostPerHour = inst.CostPerHour
-		// Populate latency stats for QueueingModelAnalyzer.
+		// Populate latency stats from completed-request metrics (zero until first completion).
 		if inst.HasSim() {
 			ls := inst.LatencyStats()
 			snap.TTFT = ls.TTFT
