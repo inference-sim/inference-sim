@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/sirupsen/logrus"
 )
@@ -29,6 +30,7 @@ type RealClient struct {
 	serverType string
 	apiFormat  string // "completions" or "chat" (default: "completions")
 	httpClient *http.Client
+	sloMap     *sim.SLOPriorityMap
 }
 
 // RealClientOption configures optional RealClient behavior.
@@ -42,6 +44,18 @@ func WithAPIFormat(format string) RealClientOption {
 // WithHTTPTimeout sets the HTTP client timeout for requests.
 func WithHTTPTimeout(d time.Duration) RealClientOption {
 	return func(c *RealClient) { c.httpClient.Timeout = d }
+}
+
+// WithSLOPriorityMap sets a custom SLO priority map for vLLM priority translation.
+// If m is nil, uses DefaultSLOPriorityMap().
+func WithSLOPriorityMap(m *sim.SLOPriorityMap) RealClientOption {
+	return func(c *RealClient) {
+		if m == nil {
+			c.sloMap = sim.DefaultSLOPriorityMap()
+		} else {
+			c.sloMap = m
+		}
+	}
 }
 
 // isTimeoutError returns true if err is a timeout or deadline-exceeded error.
@@ -61,6 +75,7 @@ func NewRealClient(baseURL, apiKey, modelName, serverType string, opts ...RealCl
 		serverType: serverType,
 		apiFormat:  "completions",
 		httpClient: &http.Client{Timeout: defaultHTTPTimeoutSeconds * time.Second},
+		sloMap:     sim.DefaultSLOPriorityMap(),
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -148,6 +163,11 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 	// Request usage data in streaming responses (required for token count extraction).
 	if req.Streaming {
 		body["stream_options"] = map[string]interface{}{"include_usage": true}
+	}
+
+	// Dual delivery: priority body for vLLM, x-gateway-inference-objective header for llm-d.
+	if req.SLOClass != "" {
+		body["priority"] = c.sloMap.InvertForVLLM(req.SLOClass)
 	}
 
 	bodyBytes, err := json.Marshal(body)

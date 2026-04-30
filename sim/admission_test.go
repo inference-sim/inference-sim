@@ -280,3 +280,72 @@ func TestNewTenantBudgetAdmission_NilTracker_Panics(t *testing.T) {
 	}()
 	NewTenantBudgetAdmission(&AlwaysAdmit{}, nil, DefaultSLOPriorityMap())
 }
+
+func TestSLOPriorityMap_InvertForVLLM_DefaultPriorities(t *testing.T) {
+	// Verify NewSLOPriorityMap(nil) uses defaults (BC-9)
+	m := NewSLOPriorityMap(nil)
+	tests := []struct {
+		class    string
+		expected int
+	}{
+		{"critical", 0},     // 4 - 4 = 0 (most urgent in vLLM)
+		{"standard", 1},     // 4 - 3 = 1
+		{"batch", 5},        // 4 - (-1) = 5
+		{"sheddable", 6},    // 4 - (-2) = 6
+		{"background", 7},   // 4 - (-3) = 7 (least urgent in vLLM)
+		{"unknown", 1},      // 4 - 3 (defaultPri) = 1
+		{"", 1},             // 4 - 3 (defaultPri) = 1
+	}
+	for _, tt := range tests {
+		t.Run(tt.class, func(t *testing.T) {
+			got := m.InvertForVLLM(tt.class)
+			if got != tt.expected {
+				t.Errorf("InvertForVLLM(%q) = %d, want %d", tt.class, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestSLOPriorityMap_InvertForVLLM_CustomOverrides(t *testing.T) {
+	// Override: batch=0 (non-sheddable), critical=10 (ultra-high)
+	m := NewSLOPriorityMap(map[string]int{
+		"batch":    0,
+		"critical": 10,
+	})
+	tests := []struct {
+		class    string
+		expected int
+	}{
+		{"critical", 0},    // 10 - 10 = 0 (max is now 10)
+		{"standard", 7},    // 10 - 3 = 7
+		{"batch", 10},      // 10 - 0 = 10
+		{"sheddable", 12},  // 10 - (-2) = 12
+		{"background", 13}, // 10 - (-3) = 13
+	}
+	for _, tt := range tests {
+		t.Run(tt.class, func(t *testing.T) {
+			got := m.InvertForVLLM(tt.class)
+			if got != tt.expected {
+				t.Errorf("InvertForVLLM(%q) = %d, want %d", tt.class, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestSLOPriorityMap_InvertForVLLM_PreservesUrgencyOrder(t *testing.T) {
+	// GIVEN default priorities
+	m := DefaultSLOPriorityMap()
+
+	// WHEN inverting all classes
+	critical := m.InvertForVLLM("critical")
+	standard := m.InvertForVLLM("standard")
+	batch := m.InvertForVLLM("batch")
+	sheddable := m.InvertForVLLM("sheddable")
+	background := m.InvertForVLLM("background")
+
+	// THEN vLLM priorities preserve urgency order (lower = more urgent)
+	if critical >= standard || standard >= batch || batch >= sheddable || sheddable >= background {
+		t.Errorf("InvertForVLLM broke urgency order: critical=%d, standard=%d, batch=%d, sheddable=%d, background=%d",
+			critical, standard, batch, sheddable, background)
+	}
+}
