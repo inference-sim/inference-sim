@@ -186,6 +186,9 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 			// NOT added to cs.rejectedRequests — that tracks admission rejections only.
 			// Gateway rejections are a separate INV-1 bucket (mutual exclusivity: the
 			// !admitted path returns early before reaching this flow-control block).
+			// Trace gap: RecordAdmission above already wrote Admitted:true for this request.
+			// No correction record is emitted here. Trace consumers must not assume all
+			// Admitted:true requests have routing records when flow control is enabled.
 			return
 		case ShedVictim:
 			if victim == nil {

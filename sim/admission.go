@@ -348,5 +348,5 @@ func (t *TenantBudgetAdmission) Admit(req *Request, state *RouterState) (bool, s
 	if t.tracker.IsOverBudget(req.TenantID) && t.priorityMap.IsSheddable(req.SLOClass) {
 		return false, "tenant-budget-shed"
 	}
-	return true, ""
+	return true, reason
 }
