@@ -90,8 +90,16 @@ When anomalies are detected, BLIS prints `=== Anomaly Counters ===`:
 | **Dropped Unservable** | Request exceeds `--max-model-len` context window or needs more KV blocks than exist | Check `--max-model-len` setting; increase `--total-kv-blocks` or reduce max input tokens |
 | **Timed Out Requests** | Request exceeded its client deadline before completing | Increase `--timeout` or reduce load |
 | **Length-Capped Requests** | Request was force-completed when it reached `MaxModelLen` tokens during decode | Expected if workloads push against `--max-model-len`; set `--max-model-len 0` (unlimited) to disable the cap |
-| **Gateway Queue Depth (horizon)** | Requests still waiting in the gateway queue when the simulation ended | Reduce arrival rate or increase cluster capacity |
-| **Gateway Queue Shed** | Requests shed from the gateway queue because it was full | Increase `--max-gateway-queue-depth` or enable `--flow-control` with a saturation detector |
+| **Gateway Queue Depth (horizon)** | Requests still waiting in the gateway queue when the simulation ended — printed only when `> 0` | Reduce arrival rate or increase cluster capacity |
+| **Gateway Queue Shed** | Requests shed from the gateway queue because it was full — printed only when `> 0` | Increase `--max-gateway-queue-depth` or enable `--flow-control` with a saturation detector |
+
+!!! note "Stdout-only vs JSON counters"
+    **Dropped Unservable**, **Timed Out Requests**, and **Length-Capped Requests** also appear as fields in the `--metrics-path` JSON output (see [Primary Metrics](#primary-metrics-json-output): `dropped_unservable`, `timed_out_requests`, `length_capped_requests`).
+
+    All other counters in this table — including **Shed (tier)**, **Gateway Queue Depth (horizon)**, and **Gateway Queue Shed** — are **stdout-only** and do not appear in the JSON file.
+
+!!! note "blis replay anomaly block"
+    `blis replay` produces a subset of this output: **Timed Out Requests**, **Gateway Queue Depth (horizon)**, and **Gateway Queue Shed** are currently missing from the `blis replay` anomaly block even when non-zero (tracked in issue #1184). **PD Disaggregation Metrics** are not supported in replay at all.
 
 ## KV Cache Metrics
 
@@ -174,6 +182,9 @@ When PD disaggregation is active (`--prefill-instances > 0`), BLIS prints a `===
 | **KV Transfer Duration** | Time to transfer KV blocks from prefill to decode instance; distribution in microseconds |
 | **Peak Concurrent Transfers** | Maximum simultaneous in-flight KV transfers (only with `--pd-transfer-contention`) |
 | **Mean Transfer Queue Depth** | Average queue depth at the transfer bandwidth bottleneck (only with `--pd-transfer-contention`) |
+
+!!! note "blis run only"
+    PD Disaggregation Metrics are produced by `blis run` only. `blis replay` does not support PD disaggregation (a warning is logged if PD flags are passed to replay). `blis observe` dispatches to real servers and produces no DES output.
 
 ## Fitness Evaluation
 
