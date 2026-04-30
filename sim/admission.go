@@ -73,21 +73,31 @@ func (r *RejectAll) Admit(_ *Request, _ *RouterState) (bool, string) {
 type SLOPriorityMap struct {
 	priorities map[string]int
 	defaultPri int
+	maxPri     int // computed once at construction for InvertForVLLM
 }
 
 // DefaultSLOPriorityMap returns the GAIE-compatible default priority mapping.
 // critical=4, standard=3, batch=-1, sheddable=-2, background=-3.
 // Empty or unknown class → 3 (Standard).
 func DefaultSLOPriorityMap() *SLOPriorityMap {
+	priorities := map[string]int{
+		"critical":   4,
+		"standard":   3,
+		"batch":      -1,
+		"sheddable":  -2,
+		"background": -3,
+	}
+	defaultPri := 3
+	maxPri := defaultPri
+	for _, p := range priorities {
+		if p > maxPri {
+			maxPri = p
+		}
+	}
 	return &SLOPriorityMap{
-		priorities: map[string]int{
-			"critical":   4,
-			"standard":   3,
-			"batch":      -1,
-			"sheddable":  -2,
-			"background": -3,
-		},
-		defaultPri: 3,
+		priorities: priorities,
+		defaultPri: defaultPri,
+		maxPri:     maxPri,
 	}
 }
 
@@ -97,6 +107,13 @@ func NewSLOPriorityMap(overrides map[string]int) *SLOPriorityMap {
 	m := DefaultSLOPriorityMap()
 	for k, v := range overrides {
 		m.priorities[k] = v
+	}
+	// Recompute maxPri after applying overrides
+	m.maxPri = m.defaultPri
+	for _, p := range m.priorities {
+		if p > m.maxPri {
+			m.maxPri = p
+		}
 	}
 	return m
 }
@@ -118,23 +135,16 @@ func (m *SLOPriorityMap) IsSheddable(class string) bool {
 
 // InvertForVLLM converts a BLIS SLO class to a vLLM priority value.
 // vLLM uses lower integers for higher urgency (min-heap), opposite of BLIS/llm-d.
-// Returns maxPriority - Priority(class), where maxPriority is the highest value
-// across all configured priorities and defaultPri.
+// Returns maxPri - Priority(class), where maxPri is precomputed at construction.
 //
-// Example with defaults (maxPriority=4):
+// Example with defaults (maxPri=4):
 //
 //	critical (4) → 0, standard (3) → 1, batch (-1) → 5, sheddable (-2) → 6, background (-3) → 7
 //
-// Handles custom overrides: if an override sets critical=10, maxPriority becomes 10
+// Handles custom overrides: if an override sets critical=10, maxPri becomes 10
 // and all inversions adjust accordingly.
 func (m *SLOPriorityMap) InvertForVLLM(class string) int {
-	maxPriority := m.defaultPri
-	for _, p := range m.priorities {
-		if p > maxPriority {
-			maxPriority = p
-		}
-	}
-	return maxPriority - m.Priority(class)
+	return m.maxPri - m.Priority(class)
 }
 
 // SLOTierPriority maps an SLOClass string to an integer priority using GAIE-compatible defaults.
