@@ -1,6 +1,7 @@
 package workload
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -310,7 +311,7 @@ func TestWorkloadSpec_Validate_SLOClassConsistency(t *testing.T) {
 		// Add 4 more clients with explicit SLOClass
 		for i := 1; i < 5; i++ {
 			spec.Clients = append(spec.Clients, ClientSpec{
-				ID:           "client-" + string(rune('0'+i)),
+				ID:           "client-" + strconv.Itoa(i+1),
 				RateFraction: 1.0,
 				SLOClass:     "standard",
 				Arrival:      ArrivalSpec{Process: "poisson"},
@@ -321,7 +322,7 @@ func TestWorkloadSpec_Validate_SLOClassConsistency(t *testing.T) {
 		// Add 4 cohorts with empty SLOClass
 		for i := 0; i < 4; i++ {
 			spec.Cohorts = append(spec.Cohorts, CohortSpec{
-				ID:           "cohort-" + string(rune('0'+i)),
+				ID:           "cohort-" + strconv.Itoa(i),
 				Population:   5,
 				RateFraction: 1.0,
 				SLOClass:     "", // empty
