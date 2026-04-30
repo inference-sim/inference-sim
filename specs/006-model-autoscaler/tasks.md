@@ -31,7 +31,7 @@
 
 ## Phase 3: User Story 1 — Pipeline Wiring + Cooldown ✅ Complete (1C-1a, PR #934)
 
-Includes US1 (pipeline wiring) and US5 (cooldown/flap prevention).
+Includes US1 (pipeline wiring) and US5 (stabilization window).
 
 - [X] T009 [US1] `TestScalingTickScheduling` — interval=0, multi-tick, same-tick actuation, delayed actuation
 - [X] T010 [US1] `TestNoOpPipelineDeterminism` — INV-6 byte-identical output
@@ -127,7 +127,7 @@ Includes US1 (pipeline wiring) and US5 (cooldown/flap prevention).
 ```
 Phase 1 ✅ (Setup)
     └── Phase 2 ✅ (Foundational: types + interfaces + config)
-            └── Phase 3 ✅ (US1+US5: pipeline wiring + cooldown)
+            └── Phase 3 ✅ (US1+US5: pipeline wiring + stabilization window)
                     ├── Phase 4 (US2: V2SaturationAnalyzer)        ← 1C-1b
                     │       └── Phase 5 (US3: Collector + UnlimitedEngine + Actuator + integration)  ← 1C-1b
                     └── Phase 6 (US4: GreedyEngine)                ← 1C-1d (after 1C-1b)
@@ -159,7 +159,7 @@ Phase 1 ✅ (Setup)
 
 1. ~~Phase 1: Setup~~ ✅
 2. ~~Phase 2: Foundational types~~ ✅
-3. ~~Phase 3: Pipeline wiring + cooldown~~ ✅ (PR #934)
+3. ~~Phase 3: Pipeline wiring + stabilization window~~ ✅ (PR #934)
 4. Complete Phase 4: US2 — V2SaturationAnalyzer
 5. Complete Phase 5: US3 — DefaultCollector + UnlimitedEngine + DirectActuator + integration test
 6. **STOP and VALIDATE**: `DefaultCollector → V2SaturationAnalyzer → UnlimitedEngine → DirectActuator` runs end-to-end
