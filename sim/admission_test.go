@@ -343,7 +343,7 @@ func TestSLOPriorityMap_InvertForVLLM_PreservesUrgencyOrder(t *testing.T) {
 	background := m.InvertForVLLM("background")
 
 	// THEN vLLM priorities preserve urgency order (lower = more urgent)
-	if !(critical < standard && standard < batch && batch < sheddable && sheddable < background) {
+	if critical >= standard || standard >= batch || batch >= sheddable || sheddable >= background {
 		t.Errorf("InvertForVLLM broke urgency order: critical=%d, standard=%d, batch=%d, sheddable=%d, background=%d",
 			critical, standard, batch, sheddable, background)
 	}
