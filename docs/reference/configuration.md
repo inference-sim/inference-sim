@@ -481,6 +481,82 @@ CLI flags override policy bundle values when explicitly set. For example, `--rou
 !!! note "Node pools and instance lifecycle are YAML-only"
     `node_pools` and `instance_lifecycle` have no corresponding CLI flags. They must be set via `--policy-config`. Omitting them is safe — the simulator falls back to single-pool, no-lifecycle mode for full backward compatibility.
 
+## Model Autoscaler
+
+BLIS can simulate dynamic replica scaling via a four-stage WVA-equivalent pipeline: **Collect → Analyze → Engine → Actuate**. The autoscaler fires on a configurable tick interval and adjusts replica counts based on observed KV utilization, queue depth, and (with `QueueingModelAnalyzer`) latency signals.
+
+The autoscaler is **disabled by default** (`model_autoscaler_interval_us: 0`). All autoscaler fields are YAML-only — set via `--policy-config`.
+
+### Enabling the Autoscaler
+
+```yaml
+# Minimal: enable autoscaler with 30-second tick, WVA defaults
+model_autoscaler_interval_us: 30000000   # 30 seconds in μs (1 μs = 1 tick)
+```
+
+### Autoscaler Fields (DeploymentConfig)
+
+| YAML field | Type | Default | Description |
+|------------|------|---------|-------------|
+| `model_autoscaler_interval_us` | float64 | 0 | Tick interval in μs. 0 = disabled. 30,000,000 = 30s. |
+| `scale_up_stabilization_window_us` | float64 | 0 | Scale-up signal must persist this long (μs) before acting. 0 = act on first signal (HPA default). |
+| `scale_down_stabilization_window_us` | float64 | 0 | Scale-down signal must persist this long (μs) before acting. 0 = no stabilization. Set to 300,000,000 (5 min) to match the Kubernetes HPA default. |
+| `hpa_scrape_delay` | DelaySpec | zero | HPA scrape lag: simulated delay from WVA metric emission to replica change. Zero = same-tick actuation. Mean/Stddev in **seconds**. |
+
+!!! warning "Unit mismatch: μs vs seconds"
+    `model_autoscaler_interval_us`, `scale_up_stabilization_window_us`, and `scale_down_stabilization_window_us` use **microseconds** (matching the DES clock). `hpa_scrape_delay.mean`/`stddev` use **seconds** (matching real-world HPA scrape intervals). Be careful not to mix units.
+
+### V2SaturationAnalyzer (default)
+
+The default analyzer uses WVA's token-based saturation model. Configured via `autoscaler_analyzer`:
+
+| YAML field | Type | Default | Description |
+|------------|------|---------|-------------|
+| `autoscaler_analyzer.kv_cache_threshold` | float64 | 0.8 | Fraction of KV capacity considered usable. `k1 = totalKvCapTokens × this`. Range: (0, 1.0]. |
+| `autoscaler_analyzer.scale_up_threshold` | float64 | 0.8 | Utilization fraction above which scale-up fires. `RequiredCapacity = max(0, demand/this − supply)`. |
+| `autoscaler_analyzer.scale_down_boundary` | float64 | 0.4 | Utilization fraction below which scale-down is safe. `SpareCapacity = max(0, supply − demand/this)`. Must be < `scale_up_threshold`. |
+| `autoscaler_analyzer.avg_input_tokens` | float64 | 512 | Average input tokens per request. Used to convert queue depth to token demand. Must be > 0. |
+
+### QueueingModelAnalyzer (via `qm_config`)
+
+`QueueingModelAnalyzer` uses an M/M/1/K-SD queueing model with three-phase parameter estimation (Nelder-Mead sliding window or EKF) to derive per-variant maximum throughput under SLO constraints.
+
+!!! note "Wiring pending (#954)"
+    `QueueingModelAnalyzer` is fully implemented but not yet selectable via YAML. Until issue #954 lands (adds an `analyzer_type` selector to `DeploymentConfig`), it must be wired programmatically in tests. The `qm_config` fields below are ready to use once #954 is merged.
+
+!!! warning "Requires latency-populating collector (#1198)"
+    `DefaultCollector` produces zero `TTFT`/`ITL`/`AvgInTokens`/`AvgOutTokens` fields. `QueueingModelAnalyzer` will silently skip all observations until a latency-aware collector is wired (issue #1198).
+
+| YAML field | Type | Default | Description |
+|------------|------|---------|-------------|
+| `qm_config.slo_targets` | map[string]SLOTarget | nil | Per-model explicit SLO targets in **milliseconds**. Key = ModelID. When set with non-zero values, overrides observation-based SLO derivation for that model. |
+| `qm_config.slo_targets.<model>.target_ttft` | float32 | 0 | TTFT SLO in **ms**. Zero value is ignored (falls through to derived/observed path). |
+| `qm_config.slo_targets.<model>.target_itl` | float32 | 0 | ITL SLO in **ms**. Zero value is ignored (falls through to derived/observed path). |
+| `qm_config.slo_multiplier` | float64 | 3.0 | Scales fitted base latency to derive SLO targets from model parameters (Priority 2 derivation). |
+| `qm_config.tuning_enabled` | bool | false | Enable parameter estimation (Nelder-Mead / EKF). When false, analyzer only uses `slo_targets`. **Must be set explicitly** — zero value disables estimation. |
+| `qm_config.init_obs` | int | 5 | Observations required before Nelder-Mead fitting begins. |
+| `qm_config.use_sliding` | bool | false | Use SlidingWindowEstimator (re-fit every cycle) instead of EKF. **Must be set explicitly** — zero value uses EKF. |
+| `qm_config.window_size` | int | 20 | Observation window for SlidingWindowEstimator. Ignored when `use_sliding: false`. |
+| `qm_config.residual_threshold` | float64 | 0.3 | Outlier rejection threshold for SlidingWindowEstimator. |
+| `qm_config.init_fit_threshold` | float64 | 0 | If the initial Nelder-Mead objective exceeds this value, fall back to EKF. 0 = no threshold check. |
+| `qm_config.warm_up_cycles` | int | 0 | EKF update cycles during which the NIS gate is disabled. 0 = NIS always active. |
+
+**Example — explicit SLO targets with tuning enabled:**
+
+```yaml
+model_autoscaler_interval_us: 30000000   # 30s tick
+
+qm_config:
+  slo_targets:
+    "qwen/qwen3-14b":
+      target_ttft: 200.0   # 200ms TTFT SLO
+      target_itl:  50.0    # 50ms ITL SLO
+  tuning_enabled: true
+  use_sliding: false        # use EKF (default)
+  init_obs: 5
+  warm_up_cycles: 3
+```
+
 ## Decision Tracing
 
 | Flag | Type | Default | Description |
@@ -580,7 +656,7 @@ For environments where live profiling is not feasible, the [Roofline model](../c
 | **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--vllm-version`, `--latency-model`, `--model-config-folder`, `--hardware-config`, `--max-model-len` |
 | **PolicyConfig** | `--scheduler`, `--priority-policy` |
 | **WorkloadConfig** | `--workload`, `--workload-spec`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
-| **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` | YAML-only (no CLI flag): `node_pools`, `instance_lifecycle`, `hw_config_by_gpu` |
+| **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` | YAML-only (no CLI flag): `node_pools`, `instance_lifecycle`, `hw_config_by_gpu`, `model_autoscaler_interval_us`, `autoscaler_analyzer`, `qm_config`, `scale_up_stabilization_window_us`, `scale_down_stabilization_window_us`, `hpa_scrape_delay` |
 | **Top-level** | `--seed`, `--horizon`, `--log`, `--metrics-path` (run only), `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
 
 ---

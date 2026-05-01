@@ -108,6 +108,55 @@ The cluster uses `(timestamp, priority, seqID)` ordering for deterministic event
 
 BLIS is work-conserving (INV-8): it never idles while requests wait. After every step completion, if the WaitQ has requests, a new StepEvent is immediately scheduled. Real systems may have scheduling delays not modeled here.
 
+## Model Autoscaling
+
+BLIS can simulate dynamic replica scaling through a four-stage WVA-equivalent pipeline:
+
+```
+ScalingTickEvent
+  → Collector.Collect()       — snapshots per-replica signals from RouterState
+  → Analyzer.Analyze()        — derives RequiredCapacity / SpareCapacity per model
+  → Engine.Optimize()         — selects variant and exact-N replica delta
+  → (HPAScrapeDelay elapses)
+  → Actuator.Apply()          — places or drains replicas
+```
+
+The autoscaler is **disabled by default**. Enable it by setting `model_autoscaler_interval_us` in `--policy-config`:
+
+```yaml
+# 30-second autoscaler tick; V2SaturationAnalyzer with WVA reference defaults
+model_autoscaler_interval_us: 30000000
+```
+
+### Analyzers
+
+| Analyzer | Description | When to use |
+|----------|-------------|-------------|
+| `V2SaturationAnalyzer` (default) | WVA token-based KV+queue saturation model | Production parity with llm-d WVA; no latency data needed |
+| `QueueingModelAnalyzer` | M/M/1/K-SD with Nelder-Mead/EKF parameter estimation | SLO-aware capacity modeling; requires latency signals (#1198/#954) |
+
+### Stabilization Windows
+
+The autoscaler applies HPA-style stabilization windows to prevent oscillation. A scale-up (or scale-down) decision is only forwarded to the actuator once the signal has been continuously present for the window duration. The window timer resets if the signal disappears.
+
+```yaml
+# 2-minute scale-up window; 5-minute scale-down window (matches Kubernetes HPA default)
+scale_up_stabilization_window_us: 120000000
+scale_down_stabilization_window_us: 300000000
+```
+
+### Actuation Delay
+
+`hpa_scrape_delay` (mean/stddev in **seconds**) models the lag between WVA metric emission and the HPA acting on it. Zero (default) means same-tick actuation.
+
+```yaml
+hpa_scrape_delay:
+  mean: 30.0     # seconds
+  stddev: 5.0
+```
+
+See [Configuration Reference: Model Autoscaler](../reference/configuration.md#model-autoscaler) for the full field reference including `autoscaler_analyzer` and `qm_config`.
+
 ## Further Reading
 
 - [Cluster Architecture](../concepts/architecture.md) — internal mechanics of the shared-clock event loop
