@@ -168,7 +168,9 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 
 	// Dual delivery: priority body for vLLM, x-gateway-inference-objective header for llm-d.
 	if req.SLOClass != "" {
-		body["priority"] = c.sloMap.InvertForVLLM(req.SLOClass)
+		vllmPriority := c.sloMap.InvertForVLLM(req.SLOClass)
+		body["priority"] = vllmPriority
+		record.VLLMPriority = vllmPriority
 	}
 
 	bodyBytes, err := json.Marshal(body)
