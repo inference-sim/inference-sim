@@ -249,7 +249,7 @@ func loadServeGenData(spec *WorkloadSpec) error {
 	}
 	var keys []sortableKey
 	for key := range cohortGroups {
-		keys = append(keys, sortableKey{period: key.period, sloClass: key.sloClass})
+		keys = append(keys, sortableKey(key))
 	}
 	// Sort by period, then by SLO class
 	sort.Slice(keys, func(i, j int) bool {
@@ -261,7 +261,7 @@ func loadServeGenData(spec *WorkloadSpec) error {
 
 	// BC-8: Build cohorts (skip empty groups)
 	for _, sortedKey := range keys {
-		key := cohortKey{period: sortedKey.period, sloClass: sortedKey.sloClass}
+		key := cohortKey(sortedKey)
 		chunks := cohortGroups[key]
 		if len(chunks) == 0 {
 			continue
@@ -479,25 +479,6 @@ const serveGenWindowDurationSec = 600
 // Note: ServeGen datasets contain token distributions at 6-hour intervals (0, 21600, 43200, 64800...),
 // while trace files have 10-minute granularity. Trace windows use nearest-preceding dataset entry.
 // Returns (0, 0) if the window name is empty/invalid.
-func getTimeWindowBounds(window string) (int64, int64) {
-	switch window {
-	case "midnight":
-		// Hour 0:00-0:30 (0s - 1800s)
-		// Trace windows at 0s, 600s, 1200s all use dataset entry at timestamp 0
-		return 0, 1800
-	case "morning":
-		// Hour 8:00-8:30 (28800s - 30600s)
-		// Trace windows at 28800s, 29400s, 30000s all use dataset entry at timestamp 21600 (Hour 6)
-		return 28800, 30600
-	case "afternoon":
-		// Hour 14:00-14:30 (50400s - 52200s)
-		// Trace windows at 50400s, 51000s, 51600s all use dataset entry at timestamp 43200 (Hour 12)
-		return 50400, 52200
-	default:
-		return 0, 0
-	}
-}
-
 // findNearestDataset finds the dataset entry for the given timestamp.
 // If an exact match exists, returns it. Otherwise, returns the nearest-preceding
 // dataset entry (largest timestamp <= queryTimestamp).

@@ -88,15 +88,6 @@ func TestLoadServeGenData_Deterministic(t *testing.T) {
 	}
 }
 
-// Helper to split cohort ID into [period, sloClass]
-func splitCohortID(id string) []string {
-	parts := strings.Split(id, "-")
-	if len(parts) < 2 {
-		return []string{id, ""}
-	}
-	return []string{parts[0], parts[1]}
-}
-
 // TestLoadServeGenData_NoDuplication verifies BC-9: no chunk appears in multiple cohorts.
 func TestLoadServeGenData_NoDuplication(t *testing.T) {
 	spec := &WorkloadSpec{
