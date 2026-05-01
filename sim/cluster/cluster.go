@@ -87,9 +87,10 @@ type ClusterSimulator struct {
 
 	// Flow control state (issue #882, GIE parity).
 	// When flowControlEnabled is false, these fields are nil/zero (BC-1 pass-through).
-	flowControlEnabled bool
-	saturationDetector sim.SaturationDetector
-	gatewayQueue       *GatewayQueue
+	flowControlEnabled   bool
+	saturationDetector   sim.SaturationDetector
+	gatewayQueue         *GatewayQueue
+	flowControlAdmission *FlowControlAdmission // typed ref for outcome inspection + completion dispatch; nil when flow control disabled
 
 	progressHook                sim.ProgressHook
 	simClockProgressIntervalUs int64
@@ -384,8 +385,37 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		)
 	}
 
+	// Flow control: per-band gateway queue with FlowControlAdmission policy (issue #882, #1191).
+	// When disabled (default), the pipeline is unchanged — requests flow directly
+	// from admission to routing (BC-1 pass-through equivalence).
+	// Must be initialized BEFORE TenantBudgetAdmission so budget wrapping decorates FlowControlAdmission.
+	if config.FlowControlEnabled {
+		dispatchOrder := config.FlowControlDispatchOrder
+		if dispatchOrder == "" {
+			dispatchOrder = "fifo"
+		}
+		cs.flowControlEnabled = true
+		gq := NewGatewayQueue(dispatchOrder, config.FlowControlMaxQueueDepth, cs.priorityMap)
+		if config.FlowControlPerBandCapacity > 0 {
+			gq.SetPerBandCapacity(config.FlowControlPerBandCapacity)
+		}
+		cs.gatewayQueue = gq
+		cs.saturationDetector = sim.NewSaturationDetector(
+			config.FlowControlDetector,
+			config.FlowControlQueueDepthThreshold,
+			config.FlowControlKVCacheUtilThreshold,
+			config.FlowControlMaxConcurrency,
+		)
+		fcAdmission := NewFlowControlAdmission(gq, cs.priorityMap)
+		cs.flowControlAdmission = fcAdmission
+		cs.admissionPolicy = fcAdmission
+		logrus.Infof("[cluster] flow control enabled: detector=%q, dispatch=%q, maxDepth=%d, perBandCapacity=%d",
+			config.FlowControlDetector, dispatchOrder, config.FlowControlMaxQueueDepth, config.FlowControlPerBandCapacity)
+	}
+
 	// Phase 1B-2a: initialize TenantTracker when TenantBudgets is configured (issue #811).
 	// totalCapacity = NumInstances × MaxRunningReqs (batch size proxy for cluster-wide capacity).
+	// Wraps whichever admission policy is active (including FlowControlAdmission when flow control enabled).
 	if config.TenantBudgets != nil {
 		totalCapacity := config.NumInstances * int(config.MaxRunningReqs)
 		if len(config.TenantBudgets) > 0 && totalCapacity == 0 {
@@ -394,26 +424,6 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		}
 		cs.tenantTracker = NewTenantTracker(config.TenantBudgets, totalCapacity)
 		cs.admissionPolicy = sim.NewTenantBudgetAdmission(cs.admissionPolicy, cs.tenantTracker, cs.priorityMap)
-	}
-
-	// Flow control: gateway queue with saturation-gated dispatch (issue #882).
-	// When disabled (default), the pipeline is unchanged — requests flow directly
-	// from admission to routing (BC-1 pass-through equivalence).
-	if config.FlowControlEnabled {
-		dispatchOrder := config.FlowControlDispatchOrder
-		if dispatchOrder == "" {
-			dispatchOrder = "fifo"
-		}
-		cs.flowControlEnabled = true
-		cs.gatewayQueue = NewGatewayQueue(dispatchOrder, config.FlowControlMaxQueueDepth, cs.priorityMap)
-		cs.saturationDetector = sim.NewSaturationDetector(
-			config.FlowControlDetector,
-			config.FlowControlQueueDepthThreshold,
-			config.FlowControlKVCacheUtilThreshold,
-			config.FlowControlMaxConcurrency,
-		)
-		logrus.Infof("[cluster] flow control enabled: detector=%q, dispatch=%q, maxDepth=%d",
-			config.FlowControlDetector, dispatchOrder, config.FlowControlMaxQueueDepth)
 	}
 
 	// Startup warning: horizon too small for pipeline (BC-1)

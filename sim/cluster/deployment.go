@@ -114,6 +114,7 @@ type DeploymentConfig struct {
 	FlowControlQueueDepthThreshold  float64 `yaml:"flow_control_queue_depth_threshold,omitempty"`   // for utilization detector
 	FlowControlKVCacheUtilThreshold float64 `yaml:"flow_control_kv_cache_util_threshold,omitempty"` // for utilization detector
 	FlowControlMaxConcurrency       int     `yaml:"flow_control_max_concurrency,omitempty"`         // for concurrency detector
+	FlowControlPerBandCapacity      int     `yaml:"flow_control_per_band_capacity,omitempty"`       // 0 = unlimited; max requests per priority band
 
 	// Issue #893: per-GPU-type hardware calibration for roofline and trained-physics backends.
 	// Key: GPU type string (e.g., "A100", "H100"). Value: HardwareCalib for that GPU.
