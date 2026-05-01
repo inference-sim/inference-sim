@@ -143,6 +143,36 @@ Examples:
 - See the `compressed-tensors` branch (~line 240) for formats with nested config structures
 - See `InferWeightBytesFromModelName()` for regex-based name pattern detection
 
+## Adding a New Engine
+
+To add a new autoscaler `Engine` implementation (e.g., a cost-minimizing MIP solver or an OpenEvolve-evolved policy):
+
+1. **Implement the `Engine` interface** in `sim/cluster/engine.go` (or a new file for complex engines) — 1 method:
+   - `Optimize(results []AnalyzerResult, inventory GPUInventory) []ScaleDecision`
+   - Inputs: one `AnalyzerResult` per model (supply/demand signals + per-variant breakdown) and a `GPUInventory` snapshot (free GPU slots per variant, pre-subtracted for Loading/Active/Draining instances).
+   - Output: at most one `ScaleDecision` per model per call. `Delta > 0` = add replicas; `Delta < 0` = remove replicas.
+   - **Must not** read `RouterState` or `ModelSignals` directly — only `AnalyzerResult`.
+
+2. **Reuse the shared helpers** when appropriate:
+   - `scaleUpN(requiredCapacity float64, vcs []VariantCapacity) int` — exact replica count via `ceil(requiredCapacity / prc)`; fallback to 1 when `prc == 0`.
+   - `scaleDownN(spareCapacity float64, vc VariantCapacity) int` — exact replica count via `floor(spareCapacity / prc)`, clamped to `[1, ReplicaCount]`; fallback to 1.
+   - `sortedByAscCost`, `sortedByDescCost` — deterministic variant sort (R2: copy-and-sort to avoid mutating caller data).
+   - Pass only the selected variant to `scaleUpN` (`vcs[0:1]`, not the full slice) so `perReplicaCapacityForScaleUp` uses the chosen variant's own capacity — not a different active variant's.
+
+3. **Wire the engine** in `sim/cluster/cluster.go` — search for `&UnlimitedEngine{}` in the autoscaler pipeline construction and replace it with your engine (or add a config field + factory once multi-engine selection is implemented in the follow-up wiring PR).
+
+4. **Add behavioral tests** in `sim/cluster/engine_test.go`:
+   - Scale-up: correct `Delta`, correct `Variant`, inventory check pass/fail.
+   - Scale-down: correct `Delta` from spare capacity, `ReplicaCount` clamp.
+   - Edge cases: zero `RequiredCapacity`, zero `SpareCapacity`, all variants inactive, `TPDegree > 1`.
+   - Cross-model: multiple `AnalyzerResult` entries — verify decisions for each model independently.
+
+5. Extension friction: **2 touch points** (implementation + wiring via `&UnlimitedEngine{}` in `cluster.go`). For research variants behind a config field, 4 touch points: implementation + `AutoscalerConfig` field + factory function + CLI flag.
+
+Examples:
+- See `UnlimitedEngine` in `sim/cluster/engine.go` for a simple inventory-ignoring engine
+- See `GreedyEngine` in `sim/cluster/engine.go` for an inventory-respecting greedy engine with exact-N sizing
+
 ## Adding New Per-Request Metric Fields
 
 To add a new field to per-request JSON output (appears in `--metrics-path` output):
