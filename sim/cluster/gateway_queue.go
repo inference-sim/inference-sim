@@ -336,7 +336,8 @@ func (q *GatewayQueue) dequeueFIFO() *sim.Request {
 		if band.totalLen == 0 {
 			continue
 		}
-		for _, flow := range band.flows {
+		for _, tid := range sortedFlowKeys(band.flows) {
+			flow := band.flows[tid]
 			if len(flow.requests) == 0 {
 				continue
 			}
@@ -367,7 +368,8 @@ func (q *GatewayQueue) dequeueFromBand(band *priorityBand) *sim.Request {
 	var bestEntry *flowEntry
 	var bestFlow *flowQueue
 
-	for _, flow := range band.flows {
+	for _, tid := range sortedFlowKeys(band.flows) {
+		flow := band.flows[tid]
 		if len(flow.requests) == 0 {
 			continue
 		}
