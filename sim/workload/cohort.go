@@ -121,8 +121,9 @@ func diurnalWindows(d *DiurnalSpec, rng *rand.Rand) []ActiveWindow {
 // spikeWindow creates a single lifecycle window for a traffic spike.
 func spikeWindow(s *SpikeSpec) ActiveWindow {
 	return ActiveWindow{
-		StartUs: s.StartTimeUs,
-		EndUs:   s.StartTimeUs + s.DurationUs,
+		StartUs:   s.StartTimeUs,
+		EndUs:     s.StartTimeUs + s.DurationUs,
+		TraceRate: s.TraceRate, // Propagate cohort-level rate
 	}
 }
 

@@ -54,6 +54,40 @@ spike:
 	}
 }
 
+func TestSpikeWindow_WithTraceRate_PropagatesField(t *testing.T) {
+	rate := 7.6
+	spec := &SpikeSpec{
+		StartTimeUs: 300000000,
+		DurationUs:  600000000,
+		TraceRate:   &rate,
+	}
+	window := spikeWindow(spec)
+	if window.TraceRate == nil {
+		t.Fatal("ActiveWindow.TraceRate is nil; expected propagated value")
+	}
+	if *window.TraceRate != 7.6 {
+		t.Errorf("ActiveWindow.TraceRate = %v; expected 7.6", *window.TraceRate)
+	}
+	if window.StartUs != 300000000 {
+		t.Errorf("StartUs = %v; expected 300000000", window.StartUs)
+	}
+	if window.EndUs != 900000000 {
+		t.Errorf("EndUs = %v; expected 900000000", window.EndUs)
+	}
+}
+
+func TestSpikeWindow_WithoutTraceRate_LeavesNil(t *testing.T) {
+	spec := &SpikeSpec{
+		StartTimeUs: 300000000,
+		DurationUs:  600000000,
+		TraceRate:   nil,
+	}
+	window := spikeWindow(spec)
+	if window.TraceRate != nil {
+		t.Errorf("ActiveWindow.TraceRate = %v; expected nil", *window.TraceRate)
+	}
+}
+
 func TestCohortValidation_ZeroPopulation_ReturnsError(t *testing.T) {
 	spec := &WorkloadSpec{
 		Version:       "2",
