@@ -166,16 +166,10 @@ func (q *GatewayQueue) Enqueue(req *sim.Request, seqID int64) (EnqueueOutcome, *
 	}
 
 	// Step 2: Global capacity check (cross-band shedding).
+	// If band-level shed occurred above, totalLen was decremented and this check is skipped.
 	if q.maxDepth > 0 && q.totalLen >= q.maxDepth {
 		victim, victimFlow, victimBand, victimIdx := q.findGlobalShedVictim(priority, seqID)
 		if victim == nil {
-			// Undo band-level shed if one happened (shouldn't co-occur, but be safe).
-			if shedVictim != nil {
-				// The band shed already happened. We can't put it back.
-				// This scenario means band had room after shed but global is still full.
-				// This is impossible: if band shed freed a slot, global also freed a slot.
-				// But defensively handle it.
-			}
 			q.rejectedCount++
 			return Rejected, nil
 		}

@@ -124,6 +124,53 @@ func TestFlowControlAdmission_SeqCounterIncrementsMonotonically(t *testing.T) {
 	}
 }
 
+// stubBudgetTracker implements sim.TenantBudgetTracker for testing.
+type stubBudgetTracker struct{ overBudget bool }
+
+func (s *stubBudgetTracker) IsOverBudget(string) bool { return s.overBudget }
+
+// TestTenantBudgetAdmission_BudgetBeforeEnqueue verifies that when TenantBudgetAdmission
+// wraps FlowControlAdmission, the budget check runs BEFORE the enqueue side effect.
+// If budget rejects, the gateway queue must be empty (no INV-1 double-counting).
+func TestTenantBudgetAdmission_BudgetBeforeEnqueue(t *testing.T) {
+	pm := sim.DefaultSLOPriorityMap()
+	q := NewGatewayQueue("priority", 0, pm)
+	fc := NewFlowControlAdmission(q, pm)
+	policy := sim.NewTenantBudgetAdmission(fc, &stubBudgetTracker{overBudget: true}, pm)
+
+	req := &sim.Request{ID: "r1", SLOClass: "batch", TenantID: "t1"} // batch is sheddable
+	admitted, reason := policy.Admit(req, &sim.RouterState{Clock: 100})
+
+	if admitted {
+		t.Error("sheddable over-budget request should be rejected")
+	}
+	if reason != "tenant-budget-shed" {
+		t.Errorf("expected tenant-budget-shed, got %q", reason)
+	}
+	if q.Len() != 0 {
+		t.Errorf("budget rejection should prevent enqueue; queue has %d entries", q.Len())
+	}
+}
+
+// TestTenantBudgetAdmission_NonSheddablePassesBudget verifies non-sheddable requests
+// bypass the budget check and are enqueued via FlowControlAdmission.
+func TestTenantBudgetAdmission_NonSheddablePassesBudget(t *testing.T) {
+	pm := sim.DefaultSLOPriorityMap()
+	q := NewGatewayQueue("priority", 0, pm)
+	fc := NewFlowControlAdmission(q, pm)
+	policy := sim.NewTenantBudgetAdmission(fc, &stubBudgetTracker{overBudget: true}, pm)
+
+	req := &sim.Request{ID: "r1", SLOClass: "standard", TenantID: "t1"} // non-sheddable
+	admitted, _ := policy.Admit(req, &sim.RouterState{Clock: 100})
+
+	if !admitted {
+		t.Error("non-sheddable request should pass budget check")
+	}
+	if q.Len() != 1 {
+		t.Errorf("non-sheddable request should be enqueued; queue has %d entries", q.Len())
+	}
+}
+
 // TestFlowControlAdmission_INV1_Conservation runs a full cluster simulation with
 // FlowControlAdmission + per-band capacity and verifies INV-1 request conservation.
 func TestFlowControlAdmission_INV1_Conservation(t *testing.T) {
@@ -157,7 +204,38 @@ func TestFlowControlAdmission_INV1_Conservation(t *testing.T) {
 		verifyINV1Conservation(t, cs, requests)
 	})
 
-	// Scenario (b): tiny global capacity to force gateway queue overflow.
+	// Scenario (b): FlowControl + TenantBudgets combined.
+	t.Run("conservation_with_tenant_budgets", func(t *testing.T) {
+		config := newTestDeploymentConfig(2)
+		config.FlowControlEnabled = true
+		config.FlowControlDetector = "utilization"
+		config.FlowControlDispatchOrder = "priority"
+		config.FlowControlMaxQueueDepth = 50
+		config.FlowControlPerBandCapacity = 10
+		config.FlowControlQueueDepthThreshold = 3
+		config.FlowControlKVCacheUtilThreshold = 0.8
+		config.TenantBudgets = map[string]float64{"tenant-0": 0.5, "tenant-1": 0.3}
+
+		requests := make([]*sim.Request, 15)
+		sloClasses := []string{"batch", "sheddable", "standard", "critical", "background"}
+		for i := 0; i < 15; i++ {
+			requests[i] = &sim.Request{
+				ID:           fmt.Sprintf("r%d", i),
+				TenantID:     fmt.Sprintf("tenant-%d", i%2),
+				SLOClass:     sloClasses[i%len(sloClasses)],
+				ArrivalTime:  int64(i * 100_000),
+				InputTokens:  make([]int, 100),
+				OutputTokens: make([]int, 50),
+				MaxOutputLen: 200,
+			}
+		}
+
+		cs := NewClusterSimulator(config, requests, nil)
+		mustRun(t, cs)
+		verifyINV1Conservation(t, cs, requests)
+	})
+
+	// Scenario (c): tiny global capacity to force gateway queue overflow.
 	// All requests have batch SLOClass (sheddable, priority -1) so cross-band shedding can evict.
 	t.Run("conservation_with_overflow", func(t *testing.T) {
 		config := newTestDeploymentConfig(2)
