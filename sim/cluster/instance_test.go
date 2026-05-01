@@ -509,3 +509,131 @@ func TestInstanceSimulator_PostDecodeFixedOverhead_DelegatesToSim(t *testing.T) 
 		t.Errorf("PostDecodeFixedOverhead() = %d, want 0 for roofline model", got)
 	}
 }
+
+// TestLatencyStatsITLSortedMean verifies that LatencyStats().ITL equals the arithmetic mean
+// of all values in RequestITLs, exercising the R2-compliant sorted-key accumulation path.
+func TestLatencyStatsITLSortedMean(t *testing.T) {
+	inst := NewInstanceSimulator("test", newTestSimConfig())
+	m := inst.sim.Metrics
+	m.CompletedRequests = 3
+	m.RequestITLs["req-a"] = 100.0
+	m.RequestITLs["req-b"] = 200.0
+	m.RequestITLs["req-c"] = 300.0
+
+	stats := inst.LatencyStats()
+	const wantITL = 200.0 // (100+200+300)/3
+	if stats.ITL != wantITL {
+		t.Errorf("ITL = %v, want %v", stats.ITL, wantITL)
+	}
+}
+
+// TestLatencyStatsDispatchRateUsesSimEndedTime verifies that when SimEndedTime > 0
+// (simulation has ended), DispatchRate uses SimEndedTime as the denominator rather than
+// the completion-window span, matching ResponsesPerSec in metrics.go:SaveResults.
+func TestLatencyStatsDispatchRateUsesSimEndedTime(t *testing.T) {
+	inst := NewInstanceSimulator("test", newTestSimConfig())
+	m := inst.sim.Metrics
+	const n = 10
+	m.CompletedRequests = n
+	m.SimEndedTime = 10_000_000 // 10s in µs
+	// Completion window spans 9s (1s to 10s) — SimEndedTime should take precedence.
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("req-%d", i)
+		m.RequestCompletionTimes[id] = float64((i + 1) * 1_000_000) // µs
+	}
+
+	stats := inst.LatencyStats()
+	// SimEndedTime = 10s → rate = 10/10 = 1.0 req/s (not 10/9 window rate)
+	wantRate := float64(n) / 10.0
+	if math.Abs(stats.DispatchRate-wantRate) > 0.01 {
+		t.Errorf("DispatchRate = %.4f, want %.4f (SimEndedTime rate)", stats.DispatchRate, wantRate)
+	}
+}
+
+// TestLatencyStatsDispatchRateUsesCompletionWindow verifies that when SimEndedTime == 0
+// (mid-simulation), DispatchRate falls back to the completion-window span so that idle
+// ramp-up time does not dilute the rate.
+func TestLatencyStatsDispatchRateUsesCompletionWindow(t *testing.T) {
+	inst := NewInstanceSimulator("test", newTestSimConfig())
+	m := inst.sim.Metrics
+	const n = 10
+	m.CompletedRequests = n
+	// Completions span from 1s to 10s (1e6 µs to 10e6 µs); SimEndedTime left at 0.
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("req-%d", i)
+		m.RequestCompletionTimes[id] = float64((i + 1) * 1_000_000) // µs
+	}
+
+	stats := inst.LatencyStats()
+	// span = 10s - 1s = 9s → rate ≈ 10/9 ≈ 1.111 req/s
+	wantRate := float64(n) / 9.0
+	if math.Abs(stats.DispatchRate-wantRate) > 0.01 {
+		t.Errorf("DispatchRate = %.4f, want %.4f (completion-window rate)", stats.DispatchRate, wantRate)
+	}
+}
+
+func TestLatencyStatsDispatchRateFallsBackToClockWhenSingleCompletion(t *testing.T) {
+	inst := NewInstanceSimulator("test", newTestSimConfig())
+	m := inst.sim.Metrics
+	m.CompletedRequests = 1
+	m.RequestCompletionTimes["req-0"] = 5_000_000 // 5s in µs
+
+	// Single completion: span = 0, so rate cannot be computed from window.
+	// DispatchRate should be 0 (clock hasn't advanced in the fresh sim).
+	stats := inst.LatencyStats()
+	if stats.DispatchRate != 0 {
+		// If the clock somehow advanced, DispatchRate will be n/clockUs which is fine.
+		// We only check it's not NaN/Inf.
+		if math.IsNaN(stats.DispatchRate) || math.IsInf(stats.DispatchRate, 0) {
+			t.Errorf("DispatchRate is NaN or Inf with single completion: %v", stats.DispatchRate)
+		}
+	}
+}
+
+func TestInstanceSimulatorLatencyStats_Empty(t *testing.T) {
+	inst := NewInstanceSimulator("test", newTestSimConfig())
+	stats := inst.LatencyStats()
+	if stats.TTFT != 0 || stats.ITL != 0 || stats.DispatchRate != 0 || stats.AvgInTokens != 0 || stats.AvgOutTokens != 0 {
+		t.Errorf("expected all-zero stats on fresh instance, got %+v", stats)
+	}
+}
+
+func TestInstanceSimulatorLatencyStats_AfterRun(t *testing.T) {
+	cfg := newTestDeploymentConfig(1).ToSimConfig()
+	inst := NewInstanceSimulator("test", cfg)
+
+	reqs := testGenerateRequests(42, cfg.Horizon, 0.0005,
+		3, 0, 512, 50, 100, 1024, 128, 20, 32, 256,
+	)
+	for _, r := range reqs {
+		inst.InjectRequest(r)
+	}
+	inst.Run()
+
+	stats := inst.LatencyStats()
+	if inst.Metrics().CompletedRequests == 0 {
+		t.Skip("no completed requests in test sim; check horizon/rate")
+	}
+	if stats.ITL <= 0 {
+		t.Errorf("ITL should be > 0 after completing requests, got %v", stats.ITL)
+	}
+	if stats.DispatchRate <= 0 {
+		t.Errorf("DispatchRate should be > 0 after completing requests, got %v", stats.DispatchRate)
+	}
+	if stats.AvgInTokens <= 0 {
+		t.Errorf("AvgInTokens should be > 0, got %v", stats.AvgInTokens)
+	}
+	if stats.AvgOutTokens <= 0 {
+		t.Errorf("AvgOutTokens should be > 0, got %v", stats.AvgOutTokens)
+	}
+}
+
+func TestInstanceSimulator_MaxBatchSize_ReturnsConstructorValue(t *testing.T) {
+	cfg := newTestSimConfig()
+	cfg.BatchConfig = sim.NewBatchConfig(128, 2048, 0)
+	inst := NewInstanceSimulator(InstanceID("test"), cfg)
+
+	if got := inst.MaxBatchSize(); got != 128 {
+		t.Errorf("MaxBatchSize() = %d, want 128", got)
+	}
+}

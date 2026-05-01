@@ -601,3 +601,4 @@ func TestGPUInventory(t *testing.T) {
 		}
 	})
 }
+

@@ -83,6 +83,16 @@ func buildRouterState(cs *ClusterSimulator, req *sim.Request) *sim.RouterState {
 		snap.GPUType = inst.GPU()
 		snap.TPDegree = inst.TPDegree
 		snap.CostPerHour = inst.CostPerHour
+		// Populate latency stats from completed-request metrics (zero until first completion).
+		if inst.HasSim() {
+			ls := inst.LatencyStats()
+			snap.TTFT = ls.TTFT
+			snap.ITL = ls.ITL
+			snap.DispatchRate = ls.DispatchRate
+			snap.AvgInTokens = ls.AvgInTokens
+			snap.AvgOutTokens = ls.AvgOutTokens
+		}
+		snap.MaxBatchSize = float64(inst.MaxBatchSize()) // float64: QueueingModelAnalyzer uses it in float arithmetic
 		snapshots = append(snapshots, snap)
 	}
 	return &sim.RouterState{

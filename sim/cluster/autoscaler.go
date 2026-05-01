@@ -39,14 +39,21 @@ func NewVariantSpec(gpuType string, tpDegree int) VariantSpec {
 // Produced by Collector, consumed by Analyzer. All numeric invariants must hold:
 // KVUtilization ∈ [0.0, 1.0], QueueDepth ≥ 0, InFlightCount ≥ 0.
 type ReplicaMetrics struct {
-	InstanceID            string
-	Variant               VariantSpec
-	KVUtilization         float64 // [0.0, 1.0]
-	QueueDepth            int
-	InFlightCount         int
-	CostPerHour           float64 // $/hr from NodePool; used for CostPerReplica in VariantCapacity
-	TTFT                  float64 // μs — zero until QueueingModelAnalyzer; Analyze() must guard against zero before dividing
-	DispatchRate          float64 // req/s — zero until QueueingModelAnalyzer; Analyze() must guard against zero before dividing
+	InstanceID    string
+	Variant       VariantSpec
+	KVUtilization float64 // [0.0, 1.0]
+	QueueDepth    int
+	InFlightCount int
+	CostPerHour   float64 // $/hr from NodePool; used for CostPerReplica in VariantCapacity
+	// Latency fields are live observability signals populated by buildRouterState() on every
+	// admission, routing, autoscaler, and flow-control tick via LatencyStats(). They are zero
+	// until the first request on this replica completes; any consumer must guard against zero.
+	TTFT                  float64 // μs — zero until first completion; Analyze() must guard against zero before dividing
+	DispatchRate          float64 // req/s — zero until first completion; Analyze() must guard against zero before dividing
+	ITL                   float64 // μs — zero until first completion; Analyze() must guard against zero before dividing
+	AvgInTokens           float64 // average input tokens per completed request; zero until first completion
+	AvgOutTokens          float64 // average output tokens per completed request; zero until first completion
+	MaxBatchSize          float64 // server-configured max batch size; zero means use DefaultMaxBatchSize
 	TotalKvCapacityTokens int64   // Total KV cache capacity in tokens; used by V2SaturationAnalyzer for k1 (memory-bound capacity)
 	KvTokensInUse         int64   // Current KV token occupancy; used by V2SaturationAnalyzer for demand computation
 }
@@ -99,6 +106,7 @@ type ScaleDecision struct {
 //   - slots held by WarmingUp instances
 //   - slots held by Active instances
 //   - slots held by Draining instances (hold GPUs until drain completes)
+//
 // Pending (Scheduling) placements are NOT subtracted. Terminated instances are NOT subtracted.
 // Callers must use FreeSlots() and Variants() to read (R2: map iteration is non-deterministic).
 type GPUInventory struct {
@@ -140,8 +148,8 @@ type Collector interface {
 // Analyzer assesses capacity for one model. Name() returns a human-readable identifier.
 // Analyze() is called once per model per tick. Must not access RouterState, GPUInventory,
 // or any external state — only ModelSignals. Must not panic on empty Replicas slice.
-// Must guard against zero-valued fields (TTFT, DispatchRate) — these are intentionally
-// zero until QueueingModelAnalyzer ships; dividing by them without a guard will panic.
+// Must guard against zero-valued fields (TTFT, DispatchRate) — these are zero until
+// first request completion; dividing by them without a guard will panic.
 // Invariants: sum(vc.Supply) == TotalSupply; sum(vc.Demand) == TotalDemand.
 type Analyzer interface {
 	Name() string

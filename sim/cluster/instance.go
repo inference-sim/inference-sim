@@ -6,6 +6,7 @@ package cluster
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/kv"
@@ -40,6 +41,10 @@ type InstanceSimulator struct {
 	// GPUType is available via inst.GPU(); TPDegree and CostPerHour are autoscaler-specific.
 	TPDegree    int     // tensor-parallel degree; 0 = unplaced/unknown
 	CostPerHour float64 // $/hr from NodePool.CostPerHour; 0 = unplaced/free tier
+
+	// maxRunningReqs stores cfg.BatchConfig.MaxRunningReqs at construction time.
+	// Exposed via MaxBatchSize() for the autoscaler pipeline.
+	maxRunningReqs int64
 }
 
 // NewInstanceSimulator creates an InstanceSimulator from a SimConfig struct.
@@ -58,9 +63,10 @@ func NewInstanceSimulator(id InstanceID, cfg sim.SimConfig) *InstanceSimulator {
 		panic(fmt.Sprintf("NewInstanceSimulator(%s): %v", id, err))
 	}
 	return &InstanceSimulator{
-		id:  id,
-		sim: s,
-		gpu: cfg.GPU,
+		id:             id,
+		sim:            s,
+		gpu:            cfg.GPU,
+		maxRunningReqs: cfg.MaxRunningReqs,
 	}
 }
 
@@ -200,6 +206,88 @@ func (i *InstanceSimulator) TotalKVBlocks() int64 {
 // PreemptionCount returns the cumulative number of preemption events on this instance.
 func (i *InstanceSimulator) PreemptionCount() int64 {
 	return i.sim.Metrics.PreemptionCount
+}
+
+// InstanceLatencyStats holds cumulative averages of per-instance latency and throughput from completed requests.
+// Units: TTFT and ITL are in microseconds (ticks = µs in the simulator clock).
+// DispatchRate is in req/s; AvgInTokens and AvgOutTokens are per-request averages.
+// All fields are zero when no requests have completed.
+type InstanceLatencyStats struct {
+	TTFT         float64 // µs
+	ITL          float64 // µs
+	DispatchRate float64 // req/s
+	AvgInTokens  float64
+	AvgOutTokens float64
+}
+
+// LatencyStats returns aggregate latency and throughput statistics from completed requests.
+// All fields are 0 when no requests have completed.
+// TTFT and ITL are in microseconds; DispatchRate is in req/s.
+func (i *InstanceSimulator) LatencyStats() InstanceLatencyStats {
+	if i.sim == nil {
+		return InstanceLatencyStats{}
+	}
+	m := i.sim.Metrics
+	if m == nil || m.CompletedRequests == 0 {
+		return InstanceLatencyStats{}
+	}
+	n := float64(m.CompletedRequests)
+
+	// DispatchRate: when simulation has ended, use SimEndedTime as the denominator
+	// (exact throughput, matches ResponsesPerSec in metrics.go:SaveResults).
+	// Mid-simulation fallback: span between first and last completion time (growing window —
+	// rate decreases over time even at steady throughput). Final fallback: current clock.
+	// INV-6 note: min/max reduction is order-independent (unlike float sums), so this map
+	// range is exempt from the R2 sort requirement.
+	var minCT, maxCT float64
+	first := true
+	for _, ct := range m.RequestCompletionTimes {
+		if first || ct < minCT {
+			minCT = ct
+		}
+		if first || ct > maxCT {
+			maxCT = ct
+		}
+		first = false
+	}
+	var dispatchRate float64
+	if m.SimEndedTime > 0 {
+		dispatchRate = n / (float64(m.SimEndedTime) / 1e6)
+	} else if span := maxCT - minCT; span > 0 {
+		dispatchRate = n / (span / 1e6)
+	} else if clockUs := i.Clock(); clockUs > 0 {
+		dispatchRate = n / (float64(clockUs) / 1e6)
+	}
+
+	// Compute ITL from RequestITLs (per-request average ITL in µs).
+	// Sort keys before accumulating to satisfy INV-6 determinism (R2).
+	// ITLSum is never populated by the simulator; RequestITLs is the authoritative source.
+	reqIDs := make([]string, 0, len(m.RequestITLs))
+	for id := range m.RequestITLs {
+		reqIDs = append(reqIDs, id)
+	}
+	sort.Strings(reqIDs)
+	var itlSum float64
+	for _, id := range reqIDs {
+		itlSum += m.RequestITLs[id]
+	}
+
+	return InstanceLatencyStats{
+		TTFT:         float64(m.TTFTSum) / n,
+		ITL:          itlSum / n,
+		DispatchRate: dispatchRate,
+		AvgInTokens:  float64(m.TotalInputTokens) / n,
+		AvgOutTokens: float64(m.TotalOutputTokens) / n,
+	}
+}
+
+// MaxBatchSize returns the simulator's configured maximum number of concurrent requests
+// (BatchConfig.MaxRunningReqs). Returns 0 when the instance has no underlying simulator.
+func (i *InstanceSimulator) MaxBatchSize() int {
+	if i.sim == nil {
+		return 0
+	}
+	return int(i.maxRunningReqs)
 }
 
 // GetCachedBlockCount returns the number of consecutive cached prefix blocks

@@ -12,20 +12,26 @@ import (
 // Timestamp is intentionally excluded: snapshot freshness is managed by
 // CachedSnapshotProvider and is not a policy concern.
 type RoutingSnapshot struct {
-	ID               string
-	QueueDepth       int
-	BatchSize        int
-	KVUtilization    float64
-	FreeKVBlocks     int64
-	CacheHitRate     float64
-	InFlightRequests int   // Requests dispatched to this instance but not yet completed
-	PreemptionCount  int64 // Cumulative preemption events since instance start (monotonically increasing; Immediate by default, Periodic when --snapshot-refresh-interval > 0)
-	Model            string // Model served by this instance; used by buildRouterState() for per-model filtering
-	GPUType          string  // GPU hardware type (e.g. "A100-80GB"); populated by buildRouterState() from instance config
-	TPDegree         int     // Tensor-parallel degree; populated by buildRouterState() from instance config
+	ID                    string
+	QueueDepth            int
+	BatchSize             int
+	KVUtilization         float64
+	FreeKVBlocks          int64
+	CacheHitRate          float64
+	InFlightRequests      int     // Requests dispatched to this instance but not yet completed
+	PreemptionCount       int64   // Cumulative preemption events since instance start (monotonically increasing; Immediate by default, Periodic when --snapshot-refresh-interval > 0)
+	Model                 string  // Model served by this instance; used by buildRouterState() for per-model filtering
+	GPUType               string  // GPU hardware type (e.g. "A100-80GB"); populated by buildRouterState() from instance config
+	TPDegree              int     // Tensor-parallel degree; populated by buildRouterState() from instance config
 	CostPerHour           float64 // Node pool cost in $/hr; populated by buildRouterState() from NodePool.CostPerHour
 	TotalKvCapacityTokens int64   // Total KV cache capacity in tokens (TotalBlocks × BlockSizeTokens); used by V2SaturationAnalyzer
 	KvTokensInUse         int64   // Current KV cache occupancy in tokens (UsedBlocks × BlockSizeTokens); used by V2SaturationAnalyzer
+	TTFT                  float64 // μs; 0 if not yet available
+	ITL                   float64 // μs; 0 if not yet available
+	DispatchRate          float64 // req/s completed by this instance; 0 if not yet available
+	AvgInTokens           float64 // average input tokens per completed request; 0 if not yet available
+	AvgOutTokens          float64 // average output tokens per completed request; 0 if not yet available
+	MaxBatchSize          float64 // server-configured max batch size; 0 if not yet available
 }
 
 // EffectiveLoad returns the total effective load on this instance:
