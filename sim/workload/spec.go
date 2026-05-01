@@ -90,8 +90,9 @@ type DiurnalSpec struct {
 // SpikeSpec configures a traffic spike as a lifecycle window.
 // Clients are active during [StartTimeUs, StartTimeUs+DurationUs).
 type SpikeSpec struct {
-	StartTimeUs int64 `yaml:"start_time_us"`
-	DurationUs  int64 `yaml:"duration_us"`
+	StartTimeUs int64    `yaml:"start_time_us"`
+	DurationUs  int64    `yaml:"duration_us"`
+	TraceRate   *float64 `yaml:"trace_rate,omitempty"` // Cohort-level rate for absolute mode
 }
 
 // DrainSpec configures a linear ramp-down to zero rate.

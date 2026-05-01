@@ -8,6 +8,52 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+func TestSpikeSpec_YAMLParsing_WithTraceRate_ParsesCorrectly(t *testing.T) {
+	yamlStr := `
+spike:
+  start_time_us: 300000000
+  duration_us: 600000000
+  trace_rate: 7.6
+`
+	var result struct {
+		Spike *SpikeSpec `yaml:"spike"`
+	}
+	err := yaml.Unmarshal([]byte(yamlStr), &result)
+	if err != nil {
+		t.Fatalf("failed to parse YAML: %v", err)
+	}
+	if result.Spike == nil {
+		t.Fatal("Spike is nil")
+	}
+	if result.Spike.TraceRate == nil {
+		t.Fatal("TraceRate is nil; expected non-nil pointer")
+	}
+	if *result.Spike.TraceRate != 7.6 {
+		t.Errorf("TraceRate = %v; expected 7.6", *result.Spike.TraceRate)
+	}
+}
+
+func TestSpikeSpec_YAMLParsing_WithoutTraceRate_IsNil(t *testing.T) {
+	yamlStr := `
+spike:
+  start_time_us: 300000000
+  duration_us: 600000000
+`
+	var result struct {
+		Spike *SpikeSpec `yaml:"spike"`
+	}
+	err := yaml.Unmarshal([]byte(yamlStr), &result)
+	if err != nil {
+		t.Fatalf("failed to parse YAML: %v", err)
+	}
+	if result.Spike == nil {
+		t.Fatal("Spike is nil")
+	}
+	if result.Spike.TraceRate != nil {
+		t.Errorf("TraceRate = %v; expected nil (omitempty)", *result.Spike.TraceRate)
+	}
+}
+
 func TestCohortValidation_ZeroPopulation_ReturnsError(t *testing.T) {
 	spec := &WorkloadSpec{
 		Version:       "2",
