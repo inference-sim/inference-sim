@@ -82,6 +82,16 @@ type serveGenTraceRow struct {
 	scaleParam   float64
 }
 
+// ServeGen Day 1 time period boundaries (in seconds since midnight)
+const (
+	midnightSpanStart  = 0     // 00:00
+	midnightSpanEnd    = 1800  // 00:30
+	morningSpanStart   = 28800 // 08:00
+	morningSpanEnd     = 30600 // 08:30
+	afternoonSpanStart = 50400 // 14:00
+	afternoonSpanEnd   = 52200 // 14:30
+)
+
 // periodInfo holds metadata for one time period (midnight, morning, afternoon).
 type periodInfo struct {
 	name        string // "midnight", "morning", "afternoon"
@@ -113,28 +123,28 @@ func loadServeGenData(spec *WorkloadSpec) error {
 	rng := rand.New(rand.NewSource(spec.Seed))
 
 	// Define three time periods (ServeGen Day 1 spans 0-86400s; each period is 30 minutes)
-	// Midnight: 0:00-0:30 (0-1800s), Morning: 8:00-8:30 (28800-30600s), Afternoon: 14:00-14:30 (50400-52200s)
+	// startUs values create gaps between periods for drain timeout
 	periods := []periodInfo{
 		{
 			name:       "midnight",
 			startUs:    0,
 			durationUs: int64(windowDurSec) * 1e6,
-			spanStart:  0,
-			spanEnd:    1800,
+			spanStart:  midnightSpanStart,
+			spanEnd:    midnightSpanEnd,
 		},
 		{
 			name:       "morning",
 			startUs:    int64(windowDurSec+drainSec) * 1e6,
 			durationUs: int64(windowDurSec) * 1e6,
-			spanStart:  28800,
-			spanEnd:    30600,
+			spanStart:  morningSpanStart,
+			spanEnd:    morningSpanEnd,
 		},
 		{
 			name:       "afternoon",
 			startUs:    int64(2*(windowDurSec+drainSec)) * 1e6,
 			durationUs: int64(windowDurSec) * 1e6,
-			spanStart:  50400,
-			spanEnd:    52200,
+			spanStart:  afternoonSpanStart,
+			spanEnd:    afternoonSpanEnd,
 		},
 	}
 
