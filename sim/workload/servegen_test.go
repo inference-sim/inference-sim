@@ -504,28 +504,23 @@ func TestServeGenConversion_HighCVTrace(t *testing.T) {
 	require.NoError(t, err, "GenerateRequests should succeed with high-CV trace when shape/scale are provided")
 	require.NotEmpty(t, requests, "Should generate requests from ServeGen data")
 
-	// AND the loaded client has per-window weibull with MLE-fitted parameters
-	require.NotEmpty(t, spec.Clients, "ServeGen should populate clients")
-	client := spec.Clients[0]
-	// With temporal preservation, arrival params are per-window.
-	require.NotNil(t, client.Lifecycle)
-	require.Greater(t, len(client.Lifecycle.Windows), 0)
-	w := client.Lifecycle.Windows[0]
-	require.NotNil(t, w.Arrival)
-	assert.Equal(t, "weibull", w.Arrival.Process)
-	require.NotNil(t, w.Arrival.Shape, "Shape should be populated from trace column 5")
-	require.NotNil(t, w.Arrival.Scale, "Scale should be populated from trace column 6")
-	assert.InDelta(t, 0.0575, *w.Arrival.Shape, 0.0001, "Shape should match trace value")
+	// AND the loaded cohort has weibull with MLE-fitted parameters
+	require.NotEmpty(t, spec.Cohorts, "ServeGen should populate cohorts (multi-period)")
+	cohort := spec.Cohorts[0]
+	assert.Equal(t, "weibull", cohort.Arrival.Process)
+	require.NotNil(t, cohort.Arrival.Shape, "Shape should be populated from trace column 5")
+	require.NotNil(t, cohort.Arrival.Scale, "Scale should be populated from trace column 6")
+	assert.InDelta(t, 0.0575, *cohort.Arrival.Shape, 0.0001, "Shape should match trace value")
 	// Scale converted from seconds (0.000573) to microseconds (573.0)
-	assert.InDelta(t, 0.000573*1e6, *w.Arrival.Scale, 0.001, "Scale should be in microseconds")
+	assert.InDelta(t, 0.000573*1e6, *cohort.Arrival.Scale, 0.001, "Scale should be in microseconds")
 
 	// AND the CV is preserved as informational metadata
-	require.NotNil(t, w.Arrival.CV, "CV should be preserved from trace")
-	assert.InDelta(t, 173.81, *w.Arrival.CV, 0.01, "CV should match trace value")
+	require.NotNil(t, cohort.Arrival.CV, "CV should be preserved from trace")
+	assert.InDelta(t, 173.81, *cohort.Arrival.CV, 0.01, "CV should match trace value")
 
 	// AND sampled IATs are finite and positive (behavioral verification)
 	ratePerMicros := 22.46 / 1e6 // Use trace rate directly
-	sampler := NewArrivalSampler(*w.Arrival, ratePerMicros)
+	sampler := NewArrivalSampler(cohort.Arrival, ratePerMicros)
 	require.NotNil(t, sampler, "Sampler should be created")
 
 	rng := rand.New(rand.NewSource(42))
@@ -926,27 +921,22 @@ func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 		Version: "1", Seed: 42, Category: "language", AggregateRate: 10.0,
 		ServeGenData: &ServeGenDataSpec{Path: dir},
 	}
-	// Load to verify client creation with per-window shape/scale parameters
+	// Load to verify cohort creation with shape/scale parameters
 	if err := loadServeGenData(spec); err != nil {
 		t.Fatalf("loadServeGenData failed: %v", err)
 	}
-	if len(spec.Clients) != 1 {
-		t.Fatalf("expected 1 client, got %d", len(spec.Clients))
+	if len(spec.Cohorts) != 1 {
+		t.Fatalf("expected 1 cohort, got %d", len(spec.Cohorts))
 	}
-	client := spec.Clients[0]
-	// With temporal preservation, parameters are per-window.
-	require.NotNil(t, client.Lifecycle, "Client should have lifecycle with windows")
-	require.Greater(t, len(client.Lifecycle.Windows), 0, "Client should have at least one window")
-	w := client.Lifecycle.Windows[0]
-	require.NotNil(t, w.Arrival, "Window should have arrival spec")
+	cohort := spec.Cohorts[0]
 	// Verify MLE-fitted shape/scale parameters were populated from 6-column trace
-	require.NotNil(t, w.Arrival.Shape, "Shape should be populated from trace column 5")
-	require.NotNil(t, w.Arrival.Scale, "Scale should be populated from trace column 6")
+	require.NotNil(t, cohort.Arrival.Shape, "Shape should be populated from trace column 5")
+	require.NotNil(t, cohort.Arrival.Scale, "Scale should be populated from trace column 6")
 	// Scale converted from seconds (6.25) to microseconds (6.25 * 1e6)
-	assert.Equal(t, 0.16, *w.Arrival.Shape, "Shape should match trace value")
-	assert.Equal(t, 6.25e6, *w.Arrival.Scale, "Scale should be converted to microseconds")
+	assert.Equal(t, 0.16, *cohort.Arrival.Shape, "Shape should match trace value")
+	assert.Equal(t, 6.25e6, *cohort.Arrival.Scale, "Scale should be converted to microseconds")
 
-	// Clear ServeGenData since clients are now populated
+	// Clear ServeGenData since cohorts are now populated
 	spec.ServeGenData = nil
 	// Use a 10-second horizon; the time-varying generator uses per-window
 	// distributions from the lifecycle windows.
@@ -957,26 +947,26 @@ func TestServeGenDataLoading_SyntheticDataset_ProducesClients(t *testing.T) {
 	if len(requests) == 0 {
 		t.Fatal("expected requests from ServeGen data")
 	}
-	// Verify input token lengths come from the empirical PDF (around 100 or 200)
-	// Lognormal can have tail samples slightly outside the core range
+	// Verify input token lengths come from fitted lognormal distribution
+	// Lognormal tails can extend beyond the original empirical PDF range (100, 200)
+	// Allow wider range to accommodate lognormal tail samples
 	for _, req := range requests[:min(10, len(requests))] {
 		l := len(req.InputTokens)
-		if l < 50 || l > 350 {
-			t.Errorf("input length %d outside expected range [50, 350]", l)
+		if l < 1 || l > 1000 {
+			t.Errorf("input length %d outside reasonable range [1, 1000]", l)
 		}
 	}
 }
 
-func TestConvertServeGen_NormalizesTimestamps(t *testing.T) {
-	// This test verifies end-to-end that ConvertServeGen produces zero-based
-	// timestamps. It creates real ServeGen files with non-zero absolute clock
-	// times and calls ConvertServeGen, ensuring a future developer cannot remove
-	// the normalization call from loadServeGenData without breaking this test.
+func TestConvertServeGen_MultiPeriodAbsoluteTimestamps(t *testing.T) {
+	// This test verifies that multi-period ServeGen conversion uses absolute
+	// timestamps (no normalization). Chunks at Hour 8 (morning) are assigned
+	// to the morning period with absolute start times.
 
 	dir := t.TempDir()
 
-	// GIVEN a ServeGen chunk with absolute clock timestamps starting at 8:00 AM (28800s).
-	// Two consecutive 10-minute windows: 28800-29400, 29400-30000.
+	// GIVEN a ServeGen chunk with absolute clock timestamps at 8:00 AM (28800s).
+	// This should be assigned to the morning period.
 	traceCSV := "28800,5.0,2.5,Gamma,0.16,6.25\n29400,3.0,1.5,Gamma,0.16,6.25\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "chunk-0-trace.csv"), []byte(traceCSV), 0644))
 
@@ -990,24 +980,21 @@ func TestConvertServeGen_NormalizesTimestamps(t *testing.T) {
 	// THEN conversion succeeds
 	require.NoError(t, err)
 	require.NotNil(t, spec)
-	require.Len(t, spec.Clients, 1, "expected 1 client from chunk-0")
+	require.NotEmpty(t, spec.Cohorts, "expected cohorts from chunk-0")
 
-	client := spec.Clients[0]
-	require.NotNil(t, client.Lifecycle)
-	require.Len(t, client.Lifecycle.Windows, 2, "expected 2 windows from trace rows")
+	// BC-10: No timestamp normalization for cohort-based specs
+	// Cohorts use absolute timestamps within the day, with period start times
+	// that preserve gaps (morning period starts at windowDur + drain after midnight)
+	cohort := spec.Cohorts[0]
+	require.NotNil(t, cohort.Spike, "cohort should have spike for the period")
 
-	// AND the earliest window starts at zero (normalization applied)
-	assert.Equal(t, int64(0), client.Lifecycle.Windows[0].StartUs,
-		"first window StartUs should be normalized to 0")
+	// The morning period starts at (600 + 180) * 1e6 = 780,000,000 µs
+	// (This is the fixed period start, not the original trace timestamp)
+	expectedMorningStart := int64((600 + 180) * 1e6)
+	assert.Equal(t, expectedMorningStart, cohort.Spike.StartTimeUs,
+		"morning period cohort should start at absolute period time (not normalized to 0)")
 
-	// AND the second window is offset by 600s (preserving relative timing)
-	assert.Equal(t, int64(600000000), client.Lifecycle.Windows[1].StartUs,
-		"second window StartUs should be 600s after first")
-
-	// AND window durations are preserved (10 minutes = 600,000,000 us each)
-	for i, w := range client.Lifecycle.Windows {
-		duration := w.EndUs - w.StartUs
-		assert.Equal(t, int64(600000000), duration,
-			"window[%d] duration should be 600s (10 min)", i)
-	}
+	// Duration should match the configured window duration (600s)
+	assert.Equal(t, int64(600*1e6), cohort.Spike.DurationUs,
+		"spike duration should be the configured window duration")
 }

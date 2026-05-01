@@ -241,8 +241,28 @@ func loadServeGenData(spec *WorkloadSpec) error {
 		}
 	}
 
+	// BC-7: Sort cohort keys for deterministic ordering
+	// Iterate by period index first, then by SLO class (alphabetical)
+	type sortableKey struct {
+		period   int
+		sloClass string
+	}
+	var keys []sortableKey
+	for key := range cohortGroups {
+		keys = append(keys, sortableKey{period: key.period, sloClass: key.sloClass})
+	}
+	// Sort by period, then by SLO class
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].period != keys[j].period {
+			return keys[i].period < keys[j].period
+		}
+		return keys[i].sloClass < keys[j].sloClass
+	})
+
 	// BC-8: Build cohorts (skip empty groups)
-	for key, chunks := range cohortGroups {
+	for _, sortedKey := range keys {
+		key := cohortKey{period: sortedKey.period, sloClass: sortedKey.sloClass}
+		chunks := cohortGroups[key]
 		if len(chunks) == 0 {
 			continue
 		}
@@ -255,10 +275,13 @@ func loadServeGenData(spec *WorkloadSpec) error {
 		var totalRate float64
 		var hasInputDist, hasOutputDist bool
 
-		// Use first chunk's arrival spec as template
+		// Use first chunk's first window's arrival spec as template
+		// (old loadServeGenChunk puts arrival params in window.Arrival, not client.Arrival)
 		var arrivalSpec ArrivalSpec
-		if len(chunks) > 0 && chunks[0].client != nil {
-			arrivalSpec = chunks[0].client.Arrival
+		if len(chunks) > 0 && chunks[0].client != nil && chunks[0].client.Lifecycle != nil && len(chunks[0].client.Lifecycle.Windows) > 0 {
+			if chunks[0].client.Lifecycle.Windows[0].Arrival != nil {
+				arrivalSpec = *chunks[0].client.Lifecycle.Windows[0].Arrival
+			}
 		}
 
 		for _, chunk := range chunks {
@@ -303,24 +326,30 @@ func loadServeGenData(spec *WorkloadSpec) error {
 			avgSigmaOutput = sumSigmaOutput / n
 		}
 
-		// BC-1, BC-5, BC-6: Build CohortSpec
-		cohort := CohortSpec{
-			ID:           cohortID,
-			Population:   len(chunks),
-			SLOClass:     key.sloClass,
-			Streaming:    true, // ServeGen traces are streaming
-			RateFraction: 1.0,  // Unused in absolute rate mode
-			Arrival:      arrivalSpec,
-			Spike: &SpikeSpec{
-				StartTimeUs: period.startUs,
-				DurationUs:  period.durationUs,
-				TraceRate:   &totalRate,
+		// BC-1, BC-5, BC-6: Build CohortSpec with default distributions
+		// InputDist and OutputDist are non-pointer fields, so must always have valid Type
+		inputDist := DistSpec{
+			Type: "gaussian",
+			Params: map[string]float64{
+				"mean":    512,
+				"std_dev": 128,
+				"min":     1,
+				"max":     32768,
+			},
+		}
+		outputDist := DistSpec{
+			Type: "gaussian",
+			Params: map[string]float64{
+				"mean":    128,
+				"std_dev": 32,
+				"min":     1,
+				"max":     32768,
 			},
 		}
 
-		// Only set distributions if we have valid data
+		// Override with lognormal if we have fitted data from chunks
 		if hasInputDist {
-			cohort.InputDist = DistSpec{
+			inputDist = DistSpec{
 				Type: "lognormal",
 				Params: map[string]float64{
 					"mu":    avgMuInput,
@@ -329,13 +358,29 @@ func loadServeGenData(spec *WorkloadSpec) error {
 			}
 		}
 		if hasOutputDist {
-			cohort.OutputDist = DistSpec{
+			outputDist = DistSpec{
 				Type: "lognormal",
 				Params: map[string]float64{
 					"mu":    avgMuOutput,
 					"sigma": avgSigmaOutput,
 				},
 			}
+		}
+
+		cohort := CohortSpec{
+			ID:           cohortID,
+			Population:   len(chunks),
+			SLOClass:     key.sloClass,
+			Streaming:    true, // ServeGen traces are streaming
+			RateFraction: 1.0,  // Unused in absolute rate mode
+			Arrival:      arrivalSpec,
+			InputDist:    inputDist,
+			OutputDist:   outputDist,
+			Spike: &SpikeSpec{
+				StartTimeUs: period.startUs,
+				DurationUs:  period.durationUs,
+				TraceRate:   &totalRate,
+			},
 		}
 
 		spec.Cohorts = append(spec.Cohorts, cohort)
