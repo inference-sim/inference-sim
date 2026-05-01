@@ -178,6 +178,10 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 	if cs.flowControlEnabled {
 		e.request.GatewayEnqueueTime = cs.clock
 		outcome, victim := cs.gatewayQueue.Enqueue(e.request, cs.nextSeqID())
+		// Trace gap: RecordAdmission above already wrote Admitted:true for any request
+		// that reaches the gateway queue. No trace.RoutingRecord is emitted for requests
+		// subsequently rejected or shed from the queue. Trace consumers must not assume
+		// all Admitted:true requests have routing records when flow control is enabled.
 		switch outcome {
 		case Rejected:
 			logrus.Debugf("[cluster] req %s: admitted but rejected by gateway queue (full, incoming could not displace any entry)", e.request.ID)
@@ -186,9 +190,8 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 			// NOT added to cs.rejectedRequests — that tracks admission rejections only.
 			// Gateway rejections are a separate INV-1 bucket (mutual exclusivity: the
 			// !admitted path returns early before reaching this flow-control block).
-			// Trace gap: RecordAdmission above already wrote Admitted:true for this request.
-			// No correction record is emitted here. Trace consumers must not assume all
-			// Admitted:true requests have routing records when flow control is enabled.
+			// No trace.RoutingRecord is emitted for this request. Counted in
+			// GatewayQueueRejected() (gw_rejected, INV-1), not in rejectedRequests.
 			return
 		case ShedVictim:
 			if victim == nil {
