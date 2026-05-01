@@ -1769,6 +1769,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#adding-fields-to-tracev2-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding Fields to TraceV2 Format
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#adding-new-latency-model-backends" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2792,6 +2803,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#adding-fields-to-tracev2-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding Fields to TraceV2 Format
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#adding-new-latency-model-backends" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2946,6 +2968,30 @@
 - See <code>AdmissionRecord</code> in <code>sim/trace/record.go</code> for a simple record
 - See <code>RoutingRecord</code> with <code>CandidateScore</code> for a record with nested counterfactual data
 - See <code>computeCounterfactual()</code> in <code>sim/cluster/counterfactual.go</code> for derived computation that lives in <code>sim/cluster/</code> (not <code>sim/trace/</code>) because it needs <code>sim.RoutingSnapshot</code></p>
+<h2 id="adding-fields-to-tracev2-format">Adding Fields to TraceV2 Format<a class="headerlink" href="#adding-fields-to-tracev2-format" title="Permanent link">&para;</a></h2>
+<p>To add a new field to TraceV2 CSV output (e.g., observability metadata like <code>vllm_priority</code>):</p>
+<ol>
+<li><strong>Add field to <code>TraceRecord</code></strong> in <code>sim/workload/tracev2.go</code> (place logically near related fields)</li>
+<li><strong>Add field to <code>RequestRecord</code></strong> in <code>cmd/observe.go</code> (if captured during observation)</li>
+<li><strong>Capture the value</strong> in <code>RealClient.Send()</code> in <code>cmd/observe.go</code> (set field on <code>RequestRecord</code>)</li>
+<li><strong>Wire through Recorder</strong> in <code>cmd/observe.go</code>: Update <code>RecordRequest()</code> to copy field from <code>RequestRecord</code> to <code>TraceRecord</code></li>
+<li><strong>Update ExportTraceV2</strong> in <code>sim/workload/tracev2.go</code>:</li>
+<li>For <strong>optional columns</strong>: scan records to determine if column is needed, conditionally add to header, conditionally write values</li>
+<li>For <strong>always-present columns</strong>: add to <code>traceV2Columns</code> slice and write in row construction</li>
+<li><strong>Update LoadTraceV2/parseTraceRecord</strong> in <code>sim/workload/tracev2.go</code>:</li>
+<li>For <strong>optional columns</strong>: detect column presence from CSV header, apply offset to subsequent column indices</li>
+<li>For <strong>always-present columns</strong>: parse at fixed index, update all downstream indices</li>
+<li><strong>Enforce simulation isolation</strong> (if observability-only): Verify <code>LoadTraceV2Requests</code> and <code>LoadTraceV2SessionBlueprints</code> do NOT read the field into <code>sim.Request</code> — add tests for this</li>
+<li><strong>Add behavioral tests</strong> covering round-trip, conditional logic, and simulation isolation</li>
+</ol>
+<p><strong>Column position guidelines:</strong>
+- Observability metadata: place near related fields (e.g., <code>vllm_priority</code> after <code>slo_class</code>)
+- Timing data: group with other timestamps
+- Optional columns: prefer conditional inclusion over always-writing zero values</p>
+<p>Examples:
+- See PR #1220 (<code>VLLMPriority</code>) — optional column, simulation-isolated, conditional on SLOClass presence
+- See <code>FinishReason</code>/<code>ErrorMessage</code> fields — always-present optional strings (empty when not set)
+- See <code>ServerInputTokens</code> field — observability metadata that differs from <code>InputTokens</code></p>
 <h2 id="adding-new-latency-model-backends">Adding New Latency Model Backends<a class="headerlink" href="#adding-new-latency-model-backends" title="Permanent link">&para;</a></h2>
 <p>To add a new latency estimation backend (e.g., SGLang RadixAttention, TensorRT-LLM, neural surrogate):</p>
 <ol>
