@@ -8,12 +8,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/sirupsen/logrus"
 )
 
@@ -1700,5 +1702,126 @@ func TestRealClient_Send_VLLMPriority_Captured(t *testing.T) {
 	// THEN VLLMPriority should be 0 (not set)
 	if record3.VLLMPriority != 0 {
 		t.Errorf("VLLMPriority: got %d, want 0 (empty SLOClass)", record3.VLLMPriority)
+	}
+}
+
+func TestObserveRecorder_VLLMPriority_EndToEndFlow(t *testing.T) {
+	// BC-7: End-to-end test verifying vllm_priority flows from RealClient.Send()
+	// through Recorder.RecordRequest() to TraceRecord, then through ExportTraceV2 to CSV,
+	// and finally back through LoadTraceV2.
+	
+	// Setup: mock server
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		response := map[string]interface{}{
+			"id":      "test-id",
+			"object":  "text_completion",
+			"created": 1234567890,
+			"model":   "test-model",
+			"choices": []map[string]interface{}{
+				{
+					"text":          "test output",
+					"index":         0,
+					"finish_reason": "stop",
+				},
+			},
+			"usage": map[string]interface{}{
+				"prompt_tokens":     100,
+				"completion_tokens": 50,
+				"total_tokens":      150,
+			},
+		}
+		json.NewEncoder(w).Encode(response)
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	// Create RealClient
+	sloMap := sim.DefaultSLOPriorityMap()
+	client := &RealClient{
+		baseURL:    server.URL,
+		modelName:  "test-model",
+		httpClient: &http.Client{Timeout: 5 * time.Second},
+		apiFormat:  "completions",
+		sloMap:     sloMap,
+	}
+
+	// Create Recorder
+	recorder := &Recorder{}
+
+	// Send request with SLOClass
+	pending := &PendingRequest{
+		RequestID:       1,
+		ClientID:        "c1",
+		TenantID:        "t1",
+		SLOClass:        "critical",
+		Prompt:          "test prompt",
+		MaxOutputTokens: 100,
+		Streaming:       false,
+	}
+
+	ctx := context.Background()
+	record, err := client.Send(ctx, pending)
+	if err != nil {
+		t.Fatalf("Send() error: %v", err)
+	}
+
+	// Verify RealClient captured VLLMPriority (BC-2)
+	expectedPriority := sloMap.InvertForVLLM("critical")
+	if record.VLLMPriority != expectedPriority {
+		t.Errorf("RealClient VLLMPriority: got %d, want %d", record.VLLMPriority, expectedPriority)
+	}
+
+	// Record the result
+	recorder.RecordRequest(pending, record, time.Now().UnixMicro(), "", 0)
+
+	// Get trace records
+	traceRecords := recorder.Records()
+	if len(traceRecords) != 1 {
+		t.Fatalf("len(traceRecords)=%d, want 1", len(traceRecords))
+	}
+
+	// Verify VLLMPriority was copied to TraceRecord
+	if traceRecords[0].VLLMPriority != expectedPriority {
+		t.Errorf("TraceRecord VLLMPriority: got %d, want %d", traceRecords[0].VLLMPriority, expectedPriority)
+	}
+
+	// Export to CSV
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	dataPath := filepath.Join(dir, "data.csv")
+	header := &workload.TraceHeader{
+		Version:  2,
+		TimeUnit: "microseconds",
+		Mode:     "real",
+	}
+	if err := recorder.Export(header, headerPath, dataPath); err != nil {
+		t.Fatalf("Export error: %v", err)
+	}
+
+	// Load back from CSV
+	loaded, err := workload.LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatalf("LoadTraceV2 error: %v", err)
+	}
+	if len(loaded.Records) != 1 {
+		t.Fatalf("len(loaded.Records)=%d, want 1", len(loaded.Records))
+	}
+
+	// Verify VLLMPriority survived round-trip (BC-4)
+	if loaded.Records[0].VLLMPriority != expectedPriority {
+		t.Errorf("Loaded VLLMPriority: got %d, want %d", loaded.Records[0].VLLMPriority, expectedPriority)
+	}
+
+	// Verify simulation isolation: LoadTraceV2Requests must NOT read VLLMPriority (BC-5)
+	requests, err := workload.LoadTraceV2Requests(loaded, 42)
+	if err != nil {
+		t.Fatalf("LoadTraceV2Requests error: %v", err)
+	}
+	if len(requests) != 1 {
+		t.Fatalf("len(requests)=%d, want 1", len(requests))
+	}
+	if requests[0].Priority != 0 {
+		t.Errorf("Request Priority=%f, want 0 (simulation isolation)", requests[0].Priority)
 	}
 }
