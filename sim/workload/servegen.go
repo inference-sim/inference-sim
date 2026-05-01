@@ -315,11 +315,17 @@ func loadServeGenData(spec *WorkloadSpec) error {
 				}
 			}
 
-			// BC-4: Sum rates from all windows
+			// BC-5: Sum rates from windows overlapping this period
 			if chunk.client.Lifecycle != nil {
 				for _, window := range chunk.client.Lifecycle.Windows {
-					if window.TraceRate != nil {
-						totalRate += *window.TraceRate
+					windowStartSec := window.StartUs / 1e6
+					windowEndSec := window.EndUs / 1e6
+
+					// Only include windows that overlap with this period's selected window
+					if windowStartSec < period.windowEnd && windowEndSec > period.windowStart {
+						if window.TraceRate != nil {
+							totalRate += *window.TraceRate
+						}
 					}
 				}
 			}
