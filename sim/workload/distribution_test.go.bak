@@ -1,0 +1,639 @@
+package workload
+
+import (
+	"math"
+	"math/rand"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/inference-sim/inference-sim/sim"
+)
+
+func TestGaussianSampler_MeanMatchesParam(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	s, err := NewLengthSampler(DistSpec{
+		Type:   "gaussian",
+		Params: map[string]float64{"mean": 512, "std_dev": 128, "min": 10, "max": 4096},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 10000
+	sum := 0
+	for i := 0; i < n; i++ {
+		sum += s.Sample(rng)
+	}
+	mean := float64(sum) / float64(n)
+	if math.Abs(mean-512)/512 > 0.05 {
+		t.Errorf("gaussian mean = %.1f, want ≈ 512 (within 5%%)", mean)
+	}
+}
+
+func TestGaussianSampler_ClampedToRange(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	s, err := NewLengthSampler(DistSpec{
+		Type:   "gaussian",
+		Params: map[string]float64{"mean": 512, "std_dev": 1000, "min": 100, "max": 900},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 10000; i++ {
+		v := s.Sample(rng)
+		if v < 100 || v > 900 {
+			t.Errorf("sample %d: %d outside [100, 900]", i, v)
+			break
+		}
+	}
+}
+
+func TestExponentialSampler_MeanMatchesParam(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	s, err := NewLengthSampler(DistSpec{
+		Type:   "exponential",
+		Params: map[string]float64{"mean": 256},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 10000
+	sum := 0
+	for i := 0; i < n; i++ {
+		sum += s.Sample(rng)
+	}
+	mean := float64(sum) / float64(n)
+	if math.Abs(mean-256)/256 > 0.05 {
+		t.Errorf("exponential mean = %.1f, want ≈ 256 (within 5%%)", mean)
+	}
+}
+
+func TestExponentialSampler_AlwaysPositive(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	s, err := NewLengthSampler(DistSpec{
+		Type:   "exponential",
+		Params: map[string]float64{"mean": 10},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 10000; i++ {
+		if v := s.Sample(rng); v < 1 {
+			t.Errorf("sample %d: got %d, want >= 1", i, v)
+			break
+		}
+	}
+}
+
+func TestParetoLogNormalSampler_ProducesPositiveValues(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	s, err := NewLengthSampler(DistSpec{
+		Type: "pareto_lognormal",
+		Params: map[string]float64{
+			"alpha": 1.5, "xm": 50, "mu": 5.5, "sigma": 1.2, "mix_weight": 0.3,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 1000; i++ {
+		v := s.Sample(rng)
+		if v < 1 {
+			t.Errorf("sample %d: got %d, want >= 1", i, v)
+			break
+		}
+	}
+}
+
+func TestParetoLogNormalSampler_MixWeightChangesDistribution(t *testing.T) {
+	// GIVEN two samplers with different mix_weights but same RNG seed
+	rng1 := rand.New(rand.NewSource(42))
+	s1, _ := NewLengthSampler(DistSpec{
+		Type: "pareto_lognormal",
+		Params: map[string]float64{
+			"alpha": 1.5, "xm": 50, "mu": 5.0, "sigma": 0.5, "mix_weight": 0.9,
+		},
+	})
+	rng2 := rand.New(rand.NewSource(42))
+	s2, _ := NewLengthSampler(DistSpec{
+		Type: "pareto_lognormal",
+		Params: map[string]float64{
+			"alpha": 1.5, "xm": 50, "mu": 5.0, "sigma": 0.5, "mix_weight": 0.1,
+		},
+	})
+	// WHEN samples are drawn
+	n := 10000
+	sum1, sum2 := 0, 0
+	for i := 0; i < n; i++ {
+		sum1 += s1.Sample(rng1)
+		sum2 += s2.Sample(rng2)
+	}
+	// THEN different mix weights produce different means (behavioral: distribution changes)
+	mean1 := float64(sum1) / float64(n)
+	mean2 := float64(sum2) / float64(n)
+	if mean1 == mean2 {
+		t.Errorf("different mix weights should produce different means, both = %.0f", mean1)
+	}
+}
+
+func TestEmpiricalPDFSampler_ReproducesDistribution(t *testing.T) {
+	// GIVEN a simple empirical PDF: {10: 0.5, 20: 0.5}
+	rng := rand.New(rand.NewSource(42))
+	pdf := map[int]float64{10: 0.5, 20: 0.5}
+	s := NewEmpiricalPDFSampler(pdf)
+
+	// WHEN 10000 samples drawn
+	n := 10000
+	counts := make(map[int]int)
+	for i := 0; i < n; i++ {
+		v := s.Sample(rng)
+		counts[v]++
+	}
+
+	// THEN each value appears ~50% of the time (within 5%)
+	frac10 := float64(counts[10]) / float64(n)
+	if math.Abs(frac10-0.5) > 0.05 {
+		t.Errorf("P(10) = %.3f, want ≈ 0.5", frac10)
+	}
+}
+
+func TestEmpiricalPDFSampler_SingleBin_AlwaysReturnsThatValue(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	pdf := map[int]float64{42: 1.0}
+	s := NewEmpiricalPDFSampler(pdf)
+	for i := 0; i < 100; i++ {
+		if v := s.Sample(rng); v != 42 {
+			t.Errorf("sample %d: got %d, want 42", i, v)
+		}
+	}
+}
+
+func TestEmpiricalPDFSampler_NonNormalized_NormalizesAutomatically(t *testing.T) {
+	// GIVEN probabilities that sum to 2.0 (not 1.0)
+	rng := rand.New(rand.NewSource(42))
+	pdf := map[int]float64{10: 1.0, 20: 1.0}
+	s := NewEmpiricalPDFSampler(pdf)
+	counts := make(map[int]int)
+	n := 10000
+	for i := 0; i < n; i++ {
+		counts[s.Sample(rng)]++
+	}
+	frac := float64(counts[10]) / float64(n)
+	if frac < 0.45 || frac > 0.55 {
+		t.Errorf("P(10) = %.3f, want ≈ 0.5 (non-normalized input should auto-normalize)", frac)
+	}
+}
+
+func TestNewLengthSampler_EmptyEmpiricalPDF_ReturnsError(t *testing.T) {
+	_, err := NewLengthSampler(DistSpec{Type: "empirical"})
+	if err == nil {
+		t.Fatal("expected error for empty empirical PDF")
+	}
+}
+
+func TestConstantSampler_AlwaysReturnsExactValue(t *testing.T) {
+	// BC-6: constant distribution always returns exact value
+	sampler, err := NewLengthSampler(DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 447},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	rng := rand.New(rand.NewSource(42))
+	for i := 0; i < 1000; i++ {
+		got := sampler.Sample(rng)
+		if got != 447 {
+			t.Fatalf("iteration %d: got %d, want 447", i, got)
+		}
+	}
+}
+
+func TestConstantSampler_ValueOne_ReturnsOne(t *testing.T) {
+	// Edge: minimum valid constant
+	sampler, err := NewLengthSampler(DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 1},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rng := rand.New(rand.NewSource(99))
+	if got := sampler.Sample(rng); got != 1 {
+		t.Errorf("got %d, want 1", got)
+	}
+}
+
+func TestConstantSampler_ZeroValue_ReturnsOne(t *testing.T) {
+	// Edge: zero value clamped to minimum of 1
+	sampler, err := NewLengthSampler(DistSpec{
+		Type:   "constant",
+		Params: map[string]float64{"value": 0},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rng := rand.New(rand.NewSource(99))
+	if got := sampler.Sample(rng); got != 1 {
+		t.Errorf("got %d, want 1 (clamped)", got)
+	}
+}
+
+// TestParetoLogNormalSampler_ZeroUniform_NoOverflow verifies BC-9:
+// extreme u values produce valid (finite, positive) samples.
+func TestParetoLogNormalSampler_ZeroUniform_NoOverflow(t *testing.T) {
+	// The Pareto formula xm/u^(1/alpha) can produce +Inf for very small u.
+	// The sampler guards against this by returning 1 for Inf/NaN results.
+	s := &ParetoLogNormalSampler{alpha: 1.0, xm: 100.0, mu: 0, sigma: 1, mixWeight: 1.0}
+	rng := rand.New(rand.NewSource(42))
+	// Run many samples; none should panic or return non-positive
+	for i := 0; i < 1000; i++ {
+		result := s.Sample(rng)
+		if result < 1 {
+			t.Errorf("sample %d returned %d, want >= 1", i, result)
+		}
+	}
+}
+
+func TestNewLengthSampler_InvalidType_ReturnsError(t *testing.T) {
+	_, err := NewLengthSampler(DistSpec{Type: "unknown"})
+	if err == nil {
+		t.Fatal("expected error for unknown distribution type")
+	}
+}
+
+// TestNewLengthSampler_MissingRequiredParams_ReturnsError verifies BC-10.
+// TestSequenceSampler_ReplayInOrder verifies BC-1:
+// values are returned in order on successive calls.
+func TestSequenceSampler_ReplayInOrder(t *testing.T) {
+	s := &SequenceSampler{values: []int{100, 200, 300}}
+	for i, want := range []int{100, 200, 300} {
+		got := s.Sample(nil)
+		if got != want {
+			t.Errorf("call %d: got %d, want %d", i, got, want)
+		}
+	}
+}
+
+// TestSequenceSampler_WrapsOnExhaustion verifies BC-2:
+// after exhaustion the sequence restarts from the beginning.
+func TestSequenceSampler_WrapsOnExhaustion(t *testing.T) {
+	s := &SequenceSampler{values: []int{10, 20}}
+	_ = s.Sample(nil) // 10
+	_ = s.Sample(nil) // 20
+	got := s.Sample(nil)
+	if got != 10 {
+		t.Errorf("wrap: got %d, want 10", got)
+	}
+}
+
+// TestSequenceSampler_SingleValue verifies that a single-element sampler
+// always returns the same value regardless of call count.
+func TestSequenceSampler_SingleValue(t *testing.T) {
+	s := &SequenceSampler{values: []int{42}}
+	for i := 0; i < 5; i++ {
+		got := s.Sample(nil)
+		if got != 42 {
+			t.Errorf("call %d: got %d, want 42", i, got)
+		}
+	}
+}
+
+// TestSequenceSampler_EmptyValues verifies that an empty SequenceSampler
+// returns 1 (minimum token count) without panicking.
+func TestSequenceSampler_EmptyValues(t *testing.T) {
+	s := &SequenceSampler{}
+	got := s.Sample(nil)
+	if got != 1 {
+		t.Errorf("empty sampler: got %d, want 1", got)
+	}
+}
+
+// --- LognormalSampler tests ---
+
+// TestLognormalSampler_MeanMatchesParams verifies BC-1:
+// E[X] = exp(mu + sigma²/2); empirical mean within 10%.
+func TestLognormalSampler_MeanMatchesParams(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	mu, sigma := 6.0, 0.5
+	s := &LognormalSampler{mu: mu, sigma: sigma}
+	expectedMean := math.Exp(mu + sigma*sigma/2)
+
+	n := 50_000
+	sum := 0
+	for i := 0; i < n; i++ {
+		sum += s.Sample(rng)
+	}
+	got := float64(sum) / float64(n)
+	if math.Abs(got-expectedMean)/expectedMean > 0.10 {
+		t.Errorf("lognormal mean = %.1f, want ≈ %.1f (within 10%%)", got, expectedMean)
+	}
+}
+
+// TestLognormalSampler_ClampedToRange verifies BC-2: all samples within [min, max].
+func TestLognormalSampler_ClampedToRange(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	s := &LognormalSampler{mu: 6.0, sigma: 2.0, min: 100, max: 2000}
+	for i := 0; i < 10_000; i++ {
+		v := s.Sample(rng)
+		if v < 100 || v > 2000 {
+			t.Errorf("sample %d: %d outside [100, 2000]", i, v)
+			break
+		}
+	}
+}
+
+// TestLognormalSampler_AlwaysPositive verifies that samples are always >= 1.
+func TestLognormalSampler_AlwaysPositive(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	s := &LognormalSampler{mu: 0.0, sigma: 0.1}
+	for i := 0; i < 10_000; i++ {
+		if v := s.Sample(rng); v < 1 {
+			t.Errorf("sample %d: got %d, want >= 1", i, v)
+			break
+		}
+	}
+}
+
+// TestLognormalSampler_ViaNewLengthSampler verifies the factory path.
+func TestLognormalSampler_ViaNewLengthSampler(t *testing.T) {
+	s, err := NewLengthSampler(DistSpec{
+		Type:   "lognormal",
+		Params: map[string]float64{"mu": 6.0, "sigma": 0.5, "min": 50, "max": 5000},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rng := rand.New(rand.NewSource(42))
+	for i := 0; i < 1000; i++ {
+		v := s.Sample(rng)
+		if v < 50 || v > 5000 {
+			t.Errorf("sample %d: %d outside [50, 5000]", i, v)
+			break
+		}
+	}
+}
+
+// TestNewLengthSampler_Lognormal_MissingMu_ReturnsError verifies required param check.
+func TestNewLengthSampler_Lognormal_MissingMu_ReturnsError(t *testing.T) {
+	_, err := NewLengthSampler(DistSpec{
+		Type:   "lognormal",
+		Params: map[string]float64{"sigma": 0.5},
+	})
+	if err == nil {
+		t.Fatal("expected error for missing mu")
+	}
+	if !strings.Contains(err.Error(), "mu") {
+		t.Errorf("error %q should mention \"mu\"", err.Error())
+	}
+}
+
+// --- ParseThinkTimeDist tests ---
+
+// TestParseThinkTimeDist_Lognormal_ProducesCorrectRange verifies BC-3:
+// samples fall within [min, max] and represent µs values.
+func TestParseThinkTimeDist_Lognormal_ProducesCorrectRange(t *testing.T) {
+	s, err := ParseThinkTimeDist("lognormal:mu=2.0,sigma=0.6,min=3s,max=30s")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rng := rand.New(rand.NewSource(42))
+	const minUs = 3_000_000
+	const maxUs = 30_000_000
+	for i := 0; i < 10_000; i++ {
+		v := s.Sample(rng)
+		if v < minUs || v > maxUs {
+			t.Errorf("sample %d: %d µs outside [%d, %d]", i, v, minUs, maxUs)
+			break
+		}
+	}
+}
+
+// TestParseThinkTimeDist_Lognormal_MedianMatchesExpected verifies the µs conversion:
+// mu=2.0 in seconds → median ≈ exp(2.0)*1e6 µs ≈ 7,389,056 µs.
+func TestParseThinkTimeDist_Lognormal_MedianMatchesExpected(t *testing.T) {
+	s, err := ParseThinkTimeDist("lognormal:mu=2.0,sigma=0.3")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rng := rand.New(rand.NewSource(42))
+	// With small sigma, empirical median ≈ exp(mu_us) = exp(2.0+ln(1e6)) µs = exp(2.0)*1e6 µs
+	expectedMedianUs := math.Exp(2.0) * 1e6
+	n := 50_000
+	samples := make([]int, n)
+	for i := range samples {
+		samples[i] = s.Sample(rng)
+	}
+	// Sort and take middle
+	sortedSamples := make([]int, n)
+	copy(sortedSamples, samples)
+	sort.Ints(sortedSamples)
+	median := float64(sortedSamples[n/2])
+	if math.Abs(median-expectedMedianUs)/expectedMedianUs > 0.05 {
+		t.Errorf("lognormal median = %.0f µs, want ≈ %.0f µs (within 5%%)", median, expectedMedianUs)
+	}
+}
+
+// TestParseThinkTimeDist_Constant_Ms verifies BC-4: constant:value=500ms → 500_000 µs.
+func TestParseThinkTimeDist_Constant_Ms(t *testing.T) {
+	s, err := ParseThinkTimeDist("constant:value=500ms")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rng := rand.New(rand.NewSource(42))
+	for i := 0; i < 10; i++ {
+		if got := s.Sample(rng); got != 500_000 {
+			t.Errorf("sample %d: got %d µs, want 500000 µs", i, got)
+		}
+	}
+}
+
+// TestParseThinkTimeDist_Constant_S verifies constant:value=2s → 2_000_000 µs.
+func TestParseThinkTimeDist_Constant_S(t *testing.T) {
+	s, err := ParseThinkTimeDist("constant:value=2s")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := s.Sample(nil); got != 2_000_000 {
+		t.Errorf("got %d µs, want 2000000 µs", got)
+	}
+}
+
+// TestParseThinkTimeDist_Constant_Us verifies constant:value=100us → 100 µs.
+func TestParseThinkTimeDist_Constant_Us(t *testing.T) {
+	s, err := ParseThinkTimeDist("constant:value=100us")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := s.Sample(nil); got != 100 {
+		t.Errorf("got %d µs, want 100 µs", got)
+	}
+}
+
+// TestParseThinkTimeDist_InvalidType_ReturnsError verifies unknown type is rejected.
+func TestParseThinkTimeDist_InvalidType_ReturnsError(t *testing.T) {
+	_, err := ParseThinkTimeDist("uniform:min=1s,max=10s")
+	if err == nil {
+		t.Fatal("expected error for unknown type")
+	}
+	if !strings.Contains(err.Error(), "uniform") {
+		t.Errorf("error %q should mention type name", err.Error())
+	}
+}
+
+// TestParseThinkTimeDist_MissingColon_ReturnsError verifies format validation.
+func TestParseThinkTimeDist_MissingColon_ReturnsError(t *testing.T) {
+	_, err := ParseThinkTimeDist("lognormal-mu=2.0")
+	if err == nil {
+		t.Fatal("expected error for missing colon")
+	}
+}
+
+// TestParseThinkTimeDist_MissingMu_ReturnsError verifies required param for lognormal.
+func TestParseThinkTimeDist_MissingMu_ReturnsError(t *testing.T) {
+	_, err := ParseThinkTimeDist("lognormal:sigma=0.6")
+	if err == nil {
+		t.Fatal("expected error for missing mu")
+	}
+	if !strings.Contains(err.Error(), "mu") {
+		t.Errorf("error %q should mention \"mu\"", err.Error())
+	}
+}
+
+// TestParseThinkTimeDist_Constant_BareNumber verifies that bare numbers (no suffix)
+// are treated as milliseconds — the same convention as --think-time-ms.
+func TestParseThinkTimeDist_Constant_BareNumber(t *testing.T) {
+	s, err := ParseThinkTimeDist("constant:value=500")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := s.Sample(nil); got != 500_000 {
+		t.Errorf("bare number: got %d µs, want 500000 µs (500ms)", got)
+	}
+}
+
+// TestParseThinkTimeDist_Lognormal_MinZero verifies that min=0 is treated as
+// "no lower bound" (s.min sentinel), not as an active clamp.
+// All samples must be >= 1 (the floor) and <= max when max is set.
+func TestParseThinkTimeDist_Lognormal_MinZero(t *testing.T) {
+	s, err := ParseThinkTimeDist("lognormal:mu=2.0,sigma=0.5,min=0s,max=30s")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rng := rand.New(rand.NewSource(99))
+	maxUs := 30_000_000
+	for i := 0; i < 1000; i++ {
+		v := s.Sample(rng)
+		if v < 1 {
+			t.Errorf("sample %d: got %d, want >= 1", i, v)
+		}
+		if v > maxUs {
+			t.Errorf("sample %d: got %d, want <= %d (30s)", i, v, maxUs)
+		}
+	}
+}
+
+// TestParseThinkTimeDist_ValidationErrors verifies that invalid inputs are
+// rejected with errors rather than silently producing degenerate samplers.
+func TestParseThinkTimeDist_ValidationErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		spec    string
+		wantErr string
+	}{
+		{"negative time value", "constant:value=-5s", "non-negative"},
+		{"infinite time value", "constant:value=Infs", "non-negative finite"},
+		{"lognormal infinite mu", "lognormal:mu=+Inf,sigma=0.6", "finite"},
+		{"lognormal NaN sigma", "lognormal:mu=2.0,sigma=NaN", "finite positive"},
+		{"lognormal negative sigma", "lognormal:mu=2.0,sigma=-0.5", "finite positive"},
+		{"lognormal zero sigma", "lognormal:mu=2.0,sigma=0", "finite positive"},
+		{"lognormal min > max", "lognormal:mu=2.0,sigma=0.6,min=30s,max=3s", "min"},
+		{"duplicate key", "lognormal:mu=2.0,sigma=0.6,mu=5.0", "duplicate key"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseThinkTimeDist(tt.spec)
+			if err == nil {
+				t.Fatalf("expected error for %q, got nil", tt.spec)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error %q should contain %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestParseThinkTimeDist_Lognormal_INV10_SessionCausality verifies that the
+// lognormal sampler always returns a positive think time, preserving INV-10:
+// round[N+1].ArrivalTime >= round[N].CompletionTime + ThinkTimeUs.
+func TestParseThinkTimeDist_Lognormal_INV10_SessionCausality(t *testing.T) {
+	s, err := ParseThinkTimeDist("lognormal:mu=2.0,sigma=0.6")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sm := NewSessionManager([]SessionBlueprint{{
+		SessionID:        "inv10-test",
+		MaxRounds:        3,
+		ThinkTimeSampler: s,
+		RNG:              rand.New(rand.NewSource(42)),
+		InputSampler:     &constantSampler{value: 10},
+		OutputSampler:    &constantSampler{value: 5},
+		Horizon:          1_000_000_000,
+	}})
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "inv10-test", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+	}
+	completionTick := int64(100_000)
+	follow := sm.OnComplete(req0, completionTick)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+	// INV-10: follow-up arrival must be >= completion + think time (>= 1 µs)
+	if follow[0].ArrivalTime < completionTick+1 {
+		t.Errorf("INV-10 violated: follow-up arrival %d < completion %d + 1",
+			follow[0].ArrivalTime, completionTick)
+	}
+}
+
+func TestNewLengthSampler_MissingRequiredParams_ReturnsError(t *testing.T) {
+	tests := []struct {
+		name    string
+		spec    DistSpec
+		wantErr string
+	}{
+		{
+			name:    "gaussian missing mean",
+			spec:    DistSpec{Type: "gaussian", Params: map[string]float64{"std_dev": 1, "min": 1, "max": 10}},
+			wantErr: "mean",
+		},
+		{
+			name:    "exponential missing mean",
+			spec:    DistSpec{Type: "exponential", Params: map[string]float64{}},
+			wantErr: "mean",
+		},
+		{
+			name:    "pareto_lognormal missing alpha",
+			spec:    DistSpec{Type: "pareto_lognormal", Params: map[string]float64{"xm": 1, "mu": 0, "sigma": 1, "mix_weight": 0.5}},
+			wantErr: "alpha",
+		},
+		{
+			name:    "constant missing value",
+			spec:    DistSpec{Type: "constant", Params: map[string]float64{}},
+			wantErr: "value",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewLengthSampler(tt.spec)
+			if err == nil {
+				t.Fatal("expected error for missing required param")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error %q should mention %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}

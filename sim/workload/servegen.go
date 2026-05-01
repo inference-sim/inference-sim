@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -81,22 +82,65 @@ type serveGenTraceRow struct {
 	scaleParam   float64
 }
 
-// loadServeGenData loads ServeGen data files and populates the spec's Clients list.
-// Scans for chunk-*-trace.csv and chunk-*-dataset.json files.
-// If TimeWindow is specified, applies 30-minute temporal filtering and computes
-// aggregate rate as peak within the window.
+// periodInfo holds metadata for one time period (midnight, morning, afternoon).
+type periodInfo struct {
+	name        string // "midnight", "morning", "afternoon"
+	startUs     int64  // Start time in microseconds
+	durationUs  int64  // Duration in microseconds
+	spanStart   int64  // ServeGen time range start (seconds)
+	spanEnd     int64  // ServeGen time range end (seconds)
+	windowStart int64  // Random 10-min window start within span (seconds)
+	windowEnd   int64  // Random 10-min window end within span (seconds)
+}
+
+// loadServeGenData loads ServeGen data files and populates the spec's Cohorts list.
+// Implements multi-period conversion: groups chunks into 3 time periods (midnight, morning, afternoon),
+// assigns to 5 SLO classes via round-robin, aggregates into CohortSpec with averaged params and summed rates.
 func loadServeGenData(spec *WorkloadSpec) error {
 	dataDir := spec.ServeGenData.Path
+	windowDurSec := spec.ServeGenData.WindowDurationSecs
+	drainSec := spec.ServeGenData.DrainTimeoutSecs
 
-	// Apply time window filtering if specified
-	if spec.ServeGenData.TimeWindow != "" {
-		start, end := getTimeWindowBounds(spec.ServeGenData.TimeWindow)
-		if start == 0 && end == 0 {
-			return fmt.Errorf("invalid time window %q (must be midnight, morning, or afternoon)", spec.ServeGenData.TimeWindow)
+	// BC-7: Deterministic RNG from spec.Seed
+	rng := rand.New(rand.NewSource(spec.Seed))
+
+	// Define three time periods (ServeGen Day 1 spans 0-86400s; each period is 30 minutes)
+	// Midnight: 0:00-0:30 (0-1800s), Morning: 8:00-8:30 (28800-30600s), Afternoon: 14:00-14:30 (50400-52200s)
+	periods := []periodInfo{
+		{
+			name:       "midnight",
+			startUs:    0,
+			durationUs: int64(windowDurSec) * 1e6,
+			spanStart:  0,
+			spanEnd:    1800,
+		},
+		{
+			name:       "morning",
+			startUs:    int64(windowDurSec+drainSec) * 1e6,
+			durationUs: int64(windowDurSec) * 1e6,
+			spanStart:  28800,
+			spanEnd:    30600,
+		},
+		{
+			name:       "afternoon",
+			startUs:    int64(2*(windowDurSec+drainSec)) * 1e6,
+			durationUs: int64(windowDurSec) * 1e6,
+			spanStart:  50400,
+			spanEnd:    52200,
+		},
+	}
+
+	// BC-2: For each period, randomly select a 10-minute window within the 30-minute span.
+	// This prevents all chunks from being assigned to the same period.
+	for i := range periods {
+		spanDur := periods[i].spanEnd - periods[i].spanStart
+		maxOffset := spanDur - int64(windowDurSec)
+		if maxOffset < 0 {
+			maxOffset = 0
 		}
-		spec.ServeGenData.SpanStart = start
-		spec.ServeGenData.SpanEnd = end
-		logrus.Infof("loadServeGenData: applying time window %q (%ds - %ds)", spec.ServeGenData.TimeWindow, start, end)
+		offset := rng.Int63n(maxOffset + 1)
+		periods[i].windowStart = periods[i].spanStart + offset
+		periods[i].windowEnd = periods[i].windowStart + int64(windowDurSec)
 	}
 
 	// Find all chunk trace files
@@ -110,65 +154,193 @@ func loadServeGenData(spec *WorkloadSpec) error {
 		return fmt.Errorf("no chunk-*-trace.csv files found in %s", dataDir)
 	}
 
-	// Track aggregate rate at each timestamp for peak calculation
-	// Map[timestamp] -> sum of rates from all chunks at that timestamp
-	aggregateRateAtTime := make(map[int64]float64)
+	// Load all chunks (no time filtering)
+	type chunkData struct {
+		id     string
+		client *ClientSpec // Temporarily use ClientSpec for loading; will convert to cohort
+	}
+	var allChunks []chunkData
 
 	for _, tracePath := range traceFiles {
-		// Derive chunk ID from filename
 		base := filepath.Base(tracePath)
-		// "chunk-0-trace.csv" → "0"
 		chunkID := strings.TrimPrefix(base, "chunk-")
 		chunkID = strings.TrimSuffix(chunkID, "-trace.csv")
 
-		// Load corresponding dataset
 		datasetPath := filepath.Join(dataDir, fmt.Sprintf("chunk-%s-dataset.json", chunkID))
 
-		client, err := loadServeGenChunk(chunkID, tracePath, datasetPath, spec.ServeGenData)
+		// Load chunk without time filtering (pass empty ServeGenDataSpec with just path)
+		client, err := loadServeGenChunk(chunkID, tracePath, datasetPath, &ServeGenDataSpec{Path: dataDir})
 		if err != nil {
 			return fmt.Errorf("loading chunk %s: %w", chunkID, err)
 		}
 		if client != nil {
-			spec.Clients = append(spec.Clients, *client)
-
-			// Accumulate this chunk's rate at each timestamp for peak calculation
-			for _, window := range client.Lifecycle.Windows {
-				if window.TraceRate != nil {
-					timestamp := window.StartUs / 1e6 // Convert to seconds
-					aggregateRateAtTime[timestamp] += *window.TraceRate
-				}
-			}
-		} else {
-			logrus.Warnf("loadServeGenData: chunk %s produced no active windows (no matching dataset entries)", chunkID)
+			allChunks = append(allChunks, chunkData{id: chunkID, client: client})
 		}
 	}
 
-	if len(spec.Clients) == 0 {
+	if len(allChunks) == 0 {
 		return fmt.Errorf("no valid chunks found in %s", dataDir)
 	}
 
-	// Set aggregate_rate to 0 to signal absolute rate mode (ServeGen temporal parity).
-	// ServeGen workloads have time-varying aggregate load encoded in per-window trace_rate.
-	// Setting aggregate_rate=0 tells the generator to use trace_rate as absolute rates
-	// instead of proportional weights, preserving temporal variation.
-	spec.AggregateRate = 0
+	// BC-2: Assign each chunk to exactly one period based on window overlap.
+	// Use a map to track which chunks are assigned (prevents duplication).
+	assignedChunks := make(map[string]bool)
 
-	// Log the peak for informational purposes
-	if spec.ServeGenData.TimeWindow != "" {
-		var peakAggregate float64
-		for _, rate := range aggregateRateAtTime {
-			if rate > peakAggregate {
-				peakAggregate = rate
+	// Group chunks by [period][sloClass] for aggregation.
+	// Each entry will become one CohortSpec.
+	type cohortKey struct {
+		period   int    // Index into periods slice
+		sloClass string
+	}
+	cohortGroups := make(map[cohortKey][]chunkData)
+
+	sloClasses := []string{"critical", "standard", "batch", "sheddable", "background"}
+	sloIndex := 0 // Round-robin counter
+
+	for _, chunk := range allChunks {
+		if assignedChunks[chunk.id] {
+			continue // Already assigned to a period
+		}
+
+		// Find first period whose window overlaps this chunk's active windows
+		assigned := false
+		for periodIdx, period := range periods {
+			if chunk.client.Lifecycle == nil || len(chunk.client.Lifecycle.Windows) == 0 {
+				continue
+			}
+
+			for _, window := range chunk.client.Lifecycle.Windows {
+				windowStartSec := window.StartUs / 1e6
+				windowEndSec := window.EndUs / 1e6
+
+				// Check overlap: [windowStart, windowEnd) intersects [period.windowStart, period.windowEnd)
+				if windowStartSec < period.windowEnd && windowEndSec > period.windowStart {
+					// Assign to this period
+					// BC-2: Round-robin SLO class assignment (deterministic)
+					sloClass := sloClasses[sloIndex%len(sloClasses)]
+					sloIndex++
+
+					key := cohortKey{period: periodIdx, sloClass: sloClass}
+					cohortGroups[key] = append(cohortGroups[key], chunk)
+					assignedChunks[chunk.id] = true
+					assigned = true
+					break
+				}
+			}
+			if assigned {
+				break
 			}
 		}
-		logrus.Infof("loadServeGenData: using absolute rate mode (aggregate_rate=0); peak rate was %.2f within %s window", peakAggregate, spec.ServeGenData.TimeWindow)
 	}
 
-	// Normalize lifecycle window timestamps to start from zero.
-	// ServeGen traces contain absolute clock times (e.g., 8:00 AM = 28800s).
-	// Without normalization, the generator waits for simulated time to reach
-	// those absolute timestamps before dispatching requests.
-	normalizeLifecycleTimestamps(&spec.Clients)
+	// BC-8: Build cohorts (skip empty groups)
+	for key, chunks := range cohortGroups {
+		if len(chunks) == 0 {
+			continue
+		}
+
+		period := periods[key.period]
+		cohortID := fmt.Sprintf("%s-%s", period.name, key.sloClass)
+
+		// BC-3: Average lognormal parameters across chunks
+		var sumMuInput, sumSigmaInput, sumMuOutput, sumSigmaOutput float64
+		var totalRate float64
+		var hasInputDist, hasOutputDist bool
+
+		// Use first chunk's arrival spec as template
+		var arrivalSpec ArrivalSpec
+		if len(chunks) > 0 && chunks[0].client != nil {
+			arrivalSpec = chunks[0].client.Arrival
+		}
+
+		for _, chunk := range chunks {
+			// Extract lognormal params from client InputDist/OutputDist
+			if chunk.client.InputDist.Type == "lognormal" {
+				if mu, ok := chunk.client.InputDist.Params["mu"]; ok {
+					sumMuInput += mu
+					hasInputDist = true
+				}
+				if sigma, ok := chunk.client.InputDist.Params["sigma"]; ok {
+					sumSigmaInput += sigma
+				}
+			}
+			if chunk.client.OutputDist.Type == "lognormal" {
+				if mu, ok := chunk.client.OutputDist.Params["mu"]; ok {
+					sumMuOutput += mu
+					hasOutputDist = true
+				}
+				if sigma, ok := chunk.client.OutputDist.Params["sigma"]; ok {
+					sumSigmaOutput += sigma
+				}
+			}
+
+			// BC-4: Sum rates from all windows
+			if chunk.client.Lifecycle != nil {
+				for _, window := range chunk.client.Lifecycle.Windows {
+					if window.TraceRate != nil {
+						totalRate += *window.TraceRate
+					}
+				}
+			}
+		}
+
+		n := float64(len(chunks))
+		var avgMuInput, avgSigmaInput, avgMuOutput, avgSigmaOutput float64
+		if hasInputDist {
+			avgMuInput = sumMuInput / n
+			avgSigmaInput = sumSigmaInput / n
+		}
+		if hasOutputDist {
+			avgMuOutput = sumMuOutput / n
+			avgSigmaOutput = sumSigmaOutput / n
+		}
+
+		// BC-1, BC-5, BC-6: Build CohortSpec
+		cohort := CohortSpec{
+			ID:           cohortID,
+			Population:   len(chunks),
+			SLOClass:     key.sloClass,
+			Streaming:    true, // ServeGen traces are streaming
+			RateFraction: 1.0,  // Unused in absolute rate mode
+			Arrival:      arrivalSpec,
+			Spike: &SpikeSpec{
+				StartTimeUs: period.startUs,
+				DurationUs:  period.durationUs,
+				TraceRate:   &totalRate,
+			},
+		}
+
+		// Only set distributions if we have valid data
+		if hasInputDist {
+			cohort.InputDist = DistSpec{
+				Type: "lognormal",
+				Params: map[string]float64{
+					"mu":    avgMuInput,
+					"sigma": avgSigmaInput,
+				},
+			}
+		}
+		if hasOutputDist {
+			cohort.OutputDist = DistSpec{
+				Type: "lognormal",
+				Params: map[string]float64{
+					"mu":    avgMuOutput,
+					"sigma": avgSigmaOutput,
+				},
+			}
+		}
+
+		spec.Cohorts = append(spec.Cohorts, cohort)
+	}
+
+	if len(spec.Cohorts) == 0 {
+		return fmt.Errorf("no active cohorts generated (all chunks filtered out)")
+	}
+
+	// BC-6: Set aggregate_rate to 0 (absolute mode)
+	spec.AggregateRate = 0
+
+	logrus.Infof("loadServeGenData: generated %d cohorts across %d periods", len(spec.Cohorts), len(periods))
 
 	return nil
 }

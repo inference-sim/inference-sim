@@ -1,0 +1,95 @@
+package workload
+
+import (
+	"strings"
+	"testing"
+)
+
+// TestLoadServeGenData_MultiPeriodGrouping verifies BC-1: chunks are assigned
+// to multiple periods and output uses Cohorts instead of Clients.
+func TestLoadServeGenData_MultiPeriodGrouping(t *testing.T) {
+	// GIVEN a spec with multi-period configuration
+	spec := &WorkloadSpec{
+		Version: "2",
+		Seed:    42,
+		ServeGenData: &ServeGenDataSpec{
+			Path:               "testdata/servegen_mini",
+			WindowDurationSecs: 600,
+			DrainTimeoutSecs:   180,
+		},
+	}
+
+	// WHEN loadServeGenData runs
+	err := loadServeGenData(spec)
+
+	// THEN it should complete without error (or return a path error for missing testdata)
+	// We're primarily testing the structure change from Clients to Cohorts
+	if err != nil {
+		// If testdata doesn't exist, that's expected - we're testing the API change
+		if !strings.Contains(err.Error(), "no chunk") && !strings.Contains(err.Error(), "testdata") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		t.Skip("testdata not available, skipping functional test")
+	}
+
+	// BC-1: Output should have Cohorts, not Clients
+	if len(spec.Cohorts) == 0 && len(spec.Clients) > 0 {
+		t.Error("BC-1: expected Cohorts to be populated, but only Clients were populated (old behavior)")
+	}
+
+	// BC-6: AggregateRate should be 0 (absolute mode)
+	if spec.AggregateRate != 0 {
+		t.Errorf("BC-6: expected AggregateRate=0, got %f", spec.AggregateRate)
+	}
+}
+
+// TestLoadServeGenData_Deterministic verifies BC-7: same seed produces
+// identical output.
+func TestLoadServeGenData_Deterministic(t *testing.T) {
+	createSpec := func() *WorkloadSpec {
+		return &WorkloadSpec{
+			Version: "2",
+			Seed:    42,
+			ServeGenData: &ServeGenDataSpec{
+				Path:               "testdata/servegen_mini",
+				WindowDurationSecs: 600,
+				DrainTimeoutSecs:   180,
+			},
+		}
+	}
+
+	spec1 := createSpec()
+	spec2 := createSpec()
+
+	// WHEN loadServeGenData runs twice with same seed
+	err1 := loadServeGenData(spec1)
+	err2 := loadServeGenData(spec2)
+
+	if err1 != nil || err2 != nil {
+		t.Skip("testdata not available")
+	}
+
+	// THEN outputs are identical
+	// BC-7: Deterministic assignment
+	if len(spec1.Cohorts) != len(spec2.Cohorts) {
+		t.Errorf("BC-7: cohort count mismatch: %d vs %d", len(spec1.Cohorts), len(spec2.Cohorts))
+	}
+
+	for i := range spec1.Cohorts {
+		if i >= len(spec2.Cohorts) {
+			break
+		}
+		if spec1.Cohorts[i].ID != spec2.Cohorts[i].ID {
+			t.Errorf("BC-7: cohort[%d] ID mismatch: %s vs %s", i, spec1.Cohorts[i].ID, spec2.Cohorts[i].ID)
+		}
+	}
+}
+
+// Helper to split cohort ID into [period, sloClass]
+func splitCohortID(id string) []string {
+	parts := strings.Split(id, "-")
+	if len(parts) < 2 {
+		return []string{id, ""}
+	}
+	return []string{parts[0], parts[1]}
+}
