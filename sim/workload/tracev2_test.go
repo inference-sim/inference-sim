@@ -1030,3 +1030,48 @@ func TestLoadTraceV2Requests_IgnoresVLLMPriority_SimulationIsolation(t *testing.
 		t.Errorf("Request 1 SLOClass=%q, want %q", requests[1].SLOClass, "batch")
 	}
 }
+
+func TestLoadTraceV2SessionBlueprints_IgnoresVLLMPriority_SimulationIsolation(t *testing.T) {
+	// BC-6: LoadTraceV2SessionBlueprints must NOT read VLLMPriority
+	// Same simulation isolation requirement as BC-5, but for session blueprints.
+	
+	trace := &TraceV2{
+		Header: TraceHeader{Version: 2, TimeUnit: "us"},
+		Records: []TraceRecord{
+			{RequestID: 1, SessionID: "s1", RoundIndex: 0, SLOClass: "critical", VLLMPriority: 0,
+				InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000,
+				FirstChunkTimeUs: 1500, LastChunkTimeUs: 2000},
+			{RequestID: 2, SessionID: "s1", RoundIndex: 1, SLOClass: "batch", VLLMPriority: 5,
+				InputTokens: 50, OutputTokens: 25, ArrivalTimeUs: 3000,
+				FirstChunkTimeUs: 3500, LastChunkTimeUs: 4000},
+		},
+	}
+
+	requests, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Session rounds are grouped into one blueprint, not separate requests
+	if len(requests) != 1 {
+		t.Fatalf("len(requests)=%d, want 1 (session grouped)", len(requests))
+	}
+	if len(blueprints) != 1 {
+		t.Fatalf("len(blueprints)=%d, want 1", len(blueprints))
+	}
+
+	// THEN returned request must NOT have Priority set from VLLMPriority
+	if requests[0].Priority != 0 {
+		t.Errorf("Request 0 Priority=%f, want 0 (must not read VLLMPriority)", requests[0].Priority)
+	}
+
+	// AND SLOClass should be preserved in blueprint for admission decisions
+	// (uses first round's SLOClass)
+	if blueprints[0].SLOClass != "critical" {
+		t.Errorf("Blueprint SLOClass=%q, want %q", blueprints[0].SLOClass, "critical")
+	}
+
+	// AND request should have SLOClass preserved
+	if requests[0].SLOClass != "critical" {
+		t.Errorf("Request 0 SLOClass=%q, want %q", requests[0].SLOClass, "critical")
+	}
+}
