@@ -173,7 +173,7 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 		})
 	}
 
-	// Flow control: FlowControlAdmission.Admit() already enqueued the request.
+	// Flow control: FlowControlAdmission.Admit() already processed the request (enqueue or rejection).
 	// Handle queue-level outcomes (shed victim accounting, dispatch).
 	// When flow control is disabled (default), cs.flowControlAdmission is nil (BC-1).
 	//

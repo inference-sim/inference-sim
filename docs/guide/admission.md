@@ -192,7 +192,7 @@ admission decision, matching llm-d's `FlowControlAdmissionController`.
 
 1. Incoming request is enqueued into a per-priority-band, per-flow queue
 2. Each unique (TenantID, Priority) pair gets its own FIFO queue within a priority band
-3. Dispatch iterates bands highest-priority first (strict priority across bands)
+3. Dispatch order follows `--dispatch-order`: with `priority`, iterates bands highest-priority first; with `fifo` (default), picks the globally-earliest arrival across all bands
 4. Within a band, the request with the earliest arrival (lowest sequence ID) is dispatched first (global-strict fairness)
 5. Saturation gating: dispatch only when cluster saturation < 1.0
 6. Completion-triggered dispatch: each completion frees capacity and tries to dispatch from the queue
@@ -219,8 +219,8 @@ entry within the band can be evicted. The global `--max-gateway-queue-depth` lim
 | Aspect | Legacy (AlwaysAdmit, TierShed, etc.) | FlowControlAdmission |
 |--------|--------------------------------------|---------------------|
 | Admission | Separate from queuing | Queue IS admission |
-| Queue structure | Single heap | Per-priority-band, per-flow |
-| Dispatch order | `--dispatch-order` (fifo/priority) | Always priority across bands |
+| Queue structure | None (direct to routing) | Per-priority-band, per-flow |
+| Dispatch order | `--dispatch-order` (fifo/priority) | `--dispatch-order` (fifo/priority) |
 | Capacity | Global only | Per-band + global |
 
 ## Pipeline Latency

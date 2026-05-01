@@ -58,7 +58,8 @@ func (o EnqueueOutcome) String() string {
 // GatewayQueue is a per-priority-band, per-flow queue for holding admitted requests
 // before routing. Replaces the flat heap with a hierarchical structure:
 // bands sorted descending by priority, each containing per-tenant flow queues.
-// Implements saturation-gated dispatch for GIE flow control parity.
+// Used by FlowControlAdmission for saturation-gated dispatch (GIE flow control parity).
+// Saturation gating is enforced by the caller (ClusterSimulator.tryDispatchFromGatewayQueue).
 type GatewayQueue struct {
 	bands           []*priorityBand // sorted descending by priority
 	totalLen        int
@@ -198,9 +199,9 @@ func (q *GatewayQueue) Enqueue(req *sim.Request, seqID int64) (EnqueueOutcome, *
 	return Enqueued, nil
 }
 
-// findBandShedVictim finds the lowest-priority sheddable entry within a band.
-// Among sheddable entries, picks the one with the highest seqID (latest arrival = least deserving).
-// Returns nil if no sheddable victim exists.
+// findBandShedVictim finds the latest-arrival sheddable entry within a band for eviction.
+// Since all entries in a band share the same priority, picks the one with the highest
+// seqID (latest arrival = least deserving). Returns nil if the band is non-sheddable.
 // Uses sorted key iteration for determinism (INV-6).
 func (q *GatewayQueue) findBandShedVictim(band *priorityBand) (*flowEntry, *flowQueue, int) {
 	var bestEntry *flowEntry
@@ -277,8 +278,9 @@ func (q *GatewayQueue) findGlobalShedVictim(incomingPriority int, incomingSeqID 
 
 // removeEntryByIndex removes the entry at the given index from the flow and decrements counts.
 func (q *GatewayQueue) removeEntryByIndex(flow *flowQueue, band *priorityBand, idx int) {
-	// Remove from slice (order doesn't matter for correctness since we always scan by seqID,
-	// but we use swap-with-last for O(1) removal).
+	// Remove from slice via swap-with-last for O(1) removal. Safe because the shedding victim
+	// is always the last element in its flow (highest seqID from append-only FIFO ordering),
+	// so no actual swap occurs and the head (index 0) used by Dequeue is preserved.
 	last := len(flow.requests) - 1
 	if idx != last {
 		flow.requests[idx] = flow.requests[last]
