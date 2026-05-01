@@ -349,3 +349,19 @@ func TestSLOPriorityMap_InvertForVLLM_PreservesUrgencyOrder(t *testing.T) {
 			critical, standard, batch, sheddable, background)
 	}
 }
+
+type stubAdmitWithReason struct{ reason string }
+
+func (s *stubAdmitWithReason) Admit(*Request, *RouterState) (bool, string) { return true, s.reason }
+
+func TestTenantBudgetAdmission_PassesThroughInnerAdmissionReason(t *testing.T) {
+	inner := &stubAdmitWithReason{reason: "inner-policy-reason"}
+	policy := NewTenantBudgetAdmission(inner, &stubTracker{overBudget: false}, DefaultSLOPriorityMap())
+	admitted, reason := policy.Admit(&Request{ID: "r1", TenantID: "t1", SLOClass: "standard"}, &RouterState{})
+	if !admitted {
+		t.Fatal("expected request to be admitted")
+	}
+	if reason != "inner-policy-reason" {
+		t.Errorf("expected reason %q from inner policy, got %q", "inner-policy-reason", reason)
+	}
+}
