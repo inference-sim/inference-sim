@@ -32,25 +32,16 @@ func (e *UnlimitedEngine) Optimize(results []AnalyzerResult, _ GPUInventory) []S
 		}
 		if r.SpareCapacity > 0 {
 			// Scale down: pick most expensive variant with active replicas, exact-N replicas.
-			// Falls back to first desc-cost variant (Delta=-1) when no active replicas exist.
 			vcs := sortedByDescCost(r.VariantCapacities)
-			chosen := -1
-			for i, vc := range vcs {
+			for _, vc := range vcs {
 				if vc.ReplicaCount > 0 {
-					chosen = i
+					decisions = append(decisions, ScaleDecision{
+						ModelID: r.ModelID,
+						Variant: vc.Variant,
+						Delta:   -scaleDownN(r.SpareCapacity, vc),
+					})
 					break
 				}
-			}
-			if chosen < 0 && len(vcs) > 0 {
-				chosen = 0 // fallback: first (most expensive) variant
-			}
-			if chosen >= 0 {
-				vc := vcs[chosen]
-				decisions = append(decisions, ScaleDecision{
-					ModelID: r.ModelID,
-					Variant: vc.Variant,
-					Delta:   -scaleDownN(r.SpareCapacity, vc),
-				})
 			}
 		}
 	}
@@ -107,9 +98,9 @@ func (e *GreedyEngine) Optimize(results []AnalyzerResult, inventory GPUInventory
 	return decisions
 }
 
-// scaleUpN returns exact replicas to add.
-// Uses cheapest active variant's Supply/ReplicaCount as perReplicaCapacity.
-// Falls back to 1 when no active variant (perReplicaCapacity == 0).
+// scaleUpN returns exact replicas to add for the selected variant (vcs[0]).
+// Uses Supply/ReplicaCount from the first active variant in vcs as perReplicaCapacity.
+// Falls back to 1 when no active variant exists (perReplicaCapacity == 0).
 func scaleUpN(requiredCapacity float64, vcs []VariantCapacity) int {
 	prc := perReplicaCapacityForScaleUp(vcs)
 	if prc <= 0 {
@@ -123,10 +114,13 @@ func scaleUpN(requiredCapacity float64, vcs []VariantCapacity) int {
 }
 
 // scaleDownN returns exact replicas to remove from vc.
-// Uses vc.Supply/vc.ReplicaCount as perReplicaCapacity.
+// Returns 0 when vc has no active replicas (safe no-op regardless of caller).
 // Falls back to 1 when perReplicaCapacity == 0; clamps to [1, replicaCount].
 func scaleDownN(spareCapacity float64, vc VariantCapacity) int {
-	if vc.ReplicaCount <= 0 || vc.Supply <= 0 {
+	if vc.ReplicaCount <= 0 {
+		return 0
+	}
+	if vc.Supply <= 0 {
 		return 1
 	}
 	prc := vc.Supply / float64(vc.ReplicaCount)
@@ -143,8 +137,8 @@ func scaleDownN(spareCapacity float64, vc VariantCapacity) int {
 	return n
 }
 
-// perReplicaCapacityForScaleUp returns Supply/ReplicaCount from the cheapest active variant.
-// vcs must be sorted ascending by cost. Returns 0 when no active variant exists.
+// perReplicaCapacityForScaleUp returns Supply/ReplicaCount from the first active variant in vcs.
+// Returns 0 when no active variant exists.
 func perReplicaCapacityForScaleUp(vcs []VariantCapacity) float64 {
 	for _, vc := range vcs {
 		if vc.ReplicaCount > 0 && vc.Supply > 0 {

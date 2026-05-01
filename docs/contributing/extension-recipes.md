@@ -161,7 +161,7 @@ To add a new autoscaler `Engine` implementation (e.g., a cost-minimizing MIP sol
    - `sortedByAscCost`, `sortedByDescCost` — deterministic variant sort (R2: copy-and-sort to avoid mutating caller data).
    - Pass only the selected variant to `scaleUpN` (`vcs[0:1]`, not the full slice) so `perReplicaCapacityForScaleUp` uses the chosen variant's own capacity — not a different active variant's.
 
-3. **Wire the engine** in `sim/cluster/cluster.go:381` — replace `&UnlimitedEngine{}` with your engine (or add a config field + factory once multi-engine selection is implemented in the follow-up wiring PR).
+3. **Wire the engine** in `sim/cluster/cluster.go` — search for `&UnlimitedEngine{}` in the autoscaler pipeline construction and replace it with your engine (or add a config field + factory once multi-engine selection is implemented in the follow-up wiring PR).
 
 4. **Add behavioral tests** in `sim/cluster/engine_test.go`:
    - Scale-up: correct `Delta`, correct `Variant`, inventory check pass/fail.
@@ -169,7 +169,7 @@ To add a new autoscaler `Engine` implementation (e.g., a cost-minimizing MIP sol
    - Edge cases: zero `RequiredCapacity`, zero `SpareCapacity`, all variants inactive, `TPDegree > 1`.
    - Cross-model: multiple `AnalyzerResult` entries — verify decisions for each model independently.
 
-5. Extension friction: **2 touch points** (implementation + wiring in `cluster.go:381`). For research variants behind a config field, 4 touch points: implementation + `AutoscalerConfig` field + factory function + CLI flag.
+5. Extension friction: **2 touch points** (implementation + wiring via `&UnlimitedEngine{}` in `cluster.go`). For research variants behind a config field, 4 touch points: implementation + `AutoscalerConfig` field + factory function + CLI flag.
 
 Examples:
 - See `UnlimitedEngine` in `sim/cluster/engine.go` for a simple inventory-ignoring engine

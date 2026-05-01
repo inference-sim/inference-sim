@@ -127,6 +127,7 @@ func TestUnlimitedEngineExactN(t *testing.T) {
 	tests := []struct {
 		name      string
 		results   []AnalyzerResult
+		wantLen   int
 		wantDelta int
 	}{
 		{
@@ -138,6 +139,7 @@ func TestUnlimitedEngineExactN(t *testing.T) {
 					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10, Supply: 10, ReplicaCount: 1},
 				},
 			}},
+			wantLen:   1,
 			wantDelta: 3,
 		},
 		{
@@ -149,6 +151,7 @@ func TestUnlimitedEngineExactN(t *testing.T) {
 					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10, Supply: 30, ReplicaCount: 3},
 				},
 			}},
+			wantLen:   1,
 			wantDelta: -2,
 		},
 		{
@@ -160,6 +163,7 @@ func TestUnlimitedEngineExactN(t *testing.T) {
 					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10, Supply: 30, ReplicaCount: 3},
 				},
 			}},
+			wantLen:   1,
 			wantDelta: -3,
 		},
 		{
@@ -171,10 +175,11 @@ func TestUnlimitedEngineExactN(t *testing.T) {
 					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10, Supply: 0, ReplicaCount: 0},
 				},
 			}},
+			wantLen:   1,
 			wantDelta: 1,
 		},
 		{
-			name: "scale-down falls back to Delta=-1 when perReplicaCapacity=0",
+			name: "scale-down with no active replicas → no decision",
 			results: []AnalyzerResult{{
 				ModelID:       "m1",
 				SpareCapacity: 50,
@@ -182,7 +187,7 @@ func TestUnlimitedEngineExactN(t *testing.T) {
 					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10, Supply: 0, ReplicaCount: 0},
 				},
 			}},
-			wantDelta: -1,
+			wantLen: 0, // no active replicas; emitting Delta=-1 would trigger a no-op actuator warn
 		},
 		{
 			name: "scale-up falls back to Delta=1 when cheapest variant is inactive but a more-expensive one is active",
@@ -194,14 +199,18 @@ func TestUnlimitedEngineExactN(t *testing.T) {
 					{Variant: NewVariantSpec("H100", 1), CostPerReplica: 20, Supply: 30, ReplicaCount: 3}, // active
 				},
 			}},
+			wantLen:   1,
 			wantDelta: 1, // A100 selected; its prc=0 → fallback to 1; does not borrow H100's prc
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			decisions := engine.Optimize(tt.results, GPUInventory{})
-			if len(decisions) != 1 {
-				t.Fatalf("want 1 decision, got %d", len(decisions))
+			if len(decisions) != tt.wantLen {
+				t.Fatalf("want %d decisions, got %d", tt.wantLen, len(decisions))
+			}
+			if tt.wantLen == 0 {
+				return
 			}
 			if decisions[0].Delta != tt.wantDelta {
 				t.Errorf("Delta: want %d got %d", tt.wantDelta, decisions[0].Delta)
@@ -372,5 +381,21 @@ func TestGreedyEngineScaleUpUsesChosenVariantCapacity(t *testing.T) {
 	}
 	if d.Delta != 2 {
 		t.Errorf("Delta: want 2 (ceil(20/10)), got %d — engine used cheapest variant's prc instead of chosen variant's", d.Delta)
+	}
+}
+
+// TestScaleDownNFloorToZero verifies that when floor(spareCapacity/prc) == 0, scaleDownN
+// clamps to 1 rather than emitting a Delta=0 no-op. Without the clamp a future refactor
+// could silently produce a zero-replica removal decision.
+func TestScaleDownNFloorToZero(t *testing.T) {
+	// spareCapacity=1, Supply=100, ReplicaCount=10 → prc=10 → floor(1/10)=0 → clamped to 1
+	vc := VariantCapacity{
+		Variant:      NewVariantSpec("A100", 1),
+		Supply:       100,
+		ReplicaCount: 10,
+	}
+	n := scaleDownN(1, vc)
+	if n != 1 {
+		t.Errorf("scaleDownN: want 1 (clamped from floor=0), got %d", n)
 	}
 }
