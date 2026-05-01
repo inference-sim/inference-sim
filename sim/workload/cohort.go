@@ -55,7 +55,15 @@ func ExpandCohorts(cohorts []CohortSpec, seed int64) []ClientSpec {
 				windows = append(windows, diurnalWindows(cohort.Diurnal, cohortRNG)...)
 			}
 			if cohort.Spike != nil {
-				windows = append(windows, spikeWindow(cohort.Spike))
+			window := spikeWindow(cohort.Spike)
+
+			// Divide cohort-level trace_rate by population for per-client rate
+			if window.TraceRate != nil {
+				perClientRate := *window.TraceRate / float64(cohort.Population)
+				window.TraceRate = &perClientRate
+			}
+
+			windows = append(windows, window)
 			}
 			if cohort.Drain != nil {
 				windows = append(windows, drainWindows(cohort.Drain)...)

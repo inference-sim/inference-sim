@@ -88,6 +88,44 @@ func TestSpikeWindow_WithoutTraceRate_LeavesNil(t *testing.T) {
 	}
 }
 
+func TestExpandCohorts_SpikeTraceRate_DividedByPopulation(t *testing.T) {
+	rate := 7.6
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 0, // Absolute mode
+		Cohorts: []CohortSpec{
+			{
+				ID:           "midnight-critical",
+				Population:   7,
+				RateFraction: 0.089,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+				Spike:        &SpikeSpec{StartTimeUs: 300000000, DurationUs: 600000000, TraceRate: &rate},
+			},
+		},
+	}
+	expanded := ExpandCohorts(spec.Cohorts, 12345)
+	if len(expanded) != 7 {
+		t.Fatalf("expected 7 clients; got %d", len(expanded))
+	}
+	// Each client should get 7.6 / 7 = 1.086 (approximately)
+	for i, client := range expanded {
+		if client.Lifecycle == nil || len(client.Lifecycle.Windows) == 0 {
+			t.Fatalf("client %d has no lifecycle windows", i)
+		}
+		window := client.Lifecycle.Windows[0]
+		if window.TraceRate == nil {
+			t.Fatalf("client %d window TraceRate is nil", i)
+		}
+		actualRate := *window.TraceRate
+		// Allow floating point tolerance
+		if actualRate < 1.085 || actualRate > 1.087 {
+			t.Errorf("client %d: TraceRate = %v; expected ~1.086 (7.6/7)", i, actualRate)
+		}
+	}
+}
+
 func TestCohortValidation_ZeroPopulation_ReturnsError(t *testing.T) {
 	spec := &WorkloadSpec{
 		Version:       "2",
