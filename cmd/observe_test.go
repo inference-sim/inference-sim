@@ -1630,7 +1630,7 @@ func TestRealClient_Send_VLLMPriority_Captured(t *testing.T) {
 				"total_tokens":      15,
 			},
 		}
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -1731,7 +1731,7 @@ func TestObserveRecorder_VLLMPriority_EndToEndFlow(t *testing.T) {
 				"total_tokens":      150,
 			},
 		}
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	})
 	server := httptest.NewServer(handler)
 	defer server.Close()
