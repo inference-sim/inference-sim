@@ -190,15 +190,18 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 			return
 		case ShedVictim:
 			victim := cs.flowControlAdmission.LastShedVictim()
-			if victim != nil {
-				tier := victim.SLOClass
-				if tier == "" {
-					tier = "standard"
-				}
-				cs.shedByTier[tier]++
+			if victim == nil {
+				panic(fmt.Sprintf("FlowControlAdmission: ShedVictim outcome but nil victim for req %s", e.request.ID))
 			}
+			tier := victim.SLOClass
+			if tier == "" {
+				tier = "standard"
+			}
+			cs.shedByTier[tier]++
 		case Enqueued:
 			// nothing extra
+		default:
+			panic(fmt.Sprintf("unhandled FlowControlAdmission outcome: %v", cs.flowControlAdmission.LastOutcome()))
 		}
 		cs.tryDispatchFromGatewayQueue()
 		return

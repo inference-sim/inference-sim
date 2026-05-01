@@ -51,10 +51,11 @@ func (fc *FlowControlAdmission) Admit(req *sim.Request, state *sim.RouterState) 
 		req.GatewayEnqueueTime = 0
 		return true, "flow-control-queue-rejected"
 	case ShedVictim:
-		if victim != nil {
-			victim.GatewayEnqueueTime = 0
-			fc.lastVictim = victim
+		if victim == nil {
+			panic(fmt.Sprintf("FlowControlAdmission: ShedVictim outcome but Enqueue returned nil victim for req %s", req.ID))
 		}
+		victim.GatewayEnqueueTime = 0
+		fc.lastVictim = victim
 		return true, "flow-control-enqueued"
 	case Enqueued:
 		return true, "flow-control-enqueued"
