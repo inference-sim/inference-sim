@@ -174,8 +174,9 @@ func loadServeGenData(spec *WorkloadSpec) error {
 
 	// Load all chunks (no time filtering)
 	type chunkData struct {
-		id     string
-		client *ClientSpec // Temporarily use ClientSpec for loading; will convert to cohort
+		id          string
+		client      *ClientSpec // Temporarily use ClientSpec for loading; will convert to cohort
+		datasetPath string      // For lognormal fitting in cohort loop
 	}
 	var allChunks []chunkData
 
@@ -192,7 +193,7 @@ func loadServeGenData(spec *WorkloadSpec) error {
 			return fmt.Errorf("loading chunk %s: %w", chunkID, err)
 		}
 		if client != nil {
-			allChunks = append(allChunks, chunkData{id: chunkID, client: client})
+			allChunks = append(allChunks, chunkData{id: chunkID, client: client, datasetPath: datasetPath})
 		}
 	}
 
@@ -280,38 +281,33 @@ func loadServeGenData(spec *WorkloadSpec) error {
 		period := periods[key.period]
 		cohortID := fmt.Sprintf("%s-%s", period.name, key.sloClass)
 
-		// BC-3: Average lognormal parameters across chunks
+		// BC-3: Fit lognormal distributions from each chunk's dataset at the period's window.
+		// Load the actual dataset file and find the nearest-preceding PDF entry,
+		// then average the fitted mu/sigma across all chunks in this cohort.
 		var sumMuInput, sumSigmaInput, sumMuOutput, sumSigmaOutput float64
+		var distCount int
 		var totalRate float64
-		var hasInputDist, hasOutputDist bool
-
-		// Use first chunk's first window's arrival spec as template
-		// (old loadServeGenChunk puts arrival params in window.Arrival, not client.Arrival)
-		var arrivalSpec ArrivalSpec
-		if len(chunks) > 0 && chunks[0].client != nil && chunks[0].client.Lifecycle != nil && len(chunks[0].client.Lifecycle.Windows) > 0 {
-			if chunks[0].client.Lifecycle.Windows[0].Arrival != nil {
-				arrivalSpec = *chunks[0].client.Lifecycle.Windows[0].Arrival
-			}
-		}
 
 		for _, chunk := range chunks {
-			// Extract lognormal params from client InputDist/OutputDist
-			if chunk.client.InputDist.Type == "lognormal" {
-				if mu, ok := chunk.client.InputDist.Params["mu"]; ok {
-					sumMuInput += mu
-					hasInputDist = true
-				}
-				if sigma, ok := chunk.client.InputDist.Params["sigma"]; ok {
-					sumSigmaInput += sigma
-				}
-			}
-			if chunk.client.OutputDist.Type == "lognormal" {
-				if mu, ok := chunk.client.OutputDist.Params["mu"]; ok {
-					sumMuOutput += mu
-					hasOutputDist = true
-				}
-				if sigma, ok := chunk.client.OutputDist.Params["sigma"]; ok {
-					sumSigmaOutput += sigma
+			// Load this chunk's dataset to fit lognormal for this period
+			datasets, dsErr := loadServeGenDatasetAllWindows(chunk.datasetPath, &ServeGenDataSpec{Path: dataDir})
+			if dsErr != nil {
+				logrus.Debugf("cohort %s: skipping chunk %s dataset: %v", cohortID, chunk.id, dsErr)
+			} else {
+				// Find nearest dataset to period window start
+				dataset, _, found := findNearestDataset(int(period.windowStart), datasets)
+				if found {
+					inputFit, fitErr := fitLognormalFromPDF(dataset.inputPDF)
+					if fitErr == nil {
+						sumMuInput += inputFit.Params["mu"]
+						sumSigmaInput += inputFit.Params["sigma"]
+					}
+					outputFit, fitErr := fitLognormalFromPDF(dataset.outputPDF)
+					if fitErr == nil {
+						sumMuOutput += outputFit.Params["mu"]
+						sumSigmaOutput += outputFit.Params["sigma"]
+						distCount++
+					}
 				}
 			}
 
@@ -331,56 +327,97 @@ func loadServeGenData(spec *WorkloadSpec) error {
 			}
 		}
 
-		n := float64(len(chunks))
-		var avgMuInput, avgSigmaInput, avgMuOutput, avgSigmaOutput float64
-		if hasInputDist {
-			avgMuInput = sumMuInput / n
-			avgSigmaInput = sumSigmaInput / n
-		}
-		if hasOutputDist {
-			avgMuOutput = sumMuOutput / n
-			avgSigmaOutput = sumSigmaOutput / n
-		}
-
-		// BC-1, BC-5, BC-6: Build CohortSpec with default distributions
-		// InputDist and OutputDist are non-pointer fields, so must always have valid Type
-		inputDist := DistSpec{
-			Type: "gaussian",
-			Params: map[string]float64{
-				"mean":    512,
-				"std_dev": 128,
-				"min":     1,
-				"max":     32768,
-			},
-		}
-		outputDist := DistSpec{
-			Type: "gaussian",
-			Params: map[string]float64{
-				"mean":    128,
-				"std_dev": 32,
-				"min":     1,
-				"max":     32768,
-			},
-		}
-
-		// Override with lognormal if we have fitted data from chunks
-		if hasInputDist {
+		// BC-3: Build averaged distributions
+		var inputDist, outputDist DistSpec
+		if distCount > 0 {
+			n := float64(distCount)
 			inputDist = DistSpec{
 				Type: "lognormal",
 				Params: map[string]float64{
-					"mu":    avgMuInput,
-					"sigma": avgSigmaInput,
+					"mu":    sumMuInput / n,
+					"sigma": sumSigmaInput / n,
 				},
 			}
-		}
-		if hasOutputDist {
 			outputDist = DistSpec{
 				Type: "lognormal",
 				Params: map[string]float64{
-					"mu":    avgMuOutput,
-					"sigma": avgSigmaOutput,
+					"mu":    sumMuOutput / n,
+					"sigma": sumSigmaOutput / n,
 				},
 			}
+		} else {
+			// Fallback (only if no datasets available at all)
+			inputDist = DistSpec{
+				Type: "gaussian",
+				Params: map[string]float64{
+					"mean":    512,
+					"std_dev": 128,
+					"min":     1,
+					"max":     32768,
+				},
+			}
+			outputDist = DistSpec{
+				Type: "gaussian",
+				Params: map[string]float64{
+					"mean":    128,
+					"std_dev": 32,
+					"min":     1,
+					"max":     32768,
+				},
+			}
+		}
+
+		// BC-4: Average arrival parameters across all chunks' overlapping windows.
+		// Majority-vote the process type; simple-average CV, shape, scale.
+		var sumCV, sumShape, sumScale float64
+		var arrivalCount int
+		gammaCount, weibullCount := 0, 0
+
+		for _, chunk := range chunks {
+			if chunk.client.Lifecycle == nil {
+				continue
+			}
+			for _, window := range chunk.client.Lifecycle.Windows {
+				windowStartSec := window.StartUs / 1e6
+				windowEndSec := window.EndUs / 1e6
+				if windowStartSec < period.windowEnd && windowEndSec > period.windowStart {
+					if window.Arrival != nil {
+						if window.Arrival.CV != nil {
+							sumCV += *window.Arrival.CV
+						}
+						if window.Arrival.Shape != nil {
+							sumShape += *window.Arrival.Shape
+						}
+						if window.Arrival.Scale != nil {
+							sumScale += *window.Arrival.Scale
+						}
+						arrivalCount++
+						switch window.Arrival.Process {
+						case "gamma":
+							gammaCount++
+						case "weibull":
+							weibullCount++
+						}
+					}
+					break // One overlapping window per chunk is enough for arrival
+				}
+			}
+		}
+
+		var arrivalSpec ArrivalSpec
+		if arrivalCount > 0 {
+			n := float64(arrivalCount)
+			if weibullCount > gammaCount {
+				arrivalSpec.Process = "weibull"
+			} else {
+				arrivalSpec.Process = "gamma"
+			}
+			avgCV := sumCV / n
+			avgShape := sumShape / n
+			avgScale := sumScale / n
+			arrivalSpec.CV = &avgCV
+			arrivalSpec.Shape = &avgShape
+			arrivalSpec.Scale = &avgScale
 		}
 
 		cohort := CohortSpec{

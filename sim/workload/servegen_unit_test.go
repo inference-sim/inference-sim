@@ -245,4 +245,43 @@ func TestServeGenMultiPeriod_RateValue(t *testing.T) {
 	if math.Abs(actualRate-expectedRate) > 0.01 {
 		t.Errorf("BC-5: trace_rate = %.2f, want %.2f (only windows overlapping period should be summed)", actualRate, expectedRate)
 	}
+
+	// BC-3: Token distributions should be lognormal (fitted from dataset), not gaussian fallback.
+	// Dataset has {100: 1.0} for input and {50: 1.0} for output.
+	// Lognormal fit of a single-point PDF: mu = ln(value), sigma = 0.
+	if midnightCohort.InputDist.Type != "lognormal" {
+		t.Errorf("BC-3: InputDist.Type = %q, want \"lognormal\" (should be fitted from dataset)", midnightCohort.InputDist.Type)
+	}
+	if midnightCohort.OutputDist.Type != "lognormal" {
+		t.Errorf("BC-3: OutputDist.Type = %q, want \"lognormal\" (should be fitted from dataset)", midnightCohort.OutputDist.Type)
+	}
+	// mu = ln(100) ≈ 4.605 for input, ln(50) ≈ 3.912 for output
+	if mu, ok := midnightCohort.InputDist.Params["mu"]; ok {
+		expectedMu := math.Log(100)
+		if math.Abs(mu-expectedMu) > 0.01 {
+			t.Errorf("BC-3: InputDist mu = %.4f, want %.4f (ln(100))", mu, expectedMu)
+		}
+	}
+	if mu, ok := midnightCohort.OutputDist.Params["mu"]; ok {
+		expectedMu := math.Log(50)
+		if math.Abs(mu-expectedMu) > 0.01 {
+			t.Errorf("BC-3: OutputDist mu = %.4f, want %.4f (ln(50))", mu, expectedMu)
+		}
+	}
+
+	// BC-4: Arrival params should be averaged from overlapping windows.
+	// Two windows overlap: row[0] (cv=0.8, shape=1.5, scale=0.02) and row[1] (cv=0.85, shape=1.55, scale=0.02).
+	// But only the first overlapping window per chunk is used (break after first match).
+	// Single chunk → the first overlapping window's params are used directly.
+	if midnightCohort.Arrival.Process != "weibull" {
+		t.Errorf("BC-4: Arrival.Process = %q, want \"weibull\"", midnightCohort.Arrival.Process)
+	}
+	if midnightCohort.Arrival.CV != nil {
+		expectedCV := 0.8
+		if math.Abs(*midnightCohort.Arrival.CV-expectedCV) > 0.01 {
+			t.Errorf("BC-4: Arrival.CV = %.4f, want %.4f", *midnightCohort.Arrival.CV, expectedCV)
+		}
+	} else {
+		t.Error("BC-4: Arrival.CV is nil, expected non-nil")
+	}
 }
