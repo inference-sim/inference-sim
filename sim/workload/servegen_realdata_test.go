@@ -22,7 +22,6 @@ func TestServeGenMultiPeriod_RealData(t *testing.T) {
 		filepath.Join("..", "..", "ServeGen", "data", "language", "m-large"),
 		filepath.Join("..", "..", "..", "ServeGen", "data", "language", "m-large"),
 		filepath.Join("..", "..", "..", "..", "ServeGen", "data", "language", "m-large"),
-		"/Users/dipanwitaguhathakurta/Downloads/inference-sim-package/inference-sim/ServeGen/data/language/m-large",
 	}
 
 	var realDataPath string
