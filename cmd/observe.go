@@ -106,7 +106,8 @@ type RequestRecord struct {
 	RequestID         int
 	OutputTokens      int
 	ServerInputTokens int
-	Status            string // "ok", "error", "timeout"
+	VLLMPriority      int     // vLLM priority value (0=highest urgency, higher=lower urgency); 0 when not set
+	Status            string  // "ok", "error", "timeout"
 	ErrorMessage      string
 	SendTimeUs        int64
 	FirstChunkTimeUs  int64

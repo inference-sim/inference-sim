@@ -839,3 +839,28 @@ func TestRequestsToTraceRecords_RoundTrip(t *testing.T) {
 		t.Errorf("Prefill-timeout FirstChunkTimeUs: got %d, want 0", lr2.FirstChunkTimeUs)
 	}
 }
+
+func TestTraceRecord_VLLMPriority_FieldExists(t *testing.T) {
+	// GIVEN a TraceRecord with VLLMPriority set
+	rec := TraceRecord{
+		RequestID:    1,
+		SLOClass:     "critical",
+		VLLMPriority: 0, // critical → 0 in vLLM convention
+	}
+
+	// THEN the field is accessible and has the expected value
+	if rec.VLLMPriority != 0 {
+		t.Errorf("Expected VLLMPriority=0, got %d", rec.VLLMPriority)
+	}
+
+	// WHEN SLOClass is empty
+	rec2 := TraceRecord{
+		RequestID: 2,
+		SLOClass:  "",
+	}
+
+	// THEN VLLMPriority defaults to 0 (not set)
+	if rec2.VLLMPriority != 0 {
+		t.Errorf("Expected default VLLMPriority=0, got %d", rec2.VLLMPriority)
+	}
+}

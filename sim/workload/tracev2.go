@@ -54,6 +54,7 @@ type TraceRecord struct {
 	ClientID          string
 	TenantID          string
 	SLOClass          string
+	VLLMPriority      int    // vLLM priority value (0=highest urgency, higher=lower urgency); 0 when not set
 	SessionID         string
 	RoundIndex        int
 	PrefixGroup       string
