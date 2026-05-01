@@ -118,11 +118,15 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	// Conditionally include vllm_priority column: present iff any record has non-zero VLLMPriority
-	// (prevents misleading empty columns in simulation traces where priority was never computed)
+	// Conditionally include vllm_priority column: present iff priority was actually computed.
+	// Include when either:
+	// 1. Any record has non-zero priority (batch, standard, sheddable, background from observe)
+	// 2. Any record has SLOClass in "real" mode (covers critical=0 from observe)
+	// This prevents misleading empty columns in simulation traces (Mode != "real") where
+	// priority was never sent to a server, even if SLOClass is set for admission control.
 	includeVLLMPriority := false
 	for _, r := range records {
-		if r.VLLMPriority != 0 {
+		if r.VLLMPriority != 0 || (r.SLOClass != "" && header.Mode == "real") {
 			includeVLLMPriority = true
 			break
 		}

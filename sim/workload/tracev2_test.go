@@ -954,13 +954,15 @@ func TestTraceRecord_VLLMPriority_FieldExists(t *testing.T) {
 }
 
 func TestExportTraceV2_VLLMPriority_ConditionalColumn(t *testing.T) {
-	// BC-3: vllm_priority column included only when any record has non-zero VLLMPriority
-	// (prevents misleading empty columns in simulation traces)
+	// BC-3: vllm_priority column included only when priority was actually computed.
+	// Distinguishes between:
+	// - observe with critical (SLOClass="critical", Mode="real", VLLMPriority=0) → column present
+	// - simulation with SLOClass (Mode="synthetic", VLLMPriority=0) → column absent
 
 	dir := t.TempDir()
-	header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
 
-	t.Run("all VLLMPriority=0 → no column (simulation case)", func(t *testing.T) {
+	t.Run("simulation with SLOClass → no column (Mode=synthetic, all priority=0)", func(t *testing.T) {
+		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "synthetic"}
 		records := []TraceRecord{
 			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, SLOClass: "critical", VLLMPriority: 0, Status: "ok"},
 			{RequestID: 2, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000, SLOClass: "batch", VLLMPriority: 0, Status: "ok"},
@@ -985,11 +987,69 @@ func TestExportTraceV2_VLLMPriority_ConditionalColumn(t *testing.T) {
 
 		// THEN vllm_priority should NOT be in the header
 		if strings.Contains(headerRow, "vllm_priority") {
-			t.Errorf("vllm_priority column should not be present when all VLLMPriority=0 (simulation isolation)")
+			t.Errorf("vllm_priority column should not be present in simulation (Mode=synthetic, all priority=0)")
 		}
 	})
 
-	t.Run("any VLLMPriority!=0 → column included (observe case)", func(t *testing.T) {
+	t.Run("observe all-critical → column present (Mode=real, SLOClass set, priority=0)", func(t *testing.T) {
+		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
+		records := []TraceRecord{
+			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, SLOClass: "critical", VLLMPriority: 0, Status: "ok"},
+			{RequestID: 2, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000, SLOClass: "critical", VLLMPriority: 0, Status: "ok"},
+		}
+
+		headerPath := filepath.Join(dir, "critical_header.yaml")
+		dataPath := filepath.Join(dir, "critical_data.csv")
+		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			t.Fatal(err)
+		}
+
+		// Read CSV header row
+		data, err := os.ReadFile(dataPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(string(data), "\n")
+		if len(lines) < 1 {
+			t.Fatal("CSV file is empty")
+		}
+		headerRow := lines[0]
+
+		// THEN vllm_priority SHOULD be in the header (critical=0 is a real priority)
+		if !strings.Contains(headerRow, "vllm_priority") {
+			t.Errorf("vllm_priority column should be present for observe with critical (Mode=real, SLOClass set)")
+		}
+
+		// Verify all values are 0 (critical priority)
+		if len(lines) < 3 {
+			t.Fatal("Expected at least 2 data rows")
+		}
+		row1 := strings.Split(lines[1], ",")
+		row2 := strings.Split(lines[2], ",")
+
+		// Find vllm_priority column index
+		cols := strings.Split(headerRow, ",")
+		vllmIdx := -1
+		for i, col := range cols {
+			if col == "vllm_priority" {
+				vllmIdx = i
+				break
+			}
+		}
+		if vllmIdx == -1 {
+			t.Fatal("vllm_priority column not found")
+		}
+
+		if row1[vllmIdx] != "0" {
+			t.Errorf("Row 1 vllm_priority: got %q, want \"0\" (critical)", row1[vllmIdx])
+		}
+		if row2[vllmIdx] != "0" {
+			t.Errorf("Row 2 vllm_priority: got %q, want \"0\" (critical)", row2[vllmIdx])
+		}
+	})
+
+	t.Run("any VLLMPriority!=0 → column included (observe mixed)", func(t *testing.T) {
+		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
 		records := []TraceRecord{
 			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, SLOClass: "critical", VLLMPriority: 0, Status: "ok"},
 			{RequestID: 2, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000, SLOClass: "batch", VLLMPriority: 5, Status: "ok"},
@@ -1055,7 +1115,35 @@ func TestExportTraceV2_VLLMPriority_ConditionalColumn(t *testing.T) {
 		}
 	})
 
-	t.Run("mixed: some with VLLMPriority=0, some non-zero", func(t *testing.T) {
+	t.Run("observe without SLOClass → no column (Mode=real, no SLOClass, priority=0)", func(t *testing.T) {
+		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
+		records := []TraceRecord{
+			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, SLOClass: "", VLLMPriority: 0, Status: "ok"},
+			{RequestID: 2, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000, SLOClass: "", VLLMPriority: 0, Status: "ok"},
+		}
+
+		headerPath := filepath.Join(dir, "no_slo_header.yaml")
+		dataPath := filepath.Join(dir, "no_slo_data.csv")
+		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			t.Fatal(err)
+		}
+
+		// Read CSV header row
+		data, err := os.ReadFile(dataPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(string(data), "\n")
+		headerRow := lines[0]
+
+		// THEN vllm_priority should NOT be in the header
+		if strings.Contains(headerRow, "vllm_priority") {
+			t.Errorf("vllm_priority column should not be present when observe has no SLOClass")
+		}
+	})
+
+	t.Run("mixed: observe with some non-zero priorities", func(t *testing.T) {
+		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
 		records := []TraceRecord{
 			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, SLOClass: "", VLLMPriority: 0, Status: "ok"},
 			{RequestID: 2, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000, SLOClass: "standard", VLLMPriority: 1, Status: "ok"},
