@@ -268,7 +268,7 @@ func parseTraceRecord(row []string, hasVLLMPriority bool) (*TraceRecord, error) 
 		return nil, fmt.Errorf("parsing request_id %q: %w", row[0], err)
 	}
 
-	// Parse vllm_priority if present (index 4)
+	// Parse vllm_priority if present (index 4, immediately after slo_class at index 3)
 	vllmPriority := 0
 	if hasVLLMPriority {
 		vllmPriority, err = strconv.Atoi(row[4])
