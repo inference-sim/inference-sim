@@ -1802,6 +1802,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#adding-a-new-engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a New Engine
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#adding-new-per-request-metric-fields" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2814,6 +2825,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#adding-a-new-engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a New Engine
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#adding-new-per-request-metric-fields" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2987,6 +3009,44 @@
 - See the GPTQ/AWQ <code>bits</code> extraction (~line 229) for formats with a top-level <code>bits</code> field
 - See the <code>compressed-tensors</code> branch (~line 240) for formats with nested config structures
 - See <code>InferWeightBytesFromModelName()</code> for regex-based name pattern detection</p>
+<h2 id="adding-a-new-engine">Adding a New Engine<a class="headerlink" href="#adding-a-new-engine" title="Permanent link">&para;</a></h2>
+<p>To add a new autoscaler <code>Engine</code> implementation (e.g., a cost-minimizing MIP solver or an OpenEvolve-evolved policy):</p>
+<ol>
+<li><strong>Implement the <code>Engine</code> interface</strong> in <code>sim/cluster/engine.go</code> (or a new file for complex engines) — 1 method:</li>
+<li><code>Optimize(results []AnalyzerResult, inventory GPUInventory) []ScaleDecision</code></li>
+<li>Inputs: one <code>AnalyzerResult</code> per model (supply/demand signals + per-variant breakdown) and a <code>GPUInventory</code> snapshot (free GPU slots per variant, pre-subtracted for Loading/Active/Draining instances).</li>
+<li>Output: at most one <code>ScaleDecision</code> per model per call. <code>Delta &gt; 0</code> = add replicas; <code>Delta &lt; 0</code> = remove replicas.</li>
+<li>
+<p><strong>Must not</strong> read <code>RouterState</code> or <code>ModelSignals</code> directly — only <code>AnalyzerResult</code>.</p>
+</li>
+<li>
+<p><strong>Reuse the shared helpers</strong> when appropriate:</p>
+</li>
+<li><code>scaleUpN(requiredCapacity float64, vcs []VariantCapacity) int</code> — exact replica count via <code>ceil(requiredCapacity / prc)</code>; fallback to 1 when <code>prc == 0</code>.</li>
+<li><code>scaleDownN(spareCapacity float64, vc VariantCapacity) int</code> — exact replica count via <code>floor(spareCapacity / prc)</code>, clamped to <code>[1, ReplicaCount]</code>; fallback to 1.</li>
+<li><code>sortedByAscCost</code>, <code>sortedByDescCost</code> — deterministic variant sort (R2: copy-and-sort to avoid mutating caller data).</li>
+<li>
+<p>Pass only the selected variant to <code>scaleUpN</code> (<code>vcs[0:1]</code>, not the full slice) so <code>perReplicaCapacityForScaleUp</code> uses the chosen variant's own capacity — not a different active variant's.</p>
+</li>
+<li>
+<p><strong>Wire the engine</strong> in <code>sim/cluster/cluster.go</code> — search for <code>&amp;UnlimitedEngine{}</code> in the autoscaler pipeline construction and replace it with your engine (or add a config field + factory once multi-engine selection is implemented in the follow-up wiring PR).</p>
+</li>
+<li>
+<p><strong>Add behavioral tests</strong> in <code>sim/cluster/engine_test.go</code>:</p>
+</li>
+<li>Scale-up: correct <code>Delta</code>, correct <code>Variant</code>, inventory check pass/fail.</li>
+<li>Scale-down: correct <code>Delta</code> from spare capacity, <code>ReplicaCount</code> clamp.</li>
+<li>Edge cases: zero <code>RequiredCapacity</code>, zero <code>SpareCapacity</code>, all variants inactive, <code>TPDegree &gt; 1</code>.</li>
+<li>
+<p>Cross-model: multiple <code>AnalyzerResult</code> entries — verify decisions for each model independently.</p>
+</li>
+<li>
+<p>Extension friction: <strong>2 touch points</strong> (implementation + wiring via <code>&amp;UnlimitedEngine{}</code> in <code>cluster.go</code>). For research variants behind a config field, 4 touch points: implementation + <code>AutoscalerConfig</code> field + factory function + CLI flag.</p>
+</li>
+</ol>
+<p>Examples:
+- See <code>UnlimitedEngine</code> in <code>sim/cluster/engine.go</code> for a simple inventory-ignoring engine
+- See <code>GreedyEngine</code> in <code>sim/cluster/engine.go</code> for an inventory-respecting greedy engine with exact-N sizing</p>
 <h2 id="adding-new-per-request-metric-fields">Adding New Per-Request Metric Fields<a class="headerlink" href="#adding-new-per-request-metric-fields" title="Permanent link">&para;</a></h2>
 <p>To add a new field to per-request JSON output (appears in <code>--metrics-path</code> output):</p>
 <ol>
