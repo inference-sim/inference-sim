@@ -2828,3 +2828,77 @@ func TestGenerateRequests_CohortProportionalMode_BackwardCompatible(t *testing.T
 		t.Fatal("expected at least 1 request; got none")
 	}
 }
+
+func TestGenerateRequests_MultiCohortAbsoluteMode_NonOverlappingSpikes(t *testing.T) {
+	// This is the motivating use case from issue #1225: multiple cohorts with
+	// non-overlapping temporal windows in absolute rate mode (ServeGen workloads).
+	traceRate1 := 5.0 // 5 req/s for first cohort
+	traceRate2 := 8.0 // 8 req/s for second cohort
+
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 0, // Absolute rate mode
+		Cohorts: []CohortSpec{
+			{
+				ID:           "morning",
+				Population:   3,
+				RateFraction: 0.33, // Ignored in absolute mode
+				Arrival:      ArrivalSpec{Process: "constant"},
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+				Spike:        &SpikeSpec{StartTimeUs: 0, DurationUs: 2000000, TraceRate: &traceRate1}, // 0-2s @ 5 req/s
+			},
+			{
+				ID:           "afternoon",
+				Population:   4,
+				RateFraction: 0.67, // Ignored in absolute mode
+				Arrival:      ArrivalSpec{Process: "constant"},
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 150, "std_dev": 15, "min": 1, "max": 300}},
+				OutputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 75, "std_dev": 8, "min": 1, "max": 150}},
+				Spike:        &SpikeSpec{StartTimeUs: 5000000, DurationUs: 3000000, TraceRate: &traceRate2}, // 5-8s @ 8 req/s
+			},
+		},
+	}
+
+	horizon := int64(10000000) // 10 seconds
+	requests, err := GenerateRequests(spec, horizon, 54321)
+	if err != nil {
+		t.Fatalf("GenerateRequests failed: %v", err)
+	}
+
+	// Collect requests per cohort
+	morningReqs := 0
+	afternoonReqs := 0
+	for _, req := range requests {
+		if strings.HasPrefix(req.ClientID, "morning-") {
+			morningReqs++
+			// Morning requests should arrive in [0, 2s)
+			if req.ArrivalTime < 0 || req.ArrivalTime >= 2000000 {
+				t.Errorf("morning request arrived at %d µs (expected [0, 2s))", req.ArrivalTime)
+			}
+		} else if strings.HasPrefix(req.ClientID, "afternoon-") {
+			afternoonReqs++
+			// Afternoon requests should arrive in [5s, 8s)
+			if req.ArrivalTime < 5000000 || req.ArrivalTime >= 8000000 {
+				t.Errorf("afternoon request arrived at %d µs (expected [5s, 8s))", req.ArrivalTime)
+			}
+		}
+	}
+
+	// Rate conservation: morning cohort should generate ~10 requests (5 req/s * 2s)
+	// afternoon cohort should generate ~24 requests (8 req/s * 3s)
+	// Tolerance: ±20% due to stochastic sampling
+	if morningReqs < 8 || morningReqs > 12 {
+		t.Errorf("morning cohort: got %d requests; expected ~10 (5 req/s * 2s)", morningReqs)
+	}
+	if afternoonReqs < 19 || afternoonReqs > 29 {
+		t.Errorf("afternoon cohort: got %d requests; expected ~24 (8 req/s * 3s)", afternoonReqs)
+	}
+
+	// No overlap: no request should arrive in [2s, 5s) window
+	for _, req := range requests {
+		if req.ArrivalTime >= 2000000 && req.ArrivalTime < 5000000 {
+			t.Errorf("unexpected request in gap window [2s, 5s): %s at %d µs", req.ClientID, req.ArrivalTime)
+		}
+	}
+}

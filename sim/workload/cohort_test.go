@@ -125,6 +125,15 @@ func TestExpandCohorts_SpikeTraceRate_DividedByPopulation(t *testing.T) {
 			t.Errorf("client %d: TraceRate = %v; expected ~1.086 (7.6/7)", i, actualRate)
 		}
 	}
+
+	// Rate conservation invariant: sum of per-client rates must equal cohort rate
+	var sumRates float64
+	for _, client := range expanded {
+		sumRates += *client.Lifecycle.Windows[0].TraceRate
+	}
+	if math.Abs(sumRates-7.6) > 1e-9 {
+		t.Errorf("rate conservation: sum of per-client rates = %v; expected 7.6 (cohort TraceRate)", sumRates)
+	}
 }
 
 func TestValidation_AbsoluteMode_CohortWithSpikeTraceRate_Passes(t *testing.T) {
