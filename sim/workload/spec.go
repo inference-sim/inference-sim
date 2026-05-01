@@ -285,10 +285,15 @@ func (s *WorkloadSpec) Validate() error {
 					}
 				}
 			}
-			// Cohorts not supported in absolute rate mode
-			if len(s.Cohorts) > 0 {
-				return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but cohorts are present (cohorts require proportional allocation)")
+		// Cohorts in absolute mode require spike.trace_rate
+		if len(s.Cohorts) > 0 {
+			for i, cohort := range s.Cohorts {
+				if cohort.Spike != nil && cohort.Spike.TraceRate == nil {
+					return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but cohort %d has spike without trace_rate", i)
+				}
+				// Diurnal/Drain patterns in absolute mode: not yet supported, but not blocked
 			}
+		}
 		} else {
 			// Normal proportional mode: aggregate_rate must be positive
 			if err := validateFinitePositive("aggregate_rate", s.AggregateRate); err != nil {
