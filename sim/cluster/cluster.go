@@ -406,7 +406,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			config.FlowControlKVCacheUtilThreshold,
 			config.FlowControlMaxConcurrency,
 		)
-		fcAdmission := NewFlowControlAdmission(gq, cs.priorityMap)
+		fcAdmission := NewFlowControlAdmission(gq)
 		cs.flowControlAdmission = fcAdmission
 		cs.admissionPolicy = fcAdmission
 		logrus.Infof("[cluster] flow control enabled: detector=%q, dispatch=%q, maxDepth=%d, perBandCapacity=%d",

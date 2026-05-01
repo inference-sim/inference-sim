@@ -316,7 +316,7 @@ type TenantBudgetTracker interface {
 }
 
 // TenantBudgetAdmission wraps an inner AdmissionPolicy and applies per-tenant
-// budget enforcement after the inner policy admits the request.
+// budget enforcement before the inner policy processes the request.
 // Only sheddable requests (priority < 0) are rejected when over budget.
 // Non-sheddable requests always pass the budget check.
 type TenantBudgetAdmission struct {

@@ -10,7 +10,7 @@ import (
 func TestFlowControlAdmission_Enqueue(t *testing.T) {
 	pm := sim.DefaultSLOPriorityMap()
 	q := NewGatewayQueue("priority", 0, pm)
-	fc := NewFlowControlAdmission(q, pm)
+	fc := NewFlowControlAdmission(q)
 
 	req := &sim.Request{ID: "r1", SLOClass: "standard", TenantID: "t1"}
 	state := &sim.RouterState{Clock: 100}
@@ -33,7 +33,7 @@ func TestFlowControlAdmission_Enqueue(t *testing.T) {
 func TestFlowControlAdmission_QueueRejection(t *testing.T) {
 	pm := sim.DefaultSLOPriorityMap()
 	q := NewGatewayQueue("priority", 1, pm) // maxDepth=1
-	fc := NewFlowControlAdmission(q, pm)
+	fc := NewFlowControlAdmission(q)
 
 	fc.Admit(&sim.Request{ID: "r1", SLOClass: "standard"}, &sim.RouterState{Clock: 100})
 	r2 := &sim.Request{ID: "r2", SLOClass: "standard"}
@@ -56,7 +56,7 @@ func TestFlowControlAdmission_QueueRejection(t *testing.T) {
 func TestFlowControlAdmission_ShedVictim(t *testing.T) {
 	pm := sim.DefaultSLOPriorityMap()
 	q := NewGatewayQueue("priority", 1, pm) // maxDepth=1
-	fc := NewFlowControlAdmission(q, pm)
+	fc := NewFlowControlAdmission(q)
 
 	fc.Admit(&sim.Request{ID: "r1", SLOClass: "batch"}, &sim.RouterState{Clock: 100})
 	fc.Admit(&sim.Request{ID: "r2", SLOClass: "standard"}, &sim.RouterState{Clock: 200})
@@ -79,7 +79,7 @@ func TestFlowControlAdmission_NilQueue_Panics(t *testing.T) {
 			t.Error("expected panic for nil queue")
 		}
 	}()
-	NewFlowControlAdmission(nil, nil)
+	NewFlowControlAdmission(nil)
 }
 
 // verifyINV1Conservation checks the full INV-1 request conservation invariant.
@@ -112,7 +112,7 @@ func verifyINV1Conservation(t *testing.T, cs *ClusterSimulator, requests []*sim.
 func TestFlowControlAdmission_SeqCounterIncrementsMonotonically(t *testing.T) {
 	pm := sim.DefaultSLOPriorityMap()
 	q := NewGatewayQueue("priority", 0, pm)
-	fc := NewFlowControlAdmission(q, pm)
+	fc := NewFlowControlAdmission(q)
 
 	fc.Admit(&sim.Request{ID: "r1", SLOClass: "standard"}, &sim.RouterState{Clock: 100})
 	fc.Admit(&sim.Request{ID: "r2", SLOClass: "standard"}, &sim.RouterState{Clock: 200})
@@ -135,7 +135,7 @@ func (s *stubBudgetTracker) IsOverBudget(string) bool { return s.overBudget }
 func TestTenantBudgetAdmission_BudgetBeforeEnqueue(t *testing.T) {
 	pm := sim.DefaultSLOPriorityMap()
 	q := NewGatewayQueue("priority", 0, pm)
-	fc := NewFlowControlAdmission(q, pm)
+	fc := NewFlowControlAdmission(q)
 	policy := sim.NewTenantBudgetAdmission(fc, &stubBudgetTracker{overBudget: true}, pm)
 
 	req := &sim.Request{ID: "r1", SLOClass: "batch", TenantID: "t1"} // batch is sheddable
@@ -157,7 +157,7 @@ func TestTenantBudgetAdmission_BudgetBeforeEnqueue(t *testing.T) {
 func TestTenantBudgetAdmission_NonSheddablePassesBudget(t *testing.T) {
 	pm := sim.DefaultSLOPriorityMap()
 	q := NewGatewayQueue("priority", 0, pm)
-	fc := NewFlowControlAdmission(q, pm)
+	fc := NewFlowControlAdmission(q)
 	policy := sim.NewTenantBudgetAdmission(fc, &stubBudgetTracker{overBudget: true}, pm)
 
 	req := &sim.Request{ID: "r1", SLOClass: "standard", TenantID: "t1"} // non-sheddable

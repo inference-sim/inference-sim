@@ -133,7 +133,7 @@ func sortedFlowKeys(flows map[string]*flowQueue) []string {
 }
 
 // Enqueue adds a request to the gateway queue.
-// Capacity checks: per-band first (within-band shedding), then global (cross-band shedding).
+// Capacity checks: per-band first (reject when band full), then global (cross-band shedding).
 // Only sheddable (priority < 0) entries are eviction candidates.
 // Returns the outcome and the evicted victim (non-nil only for ShedVictim).
 func (q *GatewayQueue) Enqueue(req *sim.Request, seqID int64) (EnqueueOutcome, *sim.Request) {
@@ -144,7 +144,6 @@ func (q *GatewayQueue) Enqueue(req *sim.Request, seqID int64) (EnqueueOutcome, *
 	}
 
 	band := q.findOrCreateBand(priority)
-	var shedVictim *sim.Request
 
 	// Step 1: Per-band capacity check.
 	// Within a band all entries share the same priority and new arrivals have higher
@@ -155,20 +154,17 @@ func (q *GatewayQueue) Enqueue(req *sim.Request, seqID int64) (EnqueueOutcome, *
 	}
 
 	// Step 2: Global capacity check (cross-band shedding).
-	// If band-level shed occurred above, totalLen was decremented and this check is skipped.
+	// Evict the lowest-priority sheddable entry globally to make room.
+	var shedVictim *sim.Request
 	if q.maxDepth > 0 && q.totalLen >= q.maxDepth {
 		victim, victimFlow, victimBand, victimIdx := q.findGlobalShedVictim(priority, seqID)
 		if victim == nil {
 			q.rejectedCount++
 			return Rejected, nil
 		}
-		// If we already shed at band level, we have room globally (band shed decremented totalLen).
-		// Only do global shed when no band shed happened.
-		if shedVictim == nil {
-			shedVictim = victim.request
-			q.removeEntryByIndex(victimFlow, victimBand, victimIdx)
-			q.shedCount++
-		}
+		shedVictim = victim.request
+		q.removeEntryByIndex(victimFlow, victimBand, victimIdx)
+		q.shedCount++
 	}
 
 	// Step 3: Enqueue into target band/flow.
@@ -196,8 +192,8 @@ func (q *GatewayQueue) findGlobalShedVictim(incomingPriority int, incomingSeqID 
 	var bestBand *priorityBand
 	var bestIdx int
 
-	// Iterate bands (already sorted descending). Check lowest-priority bands first for efficiency,
-	// but we need to find the absolute lowest across all bands.
+	// Iterate all bands (sorted descending by priority). Must scan exhaustively
+	// to find the absolute lowest-priority sheddable entry across all bands.
 	for _, band := range q.bands {
 		for _, tid := range sortedFlowKeys(band.flows) {
 			flow := band.flows[tid]
@@ -240,12 +236,12 @@ func (q *GatewayQueue) findGlobalShedVictim(incomingPriority int, incomingSeqID 
 
 // removeEntryByIndex removes the entry at the given index from the flow and decrements counts.
 func (q *GatewayQueue) removeEntryByIndex(flow *flowQueue, band *priorityBand, idx int) {
-	// Remove from slice via swap-with-last for O(1) removal. Safe because the shedding victim
-	// is always the last element in its flow (highest seqID from append-only FIFO ordering),
-	// so no actual swap occurs and the head (index 0) used by Dequeue is preserved.
+	// Remove from slice. The shedding victim is always the last element in its flow
+	// (highest seqID from append-only FIFO ordering), so this is a simple truncation
+	// and the head (index 0) used by Dequeue is preserved.
 	last := len(flow.requests) - 1
 	if idx != last {
-		flow.requests[idx] = flow.requests[last]
+		panic(fmt.Sprintf("removeEntryByIndex: idx=%d != last=%d — shed victim must be flow tail (seqID ordering violated)", idx, last))
 	}
 	flow.requests = flow.requests[:last]
 	band.totalLen--
@@ -266,10 +262,16 @@ func (q *GatewayQueue) Dequeue() *sim.Request {
 		return nil
 	}
 
+	var req *sim.Request
 	if q.priorityMode {
-		return q.dequeuePriority()
+		req = q.dequeuePriority()
+	} else {
+		req = q.dequeueFIFO()
 	}
-	return q.dequeueFIFO()
+	if req == nil {
+		panic(fmt.Sprintf("GatewayQueue.Dequeue: totalLen=%d but dequeue returned nil — counter desync", q.totalLen))
+	}
+	return req
 }
 
 // dequeuePriority dispatches from the highest non-empty band.

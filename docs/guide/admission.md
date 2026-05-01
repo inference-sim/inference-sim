@@ -203,8 +203,10 @@ admission decision, matching llm-d's `FlowControlAdmissionController`.
 |------|-------------|---------|
 | `--per-band-capacity` | Max requests per priority band (0=unlimited) | 0 |
 
-When a band reaches its capacity limit, incoming requests for that band are rejected unless a sheddable
-entry within the band can be evicted. The global `--max-gateway-queue-depth` limit applies across all bands.
+When a band reaches its capacity limit, incoming requests for that band are rejected
+(all entries in a band share the same priority, so displacement is never possible).
+The global `--max-gateway-queue-depth` limit applies across all bands with cross-band
+shedding of sheddable entries.
 
 ### Example
 

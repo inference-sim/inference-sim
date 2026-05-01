@@ -17,7 +17,6 @@ import (
 // they must NOT increment cs.rejectedRequests.
 type FlowControlAdmission struct {
 	queue       *GatewayQueue
-	priorityMap *sim.SLOPriorityMap
 	seqCounter  int64 // monotonic, separate from event queue seqIDs (DES single-threaded — safe without atomics)
 	lastOutcome EnqueueOutcome
 	lastVictim  *sim.Request
@@ -25,14 +24,11 @@ type FlowControlAdmission struct {
 
 // NewFlowControlAdmission creates a FlowControlAdmission policy.
 // Panics if queue is nil.
-func NewFlowControlAdmission(queue *GatewayQueue, priorityMap *sim.SLOPriorityMap) *FlowControlAdmission {
+func NewFlowControlAdmission(queue *GatewayQueue) *FlowControlAdmission {
 	if queue == nil {
 		panic("FlowControlAdmission: queue must not be nil")
 	}
-	if priorityMap == nil {
-		priorityMap = sim.DefaultSLOPriorityMap()
-	}
-	return &FlowControlAdmission{queue: queue, priorityMap: priorityMap}
+	return &FlowControlAdmission{queue: queue}
 }
 
 // Admit enqueues the request into the per-band gateway queue.
