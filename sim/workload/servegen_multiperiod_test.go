@@ -182,18 +182,26 @@ func TestServeGenMultiPeriod_E2E(t *testing.T) {
 	chunk0Dataset := map[string]map[string]string{
 		"0": {"input_tokens": "{100: 1.0}", "output_tokens": "{50: 1.0}"},
 	}
-	os.WriteFile(filepath.Join(tmpDir, "chunk-0-trace.csv"), []byte(chunk0Trace), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "chunk-0-trace.csv"), []byte(chunk0Trace), 0644); err != nil {
+		t.Fatal(err)
+	}
 	d0, _ := json.Marshal(chunk0Dataset)
-	os.WriteFile(filepath.Join(tmpDir, "chunk-0-dataset.json"), d0, 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "chunk-0-dataset.json"), d0, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	chunk1Trace := "0,6.0,0.9,Gamma,2.0,0.05\n" +
 		"600,5.5,0.95,Gamma,2.1,0.05\n"
 	chunk1Dataset := map[string]map[string]string{
 		"0": {"input_tokens": "{200: 1.0}", "output_tokens": "{80: 1.0}"},
 	}
-	os.WriteFile(filepath.Join(tmpDir, "chunk-1-trace.csv"), []byte(chunk1Trace), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "chunk-1-trace.csv"), []byte(chunk1Trace), 0644); err != nil {
+		t.Fatal(err)
+	}
 	d1, _ := json.Marshal(chunk1Dataset)
-	os.WriteFile(filepath.Join(tmpDir, "chunk-1-dataset.json"), d1, 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "chunk-1-dataset.json"), d1, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Morning period (28800-30600s): chunk 2
 	chunk2Trace := "28800,8.0,1.0,Weibull,1.6,0.03\n" +
@@ -201,9 +209,13 @@ func TestServeGenMultiPeriod_E2E(t *testing.T) {
 	chunk2Dataset := map[string]map[string]string{
 		"21600": {"input_tokens": "{150: 1.0}", "output_tokens": "{60: 1.0}"},
 	}
-	os.WriteFile(filepath.Join(tmpDir, "chunk-2-trace.csv"), []byte(chunk2Trace), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "chunk-2-trace.csv"), []byte(chunk2Trace), 0644); err != nil {
+		t.Fatal(err)
+	}
 	d2, _ := json.Marshal(chunk2Dataset)
-	os.WriteFile(filepath.Join(tmpDir, "chunk-2-dataset.json"), d2, 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "chunk-2-dataset.json"), d2, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Afternoon period (50400-52200s): chunks 3, 4
 	chunk3Trace := "50400,10.0,1.1,Gamma,2.5,0.06\n" +
@@ -211,18 +223,26 @@ func TestServeGenMultiPeriod_E2E(t *testing.T) {
 	chunk3Dataset := map[string]map[string]string{
 		"43200": {"input_tokens": "{180: 1.0}", "output_tokens": "{70: 1.0}"},
 	}
-	os.WriteFile(filepath.Join(tmpDir, "chunk-3-trace.csv"), []byte(chunk3Trace), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "chunk-3-trace.csv"), []byte(chunk3Trace), 0644); err != nil {
+		t.Fatal(err)
+	}
 	d3, _ := json.Marshal(chunk3Dataset)
-	os.WriteFile(filepath.Join(tmpDir, "chunk-3-dataset.json"), d3, 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "chunk-3-dataset.json"), d3, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	chunk4Trace := "50400,12.0,1.2,Weibull,1.7,0.04\n" +
 		"51000,11.0,1.25,Weibull,1.75,0.04\n"
 	chunk4Dataset := map[string]map[string]string{
 		"43200": {"input_tokens": "{220: 1.0}", "output_tokens": "{90: 1.0}"},
 	}
-	os.WriteFile(filepath.Join(tmpDir, "chunk-4-trace.csv"), []byte(chunk4Trace), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "chunk-4-trace.csv"), []byte(chunk4Trace), 0644); err != nil {
+		t.Fatal(err)
+	}
 	d4, _ := json.Marshal(chunk4Dataset)
-	os.WriteFile(filepath.Join(tmpDir, "chunk-4-dataset.json"), d4, 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "chunk-4-dataset.json"), d4, 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// WHEN converting with default parameters
 	spec, err := ConvertServeGen(tmpDir, 600, 180)
