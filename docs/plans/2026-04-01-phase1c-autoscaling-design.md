@@ -45,7 +45,7 @@ BLIS can simulate a multi-instance cluster with admission control, routing, and 
               │  SaturationAnalyzer     │  ← KV+queue spare capacity
               │  UtilizationAnalyzer    │  ← single-signal KV baseline
               │  QueueAnalyzer          │  ← single-signal queue baseline
-              │  QueueingModelAnalyzer  │  ← M/M/1 token model (future)
+              │  QueueingModelAnalyzer  │  ← M/M/1/K-SD queueing model (#1200)
               └────────────┬────────────┘
                            │  []AnalyzerResult
                            │  (model-level supply/demand + per-variant breakdown)
@@ -278,7 +278,7 @@ Two drain policies add new terms:
 | `internal/collector/` — pulls metrics from K8s pods + Prometheus | `Collector` interface + `DefaultCollector` (wraps `RouterState`) |
 | `internal/interfaces/Analyzer` — `Analyze(AnalyzerInput) *AnalyzerResult` | `Analyzer` interface (same name, same contract) |
 | `internal/engines/analyzers/saturation_v2/` — KV+queue spare capacity | `SaturationAnalyzer` (#905) |
-| `pkg/analyzer/` — M/M/1 queueing model | `QueueingModelAnalyzer` (future issue) |
+| `pkg/analyzer/` — M/M/1 queueing model | `QueueingModelAnalyzer` (M/M/1/K-SD, three-phase parameter estimation — #1200) |
 | `internal/interfaces/VariantAutoscalingsEngine` — variant allocation | `Engine` interface |
 | `pkg/solver/greedy.go` — constrained allocation | `GreedyEngine` + `GreedySolver` (#new) |
 | `pkg/solver/solver.go` SolveUnlimited — separable greedy | `UnlimitedEngine` (#new) |

@@ -374,6 +374,10 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		// Wire the default WVA pipeline: DefaultCollector → V2SaturationAnalyzer → UnlimitedEngine → DirectActuator.
 		// effectiveAnalyzerConfig fills zero fields with WVA reference defaults so callers only need interval_us.
 		// Tests that need custom components (stubs, nopActuator) replace cs.autoscaler after construction (same-package access).
+		// TODO(#954): add an AnalyzerType selector to DeploymentConfig so QueueingModelAnalyzer / GreedyEngine can be
+		// activated via config.QMConfig without requiring test-side cs.autoscaler replacement.
+		// Also: DefaultCollector produces zero TTFT/ITL/AvgInTokens/AvgOutTokens (see default_collector.go);
+		// QueueingModelAnalyzer will silently skip all observations until a latency-populating collector is wired (#1198).
 		analyzerCfg := effectiveAnalyzerConfig(config.AutoscalerAnalyzerConfig)
 		cs.autoscaler = newAutoscalerPipeline(
 			&DefaultCollector{},
