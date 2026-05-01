@@ -175,7 +175,7 @@ func TestValidation_AbsoluteMode_CohortWithoutSpikeTraceRate_Fails(t *testing.T)
 	}
 }
 
-func TestValidation_AbsoluteMode_CohortWithDiurnal_Passes(t *testing.T) {
+func TestValidation_AbsoluteMode_CohortWithDiurnal_ReturnsError(t *testing.T) {
 	spec := &WorkloadSpec{
 		Version:       "2",
 		AggregateRate: 0, // Absolute mode
@@ -187,13 +187,16 @@ func TestValidation_AbsoluteMode_CohortWithDiurnal_Passes(t *testing.T) {
 				Arrival:      ArrivalSpec{Process: "poisson"},
 				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
 				OutputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
-				Diurnal:      &DiurnalSpec{PeakHour: 14, PeakToTroughRatio: 2.0}, // No trace_rate yet
+				Diurnal:      &DiurnalSpec{PeakHour: 14, PeakToTroughRatio: 2.0}, // Diurnal not supported in absolute mode
 			},
 		},
 	}
 	err := spec.Validate()
-	if err != nil {
-		t.Errorf("expected validation to pass for diurnal (not yet supported, but not blocked); got error: %v", err)
+	if err == nil {
+		t.Fatal("expected error for diurnal cohort in absolute mode (not yet supported)")
+	}
+	if !strings.Contains(err.Error(), "diurnal pattern") {
+		t.Errorf("expected error about diurnal pattern; got: %v", err)
 	}
 }
 

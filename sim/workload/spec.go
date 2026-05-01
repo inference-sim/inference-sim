@@ -177,7 +177,10 @@ type ActiveWindow struct {
 
 	// Per-window parameters for time-varying workloads (ServeGen compatibility).
 	// When set, these override the client-level parameters during this window.
-	TraceRate  *float64     `yaml:"trace_rate,omitempty"`          // Weight for proportional rate allocation
+	// TraceRate semantic depends on context:
+	//   - Rate-mode clients (aggregate_rate > 0): weight for proportional rate allocation
+	//   - Cohort spikes (aggregate_rate = 0): absolute per-client rate in requests/second
+	TraceRate  *float64     `yaml:"trace_rate,omitempty"`
 	Arrival    *ArrivalSpec `yaml:"arrival,omitempty"`             // Arrival pattern (shape/scale for CV)
 	InputDist  *DistSpec    `yaml:"input_distribution,omitempty"`  // Input token distribution
 	OutputDist *DistSpec    `yaml:"output_distribution,omitempty"` // Output token distribution
@@ -288,6 +291,13 @@ func (s *WorkloadSpec) Validate() error {
 		// Cohorts in absolute mode require spike.trace_rate
 		if len(s.Cohorts) > 0 {
 			for i, cohort := range s.Cohorts {
+				// Diurnal/Drain patterns in absolute mode: not yet supported
+				if cohort.Diurnal != nil {
+					return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but cohort %d has diurnal pattern (not yet supported; use spike with trace_rate)", i)
+				}
+				if cohort.Drain != nil {
+					return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but cohort %d has drain pattern (not yet supported; use spike with trace_rate)", i)
+				}
 				if cohort.Spike != nil {
 					if cohort.Spike.TraceRate == nil {
 						return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but cohort %d has spike without trace_rate", i)
@@ -296,8 +306,10 @@ func (s *WorkloadSpec) Validate() error {
 					if err := validateFinitePositive(fmt.Sprintf("cohort %d spike.trace_rate", i), *cohort.Spike.TraceRate); err != nil {
 						return err
 					}
+				} else {
+					// No temporal pattern at all - would silently generate 0 requests (R1)
+					return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but cohort %d has no spike pattern with trace_rate", i)
 				}
-				// Diurnal/Drain patterns in absolute mode: not yet supported, but not blocked
 			}
 		}
 		} else {
