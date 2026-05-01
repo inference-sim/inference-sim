@@ -54,6 +54,7 @@ type TraceRecord struct {
 	ClientID          string
 	TenantID          string
 	SLOClass          string
+	VLLMPriority      int    // vLLM priority value (0=highest urgency, higher=lower urgency); 0 when not set
 	SessionID         string
 	RoundIndex        int
 	PrefixGroup       string
@@ -117,8 +118,32 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
+	// Conditionally include vllm_priority column: present iff priority was actually computed.
+	// Include when either:
+	// 1. Any record has non-zero priority (batch, standard, sheddable, background from observe)
+	// 2. Any record has SLOClass in "real" mode (covers critical=0 from observe)
+	// This prevents misleading empty columns in simulation traces (Mode != "real") where
+	// priority was never sent to a server, even if SLOClass is set for admission control.
+	includeVLLMPriority := false
+	for _, r := range records {
+		if r.VLLMPriority != 0 || (r.SLOClass != "" && header.Mode == "real") {
+			includeVLLMPriority = true
+			break
+		}
+	}
+
+	// Build column header list
+	columns := make([]string, 0, len(traceV2Columns)+1)
+	for i, col := range traceV2Columns {
+		columns = append(columns, col)
+		// Insert vllm_priority immediately after slo_class (index 3)
+		if i == 3 && includeVLLMPriority {
+			columns = append(columns, "vllm_priority")
+		}
+	}
+
 	// Write header row
-	if err := writer.Write(traceV2Columns); err != nil {
+	if err := writer.Write(columns); err != nil {
 		return fmt.Errorf("writing CSV header: %w", err)
 	}
 
@@ -129,6 +154,13 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 			r.ClientID,
 			r.TenantID,
 			r.SLOClass,
+		}
+		// Conditionally append vllm_priority after slo_class
+		if includeVLLMPriority {
+			row = append(row, strconv.Itoa(r.VLLMPriority))
+		}
+		// Continue with remaining fields
+		row = append(row,
 			r.SessionID,
 			strconv.Itoa(r.RoundIndex),
 			r.PrefixGroup,
@@ -152,7 +184,7 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 			r.Status,
 			r.ErrorMessage,
 			r.FinishReason,
-		}
+		)
 		if err := writer.Write(row); err != nil {
 			return fmt.Errorf("writing CSV row %d: %w", r.RequestID, err)
 		}
@@ -184,9 +216,19 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	reader := csv.NewReader(file)
 	reader.FieldsPerRecord = -1 // allow extra columns (future extensions)
 
-	// Skip header row
-	if _, err := reader.Read(); err != nil {
+	// Read header row to detect optional columns
+	headerRow, err := reader.Read()
+	if err != nil {
 		return nil, fmt.Errorf("reading CSV header: %w", err)
+	}
+
+	// Detect if vllm_priority column is present (appears after slo_class)
+	hasVLLMPriority := false
+	for _, col := range headerRow {
+		if col == "vllm_priority" {
+			hasVLLMPriority = true
+			break
+		}
 	}
 
 	var records []TraceRecord
@@ -198,11 +240,15 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading CSV row: %w", err)
 		}
-		if len(row) < len(traceV2Columns) {
-			return nil, fmt.Errorf("CSV row has %d columns, expected %d", len(row), len(traceV2Columns))
+		minCols := len(traceV2Columns)
+		if hasVLLMPriority {
+			minCols++ // expect 28 columns when vllm_priority is present
+		}
+		if len(row) < minCols {
+			return nil, fmt.Errorf("CSV row has %d columns, expected at least %d", len(row), minCols)
 		}
 
-		r, err := parseTraceRecord(row)
+		r, err := parseTraceRecord(row, hasVLLMPriority)
 		if err != nil {
 			return nil, err
 		}
@@ -212,113 +258,134 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	return &TraceV2{Header: header, Records: records}, nil
 }
 
-// parseTraceRecord parses a 27-column (current schema) CSV row.
-func parseTraceRecord(row []string) (*TraceRecord, error) {
+// parseTraceRecord parses a CSV row. Handles both 27-column (without vllm_priority)
+// and 28-column (with vllm_priority after slo_class) schemas.
+func parseTraceRecord(row []string, hasVLLMPriority bool) (*TraceRecord, error) {
+	// Column offset: when vllm_priority is present at index 4, all columns after
+	// slo_class (index 3) shift by +1.
+	offset := 0
+	if hasVLLMPriority {
+		offset = 1
+	}
+
 	requestID, err := strconv.Atoi(row[0])
 	if err != nil {
 		return nil, fmt.Errorf("parsing request_id %q: %w", row[0], err)
 	}
-	roundIndex, err := strconv.Atoi(row[5])
-	if err != nil {
-		return nil, fmt.Errorf("parsing round_index %q: %w", row[5], err)
+
+	// Parse vllm_priority if present (index 4, immediately after slo_class at index 3)
+	vllmPriority := 0
+	if hasVLLMPriority {
+		vllmPriority, err = strconv.Atoi(row[4])
+		if err != nil {
+			return nil, fmt.Errorf("parsing vllm_priority %q: %w", row[4], err)
+		}
+		if vllmPriority < 0 {
+			return nil, fmt.Errorf("parsing vllm_priority: negative value %d not allowed", vllmPriority)
+		}
 	}
-	// Column 7: prefix_length (new in 27-column schema)
-	prefixLength, err := strconv.Atoi(row[7])
+
+	roundIndex, err := strconv.Atoi(row[5+offset])
 	if err != nil {
-		return nil, fmt.Errorf("parsing prefix_length %q: %w", row[7], err)
+		return nil, fmt.Errorf("parsing round_index %q: %w", row[5+offset], err)
+	}
+	// Column 7+offset: prefix_length
+	prefixLength, err := strconv.Atoi(row[7+offset])
+	if err != nil {
+		return nil, fmt.Errorf("parsing prefix_length %q: %w", row[7+offset], err)
 	}
 	if prefixLength < 0 {
 		return nil, fmt.Errorf("parsing prefix_length: negative value %d not allowed", prefixLength)
 	}
-	// Column 8: streaming (was 7)
-	streaming, err := strconv.ParseBool(row[8])
+	// Column 8+offset: streaming
+	streaming, err := strconv.ParseBool(row[8+offset])
 	if err != nil {
-		return nil, fmt.Errorf("parsing streaming %q: %w", row[8], err)
+		return nil, fmt.Errorf("parsing streaming %q: %w", row[8+offset], err)
 	}
-	// Column 9: input_tokens (was 8)
-	inputTokens, err := strconv.Atoi(row[9])
+	// Column 9+offset: input_tokens
+	inputTokens, err := strconv.Atoi(row[9+offset])
 	if err != nil {
-		return nil, fmt.Errorf("parsing input_tokens %q: %w", row[9], err)
+		return nil, fmt.Errorf("parsing input_tokens %q: %w", row[9+offset], err)
 	}
 	// Negative token counts cause make([]int, negative) panics in LoadTraceV2Requests.
 	if inputTokens < 0 {
 		return nil, fmt.Errorf("parsing input_tokens: negative value %d not allowed", inputTokens)
 	}
-	outputTokens, err := strconv.Atoi(row[10])
+	outputTokens, err := strconv.Atoi(row[10+offset])
 	if err != nil {
-		return nil, fmt.Errorf("parsing output_tokens %q: %w", row[10], err)
+		return nil, fmt.Errorf("parsing output_tokens %q: %w", row[10+offset], err)
 	}
 	if outputTokens < 0 {
 		return nil, fmt.Errorf("parsing output_tokens: negative value %d not allowed", outputTokens)
 	}
-	textTokens, err := strconv.Atoi(row[11])
+	textTokens, err := strconv.Atoi(row[11+offset])
 	if err != nil {
-		return nil, fmt.Errorf("parsing text_tokens %q: %w", row[11], err)
+		return nil, fmt.Errorf("parsing text_tokens %q: %w", row[11+offset], err)
 	}
 	if textTokens < 0 {
 		return nil, fmt.Errorf("parsing text_tokens: negative value %d not allowed", textTokens)
 	}
-	imageTokens, err := strconv.Atoi(row[12])
+	imageTokens, err := strconv.Atoi(row[12+offset])
 	if err != nil {
-		return nil, fmt.Errorf("parsing image_tokens %q: %w", row[12], err)
+		return nil, fmt.Errorf("parsing image_tokens %q: %w", row[12+offset], err)
 	}
 	if imageTokens < 0 {
 		return nil, fmt.Errorf("parsing image_tokens: negative value %d not allowed", imageTokens)
 	}
-	audioTokens, err := strconv.Atoi(row[13])
+	audioTokens, err := strconv.Atoi(row[13+offset])
 	if err != nil {
-		return nil, fmt.Errorf("parsing audio_tokens %q: %w", row[13], err)
+		return nil, fmt.Errorf("parsing audio_tokens %q: %w", row[13+offset], err)
 	}
 	if audioTokens < 0 {
 		return nil, fmt.Errorf("parsing audio_tokens: negative value %d not allowed", audioTokens)
 	}
-	videoTokens, err := strconv.Atoi(row[14])
+	videoTokens, err := strconv.Atoi(row[14+offset])
 	if err != nil {
-		return nil, fmt.Errorf("parsing video_tokens %q: %w", row[14], err)
+		return nil, fmt.Errorf("parsing video_tokens %q: %w", row[14+offset], err)
 	}
 	if videoTokens < 0 {
 		return nil, fmt.Errorf("parsing video_tokens: negative value %d not allowed", videoTokens)
 	}
-	reasonRatio, err := strconv.ParseFloat(row[15], 64)
+	reasonRatio, err := strconv.ParseFloat(row[15+offset], 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing reason_ratio %q: %w", row[15], err)
+		return nil, fmt.Errorf("parsing reason_ratio %q: %w", row[15+offset], err)
 	}
 	if math.IsNaN(reasonRatio) || math.IsInf(reasonRatio, 0) || reasonRatio < 0 || reasonRatio > 1.0 {
-		return nil, fmt.Errorf("parsing reason_ratio %q: must be in range [0.0, 1.0], got %g", row[15], reasonRatio)
+		return nil, fmt.Errorf("parsing reason_ratio %q: must be in range [0.0, 1.0], got %g", row[15+offset], reasonRatio)
 	}
-	deadlineUs, err := strconv.ParseInt(row[17], 10, 64)
+	deadlineUs, err := strconv.ParseInt(row[17+offset], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing deadline_us %q: %w", row[17], err)
+		return nil, fmt.Errorf("parsing deadline_us %q: %w", row[17+offset], err)
 	}
 	if deadlineUs < 0 {
 		return nil, fmt.Errorf("parsing deadline_us: negative value %d not allowed (use 0 for no timeout)", deadlineUs)
 	}
-	serverInputTokens, err := strconv.Atoi(row[18])
+	serverInputTokens, err := strconv.Atoi(row[18+offset])
 	if err != nil {
-		return nil, fmt.Errorf("parsing server_input_tokens %q: %w", row[18], err)
+		return nil, fmt.Errorf("parsing server_input_tokens %q: %w", row[18+offset], err)
 	}
 	if serverInputTokens < 0 {
 		return nil, fmt.Errorf("parsing server_input_tokens: negative value %d not allowed", serverInputTokens)
 	}
-	arrivalTimeUs, err := strconv.ParseInt(row[19], 10, 64)
+	arrivalTimeUs, err := strconv.ParseInt(row[19+offset], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing arrival_time_us %q: %w", row[19], err)
+		return nil, fmt.Errorf("parsing arrival_time_us %q: %w", row[19+offset], err)
 	}
-	sendTimeUs, err := strconv.ParseInt(row[20], 10, 64)
+	sendTimeUs, err := strconv.ParseInt(row[20+offset], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing send_time_us %q: %w", row[20], err)
+		return nil, fmt.Errorf("parsing send_time_us %q: %w", row[20+offset], err)
 	}
-	firstChunkTimeUs, err := strconv.ParseInt(row[21], 10, 64)
+	firstChunkTimeUs, err := strconv.ParseInt(row[21+offset], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing first_chunk_time_us %q: %w", row[21], err)
+		return nil, fmt.Errorf("parsing first_chunk_time_us %q: %w", row[21+offset], err)
 	}
-	lastChunkTimeUs, err := strconv.ParseInt(row[22], 10, 64)
+	lastChunkTimeUs, err := strconv.ParseInt(row[22+offset], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing last_chunk_time_us %q: %w", row[22], err)
+		return nil, fmt.Errorf("parsing last_chunk_time_us %q: %w", row[22+offset], err)
 	}
-	numChunks, err := strconv.Atoi(row[23])
+	numChunks, err := strconv.Atoi(row[23+offset])
 	if err != nil {
-		return nil, fmt.Errorf("parsing num_chunks %q: %w", row[23], err)
+		return nil, fmt.Errorf("parsing num_chunks %q: %w", row[23+offset], err)
 	}
 	if numChunks < 0 {
 		return nil, fmt.Errorf("parsing num_chunks: negative value %d not allowed", numChunks)
@@ -329,16 +396,17 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 	if deadlineUs > 0 && arrivalTimeUs > 0 && deadlineUs < arrivalTimeUs {
 		return nil, fmt.Errorf("parsing deadline_us: value %d precedes arrival_time_us %d (corrupt trace?)", deadlineUs, arrivalTimeUs)
 	}
-	finishReason := strings.TrimSpace(row[26])
+	finishReason := strings.TrimSpace(row[26+offset])
 
 	return &TraceRecord{
 		RequestID:         requestID,
 		ClientID:          row[1],
 		TenantID:          row[2],
 		SLOClass:          row[3],
-		SessionID:         row[4],
+		VLLMPriority:      vllmPriority,
+		SessionID:         row[4+offset],
 		RoundIndex:        roundIndex,
-		PrefixGroup:       row[6],
+		PrefixGroup:       row[6+offset],
 		PrefixLength:      prefixLength,
 		Streaming:         streaming,
 		InputTokens:       inputTokens,
@@ -348,7 +416,7 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 		AudioTokens:       audioTokens,
 		VideoTokens:       videoTokens,
 		ReasonRatio:       reasonRatio,
-		Model:             row[16],
+		Model:             row[16+offset],
 		DeadlineUs:        deadlineUs,
 		ServerInputTokens: serverInputTokens,
 		ArrivalTimeUs:     arrivalTimeUs,
@@ -356,8 +424,8 @@ func parseTraceRecord(row []string) (*TraceRecord, error) {
 		FirstChunkTimeUs:  firstChunkTimeUs,
 		LastChunkTimeUs:   lastChunkTimeUs,
 		NumChunks:         numChunks,
-		Status:            row[24],
-		ErrorMessage:      strings.TrimSpace(row[25]),
+		Status:            row[24+offset],
+		ErrorMessage:      strings.TrimSpace(row[25+offset]),
 		FinishReason:      finishReason,
 	}, nil
 }

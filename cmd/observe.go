@@ -106,7 +106,8 @@ type RequestRecord struct {
 	RequestID         int
 	OutputTokens      int
 	ServerInputTokens int
-	Status            string // "ok", "error", "timeout"
+	VLLMPriority      int     // vLLM priority value (0=highest urgency, higher=lower urgency); 0 when not set
+	Status            string  // "ok", "error", "timeout"
 	ErrorMessage      string
 	SendTimeUs        int64
 	FirstChunkTimeUs  int64
@@ -118,6 +119,13 @@ type RequestRecord struct {
 
 // Send dispatches a single request to the server and records timing.
 func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRecord, error) {
+	// Defensive: ensure sloMap is initialized (guards against R4 violations where
+	// RealClient is constructed via struct literal instead of NewRealClient).
+	// This prevents nil pointer dereference when req.SLOClass != "".
+	if c.sloMap == nil {
+		c.sloMap = sim.DefaultSLOPriorityMap()
+	}
+
 	record := &RequestRecord{
 		RequestID: req.RequestID,
 		Status:    "ok",
@@ -167,7 +175,9 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 
 	// Dual delivery: priority body for vLLM, x-gateway-inference-objective header for llm-d.
 	if req.SLOClass != "" {
-		body["priority"] = c.sloMap.InvertForVLLM(req.SLOClass)
+		vllmPriority := c.sloMap.InvertForVLLM(req.SLOClass)
+		body["priority"] = vllmPriority
+		record.VLLMPriority = vllmPriority
 	}
 
 	bodyBytes, err := json.Marshal(body)
@@ -442,6 +452,7 @@ func (r *Recorder) RecordRequest(pending *PendingRequest, result *RequestRecord,
 		ClientID:          pending.ClientID,
 		TenantID:          pending.TenantID,
 		SLOClass:          pending.SLOClass,
+		VLLMPriority:      result.VLLMPriority,
 		PrefixGroup:       pending.PrefixGroup,
 		PrefixLength:      prefixLen,
 		Streaming:         pending.Streaming,

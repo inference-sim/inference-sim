@@ -8,12 +8,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/sirupsen/logrus"
 )
 
@@ -1596,5 +1598,260 @@ func TestRealClient_WithSLOPriorityMap_NilUsesDefaults(t *testing.T) {
 		if priorityInt != 0 {
 			t.Errorf("body['priority'] = %d, want 0 (default critical priority)", priorityInt)
 		}
+	}
+}
+
+func TestRealClient_Send_VLLMPriority_Captured(t *testing.T) {
+	// This test verifies BC-2: RequestRecord.VLLMPriority captures the computed vLLM
+	// priority value when req.SLOClass is set.
+
+	// Mock HTTP server that always returns OK with minimal response
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		response := map[string]interface{}{
+			"id":      "test-id",
+			"object":  "text_completion",
+			"created": 1234567890,
+			"model":   "test-model",
+			"choices": []map[string]interface{}{
+				{
+					"text":          "test output",
+					"index":         0,
+					"finish_reason": "stop",
+				},
+			},
+			"usage": map[string]interface{}{
+				"prompt_tokens":     10,
+				"completion_tokens": 5,
+				"total_tokens":      15,
+			},
+		}
+		_ = json.NewEncoder(w).Encode(response)
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	// Create RealClient with default SLOPriorityMap (using canonical constructor per R4)
+	sloMap := sim.DefaultSLOPriorityMap()
+	client := NewRealClient(
+		server.URL,
+		"",            // apiKey (empty for test)
+		"test-model",  // modelName
+		"",            // serverType (empty for test)
+		WithHTTPTimeout(5*time.Second),
+		WithAPIFormat("completions"),
+		WithSLOPriorityMap(sloMap),
+	)
+
+	tests := []struct {
+		name             string
+		sloClass         string
+		expectedPriority int
+	}{
+		{"critical", "critical", 0},  // 4 - 4 = 0
+		{"standard", "standard", 1},  // 4 - 3 = 1
+		{"batch", "batch", 5},        // 4 - (-1) = 5
+		{"sheddable", "sheddable", 6}, // 4 - (-2) = 6
+		{"background", "background", 7}, // 4 - (-3) = 7
+		{"empty", "", 0},             // not set → 0
+	}
+
+	ctx := context.Background()
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &PendingRequest{
+				RequestID:       i + 1,
+				Prompt:          "test prompt",
+				MaxOutputTokens: 100,
+				Streaming:       false,
+				SLOClass:        tt.sloClass,
+			}
+
+			record, err := client.Send(ctx, req)
+			if err != nil {
+				t.Fatalf("Send() error: %v", err)
+			}
+
+			// Verify VLLMPriority matches expected value
+			if record.VLLMPriority != tt.expectedPriority {
+				t.Errorf("VLLMPriority: got %d, want %d (sloClass=%q)",
+					record.VLLMPriority, tt.expectedPriority, tt.sloClass)
+			}
+		})
+	}
+}
+
+func TestObserveRecorder_VLLMPriority_EndToEndFlow(t *testing.T) {
+	// BC-7: End-to-end test verifying vllm_priority flows from RealClient.Send()
+	// through Recorder.RecordRequest() to TraceRecord, then through ExportTraceV2 to CSV,
+	// and finally back through LoadTraceV2.
+	
+	// Setup: mock server
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		response := map[string]interface{}{
+			"id":      "test-id",
+			"object":  "text_completion",
+			"created": 1234567890,
+			"model":   "test-model",
+			"choices": []map[string]interface{}{
+				{
+					"text":          "test output",
+					"index":         0,
+					"finish_reason": "stop",
+				},
+			},
+			"usage": map[string]interface{}{
+				"prompt_tokens":     100,
+				"completion_tokens": 50,
+				"total_tokens":      150,
+			},
+		}
+		_ = json.NewEncoder(w).Encode(response)
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	// Create RealClient (using canonical constructor per R4)
+	sloMap := sim.DefaultSLOPriorityMap()
+	client := NewRealClient(
+		server.URL,
+		"",            // apiKey (empty for test)
+		"test-model",  // modelName
+		"",            // serverType (empty for test)
+		WithHTTPTimeout(5*time.Second),
+		WithAPIFormat("completions"),
+		WithSLOPriorityMap(sloMap),
+	)
+
+	// Create Recorder
+	recorder := &Recorder{}
+
+	// Send request with SLOClass
+	pending := &PendingRequest{
+		RequestID:       1,
+		ClientID:        "c1",
+		TenantID:        "t1",
+		SLOClass:        "critical",
+		Prompt:          "test prompt",
+		MaxOutputTokens: 100,
+		Streaming:       false,
+	}
+
+	ctx := context.Background()
+	record, err := client.Send(ctx, pending)
+	if err != nil {
+		t.Fatalf("Send() error: %v", err)
+	}
+
+	// Verify RealClient captured VLLMPriority (BC-2)
+	expectedPriority := sloMap.InvertForVLLM("critical")
+	if record.VLLMPriority != expectedPriority {
+		t.Errorf("RealClient VLLMPriority: got %d, want %d", record.VLLMPriority, expectedPriority)
+	}
+
+	// Record the result
+	recorder.RecordRequest(pending, record, time.Now().UnixMicro(), "", 0)
+
+	// Get trace records
+	traceRecords := recorder.Records()
+	if len(traceRecords) != 1 {
+		t.Fatalf("len(traceRecords)=%d, want 1", len(traceRecords))
+	}
+
+	// Verify VLLMPriority was copied to TraceRecord
+	if traceRecords[0].VLLMPriority != expectedPriority {
+		t.Errorf("TraceRecord VLLMPriority: got %d, want %d", traceRecords[0].VLLMPriority, expectedPriority)
+	}
+
+	// Export to CSV
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	dataPath := filepath.Join(dir, "data.csv")
+	header := &workload.TraceHeader{
+		Version:  2,
+		TimeUnit: "microseconds",
+		Mode:     "real",
+	}
+	if err := recorder.Export(header, headerPath, dataPath); err != nil {
+		t.Fatalf("Export error: %v", err)
+	}
+
+	// Load back from CSV
+	loaded, err := workload.LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatalf("LoadTraceV2 error: %v", err)
+	}
+	if len(loaded.Records) != 1 {
+		t.Fatalf("len(loaded.Records)=%d, want 1", len(loaded.Records))
+	}
+
+	// Verify VLLMPriority survived round-trip (BC-4)
+	if loaded.Records[0].VLLMPriority != expectedPriority {
+		t.Errorf("Loaded VLLMPriority: got %d, want %d", loaded.Records[0].VLLMPriority, expectedPriority)
+	}
+
+	// Verify simulation isolation: LoadTraceV2Requests must NOT read VLLMPriority (BC-5)
+	requests, err := workload.LoadTraceV2Requests(loaded, 42)
+	if err != nil {
+		t.Fatalf("LoadTraceV2Requests error: %v", err)
+	}
+	if len(requests) != 1 {
+		t.Fatalf("len(requests)=%d, want 1", len(requests))
+	}
+	if requests[0].Priority != 0 {
+		t.Errorf("Request Priority=%f, want 0 (simulation isolation)", requests[0].Priority)
+	}
+}
+
+// TestRealClient_Send_NilSLOMapDefensive verifies defensive initialization of sloMap
+// when RealClient is constructed incorrectly (R4 violation via struct literal).
+func TestRealClient_Send_NilSLOMapDefensive(t *testing.T) {
+	// GIVEN: RealClient constructed with struct literal (R4 violation)
+	// This simulates the edge case where sloMap could be nil
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		response := map[string]interface{}{
+			"id":      "test-id",
+			"choices": []map[string]interface{}{{"text": "output"}},
+			"usage":   map[string]interface{}{"prompt_tokens": 10, "completion_tokens": 5},
+		}
+		_ = json.NewEncoder(w).Encode(response)
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	// Construct via struct literal (incorrect, but should not panic)
+	client := &RealClient{
+		baseURL:    server.URL,
+		modelName:  "test-model",
+		httpClient: &http.Client{Timeout: 5 * time.Second},
+		apiFormat:  "completions",
+		// sloMap intentionally nil (R4 violation)
+	}
+
+	// WHEN: Send is called with SLOClass set
+	req := &PendingRequest{
+		RequestID:       1,
+		Prompt:          "test",
+		MaxOutputTokens: 10,
+		Streaming:       false,
+		SLOClass:        "critical", // This would cause nil dereference without defensive guard
+	}
+
+	ctx := context.Background()
+	record, err := client.Send(ctx, req)
+
+	// THEN: Should not panic, should use default SLO map
+	if err != nil {
+		t.Fatalf("Send() error: %v", err)
+	}
+	if record.VLLMPriority != 0 {
+		t.Errorf("VLLMPriority: got %d, want 0 (critical with default map)", record.VLLMPriority)
+	}
+
+	// Verify sloMap was defensively initialized
+	if client.sloMap == nil {
+		t.Error("sloMap should have been initialized defensively, but is still nil")
 	}
 }

@@ -269,7 +269,7 @@ func TestParseTraceRecord_InvalidInteger_ReturnsError(t *testing.T) {
 	}
 
 	// WHEN parsing
-	_, err := parseTraceRecord(row)
+	_, err := parseTraceRecord(row, false)
 
 	// THEN error about invalid value
 	if err == nil {
@@ -288,7 +288,7 @@ func TestParseTraceRecord_InvalidDeadlineUs_ReturnsError(t *testing.T) {
 	}
 	row[17] = "not_a_number" // deadline_us column (shifted +1 by prefix_length)
 
-	_, err := parseTraceRecord(row)
+	_, err := parseTraceRecord(row, false)
 
 	if err == nil {
 		t.Fatal("expected error for non-numeric deadline_us, got nil")
@@ -306,13 +306,58 @@ func TestParseTraceRecord_InvalidServerInputTokens_ReturnsError(t *testing.T) {
 	}
 	row[18] = "not_a_number" // server_input_tokens column (shifted +1)
 
-	_, err := parseTraceRecord(row)
+	_, err := parseTraceRecord(row, false)
 
 	if err == nil {
 		t.Fatal("expected error for non-numeric server_input_tokens, got nil")
 	}
 	if !strings.Contains(err.Error(), "server_input_tokens") {
 		t.Errorf("error should mention 'server_input_tokens', got: %s", err.Error())
+	}
+}
+
+// TestParseTraceRecord_InvalidVLLMPriority_ReturnsError verifies that non-numeric vllm_priority values are rejected.
+func TestParseTraceRecord_InvalidVLLMPriority_ReturnsError(t *testing.T) {
+	// GIVEN a row with vllm_priority column present and set to non-numeric value
+	row := make([]string, 28) // 28 columns when vllm_priority is present
+	for i := range row {
+		row[i] = "0"
+	}
+	row[4] = "not_a_number" // vllm_priority column (index 4)
+
+	// WHEN parsing with hasVLLMPriority=true
+	_, err := parseTraceRecord(row, true)
+
+	// THEN error about invalid value
+	if err == nil {
+		t.Fatal("expected error for non-numeric vllm_priority, got nil")
+	}
+	if !strings.Contains(err.Error(), "vllm_priority") {
+		t.Errorf("error should mention 'vllm_priority', got: %s", err.Error())
+	}
+}
+
+// TestParseTraceRecord_NegativeVLLMPriority_ReturnsError verifies that negative vllm_priority values are rejected.
+func TestParseTraceRecord_NegativeVLLMPriority_ReturnsError(t *testing.T) {
+	// GIVEN a row with vllm_priority column present and set to negative value
+	row := make([]string, 28) // 28 columns when vllm_priority is present
+	for i := range row {
+		row[i] = "0"
+	}
+	row[4] = "-1" // negative vllm_priority
+
+	// WHEN parsing with hasVLLMPriority=true
+	_, err := parseTraceRecord(row, true)
+
+	// THEN error about negative value
+	if err == nil {
+		t.Fatal("expected error for negative vllm_priority, got nil")
+	}
+	if !strings.Contains(err.Error(), "vllm_priority") {
+		t.Errorf("error should mention 'vllm_priority', got: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "negative") {
+		t.Errorf("error should mention 'negative', got: %s", err.Error())
 	}
 }
 
@@ -324,7 +369,7 @@ func TestParseTraceRecord_NegativeDeadlineUs_ReturnsError(t *testing.T) {
 	}
 	row[17] = "-1" // negative deadline_us (shifted +1)
 
-	_, err := parseTraceRecord(row)
+	_, err := parseTraceRecord(row, false)
 
 	if err == nil {
 		t.Fatal("expected error for negative deadline_us, got nil")
@@ -343,7 +388,7 @@ func TestParseTraceRecord_NegativeInputTokens_ReturnsError(t *testing.T) {
 	}
 	row[9] = "-1" // input_tokens column (shifted +1)
 
-	_, err := parseTraceRecord(row)
+	_, err := parseTraceRecord(row, false)
 
 	if err == nil {
 		t.Fatal("expected error for negative input_tokens, got nil")
@@ -362,7 +407,7 @@ func TestParseTraceRecord_NegativeOutputTokens_ReturnsError(t *testing.T) {
 	}
 	row[10] = "-1" // output_tokens column (shifted +1)
 
-	_, err := parseTraceRecord(row)
+	_, err := parseTraceRecord(row, false)
 
 	if err == nil {
 		t.Fatal("expected error for negative output_tokens, got nil")
@@ -381,7 +426,7 @@ func TestParseTraceRecord_NegativeServerInputTokens_ReturnsError(t *testing.T) {
 	}
 	row[18] = "-1" // server_input_tokens column (shifted +1)
 
-	_, err := parseTraceRecord(row)
+	_, err := parseTraceRecord(row, false)
 
 	if err == nil {
 		t.Fatal("expected error for negative server_input_tokens, got nil")
@@ -401,7 +446,7 @@ func TestParseTraceRecord_DeadlineBeforeArrival_ReturnsError(t *testing.T) {
 	row[17] = "1000" // deadline_us = 1000 (shifted +1)
 	row[19] = "5000" // arrival_time_us = 5000 (shifted +1)
 
-	_, err := parseTraceRecord(row)
+	_, err := parseTraceRecord(row, false)
 
 	if err == nil {
 		t.Fatal("expected error for deadline before arrival, got nil")
@@ -430,7 +475,7 @@ func TestParseTraceRecord_InvalidReasonRatio_ReturnsError(t *testing.T) {
 		}
 		row[15] = tc.value // reason_ratio column (shifted +1)
 
-		_, err := parseTraceRecord(row)
+		_, err := parseTraceRecord(row, false)
 
 		if err == nil {
 			t.Errorf("reason_ratio=%q: expected error, got nil", tc.value)
@@ -837,5 +882,373 @@ func TestRequestsToTraceRecords_RoundTrip(t *testing.T) {
 	}
 	if lr2.FirstChunkTimeUs != 0 {
 		t.Errorf("Prefill-timeout FirstChunkTimeUs: got %d, want 0", lr2.FirstChunkTimeUs)
+	}
+}
+
+// TestRequestsToTraceRecords_VLLMPriority_AlwaysZero verifies that VLLMPriority
+// is always 0 in simulation-generated records (simulation isolation boundary).
+func TestRequestsToTraceRecords_VLLMPriority_AlwaysZero(t *testing.T) {
+	// GIVEN sim.Request instances (simulation-generated, no vLLM priority computed)
+	reqs := []*sim.Request{
+		{
+			ID:            "req1",
+			State:         sim.StateCompleted,
+			SLOClass:      "critical",
+			InputTokens:   make([]int, 10),
+			OutputTokens:  make([]int, 5),
+			ProgressIndex: 15,
+		},
+		{
+			ID:            "req2",
+			State:         sim.StateCompleted,
+			SLOClass:      "batch",
+			InputTokens:   make([]int, 20),
+			OutputTokens:  make([]int, 10),
+			ProgressIndex: 30,
+		},
+		{
+			ID:            "req3",
+			State:         sim.StateCompleted,
+			SLOClass:      "", // no SLO class
+			InputTokens:   make([]int, 5),
+			OutputTokens:  make([]int, 2),
+			ProgressIndex: 7,
+		},
+	}
+
+	// WHEN converting to TraceRecords
+	records := RequestsToTraceRecords(reqs)
+
+	// THEN all VLLMPriority values should be 0 (never computed during simulation)
+	for i, rec := range records {
+		if rec.VLLMPriority != 0 {
+			t.Errorf("record[%d].VLLMPriority: got %d, want 0 (simulation isolation)",
+				i, rec.VLLMPriority)
+		}
+	}
+}
+
+func TestTraceRecord_VLLMPriority_FieldExists(t *testing.T) {
+	// GIVEN a TraceRecord with VLLMPriority set to a non-zero value
+	rec := TraceRecord{
+		RequestID:    1,
+		SLOClass:     "batch",
+		VLLMPriority: 5, // batch → 5 in vLLM convention
+	}
+
+	// THEN the field is accessible and has the expected value
+	if rec.VLLMPriority != 5 {
+		t.Errorf("Expected VLLMPriority=5, got %d", rec.VLLMPriority)
+	}
+
+	// WHEN SLOClass is empty
+	rec2 := TraceRecord{
+		RequestID: 2,
+		SLOClass:  "",
+	}
+
+	// THEN VLLMPriority defaults to 0 (not set)
+	if rec2.VLLMPriority != 0 {
+		t.Errorf("Expected default VLLMPriority=0, got %d", rec2.VLLMPriority)
+	}
+}
+
+func TestExportTraceV2_VLLMPriority_ConditionalColumn(t *testing.T) {
+	// BC-3: vllm_priority column included only when priority was actually computed.
+	// Distinguishes between:
+	// - observe with critical (SLOClass="critical", Mode="real", VLLMPriority=0) → column present
+	// - simulation with SLOClass (Mode="synthetic", VLLMPriority=0) → column absent
+
+	dir := t.TempDir()
+
+	t.Run("simulation with SLOClass → no column (Mode=synthetic, all priority=0)", func(t *testing.T) {
+		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "synthetic"}
+		records := []TraceRecord{
+			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, SLOClass: "critical", VLLMPriority: 0, Status: "ok"},
+			{RequestID: 2, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000, SLOClass: "batch", VLLMPriority: 0, Status: "ok"},
+		}
+
+		headerPath := filepath.Join(dir, "sim_header.yaml")
+		dataPath := filepath.Join(dir, "sim_data.csv")
+		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			t.Fatal(err)
+		}
+
+		// Read CSV header row
+		data, err := os.ReadFile(dataPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(string(data), "\n")
+		if len(lines) < 1 {
+			t.Fatal("CSV file is empty")
+		}
+		headerRow := lines[0]
+
+		// THEN vllm_priority should NOT be in the header
+		if strings.Contains(headerRow, "vllm_priority") {
+			t.Errorf("vllm_priority column should not be present in simulation (Mode=synthetic, all priority=0)")
+		}
+	})
+
+	t.Run("observe all-critical → column present (Mode=real, SLOClass set, priority=0)", func(t *testing.T) {
+		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
+		records := []TraceRecord{
+			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, SLOClass: "critical", VLLMPriority: 0, Status: "ok"},
+			{RequestID: 2, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000, SLOClass: "critical", VLLMPriority: 0, Status: "ok"},
+		}
+
+		headerPath := filepath.Join(dir, "critical_header.yaml")
+		dataPath := filepath.Join(dir, "critical_data.csv")
+		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			t.Fatal(err)
+		}
+
+		// Read CSV header row
+		data, err := os.ReadFile(dataPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(string(data), "\n")
+		if len(lines) < 1 {
+			t.Fatal("CSV file is empty")
+		}
+		headerRow := lines[0]
+
+		// THEN vllm_priority SHOULD be in the header (critical=0 is a real priority)
+		if !strings.Contains(headerRow, "vllm_priority") {
+			t.Errorf("vllm_priority column should be present for observe with critical (Mode=real, SLOClass set)")
+		}
+
+		// Verify all values are 0 (critical priority)
+		if len(lines) < 3 {
+			t.Fatal("Expected at least 2 data rows")
+		}
+		row1 := strings.Split(lines[1], ",")
+		row2 := strings.Split(lines[2], ",")
+
+		// Find vllm_priority column index
+		cols := strings.Split(headerRow, ",")
+		vllmIdx := -1
+		for i, col := range cols {
+			if col == "vllm_priority" {
+				vllmIdx = i
+				break
+			}
+		}
+		if vllmIdx == -1 {
+			t.Fatal("vllm_priority column not found")
+		}
+
+		if row1[vllmIdx] != "0" {
+			t.Errorf("Row 1 vllm_priority: got %q, want \"0\" (critical)", row1[vllmIdx])
+		}
+		if row2[vllmIdx] != "0" {
+			t.Errorf("Row 2 vllm_priority: got %q, want \"0\" (critical)", row2[vllmIdx])
+		}
+	})
+
+	t.Run("any VLLMPriority!=0 → column included (observe mixed)", func(t *testing.T) {
+		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
+		records := []TraceRecord{
+			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, SLOClass: "critical", VLLMPriority: 0, Status: "ok"},
+			{RequestID: 2, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000, SLOClass: "batch", VLLMPriority: 5, Status: "ok"},
+		}
+
+		headerPath := filepath.Join(dir, "observe_header.yaml")
+		dataPath := filepath.Join(dir, "observe_data.csv")
+		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			t.Fatal(err)
+		}
+
+		// Read CSV header row
+		data, err := os.ReadFile(dataPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(string(data), "\n")
+		if len(lines) < 1 {
+			t.Fatal("CSV file is empty")
+		}
+		headerRow := lines[0]
+
+		// THEN vllm_priority should be in the header
+		if !strings.Contains(headerRow, "vllm_priority") {
+			t.Errorf("vllm_priority column should be present when any record has VLLMPriority!=0")
+		}
+
+		// AND it should appear after slo_class
+		columns := strings.Split(headerRow, ",")
+		sloIdx := -1
+		vllmIdx := -1
+		for i, col := range columns {
+			if col == "slo_class" {
+				sloIdx = i
+			}
+			if col == "vllm_priority" {
+				vllmIdx = i
+			}
+		}
+		if sloIdx == -1 {
+			t.Fatal("slo_class column not found")
+		}
+		if vllmIdx == -1 {
+			t.Fatal("vllm_priority column not found")
+		}
+		if vllmIdx != sloIdx+1 {
+			t.Errorf("vllm_priority should appear immediately after slo_class, got indices slo=%d vllm=%d", sloIdx, vllmIdx)
+		}
+
+		// BC-4: Priority values preserved in round-trip
+		// Verify data rows contain correct priority values
+		if len(lines) < 3 {
+			t.Fatal("Expected at least 3 lines (header + 2 data rows)")
+		}
+		row1 := strings.Split(lines[1], ",")
+		row2 := strings.Split(lines[2], ",")
+		
+		if row1[vllmIdx] != "0" {
+			t.Errorf("Row 1 vllm_priority: got %q, want \"0\"", row1[vllmIdx])
+		}
+		if row2[vllmIdx] != "5" {
+			t.Errorf("Row 2 vllm_priority: got %q, want \"5\"", row2[vllmIdx])
+		}
+	})
+
+	t.Run("observe without SLOClass → no column (Mode=real, no SLOClass, priority=0)", func(t *testing.T) {
+		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
+		records := []TraceRecord{
+			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, SLOClass: "", VLLMPriority: 0, Status: "ok"},
+			{RequestID: 2, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000, SLOClass: "", VLLMPriority: 0, Status: "ok"},
+		}
+
+		headerPath := filepath.Join(dir, "no_slo_header.yaml")
+		dataPath := filepath.Join(dir, "no_slo_data.csv")
+		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			t.Fatal(err)
+		}
+
+		// Read CSV header row
+		data, err := os.ReadFile(dataPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(string(data), "\n")
+		headerRow := lines[0]
+
+		// THEN vllm_priority should NOT be in the header
+		if strings.Contains(headerRow, "vllm_priority") {
+			t.Errorf("vllm_priority column should not be present when observe has no SLOClass")
+		}
+	})
+
+	t.Run("mixed: observe with some non-zero priorities", func(t *testing.T) {
+		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
+		records := []TraceRecord{
+			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, SLOClass: "", VLLMPriority: 0, Status: "ok"},
+			{RequestID: 2, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000, SLOClass: "standard", VLLMPriority: 1, Status: "ok"},
+		}
+
+		headerPath := filepath.Join(dir, "mixed_header.yaml")
+		dataPath := filepath.Join(dir, "mixed_data.csv")
+		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			t.Fatal(err)
+		}
+
+		// Read CSV header row
+		data, err := os.ReadFile(dataPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(string(data), "\n")
+		headerRow := lines[0]
+
+		// THEN vllm_priority should be in the header (at least one record has VLLMPriority!=0)
+		if !strings.Contains(headerRow, "vllm_priority") {
+			t.Errorf("vllm_priority column should be present when at least one record has VLLMPriority!=0")
+		}
+	})
+}
+
+func TestLoadTraceV2Requests_IgnoresVLLMPriority_SimulationIsolation(t *testing.T) {
+	// BC-5: LoadTraceV2Requests must NOT read VLLMPriority into Request.Priority
+	// This is a simulation isolation requirement — observability metadata must
+	// not affect simulation behavior.
+	
+	trace := &TraceV2{
+		Header: TraceHeader{Version: 2, TimeUnit: "us"},
+		Records: []TraceRecord{
+			{RequestID: 1, SLOClass: "critical", VLLMPriority: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000},
+			{RequestID: 2, SLOClass: "batch", VLLMPriority: 5, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000},
+		},
+	}
+
+	requests, err := LoadTraceV2Requests(trace, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 2 {
+		t.Fatalf("len(requests)=%d, want 2", len(requests))
+	}
+
+	// THEN Request.Priority must remain 0 (default) regardless of VLLMPriority
+	if requests[0].Priority != 0 {
+		t.Errorf("Request 0 Priority=%f, want 0 (must not read VLLMPriority)", requests[0].Priority)
+	}
+	if requests[1].Priority != 0 {
+		t.Errorf("Request 1 Priority=%f, want 0 (must not read VLLMPriority)", requests[1].Priority)
+	}
+
+	// AND SLOClass should be preserved for admission/routing decisions
+	if requests[0].SLOClass != "critical" {
+		t.Errorf("Request 0 SLOClass=%q, want %q", requests[0].SLOClass, "critical")
+	}
+	if requests[1].SLOClass != "batch" {
+		t.Errorf("Request 1 SLOClass=%q, want %q", requests[1].SLOClass, "batch")
+	}
+}
+
+func TestLoadTraceV2SessionBlueprints_IgnoresVLLMPriority_SimulationIsolation(t *testing.T) {
+	// BC-6: LoadTraceV2SessionBlueprints must NOT read VLLMPriority
+	// Same simulation isolation requirement as BC-5, but for session blueprints.
+	
+	trace := &TraceV2{
+		Header: TraceHeader{Version: 2, TimeUnit: "us"},
+		Records: []TraceRecord{
+			{RequestID: 1, SessionID: "s1", RoundIndex: 0, SLOClass: "critical", VLLMPriority: 0,
+				InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000,
+				FirstChunkTimeUs: 1500, LastChunkTimeUs: 2000},
+			{RequestID: 2, SessionID: "s1", RoundIndex: 1, SLOClass: "batch", VLLMPriority: 5,
+				InputTokens: 50, OutputTokens: 25, ArrivalTimeUs: 3000,
+				FirstChunkTimeUs: 3500, LastChunkTimeUs: 4000},
+		},
+	}
+
+	requests, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Session rounds are grouped into one blueprint, not separate requests
+	if len(requests) != 1 {
+		t.Fatalf("len(requests)=%d, want 1 (session grouped)", len(requests))
+	}
+	if len(blueprints) != 1 {
+		t.Fatalf("len(blueprints)=%d, want 1", len(blueprints))
+	}
+
+	// THEN returned request must NOT have Priority set from VLLMPriority
+	if requests[0].Priority != 0 {
+		t.Errorf("Request 0 Priority=%f, want 0 (must not read VLLMPriority)", requests[0].Priority)
+	}
+
+	// AND SLOClass should be preserved in blueprint for admission decisions
+	// (uses first round's SLOClass)
+	if blueprints[0].SLOClass != "critical" {
+		t.Errorf("Blueprint SLOClass=%q, want %q", blueprints[0].SLOClass, "critical")
+	}
+
+	// AND request should have SLOClass preserved
+	if requests[0].SLOClass != "critical" {
+		t.Errorf("Request 0 SLOClass=%q, want %q", requests[0].SLOClass, "critical")
 	}
 }
