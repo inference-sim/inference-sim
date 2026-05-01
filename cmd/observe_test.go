@@ -1635,15 +1635,17 @@ func TestRealClient_Send_VLLMPriority_Captured(t *testing.T) {
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
-	// Create RealClient with default SLOPriorityMap
+	// Create RealClient with default SLOPriorityMap (using canonical constructor per R4)
 	sloMap := sim.DefaultSLOPriorityMap()
-	client := &RealClient{
-		baseURL:    server.URL,
-		modelName:  "test-model",
-		httpClient: &http.Client{Timeout: 5 * time.Second},
-		apiFormat:  "completions",
-		sloMap:     sloMap,
-	}
+	client := NewRealClient(
+		server.URL,
+		"",            // apiKey (empty for test)
+		"test-model",  // modelName
+		"",            // serverType (empty for test)
+		WithHTTPTimeout(5*time.Second),
+		WithAPIFormat("completions"),
+		WithSLOPriorityMap(sloMap),
+	)
 
 	req := &PendingRequest{
 		RequestID:       1,
@@ -1736,15 +1738,17 @@ func TestObserveRecorder_VLLMPriority_EndToEndFlow(t *testing.T) {
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
-	// Create RealClient
+	// Create RealClient (using canonical constructor per R4)
 	sloMap := sim.DefaultSLOPriorityMap()
-	client := &RealClient{
-		baseURL:    server.URL,
-		modelName:  "test-model",
-		httpClient: &http.Client{Timeout: 5 * time.Second},
-		apiFormat:  "completions",
-		sloMap:     sloMap,
-	}
+	client := NewRealClient(
+		server.URL,
+		"",            // apiKey (empty for test)
+		"test-model",  // modelName
+		"",            // serverType (empty for test)
+		WithHTTPTimeout(5*time.Second),
+		WithAPIFormat("completions"),
+		WithSLOPriorityMap(sloMap),
+	)
 
 	// Create Recorder
 	recorder := &Recorder{}

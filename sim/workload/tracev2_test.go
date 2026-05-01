@@ -316,6 +316,51 @@ func TestParseTraceRecord_InvalidServerInputTokens_ReturnsError(t *testing.T) {
 	}
 }
 
+// TestParseTraceRecord_InvalidVLLMPriority_ReturnsError verifies that non-numeric vllm_priority values are rejected.
+func TestParseTraceRecord_InvalidVLLMPriority_ReturnsError(t *testing.T) {
+	// GIVEN a row with vllm_priority column present and set to non-numeric value
+	row := make([]string, 28) // 28 columns when vllm_priority is present
+	for i := range row {
+		row[i] = "0"
+	}
+	row[4] = "not_a_number" // vllm_priority column (index 4)
+
+	// WHEN parsing with hasVLLMPriority=true
+	_, err := parseTraceRecord(row, true)
+
+	// THEN error about invalid value
+	if err == nil {
+		t.Fatal("expected error for non-numeric vllm_priority, got nil")
+	}
+	if !strings.Contains(err.Error(), "vllm_priority") {
+		t.Errorf("error should mention 'vllm_priority', got: %s", err.Error())
+	}
+}
+
+// TestParseTraceRecord_NegativeVLLMPriority_ReturnsError verifies that negative vllm_priority values are rejected.
+func TestParseTraceRecord_NegativeVLLMPriority_ReturnsError(t *testing.T) {
+	// GIVEN a row with vllm_priority column present and set to negative value
+	row := make([]string, 28) // 28 columns when vllm_priority is present
+	for i := range row {
+		row[i] = "0"
+	}
+	row[4] = "-1" // negative vllm_priority
+
+	// WHEN parsing with hasVLLMPriority=true
+	_, err := parseTraceRecord(row, true)
+
+	// THEN error about negative value
+	if err == nil {
+		t.Fatal("expected error for negative vllm_priority, got nil")
+	}
+	if !strings.Contains(err.Error(), "vllm_priority") {
+		t.Errorf("error should mention 'vllm_priority', got: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "negative") {
+		t.Errorf("error should mention 'negative', got: %s", err.Error())
+	}
+}
+
 // TestParseTraceRecord_NegativeDeadlineUs_ReturnsError verifies R3 validation.
 func TestParseTraceRecord_NegativeDeadlineUs_ReturnsError(t *testing.T) {
 	row := make([]string, 27)
@@ -841,16 +886,16 @@ func TestRequestsToTraceRecords_RoundTrip(t *testing.T) {
 }
 
 func TestTraceRecord_VLLMPriority_FieldExists(t *testing.T) {
-	// GIVEN a TraceRecord with VLLMPriority set
+	// GIVEN a TraceRecord with VLLMPriority set to a non-zero value
 	rec := TraceRecord{
 		RequestID:    1,
-		SLOClass:     "critical",
-		VLLMPriority: 0, // critical → 0 in vLLM convention
+		SLOClass:     "batch",
+		VLLMPriority: 5, // batch → 5 in vLLM convention
 	}
 
 	// THEN the field is accessible and has the expected value
-	if rec.VLLMPriority != 0 {
-		t.Errorf("Expected VLLMPriority=0, got %d", rec.VLLMPriority)
+	if rec.VLLMPriority != 5 {
+		t.Errorf("Expected VLLMPriority=5, got %d", rec.VLLMPriority)
 	}
 
 	// WHEN SLOClass is empty

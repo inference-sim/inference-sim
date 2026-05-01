@@ -275,6 +275,9 @@ func parseTraceRecord(row []string, hasVLLMPriority bool) (*TraceRecord, error) 
 		if err != nil {
 			return nil, fmt.Errorf("parsing vllm_priority %q: %w", row[4], err)
 		}
+		if vllmPriority < 0 {
+			return nil, fmt.Errorf("parsing vllm_priority: negative value %d not allowed", vllmPriority)
+		}
 	}
 
 	roundIndex, err := strconv.Atoi(row[5+offset])
