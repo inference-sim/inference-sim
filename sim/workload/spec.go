@@ -40,14 +40,14 @@ func UpgradeV1ToV2(spec *WorkloadSpec) {
 // WorkloadSpec is the top-level workload configuration.
 // Loaded from YAML via LoadWorkloadSpec(path).
 type WorkloadSpec struct {
-	Version       string        `yaml:"version"`
-	Seed          int64         `yaml:"seed"`
-	Category      string        `yaml:"category"`
-	Clients       []ClientSpec  `yaml:"clients"`
-	Cohorts       []CohortSpec  `yaml:"cohorts,omitempty"`
-	AggregateRate float64       `yaml:"aggregate_rate"`
-	Horizon       int64         `yaml:"horizon,omitempty"`
-	NumRequests   int64         `yaml:"num_requests,omitempty"` // 0 = unlimited (use horizon only)
+	Version       string             `yaml:"version"`
+	Seed          int64              `yaml:"seed"`
+	Category      string             `yaml:"category"`
+	Clients       []ClientSpec       `yaml:"clients"`
+	Cohorts       []CohortSpec       `yaml:"cohorts,omitempty"`
+	AggregateRate float64            `yaml:"aggregate_rate"`
+	Horizon       int64              `yaml:"horizon,omitempty"`
+	NumRequests   int64              `yaml:"num_requests,omitempty"` // 0 = unlimited (use horizon only)
 	ServeGenData  *ServeGenDataSpec  `yaml:"servegen_data,omitempty"`
 	InferencePerf *InferencePerfSpec `yaml:"inference_perf,omitempty"`
 }
@@ -58,26 +58,26 @@ type WorkloadSpec struct {
 // ExpandCohorts) and Lifecycle (synthesized from Diurnal/Spike/Drain — exposing
 // Lifecycle directly would create two conflicting paths to the same effect).
 type CohortSpec struct {
-	ID           string      `yaml:"id"`
-	Population   int         `yaml:"population"`
-	TenantID     string      `yaml:"tenant_id,omitempty"`
-	SLOClass     string      `yaml:"slo_class,omitempty"`
-	Model        string      `yaml:"model,omitempty"`
-	Arrival      ArrivalSpec `yaml:"arrival"`
-	InputDist    DistSpec    `yaml:"input_distribution"`
-	OutputDist   DistSpec    `yaml:"output_distribution"`
-	PrefixGroup  string      `yaml:"prefix_group,omitempty"`
-	Streaming    bool        `yaml:"streaming,omitempty"`
-	RateFraction float64     `yaml:"rate_fraction"`
-	Diurnal      *DiurnalSpec `yaml:"diurnal,omitempty"`
-	Spike        *SpikeSpec   `yaml:"spike,omitempty"`
-	Drain        *DrainSpec   `yaml:"drain,omitempty"`
-	PrefixLength int              `yaml:"prefix_length,omitempty"`
-	Reasoning    *ReasoningSpec   `yaml:"reasoning,omitempty"`
-	ClosedLoop   *bool            `yaml:"closed_loop,omitempty"`
-	Timeout      *int64           `yaml:"timeout,omitempty"`
-	Network      *NetworkSpec     `yaml:"network,omitempty"`
-	Multimodal   *MultimodalSpec  `yaml:"multimodal,omitempty"`
+	ID           string          `yaml:"id"`
+	Population   int             `yaml:"population"`
+	TenantID     string          `yaml:"tenant_id,omitempty"`
+	SLOClass     string          `yaml:"slo_class,omitempty"`
+	Model        string          `yaml:"model,omitempty"`
+	Arrival      ArrivalSpec     `yaml:"arrival"`
+	InputDist    DistSpec        `yaml:"input_distribution"`
+	OutputDist   DistSpec        `yaml:"output_distribution"`
+	PrefixGroup  string          `yaml:"prefix_group,omitempty"`
+	Streaming    bool            `yaml:"streaming,omitempty"`
+	RateFraction float64         `yaml:"rate_fraction"`
+	Diurnal      *DiurnalSpec    `yaml:"diurnal,omitempty"`
+	Spike        *SpikeSpec      `yaml:"spike,omitempty"`
+	Drain        *DrainSpec      `yaml:"drain,omitempty"`
+	PrefixLength int             `yaml:"prefix_length,omitempty"`
+	Reasoning    *ReasoningSpec  `yaml:"reasoning,omitempty"`
+	ClosedLoop   *bool           `yaml:"closed_loop,omitempty"`
+	Timeout      *int64          `yaml:"timeout,omitempty"`
+	Network      *NetworkSpec    `yaml:"network,omitempty"`
+	Multimodal   *MultimodalSpec `yaml:"multimodal,omitempty"`
 }
 
 // DiurnalSpec configures sinusoidal rate modulation over a 24-hour cycle.
@@ -90,8 +90,9 @@ type DiurnalSpec struct {
 // SpikeSpec configures a traffic spike as a lifecycle window.
 // Clients are active during [StartTimeUs, StartTimeUs+DurationUs).
 type SpikeSpec struct {
-	StartTimeUs int64 `yaml:"start_time_us"`
-	DurationUs  int64 `yaml:"duration_us"`
+	StartTimeUs int64    `yaml:"start_time_us"`
+	DurationUs  int64    `yaml:"duration_us"`
+	TraceRate   *float64 `yaml:"trace_rate,omitempty"` // Cohort-level rate for absolute mode
 }
 
 // DrainSpec configures a linear ramp-down to zero rate.
@@ -102,25 +103,25 @@ type DrainSpec struct {
 
 // ClientSpec defines a single client's workload behavior.
 type ClientSpec struct {
-	ID           string        `yaml:"id"`
-	TenantID     string        `yaml:"tenant_id"`
-	SLOClass     string        `yaml:"slo_class"`
-	Model        string        `yaml:"model,omitempty"`
-	RateFraction float64       `yaml:"rate_fraction"`
-	Concurrency  int           `yaml:"concurrency,omitempty"`
-	ThinkTimeUs  int64         `yaml:"think_time_us,omitempty"`
-	Arrival      ArrivalSpec   `yaml:"arrival"`
-	InputDist    DistSpec      `yaml:"input_distribution"`
-	OutputDist   DistSpec      `yaml:"output_distribution"`
-	PrefixGroup  string        `yaml:"prefix_group,omitempty"`
-	PrefixLength int           `yaml:"prefix_length,omitempty"` // shared prefix token count (default 50)
-	Streaming    bool          `yaml:"streaming"`
-	Network      *NetworkSpec  `yaml:"network,omitempty"`
-	Lifecycle    *LifecycleSpec `yaml:"lifecycle,omitempty"`
+	ID           string          `yaml:"id"`
+	TenantID     string          `yaml:"tenant_id"`
+	SLOClass     string          `yaml:"slo_class"`
+	Model        string          `yaml:"model,omitempty"`
+	RateFraction float64         `yaml:"rate_fraction"`
+	Concurrency  int             `yaml:"concurrency,omitempty"`
+	ThinkTimeUs  int64           `yaml:"think_time_us,omitempty"`
+	Arrival      ArrivalSpec     `yaml:"arrival"`
+	InputDist    DistSpec        `yaml:"input_distribution"`
+	OutputDist   DistSpec        `yaml:"output_distribution"`
+	PrefixGroup  string          `yaml:"prefix_group,omitempty"`
+	PrefixLength int             `yaml:"prefix_length,omitempty"` // shared prefix token count (default 50)
+	Streaming    bool            `yaml:"streaming"`
+	Network      *NetworkSpec    `yaml:"network,omitempty"`
+	Lifecycle    *LifecycleSpec  `yaml:"lifecycle,omitempty"`
 	Multimodal   *MultimodalSpec `yaml:"multimodal,omitempty"`
 	Reasoning    *ReasoningSpec  `yaml:"reasoning,omitempty"`
-	Timeout      *int64          `yaml:"timeout,omitempty"`      // Per-request timeout in µs. nil = default (300s). 0 = no timeout. (R9: pointer for zero-value)
-	ClosedLoop   *bool           `yaml:"closed_loop,omitempty"`  // nil = default (true for reasoning/multi-turn). false = open-loop (all rounds pre-generated).
+	Timeout      *int64          `yaml:"timeout,omitempty"`     // Per-request timeout in µs. nil = default (300s). 0 = no timeout. (R9: pointer for zero-value)
+	ClosedLoop   *bool           `yaml:"closed_loop,omitempty"` // nil = default (true for reasoning/multi-turn). false = open-loop (all rounds pre-generated).
 	// CustomSamplerFactory allows programmatic injection of arrival sampler factories,
 	// bypassing the factory-based construction from Arrival.Process.
 	//
@@ -176,7 +177,10 @@ type ActiveWindow struct {
 
 	// Per-window parameters for time-varying workloads (ServeGen compatibility).
 	// When set, these override the client-level parameters during this window.
-	TraceRate  *float64     `yaml:"trace_rate,omitempty"`          // Weight for proportional rate allocation
+	// TraceRate semantic depends on context:
+	//   - Rate-mode clients (aggregate_rate > 0): weight for proportional rate allocation
+	//   - Cohort spikes (aggregate_rate = 0): absolute per-client rate in requests/second
+	TraceRate  *float64     `yaml:"trace_rate,omitempty"`
 	Arrival    *ArrivalSpec `yaml:"arrival,omitempty"`             // Arrival pattern (shape/scale for CV)
 	InputDist  *DistSpec    `yaml:"input_distribution,omitempty"`  // Input token distribution
 	OutputDist *DistSpec    `yaml:"output_distribution,omitempty"` // Output token distribution
@@ -284,9 +288,29 @@ func (s *WorkloadSpec) Validate() error {
 					}
 				}
 			}
-			// Cohorts not supported in absolute rate mode
+			// Cohorts in absolute mode require spike.trace_rate
 			if len(s.Cohorts) > 0 {
-				return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but cohorts are present (cohorts require proportional allocation)")
+				for i, cohort := range s.Cohorts {
+					// Diurnal/Drain patterns in absolute mode: not yet supported
+					if cohort.Diurnal != nil {
+						return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but cohort %d has diurnal pattern (not yet supported; use spike with trace_rate)", i)
+					}
+					if cohort.Drain != nil {
+						return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but cohort %d has drain pattern (not yet supported; use spike with trace_rate)", i)
+					}
+					if cohort.Spike != nil {
+						if cohort.Spike.TraceRate == nil {
+							return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but cohort %d has spike without trace_rate", i)
+						}
+						// Validate TraceRate value (R11: prevent NaN/Inf/negative)
+						if err := validateFinitePositive(fmt.Sprintf("cohort %d spike.trace_rate", i), *cohort.Spike.TraceRate); err != nil {
+							return err
+						}
+					} else {
+						// No temporal pattern at all - would silently generate 0 requests (R1)
+						return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but cohort %d has no spike pattern with trace_rate", i)
+					}
+				}
 			}
 		} else {
 			// Normal proportional mode: aggregate_rate must be positive

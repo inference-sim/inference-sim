@@ -121,6 +121,7 @@ Each entry in the `cohorts` list defines a population with lifecycle dynamics. C
 |-------|------|-------------|
 | `start_time_us` | int64 | Spike start time in microseconds |
 | `duration_us` | int64 | Spike duration in microseconds |
+| `trace_rate` | float64 | Cohort-level arrival rate in req/s (required when `aggregate_rate: 0`); divided evenly across population members |
 
 ### Drain Pattern
 

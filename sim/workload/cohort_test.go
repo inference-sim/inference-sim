@@ -1,12 +1,213 @@
 package workload
 
 import (
+	"math"
 	"reflect"
 	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
 )
+
+func TestSpikeSpec_YAMLParsing_WithTraceRate_ParsesCorrectly(t *testing.T) {
+	yamlStr := `
+spike:
+  start_time_us: 300000000
+  duration_us: 600000000
+  trace_rate: 7.6
+`
+	var result struct {
+		Spike *SpikeSpec `yaml:"spike"`
+	}
+	err := yaml.Unmarshal([]byte(yamlStr), &result)
+	if err != nil {
+		t.Fatalf("failed to parse YAML: %v", err)
+	}
+	if result.Spike == nil {
+		t.Fatal("Spike is nil")
+	}
+	if result.Spike.TraceRate == nil {
+		t.Fatal("TraceRate is nil; expected non-nil pointer")
+	}
+	if *result.Spike.TraceRate != 7.6 {
+		t.Errorf("TraceRate = %v; expected 7.6", *result.Spike.TraceRate)
+	}
+}
+
+func TestSpikeSpec_YAMLParsing_WithoutTraceRate_IsNil(t *testing.T) {
+	yamlStr := `
+spike:
+  start_time_us: 300000000
+  duration_us: 600000000
+`
+	var result struct {
+		Spike *SpikeSpec `yaml:"spike"`
+	}
+	err := yaml.Unmarshal([]byte(yamlStr), &result)
+	if err != nil {
+		t.Fatalf("failed to parse YAML: %v", err)
+	}
+	if result.Spike == nil {
+		t.Fatal("Spike is nil")
+	}
+	if result.Spike.TraceRate != nil {
+		t.Errorf("TraceRate = %v; expected nil (omitempty)", *result.Spike.TraceRate)
+	}
+}
+
+func TestSpikeWindow_WithTraceRate_PropagatesField(t *testing.T) {
+	rate := 7.6
+	spec := &SpikeSpec{
+		StartTimeUs: 300000000,
+		DurationUs:  600000000,
+		TraceRate:   &rate,
+	}
+	window := spikeWindow(spec)
+	if window.TraceRate == nil {
+		t.Fatal("ActiveWindow.TraceRate is nil; expected propagated value")
+	}
+	if *window.TraceRate != 7.6 {
+		t.Errorf("ActiveWindow.TraceRate = %v; expected 7.6", *window.TraceRate)
+	}
+	if window.StartUs != 300000000 {
+		t.Errorf("StartUs = %v; expected 300000000", window.StartUs)
+	}
+	if window.EndUs != 900000000 {
+		t.Errorf("EndUs = %v; expected 900000000", window.EndUs)
+	}
+}
+
+func TestSpikeWindow_WithoutTraceRate_LeavesNil(t *testing.T) {
+	spec := &SpikeSpec{
+		StartTimeUs: 300000000,
+		DurationUs:  600000000,
+		TraceRate:   nil,
+	}
+	window := spikeWindow(spec)
+	if window.TraceRate != nil {
+		t.Errorf("ActiveWindow.TraceRate = %v; expected nil", *window.TraceRate)
+	}
+}
+
+func TestExpandCohorts_SpikeTraceRate_DividedByPopulation(t *testing.T) {
+	rate := 7.6
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 0, // Absolute mode
+		Cohorts: []CohortSpec{
+			{
+				ID:           "midnight-critical",
+				Population:   7,
+				RateFraction: 0.089,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+				Spike:        &SpikeSpec{StartTimeUs: 300000000, DurationUs: 600000000, TraceRate: &rate},
+			},
+		},
+	}
+	expanded := ExpandCohorts(spec.Cohorts, 12345)
+	if len(expanded) != 7 {
+		t.Fatalf("expected 7 clients; got %d", len(expanded))
+	}
+	// Each client should get 7.6 / 7 = 1.086 (approximately)
+	for i, client := range expanded {
+		if client.Lifecycle == nil || len(client.Lifecycle.Windows) == 0 {
+			t.Fatalf("client %d has no lifecycle windows", i)
+		}
+		window := client.Lifecycle.Windows[0]
+		if window.TraceRate == nil {
+			t.Fatalf("client %d window TraceRate is nil", i)
+		}
+		actualRate := *window.TraceRate
+		// Allow floating point tolerance
+		if actualRate < 1.085 || actualRate > 1.087 {
+			t.Errorf("client %d: TraceRate = %v; expected ~1.086 (7.6/7)", i, actualRate)
+		}
+	}
+
+	// Rate conservation invariant: sum of per-client rates must equal cohort rate
+	var sumRates float64
+	for _, client := range expanded {
+		sumRates += *client.Lifecycle.Windows[0].TraceRate
+	}
+	if math.Abs(sumRates-7.6) > 1e-9 {
+		t.Errorf("rate conservation: sum of per-client rates = %v; expected 7.6 (cohort TraceRate)", sumRates)
+	}
+}
+
+func TestValidation_AbsoluteMode_CohortWithSpikeTraceRate_Passes(t *testing.T) {
+	rate := 7.6
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 0, // Absolute mode
+		Cohorts: []CohortSpec{
+			{
+				ID:           "midnight-critical",
+				Population:   7,
+				RateFraction: 0.089,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+				Spike:        &SpikeSpec{StartTimeUs: 300000000, DurationUs: 600000000, TraceRate: &rate},
+			},
+		},
+	}
+	err := spec.Validate()
+	if err != nil {
+		t.Errorf("expected validation to pass; got error: %v", err)
+	}
+}
+
+func TestValidation_AbsoluteMode_CohortWithoutSpikeTraceRate_Fails(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 0, // Absolute mode
+		Cohorts: []CohortSpec{
+			{
+				ID:           "test",
+				Population:   7,
+				RateFraction: 0.089,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+				Spike:        &SpikeSpec{StartTimeUs: 300000000, DurationUs: 600000000}, // No TraceRate
+			},
+		},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected validation to fail for cohort without spike trace_rate in absolute mode")
+	}
+	if !strings.Contains(err.Error(), "spike without trace_rate") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestValidation_AbsoluteMode_CohortWithDiurnal_ReturnsError(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 0, // Absolute mode
+		Cohorts: []CohortSpec{
+			{
+				ID:           "test",
+				Population:   5,
+				RateFraction: 0.089,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+				Diurnal:      &DiurnalSpec{PeakHour: 14, PeakToTroughRatio: 2.0}, // Diurnal not supported in absolute mode
+			},
+		},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected error for diurnal cohort in absolute mode (not yet supported)")
+	}
+	if !strings.Contains(err.Error(), "diurnal pattern") {
+		t.Errorf("expected error about diurnal pattern; got: %v", err)
+	}
+}
 
 func TestCohortValidation_ZeroPopulation_ReturnsError(t *testing.T) {
 	spec := &WorkloadSpec{
@@ -672,5 +873,83 @@ func TestGenerateRequests_CohortWithMultiTurn_ProducesMultiRoundRequests(t *test
 		s.lastArrival = r.ArrivalTime
 		s.lastRound = r.RoundIndex
 		s.lastInputLen = len(r.InputTokens)
+	}
+}
+
+func TestValidation_AbsoluteMode_CohortWithNegativeTraceRate_Fails(t *testing.T) {
+	rate := -5.0
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 0, // Absolute mode
+		Cohorts: []CohortSpec{
+			{
+				ID:           "test",
+				Population:   7,
+				RateFraction: 0.089,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+				Spike:        &SpikeSpec{StartTimeUs: 300000000, DurationUs: 600000000, TraceRate: &rate},
+			},
+		},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected validation to fail for negative trace_rate")
+	}
+	if !strings.Contains(err.Error(), "must be positive") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestValidation_AbsoluteMode_CohortWithNaNTraceRate_Fails(t *testing.T) {
+	rate := math.NaN()
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 0, // Absolute mode
+		Cohorts: []CohortSpec{
+			{
+				ID:           "test",
+				Population:   7,
+				RateFraction: 0.089,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+				Spike:        &SpikeSpec{StartTimeUs: 300000000, DurationUs: 600000000, TraceRate: &rate},
+			},
+		},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected validation to fail for NaN trace_rate")
+	}
+	if !strings.Contains(err.Error(), "must be a finite number") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestValidation_AbsoluteMode_CohortWithInfTraceRate_Fails(t *testing.T) {
+	rate := math.Inf(1)
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 0, // Absolute mode
+		Cohorts: []CohortSpec{
+			{
+				ID:           "test",
+				Population:   7,
+				RateFraction: 0.089,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+				Spike:        &SpikeSpec{StartTimeUs: 300000000, DurationUs: 600000000, TraceRate: &rate},
+			},
+		},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected validation to fail for Inf trace_rate")
+	}
+	if !strings.Contains(err.Error(), "must be a finite number") {
+		t.Errorf("unexpected error message: %v", err)
 	}
 }

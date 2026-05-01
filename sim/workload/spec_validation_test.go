@@ -66,29 +66,51 @@ func TestWorkloadSpec_Validate_AbsoluteRateMode(t *testing.T) {
 		}
 	})
 
-	t.Run("absolute mode with cohorts", func(t *testing.T) {
-		traceRate := 5.0
-		spec := validBaseSpec()
-		spec.Clients[0].Lifecycle = &LifecycleSpec{
-			Windows: []ActiveWindow{
-				{StartUs: 0, EndUs: 1000000, TraceRate: &traceRate},
-			},
-		}
-		spec.Cohorts = []CohortSpec{
-			{
-				Population:   10,
-				RateFraction: 1.0,
-				Arrival:      ArrivalSpec{Process: "poisson"},
-				InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
-				OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+	t.Run("absolute mode with cohorts without spike trace_rate", func(t *testing.T) {
+		spec := &WorkloadSpec{
+			Version:       "2",
+			AggregateRate: 0,
+			Cohorts: []CohortSpec{
+				{
+					ID:           "cohort-1",
+					Population:   10,
+					RateFraction: 1.0,
+					Arrival:      ArrivalSpec{Process: "poisson"},
+					InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+					OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+					Spike:        &SpikeSpec{StartTimeUs: 0, DurationUs: 1000000}, // No TraceRate
+				},
 			},
 		}
 		err := spec.Validate()
 		if err == nil {
-			t.Fatal("expected error for cohorts in absolute mode, got nil")
+			t.Fatal("expected error for cohort spike without trace_rate in absolute mode, got nil")
 		}
-		if !strings.Contains(err.Error(), "cohorts are present") {
-			t.Errorf("expected 'cohorts are present' error, got: %v", err)
+		if !strings.Contains(err.Error(), "spike without trace_rate") {
+			t.Errorf("expected 'spike without trace_rate' error, got: %v", err)
+		}
+	})
+
+	t.Run("absolute mode with cohorts with spike trace_rate", func(t *testing.T) {
+		traceRate := 10.0
+		spec := &WorkloadSpec{
+			Version:       "2",
+			AggregateRate: 0,
+			Cohorts: []CohortSpec{
+				{
+					ID:           "cohort-1",
+					Population:   5,
+					RateFraction: 0.5,
+					Arrival:      ArrivalSpec{Process: "poisson"},
+					InputDist:    DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+					OutputDist:   DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+					Spike:        &SpikeSpec{StartTimeUs: 0, DurationUs: 1000000, TraceRate: &traceRate},
+				},
+			},
+		}
+		err := spec.Validate()
+		if err != nil {
+			t.Errorf("expected valid for cohort with spike trace_rate in absolute mode, got error: %v", err)
 		}
 	})
 
