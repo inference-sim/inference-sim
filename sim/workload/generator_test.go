@@ -2756,3 +2756,75 @@ func TestGenerateRequests_InferencePerfMultiStage_CorrectRatePerStage(t *testing
 		}
 	}
 }
+
+func TestGenerateRequests_CohortAbsoluteMode_UsesTraceRate(t *testing.T) {
+	rate := 7.6
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 0, // Absolute mode
+		Cohorts: []CohortSpec{
+			{
+				ID:           "midnight-critical",
+				Population:   7,
+				RateFraction: 0.089,
+				Arrival:      ArrivalSpec{Process: "constant"}, // Deterministic for testing
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+				Spike:        &SpikeSpec{StartTimeUs: 0, DurationUs: 10000000, TraceRate: &rate}, // 10 seconds
+			},
+		},
+	}
+	// Expand cohorts
+	expanded := ExpandCohorts(spec.Cohorts, 12345)
+	if len(expanded) != 7 {
+		t.Fatalf("expected 7 clients; got %d", len(expanded))
+	}
+	// Generate requests for the first client
+	spec.Cohorts = nil // Clear to avoid double-expansion in GenerateRequests
+	spec.Clients = []ClientSpec{expanded[0]}
+	requests, err := GenerateRequests(spec, 10000000, 67890) // 10 second horizon
+	if err != nil {
+		t.Fatalf("GenerateRequests failed: %v", err)
+	}
+	// Each client should generate requests based on TraceRate (feature verification)
+	// Note: Exact count depends on arrival process implementation
+	if len(requests) < 1 {
+		t.Fatal("expected at least 1 request; got none")
+	}
+	if len(requests) < 10 || len(requests) > 11 {
+		t.Errorf("expected ~10-11 requests (1.086 req/s * 10s); got %d", len(requests))
+	}
+}
+
+func TestGenerateRequests_CohortProportionalMode_BackwardCompatible(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 10.0, // Proportional mode
+		Cohorts: []CohortSpec{
+			{
+				ID:           "test",
+				Population:   5,
+				RateFraction: 0.5, // 5 req/s shared among 5 clients = 1 req/s each
+				Arrival:      ArrivalSpec{Process: "constant"},
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+				Spike:        &SpikeSpec{StartTimeUs: 0, DurationUs: 10000000}, // No TraceRate
+			},
+		},
+	}
+	expanded := ExpandCohorts(spec.Cohorts, 12345)
+	if len(expanded) != 5 {
+		t.Fatalf("expected 5 clients; got %d", len(expanded))
+	}
+	// Generate requests for the first client
+	spec.Cohorts = nil // Clear to avoid double-expansion in GenerateRequests
+	spec.Clients = []ClientSpec{expanded[0]}
+	requests, err := GenerateRequests(spec, 10000000, 67890)
+	if err != nil {
+		t.Fatalf("GenerateRequests failed: %v", err)
+	}
+	// Each client should generate requests in proportional mode (backward compat)
+	if len(requests) < 1 {
+		t.Fatal("expected at least 1 request; got none")
+	}
+}
