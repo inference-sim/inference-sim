@@ -101,6 +101,14 @@ func loadServeGenData(spec *WorkloadSpec) error {
 	windowDurSec := spec.ServeGenData.WindowDurationSecs
 	drainSec := spec.ServeGenData.DrainTimeoutSecs
 
+	// Apply defaults if not set (for backwards compatibility with tests)
+	if windowDurSec <= 0 {
+		windowDurSec = 600 // 10 minutes default
+	}
+	if drainSec < 0 {
+		drainSec = 180 // 3 minutes default
+	}
+
 	// BC-7: Deterministic RNG from spec.Seed
 	rng := rand.New(rand.NewSource(spec.Seed))
 

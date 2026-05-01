@@ -985,7 +985,7 @@ func TestConvertServeGen_NormalizesTimestamps(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "chunk-0-dataset.json"), []byte(datasetJSON), 0644))
 
 	// WHEN ConvertServeGen processes these files
-	spec, err := ConvertServeGen(dir, "")
+	spec, err := ConvertServeGen(dir, 600, 180)
 
 	// THEN conversion succeeds
 	require.NoError(t, err)
