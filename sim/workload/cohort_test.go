@@ -1,6 +1,7 @@
 package workload
 
 import (
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -860,5 +861,83 @@ func TestGenerateRequests_CohortWithMultiTurn_ProducesMultiRoundRequests(t *test
 		s.lastArrival = r.ArrivalTime
 		s.lastRound = r.RoundIndex
 		s.lastInputLen = len(r.InputTokens)
+	}
+}
+
+func TestValidation_AbsoluteMode_CohortWithNegativeTraceRate_Fails(t *testing.T) {
+	rate := -5.0
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 0, // Absolute mode
+		Cohorts: []CohortSpec{
+			{
+				ID:           "test",
+				Population:   7,
+				RateFraction: 0.089,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+				Spike:        &SpikeSpec{StartTimeUs: 300000000, DurationUs: 600000000, TraceRate: &rate},
+			},
+		},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected validation to fail for negative trace_rate")
+	}
+	if !strings.Contains(err.Error(), "must be positive") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestValidation_AbsoluteMode_CohortWithNaNTraceRate_Fails(t *testing.T) {
+	rate := math.NaN()
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 0, // Absolute mode
+		Cohorts: []CohortSpec{
+			{
+				ID:           "test",
+				Population:   7,
+				RateFraction: 0.089,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+				Spike:        &SpikeSpec{StartTimeUs: 300000000, DurationUs: 600000000, TraceRate: &rate},
+			},
+		},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected validation to fail for NaN trace_rate")
+	}
+	if !strings.Contains(err.Error(), "must be a finite number") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestValidation_AbsoluteMode_CohortWithInfTraceRate_Fails(t *testing.T) {
+	rate := math.Inf(1)
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 0, // Absolute mode
+		Cohorts: []CohortSpec{
+			{
+				ID:           "test",
+				Population:   7,
+				RateFraction: 0.089,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+				Spike:        &SpikeSpec{StartTimeUs: 300000000, DurationUs: 600000000, TraceRate: &rate},
+			},
+		},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected validation to fail for Inf trace_rate")
+	}
+	if !strings.Contains(err.Error(), "must be a finite number") {
+		t.Errorf("unexpected error message: %v", err)
 	}
 }

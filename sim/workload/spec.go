@@ -288,8 +288,14 @@ func (s *WorkloadSpec) Validate() error {
 		// Cohorts in absolute mode require spike.trace_rate
 		if len(s.Cohorts) > 0 {
 			for i, cohort := range s.Cohorts {
-				if cohort.Spike != nil && cohort.Spike.TraceRate == nil {
-					return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but cohort %d has spike without trace_rate", i)
+				if cohort.Spike != nil {
+					if cohort.Spike.TraceRate == nil {
+						return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but cohort %d has spike without trace_rate", i)
+					}
+					// Validate TraceRate value (R11: prevent NaN/Inf/negative)
+					if err := validateFinitePositive(fmt.Sprintf("cohort %d spike.trace_rate", i), *cohort.Spike.TraceRate); err != nil {
+						return err
+					}
 				}
 				// Diurnal/Drain patterns in absolute mode: not yet supported, but not blocked
 			}
