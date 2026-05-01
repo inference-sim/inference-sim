@@ -1803,3 +1803,55 @@ func TestObserveRecorder_VLLMPriority_EndToEndFlow(t *testing.T) {
 		t.Errorf("Request Priority=%f, want 0 (simulation isolation)", requests[0].Priority)
 	}
 }
+
+// TestRealClient_Send_NilSLOMapDefensive verifies defensive initialization of sloMap
+// when RealClient is constructed incorrectly (R4 violation via struct literal).
+func TestRealClient_Send_NilSLOMapDefensive(t *testing.T) {
+	// GIVEN: RealClient constructed with struct literal (R4 violation)
+	// This simulates the edge case where sloMap could be nil
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		response := map[string]interface{}{
+			"id":      "test-id",
+			"choices": []map[string]interface{}{{"text": "output"}},
+			"usage":   map[string]interface{}{"prompt_tokens": 10, "completion_tokens": 5},
+		}
+		_ = json.NewEncoder(w).Encode(response)
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	// Construct via struct literal (incorrect, but should not panic)
+	client := &RealClient{
+		baseURL:    server.URL,
+		modelName:  "test-model",
+		httpClient: &http.Client{Timeout: 5 * time.Second},
+		apiFormat:  "completions",
+		// sloMap intentionally nil (R4 violation)
+	}
+
+	// WHEN: Send is called with SLOClass set
+	req := &PendingRequest{
+		RequestID:       1,
+		Prompt:          "test",
+		MaxOutputTokens: 10,
+		Streaming:       false,
+		SLOClass:        "critical", // This would cause nil dereference without defensive guard
+	}
+
+	ctx := context.Background()
+	record, err := client.Send(ctx, req)
+
+	// THEN: Should not panic, should use default SLO map
+	if err != nil {
+		t.Fatalf("Send() error: %v", err)
+	}
+	if record.VLLMPriority != 0 {
+		t.Errorf("VLLMPriority: got %d, want 0 (critical with default map)", record.VLLMPriority)
+	}
+
+	// Verify sloMap was defensively initialized
+	if client.sloMap == nil {
+		t.Error("sloMap should have been initialized defensively, but is still nil")
+	}
+}

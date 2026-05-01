@@ -119,6 +119,13 @@ type RequestRecord struct {
 
 // Send dispatches a single request to the server and records timing.
 func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRecord, error) {
+	// Defensive: ensure sloMap is initialized (guards against R4 violations where
+	// RealClient is constructed via struct literal instead of NewRealClient).
+	// This prevents nil pointer dereference when req.SLOClass != "".
+	if c.sloMap == nil {
+		c.sloMap = sim.DefaultSLOPriorityMap()
+	}
+
 	record := &RequestRecord{
 		RequestID: req.RequestID,
 		Status:    "ok",
