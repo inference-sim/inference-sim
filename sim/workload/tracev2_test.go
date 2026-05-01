@@ -992,3 +992,41 @@ func TestExportTraceV2_VLLMPriority_ConditionalColumn(t *testing.T) {
 		}
 	})
 }
+
+func TestLoadTraceV2Requests_IgnoresVLLMPriority_SimulationIsolation(t *testing.T) {
+	// BC-5: LoadTraceV2Requests must NOT read VLLMPriority into Request.Priority
+	// This is a simulation isolation requirement — observability metadata must
+	// not affect simulation behavior.
+	
+	trace := &TraceV2{
+		Header: TraceHeader{Version: 2, TimeUnit: "us"},
+		Records: []TraceRecord{
+			{RequestID: 1, SLOClass: "critical", VLLMPriority: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000},
+			{RequestID: 2, SLOClass: "batch", VLLMPriority: 5, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000},
+		},
+	}
+
+	requests, err := LoadTraceV2Requests(trace, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 2 {
+		t.Fatalf("len(requests)=%d, want 2", len(requests))
+	}
+
+	// THEN Request.Priority must remain 0 (default) regardless of VLLMPriority
+	if requests[0].Priority != 0 {
+		t.Errorf("Request 0 Priority=%f, want 0 (must not read VLLMPriority)", requests[0].Priority)
+	}
+	if requests[1].Priority != 0 {
+		t.Errorf("Request 1 Priority=%f, want 0 (must not read VLLMPriority)", requests[1].Priority)
+	}
+
+	// AND SLOClass should be preserved for admission/routing decisions
+	if requests[0].SLOClass != "critical" {
+		t.Errorf("Request 0 SLOClass=%q, want %q", requests[0].SLOClass, "critical")
+	}
+	if requests[1].SLOClass != "batch" {
+		t.Errorf("Request 1 SLOClass=%q, want %q", requests[1].SLOClass, "batch")
+	}
+}
