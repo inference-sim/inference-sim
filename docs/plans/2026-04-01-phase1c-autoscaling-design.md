@@ -183,9 +183,9 @@ type Engine interface {
 ```
 **Observes:** `[]AnalyzerResult` (one per model) + `GPUInventory` (free slots per variant).  
 **Produces:** `[]ScaleDecision` — at most one per model per call (conservative, reassess next tick).  
-**Scale-up rule:** target cheapest available variant (`CostPerReplica` ascending).  
-**Scale-down rule:** target most expensive active variant (`CostPerReplica` descending).  
-**Cross-model priority:** when GPU inventory is insufficient to satisfy all scale-up requests, models are served in descending `RequiredCapacity` order (highest need first). This is the `GreedyEngine` default; other `Engine` implementations may use different priority rules (e.g. SLO tier).  
+**Scale-up rule:** target cheapest available variant (`CostPerReplica` ascending). Replica count is exact-N: `ceil(RequiredCapacity / perReplicaCapacity)`, where `perReplicaCapacity = Supply / ReplicaCount` for the chosen variant. Falls back to `Delta=+1` when `perReplicaCapacity == 0` (no active replicas yet for that variant).  
+**Scale-down rule:** target most expensive active variant (`CostPerReplica` descending). Replica count is exact-N: `floor(SpareCapacity / perReplicaCapacity)`, clamped to `[1, ReplicaCount]`. Falls back to `Delta=-1` when `perReplicaCapacity == 0`.  
+**Cross-model priority (not yet implemented):** the current `GreedyEngine` processes `results []AnalyzerResult` in input slice order — there is no sort by `RequiredCapacity`. Serving models in descending `RequiredCapacity` order when GPU inventory is insufficient is a planned research direction (Phase 2 OpenEvolve); other `Engine` implementations may use different priority rules (e.g. SLO tier). `UnlimitedEngine` also processes in input order (no inventory constraint, so cross-model priority is moot).  
 **Must not:** read `RouterState` or `ModelSignals` directly — only `AnalyzerResult`.
 
 ### `Actuator`
