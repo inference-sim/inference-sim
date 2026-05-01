@@ -146,24 +146,12 @@ func (q *GatewayQueue) Enqueue(req *sim.Request, seqID int64) (EnqueueOutcome, *
 	band := q.findOrCreateBand(priority)
 	var shedVictim *sim.Request
 
-	// Step 1: Per-band capacity check (within-band shedding only).
+	// Step 1: Per-band capacity check.
+	// Within a band all entries share the same priority and new arrivals have higher
+	// seqIDs, so displacement is never possible — reject directly when band is full.
 	if q.maxBandCapacity > 0 && band.totalLen >= q.maxBandCapacity {
-		victim, victimFlow, victimIdx := q.findBandShedVictim(band)
-		if victim == nil {
-			q.rejectedCount++
-			return Rejected, nil
-		}
-		// Within a band, all entries share the same priority.
-		// Only displace if incoming has earlier arrival (lower seqID).
-		victimPri := q.priorityMap.Priority(victim.request.SLOClass)
-		if priority > victimPri || (priority == victimPri && seqID < victim.seqID) {
-			shedVictim = victim.request
-			q.removeEntryByIndex(victimFlow, band, victimIdx)
-			q.shedCount++
-		} else {
-			q.rejectedCount++
-			return Rejected, nil
-		}
+		q.rejectedCount++
+		return Rejected, nil
 	}
 
 	// Step 2: Global capacity check (cross-band shedding).
@@ -197,32 +185,6 @@ func (q *GatewayQueue) Enqueue(req *sim.Request, seqID int64) (EnqueueOutcome, *
 		return ShedVictim, shedVictim
 	}
 	return Enqueued, nil
-}
-
-// findBandShedVictim finds the latest-arrival sheddable entry within a band for eviction.
-// Since all entries in a band share the same priority, picks the one with the highest
-// seqID (latest arrival = least deserving). Returns nil if the band is non-sheddable.
-// Uses sorted key iteration for determinism (INV-6).
-func (q *GatewayQueue) findBandShedVictim(band *priorityBand) (*flowEntry, *flowQueue, int) {
-	var bestEntry *flowEntry
-	var bestFlow *flowQueue
-	var bestIdx int
-
-	for _, tid := range sortedFlowKeys(band.flows) {
-		flow := band.flows[tid]
-		for i := range flow.requests {
-			entry := &flow.requests[i]
-			if !q.priorityMap.IsSheddable(entry.request.SLOClass) {
-				continue
-			}
-			if bestEntry == nil || entry.seqID > bestEntry.seqID {
-				bestEntry = entry
-				bestFlow = flow
-				bestIdx = i
-			}
-		}
-	}
-	return bestEntry, bestFlow, bestIdx
 }
 
 // findGlobalShedVictim finds the lowest-priority sheddable entry across all bands.
