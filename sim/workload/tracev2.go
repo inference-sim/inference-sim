@@ -118,8 +118,27 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
+	// Conditionally include vllm_priority column: present iff any record has non-empty SLOClass
+	includeVLLMPriority := false
+	for _, r := range records {
+		if r.SLOClass != "" {
+			includeVLLMPriority = true
+			break
+		}
+	}
+
+	// Build column header list
+	columns := make([]string, 0, len(traceV2Columns)+1)
+	for i, col := range traceV2Columns {
+		columns = append(columns, col)
+		// Insert vllm_priority immediately after slo_class (index 3)
+		if i == 3 && includeVLLMPriority {
+			columns = append(columns, "vllm_priority")
+		}
+	}
+
 	// Write header row
-	if err := writer.Write(traceV2Columns); err != nil {
+	if err := writer.Write(columns); err != nil {
 		return fmt.Errorf("writing CSV header: %w", err)
 	}
 
@@ -130,6 +149,13 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 			r.ClientID,
 			r.TenantID,
 			r.SLOClass,
+		}
+		// Conditionally append vllm_priority after slo_class
+		if includeVLLMPriority {
+			row = append(row, strconv.Itoa(r.VLLMPriority))
+		}
+		// Continue with remaining fields
+		row = append(row,
 			r.SessionID,
 			strconv.Itoa(r.RoundIndex),
 			r.PrefixGroup,
@@ -153,7 +179,7 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 			r.Status,
 			r.ErrorMessage,
 			r.FinishReason,
-		}
+		)
 		if err := writer.Write(row); err != nil {
 			return fmt.Errorf("writing CSV row %d: %w", r.RequestID, err)
 		}

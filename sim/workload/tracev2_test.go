@@ -864,3 +864,131 @@ func TestTraceRecord_VLLMPriority_FieldExists(t *testing.T) {
 		t.Errorf("Expected default VLLMPriority=0, got %d", rec2.VLLMPriority)
 	}
 }
+
+func TestExportTraceV2_VLLMPriority_ConditionalColumn(t *testing.T) {
+	// BC-3: vllm_priority column included only when any record has non-empty SLOClass
+	
+	dir := t.TempDir()
+	header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
+
+	t.Run("no SLOClass → no vllm_priority column", func(t *testing.T) {
+		records := []TraceRecord{
+			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, SLOClass: "", VLLMPriority: 0, Status: "ok"},
+			{RequestID: 2, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000, SLOClass: "", VLLMPriority: 0, Status: "ok"},
+		}
+
+		headerPath := filepath.Join(dir, "no_slo_header.yaml")
+		dataPath := filepath.Join(dir, "no_slo_data.csv")
+		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			t.Fatal(err)
+		}
+
+		// Read CSV header row
+		data, err := os.ReadFile(dataPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(string(data), "\n")
+		if len(lines) < 1 {
+			t.Fatal("CSV file is empty")
+		}
+		headerRow := lines[0]
+
+		// THEN vllm_priority should NOT be in the header
+		if strings.Contains(headerRow, "vllm_priority") {
+			t.Errorf("vllm_priority column should not be present when all records have empty SLOClass")
+		}
+	})
+
+	t.Run("SLOClass set → vllm_priority column included", func(t *testing.T) {
+		records := []TraceRecord{
+			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, SLOClass: "critical", VLLMPriority: 0, Status: "ok"},
+			{RequestID: 2, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000, SLOClass: "batch", VLLMPriority: 5, Status: "ok"},
+		}
+
+		headerPath := filepath.Join(dir, "with_slo_header.yaml")
+		dataPath := filepath.Join(dir, "with_slo_data.csv")
+		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			t.Fatal(err)
+		}
+
+		// Read CSV header row
+		data, err := os.ReadFile(dataPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(string(data), "\n")
+		if len(lines) < 1 {
+			t.Fatal("CSV file is empty")
+		}
+		headerRow := lines[0]
+
+		// THEN vllm_priority should be in the header
+		if !strings.Contains(headerRow, "vllm_priority") {
+			t.Errorf("vllm_priority column should be present when any record has non-empty SLOClass")
+		}
+
+		// AND it should appear after slo_class
+		columns := strings.Split(headerRow, ",")
+		sloIdx := -1
+		vllmIdx := -1
+		for i, col := range columns {
+			if col == "slo_class" {
+				sloIdx = i
+			}
+			if col == "vllm_priority" {
+				vllmIdx = i
+			}
+		}
+		if sloIdx == -1 {
+			t.Fatal("slo_class column not found")
+		}
+		if vllmIdx == -1 {
+			t.Fatal("vllm_priority column not found")
+		}
+		if vllmIdx != sloIdx+1 {
+			t.Errorf("vllm_priority should appear immediately after slo_class, got indices slo=%d vllm=%d", sloIdx, vllmIdx)
+		}
+
+		// BC-4: Priority values preserved in round-trip
+		// Verify data rows contain correct priority values
+		if len(lines) < 3 {
+			t.Fatal("Expected at least 3 lines (header + 2 data rows)")
+		}
+		row1 := strings.Split(lines[1], ",")
+		row2 := strings.Split(lines[2], ",")
+		
+		if row1[vllmIdx] != "0" {
+			t.Errorf("Row 1 vllm_priority: got %q, want \"0\"", row1[vllmIdx])
+		}
+		if row2[vllmIdx] != "5" {
+			t.Errorf("Row 2 vllm_priority: got %q, want \"5\"", row2[vllmIdx])
+		}
+	})
+
+	t.Run("mixed: some with SLOClass, some without", func(t *testing.T) {
+		records := []TraceRecord{
+			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, SLOClass: "", VLLMPriority: 0, Status: "ok"},
+			{RequestID: 2, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000, SLOClass: "critical", VLLMPriority: 0, Status: "ok"},
+		}
+
+		headerPath := filepath.Join(dir, "mixed_header.yaml")
+		dataPath := filepath.Join(dir, "mixed_data.csv")
+		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+			t.Fatal(err)
+		}
+
+		// Read CSV header row
+		data, err := os.ReadFile(dataPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(string(data), "\n")
+		headerRow := lines[0]
+
+		// THEN vllm_priority should be in the header (at least one record has SLOClass)
+		if !strings.Contains(headerRow, "vllm_priority") {
+			t.Errorf("vllm_priority column should be present when at least one record has non-empty SLOClass")
+		}
+	})
+}
