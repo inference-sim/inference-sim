@@ -1602,13 +1602,9 @@ func TestRealClient_WithSLOPriorityMap_NilUsesDefaults(t *testing.T) {
 }
 
 func TestRealClient_Send_VLLMPriority_Captured(t *testing.T) {
-	// GIVEN a PendingRequest with SLOClass="critical"
-	// WHEN Send() is called
-	// THEN RequestRecord.VLLMPriority should capture the inverted priority value
-	
 	// This test verifies BC-2: RequestRecord.VLLMPriority captures the computed vLLM
 	// priority value when req.SLOClass is set.
-	
+
 	// Mock HTTP server that always returns OK with minimal response
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -1647,63 +1643,41 @@ func TestRealClient_Send_VLLMPriority_Captured(t *testing.T) {
 		WithSLOPriorityMap(sloMap),
 	)
 
-	req := &PendingRequest{
-		RequestID:       1,
-		Prompt:          "test prompt",
-		MaxOutputTokens: 100,
-		Streaming:       false,
-		SLOClass:        "critical",
+	tests := []struct {
+		name             string
+		sloClass         string
+		expectedPriority int
+	}{
+		{"critical", "critical", 0},  // 4 - 4 = 0
+		{"standard", "standard", 1},  // 4 - 3 = 1
+		{"batch", "batch", 5},        // 4 - (-1) = 5
+		{"sheddable", "sheddable", 6}, // 4 - (-2) = 6
+		{"background", "background", 7}, // 4 - (-3) = 7
+		{"empty", "", 0},             // not set → 0
 	}
 
 	ctx := context.Background()
-	record, err := client.Send(ctx, req)
-	if err != nil {
-		t.Fatalf("Send() error: %v", err)
-	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &PendingRequest{
+				RequestID:       i + 1,
+				Prompt:          "test prompt",
+				MaxOutputTokens: 100,
+				Streaming:       false,
+				SLOClass:        tt.sloClass,
+			}
 
-	// THEN VLLMPriority should be 0 (critical → highest priority in vLLM convention)
-	expectedPriority := sloMap.InvertForVLLM("critical")
-	if record.VLLMPriority != expectedPriority {
-		t.Errorf("VLLMPriority: got %d, want %d (critical)", record.VLLMPriority, expectedPriority)
-	}
+			record, err := client.Send(ctx, req)
+			if err != nil {
+				t.Fatalf("Send() error: %v", err)
+			}
 
-	// WHEN SLOClass is "batch"
-	req2 := &PendingRequest{
-		RequestID:       2,
-		Prompt:          "test prompt",
-		MaxOutputTokens: 100,
-		Streaming:       false,
-		SLOClass:        "batch",
-	}
-
-	record2, err := client.Send(ctx, req2)
-	if err != nil {
-		t.Fatalf("Send() error: %v", err)
-	}
-
-	// THEN VLLMPriority should be 5 (batch → low priority in vLLM convention)
-	expectedPriority2 := sloMap.InvertForVLLM("batch")
-	if record2.VLLMPriority != expectedPriority2 {
-		t.Errorf("VLLMPriority: got %d, want %d (batch)", record2.VLLMPriority, expectedPriority2)
-	}
-
-	// WHEN SLOClass is empty
-	req3 := &PendingRequest{
-		RequestID:       3,
-		Prompt:          "test prompt",
-		MaxOutputTokens: 100,
-		Streaming:       false,
-		SLOClass:        "",
-	}
-
-	record3, err := client.Send(ctx, req3)
-	if err != nil {
-		t.Fatalf("Send() error: %v", err)
-	}
-
-	// THEN VLLMPriority should be 0 (not set)
-	if record3.VLLMPriority != 0 {
-		t.Errorf("VLLMPriority: got %d, want 0 (empty SLOClass)", record3.VLLMPriority)
+			// Verify VLLMPriority matches expected value
+			if record.VLLMPriority != tt.expectedPriority {
+				t.Errorf("VLLMPriority: got %d, want %d (sloClass=%q)",
+					record.VLLMPriority, tt.expectedPriority, tt.sloClass)
+			}
+		})
 	}
 }
 
