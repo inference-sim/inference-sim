@@ -206,7 +206,8 @@ func loadServeGenData(spec *WorkloadSpec) error {
 		periodWindows[periodIdx] = windowStart
 	}
 
-	// Group chunks by period based on activity at selected window
+	// Group chunks by period based on activity at selected window across ALL days
+	// Use modulo matching: timestamp % 86400 == selectedWindow to aggregate multi-day traces
 	periodChunks := make(map[int][]chunkData)
 	for _, chunk := range allChunks {
 		if chunk.client.Lifecycle == nil || len(chunk.client.Lifecycle.Windows) == 0 {
@@ -218,7 +219,8 @@ func loadServeGenData(spec *WorkloadSpec) error {
 			hasActivity := false
 			for _, window := range chunk.client.Lifecycle.Windows {
 				windowStartSec := window.StartUs / 1e6
-				if int64(windowStartSec) == selectedWindow {
+				// Match any timestamp at the same time-of-day across all days
+				if int64(windowStartSec)%86400 == selectedWindow {
 					hasActivity = true
 					break
 				}
@@ -308,17 +310,16 @@ func loadServeGenData(spec *WorkloadSpec) error {
 				}
 			}
 
-			// BC-5: Sum rates from the selected window only
+			// BC-5: Sum rates from all windows matching the selected time-of-day (across all days)
 			if chunk.client.Lifecycle != nil {
 				for _, window := range chunk.client.Lifecycle.Windows {
 					windowStartSec := window.StartUs / 1e6
 
-					// Only include the exact selected window
-					if int64(windowStartSec) == selectedWindow {
+					// Include all windows at the same time-of-day across all days
+					if int64(windowStartSec)%86400 == selectedWindow {
 						if window.TraceRate != nil {
 							totalRate += *window.TraceRate
 						}
-						break // Only one window per chunk
 					}
 				}
 			}
@@ -364,7 +365,7 @@ func loadServeGenData(spec *WorkloadSpec) error {
 			}
 		}
 
-		// BC-4: Average arrival parameters from the selected window.
+		// BC-4: Average arrival parameters from all windows at the selected time-of-day (across all days).
 		// Majority-vote the process type; simple-average CV, shape, scale.
 		var sumCV, sumShape, sumScale float64
 		var arrivalCount int
@@ -376,7 +377,8 @@ func loadServeGenData(spec *WorkloadSpec) error {
 			}
 			for _, window := range chunk.client.Lifecycle.Windows {
 				windowStartSec := window.StartUs / 1e6
-				if int64(windowStartSec) == selectedWindow {
+				// Include all windows at the same time-of-day across all days
+				if int64(windowStartSec)%86400 == selectedWindow {
 					if window.Arrival != nil {
 						if window.Arrival.CV != nil {
 							sumCV += *window.Arrival.CV
@@ -395,7 +397,6 @@ func loadServeGenData(spec *WorkloadSpec) error {
 							weibullCount++
 						}
 					}
-					break // Found the selected window
 				}
 			}
 		}
