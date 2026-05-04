@@ -4,6 +4,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -628,5 +629,89 @@ func TestPreemptionPolicy_ValidNames(t *testing.T) {
 	}
 	if IsValidPreemptionPolicy("random") {
 		t.Error("IsValidPreemptionPolicy(\"random\") = true, want false")
+	}
+}
+
+func TestLoadPolicyBundle_InstanceLifecycleSection(t *testing.T) {
+	yaml := `
+instance_lifecycle:
+  loading_delay:
+    mean: 270.0
+    stddev: 30.0
+`
+	path := writeTempYAML(t, yaml)
+	bundle, err := LoadPolicyBundle(path)
+	if err != nil {
+		t.Fatalf("LoadPolicyBundle: %v", err)
+	}
+	if bundle.InstanceLifecycle.LoadingDelay.Mean != 270.0 {
+		t.Errorf("LoadingDelay.Mean = %v, want 270.0", bundle.InstanceLifecycle.LoadingDelay.Mean)
+	}
+	if bundle.InstanceLifecycle.LoadingDelay.Stddev != 30.0 {
+		t.Errorf("LoadingDelay.Stddev = %v, want 30.0", bundle.InstanceLifecycle.LoadingDelay.Stddev)
+	}
+}
+
+func TestLoadPolicyBundle_InstanceLifecycleAbsent_IsZero(t *testing.T) {
+	yaml := `
+admission:
+  policy: always-admit
+`
+	path := writeTempYAML(t, yaml)
+	bundle, err := LoadPolicyBundle(path)
+	if err != nil {
+		t.Fatalf("LoadPolicyBundle: %v", err)
+	}
+	if bundle.InstanceLifecycle.LoadingDelay.Mean != 0.0 {
+		t.Errorf("LoadingDelay.Mean = %v, want 0.0 (absent section should default to zero)", bundle.InstanceLifecycle.LoadingDelay.Mean)
+	}
+}
+
+func TestPolicyBundle_Validate_InstanceLifecycle(t *testing.T) {
+	cases := []struct {
+		name    string
+		yaml    string
+		wantErr string
+	}{
+		{
+			name: "negative mean",
+			yaml: `instance_lifecycle:
+  loading_delay:
+    mean: -1.0`,
+			wantErr: "loading_delay.mean must be >= 0",
+		},
+		{
+			name: "negative stddev",
+			yaml: `instance_lifecycle:
+  loading_delay:
+    stddev: -1.0`,
+			wantErr: "loading_delay.stddev must be >= 0",
+		},
+		{
+			name: "zero mean is valid",
+			yaml: `instance_lifecycle:
+  loading_delay:
+    mean: 0.0`,
+			wantErr: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeTempYAML(t, tc.yaml)
+			bundle, err := LoadPolicyBundle(path)
+			if err != nil {
+				t.Fatalf("LoadPolicyBundle: %v", err)
+			}
+			err = bundle.Validate()
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Errorf("Validate() = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("Validate() = %v, want error containing %q", err, tc.wantErr)
+			}
+		})
 	}
 }
