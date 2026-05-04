@@ -2,6 +2,7 @@ package workload
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -134,28 +135,96 @@ func TestServeGenMultiPeriod_EmptyPeriod(t *testing.T) {
 
 	// Create chunks ONLY in midnight (0-1800s) and afternoon (50400-52200s).
 	// Morning (28800-30600s) has no active chunks.
-	chunk0Trace := "0,5.0,0.8,Weibull,1.5,0.02\n"
-	chunk0Dataset := map[string]map[string]string{
-		"0": {"input_tokens": "{100: 1.0}", "output_tokens": "{50: 1.0}"},
-	}
-	if err := os.WriteFile(filepath.Join(tmpDir, "chunk-0-trace.csv"), []byte(chunk0Trace), 0644); err != nil {
-		t.Fatal(err)
-	}
-	d0, _ := json.Marshal(chunk0Dataset)
-	if err := os.WriteFile(filepath.Join(tmpDir, "chunk-0-dataset.json"), d0, 0644); err != nil {
-		t.Fatal(err)
+	// Create 3 chunks per window in each active period to ensure coverage.
+
+	// Midnight window 0
+	for i := 0; i < 3; i++ {
+		trace := fmt.Sprintf("0,%f,0.8,Weibull,1.5,0.02\n", 5.0+float64(i)*0.1)
+		dataset := map[string]map[string]string{
+			"0": {"input_tokens": "{100: 1.0}", "output_tokens": "{50: 1.0}"},
+		}
+		if err := os.WriteFile(filepath.Join(tmpDir, fmt.Sprintf("chunk-%d-trace.csv", i)), []byte(trace), 0644); err != nil {
+			t.Fatal(err)
+		}
+		d, _ := json.Marshal(dataset)
+		if err := os.WriteFile(filepath.Join(tmpDir, fmt.Sprintf("chunk-%d-dataset.json", i)), d, 0644); err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	chunk1Trace := "50400,10.0,1.1,Gamma,2.5,0.06\n"
-	chunk1Dataset := map[string]map[string]string{
-		"43200": {"input_tokens": "{180: 1.0}", "output_tokens": "{70: 1.0}"},
+	// Midnight window 1
+	for i := 3; i < 6; i++ {
+		trace := fmt.Sprintf("600,%f,0.85,Weibull,1.55,0.02\n", 5.0+float64(i)*0.1)
+		dataset := map[string]map[string]string{
+			"0": {"input_tokens": "{110: 1.0}", "output_tokens": "{55: 1.0}"},
+		}
+		if err := os.WriteFile(filepath.Join(tmpDir, fmt.Sprintf("chunk-%d-trace.csv", i)), []byte(trace), 0644); err != nil {
+			t.Fatal(err)
+		}
+		d, _ := json.Marshal(dataset)
+		if err := os.WriteFile(filepath.Join(tmpDir, fmt.Sprintf("chunk-%d-dataset.json", i)), d, 0644); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := os.WriteFile(filepath.Join(tmpDir, "chunk-1-trace.csv"), []byte(chunk1Trace), 0644); err != nil {
-		t.Fatal(err)
+
+	// Midnight window 2
+	for i := 6; i < 9; i++ {
+		trace := fmt.Sprintf("1200,%f,0.9,Weibull,1.6,0.03\n", 5.0+float64(i)*0.1)
+		dataset := map[string]map[string]string{
+			"0": {"input_tokens": "{120: 1.0}", "output_tokens": "{60: 1.0}"},
+		}
+		if err := os.WriteFile(filepath.Join(tmpDir, fmt.Sprintf("chunk-%d-trace.csv", i)), []byte(trace), 0644); err != nil {
+			t.Fatal(err)
+		}
+		d, _ := json.Marshal(dataset)
+		if err := os.WriteFile(filepath.Join(tmpDir, fmt.Sprintf("chunk-%d-dataset.json", i)), d, 0644); err != nil {
+			t.Fatal(err)
+		}
 	}
-	d1, _ := json.Marshal(chunk1Dataset)
-	if err := os.WriteFile(filepath.Join(tmpDir, "chunk-1-dataset.json"), d1, 0644); err != nil {
-		t.Fatal(err)
+
+	// Afternoon window 0
+	for i := 9; i < 12; i++ {
+		trace := fmt.Sprintf("50400,%f,1.1,Gamma,2.5,0.06\n", 10.0+float64(i-9)*0.1)
+		dataset := map[string]map[string]string{
+			"43200": {"input_tokens": "{180: 1.0}", "output_tokens": "{70: 1.0}"},
+		}
+		if err := os.WriteFile(filepath.Join(tmpDir, fmt.Sprintf("chunk-%d-trace.csv", i)), []byte(trace), 0644); err != nil {
+			t.Fatal(err)
+		}
+		d, _ := json.Marshal(dataset)
+		if err := os.WriteFile(filepath.Join(tmpDir, fmt.Sprintf("chunk-%d-dataset.json", i)), d, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Afternoon window 1
+	for i := 12; i < 15; i++ {
+		trace := fmt.Sprintf("51000,%f,1.15,Gamma,2.6,0.06\n", 10.0+float64(i-12)*0.1)
+		dataset := map[string]map[string]string{
+			"43200": {"input_tokens": "{190: 1.0}", "output_tokens": "{75: 1.0}"},
+		}
+		if err := os.WriteFile(filepath.Join(tmpDir, fmt.Sprintf("chunk-%d-trace.csv", i)), []byte(trace), 0644); err != nil {
+			t.Fatal(err)
+		}
+		d, _ := json.Marshal(dataset)
+		if err := os.WriteFile(filepath.Join(tmpDir, fmt.Sprintf("chunk-%d-dataset.json", i)), d, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Afternoon window 2
+	for i := 15; i < 18; i++ {
+		trace := fmt.Sprintf("51600,%f,1.2,Gamma,2.65,0.07\n", 10.0+float64(i-15)*0.1)
+		dataset := map[string]map[string]string{
+			"43200": {"input_tokens": "{200: 1.0}", "output_tokens": "{80: 1.0}"},
+		}
+		if err := os.WriteFile(filepath.Join(tmpDir, fmt.Sprintf("chunk-%d-trace.csv", i)), []byte(trace), 0644); err != nil {
+			t.Fatal(err)
+		}
+		d, _ := json.Marshal(dataset)
+		if err := os.WriteFile(filepath.Join(tmpDir, fmt.Sprintf("chunk-%d-dataset.json", i)), d, 0644); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	spec, err := ConvertServeGen(tmpDir, 600, 180)

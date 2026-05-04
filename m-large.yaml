@@ -1,0 +1,366 @@
+version: "2"
+seed: 42
+category: ""
+clients: []
+cohorts:
+    - id: midnight-background
+      population: 6
+      slo_class: background
+      arrival:
+        process: gamma
+        cv: 2.380570123576429
+        shape: 6.7808964126962215
+        scale: 4.5265198641936965e+06
+      input_distribution:
+        type: lognormal
+        params:
+            mu: 6.229551656022064
+            sigma: 0.3189879231709453
+      output_distribution:
+        type: lognormal
+        params:
+            mu: 3.284441432379856
+            sigma: 0.4247590795321594
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 0
+        duration_us: 600000000
+        trace_rate: 23.171666666666667
+    - id: midnight-batch
+      population: 7
+      slo_class: batch
+      arrival:
+        process: gamma
+        cv: 2.7608945821860074
+        shape: 1.5964869919398974
+        scale: 788298.8508841081
+      input_distribution:
+        type: lognormal
+        params:
+            mu: 6.557572703043401
+            sigma: 0.41047447576310436
+      output_distribution:
+        type: lognormal
+        params:
+            mu: 2.3838107003080147
+            sigma: 0.9906895041304281
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 0
+        duration_us: 600000000
+        trace_rate: 16.998333333333335
+    - id: midnight-critical
+      population: 7
+      slo_class: critical
+      arrival:
+        process: gamma
+        cv: 1.574991831350579
+        shape: 2.2342955398227455
+        scale: 4.749796451419095e+07
+      input_distribution:
+        type: lognormal
+        params:
+            mu: 6.427284468747756
+            sigma: 0.6691090640403184
+      output_distribution:
+        type: lognormal
+        params:
+            mu: 4.1820962344813735
+            sigma: 1.106445587488754
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 0
+        duration_us: 600000000
+        trace_rate: 2.7766666666666664
+    - id: midnight-sheddable
+      population: 7
+      slo_class: sheddable
+      arrival:
+        process: gamma
+        cv: 1.1348217302096923
+        shape: 0.8522543942663318
+        scale: 1.4210346078215053e+06
+      input_distribution:
+        type: lognormal
+        params:
+            mu: 6.227937054999188
+            sigma: 0.5483870075118973
+      output_distribution:
+        type: lognormal
+        params:
+            mu: 3.6879560725535856
+            sigma: 0.8171158554580308
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 0
+        duration_us: 600000000
+        trace_rate: 24.571666666666662
+    - id: midnight-standard
+      population: 7
+      slo_class: standard
+      arrival:
+        process: gamma
+        cv: 1.9026027706554092
+        shape: 0.9370184526183695
+        scale: 7.422465886100319e+06
+      input_distribution:
+        type: lognormal
+        params:
+            mu: 6.1855793682789795
+            sigma: 0.6028578473369273
+      output_distribution:
+        type: lognormal
+        params:
+            mu: 3.535170548127083
+            sigma: 0.7311670104663727
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 0
+        duration_us: 600000000
+        trace_rate: 103.49000000000001
+    - id: morning-background
+      population: 2
+      slo_class: background
+      arrival:
+        process: gamma
+        cv: 2.9791116000440794
+        shape: 0.8634774705314885
+        scale: 989863.2351736943
+      input_distribution:
+        type: lognormal
+        params:
+            mu: 6.269914534540548
+            sigma: 0.2704864908419618
+      output_distribution:
+        type: lognormal
+        params:
+            mu: 4.127212769100602
+            sigma: 0.6704275012938665
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 780000000
+        duration_us: 600000000
+        trace_rate: 1.5466666666666666
+    - id: morning-batch
+      population: 2
+      slo_class: batch
+      arrival:
+        process: gamma
+        cv: 1.8908749127967672
+        shape: 0.29296677361834367
+        scale: 7.079300985878171e+07
+      input_distribution:
+        type: lognormal
+        params:
+            mu: 6.874095208467845
+            sigma: 0.7215258540393527
+      output_distribution:
+        type: lognormal
+        params:
+            mu: 4.842679813957997
+            sigma: 1.1955846667290018
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 780000000
+        duration_us: 600000000
+        trace_rate: 0.08499999999999999
+    - id: morning-critical
+      population: 3
+      slo_class: critical
+      arrival:
+        process: gamma
+        cv: 1.3940875812009488
+        shape: 0.7454173984877822
+        scale: 7.549516182900745e+06
+      input_distribution:
+        type: lognormal
+        params:
+            mu: 6.329387355077535
+            sigma: 0.6719283216265102
+      output_distribution:
+        type: lognormal
+        params:
+            mu: 4.204770375368727
+            sigma: 0.7924780365635082
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 780000000
+        duration_us: 600000000
+        trace_rate: 2.336666666666667
+    - id: morning-sheddable
+      population: 2
+      slo_class: sheddable
+      arrival:
+        process: gamma
+        cv: 1.036304528156946
+        shape: 0.9315998417477674
+        scale: 710708.407852996
+      input_distribution:
+        type: lognormal
+        params:
+            mu: 3.9659199993567675
+            sigma: 0.8323645492369836
+      output_distribution:
+        type: lognormal
+        params:
+            mu: 4.450231700985515
+            sigma: 1.2303986332089272
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 780000000
+        duration_us: 600000000
+        trace_rate: 66.87833333333333
+    - id: morning-standard
+      population: 2
+      slo_class: standard
+      arrival:
+        process: gamma
+        cv: 2.098107563562327
+        shape: 0.6747749740583764
+        scale: 1.6369363729715005e+08
+      input_distribution:
+        type: lognormal
+        params:
+            mu: 6.011868991264118
+            sigma: 0.8731500942040936
+      output_distribution:
+        type: lognormal
+        params:
+            mu: 2.3285208563608832
+            sigma: 1.8948685999304387
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 780000000
+        duration_us: 600000000
+        trace_rate: 0.08666666666666667
+    - id: afternoon-background
+      population: 4
+      slo_class: background
+      arrival:
+        process: gamma
+        cv: 5.718647528776181
+        shape: 0.4986958104922771
+        scale: 4.942269207424002e+07
+      input_distribution:
+        type: lognormal
+        params:
+            mu: 6.232014579030862
+            sigma: 0.6763092372861552
+      output_distribution:
+        type: lognormal
+        params:
+            mu: 3.063236672517025
+            sigma: 1.5311955051450588
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 1560000000
+        duration_us: 600000000
+        trace_rate: 2.9716666666666667
+    - id: afternoon-batch
+      population: 4
+      slo_class: batch
+      arrival:
+        process: gamma
+        cv: 2.0658363555568426
+        shape: 0.7045706547219059
+        scale: 2.3691391007247297e+06
+      input_distribution:
+        type: lognormal
+        params:
+            mu: 6.646049843319507
+            sigma: 0.8204362391812056
+      output_distribution:
+        type: lognormal
+        params:
+            mu: 3.0063741281865366
+            sigma: 1.218212995169564
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 1560000000
+        duration_us: 600000000
+        trace_rate: 9.606666666666667
+    - id: afternoon-critical
+      population: 5
+      slo_class: critical
+      arrival:
+        process: gamma
+        cv: 2.9495479936655444
+        shape: 0.765766182821512
+        scale: 1.775955513353409e+07
+      input_distribution:
+        type: lognormal
+        params:
+            mu: 6.76231153729056
+            sigma: 0.4232577514891556
+      output_distribution:
+        type: lognormal
+        params:
+            mu: 3.6212282878956232
+            sigma: 0.9578546689674813
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 1560000000
+        duration_us: 600000000
+        trace_rate: 5.946666666666667
+    - id: afternoon-sheddable
+      population: 4
+      slo_class: sheddable
+      arrival:
+        process: gamma
+        cv: 3.703239725211873
+        shape: 7.427342591836397
+        scale: 4.402114513755759e+06
+      input_distribution:
+        type: lognormal
+        params:
+            mu: 6.8385937745850685
+            sigma: 0.846445846480917
+      output_distribution:
+        type: lognormal
+        params:
+            mu: 4.015132631075577
+            sigma: 0.8856577827530439
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 1560000000
+        duration_us: 600000000
+        trace_rate: 1.26
+    - id: afternoon-standard
+      population: 5
+      slo_class: standard
+      arrival:
+        process: gamma
+        cv: 2.1842547508166605
+        shape: 0.9908465514374998
+        scale: 7.938277963521399e+06
+      input_distribution:
+        type: lognormal
+        params:
+            mu: 6.948608268893551
+            sigma: 0.5833143555684369
+      output_distribution:
+        type: lognormal
+        params:
+            mu: 5.275345022146371
+            sigma: 0.5395222720535885
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 1560000000
+        duration_us: 600000000
+        trace_rate: 19.646666666666665
+aggregate_rate: 0
