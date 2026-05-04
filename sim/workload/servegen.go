@@ -447,6 +447,12 @@ func loadServeGenData(spec *WorkloadSpec) error {
 			arrivalSpec.Scale = &avgScale
 		}
 
+		// Skip cohorts with zero or negative rate (happens when selected window has no active chunks)
+		if totalRate <= 0 {
+			logrus.Warnf("Skipping cohort %s: zero rate at selected window (window %d had no active chunks)", cohortID, selectedWindow)
+			continue
+		}
+
 		cohort := CohortSpec{
 			ID:           cohortID,
 			Population:   len(chunks),
