@@ -321,8 +321,18 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			inst.TPDegree = tpDegree
 			inst.CostPerHour = poolCostPerHour
 			inst.warmUpRemaining = config.InstanceLifecycle.WarmUpRequestCount
-			inst.TransitionTo(sim.InstanceStateLoading)
-			cs.scheduleInstanceLoadedEvent(inst)
+			if config.InstanceLifecycle.WarmStartInitialInstances {
+				// Pre-deployed cluster: startup instances skip loading delay and start Active.
+				// Autoscaler-added instances (via direct_actuator.go) still use LoadingDelay.
+				if inst.warmUpRemaining > 0 {
+					inst.TransitionTo(sim.InstanceStateWarmingUp)
+				} else {
+					inst.TransitionTo(sim.InstanceStateActive)
+				}
+			} else {
+				inst.TransitionTo(sim.InstanceStateLoading)
+				cs.scheduleInstanceLoadedEvent(inst)
+			}
 			cs.instances = append(cs.instances, inst)
 			instanceMap[id] = inst
 			cs.inFlightRequests[string(id)] = 0
