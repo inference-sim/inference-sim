@@ -188,8 +188,8 @@ func loadServeGenData(spec *WorkloadSpec) error {
 		return fmt.Errorf("no valid chunks found in %s", dataDir)
 	}
 
-	// BC-2: For each cohort (period × SLO), select one of 3 windows uniformly at random.
-	// Then assign chunks that have activity at that exact window.
+	// BC-2: For each period, select one of 3 windows uniformly at random.
+	// Then split chunks active in that window across 5 SLO cohorts.
 
 	sloClasses := []string{"critical", "standard", "batch", "sheddable", "background"}
 
@@ -198,54 +198,53 @@ func loadServeGenData(spec *WorkloadSpec) error {
 		sloClass string
 	}
 
-	// Pre-select window for each cohort
-	cohortWindows := make(map[cohortKey]int64) // Maps cohort -> selected window start (seconds)
+	// Pre-select one window per period (not per cohort)
+	periodWindows := make(map[int]int64) // Maps period index -> selected window start (seconds)
 	for periodIdx, period := range periods {
-		for _, sloClass := range sloClasses {
-			windowIndex := rng.Intn(3) // Pick window 0, 1, or 2
-			windowStart := period.spanStart + int64(windowIndex*600)
-			key := cohortKey{period: periodIdx, sloClass: sloClass}
-			cohortWindows[key] = windowStart
-		}
+		windowIndex := rng.Intn(3) // Pick window 0, 1, or 2
+		windowStart := period.spanStart + int64(windowIndex*600)
+		periodWindows[periodIdx] = windowStart
 	}
 
-	// Assign chunks to cohorts based on matching window
-	cohortGroups := make(map[cohortKey][]chunkData)
-	assignedChunks := make(map[string]bool)
-
+	// Group chunks by period based on activity at selected window
+	periodChunks := make(map[int][]chunkData)
 	for _, chunk := range allChunks {
-		if assignedChunks[chunk.id] {
-			continue
-		}
-
 		if chunk.client.Lifecycle == nil || len(chunk.client.Lifecycle.Windows) == 0 {
 			continue
 		}
 
-		// Try to assign to first matching cohort (period order, then SLO order)
-		assigned := false
-		for periodIdx := range periods {
-			for _, sloClass := range sloClasses {
-				key := cohortKey{period: periodIdx, sloClass: sloClass}
-				selectedWindow := cohortWindows[key]
-
-				// Check if chunk has activity at this window
-				for _, window := range chunk.client.Lifecycle.Windows {
-					windowStartSec := window.StartUs / 1e6
-					if int64(windowStartSec) == selectedWindow {
-						cohortGroups[key] = append(cohortGroups[key], chunk)
-						assignedChunks[chunk.id] = true
-						assigned = true
-						break
-					}
-				}
-				if assigned {
+		// Check which period(s) this chunk is active in
+		for periodIdx, selectedWindow := range periodWindows {
+			hasActivity := false
+			for _, window := range chunk.client.Lifecycle.Windows {
+				windowStartSec := window.StartUs / 1e6
+				if int64(windowStartSec) == selectedWindow {
+					hasActivity = true
 					break
 				}
 			}
-			if assigned {
-				break
+			if hasActivity {
+				periodChunks[periodIdx] = append(periodChunks[periodIdx], chunk)
+				break // BC-9: Each chunk assigned to at most one period
 			}
+		}
+	}
+
+	// Split each period's chunks into 5 SLO cohorts using round-robin
+	cohortGroups := make(map[cohortKey][]chunkData)
+	for periodIdx, chunks := range periodChunks {
+		// Shuffle chunks for this period to randomize SLO assignment
+		shuffled := make([]chunkData, len(chunks))
+		copy(shuffled, chunks)
+		rng.Shuffle(len(shuffled), func(i, j int) {
+			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+		})
+
+		// Round-robin assignment to 5 SLO classes
+		for i, chunk := range shuffled {
+			sloClass := sloClasses[i%5]
+			key := cohortKey{period: periodIdx, sloClass: sloClass}
+			cohortGroups[key] = append(cohortGroups[key], chunk)
 		}
 	}
 
@@ -277,7 +276,7 @@ func loadServeGenData(spec *WorkloadSpec) error {
 
 		period := periods[key.period]
 		cohortID := fmt.Sprintf("%s-%s", period.name, key.sloClass)
-		selectedWindow := cohortWindows[key] // This cohort's selected window
+		selectedWindow := periodWindows[key.period] // This period's selected window
 
 		// BC-3: Fit lognormal distributions from each chunk's dataset at the cohort's window.
 		// Load the actual dataset file and find the nearest-preceding PDF entry,
