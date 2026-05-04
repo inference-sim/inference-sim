@@ -311,7 +311,7 @@ var validInstanceTransitions = map[sim.InstanceState]map[sim.InstanceState]struc
 
 // TransitionTo validates and applies an instance state transition.
 // Panics on invalid transition (invariant violation per Principle V).
-// No-op when State is empty (backward-compat: lifecycle not tracked).
+// Initializes State on first call when State is empty (backward-compat: lifecycle not tracked).
 func (i *InstanceSimulator) TransitionTo(state sim.InstanceState) {
 	if i.State == "" {
 		// Lifecycle tracking not enabled — silently accept transition to initialize state.

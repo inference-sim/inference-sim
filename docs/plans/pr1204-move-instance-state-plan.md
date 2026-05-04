@@ -102,10 +102,10 @@ Move type declaration, 6 constants, `validInstanceStates` map, and `IsValidInsta
 
 ## Sanity Checklist
 
-- [ ] No circular imports (sim/cluster → sim is existing direction)
-- [ ] All 6 constants preserve exact string values (byte-identical output)
-- [ ] `validInstanceTransitions` map types updated
-- [ ] `TransitionTo` method signature updated
-- [ ] `IsValidInstanceState` moved (not duplicated)
-- [ ] Test files in sim/cluster still compile (they use unqualified names within package)
-- [ ] No stale references remain (grep confirms zero hits for old location)
+- [x] No circular imports (sim/cluster → sim is existing direction)
+- [x] All 6 constants preserve exact string values (byte-identical output)
+- [x] `validInstanceTransitions` map types updated
+- [x] `TransitionTo` method signature updated
+- [x] `IsValidInstanceState` moved (not duplicated)
+- [x] Test files in sim/cluster still compile (they use unqualified names within package)
+- [x] No stale references remain (grep confirms zero hits for old location)
