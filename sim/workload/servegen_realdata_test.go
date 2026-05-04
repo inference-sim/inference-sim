@@ -44,9 +44,13 @@ func TestServeGenMultiPeriod_RealData(t *testing.T) {
 		t.Fatalf("ConvertServeGen failed on real data: %v", err)
 	}
 
-	// BC-REAL-1: Output has 15 cohorts (3 periods × 5 SLO classes)
-	if len(spec.Cohorts) != 15 {
-		t.Errorf("BC-REAL-1: expected 15 cohorts, got %d", len(spec.Cohorts))
+	// BC-REAL-1: Output has at least 3 cohorts (one per period minimum)
+	// With random window selection, not all 15 (3 periods × 5 SLO) will have chunks.
+	if len(spec.Cohorts) < 3 {
+		t.Errorf("BC-REAL-1: expected at least 3 cohorts, got %d", len(spec.Cohorts))
+	}
+	if len(spec.Cohorts) > 15 {
+		t.Errorf("BC-REAL-1: expected at most 15 cohorts, got %d", len(spec.Cohorts))
 	}
 
 	// BC-REAL-2: Total population < 162 (inactive chunks filtered out)

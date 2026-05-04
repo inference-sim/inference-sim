@@ -94,13 +94,11 @@ const (
 
 // periodInfo holds metadata for one time period (midnight, morning, afternoon).
 type periodInfo struct {
-	name        string // "midnight", "morning", "afternoon"
-	startUs     int64  // Start time in microseconds
-	durationUs  int64  // Duration in microseconds
-	spanStart   int64  // ServeGen time range start (seconds)
-	spanEnd     int64  // ServeGen time range end (seconds)
-	windowStart int64  // Random 10-min window start within span (seconds)
-	windowEnd   int64  // Random 10-min window end within span (seconds)
+	name       string // "midnight", "morning", "afternoon"
+	startUs    int64  // Start time in microseconds
+	durationUs int64  // Duration in microseconds
+	spanStart  int64  // ServeGen time range start (seconds)
+	spanEnd    int64  // ServeGen time range end (seconds)
 }
 
 // loadServeGenData loads ServeGen data files and populates the spec's Cohorts list.
@@ -148,18 +146,7 @@ func loadServeGenData(spec *WorkloadSpec) error {
 		},
 	}
 
-	// BC-2: For each period, randomly select a 10-minute window within the 30-minute span.
-	// This prevents all chunks from being assigned to the same period.
-	for i := range periods {
-		spanDur := periods[i].spanEnd - periods[i].spanStart
-		maxOffset := spanDur - int64(windowDurSec)
-		if maxOffset < 0 {
-			maxOffset = 0
-		}
-		offset := rng.Int63n(maxOffset + 1)
-		periods[i].windowStart = periods[i].spanStart + offset
-		periods[i].windowEnd = periods[i].windowStart + int64(windowDurSec)
-	}
+	// Window selection happens per-cohort (not per-period) below
 
 	// Find all chunk trace files
 	traceFiles, err := filepath.Glob(filepath.Join(dataDir, "chunk-*-trace.csv"))
@@ -201,48 +188,58 @@ func loadServeGenData(spec *WorkloadSpec) error {
 		return fmt.Errorf("no valid chunks found in %s", dataDir)
 	}
 
-	// BC-2: Assign each chunk to exactly one period based on window overlap.
-	// Use a map to track which chunks are assigned (prevents duplication).
-	assignedChunks := make(map[string]bool)
-
-	// Group chunks by [period][sloClass] for aggregation.
-	// Each entry will become one CohortSpec.
-	type cohortKey struct {
-		period   int    // Index into periods slice
-		sloClass string
-	}
-	cohortGroups := make(map[cohortKey][]chunkData)
+	// BC-2: For each cohort (period × SLO), select one of 3 windows uniformly at random.
+	// Then assign chunks that have activity at that exact window.
 
 	sloClasses := []string{"critical", "standard", "batch", "sheddable", "background"}
-	sloIndex := 0 // Round-robin counter
+
+	type cohortKey struct {
+		period   int
+		sloClass string
+	}
+
+	// Pre-select window for each cohort
+	cohortWindows := make(map[cohortKey]int64) // Maps cohort -> selected window start (seconds)
+	for periodIdx, period := range periods {
+		for _, sloClass := range sloClasses {
+			windowIndex := rng.Intn(3) // Pick window 0, 1, or 2
+			windowStart := period.spanStart + int64(windowIndex*600)
+			key := cohortKey{period: periodIdx, sloClass: sloClass}
+			cohortWindows[key] = windowStart
+		}
+	}
+
+	// Assign chunks to cohorts based on matching window
+	cohortGroups := make(map[cohortKey][]chunkData)
+	assignedChunks := make(map[string]bool)
 
 	for _, chunk := range allChunks {
 		if assignedChunks[chunk.id] {
-			continue // Already assigned to a period
+			continue
 		}
 
-		// Find first period whose window overlaps this chunk's active windows
+		if chunk.client.Lifecycle == nil || len(chunk.client.Lifecycle.Windows) == 0 {
+			continue
+		}
+
+		// Try to assign to first matching cohort (period order, then SLO order)
 		assigned := false
-		for periodIdx, period := range periods {
-			if chunk.client.Lifecycle == nil || len(chunk.client.Lifecycle.Windows) == 0 {
-				continue
-			}
+		for periodIdx := range periods {
+			for _, sloClass := range sloClasses {
+				key := cohortKey{period: periodIdx, sloClass: sloClass}
+				selectedWindow := cohortWindows[key]
 
-			for _, window := range chunk.client.Lifecycle.Windows {
-				windowStartSec := window.StartUs / 1e6
-				windowEndSec := window.EndUs / 1e6
-
-				// Check overlap: [windowStart, windowEnd) intersects [period.windowStart, period.windowEnd)
-				if windowStartSec < period.windowEnd && windowEndSec > period.windowStart {
-					// Assign to this period
-					// BC-2: Round-robin SLO class assignment (deterministic)
-					sloClass := sloClasses[sloIndex%len(sloClasses)]
-					sloIndex++
-
-					key := cohortKey{period: periodIdx, sloClass: sloClass}
-					cohortGroups[key] = append(cohortGroups[key], chunk)
-					assignedChunks[chunk.id] = true
-					assigned = true
+				// Check if chunk has activity at this window
+				for _, window := range chunk.client.Lifecycle.Windows {
+					windowStartSec := window.StartUs / 1e6
+					if int64(windowStartSec) == selectedWindow {
+						cohortGroups[key] = append(cohortGroups[key], chunk)
+						assignedChunks[chunk.id] = true
+						assigned = true
+						break
+					}
+				}
+				if assigned {
 					break
 				}
 			}
@@ -280,8 +277,9 @@ func loadServeGenData(spec *WorkloadSpec) error {
 
 		period := periods[key.period]
 		cohortID := fmt.Sprintf("%s-%s", period.name, key.sloClass)
+		selectedWindow := cohortWindows[key] // This cohort's selected window
 
-		// BC-3: Fit lognormal distributions from each chunk's dataset at the period's window.
+		// BC-3: Fit lognormal distributions from each chunk's dataset at the cohort's window.
 		// Load the actual dataset file and find the nearest-preceding PDF entry,
 		// then average the fitted mu/sigma across all chunks in this cohort.
 		var sumMuInput, sumSigmaInput, sumMuOutput, sumSigmaOutput float64
@@ -289,13 +287,13 @@ func loadServeGenData(spec *WorkloadSpec) error {
 		var totalRate float64
 
 		for _, chunk := range chunks {
-			// Load this chunk's dataset to fit lognormal for this period
+			// Load this chunk's dataset to fit lognormal for this cohort's window
 			datasets, dsErr := loadServeGenDatasetAllWindows(chunk.datasetPath, &ServeGenDataSpec{Path: dataDir})
 			if dsErr != nil {
 				logrus.Debugf("cohort %s: skipping chunk %s dataset: %v", cohortID, chunk.id, dsErr)
 			} else {
-				// Find nearest dataset to period window start
-				dataset, _, found := findNearestDataset(int(period.windowStart), datasets)
+				// Use the dataset at the selected window's timestamp directly
+				dataset, _, found := findNearestDataset(int(selectedWindow), datasets)
 				if found {
 					inputFit, fitErr := fitLognormalFromPDF(dataset.inputPDF)
 					if fitErr == nil {
@@ -311,17 +309,17 @@ func loadServeGenData(spec *WorkloadSpec) error {
 				}
 			}
 
-			// BC-5: Sum rates from windows overlapping this period
+			// BC-5: Sum rates from the selected window only
 			if chunk.client.Lifecycle != nil {
 				for _, window := range chunk.client.Lifecycle.Windows {
 					windowStartSec := window.StartUs / 1e6
-					windowEndSec := window.EndUs / 1e6
 
-					// Only include windows that overlap with this period's selected window
-					if windowStartSec < period.windowEnd && windowEndSec > period.windowStart {
+					// Only include the exact selected window
+					if int64(windowStartSec) == selectedWindow {
 						if window.TraceRate != nil {
 							totalRate += *window.TraceRate
 						}
+						break // Only one window per chunk
 					}
 				}
 			}
@@ -367,7 +365,7 @@ func loadServeGenData(spec *WorkloadSpec) error {
 			}
 		}
 
-		// BC-4: Average arrival parameters across all chunks' overlapping windows.
+		// BC-4: Average arrival parameters from the selected window.
 		// Majority-vote the process type; simple-average CV, shape, scale.
 		var sumCV, sumShape, sumScale float64
 		var arrivalCount int
@@ -379,8 +377,7 @@ func loadServeGenData(spec *WorkloadSpec) error {
 			}
 			for _, window := range chunk.client.Lifecycle.Windows {
 				windowStartSec := window.StartUs / 1e6
-				windowEndSec := window.EndUs / 1e6
-				if windowStartSec < period.windowEnd && windowEndSec > period.windowStart {
+				if int64(windowStartSec) == selectedWindow {
 					if window.Arrival != nil {
 						if window.Arrival.CV != nil {
 							sumCV += *window.Arrival.CV
@@ -399,7 +396,7 @@ func loadServeGenData(spec *WorkloadSpec) error {
 							weibullCount++
 						}
 					}
-					break // One overlapping window per chunk is enough for arrival
+					break // Found the selected window
 				}
 			}
 		}
