@@ -21,8 +21,9 @@ type PolicyBundle struct {
 	Scheduler     string                 `yaml:"scheduler"`
 	Preemption    PreemptionConfig       `yaml:"preemption"`
 	TenantBudgets map[string]float64     `yaml:"tenant_budgets"`  // nil = no tenant enforcement
-	NodePools     []NodePoolBundleConfig `yaml:"node_pools"`      // nil = no node pools
-	Autoscaler    AutoscalerBundleConfig `yaml:"autoscaler"`      // IntervalUs=0 = disabled
+	NodePools         []NodePoolBundleConfig        `yaml:"node_pools"`         // nil = no node pools
+	Autoscaler        AutoscalerBundleConfig        `yaml:"autoscaler"`         // IntervalUs=0 = disabled
+	InstanceLifecycle InstanceLifecycleBundleConfig `yaml:"instance_lifecycle"` // zero = instant loading
 }
 
 // AdmissionConfig holds admission policy configuration.
@@ -84,6 +85,12 @@ type AnalyzerBundleConfig struct {
 	ScaleUpThreshold  float64 `yaml:"scale_up_threshold"`
 	ScaleDownBoundary float64 `yaml:"scale_down_boundary"`
 	AvgInputTokens    float64 `yaml:"avg_input_tokens"`
+}
+
+// InstanceLifecycleBundleConfig holds instance lifecycle timing for YAML loading.
+// Mean and Stddev are in seconds; converted to microseconds when building DeploymentConfig.
+type InstanceLifecycleBundleConfig struct {
+	LoadingDelay DelayBundleSpec `yaml:"loading_delay"`
 }
 
 // AutoscalerBundleConfig holds autoscaler pipeline configuration.
@@ -350,6 +357,21 @@ func (b *PolicyBundle) Validate() error {
 		if np.CostPerHour < 0 {
 			return fmt.Errorf("node_pools[%d] %q: cost_per_hour must be >= 0, got %v", i, np.Name, np.CostPerHour)
 		}
+	}
+	// Validate instance lifecycle config.
+	lm := b.InstanceLifecycle.LoadingDelay.Mean
+	if math.IsNaN(lm) || math.IsInf(lm, 0) {
+		return fmt.Errorf("instance_lifecycle.loading_delay.mean must be a finite number, got %v", lm)
+	}
+	if lm < 0 {
+		return fmt.Errorf("instance_lifecycle.loading_delay.mean must be >= 0, got %v", lm)
+	}
+	ls := b.InstanceLifecycle.LoadingDelay.Stddev
+	if math.IsNaN(ls) || math.IsInf(ls, 0) {
+		return fmt.Errorf("instance_lifecycle.loading_delay.stddev must be a finite number, got %v", ls)
+	}
+	if ls < 0 {
+		return fmt.Errorf("instance_lifecycle.loading_delay.stddev must be >= 0, got %v", ls)
 	}
 	return nil
 }
