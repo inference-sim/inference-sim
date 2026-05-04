@@ -3077,3 +3077,41 @@ func TestSimulator_TTFT_UpdatedAfterPreemption(t *testing.T) {
 		t.Errorf("E2E_B = %.0f <= TTFT_B = %.0f: expected E2E_B > TTFT_B for a request with 5 output tokens", e2eB, ttftB)
 	}
 }
+
+// TestEnqueueRequest_SetsVLLMConventionPriority verifies the pre-processor converts
+// SLO class to vLLM-convention priority at instance entry (BC-1, BC-7).
+func TestEnqueueRequest_SetsVLLMConventionPriority(t *testing.T) {
+	tests := []struct {
+		name     string
+		sloClass string
+		wantPri  float64
+	}{
+		{"critical", "critical", 0.0},    // BC-1: maxPri(4) - 4 = 0
+		{"background", "background", 7.0}, // maxPri(4) - (-3) = 7
+		{"standard", "standard", 1.0},    // maxPri(4) - 3 = 1
+		{"empty", "", 1.0},               // BC-7: maxPri(4) - defaultPri(3) = 1
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := SimConfig{
+				Horizon:             1_000_000,
+				Seed:                42,
+				KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+				BatchConfig:         NewBatchConfig(256, 2048, 0),
+				LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
+				ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
+			}
+			s := mustNewSimulator(t, cfg)
+			req := &Request{
+				ID:          "r1",
+				SLOClass:    tt.sloClass,
+				InputTokens: make([]int, 10),
+				ArrivalTime: 1,
+			}
+			s.EnqueueRequest(req)
+			if req.Priority != tt.wantPri {
+				t.Errorf("Priority = %v, want %v", req.Priority, tt.wantPri)
+			}
+		})
+	}
+}
