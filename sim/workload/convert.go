@@ -6,23 +6,28 @@ import (
 )
 
 // ConvertServeGen converts a ServeGen data directory (containing chunk-*-trace.csv
-// and dataset.json files) into a v2 WorkloadSpec.
-// If timeWindow is specified ("midnight", "morning", or "afternoon"), extracts a 30-minute
-// snapshot from Day 1 and includes only chunks with active windows in that range.
+// and dataset.json files) into a v2 WorkloadSpec with multi-period CohortSpec entries.
+// windowDurationSecs controls how long each period runs (default 600s = 10 minutes).
+// drainTimeoutSecs controls the gap between periods (default 180s = 3 minutes).
 // Returns error if the directory is empty or contains invalid data (R6: never Fatalf).
-func ConvertServeGen(path string, timeWindow string) (*WorkloadSpec, error) {
+func ConvertServeGen(path string, windowDurationSecs, drainTimeoutSecs int) (*WorkloadSpec, error) {
 	if path == "" {
 		return nil, fmt.Errorf("ServeGen path must not be empty")
 	}
 	spec := &WorkloadSpec{
 		Version:       "2",
-		AggregateRate: 1.0, // placeholder; loadServeGenData derives rates from trace data
-		ServeGenData:  &ServeGenDataSpec{Path: path, TimeWindow: timeWindow},
+		AggregateRate: 0, // Absolute rate mode (trace_rate per cohort)
+		Seed:          42, // Default seed for deterministic RNG (BC-7)
+		ServeGenData: &ServeGenDataSpec{
+			Path:               path,
+			WindowDurationSecs: windowDurationSecs,
+			DrainTimeoutSecs:   drainTimeoutSecs,
+		},
 	}
 	if err := loadServeGenData(spec); err != nil {
 		return nil, fmt.Errorf("loading ServeGen data from %s: %w", path, err)
 	}
-	spec.ServeGenData = nil // clear after loading; clients are now populated
+	spec.ServeGenData = nil // clear after loading; cohorts are now populated
 	return spec, nil
 }
 

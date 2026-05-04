@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -81,23 +82,71 @@ type serveGenTraceRow struct {
 	scaleParam   float64
 }
 
-// loadServeGenData loads ServeGen data files and populates the spec's Clients list.
-// Scans for chunk-*-trace.csv and chunk-*-dataset.json files.
-// If TimeWindow is specified, applies 30-minute temporal filtering and computes
-// aggregate rate as peak within the window.
+// ServeGen Day 1 time period boundaries (in seconds since midnight)
+const (
+	midnightSpanStart  = 0     // 00:00
+	midnightSpanEnd    = 1800  // 00:30
+	morningSpanStart   = 28800 // 08:00
+	morningSpanEnd     = 30600 // 08:30
+	afternoonSpanStart = 50400 // 14:00
+	afternoonSpanEnd   = 52200 // 14:30
+)
+
+// periodInfo holds metadata for one time period (midnight, morning, afternoon).
+type periodInfo struct {
+	name       string // "midnight", "morning", "afternoon"
+	startUs    int64  // Start time in microseconds
+	durationUs int64  // Duration in microseconds
+	spanStart  int64  // ServeGen time range start (seconds)
+	spanEnd    int64  // ServeGen time range end (seconds)
+}
+
+// loadServeGenData loads ServeGen data files and populates the spec's Cohorts list.
+// Implements multi-period conversion: groups chunks into 3 time periods (midnight, morning, afternoon),
+// assigns to 5 SLO classes via round-robin, aggregates into CohortSpec with averaged params and summed rates.
 func loadServeGenData(spec *WorkloadSpec) error {
 	dataDir := spec.ServeGenData.Path
+	windowDurSec := spec.ServeGenData.WindowDurationSecs
+	drainSec := spec.ServeGenData.DrainTimeoutSecs
 
-	// Apply time window filtering if specified
-	if spec.ServeGenData.TimeWindow != "" {
-		start, end := getTimeWindowBounds(spec.ServeGenData.TimeWindow)
-		if start == 0 && end == 0 {
-			return fmt.Errorf("invalid time window %q (must be midnight, morning, or afternoon)", spec.ServeGenData.TimeWindow)
-		}
-		spec.ServeGenData.SpanStart = start
-		spec.ServeGenData.SpanEnd = end
-		logrus.Infof("loadServeGenData: applying time window %q (%ds - %ds)", spec.ServeGenData.TimeWindow, start, end)
+	// Apply defaults if not set (for backwards compatibility with tests)
+	if windowDurSec <= 0 {
+		windowDurSec = 600 // 10 minutes default
 	}
+	if drainSec < 0 {
+		drainSec = 180 // 3 minutes default
+	}
+
+	// BC-7: Deterministic RNG from spec.Seed
+	rng := rand.New(rand.NewSource(spec.Seed))
+
+	// Define three time periods (ServeGen Day 1 spans 0-86400s; each period is 30 minutes)
+	// startUs values create gaps between periods for drain timeout
+	periods := []periodInfo{
+		{
+			name:       "midnight",
+			startUs:    0,
+			durationUs: int64(windowDurSec) * 1e6,
+			spanStart:  midnightSpanStart,
+			spanEnd:    midnightSpanEnd,
+		},
+		{
+			name:       "morning",
+			startUs:    int64(windowDurSec+drainSec) * 1e6,
+			durationUs: int64(windowDurSec) * 1e6,
+			spanStart:  morningSpanStart,
+			spanEnd:    morningSpanEnd,
+		},
+		{
+			name:       "afternoon",
+			startUs:    int64(2*(windowDurSec+drainSec)) * 1e6,
+			durationUs: int64(windowDurSec) * 1e6,
+			spanStart:  afternoonSpanStart,
+			spanEnd:    afternoonSpanEnd,
+		},
+	}
+
+	// Window selection happens per-cohort (not per-period) below
 
 	// Find all chunk trace files
 	traceFiles, err := filepath.Glob(filepath.Join(dataDir, "chunk-*-trace.csv"))
@@ -110,65 +159,327 @@ func loadServeGenData(spec *WorkloadSpec) error {
 		return fmt.Errorf("no chunk-*-trace.csv files found in %s", dataDir)
 	}
 
-	// Track aggregate rate at each timestamp for peak calculation
-	// Map[timestamp] -> sum of rates from all chunks at that timestamp
-	aggregateRateAtTime := make(map[int64]float64)
+	// Load all chunks (no time filtering)
+	type chunkData struct {
+		id          string
+		client      *ClientSpec // Temporarily use ClientSpec for loading; will convert to cohort
+		datasetPath string      // For lognormal fitting in cohort loop
+	}
+	var allChunks []chunkData
 
 	for _, tracePath := range traceFiles {
-		// Derive chunk ID from filename
 		base := filepath.Base(tracePath)
-		// "chunk-0-trace.csv" → "0"
 		chunkID := strings.TrimPrefix(base, "chunk-")
 		chunkID = strings.TrimSuffix(chunkID, "-trace.csv")
 
-		// Load corresponding dataset
 		datasetPath := filepath.Join(dataDir, fmt.Sprintf("chunk-%s-dataset.json", chunkID))
 
-		client, err := loadServeGenChunk(chunkID, tracePath, datasetPath, spec.ServeGenData)
+		// Load chunk without time filtering (pass empty ServeGenDataSpec with just path)
+		client, err := loadServeGenChunk(chunkID, tracePath, datasetPath, &ServeGenDataSpec{Path: dataDir})
 		if err != nil {
 			return fmt.Errorf("loading chunk %s: %w", chunkID, err)
 		}
 		if client != nil {
-			spec.Clients = append(spec.Clients, *client)
-
-			// Accumulate this chunk's rate at each timestamp for peak calculation
-			for _, window := range client.Lifecycle.Windows {
-				if window.TraceRate != nil {
-					timestamp := window.StartUs / 1e6 // Convert to seconds
-					aggregateRateAtTime[timestamp] += *window.TraceRate
-				}
-			}
-		} else {
-			logrus.Warnf("loadServeGenData: chunk %s produced no active windows (no matching dataset entries)", chunkID)
+			allChunks = append(allChunks, chunkData{id: chunkID, client: client, datasetPath: datasetPath})
 		}
 	}
 
-	if len(spec.Clients) == 0 {
+	if len(allChunks) == 0 {
 		return fmt.Errorf("no valid chunks found in %s", dataDir)
 	}
 
-	// Set aggregate_rate to 0 to signal absolute rate mode (ServeGen temporal parity).
-	// ServeGen workloads have time-varying aggregate load encoded in per-window trace_rate.
-	// Setting aggregate_rate=0 tells the generator to use trace_rate as absolute rates
-	// instead of proportional weights, preserving temporal variation.
-	spec.AggregateRate = 0
+	// BC-2: For each period, select one of 3 windows uniformly at random.
+	// Then split chunks active in that window across 5 SLO cohorts.
 
-	// Log the peak for informational purposes
-	if spec.ServeGenData.TimeWindow != "" {
-		var peakAggregate float64
-		for _, rate := range aggregateRateAtTime {
-			if rate > peakAggregate {
-				peakAggregate = rate
-			}
-		}
-		logrus.Infof("loadServeGenData: using absolute rate mode (aggregate_rate=0); peak rate was %.2f within %s window", peakAggregate, spec.ServeGenData.TimeWindow)
+	sloClasses := []string{"critical", "standard", "batch", "sheddable", "background"}
+
+	type cohortKey struct {
+		period   int
+		sloClass string
 	}
 
-	// Normalize lifecycle window timestamps to start from zero.
-	// ServeGen traces contain absolute clock times (e.g., 8:00 AM = 28800s).
-	// Without normalization, the generator waits for simulated time to reach
-	// those absolute timestamps before dispatching requests.
-	normalizeLifecycleTimestamps(&spec.Clients)
+	// Pre-select one window per period (not per cohort)
+	periodWindows := make(map[int]int64) // Maps period index -> selected window start (seconds)
+	for periodIdx, period := range periods {
+		windowIndex := rng.Intn(3) // Pick window 0, 1, or 2
+		windowStart := period.spanStart + int64(windowIndex*600)
+		periodWindows[periodIdx] = windowStart
+	}
+
+	// Group chunks by period based on activity at selected window across ALL days
+	// Use modulo matching: timestamp % 86400 == selectedWindow to aggregate multi-day traces
+	periodChunks := make(map[int][]chunkData)
+	for _, chunk := range allChunks {
+		if chunk.client.Lifecycle == nil || len(chunk.client.Lifecycle.Windows) == 0 {
+			continue
+		}
+
+		// Check which period(s) this chunk is active in
+		for periodIdx, selectedWindow := range periodWindows {
+			hasActivity := false
+			for _, window := range chunk.client.Lifecycle.Windows {
+				windowStartSec := window.StartUs / 1e6
+				// Match any timestamp at the same time-of-day across all days
+				if int64(windowStartSec)%86400 == selectedWindow {
+					hasActivity = true
+					break
+				}
+			}
+			if hasActivity {
+				periodChunks[periodIdx] = append(periodChunks[periodIdx], chunk)
+				break // BC-9: Each chunk assigned to at most one period
+			}
+		}
+	}
+
+	// Split each period's chunks into 5 SLO cohorts using round-robin
+	cohortGroups := make(map[cohortKey][]chunkData)
+	for periodIdx, chunks := range periodChunks {
+		// Shuffle chunks for this period to randomize SLO assignment
+		shuffled := make([]chunkData, len(chunks))
+		copy(shuffled, chunks)
+		rng.Shuffle(len(shuffled), func(i, j int) {
+			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+		})
+
+		// Round-robin assignment to 5 SLO classes
+		for i, chunk := range shuffled {
+			sloClass := sloClasses[i%5]
+			key := cohortKey{period: periodIdx, sloClass: sloClass}
+			cohortGroups[key] = append(cohortGroups[key], chunk)
+		}
+	}
+
+	// BC-7: Sort cohort keys for deterministic ordering
+	// Iterate by period index first, then by SLO class (alphabetical)
+	type sortableKey struct {
+		period   int
+		sloClass string
+	}
+	var keys []sortableKey
+	for key := range cohortGroups {
+		keys = append(keys, sortableKey(key))
+	}
+	// Sort by period, then by SLO class
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].period != keys[j].period {
+			return keys[i].period < keys[j].period
+		}
+		return keys[i].sloClass < keys[j].sloClass
+	})
+
+	// BC-8: Build cohorts (skip empty groups)
+	for _, sortedKey := range keys {
+		key := cohortKey(sortedKey)
+		chunks := cohortGroups[key]
+		if len(chunks) == 0 {
+			continue
+		}
+
+		period := periods[key.period]
+		cohortID := fmt.Sprintf("%s-%s", period.name, key.sloClass)
+		selectedWindow := periodWindows[key.period] // This period's selected window
+
+		// BC-3: Fit lognormal distributions from each chunk's dataset at the cohort's window.
+		// Load the actual dataset file and find the nearest-preceding PDF entry,
+		// then average the fitted mu/sigma across all chunks in this cohort.
+		var sumMuInput, sumSigmaInput, sumMuOutput, sumSigmaOutput float64
+		var distCount int
+		var totalRate float64
+
+		for _, chunk := range chunks {
+			// Load this chunk's dataset to fit lognormal for this cohort's window
+			datasets, dsErr := loadServeGenDatasetAllWindows(chunk.datasetPath, &ServeGenDataSpec{Path: dataDir})
+			if dsErr != nil {
+				logrus.Debugf("cohort %s: skipping chunk %s dataset: %v", cohortID, chunk.id, dsErr)
+			} else {
+				// Aggregate across ALL days at the same time-of-day (consistent with rate/arrival param averaging)
+				// First find the nearest 6-hour boundary within day 1 using the existing findNearestDataset logic
+				_, nearestBoundary, found := findNearestDataset(int(selectedWindow), datasets)
+				if !found {
+					continue
+				}
+
+				// Now collect all dataset entries at this time-of-day across all days
+				// using modulo matching (same pattern as rate/arrival aggregation)
+				var chunkInputMuSum, chunkInputSigmaSum, chunkOutputMuSum, chunkOutputSigmaSum float64
+				var chunkDistCount int
+
+				for dsTimestamp, dataset := range datasets {
+					// Match datasets at the same time-of-day across all days
+					if int64(dsTimestamp)%86400 == int64(nearestBoundary)%86400 {
+						inputFit, fitErr := fitLognormalFromPDF(dataset.inputPDF)
+						if fitErr == nil {
+							chunkInputMuSum += inputFit.Params["mu"]
+							chunkInputSigmaSum += inputFit.Params["sigma"]
+						}
+						outputFit, fitErr := fitLognormalFromPDF(dataset.outputPDF)
+						if fitErr == nil {
+							chunkOutputMuSum += outputFit.Params["mu"]
+							chunkOutputSigmaSum += outputFit.Params["sigma"]
+							chunkDistCount++
+						}
+					}
+				}
+
+				// Average this chunk's multi-day distributions
+				if chunkDistCount > 0 {
+					n := float64(chunkDistCount)
+					sumMuInput += chunkInputMuSum / n
+					sumSigmaInput += chunkInputSigmaSum / n
+					sumMuOutput += chunkOutputMuSum / n
+					sumSigmaOutput += chunkOutputSigmaSum / n
+					distCount++
+				}
+			}
+
+			// BC-5: Average rates from all windows matching the selected time-of-day (across all days)
+			// Mathematical consistency: averaging arrival params requires averaging rates too
+			if chunk.client.Lifecycle != nil {
+				var chunkRateSum float64
+				var chunkRateCount int
+				for _, window := range chunk.client.Lifecycle.Windows {
+					windowStartSec := window.StartUs / 1e6
+
+					// Include all windows at the same time-of-day across all days
+					if int64(windowStartSec)%86400 == selectedWindow {
+						if window.TraceRate != nil {
+							chunkRateSum += *window.TraceRate
+							chunkRateCount++
+						}
+					}
+				}
+				if chunkRateCount > 0 {
+					totalRate += chunkRateSum / float64(chunkRateCount)
+				}
+			}
+		}
+
+		// BC-3: Build averaged distributions
+		var inputDist, outputDist DistSpec
+		if distCount > 0 {
+			n := float64(distCount)
+			inputDist = DistSpec{
+				Type: "lognormal",
+				Params: map[string]float64{
+					"mu":    sumMuInput / n,
+					"sigma": sumSigmaInput / n,
+				},
+			}
+			outputDist = DistSpec{
+				Type: "lognormal",
+				Params: map[string]float64{
+					"mu":    sumMuOutput / n,
+					"sigma": sumSigmaOutput / n,
+				},
+			}
+		} else {
+			// Fallback (only if no datasets available at all)
+			inputDist = DistSpec{
+				Type: "gaussian",
+				Params: map[string]float64{
+					"mean":    512,
+					"std_dev": 128,
+					"min":     1,
+					"max":     32768,
+				},
+			}
+			outputDist = DistSpec{
+				Type: "gaussian",
+				Params: map[string]float64{
+					"mean":    128,
+					"std_dev": 32,
+					"min":     1,
+					"max":     32768,
+				},
+			}
+		}
+
+		// BC-4: Average arrival parameters from all windows at the selected time-of-day (across all days).
+		// Majority-vote the process type; simple-average CV, shape, scale.
+		var sumCV, sumShape, sumScale float64
+		var arrivalCount int
+		gammaCount, weibullCount := 0, 0
+
+		for _, chunk := range chunks {
+			if chunk.client.Lifecycle == nil {
+				continue
+			}
+			for _, window := range chunk.client.Lifecycle.Windows {
+				windowStartSec := window.StartUs / 1e6
+				// Include all windows at the same time-of-day across all days
+				if int64(windowStartSec)%86400 == selectedWindow {
+					if window.Arrival != nil {
+						if window.Arrival.CV != nil {
+							sumCV += *window.Arrival.CV
+						}
+						if window.Arrival.Shape != nil {
+							sumShape += *window.Arrival.Shape
+						}
+						if window.Arrival.Scale != nil {
+							sumScale += *window.Arrival.Scale
+						}
+						arrivalCount++
+						switch window.Arrival.Process {
+						case "gamma":
+							gammaCount++
+						case "weibull":
+							weibullCount++
+						}
+					}
+				}
+			}
+		}
+
+		var arrivalSpec ArrivalSpec
+		if arrivalCount > 0 {
+			n := float64(arrivalCount)
+			if weibullCount > gammaCount {
+				arrivalSpec.Process = "weibull"
+			} else {
+				arrivalSpec.Process = "gamma"
+			}
+			avgCV := sumCV / n
+			avgShape := sumShape / n
+			avgScale := sumScale / n
+			arrivalSpec.CV = &avgCV
+			arrivalSpec.Shape = &avgShape
+			arrivalSpec.Scale = &avgScale
+		}
+
+		// Skip cohorts with zero or negative rate (happens when selected window has no active chunks)
+		if totalRate <= 0 {
+			logrus.Warnf("Skipping cohort %s: zero rate at selected window (window %d had no active chunks)", cohortID, selectedWindow)
+			continue
+		}
+
+		cohort := CohortSpec{
+			ID:           cohortID,
+			Population:   len(chunks),
+			SLOClass:     key.sloClass,
+			Streaming:    true, // ServeGen traces are streaming
+			RateFraction: 1.0,  // Unused in absolute rate mode
+			Arrival:      arrivalSpec,
+			InputDist:    inputDist,
+			OutputDist:   outputDist,
+			Spike: &SpikeSpec{
+				StartTimeUs: period.startUs,
+				DurationUs:  period.durationUs,
+				TraceRate:   &totalRate,
+			},
+		}
+
+		spec.Cohorts = append(spec.Cohorts, cohort)
+	}
+
+	if len(spec.Cohorts) == 0 {
+		return fmt.Errorf("no active cohorts generated (all chunks filtered out)")
+	}
+
+	// BC-6: Set aggregate_rate to 0 (absolute mode)
+	spec.AggregateRate = 0
+
+	logrus.Infof("loadServeGenData: generated %d cohorts across %d periods", len(spec.Cohorts), len(periods))
 
 	return nil
 }
@@ -254,25 +565,6 @@ const serveGenWindowDurationSec = 600
 // Note: ServeGen datasets contain token distributions at 6-hour intervals (0, 21600, 43200, 64800...),
 // while trace files have 10-minute granularity. Trace windows use nearest-preceding dataset entry.
 // Returns (0, 0) if the window name is empty/invalid.
-func getTimeWindowBounds(window string) (int64, int64) {
-	switch window {
-	case "midnight":
-		// Hour 0:00-0:30 (0s - 1800s)
-		// Trace windows at 0s, 600s, 1200s all use dataset entry at timestamp 0
-		return 0, 1800
-	case "morning":
-		// Hour 8:00-8:30 (28800s - 30600s)
-		// Trace windows at 28800s, 29400s, 30000s all use dataset entry at timestamp 21600 (Hour 6)
-		return 28800, 30600
-	case "afternoon":
-		// Hour 14:00-14:30 (50400s - 52200s)
-		// Trace windows at 50400s, 51000s, 51600s all use dataset entry at timestamp 43200 (Hour 12)
-		return 50400, 52200
-	default:
-		return 0, 0
-	}
-}
-
 // findNearestDataset finds the dataset entry for the given timestamp.
 // If an exact match exists, returns it. Otherwise, returns the nearest-preceding
 // dataset entry (largest timestamp <= queryTimestamp).

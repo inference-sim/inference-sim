@@ -154,7 +154,7 @@ func TestComposeSpecs_EmptyList_ReturnsError(t *testing.T) {
 }
 
 func TestConvertServeGen_EmptyPath_ReturnsError(t *testing.T) {
-	_, err := ConvertServeGen("", "")
+	_, err := ConvertServeGen("", 600, 180)
 	if err == nil {
 		t.Fatal("expected error for empty path")
 	}
