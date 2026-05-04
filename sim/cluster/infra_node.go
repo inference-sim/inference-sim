@@ -1,5 +1,5 @@
 // infra_node.go defines the node/GPU infrastructure types for Phase 1A.
-// NodeState and InstanceState enums, Node and GPU runtime entities.
+// NodeState enum, Node and GPU runtime entities.
 package cluster
 
 import "fmt"
@@ -28,33 +28,6 @@ func IsValidNodeState(s string) bool {
 	return ok
 }
 
-// InstanceState represents the lifecycle state of an instance (model server).
-type InstanceState string
-
-const (
-	InstanceStateScheduling InstanceState = "Scheduling"
-	InstanceStateLoading    InstanceState = "Loading"
-	InstanceStateWarmingUp  InstanceState = "WarmingUp"
-	InstanceStateActive     InstanceState = "Active"
-	InstanceStateDraining   InstanceState = "Draining"
-	InstanceStateTerminated InstanceState = "Terminated"
-)
-
-// validInstanceStates is the unexported validation map (R8).
-var validInstanceStates = map[InstanceState]struct{}{
-	InstanceStateScheduling: {},
-	InstanceStateLoading:    {},
-	InstanceStateWarmingUp:  {},
-	InstanceStateActive:     {},
-	InstanceStateDraining:   {},
-	InstanceStateTerminated: {},
-}
-
-// IsValidInstanceState returns true if s is a known InstanceState value.
-func IsValidInstanceState(s string) bool {
-	_, ok := validInstanceStates[InstanceState(s)]
-	return ok
-}
 
 // Node represents a single machine in a node pool.
 // Carries a fixed inventory of GPUs tracked as allocated or free.

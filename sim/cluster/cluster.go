@@ -303,7 +303,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			inst.TPDegree = tpDegree
 			inst.CostPerHour = poolCostPerHour
 			inst.warmUpRemaining = config.InstanceLifecycle.WarmUpRequestCount
-			inst.TransitionTo(InstanceStateLoading)
+			inst.TransitionTo(sim.InstanceStateLoading)
 			cs.scheduleInstanceLoadedEvent(inst)
 			cs.instances = append(cs.instances, inst)
 			instanceMap[id] = inst
@@ -317,9 +317,9 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			inst.Model = config.Model
 			inst.warmUpRemaining = config.InstanceLifecycle.WarmUpRequestCount
 			if inst.warmUpRemaining > 0 {
-				inst.TransitionTo(InstanceStateWarmingUp)
+				inst.TransitionTo(sim.InstanceStateWarmingUp)
 			} else {
-				inst.TransitionTo(InstanceStateActive)
+				inst.TransitionTo(sim.InstanceStateActive)
 			}
 			cs.instances = append(cs.instances, inst)
 			instanceMap[id] = inst
@@ -633,8 +633,8 @@ func (c *ClusterSimulator) Run() error {
 			// T042: drain completion accounting (Phase 1A).
 			// When a Draining instance has no more queued or running requests,
 			// transition it to Terminated and release its GPU allocations.
-			if inst.State == InstanceStateDraining && inst.QueueDepth() == 0 && inst.BatchSize() == 0 {
-				inst.TransitionTo(InstanceStateTerminated)
+			if inst.State == sim.InstanceStateDraining && inst.QueueDepth() == 0 && inst.BatchSize() == 0 {
+				inst.TransitionTo(sim.InstanceStateTerminated)
 				c.releaseInstanceGPUs(inst)
 				c.snapshotProvider.RemoveCacheInstance(inst.ID())
 				delete(c.cacheQueryFn, string(inst.ID()))
@@ -792,10 +792,10 @@ func (c *ClusterSimulator) maybeDeliverProgressSnapshot(isFinal bool) {
 	activeCount := 0
 	instanceSnaps := make([]sim.InstanceSnapshot, 0, len(c.instances))
 	for _, inst := range c.instances {
-		if inst.State == InstanceStateTerminated {
+		if inst.State == sim.InstanceStateTerminated {
 			continue
 		}
-		if inst.State == InstanceStateActive || inst.State == InstanceStateWarmingUp {
+		if inst.State == sim.InstanceStateActive || inst.State == sim.InstanceStateWarmingUp {
 			activeCount++
 		}
 		instanceSnaps = append(instanceSnaps, sim.InstanceSnapshot{
@@ -810,7 +810,7 @@ func (c *ClusterSimulator) maybeDeliverProgressSnapshot(isFinal bool) {
 			CompletedRequests: inst.Metrics().CompletedRequests,
 			InFlightRequests:  c.inFlightRequests[string(inst.ID())],
 			TimedOutRequests:  inst.Metrics().TimedOutRequests,
-			State:             string(inst.State),
+			State:             inst.State,
 			Model:             inst.Model,
 		})
 	}
@@ -926,7 +926,7 @@ func (cs *ClusterSimulator) addLiveInstance(
 	inst.TPDegree = tpDegree
 	inst.CostPerHour = costPerHour
 	inst.warmUpRemaining = cs.config.InstanceLifecycle.WarmUpRequestCount
-	inst.TransitionTo(InstanceStateLoading)
+	inst.TransitionTo(sim.InstanceStateLoading)
 
 	if cs.snapshotProvider == nil {
 		// snapshotProvider is nil — can only happen in unit tests that bypass
@@ -1228,7 +1228,7 @@ func (c *ClusterSimulator) gpuInventory() GPUInventory {
 	}
 	for _, inst := range c.instances {
 		switch inst.State {
-		case InstanceStateLoading, InstanceStateWarmingUp, InstanceStateActive, InstanceStateDraining:
+		case sim.InstanceStateLoading, sim.InstanceStateWarmingUp, sim.InstanceStateActive, sim.InstanceStateDraining:
 			if inst.GPU() != "" {
 				usedByGPUType[inst.GPU()] += inst.TPDegree
 				if inst.TPDegree > 0 {

@@ -329,7 +329,7 @@ func (sim *Simulator) buildInstanceSnapshot() InstanceSnapshot {
 	return InstanceSnapshot{
 		ID:                "instance-0",
 		Model:             sim.model,
-		State:             "Active",
+		State:             InstanceStateActive,
 		QueueDepth:        sim.QueueDepth(),
 		BatchSize:         sim.BatchSize(),
 		KVUtilization:     float64(sim.KVCache.UsedBlocks()) / float64(max(sim.KVCache.TotalCapacity(), 1)),

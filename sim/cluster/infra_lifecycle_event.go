@@ -6,6 +6,7 @@ import (
 	"container/heap"
 	"fmt"
 
+	"github.com/inference-sim/inference-sim/sim"
 	"github.com/sirupsen/logrus"
 )
 
@@ -110,9 +111,9 @@ func (e *InstanceLoadedEvent) Execute(cs *ClusterSimulator) {
 			warmUpCount := cs.config.InstanceLifecycle.WarmUpRequestCount
 			if warmUpCount <= 0 {
 				// Skip WarmingUp phase entirely — go directly to Active
-				inst.TransitionTo(InstanceStateActive)
+				inst.TransitionTo(sim.InstanceStateActive)
 			} else {
-				inst.TransitionTo(InstanceStateWarmingUp)
+				inst.TransitionTo(sim.InstanceStateWarmingUp)
 			}
 			return
 		}
@@ -135,9 +136,9 @@ func (cs *ClusterSimulator) scheduleInstanceLoadedEvent(inst *InstanceSimulator)
 		// an event at the same timestamp. Avoids unnecessary heap push/pop overhead.
 		warmUpCount := cs.config.InstanceLifecycle.WarmUpRequestCount
 		if warmUpCount <= 0 {
-			inst.TransitionTo(InstanceStateActive)
+			inst.TransitionTo(sim.InstanceStateActive)
 		} else {
-			inst.TransitionTo(InstanceStateWarmingUp)
+			inst.TransitionTo(sim.InstanceStateWarmingUp)
 		}
 		return
 	}
@@ -191,7 +192,7 @@ func NewDrainPolicy(name DrainPolicyName) DrainPolicy {
 type drainImmediate struct{}
 
 func (d *drainImmediate) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
-	inst.TransitionTo(InstanceStateDraining)
+	inst.TransitionTo(sim.InstanceStateDraining)
 
 	// C1/I2: Decrement inFlightRequests for all requests that will never complete —
 	// both queued (WaitQ) and in-flight (running batch). Drain the WaitQ so those
@@ -208,7 +209,7 @@ func (d *drainImmediate) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 		}
 	}
 
-	inst.TransitionTo(InstanceStateTerminated)
+	inst.TransitionTo(sim.InstanceStateTerminated)
 	if cs != nil {
 		cs.releaseInstanceGPUs(inst)
 		if cs.snapshotProvider != nil {
@@ -223,7 +224,7 @@ func (d *drainImmediate) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 type drainWait struct{}
 
 func (d *drainWait) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
-	inst.TransitionTo(InstanceStateDraining)
+	inst.TransitionTo(sim.InstanceStateDraining)
 	// Routing exclusion handled by buildRouterState() via inst.IsRoutable().
 
 	// I3: If the instance is already idle (no queued or running requests), transition
@@ -231,7 +232,7 @@ func (d *drainWait) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 	// in the main event loop (cluster.go:264, T042 marker) handles the transition when
 	// work finishes. This ensures GPUs are always released (INV-4 conservation).
 	if cs != nil && inst.HasSim() && inst.QueueDepth() == 0 && inst.BatchSize() == 0 {
-		inst.TransitionTo(InstanceStateTerminated)
+		inst.TransitionTo(sim.InstanceStateTerminated)
 		cs.releaseInstanceGPUs(inst)
 		if cs.snapshotProvider != nil {
 			cs.snapshotProvider.RemoveCacheInstance(inst.ID())
@@ -245,7 +246,7 @@ func (d *drainWait) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 type drainRedirect struct{}
 
 func (d *drainRedirect) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
-	inst.TransitionTo(InstanceStateDraining)
+	inst.TransitionTo(sim.InstanceStateDraining)
 	// Note: RemoveInstance and delete(cs.cacheQueryFn, ...) are intentionally absent here.
 	// The instance remains alive while processing in-flight and late-arriving requests.
 	// Cleanup happens via the T042 drain-completion check (QueueDepth==0 && BatchSize==0)
