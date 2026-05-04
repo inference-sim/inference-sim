@@ -1410,6 +1410,7 @@ var runCmd = &cobra.Command{
 					Mean:   bundle.InstanceLifecycle.LoadingDelay.Mean,
 					Stddev: bundle.InstanceLifecycle.LoadingDelay.Stddev,
 				},
+				WarmStartInitialInstances: bundle.InstanceLifecycle.WarmStartInitialInstances,
 			}
 		}
 		// CLI flag overrides bundle value when explicitly set.

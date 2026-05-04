@@ -90,7 +90,8 @@ type AnalyzerBundleConfig struct {
 // InstanceLifecycleBundleConfig holds instance lifecycle timing for YAML loading.
 // Mean and Stddev are in seconds; converted to microseconds when building DeploymentConfig.
 type InstanceLifecycleBundleConfig struct {
-	LoadingDelay DelayBundleSpec `yaml:"loading_delay"`
+	LoadingDelay               DelayBundleSpec `yaml:"loading_delay"`
+	WarmStartInitialInstances  bool            `yaml:"warm_start_initial_instances"`
 }
 
 // AutoscalerBundleConfig holds autoscaler pipeline configuration.

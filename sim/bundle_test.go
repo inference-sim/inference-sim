@@ -638,6 +638,7 @@ instance_lifecycle:
   loading_delay:
     mean: 270.0
     stddev: 30.0
+  warm_start_initial_instances: true
 `
 	path := writeTempYAML(t, yaml)
 	bundle, err := LoadPolicyBundle(path)
@@ -649,6 +650,9 @@ instance_lifecycle:
 	}
 	if bundle.InstanceLifecycle.LoadingDelay.Stddev != 30.0 {
 		t.Errorf("LoadingDelay.Stddev = %v, want 30.0", bundle.InstanceLifecycle.LoadingDelay.Stddev)
+	}
+	if !bundle.InstanceLifecycle.WarmStartInitialInstances {
+		t.Errorf("WarmStartInitialInstances = false, want true")
 	}
 }
 

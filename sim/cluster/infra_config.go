@@ -143,6 +143,12 @@ type InstanceLifecycleConfig struct {
 	WarmUpRequestCount int       `yaml:"warm_up_request_count"`
 	WarmUpTTFTFactor   float64   `yaml:"warm_up_ttft_factor"`
 	DrainPolicy        string    `yaml:"drain_policy"` // "IMMEDIATE", "WAIT", or "REDIRECT"
+
+	// WarmStartInitialInstances, when true, bypasses LoadingDelay for instances
+	// created at simulation startup (--num-instances N). Autoscaler-added instances
+	// always use LoadingDelay regardless of this flag. Set true when modeling a
+	// pre-deployed cluster where the initial replicas are already serving.
+	WarmStartInitialInstances bool `yaml:"warm_start_initial_instances"`
 }
 
 // IsValid validates all fields in the InstanceLifecycleConfig.
