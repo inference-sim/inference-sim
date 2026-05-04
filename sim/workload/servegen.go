@@ -310,17 +310,24 @@ func loadServeGenData(spec *WorkloadSpec) error {
 				}
 			}
 
-			// BC-5: Sum rates from all windows matching the selected time-of-day (across all days)
+			// BC-5: Average rates from all windows matching the selected time-of-day (across all days)
+			// Mathematical consistency: averaging arrival params requires averaging rates too
 			if chunk.client.Lifecycle != nil {
+				var chunkRateSum float64
+				var chunkRateCount int
 				for _, window := range chunk.client.Lifecycle.Windows {
 					windowStartSec := window.StartUs / 1e6
 
 					// Include all windows at the same time-of-day across all days
 					if int64(windowStartSec)%86400 == selectedWindow {
 						if window.TraceRate != nil {
-							totalRate += *window.TraceRate
+							chunkRateSum += *window.TraceRate
+							chunkRateCount++
 						}
 					}
+				}
+				if chunkRateCount > 0 {
+					totalRate += chunkRateSum / float64(chunkRateCount)
 				}
 			}
 		}
