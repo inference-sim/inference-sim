@@ -293,20 +293,43 @@ func loadServeGenData(spec *WorkloadSpec) error {
 			if dsErr != nil {
 				logrus.Debugf("cohort %s: skipping chunk %s dataset: %v", cohortID, chunk.id, dsErr)
 			} else {
-				// Use the dataset at the selected window's timestamp directly
-				dataset, _, found := findNearestDataset(int(selectedWindow), datasets)
-				if found {
-					inputFit, fitErr := fitLognormalFromPDF(dataset.inputPDF)
-					if fitErr == nil {
-						sumMuInput += inputFit.Params["mu"]
-						sumSigmaInput += inputFit.Params["sigma"]
+				// Aggregate across ALL days at the same time-of-day (consistent with rate/arrival param averaging)
+				// First find the nearest 6-hour boundary within day 1 using the existing findNearestDataset logic
+				_, nearestBoundary, found := findNearestDataset(int(selectedWindow), datasets)
+				if !found {
+					continue
+				}
+
+				// Now collect all dataset entries at this time-of-day across all days
+				// using modulo matching (same pattern as rate/arrival aggregation)
+				var chunkInputMuSum, chunkInputSigmaSum, chunkOutputMuSum, chunkOutputSigmaSum float64
+				var chunkDistCount int
+
+				for dsTimestamp, dataset := range datasets {
+					// Match datasets at the same time-of-day across all days
+					if int64(dsTimestamp)%86400 == int64(nearestBoundary)%86400 {
+						inputFit, fitErr := fitLognormalFromPDF(dataset.inputPDF)
+						if fitErr == nil {
+							chunkInputMuSum += inputFit.Params["mu"]
+							chunkInputSigmaSum += inputFit.Params["sigma"]
+						}
+						outputFit, fitErr := fitLognormalFromPDF(dataset.outputPDF)
+						if fitErr == nil {
+							chunkOutputMuSum += outputFit.Params["mu"]
+							chunkOutputSigmaSum += outputFit.Params["sigma"]
+							chunkDistCount++
+						}
 					}
-					outputFit, fitErr := fitLognormalFromPDF(dataset.outputPDF)
-					if fitErr == nil {
-						sumMuOutput += outputFit.Params["mu"]
-						sumSigmaOutput += outputFit.Params["sigma"]
-						distCount++
-					}
+				}
+
+				// Average this chunk's multi-day distributions
+				if chunkDistCount > 0 {
+					n := float64(chunkDistCount)
+					sumMuInput += chunkInputMuSum / n
+					sumSigmaInput += chunkInputSigmaSum / n
+					sumMuOutput += chunkOutputMuSum / n
+					sumSigmaOutput += chunkOutputSigmaSum / n
+					distCount++
 				}
 			}
 
