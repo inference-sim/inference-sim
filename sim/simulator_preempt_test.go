@@ -15,7 +15,7 @@ func TestPreempt_EmptyBatch_ReturnsFalse(t *testing.T) {
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
 	}
-	bf := NewBatchFormation("", nil)
+	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(config.TotalKVBlocks, config.BlockSizeTokens)
 
 	// AND the running batch is empty
@@ -70,7 +70,7 @@ func TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse(t *testing.T) {
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
 	}
-	bf := NewBatchFormation("", nil)
+	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(config.TotalKVBlocks, config.BlockSizeTokens)
 
 	// AND one small request in the running batch with KV blocks allocated
@@ -163,12 +163,17 @@ func TestNewSimulator_CustomSLOPriorityMap_AffectsPreemption(t *testing.T) {
 	for i := range bgTokens {
 		bgTokens[i] = i + 201
 	}
+	// Compute vLLM-convention priorities using the override map (mirrors what EnqueueRequest does).
+	overrideMap := NewSLOPriorityMap(cfg.SLOPriorityOverrides)
 	critReq := &Request{ID: "crit", SLOClass: "critical", ArrivalTime: 100, State: StateRunning,
-		InputTokens: critTokens, OutputTokens: make([]int, 10)}
+		InputTokens: critTokens, OutputTokens: make([]int, 10),
+		Priority: float64(overrideMap.InvertForVLLM("critical"))}
 	batchReq := &Request{ID: "batch-req", SLOClass: "batch", ArrivalTime: 200, State: StateRunning,
-		InputTokens: batchTokens, OutputTokens: make([]int, 10)}
+		InputTokens: batchTokens, OutputTokens: make([]int, 10),
+		Priority: float64(overrideMap.InvertForVLLM("batch"))}
 	bgReq := &Request{ID: "bg-req", SLOClass: "background", ArrivalTime: 300, State: StateRunning,
-		InputTokens: bgTokens, OutputTokens: make([]int, 10)}
+		InputTokens: bgTokens, OutputTokens: make([]int, 10),
+		Priority: float64(overrideMap.InvertForVLLM("background"))}
 
 	for _, req := range []*Request{critReq, batchReq, bgReq} {
 		s.KVCache.AllocateKVBlocks(req, 0, 48, nil)

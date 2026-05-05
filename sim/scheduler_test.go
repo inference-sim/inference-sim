@@ -41,18 +41,19 @@ func TestFCFSScheduler_PreservesOrder(t *testing.T) {
 	}
 }
 
-func TestPriorityFCFSScheduler_SortsByPriorityDescending(t *testing.T) {
-	// BC-3: higher priority first
+func TestPriorityFCFSScheduler_SortsByPriorityAscending(t *testing.T) {
+	// BC-2: lower priority value = more urgent = scheduled first (vLLM convention).
+	// After pre-processor: critical→0, standard→1, background→7.
 	sched := &PriorityFCFSScheduler{}
 	reqs := []*Request{
-		{ID: "low", ArrivalTime: 100, Priority: 1.0},
-		{ID: "high", ArrivalTime: 200, Priority: 3.0},
-		{ID: "mid", ArrivalTime: 50, Priority: 2.0},
+		{ID: "low-urgency", ArrivalTime: 100, Priority: 3.0},  // highest integer = least urgent
+		{ID: "high-urgency", ArrivalTime: 200, Priority: 1.0}, // lowest integer = most urgent
+		{ID: "mid-urgency", ArrivalTime: 50, Priority: 2.0},
 	}
 	sched.OrderQueue(reqs, 0)
 
 	got := requestIDs(reqs)
-	want := []string{"high", "mid", "low"}
+	want := []string{"high-urgency", "mid-urgency", "low-urgency"} // lower value first
 	if !sliceEqual(got, want) {
 		t.Errorf("PriorityFCFS priority ordering: got %v, want %v", got, want)
 	}
@@ -204,12 +205,13 @@ func TestNewScheduler_ValidNames_ReturnsBehaviorallyCorrectScheduler(t *testing.
 		t.Errorf("NewScheduler(\"fcfs\"): order changed to %v, want [c a b] (FCFS preserves order)", got)
 	}
 
-	// BC-4: "priority-fcfs" sorts by priority descending
+	// BC-2: "priority-fcfs" sorts by priority ascending (lower value = more urgent, vLLM convention).
+	// Requests have Priority: c=1.0, b=2.0, a=3.0 → sorted ascending: c(1), b(2), a(3).
 	s3 := NewScheduler("priority-fcfs")
 	r3 := reqs()
 	s3.OrderQueue(r3, 0)
-	if got := requestIDs(r3); !sliceEqual(got, []string{"a", "b", "c"}) {
-		t.Errorf("NewScheduler(\"priority-fcfs\"): got %v, want [a b c] (highest priority first)", got)
+	if got := requestIDs(r3); !sliceEqual(got, []string{"c", "b", "a"}) {
+		t.Errorf("NewScheduler(\"priority-fcfs\"): got %v, want [c b a] (lower priority value first, vLLM convention)", got)
 	}
 
 	// BC-4: "sjf" sorts by input tokens ascending
@@ -233,8 +235,9 @@ func TestNewScheduler_UnknownName_Panics(t *testing.T) {
 }
 
 func TestSimulator_PriorityFCFS_SchedulesHighPriorityFirst(t *testing.T) {
-	// BC-2 + BC-5: SLO-based priority assigns higher priority to older requests;
-	// priority-fcfs scheduler should schedule the older (higher-priority) request first.
+	// BC-2: With equal SLOClass (both empty → Priority=1.0), arrival-time tiebreak applies.
+	// priority-fcfs sorts ascending (lower Priority first), then earlier ArrivalTime first.
+	// reqOlder (ArrivalTime=0) beats reqNewer (ArrivalTime=500000) via tiebreak.
 	// Uses MaxRunningReqs=1 to force sequential scheduling so step index proves ordering.
 	cfg := SimConfig{
 		Horizon:             10000000,
@@ -243,7 +246,7 @@ func TestSimulator_PriorityFCFS_SchedulesHighPriorityFirst(t *testing.T) {
 		BatchConfig:         NewBatchConfig(1, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
-		PolicyConfig:        NewPolicyConfig("slo-based", "priority-fcfs", ""),
+		PolicyConfig:        NewPolicyConfig("", "priority-fcfs", ""),
 	}
 	s := mustNewSimulator(t, cfg)
 
