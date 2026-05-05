@@ -44,10 +44,10 @@ type Request struct {
 	NumNewTokens     int     // Number of new tokens to be generated in the current step
 	LengthCapped     bool    // Set when force-completed by runtime MaxModelLen cap (BC-5)
 	ITL              []int64  // List of inter-token latencies
-	Priority         float64  // Scheduling priority score, recomputed each step by PriorityPolicy.
-	                          // Higher = more urgent. Set by Simulator.Step() and optionally by
-	                          // RoutingDecisionEvent as a one-shot cluster-level hint; read by schedulers.
-	                          // Only meaningful for queued requests; zero-value (0.0) is the default.
+	Priority float64 // Instance-level scheduling priority (vLLM convention: lower = more urgent).
+	// Set once at EnqueueRequest/EnqueueDecodeSubRequest via SLOPriorityMap.InvertForVLLM;
+	// not recomputed per step. Optionally overwritten by RoutingDecisionEvent before enqueue
+	// (transient hint — always overwritten by pre-processor at enqueue time).
 
 	// Workload metadata (PR10). All fields are zero-value safe for backward compatibility.
 	TenantID        string  // Client/tenant identifier (empty for legacy workloads)

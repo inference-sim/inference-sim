@@ -837,21 +837,25 @@ func makeRunningRequest(id, sloClass string, arrival int64, inputLen int, kvCach
 
 func TestPreemption_Priority_EvictsLeastUrgent(t *testing.T) {
 	// Table-driven: victim position varies to prove selection is priority-based, not positional.
-	// All scenarios: bg (background=-3) must be evicted before crit (critical=4) and std (standard=3).
+	// bg (background, vLLM Priority=7) must be evicted before crit (critical=0) and std (standard=1).
+	// shed (sheddable, vLLM Priority=6) is more urgent than bg but less urgent than std (Priority=1).
 	tests := []struct {
 		name    string
 		order   []string // order of requests in batch: [sloClass, ...]
 		wantID  string
 	}{
-		{"victim at head", []string{"background", "critical", "standard"}, "bg"},
-		{"victim in middle", []string{"critical", "background", "standard"}, "bg"},
-		{"victim at tail", []string{"critical", "standard", "background"}, "bg"},
+		{"bg victim at head", []string{"background", "critical", "standard"}, "bg"},
+		{"bg victim in middle", []string{"critical", "background", "standard"}, "bg"},
+		{"bg victim at tail", []string{"critical", "standard", "background"}, "bg"},
+		{"sheddable victim at head", []string{"sheddable", "critical", "standard"}, "shed"},
+		{"sheddable victim at tail", []string{"critical", "standard", "sheddable"}, "shed"},
 	}
 
 	ids := map[string]string{
 		"background": "bg",
 		"critical":   "crit",
 		"standard":   "std",
+		"sheddable":  "shed",
 	}
 
 	for _, tt := range tests {

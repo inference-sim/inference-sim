@@ -1,5 +1,7 @@
 package sim
 
+import "fmt"
+
 // SLOPriorityMap maps SLOClass strings to integer priorities.
 // Higher = more important. Negative = sheddable (matches GAIE's IsSheddable contract).
 // Unexported map field prevents external mutation (R8).
@@ -40,9 +42,13 @@ func DefaultSLOPriorityMap() *SLOPriorityMap {
 
 // NewSLOPriorityMap creates a priority map with defaults, then applies overrides.
 // Nil or empty overrides → pure defaults. Override keys replace defaults for those classes.
+// Override values must be in the range [-100, 100]; panics otherwise (R3: validate at construction).
 func NewSLOPriorityMap(overrides map[string]int) *SLOPriorityMap {
 	m := DefaultSLOPriorityMap()
 	for k, v := range overrides {
+		if v < -100 || v > 100 {
+			panic(fmt.Sprintf("NewSLOPriorityMap: override for %q value %d out of range [-100, 100]", k, v))
+		}
 		m.priorities[k] = v
 	}
 	// Recompute maxPri after applying overrides
