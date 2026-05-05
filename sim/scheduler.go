@@ -20,16 +20,17 @@ func (f *FCFSScheduler) OrderQueue(_ []*Request, _ int64) {
 	// No-op: FIFO order preserved from enqueue order
 }
 
-// PriorityFCFSScheduler sorts requests by priority (descending),
-// then by arrival time (ascending), then by ID (ascending) for determinism.
+// PriorityFCFSScheduler sorts requests by priority (ascending — lower value = more urgent,
+// scheduled first). Matches vLLM PriorityRequestQueue min-heap semantics.
+// Tiebreaker: earlier arrival time first; then lexicographic ID for determinism.
 type PriorityFCFSScheduler struct{}
 
 func (p *PriorityFCFSScheduler) OrderQueue(reqs []*Request, _ int64) {
-	// Float != comparison is safe here: current policies produce exact arithmetic
-	// (constant return or int-derived multiply+add). Revisit if policies use division/log.
+	// Float != comparison is safe: Priority is set by float64(int) cast in the pre-processor —
+	// exact integer values, no arithmetic accumulation. Revisit if fractional offsets are added.
 	sort.SliceStable(reqs, func(i, j int) bool {
 		if reqs[i].Priority != reqs[j].Priority {
-			return reqs[i].Priority > reqs[j].Priority
+			return reqs[i].Priority < reqs[j].Priority // lower = more urgent (vLLM convention)
 		}
 		if reqs[i].ArrivalTime != reqs[j].ArrivalTime {
 			return reqs[i].ArrivalTime < reqs[j].ArrivalTime
@@ -56,15 +57,16 @@ func (s *SJFScheduler) OrderQueue(reqs []*Request, _ int64) {
 	})
 }
 
-// ReversePriority sorts requests by priority ascending (lowest priority first).
-// Pathological template: opposite of PriorityFCFSScheduler, causes priority inversions.
+// ReversePriority sorts requests by priority descending (highest value first).
+// Pathological template: opposite of PriorityFCFSScheduler under vLLM convention.
+// vLLM convention: lower = more urgent, so descending = least-urgent scheduled first.
 // Ties broken by arrival time ascending, then ID ascending for determinism.
 type ReversePriority struct{}
 
 func (r *ReversePriority) OrderQueue(reqs []*Request, _ int64) {
 	sort.SliceStable(reqs, func(i, j int) bool {
 		if reqs[i].Priority != reqs[j].Priority {
-			return reqs[i].Priority < reqs[j].Priority // ascending = lowest first
+			return reqs[i].Priority > reqs[j].Priority // descending = least-urgent first (pathological)
 		}
 		if reqs[i].ArrivalTime != reqs[j].ArrivalTime {
 			return reqs[i].ArrivalTime < reqs[j].ArrivalTime

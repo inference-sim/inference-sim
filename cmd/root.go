@@ -700,6 +700,11 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		bundleScorerConfigs = bundle.Routing.Scorers
 		if bundle.Priority.Policy != "" && !cmd.Flags().Changed("priority-policy") {
 			priorityPolicy = bundle.Priority.Policy
+			if priorityPolicy != "" && priorityPolicy != "constant" {
+				logrus.Warnf("bundle priority.policy=%q has no effect: per-step priority aging was removed in PR #1216. "+
+					"Request priority is now static (set at enqueue via SLOPriorityMap.InvertForVLLM). "+
+					"Use SLOClass in your workload spec for tier-based priority.", priorityPolicy)
+			}
 		}
 		if bundle.Scheduler != "" && !cmd.Flags().Changed("scheduler") {
 			scheduler = bundle.Scheduler
@@ -742,6 +747,12 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 	}
 	if !sim.IsValidPriorityPolicy(priorityPolicy) {
 		logrus.Fatalf("Unknown priority policy %q. Valid: %s", priorityPolicy, strings.Join(sim.ValidPriorityPolicyNames(), ", "))
+	}
+	// Warn if a non-constant policy was explicitly set via CLI — per-step aging was removed in PR #1216.
+	if cmd.Flags().Changed("priority-policy") && priorityPolicy != "constant" {
+		logrus.Warnf("--priority-policy=%q has no effect: per-step priority aging was removed in PR #1216. "+
+			"Request priority is static (set at enqueue via SLOPriorityMap.InvertForVLLM). "+
+			"Use SLOClass in your workload spec for tier-based priority scheduling.", priorityPolicy)
 	}
 	if !sim.IsValidScheduler(scheduler) {
 		logrus.Fatalf("Unknown scheduler %q. Valid: %s", scheduler, strings.Join(sim.ValidSchedulerNames(), ", "))
@@ -897,7 +908,8 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&routingScorers, "routing-scorers", "", "Scorer weights for weighted routing (e.g., queue-depth:2,kv-utilization:2,load-balance:1). Default: precise-prefix-cache:2,queue-depth:1,kv-utilization:1")
 
 	// Priority, scheduler, and preemption config
-	cmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based, inverted-slo")
+	cmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant",
+		"Priority policy (deprecated: slo-based and inverted-slo are no-ops since PR #1216; use SLOClass in workload spec instead). Valid: constant, slo-based, inverted-slo")
 	cmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf, reverse-priority")
 	cmd.Flags().StringVar(&preemptionPolicy, "preemption-policy", "fcfs", "Preemption victim selection: fcfs (tail-of-batch), priority (least-urgent SLO tier)")
 

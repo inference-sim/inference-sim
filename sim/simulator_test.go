@@ -3077,3 +3077,114 @@ func TestSimulator_TTFT_UpdatedAfterPreemption(t *testing.T) {
 		t.Errorf("E2E_B = %.0f <= TTFT_B = %.0f: expected E2E_B > TTFT_B for a request with 5 output tokens", e2eB, ttftB)
 	}
 }
+
+// TestEnqueueRequest_SetsVLLMConventionPriority verifies the pre-processor converts
+// SLO class to vLLM-convention priority at instance entry (BC-1, BC-7).
+func TestEnqueueRequest_SetsVLLMConventionPriority(t *testing.T) {
+	tests := []struct {
+		name     string
+		sloClass string
+		wantPri  float64
+	}{
+		{"critical", "critical", 0.0},    // BC-1: maxPri(4) - 4 = 0
+		{"background", "background", 7.0}, // maxPri(4) - (-3) = 7
+		{"standard", "standard", 1.0},    // maxPri(4) - 3 = 1
+		{"empty", "", 1.0},               // BC-7: maxPri(4) - defaultPri(3) = 1
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := SimConfig{
+				Horizon:             1_000_000,
+				Seed:                42,
+				KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+				BatchConfig:         NewBatchConfig(256, 2048, 0),
+				LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
+				ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
+			}
+			s := mustNewSimulator(t, cfg)
+			req := &Request{
+				ID:          "r1",
+				SLOClass:    tt.sloClass,
+				InputTokens: make([]int, 10),
+				ArrivalTime: 1,
+			}
+			s.EnqueueRequest(req)
+			if req.Priority != tt.wantPri {
+				t.Errorf("Priority = %v, want %v", req.Priority, tt.wantPri)
+			}
+		})
+	}
+}
+
+// TestSimulator_PriorityIsStatic_NotRecomputedEachStep verifies BC-5.
+// After the pre-processor sets Request.Priority at enqueue time, it must
+// not be overwritten by subsequent step executions.
+func TestSimulator_PriorityIsStatic_NotRecomputedEachStep(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
+	}
+	s := mustNewSimulator(t, cfg)
+	req := &Request{
+		ID:          "r1",
+		SLOClass:    "critical",
+		InputTokens: make([]int, 10),
+		ArrivalTime: 1,
+	}
+	s.EnqueueRequest(req)
+	wantPri := req.Priority // 0.0 in vLLM convention (critical)
+
+	// Run one step (queue is reordered but priority must not change)
+	s.Step(1)
+
+	if req.Priority != wantPri {
+		t.Errorf("BC-5 violated: Priority changed after Step: got %v, want %v", req.Priority, wantPri)
+	}
+}
+
+// TestEnqueueDecodeSubRequest_SetsVLLMConventionPriority verifies BC-8.
+// Decode sub-requests (PD disaggregation) inherit SLOClass from the parent prefill
+// (pd_events.go:215) and the pre-processor sets their Priority in vLLM convention.
+func TestEnqueueDecodeSubRequest_SetsVLLMConventionPriority(t *testing.T) {
+	tests := []struct {
+		name     string
+		sloClass string
+		wantPri  float64
+	}{
+		{"critical", "critical", 0.0},    // BC-1/BC-8: maxPri(4) - 4 = 0
+		{"background", "background", 7.0}, // maxPri(4) - (-3) = 7
+		{"empty", "", 1.0},               // BC-7/BC-8: maxPri(4) - defaultPri(3) = 1
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := SimConfig{
+				Horizon:             1_000_000,
+				Seed:                42,
+				KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+				BatchConfig:         NewBatchConfig(256, 2048, 0),
+				LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
+				ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
+			}
+			s := mustNewSimulator(t, cfg)
+			// Simulate a decode sub-request with SLOClass inherited from parent.
+			// ProgressIndex=10 mirrors AllocateTransferredKV in PD disaggregation;
+			// no KV block allocation needed here (blocks pre-allocated on prefill instance).
+			req := &Request{
+				ID:            "decode-r1",
+				SLOClass:      tt.sloClass,
+				InputTokens:   make([]int, 10),
+				OutputTokens:  make([]int, 5),
+				ProgressIndex: 10, // already past prefill (decode-only)
+				ArrivalTime:   1,
+			}
+			s.EnqueueDecodeSubRequest(req, 0)
+			if req.Priority != tt.wantPri {
+				t.Errorf("BC-8: EnqueueDecodeSubRequest Priority = %v, want %v", req.Priority, tt.wantPri)
+			}
+		})
+	}
+}

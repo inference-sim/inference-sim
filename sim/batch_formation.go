@@ -59,17 +59,15 @@ const (
 	// Matches vLLM's FCFS scheduling mode (self.running.pop()).
 	PreemptionFCFS PreemptionPolicy = "fcfs"
 
-	// PreemptionPriority evicts the least-urgent request based on SLO tier priority.
-	// Selects min(SLOPriority) with max(ArrivalTime) tiebreak.
-	// Matches vLLM's PRIORITY scheduling mode (scheduler.py:827-829)
-	// but using BLIS's inverted convention (BLIS: higher=more urgent; vLLM: lower=more urgent).
+	// PreemptionPriority evicts the least-urgent request based on Request.Priority (vLLM convention).
+	// Selects max(Priority) with max(ArrivalTime) tiebreak — direct parity with
+	// vLLM scheduler.py:1086: max(self.running, key=lambda r: (r.priority, r.arrival_time)).
 	PreemptionPriority PreemptionPolicy = "priority"
 )
 
 // VLLMBatchFormation implements the vLLM FCFS + chunked-prefill + preemption strategy.
 type VLLMBatchFormation struct {
 	preemptionPolicy PreemptionPolicy
-	sloMap           *SLOPriorityMap
 }
 
 func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
@@ -305,20 +303,23 @@ func (v *VLLMBatchFormation) preemptForTokens(req *Request, numNewTokens int64, 
 }
 
 // selectPriorityVictim returns the index of the least-urgent running request.
-// Least urgent = lowest SLOPriorityMap value (BLIS convention: higher = more urgent).
-// Ties broken by latest ArrivalTime (most recently arrived evicted first).
+// Least urgent = highest Request.Priority value (vLLM convention: lower = more urgent).
+// Ties broken by latest ArrivalTime (most recently arrived evicted first, least KV investment).
 //
-// This is the BLIS equivalent of vLLM's max(priority, arrival_time) (scheduler.py:827-829).
-// The conventions are inverted: vLLM uses lower=more-urgent so max() selects least urgent;
-// BLIS uses higher=more-urgent so min() selects least urgent. Both tiebreak by max(ArrivalTime).
+// Directly mirrors vLLM scheduler.py:1086-1089:
+//
+//	preempted_req = max(self.running, key=lambda r: (r.priority, r.arrival_time))
+//
+// Priority is set at instance entry by the pre-processor (EnqueueRequest/EnqueueDecodeSubRequest)
+// via SLOPriorityMap.InvertForVLLM — not read from SLOClass here.
 func (v *VLLMBatchFormation) selectPriorityVictim(requests []*Request) int {
 	victimIdx := len(requests) - 1
-	victimPri := v.sloMap.Priority(requests[victimIdx].SLOClass)
+	victimPri := requests[victimIdx].Priority
 	victimArrival := requests[victimIdx].ArrivalTime
 
 	for i := len(requests) - 2; i >= 0; i-- {
-		pri := v.sloMap.Priority(requests[i].SLOClass)
-		if pri < victimPri || (pri == victimPri && requests[i].ArrivalTime > victimArrival) {
+		pri := requests[i].Priority
+		if pri > victimPri || (pri == victimPri && requests[i].ArrivalTime > victimArrival) {
 			victimIdx = i
 			victimPri = pri
 			victimArrival = requests[i].ArrivalTime
@@ -329,17 +330,14 @@ func (v *VLLMBatchFormation) selectPriorityVictim(requests []*Request) int {
 
 // NewBatchFormation creates the default BatchFormation.
 // preemptionPolicy selects victim strategy: "fcfs" (tail-of-batch) or "priority" (least-urgent SLO tier).
-// sloMap provides SLO class → priority mapping for "priority" mode; nil uses GAIE defaults.
-func NewBatchFormation(preemptionPolicy string, sloMap *SLOPriorityMap) BatchFormation {
+// In "priority" mode, victim selection reads Request.Priority directly (set by the pre-processor
+// in Simulator.EnqueueRequest via SLOPriorityMap.InvertForVLLM — no sloMap needed here).
+func NewBatchFormation(preemptionPolicy string) BatchFormation {
 	policy := PreemptionPolicy(preemptionPolicy)
 	if policy == "" {
 		policy = PreemptionFCFS
 	}
-	if sloMap == nil {
-		sloMap = DefaultSLOPriorityMap()
-	}
 	return &VLLMBatchFormation{
 		preemptionPolicy: policy,
-		sloMap:           sloMap,
 	}
 }
