@@ -221,9 +221,9 @@ shedding of sheddable entries.
 | Aspect | Legacy (AlwaysAdmit, TierShed, etc.) | FlowControlAdmission |
 |--------|--------------------------------------|---------------------|
 | Admission | Separate from queuing | Queue IS admission |
-| Queue structure | None (direct to routing) | Per-priority-band, per-flow |
-| Dispatch order | `--dispatch-order` (fifo/priority) | `--dispatch-order` (fifo/priority) |
-| Capacity | Global only | Per-band + global |
+| Queue structure | None (admit/reject then route directly) | Per-priority-band, per-flow |
+| Dispatch order | N/A (no queue) | `--dispatch-order` (fifo/priority) |
+| Capacity | N/A (no queue) | Per-band + global |
 
 ## Pipeline Latency
 
