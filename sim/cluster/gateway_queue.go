@@ -288,45 +288,45 @@ func (q *GatewayQueue) Dequeue() *sim.Request {
 }
 
 // DequeueGated attempts to dispatch one request with per-band HoL blocking.
-// Matches GIE's dispatchCycle: iterates bands highest-first, checks per-band ceiling,
-// halts entirely if saturation >= ceiling (prevents priority inversion).
+// Matches GIE's dispatchCycle (processor.go:322-375): iterates ALL bands highest-first,
+// checks per-band ceiling BEFORE checking emptiness, halts entirely if saturation >= ceiling
+// (prevents priority inversion). Empty bands are skipped only after passing the ceiling check
+// (work conservation — same as GIE's "select failure → continue").
 // Returns nil if saturated or queue empty.
 func (q *GatewayQueue) DequeueGated(saturation float64) *sim.Request {
 	if q.totalLen == 0 {
 		return nil
 	}
 
-	// Count non-empty bands for ceiling computation.
-	nonEmptyBands := 0
-	for _, band := range q.bands {
-		if band.totalLen > 0 {
-			nonEmptyBands++
-		}
-	}
-	if nonEmptyBands == 0 {
-		panic(fmt.Sprintf("GatewayQueue.DequeueGated: totalLen=%d but nonEmptyBands=0 — counter desync", q.totalLen))
+	numBands := len(q.bands)
+	if numBands == 0 {
+		panic(fmt.Sprintf("GatewayQueue.DequeueGated: totalLen=%d but no bands — counter desync", q.totalLen))
 	}
 
-	// Compute per-band ceilings via linear interpolation:
-	// Highest band (rank 0) = 1.0, lowest band (rank N-1) = usageLimitThreshold.
-	// Single band always gets ceiling 1.0.
-	bandRank := 0
-	for _, band := range q.bands {
-		if band.totalLen == 0 {
-			continue // skip empty bands (work conservation)
-		}
-
+	// Iterate ALL bands by position index (descending priority order).
+	// Ceiling is computed per band position, not per non-empty rank.
+	// Matches GIE: ceilings[] is indexed by band position in the priority list.
+	for i, band := range q.bands {
+		// Compute ceiling for this band position via linear interpolation:
+		// Position 0 (highest) = 1.0, position N-1 (lowest) = usageLimitThreshold.
+		// Single band always gets ceiling 1.0.
 		ceiling := 1.0
-		if nonEmptyBands > 1 {
-			// Linear interpolation: rank 0 → 1.0, rank (N-1) → threshold
-			ceiling = 1.0 - float64(bandRank)*(1.0-q.usageLimitThreshold)/float64(nonEmptyBands-1)
+		if numBands > 1 {
+			ceiling = 1.0 - float64(i)*(1.0-q.usageLimitThreshold)/float64(numBands-1)
 		}
 
+		// HoL blocking check BEFORE emptiness check (matches GIE processor.go:337-340).
+		// If saturation exceeds this band's ceiling, halt the entire dispatch cycle.
 		if saturation >= ceiling {
-			// HoL blocking: halt entire dispatch cycle to prevent priority inversion.
 			return nil
 		}
 
+		// Work conservation: skip empty bands (matches GIE's "select failure → continue").
+		if band.totalLen == 0 {
+			continue
+		}
+
+		// Dispatch from this band.
 		req := q.dequeueFromBand(band)
 		if req == nil {
 			panic(fmt.Sprintf("GatewayQueue.DequeueGated: band priority=%d has totalLen=%d but dequeueFromBand returned nil — counter desync", band.priority, band.totalLen))

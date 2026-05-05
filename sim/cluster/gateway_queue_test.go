@@ -448,14 +448,18 @@ func TestGatewayQueue_PerBand_CapacityCheckOrder(t *testing.T) {
 }
 
 func TestGatewayQueue_DequeueGated_HoLBlocking(t *testing.T) {
+	// Tests verify per-band HoL blocking matching GIE's dispatchCycle behavior:
+	// - Ceilings computed by band POSITION (not non-empty count)
+	// - Ceiling check happens BEFORE emptiness check
+	// - If saturation >= ceiling, halt entire dispatch (prevents priority inversion)
+
+	// Case 1: 2 bands, low saturation — dispatches highest-priority item.
 	q := NewGatewayQueue("priority", 0, nil)
 	q.SetUsageLimitThreshold(0.5)
-
-	// Case 1: Low saturation — dispatches highest-priority item.
 	q.Enqueue(&sim.Request{ID: "critical1", SLOClass: "critical"}, 1)
 	q.Enqueue(&sim.Request{ID: "batch1", SLOClass: "batch"}, 2)
-	// 2 non-empty bands: critical ceiling=1.0, batch ceiling=0.5.
-	// sat=0.3 < 0.5 → critical dispatches.
+	// 2 bands [critical(4), batch(-1)]. Ceilings by position: [1.0, 0.5].
+	// sat=0.3 < critical ceiling 1.0 → dispatches critical1.
 	req := q.DequeueGated(0.3)
 	if req == nil || req.ID != "critical1" {
 		t.Fatalf("expected critical1 at sat=0.3, got %v", req)
@@ -463,7 +467,6 @@ func TestGatewayQueue_DequeueGated_HoLBlocking(t *testing.T) {
 
 	// Case 2: Full saturation blocks top band → nothing dispatches.
 	q.Enqueue(&sim.Request{ID: "critical2", SLOClass: "critical"}, 3)
-	// 2 non-empty bands: critical ceiling=1.0, batch ceiling=0.5.
 	// sat=1.0 >= critical ceiling 1.0 → HoL halt immediately.
 	req = q.DequeueGated(1.0)
 	if req != nil {
@@ -473,73 +476,92 @@ func TestGatewayQueue_DequeueGated_HoLBlocking(t *testing.T) {
 		t.Fatalf("expected 2 items still in queue, got %d", q.Len())
 	}
 
-	// Case 3: 3 non-empty bands with intermediate HoL blocking.
-	// critical(4), standard(3), batch(-1). Ceilings: 1.0, 0.75, 0.5.
+	// Case 3: HoL blocks lower band while higher band dispatches.
+	// After dequeuing critical, batch remains but band structure is preserved.
+	// 2 bands still [critical(4), batch(-1)]. Ceilings: [1.0, 0.5].
+	// Dequeue critical2 at sat=0.3:
+	req = q.DequeueGated(0.3)
+	if req == nil || req.ID != "critical2" {
+		t.Fatalf("expected critical2 at sat=0.3, got %v", req)
+	}
+	// Now critical band empty, batch has batch1. Bands still [4, -1].
+	// sat=0.6: critical ceiling=1.0 > 0.6 → passes, band empty → skip.
+	//          batch ceiling=0.5 < 0.6 → HoL halt! batch1 stays queued.
+	req = q.DequeueGated(0.6)
+	if req != nil {
+		t.Fatalf("expected nil at sat=0.6 (batch ceiling=0.5 < 0.6), got %v", req.ID)
+	}
+	if q.Len() != 1 {
+		t.Fatalf("expected 1 item (batch1) still queued, got %d", q.Len())
+	}
+	// sat=0.4 < batch ceiling 0.5 → batch1 dispatches.
+	req = q.DequeueGated(0.4)
+	if req == nil || req.ID != "batch1" {
+		t.Fatalf("expected batch1 at sat=0.4, got %v", req)
+	}
+
+	// Case 4: 3 bands with intermediate HoL blocking.
+	// critical(4), standard(3), batch(-1). numBands=3. Ceilings: [1.0, 0.75, 0.5].
 	q3 := NewGatewayQueue("priority", 0, nil)
 	q3.SetUsageLimitThreshold(0.5)
 	q3.Enqueue(&sim.Request{ID: "c1", SLOClass: "critical"}, 1)
-	q3.Enqueue(&sim.Request{ID: "c2", SLOClass: "critical"}, 2)
-	q3.Enqueue(&sim.Request{ID: "s1", SLOClass: "standard"}, 3)
-	q3.Enqueue(&sim.Request{ID: "b1", SLOClass: "batch"}, 4)
+	q3.Enqueue(&sim.Request{ID: "s1", SLOClass: "standard"}, 2)
+	q3.Enqueue(&sim.Request{ID: "b1", SLOClass: "batch"}, 3)
 
 	// sat=0.76: critical ceiling=1.0 > 0.76 → dispatches c1.
 	req = q3.DequeueGated(0.76)
 	if req == nil || req.ID != "c1" {
 		t.Fatalf("expected c1 at sat=0.76, got %v", req)
 	}
-	// Still 3 non-empty bands (c2, s1, b1). Ceilings: 1.0, 0.75, 0.5.
-	// sat=0.76 >= standard ceiling 0.75 → dispatches c2 (critical OK), then hits standard → HoL halt.
-	// But DequeueGated dispatches ONE item per call (like GIE's dispatchCycle).
-	// Critical band has c2, ceiling=1.0 > 0.76 → dispatches c2.
+	// Bands still [4, 3, -1]. Ceilings: [1.0, 0.75, 0.5].
+	// sat=0.76: critical ceiling=1.0 > 0.76 → passes (empty, skip).
+	//           standard ceiling=0.75 < 0.76 → HoL halt! s1 and b1 stay queued.
 	req = q3.DequeueGated(0.76)
-	if req == nil || req.ID != "c2" {
-		t.Fatalf("expected c2 at sat=0.76, got %v", req)
+	if req != nil {
+		t.Fatalf("expected nil at sat=0.76 (standard ceiling=0.75 blocks), got %v", req.ID)
 	}
-	// Now 2 non-empty bands (s1, b1). Ceilings recalculated: standard=1.0, batch=0.5.
-	// sat=0.76 < 1.0 → standard dispatches.
-	req = q3.DequeueGated(0.76)
+	if q3.Len() != 2 {
+		t.Fatalf("expected 2 items still queued, got %d", q3.Len())
+	}
+	// sat=0.4: all ceilings pass → dispatches s1 (highest non-empty).
+	req = q3.DequeueGated(0.4)
 	if req == nil || req.ID != "s1" {
-		t.Fatalf("expected s1 at sat=0.76, got %v", req)
+		t.Fatalf("expected s1 at sat=0.4, got %v", req)
+	}
+	// sat=0.4 < batch ceiling 0.5 → dispatches b1.
+	req = q3.DequeueGated(0.4)
+	if req == nil || req.ID != "b1" {
+		t.Fatalf("expected b1 at sat=0.4, got %v", req)
 	}
 
-	// Case 4: The real HoL test — highest band empty, lower band gated.
-	// After above: only b1 remains (1 band → ceiling=1.0 → dispatches).
-	// For HoL to block with items available: need multiple non-empty bands where
-	// the first non-empty band's ceiling is exceeded.
-	// Setup: standard(3) empty, critical(4) empty, batch(-1) has items.
-	// With only batch non-empty: single band → ceiling=1.0 → always dispatches below 1.0.
-	// Real HoL: 2 bands with items, sat exceeds the lower band's ceiling.
-	// The key effect: within a single DequeueGated call, if critical band dispatches,
-	// it takes that item. The HoL effect is that batch items STAY in the queue longer
-	// because they only dispatch when no higher-priority items exist AND saturation is low.
-	q4 := NewGatewayQueue("priority", 0, nil)
-	q4.SetUsageLimitThreshold(0.5)
-	q4.Enqueue(&sim.Request{ID: "s1", SLOClass: "standard"}, 1)
-	q4.Enqueue(&sim.Request{ID: "b1", SLOClass: "batch"}, 2)
-	// 2 non-empty bands: standard ceiling=1.0, batch ceiling=0.5.
-	// sat=0.6 < standard ceiling 1.0 → standard dispatches.
-	req = q4.DequeueGated(0.6)
+	// Case 5: HoL effect — low-priority items starved under sustained high saturation.
+	q5 := NewGatewayQueue("priority", 0, nil)
+	q5.SetUsageLimitThreshold(0.5)
+	q5.Enqueue(&sim.Request{ID: "s1", SLOClass: "standard"}, 1)
+	q5.Enqueue(&sim.Request{ID: "b1", SLOClass: "batch"}, 2)
+	// 2 bands [standard(3), batch(-1)]. Ceilings: [1.0, 0.5].
+	// sat=0.6: standard ceiling=1.0 > 0.6 → dispatches s1.
+	req = q5.DequeueGated(0.6)
 	if req == nil || req.ID != "s1" {
 		t.Fatalf("expected s1 at sat=0.6, got %v", req)
 	}
-	// Now only batch remains (1 band → ceiling=1.0).
-	// But what if we had standard still populated? Refill:
-	q4.Enqueue(&sim.Request{ID: "s2", SLOClass: "standard"}, 3)
-	// 2 non-empty bands again: standard ceiling=1.0, batch ceiling=0.5.
+	// Refill standard. Bands [3, -1] persist. Ceilings: [1.0, 0.5].
+	q5.Enqueue(&sim.Request{ID: "s2", SLOClass: "standard"}, 3)
 	// sat=0.6: standard ceiling=1.0 > 0.6 → dispatches s2.
-	req = q4.DequeueGated(0.6)
+	req = q5.DequeueGated(0.6)
 	if req == nil || req.ID != "s2" {
 		t.Fatalf("expected s2 at sat=0.6, got %v", req)
 	}
-	// Again only batch. The batch item b1 has been held back repeatedly
-	// because whenever both bands are populated, standard gets priority
-	// and batch ceiling (0.5 < 0.6) would block if we ever reached it.
-	// This IS the HoL blocking effect: low-priority items are starved
-	// as long as higher-priority items exist and saturation is high.
-	// Now batch alone: ceiling=1.0 > 0.6 → finally dispatches.
-	req = q4.DequeueGated(0.6)
+	// Standard empty, batch has b1. sat=0.6 >= batch ceiling 0.5 → HoL halt.
+	// Batch b1 is starved as long as saturation > 0.5!
+	req = q5.DequeueGated(0.6)
+	if req != nil {
+		t.Fatalf("expected nil — batch starved at sat=0.6 (ceiling=0.5), got %v", req.ID)
+	}
+	// Saturation drops → batch finally dispatches.
+	req = q5.DequeueGated(0.4)
 	if req == nil || req.ID != "b1" {
-		t.Fatalf("expected b1 at sat=0.6 (single band), got %v", req)
+		t.Fatalf("expected b1 at sat=0.4, got %v", req)
 	}
 }
 
@@ -558,14 +580,16 @@ func TestGatewayQueue_DequeueGated_SingleBand_NoCeiling(t *testing.T) {
 }
 
 func TestGatewayQueue_DequeueGated_DefaultThreshold_NoHoL(t *testing.T) {
-	// Default threshold=1.0: all ceilings=1.0, equivalent to old behavior.
+	// Default threshold=1.0: linear interpolation gives all ceilings=1.0.
+	// Formula: ceiling = 1.0 - i*(1.0-1.0)/(N-1) = 1.0 for all i.
+	// Equivalent to old behavior — no HoL blocking.
 	q := NewGatewayQueue("priority", 0, nil)
 	// No SetUsageLimitThreshold call — uses default 1.0.
 
 	q.Enqueue(&sim.Request{ID: "critical1", SLOClass: "critical"}, 1)
 	q.Enqueue(&sim.Request{ID: "batch1", SLOClass: "batch"}, 2)
 
-	// At saturation=0.99: all bands dispatch (all ceilings=1.0).
+	// At saturation=0.99: all ceilings=1.0 → both dispatch.
 	req := q.DequeueGated(0.99)
 	if req == nil || req.ID != "critical1" {
 		t.Fatalf("expected critical1, got %v", req)
