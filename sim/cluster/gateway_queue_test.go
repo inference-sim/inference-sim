@@ -600,6 +600,17 @@ func TestGatewayQueue_DequeueGated_DefaultThreshold_NoHoL(t *testing.T) {
 	}
 }
 
+// BC-5: No SetFairnessPolicy call → GlobalStrict default (backward compat).
+func TestGatewayQueue_DefaultFairnessIsGlobalStrict(t *testing.T) {
+	q := NewGatewayQueue("priority", 0, nil)
+	q.Enqueue(&sim.Request{ID: "b1", TenantID: "B", SLOClass: "standard"}, 10)
+	q.Enqueue(&sim.Request{ID: "c1", TenantID: "C", SLOClass: "standard"}, 5)
+	got := q.Dequeue()
+	if got.ID != "c1" {
+		t.Errorf("BC-5: default must be global-strict (earliest seqID c1), got %s", got.ID)
+	}
+}
+
 // BC-2: RoundRobin cycles through tenants in sorted key order.
 func TestGatewayQueue_RoundRobin_CyclesTenants(t *testing.T) {
 	q := NewGatewayQueue("priority", 0, nil)
@@ -623,6 +634,9 @@ func TestGatewayQueue_RoundRobin_CyclesTenants(t *testing.T) {
 		if got == nil || got.ID != want {
 			t.Fatalf("dequeue %d: want %s, got %v", i, want, got)
 		}
+	}
+	if q.Len() != 0 {
+		t.Errorf("queue should be empty after draining, got Len=%d", q.Len())
 	}
 }
 
@@ -696,6 +710,9 @@ func TestGatewayQueue_RoundRobin_SingleTenant(t *testing.T) {
 		if got == nil || got.ID != want {
 			t.Fatalf("dequeue %d: want %s, got %v", i, want, got)
 		}
+	}
+	if q.Len() != 0 {
+		t.Errorf("queue should be empty after draining, got Len=%d", q.Len())
 	}
 }
 

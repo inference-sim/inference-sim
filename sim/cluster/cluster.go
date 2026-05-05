@@ -408,7 +408,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		case "", "global-strict":
 			// default — already set
 		default:
-			logrus.Fatalf("[cluster] unknown fairness policy %q (must be global-strict or round-robin)", config.FlowControlFairnessPolicy)
+			panic(fmt.Sprintf("ClusterSimulator: unknown fairness policy %q (must be global-strict or round-robin)", config.FlowControlFairnessPolicy))
 		}
 		cs.gatewayQueue = gq
 		cs.saturationDetector = sim.NewSaturationDetector(

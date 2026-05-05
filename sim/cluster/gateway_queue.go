@@ -418,7 +418,7 @@ func (q *GatewayQueue) DequeueGated(saturation float64) *sim.Request {
 }
 
 // dequeuePriority dispatches from the highest non-empty band.
-// Within the band, picks the flow head with the earliest seqID (global-strict fairness).
+// Within the band, delegates flow selection to the configured FairnessPolicy.
 func (q *GatewayQueue) dequeuePriority() *sim.Request {
 	for _, band := range q.bands {
 		if band.totalLen == 0 {

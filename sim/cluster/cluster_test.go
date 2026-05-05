@@ -2953,3 +2953,40 @@ func TestClusterSimulator_PD_OrphanedTimeout_TimingNotInflated(t *testing.T) {
 	}
 }
 
+// TestClusterSimulator_FlowControl_RoundRobinWiring verifies that the
+// round-robin fairness policy is correctly wired from DeploymentConfig.
+func TestClusterSimulator_FlowControl_RoundRobinWiring(t *testing.T) {
+	config := newTestDeploymentConfig(1)
+	config.FlowControlEnabled = true
+	config.FlowControlDetector = "concurrency"
+	config.FlowControlMaxConcurrency = 1 // force queuing
+	config.FlowControlDispatchOrder = "priority"
+	config.FlowControlFairnessPolicy = "round-robin"
+
+	requests := newTestRequests(6)
+	// Assign alternating tenants: first 3 = A, last 3 = B
+	for i, r := range requests {
+		if i < 3 {
+			r.TenantID = "A"
+		} else {
+			r.TenantID = "B"
+		}
+		r.SLOClass = "standard"
+		r.MaxOutputLen = len(r.OutputTokens)
+	}
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	if m.CompletedRequests != 6 {
+		t.Fatalf("expected 6 completions, got %d", m.CompletedRequests)
+	}
+
+	// Verify the policy was wired (not panicking, runs to completion).
+	// The concurrency=1 gate forces queuing; round-robin should alternate.
+	if cs.GatewayQueueDepth() != 0 {
+		t.Errorf("expected empty gateway queue at end, got %d", cs.GatewayQueueDepth())
+	}
+}
+
