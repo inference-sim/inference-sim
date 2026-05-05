@@ -3,7 +3,9 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -1056,6 +1058,281 @@ func TestSend_Unconstrained_MinTokensStop_Warns(t *testing.T) {
 				t.Error("expected min_tokens non-support warning, but no matching entry found")
 			}
 		})
+	}
+}
+
+// TestIsTimeoutError verifies the isTimeoutError helper covers both detection
+// branches: os.IsTimeout (net.Error Timeout() interface) and errors.Is for
+// context.DeadlineExceeded. Also verifies that non-timeout errors (generic,
+// context.Canceled, io.EOF) return false.
+func TestIsTimeoutError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"generic error", errors.New("something broke"), false},
+		{"io.EOF", io.EOF, false},
+		{"context.DeadlineExceeded", context.DeadlineExceeded, true},
+		{"wrapped DeadlineExceeded", fmt.Errorf("outer: %w", context.DeadlineExceeded), true},
+		{"context.Canceled", context.Canceled, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isTimeoutError(tc.err); got != tc.want {
+				t.Errorf("isTimeoutError(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestObserveTimeoutFlagDefault verifies BC-4: default timeout is 300 seconds.
+func TestObserveTimeoutFlagDefault(t *testing.T) {
+	if observeTimeout != defaultHTTPTimeoutSeconds {
+		t.Errorf("default observeTimeout = %d, want %d", observeTimeout, defaultHTTPTimeoutSeconds)
+	}
+}
+
+// TestRealClient_WithHTTPTimeout_CustomValue verifies BC-3: WithHTTPTimeout
+// sets a custom timeout on the HTTP client.
+func TestRealClient_WithHTTPTimeout_CustomValue(t *testing.T) {
+	client := NewRealClient("http://localhost", "", "m", "vllm",
+		WithHTTPTimeout(42*time.Second))
+	if client.httpClient.Timeout != 42*time.Second {
+		t.Errorf("Timeout = %v, want 42s", client.httpClient.Timeout)
+	}
+}
+
+// TestRealClient_NonStreaming_Timeout_SetsTimeoutStatus verifies BC-2: when the
+// HTTP client timeout fires during response body read, record.Status is "timeout".
+func TestRealClient_NonStreaming_Timeout_SetsTimeoutStatus(t *testing.T) {
+	// Server sends partial body then hangs.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("expected http.Flusher")
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"text":"hel`))
+		flusher.Flush()
+		time.Sleep(2 * time.Second)
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm",
+		WithHTTPTimeout(200*time.Millisecond))
+	record, err := client.Send(context.Background(), &PendingRequest{
+		RequestID: 0, InputTokens: 10, Streaming: false,
+		Prompt: strings.Repeat("hello ", 10),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Status != "timeout" {
+		t.Errorf("Status = %q, want %q", record.Status, "timeout")
+	}
+	if record.ErrorMessage == "" {
+		t.Error("ErrorMessage should contain timeout error details")
+	}
+}
+
+// TestRealClient_HTTPLevel_Timeout_SetsTimeoutStatus verifies BC-8: when the
+// HTTP round-trip itself times out (before response headers arrive),
+// record.Status is "timeout" not generic "error".
+func TestRealClient_HTTPLevel_Timeout_SetsTimeoutStatus(t *testing.T) {
+	// Server accepts connection but never responds.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(2 * time.Second)
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm",
+		WithHTTPTimeout(200*time.Millisecond))
+	record, err := client.Send(context.Background(), &PendingRequest{
+		RequestID: 0, InputTokens: 10, Streaming: false,
+		Prompt: strings.Repeat("hello ", 10),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Status != "timeout" {
+		t.Errorf("Status = %q, want %q", record.Status, "timeout")
+	}
+	if record.ErrorMessage == "" {
+		t.Error("ErrorMessage should contain timeout error details")
+	}
+}
+
+// TestRealClient_Streaming_Timeout_SetsTimeoutStatus verifies BC-1: when the
+// HTTP client timeout fires during SSE streaming, record.Status is "timeout"
+// and record.ErrorMessage contains error details, not silent "ok".
+// BC-6: partial timestamps from chunks received before timeout are preserved.
+func TestRealClient_Streaming_Timeout_SetsTimeoutStatus(t *testing.T) {
+	// Server sends one SSE chunk then hangs until client timeout.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("expected http.Flusher")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		// Send one chunk so FirstChunkTimeUs is set (BC-6)
+		_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":\"tok\"}}]}\n\n")
+		flusher.Flush()
+		// Hang until client gives up (sleep > timeout so client times out first)
+		time.Sleep(2 * time.Second)
+	}))
+	defer server.Close()
+
+	// Use a short timeout; server sleeps 2s so timeout fires well before server finishes
+	client := NewRealClient(server.URL, "", "test-model", "vllm",
+		WithHTTPTimeout(200*time.Millisecond))
+	record, err := client.Send(context.Background(), &PendingRequest{
+		RequestID: 0, InputTokens: 10, Streaming: true,
+		Prompt: strings.Repeat("hello ", 10),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Status != "timeout" {
+		t.Errorf("Status = %q, want %q", record.Status, "timeout")
+	}
+	if record.ErrorMessage == "" {
+		t.Error("ErrorMessage should contain timeout error details")
+	}
+	// BC-6: partial timestamps preserved
+	if record.FirstChunkTimeUs == 0 {
+		t.Error("FirstChunkTimeUs should be set from the chunk received before timeout")
+	}
+	if record.NumChunks != 1 {
+		t.Errorf("NumChunks = %d, want 1 (one chunk before timeout)", record.NumChunks)
+	}
+}
+
+// TestRealClient_ServerError_BodyReadFailure verifies BC-1: when a non-200
+// response body read fails (e.g., connection reset), a warning is logged
+// and the error message notes the incomplete body.
+func TestRealClient_ServerError_BodyReadFailure(t *testing.T) {
+	hook := installLogHook(t)
+
+	// Server sends a non-200 status code then abruptly closes the connection
+	// mid-body, causing io.ReadAll to return an error.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("expected http.Hijacker")
+		}
+		conn, buf, err := hijacker.Hijack()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Write a partial HTTP response with Content-Length mismatch to force read error.
+		_, _ = buf.WriteString("HTTP/1.1 500 Internal Server Error\r\n")
+		_, _ = buf.WriteString("Content-Length: 1000\r\n")
+		_, _ = buf.WriteString("\r\n")
+		_, _ = buf.WriteString("partial error bo")
+		_ = buf.Flush()
+		_ = conn.Close()
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	record, err := client.Send(context.Background(), &PendingRequest{
+		RequestID: 3, InputTokens: 10, Streaming: false,
+		Prompt: strings.Repeat("hello ", 10),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Status != "error" {
+		t.Errorf("status = %q, want error", record.Status)
+	}
+	if !strings.Contains(record.ErrorMessage, "HTTP 500") {
+		t.Errorf("ErrorMessage should contain HTTP status code, got %q", record.ErrorMessage)
+	}
+	if !strings.Contains(record.ErrorMessage, "body read failed") {
+		t.Errorf("ErrorMessage should note body read failure, got %q", record.ErrorMessage)
+	}
+	if !hook.hasEntry("failed to read error response body") {
+		t.Error("expected warning about failed body read, but no matching log entry found")
+	}
+}
+
+// TestRealClient_ServerError_BodyReadTimeout verifies BC-1: when a non-200
+// response body read times out, record.Status is "timeout" (not "error"),
+// consistent with the success-path handlers in handleNonStreamingResponse
+// and handleStreamingResponse.
+func TestRealClient_ServerError_BodyReadTimeout(t *testing.T) {
+	hook := installLogHook(t)
+
+	// Server returns a non-200 status then hangs, causing the HTTP client
+	// timeout to fire during body read.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("expected http.Flusher")
+		}
+		_, _ = fmt.Fprint(w, "partial err")
+		flusher.Flush()
+		time.Sleep(2 * time.Second)
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm",
+		WithHTTPTimeout(200*time.Millisecond))
+	record, err := client.Send(context.Background(), &PendingRequest{
+		RequestID: 5, InputTokens: 10, Streaming: false,
+		Prompt: strings.Repeat("hello ", 10),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Status != "timeout" {
+		t.Errorf("status = %q, want timeout", record.Status)
+	}
+	if !strings.Contains(record.ErrorMessage, "HTTP 502") {
+		t.Errorf("ErrorMessage should contain HTTP status code, got %q", record.ErrorMessage)
+	}
+	if !strings.Contains(record.ErrorMessage, "body read timed out") {
+		t.Errorf("ErrorMessage should note body read timeout, got %q", record.ErrorMessage)
+	}
+	if !hook.hasEntry("failed to read error response body") {
+		t.Error("expected warning about failed body read, but no matching log entry found")
+	}
+}
+
+// TestRealClient_ServerError_BodyReadSuccess verifies BC-2: when a non-200
+// response body reads successfully, the full body is included in ErrorMessage
+// and no body-read-failure warning is logged.
+func TestRealClient_ServerError_BodyReadSuccess(t *testing.T) {
+	hook := installLogHook(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = fmt.Fprint(w, "upstream timeout")
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	record, err := client.Send(context.Background(), &PendingRequest{
+		RequestID: 4, InputTokens: 10, Streaming: false,
+		Prompt: strings.Repeat("hello ", 10),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Status != "error" {
+		t.Errorf("status = %q, want error", record.Status)
+	}
+	if !strings.Contains(record.ErrorMessage, "HTTP 502") {
+		t.Errorf("ErrorMessage should contain HTTP 502, got %q", record.ErrorMessage)
+	}
+	if !strings.Contains(record.ErrorMessage, "upstream timeout") {
+		t.Errorf("ErrorMessage should contain body text, got %q", record.ErrorMessage)
+	}
+	if hook.hasEntry("failed to read error response body") {
+		t.Error("no body-read-failure warning expected when body reads successfully")
 	}
 }
 

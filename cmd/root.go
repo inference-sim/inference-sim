@@ -106,8 +106,9 @@ var (
 	routingScorers string // Comma-separated name:weight pairs for weighted routing
 
 	// Priority and scheduler config (PR7)
-	priorityPolicy string // Priority policy name
-	scheduler      string // Scheduler name
+	priorityPolicy   string // Priority policy name
+	scheduler        string // Scheduler name
+	preemptionPolicy string // Preemption victim selection policy
 
 	// Policy bundle config
 	policyConfigPath string // Path to YAML policy configuration file
@@ -164,6 +165,9 @@ var (
 	decodeLatencyModel    string
 	prefillMaxModelLen    int64
 	decodeMaxModelLen     int64
+
+	// per-request timeout override for blis run (seconds; negative = disabled, 0 is rejected)
+	requestTimeoutSecs int
 
 	// output file paths
 	metricsPath string // File to write MetricsOutput JSON for blis run (--metrics-path)
@@ -260,6 +264,45 @@ var rootCmd = &cobra.Command{
 	Short: "BLIS — Blackbox Inference Simulator for LLM serving systems",
 }
 
+// validateDistributionParams checks token distribution bounds common to both the
+// concurrency and distribution synthesis paths (R3). Returns a non-empty error
+// string if any parameter violates a bound, empty string if all are valid.
+// A stdev of 0 is always valid — it produces a constant (deterministic) distribution.
+// Extracted for unit testability (R14).
+func validateDistributionParams(promptMin, promptMax, outputMin, outputMax, promptStdev, outputStdev, promptMean, outputMean int) string {
+	if promptMin < 1 {
+		return fmt.Sprintf("--prompt-tokens-min must be >= 1, got %d", promptMin)
+	}
+	if promptMax < 1 {
+		return fmt.Sprintf("--prompt-tokens-max must be >= 1, got %d", promptMax)
+	}
+	if outputMin < 1 {
+		return fmt.Sprintf("--output-tokens-min must be >= 1, got %d", outputMin)
+	}
+	if outputMax < 1 {
+		return fmt.Sprintf("--output-tokens-max must be >= 1, got %d", outputMax)
+	}
+	if promptStdev < 0 {
+		return fmt.Sprintf("--prompt-tokens-stdev must be >= 0, got %d", promptStdev)
+	}
+	if outputStdev < 0 {
+		return fmt.Sprintf("--output-tokens-stdev must be >= 0, got %d", outputStdev)
+	}
+	if promptMin > promptMax {
+		return fmt.Sprintf("--prompt-tokens-min (%d) must be <= --prompt-tokens-max (%d)", promptMin, promptMax)
+	}
+	if outputMin > outputMax {
+		return fmt.Sprintf("--output-tokens-min (%d) must be <= --output-tokens-max (%d)", outputMin, outputMax)
+	}
+	if promptMean > promptMax || promptMean < promptMin || promptStdev > promptMax || (promptStdev != 0 && promptStdev < promptMin) {
+		return "prompt-tokens and prompt-tokens-stdev should be in range [prompt-tokens-min, prompt-tokens-max]"
+	}
+	if outputMean > outputMax || outputMean < outputMin || outputStdev > outputMax || (outputStdev != 0 && outputStdev < outputMin) {
+		return "output-tokens and output-tokens-stdev should be in range [output-tokens-min, output-tokens-max]"
+	}
+	return ""
+}
+
 // allZeros reports whether all values in the coefficients slice are 0 (default).
 func allZeros(values []float64) bool {
 	for _, v := range values {
@@ -276,8 +319,8 @@ func allZeros(values []float64) bool {
 // modelConfigFolder, hwConfigPath) are mutated as side effects.
 type latencyResolution struct {
 	Backend     string           // resolved latency backend name
-	ModelConfig sim.ModelConfig  // HF-derived model architecture config (zero for blackbox)
-	HWConfig    sim.HardwareCalib // hardware calibration config (zero for blackbox)
+	ModelConfig sim.ModelConfig  // HF-derived model architecture config
+	HWConfig    sim.HardwareCalib // hardware calibration config
 	AlphaCoeffs []float64        // resolved alpha coefficients (local copy, not package-level)
 	BetaCoeffs  []float64        // resolved beta coefficients (local copy, not package-level)
 }
@@ -290,12 +333,10 @@ type latencyResolution struct {
 //   - Normalizes model name to lowercase
 //   - Validates gpuMemoryUtilization and blockSizeTokens (used in KV auto-calc)
 //   - Applies defaults.yaml for GPU, TP, and vllmVersion when not set via CLI
-//   - Validates alpha/beta coefficients and auto-detects blackbox mode
-//   - For roofline/crossmodel/trained-roofline/trained-physics: resolves model config folder and
+//   - Validates alpha/beta coefficients and auto-detects trained-physics mode when coefficients are provided
+//   - For roofline/trained-physics: resolves model config folder and
 //     hardware config, loads coefficients from defaults.yaml, auto-calculates
 //     total-kv-blocks and max-model-len from the HF config
-//   - For blackbox: loads coefficients from defaults.yaml, then auto-calculates
-//     total-kv-blocks and max-model-len via resolveModelConfig (downloads HF config if needed)
 //
 // Side effects (package-level vars mutated):
 //
@@ -327,9 +368,9 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	betaChanged := cmd.Flags().Changed("beta-coeffs")
 	if alphaChanged != betaChanged {
 		if alphaChanged {
-			logrus.Fatalf("--alpha-coeffs requires --beta-coeffs. Both coefficient sets are needed for blackbox mode")
+			logrus.Fatalf("--alpha-coeffs requires --beta-coeffs. Both coefficient sets are needed for coefficient-based estimation")
 		}
-		logrus.Fatalf("--beta-coeffs requires --alpha-coeffs. Both coefficient sets are needed for blackbox mode")
+		logrus.Fatalf("--beta-coeffs requires --alpha-coeffs. Both coefficient sets are needed for coefficient-based estimation")
 	}
 	for i, c := range alpha {
 		if math.IsNaN(c) || math.IsInf(c, 0) || c < 0 {
@@ -342,8 +383,8 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		}
 	}
 	if !cmd.Flags().Changed("latency-model") && alphaChanged && betaChanged {
-		backend = "blackbox"
-		logrus.Infof("--alpha-coeffs and --beta-coeffs provided; using blackbox mode")
+		backend = "trained-physics"
+		logrus.Infof("--alpha-coeffs and --beta-coeffs provided; using trained-physics mode")
 	}
 
 	// Validate flags consumed inside this function before any KV auto-calc.
@@ -392,7 +433,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		}
 		if len(missing) > 0 {
 			logrus.Fatalf("Roofline mode (the default) requires %s. No defaults found in defaults.yaml for model=%s. "+
-				"Provide these flags explicitly, or use --latency-model blackbox for offline coefficient-based estimation",
+				"Provide these flags explicitly, or use --latency-model trained-physics for coefficient-based estimation",
 				strings.Join(missing, " and "), model)
 		}
 		// alphaChanged == betaChanged is guaranteed by the "both or neither" check above,
@@ -400,7 +441,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		if cmd.Flags().Changed("latency-model") && betaChanged {
 			logrus.Fatalf("--alpha-coeffs/--beta-coeffs cannot be used with --latency-model roofline. " +
 				"Roofline computes step time analytically. " +
-				"Use --latency-model blackbox if you want coefficient-based estimation")
+				"Use --latency-model trained-physics if you want coefficient-based estimation")
 		}
 		if modelConfigFolder != "" {
 			logrus.Infof("--latency-model: explicit --model-config-folder takes precedence over auto-resolution")
@@ -418,115 +459,6 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 			logrus.Fatalf("%v", err)
 		}
 		hwConfigPath = resolvedHW
-	}
-
-	// --latency-model crossmodel
-	if backend == "crossmodel" {
-		var missing []string
-		if gpu == "" {
-			missing = append(missing, "--hardware (GPU type)")
-		}
-		if tensorParallelism <= 0 {
-			missing = append(missing, "--tp (tensor parallelism)")
-		}
-		if len(missing) > 0 {
-			logrus.Fatalf("--latency-model crossmodel requires %s. No defaults found in defaults.yaml for model=%s. "+
-				"Provide these flags explicitly", strings.Join(missing, " and "), model)
-		}
-		resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
-		if err != nil {
-			logrus.Fatalf("%v", err)
-		}
-		modelConfigFolder = resolved
-		resolvedHW, err := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
-		if err != nil {
-			logrus.Fatalf("%v", err)
-		}
-		hwConfigPath = resolvedHW
-		if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
-			data, readErr := os.ReadFile(defaultsFilePath)
-			if readErr != nil {
-				logrus.Warnf("--latency-model crossmodel: failed to read %s: %v", defaultsFilePath, readErr)
-			} else {
-				var cfg Config
-				decoder := yaml.NewDecoder(bytes.NewReader(data))
-				decoder.KnownFields(true) // R10: strict YAML parsing
-				if yamlErr := decoder.Decode(&cfg); yamlErr != nil {
-					logrus.Fatalf("--latency-model crossmodel: failed to parse %s: %v", defaultsFilePath, yamlErr)
-				}
-				if cfg.CrossModelDefaults != nil {
-					if !cmd.Flags().Changed("beta-coeffs") {
-						beta = cfg.CrossModelDefaults.BetaCoeffs
-						logrus.Infof("--latency-model: loaded crossmodel beta coefficients from defaults.yaml")
-					}
-					if !cmd.Flags().Changed("alpha-coeffs") {
-						alpha = cfg.CrossModelDefaults.AlphaCoeffs
-						logrus.Infof("--latency-model: loaded crossmodel alpha coefficients from defaults.yaml")
-					}
-				}
-			}
-		}
-		if !cmd.Flags().Changed("beta-coeffs") && (len(beta) < 4 || allZeros(beta)) {
-			logrus.Fatalf("--latency-model crossmodel: no crossmodel_defaults found in %s and no --beta-coeffs provided. "+
-				"Add crossmodel_defaults to defaults.yaml or provide --beta-coeffs explicitly", defaultsFilePath)
-		}
-	}
-
-	// --latency-model trained-roofline
-	if backend == "trained-roofline" {
-		var missing []string
-		if gpu == "" {
-			missing = append(missing, "--hardware (GPU type)")
-		}
-		if tensorParallelism <= 0 {
-			missing = append(missing, "--tp (tensor parallelism)")
-		}
-		if len(missing) > 0 {
-			logrus.Fatalf("--latency-model trained-roofline requires %s. No defaults found in defaults.yaml for model=%s. "+
-				"Provide these flags explicitly", strings.Join(missing, " and "), model)
-		}
-		resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
-		if err != nil {
-			logrus.Fatalf("%v", err)
-		}
-		modelConfigFolder = resolved
-		resolvedHW, err := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
-		if err != nil {
-			logrus.Fatalf("%v", err)
-		}
-		hwConfigPath = resolvedHW
-		if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
-			data, readErr := os.ReadFile(defaultsFilePath)
-			if readErr != nil {
-				logrus.Warnf("--latency-model trained-roofline: failed to read %s: %v", defaultsFilePath, readErr)
-			} else {
-				var cfg Config
-				decoder := yaml.NewDecoder(bytes.NewReader(data))
-				decoder.KnownFields(true) // R10: strict YAML parsing
-				if yamlErr := decoder.Decode(&cfg); yamlErr != nil {
-					logrus.Fatalf("--latency-model trained-roofline: failed to parse %s: %v", defaultsFilePath, yamlErr)
-				}
-				if cfg.TrainedRooflineDefaults != nil {
-					if !cmd.Flags().Changed("beta-coeffs") {
-						beta = cfg.TrainedRooflineDefaults.BetaCoeffs
-						logrus.Infof("--latency-model: loaded trained-roofline beta coefficients from defaults.yaml")
-					}
-					if !cmd.Flags().Changed("alpha-coeffs") {
-						alpha = cfg.TrainedRooflineDefaults.AlphaCoeffs
-						logrus.Infof("--latency-model: loaded trained-roofline alpha coefficients from defaults.yaml")
-					}
-				}
-			}
-		}
-		// Validate trained-roofline coefficients.
-		// trained_roofline.go uses betaCoeffs[0..6] = exactly 7 coefficients.
-		if !cmd.Flags().Changed("beta-coeffs") && (len(beta) < 7 || allZeros(beta)) {
-			logrus.Fatalf("--latency-model trained-roofline: no trained_roofline_defaults found in %s and no --beta-coeffs provided.", defaultsFilePath)
-		}
-		if allZeros(alpha) && !cmd.Flags().Changed("alpha-coeffs") {
-			logrus.Warnf("--latency-model trained-roofline: no trained alpha coefficients found; " +
-				"QueueingTime, PostDecodeFixedOverhead, and OutputTokenProcessingTime will use zero alpha (may underestimate TTFT/E2E)")
-		}
 	}
 
 	// --latency-model trained-physics: physics-informed roofline with architecture-aware MoE overhead.
@@ -587,27 +519,8 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		}
 	}
 
-	// --latency-model blackbox: load coefficients from defaults.yaml.
-	if backend == "blackbox" && !cmd.Flags().Changed("alpha-coeffs") && !cmd.Flags().Changed("beta-coeffs") {
-		newAlpha, newBeta := GetCoefficients(model, tensorParallelism, gpu, vllmVersion, defaultsFilePath)
-		alpha, beta = newAlpha, newBeta
-	}
-	// Blackbox: KV-block auto-calculation using same resolution as analytical backends.
-	// Resolves config.json (--model-config-folder → cached → HuggingFace download), then auto-calculates.
-	if backend == "blackbox" && !cmd.Flags().Changed("total-kv-blocks") {
-		if autoBlocks, ok := tryAutoCalcKVBlocksBlackbox(model, modelConfigFolder, defaultsFilePath, hwConfigPath, gpu, tensorParallelism, blockSizeTokens, gpuMemoryUtilization, totalKVBlocks); ok {
-			totalKVBlocks = autoBlocks
-			logrus.Infof("--latency-model blackbox: auto-calculated total-kv-blocks=%d", totalKVBlocks)
-		}
-	}
-	if backend == "blackbox" && allZeros(alpha) && allZeros(beta) {
-		logrus.Fatalf("No trained coefficients found for model=%s, GPU=%s, TP=%d. "+
-			"Provide --alpha-coeffs/--beta-coeffs, use --latency-model roofline, crossmodel, trained-roofline, or trained-physics",
-			model, gpu, tensorParallelism)
-	}
-
 	// Analytical backends: parse HF config, extract model/hardware config, auto-calc KV blocks and max-model-len.
-	if backend == "roofline" || backend == "crossmodel" || backend == "trained-roofline" || backend == "trained-physics" {
+	if backend == "roofline" || backend == "trained-physics" {
 		hfPath := filepath.Join(modelConfigFolder, "config.json")
 		hfConfig, err := latency.ParseHFConfig(hfPath)
 		if err != nil {
@@ -626,9 +539,6 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 
 		applyWeightPrecisionFallback(&modelConfig, model, hfConfig.Raw)
 
-		if backend == "trained-roofline" {
-			warnTrainedRooflineQuantization(&modelConfig)
-		}
 		if backend == "roofline" && modelConfig.NumLocalExperts > 1 {
 			logrus.Infof("--latency-model: MoE model detected (%d experts, top_%d). "+
 				"Roofline models per-expert FLOPs and active weights; dispatch overhead is not modeled",
@@ -651,14 +561,12 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 				}
 				autoBlocks, calcErr := latency.CalculateKVBlocks(modelConfig, hwConfig, tensorParallelism, blockSizeTokens, gpuMemoryUtilization, kvParams)
 				if calcErr != nil {
-					logrus.Warnf("--latency-model: KV capacity auto-calculation failed: %v. "+
-						"Using total-kv-blocks=%d. Set --total-kv-blocks explicitly to override", calcErr, totalKVBlocks)
-				} else {
-					totalKVBlocks = autoBlocks
-					logrus.Infof("--gpu-memory-utilization: %.2f used for KV block auto-calculation", gpuMemoryUtilization)
-					logrus.Infof("--latency-model: auto-calculated total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, block_size=%d, MoE=%v)",
-						totalKVBlocks, hwConfig.MemoryGiB, tensorParallelism, blockSizeTokens, kvParams.IsMoE)
+					logrus.Fatalf("--latency-model: KV capacity auto-calculation failed: %v", calcErr)
 				}
+				totalKVBlocks = autoBlocks
+				logrus.Infof("--gpu-memory-utilization: %.2f used for KV block auto-calculation", gpuMemoryUtilization)
+				logrus.Infof("--latency-model: auto-calculated total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, block_size=%d, MoE=%v)",
+					totalKVBlocks, hwConfig.MemoryGiB, tensorParallelism, blockSizeTokens, kvParams.IsMoE)
 			}
 		}
 
@@ -796,6 +704,9 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		if bundle.Scheduler != "" && !cmd.Flags().Changed("scheduler") {
 			scheduler = bundle.Scheduler
 		}
+		if bundle.Preemption.Policy != "" && !cmd.Flags().Changed("preemption-policy") {
+			preemptionPolicy = bundle.Preemption.Policy
+		}
 	}
 
 	// Apply defaults for GAIE-legacy thresholds (not set via CLI flags, only via bundle).
@@ -834,6 +745,9 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 	}
 	if !sim.IsValidScheduler(scheduler) {
 		logrus.Fatalf("Unknown scheduler %q. Valid: %s", scheduler, strings.Join(sim.ValidSchedulerNames(), ", "))
+	}
+	if !sim.IsValidPreemptionPolicy(preemptionPolicy) {
+		logrus.Fatalf("Unknown preemption policy %q. Valid: %s", preemptionPolicy, strings.Join(sim.ValidPreemptionPolicyNames(), ", "))
 	}
 	if !trace.IsValidTraceLevel(traceLevel) {
 		logrus.Fatalf("Unknown trace level %q. Valid: none, decisions", traceLevel)
@@ -905,8 +819,8 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		}
 	}
 
-	logrus.Infof("Policy config: admission=%s, routing=%s, priority=%s, scheduler=%s",
-		admissionPolicy, routingPolicy, priorityPolicy, scheduler)
+	logrus.Infof("Policy config: admission=%s, routing=%s, priority=%s, scheduler=%s, preemption=%s",
+		admissionPolicy, routingPolicy, priorityPolicy, scheduler, preemptionPolicy)
 
 	// Parse scorer configuration for weighted routing
 	var parsedScorerConfigs []sim.ScorerConfig
@@ -965,8 +879,8 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
 	cmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
 	cmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
-	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "roofline", "Latency model backend: roofline (default), blackbox, crossmodel, trained-roofline, trained-physics")
-	cmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for roofline/crossmodel when not set.")
+	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "roofline", "Latency model backend: roofline (default), trained-physics")
+	cmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for analytical backends when not set.")
 
 	// Cluster config
 	cmd.Flags().IntVar(&numInstances, "num-instances", 1, "Number of instances in the cluster")
@@ -982,9 +896,10 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, always-busiest")
 	cmd.Flags().StringVar(&routingScorers, "routing-scorers", "", "Scorer weights for weighted routing (e.g., queue-depth:2,kv-utilization:2,load-balance:1). Default: precise-prefix-cache:2,queue-depth:1,kv-utilization:1")
 
-	// Priority and scheduler config (PR7)
+	// Priority, scheduler, and preemption config
 	cmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based, inverted-slo")
 	cmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf, reverse-priority")
+	cmd.Flags().StringVar(&preemptionPolicy, "preemption-policy", "fcfs", "Preemption victim selection: fcfs (tail-of-batch), priority (least-urgent SLO tier)")
 
 	// Policy bundle config
 	cmd.Flags().StringVar(&policyConfigPath, "policy-config", "", "Path to YAML policy configuration file")
@@ -1039,60 +954,48 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 
 }
 
-// tryAutoCalcKVBlocksBlackbox attempts to auto-calculate KV blocks for blackbox mode.
-// Returns (blocks, true) on success, (0, false) on any failure.
-// Logs warnings for each failure case so the caller can use the fallback value silently.
-func tryAutoCalcKVBlocksBlackbox(model, modelConfigFolder, defaultsFilePath, hwConfigPath, gpu string, tp int, blockSize int64, gpuMemUtil float64, currentBlocks int64) (int64, bool) {
-	resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
-	if err != nil {
-		logrus.Warnf("--latency-model blackbox: could not resolve model config for KV auto-calculation: %v. Using total-kv-blocks=%d", err, currentBlocks)
-		return 0, false
+// applyTimeoutToSpec sets ClientSpec.Timeout and CohortSpec.Timeout on every entry in spec.
+// timeoutSecs>0 converts to µs and sets a deadline; timeoutSecs<=0 sets an explicit *int64(0)
+// (disabled). Explicit zero is required so computeDeadline does not fall back to the 300s
+// session default. Callers must reject timeoutSecs==0 before calling (use negative to disable).
+func applyTimeoutToSpec(spec *workload.WorkloadSpec, timeoutSecs int) {
+	var us int64
+	if timeoutSecs > 0 {
+		us = int64(timeoutSecs) * 1_000_000
 	}
-
-	hfPath := filepath.Join(resolved, "config.json")
-	hfCfg, parseErr := latency.ParseHFConfig(hfPath)
-	if parseErr != nil {
-		logrus.Warnf("--latency-model blackbox: failed to parse %s: %v. Using total-kv-blocks=%d", hfPath, parseErr, currentBlocks)
-		return 0, false
+	for i := range spec.Clients {
+		t := us
+		spec.Clients[i].Timeout = &t
 	}
-
-	mc, mcErr := latency.GetModelConfigFromHF(hfCfg)
-	if mcErr != nil {
-		logrus.Warnf("--latency-model blackbox: failed to extract model config: %v. Using total-kv-blocks=%d", mcErr, currentBlocks)
-		return 0, false
+	for i := range spec.Cohorts {
+		t := us
+		spec.Cohorts[i].Timeout = &t
 	}
-	applyWeightPrecisionFallback(mc, model, hfCfg.Raw)
-
-	resolvedHW, hwErr := resolveHardwareConfig(hwConfigPath, defaultsFilePath)
-	if hwErr != nil {
-		logrus.Warnf("--latency-model blackbox: could not resolve hardware config: %v. Using total-kv-blocks=%d", hwErr, currentBlocks)
-		return 0, false
-	}
-
-	hc, hcErr := latency.GetHWConfig(resolvedHW, gpu)
-	if hcErr != nil {
-		logrus.Warnf("--latency-model blackbox: failed to load hardware config: %v. Using total-kv-blocks=%d", hcErr, currentBlocks)
-		return 0, false
-	}
-	if hc.MemoryGiB <= 0 {
-		logrus.Warnf("--latency-model blackbox: GPU memory not available in hardware config. Using total-kv-blocks=%d", currentBlocks)
-		return 0, false
-	}
-
-	kvParams, kvErr := latency.ExtractKVCapacityParams(hfCfg)
-	if kvErr != nil {
-		logrus.Warnf("--latency-model blackbox: could not extract KV capacity params: %v. Using total-kv-blocks=%d", kvErr, currentBlocks)
-		return 0, false
-	}
-
-	autoBlocks, calcErr := latency.CalculateKVBlocks(*mc, hc, tp, blockSize, gpuMemUtil, kvParams)
-	if calcErr != nil {
-		logrus.Warnf("--latency-model blackbox: KV capacity auto-calculation failed: %v. Using total-kv-blocks=%d", calcErr, currentBlocks)
-		return 0, false
-	}
-
-	return autoBlocks, true
 }
+
+// applyTimeoutToRequests re-applies timeout to already-generated requests and session
+// blueprints. This corrects deadlines for inference_perf specs: spec.Clients is empty
+// when applyTimeoutToSpec runs and is populated inside GenerateWorkload, so the initial
+// deadlines are computed from nil Timeout. Safe to call for all spec types.
+// timeoutSecs>0 sets deadline=ArrivalTime+timeout; timeoutSecs<=0 sets deadline=0 (disabled).
+func applyTimeoutToRequests(wl *workload.GeneratedWorkload, timeoutSecs int) {
+	var timeoutUs int64
+	if timeoutSecs > 0 {
+		timeoutUs = int64(timeoutSecs) * 1_000_000
+	}
+	for _, req := range wl.Requests {
+		if timeoutUs == 0 {
+			req.Deadline = 0
+		} else {
+			req.Deadline = req.ArrivalTime + timeoutUs
+		}
+	}
+	for i := range wl.Sessions {
+		t := timeoutUs
+		wl.Sessions[i].Timeout = &t
+	}
+}
+
 
 // runCmd executes the simulation using parameters from CLI flags
 var runCmd = &cobra.Command{
@@ -1114,7 +1017,7 @@ var runCmd = &cobra.Command{
 		lr := resolveLatencyConfig(cmd)
 
 		// PD disaggregation requires ModelConfig for KV transfer duration derivation.
-		// Analytical backends populate ModelConfig from HF config.json; blackbox does not.
+		// Analytical backends populate ModelConfig from HF config.json.
 		// When PD is enabled and ModelConfig is zero-valued, resolve and load it using the
 		// same resolution as analytical backends (--model-config-folder → local bundled → HuggingFace fetch → error).
 		if prefillInstances > 0 && lr.ModelConfig.NumHeads == 0 {
@@ -1148,7 +1051,7 @@ var runCmd = &cobra.Command{
 		// Per-pool KV auto-calculation: when PD disaggregation is active and a pool
 		// uses different TP or GPU hardware, compute per-pool KV blocks from model + hardware.
 		// Only runs for analytical backends where hardware configs are available.
-		if lr.Backend == "roofline" || lr.Backend == "crossmodel" || lr.Backend == "trained-roofline" || lr.Backend == "trained-physics" {
+		if lr.Backend == "roofline" || lr.Backend == "trained-physics" {
 			if prefillInstances > 0 {
 				hfPath := filepath.Join(modelConfigFolder, "config.json")
 				hfConfig, err := latency.ParseHFConfig(hfPath)
@@ -1177,7 +1080,7 @@ var runCmd = &cobra.Command{
 						} else {
 							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolPrefillTP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool)
 							if calcErr != nil {
-								logrus.Warnf("--prefill-tp/--prefill-hardware: KV capacity auto-calculation failed for prefill pool: %v; prefill pool will use global total-kv-blocks=%d", calcErr, totalKVBlocks)
+								logrus.Fatalf("--prefill-tp/--prefill-hardware: KV capacity auto-calculation failed for prefill pool: %v", calcErr)
 							} else {
 								prefillOverrides.TotalKVBlocks = &poolBlocks
 								logrus.Infof("--prefill-tp/--prefill-hardware: auto-calculated prefill pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d)",
@@ -1211,7 +1114,7 @@ var runCmd = &cobra.Command{
 						} else {
 							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolDecodeTP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool)
 							if calcErr != nil {
-								logrus.Warnf("--decode-tp/--decode-hardware: KV capacity auto-calculation failed for decode pool: %v; decode pool will use global total-kv-blocks=%d", calcErr, totalKVBlocks)
+								logrus.Fatalf("--decode-tp/--decode-hardware: KV capacity auto-calculation failed for decode pool: %v", calcErr)
 							} else {
 								decodeOverrides.TotalKVBlocks = &poolBlocks
 								logrus.Infof("--decode-tp/--decode-hardware: auto-calculated decode pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d)",
@@ -1283,6 +1186,11 @@ var runCmd = &cobra.Command{
 			// If the user did not explicitly set it, leave it at 0 (unbounded) and
 			// require --horizon to bound the run. The existing unbounded-generation
 			// guard will fire with a clear message if neither is provided.
+			// R3: Validate distribution token bounds (shared with distribution mode).
+			if msg := validateDistributionParams(promptTokensMin, promptTokensMax, outputTokensMin, outputTokensMax,
+				promptTokensStdev, outputTokensStdev, promptTokensMean, outputTokensMean); msg != "" {
+				logrus.Fatalf("%s", msg)
+			}
 			concurrencyNumRequests := 0
 			if cmd.Flags().Changed("num-requests") {
 				concurrencyNumRequests = numRequests
@@ -1301,36 +1209,10 @@ var runCmd = &cobra.Command{
 			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
 				logrus.Fatalf("--rate must be a finite value > 0, got %v", rate)
 			}
-			// R3: Standalone validation for distribution token bounds (BC-1, BC-2)
-			if promptTokensMin < 1 {
-				logrus.Fatalf("--prompt-tokens-min must be >= 1, got %d", promptTokensMin)
-			}
-			if promptTokensMax < 1 {
-				logrus.Fatalf("--prompt-tokens-max must be >= 1, got %d", promptTokensMax)
-			}
-			if outputTokensMin < 1 {
-				logrus.Fatalf("--output-tokens-min must be >= 1, got %d", outputTokensMin)
-			}
-			if outputTokensMax < 1 {
-				logrus.Fatalf("--output-tokens-max must be >= 1, got %d", outputTokensMax)
-			}
-			if promptTokensStdev < 0 {
-				logrus.Fatalf("--prompt-tokens-stdev must be >= 0, got %d", promptTokensStdev)
-			}
-			if outputTokensStdev < 0 {
-				logrus.Fatalf("--output-tokens-stdev must be >= 0, got %d", outputTokensStdev)
-			}
-			if promptTokensMin > promptTokensMax {
-				logrus.Fatalf("--prompt-tokens-min (%d) must be <= --prompt-tokens-max (%d)", promptTokensMin, promptTokensMax)
-			}
-			if outputTokensMin > outputTokensMax {
-				logrus.Fatalf("--output-tokens-min (%d) must be <= --output-tokens-max (%d)", outputTokensMin, outputTokensMax)
-			}
-			if promptTokensMean > promptTokensMax || promptTokensMean < promptTokensMin || promptTokensStdev > promptTokensMax || promptTokensStdev < promptTokensMin {
-				logrus.Fatalf("prompt-tokens and prompt-tokens-stdev should be in range [prompt-tokens-min, prompt-tokens-max]")
-			}
-			if outputTokensMean > outputTokensMax || outputTokensMean < outputTokensMin || outputTokensStdev > outputTokensMax || outputTokensStdev < outputTokensMin {
-				logrus.Fatalf("output-tokens and output-tokens-stdev should be in range [output-tokens-min, output-tokens-max]")
+			// R3: Validate distribution token bounds (shared with concurrency mode).
+			if msg := validateDistributionParams(promptTokensMin, promptTokensMax, outputTokensMin, outputTokensMax,
+				promptTokensStdev, outputTokensStdev, promptTokensMean, outputTokensMean); msg != "" {
+				logrus.Fatalf("%s", msg)
 			}
 			spec = workload.SynthesizeFromDistribution(workload.DistributionParams{
 				Rate: rate, NumRequests: numRequests, PrefixTokens: prefixTokens,
@@ -1359,6 +1241,16 @@ var runCmd = &cobra.Command{
 			spec.Seed = seed
 		}
 
+		// Apply per-request timeout to all clients.
+		// For synthesized specs, always apply (default 300s matches the session-client default).
+		// For file-loaded specs, only apply when the flag is explicitly set.
+		if requestTimeoutSecs == 0 {
+			logrus.Fatalf("--timeout must be positive (seconds) or negative to disable; got 0")
+		}
+		if workloadSpecPath == "" || cmd.Flags().Changed("timeout") {
+			applyTimeoutToSpec(spec, requestTimeoutSecs)
+		}
+
 		// Resolve maxRequests: spec.NumRequests as default, CLI --num-requests overrides
 		maxRequests := spec.NumRequests
 		if cmd.Flags().Changed("num-requests") {
@@ -1373,6 +1265,12 @@ var runCmd = &cobra.Command{
 		wl, err := workload.GenerateWorkload(spec, simulationHorizon, maxRequests)
 		if err != nil {
 			logrus.Fatalf("Failed to generate workload: %v", err)
+		}
+		// Re-apply timeout to generated requests and session blueprints.
+		// For inference_perf specs, spec.Clients was empty at applyTimeoutToSpec time
+		// and populated inside GenerateWorkload — deadlines need correction here.
+		if workloadSpecPath == "" || cmd.Flags().Changed("timeout") {
+			applyTimeoutToRequests(wl, requestTimeoutSecs)
 		}
 		preGeneratedRequests = wl.Requests
 		if len(wl.Sessions) > 0 {
@@ -1583,7 +1481,8 @@ var runCmd = &cobra.Command{
 				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
 				ModelHardwareConfig: sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, lr.Backend, maxModelLen),
-				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler),
+				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler, preemptionPolicy),
+				SLOPriorityOverrides: sloPriorityOverrides,
 			},
 			NumInstances:            numInstances,
 			AdmissionPolicy:         admissionPolicy,
@@ -1613,7 +1512,6 @@ var runCmd = &cobra.Command{
 			GAIEQDThreshold:         gaieQDThreshold,
 			GAIEKVThreshold:         gaieKVThreshold,
 			TenantBudgets:           tenantBudgets,
-			SLOPriorityOverrides:    sloPriorityOverrides,
 			FlowControlEnabled:              flowControlEnabled,
 			FlowControlDetector:             flowControlDetector,
 			FlowControlDispatchOrder:        flowControlDispatchOrder,
@@ -1733,7 +1631,7 @@ var runCmd = &cobra.Command{
 		}
 
 		// Print anomaly counters if any detected
-		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 {
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 || rawMetrics.TimedOutRequests > 0 {
 			fmt.Println("=== Anomaly Counters ===")
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
@@ -1750,6 +1648,7 @@ var runCmd = &cobra.Command{
 			}
 			fmt.Printf("Rejected Requests (Routing): %d\n", rawMetrics.RoutingRejections)
 			fmt.Printf("Dropped Unservable: %d\n", rawMetrics.DroppedUnservable)
+			fmt.Printf("Timed Out Requests: %d\n", rawMetrics.TimedOutRequests)
 			fmt.Printf("Length-Capped Requests: %d\n", rawMetrics.LengthCappedRequests)
 			if rawMetrics.GatewayQueueDepth > 0 {
 				fmt.Printf("Gateway Queue Depth (horizon): %d\n", rawMetrics.GatewayQueueDepth)
@@ -1773,6 +1672,10 @@ var runCmd = &cobra.Command{
 		// Print per-tenant fairness metrics if any request carries a tenant label (Phase 1B-2b, FR-010)
 		perTenantMetrics := cluster.ComputePerTenantMetrics(cs.AggregatedMetrics())
 		printPerTenantMetrics(os.Stdout, perTenantMetrics)
+
+		// Print session metrics if any request carries a session label (#1058)
+		sessionMetrics := cluster.ComputeSessionMetrics(cs.AggregatedMetrics())
+		printSessionMetrics(os.Stdout, sessionMetrics)
 
 		// Print PD disaggregation metrics if disaggregation was active (PR4)
 		printPDMetrics(os.Stdout, rawMetrics.PD, config.PDTransferContention)
@@ -1886,6 +1789,28 @@ func printPerTenantMetrics(w io.Writer, perTenantMetrics map[string]*cluster.Ten
 	_, _ = fmt.Fprintf(w, "  Jain Fairness Index: %.4f\n", jain)
 }
 
+// printSessionMetrics writes the session metrics section to w.
+// No-op when sm is nil (single-turn workloads produce no session output).
+func printSessionMetrics(w io.Writer, sm *cluster.SessionMetrics) {
+	if sm == nil {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "=== Session Metrics ===")
+	_, _ = fmt.Fprintf(w, "  Sessions: %d\n", sm.SessionCount)
+	if sm.TTFTCold.Count > 0 {
+		_, _ = fmt.Fprintf(w, "  TTFT cold (round 0): mean=%.2f p50=%.2f p95=%.2f p99=%.2f ms (n=%d)\n",
+			sm.TTFTCold.Mean, sm.TTFTCold.P50, sm.TTFTCold.P95, sm.TTFTCold.P99, sm.TTFTCold.Count)
+	}
+	if sm.TTFTWarm.Count > 0 {
+		_, _ = fmt.Fprintf(w, "  TTFT warm (round≥1): mean=%.2f p50=%.2f p95=%.2f p99=%.2f ms (n=%d)\n",
+			sm.TTFTWarm.Mean, sm.TTFTWarm.P50, sm.TTFTWarm.P95, sm.TTFTWarm.P99, sm.TTFTWarm.Count)
+	}
+	if sm.SessionDuration.Count > 0 {
+		_, _ = fmt.Fprintf(w, "  Session duration:    mean=%.2f p50=%.2f p95=%.2f p99=%.2f ms (n=%d)\n",
+			sm.SessionDuration.Mean, sm.SessionDuration.P50, sm.SessionDuration.P95, sm.SessionDuration.P99, sm.SessionDuration.Count)
+	}
+}
+
 // printPDMetrics prints the PD disaggregation metrics section when disaggregation was active.
 // No-op when pd is nil (disaggregation inactive). When contentionEnabled, also prints
 // peak concurrent transfers and mean transfer queue depth.
@@ -1945,6 +1870,7 @@ func init() {
 	runCmd.Flags().IntVar(&outputTokensMin, "output-tokens-min", defaultOutputMin, "Min Output Token Count")
 	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", defaultOutputMax, "Max Output Token Count")
 	runCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "Path to YAML workload specification file (overrides --workload)")
+	runCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "Per-request deadline in seconds (default 300s matches the session-client default in computeDeadline). Negative = disabled; 0 is rejected. Consistent with blis observe: both commands reject 0.")
 
 	// Run-specific export
 	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")

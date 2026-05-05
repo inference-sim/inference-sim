@@ -73,7 +73,7 @@ func TestTimeout_QueuedRequest_TimesOut(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(1, 2048, 0), // max 1 running request — forces queuing
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}), // zero alpha = no queueing delay
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, "roofline", 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -107,7 +107,7 @@ func TestTimeout_CompletedRequest_NoOp(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, "roofline", 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -138,7 +138,7 @@ func TestTimeout_CompletionWinsAtEqualTimestamp(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 0, 0}, []float64{0, 0, 0}), // step time = beta0 = 1000µs, no per-token cost
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, "roofline", 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -206,7 +206,7 @@ func TestTimeout_RunningRequest_StateAndBatchCleanup(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{5000, 10, 5}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, "roofline", 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -245,7 +245,7 @@ func TestTimeout_PreemptThenTimeout_SafeNoOp(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(5, 16, 0, 0, 0, 0), // tiny KV: 5 blocks = 80 tokens
 		BatchConfig:         NewBatchConfig(2, 2048, 0),            // batch size 2
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, "roofline", 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -303,7 +303,7 @@ func TestTimeout_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, "roofline", 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -359,7 +359,7 @@ func TestTimeout_OrphanedTimeout_MultipleOrphans_NoneInflateClock(t *testing.T) 
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, "roofline", 0),
 	}
 	sim := mustNewSimulator(t, cfg)
 
@@ -446,9 +446,16 @@ func TestTimeout_CascadeDoesNotCreateOrphanedStepEvents(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(4, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10_000, 16),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{float64(stepTimeTicks), 0, 0}, []float64{0, 0, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test", "H100", 1, "roofline", 0),
 	}
-	sim := mustNewSimulator(t, cfg)
+	// Use a fixed-step-time latency model to get deterministic 10ms steps,
+	// independent of the roofline model's FLOPs/bandwidth calculation.
+	kvStore := MustNewKVStoreFromConfig(cfg.KVCacheConfig)
+	latencyModel := &fixedStepModel{stepTime: stepTimeTicks}
+	sim, err := NewSimulator(cfg, kvStore, latencyModel)
+	if err != nil {
+		t.Fatalf("NewSimulator: %v", err)
+	}
 
 	for i := 0; i < numRequests; i++ {
 		deadline := deadlineTicks

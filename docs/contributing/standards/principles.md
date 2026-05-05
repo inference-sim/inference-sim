@@ -90,7 +90,7 @@ Every piece of documentation lives in exactly one canonical location. Other file
 | Content | Canonical Source | Working Copies |
 |---------|-----------------|----------------|
 | Antipattern rules (R1-R23) | `docs/contributing/standards/rules.md` | CLAUDE.md (pointer), CONTRIBUTING.md (checklist), `.github/PULL_REQUEST_TEMPLATE.md` (PR checklist), `docs/contributing/templates/micro-plan-prompt.md` (Phase 8 checklist), `docs/contributing/templates/micro-plan.md` (Phase 8 checklist), `docs/contributing/index.md` (landing page table), `docs/guide/skills-and-plugins.md` (rules count) |
-| System invariants (INV-1–INV-11) | `docs/contributing/standards/invariants.md` | CLAUDE.md (summary), `docs/concepts/core-engine.md` (formulas), `docs/concepts/architecture.md` (signal freshness) |
+| System invariants (INV-1–INV-12) | `docs/contributing/standards/invariants.md` | CLAUDE.md (summary), `docs/concepts/core-engine.md` (formulas), `docs/concepts/architecture.md` (signal freshness) |
 | Engineering principles | `docs/contributing/standards/principles.md` | CLAUDE.md (summary) |
 | Agent trust boundaries | `docs/contributing/standards/agent-trust.md` | CLAUDE.md (pointer), `docs/contributing/index.md` (landing page table) |
 | Extension recipes (policies, scorers, KV tiers) | `docs/contributing/extension-recipes.md` | — |

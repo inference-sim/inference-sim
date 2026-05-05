@@ -590,6 +590,35 @@ func TestWorkloadSpec_Validate_WeibullCVOutOfRange_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestWorkloadSpec_Validate_WeibullHighCV_WithExplicitShapeScale_Passes(t *testing.T) {
+	// GIVEN a Weibull arrival with CV far exceeding [0.01, 10.4] but
+	// explicit MLE-fitted shape/scale provided (ServeGen pattern).
+	// CV is informational only when shape/scale are present.
+	cv := 173.81
+	shape := 0.0575
+	scale := 0.000573
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID:           "c1",
+			RateFraction: 1.0,
+			Arrival: ArrivalSpec{
+				Process: "weibull",
+				CV:      &cv,
+				Shape:   &shape,
+				Scale:   &scale,
+			},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	err := spec.Validate()
+	if err != nil {
+		t.Errorf("expected no error for high-CV Weibull with explicit shape/scale, got: %v", err)
+	}
+}
+
 func TestValidate_ConcurrencyClient_AcceptsZeroRateFraction(t *testing.T) {
 	spec := &WorkloadSpec{
 		Version:  "2",
@@ -643,6 +672,61 @@ func TestValidate_NegativeConcurrency_Rejects(t *testing.T) {
 	err := spec.Validate()
 	if err == nil {
 		t.Error("expected error for negative concurrency")
+	}
+}
+
+func TestValidate_LifecycleNoWindows_Rejects(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version: "2", AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID: "bad", RateFraction: 1.0,
+			Arrival:   ArrivalSpec{Process: "poisson"},
+			InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+			Lifecycle:  &LifecycleSpec{Windows: []ActiveWindow{}},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Error("expected error for lifecycle with no windows")
+	}
+}
+
+func TestValidate_LifecycleNegativeStartUs_Rejects(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version: "2", AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID: "bad", RateFraction: 1.0,
+			Arrival:   ArrivalSpec{Process: "poisson"},
+			InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+			Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{{StartUs: -1, EndUs: 1_000_000}},
+			},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Error("expected error for lifecycle window with negative start_us")
+	}
+}
+
+func TestValidate_LifecycleEndUsNotGreaterThanStartUs_Rejects(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version: "2", AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID: "bad", RateFraction: 1.0,
+			Arrival:   ArrivalSpec{Process: "poisson"},
+			InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+			Lifecycle: &LifecycleSpec{
+				Windows: []ActiveWindow{{StartUs: 1_000_000, EndUs: 1_000_000}},
+			},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Error("expected error for lifecycle window with end_us == start_us")
 	}
 }
 
@@ -763,6 +847,347 @@ func TestValidate_ConcurrencyClient_NoArrivalField_Accepted(t *testing.T) {
 	}
 	if err := spec.Validate(); err != nil {
 		t.Errorf("expected valid spec for concurrency client without arrival field, got: %v", err)
+	}
+}
+
+func TestWorkloadSpec_Validate_InfShape_ReturnsError(t *testing.T) {
+	// BC-11: +Inf shape bypasses > 0 check but creates degenerate samplers (R3 compliance)
+	infShape := math.Inf(1)
+	scale := 0.5
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID:           "c1",
+			RateFraction: 1.0,
+			Arrival: ArrivalSpec{
+				Process: "gamma",
+				Shape:   &infShape,
+				Scale:   &scale,
+			},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected error for +Inf shape parameter")
+	}
+	if !strings.Contains(err.Error(), "shape") && !strings.Contains(err.Error(), "finite") {
+		t.Errorf("error should mention shape and finite: %v", err)
+	}
+}
+
+func TestWorkloadSpec_Validate_InfScale_ReturnsError(t *testing.T) {
+	// BC-11: +Inf scale bypasses > 0 check but creates degenerate samplers (R3 compliance)
+	shape := 1.5
+	infScale := math.Inf(1)
+	spec := &WorkloadSpec{
+		Version:       "2",
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID:           "c1",
+			RateFraction: 1.0,
+			Arrival: ArrivalSpec{
+				Process: "weibull",
+				Shape:   &shape,
+				Scale:   &infScale,
+			},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	err := spec.Validate()
+	if err == nil {
+		t.Fatal("expected error for +Inf scale parameter")
+	}
+	if !strings.Contains(err.Error(), "scale") && !strings.Contains(err.Error(), "finite") {
+		t.Errorf("error should mention scale and finite: %v", err)
+	}
+}
+
+func TestWorkloadSpec_YAML_ShapeScaleRoundTrip(t *testing.T) {
+	// BC-12: Shape and Scale fields round-trip through YAML with KnownFields(true)
+	cv := 2.5
+	shape := 0.16
+	scale := 6250000.0 // microseconds
+	original := &WorkloadSpec{
+		Version:       "2",
+		Category:      "language",
+		AggregateRate: 100.0,
+		Clients: []ClientSpec{{
+			ID:           "c1",
+			RateFraction: 1.0,
+			Arrival: ArrivalSpec{
+				Process: "gamma",
+				CV:      &cv,
+				Shape:   &shape,
+				Scale:   &scale,
+			},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+
+	// Marshal to YAML
+	var buf bytes.Buffer
+	encoder := yaml.NewEncoder(&buf)
+	if err := encoder.Encode(original); err != nil {
+		t.Fatalf("encode error: %v", err)
+	}
+	yamlBytes := buf.Bytes()
+
+	// Unmarshal with KnownFields(true) to catch typos
+	var decoded WorkloadSpec
+	decoder := yaml.NewDecoder(bytes.NewReader(yamlBytes))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&decoded); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+
+	// Verify Shape and Scale round-tripped correctly
+	if decoded.Clients[0].Arrival.Shape == nil {
+		t.Fatal("Shape not round-tripped")
+	}
+	if decoded.Clients[0].Arrival.Scale == nil {
+		t.Fatal("Scale not round-tripped")
+	}
+	if *decoded.Clients[0].Arrival.Shape != shape {
+		t.Errorf("Shape = %f, want %f", *decoded.Clients[0].Arrival.Shape, shape)
+	}
+	if *decoded.Clients[0].Arrival.Scale != scale {
+		t.Errorf("Scale = %f, want %f", *decoded.Clients[0].Arrival.Scale, scale)
+	}
+	// Verify CV also round-tripped
+	if decoded.Clients[0].Arrival.CV == nil || *decoded.Clients[0].Arrival.CV != cv {
+		t.Errorf("CV = %v, want %f", decoded.Clients[0].Arrival.CV, cv)
+	}
+}
+
+func TestValidateCohort_ShapeScaleValidation(t *testing.T) {
+	// Exercise the cohort path (Cohorts field) for the new shape/scale validation logic.
+	// Ensures validateCohort applies the same guards as validateClient.
+	tests := []struct {
+		name      string
+		process   string
+		cv        *float64
+		shape     *float64
+		scale     *float64
+		wantError bool
+		errorText string
+	}{
+		{
+			name:      "weibull_high_cv_with_both_params_passes",
+			process:   "weibull",
+			cv:        ptrFloat64(173.81),
+			shape:     ptrFloat64(0.05),
+			scale:     ptrFloat64(1000000.0),
+			wantError: false,
+		},
+		{
+			name:      "weibull_high_cv_shape_only_cv_check_fires",
+			process:   "weibull",
+			cv:        ptrFloat64(173.81),
+			shape:     ptrFloat64(0.05),
+			scale:     nil, // Missing scale → CV check applies
+			wantError: true,
+			errorText: "CV",
+		},
+		{
+			name:      "inf_shape_in_cohort_returns_error",
+			process:   "gamma",
+			cv:        ptrFloat64(2.5),
+			shape:     ptrFloat64(math.Inf(1)),
+			scale:     ptrFloat64(50000.0),
+			wantError: true,
+			errorText: "finite",
+		},
+		{
+			name:      "inf_scale_in_cohort_returns_error",
+			process:   "weibull",
+			cv:        ptrFloat64(1.5),
+			shape:     ptrFloat64(1.5),
+			scale:     ptrFloat64(math.Inf(1)),
+			wantError: true,
+			errorText: "finite",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := &WorkloadSpec{
+				Version:       "2",
+				AggregateRate: 100.0,
+				Cohorts: []CohortSpec{{
+					ID:           "cohort1",
+					RateFraction: 1.0,
+					Population:   100,
+					Arrival: ArrivalSpec{
+						Process: tc.process,
+						CV:      tc.cv,
+						Shape:   tc.shape,
+						Scale:   tc.scale,
+					},
+					InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+					OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+				}},
+			}
+			err := spec.Validate()
+			if tc.wantError {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", tc.errorText)
+				}
+				if !strings.Contains(err.Error(), tc.errorText) {
+					t.Errorf("error should contain %q: %v", tc.errorText, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestActiveWindow_PerWindowParameters(t *testing.T) {
+	yamlData := `
+version: "2"
+aggregate_rate: 100
+clients:
+  - id: "test-client"
+    rate_fraction: 1.0
+    arrival:
+      process: "poisson"
+    input_distribution:
+      type: "constant"
+      params: {value: 100}
+    output_distribution:
+      type: "constant"
+      params: {value: 50}
+    lifecycle:
+      windows:
+        - start_us: 0
+          end_us: 10000000
+          trace_rate: 15.2
+          arrival:
+            process: "gamma"
+            shape: 1.5
+            scale: 50000
+          input_distribution:
+            type: "constant"
+            params: {value: 200}
+          output_distribution:
+            type: "constant"
+            params: {value: 75}
+`
+	var spec WorkloadSpec
+	err := yaml.Unmarshal([]byte(yamlData), &spec)
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+
+	if len(spec.Clients) != 1 {
+		t.Fatalf("clients count = %d, want 1", len(spec.Clients))
+	}
+	if spec.Clients[0].Lifecycle == nil {
+		t.Fatal("lifecycle is nil")
+	}
+	if len(spec.Clients[0].Lifecycle.Windows) != 1 {
+		t.Fatalf("windows count = %d, want 1", len(spec.Clients[0].Lifecycle.Windows))
+	}
+
+	window := spec.Clients[0].Lifecycle.Windows[0]
+	if window.StartUs != 0 {
+		t.Errorf("StartUs = %d, want 0", window.StartUs)
+	}
+	if window.EndUs != 10000000 {
+		t.Errorf("EndUs = %d, want 10000000", window.EndUs)
+	}
+
+	// TraceRate
+	if window.TraceRate == nil {
+		t.Fatal("TraceRate is nil, want 15.2")
+	}
+	if *window.TraceRate != 15.2 {
+		t.Errorf("TraceRate = %f, want 15.2", *window.TraceRate)
+	}
+
+	// Arrival
+	if window.Arrival == nil {
+		t.Fatal("Arrival is nil")
+	}
+	if window.Arrival.Process != "gamma" {
+		t.Errorf("Arrival.Process = %q, want %q", window.Arrival.Process, "gamma")
+	}
+	if window.Arrival.Shape == nil {
+		t.Fatal("Arrival.Shape is nil")
+	}
+	if *window.Arrival.Shape != 1.5 {
+		t.Errorf("Arrival.Shape = %f, want 1.5", *window.Arrival.Shape)
+	}
+
+	// InputDist
+	if window.InputDist == nil {
+		t.Fatal("InputDist is nil")
+	}
+	if window.InputDist.Type != "constant" {
+		t.Errorf("InputDist.Type = %q, want %q", window.InputDist.Type, "constant")
+	}
+	if window.InputDist.Params["value"] != 200.0 {
+		t.Errorf("InputDist.Params[value] = %f, want 200.0", window.InputDist.Params["value"])
+	}
+
+	// OutputDist
+	if window.OutputDist == nil {
+		t.Fatal("OutputDist is nil")
+	}
+	if window.OutputDist.Type != "constant" {
+		t.Errorf("OutputDist.Type = %q, want %q", window.OutputDist.Type, "constant")
+	}
+	if window.OutputDist.Params["value"] != 75.0 {
+		t.Errorf("OutputDist.Params[value] = %f, want 75.0", window.OutputDist.Params["value"])
+	}
+}
+
+func TestActiveWindow_PerWindowParameters_OmittedFieldsAreNil(t *testing.T) {
+	// When per-window parameters are omitted, they should be nil (use client-level).
+	yamlData := `
+version: "2"
+aggregate_rate: 100
+clients:
+  - id: "test-client"
+    rate_fraction: 1.0
+    arrival:
+      process: "poisson"
+    input_distribution:
+      type: "constant"
+      params: {value: 100}
+    output_distribution:
+      type: "constant"
+      params: {value: 50}
+    lifecycle:
+      windows:
+        - start_us: 0
+          end_us: 5000000
+`
+	var spec WorkloadSpec
+	err := yaml.Unmarshal([]byte(yamlData), &spec)
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+
+	window := spec.Clients[0].Lifecycle.Windows[0]
+	if window.TraceRate != nil {
+		t.Errorf("TraceRate = %v, want nil for omitted field", window.TraceRate)
+	}
+	if window.Arrival != nil {
+		t.Errorf("Arrival = %v, want nil for omitted field", window.Arrival)
+	}
+	if window.InputDist != nil {
+		t.Errorf("InputDist = %v, want nil for omitted field", window.InputDist)
+	}
+	if window.OutputDist != nil {
+		t.Errorf("OutputDist = %v, want nil for omitted field", window.OutputDist)
 	}
 }
 

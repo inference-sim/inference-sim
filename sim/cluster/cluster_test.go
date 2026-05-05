@@ -27,7 +27,7 @@ func newTestDeploymentConfig(numInstances int) DeploymentConfig {
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 1, "roofline", 0),
 		},
 		NumInstances:     numInstances,
 		CacheSignalDelay: DefaultCacheSignalDelay,
@@ -65,8 +65,8 @@ func TestDeploymentConfig_ToSimConfig_ReturnsEmbeddedSimConfig(t *testing.T) {
 			KVCacheConfig:       sim.NewKVCacheConfig(500, 32, 0, 0, 0, 42),
 			BatchConfig:         sim.NewBatchConfig(128, 4096, 512),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 2, "roofline", 0),
-			PolicyConfig:        sim.NewPolicyConfig("slo-based", "priority-fcfs"),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 2, "roofline", 0),
+			PolicyConfig:        sim.NewPolicyConfig("slo-based", "priority-fcfs", ""),
 		},
 		NumInstances:    3,
 		AdmissionPolicy: "token-bucket",
@@ -143,7 +143,7 @@ func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
 					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
 					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
 					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
-					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, "blackbox", 0),
+					ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, "roofline", 0),
 				},
 				NumInstances: 1,
 			}
@@ -193,7 +193,7 @@ func TestClusterSimulator_SingleInstance_GoldenInvariants(t *testing.T) {
 					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
 					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
 					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
-					ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, tc.Model, tc.Hardware, tc.TP, "blackbox", 0),
+					ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, "roofline", 0),
 				},
 				NumInstances: 1,
 			}
@@ -1574,7 +1574,7 @@ func TestClusterSimulator_MaxModelLen_DroppedUnservable(t *testing.T) {
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}), // zero alpha
-			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, "blackbox", maxModelLen),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, "roofline", maxModelLen),
 		},
 		NumInstances: 2,
 	}
@@ -1832,7 +1832,7 @@ func TestNewClusterSimulator_UsesPoolGPUType(t *testing.T) {
 	sharedConfig := sim.SimConfig{
 		Horizon:             1_000_000,
 		Seed:                42,
-		ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 1, "roofline", 0),
 		KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         sim.NewBatchConfig(4, 2048, 0),
 		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
@@ -2188,7 +2188,7 @@ func TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType(t *testing.T) {
 		SimConfig: sim.SimConfig{
 			Horizon:             1_000_000,
 			Seed:                42,
-			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test-model", "H100", 1, "blackbox", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 1, "roofline", 0),
 			KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(4, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
@@ -2257,7 +2257,7 @@ func TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType(t *testing.T) {
 
 // TestClusterSimulator_SessionTerminalStateCompleteness verifies INV-11 (BC-3):
 // every session reaches exactly one terminal state after ClusterSimulator.Run().
-// With the default blackbox latency model and a 500s horizon, all sessions
+// With the default roofline latency model and a 500s horizon, all sessions
 // complete normally (sessionCompleted path). This exercises the full DES
 // pipeline: seed injected → rounds executed → OnComplete returns nil exactly once.
 // Uses a set (not a counter) to prevent two-bugs-cancel false pass scenarios.
@@ -2746,7 +2746,7 @@ func TestClusterSimulator_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, "roofline", 0),
 		},
 		NumInstances: 2,
 	}
@@ -2812,7 +2812,7 @@ func TestClusterSimulator_MixedOrphanedAndGenuineTimeout_CorrectMetrics(t *testi
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(1, 2048, 0), // max 1 running — forces queuing
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(sim.ModelConfig{}, sim.HardwareCalib{}, "test", "H100", 1, "blackbox", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, "roofline", 0),
 		},
 		NumInstances: 1,
 	}

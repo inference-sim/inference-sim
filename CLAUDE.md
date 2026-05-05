@@ -62,6 +62,12 @@ go build -o blis main.go
   --rate 10 --num-requests 100 --output-tokens 2048 --min-tokens 2048 \
   --trace-header trace.yaml --trace-data trace.csv
 
+# Observe closed-loop with lognormal think-time distribution (requires --concurrency)
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --concurrency 10 --num-requests 100 \
+  --think-time-dist "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s" \
+  --trace-header trace.yaml --trace-data trace.csv
+
 # Observe with ITL (inter-token latency) recording for streaming requests
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --workload chatbot --rate 10 --num-requests 100 \
@@ -166,6 +172,7 @@ Full details (verification strategies, evidence): see [`docs/contributing/standa
 - **INV-9 Oracle knowledge boundary**: Servability decisions (enqueue guard, admission, routing, priority) must not read `Request.OutputTokens`. The control plane uses `MaxOutputLen` (client budget) or input-only checks. Only the execution engine may access `OutputTokens` for token generation and completion detection. See `docs/contributing/standards/invariants.md`.
 - **INV-10 Session causality**: For all rounds N in a closed-loop session: `round[N+1].ArrivalTime >= round[N].CompletionTime + ThinkTimeUs`. See `docs/contributing/standards/invariants.md`.
 - **INV-11 Session completeness**: Every session reaches exactly one terminal state: completed, cancelled, horizon-interrupted, or budget-exhausted (concurrency mode: global request cap reached). No session is silently abandoned. See `docs/contributing/standards/invariants.md`.
+- **INV-12 Phase 1 Completeness**: After Phase 1 of `FormBatch`, every non-preempted running request in decode phase has `NumNewTokens > 0`. No request silently skipped due to index drift from non-tail eviction. Trivially satisfied for FCFS. See `docs/contributing/standards/invariants.md`.
 
 ### Engineering Principles
 
@@ -267,7 +274,9 @@ For the full annotated file tree, see [`docs/reference/project-structure.md`](do
 
 ### Latency Estimation
 
-Five latency model modes (roofline, blackbox, cross-model, trained-roofline, trained-physics), selected via `--latency-model` flag. **Trained-physics** is the recommended default for new models. **Trained-roofline, crossmodel, and blackbox are deprecated** and will be removed in a future version.
+Two latency model modes (roofline, trained-physics), selected via `--latency-model` flag. **Trained-physics** is the recommended default for new models.
+
+**Migration note:** The deprecated `blackbox`, `crossmodel`, and `trained-roofline` backends have been removed. Use `--latency-model trained-physics` for modern physics-informed estimation with MoE-aware overhead modeling.
 
 **Trained-physics model**: Roofline basis functions with learned correction coefficients. Generalizes across model architectures, workloads, and TP configurations. No per-model calibration needed.
 
@@ -284,7 +293,7 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 ### Standards (what rules apply)
 
 - `docs/contributing/standards/rules.md`: **23 antipattern rules** (R1-R23) — each with evidence, checks, enforcement locations
-- `docs/contributing/standards/invariants.md`: **11 system invariants** (INV-1 through INV-11) — with verification strategies
+- `docs/contributing/standards/invariants.md`: **12 system invariants** (INV-1 through INV-12) — with verification strategies
 - `docs/contributing/standards/principles.md`: **Engineering principles** — separation of concerns, interface design, BDD/TDD
 - `docs/contributing/standards/experiments.md`: **Experiment standards** — hypothesis families (6 families × type classification), rigor requirements, root cause verification (RCV-1 through RCV-6), iterative review protocol (summary; see `docs/contributing/convergence.md`), findings classification
 - `docs/contributing/standards/agent-trust.md`: **Agent trust boundaries** — three trust tiers (Trusted, Verify-after, Never-trust) for agent operations, with known failure modes
@@ -315,6 +324,12 @@ Request processing pipeline: Arrival → Admission → Routing → WaitQueue →
 - In-memory node/GPU inventory maps; no external storage
 
 ## Recent Changes
+- SLO priority override threading (#1170): `SLOPriorityOverrides` field moved from `DeploymentConfig` to `SimConfig`, enabling policy bundle `slo_priorities` to reach `NewBatchFormation` for priority preemption. Previously custom SLO priorities only affected admission (tier-shed, GAIE-legacy); now they also affect `--preemption-policy priority` victim selection. `simulator.go` changed from `NewBatchFormation(cfg.PreemptionPolicy, nil)` to `NewBatchFormation(cfg.PreemptionPolicy, NewSLOPriorityMap(cfg.SLOPriorityOverrides))`. Field promoted via Go struct embedding — cluster.go:181 access unchanged.
+- **BREAKING**: ServeGen temporal parity (#1124): `blis convert servegen` now produces `aggregate_rate: 0` (absolute rate mode) instead of a scalar peak value. Per-window `trace_rate` values are used directly as arrival rates, preserving ServeGen's temporal variation. Workloads generated before this change used proportional allocation with fixed aggregate rate, causing 13-18% over-generation at non-peak periods. New format: each window's `trace_rate` is the absolute rate in requests/second for that window. Validation now allows `aggregate_rate=0` when all rate-based clients have explicit per-window `trace_rate`. Added `--time` flag for temporal snapshot extraction (midnight/morning/afternoon). Lognormal distribution fitting reduces file size 100x vs empirical PMFs.
+- Priority preemption mode (#1169): `--preemption-policy priority` evicts the least-urgent running request (min SLOPriorityMap value) under KV pressure instead of the batch tail. `selectPriorityVictim()`: `min(SLOPriority)` with `max(ArrivalTime)` tiebreak — analog of vLLM `scheduler.py:827-829` `max(priority, arrival_time)` with inverted convention. Phase 1 index adjustment (`reqIndex -= adj`) prevents element skipping after non-tail eviction (INV-12, analog of vLLM `scheduler.py:853` `req_index -= 1`). `NewBatchFormation(preemptionPolicy, sloMap)` 2-arg constructor; `nil` sloMap → `DefaultSLOPriorityMap()`.
+- --preemption-policy flag (#1168): `--preemption-policy` (default `fcfs`) selects preemption victim strategy. Valid: `fcfs` (tail-of-batch, matches vLLM FCFS), `priority` (least-urgent SLO tier; wired in #1169). Registered on both `blis run` and `blis replay`. Bundle `preemption.policy` field overrides CLI default when flag not explicitly set. `PreemptionPolicy` type (`sim/batch_formation.go`) + `PreemptionConfig` (`sim/bundle.go`); `PolicyConfig.PreemptionPolicy` field + 3-arg `NewPolicyConfig()` in `sim/config.go`.
+- blis run --timeout flag (#1127): `--timeout` (seconds, default `300`) overrides per-request deadline for all synthesized clients. Default 300s matches the session-client default in `computeDeadline` (preserves `UnlimitedRounds` termination). Negative value disables the deadline (explicit `*0` suppresses the 300s fallback); `0` is rejected as invalid — consistent with `blis observe` which also rejects `<= 0`. File-loaded `--workload-spec` clients are only overridden when `--timeout` is explicitly set. `blis observe` has its own `--timeout` (HTTP client timeout, default 300s, configurable via #1118; rejects `<= 0`). `blis replay` has no HTTP client and no `--timeout` flag.
+- fix(observe): streaming timeout status + configurable timeout (#1118): `blis observe` now correctly sets `status=timeout` (not silent `ok`) when HTTP client timeout fires during streaming, non-streaming body read, or HTTP round-trip. New `--timeout` flag (seconds, default 300) configures per-request HTTP timeout. `isTimeoutError()` helper checks both `os.IsTimeout()` and `context.DeadlineExceeded` for robust detection. Three error paths fixed: `httpClient.Do`, `handleStreamingResponse` scanner error, `handleNonStreamingResponse` body read.
 - Workload-level aggregate metrics in calibration (#1084): `MetricComparison` extended with `RealMean`, `SimMean`, `RealMedian`, `SimMedian`, `MeanError`, `MeanPercentError`, `MedianError`, `MedianPercentError`. CLI summary logs include `MeanError=±Xµs (±Y%)` alongside existing MAPE/PearsonR/quality. JSON report auto-includes new fields. Mean computed via single-pass sum; median aliased from P50. Division-by-zero guarded for degenerate inputs (R11, R20).
 - GAIE-legacy saturation-based admission (#1014): `gaie-legacy` admission policy replicates production llm-d/GAIE admission behavior. Saturation formula: `avg(max(qd/qdThreshold, kvUtil/kvThreshold))` across instances. Non-sheddable requests (priority >= 0) always pass; sheddable requests (priority < 0) rejected when saturation >= 1.0. Defaults: `gaie_qd_threshold=5`, `gaie_kv_threshold=0.8`. Empty pool → saturation=1.0 (conservative). Configured via policy bundle YAML only. Per-tier shed counter (`shedByTier`) now tracks all tier-aware admission rejections unconditionally.
 - Configurable SLO tier priorities (#1013): `SLOPriorityMap` type replaces hardcoded `SLOTierPriority()`. GAIE-compatible defaults: critical=4, standard=3, batch=-1, sheddable=-2, background=-3. `IsSheddable(class)` returns `priority < 0` (matches llm-d `sheddable.go`). Configurable via policy bundle YAML `slo_priorities` in `AdmissionConfig` (e.g., `admission: { slo_priorities: { batch: 0 } }` to make batch non-sheddable). Tenant budget enforcement uses `IsSheddable()` instead of hardcoded priority threshold. `TierShedMinPriority` validation removed (GAIE priorities are unbounded integers).

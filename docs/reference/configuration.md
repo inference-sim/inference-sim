@@ -23,15 +23,13 @@ The general precedence (CLI → YAML → hardcoded) applies everywhere, but each
 **Latency coefficients** (`--alpha-coeffs`, `--beta-coeffs`):
 
 1. Explicit CLI flags — if passed, used directly (no `defaults.yaml` lookup)
-2. `defaults.yaml` `models[]` entry — matched by model/GPU/TP/vllm-version (blackbox mode)
-3. Analytical computation — roofline, crossmodel, or trained-roofline backends compute from architecture + hardware specs
-4. Error — blackbox mode with no matching entry exits with an error
+2. Analytical computation — roofline or trained-physics backends compute from architecture + hardware specs
 
 **Hardware and TP** (`--hardware`, `--tp`, `--vllm-version`):
 
 1. Explicit CLI flags
 2. `defaults.yaml` `defaults[]` entry — matched by `--model`
-3. Error — roofline/crossmodel/trained-roofline require these values; blackbox fails at coefficient lookup
+3. Error — roofline/trained-physics require these values
 
 **KV cache blocks** (`--total-kv-blocks`): See the detailed [Resolution Process](#resolution-process) below — three layers: CLI flag, auto-calculation, or 1M default.
 
@@ -45,7 +43,7 @@ The general precedence (CLI → YAML → hardcoded) applies everywhere, but each
 !!! note
     `--seed`, `--horizon`, and `--num-requests` are exceptions — they override the workload-spec YAML values even when `--workload-spec` is set. `--rate` does NOT override `aggregate_rate` in the YAML (see [Common Pitfalls](#common-pitfalls)).
 
-**Routing, admission, and scheduling** (`--routing-policy`, `--admission-policy`, `--scheduler`, etc.):
+**Routing, admission, scheduling, and preemption** (`--routing-policy`, `--admission-policy`, `--scheduler`, `--preemption-policy`, etc.):
 
 1. Explicit CLI flags
 2. `--policy-config` YAML bundle — loads all policy settings from one file
@@ -82,7 +80,7 @@ All internal timestamps in the DES (arrival time, schedule time, completion time
 
 **`aggregate_rate` override for inference-perf specs.** When converting inference-perf specs via `blis convert infperf`, per-stage rates in the spec override a user-specified `aggregate_rate`. If the sum of stage rates differs from `aggregate_rate`, BLIS logs a warning and uses the stage-rate sum. This prevents silent rate scaling errors.
 
-**`--total-kv-blocks` phantom default.** The CLI default is 1,000,000 blocks, but this value almost never takes effect. For all latency backends (roofline, crossmodel, trained-roofline, trained-physics, blackbox), auto-calculation from model architecture and GPU memory supersedes it when a HuggingFace `config.json` is available and the hardware config specifies `MemoryGiB`. The 1M default is a last-resort fallback — if your simulation uses it, check whether auto-calculation is failing (missing `config.json`, missing `MemoryGiB`, or unsupported model architecture).
+**`--total-kv-blocks` phantom default.** The CLI default is 1,000,000 blocks, but this value almost never takes effect. For all latency backends (roofline, trained-physics), auto-calculation from model architecture and GPU memory supersedes it when a HuggingFace `config.json` is available and the hardware config specifies `MemoryGiB`. The 1M default is a last-resort fallback — if your simulation uses it, check whether auto-calculation is failing (missing `config.json`, missing `MemoryGiB`, or unsupported model architecture).
 
 **`enable_multi_turn_chat` semantic mismatch (issue #517).** inference-perf's `enable_multi_turn_chat` creates one persistent session per virtual user. BLIS's closest equivalent is `multi_turn.single_session: true` in the workload YAML, but the session mechanics differ. When converting inference-perf specs, verify that the converted multi-turn behavior matches your intent.
 
@@ -123,12 +121,13 @@ Controls how requests are selected for the running batch. Maps to `BatchConfig`.
 | `--max-num-running-reqs` | int64 | 256 | Maximum requests in the running batch simultaneously. |
 | `--max-num-scheduled-tokens` | int64 | 2048 | Maximum total new tokens across all running requests per step (token budget). |
 | `--long-prefill-token-threshold` | int64 | 0 | Prefill length threshold for chunked prefill. 0 = disabled (all prefill in one step). |
+| `--preemption-policy` | string | "fcfs" | Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode uses `slo_priorities` from the policy bundle when set (shared with admission). |
 
 ## Latency Model
 
 ### Regression Coefficients
 
-Trained coefficients for the blackbox latency model. Maps to `LatencyCoeffs`.
+Trained coefficients for physics-informed latency estimation. Maps to `LatencyCoeffs`.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -147,7 +146,7 @@ Maps to `ModelHardwareConfig`.
 | `--hardware` | string | "" | GPU type. Bundled options: `H100`, `A100-SXM`, `A100-80`. If empty, loaded from `defaults.yaml`. Add new GPUs to `hardware_config.json`. |
 | `--tp` | int | 0 | Tensor parallelism degree. If 0, loaded from `defaults.yaml`. |
 | `--vllm-version` | string | "" | vLLM version string. If empty, loaded from `defaults.yaml`. |
-| `--max-model-len` | int64 | 0 | Max total sequence length (input + output) in tokens. 0 = unlimited. Mirrors vLLM's `--max-model-len`. Auto-derived from `max_position_embeddings` in HuggingFace `config.json` for roofline/crossmodel backends. Applies `rope_scaling` factor for types `linear`, `dynamic`, `yarn`, `default`, `mrope`; excludes `su`, `longrope`, `llama3`; skips entirely for `gemma3` models. Capped at KV-feasible maximum. |
+| `--max-model-len` | int64 | 0 | Max total sequence length (input + output) in tokens. 0 = unlimited. Mirrors vLLM's `--max-model-len`. Auto-derived from `max_position_embeddings` in HuggingFace `config.json` for roofline/trained-physics backends. Applies `rope_scaling` factor for types `linear`, `dynamic`, `yarn`, `default`, `mrope`; excludes `su`, `longrope`, `llama3`; skips entirely for `gemma3` models. Capped at KV-feasible maximum. |
 
 ### Roofline Mode
 
@@ -155,7 +154,7 @@ For analytical step time estimation without trained coefficients.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--latency-model` | string | "roofline" | Latency model backend: `roofline` (default), `blackbox`, `crossmodel`, `trained-roofline`, `trained-physics`. All backends auto-fetch HuggingFace config.json for KV block auto-calculation (may require network access). Analytical backends (`roofline`, `crossmodel`, `trained-roofline`, `trained-physics`) require `config.json` for latency estimation and KV sizing. `blackbox` uses `config.json` only for KV sizing (falls back to 1M blocks if unavailable). Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. `trained-physics` is recommended for new models. |
+| `--latency-model` | string | "roofline" | Latency model backend: `roofline` (default), `trained-physics`. Both backends auto-fetch HuggingFace config.json for KV block auto-calculation (may require network access). Both require `config.json` for latency estimation and KV sizing. Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. `trained-physics` is recommended for new models. |
 | `--model-config-folder` | string | "" | Path to folder containing HuggingFace `config.json`. Overrides `--latency-model` auto-resolution. |
 | `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. Overrides `--latency-model` auto-resolution. |
 
@@ -166,10 +165,7 @@ See [Roofline Estimation](../concepts/roofline.md) for details on the analytical
 The latency model mode is selected based on available configuration:
 
 1. **Roofline mode** (default): Auto-resolves model config from HuggingFace and hardware config from bundled `hardware_config.json`. Requires `--hardware` and `--tp` (loaded from `defaults.yaml` when available).
-2. **Blackbox mode**: If `--latency-model blackbox` is set. Uses trained alpha/beta coefficients from `defaults.yaml`. Requires a matching entry for the model/GPU/TP combination.
-3. **Cross-model mode**: If `--latency-model crossmodel` is set with `--hardware` and `--tp`. Uses 7 globally-fitted coefficients (4 beta for step time + 3 alpha for CPU overhead) from `crossmodel_defaults` in `defaults.yaml`. Architecture features derived from HuggingFace config.json. MoE-aware.
-4. **Trained-roofline mode**: If `--latency-model trained-roofline` is set with `--hardware` and `--tp`. Uses 10 globally-fitted coefficients (7 beta for roofline corrections + 3 alpha for CPU overhead) from `trained_roofline_defaults` in `defaults.yaml`. Achieves 7% MAPE on GPU combined step time.
-5. **Error**: If blackbox mode is selected and no coefficients can be resolved for the model/GPU/TP combination
+2. **Trained-physics mode** (recommended for new models): If `--latency-model trained-physics` is set with `--hardware` and `--tp`. Uses 13 globally-fitted coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from `trained_physics_coefficients` in `defaults.yaml`. Physics-informed basis functions with learned corrections.
 
 ## Cluster Configuration
 
@@ -208,7 +204,9 @@ Controls which requests enter the routing pipeline. See [Cluster Architecture: A
 
 ### SLO Tier Priorities
 
-Each SLO class has an integer priority that determines admission ordering, shedding decisions, and gateway queue dispatch. Priorities follow the GAIE (Gateway API Inference Extension) convention where **negative priority = sheddable**.
+Each SLO class has an integer priority that determines admission ordering, shedding decisions, gateway queue dispatch, and (with `--preemption-policy priority`) preemption victim selection. Priorities follow the GAIE (Gateway API Inference Extension) convention where **negative priority = sheddable**.
+
+`slo_priorities` overrides affect both admission (tier-shed, GAIE-legacy) and preemption (`--preemption-policy priority`). Both subsystems share the same priority mapping.
 
 **Default priorities (GAIE-compatible):**
 
@@ -271,7 +269,7 @@ Controls how admitted requests are assigned to instances. See [Cluster Architect
 | `--routing-policy` | string | "round-robin" | Policy name: `round-robin`, `least-loaded`, `weighted`, `always-busiest`. |
 | `--routing-latency` | int64 | 0 | Routing decision latency in microseconds. Must be >= 0. |
 | `--routing-scorers` | string | "" | Scorer configuration for `weighted` policy. Format: `name:weight,name:weight,...` |
-| `--snapshot-refresh-interval` | int64 | 0 | Prometheus snapshot refresh interval for all instance metrics (QueueDepth, BatchSize, KVUtilization) in microseconds. 0 = immediate. |
+| `--snapshot-refresh-interval` | int64 | 0 | Prometheus snapshot refresh interval for all instance metrics (QueueDepth, BatchSize, KVUtilization, PreemptionCount) in microseconds. 0 = immediate. |
 
 ### Scorer Configuration
 
@@ -295,6 +293,7 @@ Per-instance policies that control request ordering within the wait queue. Maps 
 |------|------|---------|-------------|
 | `--scheduler` | string | "fcfs" | Scheduler: `fcfs`, `priority-fcfs`, `sjf`, `reverse-priority`. |
 | `--priority-policy` | string | "constant" | Priority policy: `constant`, `slo-based`, `inverted-slo`. |
+| `--preemption-policy` | string | "fcfs" | Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode uses `slo_priorities` from the policy bundle when set (shared with admission). |
 
 See [Core Engine: Scheduling](../concepts/core-engine.md#scheduling-policies) for policy details.
 
@@ -417,10 +416,13 @@ priority:
 
 scheduler: "fcfs"
 
+preemption:
+  policy: "priority"    # fcfs (default) or priority (least-urgent SLO tier evicted first)
+
 # Node pool infrastructure (Phase 1A — optional; omit for backward-compatible single-pool mode)
 node_pools:
   - name: "gpu-pool-1"
-    gpu_type: "H100"      # pool-authoritative: overrides --gpu flag for GPU label (all backends) and hardware calibration (roofline/trained-roofline backends); see issues #892/#893
+    gpu_type: "H100"      # pool-authoritative: overrides --gpu flag for GPU label (all backends) and hardware calibration (roofline/trained-physics backends); see issues #892/#893
     gpus_per_node: 8
     gpu_memory_gib: 80.0
     initial_nodes: 2
@@ -430,13 +432,12 @@ node_pools:
       mean: 30.0   # seconds
       stddev: 5.0  # 0 = constant delay
 
-# Per-GPU hardware calibration overrides for roofline/trained-roofline backends (issue #893 — optional)
+# Per-GPU hardware calibration overrides for roofline/trained-physics backends (issue #893 — optional)
 # Key: GPU type string matching a pool's gpu_type. Value: HardwareCalib for that GPU.
 # When a pool's gpu_type is found in this map, the matched calibration overrides the CLI
 # --gpu calibration at instance construction time (both sync and deferred/NodeReadyEvent paths),
 # ensuring pool-placed instances use the correct TFlopsPeak/BwPeakTBs for roofline math.
 # Omitting this field (zero value) is safe: no override, backward-compatible with all callers.
-# The blackbox backend does not use HWConfig and is unaffected by this field.
 # Keys must exactly match the gpu_type strings used in the node_pools entries above.
 hw_config_by_gpu:
   H100:
@@ -536,23 +537,17 @@ When BLIS starts, it resolves latency configuration through a layered process. E
 
 **Hardware and TP defaults resolution (all backends):**
 
-Before any backend-specific logic runs, BLIS loads hardware/TP/vLLM-version defaults from `defaults.yaml` for the specified `--model` when those flags are not explicitly provided. This ensures analytical backends (roofline, crossmodel, trained-roofline) can auto-resolve without requiring explicit `--hardware` and `--tp` for models listed in `defaults.yaml`.
+Before any backend-specific logic runs, BLIS loads hardware/TP/vLLM-version defaults from `defaults.yaml` for the specified `--model` when those flags are not explicitly provided. This ensures analytical backends (roofline, trained-physics) can auto-resolve without requiring explicit `--hardware` and `--tp` for models listed in `defaults.yaml`.
 
 **Backend-specific resolution:**
 
-1. If `--latency-model roofline` (default), `crossmodel`, or `trained-roofline`:
+1. If `--latency-model roofline` (default) or `trained-physics`:
    - Auto-resolve model config: check `model_configs/` for existing `config.json`, fetch from HuggingFace on miss (set `HF_TOKEN` for gated models)
    - Auto-resolve hardware config from bundled `hardware_config.json`
    - For roofline: beta coefficients are computed analytically from model architecture and hardware specs
-   - For crossmodel: load global alpha + beta coefficients from `crossmodel_defaults` in `defaults.yaml`
-   - For trained-roofline: load global correction coefficients from `trained_roofline_defaults` in `defaults.yaml`
+   - For trained-physics: load 13 global coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from `trained_physics_coefficients` in `defaults.yaml`
    - `--model-config-folder` and `--hardware-config` override auto-resolution when explicitly set
-2. If `--latency-model blackbox`:
-   - Look up the model in `defaults.yaml` using `--model`, `--hardware`, `--tp`, `--vllm-version`
-   - Load alpha/beta coefficients from the matching entry
-   - If no matching entry is found, exit with error suggesting roofline, crossmodel, or trained-roofline
-   - **Behavioral change:** Blackbox mode now auto-downloads model configs from HuggingFace for KV block auto-calculation (same as analytical backends). Previously, blackbox only used cached configs. This means blackbox runs may make network requests when `config.json` is not cached locally. Set `HF_TOKEN` for gated models.
-3. If `--alpha-coeffs` and `--beta-coeffs` are explicitly provided via CLI:
+2. If `--alpha-coeffs` and `--beta-coeffs` are explicitly provided via CLI:
    - Use them directly, no `defaults.yaml` lookup
 
 **`--total-kv-blocks` resolution** (highest priority wins):

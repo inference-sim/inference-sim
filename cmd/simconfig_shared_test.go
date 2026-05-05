@@ -47,20 +47,20 @@ func TestNoR23CommentSyncMarkersInReplay(t *testing.T) {
 	}
 }
 
-// TestTrainedRooflineBetaCoeffGuard_UsesCorrectMinimum verifies the shared function
-// uses len < 7 for trained-roofline (BC-4), matching the 7-coefficient model.
-// Verifiable from first principles: trained_roofline.go uses betaCoeffs[0..6].
-func TestTrainedRooflineBetaCoeffGuard_UsesCorrectMinimum(t *testing.T) {
+// TestTrainedPhysicsBetaCoeffGuard_UsesCorrectMinimum verifies the shared function
+// uses len < 7 for trained-physics (BC-4), matching the 7-coefficient model.
+// The guard prevents insufficient coefficients for the trained-physics backend.
+func TestTrainedPhysicsBetaCoeffGuard_UsesCorrectMinimum(t *testing.T) {
 	// GIVEN the source of cmd/root.go (where the shared guard lives after Task 1)
 	data, err := os.ReadFile("root.go")
 	assert.NoError(t, err)
 
 	content := string(data)
 
-	// THEN: the guard uses < 7 (not < 10) for trained-roofline (BC-4)
+	// THEN: the guard uses < 7 (not < 10) for trained-physics (BC-4)
 	// The local variable in resolveLatencyConfig is named "beta" (not "betaCoeffs")
 	assert.Contains(t, content, `len(beta) < 7`,
-		"trained-roofline guard must use < 7 (model uses indices 0-6); local var is 'beta' in resolveLatencyConfig")
+		"trained-physics guard must use < 7 (model uses indices 0-6); local var is 'beta' in resolveLatencyConfig")
 
 	// THEN: the wrong value < 10 must not appear in root.go
 	assert.NotContains(t, content, `len(beta) < 10`,
@@ -104,7 +104,7 @@ func TestResolvePolicies_InvalidAdmissionPolicy_Fatal(t *testing.T) {
 // consumed by resolvePolicies are registered in both runCmd and replayCmd (BC-2).
 func TestResolvePolicies_PolicyFlagsRegisteredInBothCommands(t *testing.T) {
 	policyFlags := []string{
-		"admission-policy", "routing-policy", "priority-policy", "scheduler",
+		"admission-policy", "routing-policy", "priority-policy", "scheduler", "preemption-policy",
 		"routing-scorers", "token-bucket-capacity", "token-bucket-refill-rate",
 		"kv-cpu-blocks", "kv-offload-threshold", "kv-transfer-bandwidth",
 		"kv-transfer-base-latency", "snapshot-refresh-interval",
@@ -132,10 +132,6 @@ func TestReplayCmd_SourceContainsNoInlineBackendBlocks(t *testing.T) {
 	// THEN they must not be present (indicates delegation to resolveLatencyConfig)
 	assert.NotContains(t, content, `if backend == "roofline" {`,
 		"replay.go must not contain inline roofline resolution block; use resolveLatencyConfig(cmd)")
-	assert.NotContains(t, content, `if backend == "crossmodel" {`,
-		"replay.go must not contain inline crossmodel resolution block; use resolveLatencyConfig(cmd)")
-	assert.NotContains(t, content, `if backend == "trained-roofline" {`,
-		"replay.go must not contain inline trained-roofline resolution block; use resolveLatencyConfig(cmd)")
 }
 
 // TestReplayCmd_SourceContainsNoPolicyInlineBlocks verifies replay.go delegates
@@ -159,7 +155,7 @@ func TestBothCommands_SimConfigFlagsHaveIdenticalDefaults(t *testing.T) {
 		"latency-model", "hardware", "tp", "alpha-coeffs", "beta-coeffs",
 		"total-kv-blocks", "block-size-in-tokens", "max-model-len",
 		"gpu-memory-utilization", "model-config-folder", "hardware-config",
-		"admission-policy", "routing-policy", "priority-policy", "scheduler",
+		"admission-policy", "routing-policy", "priority-policy", "scheduler", "preemption-policy",
 		"routing-scorers", "token-bucket-capacity", "token-bucket-refill-rate",
 		"kv-cpu-blocks", "kv-offload-threshold", "kv-transfer-bandwidth",
 		"kv-transfer-base-latency", "snapshot-refresh-interval",

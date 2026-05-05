@@ -13,7 +13,7 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 - **Discrete-event simulation** for prefill, decode, and request scheduling
 - **KV-cache modeling** (blocks, prefix caching, prefill chunking, tiered GPU+CPU offload)
 - **CPU-only inference cost model** via analytical roofline estimation or learned α/β coefficients
-- **Five latency estimation modes**: roofline (default, analytical), trained-physics (physics-informed basis functions with architecture-aware MoE scaling), ~~cross-model~~ (deprecated), ~~trained-roofline~~ (deprecated), and ~~blackbox~~ (deprecated, data-driven, per-model coefficients). **Use trained-physics for new work.**
+- **Two latency estimation modes**: roofline (analytical) and trained-physics (physics-informed basis functions with architecture-aware MoE scaling). The deprecated `blackbox`, `crossmodel`, and `trained-roofline` backends have been removed; use `trained-physics` for modern physics-informed estimation.
 - **Multi-instance cluster simulation** with shared-clock event loop and pluggable routing (round-robin, least-loaded, weighted-scoring)
 - **Multiple workload types**: preset (`chatbot`, `contentgen`, `summarization`, `multidoc`), custom distributions, or trace replay
 
@@ -22,6 +22,7 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 - **Any HuggingFace model**: dense (Llama-2, Qwen3, etc.) and MoE (Mixtral, etc.) — auto-fetches model config on first run
 - **vLLM deployment configuration** (TP, chunk size, batch limits)
 - **Priority policies and instance schedulers**: constant, slo-based; fcfs, priority-fcfs, sjf
+- **Preemption policies**: fcfs (tail-of-batch), priority (least-urgent SLO tier evicted first)
 - **Admission control**: always-admit or token-bucket rate limiting
 - **YAML policy configuration**: define all policies in a single config file (`--policy-config`)
 - **ServeGen-informed workload generation**: multi-client specs with Poisson/Gamma/Weibull/Constant arrivals (`--workload-spec`)
@@ -44,7 +45,7 @@ cd inference-sim
 go build -o blis main.go
 ```
 
-**Note:** On first run, BLIS auto-fetches the model's `config.json` from HuggingFace (~1 second for public models like Qwen3). Subsequent runs use the cached config in `model_configs/`. For offline use with cached configs, `--latency-model trained-physics` provides accurate predictions across model architectures without per-model calibration.
+**Note:** On first run, BLIS auto-fetches the model's `config.json` from HuggingFace (~1 second for public models like Qwen3). Subsequent runs use the cached config in `model_configs/`. For offline use with cached configs, both roofline and trained-physics modes work without network access.
 
 **Environment setup (optional):**
 
@@ -259,10 +260,8 @@ inference-sim/
 │   ├── tiered.go           # TieredKVCache (GPU+CPU)
 │   └── register.go         # NewKVStore factory + init()-based registration into sim/
 ├── sim/latency/            # Latency model implementations
-│   ├── latency.go          # RooflineLatencyModel, BlackboxLatencyModel (DEPRECATED), CrossModelLatencyModel (DEPRECATED), NewLatencyModel factory
-│   ├── trained_roofline.go # TrainedRooflineLatencyModel: roofline basis functions × learned corrections (DEPRECATED — use trained-physics)
+│   ├── latency.go          # RooflineLatencyModel, TrainedPhysicsLatencyModel, NewLatencyModel factory
 │   ├── trained_physics_model.go # TrainedPhysicsLatencyModel: physics-informed basis functions with architecture-aware scaling
-│   ├── crossmodel.go       # CrossModelLatencyModel: physics-informed step time (DEPRECATED — use trained-physics)
 │   ├── roofline.go         # Analytical FLOPs/bandwidth latency estimation
 │   ├── config.go           # HFConfig, GetHWConfig, GetModelConfig, ValidateRooflineConfig
 │   ├── kv_capacity.go      # KV cache block auto-calculation from model architecture + GPU memory

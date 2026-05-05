@@ -378,7 +378,7 @@ This is the extension type that requires refactoring first. Examples: SGLang lat
 **Two-phase approach:**
 
 **Phase A — Extract interface (refactoring PR):**
-- Identify the hardcoded logic (e.g., `Step()` calling the blackbox latency estimator directly)
+- Identify the hardcoded logic (e.g., `Step()` calling a specific latency estimator directly)
 - Define an interface that captures the behavioral contract of the existing implementation
 - Extract the existing implementation behind the new interface
 - Verify: all existing tests pass, no behavior change, the factory returns the existing implementation by default

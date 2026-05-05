@@ -51,8 +51,8 @@ func msConfig(horizon int64) SimConfig {
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 100000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs(msBeta(), msAlpha()),
-		ModelHardwareConfig: NewModelHardwareConfig(ModelConfig{}, HardwareCalib{}, "test-model", "test-gpu", 1, "blackbox", 0),
-		PolicyConfig:        NewPolicyConfig("constant", "fcfs"),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-model", "test-gpu", 1, "roofline", 0),
+		PolicyConfig:        NewPolicyConfig("constant", "fcfs", ""),
 		WorkloadConfig:      NewWorkloadConfig(),
 	}
 }
@@ -356,7 +356,7 @@ func TestMetrics_AllITLs_Sum_WithZeroOutputRequests(t *testing.T) {
 
 func TestMetrics_SchedulingDelay_EqualsAlpha_Isolated(t *testing.T) {
 	// Regression anchor (one per method, per project convention): for an isolated
-	// request with blackbox latency model and no queueing contention, the scheduling
+	// request with roofline latency model and no queueing contention, the scheduling
 	// delay equals QueueingTime = alpha0 + alpha1 * inputLen. This exact-value check
 	// is intentionally model-specific — it would need updating if the latency model
 	// changes, but it catches formula regressions that behavioral tests miss.
@@ -623,7 +623,7 @@ func TestMetrics_PeakKVBlocks_BoundedAndZeroAfterCompletion(t *testing.T) {
 // Without prefix caching: cacheMissTokens == totalInputTokens, so (a) and (b)
 // collapse into simple monotonicity with input length.
 //
-// These properties hold for any LatencyModel (blackbox alpha/beta, roofline
+// These properties hold for any LatencyModel (roofline
 // FLOPs/bandwidth, or future implementations) as long as the interface
 // contract is satisfied. The tests below verify the properties, not any
 // particular formula.

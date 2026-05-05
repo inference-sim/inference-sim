@@ -88,6 +88,13 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 	// Generate shared prefix tokens per prefix group
 	prefixes := generatePrefixTokens(allClients, workloadRNG)
 
+	// Route to time-varying generator when any client has per-window parameter
+	// overrides (TraceRate, Arrival, InputDist, OutputDist on ActiveWindow).
+	// This path uses per-window proportional allocation and IAT rescaling.
+	if hasPerWindowParameters(allClients) {
+		return generateTimeVaryingRequests(spec, horizon, maxRequests, allClients, workloadRNG)
+	}
+
 	// Per-client generation cap: prevent OOM when horizon >> maxRequests.
 	// Each client generates at most 2x maxRequests, then post-merge truncation finalizes.
 	perClientCap := int64(0)
@@ -111,7 +118,9 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 		clientSeed := workloadRNG.Int63()
 		clientRNG := newRandFromSeed(clientSeed)
 
-		// Create samplers
+		// Create samplers.
+		// When CustomSamplerFactory is set, clientRate is only used for the
+		// skip guard above (line 106); the factory overrides the actual arrival rate.
 		var arrivalSampler ArrivalSampler
 		if client.CustomSamplerFactory != nil {
 			// Derive sub-RNG for factory with single entropy draw from clientRNG.
@@ -218,8 +227,11 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				if currentTime >= horizon {
 					break
 				}
-				// Check lifecycle windows (bug fix: reasoning path was missing this)
+				// Check lifecycle windows
 				if client.Lifecycle != nil && !isInActiveWindow(currentTime, client.Lifecycle) {
+					if currentTime >= lastWindowEndUs(client.Lifecycle) {
+						break
+					}
 					continue
 				}
 				reasoningReqs, err := GenerateReasoningRequests(
@@ -282,6 +294,9 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 
 			// Check lifecycle windows
 			if client.Lifecycle != nil && !isInActiveWindow(currentTime, client.Lifecycle) {
+				if currentTime >= lastWindowEndUs(client.Lifecycle) {
+					break
+				}
 				continue
 			}
 
@@ -668,6 +683,18 @@ func isInActiveWindow(timeUs int64, lifecycle *LifecycleSpec) bool {
 	return false
 }
 
+// lastWindowEndUs returns the maximum EndUs across all lifecycle windows.
+// Returns 0 if Windows is empty; callers must ensure the lifecycle is validated.
+func lastWindowEndUs(lifecycle *LifecycleSpec) int64 {
+	var maxEnd int64
+	for _, w := range lifecycle.Windows {
+		if w.EndUs > maxEnd {
+			maxEnd = w.EndUs
+		}
+	}
+	return maxEnd
+}
+
 // newRandFromSeed creates a new *rand.Rand from a seed (avoids importing math/rand in callers).
 func newRandFromSeed(seed int64) *rand.Rand {
 	return rand.New(rand.NewSource(seed))
@@ -704,4 +731,327 @@ func isClosedLoop(client *ClientSpec) bool {
 	}
 	// Default: true for reasoning/multi-turn clients
 	return client.Reasoning != nil && client.Reasoning.MultiTurn != nil
+}
+
+// hasPerWindowParameters checks if any client has per-window parameter overrides
+// (TraceRate, Arrival, InputDist, or OutputDist set on any ActiveWindow).
+// Returns true when time-varying generation should be used instead of static generation.
+func hasPerWindowParameters(clients []ClientSpec) bool {
+	for _, client := range clients {
+		if client.Lifecycle == nil {
+			continue
+		}
+		for _, window := range client.Lifecycle.Windows {
+			if window.TraceRate != nil || window.Arrival != nil ||
+				window.InputDist != nil || window.OutputDist != nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// generateTimeVaryingRequests generates requests for workloads with per-window
+// parameters, using proportional rate allocation and IAT rescaling to match
+// window durations. Each client's lifecycle windows are iterated, generating
+// requests per window using window-specific distributions and rates.
+//
+// Windows beyond the horizon are skipped. Requests from all clients and windows
+// are merged, sorted by arrival time, truncated to maxRequests, and assigned
+// sequential IDs.
+func generateTimeVaryingRequests(
+	spec *WorkloadSpec,
+	horizon int64,
+	maxRequests int64,
+	allClients []ClientSpec,
+	rng *rand.Rand,
+) ([]*sim.Request, error) {
+	var allRequests []*sim.Request
+
+	// Generate requests for each client's windows.
+	for i := range allClients {
+		client := &allClients[i]
+
+		if client.Lifecycle == nil || len(client.Lifecycle.Windows) == 0 {
+			// Client has no lifecycle windows - skip.
+			// Always-on clients mixed with windowed clients are handled
+			// by computeProportionalRate (contributes RateFraction to denominator).
+			logrus.Warnf("generateTimeVaryingRequests: client %q has no lifecycle windows and will generate no requests (mixed always-on + windowed clients are not supported)", client.ID)
+			continue
+		}
+
+		// Create per-client RNG for determinism (isolates client entropy).
+		clientSeed := rng.Int63()
+		clientRNG := newRandFromSeed(clientSeed)
+
+		// Generate requests for each window.
+		for _, window := range client.Lifecycle.Windows {
+			// Skip windows that start beyond the simulation horizon.
+			if window.StartUs >= horizon {
+				continue
+			}
+
+			// Clamp window end to horizon to avoid generating requests beyond it.
+			effectiveWindow := window
+			if effectiveWindow.EndUs > horizon {
+				effectiveWindow.EndUs = horizon
+			}
+
+			windowRequests, err := generateRequestsForWindow(
+				*client, effectiveWindow, allClients, spec.AggregateRate, clientRNG,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("generating window [%d-%d] for client %q: %w",
+					effectiveWindow.StartUs, effectiveWindow.EndUs, client.ID, err)
+			}
+			allRequests = append(allRequests, windowRequests...)
+		}
+	}
+
+	// Sort all requests by arrival time (stable sort preserves client order for ties).
+	sort.SliceStable(allRequests, func(i, j int) bool {
+		return allRequests[i].ArrivalTime < allRequests[j].ArrivalTime
+	})
+
+	// Apply maxRequests cap if specified.
+	if maxRequests > 0 && int64(len(allRequests)) > maxRequests {
+		allRequests = allRequests[:maxRequests]
+	}
+
+	// Assign sequential IDs.
+	for i, req := range allRequests {
+		req.ID = fmt.Sprintf("request_%d", i)
+	}
+
+	return allRequests, nil
+}
+
+// generateRequestsForWindow generates requests for a single lifecycle window
+// with proportional rate allocation and IAT rescaling to match the window duration.
+//
+// Steps:
+//  1. Resolve parameters with fallback to client-level defaults.
+//  2. Compute allocated rate via proportional allocation across co-active windows.
+//  3. Sample IATs from the resolved arrival process.
+//  4. Rescale IATs to match the target window duration (exact rate matching).
+//  5. Generate requests with window-specific token distributions.
+//
+// Requests are returned in arrival-time order. IDs are left empty (assigned by caller
+// after merging requests from all windows).
+func generateRequestsForWindow(
+	client ClientSpec,
+	window ActiveWindow,
+	allClients []ClientSpec,
+	aggregateRate float64,
+	rng *rand.Rand,
+) ([]*sim.Request, error) {
+	// Step 1: Resolve parameters with fallback to client-level defaults.
+	arrival, inputDist, outputDist, _ := resolveWindowParameters(client, window)
+
+	// Step 2: Compute allocated rate for this window via proportional allocation.
+	windowTargetRate := computeProportionalRate(client, window, allClients, aggregateRate)
+	if windowTargetRate <= 0 {
+		return nil, nil
+	}
+
+	windowDurationUs := window.EndUs - window.StartUs
+	windowDurationSec := float64(windowDurationUs) / 1e6
+
+	// Step 3: Determine number of requests from allocated rate and window duration.
+	expectedRequests := windowTargetRate * windowDurationSec
+	numRequests := int(math.Ceil(expectedRequests))
+	if numRequests == 0 {
+		return nil, nil
+	}
+
+	// Step 4: Create samplers from resolved parameters.
+	// The rate passed to NewArrivalSampler is in requests/microsecond; it
+	// affects the mean IAT of the underlying distribution. Post-hoc rescaling
+	// (step 6) ensures the sum of IATs matches the window duration exactly.
+	arrivalSampler := NewArrivalSampler(arrival, windowTargetRate/1e6)
+	inputSampler, err := NewLengthSampler(inputDist)
+	if err != nil {
+		return nil, fmt.Errorf("client %q input dist: %w", client.ID, err)
+	}
+	outputSampler, err := NewLengthSampler(outputDist)
+	if err != nil {
+		return nil, fmt.Errorf("client %q output dist: %w", client.ID, err)
+	}
+
+	// Step 5: Sample IATs using the resolved arrival process (shape/scale for CV).
+	iats := make([]int64, numRequests)
+	for i := 0; i < numRequests; i++ {
+		iats[i] = arrivalSampler.SampleIAT(rng)
+	}
+
+	// Step 6: Rescale IATs to match target window duration.
+	// This preserves relative ratios (CV) while ensuring total span equals windowDurationUs.
+	iats = rescaleIATsToMatchDuration(iats, windowDurationUs)
+
+	// Step 7: Generate requests with window-specific distributions.
+	requests := make([]*sim.Request, 0, numRequests)
+	currentTime := window.StartUs
+
+	for i := 0; i < numRequests; i++ {
+		currentTime += iats[i]
+
+		// Stop if we exceed window boundary.
+		if currentTime >= window.EndUs {
+			break
+		}
+
+		// Sample token lengths from resolved distributions.
+		inputLen := inputSampler.Sample(rng)
+		outputLen := outputSampler.Sample(rng)
+		inputTokens := sim.GenerateRandomTokenIDs(rng, inputLen)
+		outputTokens := sim.GenerateRandomTokenIDs(rng, outputLen)
+
+		req := &sim.Request{
+			ID:           "", // Assigned later after merge+sort across all windows.
+			ArrivalTime:  currentTime,
+			InputTokens:  inputTokens,
+			OutputTokens: outputTokens,
+			MaxOutputLen: outputLen,
+			State:        sim.StateQueued,
+			TenantID:     client.TenantID,
+			SLOClass:     client.SLOClass,
+			Model:        client.Model,
+			ClientID:     client.ID,
+			Streaming:    client.Streaming,
+			Deadline:     0, // Set by caller if needed.
+		}
+		requests = append(requests, req)
+	}
+
+	return requests, nil
+}
+
+// computeProportionalRate computes the allocated rate for a window using
+// proportional allocation across co-active clients. When aggregate_rate > 0,
+// returns: target_aggregate_rate * (window_trace_rate / sum_of_co_active_trace_rates).
+// When aggregate_rate is 0 (absolute rate mode), returns window.TraceRate directly.
+//
+// For each co-active client (any client whose window overlaps the queried window),
+// the first overlapping window's trace rate is summed into totalTraceRate. Always-on
+// clients (no lifecycle) contribute their RateFraction. If totalTraceRate is zero,
+// returns zero to avoid division by zero (R11).
+func computeProportionalRate(
+	client ClientSpec,
+	window ActiveWindow,
+	allClients []ClientSpec,
+	aggregateRate float64,
+) float64 {
+	// Get this window's trace rate (resolveWindowParameters falls back to client.RateFraction)
+	_, _, _, traceRate := resolveWindowParameters(client, window)
+
+	// Absolute rate mode: when aggregate_rate is 0, use trace_rate directly.
+	// This signals "use per-window rates verbatim, don't scale". Useful for
+	// workloads with time-varying aggregate load that cannot be represented
+	// by a single scalar aggregate_rate.
+	if aggregateRate == 0 && window.TraceRate != nil {
+		return traceRate
+	}
+	// Sum trace rates of all co-active windows
+	totalTraceRate := 0.0
+
+	for _, otherClient := range allClients {
+		// Always-on clients (no lifecycle) contribute their RateFraction
+		if otherClient.Lifecycle == nil || len(otherClient.Lifecycle.Windows) == 0 {
+			totalTraceRate += otherClient.RateFraction
+			continue
+		}
+
+		// Check if any of otherClient's windows overlap with the current window.
+		// Only count each client once (first overlapping window) to avoid
+		// double-counting a client that has multiple overlapping windows.
+		for _, otherWindow := range otherClient.Lifecycle.Windows {
+			// Time-based overlap: windows overlap iff start_a < end_b AND start_b < end_a
+			if otherWindow.StartUs < window.EndUs && window.StartUs < otherWindow.EndUs {
+				_, _, _, otherRate := resolveWindowParameters(otherClient, otherWindow)
+				totalTraceRate += otherRate
+				break // Only count each client once per query window
+			}
+		}
+	}
+
+	if totalTraceRate == 0 {
+		logrus.Warnf("computeProportionalRate: totalTraceRate is zero for client %q window [%d-%d] (no co-active windows with non-zero rates)",
+			client.ID, window.StartUs, window.EndUs)
+		return 0
+	}
+
+	// Proportional allocation
+	return aggregateRate * (traceRate / totalTraceRate)
+}
+
+// rescaleIATsToMatchDuration rescales inter-arrival times to sum exactly to
+// targetDuration, preserving relative ratios (CV). This ensures that N requests
+// generated with a given rate will fill exactly the specified window duration.
+//
+// Each IAT is multiplied by (targetDuration / sumIATs). A rounding residual
+// from int64 truncation is applied to the last element so the sum is exact.
+// Returns nil for empty input; returns the original slice unchanged if all
+// IATs are zero (no scaling possible).
+func rescaleIATsToMatchDuration(iats []int64, targetDuration int64) []int64 {
+	if len(iats) == 0 {
+		return nil
+	}
+
+	// Compute sum of original IATs.
+	sumIATs := int64(0)
+	for _, iat := range iats {
+		sumIATs += iat
+	}
+
+	// Guard against zero sum: scaling undefined, return original values.
+	if sumIATs == 0 {
+		return iats
+	}
+
+	// Scale factor preserves relative ratios (CV).
+	scaleFactor := float64(targetDuration) / float64(sumIATs)
+
+	// Rescale all IATs, tracking the accumulated sum for residual correction.
+	rescaled := make([]int64, len(iats))
+	rescaledSum := int64(0)
+	for i, iat := range iats {
+		rescaled[i] = int64(float64(iat) * scaleFactor)
+		rescaledSum += rescaled[i]
+	}
+
+	// Distribute rounding residual to the last element so sum is exact.
+	rescaled[len(rescaled)-1] += targetDuration - rescaledSum
+
+	return rescaled
+}
+
+// resolveWindowParameters resolves per-window parameters with fallback to client-level defaults.
+// Returns the effective arrival spec, input distribution, output distribution, and trace rate.
+// When a window field is nil, the corresponding client-level value is used.
+func resolveWindowParameters(client ClientSpec, window ActiveWindow) (ArrivalSpec, DistSpec, DistSpec, float64) {
+	// Resolve arrival spec
+	arrival := client.Arrival
+	if window.Arrival != nil {
+		arrival = *window.Arrival
+	}
+
+	// Resolve input distribution
+	inputDist := client.InputDist
+	if window.InputDist != nil {
+		inputDist = *window.InputDist
+	}
+
+	// Resolve output distribution
+	outputDist := client.OutputDist
+	if window.OutputDist != nil {
+		outputDist = *window.OutputDist
+	}
+
+	// Resolve trace rate (falls back to client RateFraction)
+	traceRate := client.RateFraction
+	if window.TraceRate != nil {
+		traceRate = *window.TraceRate
+	}
+
+	return arrival, inputDist, outputDist, traceRate
 }

@@ -160,7 +160,7 @@ These are the conceptual timestamps in a request's lifecycle. Some are stored as
 ### Preemption
 
 When KV cache pressure forces eviction, running requests are preempted:
-1. Request is removed from the running batch (tail-first eviction)
+1. Request is removed from the running batch. By default (`--preemption-policy fcfs`), the tail of the batch is evicted. With `--preemption-policy priority`, the running request with the lowest SLO tier priority is evicted first (background before sheddable before batch before standard before critical); among equal-priority requests, the most recently arrived is evicted.
 2. Its KV blocks are freed
 3. It is re-enqueued at the front of the wait queue (not the back)
 4. A debug log is emitted and `PreemptionCount` is incremented
@@ -205,8 +205,8 @@ Dequeue requests from the wait queue:
 ### Preemption Strategy
 
 When KV allocation fails for a continuing request:
-1. Evict requests from the batch tail (reverse order of admission)
-2. Free their KV blocks
+1. Select a victim: by default (`--preemption-policy fcfs`), evict from the batch tail (reverse order of admission). With `--preemption-policy priority`, evict the running request with the lowest SLO tier priority (background before sheddable before batch before standard before critical); among equal-priority requests, the most recently arrived is evicted first. This matches vLLM's `--scheduling-policy priority` preemption behavior.
+2. Free the victim's KV blocks
 3. Re-enqueue evicted requests at the front of the wait queue
 4. Retry allocation for the original request
 5. **Circuit breaker:** Stop if allocation still fails after exhausting the batch, or if the request itself is unservable
@@ -240,24 +240,7 @@ When `--kv-cpu-blocks` is set to a positive value, BLIS enables a two-tier cache
 
 ## Latency Models
 
-BLIS predicts GPU step time through one of five latency model backends. The choice is made via the `--latency-model` flag or automatically based on available configuration.
-
-### Blackbox Model
-
-Uses trained regression coefficients to predict step time:
-
-```
-StepTime    = beta0 + beta1 * cache_miss_tokens + beta2 * decode_tokens
-QueueingTime = alpha0 + alpha1 * input_length
-OutputTokenProcessingTime = alpha2
-```
-
-- **Beta coefficients** model GPU execution time as a linear function of batch composition
-- **Alpha coefficients** model non-GPU overhead (tokenization, API serialization, output processing)
-- Coefficients are trained offline via Bayesian optimization against real vLLM measurements
-- Pre-trained coefficients for common model/GPU combinations are shipped in `defaults.yaml`
-
-See [Configuration Reference: Coefficient Calibration](../reference/configuration.md#coefficient-calibration) for the training process.
+BLIS predicts GPU step time through two latency model backends. The choice is made via the `--latency-model` flag or automatically based on available configuration.
 
 ### Roofline Model (Default)
 
@@ -274,36 +257,6 @@ Step Time  = Prefill Phase Time + Decode Phase Time
 - No training data needed — works for any supported model immediately
 
 See [Roofline Estimation](roofline.md) for implementation details.
-
-### Cross-Model Mode
-
-Uses globally-fitted coefficients with architecture features:
-
-```
-stepTime = β₀ × numLayers + β₁ × dc × kvDimScaled + β₂ × (pf+dc) × isMoE + β₃ × isTP
-```
-
-- **7 global coefficients** (4 beta for step time + 3 alpha for CPU overhead)
-- **Architecture-aware scaling** from `config.json` features (layers, KV heads, MoE indicators)
-- No per-model training needed — coefficients work across model families
-
-See [Latency Models Guide](../guide/latency-models.md#cross-model-mode-physics-informed) for details.
-
-### Trained-Roofline Mode
-
-Applies learned correction factors to analytical roofline basis functions:
-
-```
-StepTime = β₁ × max(T_pf_compute, T_pf_kv) + β₂ × max(T_dc_compute, T_dc_kv)
-         + β₃ × T_weight + β₄ × T_tp + β₅ × L + β₆ × batch_size + β₇
-```
-
-- **10 global coefficients** (7 beta for roofline corrections + 3 alpha for CPU overhead)
-- **7% MAPE** on GPU combined step time (fitted from 137K real vLLM requests)
-- Each basis function is a full analytical roofline calculation
-- MoE-aware (per-expert FLOPs + effective expert count)
-
-See [Latency Models Guide](../guide/latency-models.md#trained-roofline-mode) for details.
 
 ### Trained-Physics Mode (Recommended)
 

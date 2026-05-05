@@ -66,6 +66,12 @@ type SimConfig struct {
 	ModelHardwareConfig
 	PolicyConfig
 	WorkloadConfig
+
+	// SLO priority overrides for preemption victim selection (--preemption-policy priority).
+	// nil = use GAIE defaults (critical=4, standard=3, batch=-1, sheddable=-2, background=-3).
+	// Shared with admission: same overrides flow from policy bundle slo_priorities.
+	// Set programmatically in cmd/root.go and cmd/replay.go from parsed bundle/CLI overrides — no YAML tag needed.
+	SLOPriorityOverrides map[string]int
 }
 
 // Simulator is the core object that holds simulation time, system state, and the event loop.
@@ -105,6 +111,10 @@ type Simulator struct {
 	// state (completed, length-capped, or timed out). Returns follow-up requests to inject.
 	// Set by the caller (cmd/root.go or ClusterSimulator). Nil = no callback.
 	OnRequestDone func(req *Request, tick int64) []*Request
+
+	progressHook                ProgressHook
+	simClockProgressIntervalUs int64
+	nextSnapshotClockUs        int64
 }
 
 // NewSimulator creates a Simulator from a SimConfig struct and pre-built dependencies.
@@ -142,7 +152,7 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 				blocksForMaxLen, cfg.MaxModelLen, cfg.BlockSizeTokens, cfg.TotalKVBlocks)
 		}
 	}
-	batchFormation := NewBatchFormation()
+	batchFormation := NewBatchFormation(cfg.PreemptionPolicy, NewSLOPriorityMap(cfg.SLOPriorityOverrides))
 
 	s := &Simulator{
 		Clock:                     0,
@@ -265,8 +275,71 @@ func (sim *Simulator) Run() {
 		if sim.Clock > sim.Horizon {
 			break
 		}
+		sim.maybeDeliverProgressSnapshot(false)
 	}
+	sim.maybeDeliverProgressSnapshot(true)
 	sim.Finalize()
+}
+
+// SetProgressHook registers an optional hook that receives periodic state
+// snapshots during simulation execution. Must be called before Run().
+// When hook is nil (default), there is zero behavioral or performance impact.
+// simClockIntervalUs controls the minimum simulation-clock interval (microseconds)
+// between periodic snapshots. If simClockIntervalUs <= 0, only the final snapshot
+// is delivered.
+func (sim *Simulator) SetProgressHook(hook ProgressHook, simClockIntervalUs int64) {
+	sim.progressHook = hook
+	if simClockIntervalUs > 0 {
+		sim.simClockProgressIntervalUs = simClockIntervalUs
+		sim.nextSnapshotClockUs = simClockIntervalUs
+	}
+}
+
+func (sim *Simulator) maybeDeliverProgressSnapshot(isFinal bool) {
+	if sim.progressHook == nil {
+		return
+	}
+	if !isFinal && (sim.simClockProgressIntervalUs <= 0 || sim.Clock < sim.nextSnapshotClockUs) {
+		return
+	}
+	clock := sim.Clock
+	if isFinal {
+		clock = min(sim.Clock, sim.Horizon)
+	}
+	snap := ProgressSnapshot{
+		Clock:             clock,
+		TotalCompleted:    sim.Metrics.CompletedRequests,
+		TotalTimedOut:     sim.Metrics.TimedOutRequests,
+		TotalDropped:      sim.Metrics.DroppedUnservable,
+		TotalInputTokens:  sim.Metrics.TotalInputTokens,
+		TotalOutputTokens: sim.Metrics.TotalOutputTokens,
+		TotalPreemptions:  sim.Metrics.PreemptionCount,
+		InstanceSnapshots: []InstanceSnapshot{sim.buildInstanceSnapshot()},
+		TotalInstances:    1,
+		ActiveInstances:   1,
+		IsFinal:           isFinal,
+	}
+	sim.progressHook.OnProgress(snap)
+	if !isFinal {
+		sim.nextSnapshotClockUs += sim.simClockProgressIntervalUs
+	}
+}
+
+func (sim *Simulator) buildInstanceSnapshot() InstanceSnapshot {
+	return InstanceSnapshot{
+		ID:                "instance-0",
+		Model:             sim.model,
+		State:             "Active",
+		QueueDepth:        sim.QueueDepth(),
+		BatchSize:         sim.BatchSize(),
+		KVUtilization:     float64(sim.KVCache.UsedBlocks()) / float64(max(sim.KVCache.TotalCapacity(), 1)),
+		KVFreeBlocks:      sim.KVCache.TotalCapacity() - sim.KVCache.UsedBlocks(),
+		KVTotalBlocks:     sim.KVCache.TotalCapacity(),
+		CacheHitRate:      sim.KVCache.CacheHitRate(),
+		PreemptionCount:   sim.Metrics.PreemptionCount,
+		CompletedRequests: sim.Metrics.CompletedRequests,
+		TimedOutRequests:  sim.Metrics.TimedOutRequests,
+	}
 }
 
 // QueueDepth returns the number of requests in the wait queue.
@@ -298,7 +371,7 @@ func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 // PostDecodeFixedOverhead returns the latency model's fixed per-request post-decode
 // overhead in microseconds. Used by the cluster layer to include overhead in
 // parent.CompletionTime when disaggregated decode sub-requests complete.
-// Returns 0 for all backends except trained-roofline (BC-1, issue #846).
+// Returns 0 for all backends except trained-physics (BC-1, issue #846).
 func (sim *Simulator) PostDecodeFixedOverhead() int64 {
 	return sim.latencyModel.PostDecodeFixedOverhead()
 }
@@ -428,7 +501,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 // (blocks already allocated, guard would leak them) and does NOT increment TotalInputTokens
 // (input tokens were already counted by the prefill sub-request).
 // clusterTime is the cluster-level clock when this request is injected (from
-// DecodeRoutingEvent.Execute()). The StepEvent is scheduled at
+// KVTransferCompletedEvent.Execute()). The StepEvent is scheduled at
 // max(sim.Clock, clusterTime) to prevent the instance from processing the
 // decode sub-request at a stale internal time that precedes the request's arrival.
 // Triggers StepEvent if the instance is idle (INV-8: work-conserving).
@@ -481,7 +554,7 @@ func (sim *Simulator) recordKVUsageMetrics(stepDuration int64) {
 // E2E and RequestCompletionTimes beyond the RequestLeftEvent timestamp by the overhead
 // amount. This is architecturally intentional: real vLLM's post-processing (detokenization,
 // response serialization) is non-blocking but still contributes to client-perceived latency.
-// For trained-roofline, PostDecodeFixedOverhead adds ~1.85ms to E2E; for other backends it's 0.
+// For trained-physics, PostDecodeFixedOverhead adds ~777µs to E2E; for other backends it's 0.
 func (sim *Simulator) recordRequestCompletion(req *Request) {
 	// INV-1 conservation: Always increment CompletedRequests.
 	// For redirected requests: the source instance drained the request from its WaitQ
@@ -491,14 +564,18 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	sim.Metrics.CompletedRequests++
 	sim.Metrics.TTFTSum += req.FirstTokenTime
 
-	// Count decode tokens at completion time, not inline during each decode step.
-	// Inline counting double-counts when a request is preempted (ProgressIndex reset
-	// to 0) and re-runs: tokens from the aborted run are counted a second time.
-	// At completion: PI = InputLen + OutputLen - 1 (normal) or maxModelLen - 1 (capped),
-	// so PI - InputLen counts decode-step increments (= OutputLen - 1; the first output
-	// token is generated at prefill completion, not as a decode-step increment).
+	// Count output tokens at completion time (not inline per step) to avoid
+	// double-counting under preemption (ProgressIndex reset to 0 on eviction).
+	// PI - InputLen counts decode-step increments (= OutputLen - 1 for normal completion).
+	// Add 1 for the prefill-generated first token (#1097) when decodeTokens falls short
+	// of OutputLen. PD 1-output decode sub-requests are the exception: their PI_final
+	// lands at InputLen+1 (one step past the InputLen threshold), so decodeTokens==OutputLen
+	// already — the guard prevents double-counting in that case.
 	decodeTokens := int(req.ProgressIndex) - len(req.InputTokens)
-	if decodeTokens > 0 { // zero-output-token requests complete with PI == InputLen → decodeTokens == 0
+	if decodeTokens < len(req.OutputTokens) {
+		decodeTokens++ // prefill-generated first token (vLLM parity)
+	}
+	if decodeTokens > 0 {
 		sim.Metrics.TotalOutputTokens += decodeTokens
 	}
 
@@ -646,9 +723,12 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 	// similar to vLLM's execute_model()
 	// Note: Per-request TTFT fields (FirstTokenTime, RequestTTFTs) are recorded inline
 	// because they are tightly coupled to the prefill/decode state transitions in this
-	// loop (scalar/map overwrites, safe across preemption). TTFTSum and TotalOutputTokens
-	// are computed at completion time in recordRequestCompletion to avoid double-counting
-	// when a preempted request re-runs from ProgressIndex=0.
+	// loop. Safety across preemption comes from the !req.TTFTSet guard below (TTFTSet is
+	// reset to false on preemption by batch_formation.go), not from overwrite idempotency —
+	// the guard ensures the block fires exactly once per prefill completion so FirstTokenTime
+	// always reflects the final re-prefill. TTFTSum and TotalOutputTokens are computed at
+	// completion time in recordRequestCompletion to avoid double-counting when a preempted
+	// request re-runs from ProgressIndex=0.
 	for _, req := range sim.RunningBatch.Requests {
 		if req.ProgressIndex < util.Len64(req.InputTokens) {
 			req.ProgressIndex = sim.reqNumComputedTokens[req.ID]
@@ -664,7 +744,13 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 				req.ITL = append(req.ITL, currStepAdvance+sim.latencyModel.OutputTokenProcessingTime())
 			}
 		}
-		if req.ProgressIndex == util.Len64(req.InputTokens) { // prefill complete, first token is generated
+		// !req.TTFTSet guard: fires once per prefill completion (including re-prefill after
+		// preemption). TTFTSet is reset to false on preemption (batch_formation.go) so this
+		// block fires again on re-prefill, overwriting FirstTokenTime with the correct
+		// post-preemption TTFT. req.FirstTokenTime is a scalar assignment (not an
+		// accumulation), so overwriting it is safe. TTFTSum is not accumulated here;
+		// it is accumulated exactly once at completion time in recordRequestCompletion.
+		if req.ProgressIndex == util.Len64(req.InputTokens) && !req.TTFTSet {
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
 			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)

@@ -399,3 +399,82 @@ func makeDecodeBatch(count, seqLen int) []*sim.Request {
 	}
 	return batch
 }
+
+// BC-1: TP=2 reduces step time vs TP=1 for trained-physics model.
+// Every compute and bandwidth term is divided by tp, so TP=2 must be strictly faster
+// than TP=1 for any non-trivial batch (All-Reduce overhead β₄ is small relative to savings).
+func TestTrainedPhysicsModel_TPScaling_TP2LessThanTP1(t *testing.T) {
+	mc := trainedPhysicsTestModelConfig()
+	hw := testHardwareConfig()
+	coeffs := testCoeffs()
+
+	hwTP1 := sim.ModelHardwareConfig{
+		Backend:     "trained-physics",
+		TP:          1,
+		ModelConfig: *mc,
+		HWConfig:    hw,
+	}
+	hwTP2 := sim.ModelHardwareConfig{
+		Backend:     "trained-physics",
+		TP:          2,
+		ModelConfig: *mc,
+		HWConfig:    hw,
+	}
+
+	mTP1, err := NewTrainedPhysicsModel(*coeffs, hwTP1)
+	require.NoError(t, err)
+	mTP2, err := NewTrainedPhysicsModel(*coeffs, hwTP2)
+	require.NoError(t, err)
+
+	batch := append(makePrefillBatch(1, 128), makeDecodeBatch(4, 256)...)
+
+	tp1Time := mTP1.StepTime(batch)
+	tp2Time := mTP2.StepTime(batch)
+
+	assert.Less(t, tp2Time, tp1Time,
+		"TP=2 step time (%d µs) must be less than TP=1 (%d µs)", tp2Time, tp1Time)
+	assert.Greater(t, tp2Time, int64(0), "TP=2 step time must be positive")
+}
+
+// BC-2: GQA (NumKVHeads < NumHeads) reduces step time vs MHA (NumKVHeads == NumHeads).
+// Fewer KV heads → smaller dKV → lower KV cache bandwidth and weight bandwidth.
+// Decode-heavy batch makes KV bandwidth the dominant term.
+func TestTrainedPhysicsModel_GQA_ReducesKVBandwidth(t *testing.T) {
+	hw := testHardwareConfig()
+	coeffs := testCoeffs()
+
+	// MHA: NumKVHeads == NumHeads (full attention bandwidth)
+	mcMHA := trainedPhysicsTestModelConfig()
+	mcMHA.NumKVHeads = mcMHA.NumHeads // 32
+
+	// GQA: NumKVHeads = 8 (4x fewer KV heads → lower KV bandwidth)
+	mcGQA := trainedPhysicsTestModelConfig()
+	mcGQA.NumKVHeads = 8
+
+	hwMHA := sim.ModelHardwareConfig{
+		Backend:     "trained-physics",
+		TP:          1,
+		ModelConfig: *mcMHA,
+		HWConfig:    hw,
+	}
+	hwGQA := sim.ModelHardwareConfig{
+		Backend:     "trained-physics",
+		TP:          1,
+		ModelConfig: *mcGQA,
+		HWConfig:    hw,
+	}
+
+	mMHA, err := NewTrainedPhysicsModel(*coeffs, hwMHA)
+	require.NoError(t, err)
+	mGQA, err := NewTrainedPhysicsModel(*coeffs, hwGQA)
+	require.NoError(t, err)
+
+	batch := makeDecodeBatch(8, 512)
+
+	mhaTime := mMHA.StepTime(batch)
+	gqaTime := mGQA.StepTime(batch)
+
+	assert.Greater(t, gqaTime, int64(0), "GQA step time must be positive")
+	assert.Less(t, gqaTime, mhaTime,
+		"GQA step time (%d µs) must be less than MHA (%d µs): fewer KV heads → lower bandwidth", gqaTime, mhaTime)
+}

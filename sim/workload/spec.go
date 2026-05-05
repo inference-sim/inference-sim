@@ -143,6 +143,12 @@ type ClientSpec struct {
 type ArrivalSpec struct {
 	Process string   `yaml:"process"`
 	CV      *float64 `yaml:"cv,omitempty"`
+
+	// Optional MLE-fitted distribution parameters (ServeGen compatibility).
+	// When present, these override CV-based derivation in NewArrivalSampler.
+	// Populated by `blis convert servegen` (trace columns 5-6) or set directly in YAML for manual calibration.
+	Shape *float64 `yaml:"shape,omitempty"` // Gamma α or Weibull k
+	Scale *float64 `yaml:"scale,omitempty"` // Gamma θ or Weibull λ (in microseconds)
 }
 
 // DistSpec parameterizes a token length distribution.
@@ -167,6 +173,13 @@ type LifecycleSpec struct {
 type ActiveWindow struct {
 	StartUs int64 `yaml:"start_us"`
 	EndUs   int64 `yaml:"end_us"`
+
+	// Per-window parameters for time-varying workloads (ServeGen compatibility).
+	// When set, these override the client-level parameters during this window.
+	TraceRate  *float64     `yaml:"trace_rate,omitempty"`          // Weight for proportional rate allocation
+	Arrival    *ArrivalSpec `yaml:"arrival,omitempty"`             // Arrival pattern (shape/scale for CV)
+	InputDist  *DistSpec    `yaml:"input_distribution,omitempty"`  // Input token distribution
+	OutputDist *DistSpec    `yaml:"output_distribution,omitempty"` // Output token distribution
 }
 
 // MultimodalSpec configures multimodal request generation.
@@ -196,9 +209,10 @@ type MultiTurnSpec struct {
 
 // ServeGenDataSpec configures native ServeGen data file loading.
 type ServeGenDataSpec struct {
-	Path      string `yaml:"path"`
-	SpanStart int64  `yaml:"span_start,omitempty"`
-	SpanEnd   int64  `yaml:"span_end,omitempty"`
+	Path       string `yaml:"path"`
+	SpanStart  int64  `yaml:"span_start,omitempty"`
+	SpanEnd    int64  `yaml:"span_end,omitempty"`
+	TimeWindow string `yaml:"time_window,omitempty"` // "midnight", "morning", or "afternoon"
 }
 
 // Valid value registries.
@@ -207,7 +221,7 @@ var (
 		"poisson": true, "gamma": true, "weibull": true, "constant": true,
 	}
 	validDistTypes = map[string]bool{
-		"gaussian": true, "exponential": true, "pareto_lognormal": true, "empirical": true, "constant": true,
+		"gaussian": true, "exponential": true, "pareto_lognormal": true, "lognormal": true, "empirical": true, "constant": true,
 	}
 	validCategories = map[string]bool{
 		"": true, "language": true, "multimodal": true, "reasoning": true,
@@ -253,8 +267,32 @@ func (s *WorkloadSpec) Validate() error {
 		hasRateBasedClient = true
 	}
 	if hasRateBasedClient {
-		if err := validateFinitePositive("aggregate_rate", s.AggregateRate); err != nil {
-			return err
+		// aggregate_rate can be 0 in absolute rate mode. In this mode, each window
+		// must have an explicit trace_rate that is used directly instead of being
+		// scaled by aggregate_rate. Useful for time-varying workloads.
+		if s.AggregateRate == 0 {
+			// Verify all rate-based clients have windows with trace_rate
+			for i, c := range s.Clients {
+				if c.Concurrency == 0 { // rate-based
+					if c.Lifecycle == nil || len(c.Lifecycle.Windows) == 0 {
+						return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but client %d has no lifecycle windows with trace_rate", i)
+					}
+					for j, w := range c.Lifecycle.Windows {
+						if w.TraceRate == nil {
+							return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but client %d window %d has no trace_rate", i, j)
+						}
+					}
+				}
+			}
+			// Cohorts not supported in absolute rate mode
+			if len(s.Cohorts) > 0 {
+				return fmt.Errorf("aggregate_rate is 0 (absolute rate mode) but cohorts are present (cohorts require proportional allocation)")
+			}
+		} else {
+			// Normal proportional mode: aggregate_rate must be positive
+			if err := validateFinitePositive("aggregate_rate", s.AggregateRate); err != nil {
+				return err
+			}
 		}
 	}
 	if len(s.Clients) == 0 && s.ServeGenData == nil && len(s.Cohorts) == 0 {
@@ -324,14 +362,32 @@ func validateClient(c *ClientSpec, idx int) error {
 			return fmt.Errorf("%s: unknown arrival process %q; valid: poisson, gamma, weibull, constant", prefix, c.Arrival.Process)
 		}
 		if c.Arrival.Process == "weibull" && c.Arrival.CV != nil {
-			cv := *c.Arrival.CV
-			if cv < 0.01 || cv > 10.4 {
-				return fmt.Errorf("%s: weibull CV must be in [0.01, 10.4], got %f", prefix, cv)
+			// Skip CV bounds check when explicit MLE-fitted shape/scale are
+			// provided. In that case CV is informational metadata from the
+			// ServeGen trace and is not used for distribution derivation.
+			hasExplicitParams := c.Arrival.Shape != nil && c.Arrival.Scale != nil &&
+				*c.Arrival.Shape > 0 && *c.Arrival.Scale > 0
+			if !hasExplicitParams {
+				cv := *c.Arrival.CV
+				if cv < 0.01 || cv > 10.4 {
+					return fmt.Errorf("%s: weibull CV must be in [0.01, 10.4], got %f", prefix, cv)
+				}
 			}
 		}
 	}
 	if c.Concurrency == 0 && c.Arrival.CV != nil {
 		if err := validateFinitePositive(prefix+".cv", *c.Arrival.CV); err != nil {
+			return err
+		}
+	}
+	// Validate explicit shape/scale parameters if provided (ServeGen MLE-fitted params)
+	if c.Arrival.Shape != nil {
+		if err := validateFinitePositive(prefix+".arrival.shape", *c.Arrival.Shape); err != nil {
+			return err
+		}
+	}
+	if c.Arrival.Scale != nil {
+		if err := validateFinitePositive(prefix+".arrival.scale", *c.Arrival.Scale); err != nil {
 			return err
 		}
 	}
@@ -352,12 +408,27 @@ func validateClient(c *ClientSpec, idx int) error {
 	if c.Reasoning != nil && c.Reasoning.MultiTurn != nil && c.Reasoning.MultiTurn.MaxRounds < 1 {
 		return fmt.Errorf("%s: reasoning.multi_turn.max_rounds must be >= 1, got %d", prefix, c.Reasoning.MultiTurn.MaxRounds)
 	}
+	// Validate lifecycle windows (#1131): empty or degenerate windows would cause
+	// the generator to loop indefinitely against a MaxInt64 horizon.
+	if c.Lifecycle != nil {
+		if len(c.Lifecycle.Windows) == 0 {
+			return fmt.Errorf("%s: lifecycle specified with no windows", prefix)
+		}
+		for j, w := range c.Lifecycle.Windows {
+			if w.StartUs < 0 {
+				return fmt.Errorf("%s: lifecycle.windows[%d] has negative start_us (%d)", prefix, j, w.StartUs)
+			}
+			if w.EndUs <= w.StartUs {
+				return fmt.Errorf("%s: lifecycle.windows[%d] has end_us (%d) <= start_us (%d)", prefix, j, w.EndUs, w.StartUs)
+			}
+		}
+	}
 	return nil
 }
 
 func validateDistSpec(prefix string, d *DistSpec) error {
 	if !validDistTypes[d.Type] {
-		return fmt.Errorf("%s: unknown distribution type %q; valid: gaussian, exponential, pareto_lognormal, empirical, constant", prefix, d.Type)
+		return fmt.Errorf("%s: unknown distribution type %q; valid: gaussian, exponential, pareto_lognormal, empirical, constant, lognormal", prefix, d.Type)
 	}
 	for name, val := range d.Params {
 		if math.IsNaN(val) || math.IsInf(val, 0) {
@@ -388,13 +459,30 @@ func validateCohort(c *CohortSpec, idx int) error {
 		return fmt.Errorf("%s: unknown arrival process %q; valid: poisson, gamma, weibull, constant", prefix, c.Arrival.Process)
 	}
 	if c.Arrival.Process == "weibull" && c.Arrival.CV != nil {
-		cv := *c.Arrival.CV
-		if cv < 0.01 || cv > 10.4 {
-			return fmt.Errorf("%s: weibull CV must be in [0.01, 10.4], got %f", prefix, cv)
+		// Skip CV bounds check when explicit MLE-fitted shape/scale are
+		// provided (same logic as validateClient).
+		hasExplicitParams := c.Arrival.Shape != nil && c.Arrival.Scale != nil &&
+			*c.Arrival.Shape > 0 && *c.Arrival.Scale > 0
+		if !hasExplicitParams {
+			cv := *c.Arrival.CV
+			if cv < 0.01 || cv > 10.4 {
+				return fmt.Errorf("%s: weibull CV must be in [0.01, 10.4], got %f", prefix, cv)
+			}
 		}
 	}
 	if c.Arrival.CV != nil {
 		if err := validateFinitePositive(prefix+".cv", *c.Arrival.CV); err != nil {
+			return err
+		}
+	}
+	// Validate explicit shape/scale parameters if provided (ServeGen MLE-fitted params)
+	if c.Arrival.Shape != nil {
+		if err := validateFinitePositive(prefix+".arrival.shape", *c.Arrival.Shape); err != nil {
+			return err
+		}
+	}
+	if c.Arrival.Scale != nil {
+		if err := validateFinitePositive(prefix+".arrival.scale", *c.Arrival.Scale); err != nil {
 			return err
 		}
 	}

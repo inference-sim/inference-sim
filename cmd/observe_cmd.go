@@ -52,11 +52,13 @@ var (
 	observeRttMs               float64
 	observeConcurrency         int
 	observeThinkTimeMs         int
+	observeThinkTimeDist       string
 	observeWorkload            string
 	observeDefaultsFilePath    string
 	observeRecordITL           bool
 	observeITLOutput           string
 	observeMinTokens           int
+	observeTimeout             int
 )
 
 var observeCmd = &cobra.Command{
@@ -127,7 +129,8 @@ func init() {
 	observeCmd.Flags().Int64Var(&observeHorizon, "horizon", 0, "Observation horizon in microseconds (0 = from spec or unlimited)")
 	observeCmd.Flags().IntVar(&observeNumRequests, "num-requests", 0, "Maximum requests to generate (0 = from spec or unlimited; differs from blis run default of 100)")
 	observeCmd.Flags().IntVar(&observeConcurrency, "concurrency", 0, "Number of concurrent virtual users (closed-loop, mutually exclusive with --rate)")
-	observeCmd.Flags().IntVar(&observeThinkTimeMs, "think-time-ms", 0, "Think time in ms between response and next request (concurrency mode)")
+	observeCmd.Flags().IntVar(&observeThinkTimeMs, "think-time-ms", 0, "Think time in ms between response and next request (concurrency mode; mutually exclusive with --think-time-dist)")
+	observeCmd.Flags().StringVar(&observeThinkTimeDist, "think-time-dist", "", `Think-time distribution spec for closed-loop observe (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s" or "constant:value=500ms"). Mutually exclusive with --think-time-ms. Requires --concurrency.`)
 
 	// Distribution synthesis flags — same names AND defaults as blis run.
 	// Default values are defined in root.go (distDefaults const block).
@@ -144,6 +147,9 @@ func init() {
 	observeCmd.Flags().BoolVar(&observeUnconstrainedOutput, "unconstrained-output", false, "Do not set max_tokens (let server decide output length)")
 	observeCmd.Flags().IntVar(&observeMinTokens, "min-tokens", 0, "Set min_tokens in request body (requests server to generate at least N tokens before EOS; 0 = omit field)")
 	observeCmd.Flags().Float64Var(&observeRttMs, "rtt-ms", 0, "Measured network round-trip time in milliseconds (recorded in trace header)")
+
+	// HTTP client tuning
+	observeCmd.Flags().IntVar(&observeTimeout, "timeout", defaultHTTPTimeoutSeconds, "HTTP request timeout in seconds (per request)")
 
 	// ITL recording (optional, opt-in)
 	observeCmd.Flags().BoolVar(&observeRecordITL, "record-itl", false, "Record per-chunk timestamps for ITL calibration (streaming only)")
@@ -239,6 +245,23 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	if observeThinkTimeMs < 0 {
 		logrus.Fatalf("--think-time-ms must be >= 0, got %d", observeThinkTimeMs)
 	}
+	if cmd.Flags().Changed("think-time-ms") && cmd.Flags().Changed("think-time-dist") {
+		logrus.Fatalf("--think-time-ms and --think-time-dist are mutually exclusive")
+	}
+	if observeThinkTimeDist != "" && observeConcurrency <= 0 {
+		logrus.Fatalf("--think-time-dist requires --concurrency")
+	}
+
+	// Resolve think-time distribution sampler (nil when --think-time-dist is not set;
+	// --think-time-ms is applied via DistributionParams.ThinkTimeMs below).
+	var observeThinkTimeSampler workload.LengthSampler
+	if cmd.Flags().Changed("think-time-dist") {
+		var err error
+		observeThinkTimeSampler, err = workload.ParseThinkTimeDist(observeThinkTimeDist)
+		if err != nil {
+			logrus.Fatalf("--think-time-dist: %v", err)
+		}
+	}
 
 	// BC-14: Numeric flag validation (R3)
 	if observeMaxConcur <= 0 {
@@ -258,6 +281,9 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	}
 	if observeMinTokens < 0 {
 		logrus.Fatalf("--min-tokens must be >= 0, got %d", observeMinTokens)
+	}
+	if observeTimeout <= 0 || observeTimeout > 86400 {
+		logrus.Fatalf("--timeout must be between 1 and 86400 seconds (1 day), got %d", observeTimeout)
 	}
 	if observeMinTokens > 0 && !observeUnconstrainedOutput &&
 		observeWorkloadSpec == "" && observeWorkload == "" &&
@@ -295,6 +321,11 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		spec.Seed = observeSeed
 	} else {
 		// Distribution or concurrency synthesis
+		// R3: Validate distribution token bounds before synthesis.
+		if msg := validateDistributionParams(observePromptMin, observePromptMax, observeOutputMin, observeOutputMax,
+			observePromptStdDev, observeOutputStdDev, observePromptTokens, observeOutputTokens); msg != "" {
+			logrus.Fatalf("%s", msg)
+		}
 		spec = workload.SynthesizeFromDistribution(workload.DistributionParams{
 			Rate:               observeRate,
 			Concurrency:        observeConcurrency,
@@ -343,6 +374,9 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Infof("Generated %d session blueprints (closed-loop)", len(wl.Sessions))
 	}
 
+	// Apply --think-time-dist sampler to all session blueprints (overrides constant ThinkTimeUs).
+	applyThinkTimeSampler(wl.Sessions, observeThinkTimeSampler)
+
 	if len(wl.Requests) == 0 {
 		logrus.Warn("No requests generated — writing empty trace")
 	}
@@ -374,7 +408,9 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	}
 
 	// Setup
-	client := NewRealClient(observeServerURL, observeAPIKey, observeModel, observeServerType, WithAPIFormat(observeAPIFormat))
+	client := NewRealClient(observeServerURL, observeAPIKey, observeModel, observeServerType,
+		WithAPIFormat(observeAPIFormat),
+		WithHTTPTimeout(time.Duration(observeTimeout)*time.Second))
 	recorder := &Recorder{}
 
 	// Calibrate tokens-per-word ratio for the server's tokenizer (BC-6).
@@ -464,6 +500,10 @@ func runObserve(cmd *cobra.Command, _ []string) {
 
 	records := recorder.Records()
 	logrus.Infof("Trace exported: %d records to %s / %s", len(records), observeTraceHeader, observeTraceData)
+
+	// Print session metrics if any record carries a session label (#1058)
+	sessionMetrics := computeSessionMetricsFromTrace(records)
+	printSessionMetrics(os.Stdout, sessionMetrics)
 
 	// Export ITL if requested (BC-5: opt-in)
 	if observeRecordITL {
@@ -947,4 +987,15 @@ func buildPrefixStrings(groups map[string]int, seed int64, tokensPerWord float64
 		prefixLengths[group] = length
 	}
 	return prefixes, prefixLengths
+}
+
+// applyThinkTimeSampler sets s on every blueprint in sessions.
+// No-op when s is nil. Extracted for unit testability.
+func applyThinkTimeSampler(sessions []workload.SessionBlueprint, s workload.LengthSampler) {
+	if s == nil {
+		return
+	}
+	for i := range sessions {
+		sessions[i].ThinkTimeSampler = s
+	}
 }

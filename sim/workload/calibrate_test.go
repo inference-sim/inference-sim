@@ -215,6 +215,33 @@ func TestBuildCalibrationReport_IncludesAllAnnotations(t *testing.T) {
 	if report.TraceInfo.MatchedPairs != 3 {
 		t.Errorf("matched pairs = %d, want 3", report.TraceInfo.MatchedPairs)
 	}
+
+	// THEN tail percentile error fields are populated (non-zero when inputs differ)
+	ttft := report.Metrics["ttft"]
+	if ttft.WorkloadLevel.P50Error == 0.0 {
+		t.Error("P50Error should be non-zero when real and sim differ")
+	}
+	if ttft.WorkloadLevel.P50PercentError == 0.0 {
+		t.Error("P50PercentError should be non-zero when real and sim differ")
+	}
+	if ttft.WorkloadLevel.P90Error == 0.0 {
+		t.Error("P90Error should be non-zero when real and sim differ")
+	}
+	if ttft.WorkloadLevel.P90PercentError == 0.0 {
+		t.Error("P90PercentError should be non-zero when real and sim differ")
+	}
+	if ttft.WorkloadLevel.P95Error == 0.0 {
+		t.Error("P95Error should be non-zero when real and sim differ")
+	}
+	if ttft.WorkloadLevel.P95PercentError == 0.0 {
+		t.Error("P95PercentError should be non-zero when real and sim differ")
+	}
+	if ttft.WorkloadLevel.P99Error == 0.0 {
+		t.Error("P99Error should be non-zero when real and sim differ")
+	}
+	if ttft.WorkloadLevel.P99PercentError == 0.0 {
+		t.Error("P99PercentError should be non-zero when real and sim differ")
+	}
 }
 
 func TestCalibration_WithITL(t *testing.T) {
@@ -433,7 +460,7 @@ func TestComputeCalibration_ZeroRealMean_GuardsDivision(t *testing.T) {
 	// WHEN computing calibration
 	report, err := ComputeCalibration(real, sim, "test")
 
-	// THEN MeanPercentError is set to 0 (BC-11, R11)
+	// THEN MeanPercentError is set to 0 (BC-11, R11, guard: > 0)
 	if err != nil {
 		t.Fatalf("ComputeCalibration failed: %v", err)
 	}
@@ -457,7 +484,7 @@ func TestComputeCalibration_ZeroRealMedian_GuardsDivision(t *testing.T) {
 	// WHEN computing calibration
 	report, err := ComputeCalibration(real, sim, "test")
 
-	// THEN MedianPercentError is set to 0 (BC-12, R11)
+	// THEN MedianPercentError is set to 0 (BC-12, R11, guard: > 0)
 	if err != nil {
 		t.Fatalf("ComputeCalibration failed: %v", err)
 	}
@@ -470,6 +497,30 @@ func TestComputeCalibration_ZeroRealMedian_GuardsDivision(t *testing.T) {
 	// MedianError should still be computed (not guarded)
 	if report.WorkloadLevel.MedianError != 10.0 {
 		t.Errorf("WorkloadLevel.MedianError = %f, want 10.0", report.WorkloadLevel.MedianError)
+	}
+}
+
+func TestComputeCalibration_ZeroRealP50_GuardsDivision(t *testing.T) {
+	// GIVEN real values where P50 is exactly zero (all values are zero)
+	real := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	sim := []float64{10, 10, 10, 10, 10, 10, 10, 10, 10, 10}
+
+	// WHEN computing calibration
+	report, err := ComputeCalibration(real, sim, "test")
+
+	// THEN P50PercentError is set to 0 (R11, guard: > 0)
+	if err != nil {
+		t.Fatalf("ComputeCalibration failed: %v", err)
+	}
+	if report.WorkloadLevel.RealP50 != 0.0 {
+		t.Errorf("WorkloadLevel.RealP50 = %f, want 0.0", report.WorkloadLevel.RealP50)
+	}
+	if report.WorkloadLevel.P50PercentError != 0.0 {
+		t.Errorf("WorkloadLevel.P50PercentError = %f, want 0.0 (guarded division)", report.WorkloadLevel.P50PercentError)
+	}
+	// P50Error should still be computed (not guarded)
+	if report.WorkloadLevel.P50Error != 10.0 {
+		t.Errorf("WorkloadLevel.P50Error = %f, want 10.0", report.WorkloadLevel.P50Error)
 	}
 }
 
@@ -571,5 +622,466 @@ func TestMetricComparison_JSONRoundTrip_IncludesNewFields(t *testing.T) {
 	}
 	if len(topLevel) != 3 {
 		t.Errorf("JSON should have exactly 3 top-level keys (workload_level, request_level, count), got %d: %v", len(topLevel), topLevel)
+	}
+}
+
+func TestPrepareCalibrationPairs_PrefixCached_UsesServerInputTokens(t *testing.T) {
+	// GIVEN a prefix-cached trace record with client-side InputTokens (268, new tokens only)
+	// and server-side ServerInputTokens (16652, full prompt tokens including prefix)
+	realRecords := []TraceRecord{
+		{
+			RequestID:         0,
+			InputTokens:       268,   // client-side count (new tokens only)
+			ServerInputTokens: 16652, // server-reported full prompt tokens
+			OutputTokens:      100,
+			FirstChunkTimeUs:  1000,
+			LastChunkTimeUs:   5000,
+			SendTimeUs:        0,
+		},
+	}
+
+	// WHEN simulator reports full tokens (16652, includes prefix)
+	simResults := []SimResult{
+		{
+			RequestID:    0,
+			InputTokens:  16652, // full tokens including prefix
+			OutputTokens: 100,
+			TTFT:         800,
+			E2E:          4500,
+		},
+	}
+
+	config := &CalibrationConfig{WarmUpRequests: 0}
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, config)
+
+	// THEN no error and token mismatch count should be 0
+	// Without this fix, rec.InputTokens (268) != sr.InputTokens (16652) would
+	// cause a false mismatch; using ServerInputTokens (16652) matches correctly
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pairs.TokenMismatchCount != 0 {
+		t.Errorf("expected TokenMismatchCount=0 for prefix-cached request, got %d", pairs.TokenMismatchCount)
+	}
+	if pairs.MatchedCount != 1 {
+		t.Errorf("expected MatchedCount=1, got %d", pairs.MatchedCount)
+	}
+}
+
+func TestPrepareCalibrationPairs_LegacyTrace_FallsBackToInputTokens(t *testing.T) {
+	// GIVEN a legacy trace without ServerInputTokens (0 = not recorded)
+	realRecords := []TraceRecord{
+		{
+			RequestID:         0,
+			InputTokens:       512,
+			ServerInputTokens: 0, // not recorded (legacy trace)
+			OutputTokens:      100,
+			FirstChunkTimeUs:  1000,
+			LastChunkTimeUs:   5000,
+			SendTimeUs:        0,
+		},
+	}
+
+	// WHEN simulator reports matching InputTokens
+	simResults := []SimResult{
+		{
+			RequestID:    0,
+			InputTokens:  512,
+			OutputTokens: 100,
+			TTFT:         800,
+			E2E:          4500,
+		},
+	}
+
+	config := &CalibrationConfig{WarmUpRequests: 0}
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, config)
+
+	// THEN no token mismatch (legacy path works)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pairs.TokenMismatchCount != 0 {
+		t.Errorf("expected TokenMismatchCount=0 for legacy trace, got %d", pairs.TokenMismatchCount)
+	}
+	if pairs.MatchedCount != 1 {
+		t.Errorf("expected MatchedCount=1, got %d", pairs.MatchedCount)
+	}
+}
+
+func TestPrepareCalibrationPairs_NonPrefixCached_UsesServerInputTokens(t *testing.T) {
+	// GIVEN a non-prefix-cached request where ServerInputTokens == InputTokens
+	realRecords := []TraceRecord{
+		{
+			RequestID:         0,
+			InputTokens:       264,
+			ServerInputTokens: 264, // no prefix caching
+			OutputTokens:      100,
+			FirstChunkTimeUs:  1000,
+			LastChunkTimeUs:   5000,
+			SendTimeUs:        0,
+		},
+	}
+
+	// WHEN simulator reports slightly different token count (genuine mismatch)
+	simResults := []SimResult{
+		{
+			RequestID:    0,
+			InputTokens:  263,
+			OutputTokens: 100,
+			TTFT:         800,
+			E2E:          4500,
+		},
+	}
+
+	config := &CalibrationConfig{WarmUpRequests: 0}
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, config)
+
+	// THEN token mismatch is flagged
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pairs.TokenMismatchCount != 1 {
+		t.Errorf("expected TokenMismatchCount=1 for genuine mismatch, got %d", pairs.TokenMismatchCount)
+	}
+	if pairs.MatchedCount != 1 {
+		t.Errorf("expected MatchedCount=1, got %d", pairs.MatchedCount)
+	}
+}
+
+func TestPrepareCalibrationPairs_OutputTokenMismatch_StillDetected(t *testing.T) {
+	// GIVEN a request with correct input tokens but mismatched output
+	realRecords := []TraceRecord{
+		{
+			RequestID:         0,
+			InputTokens:       512,
+			ServerInputTokens: 512,
+			OutputTokens:      128,
+			FirstChunkTimeUs:  1000,
+			LastChunkTimeUs:   5000,
+			SendTimeUs:        0,
+		},
+	}
+
+	// WHEN simulator reports different output token count
+	simResults := []SimResult{
+		{
+			RequestID:    0,
+			InputTokens:  512,
+			OutputTokens: 130,
+			TTFT:         800,
+			E2E:          4500,
+		},
+	}
+
+	config := &CalibrationConfig{WarmUpRequests: 0}
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, config)
+
+	// THEN output token mismatch is flagged
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pairs.TokenMismatchCount != 1 {
+		t.Errorf("expected TokenMismatchCount=1 for output mismatch, got %d", pairs.TokenMismatchCount)
+	}
+}
+
+func TestPrepareCalibrationPairs_PrefixCached_TokenizerRounding(t *testing.T) {
+	// GIVEN a prefix-cached trace with ServerInputTokens=16638 and sim reports 16652
+	// (14-token difference due to tokenizer boundary rounding - real-world scenario)
+	realRecords := []TraceRecord{
+		{
+			RequestID:         0,
+			InputTokens:       268,   // client-side count (new tokens only)
+			ServerInputTokens: 16638, // server-reported full prompt tokens
+			OutputTokens:      100,
+			FirstChunkTimeUs:  1000,
+			LastChunkTimeUs:   5000,
+			SendTimeUs:        0,
+		},
+	}
+
+	// WHEN simulator reports slightly different full tokens (tokenizer rounding)
+	simResults := []SimResult{
+		{
+			RequestID:    0,
+			InputTokens:  16652, // sim's full token count (14-token diff from server)
+			OutputTokens: 100,
+			TTFT:         800,
+			E2E:          4500,
+		},
+	}
+
+	config := &CalibrationConfig{WarmUpRequests: 0}
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, config)
+
+	// THEN token mismatch is correctly flagged (genuine tokenizer boundary difference)
+	// Without the fix, this would compare InputTokens=268 vs 16652 (false positive)
+	// With the fix, it compares ServerInputTokens=16638 vs 16652 (genuine 14-token diff)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pairs.TokenMismatchCount != 1 {
+		t.Errorf("expected TokenMismatchCount=1 for tokenizer rounding (14-token diff), got %d", pairs.TokenMismatchCount)
+	}
+	if pairs.MatchedCount != 1 {
+		t.Errorf("expected MatchedCount=1, got %d", pairs.MatchedCount)
+	}
+}
+
+func TestComputeCalibration_TailPercentileErrors_CorrectSignAndMagnitude(t *testing.T) {
+	tests := []struct {
+		name                string
+		real                []float64
+		sim                 []float64
+		wantP50Error        float64
+		wantP50PercentError float64
+		wantP90Error        float64
+		wantP90PercentError float64
+		wantP95Error        float64
+		wantP95PercentError float64
+		wantP99Error        float64
+		wantP99PercentError float64
+		tolerance           float64
+	}{
+		{
+			name: "over-predict-tail",
+			// Distribution where sim consistently over-predicts by 10%
+			// P50: real[4..5] = 500..600 → 550, sim[4..5] = 550..660 → 605 → error=55
+			// P90: real[8..9] = 900..1000 → 910, sim[8..9] = 990..1100 → 1001 → error=91
+			// P95: real[8..9] = 900..1000 → 955, sim[8..9] = 990..1100 → 1050.5 → error=95.5
+			// P99: real[8..9] = 900..1000 → 991, sim[8..9] = 990..1100 → 1090.1 → error=99.1
+			real:                []float64{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000},
+			sim:                 []float64{110, 220, 330, 440, 550, 660, 770, 880, 990, 1100},
+			wantP50Error:        55.0,  // 605 - 550
+			wantP50PercentError: 0.100, // 55 / 550
+			wantP90Error:        91.0,  // 1001 - 910
+			wantP90PercentError: 0.100, // 91 / 910
+			wantP95Error:        95.5,  // 1050.5 - 955
+			wantP95PercentError: 0.100, // 95.5 / 955
+			wantP99Error:        99.1,  // 1090.1 - 991
+			wantP99PercentError: 0.100, // 99.1 / 991
+			tolerance:           0.01,
+		},
+		{
+			name:                "under-predict-tail",
+			real:                []float64{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000},
+			sim:                 []float64{90, 180, 270, 360, 450, 540, 630, 720, 810, 900},
+			wantP50Error:        -55.0, // 495 - 550
+			wantP50PercentError: 0.100, // | -55 | / 550
+			wantP90Error:        -91.0, // 819 - 910
+			wantP90PercentError: 0.100, // | -91 | / 910
+			wantP95Error:        -95.5, // 859.5 - 955
+			wantP95PercentError: 0.100, // | -95.5 | / 955
+			wantP99Error:        -99.1, // 891.9 - 991
+			wantP99PercentError: 0.100, // | -99.1 | / 991
+			tolerance:           0.01,
+		},
+		{
+			name:                "perfect-match-tail",
+			real:                []float64{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000},
+			sim:                 []float64{100, 200, 300, 400, 500, 600, 700, 800, 900, 1000},
+			wantP50Error:        0.0,
+			wantP50PercentError: 0.0,
+			wantP90Error:        0.0,
+			wantP90PercentError: 0.0,
+			wantP95Error:        0.0,
+			wantP95PercentError: 0.0,
+			wantP99Error:        0.0,
+			wantP99PercentError: 0.0,
+			tolerance:           0.001,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// WHEN computing calibration
+			report, err := ComputeCalibration(tt.real, tt.sim, "test")
+			if err != nil {
+				t.Fatalf("ComputeCalibration failed: %v", err)
+			}
+
+			// THEN tail percentile error fields match expected values
+			if math.Abs(report.WorkloadLevel.P50Error-tt.wantP50Error) > tt.tolerance {
+				t.Errorf("WorkloadLevel.P50Error = %f, want %f", report.WorkloadLevel.P50Error, tt.wantP50Error)
+			}
+			if math.Abs(report.WorkloadLevel.P50PercentError-tt.wantP50PercentError) > tt.tolerance {
+				t.Errorf("WorkloadLevel.P50PercentError = %f, want %f", report.WorkloadLevel.P50PercentError, tt.wantP50PercentError)
+			}
+			if math.Abs(report.WorkloadLevel.P90Error-tt.wantP90Error) > tt.tolerance {
+				t.Errorf("WorkloadLevel.P90Error = %f, want %f", report.WorkloadLevel.P90Error, tt.wantP90Error)
+			}
+			if math.Abs(report.WorkloadLevel.P90PercentError-tt.wantP90PercentError) > tt.tolerance {
+				t.Errorf("WorkloadLevel.P90PercentError = %f, want %f", report.WorkloadLevel.P90PercentError, tt.wantP90PercentError)
+			}
+			if math.Abs(report.WorkloadLevel.P95Error-tt.wantP95Error) > tt.tolerance {
+				t.Errorf("WorkloadLevel.P95Error = %f, want %f", report.WorkloadLevel.P95Error, tt.wantP95Error)
+			}
+			if math.Abs(report.WorkloadLevel.P95PercentError-tt.wantP95PercentError) > tt.tolerance {
+				t.Errorf("WorkloadLevel.P95PercentError = %f, want %f", report.WorkloadLevel.P95PercentError, tt.wantP95PercentError)
+			}
+			if math.Abs(report.WorkloadLevel.P99Error-tt.wantP99Error) > tt.tolerance {
+				t.Errorf("WorkloadLevel.P99Error = %f, want %f", report.WorkloadLevel.P99Error, tt.wantP99Error)
+			}
+			if math.Abs(report.WorkloadLevel.P99PercentError-tt.wantP99PercentError) > tt.tolerance {
+				t.Errorf("WorkloadLevel.P99PercentError = %f, want %f", report.WorkloadLevel.P99PercentError, tt.wantP99PercentError)
+			}
+		})
+	}
+}
+
+func TestComputeCalibration_ZeroRealP90_GuardsDivision(t *testing.T) {
+	// GIVEN real values where P90 is exactly zero (all values are zero)
+	real := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	sim := []float64{10, 10, 10, 10, 10, 10, 10, 10, 10, 10}
+
+	// WHEN computing calibration
+	report, err := ComputeCalibration(real, sim, "test")
+
+	// THEN P90PercentError is set to 0 (R11, guard: > 0)
+	if err != nil {
+		t.Fatalf("ComputeCalibration failed: %v", err)
+	}
+	if report.WorkloadLevel.RealP90 != 0.0 {
+		t.Errorf("WorkloadLevel.RealP90 = %f, want 0.0", report.WorkloadLevel.RealP90)
+	}
+	if report.WorkloadLevel.P90PercentError != 0.0 {
+		t.Errorf("WorkloadLevel.P90PercentError = %f, want 0.0 (guarded division)", report.WorkloadLevel.P90PercentError)
+	}
+	// P90Error should still be computed (not guarded)
+	if report.WorkloadLevel.P90Error != 10.0 {
+		t.Errorf("WorkloadLevel.P90Error = %f, want 10.0", report.WorkloadLevel.P90Error)
+	}
+}
+
+func TestComputeCalibration_ZeroRealP95_GuardsDivision(t *testing.T) {
+	// GIVEN real values where P95 is exactly zero (all values are zero)
+	real := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	sim := []float64{10, 10, 10, 10, 10, 10, 10, 10, 10, 10}
+
+	// WHEN computing calibration
+	report, err := ComputeCalibration(real, sim, "test")
+
+	// THEN P95PercentError is set to 0 (R11, guard: > 0)
+	if err != nil {
+		t.Fatalf("ComputeCalibration failed: %v", err)
+	}
+	if report.WorkloadLevel.RealP95 != 0.0 {
+		t.Errorf("WorkloadLevel.RealP95 = %f, want 0.0", report.WorkloadLevel.RealP95)
+	}
+	if report.WorkloadLevel.P95PercentError != 0.0 {
+		t.Errorf("WorkloadLevel.P95PercentError = %f, want 0.0 (guarded division)", report.WorkloadLevel.P95PercentError)
+	}
+	// P95Error should still be computed (not guarded)
+	if report.WorkloadLevel.P95Error != 10.0 {
+		t.Errorf("WorkloadLevel.P95Error = %f, want 10.0", report.WorkloadLevel.P95Error)
+	}
+}
+
+func TestComputeCalibration_ZeroRealP99_GuardsDivision(t *testing.T) {
+	// GIVEN real values where P99 is exactly zero (all values are zero)
+	real := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	sim := []float64{10, 10, 10, 10, 10, 10, 10, 10, 10, 10}
+
+	// WHEN computing calibration
+	report, err := ComputeCalibration(real, sim, "test")
+
+	// THEN P99PercentError is set to 0 (R11, guard: > 0)
+	if err != nil {
+		t.Fatalf("ComputeCalibration failed: %v", err)
+	}
+	if report.WorkloadLevel.RealP99 != 0.0 {
+		t.Errorf("WorkloadLevel.RealP99 = %f, want 0.0", report.WorkloadLevel.RealP99)
+	}
+	if report.WorkloadLevel.P99PercentError != 0.0 {
+		t.Errorf("WorkloadLevel.P99PercentError = %f, want 0.0 (guarded division)", report.WorkloadLevel.P99PercentError)
+	}
+	// P99Error should still be computed (not guarded)
+	if report.WorkloadLevel.P99Error != 10.0 {
+		t.Errorf("WorkloadLevel.P99Error = %f, want 10.0", report.WorkloadLevel.P99Error)
+	}
+}
+
+func TestMetricComparison_JSONRoundTrip_IncludesTailPercentileErrors(t *testing.T) {
+	// GIVEN a MetricComparison with tail percentile error fields
+	original := &MetricComparison{
+		WorkloadLevel: WorkloadAggregates{
+			RealP50:            5000,
+			SimP50:             5100,
+			P50Error:           100,
+			P50PercentError:    0.020,
+			RealP90:            8000,
+			SimP90:             8200,
+			P90Error:           200,
+			P90PercentError:    0.025,
+			RealP95:            9000,
+			SimP95:             9100,
+			P95Error:           100,
+			P95PercentError:    0.011,
+			RealP99:            11000,
+			SimP99:             10800,
+			P99Error:           -200,
+			P99PercentError:    0.018,
+			RealMean:           5200,
+			SimMean:            5400,
+			RealMedian:         5000,
+			SimMedian:          5100,
+			MeanError:          200,
+			MeanPercentError:   0.038,
+			MedianError:        100,
+			MedianPercentError: 0.020,
+		},
+		RequestLevel: PredictionQuality{
+			MAPE:          0.12,
+			PearsonR:      0.92,
+			BiasDirection: "over-predict",
+			Quality:       "good",
+		},
+		Count: 100,
+	}
+
+	// WHEN marshaling to JSON and back
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+
+	var decoded MetricComparison
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+
+	// THEN tail percentile error fields round-trip correctly
+	if decoded.WorkloadLevel.P50Error != original.WorkloadLevel.P50Error {
+		t.Errorf("WorkloadLevel.P50Error = %f, want %f", decoded.WorkloadLevel.P50Error, original.WorkloadLevel.P50Error)
+	}
+	if decoded.WorkloadLevel.P50PercentError != original.WorkloadLevel.P50PercentError {
+		t.Errorf("WorkloadLevel.P50PercentError = %f, want %f", decoded.WorkloadLevel.P50PercentError, original.WorkloadLevel.P50PercentError)
+	}
+	if decoded.WorkloadLevel.P90Error != original.WorkloadLevel.P90Error {
+		t.Errorf("WorkloadLevel.P90Error = %f, want %f", decoded.WorkloadLevel.P90Error, original.WorkloadLevel.P90Error)
+	}
+	if decoded.WorkloadLevel.P90PercentError != original.WorkloadLevel.P90PercentError {
+		t.Errorf("WorkloadLevel.P90PercentError = %f, want %f", decoded.WorkloadLevel.P90PercentError, original.WorkloadLevel.P90PercentError)
+	}
+	if decoded.WorkloadLevel.P95Error != original.WorkloadLevel.P95Error {
+		t.Errorf("WorkloadLevel.P95Error = %f, want %f", decoded.WorkloadLevel.P95Error, original.WorkloadLevel.P95Error)
+	}
+	if decoded.WorkloadLevel.P95PercentError != original.WorkloadLevel.P95PercentError {
+		t.Errorf("WorkloadLevel.P95PercentError = %f, want %f", decoded.WorkloadLevel.P95PercentError, original.WorkloadLevel.P95PercentError)
+	}
+	if decoded.WorkloadLevel.P99Error != original.WorkloadLevel.P99Error {
+		t.Errorf("WorkloadLevel.P99Error = %f, want %f", decoded.WorkloadLevel.P99Error, original.WorkloadLevel.P99Error)
+	}
+	if decoded.WorkloadLevel.P99PercentError != original.WorkloadLevel.P99PercentError {
+		t.Errorf("WorkloadLevel.P99PercentError = %f, want %f", decoded.WorkloadLevel.P99PercentError, original.WorkloadLevel.P99PercentError)
+	}
+
+	// THEN JSON includes expected keys
+	jsonStr := string(data)
+	expectedKeys := []string{"p50_error", "p50_percent_error", "p90_error", "p90_percent_error", "p95_error", "p95_percent_error", "p99_error", "p99_percent_error"}
+	for _, key := range expectedKeys {
+		if !strings.Contains(jsonStr, key) {
+			t.Errorf("JSON missing key %q: %s", key, jsonStr)
+		}
 	}
 }

@@ -16,6 +16,7 @@ import (
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/latency"
+	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -294,6 +295,181 @@ func TestPrintPDMetrics_NilPD_ProducesNoOutput(t *testing.T) {
 	assert.Empty(t, buf.String(), "printPDMetrics with nil pd must produce no output")
 }
 
+// TestValidateDistributionParams verifies the behavioral contract of the extracted
+// distribution-parameter validation helper (R3, R14).
+//
+// Contract: validateDistributionParams returns an empty string for valid inputs and
+// a non-empty string describing the violation for any invalid input.
+//
+// GIVEN distribution token parameters
+// WHEN validateDistributionParams is called
+// THEN it returns empty string iff all parameters satisfy the bounds invariants
+func TestValidateDistributionParams(t *testing.T) {
+	// valid baseline — all defaults from the shared constants
+	const (
+		validMin    = defaultPromptMin
+		validMax    = defaultPromptMax
+		validMean   = defaultPromptMean
+		validStdev  = defaultPromptStdev
+		validOMin   = defaultOutputMin
+		validOMax   = defaultOutputMax
+		validOMean  = defaultOutputMean
+		validOStdev = defaultOutputStdev
+	)
+
+	tests := []struct {
+		name      string
+		promptMin int
+		promptMax int
+		outputMin int
+		outputMax int
+		promptStdev int
+		outputStdev int
+		promptMean  int
+		outputMean  int
+		wantErr     bool
+	}{
+		{
+			name:        "valid defaults produce no error",
+			promptMin: validMin, promptMax: validMax,
+			outputMin: validOMin, outputMax: validOMax,
+			promptStdev: validStdev, outputStdev: validOStdev,
+			promptMean: validMean, outputMean: validOMean,
+			wantErr: false,
+		},
+		{
+			name:        "prompt-tokens-min zero is rejected",
+			promptMin: 0, promptMax: validMax,
+			outputMin: validOMin, outputMax: validOMax,
+			promptStdev: validStdev, outputStdev: validOStdev,
+			promptMean: validMean, outputMean: validOMean,
+			wantErr: true,
+		},
+		{
+			name:        "prompt-tokens-min negative is rejected",
+			promptMin: -5, promptMax: validMax,
+			outputMin: validOMin, outputMax: validOMax,
+			promptStdev: validStdev, outputStdev: validOStdev,
+			promptMean: validMean, outputMean: validOMean,
+			wantErr: true,
+		},
+		{
+			name:        "prompt-tokens-max zero is rejected",
+			promptMin: validMin, promptMax: 0,
+			outputMin: validOMin, outputMax: validOMax,
+			promptStdev: validStdev, outputStdev: validOStdev,
+			promptMean: validMean, outputMean: validOMean,
+			wantErr: true,
+		},
+		{
+			name:        "output-tokens-min zero is rejected",
+			promptMin: validMin, promptMax: validMax,
+			outputMin: 0, outputMax: validOMax,
+			promptStdev: validStdev, outputStdev: validOStdev,
+			promptMean: validMean, outputMean: validOMean,
+			wantErr: true,
+		},
+		{
+			name:        "output-tokens-max zero is rejected",
+			promptMin: validMin, promptMax: validMax,
+			outputMin: validOMin, outputMax: 0,
+			promptStdev: validStdev, outputStdev: validOStdev,
+			promptMean: validMean, outputMean: validOMean,
+			wantErr: true,
+		},
+		{
+			name:        "negative prompt stdev is rejected",
+			promptMin: validMin, promptMax: validMax,
+			outputMin: validOMin, outputMax: validOMax,
+			promptStdev: -1, outputStdev: validOStdev,
+			promptMean: validMean, outputMean: validOMean,
+			wantErr: true,
+		},
+		{
+			name:        "negative output stdev is rejected",
+			promptMin: validMin, promptMax: validMax,
+			outputMin: validOMin, outputMax: validOMax,
+			promptStdev: validStdev, outputStdev: -1,
+			promptMean: validMean, outputMean: validOMean,
+			wantErr: true,
+		},
+		{
+			name:        "prompt min greater than max is rejected",
+			promptMin: 500, promptMax: 100,
+			outputMin: validOMin, outputMax: validOMax,
+			promptStdev: 50, outputStdev: validOStdev,
+			promptMean: 100, outputMean: validOMean,
+			wantErr: true,
+		},
+		{
+			name:        "output min greater than max is rejected",
+			promptMin: validMin, promptMax: validMax,
+			outputMin: 500, outputMax: 100,
+			promptStdev: validStdev, outputStdev: 50,
+			promptMean: validMean, outputMean: 100,
+			wantErr: true,
+		},
+		{
+			name:        "prompt mean above max is rejected",
+			promptMin: 10, promptMax: 100,
+			outputMin: validOMin, outputMax: validOMax,
+			promptStdev: 10, outputStdev: validOStdev,
+			promptMean: 200, outputMean: validOMean,
+			wantErr: true,
+		},
+		{
+			name:        "output mean below min is rejected",
+			promptMin: validMin, promptMax: validMax,
+			outputMin: 100, outputMax: 500,
+			promptStdev: validStdev, outputStdev: 50,
+			promptMean: validMean, outputMean: 50,
+			wantErr: true,
+		},
+		// stdev=0 is a valid deterministic distribution; lower-bound check must be skipped
+		{
+			name:        "prompt stdev 0 with min 1 is accepted",
+			promptMin: 1, promptMax: validMax,
+			outputMin: validOMin, outputMax: validOMax,
+			promptStdev: 0, outputStdev: validOStdev,
+			promptMean: validMean, outputMean: validOMean,
+			wantErr: false,
+		},
+		{
+			name:        "output stdev 0 with min 1 is accepted",
+			promptMin: validMin, promptMax: validMax,
+			outputMin: 1, outputMax: validOMax,
+			promptStdev: validStdev, outputStdev: 0,
+			promptMean: validMean, outputMean: validOMean,
+			wantErr: false,
+		},
+		{
+			name:        "both stddevs 0 with large mins are accepted",
+			promptMin: 100, promptMax: 1024,
+			outputMin: 50, outputMax: 512,
+			promptStdev: 0, outputStdev: 0,
+			promptMean: 512, outputMean: 128,
+			wantErr: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := validateDistributionParams(
+				tc.promptMin, tc.promptMax,
+				tc.outputMin, tc.outputMax,
+				tc.promptStdev, tc.outputStdev,
+				tc.promptMean, tc.outputMean,
+			)
+			if tc.wantErr && got == "" {
+				t.Errorf("expected a non-empty error string, got empty")
+			}
+			if !tc.wantErr && got != "" {
+				t.Errorf("expected no error, got %q", got)
+			}
+		})
+	}
+}
+
 // TestRunCmdDistributionDefaults_NoHardcodedLiterals verifies that none of the distDefaults
 // constant values appear as hardcoded literals in root.go's distribution flag IntVar calls
 // (BC-2: single source of truth).
@@ -472,219 +648,285 @@ func TestReplayCmd_HasResultsPathFlag(t *testing.T) {
 	}
 }
 
-// TestTryAutoCalcKVBlocksBlackbox_ErrorPaths tests all error paths in
-// tryAutoCalcKVBlocksBlackbox. Each error path should return (0, false) and
-// emit a warning (not tested here — warnings go to logrus stderr).
-func TestTryAutoCalcKVBlocksBlackbox_ErrorPaths(t *testing.T) {
-	// Create temporary test fixtures
-	tmpDir := t.TempDir()
+// TestRunCmd_TimeoutFlag_RegisteredWithDefault300s verifies that --timeout is registered
+// on runCmd with a default of 300s. Default 300s matches the session-client default in
+// computeDeadline (DefaultTimeoutUs), preserving termination for UnlimitedRounds sessions
+// and providing consistent behavior for synthesized workloads (#1127).
+func TestRunCmd_TimeoutFlag_RegisteredWithDefault300s(t *testing.T) {
+	f := runCmd.Flags().Lookup("timeout")
+	if f == nil {
+		t.Fatal("flag --timeout not found on runCmd")
+	}
+	if f.DefValue != "300" {
+		t.Errorf("--timeout default: got %q, want \"300\" (matches 300s session-client default in computeDeadline)", f.DefValue)
+	}
+}
 
-	// Valid hardware config file (JSON format)
-	hwConfigPath := filepath.Join(tmpDir, "hw.json")
-	hwJSON := `{
-  "H100": {
-    "MemoryGiB": 80.0,
-    "TFlopsPeak": 1000.0,
-    "BwPeakTBs": 3.35
-  }
-}`
-	if err := os.WriteFile(hwConfigPath, []byte(hwJSON), 0644); err != nil {
-		t.Fatalf("write hw config: %v", err)
+// TestRunCmd_TimeoutFlag_NotOnReplay verifies that --timeout is NOT registered on replayCmd.
+// blis replay replays a pre-captured trace and has no HTTP client; timeouts for replay
+// are expressed via the workload spec's deadline_us field (#1127).
+func TestRunCmd_TimeoutFlag_NotOnReplay(t *testing.T) {
+	if replayCmd.Flags().Lookup("timeout") != nil {
+		t.Error("replayCmd must NOT have --timeout flag; replay has no HTTP client and uses workload spec deadlines")
 	}
+}
 
-	// Valid model config.json file (minimal Llama-like)
-	validConfigJSON := `{
-  "architectures": ["LlamaForCausalLM"],
-  "num_attention_heads": 32,
-  "num_hidden_layers": 32,
-  "num_key_value_heads": 8,
-  "hidden_size": 4096,
-  "intermediate_size": 14336,
-  "vocab_size": 128256,
-  "torch_dtype": "float16",
-  "hidden_act": "silu"
-}`
+// TestApplyTimeoutToSpec_SynthesizedSpec verifies the core behavioral contract of
+// applyTimeoutToSpec: all ClientSpec.Timeout fields are set to the specified value,
+// and a zero value sets an explicit no-timeout pointer (not nil).
+//
+// GIVEN a synthesized spec with clients having nil Timeout
+// WHEN applyTimeoutToSpec is called with a non-zero timeout
+// THEN all clients receive a Timeout pointer with the converted microsecond value
+func TestApplyTimeoutToSpec_SynthesizedSpec(t *testing.T) {
+	spec := buildSynthesizedSpec()
 
-	validModelDir := filepath.Join(tmpDir, "valid-model")
-	if err := os.MkdirAll(validModelDir, 0755); err != nil {
-		t.Fatalf("create valid model dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(validModelDir, "config.json"), []byte(validConfigJSON), 0644); err != nil {
-		t.Fatalf("write valid config.json: %v", err)
-	}
+	applyTimeoutToSpec(spec, 60)
 
-	// Invalid model config.json (malformed JSON)
-	invalidModelDir := filepath.Join(tmpDir, "invalid-model")
-	if err := os.MkdirAll(invalidModelDir, 0755); err != nil {
-		t.Fatalf("create invalid model dir: %v", err)
+	for i, c := range spec.Clients {
+		if c.Timeout == nil {
+			t.Errorf("client[%d] Timeout is nil after applyTimeoutToSpec; want non-nil", i)
+			continue
+		}
+		want := int64(60_000_000)
+		if *c.Timeout != want {
+			t.Errorf("client[%d] Timeout = %d, want %d (60s in µs)", i, *c.Timeout, want)
+		}
 	}
-	if err := os.WriteFile(filepath.Join(invalidModelDir, "config.json"), []byte("{invalid json}"), 0644); err != nil {
-		t.Fatalf("write invalid config.json: %v", err)
-	}
+}
 
-	// Incomplete model config.json (missing required fields)
-	incompleteModelDir := filepath.Join(tmpDir, "incomplete-model")
-	if err := os.MkdirAll(incompleteModelDir, 0755); err != nil {
-		t.Fatalf("create incomplete model dir: %v", err)
-	}
-	incompleteJSON := `{"architectures": ["LlamaForCausalLM"]}`
-	if err := os.WriteFile(filepath.Join(incompleteModelDir, "config.json"), []byte(incompleteJSON), 0644); err != nil {
-		t.Fatalf("write incomplete config.json: %v", err)
-	}
-
-	// MoE model without num_local_experts (triggers ExtractKVCapacityParams error)
-	moeModelDir := filepath.Join(tmpDir, "moe-model")
-	if err := os.MkdirAll(moeModelDir, 0755); err != nil {
-		t.Fatalf("create moe model dir: %v", err)
-	}
-	moeJSON := `{
-  "architectures": ["MixtralForCausalLM"],
-  "num_attention_heads": 32,
-  "num_hidden_layers": 32,
-  "num_key_value_heads": 8,
-  "hidden_size": 4096,
-  "intermediate_size": 14336,
-  "vocab_size": 128256,
-  "torch_dtype": "float16",
-  "hidden_act": "silu",
-  "num_experts_per_tok": 2
-}`
-	if err := os.WriteFile(filepath.Join(moeModelDir, "config.json"), []byte(moeJSON), 0644); err != nil {
-		t.Fatalf("write moe config.json: %v", err)
-	}
-
-	// Hardware config with zero memory (JSON format)
-	zeroMemHWPath := filepath.Join(tmpDir, "zero-mem-hw.json")
-	zeroMemJSON := `{
-  "H100": {
-    "MemoryGiB": 0,
-    "TFlopsPeak": 1000.0,
-    "BwPeakTBs": 3.35
-  }
-}`
-	if err := os.WriteFile(zeroMemHWPath, []byte(zeroMemJSON), 0644); err != nil {
-		t.Fatalf("write zero-mem hw config: %v", err)
-	}
-
-	// Empty defaults.yaml for tests that don't need it
-	emptyDefaults := filepath.Join(tmpDir, "defaults.yaml")
-	if err := os.WriteFile(emptyDefaults, []byte("version: \"1.0\"\n"), 0644); err != nil {
-		t.Fatalf("write empty defaults: %v", err)
-	}
-
-	tests := []struct {
-		name                string
-		modelConfigFolder   string
-		defaultsFilePath    string
-		hwConfigPath        string
-		gpu                 string
-		expectSuccess       bool
-		description         string
-	}{
-		{
-			name:              "nonexistent model path",
-			modelConfigFolder: filepath.Join(tmpDir, "nonexistent"),
-			defaultsFilePath:  emptyDefaults,
-			hwConfigPath:      hwConfigPath,
-			gpu:               "H100",
-			expectSuccess:     false,
-			description:       "resolveModelConfig fails when path doesn't exist",
-		},
-		{
-			name:              "malformed config.json",
-			modelConfigFolder: invalidModelDir,
-			defaultsFilePath:  emptyDefaults,
-			hwConfigPath:      hwConfigPath,
-			gpu:               "H100",
-			expectSuccess:     false,
-			description:       "ParseHFConfig fails on invalid JSON",
-		},
-		{
-			name:              "incomplete config.json",
-			modelConfigFolder: incompleteModelDir,
-			defaultsFilePath:  emptyDefaults,
-			hwConfigPath:      hwConfigPath,
-			gpu:               "H100",
-			expectSuccess:     false,
-			description:       "GetModelConfigFromHF fails when required fields missing",
-		},
-		{
-			name:              "missing hardware config",
-			modelConfigFolder: validModelDir,
-			defaultsFilePath:  emptyDefaults,
-			hwConfigPath:      filepath.Join(tmpDir, "nonexistent-hw.json"),
-			gpu:               "H100",
-			expectSuccess:     false,
-			description:       "resolveHardwareConfig fails when file doesn't exist",
-		},
-		{
-			name:              "unknown GPU type",
-			modelConfigFolder: validModelDir,
-			defaultsFilePath:  emptyDefaults,
-			hwConfigPath:      hwConfigPath,
-			gpu:               "UnknownGPU",
-			expectSuccess:     false,
-			description:       "GetHWConfig fails when GPU not in hardware config",
-		},
-		{
-			name:              "zero GPU memory",
-			modelConfigFolder: validModelDir,
-			defaultsFilePath:  emptyDefaults,
-			hwConfigPath:      zeroMemHWPath,
-			gpu:               "H100",
-			expectSuccess:     false,
-			description:       "MemoryGiB <= 0 check fails",
-		},
-		{
-			name:              "MoE without num_local_experts",
-			modelConfigFolder: moeModelDir,
-			defaultsFilePath:  emptyDefaults,
-			hwConfigPath:      hwConfigPath,
-			gpu:               "H100",
-			expectSuccess:     false,
-			description:       "ExtractKVCapacityParams fails for MoE with num_experts_per_tok but no total expert count",
-		},
-		{
-			name:              "happy path",
-			modelConfigFolder: validModelDir,
-			defaultsFilePath:  emptyDefaults,
-			hwConfigPath:      hwConfigPath,
-			gpu:               "H100",
-			expectSuccess:     true,
-			description:       "All steps succeed, returns calculated blocks",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			blocks, ok := tryAutoCalcKVBlocksBlackbox(
-				"test-model",
-				tc.modelConfigFolder,
-				tc.defaultsFilePath,
-				tc.hwConfigPath,
-				tc.gpu,
-				1,    // tp
-				16,   // blockSize
-				0.9,  // gpuMemUtil
-				1000, // currentBlocks (fallback value)
-			)
-
-			if tc.expectSuccess {
-				if !ok {
-					t.Errorf("%s: expected success but got failure", tc.description)
-				}
-				if blocks <= 0 {
-					t.Errorf("%s: expected positive block count, got %d", tc.description, blocks)
-				}
-			} else {
-				if ok {
-					t.Errorf("%s: expected failure but got success with blocks=%d", tc.description, blocks)
-				}
-				if blocks != 0 {
-					t.Errorf("%s: expected blocks=0 on failure, got %d", tc.description, blocks)
-				}
+// TestApplyTimeoutToSpec_NonPositiveMeansDisabled verifies that timeout<=0 results in an
+// explicit no-timeout pointer (*int64 pointing to 0), not nil. Both 0 and negative values
+// disable the deadline. The CLI rejects 0 before calling this function (matching blis observe),
+// but the function itself treats all non-positive values identically: explicit *0 disables
+// the deadline and suppresses the 300s session default in computeDeadline (#1127).
+//
+// GIVEN a synthesized spec
+// WHEN applyTimeoutToSpec is called with timeout=0 or timeout=-1
+// THEN all clients have a non-nil Timeout pointer pointing to 0
+func TestApplyTimeoutToSpec_NonPositiveMeansDisabled(t *testing.T) {
+	for _, secs := range []int{0, -1, -300} {
+		spec := buildSynthesizedSpec()
+		applyTimeoutToSpec(spec, secs)
+		for i, c := range spec.Clients {
+			if c.Timeout == nil {
+				t.Errorf("secs=%d client[%d] Timeout is nil; want explicit *0 to suppress 300s default", secs, i)
+				continue
 			}
-		})
+			if *c.Timeout != 0 {
+				t.Errorf("secs=%d client[%d] Timeout = %d, want 0 (disabled)", secs, i, *c.Timeout)
+			}
+		}
+	}
+}
+
+// TestApplyTimeoutToSpec_CohortSpec verifies that applyTimeoutToSpec also sets
+// Timeout on CohortSpec entries (cohorts are expanded to clients during generation).
+func TestApplyTimeoutToSpec_CohortSpec(t *testing.T) {
+	spec := buildSynthesizedSpec()
+	// Add a cohort to simulate a spec with cohort-based clients.
+	spec.Cohorts = append(spec.Cohorts, buildTestCohort())
+
+	applyTimeoutToSpec(spec, 120)
+
+	wantUs := int64(120_000_000)
+	for i, coh := range spec.Cohorts {
+		if coh.Timeout == nil {
+			t.Errorf("cohort[%d] Timeout is nil; want non-nil", i)
+			continue
+		}
+		if *coh.Timeout != wantUs {
+			t.Errorf("cohort[%d] Timeout = %d, want %d", i, *coh.Timeout, wantUs)
+		}
+	}
+}
+
+// TestApplyTimeoutToSpec_NegativeMeansDisabled verifies that a negative timeoutSecs (the
+// way to disable the timeout via --timeout -1) produces an explicit *int64(0), not a
+// negative microsecond value. A negative µs deadline would violate INV-5 (causality:
+// deadline < arrival). Using negative as the "disabled" sentinel while mapping to *0
+// ensures backward-compatible behavior with computeDeadline (#1127).
+//
+// GIVEN a timeout of -1 seconds
+// WHEN applyTimeoutToSpec is called
+// THEN all clients have a non-nil Timeout pointer pointing to 0 (not negative µs)
+func TestApplyTimeoutToSpec_NegativeMeansDisabled(t *testing.T) {
+	spec := buildSynthesizedSpec()
+
+	applyTimeoutToSpec(spec, -1)
+
+	for i, c := range spec.Clients {
+		if c.Timeout == nil {
+			t.Errorf("client[%d] Timeout is nil; want explicit *0", i)
+			continue
+		}
+		if *c.Timeout != 0 {
+			t.Errorf("client[%d] Timeout = %d; want 0 (negative input maps to disabled, not negative µs)", i, *c.Timeout)
+		}
+	}
+}
+
+// TestApplyTimeoutToSpec_NotCalledForSpecFile verifies the dispatch guard:
+// when a workload spec is loaded from a file and --timeout is not explicitly set,
+// applyTimeoutToSpec must NOT be called (client-defined timeouts in the spec are preserved).
+//
+// GIVEN the package-level workloadSpecPath is non-empty and --timeout was not explicitly set
+// WHEN the real guard condition (workloadSpecPath == "" || cmd.Flags().Changed("timeout"))
+//      is evaluated
+// THEN the client Timeout is unchanged (applyTimeoutToSpec was not called)
+func TestApplyTimeoutToSpec_NotCalledForSpecFile(t *testing.T) {
+	origPath := workloadSpecPath
+	defer func() { workloadSpecPath = origPath }()
+	workloadSpecPath = "/path/to/workload.yaml"
+
+	spec := buildSynthesizedSpec()
+	want := int64(120_000_000) // 120s, already set in the spec
+	for i := range spec.Clients {
+		v := want
+		spec.Clients[i].Timeout = &v
+	}
+
+	// Exercise the actual guard condition — mirrors runCmd dispatch path.
+	// workloadSpecPath != "" and --timeout not set → guard is false → skip.
+	if workloadSpecPath == "" || runCmd.Flags().Changed("timeout") {
+		applyTimeoutToSpec(spec, requestTimeoutSecs)
+	}
+
+	for i, c := range spec.Clients {
+		if c.Timeout == nil || *c.Timeout != want {
+			t.Errorf("client[%d] Timeout = %v; want %d (spec timeout preserved)", i, c.Timeout, want)
+		}
+	}
+}
+
+// TestApplyTimeoutToRequests_ZeroSetsDeadlineZero verifies that applyTimeoutToRequests
+// with timeoutSecs=0 sets Deadline=0 on all requests regardless of ArrivalTime.
+// Zero disables the deadline; a nil Timeout for session clients would trigger the 300s
+// default in computeDeadline, so the explicit-zero post-pass is required (#1127).
+func TestApplyTimeoutToRequests_ZeroSetsDeadlineZero(t *testing.T) {
+	wl := &workload.GeneratedWorkload{
+		Requests: []*sim.Request{
+			{ID: "r0", ArrivalTime: 0, Deadline: 300_000_000},
+			{ID: "r1", ArrivalTime: 1_000_000, Deadline: 301_000_000},
+		},
+	}
+
+	applyTimeoutToRequests(wl, 0)
+
+	for i, req := range wl.Requests {
+		if req.Deadline != 0 {
+			t.Errorf("request[%d] Deadline = %d; want 0 (no timeout)", i, req.Deadline)
+		}
+	}
+}
+
+// TestApplyTimeoutToRequests_NonZeroSetsDeadlineFromArrival verifies that a positive
+// timeout sets Deadline = ArrivalTime + timeoutUs on each request.
+func TestApplyTimeoutToRequests_NonZeroSetsDeadlineFromArrival(t *testing.T) {
+	wl := &workload.GeneratedWorkload{
+		Requests: []*sim.Request{
+			{ID: "r0", ArrivalTime: 0},
+			{ID: "r1", ArrivalTime: 500_000},
+		},
+	}
+
+	applyTimeoutToRequests(wl, 60)
+
+	for i, req := range wl.Requests {
+		want := req.ArrivalTime + 60_000_000
+		if req.Deadline != want {
+			t.Errorf("request[%d] Deadline = %d; want %d (ArrivalTime + 60s)", i, req.Deadline, want)
+		}
+	}
+}
+
+// TestApplyTimeoutToRequests_ZeroSetsSessionBlueprintExplicitZero verifies that
+// applyTimeoutToRequests with timeoutSecs=0 sets session blueprint Timeout to an
+// explicit *int64(0), not nil. nil would trigger the 300s default for follow-up rounds.
+func TestApplyTimeoutToRequests_ZeroSetsSessionBlueprintExplicitZero(t *testing.T) {
+	wl := &workload.GeneratedWorkload{
+		Sessions: []workload.SessionBlueprint{
+			{SessionID: "s0"},
+			{SessionID: "s1"},
+		},
+	}
+
+	applyTimeoutToRequests(wl, 0)
+
+	for i, bp := range wl.Sessions {
+		if bp.Timeout == nil {
+			t.Errorf("session[%d] Timeout is nil; want explicit *0 to suppress 300s default", i)
+			continue
+		}
+		if *bp.Timeout != 0 {
+			t.Errorf("session[%d] Timeout = %d; want 0", i, *bp.Timeout)
+		}
+	}
+}
+
+// TestApplyTimeoutToRequests_NonZeroSetsSessionBlueprintTimeout verifies that a positive
+// timeout is propagated to session blueprints so follow-up round deadlines match.
+func TestApplyTimeoutToRequests_NonZeroSetsSessionBlueprintTimeout(t *testing.T) {
+	wl := &workload.GeneratedWorkload{
+		Sessions: []workload.SessionBlueprint{
+			{SessionID: "s0"},
+		},
+	}
+
+	applyTimeoutToRequests(wl, 120)
+
+	for i, bp := range wl.Sessions {
+		if bp.Timeout == nil {
+			t.Errorf("session[%d] Timeout is nil; want 120s in µs", i)
+			continue
+		}
+		want := int64(120_000_000)
+		if *bp.Timeout != want {
+			t.Errorf("session[%d] Timeout = %d; want %d (120s in µs)", i, *bp.Timeout, want)
+		}
+	}
+}
+
+// TestApplyTimeoutToRequests_NegativeSetsDeadlineZero verifies that a negative timeoutSecs
+// (the "disabled" sentinel, e.g. default -1) sets req.Deadline=0 on all requests.
+// Negative must not produce a negative deadline (INV-5 violation: deadline < arrival).
+func TestApplyTimeoutToRequests_NegativeSetsDeadlineZero(t *testing.T) {
+	wl := &workload.GeneratedWorkload{
+		Requests: []*sim.Request{
+			{ID: "r0", ArrivalTime: 0, Deadline: 300_000_000},
+			{ID: "r1", ArrivalTime: 1_000_000, Deadline: 301_000_000},
+		},
+	}
+
+	applyTimeoutToRequests(wl, -1)
+
+	for i, req := range wl.Requests {
+		if req.Deadline != 0 {
+			t.Errorf("request[%d] Deadline = %d; want 0 (negative input means disabled, not negative deadline)", i, req.Deadline)
+		}
+	}
+}
+
+// TestApplyTimeoutToRequests_NegativeSetsSessionBlueprintExplicitZero verifies that a
+// negative timeoutSecs sets session blueprint Timeout to *int64(0), not nil and not negative.
+// nil would trigger the 300s default for follow-up rounds; negative would violate INV-5.
+func TestApplyTimeoutToRequests_NegativeSetsSessionBlueprintExplicitZero(t *testing.T) {
+	wl := &workload.GeneratedWorkload{
+		Sessions: []workload.SessionBlueprint{
+			{SessionID: "s0"},
+		},
+	}
+
+	applyTimeoutToRequests(wl, -1)
+
+	for i, bp := range wl.Sessions {
+		if bp.Timeout == nil {
+			t.Errorf("session[%d] Timeout is nil; want explicit *0 (negative = disabled, not nil)", i)
+			continue
+		}
+		if *bp.Timeout != 0 {
+			t.Errorf("session[%d] Timeout = %d; want 0 (negative maps to disabled)", i, *bp.Timeout)
+		}
 	}
 }
 
@@ -729,8 +971,10 @@ func TestAutoCalcKVBlocks_SuppressedByExplicitFlag(t *testing.T) {
 func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	outFile := filepath.Join(t.TempDir(), "metrics.json")
 
+	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
 	// Save and restore all package-level flag vars mutated by runCmd.Run.
-	// Base list copied from TestReplayCmd_EndToEnd_BlackboxMode:377-434;
+	// Base list copied from TestReplayCmd_EndToEnd_TrainedPhysicsMode;
 	// run-only workload vars and metricsPath added on top.
 	origMetrics := metricsPath
 	origModel := model
@@ -775,8 +1019,13 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	origOutputMin := outputTokensMin
 	origOutputMax := outputTokensMax
 	origWorkloadSpec := workloadSpecPath
+	origRequestTimeout := requestTimeoutSecs
 	origTraceOut := traceOutput
 	origLogLevel := logLevel
+	origModelConfigFolder := modelConfigFolder
+	origHwConfigPath := hwConfigPath
+	origGPU := gpu
+	origTP := tensorParallelism
 	defer func() {
 		metricsPath = origMetrics
 		model = origModel
@@ -820,8 +1069,13 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 		outputTokensMin = origOutputMin
 		outputTokensMax = origOutputMax
 		workloadSpecPath = origWorkloadSpec
+		requestTimeoutSecs = origRequestTimeout
 		traceOutput = origTraceOut
 		logLevel = origLogLevel
+		modelConfigFolder = origModelConfigFolder
+		hwConfigPath = origHwConfigPath
+		gpu = origGPU
+		tensorParallelism = origTP
 	}()
 
 	// Set required run vars — runCmd.Run has logrus.Fatalf guards on zero/invalid values.
@@ -847,9 +1101,12 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	testCmd.Flags().StringVar(&workloadType, "workload", "", "")
 	if err := testCmd.ParseFlags([]string{
 		"--model", "qwen/qwen3-14b",
-		"--latency-model", "blackbox", // avoids roofline HF config fetch
-		"--beta-coeffs", "10000.0,1.0,1.0",
-		"--alpha-coeffs", "0.0,0.0,0.0",
+		"--latency-model", "trained-physics",
+		"--defaults-filepath", defaultsPath,
+		"--model-config-folder", mcFolder,
+		"--hardware-config", hwPath,
+		"--hardware", "H100",
+		"--tp", "1",
 		"--total-kv-blocks", "1000",
 		"--num-requests", "1",
 		"--seed", "42",
@@ -882,3 +1139,21 @@ func TestRunCmd_ModelAutoscalerIntervalUs_FlagRegistered(t *testing.T) {
 	assert.NoError(t, err, "default must be a valid float64")
 	assert.Equal(t, 0.0, defVal, "default must be 0 (disabled)")
 }
+
+// buildSynthesizedSpec returns a minimal WorkloadSpec as produced by SynthesizeFromDistribution,
+// with two clients and no cohorts, for use in applyTimeoutToSpec tests.
+func buildSynthesizedSpec() *workload.WorkloadSpec {
+	return &workload.WorkloadSpec{
+		Version: "2",
+		Clients: []workload.ClientSpec{
+			{ID: "client-0"},
+			{ID: "client-1"},
+		},
+	}
+}
+
+// buildTestCohort returns a minimal CohortSpec with no Timeout set.
+func buildTestCohort() workload.CohortSpec {
+	return workload.CohortSpec{ID: "cohort-0"}
+}
+

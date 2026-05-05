@@ -91,16 +91,14 @@ To add a new latency estimation backend (e.g., SGLang RadixAttention, TensorRT-L
    - `PostDecodeFixedOverhead() int64` — fixed per-request completion overhead (return 0 if not applicable)
    - **All `float64 → int64` conversions MUST use `clampToInt64(v)` (defined in `sim/latency/latency.go`).** Direct `int64(v)` casts on float64 values are undefined behavior in Go when the value is out of range. `clampToInt64` handles NaN and positive overflow correctly.
 2. **Register the backend name** in `sim/bundle.go`: add `"your-backend": true` to `validLatencyBackends` map.
-3. **Register in `NewLatencyModel` factory** in `sim/latency/latency.go`: add a `case` branch in the `switch hw.Backend` block. The backend string (e.g., `"trained-roofline"`) is set by the `--latency-model` CLI flag and stored in `ModelHardwareConfig.Backend`. The factory signature is `NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)`.
+3. **Register in `NewLatencyModel` factory** in `sim/latency/latency.go`: add a `case` branch in the `switch hw.Backend` block. The backend string (e.g., `"trained-physics"`) is set by the `--latency-model` CLI flag and stored in `ModelHardwareConfig.Backend`. The factory signature is `NewLatencyModel(LatencyCoeffs, ModelHardwareConfig)`.
 4. **Add CLI wiring** (if needed) in `cmd/root.go`: add a loading block for your backend's coefficients from `defaults.yaml`. If your backend needs a custom defaults section, add a struct to `cmd/default_config.go`.
 5. **Add behavioral tests** in `sim/latency/` — monotonicity (more tokens → longer step time), positive output, boundary cases (empty batch)
 6. Extension friction: **3-5 touch points** (implementation + bundle map + factory branch; optionally CLI wiring + defaults struct)
 
 Examples:
-- See `BlackboxLatencyModel` in `sim/latency/latency.go` for a simple stateless model (alpha/beta regression)
-- See `RooflineLatencyModel` in `sim/latency/latency.go` for a model that uses hardware config (FLOPs/bandwidth)
-- See `CrossModelLatencyModel` in `sim/latency/crossmodel.go` for a physics-informed model that derives step time from HuggingFace architecture features (MoE-aware)
-- See `TrainedRooflineLatencyModel` in `sim/latency/trained_roofline.go` for a data-driven model with roofline basis functions × learned corrections (zero-allocation hot path, 7% MAPE)
+- See `RooflineLatencyModel` in `sim/latency/latency.go` for a simple stateless analytical model (FLOPs/bandwidth roofline)
+- See `TrainedPhysicsModel` in `sim/latency/trained_physics_model.go` for a physics-informed model with roofline basis functions, learned corrections, and MoE-aware overhead modeling
 
 ## Adding New Batch Formation Strategies
 
@@ -112,11 +110,11 @@ To add a new batch formation strategy (e.g., disaggregated prefill/decode, specu
    - The implementation MUST update `ctx.ComputedTokens[req.ID]` for each request that receives new tokens (Phase 2 of `Step()` reads this map to advance `ProgressIndex`)
    - The implementation may mutate `WaitQ` (dequeue/prepend) and `KVCache` (allocate/release) during batch formation
    - The implementation MUST NOT schedule events or record metrics — return decisions in `BatchResult`, the Simulator applies them
-2. **Register in `NewBatchFormation` factory** in `sim/batch_formation.go`: add a selection branch. The factory signature is `NewBatchFormation()` — a future PR will add a strategy selection parameter (e.g., a string field in `PolicyConfig` or `BatchConfig`)
+2. **Register in `NewBatchFormation` factory** in `sim/batch_formation.go`: add a selection branch. The factory signature is `NewBatchFormation(preemptionPolicy string, sloMap *SLOPriorityMap)`. For a new batch formation *strategy* (not just a preemption variant), add a `BatchFormation string` field to `PolicyConfig` and a selection branch in `NewBatchFormation`
 3. **Add behavioral tests** — token budget enforcement, batch size limits, KV conservation, preemption behavior (if applicable), FCFS ordering
 4. Extension friction: **2 touch points** (implementation + factory registration)
 
-**Note:** Currently only `VLLMBatchFormation` exists. Adding a second strategy will also require: (a) a `BatchFormation string` field in `PolicyConfig` or `BatchConfig` (in `sim/config.go`), (b) a CLI flag in `cmd/root.go`, (c) validation in `sim/bundle.go`, (d) selection logic in `NewBatchFormation`.
+**Note:** Currently only `VLLMBatchFormation` exists (with configurable preemption via `--preemption-policy fcfs|priority`). Adding a second batch formation strategy will also require: (a) a `BatchFormation string` field in `PolicyConfig` or `BatchConfig` (in `sim/config.go`), (b) a CLI flag in `cmd/root.go`, (c) validation in `sim/bundle.go`, (d) selection logic in `NewBatchFormation`. For adding a new *preemption* variant (not a new strategy), add a constant to `batch_formation.go`, a case to the `switch` in `preemptForTokens`, and an entry in `validPreemptionPolicies` in `bundle.go`.
 
 Examples:
 - See `VLLMBatchFormation` in `sim/batch_formation.go` for the vLLM FCFS + chunked-prefill + preemption strategy

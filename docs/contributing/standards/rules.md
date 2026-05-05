@@ -233,7 +233,7 @@ Routing snapshot signals have different freshness guarantees due to DES event or
 
 **Freshness hierarchy:**
 - **Synchronous (cluster-owned):** InFlightRequests — always fresh (gateway counter)
-- **Immediate/Periodic (instance-owned):** QueueDepth, BatchSize, KVUtilization, CacheHitRate — Immediate when `--snapshot-refresh-interval=0`, Periodic when `>0`
+- **Immediate/Periodic (instance-owned):** QueueDepth, BatchSize, KVUtilization, CacheHitRate, PreemptionCount — Immediate when `--snapshot-refresh-interval=0`, Periodic when `>0`
 
 **Check:** When writing a new scorer, identify which snapshot fields it reads and their freshness. If using only Periodic signals, document why or combine with a synchronous scorer (InFlightRequests via EffectiveLoad). The `queue-depth` scorer reads only QueueDepth (Periodic) for GIE parity; the `load-balance` scorer reads EffectiveLoad (includes synchronous InFlightRequests).
 

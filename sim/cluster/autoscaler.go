@@ -258,15 +258,11 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 	// Reset timers for models whose signal disappeared this tick.
 	for modelID := range p.scaleUpFirstSignalAt {
 		if _, present := modelsWithScaleUp[modelID]; !present {
-			logrus.Debugf("[autoscaler] scale-up timer reset for model %q: signal absent this tick (accumulated %dμs)",
-				modelID, nowUs-p.scaleUpFirstSignalAt[modelID])
 			delete(p.scaleUpFirstSignalAt, modelID)
 		}
 	}
 	for modelID := range p.scaleDownFirstSignalAt {
 		if _, present := modelsWithScaleDown[modelID]; !present {
-			logrus.Debugf("[autoscaler] scale-down timer reset for model %q: signal absent this tick (accumulated %dμs)",
-				modelID, nowUs-p.scaleDownFirstSignalAt[modelID])
 			delete(p.scaleDownFirstSignalAt, modelID)
 		}
 	}

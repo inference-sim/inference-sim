@@ -2,6 +2,8 @@ package workload
 
 import (
 	"fmt"
+	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1478,9 +1480,9 @@ func TestExpandInferencePerfSpec_SingleStage_NormalizedDeterministic(t *testing.
 	}
 }
 
-func TestExpandInferencePerfSpec_MultiStage_KeepsPoisson(t *testing.T) {
-	// BC-4: Multi-stage expansion still uses Poisson arrival (for now).
-	// Verify that clients have Arrival field set (not CustomSamplerFactory).
+func TestExpandInferencePerfSpec_MultiStage_CustomSamplerFactory(t *testing.T) {
+	// BC-5: Multi-stage expansion uses CustomSamplerFactory with Poisson at exact
+	// per-client rate, bypassing fraction normalization.
 	ipSpec := &InferencePerfSpec{
 		Stages: []StageSpec{
 			{Rate: 8.0, Duration: 10},
@@ -1502,12 +1504,28 @@ func TestExpandInferencePerfSpec_MultiStage_KeepsPoisson(t *testing.T) {
 	if len(expanded.Clients) != 2 {
 		t.Fatalf("client count = %d, want 2", len(expanded.Clients))
 	}
+	wantRates := []float64{8.0, 20.0} // stage rates with 1 client per stage
 	for i, client := range expanded.Clients {
 		if client.Arrival.Process != "poisson" {
 			t.Errorf("client %d: arrival process = %q, want poisson", i, client.Arrival.Process)
 		}
-		if client.CustomSamplerFactory != nil {
-			t.Errorf("client %d: CustomSamplerFactory should be nil (using Poisson)", i)
+		if client.CustomSamplerFactory == nil {
+			t.Fatalf("client %d: CustomSamplerFactory should be set", i)
+		}
+		// Verify the factory produces a sampler at the correct rate by sampling IATs.
+		rng := rand.New(rand.NewSource(99))
+		sampler := client.CustomSamplerFactory(rng)
+		// Sample enough IATs to estimate the rate within ±20%.
+		var totalIAT int64
+		n := 10000
+		for j := 0; j < n; j++ {
+			totalIAT += sampler.SampleIAT(rng)
+		}
+		avgIATus := float64(totalIAT) / float64(n)
+		estimatedRate := 1e6 / avgIATus // convert µs IAT to req/s
+		want := wantRates[i]
+		if math.Abs(estimatedRate-want)/want > 0.20 {
+			t.Errorf("client %d: estimated rate = %.2f req/s, want ~%.2f req/s (±20%%)", i, estimatedRate, want)
 		}
 	}
 }

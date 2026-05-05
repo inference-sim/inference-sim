@@ -188,6 +188,266 @@ func TestConstantArrivalSampler_MinimumOneUs(t *testing.T) {
 	}
 }
 
+func TestNewArrivalSampler_GammaExplicitParams_MeanMatchesTheory(t *testing.T) {
+	// GIVEN an ArrivalSpec with explicit shape/scale (ServeGen-style)
+	// Gamma(shape=2.0, scale=50000) has theoretical mean = shape*scale = 100000 µs
+	shape := 2.0
+	scale := 50000.0
+	spec := ArrivalSpec{
+		Process: "gamma",
+		Shape:   &shape,
+		Scale:   &scale,
+	}
+	rng := rand.New(rand.NewSource(42))
+
+	// WHEN creating a sampler and drawing 50000 samples
+	sampler := NewArrivalSampler(spec, 0.00001) // rate is ignored when explicit params provided
+	n := 50000
+	sum := int64(0)
+	for i := 0; i < n; i++ {
+		sum += sampler.SampleIAT(rng)
+	}
+	empiricalMean := float64(sum) / float64(n)
+
+	// THEN empirical mean ≈ shape * scale = 100000 µs (within 5%)
+	theoreticalMean := shape * scale
+	relErr := math.Abs(empiricalMean-theoreticalMean) / theoreticalMean
+	if relErr > 0.05 {
+		t.Errorf("gamma explicit params: empirical mean = %.0f, theoretical mean = %.0f, relative error = %.3f (want < 0.05)", empiricalMean, theoreticalMean, relErr)
+	}
+}
+
+func TestNewArrivalSampler_WeibullExplicitParams_MeanMatchesTheory(t *testing.T) {
+	// GIVEN an ArrivalSpec with explicit Weibull shape/scale
+	// Weibull(k=1.5, λ=100000) has theoretical mean = λ * Γ(1 + 1/k)
+	shape := 1.5
+	scale := 100000.0
+	spec := ArrivalSpec{
+		Process: "weibull",
+		Shape:   &shape,
+		Scale:   &scale,
+	}
+	rng := rand.New(rand.NewSource(42))
+
+	// WHEN creating a sampler and drawing 50000 samples
+	sampler := NewArrivalSampler(spec, 0.00001) // rate is ignored when explicit params provided
+	n := 50000
+	sum := int64(0)
+	for i := 0; i < n; i++ {
+		sum += sampler.SampleIAT(rng)
+	}
+	empiricalMean := float64(sum) / float64(n)
+
+	// THEN empirical mean ≈ λ * Γ(1 + 1/k) (within 5%)
+	theoreticalMean := scale * math.Gamma(1.0+1.0/shape)
+	relErr := math.Abs(empiricalMean-theoreticalMean) / theoreticalMean
+	if relErr > 0.05 {
+		t.Errorf("weibull explicit params: empirical mean = %.0f, theoretical mean = %.0f, relative error = %.3f (want < 0.05)", empiricalMean, theoreticalMean, relErr)
+	}
+}
+
+func TestNewArrivalSampler_GammaExplicitParams_RateIsIgnored(t *testing.T) {
+	// GIVEN an ArrivalSpec with explicit shape/scale and a rate that would give a different mean
+	// Gamma(shape=2.0, scale=50000) has theoretical mean = 100000 µs
+	// But rate = 5.0/1e6 (5 req/s) would imply mean = 1/rate = 200000 µs
+	shape := 2.0
+	scale := 50000.0
+	spec := ArrivalSpec{
+		Process: "gamma",
+		Shape:   &shape,
+		Scale:   &scale,
+	}
+	rate := 5.0 / 1e6 // 5 req/s = 0.000005 req/µs → 1/rate = 200000 µs
+	rng := rand.New(rand.NewSource(42))
+
+	// WHEN creating a sampler and drawing 50000 samples
+	sampler := NewArrivalSampler(spec, rate)
+	n := 50000
+	sum := int64(0)
+	for i := 0; i < n; i++ {
+		sum += sampler.SampleIAT(rng)
+	}
+	empiricalMean := float64(sum) / float64(n)
+
+	// THEN empirical mean ≈ shape*scale = 100000 (NOT 1/rate = 200000)
+	theoreticalMean := shape * scale
+	relErr := math.Abs(empiricalMean-theoreticalMean) / theoreticalMean
+	if relErr > 0.05 {
+		t.Errorf("gamma explicit params: empirical mean = %.0f, want ≈ %.0f (shape*scale), relative error = %.3f (want < 0.05)", empiricalMean, theoreticalMean, relErr)
+	}
+
+	// AND empirical mean is NOT close to 1/rate (proves rate is ignored)
+	rateDerivedMean := 1.0 / rate
+	if math.Abs(empiricalMean-rateDerivedMean)/rateDerivedMean < 0.3 {
+		t.Errorf("gamma explicit params should ignore rate: empirical mean = %.0f is suspiciously close to 1/rate = %.0f", empiricalMean, rateDerivedMean)
+	}
+}
+
+func TestNewArrivalSampler_WeibullExplicitParams_RateIsIgnored(t *testing.T) {
+	// GIVEN an ArrivalSpec with explicit Weibull shape/scale and a rate that would give a different mean
+	// Weibull(k=1.5, λ=100000) has theoretical mean = λ * Γ(1 + 1/k) ≈ 88623 µs
+	// But rate = 5.0/1e6 (5 req/s) would imply mean = 1/rate = 200000 µs
+	shape := 1.5
+	scale := 100000.0
+	spec := ArrivalSpec{
+		Process: "weibull",
+		Shape:   &shape,
+		Scale:   &scale,
+	}
+	rate := 5.0 / 1e6 // 5 req/s = 0.000005 req/µs → 1/rate = 200000 µs
+	rng := rand.New(rand.NewSource(42))
+
+	// WHEN creating a sampler and drawing 50000 samples
+	sampler := NewArrivalSampler(spec, rate)
+	n := 50000
+	sum := int64(0)
+	for i := 0; i < n; i++ {
+		sum += sampler.SampleIAT(rng)
+	}
+	empiricalMean := float64(sum) / float64(n)
+
+	// THEN empirical mean ≈ λ * Γ(1 + 1/k) (NOT 1/rate = 200000)
+	theoreticalMean := scale * math.Gamma(1.0+1.0/shape)
+	relErr := math.Abs(empiricalMean-theoreticalMean) / theoreticalMean
+	if relErr > 0.05 {
+		t.Errorf("weibull explicit params: empirical mean = %.0f, want ≈ %.0f (λ*Γ(1+1/k)), relative error = %.3f (want < 0.05)", empiricalMean, theoreticalMean, relErr)
+	}
+
+	// AND empirical mean is NOT close to 1/rate (proves rate is ignored)
+	rateDerivedMean := 1.0 / rate
+	if math.Abs(empiricalMean-rateDerivedMean)/rateDerivedMean < 0.3 {
+		t.Errorf("weibull explicit params should ignore rate: empirical mean = %.0f is suspiciously close to 1/rate = %.0f", empiricalMean, rateDerivedMean)
+	}
+}
+
+func TestNewArrivalSampler_GammaCVFallback_MeanMatchesRate(t *testing.T) {
+	// GIVEN an ArrivalSpec with CV=2.5 but no explicit params
+	cv := 2.5
+	spec := ArrivalSpec{
+		Process: "gamma",
+		CV:      &cv,
+	}
+	rate := 10.0 / 1e6 // 10 req/s = 0.00001 req/µs
+	rng := rand.New(rand.NewSource(42))
+
+	// WHEN creating a sampler and drawing 50000 samples
+	sampler := NewArrivalSampler(spec, rate)
+	n := 50000
+	sum := int64(0)
+	for i := 0; i < n; i++ {
+		sum += sampler.SampleIAT(rng)
+	}
+	empiricalMean := float64(sum) / float64(n)
+
+	// THEN empirical mean ≈ 1/rate = 100000 µs (within 5%)
+	expectedMean := 1.0 / rate
+	relErr := math.Abs(empiricalMean-expectedMean) / expectedMean
+	if relErr > 0.05 {
+		t.Errorf("gamma CV fallback: empirical mean = %.0f, expected = %.0f, relative error = %.3f (want < 0.05)", empiricalMean, expectedMean, relErr)
+	}
+}
+
+func TestNewArrivalSampler_InvalidExplicitParams_FallsBackToCV(t *testing.T) {
+	// GIVEN ArrivalSpecs with non-positive explicit shape/scale
+	tests := []struct {
+		name    string
+		process string
+		shape   float64
+		scale   float64
+	}{
+		{"gamma_zero_shape", "gamma", 0.0, 50000.0},
+		{"gamma_negative_shape", "gamma", -1.0, 50000.0},
+		{"gamma_zero_scale", "gamma", 2.0, 0.0},
+		{"gamma_negative_scale", "gamma", 2.0, -100.0},
+		{"weibull_zero_shape", "weibull", 0.0, 100000.0},
+		{"weibull_negative_shape", "weibull", -0.5, 100000.0},
+		{"weibull_zero_scale", "weibull", 1.5, 0.0},
+		{"weibull_negative_scale", "weibull", 1.5, -100.0},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			shape := tc.shape
+			scale := tc.scale
+			spec := ArrivalSpec{
+				Process: tc.process,
+				Shape:   &shape,
+				Scale:   &scale,
+			}
+			rate := 10.0 / 1e6 // 10 req/s
+			rng := rand.New(rand.NewSource(42))
+
+			// WHEN creating a sampler (should fall back to CV derivation, not panic)
+			sampler := NewArrivalSampler(spec, rate)
+
+			// THEN sampler produces valid positive IATs with mean ≈ 1/rate
+			n := 10000
+			sum := int64(0)
+			for i := 0; i < n; i++ {
+				iat := sampler.SampleIAT(rng)
+				if iat < 1 {
+					t.Fatalf("IAT must be >= 1, got %d at iteration %d", iat, i)
+				}
+				sum += iat
+			}
+			empiricalMean := float64(sum) / float64(n)
+			expectedMean := 1.0 / rate
+			// Wider tolerance since CV defaults to 1.0 (Poisson-like)
+			relErr := math.Abs(empiricalMean-expectedMean) / expectedMean
+			if relErr > 0.15 {
+				t.Errorf("fallback sampler mean = %.0f, expected ≈ %.0f, relative error = %.3f (want < 0.15)", empiricalMean, expectedMean, relErr)
+			}
+		})
+	}
+}
+
+func TestNewArrivalSampler_ShapeOnlyNoScale_FallsBackToCVDerivedMean(t *testing.T) {
+	// Tests the fallback when only one of shape/scale is set (guard: shape != nil && scale != nil)
+	tests := []struct {
+		name    string
+		process string
+		shape   *float64
+		scale   *float64
+	}{
+		{"gamma_shape_only", "gamma", ptrFloat64(2.0), nil},
+		{"gamma_scale_only", "gamma", nil, ptrFloat64(50000.0)},
+		{"weibull_shape_only", "weibull", ptrFloat64(1.5), nil},
+		{"weibull_scale_only", "weibull", nil, ptrFloat64(100000.0)},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := ArrivalSpec{
+				Process: tc.process,
+				Shape:   tc.shape,
+				Scale:   tc.scale,
+			}
+			rate := 10.0 / 1e6 // 10 req/s = 0.00001 req/µs → 1/rate = 100000 µs
+			rng := rand.New(rand.NewSource(42))
+
+			// WHEN creating a sampler (should fall back to CV-derived mean, not use partial params)
+			sampler := NewArrivalSampler(spec, rate)
+
+			// THEN sampler produces valid positive IATs with mean ≈ 1/rate = 100000 µs
+			n := 50000
+			sum := int64(0)
+			for i := 0; i < n; i++ {
+				iat := sampler.SampleIAT(rng)
+				if iat < 1 {
+					t.Fatalf("IAT must be >= 1, got %d at iteration %d", iat, i)
+				}
+				sum += iat
+			}
+			empiricalMean := float64(sum) / float64(n)
+			expectedMean := 1.0 / rate // 100000 µs
+			relErr := math.Abs(empiricalMean-expectedMean) / expectedMean
+			if relErr > 0.15 {
+				t.Errorf("partial-params fallback: empirical mean = %.0f, expected (1/rate) = %.0f, relative error = %.3f (want < 0.15)", empiricalMean, expectedMean, relErr)
+			}
+		})
+	}
+}
+
 // TestNormalizedExponentialSampler_Normalized verifies BC-1:
 // Sampler generates exactly count intervals with sum ≈ duration.
 func TestNormalizedExponentialSampler_Normalized(t *testing.T) {
@@ -353,4 +613,9 @@ func TestNormalizedExponentialSampler_EdgeCases(t *testing.T) {
 		}()
 		NewNormalizedExponentialSampler(rng, 1000, 999)
 	})
+}
+
+// ptrFloat64 returns a pointer to the given float64 value.
+func ptrFloat64(v float64) *float64 {
+	return &v
 }

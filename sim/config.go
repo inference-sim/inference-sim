@@ -96,12 +96,12 @@ func NewLatencyCoeffs(betaCoeffs, alphaCoeffs []float64) LatencyCoeffs {
 
 // ModelHardwareConfig groups model identity and hardware specification.
 type ModelHardwareConfig struct {
-	ModelConfig ModelConfig   // HuggingFace model parameters (for roofline/crossmodel modes)
-	HWConfig    HardwareCalib // GPU specifications (for roofline/crossmodel modes)
+	ModelConfig ModelConfig   // HuggingFace model parameters (for roofline and trained-physics modes)
+	HWConfig    HardwareCalib // GPU specifications (for roofline and trained-physics modes)
 	Model       string        // model name (e.g., "meta-llama/llama-3.1-8b-instruct")
 	GPU         string        // GPU type (e.g., "H100")
 	TP          int           // tensor parallelism degree
-	Backend     string        // latency model backend: "" or "roofline" (default), "blackbox", "crossmodel", "trained-roofline"
+	Backend     string        // latency model backend: "" or "roofline" (default), "trained-physics"
 	MaxModelLen int64         // max total sequence length (input + output); 0 = unlimited (mirrors vLLM --max-model-len)
 }
 
@@ -126,16 +126,18 @@ func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 
 // PolicyConfig groups scheduling and priority policy selection.
 type PolicyConfig struct {
-	PriorityPolicy string // "constant" (default) or "slo-based"
-	Scheduler      string // "fcfs" (default), "priority-fcfs", "sjf", "reverse-priority"
+	PriorityPolicy   string // "constant" (default) or "slo-based"
+	Scheduler        string // "fcfs" (default), "priority-fcfs", "sjf", "reverse-priority"
+	PreemptionPolicy string // "fcfs" (default) or "priority"
 }
 
 // NewPolicyConfig creates a PolicyConfig with all fields explicitly set.
 // This is the canonical constructor — all construction sites must use it (R4).
-func NewPolicyConfig(priorityPolicy, scheduler string) PolicyConfig {
+func NewPolicyConfig(priorityPolicy, scheduler, preemptionPolicy string) PolicyConfig {
 	return PolicyConfig{
-		PriorityPolicy: priorityPolicy,
-		Scheduler:      scheduler,
+		PriorityPolicy:   priorityPolicy,
+		Scheduler:        scheduler,
+		PreemptionPolicy: preemptionPolicy,
 	}
 }
 

@@ -99,10 +99,6 @@ type DeploymentConfig struct {
 	GAIEQDThreshold float64 // queue depth threshold per instance (default 5)
 	GAIEKVThreshold float64 // KV cache utilization threshold (default 0.8)
 
-	// SLO priority overrides (issue #1013). Nil = GAIE-compatible defaults.
-	// Keys are SLO class names; values are integer priorities. Negative = sheddable.
-	SLOPriorityOverrides map[string]int `yaml:"slo_priority_overrides,omitempty"`
-
 	// Phase 1B-2a: per-tenant fair-share budgets (issue #811).
 	// Key: TenantID string. Value: fraction of total cluster capacity (0.0–1.0).
 	// Zero value is safe: nil = no enforcement (all tenants unlimited).
@@ -119,7 +115,7 @@ type DeploymentConfig struct {
 	FlowControlKVCacheUtilThreshold float64 `yaml:"flow_control_kv_cache_util_threshold,omitempty"` // for utilization detector
 	FlowControlMaxConcurrency       int     `yaml:"flow_control_max_concurrency,omitempty"`         // for concurrency detector
 
-	// Issue #893: per-GPU-type hardware calibration for roofline/trained-roofline backends.
+	// Issue #893: per-GPU-type hardware calibration for roofline and trained-physics backends.
 	// Key: GPU type string (e.g., "A100", "H100"). Value: HardwareCalib for that GPU.
 	// When non-nil and a pool's gpu_type is found in the map, the matched HardwareCalib
 	// overrides simCfg.HWConfig at instance construction time (both sync and deferred paths),

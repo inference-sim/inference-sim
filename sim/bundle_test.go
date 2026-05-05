@@ -190,6 +190,7 @@ func TestPolicyBundle_Validate_InvalidPolicy(t *testing.T) {
 		{"bad routing", PolicyBundle{Routing: RoutingConfig{Policy: "invalid"}}},
 		{"bad priority", PolicyBundle{Priority: PriorityConfig{Policy: "invalid"}}},
 		{"bad scheduler", PolicyBundle{Scheduler: "invalid"}},
+		{"bad preemption", PolicyBundle{Preemption: PreemptionConfig{Policy: "random"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -562,20 +563,77 @@ func TestPolicyBundle_Validate_NodePool_MaxLessThanInitial(t *testing.T) {
 
 func TestIsValidLatencyBackend(t *testing.T) {
 	assert.True(t, IsValidLatencyBackend(""))
-	assert.True(t, IsValidLatencyBackend("blackbox"))
 	assert.True(t, IsValidLatencyBackend("roofline"))
-	assert.True(t, IsValidLatencyBackend("crossmodel"))
-	assert.True(t, IsValidLatencyBackend("trained-roofline"))
 	assert.True(t, IsValidLatencyBackend("trained-physics"))
+	assert.False(t, IsValidLatencyBackend("blackbox"))
 	assert.False(t, IsValidLatencyBackend("nonexistent"))
 }
 
 func TestValidLatencyBackendNames(t *testing.T) {
 	names := ValidLatencyBackendNames()
-	assert.Contains(t, names, "blackbox")
 	assert.Contains(t, names, "roofline")
-	assert.Contains(t, names, "crossmodel")
-	assert.Contains(t, names, "trained-roofline")
 	assert.Contains(t, names, "trained-physics")
+	assert.NotContains(t, names, "blackbox")
 	assert.NotContains(t, names, "")
+}
+
+func TestIsValidLatencyBackend_RemovedBackends(t *testing.T) {
+	// GIVEN removed backend names
+	removedBackends := []string{"blackbox", "crossmodel", "trained-roofline"}
+
+	for _, backend := range removedBackends {
+		t.Run(backend, func(t *testing.T) {
+			// WHEN checking if backend is valid
+			valid := IsValidLatencyBackend(backend)
+
+			// THEN it must return false
+			if valid {
+				t.Errorf("IsValidLatencyBackend(%q) = true; want false (backend was removed)", backend)
+			}
+		})
+	}
+}
+
+func TestValidLatencyBackendNames_ExcludesRemoved(t *testing.T) {
+	// GIVEN the list of valid backend names
+	names := ValidLatencyBackendNames()
+
+	// WHEN checking for removed backends
+	removedBackends := []string{"blackbox", "crossmodel", "trained-roofline"}
+	for _, removed := range removedBackends {
+		for _, name := range names {
+			// THEN removed backends must not appear in the list
+			if name == removed {
+				t.Errorf("ValidLatencyBackendNames() contains removed backend %q; want excluded", removed)
+			}
+		}
+	}
+
+	// AND the list must contain exactly 2 backends
+	expected := []string{"roofline", "trained-physics"}
+	if len(names) != len(expected) {
+		t.Errorf("ValidLatencyBackendNames() returned %d backends; want %d: %v", len(names), len(expected), expected)
+	}
+
+	// AND they must be the correct backends
+	nameSet := make(map[string]bool)
+	for _, name := range names {
+		nameSet[name] = true
+	}
+	for _, exp := range expected {
+		if !nameSet[exp] {
+			t.Errorf("ValidLatencyBackendNames() missing expected backend %q", exp)
+		}
+	}
+}
+
+func TestPreemptionPolicy_ValidNames(t *testing.T) {
+	for _, name := range []string{"", "fcfs", "priority"} {
+		if !IsValidPreemptionPolicy(name) {
+			t.Errorf("IsValidPreemptionPolicy(%q) = false, want true", name)
+		}
+	}
+	if IsValidPreemptionPolicy("random") {
+		t.Error("IsValidPreemptionPolicy(\"random\") = true, want false")
+	}
 }

@@ -25,6 +25,7 @@ var (
 	replayTraceOutput string // File prefix for TraceV2 re-export (<prefix>.yaml + <prefix>.csv)
 	replaySessionMode string
 	replayThinkTimeMs int
+	replayThinkTimeDist string // distribution spec for think time (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s")
 )
 
 var replayCmd = &cobra.Command{
@@ -89,6 +90,30 @@ Example:
 		if replayThinkTimeMs > 0 && replaySessionMode != "closed-loop" {
 			logrus.Fatalf("--think-time-ms requires --session-mode closed-loop")
 		}
+		if replayThinkTimeDist != "" && replaySessionMode != "closed-loop" {
+			logrus.Fatalf("--think-time-dist requires --session-mode closed-loop")
+		}
+		if cmd.Flags().Changed("think-time-ms") && cmd.Flags().Changed("think-time-dist") {
+			logrus.Fatalf("--think-time-ms and --think-time-dist are mutually exclusive")
+		}
+
+		// Resolve think-time sampler: --think-time-dist takes the general distribution;
+		// --think-time-ms is a convenience alias for constant:<N>ms.
+		// Neither → nil (derive per-session think time from trace arrival gaps).
+		var thinkTimeSampler workload.LengthSampler
+		if cmd.Flags().Changed("think-time-dist") {
+			var err error
+			thinkTimeSampler, err = workload.ParseThinkTimeDist(replayThinkTimeDist)
+			if err != nil {
+				logrus.Fatalf("--think-time-dist: %v", err)
+			}
+		} else if replayThinkTimeMs > 0 {
+			var err error
+			thinkTimeSampler, err = workload.ParseThinkTimeDist(fmt.Sprintf("constant:value=%dms", replayThinkTimeMs))
+			if err != nil {
+				logrus.Fatalf("--think-time-ms: %v", err)
+			}
+		}
 
 		// Build requests from trace — mode selects pre-baked vs closed-loop (BC-8, BC-9)
 		var requests []*sim.Request
@@ -97,12 +122,11 @@ Example:
 			// Closed-loop: inject only round-0 requests; SessionManager drives follow-ups.
 			// Compute the preliminary horizon from trace records directly (O(n)) so we can
 			// call LoadTraceV2SessionBlueprints exactly once with correct parameters.
-			thinkTimeUs := int64(replayThinkTimeMs) * 1000
 			replayHorizonPrelim := computeHorizonFromMaxArrival(maxInjectedArrivalTimeUs(traceData))
 			if cmd.Flags().Changed("horizon") {
 				replayHorizonPrelim = simulationHorizon
 			}
-			r0Requests, blueprints, bErr := workload.LoadTraceV2SessionBlueprints(traceData, seed, thinkTimeUs, replayHorizonPrelim)
+			r0Requests, blueprints, bErr := workload.LoadTraceV2SessionBlueprints(traceData, seed, thinkTimeSampler, replayHorizonPrelim)
 			if bErr != nil {
 				logrus.Fatalf("Failed to build session blueprints from trace: %v", bErr)
 			}
@@ -188,7 +212,8 @@ Example:
 				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
 				ModelHardwareConfig: sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, lr.Backend, maxModelLen),
-				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler),
+				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler, preemptionPolicy),
+				SLOPriorityOverrides: sloPriorityOverrides,
 			},
 			NumInstances:            numInstances,
 			AdmissionPolicy:         admissionPolicy,
@@ -214,7 +239,6 @@ Example:
 			GAIEQDThreshold:                  gaieQDThreshold,
 			GAIEKVThreshold:                  gaieKVThreshold,
 			TenantBudgets:                    tenantBudgets,
-			SLOPriorityOverrides:             sloPriorityOverrides,
 		}
 
 		// Run simulation — wire SessionManager for closed-loop, nil for fixed mode
@@ -299,6 +323,10 @@ Example:
 		perTenantMetrics := cluster.ComputePerTenantMetrics(cs.AggregatedMetrics())
 		printPerTenantMetrics(os.Stdout, perTenantMetrics)
 
+		// Print session metrics if any request carries a session label (#1058)
+		sessionMetrics := cluster.ComputeSessionMetrics(cs.AggregatedMetrics())
+		printSessionMetrics(os.Stdout, sessionMetrics)
+
 		if cs.Trace() != nil && summarizeTrace {
 			traceSummary := trace.Summarize(cs.Trace())
 			fmt.Println("=== Trace Summary ===")
@@ -350,7 +378,8 @@ func init() {
 	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens) for blis calibrate consumption.")
 	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\"")
 	replayCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", `Session replay mode: "fixed" (pre-baked arrivals from trace) or "closed-loop" (load-adaptive follow-ups via SessionManager)`)
-	replayCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "Override think time between session rounds in milliseconds (0 = derive from trace inter-round arrival gaps, which include prior-round service time — use this flag to supply the actual client-side think time; requires --session-mode closed-loop)")
+	replayCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "Override think time between session rounds in milliseconds (0 = derive from trace inter-round arrival gaps; mutually exclusive with --think-time-dist; requires --session-mode closed-loop)")
+	replayCmd.Flags().StringVar(&replayThinkTimeDist, "think-time-dist", "", `Think-time distribution spec for closed-loop replay (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s" or "constant:value=500ms"). Mutually exclusive with --think-time-ms. Requires --session-mode closed-loop.`)
 	rootCmd.AddCommand(replayCmd)
 }
 

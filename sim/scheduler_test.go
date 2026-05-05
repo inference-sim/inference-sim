@@ -242,8 +242,8 @@ func TestSimulator_PriorityFCFS_SchedulesHighPriorityFirst(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(1, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: ModelHardwareConfig{Backend: "blackbox"},
-		PolicyConfig:        NewPolicyConfig("slo-based", "priority-fcfs"),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
+		PolicyConfig:        NewPolicyConfig("slo-based", "priority-fcfs", ""),
 	}
 	s := mustNewSimulator(t, cfg)
 
@@ -292,7 +292,7 @@ func TestSimulator_DefaultConfig_MatchesFCFS(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(1, 2048, 0), // force sequential: only 1 at a time
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: ModelHardwareConfig{Backend: "blackbox"},
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
 		// PriorityPolicy and Scheduler left empty (defaults)
 	}
 	s := mustNewSimulator(t, cfg)
@@ -362,8 +362,8 @@ func TestSimulator_SJF_SchedulesShortJobFirst(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 100}), // zero queueing delay so both queue at arrival time
-		ModelHardwareConfig: ModelHardwareConfig{Backend: "blackbox"},
-		PolicyConfig:        NewPolicyConfig("", "sjf"),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
+		PolicyConfig:        NewPolicyConfig("", "sjf", ""),
 	}
 	s := mustNewSimulator(t, cfg)
 
@@ -412,8 +412,8 @@ func TestSimulator_SLOBased_PriorityFCFS_OlderRequestFirst(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(1, 2048, 0), // only 1 slot: forces sequential scheduling
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: ModelHardwareConfig{Backend: "blackbox"},
-		PolicyConfig:        NewPolicyConfig("slo-based", "priority-fcfs"),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
+		PolicyConfig:        NewPolicyConfig("slo-based", "priority-fcfs", ""),
 	}
 	s := mustNewSimulator(t, cfg)
 

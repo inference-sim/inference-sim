@@ -109,7 +109,7 @@ func (i *InstanceSimulator) Horizon() int64 {
 // PostDecodeFixedOverhead returns the fixed per-request post-decode overhead (µs)
 // from the instance's underlying latency model. Used by detectDecodeCompletions
 // to stamp parent.CompletionTime with the correct client-visible completion time.
-// Returns 0 for blackbox/roofline/cross-model; non-zero for trained-roofline (BC-2, #846).
+// Returns 0 for roofline; non-zero for trained-physics (BC-2, #846).
 func (i *InstanceSimulator) PostDecodeFixedOverhead() int64 {
 	return i.sim.PostDecodeFixedOverhead()
 }
@@ -190,6 +190,19 @@ func (i *InstanceSimulator) KvTokensInUse() int64 {
 		return 0
 	}
 	return i.sim.KVCache.UsedBlocks() * i.sim.KVCache.BlockSize()
+}
+
+// TotalKVBlocks returns the total number of KV cache blocks for this instance.
+func (i *InstanceSimulator) TotalKVBlocks() int64 {
+	if i.sim == nil || i.sim.KVCache == nil {
+		return 0
+	}
+	return i.sim.KVCache.TotalCapacity()
+}
+
+// PreemptionCount returns the cumulative number of preemption events on this instance.
+func (i *InstanceSimulator) PreemptionCount() int64 {
+	return i.sim.Metrics.PreemptionCount
 }
 
 // GetCachedBlockCount returns the number of consecutive cached prefix blocks
@@ -338,7 +351,7 @@ func (i *InstanceSimulator) AllocateTransferredKV(req *sim.Request) bool {
 // Bypasses the normal ArrivalEvent → QueuedEvent → EnqueueRequest chain to avoid
 // the oversized-request guard (KV already allocated) and TotalInputTokens double-counting.
 // Registers request in metrics and directly enqueues into wait queue.
-// clusterTime is the cluster clock at the time of injection (from DecodeRoutingEvent).
+// clusterTime is the cluster clock at the time of injection (from KVTransferCompletedEvent).
 func (i *InstanceSimulator) InjectDecodeOnline(req *sim.Request, clusterTime int64) {
 	i.sim.Metrics.Requests[req.ID] = sim.NewRequestMetrics(req, float64(req.ArrivalTime)/1e6)
 	i.sim.EnqueueDecodeSubRequest(req, clusterTime)

@@ -12,7 +12,7 @@
 // The sim package defines interfaces and bridge types; implementations live in
 // sub-packages:
 //   - sim/kv/: KV cache implementations (single-tier GPU, tiered GPU+CPU)
-//   - sim/latency/: Latency models (blackbox alpha/beta, roofline FLOPs/bandwidth)
+//   - sim/latency/: Latency models (roofline FLOPs/bandwidth, trained-physics)
 //   - sim/cluster/: Multi-instance cluster orchestration
 //   - sim/workload/: Workload generation and trace replay
 //   - sim/trace/: Decision trace recording

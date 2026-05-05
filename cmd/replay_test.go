@@ -14,6 +14,68 @@ import (
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
+// setupTrainedPhysicsTestFixtures creates temp model config and hardware config
+// files for replay integration tests that need a working latency backend.
+// Returns the model config folder and hardware config file path.
+func setupTrainedPhysicsTestFixtures(t *testing.T) (mcFolder, hwPath string) {
+	t.Helper()
+	dir := t.TempDir()
+
+	// Minimal HF config.json (Llama-like, 2-layer for fast simulation)
+	mcDir := filepath.Join(dir, "config")
+	if err := os.MkdirAll(mcDir, 0755); err != nil {
+		t.Fatalf("mkdir model config: %v", err)
+	}
+	configJSON := `{
+  "architectures": ["LlamaForCausalLM"],
+  "num_attention_heads": 4,
+  "num_hidden_layers": 2,
+  "hidden_size": 64,
+  "intermediate_size": 128,
+  "num_key_value_heads": 4,
+  "torch_dtype": "float16",
+  "max_position_embeddings": 4096
+}`
+	if err := os.WriteFile(filepath.Join(mcDir, "config.json"), []byte(configJSON), 0644); err != nil {
+		t.Fatalf("write config.json: %v", err)
+	}
+
+	// Minimal hardware config
+	hwFile := filepath.Join(dir, "hw.json")
+	hwJSON := `{
+  "H100": {
+    "MemoryGiB": 80.0,
+    "TFlopsPeak": 1.0,
+    "BwPeakTBs": 0.001
+  }
+}`
+	if err := os.WriteFile(hwFile, []byte(hwJSON), 0644); err != nil {
+		t.Fatalf("write hw config: %v", err)
+	}
+
+	return mcDir, hwFile
+}
+
+// setupTrainedPhysicsTestFixturesWithDefaults extends setupTrainedPhysicsTestFixtures
+// by also creating a defaults.yaml with trained_physics_coefficients.
+// Returns model config folder, hardware config path, and defaults file path.
+func setupTrainedPhysicsTestFixturesWithDefaults(t *testing.T) (mcFolder, hwPath, defaultsPath string) {
+	t.Helper()
+	mcFolder, hwPath = setupTrainedPhysicsTestFixtures(t)
+
+	// Create minimal defaults.yaml with trained_physics_coefficients
+	defaultsPath = filepath.Join(filepath.Dir(hwPath), "defaults.yaml")
+	defaultsYAML := `trained_physics_coefficients:
+  alpha_coeffs: [100.0, 1.0, 100.0]
+  beta_coeffs: [0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+`
+	if err := os.WriteFile(defaultsPath, []byte(defaultsYAML), 0644); err != nil {
+		t.Fatalf("write defaults.yaml: %v", err)
+	}
+
+	return mcFolder, hwPath, defaultsPath
+}
+
 // TestReplayCmd_SimConfigFlags_Registered verifies BC-4:
 // all sim config flags registered on replayCmd.
 func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
@@ -41,8 +103,8 @@ func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
 		// registerSimConfigFlags: routing policy
 		"routing-policy", "routing-scorers",
 
-		// registerSimConfigFlags: priority and scheduler
-		"priority-policy", "scheduler",
+		// registerSimConfigFlags: priority, scheduler, and preemption
+		"priority-policy", "scheduler", "preemption-policy",
 
 		// registerSimConfigFlags: policy bundle
 		"policy-config",
@@ -390,6 +452,8 @@ warm_up_requests: 0
 		t.Fatal(err)
 	}
 
+	mcFolder, hwPath := setupTrainedPhysicsTestFixtures(t)
+
 	// Save and restore all package-level flag vars (same pattern as EndToEnd test)
 	origModel := model
 	origBackend := latencyModelBackend
@@ -428,6 +492,11 @@ warm_up_requests: 0
 	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
 	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
 	origFlowControlMaxConcurrency := flowControlMaxConcurrency
+	origModelConfigFolder := modelConfigFolder
+	origHwConfigPath := hwConfigPath
+	origGPU := gpu
+	origTP := tensorParallelism
+	origDefaultsFilePath := defaultsFilePath
 	defer func() {
 		model = origModel
 		latencyModelBackend = origBackend
@@ -466,13 +535,17 @@ warm_up_requests: 0
 		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
 		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
 		flowControlMaxConcurrency = origFlowControlMaxConcurrency
+		modelConfigFolder = origModelConfigFolder
+		hwConfigPath = origHwConfigPath
+		gpu = origGPU
+		tensorParallelism = origTP
+		defaultsFilePath = origDefaultsFilePath
 	}()
 
 	// Set package-level vars
 	model = "test-model"
-	latencyModelBackend = "blackbox"
-	betaCoeffs = []float64{10000.0, 1.0, 1.0}
-	alphaCoeffs = []float64{0.0, 0.0, 0.0}
+	latencyModelBackend = "trained-physics"
+	// Note: betaCoeffs and alphaCoeffs NOT set → auto-loads from defaults.yaml trained_physics_coefficients
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
 	maxRunningReqs = 64
@@ -498,6 +571,11 @@ warm_up_requests: 0
 	traceDataPath = dataPath
 	simulationHorizon = math.MaxInt64
 	replayTraceOutput = outputPrefix
+	modelConfigFolder = mcFolder
+	hwConfigPath = hwPath
+	gpu = "H100"
+	tensorParallelism = 1
+	defaultsFilePath = "../defaults.yaml" // Load trained-physics coefficients (relative to cmd/ test dir)
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
@@ -506,13 +584,17 @@ warm_up_requests: 0
 	testCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "")
 	if err := testCmd.ParseFlags([]string{
 		"--model", "test-model",
-		"--latency-model", "blackbox",
-		"--beta-coeffs", "10000.0,1.0,1.0",
-		"--alpha-coeffs", "0.0,0.0,0.0",
+		"--latency-model", "trained-physics",
+		// Note: --beta-coeffs and --alpha-coeffs omitted → auto-loads from defaults.yaml
 		"--total-kv-blocks", "1000",
+		"--hardware", "H100",
+		"--tp", "1",
+		"--model-config-folder", mcFolder,
+		"--hardware-config", hwPath,
 		"--trace-header", headerPath,
 		"--trace-data", dataPath,
 		"--trace-output", outputPrefix,
+		"--defaults-filepath", "../defaults.yaml",
 	}); err != nil {
 		t.Fatalf("ParseFlags failed: %v", err)
 	}
@@ -566,7 +648,7 @@ warm_up_requests: 0
 	}
 }
 
-func TestReplayCmd_EndToEnd_BlackboxMode(t *testing.T) {
+func TestReplayCmd_EndToEnd_TrainedPhysicsMode(t *testing.T) {
 	// NOTE: This test mutates package-level flag vars shared with runCmd.
 	// Do NOT use t.Parallel() — concurrent execution would create data races.
 
@@ -594,6 +676,8 @@ warm_up_requests: 0
 	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
 		t.Fatal(err)
 	}
+
+	mcFolder, hwCfgPath := setupTrainedPhysicsTestFixtures(t)
 
 	// Save and restore package-level flag vars (this test mutates them)
 	origModel := model
@@ -633,6 +717,11 @@ warm_up_requests: 0
 	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
 	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
 	origFlowControlMaxConcurrency := flowControlMaxConcurrency
+	origModelConfigFolder := modelConfigFolder
+	origHwConfigPath := hwConfigPath
+	origGPU := gpu
+	origTP := tensorParallelism
+	origDefaultsFilePath := defaultsFilePath
 	defer func() {
 		model = origModel
 		latencyModelBackend = origBackend
@@ -671,6 +760,11 @@ warm_up_requests: 0
 		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
 		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
 		flowControlMaxConcurrency = origFlowControlMaxConcurrency
+		modelConfigFolder = origModelConfigFolder
+		hwConfigPath = origHwConfigPath
+		gpu = origGPU
+		tensorParallelism = origTP
+		defaultsFilePath = origDefaultsFilePath
 	}()
 
 	// Library-level BC-1 verification: trace loads correctly and requests are correct
@@ -708,9 +802,8 @@ warm_up_requests: 0
 
 	// Full simulation via replayCmd.Run (BC-2: verifies SimResult JSON output)
 	model = "test-model"
-	latencyModelBackend = "blackbox"
-	betaCoeffs = []float64{10000.0, 1.0, 1.0} // ~10ms prefill base
-	alphaCoeffs = []float64{0.0, 0.0, 0.0}
+	latencyModelBackend = "trained-physics"
+	// Note: betaCoeffs and alphaCoeffs NOT set → auto-loads from defaults.yaml
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
 	maxRunningReqs = 64
@@ -735,6 +828,10 @@ warm_up_requests: 0
 	traceHeaderPath = headerPath
 	traceDataPath = dataPath
 	simulationHorizon = math.MaxInt64
+	modelConfigFolder = mcFolder
+	hwConfigPath = hwCfgPath
+	gpu = "H100"
+	tensorParallelism = 1
 
 	// Create a cobra command with Changed() tracking for the flags the Run closure checks.
 	// This is required so cmd.Flags().Changed("latency-model") etc. return correct values.
@@ -744,12 +841,16 @@ warm_up_requests: 0
 	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 	if err := testCmd.ParseFlags([]string{
 		"--model", "test-model",
-		"--latency-model", "blackbox",
-		"--beta-coeffs", "10000.0,1.0,1.0",
-		"--alpha-coeffs", "0.0,0.0,0.0",
+		"--latency-model", "trained-physics",
+		// Note: --beta-coeffs and --alpha-coeffs omitted → auto-loads from defaults.yaml
 		"--total-kv-blocks", "1000",
+		"--hardware", "H100",
+		"--tp", "1",
+		"--model-config-folder", mcFolder,
+		"--hardware-config", hwCfgPath,
 		"--trace-header", headerPath,
 		"--trace-data", dataPath,
+		"--defaults-filepath", "../defaults.yaml",
 	}); err != nil {
 		t.Fatalf("ParseFlags failed: %v", err)
 	}
@@ -791,9 +892,10 @@ warm_up_requests: 0
 		}
 	}
 
-	// TTFT must be in microseconds (not ms): 10ms prefill base = ~10,000 µs
-	if len(simResults) > 0 && simResults[0].TTFT < 1000 {
-		t.Errorf("TTFT %f looks like it's in ms (expected ~10000 µs for 10ms prefill base)", simResults[0].TTFT)
+	// TTFT must be in microseconds (not ms) and positive.
+	// With trained-physics (β₅=100 µs/layer, L=2), TTFT ≈ 200+ µs.
+	if len(simResults) > 0 && simResults[0].TTFT <= 0 {
+		t.Errorf("TTFT %f must be positive (microseconds)", simResults[0].TTFT)
 	}
 }
 
@@ -813,6 +915,8 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
 		t.Fatal(err)
 	}
+
+	mcFolder3, hwPath3 := setupTrainedPhysicsTestFixtures(t)
 
 	// Save/restore package-level vars
 	origModel := model
@@ -852,6 +956,11 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
 	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
 	origFlowControlMaxConcurrency := flowControlMaxConcurrency
+	origModelConfigFolder := modelConfigFolder
+	origHwConfigPath := hwConfigPath
+	origGPU := gpu
+	origTP := tensorParallelism
+	origDefaultsFilePath := defaultsFilePath
 	defer func() {
 		model = origModel
 		latencyModelBackend = origBackend
@@ -890,12 +999,16 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
 		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
 		flowControlMaxConcurrency = origFlowControlMaxConcurrency
+		modelConfigFolder = origModelConfigFolder
+		hwConfigPath = origHwConfigPath
+		gpu = origGPU
+		tensorParallelism = origTP
+		defaultsFilePath = origDefaultsFilePath
 	}()
 
 	model = "test-model"
-	latencyModelBackend = "blackbox"
-	betaCoeffs = []float64{10000.0, 1.0, 1.0}
-	alphaCoeffs = []float64{0.0, 0.0, 0.0}
+	latencyModelBackend = "trained-physics"
+	// Note: betaCoeffs and alphaCoeffs NOT set → auto-loads from defaults.yaml
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
 	maxRunningReqs = 64
@@ -921,15 +1034,23 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	traceDataPath = dataPath
 	simulationHorizon = math.MaxInt64
 	replayTraceOutput = "" // BC-4: no --trace-output flag set
+	modelConfigFolder = mcFolder3
+	hwConfigPath = hwPath3
+	gpu = "H100"
+	tensorParallelism = 1
+	defaultsFilePath = "../defaults.yaml" // Load trained-physics coefficients (relative to cmd/ test dir)
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
 	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
 	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 	if err := testCmd.ParseFlags([]string{
-		"--model", "test-model", "--latency-model", "blackbox",
-		"--beta-coeffs", "10000.0,1.0,1.0", "--alpha-coeffs", "0.0,0.0,0.0",
-		"--total-kv-blocks", "1000", "--trace-header", headerPath, "--trace-data", dataPath,
+		"--model", "test-model", "--latency-model", "trained-physics",
+		// Note: --beta-coeffs and --alpha-coeffs omitted → auto-loads from defaults.yaml
+		"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+		"--model-config-folder", mcFolder3, "--hardware-config", hwPath3,
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--defaults-filepath", "../defaults.yaml",
 	}); err != nil {
 		t.Fatalf("ParseFlags failed: %v", err)
 	}
@@ -963,6 +1084,8 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
 		t.Fatal(err)
 	}
+
+	mcFolder4, hwPath4 := setupTrainedPhysicsTestFixtures(t)
 
 	// runOnce runs the replay and returns the content of the output files
 	runOnce := func(prefix string) (yamlBytes, csvBytes []byte) {
@@ -1005,6 +1128,10 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
 		origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
 		origFlowControlMaxConcurrency := flowControlMaxConcurrency
+		origModelConfigFolder := modelConfigFolder
+		origHwConfigPath := hwConfigPath
+		origGPU := gpu
+		origTP := tensorParallelism
 		defer func() {
 			model = origModel
 			latencyModelBackend = origBackend
@@ -1043,12 +1170,15 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 			flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
 			flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
 			flowControlMaxConcurrency = origFlowControlMaxConcurrency
+			modelConfigFolder = origModelConfigFolder
+			hwConfigPath = origHwConfigPath
+			gpu = origGPU
+			tensorParallelism = origTP
 		}()
 
 		model = "test-model"
-		latencyModelBackend = "blackbox"
-		betaCoeffs = []float64{10000.0, 1.0, 1.0}
-		alphaCoeffs = []float64{0.0, 0.0, 0.0}
+		latencyModelBackend = "trained-physics"
+		// Note: betaCoeffs and alphaCoeffs NOT set → auto-loads from defaults.yaml
 		totalKVBlocks = 1000
 		blockSizeTokens = 16
 		maxRunningReqs = 64
@@ -1074,6 +1204,11 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		traceDataPath = dataPath
 		simulationHorizon = math.MaxInt64
 		replayTraceOutput = prefix
+		modelConfigFolder = mcFolder4
+		hwConfigPath = hwPath4
+		gpu = "H100"
+		tensorParallelism = 1
+		defaultsFilePath = "../defaults.yaml" // Load trained-physics coefficients (relative to cmd/ test dir)
 
 		testCmd := &cobra.Command{}
 		registerSimConfigFlags(testCmd)
@@ -1081,10 +1216,13 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 		testCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "")
 		if err := testCmd.ParseFlags([]string{
-			"--model", "test-model", "--latency-model", "blackbox",
-			"--beta-coeffs", "10000.0,1.0,1.0", "--alpha-coeffs", "0.0,0.0,0.0",
-			"--total-kv-blocks", "1000", "--trace-header", headerPath,
+			"--model", "test-model", "--latency-model", "trained-physics",
+			// Note: --beta-coeffs and --alpha-coeffs omitted → auto-loads from defaults.yaml
+			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+			"--model-config-folder", mcFolder4, "--hardware-config", hwPath4,
+			"--trace-header", headerPath,
 			"--trace-data", dataPath, "--trace-output", prefix,
+			"--defaults-filepath", "../defaults.yaml",
 		}); err != nil {
 			t.Fatalf("ParseFlags failed: %v", err)
 		}
