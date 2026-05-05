@@ -1186,6 +1186,9 @@ func TestPreemption_Priority_MultiEvictionOrdering(t *testing.T) {
 
 // TestSelectPriorityVictim_MaxPriorityEvicted verifies BC-3 (vLLM parity).
 // With vLLM convention (lower=urgent), max priority value = least urgent = victim.
+// Note: calls unexported selectPriorityVictim directly as a unit test. The observable
+// outcome (which request is evicted under KV pressure) is also covered at integration
+// level by TestPreemption_Priority_EvictsLeastUrgent via FormBatch.
 func TestSelectPriorityVictim_MaxPriorityEvicted(t *testing.T) {
 	reqs := []*Request{
 		{ID: "cr", Priority: 0.0, ArrivalTime: 100}, // critical in vLLM convention

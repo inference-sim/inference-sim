@@ -689,6 +689,12 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		}
 		if bundle.Admission.SLOPriorities != nil {
 			sloPriorityOverrides = bundle.Admission.SLOPriorities
+			// Validate at CLI boundary (R3) before reaching library-level panic in NewSLOPriorityMap.
+			for k, v := range sloPriorityOverrides {
+				if v < -100 || v > 100 {
+					logrus.Fatalf("slo_priorities override for %q: value %d out of range [-100, 100]", k, v)
+				}
+			}
 		}
 		if bundle.Admission.GAIEQDThreshold != nil {
 			gaieQDThreshold = *bundle.Admission.GAIEQDThreshold
