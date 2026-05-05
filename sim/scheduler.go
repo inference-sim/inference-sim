@@ -57,15 +57,16 @@ func (s *SJFScheduler) OrderQueue(reqs []*Request, _ int64) {
 	})
 }
 
-// ReversePriority sorts requests by priority ascending (lowest priority first).
-// Pathological template: opposite of PriorityFCFSScheduler, causes priority inversions.
+// ReversePriority sorts requests by priority descending (highest value first).
+// Pathological template: opposite of PriorityFCFSScheduler under vLLM convention.
+// vLLM convention: lower = more urgent, so descending = least-urgent scheduled first.
 // Ties broken by arrival time ascending, then ID ascending for determinism.
 type ReversePriority struct{}
 
 func (r *ReversePriority) OrderQueue(reqs []*Request, _ int64) {
 	sort.SliceStable(reqs, func(i, j int) bool {
 		if reqs[i].Priority != reqs[j].Priority {
-			return reqs[i].Priority < reqs[j].Priority // ascending = lowest first
+			return reqs[i].Priority > reqs[j].Priority // descending = least-urgent first (pathological)
 		}
 		if reqs[i].ArrivalTime != reqs[j].ArrivalTime {
 			return reqs[i].ArrivalTime < reqs[j].ArrivalTime

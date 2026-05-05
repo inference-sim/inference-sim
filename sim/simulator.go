@@ -491,7 +491,9 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 	// Mirrors the llm-d → vLLM dispatch boundary in production (lower = more urgent).
 	// Overwrites any routing-hint Priority (which was always transient; see routing.go:59).
 	if sim.sloMap == nil {
-		sim.sloMap = DefaultSLOPriorityMap() // guard against manual struct construction
+		// sloMap should always be set by NewSimulator; this path indicates manual struct construction.
+		logrus.Warnf("Simulator.sloMap not initialized — using DefaultSLOPriorityMap; prefer NewSimulator()")
+		sim.sloMap = DefaultSLOPriorityMap()
 	}
 	r.Priority = float64(sim.sloMap.InvertForVLLM(r.SLOClass))
 
@@ -517,6 +519,7 @@ func (sim *Simulator) EnqueueDecodeSubRequest(r *Request, clusterTime int64) {
 	// Pre-processor: decode sub-requests inherit SLOClass from parent (pd_events.go:215).
 	// Apply the same vLLM-convention priority as EnqueueRequest.
 	if sim.sloMap == nil {
+		logrus.Warnf("Simulator.sloMap not initialized — using DefaultSLOPriorityMap; prefer NewSimulator()")
 		sim.sloMap = DefaultSLOPriorityMap()
 	}
 	r.Priority = float64(sim.sloMap.InvertForVLLM(r.SLOClass))
