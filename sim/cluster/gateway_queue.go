@@ -304,7 +304,7 @@ func (q *GatewayQueue) DequeueGated(saturation float64) *sim.Request {
 		}
 	}
 	if nonEmptyBands == 0 {
-		return nil
+		panic(fmt.Sprintf("GatewayQueue.DequeueGated: totalLen=%d but nonEmptyBands=0 — counter desync", q.totalLen))
 	}
 
 	// Compute per-band ceilings via linear interpolation:
@@ -328,10 +328,10 @@ func (q *GatewayQueue) DequeueGated(saturation float64) *sim.Request {
 		}
 
 		req := q.dequeueFromBand(band)
-		if req != nil {
-			return req
+		if req == nil {
+			panic(fmt.Sprintf("GatewayQueue.DequeueGated: band priority=%d has totalLen=%d but dequeueFromBand returned nil — counter desync", band.priority, band.totalLen))
 		}
-		bandRank++
+		return req
 	}
 	return nil
 }

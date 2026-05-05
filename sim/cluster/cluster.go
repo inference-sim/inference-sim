@@ -1303,6 +1303,9 @@ func (c *ClusterSimulator) tryDispatchFromGatewayQueue() bool {
 	// Build fresh state for late binding (BC-3)
 	state := buildRouterState(c, nil)
 	sat := c.saturationDetector.Saturation(state)
+	if math.IsNaN(sat) || math.IsInf(sat, 0) {
+		panic(fmt.Sprintf("tryDispatchFromGatewayQueue: saturation=%f is not finite — detector bug", sat))
+	}
 	// Per-band HoL blocking: DequeueGated checks saturation against per-band ceilings
 	// and halts dispatch if any band's ceiling is exceeded (GIE parity).
 	req := c.gatewayQueue.DequeueGated(sat)
