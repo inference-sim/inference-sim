@@ -61,14 +61,15 @@ func (o EnqueueOutcome) String() string {
 // Used by FlowControlAdmission for saturation-gated dispatch (GIE flow control parity).
 // Saturation gating is enforced by the caller (ClusterSimulator.tryDispatchFromGatewayQueue).
 type GatewayQueue struct {
-	bands           []*priorityBand // sorted descending by priority
-	totalLen        int
-	maxDepth        int // 0 = unlimited (global)
-	maxBandCapacity int // 0 = unlimited (per-band)
-	shedCount       int
-	rejectedCount   int
-	priorityMap     *sim.SLOPriorityMap
-	priorityMode    bool // true for "priority", false for "fifo"
+	bands                []*priorityBand // sorted descending by priority
+	totalLen             int
+	maxDepth             int // 0 = unlimited (global)
+	maxBandCapacity      int // 0 = unlimited (per-band)
+	shedCount            int
+	rejectedCount        int
+	priorityMap          *sim.SLOPriorityMap
+	priorityMode         bool    // true for "priority", false for "fifo"
+	usageLimitThreshold  float64 // per-band HoL blocking ceiling (default 1.0 = no HoL)
 }
 
 // NewGatewayQueue creates a gateway queue with the given dispatch order and max depth.
@@ -86,9 +87,10 @@ func NewGatewayQueue(dispatchOrder string, maxDepth int, priorityMap *sim.SLOPri
 		priorityMap = sim.DefaultSLOPriorityMap()
 	}
 	return &GatewayQueue{
-		maxDepth:     maxDepth,
-		priorityMap:  priorityMap,
-		priorityMode: dispatchOrder == "priority",
+		maxDepth:            maxDepth,
+		priorityMap:         priorityMap,
+		priorityMode:        dispatchOrder == "priority",
+		usageLimitThreshold: 1.0,
 	}
 }
 
@@ -99,6 +101,17 @@ func (q *GatewayQueue) SetPerBandCapacity(n int) {
 		panic(fmt.Sprintf("GatewayQueue: maxBandCapacity must be >= 0, got %d", n))
 	}
 	q.maxBandCapacity = n
+}
+
+// SetUsageLimitThreshold sets the per-band saturation ceiling for HoL blocking.
+// Must be in (0, 1.0]. 1.0 = no HoL blocking (default). <1.0 gates lower-priority bands earlier.
+// Matches GIE's UsageLimitPolicy: highest band gets ceiling 1.0, lowest gets threshold,
+// intermediate bands are linearly interpolated.
+func (q *GatewayQueue) SetUsageLimitThreshold(t float64) {
+	if t <= 0 || t > 1.0 {
+		panic(fmt.Sprintf("GatewayQueue: usageLimitThreshold must be in (0, 1.0], got %f", t))
+	}
+	q.usageLimitThreshold = t
 }
 
 // findOrCreateBand returns the band for the given priority, creating one if needed.
@@ -272,6 +285,55 @@ func (q *GatewayQueue) Dequeue() *sim.Request {
 		panic(fmt.Sprintf("GatewayQueue.Dequeue: totalLen=%d but dequeue returned nil — counter desync", q.totalLen))
 	}
 	return req
+}
+
+// DequeueGated attempts to dispatch one request with per-band HoL blocking.
+// Matches GIE's dispatchCycle: iterates bands highest-first, checks per-band ceiling,
+// halts entirely if saturation >= ceiling (prevents priority inversion).
+// Returns nil if saturated or queue empty.
+func (q *GatewayQueue) DequeueGated(saturation float64) *sim.Request {
+	if q.totalLen == 0 {
+		return nil
+	}
+
+	// Count non-empty bands for ceiling computation.
+	nonEmptyBands := 0
+	for _, band := range q.bands {
+		if band.totalLen > 0 {
+			nonEmptyBands++
+		}
+	}
+	if nonEmptyBands == 0 {
+		return nil
+	}
+
+	// Compute per-band ceilings via linear interpolation:
+	// Highest band (rank 0) = 1.0, lowest band (rank N-1) = usageLimitThreshold.
+	// Single band always gets ceiling 1.0.
+	bandRank := 0
+	for _, band := range q.bands {
+		if band.totalLen == 0 {
+			continue // skip empty bands (work conservation)
+		}
+
+		ceiling := 1.0
+		if nonEmptyBands > 1 {
+			// Linear interpolation: rank 0 → 1.0, rank (N-1) → threshold
+			ceiling = 1.0 - float64(bandRank)*(1.0-q.usageLimitThreshold)/float64(nonEmptyBands-1)
+		}
+
+		if saturation >= ceiling {
+			// HoL blocking: halt entire dispatch cycle to prevent priority inversion.
+			return nil
+		}
+
+		req := q.dequeueFromBand(band)
+		if req != nil {
+			return req
+		}
+		bandRank++
+	}
+	return nil
 }
 
 // dequeuePriority dispatches from the highest non-empty band.

@@ -399,6 +399,9 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		if config.FlowControlPerBandCapacity > 0 {
 			gq.SetPerBandCapacity(config.FlowControlPerBandCapacity)
 		}
+		if config.FlowControlUsageLimitThreshold > 0 && config.FlowControlUsageLimitThreshold < 1.0 {
+			gq.SetUsageLimitThreshold(config.FlowControlUsageLimitThreshold)
+		}
 		cs.gatewayQueue = gq
 		cs.saturationDetector = sim.NewSaturationDetector(
 			config.FlowControlDetector,
@@ -1300,13 +1303,12 @@ func (c *ClusterSimulator) tryDispatchFromGatewayQueue() bool {
 	// Build fresh state for late binding (BC-3)
 	state := buildRouterState(c, nil)
 	sat := c.saturationDetector.Saturation(state)
-	if sat >= 1.0 {
+	// Per-band HoL blocking: DequeueGated checks saturation against per-band ceilings
+	// and halts dispatch if any band's ceiling is exceeded (GIE parity).
+	req := c.gatewayQueue.DequeueGated(sat)
+	if req == nil {
 		logrus.Debugf("[cluster] tryDispatch: held (saturation=%.2f, snapshots=%d, queueLen=%d)",
 			sat, len(state.Snapshots), c.gatewayQueue.Len())
-		return false // hold until next completion
-	}
-	req := c.gatewayQueue.Dequeue()
-	if req == nil {
 		return false
 	}
 	req.GatewayDispatchTime = c.clock
