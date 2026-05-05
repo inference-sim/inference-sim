@@ -519,7 +519,8 @@ func TestServeGenMultiPeriod_E2E(t *testing.T) {
 		t.Errorf("BC-6: expected aggregate_rate=0, got %f", spec.AggregateRate)
 	}
 
-	// BC-7: Determinism - run twice with same seed
+	// BC-7: Determinism - run twice with same seed, verify bit-identical float values
+	// This catches INV-6 violations from non-deterministic map iteration affecting RNG state or float accumulation
 	spec2, err2 := ConvertServeGen(tmpDir, 600, 180)
 	if err2 != nil {
 		t.Fatalf("second conversion failed: %v", err2)
@@ -531,8 +532,37 @@ func TestServeGenMultiPeriod_E2E(t *testing.T) {
 		if i >= len(spec2.Cohorts) {
 			break
 		}
-		if spec.Cohorts[i].ID != spec2.Cohorts[i].ID {
-			t.Errorf("BC-7: cohort[%d] ID mismatch: %s vs %s", i, spec.Cohorts[i].ID, spec2.Cohorts[i].ID)
+		c1 := spec.Cohorts[i]
+		c2 := spec2.Cohorts[i]
+
+		// Check cohort ID (structural)
+		if c1.ID != c2.ID {
+			t.Errorf("BC-7: cohort[%d] ID mismatch: %s vs %s", i, c1.ID, c2.ID)
+		}
+
+		// Check trace_rate (critical float value - INV-6 test)
+		if c1.Spike != nil && c2.Spike != nil {
+			if c1.Spike.TraceRate != nil && c2.Spike.TraceRate != nil {
+				if *c1.Spike.TraceRate != *c2.Spike.TraceRate {
+					t.Errorf("BC-7/INV-6: cohort[%d] trace_rate mismatch: %v vs %v", i, *c1.Spike.TraceRate, *c2.Spike.TraceRate)
+				}
+			}
+		}
+
+		// Check input distribution params (critical float values - INV-6 test)
+		if c1.InputDist.Params["mu"] != c2.InputDist.Params["mu"] {
+			t.Errorf("BC-7/INV-6: cohort[%d] input mu mismatch: %v vs %v", i, c1.InputDist.Params["mu"], c2.InputDist.Params["mu"])
+		}
+		if c1.InputDist.Params["sigma"] != c2.InputDist.Params["sigma"] {
+			t.Errorf("BC-7/INV-6: cohort[%d] input sigma mismatch: %v vs %v", i, c1.InputDist.Params["sigma"], c2.InputDist.Params["sigma"])
+		}
+
+		// Check output distribution params (critical float values - INV-6 test)
+		if c1.OutputDist.Params["mu"] != c2.OutputDist.Params["mu"] {
+			t.Errorf("BC-7/INV-6: cohort[%d] output mu mismatch: %v vs %v", i, c1.OutputDist.Params["mu"], c2.OutputDist.Params["mu"])
+		}
+		if c1.OutputDist.Params["sigma"] != c2.OutputDist.Params["sigma"] {
+			t.Errorf("BC-7/INV-6: cohort[%d] output sigma mismatch: %v vs %v", i, c1.OutputDist.Params["sigma"], c2.OutputDist.Params["sigma"])
 		}
 	}
 
