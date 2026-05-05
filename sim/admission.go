@@ -316,7 +316,7 @@ type TenantBudgetTracker interface {
 }
 
 // TenantBudgetAdmission wraps an inner AdmissionPolicy and applies per-tenant
-// budget enforcement after the inner policy admits the request.
+// budget enforcement before the inner policy processes the request.
 // Only sheddable requests (priority < 0) are rejected when over budget.
 // Non-sheddable requests always pass the budget check.
 type TenantBudgetAdmission struct {
@@ -341,12 +341,11 @@ func NewTenantBudgetAdmission(inner AdmissionPolicy, tracker TenantBudgetTracker
 }
 
 func (t *TenantBudgetAdmission) Admit(req *Request, state *RouterState) (bool, string) {
-	admitted, reason := t.inner.Admit(req, state)
-	if !admitted {
-		return false, reason
-	}
+	// Budget check BEFORE inner policy. When inner is FlowControlAdmission,
+	// inner.Admit() has the side effect of enqueuing — rejecting after enqueue
+	// would double-count the request in both rejected and gateway_queue_depth (INV-1).
 	if t.tracker.IsOverBudget(req.TenantID) && t.priorityMap.IsSheddable(req.SLOClass) {
 		return false, "tenant-budget-shed"
 	}
-	return true, reason
+	return t.inner.Admit(req, state)
 }

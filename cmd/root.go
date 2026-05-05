@@ -155,6 +155,8 @@ var (
 	flowControlQueueDepthThreshold  float64
 	flowControlKVCacheUtilThreshold float64
 	flowControlMaxConcurrency       int
+	flowControlPerBandCapacity      int
+	flowControlUsageLimitThreshold  float64
 
 	// Per-pool hardware override config
 	prefillTP             int
@@ -801,6 +803,15 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		if flowControlMaxQueueDepth < 0 {
 			logrus.Fatalf("--max-gateway-queue-depth must be >= 0, got %d", flowControlMaxQueueDepth)
 		}
+		if flowControlPerBandCapacity < 0 {
+			logrus.Fatalf("--per-band-capacity must be >= 0, got %d", flowControlPerBandCapacity)
+		}
+		if flowControlUsageLimitThreshold <= 0 || flowControlUsageLimitThreshold > 1.0 {
+			logrus.Fatalf("--usage-limit-threshold must be in (0, 1.0], got %v", flowControlUsageLimitThreshold)
+		}
+		if flowControlUsageLimitThreshold < 1.0 && flowControlDispatchOrder == "fifo" {
+			logrus.Warnf("--usage-limit-threshold < 1.0 with --dispatch-order fifo: HoL blocking uses priority-order iteration, FIFO semantics will not apply to gating decisions")
+		}
 		// Validate only parameters consumed by the selected detector
 		switch flowControlDetector {
 		case "utilization":
@@ -941,6 +952,8 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&flowControlQueueDepthThreshold, "queue-depth-threshold", 5, "Queue depth threshold for utilization detector")
 	cmd.Flags().Float64Var(&flowControlKVCacheUtilThreshold, "kv-cache-util-threshold", 0.8, "KV cache utilization threshold for utilization detector")
 	cmd.Flags().IntVar(&flowControlMaxConcurrency, "max-concurrency", 100, "Max concurrency per instance for concurrency detector")
+	cmd.Flags().IntVar(&flowControlPerBandCapacity, "per-band-capacity", 0, "Max requests per priority band when --flow-control is enabled (0=unlimited)")
+	cmd.Flags().Float64Var(&flowControlUsageLimitThreshold, "usage-limit-threshold", 1.0, "Per-band saturation ceiling for HoL blocking (1.0=no HoL, <1.0 gates lower-priority bands earlier)")
 
 	// Per-pool hardware overrides
 	cmd.Flags().IntVar(&prefillTP, "prefill-tp", 0, "Tensor parallelism degree for prefill pool instances (0 = use global --tensor-parallelism)")
@@ -1519,6 +1532,8 @@ var runCmd = &cobra.Command{
 			FlowControlQueueDepthThreshold:  flowControlQueueDepthThreshold,
 			FlowControlKVCacheUtilThreshold: flowControlKVCacheUtilThreshold,
 			FlowControlMaxConcurrency:       flowControlMaxConcurrency,
+			FlowControlPerBandCapacity:      flowControlPerBandCapacity,
+			FlowControlUsageLimitThreshold:  flowControlUsageLimitThreshold,
 			ModelAutoscalerIntervalUs:              bundleAutoscalerIntervalUs,
 			ScaleUpStabilizationWindowUs:           bundleScaleUpStabilizationWindowUs,
 			ScaleDownStabilizationWindowUs:         bundleScaleDownStabilizationWindowUs,

@@ -173,41 +173,35 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 		})
 	}
 
-	// Flow control: enqueue in gateway queue instead of scheduling routing directly.
-	// When flow control is disabled (default), the original path is unchanged (BC-1).
-	if cs.flowControlEnabled {
-		e.request.GatewayEnqueueTime = cs.clock
-		outcome, victim := cs.gatewayQueue.Enqueue(e.request, cs.nextSeqID())
-		// Trace gap: RecordAdmission above already wrote Admitted:true for any request
-		// that reaches the gateway queue. No trace.RoutingRecord is emitted for requests
-		// subsequently rejected or shed from the queue. Trace consumers must not assume
-		// all Admitted:true requests have routing records when flow control is enabled.
-		switch outcome {
+	// Flow control: FlowControlAdmission.Admit() already processed the request (enqueue or rejection).
+	// Handle queue-level outcomes (shed victim accounting, dispatch).
+	// When flow control is disabled (default), cs.flowControlAdmission is nil (BC-1).
+	//
+	// Trace gap: RecordAdmission above already wrote Admitted:true for any request
+	// that reaches the gateway queue. No trace.RoutingRecord is emitted for requests
+	// subsequently rejected or shed from the queue. Trace consumers must not assume
+	// all Admitted:true requests have routing records when flow control is enabled.
+	if cs.flowControlAdmission != nil {
+		switch cs.flowControlAdmission.LastOutcome() {
 		case Rejected:
-			logrus.Debugf("[cluster] req %s: admitted but rejected by gateway queue (full, incoming could not displace any entry)", e.request.ID)
-			e.request.GatewayEnqueueTime = 0 // not enqueued — clear timestamp
-			// INV-1 accounting: flows into gw_rejected via gatewayQueue.rejectedCount.
-			// NOT added to cs.rejectedRequests — that tracks admission rejections only.
-			// Gateway rejections are a separate INV-1 bucket (mutual exclusivity: the
-			// !admitted path returns early before reaching this flow-control block).
-			// No trace.RoutingRecord is emitted for this request. Counted in
-			// GatewayQueueRejected() (gw_rejected, INV-1), not in rejectedRequests.
+			// Queue-rejected. NOT an admission rejection (Admit returned true).
+			// Accounted via gatewayQueue.RejectedCount() (INV-1: gateway_queue_rejected).
+			logrus.Debugf("[cluster] req %s: flow-control queue rejected", e.request.ID)
 			return
 		case ShedVictim:
+			victim := cs.flowControlAdmission.LastShedVictim()
 			if victim == nil {
-				panic(fmt.Sprintf("AdmissionDecisionEvent: ShedVictim with nil victim for req %s", e.request.ID))
+				panic(fmt.Sprintf("FlowControlAdmission: ShedVictim outcome but nil victim for req %s", e.request.ID))
 			}
-			victim.GatewayEnqueueTime = 0 // evicted — clear stale timestamp
 			tier := victim.SLOClass
 			if tier == "" {
 				tier = "standard"
 			}
 			cs.shedByTier[tier]++
-			// INV-1 accounting: victim flows into gw_shed via gatewayQueue.shedCount.
 		case Enqueued:
 			// nothing extra
 		default:
-			panic(fmt.Sprintf("AdmissionDecisionEvent: unhandled EnqueueOutcome %d for request %s", outcome, e.request.ID))
+			panic(fmt.Sprintf("unhandled FlowControlAdmission outcome: %v", cs.flowControlAdmission.LastOutcome()))
 		}
 		cs.tryDispatchFromGatewayQueue()
 		return

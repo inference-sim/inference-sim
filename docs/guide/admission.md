@@ -182,6 +182,49 @@ Both defaults come directly from the GAIE production source code:
 | **Activation** | When any instance exceeds `tier_shed_threshold` | When pool-average saturation >= 1.0 |
 | **Production parity** | BLIS-specific | Matches llm-d/GAIE |
 
+## Flow Control Admission
+
+When `--flow-control` is enabled, the `FlowControlAdmission` policy replaces the configured
+admission policy. In this mode, admission and queuing are a single step -- the queue IS the
+admission decision, matching llm-d's `FlowControlAdmissionController`.
+
+### How It Works
+
+1. Incoming request is enqueued into a per-priority-band, per-flow queue
+2. Each unique (TenantID, Priority) pair gets its own FIFO queue within a priority band
+3. Dispatch order follows `--dispatch-order`: with `priority`, iterates bands highest-priority first; with `fifo` (default), picks the globally-earliest arrival across all bands
+4. Within a band, the request with the earliest arrival (lowest sequence ID) is dispatched first (global-strict fairness)
+5. Saturation gating: dispatch only when cluster saturation < 1.0
+6. Completion-triggered dispatch: each completion frees capacity and tries to dispatch from the queue
+
+### Per-Band Capacity
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--per-band-capacity` | Max requests per priority band (0=unlimited) | 0 |
+
+When a band reaches its capacity limit, incoming requests for that band are rejected
+(all entries in a band share the same priority, so displacement is never possible).
+The global `--max-gateway-queue-depth` limit applies across all bands with cross-band
+shedding of sheddable entries.
+
+### Example
+
+```bash
+./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
+  --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 \
+  --per-band-capacity 100 --max-gateway-queue-depth 500
+```
+
+### Comparison with Legacy Admission
+
+| Aspect | Legacy (AlwaysAdmit, TierShed, etc.) | FlowControlAdmission |
+|--------|--------------------------------------|---------------------|
+| Admission | Separate from queuing | Queue IS admission |
+| Queue structure | None (admit/reject then route directly) | Per-priority-band, per-flow |
+| Dispatch order | N/A (no queue) | `--dispatch-order` (fifo/priority) |
+| Capacity | N/A (no queue) | Per-band + global |
+
 ## Pipeline Latency
 
 The `--admission-latency` and `--routing-latency` flags model real network and processing overhead between gateway and backend (gRPC hops, service mesh serialization, queue dispatch). These are pipeline concerns that affect both admission and routing stages. See [Cluster Simulation](cluster.md#admission-and-routing-latency) for details on configuring pipeline latency.

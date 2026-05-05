@@ -250,3 +250,352 @@ func TestGatewayQueue_NegativeMaxDepth_Panics(t *testing.T) {
 	}()
 	NewGatewayQueue("fifo", -1, nil)
 }
+
+// --- Per-band queue tests (Task 1: BC-2, BC-3, BC-4, BC-5) ---
+
+func TestGatewayQueue_PerBand_FlowKeyMapping(t *testing.T) {
+	q := NewGatewayQueue("priority", 0, nil)
+	r1 := &sim.Request{ID: "r1", TenantID: "tenant-A", SLOClass: "standard"} // priority 3
+	r2 := &sim.Request{ID: "r2", TenantID: "tenant-B", SLOClass: "standard"} // priority 3
+	r3 := &sim.Request{ID: "r3", TenantID: "", SLOClass: "critical"}         // priority 4, default tenant
+
+	q.Enqueue(r1, 1)
+	q.Enqueue(r2, 2)
+	q.Enqueue(r3, 3)
+
+	// Band 4 (critical) dispatched first
+	got := q.Dequeue()
+	if got.ID != "r3" {
+		t.Errorf("expected r3 (critical band 4), got %s", got.ID)
+	}
+	// Band 3: r1 and r2 in separate flows. Global-strict: earliest seqID wins.
+	got = q.Dequeue()
+	if got.ID != "r1" {
+		t.Errorf("expected r1 (earliest in band 3), got %s", got.ID)
+	}
+	got = q.Dequeue()
+	if got.ID != "r2" {
+		t.Errorf("expected r2, got %s", got.ID)
+	}
+}
+
+func TestGatewayQueue_PerBand_DefaultTenantID(t *testing.T) {
+	q := NewGatewayQueue("priority", 0, nil)
+	q.Enqueue(&sim.Request{ID: "r1", TenantID: "", SLOClass: "standard"}, 1)
+	if q.LenByBand(sim.DefaultSLOPriorityMap().Priority("standard")) != 1 {
+		t.Errorf("expected 1 request in standard band")
+	}
+}
+
+func TestGatewayQueue_PerBand_DefaultTenantIDCollision(t *testing.T) {
+	q := NewGatewayQueue("priority", 0, nil)
+	q.Enqueue(&sim.Request{ID: "r1", TenantID: "", SLOClass: "standard"}, 1)
+	q.Enqueue(&sim.Request{ID: "r2", TenantID: "default", SLOClass: "standard"}, 2)
+
+	got1 := q.Dequeue()
+	got2 := q.Dequeue()
+	if got1.ID != "r1" || got2.ID != "r2" {
+		t.Errorf("got %s, %s; want r1, r2 (same flow, FIFO by seqID)", got1.ID, got2.ID)
+	}
+}
+
+func TestGatewayQueue_PerBand_DispatchOrder(t *testing.T) {
+	q := NewGatewayQueue("priority", 0, nil)
+	q.Enqueue(&sim.Request{ID: "d", SLOClass: "batch"}, 1)    // band -1
+	q.Enqueue(&sim.Request{ID: "b", SLOClass: "standard"}, 2) // band 3
+	q.Enqueue(&sim.Request{ID: "a", SLOClass: "critical"}, 3) // band 4
+	q.Enqueue(&sim.Request{ID: "c", SLOClass: "standard"}, 4) // band 3
+
+	expected := []string{"a", "b", "c", "d"}
+	for i, exp := range expected {
+		got := q.Dequeue()
+		if got.ID != exp {
+			t.Errorf("position %d: got %s, want %s", i, got.ID, exp)
+		}
+	}
+	if q.Dequeue() != nil {
+		t.Error("expected nil from empty queue")
+	}
+}
+
+func TestGatewayQueue_PerBand_GlobalStrictFairness(t *testing.T) {
+	q := NewGatewayQueue("priority", 0, nil)
+	q.Enqueue(&sim.Request{ID: "b1", TenantID: "B", SLOClass: "standard"}, 10)
+	q.Enqueue(&sim.Request{ID: "b2", TenantID: "B", SLOClass: "standard"}, 20)
+	q.Enqueue(&sim.Request{ID: "c1", TenantID: "C", SLOClass: "standard"}, 5) // earlier seqID
+
+	got := q.Dequeue()
+	if got.ID != "c1" {
+		t.Errorf("expected c1 (earliest head), got %s", got.ID)
+	}
+	got = q.Dequeue()
+	if got.ID != "b1" {
+		t.Errorf("expected b1, got %s", got.ID)
+	}
+	got = q.Dequeue()
+	if got.ID != "b2" {
+		t.Errorf("expected b2, got %s", got.ID)
+	}
+}
+
+func TestGatewayQueue_PerBand_LenByBand(t *testing.T) {
+	pm := sim.DefaultSLOPriorityMap()
+	q := NewGatewayQueue("priority", 0, pm)
+	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "critical"}, 1)
+	q.Enqueue(&sim.Request{ID: "r2", SLOClass: "standard"}, 2)
+	q.Enqueue(&sim.Request{ID: "r3", SLOClass: "standard"}, 3)
+	q.Enqueue(&sim.Request{ID: "r4", SLOClass: "background"}, 4)
+
+	if q.LenByBand(pm.Priority("critical")) != 1 {
+		t.Errorf("critical band wrong")
+	}
+	if q.LenByBand(pm.Priority("standard")) != 2 {
+		t.Errorf("standard band wrong")
+	}
+	if q.LenByBand(pm.Priority("background")) != 1 {
+		t.Errorf("background band wrong")
+	}
+	if q.LenByBand(99) != 0 {
+		t.Errorf("nonexistent band should be 0")
+	}
+	if q.Len() != 4 {
+		t.Errorf("total: got %d", q.Len())
+	}
+}
+
+func TestGatewayQueue_PerBand_CustomSLOPriorities(t *testing.T) {
+	pm := sim.NewSLOPriorityMap(map[string]int{"batch": 0})
+	q := NewGatewayQueue("priority", 0, pm)
+	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "batch"}, 1)    // band 0 (custom)
+	q.Enqueue(&sim.Request{ID: "r2", SLOClass: "standard"}, 2) // band 3
+
+	got := q.Dequeue()
+	if got.ID != "r2" {
+		t.Errorf("expected standard (band 3) first, got %s", got.ID)
+	}
+	got = q.Dequeue()
+	if got.ID != "r1" {
+		t.Errorf("expected batch (band 0) second, got %s", got.ID)
+	}
+}
+
+// --- Per-band capacity tests (Task 2: BC-6, BC-11, BC-12) ---
+
+func TestGatewayQueue_PerBand_BandCapacityRejection(t *testing.T) {
+	q := NewGatewayQueue("priority", 0, nil)
+	q.SetPerBandCapacity(2)
+
+	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "standard"}, 1)
+	q.Enqueue(&sim.Request{ID: "r2", SLOClass: "standard"}, 2)
+
+	// Third standard -> rejected (band full, no sheddable to evict within band)
+	outcome, victim := q.Enqueue(&sim.Request{ID: "r3", SLOClass: "standard"}, 3)
+	if outcome != Rejected {
+		t.Errorf("expected Rejected, got %v", outcome)
+	}
+	if victim != nil {
+		t.Error("expected nil victim")
+	}
+
+	// Different band still accepts
+	outcome, _ = q.Enqueue(&sim.Request{ID: "r4", SLOClass: "batch"}, 4)
+	if outcome != Enqueued {
+		t.Errorf("expected Enqueued in different band, got %v", outcome)
+	}
+}
+
+func TestGatewayQueue_PerBand_BandCapacitySamePriorityEviction(t *testing.T) {
+	q := NewGatewayQueue("priority", 0, nil)
+	q.SetPerBandCapacity(2)
+
+	q.Enqueue(&sim.Request{ID: "r1", TenantID: "A", SLOClass: "batch"}, 1)
+	q.Enqueue(&sim.Request{ID: "r2", TenantID: "B", SLOClass: "batch"}, 2)
+
+	// Band -1 full. Incoming batch with later seqID -> rejected (cannot displace same-priority)
+	outcome, _ := q.Enqueue(&sim.Request{ID: "r3", TenantID: "C", SLOClass: "batch"}, 3)
+	if outcome != Rejected {
+		t.Errorf("later seqID same-priority should be rejected, got %v", outcome)
+	}
+}
+
+func TestGatewayQueue_PerBand_GlobalMaxDepthStillWorks(t *testing.T) {
+	q := NewGatewayQueue("priority", 2, nil)
+	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "standard"}, 1)
+	q.Enqueue(&sim.Request{ID: "r2", SLOClass: "critical"}, 2)
+
+	// Queue full. Sheddable -> rejected (no sheddable victims)
+	outcome, _ := q.Enqueue(&sim.Request{ID: "r3", SLOClass: "sheddable"}, 3)
+	if outcome != Rejected {
+		t.Errorf("expected Rejected, got %v", outcome)
+	}
+	if q.Len() != 2 {
+		t.Errorf("expected 2, got %d", q.Len())
+	}
+}
+
+func TestGatewayQueue_PerBand_CapacityCheckOrder(t *testing.T) {
+	q := NewGatewayQueue("priority", 100, nil)
+	q.SetPerBandCapacity(2)
+
+	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "standard"}, 1)
+	q.Enqueue(&sim.Request{ID: "r2", SLOClass: "standard"}, 2)
+
+	// Per-band cap reached (2), global not (2 < 100)
+	outcome, _ := q.Enqueue(&sim.Request{ID: "r3", SLOClass: "standard"}, 3)
+	if outcome != Rejected {
+		t.Errorf("per-band cap should reject, got %v", outcome)
+	}
+}
+
+func TestGatewayQueue_DequeueGated_HoLBlocking(t *testing.T) {
+	// Tests verify per-band HoL blocking matching GIE's dispatchCycle behavior:
+	// - Ceilings computed by band POSITION (not non-empty count)
+	// - Ceiling check happens BEFORE emptiness check
+	// - If saturation >= ceiling, halt entire dispatch (prevents priority inversion)
+
+	// Case 1: 2 bands, low saturation — dispatches highest-priority item.
+	q := NewGatewayQueue("priority", 0, nil)
+	q.SetUsageLimitThreshold(0.5)
+	q.Enqueue(&sim.Request{ID: "critical1", SLOClass: "critical"}, 1)
+	q.Enqueue(&sim.Request{ID: "batch1", SLOClass: "batch"}, 2)
+	// 2 bands [critical(4), batch(-1)]. Ceilings by position: [1.0, 0.5].
+	// sat=0.3 < critical ceiling 1.0 → dispatches critical1.
+	req := q.DequeueGated(0.3)
+	if req == nil || req.ID != "critical1" {
+		t.Fatalf("expected critical1 at sat=0.3, got %v", req)
+	}
+
+	// Case 2: Full saturation blocks top band → nothing dispatches.
+	q.Enqueue(&sim.Request{ID: "critical2", SLOClass: "critical"}, 3)
+	// sat=1.0 >= critical ceiling 1.0 → HoL halt immediately.
+	req = q.DequeueGated(1.0)
+	if req != nil {
+		t.Fatalf("expected nil at sat=1.0, got %v", req.ID)
+	}
+	if q.Len() != 2 {
+		t.Fatalf("expected 2 items still in queue, got %d", q.Len())
+	}
+
+	// Case 3: HoL blocks lower band while higher band dispatches.
+	// After dequeuing critical, batch remains but band structure is preserved.
+	// 2 bands still [critical(4), batch(-1)]. Ceilings: [1.0, 0.5].
+	// Dequeue critical2 at sat=0.3:
+	req = q.DequeueGated(0.3)
+	if req == nil || req.ID != "critical2" {
+		t.Fatalf("expected critical2 at sat=0.3, got %v", req)
+	}
+	// Now critical band empty, batch has batch1. Bands still [4, -1].
+	// sat=0.6: critical ceiling=1.0 > 0.6 → passes, band empty → skip.
+	//          batch ceiling=0.5 < 0.6 → HoL halt! batch1 stays queued.
+	req = q.DequeueGated(0.6)
+	if req != nil {
+		t.Fatalf("expected nil at sat=0.6 (batch ceiling=0.5 < 0.6), got %v", req.ID)
+	}
+	if q.Len() != 1 {
+		t.Fatalf("expected 1 item (batch1) still queued, got %d", q.Len())
+	}
+	// sat=0.4 < batch ceiling 0.5 → batch1 dispatches.
+	req = q.DequeueGated(0.4)
+	if req == nil || req.ID != "batch1" {
+		t.Fatalf("expected batch1 at sat=0.4, got %v", req)
+	}
+
+	// Case 4: 3 bands with intermediate HoL blocking.
+	// critical(4), standard(3), batch(-1). numBands=3. Ceilings: [1.0, 0.75, 0.5].
+	q3 := NewGatewayQueue("priority", 0, nil)
+	q3.SetUsageLimitThreshold(0.5)
+	q3.Enqueue(&sim.Request{ID: "c1", SLOClass: "critical"}, 1)
+	q3.Enqueue(&sim.Request{ID: "s1", SLOClass: "standard"}, 2)
+	q3.Enqueue(&sim.Request{ID: "b1", SLOClass: "batch"}, 3)
+
+	// sat=0.76: critical ceiling=1.0 > 0.76 → dispatches c1.
+	req = q3.DequeueGated(0.76)
+	if req == nil || req.ID != "c1" {
+		t.Fatalf("expected c1 at sat=0.76, got %v", req)
+	}
+	// Bands still [4, 3, -1]. Ceilings: [1.0, 0.75, 0.5].
+	// sat=0.76: critical ceiling=1.0 > 0.76 → passes (empty, skip).
+	//           standard ceiling=0.75 < 0.76 → HoL halt! s1 and b1 stay queued.
+	req = q3.DequeueGated(0.76)
+	if req != nil {
+		t.Fatalf("expected nil at sat=0.76 (standard ceiling=0.75 blocks), got %v", req.ID)
+	}
+	if q3.Len() != 2 {
+		t.Fatalf("expected 2 items still queued, got %d", q3.Len())
+	}
+	// sat=0.4: all ceilings pass → dispatches s1 (highest non-empty).
+	req = q3.DequeueGated(0.4)
+	if req == nil || req.ID != "s1" {
+		t.Fatalf("expected s1 at sat=0.4, got %v", req)
+	}
+	// sat=0.4 < batch ceiling 0.5 → dispatches b1.
+	req = q3.DequeueGated(0.4)
+	if req == nil || req.ID != "b1" {
+		t.Fatalf("expected b1 at sat=0.4, got %v", req)
+	}
+
+	// Case 5: HoL effect — low-priority items starved under sustained high saturation.
+	q5 := NewGatewayQueue("priority", 0, nil)
+	q5.SetUsageLimitThreshold(0.5)
+	q5.Enqueue(&sim.Request{ID: "s1", SLOClass: "standard"}, 1)
+	q5.Enqueue(&sim.Request{ID: "b1", SLOClass: "batch"}, 2)
+	// 2 bands [standard(3), batch(-1)]. Ceilings: [1.0, 0.5].
+	// sat=0.6: standard ceiling=1.0 > 0.6 → dispatches s1.
+	req = q5.DequeueGated(0.6)
+	if req == nil || req.ID != "s1" {
+		t.Fatalf("expected s1 at sat=0.6, got %v", req)
+	}
+	// Refill standard. Bands [3, -1] persist. Ceilings: [1.0, 0.5].
+	q5.Enqueue(&sim.Request{ID: "s2", SLOClass: "standard"}, 3)
+	// sat=0.6: standard ceiling=1.0 > 0.6 → dispatches s2.
+	req = q5.DequeueGated(0.6)
+	if req == nil || req.ID != "s2" {
+		t.Fatalf("expected s2 at sat=0.6, got %v", req)
+	}
+	// Standard empty, batch has b1. sat=0.6 >= batch ceiling 0.5 → HoL halt.
+	// Batch b1 is starved as long as saturation > 0.5!
+	req = q5.DequeueGated(0.6)
+	if req != nil {
+		t.Fatalf("expected nil — batch starved at sat=0.6 (ceiling=0.5), got %v", req.ID)
+	}
+	// Saturation drops → batch finally dispatches.
+	req = q5.DequeueGated(0.4)
+	if req == nil || req.ID != "b1" {
+		t.Fatalf("expected b1 at sat=0.4, got %v", req)
+	}
+}
+
+func TestGatewayQueue_DequeueGated_SingleBand_NoCeiling(t *testing.T) {
+	// Single band: ceiling is always 1.0 regardless of threshold.
+	q := NewGatewayQueue("priority", 0, nil)
+	q.SetUsageLimitThreshold(0.5)
+
+	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "critical"}, 1)
+
+	// At saturation=0.9: should still dispatch (single band → ceiling=1.0).
+	req := q.DequeueGated(0.9)
+	if req == nil || req.ID != "r1" {
+		t.Fatalf("expected r1 at sat=0.9 with single band, got %v", req)
+	}
+}
+
+func TestGatewayQueue_DequeueGated_DefaultThreshold_NoHoL(t *testing.T) {
+	// Default threshold=1.0: linear interpolation gives all ceilings=1.0.
+	// Formula: ceiling = 1.0 - i*(1.0-1.0)/(N-1) = 1.0 for all i.
+	// Equivalent to old behavior — no HoL blocking.
+	q := NewGatewayQueue("priority", 0, nil)
+	// No SetUsageLimitThreshold call — uses default 1.0.
+
+	q.Enqueue(&sim.Request{ID: "critical1", SLOClass: "critical"}, 1)
+	q.Enqueue(&sim.Request{ID: "batch1", SLOClass: "batch"}, 2)
+
+	// At saturation=0.99: all ceilings=1.0 → both dispatch.
+	req := q.DequeueGated(0.99)
+	if req == nil || req.ID != "critical1" {
+		t.Fatalf("expected critical1, got %v", req)
+	}
+	req = q.DequeueGated(0.99)
+	if req == nil || req.ID != "batch1" {
+		t.Fatalf("expected batch1, got %v", req)
+	}
+}

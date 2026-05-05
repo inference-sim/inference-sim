@@ -234,6 +234,8 @@ Example:
 			FlowControlQueueDepthThreshold:   flowControlQueueDepthThreshold,
 			FlowControlKVCacheUtilThreshold:  flowControlKVCacheUtilThreshold,
 			FlowControlMaxConcurrency:        flowControlMaxConcurrency,
+			FlowControlPerBandCapacity:       flowControlPerBandCapacity,
+			FlowControlUsageLimitThreshold:   flowControlUsageLimitThreshold,
 			TierShedThreshold:                tierShedThreshold,
 			TierShedMinPriority:              tierShedMinPriority,
 			GAIEQDThreshold:                  gaieQDThreshold,
