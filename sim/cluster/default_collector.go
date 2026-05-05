@@ -1,4 +1,4 @@
-// default_collector.go implements DefaultCollector Ã¢ÂÂ the standard Collector that maps
+// default_collector.go implements DefaultCollector — the standard Collector that maps
 // RouterState snapshots into per-model ModelSignals for the autoscaler pipeline.
 package cluster
 
