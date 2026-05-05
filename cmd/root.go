@@ -809,6 +809,9 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		if flowControlUsageLimitThreshold <= 0 || flowControlUsageLimitThreshold > 1.0 {
 			logrus.Fatalf("--usage-limit-threshold must be in (0, 1.0], got %v", flowControlUsageLimitThreshold)
 		}
+		if flowControlUsageLimitThreshold < 1.0 && flowControlDispatchOrder == "fifo" {
+			logrus.Warnf("--usage-limit-threshold < 1.0 with --dispatch-order fifo: HoL blocking uses priority-order iteration, FIFO semantics will not apply to gating decisions")
+		}
 		// Validate only parameters consumed by the selected detector
 		switch flowControlDetector {
 		case "utilization":
