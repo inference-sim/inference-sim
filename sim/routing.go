@@ -56,12 +56,14 @@ type RoutingDecision struct {
 	TargetInstance string             // Instance ID to route to (must match a snapshot ID)
 	Reason         string             // Human-readable explanation
 	Scores         map[string]float64 // Instance ID → composite score (nil for policies without scoring)
-	// Priority is a one-shot cluster-level priority hint applied before instance injection.
-	// Zero (default) means defer to instance-level PriorityPolicy entirely.
-	// Non-zero value sets req.Priority for initial queue ordering only — the instance-level
-	// PriorityPolicy recomputes priority each step, so this hint affects first-step scheduling
-	// but does not persist. This is intentional: it allows priority to evolve over time
-	// (e.g., SLOBasedPriority ages requests) while giving routing a way to influence initial placement.
+	// Priority is a cluster-level routing hint written to req.Priority before instance injection
+	// (see cluster_event.go:265). Zero (default) = no hint.
+	//
+	// NOTE (PR #1216): This field is overwritten at instance entry by the pre-processor in
+	// Simulator.EnqueueRequest via SLOPriorityMap.InvertForVLLM(req.SLOClass). A non-zero
+	// routing hint is therefore silently discarded; per-step PriorityPolicy recomputation no
+	// longer exists. No current routing policy sets a non-zero value. Reserved for future use
+	// by policies that need to override SLO-class-based priority at the routing layer.
 	Priority float64
 }
 

@@ -204,8 +204,9 @@ func TestRoutingDecisionEvent_PriorityHint_Applied(t *testing.T) {
 
 	// The priority hint was applied (verified by the fact that the simulation
 	// completed without panics — the stub policy routed all requests to instance_0).
-	// Note: instance-level PriorityPolicy recomputes priority each step,
-	// so the hint is one-shot for initial queue ordering only.
+	// Note (PR #1216): the RoutingDecision.Priority hint is overwritten by the
+	// instance-level pre-processor in EnqueueRequest. Per-step PriorityPolicy
+	// recomputation no longer exists; see routing.go:Priority field comment.
 }
 
 // TestRoutingDecisionEvent_PriorityHint_ZeroDoesNotOverride verifies BC-9 zero path:
