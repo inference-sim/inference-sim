@@ -62,12 +62,14 @@ func TestConvertServeGenCmd_TimeFilterFlag(t *testing.T) {
 // TestFilterCohortsByPeriod verifies that filterCohortsByPeriod correctly
 // filters cohorts by ID prefix and preserves spec metadata.
 func TestFilterCohortsByPeriod(t *testing.T) {
-	// Create a spec with cohorts from all three periods
+	// Create a spec with cohorts from all three periods and all fields populated
 	spec := &workload.WorkloadSpec{
 		Version:       "2",
 		Seed:          42,
 		AggregateRate: 0,
 		Category:      "test",
+		Horizon:       100000000,
+		NumRequests:   1000,
 		Cohorts: []workload.CohortSpec{
 			{ID: "midnight-background", Population: 5},
 			{ID: "midnight-critical", Population: 6},
@@ -93,7 +95,7 @@ func TestFilterCohortsByPeriod(t *testing.T) {
 		t.Run(tt.period, func(t *testing.T) {
 			filtered := filterCohortsByPeriod(spec, tt.period)
 
-			// Check metadata preserved
+			// Check all spec metadata preserved
 			if filtered.Version != spec.Version {
 				t.Errorf("Version: got %q, want %q", filtered.Version, spec.Version)
 			}
@@ -102,6 +104,15 @@ func TestFilterCohortsByPeriod(t *testing.T) {
 			}
 			if filtered.AggregateRate != spec.AggregateRate {
 				t.Errorf("AggregateRate: got %f, want %f", filtered.AggregateRate, spec.AggregateRate)
+			}
+			if filtered.Category != spec.Category {
+				t.Errorf("Category: got %q, want %q", filtered.Category, spec.Category)
+			}
+			if filtered.Horizon != spec.Horizon {
+				t.Errorf("Horizon: got %d, want %d", filtered.Horizon, spec.Horizon)
+			}
+			if filtered.NumRequests != spec.NumRequests {
+				t.Errorf("NumRequests: got %d, want %d", filtered.NumRequests, spec.NumRequests)
 			}
 
 			// Check cohort count

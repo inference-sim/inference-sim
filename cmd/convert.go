@@ -122,13 +122,18 @@ var convertInfPerfCmd = &cobra.Command{
 // filterCohortsByPeriod filters cohorts to only those matching the specified time period.
 // Cohort IDs are expected to have format: "{period}-{slo_class}" (e.g., "midnight-critical").
 func filterCohortsByPeriod(spec *workload.WorkloadSpec, period string) *workload.WorkloadSpec {
+	// Copy the full spec to preserve all fields, then replace Cohorts
 	filtered := &workload.WorkloadSpec{
 		Version:       spec.Version,
 		Seed:          spec.Seed,
 		AggregateRate: spec.AggregateRate,
 		Category:      spec.Category,
 		Clients:       spec.Clients,
-		Cohorts:       []workload.CohortSpec{},
+		Cohorts:       []workload.CohortSpec{}, // Will be populated below
+		Horizon:       spec.Horizon,
+		NumRequests:   spec.NumRequests,
+		ServeGenData:  spec.ServeGenData,
+		InferencePerf: spec.InferencePerf,
 	}
 
 	prefix := period + "-"
