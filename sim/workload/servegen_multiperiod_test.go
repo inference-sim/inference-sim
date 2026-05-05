@@ -88,7 +88,9 @@ func TestLoadServeGenData_Deterministic(t *testing.T) {
 	}
 }
 
-// TestLoadServeGenData_NoDuplication verifies BC-9: no chunk appears in multiple cohorts.
+// TestLoadServeGenData_NoDuplication verifies BC-9: no chunk appears in multiple cohorts
+// within the same period. Chunks MAY be assigned to multiple periods if they have active
+// windows spanning multiple time-of-day boundaries.
 func TestLoadServeGenData_NoDuplication(t *testing.T) {
 	spec := &WorkloadSpec{
 		Version: "2",
@@ -105,16 +107,16 @@ func TestLoadServeGenData_NoDuplication(t *testing.T) {
 		t.Skip("testdata not available")
 	}
 
-	// BC-9: Sum of cohort populations should equal number of unique chunks
+	// BC-9: Each chunk should appear in at most one cohort PER period.
+	// Within each period, sum of populations for same-period cohorts should not exceed
+	// the number of chunks active in that period.
+	// We can't hard-code expected count without testdata, but we can verify
+	// that population > 0 and cohorts were created.
 	totalPopulation := 0
 	for _, cohort := range spec.Cohorts {
 		totalPopulation += cohort.Population
 	}
 
-	// The total population represents how many chunk assignments were made
-	// Since each chunk should be assigned exactly once, this tests deduplication
-	// We can't hard-code expected count without testdata, but we can verify
-	// that population > 0 and cohorts were created
 	if totalPopulation == 0 && len(spec.Cohorts) > 0 {
 		t.Error("BC-9: cohorts exist but have zero population (impossible)")
 	}
@@ -534,13 +536,16 @@ func TestServeGenMultiPeriod_E2E(t *testing.T) {
 		}
 	}
 
-	// BC-2 & BC-9: Each chunk assigned to exactly one period, then split into 5 SLO cohorts
+	// BC-2 & BC-9: In this synthetic test, each chunk is active in exactly one period
+	// (by construction: midnight chunks have no morning/afternoon windows). This verifies
+	// that the implementation correctly handles the single-period-per-chunk case.
+	// Real ServeGen data MAY have chunks spanning multiple periods.
 	totalPopulation := 0
 	for _, cohort := range spec.Cohorts {
 		totalPopulation += cohort.Population
 	}
 	if totalPopulation != 9 {
-		t.Errorf("BC-2/BC-9: expected 9 chunks assigned once each (3 chunks × 3 periods), got total population %d", totalPopulation)
+		t.Errorf("BC-2/BC-9: expected 9 total chunk assignments (3 chunks × 3 periods), got %d", totalPopulation)
 	}
 
 	// BC-4b: With 3 chunks per period split into 5 SLO classes, not all cohorts will have chunks

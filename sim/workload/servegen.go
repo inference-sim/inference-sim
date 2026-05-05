@@ -235,7 +235,18 @@ func loadServeGenData(spec *WorkloadSpec) error {
 
 	// Split each period's chunks into 5 SLO cohorts using round-robin
 	cohortGroups := make(map[cohortKey][]chunkData)
-	for periodIdx, chunks := range periodChunks {
+
+	// INV-6: Sort period indices for deterministic RNG consumption
+	// Map iteration is non-deterministic in Go; shuffling periods in different
+	// orders changes the RNG state consumed and breaks determinism.
+	periodIndices := make([]int, 0, len(periodChunks))
+	for idx := range periodChunks {
+		periodIndices = append(periodIndices, idx)
+	}
+	sort.Ints(periodIndices)
+
+	for _, periodIdx := range periodIndices {
+		chunks := periodChunks[periodIdx]
 		// Shuffle chunks for this period to randomize SLO assignment
 		shuffled := make([]chunkData, len(chunks))
 		copy(shuffled, chunks)
@@ -308,7 +319,18 @@ func loadServeGenData(spec *WorkloadSpec) error {
 			var chunkInputMuSum, chunkInputSigmaSum, chunkOutputMuSum, chunkOutputSigmaSum float64
 			var chunkDistCount int
 
-			for dsTimestamp, dataset := range datasets {
+			// INV-6: Sort dataset timestamps for deterministic float accumulation
+			// (same pattern as fitLognormalFromPDF:828-833). Map iteration is
+			// non-deterministic; floating-point addition is not associative, so
+			// accumulation order affects the final sum.
+			dsSortedTimestamps := make([]int, 0, len(datasets))
+			for ts := range datasets {
+				dsSortedTimestamps = append(dsSortedTimestamps, ts)
+			}
+			sort.Ints(dsSortedTimestamps)
+
+			for _, dsTimestamp := range dsSortedTimestamps {
+				dataset := datasets[dsTimestamp]
 				// Match datasets at the same time-of-day across all days
 				if int64(dsTimestamp)%86400 == int64(nearestBoundary)%86400 {
 					inputFit, fitErr := fitLognormalFromPDF(dataset.inputPDF)
@@ -560,11 +582,6 @@ func loadServeGenDatasetAllWindows(path string, sgConfig *ServeGenDataSpec) (map
 // serveGenWindowDurationSec is the standard ServeGen window duration (10 minutes).
 const serveGenWindowDurationSec = 600
 
-// getTimeWindowBounds converts a time window name to (start, end) bounds in seconds.
-// Uses 30-minute windows aligned with ServeGen's diurnal analysis.
-// Note: ServeGen datasets contain token distributions at 6-hour intervals (0, 21600, 43200, 64800...),
-// while trace files have 10-minute granularity. Trace windows use nearest-preceding dataset entry.
-// Returns (0, 0) if the window name is empty/invalid.
 // findNearestDataset finds the dataset entry for the given timestamp.
 // If an exact match exists, returns it. Otherwise, returns the nearest-preceding
 // dataset entry (largest timestamp <= queryTimestamp).
