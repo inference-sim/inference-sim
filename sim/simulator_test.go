@@ -3115,3 +3115,33 @@ func TestEnqueueRequest_SetsVLLMConventionPriority(t *testing.T) {
 		})
 	}
 }
+
+// TestSimulator_PriorityIsStatic_NotRecomputedEachStep verifies BC-5.
+// After the pre-processor sets Request.Priority at enqueue time, it must
+// not be overwritten by subsequent step executions.
+func TestSimulator_PriorityIsStatic_NotRecomputedEachStep(t *testing.T) {
+	cfg := SimConfig{
+		Horizon:             1_000_000,
+		Seed:                42,
+		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+		BatchConfig:         NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
+	}
+	s := mustNewSimulator(t, cfg)
+	req := &Request{
+		ID:          "r1",
+		SLOClass:    "critical",
+		InputTokens: make([]int, 10),
+		ArrivalTime: 1,
+	}
+	s.EnqueueRequest(req)
+	wantPri := req.Priority // 0.0 in vLLM convention (critical)
+
+	// Run one step (queue is reordered but priority must not change)
+	s.Step(1)
+
+	if req.Priority != wantPri {
+		t.Errorf("BC-5 violated: Priority changed after Step: got %v, want %v", req.Priority, wantPri)
+	}
+}
