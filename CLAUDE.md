@@ -84,6 +84,7 @@ go build -o blis main.go
 # Convert workload formats
 ./blis convert preset --name chatbot --rate 10 --num-requests 100
 ./blis convert servegen --path data/
+./blis convert servegen --path data/ --time midnight  # Single period for testing
 ./blis convert inference-perf --spec spec.yaml
 ./blis compose --from spec1.yaml --from spec2.yaml
 
