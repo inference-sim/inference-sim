@@ -103,12 +103,7 @@ type Simulator struct {
 	gpu                    string
 	maxModelLen            int64 // max total sequence length (0 = unlimited)
 	rng                    *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
-	// priorityPolicy is deprecated. Request.Priority is now set statically at
-	// EnqueueRequest time via SLOPriorityMap.InvertForVLLM (vLLM static priority model).
-	// Field is zero-valued at construction; retained only so existing test fixtures
-	// that use direct struct literals compile without change.
-	priorityPolicy PriorityPolicy
-	sloMap         *SLOPriorityMap // vLLM-convention priority mapping for instance-level scheduling
+	sloMap *SLOPriorityMap // vLLM-convention priority mapping for instance-level scheduling
 	scheduler      InstanceScheduler
 	latencyModel           LatencyModel
 	seqCounter             int64 // monotonic counter for event queue seqID (deterministic ordering)
@@ -181,7 +176,6 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		sloMap:                    NewSLOPriorityMap(cfg.SLOPriorityOverrides),
 	}
 	s.rng = NewPartitionedRNG(NewSimulationKey(cfg.Seed))
-	// s.priorityPolicy is intentionally not initialized (deprecated — see field comment).
 	s.scheduler = NewScheduler(cfg.Scheduler)
 
 	return s, nil
@@ -666,10 +660,9 @@ func (sim *Simulator) scheduleBatch(now int64) {
 	// Synchronize KV cache clock for thrashing detection (no-op for single-tier KVCacheState)
 	sim.KVCache.SetClock(now)
 
-	// Assign priorities to queued requests and order queue per scheduler policy
-	for _, req := range sim.WaitQ.Items() {
-		req.Priority = sim.priorityPolicy.Compute(req, now)
-	}
+	// Order queue per scheduler policy. Priorities are static — set once at
+	// EnqueueRequest/EnqueueDecodeSubRequest via SLOPriorityMap.InvertForVLLM
+	// (vLLM static priority model; per-step recomputation removed).
 	sim.WaitQ.Reorder(func(reqs []*Request) {
 		sim.scheduler.OrderQueue(reqs, now)
 	})
