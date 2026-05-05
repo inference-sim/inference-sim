@@ -1,4 +1,4 @@
-// default_collector.go implements DefaultCollector â the standard Collector that maps
+// default_collector.go implements DefaultCollector Ã¢ÂÂ the standard Collector that maps
 // RouterState snapshots into per-model ModelSignals for the autoscaler pipeline.
 package cluster
 
@@ -10,8 +10,9 @@ import (
 )
 
 // DefaultCollector maps RoutingSnapshot fields to ReplicaMetrics, grouping by model.
-// Filters structurally incomplete snapshots (empty Model or GPUType) with a Debugf log;
-// all valid signals pass through unmodified — no thresholding, no business-logic suppression.
+// Filters only structurally incomplete snapshots (empty Model, empty GPUType, or loading
+// snapshots with TotalKvCapacityTokens <= 0), emitting a Debugf for each skip. All valid
+// signals pass through unmodified — no thresholding, no business-logic suppression.
 // Latency fields (TTFT, ITL, DispatchRate, AvgInTokens, AvgOutTokens, MaxBatchSize) are
 // populated from the snapshot when available (set by buildRouterState via LatencyStats).
 type DefaultCollector struct{}
