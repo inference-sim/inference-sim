@@ -23,6 +23,7 @@ var (
 	serveGenPath              string
 	serveGenWindowDurationSec int
 	serveGenDrainTimeoutSec   int
+	serveGenTimeFilter        string
 )
 
 var convertServeGenCmd = &cobra.Command{
@@ -37,10 +38,24 @@ var convertServeGenCmd = &cobra.Command{
 			logrus.Fatalf("--drain-timeout-seconds must be >= 0, got %d", serveGenDrainTimeoutSec)
 		}
 
+		// Validate --time flag if specified
+		if serveGenTimeFilter != "" {
+			validTimes := map[string]bool{"midnight": true, "morning": true, "afternoon": true}
+			if !validTimes[serveGenTimeFilter] {
+				logrus.Fatalf("--time must be one of: midnight, morning, afternoon (got %q)", serveGenTimeFilter)
+			}
+		}
+
 		spec, err := workload.ConvertServeGen(serveGenPath, serveGenWindowDurationSec, serveGenDrainTimeoutSec)
 		if err != nil {
 			logrus.Fatalf("ServeGen conversion failed: %v", err)
 		}
+
+		// Filter cohorts by time period if --time is specified
+		if serveGenTimeFilter != "" {
+			spec = filterCohortsByPeriod(spec, serveGenTimeFilter)
+		}
+
 		writeSpecToStdout(spec)
 	},
 }
@@ -104,6 +119,34 @@ var convertInfPerfCmd = &cobra.Command{
 	},
 }
 
+// filterCohortsByPeriod filters cohorts to only those matching the specified time period.
+// Cohort IDs are expected to have format: "{period}-{slo_class}" (e.g., "midnight-critical").
+func filterCohortsByPeriod(spec *workload.WorkloadSpec, period string) *workload.WorkloadSpec {
+	filtered := &workload.WorkloadSpec{
+		Version:       spec.Version,
+		Seed:          spec.Seed,
+		AggregateRate: spec.AggregateRate,
+		Category:      spec.Category,
+		Clients:       spec.Clients,
+		Cohorts:       []workload.CohortSpec{},
+	}
+
+	prefix := period + "-"
+	for _, cohort := range spec.Cohorts {
+		// Check if cohort ID starts with the period name
+		if len(cohort.ID) >= len(prefix) && cohort.ID[:len(prefix)] == prefix {
+			filtered.Cohorts = append(filtered.Cohorts, cohort)
+		}
+	}
+
+	if len(filtered.Cohorts) == 0 {
+		logrus.Fatalf("No cohorts found for period %q. Generated cohort IDs may not match expected format.", period)
+	}
+
+	logrus.Infof("Filtered to %d cohorts for period %q", len(filtered.Cohorts), period)
+	return filtered
+}
+
 // writeSpecToStdout validates and marshals a WorkloadSpec to YAML on stdout.
 func writeSpecToStdout(spec *workload.WorkloadSpec) {
 	if err := spec.Validate(); err != nil {
@@ -130,6 +173,7 @@ func init() {
 	convertServeGenCmd.Flags().StringVar(&serveGenPath, "path", "", "Path to ServeGen data directory")
 	convertServeGenCmd.Flags().IntVar(&serveGenWindowDurationSec, "window-duration-seconds", 600, "Duration of each time period in seconds")
 	convertServeGenCmd.Flags().IntVar(&serveGenDrainTimeoutSec, "drain-timeout-seconds", 180, "Gap between periods where no new requests arrive")
+	convertServeGenCmd.Flags().StringVar(&serveGenTimeFilter, "time", "", "Optional: filter to single period (midnight, morning, or afternoon)")
 	_ = convertServeGenCmd.MarkFlagRequired("path")
 
 	convertPresetCmd.Flags().StringVar(&presetName, "name", "", "Preset name (e.g., chatbot, summarization)")
