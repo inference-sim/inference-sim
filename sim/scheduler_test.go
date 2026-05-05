@@ -472,3 +472,20 @@ func TestReversePriority_LowestPriorityFirst(t *testing.T) {
 		t.Errorf("expected 'high' last, got %q (priority=%f)", reqs[2].ID, reqs[2].Priority)
 	}
 }
+
+// TestPriorityFCFSScheduler_LowerFirstOrder verifies BC-2 (vLLM convention).
+// After the pre-processor, instance-level priorities use lower=more urgent.
+// The scheduler must sort ascending so critical(0) comes before background(7).
+func TestPriorityFCFSScheduler_LowerFirstOrder(t *testing.T) {
+	reqs := []*Request{
+		{ID: "bg", Priority: 7.0, ArrivalTime: 100}, // background in vLLM convention
+		{ID: "cr", Priority: 0.0, ArrivalTime: 200}, // critical
+		{ID: "st", Priority: 1.0, ArrivalTime: 150}, // standard
+	}
+	s := &PriorityFCFSScheduler{}
+	s.OrderQueue(reqs, 0)
+	if reqs[0].ID != "cr" || reqs[1].ID != "st" || reqs[2].ID != "bg" {
+		t.Errorf("BC-2: wrong order got [%v %v %v], want [cr st bg] (lower priority first)",
+			reqs[0].ID, reqs[1].ID, reqs[2].ID)
+	}
+}
