@@ -58,8 +58,8 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 		spec.AggregateRate = expanded.AggregateRate
 	}
 
-	// Load ServeGen data if specified (populates spec.Clients)
-	if spec.ServeGenData != nil && len(spec.Clients) == 0 {
+	// Load ServeGen data if specified (populates spec.Cohorts)
+	if spec.ServeGenData != nil && len(spec.Clients) == 0 && len(spec.Cohorts) == 0 {
 		if err := loadServeGenData(spec); err != nil {
 			return nil, fmt.Errorf("loading ServeGen data: %w", err)
 		}

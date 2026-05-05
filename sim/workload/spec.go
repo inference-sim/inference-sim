@@ -212,11 +212,14 @@ type MultiTurnSpec struct {
 }
 
 // ServeGenDataSpec configures native ServeGen data file loading.
+// Used during conversion; not persisted in output YAML.
 type ServeGenDataSpec struct {
-	Path       string `yaml:"path"`
-	SpanStart  int64  `yaml:"span_start,omitempty"`
-	SpanEnd    int64  `yaml:"span_end,omitempty"`
-	TimeWindow string `yaml:"time_window,omitempty"` // "midnight", "morning", or "afternoon"
+	Path                string `yaml:"path,omitempty"`
+	TimeWindow          string `yaml:"time_window,omitempty"`          // Deprecated (single-period mode)
+	SpanStart           int64  `yaml:"span_start,omitempty"`           // Internal: computed from TimeWindow
+	SpanEnd             int64  `yaml:"span_end,omitempty"`             // Internal: computed from TimeWindow
+	WindowDurationSecs  int    `yaml:"window_duration_secs,omitempty"` // Multi-period: duration of each period
+	DrainTimeoutSecs    int    `yaml:"drain_timeout_secs,omitempty"`   // Multi-period: gap between periods
 }
 
 // Valid value registries.

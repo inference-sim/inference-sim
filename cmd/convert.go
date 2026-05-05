@@ -20,18 +20,42 @@ var convertCmd = &cobra.Command{
 // --- blis convert servegen ---
 
 var (
-	serveGenPath       string
-	serveGenTimeWindow string
+	serveGenPath              string
+	serveGenWindowDurationSec int
+	serveGenDrainTimeoutSec   int
+	serveGenTimeFilter        string
 )
 
 var convertServeGenCmd = &cobra.Command{
 	Use:   "servegen",
-	Short: "Convert ServeGen data directory to v2 spec",
+	Short: "Convert ServeGen data directory to v2 spec with multi-period cohorts",
 	Run: func(cmd *cobra.Command, args []string) {
-		spec, err := workload.ConvertServeGen(serveGenPath, serveGenTimeWindow)
+		// R3: validate numeric CLI flags
+		if serveGenWindowDurationSec <= 0 {
+			logrus.Fatalf("--window-duration-seconds must be > 0, got %d", serveGenWindowDurationSec)
+		}
+		if serveGenDrainTimeoutSec < 0 {
+			logrus.Fatalf("--drain-timeout-seconds must be >= 0, got %d", serveGenDrainTimeoutSec)
+		}
+
+		// Validate --time flag if specified
+		if serveGenTimeFilter != "" {
+			validTimes := map[string]bool{"midnight": true, "morning": true, "afternoon": true}
+			if !validTimes[serveGenTimeFilter] {
+				logrus.Fatalf("--time must be one of: midnight, morning, afternoon (got %q)", serveGenTimeFilter)
+			}
+		}
+
+		spec, err := workload.ConvertServeGen(serveGenPath, serveGenWindowDurationSec, serveGenDrainTimeoutSec)
 		if err != nil {
 			logrus.Fatalf("ServeGen conversion failed: %v", err)
 		}
+
+		// Filter cohorts by time period if --time is specified
+		if serveGenTimeFilter != "" {
+			spec = filterCohortsByPeriod(spec, serveGenTimeFilter)
+		}
+
 		writeSpecToStdout(spec)
 	},
 }
@@ -95,6 +119,39 @@ var convertInfPerfCmd = &cobra.Command{
 	},
 }
 
+// filterCohortsByPeriod filters cohorts to only those matching the specified time period.
+// Cohort IDs are expected to have format: "{period}-{slo_class}" (e.g., "midnight-critical").
+func filterCohortsByPeriod(spec *workload.WorkloadSpec, period string) *workload.WorkloadSpec {
+	// Copy the full spec to preserve all fields, then replace Cohorts
+	filtered := &workload.WorkloadSpec{
+		Version:       spec.Version,
+		Seed:          spec.Seed,
+		AggregateRate: spec.AggregateRate,
+		Category:      spec.Category,
+		Clients:       spec.Clients,
+		Cohorts:       []workload.CohortSpec{}, // Will be populated below
+		Horizon:       spec.Horizon,
+		NumRequests:   spec.NumRequests,
+		ServeGenData:  spec.ServeGenData,
+		InferencePerf: spec.InferencePerf,
+	}
+
+	prefix := period + "-"
+	for _, cohort := range spec.Cohorts {
+		// Check if cohort ID starts with the period name
+		if len(cohort.ID) >= len(prefix) && cohort.ID[:len(prefix)] == prefix {
+			filtered.Cohorts = append(filtered.Cohorts, cohort)
+		}
+	}
+
+	if len(filtered.Cohorts) == 0 {
+		logrus.Fatalf("No cohorts found for period %q. Generated cohort IDs may not match expected format.", period)
+	}
+
+	logrus.Infof("Filtered to %d cohorts for period %q", len(filtered.Cohorts), period)
+	return filtered
+}
+
 // writeSpecToStdout validates and marshals a WorkloadSpec to YAML on stdout.
 func writeSpecToStdout(spec *workload.WorkloadSpec) {
 	if err := spec.Validate(); err != nil {
@@ -119,7 +176,9 @@ func loadPresetWorkload(defaultsPath, name string) *Workload {
 
 func init() {
 	convertServeGenCmd.Flags().StringVar(&serveGenPath, "path", "", "Path to ServeGen data directory")
-	convertServeGenCmd.Flags().StringVar(&serveGenTimeWindow, "time", "", "Time window: midnight (0:00-0:30), morning (8:00-8:30), or afternoon (14:00-14:30)")
+	convertServeGenCmd.Flags().IntVar(&serveGenWindowDurationSec, "window-duration-seconds", 600, "Duration of each time period in seconds")
+	convertServeGenCmd.Flags().IntVar(&serveGenDrainTimeoutSec, "drain-timeout-seconds", 180, "Gap between periods where no new requests arrive")
+	convertServeGenCmd.Flags().StringVar(&serveGenTimeFilter, "time", "", "Optional: filter to single period (midnight, morning, or afternoon)")
 	_ = convertServeGenCmd.MarkFlagRequired("path")
 
 	convertPresetCmd.Flags().StringVar(&presetName, "name", "", "Preset name (e.g., chatbot, summarization)")
