@@ -600,3 +600,78 @@ func TestServeGenMultiPeriod_E2E(t *testing.T) {
 		}
 	}
 }
+
+// TestServeGenMultiPeriod_E2E_GeneratorConsumption verifies that CohortSpec
+// output from multi-period conversion can be consumed by GenerateRequests.
+// This ensures cross-path parity: convert → run/replay workflows work.
+func TestServeGenMultiPeriod_E2E_GeneratorConsumption(t *testing.T) {
+	// GIVEN: A multi-period ServeGen conversion
+	spec := &WorkloadSpec{
+		Version: "2",
+		Seed:    42,
+		ServeGenData: &ServeGenDataSpec{
+			Path:               "testdata/servegen_mini",
+			WindowDurationSecs: 600,
+			DrainTimeoutSecs:   180,
+		},
+	}
+
+	err := loadServeGenData(spec)
+	if err != nil {
+		if strings.Contains(err.Error(), "no chunk") || strings.Contains(err.Error(), "testdata") {
+			t.Skip("testdata not available")
+		}
+		t.Fatalf("loadServeGenData failed: %v", err)
+	}
+
+	if len(spec.Cohorts) == 0 {
+		t.Fatal("no cohorts generated")
+	}
+
+	// Clear ServeGenData since it's consumed
+	spec.ServeGenData = nil
+
+	// WHEN: Generating requests from the CohortSpec
+	requests, genErr := GenerateRequests(spec, 42, 3000000000) // 3000s horizon
+
+	// THEN: Request generation should succeed
+	if genErr != nil {
+		t.Fatalf("GenerateRequests failed on CohortSpec output: %v", genErr)
+	}
+
+	if len(requests) == 0 {
+		t.Fatal("GenerateRequests produced zero requests from CohortSpec")
+	}
+
+	// Verify requests span multiple time periods
+	// Expected periods: [0-600s], [780-1380s], [1560-2160s]
+	periodBuckets := make(map[string]int)
+	for _, req := range requests {
+		arrivalSec := req.ArrivalTime / 1000000
+		switch {
+		case arrivalSec >= 0 && arrivalSec < 600:
+			periodBuckets["midnight"]++
+		case arrivalSec >= 780 && arrivalSec < 1380:
+			periodBuckets["morning"]++
+		case arrivalSec >= 1560 && arrivalSec < 2160:
+			periodBuckets["afternoon"]++
+		case arrivalSec >= 600 && arrivalSec < 780:
+			t.Errorf("Request arrived in midnight drain gap: %d µs", req.ArrivalTime)
+		case arrivalSec >= 1380 && arrivalSec < 1560:
+			t.Errorf("Request arrived in morning drain gap: %d µs", req.ArrivalTime)
+		}
+	}
+
+	// Verify at least 2 periods have requests (random window selection may skip some)
+	if len(periodBuckets) < 2 {
+		t.Errorf("Expected requests in at least 2 periods, got %d: %v", len(periodBuckets), periodBuckets)
+	}
+
+	// Verify no requests in drain gaps
+	for _, req := range requests {
+		arrivalSec := req.ArrivalTime / 1000000
+		if (arrivalSec >= 600 && arrivalSec < 780) || (arrivalSec >= 1380 && arrivalSec < 1560) {
+			t.Errorf("Request in drain gap: arrival=%d µs (%d s)", req.ArrivalTime, arrivalSec)
+		}
+	}
+}

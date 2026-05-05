@@ -227,8 +227,8 @@ func loadServeGenData(spec *WorkloadSpec) error {
 				}
 			}
 			if hasActivity {
+				// Chunks can be assigned to multiple periods if active in multiple time windows
 				periodChunks[periodIdx] = append(periodChunks[periodIdx], chunk)
-				// Removed break: chunks can now be assigned to ALL periods where they're active
 			}
 		}
 	}
@@ -292,46 +292,47 @@ func loadServeGenData(spec *WorkloadSpec) error {
 			// Load this chunk's dataset to fit lognormal for this cohort's window
 			datasets, dsErr := loadServeGenDatasetAllWindows(chunk.datasetPath, &ServeGenDataSpec{Path: dataDir})
 			if dsErr != nil {
-				// Skip chunk if dataset cannot be loaded
-			} else {
-				// Aggregate across ALL days at the same time-of-day (consistent with rate/arrival param averaging)
-				// First find the nearest 6-hour boundary within day 1 using the existing findNearestDataset logic
-				_, nearestBoundary, found := findNearestDataset(int(selectedWindow), datasets)
-				if !found {
-					continue
-				}
+				logrus.Warnf("Skipping chunk %s for cohort %s: dataset load failed: %v", chunk.id, cohortID, dsErr)
+				continue
+			}
 
-				// Now collect all dataset entries at this time-of-day across all days
-				// using modulo matching (same pattern as rate/arrival aggregation)
-				var chunkInputMuSum, chunkInputSigmaSum, chunkOutputMuSum, chunkOutputSigmaSum float64
-				var chunkDistCount int
+			// Aggregate across ALL days at the same time-of-day (consistent with rate/arrival param averaging)
+			// First find the nearest 6-hour boundary within day 1 using the existing findNearestDataset logic
+			_, nearestBoundary, found := findNearestDataset(int(selectedWindow), datasets)
+			if !found {
+				continue
+			}
 
-				for dsTimestamp, dataset := range datasets {
-					// Match datasets at the same time-of-day across all days
-					if int64(dsTimestamp)%86400 == int64(nearestBoundary)%86400 {
-						inputFit, fitErr := fitLognormalFromPDF(dataset.inputPDF)
-						if fitErr == nil {
-							chunkInputMuSum += inputFit.Params["mu"]
-							chunkInputSigmaSum += inputFit.Params["sigma"]
-						}
-						outputFit, fitErr := fitLognormalFromPDF(dataset.outputPDF)
-						if fitErr == nil {
-							chunkOutputMuSum += outputFit.Params["mu"]
-							chunkOutputSigmaSum += outputFit.Params["sigma"]
-							chunkDistCount++
-						}
+			// Now collect all dataset entries at this time-of-day across all days
+			// using modulo matching (same pattern as rate/arrival aggregation)
+			var chunkInputMuSum, chunkInputSigmaSum, chunkOutputMuSum, chunkOutputSigmaSum float64
+			var chunkDistCount int
+
+			for dsTimestamp, dataset := range datasets {
+				// Match datasets at the same time-of-day across all days
+				if int64(dsTimestamp)%86400 == int64(nearestBoundary)%86400 {
+					inputFit, fitErr := fitLognormalFromPDF(dataset.inputPDF)
+					if fitErr == nil {
+						chunkInputMuSum += inputFit.Params["mu"]
+						chunkInputSigmaSum += inputFit.Params["sigma"]
+					}
+					outputFit, fitErr := fitLognormalFromPDF(dataset.outputPDF)
+					if fitErr == nil {
+						chunkOutputMuSum += outputFit.Params["mu"]
+						chunkOutputSigmaSum += outputFit.Params["sigma"]
+						chunkDistCount++
 					}
 				}
+			}
 
-				// Average this chunk's multi-day distributions
-				if chunkDistCount > 0 {
-					n := float64(chunkDistCount)
-					sumMuInput += chunkInputMuSum / n
-					sumSigmaInput += chunkInputSigmaSum / n
-					sumMuOutput += chunkOutputMuSum / n
-					sumSigmaOutput += chunkOutputSigmaSum / n
-					distCount++
-				}
+			// Average this chunk's multi-day distributions
+			if chunkDistCount > 0 {
+				n := float64(chunkDistCount)
+				sumMuInput += chunkInputMuSum / n
+				sumSigmaInput += chunkInputSigmaSum / n
+				sumMuOutput += chunkOutputMuSum / n
+				sumSigmaOutput += chunkOutputSigmaSum / n
+				distCount++
 			}
 
 			// BC-5: Average rates from all windows matching the selected time-of-day (across all days)
