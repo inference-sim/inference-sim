@@ -999,7 +999,7 @@ func TestConvertServeGen_MultiPeriodAbsoluteTimestamps(t *testing.T) {
 	}
 
 	// WHEN ConvertServeGen processes these files
-	spec, err := ConvertServeGen(dir, 600, 180, 42)
+	spec, err := ConvertServeGen(dir, 600, 180)
 
 	// THEN conversion succeeds
 	require.NoError(t, err)
@@ -1075,7 +1075,7 @@ func TestDetectReasoningCategory_FromDataset(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "chunk-001-dataset.json"), []byte(datasetContent), 0644))
 
 	// WHEN ConvertServeGen is called
-	spec, err := ConvertServeGen(tmpDir, 600, 180, 42)
+	spec, err := ConvertServeGen(tmpDir, 600, 180)
 
 	// THEN category is set to "reasoning"
 	require.NoError(t, err)
@@ -1094,7 +1094,7 @@ func TestDetectLanguageCategory_NoReasonRatio(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "chunk-001-dataset.json"), []byte(datasetContent), 0644))
 
 	// WHEN ConvertServeGen is called
-	spec, err := ConvertServeGen(tmpDir, 600, 180, 42)
+	spec, err := ConvertServeGen(tmpDir, 600, 180)
 
 	// THEN category is empty (default language) OR error due to minimal data
 	// (The key test is that reasoning was NOT detected)

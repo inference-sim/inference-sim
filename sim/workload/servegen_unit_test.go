@@ -227,7 +227,7 @@ func TestServeGenMultiPeriod_EmptyPeriod(t *testing.T) {
 		}
 	}
 
-	spec, err := ConvertServeGen(tmpDir, 600, 180, 42)
+	spec, err := ConvertServeGen(tmpDir, 600, 180)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -281,7 +281,7 @@ func TestServeGenMultiPeriod_RateValue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	spec, err := ConvertServeGen(tmpDir, 600, 180, 42)
+	spec, err := ConvertServeGen(tmpDir, 600, 180)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

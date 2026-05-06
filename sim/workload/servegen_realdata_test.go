@@ -37,7 +37,7 @@ func TestServeGenMultiPeriod_RealData(t *testing.T) {
 	}
 
 	// WHEN: ConvertServeGen processes real data with default window/drain settings
-	spec, err := ConvertServeGen(realDataPath, 600, 180, 42)
+	spec, err := ConvertServeGen(realDataPath, 600, 180)
 
 	// THEN: Conversion succeeds without errors
 	if err != nil {
