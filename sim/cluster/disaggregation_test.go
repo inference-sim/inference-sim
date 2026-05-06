@@ -589,7 +589,7 @@ func newTestPrefixThresholdConfig(threshold int) DeploymentConfig {
 // TestPrefixThreshold_BelowThresholdNotDisaggregated verifies BC-PD-21 at the cluster level:
 // requests with non-cached token counts well below the threshold must not be disaggregated
 // (absent from parentRequests). Tests the full NewClusterSimulator → PrefixThresholdDecider
-// constructor path and the DisaggregationDecisionEvent bifurcation.
+// constructor path and the executeDisaggregatedRouting bifurcation.
 func TestPrefixThreshold_BelowThresholdNotDisaggregated(t *testing.T) {
 	const threshold = 200
 	config := newTestPrefixThresholdConfig(threshold)
@@ -656,7 +656,7 @@ func TestPrefixThreshold_AboveThresholdDisaggregated(t *testing.T) {
 // TestPrefixThreshold_ObserverWarmsCache verifies BC-PD-24 at the cluster level:
 // req1 (disaggregated) warms the prefix cache via notifyDisaggregationObserver in
 // PrefillRoutingEvent.Execute (pd_events.go); req2 (non-disaggregated) verifies that
-// the warmed cache is consulted in DisaggregationDecisionEvent, reducing non-cached
+// the warmed cache is consulted in executeDisaggregatedRouting, reducing non-cached
 // token count below the threshold. Tests the full end-to-end wiring path.
 func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
 	const threshold = 300
@@ -1750,8 +1750,9 @@ func TestDisaggregation_PD_SessionManager_ContextAccumulation(t *testing.T) {
 
 // TestDisaggregation_NonDisaggRoutedToDecodePoolOnly verifies P3 fix: when PDDecider="never"
 // (no disaggregation), all requests must be routed exclusively to decode pool instances.
-// Before the fix, DisaggregationDecisionEvent scheduled RoutingDecisionEvent which called
-// buildRouterState() including ALL instances (prefill + decode).
+// Before the fix, the non-disaggregated path scheduled a full-cluster RoutingDecisionEvent
+// which called buildRouterState() including ALL instances (prefill + decode). Post-#1261,
+// executeDisaggregatedRouting routes directly to the decode pool.
 func TestDisaggregation_NonDisaggRoutedToDecodePoolOnly(t *testing.T) {
 	// GIVEN: pool topology configured but disaggregation never triggered
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
@@ -1784,7 +1785,7 @@ func TestDisaggregation_NonDisaggRoutedToDecodePoolOnly(t *testing.T) {
 }
 
 // TestDisaggregation_DecodeInstancePreSelected verifies P1 fix: the decode instance is
-// selected during DisaggregationDecisionEvent (before prefill routing), not after KV transfer.
+// selected during executeDisaggregatedRouting (before prefill routing), not after KV transfer.
 // Before the fix, DecodeInstanceID was set by DecodeRoutingEvent after KV transfer completed.
 func TestDisaggregation_DecodeInstancePreSelected(t *testing.T) {
 	// GIVEN: always-disaggregate pool topology
@@ -1821,7 +1822,7 @@ func TestDisaggregation_DecodeInstancePreSelected(t *testing.T) {
 
 // TestDisaggregation_NoDecodeRoutingEvent verifies P2 fix: no DecodeRoutingRecord is emitted
 // in the trace because the second routing decision (DecodeRoutingEvent) is eliminated.
-// The decode pod is pre-selected at DisaggregationDecisionEvent time; KVTransferCompletedEvent
+// The decode pod is pre-selected at executeDisaggregatedRouting time; KVTransferCompletedEvent
 // injects directly to the pre-selected pod.
 func TestDisaggregation_NoDecodeRoutingEvent(t *testing.T) {
 	// GIVEN: always-disaggregate with trace enabled

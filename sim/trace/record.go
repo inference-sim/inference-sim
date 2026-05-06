@@ -45,7 +45,7 @@ type RoutingRecord struct {
 // matching ParentRequestID in the trace. To detect case 2: check the
 // absence of a KVTransferRecord for a given ParentRequestID.
 // Note: DecodeRoutingRecord is never emitted; the decode pod is pre-selected at
-// DisaggregationDecisionEvent time (no second routing decision).
+// executeDisaggregatedRouting time (no second routing decision).
 type DisaggregationRecord struct {
 	RequestID    string
 	Clock        int64
