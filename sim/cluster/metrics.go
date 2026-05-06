@@ -182,10 +182,11 @@ func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, reje
 // worse E2E than a later-arriving request (with 2× threshold).
 // Requests are grouped by SLO class before comparison — cross-class differences
 // reflect workload size heterogeneity, not scheduling unfairness. (#292, R20)
-// When scheduler is "fcfs" or "" (no priority ordering), inversions
-// returns 0 — all requests share the same priority.
+// Only "priority-fcfs" enforces a meaningful priority ordering — all other
+// schedulers either ignore priority (fcfs, sjf) or deliberately invert it
+// (reverse-priority), making inversion detection produce false positives for them.
 func detectPriorityInversions(perInstance []*sim.Metrics, scheduler string) int {
-	if scheduler == "" || scheduler == "fcfs" {
+	if scheduler != "priority-fcfs" {
 		return 0
 	}
 	count := 0

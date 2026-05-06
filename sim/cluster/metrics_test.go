@@ -332,8 +332,8 @@ func TestParseFitnessWeights_ZeroWeight_Accepted(t *testing.T) {
 }
 
 // TestCollectRawMetrics_FCFSScheduler_SuppressesInversions verifies that
-// priority inversion counter returns 0 when using constant priority policy,
-// since there are no meaningful priorities to invert.
+// priority inversion counter returns 0 for non-priority-fcfs schedulers
+// since inversion detection only makes sense when priority ordering is enforced.
 func TestCollectRawMetrics_FCFSScheduler_SuppressesInversions(t *testing.T) {
 	// GIVEN per-instance metrics with requests that would normally trigger inversions
 	m := sim.NewMetrics()

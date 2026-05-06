@@ -292,8 +292,7 @@ Per-instance policies that control request ordering within the wait queue. Maps 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--scheduler` | string | "fcfs" | Scheduler: `fcfs`, `priority-fcfs`, `sjf`, `reverse-priority`. |
-| `--priority-policy` | string | "constant" | Priority policy: `constant`, `slo-based`, `inverted-slo`. |
-| `--preemption-policy` | string | "fcfs" | Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode uses `slo_priorities` from the policy bundle when set (shared with admission). |
+| `--preemption-policy` | string | "fcfs" | Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode evicts the running request with the highest `Request.Priority` value (vLLM convention: background=7 is evicted first). |
 
 See [Core Engine: Scheduling](../concepts/core-engine.md#scheduling-policies) for policy details.
 
@@ -578,7 +577,7 @@ For environments where live profiling is not feasible, the [Roofline model](../c
 | **BatchConfig** | `--max-num-running-reqs`, `--max-num-scheduled-tokens`, `--long-prefill-token-threshold` |
 | **LatencyCoeffs** | `--alpha-coeffs`, `--beta-coeffs` |
 | **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--vllm-version`, `--latency-model`, `--model-config-folder`, `--hardware-config`, `--max-model-len` |
-| **PolicyConfig** | `--scheduler`, `--priority-policy` |
+| **PolicyConfig** | `--scheduler`, `--preemption-policy` |
 | **WorkloadConfig** | `--workload`, `--workload-spec`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
 | **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` | YAML-only (no CLI flag): `node_pools`, `instance_lifecycle`, `hw_config_by_gpu` |
 | **Top-level** | `--seed`, `--horizon`, `--log`, `--metrics-path` (run only), `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |

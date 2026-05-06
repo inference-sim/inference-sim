@@ -1190,6 +1190,9 @@ func TestPreemption_Priority_MultiEvictionOrdering(t *testing.T) {
 // outcome (which request is evicted under KV pressure) is also covered at integration
 // level by TestPreemption_Priority_EvictsLeastUrgent via FormBatch.
 func TestSelectPriorityVictim_MaxPriorityEvicted(t *testing.T) {
+	// VLLMBatchFormation struct literal used directly (R4 bypass): selectPriorityVictim is
+	// unexported and unreachable via the BatchFormation interface returned by NewBatchFormation.
+	// Integration-level coverage via TestPreemption_Priority_EvictsLeastUrgent (uses FormBatch).
 	reqs := []*Request{
 		{ID: "cr", Priority: 0.0, ArrivalTime: 100}, // critical in vLLM convention
 		{ID: "bg", Priority: 7.0, ArrivalTime: 200}, // background
