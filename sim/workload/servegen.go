@@ -137,9 +137,50 @@ func parseServeGenFloatPDF(s string) (map[float64]float64, error) {
 	return pdf, nil
 }
 
+// classifyReasoningChunks splits chunks into low-reasoning and high-reasoning
+// groups based on mean reason_ratio threshold. Returns error if any chunk has
+// empty reason_ratio PDF.
+func classifyReasoningChunks(chunks []chunkData, threshold float64) (low, high []chunkData, err error) {
+	for _, chunk := range chunks {
+		if len(chunk.reasonRatioPDF) == 0 {
+			return nil, nil, fmt.Errorf("chunk %s: empty reason_ratio PDF", chunk.id)
+		}
+
+		// Compute weighted mean ratio
+		var sumRatio, sumProb float64
+		for ratio, prob := range chunk.reasonRatioPDF {
+			if prob > 0 {
+				sumRatio += ratio * prob
+				sumProb += prob
+			}
+		}
+
+		if sumProb <= 0 {
+			return nil, nil, fmt.Errorf("chunk %s: sum of probabilities is zero", chunk.id)
+		}
+
+		meanRatio := sumRatio / sumProb
+
+		if meanRatio < threshold {
+			low = append(low, chunk)
+		} else {
+			high = append(high, chunk)
+		}
+	}
+	return low, high, nil
+}
+
+// chunkData represents a single ServeGen chunk during loading.
+type chunkData struct {
+	id             string
+	client         *ClientSpec // Temporarily use ClientSpec for loading; will convert to cohort
+	datasetPath    string      // For lognormal fitting in cohort loop
+	reasonRatioPDF map[float64]float64 // For reasoning workloads
+}
+
 // serveGenTraceRow represents one row from a ServeGen chunk-*-trace.csv.
 // Format: start_time(s), rate(req/s), cv, pattern_type, param1, param2
-type serveGenTraceRow struct {
+type serveGenTraceRow struct{
 	startTimeSec float64
 	rate         float64
 	cv           float64
@@ -258,11 +299,6 @@ func loadServeGenData(spec *WorkloadSpec) error {
 	}
 
 	// Load all chunks (no time filtering)
-	type chunkData struct {
-		id          string
-		client      *ClientSpec // Temporarily use ClientSpec for loading; will convert to cohort
-		datasetPath string      // For lognormal fitting in cohort loop
-	}
 	var allChunks []chunkData
 
 	for _, tracePath := range traceFiles {

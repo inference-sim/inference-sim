@@ -1100,3 +1100,39 @@ func TestDetectLanguageCategory_NoReasonRatio(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "", spec.Category)
 }
+
+func TestClassifyReasoningChunks_SplitAtThreshold(t *testing.T) {
+	// GIVEN chunks with varying mean ratios
+	chunks := []chunkData{
+		{id: "A", reasonRatioPDF: map[float64]float64{0.1: 0.8, 0.2: 0.2}}, // mean ~0.12
+		{id: "B", reasonRatioPDF: map[float64]float64{0.3: 0.5, 0.4: 0.5}}, // mean ~0.35
+		{id: "C", reasonRatioPDF: map[float64]float64{0.5: 0.6, 0.7: 0.4}}, // mean ~0.58
+		{id: "D", reasonRatioPDF: map[float64]float64{0.8: 0.3, 0.9: 0.7}}, // mean ~0.87
+	}
+
+	// WHEN classified with threshold 0.4
+	low, high, err := classifyReasoningChunks(chunks, 0.4)
+
+	// THEN low contains A, B; high contains C, D
+	require.NoError(t, err)
+	assert.Equal(t, 2, len(low))
+	assert.Equal(t, 2, len(high))
+	assert.Equal(t, "A", low[0].id)
+	assert.Equal(t, "B", low[1].id)
+	assert.Equal(t, "C", high[0].id)
+	assert.Equal(t, "D", high[1].id)
+}
+
+func TestClassifyReasoningChunks_EmptyRatioPDF(t *testing.T) {
+	// GIVEN chunk with empty reason_ratio PDF
+	chunks := []chunkData{
+		{id: "E", reasonRatioPDF: map[float64]float64{}},
+	}
+
+	// WHEN classified
+	_, _, err := classifyReasoningChunks(chunks, 0.4)
+
+	// THEN it returns error
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "empty reason_ratio PDF")
+}
