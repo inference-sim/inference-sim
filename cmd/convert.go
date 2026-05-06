@@ -24,6 +24,7 @@ var (
 	serveGenWindowDurationSec int
 	serveGenDrainTimeoutSec   int
 	serveGenTimeFilter        string
+	serveGenSeed              int64
 )
 
 var convertServeGenCmd = &cobra.Command{
@@ -46,7 +47,7 @@ var convertServeGenCmd = &cobra.Command{
 			}
 		}
 
-		spec, err := workload.ConvertServeGen(serveGenPath, serveGenWindowDurationSec, serveGenDrainTimeoutSec)
+		spec, err := workload.ConvertServeGen(serveGenPath, serveGenWindowDurationSec, serveGenDrainTimeoutSec, serveGenSeed)
 		if err != nil {
 			logrus.Fatalf("ServeGen conversion failed: %v", err)
 		}
@@ -184,6 +185,7 @@ func init() {
 	convertServeGenCmd.Flags().IntVar(&serveGenWindowDurationSec, "window-duration-seconds", 600, "Duration of each time period in seconds")
 	convertServeGenCmd.Flags().IntVar(&serveGenDrainTimeoutSec, "drain-timeout-seconds", 180, "Gap between periods where no new requests arrive")
 	convertServeGenCmd.Flags().StringVar(&serveGenTimeFilter, "time", "", "Optional: filter to single period (midnight, morning, or afternoon)")
+	convertServeGenCmd.Flags().Int64Var(&serveGenSeed, "seed", 42, "Random seed for window selection and cohort assignment")
 	_ = convertServeGenCmd.MarkFlagRequired("path")
 
 	convertPresetCmd.Flags().StringVar(&presetName, "name", "", "Preset name (e.g., chatbot, summarization)")

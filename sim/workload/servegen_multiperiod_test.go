@@ -126,7 +126,7 @@ func TestLoadServeGenData_NoDuplication(t *testing.T) {
 func TestConvertServeGen_MissingDirectory(t *testing.T) {
 	// GIVEN a nonexistent directory
 	// WHEN ConvertServeGen runs
-	spec, err := ConvertServeGen("/nonexistent/dir/that/does/not/exist", 600, 180)
+	spec, err := ConvertServeGen("/nonexistent/dir/that/does/not/exist", 600, 180, 42)
 
 	// THEN error is returned
 	// BC-11: Missing directory error
@@ -146,7 +146,7 @@ func TestConvertServeGen_MissingDirectory(t *testing.T) {
 func TestConvertServeGen_AllChunksInactive(t *testing.T) {
 	// GIVEN a ServeGen directory where all chunks have rate=0 (would need testdata)
 	// For now, we test with a missing directory which also results in "no valid chunks"
-	_, err := ConvertServeGen("testdata/servegen_empty_if_exists", 600, 180)
+	_, err := ConvertServeGen("testdata/servegen_empty_if_exists", 600, 180, 42)
 
 	// THEN error is returned
 	if err == nil {
@@ -499,7 +499,7 @@ func TestServeGenMultiPeriod_E2E(t *testing.T) {
 	}
 
 	// WHEN converting with default parameters
-	spec, err := ConvertServeGen(tmpDir, 600, 180)
+	spec, err := ConvertServeGen(tmpDir, 600, 180, 42)
 
 	// THEN conversion succeeds
 	if err != nil {
@@ -521,7 +521,7 @@ func TestServeGenMultiPeriod_E2E(t *testing.T) {
 
 	// BC-7: Determinism - run twice with same seed, verify bit-identical float values
 	// This catches INV-6 violations from non-deterministic map iteration affecting RNG state or float accumulation
-	spec2, err2 := ConvertServeGen(tmpDir, 600, 180)
+	spec2, err2 := ConvertServeGen(tmpDir, 600, 180, 42)
 	if err2 != nil {
 		t.Fatalf("second conversion failed: %v", err2)
 	}
