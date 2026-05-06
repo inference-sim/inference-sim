@@ -140,6 +140,36 @@ func parseServeGenFloatPDF(s string) (map[float64]float64, error) {
 // classifyReasoningChunks splits chunks into low-reasoning and high-reasoning
 // groups based on mean reason_ratio threshold. Returns error if any chunk has
 // empty reason_ratio PDF.
+// findBestCoverageWindow returns the window index (0-143) with the most active chunks.
+func findBestCoverageWindow(traceFiles []string) int {
+	windowCoverage := make(map[int]int)
+
+	for _, tracePath := range traceFiles {
+		rows, err := parseServeGenTrace(tracePath)
+		if err != nil {
+			continue
+		}
+		for _, row := range rows {
+			windowIdx := int(row.startTimeSec / 600)
+			if row.rate > 0 {
+				windowCoverage[windowIdx]++
+			}
+		}
+	}
+
+	// Find window with max coverage
+	bestWindow := 0
+	maxCoverage := 0
+	for windowIdx := 0; windowIdx < 144; windowIdx++ {
+		if windowCoverage[windowIdx] > maxCoverage {
+			maxCoverage = windowCoverage[windowIdx]
+			bestWindow = windowIdx
+		}
+	}
+
+	return bestWindow
+}
+
 // averageReasonRatioPMFs computes the element-wise average of reason_ratio PMFs
 // across all chunks, preserving the bimodal structure. Returns an empirical
 // distribution with percentages (0-100) as keys.
@@ -1227,11 +1257,11 @@ func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Ra
 		windowDurSec = 600
 	}
 
-	// BC-4: Select ONE random window from 144 (24-hour period at 10-min intervals)
-	selectedWindowIndex := rng.Intn(144)
+	// BC-4: Select window with best chunk coverage (most active chunks)
+	selectedWindowIndex := findBestCoverageWindow(traceFiles)
 	selectedWindowStartSec := int64(selectedWindowIndex * 600) // 600s per window
 
-	logrus.Infof("Selected reasoning window %d (time offset %d seconds)", selectedWindowIndex, selectedWindowStartSec)
+	logrus.Infof("Selected reasoning window %d (time offset %d seconds) - best coverage", selectedWindowIndex, selectedWindowStartSec)
 
 	// Load all chunks and parse reason_ratio PDFs
 	var chunks []chunkData
@@ -1291,18 +1321,87 @@ func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Ra
 		return fmt.Errorf("averaging reason_ratio PMFs: %w", err)
 	}
 
+	// Load trace rates from all chunks at the selected window and sum them
+	var totalRate float64
+	for _, tracePath := range traceFiles {
+		rows, err := parseServeGenTrace(tracePath)
+		if err != nil {
+			logrus.Warnf("Skipping trace file %s: parse failed: %v", tracePath, err)
+			continue
+		}
+
+		// Find the row matching the selected window
+		for _, row := range rows {
+			if int64(row.startTimeSec) == selectedWindowStartSec {
+				totalRate += row.rate
+				break
+			}
+		}
+	}
+
+	if totalRate <= 0 {
+		return fmt.Errorf("no active chunks at selected window (total rate = 0)")
+	}
+
+	logrus.Infof("Total rate at selected window: %.2f req/s", totalRate)
+
 	// BC-5: Build 5 cohorts (one per SLO class)
-	// All chunks contribute to all cohorts (no splitting)
+	// Distribute chunks via round-robin to SLO classes
 	sloClasses := []string{"critical", "standard", "batch", "sheddable", "background"}
 
-	for _, sloClass := range sloClasses {
+	// Shuffle chunks for random SLO assignment (deterministic with seed 42)
+	shuffled := make([]chunkData, len(chunks))
+	copy(shuffled, chunks)
+	rng.Shuffle(len(shuffled), func(i, j int) {
+		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+	})
+
+	// Round-robin assign to 5 SLO classes
+	cohortGroups := make(map[string][]chunkData)
+	for i, chunk := range shuffled {
+		sloClass := sloClasses[i%5]
+		cohortGroups[sloClass] = append(cohortGroups[sloClass], chunk)
+	}
+
+	// Sort SLO classes for deterministic ordering
+	sortedSLOClasses := make([]string, len(sloClasses))
+	copy(sortedSLOClasses, sloClasses)
+	sort.Strings(sortedSLOClasses)
+
+	for _, sloClass := range sortedSLOClasses {
+		cohortChunks := cohortGroups[sloClass]
+		if len(cohortChunks) == 0 {
+			continue
+		}
+
 		cohortID := fmt.Sprintf("reasoning-%s", sloClass)
 
-		// BC-6: Fit input/output distributions from datasets
+		// Compute this cohort's rate as sum of its chunks' rates at the selected window
+		var cohortRate float64
+		for _, chunk := range cohortChunks {
+			tracePath := filepath.Join(dataDir, fmt.Sprintf("chunk-%s-trace.csv", chunk.id))
+			rows, err := parseServeGenTrace(tracePath)
+			if err != nil {
+				continue
+			}
+			for _, row := range rows {
+				if int64(row.startTimeSec) == selectedWindowStartSec {
+					cohortRate += row.rate
+					break
+				}
+			}
+		}
+
+		if cohortRate <= 0 {
+			logrus.Warnf("Skipping cohort %s: no active chunks at selected window (rate = 0)", cohortID)
+			continue
+		}
+
+		// BC-6: Fit input/output distributions from datasets (using this cohort's chunks)
 		var sumMuInput, sumSigmaInput, sumMuOutput, sumSigmaOutput float64
 		var distCount int
 
-		for _, chunk := range chunks {
+		for _, chunk := range cohortChunks {
 			// Load dataset to fit input/output token distributions
 			datasets, dsErr := loadServeGenDatasetAllWindows(chunk.datasetPath, &ServeGenDataSpec{Path: dataDir})
 			if dsErr != nil {
@@ -1367,12 +1466,17 @@ func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Ra
 		avgSigmaOutput := sumSigmaOutput / float64(distCount)
 
 		// BC-7: Inject MultiTurn workaround
+		// Explicitly set ClosedLoop to false for spike-based reasoning workloads.
+		// Even though we set MultiTurn (needed for reasoning generation), these
+		// are open-loop spike arrivals, not closed-loop sessions.
+		closedLoop := false
 		cohort := CohortSpec{
 			ID:           cohortID,
-			Population:   len(chunks), // All chunks in every cohort
+			Population:   len(cohortChunks), // This cohort's assigned chunks
 			SLOClass:     sloClass,
 			Streaming:    true,
 			RateFraction: 1.0, // Divided by population during ExpandCohorts
+			ClosedLoop:   &closedLoop,
 			Arrival:      ArrivalSpec{Process: "poisson"},
 			InputDist: DistSpec{
 				Type: "lognormal",
@@ -1391,7 +1495,7 @@ func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Ra
 			Spike: &SpikeSpec{
 				StartTimeUs: 0,
 				DurationUs:  int64(windowDurSec) * 1e6,
-				TraceRate:   func() *float64 { r := 1.0; return &r }(), // Placeholder rate
+				TraceRate:   &cohortRate,
 			},
 			Reasoning: &ReasoningSpec{
 				ReasonRatioDist: avgReasonRatioPMF, // Empirical distribution

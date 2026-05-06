@@ -10,14 +10,14 @@ import (
 // windowDurationSecs controls how long each period runs (default 600s = 10 minutes).
 // drainTimeoutSecs controls the gap between periods (default 180s = 3 minutes).
 // Returns error if the directory is empty or contains invalid data (R6: never Fatalf).
-func ConvertServeGen(path string, windowDurationSecs, drainTimeoutSecs int, seed int64) (*WorkloadSpec, error) {
+func ConvertServeGen(path string, windowDurationSecs, drainTimeoutSecs int) (*WorkloadSpec, error) {
 	if path == "" {
 		return nil, fmt.Errorf("ServeGen path must not be empty")
 	}
 	spec := &WorkloadSpec{
 		Version:       "2",
 		AggregateRate: 0, // Absolute rate mode (trace_rate per cohort)
-		Seed:          seed,
+		Seed:          42, // Default seed for deterministic RNG (BC-7)
 		ServeGenData: &ServeGenDataSpec{
 			Path:               path,
 			WindowDurationSecs: windowDurationSecs,

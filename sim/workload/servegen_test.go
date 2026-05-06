@@ -999,7 +999,7 @@ func TestConvertServeGen_MultiPeriodAbsoluteTimestamps(t *testing.T) {
 	}
 
 	// WHEN ConvertServeGen processes these files
-	spec, err := ConvertServeGen(dir, 600, 180, 42)
+	spec, err := ConvertServeGen(dir, 600, 180)
 
 	// THEN conversion succeeds
 	require.NoError(t, err)
@@ -1066,8 +1066,12 @@ func TestDetectReasoningCategory_FromDataset(t *testing.T) {
 	// GIVEN ServeGen data directory with reason_ratio field in dataset
 	tmpDir := t.TempDir()
 
-	// Create minimal trace file
-	traceContent := "0,1.5,0.8,Gamma,2.0,300\n"
+	// Create trace file with 144 windows (24 hours at 10-min intervals)
+	// to ensure the randomly-selected window has data
+	var traceContent string
+	for i := 0; i < 144; i++ {
+		traceContent += fmt.Sprintf("%d,1.5,0.8,Gamma,2.0,300\n", i*600)
+	}
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "chunk-001-trace.csv"), []byte(traceContent), 0644))
 
 	// Create dataset with reason_ratio field
@@ -1075,7 +1079,7 @@ func TestDetectReasoningCategory_FromDataset(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "chunk-001-dataset.json"), []byte(datasetContent), 0644))
 
 	// WHEN ConvertServeGen is called
-	spec, err := ConvertServeGen(tmpDir, 600, 180, 42)
+	spec, err := ConvertServeGen(tmpDir, 600, 180)
 
 	// THEN category is set to "reasoning"
 	require.NoError(t, err)
@@ -1094,7 +1098,7 @@ func TestDetectLanguageCategory_NoReasonRatio(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "chunk-001-dataset.json"), []byte(datasetContent), 0644))
 
 	// WHEN ConvertServeGen is called
-	spec, err := ConvertServeGen(tmpDir, 600, 180, 42)
+	spec, err := ConvertServeGen(tmpDir, 600, 180)
 
 	// THEN category is empty (default language) OR error due to minimal data
 	// (The key test is that reasoning was NOT detected)
