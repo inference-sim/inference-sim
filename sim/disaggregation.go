@@ -2,8 +2,6 @@ package sim
 
 import (
 	"fmt"
-
-	"github.com/sirupsen/logrus"
 )
 
 // DisaggregationDecision encapsulates the prefill-decode disaggregation decision for a request.
@@ -51,8 +49,9 @@ func NewRequestView(req *Request) RequestView {
 // owned state is ever reachable (structural analog of R9: exported mutable maps are
 // forbidden).
 //
-// Extension point: later PRs in the #1241 tracker (e.g., pending-transfer accessor
-// wiring, PR 4) add more accessors here without changing the decider interface shape.
+// Extension point: later work tracked in #1241 adds more accessors here (e.g.,
+// pending-transfer counts, per-pool ID lists) without changing the decider interface
+// shape.
 type DisaggregationContext struct {
 	decodeInstanceID string
 	decodeCacheQuery func(tokens []int) int
@@ -245,7 +244,10 @@ func (p *PrefixBasedPDDecider) Decide(view RequestView, ctx DisaggregationContex
 //
 // Threading: cachedHashes and cachedReqID are a single-use scratchpad — Decide()
 // writes them and ObserveRouting() consumes and clears them. Safe only because
-// the DES event loop is single-threaded.
+// the DES event loop is single-threaded. ObserveRouting uses the scratchpad only
+// when the incoming req.ID matches cachedReqID; on mismatch (e.g. the
+// "<parent>_prefill" sub-request ID) it recomputes hashes from req.InputTokens,
+// so stale scratchpad state is never reused across requests.
 type GlobalPrefixThresholdDecider struct {
 	threshold    int
 	blockSize    int
@@ -274,6 +276,13 @@ func NewGlobalPrefixThresholdDecider(threshold, blockSize int) *GlobalPrefixThre
 // Decide returns Disaggregate=true when non-cached token count exceeds the threshold,
 // using the router-side global virtual LRU to estimate cluster-wide cache hits.
 // `threshold == 0` short-circuits to false to match PrefixBasedPDDecider semantics.
+//
+// No negative-nonCached clamp is needed here (unlike PrefixBasedPDDecider): this
+// decider derives cachedBlocks from PrefixCacheIndex.MatchLength, which is bounded
+// internally by len(cachedHashes) = floor(len(InputTokens)/blockSize). That bound
+// guarantees cachedBlocks*blockSize <= len(InputTokens), so nonCachedTokens cannot
+// go negative. PrefixBasedPDDecider receives cachedBlocks from an external closure
+// and therefore keeps a defensive clamp.
 func (p *GlobalPrefixThresholdDecider) Decide(view RequestView, _ DisaggregationContext) DisaggregationDecision {
 	if p.threshold == 0 {
 		return DisaggregationDecision{Disaggregate: false}
@@ -295,8 +304,10 @@ func (p *GlobalPrefixThresholdDecider) Decide(view RequestView, _ Disaggregation
 // parent request evaluated by Decide.
 func (p *GlobalPrefixThresholdDecider) ObserveRouting(req *Request, _ string) {
 	if req == nil {
-		logrus.Errorf("GlobalPrefixThresholdDecider.ObserveRouting: req is nil (contract violation); skipping cache update")
-		return
+		// R6: library panic on contract violation. The docstring on
+		// DisaggregationObserver.ObserveRouting guarantees req is non-nil;
+		// silently continuing would hide caller bugs and corrupt the LRU.
+		panic("GlobalPrefixThresholdDecider.ObserveRouting: req must not be nil (contract violation)")
 	}
 	if len(req.InputTokens) == 0 {
 		return

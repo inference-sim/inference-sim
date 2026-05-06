@@ -231,7 +231,8 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		case "prefix-threshold", "prefix-based-pd-decider":
 			// `prefix-threshold` is a one-release alias for `prefix-based-pd-decider`
 			// (llm-d parity name). Behavior change: per-pod cache lookup replaces the
-			// old global virtual-LRU aggregate. See #1250 and CHANGELOG.
+			// old global virtual-LRU aggregate. See #1250 and the Recent Changes
+			// section of CLAUDE.md.
 			cs.disaggregationDecider = sim.NewPrefixBasedPDDecider(config.PDPrefixThreshold, int(config.BlockSizeTokens))
 		case "global-prefix-threshold":
 			// Counterfactual baseline retained for A1 calibration (#1006 Phase B §11).

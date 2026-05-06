@@ -653,6 +653,19 @@ func TestPrefixThreshold_AboveThresholdDisaggregated(t *testing.T) {
 	}
 }
 
+// newTestSingleDecodePrefixThresholdConfig returns a (2 prefill, 1 decode) topology
+// with PDDecider = "prefix-threshold". A single decode instance is required for the
+// per-pod-cache integration test: with multiple decode instances, routing affinity
+// depends on the shared round-robin counter state (including counter increments from
+// prefill routing), which makes "req2 lands on the same decode pod as req1" a fragile
+// implicit invariant. Forcing a single decode pod removes that dependency entirely.
+func newTestSingleDecodePrefixThresholdConfig(threshold int) DeploymentConfig {
+	cfg := newTestDisaggDeploymentConfig(3, 2, 1)
+	cfg.PDDecider = "prefix-threshold"
+	cfg.PDPrefixThreshold = threshold
+	return cfg
+}
+
 // TestPrefixBasedPDDecider_PerPodCacheReducesNonCached_Integration verifies BEH-2 at
 // the cluster level: after req1's prefill + KV transfer populates the selected decode
 // pod's KV cache with the shared prefix, req2 (with overlapping prefix) queries that
@@ -664,13 +677,15 @@ func TestPrefixThreshold_AboveThresholdDisaggregated(t *testing.T) {
 // decider reads the selected decode instance's actual KV cache through the same
 // closure (cs.cacheQueryFn[id]) that precise-prefix-cache consumes.
 //
-// Test topology relies on CacheSignalDelay=0 (oracle mode — the default in the test
-// DeploymentConfig) so ctx.DecodeCacheQuery returns the live per-pod block count
-// rather than a stale snapshot.
+// Topology: 2 prefill + 1 decode. The single decode pod guarantees req2 routes to the
+// same decode instance that received req1's KV transfer — without this the test would
+// depend on the round-robin counter state. CacheSignalDelay=0 (oracle mode — default
+// in the test DeploymentConfig) ensures ctx.DecodeCacheQuery returns the live per-pod
+// block count rather than a stale snapshot.
 func TestPrefixBasedPDDecider_PerPodCacheReducesNonCached_Integration(t *testing.T) {
 	const threshold = 300
 	const blockSize = 16
-	config := newTestPrefixThresholdConfig(threshold)
+	config := newTestSingleDecodePrefixThresholdConfig(threshold)
 
 	// req1: 400 tokens (25 complete blocks), no prior cache.
 	// nonCached = 400 > 300 → disaggregated; after prefill + KV transfer, the selected
