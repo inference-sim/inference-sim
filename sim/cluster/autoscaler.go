@@ -62,8 +62,10 @@ type ReplicaMetrics struct {
 // Output of Collector.Collect(). Input to Analyzer.Analyze() (one call per model).
 // Replicas may be empty (zero-replica model); Analyzer must handle this without panic.
 type ModelSignals struct {
-	ModelID  string
-	Replicas []ReplicaMetrics // may be empty
+	ModelID                      string
+	Replicas                     []ReplicaMetrics // may be empty
+	PendingReplicaCount          int              // Loading instances with positive KV capacity, not yet routable
+	PendingTotalKvCapacityTokens int64            // sum of TotalKvCapacityTokens for all Loading instances of this model (zero-capacity instances excluded)
 }
 
 // VariantCapacity is one variant's share of a model's total supply and demand.
@@ -139,7 +141,9 @@ func (g GPUInventory) Variants() []VariantSpec {
 // ---------------------------------------------------------------------------
 
 // Collector observes RouterState and produces one ModelSignals per active model,
-// grouping replicas by ModelID. Must not modify state, filter models, or apply thresholds.
+// grouping replicas by ModelID. Must not modify state, suppress valid models from output,
+// or apply business-logic thresholds. Structurally incomplete snapshots (empty Model, empty
+// GPUType, zero-capacity loading snapshots) may be skipped with a diagnostic log per FR-006.
 // Pure function: same RouterState always produces the same output (determinism).
 type Collector interface {
 	Collect(state *sim.RouterState) []ModelSignals
@@ -264,11 +268,15 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 	// Reset timers for models whose signal disappeared this tick.
 	for modelID := range p.scaleUpFirstSignalAt {
 		if _, present := modelsWithScaleUp[modelID]; !present {
+			logrus.Debugf("[autoscaler] scale-up timer reset for model %q: signal absent this tick (accumulated %dμs)",
+				modelID, nowUs-p.scaleUpFirstSignalAt[modelID])
 			delete(p.scaleUpFirstSignalAt, modelID)
 		}
 	}
 	for modelID := range p.scaleDownFirstSignalAt {
 		if _, present := modelsWithScaleDown[modelID]; !present {
+			logrus.Debugf("[autoscaler] scale-down timer reset for model %q: signal absent this tick (accumulated %dμs)",
+				modelID, nowUs-p.scaleDownFirstSignalAt[modelID])
 			delete(p.scaleDownFirstSignalAt, modelID)
 		}
 	}
