@@ -1,0 +1,289 @@
+time="2026-05-06T09:47:23-04:00" level=info msg="Detected reasoning workload (reason_ratio field found in chunk 0)"
+time="2026-05-06T09:47:23-04:00" level=info msg="Selected reasoning window 17 (time offset 10200 seconds)"
+time="2026-05-06T09:47:23-04:00" level=info msg="Classified 3 low-reasoning chunks, 70 high-reasoning chunks"
+version: "2"
+seed: 42
+category: reasoning
+clients: []
+cohorts:
+    - id: reasoning-critical-low
+      population: 1
+      slo_class: critical
+      arrival:
+        process: poisson
+      input_distribution:
+        type: gaussian
+        params:
+            max: 32768
+            mean: 512
+            min: 1
+            std_dev: 128
+      output_distribution:
+        type: gaussian
+        params:
+            max: 32768
+            mean: 128
+            min: 1
+            std_dev: 32
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 0
+        duration_us: 600000000
+        trace_rate: 1
+      reasoning:
+        reason_ratio_distribution:
+            type: lognormal
+            params:
+                mu: 3.4339872044851463
+                sigma: 2.567669235937938e-08
+        multi_turn:
+            max_rounds: 1
+            think_time_us: 0
+            context_growth: ""
+    - id: reasoning-standard-low
+      population: 1
+      slo_class: standard
+      arrival:
+        process: poisson
+      input_distribution:
+        type: gaussian
+        params:
+            max: 32768
+            mean: 512
+            min: 1
+            std_dev: 128
+      output_distribution:
+        type: gaussian
+        params:
+            max: 32768
+            mean: 128
+            min: 1
+            std_dev: 32
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 0
+        duration_us: 600000000
+        trace_rate: 1
+      reasoning:
+        reason_ratio_distribution:
+            type: lognormal
+            params:
+                mu: 3.6014652371126163
+                sigma: 0.2771653032716492
+        multi_turn:
+            max_rounds: 1
+            think_time_us: 0
+            context_growth: ""
+    - id: reasoning-batch-low
+      population: 1
+      slo_class: batch
+      arrival:
+        process: poisson
+      input_distribution:
+        type: gaussian
+        params:
+            max: 32768
+            mean: 512
+            min: 1
+            std_dev: 128
+      output_distribution:
+        type: gaussian
+        params:
+            max: 32768
+            mean: 128
+            min: 1
+            std_dev: 32
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 0
+        duration_us: 600000000
+        trace_rate: 1
+      reasoning:
+        reason_ratio_distribution:
+            type: lognormal
+            params:
+                mu: 3.1780538303479458
+                sigma: 0
+        multi_turn:
+            max_rounds: 1
+            think_time_us: 0
+            context_growth: ""
+    - id: reasoning-critical-high
+      population: 14
+      slo_class: critical
+      arrival:
+        process: poisson
+      input_distribution:
+        type: gaussian
+        params:
+            max: 32768
+            mean: 512
+            min: 1
+            std_dev: 128
+      output_distribution:
+        type: gaussian
+        params:
+            max: 32768
+            mean: 128
+            min: 1
+            std_dev: 32
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 0
+        duration_us: 600000000
+        trace_rate: 1
+      reasoning:
+        reason_ratio_distribution:
+            type: lognormal
+            params:
+                mu: 4.249339065743372
+                sigma: 0.18854781319085928
+        multi_turn:
+            max_rounds: 1
+            think_time_us: 0
+            context_growth: ""
+    - id: reasoning-standard-high
+      population: 14
+      slo_class: standard
+      arrival:
+        process: poisson
+      input_distribution:
+        type: gaussian
+        params:
+            max: 32768
+            mean: 512
+            min: 1
+            std_dev: 128
+      output_distribution:
+        type: gaussian
+        params:
+            max: 32768
+            mean: 128
+            min: 1
+            std_dev: 32
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 0
+        duration_us: 600000000
+        trace_rate: 1
+      reasoning:
+        reason_ratio_distribution:
+            type: lognormal
+            params:
+                mu: 4.347809124610842
+                sigma: 0.16141982810682645
+        multi_turn:
+            max_rounds: 1
+            think_time_us: 0
+            context_growth: ""
+    - id: reasoning-batch-high
+      population: 14
+      slo_class: batch
+      arrival:
+        process: poisson
+      input_distribution:
+        type: gaussian
+        params:
+            max: 32768
+            mean: 512
+            min: 1
+            std_dev: 128
+      output_distribution:
+        type: gaussian
+        params:
+            max: 32768
+            mean: 128
+            min: 1
+            std_dev: 32
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 0
+        duration_us: 600000000
+        trace_rate: 1
+      reasoning:
+        reason_ratio_distribution:
+            type: lognormal
+            params:
+                mu: 4.320354575959909
+                sigma: 0.14688313088287777
+        multi_turn:
+            max_rounds: 1
+            think_time_us: 0
+            context_growth: ""
+    - id: reasoning-sheddable-high
+      population: 14
+      slo_class: sheddable
+      arrival:
+        process: poisson
+      input_distribution:
+        type: gaussian
+        params:
+            max: 32768
+            mean: 512
+            min: 1
+            std_dev: 128
+      output_distribution:
+        type: gaussian
+        params:
+            max: 32768
+            mean: 128
+            min: 1
+            std_dev: 32
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 0
+        duration_us: 600000000
+        trace_rate: 1
+      reasoning:
+        reason_ratio_distribution:
+            type: lognormal
+            params:
+                mu: 4.363706767332592
+                sigma: 0.13564799686994491
+        multi_turn:
+            max_rounds: 1
+            think_time_us: 0
+            context_growth: ""
+    - id: reasoning-background-high
+      population: 14
+      slo_class: background
+      arrival:
+        process: poisson
+      input_distribution:
+        type: gaussian
+        params:
+            max: 32768
+            mean: 512
+            min: 1
+            std_dev: 128
+      output_distribution:
+        type: gaussian
+        params:
+            max: 32768
+            mean: 128
+            min: 1
+            std_dev: 32
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 0
+        duration_us: 600000000
+        trace_rate: 1
+      reasoning:
+        reason_ratio_distribution:
+            type: lognormal
+            params:
+                mu: 4.290475933039249
+                sigma: 0.164247389517323
+        multi_turn:
+            max_rounds: 1
+            think_time_us: 0
+            context_growth: ""
+aggregate_rate: 0

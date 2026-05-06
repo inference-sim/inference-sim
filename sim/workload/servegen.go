@@ -1353,11 +1353,12 @@ func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Ra
 
 			// BC-7: Inject MultiTurn workaround
 			cohort := CohortSpec{
-				ID:         cohortID,
-				Population: len(cohortChunks),
-				SLOClass:   sloClass,
-				Streaming:  true,
-				Arrival:    ArrivalSpec{Process: "poisson"},
+				ID:           cohortID,
+				Population:   len(cohortChunks),
+				SLOClass:     sloClass,
+				Streaming:    true,
+				RateFraction: 1.0, // Divided by population during ExpandCohorts
+				Arrival:      ArrivalSpec{Process: "poisson"},
 				InputDist: DistSpec{
 					Type:   "gaussian",
 					Params: map[string]float64{"mean": 512, "std_dev": 128, "min": 1, "max": 32768},
