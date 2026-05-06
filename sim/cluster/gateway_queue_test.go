@@ -737,6 +737,66 @@ func TestGatewayQueue_FIFO_IgnoresFairnessPolicy(t *testing.T) {
 	}
 }
 
+// TestGatewayQueue_RoundRobin_BandCursorIsolation verifies that each priority
+// band maintains its own independent cursor. Draining one band must not affect
+// the cursor position in another band.
+func TestGatewayQueue_RoundRobin_BandCursorIsolation(t *testing.T) {
+	q := NewGatewayQueue("priority", 0, nil)
+	q.SetFairnessPolicy(NewRoundRobinPolicy())
+
+	// Critical band: A then B. Dequeue once → picks A, cursor ends at A.
+	q.Enqueue(&sim.Request{ID: "cA", SLOClass: "critical", TenantID: "A"}, 1)
+	q.Enqueue(&sim.Request{ID: "cB", SLOClass: "critical", TenantID: "B"}, 2)
+
+	// Standard band: A and B. If cursors were shared, cursor="A" from critical
+	// would advance standard to B first. With isolated cursors, standard starts
+	// fresh and picks A first.
+	q.Enqueue(&sim.Request{ID: "sA", SLOClass: "standard", TenantID: "A"}, 3)
+	q.Enqueue(&sim.Request{ID: "sB", SLOClass: "standard", TenantID: "B"}, 4)
+
+	// Drain critical: picks cA (cursor now "A" in critical band).
+	got := q.Dequeue()
+	if got.ID != "cA" {
+		t.Fatalf("want cA, got %s", got.ID)
+	}
+	// Next dequeue: critical still has cB, picks it.
+	got = q.Dequeue()
+	if got.ID != "cB" {
+		t.Fatalf("want cB, got %s", got.ID)
+	}
+	// Critical drained. Standard band: with isolated cursors, fresh start → picks A.
+	// With shared cursor ("B" from critical), would pick A too (wraps). So we need
+	// a different setup: drain critical with cursor ending at A, then standard
+	// must still pick A (fresh cursor), not B (shared cursor advance).
+	// Reset and use asymmetric setup:
+	q2 := NewGatewayQueue("priority", 0, nil)
+	q2.SetFairnessPolicy(NewRoundRobinPolicy())
+
+	// Critical: only A. Dequeue → cursor ends at "A" in critical band.
+	q2.Enqueue(&sim.Request{ID: "cA1", SLOClass: "critical", TenantID: "A"}, 1)
+	// Standard: A and B.
+	q2.Enqueue(&sim.Request{ID: "sA1", SLOClass: "standard", TenantID: "A"}, 2)
+	q2.Enqueue(&sim.Request{ID: "sB1", SLOClass: "standard", TenantID: "B"}, 3)
+
+	got = q2.Dequeue() // critical → cA1, cursor["critical"] = "A"
+	if got.ID != "cA1" {
+		t.Fatalf("want cA1, got %s", got.ID)
+	}
+	// Standard band: if cursors shared, cursor="A" → startIndex=(0+1)%2=1 → picks B.
+	// If cursors isolated (correct), no cursor for standard → startIndex=0 → picks A.
+	got = q2.Dequeue()
+	if got.ID != "sA1" {
+		t.Fatalf("band cursor isolation: want sA1 (fresh cursor), got %s (shared cursor leak)", got.ID)
+	}
+	got = q2.Dequeue()
+	if got.ID != "sB1" {
+		t.Fatalf("want sB1, got %s", got.ID)
+	}
+	if q2.Len() != 0 {
+		t.Errorf("queue should be empty, got Len=%d", q2.Len())
+	}
+}
+
 // BC-6: RoundRobin works through DequeueGated code path.
 func TestGatewayQueue_RoundRobin_WithGatedDispatch(t *testing.T) {
 	q := NewGatewayQueue("priority", 0, nil)
