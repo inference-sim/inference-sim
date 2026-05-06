@@ -51,7 +51,12 @@ var convertServeGenCmd = &cobra.Command{
 			logrus.Fatalf("ServeGen conversion failed: %v", err)
 		}
 
-		// Filter cohorts by time period if --time is specified
+		// BC-8: Reject --time flag for reasoning workloads
+		if spec.Category == "reasoning" && serveGenTimeFilter != "" {
+			logrus.Fatalf("--time flag is not supported for reasoning workloads (reason category has no temporal decomposition)")
+		}
+
+		// Filter cohorts by time period if --time is specified (language/multimodal only)
 		if serveGenTimeFilter != "" {
 			spec = filterCohortsByPeriod(spec, serveGenTimeFilter)
 		}
