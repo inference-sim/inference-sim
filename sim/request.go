@@ -46,8 +46,7 @@ type Request struct {
 	ITL              []int64  // List of inter-token latencies
 	Priority float64 // Instance-level scheduling priority (vLLM convention: lower = more urgent).
 	// Set once at EnqueueRequest/EnqueueDecodeSubRequest via SLOPriorityMap.InvertForVLLM;
-	// not recomputed per step. Optionally overwritten by RoutingDecisionEvent before enqueue
-	// (transient hint — always overwritten by pre-processor at enqueue time).
+	// not recomputed per step.
 
 	// Workload metadata (PR10). All fields are zero-value safe for backward compatibility.
 	TenantID        string  // Client/tenant identifier (empty for legacy workloads)

@@ -9,7 +9,6 @@ To add a new policy template (e.g., a new routing algorithm):
 1. **Implement the interface** in the corresponding file:
    - `AdmissionPolicy` → `sim/admission.go` (cluster-level: receives `*RouterState` with snapshots + clock)
    - `RoutingPolicy` → `sim/routing.go` (cluster-level: receives `*RouterState` with snapshots + clock)
-   - `PriorityPolicy` → `sim/priority.go` (instance-level: receives `req` + `clock` only)
    - `InstanceScheduler` → `sim/scheduler.go` (instance-level: receives `requests` + `clock` only)
    - Note: `RouterState` is a bridge type in `sim/` to avoid import cycles — see `sim/router_state.go`
 
