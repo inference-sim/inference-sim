@@ -1202,7 +1202,201 @@ func normalizeLifecycleTimestamps(clients *[]ClientSpec) {
 }
 
 // buildReasoningCohorts converts reasoning chunks into cohorts with single-window
-// temporal structure. Stub implementation - will be completed in Task 4.
+// temporal structure (no morning/afternoon periods). Generates 10 cohorts:
+// 2 reasoning levels (low, high) × 5 SLO classes.
 func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Rand) error {
-	return fmt.Errorf("buildReasoningCohorts not yet implemented (Task 4)")
+	if len(traceFiles) == 0 {
+		return fmt.Errorf("no chunks provided for reasoning cohort building")
+	}
+
+	dataDir := spec.ServeGenData.Path
+	windowDurSec := spec.ServeGenData.WindowDurationSecs
+	if windowDurSec <= 0 {
+		windowDurSec = 600
+	}
+
+	// BC-4: Select ONE random window from 144 (24-hour period at 10-min intervals)
+	selectedWindowIndex := rng.Intn(144)
+	selectedWindowStartSec := int64(selectedWindowIndex * 600) // 600s per window
+
+	logrus.Infof("Selected reasoning window %d (time offset %d seconds)", selectedWindowIndex, selectedWindowStartSec)
+
+	// Load all chunks and parse reason_ratio PDFs
+	var chunks []chunkData
+	for _, tracePath := range traceFiles {
+		base := filepath.Base(tracePath)
+		chunkID := strings.TrimPrefix(base, "chunk-")
+		chunkID = strings.TrimSuffix(chunkID, "-trace.csv")
+		datasetPath := filepath.Join(dataDir, fmt.Sprintf("chunk-%s-dataset.json", chunkID))
+
+		// Read dataset JSON
+		data, err := os.ReadFile(datasetPath)
+		if err != nil {
+			logrus.Warnf("Skipping chunk %s: dataset read failed: %v", chunkID, err)
+			continue
+		}
+
+		var raw map[string]map[string]string
+		if err := json.Unmarshal(data, &raw); err != nil {
+			logrus.Warnf("Skipping chunk %s: JSON parse failed: %v", chunkID, err)
+			continue
+		}
+
+		// Find reason_ratio at selected window (or first available)
+		var reasonRatioPDF map[float64]float64
+		for _, window := range raw {
+			if ratioStr, ok := window["reason_ratio"]; ok && ratioStr != "" && ratioStr != "{}" {
+				parsed, parseErr := parseServeGenFloatPDF(ratioStr)
+				if parseErr == nil {
+					reasonRatioPDF = parsed
+					break
+				}
+			}
+		}
+
+		if len(reasonRatioPDF) == 0 {
+			logrus.Warnf("Skipping chunk %s: no valid reason_ratio found", chunkID)
+			continue
+		}
+
+		chunks = append(chunks, chunkData{
+			id:             chunkID,
+			reasonRatioPDF: reasonRatioPDF,
+			datasetPath:    datasetPath,
+		})
+	}
+
+	if len(chunks) == 0 {
+		return fmt.Errorf("no valid reasoning chunks found")
+	}
+
+	// BC-3: Classify chunks by mean reasoning intensity
+	threshold := 0.4
+	lowChunks, highChunks, err := classifyReasoningChunks(chunks, threshold)
+	if err != nil {
+		return fmt.Errorf("classifying reasoning chunks: %w", err)
+	}
+
+	logrus.Infof("Classified %d low-reasoning chunks, %d high-reasoning chunks", len(lowChunks), len(highChunks))
+
+	// BC-5: Build 10 cohorts (2 levels × 5 SLO classes)
+	sloClasses := []string{"critical", "standard", "batch", "sheddable", "background"}
+	reasoningLevels := []struct {
+		name   string
+		chunks []chunkData
+	}{
+		{"low", lowChunks},
+		{"high", highChunks},
+	}
+
+	for _, level := range reasoningLevels {
+		if len(level.chunks) == 0 {
+			logrus.Warnf("No chunks in %s-reasoning group; some cohorts will be empty", level.name)
+			continue
+		}
+
+		// Shuffle chunks for random SLO assignment
+		shuffled := make([]chunkData, len(level.chunks))
+		copy(shuffled, level.chunks)
+		rng.Shuffle(len(shuffled), func(i, j int) {
+			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+		})
+
+		// Round-robin assign to 5 SLO classes
+		groups := make(map[string][]chunkData)
+		for i, chunk := range shuffled {
+			sloClass := sloClasses[i%5]
+			groups[sloClass] = append(groups[sloClass], chunk)
+		}
+
+		// Build cohorts
+		for _, sloClass := range sloClasses {
+			cohortChunks := groups[sloClass]
+			if len(cohortChunks) == 0 {
+				continue
+			}
+
+			cohortID := fmt.Sprintf("reasoning-%s-%s", sloClass, level.name)
+
+			// Average lognormal params across chunks
+			var sumMu, sumSigma float64
+			fitCount := 0
+			for _, chunk := range cohortChunks {
+				// Convert float PDF to int PDF by scaling to [0, 100]
+				intPDF := make(map[int]float64)
+				for ratio, prob := range chunk.reasonRatioPDF {
+					pct := int(ratio * 100)
+					if pct < 0 {
+						pct = 0
+					}
+					if pct > 100 {
+						pct = 100
+					}
+					intPDF[pct] += prob
+				}
+
+				fit, fitErr := fitLognormalFromPDF(intPDF)
+				if fitErr == nil {
+					sumMu += fit.Params["mu"]
+					sumSigma += fit.Params["sigma"]
+					fitCount++
+				}
+			}
+
+			if fitCount == 0 {
+				logrus.Warnf("Skipping cohort %s: no valid lognormal fits", cohortID)
+				continue
+			}
+
+			avgMu := sumMu / float64(fitCount)
+			avgSigma := sumSigma / float64(fitCount)
+
+			// BC-7: Inject MultiTurn workaround
+			cohort := CohortSpec{
+				ID:         cohortID,
+				Population: len(cohortChunks),
+				SLOClass:   sloClass,
+				Streaming:  true,
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist: DistSpec{
+					Type:   "gaussian",
+					Params: map[string]float64{"mean": 512, "std_dev": 128, "min": 1, "max": 32768},
+				},
+				OutputDist: DistSpec{
+					Type:   "gaussian",
+					Params: map[string]float64{"mean": 128, "std_dev": 32, "min": 1, "max": 32768},
+				},
+				Spike: &SpikeSpec{
+					StartTimeUs: 0,
+					DurationUs:  int64(windowDurSec) * 1e6,
+					TraceRate:   func() *float64 { r := 1.0; return &r }(), // Placeholder rate
+				},
+				Reasoning: &ReasoningSpec{
+					ReasonRatioDist: DistSpec{
+						Type: "lognormal",
+						Params: map[string]float64{
+							"mu":    avgMu,
+							"sigma": avgSigma,
+						},
+					},
+					MultiTurn: &MultiTurnSpec{
+						MaxRounds:     1,
+						ThinkTimeUs:   0,
+						ContextGrowth: "",
+					},
+				},
+			}
+
+			spec.Cohorts = append(spec.Cohorts, cohort)
+		}
+	}
+
+	if len(spec.Cohorts) == 0 {
+		return fmt.Errorf("no cohorts generated (all groups empty)")
+	}
+
+	// Set aggregate_rate to 0 (absolute mode)
+	spec.AggregateRate = 0
+
+	return nil
 }
