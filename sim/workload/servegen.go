@@ -146,18 +146,9 @@ func classifyReasoningChunks(chunks []chunkData, threshold float64) (low, high [
 			return nil, nil, fmt.Errorf("chunk %s: empty reason_ratio PDF", chunk.id)
 		}
 
-		// Compute weighted mean ratio (INV-6: sort keys for deterministic float accumulation)
+		// Compute weighted mean ratio
 		var sumRatio, sumProb float64
-
-		// Sort ratios for deterministic iteration order
-		ratios := make([]float64, 0, len(chunk.reasonRatioPDF))
-		for ratio := range chunk.reasonRatioPDF {
-			ratios = append(ratios, ratio)
-		}
-		sort.Float64s(ratios)
-
-		for _, ratio := range ratios {
-			prob := chunk.reasonRatioPDF[ratio]
+		for ratio, prob := range chunk.reasonRatioPDF {
 			if prob > 0 {
 				sumRatio += ratio * prob
 				sumProb += prob
@@ -1213,44 +1204,6 @@ func normalizeLifecycleTimestamps(clients *[]ClientSpec) {
 // buildReasoningCohorts converts reasoning chunks into cohorts with single-window
 // temporal structure (no morning/afternoon periods). Generates 10 cohorts:
 // 2 reasoning levels (low, high) × 5 SLO classes.
-// findBestCoverageWindow scans all 144 10-minute windows and returns the one
-// where the most chunks have valid dataset entries (input/output token PDFs).
-// Returns (windowIndex, windowStartSec) for the best window.
-func findBestCoverageWindow(chunks []chunkData, dataDir string) (int, int64) {
-	const numWindows = 144 // 24 hours / 10 minutes
-	coverageCount := make([]int, numWindows)
-
-	// For each window, count how many chunks have valid datasets at that time
-	for windowIdx := 0; windowIdx < numWindows; windowIdx++ {
-		windowStartSec := int64(windowIdx * 600)
-
-		for _, chunk := range chunks {
-			datasets, err := loadServeGenDatasetAllWindows(chunk.datasetPath, &ServeGenDataSpec{Path: dataDir})
-			if err != nil {
-				continue
-			}
-
-			// Check if this chunk has a dataset at or before this window
-			_, _, found := findNearestDataset(int(windowStartSec), datasets)
-			if found {
-				coverageCount[windowIdx]++
-			}
-		}
-	}
-
-	// Find window with maximum coverage
-	bestWindow := 0
-	maxCoverage := coverageCount[0]
-	for i := 1; i < numWindows; i++ {
-		if coverageCount[i] > maxCoverage {
-			maxCoverage = coverageCount[i]
-			bestWindow = i
-		}
-	}
-
-	return bestWindow, int64(bestWindow * 600)
-}
-
 func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Rand) error {
 	if len(traceFiles) == 0 {
 		return fmt.Errorf("no chunks provided for reasoning cohort building")
@@ -1262,7 +1215,13 @@ func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Ra
 		windowDurSec = 600
 	}
 
-	// Load all chunks and parse reason_ratio PDFs first
+	// BC-4: Select ONE random window from 144 (24-hour period at 10-min intervals)
+	selectedWindowIndex := rng.Intn(144)
+	selectedWindowStartSec := int64(selectedWindowIndex * 600) // 600s per window
+
+	logrus.Infof("Selected reasoning window %d (time offset %d seconds)", selectedWindowIndex, selectedWindowStartSec)
+
+	// Load all chunks and parse reason_ratio PDFs
 	var chunks []chunkData
 	for _, tracePath := range traceFiles {
 		base := filepath.Base(tracePath)
@@ -1283,18 +1242,9 @@ func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Ra
 			continue
 		}
 
-		// Find reason_ratio at first available window (deterministic: sort timestamps)
+		// Find reason_ratio at selected window (or first available)
 		var reasonRatioPDF map[float64]float64
-
-		// Sort timestamps for deterministic iteration
-		timestamps := make([]string, 0, len(raw))
-		for ts := range raw {
-			timestamps = append(timestamps, ts)
-		}
-		sort.Strings(timestamps)
-
-		for _, ts := range timestamps {
-			window := raw[ts]
+		for _, window := range raw {
 			if ratioStr, ok := window["reason_ratio"]; ok && ratioStr != "" && ratioStr != "{}" {
 				parsed, parseErr := parseServeGenFloatPDF(ratioStr)
 				if parseErr == nil {
@@ -1319,10 +1269,6 @@ func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Ra
 	if len(chunks) == 0 {
 		return fmt.Errorf("no valid reasoning chunks found")
 	}
-
-	// BC-4: Select window with best dataset coverage (deterministic)
-	selectedWindowIndex, selectedWindowStartSec := findBestCoverageWindow(chunks, dataDir)
-	logrus.Infof("Selected reasoning window %d (time offset %d seconds) with best dataset coverage", selectedWindowIndex, selectedWindowStartSec)
 
 	// BC-3: Classify chunks by mean reasoning intensity
 	threshold := 0.4
@@ -1349,16 +1295,16 @@ func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Ra
 			continue
 		}
 
-		// Sort chunks by ID for deterministic round-robin assignment
-		sorted := make([]chunkData, len(level.chunks))
-		copy(sorted, level.chunks)
-		sort.Slice(sorted, func(i, j int) bool {
-			return sorted[i].id < sorted[j].id
+		// Shuffle chunks for random SLO assignment
+		shuffled := make([]chunkData, len(level.chunks))
+		copy(shuffled, level.chunks)
+		rng.Shuffle(len(shuffled), func(i, j int) {
+			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 		})
 
 		// Round-robin assign to 5 SLO classes
 		groups := make(map[string][]chunkData)
-		for i, chunk := range sorted {
+		for i, chunk := range shuffled {
 			sloClass := sloClasses[i%5]
 			groups[sloClass] = append(groups[sloClass], chunk)
 		}
