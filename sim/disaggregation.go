@@ -205,9 +205,9 @@ func NewPrefixBasedPDDecider(threshold, blockSize int) *PrefixBasedPDDecider {
 
 // NewPrefixThresholdDecider is retained as a backward-compatible constructor name
 // that now returns the per-pod decider. Callers that previously relied on the old
-// global-LRU semantics should migrate to NewGlobalPrefixThresholdDecider. Documented
-// behavior change in the PR description (see issue #1250 §"Proposed fix" and the
-// CHANGELOG note for one-release deprecation of the old name).
+// global-LRU semantics should migrate to NewGlobalPrefixThresholdDecider. This is
+// a behavior change documented in PR #1255 / issue #1250 and surfaced at runtime
+// by the --pd-decider=prefix-threshold warning in cmd/root.go.
 func NewPrefixThresholdDecider(threshold, blockSize int) *PrefixBasedPDDecider {
 	return NewPrefixBasedPDDecider(threshold, blockSize)
 }
