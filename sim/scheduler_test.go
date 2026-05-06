@@ -296,7 +296,7 @@ func TestSimulator_DefaultConfig_MatchesFCFS(t *testing.T) {
 		BatchConfig:         NewBatchConfig(1, 2048, 0), // force sequential: only 1 at a time
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
 		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
-		// PriorityPolicy and Scheduler left empty (defaults)
+		// Scheduler left empty (defaults to fcfs)
 	}
 	s := mustNewSimulator(t, cfg)
 
