@@ -11,7 +11,7 @@ func TestNeverDisaggregate_AlwaysReturnsFalse(t *testing.T) {
 	decider := &NeverDisaggregate{}
 	req := &Request{ID: "req-1", InputTokens: make([]int, 100)}
 
-	decision := decider.Decide(req)
+	decision := decider.Decide(req, RoutingSnapshot{})
 
 	if decision.Disaggregate {
 		t.Error("NeverDisaggregate should return Disaggregate=false")
@@ -24,7 +24,7 @@ func TestAlwaysDisaggregate_AlwaysReturnsTrue(t *testing.T) {
 	decider := &AlwaysDisaggregate{}
 	req := &Request{ID: "req-1", InputTokens: make([]int, 100)}
 
-	decision := decider.Decide(req)
+	decision := decider.Decide(req, RoutingSnapshot{})
 
 	if !decision.Disaggregate {
 		t.Error("AlwaysDisaggregate should return Disaggregate=true")
@@ -55,7 +55,7 @@ func TestNewDisaggregationDecider_Factory(t *testing.T) {
 			if d == nil {
 				t.Fatal("NewDisaggregationDecider returned nil")
 			}
-			got := d.Decide(req).Disaggregate
+			got := d.Decide(req, RoutingSnapshot{}).Disaggregate
 			if got != tc.wantDisaggregate {
 				t.Errorf("NewDisaggregationDecider(%q).Decide().Disaggregate = %v, want %v",
 					tc.name, got, tc.wantDisaggregate)
@@ -147,11 +147,38 @@ func TestDisaggregationDecider_INV9_OracleBoundary(t *testing.T) {
 		NewPrefixThresholdDecider(512, 16),
 	}
 	for _, d := range deciders {
-		d1 := d.Decide(req1)
-		d2 := d.Decide(req2)
+		d1 := d.Decide(req1, RoutingSnapshot{})
+		d2 := d.Decide(req2, RoutingSnapshot{})
 		if d1 != d2 {
 			t.Errorf("%T: decision differs with different OutputTokens (d1=%v, d2=%v); INV-9 violation",
 				d, d1, d2)
+		}
+	}
+}
+
+// TestDisaggregationDecider_SnapshotAgnostic verifies BC-1/BC-2: all built-in
+// deciders accept a RoutingSnapshot argument and produce identical decisions
+// when called with a zero-value snapshot vs an arbitrary populated snapshot.
+// NeverDisaggregate and AlwaysDisaggregate are constant; PrefixThresholdDecider
+// does not yet consume the snapshot (GAP-3 will wire it in) and must therefore
+// also be invariant under this change.
+func TestDisaggregationDecider_SnapshotAgnostic(t *testing.T) {
+	req := &Request{ID: "req-1", InputTokens: make([]int, 100)}
+	zero := RoutingSnapshot{}
+	populated := RoutingSnapshot{ID: "decode_0", QueueDepth: 7, KVUtilization: 0.4}
+
+	deciders := []DisaggregationDecider{
+		&NeverDisaggregate{},
+		&AlwaysDisaggregate{},
+		NewPrefixThresholdDecider(512, 16),
+	}
+	for _, d := range deciders {
+		gotZero := d.Decide(req, zero)
+		gotPop := d.Decide(req, populated)
+		if gotZero != gotPop {
+			t.Errorf("%T: decision differs between zero and populated snapshot "+
+				"(zero=%v, populated=%v); snapshot-agnostic deciders must be invariant",
+				d, gotZero, gotPop)
 		}
 	}
 }
@@ -198,7 +225,7 @@ func TestPrefixThresholdDecider_EmptyTokens(t *testing.T) {
 	decider := NewPrefixThresholdDecider(512, 16)
 	req := &Request{ID: "req-empty", InputTokens: []int{}}
 
-	decision := decider.Decide(req)
+	decision := decider.Decide(req, RoutingSnapshot{})
 
 	if decision.Disaggregate {
 		t.Error("BC-PD-20: empty InputTokens must return Disaggregate=false")
@@ -227,7 +254,7 @@ func TestPrefixThresholdDecider_AboveThreshold(t *testing.T) {
 			}
 			req := &Request{ID: fmt.Sprintf("req-%s", tc.name), InputTokens: tokens}
 
-			decision := decider.Decide(req)
+			decision := decider.Decide(req, RoutingSnapshot{})
 
 			if !decision.Disaggregate {
 				t.Errorf("BC-PD-21: %d uncached tokens with threshold=%d should return Disaggregate=true",
@@ -258,7 +285,7 @@ func TestPrefixThresholdDecider_BelowOrAtThreshold(t *testing.T) {
 			}
 			req := &Request{ID: fmt.Sprintf("req-%s", tc.name), InputTokens: tokens}
 
-			decision := decider.Decide(req)
+			decision := decider.Decide(req, RoutingSnapshot{})
 
 			if decision.Disaggregate {
 				t.Errorf("BC-PD-22: %d non-cached tokens with threshold=%d should return Disaggregate=false",
@@ -285,7 +312,7 @@ func TestPrefixThresholdDecider_CacheAware(t *testing.T) {
 	}
 	prefixReq := &Request{ID: "req-warm", InputTokens: prefix}
 	// Calling Decide records cachedHashes, then ObserveRouting warms the cache.
-	decider.Decide(prefixReq)
+	decider.Decide(prefixReq, RoutingSnapshot{})
 	decider.ObserveRouting(prefixReq, "instance_0")
 
 	// New request: same 640-token prefix + 200 new tokens = 840 tokens total.
@@ -298,7 +325,7 @@ func TestPrefixThresholdDecider_CacheAware(t *testing.T) {
 	}
 	req := &Request{ID: "req-cached", InputTokens: extended}
 
-	decision := decider.Decide(req)
+	decision := decider.Decide(req, RoutingSnapshot{})
 
 	if decision.Disaggregate {
 		t.Errorf("BC-PD-24: with 640 tokens cached (40 blocks), 200 non-cached tokens should not disaggregate (threshold=%d)", threshold)
@@ -322,14 +349,14 @@ func TestPrefixThresholdDecider_CacheAware_SubRequestIDMismatch(t *testing.T) {
 
 	// Step 1: Decide is called with the parent request.
 	parentReq := &Request{ID: "req-parent", InputTokens: prefix}
-	decider.Decide(parentReq)
+	decider.Decide(parentReq, RoutingSnapshot{})
 
 	// Step 2: Overwrite cachedHashes with a stale unrelated request so that ObserveRouting
 	// MUST recompute when it sees the mismatched sub-request ID. Without this step, the
 	// original test cannot detect an inversion of the != check: parentReq and subReq share
 	// the same token content, so stale hashes from parentReq would produce the same result.
 	staleReq := &Request{ID: "req-stale", InputTokens: []int{99999, 99998}} // < blockSize, 0 hashes
-	decider.Decide(staleReq) // overwrites cachedHashes (empty) and cachedReqID = "req-stale"
+	decider.Decide(staleReq, RoutingSnapshot{}) // overwrites cachedHashes (empty) and cachedReqID = "req-stale"
 
 	// Step 3: ObserveRouting is called with a sub-request (different ID from stale, same
 	// InputTokens as prefix). ID mismatch must trigger recompute — without it the empty stale
@@ -346,7 +373,7 @@ func TestPrefixThresholdDecider_CacheAware_SubRequestIDMismatch(t *testing.T) {
 	}
 	req := &Request{ID: "req-follow", InputTokens: extended}
 
-	decision := decider.Decide(req)
+	decision := decider.Decide(req, RoutingSnapshot{})
 
 	if decision.Disaggregate {
 		t.Errorf("CacheAware/SubRequestIDMismatch: ObserveRouting with mismatched ID should still "+
@@ -367,7 +394,7 @@ func TestPrefixThresholdDecider_ZeroThreshold(t *testing.T) {
 	}
 	req := &Request{ID: "req-zero-thresh", InputTokens: tokens}
 
-	decision := decider.Decide(req)
+	decision := decider.Decide(req, RoutingSnapshot{})
 
 	if !decision.Disaggregate {
 		t.Error("threshold=0 with non-empty uncached tokens should return Disaggregate=true")

@@ -19,18 +19,25 @@ type DisaggregationDecision struct {
 // use len(req.InputTokens) and req.MaxOutputLen only.
 //
 // req is guaranteed non-nil; implementations may assume a non-nil pointer.
+// snap is the RoutingSnapshot of the decode pod already selected by the decode
+// routing policy — implementations may query per-pod state (cache presence,
+// load) to inform the decision. snap may be a zero value (RoutingSnapshot{})
+// in edge cases (e.g., the caller could not locate the snapshot matching the
+// selected TargetInstance); implementations must handle this gracefully,
+// consistent with llm-d's nil-endpoint guard in
+// prefix_based_pd_decider.go lines 108–111.
 //
 // Stateful implementations may additionally implement DisaggregationObserver to
 // learn from routing outcomes (e.g., PrefixThresholdDecider).
 type DisaggregationDecider interface {
-	Decide(req *Request) DisaggregationDecision
+	Decide(req *Request, snap RoutingSnapshot) DisaggregationDecision
 }
 
 // NeverDisaggregate always returns Disaggregate=false.
 // Default decider when PD disaggregation is not configured.
 type NeverDisaggregate struct{}
 
-func (n *NeverDisaggregate) Decide(_ *Request) DisaggregationDecision {
+func (n *NeverDisaggregate) Decide(_ *Request, _ RoutingSnapshot) DisaggregationDecision {
 	return DisaggregationDecision{Disaggregate: false}
 }
 
@@ -38,7 +45,7 @@ func (n *NeverDisaggregate) Decide(_ *Request) DisaggregationDecision {
 // Test-oriented decider for validating disaggregation pipeline wiring.
 type AlwaysDisaggregate struct{}
 
-func (a *AlwaysDisaggregate) Decide(_ *Request) DisaggregationDecision {
+func (a *AlwaysDisaggregate) Decide(_ *Request, _ RoutingSnapshot) DisaggregationDecision {
 	return DisaggregationDecision{Disaggregate: true}
 }
 
@@ -141,7 +148,9 @@ func NewPrefixThresholdDecider(threshold, blockSize int) *PrefixThresholdDecider
 // Decide returns Disaggregate=true when non-cached token count exceeds the threshold.
 // Empty requests (len(InputTokens) == 0) always return Disaggregate=false.
 // Caches block hashes for reuse by ObserveRouting when the same request is routed next.
-func (p *PrefixThresholdDecider) Decide(req *Request) DisaggregationDecision {
+// The snap argument is accepted for interface conformance and is currently ignored;
+// GAP-3 will replace the cluster-wide cache estimate with per-pod cache state from snap.
+func (p *PrefixThresholdDecider) Decide(req *Request, _ RoutingSnapshot) DisaggregationDecision {
 	if len(req.InputTokens) == 0 {
 		return DisaggregationDecision{Disaggregate: false}
 	}
