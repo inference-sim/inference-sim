@@ -1494,6 +1494,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#direct-vllm-priority-injection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Direct vLLM priority injection
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3214,6 +3225,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#direct-vllm-priority-injection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Direct vLLM priority injection
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -4104,6 +4126,9 @@
 <a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="w">    </span><span class="nt">tenant_id</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;team-beta&quot;</span>
 </code></pre></div>
 <p>Note: The GIE API version (<code>v1alpha2</code>) shown above may differ on your cluster. Check your installed CRD version with <code>kubectl get crd inferenceobjectives.inference.networking.x-k8s.io</code>.</p>
+<h3 id="direct-vllm-priority-injection">Direct vLLM priority injection<a class="headerlink" href="#direct-vllm-priority-injection" title="Permanent link">&para;</a></h3>
+<p>When <code>slo_class</code> is set, <code>blis observe</code> also injects a <code>priority</code> integer into the JSON request body. This targets vLLM directly when running without GIE in front of it. vLLM uses the opposite convention from llm-d/GAIE — <strong>lower integer = more urgent</strong> (min-heap) — so the value is computed via <code>SLOPriorityMap.InvertForVLLM(class)</code> = <code>maxPriority - priority(class)</code>. With the default tier priorities, this produces: <code>critical → 0</code>, <code>standard → 1</code>, <code>batch → 5</code>, <code>sheddable → 6</code>, <code>background → 7</code>.</p>
+<p>Both signals are sent on every request when <code>slo_class</code> is set: the <code>x-gateway-inference-objective</code> header (llm-d) and the <code>priority</code> body field (vLLM). Servers ignore what they don't use — vLLM ignores unknown headers, and llm-d's vLLM FCFS backend silently ignores the body priority field — so dual delivery is safe regardless of deployment.</p>
 <hr />
 <h2 id="tips">Tips<a class="headerlink" href="#tips" title="Permanent link">&para;</a></h2>
 <ul>
