@@ -38,8 +38,12 @@ ReplicaMetrics
 ├── CostPerHour            float64    // from RoutingSnapshot.CostPerHour (NodePool cost)
 ├── TotalKvCapacityTokens  int64      // total KV cache capacity in tokens; used by V2SaturationAnalyzer for k1
 ├── KvTokensInUse          int64      // current KV token occupancy; used by V2SaturationAnalyzer for demand
-├── TTFT                   float64    // μs — zero in DefaultCollector (future: QueueingModelAnalyzer)
-└── DispatchRate           float64    // req/s — zero in DefaultCollector (future: QueueingModelAnalyzer)
+├── TTFT                   float64    // μs — zero until first completion; consumers must guard against zero
+├── DispatchRate           float64    // req/s — zero until first completion; consumers must guard against zero
+├── ITL                    float64    // μs — inter-token latency; zero until first completion
+├── AvgInTokens            float64    // average input tokens per completed request; zero until first completion
+├── AvgOutTokens           float64    // average output tokens per completed request; zero until first completion
+└── MaxBatchSize           float64    // server-configured max batch size; zero means use DefaultMaxBatchSize
 ```
 
 **Note on CostPerHour**: This field extends the issue spec's 7-field ReplicaMetrics. See research.md Decision 3.  

@@ -158,6 +158,10 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 		// Mutual exclusivity: if scaling up, no spare capacity
 		return result
 	}
+	if pendingSupply > 0 {
+		logrus.Debugf("[analyzer] model %q: scale-up suppressed by pending supply (readySupply=%.0f pendingSupply=%.0f demand=%.0f)",
+			metrics.ModelID, result.TotalSupply, pendingSupply, result.TotalDemand)
+	}
 
 	// Scale-down signal with N-1 redistribution check:
 	// Can only scale down if we have > 1 initialized replica AND redistributing load

@@ -21,7 +21,7 @@ Contract: Collector
 ```
 
 **Implementations**:
-- `DefaultCollector{}` — maps RoutingSnapshot fields to ReplicaMetrics; sets TTFT=0, DispatchRate=0
+- `DefaultCollector{}` — maps RoutingSnapshot fields to ReplicaMetrics, including latency fields (TTFT, ITL, DispatchRate, AvgInTokens, AvgOutTokens, MaxBatchSize) copied directly from the snapshot; latency fields are zero until the first request completes on each replica
 
 ---
 

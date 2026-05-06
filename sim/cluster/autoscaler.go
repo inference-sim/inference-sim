@@ -141,7 +141,9 @@ func (g GPUInventory) Variants() []VariantSpec {
 // ---------------------------------------------------------------------------
 
 // Collector observes RouterState and produces one ModelSignals per active model,
-// grouping replicas by ModelID. Must not modify state, filter models, or apply thresholds.
+// grouping replicas by ModelID. Must not modify state, suppress valid models from output,
+// or apply business-logic thresholds. Structurally incomplete snapshots (empty Model, empty
+// GPUType, zero-capacity loading snapshots) may be skipped with a diagnostic log per FR-006.
 // Pure function: same RouterState always produces the same output (determinism).
 type Collector interface {
 	Collect(state *sim.RouterState) []ModelSignals
