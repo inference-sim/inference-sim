@@ -1275,7 +1275,7 @@ func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Ra
 	dataDir := spec.ServeGenData.Path
 	windowDurSec := spec.ServeGenData.WindowDurationSecs
 	if windowDurSec <= 0 {
-		windowDurSec = 600
+		windowDurSec = serveGenWindowDurationSec
 	}
 
 	// BC-4: Select window with best chunk coverage (most active chunks)
