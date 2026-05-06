@@ -260,6 +260,22 @@ tenant_budgets:
   bob: 0.7     # bob may use at most 70% of total cluster capacity
 ```
 
+## Flow Control (Gateway Queue)
+
+When `--flow-control` is enabled, admission IS the queue — requests are enqueued into per-priority-band, per-tenant flow queues and dispatched under saturation gating. See [Admission: Flow Control](../guide/admission.md#flow-control-mode).
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--flow-control` | bool | false | Enable flow-control admission (replaces legacy admission) |
+| `--saturation-detector` | string | "utilization" | Saturation detection: `utilization`, `concurrency`, `never` |
+| `--queue-depth-threshold` | int | 5 | Queue depth threshold for utilization-based saturation |
+| `--kv-cache-util-threshold` | float64 | 0.8 | KV cache utilization threshold for saturation |
+| `--max-concurrency` | int | 64 | Max in-flight requests for concurrency-based saturation |
+| `--dispatch-order` | string | "fifo" | Cross-band dispatch: `fifo` (globally-earliest), `priority` (highest band first) |
+| `--fairness-policy` | string | "global-strict" | Intra-band flow selection: `global-strict` (earliest seqID), `round-robin` (tenant cycling) |
+| `--per-band-capacity` | int | 0 | Max requests per priority band (0=unlimited) |
+| `--max-gateway-queue-depth` | int | 0 | Global queue depth limit (0=unlimited) |
+
 ## Routing Policy
 
 Controls how admitted requests are assigned to instances. See [Cluster Architecture: Routing](../concepts/architecture.md#routing-pipeline).
