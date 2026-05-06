@@ -1318,10 +1318,68 @@ func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Ra
 
 			cohortID := fmt.Sprintf("reasoning-%s-%s", sloClass, level.name)
 
-			// Average lognormal params across chunks
-			var sumMu, sumSigma float64
-			fitCount := 0
+			// BC-6: Fit input/output distributions from datasets
+			var sumMuInput, sumSigmaInput, sumMuOutput, sumSigmaOutput float64
+			var distCount int
+
+			// BC-6: Fit reasoning ratio distributions from reason_ratio PDFs
+			var sumMuRatio, sumSigmaRatio float64
+			var ratioFitCount int
+
 			for _, chunk := range cohortChunks {
+				// Load dataset to fit input/output token distributions
+				datasets, dsErr := loadServeGenDatasetAllWindows(chunk.datasetPath, &ServeGenDataSpec{Path: dataDir})
+				if dsErr != nil {
+					logrus.Warnf("Skipping chunk %s for cohort %s: dataset load failed: %v", chunk.id, cohortID, dsErr)
+					continue
+				}
+
+				// Find nearest dataset boundary for the selected window
+				_, nearestBoundary, found := findNearestDataset(int(selectedWindowStartSec), datasets)
+				if !found {
+					logrus.Warnf("Skipping chunk %s for cohort %s: no dataset at selected window", chunk.id, cohortID)
+					continue
+				}
+
+				// Aggregate across all matching time-of-day windows (deterministic order)
+				dsSortedTimestamps := make([]int, 0, len(datasets))
+				for ts := range datasets {
+					dsSortedTimestamps = append(dsSortedTimestamps, ts)
+				}
+				sort.Ints(dsSortedTimestamps)
+
+				var chunkInputMuSum, chunkInputSigmaSum, chunkOutputMuSum, chunkOutputSigmaSum float64
+				var chunkDistCount int
+
+				for _, dsTimestamp := range dsSortedTimestamps {
+					dataset := datasets[dsTimestamp]
+					// Match time-of-day across all days
+					if int64(dsTimestamp)%86400 == int64(nearestBoundary)%86400 {
+						inputFit, fitErr := fitLognormalFromPDF(dataset.inputPDF)
+						if fitErr == nil {
+							chunkInputMuSum += inputFit.Params["mu"]
+							chunkInputSigmaSum += inputFit.Params["sigma"]
+						}
+						outputFit, fitErr := fitLognormalFromPDF(dataset.outputPDF)
+						if fitErr == nil {
+							chunkOutputMuSum += outputFit.Params["mu"]
+							chunkOutputSigmaSum += outputFit.Params["sigma"]
+							chunkDistCount++
+						}
+					}
+				}
+
+				// Average this chunk's multi-day distributions
+				if chunkDistCount > 0 {
+					n := float64(chunkDistCount)
+					sumMuInput += chunkInputMuSum / n
+					sumSigmaInput += chunkInputSigmaSum / n
+					sumMuOutput += chunkOutputMuSum / n
+					sumSigmaOutput += chunkOutputSigmaSum / n
+					distCount++
+				}
+
+				// Fit reasoning ratio distribution from float PDF
 				// Convert float PDF to int PDF by scaling to [0, 100]
 				intPDF := make(map[int]float64)
 				for ratio, prob := range chunk.reasonRatioPDF {
@@ -1337,19 +1395,27 @@ func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Ra
 
 				fit, fitErr := fitLognormalFromPDF(intPDF)
 				if fitErr == nil {
-					sumMu += fit.Params["mu"]
-					sumSigma += fit.Params["sigma"]
-					fitCount++
+					sumMuRatio += fit.Params["mu"]
+					sumSigmaRatio += fit.Params["sigma"]
+					ratioFitCount++
 				}
 			}
 
-			if fitCount == 0 {
-				logrus.Warnf("Skipping cohort %s: no valid lognormal fits", cohortID)
+			if distCount == 0 {
+				logrus.Warnf("Skipping cohort %s: no valid input/output distributions", cohortID)
+				continue
+			}
+			if ratioFitCount == 0 {
+				logrus.Warnf("Skipping cohort %s: no valid reasoning ratio fits", cohortID)
 				continue
 			}
 
-			avgMu := sumMu / float64(fitCount)
-			avgSigma := sumSigma / float64(fitCount)
+			avgMuInput := sumMuInput / float64(distCount)
+			avgSigmaInput := sumSigmaInput / float64(distCount)
+			avgMuOutput := sumMuOutput / float64(distCount)
+			avgSigmaOutput := sumSigmaOutput / float64(distCount)
+			avgMuRatio := sumMuRatio / float64(ratioFitCount)
+			avgSigmaRatio := sumSigmaRatio / float64(ratioFitCount)
 
 			// BC-7: Inject MultiTurn workaround
 			cohort := CohortSpec{
@@ -1360,12 +1426,18 @@ func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Ra
 				RateFraction: 1.0, // Divided by population during ExpandCohorts
 				Arrival:      ArrivalSpec{Process: "poisson"},
 				InputDist: DistSpec{
-					Type:   "gaussian",
-					Params: map[string]float64{"mean": 512, "std_dev": 128, "min": 1, "max": 32768},
+					Type: "lognormal",
+					Params: map[string]float64{
+						"mu":    avgMuInput,
+						"sigma": avgSigmaInput,
+					},
 				},
 				OutputDist: DistSpec{
-					Type:   "gaussian",
-					Params: map[string]float64{"mean": 128, "std_dev": 32, "min": 1, "max": 32768},
+					Type: "lognormal",
+					Params: map[string]float64{
+						"mu":    avgMuOutput,
+						"sigma": avgSigmaOutput,
+					},
 				},
 				Spike: &SpikeSpec{
 					StartTimeUs: 0,
@@ -1376,8 +1448,8 @@ func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Ra
 					ReasonRatioDist: DistSpec{
 						Type: "lognormal",
 						Params: map[string]float64{
-							"mu":    avgMu,
-							"sigma": avgSigma,
+							"mu":    avgMuRatio,
+							"sigma": avgSigmaRatio,
 						},
 					},
 					MultiTurn: &MultiTurnSpec{
