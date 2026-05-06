@@ -11,7 +11,7 @@ Principles guide design decisions. The [antipattern rules](rules.md) are specifi
 
 ## Interface Design
 
-- Single-method interfaces where possible (`AdmissionPolicy`, `RoutingPolicy`, `PriorityPolicy`, `InstanceScheduler`).
+- Single-method interfaces where possible (`AdmissionPolicy`, `RoutingPolicy`, `InstanceScheduler`).
 - Query methods must be pure — no side effects, no state mutation, no destructive reads. Separate `Get()` and `Consume()` for query-and-clear.
 - Factory functions must validate inputs: `IsValid*()` check + switch/case + panic on unknown.
 - Interfaces defined by behavioral contract, not one implementation's data model. *(Enforced by R13)*

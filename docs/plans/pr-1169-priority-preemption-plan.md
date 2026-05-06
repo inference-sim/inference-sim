@@ -1,5 +1,7 @@
 # Priority Preemption Implementation Plan
 
+> **Status: COMPLETED (merged as PR #1169). Partially superseded by PR #1216** which changed `NewBatchFormation` from 2-arg to 1-arg (sloMap moved to `Simulator.sloMap`), flipped `selectPriorityVictim` to vLLM convention (`max()` instead of `min()`), and aligned `PriorityFCFSScheduler` to ascending order. Code signatures in this plan are historical.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Add `selectPriorityVictim()` victim selection, fix Phase 1 index drift for non-tail eviction, and document INV-12 — making `--preemption-policy priority` functional.

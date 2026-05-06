@@ -255,11 +255,6 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 	decision := cs.routingPolicy.Route(e.request, state)
 	logrus.Debugf("[cluster] req %s → instance %s (reason=%s)", e.request.ID, decision.TargetInstance, decision.Reason)
 
-	// BC-9: Apply cluster-level priority hint if set by routing policy
-	if decision.Priority != 0 {
-		e.request.Priority = decision.Priority
-	}
-
 	// #181: Stamp request with assigned instance for per-request metrics
 	e.request.AssignedInstance = decision.TargetInstance
 
@@ -380,9 +375,6 @@ func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 		// This fixes P3: non-disaggregated requests are now routed exclusively to the decode
 		// pool, not to all instances via buildRouterState().
 		e.request.AssignedInstance = decodeDecision.TargetInstance
-		if decodeDecision.Priority != 0 {
-			e.request.Priority = decodeDecision.Priority
-		}
 
 		// Record standard routing trace for BC-TRACE-COMPAT: consumers (e.g.
 		// TestPDTrace_NeverDecider_WithPools) expect len(tr.Routings) == numRequests.

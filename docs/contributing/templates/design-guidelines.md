@@ -237,7 +237,7 @@ flowchart TD
 | **Admission** | Accept/reject requests at cluster entry | `AdmissionPolicy` (single method) | Implemented, frozen |
 | **Router** | Select target instance for admitted requests | `RoutingPolicy` (single method) | Implemented, frozen |
 | **Scheduler** | Order queued requests within an instance | `InstanceScheduler` (single method) | Implemented, frozen |
-| **Priority** | Compute request priority for scheduler | `PriorityPolicy` (single method) | Implemented, frozen |
+| **Priority** | Map SLO class to vLLM-convention priority at instance entry | `SLOPriorityMap` (set once at `EnqueueRequest` via `InvertForVLLM`, not per-step) | Implemented, frozen |
 | **KV Cache Manager** | Allocate/release/cache KV blocks | `KVStore` (11 methods) | Implemented |
 | **AutoScaler** | Add/remove instances based on load signals | `AutoScalePolicy` (planned) | Target — PR11 |
 | **Latency Model** | Estimate step execution time | `LatencyModel` (3 methods) | Implemented — `NewLatencyModel` factory |

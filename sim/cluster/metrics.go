@@ -122,11 +122,11 @@ type RawMetrics struct {
 
 // CollectRawMetrics builds RawMetrics from aggregated and per-instance metrics.
 // perInstance is optional (may be nil for anomaly-free collection).
-// priorityPolicy controls whether priority inversion detection runs:
-// when "constant" or "" (both map to ConstantPriority), inversions are
-// suppressed (always 0) since all requests share the same priority and
-// E2E differences reflect workload variance, not unfairness.
-func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, rejectedRequests int, priorityPolicy string, routingRejections int) *RawMetrics {
+// scheduler controls whether priority inversion detection runs:
+// when "fcfs" or "" (no priority ordering), inversions are
+// suppressed (always 0) since requests are served in arrival order and
+// E2E differences reflect workload variance, not scheduling unfairness.
+func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, rejectedRequests int, scheduler string, routingRejections int) *RawMetrics {
 	raw := &RawMetrics{
 		RejectedRequests:     rejectedRequests,
 		RoutingRejections:    routingRejections,
@@ -151,7 +151,7 @@ func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, reje
 
 	// Anomaly detection
 	if perInstance != nil {
-		raw.PriorityInversions = detectPriorityInversions(perInstance, priorityPolicy)
+		raw.PriorityInversions = detectPriorityInversions(perInstance, scheduler)
 		raw.HOLBlockingEvents = detectHOLBlocking(perInstance)
 
 		// KV cache metrics (PR12)
@@ -182,10 +182,11 @@ func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, reje
 // worse E2E than a later-arriving request (with 2× threshold).
 // Requests are grouped by SLO class before comparison — cross-class differences
 // reflect workload size heterogeneity, not scheduling unfairness. (#292, R20)
-// When priorityPolicy is "constant" or "" (both map to ConstantPriority),
-// returns 0 — all requests share the same priority.
-func detectPriorityInversions(perInstance []*sim.Metrics, priorityPolicy string) int {
-	if priorityPolicy == "constant" || priorityPolicy == "" {
+// Only "priority-fcfs" enforces a meaningful priority ordering — all other
+// schedulers either ignore priority (fcfs, sjf) or deliberately invert it
+// (reverse-priority), making inversion detection produce false positives for them.
+func detectPriorityInversions(perInstance []*sim.Metrics, scheduler string) int {
+	if scheduler != "priority-fcfs" {
 		return 0
 	}
 	count := 0

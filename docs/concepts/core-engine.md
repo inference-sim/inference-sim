@@ -67,8 +67,8 @@ flowchart TD
 
 ### Phase 1: Schedule Batch (`scheduleBatch`)
 
-1. Assign priority scores to all queued requests via the priority policy
-2. Reorder the wait queue via the scheduling policy (e.g., FCFS, SJF, priority-based)
+1. Reorder the wait queue via the scheduling policy (e.g., FCFS, SJF, priority-FCFS). Request priorities are **static** — set once at enqueue via `SLOPriorityMap.InvertForVLLM(SLOClass)`, not recomputed per step.
+2. (step loop reordering — see above)
 3. Invoke batch formation to select which requests enter the running batch
 4. Record preemption metrics for any evicted requests
 5. Schedule `ScheduledEvent` for any newly admitted requests
@@ -288,19 +288,11 @@ Scheduling policies control the order in which queued requests are selected for 
 | Policy | Ordering Rule | Use Case |
 |--------|---------------|----------|
 | `fcfs` | No reordering (arrival order) | Default, fair |
-| `priority-fcfs` | Priority descending, then arrival ascending | SLO-aware scheduling |
+| `priority-fcfs` | Priority **ascending** (lower value = more urgent, vLLM convention), then arrival ascending | SLO-aware scheduling with `slo_class` in workload spec |
 | `sjf` | Input token count ascending, then arrival ascending | Shortest-job-first for TTFT optimization |
-| `reverse-priority` | Priority ascending (starves high-priority) | Pathological testing only |
+| `reverse-priority` | Priority descending (highest value = least urgent scheduled first) | Pathological testing only |
 
-### Priority Policies
-
-Priority policies assign a numeric score to each request before scheduling:
-
-| Policy | Score Computation | Behavior |
-|--------|-------------------|----------|
-| `constant` | Fixed score for all requests | No differentiation (default) |
-| `slo-based` | `base + age_weight * (clock - arrival)` | Favors older requests, prevents starvation. Note: despite the name, does not currently use per-request SLO metadata. |
-| `inverted-slo` | `base - age_weight * age` | Starves older requests (pathological) |
+Request priorities are **static** — set once at enqueue via `SLOPriorityMap.InvertForVLLM(SLOClass)` (vLLM convention: lower integer = more urgent). Default mapping: `critical=0`, `standard=1`, `batch=5`, `sheddable=6`, `background=7`. No per-step recomputation.
 
 ## Metrics
 

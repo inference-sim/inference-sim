@@ -105,8 +105,7 @@ var (
 	routingPolicy  string // Routing policy name
 	routingScorers string // Comma-separated name:weight pairs for weighted routing
 
-	// Priority and scheduler config (PR7)
-	priorityPolicy   string // Priority policy name
+	// Scheduler and preemption config
 	scheduler        string // Scheduler name
 	preemptionPolicy string // Preemption victim selection policy
 
@@ -644,7 +643,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 // re-validate them. Calling resolvePolicies without a prior resolveLatencyConfig call
 // would bypass those validations.
 //
-// Side effects: may write admissionPolicy, routingPolicy, priorityPolicy, scheduler,
+// Side effects: may write admissionPolicy, routingPolicy, scheduler,
 // tokenBucketCapacity, tokenBucketRefillRate, tierShedThreshold, tierShedMinPriority,
 // tenantBudgets package-level vars (from policy bundle).
 //
@@ -689,6 +688,12 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		}
 		if bundle.Admission.SLOPriorities != nil {
 			sloPriorityOverrides = bundle.Admission.SLOPriorities
+			// Validate at CLI boundary (R3) before reaching library-level panic in NewSLOPriorityMap.
+			for k, v := range sloPriorityOverrides {
+				if v < -100 || v > 100 {
+					logrus.Fatalf("slo_priorities override for %q: value %d out of range [-100, 100]", k, v)
+				}
+			}
 		}
 		if bundle.Admission.GAIEQDThreshold != nil {
 			gaieQDThreshold = *bundle.Admission.GAIEQDThreshold
@@ -700,8 +705,10 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 			routingPolicy = bundle.Routing.Policy
 		}
 		bundleScorerConfigs = bundle.Routing.Scorers
-		if bundle.Priority.Policy != "" && !cmd.Flags().Changed("priority-policy") {
-			priorityPolicy = bundle.Priority.Policy
+		if bundle.Priority.Policy != "" && bundle.Priority.Policy != "constant" {
+			logrus.Warnf("bundle priority.policy=%q has no effect: --priority-policy was removed in PR #1216. "+
+				"Request priority is now static (set at enqueue via SLOPriorityMap.InvertForVLLM). "+
+				"Use SLOClass in your workload spec for tier-based priority.", bundle.Priority.Policy)
 		}
 		if bundle.Scheduler != "" && !cmd.Flags().Changed("scheduler") {
 			scheduler = bundle.Scheduler
@@ -741,9 +748,6 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 	}
 	if !sim.IsValidRoutingPolicy(routingPolicy) {
 		logrus.Fatalf("Unknown routing policy %q. Valid: %s", routingPolicy, strings.Join(sim.ValidRoutingPolicyNames(), ", "))
-	}
-	if !sim.IsValidPriorityPolicy(priorityPolicy) {
-		logrus.Fatalf("Unknown priority policy %q. Valid: %s", priorityPolicy, strings.Join(sim.ValidPriorityPolicyNames(), ", "))
 	}
 	if !sim.IsValidScheduler(scheduler) {
 		logrus.Fatalf("Unknown scheduler %q. Valid: %s", scheduler, strings.Join(sim.ValidSchedulerNames(), ", "))
@@ -830,8 +834,8 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		}
 	}
 
-	logrus.Infof("Policy config: admission=%s, routing=%s, priority=%s, scheduler=%s, preemption=%s",
-		admissionPolicy, routingPolicy, priorityPolicy, scheduler, preemptionPolicy)
+	logrus.Infof("Policy config: admission=%s, routing=%s, scheduler=%s, preemption=%s",
+		admissionPolicy, routingPolicy, scheduler, preemptionPolicy)
 
 	// Parse scorer configuration for weighted routing
 	var parsedScorerConfigs []sim.ScorerConfig
@@ -907,8 +911,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&routingPolicy, "routing-policy", "round-robin", "Routing policy: round-robin, least-loaded, weighted, always-busiest")
 	cmd.Flags().StringVar(&routingScorers, "routing-scorers", "", "Scorer weights for weighted routing (e.g., queue-depth:2,kv-utilization:2,load-balance:1). Default: precise-prefix-cache:2,queue-depth:1,kv-utilization:1")
 
-	// Priority, scheduler, and preemption config
-	cmd.Flags().StringVar(&priorityPolicy, "priority-policy", "constant", "Priority policy: constant, slo-based, inverted-slo")
+	// Scheduler and preemption config
 	cmd.Flags().StringVar(&scheduler, "scheduler", "fcfs", "Instance scheduler: fcfs, priority-fcfs, sjf, reverse-priority")
 	cmd.Flags().StringVar(&preemptionPolicy, "preemption-policy", "fcfs", "Preemption victim selection: fcfs (tail-of-batch), priority (least-urgent SLO tier)")
 
@@ -1494,7 +1497,7 @@ var runCmd = &cobra.Command{
 				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:       sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
 				ModelHardwareConfig: sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, lr.Backend, maxModelLen),
-				PolicyConfig:        sim.NewPolicyConfig(priorityPolicy, scheduler, preemptionPolicy),
+				PolicyConfig:        sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				SLOPriorityOverrides: sloPriorityOverrides,
 			},
 			NumInstances:            numInstances,
@@ -1604,7 +1607,7 @@ var runCmd = &cobra.Command{
 			cs.AggregatedMetrics(),
 			cs.PerInstanceMetrics(),
 			cs.RejectedRequests(),
-			priorityPolicy,
+			scheduler,
 			cs.RoutingRejections(),
 		)
 
