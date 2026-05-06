@@ -137,11 +137,11 @@ func parseServeGenFloatPDF(s string) (map[float64]float64, error) {
 	return pdf, nil
 }
 
-// classifyReasoningChunks splits chunks into low-reasoning and high-reasoning
-// groups based on mean reason_ratio threshold. Returns error if any chunk has
-// empty reason_ratio PDF.
 // findBestCoverageWindow returns the window index (0-143) with the most active chunks.
-func findBestCoverageWindow(traceFiles []string) int {
+// Returns error if all windows have zero coverage (total trace parse failure).
+func findBestCoverageWindow(traceFiles []string) (int, error) {
+	const dayDurationSec = 86400 // 24 hours
+	numWindows := dayDurationSec / serveGenWindowDurationSec // 144 windows per day
 	windowCoverage := make(map[int]int)
 
 	for _, tracePath := range traceFiles {
@@ -150,7 +150,7 @@ func findBestCoverageWindow(traceFiles []string) int {
 			continue
 		}
 		for _, row := range rows {
-			windowIdx := int(row.startTimeSec / 600)
+			windowIdx := int(row.startTimeSec / serveGenWindowDurationSec)
 			if row.rate > 0 {
 				windowCoverage[windowIdx]++
 			}
@@ -160,14 +160,19 @@ func findBestCoverageWindow(traceFiles []string) int {
 	// Find window with max coverage
 	bestWindow := 0
 	maxCoverage := 0
-	for windowIdx := 0; windowIdx < 144; windowIdx++ {
+	for windowIdx := 0; windowIdx < numWindows; windowIdx++ {
 		if windowCoverage[windowIdx] > maxCoverage {
 			maxCoverage = windowCoverage[windowIdx]
 			bestWindow = windowIdx
 		}
 	}
 
-	return bestWindow
+	// Error if all windows have zero coverage (total failure)
+	if maxCoverage == 0 {
+		return 0, fmt.Errorf("all windows have zero coverage (all trace files failed to parse or all rates are 0)")
+	}
+
+	return bestWindow, nil
 }
 
 // averageReasonRatioPMFs computes the element-wise average of reason_ratio PMFs
@@ -180,9 +185,16 @@ func averageReasonRatioPMFs(chunks []chunkData) (DistSpec, error) {
 
 	// Accumulate probabilities for each percentage (0-100)
 	// Convert ratio [0.0, 1.0] to percentage [0, 100]
+	// Sort ratio keys for deterministic float accumulation (R2)
 	probSums := make(map[int]float64)
 	for _, chunk := range chunks {
-		for ratio, prob := range chunk.reasonRatioPDF {
+		ratios := make([]float64, 0, len(chunk.reasonRatioPDF))
+		for ratio := range chunk.reasonRatioPDF {
+			ratios = append(ratios, ratio)
+		}
+		sort.Float64s(ratios)
+		for _, ratio := range ratios {
+			prob := chunk.reasonRatioPDF[ratio]
 			pct := int(ratio * 100)
 			if pct < 0 {
 				pct = 0
@@ -194,9 +206,14 @@ func averageReasonRatioPMFs(chunks []chunkData) (DistSpec, error) {
 		}
 	}
 
-	// Average by chunk count
+	// Average by chunk count (sort percentages for deterministic division order)
 	n := float64(len(chunks))
+	percentages := make([]int, 0, len(probSums))
 	for pct := range probSums {
+		percentages = append(percentages, pct)
+	}
+	sort.Ints(percentages)
+	for _, pct := range percentages {
 		probSums[pct] /= n
 	}
 
@@ -327,7 +344,11 @@ func loadServeGenData(spec *WorkloadSpec) error {
 						break
 					}
 				}
+			} else {
+				logrus.Warnf("Reasoning detection: failed to parse JSON from %s: %v (treating as non-reasoning)", firstDatasetPath, jsonErr)
 			}
+		} else {
+			logrus.Warnf("Reasoning detection: failed to read %s: %v (treating as non-reasoning)", firstDatasetPath, readErr)
 		}
 	}
 
@@ -1258,8 +1279,11 @@ func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Ra
 	}
 
 	// BC-4: Select window with best chunk coverage (most active chunks)
-	selectedWindowIndex := findBestCoverageWindow(traceFiles)
-	selectedWindowStartSec := int64(selectedWindowIndex * 600) // 600s per window
+	selectedWindowIndex, err := findBestCoverageWindow(traceFiles)
+	if err != nil {
+		return fmt.Errorf("finding best coverage window: %w", err)
+	}
+	selectedWindowStartSec := int64(selectedWindowIndex * serveGenWindowDurationSec)
 
 	logrus.Infof("Selected reasoning window %d (time offset %d seconds) - best coverage", selectedWindowIndex, selectedWindowStartSec)
 
@@ -1285,8 +1309,15 @@ func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Ra
 		}
 
 		// Find reason_ratio at selected window (or first available)
+		// Sort window keys for deterministic iteration (R2, INV-6)
 		var reasonRatioPDF map[float64]float64
-		for _, window := range raw {
+		windowKeys := make([]string, 0, len(raw))
+		for k := range raw {
+			windowKeys = append(windowKeys, k)
+		}
+		sort.Strings(windowKeys)
+		for _, key := range windowKeys {
+			window := raw[key]
 			if ratioStr, ok := window["reason_ratio"]; ok && ratioStr != "" && ratioStr != "{}" {
 				parsed, parseErr := parseServeGenFloatPDF(ratioStr)
 				if parseErr == nil {
@@ -1382,6 +1413,7 @@ func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Ra
 			tracePath := filepath.Join(dataDir, fmt.Sprintf("chunk-%s-trace.csv", chunk.id))
 			rows, err := parseServeGenTrace(tracePath)
 			if err != nil {
+				logrus.Warnf("Skipping chunk %s for cohort %s rate calculation: trace parse failed: %v", chunk.id, cohortID, err)
 				continue
 			}
 			for _, row := range rows {
@@ -1424,7 +1456,7 @@ func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Ra
 			sort.Ints(dsSortedTimestamps)
 
 			var chunkInputMuSum, chunkInputSigmaSum, chunkOutputMuSum, chunkOutputSigmaSum float64
-			var chunkDistCount int
+			var chunkInputCount, chunkOutputCount int
 
 			for _, dsTimestamp := range dsSortedTimestamps {
 				dataset := datasets[dsTimestamp]
@@ -1434,23 +1466,24 @@ func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Ra
 					if fitErr == nil {
 						chunkInputMuSum += inputFit.Params["mu"]
 						chunkInputSigmaSum += inputFit.Params["sigma"]
+						chunkInputCount++
 					}
 					outputFit, fitErr := fitLognormalFromPDF(dataset.outputPDF)
 					if fitErr == nil {
 						chunkOutputMuSum += outputFit.Params["mu"]
 						chunkOutputSigmaSum += outputFit.Params["sigma"]
-						chunkDistCount++
+						chunkOutputCount++
 					}
 				}
 			}
 
 			// Average this chunk's multi-day distributions
-			if chunkDistCount > 0 {
-				n := float64(chunkDistCount)
-				sumMuInput += chunkInputMuSum / n
-				sumSigmaInput += chunkInputSigmaSum / n
-				sumMuOutput += chunkOutputMuSum / n
-				sumSigmaOutput += chunkOutputSigmaSum / n
+			// Track input and output separately to avoid wrong denominator bias
+			if chunkInputCount > 0 && chunkOutputCount > 0 {
+				sumMuInput += chunkInputMuSum / float64(chunkInputCount)
+				sumSigmaInput += chunkInputSigmaSum / float64(chunkInputCount)
+				sumMuOutput += chunkOutputMuSum / float64(chunkOutputCount)
+				sumSigmaOutput += chunkOutputSigmaSum / float64(chunkOutputCount)
 				distCount++
 			}
 		}
