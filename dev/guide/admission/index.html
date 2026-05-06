@@ -1210,6 +1210,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#fairness-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fairness Policy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#per-band-capacity" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3081,6 +3092,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#fairness-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fairness Policy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#per-band-capacity" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3440,10 +3462,31 @@ admission decision, matching llm-d's <code>FlowControlAdmissionController</code>
 <li>Incoming request is enqueued into a per-priority-band, per-flow queue</li>
 <li>Each unique (TenantID, Priority) pair gets its own FIFO queue within a priority band</li>
 <li>Dispatch order follows <code>--dispatch-order</code>: with <code>priority</code>, iterates bands highest-priority first; with <code>fifo</code> (default), picks the globally-earliest arrival across all bands</li>
-<li>Within a band, the request with the earliest arrival (lowest sequence ID) is dispatched first (global-strict fairness)</li>
+<li>Within a band, <code>--fairness-policy</code> controls flow selection: <code>global-strict</code> (default) picks the earliest arrival (lowest sequence ID); <code>round-robin</code> cycles through tenants in sorted key order</li>
 <li>Saturation gating: dispatch only when cluster saturation &lt; 1.0</li>
 <li>Completion-triggered dispatch: each completion frees capacity and tries to dispatch from the queue</li>
 </ol>
+<h3 id="fairness-policy">Fairness Policy<a class="headerlink" href="#fairness-policy" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--fairness-policy</code></td>
+<td>Intra-band dispatch fairness: <code>global-strict</code>, <code>round-robin</code></td>
+<td><code>global-strict</code></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>global-strict</strong>: Picks the flow head with the earliest sequence ID (arrival order). Matches GIE's GlobalStrict.</li>
+<li><strong>round-robin</strong>: Cycles through tenants in sorted key order, skipping empty flows. Maintains a per-band cursor.</li>
+</ul>
 <h3 id="per-band-capacity">Per-Band Capacity<a class="headerlink" href="#per-band-capacity" title="Permanent link">&para;</a></h3>
 <table>
 <thead>

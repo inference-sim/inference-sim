@@ -1596,6 +1596,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#flow-control-gateway-queue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flow Control (Gateway Queue)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#routing-policy" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3353,6 +3364,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#flow-control-gateway-queue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flow Control (Gateway Queue)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#routing-policy" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4308,6 +4330,74 @@
 <a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="nt">alice</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.3</span><span class="w">   </span><span class="c1"># alice may use at most 30% of total cluster capacity</span>
 <a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">  </span><span class="nt">bob</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.7</span><span class="w">     </span><span class="c1"># bob may use at most 70% of total cluster capacity</span>
 </code></pre></div>
+<h2 id="flow-control-gateway-queue">Flow Control (Gateway Queue)<a class="headerlink" href="#flow-control-gateway-queue" title="Permanent link">&para;</a></h2>
+<p>When <code>--flow-control</code> is enabled, admission IS the queue — requests are enqueued into per-priority-band, per-tenant flow queues and dispatched under saturation gating. See <a href="../../guide/admission/#flow-control-mode">Admission: Flow Control</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--flow-control</code></td>
+<td>bool</td>
+<td>false</td>
+<td>Enable flow-control admission (replaces legacy admission)</td>
+</tr>
+<tr>
+<td><code>--saturation-detector</code></td>
+<td>string</td>
+<td>"utilization"</td>
+<td>Saturation detection: <code>utilization</code>, <code>concurrency</code>, <code>never</code></td>
+</tr>
+<tr>
+<td><code>--queue-depth-threshold</code></td>
+<td>int</td>
+<td>5</td>
+<td>Queue depth threshold for utilization-based saturation</td>
+</tr>
+<tr>
+<td><code>--kv-cache-util-threshold</code></td>
+<td>float64</td>
+<td>0.8</td>
+<td>KV cache utilization threshold for saturation</td>
+</tr>
+<tr>
+<td><code>--max-concurrency</code></td>
+<td>int</td>
+<td>64</td>
+<td>Max in-flight requests for concurrency-based saturation</td>
+</tr>
+<tr>
+<td><code>--dispatch-order</code></td>
+<td>string</td>
+<td>"fifo"</td>
+<td>Cross-band dispatch: <code>fifo</code> (globally-earliest), <code>priority</code> (highest band first)</td>
+</tr>
+<tr>
+<td><code>--fairness-policy</code></td>
+<td>string</td>
+<td>"global-strict"</td>
+<td>Intra-band flow selection: <code>global-strict</code> (earliest seqID), <code>round-robin</code> (tenant cycling)</td>
+</tr>
+<tr>
+<td><code>--per-band-capacity</code></td>
+<td>int</td>
+<td>0</td>
+<td>Max requests per priority band (0=unlimited)</td>
+</tr>
+<tr>
+<td><code>--max-gateway-queue-depth</code></td>
+<td>int</td>
+<td>0</td>
+<td>Global queue depth limit (0=unlimited)</td>
+</tr>
+</tbody>
+</table>
 <h2 id="routing-policy">Routing Policy<a class="headerlink" href="#routing-policy" title="Permanent link">&para;</a></h2>
 <p>Controls how admitted requests are assigned to instances. See <a href="../../concepts/architecture/#routing-pipeline">Cluster Architecture: Routing</a>.</p>
 <table>
