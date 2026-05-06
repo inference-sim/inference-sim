@@ -20,9 +20,9 @@ type PolicyBundle struct {
 	Priority      PriorityConfig         `yaml:"priority"`
 	Scheduler     string                 `yaml:"scheduler"`
 	Preemption    PreemptionConfig       `yaml:"preemption"`
-	TenantBudgets map[string]float64     `yaml:"tenant_budgets"`  // nil = no tenant enforcement
-	NodePools     []NodePoolBundleConfig `yaml:"node_pools"`      // nil = no node pools
-	Autoscaler    AutoscalerBundleConfig `yaml:"autoscaler"`      // IntervalUs=0 = disabled
+	TenantBudgets map[string]float64     `yaml:"tenant_budgets"` // nil = no tenant enforcement
+	NodePools     []NodePoolBundleConfig `yaml:"node_pools"`     // nil = no node pools
+	Autoscaler    AutoscalerBundleConfig `yaml:"autoscaler"`     // IntervalUs=0 = disabled
 }
 
 // AdmissionConfig holds admission policy configuration.
@@ -31,7 +31,7 @@ type AdmissionConfig struct {
 	TokenBucketCapacity   *float64 `yaml:"token_bucket_capacity"`
 	TokenBucketRefillRate *float64 `yaml:"token_bucket_refill_rate"`
 	// Tier-shed options (Phase 1B): only used when policy = "tier-shed".
-	TierShedThreshold   *int `yaml:"tier_shed_threshold"`   // nil = use default (0)
+	TierShedThreshold   *int `yaml:"tier_shed_threshold"`    // nil = use default (0)
 	TierShedMinPriority *int `yaml:"tier_shed_min_priority"` // nil = use default (3)
 	// GAIE-legacy options: only used when policy = "gaie-legacy".
 	GAIEQDThreshold *float64 `yaml:"gaie_qd_threshold"` // nil = use default (5)
@@ -118,14 +118,14 @@ func LoadPolicyBundle(path string) (*PolicyBundle, error) {
 // Valid policy name registries. Unexported to prevent external mutation.
 // Used by Validate(), factory functions, and ValidatePolicyName().
 var (
-	validAdmissionPolicies = map[string]bool{"": true, "always-admit": true, "token-bucket": true, "reject-all": true, "tier-shed": true, "gaie-legacy": true}
-	validRoutingPolicies   = map[string]bool{"": true, "round-robin": true, "least-loaded": true, "weighted": true, "always-busiest": true}
-	validPriorityPolicies    = map[string]bool{"": true, "constant": true, "slo-based": true, "inverted-slo": true}
-	validSchedulers          = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
-	validPreemptionPolicies  = map[string]bool{"": true, "fcfs": true, "priority": true}
-	validLatencyBackends          = map[string]bool{"": true, "roofline": true, "trained-physics": true}
-	validDisaggregationDeciders   = map[string]bool{"": true, "never": true, "always": true, "prefix-threshold": true}
-	validSaturationDetectors      = map[string]bool{"": true, "never": true, "utilization": true, "concurrency": true}
+	validAdmissionPolicies      = map[string]bool{"": true, "always-admit": true, "token-bucket": true, "reject-all": true, "tier-shed": true, "gaie-legacy": true}
+	validRoutingPolicies        = map[string]bool{"": true, "round-robin": true, "least-loaded": true, "weighted": true, "always-busiest": true}
+	validPriorityPolicies       = map[string]bool{"": true, "constant": true, "slo-based": true, "inverted-slo": true}
+	validSchedulers             = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
+	validPreemptionPolicies     = map[string]bool{"": true, "fcfs": true, "priority": true}
+	validLatencyBackends        = map[string]bool{"": true, "roofline": true, "trained-physics": true}
+	validDisaggregationDeciders = map[string]bool{"": true, "never": true, "always": true, "prefix-threshold": true, "prefix-based-pd-decider": true, "global-prefix-threshold": true}
+	validSaturationDetectors    = map[string]bool{"": true, "never": true, "utilization": true, "concurrency": true}
 )
 
 // IsValidAdmissionPolicy returns true if name is a recognized admission policy.

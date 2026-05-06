@@ -109,7 +109,7 @@ type ClusterArrivalEvent struct {
 }
 
 func (e *ClusterArrivalEvent) Timestamp() int64 { return e.time }
-func (e *ClusterArrivalEvent) Priority() int     { return 0 }
+func (e *ClusterArrivalEvent) Priority() int    { return 0 }
 
 // Execute schedules an AdmissionDecisionEvent with the configured admission latency.
 func (e *ClusterArrivalEvent) Execute(cs *ClusterSimulator) {
@@ -132,7 +132,7 @@ type AdmissionDecisionEvent struct {
 }
 
 func (e *AdmissionDecisionEvent) Timestamp() int64 { return e.time }
-func (e *AdmissionDecisionEvent) Priority() int     { return 1 }
+func (e *AdmissionDecisionEvent) Priority() int    { return 1 }
 
 // Execute processes the admission decision for an incoming request.
 // Checks admission policy with full RouterState (BC-8: includes snapshots).
@@ -236,7 +236,7 @@ type RoutingDecisionEvent struct {
 }
 
 func (e *RoutingDecisionEvent) Timestamp() int64 { return e.time }
-func (e *RoutingDecisionEvent) Priority() int     { return 2 }
+func (e *RoutingDecisionEvent) Priority() int    { return 2 }
 
 // Execute routes the request using the configured routing policy and injects it.
 func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
@@ -285,28 +285,29 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 	// Find target instance, increment in-flight count, and inject request
 	for _, inst := range cs.instances {
 		if string(inst.ID()) == decision.TargetInstance {
-					// Increment in-flight AFTER target validation — gives next routing decision
-					// visibility into this routing decision (#170)
-					cs.inFlightRequests[decision.TargetInstance]++
-					// Phase 1B-2a: track tenant in-flight count for fair-share enforcement.
-					if cs.tenantTracker != nil {
-						cs.tenantTracker.OnStart(e.request.TenantID)
-					}
+			// Increment in-flight AFTER target validation — gives next routing decision
+			// visibility into this routing decision (#170)
+			cs.inFlightRequests[decision.TargetInstance]++
+			// Phase 1B-2a: track tenant in-flight count for fair-share enforcement.
+			if cs.tenantTracker != nil {
+				cs.tenantTracker.OnStart(e.request.TenantID)
+			}
 
-					// T042: record warm-up requests for TTFT factor application (Phase 1A).
-					// Record the first WarmUpRequestCount requests routed to this instance.
-					// We check the count of already-recorded IDs rather than State or warmUpRemaining
-					// because those change during simulation as requests complete.
-					warmUpCount := cs.config.InstanceLifecycle.WarmUpRequestCount
-					if warmUpCount > 0 && len(inst.WarmUpRequestIDs()) < warmUpCount {
-						inst.RecordWarmUpRequest(e.request.ID)
-					}
-			
-					inst.InjectRequestOnline(e.request, e.time)
-					// Notify observer so stateful deciders (e.g., PrefixThresholdDecider) can learn
-					// from this routing decision (synchronous call -- cache is always current).
-					cs.notifyDisaggregationObserver(e.request, decision.TargetInstance)
-					return		}
+			// T042: record warm-up requests for TTFT factor application (Phase 1A).
+			// Record the first WarmUpRequestCount requests routed to this instance.
+			// We check the count of already-recorded IDs rather than State or warmUpRemaining
+			// because those change during simulation as requests complete.
+			warmUpCount := cs.config.InstanceLifecycle.WarmUpRequestCount
+			if warmUpCount > 0 && len(inst.WarmUpRequestIDs()) < warmUpCount {
+				inst.RecordWarmUpRequest(e.request.ID)
+			}
+
+			inst.InjectRequestOnline(e.request, e.time)
+			// Notify observer so stateful deciders (e.g., PrefixThresholdDecider) can learn
+			// from this routing decision (synchronous call -- cache is always current).
+			cs.notifyDisaggregationObserver(e.request, decision.TargetInstance)
+			return
+		}
 	}
 
 	// Should never reach here (policy contract ensures valid target)
@@ -323,7 +324,7 @@ type DisaggregationDecisionEvent struct {
 }
 
 func (e *DisaggregationDecisionEvent) Timestamp() int64 { return e.time }
-func (e *DisaggregationDecisionEvent) Priority() int     { return 3 }
+func (e *DisaggregationDecisionEvent) Priority() int    { return 3 }
 
 // Execute implements the llm-d decode-first routing order:
 // 1. Select a decode pod first (via decode pool routing).
@@ -349,8 +350,18 @@ func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 	decodeDecision := policy.Route(e.request, state)
 	logrus.Debugf("[cluster] req %s: decode pod pre-selected → %s", e.request.ID, decodeDecision.TargetInstance)
 
-	// Step 2: disaggregation decision with decode pod known.
-	disaggDecision := cs.disaggregationDecider.Decide(e.request)
+	// Step 2: disaggregation decision with decode pod known. Build the DisaggregationContext
+	// from cs.cacheQueryFn[decodeDecision.TargetInstance] — the SAME closure consumed by
+	// precise-prefix-cache / no-hit-lru scorers. This inherits the --cache-signal-delay
+	// freshness tier and preserves BEH-6 (freshness parity). A nil entry is tolerated by
+	// DisaggregationContext.DecodeCacheQuery (returns 0) so deciders degrade to "no cache
+	// knowledge" rather than panic.
+	var decodeCacheQuery func([]int) int
+	if cs.cacheQueryFn != nil {
+		decodeCacheQuery = cs.cacheQueryFn[decodeDecision.TargetInstance]
+	}
+	disaggCtx := sim.NewDisaggregationContext(decodeDecision.TargetInstance, decodeCacheQuery)
+	disaggDecision := cs.disaggregationDecider.Decide(sim.NewRequestView(e.request), disaggCtx)
 	logrus.Debugf("[cluster] req %s: disaggregate=%v", e.request.ID, disaggDecision.Disaggregate)
 
 	// Record disaggregation decision if tracing is enabled (BC-PD-17).
@@ -461,7 +472,7 @@ type ScalingTickEvent struct {
 }
 
 func (e *ScalingTickEvent) Timestamp() int64 { return e.At }
-func (e *ScalingTickEvent) Priority() int     { return 8 }
+func (e *ScalingTickEvent) Priority() int    { return 8 }
 
 // Execute runs the autoscaling pipeline: Collect → Analyze → Optimize → stabilization window gate
 // → schedule ScaleActuationEvent → schedule next ScalingTickEvent.
@@ -483,7 +494,7 @@ type ScaleActuationEvent struct {
 }
 
 func (e *ScaleActuationEvent) Timestamp() int64 { return e.At }
-func (e *ScaleActuationEvent) Priority() int     { return 9 }
+func (e *ScaleActuationEvent) Priority() int    { return 9 }
 
 // Execute calls Actuator.Apply(decisions).
 // Full actuator logic is wired in US3 (T019–T023).
