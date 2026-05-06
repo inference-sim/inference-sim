@@ -1062,6 +1062,18 @@ func TestParseServeGenFloatPDF_EmptyDict(t *testing.T) {
 	assert.Contains(t, err.Error(), "empty PDF dictionary")
 }
 
+func TestParseServeGenFloatPDF_NegativeProbability(t *testing.T) {
+	// GIVEN PDF with negative probability value
+	input := `{"0.5": -0.3}`
+
+	// WHEN parsed
+	_, err := parseServeGenFloatPDF(input)
+
+	// THEN it returns error
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "negative probability")
+}
+
 func TestDetectReasoningCategory_FromDataset(t *testing.T) {
 	// GIVEN ServeGen data directory with reason_ratio field in dataset
 	tmpDir := t.TempDir()
@@ -1086,29 +1098,247 @@ func TestDetectReasoningCategory_FromDataset(t *testing.T) {
 	assert.Equal(t, "reasoning", spec.Category)
 }
 
-func TestDetectLanguageCategory_NoReasonRatio(t *testing.T) {
-	// GIVEN ServeGen data without reason_ratio field
+func TestReasoningCohorts_BehavioralContract(t *testing.T) {
+	// GIVEN ServeGen reasoning dataset with 5 chunks
 	tmpDir := t.TempDir()
 
-	traceContent := "0,1.5,0.8,Gamma,2.0,300\n"
+	// Create 5 chunks with varying rates to ensure round-robin distribution
+	for i := 0; i < 5; i++ {
+		chunkID := fmt.Sprintf("%03d", i)
+
+		// Full-day trace (144 windows) with non-zero rate
+		var traceContent string
+		for w := 0; w < 144; w++ {
+			rate := 1.0 + float64(i)*0.5 // Different rate per chunk
+			traceContent += fmt.Sprintf("%d,%.1f,0.8,Gamma,2.0,300\n", w*600, rate)
+		}
+		require.NoError(t, os.WriteFile(
+			filepath.Join(tmpDir, fmt.Sprintf("chunk-%s-trace.csv", chunkID)),
+			[]byte(traceContent), 0644))
+
+		// Dataset with reason_ratio (bimodal: low=24%, high=61%)
+		datasetContent := `{"0": {
+			"input_tokens": "{100: 0.5, 200: 0.5}",
+			"output_tokens": "{50: 0.5, 100: 0.5}",
+			"reason_ratio": "{0.24: 0.6, 0.61: 0.4}"
+		}}`
+		require.NoError(t, os.WriteFile(
+			filepath.Join(tmpDir, fmt.Sprintf("chunk-%s-dataset.json", chunkID)),
+			[]byte(datasetContent), 0644))
+	}
+
+	// WHEN ConvertServeGen is called
+	spec, err := ConvertServeGen(tmpDir, 600, 180)
+	require.NoError(t, err)
+
+	// THEN behavioral contract guarantees are verified
+
+	// BC-1: AggregateRate is 0 (absolute mode)
+	assert.Equal(t, 0.0, spec.AggregateRate, "should use absolute rate mode")
+
+	// BC-2: All 5 SLO cohorts are present
+	assert.Len(t, spec.Cohorts, 5, "should have 5 SLO cohorts")
+
+	sloClassesFound := make(map[string]bool)
+	for _, cohort := range spec.Cohorts {
+		// BC-3: Cohort IDs follow reasoning-<sloClass> format
+		assert.Regexp(t, `^reasoning-(critical|standard|batch|sheddable|background)$`,
+			cohort.ID, "cohort ID should follow reasoning-<sloClass> format")
+
+		sloClassesFound[cohort.SLOClass] = true
+
+		// BC-4: Population is non-zero (chunks distributed round-robin)
+		assert.Greater(t, cohort.Population, 0, "cohort %s should have non-zero population", cohort.ID)
+
+		// BC-5: ClosedLoop is explicitly false (spike-based, not sessions)
+		require.NotNil(t, cohort.ClosedLoop, "cohort %s should have ClosedLoop set", cohort.ID)
+		assert.False(t, *cohort.ClosedLoop, "cohort %s should be open-loop (spike-based)", cohort.ID)
+
+		// BC-6: Spike config with positive TraceRate
+		require.NotNil(t, cohort.Spike, "cohort %s should have Spike config", cohort.ID)
+		require.NotNil(t, cohort.Spike.TraceRate, "cohort %s should have TraceRate", cohort.ID)
+		assert.Greater(t, *cohort.Spike.TraceRate, 0.0, "cohort %s should have positive rate", cohort.ID)
+
+		// BC-7: Reasoning config with empirical distribution
+		require.NotNil(t, cohort.Reasoning, "cohort %s should have Reasoning config", cohort.ID)
+		assert.Equal(t, "empirical", cohort.Reasoning.ReasonRatioDist.Type,
+			"cohort %s should use empirical distribution", cohort.ID)
+		assert.NotEmpty(t, cohort.Reasoning.ReasonRatioDist.Params,
+			"cohort %s should have non-empty reason_ratio distribution", cohort.ID)
+
+		// BC-8: MultiTurn workaround (MaxRounds=1)
+		require.NotNil(t, cohort.Reasoning.MultiTurn, "cohort %s should have MultiTurn", cohort.ID)
+		assert.Equal(t, 1, cohort.Reasoning.MultiTurn.MaxRounds,
+			"cohort %s should have MaxRounds=1", cohort.ID)
+	}
+
+	// Verify all 5 SLO classes are present
+	expectedClasses := []string{"critical", "standard", "batch", "sheddable", "background"}
+	for _, sloClass := range expectedClasses {
+		assert.True(t, sloClassesFound[sloClass], "should have %s cohort", sloClass)
+	}
+}
+
+func TestReasoningConversion_Determinism(t *testing.T) {
+	// GIVEN ServeGen reasoning dataset
+	tmpDir := t.TempDir()
+
+	// Create minimal reasoning dataset (2 chunks for round-robin distribution)
+	for i := 0; i < 2; i++ {
+		chunkID := fmt.Sprintf("%03d", i)
+
+		var traceContent string
+		for w := 0; w < 144; w++ {
+			traceContent += fmt.Sprintf("%d,%.1f,0.8,Gamma,2.0,300\n", w*600, 1.0+float64(i)*0.1)
+		}
+		require.NoError(t, os.WriteFile(
+			filepath.Join(tmpDir, fmt.Sprintf("chunk-%s-trace.csv", chunkID)),
+			[]byte(traceContent), 0644))
+
+		datasetContent := `{"0": {
+			"input_tokens": "{100: 0.4, 200: 0.6}",
+			"output_tokens": "{50: 0.3, 100: 0.7}",
+			"reason_ratio": "{0.3: 0.5, 0.7: 0.5}"
+		}}`
+		require.NoError(t, os.WriteFile(
+			filepath.Join(tmpDir, fmt.Sprintf("chunk-%s-dataset.json", chunkID)),
+			[]byte(datasetContent), 0644))
+	}
+
+	// WHEN ConvertServeGen is called twice
+	spec1, err1 := ConvertServeGen(tmpDir, 600, 180)
+	require.NoError(t, err1)
+
+	spec2, err2 := ConvertServeGen(tmpDir, 600, 180)
+	require.NoError(t, err2)
+
+	// THEN outputs are identical (INV-6: deterministic conversion)
+	require.Equal(t, len(spec1.Cohorts), len(spec2.Cohorts), "cohort count should match")
+
+	for i := range spec1.Cohorts {
+		c1, c2 := spec1.Cohorts[i], spec2.Cohorts[i]
+
+		assert.Equal(t, c1.ID, c2.ID, "cohort %d ID should match", i)
+		assert.Equal(t, c1.Population, c2.Population, "cohort %d population should match", i)
+		assert.Equal(t, c1.SLOClass, c2.SLOClass, "cohort %d SLO class should match", i)
+		assert.Equal(t, c1.ClosedLoop, c2.ClosedLoop, "cohort %d ClosedLoop should match", i)
+
+		// Spike config
+		require.NotNil(t, c1.Spike)
+		require.NotNil(t, c2.Spike)
+		assert.Equal(t, c1.Spike.StartTimeUs, c2.Spike.StartTimeUs, "cohort %d spike start should match", i)
+		assert.Equal(t, c1.Spike.DurationUs, c2.Spike.DurationUs, "cohort %d spike duration should match", i)
+		if c1.Spike.TraceRate != nil && c2.Spike.TraceRate != nil {
+			assert.InDelta(t, *c1.Spike.TraceRate, *c2.Spike.TraceRate, 1e-9, "cohort %d trace rate should match", i)
+		}
+
+		// Input/Output distributions
+		assert.Equal(t, c1.InputDist.Type, c2.InputDist.Type, "cohort %d input dist type should match", i)
+		assert.InDelta(t, c1.InputDist.Params["mu"], c2.InputDist.Params["mu"], 1e-9, "cohort %d input mu should match", i)
+		assert.InDelta(t, c1.InputDist.Params["sigma"], c2.InputDist.Params["sigma"], 1e-9, "cohort %d input sigma should match", i)
+		assert.Equal(t, c1.OutputDist.Type, c2.OutputDist.Type, "cohort %d output dist type should match", i)
+		assert.InDelta(t, c1.OutputDist.Params["mu"], c2.OutputDist.Params["mu"], 1e-9, "cohort %d output mu should match", i)
+		assert.InDelta(t, c1.OutputDist.Params["sigma"], c2.OutputDist.Params["sigma"], 1e-9, "cohort %d output sigma should match", i)
+
+		// Reasoning distribution params
+		require.NotNil(t, c1.Reasoning)
+		require.NotNil(t, c2.Reasoning)
+		assert.Equal(t, len(c1.Reasoning.ReasonRatioDist.Params), len(c2.Reasoning.ReasonRatioDist.Params),
+			"cohort %d reason ratio param count should match", i)
+		for key, val1 := range c1.Reasoning.ReasonRatioDist.Params {
+			val2, ok := c2.Reasoning.ReasonRatioDist.Params[key]
+			assert.True(t, ok, "cohort %d reason ratio key %s should exist in both", i, key)
+			assert.InDelta(t, val1, val2, 1e-9, "cohort %d reason ratio[%s] should match", i, key)
+		}
+	}
+}
+
+func TestFindBestCoverageWindow_TieBreaking(t *testing.T) {
+	// GIVEN trace files where multiple windows have same coverage
+	tmpDir := t.TempDir()
+
+	// Chunk 1: windows 0 and 5 both have rate > 0
+	trace1 := "0,1.0,0.8,Gamma,2.0,300\n3000,1.0,0.8,Gamma,2.0,300\n"
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "chunk-001-trace.csv"), []byte(trace1), 0644))
+
+	// Chunk 2: windows 0 and 5 both have rate > 0
+	trace2 := "0,2.0,0.8,Gamma,2.0,300\n3000,2.0,0.8,Gamma,2.0,300\n"
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "chunk-002-trace.csv"), []byte(trace2), 0644))
+
+	traceFiles, _ := filepath.Glob(filepath.Join(tmpDir, "chunk-*-trace.csv"))
+
+	// WHEN findBestCoverageWindow is called
+	bestWindow, err := findBestCoverageWindow(traceFiles)
+
+	// THEN it picks the first window with max coverage (tie-breaking rule)
+	require.NoError(t, err)
+	assert.Equal(t, 0, bestWindow, "should pick first window when tied")
+}
+
+func TestFindBestCoverageWindow_AllRatesZero(t *testing.T) {
+	// GIVEN trace files where all rates are 0
+	tmpDir := t.TempDir()
+
+	trace := "0,0.0,0.8,Gamma,2.0,300\n600,0.0,0.8,Gamma,2.0,300\n"
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "chunk-001-trace.csv"), []byte(trace), 0644))
+
+	traceFiles, _ := filepath.Glob(filepath.Join(tmpDir, "chunk-*-trace.csv"))
+
+	// WHEN findBestCoverageWindow is called
+	_, err := findBestCoverageWindow(traceFiles)
+
+	// THEN it returns error (zero coverage = total failure)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "all windows have zero coverage")
+}
+
+func TestFindBestCoverageWindow_SingleChunk(t *testing.T) {
+	// GIVEN single trace file with one active window
+	tmpDir := t.TempDir()
+
+	// Window 7 has rate > 0, all others zero
+	trace := ""
+	for i := 0; i < 144; i++ {
+		rate := 0.0
+		if i == 7 {
+			rate = 5.0
+		}
+		trace += fmt.Sprintf("%d,%.1f,0.8,Gamma,2.0,300\n", i*600, rate)
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "chunk-001-trace.csv"), []byte(trace), 0644))
+
+	traceFiles, _ := filepath.Glob(filepath.Join(tmpDir, "chunk-*-trace.csv"))
+
+	// WHEN findBestCoverageWindow is called
+	bestWindow, err := findBestCoverageWindow(traceFiles)
+
+	// THEN it picks the only active window
+	require.NoError(t, err)
+	assert.Equal(t, 7, bestWindow)
+}
+
+func TestDetectLanguageCategory_NoReasonRatio(t *testing.T) {
+	// GIVEN ServeGen data without reason_ratio field (sufficient for success)
+	tmpDir := t.TempDir()
+
+	// Full-day trace to guarantee valid window selection
+	var traceContent string
+	for i := 0; i < 144; i++ {
+		traceContent += fmt.Sprintf("%d,1.5,0.8,Gamma,2.0,300\n", i*600)
+	}
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "chunk-001-trace.csv"), []byte(traceContent), 0644))
 
-	// Dataset WITHOUT reason_ratio
-	datasetContent := `{"0": {"input_tokens": "{100: 1.0}", "output_tokens": "{50: 1.0}"}}`
+	// Dataset WITHOUT reason_ratio (language workload)
+	datasetContent := `{"0": {"input_tokens": "{100: 0.5, 200: 0.5}", "output_tokens": "{50: 0.5, 100: 0.5}"}}`
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "chunk-001-dataset.json"), []byte(datasetContent), 0644))
 
 	// WHEN ConvertServeGen is called
 	spec, err := ConvertServeGen(tmpDir, 600, 180)
 
-	// THEN category is empty (default language) OR error due to minimal data
-	// (The key test is that reasoning was NOT detected)
-	if err == nil {
-		assert.Equal(t, "", spec.Category)
-	}
-	// If error, it should not be about reasoning detection
-	if err != nil {
-		assert.NotContains(t, err.Error(), "buildReasoningCohorts")
-	}
+	// THEN conversion succeeds and category is empty (language workload)
+	require.NoError(t, err, "conversion should succeed with sufficient data")
+	assert.Equal(t, "", spec.Category, "category should be empty (language, not reasoning)")
+	assert.NotEqual(t, "reasoning", spec.Category, "reasoning should not be detected")
 }
 
 func TestAverageReasonRatioPMFs_PreservesBimodality(t *testing.T) {
