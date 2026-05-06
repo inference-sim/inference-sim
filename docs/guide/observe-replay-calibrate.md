@@ -487,6 +487,12 @@ clients:
 
 Note: The GIE API version (`v1alpha2`) shown above may differ on your cluster. Check your installed CRD version with `kubectl get crd inferenceobjectives.inference.networking.x-k8s.io`.
 
+### Direct vLLM priority injection
+
+When `slo_class` is set, `blis observe` also injects a `priority` integer into the JSON request body. This targets vLLM directly when running without GIE in front of it. vLLM uses the opposite convention from llm-d/GAIE — **lower integer = more urgent** (min-heap) — so the value is computed via `SLOPriorityMap.InvertForVLLM(class)` = `maxPriority - priority(class)`. With the default tier priorities, this produces: `critical → 0`, `standard → 1`, `batch → 5`, `sheddable → 6`, `background → 7`.
+
+Both signals are sent on every request when `slo_class` is set: the `x-gateway-inference-objective` header (llm-d) and the `priority` body field (vLLM). Servers ignore what they don't use — vLLM ignores unknown headers, and llm-d's vLLM FCFS backend silently ignores the body priority field — so dual delivery is safe regardless of deployment.
+
 ---
 
 ## Tips
