@@ -221,6 +221,38 @@ func loadServeGenData(spec *WorkloadSpec) error {
 	}
 	sort.Strings(traceFiles)
 
+	// Detect reasoning category by checking first chunk's dataset for reason_ratio field
+	isReasoningWorkload := false
+	if len(traceFiles) > 0 {
+		firstTrace := traceFiles[0]
+		base := filepath.Base(firstTrace)
+		chunkID := strings.TrimPrefix(base, "chunk-")
+		chunkID = strings.TrimSuffix(chunkID, "-trace.csv")
+		firstDatasetPath := filepath.Join(dataDir, fmt.Sprintf("chunk-%s-dataset.json", chunkID))
+
+		// Load first dataset window to check for reason_ratio
+		data, readErr := os.ReadFile(firstDatasetPath)
+		if readErr == nil {
+			var raw map[string]map[string]string
+			if jsonErr := json.Unmarshal(data, &raw); jsonErr == nil {
+				// Check first window for reason_ratio field
+				for _, window := range raw {
+					if _, hasReasonRatio := window["reason_ratio"]; hasReasonRatio {
+						isReasoningWorkload = true
+						spec.Category = "reasoning"
+						logrus.Infof("Detected reasoning workload (reason_ratio field found in chunk %s)", chunkID)
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Route to appropriate conversion path
+	if isReasoningWorkload {
+		return buildReasoningCohorts(spec, traceFiles, rng)
+	}
+
 	if len(traceFiles) == 0 {
 		return fmt.Errorf("no chunk-*-trace.csv files found in %s", dataDir)
 	}
@@ -1131,4 +1163,10 @@ func normalizeLifecycleTimestamps(clients *[]ClientSpec) {
 			client.Lifecycle.Windows[j].EndUs -= minStartUs
 		}
 	}
+}
+
+// buildReasoningCohorts converts reasoning chunks into cohorts with single-window
+// temporal structure. Stub implementation - will be completed in Task 4.
+func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Rand) error {
+	return fmt.Errorf("buildReasoningCohorts not yet implemented (Task 4)")
 }

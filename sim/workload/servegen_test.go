@@ -1061,3 +1061,42 @@ func TestParseServeGenFloatPDF_EmptyDict(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "empty PDF dictionary")
 }
+
+func TestDetectReasoningCategory_FromDataset(t *testing.T) {
+	// GIVEN ServeGen data directory with reason_ratio field in dataset
+	tmpDir := t.TempDir()
+
+	// Create minimal trace file
+	traceContent := "0,1.5,0.8,Gamma,2.0,300\n"
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "chunk-001-trace.csv"), []byte(traceContent), 0644))
+
+	// Create dataset with reason_ratio field
+	datasetContent := `{"0": {"input_tokens": "{100: 1.0}", "output_tokens": "{50: 1.0}", "reason_ratio": "{0.5: 1.0}"}}`
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "chunk-001-dataset.json"), []byte(datasetContent), 0644))
+
+	// WHEN ConvertServeGen is called
+	spec, err := ConvertServeGen(tmpDir, 600, 180)
+
+	// THEN category is set to "reasoning"
+	require.NoError(t, err)
+	assert.Equal(t, "reasoning", spec.Category)
+}
+
+func TestDetectLanguageCategory_NoReasonRatio(t *testing.T) {
+	// GIVEN ServeGen data without reason_ratio field
+	tmpDir := t.TempDir()
+
+	traceContent := "0,1.5,0.8,Gamma,2.0,300\n"
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "chunk-001-trace.csv"), []byte(traceContent), 0644))
+
+	// Dataset WITHOUT reason_ratio
+	datasetContent := `{"0": {"input_tokens": "{100: 1.0}", "output_tokens": "{50: 1.0}"}}`
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "chunk-001-dataset.json"), []byte(datasetContent), 0644))
+
+	// WHEN ConvertServeGen is called
+	spec, err := ConvertServeGen(tmpDir, 600, 180)
+
+	// THEN category is empty (default language)
+	require.NoError(t, err)
+	assert.Equal(t, "", spec.Category)
+}
