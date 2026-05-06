@@ -94,12 +94,12 @@ var (
 	routingLatency        int64              // Routing latency in microseconds
 	tokenBucketCapacity   float64            // Token bucket capacity
 	tokenBucketRefillRate float64            // Token bucket refill rate (tokens/second)
-	tierShedThreshold      int                // Tier-shed overload threshold (0 = any load)
-	tierShedMinPriority    int                // Tier-shed minimum admitted priority under overload
-	tenantBudgets          map[string]float64 // Per-tenant fraction of total capacity (nil = no enforcement)
-	sloPriorityOverrides   map[string]int     // SLO class → priority overrides (nil = GAIE defaults)
-	gaieQDThreshold        float64            // GAIE-legacy queue depth threshold per instance (default 5)
-	gaieKVThreshold        float64            // GAIE-legacy KV cache utilization threshold (default 0.8)
+	tierShedThreshold     int                // Tier-shed overload threshold (0 = any load)
+	tierShedMinPriority   int                // Tier-shed minimum admitted priority under overload
+	tenantBudgets         map[string]float64 // Per-tenant fraction of total capacity (nil = no enforcement)
+	sloPriorityOverrides  map[string]int     // SLO class → priority overrides (nil = GAIE defaults)
+	gaieQDThreshold       float64            // GAIE-legacy queue depth threshold per instance (default 5)
+	gaieKVThreshold       float64            // GAIE-legacy KV cache utilization threshold (default 0.8)
 
 	// routing policy config (PR 6, evolved in PR17)
 	routingPolicy  string // Routing policy name
@@ -138,9 +138,9 @@ var (
 	pdDecider             string  // Disaggregation decider name
 	pdTransferBandwidth   float64 // Inter-instance KV transfer bandwidth in GB/s
 	pdTransferBaseLatency float64 // Inter-instance KV transfer base latency in ms
-	pdTransferContention     bool    // Enable fair-share bandwidth contention model
-	pdPrefixThreshold       int    // Non-cached token threshold for prefix-threshold decider
-	prefillRoutingScorers   string // Scorer weights for prefill pool routing
+	pdTransferContention  bool    // Enable fair-share bandwidth contention model
+	pdPrefixThreshold     int     // Non-cached token threshold for prefix-threshold decider
+	prefillRoutingScorers string  // Scorer weights for prefill pool routing
 	decodeRoutingScorers  string  // Scorer weights for decode pool routing
 
 	// Autoscaler config (Phase 1C)
@@ -158,14 +158,14 @@ var (
 	flowControlUsageLimitThreshold  float64
 
 	// Per-pool hardware override config
-	prefillTP             int
-	decodeTP              int
-	prefillHardware       string
-	decodeHardware        string
-	prefillLatencyModel   string
-	decodeLatencyModel    string
-	prefillMaxModelLen    int64
-	decodeMaxModelLen     int64
+	prefillTP           int
+	decodeTP            int
+	prefillHardware     string
+	decodeHardware      string
+	prefillLatencyModel string
+	decodeLatencyModel  string
+	prefillMaxModelLen  int64
+	decodeMaxModelLen   int64
 
 	// per-request timeout override for blis run (seconds; negative = disabled, 0 is rejected)
 	requestTimeoutSecs int
@@ -319,11 +319,11 @@ func allZeros(values []float64) bool {
 // Package-level vars (totalKVBlocks, maxModelLen, model, gpu, tensorParallelism,
 // modelConfigFolder, hwConfigPath) are mutated as side effects.
 type latencyResolution struct {
-	Backend     string           // resolved latency backend name
-	ModelConfig sim.ModelConfig  // HF-derived model architecture config
+	Backend     string            // resolved latency backend name
+	ModelConfig sim.ModelConfig   // HF-derived model architecture config
 	HWConfig    sim.HardwareCalib // hardware calibration config
-	AlphaCoeffs []float64        // resolved alpha coefficients (local copy, not package-level)
-	BetaCoeffs  []float64        // resolved beta coefficients (local copy, not package-level)
+	AlphaCoeffs []float64         // resolved alpha coefficients (local copy, not package-level)
+	BetaCoeffs  []float64         // resolved beta coefficients (local copy, not package-level)
 }
 
 // resolveLatencyConfig resolves the latency backend configuration from CLI flags and
@@ -939,7 +939,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// PD disaggregation config
 	cmd.Flags().IntVar(&prefillInstances, "prefill-instances", 0, "Number of instances dedicated to prefill (0 = disabled)")
 	cmd.Flags().IntVar(&decodeInstances, "decode-instances", 0, "Number of instances dedicated to decode (0 = disabled)")
-	cmd.Flags().StringVar(&pdDecider, "pd-decider", "never", "PD disaggregation decider: never (default), always, prefix-threshold")
+	cmd.Flags().StringVar(&pdDecider, "pd-decider", "never", "PD disaggregation decider: never (default), always, prefix-based-pd-decider, global-prefix-threshold, prefix-threshold (alias for prefix-based-pd-decider)")
 	cmd.Flags().Float64Var(&pdTransferBandwidth, "pd-transfer-bandwidth", 25.0, "PD KV transfer bandwidth in GB/s (NIXL RDMA default)")
 	cmd.Flags().Float64Var(&pdTransferBaseLatency, "pd-transfer-base-latency", 0.05, "PD KV transfer base latency in ms")
 	cmd.Flags().BoolVar(&pdTransferContention, "pd-transfer-contention", false, "Enable fair-share bandwidth contention model for concurrent KV transfers (INV-P2-2)")
@@ -1011,7 +1011,6 @@ func applyTimeoutToRequests(wl *workload.GeneratedWorkload, timeoutSecs int) {
 		wl.Sessions[i].Timeout = &t
 	}
 }
-
 
 // runCmd executes the simulation using parameters from CLI flags
 var runCmd = &cobra.Command{
@@ -1326,21 +1325,21 @@ var runCmd = &cobra.Command{
 
 		// Resolve autoscaler and node pool config from policy bundle, then apply CLI overrides.
 		var (
-			bundleAutoscalerIntervalUs              float64
-			bundleScaleUpStabilizationWindowUs      float64
-			bundleScaleDownStabilizationWindowUs    float64
-			bundleHPAScrapeDelayMean                float64
-			bundleHPAScrapeDelayStddev              float64
-			bundleAnalyzerCfg                       cluster.V2SaturationAnalyzerConfig
-			bundleNodePools                         []cluster.NodePoolConfig
+			bundleAutoscalerIntervalUs           float64
+			bundleScaleUpStabilizationWindowUs   float64
+			bundleScaleDownStabilizationWindowUs float64
+			bundleHPAScrapeDelayMean             float64
+			bundleHPAScrapeDelayStddev           float64
+			bundleAnalyzerCfg                    cluster.V2SaturationAnalyzerConfig
+			bundleNodePools                      []cluster.NodePoolConfig
 		)
 		if bundle != nil {
 			if bundle.Autoscaler.IntervalUs > 0 {
-				bundleAutoscalerIntervalUs             = bundle.Autoscaler.IntervalUs
-				bundleScaleUpStabilizationWindowUs     = bundle.Autoscaler.ScaleUpStabilizationWindowUs
-				bundleScaleDownStabilizationWindowUs   = bundle.Autoscaler.ScaleDownStabilizationWindowUs
-				bundleHPAScrapeDelayMean               = bundle.Autoscaler.HPAScrapeDelay.Mean
-				bundleHPAScrapeDelayStddev             = bundle.Autoscaler.HPAScrapeDelay.Stddev
+				bundleAutoscalerIntervalUs = bundle.Autoscaler.IntervalUs
+				bundleScaleUpStabilizationWindowUs = bundle.Autoscaler.ScaleUpStabilizationWindowUs
+				bundleScaleDownStabilizationWindowUs = bundle.Autoscaler.ScaleDownStabilizationWindowUs
+				bundleHPAScrapeDelayMean = bundle.Autoscaler.HPAScrapeDelay.Mean
+				bundleHPAScrapeDelayStddev = bundle.Autoscaler.HPAScrapeDelay.Stddev
 				bundleAnalyzerCfg = cluster.V2SaturationAnalyzerConfig{
 					KvCacheThreshold:  bundle.Autoscaler.Analyzer.KVCacheThreshold,
 					ScaleUpThreshold:  bundle.Autoscaler.Analyzer.ScaleUpThreshold,
@@ -1392,11 +1391,23 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("--pd-transfer-base-latency must be a finite non-negative number, got %f", pdTransferBaseLatency)
 			}
 		}
-		if pdDecider == "prefix-threshold" && pdPrefixThreshold < 0 {
+		isThresholdBasedDecider := pdDecider == "prefix-threshold" || pdDecider == "prefix-based-pd-decider" || pdDecider == "global-prefix-threshold"
+		if isThresholdBasedDecider && pdPrefixThreshold < 0 {
 			logrus.Fatalf("--pd-prefix-threshold must be >= 0, got %d", pdPrefixThreshold)
 		}
-		if pdDecider != "prefix-threshold" && cmd.Flags().Changed("pd-prefix-threshold") {
-			logrus.Warnf("--pd-prefix-threshold=%d is ignored when --pd-decider=%q (only applies to the prefix-threshold decider)", pdPrefixThreshold, pdDecider)
+		if !isThresholdBasedDecider && cmd.Flags().Changed("pd-prefix-threshold") {
+			logrus.Warnf("--pd-prefix-threshold=%d is ignored when --pd-decider=%q (only applies to threshold-based deciders: prefix-based-pd-decider, global-prefix-threshold, prefix-threshold)", pdPrefixThreshold, pdDecider)
+		}
+		if isThresholdBasedDecider && cmd.Flags().Changed("pd-prefix-threshold") && pdPrefixThreshold == 0 {
+			// #1250 BEH-3 flipped the threshold==0 semantic: the pre-#1250 PrefixThresholdDecider
+			// treated threshold==0 as "always disaggregate on any non-empty request"; both
+			// PrefixBasedPDDecider and GlobalPrefixThresholdDecider now short-circuit to
+			// Disaggregate=false to match llm-d. A user who set threshold=0 to force
+			// disaggregation will silently get the opposite behavior — warn loudly.
+			logrus.Warnf("--pd-prefix-threshold=0 disables disaggregation entirely (BEH-3 short-circuit matching llm-d). BEHAVIOR CHANGED in #1250: the pre-#1250 prefix-threshold decider treated threshold=0 as \"always disaggregate\". Use --pd-decider=never to disable disaggregation, or set --pd-prefix-threshold > 0.")
+		}
+		if pdDecider == "prefix-threshold" {
+			logrus.Warnf("--pd-decider=prefix-threshold: this name is a one-release alias for prefix-based-pd-decider (llm-d parity). Behavior CHANGED in #1250: per-pod cache lookup replaces the old global virtual-LRU aggregate. Use --pd-decider=global-prefix-threshold for the legacy counterfactual baseline.")
 		}
 		if pdDecider != "" && pdDecider != "never" && prefillInstances == 0 {
 			logrus.Warnf("--pd-decider=%q has no effect because --prefill-instances=0 (disaggregation is disabled); set --prefill-instances and --decode-instances to enable", pdDecider)
@@ -1494,40 +1505,40 @@ var runCmd = &cobra.Command{
 				Seed:    seed,
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
-				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
-				LatencyCoeffs:       sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
-				ModelHardwareConfig: sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, lr.Backend, maxModelLen),
-				PolicyConfig:        sim.NewPolicyConfig(scheduler, preemptionPolicy),
+				BatchConfig:          sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
+				LatencyCoeffs:        sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
+				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, lr.Backend, maxModelLen),
+				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				SLOPriorityOverrides: sloPriorityOverrides,
 			},
-			NumInstances:            numInstances,
-			AdmissionPolicy:         admissionPolicy,
-			AdmissionLatency:        admissionLatency,
-			RoutingLatency:          routingLatency,
-			TokenBucketCapacity:     tokenBucketCapacity,
-			TokenBucketRefillRate:   tokenBucketRefillRate,
-			RoutingPolicy:           routingPolicy,
-			RoutingScorerConfigs:    parsedScorerConfigs,
-			TraceLevel:              traceLevel,
-			CounterfactualK:         counterfactualK,
-			SnapshotRefreshInterval: snapshotRefreshInterval,
-			CacheSignalDelay:        cacheSignalDelay,
-			PrefillInstances:        prefillInstances,
-			DecodeInstances:         decodeInstances,
-			PDDecider:               pdDecider,
-			PDPrefixThreshold:       pdPrefixThreshold,
-			PDTransferBandwidthGBps: pdTransferBandwidth,
-			PDTransferBaseLatencyMs: pdTransferBaseLatency,
-			PDTransferContention:    pdTransferContention,
-			PrefillScorerConfigs:    prefillScorerCfgs,
-			DecodeScorerConfigs:     decodeScorerCfgs,
-			PrefillOverrides:        prefillOverrides,
-			DecodeOverrides:         decodeOverrides,
-			TierShedThreshold:       tierShedThreshold,
-			TierShedMinPriority:     tierShedMinPriority,
-			GAIEQDThreshold:         gaieQDThreshold,
-			GAIEKVThreshold:         gaieKVThreshold,
-			TenantBudgets:           tenantBudgets,
+			NumInstances:                    numInstances,
+			AdmissionPolicy:                 admissionPolicy,
+			AdmissionLatency:                admissionLatency,
+			RoutingLatency:                  routingLatency,
+			TokenBucketCapacity:             tokenBucketCapacity,
+			TokenBucketRefillRate:           tokenBucketRefillRate,
+			RoutingPolicy:                   routingPolicy,
+			RoutingScorerConfigs:            parsedScorerConfigs,
+			TraceLevel:                      traceLevel,
+			CounterfactualK:                 counterfactualK,
+			SnapshotRefreshInterval:         snapshotRefreshInterval,
+			CacheSignalDelay:                cacheSignalDelay,
+			PrefillInstances:                prefillInstances,
+			DecodeInstances:                 decodeInstances,
+			PDDecider:                       pdDecider,
+			PDPrefixThreshold:               pdPrefixThreshold,
+			PDTransferBandwidthGBps:         pdTransferBandwidth,
+			PDTransferBaseLatencyMs:         pdTransferBaseLatency,
+			PDTransferContention:            pdTransferContention,
+			PrefillScorerConfigs:            prefillScorerCfgs,
+			DecodeScorerConfigs:             decodeScorerCfgs,
+			PrefillOverrides:                prefillOverrides,
+			DecodeOverrides:                 decodeOverrides,
+			TierShedThreshold:               tierShedThreshold,
+			TierShedMinPriority:             tierShedMinPriority,
+			GAIEQDThreshold:                 gaieQDThreshold,
+			GAIEKVThreshold:                 gaieKVThreshold,
+			TenantBudgets:                   tenantBudgets,
 			FlowControlEnabled:              flowControlEnabled,
 			FlowControlDetector:             flowControlDetector,
 			FlowControlDispatchOrder:        flowControlDispatchOrder,
@@ -1537,10 +1548,10 @@ var runCmd = &cobra.Command{
 			FlowControlMaxConcurrency:       flowControlMaxConcurrency,
 			FlowControlPerBandCapacity:      flowControlPerBandCapacity,
 			FlowControlUsageLimitThreshold:  flowControlUsageLimitThreshold,
-			ModelAutoscalerIntervalUs:              bundleAutoscalerIntervalUs,
-			ScaleUpStabilizationWindowUs:           bundleScaleUpStabilizationWindowUs,
-			ScaleDownStabilizationWindowUs:         bundleScaleDownStabilizationWindowUs,
-			HPAScrapeDelay:                         cluster.DelaySpec{Mean: bundleHPAScrapeDelayMean, Stddev: bundleHPAScrapeDelayStddev},
+			ModelAutoscalerIntervalUs:       bundleAutoscalerIntervalUs,
+			ScaleUpStabilizationWindowUs:    bundleScaleUpStabilizationWindowUs,
+			ScaleDownStabilizationWindowUs:  bundleScaleDownStabilizationWindowUs,
+			HPAScrapeDelay:                  cluster.DelaySpec{Mean: bundleHPAScrapeDelayMean, Stddev: bundleHPAScrapeDelayStddev},
 			AutoscalerAnalyzerConfig:        bundleAnalyzerCfg,
 			NodePools:                       bundleNodePools,
 		}
@@ -1617,10 +1628,10 @@ var runCmd = &cobra.Command{
 			cs.PoolMembership(),
 			cs.PerInstanceMetricsByID(),
 		)
-		rawMetrics.ShedByTier = cs.ShedByTier()                             // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
-		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth()               // Issue #882: gateway queue depth at horizon
-		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()                 // Issue #882: gateway queue shed count
-		rawMetrics.GatewayQueueRejected = cs.GatewayQueueRejected()         // Issue #1190: gateway queue rejected count
+		rawMetrics.ShedByTier = cs.ShedByTier()                     // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
+		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth()       // Issue #882: gateway queue depth at horizon
+		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()         // Issue #882: gateway queue shed count
+		rawMetrics.GatewayQueueRejected = cs.GatewayQueueRejected() // Issue #1190: gateway queue rejected count
 
 		if rawMetrics.PD != nil && config.PDTransferContention {
 			rawMetrics.PD.PeakConcurrentTransfers = cs.PeakConcurrentTransfers()

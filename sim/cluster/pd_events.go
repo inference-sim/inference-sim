@@ -16,12 +16,12 @@ import (
 // Priority 4: after DisaggregationDecisionEvent (3), before KV transfer events.
 type PrefillRoutingEvent struct {
 	time      int64
-	request   *sim.Request   // Prefill sub-request
+	request   *sim.Request // Prefill sub-request
 	parentReq *ParentRequest
 }
 
 func (e *PrefillRoutingEvent) Timestamp() int64 { return e.time }
-func (e *PrefillRoutingEvent) Priority() int     { return 4 }
+func (e *PrefillRoutingEvent) Priority() int    { return 4 }
 
 // Execute routes the prefill sub-request to a prefill pool instance using pool-filtered snapshots.
 func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
@@ -79,8 +79,8 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 				cs.tenantTracker.OnStart(e.request.TenantID)
 			}
 			inst.InjectRequestOnline(e.request, e.time)
-			// Notify observer so stateful deciders (e.g., PrefixThresholdDecider) can learn
-			// from this prefill routing decision (synchronous call -- cache is always current).
+			// Notify observer so stateful deciders (e.g., GlobalPrefixThresholdDecider) can
+			// learn from this prefill routing decision (synchronous call -- cache is always current).
 			cs.notifyDisaggregationObserver(e.request, decision.TargetInstance)
 			return
 		}
@@ -98,7 +98,7 @@ type KVTransferStartedEvent struct {
 }
 
 func (e *KVTransferStartedEvent) Timestamp() int64 { return e.time }
-func (e *KVTransferStartedEvent) Priority() int     { return 5 }
+func (e *KVTransferStartedEvent) Priority() int    { return 5 }
 
 // Execute computes transfer duration and schedules KVTransferCompletedEvent.
 func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
@@ -134,7 +134,7 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 	transferBytes := float64(numBlocks) * blockSizeBytesF
 
 	bandwidthBytesPerUs := cs.config.PDTransferBandwidthGBps * 1000.0 // GB/s → bytes/μs
-	baseLatUs := cs.config.PDTransferBaseLatencyMs * 1000.0            // ms → μs
+	baseLatUs := cs.config.PDTransferBaseLatencyMs * 1000.0           // ms → μs
 
 	// Fair-share: divide effective bandwidth by number of concurrent transfers (INV-P2-2)
 	if cs.config.PDTransferContention && cs.activeTransfers > 1 {
@@ -177,7 +177,7 @@ type KVTransferCompletedEvent struct {
 }
 
 func (e *KVTransferCompletedEvent) Timestamp() int64 { return e.time }
-func (e *KVTransferCompletedEvent) Priority() int     { return 6 }
+func (e *KVTransferCompletedEvent) Priority() int    { return 6 }
 
 // Execute creates the decode sub-request and injects it directly into the pre-selected
 // decode pod (stored in parentReq.DecodeInstanceID by DisaggregationDecisionEvent).

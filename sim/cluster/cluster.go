@@ -24,21 +24,21 @@ type ClusterSimulator struct {
 	aggregatedMetrics *sim.Metrics
 
 	// Online routing pipeline fields
-	clusterEvents        ClusterEventQueue
-	seqCounter           int64
-	admissionLatency     int64
-	routingLatency       int64
-	admissionPolicy      sim.AdmissionPolicy
-	priorityMap          *sim.SLOPriorityMap
-	snapshotProvider     *CachedSnapshotProvider
-	routingPolicy        sim.RoutingPolicy
-	rejectedRequests     int                    // EC-2: count of requests rejected by admission policy
-	routingRejections    int                    // I13: count of requests rejected at routing (no routable instances)
-	shedByTier           map[string]int         // per-SLOClass rejection counts (Phase 1B-1a)
-	trace                *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
-	preGeneratedRequests []*sim.Request         // Pre-generated requests (all workload paths unified)
-	inFlightRequests     map[string]int         // instance ID → dispatched-but-not-completed count (#463)
-	poolMembership       map[string]PoolRole    // instance ID → pool role (nil when disaggregation disabled)
+	clusterEvents         ClusterEventQueue
+	seqCounter            int64
+	admissionLatency      int64
+	routingLatency        int64
+	admissionPolicy       sim.AdmissionPolicy
+	priorityMap           *sim.SLOPriorityMap
+	snapshotProvider      *CachedSnapshotProvider
+	routingPolicy         sim.RoutingPolicy
+	rejectedRequests      int                       // EC-2: count of requests rejected by admission policy
+	routingRejections     int                       // I13: count of requests rejected at routing (no routable instances)
+	shedByTier            map[string]int            // per-SLOClass rejection counts (Phase 1B-1a)
+	trace                 *trace.SimulationTrace    // nil when trace-level is "none" (BC-1: zero overhead)
+	preGeneratedRequests  []*sim.Request            // Pre-generated requests (all workload paths unified)
+	inFlightRequests      map[string]int            // instance ID → dispatched-but-not-completed count (#463)
+	poolMembership        map[string]PoolRole       // instance ID → pool role (nil when disaggregation disabled)
 	disaggregationDecider sim.DisaggregationDecider // PD disaggregation decider (nil when disabled)
 
 	// PD disaggregation state (PR2)
@@ -47,12 +47,12 @@ type ClusterSimulator struct {
 	pendingDecodeCompletions  map[string]string         // decode sub-req ID → parent ID
 	transfersInitiated        int
 	transfersCompleted        int
-	pdPrefillCompletedCount   int                       // prefill sub-requests that completed (for INV-1 correction)
-	pdDecodeCompletedCount    int                       // decode sub-requests that completed (for INV-1 in-flight tracking)
-	pdDecodeTimedOutCount     int                       // decode sub-requests that timed out (for INV-1 in-flight tracking)
-	droppedAtDecodeKV         int                       // requests dropped due to insufficient KV at decode
-	prefillRoutingPolicy      sim.RoutingPolicy         // nil = use main routingPolicy
-	decodeRoutingPolicy       sim.RoutingPolicy         // nil = use main routingPolicy
+	pdPrefillCompletedCount   int               // prefill sub-requests that completed (for INV-1 correction)
+	pdDecodeCompletedCount    int               // decode sub-requests that completed (for INV-1 in-flight tracking)
+	pdDecodeTimedOutCount     int               // decode sub-requests that timed out (for INV-1 in-flight tracking)
+	droppedAtDecodeKV         int               // requests dropped due to insufficient KV at decode
+	prefillRoutingPolicy      sim.RoutingPolicy // nil = use main routingPolicy
+	decodeRoutingPolicy       sim.RoutingPolicy // nil = use main routingPolicy
 
 	// Transfer contention state (--pd-transfer-contention flag, INV-P2-2)
 	activeTransfers                int
@@ -92,7 +92,7 @@ type ClusterSimulator struct {
 	gatewayQueue         *GatewayQueue
 	flowControlAdmission *FlowControlAdmission // typed ref for outcome inspection + completion dispatch; nil when flow control disabled
 
-	progressHook                sim.ProgressHook
+	progressHook               sim.ProgressHook
 	simClockProgressIntervalUs int64
 	nextSnapshotClockUs        int64
 }
@@ -217,8 +217,8 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		routingLatency:       config.RoutingLatency,
 		admissionPolicy:      admissionPolicy,
 		priorityMap:          priorityMap,
-		snapshotProvider: nil, // set after unified construction loop below
-		routingPolicy:    nil, // set after instance construction (needs cacheQueryFn from instances)
+		snapshotProvider:     nil, // set after unified construction loop below
+		routingPolicy:        nil, // set after instance construction (needs cacheQueryFn from instances)
 		trace:                simTrace,
 		inFlightRequests:     make(map[string]int, config.NumInstances),
 		shedByTier:           make(map[string]int),
@@ -228,8 +228,15 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
 		cs.poolMembership = prePoolMembership
 		switch config.PDDecider {
-		case "prefix-threshold":
-			cs.disaggregationDecider = sim.NewPrefixThresholdDecider(config.PDPrefixThreshold, int(config.BlockSizeTokens))
+		case "prefix-threshold", "prefix-based-pd-decider":
+			// `prefix-threshold` is a one-release alias for `prefix-based-pd-decider`
+			// (llm-d parity name). Behavior change: per-pod cache lookup replaces the
+			// old global virtual-LRU aggregate. See #1250 and the Recent Changes
+			// section of CLAUDE.md.
+			cs.disaggregationDecider = sim.NewPrefixBasedPDDecider(config.PDPrefixThreshold, int(config.BlockSizeTokens))
+		case "global-prefix-threshold":
+			// Counterfactual baseline retained for A1 calibration (#1006 Phase B §11).
+			cs.disaggregationDecider = sim.NewGlobalPrefixThresholdDecider(config.PDPrefixThreshold, int(config.BlockSizeTokens))
 		default:
 			cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
 		}

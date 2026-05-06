@@ -67,7 +67,7 @@ func newTestDisaggDeploymentConfigWithOverhead(overhead float64) DeploymentConfi
 	}
 	hwCfg := sim.HardwareCalib{TFlopsPeak: 1.0, BwPeakTBs: 0.001}
 	betas := []float64{0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0} // β₅ = 100 µs/layer
-	alphas := []float64{0.0, overhead, 0.0}                   // α₁ = overhead (PostDecodeFixedOverhead)
+	alphas := []float64{0.0, overhead, 0.0}                 // α₁ = overhead (PostDecodeFixedOverhead)
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
 			Horizon:             math.MaxInt64,
@@ -322,7 +322,7 @@ func TestDisaggregation_DroppedAtDecodeKV(t *testing.T) {
 	// Strategy: 1 decode instance with only 3 blocks (48 tokens). Each request needs
 	// 2 blocks (20 tokens). First request fills 2/3 blocks, second request tries to
 	// allocate 2 more but only 1 free → AllocateTransferredKV fails.
-	config := newTestDisaggDeploymentConfig(3, 2, 1) // 2 prefill, 1 decode
+	config := newTestDisaggDeploymentConfig(3, 2, 1)               // 2 prefill, 1 decode
 	config.KVCacheConfig = sim.NewKVCacheConfig(3, 16, 0, 0, 0, 0) // 3 blocks = 48 tokens
 
 	requests := newShortRequests(4)
@@ -653,18 +653,43 @@ func TestPrefixThreshold_AboveThresholdDisaggregated(t *testing.T) {
 	}
 }
 
-// TestPrefixThreshold_ObserverWarmsCache verifies BC-PD-24 at the cluster level:
-// req1 (disaggregated) warms the prefix cache via notifyDisaggregationObserver in
-// PrefillRoutingEvent.Execute (pd_events.go); req2 (non-disaggregated) verifies that
-// the warmed cache is consulted in DisaggregationDecisionEvent, reducing non-cached
-// token count below the threshold. Tests the full end-to-end wiring path.
-func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
+// newTestSingleDecodePrefixThresholdConfig returns a (2 prefill, 1 decode) topology
+// with PDDecider = "prefix-threshold". A single decode instance is required for the
+// per-pod-cache integration test: with multiple decode instances, routing affinity
+// depends on the shared round-robin counter state (including counter increments from
+// prefill routing), which makes "req2 lands on the same decode pod as req1" a fragile
+// implicit invariant. Forcing a single decode pod removes that dependency entirely.
+func newTestSingleDecodePrefixThresholdConfig(threshold int) DeploymentConfig {
+	cfg := newTestDisaggDeploymentConfig(3, 2, 1)
+	cfg.PDDecider = "prefix-threshold"
+	cfg.PDPrefixThreshold = threshold
+	return cfg
+}
+
+// TestPrefixBasedPDDecider_PerPodCacheReducesNonCached_Integration verifies BEH-2 at
+// the cluster level: after req1's prefill + KV transfer populates the selected decode
+// pod's KV cache with the shared prefix, req2 (with overlapping prefix) queries that
+// live cache via ctx.DecodeCacheQuery and observes enough cached blocks to fall below
+// the threshold — so it is NOT disaggregated.
+//
+// This is a pure per-pod mechanism: PrefixBasedPDDecider is stateless. There is no
+// router-side LRU warming and no DisaggregationObserver call on this path; the
+// decider reads the selected decode instance's actual KV cache through the same
+// closure (cs.cacheQueryFn[id]) that precise-prefix-cache consumes.
+//
+// Topology: 2 prefill + 1 decode. The single decode pod guarantees req2 routes to the
+// same decode instance that received req1's KV transfer — without this the test would
+// depend on the round-robin counter state. CacheSignalDelay=0 (oracle mode — default
+// in the test DeploymentConfig) ensures ctx.DecodeCacheQuery returns the live per-pod
+// block count rather than a stale snapshot.
+func TestPrefixBasedPDDecider_PerPodCacheReducesNonCached_Integration(t *testing.T) {
 	const threshold = 300
 	const blockSize = 16
-	config := newTestPrefixThresholdConfig(threshold)
+	config := newTestSingleDecodePrefixThresholdConfig(threshold)
 
 	// req1: 400 tokens (25 complete blocks), no prior cache.
-	// nonCached = 400 > 300 → disaggregated; ObserveRouting warms 25 blocks in cache.
+	// nonCached = 400 > 300 → disaggregated; after prefill + KV transfer, the selected
+	// decode pod's cache is populated with 25 blocks of this prefix.
 	prefix := make([]int, 400)
 	for i := range prefix {
 		prefix[i] = i + 1
@@ -678,8 +703,10 @@ func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
 	}
 
 	// req2: same 400-token prefix + 50 new tokens = 450 total.
-	// After req1 warms the cache: nonCached = 450 - 25*16 = 450 - 400 = 50 <= 300 → NOT disaggregated.
-	// req2 arrives 2s after req1, well after req1's PrefillRoutingEvent fires and warms the cache.
+	// When decode routing picks a decode pod whose cache holds req1's blocks,
+	// ctx.DecodeCacheQuery returns 25 cached blocks; nonCached = 450 - 25*16 = 50 <=
+	// 300 → NOT disaggregated. req2 arrives 2s after req1, well after req1's prefill
+	// and KV transfer have completed.
 	extended := make([]int, len(prefix)+50)
 	copy(extended, prefix)
 	for i := len(prefix); i < len(extended); i++ {
@@ -690,10 +717,9 @@ func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
 		InputTokens:  extended,
 		OutputTokens: make([]int, 5),
 		State:        sim.StateQueued,
-		ArrivalTime:  2000000, // req1's PrefillRoutingEvent fires at t=0+routingLatency=0; req2 arrives at t=2,000,000;
-		// ordering is guaranteed by event timestamps alone (t=0 < t=2,000,000), not the gap magnitude
+		ArrivalTime:  2000000, // 2s after req1 — ordering by event timestamps alone
 	}
-	_ = blockSize // documents the block arithmetic above
+	_ = blockSize // documents the 25-block arithmetic above
 
 	cs := NewClusterSimulator(config, []*sim.Request{req1, req2}, nil)
 	mustRun(t, cs)
@@ -707,15 +733,16 @@ func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
 	}
 	if !req1Disaggregated {
 		t.Error("req-warm (400 uncached tokens > 300 threshold) must be disaggregated; " +
-			"check PrefixThresholdDecider constructor wiring in NewClusterSimulator")
+			"check PrefixBasedPDDecider constructor wiring in NewClusterSimulator")
 	}
 
-	// req2 must NOT be disaggregated: prefix is cached after req1's PrefillRoutingEvent
-	// fires ObserveRouting, so only 50 tokens are non-cached (50 <= 300 threshold).
+	// req2 must NOT be disaggregated: the selected decode pod's KV cache holds
+	// req1's 25 prefix blocks, so ctx.DecodeCacheQuery returns 25 and only 50 tokens
+	// remain non-cached (50 <= 300 threshold).
 	for _, pr := range cs.parentRequests {
 		if pr.ID == "req-follow" {
-			t.Error("req-follow (50 non-cached tokens <= 300 threshold after cache warming) must NOT be disaggregated; " +
-				"check notifyDisaggregationObserver wiring in PrefillRoutingEvent.Execute (pd_events.go)")
+			t.Error("req-follow (50 non-cached tokens <= 300 threshold after per-pod cache population) must NOT be disaggregated; " +
+				"check DisaggregationContext.DecodeCacheQuery wiring in DisaggregationDecisionEvent.Execute (cluster_event.go)")
 		}
 	}
 }
@@ -989,7 +1016,7 @@ func TestDisaggregation_TTFT_FallbackWhenDecodeDataMissing(t *testing.T) {
 			parent: &ParentRequest{
 				ID: "p1", PrefillSubReqID: "p1_prefill", DecodeSubReqID: "p1_decode",
 				OriginalRequest: origReq,
-				ArrivalTime: 0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				ArrivalTime:     0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
 				TransferStartTime: 0, TransferCompleteTime: 0,
 				DecodeSubReq: &sim.Request{ITL: []int64{100}},
 			},
@@ -999,7 +1026,7 @@ func TestDisaggregation_TTFT_FallbackWhenDecodeDataMissing(t *testing.T) {
 			parent: &ParentRequest{
 				ID: "p2", PrefillSubReqID: "p2_prefill", DecodeSubReqID: "p2_decode",
 				OriginalRequest: origReq,
-				ArrivalTime: 0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				ArrivalTime:     0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
 				TransferStartTime: 100, TransferCompleteTime: 200,
 				DecodeSubReq: &sim.Request{ITL: nil},
 			},
@@ -1009,7 +1036,7 @@ func TestDisaggregation_TTFT_FallbackWhenDecodeDataMissing(t *testing.T) {
 			parent: &ParentRequest{
 				ID: "p3", PrefillSubReqID: "p3_prefill", DecodeSubReqID: "p3_decode",
 				OriginalRequest: origReq,
-				ArrivalTime: 0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				ArrivalTime:     0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
 				TransferStartTime: 100, TransferCompleteTime: 200,
 				DecodeSubReq: nil,
 			},
@@ -1019,7 +1046,7 @@ func TestDisaggregation_TTFT_FallbackWhenDecodeDataMissing(t *testing.T) {
 			parent: &ParentRequest{
 				ID: "p4", PrefillSubReqID: "p4_prefill", DecodeSubReqID: "p4_decode",
 				OriginalRequest: origReq,
-				ArrivalTime: 0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				ArrivalTime:     0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
 				TransferStartTime: 100, TransferCompleteTime: 200,
 				DecodeSubReq: &sim.Request{ITL: []int64{100}},
 			},
@@ -1509,7 +1536,7 @@ func TestDisaggregation_SessionFollowUp_InjectsFollowUp(t *testing.T) {
 // THEN: callback fires for each completed request with SessionID preserved
 func TestDisaggregation_AggregateMode_Unaffected(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 0, 0) // no PD
-	config.PDDecider = ""                             // disable decider
+	config.PDDecider = ""                            // disable decider
 	reqs := newTestRequestsWithSession(3, "sess_agg")
 
 	var capture sessionCallbackCapture
