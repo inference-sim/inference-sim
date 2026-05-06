@@ -106,7 +106,7 @@ func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
 		"routing-policy", "routing-scorers",
 
 		// registerSimConfigFlags: priority, scheduler, and preemption
-		"priority-policy", "scheduler", "preemption-policy",
+		"scheduler", "preemption-policy",
 
 		// registerSimConfigFlags: policy bundle
 		"policy-config",
@@ -477,7 +477,6 @@ warm_up_requests: 0
 	origSnapRefresh := snapshotRefreshInterval
 	origAdmission := admissionPolicy
 	origRouting := routingPolicy
-	origPriority := priorityPolicy
 	origScheduler := scheduler
 	origPolicyConfig := policyConfigPath
 	origMaxModelLen := maxModelLen
@@ -523,7 +522,6 @@ warm_up_requests: 0
 		snapshotRefreshInterval = origSnapRefresh
 		admissionPolicy = origAdmission
 		routingPolicy = origRouting
-		priorityPolicy = origPriority
 		scheduler = origScheduler
 		policyConfigPath = origPolicyConfig
 		maxModelLen = origMaxModelLen
@@ -570,7 +568,6 @@ warm_up_requests: 0
 	snapshotRefreshInterval = 0
 	admissionPolicy = "always-admit"
 	routingPolicy = "round-robin"
-	priorityPolicy = "constant"
 	scheduler = "fcfs"
 	policyConfigPath = ""
 	maxModelLen = 0
@@ -708,7 +705,6 @@ warm_up_requests: 0
 	origSnapRefresh := snapshotRefreshInterval
 	origAdmission := admissionPolicy
 	origRouting := routingPolicy
-	origPriority := priorityPolicy
 	origScheduler := scheduler
 	origPolicyConfig := policyConfigPath
 	origMaxModelLen := maxModelLen
@@ -754,7 +750,6 @@ warm_up_requests: 0
 		snapshotRefreshInterval = origSnapRefresh
 		admissionPolicy = origAdmission
 		routingPolicy = origRouting
-		priorityPolicy = origPriority
 		scheduler = origScheduler
 		policyConfigPath = origPolicyConfig
 		maxModelLen = origMaxModelLen
@@ -834,7 +829,6 @@ warm_up_requests: 0
 	snapshotRefreshInterval = 0
 	admissionPolicy = "always-admit"
 	routingPolicy = "round-robin"
-	priorityPolicy = "constant"
 	scheduler = "fcfs"
 	policyConfigPath = ""
 	maxModelLen = 0
@@ -953,7 +947,6 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	origSnapRefresh := snapshotRefreshInterval
 	origAdmission := admissionPolicy
 	origRouting := routingPolicy
-	origPriority := priorityPolicy
 	origScheduler := scheduler
 	origPolicyConfig := policyConfigPath
 	origMaxModelLen := maxModelLen
@@ -999,7 +992,6 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 		snapshotRefreshInterval = origSnapRefresh
 		admissionPolicy = origAdmission
 		routingPolicy = origRouting
-		priorityPolicy = origPriority
 		scheduler = origScheduler
 		policyConfigPath = origPolicyConfig
 		maxModelLen = origMaxModelLen
@@ -1045,7 +1037,6 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	snapshotRefreshInterval = 0
 	admissionPolicy = "always-admit"
 	routingPolicy = "round-robin"
-	priorityPolicy = "constant"
 	scheduler = "fcfs"
 	policyConfigPath = ""
 	maxModelLen = 0
@@ -1131,7 +1122,6 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		origSnapRefresh := snapshotRefreshInterval
 		origAdmission := admissionPolicy
 		origRouting := routingPolicy
-		origPriority := priorityPolicy
 		origScheduler := scheduler
 		origPolicyConfig := policyConfigPath
 		origMaxModelLen := maxModelLen
@@ -1176,7 +1166,6 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 			snapshotRefreshInterval = origSnapRefresh
 			admissionPolicy = origAdmission
 			routingPolicy = origRouting
-			priorityPolicy = origPriority
 			scheduler = origScheduler
 			policyConfigPath = origPolicyConfig
 			maxModelLen = origMaxModelLen
@@ -1221,7 +1210,6 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		snapshotRefreshInterval = 0
 		admissionPolicy = "always-admit"
 		routingPolicy = "round-robin"
-		priorityPolicy = "constant"
 		scheduler = "fcfs"
 		policyConfigPath = ""
 		maxModelLen = 0
@@ -1321,7 +1309,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	origSnapRefresh := snapshotRefreshInterval
 	origAdmission := admissionPolicy
 	origRouting := routingPolicy
-	origPriority := priorityPolicy
 	origScheduler := scheduler
 	origPolicyConfig := policyConfigPath
 	origMaxModelLen := maxModelLen
@@ -1367,7 +1354,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 		snapshotRefreshInterval = origSnapRefresh
 		admissionPolicy = origAdmission
 		routingPolicy = origRouting
-		priorityPolicy = origPriority
 		scheduler = origScheduler
 		policyConfigPath = origPolicyConfig
 		maxModelLen = origMaxModelLen
@@ -1412,7 +1398,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	snapshotRefreshInterval = 0
 	admissionPolicy = "always-admit"
 	routingPolicy = "round-robin"
-	priorityPolicy = "constant"
 	scheduler = "fcfs"
 	policyConfigPath = ""
 	maxModelLen = 0

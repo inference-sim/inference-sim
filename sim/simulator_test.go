@@ -1869,7 +1869,7 @@ func TestINV9_OracleKnowledgeBoundary_NoOutputTokensInControlPlane(t *testing.T)
 		"routing_scorers.go",
 		"routing_prefix_scorer.go",
 		"scheduler.go",
-		"priority.go",
+		"slo_priority.go",
 	}
 
 	for _, filename := range simControlPlaneFiles {

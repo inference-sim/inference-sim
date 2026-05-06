@@ -398,8 +398,8 @@ func TestWeightedScoring_EmptyConfigs_UsesDefaults(t *testing.T) {
 	}
 }
 
-// TestRoutingDecision_PriorityHint_DefaultZero verifies BC-9: default Priority is zero.
-func TestRoutingDecision_PriorityHint_DefaultZero(t *testing.T) {
+// TestRoutingDecision_TargetSet verifies routing policies return a non-empty TargetInstance.
+func TestRoutingDecision_TargetSet(t *testing.T) {
 	policyNames := []string{"round-robin", "least-loaded", "weighted"}
 
 	for _, name := range policyNames {
@@ -412,8 +412,8 @@ func TestRoutingDecision_PriorityHint_DefaultZero(t *testing.T) {
 			req := &Request{ID: "req1", InputTokens: []int{1, 2, 3}}
 			decision := policy.Route(req, state)
 
-			if decision.Priority != 0 {
-				t.Errorf("expected default Priority 0, got %f", decision.Priority)
+			if decision.TargetInstance == "" {
+				t.Errorf("expected non-empty TargetInstance")
 			}
 		})
 	}

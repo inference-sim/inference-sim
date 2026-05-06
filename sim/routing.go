@@ -56,20 +56,10 @@ type RoutingDecision struct {
 	TargetInstance string             // Instance ID to route to (must match a snapshot ID)
 	Reason         string             // Human-readable explanation
 	Scores         map[string]float64 // Instance ID → composite score (nil for policies without scoring)
-	// Priority is a cluster-level routing hint written to req.Priority before instance injection
-	// (see cluster_event.go:265). Zero (default) = no hint.
-	//
-	// NOTE (PR #1216): This field is overwritten at instance entry by the pre-processor in
-	// Simulator.EnqueueRequest via SLOPriorityMap.InvertForVLLM(req.SLOClass). A non-zero
-	// routing hint is therefore silently discarded; per-step PriorityPolicy recomputation no
-	// longer exists. No current routing policy sets a non-zero value. Reserved for future use
-	// by policies that need to override SLO-class-based priority at the routing layer.
-	Priority float64
 }
 
 // NewRoutingDecision creates a RoutingDecision with the given target and reason.
-// Scores is nil and Priority is 0.0 (defer to instance-level PriorityPolicy).
-// This is the canonical constructor for policies that do not produce per-instance scores.
+// Scores is nil. This is the canonical constructor for policies that do not produce per-instance scores.
 func NewRoutingDecision(target string, reason string) RoutingDecision {
 	if target == "" {
 		panic("NewRoutingDecision: target must not be empty")

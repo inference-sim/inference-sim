@@ -347,7 +347,7 @@ func TestCollectRawMetrics_ConstantPriority_SuppressesInversions(t *testing.T) {
 	aggregated.SimEndedTime = 1_000_000
 
 	// WHEN collecting with constant priority policy
-	raw := CollectRawMetrics(aggregated, []*sim.Metrics{m}, 0, "constant", 0)
+	raw := CollectRawMetrics(aggregated, []*sim.Metrics{m}, 0, "", 0)
 
 	// THEN priority inversions should be suppressed
 	if raw.PriorityInversions != 0 {
@@ -370,7 +370,7 @@ func TestCollectRawMetrics_SLOBasedPriority_DetectsInversions(t *testing.T) {
 	aggregated.SimEndedTime = 1_000_000
 
 	// WHEN collecting with slo-based priority policy
-	raw := CollectRawMetrics(aggregated, []*sim.Metrics{m}, 0, "slo-based", 0)
+	raw := CollectRawMetrics(aggregated, []*sim.Metrics{m}, 0, "priority-fcfs", 0)
 
 	// THEN priority inversions should be detected
 	if raw.PriorityInversions == 0 {

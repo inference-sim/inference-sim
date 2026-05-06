@@ -120,8 +120,7 @@ func LoadPolicyBundle(path string) (*PolicyBundle, error) {
 var (
 	validAdmissionPolicies = map[string]bool{"": true, "always-admit": true, "token-bucket": true, "reject-all": true, "tier-shed": true, "gaie-legacy": true}
 	validRoutingPolicies   = map[string]bool{"": true, "round-robin": true, "least-loaded": true, "weighted": true, "always-busiest": true}
-	validPriorityPolicies    = map[string]bool{"": true, "constant": true, "slo-based": true, "inverted-slo": true}
-	validSchedulers          = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
+	validSchedulers        = map[string]bool{"": true, "fcfs": true, "priority-fcfs": true, "sjf": true, "reverse-priority": true}
 	validPreemptionPolicies  = map[string]bool{"": true, "fcfs": true, "priority": true}
 	validLatencyBackends          = map[string]bool{"": true, "roofline": true, "trained-physics": true}
 	validDisaggregationDeciders   = map[string]bool{"": true, "never": true, "always": true, "prefix-threshold": true}
@@ -134,9 +133,6 @@ func IsValidAdmissionPolicy(name string) bool { return validAdmissionPolicies[na
 // IsValidRoutingPolicy returns true if name is a recognized routing policy.
 func IsValidRoutingPolicy(name string) bool { return validRoutingPolicies[name] }
 
-// IsValidPriorityPolicy returns true if name is a recognized priority policy.
-func IsValidPriorityPolicy(name string) bool { return validPriorityPolicies[name] }
-
 // IsValidScheduler returns true if name is a recognized scheduler.
 func IsValidScheduler(name string) bool { return validSchedulers[name] }
 
@@ -145,9 +141,6 @@ func ValidAdmissionPolicyNames() []string { return validNamesList(validAdmission
 
 // ValidRoutingPolicyNames returns sorted valid routing policy names (excluding empty).
 func ValidRoutingPolicyNames() []string { return validNamesList(validRoutingPolicies) }
-
-// ValidPriorityPolicyNames returns sorted valid priority policy names (excluding empty).
-func ValidPriorityPolicyNames() []string { return validNamesList(validPriorityPolicies) }
 
 // ValidSchedulerNames returns sorted valid scheduler names (excluding empty).
 func ValidSchedulerNames() []string { return validNamesList(validSchedulers) }
@@ -200,9 +193,6 @@ func (b *PolicyBundle) Validate() error {
 	}
 	if !validRoutingPolicies[b.Routing.Policy] {
 		return fmt.Errorf("unknown routing policy %q; valid options: %s", b.Routing.Policy, validNames(validRoutingPolicies))
-	}
-	if !validPriorityPolicies[b.Priority.Policy] {
-		return fmt.Errorf("unknown priority policy %q; valid options: %s", b.Priority.Policy, validNames(validPriorityPolicies))
 	}
 	if !validSchedulers[b.Scheduler] {
 		return fmt.Errorf("unknown scheduler %q; valid options: %s", b.Scheduler, validNames(validSchedulers))

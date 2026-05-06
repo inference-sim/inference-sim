@@ -144,7 +144,7 @@ func TestNewSimulator_CustomSLOPriorityMap_AffectsPreemption(t *testing.T) {
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 0, 0}, []float64{100, 1, 0}),
 		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
-		PolicyConfig:        NewPolicyConfig("constant", "fcfs", "priority"),
+		PolicyConfig:        NewPolicyConfig("fcfs", "priority"),
 		SLOPriorityOverrides: map[string]int{"background": 10}, // promote background above batch(-1)
 	}
 	s := mustNewSimulator(t, cfg)
