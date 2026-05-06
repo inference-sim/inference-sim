@@ -30,7 +30,7 @@ Each stage is configurable:
 |-------|----------|-----------|
 | **Admission** | Whether to accept the request | `--admission-policy`, `--token-bucket-capacity` |
 | **Routing** | Which instance receives it | `--routing-policy`, `--routing-scorers` |
-| **Scheduling** | What order within the instance | `--scheduler`, `--priority-policy` |
+| **Scheduling** | What order within the instance | `--scheduler`, `--preemption-policy` |
 | **Batch Formation** | Which requests form the next batch | `--max-num-running-reqs`, `--max-num-scheduled-tokens` |
 
 ## Tensor Parallelism

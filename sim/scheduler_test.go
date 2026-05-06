@@ -410,8 +410,8 @@ func TestSimulator_PriorityFCFS_ArrivalTimeTiebreak_OlderFirst(t *testing.T) {
 	// BC-2 (tiebreak): With equal SLOClass (empty → Priority=1.0 for both), the
 	// priority-fcfs scheduler uses arrival time as tiebreak (ascending: earlier = scheduled first).
 	// reqOlder (ArrivalTime=0) precedes reqNewer (ArrivalTime=500000) by tiebreak.
-	// Note: --priority-policy slo-based is a no-op since PR #1216 (per-step aging removed);
-	// "" is used instead to accurately document what is being tested.
+	// Note: --priority-policy was removed in PR #1216; "" scheduler means fcfs default.
+	// Priority is now set once at enqueue via SLOPriorityMap.InvertForVLLM (static model).
 	cfg := SimConfig{
 		Horizon:             10000000,
 		Seed:                42,

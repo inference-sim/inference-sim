@@ -69,8 +69,7 @@ comparisons, and regression detection.
 Interfaces define behavioral contracts, not implementation convenience.
 
 Non-negotiable rules:
-- Prefer single-method interfaces (`AdmissionPolicy`, `RoutingPolicy`, `PriorityPolicy`,
-  `InstanceScheduler`).
+- Prefer single-method interfaces (`AdmissionPolicy`, `RoutingPolicy`, `InstanceScheduler`).
 - Query methods MUST be **pure** — no side effects, no state mutation, no destructive
   reads. Use separate `Get()` and `Consume()` for query-and-clear patterns.
 - Factory functions MUST validate inputs: `IsValid*()` check + switch/case + panic on
