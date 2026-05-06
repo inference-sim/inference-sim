@@ -93,7 +93,7 @@ For each non-obvious architectural decision:
 
 ### I) Cross-Cutting Infrastructure
 
-Test infrastructure, documentation, and CI changes — each assigned to a specific PR. CLAUDE.md update ownership: the PR that causes the change updates it.
+Test infrastructure, documentation, and CI changes — each assigned to a specific PR. CLAUDE.md update ownership: the PR that causes the change updates the relevant structural sections (File Organization, CLI flags, invariants). Do **not** add changelog entries to `## Change History` — that section is a pointer to `git log` only.
 
 ### J) Extension Friction Assessment
 
@@ -104,7 +104,7 @@ For each new module boundary: how many files must change to add one more variant
 Checklist to prevent common macro-plan anti-patterns:
 
 - [ ] No scaffolding creep (every struct/method/flag exercised by end of introducing PR)
-- [ ] No documentation drift (CLAUDE.md updated in same PR that causes the change)
+- [ ] No documentation drift (CLAUDE.md structural sections updated in same PR that causes the change; `## Change History` must stay as a `git log` pointer — no changelog entries)
 - [ ] No test infrastructure duplication (shared packages created early)
 - [ ] No golden dataset staleness (regeneration steps included)
 - [ ] No DES-specific anti-patterns: Type Catalog trap, fidelity for its own sake, golden without invariant, mixing exogenous and endogenous events

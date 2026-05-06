@@ -60,7 +60,7 @@ For each perspective, check every item. Classify findings as CRITICAL / IMPORTAN
 **Perspective 6 — Cross-Cutting Infrastructure:**
 - Are test infrastructure, documentation, and CI changes each assigned to a specific PR?
 - Is the interface freeze schedule documented (which PR freezes which interface)?
-- Is CLAUDE.md update ownership clear (the PR that causes the change updates it)?
+- Is CLAUDE.md update ownership clear (the PR that causes the change updates relevant structural sections — not changelog entries)?
 - Are no items left as "address when needed"?
 
 **Perspective 7 — Extension Friction:**
@@ -70,7 +70,7 @@ For each perspective, check every item. Classify findings as CRITICAL / IMPORTAN
 
 **Perspective 8 — Design Bug Prevention:**
 - Is scaffolding creep prevented (every struct/method/flag exercised by end of introducing PR)?
-- Is documentation drift prevented (CLAUDE.md updated in the same PR that causes the change)?
+- Is documentation drift prevented (CLAUDE.md structural sections updated in the same PR that causes the change; `## Change History` stays as a `git log` pointer only)?
 - Is test infrastructure duplication prevented (shared packages created early)?
 - Is golden dataset staleness prevented (regeneration steps included)?
 - Are DES-specific anti-patterns addressed (type catalog, fidelity for its own sake, golden without invariant)?

@@ -215,7 +215,7 @@ Before implementation, verify:
 - [ ] No hidden global state impact.
 - [ ] All new code will pass golangci-lint.
 - [ ] Shared test helpers used from existing shared test package (not duplicated locally).
-- [ ] CLAUDE.md updated if: new files/packages added, file organization changed, plan milestone completed, new CLI flags added.
+- [ ] CLAUDE.md updated if: new files/packages added, file organization changed, new CLI flags added, or invariant table changed. Do **not** add changelog entries to `## Change History` — that section is a pointer to `git log` only.
 - [ ] No stale references left in CLAUDE.md.
 - [ ] Documentation DRY: If this PR modifies a canonical source (docs/contributing/standards/rules.md, docs/contributing/standards/invariants.md, docs/contributing/standards/principles.md, docs/contributing/extension-recipes.md), all working copies in the source-of-truth map are updated. If a new file is added, it appears in the CLAUDE.md File Organization tree.
 - [ ] Deviation log reviewed — no unresolved deviations.

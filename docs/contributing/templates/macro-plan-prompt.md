@@ -289,8 +289,10 @@ assign cross-cutting items, then finalize both.
 
 2) Documentation Maintenance
    - CLAUDE.md update triggers: new packages, new files, changed file
-     organization, completed plan milestones, new CLI flags
-   - Who updates CLAUDE.md? (The PR that causes the change.)
+     organization, new CLI flags, invariant table changes. Do NOT add
+     changelog entries to `## Change History` — that section is a pointer
+     to `git log` only.
+   - Who updates CLAUDE.md structural sections? (The PR that causes the change.)
    - README update triggers and ownership
    - Design guidelines compliance: does this feature expansion require
      updating the target module map in the design guidelines?
@@ -403,9 +405,11 @@ Common architectural failure modes and how this plan prevents them:
   - Scaffolding creep (dead code introduced "for later").
     Prevention: every struct field, method, and flag must be exercised
     by the end of the PR that introduces it.
-  - Documentation drift (CLAUDE.md diverges from reality).
-    Prevention: the PR that causes the change updates CLAUDE.md in the
-    same commit. No deferred documentation.
+  - Documentation drift (CLAUDE.md structural sections diverge from reality).
+    Prevention: the PR that causes the change updates CLAUDE.md structural
+    sections (File Organization, CLI flags, invariants) in the same commit.
+    Do NOT add changelog entries to `## Change History` — that section
+    is a pointer to `git log` only. No deferred documentation.
   - Test infrastructure duplication (helpers copied across packages).
     Prevention: shared test packages created in an early PR, consumed
     by all subsequent PRs (specified in Phase 5, item 1).

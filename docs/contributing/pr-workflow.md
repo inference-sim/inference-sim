@@ -370,7 +370,7 @@ Stop, think critically, and answer each question below from your own reasoning. 
 2. **Design bugs:** Does the design actually achieve what the contracts promise? Would a user get the expected behavior? Are there scale mismatches, unit confusions, or semantic errors?
 3. **Determinism (R2, INV-6):** Is all output deterministic? Any map iteration used for ordered output? Any floating-point accumulation order dependencies?
 4. **Consistency:** Are naming patterns consistent across all changed files? Do comments match code? Do doc strings match implementations? Are there stale references?
-5. **Documentation:** Would a new user find everything they need? Would a contributor know how to extend this? Are CLI flags documented everywhere (CLAUDE.md, README, `--help`)?
+5. **Documentation:** Would a new user find everything they need? Would a contributor know how to extend this? Are CLI flags documented everywhere (CLAUDE.md structural sections, README, `--help`)? Note: do not add changelog entries to CLAUDE.md's `## Change History` section — that section points to `git log` and must stay as a pointer only.
 6. **Defensive edge cases:** What happens with zero input? Empty collections? Maximum values? What if the user passes unusual but valid flag combinations?
 7. **Test epistemology (R7, R12):** For every test that compares against a golden value, ask: "How do I know this expected value is correct?" If the answer is "because the code produced it," that test catches regressions but not pre-existing bugs. Verify a corresponding invariant test validates the result from first principles. (See issue #183: a golden test perpetuated a silently-dropped request for months.)
 8. **Construction site uniqueness (R4):** Does this PR add fields to existing structs? If so, are ALL construction sites updated? Grep for `StructName{` across the codebase. Are there canonical constructors, or are structs built inline in multiple places?
@@ -466,7 +466,7 @@ The workflow is the same regardless of source (macro plan, design doc, GitHub is
 4. **Use worktrees for complex PRs** — avoid disrupting main workspace
 5. **Review after execution** — use automated code review (Step 4.5) after all tasks complete
 6. **Reference contracts in commits** — makes review easier and more traceable
-7. **Update CLAUDE.md immediately** — don't defer documentation
+7. **Update CLAUDE.md immediately** — update structural sections (File Organization, CLI flags, invariants, Key Invariants) when they change; do **not** add changelog entries to `## Change History` — that section is a pointer to `git log`, not a log itself
 8. **Keep source documents updated** — mark PRs as completed in macro plan; close resolved issues
 9. **Don't trust automated passes alone** — the self-audit (Step 4.75) catches substance bugs that pattern-matching agents miss. In PR9, 3 real bugs were found by critical thinking after 4 automated passes found 0 issues.
 10. **Checkpoint long sessions** — for PRs with 8+ tasks or multi-round reviews, write a checkpoint summary to `.claude/checkpoint.md` after each major phase. If you hit context limits, read the checkpoint first.
