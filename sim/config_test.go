@@ -57,13 +57,13 @@ func TestNewModelHardwareConfig_FieldEquivalence(t *testing.T) {
 }
 
 func TestNewPolicyConfig_FieldEquivalence(t *testing.T) {
-	got := NewPolicyConfig("slo-based", "priority-fcfs", "")
-	want := PolicyConfig{PriorityPolicy: "slo-based", Scheduler: "priority-fcfs", PreemptionPolicy: ""}
+	got := NewPolicyConfig("priority-fcfs", "")
+	want := PolicyConfig{Scheduler: "priority-fcfs", PreemptionPolicy: ""}
 	assert.Equal(t, want, got)
 }
 
 func TestNewPolicyConfig_DefaultPreemptionPolicy(t *testing.T) {
-	cfg := NewPolicyConfig("constant", "fcfs", "")
+	cfg := NewPolicyConfig("fcfs", "")
 	if cfg.PreemptionPolicy != "" {
 		t.Errorf("default PreemptionPolicy: got %q, want empty", cfg.PreemptionPolicy)
 	}

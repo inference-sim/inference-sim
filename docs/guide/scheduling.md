@@ -1,12 +1,47 @@
 # Scheduling & Priority
 
-Routing decides **which instance** receives a request. Scheduling decides **what order** requests are processed within an instance. These are independent policy axes -- you can combine any routing policy with any scheduler and any priority policy.
+Routing decides **which instance** receives a request. Scheduling decides **what order** requests are processed within an instance. These are independent policy axes — you can combine any routing policy with any scheduler.
 
 ```bash
-# Priority-FCFS scheduling with age-based priority in a 4-instance cluster
+# Priority-FCFS scheduling with SLO-class-based priority in a 4-instance cluster
 ./blis run --model qwen/qwen3-14b \
   --num-instances 4 --rate 100 --num-requests 500 \
-  --scheduler priority-fcfs --priority-policy slo-based
+  --scheduler priority-fcfs
+# SLO class is set in the workload spec (slo_class: critical/standard/batch/etc.)
+```
+
+## How Priority Works
+
+Request priority is **static** — set once when the request enters the instance, and never changed.
+
+At enqueue time (`EnqueueRequest` and `EnqueueDecodeSubRequest`), the simulator converts the request's `SLOClass` to a vLLM-convention priority value via `SLOPriorityMap.InvertForVLLM(SLOClass)`:
+
+```
+critical   → Priority 0.0  (most urgent)
+standard   → Priority 1.0
+batch      → Priority 5.0
+sheddable  → Priority 6.0
+background → Priority 7.0  (least urgent)
+```
+
+This follows **vLLM's convention: lower integer = more urgent**. The cluster layer (admission, routing, gateway queue) continues to use the llm-d convention (higher = more urgent); the inversion happens at the cluster→instance dispatch boundary.
+
+SLO class is set in your workload spec:
+
+```yaml
+clients:
+  - slo_class: critical
+    rate: 10
+  - slo_class: standard
+    rate: 50
+```
+
+Custom priority values can be overridden via the policy bundle:
+
+```yaml
+admission:
+  slo_priorities:
+    batch: 0   # make batch non-sheddable
 ```
 
 ## Available Schedulers
@@ -15,70 +50,56 @@ Each scheduler implements the `InstanceScheduler` interface: a single `OrderQueu
 
 | Scheduler | Flag Value | Strategy | Notes |
 |-----------|-----------|----------|-------|
-| **FCFS** | `--scheduler fcfs` | First-Come-First-Served. No reordering -- requests are processed in arrival order. | Default. Fair and predictable. |
-| **Priority-FCFS** | `--scheduler priority-fcfs` | Sort by priority descending, then by arrival time ascending within the same priority. Ties broken by request ID for determinism. | Requires a non-constant priority policy to be useful. With `--priority-policy constant`, all scores are equal and this degrades to FCFS. |
-| **SJF** | `--scheduler sjf` | Shortest Job First. Sort by input token count ascending, then by arrival time, then by ID. | Optimizes TTFT for short requests but can starve long ones under sustained load. Ignores priority scores entirely. |
-| **Reverse-priority** | `--scheduler reverse-priority` | Lowest priority first. Sort by priority ascending, then by arrival time, then by ID. | Pathological template for testing only. Causes priority inversions by design. |
+| **FCFS** | `--scheduler fcfs` | First-Come-First-Served. No reordering — requests are processed in arrival order. | Default. Fair and predictable. |
+| **Priority-FCFS** | `--scheduler priority-fcfs` | Sort by priority **ascending** (lower value = more urgent, vLLM convention), then by arrival time ascending within the same priority. Ties broken by request ID for determinism. | Useful when `SLOClass` is set in the workload spec. Without SLO classes, all requests get Priority=1.0 (standard) and this degrades to FCFS by arrival tiebreak. |
+| **SJF** | `--scheduler sjf` | Shortest Job First. Sort by input token count ascending, then by arrival time, then by ID. | Optimizes TTFT for short requests but can starve long ones under sustained load. Ignores `Request.Priority` entirely. |
+| **Reverse-priority** | `--scheduler reverse-priority` | Sort by priority **descending** (highest value = least urgent scheduled first). | Pathological template for testing only — deliberately causes priority inversions. |
 
 All schedulers use `sort.SliceStable` for deterministic ordering (INV-6).
 
-## Priority Policies
-
-Each priority policy implements the `PriorityPolicy` interface: a single `Compute` method that returns a `float64` score for a request at a given clock tick. Higher scores mean higher priority.
-
-| Policy | Flag Value | Formula | Notes |
-|--------|-----------|---------|-------|
-| **Constant** | `--priority-policy constant` | Returns `0.0` for all requests. | Default. No differentiation -- all requests have equal priority. |
-| **SLO-based** | `--priority-policy slo-based` | `BaseScore + AgeWeight * (clock - arrival_time)` | Favors older requests. With default `AgeWeight=1e-6`, a request waiting 1 second (1,000,000 ticks) gets +1.0 priority. Despite the name, does NOT currently use per-request SLO metadata (`Request.SLOClass` is available but unused by this policy). |
-| **Inverted-SLO** | `--priority-policy inverted-slo` | `BaseScore - AgeWeight * (clock - arrival_time)` | Starves older requests -- newer requests get higher priority. Pathological template for testing only. |
-
-Priority scores are recomputed every step before the scheduler orders the queue. This means SLO-based priority naturally ages: a request that has been waiting longer will have a higher score at the next step.
-
 ## How Scheduling and Priority Interact
 
-The scheduler and priority policy are independent modules that compose at step time. The simulator calls them in sequence:
+The scheduler and priority are composed at each simulation step:
 
-1. **Priority assignment**: For each queued request, call `PriorityPolicy.Compute()` and store the result on `Request.Priority`.
+1. **Priority is already set** (static — set at enqueue via `SLOPriorityMap.InvertForVLLM`, not recomputed per step).
 2. **Queue reordering**: Call `InstanceScheduler.OrderQueue()` on the wait queue.
 3. **Batch formation**: Dequeue requests from the front of the reordered queue into the running batch.
 
-This means certain combinations are degenerate:
+Common combinations:
 
 | Combination | Effective Behavior |
 |-------------|-------------------|
-| `priority-fcfs` + `constant` | FCFS (all priority scores are 0.0, so the descending sort changes nothing) |
-| `sjf` + any priority policy | SJF (priority scores are computed but ignored -- SJF sorts by input token count) |
-| `fcfs` + `slo-based` | FCFS (priority scores are computed but FCFS does not reorder) |
-| **`priority-fcfs` + `slo-based`** | **The useful combination**: older requests float to the top of the queue |
+| `priority-fcfs` + mixed SLO classes | Critical requests scheduled first, background last. |
+| `priority-fcfs` + uniform SLO class | All priorities equal — degrades to FCFS by arrival time. |
+| `sjf` + any SLO class | SJF by input length (priority ignored). |
+| `fcfs` + any SLO class | FCFS by arrival time (priority computed but reordering skipped). |
 
 ### Preemption and Re-enqueueing
 
-BLIS models vLLM's two-queue architecture (WaitQ + RunningBatch), simplifying vLLM's three-queue model (waiting / running / swapped). When a request is preempted from the running batch due to KV cache pressure:
+BLIS models vLLM's two-queue architecture (WaitQ + RunningBatch). When a request is preempted from the running batch due to KV cache pressure:
 
 - The request is placed at the **front** of the WaitQ (not the back).
 - Its progress is reset to zero (recompute mode, matching vLLM's recompute preemption).
 - On the next step, the scheduler reorders the full queue including the preempted request.
 
-This means preempted requests get implicit priority over fresh arrivals in FCFS mode. With priority-fcfs + slo-based, the preempted request's age still determines its position relative to other waiting requests.
+This means preempted requests get implicit priority over fresh arrivals in FCFS mode. With `priority-fcfs` and mixed SLO classes, the preempted request's static priority determines its position relative to other waiting requests.
 
-By default (`--preemption-policy fcfs`), the tail of the running batch is evicted. When `--preemption-policy priority` is set, the least-urgent running request is evicted based on SLO tier priority (background=-3, sheddable=-2, batch=-1, standard=3, critical=4). Among requests with equal SLO tier priority, the most recently arrived is evicted first. This matches vLLM's `--scheduling-policy priority` preemption behavior.
-
-The SLO tier priority mapping is shared between admission and preemption. If `slo_priorities` overrides are set in the policy bundle (e.g., `admission: { slo_priorities: { batch: 0 } }`), those overrides apply to both admission shedding and priority preemption victim selection.
+By default (`--preemption-policy fcfs`), the tail of the running batch is evicted. When `--preemption-policy priority` is set, the least-urgent running request is evicted — the one with the **highest Priority value** (vLLM convention: background=7 is least urgent and evicted first). Among equal-priority requests, the most recently arrived is evicted first. This matches vLLM's `--scheduling-policy priority` preemption behavior (`scheduler.py:1086`).
 
 ## When to Use Which
 
 | Workload | Recommended Configuration | Why |
 |----------|--------------------------|-----|
 | Uniform traffic, no SLO differentiation | `--scheduler fcfs` (default) | No reordering needed. All requests are equivalent. |
-| Mixed SLO classes needing fairness | `--scheduler priority-fcfs --priority-policy slo-based` | Older requests float up, preventing starvation of any class. |
+| Mixed SLO classes (critical vs background) | `--scheduler priority-fcfs` with `slo_class` in workload spec | Critical requests get Priority=0, scheduled before background (Priority=7). |
 | Latency-sensitive short requests | `--scheduler sjf` | Short prompts get processed first. Watch for starvation of long requests under sustained load. |
-| Low load (< ~10 req/s) | Any | Batch sizes are small enough that all schedulers pick the same requests. At low load, all four schedulers produce equivalent results within ~5%. |
+| Low load (< ~10 req/s) | Any | Batch sizes are small enough that all schedulers pick the same requests. At low load, all schedulers produce equivalent results within ~5%. |
 
 !!! tip "SJF starvation risk"
-    Under sustained high load, SJF can indefinitely delay long-prompt requests as short ones keep arriving. BLIS does not currently implement aging or starvation guards for SJF. If your workload has a mix of short and long prompts at high utilization, prefer `priority-fcfs` + `slo-based` instead.
+    Under sustained high load, SJF can indefinitely delay long-prompt requests as short ones keep arriving. BLIS does not currently implement aging or starvation guards for SJF. If your workload has a mix of short and long prompts at high utilization, prefer `--scheduler priority-fcfs` with SLO classes instead.
 
 ## Further Reading
 
-- [Routing Policies](routing.md) -- the upstream decision (which instance)
-- [Cluster Simulation](cluster.md) -- the full request pipeline from arrival to completion
-- [Core Engine: Scheduling Policies](../concepts/core-engine.md#scheduling-policies) -- implementation details and DES mechanics
+- [Routing Policies](routing.md) — the upstream decision (which instance)
+- [Cluster Simulation](cluster.md) — the full request pipeline from arrival to completion
+- [Core Engine: Scheduling Policies](../concepts/core-engine.md#scheduling-policies) — implementation details and DES mechanics

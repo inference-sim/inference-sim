@@ -476,11 +476,128 @@ func TestGlobalPrefixThresholdDecider_ZeroThresholdDisablesDisaggregation(t *tes
 	}
 }
 
-// TestNewPrefixThresholdDecider_ReturnsPerPodVariant verifies the backward-compatible
-// constructor now returns a *PrefixBasedPDDecider (behavior change documented in #1250).
-func TestNewPrefixThresholdDecider_ReturnsPerPodVariant(t *testing.T) {
-	d := NewPrefixThresholdDecider(512, 16)
-	if _, ok := any(d).(*PrefixBasedPDDecider); !ok {
-		t.Errorf("NewPrefixThresholdDecider must return *PrefixBasedPDDecider (per-pod variant), got %T", d)
+// TestNewPrefixThresholdDecider_ReturnsPerPodBehavior verifies the backward-compatible
+// constructor now returns the per-pod-cache-reading decider (behavior change documented
+// in #1250). Asserted behaviorally rather than via type assertion: a decider fed a
+// DisaggregationContext with a stubbed cache-query closure must observe its result —
+// the old global-LRU decider ignores ctx.DecodeCacheQuery and would treat cachedBlocks as 0.
+func TestNewPrefixThresholdDecider_ReturnsPerPodBehavior(t *testing.T) {
+	const blockSize = 16
+	const threshold = 100
+	d := NewPrefixThresholdDecider(threshold, blockSize)
+
+	// 200 input tokens with 20 cached blocks (320 tokens) → nonCached = -120 → clamped to 0
+	// → 0 <= 100 → Disaggregate=false. Only the per-pod decider observes ctx.DecodeCacheQuery
+	// and clamps negative nonCached to 0; the global-LRU decider would see 0 cache blocks
+	// and return Disaggregate=true (200 > 100).
+	tokens := make([]int, 200)
+	view := newTestRequestView("req", tokens)
+	decision := d.Decide(view, stubCacheQuery("instance_0", 20))
+
+	if decision.Disaggregate {
+		t.Errorf("NewPrefixThresholdDecider must return a decider that consults ctx.DecodeCacheQuery; " +
+			"stubbed 20 cached blocks should drive Disaggregate=false")
+	}
+}
+
+// --- Additional GlobalPrefixThresholdDecider tests (review feedback) ---
+
+// TestNewGlobalPrefixThresholdDecider_PanicsOnNegativeThreshold verifies constructor validates threshold (R3).
+func TestNewGlobalPrefixThresholdDecider_PanicsOnNegativeThreshold(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for negative threshold")
+		}
+	}()
+	NewGlobalPrefixThresholdDecider(-1, 16)
+}
+
+// TestNewGlobalPrefixThresholdDecider_PanicsOnZeroBlockSize verifies constructor validates blockSize (R3).
+func TestNewGlobalPrefixThresholdDecider_PanicsOnZeroBlockSize(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for zero blockSize")
+		}
+	}()
+	NewGlobalPrefixThresholdDecider(512, 0)
+}
+
+// TestGlobalPrefixThresholdDecider_BelowOrAtThreshold pins the strict > boundary for the
+// counterfactual decider (nonCached <= threshold → Disaggregate=false), mirroring the
+// PrefixBasedPDDecider boundary test.
+func TestGlobalPrefixThresholdDecider_BelowOrAtThreshold(t *testing.T) {
+	const blockSize = 16
+	const threshold = 512
+	decider := NewGlobalPrefixThresholdDecider(threshold, blockSize)
+
+	tests := []struct {
+		name   string
+		tokens int
+	}{
+		{"below_threshold", 100},
+		{"exact_threshold", threshold},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tokens := make([]int, tc.tokens)
+			for i := range tokens {
+				tokens[i] = 100000 + i // unique tokens, no warm cache
+			}
+			view := newTestRequestView(fmt.Sprintf("req-%s", tc.name), tokens)
+
+			decision := decider.Decide(view, emptyCtx())
+
+			if decision.Disaggregate {
+				t.Errorf("GlobalPrefixThresholdDecider: %d non-cached tokens with threshold=%d should return Disaggregate=false",
+					tc.tokens, threshold)
+			}
+		})
+	}
+}
+
+// TestGlobalPrefixThresholdDecider_ObserveRouting_IDMismatch_Recomputes verifies the
+// production path in the disaggregated flow: Decide is called with a parent request;
+// ObserveRouting is later called with a sub-request ID (e.g. "<parent>_prefill") that
+// does NOT match p.cachedReqID, so the recompute branch at disaggregation.go must fire
+// and still correctly populate the LRU.
+func TestGlobalPrefixThresholdDecider_ObserveRouting_IDMismatch_Recomputes(t *testing.T) {
+	const blockSize = 16
+	const threshold = 300
+	decider := NewGlobalPrefixThresholdDecider(threshold, blockSize)
+
+	// Shared 400-token prefix (25 blocks).
+	prefix := make([]int, 400)
+	for i := range prefix {
+		prefix[i] = i + 1
+	}
+
+	// Step 1: Decide called with the parent request.
+	parentReq := &Request{ID: "req-parent", InputTokens: prefix}
+	decider.Decide(NewRequestView(parentReq), emptyCtx())
+
+	// Step 2: Overwrite cachedHashes with a stale unrelated request so a re-use would be
+	// detectably wrong. Without this step, parentReq and subReq share token content and
+	// stale hashes would coincidentally produce the right answer.
+	staleReq := &Request{ID: "req-stale", InputTokens: []int{99999, 99998}} // < blockSize, 0 hashes
+	decider.Decide(NewRequestView(staleReq), emptyCtx())                    // cachedReqID="req-stale", cachedHashes=[]
+
+	// Step 3: ObserveRouting with a sub-request ID that mismatches cachedReqID; this MUST
+	// trigger recompute from subReq.InputTokens.
+	subReq := &Request{ID: "req-parent_prefill", InputTokens: prefix}
+	decider.ObserveRouting(subReq, "prefill_0")
+
+	// Step 4: New request with the shared 400-token prefix + 50 new tokens = 450 total.
+	// LRU should hold 25 blocks → nonCached = 50 <= 300 → do NOT disaggregate.
+	extended := make([]int, len(prefix)+50)
+	copy(extended, prefix)
+	for i := len(prefix); i < len(extended); i++ {
+		extended[i] = 10000 + i
+	}
+	view := newTestRequestView("req-follow", extended)
+
+	decision := decider.Decide(view, emptyCtx())
+	if decision.Disaggregate {
+		t.Errorf("ObserveRouting with mismatched sub-request ID must recompute and populate the LRU; " +
+			"50 non-cached tokens after recompute <= 300 threshold should not disaggregate")
 	}
 }

@@ -208,6 +208,9 @@ func NewPrefixBasedPDDecider(threshold, blockSize int) *PrefixBasedPDDecider {
 // global-LRU semantics should migrate to NewGlobalPrefixThresholdDecider. This is
 // a behavior change documented in PR #1255 / issue #1250 and surfaced at runtime
 // by the --pd-decider=prefix-threshold warning in cmd/root.go.
+//
+// Deprecated: use NewPrefixBasedPDDecider for the llm-d-parity per-pod decider, or
+// NewGlobalPrefixThresholdDecider for the pre-#1250 global-LRU counterfactual.
 func NewPrefixThresholdDecider(threshold, blockSize int) *PrefixBasedPDDecider {
 	return NewPrefixBasedPDDecider(threshold, blockSize)
 }

@@ -28,7 +28,7 @@
 //   - RoutingPolicy: select target instance given cluster snapshots
 //   - AdmissionPolicy: accept or reject incoming requests
 //   - InstanceScheduler: order requests within a single instance's wait queue
-//   - PriorityPolicy: compute priority scores for scheduling
+//   - SLOPriorityMap: map SLO class → priority value; InvertForVLLM converts cluster-convention (higher=urgent) to instance-convention (lower=urgent) at EnqueueRequest
 //   - BatchFormation: form batches from waiting requests with KV constraints
 //
 // See docs/extension-recipes.md for step-by-step guides to extend each interface.

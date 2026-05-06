@@ -22,13 +22,10 @@ func TestNewRoutingDecision_Fields(t *testing.T) {
 	if decision.Scores != nil {
 		t.Errorf("Scores = %v, want nil", decision.Scores)
 	}
-	if decision.Priority != 0.0 {
-		t.Errorf("Priority = %f, want 0.0", decision.Priority)
-	}
 }
 
 // TestNewRoutingDecisionWithScores_Fields verifies BC-2: constructor sets Target, Reason,
-// and Scores, leaves Priority zero.
+// and Scores, constructor sets Target, Reason, and Scores.
 func TestNewRoutingDecisionWithScores_Fields(t *testing.T) {
 	// GIVEN target, reason, and scores
 	target := "instance_1"
@@ -50,9 +47,6 @@ func TestNewRoutingDecisionWithScores_Fields(t *testing.T) {
 	}
 	if decision.Scores["instance_1"] != 0.85 {
 		t.Errorf("Scores[instance_1] = %f, want 0.85", decision.Scores["instance_1"])
-	}
-	if decision.Priority != 0.0 {
-		t.Errorf("Priority = %f, want 0.0", decision.Priority)
 	}
 }
 

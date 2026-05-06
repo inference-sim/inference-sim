@@ -26,11 +26,11 @@ inference-sim/
 │   ├── doc.go                 # Package reading guide: start with request.go, event.go, simulator.go
 │   ├── simulator.go           # SimConfig struct (composed of embedded sub-configs + Horizon/Seed), NewSimulator(SimConfig) (*Simulator, error) constructor (validates MaxModelLen vs KV capacity), event loop (Run()), batch formation (delegated to BatchFormation interface), step execution with phased metric recording, EnqueueRequest (MaxModelLen + KV capacity guards), processCompletions (proactive MaxModelLen cap at maxModelLen-1 boundary), observation methods (QueueDepth(), BatchSize(), CurrentClock(), SimHorizon()). All workload generation external via InjectArrival().
 │   ├── admission.go           # AdmissionPolicy interface (accepts *RouterState), AlwaysAdmit, TokenBucket, RejectAll, NewAdmissionPolicy factory
-│   ├── routing.go             # RoutingPolicy interface (accepts *RouterState), RoutingSnapshot (with EffectiveLoad() used by load-balance, least-loaded, and admission), RoutingDecision (with Priority hint), RoundRobin, LeastLoaded, WeightedScoring (composable scorer pipeline), AlwaysBusiest templates, NewRoutingPolicy factory
+│   ├── routing.go             # RoutingPolicy interface (accepts *RouterState), RoutingSnapshot (with EffectiveLoad() used by load-balance, least-loaded, and admission), RoutingDecision (TargetInstance + Reason + Scores), RoundRobin, LeastLoaded, WeightedScoring (composable scorer pipeline), AlwaysBusiest templates, NewRoutingPolicy factory
 │   ├── routing_scorers.go     # ScorerConfig, scorer implementations (queue-depth, kv-utilization, load-balance), ParseScorerConfigs, IsValidScorer, DefaultScorerConfigs, newScorerWithObserver factory
 │   ├── routing_prefix_scorer.go # Prefix-affinity scorer + observer (proportional prefix matching)
 │   ├── prefix_cache_index.go  # PrefixCacheIndex: per-instance LRU of hierarchical block hashes
-│   ├── priority.go            # PriorityPolicy interface with ConstantPriority, SLOBasedPriority, and InvertedSLO templates, NewPriorityPolicy factory
+│   ├── slo_priority.go        # SLOPriorityMap: BLIS/llm-d convention (higher=urgent) for cluster layer; InvertForVLLM() converts to vLLM convention (lower=urgent) at instance entry (EnqueueRequest)
 │   ├── scheduler.go           # InstanceScheduler interface with FCFSScheduler, PriorityFCFSScheduler, SJFScheduler, and ReversePriority templates, NewScheduler factory
 │   ├── latency_model.go       # LatencyModel interface (3 methods), NewLatencyModelFunc registration variable, MustNewLatencyModel nil-guarded wrapper
 │   ├── router_state.go        # RouterState bridge type (Snapshots + Clock) for cluster-level policies
@@ -39,7 +39,7 @@ inference-sim/
 │   ├── request.go             # RequestState typed constants (StateQueued, StateRunning, StateCompleted, StateTimedOut), Request lifecycle and state machine, Deadline field for client timeout, Priority field for scheduler-aware ordering, AssignedInstance for cluster routing provenance (#181), workload metadata (TenantID, SLOClass, etc.), MaxOutputLen (client output budget for enqueue guard)
 │   ├── kv_store.go            # KVStore interface (12 methods: +SetClock, +ConsumePendingTransferLatency, +MirrorToCPU), NewKVStoreFromConfig registration variable, MustNewKVCacheState/MustNewKVStoreFromConfig nil-guarded wrappers
 │   ├── batch.go               # Batch struct
-│   ├── batch_formation.go     # BatchFormation interface, BatchContext/BatchResult types, VLLMBatchFormation (fcfs/priority preemption + chunked-prefill), NewBatchFormation(PreemptionPolicy, SLOPriorityMap) factory
+│   ├── batch_formation.go     # BatchFormation interface, BatchContext/BatchResult types, VLLMBatchFormation (fcfs/priority preemption + chunked-prefill), NewBatchFormation(preemptionPolicy string) factory
 │   ├── queue.go               # FIFO wait queue
 │   ├── metrics.go             # TTFT, TPOT, E2E collection and SaveResults()
 │   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor

@@ -1,5 +1,7 @@
 # SLO Priority Override Threading Implementation Plan
 
+> **Status: COMPLETED (merged as PR #1170). Superseded by PR #1216** which changed `NewBatchFormation` from 2-arg to 1-arg: `SLOPriorityOverrides` now flows into `Simulator.sloMap` (not `VLLMBatchFormation.sloMap`). Code signatures in this plan are historical.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Thread `SLOPriorityOverrides` from `DeploymentConfig` through `SimConfig` to `NewBatchFormation`, replacing the hardcoded `nil` sloMap so that custom `slo_priorities` in the policy bundle YAML actually affect priority preemption victim selection.

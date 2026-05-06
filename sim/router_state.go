@@ -8,7 +8,7 @@ package sim
 // USAGE BOUNDARY: In production, only constructed by ClusterSimulator's event
 // handlers (via buildRouterState). Tests may construct directly.
 // Single-instance Simulator does not use RouterState — instance-level policies
-// (PriorityPolicy, InstanceScheduler) receive parameters directly.
+// (InstanceScheduler) receive parameters directly.
 // This prevents import cycles: sim/cluster/ imports sim/, not the reverse.
 type RouterState struct {
 	Snapshots []RoutingSnapshot // One per instance, same order as ClusterSimulator.instances

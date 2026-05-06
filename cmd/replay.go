@@ -221,7 +221,7 @@ Example:
 				BatchConfig:          sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:        sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
 				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, lr.Backend, maxModelLen),
-				PolicyConfig:         sim.NewPolicyConfig(priorityPolicy, scheduler, preemptionPolicy),
+				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				SLOPriorityOverrides: sloPriorityOverrides,
 			},
 			NumInstances:                    numInstances,
@@ -295,7 +295,7 @@ Example:
 			cs.AggregatedMetrics(),
 			cs.PerInstanceMetrics(),
 			cs.RejectedRequests(),
-			priorityPolicy,
+			scheduler,
 			cs.RoutingRejections(),
 		)
 		rawMetrics.ShedByTier = cs.ShedByTier()               // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)

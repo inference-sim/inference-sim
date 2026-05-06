@@ -103,8 +103,8 @@ type Simulator struct {
 	gpu                    string
 	maxModelLen            int64 // max total sequence length (0 = unlimited)
 	rng                    *PartitionedRNG // partitioned RNG for deterministic multi-subsystem simulation
-	priorityPolicy         PriorityPolicy
-	scheduler              InstanceScheduler
+	sloMap *SLOPriorityMap // vLLM-convention priority mapping for instance-level scheduling
+	scheduler      InstanceScheduler
 	latencyModel           LatencyModel
 	seqCounter             int64 // monotonic counter for event queue seqID (deterministic ordering)
 	// OnRequestDone is an optional callback invoked when a request reaches a terminal
@@ -152,7 +152,7 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 				blocksForMaxLen, cfg.MaxModelLen, cfg.BlockSizeTokens, cfg.TotalKVBlocks)
 		}
 	}
-	batchFormation := NewBatchFormation(cfg.PreemptionPolicy, NewSLOPriorityMap(cfg.SLOPriorityOverrides))
+	batchFormation := NewBatchFormation(cfg.PreemptionPolicy)
 
 	s := &Simulator{
 		Clock:                     0,
@@ -173,9 +173,9 @@ func NewSimulator(cfg SimConfig, kvStore KVStore, latencyModel LatencyModel) (*S
 		gpu:                       cfg.GPU,
 		maxModelLen:               cfg.MaxModelLen,
 		latencyModel:              latencyModel,
+		sloMap:                    NewSLOPriorityMap(cfg.SLOPriorityOverrides),
 	}
 	s.rng = NewPartitionedRNG(NewSimulationKey(cfg.Seed))
-	s.priorityPolicy = NewPriorityPolicy(cfg.PriorityPolicy)
 	s.scheduler = NewScheduler(cfg.Scheduler)
 
 	return s, nil
@@ -487,6 +487,16 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 		return
 	}
 
+	// Pre-processor: convert cluster-convention SLO priority to vLLM instance convention.
+	// Mirrors the llm-d → vLLM dispatch boundary in production (lower = more urgent).
+	// Overwrites any routing-hint Priority (which was always transient; see routing.go:59).
+	if sim.sloMap == nil {
+		// sloMap should always be set by NewSimulator; this path indicates manual struct construction.
+		logrus.Warnf("Simulator.sloMap not initialized — using DefaultSLOPriorityMap; prefer NewSimulator()")
+		sim.sloMap = DefaultSLOPriorityMap()
+	}
+	r.Priority = float64(sim.sloMap.InvertForVLLM(r.SLOClass))
+
 	sim.WaitQ.Enqueue(r)
 
 	// Schedule timeout event (after all guards + enqueue — BC-5)
@@ -506,6 +516,14 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 // decode sub-request at a stale internal time that precedes the request's arrival.
 // Triggers StepEvent if the instance is idle (INV-8: work-conserving).
 func (sim *Simulator) EnqueueDecodeSubRequest(r *Request, clusterTime int64) {
+	// Pre-processor: decode sub-requests inherit SLOClass from parent (pd_events.go:215).
+	// Apply the same vLLM-convention priority as EnqueueRequest.
+	if sim.sloMap == nil {
+		logrus.Warnf("Simulator.sloMap not initialized — using DefaultSLOPriorityMap; prefer NewSimulator()")
+		sim.sloMap = DefaultSLOPriorityMap()
+	}
+	r.Priority = float64(sim.sloMap.InvertForVLLM(r.SLOClass))
+
 	sim.WaitQ.Enqueue(r)
 	// Do NOT add len(r.InputTokens) to TotalInputTokens — already counted by prefill sub-request.
 
@@ -645,10 +663,9 @@ func (sim *Simulator) scheduleBatch(now int64) {
 	// Synchronize KV cache clock for thrashing detection (no-op for single-tier KVCacheState)
 	sim.KVCache.SetClock(now)
 
-	// Assign priorities to queued requests and order queue per scheduler policy
-	for _, req := range sim.WaitQ.Items() {
-		req.Priority = sim.priorityPolicy.Compute(req, now)
-	}
+	// Order queue per scheduler policy. Priorities are static — set once at
+	// EnqueueRequest/EnqueueDecodeSubRequest via SLOPriorityMap.InvertForVLLM
+	// (vLLM static priority model; per-step recomputation removed).
 	sim.WaitQ.Reorder(func(reqs []*Request) {
 		sim.scheduler.OrderQueue(reqs, now)
 	})

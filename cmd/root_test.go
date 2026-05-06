@@ -996,7 +996,6 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	origSnapRefresh := snapshotRefreshInterval
 	origAdmission := admissionPolicy
 	origRouting := routingPolicy
-	origPriority := priorityPolicy
 	origScheduler := scheduler
 	origPolicyConfig := policyConfigPath
 	origMaxModelLen := maxModelLen
@@ -1047,7 +1046,6 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 		snapshotRefreshInterval = origSnapRefresh
 		admissionPolicy = origAdmission
 		routingPolicy = origRouting
-		priorityPolicy = origPriority
 		scheduler = origScheduler
 		policyConfigPath = origPolicyConfig
 		maxModelLen = origMaxModelLen

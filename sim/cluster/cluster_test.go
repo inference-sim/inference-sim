@@ -66,7 +66,7 @@ func TestDeploymentConfig_ToSimConfig_ReturnsEmbeddedSimConfig(t *testing.T) {
 			BatchConfig:         sim.NewBatchConfig(128, 4096, 512),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
 			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 2, "roofline", 0),
-			PolicyConfig:        sim.NewPolicyConfig("slo-based", "priority-fcfs", ""),
+			PolicyConfig:        sim.NewPolicyConfig("priority-fcfs", ""),
 		},
 		NumInstances:    3,
 		AdmissionPolicy: "token-bucket",
@@ -1080,7 +1080,6 @@ func TestClusterSimulator_Conservation_PolicyMatrix(t *testing.T) {
 			config.RoutingPolicy = tc.routingPolicy
 			config.RoutingScorerConfigs = tc.scorerConfigs
 			config.Scheduler = tc.scheduler
-			config.PriorityPolicy = tc.priorityPolicy
 			config.AdmissionPolicy = tc.admissionPolicy
 			// Token bucket with generous capacity so all requests are admitted
 			if tc.admissionPolicy == "token-bucket" {
@@ -1229,7 +1228,6 @@ func TestClusterSimulator_OverloadConservation(t *testing.T) {
 			config.AdmissionPolicy = tc.admissionPolicy
 			config.RoutingPolicy = "least-loaded"
 			config.Scheduler = "fcfs"
-			config.PriorityPolicy = "constant"
 			if tc.admissionPolicy == "token-bucket" {
 				config.TokenBucketCapacity = tc.tbCapacity
 				config.TokenBucketRefillRate = tc.tbRefillRate
@@ -1314,7 +1312,6 @@ func TestClusterSimulator_SchedulerLiveness(t *testing.T) {
 			config.RoutingPolicy = "least-loaded"
 			config.AdmissionPolicy = "always-admit"
 			config.Scheduler = tc.scheduler
-			config.PriorityPolicy = tc.priorityPolicy
 
 			// Mixed workload: varying prompt and output sizes to exercise scheduler ordering
 			requests := testGenerateRequests(42, math.MaxInt64, rateReqPerS/1e6, numRequests,
@@ -1458,7 +1455,6 @@ func TestClusterSimulator_FullStackConservation(t *testing.T) {
 		config.RoutingPolicy = "weighted"
 		config.RoutingScorerConfigs = sim.DefaultScorerConfigs()
 		config.Scheduler = "priority-fcfs"
-		config.PriorityPolicy = "slo-based"
 		config.AdmissionPolicy = "always-admit"
 		return config
 	}

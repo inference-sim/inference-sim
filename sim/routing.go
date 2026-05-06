@@ -56,18 +56,10 @@ type RoutingDecision struct {
 	TargetInstance string             // Instance ID to route to (must match a snapshot ID)
 	Reason         string             // Human-readable explanation
 	Scores         map[string]float64 // Instance ID → composite score (nil for policies without scoring)
-	// Priority is a one-shot cluster-level priority hint applied before instance injection.
-	// Zero (default) means defer to instance-level PriorityPolicy entirely.
-	// Non-zero value sets req.Priority for initial queue ordering only — the instance-level
-	// PriorityPolicy recomputes priority each step, so this hint affects first-step scheduling
-	// but does not persist. This is intentional: it allows priority to evolve over time
-	// (e.g., SLOBasedPriority ages requests) while giving routing a way to influence initial placement.
-	Priority float64
 }
 
 // NewRoutingDecision creates a RoutingDecision with the given target and reason.
-// Scores is nil and Priority is 0.0 (defer to instance-level PriorityPolicy).
-// This is the canonical constructor for policies that do not produce per-instance scores.
+// Scores is nil. This is the canonical constructor for policies that do not produce per-instance scores.
 func NewRoutingDecision(target string, reason string) RoutingDecision {
 	if target == "" {
 		panic("NewRoutingDecision: target must not be empty")
@@ -79,7 +71,6 @@ func NewRoutingDecision(target string, reason string) RoutingDecision {
 }
 
 // NewRoutingDecisionWithScores creates a RoutingDecision with target, reason, and per-instance scores.
-// Priority is 0.0 (defer to instance-level PriorityPolicy).
 // Used by scoring-based routing policies (e.g., WeightedScoring).
 func NewRoutingDecisionWithScores(target string, reason string, scores map[string]float64) RoutingDecision {
 	if target == "" {

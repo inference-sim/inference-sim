@@ -188,7 +188,6 @@ func TestPolicyBundle_Validate_InvalidPolicy(t *testing.T) {
 	}{
 		{"bad admission", PolicyBundle{Admission: AdmissionConfig{Policy: "invalid"}}},
 		{"bad routing", PolicyBundle{Routing: RoutingConfig{Policy: "invalid"}}},
-		{"bad priority", PolicyBundle{Priority: PriorityConfig{Policy: "invalid"}}},
 		{"bad scheduler", PolicyBundle{Scheduler: "invalid"}},
 		{"bad preemption", PolicyBundle{Preemption: PreemptionConfig{Policy: "random"}}},
 	}
@@ -355,12 +354,6 @@ func TestValidRoutingPolicyNames_Sorted(t *testing.T) {
 	}
 }
 
-func TestValidPriorityPolicyNames_ReturnsAllNames(t *testing.T) {
-	names := ValidPriorityPolicyNames()
-	assert.Contains(t, names, "constant")
-	assert.Contains(t, names, "slo-based")
-	assert.Contains(t, names, "inverted-slo")
-}
 
 func TestValidSchedulerNames_ReturnsAllNames(t *testing.T) {
 	names := ValidSchedulerNames()

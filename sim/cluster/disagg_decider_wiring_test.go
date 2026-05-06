@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -130,5 +131,74 @@ func TestDisaggregationDecider_INV_DECIDER_1_CalledOncePerRequest(t *testing.T) 
 	if stub.sawCalls != numRequests {
 		t.Errorf("INV-DECIDER-1: Decide called %d times for %d requests; want exactly one call per parent request",
 			stub.sawCalls, numRequests)
+	}
+}
+
+// TestDisaggregationDecider_INV_DECIDER_1_CalledOncePerRequest_DisaggregatedPath verifies
+// INV-DECIDER-1 holds even on the disaggregated path: the prefill sub-request spawned by
+// a Decide=true outcome must NOT trigger a second DisaggregationDecisionEvent, so the
+// total call count is still exactly one per parent request.
+func TestDisaggregationDecider_INV_DECIDER_1_CalledOncePerRequest_DisaggregatedPath(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	const numRequests = 5
+	requests := newTestRequests(numRequests)
+
+	cs := NewClusterSimulator(config, requests, nil)
+	stub := &capturingDecider{disaggregate: true}
+	cs.disaggregationDecider = stub
+
+	mustRun(t, cs)
+
+	if stub.sawCalls != numRequests {
+		t.Errorf("INV-DECIDER-1 (disaggregated path): Decide called %d times for %d requests; want exactly one call per parent request — a second Decide call would indicate a prefill sub-request is re-entering DisaggregationDecisionEvent",
+			stub.sawCalls, numRequests)
+	}
+}
+
+// newTestGlobalPrefixThresholdConfig returns a DeploymentConfig with
+// PDDecider = "global-prefix-threshold" and the specified threshold, reusing the
+// standard 4-instance (2 prefill, 2 decode) topology. Exists solely to exercise the
+// cluster.go constructor dispatch path for the counterfactual decider.
+func newTestGlobalPrefixThresholdConfig(threshold int) DeploymentConfig {
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2)
+	cfg.PDDecider = "global-prefix-threshold"
+	cfg.PDPrefixThreshold = threshold
+	return cfg
+}
+
+// TestGlobalPrefixThreshold_AboveThresholdDisaggregated_Integration verifies the
+// global-prefix-threshold constructor dispatch path (cluster.go) and end-to-end
+// wiring: requests with tokens above the threshold are disaggregated. This also
+// exercises the ObserveRouting → global-LRU warming path through the real event
+// loop (PrefillRoutingEvent.Execute calls notifyDisaggregationObserver which
+// forwards to GlobalPrefixThresholdDecider.ObserveRouting).
+func TestGlobalPrefixThreshold_AboveThresholdDisaggregated_Integration(t *testing.T) {
+	const threshold = 200
+	config := newTestGlobalPrefixThresholdConfig(threshold)
+
+	// 3 requests with 400 unique tokens each: nonCached = 400 > 200 → all disaggregated
+	// on first Decide (cold LRU). Each prefill-routing notification warms the global
+	// LRU with that request's 25 blocks.
+	requests := make([]*sim.Request, 3)
+	for i := range requests {
+		tokens := make([]int, 400)
+		for j := range tokens {
+			tokens[j] = j + i*10000 + 1 // unique across requests
+		}
+		requests[i] = &sim.Request{
+			ID:           fmt.Sprintf("gpt_%d", i),
+			InputTokens:  tokens,
+			OutputTokens: make([]int, 5),
+			State:        sim.StateQueued,
+			ArrivalTime:  int64(i * 500000),
+		}
+	}
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	if len(cs.parentRequests) != 3 {
+		t.Errorf("GlobalPrefixThresholdDecider integration: parentRequests = %d, want 3 — all three 400-token requests exceed threshold=%d and should be disaggregated",
+			len(cs.parentRequests), threshold)
 	}
 }
