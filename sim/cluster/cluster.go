@@ -402,6 +402,14 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		if config.FlowControlUsageLimitThreshold > 0 && config.FlowControlUsageLimitThreshold < 1.0 {
 			gq.SetUsageLimitThreshold(config.FlowControlUsageLimitThreshold)
 		}
+		switch config.FlowControlFairnessPolicy {
+		case "round-robin":
+			gq.SetFairnessPolicy(NewRoundRobinPolicy())
+		case "", "global-strict":
+			// default — already set
+		default:
+			panic(fmt.Sprintf("ClusterSimulator: unknown fairness policy %q (must be global-strict or round-robin)", config.FlowControlFairnessPolicy))
+		}
 		cs.gatewayQueue = gq
 		cs.saturationDetector = sim.NewSaturationDetector(
 			config.FlowControlDetector,
@@ -412,8 +420,12 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		fcAdmission := NewFlowControlAdmission(gq)
 		cs.flowControlAdmission = fcAdmission
 		cs.admissionPolicy = fcAdmission
-		logrus.Infof("[cluster] flow control enabled: detector=%q, dispatch=%q, maxDepth=%d, perBandCapacity=%d",
-			config.FlowControlDetector, dispatchOrder, config.FlowControlMaxQueueDepth, config.FlowControlPerBandCapacity)
+		fairness := config.FlowControlFairnessPolicy
+		if fairness == "" {
+			fairness = "global-strict"
+		}
+		logrus.Infof("[cluster] flow control enabled: detector=%q, dispatch=%q, fairness=%q, maxDepth=%d, perBandCapacity=%d",
+			config.FlowControlDetector, dispatchOrder, fairness, config.FlowControlMaxQueueDepth, config.FlowControlPerBandCapacity)
 	}
 
 	// Phase 1B-2a: initialize TenantTracker when TenantBudgets is configured (issue #811).

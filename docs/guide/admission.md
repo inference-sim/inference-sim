@@ -193,9 +193,18 @@ admission decision, matching llm-d's `FlowControlAdmissionController`.
 1. Incoming request is enqueued into a per-priority-band, per-flow queue
 2. Each unique (TenantID, Priority) pair gets its own FIFO queue within a priority band
 3. Dispatch order follows `--dispatch-order`: with `priority`, iterates bands highest-priority first; with `fifo` (default), picks the globally-earliest arrival across all bands
-4. Within a band, the request with the earliest arrival (lowest sequence ID) is dispatched first (global-strict fairness)
+4. Within a band, `--fairness-policy` controls flow selection: `global-strict` (default) picks the earliest arrival (lowest sequence ID); `round-robin` cycles through tenants in sorted key order
 5. Saturation gating: dispatch only when cluster saturation < 1.0
 6. Completion-triggered dispatch: each completion frees capacity and tries to dispatch from the queue
+
+### Fairness Policy
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--fairness-policy` | Intra-band dispatch fairness: `global-strict`, `round-robin` | `global-strict` |
+
+- **global-strict**: Picks the flow head with the earliest sequence ID (arrival order). Matches GIE's GlobalStrict.
+- **round-robin**: Cycles through tenants in sorted key order, skipping empty flows. Maintains a per-band cursor.
 
 ### Per-Band Capacity
 
