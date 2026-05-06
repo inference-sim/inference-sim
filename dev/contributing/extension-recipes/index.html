@@ -2896,7 +2896,6 @@
 <li><strong>Implement the interface</strong> in the corresponding file:</li>
 <li><code>AdmissionPolicy</code> → <code>sim/admission.go</code> (cluster-level: receives <code>*RouterState</code> with snapshots + clock)</li>
 <li><code>RoutingPolicy</code> → <code>sim/routing.go</code> (cluster-level: receives <code>*RouterState</code> with snapshots + clock)</li>
-<li><code>PriorityPolicy</code> → <code>sim/priority.go</code> (instance-level: receives <code>req</code> + <code>clock</code> only)</li>
 <li><code>InstanceScheduler</code> → <code>sim/scheduler.go</code> (instance-level: receives <code>requests</code> + <code>clock</code> only)</li>
 <li>
 <p>Note: <code>RouterState</code> is a bridge type in <code>sim/</code> to avoid import cycles — see <code>sim/router_state.go</code></p>
@@ -3019,7 +3018,7 @@
 <li>The implementation MUST update <code>ctx.ComputedTokens[req.ID]</code> for each request that receives new tokens (Phase 2 of <code>Step()</code> reads this map to advance <code>ProgressIndex</code>)</li>
 <li>The implementation may mutate <code>WaitQ</code> (dequeue/prepend) and <code>KVCache</code> (allocate/release) during batch formation</li>
 <li>The implementation MUST NOT schedule events or record metrics — return decisions in <code>BatchResult</code>, the Simulator applies them</li>
-<li><strong>Register in <code>NewBatchFormation</code> factory</strong> in <code>sim/batch_formation.go</code>: add a selection branch. The factory signature is <code>NewBatchFormation(preemptionPolicy string, sloMap *SLOPriorityMap)</code>. For a new batch formation <em>strategy</em> (not just a preemption variant), add a <code>BatchFormation string</code> field to <code>PolicyConfig</code> and a selection branch in <code>NewBatchFormation</code></li>
+<li><strong>Register in <code>NewBatchFormation</code> factory</strong> in <code>sim/batch_formation.go</code>: add a selection branch. The factory signature is <code>NewBatchFormation(preemptionPolicy string)</code>. For a new batch formation <em>strategy</em> (not just a preemption variant), add a <code>BatchFormation string</code> field to <code>PolicyConfig</code> and a selection branch in <code>NewBatchFormation</code></li>
 <li><strong>Add behavioral tests</strong> — token budget enforcement, batch size limits, KV conservation, preemption behavior (if applicable), FCFS ordering</li>
 <li>Extension friction: <strong>2 touch points</strong> (implementation + factory registration)</li>
 </ol>

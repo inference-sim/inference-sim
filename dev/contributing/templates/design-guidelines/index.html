@@ -3884,8 +3884,8 @@
 </tr>
 <tr>
 <td><strong>Priority</strong></td>
-<td>Compute request priority for scheduler</td>
-<td><code>PriorityPolicy</code> (single method)</td>
+<td>Map SLO class to vLLM-convention priority at instance entry</td>
+<td><code>SLOPriorityMap</code> (set once at <code>EnqueueRequest</code> via <code>InvertForVLLM</code>, not per-step)</td>
 <td>Implemented, frozen</td>
 </tr>
 <tr>

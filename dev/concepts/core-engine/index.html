@@ -1130,23 +1130,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Scheduling Policies">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#priority-policies" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Priority Policies
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -3306,23 +3289,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Scheduling Policies">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#priority-policies" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Priority Policies
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -3485,8 +3451,8 @@
     style P4 fill:#d0bfff</code></pre>
 <h3 id="phase-1-schedule-batch-schedulebatch">Phase 1: Schedule Batch (<code>scheduleBatch</code>)<a class="headerlink" href="#phase-1-schedule-batch-schedulebatch" title="Permanent link">&para;</a></h3>
 <ol>
-<li>Assign priority scores to all queued requests via the priority policy</li>
-<li>Reorder the wait queue via the scheduling policy (e.g., FCFS, SJF, priority-based)</li>
+<li>Reorder the wait queue via the scheduling policy (e.g., FCFS, SJF, priority-FCFS). Request priorities are <strong>static</strong> — set once at enqueue via <code>SLOPriorityMap.InvertForVLLM(SLOClass)</code>, not recomputed per step.</li>
+<li>(step loop reordering — see above)</li>
 <li>Invoke batch formation to select which requests enter the running batch</li>
 <li>Record preemption metrics for any evicted requests</li>
 <li>Schedule <code>ScheduledEvent</code> for any newly admitted requests</li>
@@ -3740,8 +3706,8 @@ Dequeue requests from the wait queue:
 </tr>
 <tr>
 <td><code>priority-fcfs</code></td>
-<td>Priority descending, then arrival ascending</td>
-<td>SLO-aware scheduling</td>
+<td>Priority <strong>ascending</strong> (lower value = more urgent, vLLM convention), then arrival ascending</td>
+<td>SLO-aware scheduling with <code>slo_class</code> in workload spec</td>
 </tr>
 <tr>
 <td><code>sjf</code></td>
@@ -3750,39 +3716,12 @@ Dequeue requests from the wait queue:
 </tr>
 <tr>
 <td><code>reverse-priority</code></td>
-<td>Priority ascending (starves high-priority)</td>
+<td>Priority descending (highest value = least urgent scheduled first)</td>
 <td>Pathological testing only</td>
 </tr>
 </tbody>
 </table>
-<h3 id="priority-policies">Priority Policies<a class="headerlink" href="#priority-policies" title="Permanent link">&para;</a></h3>
-<p>Priority policies assign a numeric score to each request before scheduling:</p>
-<table>
-<thead>
-<tr>
-<th>Policy</th>
-<th>Score Computation</th>
-<th>Behavior</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>constant</code></td>
-<td>Fixed score for all requests</td>
-<td>No differentiation (default)</td>
-</tr>
-<tr>
-<td><code>slo-based</code></td>
-<td><code>base + age_weight * (clock - arrival)</code></td>
-<td>Favors older requests, prevents starvation. Note: despite the name, does not currently use per-request SLO metadata.</td>
-</tr>
-<tr>
-<td><code>inverted-slo</code></td>
-<td><code>base - age_weight * age</code></td>
-<td>Starves older requests (pathological)</td>
-</tr>
-</tbody>
-</table>
+<p>Request priorities are <strong>static</strong> — set once at enqueue via <code>SLOPriorityMap.InvertForVLLM(SLOClass)</code> (vLLM convention: lower integer = more urgent). Default mapping: <code>critical=0</code>, <code>standard=1</code>, <code>batch=5</code>, <code>sheddable=6</code>, <code>background=7</code>. No per-step recomputation.</p>
 <h2 id="metrics">Metrics<a class="headerlink" href="#metrics" title="Permanent link">&para;</a></h2>
 <p>BLIS records per-request and aggregate metrics throughout the simulation.</p>
 <h3 id="per-request-metrics">Per-Request Metrics<a class="headerlink" href="#per-request-metrics" title="Permanent link">&para;</a></h3>
