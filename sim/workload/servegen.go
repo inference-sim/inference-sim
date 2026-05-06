@@ -71,6 +71,72 @@ func parseServeGenPDF(s string) (map[int]float64, error) {
 	return pdf, nil
 }
 
+// parseServeGenFloatPDF parses a Python dict string like {"0.0": 0.1, "0.5": 0.3}
+// into a Go map[float64]float64. Used for reason_ratio distributions.
+// Validates that all keys are in [0.0, 1.0] range.
+func parseServeGenFloatPDF(s string) (map[float64]float64, error) {
+	// Strip outer braces
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "{") || !strings.HasSuffix(s, "}") {
+		return nil, fmt.Errorf("expected dict string starting with '{' and ending with '}', got: %.40s", s)
+	}
+	s = s[1 : len(s)-1]
+	s = strings.TrimSpace(s)
+
+	if s == "" {
+		return nil, fmt.Errorf("empty PDF dictionary")
+	}
+
+	pdf := make(map[float64]float64)
+
+	// Split by comma, parse each "key: value" pair
+	pairs := strings.Split(s, ",")
+	for _, pair := range pairs {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue // trailing comma
+		}
+		parts := strings.SplitN(pair, ":", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid key:value pair: %q", pair)
+		}
+
+		keyStr := strings.TrimSpace(parts[0])
+		valStr := strings.TrimSpace(parts[1])
+
+		// Strip quotes from key (JSON format)
+		keyStr = strings.Trim(keyStr, "\"")
+
+		// Parse key as float64
+		key, err := strconv.ParseFloat(keyStr, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid key %q: %w", keyStr, err)
+		}
+
+		// Validate range [0.0, 1.0]
+		if key < 0.0 || key > 1.0 {
+			return nil, fmt.Errorf("reason_ratio key %f outside valid range [0.0, 1.0]", key)
+		}
+
+		// Parse value as float64 (probability)
+		val, err := strconv.ParseFloat(valStr, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid value %q for key %f: %w", valStr, key, err)
+		}
+
+		if val < 0 {
+			return nil, fmt.Errorf("negative probability %f for key %f", val, key)
+		}
+
+		pdf[key] = val
+	}
+
+	if len(pdf) == 0 {
+		return nil, fmt.Errorf("no valid entries in PDF dictionary")
+	}
+	return pdf, nil
+}
+
 // serveGenTraceRow represents one row from a ServeGen chunk-*-trace.csv.
 // Format: start_time(s), rate(req/s), cv, pattern_type, param1, param2
 type serveGenTraceRow struct {

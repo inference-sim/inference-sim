@@ -1022,3 +1022,42 @@ func TestConvertServeGen_MultiPeriodAbsoluteTimestamps(t *testing.T) {
 	assert.Equal(t, int64(600*1e6), cohort.Spike.DurationUs,
 		"spike duration should be the configured window duration")
 }
+
+func TestParseServeGenFloatPDF_ValidRatios(t *testing.T) {
+	// GIVEN a reason_ratio PDF with float keys in [0.0, 1.0]
+	input := `{"0.0": 0.1, "0.5": 0.3, "1.0": 0.6}`
+
+	// WHEN parsed
+	pdf, err := parseServeGenFloatPDF(input)
+
+	// THEN it succeeds and returns float map
+	require.NoError(t, err)
+	assert.InDelta(t, 0.1, pdf[0.0], 0.0001)
+	assert.InDelta(t, 0.3, pdf[0.5], 0.0001)
+	assert.InDelta(t, 0.6, pdf[1.0], 0.0001)
+	assert.Equal(t, 3, len(pdf))
+}
+
+func TestParseServeGenFloatPDF_OutOfRangeKey(t *testing.T) {
+	// GIVEN PDF with key outside [0.0, 1.0]
+	input := `{"1.5": 0.2}`
+
+	// WHEN parsed
+	_, err := parseServeGenFloatPDF(input)
+
+	// THEN it returns error
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "outside valid range")
+}
+
+func TestParseServeGenFloatPDF_EmptyDict(t *testing.T) {
+	// GIVEN empty PDF dict
+	input := `{}`
+
+	// WHEN parsed
+	_, err := parseServeGenFloatPDF(input)
+
+	// THEN it returns error
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "empty PDF dictionary")
+}
