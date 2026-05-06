@@ -331,10 +331,10 @@ func TestParseFitnessWeights_ZeroWeight_Accepted(t *testing.T) {
 	}
 }
 
-// TestCollectRawMetrics_ConstantPriority_SuppressesInversions verifies that
+// TestCollectRawMetrics_FCFSScheduler_SuppressesInversions verifies that
 // priority inversion counter returns 0 when using constant priority policy,
 // since there are no meaningful priorities to invert.
-func TestCollectRawMetrics_ConstantPriority_SuppressesInversions(t *testing.T) {
+func TestCollectRawMetrics_FCFSScheduler_SuppressesInversions(t *testing.T) {
 	// GIVEN per-instance metrics with requests that would normally trigger inversions
 	m := sim.NewMetrics()
 	m.Requests["early"] = sim.RequestMetrics{ID: "early", ArrivedAt: 100}
@@ -355,9 +355,9 @@ func TestCollectRawMetrics_ConstantPriority_SuppressesInversions(t *testing.T) {
 	}
 }
 
-// TestCollectRawMetrics_SLOBasedPriority_DetectsInversions verifies that
+// TestCollectRawMetrics_PriorityScheduler_DetectsInversions verifies that
 // priority inversion counter still works for non-constant priority policies.
-func TestCollectRawMetrics_SLOBasedPriority_DetectsInversions(t *testing.T) {
+func TestCollectRawMetrics_PriorityScheduler_DetectsInversions(t *testing.T) {
 	// GIVEN per-instance metrics with requests that would trigger inversions
 	m := sim.NewMetrics()
 	m.Requests["early"] = sim.RequestMetrics{ID: "early", ArrivedAt: 100}
@@ -369,12 +369,12 @@ func TestCollectRawMetrics_SLOBasedPriority_DetectsInversions(t *testing.T) {
 	aggregated.CompletedRequests = 2
 	aggregated.SimEndedTime = 1_000_000
 
-	// WHEN collecting with slo-based priority policy
+	// WHEN collecting with priority-fcfs scheduler
 	raw := CollectRawMetrics(aggregated, []*sim.Metrics{m}, 0, "priority-fcfs", 0)
 
 	// THEN priority inversions should be detected
 	if raw.PriorityInversions == 0 {
-		t.Error("expected priority inversions > 0 with slo-based policy")
+		t.Error("expected priority inversions > 0 with priority-fcfs scheduler")
 	}
 }
 
@@ -386,7 +386,7 @@ func TestDetectPriorityInversions_InvertedRequests(t *testing.T) {
 	m.Requests["low"] = sim.RequestMetrics{ID: "low", ArrivedAt: 200}
 	m.RequestE2Es["low"] = 5000.0
 
-	inversions := detectPriorityInversions([]*sim.Metrics{m}, "slo-based")
+	inversions := detectPriorityInversions([]*sim.Metrics{m}, "priority-fcfs")
 
 	if inversions < 0 {
 		t.Errorf("inversions should be >= 0, got %d", inversions)
@@ -417,7 +417,7 @@ func TestDetectPriorityInversions_MissingE2E_WarnsAndCountsMatched(t *testing.T)
 	defer logrus.SetOutput(os.Stderr)
 
 	// WHEN detecting priority inversions
-	inversions := detectPriorityInversions([]*sim.Metrics{m}, "slo-based")
+	inversions := detectPriorityInversions([]*sim.Metrics{m}, "priority-fcfs")
 
 	// THEN inversions are counted from matched requests (r1 vs r2)
 	assert.GreaterOrEqual(t, inversions, 1, "should detect inversion between r1 and r2")
@@ -442,8 +442,8 @@ func TestDetectPriorityInversions_MixedSLO_NoFalsePositives(t *testing.T) {
 	m.Requests["b2"] = sim.RequestMetrics{ID: "b2", ArrivedAt: 400, SLOClass: "batch"}
 	m.RequestE2Es["b2"] = 48000.0
 
-	// WHEN detecting with slo-based priority
-	inversions := detectPriorityInversions([]*sim.Metrics{m}, "slo-based")
+	// WHEN detecting with priority-fcfs scheduler
+	inversions := detectPriorityInversions([]*sim.Metrics{m}, "priority-fcfs")
 
 	// THEN no inversions (within each class, requests are ordered correctly)
 	if inversions != 0 {
@@ -461,7 +461,7 @@ func TestDetectPriorityInversions_WithinSLOClass_StillDetected(t *testing.T) {
 	m.Requests["rt2"] = sim.RequestMetrics{ID: "rt2", ArrivedAt: 200, SLOClass: "critical"}
 	m.RequestE2Es["rt2"] = 5000.0
 
-	inversions := detectPriorityInversions([]*sim.Metrics{m}, "slo-based")
+	inversions := detectPriorityInversions([]*sim.Metrics{m}, "priority-fcfs")
 
 	if inversions == 0 {
 		t.Error("expected at least 1 inversion within the same SLO class")
@@ -479,7 +479,7 @@ func TestDetectPriorityInversions_EmptySLOClass_UsesDefault(t *testing.T) {
 	m.Requests["r2"] = sim.RequestMetrics{ID: "r2", ArrivedAt: 200}
 	m.RequestE2Es["r2"] = 5000.0
 
-	inversions := detectPriorityInversions([]*sim.Metrics{m}, "slo-based")
+	inversions := detectPriorityInversions([]*sim.Metrics{m}, "priority-fcfs")
 
 	if inversions == 0 {
 		t.Error("expected inversion detected for legacy (empty SLO class) requests")

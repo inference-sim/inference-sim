@@ -123,9 +123,9 @@ type RawMetrics struct {
 // CollectRawMetrics builds RawMetrics from aggregated and per-instance metrics.
 // perInstance is optional (may be nil for anomaly-free collection).
 // scheduler controls whether priority inversion detection runs:
-// when "constant" or "" (both map to ConstantPriority), inversions are
-// suppressed (always 0) since all requests share the same priority and
-// E2E differences reflect workload variance, not unfairness.
+// when "fcfs" or "" (no priority ordering), inversions are
+// suppressed (always 0) since requests are served in arrival order and
+// E2E differences reflect workload variance, not scheduling unfairness.
 func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, rejectedRequests int, scheduler string, routingRejections int) *RawMetrics {
 	raw := &RawMetrics{
 		RejectedRequests:     rejectedRequests,

@@ -71,7 +71,6 @@ func NewRoutingDecision(target string, reason string) RoutingDecision {
 }
 
 // NewRoutingDecisionWithScores creates a RoutingDecision with target, reason, and per-instance scores.
-// Priority is 0.0 (defer to instance-level PriorityPolicy).
 // Used by scoring-based routing policies (e.g., WeightedScoring).
 func NewRoutingDecisionWithScores(target string, reason string, scores map[string]float64) RoutingDecision {
 	if target == "" {
