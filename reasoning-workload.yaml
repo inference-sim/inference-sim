@@ -11,13 +11,75 @@ cohorts:
       input_distribution:
         type: lognormal
         params:
-            mu: 8.33811041912114
-            sigma: 1.4738915594714361
+            mu: 4.052964928806574
+            sigma: 0.342337684767796
       output_distribution:
         type: lognormal
         params:
-            mu: 6.805726941929303
-            sigma: 0.3696707761013584
+            mu: 6.320547217158452
+            sigma: 0.2617908461470518
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 0
+        duration_us: 600000000
+        trace_rate: 1
+      reasoning:
+        reason_ratio_distribution:
+            type: lognormal
+            params:
+                mu: 3.1780538303479458
+                sigma: 0
+        multi_turn:
+            max_rounds: 1
+            think_time_us: 0
+            context_growth: ""
+    - id: reasoning-standard-low
+      population: 1
+      slo_class: standard
+      arrival:
+        process: poisson
+      input_distribution:
+        type: lognormal
+        params:
+            mu: 4.323531261689864
+            sigma: 0.6204136847462897
+      output_distribution:
+        type: lognormal
+        params:
+            mu: 7.026806893587205
+            sigma: 0.2848994438813931
+      streaming: true
+      rate_fraction: 1
+      spike:
+        start_time_us: 0
+        duration_us: 600000000
+        trace_rate: 1
+      reasoning:
+        reason_ratio_distribution:
+            type: lognormal
+            params:
+                mu: 3.6014652371126177
+                sigma: 0.2771653032716415
+        multi_turn:
+            max_rounds: 1
+            think_time_us: 0
+            context_growth: ""
+    - id: reasoning-batch-low
+      population: 1
+      slo_class: batch
+      arrival:
+        process: poisson
+      input_distribution:
+        type: lognormal
+        params:
+            mu: 8.667131917310426
+            sigma: 1.0310088064750382
+      output_distribution:
+        type: lognormal
+        params:
+            mu: 6.680025582232028
+            sigma: 0.4894710905305601
       streaming: true
       rate_fraction: 1
       spike:
@@ -34,21 +96,21 @@ cohorts:
             max_rounds: 1
             think_time_us: 0
             context_growth: ""
-    - id: reasoning-standard-low
+    - id: reasoning-sheddable-low
       population: 1
-      slo_class: standard
+      slo_class: sheddable
       arrival:
         process: poisson
       input_distribution:
         type: lognormal
         params:
-            mu: 3.2188758248682006
-            sigma: 0
+            mu: 4.275865234962992
+            sigma: 0.17849322227054448
       output_distribution:
         type: lognormal
         params:
-            mu: 7.080867896690782
-            sigma: 7.3702669400468425e-09
+            mu: 5.848409467685314
+            sigma: 0.37634721080331035
       streaming: true
       rate_fraction: 1
       spike:
@@ -73,13 +135,13 @@ cohorts:
       input_distribution:
         type: lognormal
         params:
-            mu: 5.247468943420536
-            sigma: 0.7209262672666563
+            mu: 5.481058487060466
+            sigma: 0.7588322925348974
       output_distribution:
         type: lognormal
         params:
-            mu: 6.5292486540615835
-            sigma: 0.563883141065641
+            mu: 6.512669026125535
+            sigma: 0.5377234781267183
       streaming: true
       rate_fraction: 1
       spike:
@@ -90,8 +152,8 @@ cohorts:
         reason_ratio_distribution:
             type: lognormal
             params:
-                mu: 4.231158470776138
-                sigma: 0.2715821643489484
+                mu: 4.269773549041356
+                sigma: 0.22031905066755791
         multi_turn:
             max_rounds: 1
             think_time_us: 0
@@ -104,13 +166,13 @@ cohorts:
       input_distribution:
         type: lognormal
         params:
-            mu: 6.854915974982856
-            sigma: 0.5615630824029608
+            mu: 5.951739983948257
+            sigma: 0.7232354455405318
       output_distribution:
         type: lognormal
         params:
-            mu: 6.6903355403926
-            sigma: 0.39919767693134806
+            mu: 6.543563105150075
+            sigma: 0.44836649346168894
       streaming: true
       rate_fraction: 1
       spike:
@@ -121,8 +183,8 @@ cohorts:
         reason_ratio_distribution:
             type: lognormal
             params:
-                mu: 4.2879901850928075
-                sigma: 0.19609117164681436
+                mu: 4.336981524502052
+                sigma: 0.1395791409778836
         multi_turn:
             max_rounds: 1
             think_time_us: 0
@@ -135,13 +197,13 @@ cohorts:
       input_distribution:
         type: lognormal
         params:
-            mu: 7.205073944245685
-            sigma: 0.3730587773657543
+            mu: 5.904380541950068
+            sigma: 0.46427643979408856
       output_distribution:
         type: lognormal
         params:
-            mu: 6.32151227010474
-            sigma: 0.37647911650769633
+            mu: 6.5124063211813965
+            sigma: 0.38286575302459236
       streaming: true
       rate_fraction: 1
       spike:
@@ -152,8 +214,8 @@ cohorts:
         reason_ratio_distribution:
             type: lognormal
             params:
-                mu: 4.198022969922392
-                sigma: 0.24623039801795762
+                mu: 4.35129096170915
+                sigma: 0.12906624477540762
         multi_turn:
             max_rounds: 1
             think_time_us: 0
@@ -166,13 +228,13 @@ cohorts:
       input_distribution:
         type: lognormal
         params:
-            mu: 5.350906476351803
-            sigma: 1.0337705941110775
+            mu: 6.257717653885002
+            sigma: 0.4608743974644476
       output_distribution:
         type: lognormal
         params:
-            mu: 6.285830996825151
-            sigma: 0.49059842025281797
+            mu: 6.6513297881179545
+            sigma: 0.45084563800687816
       streaming: true
       rate_fraction: 1
       spike:
@@ -183,8 +245,8 @@ cohorts:
         reason_ratio_distribution:
             type: lognormal
             params:
-                mu: 4.140505752850047
-                sigma: 0.24851790140773314
+                mu: 4.355392932714556
+                sigma: 0.1302182526345334
         multi_turn:
             max_rounds: 1
             think_time_us: 0
@@ -197,13 +259,13 @@ cohorts:
       input_distribution:
         type: lognormal
         params:
-            mu: 6.072447087548748
-            sigma: 0.5063406306826783
+            mu: 5.335756313106125
+            sigma: 0.7793732534563624
       output_distribution:
         type: lognormal
         params:
-            mu: 6.537543434841198
-            sigma: 0.5016021006512736
+            mu: 6.306759226772668
+            sigma: 0.46629754035029625
       streaming: true
       rate_fraction: 1
       spike:
@@ -214,8 +276,8 @@ cohorts:
         reason_ratio_distribution:
             type: lognormal
             params:
-                mu: 4.228339722004845
-                sigma: 0.1890241760109592
+                mu: 4.280676107832362
+                sigma: 0.1669095874252537
         multi_turn:
             max_rounds: 1
             think_time_us: 0

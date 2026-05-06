@@ -1107,38 +1107,40 @@ func TestDetectLanguageCategory_NoReasonRatio(t *testing.T) {
 	}
 }
 
-func TestClassifyReasoningChunks_SplitAtThreshold(t *testing.T) {
-	// GIVEN chunks with varying mean ratios
+func TestAverageReasonRatioPMFs_PreservesBimodality(t *testing.T) {
+	// GIVEN chunks with bimodal distributions (two peaks: low and high)
 	chunks := []chunkData{
-		{id: "A", reasonRatioPDF: map[float64]float64{0.1: 0.8, 0.2: 0.2}}, // mean ~0.12
-		{id: "B", reasonRatioPDF: map[float64]float64{0.3: 0.5, 0.4: 0.5}}, // mean ~0.35
-		{id: "C", reasonRatioPDF: map[float64]float64{0.5: 0.6, 0.7: 0.4}}, // mean ~0.58
-		{id: "D", reasonRatioPDF: map[float64]float64{0.8: 0.3, 0.9: 0.7}}, // mean ~0.87
+		// Chunk A: 80% at 10%, 20% at 90%
+		{id: "A", reasonRatioPDF: map[float64]float64{0.1: 0.8, 0.9: 0.2}},
+		// Chunk B: 70% at 10%, 30% at 90%
+		{id: "B", reasonRatioPDF: map[float64]float64{0.1: 0.7, 0.9: 0.3}},
 	}
 
-	// WHEN classified with threshold 0.4
-	low, high, err := classifyReasoningChunks(chunks, 0.4)
+	// WHEN averaged
+	dist, err := averageReasonRatioPMFs(chunks)
 
-	// THEN low contains A, B; high contains C, D
+	// THEN result is empirical distribution preserving bimodality
 	require.NoError(t, err)
-	assert.Equal(t, 2, len(low))
-	assert.Equal(t, 2, len(high))
-	assert.Equal(t, "A", low[0].id)
-	assert.Equal(t, "B", low[1].id)
-	assert.Equal(t, "C", high[0].id)
-	assert.Equal(t, "D", high[1].id)
+	assert.Equal(t, "empirical", dist.Type)
+	assert.NotNil(t, dist.Params)
+
+	// Should have two peaks at 10% and 90%
+	assert.Contains(t, dist.Params, "10") // 10% key
+	assert.Contains(t, dist.Params, "90") // 90% key
+
+	// Average probabilities: (0.8+0.7)/2 = 0.75 and (0.2+0.3)/2 = 0.25
+	assert.InDelta(t, 0.75, dist.Params["10"], 0.01)
+	assert.InDelta(t, 0.25, dist.Params["90"], 0.01)
 }
 
-func TestClassifyReasoningChunks_EmptyRatioPDF(t *testing.T) {
-	// GIVEN chunk with empty reason_ratio PDF
-	chunks := []chunkData{
-		{id: "E", reasonRatioPDF: map[float64]float64{}},
-	}
+func TestAverageReasonRatioPMFs_EmptyChunks(t *testing.T) {
+	// GIVEN empty chunks list
+	chunks := []chunkData{}
 
-	// WHEN classified
-	_, _, err := classifyReasoningChunks(chunks, 0.4)
+	// WHEN averaged
+	_, err := averageReasonRatioPMFs(chunks)
 
 	// THEN it returns error
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "empty reason_ratio PDF")
+	assert.Contains(t, err.Error(), "no chunks provided")
 }
