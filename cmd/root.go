@@ -1745,7 +1745,7 @@ var runCmd = &cobra.Command{
 		if runSaturationOutputPath != "" && traceOutput == "" {
 			logrus.Fatalf("--saturation-output requires --trace-output to be specified")
 		}
-		if runSaturationOutputPath != "" && len(inMemoryRecords) > 0 {
+		if runSaturationOutputPath != "" {
 			// Use in-memory records instead of re-loading from disk
 			traceData := workload.TraceV2{Records: inMemoryRecords}
 			verdict := workload.AnalyzeSaturation(traceData, 60.0)
