@@ -18,8 +18,8 @@
 
 **BC-3: Cluster passes the decode pod's snapshot, not an arbitrary one**
 - GIVEN a cluster where decode routing has selected `TargetInstance = X`
-- WHEN `DisaggregationDecisionEvent.Execute` invokes the decider
-- THEN the snapshot passed to `Decide` has `ID == X` (decode pod, not prefill pod)
+- WHEN `ClusterSimulator.executeDisaggregatedRouting` invokes the decider
+- THEN the snapshot passed to `Decide` has `ID == X` (decode target, which may be a dedicated decode pod or a shared-role pod)
 
 **BC-4: PrefixThresholdDecider decision preserved**
 - GIVEN a `PrefixThresholdDecider` with existing threshold/block-size configuration
@@ -96,13 +96,15 @@ Also update the interface docstring to document the snapshot argument and the ze
 
 ### Task 2: Pass decode snapshot at the call site (BC-3)
 
-**Files:** modify `sim/cluster/cluster_event.go`
+**Files:** modify `sim/cluster/cluster.go`
+
+> **Note:** Originally targeted `sim/cluster/cluster_event.go` (`DisaggregationDecisionEvent.Execute`). GAP-1 (#1266) moved the disaggregation decision into `ClusterSimulator.executeDisaggregatedRouting` in `sim/cluster/cluster.go` — the snapshot-threading change was reapplied at the new call site on merge. GAP-5 (#1278) later extended `FilterSnapshotsByPool` to use `.Has(role)` set-membership so shared-role pods appear in the decode-filtered list; the ID-based snapshot lookup is unaffected.
 
 **Test:** covered indirectly by existing cluster-level disaggregation tests (`TestPrefixThreshold_*`, `TestDisaggregation_*`) which exercise the full pipeline and will fail to compile without this change. No new test required — passing a zero-value snapshot would be invisible to behavior; the existing tests verify end-to-end wiring.
 
-**Impl (in `sim/cluster/cluster_event.go`, `DisaggregationDecisionEvent.Execute`):**
+**Impl (in `sim/cluster/cluster.go`, `ClusterSimulator.executeDisaggregatedRouting`):**
 
-After the line that computes `decodeDecision := policy.Route(...)` (line 367), find the snapshot whose `ID` equals `decodeDecision.TargetInstance` in `filteredSnapshots`. Pass it into `Decide`:
+After the line that computes `decodeDecision := policy.Route(...)`, find the snapshot whose `ID` equals `decodeDecision.TargetInstance` in `filteredSnapshots`. Pass it into `Decide`:
 
 ```go
 var decodeSnap sim.RoutingSnapshot
