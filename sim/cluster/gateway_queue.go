@@ -55,6 +55,76 @@ func (o EnqueueOutcome) String() string {
 	}
 }
 
+// FairnessPolicy selects which flow to dispatch from within a priority band.
+// Matches GIE's FairnessPolicy interface (Pick selects next flow).
+type FairnessPolicy interface {
+	Pick(band *priorityBand) *flowQueue
+}
+
+// GlobalStrictPolicy picks the flow whose head has the earliest seqID.
+// Stateless — matches GIE's GlobalStrict implementation.
+type GlobalStrictPolicy struct{}
+
+func (g *GlobalStrictPolicy) Pick(band *priorityBand) *flowQueue {
+	var bestFlow *flowQueue
+	var bestSeqID int64
+	for _, tid := range sortedFlowKeys(band.flows) {
+		flow := band.flows[tid]
+		if len(flow.requests) == 0 {
+			continue
+		}
+		if bestFlow == nil || flow.requests[0].seqID < bestSeqID {
+			bestFlow = flow
+			bestSeqID = flow.requests[0].seqID
+		}
+	}
+	return bestFlow
+}
+
+// RoundRobinPolicy cycles through flows in sorted key order per band.
+// Maintains a cursor (last-selected tenantID) per priority level.
+// DES single-threaded — no mutex needed (unlike GIE's goroutine-safe cursor).
+// Matches GIE's RoundRobin implementation.
+type RoundRobinPolicy struct {
+	cursors map[int]string // priority → last-selected tenantID
+}
+
+// NewRoundRobinPolicy creates a RoundRobinPolicy with empty cursor state.
+func NewRoundRobinPolicy() *RoundRobinPolicy {
+	return &RoundRobinPolicy{cursors: make(map[int]string)}
+}
+
+func (rr *RoundRobinPolicy) Pick(band *priorityBand) *flowQueue {
+	keys := sortedFlowKeys(band.flows)
+	if len(keys) == 0 {
+		return nil
+	}
+
+	lastSelected := rr.cursors[band.priority]
+	startIndex := 0
+	if lastSelected != "" {
+		for i, k := range keys {
+			if k == lastSelected {
+				startIndex = (i + 1) % len(keys)
+				break
+			}
+		}
+		// If lastSelected not found (flow removed), startIndex stays 0.
+	}
+
+	for i := 0; i < len(keys); i++ {
+		idx := (startIndex + i) % len(keys)
+		flow := band.flows[keys[idx]]
+		if len(flow.requests) > 0 {
+			rr.cursors[band.priority] = keys[idx]
+			return flow
+		}
+	}
+
+	delete(rr.cursors, band.priority)
+	return nil
+}
+
 // GatewayQueue is a per-priority-band, per-flow queue for holding admitted requests
 // before routing. Replaces the flat heap with a hierarchical structure:
 // bands sorted descending by priority, each containing per-tenant flow queues.
@@ -70,6 +140,7 @@ type GatewayQueue struct {
 	priorityMap          *sim.SLOPriorityMap
 	priorityMode         bool    // true for "priority", false for "fifo"
 	usageLimitThreshold  float64 // per-band HoL blocking ceiling (default 1.0 = no HoL)
+	fairnessPolicy       FairnessPolicy
 }
 
 // NewGatewayQueue creates a gateway queue with the given dispatch order and max depth.
@@ -91,7 +162,17 @@ func NewGatewayQueue(dispatchOrder string, maxDepth int, priorityMap *sim.SLOPri
 		priorityMap:         priorityMap,
 		priorityMode:        dispatchOrder == "priority",
 		usageLimitThreshold: 1.0,
+		fairnessPolicy:      &GlobalStrictPolicy{},
 	}
+}
+
+// SetFairnessPolicy sets the intra-band dispatch fairness policy.
+// Panics if fp is nil.
+func (q *GatewayQueue) SetFairnessPolicy(fp FairnessPolicy) {
+	if fp == nil {
+		panic("GatewayQueue: fairnessPolicy must not be nil")
+	}
+	q.fairnessPolicy = fp
 }
 
 // SetPerBandCapacity sets the maximum number of requests per priority band.
@@ -337,7 +418,7 @@ func (q *GatewayQueue) DequeueGated(saturation float64) *sim.Request {
 }
 
 // dequeuePriority dispatches from the highest non-empty band.
-// Within the band, picks the flow head with the earliest seqID (global-strict fairness).
+// Within the band, delegates flow selection to the configured FairnessPolicy.
 func (q *GatewayQueue) dequeuePriority() *sim.Request {
 	for _, band := range q.bands {
 		if band.totalLen == 0 {
@@ -385,31 +466,18 @@ func (q *GatewayQueue) dequeueFIFO() *sim.Request {
 	return req
 }
 
-// dequeueFromBand picks the flow head with the earliest seqID within the given band.
+// dequeueFromBand delegates within-band flow selection to the configured FairnessPolicy.
 func (q *GatewayQueue) dequeueFromBand(band *priorityBand) *sim.Request {
-	var bestEntry *flowEntry
-	var bestFlow *flowQueue
-
-	for _, tid := range sortedFlowKeys(band.flows) {
-		flow := band.flows[tid]
-		if len(flow.requests) == 0 {
-			continue
-		}
-		head := &flow.requests[0]
-		if bestEntry == nil || head.seqID < bestEntry.seqID {
-			bestEntry = head
-			bestFlow = flow
-		}
-	}
-	if bestEntry == nil {
+	flow := q.fairnessPolicy.Pick(band)
+	if flow == nil {
 		return nil
 	}
-	req := bestEntry.request
-	bestFlow.requests = bestFlow.requests[1:]
+	req := flow.requests[0].request
+	flow.requests = flow.requests[1:]
 	band.totalLen--
 	q.totalLen--
-	if len(bestFlow.requests) == 0 {
-		delete(band.flows, bestFlow.key.TenantID)
+	if len(flow.requests) == 0 {
+		delete(band.flows, flow.key.TenantID)
 	}
 	return req
 }

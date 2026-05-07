@@ -239,6 +239,7 @@ Example:
 			FlowControlMaxConcurrency:       flowControlMaxConcurrency,
 			FlowControlPerBandCapacity:      flowControlPerBandCapacity,
 			FlowControlUsageLimitThreshold:  flowControlUsageLimitThreshold,
+			FlowControlFairnessPolicy:       flowControlFairnessPolicy,
 			TierShedThreshold:               tierShedThreshold,
 			TierShedMinPriority:             tierShedMinPriority,
 			GAIEQDThreshold:                 gaieQDThreshold,

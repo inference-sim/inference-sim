@@ -599,3 +599,231 @@ func TestGatewayQueue_DequeueGated_DefaultThreshold_NoHoL(t *testing.T) {
 		t.Fatalf("expected batch1, got %v", req)
 	}
 }
+
+// BC-5: No SetFairnessPolicy call → GlobalStrict default (backward compat).
+func TestGatewayQueue_DefaultFairnessIsGlobalStrict(t *testing.T) {
+	q := NewGatewayQueue("priority", 0, nil)
+	q.Enqueue(&sim.Request{ID: "b1", TenantID: "B", SLOClass: "standard"}, 10)
+	q.Enqueue(&sim.Request{ID: "c1", TenantID: "C", SLOClass: "standard"}, 5)
+	got := q.Dequeue()
+	if got.ID != "c1" {
+		t.Errorf("BC-5: default must be global-strict (earliest seqID c1), got %s", got.ID)
+	}
+}
+
+// BC-2: RoundRobin cycles through tenants in sorted key order.
+func TestGatewayQueue_RoundRobin_CyclesTenants(t *testing.T) {
+	q := NewGatewayQueue("priority", 0, nil)
+	q.SetFairnessPolicy(NewRoundRobinPolicy())
+
+	// All same priority (standard=3), three tenants with equal depth (3 each).
+	q.Enqueue(&sim.Request{ID: "a1", SLOClass: "standard", TenantID: "A"}, 1)
+	q.Enqueue(&sim.Request{ID: "a2", SLOClass: "standard", TenantID: "A"}, 2)
+	q.Enqueue(&sim.Request{ID: "a3", SLOClass: "standard", TenantID: "A"}, 3)
+	q.Enqueue(&sim.Request{ID: "b1", SLOClass: "standard", TenantID: "B"}, 4)
+	q.Enqueue(&sim.Request{ID: "b2", SLOClass: "standard", TenantID: "B"}, 5)
+	q.Enqueue(&sim.Request{ID: "b3", SLOClass: "standard", TenantID: "B"}, 6)
+	q.Enqueue(&sim.Request{ID: "c1", SLOClass: "standard", TenantID: "C"}, 7)
+	q.Enqueue(&sim.Request{ID: "c2", SLOClass: "standard", TenantID: "C"}, 8)
+	q.Enqueue(&sim.Request{ID: "c3", SLOClass: "standard", TenantID: "C"}, 9)
+
+	// Round-robin in sorted key order: A→B→C→A→B→C→A→B→C
+	expected := []string{"a1", "b1", "c1", "a2", "b2", "c2", "a3", "b3", "c3"}
+	for i, want := range expected {
+		got := q.Dequeue()
+		if got == nil || got.ID != want {
+			t.Fatalf("dequeue %d: want %s, got %v", i, want, got)
+		}
+	}
+	if q.Len() != 0 {
+		t.Errorf("queue should be empty after draining, got Len=%d", q.Len())
+	}
+}
+
+// BC-3: RoundRobin skips empty flows and advances cursor.
+func TestGatewayQueue_RoundRobin_SkipsEmpty(t *testing.T) {
+	q := NewGatewayQueue("priority", 0, nil)
+	q.SetFairnessPolicy(NewRoundRobinPolicy())
+
+	q.Enqueue(&sim.Request{ID: "a1", SLOClass: "standard", TenantID: "A"}, 1)
+	// B has no requests (will be empty after first cycle)
+	q.Enqueue(&sim.Request{ID: "c1", SLOClass: "standard", TenantID: "C"}, 2)
+
+	// First cycle: cursor unset → starts at A (sorted first)
+	got := q.Dequeue()
+	if got.ID != "a1" {
+		t.Fatalf("want a1, got %s", got.ID)
+	}
+	// Cursor at A, advance to B — but B doesn't exist, so skip to C
+	got = q.Dequeue()
+	if got.ID != "c1" {
+		t.Fatalf("want c1, got %s", got.ID)
+	}
+}
+
+// BC-4: RoundRobin handles removed flow (cursor points to nonexistent tenant).
+func TestGatewayQueue_RoundRobin_RemovedFlow(t *testing.T) {
+	q := NewGatewayQueue("priority", 0, nil)
+	rr := NewRoundRobinPolicy()
+	q.SetFairnessPolicy(rr)
+
+	q.Enqueue(&sim.Request{ID: "a1", SLOClass: "standard", TenantID: "A"}, 1)
+	q.Enqueue(&sim.Request{ID: "b1", SLOClass: "standard", TenantID: "B"}, 2)
+
+	// Dequeue A (cursor now at A)
+	got := q.Dequeue()
+	if got.ID != "a1" {
+		t.Fatalf("want a1, got %s", got.ID)
+	}
+	// Dequeue B (cursor now at B)
+	got = q.Dequeue()
+	if got.ID != "b1" {
+		t.Fatalf("want b1, got %s", got.ID)
+	}
+
+	// Now enqueue only C — cursor points to B which no longer exists.
+	q.Enqueue(&sim.Request{ID: "c1", SLOClass: "standard", TenantID: "C"}, 3)
+	q.Enqueue(&sim.Request{ID: "d1", SLOClass: "standard", TenantID: "D"}, 4)
+
+	// Cursor at B (removed) → wraps to start → picks C (sorted first)
+	got = q.Dequeue()
+	if got.ID != "c1" {
+		t.Fatalf("want c1 (wrap to start after removed cursor), got %s", got.ID)
+	}
+	got = q.Dequeue()
+	if got.ID != "d1" {
+		t.Fatalf("want d1, got %s", got.ID)
+	}
+}
+
+// RoundRobin with single tenant degenerates to FIFO within that tenant.
+func TestGatewayQueue_RoundRobin_SingleTenant(t *testing.T) {
+	q := NewGatewayQueue("priority", 0, nil)
+	q.SetFairnessPolicy(NewRoundRobinPolicy())
+
+	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "standard", TenantID: "A"}, 1)
+	q.Enqueue(&sim.Request{ID: "r2", SLOClass: "standard", TenantID: "A"}, 2)
+	q.Enqueue(&sim.Request{ID: "r3", SLOClass: "standard", TenantID: "A"}, 3)
+
+	for i, want := range []string{"r1", "r2", "r3"} {
+		got := q.Dequeue()
+		if got == nil || got.ID != want {
+			t.Fatalf("dequeue %d: want %s, got %v", i, want, got)
+		}
+	}
+	if q.Len() != 0 {
+		t.Errorf("queue should be empty after draining, got Len=%d", q.Len())
+	}
+}
+
+// FIFO dispatch-order ignores fairness policy (flat global scan).
+func TestGatewayQueue_FIFO_IgnoresFairnessPolicy(t *testing.T) {
+	q := NewGatewayQueue("fifo", 0, nil)
+	q.SetFairnessPolicy(NewRoundRobinPolicy()) // should have no effect
+
+	// With RoundRobin in priority mode, order would be a1,b1,a2,b2.
+	// In FIFO mode, order must be strictly by seqID regardless of tenant.
+	q.Enqueue(&sim.Request{ID: "a1", SLOClass: "standard", TenantID: "A"}, 1)
+	q.Enqueue(&sim.Request{ID: "a2", SLOClass: "standard", TenantID: "A"}, 2)
+	q.Enqueue(&sim.Request{ID: "b1", SLOClass: "standard", TenantID: "B"}, 3)
+	q.Enqueue(&sim.Request{ID: "b2", SLOClass: "standard", TenantID: "B"}, 4)
+
+	expected := []string{"a1", "a2", "b1", "b2"} // strict seqID order
+	for i, want := range expected {
+		got := q.Dequeue()
+		if got == nil || got.ID != want {
+			t.Fatalf("dequeue %d: want %s, got %v", i, want, got)
+		}
+	}
+}
+
+// TestGatewayQueue_RoundRobin_BandCursorIsolation verifies that each priority
+// band maintains its own independent cursor. Draining one band must not affect
+// the cursor position in another band.
+func TestGatewayQueue_RoundRobin_BandCursorIsolation(t *testing.T) {
+	q := NewGatewayQueue("priority", 0, nil)
+	q.SetFairnessPolicy(NewRoundRobinPolicy())
+
+	// Critical band: A then B. Dequeue once → picks A, cursor ends at A.
+	q.Enqueue(&sim.Request{ID: "cA", SLOClass: "critical", TenantID: "A"}, 1)
+	q.Enqueue(&sim.Request{ID: "cB", SLOClass: "critical", TenantID: "B"}, 2)
+
+	// Standard band: A and B. If cursors were shared, cursor="A" from critical
+	// would advance standard to B first. With isolated cursors, standard starts
+	// fresh and picks A first.
+	q.Enqueue(&sim.Request{ID: "sA", SLOClass: "standard", TenantID: "A"}, 3)
+	q.Enqueue(&sim.Request{ID: "sB", SLOClass: "standard", TenantID: "B"}, 4)
+
+	// Drain critical: picks cA (cursor now "A" in critical band).
+	got := q.Dequeue()
+	if got.ID != "cA" {
+		t.Fatalf("want cA, got %s", got.ID)
+	}
+	// Next dequeue: critical still has cB, picks it.
+	got = q.Dequeue()
+	if got.ID != "cB" {
+		t.Fatalf("want cB, got %s", got.ID)
+	}
+	// Critical drained. Standard band: with isolated cursors, fresh start → picks A.
+	// With shared cursor ("B" from critical), would pick A too (wraps). So we need
+	// a different setup: drain critical with cursor ending at A, then standard
+	// must still pick A (fresh cursor), not B (shared cursor advance).
+	// Reset and use asymmetric setup:
+	q2 := NewGatewayQueue("priority", 0, nil)
+	q2.SetFairnessPolicy(NewRoundRobinPolicy())
+
+	// Critical: only A. Dequeue → cursor ends at "A" in critical band.
+	q2.Enqueue(&sim.Request{ID: "cA1", SLOClass: "critical", TenantID: "A"}, 1)
+	// Standard: A and B.
+	q2.Enqueue(&sim.Request{ID: "sA1", SLOClass: "standard", TenantID: "A"}, 2)
+	q2.Enqueue(&sim.Request{ID: "sB1", SLOClass: "standard", TenantID: "B"}, 3)
+
+	got = q2.Dequeue() // critical → cA1, cursor["critical"] = "A"
+	if got.ID != "cA1" {
+		t.Fatalf("want cA1, got %s", got.ID)
+	}
+	// Standard band: if cursors shared, cursor="A" → startIndex=(0+1)%2=1 → picks B.
+	// If cursors isolated (correct), no cursor for standard → startIndex=0 → picks A.
+	got = q2.Dequeue()
+	if got.ID != "sA1" {
+		t.Fatalf("band cursor isolation: want sA1 (fresh cursor), got %s (shared cursor leak)", got.ID)
+	}
+	got = q2.Dequeue()
+	if got.ID != "sB1" {
+		t.Fatalf("want sB1, got %s", got.ID)
+	}
+	if q2.Len() != 0 {
+		t.Errorf("queue should be empty, got Len=%d", q2.Len())
+	}
+}
+
+// BC-6: RoundRobin works through DequeueGated code path.
+func TestGatewayQueue_RoundRobin_WithGatedDispatch(t *testing.T) {
+	q := NewGatewayQueue("priority", 0, nil)
+	q.SetFairnessPolicy(NewRoundRobinPolicy())
+
+	// Two bands: critical (4) and standard (3), each with 2 tenants.
+	q.Enqueue(&sim.Request{ID: "cA", SLOClass: "critical", TenantID: "A"}, 1)
+	q.Enqueue(&sim.Request{ID: "cB", SLOClass: "critical", TenantID: "B"}, 2)
+	q.Enqueue(&sim.Request{ID: "sA", SLOClass: "standard", TenantID: "A"}, 3)
+	q.Enqueue(&sim.Request{ID: "sB", SLOClass: "standard", TenantID: "B"}, 4)
+
+	// Saturation 0 → all bands dispatch. Critical band first, round-robin within.
+	got := q.DequeueGated(0)
+	if got.ID != "cA" {
+		t.Fatalf("want cA, got %s", got.ID)
+	}
+	got = q.DequeueGated(0)
+	if got.ID != "cB" {
+		t.Fatalf("want cB, got %s", got.ID)
+	}
+	// Critical band empty → standard band, round-robin within.
+	got = q.DequeueGated(0)
+	if got.ID != "sA" {
+		t.Fatalf("want sA, got %s", got.ID)
+	}
+	got = q.DequeueGated(0)
+	if got.ID != "sB" {
+		t.Fatalf("want sB, got %s", got.ID)
+	}
+}

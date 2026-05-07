@@ -71,9 +71,175 @@ func parseServeGenPDF(s string) (map[int]float64, error) {
 	return pdf, nil
 }
 
+// parseServeGenFloatPDF parses a Python dict string like {"0.0": 0.1, "0.5": 0.3}
+// into a Go map[float64]float64. Used for reason_ratio distributions.
+// Validates that all keys are in [0.0, 1.0] range.
+func parseServeGenFloatPDF(s string) (map[float64]float64, error) {
+	// Strip outer braces
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "{") || !strings.HasSuffix(s, "}") {
+		return nil, fmt.Errorf("expected dict string starting with '{' and ending with '}', got: %.40s", s)
+	}
+	s = s[1 : len(s)-1]
+	s = strings.TrimSpace(s)
+
+	if s == "" {
+		return nil, fmt.Errorf("empty PDF dictionary")
+	}
+
+	pdf := make(map[float64]float64)
+
+	// Split by comma, parse each "key: value" pair
+	pairs := strings.Split(s, ",")
+	for _, pair := range pairs {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue // trailing comma
+		}
+		parts := strings.SplitN(pair, ":", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid key:value pair: %q", pair)
+		}
+
+		keyStr := strings.TrimSpace(parts[0])
+		valStr := strings.TrimSpace(parts[1])
+
+		// Strip quotes from key (JSON format)
+		keyStr = strings.Trim(keyStr, "\"")
+
+		// Parse key as float64
+		key, err := strconv.ParseFloat(keyStr, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid key %q: %w", keyStr, err)
+		}
+
+		// Validate range [0.0, 1.0]
+		if key < 0.0 || key > 1.0 {
+			return nil, fmt.Errorf("reason_ratio key %f outside valid range [0.0, 1.0]", key)
+		}
+
+		// Parse value as float64 (probability)
+		val, err := strconv.ParseFloat(valStr, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid value %q for key %f: %w", valStr, key, err)
+		}
+
+		if val < 0 {
+			return nil, fmt.Errorf("negative probability %f for key %f", val, key)
+		}
+
+		pdf[key] = val
+	}
+
+	if len(pdf) == 0 {
+		return nil, fmt.Errorf("no valid entries in PDF dictionary")
+	}
+	return pdf, nil
+}
+
+// findBestCoverageWindow returns the window index (0-143) with the most active chunks.
+// Returns error if all windows have zero coverage (total trace parse failure).
+func findBestCoverageWindow(traceFiles []string) (int, error) {
+	const dayDurationSec = 86400 // 24 hours
+	numWindows := dayDurationSec / serveGenWindowDurationSec // 144 windows per day
+	windowCoverage := make(map[int]int)
+
+	for _, tracePath := range traceFiles {
+		rows, err := parseServeGenTrace(tracePath)
+		if err != nil {
+			continue
+		}
+		for _, row := range rows {
+			windowIdx := int(row.startTimeSec / serveGenWindowDurationSec)
+			if row.rate > 0 {
+				windowCoverage[windowIdx]++
+			}
+		}
+	}
+
+	// Find window with max coverage
+	bestWindow := 0
+	maxCoverage := 0
+	for windowIdx := 0; windowIdx < numWindows; windowIdx++ {
+		if windowCoverage[windowIdx] > maxCoverage {
+			maxCoverage = windowCoverage[windowIdx]
+			bestWindow = windowIdx
+		}
+	}
+
+	// Error if all windows have zero coverage (total failure)
+	if maxCoverage == 0 {
+		return 0, fmt.Errorf("all windows have zero coverage (all trace files failed to parse or all rates are 0)")
+	}
+
+	return bestWindow, nil
+}
+
+// averageReasonRatioPMFs computes the element-wise average of reason_ratio PMFs
+// across all chunks, preserving the bimodal structure. Returns an empirical
+// distribution with percentages (0-100) as keys.
+func averageReasonRatioPMFs(chunks []chunkData) (DistSpec, error) {
+	if len(chunks) == 0 {
+		return DistSpec{}, fmt.Errorf("no chunks provided")
+	}
+
+	// Accumulate probabilities for each percentage (0-100)
+	// Convert ratio [0.0, 1.0] to percentage [0, 100]
+	// Sort ratio keys for deterministic float accumulation (R2)
+	probSums := make(map[int]float64)
+	for _, chunk := range chunks {
+		ratios := make([]float64, 0, len(chunk.reasonRatioPDF))
+		for ratio := range chunk.reasonRatioPDF {
+			ratios = append(ratios, ratio)
+		}
+		sort.Float64s(ratios)
+		for _, ratio := range ratios {
+			prob := chunk.reasonRatioPDF[ratio]
+			pct := int(ratio * 100)
+			if pct < 0 {
+				pct = 0
+			}
+			if pct > 100 {
+				pct = 100
+			}
+			probSums[pct] += prob
+		}
+	}
+
+	// Average by chunk count (sort percentages for deterministic division order)
+	n := float64(len(chunks))
+	percentages := make([]int, 0, len(probSums))
+	for pct := range probSums {
+		percentages = append(percentages, pct)
+	}
+	sort.Ints(percentages)
+	for _, pct := range percentages {
+		probSums[pct] /= n
+	}
+
+	// Convert to DistSpec params format (string keys)
+	params := make(map[string]float64, len(probSums))
+	for pct, prob := range probSums {
+		params[fmt.Sprintf("%d", pct)] = prob
+	}
+
+	return DistSpec{
+		Type:   "empirical",
+		Params: params,
+	}, nil
+}
+
+// chunkData represents a single ServeGen chunk during loading.
+type chunkData struct {
+	id             string
+	client         *ClientSpec // Temporarily use ClientSpec for loading; will convert to cohort
+	datasetPath    string      // For lognormal fitting in cohort loop
+	reasonRatioPDF map[float64]float64 // For reasoning workloads
+}
+
 // serveGenTraceRow represents one row from a ServeGen chunk-*-trace.csv.
 // Format: start_time(s), rate(req/s), cv, pattern_type, param1, param2
-type serveGenTraceRow struct {
+type serveGenTraceRow struct{
 	startTimeSec float64
 	rate         float64
 	cv           float64
@@ -155,16 +321,47 @@ func loadServeGenData(spec *WorkloadSpec) error {
 	}
 	sort.Strings(traceFiles)
 
+	// Detect reasoning category by checking first chunk's dataset for reason_ratio field
+	isReasoningWorkload := false
+	if len(traceFiles) > 0 {
+		firstTrace := traceFiles[0]
+		base := filepath.Base(firstTrace)
+		chunkID := strings.TrimPrefix(base, "chunk-")
+		chunkID = strings.TrimSuffix(chunkID, "-trace.csv")
+		firstDatasetPath := filepath.Join(dataDir, fmt.Sprintf("chunk-%s-dataset.json", chunkID))
+
+		// Load first dataset window to check for reason_ratio
+		data, readErr := os.ReadFile(firstDatasetPath)
+		if readErr == nil {
+			var raw map[string]map[string]string
+			if jsonErr := json.Unmarshal(data, &raw); jsonErr == nil {
+				// Check first window for reason_ratio field
+				for _, window := range raw {
+					if _, hasReasonRatio := window["reason_ratio"]; hasReasonRatio {
+						isReasoningWorkload = true
+						spec.Category = "reasoning"
+						logrus.Infof("Detected reasoning workload (reason_ratio field found in chunk %s)", chunkID)
+						break
+					}
+				}
+			} else {
+				logrus.Warnf("Reasoning detection: failed to parse JSON from %s: %v (treating as non-reasoning)", firstDatasetPath, jsonErr)
+			}
+		} else {
+			logrus.Warnf("Reasoning detection: failed to read %s: %v (treating as non-reasoning)", firstDatasetPath, readErr)
+		}
+	}
+
+	// Route to appropriate conversion path
+	if isReasoningWorkload {
+		return buildReasoningCohorts(spec, traceFiles, rng)
+	}
+
 	if len(traceFiles) == 0 {
 		return fmt.Errorf("no chunk-*-trace.csv files found in %s", dataDir)
 	}
 
 	// Load all chunks (no time filtering)
-	type chunkData struct {
-		id          string
-		client      *ClientSpec // Temporarily use ClientSpec for loading; will convert to cohort
-		datasetPath string      // For lognormal fitting in cohort loop
-	}
 	var allChunks []chunkData
 
 	for _, tracePath := range traceFiles {
@@ -1065,4 +1262,293 @@ func normalizeLifecycleTimestamps(clients *[]ClientSpec) {
 			client.Lifecycle.Windows[j].EndUs -= minStartUs
 		}
 	}
+}
+
+// buildReasoningCohorts converts reasoning chunks into cohorts with single-window
+// temporal structure (no morning/afternoon periods). Generates 5 cohorts (one per SLO class)
+// with empirical reason_ratio distributions that preserve bimodality.
+func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Rand) error {
+	if len(traceFiles) == 0 {
+		return fmt.Errorf("no chunks provided for reasoning cohort building")
+	}
+
+	dataDir := spec.ServeGenData.Path
+	windowDurSec := spec.ServeGenData.WindowDurationSecs
+	if windowDurSec <= 0 {
+		windowDurSec = serveGenWindowDurationSec
+	}
+
+	// BC-4: Select window with best chunk coverage (most active chunks)
+	selectedWindowIndex, err := findBestCoverageWindow(traceFiles)
+	if err != nil {
+		return fmt.Errorf("finding best coverage window: %w", err)
+	}
+	selectedWindowStartSec := int64(selectedWindowIndex * serveGenWindowDurationSec)
+
+	logrus.Infof("Selected reasoning window %d (time offset %d seconds) - best coverage", selectedWindowIndex, selectedWindowStartSec)
+
+	// Load all chunks and parse reason_ratio PDFs
+	var chunks []chunkData
+	for _, tracePath := range traceFiles {
+		base := filepath.Base(tracePath)
+		chunkID := strings.TrimPrefix(base, "chunk-")
+		chunkID = strings.TrimSuffix(chunkID, "-trace.csv")
+		datasetPath := filepath.Join(dataDir, fmt.Sprintf("chunk-%s-dataset.json", chunkID))
+
+		// Read dataset JSON
+		data, err := os.ReadFile(datasetPath)
+		if err != nil {
+			logrus.Warnf("Skipping chunk %s: dataset read failed: %v", chunkID, err)
+			continue
+		}
+
+		var raw map[string]map[string]string
+		if err := json.Unmarshal(data, &raw); err != nil {
+			logrus.Warnf("Skipping chunk %s: JSON parse failed: %v", chunkID, err)
+			continue
+		}
+
+		// Find reason_ratio at selected window (or first available)
+		// Sort window keys for deterministic iteration (R2, INV-6)
+		var reasonRatioPDF map[float64]float64
+		windowKeys := make([]string, 0, len(raw))
+		for k := range raw {
+			windowKeys = append(windowKeys, k)
+		}
+		sort.Strings(windowKeys)
+		for _, key := range windowKeys {
+			window := raw[key]
+			if ratioStr, ok := window["reason_ratio"]; ok && ratioStr != "" && ratioStr != "{}" {
+				parsed, parseErr := parseServeGenFloatPDF(ratioStr)
+				if parseErr == nil {
+					reasonRatioPDF = parsed
+					break
+				}
+			}
+		}
+
+		if len(reasonRatioPDF) == 0 {
+			logrus.Warnf("Skipping chunk %s: no valid reason_ratio found", chunkID)
+			continue
+		}
+
+		chunks = append(chunks, chunkData{
+			id:             chunkID,
+			reasonRatioPDF: reasonRatioPDF,
+			datasetPath:    datasetPath,
+		})
+	}
+
+	if len(chunks) == 0 {
+		return fmt.Errorf("no valid reasoning chunks found")
+	}
+
+	logrus.Infof("Loaded %d reasoning chunks", len(chunks))
+
+	// Average reason_ratio PMFs element-wise across all chunks
+	// Result is a single 501-valued empirical distribution preserving bimodality
+	avgReasonRatioPMF, err := averageReasonRatioPMFs(chunks)
+	if err != nil {
+		return fmt.Errorf("averaging reason_ratio PMFs: %w", err)
+	}
+
+	// Load trace rates from all chunks at the selected window and sum them
+	var totalRate float64
+	for _, tracePath := range traceFiles {
+		rows, err := parseServeGenTrace(tracePath)
+		if err != nil {
+			logrus.Warnf("Skipping trace file %s: parse failed: %v", tracePath, err)
+			continue
+		}
+
+		// Find the row matching the selected window
+		for _, row := range rows {
+			if int64(row.startTimeSec) == selectedWindowStartSec {
+				totalRate += row.rate
+				break
+			}
+		}
+	}
+
+	if totalRate <= 0 {
+		return fmt.Errorf("no active chunks at selected window (total rate = 0)")
+	}
+
+	logrus.Infof("Total rate at selected window: %.2f req/s", totalRate)
+
+	// BC-5: Build 5 cohorts (one per SLO class)
+	// Distribute chunks via round-robin to SLO classes
+	sloClasses := []string{"critical", "standard", "batch", "sheddable", "background"}
+
+	// Shuffle chunks for random SLO assignment (deterministic with seed 42)
+	shuffled := make([]chunkData, len(chunks))
+	copy(shuffled, chunks)
+	rng.Shuffle(len(shuffled), func(i, j int) {
+		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+	})
+
+	// Round-robin assign to 5 SLO classes
+	cohortGroups := make(map[string][]chunkData)
+	for i, chunk := range shuffled {
+		sloClass := sloClasses[i%5]
+		cohortGroups[sloClass] = append(cohortGroups[sloClass], chunk)
+	}
+
+	// Sort SLO classes for deterministic ordering
+	sortedSLOClasses := make([]string, len(sloClasses))
+	copy(sortedSLOClasses, sloClasses)
+	sort.Strings(sortedSLOClasses)
+
+	for _, sloClass := range sortedSLOClasses {
+		cohortChunks := cohortGroups[sloClass]
+		if len(cohortChunks) == 0 {
+			continue
+		}
+
+		cohortID := fmt.Sprintf("reasoning-%s", sloClass)
+
+		// Compute this cohort's rate as sum of its chunks' rates at the selected window
+		var cohortRate float64
+		for _, chunk := range cohortChunks {
+			tracePath := filepath.Join(dataDir, fmt.Sprintf("chunk-%s-trace.csv", chunk.id))
+			rows, err := parseServeGenTrace(tracePath)
+			if err != nil {
+				logrus.Warnf("Skipping chunk %s for cohort %s rate calculation: trace parse failed: %v", chunk.id, cohortID, err)
+				continue
+			}
+			for _, row := range rows {
+				if int64(row.startTimeSec) == selectedWindowStartSec {
+					cohortRate += row.rate
+					break
+				}
+			}
+		}
+
+		if cohortRate <= 0 {
+			logrus.Warnf("Skipping cohort %s: no active chunks at selected window (rate = 0)", cohortID)
+			continue
+		}
+
+		// BC-6: Fit input/output distributions from datasets (using this cohort's chunks)
+		var sumMuInput, sumSigmaInput, sumMuOutput, sumSigmaOutput float64
+		var distCount int
+
+		for _, chunk := range cohortChunks {
+			// Load dataset to fit input/output token distributions
+			datasets, dsErr := loadServeGenDatasetAllWindows(chunk.datasetPath, &ServeGenDataSpec{Path: dataDir})
+			if dsErr != nil {
+				logrus.Warnf("Skipping chunk %s for cohort %s: dataset load failed: %v", chunk.id, cohortID, dsErr)
+				continue
+			}
+
+			// Find nearest dataset boundary for the selected window
+			_, nearestBoundary, found := findNearestDataset(int(selectedWindowStartSec), datasets)
+			if !found {
+				logrus.Warnf("Skipping chunk %s for cohort %s: no dataset at selected window", chunk.id, cohortID)
+				continue
+			}
+
+			// Aggregate across all matching time-of-day windows (deterministic order)
+			dsSortedTimestamps := make([]int, 0, len(datasets))
+			for ts := range datasets {
+				dsSortedTimestamps = append(dsSortedTimestamps, ts)
+			}
+			sort.Ints(dsSortedTimestamps)
+
+			var chunkInputMuSum, chunkInputSigmaSum, chunkOutputMuSum, chunkOutputSigmaSum float64
+			var chunkInputCount, chunkOutputCount int
+
+			for _, dsTimestamp := range dsSortedTimestamps {
+				dataset := datasets[dsTimestamp]
+				// Match time-of-day across all days
+				if int64(dsTimestamp)%86400 == int64(nearestBoundary)%86400 {
+					inputFit, fitErr := fitLognormalFromPDF(dataset.inputPDF)
+					if fitErr == nil {
+						chunkInputMuSum += inputFit.Params["mu"]
+						chunkInputSigmaSum += inputFit.Params["sigma"]
+						chunkInputCount++
+					}
+					outputFit, fitErr := fitLognormalFromPDF(dataset.outputPDF)
+					if fitErr == nil {
+						chunkOutputMuSum += outputFit.Params["mu"]
+						chunkOutputSigmaSum += outputFit.Params["sigma"]
+						chunkOutputCount++
+					}
+				}
+			}
+
+			// Average this chunk's multi-day distributions
+			// Track input and output separately to avoid wrong denominator bias
+			if chunkInputCount > 0 && chunkOutputCount > 0 {
+				sumMuInput += chunkInputMuSum / float64(chunkInputCount)
+				sumSigmaInput += chunkInputSigmaSum / float64(chunkInputCount)
+				sumMuOutput += chunkOutputMuSum / float64(chunkOutputCount)
+				sumSigmaOutput += chunkOutputSigmaSum / float64(chunkOutputCount)
+				distCount++
+			}
+		}
+
+		if distCount == 0 {
+			logrus.Warnf("Skipping cohort %s: no valid input/output distributions", cohortID)
+			continue
+		}
+
+		avgMuInput := sumMuInput / float64(distCount)
+		avgSigmaInput := sumSigmaInput / float64(distCount)
+		avgMuOutput := sumMuOutput / float64(distCount)
+		avgSigmaOutput := sumSigmaOutput / float64(distCount)
+
+		// BC-7: Inject MultiTurn workaround
+		// Explicitly set ClosedLoop to false for spike-based reasoning workloads.
+		// Even though we set MultiTurn (needed for reasoning generation), these
+		// are open-loop spike arrivals, not closed-loop sessions.
+		closedLoop := false
+		cohort := CohortSpec{
+			ID:           cohortID,
+			Population:   len(cohortChunks), // This cohort's assigned chunks
+			SLOClass:     sloClass,
+			Streaming:    true,
+			RateFraction: 1.0, // Divided by population during ExpandCohorts
+			ClosedLoop:   &closedLoop,
+			Arrival:      ArrivalSpec{Process: "poisson"},
+			InputDist: DistSpec{
+				Type: "lognormal",
+				Params: map[string]float64{
+					"mu":    avgMuInput,
+					"sigma": avgSigmaInput,
+				},
+			},
+			OutputDist: DistSpec{
+				Type: "lognormal",
+				Params: map[string]float64{
+					"mu":    avgMuOutput,
+					"sigma": avgSigmaOutput,
+				},
+			},
+			Spike: &SpikeSpec{
+				StartTimeUs: 0,
+				DurationUs:  int64(windowDurSec) * 1e6,
+				TraceRate:   &cohortRate,
+			},
+			Reasoning: &ReasoningSpec{
+				ReasonRatioDist: avgReasonRatioPMF, // Empirical distribution
+				MultiTurn: &MultiTurnSpec{
+					MaxRounds:     1,
+					ThinkTimeUs:   0,
+					ContextGrowth: "",
+				},
+			},
+		}
+
+		spec.Cohorts = append(spec.Cohorts, cohort)
+	}
+
+	if len(spec.Cohorts) == 0 {
+		return fmt.Errorf("no cohorts generated (all groups empty)")
+	}
+
+	// Set aggregate_rate to 0 (absolute mode)
+	spec.AggregateRate = 0
+
+	return nil
 }
