@@ -1,6 +1,7 @@
 package workload
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -204,5 +205,197 @@ func TestAnalyzeSaturation_InsufficientData(t *testing.T) {
 	// THEN verdict should be INSUFFICIENT_DATA
 	if verdict.Verdict != "INSUFFICIENT_DATA" {
 		t.Errorf("verdict = %s, want INSUFFICIENT_DATA", verdict.Verdict)
+	}
+}
+
+func TestAnalyzeSaturation_EmptyTrace(t *testing.T) {
+	// GIVEN empty trace (zero requests)
+	trace := TraceV2{Records: []TraceRecord{}}
+
+	// WHEN analyzing
+	verdict := AnalyzeSaturation(trace, 10.0)
+
+	// THEN verdict should be INSUFFICIENT_DATA
+	if verdict.Verdict != "INSUFFICIENT_DATA" {
+		t.Errorf("verdict = %s, want INSUFFICIENT_DATA", verdict.Verdict)
+	}
+	// THEN all metrics should be zero
+	if verdict.WindowCount != 0 {
+		t.Errorf("WindowCount = %d, want 0", verdict.WindowCount)
+	}
+	if verdict.BacklogSlope != 0.0 {
+		t.Errorf("BacklogSlope = %.3f, want 0.0", verdict.BacklogSlope)
+	}
+	if verdict.ObservationDurationS != 0.0 {
+		t.Errorf("ObservationDurationS = %.3f, want 0.0", verdict.ObservationDurationS)
+	}
+}
+
+func TestSaturationVerdict_JSONRoundTrip(t *testing.T) {
+	// GIVEN a saturation verdict
+	original := SaturationVerdict{
+		Verdict:              "PERSISTENTLY_SATURATED",
+		WindowCount:          5,
+		BacklogSlope:         0.25,
+		InitialBacklog:       10,
+		FinalBacklog:         20,
+		ObservationDurationS: 120.5,
+	}
+
+	// WHEN marshaling to JSON and back
+	jsonData, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+
+	var decoded SaturationVerdict
+	if err := json.Unmarshal(jsonData, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+
+	// THEN all fields should match
+	if decoded.Verdict != original.Verdict {
+		t.Errorf("Verdict: got %s, want %s", decoded.Verdict, original.Verdict)
+	}
+	if decoded.WindowCount != original.WindowCount {
+		t.Errorf("WindowCount: got %d, want %d", decoded.WindowCount, original.WindowCount)
+	}
+	if decoded.BacklogSlope != original.BacklogSlope {
+		t.Errorf("BacklogSlope: got %.3f, want %.3f", decoded.BacklogSlope, original.BacklogSlope)
+	}
+	if decoded.InitialBacklog != original.InitialBacklog {
+		t.Errorf("InitialBacklog: got %d, want %d", decoded.InitialBacklog, original.InitialBacklog)
+	}
+	if decoded.FinalBacklog != original.FinalBacklog {
+		t.Errorf("FinalBacklog: got %d, want %d", decoded.FinalBacklog, original.FinalBacklog)
+	}
+	if decoded.ObservationDurationS != original.ObservationDurationS {
+		t.Errorf("ObservationDurationS: got %.3f, want %.3f", decoded.ObservationDurationS, original.ObservationDurationS)
+	}
+}
+
+func TestComputeActiveRequests_SimultaneousCompletions(t *testing.T) {
+	// GIVEN three requests that all complete at exactly the same microsecond
+	completionTime := int64(5_000_000) // 5 seconds
+	records := []TraceRecord{
+		{RequestID: 0, ArrivalTimeUs: 1_000_000, SendTimeUs: 1_000_000, LastChunkTimeUs: completionTime},
+		{RequestID: 1, ArrivalTimeUs: 2_000_000, SendTimeUs: 2_000_000, LastChunkTimeUs: completionTime},
+		{RequestID: 2, ArrivalTimeUs: 3_000_000, SendTimeUs: 3_000_000, LastChunkTimeUs: completionTime},
+	}
+
+	// WHEN sampling at and around the completion time
+	samples := []int64{
+		4_000_000,  // before all complete
+		completionTime,  // exactly at completion
+		6_000_000,  // after all complete
+	}
+	actives := computeActiveRequests(records, samples)
+
+	// THEN all should be active before, none at completion (half-open interval)
+	expected := []int{3, 0, 0}
+	for i, sample := range samples {
+		if actives[i] != expected[i] {
+			t.Errorf("active_requests(%d) = %d, want %d", sample, actives[i], expected[i])
+		}
+	}
+}
+
+func TestAnalyzeSaturation_PreemptionScenario(t *testing.T) {
+	// GIVEN trace where a request appears to have very long latency
+	// (simulating preemption - request was evicted, re-queued, then completed)
+	// CURRENT LIMITATION: Preemption is not captured in TraceV2, so appears as single long request
+	records := []TraceRecord{
+		// Normal requests: 1s latency
+		{RequestID: 0, ArrivalTimeUs: 0, SendTimeUs: 0, LastChunkTimeUs: 1_000_000},
+		{RequestID: 1, ArrivalTimeUs: 1_000_000, SendTimeUs: 1_000_000, LastChunkTimeUs: 2_000_000},
+		// "Preempted" request: arrives at t=2s, completes at t=10s (8s latency)
+		// Reality: might have been preempted at t=3s, idle until t=9s, re-executed
+		// Trace shows: continuous execution from t=2s to t=10s
+		{RequestID: 2, ArrivalTimeUs: 2_000_000, SendTimeUs: 2_000_000, LastChunkTimeUs: 10_000_000},
+		// More normal requests
+		{RequestID: 3, ArrivalTimeUs: 3_000_000, SendTimeUs: 3_000_000, LastChunkTimeUs: 4_000_000},
+		{RequestID: 4, ArrivalTimeUs: 4_000_000, SendTimeUs: 4_000_000, LastChunkTimeUs: 5_000_000},
+		{RequestID: 5, ArrivalTimeUs: 5_000_000, SendTimeUs: 5_000_000, LastChunkTimeUs: 6_000_000},
+		{RequestID: 6, ArrivalTimeUs: 6_000_000, SendTimeUs: 6_000_000, LastChunkTimeUs: 7_000_000},
+		{RequestID: 7, ArrivalTimeUs: 7_000_000, SendTimeUs: 7_000_000, LastChunkTimeUs: 8_000_000},
+		{RequestID: 8, ArrivalTimeUs: 8_000_000, SendTimeUs: 8_000_000, LastChunkTimeUs: 9_000_000},
+		{RequestID: 9, ArrivalTimeUs: 9_000_000, SendTimeUs: 9_000_000, LastChunkTimeUs: 10_000_000},
+	}
+	trace := TraceV2{Records: records}
+
+	// WHEN analyzing with 2s windows
+	verdict := AnalyzeSaturation(trace, 2.0)
+
+	// THEN current behavior: treats preempted request as continuously active
+	// This documents the KNOWN LIMITATION - preemption causes overestimation of backlog
+	if verdict.Verdict == "" {
+		t.Error("verdict should not be empty")
+	}
+	// The "preempted" request (RequestID: 2) will be counted as active for entire [2s, 10s) interval
+	// This is acceptable given TraceV2 data limitations, but should be documented
+	t.Logf("Verdict: %s (documents current preemption-unaware behavior)", verdict.Verdict)
+	t.Logf("BacklogSlope: %.3f (may be artificially elevated due to preemption)", verdict.BacklogSlope)
+	// This test passes regardless of verdict - it documents expected behavior given data limitations
+}
+
+func TestComputeActiveRequests_EmptyRecords(t *testing.T) {
+	// GIVEN empty records array
+	records := []TraceRecord{}
+	samples := []int64{1000, 2000, 3000}
+
+	// WHEN computing active requests
+	actives := computeActiveRequests(records, samples)
+
+	// THEN all samples should have zero active requests
+	for i, count := range actives {
+		if count != 0 {
+			t.Errorf("active_requests(%d) = %d, want 0", samples[i], count)
+		}
+	}
+}
+
+func TestComputeWindowMetrics_EmptyRecords(t *testing.T) {
+	// GIVEN empty records array
+	records := []TraceRecord{}
+	windowDurationUs := int64(60_000_000)
+
+	// WHEN computing window metrics
+	windows := computeWindowMetrics(records, windowDurationUs)
+
+	// THEN should return nil (no windows)
+	if windows != nil {
+		t.Errorf("expected nil windows for empty records, got %d windows", len(windows))
+	}
+}
+
+func TestClassifyBacklogTrend_ZeroBacklogs(t *testing.T) {
+	// GIVEN both initial and final backlog are zero (idle system)
+	slope := 0.0
+	initialBacklog := 0
+	finalBacklog := 0
+	hadTransientSpike := false
+
+	// WHEN classifying
+	verdict := classifyBacklogTrend(slope, initialBacklog, finalBacklog, hadTransientSpike)
+
+	// THEN should classify as UNSATURATED (ratio is 1.0 by special case handling)
+	if verdict != "UNSATURATED" {
+		t.Errorf("verdict = %s, want UNSATURATED for idle system", verdict)
+	}
+}
+
+func TestClassifyBacklogTrend_GrowthFromZero(t *testing.T) {
+	// GIVEN backlog grows from zero to nonzero (initial warmup)
+	slope := 0.5
+	initialBacklog := 0
+	finalBacklog := 10
+	hadTransientSpike := false
+
+	// WHEN classifying
+	verdict := classifyBacklogTrend(slope, initialBacklog, finalBacklog, hadTransientSpike)
+
+	// THEN should classify as PERSISTENTLY_SATURATED (ratio is infinity)
+	if verdict != "PERSISTENTLY_SATURATED" {
+		t.Errorf("verdict = %s, want PERSISTENTLY_SATURATED for growth from zero", verdict)
 	}
 }
