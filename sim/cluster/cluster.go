@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
+	"reflect"
 	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -49,12 +50,12 @@ type ClusterSimulator struct {
 	pendingDecodeCompletions  map[string]string         // decode sub-req ID → parent ID
 	transfersInitiated        int
 	transfersCompleted        int
-	pdPrefillCompletedCount   int                       // prefill sub-requests that completed (for INV-1 correction)
-	pdDecodeCompletedCount    int                       // decode sub-requests that completed (for INV-1 in-flight tracking)
-	pdDecodeTimedOutCount     int                       // decode sub-requests that timed out (for INV-1 in-flight tracking)
-	droppedAtDecodeKV         int                       // requests dropped due to insufficient KV at decode
-	prefillRoutingPolicy      sim.RoutingPolicy         // nil = use main routingPolicy
-	decodeRoutingPolicy       sim.RoutingPolicy         // nil = use main routingPolicy
+	pdPrefillCompletedCount   int               // prefill sub-requests that completed (for INV-1 correction)
+	pdDecodeCompletedCount    int               // decode sub-requests that completed (for INV-1 in-flight tracking)
+	pdDecodeTimedOutCount     int               // decode sub-requests that timed out (for INV-1 in-flight tracking)
+	droppedAtDecodeKV         int               // requests dropped due to insufficient KV at decode
+	prefillRoutingPolicy      sim.RoutingPolicy // nil = use main routingPolicy
+	decodeRoutingPolicy       sim.RoutingPolicy // nil = use main routingPolicy
 
 	// Transfer contention state (--pd-transfer-contention flag, INV-P2-2)
 	activeTransfers                int
@@ -94,7 +95,7 @@ type ClusterSimulator struct {
 	gatewayQueue         *GatewayQueue
 	flowControlAdmission *FlowControlAdmission // typed ref for outcome inspection + completion dispatch; nil when flow control disabled
 
-	progressHook                sim.ProgressHook
+	progressHook               sim.ProgressHook
 	simClockProgressIntervalUs int64
 	nextSnapshotClockUs        int64
 }
@@ -131,8 +132,8 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	}
 
 	// Validate pool topology and overrides early (before instance construction).
-	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
-		if err := ValidatePoolTopology(config.PrefillInstances, config.DecodeInstances, config.NumInstances); err != nil {
+	if config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 {
+		if err := ValidatePoolTopology(config.PrefillInstances, config.DecodeInstances, config.SharedInstances, config.NumInstances); err != nil {
 			panic(fmt.Sprintf("ClusterSimulator: %v", err))
 		}
 		if err := config.PrefillOverrides.Validate("prefill pool"); err != nil {
@@ -145,7 +146,9 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 
 	// Validate KV bytes per token derivation early so KVTransferStartedEvent never
 	// encounters a configuration error at runtime (the panic there is now unreachable).
-	if config.PrefillInstances > 0 {
+	// Covers pure-shared clusters too (issue #1276): a shared-role pod can perform
+	// prefill and therefore source a KV transfer.
+	if config.PrefillInstances > 0 || config.SharedInstances > 0 {
 		if config.EffectivePrefillTP() <= 0 {
 			panic("ClusterSimulator: PD disaggregation requires prefill TP > 0 (set --tp or --prefill-tp)")
 		}
@@ -154,16 +157,19 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		}
 	}
 
-	if config.PDTransferContention && config.PrefillInstances == 0 && config.DecodeInstances == 0 {
-		panic("ClusterSimulator: PDTransferContention requires PD disaggregation (--prefill-instances and --decode-instances must be set)")
+	// PDTransferContention is valid for any PD-enabled deployment, including pure-shared
+	// (shared pod → shared pod KV transfer is possible when prefill and decode land on
+	// different shared pods). Only reject when PD is entirely disabled. (#1276)
+	if config.PDTransferContention && config.PrefillInstances == 0 && config.DecodeInstances == 0 && config.SharedInstances == 0 {
+		panic("ClusterSimulator: PDTransferContention requires PD disaggregation (--prefill-instances, --decode-instances, or --prefill-decode-instances must be set)")
 	}
 
 	// Build pre-construction pool membership so instance construction can resolve per-pool config.
-	// When disaggregation is disabled (PrefillInstances==0), prePoolMembership is nil and
-	// all instances use the global config (backward-compatible).
+	// When disaggregation is disabled (all pool counts are 0), prePoolMembership is nil
+	// and all instances use the global config (backward-compatible).
 	var prePoolMembership map[string]PoolRole
-	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
-		prePoolMembership = BuildPoolMembershipFromIndices(config.NumInstances, config.PrefillInstances, config.DecodeInstances)
+	if config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 {
+		prePoolMembership = BuildPoolMembershipFromIndices(config.NumInstances, config.PrefillInstances, config.DecodeInstances, config.SharedInstances)
 	}
 
 	// instances and instanceMap are populated by the unified construction+placement loop below.
@@ -219,15 +225,15 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		routingLatency:       config.RoutingLatency,
 		admissionPolicy:      admissionPolicy,
 		priorityMap:          priorityMap,
-		snapshotProvider: nil, // set after unified construction loop below
-		routingPolicy:    nil, // set after instance construction (needs cacheQueryFn from instances)
+		snapshotProvider:     nil, // set after unified construction loop below
+		routingPolicy:        nil, // set after instance construction (needs cacheQueryFn from instances)
 		trace:                simTrace,
 		inFlightRequests:     make(map[string]int, config.NumInstances),
 		shedByTier:           make(map[string]int),
 	}
 
 	// PD disaggregation: set pool membership (topology already validated above)
-	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
+	if config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 {
 		cs.poolMembership = prePoolMembership
 		switch config.PDDecider {
 		case "prefix-threshold":
@@ -242,8 +248,14 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		// Per-pool routing policies are created after the construction loop
 		// (need cacheQueryFn from instances).
 
-		logrus.Infof("[cluster] PD disaggregation enabled: %d prefill, %d decode instances, decider=%q",
-			config.PrefillInstances, config.DecodeInstances, config.PDDecider)
+		logrus.Infof("[cluster] PD disaggregation enabled: %d prefill, %d decode, %d shared (prefill-decode) instances, decider=%q",
+			config.PrefillInstances, config.DecodeInstances, config.SharedInstances, config.PDDecider)
+
+		// Issue #1276 D-2: shared-role pods resolve config via decode-wins precedence.
+		// Warn when PrefillOverrides would have been applicable but is silently discarded.
+		if config.SharedInstances > 0 && !reflect.DeepEqual(config.PrefillOverrides, config.DecodeOverrides) {
+			logrus.Infof("[cluster] shared-role pods use DecodeOverrides (PrefillOverrides ignored per PR1276 decode-wins rule)")
+		}
 	}
 
 	// Phase 1A: initialize PlacementManager when node pools are configured.
@@ -674,12 +686,15 @@ func (c *ClusterSimulator) Run() error {
 				}
 			}
 
-			// PD disaggregation: detect prefill/decode sub-request completions
+			// PD disaggregation: detect prefill/decode sub-request completions.
+			// Set-membership (.Has) so a shared-role pod (PoolRolePrefillDecode)
+			// fires both detectors — issue #1276 BC-5.
 			if c.poolsConfigured() {
-				if c.poolMembership[instID] == PoolRolePrefill {
+				role := c.poolMembership[instID]
+				if role.Has(PoolRolePrefill) {
 					c.detectPrefillCompletions(inst)
 				}
-				if c.poolMembership[instID] == PoolRoleDecode {
+				if role.Has(PoolRoleDecode) {
 					c.detectDecodeCompletions(inst)
 				}
 			}
@@ -1039,7 +1054,14 @@ func (c *ClusterSimulator) ParentRequests() []*ParentRequest {
 // Model filter is intentionally omitted: all instances in a DeploymentConfig share config.Model,
 // so pool-role filtering is sufficient. If multi-model PD clusters are added, add model filtering here.
 // Preserves instance order from c.instances for determinism (R2).
+//
+// INV-7: refreshes stale cache snapshots before sampling so the disaggregated routing
+// path observes the same cache-block view as buildRouterState under Periodic mode.
 func (c *ClusterSimulator) buildPoolFilteredSnapshots(role PoolRole) []sim.RoutingSnapshot {
+	// Refresh stale cache snapshots if interval has elapsed (#919, #1060).
+	// No-op when CacheBlocks.Mode != Periodic (oracle mode).
+	c.snapshotProvider.RefreshCacheIfNeeded(c.clock)
+
 	allSnapshots := make([]sim.RoutingSnapshot, 0, len(c.instances))
 	for _, inst := range c.instances {
 		if !inst.IsRoutable() {
@@ -1348,24 +1370,15 @@ func (c *ClusterSimulator) tryDispatchFromGatewayQueue() bool {
 	}
 	req.GatewayDispatchTime = c.clock
 
-	// Schedule routing or disaggregation event (BC-9)
-	if c.poolsConfigured() {
-		heap.Push(&c.clusterEvents, clusterEventEntry{
-			event: &DisaggregationDecisionEvent{
-				time:    c.clock,
-				request: req,
-			},
-			seqID: c.nextSeqID(),
-		})
-	} else {
-		heap.Push(&c.clusterEvents, clusterEventEntry{
-			event: &RoutingDecisionEvent{
-				time:    c.clock + c.routingLatency,
-				request: req,
-			},
-			seqID: c.nextSeqID(),
-		})
-	}
+	// Schedule routing (BC-9). RoutingDecisionEvent.Execute branches internally on
+	// cs.poolsConfigured() for the disaggregated vs standard path — no fork here.
+	heap.Push(&c.clusterEvents, clusterEventEntry{
+		event: &RoutingDecisionEvent{
+			time:    c.clock + c.routingLatency,
+			request: req,
+		},
+		seqID: c.nextSeqID(),
+	})
 	return true
 }
 
@@ -1659,4 +1672,208 @@ func (c *ClusterSimulator) projectPDMetrics() {
 			m.RequestCompletionTimes[pid] = float64(parent.CompletionTime)
 		}
 	}
+}
+
+// executeStandardRouting performs non-disaggregated routing: select a target over
+// all routable instances, record the decision, increment in-flight/tenant counters,
+// record warm-up, and inject the request into the target instance. Used when pool
+// topology is not configured (plain DES routing). Called by RoutingDecisionEvent.Execute.
+//
+// Parameter `time` is the scheduled event time (already advanced by routingLatency
+// from admission). Injection happens at `time` — no additional offset.
+func (cs *ClusterSimulator) executeStandardRouting(req *sim.Request, time int64) {
+	state := buildRouterState(cs, req)
+
+	// Guard: if no routable instances are available (e.g., all model-M instances are Loading
+	// or Draining), routing policies panic on empty snapshot sets. Treat as rejection instead.
+	// Uses Warn so users understand why requests are dropping (visible at default log level).
+	// I13: Use routingRejections counter to distinguish from admission rejections.
+	if len(state.Snapshots) == 0 {
+		logrus.Warnf("[cluster] req %s: no routable instances for model %q — request rejected at routing (all instances may be Loading or Draining)", req.ID, req.Model)
+		cs.routingRejections++
+		return
+	}
+
+	decision := cs.routingPolicy.Route(req, state)
+	logrus.Debugf("[cluster] req %s → instance %s (reason=%s)", req.ID, decision.TargetInstance, decision.Reason)
+
+	// #181: Stamp request with assigned instance for per-request metrics
+	req.AssignedInstance = decision.TargetInstance
+
+	// Record routing decision if tracing is enabled (BC-3, BC-4, BC-5, BC-6)
+	if cs.trace != nil {
+		record := trace.RoutingRecord{
+			RequestID:      req.ID,
+			Clock:          cs.clock,
+			ChosenInstance: decision.TargetInstance,
+			Reason:         decision.Reason,
+			Scores:         copyScores(decision.Scores),
+		}
+		if cs.trace.Config.CounterfactualK > 0 {
+			record.Candidates, record.Regret = computeCounterfactual(
+				decision.TargetInstance, decision.Scores,
+				state.Snapshots, cs.trace.Config.CounterfactualK,
+			)
+		}
+		cs.trace.RecordRouting(record)
+	}
+
+	// Find target instance, increment in-flight count, and inject request
+	for _, inst := range cs.instances {
+		if string(inst.ID()) == decision.TargetInstance {
+			// Increment in-flight AFTER target validation — gives next routing decision
+			// visibility into this routing decision (#170)
+			cs.inFlightRequests[decision.TargetInstance]++
+			// Phase 1B-2a: track tenant in-flight count for fair-share enforcement.
+			if cs.tenantTracker != nil {
+				cs.tenantTracker.OnStart(req.TenantID)
+			}
+
+			// T042: record warm-up requests for TTFT factor application (Phase 1A).
+			warmUpCount := cs.config.InstanceLifecycle.WarmUpRequestCount
+			if warmUpCount > 0 && len(inst.WarmUpRequestIDs()) < warmUpCount {
+				inst.RecordWarmUpRequest(req.ID)
+			}
+
+			inst.InjectRequestOnline(req, time)
+			// Track routed sheddable requests for in-flight eviction (BC-3).
+			if cs.evictionTracker != nil {
+				cs.evictionTracker.Track(req, decision.TargetInstance, cs.priorityMap)
+			}
+			// Notify observer so stateful deciders (e.g., PrefixThresholdDecider) can learn
+			// from this routing decision (synchronous call — cache is always current).
+			cs.notifyDisaggregationObserver(req, decision.TargetInstance)
+			return
+		}
+	}
+
+	// Should never reach here (policy contract ensures valid target)
+	panic(fmt.Sprintf("executeStandardRouting: invalid TargetInstance %q", decision.TargetInstance))
+}
+
+// executeDisaggregatedRouting performs PD disaggregation routing: select a decode pod
+// first (llm-d parity), then decide whether to disaggregate. If disaggregate=false,
+// inject directly to the selected decode pod. If disaggregate=true, store the decode
+// pod in a ParentRequest and schedule a PrefillRoutingEvent.
+//
+// Parameter `time` is the scheduled event time (already advanced by routingLatency
+// from admission). Both the non-disaggregated injection and the PrefillRoutingEvent
+// fire at `time` — no additional offset.
+func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time int64) {
+	// Step 1: route to decode pool first (llm-d parity: decode pod always selected first).
+	filteredSnapshots := cs.buildPoolFilteredSnapshots(PoolRoleDecode)
+	if len(filteredSnapshots) == 0 {
+		logrus.Warnf("[cluster] req %s: no routable instances in decode pool — request rejected at routing", req.ID)
+		cs.routingRejections++
+		return
+	}
+	state := &sim.RouterState{Snapshots: filteredSnapshots, Clock: cs.clock}
+	policy := cs.decodeRoutingPolicy
+	if policy == nil {
+		policy = cs.routingPolicy
+	}
+	decodeDecision := policy.Route(req, state)
+	logrus.Debugf("[cluster] req %s: decode pod pre-selected → %s", req.ID, decodeDecision.TargetInstance)
+
+	// Step 2: disaggregation decision with decode pod known. Pass the full decode-pool
+	// RouterState so the decider can query per-pod state (cache presence, load) and
+	// optionally reconsider the decode pod via DisaggregationDecision.DecodePodOverride.
+	disaggDecision := cs.disaggregationDecider.Decide(req, state)
+	logrus.Debugf("[cluster] req %s: disaggregate=%v", req.ID, disaggDecision.Disaggregate)
+
+	// If the decider overrode the decode pod (joint D+P policies), retarget.
+	// Empty string = keep the pod pre-selected by the decode routing policy.
+	// The override must be a member of the decode-pool snapshot set; the downstream
+	// instance lookup panics otherwise (see decodeInst == nil guard below).
+	if disaggDecision.DecodePodOverride != "" {
+		decodeDecision.TargetInstance = disaggDecision.DecodePodOverride
+	}
+
+	// Record disaggregation decision if tracing is enabled (BC-PD-17).
+	if cs.trace != nil {
+		cs.trace.RecordDisaggregation(trace.DisaggregationRecord{
+			RequestID:    req.ID,
+			Clock:        cs.clock,
+			Disaggregate: disaggDecision.Disaggregate,
+		})
+	}
+
+	// Find the target decode instance object (used in both paths below).
+	var decodeInst *InstanceSimulator
+	for _, inst := range cs.instances {
+		if string(inst.ID()) == decodeDecision.TargetInstance {
+			decodeInst = inst
+			break
+		}
+	}
+	if decodeInst == nil {
+		// R6: routing policy must return a valid target from the provided snapshot set.
+		panic(fmt.Sprintf("executeDisaggregatedRouting: invalid decode TargetInstance %q returned by routing policy", decodeDecision.TargetInstance))
+	}
+
+	if !disaggDecision.Disaggregate {
+		// Step 3a: local path — inject directly to the selected decode pod.
+		// Non-disaggregated requests route exclusively to the decode pool, not to all
+		// instances via buildRouterState().
+		req.AssignedInstance = decodeDecision.TargetInstance
+
+		// Record standard routing trace for BC-TRACE-COMPAT: consumers expect
+		// len(tr.Routings) == numRequests.
+		if cs.trace != nil {
+			record := trace.RoutingRecord{
+				RequestID:      req.ID,
+				Clock:          cs.clock,
+				ChosenInstance: decodeDecision.TargetInstance,
+				Reason:         decodeDecision.Reason,
+				Scores:         copyScores(decodeDecision.Scores),
+			}
+			if cs.trace.Config.CounterfactualK > 0 {
+				record.Candidates, record.Regret = computeCounterfactual(
+					decodeDecision.TargetInstance, decodeDecision.Scores,
+					filteredSnapshots, cs.trace.Config.CounterfactualK,
+				)
+			}
+			cs.trace.RecordRouting(record)
+		}
+
+		cs.inFlightRequests[decodeDecision.TargetInstance]++
+		if cs.tenantTracker != nil {
+			cs.tenantTracker.OnStart(req.TenantID)
+		}
+		warmUpCount := cs.config.InstanceLifecycle.WarmUpRequestCount
+		if warmUpCount > 0 && len(decodeInst.WarmUpRequestIDs()) < warmUpCount {
+			decodeInst.RecordWarmUpRequest(req.ID)
+		}
+		decodeInst.InjectRequestOnline(req, time)
+		cs.notifyDisaggregationObserver(req, decodeDecision.TargetInstance)
+		return
+	}
+
+	// Step 3b: disaggregated path — decode pod pre-selected, route prefill next.
+	parent := NewParentRequest(req, cs.config.BlockSizeTokens)
+	parent.DecodeInstanceID = InstanceID(decodeDecision.TargetInstance)
+	cs.parentRequests[parent.ID] = parent
+
+	// Create prefill sub-request: same input, no output (completes after prefill).
+	prefillSubReq := &sim.Request{
+		ID:           parent.PrefillSubReqID,
+		InputTokens:  req.InputTokens,
+		MaxOutputLen: req.MaxOutputLen,
+		Deadline:     req.Deadline,
+		PrefixGroup:  req.PrefixGroup,
+		State:        sim.StateQueued,
+		ArrivalTime:  req.ArrivalTime,
+		TenantID:     req.TenantID,
+		SLOClass:     req.SLOClass,
+		Model:        req.Model,
+	}
+
+	heap.Push(&cs.clusterEvents, clusterEventEntry{
+		event: &PrefillRoutingEvent{
+			time:      time,
+			request:   prefillSubReq,
+			parentReq: parent,
+		},
+		seqID: cs.nextSeqID(),
+	})
 }

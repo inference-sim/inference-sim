@@ -20,11 +20,11 @@ import (
 )
 
 var (
-	traceHeaderPath   string
-	traceDataPath     string
-	replayTraceOutput string // File prefix for TraceV2 re-export (<prefix>.yaml + <prefix>.csv)
-	replaySessionMode string
-	replayThinkTimeMs int
+	traceHeaderPath     string
+	traceDataPath       string
+	replayTraceOutput   string // File prefix for TraceV2 re-export (<prefix>.yaml + <prefix>.csv)
+	replaySessionMode   string
+	replayThinkTimeMs   int
 	replayThinkTimeDist string // distribution spec for think time (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s")
 )
 
@@ -184,6 +184,9 @@ Example:
 		if pdTransferContention {
 			logrus.Warnf("[replay] --pd-transfer-contention is not applicable to blis replay (PD disaggregation is not supported); flag ignored")
 		}
+		if prefillDecodeInstances > 0 {
+			logrus.Warnf("[replay] --prefill-decode-instances is not applicable to blis replay (PD disaggregation is not supported); flag ignored")
+		}
 
 		// Resolve policy configuration (single code path shared with runCmd).
 		// Replay does not support autoscaler or node-pool config; warn if the bundle contains them.
@@ -209,39 +212,39 @@ Example:
 				Seed:    seed,
 				KVCacheConfig: sim.NewKVCacheConfig(totalKVBlocks, blockSizeTokens, kvCPUBlocks,
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
-				BatchConfig:         sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
-				LatencyCoeffs:       sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
-				ModelHardwareConfig: sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, lr.Backend, maxModelLen),
-				PolicyConfig:        sim.NewPolicyConfig(scheduler, preemptionPolicy),
+				BatchConfig:          sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
+				LatencyCoeffs:        sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
+				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, lr.Backend, maxModelLen),
+				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				SLOPriorityOverrides: sloPriorityOverrides,
 			},
-			NumInstances:            numInstances,
-			AdmissionPolicy:         admissionPolicy,
-			AdmissionLatency:        admissionLatency,
-			RoutingLatency:          routingLatency,
-			TokenBucketCapacity:     tokenBucketCapacity,
-			TokenBucketRefillRate:   tokenBucketRefillRate,
-			RoutingPolicy:           routingPolicy,
-			RoutingScorerConfigs:    parsedScorerConfigs,
-			TraceLevel:              traceLevel,
-			CounterfactualK:         counterfactualK,
-			SnapshotRefreshInterval:          snapshotRefreshInterval,
-			CacheSignalDelay:                 cacheSignalDelay,
-			FlowControlEnabled:               flowControlEnabled,
-			FlowControlDetector:              flowControlDetector,
-			FlowControlDispatchOrder:         flowControlDispatchOrder,
-			FlowControlMaxQueueDepth:         flowControlMaxQueueDepth,
-			FlowControlQueueDepthThreshold:   flowControlQueueDepthThreshold,
-			FlowControlKVCacheUtilThreshold:  flowControlKVCacheUtilThreshold,
-			FlowControlMaxConcurrency:        flowControlMaxConcurrency,
-			FlowControlPerBandCapacity:       flowControlPerBandCapacity,
-			FlowControlUsageLimitThreshold:   flowControlUsageLimitThreshold,
-			FlowControlFairnessPolicy:        flowControlFairnessPolicy,
-			TierShedThreshold:                tierShedThreshold,
-			TierShedMinPriority:              tierShedMinPriority,
-			GAIEQDThreshold:                  gaieQDThreshold,
-			GAIEKVThreshold:                  gaieKVThreshold,
-			TenantBudgets:                    tenantBudgets,
+			NumInstances:                    numInstances,
+			AdmissionPolicy:                 admissionPolicy,
+			AdmissionLatency:                admissionLatency,
+			RoutingLatency:                  routingLatency,
+			TokenBucketCapacity:             tokenBucketCapacity,
+			TokenBucketRefillRate:           tokenBucketRefillRate,
+			RoutingPolicy:                   routingPolicy,
+			RoutingScorerConfigs:            parsedScorerConfigs,
+			TraceLevel:                      traceLevel,
+			CounterfactualK:                 counterfactualK,
+			SnapshotRefreshInterval:         snapshotRefreshInterval,
+			CacheSignalDelay:                cacheSignalDelay,
+			FlowControlEnabled:              flowControlEnabled,
+			FlowControlDetector:             flowControlDetector,
+			FlowControlDispatchOrder:        flowControlDispatchOrder,
+			FlowControlMaxQueueDepth:        flowControlMaxQueueDepth,
+			FlowControlQueueDepthThreshold:  flowControlQueueDepthThreshold,
+			FlowControlKVCacheUtilThreshold: flowControlKVCacheUtilThreshold,
+			FlowControlMaxConcurrency:       flowControlMaxConcurrency,
+			FlowControlPerBandCapacity:      flowControlPerBandCapacity,
+			FlowControlUsageLimitThreshold:  flowControlUsageLimitThreshold,
+			FlowControlFairnessPolicy:       flowControlFairnessPolicy,
+			TierShedThreshold:               tierShedThreshold,
+			TierShedMinPriority:             tierShedMinPriority,
+			GAIEQDThreshold:                 gaieQDThreshold,
+			GAIEKVThreshold:                 gaieKVThreshold,
+			TenantBudgets:                   tenantBudgets,
 		}
 
 		// Run simulation — wire SessionManager for closed-loop, nil for fixed mode
@@ -290,10 +293,10 @@ Example:
 			scheduler,
 			cs.RoutingRejections(),
 		)
-		rawMetrics.ShedByTier = cs.ShedByTier()                             // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
-		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth()               // Issue #882: gateway queue depth at horizon
-		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()                 // Issue #882: gateway queue shed count
-		rawMetrics.GatewayEvicted = cs.GatewayEvicted()                     // Phase 4: in-flight eviction count (#1228)
+		rawMetrics.ShedByTier = cs.ShedByTier()               // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
+		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth() // Issue #882: gateway queue depth at horizon
+		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()   // Issue #882: gateway queue shed count
+		rawMetrics.GatewayEvicted = cs.GatewayEvicted()        // Phase 4: in-flight eviction count (#1228)
 
 		// Print anomaly counters if any detected
 		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 || rawMetrics.GatewayEvicted > 0 || rawMetrics.TimedOutRequests > 0 {

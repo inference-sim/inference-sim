@@ -81,7 +81,7 @@ func TestPDTrace_DisaggMode_AllRecordTypesPresent(t *testing.T) {
 	if len(tr.KVTransfers) != numRequests {
 		t.Errorf("KVTransfers: expected %d, got %d", numRequests, len(tr.KVTransfers))
 	}
-	// DecodeRoutings is always empty: the decode pod is pre-selected at DisaggregationDecisionEvent
+	// DecodeRoutings is always empty: the decode pod is pre-selected at executeDisaggregatedRouting
 	// time; KVTransferCompletedEvent injects directly without a second routing decision (P2 fix).
 	if len(tr.DecodeRoutings) != 0 {
 		t.Errorf("DecodeRoutings: expected 0 (no second routing decision), got %d", len(tr.DecodeRoutings))
@@ -172,7 +172,7 @@ func TestPDTrace_DisaggMode_Counterfactual(t *testing.T) {
 
 // TestPDTrace_DisaggMode_Cardinality verifies the PD trace cardinality conservation law (R7):
 // with AlwaysDisaggregate, DisaggregatedCount == len(PrefillRoutings) == len(KVTransfers).
-// DecodeRoutings is always 0 because the decode pod is pre-selected at DisaggregationDecisionEvent
+// DecodeRoutings is always 0 because the decode pod is pre-selected at executeDisaggregatedRouting
 // time; there is no second routing decision.
 // Note: len(Disaggregations) >= DisaggregatedCount (Disaggregations records ALL decisions, including disaggregate=false).
 func TestPDTrace_DisaggMode_Cardinality(t *testing.T) {
@@ -295,9 +295,9 @@ func TestPDTrace_DroppedAtDecodeKV_NoOrphanRecords(t *testing.T) {
 }
 
 // TestPDTrace_NeverDecider_WithPools_OnlyDisaggRecords verifies that when PDDecider="never"
-// is configured alongside pool topology, DisaggregationDecisionEvent still fires and records
-// decisions, but all Disaggregate=false so no PrefillRouting, KVTransfer, or DecodeRouting
-// records are emitted.
+// is configured alongside pool topology, executeDisaggregatedRouting still records
+// disaggregation decisions, but all Disaggregate=false so no PrefillRouting, KVTransfer,
+// or DecodeRouting records are emitted.
 func TestPDTrace_NeverDecider_WithPools_OnlyDisaggRecords(t *testing.T) {
 	// GIVEN pools configured but disaggregation decider set to "never"
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
@@ -310,7 +310,7 @@ func TestPDTrace_NeverDecider_WithPools_OnlyDisaggRecords(t *testing.T) {
 	// WHEN run
 	mustRun(t, cs)
 
-	// THEN DisaggregationDecisionEvent fires for every request
+	// THEN executeDisaggregatedRouting records a disaggregation decision for every request
 	tr := cs.Trace()
 	if tr == nil {
 		t.Fatal("expected non-nil trace with trace-level decisions")

@@ -111,3 +111,17 @@ docs/superpowers/
 AGENTS.md
 .worktrees/
 *.bak
+
+# External-repo sibling directories cloned alongside inference-sim
+ServeGen/
+aiconfigurator/
+gateway-api-inference-extension/
+llm-d-inference-payload-processor/
+llm-d-inference-scheduler/
+llm-d-kv-cache/
+llm-d-pd-utils/
+llm-d-routing-sidecar/
+llm-d/
+sarathi-serve/
+vidur/
+vllm/

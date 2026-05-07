@@ -13,7 +13,7 @@ import (
 )
 
 // PrefillRoutingEvent routes a prefill sub-request to a prefill pool instance.
-// Priority 4: after DisaggregationDecisionEvent (3), before KV transfer events.
+// Priority 4: after RoutingDecisionEvent (2), before KV transfer events.
 type PrefillRoutingEvent struct {
 	time      int64
 	request   *sim.Request   // Prefill sub-request
@@ -180,7 +180,7 @@ func (e *KVTransferCompletedEvent) Timestamp() int64 { return e.time }
 func (e *KVTransferCompletedEvent) Priority() int     { return 6 }
 
 // Execute creates the decode sub-request and injects it directly into the pre-selected
-// decode pod (stored in parentReq.DecodeInstanceID by DisaggregationDecisionEvent).
+// decode pod (stored in parentReq.DecodeInstanceID by executeDisaggregatedRouting).
 // This eliminates the former DecodeRoutingEvent (second routing decision), fixing P2.
 func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	cs.transfersCompleted++
@@ -217,7 +217,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 		IsDecodeSubRequest: true,
 	}
 
-	// Look up the pre-selected decode instance (set at DisaggregationDecisionEvent time).
+	// Look up the pre-selected decode instance (set at executeDisaggregatedRouting time).
 	decodeInstID := string(e.parentReq.DecodeInstanceID)
 	logrus.Debugf("[cluster] KV transfer completed for %s, injecting to pre-selected decode pod %s", e.parentReq.ID, decodeInstID)
 

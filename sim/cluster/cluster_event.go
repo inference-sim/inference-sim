@@ -14,7 +14,7 @@ import (
 // These are separate from sim.Event and processed by ClusterSimulator's control plane.
 type ClusterEvent interface {
 	Timestamp() int64
-	Priority() int // 0=Arrival, 1=Admission, 2=Routing, 3=Disaggregation, 4-6=PD, 8=ScalingTick, 9=ScaleActuation
+	Priority() int // 0=Arrival, 1=Admission, 2=Routing, 4-6=PD, 8=ScalingTick, 9=ScaleActuation
 	Execute(*ClusterSimulator)
 }
 
@@ -230,25 +230,17 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 		return
 	}
 
-	// BC-PD-4: When pools are configured, schedule DisaggregationDecisionEvent
-	// between admission and routing. When not configured, go directly to routing.
-	if cs.poolsConfigured() {
-		heap.Push(&cs.clusterEvents, clusterEventEntry{
-			event: &DisaggregationDecisionEvent{
-				time:    e.time,
-				request: e.request,
-			},
-			seqID: cs.nextSeqID(),
-		})
-	} else {
-		heap.Push(&cs.clusterEvents, clusterEventEntry{
-			event: &RoutingDecisionEvent{
-				time:    e.time + cs.routingLatency,
-				request: e.request,
-			},
-			seqID: cs.nextSeqID(),
-		})
-	}
+	// Schedule routing. RoutingDecisionEvent.Execute branches internally on
+	// cs.poolsConfigured(): disaggregated routing for PD topology, standard routing
+	// otherwise. This mirrors llm-d-inference-scheduler's disagg-profile-handler,
+	// which handles both paths inside a single scheduling plugin entry point.
+	heap.Push(&cs.clusterEvents, clusterEventEntry{
+		event: &RoutingDecisionEvent{
+			time:    e.time + cs.routingLatency,
+			request: e.request,
+		},
+		seqID: cs.nextSeqID(),
+	})
 }
 
 // RoutingDecisionEvent represents the routing decision point for a request.
@@ -262,77 +254,16 @@ func (e *RoutingDecisionEvent) Timestamp() int64 { return e.time }
 func (e *RoutingDecisionEvent) Priority() int     { return 2 }
 
 // Execute routes the request using the configured routing policy and injects it.
+// Dispatches to executeDisaggregatedRouting when pool topology is configured (PD
+// disaggregation active), otherwise to executeStandardRouting. Both paths live on
+// ClusterSimulator so the fork happens inside one event type rather than at the
+// two pre-existing call sites in AdmissionDecisionEvent and tryDispatchFromGatewayQueue.
 func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
-	state := buildRouterState(cs, e.request)
-
-	// Guard: if no routable instances are available (e.g., all model-M instances are Loading
-	// or Draining), routing policies panic on empty snapshot sets. Treat as rejection instead.
-	// Uses Warn so users understand why requests are dropping (visible at default log level).
-	// I13: Use routingRejections counter to distinguish from admission rejections.
-	if len(state.Snapshots) == 0 {
-		logrus.Warnf("[cluster] req %s: no routable instances for model %q — request rejected at routing (all instances may be Loading or Draining)", e.request.ID, e.request.Model)
-		cs.routingRejections++
-		return
+	if cs.poolsConfigured() {
+		cs.executeDisaggregatedRouting(e.request, e.time)
+	} else {
+		cs.executeStandardRouting(e.request, e.time)
 	}
-
-	decision := cs.routingPolicy.Route(e.request, state)
-	logrus.Debugf("[cluster] req %s → instance %s (reason=%s)", e.request.ID, decision.TargetInstance, decision.Reason)
-
-	// #181: Stamp request with assigned instance for per-request metrics
-	e.request.AssignedInstance = decision.TargetInstance
-
-	// Record routing decision if tracing is enabled (BC-3, BC-4, BC-5, BC-6)
-	// Placed after priority assignment to minimize diff; recording reads decision, not request.Priority
-	if cs.trace != nil {
-		record := trace.RoutingRecord{
-			RequestID:      e.request.ID,
-			Clock:          cs.clock,
-			ChosenInstance: decision.TargetInstance,
-			Reason:         decision.Reason,
-			Scores:         copyScores(decision.Scores),
-		}
-		if cs.trace.Config.CounterfactualK > 0 {
-			record.Candidates, record.Regret = computeCounterfactual(
-				decision.TargetInstance, decision.Scores,
-				state.Snapshots, cs.trace.Config.CounterfactualK,
-			)
-		}
-		cs.trace.RecordRouting(record)
-	}
-
-	// Find target instance, increment in-flight count, and inject request
-	for _, inst := range cs.instances {
-		if string(inst.ID()) == decision.TargetInstance {
-					// Increment in-flight AFTER target validation — gives next routing decision
-					// visibility into this routing decision (#170)
-					cs.inFlightRequests[decision.TargetInstance]++
-					// Phase 1B-2a: track tenant in-flight count for fair-share enforcement.
-					if cs.tenantTracker != nil {
-						cs.tenantTracker.OnStart(e.request.TenantID)
-					}
-
-					// T042: record warm-up requests for TTFT factor application (Phase 1A).
-					// Record the first WarmUpRequestCount requests routed to this instance.
-					// We check the count of already-recorded IDs rather than State or warmUpRemaining
-					// because those change during simulation as requests complete.
-					warmUpCount := cs.config.InstanceLifecycle.WarmUpRequestCount
-					if warmUpCount > 0 && len(inst.WarmUpRequestIDs()) < warmUpCount {
-						inst.RecordWarmUpRequest(e.request.ID)
-					}
-			
-					inst.InjectRequestOnline(e.request, e.time)
-					// Track routed sheddable requests for in-flight eviction (BC-3).
-					if cs.evictionTracker != nil {
-						cs.evictionTracker.Track(e.request, decision.TargetInstance, cs.priorityMap)
-					}
-					// Notify observer so stateful deciders (e.g., PrefixThresholdDecider) can learn
-					// from this routing decision (synchronous call -- cache is always current).
-					cs.notifyDisaggregationObserver(e.request, decision.TargetInstance)
-					return		}
-	}
-
-	// Should never reach here (policy contract ensures valid target)
-	panic(fmt.Sprintf("RoutingDecisionEvent: invalid TargetInstance %q", decision.TargetInstance))
 }
 
 // GatewayEvictionEvent terminates a dispatched sheddable request on its instance.
@@ -415,7 +346,7 @@ func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 	logrus.Debugf("[cluster] req %s: decode pod pre-selected → %s", e.request.ID, decodeDecision.TargetInstance)
 
 	// Step 2: disaggregation decision with decode pod known.
-	disaggDecision := cs.disaggregationDecider.Decide(e.request)
+	disaggDecision := cs.disaggregationDecider.Decide(e.request, state)
 	logrus.Debugf("[cluster] req %s: disaggregate=%v", e.request.ID, disaggDecision.Disaggregate)
 
 	// Record disaggregation decision if tracing is enabled (BC-PD-17).
