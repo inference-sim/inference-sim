@@ -769,12 +769,16 @@ func generateTimeVaryingRequests(
 	var allRequests []*sim.Request
 
 	// Build prefix tokens map for all prefix groups (BC-2)
+	// Use per-client RNG for determinism parity with non-time-varying path
 	prefixes := make(map[string][]int)
 	for i := range allClients {
 		client := &allClients[i]
 		if client.PrefixGroup != "" && client.PrefixLength > 0 {
 			if _, exists := prefixes[client.PrefixGroup]; !exists {
-				prefixTokens := sim.GenerateRandomTokenIDs(rng, client.PrefixLength)
+				// Match non-time-varying path: per-client RNG (generator.go:663-667)
+				clientSeed := spec.Seed + int64(i) + 1
+				clientRNG := rand.New(rand.NewSource(clientSeed))
+				prefixTokens := sim.GenerateRandomTokenIDs(clientRNG, client.PrefixLength)
 				prefixes[client.PrefixGroup] = prefixTokens
 			}
 		}
@@ -942,10 +946,12 @@ func generateRequestsForWindow(
 		}
 
 		// BC-5: Filter rounds outside window boundary
+		// Invariant: GenerateReasoningRequests returns rounds in chronological order
+		// (round[i].ArrivalTime < round[i+1].ArrivalTime due to ThinkTimeUs accumulation)
 		requests := make([]*sim.Request, 0, len(reasoningReqs))
 		for _, req := range reasoningReqs {
 			if req.ArrivalTime >= window.EndUs {
-				break // rounds are in chronological order
+				break // Safe to break: remaining rounds arrive even later
 			}
 			requests = append(requests, req)
 		}

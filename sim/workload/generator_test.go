@@ -3084,6 +3084,23 @@ func TestGenerateRequestsForWindow_ReasoningWithPrefix(t *testing.T) {
 			t.Errorf("Request %d: PrefixLength = %d, want %d", i, req.PrefixLength, len(prefixTokens))
 		}
 	}
+
+	// BC-2: Verify prefix prepending preserves context accumulation
+	if len(requests) >= 2 {
+		round0Len := len(requests[0].InputTokens)
+		round1Len := len(requests[1].InputTokens)
+
+		// Round 1 should have: prefix + round 1 input + (round 0 input + round 0 output)
+		// Growth = round 0 input + round 0 output (context accumulation adds both)
+		round0InputLen := len(requests[0].InputTokens) - len(prefixTokens) // Exclude prefix
+		expectedGrowth := round0InputLen + len(requests[0].OutputTokens)
+		actualGrowth := round1Len - round0Len
+
+		if actualGrowth != expectedGrowth {
+			t.Errorf("Context accumulation with prefix failed: expected growth %d (round 0 input + output), got %d",
+				expectedGrowth, actualGrowth)
+		}
+	}
 }
 
 func TestGenerateRequestsForWindow_ReasoningWithDeadline(t *testing.T) {
@@ -3132,6 +3149,132 @@ func TestGenerateRequestsForWindow_ReasoningWithDeadline(t *testing.T) {
 		expectedDeadline := req.ArrivalTime + timeoutUs
 		if req.Deadline != expectedDeadline {
 			t.Errorf("Request %d: Deadline = %d, want %d (ArrivalTime + Timeout)", i, req.Deadline, expectedDeadline)
+		}
+	}
+}
+
+func TestGenerateRequestsForWindow_ReasoningDefaultTimeout(t *testing.T) {
+	// BC-3: Default 300s timeout for reasoning sessions (when Timeout is nil)
+	rng := rand.New(rand.NewSource(12345))
+
+	client := ClientSpec{
+		ID:       "reasoning-client-default-timeout",
+		TenantID: "tenant-a",
+		SLOClass: "standard",
+		Model:    "qwen/qwen3-14b",
+		Timeout:  nil, // No explicit timeout - should default to 300s
+		Reasoning: &ReasoningSpec{
+			MultiTurn: &MultiTurnSpec{
+				MaxRounds:     2,
+				ThinkTimeUs:   1000000,
+				ContextGrowth: "accumulate",
+			},
+		},
+		InputDist: DistSpec{
+			Type:   "constant",
+			Params: map[string]float64{"value": 100},
+		},
+		OutputDist: DistSpec{
+			Type:   "constant",
+			Params: map[string]float64{"value": 50},
+		},
+		Streaming: true,
+	}
+
+	window := ActiveWindow{
+		StartUs:   0,
+		EndUs:     10000000,
+		TraceRate: floatPtr(1.0),
+	}
+
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
+	if err != nil {
+		t.Fatalf("generateRequestsForWindow failed: %v", err)
+	}
+
+	// BC-3: Verify all rounds have default 300s timeout
+	const defaultTimeoutUs = 300_000_000 // 300s from computeDeadline default
+	for i, req := range requests {
+		expectedDeadline := req.ArrivalTime + defaultTimeoutUs
+		if req.Deadline != expectedDeadline {
+			t.Errorf("Request %d: Deadline = %d, want %d (ArrivalTime + 300s default)", i, req.Deadline, expectedDeadline)
+		}
+	}
+}
+
+func TestGenerateRequestsForWindow_ReasoningPreemptionSafety(t *testing.T) {
+	// Preemption safety: Verify reasoning requests have immutable session metadata
+	// that is preserved across preemption (SessionID, RoundIndex don't change)
+	rng := rand.New(rand.NewSource(12345))
+
+	client := ClientSpec{
+		ID:       "reasoning-client-preemption-test",
+		TenantID: "tenant-a",
+		SLOClass: "standard",
+		Model:    "qwen/qwen3-14b",
+		Reasoning: &ReasoningSpec{
+			MultiTurn: &MultiTurnSpec{
+				MaxRounds:     3,
+				ThinkTimeUs:   1000000,
+				ContextGrowth: "accumulate",
+			},
+		},
+		InputDist: DistSpec{
+			Type:   "constant",
+			Params: map[string]float64{"value": 100},
+		},
+		OutputDist: DistSpec{
+			Type:   "constant",
+			Params: map[string]float64{"value": 50},
+		},
+		Streaming: true,
+	}
+
+	window := ActiveWindow{
+		StartUs:   0,
+		EndUs:     10000000,
+		TraceRate: floatPtr(1.0),
+	}
+
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
+	if err != nil {
+		t.Fatalf("generateRequestsForWindow failed: %v", err)
+	}
+
+	// Preemption safety verification:
+	// 1. SessionID and RoundIndex are set at request creation time
+	// 2. These fields are immutable (not recomputed on re-queue)
+	// 3. Session causality (round N+1 arrival >= round N completion) is enforced
+	//    by GenerateReasoningRequests (tested separately in reasoning_test.go)
+	//
+	// This test verifies that request metadata is correctly initialized,
+	// which ensures preemption safety (preempted requests retain their identity).
+
+	sessionID := requests[0].SessionID
+	if sessionID == "" {
+		t.Fatal("SessionID not set - preemption would lose session identity")
+	}
+
+	// Verify immutable fields are set correctly
+	for i, req := range requests {
+		if req.SessionID != sessionID {
+			t.Errorf("Request %d: SessionID mismatch - not preemption-safe", i)
+		}
+		if req.RoundIndex != i {
+			t.Errorf("Request %d: RoundIndex = %d, want %d - not preemption-safe", i, req.RoundIndex, i)
+		}
+		if req.ClientID != client.ID {
+			t.Errorf("Request %d: ClientID mismatch - not preemption-safe", i)
+		}
+
+		// Verify causality constraint is encoded in arrival times
+		if i > 0 {
+			prevCompletion := requests[i-1].ArrivalTime + int64(len(requests[i-1].OutputTokens))
+			minArrival := prevCompletion + client.Reasoning.MultiTurn.ThinkTimeUs
+			if req.ArrivalTime < minArrival {
+				t.Errorf("Round %d: ArrivalTime %d < min %d (violates session causality)",
+					i, req.ArrivalTime, minArrival)
+			}
 		}
 	}
 }
