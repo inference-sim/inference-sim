@@ -3295,6 +3295,79 @@ func TestGenerateRequestsForWindow_ReasoningPreemptionSafety(t *testing.T) {
 	}
 }
 
+func TestGenerateRequestsForWindow_ReasoningSingleSession(t *testing.T) {
+	// I1: Test time-varying SingleSession branch (generator.go:907-952)
+	// Verifies:
+	// 1. Exactly one unique SessionID appears across all returned requests
+	// 2. All returned rounds have ArrivalTime < window.EndUs
+	// 3. RoundIndex values are sequential starting from 0
+	rng := rand.New(rand.NewSource(42))
+
+	client := ClientSpec{
+		ID:       "reasoning-client-single-session",
+		TenantID: "tenant-a",
+		SLOClass: "standard",
+		Model:    "qwen/qwen3-14b",
+		Reasoning: &ReasoningSpec{
+			MultiTurn: &MultiTurnSpec{
+				MaxRounds:     5,
+				ThinkTimeUs:   1000000, // 1s
+				ContextGrowth: "accumulate",
+				SingleSession: true, // KEY: Enable SingleSession mode
+			},
+		},
+		InputDist: DistSpec{
+			Type:   "constant",
+			Params: map[string]float64{"value": 100},
+		},
+		OutputDist: DistSpec{
+			Type:   "constant",
+			Params: map[string]float64{"value": 50},
+		},
+		Streaming: true,
+	}
+
+	window := ActiveWindow{
+		StartUs:   0,
+		EndUs:     10000000, // 10s window
+		TraceRate: ptrFloat64(1.0),
+	}
+
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
+	if err != nil {
+		t.Fatalf("generateRequestsForWindow failed: %v", err)
+	}
+
+	if len(requests) == 0 {
+		t.Fatal("Expected at least one request in SingleSession mode, got 0")
+	}
+
+	// Verification 1: Exactly one unique SessionID
+	sessionIDs := make(map[string]bool)
+	for _, req := range requests {
+		sessionIDs[req.SessionID] = true
+	}
+	if len(sessionIDs) != 1 {
+		t.Errorf("Expected exactly 1 unique SessionID in SingleSession mode, got %d", len(sessionIDs))
+	}
+
+	// Verification 2: All rounds have ArrivalTime < window.EndUs
+	for i, req := range requests {
+		if req.ArrivalTime >= window.EndUs {
+			t.Errorf("Round %d: ArrivalTime %d >= window.EndUs %d (should be filtered)",
+				i, req.ArrivalTime, window.EndUs)
+		}
+	}
+
+	// Verification 3: RoundIndex values are sequential starting from 0
+	for i, req := range requests {
+		if req.RoundIndex != i {
+			t.Errorf("Round %d: RoundIndex = %d, want %d (sequential order broken)",
+				i, req.RoundIndex, i)
+		}
+	}
+}
+
 func TestGenerateWorkload_TimeVaryingClosedLoopReasoning(t *testing.T) {
 	// BC-4: Closed-loop session blueprint creation for time-varying workloads
 	// BC-8: Determinism (run twice with same seed, verify identical output)
