@@ -179,6 +179,31 @@ func TestResolveConfigForRole_Decode(t *testing.T) {
 	}
 }
 
+// TestResolveConfigForRole_Shared verifies issue #1276 BC-7: the shared-role
+// (PoolRolePrefillDecode) resolves to DecodeOverrides — "decode wins"
+// precedence (D-2 in the micro plan). This mirrors the spirit of llm-d's
+// allowsNoLabel=true decode default and avoids the oversizing trap that
+// would result from applying prefill's higher TP to a pod also serving decode.
+func TestResolveConfigForRole_Shared(t *testing.T) {
+	prefillTP := 8
+	decodeTP := 4
+	dc := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			KVCacheConfig:       sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 16, "", 0),
+		},
+		PrefillOverrides: PoolOverrides{TP: &prefillTP},
+		DecodeOverrides:  PoolOverrides{TP: &decodeTP},
+	}
+
+	cfg := dc.resolveConfigForRole(PoolRolePrefillDecode)
+	if cfg.TP != decodeTP {
+		t.Errorf("shared-role TP = %d, want %d (decode-wins precedence per issue #1276 D-2)", cfg.TP, decodeTP)
+	}
+}
+
 func TestResolveConfigForRole_NoRole_ReturnsGlobal(t *testing.T) {
 	tp := 8
 	dc := DeploymentConfig{
@@ -578,15 +603,15 @@ func TestNewHeterogeneousDeploymentConfig_Helper(t *testing.T) {
 func TestResolvePoolConfig_MaxModelLen_CappedToPoolKVCapacity(t *testing.T) {
 	// GIVEN global config with large MaxModelLen and large global KV blocks
 	global := sim.SimConfig{
-		Horizon: 1000000,
-		Seed:    42,
+		Horizon:             1000000,
+		Seed:                42,
 		KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0), // 10000 blocks × 16 = 160000 tokens
 		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, "", 131072),
 	}
 
 	// AND per-pool override with smaller TotalKVBlocks (smaller GPU) and auto-capped MaxModelLen
 	poolKVFeasibleMax := int64(2048 * 16) // 32768 tokens
-	poolMaxModelLen := poolKVFeasibleMax   // auto-capped CLI fix would set this
+	poolMaxModelLen := poolKVFeasibleMax  // auto-capped CLI fix would set this
 	poolBlocks := int64(2048)
 	overrides := PoolOverrides{
 		TotalKVBlocks: &poolBlocks,

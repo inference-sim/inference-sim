@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
+	"reflect"
 	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -24,21 +25,21 @@ type ClusterSimulator struct {
 	aggregatedMetrics *sim.Metrics
 
 	// Online routing pipeline fields
-	clusterEvents        ClusterEventQueue
-	seqCounter           int64
-	admissionLatency     int64
-	routingLatency       int64
-	admissionPolicy      sim.AdmissionPolicy
-	priorityMap          *sim.SLOPriorityMap
-	snapshotProvider     *CachedSnapshotProvider
-	routingPolicy        sim.RoutingPolicy
-	rejectedRequests     int                    // EC-2: count of requests rejected by admission policy
-	routingRejections    int                    // I13: count of requests rejected at routing (no routable instances)
-	shedByTier           map[string]int         // per-SLOClass rejection counts (Phase 1B-1a)
-	trace                *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
-	preGeneratedRequests []*sim.Request         // Pre-generated requests (all workload paths unified)
-	inFlightRequests     map[string]int         // instance ID → dispatched-but-not-completed count (#463)
-	poolMembership       map[string]PoolRole    // instance ID → pool role (nil when disaggregation disabled)
+	clusterEvents         ClusterEventQueue
+	seqCounter            int64
+	admissionLatency      int64
+	routingLatency        int64
+	admissionPolicy       sim.AdmissionPolicy
+	priorityMap           *sim.SLOPriorityMap
+	snapshotProvider      *CachedSnapshotProvider
+	routingPolicy         sim.RoutingPolicy
+	rejectedRequests      int                       // EC-2: count of requests rejected by admission policy
+	routingRejections     int                       // I13: count of requests rejected at routing (no routable instances)
+	shedByTier            map[string]int            // per-SLOClass rejection counts (Phase 1B-1a)
+	trace                 *trace.SimulationTrace    // nil when trace-level is "none" (BC-1: zero overhead)
+	preGeneratedRequests  []*sim.Request            // Pre-generated requests (all workload paths unified)
+	inFlightRequests      map[string]int            // instance ID → dispatched-but-not-completed count (#463)
+	poolMembership        map[string]PoolRole       // instance ID → pool role (nil when disaggregation disabled)
 	disaggregationDecider sim.DisaggregationDecider // PD disaggregation decider (nil when disabled)
 
 	// PD disaggregation state (PR2)
@@ -47,12 +48,12 @@ type ClusterSimulator struct {
 	pendingDecodeCompletions  map[string]string         // decode sub-req ID → parent ID
 	transfersInitiated        int
 	transfersCompleted        int
-	pdPrefillCompletedCount   int                       // prefill sub-requests that completed (for INV-1 correction)
-	pdDecodeCompletedCount    int                       // decode sub-requests that completed (for INV-1 in-flight tracking)
-	pdDecodeTimedOutCount     int                       // decode sub-requests that timed out (for INV-1 in-flight tracking)
-	droppedAtDecodeKV         int                       // requests dropped due to insufficient KV at decode
-	prefillRoutingPolicy      sim.RoutingPolicy         // nil = use main routingPolicy
-	decodeRoutingPolicy       sim.RoutingPolicy         // nil = use main routingPolicy
+	pdPrefillCompletedCount   int               // prefill sub-requests that completed (for INV-1 correction)
+	pdDecodeCompletedCount    int               // decode sub-requests that completed (for INV-1 in-flight tracking)
+	pdDecodeTimedOutCount     int               // decode sub-requests that timed out (for INV-1 in-flight tracking)
+	droppedAtDecodeKV         int               // requests dropped due to insufficient KV at decode
+	prefillRoutingPolicy      sim.RoutingPolicy // nil = use main routingPolicy
+	decodeRoutingPolicy       sim.RoutingPolicy // nil = use main routingPolicy
 
 	// Transfer contention state (--pd-transfer-contention flag, INV-P2-2)
 	activeTransfers                int
@@ -92,7 +93,7 @@ type ClusterSimulator struct {
 	gatewayQueue         *GatewayQueue
 	flowControlAdmission *FlowControlAdmission // typed ref for outcome inspection + completion dispatch; nil when flow control disabled
 
-	progressHook                sim.ProgressHook
+	progressHook               sim.ProgressHook
 	simClockProgressIntervalUs int64
 	nextSnapshotClockUs        int64
 }
@@ -129,8 +130,8 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	}
 
 	// Validate pool topology and overrides early (before instance construction).
-	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
-		if err := ValidatePoolTopology(config.PrefillInstances, config.DecodeInstances, config.NumInstances); err != nil {
+	if config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 {
+		if err := ValidatePoolTopology(config.PrefillInstances, config.DecodeInstances, config.SharedInstances, config.NumInstances); err != nil {
 			panic(fmt.Sprintf("ClusterSimulator: %v", err))
 		}
 		if err := config.PrefillOverrides.Validate("prefill pool"); err != nil {
@@ -157,11 +158,11 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	}
 
 	// Build pre-construction pool membership so instance construction can resolve per-pool config.
-	// When disaggregation is disabled (PrefillInstances==0), prePoolMembership is nil and
-	// all instances use the global config (backward-compatible).
+	// When disaggregation is disabled (all pool counts are 0), prePoolMembership is nil
+	// and all instances use the global config (backward-compatible).
 	var prePoolMembership map[string]PoolRole
-	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
-		prePoolMembership = BuildPoolMembershipFromIndices(config.NumInstances, config.PrefillInstances, config.DecodeInstances)
+	if config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 {
+		prePoolMembership = BuildPoolMembershipFromIndices(config.NumInstances, config.PrefillInstances, config.DecodeInstances, config.SharedInstances)
 	}
 
 	// instances and instanceMap are populated by the unified construction+placement loop below.
@@ -217,15 +218,15 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		routingLatency:       config.RoutingLatency,
 		admissionPolicy:      admissionPolicy,
 		priorityMap:          priorityMap,
-		snapshotProvider: nil, // set after unified construction loop below
-		routingPolicy:    nil, // set after instance construction (needs cacheQueryFn from instances)
+		snapshotProvider:     nil, // set after unified construction loop below
+		routingPolicy:        nil, // set after instance construction (needs cacheQueryFn from instances)
 		trace:                simTrace,
 		inFlightRequests:     make(map[string]int, config.NumInstances),
 		shedByTier:           make(map[string]int),
 	}
 
 	// PD disaggregation: set pool membership (topology already validated above)
-	if config.PrefillInstances > 0 || config.DecodeInstances > 0 {
+	if config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 {
 		cs.poolMembership = prePoolMembership
 		switch config.PDDecider {
 		case "prefix-threshold":
@@ -240,8 +241,14 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		// Per-pool routing policies are created after the construction loop
 		// (need cacheQueryFn from instances).
 
-		logrus.Infof("[cluster] PD disaggregation enabled: %d prefill, %d decode instances, decider=%q",
-			config.PrefillInstances, config.DecodeInstances, config.PDDecider)
+		logrus.Infof("[cluster] PD disaggregation enabled: %d prefill, %d decode, %d shared (prefill-decode) instances, decider=%q",
+			config.PrefillInstances, config.DecodeInstances, config.SharedInstances, config.PDDecider)
+
+		// Issue #1276 D-2: shared-role pods resolve config via decode-wins precedence.
+		// Warn when PrefillOverrides would have been applicable but is silently discarded.
+		if config.SharedInstances > 0 && !reflect.DeepEqual(config.PrefillOverrides, config.DecodeOverrides) {
+			logrus.Infof("[cluster] shared-role pods use DecodeOverrides (PrefillOverrides ignored per PR1276 decode-wins rule)")
+		}
 	}
 
 	// Phase 1A: initialize PlacementManager when node pools are configured.
@@ -659,12 +666,15 @@ func (c *ClusterSimulator) Run() error {
 				}
 			}
 
-			// PD disaggregation: detect prefill/decode sub-request completions
+			// PD disaggregation: detect prefill/decode sub-request completions.
+			// Set-membership (.Has) so a shared-role pod (PoolRolePrefillDecode)
+			// fires both detectors — issue #1276 BC-5.
 			if c.poolsConfigured() {
-				if c.poolMembership[instID] == PoolRolePrefill {
+				role := c.poolMembership[instID]
+				if role.Has(PoolRolePrefill) {
 					c.detectPrefillCompletions(inst)
 				}
-				if c.poolMembership[instID] == PoolRoleDecode {
+				if role.Has(PoolRoleDecode) {
 					c.detectDecodeCompletions(inst)
 				}
 			}

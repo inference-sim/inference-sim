@@ -171,12 +171,16 @@ func collectPoolThroughput(
 			// A nil entry from a test helper signals incorrect test setup -- panic to make the error visible.
 			panic(fmt.Sprintf("collectPoolThroughput: nil *sim.Metrics for instance %q (programming error)", id))
 		}
-		switch poolMembership[id] {
-		case PoolRolePrefill:
+		// Set-membership (.Has) so a shared-role pod (PoolRolePrefillDecode)
+		// contributes to both pool counters — issue #1276 BC-6. Instances
+		// not in pool membership (PoolRole(0)) contribute to neither
+		// (BC-10 partial-membership safe).
+		role := poolMembership[id]
+		if role.Has(PoolRolePrefill) {
 			prefillCompleted += m.CompletedRequests
-		case PoolRoleDecode:
+		}
+		if role.Has(PoolRoleDecode) {
 			decodeCompleted += m.CompletedRequests
-		// default: instance not in pool membership (no-op, BC-10 partial membership safe)
 		}
 	}
 

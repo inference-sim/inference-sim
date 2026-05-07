@@ -58,8 +58,15 @@ type DeploymentConfig struct {
 	// PD disaggregation configuration (PR1)
 	// When both PrefillInstances and DecodeInstances are 0, disaggregation is disabled
 	// and the pipeline is unchanged (BC-PD-1).
-	PrefillInstances int    // Number of instances dedicated to prefill (0 = disabled)
-	DecodeInstances  int    // Number of instances dedicated to decode (0 = disabled)
+	PrefillInstances int // Number of instances dedicated to prefill (0 = disabled)
+	DecodeInstances  int // Number of instances dedicated to decode (0 = disabled)
+	// SharedInstances (issue #1276, GAP-5) — number of instances serving both
+	// prefill and decode (shared-role pods, llm-d "prefill-decode" / legacy "both"
+	// role labels). When > 0, ValidatePoolTopology accepts
+	// prefill+decode+shared <= total, and BuildPoolMembershipFromIndices
+	// assigns PoolRolePrefillDecode to the last `shared` indices after
+	// the prefill-only and decode-only ranges.
+	SharedInstances   int
 	PDDecider         string // Disaggregation decider: "" or "never" (default), "always", "prefix-threshold"
 	PDPrefixThreshold int    // Non-cached token threshold for prefix-threshold decider (PR6)
 
@@ -80,14 +87,14 @@ type DeploymentConfig struct {
 
 	// Phase 1C: Model autoscaler pipeline (issue #692).
 	// Zero value is safe: ModelAutoscalerIntervalUs=0 disables the autoscaler entirely (INV-6).
-	ModelAutoscalerIntervalUs float64                    `yaml:"model_autoscaler_interval_us,omitempty"` // tick interval in μs; 0 = autoscaler disabled
-	HPAScrapeDelay                 DelaySpec                  `yaml:"hpa_scrape_delay,omitempty"`                    // HPA scrape lag: time from WVA metric emission to HPA acting; zero = same-tick actuation; Mean/Stddev in seconds
-	ScaleUpStabilizationWindowUs   float64                    `yaml:"scale_up_stabilization_window_us,omitempty"`    // HPA scale-up stabilization window in μs; 0 = act on first signal (HPA default)
-	ScaleDownStabilizationWindowUs float64                    `yaml:"scale_down_stabilization_window_us,omitempty"`  // HPA scale-down stabilization window in μs; 0 = no stabilization (pass immediately). Set to 300,000,000 (= 5 minutes) to match the Kubernetes HPA default.
+	ModelAutoscalerIntervalUs      float64   `yaml:"model_autoscaler_interval_us,omitempty"`       // tick interval in μs; 0 = autoscaler disabled
+	HPAScrapeDelay                 DelaySpec `yaml:"hpa_scrape_delay,omitempty"`                   // HPA scrape lag: time from WVA metric emission to HPA acting; zero = same-tick actuation; Mean/Stddev in seconds
+	ScaleUpStabilizationWindowUs   float64   `yaml:"scale_up_stabilization_window_us,omitempty"`   // HPA scale-up stabilization window in μs; 0 = act on first signal (HPA default)
+	ScaleDownStabilizationWindowUs float64   `yaml:"scale_down_stabilization_window_us,omitempty"` // HPA scale-down stabilization window in μs; 0 = no stabilization (pass immediately). Set to 300,000,000 (= 5 minutes) to match the Kubernetes HPA default.
 	// AutoscalerAnalyzerConfig holds V2SaturationAnalyzer thresholds.
 	// Zero values are safe: NewClusterSimulator applies WVA reference defaults
 	// (KvCacheThreshold=0.8, ScaleUpThreshold=0.8, ScaleDownBoundary=0.4, AvgInputTokens=512).
-	AutoscalerAnalyzerConfig  V2SaturationAnalyzerConfig `yaml:"autoscaler_analyzer,omitempty"`
+	AutoscalerAnalyzerConfig V2SaturationAnalyzerConfig `yaml:"autoscaler_analyzer,omitempty"`
 
 	// Phase 1B-1a: tier-ordered admission shedding config (issue #809).
 	// TierShedMinPriority=0 rejects sheddable tiers (priority < 0) under overload.
@@ -108,7 +115,7 @@ type DeploymentConfig struct {
 	// When FlowControlEnabled is false (default), the gateway queue is bypassed
 	// and requests flow directly from admission to routing (BC-1 pass-through).
 	FlowControlEnabled              bool    `yaml:"flow_control_enabled,omitempty"`
-	FlowControlDetector             string  `yaml:"flow_control_detector,omitempty"`               // "never" (default), "utilization", "concurrency"
+	FlowControlDetector             string  `yaml:"flow_control_detector,omitempty"`                // "never" (default), "utilization", "concurrency"
 	FlowControlDispatchOrder        string  `yaml:"flow_control_dispatch_order,omitempty"`          // "fifo" (default), "priority"
 	FlowControlMaxQueueDepth        int     `yaml:"flow_control_max_queue_depth,omitempty"`         // 0 = unlimited
 	FlowControlQueueDepthThreshold  float64 `yaml:"flow_control_queue_depth_threshold,omitempty"`   // for utilization detector
@@ -148,10 +155,16 @@ func (d DeploymentConfig) EffectivePrefillTP() int {
 // resolveConfigForRole returns the SimConfig appropriate for an instance in the given pool role.
 // For PoolRolePrefill: applies PrefillOverrides to the global SimConfig.
 // For PoolRoleDecode: applies DecodeOverrides to the global SimConfig.
+// For PoolRolePrefillDecode (shared-role): applies DecodeOverrides — "decode wins"
+// precedence per issue #1276 D-2 (matches the spirit of llm-d's allowsNoLabel=true
+// decode default; a shared pod is decode-capable in every deployment, and picking
+// decode avoids oversizing TP for pods that also do prefill).
 // For any other role (including 0/unset): returns the global SimConfig unchanged.
 // The global SimConfig is never mutated.
 func (d DeploymentConfig) resolveConfigForRole(role PoolRole) sim.SimConfig {
 	switch role {
+	case PoolRolePrefillDecode:
+		return ResolvePoolConfig(d.SimConfig, d.DecodeOverrides)
 	case PoolRolePrefill:
 		return ResolvePoolConfig(d.SimConfig, d.PrefillOverrides)
 	case PoolRoleDecode:
