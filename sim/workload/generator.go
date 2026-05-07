@@ -936,6 +936,11 @@ func generateRequestsForWindow(
 			}
 		}
 
+		// BC-3: Set Deadline on all reasoning requests
+		for _, req := range reasoningReqs {
+			req.Deadline = computeDeadline(req.ArrivalTime, client.Timeout, true)
+		}
+
 		// BC-5: Filter rounds outside window boundary
 		requests := make([]*sim.Request, 0, len(reasoningReqs))
 		for _, req := range reasoningReqs {

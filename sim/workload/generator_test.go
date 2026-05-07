@@ -3086,6 +3086,56 @@ func TestGenerateRequestsForWindow_ReasoningWithPrefix(t *testing.T) {
 	}
 }
 
+func TestGenerateRequestsForWindow_ReasoningWithDeadline(t *testing.T) {
+	// BC-3: Deadline setting in time-varying reasoning
+	rng := rand.New(rand.NewSource(12345))
+
+	timeoutUs := int64(30000000) // 30s timeout
+
+	client := ClientSpec{
+		ID:       "reasoning-client-with-deadline",
+		TenantID: "tenant-a",
+		SLOClass: "standard",
+		Model:    "qwen/qwen3-14b",
+		Timeout:  &timeoutUs,
+		Reasoning: &ReasoningSpec{
+			MultiTurn: &MultiTurnSpec{
+				MaxRounds:     3,
+				ThinkTimeUs:   1000000,
+				ContextGrowth: "accumulate",
+			},
+		},
+		InputDist: DistSpec{
+			Type:   "constant",
+			Params: map[string]float64{"value": 100},
+		},
+		OutputDist: DistSpec{
+			Type:   "constant",
+			Params: map[string]float64{"value": 50},
+		},
+		Streaming: true,
+	}
+
+	window := ActiveWindow{
+		StartUs:   0,
+		EndUs:     10000000,
+		TraceRate: floatPtr(1.0), // 1 req/s
+	}
+
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
+	if err != nil {
+		t.Fatalf("generateRequestsForWindow failed: %v", err)
+	}
+
+	// BC-3: Verify all rounds have deadline set
+	for i, req := range requests {
+		expectedDeadline := req.ArrivalTime + timeoutUs
+		if req.Deadline != expectedDeadline {
+			t.Errorf("Request %d: Deadline = %d, want %d (ArrivalTime + Timeout)", i, req.Deadline, expectedDeadline)
+		}
+	}
+}
+
 func floatPtr(f float64) *float64 {
 	return &f
 }
