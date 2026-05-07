@@ -3064,3 +3064,67 @@ func TestClusterSimulator_FlowControl_Eviction_Conservation(t *testing.T) {
 		m.CompletedRequests, gwEvicted, gwShed, gwDepth)
 }
 
+// TestClusterSimulator_FlowControl_Eviction_PD verifies that eviction tracking
+// works when requests are routed through the PD disaggregation path (non-disaggregated).
+func TestClusterSimulator_FlowControl_Eviction_PD(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(2, 1, 1)
+	config.FlowControlEnabled = true
+	config.FlowControlDetector = "concurrency"
+	config.FlowControlMaxConcurrency = 1 // saturation = totalInFlight / (numInstances * maxConcurrency) — saturates at 2 in-flight
+	config.FlowControlDispatchOrder = "priority"
+	config.FlowControlMaxQueueDepth = 100
+	config.PDDecider = "never" // non-disaggregated: requests go directly to decode pod
+
+	longOutput := make([]int, 200)
+	for j := range longOutput {
+		longOutput[j] = j + 1
+	}
+
+	// Need enough sheddable to saturate: 2 instances × maxConcurrency=1 → saturates at 2 in-flight
+	requests := make([]*sim.Request, 0, 8)
+	for i := 0; i < 4; i++ {
+		out := make([]int, len(longOutput))
+		copy(out, longOutput)
+		requests = append(requests, &sim.Request{
+			ID:           fmt.Sprintf("pd-shed-%d", i),
+			ArrivalTime:  int64(i * 1000),
+			SLOClass:     "sheddable",
+			InputTokens:  []int{1, 2, 3, 4, 5},
+			OutputTokens: out,
+		})
+	}
+	for i := 0; i < 4; i++ {
+		requests = append(requests, &sim.Request{
+			ID:           fmt.Sprintf("pd-crit-%d", i),
+			ArrivalTime:  int64(50000 + i*1000),
+			SLOClass:     "critical",
+			InputTokens:  []int{1, 2, 3},
+			OutputTokens: []int{1, 2, 3},
+		})
+	}
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	gwEvicted := cs.GatewayEvicted()
+
+	// INV-1 conservation
+	gwDepth := cs.GatewayQueueDepth()
+	gwShed := cs.GatewayQueueShed()
+	gwRejected := cs.GatewayQueueRejected()
+	injected := len(requests) - cs.RejectedRequests()
+	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning +
+		m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() +
+		gwDepth + gwShed + gwRejected + gwEvicted
+	if injected != accounted {
+		t.Errorf("INV-1 violated: injected=%d != accounted=%d", injected, accounted)
+	}
+
+	if gwEvicted == 0 {
+		t.Errorf("expected gwEvicted > 0 in PD+flow-control mode")
+	}
+
+	t.Logf("PD+FC results: completed=%d gwEvicted=%d", m.CompletedRequests, gwEvicted)
+}
+
