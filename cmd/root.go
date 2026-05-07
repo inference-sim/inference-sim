@@ -1754,12 +1754,10 @@ var runCmd = &cobra.Command{
 				}
 				// Otherwise just warn - saturation analysis is optional
 				logrus.Warnf("Failed to load trace for saturation analysis: %v", traceErr)
-			} else {
+			} else if runSaturationOutputPath != "" {
 				verdict := workload.AnalyzeSaturation(*traceData, 60.0)
 				printSaturationSummary(os.Stdout, verdict)
-				if runSaturationOutputPath != "" {
-					writeSaturationJSON(runSaturationOutputPath, verdict)
-				}
+				writeSaturationJSON(runSaturationOutputPath, verdict)
 			}
 		}
 
