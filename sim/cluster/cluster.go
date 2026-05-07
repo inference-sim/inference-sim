@@ -144,7 +144,9 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 
 	// Validate KV bytes per token derivation early so KVTransferStartedEvent never
 	// encounters a configuration error at runtime (the panic there is now unreachable).
-	if config.PrefillInstances > 0 {
+	// Covers pure-shared clusters too (issue #1276): a shared-role pod can perform
+	// prefill and therefore source a KV transfer.
+	if config.PrefillInstances > 0 || config.SharedInstances > 0 {
 		if config.EffectivePrefillTP() <= 0 {
 			panic("ClusterSimulator: PD disaggregation requires prefill TP > 0 (set --tp or --prefill-tp)")
 		}
@@ -153,8 +155,11 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		}
 	}
 
-	if config.PDTransferContention && config.PrefillInstances == 0 && config.DecodeInstances == 0 {
-		panic("ClusterSimulator: PDTransferContention requires PD disaggregation (--prefill-instances and --decode-instances must be set)")
+	// PDTransferContention is valid for any PD-enabled deployment, including pure-shared
+	// (shared pod → shared pod KV transfer is possible when prefill and decode land on
+	// different shared pods). Only reject when PD is entirely disabled. (#1276)
+	if config.PDTransferContention && config.PrefillInstances == 0 && config.DecodeInstances == 0 && config.SharedInstances == 0 {
+		panic("ClusterSimulator: PDTransferContention requires PD disaggregation (--prefill-instances, --decode-instances, or --prefill-decode-instances must be set)")
 	}
 
 	// Build pre-construction pool membership so instance construction can resolve per-pool config.
