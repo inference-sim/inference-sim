@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"sort"
@@ -20,12 +21,13 @@ import (
 )
 
 var (
-	traceHeaderPath     string
-	traceDataPath       string
-	replayTraceOutput   string // File prefix for TraceV2 re-export (<prefix>.yaml + <prefix>.csv)
-	replaySessionMode   string
-	replayThinkTimeMs   int
-	replayThinkTimeDist string // distribution spec for think time (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s")
+	traceHeaderPath           string
+	traceDataPath             string
+	replayTraceOutput         string // File prefix for TraceV2 re-export (<prefix>.yaml + <prefix>.csv)
+	replaySessionMode         string
+	replayThinkTimeMs         int
+	replayThinkTimeDist       string // distribution spec for think time (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s")
+	replaySaturationOutputPath string // Path to write saturation verdict JSON
 )
 
 var replayCmd = &cobra.Command{
@@ -325,6 +327,22 @@ Example:
 			}
 		}
 
+		// Saturation analysis (requires trace data, which replay always has)
+		// Load trace from input files and analyze backlog drift
+		traceData, traceErr := workload.LoadTraceV2(traceHeaderPath, traceDataPath)
+		if traceErr != nil {
+			logrus.Warnf("Failed to load trace for saturation analysis: %v", traceErr)
+		} else {
+			// Analyze saturation with 60-second windows
+			verdict := workload.AnalyzeSaturation(*traceData, 60.0)
+			printSaturationSummary(os.Stdout, verdict)
+
+			// Write JSON if requested
+			if replaySaturationOutputPath != "" {
+				writeSaturationJSON(replaySaturationOutputPath, verdict)
+			}
+		}
+
 		printKVCacheMetrics(os.Stdout, rawMetrics.PreemptionRate, rawMetrics.CacheHitRate, rawMetrics.KVThrashingRate)
 
 		sloDistributions := cluster.ComputePerSLODistributions(cs.AggregatedMetrics())
@@ -394,7 +412,8 @@ func init() {
 	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\"")
 	replayCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", `Session replay mode: "fixed" (pre-baked arrivals from trace) or "closed-loop" (load-adaptive follow-ups via SessionManager)`)
 	replayCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "Override think time between session rounds in milliseconds (0 = derive from trace inter-round arrival gaps; mutually exclusive with --think-time-dist; requires --session-mode closed-loop)")
-	replayCmd.Flags().StringVar(&replayThinkTimeDist, "think-time-dist", "", `Think-time distribution spec for closed-loop replay (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s" or "constant:value=500ms"). Mutually exclusive with --think-time-ms. Requires --session-mode closed-loop.`)
+	replayCmd.Flags().StringVar(&replayThinkTimeDist, "think-time-dist", "", `Think-time distribution spec for closed-loop replay (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s" or "constant:value=500ms"). Mutually exclusive with --think-time-dist. Requires --session-mode closed-loop.`)
+	replayCmd.Flags().StringVar(&replaySaturationOutputPath, "saturation-output", "", "Optional path to write saturation verdict JSON (read by blis tune to detect overload)")
 	rootCmd.AddCommand(replayCmd)
 }
 
@@ -498,4 +517,30 @@ func extractSimResults(m *sim.Metrics) []workload.SimResult {
 		return results[i].RequestID < results[j].RequestID
 	})
 	return results
+}
+
+// printSaturationSummary prints the saturation verdict section to w.
+func printSaturationSummary(w io.Writer, v workload.SaturationVerdict) {
+	_, _ = fmt.Fprintln(w, "=== Saturation Summary ===")
+	_, _ = fmt.Fprintf(w, "Verdict: %s\n", v.Verdict)
+	if v.Verdict != "INSUFFICIENT_DATA" {
+		_, _ = fmt.Fprintf(w, "Observation Duration: %.1f seconds\n", v.ObservationDurationS)
+		_, _ = fmt.Fprintf(w, "Window Count: %d\n", v.WindowCount)
+		_, _ = fmt.Fprintf(w, "Backlog Slope: %.3f requests/second\n", v.BacklogSlope)
+		_, _ = fmt.Fprintf(w, "Initial Backlog: %d requests\n", v.InitialBacklog)
+		_, _ = fmt.Fprintf(w, "Final Backlog: %d requests\n", v.FinalBacklog)
+	}
+}
+
+// writeSaturationJSON marshals verdict to JSON and writes to path.
+// Logs errors (non-fatal) if write fails.
+func writeSaturationJSON(path string, v workload.SaturationVerdict) {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		logrus.Warnf("Failed to marshal saturation verdict: %v", err)
+		return
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		logrus.Warnf("Failed to write saturation verdict to %s: %v", path, err)
+	}
 }
