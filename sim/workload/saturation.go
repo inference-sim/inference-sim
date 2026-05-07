@@ -67,7 +67,15 @@ func computeWindowMetrics(records []TraceRecord, windowDurationUs int64) []windo
 	}
 
 	// Generate window boundaries
-	numWindows := int((maxTime-minTime)/windowDurationUs) + 1
+	// Use ceiling division to avoid creating empty trailing windows when observation
+	// duration is exact multiple of window duration (e.g., 60s trace with 60s windows).
+	// Formula: ceil(duration / windowDuration) = (duration + windowDuration - 1) / windowDuration
+	// Ensures at least 1 window even for traces shorter than windowDurationUs.
+	duration := maxTime - minTime
+	numWindows := int((duration+windowDurationUs-1)/windowDurationUs)
+	if numWindows < 1 {
+		numWindows = 1
+	}
 	windows := make([]windowMetrics, numWindows)
 	for i := 0; i < numWindows; i++ {
 		windows[i].StartTimeUs = minTime + int64(i)*windowDurationUs
@@ -202,6 +210,11 @@ const minRequestsForAnalysis = 10
 // systems with frequent preemption. This is a TraceV2 data limitation - preemption events
 // are not currently captured in the trace format. See follow-up issue for TraceV2 extension.
 func AnalyzeSaturation(trace TraceV2, windowDurationS float64) SaturationVerdict {
+	// R3: Validate numeric parameters - prevent divide-by-zero in computeWindowMetrics
+	if windowDurationS <= 0 {
+		panic("AnalyzeSaturation: windowDurationS must be > 0")
+	}
+
 	records := trace.Records
 	if len(records) < minRequestsForAnalysis {
 		return SaturationVerdict{

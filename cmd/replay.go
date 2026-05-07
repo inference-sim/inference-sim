@@ -327,25 +327,14 @@ Example:
 			}
 		}
 
-		// Saturation analysis (requires trace data, which replay always has)
-		// Load trace from input files and analyze backlog drift
-		traceData, traceErr := workload.LoadTraceV2(traceHeaderPath, traceDataPath)
-		if traceErr != nil {
-			// If user requested saturation output, this is fatal (file won't be created)
-			if replaySaturationOutputPath != "" {
-				logrus.Fatalf("Failed to load trace for saturation analysis: %v", traceErr)
-			}
-			// Otherwise just warn - saturation analysis is optional
-			logrus.Warnf("Failed to load trace for saturation analysis: %v", traceErr)
-		} else {
-			// Analyze saturation with 60-second windows
+		// Saturation analysis (optional, only when --saturation-output is specified)
+		// CRIT-1: Gate printing to avoid breaking stdout for users piping to jq
+		// CRIT-2: Reuse traceData from line 79 to avoid double-loading trace files
+		if replaySaturationOutputPath != "" {
+			// Analyze saturation with 60-second windows using already-loaded trace
 			verdict := workload.AnalyzeSaturation(*traceData, 60.0)
 			printSaturationSummary(os.Stdout, verdict)
-
-			// Write JSON if requested
-			if replaySaturationOutputPath != "" {
-				writeSaturationJSON(replaySaturationOutputPath, verdict)
-			}
+			writeSaturationJSON(replaySaturationOutputPath, verdict)
 		}
 
 		printKVCacheMetrics(os.Stdout, rawMetrics.PreemptionRate, rawMetrics.CacheHitRate, rawMetrics.KVThrashingRate)
