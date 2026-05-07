@@ -79,11 +79,10 @@ API format: Use --api-format=chat for servers that expose /v1/chat/completions
 (most production vLLM/SGLang deployments). Default is --api-format=completions
 which uses /v1/completions with a "prompt" field.
 
-Output control: Use --unconstrained-output to let the server decide output length
-(omits max_tokens for chat, sends large value for completions). Use --min-tokens N
-to force the server to generate at least N tokens before EOS (set equal to
---output-tokens with --output-tokens-stdev 0 for exact token counts).
-Default constrains output to the workload spec's sampled MaxOutputTokens.
+Output control: By default, min_tokens is automatically set equal to each request's
+max_tokens so the server generates exactly the workload-spec-sampled output length
+(matching blis run behavior). Use --unconstrained-output to let the server decide
+output length freely (omits max_tokens for chat, sends large value for completions).
 
 Network calibration: Use --rtt-ms to record measured network round-trip time
 in the trace header for calibration normalization.
