@@ -2948,22 +2948,21 @@ func TestGenerateRequestsForWindow_ReasoningClient(t *testing.T) {
 		t.Fatal("Expected reasoning requests, got 0")
 	}
 
-	sessionID := requests[0].SessionID
-	if sessionID == "" {
-		t.Errorf("Round-0 request missing SessionID")
+	// BC-1: Multi-session behavior - verify multiple sessions generated (rate-proportional)
+	// 1 req/s × 5s window = ~5 sessions expected
+	sessionsFound := make(map[string]bool)
+	for _, req := range requests {
+		if req.SessionID == "" {
+			t.Errorf("Request missing SessionID")
+		}
+		sessionsFound[req.SessionID] = true
+		if req.ClientID != client.ID {
+			t.Errorf("Request: ClientID = %q, want %q", req.ClientID, client.ID)
+		}
 	}
 
-	// Verify all rounds have same SessionID and sequential RoundIndex
-	for i, req := range requests {
-		if req.SessionID != sessionID {
-			t.Errorf("Request %d: SessionID mismatch: got %q, want %q", i, req.SessionID, sessionID)
-		}
-		if req.RoundIndex != i {
-			t.Errorf("Request %d: RoundIndex = %d, want %d", i, req.RoundIndex, i)
-		}
-		if req.ClientID != client.ID {
-			t.Errorf("Request %d: ClientID = %q, want %q", i, req.ClientID, client.ID)
-		}
+	if len(sessionsFound) < 2 {
+		t.Errorf("Expected multiple sessions (rate-proportional), got %d session(s)", len(sessionsFound))
 	}
 
 	// BC-5: Verify all requests within window boundary
@@ -2973,12 +2972,22 @@ func TestGenerateRequestsForWindow_ReasoningClient(t *testing.T) {
 		}
 	}
 
-	// BC-1: Verify context accumulation (rounds should have increasing input length)
-	if len(requests) >= 2 {
-		round0InputLen := len(requests[0].InputTokens)
-		round1InputLen := len(requests[1].InputTokens)
-		if round1InputLen <= round0InputLen {
-			t.Errorf("Context accumulation failed: round 1 input length (%d) should exceed round 0 (%d)", round1InputLen, round0InputLen)
+	// BC-1: Verify context accumulation within a single session
+	// Find first session with multiple rounds
+	sessionRounds := make(map[string][]*sim.Request)
+	for _, req := range requests {
+		sessionRounds[req.SessionID] = append(sessionRounds[req.SessionID], req)
+	}
+
+	for sessionID, rounds := range sessionRounds {
+		if len(rounds) >= 2 {
+			round0InputLen := len(rounds[0].InputTokens)
+			round1InputLen := len(rounds[1].InputTokens)
+			if round1InputLen <= round0InputLen {
+				t.Errorf("Session %s: context accumulation failed - round 1 input length (%d) should exceed round 0 (%d)",
+					sessionID, round1InputLen, round0InputLen)
+			}
+			break // Only need to verify one session for context accumulation
 		}
 	}
 }
@@ -3250,30 +3259,37 @@ func TestGenerateRequestsForWindow_ReasoningPreemptionSafety(t *testing.T) {
 	// This test verifies that request metadata is correctly initialized,
 	// which ensures preemption safety (preempted requests retain their identity).
 
-	sessionID := requests[0].SessionID
-	if sessionID == "" {
-		t.Fatal("SessionID not set - preemption would lose session identity")
+	// Group requests by session
+	sessionRounds := make(map[string][]*sim.Request)
+	for _, req := range requests {
+		if req.SessionID == "" {
+			t.Fatal("SessionID not set - preemption would lose session identity")
+		}
+		sessionRounds[req.SessionID] = append(sessionRounds[req.SessionID], req)
 	}
 
-	// Verify immutable fields are set correctly
-	for i, req := range requests {
-		if req.SessionID != sessionID {
-			t.Errorf("Request %d: SessionID mismatch - not preemption-safe", i)
-		}
-		if req.RoundIndex != i {
-			t.Errorf("Request %d: RoundIndex = %d, want %d - not preemption-safe", i, req.RoundIndex, i)
-		}
-		if req.ClientID != client.ID {
-			t.Errorf("Request %d: ClientID mismatch - not preemption-safe", i)
-		}
+	// Verify immutable fields and causality for each session
+	for sessionID, rounds := range sessionRounds {
+		for i, req := range rounds {
+			if req.SessionID != sessionID {
+				t.Errorf("Session %s round %d: SessionID mismatch - not preemption-safe", sessionID, i)
+			}
+			if req.RoundIndex != i {
+				t.Errorf("Session %s round %d: RoundIndex = %d, want %d - not preemption-safe",
+					sessionID, i, req.RoundIndex, i)
+			}
+			if req.ClientID != client.ID {
+				t.Errorf("Session %s round %d: ClientID mismatch - not preemption-safe", sessionID, i)
+			}
 
-		// Verify causality constraint is encoded in arrival times
-		if i > 0 {
-			prevCompletion := requests[i-1].ArrivalTime + int64(len(requests[i-1].OutputTokens))
-			minArrival := prevCompletion + client.Reasoning.MultiTurn.ThinkTimeUs
-			if req.ArrivalTime < minArrival {
-				t.Errorf("Round %d: ArrivalTime %d < min %d (violates session causality)",
-					i, req.ArrivalTime, minArrival)
+			// Verify causality constraint is encoded in arrival times within the same session
+			if i > 0 {
+				prevCompletion := rounds[i-1].ArrivalTime + int64(len(rounds[i-1].OutputTokens))
+				minArrival := prevCompletion + client.Reasoning.MultiTurn.ThinkTimeUs
+				if req.ArrivalTime < minArrival {
+					t.Errorf("Session %s round %d: ArrivalTime %d < min %d (violates session causality)",
+						sessionID, i, req.ArrivalTime, minArrival)
+				}
 			}
 		}
 	}
@@ -3336,6 +3352,17 @@ func TestGenerateWorkload_TimeVaryingClosedLoopReasoning(t *testing.T) {
 	// BC-4: Verify session blueprints were created (no warnings)
 	if len(wl1.Sessions) == 0 {
 		t.Fatal("Expected session blueprints for closed-loop reasoning client, got 0")
+	}
+
+	// BC-4: Verify session count is rate-proportional (not single-session-per-window bug)
+	// trace_rate=5.0 req/s × 10s window = ~50 sessions expected (within ±20% tolerance for Poisson)
+	expectedSessions := 50.0
+	tolerance := 0.2
+	minSessions := int(expectedSessions * (1 - tolerance))
+	maxSessions := int(expectedSessions * (1 + tolerance))
+	if len(wl1.Sessions) < minSessions || len(wl1.Sessions) > maxSessions {
+		t.Errorf("Session count %d not within expected range [%d, %d] for rate=5.0req/s × 10s",
+			len(wl1.Sessions), minSessions, maxSessions)
 	}
 
 	// Verify all sessions belong to the correct client
