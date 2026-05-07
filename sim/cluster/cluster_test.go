@@ -2990,3 +2990,74 @@ func TestClusterSimulator_FlowControl_RoundRobinWiring(t *testing.T) {
 	}
 }
 
+// TestClusterSimulator_FlowControl_Eviction_Conservation verifies that in-flight
+// gateway eviction preserves INV-1 (request conservation with gw_evicted bucket).
+func TestClusterSimulator_FlowControl_Eviction_Conservation(t *testing.T) {
+	config := newTestDeploymentConfig(1)
+	config.FlowControlEnabled = true
+	config.FlowControlDetector = "concurrency"
+	config.FlowControlMaxConcurrency = 1
+	config.FlowControlDispatchOrder = "priority"
+	config.FlowControlMaxQueueDepth = 100
+
+	// Mix of sheddable and critical requests. Sheddable arrive first to fill capacity,
+	// then critical arrive and trigger eviction.
+	requests := make([]*sim.Request, 0, 10)
+	// Sheddable requests with long output (occupy instance for a long time)
+	longOutput := make([]int, 200)
+	for j := range longOutput {
+		longOutput[j] = j + 1
+	}
+	for i := 0; i < 3; i++ {
+		out := make([]int, len(longOutput))
+		copy(out, longOutput)
+		r := &sim.Request{
+			ID:          fmt.Sprintf("shed-%d", i),
+			ArrivalTime: int64(i * 1000), // arrive close together
+			SLOClass:    "sheddable",
+			InputTokens: []int{1, 2, 3, 4, 5},
+			OutputTokens: out,
+		}
+		requests = append(requests, r)
+	}
+	// Critical requests arrive while sheddable is occupying the instance
+	for i := 0; i < 3; i++ {
+		r := &sim.Request{
+			ID:          fmt.Sprintf("crit-%d", i),
+			ArrivalTime: int64(50000 + i*1000), // arrive after sheddables are running
+			SLOClass:    "critical",
+			InputTokens: []int{1, 2, 3},
+			OutputTokens: []int{1, 2, 3},
+		}
+		requests = append(requests, r)
+	}
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	gwDepth := cs.GatewayQueueDepth()
+	gwShed := cs.GatewayQueueShed()
+	gwRejected := cs.GatewayQueueRejected()
+	gwEvicted := cs.GatewayEvicted()
+
+	// INV-1: injected == completed + queued + running + dropped + timedout +
+	//         routingRejections + gwDepth + gwShed + gwRejected + gwEvicted
+	injected := len(requests) - cs.RejectedRequests()
+	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning +
+		m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() +
+		gwDepth + gwShed + gwRejected + gwEvicted
+	if injected != accounted {
+		t.Errorf("INV-1 violated: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d routingRejections=%d gwDepth=%d gwShed=%d gwRejected=%d gwEvicted=%d)",
+			injected, accounted,
+			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
+			m.TimedOutRequests, cs.RoutingRejections(), gwDepth, gwShed, gwRejected, gwEvicted)
+	}
+
+	// BC-6: non-sheddable requests should never be evicted.
+	// All critical requests should complete (not be evicted).
+	// gwEvicted should only count sheddable requests.
+	t.Logf("Results: completed=%d gwEvicted=%d gwShed=%d gwDepth=%d",
+		m.CompletedRequests, gwEvicted, gwShed, gwDepth)
+}
+

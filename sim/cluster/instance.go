@@ -454,10 +454,12 @@ func (i *InstanceSimulator) DrainWaitQueue() []*sim.Request {
 
 // EvictRequest removes a request from this instance due to gateway-level eviction.
 // Searches WaitQ first, then RunningBatch. Frees KV blocks if allocated.
+// Sets req.State to StateCompleted to prevent dangling TimeoutEvents from double-counting.
 // Returns true if found and removed, false otherwise (idempotent for already-completed).
 func (i *InstanceSimulator) EvictRequest(req *sim.Request) bool {
 	if i.sim.WaitQ.Remove(req) {
 		i.sim.KVCache.ReleaseKVBlocks(req)
+		req.State = sim.StateCompleted
 		return true
 	}
 	if i.sim.RunningBatch != nil {
@@ -468,6 +470,10 @@ func (i *InstanceSimulator) EvictRequest(req *sim.Request) bool {
 					i.sim.RunningBatch.Requests[idx+1:]...,
 				)
 				i.sim.KVCache.ReleaseKVBlocks(req)
+				req.State = sim.StateCompleted
+				if len(i.sim.RunningBatch.Requests) == 0 {
+					i.sim.RunningBatch = nil
+				}
 				return true
 			}
 		}
