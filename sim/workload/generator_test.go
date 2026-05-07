@@ -2902,3 +2902,190 @@ func TestGenerateRequests_MultiCohortAbsoluteMode_NonOverlappingSpikes(t *testin
 		}
 	}
 }
+
+func TestGenerateRequestsForWindow_ReasoningClient(t *testing.T) {
+	// BC-1: Time-varying reasoning session generation
+	// BC-5: Window boundary filtering
+	rng := rand.New(rand.NewSource(12345))
+
+	client := ClientSpec{
+		ID:       "reasoning-client-0",
+		TenantID: "tenant-a",
+		SLOClass: "standard",
+		Model:    "qwen/qwen3-14b",
+		Reasoning: &ReasoningSpec{
+			MultiTurn: &MultiTurnSpec{
+				MaxRounds:     4,
+				ThinkTimeUs:   1000000, // 1s
+				ContextGrowth: "accumulate",
+			},
+		},
+		InputDist: DistSpec{
+			Type:   "constant",
+			Params: map[string]float64{"value": 100},
+		},
+		OutputDist: DistSpec{
+			Type:   "constant",
+			Params: map[string]float64{"value": 50},
+		},
+		Streaming: true,
+	}
+
+	window := ActiveWindow{
+		StartUs:   0,
+		EndUs:     5000000, // 5s window
+		TraceRate: floatPtr(1.0), // 1 req/s
+	}
+
+	// Call generateRequestsForWindow (with nil prefix)
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
+	if err != nil {
+		t.Fatalf("generateRequestsForWindow failed: %v", err)
+	}
+
+	// BC-1: Verify requests have session metadata
+	if len(requests) == 0 {
+		t.Fatal("Expected reasoning requests, got 0")
+	}
+
+	sessionID := requests[0].SessionID
+	if sessionID == "" {
+		t.Errorf("Round-0 request missing SessionID")
+	}
+
+	// Verify all rounds have same SessionID and sequential RoundIndex
+	for i, req := range requests {
+		if req.SessionID != sessionID {
+			t.Errorf("Request %d: SessionID mismatch: got %q, want %q", i, req.SessionID, sessionID)
+		}
+		if req.RoundIndex != i {
+			t.Errorf("Request %d: RoundIndex = %d, want %d", i, req.RoundIndex, i)
+		}
+		if req.ClientID != client.ID {
+			t.Errorf("Request %d: ClientID = %q, want %q", i, req.ClientID, client.ID)
+		}
+	}
+
+	// BC-5: Verify all requests within window boundary
+	for i, req := range requests {
+		if req.ArrivalTime >= window.EndUs {
+			t.Errorf("Request %d: ArrivalTime %d >= window.EndUs %d (should be filtered)", i, req.ArrivalTime, window.EndUs)
+		}
+	}
+
+	// BC-1: Verify context accumulation (rounds should have increasing input length)
+	if len(requests) >= 2 {
+		round0InputLen := len(requests[0].InputTokens)
+		round1InputLen := len(requests[1].InputTokens)
+		if round1InputLen <= round0InputLen {
+			t.Errorf("Context accumulation failed: round 1 input length (%d) should exceed round 0 (%d)", round1InputLen, round0InputLen)
+		}
+	}
+}
+
+func TestGenerateRequestsForWindow_NonReasoningClient(t *testing.T) {
+	// BC-6: Non-reasoning client path unchanged
+	rng := rand.New(rand.NewSource(12345))
+
+	client := ClientSpec{
+		ID:       "single-shot-client",
+		TenantID: "tenant-a",
+		SLOClass: "standard",
+		Model:    "qwen/qwen3-14b",
+		Reasoning: nil, // No reasoning spec
+		InputDist: DistSpec{
+			Type:   "constant",
+			Params: map[string]float64{"value": 100},
+		},
+		OutputDist: DistSpec{
+			Type:   "constant",
+			Params: map[string]float64{"value": 50},
+		},
+		Streaming: true,
+	}
+
+	window := ActiveWindow{
+		StartUs:   0,
+		EndUs:     5000000,
+		TraceRate: floatPtr(10.0), // 10 req/s
+	}
+
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
+	if err != nil {
+		t.Fatalf("generateRequestsForWindow failed: %v", err)
+	}
+
+	// BC-6: Verify single-shot requests (no session metadata)
+	for i, req := range requests {
+		if req.SessionID != "" {
+			t.Errorf("Request %d: Expected empty SessionID for non-reasoning client, got %q", i, req.SessionID)
+		}
+		if req.RoundIndex != 0 {
+			t.Errorf("Request %d: Expected RoundIndex=0 for non-reasoning client, got %d", i, req.RoundIndex)
+		}
+	}
+}
+
+func TestGenerateRequestsForWindow_ReasoningWithPrefix(t *testing.T) {
+	// BC-2: Prefix prepending in time-varying reasoning
+	rng := rand.New(rand.NewSource(12345))
+
+	prefixTokens := []int{999, 888, 777} // 3-token shared prefix
+
+	client := ClientSpec{
+		ID:           "reasoning-client-with-prefix",
+		TenantID:     "tenant-a",
+		SLOClass:     "standard",
+		Model:        "qwen/qwen3-14b",
+		PrefixGroup:  "group-a",
+		PrefixLength: len(prefixTokens),
+		Reasoning: &ReasoningSpec{
+			MultiTurn: &MultiTurnSpec{
+				MaxRounds:     3,
+				ThinkTimeUs:   1000000,
+				ContextGrowth: "accumulate",
+			},
+		},
+		InputDist: DistSpec{
+			Type:   "constant",
+			Params: map[string]float64{"value": 100},
+		},
+		OutputDist: DistSpec{
+			Type:   "constant",
+			Params: map[string]float64{"value": 50},
+		},
+		Streaming: true,
+	}
+
+	window := ActiveWindow{
+		StartUs:   0,
+		EndUs:     10000000,
+		TraceRate: floatPtr(1.0), // 1 req/s
+	}
+
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, prefixTokens)
+	if err != nil {
+		t.Fatalf("generateRequestsForWindow failed: %v", err)
+	}
+
+	// BC-2: Verify all rounds have prefix prepended
+	for i, req := range requests {
+		if len(req.InputTokens) < len(prefixTokens) {
+			t.Errorf("Request %d: InputTokens too short to contain prefix", i)
+			continue
+		}
+		// Check if first N tokens match prefix
+		for j := 0; j < len(prefixTokens); j++ {
+			if req.InputTokens[j] != prefixTokens[j] {
+				t.Errorf("Request %d: Prefix token[%d] = %d, want %d", i, j, req.InputTokens[j], prefixTokens[j])
+			}
+		}
+		if req.PrefixLength != len(prefixTokens) {
+			t.Errorf("Request %d: PrefixLength = %d, want %d", i, req.PrefixLength, len(prefixTokens))
+		}
+	}
+}
+
+func floatPtr(f float64) *float64 {
+	return &f
+}

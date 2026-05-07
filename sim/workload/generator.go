@@ -768,6 +768,18 @@ func generateTimeVaryingRequests(
 ) ([]*sim.Request, error) {
 	var allRequests []*sim.Request
 
+	// Build prefix tokens map for all prefix groups (BC-2)
+	prefixes := make(map[string][]int)
+	for i := range allClients {
+		client := &allClients[i]
+		if client.PrefixGroup != "" && client.PrefixLength > 0 {
+			if _, exists := prefixes[client.PrefixGroup]; !exists {
+				prefixTokens := sim.GenerateRandomTokenIDs(rng, client.PrefixLength)
+				prefixes[client.PrefixGroup] = prefixTokens
+			}
+		}
+	}
+
 	// Generate requests for each client's windows.
 	for i := range allClients {
 		client := &allClients[i]
@@ -797,8 +809,9 @@ func generateTimeVaryingRequests(
 				effectiveWindow.EndUs = horizon
 			}
 
+			prefix := prefixes[client.PrefixGroup] // empty slice if no prefix group
 			windowRequests, err := generateRequestsForWindow(
-				*client, effectiveWindow, allClients, spec.AggregateRate, clientRNG,
+				*client, effectiveWindow, allClients, spec.AggregateRate, clientRNG, prefix,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("generating window [%d-%d] for client %q: %w",
@@ -844,6 +857,7 @@ func generateRequestsForWindow(
 	allClients []ClientSpec,
 	aggregateRate float64,
 	rng *rand.Rand,
+	prefix []int,
 ) ([]*sim.Request, error) {
 	// Step 1: Resolve parameters with fallback to client-level defaults.
 	arrival, inputDist, outputDist, _ := resolveWindowParameters(client, window)
@@ -889,6 +903,52 @@ func generateRequestsForWindow(
 	iats = rescaleIATsToMatchDuration(iats, windowDurationUs)
 
 	// Step 7: Generate requests with window-specific distributions.
+	// BC-1: Detect reasoning clients and route to GenerateReasoningRequests.
+	// BC-6: Non-reasoning clients use single-shot path (unchanged).
+	if client.Reasoning != nil && client.Reasoning.MultiTurn != nil {
+		// Reasoning path: generate multi-turn session
+		// Compute session start time from the first IAT sample (mimics non-time-varying path)
+		startTime := window.StartUs
+		if len(iats) > 0 {
+			startTime += iats[0]
+		}
+		if startTime >= window.EndUs {
+			return nil, nil // Session starts beyond window boundary
+		}
+
+		// BC-1: Call GenerateReasoningRequests to create session metadata
+		reasoningReqs, err := GenerateReasoningRequests(
+			rng, client.Reasoning,
+			inputSampler, outputSampler,
+			startTime,
+			client.ID, client.TenantID, client.SLOClass, client.Model,
+		)
+		if err != nil {
+			// BC-9: Propagate error with client ID context
+			return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
+		}
+
+		// BC-2: Prepend shared prefix to each round's input
+		if len(prefix) > 0 {
+			for _, req := range reasoningReqs {
+				req.InputTokens = append(append([]int{}, prefix...), req.InputTokens...)
+				req.PrefixLength = len(prefix)
+			}
+		}
+
+		// BC-5: Filter rounds outside window boundary
+		requests := make([]*sim.Request, 0, len(reasoningReqs))
+		for _, req := range reasoningReqs {
+			if req.ArrivalTime >= window.EndUs {
+				break // rounds are in chronological order
+			}
+			requests = append(requests, req)
+		}
+
+		return requests, nil
+	}
+
+	// BC-6: Single-shot path (unchanged from original implementation)
 	requests := make([]*sim.Request, 0, numRequests)
 	currentTime := window.StartUs
 
