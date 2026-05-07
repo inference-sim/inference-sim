@@ -178,6 +178,9 @@ var (
 
 	// trace export
 	traceOutput string // File prefix for TraceV2 export (<prefix>.yaml + <prefix>.csv)
+
+	// saturation analysis output
+	runSaturationOutputPath string // File to write SaturationVerdict JSON for blis run (--saturation-output)
 )
 
 // applyRopeScaling applies rope_scaling factor to maxPosEmb if applicable.
@@ -1736,6 +1739,22 @@ var runCmd = &cobra.Command{
 			fmt.Printf("Max Regret: %.6f\n", traceSummary.MaxRegret)
 		}
 
+		// Saturation analysis (requires --trace-output)
+		if traceOutput != "" {
+			traceHeaderPath := traceOutput + ".yaml"
+			traceDataPath := traceOutput + ".csv"
+			traceData, traceErr := workload.LoadTraceV2(traceHeaderPath, traceDataPath)
+			if traceErr != nil {
+				logrus.Warnf("Failed to load trace for saturation analysis: %v", traceErr)
+			} else {
+				verdict := workload.AnalyzeSaturation(*traceData, 60.0)
+				printSaturationSummary(os.Stdout, verdict)
+				if runSaturationOutputPath != "" {
+					writeSaturationJSON(runSaturationOutputPath, verdict)
+				}
+			}
+		}
+
 		logrus.Info("Simulation complete.")
 	},
 }
@@ -1908,6 +1927,7 @@ func init() {
 	// Run-specific export
 	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")
 	runCmd.Flags().StringVar(&metricsPath, "metrics-path", "", "File to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats). Use --results-path on blis replay for per-request SimResult JSON.")
+	runCmd.Flags().StringVar(&runSaturationOutputPath, "saturation-output", "", "File to write SaturationVerdict JSON (requires --trace-output)")
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)
