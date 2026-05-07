@@ -321,6 +321,10 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 					}
 			
 					inst.InjectRequestOnline(e.request, e.time)
+					// Track routed sheddable requests for in-flight eviction (BC-3).
+					if cs.evictionTracker != nil {
+						cs.evictionTracker.Track(e.request, decision.TargetInstance, cs.priorityMap)
+					}
 					// Notify observer so stateful deciders (e.g., PrefixThresholdDecider) can learn
 					// from this routing decision (synchronous call -- cache is always current).
 					cs.notifyDisaggregationObserver(e.request, decision.TargetInstance)
@@ -329,6 +333,49 @@ func (e *RoutingDecisionEvent) Execute(cs *ClusterSimulator) {
 
 	// Should never reach here (policy contract ensures valid target)
 	panic(fmt.Sprintf("RoutingDecisionEvent: invalid TargetInstance %q", decision.TargetInstance))
+}
+
+// GatewayEvictionEvent terminates a dispatched sheddable request on its instance.
+// Gateway-level eviction (distinct from instance-level KV preemption).
+// The request is terminated — not requeued. This is a terminal state.
+// Priority 5: processed after routing decisions at the same timestamp.
+type GatewayEvictionEvent struct {
+	time           int64
+	request        *sim.Request
+	targetInstance string
+}
+
+func (e *GatewayEvictionEvent) Timestamp() int64 { return e.time }
+func (e *GatewayEvictionEvent) Priority() int     { return 5 }
+
+func (e *GatewayEvictionEvent) Execute(cs *ClusterSimulator) {
+	logrus.Debugf("[cluster] gateway eviction: req %s evicted from instance %s at tick %d",
+		e.request.ID, e.targetInstance, e.time)
+
+	var evicted bool
+	for _, inst := range cs.instances {
+		if string(inst.ID()) == e.targetInstance {
+			evicted = inst.EvictRequest(e.request)
+			break
+		}
+	}
+	if !evicted {
+		return
+	}
+
+	cs.inFlightRequests[e.targetInstance]--
+	if cs.inFlightRequests[e.targetInstance] < 0 {
+		cs.inFlightRequests[e.targetInstance] = 0
+	}
+
+	if cs.tenantTracker != nil {
+		cs.tenantTracker.OnComplete(e.request.TenantID)
+	}
+
+	cs.gatewayEvicted++
+
+	// Re-trigger dispatch: freed capacity may allow waiting request to dispatch.
+	cs.tryDispatchFromGatewayQueue()
 }
 
 // DisaggregationDecisionEvent represents the PD disaggregation decision point for a request.

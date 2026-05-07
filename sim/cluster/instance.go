@@ -451,3 +451,26 @@ func (i *InstanceSimulator) InjectDecodeOnline(req *sim.Request, clusterTime int
 func (i *InstanceSimulator) DrainWaitQueue() []*sim.Request {
 	return i.sim.DrainWaitQueue()
 }
+
+// EvictRequest removes a request from this instance due to gateway-level eviction.
+// Searches WaitQ first, then RunningBatch. Frees KV blocks if allocated.
+// Returns true if found and removed, false otherwise (idempotent for already-completed).
+func (i *InstanceSimulator) EvictRequest(req *sim.Request) bool {
+	if i.sim.WaitQ.Remove(req) {
+		i.sim.KVCache.ReleaseKVBlocks(req)
+		return true
+	}
+	if i.sim.RunningBatch != nil {
+		for idx, r := range i.sim.RunningBatch.Requests {
+			if r.ID == req.ID {
+				i.sim.RunningBatch.Requests = append(
+					i.sim.RunningBatch.Requests[:idx],
+					i.sim.RunningBatch.Requests[idx+1:]...,
+				)
+				i.sim.KVCache.ReleaseKVBlocks(req)
+				return true
+			}
+		}
+	}
+	return false
+}
