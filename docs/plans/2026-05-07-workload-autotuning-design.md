@@ -45,6 +45,10 @@ As a capacity planner, I want to tune a ServeGen workload (tau2) to find the max
   --num-requests 1000 \
   --model qwen/qwen3-14b \
   --num-instances 4 \
+  --gpu a100 \
+  --tensor-parallelism 2 \
+  --scheduler priority-fcfs \
+  --routing-policy weighted \
   --output tuned.yaml
 ```
 
@@ -68,9 +72,27 @@ for N in 2 4 8; do
   ./blis tune --workload-spec base.yaml \
     --rate-field spike.trace_rate \
     --num-requests 1000 \
+    --model qwen/qwen3-14b \
     --num-instances $N \
+    --gpu a100 \
+    --tensor-parallelism 1 \
     --output tuned-n${N}.yaml
 done
+```
+
+### Story 4: KV Cache Configuration Tuning
+As a performance engineer, I want to find the optimal rate for a tiered KV cache configuration with CPU offloading.
+
+```bash
+./blis tune --workload-spec workload.yaml \
+  --rate-field spike.trace_rate \
+  --num-requests 2000 \
+  --model meta-llama/Llama-2-70b-hf \
+  --gpu a100 \
+  --kv-cpu-blocks 5000 \
+  --kv-offload-threshold 0.85 \
+  --kv-transfer-bandwidth 100 \
+  --output tuned-tiered-kv.yaml
 ```
 
 ## Design
@@ -91,7 +113,20 @@ done
 - `--mu-max <float>` - Maximum rate multiplier for binary search (default: 10.0)
 - `--mu-tolerance <float>` - Convergence threshold for binary search (default: 0.05)
 - `--max-iterations <int>` - Max binary search iterations (default: 20)
-- All standard `blis run` simulation flags (--gpu, --tensor-parallelism, --num-instances, etc.)
+
+**vLLM/Cluster configuration flags** (passed through to each simulation trial):
+- **Hardware:** `--gpu`, `--tensor-parallelism`, `--gpu-memory-utilization`, `--hardware-config`
+- **Cluster:** `--num-instances`, `--decode-instances`, `--prefill-instances` (disaggregated serving)
+- **Scheduling:** `--scheduler` (fcfs, priority-fcfs, sjf), `--max-num-running-reqs`, `--max-num-scheduled-tokens`
+- **KV Cache:** `--block-size-in-tokens`, `--kv-cpu-blocks`, `--kv-offload-threshold`, `--kv-transfer-bandwidth`
+- **Routing:** `--routing-policy`, `--routing-scorers` (weighted routing profiles)
+- **Admission:** `--admission-policy` (always-admit, tier-shed, token-bucket)
+- **Preemption:** `--preemption-policy` (fcfs, priority)
+- **Latency model:** `--latency-model` (roofline, trained-physics), `--alpha-coeffs`, `--beta-coeffs`
+- **Flow control:** `--flow-control`, `--saturation-detector`, `--max-gateway-queue-depth`
+- **Other:** `--max-model-len`, `--seed`, `--horizon`, `--log`
+
+These flags define the system configuration being tuned. Different configurations will yield different optimal rates.
 
 **Rate field validation:**
 The tool detects available rate fields in the workload and validates `--rate-field`:
