@@ -1,6 +1,7 @@
 package workload
 
 import (
+	"math"
 	"sort"
 )
 
@@ -58,4 +59,119 @@ func computeActiveRequests(records []TraceRecord, sampleTimestamps []int64) []in
 	}
 
 	return result
+}
+
+// windowMetrics captures per-window saturation indicators.
+type windowMetrics struct {
+	StartTimeUs  int64
+	EndTimeUs    int64
+	NumEntered   int     // requests with arrival in [start, end)
+	NumLeft      int     // requests with completion in [start, end)
+	ActiveStart  int     // active requests at start
+	ActiveEnd    int     // active requests at end
+	DeltaBacklog int     // ActiveEnd - ActiveStart
+	DrainRatio   float64 // NumLeft / NumEntered (0.0 if NumEntered == 0)
+}
+
+// computeWindowMetrics partitions the observation into fixed-width windows and computes metrics per window.
+func computeWindowMetrics(records []TraceRecord, windowDurationUs int64) []windowMetrics {
+	if len(records) == 0 {
+		return nil
+	}
+
+	// Find observation bounds
+	minTime := records[0].ArrivalTimeUs
+	maxTime := records[0].LastChunkTimeUs
+	for _, r := range records {
+		if r.ArrivalTimeUs < minTime {
+			minTime = r.ArrivalTimeUs
+		}
+		if r.LastChunkTimeUs > maxTime {
+			maxTime = r.LastChunkTimeUs
+		}
+	}
+
+	// Generate window boundaries
+	numWindows := int((maxTime-minTime)/windowDurationUs) + 1
+	windows := make([]windowMetrics, numWindows)
+	for i := 0; i < numWindows; i++ {
+		windows[i].StartTimeUs = minTime + int64(i)*windowDurationUs
+		windows[i].EndTimeUs = windows[i].StartTimeUs + windowDurationUs
+	}
+
+	// Compute active requests at each window boundary
+	boundaryTimes := make([]int64, 0, numWindows+1)
+	for i := 0; i < numWindows; i++ {
+		boundaryTimes = append(boundaryTimes, windows[i].StartTimeUs)
+	}
+	boundaryTimes = append(boundaryTimes, windows[numWindows-1].EndTimeUs)
+	activeCounts := computeActiveRequests(records, boundaryTimes)
+
+	for i := 0; i < numWindows; i++ {
+		windows[i].ActiveStart = activeCounts[i]
+		windows[i].ActiveEnd = activeCounts[i+1]
+		windows[i].DeltaBacklog = windows[i].ActiveEnd - windows[i].ActiveStart
+	}
+
+	// Count arrivals and completions per window
+	for _, r := range records {
+		arrivalTime := r.ArrivalTimeUs
+		completionTime := r.LastChunkTimeUs
+
+		// Find arrival window (inclusive of minTime, exclusive of maxTime for intermediate points)
+		if arrivalTime >= minTime {
+			windowIdx := int((arrivalTime - minTime) / windowDurationUs)
+			if windowIdx < len(windows) && arrivalTime < windows[windowIdx].EndTimeUs {
+				windows[windowIdx].NumEntered++
+			}
+		}
+
+		// Find completion window (inclusive of both minTime and maxTime since maxTime is defined by last completion)
+		if completionTime >= minTime {
+			windowIdx := int((completionTime - minTime) / windowDurationUs)
+			// Handle completions that fall exactly on the boundary of the last window
+			if windowIdx >= len(windows) {
+				windowIdx = len(windows) - 1
+			}
+			if windowIdx >= 0 && windowIdx < len(windows) {
+				windows[windowIdx].NumLeft++
+			}
+		}
+	}
+
+	// Compute drain ratio
+	for i := 0; i < len(windows); i++ {
+		if windows[i].NumEntered > 0 {
+			windows[i].DrainRatio = float64(windows[i].NumLeft) / float64(windows[i].NumEntered)
+		} else {
+			windows[i].DrainRatio = 0.0 // No arrivals in window
+		}
+	}
+
+	return windows
+}
+
+// linearTrend fits a simple linear regression y = a + b*x to the (x, y) data points.
+// Returns slope b. Uses least squares method.
+func linearTrend(xValues, yValues []float64) float64 {
+	if len(xValues) != len(yValues) || len(xValues) == 0 {
+		return 0.0
+	}
+
+	n := float64(len(xValues))
+	var sumX, sumY, sumXY, sumX2 float64
+	for i := 0; i < len(xValues); i++ {
+		sumX += xValues[i]
+		sumY += yValues[i]
+		sumXY += xValues[i] * yValues[i]
+		sumX2 += xValues[i] * xValues[i]
+	}
+
+	// Slope b = (n*sumXY - sumX*sumY) / (n*sumX2 - sumX*sumX)
+	denominator := n*sumX2 - sumX*sumX
+	if math.Abs(denominator) < 1e-9 {
+		return 0.0 // No variance in x (all same time)
+	}
+	slope := (n*sumXY - sumX*sumY) / denominator
+	return slope
 }

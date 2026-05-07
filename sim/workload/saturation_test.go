@@ -45,3 +45,33 @@ func TestComputeActiveRequests_OverlappingRequests(t *testing.T) {
 		t.Errorf("active_requests(2500) = %d, want 3", actives[0])
 	}
 }
+
+func TestComputeWindowMetrics_SingleWindow(t *testing.T) {
+	// GIVEN 3 requests within a 60-second observation window
+	// Observation spans from first arrival to last completion
+	records := []TraceRecord{
+		{RequestID: 0, ArrivalTimeUs: 5_000_000, SendTimeUs: 5_000_000, LastChunkTimeUs: 25_000_000},   // enter@5s, leave@25s
+		{RequestID: 1, ArrivalTimeUs: 10_000_000, SendTimeUs: 10_000_000, LastChunkTimeUs: 40_000_000}, // enter@10s, leave@40s
+		{RequestID: 2, ArrivalTimeUs: 15_000_000, SendTimeUs: 15_000_000, LastChunkTimeUs: 55_000_000}, // enter@15s, leave@55s
+	}
+	windowDurationUs := int64(60_000_000) // 60 seconds
+
+	// WHEN computing window metrics
+	windows := computeWindowMetrics(records, windowDurationUs)
+
+	// THEN first (and only) window should show: 3 entered, 3 left, drain_ratio = 1.0
+	if len(windows) != 1 {
+		t.Fatalf("expected 1 window, got %d", len(windows))
+	}
+	w := windows[0]
+	if w.NumEntered != 3 {
+		t.Errorf("window.NumEntered = %d, want 3", w.NumEntered)
+	}
+	if w.NumLeft != 3 {
+		t.Errorf("window.NumLeft = %d, want 3", w.NumLeft)
+	}
+	expectedRatio := 1.0
+	if w.DrainRatio < expectedRatio-0.01 || w.DrainRatio > expectedRatio+0.01 {
+		t.Errorf("window.DrainRatio = %.2f, want %.2f", w.DrainRatio, expectedRatio)
+	}
+}
