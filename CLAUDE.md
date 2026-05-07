@@ -20,8 +20,15 @@ go build -o blis main.go
 # Run and export workload as TraceV2 (prefix auto-appends .yaml/.csv)
 ./blis run --model qwen/qwen3-14b --trace-output traces/run1
 
+# Run and analyze saturation from exported trace (requires --trace-output)
+./blis run --model qwen/qwen3-14b --trace-output traces/run1 --saturation-output saturation.json
+
 # Replay a captured TraceV2 file through the DES (fixed timing from trace)
 ./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b
+
+# Replay and analyze saturation from trace data
+./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
+  --saturation-output saturation.json
 
 # Replay and re-export trace with simulation-computed timing (mode: replayed)
 ./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
