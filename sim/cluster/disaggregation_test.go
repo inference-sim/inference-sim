@@ -1855,3 +1855,59 @@ func TestDisaggregation_NoDecodeRoutingEvent(t *testing.T) {
 		t.Errorf("expected %d KV transfer records, got %d", numRequests, len(tr.KVTransfers))
 	}
 }
+
+// TestPDRouting_InjectionTimingPreserved verifies BC-2 for the unified routing
+// entry point (#1261): effective injection wall-time is unchanged after collapsing
+// the poolsConfigured() fork. For a disaggregated request, PrefillEnqueueTime —
+// the timestamp at which PrefillRoutingEvent fires and writes the parent record —
+// must equal ArrivalTime + AdmissionLatency + RoutingLatency, the same value the
+// old DisaggregationDecisionEvent produced (it fired at admission_time and
+// re-added routingLatency when scheduling PrefillRoutingEvent).
+//
+// A future refactor that accidentally dropped routingLatency from the
+// RoutingDecisionEvent schedule expression would silently pass the weaker
+// causality test (PrefillEnqueueTime >= ArrivalTime); this test asserts the
+// exact offset.
+func TestPDRouting_InjectionTimingPreserved(t *testing.T) {
+	const admissionLatency int64 = 50_000  // 50ms
+	const routingLatency int64 = 100_000   // 100ms
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.AdmissionLatency = admissionLatency
+	config.RoutingLatency = routingLatency
+
+	const numRequests = 3
+	requests := newTestRequests(numRequests)
+	// Pin arrivals to known values so we can compute the expected enqueue offset.
+	for i, r := range requests {
+		r.ArrivalTime = int64(i) * 200_000 // 200ms apart
+	}
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	parents := cs.ParentRequests()
+	if len(parents) != numRequests {
+		t.Fatalf("expected %d disaggregated parents, got %d", numRequests, len(parents))
+	}
+
+	// Build a lookup: parent ID -> ArrivalTime. ParentRequest.ID equals the
+	// original request ID; newTestRequests assigns sequential IDs.
+	arrivalByID := make(map[string]int64, numRequests)
+	for _, r := range requests {
+		arrivalByID[r.ID] = r.ArrivalTime
+	}
+
+	for _, parent := range parents {
+		arrival, ok := arrivalByID[parent.ID]
+		if !ok {
+			t.Errorf("parent %s: no matching request in input set", parent.ID)
+			continue
+		}
+		want := arrival + admissionLatency + routingLatency
+		if parent.PrefillEnqueueTime != want {
+			t.Errorf("parent %s: PrefillEnqueueTime=%d, want %d (ArrivalTime=%d + AdmissionLatency=%d + RoutingLatency=%d)",
+				parent.ID, parent.PrefillEnqueueTime, want,
+				arrival, admissionLatency, routingLatency)
+		}
+	}
+}

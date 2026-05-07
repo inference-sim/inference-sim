@@ -47,7 +47,11 @@ type RoutingRecord struct {
 // Note: DecodeRoutingRecord is never emitted; the decode pod is pre-selected at
 // executeDisaggregatedRouting time (no second routing decision).
 type DisaggregationRecord struct {
-	RequestID    string
+	RequestID string
+	// Clock is the simulation time at which the routing (and disaggregation)
+	// decision was made: admission_time + routingLatency. Since #1261 unified
+	// the PD and standard routing paths under RoutingDecisionEvent, this value
+	// reflects the routing-fire time rather than the admission time.
 	Clock        int64
 	Disaggregate bool // true = routed to prefill pool; false = standard routing to decode pool
 }

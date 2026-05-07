@@ -1035,7 +1035,14 @@ func (c *ClusterSimulator) ParentRequests() []*ParentRequest {
 // Model filter is intentionally omitted: all instances in a DeploymentConfig share config.Model,
 // so pool-role filtering is sufficient. If multi-model PD clusters are added, add model filtering here.
 // Preserves instance order from c.instances for determinism (R2).
+//
+// INV-7: refreshes stale cache snapshots before sampling so the disaggregated routing
+// path observes the same cache-block view as buildRouterState under Periodic mode.
 func (c *ClusterSimulator) buildPoolFilteredSnapshots(role PoolRole) []sim.RoutingSnapshot {
+	// Refresh stale cache snapshots if interval has elapsed (#919, #1060).
+	// No-op when CacheBlocks.Mode != Periodic (oracle mode).
+	c.snapshotProvider.RefreshCacheIfNeeded(c.clock)
+
 	allSnapshots := make([]sim.RoutingSnapshot, 0, len(c.instances))
 	for _, inst := range c.instances {
 		if !inst.IsRoutable() {
