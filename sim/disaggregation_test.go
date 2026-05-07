@@ -252,9 +252,11 @@ func TestNewPrefixThresholdDecider_PanicsOnZeroBlockSize(t *testing.T) {
 	NewPrefixThresholdDecider(512, 0, nil)
 }
 
-// coldState builds a RouterState whose selected instance maps to a 0-blocks
-// cache query — the decider's formula is exercised with cachedBlocks=0, so
-// nonCachedTokens == len(InputTokens).
+// coldState builds a RouterState with SelectedInstance set to selectedID.
+// Pair with a coldCache(selectedID)-constructed decider to exercise the
+// formula with cachedBlocks=0 (so nonCachedTokens == len(InputTokens)).
+// RouterState itself carries no cache query; the cache query lives on the
+// decider via cacheQuery.
 func coldState(selectedID string) *RouterState {
 	return &RouterState{
 		Snapshots:        []RoutingSnapshot{{ID: selectedID}},
@@ -400,14 +402,13 @@ func TestPrefixThresholdDecider_PerPodCacheQuery(t *testing.T) {
 }
 
 // TestPrefixThresholdDecider_MissingSelection_ReturnsFalse verifies BC-3 — the
-// conservative-cold fallback paths. In any of these four scenarios the decider
+// conservative-cold fallback paths. In any of these five scenarios the decider
 // cannot locate a valid per-pod cache closure, so it returns Disaggregate=false:
 //  1. state == nil
 //  2. state.SelectedInstance == "" (upstream made no selection)
 //  3. state.SelectedInstance is not a key in cacheQuery
-//  4. cacheQuery[SelectedInstance] is nil
-//
-// (A separate path — cacheQuery itself is nil — is covered at the end.)
+//  4. cacheQuery[SelectedInstance] is nil (closure missing at the key)
+//  5. cacheQuery itself is nil (unit tests without cluster state)
 func TestPrefixThresholdDecider_MissingSelection_ReturnsFalse(t *testing.T) {
 	const threshold = 100
 	const blockSize = 16

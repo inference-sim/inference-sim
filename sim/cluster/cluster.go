@@ -232,7 +232,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 
 	// PD disaggregation: set pool membership (topology already validated above).
 	// Decider construction is deferred until after cs.cacheQueryFn is built
-	// (PrefixThresholdDecider consumes the map; see GAP-3 / issue #1263).
+	// (PrefixThresholdDecider consumes the map).
 	if config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 {
 		cs.poolMembership = prePoolMembership
 		cs.parentRequests = make(map[string]*ParentRequest)
@@ -356,8 +356,8 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	}
 
 	// PD disaggregation: construct the decider now that cacheQueryFn is available.
-	// PrefixThresholdDecider consumes the per-pod cache-query map (GAP-3 / issue #1263);
-	// other deciders ignore state but share the same construction point.
+	// PrefixThresholdDecider consumes the per-pod cache-query map; other deciders
+	// ignore state but share the same construction point.
 	if config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 {
 		switch config.PDDecider {
 		case "prefix-threshold":
@@ -1731,9 +1731,10 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 	// Step 2: disaggregation decision with decode pod known. Pass the full decode-pool
 	// RouterState so the decider can query per-pod state (cache presence, load) and
 	// optionally reconsider the decode pod via DisaggregationDecision.DecodePodOverride.
-	// state.SelectedInstance tells the decider which snapshot was pre-selected by the
-	// decode routing policy (GAP-3 / issue #1263) — PrefixThresholdDecider queries
-	// the selected pod's cacheQueryFn closure for per-pod prefix cache state.
+	// state.SelectedInstance tells the decider which snapshot was pre-selected by
+	// the decode routing policy — PrefixThresholdDecider queries the selected
+	// pod's cacheQueryFn closure for per-pod prefix cache state (matches llm-d's
+	// PrefixBasedPDDecider reading endpoint.Get(PrefixCacheMatchInfoKey)).
 	state.SelectedInstance = decodeDecision.TargetInstance
 	disaggDecision := cs.disaggregationDecider.Decide(req, state)
 	logrus.Debugf("[cluster] req %s: disaggregate=%v", req.ID, disaggDecision.Disaggregate)
