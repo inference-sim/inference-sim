@@ -123,3 +123,86 @@ func TestClassifyBacklogTrend_PersistentlySaturated(t *testing.T) {
 		t.Errorf("verdict = %s, want PERSISTENTLY_SATURATED", verdict)
 	}
 }
+
+func TestAnalyzeSaturation_Unsaturated(t *testing.T) {
+	// GIVEN trace with balanced arrivals/completions
+	records := make([]TraceRecord, 100)
+	for i := 0; i < 100; i++ {
+		arrivalTime := int64(i * 1_000_000) // 1 request per second
+		records[i] = TraceRecord{
+			RequestID:       i,
+			ArrivalTimeUs:   arrivalTime,
+			SendTimeUs:      arrivalTime,
+			LastChunkTimeUs: arrivalTime + 500_000, // 500ms latency
+		}
+	}
+	trace := TraceV2{Records: records}
+
+	// WHEN analyzing saturation with 10s windows
+	verdict := AnalyzeSaturation(trace, 10.0)
+
+	// THEN verdict should be UNSATURATED (system kept up)
+	if verdict.Verdict != "UNSATURATED" {
+		t.Errorf("verdict = %s, want UNSATURATED", verdict.Verdict)
+	}
+	if verdict.BacklogSlope > 0.05 {
+		t.Errorf("backlog slope = %.3f, expected near zero", verdict.BacklogSlope)
+	}
+}
+
+func TestAnalyzeSaturation_PersistentlySaturated(t *testing.T) {
+	// GIVEN trace where requests accumulate rapidly (high arrival rate, long latencies)
+	// Arrivals: 10 req/sec, Latency: constant 15 seconds
+	// This means 10 new requests arrive per second, but each takes 15s to complete
+	// Backlog grows by ~10 req/s (arrival rate) - ~0.67 req/s (completion rate) = 9.33 req/s
+	records := make([]TraceRecord, 50)
+	for i := 0; i < 50; i++ {
+		arrivalTime := int64(i * 100_000)         // 10 req/s (100ms apart)
+		latency := int64(15_000_000)              // constant 15s latency
+		records[i] = TraceRecord{
+			RequestID:       i,
+			ArrivalTimeUs:   arrivalTime,
+			SendTimeUs:      arrivalTime,
+			LastChunkTimeUs: arrivalTime + latency,
+		}
+	}
+	trace := TraceV2{Records: records}
+
+	// WHEN analyzing with 1s windows
+	verdict := AnalyzeSaturation(trace, 1.0)
+
+	// THEN verdict should be PERSISTENTLY_SATURATED
+	if verdict.Verdict != "PERSISTENTLY_SATURATED" {
+		t.Errorf("verdict = %s, want PERSISTENTLY_SATURATED (slope=%.3f, ratio=%.2f)",
+			verdict.Verdict, verdict.BacklogSlope, float64(verdict.FinalBacklog)/float64(verdict.InitialBacklog))
+	}
+	if verdict.BacklogSlope <= 0 {
+		t.Errorf("backlog slope = %.3f, expected positive", verdict.BacklogSlope)
+	}
+	if verdict.FinalBacklog <= verdict.InitialBacklog {
+		t.Errorf("final backlog %d should be > initial %d", verdict.FinalBacklog, verdict.InitialBacklog)
+	}
+}
+
+func TestAnalyzeSaturation_InsufficientData(t *testing.T) {
+	// GIVEN trace with only 5 requests (< 10 threshold)
+	records := make([]TraceRecord, 5)
+	for i := 0; i < 5; i++ {
+		arrivalTime := int64(i * 1_000_000)
+		records[i] = TraceRecord{
+			RequestID:       i,
+			ArrivalTimeUs:   arrivalTime,
+			SendTimeUs:      arrivalTime,
+			LastChunkTimeUs: arrivalTime + 500_000,
+		}
+	}
+	trace := TraceV2{Records: records}
+
+	// WHEN analyzing
+	verdict := AnalyzeSaturation(trace, 10.0)
+
+	// THEN verdict should be INSUFFICIENT_DATA
+	if verdict.Verdict != "INSUFFICIENT_DATA" {
+		t.Errorf("verdict = %s, want INSUFFICIENT_DATA", verdict.Verdict)
+	}
+}

@@ -211,3 +211,82 @@ func classifyBacklogTrend(slope float64, initialBacklog, finalBacklog int, hadTr
 	// TRANSIENT_BACKLOG: everything else (temporary overload but recovered)
 	return "TRANSIENT_BACKLOG"
 }
+
+const minRequestsForAnalysis = 10
+
+// AnalyzeSaturation performs backlog drift analysis on trace data and returns a saturation verdict.
+// Uses the three-level classification from discussion #1163.
+// Returns INSUFFICIENT_DATA verdict if trace has < 10 requests.
+func AnalyzeSaturation(trace TraceV2, windowDurationS float64) SaturationVerdict {
+	records := trace.Records
+	if len(records) < minRequestsForAnalysis {
+		return SaturationVerdict{
+			Verdict:              "INSUFFICIENT_DATA",
+			WindowCount:          0,
+			BacklogSlope:         0.0,
+			InitialBacklog:       0,
+			FinalBacklog:         0,
+			ObservationDurationS: 0.0,
+		}
+	}
+
+	// Convert window duration to microseconds
+	windowDurationUs := int64(windowDurationS * 1_000_000)
+
+	// Compute window metrics
+	windows := computeWindowMetrics(records, windowDurationUs)
+	if len(windows) == 0 {
+		return SaturationVerdict{Verdict: "INSUFFICIENT_DATA"}
+	}
+
+	// Extract active request time series for trend fitting
+	timePoints := make([]float64, len(windows))
+	activePoints := make([]float64, len(windows))
+	for i, w := range windows {
+		timePoints[i] = float64(w.StartTimeUs) / 1_000_000.0 // convert to seconds
+		activePoints[i] = float64(w.ActiveStart)
+	}
+
+	// Fit linear trend to active_requests(t)
+	slope := linearTrend(timePoints, activePoints)
+
+	// Determine if there were transient spikes (any window with drain_ratio < 1.0 AND delta > 0)
+	hadTransientSpike := false
+	for _, w := range windows {
+		if w.DrainRatio < 1.0 && w.DeltaBacklog > 0 {
+			hadTransientSpike = true
+			break
+		}
+	}
+
+	// Get initial and final backlog
+	// Use ActiveStart of first and last windows (sampling at window starts, not ends)
+	// This avoids the edge case where ActiveEnd of the last window is 0 after all completions
+	initialBacklog := windows[0].ActiveStart
+	finalBacklog := windows[len(windows)-1].ActiveStart
+
+	// Classify
+	verdict := classifyBacklogTrend(slope, initialBacklog, finalBacklog, hadTransientSpike)
+
+	// Compute observation duration
+	minTime := records[0].ArrivalTimeUs
+	maxTime := records[0].LastChunkTimeUs
+	for _, r := range records {
+		if r.ArrivalTimeUs < minTime {
+			minTime = r.ArrivalTimeUs
+		}
+		if r.LastChunkTimeUs > maxTime {
+			maxTime = r.LastChunkTimeUs
+		}
+	}
+	observationDurationS := float64(maxTime-minTime) / 1_000_000.0
+
+	return SaturationVerdict{
+		Verdict:              verdict,
+		WindowCount:          len(windows),
+		BacklogSlope:         slope,
+		InitialBacklog:       initialBacklog,
+		FinalBacklog:         finalBacklog,
+		ObservationDurationS: observationDurationS,
+	}
+}
