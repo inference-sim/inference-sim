@@ -264,6 +264,10 @@ func coldState(selectedID string) *RouterState {
 	}
 }
 
+// coldCache builds a cacheQuery map with a single entry for selectedID whose
+// closure always returns 0 cached blocks. Pair with coldState(selectedID) to
+// exercise the decider's formula with cachedBlocks=0 — i.e. the selected pod
+// is known but has none of the input cached.
 func coldCache(selectedID string) map[string]func([]int) int {
 	return map[string]func([]int) int{
 		selectedID: func([]int) int { return 0 },

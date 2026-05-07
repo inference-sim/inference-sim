@@ -29,10 +29,12 @@ type DisaggregationDecision struct {
 // state carries the decode-pool RouterState — the same snapshots used to
 // pre-select the decode pod. state.SelectedInstance holds the ID of the pod
 // chosen by the decode routing policy. Implementations may read any field of
-// state except Request.OutputTokens. state may be nil in unit tests and for
-// state-agnostic deciders; implementations must tolerate a nil pointer.
-// Passing the full RouterState (rather than a single snapshot) lets joint D+P
-// policies reconsider the decode pod via DisaggregationDecision.DecodePodOverride.
+// state except Request.OutputTokens. state is guaranteed non-nil at runtime
+// (executeDisaggregatedRouting returns at the empty-decode-pool guard before
+// calling Decide), but implementations must still tolerate a nil pointer for
+// unit-test convenience. Passing the full RouterState (rather than a single
+// snapshot) lets joint D+P policies reconsider the decode pod via
+// DisaggregationDecision.DecodePodOverride.
 type DisaggregationDecider interface {
 	Decide(req *Request, state *RouterState) DisaggregationDecision
 }

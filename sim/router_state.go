@@ -21,8 +21,11 @@ type RouterState struct {
 	// (typically the decode-routing policy) before invoking a
 	// DisaggregationDecider. Empty for contexts where no prior selection has
 	// been made (e.g., RoutingPolicy.Route itself receives RouterState with
-	// SelectedInstance == ""). DisaggregationDecider implementations may read
-	// this to identify which of Snapshots was chosen upstream; a zero value
-	// must be tolerated (treat as "no selection known").
+	// SelectedInstance == ""). DisaggregationDecider implementations may use
+	// this ID to locate the selected pod's state (e.g., in a per-pod cache-
+	// query map). Membership in Snapshots is not structurally guaranteed —
+	// implementations must tolerate both a zero value ("no selection known")
+	// and an ID that has no corresponding entry in Snapshots (e.g., the pod
+	// was removed after routing) and guard accordingly.
 	SelectedInstance string
 }
