@@ -175,3 +175,39 @@ func linearTrend(xValues, yValues []float64) float64 {
 	slope := (n*sumXY - sumX*sumY) / denominator
 	return slope
 }
+
+const (
+	backlogSlopeThreshold      = 0.1  // requests per second
+	unsaturatedBacklogRatioMin = 0.9
+	unsaturatedBacklogRatioMax = 1.1
+	saturatedBacklogRatioMin   = 1.5
+)
+
+// classifyBacklogTrend determines saturation level from backlog trend analysis.
+// Uses three-level classification from discussion #1163.
+func classifyBacklogTrend(slope float64, initialBacklog, finalBacklog int, hadTransientSpike bool) string {
+	// Guard against division by zero
+	var backlogRatio float64
+	if initialBacklog == 0 {
+		if finalBacklog == 0 {
+			backlogRatio = 1.0
+		} else {
+			backlogRatio = math.Inf(1) // Grew from zero to nonzero
+		}
+	} else {
+		backlogRatio = float64(finalBacklog) / float64(initialBacklog)
+	}
+
+	// PERSISTENTLY_SATURATED: positive slope AND final >> initial
+	if slope > backlogSlopeThreshold && backlogRatio > saturatedBacklogRatioMin {
+		return "PERSISTENTLY_SATURATED"
+	}
+
+	// UNSATURATED: slope near zero AND final ≈ initial AND no transient spikes
+	if math.Abs(slope) < backlogSlopeThreshold && backlogRatio >= unsaturatedBacklogRatioMin && backlogRatio <= unsaturatedBacklogRatioMax && !hadTransientSpike {
+		return "UNSATURATED"
+	}
+
+	// TRANSIENT_BACKLOG: everything else (temporary overload but recovered)
+	return "TRANSIENT_BACKLOG"
+}

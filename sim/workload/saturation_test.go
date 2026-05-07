@@ -75,3 +75,51 @@ func TestComputeWindowMetrics_SingleWindow(t *testing.T) {
 		t.Errorf("window.DrainRatio = %.2f, want %.2f", w.DrainRatio, expectedRatio)
 	}
 }
+
+func TestClassifyBacklogTrend_Unsaturated(t *testing.T) {
+	// GIVEN slope near zero, final backlog ≈ initial backlog
+	slope := 0.05 // below threshold
+	initialBacklog := 10
+	finalBacklog := 11         // ratio = 1.1 (within [0.9, 1.1])
+	hadTransientSpike := false
+
+	// WHEN classifying
+	verdict := classifyBacklogTrend(slope, initialBacklog, finalBacklog, hadTransientSpike)
+
+	// THEN verdict is UNSATURATED
+	if verdict != "UNSATURATED" {
+		t.Errorf("verdict = %s, want UNSATURATED", verdict)
+	}
+}
+
+func TestClassifyBacklogTrend_TransientBacklog(t *testing.T) {
+	// GIVEN slope near zero, final ≈ initial, but some windows had drain_ratio < 1.0
+	slope := 0.03
+	initialBacklog := 5
+	finalBacklog := 6          // ratio = 1.2 (close to 1.0)
+	hadTransientSpike := true  // indicates temporary overload
+
+	// WHEN classifying
+	verdict := classifyBacklogTrend(slope, initialBacklog, finalBacklog, hadTransientSpike)
+
+	// THEN verdict is TRANSIENT_BACKLOG
+	if verdict != "TRANSIENT_BACKLOG" {
+		t.Errorf("verdict = %s, want TRANSIENT_BACKLOG", verdict)
+	}
+}
+
+func TestClassifyBacklogTrend_PersistentlySaturated(t *testing.T) {
+	// GIVEN positive slope above threshold, final >> initial
+	slope := 0.5 // significantly positive
+	initialBacklog := 10
+	finalBacklog := 20 // ratio = 2.0 (> 1.5)
+	hadTransientSpike := false
+
+	// WHEN classifying
+	verdict := classifyBacklogTrend(slope, initialBacklog, finalBacklog, hadTransientSpike)
+
+	// THEN verdict is PERSISTENTLY_SATURATED
+	if verdict != "PERSISTENTLY_SATURATED" {
+		t.Errorf("verdict = %s, want PERSISTENTLY_SATURATED", verdict)
+	}
+}
