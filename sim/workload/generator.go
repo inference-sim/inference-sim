@@ -85,15 +85,16 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 	// Normalize rate fractions
 	clientRates := normalizeRateFractions(allClients, spec.AggregateRate)
 
-	// Generate shared prefix tokens per prefix group
-	prefixes := generatePrefixTokens(allClients, workloadRNG)
-
 	// Route to time-varying generator when any client has per-window parameter
 	// overrides (TraceRate, Arrival, InputDist, OutputDist on ActiveWindow).
 	// This path uses per-window proportional allocation and IAT rescaling.
+	// Prefix generation happens inside each branch to avoid double-advancing the RNG.
 	if hasPerWindowParameters(allClients) {
 		return generateTimeVaryingRequests(spec, horizon, maxRequests, allClients, workloadRNG)
 	}
+
+	// Generate shared prefix tokens per prefix group (non-time-varying path only)
+	prefixes := generatePrefixTokens(allClients, workloadRNG)
 
 	// Per-client generation cap: prevent OOM when horizon >> maxRequests.
 	// Each client generates at most 2x maxRequests, then post-merge truncation finalizes.
@@ -768,8 +769,10 @@ func generateTimeVaryingRequests(
 ) ([]*sim.Request, error) {
 	var allRequests []*sim.Request
 
-	// Build prefix tokens map for all prefix groups (BC-2)
-	// Uses generatePrefixTokens() for true cross-path parity with non-time-varying path
+	// Build prefix tokens map for all prefix groups (BC-2).
+	// Uses generatePrefixTokens() for cross-path parity with non-time-varying path.
+	// With line 89 moved into the non-time-varying branch, both paths now call
+	// generatePrefixTokens exactly once on the same RNG state.
 	prefixes := generatePrefixTokens(allClients, rng)
 
 	// Generate requests for each client's windows.
