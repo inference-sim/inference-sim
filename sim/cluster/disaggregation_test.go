@@ -1911,3 +1911,139 @@ func TestPDRouting_InjectionTimingPreserved(t *testing.T) {
 		}
 	}
 }
+
+// recordingDecider captures every (req, state) pair passed into Decide and
+// delegates the actual decision to an inner decider. Used to pin BC-3 at the
+// cluster level: the RouterState passed to Decide must contain snapshots for
+// every routable decode-pool instance.
+type recordingDecider struct {
+	inner sim.DisaggregationDecider
+	calls []recordedCall
+}
+
+type recordedCall struct {
+	reqID       string
+	snapshotIDs []string
+	stateNil    bool
+	clock       int64
+}
+
+func (r *recordingDecider) Decide(req *sim.Request, state *sim.RouterState) sim.DisaggregationDecision {
+	c := recordedCall{reqID: req.ID, stateNil: state == nil}
+	if state != nil {
+		c.clock = state.Clock
+		c.snapshotIDs = make([]string, len(state.Snapshots))
+		for i, s := range state.Snapshots {
+			c.snapshotIDs[i] = s.ID
+		}
+	}
+	r.calls = append(r.calls, c)
+	return r.inner.Decide(req, state)
+}
+
+// TestDisaggregation_DeciderReceivesDecodePoolState verifies BC-3 at the cluster
+// level: the RouterState passed to DisaggregationDecider.Decide contains
+// snapshots for every decode-pool instance (non-nil, non-empty, IDs match the
+// decode pool).
+func TestDisaggregation_DeciderReceivesDecodePoolState(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2) // 2 prefill + 2 decode
+	const numRequests = 3
+	requests := newTestRequests(numRequests)
+
+	cs := NewClusterSimulator(config, requests, nil)
+	rec := &recordingDecider{inner: &sim.AlwaysDisaggregate{}}
+	cs.disaggregationDecider = rec
+
+	mustRun(t, cs)
+
+	// Build the expected decode-pool ID set from pool membership.
+	wantDecodeIDs := make(map[string]bool)
+	for id, role := range cs.poolMembership {
+		if role.Has(PoolRoleDecode) {
+			wantDecodeIDs[id] = true
+		}
+	}
+	if len(wantDecodeIDs) == 0 {
+		t.Fatal("test precondition: no decode-pool instances in cluster")
+	}
+
+	if len(rec.calls) != numRequests {
+		t.Fatalf("recorded %d Decide calls, want %d (one per request)", len(rec.calls), numRequests)
+	}
+	for i, c := range rec.calls {
+		if c.stateNil {
+			t.Errorf("call %d (req %s): state was nil, want non-nil (empty-pool case is rejected before Decide)", i, c.reqID)
+			continue
+		}
+		if len(c.snapshotIDs) != len(wantDecodeIDs) {
+			t.Errorf("call %d (req %s): state.Snapshots has %d entries, want %d (decode-pool size)",
+				i, c.reqID, len(c.snapshotIDs), len(wantDecodeIDs))
+		}
+		for _, id := range c.snapshotIDs {
+			if !wantDecodeIDs[id] {
+				t.Errorf("call %d (req %s): state.Snapshots contains %q which is not in the decode pool",
+					i, c.reqID, id)
+			}
+		}
+	}
+}
+
+// overrideDecider always returns Disaggregate=false plus a DecodePodOverride,
+// rerouting the decode target to the configured instance. Used to verify the
+// call-site retargeting logic in executeDisaggregatedRouting.
+type overrideDecider struct {
+	override string
+}
+
+func (o *overrideDecider) Decide(_ *sim.Request, _ *sim.RouterState) sim.DisaggregationDecision {
+	return sim.DisaggregationDecision{Disaggregate: false, DecodePodOverride: o.override}
+}
+
+// TestDisaggregation_DecodePodOverrideReroutes verifies the call site applies
+// DisaggregationDecision.DecodePodOverride: when the decider returns a non-empty
+// override (within the decode pool), every request lands on that instance,
+// regardless of what the decode routing policy would have selected.
+func TestDisaggregation_DecodePodOverrideReroutes(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	const numRequests = 5
+	requests := newTestRequests(numRequests)
+
+	cs := NewClusterSimulator(config, requests, nil)
+
+	// Pick a specific decode-pool instance as the override target. Use the
+	// lexicographically-last decode ID so the override differs from the
+	// round-robin default (which starts at the first decode instance).
+	var targetID string
+	for id, role := range cs.poolMembership {
+		if role.Has(PoolRoleDecode) {
+			if id > targetID {
+				targetID = id
+			}
+		}
+	}
+	if targetID == "" {
+		t.Fatal("test precondition: no decode-pool instance found for override")
+	}
+	cs.disaggregationDecider = &overrideDecider{override: targetID}
+
+	mustRun(t, cs)
+
+	// With Disaggregate=false and DecodePodOverride set, every routed request
+	// must have AssignedInstance == targetID — the override replaces the
+	// round-robin pick.
+	overrideCount := 0
+	for _, req := range requests {
+		if req.AssignedInstance == "" {
+			continue // not routed (e.g., still queued at horizon)
+		}
+		if req.AssignedInstance != targetID {
+			t.Errorf("req %s: AssignedInstance = %q, want %q (DecodePodOverride must retarget)",
+				req.ID, req.AssignedInstance, targetID)
+			continue
+		}
+		overrideCount++
+	}
+	if overrideCount == 0 {
+		t.Fatal("no requests landed on override target — override logic did not fire")
+	}
+}
