@@ -1740,11 +1740,19 @@ var runCmd = &cobra.Command{
 		}
 
 		// Saturation analysis (requires --trace-output)
+		if runSaturationOutputPath != "" && traceOutput == "" {
+			logrus.Fatalf("--saturation-output requires --trace-output to be specified")
+		}
 		if traceOutput != "" {
 			traceHeaderPath := traceOutput + ".yaml"
 			traceDataPath := traceOutput + ".csv"
 			traceData, traceErr := workload.LoadTraceV2(traceHeaderPath, traceDataPath)
 			if traceErr != nil {
+				// If user requested saturation output, this is fatal (file won't be created)
+				if runSaturationOutputPath != "" {
+					logrus.Fatalf("Failed to load trace for saturation analysis: %v", traceErr)
+				}
+				// Otherwise just warn - saturation analysis is optional
 				logrus.Warnf("Failed to load trace for saturation analysis: %v", traceErr)
 			} else {
 				verdict := workload.AnalyzeSaturation(*traceData, 60.0)

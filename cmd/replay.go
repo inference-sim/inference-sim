@@ -331,6 +331,11 @@ Example:
 		// Load trace from input files and analyze backlog drift
 		traceData, traceErr := workload.LoadTraceV2(traceHeaderPath, traceDataPath)
 		if traceErr != nil {
+			// If user requested saturation output, this is fatal (file won't be created)
+			if replaySaturationOutputPath != "" {
+				logrus.Fatalf("Failed to load trace for saturation analysis: %v", traceErr)
+			}
+			// Otherwise just warn - saturation analysis is optional
 			logrus.Warnf("Failed to load trace for saturation analysis: %v", traceErr)
 		} else {
 			// Analyze saturation with 60-second windows

@@ -2,7 +2,6 @@ package workload
 
 import (
 	"math"
-	"sort"
 )
 
 // SaturationVerdict represents the result of saturation analysis.
@@ -18,33 +17,9 @@ type SaturationVerdict struct {
 // computeActiveRequests computes the number of active (in-flight) requests at each sample timestamp.
 // A request is active at time t if arrival_time_us <= t < completion_time_us.
 // Completion time is computed as SendTimeUs + (LastChunkTimeUs - SendTimeUs) = LastChunkTimeUs.
-// Uses sweep-line algorithm: O(N log N + S) where N = num requests, S = num samples.
+// Uses brute force: O(N*S) where N = num requests, S = num samples.
+// Acceptable for typical workloads (100-1000 requests, 10-20 windows = ~10k iterations < 1ms).
 func computeActiveRequests(records []TraceRecord, sampleTimestamps []int64) []int {
-	type event struct {
-		timestamp int64
-		delta     int // +1 for arrival, -1 for completion
-	}
-
-	events := make([]event, 0, 2*len(records))
-	for _, r := range records {
-		arrivalTime := r.ArrivalTimeUs
-		completionTime := r.LastChunkTimeUs // Already absolute timestamp
-		events = append(events, event{timestamp: arrivalTime, delta: 1})
-		events = append(events, event{timestamp: completionTime, delta: -1})
-	}
-
-	// Sort events by timestamp, with completions before arrivals at the same timestamp
-	// (this ensures active_requests(t) does not include requests that complete exactly at t)
-	sort.Slice(events, func(i, j int) bool {
-		if events[i].timestamp != events[j].timestamp {
-			return events[i].timestamp < events[j].timestamp
-		}
-		// At same timestamp: completion (-1) before arrival (+1)
-		return events[i].delta < events[j].delta
-	})
-
-	// Sweep through sample timestamps and compute active count at each
-	// A request is active at time t if arrival_time <= t < completion_time
 	result := make([]int, len(sampleTimestamps))
 
 	for sampleIdx, sampleTime := range sampleTimestamps {
@@ -129,7 +104,9 @@ func computeWindowMetrics(records []TraceRecord, windowDurationUs int64) []windo
 		// Find completion window (inclusive of both minTime and maxTime since maxTime is defined by last completion)
 		if completionTime >= minTime {
 			windowIdx := int((completionTime - minTime) / windowDurationUs)
-			// Handle completions that fall exactly on the boundary of the last window
+			// Handle edge case: completions at exactly maxTime can index beyond array.
+			// Example: maxTime=120s, windowDuration=60s → windowIdx=2 but len(windows)=2
+			// Clamp to last window since maxTime completion should count in final window.
 			if windowIdx >= len(windows) {
 				windowIdx = len(windows) - 1
 			}
@@ -176,11 +153,13 @@ func linearTrend(xValues, yValues []float64) float64 {
 	return slope
 }
 
+// Classification thresholds from discussion #1163 section 4.
+// These empirically-derived values distinguish persistent saturation from transient spikes.
 const (
-	backlogSlopeThreshold      = 0.1  // requests per second
-	unsaturatedBacklogRatioMin = 0.9
+	backlogSlopeThreshold      = 0.1  // requests per second - significant positive trend
+	unsaturatedBacklogRatioMin = 0.9  // final/initial backlog ratio bounds for stable system
 	unsaturatedBacklogRatioMax = 1.1
-	saturatedBacklogRatioMin   = 1.5
+	saturatedBacklogRatioMin   = 1.5  // final/initial backlog ratio indicating growth
 )
 
 // classifyBacklogTrend determines saturation level from backlog trend analysis.
@@ -217,6 +196,11 @@ const minRequestsForAnalysis = 10
 // AnalyzeSaturation performs backlog drift analysis on trace data and returns a saturation verdict.
 // Uses the three-level classification from discussion #1163.
 // Returns INSUFFICIENT_DATA verdict if trace has < 10 requests.
+//
+// LIMITATION: Does not account for request preemption. Preempted requests are treated as
+// continuously active from arrival to final completion, which may overestimate backlog in
+// systems with frequent preemption. This is a TraceV2 data limitation - preemption events
+// are not currently captured in the trace format. See follow-up issue for TraceV2 extension.
 func AnalyzeSaturation(trace TraceV2, windowDurationS float64) SaturationVerdict {
 	records := trace.Records
 	if len(records) < minRequestsForAnalysis {
@@ -260,8 +244,10 @@ func AnalyzeSaturation(trace TraceV2, windowDurationS float64) SaturationVerdict
 	}
 
 	// Get initial and final backlog
-	// Use ActiveStart of first and last windows (sampling at window starts, not ends)
-	// This avoids the edge case where ActiveEnd of the last window is 0 after all completions
+	// Use ActiveStart of first and last windows (sampling at window starts, not ends).
+	// Rationale: ActiveEnd of the last window would be 0 after all requests complete
+	// (since maxTime is defined by the last completion), giving misleading final backlog.
+	// Sampling at window start gives true backlog at that point in time.
 	initialBacklog := windows[0].ActiveStart
 	finalBacklog := windows[len(windows)-1].ActiveStart
 
