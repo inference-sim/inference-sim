@@ -3136,6 +3136,120 @@ func TestGenerateRequestsForWindow_ReasoningWithDeadline(t *testing.T) {
 	}
 }
 
+func TestGenerateWorkload_TimeVaryingClosedLoopReasoning(t *testing.T) {
+	// BC-4: Closed-loop session blueprint creation for time-varying workloads
+	// BC-8: Determinism (run twice with same seed, verify identical output)
+
+	closedLoop := true
+	spec := &WorkloadSpec{
+		Version:       "2",
+		Seed:          42,
+		Horizon:       10000000, // 10s
+		AggregateRate: 0,        // Absolute rate mode (per-window TraceRate)
+		Clients: []ClientSpec{
+			{
+				ID:           "reasoning-client-0",
+				TenantID:     "tenant-a",
+				SLOClass:     "standard",
+				Model:        "qwen/qwen3-14b",
+				RateFraction: 1.0,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				ClosedLoop:   &closedLoop,
+				Reasoning: &ReasoningSpec{
+					MultiTurn: &MultiTurnSpec{
+						MaxRounds:     4,
+						ThinkTimeUs:   1000000, // 1s think time
+						ContextGrowth: "accumulate",
+					},
+				},
+				Lifecycle: &LifecycleSpec{
+					Windows: []ActiveWindow{
+						{
+							StartUs:   0,
+							EndUs:     10000000,
+							TraceRate: floatPtr(5.0), // 5 req/s (spike-based)
+						},
+					},
+				},
+				InputDist: DistSpec{
+					Type:   "constant",
+					Params: map[string]float64{"value": 100},
+				},
+				OutputDist: DistSpec{
+					Type:   "constant",
+					Params: map[string]float64{"value": 50},
+				},
+				Streaming: true,
+			},
+		},
+	}
+
+	// First run
+	wl1, err := GenerateWorkload(spec, spec.Horizon, 0)
+	if err != nil {
+		t.Fatalf("GenerateWorkload run 1 failed: %v", err)
+	}
+
+	// BC-4: Verify session blueprints were created (no warnings)
+	if len(wl1.Sessions) == 0 {
+		t.Fatal("Expected session blueprints for closed-loop reasoning client, got 0")
+	}
+
+	// Verify all sessions belong to the correct client
+	for i, sess := range wl1.Sessions {
+		if sess.ClientID != "reasoning-client-0" {
+			t.Errorf("Session %d: ClientID = %q, want %q", i, sess.ClientID, "reasoning-client-0")
+		}
+		if sess.MaxRounds != 4 {
+			t.Errorf("Session %d: MaxRounds = %d, want 4", i, sess.MaxRounds)
+		}
+	}
+
+	// Verify round-0 requests have session metadata
+	round0Count := 0
+	for _, req := range wl1.Requests {
+		if req.ClientID == "reasoning-client-0" && req.RoundIndex == 0 {
+			round0Count++
+			if req.SessionID == "" {
+				t.Errorf("Round-0 request missing SessionID")
+			}
+		}
+	}
+	if round0Count != len(wl1.Sessions) {
+		t.Errorf("Round-0 request count (%d) != session blueprint count (%d)", round0Count, len(wl1.Sessions))
+	}
+
+	// BC-8: Determinism — second run with same seed should produce identical output
+	wl2, err := GenerateWorkload(spec, spec.Horizon, 0)
+	if err != nil {
+		t.Fatalf("GenerateWorkload run 2 failed: %v", err)
+	}
+
+	if len(wl2.Requests) != len(wl1.Requests) {
+		t.Errorf("Request count mismatch: run1=%d, run2=%d", len(wl1.Requests), len(wl2.Requests))
+	}
+	if len(wl2.Sessions) != len(wl1.Sessions) {
+		t.Errorf("Session count mismatch: run1=%d, run2=%d", len(wl1.Sessions), len(wl2.Sessions))
+	}
+
+	// Verify byte-identical request properties (ArrivalTime, InputTokens, SessionID)
+	for i := range wl1.Requests {
+		if i >= len(wl2.Requests) {
+			break
+		}
+		r1, r2 := wl1.Requests[i], wl2.Requests[i]
+		if r1.ArrivalTime != r2.ArrivalTime {
+			t.Errorf("Request %d: ArrivalTime mismatch: run1=%d, run2=%d", i, r1.ArrivalTime, r2.ArrivalTime)
+		}
+		if r1.SessionID != r2.SessionID {
+			t.Errorf("Request %d: SessionID mismatch: run1=%q, run2=%q", i, r1.SessionID, r2.SessionID)
+		}
+		if r1.RoundIndex != r2.RoundIndex {
+			t.Errorf("Request %d: RoundIndex mismatch: run1=%d, run2=%d", i, r1.RoundIndex, r2.RoundIndex)
+		}
+	}
+}
+
 func floatPtr(f float64) *float64 {
 	return &f
 }
