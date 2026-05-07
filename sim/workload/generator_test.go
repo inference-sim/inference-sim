@@ -2934,7 +2934,7 @@ func TestGenerateRequestsForWindow_ReasoningClient(t *testing.T) {
 	window := ActiveWindow{
 		StartUs:   0,
 		EndUs:     5000000, // 5s window
-		TraceRate: floatPtr(1.0), // 1 req/s
+		TraceRate: ptrFloat64(1.0), // 1 req/s
 	}
 
 	// Call generateRequestsForWindow (with nil prefix)
@@ -3016,7 +3016,7 @@ func TestGenerateRequestsForWindow_NonReasoningClient(t *testing.T) {
 	window := ActiveWindow{
 		StartUs:   0,
 		EndUs:     5000000,
-		TraceRate: floatPtr(10.0), // 10 req/s
+		TraceRate: ptrFloat64(10.0), // 10 req/s
 	}
 
 	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
@@ -3069,7 +3069,7 @@ func TestGenerateRequestsForWindow_ReasoningWithPrefix(t *testing.T) {
 	window := ActiveWindow{
 		StartUs:   0,
 		EndUs:     10000000,
-		TraceRate: floatPtr(1.0), // 1 req/s
+		TraceRate: ptrFloat64(1.0), // 1 req/s
 	}
 
 	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, prefixTokens)
@@ -3145,7 +3145,7 @@ func TestGenerateRequestsForWindow_ReasoningWithDeadline(t *testing.T) {
 	window := ActiveWindow{
 		StartUs:   0,
 		EndUs:     10000000,
-		TraceRate: floatPtr(1.0), // 1 req/s
+		TraceRate: ptrFloat64(1.0), // 1 req/s
 	}
 
 	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
@@ -3193,7 +3193,7 @@ func TestGenerateRequestsForWindow_ReasoningDefaultTimeout(t *testing.T) {
 	window := ActiveWindow{
 		StartUs:   0,
 		EndUs:     10000000,
-		TraceRate: floatPtr(1.0),
+		TraceRate: ptrFloat64(1.0),
 	}
 
 	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
@@ -3242,7 +3242,7 @@ func TestGenerateRequestsForWindow_ReasoningPreemptionSafety(t *testing.T) {
 	window := ActiveWindow{
 		StartUs:   0,
 		EndUs:     10000000,
-		TraceRate: floatPtr(1.0),
+		TraceRate: ptrFloat64(1.0),
 	}
 
 	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
@@ -3326,7 +3326,7 @@ func TestGenerateWorkload_TimeVaryingClosedLoopReasoning(t *testing.T) {
 						{
 							StartUs:   0,
 							EndUs:     10000000,
-							TraceRate: floatPtr(5.0), // 5 req/s (spike-based)
+							TraceRate: ptrFloat64(5.0), // 5 req/s (spike-based)
 						},
 					},
 				},
@@ -3418,8 +3418,4 @@ func TestGenerateWorkload_TimeVaryingClosedLoopReasoning(t *testing.T) {
 			t.Errorf("Request %d: RoundIndex mismatch: run1=%d, run2=%d", i, r1.RoundIndex, r2.RoundIndex)
 		}
 	}
-}
-
-func floatPtr(f float64) *float64 {
-	return &f
 }

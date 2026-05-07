@@ -769,20 +769,8 @@ func generateTimeVaryingRequests(
 	var allRequests []*sim.Request
 
 	// Build prefix tokens map for all prefix groups (BC-2)
-	// Use per-client RNG seeding strategy: spec.Seed + clientIndex + 1
-	// (consistent with non-time-varying path's client-partitioned RNG)
-	prefixes := make(map[string][]int)
-	for i := range allClients {
-		client := &allClients[i]
-		if client.PrefixGroup != "" && client.PrefixLength > 0 {
-			if _, exists := prefixes[client.PrefixGroup]; !exists {
-				clientSeed := spec.Seed + int64(i) + 1
-				clientRNG := rand.New(rand.NewSource(clientSeed))
-				prefixTokens := sim.GenerateRandomTokenIDs(clientRNG, client.PrefixLength)
-				prefixes[client.PrefixGroup] = prefixTokens
-			}
-		}
-	}
+	// Uses generatePrefixTokens() for true cross-path parity with non-time-varying path
+	prefixes := generatePrefixTokens(allClients, rng)
 
 	// Generate requests for each client's windows.
 	for i := range allClients {
