@@ -144,15 +144,18 @@ BC-8: No eviction when not saturated
                    └─────────────────────────────────────────────┘
 
 Data flow:
-- On routing (RoutingDecisionEvent): tracker.Track(req, instanceID) — adds sheddable req to heap
-- On completion: tracker.Untrack(req.ID) — removes from heap
+- On routing (executeStandardRouting): tracker.Track(req, instanceID) — adds sheddable req to heap
+- On terminal state (OnRequestDone callback): tracker.Untrack(req.ID) — removes from heap
 - On eviction trigger: tracker.Pop() → returns (req, instanceID) → schedule GatewayEvictionEvent
 - GatewayEvictionEvent: removes req from instance, frees KV, increments gw_evicted
 
-KEY DESIGN DECISION: Tracking starts at ROUTING (not gateway dispatch) because between
-gateway dispatch and routing, the request is in the event pipeline — it hasn't reached
-any instance yet. The EvictionTracker stores the target instance ID alongside each request
-so findInstanceForRequest() is O(1) lookup from the tracker entry, not an O(n) scan.
+KEY DESIGN DECISIONS:
+1. Tracking starts at ROUTING (not gateway dispatch) because between gateway dispatch
+   and routing, the request is in the event pipeline — it hasn't reached any instance yet.
+2. Untracking uses the OnRequestDone callback (fires on completion, timeout, drop) so all
+   terminal paths are covered without scattering Untrack calls.
+3. EvictionTracker stores the target instance ID alongside each request so Pop() returns
+   (req, instanceID) directly — no O(n) scan needed.
 ```
 
 ### D) Deviation Log

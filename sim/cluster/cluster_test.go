@@ -3054,9 +3054,12 @@ func TestClusterSimulator_FlowControl_Eviction_Conservation(t *testing.T) {
 			m.TimedOutRequests, cs.RoutingRejections(), gwDepth, gwShed, gwRejected, gwEvicted)
 	}
 
-	// BC-6: non-sheddable requests should never be evicted.
-	// All critical requests should complete (not be evicted).
-	// gwEvicted should only count sheddable requests.
+	// BC-1: eviction must actually fire — a silent regression that disables eviction
+	// would still pass INV-1 trivially (gwEvicted=0 doesn't break the sum).
+	if gwEvicted == 0 {
+		t.Errorf("expected gwEvicted > 0 (eviction should fire when saturated with sheddable in-flight and critical waiting)")
+	}
+
 	t.Logf("Results: completed=%d gwEvicted=%d gwShed=%d gwDepth=%d",
 		m.CompletedRequests, gwEvicted, gwShed, gwDepth)
 }
