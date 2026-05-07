@@ -79,10 +79,11 @@ API format: Use --api-format=chat for servers that expose /v1/chat/completions
 (most production vLLM/SGLang deployments). Default is --api-format=completions
 which uses /v1/completions with a "prompt" field.
 
-Output control: By default, min_tokens is automatically set equal to each request's
-max_tokens so the server generates exactly the workload-spec-sampled output length
-(matching blis run behavior). Use --unconstrained-output to let the server decide
-output length freely (omits max_tokens for chat, sends large value for completions).
+Output control: By default, for each request with a non-zero MaxOutputLen, min_tokens
+is automatically set equal to max_tokens so the server generates exactly the
+workload-spec-sampled output length (matching blis run behavior). Use
+--unconstrained-output to let the server decide output length freely (omits max_tokens
+for chat, sends large value for completions).
 
 Network calibration: Use --rtt-ms to record measured network round-trip time
 in the trace header for calibration normalization.
@@ -804,9 +805,9 @@ func requestToPending(req *sim.Request, reqIndex int, noStreaming, unconstrained
 		prompt = tokensToPrompt(req.InputTokens, wordCount)
 	}
 
-	// BC-1: set min_tokens = max_tokens per-request so the server generates exactly
-	// MaxOutputLen tokens (matching what blis run produces). BC-2: skip in unconstrained
-	// mode — the server decides output length freely (Send() omits min_tokens when 0).
+	// Set min_tokens = max_tokens per-request so the server generates exactly MaxOutputLen
+	// tokens (matching what blis run produces). In unconstrained mode, set to 0 so
+	// Send() omits the field entirely and the server decides output length freely.
 	minTokens := req.MaxOutputLen
 	if unconstrained {
 		minTokens = 0

@@ -1090,6 +1090,10 @@ func TestRequestToPending_MinTokensEqualsMaxOutputLen(t *testing.T) {
 	}{
 		{"normal mode: MinTokens equals MaxOutputLen", 256, false, 256},
 		{"unconstrained mode: MinTokens is zero", 256, true, 0},
+		// MaxOutputLen=0: MinTokens=0 → Send() omits min_tokens; Send() applies
+		// defaultMaxOutputTokens (2048) fallback for max_tokens on the wire.
+		// Workload generation bounds MaxOutputLen ≥ 1 in practice, so this is a
+		// degenerate edge case (empty output budget).
 		{"zero MaxOutputLen in normal mode: MinTokens is zero", 0, false, 0},
 		{"large MaxOutputLen in normal mode", 4096, false, 4096},
 	}
@@ -1534,9 +1538,9 @@ func TestObserveCmd_ITLFlags_Defined(t *testing.T) {
 	}
 }
 
-// TestSend_UnconstrainedOutput_MaxTokensHandled verifies that in unconstrained mode,
-// Send() correctly omits max_tokens (chat format) or sets it to math.MaxInt32 (completions
-// format), so the server is never constrained by max_tokens when unconstrained=true.
+// Verifies that in unconstrained mode, Send() correctly omits max_tokens (chat format)
+// or sets it to math.MaxInt32 (completions format), so the server is never constrained
+// by max_tokens when Unconstrained=true.
 func TestSend_UnconstrainedOutput_MaxTokensNeverBelowMinTokens(t *testing.T) {
 	for _, apiFormat := range []string{"completions", "chat"} {
 		t.Run(apiFormat, func(t *testing.T) {
