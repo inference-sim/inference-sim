@@ -471,12 +471,16 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	// admission → routing → instance injection. The callback returns nil so the per-instance
 	// simulator does not inject locally.
 	// Phase 1B-2a: also notify tenantTracker on completion when budgets are configured.
-	if onRequestDone != nil || cs.tenantTracker != nil {
+	if onRequestDone != nil || cs.tenantTracker != nil || cs.evictionTracker != nil {
 		for _, inst := range cs.instances {
 			inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
 				// Phase 1B-2a: release tenant in-flight slot on every terminal state.
 				if cs.tenantTracker != nil {
 					cs.tenantTracker.OnComplete(req.TenantID)
+				}
+				// Remove from eviction tracker on normal completion (BC-3).
+				if cs.evictionTracker != nil {
+					cs.evictionTracker.Untrack(req.ID)
 				}
 				if onRequestDone == nil {
 					return nil
