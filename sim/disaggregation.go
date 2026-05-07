@@ -7,8 +7,17 @@ import (
 )
 
 // DisaggregationDecision encapsulates the prefill-decode disaggregation decision for a request.
+//
+// DecodePodOverride and PrefillPodHint let a decider reconsider pod selection made
+// by the routing policy. Empty string means "no override" — the caller keeps the
+// previously selected decode pod / applies normal prefill routing. Joint D+P
+// policies (future work) can populate these; the three built-in deciders always
+// leave them empty. PrefillPodHint is defined now to pre-empt a future interface
+// break; GAP-4 (encode pool) will consume it.
 type DisaggregationDecision struct {
-	Disaggregate bool // true = route to prefill pool, false = route to shared/decode pool
+	Disaggregate      bool   // true = route to prefill pool, false = route to shared/decode pool
+	DecodePodOverride string // empty = keep pre-selected decode pod
+	PrefillPodHint    string // empty = normal prefill routing (GAP-4 will use this)
 }
 
 // DisaggregationDecider decides whether a request should be disaggregated
@@ -19,25 +28,25 @@ type DisaggregationDecision struct {
 // use len(req.InputTokens) and req.MaxOutputLen only.
 //
 // req is guaranteed non-nil; implementations may assume a non-nil pointer.
-// snap is the RoutingSnapshot of the decode pod already selected by the decode
-// routing policy — implementations may query per-pod state (cache presence,
-// load) to inform the decision. snap may be a zero value (RoutingSnapshot{})
-// in edge cases (e.g., the caller could not locate the snapshot matching the
-// selected TargetInstance); implementations must handle this gracefully,
-// consistent with llm-d's nil-endpoint guard in
-// prefix_based_pd_decider.go lines 108–111.
+// state is the RouterState built from the decode pool — the same snapshots used
+// to pre-select the decode pod. Implementations may read any field of state
+// except Request.OutputTokens. state is guaranteed non-nil in practice: the
+// empty-pool case is rejected before Decide is called. Passing the full
+// RouterState (rather than a single snapshot) lets joint D+P policies reconsider
+// the decode pod via DisaggregationDecision.DecodePodOverride and keeps future
+// design open (GAP-3 will use state.Snapshots for per-pod cache queries).
 //
 // Stateful implementations may additionally implement DisaggregationObserver to
 // learn from routing outcomes (e.g., PrefixThresholdDecider).
 type DisaggregationDecider interface {
-	Decide(req *Request, snap RoutingSnapshot) DisaggregationDecision
+	Decide(req *Request, state *RouterState) DisaggregationDecision
 }
 
 // NeverDisaggregate always returns Disaggregate=false.
 // Default decider when PD disaggregation is not configured.
 type NeverDisaggregate struct{}
 
-func (n *NeverDisaggregate) Decide(_ *Request, _ RoutingSnapshot) DisaggregationDecision {
+func (n *NeverDisaggregate) Decide(_ *Request, _ *RouterState) DisaggregationDecision {
 	return DisaggregationDecision{Disaggregate: false}
 }
 
@@ -45,7 +54,7 @@ func (n *NeverDisaggregate) Decide(_ *Request, _ RoutingSnapshot) Disaggregation
 // Test-oriented decider for validating disaggregation pipeline wiring.
 type AlwaysDisaggregate struct{}
 
-func (a *AlwaysDisaggregate) Decide(_ *Request, _ RoutingSnapshot) DisaggregationDecision {
+func (a *AlwaysDisaggregate) Decide(_ *Request, _ *RouterState) DisaggregationDecision {
 	return DisaggregationDecision{Disaggregate: true}
 }
 
@@ -148,10 +157,10 @@ func NewPrefixThresholdDecider(threshold, blockSize int) *PrefixThresholdDecider
 // Decide returns Disaggregate=true when non-cached token count exceeds the threshold.
 // Empty requests (len(InputTokens) == 0) always return Disaggregate=false.
 // Caches block hashes for reuse by ObserveRouting when the same request is routed next.
-// The snap argument is accepted for interface conformance and is currently ignored;
+// The state argument is accepted for interface conformance and is currently ignored;
 // issue #1263 (GAP-3) will replace the cluster-wide cache estimate with per-pod
-// cache state from snap.
-func (p *PrefixThresholdDecider) Decide(req *Request, _ RoutingSnapshot) DisaggregationDecision {
+// cache state queried from state.Snapshots.
+func (p *PrefixThresholdDecider) Decide(req *Request, _ *RouterState) DisaggregationDecision {
 	if len(req.InputTokens) == 0 {
 		return DisaggregationDecision{Disaggregate: false}
 	}

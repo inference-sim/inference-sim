@@ -1,136 +1,108 @@
-# Thread Decode Snapshot Into DisaggregationDecider.Decide (GAP-2) — Implementation Plan
+# Widen DisaggregationDecider.Decide Interface (GAP-2) — Implementation Plan
 
-**Goal:** Pass the already-selected decode pod's `RoutingSnapshot` into `DisaggregationDecider.Decide`, so deciders can inspect per-pod state (cache presence, load) when choosing whether to disaggregate — mirroring llm-d's decider API.
-**Source:** https://github.com/inference-sim/inference-sim/issues/1262 (parent tracking: #1260)
+**Goal:** Widen `DisaggregationDecider.Decide` to receive the decode-pool `*RouterState` (not a single snapshot), and expand `DisaggregationDecision` with optional `DecodePodOverride` / `PrefillPodHint` fields so future joint D+P policies (e.g., GAP-3, GAP-4) can fully reconsider pod selection without another interface break. Built-in deciders (`NeverDisaggregate`, `AlwaysDisaggregate`, `PrefixThresholdDecider`) ignore `state` and leave overrides empty — parity with llm-d today, extensibility for tomorrow.
+**Source:** https://github.com/inference-sim/inference-sim/issues/1262 (scope expanded per [#1262 comment 4399184134](https://github.com/inference-sim/inference-sim/issues/1262#issuecomment-4399184134); parent tracking: #1260)
 **Closes:** Fixes #1262
 
 ## Behavioral Contracts
 
-**BC-1: Interface carries decode snapshot**
+**BC-1: Interface carries the decode-pool RouterState**
 - GIVEN a `DisaggregationDecider` implementation
-- WHEN the cluster calls `Decide(req, snap)`
-- THEN the implementation receives both the request and the decode pod's `RoutingSnapshot` (or a zero-value snapshot in edge cases)
+- WHEN the cluster calls `Decide(req, state)`
+- THEN the implementation receives the request and a non-nil `*RouterState` whose `Snapshots` contain every routable decode-pool instance
 
-**BC-2: Snapshot-agnostic deciders are decision-invariant**
-- GIVEN `NeverDisaggregate` or `AlwaysDisaggregate`
-- WHEN `Decide(req, snap)` is called with any snapshot value (including zero value)
-- THEN the returned `DisaggregationDecision` is identical to the pre-change behavior (never and always, respectively)
+**BC-2: State-agnostic deciders are decision-invariant**
+- GIVEN `NeverDisaggregate`, `AlwaysDisaggregate`, or `PrefixThresholdDecider`
+- WHEN `Decide(req, state)` is called with any `*RouterState` value (including nil)
+- THEN the returned `DisaggregationDecision` is identical to the pre-change behavior — and `DecodePodOverride` / `PrefillPodHint` are the empty string (built-in deciders never override)
 
-**BC-3: Cluster passes the decode pod's snapshot, not an arbitrary one**
-- GIVEN a cluster where decode routing has selected `TargetInstance = X`
+**BC-3: Cluster passes the decode pool's RouterState**
+- GIVEN a cluster with decode-pool instances D₁…Dₙ (either dedicated-decode or shared-role pods)
 - WHEN `ClusterSimulator.executeDisaggregatedRouting` invokes the decider
-- THEN the snapshot passed to `Decide` has `ID == X` (decode target, which may be a dedicated decode pod or a shared-role pod)
+- THEN the `state.Snapshots` passed to `Decide` contains exactly the ID set `{D₁…Dₙ}` (verified by `TestDisaggregation_DeciderReceivesDecodePoolState`)
 
-**BC-4: PrefixThresholdDecider decision preserved**
-- GIVEN a `PrefixThresholdDecider` with existing threshold/block-size configuration
-- WHEN `Decide(req, snap)` is called
-- THEN the returned decision matches pre-change behavior for all existing tests (snapshot argument is accepted but ignored in this PR; GAP-3 will wire it in)
+**BC-4: DecodePodOverride retargets the decode pod**
+- GIVEN a decider that returns `DisaggregationDecision{Disaggregate: false, DecodePodOverride: "decode_X"}`
+- WHEN `executeDisaggregatedRouting` processes the decision
+- THEN the request is injected into instance `decode_X` regardless of what the decode routing policy selected (verified by `TestDisaggregation_DecodePodOverrideReroutes`)
 
 **BC-5: INV-9 oracle boundary preserved**
 - GIVEN any decider implementation under this PR
-- WHEN `Decide(req, snap)` runs
-- THEN no implementation reads `req.OutputTokens` (snapshot threading does not introduce OutputTokens access)
+- WHEN `Decide(req, state)` runs
+- THEN no implementation reads `req.OutputTokens` (state threading does not introduce OutputTokens access)
 
 ## Tasks
 
-### Task 1: Widen `DisaggregationDecider.Decide` interface + update all implementations (BC-1, BC-2, BC-4, BC-5)
+### Task 1: Widen the interface + decision struct (`sim/disaggregation.go`)
 
 **Files:** modify `sim/disaggregation.go`, `sim/disaggregation_test.go`
 
-**Test (add to `sim/disaggregation_test.go`):**
+**Impl — `DisaggregationDecision` expanded:**
 
 ```go
-// TestDisaggregate_SnapshotPassthrough verifies BC-1/BC-2: all built-in
-// deciders accept a RoutingSnapshot argument and produce identical decisions
-// when called with a zero-value snapshot vs an arbitrary populated snapshot
-// (snapshot-agnostic implementations must remain unaffected by snap content).
-func TestDisaggregate_SnapshotPassthrough(t *testing.T) {
-    req := &Request{ID: "req-1", InputTokens: make([]int, 100)}
-    zero := RoutingSnapshot{}
-    populated := RoutingSnapshot{ID: "decode_0", QueueDepth: 7, KVUtilization: 0.4}
-
-    deciders := []DisaggregationDecider{
-        &NeverDisaggregate{},
-        &AlwaysDisaggregate{},
-        NewPrefixThresholdDecider(512, 16),
-    }
-    for _, d := range deciders {
-        gotZero := d.Decide(req, zero)
-        gotPop := d.Decide(req, populated)
-        if gotZero != gotPop {
-            t.Errorf("%T: decision differs between zero and populated snapshot "+
-                "(zero=%v, populated=%v); snapshot-agnostic deciders must be invariant",
-                d, gotZero, gotPop)
-        }
-    }
+type DisaggregationDecision struct {
+    Disaggregate      bool
+    DecodePodOverride string // empty = keep pre-selected decode pod
+    PrefillPodHint    string // empty = normal prefill routing (GAP-4 will use this)
 }
 ```
 
-Update all existing tests in `sim/disaggregation_test.go` that call `.Decide(req)` to call `.Decide(req, RoutingSnapshot{})`.
-
-**Impl (in `sim/disaggregation.go`):**
+**Impl — Interface signature takes `*RouterState`:**
 
 ```go
 type DisaggregationDecider interface {
-    Decide(req *Request, snap RoutingSnapshot) DisaggregationDecision
-}
-
-func (n *NeverDisaggregate) Decide(_ *Request, _ RoutingSnapshot) DisaggregationDecision {
-    return DisaggregationDecision{Disaggregate: false}
-}
-
-func (a *AlwaysDisaggregate) Decide(_ *Request, _ RoutingSnapshot) DisaggregationDecision {
-    return DisaggregationDecision{Disaggregate: true}
-}
-
-func (p *PrefixThresholdDecider) Decide(req *Request, _ RoutingSnapshot) DisaggregationDecision {
-    // body unchanged — GAP-3 will consume snap.
-    // ... (existing body)
+    Decide(req *Request, state *RouterState) DisaggregationDecision
 }
 ```
 
-Also update the interface docstring to document the snapshot argument and the zero-value contract.
+All three built-in implementations (`NeverDisaggregate`, `AlwaysDisaggregate`, `PrefixThresholdDecider`) ignore `state` and return zero-valued overrides. The `PrefixThresholdDecider` body is unchanged; issue #1263 (GAP-3) will replace the cluster-wide cache estimate with per-pod queries from `state.Snapshots`.
+
+**Tests:**
+- Rename `TestDisaggregationDecider_SnapshotAgnostic` → `TestDisaggregationDecider_StateAgnostic` (BC-2) — verifies nil vs populated `*RouterState` produces identical decisions across all built-ins.
+- Add `TestDisaggregationDecider_BuiltinsReturnNoOverrides` — pins the invariant that every built-in leaves `DecodePodOverride` and `PrefillPodHint` empty (regression guard for future edits).
+- Update every existing `.Decide(req)` / `.Decide(req, snap)` call site to `.Decide(req, (*RouterState)(nil))` for mechanical tests that do not exercise state.
 
 **Verify:** `go test ./sim/ -run TestDisagg -v`
 **Lint:** `golangci-lint run ./sim/...`
 
-### Task 2: Pass decode snapshot at the call site (BC-3)
+### Task 2: Thread state + apply override at the call site (BC-1, BC-3, BC-4)
 
 **Files:** modify `sim/cluster/cluster.go`
 
-> **Note:** Originally targeted `sim/cluster/cluster_event.go` (`DisaggregationDecisionEvent.Execute`). GAP-1 (#1266) moved the disaggregation decision into `ClusterSimulator.executeDisaggregatedRouting` in `sim/cluster/cluster.go` — the snapshot-threading change was reapplied at the new call site on merge. GAP-5 (#1278) later extended `FilterSnapshotsByPool` to use `.Has(role)` set-membership so shared-role pods appear in the decode-filtered list; the ID-based snapshot lookup is unaffected.
-
-**Test:** covered indirectly by existing cluster-level disaggregation tests (`TestPrefixThreshold_*`, `TestDisaggregation_*`) which exercise the full pipeline and will fail to compile without this change. No new test required — passing a zero-value snapshot would be invisible to behavior; the existing tests verify end-to-end wiring.
-
-**Impl (in `sim/cluster/cluster.go`, `ClusterSimulator.executeDisaggregatedRouting`):**
-
-After the line that computes `decodeDecision := policy.Route(...)`, find the snapshot whose `ID` equals `decodeDecision.TargetInstance` in `filteredSnapshots`. Pass it into `Decide`:
+**Impl (in `ClusterSimulator.executeDisaggregatedRouting`):**
 
 ```go
-var decodeSnap sim.RoutingSnapshot
-for _, s := range filteredSnapshots {
-    if s.ID == decodeDecision.TargetInstance {
-        decodeSnap = s
-        break
-    }
+// state already exists (built at the top of the function to pick the decode pod).
+disaggDecision := cs.disaggregationDecider.Decide(req, state)
+
+// Apply optional retargeting from joint D+P policies.
+if disaggDecision.DecodePodOverride != "" {
+    decodeDecision.TargetInstance = disaggDecision.DecodePodOverride
 }
-// If no match (should not occur given R6 contract on Route), decodeSnap is zero-value.
-disaggDecision := cs.disaggregationDecider.Decide(e.request, decodeSnap)
 ```
 
-**Verify:** `go test ./... -count=1`
-**Lint:** `golangci-lint run ./...`
+The override must be a member of the decode-pool snapshot set; the downstream `decodeInst == nil` guard panics on a bad override, which is the correct contract violation for a test-only / future policy bug.
 
-### Task 3: Commit and push
+**Verify:** `go test ./sim/cluster/ -run TestDisaggregation -v && go test ./... -count=1`
 
-**Commit:** `refactor(sim): thread decode snapshot into DisaggregationDecider.Decide (BC-1..BC-5)`
+### Task 3: Cluster-level behavior tests (BC-3, BC-4)
+
+**Files:** modify `sim/cluster/disaggregation_test.go`
+
+**Test 1 — `TestDisaggregation_DeciderReceivesDecodePoolState` (BC-3):** install a `recordingDecider` that captures every `(req, state)` invocation, run a 4-instance cluster (2 prefill + 2 decode), assert `state.Snapshots` contains exactly the decode-pool IDs on every call.
+
+**Test 2 — `TestDisaggregation_DecodePodOverrideReroutes` (BC-4):** install an `overrideDecider` returning `{Disaggregate: false, DecodePodOverride: <specific decode pod>}`, run a 4-instance cluster, assert every routed request lands on the override target (not the round-robin pick).
+
+### Task 4: Commit and push
+
+**Commit:** `feat(sim): widen DisaggregationDecider — pass *RouterState + decision overrides (BC-1..BC-5)`
 
 ## Sanity Checklist
 
 - [x] R1 (no silent continue): no error paths touched
-- [x] R4 (canonical construction): no struct construction changes
-- [x] R6 (routing target validity): call site falls back to zero-value snapshot when the snapshot ID is not found, avoiding a nil/panic path; matches the issue's "zero-value allowed" contract
-- [x] R13 (single-module interface): the interface remains single-module (cluster → decider); the snapshot type is already part of the `sim` package
-- [x] INV-9: no implementation reads `req.OutputTokens`
+- [x] R4 (canonical construction): `DisaggregationDecision` gains fields at a single site; zero-value defaults keep all callers forward-compatible
+- [x] R6 (no `logrus.Fatalf` in sim/): no change
+- [x] R13 (single-module interface): interface remains single-module (cluster → decider); `*RouterState` is already part of the `sim` package
 - [x] INV-1/4/5/6/7/8/10/11/12: unaffected (no event ordering, conservation, or causality changes)
-- [x] CLAUDE.md "Recent Changes": not updated by this PR (the CLAUDE.md working copy mirrors the canonical source — this PR does not modify canonical standards; an entry may be added at merge time alongside GAP-3/GAP-1/GAP-4 for the overall PD parity series, but is not required for a single GAP-2 refactor)
+- [x] INV-9: no implementation reads `req.OutputTokens`; `state` carries snapshots and clock only
+- [x] CLAUDE.md: no canonical-source edits; Change History entry may be added at merge time alongside GAP-3/GAP-4, not required for this PR

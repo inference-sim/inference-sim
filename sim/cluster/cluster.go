@@ -1735,21 +1735,19 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 	decodeDecision := policy.Route(req, state)
 	logrus.Debugf("[cluster] req %s: decode pod pre-selected → %s", req.ID, decodeDecision.TargetInstance)
 
-	// Step 2: disaggregation decision with decode pod known.
-	// Locate the decode pod's snapshot so the decider can inspect per-pod state
-	// (e.g., cache presence). If no snapshot matches (should not occur — the
-	// routing policy contract requires Route to return a TargetInstance from the
-	// provided snapshot set), fall back to a zero-value snapshot — decider
-	// implementations must handle this, consistent with llm-d's nil-endpoint guard.
-	var decodeSnap sim.RoutingSnapshot
-	for _, s := range filteredSnapshots {
-		if s.ID == decodeDecision.TargetInstance {
-			decodeSnap = s
-			break
-		}
-	}
-	disaggDecision := cs.disaggregationDecider.Decide(req, decodeSnap)
+	// Step 2: disaggregation decision with decode pod known. Pass the full decode-pool
+	// RouterState so the decider can query per-pod state (cache presence, load) and
+	// optionally reconsider the decode pod via DisaggregationDecision.DecodePodOverride.
+	disaggDecision := cs.disaggregationDecider.Decide(req, state)
 	logrus.Debugf("[cluster] req %s: disaggregate=%v", req.ID, disaggDecision.Disaggregate)
+
+	// If the decider overrode the decode pod (joint D+P policies), retarget.
+	// Empty string = keep the pod pre-selected by the decode routing policy.
+	// The override must be a member of the decode-pool snapshot set; the downstream
+	// instance lookup panics otherwise (see decodeInst == nil guard below).
+	if disaggDecision.DecodePodOverride != "" {
+		decodeDecision.TargetInstance = disaggDecision.DecodePodOverride
+	}
 
 	// Record disaggregation decision if tracing is enabled (BC-PD-17).
 	if cs.trace != nil {
