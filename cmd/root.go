@@ -1582,6 +1582,8 @@ var runCmd = &cobra.Command{
 		logrus.Infof("Simulation wall-clock time: %.3fs", time.Since(startTime).Seconds())
 
 		// Export trace if requested (BC-1, BC-7)
+		// Declare inMemoryRecords outside the block scope for reuse in saturation analysis
+		var inMemoryRecords []workload.TraceRecord
 		if traceOutput != "" {
 			allRequests := make([]*sim.Request, 0, len(preGeneratedRequests)+len(followUpRequests))
 			allRequests = append(allRequests, preGeneratedRequests...)
@@ -1590,17 +1592,17 @@ var runCmd = &cobra.Command{
 			sort.SliceStable(allRequests, func(i, j int) bool {
 				return allRequests[i].ArrivalTime < allRequests[j].ArrivalTime
 			})
-			records := workload.RequestsToTraceRecords(allRequests)
+			inMemoryRecords = workload.RequestsToTraceRecords(allRequests)
 			header := &workload.TraceHeader{
 				Version:      2,
 				TimeUnit:     "microseconds",
 				Mode:         "generated",
 				WorkloadSeed: &spec.Seed,
 			}
-			if err := workload.ExportTraceV2(header, records, traceOutput+".yaml", traceOutput+".csv"); err != nil {
+			if err := workload.ExportTraceV2(header, inMemoryRecords, traceOutput+".yaml", traceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)
 			}
-			logrus.Infof("Trace exported: %s.yaml, %s.csv (%d records)", traceOutput, traceOutput, len(records))
+			logrus.Infof("Trace exported: %s.yaml, %s.csv (%d records)", traceOutput, traceOutput, len(inMemoryRecords))
 		}
 
 		if numInstances > 1 {
@@ -1743,22 +1745,12 @@ var runCmd = &cobra.Command{
 		if runSaturationOutputPath != "" && traceOutput == "" {
 			logrus.Fatalf("--saturation-output requires --trace-output to be specified")
 		}
-		if traceOutput != "" {
-			traceHeaderPath := traceOutput + ".yaml"
-			traceDataPath := traceOutput + ".csv"
-			traceData, traceErr := workload.LoadTraceV2(traceHeaderPath, traceDataPath)
-			if traceErr != nil {
-				// If user requested saturation output, this is fatal (file won't be created)
-				if runSaturationOutputPath != "" {
-					logrus.Fatalf("Failed to load trace for saturation analysis: %v", traceErr)
-				}
-				// Otherwise just warn - saturation analysis is optional
-				logrus.Warnf("Failed to load trace for saturation analysis: %v", traceErr)
-			} else if runSaturationOutputPath != "" {
-				verdict := workload.AnalyzeSaturation(*traceData, 60.0)
-				printSaturationSummary(os.Stdout, verdict)
-				writeSaturationJSON(runSaturationOutputPath, verdict)
-			}
+		if runSaturationOutputPath != "" && len(inMemoryRecords) > 0 {
+			// Use in-memory records instead of re-loading from disk
+			traceData := workload.TraceV2{Records: inMemoryRecords}
+			verdict := workload.AnalyzeSaturation(traceData, 60.0)
+			printSaturationSummary(os.Stdout, verdict)
+			writeSaturationJSON(runSaturationOutputPath, verdict)
 		}
 
 		logrus.Info("Simulation complete.")
