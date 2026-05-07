@@ -405,6 +405,9 @@ func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 			decodeInst.RecordWarmUpRequest(e.request.ID)
 		}
 		decodeInst.InjectRequestOnline(e.request, e.time+cs.routingLatency)
+		if cs.evictionTracker != nil {
+			cs.evictionTracker.Track(e.request, decodeDecision.TargetInstance, cs.priorityMap)
+		}
 		cs.notifyDisaggregationObserver(e.request, decodeDecision.TargetInstance)
 		return
 	}

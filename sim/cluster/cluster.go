@@ -1849,6 +1849,9 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 			decodeInst.RecordWarmUpRequest(req.ID)
 		}
 		decodeInst.InjectRequestOnline(req, time)
+		if cs.evictionTracker != nil {
+			cs.evictionTracker.Track(req, decodeDecision.TargetInstance, cs.priorityMap)
+		}
 		cs.notifyDisaggregationObserver(req, decodeDecision.TargetInstance)
 		return
 	}
