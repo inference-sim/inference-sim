@@ -653,18 +653,23 @@ func TestPrefixThreshold_AboveThresholdDisaggregated(t *testing.T) {
 	}
 }
 
-// TestPrefixThreshold_ObserverWarmsCache verifies BC-PD-24 at the cluster level:
-// req1 (disaggregated) warms the prefix cache via notifyDisaggregationObserver in
-// PrefillRoutingEvent.Execute (pd_events.go); req2 (non-disaggregated) verifies that
-// the warmed cache is consulted in executeDisaggregatedRouting, reducing non-cached
-// token count below the threshold. Tests the full end-to-end wiring path.
-func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
+// TestPrefixThreshold_PerPodCacheQuery verifies BC-1 at the cluster level
+// (issue #1263 / GAP-3): req1 (disaggregated) populates the decode pod's real
+// KV cache as part of the disaggregated pipeline (prefill → KV transfer → decode
+// lands on the selected pod); req2 (non-disaggregated) verifies that
+// PrefixThresholdDecider consults the pre-selected decode pod's per-pod
+// cacheQueryFn in executeDisaggregatedRouting, reducing the non-cached token
+// count below the threshold. The default weighted routing profile includes
+// `precise-prefix-cache:2` which routes req2 to the warm pod, so the query
+// sees the blocks req1 left behind. Tests the full end-to-end wiring path.
+func TestPrefixThreshold_PerPodCacheQuery(t *testing.T) {
 	const threshold = 300
 	const blockSize = 16
 	config := newTestPrefixThresholdConfig(threshold)
 
 	// req1: 400 tokens (25 complete blocks), no prior cache.
-	// nonCached = 400 > 300 → disaggregated; ObserveRouting warms 25 blocks in cache.
+	// nonCached = 400 > 300 → disaggregated; as req1 flows through the PD
+	// pipeline its KV cache blocks land on the selected decode pod.
 	prefix := make([]int, 400)
 	for i := range prefix {
 		prefix[i] = i + 1
@@ -678,8 +683,10 @@ func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
 	}
 
 	// req2: same 400-token prefix + 50 new tokens = 450 total.
-	// After req1 warms the cache: nonCached = 450 - 25*16 = 450 - 400 = 50 <= 300 → NOT disaggregated.
-	// req2 arrives 2s after req1, well after req1's PrefillRoutingEvent fires and warms the cache.
+	// After req1 populates the decode-pod cache: nonCached = 450 - 25*16 = 450 - 400 = 50 <= 300 → NOT disaggregated.
+	// req2 arrives 2s after req1, well after req1's prefill + KV transfer + decode have populated
+	// the decode pod's KV cache. The `precise-prefix-cache` scorer in the default routing profile
+	// then routes req2 to the warm pod, so the PrefixThresholdDecider's cacheQueryFn lookup hits.
 	extended := make([]int, len(prefix)+50)
 	copy(extended, prefix)
 	for i := len(prefix); i < len(extended); i++ {
@@ -710,12 +717,15 @@ func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
 			"check PrefixThresholdDecider constructor wiring in NewClusterSimulator")
 	}
 
-	// req2 must NOT be disaggregated: prefix is cached after req1's PrefillRoutingEvent
-	// fires ObserveRouting, so only 50 tokens are non-cached (50 <= 300 threshold).
+	// req2 must NOT be disaggregated: the prefix is cached on the decode pod after
+	// req1's disaggregated pipeline completed — the `precise-prefix-cache` scorer
+	// in the default weighted routing profile routes req2 to the warm pod, and
+	// PrefixThresholdDecider's cacheQueryFn lookup sees the 25 cached blocks.
+	// Non-cached count: 450 - 400 = 50 <= 300 threshold → not disaggregated.
 	for _, pr := range cs.parentRequests {
 		if pr.ID == "req-follow" {
 			t.Error("req-follow (50 non-cached tokens <= 300 threshold after cache warming) must NOT be disaggregated; " +
-				"check notifyDisaggregationObserver wiring in PrefillRoutingEvent.Execute (pd_events.go)")
+				"check per-pod cacheQueryFn wiring via state.SelectedInstance (sim/cluster/cluster.go)")
 		}
 	}
 }
