@@ -149,7 +149,8 @@ func NewPrefixThresholdDecider(threshold, blockSize int) *PrefixThresholdDecider
 // Empty requests (len(InputTokens) == 0) always return Disaggregate=false.
 // Caches block hashes for reuse by ObserveRouting when the same request is routed next.
 // The snap argument is accepted for interface conformance and is currently ignored;
-// GAP-3 will replace the cluster-wide cache estimate with per-pod cache state from snap.
+// issue #1263 (GAP-3) will replace the cluster-wide cache estimate with per-pod
+// cache state from snap.
 func (p *PrefixThresholdDecider) Decide(req *Request, _ RoutingSnapshot) DisaggregationDecision {
 	if len(req.InputTokens) == 0 {
 		return DisaggregationDecision{Disaggregate: false}
@@ -184,4 +185,9 @@ func (p *PrefixThresholdDecider) ObserveRouting(req *Request, _ string) {
 }
 
 // Compile-time interface compliance checks.
-var _ DisaggregationObserver = (*PrefixThresholdDecider)(nil)
+var (
+	_ DisaggregationDecider  = (*NeverDisaggregate)(nil)
+	_ DisaggregationDecider  = (*AlwaysDisaggregate)(nil)
+	_ DisaggregationDecider  = (*PrefixThresholdDecider)(nil)
+	_ DisaggregationObserver = (*PrefixThresholdDecider)(nil)
+)
