@@ -369,10 +369,10 @@ func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 
 	// Step 2: disaggregation decision with decode pod known.
 	// Locate the decode pod's snapshot so the decider can inspect per-pod state
-	// (e.g., cache presence). If no snapshot matches (should not occur under R6,
-	// which requires Route to return a TargetInstance from the provided set), fall
-	// back to a zero-value snapshot — decider implementations must handle this,
-	// consistent with llm-d's nil-endpoint guard.
+	// (e.g., cache presence). If no snapshot matches (should not occur — the
+	// routing policy contract requires Route to return a TargetInstance from the
+	// provided snapshot set), fall back to a zero-value snapshot — decider
+	// implementations must handle this, consistent with llm-d's nil-endpoint guard.
 	var decodeSnap sim.RoutingSnapshot
 	for _, s := range filteredSnapshots {
 		if s.ID == decodeDecision.TargetInstance {
