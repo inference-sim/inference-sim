@@ -107,6 +107,7 @@ type RawMetrics struct {
 	GatewayQueueShed           int           // Requests shed (evicted victims) from gateway queue (issue #882)
 	GatewayQueueRejected       int           // Requests rejected from gateway queue — incoming could not displace any entry (#1190)
 	RoutingRejections    int            // I13: routing rejections (no routable instances)
+	EncodeRoutingRejections int         // GAP-4 (#1264): encode pool routing rejections (no routable encode instances)
 	DroppedUnservable    int
 	LengthCappedRequests int
 	TimedOutRequests     int
@@ -134,6 +135,10 @@ func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, reje
 		LengthCappedRequests: aggregated.LengthCappedRequests,
 		TimedOutRequests:     aggregated.TimedOutRequests,
 	}
+	// EncodeRoutingRejections (GAP-4, #1264) is populated by the caller via
+	// ClusterSimulator.EncodeRoutingRejections() — kept out of this function
+	// signature so existing callers in tests and the replay pipeline do not
+	// need updating when the E/P/D pool is unused.
 
 	// Latency distributions
 	ttftValues := mapValues(aggregated.RequestTTFTs)

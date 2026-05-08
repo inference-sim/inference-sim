@@ -538,3 +538,134 @@ func TestPrefixThresholdDecider_QueriesOnlySelectedPod(t *testing.T) {
 		t.Errorf("decode_B closure called %d times, want 0 (must not query non-selected pods)", bCalls)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// EncodeDecider tests (GAP-4, issue #1264)
+// ---------------------------------------------------------------------------
+
+// TestAlwaysEncode verifies AlwaysEncode.ShouldEncode returns true for any
+// request, regardless of modality counts or OutputTokens presence.
+func TestAlwaysEncode(t *testing.T) {
+	d := &AlwaysEncode{}
+	cases := []*Request{
+		{ID: "text", InputTokens: make([]int, 32)},
+		{ID: "image", ImageTokenCount: 10},
+		{ID: "nil-tokens", OutputTokens: nil},
+	}
+	for _, r := range cases {
+		if !d.ShouldEncode(r, "inst_0") {
+			t.Errorf("AlwaysEncode.ShouldEncode(%q) = false, want true", r.ID)
+		}
+	}
+}
+
+// TestNeverEncode verifies NeverEncode.ShouldEncode returns false unconditionally.
+func TestNeverEncode(t *testing.T) {
+	d := &NeverEncode{}
+	if d.ShouldEncode(&Request{ImageTokenCount: 999}, "x") {
+		t.Error("NeverEncode.ShouldEncode must always return false")
+	}
+}
+
+// TestMultimodalEncodeDecider_True verifies BC-EPD-2 positive case: the
+// decider returns true when any per-modality token count is > 0.
+func TestMultimodalEncodeDecider_True(t *testing.T) {
+	d := &MultimodalEncodeDecider{}
+	cases := []struct {
+		name string
+		req  *Request
+	}{
+		{"image only", &Request{ImageTokenCount: 10}},
+		{"audio only", &Request{AudioTokenCount: 5}},
+		{"video only", &Request{VideoTokenCount: 1}},
+		{"image + text", &Request{TextTokenCount: 100, ImageTokenCount: 20}},
+		{"all three", &Request{ImageTokenCount: 1, AudioTokenCount: 1, VideoTokenCount: 1}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if !d.ShouldEncode(tc.req, "inst_0") {
+				t.Errorf("ShouldEncode(%+v) = false, want true", tc.req)
+			}
+		})
+	}
+}
+
+// TestMultimodalEncodeDecider_False verifies BC-EPD-2 negative case: the
+// decider returns false for text-only requests (all modality counts zero).
+func TestMultimodalEncodeDecider_False(t *testing.T) {
+	d := &MultimodalEncodeDecider{}
+	cases := []struct {
+		name string
+		req  *Request
+	}{
+		{"all zero", &Request{}},
+		{"text-only", &Request{TextTokenCount: 500}},
+		{"nil request", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if d.ShouldEncode(tc.req, "inst_0") {
+				t.Errorf("ShouldEncode(%+v) = true, want false", tc.req)
+			}
+		})
+	}
+}
+
+// TestMultimodalEncodeDecider_IgnoresOutputTokens verifies BC-EPD-7 (INV-9
+// oracle boundary): the decider makes its decision without touching
+// Request.OutputTokens. Proven by handing it a request with OutputTokens=nil —
+// any code path that touched OutputTokens would nil-deref.
+func TestMultimodalEncodeDecider_IgnoresOutputTokens(t *testing.T) {
+	d := &MultimodalEncodeDecider{}
+	req := &Request{
+		ID:              "oracle-probe",
+		ImageTokenCount: 5,
+		OutputTokens:    nil, // must not be read
+	}
+	if !d.ShouldEncode(req, "inst_0") {
+		t.Error("ShouldEncode returned false; expected true — and must not have read OutputTokens")
+	}
+}
+
+// TestIsValidEncodeDecider verifies the encode-decider name validity set.
+func TestIsValidEncodeDecider(t *testing.T) {
+	cases := []struct {
+		name string
+		want bool
+	}{
+		{"", true}, // empty defaults to "never"
+		{"never", true},
+		{"always", true},
+		{"multimodal", true},
+		{"prefix-threshold", false}, // DisaggregationDecider name, not an encode decider
+		{"bogus", false},
+		{"Always", false}, // case-sensitive
+	}
+	for _, tc := range cases {
+		if got := IsValidEncodeDecider(tc.name); got != tc.want {
+			t.Errorf("IsValidEncodeDecider(%q) = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestNewEncodeDecider verifies factory dispatch and panic on unknown names.
+func TestNewEncodeDecider(t *testing.T) {
+	// Valid names return a non-nil decider.
+	for _, name := range []string{"", "never", "always", "multimodal"} {
+		d := NewEncodeDecider(name)
+		if d == nil {
+			t.Errorf("NewEncodeDecider(%q) returned nil", name)
+		}
+	}
+	// Empty string defaults to NeverEncode.
+	if _, ok := NewEncodeDecider("").(*NeverEncode); !ok {
+		t.Errorf("NewEncodeDecider(\"\") must return *NeverEncode")
+	}
+	// Unknown name panics.
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("NewEncodeDecider(\"bogus\") did not panic")
+		}
+	}()
+	_ = NewEncodeDecider("bogus")
+}

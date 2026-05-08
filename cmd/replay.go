@@ -187,6 +187,10 @@ Example:
 		if prefillDecodeInstances > 0 {
 			logrus.Warnf("[replay] --prefill-decode-instances is not applicable to blis replay (PD disaggregation is not supported); flag ignored")
 		}
+		// E/P/D (GAP-4): encode requires a decode-capable pool, which replay does not support.
+		if encodeInstances > 0 {
+			logrus.Warnf("[replay] --encode-instances is not applicable to blis replay (PD disaggregation is not supported; encode requires a decode-capable pool); flag ignored")
+		}
 
 		// Resolve policy configuration (single code path shared with runCmd).
 		// Replay does not support autoscaler or node-pool config; warn if the bundle contains them.

@@ -98,6 +98,17 @@ func (req Request) String() string {
 	return fmt.Sprintf("Request: (ID: %s, State: %s, ProgressIndex: %v, ArrivalTime: %d)", req.ID, req.State, req.ProgressIndex, req.ArrivalTime)
 }
 
+// IsMultimodal reports whether the request carries any non-text modality
+// (image, audio, or video). Derived from the per-modality token counts that
+// already exist on Request (populated by workload generation, TraceV2 replay,
+// and synthesis). Using a derived method instead of a new boolean field keeps
+// a single source of truth and avoids a TraceV2 schema change.
+//
+// GAP-4 (issue #1264): consumed by MultimodalEncodeDecider.ShouldEncode.
+func (req *Request) IsMultimodal() bool {
+	return req.ImageTokenCount > 0 || req.AudioTokenCount > 0 || req.VideoTokenCount > 0
+}
+
 // GenerateRandomTokenIDs creates a slice of random token IDs in [0, MaxTokenID).
 // RNG calls: length × Intn(MaxTokenID).
 func GenerateRandomTokenIDs(rng *rand.Rand, length int) []int {

@@ -82,6 +82,22 @@ type DecodeRoutingRecord struct {
 	Regret     float64            // max(alternative scores) - score(chosen); 0 if chosen is best; always >= 0
 }
 
+// EncodeRoutingRecord captures an encode pool routing decision (GAP-4, issue #1264).
+// Emitted when an EncodeDecider approves encoding for a request during
+// executeDisaggregatedRouting. Under option A (zero-duration encode), the record
+// reflects a routing decision only — no encode sub-request is injected.
+// ParentRequestID equals the request ID (one encode record per parent).
+type EncodeRoutingRecord struct {
+	ParentRequestID string
+	Clock           int64
+	ChosenInstance  string
+	// Scores maps instance ID → composite routing score (higher = more preferred).
+	// Nil when scoring is disabled.
+	Scores     map[string]float64
+	Candidates []CandidateScore // top-k candidates sorted by score desc (nil if k=0)
+	Regret     float64          // max(alternative scores) - score(chosen); >= 0
+}
+
 // KVTransferRecord captures a KV cache transfer event between prefill and decode instances.
 // TransferDuration is always >= 0; negative values are clamped to 0 with a warning in
 // KVTransferCompletedEvent.Execute() (sim/cluster/pd_events.go) if INV-PD-4 is ever violated.

@@ -153,3 +153,75 @@ var (
 	_ DisaggregationDecider = (*AlwaysDisaggregate)(nil)
 	_ DisaggregationDecider = (*PrefixThresholdDecider)(nil)
 )
+
+// ---------------------------------------------------------------------------
+// E/P/D disaggregation (GAP-4, issue #1264)
+// ---------------------------------------------------------------------------
+
+// EncodeDecider decides whether a request should be routed to the encode pool
+// before proceeding to prefill/decode. Modeled on llm-d's
+// AlwaysDisaggMultimodalDecider.disaggregate (Permalink 3 in issue #1264):
+// the single decodeInstanceID argument mirrors llm-d's
+// decodeRes.TargetEndpoints[0] — a pre-selected decode endpoint, not a snapshot.
+//
+// Implementations must not read Request.OutputTokens (INV-9 oracle boundary);
+// use input-only signals such as per-modality token counts, len(InputTokens),
+// MaxOutputLen, or the decode instance ID.
+type EncodeDecider interface {
+	ShouldEncode(req *Request, decodeInstanceID string) bool
+}
+
+// AlwaysEncode always returns true. Test-oriented decider for validating the
+// encode routing wiring end-to-end.
+type AlwaysEncode struct{}
+
+func (a *AlwaysEncode) ShouldEncode(_ *Request, _ string) bool { return true }
+
+// NeverEncode always returns false. Default when no encode decider is
+// configured, and useful for "flag enabled, decider off" wiring tests
+// (analogous to NeverDisaggregate).
+type NeverEncode struct{}
+
+func (n *NeverEncode) ShouldEncode(_ *Request, _ string) bool { return false }
+
+// MultimodalEncodeDecider triggers encoding when the request carries any
+// non-text modality. Matches llm-d's AlwaysDisaggMultimodalDecider
+// (always_disagg_mm_decider.go:47-49) + hasMultimodalContent
+// (multimodal_helpers.go:8-21), adapted to BLIS's token-count abstraction.
+type MultimodalEncodeDecider struct{}
+
+func (m *MultimodalEncodeDecider) ShouldEncode(req *Request, _ string) bool {
+	if req == nil {
+		return false
+	}
+	return req.IsMultimodal()
+}
+
+// NewEncodeDecider creates an encode decider by name. Valid names are
+// defined in validEncodeDeciders (bundle.go). An empty string defaults to
+// NeverEncode. Panics on unrecognized names (R6).
+func NewEncodeDecider(name string) EncodeDecider {
+	if !IsValidEncodeDecider(name) {
+		panic(fmt.Sprintf("unknown encode decider %q", name))
+	}
+	switch name {
+	case "", "never":
+		return &NeverEncode{}
+	case "always":
+		return &AlwaysEncode{}
+	case "multimodal":
+		return &MultimodalEncodeDecider{}
+	default:
+		panic(fmt.Sprintf(
+			"encode decider %q is registered in validEncodeDeciders (bundle.go) "+
+				"but has no case in NewEncodeDecider; add a case here",
+			name))
+	}
+}
+
+// Compile-time interface compliance checks.
+var (
+	_ EncodeDecider = (*AlwaysEncode)(nil)
+	_ EncodeDecider = (*NeverEncode)(nil)
+	_ EncodeDecider = (*MultimodalEncodeDecider)(nil)
+)

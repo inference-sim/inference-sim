@@ -95,3 +95,14 @@ func TestNewParentRequest_PanicOnNegativeBlockSize(t *testing.T) {
 	req := &sim.Request{ID: "req-1", InputTokens: make([]int, 10)}
 	NewParentRequest(req, -1)
 }
+
+// TestNewParentRequest_EncodeInstanceIDZero verifies that the canonical
+// constructor initializes EncodeInstanceID to the zero value (empty InstanceID),
+// indicating "encode did not fire for this parent" (GAP-4, issue #1264).
+func TestNewParentRequest_EncodeInstanceIDZero(t *testing.T) {
+	req := &sim.Request{ID: "req-enc-init", InputTokens: make([]int, 16)}
+	pr := NewParentRequest(req, 16)
+	if pr.EncodeInstanceID != "" {
+		t.Errorf("EncodeInstanceID = %q, want empty at construction", pr.EncodeInstanceID)
+	}
+}

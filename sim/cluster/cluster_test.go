@@ -1787,15 +1787,16 @@ func TestClusterSimulator_FlowControl_Conservation(t *testing.T) {
 	gwDepth := cs.GatewayQueueDepth()
 	gwShed := cs.GatewayQueueShed()
 
-	// INV-1: injected == completed + queued + running + dropped + timedout + routingRejections + gwDepth + gwShed + gwRejected
+	// INV-1: injected == completed + queued + running + dropped + timedout + routingRejections + gwDepth + gwShed + gwRejected + encodeRoutingRejections
 	gwRejected := cs.GatewayQueueRejected()
+	encRej := cs.EncodeRoutingRejections()
 	injected := len(requests) - cs.RejectedRequests()
-	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() + gwDepth + gwShed + gwRejected
+	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() + gwDepth + gwShed + gwRejected + encRej
 	if injected != accounted {
-		t.Errorf("INV-1: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d routingRejections=%d gwDepth=%d gwShed=%d gwRejected=%d)",
+		t.Errorf("INV-1: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d routingRejections=%d gwDepth=%d gwShed=%d gwRejected=%d encodeRoutingRejections=%d)",
 			injected, accounted,
 			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
-			m.TimedOutRequests, cs.RoutingRejections(), gwDepth, gwShed, gwRejected)
+			m.TimedOutRequests, cs.RoutingRejections(), gwDepth, gwShed, gwRejected, encRej)
 	}
 	// Note: gwRejected is included in the conservation formula but may be 0 here.
 	// The rejection path (queue full + no sheddable victim) is exercised at the unit level
