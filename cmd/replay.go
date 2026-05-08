@@ -751,6 +751,9 @@ func extractSimResults(m *sim.Metrics) []workload.SimResult {
 	if nonNumericCount > 0 {
 		logrus.Debugf("extractSimResults: excluded %d non-numeric-ID request(s) (session follow-ups)", nonNumericCount)
 	}
+	if len(m.RequestITLs) == 0 {
+		logrus.Debugf("extractSimResults: no ITL data recorded; ITLMeanUs will be 0 for all requests (use --record-itl in blis observe to capture ITL)")
+	}
 	// Sort by RequestID for deterministic JSON output (R2, INV-6)
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].RequestID < results[j].RequestID
