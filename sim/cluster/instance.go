@@ -473,6 +473,7 @@ func (i *InstanceSimulator) EvictRequest(req *sim.Request) bool {
 				req.State = sim.StateCompleted
 				if len(i.sim.RunningBatch.Requests) == 0 {
 					i.sim.RunningBatch = nil
+					i.sim.ScheduleStepIfIdle(i.sim.CurrentClock())
 				}
 				return true
 			}

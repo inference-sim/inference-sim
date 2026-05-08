@@ -1787,15 +1787,16 @@ func TestClusterSimulator_FlowControl_Conservation(t *testing.T) {
 	gwDepth := cs.GatewayQueueDepth()
 	gwShed := cs.GatewayQueueShed()
 
-	// INV-1: injected == completed + queued + running + dropped + timedout + routingRejections + gwDepth + gwShed + gwRejected
+	// INV-1: injected == completed + queued + running + dropped + timedout + routingRejections + gwDepth + gwShed + gwRejected + gwEvicted
 	gwRejected := cs.GatewayQueueRejected()
+	gwEvicted := cs.GatewayEvicted()
 	injected := len(requests) - cs.RejectedRequests()
-	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() + gwDepth + gwShed + gwRejected
+	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() + gwDepth + gwShed + gwRejected + gwEvicted
 	if injected != accounted {
-		t.Errorf("INV-1: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d routingRejections=%d gwDepth=%d gwShed=%d gwRejected=%d)",
+		t.Errorf("INV-1: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d routingRejections=%d gwDepth=%d gwShed=%d gwRejected=%d gwEvicted=%d)",
 			injected, accounted,
 			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
-			m.TimedOutRequests, cs.RoutingRejections(), gwDepth, gwShed, gwRejected)
+			m.TimedOutRequests, cs.RoutingRejections(), gwDepth, gwShed, gwRejected, gwEvicted)
 	}
 	// Note: gwRejected is included in the conservation formula but may be 0 here.
 	// The rejection path (queue full + no sheddable victim) is exercised at the unit level
@@ -3060,8 +3061,23 @@ func TestClusterSimulator_FlowControl_Eviction_Conservation(t *testing.T) {
 		t.Errorf("expected gwEvicted > 0 (eviction should fire when saturated with sheddable in-flight and critical waiting)")
 	}
 
-	t.Logf("Results: completed=%d gwEvicted=%d gwShed=%d gwDepth=%d",
-		m.CompletedRequests, gwEvicted, gwShed, gwDepth)
+	// BC-6: non-sheddable requests must never be evicted. All 3 critical requests
+	// must complete. Since eviction only targets sheddable, completed must be >= 3
+	// (all critical) + some sheddable that finished before eviction.
+	// With gwEvicted sheddable removed and 3 critical completing:
+	// completed + gwEvicted should equal total injected (minus any in other buckets).
+	criticalCompleted := 0
+	for id := range m.Requests {
+		if strings.HasPrefix(id, "crit-") {
+			criticalCompleted++
+		}
+	}
+	if criticalCompleted != 3 {
+		t.Errorf("BC-6: expected all 3 critical requests in completed metrics, got %d", criticalCompleted)
+	}
+
+	t.Logf("Results: completed=%d gwEvicted=%d gwShed=%d gwDepth=%d criticalCompleted=%d",
+		m.CompletedRequests, gwEvicted, gwShed, gwDepth, criticalCompleted)
 }
 
 // TestClusterSimulator_FlowControl_Eviction_PD verifies that eviction tracking
