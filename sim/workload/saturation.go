@@ -130,3 +130,60 @@ func RequestsToIntervals(requests []*sim.Request, simEndUs int64) []RequestInter
 
 	return intervals
 }
+
+// computeWindowMetrics computes per-window saturation metrics per BC-1.
+// Returns one WindowMetrics entry per complete window of size windowSizeUs.
+// Enforces identity: DeltaBacklog = NumEntered - NumLeft.
+func computeWindowMetrics(intervals []RequestInterval, windowSizeUs, totalDurationUs int64) []WindowMetrics {
+	if len(intervals) == 0 || totalDurationUs <= 0 || windowSizeUs <= 0 {
+		return []WindowMetrics{}
+	}
+
+	numWindows := int((totalDurationUs + windowSizeUs - 1) / windowSizeUs) // Ceiling division
+	windows := make([]WindowMetrics, numWindows)
+
+	for i := 0; i < numWindows; i++ {
+		startUs := int64(i) * windowSizeUs
+		endUs := startUs + windowSizeUs
+		if endUs > totalDurationUs {
+			endUs = totalDurationUs
+		}
+
+		w := WindowMetrics{
+			StartUs: startUs,
+			EndUs:   endUs,
+		}
+
+		// Compute metrics by scanning all intervals
+		for _, iv := range intervals {
+			// NumEntered: arrival in [startUs, endUs)
+			if iv.ArrivalUs >= startUs && iv.ArrivalUs < endUs {
+				w.NumEntered++
+			}
+			// NumLeft: completion in [startUs, endUs)
+			if iv.CompletionUs >= startUs && iv.CompletionUs < endUs {
+				w.NumLeft++
+			}
+			// ActiveStart: interval contains startUs (arrival <= startUs < completion)
+			if iv.ArrivalUs <= startUs && startUs < iv.CompletionUs {
+				w.ActiveStart++
+			}
+			// ActiveEnd: interval contains endUs
+			if iv.ArrivalUs <= endUs && endUs < iv.CompletionUs {
+				w.ActiveEnd++
+			}
+		}
+
+		// DeltaBacklog and DrainRatio
+		w.DeltaBacklog = w.ActiveEnd - w.ActiveStart
+		if w.NumEntered > 0 {
+			w.DrainRatio = float64(w.NumLeft) / float64(w.NumEntered)
+		} else {
+			w.DrainRatio = math.NaN() // Undefined when no arrivals
+		}
+
+		windows[i] = w
+	}
+
+	return windows
+}

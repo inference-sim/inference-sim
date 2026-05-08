@@ -117,3 +117,54 @@ func TestRequestsToIntervals_EmptyInput_ReturnsEmpty(t *testing.T) {
 		t.Errorf("Expected empty result for empty input, got %d", len(intervals))
 	}
 }
+
+func TestComputeWindowMetrics_Identity_DeltaBacklogEqualsEnterMinusLeft(t *testing.T) {
+	// GIVEN intervals spanning multiple windows
+	// WHEN computing per-window metrics
+	// THEN delta_backlog = num_entered - num_left (BC-1 identity)
+	intervals := []RequestInterval{
+		{ArrivalUs: 10_000, CompletionUs: 70_000},   // Enters window 0, leaves window 1
+		{ArrivalUs: 50_000, CompletionUs: 150_000},  // Enters window 0, leaves window 2
+		{ArrivalUs: 90_000, CompletionUs: 130_000},  // Enters window 1, leaves window 2
+	}
+	windowSizeUs := int64(60_000_000) // 60 seconds in µs
+	totalDurationUs := int64(200_000)
+
+	windows := computeWindowMetrics(intervals, windowSizeUs, totalDurationUs)
+
+	for i, w := range windows {
+		identity := w.NumEntered - w.NumLeft
+		if w.DeltaBacklog != identity {
+			t.Errorf("Window %d: DeltaBacklog=%d, but NumEntered-NumLeft=%d (identity violation)",
+				i, w.DeltaBacklog, identity)
+		}
+	}
+}
+
+func TestComputeWindowMetrics_ActiveCount_AtBoundaries(t *testing.T) {
+	// GIVEN intervals with known active counts at boundaries
+	// WHEN computing window metrics
+	// THEN ActiveStart and ActiveEnd reflect interval containment
+	intervals := []RequestInterval{
+		{ArrivalUs: 10, CompletionUs: 50}, // Active during [10, 50)
+		{ArrivalUs: 20, CompletionUs: 80}, // Active during [20, 80)
+	}
+	windowSizeUs := int64(30) // Window [0, 30), [30, 60), ...
+	totalDurationUs := int64(100)
+
+	windows := computeWindowMetrics(intervals, windowSizeUs, totalDurationUs)
+
+	// Window 0: [0, 30)
+	// ActiveStart(0): interval 1 starts at 10 (not yet), interval 2 starts at 20 (not yet) → 0
+	// ActiveEnd(30): interval 1 [10, 50) contains 30 → yes, interval 2 [20, 80) contains 30 → yes → 2
+	if windows[0].ActiveStart != 0 || windows[0].ActiveEnd != 2 {
+		t.Errorf("Window 0: ActiveStart=%d, ActiveEnd=%d (expected 0, 2)", windows[0].ActiveStart, windows[0].ActiveEnd)
+	}
+
+	// Window 1: [30, 60)
+	// ActiveStart(30): 2 active (from above)
+	// ActiveEnd(60): interval 1 [10, 50) does NOT contain 60 → no, interval 2 [20, 80) contains 60 → yes → 1
+	if windows[1].ActiveStart != 2 || windows[1].ActiveEnd != 1 {
+		t.Errorf("Window 1: ActiveStart=%d, ActiveEnd=%d (expected 2, 1)", windows[1].ActiveStart, windows[1].ActiveEnd)
+	}
+}
