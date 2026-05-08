@@ -752,7 +752,58 @@ func TestLoadTraceV2SessionBlueprints_ConcurrencyModeInjection(t *testing.T) {
 		t.Fatal("expected ThinkTimeSampler for multi-round session")
 	}
 	gotThinkTime := bp.ThinkTimeSampler.Sample(nil)
+	// ArrivalTimeUs gap: 200000 - 0 = 200000.
+	// SendTimeUs gap:    230000 - 50000 = 180000.
+	// Asserting == 200000 AND != 180000 makes the law explicit: think-time MUST
+	// come from ArrivalTimeUs deltas, not SendTimeUs deltas.
 	if gotThinkTime != 200000 {
-		t.Errorf("BC-5: think time = %d, want 200000 (from ArrivalTimeUs gap, not SendTimeUs gap)", gotThinkTime)
+		t.Errorf("BC-5: think time = %d, want 200000 (ArrivalTimeUs gap); if 180000, SendTimeUs gap was used instead", gotThinkTime)
+	}
+	if gotThinkTime == 180000 {
+		t.Error("BC-5: think time == 180000 (SendTimeUs gap) — must use ArrivalTimeUs gap instead")
+	}
+}
+
+// TestLoadTraceV2SessionBlueprints_NegativeSendTime verifies that negative SendTimeUs
+// (clock corruption) falls back to ArrivalTimeUs for both the session round-0 and
+// non-session call sites in LoadTraceV2SessionBlueprints (INV-3 guard, mirroring the
+// negative case in TestLoadTraceV2Requests_ConcurrencyModeUseSendTime).
+func TestLoadTraceV2SessionBlueprints_NegativeSendTime(t *testing.T) {
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			// Session round-0: negative SendTimeUs must not become injection time.
+			{RequestID: 1, SessionID: "A", RoundIndex: 0,
+				ArrivalTimeUs: 10000, SendTimeUs: -500,
+				InputTokens: 50, OutputTokens: 25},
+			// Non-session: same guard on the independent call site.
+			{RequestID: 2, SessionID: "",
+				ArrivalTimeUs: 20000, SendTimeUs: -100,
+				InputTokens: 30, OutputTokens: 15},
+		},
+	}
+
+	requests, _, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	sessionArrival := int64(-1)
+	nonSessionArrival := int64(-1)
+	for _, r := range requests {
+		switch r.SessionID {
+		case "A":
+			sessionArrival = r.ArrivalTime
+		case "":
+			nonSessionArrival = r.ArrivalTime
+		}
+	}
+
+	// Session round-0: must use ArrivalTimeUs (10000), not SendTimeUs (-500).
+	if sessionArrival != 10000 {
+		t.Errorf("session round-0: ArrivalTime = %d, want 10000 (negative send_time must fall back)", sessionArrival)
+	}
+	// Non-session: must use ArrivalTimeUs (20000), not SendTimeUs (-100).
+	if nonSessionArrival != 20000 {
+		t.Errorf("non-session: ArrivalTime = %d, want 20000 (negative send_time must fall back)", nonSessionArrival)
 	}
 }

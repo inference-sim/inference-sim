@@ -32,8 +32,11 @@ func effectiveInputTokenCount(inputTokens, serverInputTokens int, prefixGroup st
 // matches calibrate's TTFT baseline of first_chunk_time_us - send_time_us.
 // For generated traces (blis run), SendTimeUs == ArrivalTimeUs, so both
 // branches produce the same result.
-// Falls back to ArrivalTimeUs only for legacy traces without send_time
-// (SendTimeUs == 0) and for requests with ArrivalTimeUs == 0.
+// Falls back to ArrivalTimeUs whenever SendTimeUs <= 0:
+//   - SendTimeUs == 0: legacy traces or generated traces (blis run) where no
+//     real network send occurred.
+//   - SendTimeUs < 0: defensive guard against corrupted trace timestamps;
+//     a negative DES injection time would violate INV-3 (clock monotonicity).
 //
 // Note: in closed-loop session replay, think-time gaps between rounds are
 // derived from ArrivalTimeUs deltas (not SendTimeUs) to preserve client-side
