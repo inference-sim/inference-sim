@@ -63,16 +63,16 @@ go build -o blis main.go
   --think-time-dist "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s" \
   --trace-header trace.yaml --trace-data trace.csv
 
-# Observe with ITL (inter-token latency) recording for streaming requests
+# Observe with custom ITL output path (ITL recording is on by default; use --record-itl=false to disable)
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --workload chatbot --rate 10 --num-requests 100 \
-  --record-itl --itl-output trace.itl.csv \
+  --itl-output trace.itl.csv \
   --trace-header trace.yaml --trace-data trace.csv
 
 # Compare real observed latencies against simulator predictions
 ./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json --report calibration.json
 
-# Compare with ITL metric included (requires observe --record-itl)
+# Compare with ITL metric included (ITL is recorded by default; use --record-itl=false to skip)
 ./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json \
   --itl-data trace.itl.csv --report calibration.json
 
