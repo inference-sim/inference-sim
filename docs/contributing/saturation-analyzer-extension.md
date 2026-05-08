@@ -1,0 +1,188 @@
+# Saturation Analyzer Extension Guide
+
+## Overview
+
+Saturation analyzers detect when your system is overloaded. They classify the system into three states:
+
+- **UNSATURATED**: System handling load comfortably
+- **TRANSIENT_BACKLOG**: Temporary bursts or near capacity
+- **PERSISTENTLY_SATURATED**: System can't keep up, backlog growing
+
+The `SaturationAnalyzer` interface lets you plug in different detection algorithms.
+
+## Current Implementation: BacklogDriftAnalyzer
+
+The default analyzer watches how the request backlog changes over time:
+
+- **How it works**: Splits observation into time windows, tracks active requests, fits a trend line
+- **Classification**:
+  - Growing backlog → PERSISTENTLY_SATURATED
+  - Spike but stable trend → TRANSIENT_BACKLOG
+  - Flat or declining → UNSATURATED
+
+**Configuration options**:
+- `--saturation-window`: Time window size (default: 60s)
+- `--saturation-min-windows`: Minimum windows needed (default: 5)
+- `--saturation-peak-ratio`: Burst threshold (default: 2.0)
+- `--saturation-peak-band`: Confidence band (default: 0.2)
+- `--saturation-ci`: Statistical confidence (default: 0.95)
+
+## Usage Examples
+
+```bash
+# Low load - should show UNSATURATED
+./blis run --model qwen/qwen3-14b --rate 5 --num-requests 500 \
+  --saturation-report sat.json
+
+# Medium load - should show TRANSIENT_BACKLOG
+# Note: Use --horizon to stop before requests drain
+./blis run --model qwen/qwen3-14b --rate 100 --num-requests 10000 \
+  --horizon 60000000 --saturation-report sat.json
+
+# High load - should show PERSISTENTLY_SATURATED
+./blis run --model qwen/qwen3-14b --rate 500 --num-requests 100000 \
+  --horizon 120000000 --saturation-report sat.json
+```
+
+**Important**: For PERSISTENTLY_SATURATED detection, use `--horizon` to end observation while load is active. If you let all requests complete, the system drains and looks unsaturated at the end.
+
+## Classification Progression
+
+As you increase load, classifications progress:
+
+| System Load | Classification | What You'll See |
+|-------------|----------------|-----------------|
+| < 50% capacity | UNSATURATED | Small, stable backlog |
+| ≈ 100% capacity | TRANSIENT_BACKLOG | Bursts but recovers |
+| >> capacity | PERSISTENTLY_SATURATED | Backlog keeps growing |
+
+## Adding a New Analyzer
+
+Want to detect saturation using different metrics (CPU, memory, latency)? Here's the process:
+
+### 1. Create Your Analyzer
+
+Create a new file `sim/workload/saturation_<name>.go`:
+
+```go
+package workload
+
+type YourAnalyzer struct {
+    // Your configuration
+}
+
+// Implement the SaturationAnalyzer interface
+func (a *YourAnalyzer) Analyze(requests []*sim.Request, simEndUs int64) SaturationReport {
+    // 1. Compute your metrics from requests
+    // 2. Classify as UNSATURATED, TRANSIENT_BACKLOG, or PERSISTENTLY_SATURATED
+    // 3. Return SaturationReport
+
+    return SaturationReport{
+        Classification: "...",
+        Algorithm:      "your-analyzer",
+        Note:           "Human-readable explanation",
+        Recommendation: "Suggested action",
+        AlgorithmData:  yourMetrics, // Your custom data structure
+    }
+}
+```
+
+### 2. Register in Factory
+
+Add your analyzer to `sim/workload/saturation_analyzer.go`:
+
+```go
+func NewSaturationAnalyzer(algorithm string, config interface{}) (SaturationAnalyzer, error) {
+    switch algorithm {
+    case "backlog-drift":
+        // ... existing code ...
+
+    case "your-analyzer":  // Add this
+        cfg, ok := config.(YourConfig)
+        if !ok {
+            return nil, fmt.Errorf("your-analyzer requires YourConfig, got %T", config)
+        }
+        return NewYourAnalyzer(cfg), nil
+
+    default:
+        return nil, fmt.Errorf("unknown saturation algorithm: %s", algorithm)
+    }
+}
+```
+
+### 3. Add CLI Flags (Optional)
+
+If you need configuration flags, add them to `cmd/root.go`:
+
+```go
+// In variable declarations
+var (
+    saturationAlgorithm string  // Algorithm selector
+    // ... your analyzer's config flags ...
+)
+
+// In flag registration
+runCmd.Flags().StringVar(&saturationAlgorithm, "saturation-algorithm", "backlog-drift",
+    "Saturation detection algorithm: backlog-drift, your-analyzer")
+```
+
+### 4. Write Tests
+
+Test your analyzer in `sim/workload/saturation_<name>_test.go`:
+
+```go
+func TestYourAnalyzer_HighLoad(t *testing.T) {
+    analyzer := NewYourAnalyzer(config)
+    requests := /* create test requests */
+
+    report := analyzer.Analyze(requests, simEndUs)
+
+    if report.Classification != "PERSISTENTLY_SATURATED" {
+        t.Errorf("Expected PERSISTENTLY_SATURATED, got %s", report.Classification)
+    }
+}
+```
+
+## Output Format
+
+All analyzers produce a unified JSON report:
+
+```json
+{
+  "classification": "TRANSIENT_BACKLOG",
+  "algorithm": "backlog-drift",
+  "note": "Backlog stable but peak 468 exceeded 2.0× mean 211",
+  "recommendation": "System experienced transient congestion...",
+  "algorithm_data": {
+    "slope": -0.0000186,
+    "peak_in_flight": 468,
+    "mean_in_flight": 211.5
+  }
+}
+```
+
+The `algorithm_data` field contains algorithm-specific metrics.
+
+## When to Use Which Analyzer
+
+| Analyzer Type | Best For | Example Use Case |
+|---------------|----------|------------------|
+| **backlog-drift** | Time-series workloads with sustained load | Production traffic monitoring |
+| **utilization-based** | Short observations, resource limits | Quick capacity checks |
+| **queue-depth** | Request-rate-focused workloads | API endpoint monitoring |
+| **latency-based** | User-facing SLAs | Customer experience tracking |
+
+## Design Principles
+
+- **One method**: Implement just `Analyze()`
+- **Config validated early**: Check parameters at creation time, not analysis time
+- **Unified output**: Always return `SaturationReport`
+- **Algorithm-specific data**: Put your custom metrics in `AlgorithmData` field
+- **Forward compatible**: The `algorithm` field lets tools know how to parse `algorithm_data`
+
+## Need Help?
+
+Check existing implementations:
+- `sim/workload/saturation.go` - BacklogDriftAnalyzer
+- `sim/workload/saturation_analyzer.go` - Interface definition
+- `sim/workload/saturation_test.go` - Example tests

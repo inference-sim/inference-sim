@@ -175,6 +175,14 @@ var (
 	// output file paths
 	metricsPath string // File to write MetricsOutput JSON for blis run (--metrics-path)
 	resultsPath string // File to write []SimResult JSON for blis replay (--results-path)
+	saturationReport string // File to write BacklogDriftReport JSON for saturation analysis (--saturation-report)
+
+	// saturation analysis configuration
+	saturationWindowSec int // Window size in seconds for backlog-drift analysis (--saturation-window)
+	saturationMinWindows int // Minimum number of windows required for classification (--saturation-min-windows)
+	saturationPeakRatio float64 // Peak/mean ratio threshold for transient backlog detection (--saturation-peak-ratio)
+	saturationPeakBand float64 // Confidence band around peak ratio threshold (--saturation-peak-band)
+	saturationConfidence float64 // Confidence level for slope CI (--saturation-ci)
 
 	// trace export
 	traceOutput string // File prefix for TraceV2 export (<prefix>.yaml + <prefix>.csv)
@@ -1578,15 +1586,20 @@ var runCmd = &cobra.Command{
 		// Wall-clock timing on stderr (BC-6); stdout remains deterministic (BC-7)
 		logrus.Infof("Simulation wall-clock time: %.3fs", time.Since(startTime).Seconds())
 
-		// Export trace if requested (BC-1, BC-7)
-		if traceOutput != "" {
-			allRequests := make([]*sim.Request, 0, len(preGeneratedRequests)+len(followUpRequests))
+		// Assemble allRequests if trace export or saturation analysis requested (BC-12, issue #1298)
+		var allRequests []*sim.Request
+		if traceOutput != "" || saturationReport != "" {
+			allRequests = make([]*sim.Request, 0, len(preGeneratedRequests)+len(followUpRequests))
 			allRequests = append(allRequests, preGeneratedRequests...)
 			allRequests = append(allRequests, followUpRequests...)
 			// Sort by arrival time so RequestIDs (array indices) are arrival-ordered
 			sort.SliceStable(allRequests, func(i, j int) bool {
 				return allRequests[i].ArrivalTime < allRequests[j].ArrivalTime
 			})
+		}
+
+		// Export trace if requested (BC-1, BC-7)
+		if traceOutput != "" {
 			records := workload.RequestsToTraceRecords(allRequests)
 			header := &workload.TraceHeader{
 				Version:      2,
@@ -1598,6 +1611,44 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("Trace export failed: %v", err)
 			}
 			logrus.Infof("Trace exported: %s.yaml, %s.csv (%d records)", traceOutput, traceOutput, len(records))
+		}
+
+		// Saturation analysis if requested (issue #1298)
+		if saturationReport != "" {
+			// Compute simEndUs from actual request completion times
+			simEndUs := int64(0)
+			for _, req := range allRequests {
+				completionUs := req.ArrivalTime
+				if req.TTFTSet {
+					completionUs += req.FirstTokenTime
+				}
+				if len(req.ITL) > 0 {
+					for _, itl := range req.ITL {
+						completionUs += itl
+					}
+				}
+				if completionUs > simEndUs {
+					simEndUs = completionUs
+				}
+			}
+			// Use horizon as floor if explicitly set and larger
+			if config.Horizon > 0 && config.Horizon < math.MaxInt64 && config.Horizon > simEndUs {
+				simEndUs = config.Horizon
+			}
+
+			// Build saturation analysis config from flags (or defaults if not set)
+			cfg := workload.NewBacklogDriftConfig(
+				time.Duration(saturationWindowSec)*time.Second,
+				saturationMinWindows,
+				saturationPeakRatio,
+				saturationPeakBand,
+				saturationConfidence,
+			)
+			report := workload.AnalyzeBacklogDrift(allRequests, simEndUs, cfg)
+			if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
+				logrus.Fatalf("Failed to write saturation report: %v", err)
+			}
+			logrus.Infof("Saturation report written to %s (classification: %s)", saturationReport, report.Classification)
 		}
 
 		if numInstances > 1 {
@@ -1912,6 +1963,14 @@ func init() {
 	// Run-specific export
 	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")
 	runCmd.Flags().StringVar(&metricsPath, "metrics-path", "", "File to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats). Use --results-path on blis replay for per-request SimResult JSON.")
+	runCmd.Flags().StringVar(&saturationReport, "saturation-report", "", "File to write saturation analysis JSON (backlog-drift classification)")
+
+	// Saturation analysis configuration
+	runCmd.Flags().IntVar(&saturationWindowSec, "saturation-window", 60, "Window size in seconds for backlog-drift analysis")
+	runCmd.Flags().IntVar(&saturationMinWindows, "saturation-min-windows", 5, "Minimum number of complete windows required for reliable classification")
+	runCmd.Flags().Float64Var(&saturationPeakRatio, "saturation-peak-ratio", 2.0, "Peak/mean in-flight ratio threshold for TRANSIENT_BACKLOG detection")
+	runCmd.Flags().Float64Var(&saturationPeakBand, "saturation-peak-band", 0.2, "Confidence band around peak-ratio threshold (creates borderline zone using slope as tiebreaker)")
+	runCmd.Flags().Float64Var(&saturationConfidence, "saturation-ci", 0.95, "Confidence level for slope significance test (0.90, 0.95, or 0.99)")
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)
