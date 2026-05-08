@@ -326,6 +326,32 @@ The report uses two levels of analysis because they catch different problems. **
 
 **`known_limitations`** — Documents known sources of sim/real divergence (batch step granularity, synthetic prefix tokens, speculative decoding).
 
+### Known Gap: Scheduling Delay
+
+!!! note "Scheduling delay cannot be calibrated"
+    `blis run` and `blis replay` report **scheduling delay** — the time a request
+    waited in the simulator's internal queue before being selected for batch execution.
+    This appears in per-request `RequestMetrics.SchedulingDelay` and in the aggregate
+    `scheduling_delay_p99_ms` field of `MetricsOutput` (printed to stdout).
+
+    `blis observe` **cannot** record scheduling delay because real inference servers
+    do not expose per-request queue wait time through their HTTP APIs. A client sees
+    only TTFT and E2E; the server never reveals how long a request queued before
+    execution began. This gap is inherent and cannot be closed without server-side
+    instrumentation outside BLIS's scope.
+
+**What this means for calibration:**
+
+- Scheduling delay is already **factored into E2E and TTFT**. A real server's TTFT includes queue wait implicitly — it cannot be decomposed from execution time externally. Mathematically, `SchedulingDelay = (batch selection time) − ArrivalTime` and `TTFT ≥ SchedulingDelay` always (per INV-5 Causality: `arrival_time ≤ enqueue_time ≤ schedule_time ≤ completion_time`). `blis calibrate` compares E2E and TTFT end-to-end; a good MAPE on those metrics confirms the scheduling model is correct, even without a direct scheduling delay comparison.
+- **Do not expect** `SchedulingDelay` to appear as a separately calibratable field in the calibration report. `blis calibrate` compares E2E and TTFT only — `scheduling_delay_ms` is not in `SimResult` (the format `blis replay` writes to `--results-path`). It is a simulator-internal diagnostic only.
+- **When scheduling delay matters:** If `blis run` or `blis replay` shows high scheduling delay (e.g., P99 > 500ms — exact thresholds are workload-dependent) **and** calibration MAPE is high, the root cause is likely queue buildup rather than the execution latency model. Enable flow control to add explicit queue depth gating that better models servers with admission backpressure, then re-calibrate:
+
+    ```bash
+    ./blis replay --trace-header trace.yaml --trace-data trace.csv \
+      --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
+      --queue-depth-threshold 5 --kv-cache-util-threshold 0.8
+    ```
+
 ---
 
 ## Worked Example
