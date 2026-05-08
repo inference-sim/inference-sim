@@ -304,6 +304,11 @@ func (e *GatewayEvictionEvent) Execute(cs *ClusterSimulator) {
 	}
 
 	cs.gatewayEvicted++
+	tier := e.request.SLOClass
+	if tier == "" {
+		tier = "standard"
+	}
+	cs.shedByTier[tier]++
 
 	// Re-trigger dispatch: freed capacity may allow waiting request to dispatch.
 	cs.tryDispatchFromGatewayQueue()
