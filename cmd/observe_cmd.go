@@ -153,8 +153,8 @@ func init() {
 	// HTTP client tuning
 	observeCmd.Flags().IntVar(&observeTimeout, "timeout", defaultHTTPTimeoutSeconds, "HTTP request timeout in seconds (per request)")
 
-	// ITL recording (on by default; pass --record-itl=false to disable)
-	observeCmd.Flags().BoolVar(&observeRecordITL, "record-itl", true, "Record per-chunk timestamps for ITL calibration, streaming only (default: on; pass --record-itl=false to disable)")
+	// ITL recording (opt-in; requires streaming)
+	observeCmd.Flags().BoolVar(&observeRecordITL, "record-itl", false, "Record per-chunk timestamps for ITL calibration (streaming only; forces streaming on non-streaming workloads)")
 	observeCmd.Flags().StringVar(&observeITLOutput, "itl-output", "", "Output path for ITL CSV file (default: <trace-data>.itl.csv if --record-itl is set)")
 
 	rootCmd.AddCommand(observeCmd)
@@ -285,13 +285,6 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Fatalf("--timeout must be between 1 and 86400 seconds (1 day), got %d", observeTimeout)
 	}
 
-	// ITL recording requires streaming; auto-disable when --no-streaming is set and the
-	// user did not explicitly pass --record-itl (i.e., still at the default-true value).
-	if observeNoStreaming && !cmd.Flags().Changed("record-itl") {
-		observeRecordITL = false
-		logrus.Info("ITL recording auto-disabled: --no-streaming is set (pass --record-itl=true to override)")
-	}
-
 	// Generate workload
 	var spec *workload.WorkloadSpec
 	if observeWorkloadSpec != "" {
@@ -380,10 +373,10 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Warn("No requests generated — writing empty trace")
 	}
 
-	// Enable streaming on all requests when --record-itl is set (BC-6; default: on).
+	// Enable streaming on all requests when --record-itl is set (BC-6).
 	// ITL recording requires streaming responses to capture per-chunk timestamps.
 	// The inference-perf format defaults to non-streaming for parity with the real tool,
-	// so we override it here. Pass --record-itl=false to preserve non-streaming behavior.
+	// so we override it here when the user explicitly opts in to ITL recording.
 	if observeRecordITL {
 		streamingCount := 0
 		for i := range wl.Requests {
@@ -497,7 +490,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	sessionMetrics := computeSessionMetricsFromTrace(records)
 	printSessionMetrics(os.Stdout, sessionMetrics)
 
-	// Export ITL unless explicitly disabled (BC-4: on by default; BC-5: disable via --record-itl=false)
+	// Export ITL if requested (BC-5: opt-in via --record-itl)
 	if observeRecordITL {
 		itlPath := observeITLOutput
 		if itlPath == "" {

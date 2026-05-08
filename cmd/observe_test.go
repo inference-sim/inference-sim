@@ -1965,18 +1965,17 @@ func TestPrintObserveLatencySummary_MalformedE2ELessThanTTFT_Excluded(t *testing
 
 // --- TestObserveRecordITLDefault (BC-4) ---
 
-func TestObserveRecordITLDefault_IsTrue(t *testing.T) {
+func TestObserveRecordITLDefault_IsFalse(t *testing.T) {
 	// GIVEN a blis observe invocation with no --record-itl flag
 	// WHEN the command runs
-	// THEN ITL recording is active (BC-4: ITL on by default)
+	// THEN ITL recording is off by default (opt-in, requires explicit --record-itl)
 	//
-	// Verified via the registered flag default, which is what cobra uses
-	// to populate observeRecordITL when --record-itl is absent.
+	// Default is false to avoid silently forcing streaming on non-streaming workloads.
 	f := observeCmd.Flags().Lookup("record-itl")
 	if f == nil {
 		t.Fatal("--record-itl flag not found")
 	}
-	if f.DefValue != "true" {
-		t.Errorf("ITL recording should be on by default (BC-4); --record-itl default is %q, want %q", f.DefValue, "true")
+	if f.DefValue != "false" {
+		t.Errorf("--record-itl should default to false (opt-in); got %q", f.DefValue)
 	}
 }
