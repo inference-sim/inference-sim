@@ -1496,7 +1496,9 @@ var runCmd = &cobra.Command{
 
 		startTime := time.Now() // Get current time (start)
 
-		// Unified cluster path (used for all values of numInstances)
+		// Unified cluster path (used for all values of numInstances).
+		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/replay.go (replayCmd
+		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
 		config := cluster.DeploymentConfig{
 			SimConfig: sim.SimConfig{
 				Horizon: simulationHorizon,

@@ -194,12 +194,125 @@ Example:
 			}
 		}
 
+		// PD disaggregation validation (same as runCmd, R3) — INV-13 Track A.
+		if prefillInstances < 0 {
+			logrus.Fatalf("--prefill-instances must be >= 0, got %d", prefillInstances)
+		}
+		if decodeInstances < 0 {
+			logrus.Fatalf("--decode-instances must be >= 0, got %d", decodeInstances)
+		}
+		if prefillDecodeInstances < 0 {
+			logrus.Fatalf("--prefill-decode-instances must be >= 0, got %d", prefillDecodeInstances)
+		}
+		if !sim.IsValidDisaggregationDecider(pdDecider) {
+			logrus.Fatalf("Unknown PD decider %q. Valid: %s", pdDecider, strings.Join(sim.ValidDisaggregationDeciderNames(), ", "))
+		}
+		if err := cluster.ValidatePoolTopology(prefillInstances, decodeInstances, prefillDecodeInstances, numInstances); err != nil {
+			logrus.Fatalf("Invalid PD pool topology: %v", err)
+		}
+		if prefillInstances > 0 {
+			if pdTransferBandwidth <= 0 || math.IsInf(pdTransferBandwidth, 0) || math.IsNaN(pdTransferBandwidth) {
+				logrus.Fatalf("--pd-transfer-bandwidth must be a finite positive number, got %f", pdTransferBandwidth)
+			}
+			if pdTransferBaseLatency < 0 || math.IsInf(pdTransferBaseLatency, 0) || math.IsNaN(pdTransferBaseLatency) {
+				logrus.Fatalf("--pd-transfer-base-latency must be a finite non-negative number, got %f", pdTransferBaseLatency)
+			}
+		}
+		if pdDecider == "prefix-threshold" && pdPrefixThreshold < 0 {
+			logrus.Fatalf("--pd-prefix-threshold must be >= 0, got %d", pdPrefixThreshold)
+		}
+		if pdDecider != "prefix-threshold" && cmd.Flags().Changed("pd-prefix-threshold") {
+			logrus.Warnf("--pd-prefix-threshold=%d is ignored when --pd-decider=%q (only applies to the prefix-threshold decider)", pdPrefixThreshold, pdDecider)
+		}
+		if pdDecider != "" && pdDecider != "never" && prefillInstances == 0 {
+			logrus.Warnf("--pd-decider=%q has no effect because --prefill-instances=0 (disaggregation is disabled); set --prefill-instances and --decode-instances to enable", pdDecider)
+		}
+
+		// Per-pool hardware override construction (same as runCmd).
+		var prefillOverrides, decodeOverrides cluster.PoolOverrides
+		perPoolFlagsChanged := cmd.Flags().Changed("prefill-tp") || cmd.Flags().Changed("decode-tp") ||
+			cmd.Flags().Changed("prefill-hardware") || cmd.Flags().Changed("decode-hardware") ||
+			cmd.Flags().Changed("prefill-latency-model") || cmd.Flags().Changed("decode-latency-model") ||
+			cmd.Flags().Changed("prefill-max-model-len") || cmd.Flags().Changed("decode-max-model-len")
+		if perPoolFlagsChanged && prefillInstances == 0 {
+			logrus.Warnf("per-pool hardware flags (--prefill-tp, --decode-tp, etc.) have no effect when --prefill-instances=0 (disaggregation is disabled)")
+		}
+		if prefillInstances > 0 {
+			if cmd.Flags().Changed("prefill-tp") {
+				if prefillTP <= 0 {
+					logrus.Fatalf("--prefill-tp must be > 0, got %d", prefillTP)
+				}
+				tp := prefillTP
+				prefillOverrides.TP = &tp
+			}
+			if cmd.Flags().Changed("prefill-hardware") {
+				prefillOverrides.GPU = prefillHardware
+			}
+			if cmd.Flags().Changed("prefill-latency-model") {
+				if !sim.IsValidLatencyBackend(prefillLatencyModel) {
+					logrus.Fatalf("--prefill-latency-model %q is not a recognized backend; valid: %s",
+						prefillLatencyModel, strings.Join(sim.ValidLatencyBackendNames(), ", "))
+				}
+				prefillOverrides.LatencyBackend = prefillLatencyModel
+			}
+			if cmd.Flags().Changed("prefill-max-model-len") {
+				if prefillMaxModelLen <= 0 {
+					logrus.Fatalf("--prefill-max-model-len must be > 0 when set, got %d", prefillMaxModelLen)
+				}
+				ml := prefillMaxModelLen
+				prefillOverrides.MaxModelLen = &ml
+			}
+			if cmd.Flags().Changed("decode-tp") {
+				if decodeTP <= 0 {
+					logrus.Fatalf("--decode-tp must be > 0, got %d", decodeTP)
+				}
+				tp := decodeTP
+				decodeOverrides.TP = &tp
+			}
+			if cmd.Flags().Changed("decode-hardware") {
+				decodeOverrides.GPU = decodeHardware
+			}
+			if cmd.Flags().Changed("decode-latency-model") {
+				if !sim.IsValidLatencyBackend(decodeLatencyModel) {
+					logrus.Fatalf("--decode-latency-model %q is not a recognized backend; valid: %s",
+						decodeLatencyModel, strings.Join(sim.ValidLatencyBackendNames(), ", "))
+				}
+				decodeOverrides.LatencyBackend = decodeLatencyModel
+			}
+			if cmd.Flags().Changed("decode-max-model-len") {
+				if decodeMaxModelLen <= 0 {
+					logrus.Fatalf("--decode-max-model-len must be > 0 when set, got %d", decodeMaxModelLen)
+				}
+				ml := decodeMaxModelLen
+				decodeOverrides.MaxModelLen = &ml
+			}
+		}
+
+		// Parse per-pool scorer configs (same as runCmd).
+		var prefillScorerCfgs, decodeScorerCfgs []sim.ScorerConfig
+		if prefillRoutingScorers != "" {
+			var err error
+			prefillScorerCfgs, err = sim.ParseScorerConfigs(prefillRoutingScorers)
+			if err != nil {
+				logrus.Fatalf("Invalid --prefill-routing-scorers: %v", err)
+			}
+		}
+		if decodeRoutingScorers != "" {
+			var err error
+			decodeScorerCfgs, err = sim.ParseScorerConfigs(decodeRoutingScorers)
+			if err != nil {
+				logrus.Fatalf("Invalid --decode-routing-scorers: %v", err)
+			}
+		}
+
 		logrus.Infof("Starting replay with %d KV blocks, horizon=%dticks, alphaCoeffs=%v, betaCoeffs=%v",
 			totalKVBlocks, replayHorizon, lr.AlphaCoeffs, lr.BetaCoeffs)
 
 		startTime := time.Now()
 
-		// Build cluster config (same as runCmd, using replayHorizon instead of simulationHorizon)
+		// Build cluster config (same as runCmd, using replayHorizon instead of simulationHorizon).
+		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/root.go (runCmd
+		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
 		config := cluster.DeploymentConfig{
 			SimConfig: sim.SimConfig{
 				Horizon: replayHorizon,
@@ -224,6 +337,18 @@ Example:
 			CounterfactualK:                 counterfactualK,
 			SnapshotRefreshInterval:         snapshotRefreshInterval,
 			CacheSignalDelay:                cacheSignalDelay,
+			PrefillInstances:                prefillInstances,
+			DecodeInstances:                 decodeInstances,
+			SharedInstances:                 prefillDecodeInstances,
+			PDDecider:                       pdDecider,
+			PDPrefixThreshold:               pdPrefixThreshold,
+			PDTransferBandwidthGBps:         pdTransferBandwidth,
+			PDTransferBaseLatencyMs:         pdTransferBaseLatency,
+			PDTransferContention:            pdTransferContention,
+			PrefillScorerConfigs:            prefillScorerCfgs,
+			DecodeScorerConfigs:             decodeScorerCfgs,
+			PrefillOverrides:                prefillOverrides,
+			DecodeOverrides:                 decodeOverrides,
 			FlowControlEnabled:              flowControlEnabled,
 			FlowControlDetector:             flowControlDetector,
 			FlowControlDispatchOrder:        flowControlDispatchOrder,
