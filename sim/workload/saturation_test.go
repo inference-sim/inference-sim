@@ -259,3 +259,66 @@ func TestFitSlopeRegression_FlatLine(t *testing.T) {
 		t.Errorf("Expected CI to include zero, got [%f, %f]", lower, upper)
 	}
 }
+
+func TestClassifyBacklogDrift_UNSATURATED(t *testing.T) {
+	// GIVEN slope CI excludes positive values (upper < 0) or includes zero with low peak
+	// WHEN classifying
+	// THEN returns UNSATURATED
+	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.95)
+
+	// Case 1: Negative slope (decreasing backlog)
+	classification, note, recommendation := classifyBacklogDrift(-0.01, -0.02, 0.0, 10, 5, 10, 8.0, cfg)
+	if classification != "UNSATURATED" {
+		t.Errorf("Case 1: Expected UNSATURATED, got %s", classification)
+	}
+	if note == "" {
+		t.Error("Case 1: Expected non-empty note")
+	}
+	if recommendation == "" {
+		t.Error("Case 1: Expected non-empty recommendation")
+	}
+
+	// Case 2: Flat slope (CI includes zero) with low peak ratio
+	classification, note, recommendation = classifyBacklogDrift(0.0, -0.01, 0.01, 10, 10, 15, 12.0, cfg)
+	if classification != "UNSATURATED" {
+		t.Errorf("Case 2: Expected UNSATURATED, got %s", classification)
+	}
+}
+
+func TestClassifyBacklogDrift_TRANSIENT_BACKLOG(t *testing.T) {
+	// GIVEN slope CI includes zero but peak > PeakRatio * mean
+	// WHEN classifying
+	// THEN returns TRANSIENT_BACKLOG
+	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.95)
+
+	// Flat slope with high peak: peak=25, mean=10, ratio=2.5 > 2.0
+	classification, note, recommendation := classifyBacklogDrift(0.0, -0.01, 0.01, 10, 10, 25, 10.0, cfg)
+	if classification != "TRANSIENT_BACKLOG" {
+		t.Errorf("Expected TRANSIENT_BACKLOG, got %s", classification)
+	}
+	if note == "" {
+		t.Error("Expected non-empty note")
+	}
+	if recommendation == "" {
+		t.Error("Expected non-empty recommendation")
+	}
+}
+
+func TestClassifyBacklogDrift_PERSISTENTLY_SATURATED(t *testing.T) {
+	// GIVEN slope CI excludes zero (lower > 0) — statistically significant positive drift
+	// WHEN classifying
+	// THEN returns PERSISTENTLY_SATURATED
+	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.95)
+
+	// Positive slope with CI excluding zero
+	classification, note, recommendation := classifyBacklogDrift(0.05, 0.02, 0.08, 10, 30, 35, 22.0, cfg)
+	if classification != "PERSISTENTLY_SATURATED" {
+		t.Errorf("Expected PERSISTENTLY_SATURATED, got %s", classification)
+	}
+	if note == "" {
+		t.Error("Expected non-empty note")
+	}
+	if recommendation == "" {
+		t.Error("Expected non-empty recommendation")
+	}
+}

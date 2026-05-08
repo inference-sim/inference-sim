@@ -257,3 +257,45 @@ func fitSlopeRegression(samples []struct{ timeUs int64; count int }, totalDurati
 
 	return slopeOrig, slopeOrig - marginOrig, slopeOrig + marginOrig
 }
+
+// classifyBacklogDrift determines saturation classification per BC-4/5/6/7.
+// Returns (classification, note, recommendation).
+func classifyBacklogDrift(slope, slopeLower, slopeUpper float64,
+	initialBacklog, finalBacklog, peakInFlight int, meanInFlight float64,
+	cfg BacklogDriftConfig) (classification, note, recommendation string) {
+
+	// BC-5: PERSISTENTLY_SATURATED — slope CI excludes zero (lower > 0)
+	if slopeLower > 0 {
+		classification = "PERSISTENTLY_SATURATED"
+		note = fmt.Sprintf("Backlog grew persistently (slope=%.2e req/µs, CI=[%.2e, %.2e] excludes zero). "+
+			"Initial=%d, Final=%d, Peak=%d.",
+			slope, slopeLower, slopeUpper, initialBacklog, finalBacklog, peakInFlight)
+		recommendation = "System is overloaded. Add capacity, reduce load, or increase request timeouts."
+		return
+	}
+
+	// BC-6: TRANSIENT_BACKLOG — slope CI includes zero but peak exceeds threshold
+	peakRatio := float64(peakInFlight) / meanInFlight
+	if peakRatio > cfg.PeakRatio {
+		classification = "TRANSIENT_BACKLOG"
+		note = fmt.Sprintf("Backlog did not grow on average (slope CI includes zero), but peak in-flight (%d) "+
+			"exceeded %.1f× mean (%.1f). Ratio=%.2f > %.2f.",
+			peakInFlight, cfg.PeakRatio, meanInFlight, peakRatio, cfg.PeakRatio)
+		recommendation = "System experienced transient congestion. Consider increasing burst capacity or smoothing load."
+		return
+	}
+
+	// BC-4: UNSATURATED — slope CI excludes positive or includes zero with low peak
+	classification = "UNSATURATED"
+	if slopeUpper < 0 {
+		note = fmt.Sprintf("Backlog decreased (slope=%.2e req/µs, CI=[%.2e, %.2e] excludes zero). "+
+			"Initial=%d, Final=%d, Peak=%d.",
+			slope, slopeLower, slopeUpper, initialBacklog, finalBacklog, peakInFlight)
+	} else {
+		note = fmt.Sprintf("Backlog remained stable (slope=%.2e req/µs, CI=[%.2e, %.2e] includes zero). "+
+			"Peak/mean ratio=%.2f <= %.2f.",
+			slope, slopeLower, slopeUpper, peakRatio, cfg.PeakRatio)
+	}
+	recommendation = "System handled load without saturation. Current capacity is adequate."
+	return
+}
