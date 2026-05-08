@@ -1857,27 +1857,14 @@ func TestRealClient_Send_NilSLOMapDefensive(t *testing.T) {
 	}
 }
 
-// --- printObserveLatencySummary tests (BC-1, BC-2, BC-3, BC-3b) ---
+// --- printObserveLatencySummary tests (BC-1, BC-2, BC-3) ---
 
 func TestPrintObserveLatencySummary_NoRecords_NothingPrinted(t *testing.T) {
 	// GIVEN zero records (BC-2)
 	var buf bytes.Buffer
-	printObserveLatencySummary(&buf, nil, 0)
+	printObserveLatencySummary(&buf, nil)
 	if buf.Len() != 0 {
 		t.Errorf("expected empty output, got: %q", buf.String())
-	}
-}
-
-func TestPrintObserveLatencySummary_AllWarmup_NothingPrinted(t *testing.T) {
-	// GIVEN all records are warmup (BC-2, BC-3)
-	records := []workload.TraceRecord{
-		{RequestID: 0, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 100_000, LastChunkTimeUs: 500_000},
-		{RequestID: 1, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 100_000, LastChunkTimeUs: 500_000},
-	}
-	var buf bytes.Buffer
-	printObserveLatencySummary(&buf, records, 2) // warmup=2, both excluded
-	if buf.Len() != 0 {
-		t.Errorf("expected empty output for all-warmup records, got: %q", buf.String())
 	}
 }
 
@@ -1890,7 +1877,7 @@ func TestPrintObserveLatencySummary_MixedValidAndError_OnlyValidCounted(t *testi
 		{RequestID: 1, Status: "error", SendTimeUs: 0, FirstChunkTimeUs: 200_000, LastChunkTimeUs: 800_000},
 	}
 	var buf bytes.Buffer
-	printObserveLatencySummary(&buf, records, 0)
+	printObserveLatencySummary(&buf, records)
 	out := buf.String()
 	if !strings.Contains(out, "=== Observe Latency Summary (1 requests)") {
 		t.Errorf("expected exactly 1 valid request in summary (error excluded), got: %q", out)
@@ -1907,7 +1894,7 @@ func TestPrintObserveLatencySummary_ErrorRecordsExcluded(t *testing.T) {
 		{RequestID: 0, Status: "error", SendTimeUs: 0, FirstChunkTimeUs: 100_000, LastChunkTimeUs: 500_000},
 	}
 	var buf bytes.Buffer
-	printObserveLatencySummary(&buf, records, 0)
+	printObserveLatencySummary(&buf, records)
 	if buf.Len() != 0 {
 		t.Errorf("expected empty output for error-only records, got: %q", buf.String())
 	}
@@ -1920,7 +1907,7 @@ func TestPrintObserveLatencySummary_ValidRecord_OutputContainsExpectedSections(t
 		{RequestID: 0, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 100_000, LastChunkTimeUs: 500_000},
 	}
 	var buf bytes.Buffer
-	printObserveLatencySummary(&buf, records, 0)
+	printObserveLatencySummary(&buf, records)
 	out := buf.String()
 	// Header present
 	if !strings.Contains(out, "=== Observe Latency Summary") {
@@ -1936,49 +1923,31 @@ func TestPrintObserveLatencySummary_ValidRecord_OutputContainsExpectedSections(t
 	}
 }
 
-func TestPrintObserveLatencySummary_MixedWarmup_OnlyNonWarmupCounted(t *testing.T) {
-	// GIVEN 3 records where RequestID 0 and 1 are warmup (warmup=2), ID 2 is not.
-	// WHEN printObserveLatencySummary is called
-	// THEN the summary counts exactly 1 request (not 3), verifying the < boundary.
-	records := []workload.TraceRecord{
-		{RequestID: 0, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 50_000, LastChunkTimeUs: 200_000},
-		{RequestID: 1, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 50_000, LastChunkTimeUs: 200_000},
-		{RequestID: 2, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 300_000, LastChunkTimeUs: 600_000},
-	}
-	var buf bytes.Buffer
-	printObserveLatencySummary(&buf, records, 2) // warmup=2 → IDs 0,1 excluded; ID 2 included
-	out := buf.String()
-	if !strings.Contains(out, "=== Observe Latency Summary (1 requests)") {
-		t.Errorf("expected exactly 1 non-warmup request in summary, got: %q", out)
-	}
-	// TTFT for ID 2: 300_000us → 300.00ms; E2E: 600_000us → 600.00ms
-	if !strings.Contains(out, "TTFT: mean=300.00ms") {
-		t.Errorf("expected TTFT 300.00ms for non-warmup record, got: %q", out)
-	}
-}
-
 func TestPrintObserveLatencySummary_ZeroLatency_Excluded(t *testing.T) {
 	// GIVEN a record where TTFT == 0 (SendTime == FirstChunkTime) (BC-3)
 	records := []workload.TraceRecord{
 		{RequestID: 0, Status: "ok", SendTimeUs: 100, FirstChunkTimeUs: 100, LastChunkTimeUs: 100},
 	}
 	var buf bytes.Buffer
-	printObserveLatencySummary(&buf, records, 0)
+	printObserveLatencySummary(&buf, records)
 	if buf.Len() != 0 {
 		t.Errorf("expected empty output for zero-latency record, got: %q", buf.String())
 	}
 }
 
-func TestPrintObserveLatencySummary_NonStreamingRecord_Included(t *testing.T) {
-	// GIVEN a non-streaming record where FirstChunk == LastChunk > Send (BC-3b)
+func TestPrintObserveLatencySummary_EqualTTFTAndE2E_Included(t *testing.T) {
+	// GIVEN a record where FirstChunkTimeUs == LastChunkTimeUs > SendTimeUs
+	// (body read completed in the same microsecond as first byte — degenerate but valid).
+	// WHEN printObserveLatencySummary is called
+	// THEN the record is included (e2e < ttft is false when they're equal).
 	records := []workload.TraceRecord{
 		{RequestID: 0, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 200_000, LastChunkTimeUs: 200_000},
 	}
 	var buf bytes.Buffer
-	printObserveLatencySummary(&buf, records, 0)
+	printObserveLatencySummary(&buf, records)
 	out := buf.String()
 	if !strings.Contains(out, "=== Observe Latency Summary") {
-		t.Errorf("non-streaming record with TTFT==E2E>0 should be included, got: %q", out)
+		t.Errorf("record with TTFT==E2E>0 should be included, got: %q", out)
 	}
 }
 
@@ -1988,7 +1957,7 @@ func TestPrintObserveLatencySummary_MalformedE2ELessThanTTFT_Excluded(t *testing
 		{RequestID: 0, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 500_000, LastChunkTimeUs: 100_000},
 	}
 	var buf bytes.Buffer
-	printObserveLatencySummary(&buf, records, 0)
+	printObserveLatencySummary(&buf, records)
 	if buf.Len() != 0 {
 		t.Errorf("expected empty output for malformed record (e2e < ttft), got: %q", buf.String())
 	}

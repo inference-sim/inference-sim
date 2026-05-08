@@ -491,7 +491,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	records := recorder.Records()
 	logrus.Infof("Trace exported: %d records to %s / %s", len(records), observeTraceHeader, observeTraceData)
 
-	printObserveLatencySummary(os.Stdout, records, observeWarmup)
+	printObserveLatencySummary(os.Stdout, records)
 
 	// Print session metrics if any record carries a session label (#1058)
 	sessionMetrics := computeSessionMetricsFromTrace(records)
@@ -525,15 +525,12 @@ type completionEvent struct {
 }
 
 // printObserveLatencySummary prints TTFT and E2E statistics for the given records,
-// excluding warm-up requests, error records, and records with zero or negative latency.
-// Records where LastChunkTimeUs < FirstChunkTimeUs are also excluded as malformed.
+// excluding error records and records with zero, negative, or inverted latency.
+// Warmup records are excluded at recording time and never appear in records.
 // Prints nothing if there are no valid records.
-func printObserveLatencySummary(w io.Writer, records []workload.TraceRecord, warmup int) {
+func printObserveLatencySummary(w io.Writer, records []workload.TraceRecord) {
 	var ttftsUs, e2esUs []int64
 	for _, rec := range records {
-		if rec.RequestID < warmup {
-			continue // warm-up request
-		}
 		if rec.Status != "ok" {
 			continue // error record
 		}
@@ -546,16 +543,10 @@ func printObserveLatencySummary(w io.Writer, records []workload.TraceRecord, war
 		e2esUs = append(e2esUs, e2e)
 	}
 	if len(ttftsUs) == 0 {
-		// Warn only when there were post-warmup records that were all filtered out,
-		// so the user knows the summary was suppressed rather than silently absent.
-		postWarmup := 0
-		for _, rec := range records {
-			if rec.RequestID >= warmup {
-				postWarmup++
-			}
-		}
-		if postWarmup > 0 {
-			logrus.Warnf("Latency summary skipped: all %d post-warmup records were filtered (non-streaming, errors, or zero timestamps)", postWarmup)
+		// Warn when records exist but all were filtered, so the user knows
+		// the missing summary is not a bug.
+		if len(records) > 0 {
+			logrus.Warnf("Latency summary skipped: all %d records were filtered (errors or invalid timestamps)", len(records))
 		}
 		return
 	}
