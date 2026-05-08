@@ -26,13 +26,18 @@ func effectiveInputTokenCount(inputTokens, serverInputTokens int, prefixGroup st
 }
 
 // injectionTime returns the DES injection time for a trace record.
-// For observed traces (blis observe), SendTimeUs > 0 and represents when the
-// HTTP request was actually sent to the server — the correct reference for
-// TTFT comparison against calibrate's send_time_us baseline. In concurrency
-// mode, SendTimeUs >= ArrivalTimeUs because requests may wait for a free
-// concurrency slot before being dispatched.
-// Falls back to ArrivalTimeUs for generated traces (SendTimeUs == 0) and
-// legacy traces without send_time.
+// For traces where SendTimeUs > 0, uses SendTimeUs as the DES injection time.
+// For blis observe traces with --concurrency, SendTimeUs is when the HTTP
+// request was actually dispatched (after any concurrency-slot wait), which
+// matches calibrate's TTFT baseline of first_chunk_time_us - send_time_us.
+// For generated traces (blis run), SendTimeUs == ArrivalTimeUs, so both
+// branches produce the same result.
+// Falls back to ArrivalTimeUs only for legacy traces without send_time
+// (SendTimeUs == 0) and for requests with ArrivalTimeUs == 0.
+//
+// Note: in closed-loop session replay, think-time gaps between rounds are
+// derived from ArrivalTimeUs deltas (not SendTimeUs) to preserve client-side
+// pacing semantics; only the initial injection point uses SendTimeUs.
 func injectionTime(rec TraceRecord) int64 {
 	if rec.SendTimeUs > 0 {
 		return rec.SendTimeUs

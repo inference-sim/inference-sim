@@ -649,6 +649,15 @@ func TestLoadTraceV2Requests_ConcurrencyModeUseSendTime(t *testing.T) {
 			arrivalTimeUs: 200000,
 			wantArrival:   200000,
 		},
+		{
+			// Negative send_time (clock corruption) must NOT be used as injection
+			// time — the > 0 guard ensures we fall back to arrival_time rather
+			// than injecting a negative DES timestamp (which would violate INV-3).
+			name:          "negative send_time falls back to arrival_time",
+			sendTimeUs:    -100,
+			arrivalTimeUs: 300000,
+			wantArrival:   300000,
+		},
 	}
 
 	for _, tc := range tests {
