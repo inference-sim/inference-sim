@@ -1061,3 +1061,119 @@ func generateTestWorkload(rate float64, numRequests int, horizonUs int64) []*sim
 
 	return requests
 }
+
+// TestSaturationProgression_TransitionBoundaries validates classification transitions
+// at the actual boundary rates discovered through empirical testing.
+//
+// This test enforces that:
+//   - UNSATURATED → TRANSIENT_BACKLOG transition occurs between 40-60 req/s
+//   - TRANSIENT_BACKLOG → PERSISTENTLY_SATURATED transition occurs between 100-120 req/s
+//
+// Uses moderate step sizes (10-20 req/s) to verify smooth progression through transitions.
+func TestSaturationProgression_TransitionBoundaries(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping transition boundary test in short mode")
+	}
+
+	cfg := NewBacklogDriftConfig(
+		10*time.Second,
+		4,
+		2.0,
+		0.2,
+		0.95,
+	)
+	analyzer := NewBacklogDriftAnalyzer(cfg)
+
+	// Test rates spanning both transition boundaries
+	tests := []struct {
+		name          string
+		rate          float64
+		numRequests   int
+		horizonUs     int64
+		expectedClass string
+	}{
+		{
+			name:          "Well below first transition",
+			rate:          10.0,
+			numRequests:   1000,
+			horizonUs:     0,
+			expectedClass: "UNSATURATED",
+		},
+		{
+			name:          "Just before first transition",
+			rate:          40.0,
+			numRequests:   4000,
+			horizonUs:     0,
+			expectedClass: "UNSATURATED",
+		},
+		{
+			name:          "After first transition - low transient",
+			rate:          60.0,
+			numRequests:   6000,
+			horizonUs:     60_000_000,
+			expectedClass: "TRANSIENT_BACKLOG",
+		},
+		{
+			name:          "Mid transient zone",
+			rate:          100.0,
+			numRequests:   10000,
+			horizonUs:     60_000_000,
+			expectedClass: "TRANSIENT_BACKLOG",
+		},
+		{
+			name:          "After second transition - early persistent",
+			rate:          120.0,
+			numRequests:   12000,
+			horizonUs:     80_000_000,
+			expectedClass: "PERSISTENTLY_SATURATED",
+		},
+		{
+			name:          "After second transition - persistent",
+			rate:          160.0,
+			numRequests:   16000,
+			horizonUs:     100_000_000,
+			expectedClass: "PERSISTENTLY_SATURATED",
+		},
+		{
+			name:          "Deep persistent zone",
+			rate:          300.0,
+			numRequests:   30000,
+			horizonUs:     120_000_000,
+			expectedClass: "PERSISTENTLY_SATURATED",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requests := generateTestWorkload(tt.rate, tt.numRequests, tt.horizonUs)
+
+			simEndUs := tt.horizonUs
+			if simEndUs == 0 {
+				for _, req := range requests {
+					if req.TTFTSet {
+						completionUs := req.ArrivalTime + req.FirstTokenTime
+						for _, itl := range req.ITL {
+							completionUs += itl
+						}
+						if completionUs > simEndUs {
+							simEndUs = completionUs
+						}
+					}
+				}
+			}
+
+			report := analyzer.Analyze(requests, simEndUs)
+
+			if report.Classification != tt.expectedClass {
+				data := report.AlgorithmData.(BacklogDriftData)
+				t.Errorf("Rate %.0f req/s:\n  Expected: %s\n  Got:      %s\n  Slope:    %.3e (CI: [%.3e, %.3e])\n  Peak/Mean: %.2f\n  Note:     %s",
+					tt.rate, tt.expectedClass, report.Classification,
+					data.Slope, data.SlopeLower, data.SlopeUpper,
+					float64(data.PeakInFlight)/data.MeanInFlight,
+					report.Note)
+			}
+
+			t.Logf("Rate %3.0f → %-25s ✓", tt.rate, report.Classification)
+		})
+	}
+}
