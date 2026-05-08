@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
+	"github.com/inference-sim/inference-sim/sim/latency"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -228,8 +230,120 @@ Example:
 			logrus.Fatalf("--pd-decider=%q has no effect because --prefill-instances=0 (disaggregation is disabled); set --prefill-instances > 0 and --decode-instances > 0, or omit --pd-decider", pdDecider)
 		}
 
+		// ModelConfig resolution for PD KV transfer sizing (same as runCmd, root.go:1045-1065).
+		// When PD is active and an analytical backend is in use, the ModelConfig may need to
+		// be loaded from the HF config to calculate per-pool KV block counts. If resolveLatencyConfig
+		// already loaded it (roofline/trained-physics), lr.ModelConfig.NumHeads will be non-zero.
+		if prefillInstances > 0 && lr.ModelConfig.NumHeads == 0 {
+			resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
+			if err != nil {
+				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing: %v", err)
+			}
+			hfPath := filepath.Join(resolved, "config.json")
+			hfConfig, parseErr := latency.ParseHFConfig(hfPath)
+			if parseErr != nil {
+				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing, but failed to parse %s: %v", hfPath, parseErr)
+			}
+			mc, mcErr := latency.GetModelConfigFromHF(hfConfig)
+			if mcErr != nil {
+				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing, but failed to extract ModelConfig: %v", mcErr)
+			}
+			applyWeightPrecisionFallback(mc, model, hfConfig.Raw)
+			if mc.BytesPerParam <= 0 {
+				logrus.Fatalf("PD disaggregation: could not determine model precision (BytesPerParam=%v) from %s — ensure torch_dtype or dtype is present in config.json", mc.BytesPerParam, hfPath)
+			}
+			lr.ModelConfig = *mc
+			logrus.Infof("PD disaggregation: loaded ModelConfig from %s for KV transfer derivation", hfPath)
+		}
+
 		// Per-pool hardware override construction (same as runCmd).
 		var prefillOverrides, decodeOverrides cluster.PoolOverrides
+
+		// Per-pool KV auto-calculation (same as runCmd, root.go:1076-1156).
+		// When PD disaggregation is active and a pool uses different TP or GPU hardware,
+		// compute per-pool KV blocks from model + hardware for analytical backends.
+		if lr.Backend == "roofline" || lr.Backend == "trained-physics" {
+			if prefillInstances > 0 {
+				hfPath := filepath.Join(modelConfigFolder, "config.json")
+				hfConfig, err := latency.ParseHFConfig(hfPath)
+				if err != nil {
+					logrus.Fatalf("Failed to parse HuggingFace config for per-pool KV calc: %v", err)
+				}
+				kvParamsPool, kvErrPool := latency.ExtractKVCapacityParams(hfConfig)
+				if kvErrPool != nil {
+					logrus.Warnf("per-pool KV auto-calculation skipped (could not extract model KV params: %v); both pools will use global total-kv-blocks=%d", kvErrPool, totalKVBlocks)
+				} else {
+					// Prefill pool auto-calc
+					poolPrefillTP := tensorParallelism
+					if cmd.Flags().Changed("prefill-tp") {
+						poolPrefillTP = prefillTP
+					}
+					poolPrefillGPU := gpu
+					if cmd.Flags().Changed("prefill-hardware") {
+						poolPrefillGPU = prefillHardware
+					}
+					if poolPrefillTP != tensorParallelism || poolPrefillGPU != gpu {
+						poolHC, hcErr := latency.GetHWConfig(hwConfigPath, poolPrefillGPU)
+						if hcErr != nil {
+							logrus.Warnf("--prefill-hardware: failed to load hardware config for GPU %q: %v; prefill pool will use global total-kv-blocks=%d", poolPrefillGPU, hcErr, totalKVBlocks)
+						} else if poolHC.MemoryGiB <= 0 {
+							logrus.Warnf("--prefill-hardware: GPU memory capacity not available for %q in hardware config; prefill pool will use global total-kv-blocks=%d", poolPrefillGPU, totalKVBlocks)
+						} else {
+							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolPrefillTP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool)
+							if calcErr != nil {
+								logrus.Fatalf("--prefill-tp/--prefill-hardware: KV capacity auto-calculation failed for prefill pool: %v", calcErr)
+							} else {
+								prefillOverrides.TotalKVBlocks = &poolBlocks
+								logrus.Infof("--prefill-tp/--prefill-hardware: auto-calculated prefill pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d)",
+									poolBlocks, poolHC.MemoryGiB, poolPrefillTP)
+								if !cmd.Flags().Changed("prefill-max-model-len") {
+									kvFeasibleMax := poolBlocks * int64(blockSizeTokens)
+									if kvFeasibleMax < maxModelLen {
+										prefillOverrides.MaxModelLen = &kvFeasibleMax
+										logrus.Infof("--prefill-tp/--prefill-hardware: auto-capped prefill pool max-model-len=%d (pool KV capacity smaller than global)", kvFeasibleMax)
+									}
+								}
+							}
+						}
+					}
+
+					// Decode pool auto-calc
+					poolDecodeTP := tensorParallelism
+					if cmd.Flags().Changed("decode-tp") {
+						poolDecodeTP = decodeTP
+					}
+					poolDecodeGPU := gpu
+					if cmd.Flags().Changed("decode-hardware") {
+						poolDecodeGPU = decodeHardware
+					}
+					if poolDecodeTP != tensorParallelism || poolDecodeGPU != gpu {
+						poolHC, hcErr := latency.GetHWConfig(hwConfigPath, poolDecodeGPU)
+						if hcErr != nil {
+							logrus.Warnf("--decode-hardware: failed to load hardware config for GPU %q: %v; decode pool will use global total-kv-blocks=%d", poolDecodeGPU, hcErr, totalKVBlocks)
+						} else if poolHC.MemoryGiB <= 0 {
+							logrus.Warnf("--decode-hardware: GPU memory capacity not available for %q in hardware config; decode pool will use global total-kv-blocks=%d", poolDecodeGPU, totalKVBlocks)
+						} else {
+							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolDecodeTP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool)
+							if calcErr != nil {
+								logrus.Fatalf("--decode-tp/--decode-hardware: KV capacity auto-calculation failed for decode pool: %v", calcErr)
+							} else {
+								decodeOverrides.TotalKVBlocks = &poolBlocks
+								logrus.Infof("--decode-tp/--decode-hardware: auto-calculated decode pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d)",
+									poolBlocks, poolHC.MemoryGiB, poolDecodeTP)
+								if !cmd.Flags().Changed("decode-max-model-len") {
+									kvFeasibleMax := poolBlocks * int64(blockSizeTokens)
+									if kvFeasibleMax < maxModelLen {
+										decodeOverrides.MaxModelLen = &kvFeasibleMax
+										logrus.Infof("--decode-tp/--decode-hardware: auto-capped decode pool max-model-len=%d (pool KV capacity smaller than global)", kvFeasibleMax)
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
 		perPoolFlagsChanged := cmd.Flags().Changed("prefill-tp") || cmd.Flags().Changed("decode-tp") ||
 			cmd.Flags().Changed("prefill-hardware") || cmd.Flags().Changed("decode-hardware") ||
 			cmd.Flags().Changed("prefill-latency-model") || cmd.Flags().Changed("decode-latency-model") ||
