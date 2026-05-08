@@ -44,6 +44,7 @@ type ProgressSnapshot struct {
 	GatewayQueueDepth int
 	GatewayQueueShed  int
 	GatewayEvicted    int
+	// ShedByTier: per-SLO-class cumulative count of admission rejections + gateway queue shed + in-flight evictions.
 	ShedByTier        map[string]int
 	ActivePDTransfers int
 

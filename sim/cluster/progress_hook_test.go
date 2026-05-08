@@ -229,13 +229,13 @@ func TestClusterSimulator_ProgressHook_ShedByTierNilWhenNoShedding(t *testing.T)
 }
 
 func TestClusterSimulator_ProgressHook_ShedByTierDeterminism(t *testing.T) {
-	// BC-4: hook presence does not affect ShedByTier() counts.
+	// BC-4: hook presence (including periodic delivery) does not affect ShedByTier() counts.
 	makeRequests := func() []*sim.Request {
 		var reqs []*sim.Request
 		for i := 0; i < 40; i++ {
 			reqs = append(reqs, &sim.Request{
 				ID:           fmt.Sprintf("req_sheddable_%d", i),
-				ArrivalTime:  int64(i) * 10,
+				ArrivalTime:  int64(i) * 50_000, // spread to trigger periodic snapshots
 				SLOClass:     "sheddable",
 				InputTokens:  make([]int, 50),
 				OutputTokens: make([]int, 20),
@@ -250,7 +250,7 @@ func TestClusterSimulator_ProgressHook_ShedByTierDeterminism(t *testing.T) {
 		cs := NewClusterSimulator(cfg, makeRequests(), nil)
 		if withHook {
 			var snapshots []sim.ProgressSnapshot
-			cs.SetProgressHook(&clusterCollectingHook{snapshots: &snapshots}, 100_000)
+			cs.SetProgressHook(&clusterCollectingHook{snapshots: &snapshots}, 500_000)
 		}
 		mustRun(t, cs)
 		return cs.ShedByTier()
