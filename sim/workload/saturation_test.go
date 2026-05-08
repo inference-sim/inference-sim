@@ -633,8 +633,7 @@ func TestSaturationProgression_Demonstration(t *testing.T) {
 			// Generate synthetic workload
 			requests, observationEndUs := generateSyntheticRequestsWithHorizon(
 				scenario.rate,
-				10.0, // capacity: 10 req/s
-				400,  // fixed number of requests
+				400, // fixed number of requests
 			)
 
 			// Analyze
@@ -663,14 +662,14 @@ func TestSaturationProgression_Demonstration(t *testing.T) {
 // Key insight: For PERSISTENTLY_SATURATED detection, the observation must end
 // while backlog is still growing (not after the system drains). This mirrors
 // real-world scenarios where you observe a live system under load.
-func generateSyntheticRequestsWithHorizon(arrivalRate, capacity float64, numRequests int) ([]*sim.Request, int64) {
+func generateSyntheticRequestsWithHorizon(arrivalRate float64, numRequests int) ([]*sim.Request, int64) {
 	requests := make([]*sim.Request, numRequests)
 
 	// Inter-arrival time in microseconds
 	iatUs := int64(1_000_000.0 / arrivalRate)
 
-	// Service time based on capacity (how long each request takes to process)
-	serviceTimeUs := int64(100_000) // Fixed 100ms service time
+	// Fixed service time: 100ms → capacity of 10 req/s
+	serviceTimeUs := int64(100_000)
 
 	// Observation horizon: Fixed 40-second window
 	// This ensures we observe the steady-state behavior, not the drain phase
@@ -791,36 +790,48 @@ func TestSaturationClassification_ManualScenarios(t *testing.T) {
 	})
 
 	t.Run("TRANSIENT_BACKLOG - burst with recovery", func(t *testing.T) {
-		// Scenario: Large burst arrives, creates high peak, but drains back down
-		// Slope near zero, but peak >> mean
-		requests := createManualRequests([]requestTiming{
-			// Window 1 (0-10s): Burst arrives, peak=50, mean~40
-			{arriveUs: 0, completeUs: 11_000_000},    // Overlaps into window 2
-			{arriveUs: 100_000, completeUs: 12_000_000},
-			{arriveUs: 200_000, completeUs: 13_000_000},
-		})
-		
-		// Add 47 more requests that arrive in burst and slowly drain
-		for i := 0; i < 47; i++ {
+		// Scenario: Sharp burst with quick recovery creates high peak/mean ratio
+		// Windows: 0-10s, 10-20s, 20-30s
+		// Strategy: All requests arrive in a burst (< 0.5s), all complete by 15s
+		// This creates high peak at 10s window boundary, but mean is low due to zeros later
+		var requests []*sim.Request
+
+		// Burst: 80 requests arrive in 0-0.4s, all complete by 15s
+		for i := 0; i < 80; i++ {
+			arrivalUs := int64(i * 5_000) // Arrivals: 0-0.4s (very tight burst!)
+			completionUs := int64(10_000_000 + i*60_000) // Completions: 10-14.8s (all in window 2)
 			requests = append(requests, &sim.Request{
 				ID:             fmt.Sprintf("burst_%d", i),
-				ArrivalTime:    int64(300_000 + i*10_000),
-				FirstTokenTime: 11_000_000,
+				ArrivalTime:    arrivalUs,
+				FirstTokenTime: (completionUs - arrivalUs) / 2,
 				TTFTSet:        true,
-				ITL:            []int64{50_000},
+				ITL:            []int64{(completionUs - arrivalUs) / 2},
 				State:          sim.StateCompleted,
 				InputTokens:    []int{0},
 				OutputTokens:   []int{0},
 			})
 		}
 
-		// Window 2 (10-20s): Backlog draining, active~40
-		// Window 3 (20-30s): Further draining, active~30
+		// At t=10s: all 80 active (ActiveEnd = 80)
+		// At t=20s: 0 active (all completed by 15s)
+		// At t=30s: 0 active
+		// Mean ≈ 26.7 (80+0+0)/3, Peak = 80, Peak/Mean ≈ 3.0 > 2.2 → TRANSIENT
 
 		report := analyzer.Analyze(requests, 30_000_000)
 
 		if report.Classification != "TRANSIENT_BACKLOG" {
-			t.Errorf("Expected TRANSIENT_BACKLOG, got %s\nNote: %s", report.Classification, report.Note)
+			data, ok := report.AlgorithmData.(BacklogDriftData)
+			if !ok {
+				t.Fatalf("AlgorithmData type assertion failed: got %T", report.AlgorithmData)
+			}
+			peakRatio := 0.0
+			if data.MeanInFlight > 0 {
+				peakRatio = float64(data.PeakInFlight) / data.MeanInFlight
+			}
+			t.Errorf("Expected TRANSIENT_BACKLOG, got %s\nNote: %s\nSlope: %.3e, CI: [%.3e, %.3e]\nPeak/Mean: %.2f (peak=%d, mean=%.1f)",
+				report.Classification, report.Note,
+				data.Slope, data.SlopeLower, data.SlopeUpper,
+				peakRatio, data.PeakInFlight, data.MeanInFlight)
 		}
 	})
 
@@ -989,7 +1000,10 @@ func TestSaturationProgression_RealWorkloads(t *testing.T) {
 			}
 
 			// Verify slope CI behavior
-			data := report.AlgorithmData.(BacklogDriftData)
+			data, ok := report.AlgorithmData.(BacklogDriftData)
+			if !ok {
+				t.Fatalf("AlgorithmData type assertion failed: got %T", report.AlgorithmData)
+			}
 			ciExcludesZero := data.SlopeLower > 0
 			if tt.expectPositiveCI && !ciExcludesZero {
 				t.Errorf("Rate %.1f req/s: Expected CI to exclude zero, got CI=[%.6e, %.6e]",
@@ -1165,7 +1179,10 @@ func TestSaturationProgression_TransitionBoundaries(t *testing.T) {
 			report := analyzer.Analyze(requests, simEndUs)
 
 			if report.Classification != tt.expectedClass {
-				data := report.AlgorithmData.(BacklogDriftData)
+				data, ok := report.AlgorithmData.(BacklogDriftData)
+				if !ok {
+					t.Fatalf("AlgorithmData type assertion failed: got %T", report.AlgorithmData)
+				}
 				t.Errorf("Rate %.0f req/s:\n  Expected: %s\n  Got:      %s\n  Slope:    %.3e (CI: [%.3e, %.3e])\n  Peak/Mean: %.2f\n  Note:     %s",
 					tt.rate, tt.expectedClass, report.Classification,
 					data.Slope, data.SlopeLower, data.SlopeUpper,
