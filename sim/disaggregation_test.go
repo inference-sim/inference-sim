@@ -35,6 +35,7 @@ func TestAlwaysDisaggregate_AlwaysReturnsTrue(t *testing.T) {
 func TestDisaggregationDecider_Interface(t *testing.T) {
 	var _ DisaggregationDecider = &NeverDisaggregate{}
 	var _ DisaggregationDecider = &AlwaysDisaggregate{}
+	var _ DisaggregationDecider = &PrefixThresholdDecider{}
 }
 
 // TestNewDisaggregationDecider_Factory verifies factory dispatches correctly
@@ -141,14 +142,24 @@ func TestDisaggregationDecider_INV9_OracleBoundary(t *testing.T) {
 	req1 := &Request{ID: "req-1", InputTokens: make([]int, 100), OutputTokens: nil}
 	req2 := &Request{ID: "req-2", InputTokens: make([]int, 100), OutputTokens: make([]int, 9999)}
 
+	// Stub cacheQuery returning 0 blocks for any instance — exercises Decide's
+	// formula path without depending on real cluster state.
+	stubCache := map[string]func([]int) int{
+		"decode_0": func([]int) int { return 0 },
+	}
+	state := &RouterState{
+		Snapshots:        []RoutingSnapshot{{ID: "decode_0"}},
+		SelectedInstance: "decode_0",
+	}
+
 	deciders := []DisaggregationDecider{
 		&NeverDisaggregate{},
 		&AlwaysDisaggregate{},
-		NewPrefixThresholdDecider(512, 16),
+		NewPrefixThresholdDecider(512, 16, stubCache),
 	}
 	for _, d := range deciders {
-		d1 := d.Decide(req1, (*RouterState)(nil))
-		d2 := d.Decide(req2, (*RouterState)(nil))
+		d1 := d.Decide(req1, state)
+		d2 := d.Decide(req2, state)
 		if d1 != d2 {
 			t.Errorf("%T: decision differs with different OutputTokens (d1=%v, d2=%v); INV-9 violation",
 				d, d1, d2)
@@ -156,12 +167,11 @@ func TestDisaggregationDecider_INV9_OracleBoundary(t *testing.T) {
 	}
 }
 
-// TestDisaggregationDecider_StateAgnostic verifies BC-1/BC-2: all built-in
-// deciders accept a *RouterState argument and produce identical decisions
-// regardless of state content (nil vs populated). NeverDisaggregate and
-// AlwaysDisaggregate are constant; PrefixThresholdDecider does not yet consume
-// state (issue #1263 / GAP-3 will wire it in) and must therefore also be
-// invariant under this change.
+// TestDisaggregationDecider_StateAgnostic verifies BC-2 (from PR #1265 / GAP-2):
+// NeverDisaggregate and AlwaysDisaggregate ignore state entirely — nil vs populated
+// state yields identical decisions. PrefixThresholdDecider is intentionally NOT in
+// this list anymore: after GAP-3, its decision depends on state.SelectedInstance
+// and the cache query map; it has its own dedicated tests below.
 func TestDisaggregationDecider_StateAgnostic(t *testing.T) {
 	req := &Request{ID: "req-1", InputTokens: make([]int, 100)}
 	nilState := (*RouterState)(nil)
@@ -170,13 +180,13 @@ func TestDisaggregationDecider_StateAgnostic(t *testing.T) {
 			{ID: "decode_0", QueueDepth: 7, KVUtilization: 0.4},
 			{ID: "decode_1", QueueDepth: 2, KVUtilization: 0.9},
 		},
-		Clock: 12345,
+		Clock:            12345,
+		SelectedInstance: "decode_1",
 	}
 
 	deciders := []DisaggregationDecider{
 		&NeverDisaggregate{},
 		&AlwaysDisaggregate{},
-		NewPrefixThresholdDecider(512, 16),
 	}
 	for _, d := range deciders {
 		gotNil := d.Decide(req, nilState)
@@ -196,12 +206,18 @@ func TestDisaggregationDecider_StateAgnostic(t *testing.T) {
 // and any regression that accidentally populates one will fail this test.
 func TestDisaggregationDecider_BuiltinsReturnNoOverrides(t *testing.T) {
 	req := &Request{ID: "req-1", InputTokens: make([]int, 100)}
-	state := &RouterState{Snapshots: []RoutingSnapshot{{ID: "decode_0"}}}
+	stubCache := map[string]func([]int) int{
+		"decode_0": func([]int) int { return 0 },
+	}
+	state := &RouterState{
+		Snapshots:        []RoutingSnapshot{{ID: "decode_0"}},
+		SelectedInstance: "decode_0",
+	}
 
 	deciders := []DisaggregationDecider{
 		&NeverDisaggregate{},
 		&AlwaysDisaggregate{},
-		NewPrefixThresholdDecider(512, 16),
+		NewPrefixThresholdDecider(512, 16, stubCache),
 	}
 	for _, d := range deciders {
 		got := d.Decide(req, state)
@@ -223,7 +239,7 @@ func TestNewPrefixThresholdDecider_PanicsOnNegativeThreshold(t *testing.T) {
 			t.Error("expected panic for negative threshold")
 		}
 	}()
-	NewPrefixThresholdDecider(-1, 16)
+	NewPrefixThresholdDecider(-1, 16, nil)
 }
 
 // TestNewPrefixThresholdDecider_PanicsOnZeroBlockSize verifies constructor validates blockSize.
@@ -233,42 +249,50 @@ func TestNewPrefixThresholdDecider_PanicsOnZeroBlockSize(t *testing.T) {
 			t.Error("expected panic for zero blockSize")
 		}
 	}()
-	NewPrefixThresholdDecider(512, 0)
+	NewPrefixThresholdDecider(512, 0, nil)
 }
 
-// noopDisaggregationObserver is a no-op DisaggregationObserver used in tests to satisfy R13:
-// DisaggregationObserver must work for >=2 backends (not tightly coupled to PrefixThresholdDecider).
-// Any future stateful decider (e.g., adaptive-rate, popularity-based) should also implement it.
-type noopDisaggregationObserver struct{}
-
-func (*noopDisaggregationObserver) ObserveRouting(_ *Request, _ string) {}
-
-// TestPrefixThresholdDecider_Interface verifies PrefixThresholdDecider satisfies both interfaces.
-// Also verifies DisaggregationObserver is a general extension point (R13: works for >=2 backends).
-func TestPrefixThresholdDecider_Interface(t *testing.T) {
-	var _ DisaggregationDecider = &PrefixThresholdDecider{}
-	var _ DisaggregationObserver = &PrefixThresholdDecider{}
-	var _ DisaggregationObserver = &noopDisaggregationObserver{} // R13: second backend
-}
-
-// TestPrefixThresholdDecider_EmptyTokens verifies BC-PD-20: empty input returns Disaggregate=false.
-func TestPrefixThresholdDecider_EmptyTokens(t *testing.T) {
-	decider := NewPrefixThresholdDecider(512, 16)
-	req := &Request{ID: "req-empty", InputTokens: []int{}}
-
-	decision := decider.Decide(req, (*RouterState)(nil))
-
-	if decision.Disaggregate {
-		t.Error("BC-PD-20: empty InputTokens must return Disaggregate=false")
+// coldState builds a RouterState with SelectedInstance set to selectedID.
+// Pair with a coldCache(selectedID)-constructed decider to exercise the
+// formula with cachedBlocks=0 (so nonCachedTokens == len(InputTokens)).
+// RouterState itself carries no cache query; the cache query lives on the
+// decider via cacheQuery.
+func coldState(selectedID string) *RouterState {
+	return &RouterState{
+		Snapshots:        []RoutingSnapshot{{ID: selectedID}},
+		SelectedInstance: selectedID,
 	}
 }
 
-// TestPrefixThresholdDecider_AboveThreshold verifies BC-PD-21: non-cached tokens > threshold -> true.
+// coldCache builds a cacheQuery map with a single entry for selectedID whose
+// closure always returns 0 cached blocks. Pair with coldState(selectedID) to
+// exercise the decider's formula with cachedBlocks=0 — i.e. the selected pod
+// is known but has none of the input cached.
+func coldCache(selectedID string) map[string]func([]int) int {
+	return map[string]func([]int) int{
+		selectedID: func([]int) int { return 0 },
+	}
+}
+
+// TestPrefixThresholdDecider_EmptyTokens verifies BC-3: empty input returns Disaggregate=false.
+func TestPrefixThresholdDecider_EmptyTokens(t *testing.T) {
+	decider := NewPrefixThresholdDecider(512, 16, coldCache("decode_0"))
+	req := &Request{ID: "req-empty", InputTokens: []int{}}
+
+	decision := decider.Decide(req, coldState("decode_0"))
+
+	if decision.Disaggregate {
+		t.Error("BC-3: empty InputTokens must return Disaggregate=false")
+	}
+}
+
+// TestPrefixThresholdDecider_AboveThreshold verifies BC-2: non-cached tokens > threshold -> true.
 // Uses threshold+1 as the boundary case to pin the strict > semantics (not >=).
 func TestPrefixThresholdDecider_AboveThreshold(t *testing.T) {
 	const blockSize = 16
 	const threshold = 512
-	decider := NewPrefixThresholdDecider(threshold, blockSize)
+	decider := NewPrefixThresholdDecider(threshold, blockSize, coldCache("decode_0"))
+	state := coldState("decode_0")
 
 	tests := []struct {
 		name   string
@@ -281,25 +305,26 @@ func TestPrefixThresholdDecider_AboveThreshold(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tokens := make([]int, tc.tokens)
 			for i := range tokens {
-				tokens[i] = i + 1 // unique tokens, no cache hit
+				tokens[i] = i + 1 // unique tokens
 			}
 			req := &Request{ID: fmt.Sprintf("req-%s", tc.name), InputTokens: tokens}
 
-			decision := decider.Decide(req, (*RouterState)(nil))
+			decision := decider.Decide(req, state)
 
 			if !decision.Disaggregate {
-				t.Errorf("BC-PD-21: %d uncached tokens with threshold=%d should return Disaggregate=true",
+				t.Errorf("BC-2: %d uncached tokens with threshold=%d should return Disaggregate=true",
 					tc.tokens, threshold)
 			}
 		})
 	}
 }
 
-// TestPrefixThresholdDecider_BelowOrAtThreshold verifies BC-PD-22: non-cached <= threshold -> false.
+// TestPrefixThresholdDecider_BelowOrAtThreshold verifies BC-2: non-cached <= threshold -> false.
 func TestPrefixThresholdDecider_BelowOrAtThreshold(t *testing.T) {
 	const blockSize = 16
 	const threshold = 512
-	decider := NewPrefixThresholdDecider(threshold, blockSize)
+	decider := NewPrefixThresholdDecider(threshold, blockSize, coldCache("decode_0"))
+	state := coldState("decode_0")
 
 	tests := []struct {
 		name   string
@@ -312,122 +337,204 @@ func TestPrefixThresholdDecider_BelowOrAtThreshold(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tokens := make([]int, tc.tokens)
 			for i := range tokens {
-				tokens[i] = i + 1000 // unique tokens, no cache hit
+				tokens[i] = i + 1000 // unique tokens
 			}
 			req := &Request{ID: fmt.Sprintf("req-%s", tc.name), InputTokens: tokens}
 
-			decision := decider.Decide(req, (*RouterState)(nil))
+			decision := decider.Decide(req, state)
 
 			if decision.Disaggregate {
-				t.Errorf("BC-PD-22: %d non-cached tokens with threshold=%d should return Disaggregate=false",
+				t.Errorf("BC-2: %d non-cached tokens with threshold=%d should return Disaggregate=false",
 					tc.tokens, threshold)
 			}
 		})
 	}
 }
 
-// TestPrefixThresholdDecider_CacheAware verifies BC-PD-24: cached prefix reduces non-cached count.
-// Scenario: warm cache has N blocks cached. New request with same prefix + additional tokens.
-// Non-cached tokens = total_tokens - cached_blocks * blockSize.
-func TestPrefixThresholdDecider_CacheAware(t *testing.T) {
+// TestPrefixThresholdDecider_PerPodCacheQuery verifies BC-1: the decider reads
+// cached block count from the SELECTED pod's closure, and BC-4: a cache hit on
+// one pod does not influence a decision targeting a different pod.
+//
+// Scenario:
+//   - decode_A has 40 cached blocks (640 tokens) for the input.
+//   - decode_B has 0 cached blocks (cold).
+//   - threshold=512, blockSize=16.
+//   - Request has 840 input tokens.
+//
+// Expected:
+//   - SelectedInstance="decode_A": nonCached = 840 - 40*16 = 200 ≤ 512 → false.
+//   - SelectedInstance="decode_B": nonCached = 840 - 0*16  = 840 > 512 → true.
+func TestPrefixThresholdDecider_PerPodCacheQuery(t *testing.T) {
 	const blockSize = 16
 	const threshold = 512
-
-	decider := NewPrefixThresholdDecider(threshold, blockSize)
-
-	// Warm cache: record 40 blocks (640 tokens) for a known prefix.
-	// Use consecutive tokens 1..640 as the shared prefix.
-	prefix := make([]int, 640) // 40 blocks
-	for i := range prefix {
-		prefix[i] = i + 1
+	cacheQuery := map[string]func([]int) int{
+		"decode_A": func([]int) int { return 40 },
+		"decode_B": func([]int) int { return 0 },
 	}
-	prefixReq := &Request{ID: "req-warm", InputTokens: prefix}
-	// Calling Decide records cachedHashes, then ObserveRouting warms the cache.
-	decider.Decide(prefixReq, (*RouterState)(nil))
-	decider.ObserveRouting(prefixReq, "instance_0")
+	decider := NewPrefixThresholdDecider(threshold, blockSize, cacheQuery)
 
-	// New request: same 640-token prefix + 200 new tokens = 840 tokens total.
-	// Cached: 40 blocks * 16 = 640 tokens. Non-cached: 840 - 640 = 200 tokens.
-	// 200 <= 512 threshold -> should NOT disaggregate.
-	extended := make([]int, len(prefix)+200)
-	copy(extended, prefix)
-	for i := len(prefix); i < len(extended); i++ {
-		extended[i] = 10000 + i // unique suffix tokens
+	tokens := make([]int, 840)
+	for i := range tokens {
+		tokens[i] = i + 1
 	}
-	req := &Request{ID: "req-cached", InputTokens: extended}
+	req := &Request{ID: "req-multi-pod", InputTokens: tokens}
 
-	decision := decider.Decide(req, (*RouterState)(nil))
-
-	if decision.Disaggregate {
-		t.Errorf("BC-PD-24: with 640 tokens cached (40 blocks), 200 non-cached tokens should not disaggregate (threshold=%d)", threshold)
+	tests := []struct {
+		selectedInstance string
+		wantDisagg       bool
+		reason           string
+	}{
+		{"decode_A", false, "warm pod: 840-640=200 ≤ 512"},
+		{"decode_B", true, "cold pod: 840-0=840 > 512"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.selectedInstance, func(t *testing.T) {
+			state := &RouterState{
+				Snapshots: []RoutingSnapshot{
+					{ID: "decode_A"},
+					{ID: "decode_B"},
+				},
+				SelectedInstance: tc.selectedInstance,
+			}
+			got := decider.Decide(req, state).Disaggregate
+			if got != tc.wantDisagg {
+				t.Errorf("SelectedInstance=%s: Disaggregate=%v, want %v (%s)",
+					tc.selectedInstance, got, tc.wantDisagg, tc.reason)
+			}
+		})
 	}
 }
 
-// TestPrefixThresholdDecider_CacheAware_SubRequestIDMismatch verifies BC-PD-24 via the
-// disaggregated pipeline path: ObserveRouting is called with a sub-request whose ID
-// differs from the parent request passed to Decide (e.g., "<parent>_prefill" vs "<parent>").
-// ObserveRouting must recompute hashes and still correctly populate the cache.
-func TestPrefixThresholdDecider_CacheAware_SubRequestIDMismatch(t *testing.T) {
+// TestPrefixThresholdDecider_MissingSelection_ReturnsFalse verifies BC-3 — the
+// conservative-cold fallback paths. In any of these five scenarios the decider
+// cannot locate a valid per-pod cache closure, so it returns Disaggregate=false:
+//  1. state == nil
+//  2. state.SelectedInstance == "" (upstream made no selection)
+//  3. state.SelectedInstance is not a key in cacheQuery
+//  4. cacheQuery[SelectedInstance] is nil (closure missing at the key)
+//  5. cacheQuery itself is nil (unit tests without cluster state)
+func TestPrefixThresholdDecider_MissingSelection_ReturnsFalse(t *testing.T) {
+	const threshold = 100
 	const blockSize = 16
-	const threshold = 512
-	decider := NewPrefixThresholdDecider(threshold, blockSize)
-
-	// Shared prefix: 40 blocks (640 tokens), unique token values.
-	prefix := make([]int, 640)
-	for i := range prefix {
-		prefix[i] = i + 1
+	// Request is large enough that if the selected-pod path were taken with a
+	// 0-blocks closure, the decision would be Disaggregate=true. So any test
+	// that observes Disaggregate=false proves the early-return fired.
+	tokens := make([]int, 400) // 400 > 100 threshold
+	for i := range tokens {
+		tokens[i] = i + 1
 	}
+	req := &Request{ID: "req-missing", InputTokens: tokens}
 
-	// Step 1: Decide is called with the parent request.
-	parentReq := &Request{ID: "req-parent", InputTokens: prefix}
-	decider.Decide(parentReq, (*RouterState)(nil))
-
-	// Step 2: Overwrite cachedHashes with a stale unrelated request so that ObserveRouting
-	// MUST recompute when it sees the mismatched sub-request ID. Without this step, the
-	// original test cannot detect an inversion of the != check: parentReq and subReq share
-	// the same token content, so stale hashes from parentReq would produce the same result.
-	staleReq := &Request{ID: "req-stale", InputTokens: []int{99999, 99998}} // < blockSize, 0 hashes
-	decider.Decide(staleReq, (*RouterState)(nil)) // overwrites cachedHashes (empty) and cachedReqID = "req-stale"
-
-	// Step 3: ObserveRouting is called with a sub-request (different ID from stale, same
-	// InputTokens as prefix). ID mismatch must trigger recompute — without it the empty stale
-	// hashes would be recorded and the follow-up request would incorrectly disaggregate.
-	subReq := &Request{ID: "req-parent_prefill", InputTokens: prefix}
-	decider.ObserveRouting(subReq, "prefill_0") // ID mismatch → must recompute + record
-
-	// Step 4: New request with same prefix + 200 unique tokens = 840 total.
-	// Cached: 40 blocks * 16 = 640 tokens. Non-cached: 200 <= 512 → should NOT disaggregate.
-	extended := make([]int, len(prefix)+200)
-	copy(extended, prefix)
-	for i := len(prefix); i < len(extended); i++ {
-		extended[i] = 10000 + i
+	tests := []struct {
+		name       string
+		cacheQuery map[string]func([]int) int
+		state      *RouterState
+	}{
+		{
+			name:       "nil_state",
+			cacheQuery: coldCache("decode_0"),
+			state:      nil,
+		},
+		{
+			name:       "empty_selected_instance",
+			cacheQuery: coldCache("decode_0"),
+			state:      &RouterState{Snapshots: []RoutingSnapshot{{ID: "decode_0"}}, SelectedInstance: ""},
+		},
+		{
+			name:       "unknown_selected_instance",
+			cacheQuery: coldCache("decode_0"),
+			state:      &RouterState{Snapshots: []RoutingSnapshot{{ID: "decode_0"}}, SelectedInstance: "decode_X"},
+		},
+		{
+			name: "nil_closure_in_map",
+			cacheQuery: map[string]func([]int) int{
+				"decode_0": nil,
+			},
+			state: coldState("decode_0"),
+		},
+		{
+			name:       "nil_cacheQuery_map",
+			cacheQuery: nil,
+			state:      coldState("decode_0"),
+		},
 	}
-	req := &Request{ID: "req-follow", InputTokens: extended}
-
-	decision := decider.Decide(req, (*RouterState)(nil))
-
-	if decision.Disaggregate {
-		t.Errorf("CacheAware/SubRequestIDMismatch: ObserveRouting with mismatched ID should still "+
-			"populate the cache; 200 non-cached tokens should not disaggregate (threshold=%d)", threshold)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			decider := NewPrefixThresholdDecider(threshold, blockSize, tc.cacheQuery)
+			got := decider.Decide(req, tc.state).Disaggregate
+			if got {
+				t.Errorf("BC-3 %s: expected Disaggregate=false (conservative fallback), got true", tc.name)
+			}
+		})
 	}
 }
 
-// TestPrefixThresholdDecider_ZeroThreshold verifies threshold=0 means always disaggregate
-// when tokens are non-empty (any non-cached token > 0).
+// TestPrefixThresholdDecider_ZeroThreshold verifies threshold=0 means any
+// non-empty request with non-zero non-cached tokens disaggregates. A fully-
+// cached request (0 non-cached tokens) does NOT disaggregate (strict >).
 func TestPrefixThresholdDecider_ZeroThreshold(t *testing.T) {
 	const blockSize = 16
-	decider := NewPrefixThresholdDecider(0, blockSize)
 
-	// 100 uncached tokens -> 100 > 0 -> disaggregate
+	// Case 1: cold pod, any non-empty input → disaggregate.
+	decider := NewPrefixThresholdDecider(0, blockSize, coldCache("decode_0"))
 	tokens := make([]int, 100)
 	for i := range tokens {
 		tokens[i] = i + 1
 	}
-	req := &Request{ID: "req-zero-thresh", InputTokens: tokens}
-
-	decision := decider.Decide(req, (*RouterState)(nil))
-
-	if !decision.Disaggregate {
+	req := &Request{ID: "req-zero-thresh-cold", InputTokens: tokens}
+	if !decider.Decide(req, coldState("decode_0")).Disaggregate {
 		t.Error("threshold=0 with non-empty uncached tokens should return Disaggregate=true")
+	}
+
+	// Case 2: fully-cached prefix (cachedBlocks * blockSize == len(tokens))
+	// → nonCached = 0, 0 > 0 is false → NOT disaggregate.
+	//
+	// This pins the strict > semantics at the boundary, guarding against an
+	// accidental >= flip in the formula.
+	fullCache := map[string]func([]int) int{
+		"decode_0": func(t []int) int { return len(t) / blockSize },
+	}
+	fullyCachedDecider := NewPrefixThresholdDecider(0, blockSize, fullCache)
+	exactBlocks := make([]int, 64) // 64 tokens = 4 full blocks
+	for i := range exactBlocks {
+		exactBlocks[i] = i + 1
+	}
+	reqFull := &Request{ID: "req-fully-cached", InputTokens: exactBlocks}
+	if fullyCachedDecider.Decide(reqFull, coldState("decode_0")).Disaggregate {
+		t.Error("threshold=0 with fully-cached tokens (nonCached=0) should return Disaggregate=false (strict >)")
+	}
+}
+
+// TestPrefixThresholdDecider_QueriesOnlySelectedPod verifies BC-1 (isolation): when
+// Decide runs, it invokes the closure for SelectedInstance exactly once and does not
+// invoke closures for any other instance in the map. This guards against an accidental
+// "scan all pods" regression (option (b) in the #1265 review comment was explicitly
+// rejected; we implement option (a) — query only the selected pod).
+func TestPrefixThresholdDecider_QueriesOnlySelectedPod(t *testing.T) {
+	var aCalls, bCalls int
+	cacheQuery := map[string]func([]int) int{
+		"decode_A": func([]int) int { aCalls++; return 0 },
+		"decode_B": func([]int) int { bCalls++; return 0 },
+	}
+	decider := NewPrefixThresholdDecider(512, 16, cacheQuery)
+
+	req := &Request{ID: "req-isolation", InputTokens: make([]int, 100)}
+	for i := range req.InputTokens {
+		req.InputTokens[i] = i + 1
+	}
+	state := &RouterState{
+		Snapshots: []RoutingSnapshot{
+			{ID: "decode_A"},
+			{ID: "decode_B"},
+		},
+		SelectedInstance: "decode_A",
+	}
+	decider.Decide(req, state)
+
+	if aCalls != 1 {
+		t.Errorf("decode_A closure called %d times, want 1", aCalls)
+	}
+	if bCalls != 0 {
+		t.Errorf("decode_B closure called %d times, want 0 (must not query non-selected pods)", bCalls)
 	}
 }

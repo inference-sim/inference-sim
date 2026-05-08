@@ -230,21 +230,17 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		shedByTier:           make(map[string]int),
 	}
 
-	// PD disaggregation: set pool membership (topology already validated above)
+	// PD disaggregation: set pool membership (topology already validated above).
+	// Decider construction is deferred until after cs.cacheQueryFn is built
+	// (PrefixThresholdDecider consumes the map).
 	if config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 {
 		cs.poolMembership = prePoolMembership
-		switch config.PDDecider {
-		case "prefix-threshold":
-			cs.disaggregationDecider = sim.NewPrefixThresholdDecider(config.PDPrefixThreshold, int(config.BlockSizeTokens))
-		default:
-			cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
-		}
 		cs.parentRequests = make(map[string]*ParentRequest)
 		cs.pendingPrefillCompletions = make(map[string]string)
 		cs.pendingDecodeCompletions = make(map[string]string)
 
-		// Per-pool routing policies are created after the construction loop
-		// (need cacheQueryFn from instances).
+		// Per-pool routing policies and the disaggregation decider are created after
+		// the construction loop (both need cacheQueryFn from instances).
 
 		logrus.Infof("[cluster] PD disaggregation enabled: %d prefill, %d decode, %d shared (prefill-decode) instances, decider=%q",
 			config.PrefillInstances, config.DecodeInstances, config.SharedInstances, config.PDDecider)
@@ -357,6 +353,18 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	}
 	if len(config.DecodeScorerConfigs) > 0 {
 		cs.decodeRoutingPolicy = sim.NewRoutingPolicyWithCache("weighted", config.DecodeScorerConfigs, config.BlockSizeTokens, rng.ForSubsystem("decode-router"), cs.cacheQueryFn)
+	}
+
+	// PD disaggregation: construct the decider now that cacheQueryFn is available.
+	// PrefixThresholdDecider consumes the per-pod cache-query map; other deciders
+	// ignore state but share the same construction point.
+	if config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 {
+		switch config.PDDecider {
+		case "prefix-threshold":
+			cs.disaggregationDecider = sim.NewPrefixThresholdDecider(config.PDPrefixThreshold, int(config.BlockSizeTokens), cs.cacheQueryFn)
+		default:
+			cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
+		}
 	}
 
 	// Phase 1C: initialize autoscaler pipeline when ModelAutoscalerIntervalUs > 0 (issue #692).
@@ -1396,18 +1404,6 @@ func (c *ClusterSimulator) PerInstanceMetricsByID() map[string]*sim.Metrics {
 	return result
 }
 
-// notifyDisaggregationObserver calls ObserveRouting on the disaggregationDecider if it
-// implements sim.DisaggregationObserver. Called synchronously within the event loop,
-// so the prefix cache is always current at the next Decide() call.
-func (c *ClusterSimulator) notifyDisaggregationObserver(req *sim.Request, instanceID string) {
-	if c.disaggregationDecider == nil {
-		return
-	}
-	if obs, ok := c.disaggregationDecider.(sim.DisaggregationObserver); ok {
-		obs.ObserveRouting(req, instanceID)
-	}
-}
-
 // PeakConcurrentTransfers returns the maximum number of KV transfers in flight simultaneously.
 // Returns 0 when --pd-transfer-contention is disabled (backward-compat).
 func (c *ClusterSimulator) PeakConcurrentTransfers() int {
@@ -1700,9 +1696,6 @@ func (cs *ClusterSimulator) executeStandardRouting(req *sim.Request, time int64)
 			}
 
 			inst.InjectRequestOnline(req, time)
-			// Notify observer so stateful deciders (e.g., PrefixThresholdDecider) can learn
-			// from this routing decision (synchronous call — cache is always current).
-			cs.notifyDisaggregationObserver(req, decision.TargetInstance)
 			return
 		}
 	}
@@ -1738,6 +1731,11 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 	// Step 2: disaggregation decision with decode pod known. Pass the full decode-pool
 	// RouterState so the decider can query per-pod state (cache presence, load) and
 	// optionally reconsider the decode pod via DisaggregationDecision.DecodePodOverride.
+	// state.SelectedInstance tells the decider which snapshot was pre-selected by
+	// the decode routing policy — PrefixThresholdDecider queries the selected
+	// pod's cacheQueryFn closure for per-pod prefix cache state (matches llm-d's
+	// PrefixBasedPDDecider reading endpoint.Get(PrefixCacheMatchInfoKey)).
+	state.SelectedInstance = decodeDecision.TargetInstance
 	disaggDecision := cs.disaggregationDecider.Decide(req, state)
 	logrus.Debugf("[cluster] req %s: disaggregate=%v", req.ID, disaggDecision.Disaggregate)
 
@@ -1805,7 +1803,6 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 			decodeInst.RecordWarmUpRequest(req.ID)
 		}
 		decodeInst.InjectRequestOnline(req, time)
-		cs.notifyDisaggregationObserver(req, decodeDecision.TargetInstance)
 		return
 	}
 

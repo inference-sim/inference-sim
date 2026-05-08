@@ -2,8 +2,6 @@ package sim
 
 import (
 	"fmt"
-
-	"github.com/sirupsen/logrus"
 )
 
 // DisaggregationDecision encapsulates the prefill-decode disaggregation decision for a request.
@@ -28,16 +26,15 @@ type DisaggregationDecision struct {
 // use len(req.InputTokens) and req.MaxOutputLen only.
 //
 // req is guaranteed non-nil; implementations may assume a non-nil pointer.
-// state is the RouterState built from the decode pool — the same snapshots used
-// to pre-select the decode pod. Implementations may read any field of state
-// except Request.OutputTokens. state is guaranteed non-nil in practice: the
-// empty-pool case is rejected before Decide is called. Passing the full
-// RouterState (rather than a single snapshot) lets joint D+P policies reconsider
-// the decode pod via DisaggregationDecision.DecodePodOverride and keeps future
-// design open (GAP-3 will use state.Snapshots for per-pod cache queries).
-//
-// Stateful implementations may additionally implement DisaggregationObserver to
-// learn from routing outcomes (e.g., PrefixThresholdDecider).
+// state carries the decode-pool RouterState — the same snapshots used to
+// pre-select the decode pod. state.SelectedInstance holds the ID of the pod
+// chosen by the decode routing policy. Implementations may read any field of
+// state except Request.OutputTokens. state is guaranteed non-nil at runtime
+// (executeDisaggregatedRouting returns at the empty-decode-pool guard before
+// calling Decide), but implementations must still tolerate a nil pointer for
+// unit-test convenience. Passing the full RouterState (rather than a single
+// snapshot) lets joint D+P policies reconsider the decode pod via
+// DisaggregationDecision.DecodePodOverride.
 type DisaggregationDecider interface {
 	Decide(req *Request, state *RouterState) DisaggregationDecision
 }
@@ -62,7 +59,7 @@ func (a *AlwaysDisaggregate) Decide(_ *Request, _ *RouterState) DisaggregationDe
 // Valid names are defined in validDisaggregationDeciders (bundle.go).
 // An empty string defaults to NeverDisaggregate.
 // Panics on unrecognized names or on "prefix-threshold" (use NewPrefixThresholdDecider
-// directly, as it requires a caller-supplied threshold).
+// directly, as it requires a caller-supplied threshold and cache-query map).
 func NewDisaggregationDecider(name string) DisaggregationDecider {
 	if !IsValidDisaggregationDecider(name) {
 		panic(fmt.Sprintf("unknown disaggregation decider %q", name))
@@ -73,7 +70,7 @@ func NewDisaggregationDecider(name string) DisaggregationDecider {
 	case "always":
 		return &AlwaysDisaggregate{}
 	case "prefix-threshold":
-		panic("use NewPrefixThresholdDecider(threshold, blockSize) to construct prefix-threshold decider")
+		panic("use NewPrefixThresholdDecider(threshold, blockSize, cacheQuery) to construct prefix-threshold decider")
 	default:
 		panic(fmt.Sprintf(
 			"disaggregation decider %q is registered in validDisaggregationDeciders (bundle.go) "+
@@ -82,65 +79,36 @@ func NewDisaggregationDecider(name string) DisaggregationDecider {
 	}
 }
 
-// globalVirtualInstance is the single key used in PrefixThresholdDecider's PrefixCacheIndex
-// to represent cluster-wide prefix knowledge. All requests update the same virtual instance
-// so the decider tracks the global set of recently-seen prefixes.
-// Using a single virtual key repurposes the per-instance PrefixCacheIndex structure to
-// maintain one aggregate view of cluster-wide prefix state without modifying its interface.
-// Collision with real instance IDs is not a risk: instance IDs use a numeric index (e.g.,
-// "instance_0"), whereas this sentinel uses the "__" prefix convention.
-const globalVirtualInstance = "__global__"
-
-// defaultDisaggLRUCapacity is the number of block hash slots tracked in PrefixThresholdDecider's
-// router-side prefix cache (LRU capacity). Independent of block size.
-const defaultDisaggLRUCapacity = 10000
-
-// DisaggregationObserver is an optional interface for stateful DisaggregationDeciders that need
-// to learn from routing decisions. ClusterSimulator calls ObserveRouting after each routing
-// decision that assigns a request to an instance: after standard routing (RoutingDecisionEvent
-// in cluster_event.go) and after prefill routing (PrefillRoutingEvent in pd_events.go).
-// It is not called for decode routing, because the decider's prefix knowledge is based on
-// input tokens, which are identical between prefill and decode sub-requests.
+// PrefixThresholdDecider disaggregates a request when the tokens not already
+// cached on the pre-selected decode pod exceed a configured threshold.
+// Matches llm-d's PrefixBasedPDDecider.disaggregate, which reads per-endpoint
+// PrefixCacheMatchInfo from the selected decode endpoint.
 //
-// ObserveRouting is called synchronously within the event loop immediately after each
-// routing decision, so the prefix cache is always current at the next Decide() call.
+// Formula:
 //
-// req is guaranteed non-nil. Implementations must treat req as read-only.
-// instanceID is the routing target; implementations maintaining per-instance state should
-// record it; implementations with global state (like PrefixThresholdDecider) may ignore it.
-type DisaggregationObserver interface {
-	ObserveRouting(req *Request, instanceID string)
-}
-
-// PrefixThresholdDecider disaggregates a request when its non-cached token count exceeds
-// the configured threshold. Maintains a router-side prefix cache (globalVirtualInstance)
-// to estimate how many input tokens are already cached cluster-wide.
+//	nonCachedTokens = len(req.InputTokens) − cachedBlocks × blockSize
+//	Disaggregate    = (nonCachedTokens > threshold)
 //
-// Non-cached token count: len(req.InputTokens) - cachedBlocks * blockSize (always >= 0,
-// because ComputeBlockHashes only produces complete-block hashes so cachedBlocks*blockSize
-// never exceeds len(InputTokens)). threshold and blockSize are in token counts, not bytes.
-// Decision: Disaggregate = (nonCachedTokens > threshold).
+// where cachedBlocks is obtained by calling cacheQuery[state.SelectedInstance]
+// on req.InputTokens. threshold and blockSize are in token counts, not bytes.
 //
-// The prefix cache is always current at decision time: ObserveRouting is called
-// synchronously within the event loop immediately after each routing decision.
-//
-// Threading: cachedHashes and cachedReqID are a single-use scratchpad — Decide() writes
-// them and ObserveRouting() consumes and clears them. This is safe only because the DES
-// event loop is single-threaded: no Decide() can interleave between a Decide() call and
-// its paired ObserveRouting() call. If routing is rejected after Decide() (no routable
-// instances), ObserveRouting() is not called; the stale scratchpad is harmlessly
-// overwritten by the next Decide() call.
+// cacheQuery shares the same map used by the precise-prefix-cache scorer
+// (wired in sim/cluster/cluster.go from CachedSnapshotProvider.BuildCacheQueryFn).
+// Staleness is inherited from that provider — see --cache-signal-delay (INV-7).
 type PrefixThresholdDecider struct {
-	threshold    int
-	blockSize    int
-	idx          *PrefixCacheIndex
-	cachedHashes []string
-	cachedReqID  string
+	threshold  int
+	blockSize  int
+	cacheQuery map[string]func([]int) int
 }
 
-// NewPrefixThresholdDecider creates a PrefixThresholdDecider with the given threshold and block size.
+// NewPrefixThresholdDecider creates a PrefixThresholdDecider with the given
+// threshold, block size, and per-pod cache-query map.
 // threshold must be >= 0; blockSize must be > 0. Panics otherwise (R3).
-func NewPrefixThresholdDecider(threshold, blockSize int) *PrefixThresholdDecider {
+// cacheQuery may be nil (e.g. unit tests without cluster state); when nil or
+// when state.SelectedInstance is missing from the map, Decide returns
+// Disaggregate=false (conservative fallback, consistent with llm-d's
+// nil-endpoint guard at prefix_based_pd_decider.go:108-111).
+func NewPrefixThresholdDecider(threshold, blockSize int, cacheQuery map[string]func([]int) int) *PrefixThresholdDecider {
 	if threshold < 0 {
 		panic(fmt.Sprintf("NewPrefixThresholdDecider: threshold must be >= 0, got %d", threshold))
 	}
@@ -148,55 +116,40 @@ func NewPrefixThresholdDecider(threshold, blockSize int) *PrefixThresholdDecider
 		panic(fmt.Sprintf("NewPrefixThresholdDecider: blockSize must be > 0, got %d", blockSize))
 	}
 	return &PrefixThresholdDecider{
-		threshold: threshold,
-		blockSize: blockSize,
-		idx:       NewPrefixCacheIndex(blockSize, defaultDisaggLRUCapacity),
+		threshold:  threshold,
+		blockSize:  blockSize,
+		cacheQuery: cacheQuery,
 	}
 }
 
-// Decide returns Disaggregate=true when non-cached token count exceeds the threshold.
-// Empty requests (len(InputTokens) == 0) always return Disaggregate=false.
-// Caches block hashes for reuse by ObserveRouting when the same request is routed next.
-// The state argument is accepted for interface conformance and is currently ignored;
-// issue #1263 (GAP-3) will replace the cluster-wide cache estimate with per-pod
-// cache state queried from state.Snapshots.
-func (p *PrefixThresholdDecider) Decide(req *Request, _ *RouterState) DisaggregationDecision {
+// Decide returns Disaggregate=true when the number of input tokens not cached
+// on the pre-selected decode pod exceeds the threshold.
+//
+// Early returns (all yielding Disaggregate=false):
+//   - len(req.InputTokens) == 0
+//   - state == nil
+//   - state.SelectedInstance == "" (no upstream selection)
+//   - cacheQuery is nil, or the selected instance is missing from the map,
+//     or its closure is nil (pod not yet registered / just removed)
+func (p *PrefixThresholdDecider) Decide(req *Request, state *RouterState) DisaggregationDecision {
 	if len(req.InputTokens) == 0 {
 		return DisaggregationDecision{Disaggregate: false}
 	}
-	p.cachedHashes = p.idx.ComputeBlockHashes(req.InputTokens)
-	p.cachedReqID = req.ID
-	cachedBlocks := p.idx.MatchLength(p.cachedHashes, globalVirtualInstance)
+	if state == nil || state.SelectedInstance == "" || p.cacheQuery == nil {
+		return DisaggregationDecision{Disaggregate: false}
+	}
+	fn, ok := p.cacheQuery[state.SelectedInstance]
+	if !ok || fn == nil {
+		return DisaggregationDecision{Disaggregate: false}
+	}
+	cachedBlocks := fn(req.InputTokens)
 	nonCachedTokens := len(req.InputTokens) - cachedBlocks*p.blockSize
 	return DisaggregationDecision{Disaggregate: nonCachedTokens > p.threshold}
 }
 
-// ObserveRouting updates the prefix cache after a routing decision, recording the request's
-// block hashes under globalVirtualInstance. Reuses hashes from Decide when the request ID
-// matches; otherwise recomputes. The ID mismatch case is expected in the disaggregated path:
-// notifyDisaggregationObserver is called with the prefill sub-request (ID "<parent>_prefill"),
-// which differs from the parent request evaluated by Decide.
-func (p *PrefixThresholdDecider) ObserveRouting(req *Request, _ string) {
-	if req == nil {
-		logrus.Errorf("PrefixThresholdDecider.ObserveRouting: req is nil (contract violation); skipping cache update")
-		return
-	}
-	if len(req.InputTokens) == 0 {
-		return // no complete blocks to record; consistent with Decide's early-return for empty tokens
-	}
-	hashes := p.cachedHashes
-	if req.ID != p.cachedReqID || p.cachedHashes == nil {
-		hashes = p.idx.ComputeBlockHashes(req.InputTokens)
-	}
-	p.idx.RecordBlocks(hashes, globalVirtualInstance)
-	p.cachedHashes = nil
-	p.cachedReqID = ""
-}
-
 // Compile-time interface compliance checks.
 var (
-	_ DisaggregationDecider  = (*NeverDisaggregate)(nil)
-	_ DisaggregationDecider  = (*AlwaysDisaggregate)(nil)
-	_ DisaggregationDecider  = (*PrefixThresholdDecider)(nil)
-	_ DisaggregationObserver = (*PrefixThresholdDecider)(nil)
+	_ DisaggregationDecider = (*NeverDisaggregate)(nil)
+	_ DisaggregationDecider = (*AlwaysDisaggregate)(nil)
+	_ DisaggregationDecider = (*PrefixThresholdDecider)(nil)
 )
