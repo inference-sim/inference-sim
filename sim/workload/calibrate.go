@@ -82,12 +82,17 @@ type CalibrationConfig struct {
 
 // SimResult holds per-request sim output for calibration matching.
 // TTFT and E2E are server-side latencies in microseconds (simulation ticks).
+// SLOClass, Model, and ITLMeanUs are optional — omitted from JSON when zero/empty
+// so existing consumers that do not know these fields are unaffected (BC-2).
 type SimResult struct {
 	RequestID    int     `json:"request_id"`
 	TTFT         float64 `json:"ttft_us"` // server-side TTFT in microseconds
 	E2E          float64 `json:"e2e_us"`  // server-side E2E in microseconds
 	InputTokens  int     `json:"input_tokens"`
 	OutputTokens int     `json:"output_tokens"`
+	SLOClass     string  `json:"slo_class,omitempty"`   // SLO tier (e.g., "standard", "batch"); empty if not set
+	Model        string  `json:"model,omitempty"`       // model tag; empty if not set
+	ITLMeanUs    float64 `json:"itl_mean_us,omitempty"` // mean ITL in microseconds (rm.ITL ms * 1000); 0 if not computed
 }
 
 // LatencyPair holds matched real-vs-sim latency vectors.

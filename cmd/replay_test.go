@@ -2389,3 +2389,58 @@ func TestReplayCmd_PDTopologyFatal(t *testing.T) {
 		t.Errorf("BC-5: fatal message should mention 'topology', got:\n%s", out)
 	}
 }
+
+func TestSimResult_NewFields_JSONOmitWhenEmpty(t *testing.T) {
+	// BC-2: omitempty means empty SLOClass/Model and zero ITLMeanUs are omitted from JSON
+	sr := workload.SimResult{
+		RequestID:    1,
+		TTFT:         100.0,
+		E2E:          200.0,
+		InputTokens:  10,
+		OutputTokens: 5,
+		// SLOClass, Model, ITLMeanUs intentionally zero/empty
+	}
+	data, err := json.Marshal(sr)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	s := string(data)
+	if strings.Contains(s, "slo_class") {
+		t.Errorf("omitempty: slo_class should be absent, got: %s", s)
+	}
+	if strings.Contains(s, `"model"`) {
+		t.Errorf("omitempty: model should be absent, got: %s", s)
+	}
+	if strings.Contains(s, "itl_mean_us") {
+		t.Errorf("omitempty: itl_mean_us should be absent, got: %s", s)
+	}
+
+	// GIVEN non-empty fields: all three must round-trip correctly (BC-1)
+	sr2 := workload.SimResult{
+		RequestID:    2,
+		TTFT:         100.0,
+		E2E:          200.0,
+		InputTokens:  10,
+		OutputTokens: 5,
+		SLOClass:     "standard",
+		Model:        "qwen3-14b",
+		ITLMeanUs:    5000.0,
+	}
+	data2, err := json.Marshal(sr2)
+	if err != nil {
+		t.Fatalf("json.Marshal (non-empty): %v", err)
+	}
+	var got workload.SimResult
+	if err := json.Unmarshal(data2, &got); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if got.SLOClass != "standard" {
+		t.Errorf("SLOClass round-trip: got %q, want %q", got.SLOClass, "standard")
+	}
+	if got.Model != "qwen3-14b" {
+		t.Errorf("Model round-trip: got %q, want %q", got.Model, "qwen3-14b")
+	}
+	if got.ITLMeanUs != 5000.0 {
+		t.Errorf("ITLMeanUs round-trip: got %f, want 5000.0", got.ITLMeanUs)
+	}
+}
