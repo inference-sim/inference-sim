@@ -110,7 +110,7 @@ func TestLoadTraceV2Requests_PrefixGroup_SharedTokens(t *testing.T) {
 	}
 }
 
-// --- LoadTraceV2SessionBlueprints tests (BC-5, BC-6, BC-7) ---
+// --- LoadTraceV2SessionBlueprints tests (BC-5, BC-6) ---
 
 func TestLoadTraceV2SessionBlueprints_GroupsBySession(t *testing.T) {
 	trace := &TraceV2{
@@ -169,12 +169,12 @@ func TestLoadTraceV2SessionBlueprints_NonSessionPassThrough(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// BC-7: 1 non-session + 1 round-0 session = 2 requests total
+	// 1 non-session + 1 round-0 session request = 2 requests total
 	if len(requests) != 2 {
-		t.Fatalf("BC-7: got %d requests, want 2", len(requests))
+		t.Fatalf("got %d requests, want 2 (1 non-session + 1 round-0 session)", len(requests))
 	}
 	if len(blueprints) != 1 {
-		t.Errorf("BC-7: got %d blueprints, want 1", len(blueprints))
+		t.Errorf("got %d blueprints, want 1", len(blueprints))
 	}
 }
 
@@ -296,6 +296,40 @@ func TestLoadTraceV2SessionBlueprints_NonConsecutiveRoundIndex_Error(t *testing.
 	}
 }
 
+// --- effectiveInputTokenCount unit tests ---
+
+func TestEffectiveInputTokenCount(t *testing.T) {
+	cases := []struct {
+		name             string
+		inputTokens      int
+		serverTokens     int
+		prefixGroup      string
+		want             int
+	}{
+		// Server > client, no prefix: use server (chat-template overhead case)
+		{"server_overrides_client", 512, 530, "", 530},
+		// Server < client, no prefix: use server (unusual but valid — server is authoritative)
+		{"server_smaller_than_client", 512, 480, "", 480},
+		// Server == client, no prefix: use server (no-op, same result)
+		{"server_equals_client", 256, 256, "", 256},
+		// Server > 0 but prefix group set: fall back to client (avoid double-counting)
+		{"prefix_group_falls_back", 100, 246, "shared", 100},
+		// Server == 0, no prefix: fall back to client (not recorded, e.g. generated trace)
+		{"zero_server_falls_back", 256, 0, "", 256},
+		// Server == 0 and prefix group: fall back to client
+		{"zero_server_prefix_group", 100, 0, "shared", 100},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := effectiveInputTokenCount(tc.inputTokens, tc.serverTokens, tc.prefixGroup)
+			if got != tc.want {
+				t.Errorf("effectiveInputTokenCount(%d, %d, %q) = %d, want %d",
+					tc.inputTokens, tc.serverTokens, tc.prefixGroup, got, tc.want)
+			}
+		})
+	}
+}
+
 // --- ServerInputTokens tests (BC-1, BC-2) ---
 
 func TestLoadTraceV2Requests_ServerInputTokens_UsedWhenPresent(t *testing.T) {
@@ -402,7 +436,7 @@ func TestLoadTraceV2SessionBlueprints_ServerInputTokens_Sampler(t *testing.T) {
 		t.Fatal(err)
 	}
 	bp := blueprints[0]
-	// SequenceSampler is stateful: each Sample() call advances to the next value.
+	// Each successive Sample() call returns the next round's token count.
 	// BC-4: round-1 sampler returns ServerInputTokens (274 > 256)
 	got1 := bp.InputSampler.Sample(nil)
 	if got1 != 274 {
@@ -515,9 +549,10 @@ func TestLoadTraceV2SessionBlueprints_ServerInputTokens_NonSession_PrefixGroup_F
 	}
 }
 
-// TestLoadTraceV2Requests_ModelAndDeadline verifies BC-3, BC-4, BC-5, BC-6 from the
-// original observe-replay plan, and BC-1 from this plan (ServerInputTokens used for
-// token count generation when > 0 and PrefixGroup is empty).
+// TestLoadTraceV2Requests_ModelAndDeadline verifies that Model, Deadline, empty Model,
+// and zero Deadline are propagated from TraceRecord to sim.Request (from the original
+// observe-replay plan), and that ServerInputTokens is used as the token count when > 0
+// and PrefixGroup is empty (replay-server-tokens-plan.md BC-1).
 func TestLoadTraceV2Requests_ModelAndDeadline(t *testing.T) {
 	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "real"}
 	records := []TraceRecord{
