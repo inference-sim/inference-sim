@@ -1243,6 +1243,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#in-flight-eviction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In-Flight Eviction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#comparison-with-legacy-admission" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3125,6 +3136,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#in-flight-eviction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In-Flight Eviction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#comparison-with-legacy-admission" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3513,6 +3535,27 @@ shedding of sheddable entries.</p>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--queue-depth-threshold<span class="w"> </span><span class="m">5</span><span class="w"> </span>--kv-cache-util-threshold<span class="w"> </span><span class="m">0</span>.8<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span>--per-band-capacity<span class="w"> </span><span class="m">100</span><span class="w"> </span>--max-gateway-queue-depth<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
+<h3 id="in-flight-eviction">In-Flight Eviction<a class="headerlink" href="#in-flight-eviction" title="Permanent link">&para;</a></h3>
+<p>When flow control is enabled and the system is saturated, BLIS can evict sheddable requests that are already running on instances to free capacity for higher-priority waiting requests. This matches GIE's eviction architecture.</p>
+<p><strong>How it works:</strong></p>
+<ol>
+<li>When saturation &gt;= 1.0 and a non-sheddable request is waiting in the gateway queue</li>
+<li>The eviction trigger selects the most-evictable in-flight request:<ul>
+<li>Lowest priority first (background=-3 before sheddable=-2 before batch=-1)</li>
+<li>Among equal priority: newest dispatch time first (minimizes wasted compute)</li>
+</ul>
+</li>
+<li>The selected request is terminated on its instance (KV freed, resources released)</li>
+<li>The freed capacity allows the waiting higher-priority request to dispatch</li>
+</ol>
+<p><strong>Key properties:</strong></p>
+<ul>
+<li>Only sheddable requests (priority &lt; 0) can be evicted — critical and standard are always protected</li>
+<li>Eviction is automatic when <code>--flow-control</code> is active — no additional flag needed</li>
+<li>Evicted requests appear in the <code>Gateway Evicted (in-flight)</code> anomaly counter</li>
+<li>This is a terminal state — evicted requests are not requeued</li>
+<li>Eviction is distinct from instance-level KV preemption (<code>--preemption-policy</code>), which handles memory pressure and requeues victims</li>
+</ul>
 <h3 id="comparison-with-legacy-admission">Comparison with Legacy Admission<a class="headerlink" href="#comparison-with-legacy-admission" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
