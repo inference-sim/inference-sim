@@ -299,3 +299,72 @@ func classifyBacklogDrift(slope, slopeLower, slopeUpper float64,
 	recommendation = "System handled load without saturation. Current capacity is adequate."
 	return
 }
+
+// AnalyzeBacklogDrift performs end-to-end backlog-drift saturation analysis (BC-8).
+// Orchestrates: eligibility filter → window metrics → regression → classification.
+// Returns UNSATURATED with note if observation has fewer than MinWindows complete windows (BC-7).
+func AnalyzeBacklogDrift(requests []*sim.Request, simEndUs int64, cfg BacklogDriftConfig) BacklogDriftReport {
+	// Step 1: Filter eligible requests (BC-2, BC-13)
+	intervals := RequestsToIntervals(requests, simEndUs)
+
+	// Step 2: Compute per-window metrics (BC-1)
+	windowSizeUs := int64(cfg.WindowSize / time.Microsecond)
+	windows := computeWindowMetrics(intervals, windowSizeUs, simEndUs)
+
+	// BC-7: Early exit if insufficient windows
+	if len(windows) < cfg.MinWindows {
+		return BacklogDriftReport{
+			Classification: "UNSATURATED",
+			Note: fmt.Sprintf("Observation too short: %d windows < MinWindows=%d. Cannot reliably classify saturation. "+
+				"Conservatively marking as UNSATURATED.",
+				len(windows), cfg.MinWindows),
+			Recommendation: "Run longer observations (at least %.0f seconds) for reliable classification.",
+			Windows:        windows,
+		}
+	}
+
+	// Step 3: Prepare time series samples for regression
+	samples := make([]struct{ timeUs int64; count int }, len(windows))
+	for i, w := range windows {
+		// Use window midpoint as time coordinate
+		samples[i].timeUs = (w.StartUs + w.EndUs) / 2
+		samples[i].count = w.ActiveEnd
+	}
+
+	// Step 4: Fit linear regression (BC-3)
+	slope, slopeLower, slopeUpper := fitSlopeRegression(samples, simEndUs, cfg.ConfidenceCI)
+
+	// Step 5: Compute summary statistics
+	initialBacklog := windows[0].ActiveStart
+	finalBacklog := windows[len(windows)-1].ActiveEnd
+	peakInFlight := 0
+	sumInFlight := 0
+	for _, w := range windows {
+		if w.ActiveEnd > peakInFlight {
+			peakInFlight = w.ActiveEnd
+		}
+		sumInFlight += w.ActiveEnd
+	}
+	meanInFlight := float64(sumInFlight) / float64(len(windows))
+
+	// Step 6: Classify saturation state (BC-4/5/6)
+	classification, note, recommendation := classifyBacklogDrift(
+		slope, slopeLower, slopeUpper,
+		initialBacklog, finalBacklog, peakInFlight, meanInFlight,
+		cfg,
+	)
+
+	return BacklogDriftReport{
+		Classification: classification,
+		Slope:          slope,
+		SlopeLower:     slopeLower,
+		SlopeUpper:     slopeUpper,
+		InitialBacklog: initialBacklog,
+		FinalBacklog:   finalBacklog,
+		PeakInFlight:   peakInFlight,
+		MeanInFlight:   meanInFlight,
+		Windows:        windows,
+		Note:           note,
+		Recommendation: recommendation,
+	}
+}

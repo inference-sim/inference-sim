@@ -322,3 +322,97 @@ func TestClassifyBacklogDrift_PERSISTENTLY_SATURATED(t *testing.T) {
 		t.Error("Expected non-empty recommendation")
 	}
 }
+
+func TestAnalyzeBacklogDrift_InsufficientData(t *testing.T) {
+	// GIVEN observation with fewer than MinWindows complete windows (BC-7)
+	// WHEN analyzing
+	// THEN returns UNSATURATED with note explaining insufficient data
+	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.95)
+
+	// Very short observation: only 2 windows (< MinWindows=5)
+	requests := []*sim.Request{
+		{ArrivalTime: 0, FirstTokenTime: 10, ITL: []int64{5, 5}, TTFTSet: true, State: sim.StateCompleted},
+		{ArrivalTime: 50, FirstTokenTime: 10, ITL: []int64{5}, TTFTSet: true, State: sim.StateCompleted},
+	}
+	simEndUs := int64(120_000_000) // 120 seconds (only 2 complete 60s windows)
+
+	report := AnalyzeBacklogDrift(requests, simEndUs, cfg)
+
+	if report.Classification != "UNSATURATED" {
+		t.Errorf("Expected UNSATURATED for insufficient data, got %s", report.Classification)
+	}
+	noteLower := strings.ToLower(report.Note)
+	if !strings.Contains(noteLower, "observation too short") && !strings.Contains(noteLower, "fewer") && !strings.Contains(noteLower, "windows") {
+		t.Errorf("Expected note about insufficient data, got: %s", report.Note)
+	}
+	if report.Recommendation == "" {
+		t.Error("Expected non-empty recommendation")
+	}
+}
+
+func TestAnalyzeBacklogDrift_EndToEnd_PERSISTENTLY_SATURATED(t *testing.T) {
+	// GIVEN requests with growing backlog
+	// WHEN analyzing with sufficient windows
+	// THEN returns PERSISTENTLY_SATURATED classification
+	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.95)
+
+	// Create requests that overlap to build backlog
+	requests := []*sim.Request{
+		// Window 0: 5 long requests start
+		{ArrivalTime: 0, FirstTokenTime: 1000, ITL: []int64{500_000_000}, TTFTSet: true, State: sim.StateCompleted},
+		{ArrivalTime: 10, FirstTokenTime: 1000, ITL: []int64{500_000_000}, TTFTSet: true, State: sim.StateCompleted},
+		{ArrivalTime: 20, FirstTokenTime: 1000, ITL: []int64{500_000_000}, TTFTSet: true, State: sim.StateCompleted},
+		{ArrivalTime: 30, FirstTokenTime: 1000, ITL: []int64{500_000_000}, TTFTSet: true, State: sim.StateCompleted},
+		{ArrivalTime: 40, FirstTokenTime: 1000, ITL: []int64{500_000_000}, TTFTSet: true, State: sim.StateCompleted},
+		// More requests in later windows to sustain backlog growth
+		{ArrivalTime: 70_000_000, FirstTokenTime: 1000, ITL: []int64{500_000_000}, TTFTSet: true, State: sim.StateCompleted},
+		{ArrivalTime: 130_000_000, FirstTokenTime: 1000, ITL: []int64{500_000_000}, TTFTSet: true, State: sim.StateCompleted},
+		{ArrivalTime: 190_000_000, FirstTokenTime: 1000, ITL: []int64{500_000_000}, TTFTSet: true, State: sim.StateCompleted},
+		{ArrivalTime: 250_000_000, FirstTokenTime: 1000, ITL: []int64{500_000_000}, TTFTSet: true, State: sim.StateCompleted},
+	}
+	simEndUs := int64(400_000_000) // 400 seconds (6+ windows)
+
+	report := AnalyzeBacklogDrift(requests, simEndUs, cfg)
+
+	if report.Classification != "PERSISTENTLY_SATURATED" {
+		t.Errorf("Expected PERSISTENTLY_SATURATED, got %s (note: %s)", report.Classification, report.Note)
+	}
+	if report.Slope <= 0 {
+		t.Errorf("Expected positive slope, got %f", report.Slope)
+	}
+	if report.FinalBacklog <= report.InitialBacklog {
+		t.Errorf("Expected final backlog > initial backlog, got %d > %d", report.FinalBacklog, report.InitialBacklog)
+	}
+	if len(report.Windows) < cfg.MinWindows {
+		t.Errorf("Expected at least %d windows, got %d", cfg.MinWindows, len(report.Windows))
+	}
+}
+
+func TestAnalyzeBacklogDrift_EndToEnd_UNSATURATED(t *testing.T) {
+	// GIVEN requests with stable backlog
+	// WHEN analyzing
+	// THEN returns UNSATURATED classification
+	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.95)
+
+	// Create requests that complete quickly — no backlog buildup
+	var requests []*sim.Request
+	for i := int64(0); i < 50; i++ {
+		requests = append(requests, &sim.Request{
+			ArrivalTime:    i * 10_000_000, // Every 10 seconds
+			FirstTokenTime: 1000,
+			ITL:            []int64{100_000}, // 100ms completion
+			TTFTSet:        true,
+			State:          sim.StateCompleted,
+		})
+	}
+	simEndUs := int64(500_000_000) // 500 seconds (8+ windows)
+
+	report := AnalyzeBacklogDrift(requests, simEndUs, cfg)
+
+	if report.Classification != "UNSATURATED" {
+		t.Errorf("Expected UNSATURATED, got %s (note: %s)", report.Classification, report.Note)
+	}
+	if len(report.Windows) < cfg.MinWindows {
+		t.Errorf("Expected at least %d windows, got %d", cfg.MinWindows, len(report.Windows))
+	}
+}
