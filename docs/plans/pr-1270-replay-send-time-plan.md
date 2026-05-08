@@ -66,6 +66,15 @@ func TestLoadTraceV2Requests_ConcurrencyModeUseSendTime(t *testing.T) {
 			arrivalTimeUs: 200000,
 			wantArrival:   200000,
 		},
+		{
+			// Negative send_time (clock corruption) must NOT be used as injection
+			// time — the > 0 guard ensures we fall back to arrival_time rather
+			// than injecting a negative DES timestamp (which would violate INV-3).
+			name:          "negative send_time falls back to arrival_time",
+			sendTimeUs:    -100,
+			arrivalTimeUs: 300000,
+			wantArrival:   300000,
+		},
 	}
 
 	for _, tc := range tests {
@@ -127,9 +136,10 @@ func TestLoadTraceV2SessionBlueprints_ConcurrencyModeInjection(t *testing.T) {
 	sessionArrival := int64(-1)
 	nonSessionArrival := int64(-1)
 	for _, r := range requests {
-		if r.SessionID == "A" {
+		switch r.SessionID {
+		case "A":
 			sessionArrival = r.ArrivalTime
-		} else if r.SessionID == "" {
+		case "":
 			nonSessionArrival = r.ArrivalTime
 		}
 	}
@@ -150,7 +160,10 @@ func TestLoadTraceV2SessionBlueprints_ConcurrencyModeInjection(t *testing.T) {
 		t.Errorf("BC-4: non-session ArrivalTime = %d, want 40000 (send_time_us)", nonSessionArrival)
 	}
 
-	// BC-5: think-time gap derived from ArrivalTimeUs differences (200000 - 0 = 200000)
+	// BC-5: think-time gap derived from ArrivalTimeUs differences (200000 - 0 = 200000).
+	// ArrivalTimeUs gap: 200000 - 0 = 200000.
+	// SendTimeUs gap:    230000 - 50000 = 180000.
+	// Both assertions make the law explicit: think-time MUST come from ArrivalTimeUs deltas.
 	if len(blueprints) != 1 {
 		t.Fatalf("expected 1 blueprint, got %d", len(blueprints))
 	}
@@ -160,7 +173,49 @@ func TestLoadTraceV2SessionBlueprints_ConcurrencyModeInjection(t *testing.T) {
 	}
 	gotThinkTime := bp.ThinkTimeSampler.Sample(nil)
 	if gotThinkTime != 200000 {
-		t.Errorf("BC-5: think time = %d, want 200000 (from ArrivalTimeUs gap, not SendTimeUs gap)", gotThinkTime)
+		t.Errorf("BC-5: think time = %d, want 200000 (ArrivalTimeUs gap); if 180000, SendTimeUs gap was used instead", gotThinkTime)
+	}
+	if gotThinkTime == 180000 {
+		t.Error("BC-5: think time == 180000 (SendTimeUs gap) — must use ArrivalTimeUs gap instead")
+	}
+}
+
+// TestLoadTraceV2SessionBlueprints_NegativeSendTime verifies that negative SendTimeUs
+// (clock corruption) falls back to ArrivalTimeUs for both the session round-0 and
+// non-session call sites in LoadTraceV2SessionBlueprints (INV-3 guard).
+func TestLoadTraceV2SessionBlueprints_NegativeSendTime(t *testing.T) {
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 1, SessionID: "A", RoundIndex: 0,
+				ArrivalTimeUs: 10000, SendTimeUs: -500,
+				InputTokens: 50, OutputTokens: 25},
+			{RequestID: 2, SessionID: "",
+				ArrivalTimeUs: 20000, SendTimeUs: -100,
+				InputTokens: 30, OutputTokens: 15},
+		},
+	}
+
+	requests, _, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	sessionArrival := int64(-1)
+	nonSessionArrival := int64(-1)
+	for _, r := range requests {
+		switch r.SessionID {
+		case "A":
+			sessionArrival = r.ArrivalTime
+		case "":
+			nonSessionArrival = r.ArrivalTime
+		}
+	}
+
+	if sessionArrival != 10000 {
+		t.Errorf("session round-0: ArrivalTime = %d, want 10000 (negative send_time must fall back)", sessionArrival)
+	}
+	if nonSessionArrival != 20000 {
+		t.Errorf("non-session: ArrivalTime = %d, want 20000 (negative send_time must fall back)", nonSessionArrival)
 	}
 }
 ```
@@ -185,10 +240,21 @@ Add a package-level helper (used in 3 places in this file):
 
 ```go
 // injectionTime returns the DES injection time for a trace record.
-// For observed traces (concurrency mode), SendTimeUs > 0 and represents
-// when the request was actually sent to the server — the correct reference
-// for TTFT comparison against calibrate's send_time baseline.
-// Falls back to ArrivalTimeUs for generated traces (SendTimeUs == 0).
+// For traces where SendTimeUs > 0, uses SendTimeUs as the DES injection time.
+// For blis observe traces with --concurrency, SendTimeUs is when the HTTP
+// request was actually dispatched (after any concurrency-slot wait), which
+// matches calibrate's TTFT baseline of first_chunk_time_us - send_time_us.
+// For generated traces (blis run), SendTimeUs == ArrivalTimeUs, so both
+// branches produce the same result.
+// Falls back to ArrivalTimeUs whenever SendTimeUs <= 0:
+//   - SendTimeUs == 0: legacy traces or generated traces where no real network
+//     send occurred.
+//   - SendTimeUs < 0: defensive guard against corrupted trace timestamps;
+//     a negative DES injection time would violate INV-3 (clock monotonicity).
+//
+// Note: in closed-loop session replay, think-time gaps between rounds are
+// derived from ArrivalTimeUs deltas (not SendTimeUs) to preserve client-side
+// pacing semantics; only the initial injection point uses SendTimeUs.
 func injectionTime(rec TraceRecord) int64 {
 	if rec.SendTimeUs > 0 {
 		return rec.SendTimeUs
@@ -235,7 +301,7 @@ Expected: all pass (regression check)
 - [ ] R1: No silent `continue` — not applicable (no new error paths)
 - [ ] R3: No new numeric parameters added — not applicable
 - [ ] R4: No struct literal construction sites changed (no fields added, only which value is assigned to `ArrivalTime`)
-- [ ] INV-3 Clock monotonicity: `SendTimeUs >= ArrivalTimeUs` for observed traces; sim-generated traces have `SendTimeUs == ArrivalTimeUs`. No new ordering violation.
+- [ ] INV-3 Clock monotonicity: `SendTimeUs >= ArrivalTimeUs` for observed traces; sim-generated traces have `SendTimeUs == ArrivalTimeUs`. The `> 0` guard (not `!= 0`) additionally defends against corrupted negative timestamps — a negative injection time would violate INV-3 in the event queue.
 - [ ] INV-5 Causality: `req.ArrivalTime` will now be `SendTimeUs` (≥ `ArrivalTimeUs`) — causality still holds since `send_time ≤ first_chunk_time ≤ last_chunk_time`
 - [ ] INV-6 Determinism: helper is pure (no RNG, no map iteration) — determinism preserved
 - [ ] BC-5 think-time gap: `ArrivalTimeUs` differences in the gap loop are not touched
