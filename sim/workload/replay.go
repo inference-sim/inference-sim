@@ -25,6 +25,29 @@ func effectiveInputTokenCount(inputTokens, serverInputTokens int, prefixGroup st
 	return inputTokens
 }
 
+// injectionTime returns the DES injection time for a trace record.
+// For traces where SendTimeUs > 0, uses SendTimeUs as the DES injection time.
+// For blis observe traces with --concurrency, SendTimeUs is when the HTTP
+// request was actually dispatched (after any concurrency-slot wait), which
+// matches calibrate's TTFT baseline of first_chunk_time_us - send_time_us.
+// For generated traces (blis run), SendTimeUs == ArrivalTimeUs, so both
+// branches produce the same result.
+// Falls back to ArrivalTimeUs whenever SendTimeUs <= 0:
+//   - SendTimeUs == 0: legacy traces or generated traces (blis run) where no
+//     real network send occurred.
+//   - SendTimeUs < 0: defensive guard against corrupted trace timestamps;
+//     a negative DES injection time would violate INV-3 (clock monotonicity).
+//
+// Note: in closed-loop session replay, think-time gaps between rounds are
+// derived from ArrivalTimeUs deltas (not SendTimeUs) to preserve client-side
+// pacing semantics; only the initial injection point uses SendTimeUs.
+func injectionTime(rec TraceRecord) int64 {
+	if rec.SendTimeUs > 0 {
+		return rec.SendTimeUs
+	}
+	return rec.ArrivalTimeUs
+}
+
 // LoadTraceV2Requests converts trace v2 records into sim.Request objects
 // with synthetic token IDs for simulation replay. Requests in the same
 // prefix_group share identical prefix token sequences.
@@ -61,7 +84,7 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 
 		req := &sim.Request{
 			ID:               fmt.Sprintf("request_%d", rec.RequestID),
-			ArrivalTime:      rec.ArrivalTimeUs,
+			ArrivalTime:      injectionTime(rec),
 			InputTokens:      inputTokens,
 			OutputTokens:     outputTokens,
 			MaxOutputLen:     len(outputTokens),
@@ -215,7 +238,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 
 		req := &sim.Request{
 			ID:              fmt.Sprintf("request_%d", r0.RequestID),
-			ArrivalTime:     r0.ArrivalTimeUs,
+			ArrivalTime:     injectionTime(r0),
 			InputTokens:     inputTokens,
 			OutputTokens:    outputTokens,
 			MaxOutputLen:    len(outputTokens),
@@ -267,7 +290,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 		outputTokens := sim.GenerateRandomTokenIDs(rng, rec.OutputTokens)
 		req := &sim.Request{
 			ID:              fmt.Sprintf("request_%d", rec.RequestID),
-			ArrivalTime:     rec.ArrivalTimeUs,
+			ArrivalTime:     injectionTime(rec),
 			InputTokens:     inputTokens,
 			OutputTokens:    outputTokens,
 			MaxOutputLen:    len(outputTokens),
