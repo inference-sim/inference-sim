@@ -518,7 +518,7 @@ func TestLoadTraceV2SessionBlueprints_ServerInputTokens_Sampler_PrefixGroup_Fall
 	if err != nil {
 		t.Fatal(err)
 	}
-	// round-0 sampler value is inputSeq[1]: prefix-group round → falls back to InputTokens(50)
+	// first Sample() call returns inputSeq[1] (round-1 token count): prefix-group round → falls back to InputTokens(50)
 	got := blueprints[0].InputSampler.Sample(nil)
 	if got != 50 {
 		t.Errorf("round-1 sampler value = %d, want 50 (fallback: PrefixGroup set, ServerInputTokens ignored)",
@@ -550,9 +550,9 @@ func TestLoadTraceV2SessionBlueprints_ServerInputTokens_NonSession_PrefixGroup_F
 }
 
 // TestLoadTraceV2Requests_ModelAndDeadline verifies that Model, Deadline, empty Model,
-// and zero Deadline are propagated from TraceRecord to sim.Request (from the original
-// observe-replay plan), and that ServerInputTokens is used as the token count when > 0
-// and PrefixGroup is empty (replay-server-tokens-plan.md BC-1).
+// and zero Deadline are propagated from TraceRecord to sim.Request
+// (2026-03-14-pr653-tracev2-schema-plan.md BC-3–6), and that ServerInputTokens is used
+// as the token count when > 0 and PrefixGroup is empty (replay-server-tokens-plan.md BC-1).
 func TestLoadTraceV2Requests_ModelAndDeadline(t *testing.T) {
 	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "real"}
 	records := []TraceRecord{

@@ -10,10 +10,14 @@ import (
 )
 
 // effectiveInputTokenCount returns the token count to use for generating synthetic
-// input token IDs. It prefers ServerInputTokens (server-reported prompt_tokens from
-// blis observe) when > 0 and no PrefixGroup is set. The PrefixGroup guard prevents
-// double-counting: for prefix-group records, ServerInputTokens includes the prefix
-// length, but replay.go prepends prefix tokens separately.
+// input token IDs. Priority rules:
+//  1. serverInputTokens > 0 && prefixGroup == "": return serverInputTokens (server
+//     is authoritative; covers chat-template overhead in blis-observe traces).
+//  2. prefixGroup != "": return inputTokens regardless of serverInputTokens (server
+//     count includes the prefix; using it as suffix would double-count the prefix
+//     that replay.go prepends separately).
+//  3. serverInputTokens == 0: return inputTokens (field absent in
+//     generated/synthetic traces; not a real measurement).
 func effectiveInputTokenCount(inputTokens, serverInputTokens int, prefixGroup string) int {
 	if serverInputTokens > 0 && prefixGroup == "" {
 		return serverInputTokens
