@@ -92,7 +92,7 @@ type SimResult struct {
 	OutputTokens int     `json:"output_tokens"`
 	SLOClass     string  `json:"slo_class,omitempty"`   // SLO tier (e.g., "standard", "batch"); empty if not set
 	Model        string  `json:"model,omitempty"`       // model tag; empty if not set
-	ITLMeanUs    float64 `json:"itl_mean_us,omitempty"` // mean ITL in microseconds (rm.ITL ms * 1000); 0 if not computed
+	ITLMeanUs    float64 `json:"itl_mean_us,omitempty"` // mean ITL in microseconds (from m.RequestITLs, ticks=µs); 0 if not computed
 }
 
 // LatencyPair holds matched real-vs-sim latency vectors.

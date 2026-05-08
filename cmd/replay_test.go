@@ -2395,12 +2395,13 @@ func TestExtractSimResults_PropagatesSLOClassModelITL(t *testing.T) {
 	m := sim.NewMetrics()
 	m.RequestTTFTs["request_0"] = 1000.0
 	m.RequestE2Es["request_0"] = 5000.0
+	m.RequestITLs["request_0"] = 5000.0 // 5000 ticks = 5ms = 5000µs (same unit as TTFT/E2E)
 	m.Requests["request_0"] = sim.RequestMetrics{
 		NumPrefillTokens: 100,
 		NumDecodeTokens:  50,
 		SLOClass:         "standard",
 		Model:            "qwen3-14b",
-		ITL:              5.0, // milliseconds
+		// ITL field NOT set here — production code reads m.RequestITLs[reqID], not rm.ITL
 	}
 
 	// WHEN extractSimResults is called
@@ -2417,9 +2418,9 @@ func TestExtractSimResults_PropagatesSLOClassModelITL(t *testing.T) {
 	if r.Model != "qwen3-14b" {
 		t.Errorf("Model: got %q, want %q", r.Model, "qwen3-14b")
 	}
-	// ITL is 5.0ms in RequestMetrics → ITLMeanUs = 5000.0µs
+	// ITLMeanUs sourced from m.RequestITLs (ticks = µs), not rm.ITL (ms)
 	if r.ITLMeanUs != 5000.0 {
-		t.Errorf("ITLMeanUs: got %f, want 5000.0 (5ms * 1000)", r.ITLMeanUs)
+		t.Errorf("ITLMeanUs: got %f, want 5000.0 (from m.RequestITLs, ticks=µs)", r.ITLMeanUs)
 	}
 }
 

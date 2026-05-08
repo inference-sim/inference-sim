@@ -738,7 +738,7 @@ func extractSimResults(m *sim.Metrics) []workload.SimResult {
 			OutputTokens: rm.NumDecodeTokens,
 			SLOClass:     rm.SLOClass,
 			Model:        rm.Model,
-			ITLMeanUs:    rm.ITL * 1000, // rm.ITL is ms; ITLMeanUs is µs
+			ITLMeanUs:    m.RequestITLs[reqID], // already in ticks (µs), same as TTFT/E2E; 0 if not computed
 		})
 	}
 	// Log all exclusions at Debug level for observability (R1: no silent data loss)
