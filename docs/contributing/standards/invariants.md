@@ -171,6 +171,18 @@ Invariants are properties that must hold at all times during and after simulatio
 
 ---
 
+## INV-13: Run/Replay Parity
+
+**Statement:** For any configuration supported by both `blis run` and `blis replay`, a trace exported via `blis run --trace-output` and replayed via `blis replay --session-mode fixed` with identical flags MUST produce identical per-request TTFT, E2E, and aggregate metrics. Features not yet supported by replay (autoscaler, node pools) MUST cause a `logrus.Fatalf` at startup when those flags are explicitly set or when a policy bundle containing those features is passed — never silent degradation or a mere warning.
+
+**Verification:** `cmd/replay_test.go` — `TestINV13_RunReplayParity_PD` verifies that a PD-disaggregated cluster produces matching `RequestTTFTs` and `RequestE2Es` maps when the same requests are run directly vs. through the trace-export-then-replay path. `TestReplayCmd_AutoscalerBundleFatal` and `TestReplayCmd_NodePoolsBundleFatal` verify fatal exit for unsupported features.
+
+**Evidence:** `cmd/replay.go::replayCmd.Run` wires all 11 PD disaggregation fields to `cluster.DeploymentConfig` (same set as `runCmd`). Autoscaler and node-pool checks use `logrus.Fatalf` to prevent silent divergence.
+
+**Hypothesis family:** Pipeline fidelity (same as INV-1, INV-5, INV-6).
+
+---
+
 ## PD Disaggregation Invariants
 
 ### INV-PD-1: KV Completeness
