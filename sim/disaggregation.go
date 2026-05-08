@@ -10,12 +10,14 @@ import (
 // by the routing policy. Empty string means "no override" — the caller keeps the
 // previously selected decode pod / applies normal prefill routing. Joint D+P
 // policies (future work) can populate these; the three built-in deciders always
-// leave them empty. PrefillPodHint is defined now to pre-empt a future interface
-// break; GAP-4 (encode pool) will consume it.
+// leave them empty. PrefillPodHint is defined to pre-empt a future interface
+// break and is reserved for future joint D+P policies. GAP-4 (encode pool, #1264)
+// does not consume this field — encode routing threads its decision via a local
+// variable and ParentRequest.EncodeInstanceID, not through DisaggregationDecision.
 type DisaggregationDecision struct {
 	Disaggregate      bool   // true = route to prefill pool, false = route to shared/decode pool
 	DecodePodOverride string // empty = keep pre-selected decode pod
-	PrefillPodHint    string // empty = normal prefill routing (GAP-4 will use this)
+	PrefillPodHint    string // empty = normal prefill routing (reserved for future joint D+P policies)
 }
 
 // DisaggregationDecider decides whether a request should be disaggregated
