@@ -225,6 +225,27 @@ shedding of sheddable entries.
   --per-band-capacity 100 --max-gateway-queue-depth 500
 ```
 
+### In-Flight Eviction
+
+When flow control is enabled and the system is saturated, BLIS can evict sheddable requests that are already running on instances to free capacity for higher-priority waiting requests. This matches GIE's eviction architecture.
+
+**How it works:**
+
+1. When saturation >= 1.0 and a non-sheddable request is waiting in the gateway queue
+2. The eviction trigger selects the most-evictable in-flight request:
+    - Lowest priority first (background=-3 before sheddable=-2 before batch=-1)
+    - Among equal priority: newest dispatch time first (minimizes wasted compute)
+3. The selected request is terminated on its instance (KV freed, resources released)
+4. The freed capacity allows the waiting higher-priority request to dispatch
+
+**Key properties:**
+
+- Only sheddable requests (priority < 0) can be evicted — critical and standard are always protected
+- Eviction is automatic when `--flow-control` is active — no additional flag needed
+- Evicted requests appear in the `Gateway Evicted (in-flight)` anomaly counter
+- This is a terminal state — evicted requests are not requeued
+- Eviction is distinct from instance-level KV preemption (`--preemption-policy`), which handles memory pressure and requeues victims
+
 ### Comparison with Legacy Admission
 
 | Aspect | Legacy (AlwaysAdmit, TierShed, etc.) | FlowControlAdmission |

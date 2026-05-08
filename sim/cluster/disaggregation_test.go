@@ -589,7 +589,7 @@ func newTestPrefixThresholdConfig(threshold int) DeploymentConfig {
 // TestPrefixThreshold_BelowThresholdNotDisaggregated verifies BC-PD-21 at the cluster level:
 // requests with non-cached token counts well below the threshold must not be disaggregated
 // (absent from parentRequests). Tests the full NewClusterSimulator → PrefixThresholdDecider
-// constructor path and the DisaggregationDecisionEvent bifurcation.
+// constructor path and the executeDisaggregatedRouting bifurcation.
 func TestPrefixThreshold_BelowThresholdNotDisaggregated(t *testing.T) {
 	const threshold = 200
 	config := newTestPrefixThresholdConfig(threshold)
@@ -653,18 +653,39 @@ func TestPrefixThreshold_AboveThresholdDisaggregated(t *testing.T) {
 	}
 }
 
-// TestPrefixThreshold_ObserverWarmsCache verifies BC-PD-24 at the cluster level:
-// req1 (disaggregated) warms the prefix cache via notifyDisaggregationObserver in
-// PrefillRoutingEvent.Execute (pd_events.go); req2 (non-disaggregated) verifies that
-// the warmed cache is consulted in DisaggregationDecisionEvent, reducing non-cached
-// token count below the threshold. Tests the full end-to-end wiring path.
-func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
+// TestPrefixThreshold_PerPodCacheQuery verifies BC-1 at the cluster level
+// for GAP-3: req1 (disaggregated) populates the decode pod's real KV cache as
+// part of the disaggregated pipeline (prefill → KV transfer → decode lands on
+// the selected pod); req2 (non-disaggregated) verifies that
+// PrefixThresholdDecider consults the pre-selected decode pod's per-pod
+// cacheQueryFn in executeDisaggregatedRouting, reducing the non-cached token
+// count below the threshold.
+//
+// Routing setup: the shared test config defaults to round-robin, which would
+// make req2's landing pod a function of routing-call count parity — fragile
+// and not representative. This test overrides RoutingPolicy to "weighted"
+// with precise-prefix-cache:2 + queue-depth:1 so req2 is routed to the warm
+// pod by the same prefix-affinity mechanism BLIS uses in production
+// (precise-prefix-cache scorer queries cacheQueryFn and prefers warm pods).
+// That is the exact mechanism PrefixThresholdDecider then re-queries via
+// state.SelectedInstance — making the per-pod cache hit the real cause of
+// the decision, not a round-robin coincidence.
+func TestPrefixThreshold_PerPodCacheQuery(t *testing.T) {
 	const threshold = 300
 	const blockSize = 16
 	config := newTestPrefixThresholdConfig(threshold)
+	// Use prefix-affinity-dominant routing so req2 is routed to req1's decode pod
+	// by design (not round-robin coincidence). Mirrors the pattern in
+	// prefix_routing_test.go.
+	config.RoutingPolicy = "weighted"
+	config.RoutingScorerConfigs = []sim.ScorerConfig{
+		{Name: "precise-prefix-cache", Weight: 2.0},
+		{Name: "queue-depth", Weight: 1.0},
+	}
 
 	// req1: 400 tokens (25 complete blocks), no prior cache.
-	// nonCached = 400 > 300 → disaggregated; ObserveRouting warms 25 blocks in cache.
+	// nonCached = 400 > 300 → disaggregated; as req1 flows through the PD
+	// pipeline its KV cache blocks land on the selected decode pod.
 	prefix := make([]int, 400)
 	for i := range prefix {
 		prefix[i] = i + 1
@@ -678,8 +699,10 @@ func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
 	}
 
 	// req2: same 400-token prefix + 50 new tokens = 450 total.
-	// After req1 warms the cache: nonCached = 450 - 25*16 = 450 - 400 = 50 <= 300 → NOT disaggregated.
-	// req2 arrives 2s after req1, well after req1's PrefillRoutingEvent fires and warms the cache.
+	// After req1 populates the decode-pod cache: nonCached = 450 - 25*16 = 450 - 400 = 50 <= 300 → NOT disaggregated.
+	// req2 arrives 2s after req1, well after req1's prefill + KV transfer + decode have populated
+	// the decode pod's KV cache. The `precise-prefix-cache` scorer configured above then routes
+	// req2 to the warm pod, so the PrefixThresholdDecider's cacheQueryFn lookup hits.
 	extended := make([]int, len(prefix)+50)
 	copy(extended, prefix)
 	for i := len(prefix); i < len(extended); i++ {
@@ -710,12 +733,15 @@ func TestPrefixThreshold_ObserverWarmsCache(t *testing.T) {
 			"check PrefixThresholdDecider constructor wiring in NewClusterSimulator")
 	}
 
-	// req2 must NOT be disaggregated: prefix is cached after req1's PrefillRoutingEvent
-	// fires ObserveRouting, so only 50 tokens are non-cached (50 <= 300 threshold).
+	// req2 must NOT be disaggregated: the prefix is cached on the decode pod after
+	// req1's disaggregated pipeline completed — the `precise-prefix-cache` scorer
+	// configured in this test routes req2 to the warm pod, and
+	// PrefixThresholdDecider's cacheQueryFn lookup sees the 25 cached blocks.
+	// Non-cached count: 450 - 400 = 50 <= 300 threshold → not disaggregated.
 	for _, pr := range cs.parentRequests {
 		if pr.ID == "req-follow" {
 			t.Error("req-follow (50 non-cached tokens <= 300 threshold after cache warming) must NOT be disaggregated; " +
-				"check notifyDisaggregationObserver wiring in PrefillRoutingEvent.Execute (pd_events.go)")
+				"check per-pod cacheQueryFn wiring via state.SelectedInstance (sim/cluster/cluster.go)")
 		}
 	}
 }
@@ -1750,8 +1776,9 @@ func TestDisaggregation_PD_SessionManager_ContextAccumulation(t *testing.T) {
 
 // TestDisaggregation_NonDisaggRoutedToDecodePoolOnly verifies P3 fix: when PDDecider="never"
 // (no disaggregation), all requests must be routed exclusively to decode pool instances.
-// Before the fix, DisaggregationDecisionEvent scheduled RoutingDecisionEvent which called
-// buildRouterState() including ALL instances (prefill + decode).
+// Before the fix, the non-disaggregated path scheduled a full-cluster RoutingDecisionEvent
+// which called buildRouterState() including ALL instances (prefill + decode). Post-#1261,
+// executeDisaggregatedRouting routes directly to the decode pool.
 func TestDisaggregation_NonDisaggRoutedToDecodePoolOnly(t *testing.T) {
 	// GIVEN: pool topology configured but disaggregation never triggered
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
@@ -1784,7 +1811,7 @@ func TestDisaggregation_NonDisaggRoutedToDecodePoolOnly(t *testing.T) {
 }
 
 // TestDisaggregation_DecodeInstancePreSelected verifies P1 fix: the decode instance is
-// selected during DisaggregationDecisionEvent (before prefill routing), not after KV transfer.
+// selected during executeDisaggregatedRouting (before prefill routing), not after KV transfer.
 // Before the fix, DecodeInstanceID was set by DecodeRoutingEvent after KV transfer completed.
 func TestDisaggregation_DecodeInstancePreSelected(t *testing.T) {
 	// GIVEN: always-disaggregate pool topology
@@ -1821,7 +1848,7 @@ func TestDisaggregation_DecodeInstancePreSelected(t *testing.T) {
 
 // TestDisaggregation_NoDecodeRoutingEvent verifies P2 fix: no DecodeRoutingRecord is emitted
 // in the trace because the second routing decision (DecodeRoutingEvent) is eliminated.
-// The decode pod is pre-selected at DisaggregationDecisionEvent time; KVTransferCompletedEvent
+// The decode pod is pre-selected at executeDisaggregatedRouting time; KVTransferCompletedEvent
 // injects directly to the pre-selected pod.
 func TestDisaggregation_NoDecodeRoutingEvent(t *testing.T) {
 	// GIVEN: always-disaggregate with trace enabled
@@ -1852,5 +1879,197 @@ func TestDisaggregation_NoDecodeRoutingEvent(t *testing.T) {
 	}
 	if len(tr.KVTransfers) != numRequests {
 		t.Errorf("expected %d KV transfer records, got %d", numRequests, len(tr.KVTransfers))
+	}
+}
+
+// TestPDRouting_InjectionTimingPreserved verifies BC-2 for the unified routing
+// entry point (#1261): effective injection wall-time is unchanged after collapsing
+// the poolsConfigured() fork. For a disaggregated request, PrefillEnqueueTime —
+// the timestamp at which PrefillRoutingEvent fires and writes the parent record —
+// must equal ArrivalTime + AdmissionLatency + RoutingLatency, the same value the
+// old DisaggregationDecisionEvent produced (it fired at admission_time and
+// re-added routingLatency when scheduling PrefillRoutingEvent).
+//
+// A future refactor that accidentally dropped routingLatency from the
+// RoutingDecisionEvent schedule expression would silently pass the weaker
+// causality test (PrefillEnqueueTime >= ArrivalTime); this test asserts the
+// exact offset.
+func TestPDRouting_InjectionTimingPreserved(t *testing.T) {
+	const admissionLatency int64 = 50_000  // 50ms
+	const routingLatency int64 = 100_000   // 100ms
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	config.AdmissionLatency = admissionLatency
+	config.RoutingLatency = routingLatency
+
+	const numRequests = 3
+	requests := newTestRequests(numRequests)
+	// Pin arrivals to known values so we can compute the expected enqueue offset.
+	for i, r := range requests {
+		r.ArrivalTime = int64(i) * 200_000 // 200ms apart
+	}
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	parents := cs.ParentRequests()
+	if len(parents) != numRequests {
+		t.Fatalf("expected %d disaggregated parents, got %d", numRequests, len(parents))
+	}
+
+	// Build a lookup: parent ID -> ArrivalTime. ParentRequest.ID equals the
+	// original request ID; newTestRequests assigns sequential IDs.
+	arrivalByID := make(map[string]int64, numRequests)
+	for _, r := range requests {
+		arrivalByID[r.ID] = r.ArrivalTime
+	}
+
+	for _, parent := range parents {
+		arrival, ok := arrivalByID[parent.ID]
+		if !ok {
+			t.Errorf("parent %s: no matching request in input set", parent.ID)
+			continue
+		}
+		want := arrival + admissionLatency + routingLatency
+		if parent.PrefillEnqueueTime != want {
+			t.Errorf("parent %s: PrefillEnqueueTime=%d, want %d (ArrivalTime=%d + AdmissionLatency=%d + RoutingLatency=%d)",
+				parent.ID, parent.PrefillEnqueueTime, want,
+				arrival, admissionLatency, routingLatency)
+		}
+	}
+}
+
+// recordingDecider captures every (req, state) pair passed into Decide and
+// delegates the actual decision to an inner decider. Used to pin BC-3 at the
+// cluster level: the RouterState passed to Decide must contain snapshots for
+// every routable decode-pool instance.
+type recordingDecider struct {
+	inner sim.DisaggregationDecider
+	calls []recordedCall
+}
+
+type recordedCall struct {
+	reqID       string
+	snapshotIDs []string
+	stateNil    bool
+	clock       int64
+}
+
+func (r *recordingDecider) Decide(req *sim.Request, state *sim.RouterState) sim.DisaggregationDecision {
+	c := recordedCall{reqID: req.ID, stateNil: state == nil}
+	if state != nil {
+		c.clock = state.Clock
+		c.snapshotIDs = make([]string, len(state.Snapshots))
+		for i, s := range state.Snapshots {
+			c.snapshotIDs[i] = s.ID
+		}
+	}
+	r.calls = append(r.calls, c)
+	return r.inner.Decide(req, state)
+}
+
+// TestDisaggregation_DeciderReceivesDecodePoolState verifies BC-3 at the cluster
+// level: the RouterState passed to DisaggregationDecider.Decide contains
+// snapshots for every decode-pool instance (non-nil, non-empty, IDs match the
+// decode pool).
+func TestDisaggregation_DeciderReceivesDecodePoolState(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2) // 2 prefill + 2 decode
+	const numRequests = 3
+	requests := newTestRequests(numRequests)
+
+	cs := NewClusterSimulator(config, requests, nil)
+	rec := &recordingDecider{inner: &sim.AlwaysDisaggregate{}}
+	cs.disaggregationDecider = rec
+
+	mustRun(t, cs)
+
+	// Build the expected decode-pool ID set from pool membership.
+	wantDecodeIDs := make(map[string]bool)
+	for id, role := range cs.poolMembership {
+		if role.Has(PoolRoleDecode) {
+			wantDecodeIDs[id] = true
+		}
+	}
+	if len(wantDecodeIDs) == 0 {
+		t.Fatal("test precondition: no decode-pool instances in cluster")
+	}
+
+	if len(rec.calls) != numRequests {
+		t.Fatalf("recorded %d Decide calls, want %d (one per request)", len(rec.calls), numRequests)
+	}
+	for i, c := range rec.calls {
+		if c.stateNil {
+			t.Errorf("call %d (req %s): state was nil, want non-nil (empty-pool case is rejected before Decide)", i, c.reqID)
+			continue
+		}
+		if len(c.snapshotIDs) != len(wantDecodeIDs) {
+			t.Errorf("call %d (req %s): state.Snapshots has %d entries, want %d (decode-pool size)",
+				i, c.reqID, len(c.snapshotIDs), len(wantDecodeIDs))
+		}
+		for _, id := range c.snapshotIDs {
+			if !wantDecodeIDs[id] {
+				t.Errorf("call %d (req %s): state.Snapshots contains %q which is not in the decode pool",
+					i, c.reqID, id)
+			}
+		}
+	}
+}
+
+// overrideDecider always returns Disaggregate=false plus a DecodePodOverride,
+// rerouting the decode target to the configured instance. Used to verify the
+// call-site retargeting logic in executeDisaggregatedRouting.
+type overrideDecider struct {
+	override string
+}
+
+func (o *overrideDecider) Decide(_ *sim.Request, _ *sim.RouterState) sim.DisaggregationDecision {
+	return sim.DisaggregationDecision{Disaggregate: false, DecodePodOverride: o.override}
+}
+
+// TestDisaggregation_DecodePodOverrideReroutes verifies the call site applies
+// DisaggregationDecision.DecodePodOverride: when the decider returns a non-empty
+// override (within the decode pool), every request lands on that instance,
+// regardless of what the decode routing policy would have selected.
+func TestDisaggregation_DecodePodOverrideReroutes(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	const numRequests = 5
+	requests := newTestRequests(numRequests)
+
+	cs := NewClusterSimulator(config, requests, nil)
+
+	// Pick a specific decode-pool instance as the override target. Use the
+	// lexicographically-last decode ID so the override differs from the
+	// round-robin default (which starts at the first decode instance).
+	var targetID string
+	for id, role := range cs.poolMembership {
+		if role.Has(PoolRoleDecode) {
+			if id > targetID {
+				targetID = id
+			}
+		}
+	}
+	if targetID == "" {
+		t.Fatal("test precondition: no decode-pool instance found for override")
+	}
+	cs.disaggregationDecider = &overrideDecider{override: targetID}
+
+	mustRun(t, cs)
+
+	// With Disaggregate=false and DecodePodOverride set, every routed request
+	// must have AssignedInstance == targetID — the override replaces the
+	// round-robin pick.
+	overrideCount := 0
+	for _, req := range requests {
+		if req.AssignedInstance == "" {
+			continue // not routed (e.g., still queued at horizon)
+		}
+		if req.AssignedInstance != targetID {
+			t.Errorf("req %s: AssignedInstance = %q, want %q (DecodePodOverride must retarget)",
+				req.ID, req.AssignedInstance, targetID)
+			continue
+		}
+		overrideCount++
+	}
+	if overrideCount == 0 {
+		t.Fatal("no requests landed on override target — override logic did not fire")
 	}
 }

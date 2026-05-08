@@ -43,6 +43,7 @@ type ProgressSnapshot struct {
 	RoutingRejections int
 	GatewayQueueDepth int
 	GatewayQueueShed  int
+	GatewayEvicted    int
 	ShedByTier        map[string]int
 	ActivePDTransfers int
 

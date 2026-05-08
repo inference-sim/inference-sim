@@ -179,6 +179,31 @@ func TestResolveConfigForRole_Decode(t *testing.T) {
 	}
 }
 
+// TestResolveConfigForRole_Shared verifies issue #1276 BC-7: the shared-role
+// (PoolRolePrefillDecode) resolves to DecodeOverrides — "decode wins"
+// precedence (D-2 in the micro plan). This mirrors the spirit of llm-d's
+// allowsNoLabel=true decode default and avoids the oversizing trap that
+// would result from applying prefill's higher TP to a pod also serving decode.
+func TestResolveConfigForRole_Shared(t *testing.T) {
+	prefillTP := 8
+	decodeTP := 4
+	dc := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			KVCacheConfig:       sim.NewKVCacheConfig(5000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 16, "", 0),
+		},
+		PrefillOverrides: PoolOverrides{TP: &prefillTP},
+		DecodeOverrides:  PoolOverrides{TP: &decodeTP},
+	}
+
+	cfg := dc.resolveConfigForRole(PoolRolePrefillDecode)
+	if cfg.TP != decodeTP {
+		t.Errorf("shared-role TP = %d, want %d (decode-wins precedence per issue #1276 D-2)", cfg.TP, decodeTP)
+	}
+}
+
 func TestResolveConfigForRole_NoRole_ReturnsGlobal(t *testing.T) {
 	tp := 8
 	dc := DeploymentConfig{
@@ -578,15 +603,15 @@ func TestNewHeterogeneousDeploymentConfig_Helper(t *testing.T) {
 func TestResolvePoolConfig_MaxModelLen_CappedToPoolKVCapacity(t *testing.T) {
 	// GIVEN global config with large MaxModelLen and large global KV blocks
 	global := sim.SimConfig{
-		Horizon: 1000000,
-		Seed:    42,
+		Horizon:             1000000,
+		Seed:                42,
 		KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0), // 10000 blocks × 16 = 160000 tokens
 		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, "", 131072),
 	}
 
 	// AND per-pool override with smaller TotalKVBlocks (smaller GPU) and auto-capped MaxModelLen
 	poolKVFeasibleMax := int64(2048 * 16) // 32768 tokens
-	poolMaxModelLen := poolKVFeasibleMax   // auto-capped CLI fix would set this
+	poolMaxModelLen := poolKVFeasibleMax  // auto-capped CLI fix would set this
 	poolBlocks := int64(2048)
 	overrides := PoolOverrides{
 		TotalKVBlocks: &poolBlocks,
@@ -704,6 +729,7 @@ func TestResolveConfigForRole_SLOPriorityOverrides_Propagates(t *testing.T) {
 		{"default", PoolRole(0)},
 		{"prefill", PoolRolePrefill},
 		{"decode", PoolRoleDecode},
+		{"shared", PoolRolePrefillDecode}, // issue #1276
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := dc.resolveConfigForRole(tc.role)
@@ -756,6 +782,69 @@ func TestNewClusterSimulator_PanicsOnInvalidPrefillOverrides(t *testing.T) {
 	}()
 
 	NewClusterSimulator(config, nil, nil)
+}
+
+// TestNewClusterSimulator_PureSharedCluster verifies issue #1276: a pure-shared
+// cluster (only --prefill-decode-instances set, no dedicated prefill/decode) can
+// be constructed successfully. The KV-transfer-sizing validation guard at
+// NewClusterSimulator must cover SharedInstances>0 in addition to PrefillInstances>0.
+func TestNewClusterSimulator_PureSharedCluster(t *testing.T) {
+	config := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 4, "roofline", 0),
+		},
+		NumInstances:    3,
+		SharedInstances: 3, // all instances are prefill-decode shared-role
+		PDDecider:       "always",
+		RoutingPolicy:   "round-robin",
+	}
+
+	// Must construct without panicking — the extended guard accepts pure-shared.
+	cs := NewClusterSimulator(config, nil, nil)
+	if cs == nil {
+		t.Fatal("NewClusterSimulator returned nil for a valid pure-shared cluster")
+	}
+	if !cs.poolsConfigured() {
+		t.Error("pure-shared cluster should have poolsConfigured() == true")
+	}
+	// Every instance must carry the shared-role bit.
+	for id, role := range cs.PoolMembership() {
+		if !role.Has(PoolRolePrefill) || !role.Has(PoolRoleDecode) {
+			t.Errorf("instance %s: role %v missing prefill and/or decode bit", id, role)
+		}
+	}
+}
+
+// TestNewClusterSimulator_PureSharedWithTransferContention verifies issue #1276:
+// PDTransferContention is permitted for pure-shared clusters (shared pod →
+// shared pod KV transfers are legitimate when a request's prefill and decode
+// land on different shared pods).
+func TestNewClusterSimulator_PureSharedWithTransferContention(t *testing.T) {
+	config := DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             math.MaxInt64,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 4, "roofline", 0),
+		},
+		NumInstances:         2,
+		SharedInstances:      2,
+		PDDecider:            "always",
+		PDTransferContention: true,
+		RoutingPolicy:        "round-robin",
+	}
+
+	cs := NewClusterSimulator(config, nil, nil)
+	if cs == nil {
+		t.Fatal("NewClusterSimulator returned nil for pure-shared + PDTransferContention")
+	}
 }
 
 // TestNewClusterSimulator_PanicsOnInvalidDecodeOverrides verifies the same panic contract

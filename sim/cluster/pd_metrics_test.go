@@ -147,9 +147,9 @@ func TestCollectPDMetrics_TransferDuration(t *testing.T) {
 // BC-6: DisaggregatedCount counts parents with TransferCompleteTime > 0.
 func TestCollectPDMetrics_DisaggregatedCount(t *testing.T) {
 	parents := []*ParentRequest{
-		buildParentRequest("req-1", "req-1_prefill", 100, 200),  // completed transfer
-		buildParentRequest("req-2", "req-2_prefill", 0, 0),       // no transfer (local)
-		buildParentRequest("req-3", "req-3_prefill", 100, 300),  // completed transfer
+		buildParentRequest("req-1", "req-1_prefill", 100, 200), // completed transfer
+		buildParentRequest("req-2", "req-2_prefill", 0, 0),     // no transfer (local)
+		buildParentRequest("req-3", "req-3_prefill", 100, 300), // completed transfer
 	}
 	agg := buildAggregatedWithTTFTs(map[string]float64{
 		"req-1": 5000.0,
@@ -401,6 +401,66 @@ func TestCollectPDMetrics_LoadImbalanceRatio_BothZeroGuard(t *testing.T) {
 	}
 	if math.Abs(pd.LoadImbalanceRatio-1.0) > 1e-9 {
 		t.Errorf("expected LoadImbalanceRatio=1.0 (both idle sentinel), got %.4f", pd.LoadImbalanceRatio)
+	}
+}
+
+// Issue #1276 BC-6: a shared-role instance's completed requests are attributed
+// to both prefillCompleted and decodeCompleted (set-membership, not exact equality).
+// Matches llm-d behaviour where a prefill-decode pod participates in both pools.
+func TestCollectPoolThroughput_SharedRole(t *testing.T) {
+	poolMembership := map[string]PoolRole{
+		"prefill-only":  PoolRolePrefill,
+		"decode-only":   PoolRoleDecode,
+		"shared-pd-pod": PoolRolePrefillDecode,
+	}
+	mPre := sim.NewMetrics()
+	mPre.CompletedRequests = 10
+	mDec := sim.NewMetrics()
+	mDec.CompletedRequests = 10
+	mShared := sim.NewMetrics()
+	mShared.CompletedRequests = 10
+	metricsByID := map[string]*sim.Metrics{
+		"prefill-only":  mPre,
+		"decode-only":   mDec,
+		"shared-pd-pod": mShared,
+	}
+
+	// simEndedTime = 1s in microseconds — completed/1s == completed RPS.
+	prefillRPS, decodeRPS, _ := collectPoolThroughput(poolMembership, metricsByID, 1_000_000)
+
+	// prefill-only contributes 10, shared contributes 10 → 20 total.
+	if math.Abs(prefillRPS-20.0) > 1e-9 {
+		t.Errorf("prefillRPS = %.4f, want 20.0 (shared pod must double-count into prefill)", prefillRPS)
+	}
+	// decode-only contributes 10, shared contributes 10 → 20 total.
+	if math.Abs(decodeRPS-20.0) > 1e-9 {
+		t.Errorf("decodeRPS = %.4f, want 20.0 (shared pod must double-count into decode)", decodeRPS)
+	}
+}
+
+// Issue #1276: PoolRole(0) (unassigned) must not contribute to either counter,
+// preserving the "partial membership safe" contract from BC-10.
+func TestCollectPoolThroughput_UnassignedIgnored(t *testing.T) {
+	poolMembership := map[string]PoolRole{
+		"prefill-only": PoolRolePrefill,
+		"unassigned":   PoolRole(0),
+	}
+	mPre := sim.NewMetrics()
+	mPre.CompletedRequests = 7
+	mUnassigned := sim.NewMetrics()
+	mUnassigned.CompletedRequests = 999 // must be ignored
+	metricsByID := map[string]*sim.Metrics{
+		"prefill-only": mPre,
+		"unassigned":   mUnassigned,
+	}
+
+	prefillRPS, decodeRPS, _ := collectPoolThroughput(poolMembership, metricsByID, 1_000_000)
+
+	if math.Abs(prefillRPS-7.0) > 1e-9 {
+		t.Errorf("prefillRPS = %.4f, want 7.0 (unassigned must NOT contribute)", prefillRPS)
+	}
+	if math.Abs(decodeRPS-0.0) > 1e-9 {
+		t.Errorf("decodeRPS = %.4f, want 0.0 (unassigned must NOT contribute)", decodeRPS)
 	}
 }
 
