@@ -60,7 +60,7 @@ var (
 	observeRecordITL           bool
 	observeITLOutput           string
 	observeTimeout             int
-	observeSaturationReport    string // File to write BacklogDriftReport JSON for saturation analysis (--saturation-report)
+	// saturationReport is declared in root.go and shared across run, replay, observe
 )
 
 var observeCmd = &cobra.Command{
@@ -159,13 +159,8 @@ func init() {
 	observeCmd.Flags().StringVar(&observeITLOutput, "itl-output", "", "Output path for ITL CSV file (default: <trace-data>.itl.csv if --record-itl is set)")
 
 	// Saturation analysis (optional)
-	observeCmd.Flags().StringVar(&observeSaturationReport, "saturation-report", "", "File to write saturation analysis JSON (backlog-drift classification)")
-	// Saturation analysis configuration (shared with run/replay commands)
-	observeCmd.Flags().IntVar(&saturationWindowSec, "saturation-window", 60, "Window size in seconds for backlog-drift analysis")
-	observeCmd.Flags().IntVar(&saturationMinWindows, "saturation-min-windows", 5, "Minimum number of complete windows required for reliable classification")
-	observeCmd.Flags().Float64Var(&saturationPeakRatio, "saturation-peak-ratio", 2.0, "Peak/mean in-flight ratio threshold for TRANSIENT_BACKLOG detection")
-	observeCmd.Flags().Float64Var(&saturationPeakBand, "saturation-peak-band", 0.2, "Confidence band around peak-ratio threshold (creates borderline zone using slope as tiebreaker)")
-	observeCmd.Flags().Float64Var(&saturationConfidence, "saturation-ci", 0.95, "Confidence level for slope significance test (0.90, 0.95, or 0.99)")
+	observeCmd.Flags().StringVar(&saturationReport, "saturation-report", "", "File to write saturation analysis JSON (backlog-drift classification)")
+	registerSaturationFlags(observeCmd)
 
 	rootCmd.AddCommand(observeCmd)
 }
@@ -520,7 +515,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	}
 
 	// Saturation analysis if requested (issue #1298)
-	if observeSaturationReport != "" {
+	if saturationReport != "" {
 		// Convert trace records to sim.Request objects for analysis
 		requests := workload.TraceRecordsToRequests(records)
 
@@ -546,10 +541,10 @@ func runObserve(cmd *cobra.Command, _ []string) {
 			saturationConfidence,
 		)
 		report := workload.AnalyzeBacklogDrift(requests, simEndUs, cfg)
-		if err := workload.WriteBacklogDriftReportJSON(observeSaturationReport, report); err != nil {
+		if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
 			logrus.Fatalf("Failed to write saturation report: %v", err)
 		}
-		logrus.Infof("Saturation report written to %s (classification: %s)", observeSaturationReport, report.Classification)
+		logrus.Infof("Saturation report written to %s (classification: %s)", saturationReport, report.Classification)
 	}
 }
 

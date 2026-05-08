@@ -23,10 +23,10 @@ var (
 	traceHeaderPath string
 	traceDataPath   string
 	replayTraceOutput   string // File prefix for TraceV2 re-export (<prefix>.yaml + <prefix>.csv)
-	replaySaturationReport string // File to write BacklogDriftReport JSON for saturation analysis (--saturation-report)
 	replaySessionMode   string
 	replayThinkTimeMs   int
 	replayThinkTimeDist string // distribution spec for think time (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s")
+	// saturationReport is declared in root.go and shared across run, replay, observe
 )
 
 var replayCmd = &cobra.Command{
@@ -399,7 +399,7 @@ Example:
 		}
 
 		// Saturation analysis if requested (issue #1298)
-		if replaySaturationReport != "" {
+		if saturationReport != "" {
 			// Assemble all requests (original + follow-ups)
 			allRequests := make([]*sim.Request, 0, len(requests)+len(followUpRequests))
 			allRequests = append(allRequests, requests...)
@@ -408,26 +408,7 @@ Example:
 				return allRequests[i].ArrivalTime < allRequests[j].ArrivalTime
 			})
 
-			// Compute simEndUs from actual request completion times
-			simEndUs := int64(0)
-			for _, req := range allRequests {
-				completionUs := req.ArrivalTime
-				if req.TTFTSet {
-					completionUs += req.FirstTokenTime
-				}
-				if len(req.ITL) > 0 {
-					for _, itl := range req.ITL {
-						completionUs += itl
-					}
-				}
-				if completionUs > simEndUs {
-					simEndUs = completionUs
-				}
-			}
-			// Use horizon as floor if explicitly set and larger
-			if config.Horizon > 0 && config.Horizon < math.MaxInt64 && config.Horizon > simEndUs {
-				simEndUs = config.Horizon
-			}
+			simEndUs := workload.ComputeSimEndUs(allRequests, config.Horizon)
 
 			// Build saturation analysis config from flags (or defaults if not set)
 			cfg := workload.NewBacklogDriftConfig(
@@ -438,10 +419,10 @@ Example:
 				saturationConfidence,
 			)
 			report := workload.AnalyzeBacklogDrift(allRequests, simEndUs, cfg)
-			if err := workload.WriteBacklogDriftReportJSON(replaySaturationReport, report); err != nil {
+			if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
 				logrus.Fatalf("Failed to write saturation report: %v", err)
 			}
-			logrus.Infof("Saturation report written to %s (classification: %s)", replaySaturationReport, report.Classification)
+			logrus.Infof("Saturation report written to %s (classification: %s)", saturationReport, report.Classification)
 		}
 
 		logrus.Info("Replay complete.")
@@ -454,14 +435,8 @@ func init() {
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
 	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens) for blis calibrate consumption.")
 	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\"")
-	replayCmd.Flags().StringVar(&replaySaturationReport, "saturation-report", "", "File to write saturation analysis JSON (backlog-drift classification)")
-
-	// Saturation analysis configuration (shared with run command)
-	replayCmd.Flags().IntVar(&saturationWindowSec, "saturation-window", 60, "Window size in seconds for backlog-drift analysis")
-	replayCmd.Flags().IntVar(&saturationMinWindows, "saturation-min-windows", 5, "Minimum number of complete windows required for reliable classification")
-	replayCmd.Flags().Float64Var(&saturationPeakRatio, "saturation-peak-ratio", 2.0, "Peak/mean in-flight ratio threshold for TRANSIENT_BACKLOG detection")
-	replayCmd.Flags().Float64Var(&saturationPeakBand, "saturation-peak-band", 0.2, "Confidence band around peak-ratio threshold (creates borderline zone using slope as tiebreaker)")
-	replayCmd.Flags().Float64Var(&saturationConfidence, "saturation-ci", 0.95, "Confidence level for slope significance test (0.90, 0.95, or 0.99)")
+	replayCmd.Flags().StringVar(&saturationReport, "saturation-report", "", "File to write saturation analysis JSON (backlog-drift classification)")
+	registerSaturationFlags(replayCmd)
 
 	replayCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", `Session replay mode: "fixed" (pre-baked arrivals from trace) or "closed-loop" (load-adaptive follow-ups via SessionManager)`)
 	replayCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "Override think time between session rounds in milliseconds (0 = derive from trace inter-round arrival gaps; mutually exclusive with --think-time-dist; requires --session-mode closed-loop)")

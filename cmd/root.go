@@ -188,6 +188,16 @@ var (
 	traceOutput string // File prefix for TraceV2 export (<prefix>.yaml + <prefix>.csv)
 )
 
+// registerSaturationFlags registers the 5 saturation analysis config flags on the given command.
+// These flags control backlog-drift analysis behavior and are shared across run, replay, and observe.
+func registerSaturationFlags(cmd *cobra.Command) {
+	cmd.Flags().IntVar(&saturationWindowSec, "saturation-window", 60, "Window size in seconds for backlog-drift analysis")
+	cmd.Flags().IntVar(&saturationMinWindows, "saturation-min-windows", 5, "Minimum number of complete windows required for reliable classification")
+	cmd.Flags().Float64Var(&saturationPeakRatio, "saturation-peak-ratio", 2.0, "Peak/mean in-flight ratio threshold for TRANSIENT_BACKLOG detection")
+	cmd.Flags().Float64Var(&saturationPeakBand, "saturation-peak-band", 0.2, "Confidence band around peak-ratio threshold (creates borderline zone using slope as tiebreaker)")
+	cmd.Flags().Float64Var(&saturationConfidence, "saturation-ci", 0.95, "Confidence level for slope significance test (0.90, 0.95, or 0.99)")
+}
+
 // applyRopeScaling applies rope_scaling factor to maxPosEmb if applicable.
 // Returns the (possibly scaled) value and whether scaling was applied.
 // modelType is the HuggingFace model_type string (empty if not present).
@@ -1615,26 +1625,7 @@ var runCmd = &cobra.Command{
 
 		// Saturation analysis if requested (issue #1298)
 		if saturationReport != "" {
-			// Compute simEndUs from actual request completion times
-			simEndUs := int64(0)
-			for _, req := range allRequests {
-				completionUs := req.ArrivalTime
-				if req.TTFTSet {
-					completionUs += req.FirstTokenTime
-				}
-				if len(req.ITL) > 0 {
-					for _, itl := range req.ITL {
-						completionUs += itl
-					}
-				}
-				if completionUs > simEndUs {
-					simEndUs = completionUs
-				}
-			}
-			// Use horizon as floor if explicitly set and larger
-			if config.Horizon > 0 && config.Horizon < math.MaxInt64 && config.Horizon > simEndUs {
-				simEndUs = config.Horizon
-			}
+			simEndUs := workload.ComputeSimEndUs(allRequests, config.Horizon)
 
 			// Build saturation analysis config from flags (or defaults if not set)
 			cfg := workload.NewBacklogDriftConfig(
@@ -1964,13 +1955,7 @@ func init() {
 	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")
 	runCmd.Flags().StringVar(&metricsPath, "metrics-path", "", "File to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats). Use --results-path on blis replay for per-request SimResult JSON.")
 	runCmd.Flags().StringVar(&saturationReport, "saturation-report", "", "File to write saturation analysis JSON (backlog-drift classification)")
-
-	// Saturation analysis configuration
-	runCmd.Flags().IntVar(&saturationWindowSec, "saturation-window", 60, "Window size in seconds for backlog-drift analysis")
-	runCmd.Flags().IntVar(&saturationMinWindows, "saturation-min-windows", 5, "Minimum number of complete windows required for reliable classification")
-	runCmd.Flags().Float64Var(&saturationPeakRatio, "saturation-peak-ratio", 2.0, "Peak/mean in-flight ratio threshold for TRANSIENT_BACKLOG detection")
-	runCmd.Flags().Float64Var(&saturationPeakBand, "saturation-peak-band", 0.2, "Confidence band around peak-ratio threshold (creates borderline zone using slope as tiebreaker)")
-	runCmd.Flags().Float64Var(&saturationConfidence, "saturation-ci", 0.95, "Confidence level for slope significance test (0.90, 0.95, or 0.99)")
+	registerSaturationFlags(runCmd)
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)

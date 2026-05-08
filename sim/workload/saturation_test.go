@@ -419,7 +419,6 @@ func TestAnalyzeBacklogDrift_EndToEnd_PERSISTENTLY_SATURATED(t *testing.T) {
 
 	// Use same config as RealWorkloads test: 10s windows instead of 60s
 	cfg := NewBacklogDriftConfig(10*time.Second, 4, 2.0, 0.2, 0.95)
-	analyzer := NewBacklogDriftAnalyzer(cfg)
 
 	// Same parameters as RealWorkloads "High rate - persistent saturation" test
 	rate := 500.0
@@ -428,28 +427,20 @@ func TestAnalyzeBacklogDrift_EndToEnd_PERSISTENTLY_SATURATED(t *testing.T) {
 	requests := generateTestWorkload(rate, numRequests, horizonUs)
 	simEndUs := horizonUs
 
-	report := analyzer.Analyze(requests, simEndUs)
+	report := AnalyzeBacklogDrift(requests, simEndUs, cfg)
 
 	if report.Classification != "PERSISTENTLY_SATURATED" {
-		data, ok := report.AlgorithmData.(BacklogDriftData)
-		if !ok {
-			t.Fatalf("AlgorithmData type assertion failed: got %T", report.AlgorithmData)
-		}
 		t.Errorf("Expected PERSISTENTLY_SATURATED, got %s\nNote: %s\nSlope: %.6e (CI: [%.6e, %.6e])\nPeak/Mean: %.2f",
-			report.Classification, report.Note, data.Slope, data.SlopeLower, data.SlopeUpper,
-			float64(data.PeakInFlight)/data.MeanInFlight)
+			report.Classification, report.Note, report.Slope, report.SlopeLower, report.SlopeUpper,
+			float64(report.PeakInFlight)/report.MeanInFlight)
 	}
-	data, ok := report.AlgorithmData.(BacklogDriftData)
-	if !ok {
-		t.Fatalf("AlgorithmData type assertion failed: got %T", report.AlgorithmData)
-	}
-	if data.Slope <= 0 {
-		t.Errorf("Expected positive slope, got %f", data.Slope)
+	if report.Slope <= 0 {
+		t.Errorf("Expected positive slope, got %f", report.Slope)
 	}
 	// Note: FinalBacklog can be 0 if horizon captures the full workload including drain phase
 	// The key invariant is positive slope with CI excluding zero → persistent growth occurred
-	if len(data.Windows) < cfg.MinWindows {
-		t.Errorf("Expected at least %d windows, got %d", cfg.MinWindows, len(data.Windows))
+	if len(report.Windows) < cfg.MinWindows {
+		t.Errorf("Expected at least %d windows, got %d", cfg.MinWindows, len(report.Windows))
 	}
 }
 
@@ -618,7 +609,6 @@ func TestSaturationProgression_Demonstration(t *testing.T) {
 		0.2,            // peak ratio band
 		0.95,           // confidence level
 	)
-	analyzer := NewBacklogDriftAnalyzer(cfg)
 
 	// Three scenarios: low, medium, high rate
 	// Expectations are informational only (not strict assertions)
@@ -640,7 +630,7 @@ func TestSaturationProgression_Demonstration(t *testing.T) {
 			)
 
 			// Analyze
-			report := analyzer.Analyze(requests, observationEndUs)
+			report := AnalyzeBacklogDrift(requests, observationEndUs, cfg)
 
 			// Log result (not enforcing specific classification)
 			t.Logf("%s: %s (rate=%.1f req/s)", scenario.name, report.Classification, scenario.rate)
@@ -759,7 +749,6 @@ func TestSaturationClassification_ManualScenarios(t *testing.T) {
 		0.2,            // peak ratio band
 		0.95,           // confidence level
 	)
-	analyzer := NewBacklogDriftAnalyzer(cfg)
 
 	t.Run("UNSATURATED - stable low backlog", func(t *testing.T) {
 		// Scenario: System processes requests faster than they arrive
@@ -785,7 +774,7 @@ func TestSaturationClassification_ManualScenarios(t *testing.T) {
 			{arriveUs: 24_000_000, completeUs: 32_000_000},
 		})
 
-		report := analyzer.Analyze(requests, 30_000_000)
+		report := AnalyzeBacklogDrift(requests, 30_000_000, cfg)
 
 		if report.Classification != "UNSATURATED" {
 			t.Errorf("Expected UNSATURATED, got %s\nNote: %s", report.Classification, report.Note)
@@ -820,21 +809,17 @@ func TestSaturationClassification_ManualScenarios(t *testing.T) {
 		// At t=30s: 0 active
 		// Mean ≈ 26.7 (80+0+0)/3, Peak = 80, Peak/Mean ≈ 3.0 > 2.2 → TRANSIENT
 
-		report := analyzer.Analyze(requests, 30_000_000)
+		report := AnalyzeBacklogDrift(requests, 30_000_000, cfg)
 
 		if report.Classification != "TRANSIENT_BACKLOG" {
-			data, ok := report.AlgorithmData.(BacklogDriftData)
-			if !ok {
-				t.Fatalf("AlgorithmData type assertion failed: got %T", report.AlgorithmData)
-			}
 			peakRatio := 0.0
-			if data.MeanInFlight > 0 {
-				peakRatio = float64(data.PeakInFlight) / data.MeanInFlight
+			if report.MeanInFlight > 0 {
+				peakRatio = float64(report.PeakInFlight) / report.MeanInFlight
 			}
 			t.Errorf("Expected TRANSIENT_BACKLOG, got %s\nNote: %s\nSlope: %.3e, CI: [%.3e, %.3e]\nPeak/Mean: %.2f (peak=%d, mean=%.1f)",
 				report.Classification, report.Note,
-				data.Slope, data.SlopeLower, data.SlopeUpper,
-				peakRatio, data.PeakInFlight, data.MeanInFlight)
+				report.Slope, report.SlopeLower, report.SlopeUpper,
+				peakRatio, report.PeakInFlight, report.MeanInFlight)
 		}
 	})
 
@@ -878,7 +863,7 @@ func TestSaturationClassification_ManualScenarios(t *testing.T) {
 			})
 		}
 
-		report := analyzer.Analyze(requests, 30_000_000)
+		report := AnalyzeBacklogDrift(requests, 30_000_000, cfg)
 
 		// Just verify it produces a classification (not enforcing which one)
 		if report.Classification == "" {
@@ -933,7 +918,6 @@ func TestSaturationProgression_RealWorkloads(t *testing.T) {
 		0.2,            // peak ratio band
 		0.95,           // confidence level
 	)
-	analyzer := NewBacklogDriftAnalyzer(cfg)
 
 	// Test cases demonstrate saturation progression
 	// Rate increases → classification severity increases
@@ -994,7 +978,7 @@ func TestSaturationProgression_RealWorkloads(t *testing.T) {
 			}
 
 			// Analyze
-			report := analyzer.Analyze(requests, simEndUs)
+			report := AnalyzeBacklogDrift(requests, simEndUs, cfg)
 
 			// Verify classification
 			if report.Classification != tt.expectedClass {
@@ -1003,19 +987,15 @@ func TestSaturationProgression_RealWorkloads(t *testing.T) {
 			}
 
 			// Verify slope CI behavior
-			data, ok := report.AlgorithmData.(BacklogDriftData)
-			if !ok {
-				t.Fatalf("AlgorithmData type assertion failed: got %T", report.AlgorithmData)
-			}
-			ciExcludesZero := data.SlopeLower > 0
+			ciExcludesZero := report.SlopeLower > 0
 			if tt.expectPositiveCI && !ciExcludesZero {
 				t.Errorf("Rate %.1f req/s: Expected CI to exclude zero, got CI=[%.6e, %.6e]",
-					tt.rate, data.SlopeLower, data.SlopeUpper)
+					tt.rate, report.SlopeLower, report.SlopeUpper)
 			}
 
 			t.Logf("Rate %.1f → %s (slope=%.6e, CI=[%.6e, %.6e], peak=%d, mean=%.1f)",
-				tt.rate, report.Classification, data.Slope, data.SlopeLower, data.SlopeUpper,
-				data.PeakInFlight, data.MeanInFlight)
+				tt.rate, report.Classification, report.Slope, report.SlopeLower, report.SlopeUpper,
+				report.PeakInFlight, report.MeanInFlight)
 		})
 	}
 }
@@ -1099,7 +1079,6 @@ func TestSaturationProgression_TransitionBoundaries(t *testing.T) {
 		0.2,
 		0.95,
 	)
-	analyzer := NewBacklogDriftAnalyzer(cfg)
 
 	// Test rates spanning both transition boundaries
 	tests := []struct {
@@ -1179,17 +1158,13 @@ func TestSaturationProgression_TransitionBoundaries(t *testing.T) {
 				}
 			}
 
-			report := analyzer.Analyze(requests, simEndUs)
+			report := AnalyzeBacklogDrift(requests, simEndUs, cfg)
 
 			if report.Classification != tt.expectedClass {
-				data, ok := report.AlgorithmData.(BacklogDriftData)
-				if !ok {
-					t.Fatalf("AlgorithmData type assertion failed: got %T", report.AlgorithmData)
-				}
 				t.Errorf("Rate %.0f req/s:\n  Expected: %s\n  Got:      %s\n  Slope:    %.3e (CI: [%.3e, %.3e])\n  Peak/Mean: %.2f\n  Note:     %s",
 					tt.rate, tt.expectedClass, report.Classification,
-					data.Slope, data.SlopeLower, data.SlopeUpper,
-					float64(data.PeakInFlight)/data.MeanInFlight,
+					report.Slope, report.SlopeLower, report.SlopeUpper,
+					float64(report.PeakInFlight)/report.MeanInFlight,
 					report.Note)
 			}
 

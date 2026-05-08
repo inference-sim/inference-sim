@@ -12,6 +12,32 @@ import (
 	"gonum.org/v1/gonum/stat/distuv"
 )
 
+// ComputeSimEndUs computes the simulation end time from request completion times.
+// Returns max(all completion times, horizon) where horizon is used as a floor if > 0.
+// This is the canonical simEndUs calculation used by run, replay, and calibrate commands.
+func ComputeSimEndUs(requests []*sim.Request, horizon int64) int64 {
+	simEndUs := int64(0)
+	for _, req := range requests {
+		completionUs := req.ArrivalTime
+		if req.TTFTSet {
+			completionUs += req.FirstTokenTime
+		}
+		if len(req.ITL) > 0 {
+			for _, itl := range req.ITL {
+				completionUs += itl
+			}
+		}
+		if completionUs > simEndUs {
+			simEndUs = completionUs
+		}
+	}
+	// Use horizon as floor if explicitly set and larger
+	if horizon > 0 && horizon < math.MaxInt64 && horizon > simEndUs {
+		simEndUs = horizon
+	}
+	return simEndUs
+}
+
 // RequestInterval represents a request's active period [ArrivalUs, CompletionUs).
 // Used as input to backlog-drift saturation analysis (BC-2).
 type RequestInterval struct {
@@ -78,47 +104,8 @@ type WindowMetrics struct {
 	DrainRatio   float64 // NumLeft / NumEntered (NaN if NumEntered==0)
 }
 
-// BacklogDriftAnalyzer implements SaturationAnalyzer using linear regression on active request counts.
-// Classification logic:
-//   - PERSISTENTLY_SATURATED: Backlog growing (positive slope, CI excludes zero)
-//   - TRANSIENT_BACKLOG: Backlog stable but high peak (slope CI includes zero, peak > threshold)
-//   - UNSATURATED: Backlog stable or decreasing (slope CI includes zero, peak ≤ threshold)
-type BacklogDriftAnalyzer struct {
-	config BacklogDriftConfig
-}
-
-// NewBacklogDriftAnalyzer creates a new backlog-drift saturation analyzer.
-func NewBacklogDriftAnalyzer(config BacklogDriftConfig) *BacklogDriftAnalyzer {
-	return &BacklogDriftAnalyzer{config: config}
-}
-
-// Analyze implements the SaturationAnalyzer interface using backlog-drift algorithm.
-func (a *BacklogDriftAnalyzer) Analyze(requests []*sim.Request, simEndUs int64) SaturationReport {
-	// Delegate to the existing implementation for backward compatibility
-	legacyReport := AnalyzeBacklogDrift(requests, simEndUs, a.config)
-
-	// Convert to new unified format
-	return SaturationReport{
-		Classification: legacyReport.Classification,
-		Algorithm:      "backlog-drift",
-		Note:           legacyReport.Note,
-		Recommendation: legacyReport.Recommendation,
-		AlgorithmData: BacklogDriftData{
-			Slope:          legacyReport.Slope,
-			SlopeLower:     legacyReport.SlopeLower,
-			SlopeUpper:     legacyReport.SlopeUpper,
-			InitialBacklog: legacyReport.InitialBacklog,
-			FinalBacklog:   legacyReport.FinalBacklog,
-			PeakInFlight:   legacyReport.PeakInFlight,
-			MeanInFlight:   legacyReport.MeanInFlight,
-			Windows:        legacyReport.Windows,
-		},
-	}
-}
-
 // BacklogDriftReport contains saturation classification results (BC-4, BC-5, BC-6, BC-7).
-// DEPRECATED: Use SaturationReport instead. This type is kept for backward compatibility
-// with existing code that writes/reads JSON files.
+// CLI uses AnalyzeBacklogDrift() directly for saturation analysis.
 type BacklogDriftReport struct {
 	Classification string          `json:"classification"` // "UNSATURATED", "TRANSIENT_BACKLOG", "PERSISTENTLY_SATURATED"
 	Slope          float64         `json:"slope"`          // Linear regression slope (req/µs)
