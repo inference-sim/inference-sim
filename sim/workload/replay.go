@@ -31,8 +31,15 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 
 	requests := make([]*sim.Request, 0, len(trace.Records))
 	for _, rec := range trace.Records {
-		// Generate synthetic token IDs
-		inputTokens := sim.GenerateRandomTokenIDs(rng, rec.InputTokens)
+		// Generate synthetic token IDs. Use server-reported token count when available
+		// (eliminates chat-template overhead bias for --api-format chat traces).
+		// Guard PrefixGroup == "": for prefix-group records, ServerInputTokens already
+		// includes the prefix length; using it as suffix count would double-count.
+		nInput := rec.InputTokens
+		if rec.ServerInputTokens > 0 && rec.PrefixGroup == "" {
+			nInput = rec.ServerInputTokens
+		}
+		inputTokens := sim.GenerateRandomTokenIDs(rng, nInput)
 
 		// Prepend prefix if in a group
 		if rec.PrefixGroup != "" {
@@ -67,7 +74,6 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 			PrefixGroup:      rec.PrefixGroup,
 			PrefixLength:     rec.PrefixLength,
 			Streaming:        rec.Streaming,
-			// ServerInputTokens: not propagated to sim.Request (calibration-only field, BC-7)
 		}
 		requests = append(requests, req)
 	}
@@ -153,11 +159,17 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			continue
 		}
 
-		// Build per-round token sequences
+		// Build per-round token sequences. Use ServerInputTokens when available and no
+		// PrefixGroup (same rule as LoadTraceV2Requests — prefix-group records must fall
+		// back to InputTokens to avoid double-counting the prepended prefix).
 		inputSeq := make([]int, len(rounds))
 		outputSeq := make([]int, len(rounds))
 		for i, rec := range rounds {
-			inputSeq[i] = rec.InputTokens
+			nInput := rec.InputTokens
+			if rec.ServerInputTokens > 0 && rec.PrefixGroup == "" {
+				nInput = rec.ServerInputTokens
+			}
+			inputSeq[i] = nInput
 			outputSeq[i] = rec.OutputTokens
 		}
 
@@ -185,7 +197,11 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 
 		// Build round-0 request
 		r0 := rounds[0]
-		inputTokens := sim.GenerateRandomTokenIDs(sessionRNG, r0.InputTokens)
+		nInputR0 := r0.InputTokens
+		if r0.ServerInputTokens > 0 && r0.PrefixGroup == "" {
+			nInputR0 = r0.ServerInputTokens
+		}
+		inputTokens := sim.GenerateRandomTokenIDs(sessionRNG, nInputR0)
 		if r0.PrefixGroup != "" {
 			if prefix, ok := prefixTokens[r0.PrefixGroup]; ok {
 				inputTokens = append(append([]int{}, prefix...), inputTokens...)
@@ -243,7 +259,11 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 
 	// Append non-session requests (same construction as LoadTraceV2Requests)
 	for _, rec := range nonSessionRecords {
-		inputTokens := sim.GenerateRandomTokenIDs(rng, rec.InputTokens)
+		nInput := rec.InputTokens
+		if rec.ServerInputTokens > 0 && rec.PrefixGroup == "" {
+			nInput = rec.ServerInputTokens
+		}
+		inputTokens := sim.GenerateRandomTokenIDs(rng, nInput)
 		if rec.PrefixGroup != "" {
 			if prefix, ok := prefixTokens[rec.PrefixGroup]; ok {
 				inputTokens = append(append([]int{}, prefix...), inputTokens...)

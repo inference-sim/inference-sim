@@ -296,7 +296,148 @@ func TestLoadTraceV2SessionBlueprints_NonConsecutiveRoundIndex_Error(t *testing.
 	}
 }
 
-// TestLoadTraceV2Requests_ModelAndDeadline verifies BC-3, BC-4, BC-5, BC-6, BC-7.
+// --- ServerInputTokens tests (BC-1, BC-2) ---
+
+func TestLoadTraceV2Requests_ServerInputTokens_UsedWhenPresent(t *testing.T) {
+	// GIVEN a trace record where ServerInputTokens > InputTokens (chat template overhead)
+	// and no PrefixGroup (the --api-format chat use case)
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 0, InputTokens: 512, ServerInputTokens: 530,
+				OutputTokens: 64, ArrivalTimeUs: 0, Status: "ok"},
+		},
+	}
+	requests, err := LoadTraceV2Requests(trace, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// BC-1: len(InputTokens) reflects server-reported count, not client-side count
+	if len(requests[0].InputTokens) != 530 {
+		t.Errorf("input token count = %d, want 530 (server-reported)", len(requests[0].InputTokens))
+	}
+}
+
+func TestLoadTraceV2Requests_ServerInputTokens_Zero_FallsBackToInputTokens(t *testing.T) {
+	// GIVEN a trace record with ServerInputTokens == 0 (generated trace, not observed)
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 0, InputTokens: 256, ServerInputTokens: 0,
+				OutputTokens: 32, ArrivalTimeUs: 0, Status: "ok"},
+		},
+	}
+	requests, err := LoadTraceV2Requests(trace, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// BC-2: fallback to InputTokens when ServerInputTokens not recorded
+	if len(requests[0].InputTokens) != 256 {
+		t.Errorf("input token count = %d, want 256 (fallback)", len(requests[0].InputTokens))
+	}
+}
+
+func TestLoadTraceV2Requests_ServerInputTokens_PrefixGroup_FallsBackToInputTokens(t *testing.T) {
+	// GIVEN a prefix-group record with ServerInputTokens > InputTokens.
+	// ServerInputTokens includes the prefix length — applying it as suffix count would double-count.
+	// WHEN LoadTraceV2Requests constructs the request
+	// THEN the suffix uses InputTokens, not ServerInputTokens (prefix prepended separately)
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 0, InputTokens: 100, PrefixGroup: "shared", PrefixLength: 128,
+				ServerInputTokens: 246, // = PrefixLength(128) + InputTokens(100) + overhead(18)
+				OutputTokens: 32, ArrivalTimeUs: 0, Status: "ok"},
+		},
+	}
+	requests, err := LoadTraceV2Requests(trace, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// BC-2: total = PrefixLength(128) + InputTokens(100) = 228, not 128+246=374
+	if len(requests[0].InputTokens) != 228 {
+		t.Errorf("input token count = %d, want 228 (prefix 128 + suffix 100, not ServerInputTokens 246)",
+			len(requests[0].InputTokens))
+	}
+}
+
+// --- ServerInputTokens session tests (BC-3, BC-4, BC-5) ---
+
+func TestLoadTraceV2SessionBlueprints_ServerInputTokens_Round0(t *testing.T) {
+	// GIVEN a 2-round session where round-0 has server overhead tokens
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 1, SessionID: "A", RoundIndex: 0,
+				InputTokens: 512, ServerInputTokens: 530,
+				OutputTokens: 64, ArrivalTimeUs: 0},
+			{RequestID: 2, SessionID: "A", RoundIndex: 1,
+				InputTokens: 256, ServerInputTokens: 274,
+				OutputTokens: 32, ArrivalTimeUs: 5000},
+		},
+	}
+	requests, _, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 1 {
+		t.Fatalf("expected 1 round-0 request, got %d", len(requests))
+	}
+	// BC-3: round-0 token count uses ServerInputTokens
+	if len(requests[0].InputTokens) != 530 {
+		t.Errorf("round-0 input token count = %d, want 530 (server-reported)", len(requests[0].InputTokens))
+	}
+}
+
+func TestLoadTraceV2SessionBlueprints_ServerInputTokens_Sampler(t *testing.T) {
+	// GIVEN a 3-round session with ServerInputTokens on rounds 1 and 2
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 1, SessionID: "A", RoundIndex: 0,
+				InputTokens: 512, ServerInputTokens: 530, OutputTokens: 64, ArrivalTimeUs: 0},
+			{RequestID: 2, SessionID: "A", RoundIndex: 1,
+				InputTokens: 256, ServerInputTokens: 274, OutputTokens: 32, ArrivalTimeUs: 5000},
+			{RequestID: 3, SessionID: "A", RoundIndex: 2,
+				InputTokens: 128, ServerInputTokens: 0, OutputTokens: 16, ArrivalTimeUs: 10000},
+		},
+	}
+	_, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bp := blueprints[0]
+	// BC-4: round-1 sampler returns ServerInputTokens (274 > 256)
+	got1 := bp.InputSampler.Sample(nil)
+	if got1 != 274 {
+		t.Errorf("round-1 sampler value = %d, want 274 (server-reported)", got1)
+	}
+	// BC-2: round-2 sampler falls back to InputTokens (ServerInputTokens == 0)
+	got2 := bp.InputSampler.Sample(nil)
+	if got2 != 128 {
+		t.Errorf("round-2 sampler value = %d, want 128 (fallback)", got2)
+	}
+}
+
+func TestLoadTraceV2SessionBlueprints_ServerInputTokens_NonSessionRecord(t *testing.T) {
+	// GIVEN a non-session record with ServerInputTokens > InputTokens
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 1, SessionID: "", InputTokens: 512, ServerInputTokens: 530,
+				OutputTokens: 64, ArrivalTimeUs: 0},
+		},
+	}
+	requests, _, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 1 {
+		t.Fatalf("expected 1 request, got %d", len(requests))
+	}
+	// BC-5: non-session path uses ServerInputTokens
+	if len(requests[0].InputTokens) != 530 {
+		t.Errorf("non-session input token count = %d, want 530", len(requests[0].InputTokens))
+	}
+}
+
+// TestLoadTraceV2Requests_ModelAndDeadline verifies BC-3, BC-4, BC-5, BC-6 from the
+// original observe-replay plan, and BC-1 from this plan (ServerInputTokens used for
+// token count generation when > 0 and PrefixGroup is empty).
 func TestLoadTraceV2Requests_ModelAndDeadline(t *testing.T) {
 	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "real"}
 	records := []TraceRecord{
@@ -304,7 +445,7 @@ func TestLoadTraceV2Requests_ModelAndDeadline(t *testing.T) {
 			RequestID:         0,
 			Model:             "meta-llama/Llama-3.1-8B-Instruct",
 			DeadlineUs:        7500000,
-			ServerInputTokens: 300, // must NOT appear on sim.Request
+			ServerInputTokens: 300, // used as token count for InputTokens generation (> InputTokens: 100)
 			InputTokens:       100,
 			OutputTokens:      50,
 			ArrivalTimeUs:     0,
@@ -356,9 +497,13 @@ func TestLoadTraceV2Requests_ModelAndDeadline(t *testing.T) {
 	if requests[1].Deadline != 0 {
 		t.Errorf("request 1 Deadline = %d, want 0", requests[1].Deadline)
 	}
-	// BC-7: ServerInputTokens is NOT on sim.Request (calibration-only field).
-	// The compiler enforces this: sim.Request has no ServerInputTokens field.
-	// No runtime assertion needed — if someone adds the field and wires it up,
-	// the compilation of this package would not catch it, but the architectural
-	// review (BC-7 in the plan) documents the non-propagation intent explicitly.
+	// BC-1: ServerInputTokens (300) used as token count for InputTokens generation, not InputTokens (100).
+	// sim.Request has no ServerInputTokens field; the value is used only to size the synthetic token slice.
+	if len(requests[0].InputTokens) != 300 {
+		t.Errorf("request 0 input token count = %d, want 300 (server-reported)", len(requests[0].InputTokens))
+	}
+	// BC-2: ServerInputTokens == 0 → fallback to InputTokens (50)
+	if len(requests[1].InputTokens) != 50 {
+		t.Errorf("request 1 input token count = %d, want 50 (fallback)", len(requests[1].InputTokens))
+	}
 }
