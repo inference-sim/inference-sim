@@ -402,6 +402,7 @@ func TestLoadTraceV2SessionBlueprints_ServerInputTokens_Sampler(t *testing.T) {
 		t.Fatal(err)
 	}
 	bp := blueprints[0]
+	// SequenceSampler is stateful: each Sample() call advances to the next value.
 	// BC-4: round-1 sampler returns ServerInputTokens (274 > 256)
 	got1 := bp.InputSampler.Sample(nil)
 	if got1 != 274 {
