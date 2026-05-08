@@ -38,7 +38,7 @@ type ProgressSnapshot struct {
 	TotalPreemptions  int64
 	InstanceSnapshots []InstanceSnapshot
 
-	// Cluster-mode only; always 0 in single-instance mode.
+	// Cluster-mode only; zero-value (0 for ints, nil for maps) in single-instance mode.
 	RejectedRequests  int
 	RoutingRejections int
 	GatewayQueueDepth int

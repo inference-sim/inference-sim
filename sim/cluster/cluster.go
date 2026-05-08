@@ -35,7 +35,7 @@ type ClusterSimulator struct {
 	routingPolicy        sim.RoutingPolicy
 	rejectedRequests     int                    // EC-2: count of requests rejected by admission policy
 	routingRejections    int                    // I13: count of requests rejected at routing (no routable instances)
-	shedByTier           map[string]int         // per-SLOClass rejection counts (Phase 1B-1a)
+	shedByTier           map[string]int         // per-SLOClass shedding: admission rejections + gateway queue shed + in-flight evictions
 	trace                *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
 	preGeneratedRequests []*sim.Request         // Pre-generated requests (all workload paths unified)
 	inFlightRequests     map[string]int         // instance ID → dispatched-but-not-completed count (#463)
