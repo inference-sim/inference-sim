@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"math"
 	"time"
+
+	"github.com/sirupsen/logrus"
+	sim "github.com/inference-sim/inference-sim/sim"
 )
 
 // RequestInterval represents a request's active period [ArrivalUs, CompletionUs).
@@ -79,4 +82,51 @@ type BacklogDriftReport struct {
 	Windows        []WindowMetrics `json:"windows"`
 	Note           string          `json:"note,omitempty"`           // Explanation (e.g., "observation too short")
 	Recommendation string          `json:"recommendation,omitempty"` // User-facing guidance
+}
+
+// RequestsToIntervals converts sim.Request slices to RequestInterval slices for
+// saturation analysis. Applies eligibility filter per BC-2:
+//   - Exclude: TTFTSet==false AND State==StateTimedOut (timed out before TTFT)
+//   - Include with simEndUs: TTFTSet==false AND State==StateRunning (horizon-truncated)
+//   - Include with computed time: TTFTSet==true (completed)
+// Logs included and excluded counts per BC-13 (R1: no silent discard).
+func RequestsToIntervals(requests []*sim.Request, simEndUs int64) []RequestInterval {
+	if len(requests) == 0 {
+		return []RequestInterval{} // BC-15: degenerate input
+	}
+
+	intervals := make([]RequestInterval, 0, len(requests))
+	excluded := 0
+
+	for _, req := range requests {
+		if !req.TTFTSet {
+			// No valid TTFT — check if timed out or horizon-truncated
+			if req.State == sim.StateTimedOut {
+				// Case 1: Timed out before generating any output — exclude
+				excluded++
+				continue
+			}
+			// Case 2: Horizon-truncated (StateRunning without TTFT) — use simEndUs as completion
+			intervals = append(intervals, RequestInterval{
+				ArrivalUs:    req.ArrivalTime,
+				CompletionUs: simEndUs,
+			})
+		} else {
+			// Case 3: Completed (TTFTSet==true) — compute completion time
+			// Completion = ArrivalTime + FirstTokenTime + Σ(inter-token latencies)
+			completionUs := req.ArrivalTime + req.FirstTokenTime
+			for _, itl := range req.ITL {
+				completionUs += itl
+			}
+			intervals = append(intervals, RequestInterval{
+				ArrivalUs:    req.ArrivalTime,
+				CompletionUs: completionUs,
+			})
+		}
+	}
+
+	// BC-13: Log counts (R1 no silent discard)
+	logrus.Infof("Saturation analysis: %d requests eligible, %d excluded (timed out before TTFT)", len(intervals), excluded)
+
+	return intervals
 }
