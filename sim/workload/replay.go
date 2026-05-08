@@ -25,6 +25,18 @@ func effectiveInputTokenCount(inputTokens, serverInputTokens int, prefixGroup st
 	return inputTokens
 }
 
+// injectionTime returns the DES injection time for a trace record.
+// For observed traces, SendTimeUs > 0 and represents when the request was
+// actually sent to the server — the correct reference for TTFT comparison
+// against calibrate's send_time baseline. Falls back to ArrivalTimeUs for
+// generated traces (SendTimeUs == 0) and legacy traces without send_time.
+func injectionTime(rec TraceRecord) int64 {
+	if rec.SendTimeUs > 0 {
+		return rec.SendTimeUs
+	}
+	return rec.ArrivalTimeUs
+}
+
 // LoadTraceV2Requests converts trace v2 records into sim.Request objects
 // with synthetic token IDs for simulation replay. Requests in the same
 // prefix_group share identical prefix token sequences.
@@ -61,7 +73,7 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 
 		req := &sim.Request{
 			ID:               fmt.Sprintf("request_%d", rec.RequestID),
-			ArrivalTime:      rec.ArrivalTimeUs,
+			ArrivalTime:      injectionTime(rec),
 			InputTokens:      inputTokens,
 			OutputTokens:     outputTokens,
 			MaxOutputLen:     len(outputTokens),
@@ -215,7 +227,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 
 		req := &sim.Request{
 			ID:              fmt.Sprintf("request_%d", r0.RequestID),
-			ArrivalTime:     r0.ArrivalTimeUs,
+			ArrivalTime:     injectionTime(r0),
 			InputTokens:     inputTokens,
 			OutputTokens:    outputTokens,
 			MaxOutputLen:    len(outputTokens),
@@ -267,7 +279,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 		outputTokens := sim.GenerateRandomTokenIDs(rng, rec.OutputTokens)
 		req := &sim.Request{
 			ID:              fmt.Sprintf("request_%d", rec.RequestID),
-			ArrivalTime:     rec.ArrivalTimeUs,
+			ArrivalTime:     injectionTime(rec),
 			InputTokens:     inputTokens,
 			OutputTokens:    outputTokens,
 			MaxOutputLen:    len(outputTokens),
