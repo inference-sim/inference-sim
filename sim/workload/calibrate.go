@@ -101,11 +101,20 @@ type LatencyPair struct {
 	Sim  []float64
 }
 
+// BreakdownPairs holds matched real-vs-sim latency vectors for a single breakdown dimension
+// (e.g., one SLO class or one model tag). Tracks TTFT and E2E separately.
+type BreakdownPairs struct {
+	TTFT LatencyPair
+	E2E  LatencyPair
+}
+
 // CalibrationPairs holds matched, normalized real-vs-sim latency vectors.
 type CalibrationPairs struct {
 	TTFT               LatencyPair
 	E2E                LatencyPair
 	ITL                LatencyPair
+	BySLO              map[string]*BreakdownPairs // keyed by SLOClass; only populated when SLOClass is non-empty
+	ByModel            map[string]*BreakdownPairs // keyed by Model; only populated when Model is non-empty
 	TokenMismatchCount int
 	ExcludedWarmUp     int
 	MatchedCount       int
@@ -132,7 +141,10 @@ func PrepareCalibrationPairs(
 		simByID[sr.RequestID] = sr
 	}
 
-	pairs := &CalibrationPairs{}
+	pairs := &CalibrationPairs{
+		BySLO:   make(map[string]*BreakdownPairs),
+		ByModel: make(map[string]*BreakdownPairs),
+	}
 	matchedSimIDs := make(map[int]bool)
 
 	for _, rec := range realRecords {
@@ -183,6 +195,31 @@ func PrepareCalibrationPairs(
 		pairs.TTFT.Sim = append(pairs.TTFT.Sim, simTTFT)
 		pairs.E2E.Real = append(pairs.E2E.Real, realE2E)
 		pairs.E2E.Sim = append(pairs.E2E.Sim, simE2E)
+
+		// Per-SLO breakdown (only when SLOClass is set)
+		if sr.SLOClass != "" {
+			bp, ok := pairs.BySLO[sr.SLOClass]
+			if !ok {
+				bp = &BreakdownPairs{}
+				pairs.BySLO[sr.SLOClass] = bp
+			}
+			bp.TTFT.Real = append(bp.TTFT.Real, realTTFT)
+			bp.TTFT.Sim = append(bp.TTFT.Sim, simTTFT)
+			bp.E2E.Real = append(bp.E2E.Real, realE2E)
+			bp.E2E.Sim = append(bp.E2E.Sim, simE2E)
+		}
+		// Per-model breakdown (only when Model is set)
+		if sr.Model != "" {
+			bp, ok := pairs.ByModel[sr.Model]
+			if !ok {
+				bp = &BreakdownPairs{}
+				pairs.ByModel[sr.Model] = bp
+			}
+			bp.TTFT.Real = append(bp.TTFT.Real, realTTFT)
+			bp.TTFT.Sim = append(bp.TTFT.Sim, simTTFT)
+			bp.E2E.Real = append(bp.E2E.Real, realE2E)
+			bp.E2E.Sim = append(bp.E2E.Sim, simE2E)
+		}
 	}
 
 	// Count unmatched sim results

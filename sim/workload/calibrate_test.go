@@ -1085,3 +1085,110 @@ func TestMetricComparison_JSONRoundTrip_IncludesTailPercentileErrors(t *testing.
 		}
 	}
 }
+
+func TestPrepareCalibrationPairs_SLOBreakdown(t *testing.T) {
+	// GIVEN 4 matched requests with two SLO classes
+	realRecords := []TraceRecord{
+		{RequestID: 0, FirstChunkTimeUs: 500, LastChunkTimeUs: 1000, SendTimeUs: 0},
+		{RequestID: 1, FirstChunkTimeUs: 1500, LastChunkTimeUs: 2000, SendTimeUs: 1000},
+		{RequestID: 2, FirstChunkTimeUs: 2500, LastChunkTimeUs: 3000, SendTimeUs: 2000},
+		{RequestID: 3, FirstChunkTimeUs: 3500, LastChunkTimeUs: 4000, SendTimeUs: 3000},
+	}
+	simResults := []SimResult{
+		{RequestID: 0, TTFT: 450, E2E: 900, SLOClass: "standard"},
+		{RequestID: 1, TTFT: 480, E2E: 950, SLOClass: "batch"},
+		{RequestID: 2, TTFT: 460, E2E: 920, SLOClass: "standard"},
+		{RequestID: 3, TTFT: 490, E2E: 960, SLOClass: "batch"},
+	}
+
+	// WHEN PrepareCalibrationPairs runs
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, &CalibrationConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// THEN BySLO["standard"] contains 2 pairs, BySLO["batch"] contains 2 pairs (BC-3)
+	if len(pairs.BySLO) != 2 {
+		t.Fatalf("BySLO len: got %d, want 2", len(pairs.BySLO))
+	}
+	stdPairs, ok := pairs.BySLO["standard"]
+	if !ok {
+		t.Fatal("BySLO missing 'standard' key")
+	}
+	if len(stdPairs.TTFT.Real) != 2 {
+		t.Errorf("BySLO[standard] TTFT count: got %d, want 2", len(stdPairs.TTFT.Real))
+	}
+	if len(stdPairs.E2E.Real) != 2 {
+		t.Errorf("BySLO[standard] E2E count: got %d, want 2", len(stdPairs.E2E.Real))
+	}
+	batchPairs, ok := pairs.BySLO["batch"]
+	if !ok {
+		t.Fatal("BySLO missing 'batch' key")
+	}
+	if len(batchPairs.TTFT.Real) != 2 {
+		t.Errorf("BySLO[batch] TTFT count: got %d, want 2", len(batchPairs.TTFT.Real))
+	}
+}
+
+func TestPrepareCalibrationPairs_ModelBreakdown(t *testing.T) {
+	// GIVEN 3 matched requests with two model tags
+	realRecords := []TraceRecord{
+		{RequestID: 0, FirstChunkTimeUs: 500, LastChunkTimeUs: 1000, SendTimeUs: 0},
+		{RequestID: 1, FirstChunkTimeUs: 1500, LastChunkTimeUs: 2000, SendTimeUs: 1000},
+		{RequestID: 2, FirstChunkTimeUs: 2500, LastChunkTimeUs: 3000, SendTimeUs: 2000},
+	}
+	simResults := []SimResult{
+		{RequestID: 0, TTFT: 450, E2E: 900, Model: "qwen3-14b"},
+		{RequestID: 1, TTFT: 480, E2E: 950, Model: "llama3-8b"},
+		{RequestID: 2, TTFT: 460, E2E: 920, Model: "qwen3-14b"},
+	}
+
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, &CalibrationConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// THEN ByModel["qwen3-14b"] has 2 pairs, ByModel["llama3-8b"] has 1 pair (BC-4)
+	if len(pairs.ByModel) != 2 {
+		t.Fatalf("ByModel len: got %d, want 2", len(pairs.ByModel))
+	}
+	q, ok := pairs.ByModel["qwen3-14b"]
+	if !ok {
+		t.Fatal("ByModel missing 'qwen3-14b'")
+	}
+	if len(q.TTFT.Real) != 2 {
+		t.Errorf("ByModel[qwen3-14b] TTFT count: got %d, want 2", len(q.TTFT.Real))
+	}
+	l, ok := pairs.ByModel["llama3-8b"]
+	if !ok {
+		t.Fatal("ByModel missing 'llama3-8b'")
+	}
+	if len(l.TTFT.Real) != 1 {
+		t.Errorf("ByModel[llama3-8b] TTFT count: got %d, want 1", len(l.TTFT.Real))
+	}
+}
+
+func TestPrepareCalibrationPairs_EmptySLOAndModel_NoBreakdown(t *testing.T) {
+	// GIVEN requests with no SLO class and no model tag (BC-5)
+	realRecords := []TraceRecord{
+		{RequestID: 0, FirstChunkTimeUs: 500, LastChunkTimeUs: 1000, SendTimeUs: 0},
+		{RequestID: 1, FirstChunkTimeUs: 1500, LastChunkTimeUs: 2000, SendTimeUs: 1000},
+	}
+	simResults := []SimResult{
+		{RequestID: 0, TTFT: 450, E2E: 900, SLOClass: "", Model: ""},
+		{RequestID: 1, TTFT: 480, E2E: 950, SLOClass: "", Model: ""},
+	}
+
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, &CalibrationConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// THEN BySLO and ByModel are both empty (no panic)
+	if len(pairs.BySLO) != 0 {
+		t.Errorf("BySLO should be empty for requests without SLO class, got len=%d", len(pairs.BySLO))
+	}
+	if len(pairs.ByModel) != 0 {
+		t.Errorf("ByModel should be empty for requests without model tag, got len=%d", len(pairs.ByModel))
+	}
+}
