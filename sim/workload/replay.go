@@ -9,6 +9,22 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
+// effectiveInputTokenCount returns the token count to use for generating synthetic
+// input token IDs. Priority rules:
+//  1. serverInputTokens > 0 && prefixGroup == "": return serverInputTokens (server
+//     is authoritative; covers chat-template overhead in blis-observe traces).
+//  2. prefixGroup != "": return inputTokens regardless of serverInputTokens (server
+//     count includes the prefix; using it as suffix would double-count the prefix
+//     that replay.go prepends separately).
+//  3. serverInputTokens == 0: return inputTokens (field absent in
+//     generated/synthetic traces; not a real measurement).
+func effectiveInputTokenCount(inputTokens, serverInputTokens int, prefixGroup string) int {
+	if serverInputTokens > 0 && prefixGroup == "" {
+		return serverInputTokens
+	}
+	return inputTokens
+}
+
 // LoadTraceV2Requests converts trace v2 records into sim.Request objects
 // with synthetic token IDs for simulation replay. Requests in the same
 // prefix_group share identical prefix token sequences.
@@ -31,8 +47,8 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 
 	requests := make([]*sim.Request, 0, len(trace.Records))
 	for _, rec := range trace.Records {
-		// Generate synthetic token IDs
-		inputTokens := sim.GenerateRandomTokenIDs(rng, rec.InputTokens)
+		// Generate synthetic token IDs, preferring server-reported count when available.
+		inputTokens := sim.GenerateRandomTokenIDs(rng, effectiveInputTokenCount(rec.InputTokens, rec.ServerInputTokens, rec.PrefixGroup))
 
 		// Prepend prefix if in a group
 		if rec.PrefixGroup != "" {
@@ -67,7 +83,6 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 			PrefixGroup:      rec.PrefixGroup,
 			PrefixLength:     rec.PrefixLength,
 			Streaming:        rec.Streaming,
-			// ServerInputTokens: not propagated to sim.Request (calibration-only field, BC-7)
 		}
 		requests = append(requests, req)
 	}
@@ -153,11 +168,11 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			continue
 		}
 
-		// Build per-round token sequences
+		// Build per-round token sequences, preferring server-reported count when available.
 		inputSeq := make([]int, len(rounds))
 		outputSeq := make([]int, len(rounds))
 		for i, rec := range rounds {
-			inputSeq[i] = rec.InputTokens
+			inputSeq[i] = effectiveInputTokenCount(rec.InputTokens, rec.ServerInputTokens, rec.PrefixGroup)
 			outputSeq[i] = rec.OutputTokens
 		}
 
@@ -183,9 +198,9 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 		// Per-session RNG for deterministic token ID generation (INV-6)
 		sessionRNG := rand.New(rand.NewSource(rng.Int63()))
 
-		// Build round-0 request
+		// Build round-0 request, preferring server-reported count when available.
 		r0 := rounds[0]
-		inputTokens := sim.GenerateRandomTokenIDs(sessionRNG, r0.InputTokens)
+		inputTokens := sim.GenerateRandomTokenIDs(sessionRNG, effectiveInputTokenCount(r0.InputTokens, r0.ServerInputTokens, r0.PrefixGroup))
 		if r0.PrefixGroup != "" {
 			if prefix, ok := prefixTokens[r0.PrefixGroup]; ok {
 				inputTokens = append(append([]int{}, prefix...), inputTokens...)
@@ -241,9 +256,9 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 		blueprints = append(blueprints, bp)
 	}
 
-	// Append non-session requests (same construction as LoadTraceV2Requests)
+	// Append non-session requests (same construction as LoadTraceV2Requests).
 	for _, rec := range nonSessionRecords {
-		inputTokens := sim.GenerateRandomTokenIDs(rng, rec.InputTokens)
+		inputTokens := sim.GenerateRandomTokenIDs(rng, effectiveInputTokenCount(rec.InputTokens, rec.ServerInputTokens, rec.PrefixGroup))
 		if rec.PrefixGroup != "" {
 			if prefix, ok := prefixTokens[rec.PrefixGroup]; ok {
 				inputTokens = append(append([]int{}, prefix...), inputTokens...)
