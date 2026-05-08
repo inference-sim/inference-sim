@@ -64,6 +64,7 @@ go build -o blis main.go
   --trace-header trace.yaml --trace-data trace.csv
 
 # Observe with ITL (inter-token latency) recording for streaming requests
+# --record-itl forces streaming on non-streaming workloads to capture per-chunk timestamps
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --workload chatbot --rate 10 --num-requests 100 \
   --record-itl --itl-output trace.itl.csv \
