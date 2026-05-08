@@ -1555,19 +1555,19 @@ var runCmd = &cobra.Command{
 			AutoscalerAnalyzerConfig:        bundleAnalyzerCfg,
 			NodePools:                       bundleNodePools,
 		}
+		// Session callback installation (Constraint 3 fix):
+		// Follow-up collection must be UNCONDITIONAL for saturation analysis correctness.
+		// The TraceV2 export (lines 1582-1601) remains gated on --trace-output, but the
+		// follow-up accumulation happens regardless so saturation analysis sees complete workloads.
 		var followUpRequests []*sim.Request
 		var onRequestDone func(*sim.Request, int64) []*sim.Request
 		if sessionMgr != nil {
+			// Always install callback to accumulate follow-ups (for saturation analysis + optional trace export)
 			baseCb := sessionMgr.OnComplete
-			if traceOutput != "" {
-				// Wrap callback to accumulate follow-up requests for trace export
-				onRequestDone = func(req *sim.Request, clock int64) []*sim.Request {
-					followUps := baseCb(req, clock)
-					followUpRequests = append(followUpRequests, followUps...)
-					return followUps
-				}
-			} else {
-				onRequestDone = baseCb
+			onRequestDone = func(req *sim.Request, clock int64) []*sim.Request {
+				followUps := baseCb(req, clock)
+				followUpRequests = append(followUpRequests, followUps...)
+				return followUps
 			}
 		}
 		cs := cluster.NewClusterSimulator(config, preGeneratedRequests, onRequestDone)
