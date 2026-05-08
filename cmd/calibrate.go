@@ -223,7 +223,7 @@ Example:
 			logrus.Infof("Per-SLO-class calibration:")
 			for _, slo := range sloKeys {
 				p := pairs.BySLO[slo]
-				if len(p.TTFT.Real) == 0 {
+				if p == nil || len(p.TTFT.Real) == 0 {
 					continue
 				}
 				logrus.Infof("  SLO=%s: n=%d TTFT-MAPE=%.1f%% E2E-MAPE=%.1f%%",
@@ -242,7 +242,7 @@ Example:
 			logrus.Infof("Per-model calibration:")
 			for _, model := range modelKeys {
 				p := pairs.ByModel[model]
-				if len(p.TTFT.Real) == 0 {
+				if p == nil || len(p.TTFT.Real) == 0 {
 					continue
 				}
 				logrus.Infof("  model=%s: n=%d TTFT-MAPE=%.1f%% E2E-MAPE=%.1f%%",

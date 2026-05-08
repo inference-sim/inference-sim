@@ -1238,6 +1238,18 @@ func TestMapePct(t *testing.T) {
 			want: 0.20,
 		},
 		{
+			name: "NaN in sim skipped via err-guard",
+			real: []float64{100.0, 200.0},
+			sim:  []float64{120.0, math.NaN()},
+			want: 0.20, // second pair produces NaN err, skipped; only first pair contributes
+		},
+		{
+			name: "Inf in sim skipped via err-guard",
+			real: []float64{100.0, 200.0},
+			sim:  []float64{120.0, math.Inf(1)},
+			want: 0.20, // second pair produces Inf err, skipped; only first pair contributes
+		},
+		{
 			name: "perfect match returns 0",
 			real: []float64{100.0, 200.0, 300.0},
 			sim:  []float64{100.0, 200.0, 300.0},

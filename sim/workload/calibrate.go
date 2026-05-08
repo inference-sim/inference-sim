@@ -83,16 +83,16 @@ type CalibrationConfig struct {
 // SimResult holds per-request sim output for calibration matching.
 // TTFT and E2E are server-side latencies in microseconds (simulation ticks).
 // SLOClass, Model, and ITLMeanUs are optional — omitted from JSON when zero/empty
-// so existing consumers that do not know these fields are unaffected (BC-2).
+// so existing consumers that do not set these fields are unaffected (backward-compatible).
 type SimResult struct {
 	RequestID    int     `json:"request_id"`
 	TTFT         float64 `json:"ttft_us"` // server-side TTFT in microseconds
 	E2E          float64 `json:"e2e_us"`  // server-side E2E in microseconds
 	InputTokens  int     `json:"input_tokens"`
 	OutputTokens int     `json:"output_tokens"`
-	SLOClass     string  `json:"slo_class,omitempty"`   // SLO tier (e.g., "standard", "batch"); empty if not set
-	Model        string  `json:"model,omitempty"`       // model tag; empty if not set
-	ITLMeanUs    float64 `json:"itl_mean_us,omitempty"` // mean ITL in microseconds (from m.RequestITLs, ticks=µs); 0 if not computed
+	SLOClass     string  `json:"slo_class,omitempty"` // SLO tier (e.g., "standard", "batch"); empty if not set
+	Model        string  `json:"model,omitempty"`     // model tag; empty if not set
+	ITLMeanUs    float64 `json:"itl_mean_us,omitempty"` // mean ITL in microseconds; 0 if not recorded
 }
 
 // LatencyPair holds matched real-vs-sim latency vectors.
@@ -519,8 +519,9 @@ func pearsonCorrelation(x, y []float64) float64 {
 }
 
 // MapePct computes mean absolute percentage error between real and sim slices.
-// Pairs where real==0, NaN, or Inf are skipped. Returns 0 if no valid pairs.
-// Returns a fraction (not a percentage) — multiply by 100 for display.
+// Pairs where real==0, NaN, or Inf are skipped. Pairs where the computed
+// absolute error is NaN or Inf (e.g., sim is NaN or Inf) are also skipped.
+// Returns 0 if no valid pairs. Returns a fraction (not a percentage) — multiply by 100 for display.
 func MapePct(real, sim []float64) float64 {
 	var sum float64
 	count := 0
