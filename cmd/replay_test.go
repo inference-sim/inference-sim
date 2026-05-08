@@ -2390,6 +2390,39 @@ func TestReplayCmd_PDTopologyFatal(t *testing.T) {
 	}
 }
 
+func TestExtractSimResults_PropagatesSLOClassModelITL(t *testing.T) {
+	// GIVEN a Metrics struct with one completed request that has SLOClass, Model, and ITL set
+	m := sim.NewMetrics()
+	m.RequestTTFTs["request_0"] = 1000.0
+	m.RequestE2Es["request_0"] = 5000.0
+	m.Requests["request_0"] = sim.RequestMetrics{
+		NumPrefillTokens: 100,
+		NumDecodeTokens:  50,
+		SLOClass:         "standard",
+		Model:            "qwen3-14b",
+		ITL:              5.0, // milliseconds
+	}
+
+	// WHEN extractSimResults is called
+	results := extractSimResults(m)
+
+	// THEN SLOClass, Model, and ITLMeanUs are populated correctly (BC-1)
+	if len(results) != 1 {
+		t.Fatalf("want 1 result, got %d", len(results))
+	}
+	r := results[0]
+	if r.SLOClass != "standard" {
+		t.Errorf("SLOClass: got %q, want %q", r.SLOClass, "standard")
+	}
+	if r.Model != "qwen3-14b" {
+		t.Errorf("Model: got %q, want %q", r.Model, "qwen3-14b")
+	}
+	// ITL is 5.0ms in RequestMetrics → ITLMeanUs = 5000.0µs
+	if r.ITLMeanUs != 5000.0 {
+		t.Errorf("ITLMeanUs: got %f, want 5000.0 (5ms * 1000)", r.ITLMeanUs)
+	}
+}
+
 func TestSimResult_NewFields_JSONOmitWhenEmpty(t *testing.T) {
 	// BC-2: omitempty means empty SLOClass/Model and zero ITLMeanUs are omitted from JSON
 	sr := workload.SimResult{

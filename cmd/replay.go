@@ -736,6 +736,9 @@ func extractSimResults(m *sim.Metrics) []workload.SimResult {
 			E2E:          e2eUs,
 			InputTokens:  rm.NumPrefillTokens,
 			OutputTokens: rm.NumDecodeTokens,
+			SLOClass:     rm.SLOClass,
+			Model:        rm.Model,
+			ITLMeanUs:    rm.ITL * 1000, // rm.ITL is ms; ITLMeanUs is µs
 		})
 	}
 	// Log all exclusions at Debug level for observability (R1: no silent data loss)
