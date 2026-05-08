@@ -1787,16 +1787,17 @@ func TestClusterSimulator_FlowControl_Conservation(t *testing.T) {
 	gwDepth := cs.GatewayQueueDepth()
 	gwShed := cs.GatewayQueueShed()
 
-	// INV-1: injected == completed + queued + running + dropped + timedout + routingRejections + gwDepth + gwShed + gwRejected + encodeRoutingRejections
+	// INV-1: injected == completed + queued + running + dropped + timedout + routingRejections + gwDepth + gwShed + gwRejected + gwEvicted + encodeRoutingRejections
 	gwRejected := cs.GatewayQueueRejected()
+	gwEvicted := cs.GatewayEvicted()
 	encRej := cs.EncodeRoutingRejections()
 	injected := len(requests) - cs.RejectedRequests()
-	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() + gwDepth + gwShed + gwRejected + encRej
+	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() + gwDepth + gwShed + gwRejected + gwEvicted + encRej
 	if injected != accounted {
-		t.Errorf("INV-1: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d routingRejections=%d gwDepth=%d gwShed=%d gwRejected=%d encodeRoutingRejections=%d)",
+		t.Errorf("INV-1: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d routingRejections=%d gwDepth=%d gwShed=%d gwRejected=%d gwEvicted=%d encodeRoutingRejections=%d)",
 			injected, accounted,
 			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
-			m.TimedOutRequests, cs.RoutingRejections(), gwDepth, gwShed, gwRejected, encRej)
+			m.TimedOutRequests, cs.RoutingRejections(), gwDepth, gwShed, gwRejected, gwEvicted, encRej)
 	}
 	// Note: gwRejected is included in the conservation formula but may be 0 here.
 	// The rejection path (queue full + no sheddable victim) is exercised at the unit level
@@ -2989,5 +2990,158 @@ func TestClusterSimulator_FlowControl_RoundRobinWiring(t *testing.T) {
 	if cs.GatewayQueueDepth() != 0 {
 		t.Errorf("expected empty gateway queue at end, got %d", cs.GatewayQueueDepth())
 	}
+}
+
+// TestClusterSimulator_FlowControl_Eviction_Conservation verifies that in-flight
+// gateway eviction preserves INV-1 (request conservation with gw_evicted bucket).
+func TestClusterSimulator_FlowControl_Eviction_Conservation(t *testing.T) {
+	config := newTestDeploymentConfig(1)
+	config.FlowControlEnabled = true
+	config.FlowControlDetector = "concurrency"
+	config.FlowControlMaxConcurrency = 1
+	config.FlowControlDispatchOrder = "priority"
+	config.FlowControlMaxQueueDepth = 100
+
+	// Mix of sheddable and critical requests. Sheddable arrive first to fill capacity,
+	// then critical arrive and trigger eviction.
+	requests := make([]*sim.Request, 0, 10)
+	// Sheddable requests with long output (occupy instance for a long time)
+	longOutput := make([]int, 200)
+	for j := range longOutput {
+		longOutput[j] = j + 1
+	}
+	for i := 0; i < 3; i++ {
+		out := make([]int, len(longOutput))
+		copy(out, longOutput)
+		r := &sim.Request{
+			ID:          fmt.Sprintf("shed-%d", i),
+			ArrivalTime: int64(i * 1000), // arrive close together
+			SLOClass:    "sheddable",
+			InputTokens: []int{1, 2, 3, 4, 5},
+			OutputTokens: out,
+		}
+		requests = append(requests, r)
+	}
+	// Critical requests arrive while sheddable is occupying the instance
+	for i := 0; i < 3; i++ {
+		r := &sim.Request{
+			ID:          fmt.Sprintf("crit-%d", i),
+			ArrivalTime: int64(50000 + i*1000), // arrive after sheddables are running
+			SLOClass:    "critical",
+			InputTokens: []int{1, 2, 3},
+			OutputTokens: []int{1, 2, 3},
+		}
+		requests = append(requests, r)
+	}
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	gwDepth := cs.GatewayQueueDepth()
+	gwShed := cs.GatewayQueueShed()
+	gwRejected := cs.GatewayQueueRejected()
+	gwEvicted := cs.GatewayEvicted()
+
+	// INV-1: injected == completed + queued + running + dropped + timedout +
+	//         routingRejections + gwDepth + gwShed + gwRejected + gwEvicted
+	injected := len(requests) - cs.RejectedRequests()
+	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning +
+		m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() +
+		gwDepth + gwShed + gwRejected + gwEvicted
+	if injected != accounted {
+		t.Errorf("INV-1 violated: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d routingRejections=%d gwDepth=%d gwShed=%d gwRejected=%d gwEvicted=%d)",
+			injected, accounted,
+			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
+			m.TimedOutRequests, cs.RoutingRejections(), gwDepth, gwShed, gwRejected, gwEvicted)
+	}
+
+	// BC-1: eviction must actually fire — a silent regression that disables eviction
+	// would still pass INV-1 trivially (gwEvicted=0 doesn't break the sum).
+	if gwEvicted == 0 {
+		t.Errorf("expected gwEvicted > 0 (eviction should fire when saturated with sheddable in-flight and critical waiting)")
+	}
+
+	// BC-6: non-sheddable requests must never be evicted. All 3 critical requests
+	// must complete. Since eviction only targets sheddable, completed must be >= 3
+	// (all critical) + some sheddable that finished before eviction.
+	// With gwEvicted sheddable removed and 3 critical completing:
+	// completed + gwEvicted should equal total injected (minus any in other buckets).
+	criticalCompleted := 0
+	for id := range m.Requests {
+		if strings.HasPrefix(id, "crit-") {
+			criticalCompleted++
+		}
+	}
+	if criticalCompleted != 3 {
+		t.Errorf("BC-6: expected all 3 critical requests in completed metrics, got %d", criticalCompleted)
+	}
+
+	t.Logf("Results: completed=%d gwEvicted=%d gwShed=%d gwDepth=%d criticalCompleted=%d",
+		m.CompletedRequests, gwEvicted, gwShed, gwDepth, criticalCompleted)
+}
+
+// TestClusterSimulator_FlowControl_Eviction_PD verifies that eviction tracking
+// works when requests are routed through the PD disaggregation path (non-disaggregated).
+func TestClusterSimulator_FlowControl_Eviction_PD(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(2, 1, 1)
+	config.FlowControlEnabled = true
+	config.FlowControlDetector = "concurrency"
+	config.FlowControlMaxConcurrency = 1 // saturation = totalInFlight / (numInstances * maxConcurrency) — saturates at 2 in-flight
+	config.FlowControlDispatchOrder = "priority"
+	config.FlowControlMaxQueueDepth = 100
+	config.PDDecider = "never" // non-disaggregated: requests go directly to decode pod
+
+	longOutput := make([]int, 200)
+	for j := range longOutput {
+		longOutput[j] = j + 1
+	}
+
+	// Need enough sheddable to saturate: 2 instances × maxConcurrency=1 → saturates at 2 in-flight
+	requests := make([]*sim.Request, 0, 8)
+	for i := 0; i < 4; i++ {
+		out := make([]int, len(longOutput))
+		copy(out, longOutput)
+		requests = append(requests, &sim.Request{
+			ID:           fmt.Sprintf("pd-shed-%d", i),
+			ArrivalTime:  int64(i * 1000),
+			SLOClass:     "sheddable",
+			InputTokens:  []int{1, 2, 3, 4, 5},
+			OutputTokens: out,
+		})
+	}
+	for i := 0; i < 4; i++ {
+		requests = append(requests, &sim.Request{
+			ID:           fmt.Sprintf("pd-crit-%d", i),
+			ArrivalTime:  int64(50000 + i*1000),
+			SLOClass:     "critical",
+			InputTokens:  []int{1, 2, 3},
+			OutputTokens: []int{1, 2, 3},
+		})
+	}
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	m := cs.AggregatedMetrics()
+	gwEvicted := cs.GatewayEvicted()
+
+	// INV-1 conservation
+	gwDepth := cs.GatewayQueueDepth()
+	gwShed := cs.GatewayQueueShed()
+	gwRejected := cs.GatewayQueueRejected()
+	injected := len(requests) - cs.RejectedRequests()
+	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning +
+		m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() +
+		gwDepth + gwShed + gwRejected + gwEvicted
+	if injected != accounted {
+		t.Errorf("INV-1 violated: injected=%d != accounted=%d", injected, accounted)
+	}
+
+	if gwEvicted == 0 {
+		t.Errorf("expected gwEvicted > 0 in PD+flow-control mode")
+	}
+
+	t.Logf("PD+FC results: completed=%d gwEvicted=%d", m.CompletedRequests, gwEvicted)
 }
 

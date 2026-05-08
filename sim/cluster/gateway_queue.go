@@ -507,3 +507,13 @@ func (q *GatewayQueue) ShedCount() int {
 func (q *GatewayQueue) RejectedCount() int {
 	return q.rejectedCount
 }
+
+// HasNonSheddableWaiting returns true if any priority band with priority >= 0 has entries.
+func (q *GatewayQueue) HasNonSheddableWaiting() bool {
+	for _, band := range q.bands {
+		if band.priority >= 0 && band.totalLen > 0 {
+			return true
+		}
+	}
+	return false
+}

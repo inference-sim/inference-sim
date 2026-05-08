@@ -368,6 +368,17 @@ func (sim *Simulator) CurrentClock() int64 { return sim.Clock }
 // SimHorizon returns the simulation horizon (in ticks).
 func (sim *Simulator) SimHorizon() int64 { return sim.Horizon }
 
+// ScheduleStepIfIdle schedules a batch-formation step if the instance is idle
+// with pending work. Used by gateway eviction to maintain INV-8 after removing
+// the last request from RunningBatch.
+func (sim *Simulator) ScheduleStepIfIdle(time int64) {
+	if sim.stepEvent == nil && sim.WaitQ.Len() > 0 {
+		step := &StepEvent{time: time}
+		sim.stepEvent = step
+		sim.Schedule(step)
+	}
+}
+
 // PostDecodeFixedOverhead returns the latency model's fixed per-request post-decode
 // overhead in microseconds. Used by the cluster layer to include overhead in
 // parent.CompletionTime when disaggregated decode sub-requests complete.

@@ -25,21 +25,23 @@ type ClusterSimulator struct {
 	aggregatedMetrics *sim.Metrics
 
 	// Online routing pipeline fields
-	clusterEvents         ClusterEventQueue
-	seqCounter            int64
-	admissionLatency      int64
-	routingLatency        int64
-	admissionPolicy       sim.AdmissionPolicy
-	priorityMap           *sim.SLOPriorityMap
-	snapshotProvider      *CachedSnapshotProvider
-	routingPolicy         sim.RoutingPolicy
-	rejectedRequests      int                       // EC-2: count of requests rejected by admission policy
-	routingRejections     int                       // I13: count of requests rejected at routing (no routable instances)
-	shedByTier            map[string]int            // per-SLOClass rejection counts (Phase 1B-1a)
-	trace                 *trace.SimulationTrace    // nil when trace-level is "none" (BC-1: zero overhead)
-	preGeneratedRequests  []*sim.Request            // Pre-generated requests (all workload paths unified)
-	inFlightRequests      map[string]int            // instance ID → dispatched-but-not-completed count (#463)
-	poolMembership        map[string]PoolRole       // instance ID → pool role (nil when disaggregation disabled)
+	clusterEvents        ClusterEventQueue
+	seqCounter           int64
+	admissionLatency     int64
+	routingLatency       int64
+	admissionPolicy      sim.AdmissionPolicy
+	priorityMap          *sim.SLOPriorityMap
+	snapshotProvider     *CachedSnapshotProvider
+	routingPolicy        sim.RoutingPolicy
+	rejectedRequests     int                    // EC-2: count of requests rejected by admission policy
+	routingRejections    int                    // I13: count of requests rejected at routing (no routable instances)
+	shedByTier           map[string]int         // per-SLOClass rejection counts (Phase 1B-1a)
+	trace                *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
+	preGeneratedRequests []*sim.Request         // Pre-generated requests (all workload paths unified)
+	inFlightRequests     map[string]int         // instance ID → dispatched-but-not-completed count (#463)
+	evictionTracker      *EvictionTracker       // tracks routed sheddable requests for in-flight eviction (nil when flow control disabled)
+	gatewayEvicted       int                    // count of requests evicted in-flight from instances (INV-1: gw_evicted)
+	poolMembership       map[string]PoolRole    // instance ID → pool role (nil when disaggregation disabled)
 	disaggregationDecider sim.DisaggregationDecider // PD disaggregation decider (nil when disabled)
 
 	// PD disaggregation state (PR2)
@@ -457,6 +459,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		fcAdmission := NewFlowControlAdmission(gq)
 		cs.flowControlAdmission = fcAdmission
 		cs.admissionPolicy = fcAdmission
+		cs.evictionTracker = NewEvictionTracker()
 		fairness := config.FlowControlFairnessPolicy
 		if fairness == "" {
 			fairness = "global-strict"
@@ -493,12 +496,16 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	// admission → routing → instance injection. The callback returns nil so the per-instance
 	// simulator does not inject locally.
 	// Phase 1B-2a: also notify tenantTracker on completion when budgets are configured.
-	if onRequestDone != nil || cs.tenantTracker != nil {
+	if onRequestDone != nil || cs.tenantTracker != nil || cs.evictionTracker != nil {
 		for _, inst := range cs.instances {
 			inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
 				// Phase 1B-2a: release tenant in-flight slot on every terminal state.
 				if cs.tenantTracker != nil {
 					cs.tenantTracker.OnComplete(req.TenantID)
+				}
+				// Remove from eviction tracker on normal completion (BC-3).
+				if cs.evictionTracker != nil {
+					cs.evictionTracker.Untrack(req.ID)
 				}
 				if onRequestDone == nil {
 					return nil
@@ -904,6 +911,7 @@ func (c *ClusterSimulator) maybeDeliverProgressSnapshot(isFinal bool) {
 		RoutingRejections: c.routingRejections,
 		GatewayQueueDepth: gatewayQueueDepth,
 		GatewayQueueShed:  gatewayQueueShed,
+		GatewayEvicted:    c.gatewayEvicted,
 		ActivePDTransfers: c.activeTransfers,
 		ActiveInstances:   activeCount,
 		TotalInstances:    len(c.instances),
@@ -1015,10 +1023,13 @@ func (cs *ClusterSimulator) addLiveInstance(
 
 	// Wire OnRequestDone callback — mirrors startup path in NewClusterSimulator (R4).
 	onRequestDone := cs.sessionCallback
-	if onRequestDone != nil || cs.tenantTracker != nil {
+	if onRequestDone != nil || cs.tenantTracker != nil || cs.evictionTracker != nil {
 		inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
 			if cs.tenantTracker != nil {
 				cs.tenantTracker.OnComplete(req.TenantID)
+			}
+			if cs.evictionTracker != nil {
+				cs.evictionTracker.Untrack(req.ID)
 			}
 			if onRequestDone == nil {
 				return nil
@@ -1358,6 +1369,12 @@ func (c *ClusterSimulator) GatewayQueueRejected() int {
 	return c.gatewayQueue.RejectedCount()
 }
 
+// GatewayEvicted returns the number of requests evicted in-flight from instances
+// due to gateway-level eviction (INV-1: gw_evicted bucket).
+func (c *ClusterSimulator) GatewayEvicted() int {
+	return c.gatewayEvicted
+}
+
 // tryDispatchFromGatewayQueue attempts to dispatch one request from the gateway queue.
 // Called after each completion (BC-4) and after each enqueue (for NeverSaturated pass-through).
 // Builds fresh RouterState at dispatch time for late binding (BC-3).
@@ -1372,6 +1389,16 @@ func (c *ClusterSimulator) tryDispatchFromGatewayQueue() bool {
 	if math.IsNaN(sat) || math.IsInf(sat, 0) {
 		panic(fmt.Sprintf("tryDispatchFromGatewayQueue: saturation=%f is not finite — detector bug", sat))
 	}
+
+	// Eviction trigger (BC-1): if saturated and a non-sheddable request is waiting,
+	// evict one sheddable in-flight request to free capacity.
+	if sat >= 1.0 && c.evictionTracker != nil && c.evictionTracker.Len() > 0 {
+		if c.gatewayQueue.HasNonSheddableWaiting() {
+			c.tryEvictOne()
+			return false
+		}
+	}
+
 	// Per-band HoL blocking: DequeueGated checks saturation against per-band ceilings
 	// and halts dispatch if any band's ceiling is exceeded (GIE parity).
 	req := c.gatewayQueue.DequeueGated(sat)
@@ -1392,6 +1419,22 @@ func (c *ClusterSimulator) tryDispatchFromGatewayQueue() bool {
 		seqID: c.nextSeqID(),
 	})
 	return true
+}
+
+// tryEvictOne pops the most-evictable request and schedules its termination.
+func (c *ClusterSimulator) tryEvictOne() {
+	victim, instanceID := c.evictionTracker.Pop()
+	if victim == nil {
+		return
+	}
+	heap.Push(&c.clusterEvents, clusterEventEntry{
+		event: &GatewayEvictionEvent{
+			time:           c.clock,
+			request:        victim,
+			targetInstance: instanceID,
+		},
+		seqID: c.nextSeqID(),
+	})
 }
 
 // Trace returns the decision trace collected during simulation.
@@ -1720,6 +1763,10 @@ func (cs *ClusterSimulator) executeStandardRouting(req *sim.Request, time int64)
 			}
 
 			inst.InjectRequestOnline(req, time)
+			// Track routed sheddable requests for in-flight eviction (BC-3).
+			if cs.evictionTracker != nil {
+				cs.evictionTracker.Track(req, decision.TargetInstance, cs.priorityMap)
+			}
 			return
 		}
 	}
@@ -1868,6 +1915,9 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 			decodeInst.RecordWarmUpRequest(req.ID)
 		}
 		decodeInst.InjectRequestOnline(req, time)
+		if cs.evictionTracker != nil {
+			cs.evictionTracker.Track(req, decodeDecision.TargetInstance, cs.priorityMap)
+		}
 		return
 	}
 

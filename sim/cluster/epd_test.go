@@ -180,12 +180,13 @@ func TestEPD_EmptyEncodePool_RoutingRejection(t *testing.T) {
 		t.Errorf("EncodeRoutingRejections = %d, want %d", got, len(reqs))
 	}
 	// Aggregate INV-1 check: injected == completed + queued + running + dropped + timedout
-	// + routingRejections + encodeRoutingRejections (+ gw terms, all zero here).
+	// + routingRejections + encodeRoutingRejections + gwEvicted (+ gw terms, all zero here).
 	m := cs.AggregatedMetrics()
 	injected := len(reqs) - cs.RejectedRequests()
 	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable +
 		m.TimedOutRequests + cs.RoutingRejections() + cs.EncodeRoutingRejections() +
-		cs.GatewayQueueDepth() + cs.GatewayQueueShed() + cs.GatewayQueueRejected()
+		cs.GatewayQueueDepth() + cs.GatewayQueueShed() + cs.GatewayQueueRejected() +
+		cs.GatewayEvicted()
 	if injected != accounted {
 		t.Errorf("INV-1: injected=%d != accounted=%d (completed=%d timedout=%d dropped=%d encRej=%d routingRej=%d)",
 			injected, accounted, m.CompletedRequests, m.TimedOutRequests,
