@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1853,5 +1854,106 @@ func TestRealClient_Send_NilSLOMapDefensive(t *testing.T) {
 	// Verify sloMap was defensively initialized
 	if client.sloMap == nil {
 		t.Error("sloMap should have been initialized defensively, but is still nil")
+	}
+}
+
+// --- printObserveLatencySummary tests (BC-1, BC-2, BC-3, BC-3b) ---
+
+func TestPrintObserveLatencySummary_NoRecords_NothingPrinted(t *testing.T) {
+	// GIVEN zero records (BC-2)
+	var buf bytes.Buffer
+	printObserveLatencySummary(&buf, nil, 0)
+	if buf.Len() != 0 {
+		t.Errorf("expected empty output, got: %q", buf.String())
+	}
+}
+
+func TestPrintObserveLatencySummary_AllWarmup_NothingPrinted(t *testing.T) {
+	// GIVEN all records are warmup (BC-2, BC-3)
+	records := []workload.TraceRecord{
+		{RequestID: 0, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 100_000, LastChunkTimeUs: 500_000},
+		{RequestID: 1, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 100_000, LastChunkTimeUs: 500_000},
+	}
+	var buf bytes.Buffer
+	printObserveLatencySummary(&buf, records, 2) // warmup=2, both excluded
+	if buf.Len() != 0 {
+		t.Errorf("expected empty output for all-warmup records, got: %q", buf.String())
+	}
+}
+
+func TestPrintObserveLatencySummary_ErrorRecordsExcluded(t *testing.T) {
+	// GIVEN only error-status records (BC-3)
+	records := []workload.TraceRecord{
+		{RequestID: 0, Status: "error", SendTimeUs: 0, FirstChunkTimeUs: 100_000, LastChunkTimeUs: 500_000},
+	}
+	var buf bytes.Buffer
+	printObserveLatencySummary(&buf, records, 0)
+	if buf.Len() != 0 {
+		t.Errorf("expected empty output for error-only records, got: %q", buf.String())
+	}
+}
+
+func TestPrintObserveLatencySummary_ValidRecord_OutputContainsExpectedSections(t *testing.T) {
+	// GIVEN one valid record: TTFT=100ms (100_000us), E2E=500ms (500_000us) (BC-1)
+	records := []workload.TraceRecord{
+		{RequestID: 0, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 100_000, LastChunkTimeUs: 500_000},
+	}
+	var buf bytes.Buffer
+	printObserveLatencySummary(&buf, records, 0)
+	out := buf.String()
+	// Header present
+	if !strings.Contains(out, "=== Observe Latency Summary") {
+		t.Errorf("missing header in output: %q", out)
+	}
+	if !strings.Contains(out, "TTFT:") {
+		t.Errorf("missing TTFT line in output: %q", out)
+	}
+	if !strings.Contains(out, "E2E:") {
+		t.Errorf("missing E2E line in output: %q", out)
+	}
+	// Numeric values correct: single record → mean=p50=p90=p99
+	// TTFT=100_000us → 100.00ms; E2E=500_000us → 500.00ms
+	if !strings.Contains(out, "100.00ms") {
+		t.Errorf("expected TTFT 100.00ms in output: %q", out)
+	}
+	if !strings.Contains(out, "500.00ms") {
+		t.Errorf("expected E2E 500.00ms in output: %q", out)
+	}
+}
+
+func TestPrintObserveLatencySummary_ZeroLatency_Excluded(t *testing.T) {
+	// GIVEN a record where TTFT == 0 (SendTime == FirstChunkTime) (BC-3)
+	records := []workload.TraceRecord{
+		{RequestID: 0, Status: "ok", SendTimeUs: 100, FirstChunkTimeUs: 100, LastChunkTimeUs: 100},
+	}
+	var buf bytes.Buffer
+	printObserveLatencySummary(&buf, records, 0)
+	if buf.Len() != 0 {
+		t.Errorf("expected empty output for zero-latency record, got: %q", buf.String())
+	}
+}
+
+func TestPrintObserveLatencySummary_NonStreamingRecord_Included(t *testing.T) {
+	// GIVEN a non-streaming record where FirstChunk == LastChunk > Send (BC-3b)
+	records := []workload.TraceRecord{
+		{RequestID: 0, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 200_000, LastChunkTimeUs: 200_000},
+	}
+	var buf bytes.Buffer
+	printObserveLatencySummary(&buf, records, 0)
+	out := buf.String()
+	if !strings.Contains(out, "=== Observe Latency Summary") {
+		t.Errorf("non-streaming record with TTFT==E2E>0 should be included, got: %q", out)
+	}
+}
+
+func TestPrintObserveLatencySummary_MalformedE2ELessThanTTFT_Excluded(t *testing.T) {
+	// GIVEN a malformed record where LastChunkTimeUs < FirstChunkTimeUs (BC-3)
+	records := []workload.TraceRecord{
+		{RequestID: 0, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 500_000, LastChunkTimeUs: 100_000},
+	}
+	var buf bytes.Buffer
+	printObserveLatencySummary(&buf, records, 0)
+	if buf.Len() != 0 {
+		t.Errorf("expected empty output for malformed record (e2e < ttft), got: %q", buf.String())
 	}
 }

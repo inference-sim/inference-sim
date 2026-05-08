@@ -5,10 +5,12 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"math"
 	"math/rand"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -482,6 +484,8 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	records := recorder.Records()
 	logrus.Infof("Trace exported: %d records to %s / %s", len(records), observeTraceHeader, observeTraceData)
 
+	printObserveLatencySummary(os.Stdout, records, observeWarmup)
+
 	// Print session metrics if any record carries a session label (#1058)
 	sessionMetrics := computeSessionMetricsFromTrace(records)
 	printSessionMetrics(os.Stdout, sessionMetrics)
@@ -511,6 +515,57 @@ type completionEvent struct {
 	req       *sim.Request
 	record    *RequestRecord
 	wallClock int64 // wall-clock microseconds at completion
+}
+
+// printObserveLatencySummary prints TTFT and E2E statistics for the given records,
+// excluding warm-up requests, error records, and records with zero or negative latency.
+// Records where LastChunkTimeUs < FirstChunkTimeUs are also excluded as malformed.
+// Prints nothing if there are no valid records.
+func printObserveLatencySummary(w io.Writer, records []workload.TraceRecord, warmup int) {
+	var ttftsUs, e2esUs []int64
+	for _, rec := range records {
+		if rec.RequestID < warmup {
+			continue // warm-up request
+		}
+		if rec.Status != "ok" {
+			continue // error record
+		}
+		ttft := rec.FirstChunkTimeUs - rec.SendTimeUs
+		e2e := rec.LastChunkTimeUs - rec.SendTimeUs
+		if ttft <= 0 || e2e <= 0 || e2e < ttft {
+			continue // zero or negative latency — clock skew or unrecorded timestamps
+		}
+		ttftsUs = append(ttftsUs, ttft)
+		e2esUs = append(e2esUs, e2e)
+	}
+	if len(ttftsUs) == 0 {
+		return
+	}
+	sort.Slice(ttftsUs, func(i, j int) bool { return ttftsUs[i] < ttftsUs[j] })
+	sort.Slice(e2esUs, func(i, j int) bool { return e2esUs[i] < e2esUs[j] })
+
+	var ttftSum, e2eSum int64
+	for i := range ttftsUs {
+		ttftSum += ttftsUs[i]
+		e2eSum += e2esUs[i]
+	}
+	n := len(ttftsUs)
+	ttftMeanMs := float64(ttftSum) / float64(n) / 1000.0
+	e2eMeanMs := float64(e2eSum) / float64(n) / 1000.0
+
+	_, _ = fmt.Fprintf(w, "=== Observe Latency Summary (%d requests) ===\n", n)
+	_, _ = fmt.Fprintf(w, "TTFT: mean=%.2fms  p50=%.2fms  p90=%.2fms  p99=%.2fms\n",
+		ttftMeanMs,
+		sim.CalculatePercentile(ttftsUs, 50),
+		sim.CalculatePercentile(ttftsUs, 90),
+		sim.CalculatePercentile(ttftsUs, 99),
+	)
+	_, _ = fmt.Fprintf(w, "E2E:  mean=%.2fms  p50=%.2fms  p90=%.2fms  p99=%.2fms\n",
+		e2eMeanMs,
+		sim.CalculatePercentile(e2esUs, 50),
+		sim.CalculatePercentile(e2esUs, 90),
+		sim.CalculatePercentile(e2esUs, 99),
+	)
 }
 
 // runObserveOrchestrator implements the dispatch loop with session support.
