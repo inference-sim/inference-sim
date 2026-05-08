@@ -153,8 +153,8 @@ func init() {
 	// HTTP client tuning
 	observeCmd.Flags().IntVar(&observeTimeout, "timeout", defaultHTTPTimeoutSeconds, "HTTP request timeout in seconds (per request)")
 
-	// ITL recording (optional, opt-in)
-	observeCmd.Flags().BoolVar(&observeRecordITL, "record-itl", false, "Record per-chunk timestamps for ITL calibration (streaming only)")
+	// ITL recording (on by default; pass --record-itl=false to disable)
+	observeCmd.Flags().BoolVar(&observeRecordITL, "record-itl", true, "Record per-chunk timestamps for ITL calibration, streaming only (default: on; pass --record-itl=false to disable)")
 	observeCmd.Flags().StringVar(&observeITLOutput, "itl-output", "", "Output path for ITL CSV file (default: <trace-data>.itl.csv if --record-itl is set)")
 
 	rootCmd.AddCommand(observeCmd)
@@ -490,7 +490,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	sessionMetrics := computeSessionMetricsFromTrace(records)
 	printSessionMetrics(os.Stdout, sessionMetrics)
 
-	// Export ITL if requested (BC-5: opt-in)
+	// Export ITL unless explicitly disabled (BC-4: on by default; BC-5: disable via --record-itl=false)
 	if observeRecordITL {
 		itlPath := observeITLOutput
 		if itlPath == "" {

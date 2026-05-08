@@ -1957,3 +1957,18 @@ func TestPrintObserveLatencySummary_MalformedE2ELessThanTTFT_Excluded(t *testing
 		t.Errorf("expected empty output for malformed record (e2e < ttft), got: %q", buf.String())
 	}
 }
+
+// --- TestObserveRecordITLDefault (BC-4) ---
+
+func TestObserveRecordITLDefault_IsTrue(t *testing.T) {
+	// GIVEN the observe command flags
+	// WHEN the default value for --record-itl is inspected
+	// THEN it is true (BC-4: ITL recording on by default)
+	f := observeCmd.Flags().Lookup("record-itl")
+	if f == nil {
+		t.Fatal("--record-itl flag not found")
+	}
+	if f.DefValue != "true" {
+		t.Errorf("expected --record-itl default to be true, got %q", f.DefValue)
+	}
+}
