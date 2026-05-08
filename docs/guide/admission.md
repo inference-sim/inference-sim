@@ -40,7 +40,7 @@ How it works:
 !!! example "Sizing the bucket"
     With `--token-bucket-capacity 10000 --token-bucket-refill-rate 1000` and requests averaging 512 input tokens, the sustained admission rate is roughly `1000 / 512 ~ 1.95 req/s`. The bucket's capacity of 10000 tokens allows a burst of up to `10000 / 512 ~ 19` requests before rate-limiting kicks in.
 
-Rejected requests are counted in the output anomaly counters (`Rejected Requests`) and in the full pipeline conservation formula (`num_requests == injected_requests + rejected_requests`), but they never enter the routing stage or any instance queue. Every rejection — regardless of admission policy — is also recorded in the per-SLO-class `ShedByTier` counter, so you can see which request classes are being rejected (e.g., `{"batch": 12, "sheddable": 8}`).
+Rejected requests are counted in the output anomaly counters (`Rejected Requests`) and in the full pipeline conservation formula (`num_requests == injected_requests + rejected_requests`), but they never enter the routing stage or any instance queue. Every rejection — regardless of admission policy — is also recorded in the per-SLO-class `ShedByTier` counter, so you can see which request classes are being rejected (e.g., `{"batch": 12, "sheddable": 8}`). `ShedByTier` is also exposed in periodic `ProgressSnapshot` callbacks, allowing live monitoring of per-tier shedding rates during simulation.
 
 ## When to Use Admission Control
 
