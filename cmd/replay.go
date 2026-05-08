@@ -188,6 +188,10 @@ Example:
 			logrus.Warnf("[replay] --prefill-decode-instances is not applicable to blis replay (PD disaggregation is not supported); flag ignored")
 		}
 		// E/P/D (GAP-4): encode requires a decode-capable pool, which replay does not support.
+		// Validate the decider name first so typos fatal on both run and replay paths (parity).
+		if encodeDecider != "" && !sim.IsValidEncodeDecider(encodeDecider) {
+			logrus.Fatalf("Unknown encode decider %q. Valid: %s", encodeDecider, strings.Join(sim.ValidEncodeDeciderNames(), ", "))
+		}
 		if encodeInstances > 0 {
 			logrus.Warnf("[replay] --encode-instances is not applicable to blis replay (PD disaggregation is not supported; encode requires a decode-capable pool); flag ignored")
 		}

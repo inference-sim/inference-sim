@@ -17,7 +17,7 @@
 | No new `EncodeRoutingEvent` type; encode stage is inlined into `executeDisaggregatedRouting`. | Issue's own Extension-friction note: "If GAP-1 (routing path unification) is resolved first, add the encode stage to `executeDisaggregatedRouting` rather than to `DisaggregationDecisionEvent.Execute`." GAP-1 is merged. Option A = zero-duration; wrapping in an event adds bookkeeping without modeling fidelity. | CLARIFICATION |
 | No new `IsMultimodal` field on `sim.Request`; use a derived method `Request.IsMultimodal()` over existing `ImageTokenCount + AudioTokenCount + VideoTokenCount`. | Those fields already exist and already flow through spec → generator → trace v2 → replay. Adding a boolean duplicates the source of truth. | CLARIFICATION |
 | No new `is_multimodal` column in TraceV2. | Derivable from existing `image_tokens`, `audio_tokens`, `video_tokens` columns. | CLARIFICATION |
-| `EncodeInstanceID` only lives on `ParentRequest` (populated during `executeDisaggregatedRouting`). | When encode fires outside disagg (Sub-case BC-EPD-4), we still create a `ParentRequest` to hold the encode record — this is a minor bookkeeping extension for the non-disagg-but-encode case. | CLARIFICATION |
+| `EncodeInstanceID` only lives on `ParentRequest` (populated during `executeDisaggregatedRouting`) and only on the disagg path. | On the non-disagg path (BC-EPD-4), `encodeInstanceID` is captured as a local variable, recorded in the trace (`EncodeRoutingRecord`), and then discarded — no `ParentRequest` is created. This matches the current non-disagg behavior (no parent tracking); the encode instance is already observable via the trace record. | CLARIFICATION |
 | `PoolRole` is a bitmask (per PR #1278), not `iota + 1`. | Issue was written against an older commit (before #1278). Use `PoolRoleEncode = 1 << 2` to extend the bitmask. | CLARIFICATION |
 | Priority renumbering (shift `PrefillRoutingEvent` 4→5, `KVTransferStarted` 5→6) is **not applied** because we did not add a new event. | No new event type added; existing priorities retained. | CLARIFICATION |
 | Introduce a `NeverEncode` decider in addition to `AlwaysEncode` and `MultimodalEncodeDecider`. | Useful for wiring tests; symmetric with `NeverDisaggregate`. | CLARIFICATION |
@@ -210,7 +210,7 @@ if cs.encodeDecider != nil && cs.encodeDecider.ShouldEncode(req, decodeDecision.
 }
 ```
 
-Then, on both fork paths (non-disagg direct-inject and disagg prefill-route), set `parent.EncodeInstanceID` when a parent is created. For the non-disagg path, when encode fired, construct a `ParentRequest` (lightweight) to hold `EncodeInstanceID`.
+On the disagg path only, set `parent.EncodeInstanceID = InstanceID(encodeInstanceID)` after the `ParentRequest` is constructed. On the non-disagg path, no `ParentRequest` is created (matching the existing non-disagg behavior) — the encode instance is already recorded in the trace via `EncodeRoutingRecord`, which is the sole observable for BC-EPD-4 assertions.
 
 Add corresponding fields to `ClusterSimulator`:
 - `encodeDecider sim.EncodeDecider`

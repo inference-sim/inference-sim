@@ -191,9 +191,9 @@ func (n *NeverEncode) ShouldEncode(_ *Request, _ string) bool { return false }
 type MultimodalEncodeDecider struct{}
 
 func (m *MultimodalEncodeDecider) ShouldEncode(req *Request, _ string) bool {
-	if req == nil {
-		return false
-	}
+	// Interface contract (parity with DisaggregationDecider): req is guaranteed
+	// non-nil at the call site. No defensive nil check here — symmetric with
+	// AlwaysEncode / NeverEncode.
 	return req.IsMultimodal()
 }
 

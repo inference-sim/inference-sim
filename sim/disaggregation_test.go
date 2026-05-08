@@ -600,7 +600,6 @@ func TestMultimodalEncodeDecider_False(t *testing.T) {
 	}{
 		{"all zero", &Request{}},
 		{"text-only", &Request{TextTokenCount: 500}},
-		{"nil request", nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -612,18 +611,22 @@ func TestMultimodalEncodeDecider_False(t *testing.T) {
 }
 
 // TestMultimodalEncodeDecider_IgnoresOutputTokens verifies BC-EPD-7 (INV-9
-// oracle boundary): the decider makes its decision without touching
-// Request.OutputTokens. Proven by handing it a request with OutputTokens=nil —
-// any code path that touched OutputTokens would nil-deref.
+// oracle boundary): the decider makes its decision independently of
+// Request.OutputTokens. The probe runs twice — once with OutputTokens=nil,
+// once with a large populated OutputTokens slice — and asserts the decision
+// is identical. Nil-safety is proven by the first run; decision independence
+// is proven by the second run agreeing.
 func TestMultimodalEncodeDecider_IgnoresOutputTokens(t *testing.T) {
 	d := &MultimodalEncodeDecider{}
-	req := &Request{
-		ID:              "oracle-probe",
-		ImageTokenCount: 5,
-		OutputTokens:    nil, // must not be read
+	reqNoOutput := &Request{ID: "oracle-probe-nil", ImageTokenCount: 5, OutputTokens: nil}
+	reqLargeOutput := &Request{ID: "oracle-probe-large", ImageTokenCount: 5, OutputTokens: make([]int, 9999)}
+	decisionNil := d.ShouldEncode(reqNoOutput, "inst_0")
+	decisionLarge := d.ShouldEncode(reqLargeOutput, "inst_0")
+	if !decisionNil {
+		t.Error("ShouldEncode(OutputTokens=nil) = false, want true for a multimodal request")
 	}
-	if !d.ShouldEncode(req, "inst_0") {
-		t.Error("ShouldEncode returned false; expected true — and must not have read OutputTokens")
+	if decisionNil != decisionLarge {
+		t.Errorf("decision depends on OutputTokens: nil=%v, large=%v — INV-9 violation", decisionNil, decisionLarge)
 	}
 }
 
@@ -657,9 +660,11 @@ func TestNewEncodeDecider(t *testing.T) {
 			t.Errorf("NewEncodeDecider(%q) returned nil", name)
 		}
 	}
-	// Empty string defaults to NeverEncode.
-	if _, ok := NewEncodeDecider("").(*NeverEncode); !ok {
-		t.Errorf("NewEncodeDecider(\"\") must return *NeverEncode")
+	// Empty string defaults to the never-encode behavior (behavioral check, not
+	// structural: would survive a rename of *NeverEncode).
+	defaultDecider := NewEncodeDecider("")
+	if defaultDecider.ShouldEncode(&Request{ImageTokenCount: 10}, "inst_0") {
+		t.Errorf("NewEncodeDecider(\"\") must behave like NeverEncode (returned true for multimodal)")
 	}
 	// Unknown name panics.
 	defer func() {

@@ -66,9 +66,11 @@ This design adds the encode pool role, an encode decider interface, CLI flags, a
 
 **Choice:**
 - When `--encode-instances == 0` (default): encode decider is `nil`. No encode stage runs. Backward-compatible.
-- When `--encode-instances > 0` and `--encode-decider` unset: default to `"multimodal"` (per the issue's Step 7).
+- When `--encode-instances > 0`: the decider is constructed from `--encode-decider`, which itself defaults to `"never"` at the flag level. **Users who want the multimodal gating behavior must explicitly pass `--encode-decider multimodal`.** No implicit promotion from `"never"` to `"multimodal"` happens based on the presence of encode instances.
 - `"always"`: always encode (for tests / wiring validation).
-- `"never"`: never encode (disables the stage while keeping the pool reservable).
+- `"never"`: never encode (keeps the pool reservable but makes the stage a no-op).
+
+**Deviation from the issue's Step 7:** the issue proposed `"multimodal"` as the default when `--encode-instances > 0`. We opted for the stricter "explicit opt-in" pattern (flag default is `"never"` regardless of instance count) to match BLIS's existing convention of not inferring behavior from related flags. Users setting `--encode-instances > 0` without specifying a decider get a no-op encode stage; a CLI warning could be added in a follow-up if this proves confusing.
 
 **Deviation from Step 2 of the issue:** `NeverEncode` is a new test-only decider not mentioned in the issue. Rationale: symmetric with `NeverDisaggregate`; useful for testing "flag-enabled but decider off" wiring.
 
@@ -99,7 +101,7 @@ See micro plan `2026-05-08-epd-disaggregation-plan.md` for full test list. Summa
 - **BC-EPD-2** (encode decider fires for multimodal): `MultimodalEncodeDecider.ShouldEncode` returns true iff the request has non-zero image/audio/video tokens.
 - **BC-EPD-3** (encode + disagg): when encode fires and `disaggDecision.Disaggregate == true`, the pipeline records encode routing, then prefill routing, then decode; `ParentRequest.EncodeInstanceID` is set.
 - **BC-EPD-4** (encode + non-disagg): when encode fires and `disaggDecision.Disaggregate == false`, the pipeline records encode routing, then injects directly to the pre-selected decode instance — no prefill routing.
-- **BC-EPD-5** (empty encode pool): `--encode-instances 0` with `--encode-decider multimodal` and a multimodal request → config validation rejects at CLI.
+- **BC-EPD-5** (non-"never" decider requires encode pool): `--encode-decider` set to `"always"` or `"multimodal"` with `--encode-instances 0` is rejected at CLI validation (`logrus.Fatalf`).
 - **BC-EPD-6** (conservation): `encode_routing_rejections` is included in the INV-1 ledger.
 - **BC-EPD-7** (INV-9 oracle boundary): `MultimodalEncodeDecider` does not reference `req.OutputTokens`.
 - **BC-EPD-8** (determinism): same seed + same workload + E/P/D enabled → byte-identical stdout.

@@ -59,10 +59,7 @@ type ClusterSimulator struct {
 
 	// E/P/D disaggregation state (GAP-4, issue #1264).
 	// encodeDecider is nil when --encode-instances == 0, which disables the encode stage.
-	// encodeRoutingPolicy is always nil in this PR (encode pool uses the main routingPolicy).
-	// The field is declared now so future per-pool scorer configs have a landing spot.
 	encodeDecider           sim.EncodeDecider
-	encodeRoutingPolicy     sim.RoutingPolicy
 	encodeRoutingRejections int // INV-1 term: requests rejected at encode routing (empty encode pool)
 
 	// Transfer contention state (--pd-transfer-contention flag, INV-P2-2)
@@ -1856,11 +1853,9 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 			return
 		}
 		encodeState := &sim.RouterState{Snapshots: encodeSnapshots, Clock: cs.clock}
-		encodePolicy := cs.encodeRoutingPolicy
-		if encodePolicy == nil {
-			encodePolicy = cs.routingPolicy
-		}
-		encodeDecision := encodePolicy.Route(req, encodeState)
+		// Encode routing uses the main routingPolicy in this PR; per-pool scorer
+		// config is a follow-up (design doc D6).
+		encodeDecision := cs.routingPolicy.Route(req, encodeState)
 		encodeInstanceID = encodeDecision.TargetInstance
 		logrus.Debugf("[cluster] req %s: encode pod selected → %s", req.ID, encodeInstanceID)
 
