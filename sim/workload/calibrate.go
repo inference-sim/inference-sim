@@ -518,6 +518,29 @@ func pearsonCorrelation(x, y []float64) float64 {
 	return num / den
 }
 
+// MapePct computes mean absolute percentage error between real and sim slices.
+// Pairs where real==0, NaN, or Inf are skipped. Returns 0 if no valid pairs.
+// Returns a fraction (not a percentage) — multiply by 100 for display.
+func MapePct(real, sim []float64) float64 {
+	var sum float64
+	count := 0
+	for i := range real {
+		if real[i] == 0 || math.IsNaN(real[i]) || math.IsInf(real[i], 0) {
+			continue
+		}
+		err := math.Abs(real[i]-sim[i]) / real[i]
+		if math.IsNaN(err) || math.IsInf(err, 0) {
+			continue
+		}
+		sum += err
+		count++
+	}
+	if count == 0 {
+		return 0
+	}
+	return sum / float64(count)
+}
+
 func qualityRating(mape, pearsonR float64) string {
 	if mape < 0.10 && pearsonR > 0.95 {
 		return "excellent"

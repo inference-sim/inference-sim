@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"sort"
 
 	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/sirupsen/logrus"
@@ -210,6 +211,45 @@ Example:
 		if itl, ok := report.Metrics["itl"]; ok {
 			logrus.Infof("  ITL:  MAPE=%.1f%%, PearsonR=%.3f, Bias=%s, Quality=%s",
 				itl.RequestLevel.MAPE*100, itl.RequestLevel.PearsonR, itl.RequestLevel.BiasDirection, itl.RequestLevel.Quality)
+		}
+
+		// Per-SLO class breakdown (when data present)
+		if len(pairs.BySLO) > 0 {
+			sloKeys := make([]string, 0, len(pairs.BySLO))
+			for k := range pairs.BySLO {
+				sloKeys = append(sloKeys, k)
+			}
+			sort.Strings(sloKeys) // deterministic output (R2, INV-6)
+			logrus.Infof("Per-SLO-class calibration:")
+			for _, slo := range sloKeys {
+				p := pairs.BySLO[slo]
+				if len(p.TTFT.Real) == 0 {
+					continue
+				}
+				logrus.Infof("  SLO=%s: n=%d TTFT-MAPE=%.1f%% E2E-MAPE=%.1f%%",
+					slo, len(p.TTFT.Real),
+					workload.MapePct(p.TTFT.Real, p.TTFT.Sim)*100,
+					workload.MapePct(p.E2E.Real, p.E2E.Sim)*100)
+			}
+		}
+		// Per-model breakdown (when data present)
+		if len(pairs.ByModel) > 0 {
+			modelKeys := make([]string, 0, len(pairs.ByModel))
+			for k := range pairs.ByModel {
+				modelKeys = append(modelKeys, k)
+			}
+			sort.Strings(modelKeys) // deterministic output (R2, INV-6)
+			logrus.Infof("Per-model calibration:")
+			for _, model := range modelKeys {
+				p := pairs.ByModel[model]
+				if len(p.TTFT.Real) == 0 {
+					continue
+				}
+				logrus.Infof("  model=%s: n=%d TTFT-MAPE=%.1f%% E2E-MAPE=%.1f%%",
+					model, len(p.TTFT.Real),
+					workload.MapePct(p.TTFT.Real, p.TTFT.Sim)*100,
+					workload.MapePct(p.E2E.Real, p.E2E.Sim)*100)
+			}
 		}
 	},
 }
