@@ -3042,18 +3042,19 @@ func TestClusterSimulator_FlowControl_Eviction_Conservation(t *testing.T) {
 	gwShed := cs.GatewayQueueShed()
 	gwRejected := cs.GatewayQueueRejected()
 	gwEvicted := cs.GatewayEvicted()
+	encRej := cs.EncodeRoutingRejections()
 
 	// INV-1: injected == completed + queued + running + dropped + timedout +
-	//         routingRejections + gwDepth + gwShed + gwRejected + gwEvicted
+	//         routingRejections + gwDepth + gwShed + gwRejected + gwEvicted + encRej
 	injected := len(requests) - cs.RejectedRequests()
 	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning +
 		m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() +
-		gwDepth + gwShed + gwRejected + gwEvicted
+		gwDepth + gwShed + gwRejected + gwEvicted + encRej
 	if injected != accounted {
-		t.Errorf("INV-1 violated: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d routingRejections=%d gwDepth=%d gwShed=%d gwRejected=%d gwEvicted=%d)",
+		t.Errorf("INV-1 violated: injected=%d != accounted=%d (completed=%d queued=%d running=%d dropped=%d timedout=%d routingRejections=%d gwDepth=%d gwShed=%d gwRejected=%d gwEvicted=%d encRej=%d)",
 			injected, accounted,
 			m.CompletedRequests, m.StillQueued, m.StillRunning, m.DroppedUnservable,
-			m.TimedOutRequests, cs.RoutingRejections(), gwDepth, gwShed, gwRejected, gwEvicted)
+			m.TimedOutRequests, cs.RoutingRejections(), gwDepth, gwShed, gwRejected, gwEvicted, encRej)
 	}
 
 	// BC-1: eviction must actually fire — a silent regression that disables eviction
@@ -3130,10 +3131,11 @@ func TestClusterSimulator_FlowControl_Eviction_PD(t *testing.T) {
 	gwDepth := cs.GatewayQueueDepth()
 	gwShed := cs.GatewayQueueShed()
 	gwRejected := cs.GatewayQueueRejected()
+	encRej := cs.EncodeRoutingRejections()
 	injected := len(requests) - cs.RejectedRequests()
 	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning +
 		m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() +
-		gwDepth + gwShed + gwRejected + gwEvicted
+		gwDepth + gwShed + gwRejected + gwEvicted + encRej
 	if injected != accounted {
 		t.Errorf("INV-1 violated: injected=%d != accounted=%d", injected, accounted)
 	}

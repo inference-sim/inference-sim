@@ -299,6 +299,36 @@ func TestValidatePoolTopology_EncodeEdgeCases(t *testing.T) {
 	}
 }
 
+// TestEPDDisabled_ZeroInstances_NoEncodeActivity (BC-EPD-1 direct guard):
+// with --encode-instances == 0 there is no encode decider, no encode snapshots,
+// no encode routing records, and EncodeRoutingRejections is always zero — for
+// any mix of multimodal and text-only requests. This is the dedicated
+// zero-instances test the plan's "TestEPDDisabled_PDUnchanged" named;
+// TestEPD_EncodeNever_IsPDUnchanged exercises the decider=never path with
+// a pool configured, which is subtly different.
+func TestEPDDisabled_ZeroInstances_NoEncodeActivity(t *testing.T) {
+	cfg := newTestDisaggDeploymentConfig(4, 2, 2) // standard PD, no encode pool
+	cfg.PDDecider = "always"
+	cfg.TraceLevel = "decisions"
+	// EncodeInstances defaulted to 0 by newTestDisaggDeploymentConfig.
+	reqs := multimodalRequests(6) // half multimodal, half text — worst case
+	cs := NewClusterSimulator(cfg, reqs, nil)
+	mustRun(t, cs)
+
+	if cs.encodeDecider != nil {
+		t.Error("encodeDecider must be nil when EncodeInstances == 0")
+	}
+	if cs.EncodeRoutingRejections() != 0 {
+		t.Errorf("EncodeRoutingRejections = %d, want 0", cs.EncodeRoutingRejections())
+	}
+	if cs.trace == nil {
+		t.Fatalf("trace must be enabled")
+	}
+	if got := len(cs.trace.EncodeRoutings); got != 0 {
+		t.Errorf("EncodeRoutings = %d, want 0 with EncodeInstances == 0", got)
+	}
+}
+
 // --- Helpers ---
 
 // spyEncodeDecider records the decodeInstanceID arguments it receives.
