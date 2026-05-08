@@ -147,10 +147,9 @@ type EncodeRoutingRecord struct {
     ParentRequestID string
     Clock           int64
     ChosenInstance  string
-    Scores          map[string]float64
-    // Candidates / Regret fields for counterfactual (match PrefillRoutingRecord shape)
-    Candidates []string
-    Regret     float64
+    Scores          map[string]float64 // from RoutingDecision.Scores (may be nil)
+    Candidates      []CandidateScore   // top-k counterfactual candidates; nil if k=0 (matches PrefillRoutingRecord)
+    Regret          float64            // max(alternative scores) - score(chosen); >= 0
 }
 ```
 
