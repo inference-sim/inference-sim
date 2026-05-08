@@ -1192,3 +1192,57 @@ func TestPrepareCalibrationPairs_EmptySLOAndModel_NoBreakdown(t *testing.T) {
 		t.Errorf("ByModel should be empty for requests without model tag, got len=%d", len(pairs.ByModel))
 	}
 }
+
+func TestMapePct(t *testing.T) {
+	tests := []struct {
+		name string
+		real []float64
+		sim  []float64
+		want float64
+	}{
+		{
+			name: "normal case: known 20% error",
+			real: []float64{100.0, 200.0},
+			sim:  []float64{120.0, 240.0},
+			want: 0.20,
+		},
+		{
+			name: "all-zero denominators returns 0",
+			real: []float64{0.0, 0.0},
+			sim:  []float64{100.0, 200.0},
+			want: 0.0,
+		},
+		{
+			name: "empty slices returns 0",
+			real: []float64{},
+			sim:  []float64{},
+			want: 0.0,
+		},
+		{
+			name: "NaN in real skipped",
+			real: []float64{100.0, math.NaN()},
+			sim:  []float64{120.0, 200.0},
+			want: 0.20,
+		},
+		{
+			name: "Inf in real skipped",
+			real: []float64{100.0, math.Inf(1)},
+			sim:  []float64{120.0, 200.0},
+			want: 0.20,
+		},
+		{
+			name: "perfect match returns 0",
+			real: []float64{100.0, 200.0, 300.0},
+			sim:  []float64{100.0, 200.0, 300.0},
+			want: 0.0,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := MapePct(tc.real, tc.sim)
+			if math.Abs(got-tc.want) > 1e-9 {
+				t.Errorf("MapePct(%v, %v) = %f, want %f", tc.real, tc.sim, got, tc.want)
+			}
+		})
+	}
+}
