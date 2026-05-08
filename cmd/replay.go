@@ -178,25 +178,19 @@ Example:
 			logrus.Fatalf("--horizon must be > 0, got %d", replayHorizon)
 		}
 
-		// Warn on PD-disaggregation flags that replay does not support.
-		// These flags are registered via registerSimConfigFlags (shared with runCmd) but
-		// replay does not build a PD-disaggregated ClusterSimulator.
-		if pdTransferContention {
-			logrus.Warnf("[replay] --pd-transfer-contention is not applicable to blis replay (PD disaggregation is not supported); flag ignored")
-		}
-		if prefillDecodeInstances > 0 {
-			logrus.Warnf("[replay] --prefill-decode-instances is not applicable to blis replay (PD disaggregation is not supported); flag ignored")
-		}
-
 		// Resolve policy configuration (single code path shared with runCmd).
-		// Replay does not support autoscaler or node-pool config; warn if the bundle contains them.
+		// Autoscaler and node-pool configs are not supported in replay — fail fast
+		// rather than silently producing divergent results (INV-13, Track B).
 		parsedScorerConfigs, bundle := resolvePolicies(cmd)
+		if cmd.Flags().Changed("model-autoscaler-interval-us") {
+			logrus.Fatalf("--model-autoscaler-interval-us is not supported in blis replay; remove this flag or use blis run instead")
+		}
 		if bundle != nil {
 			if bundle.Autoscaler.IntervalUs > 0 {
-				logrus.Warnf("[replay] policy bundle contains autoscaler config (interval_us=%g) — autoscaler is not supported in replay mode and will be ignored", bundle.Autoscaler.IntervalUs)
+				logrus.Fatalf("blis replay does not support autoscaler config (policy bundle interval_us=%g); remove the autoscaler section from the policy bundle or use blis run instead", bundle.Autoscaler.IntervalUs)
 			}
 			if len(bundle.NodePools) > 0 {
-				logrus.Warnf("[replay] policy bundle contains %d node_pools — node pools are not supported in replay mode and will be ignored", len(bundle.NodePools))
+				logrus.Fatalf("blis replay does not support node_pools config (%d pool(s) in policy bundle); remove the node_pools section from the policy bundle or use blis run instead", len(bundle.NodePools))
 			}
 		}
 

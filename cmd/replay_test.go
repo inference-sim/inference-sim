@@ -3,9 +3,12 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,6 +16,8 @@ import (
 	"github.com/spf13/cobra"
 
 	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/cluster"
+	"github.com/inference-sim/inference-sim/sim/latency"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -1458,4 +1463,514 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	if !strings.Contains(out, "Timed Out Requests: 1") {
 		t.Errorf("BC-1: expected 'Timed Out Requests: 1' in anomaly block, got:\n%s", out)
 	}
+}
+
+// TestReplayCmd_AutoscalerBundleFatal verifies BC-2:
+// policy bundle with autoscaler config causes fatal exit in replay.
+func TestReplayCmd_AutoscalerBundleFatal(t *testing.T) {
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		// Running as subprocess: set up and trigger the fatal path.
+		dir := t.TempDir()
+		bundleYAML := "autoscaler:\n  interval_us: 500000\n"
+		bundlePath := filepath.Join(dir, "bundle.yaml")
+		if err := os.WriteFile(bundlePath, []byte(bundleYAML), 0644); err != nil {
+			os.Exit(2)
+		}
+		headerPath := filepath.Join(dir, "trace.yaml")
+		dataPath := filepath.Join(dir, "trace.csv")
+		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
+		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
+
+		mcFolder, hwPath := setupTrainedPhysicsTestFixtures(t)
+		model = "test-model"
+		latencyModelBackend = "trained-physics"
+		totalKVBlocks = 1000
+		blockSizeTokens = 16
+		maxRunningReqs = 64
+		maxScheduledTokens = 2048
+		numInstances = 1
+		seed = 42
+		longPrefillTokenThreshold = 0
+		kvCPUBlocks = 0
+		kvOffloadThreshold = 0.9
+		kvTransferBandwidth = 100.0
+		kvTransferBaseLatency = 0
+		snapshotRefreshInterval = 0
+		admissionPolicy = "always-admit"
+		routingPolicy = "round-robin"
+		scheduler = "fcfs"
+		policyConfigPath = bundlePath
+		maxModelLen = 0
+		traceLevel = "none"
+		counterfactualK = 0
+		traceHeaderPath = headerPath
+		traceDataPath = dataPath
+		modelConfigFolder = mcFolder
+		hwConfigPath = hwPath
+		gpu = "H100"
+		tensorParallelism = 1
+		defaultsFilePath = "../defaults.yaml"
+		replaySessionMode = "fixed"
+		resultsPath = ""
+		replayTraceOutput = ""
+
+		testCmd := &cobra.Command{}
+		registerSimConfigFlags(testCmd)
+		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+		_ = testCmd.ParseFlags([]string{
+			"--model", "test-model", "--latency-model", "trained-physics",
+			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+			"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+			"--trace-header", headerPath, "--trace-data", dataPath,
+			"--policy-config", bundlePath, "--defaults-filepath", "../defaults.yaml",
+		})
+		replayCmd.Run(testCmd, nil) // must Fatalf before here
+		os.Exit(0)                  // reached only if no fatal = parent test failure
+	}
+
+	// Parent: re-run this test as subprocess and expect non-zero exit (BC-2).
+	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_AutoscalerBundleFatal", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	err := cmd.Run()
+	if err == nil {
+		t.Fatal("BC-2: expected non-zero exit when autoscaler bundle is present, got exit 0")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("BC-2: unexpected error type: %v", err)
+	}
+	// Non-zero exit confirms logrus.Fatalf was triggered (expected).
+}
+
+// TestReplayCmd_NodePoolsBundleFatal verifies BC-4:
+// policy bundle with node_pools causes fatal exit in replay.
+func TestReplayCmd_NodePoolsBundleFatal(t *testing.T) {
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		dir := t.TempDir()
+		bundleYAML := "node_pools:\n  - name: pool-a\n    gpu_type: H100\n    gpus_per_node: 8\n    gpu_memory_gib: 80\n    initial_nodes: 1\n    min_nodes: 1\n    max_nodes: 4\n    cost_per_hour: 32.0\n"
+		bundlePath := filepath.Join(dir, "bundle.yaml")
+		if err := os.WriteFile(bundlePath, []byte(bundleYAML), 0644); err != nil {
+			os.Exit(2)
+		}
+		headerPath := filepath.Join(dir, "trace.yaml")
+		dataPath := filepath.Join(dir, "trace.csv")
+		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
+		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
+
+		mcFolder, hwPath := setupTrainedPhysicsTestFixtures(t)
+		model = "test-model"
+		latencyModelBackend = "trained-physics"
+		totalKVBlocks = 1000
+		blockSizeTokens = 16
+		maxRunningReqs = 64
+		maxScheduledTokens = 2048
+		numInstances = 1
+		seed = 42
+		longPrefillTokenThreshold = 0
+		kvCPUBlocks = 0
+		kvOffloadThreshold = 0.9
+		kvTransferBandwidth = 100.0
+		kvTransferBaseLatency = 0
+		snapshotRefreshInterval = 0
+		admissionPolicy = "always-admit"
+		routingPolicy = "round-robin"
+		scheduler = "fcfs"
+		policyConfigPath = bundlePath
+		maxModelLen = 0
+		traceLevel = "none"
+		counterfactualK = 0
+		traceHeaderPath = headerPath
+		traceDataPath = dataPath
+		modelConfigFolder = mcFolder
+		hwConfigPath = hwPath
+		gpu = "H100"
+		tensorParallelism = 1
+		defaultsFilePath = "../defaults.yaml"
+		replaySessionMode = "fixed"
+		resultsPath = ""
+		replayTraceOutput = ""
+
+		testCmd := &cobra.Command{}
+		registerSimConfigFlags(testCmd)
+		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+		_ = testCmd.ParseFlags([]string{
+			"--model", "test-model", "--latency-model", "trained-physics",
+			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+			"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+			"--trace-header", headerPath, "--trace-data", dataPath,
+			"--policy-config", bundlePath, "--defaults-filepath", "../defaults.yaml",
+		})
+		replayCmd.Run(testCmd, nil) // must Fatalf before here
+		os.Exit(0)
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_NodePoolsBundleFatal", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	err := cmd.Run()
+	if err == nil {
+		t.Fatal("BC-4: expected non-zero exit when node_pools bundle is present, got exit 0")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("BC-4: unexpected error type: %v", err)
+	}
+}
+
+// TestReplayCmd_PD_BasicSmoke verifies BC-1 (pre-parity smoke):
+// replay with PD flags set does not panic and completes simulation.
+// Requires Track A (Task 3) wiring to exercise the disaggregated path.
+func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	if err := os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n" +
+		"1,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,100000,100000,0,0,0,ok,,\n"
+	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	mcFolder, hwPath := setupTrainedPhysicsTestFixtures(t)
+
+	// Save/restore PD-related package-level vars.
+	origPrefillInstances := prefillInstances
+	origDecodeInstances := decodeInstances
+	origSharedInstances := prefillDecodeInstances
+	origPDDecider := pdDecider
+	origPDTransferBandwidth := pdTransferBandwidth
+	origPDTransferBaseLatency := pdTransferBaseLatency
+	origPDTransferContention := pdTransferContention
+	origPDPrefixThreshold := pdPrefixThreshold
+	origPrefillScorers := prefillRoutingScorers
+	origDecodeScorers := decodeRoutingScorers
+	defer func() {
+		prefillInstances = origPrefillInstances
+		decodeInstances = origDecodeInstances
+		prefillDecodeInstances = origSharedInstances
+		pdDecider = origPDDecider
+		pdTransferBandwidth = origPDTransferBandwidth
+		pdTransferBaseLatency = origPDTransferBaseLatency
+		pdTransferContention = origPDTransferContention
+		pdPrefixThreshold = origPDPrefixThreshold
+		prefillRoutingScorers = origPrefillScorers
+		decodeRoutingScorers = origDecodeScorers
+	}()
+
+	// Save/restore standard vars.
+	origModel := model
+	origBackend := latencyModelBackend
+	origBeta := betaCoeffs
+	origAlpha := alphaCoeffs
+	origTotalKV := totalKVBlocks
+	origBlockSize := blockSizeTokens
+	origMaxRunning := maxRunningReqs
+	origMaxSched := maxScheduledTokens
+	origInstances := numInstances
+	origSeed := seed
+	origResults := resultsPath
+	origThreshold := longPrefillTokenThreshold
+	origKVCPU := kvCPUBlocks
+	origOffload := kvOffloadThreshold
+	origBandwidth := kvTransferBandwidth
+	origBaseLatency := kvTransferBaseLatency
+	origSnapRefresh := snapshotRefreshInterval
+	origAdmission := admissionPolicy
+	origRouting := routingPolicy
+	origScheduler := scheduler
+	origPolicyConfig := policyConfigPath
+	origMaxModelLen := maxModelLen
+	origTraceLevel := traceLevel
+	origCounterfactualK := counterfactualK
+	origTraceHeader := traceHeaderPath
+	origTraceData := traceDataPath
+	origSimHorizon := simulationHorizon
+	origTraceOutput := replayTraceOutput
+	origCacheSignalDelay := cacheSignalDelay
+	origFlowControlEnabled := flowControlEnabled
+	origFlowControlDetector := flowControlDetector
+	origFlowControlDispatchOrder := flowControlDispatchOrder
+	origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
+	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
+	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
+	origFlowControlMaxConcurrency := flowControlMaxConcurrency
+	origModelConfigFolder := modelConfigFolder
+	origHwConfigPath := hwConfigPath
+	origGPU := gpu
+	origTP := tensorParallelism
+	origDefaultsFilePath := defaultsFilePath
+	origSessionMode := replaySessionMode
+	origThinkTimeMs := replayThinkTimeMs
+	origThinkTimeDist := replayThinkTimeDist
+	defer func() {
+		model = origModel
+		latencyModelBackend = origBackend
+		betaCoeffs = origBeta
+		alphaCoeffs = origAlpha
+		totalKVBlocks = origTotalKV
+		blockSizeTokens = origBlockSize
+		maxRunningReqs = origMaxRunning
+		maxScheduledTokens = origMaxSched
+		numInstances = origInstances
+		seed = origSeed
+		resultsPath = origResults
+		longPrefillTokenThreshold = origThreshold
+		kvCPUBlocks = origKVCPU
+		kvOffloadThreshold = origOffload
+		kvTransferBandwidth = origBandwidth
+		kvTransferBaseLatency = origBaseLatency
+		snapshotRefreshInterval = origSnapRefresh
+		admissionPolicy = origAdmission
+		routingPolicy = origRouting
+		scheduler = origScheduler
+		policyConfigPath = origPolicyConfig
+		maxModelLen = origMaxModelLen
+		traceLevel = origTraceLevel
+		counterfactualK = origCounterfactualK
+		traceHeaderPath = origTraceHeader
+		traceDataPath = origTraceData
+		simulationHorizon = origSimHorizon
+		replayTraceOutput = origTraceOutput
+		cacheSignalDelay = origCacheSignalDelay
+		flowControlEnabled = origFlowControlEnabled
+		flowControlDetector = origFlowControlDetector
+		flowControlDispatchOrder = origFlowControlDispatchOrder
+		flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
+		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
+		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
+		flowControlMaxConcurrency = origFlowControlMaxConcurrency
+		modelConfigFolder = origModelConfigFolder
+		hwConfigPath = origHwConfigPath
+		gpu = origGPU
+		tensorParallelism = origTP
+		defaultsFilePath = origDefaultsFilePath
+		replaySessionMode = origSessionMode
+		replayThinkTimeMs = origThinkTimeMs
+		replayThinkTimeDist = origThinkTimeDist
+	}()
+
+	// WHEN: replay with PD config: 1 prefill + 1 decode out of 2 total instances.
+	model = "test-model"
+	latencyModelBackend = "trained-physics"
+	totalKVBlocks = 1000
+	blockSizeTokens = 16
+	maxRunningReqs = 64
+	maxScheduledTokens = 2048
+	numInstances = 2
+	seed = 42
+	resultsPath = ""
+	longPrefillTokenThreshold = 0
+	kvCPUBlocks = 0
+	kvOffloadThreshold = 0.9
+	kvTransferBandwidth = 100.0
+	kvTransferBaseLatency = 0
+	snapshotRefreshInterval = 0
+	admissionPolicy = "always-admit"
+	routingPolicy = "round-robin"
+	scheduler = "fcfs"
+	policyConfigPath = ""
+	maxModelLen = 0
+	traceLevel = "none"
+	counterfactualK = 0
+	traceHeaderPath = headerPath
+	traceDataPath = dataPath
+	simulationHorizon = math.MaxInt64
+	replayTraceOutput = ""
+	modelConfigFolder = mcFolder
+	hwConfigPath = hwPath
+	gpu = "H100"
+	tensorParallelism = 1
+	defaultsFilePath = "../defaults.yaml"
+	replaySessionMode = "fixed"
+	replayThinkTimeMs = 0
+	replayThinkTimeDist = ""
+	cacheSignalDelay = 0
+	flowControlEnabled = false
+	flowControlDetector = "utilization"
+	flowControlDispatchOrder = "fifo"
+	flowControlMaxQueueDepth = 0
+	flowControlQueueDepthThreshold = 5.0
+	flowControlKVCacheUtilThreshold = 0.8
+	flowControlMaxConcurrency = 0
+
+	// PD config: 1 prefill + 1 decode.
+	prefillInstances = 1
+	decodeInstances = 1
+	prefillDecodeInstances = 0
+	pdDecider = "always"
+	pdTransferBandwidth = 25.0
+	pdTransferBaseLatency = 0.05
+	pdTransferContention = false
+	pdPrefixThreshold = 0
+	prefillRoutingScorers = ""
+	decodeRoutingScorers = ""
+
+	testCmd := &cobra.Command{}
+	registerSimConfigFlags(testCmd)
+	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+	if err := testCmd.ParseFlags([]string{
+		"--model", "test-model", "--latency-model", "trained-physics",
+		"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--num-instances", "2",
+		"--prefill-instances", "1", "--decode-instances", "1",
+		"--pd-decider", "always", "--pd-transfer-bandwidth", "25.0",
+		"--defaults-filepath", "../defaults.yaml",
+	}); err != nil {
+		t.Fatalf("ParseFlags failed: %v", err)
+	}
+
+	// THEN: simulation completes without panic (BC-1 smoke test).
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("BC-1: replay with PD config panicked: %v", r)
+		}
+	}()
+	replayCmd.Run(testCmd, nil)
+}
+
+// TestINV13_RunReplayParity_PD verifies INV-13 for PD disaggregation:
+// running the same requests through a PD cluster directly vs. through
+// trace-export-then-replay produces identical per-request TTFT and E2E.
+func TestINV13_RunReplayParity_PD(t *testing.T) {
+	const fixedSeed int64 = 99
+	requests := makeMinimalPDRequests(t)
+
+	mcFolder, hwPath := setupTrainedPhysicsTestFixtures(t)
+	dir := t.TempDir()
+
+	// Write defaults.yaml with trained-physics coefficients.
+	defaultsContent := `trained_physics_coefficients:
+  alpha_coeffs: [100.0, 1.0, 100.0]
+  beta_coeffs: [0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+`
+	defaultsPath := filepath.Join(filepath.Dir(hwPath), "defaults.yaml")
+	if err := os.WriteFile(defaultsPath, []byte(defaultsContent), 0644); err != nil {
+		t.Fatalf("write defaults.yaml: %v", err)
+	}
+
+	// Build SimConfig from model config files.
+	hfPath := filepath.Join(mcFolder, "config.json")
+	hfConfig, err := latency.ParseHFConfig(hfPath)
+	if err != nil {
+		t.Fatalf("ParseHFConfig: %v", err)
+	}
+	mc, err := latency.GetModelConfigFromHF(hfConfig)
+	if err != nil {
+		t.Fatalf("GetModelConfigFromHF: %v", err)
+	}
+	hwCfg, err := latency.GetHWConfig(hwPath, "H100")
+	if err != nil {
+		t.Fatalf("GetHWConfig: %v", err)
+	}
+
+	betaCfg := []float64{0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0}
+	alphaCfg := []float64{100.0, 1.0, 100.0}
+
+	// INV-13 SYNC POINT: cfg must match the DeploymentConfig built by replayCmd.Run
+	// for the same flags. Keep in sync with cmd/replay.go (see cmd/root.go:1500).
+	cfg := cluster.DeploymentConfig{
+		SimConfig: sim.SimConfig{
+			Horizon:             10_000_000,
+			Seed:                fixedSeed,
+			KVCacheConfig:       sim.NewKVCacheConfig(1000, 16, 0, 0.9, 100.0, 0),
+			BatchConfig:         sim.NewBatchConfig(64, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs(betaCfg, alphaCfg),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(*mc, hwCfg, "test-model", "H100", 1, "trained-physics", 4096),
+			PolicyConfig:        sim.NewPolicyConfig("fcfs", ""),
+		},
+		NumInstances:            2,
+		AdmissionPolicy:         "always-admit",
+		RoutingPolicy:           "round-robin",
+		PrefillInstances:        1,
+		DecodeInstances:         1,
+		PDDecider:               "always",
+		PDTransferBandwidthGBps: 25.0,
+		PDTransferBaseLatencyMs: 0.05,
+	}
+
+	// WHEN: direct run.
+	cs1 := cluster.NewClusterSimulator(cfg, requests, nil)
+	if err := cs1.Run(); err != nil {
+		t.Fatalf("direct run failed: %v", err)
+	}
+	runTTFTs := cs1.AggregatedMetrics().RequestTTFTs
+	runE2Es := cs1.AggregatedMetrics().RequestE2Es
+
+	if len(runTTFTs) == 0 {
+		t.Fatal("INV-13: direct run produced no completed requests — cannot verify parity")
+	}
+
+	// WHEN: export to trace → reload → replay with same config.
+	traceRecords := workload.RequestsToTraceRecords(requests)
+	traceHdr := &workload.TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated"}
+	traceHeaderFile := filepath.Join(dir, "trace.yaml")
+	traceDataFile := filepath.Join(dir, "trace.csv")
+	if err := workload.ExportTraceV2(traceHdr, traceRecords, traceHeaderFile, traceDataFile); err != nil {
+		t.Fatalf("ExportTraceV2: %v", err)
+	}
+	traceData, err := workload.LoadTraceV2(traceHeaderFile, traceDataFile)
+	if err != nil {
+		t.Fatalf("LoadTraceV2: %v", err)
+	}
+	replayReqs, err := workload.LoadTraceV2Requests(traceData, fixedSeed)
+	if err != nil {
+		t.Fatalf("LoadTraceV2Requests: %v", err)
+	}
+
+	cs2 := cluster.NewClusterSimulator(cfg, replayReqs, nil)
+	if err := cs2.Run(); err != nil {
+		t.Fatalf("replay run failed: %v", err)
+	}
+	replayTTFTs := cs2.AggregatedMetrics().RequestTTFTs
+	replayE2Es := cs2.AggregatedMetrics().RequestE2Es
+
+	// THEN: per-request metrics must be identical (INV-13, BC-1).
+	if len(runTTFTs) != len(replayTTFTs) {
+		t.Errorf("INV-13: TTFT map size mismatch: run=%d replay=%d", len(runTTFTs), len(replayTTFTs))
+	}
+	for id, ttft := range runTTFTs {
+		if got, ok := replayTTFTs[id]; !ok {
+			t.Errorf("INV-13: request %s present in run but missing from replay TTFTs", id)
+		} else if got != ttft {
+			t.Errorf("INV-13: request %s TTFT mismatch: run=%f replay=%f", id, ttft, got)
+		}
+	}
+	for id, e2e := range runE2Es {
+		if got, ok := replayE2Es[id]; !ok {
+			t.Errorf("INV-13: request %s present in run but missing from replay E2Es", id)
+		} else if got != e2e {
+			t.Errorf("INV-13: request %s E2E mismatch: run=%f replay=%f", id, e2e, got)
+		}
+	}
+}
+
+// makeMinimalPDRequests creates a small set of deterministic requests for PD parity testing.
+func makeMinimalPDRequests(t *testing.T) []*sim.Request {
+	t.Helper()
+	reqs := make([]*sim.Request, 3)
+	for i := range reqs {
+		inputToks := make([]int, 10)
+		for j := range inputToks {
+			inputToks[j] = 100 + i*10 + j
+		}
+		outputToks := make([]int, 5)
+		for j := range outputToks {
+			outputToks[j] = 200 + j
+		}
+		reqs[i] = &sim.Request{
+			ID:           fmt.Sprintf("request_%d", i),
+			ArrivalTime:  int64(i) * 100_000,
+			InputTokens:  inputToks,
+			OutputTokens: outputToks,
+			MaxOutputLen: 100,
+		}
+	}
+	return reqs
 }
