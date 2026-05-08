@@ -85,15 +85,16 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 	// Normalize rate fractions
 	clientRates := normalizeRateFractions(allClients, spec.AggregateRate)
 
-	// Generate shared prefix tokens per prefix group
-	prefixes := generatePrefixTokens(allClients, workloadRNG)
-
 	// Route to time-varying generator when any client has per-window parameter
 	// overrides (TraceRate, Arrival, InputDist, OutputDist on ActiveWindow).
 	// This path uses per-window proportional allocation and IAT rescaling.
+	// Prefix generation happens inside each branch to avoid double-advancing the RNG.
 	if hasPerWindowParameters(allClients) {
 		return generateTimeVaryingRequests(spec, horizon, maxRequests, allClients, workloadRNG)
 	}
+
+	// Generate shared prefix tokens per prefix group (non-time-varying path only)
+	prefixes := generatePrefixTokens(allClients, workloadRNG)
 
 	// Per-client generation cap: prevent OOM when horizon >> maxRequests.
 	// Each client generates at most 2x maxRequests, then post-merge truncation finalizes.
@@ -768,6 +769,12 @@ func generateTimeVaryingRequests(
 ) ([]*sim.Request, error) {
 	var allRequests []*sim.Request
 
+	// Build prefix tokens map for all prefix groups (BC-2).
+	// Uses generatePrefixTokens() for cross-path parity with non-time-varying path.
+	// With line 89 moved into the non-time-varying branch, both paths now call
+	// generatePrefixTokens exactly once on the same RNG state.
+	prefixes := generatePrefixTokens(allClients, rng)
+
 	// Generate requests for each client's windows.
 	for i := range allClients {
 		client := &allClients[i]
@@ -797,8 +804,9 @@ func generateTimeVaryingRequests(
 				effectiveWindow.EndUs = horizon
 			}
 
+			prefix := prefixes[client.PrefixGroup] // empty slice if no prefix group
 			windowRequests, err := generateRequestsForWindow(
-				*client, effectiveWindow, allClients, spec.AggregateRate, clientRNG,
+				*client, effectiveWindow, allClients, spec.AggregateRate, clientRNG, prefix,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("generating window [%d-%d] for client %q: %w",
@@ -844,6 +852,7 @@ func generateRequestsForWindow(
 	allClients []ClientSpec,
 	aggregateRate float64,
 	rng *rand.Rand,
+	prefix []int,
 ) ([]*sim.Request, error) {
 	// Step 1: Resolve parameters with fallback to client-level defaults.
 	arrival, inputDist, outputDist, _ := resolveWindowParameters(client, window)
@@ -889,6 +898,108 @@ func generateRequestsForWindow(
 	iats = rescaleIATsToMatchDuration(iats, windowDurationUs)
 
 	// Step 7: Generate requests with window-specific distributions.
+	// BC-1: Detect reasoning clients and route to GenerateReasoningRequests.
+	// BC-6: Non-reasoning clients use single-shot path (unchanged).
+	if client.Reasoning != nil && client.Reasoning.MultiTurn != nil {
+		mt := client.Reasoning.MultiTurn
+		var allRequests []*sim.Request
+
+		if mt.SingleSession {
+			// Single session: use first IAT, generate one session, filter rounds.
+			// Matches non-time-varying path (generator.go:154-209).
+			startTime := window.StartUs
+			if len(iats) > 0 {
+				startTime += iats[0]
+			}
+			if startTime >= window.EndUs {
+				return nil, nil // Session starts beyond window boundary
+			}
+
+			// BC-1: Call GenerateReasoningRequests to create session metadata
+			reasoningReqs, err := GenerateReasoningRequests(
+				rng, client.Reasoning,
+				inputSampler, outputSampler,
+				startTime,
+				client.ID, client.TenantID, client.SLOClass, client.Model,
+			)
+			if err != nil {
+				// BC-9: Propagate error with client ID context
+				return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
+			}
+
+			// BC-2: Prepend shared prefix to each round's input
+			if len(prefix) > 0 {
+				for _, req := range reasoningReqs {
+					req.InputTokens = append(append([]int{}, prefix...), req.InputTokens...)
+					req.PrefixLength = len(prefix)
+				}
+			}
+
+			// BC-3: Set Deadline on all reasoning requests
+			for _, req := range reasoningReqs {
+				req.Deadline = computeDeadline(req.ArrivalTime, client.Timeout, true)
+			}
+
+			// BC-5: Filter rounds outside window boundary
+			// Invariant: GenerateReasoningRequests returns rounds in chronological order
+			for _, req := range reasoningReqs {
+				if req.ArrivalTime >= window.EndUs {
+					break // Safe to break: remaining rounds arrive even later
+				}
+				allRequests = append(allRequests, req)
+			}
+
+			return allRequests, nil
+		}
+
+		// Multi-session: loop over IAT samples to generate multiple sessions.
+		// Matches non-time-varying path (generator.go:212-272).
+		currentTime := window.StartUs
+		for i := 0; i < len(iats); i++ {
+			currentTime += iats[i]
+			if currentTime >= window.EndUs {
+				break // Session start is beyond window boundary
+			}
+
+			// BC-1: Call GenerateReasoningRequests to create session metadata
+			reasoningReqs, err := GenerateReasoningRequests(
+				rng, client.Reasoning,
+				inputSampler, outputSampler,
+				currentTime,
+				client.ID, client.TenantID, client.SLOClass, client.Model,
+			)
+			if err != nil {
+				// BC-9: Propagate error with client ID context
+				return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
+			}
+
+			// BC-2: Prepend shared prefix to each round's input
+			if len(prefix) > 0 {
+				for _, req := range reasoningReqs {
+					req.InputTokens = append(append([]int{}, prefix...), req.InputTokens...)
+					req.PrefixLength = len(prefix)
+				}
+			}
+
+			// BC-3: Set Deadline on all reasoning requests
+			for _, req := range reasoningReqs {
+				req.Deadline = computeDeadline(req.ArrivalTime, client.Timeout, true)
+			}
+
+			// BC-5: Filter rounds outside window boundary
+			// Invariant: GenerateReasoningRequests returns rounds in chronological order
+			for _, req := range reasoningReqs {
+				if req.ArrivalTime >= window.EndUs {
+					break // Safe to break: remaining rounds arrive even later
+				}
+				allRequests = append(allRequests, req)
+			}
+		}
+
+		return allRequests, nil
+	}
+
+	// BC-6: Single-shot path (unchanged from original implementation)
 	requests := make([]*sim.Request, 0, numRequests)
 	currentTime := window.StartUs
 
