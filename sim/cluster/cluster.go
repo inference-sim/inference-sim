@@ -998,10 +998,13 @@ func (cs *ClusterSimulator) addLiveInstance(
 
 	// Wire OnRequestDone callback — mirrors startup path in NewClusterSimulator (R4).
 	onRequestDone := cs.sessionCallback
-	if onRequestDone != nil || cs.tenantTracker != nil {
+	if onRequestDone != nil || cs.tenantTracker != nil || cs.evictionTracker != nil {
 		inst.sim.OnRequestDone = func(req *sim.Request, tick int64) []*sim.Request {
 			if cs.tenantTracker != nil {
 				cs.tenantTracker.OnComplete(req.TenantID)
+			}
+			if cs.evictionTracker != nil {
+				cs.evictionTracker.Untrack(req.ID)
 			}
 			if onRequestDone == nil {
 				return nil
