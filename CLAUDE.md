@@ -76,6 +76,12 @@ go build -o blis main.go
 ./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json \
   --itl-data trace.itl.csv --report calibration.json
 
+# Observe non-streaming (ITL auto-disabled when --no-streaming is set without --record-itl)
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --workload chatbot --rate 10 --num-requests 100 \
+  --no-streaming \
+  --trace-header trace.yaml --trace-data trace.csv
+
 # Convert workload formats
 ./blis convert preset --name chatbot --rate 10 --num-requests 100
 ./blis convert servegen --path data/

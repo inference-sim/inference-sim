@@ -1881,6 +1881,26 @@ func TestPrintObserveLatencySummary_AllWarmup_NothingPrinted(t *testing.T) {
 	}
 }
 
+func TestPrintObserveLatencySummary_MixedValidAndError_OnlyValidCounted(t *testing.T) {
+	// GIVEN one valid and one error record (BC-3)
+	// WHEN printObserveLatencySummary is called
+	// THEN only the valid record contributes to the summary
+	records := []workload.TraceRecord{
+		{RequestID: 0, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 100_000, LastChunkTimeUs: 400_000},
+		{RequestID: 1, Status: "error", SendTimeUs: 0, FirstChunkTimeUs: 200_000, LastChunkTimeUs: 800_000},
+	}
+	var buf bytes.Buffer
+	printObserveLatencySummary(&buf, records, 0)
+	out := buf.String()
+	if !strings.Contains(out, "=== Observe Latency Summary (1 requests)") {
+		t.Errorf("expected exactly 1 valid request in summary (error excluded), got: %q", out)
+	}
+	// TTFT for ok record: 100_000us → 100.00ms
+	if !strings.Contains(out, "TTFT: mean=100.00ms") {
+		t.Errorf("expected TTFT 100.00ms from the valid record, got: %q", out)
+	}
+}
+
 func TestPrintObserveLatencySummary_ErrorRecordsExcluded(t *testing.T) {
 	// GIVEN only error-status records (BC-3)
 	records := []workload.TraceRecord{
