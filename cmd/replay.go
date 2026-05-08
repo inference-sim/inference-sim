@@ -408,6 +408,27 @@ Example:
 				return allRequests[i].ArrivalTime < allRequests[j].ArrivalTime
 			})
 
+			// Compute simEndUs from actual request completion times
+			simEndUs := int64(0)
+			for _, req := range allRequests {
+				completionUs := req.ArrivalTime
+				if req.TTFTSet {
+					completionUs += req.FirstTokenTime
+				}
+				if len(req.ITL) > 0 {
+					for _, itl := range req.ITL {
+						completionUs += itl
+					}
+				}
+				if completionUs > simEndUs {
+					simEndUs = completionUs
+				}
+			}
+			// Use horizon as floor if explicitly set and larger
+			if config.Horizon > 0 && config.Horizon < math.MaxInt64 && config.Horizon > simEndUs {
+				simEndUs = config.Horizon
+			}
+
 			// Build saturation analysis config from flags (or defaults if not set)
 			cfg := workload.NewBacklogDriftConfig(
 				time.Duration(saturationWindowSec)*time.Second,
@@ -416,7 +437,7 @@ Example:
 				saturationPeakBand,
 				saturationConfidence,
 			)
-			report := workload.AnalyzeBacklogDrift(allRequests, config.Horizon, cfg)
+			report := workload.AnalyzeBacklogDrift(allRequests, simEndUs, cfg)
 			if err := workload.WriteBacklogDriftReportJSON(replaySaturationReport, report); err != nil {
 				logrus.Fatalf("Failed to write saturation report: %v", err)
 			}

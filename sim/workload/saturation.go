@@ -135,7 +135,7 @@ type BacklogDriftReport struct {
 
 // RequestsToIntervals converts sim.Request slices to RequestInterval slices for
 // saturation analysis. Applies eligibility filter per BC-2:
-//   - Exclude: TTFTSet==false AND State==StateTimedOut (timed out before TTFT)
+//   - Exclude: TTFTSet==false AND (State==StateTimedOut OR State==StateQueued) (never executed)
 //   - Include with simEndUs: TTFTSet==false AND State==StateRunning (horizon-truncated)
 //   - Include with computed time: TTFTSet==true (completed)
 //
@@ -150,9 +150,9 @@ func RequestsToIntervals(requests []*sim.Request, simEndUs int64) []RequestInter
 
 	for _, req := range requests {
 		if !req.TTFTSet {
-			// No valid TTFT — check if timed out or horizon-truncated
-			if req.State == sim.StateTimedOut {
-				// Case 1: Timed out before generating any output — exclude
+			// No valid TTFT — check state
+			if req.State == sim.StateTimedOut || req.State == sim.StateQueued {
+				// Case 1: Timed out before generating any output, or still queued at horizon — exclude
 				excluded++
 				continue
 			}
@@ -176,7 +176,7 @@ func RequestsToIntervals(requests []*sim.Request, simEndUs int64) []RequestInter
 	}
 
 	// BC-13: Log counts (R1 no silent discard)
-	logrus.Infof("Saturation analysis: %d requests eligible, %d excluded (timed out before TTFT)", len(intervals), excluded)
+	logrus.Infof("Saturation analysis: %d requests eligible, %d excluded (timed out or still queued)", len(intervals), excluded)
 
 	return intervals
 }
