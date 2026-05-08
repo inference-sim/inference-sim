@@ -187,3 +187,73 @@ func computeWindowMetrics(intervals []RequestInterval, windowSizeUs, totalDurati
 
 	return windows
 }
+
+// fitSlopeRegression fits linear regression active(t) = a + b*t with time normalization (BC-3).
+// Returns slope (requests per µs), and (lower, upper) confidence interval bounds.
+// Time is normalized to [0,1] for numerical stability, then slope is un-normalized.
+func fitSlopeRegression(samples []struct{ timeUs int64; count int }, totalDurationUs int64, confidenceCI float64) (slope, lower, upper float64) {
+	if len(samples) == 0 || totalDurationUs <= 0 {
+		return 0, 0, 0
+	}
+
+	n := float64(len(samples))
+
+	// Normalize time to [0, 1] for numerical stability
+	var sumT, sumY, sumTY, sumTT float64
+	for _, s := range samples {
+		t := float64(s.timeUs) / float64(totalDurationUs) // Normalized time in [0, 1]
+		y := float64(s.count)
+		sumT += t
+		sumY += y
+		sumTY += t * y
+		sumTT += t * t
+	}
+
+	// Ordinary least squares: slope = (n*sumTY - sumT*sumY) / (n*sumTT - sumT^2)
+	// intercept = (sumY - slope*sumT) / n
+	denominator := n*sumTT - sumT*sumT
+	if math.Abs(denominator) < 1e-12 {
+		// Degenerate case: all times identical
+		return 0, 0, 0
+	}
+
+	slopeNorm := (n*sumTY - sumT*sumY) / denominator
+	intercept := (sumY - slopeNorm*sumT) / n
+
+	// Compute residual sum of squares for standard error
+	var rss float64
+	for _, s := range samples {
+		t := float64(s.timeUs) / float64(totalDurationUs)
+		y := float64(s.count)
+		predicted := intercept + slopeNorm*t
+		residual := y - predicted
+		rss += residual * residual
+	}
+
+	// Standard error of slope
+	if n <= 2 {
+		// Insufficient degrees of freedom
+		return slopeNorm / float64(totalDurationUs), 0, 0
+	}
+	mse := rss / (n - 2)
+	seSlope := math.Sqrt(mse / (n*sumTT - sumT*sumT))
+
+	// t-distribution critical value for confidence interval
+	// For simplicity, use normal approximation (z-score) for large n
+	// For small n, this is an approximation; exact t-table lookup would be better
+	zScore := 1.96 // 95% CI approximation (could use gonum.org/v1/gonum/stat/distuv for exact t)
+	if confidenceCI == 0.99 {
+		zScore = 2.576
+	} else if confidenceCI == 0.90 {
+		zScore = 1.645
+	}
+
+	// Confidence interval on normalized slope
+	marginNorm := zScore * seSlope
+
+	// Un-normalize slope: slope_original = slope_normalized / totalDurationUs
+	slopeOrig := slopeNorm / float64(totalDurationUs)
+	marginOrig := marginNorm / float64(totalDurationUs)
+
+	return slopeOrig, slopeOrig - marginOrig, slopeOrig + marginOrig
+}

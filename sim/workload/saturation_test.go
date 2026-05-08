@@ -168,3 +168,94 @@ func TestComputeWindowMetrics_ActiveCount_AtBoundaries(t *testing.T) {
 		t.Errorf("Window 1: ActiveStart=%d, ActiveEnd=%d (expected 2, 1)", windows[1].ActiveStart, windows[1].ActiveEnd)
 	}
 }
+
+func TestFitSlopeRegression_PositiveSlope(t *testing.T) {
+	// GIVEN active request counts increasing over time
+	// WHEN fitting regression
+	// THEN slope is positive
+	samples := []struct {
+		timeUs int64
+		count  int
+	}{
+		{0, 10},
+		{1000, 20},
+		{2000, 30},
+		{3000, 40},
+	}
+
+	slope, lower, upper := fitSlopeRegression(samples, 3000, 0.95)
+
+	// Slope should be positive (requests increasing)
+	if slope <= 0 {
+		t.Errorf("Expected positive slope, got %f", slope)
+	}
+
+	// CI should exclude zero (statistically significant)
+	if lower <= 0 {
+		t.Errorf("Expected CI lower bound > 0, got %f", lower)
+	}
+
+	// Bounds should be ordered
+	if !(lower < slope && slope < upper) {
+		t.Errorf("Expected lower < slope < upper, got %f < %f < %f", lower, slope, upper)
+	}
+}
+
+func TestFitSlopeRegression_NegativeSlope(t *testing.T) {
+	// GIVEN active request counts decreasing over time
+	// WHEN fitting regression
+	// THEN slope is negative
+	samples := []struct {
+		timeUs int64
+		count  int
+	}{
+		{0, 40},
+		{1000, 30},
+		{2000, 20},
+		{3000, 10},
+	}
+
+	slope, lower, upper := fitSlopeRegression(samples, 3000, 0.95)
+
+	// Slope should be negative (requests decreasing)
+	if slope >= 0 {
+		t.Errorf("Expected negative slope, got %f", slope)
+	}
+
+	// CI should exclude zero (statistically significant)
+	if upper >= 0 {
+		t.Errorf("Expected CI upper bound < 0, got %f", upper)
+	}
+
+	// Bounds should be ordered
+	if !(lower < slope && slope < upper) {
+		t.Errorf("Expected lower < slope < upper, got %f < %f < %f", lower, slope, upper)
+	}
+}
+
+func TestFitSlopeRegression_FlatLine(t *testing.T) {
+	// GIVEN constant active request count
+	// WHEN fitting regression
+	// THEN slope is near zero and CI includes zero
+	samples := []struct {
+		timeUs int64
+		count  int
+	}{
+		{0, 25},
+		{1000, 25},
+		{2000, 25},
+		{3000, 25},
+	}
+
+	slope, lower, upper := fitSlopeRegression(samples, 3000, 0.95)
+
+	// Slope should be near zero
+	if math.Abs(slope) > 1e-10 {
+		t.Errorf("Expected slope near 0, got %f", slope)
+	}
+
+	// CI should include zero
+	if lower > 0 || upper < 0 {
+		t.Errorf("Expected CI to include zero, got [%f, %f]", lower, upper)
+	}
+}
