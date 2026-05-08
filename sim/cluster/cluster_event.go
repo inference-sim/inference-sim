@@ -408,7 +408,6 @@ func (e *DisaggregationDecisionEvent) Execute(cs *ClusterSimulator) {
 		if cs.evictionTracker != nil {
 			cs.evictionTracker.Track(e.request, decodeDecision.TargetInstance, cs.priorityMap)
 		}
-		cs.notifyDisaggregationObserver(e.request, decodeDecision.TargetInstance)
 		return
 	}
 

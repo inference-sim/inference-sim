@@ -623,7 +623,7 @@ func TestGenerateRequestsForWindow(t *testing.T) {
 		rng := rand.New(rand.NewSource(42))
 
 		window := clients[0].Lifecycle.Windows[0]
-		requests, err := generateRequestsForWindow(clients[0], window, clients, aggregateRate, rng)
+		requests, err := generateRequestsForWindow(clients[0], window, clients, aggregateRate, rng, nil)
 		require.NoError(t, err)
 		// Should generate requests
 		require.Greater(t, len(requests), 0, "should generate requests")
@@ -674,7 +674,7 @@ func TestGenerateRequestsForWindow(t *testing.T) {
 		rng := rand.New(rand.NewSource(123))
 
 		window := clients[0].Lifecycle.Windows[0]
-		requests, err := generateRequestsForWindow(clients[0], window, clients, aggregateRate, rng)
+		requests, err := generateRequestsForWindow(clients[0], window, clients, aggregateRate, rng, nil)
 		require.NoError(t, err)
 		// Check achieved rate is close to target (50 req/s for 10s = 500 requests)
 		windowDurationSec := float64(window.EndUs-window.StartUs) / 1e6
@@ -708,7 +708,7 @@ func TestGenerateRequestsForWindow(t *testing.T) {
 
 		rng := rand.New(rand.NewSource(42))
 		window := clients[0].Lifecycle.Windows[0]
-		requests, err := generateRequestsForWindow(clients[0], window, clients, 100.0, rng)
+		requests, err := generateRequestsForWindow(clients[0], window, clients, 100.0, rng, nil)
 		require.NoError(t, err)
 		assert.Empty(t, requests, "zero trace_rate should produce no requests")
 	})
@@ -735,7 +735,7 @@ func TestGenerateRequestsForWindow(t *testing.T) {
 
 		rng := rand.New(rand.NewSource(99))
 		window := clients[0].Lifecycle.Windows[0]
-		requests, err := generateRequestsForWindow(clients[0], window, clients, 20.0, rng)
+		requests, err := generateRequestsForWindow(clients[0], window, clients, 20.0, rng, nil)
 		require.NoError(t, err)
 		require.Greater(t, len(requests), 1, "need multiple requests for monotonicity check")
 
@@ -768,7 +768,7 @@ func TestGenerateRequestsForWindow(t *testing.T) {
 
 		rng := rand.New(rand.NewSource(42))
 		window := clients[0].Lifecycle.Windows[0]
-		requests, err := generateRequestsForWindow(clients[0], window, clients, 10.0, rng)
+		requests, err := generateRequestsForWindow(clients[0], window, clients, 10.0, rng, nil)
 		require.NoError(t, err)
 		require.Greater(t, len(requests), 0)
 
@@ -803,7 +803,7 @@ func TestGenerateRequestsForWindow(t *testing.T) {
 
 		rng := rand.New(rand.NewSource(42))
 		window := clients[0].Lifecycle.Windows[0]
-		requests, err := generateRequestsForWindow(clients[0], window, clients, 20.0, rng)
+		requests, err := generateRequestsForWindow(clients[0], window, clients, 20.0, rng, nil)
 		require.NoError(t, err)
 		require.Greater(t, len(requests), 0)
 		for _, req := range requests {
@@ -840,9 +840,9 @@ func TestGenerateRequestsForWindow_Determinism_AbsoluteRateMode(t *testing.T) {
 
 	window := clients[0].Lifecycle.Windows[0]
 
-	requests1, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng1) // AggregateRate=0
+	requests1, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng1, nil) // AggregateRate=0
 	require.NoError(t, err)
-	requests2, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng2)
+	requests2, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng2, nil)
 	require.NoError(t, err)
 
 	// Verify requests are actually generated (not zero due to misconfiguration)
