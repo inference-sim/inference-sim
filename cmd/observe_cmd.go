@@ -285,6 +285,13 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Fatalf("--timeout must be between 1 and 86400 seconds (1 day), got %d", observeTimeout)
 	}
 
+	// ITL recording requires streaming; auto-disable when --no-streaming is set and the
+	// user did not explicitly pass --record-itl (i.e., still at the default-true value).
+	if observeNoStreaming && !cmd.Flags().Changed("record-itl") {
+		observeRecordITL = false
+		logrus.Info("ITL recording auto-disabled: --no-streaming is set (pass --record-itl=true to override)")
+	}
+
 	// Generate workload
 	var spec *workload.WorkloadSpec
 	if observeWorkloadSpec != "" {
@@ -533,12 +540,23 @@ func printObserveLatencySummary(w io.Writer, records []workload.TraceRecord, war
 		ttft := rec.FirstChunkTimeUs - rec.SendTimeUs
 		e2e := rec.LastChunkTimeUs - rec.SendTimeUs
 		if ttft <= 0 || e2e <= 0 || e2e < ttft {
-			continue // zero or negative latency — clock skew or unrecorded timestamps
+			continue // zero/negative latency (clock skew or unrecorded) or malformed record (e2e < ttft)
 		}
 		ttftsUs = append(ttftsUs, ttft)
 		e2esUs = append(e2esUs, e2e)
 	}
 	if len(ttftsUs) == 0 {
+		// Warn only when there were post-warmup records that were all filtered out,
+		// so the user knows the summary was suppressed rather than silently absent.
+		postWarmup := 0
+		for _, rec := range records {
+			if rec.RequestID >= warmup {
+				postWarmup++
+			}
+		}
+		if postWarmup > 0 {
+			logrus.Warnf("Latency summary skipped: all %d post-warmup records were filtered (non-streaming, errors, or zero timestamps)", postWarmup)
+		}
 		return
 	}
 	sort.Slice(ttftsUs, func(i, j int) bool { return ttftsUs[i] < ttftsUs[j] })

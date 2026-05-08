@@ -1895,6 +1895,7 @@ func TestPrintObserveLatencySummary_ErrorRecordsExcluded(t *testing.T) {
 
 func TestPrintObserveLatencySummary_ValidRecord_OutputContainsExpectedSections(t *testing.T) {
 	// GIVEN one valid record: TTFT=100ms (100_000us), E2E=500ms (500_000us) (BC-1)
+	// Single record: mean=p50=p90=p99 for both metrics.
 	records := []workload.TraceRecord{
 		{RequestID: 0, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 100_000, LastChunkTimeUs: 500_000},
 	}
@@ -1905,19 +1906,34 @@ func TestPrintObserveLatencySummary_ValidRecord_OutputContainsExpectedSections(t
 	if !strings.Contains(out, "=== Observe Latency Summary") {
 		t.Errorf("missing header in output: %q", out)
 	}
-	if !strings.Contains(out, "TTFT:") {
-		t.Errorf("missing TTFT line in output: %q", out)
+	// Numeric values anchored to label to distinguish TTFT from E2E.
+	// TTFT=100_000us/1000 = 100.00ms; E2E=500_000us/1000 = 500.00ms
+	if !strings.Contains(out, "TTFT: mean=100.00ms") {
+		t.Errorf("expected 'TTFT: mean=100.00ms' in output: %q", out)
 	}
-	if !strings.Contains(out, "E2E:") {
-		t.Errorf("missing E2E line in output: %q", out)
+	if !strings.Contains(out, "E2E:  mean=500.00ms") {
+		t.Errorf("expected 'E2E:  mean=500.00ms' in output: %q", out)
 	}
-	// Numeric values correct: single record → mean=p50=p90=p99
-	// TTFT=100_000us → 100.00ms; E2E=500_000us → 500.00ms
-	if !strings.Contains(out, "100.00ms") {
-		t.Errorf("expected TTFT 100.00ms in output: %q", out)
+}
+
+func TestPrintObserveLatencySummary_MixedWarmup_OnlyNonWarmupCounted(t *testing.T) {
+	// GIVEN 3 records where RequestID 0 and 1 are warmup (warmup=2), ID 2 is not.
+	// WHEN printObserveLatencySummary is called
+	// THEN the summary counts exactly 1 request (not 3), verifying the < boundary.
+	records := []workload.TraceRecord{
+		{RequestID: 0, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 50_000, LastChunkTimeUs: 200_000},
+		{RequestID: 1, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 50_000, LastChunkTimeUs: 200_000},
+		{RequestID: 2, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 300_000, LastChunkTimeUs: 600_000},
 	}
-	if !strings.Contains(out, "500.00ms") {
-		t.Errorf("expected E2E 500.00ms in output: %q", out)
+	var buf bytes.Buffer
+	printObserveLatencySummary(&buf, records, 2) // warmup=2 → IDs 0,1 excluded; ID 2 included
+	out := buf.String()
+	if !strings.Contains(out, "=== Observe Latency Summary (1 requests)") {
+		t.Errorf("expected exactly 1 non-warmup request in summary, got: %q", out)
+	}
+	// TTFT for ID 2: 300_000us → 300.00ms; E2E: 600_000us → 600.00ms
+	if !strings.Contains(out, "TTFT: mean=300.00ms") {
+		t.Errorf("expected TTFT 300.00ms for non-warmup record, got: %q", out)
 	}
 }
 
