@@ -145,23 +145,42 @@ func TestYourAnalyzer_HighLoad(t *testing.T) {
 
 ## Output Format
 
-All analyzers produce a unified JSON report:
+The `backlog-drift` analyzer (currently the only implemented analyzer) produces the following JSON report format:
 
 ```json
 {
   "classification": "TRANSIENT_BACKLOG",
-  "algorithm": "backlog-drift",
-  "note": "Backlog stable but peak 468 exceeded 2.0× mean 211",
-  "recommendation": "System experienced transient congestion...",
-  "algorithm_data": {
-    "slope": -0.0000186,
-    "peak_in_flight": 468,
-    "mean_in_flight": 211.5
-  }
+  "slope": -0.0000186,
+  "slope_lower": -0.0000235,
+  "slope_upper": -0.0000137,
+  "initial_backlog": 0,
+  "final_backlog": 0,
+  "peak_in_flight": 468,
+  "mean_in_flight": 211.5,
+  "windows": [
+    {
+      "start_us": 0,
+      "end_us": 60000000,
+      "num_entered": 120,
+      "num_left": 100,
+      "active_start": 0,
+      "active_end": 20,
+      "delta_backlog": 20,
+      "drain_ratio": 0.833
+    }
+  ],
+  "note": "Peak/mean ratio (2.21) is borderline. Using positive slope as tiebreaker → TRANSIENT_BACKLOG.",
+  "recommendation": "System experienced transient congestion (bursts without persistent growth). Monitor for recurring patterns. Consider increasing capacity if bursts are frequent."
 }
 ```
 
-The `algorithm_data` field contains algorithm-specific metrics.
+**Key fields:**
+- `classification`: One of `UNSATURATED`, `TRANSIENT_BACKLOG`, or `PERSISTENTLY_SATURATED`
+- `slope`, `slope_lower`, `slope_upper`: Linear regression slope with 95% confidence interval (req/µs)
+- `peak_in_flight`, `mean_in_flight`: Peak and mean active request counts across windows
+- `windows`: Per-window metrics (see `WindowMetrics` for field definitions)
+- `note`: Explanation of the classification decision
+- `recommendation`: User-facing guidance for capacity planning
 
 ## When to Use Which Analyzer
 

@@ -249,7 +249,7 @@ Example:
 		}
 
 		// Run simulation — wire SessionManager for closed-loop, nil for fixed mode
-		// Collect follow-ups if saturation analysis requested (BC-12, issue #1298)
+		// Collect follow-ups for saturation analysis in closed-loop mode (BC-12, issue #1298)
 		var followUpRequests []*sim.Request
 		var onRequestDone func(*sim.Request, int64) []*sim.Request
 		if sessionMgr != nil {
