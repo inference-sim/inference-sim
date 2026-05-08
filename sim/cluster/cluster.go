@@ -869,6 +869,12 @@ func (c *ClusterSimulator) maybeDeliverProgressSnapshot(isFinal bool) {
 		TotalInstances:    len(c.instances),
 		IsFinal:           isFinal,
 	}
+	if len(c.shedByTier) > 0 {
+		snap.ShedByTier = make(map[string]int, len(c.shedByTier))
+		for k, v := range c.shedByTier {
+			snap.ShedByTier[k] = v
+		}
+	}
 	c.progressHook.OnProgress(snap)
 	if !isFinal {
 		c.nextSnapshotClockUs += c.simClockProgressIntervalUs
