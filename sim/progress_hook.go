@@ -43,6 +43,7 @@ type ProgressSnapshot struct {
 	RoutingRejections int
 	GatewayQueueDepth int
 	GatewayQueueShed  int
+	GatewayEvicted    int
 	ActivePDTransfers int
 
 	// ActiveInstances counts instances in Active or WarmingUp state.
