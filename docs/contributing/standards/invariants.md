@@ -177,9 +177,9 @@ Invariants are properties that must hold at all times during and after simulatio
 
 **Verification:** `cmd/replay_test.go` — `TestINV13_RunReplayParity_PD` verifies that a PD-disaggregated cluster produces matching `RequestTTFTs` and `RequestE2Es` maps when the same requests are run directly vs. through the trace-export-then-replay path. `TestReplayCmd_AutoscalerBundleFatal` and `TestReplayCmd_NodePoolsBundleFatal` verify fatal exit for unsupported features.
 
-**Evidence:** `cmd/replay.go::replayCmd.Run` wires all 11 PD disaggregation fields to `cluster.DeploymentConfig` (same set as `runCmd`). Autoscaler and node-pool checks use `logrus.Fatalf` to prevent silent divergence.
+**Evidence:** `cmd/replay.go::replayCmd.Run` wires all 12 PD disaggregation fields to `cluster.DeploymentConfig` (same set as `runCmd`): `PrefillInstances`, `DecodeInstances`, `SharedInstances`, `PDDecider`, `PDPrefixThreshold`, `PDTransferBandwidthGBps`, `PDTransferBaseLatencyMs`, `PDTransferContention`, `PrefillScorerConfigs`, `DecodeScorerConfigs`, `PrefillOverrides`, `DecodeOverrides`. Autoscaler and node-pool checks use `logrus.Fatalf` to prevent silent divergence.
 
-**Hypothesis family:** Pipeline fidelity (same as INV-1, INV-5, INV-6).
+**Hypothesis family:** Scheduler invariants (safety/liveness) — same as INV-1, INV-5, INV-6.
 
 ---
 

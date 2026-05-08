@@ -222,10 +222,10 @@ Example:
 			logrus.Fatalf("--pd-prefix-threshold must be >= 0, got %d", pdPrefixThreshold)
 		}
 		if pdDecider != "prefix-threshold" && cmd.Flags().Changed("pd-prefix-threshold") {
-			logrus.Warnf("--pd-prefix-threshold=%d is ignored when --pd-decider=%q (only applies to the prefix-threshold decider)", pdPrefixThreshold, pdDecider)
+			logrus.Fatalf("--pd-prefix-threshold=%d has no effect when --pd-decider=%q (only applies to the prefix-threshold decider); remove the flag or set --pd-decider=prefix-threshold", pdPrefixThreshold, pdDecider)
 		}
 		if pdDecider != "" && pdDecider != "never" && prefillInstances == 0 {
-			logrus.Warnf("--pd-decider=%q has no effect because --prefill-instances=0 (disaggregation is disabled); set --prefill-instances and --decode-instances to enable", pdDecider)
+			logrus.Fatalf("--pd-decider=%q has no effect because --prefill-instances=0 (disaggregation is disabled); set --prefill-instances > 0 and --decode-instances > 0, or omit --pd-decider", pdDecider)
 		}
 
 		// Per-pool hardware override construction (same as runCmd).
@@ -235,7 +235,7 @@ Example:
 			cmd.Flags().Changed("prefill-latency-model") || cmd.Flags().Changed("decode-latency-model") ||
 			cmd.Flags().Changed("prefill-max-model-len") || cmd.Flags().Changed("decode-max-model-len")
 		if perPoolFlagsChanged && prefillInstances == 0 {
-			logrus.Warnf("per-pool hardware flags (--prefill-tp, --decode-tp, etc.) have no effect when --prefill-instances=0 (disaggregation is disabled)")
+			logrus.Fatalf("per-pool hardware flags (--prefill-tp, --decode-tp, etc.) have no effect when --prefill-instances=0 (disaggregation is disabled); either set --prefill-instances > 0 or remove the per-pool flags")
 		}
 		if prefillInstances > 0 {
 			if cmd.Flags().Changed("prefill-tp") {
@@ -412,11 +412,23 @@ Example:
 			scheduler,
 			cs.RoutingRejections(),
 		)
+		// INV-13 SYNC POINT (metrics): keep in sync with cmd/root.go post-simulation block.
+		rawMetrics.PD = cluster.CollectPDMetrics(
+			cs.ParentRequests(),
+			cs.AggregatedMetrics(),
+			cs.PoolMembership(),
+			cs.PerInstanceMetricsByID(),
+		)
 		rawMetrics.ShedByTier = cs.ShedByTier()               // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
 		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth() // Issue #882: gateway queue depth at horizon
 		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()         // Issue #882: gateway queue shed count
 		rawMetrics.GatewayQueueRejected = cs.GatewayQueueRejected() // Issue #1190: gateway queue rejected count
 		rawMetrics.GatewayEvicted = cs.GatewayEvicted()              // Phase 4: in-flight eviction count (#1228)
+
+		if rawMetrics.PD != nil && config.PDTransferContention {
+			rawMetrics.PD.PeakConcurrentTransfers = cs.PeakConcurrentTransfers()
+			rawMetrics.PD.MeanTransferQueueDepth = cs.MeanTransferQueueDepth()
+		}
 
 		// Print anomaly counters if any detected
 		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 || rawMetrics.GatewayQueueRejected > 0 || rawMetrics.GatewayEvicted > 0 || rawMetrics.TimedOutRequests > 0 {
@@ -468,6 +480,8 @@ Example:
 		// Print session metrics if any request carries a session label (#1058)
 		sessionMetrics := cluster.ComputeSessionMetrics(cs.AggregatedMetrics())
 		printSessionMetrics(os.Stdout, sessionMetrics)
+
+		printPDMetrics(os.Stdout, rawMetrics.PD, config.PDTransferContention)
 
 		if cs.Trace() != nil && summarizeTrace {
 			traceSummary := trace.Summarize(cs.Trace())

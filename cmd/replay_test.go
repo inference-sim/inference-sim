@@ -1518,21 +1518,24 @@ func TestReplayCmd_AutoscalerBundleFatal(t *testing.T) {
 		registerSimConfigFlags(testCmd)
 		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
 		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
-		_ = testCmd.ParseFlags([]string{
+		if err := testCmd.ParseFlags([]string{
 			"--model", "test-model", "--latency-model", "trained-physics",
 			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
 			"--model-config-folder", mcFolder, "--hardware-config", hwPath,
 			"--trace-header", headerPath, "--trace-data", dataPath,
 			"--policy-config", bundlePath, "--defaults-filepath", "../defaults.yaml",
-		})
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)
+			os.Exit(2) // distinct from logrus.Fatalf exit code (1)
+		}
 		replayCmd.Run(testCmd, nil) // must Fatalf before here
 		os.Exit(0)                  // reached only if no fatal = parent test failure
 	}
 
-	// Parent: re-run this test as subprocess and expect non-zero exit (BC-2).
+	// Parent: re-run this test as subprocess and expect exit code 1 (logrus.Fatalf) (BC-2).
 	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_AutoscalerBundleFatal", "-test.v")
 	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
-	err := cmd.Run()
+	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatal("BC-2: expected non-zero exit when autoscaler bundle is present, got exit 0")
 	}
@@ -1540,7 +1543,12 @@ func TestReplayCmd_AutoscalerBundleFatal(t *testing.T) {
 	if !errors.As(err, &exitErr) {
 		t.Fatalf("BC-2: unexpected error type: %v", err)
 	}
-	// Non-zero exit confirms logrus.Fatalf was triggered (expected).
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("BC-2: expected exit code 1 (logrus.Fatalf), got %d; output:\n%s", exitErr.ExitCode(), out)
+	}
+	if !strings.Contains(string(out), "autoscaler") {
+		t.Errorf("BC-2: fatal message should mention 'autoscaler', got:\n%s", out)
+	}
 }
 
 // TestReplayCmd_NodePoolsBundleFatal verifies BC-4:
@@ -1595,26 +1603,35 @@ func TestReplayCmd_NodePoolsBundleFatal(t *testing.T) {
 		registerSimConfigFlags(testCmd)
 		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
 		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
-		_ = testCmd.ParseFlags([]string{
+		if err := testCmd.ParseFlags([]string{
 			"--model", "test-model", "--latency-model", "trained-physics",
 			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
 			"--model-config-folder", mcFolder, "--hardware-config", hwPath,
 			"--trace-header", headerPath, "--trace-data", dataPath,
 			"--policy-config", bundlePath, "--defaults-filepath", "../defaults.yaml",
-		})
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)
+			os.Exit(2) // distinct from logrus.Fatalf exit code (1)
+		}
 		replayCmd.Run(testCmd, nil) // must Fatalf before here
 		os.Exit(0)
 	}
 
 	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_NodePoolsBundleFatal", "-test.v")
 	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
-	err := cmd.Run()
+	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatal("BC-4: expected non-zero exit when node_pools bundle is present, got exit 0")
 	}
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) {
 		t.Fatalf("BC-4: unexpected error type: %v", err)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("BC-4: expected exit code 1 (logrus.Fatalf), got %d; output:\n%s", exitErr.ExitCode(), out)
+	}
+	if !strings.Contains(string(out), "node_pools") {
+		t.Errorf("BC-4: fatal message should mention 'node_pools', got:\n%s", out)
 	}
 }
 
@@ -1973,4 +1990,174 @@ func makeMinimalPDRequests(t *testing.T) []*sim.Request {
 		}
 	}
 	return reqs
+}
+
+// TestReplayCmd_AutoscalerFlagFatal verifies BC-3:
+// passing --model-autoscaler-interval-us directly to blis replay causes fatal exit.
+func TestReplayCmd_AutoscalerFlagFatal(t *testing.T) {
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		dir := t.TempDir()
+		headerPath := filepath.Join(dir, "trace.yaml")
+		dataPath := filepath.Join(dir, "trace.csv")
+		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
+		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
+
+		mcFolder, hwPath := setupTrainedPhysicsTestFixtures(t)
+		model = "test-model"
+		latencyModelBackend = "trained-physics"
+		totalKVBlocks = 1000
+		blockSizeTokens = 16
+		maxRunningReqs = 64
+		maxScheduledTokens = 2048
+		numInstances = 1
+		seed = 42
+		longPrefillTokenThreshold = 0
+		kvCPUBlocks = 0
+		kvOffloadThreshold = 0.9
+		kvTransferBandwidth = 100.0
+		kvTransferBaseLatency = 0
+		snapshotRefreshInterval = 0
+		admissionPolicy = "always-admit"
+		routingPolicy = "round-robin"
+		scheduler = "fcfs"
+		policyConfigPath = ""
+		maxModelLen = 0
+		traceLevel = "none"
+		counterfactualK = 0
+		traceHeaderPath = headerPath
+		traceDataPath = dataPath
+		modelConfigFolder = mcFolder
+		hwConfigPath = hwPath
+		gpu = "H100"
+		tensorParallelism = 1
+		defaultsFilePath = "../defaults.yaml"
+		replaySessionMode = "fixed"
+		resultsPath = ""
+		replayTraceOutput = ""
+
+		testCmd := &cobra.Command{}
+		registerSimConfigFlags(testCmd)
+		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+		if err := testCmd.ParseFlags([]string{
+			"--model", "test-model", "--latency-model", "trained-physics",
+			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+			"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+			"--trace-header", headerPath, "--trace-data", dataPath,
+			"--model-autoscaler-interval-us", "500000",
+			"--defaults-filepath", "../defaults.yaml",
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)
+			os.Exit(2)
+		}
+		replayCmd.Run(testCmd, nil) // must Fatalf before here
+		os.Exit(0)
+	}
+
+	// Parent: expect exit code 1 from --model-autoscaler-interval-us (BC-3).
+	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_AutoscalerFlagFatal", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("BC-3: expected non-zero exit when --model-autoscaler-interval-us is set, got exit 0")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("BC-3: unexpected error type: %v", err)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("BC-3: expected exit code 1 (logrus.Fatalf), got %d; output:\n%s", exitErr.ExitCode(), out)
+	}
+	if !strings.Contains(string(out), "model-autoscaler-interval-us") {
+		t.Errorf("BC-3: fatal message should mention 'model-autoscaler-interval-us', got:\n%s", out)
+	}
+}
+
+// TestReplayCmd_PDTopologyFatal verifies BC-5:
+// an invalid PD pool topology causes a fatal exit in replay.
+func TestReplayCmd_PDTopologyFatal(t *testing.T) {
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		dir := t.TempDir()
+		headerPath := filepath.Join(dir, "trace.yaml")
+		dataPath := filepath.Join(dir, "trace.csv")
+		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
+		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
+
+		mcFolder, hwPath := setupTrainedPhysicsTestFixtures(t)
+		model = "test-model"
+		latencyModelBackend = "trained-physics"
+		totalKVBlocks = 1000
+		blockSizeTokens = 16
+		maxRunningReqs = 64
+		maxScheduledTokens = 2048
+		numInstances = 2 // 4 prefill + 0 decode > 2 total: invalid topology
+		seed = 42
+		longPrefillTokenThreshold = 0
+		kvCPUBlocks = 0
+		kvOffloadThreshold = 0.9
+		kvTransferBandwidth = 25.0
+		kvTransferBaseLatency = 0
+		snapshotRefreshInterval = 0
+		admissionPolicy = "always-admit"
+		routingPolicy = "round-robin"
+		scheduler = "fcfs"
+		policyConfigPath = ""
+		maxModelLen = 0
+		traceLevel = "none"
+		counterfactualK = 0
+		traceHeaderPath = headerPath
+		traceDataPath = dataPath
+		modelConfigFolder = mcFolder
+		hwConfigPath = hwPath
+		gpu = "H100"
+		tensorParallelism = 1
+		defaultsFilePath = "../defaults.yaml"
+		replaySessionMode = "fixed"
+		resultsPath = ""
+		replayTraceOutput = ""
+		prefillInstances = 4
+		decodeInstances = 0
+		prefillDecodeInstances = 0
+		pdDecider = "always"
+		pdTransferBandwidth = 25.0
+		pdTransferBaseLatency = 0.05
+
+		testCmd := &cobra.Command{}
+		registerSimConfigFlags(testCmd)
+		testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
+		testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
+		if err := testCmd.ParseFlags([]string{
+			"--model", "test-model", "--latency-model", "trained-physics",
+			"--total-kv-blocks", "1000", "--hardware", "H100", "--tp", "1",
+			"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+			"--trace-header", headerPath, "--trace-data", dataPath,
+			"--num-instances", "2",
+			"--prefill-instances", "4", "--decode-instances", "0",
+			"--pd-decider", "always", "--pd-transfer-bandwidth", "25.0",
+			"--defaults-filepath", "../defaults.yaml",
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "ParseFlags failed (test setup error): %v\n", err)
+			os.Exit(2)
+		}
+		replayCmd.Run(testCmd, nil) // must Fatalf before here
+		os.Exit(0)
+	}
+
+	// Parent: expect exit code 1 from ValidatePoolTopology (BC-5).
+	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_PDTopologyFatal", "-test.v")
+	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("BC-5: expected non-zero exit when PD topology is invalid (4 prefill > 2 total), got exit 0")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("BC-5: unexpected error type: %v", err)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("BC-5: expected exit code 1 (logrus.Fatalf), got %d; output:\n%s", exitErr.ExitCode(), out)
+	}
+	if !strings.Contains(string(out), "topology") {
+		t.Errorf("BC-5: fatal message should mention 'topology', got:\n%s", out)
+	}
 }
