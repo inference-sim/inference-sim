@@ -435,6 +435,85 @@ func TestLoadTraceV2SessionBlueprints_ServerInputTokens_NonSessionRecord(t *test
 	}
 }
 
+// BC-2 session guard: PrefixGroup records must fall back to InputTokens even when
+// ServerInputTokens > 0, to avoid double-counting the prefix prepended by the session
+// manager. These tests guard all three application sites in LoadTraceV2SessionBlueprints.
+
+func TestLoadTraceV2SessionBlueprints_ServerInputTokens_Round0_PrefixGroup_FallsBack(t *testing.T) {
+	// GIVEN a session with PrefixGroup on round-0 and ServerInputTokens set
+	// ServerInputTokens(246) = PrefixLength(128) + InputTokens(100) + overhead(18, illustrative)
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 1, SessionID: "A", RoundIndex: 0,
+				InputTokens: 100, PrefixGroup: "shared", PrefixLength: 128,
+				ServerInputTokens: 246, OutputTokens: 32, ArrivalTimeUs: 0},
+			{RequestID: 2, SessionID: "A", RoundIndex: 1,
+				InputTokens: 50, PrefixGroup: "shared", PrefixLength: 128,
+				ServerInputTokens: 196, OutputTokens: 16, ArrivalTimeUs: 5000},
+		},
+	}
+	requests, _, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 1 {
+		t.Fatalf("expected 1 round-0 request, got %d", len(requests))
+	}
+	// BC-2: total = PrefixLength(128) + InputTokens(100) = 228, not 128+246=374
+	if len(requests[0].InputTokens) != 228 {
+		t.Errorf("round-0 input token count = %d, want 228 (prefix 128 + suffix 100, not ServerInputTokens 246)",
+			len(requests[0].InputTokens))
+	}
+}
+
+func TestLoadTraceV2SessionBlueprints_ServerInputTokens_Sampler_PrefixGroup_FallsBack(t *testing.T) {
+	// GIVEN a session where round-1 has PrefixGroup set and ServerInputTokens populated
+	// THEN the InputSampler returns InputTokens (fallback), not ServerInputTokens
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 1, SessionID: "A", RoundIndex: 0,
+				InputTokens: 512, ServerInputTokens: 530, OutputTokens: 64, ArrivalTimeUs: 0},
+			{RequestID: 2, SessionID: "A", RoundIndex: 1,
+				InputTokens: 50, PrefixGroup: "shared", PrefixLength: 64,
+				ServerInputTokens: 132, // = PrefixLength(64) + InputTokens(50) + overhead(18)
+				OutputTokens: 16, ArrivalTimeUs: 5000},
+		},
+	}
+	_, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// round-0 sampler value is inputSeq[1]: prefix-group round → falls back to InputTokens(50)
+	got := blueprints[0].InputSampler.Sample(nil)
+	if got != 50 {
+		t.Errorf("round-1 sampler value = %d, want 50 (fallback: PrefixGroup set, ServerInputTokens ignored)",
+			got)
+	}
+}
+
+func TestLoadTraceV2SessionBlueprints_ServerInputTokens_NonSession_PrefixGroup_FallsBack(t *testing.T) {
+	// GIVEN a non-session record in LoadTraceV2SessionBlueprints with PrefixGroup set
+	// and ServerInputTokens > InputTokens
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 1, SessionID: "", InputTokens: 100, PrefixGroup: "shared", PrefixLength: 128,
+				ServerInputTokens: 246, OutputTokens: 32, ArrivalTimeUs: 0},
+		},
+	}
+	requests, _, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 1 {
+		t.Fatalf("expected 1 request, got %d", len(requests))
+	}
+	// BC-2/BC-5: total = PrefixLength(128) + InputTokens(100) = 228, not 128+246=374
+	if len(requests[0].InputTokens) != 228 {
+		t.Errorf("non-session input token count = %d, want 228 (prefix 128 + suffix 100, not ServerInputTokens 246)",
+			len(requests[0].InputTokens))
+	}
+}
+
 // TestLoadTraceV2Requests_ModelAndDeadline verifies BC-3, BC-4, BC-5, BC-6 from the
 // original observe-replay plan, and BC-1 from this plan (ServerInputTokens used for
 // token count generation when > 0 and PrefixGroup is empty).

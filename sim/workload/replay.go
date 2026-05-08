@@ -33,8 +33,10 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 	for _, rec := range trace.Records {
 		// Generate synthetic token IDs. Use server-reported token count when available
 		// (eliminates chat-template overhead bias for --api-format chat traces).
-		// Guard PrefixGroup == "": for prefix-group records, ServerInputTokens already
-		// includes the prefix length; using it as suffix count would double-count.
+		// Guard PrefixGroup == "": for prefix-group records, ServerInputTokens reflects
+		// the server's total prompt_tokens (prefix + suffix + template tokens, consistent
+		// with vLLM's usage reporting in blis observe). Using it as the suffix count would
+		// double-count the prefix that is prepended separately below.
 		nInput := rec.InputTokens
 		if rec.ServerInputTokens > 0 && rec.PrefixGroup == "" {
 			nInput = rec.ServerInputTokens
@@ -195,7 +197,8 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 		// Per-session RNG for deterministic token ID generation (INV-6)
 		sessionRNG := rand.New(rand.NewSource(rng.Int63()))
 
-		// Build round-0 request
+		// Build round-0 request. Same ServerInputTokens selection rule as LoadTraceV2Requests:
+		// skip for prefix-group records (ServerInputTokens includes prefix; avoid double-count).
 		r0 := rounds[0]
 		nInputR0 := r0.InputTokens
 		if r0.ServerInputTokens > 0 && r0.PrefixGroup == "" {
@@ -257,7 +260,8 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 		blueprints = append(blueprints, bp)
 	}
 
-	// Append non-session requests (same construction as LoadTraceV2Requests)
+	// Append non-session requests (same construction as LoadTraceV2Requests).
+	// Same ServerInputTokens selection rule: skip for prefix-group records (avoid double-count).
 	for _, rec := range nonSessionRecords {
 		nInput := rec.InputTokens
 		if rec.ServerInputTokens > 0 && rec.PrefixGroup == "" {
