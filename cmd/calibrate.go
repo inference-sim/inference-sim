@@ -219,7 +219,7 @@ Example:
 			for k := range pairs.BySLO {
 				sloKeys = append(sloKeys, k)
 			}
-			sort.Strings(sloKeys) // deterministic output (R2, INV-6)
+			sort.Strings(sloKeys) // deterministic stderr output (R2)
 			logrus.Infof("Per-SLO-class calibration:")
 			for _, slo := range sloKeys {
 				p := pairs.BySLO[slo]
@@ -238,7 +238,7 @@ Example:
 			for k := range pairs.ByModel {
 				modelKeys = append(modelKeys, k)
 			}
-			sort.Strings(modelKeys) // deterministic output (R2, INV-6)
+			sort.Strings(modelKeys) // deterministic stderr output (R2)
 			logrus.Infof("Per-model calibration:")
 			for _, model := range modelKeys {
 				p := pairs.ByModel[model]

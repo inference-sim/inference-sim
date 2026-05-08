@@ -1128,6 +1128,13 @@ func TestPrepareCalibrationPairs_SLOBreakdown(t *testing.T) {
 	if len(batchPairs.TTFT.Real) != 2 {
 		t.Errorf("BySLO[batch] TTFT count: got %d, want 2", len(batchPairs.TTFT.Real))
 	}
+	// Sim slices must be parallel to Real slices (length symmetry invariant)
+	if len(stdPairs.TTFT.Sim) != len(stdPairs.TTFT.Real) {
+		t.Errorf("BySLO[standard] TTFT Real/Sim length mismatch: Real=%d Sim=%d", len(stdPairs.TTFT.Real), len(stdPairs.TTFT.Sim))
+	}
+	if len(stdPairs.E2E.Sim) != len(stdPairs.E2E.Real) {
+		t.Errorf("BySLO[standard] E2E Real/Sim length mismatch: Real=%d Sim=%d", len(stdPairs.E2E.Real), len(stdPairs.E2E.Sim))
+	}
 }
 
 func TestPrepareCalibrationPairs_ModelBreakdown(t *testing.T) {
