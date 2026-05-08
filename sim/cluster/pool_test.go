@@ -451,6 +451,10 @@ func TestPoolRoleEncode_BitmaskIdentity(t *testing.T) {
 	if PoolRoleEncode == 0 {
 		t.Fatal("PoolRoleEncode must be non-zero")
 	}
+	// Self-membership: an encode-role pod satisfies an encode filter.
+	if !PoolRoleEncode.Has(PoolRoleEncode) {
+		t.Errorf("PoolRoleEncode.Has(PoolRoleEncode) = false, want true")
+	}
 	if PoolRoleEncode.Has(PoolRolePrefill) {
 		t.Errorf("PoolRoleEncode must not contain PoolRolePrefill bit")
 	}
@@ -473,7 +477,7 @@ func TestValidatePoolTopology_Encode(t *testing.T) {
 		wantErr                                        bool
 	}{
 		{"valid 1p/1d/0s/1e in total=3", 1, 1, 0, 1, 3, false},
-		{"valid 0p/2d/0s/1e in total=3 (decode + encode)", 0, 2, 0, 1, 3, true}, // prefill+decode must both be set OR shared; (0,2) fails the existing PD pair rule even with encode>0
+		{"decode-only + encode rejected by PD pair rule (shared=0 requires both p and d)", 0, 2, 0, 1, 3, true},
 		{"valid 2p/2d/0s/1e in total=5", 2, 2, 0, 1, 5, false},
 		{"encode only, no decode-capable pool — rejected", 0, 0, 0, 2, 2, true},
 		{"encode+shared valid", 0, 0, 2, 1, 3, false},

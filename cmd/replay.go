@@ -191,6 +191,9 @@ Example:
 		if encodeInstances > 0 {
 			logrus.Warnf("[replay] --encode-instances is not applicable to blis replay (PD disaggregation is not supported; encode requires a decode-capable pool); flag ignored")
 		}
+		if encodeDecider != "" && encodeDecider != "never" {
+			logrus.Warnf("[replay] --encode-decider=%q is not applicable to blis replay (encode pool disabled); flag ignored", encodeDecider)
+		}
 
 		// Resolve policy configuration (single code path shared with runCmd).
 		// Replay does not support autoscaler or node-pool config; warn if the bundle contains them.
@@ -297,12 +300,13 @@ Example:
 			scheduler,
 			cs.RoutingRejections(),
 		)
-		rawMetrics.ShedByTier = cs.ShedByTier()               // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
-		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth() // Issue #882: gateway queue depth at horizon
-		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()   // Issue #882: gateway queue shed count
+		rawMetrics.ShedByTier = cs.ShedByTier()                           // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
+		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth()             // Issue #882: gateway queue depth at horizon
+		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()               // Issue #882: gateway queue shed count
+		rawMetrics.EncodeRoutingRejections = cs.EncodeRoutingRejections() // Issue #1264 (GAP-4): encode pool routing rejections
 
 		// Print anomaly counters if any detected
-		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 || rawMetrics.TimedOutRequests > 0 {
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 || rawMetrics.EncodeRoutingRejections > 0 || rawMetrics.TimedOutRequests > 0 {
 			fmt.Println("=== Anomaly Counters ===")
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
@@ -326,6 +330,9 @@ Example:
 			}
 			if rawMetrics.GatewayQueueShed > 0 {
 				fmt.Printf("Gateway Queue Shed: %d\n", rawMetrics.GatewayQueueShed)
+			}
+			if rawMetrics.EncodeRoutingRejections > 0 {
+				fmt.Printf("Encode Routing Rejections: %d\n", rawMetrics.EncodeRoutingRejections)
 			}
 		}
 
