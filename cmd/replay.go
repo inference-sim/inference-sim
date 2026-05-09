@@ -230,7 +230,7 @@ Example:
 			logrus.Fatalf("--pd-decider=%q has no effect because --prefill-instances=0 (disaggregation is disabled); set --prefill-instances > 0 and --decode-instances > 0, or omit --pd-decider", pdDecider)
 		}
 
-		// ModelConfig resolution for PD KV transfer sizing (same as runCmd, root.go:1045-1065).
+		// ModelConfig resolution for PD KV transfer sizing (same as runCmd).
 		// When PD is active and an analytical backend is in use, the ModelConfig may need to
 		// be loaded from the HF config to calculate per-pool KV block counts. If resolveLatencyConfig
 		// already loaded it (roofline/trained-physics), lr.ModelConfig.NumHeads will be non-zero.
@@ -259,7 +259,7 @@ Example:
 		// Per-pool hardware override construction (same as runCmd).
 		var prefillOverrides, decodeOverrides cluster.PoolOverrides
 
-		// Per-pool KV auto-calculation (same as runCmd, root.go:1076-1156).
+		// Per-pool KV auto-calculation (same as runCmd).
 		// When PD disaggregation is active and a pool uses different TP or GPU hardware,
 		// compute per-pool KV blocks from model + hardware for analytical backends.
 		if lr.Backend == "roofline" || lr.Backend == "trained-physics" {
