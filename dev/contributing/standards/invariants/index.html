@@ -2120,6 +2120,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#inv-13-runreplay-parity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-13: Run/Replay Parity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pd-disaggregation-invariants" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3029,6 +3040,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#inv-13-runreplay-parity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-13: Run/Replay Parity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pd-disaggregation-invariants" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3315,6 +3337,12 @@
 <p><strong>Verification:</strong> <code>sim/batch_formation_test.go</code> — <code>TestPreemption_Priority_Phase1Completeness</code>: verifies that after non-tail eviction where <code>victimIdx &lt; reqIndex</code>, ALL remaining running requests receive decode tokens (NumNewTokens &gt; 0). The index adjustment is tested with [bg, crit, std] batch where bg is evicted at index 0 while processing crit at index 1.</p>
 <p><strong>Trivially satisfied for FCFS:</strong> With <code>--preemption-policy fcfs</code> (default), victims are always at the batch tail (<code>victimIdx == len-1 &gt;= reqIndex</code>), so <code>adjustment == 0</code> and no element skipping is possible.</p>
 <p><strong>Hypothesis family:</strong> Structural model (same as INV-4, INV-7, INV-8, INV-9).</p>
+<hr />
+<h2 id="inv-13-runreplay-parity">INV-13: Run/Replay Parity<a class="headerlink" href="#inv-13-runreplay-parity" title="Permanent link">&para;</a></h2>
+<p><strong>Statement:</strong> For any configuration supported by both <code>blis run</code> and <code>blis replay</code>, a trace exported via <code>blis run --trace-output</code> and replayed via <code>blis replay --session-mode fixed</code> with identical flags MUST produce identical per-request TTFT, E2E, and aggregate metrics. Features not yet supported by replay (autoscaler, node pools) MUST cause a <code>logrus.Fatalf</code> at startup when those flags are explicitly set or when a policy bundle containing those features is passed — never silent degradation or a mere warning.</p>
+<p><strong>Verification:</strong> <code>cmd/replay_test.go</code> — <code>TestINV13_RunReplayParity_PD</code> verifies that a PD-disaggregated cluster produces matching <code>RequestTTFTs</code> and <code>RequestE2Es</code> maps when the same requests are run directly vs. through the trace-export-then-replay path. <code>TestReplayCmd_AutoscalerBundleFatal</code> and <code>TestReplayCmd_NodePoolsBundleFatal</code> verify fatal exit for unsupported features.</p>
+<p><strong>Evidence:</strong> <code>cmd/replay.go::replayCmd.Run</code> wires all 12 PD disaggregation fields to <code>cluster.DeploymentConfig</code> (same set as <code>runCmd</code>): <code>PrefillInstances</code>, <code>DecodeInstances</code>, <code>SharedInstances</code>, <code>PDDecider</code>, <code>PDPrefixThreshold</code>, <code>PDTransferBandwidthGBps</code>, <code>PDTransferBaseLatencyMs</code>, <code>PDTransferContention</code>, <code>PrefillScorerConfigs</code>, <code>DecodeScorerConfigs</code>, <code>PrefillOverrides</code>, <code>DecodeOverrides</code>. Autoscaler and node-pool checks use <code>logrus.Fatalf</code> to prevent silent divergence.</p>
+<p><strong>Hypothesis family:</strong> Scheduler invariants (safety/liveness) — same as INV-1, INV-5, INV-6.</p>
 <hr />
 <h2 id="pd-disaggregation-invariants">PD Disaggregation Invariants<a class="headerlink" href="#pd-disaggregation-invariants" title="Permanent link">&para;</a></h2>
 <h3 id="inv-pd-1-kv-completeness">INV-PD-1: KV Completeness<a class="headerlink" href="#inv-pd-1-kv-completeness" title="Permanent link">&para;</a></h3>
