@@ -35,7 +35,7 @@ type ClusterSimulator struct {
 	routingPolicy        sim.RoutingPolicy
 	rejectedRequests     int                    // EC-2: count of requests rejected by admission policy
 	routingRejections    int                    // I13: count of requests rejected at routing (no routable instances)
-	shedByTier           map[string]int         // per-SLOClass rejection counts (Phase 1B-1a)
+	shedByTier           map[string]int         // per-SLOClass shedding: admission rejections + gateway queue shed + in-flight evictions
 	trace                *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
 	preGeneratedRequests []*sim.Request         // Pre-generated requests (all workload paths unified)
 	inFlightRequests     map[string]int         // instance ID → dispatched-but-not-completed count (#463)
@@ -913,6 +913,12 @@ func (c *ClusterSimulator) maybeDeliverProgressSnapshot(isFinal bool) {
 		ActiveInstances:   activeCount,
 		TotalInstances:    len(c.instances),
 		IsFinal:           isFinal,
+	}
+	if len(c.shedByTier) > 0 {
+		snap.ShedByTier = make(map[string]int, len(c.shedByTier))
+		for k, v := range c.shedByTier {
+			snap.ShedByTier[k] = v
+		}
 	}
 	c.progressHook.OnProgress(snap)
 	if !isFinal {

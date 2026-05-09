@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
+	"github.com/inference-sim/inference-sim/sim/latency"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -178,36 +180,257 @@ Example:
 			logrus.Fatalf("--horizon must be > 0, got %d", replayHorizon)
 		}
 
-		// Warn on PD-disaggregation flags that replay does not support.
-		// These flags are registered via registerSimConfigFlags (shared with runCmd) but
-		// replay does not build a PD-disaggregated ClusterSimulator.
-		if pdTransferContention {
-			logrus.Warnf("[replay] --pd-transfer-contention is not applicable to blis replay (PD disaggregation is not supported); flag ignored")
+		// E/P/D validation (GAP-4, issue #1264). Per INV-13 (run/replay parity,
+		// PR #1305), encode pool flags are supported in replay the same way PD
+		// disaggregation is: validate the decider name and the encode-instances /
+		// encode-decider pairing, then wire them into DeploymentConfig below.
+		if encodeInstances < 0 {
+			logrus.Fatalf("--encode-instances must be >= 0, got %d", encodeInstances)
 		}
-		if prefillDecodeInstances > 0 {
-			logrus.Warnf("[replay] --prefill-decode-instances is not applicable to blis replay (PD disaggregation is not supported); flag ignored")
-		}
-		// E/P/D (GAP-4): encode requires a decode-capable pool, which replay does not support.
-		// Validate the decider name first so typos fatal on both run and replay paths (parity).
-		if encodeDecider != "" && !sim.IsValidEncodeDecider(encodeDecider) {
+		if !sim.IsValidEncodeDecider(encodeDecider) {
 			logrus.Fatalf("Unknown encode decider %q. Valid: %s", encodeDecider, strings.Join(sim.ValidEncodeDeciderNames(), ", "))
 		}
-		if encodeInstances > 0 {
-			logrus.Warnf("[replay] --encode-instances is not applicable to blis replay (PD disaggregation is not supported; encode requires a decode-capable pool); flag ignored")
-		}
-		if encodeDecider != "" && encodeDecider != "never" {
-			logrus.Warnf("[replay] --encode-decider=%q is not applicable to blis replay (encode pool disabled); flag ignored", encodeDecider)
+		if encodeDecider != "" && encodeDecider != "never" && encodeInstances == 0 {
+			logrus.Fatalf("--encode-decider=%q requires --encode-instances > 0 (the encode pool is disabled)", encodeDecider)
 		}
 
+
 		// Resolve policy configuration (single code path shared with runCmd).
-		// Replay does not support autoscaler or node-pool config; warn if the bundle contains them.
+		// Autoscaler and node-pool configs are not supported in replay — fail fast
+		// rather than silently producing divergent results (INV-13, Track B).
 		parsedScorerConfigs, bundle := resolvePolicies(cmd)
+		if cmd.Flags().Changed("model-autoscaler-interval-us") {
+			logrus.Fatalf("--model-autoscaler-interval-us is not supported in blis replay; remove this flag or use blis run instead")
+		}
 		if bundle != nil {
 			if bundle.Autoscaler.IntervalUs > 0 {
-				logrus.Warnf("[replay] policy bundle contains autoscaler config (interval_us=%g) — autoscaler is not supported in replay mode and will be ignored", bundle.Autoscaler.IntervalUs)
+				logrus.Fatalf("blis replay does not support autoscaler config (policy bundle interval_us=%g); remove the autoscaler section from the policy bundle or use blis run instead", bundle.Autoscaler.IntervalUs)
 			}
 			if len(bundle.NodePools) > 0 {
-				logrus.Warnf("[replay] policy bundle contains %d node_pools — node pools are not supported in replay mode and will be ignored", len(bundle.NodePools))
+				logrus.Fatalf("blis replay does not support node_pools config (%d pool(s) in policy bundle); remove the node_pools section from the policy bundle or use blis run instead", len(bundle.NodePools))
+			}
+		}
+
+		// PD disaggregation validation (same as runCmd, R3) — INV-13 Track A.
+		if prefillInstances < 0 {
+			logrus.Fatalf("--prefill-instances must be >= 0, got %d", prefillInstances)
+		}
+		if decodeInstances < 0 {
+			logrus.Fatalf("--decode-instances must be >= 0, got %d", decodeInstances)
+		}
+		if prefillDecodeInstances < 0 {
+			logrus.Fatalf("--prefill-decode-instances must be >= 0, got %d", prefillDecodeInstances)
+		}
+		if !sim.IsValidDisaggregationDecider(pdDecider) {
+			logrus.Fatalf("Unknown PD decider %q. Valid: %s", pdDecider, strings.Join(sim.ValidDisaggregationDeciderNames(), ", "))
+		}
+		if err := cluster.ValidatePoolTopology(prefillInstances, decodeInstances, prefillDecodeInstances, encodeInstances, numInstances); err != nil {
+			logrus.Fatalf("Invalid PD pool topology: %v", err)
+		}
+		if prefillInstances > 0 {
+			if pdTransferBandwidth <= 0 || math.IsInf(pdTransferBandwidth, 0) || math.IsNaN(pdTransferBandwidth) {
+				logrus.Fatalf("--pd-transfer-bandwidth must be a finite positive number, got %f", pdTransferBandwidth)
+			}
+			if pdTransferBaseLatency < 0 || math.IsInf(pdTransferBaseLatency, 0) || math.IsNaN(pdTransferBaseLatency) {
+				logrus.Fatalf("--pd-transfer-base-latency must be a finite non-negative number, got %f", pdTransferBaseLatency)
+			}
+		}
+		if pdDecider == "prefix-threshold" && pdPrefixThreshold < 0 {
+			logrus.Fatalf("--pd-prefix-threshold must be >= 0, got %d", pdPrefixThreshold)
+		}
+		if pdDecider != "prefix-threshold" && cmd.Flags().Changed("pd-prefix-threshold") {
+			logrus.Fatalf("--pd-prefix-threshold=%d has no effect when --pd-decider=%q (only applies to the prefix-threshold decider); remove the flag or set --pd-decider=prefix-threshold", pdPrefixThreshold, pdDecider)
+		}
+		if pdDecider != "" && pdDecider != "never" && prefillInstances == 0 {
+			logrus.Fatalf("--pd-decider=%q has no effect because --prefill-instances=0 (disaggregation is disabled); set --prefill-instances > 0 and --decode-instances > 0, or omit --pd-decider", pdDecider)
+		}
+
+		// ModelConfig resolution for PD KV transfer sizing (same as runCmd).
+		// When PD is active and an analytical backend is in use, the ModelConfig may need to
+		// be loaded from the HF config to calculate per-pool KV block counts. If resolveLatencyConfig
+		// already loaded it (roofline/trained-physics), lr.ModelConfig.NumHeads will be non-zero.
+		if prefillInstances > 0 && lr.ModelConfig.NumHeads == 0 {
+			resolved, err := resolveModelConfig(model, modelConfigFolder, defaultsFilePath)
+			if err != nil {
+				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing: %v", err)
+			}
+			hfPath := filepath.Join(resolved, "config.json")
+			hfConfig, parseErr := latency.ParseHFConfig(hfPath)
+			if parseErr != nil {
+				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing, but failed to parse %s: %v", hfPath, parseErr)
+			}
+			mc, mcErr := latency.GetModelConfigFromHF(hfConfig)
+			if mcErr != nil {
+				logrus.Fatalf("PD disaggregation requires model architecture for KV transfer sizing, but failed to extract ModelConfig: %v", mcErr)
+			}
+			applyWeightPrecisionFallback(mc, model, hfConfig.Raw)
+			if mc.BytesPerParam <= 0 {
+				logrus.Fatalf("PD disaggregation: could not determine model precision (BytesPerParam=%v) from %s — ensure torch_dtype or dtype is present in config.json", mc.BytesPerParam, hfPath)
+			}
+			lr.ModelConfig = *mc
+			logrus.Infof("PD disaggregation: loaded ModelConfig from %s for KV transfer derivation", hfPath)
+		}
+
+		// Per-pool hardware override construction (same as runCmd).
+		var prefillOverrides, decodeOverrides cluster.PoolOverrides
+
+		// Per-pool KV auto-calculation (same as runCmd).
+		// When PD disaggregation is active and a pool uses different TP or GPU hardware,
+		// compute per-pool KV blocks from model + hardware for analytical backends.
+		if lr.Backend == "roofline" || lr.Backend == "trained-physics" {
+			if prefillInstances > 0 {
+				hfPath := filepath.Join(modelConfigFolder, "config.json")
+				hfConfig, err := latency.ParseHFConfig(hfPath)
+				if err != nil {
+					logrus.Fatalf("Failed to parse HuggingFace config for per-pool KV calc: %v", err)
+				}
+				kvParamsPool, kvErrPool := latency.ExtractKVCapacityParams(hfConfig)
+				if kvErrPool != nil {
+					logrus.Warnf("per-pool KV auto-calculation skipped (could not extract model KV params: %v); both pools will use global total-kv-blocks=%d", kvErrPool, totalKVBlocks)
+				} else {
+					// Prefill pool auto-calc
+					poolPrefillTP := tensorParallelism
+					if cmd.Flags().Changed("prefill-tp") {
+						poolPrefillTP = prefillTP
+					}
+					poolPrefillGPU := gpu
+					if cmd.Flags().Changed("prefill-hardware") {
+						poolPrefillGPU = prefillHardware
+					}
+					if poolPrefillTP != tensorParallelism || poolPrefillGPU != gpu {
+						poolHC, hcErr := latency.GetHWConfig(hwConfigPath, poolPrefillGPU)
+						if hcErr != nil {
+							logrus.Warnf("--prefill-hardware: failed to load hardware config for GPU %q: %v; prefill pool will use global total-kv-blocks=%d", poolPrefillGPU, hcErr, totalKVBlocks)
+						} else if poolHC.MemoryGiB <= 0 {
+							logrus.Warnf("--prefill-hardware: GPU memory capacity not available for %q in hardware config; prefill pool will use global total-kv-blocks=%d", poolPrefillGPU, totalKVBlocks)
+						} else {
+							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolPrefillTP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool)
+							if calcErr != nil {
+								logrus.Fatalf("--prefill-tp/--prefill-hardware: KV capacity auto-calculation failed for prefill pool: %v", calcErr)
+							} else {
+								prefillOverrides.TotalKVBlocks = &poolBlocks
+								logrus.Infof("--prefill-tp/--prefill-hardware: auto-calculated prefill pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d)",
+									poolBlocks, poolHC.MemoryGiB, poolPrefillTP)
+								if !cmd.Flags().Changed("prefill-max-model-len") {
+									kvFeasibleMax := poolBlocks * int64(blockSizeTokens)
+									if kvFeasibleMax < maxModelLen {
+										prefillOverrides.MaxModelLen = &kvFeasibleMax
+										logrus.Infof("--prefill-tp/--prefill-hardware: auto-capped prefill pool max-model-len=%d (pool KV capacity smaller than global)", kvFeasibleMax)
+									}
+								}
+							}
+						}
+					}
+
+					// Decode pool auto-calc
+					poolDecodeTP := tensorParallelism
+					if cmd.Flags().Changed("decode-tp") {
+						poolDecodeTP = decodeTP
+					}
+					poolDecodeGPU := gpu
+					if cmd.Flags().Changed("decode-hardware") {
+						poolDecodeGPU = decodeHardware
+					}
+					if poolDecodeTP != tensorParallelism || poolDecodeGPU != gpu {
+						poolHC, hcErr := latency.GetHWConfig(hwConfigPath, poolDecodeGPU)
+						if hcErr != nil {
+							logrus.Warnf("--decode-hardware: failed to load hardware config for GPU %q: %v; decode pool will use global total-kv-blocks=%d", poolDecodeGPU, hcErr, totalKVBlocks)
+						} else if poolHC.MemoryGiB <= 0 {
+							logrus.Warnf("--decode-hardware: GPU memory capacity not available for %q in hardware config; decode pool will use global total-kv-blocks=%d", poolDecodeGPU, totalKVBlocks)
+						} else {
+							poolBlocks, calcErr := latency.CalculateKVBlocks(lr.ModelConfig, poolHC, poolDecodeTP, blockSizeTokens, gpuMemoryUtilization, kvParamsPool)
+							if calcErr != nil {
+								logrus.Fatalf("--decode-tp/--decode-hardware: KV capacity auto-calculation failed for decode pool: %v", calcErr)
+							} else {
+								decodeOverrides.TotalKVBlocks = &poolBlocks
+								logrus.Infof("--decode-tp/--decode-hardware: auto-calculated decode pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d)",
+									poolBlocks, poolHC.MemoryGiB, poolDecodeTP)
+								if !cmd.Flags().Changed("decode-max-model-len") {
+									kvFeasibleMax := poolBlocks * int64(blockSizeTokens)
+									if kvFeasibleMax < maxModelLen {
+										decodeOverrides.MaxModelLen = &kvFeasibleMax
+										logrus.Infof("--decode-tp/--decode-hardware: auto-capped decode pool max-model-len=%d (pool KV capacity smaller than global)", kvFeasibleMax)
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		perPoolFlagsChanged := cmd.Flags().Changed("prefill-tp") || cmd.Flags().Changed("decode-tp") ||
+			cmd.Flags().Changed("prefill-hardware") || cmd.Flags().Changed("decode-hardware") ||
+			cmd.Flags().Changed("prefill-latency-model") || cmd.Flags().Changed("decode-latency-model") ||
+			cmd.Flags().Changed("prefill-max-model-len") || cmd.Flags().Changed("decode-max-model-len")
+		if perPoolFlagsChanged && prefillInstances == 0 {
+			logrus.Fatalf("per-pool hardware flags (--prefill-tp, --decode-tp, etc.) have no effect when --prefill-instances=0 (disaggregation is disabled); either set --prefill-instances > 0 or remove the per-pool flags")
+		}
+		if prefillInstances > 0 {
+			if cmd.Flags().Changed("prefill-tp") {
+				if prefillTP <= 0 {
+					logrus.Fatalf("--prefill-tp must be > 0, got %d", prefillTP)
+				}
+				tp := prefillTP
+				prefillOverrides.TP = &tp
+			}
+			if cmd.Flags().Changed("prefill-hardware") {
+				prefillOverrides.GPU = prefillHardware
+			}
+			if cmd.Flags().Changed("prefill-latency-model") {
+				if !sim.IsValidLatencyBackend(prefillLatencyModel) {
+					logrus.Fatalf("--prefill-latency-model %q is not a recognized backend; valid: %s",
+						prefillLatencyModel, strings.Join(sim.ValidLatencyBackendNames(), ", "))
+				}
+				prefillOverrides.LatencyBackend = prefillLatencyModel
+			}
+			if cmd.Flags().Changed("prefill-max-model-len") {
+				if prefillMaxModelLen <= 0 {
+					logrus.Fatalf("--prefill-max-model-len must be > 0 when set, got %d", prefillMaxModelLen)
+				}
+				ml := prefillMaxModelLen
+				prefillOverrides.MaxModelLen = &ml
+			}
+			if cmd.Flags().Changed("decode-tp") {
+				if decodeTP <= 0 {
+					logrus.Fatalf("--decode-tp must be > 0, got %d", decodeTP)
+				}
+				tp := decodeTP
+				decodeOverrides.TP = &tp
+			}
+			if cmd.Flags().Changed("decode-hardware") {
+				decodeOverrides.GPU = decodeHardware
+			}
+			if cmd.Flags().Changed("decode-latency-model") {
+				if !sim.IsValidLatencyBackend(decodeLatencyModel) {
+					logrus.Fatalf("--decode-latency-model %q is not a recognized backend; valid: %s",
+						decodeLatencyModel, strings.Join(sim.ValidLatencyBackendNames(), ", "))
+				}
+				decodeOverrides.LatencyBackend = decodeLatencyModel
+			}
+			if cmd.Flags().Changed("decode-max-model-len") {
+				if decodeMaxModelLen <= 0 {
+					logrus.Fatalf("--decode-max-model-len must be > 0 when set, got %d", decodeMaxModelLen)
+				}
+				ml := decodeMaxModelLen
+				decodeOverrides.MaxModelLen = &ml
+			}
+		}
+
+		// Parse per-pool scorer configs (same as runCmd).
+		var prefillScorerCfgs, decodeScorerCfgs []sim.ScorerConfig
+		if prefillRoutingScorers != "" {
+			var err error
+			prefillScorerCfgs, err = sim.ParseScorerConfigs(prefillRoutingScorers)
+			if err != nil {
+				logrus.Fatalf("Invalid --prefill-routing-scorers: %v", err)
+			}
+		}
+		if decodeRoutingScorers != "" {
+			var err error
+			decodeScorerCfgs, err = sim.ParseScorerConfigs(decodeRoutingScorers)
+			if err != nil {
+				logrus.Fatalf("Invalid --decode-routing-scorers: %v", err)
 			}
 		}
 
@@ -216,7 +439,9 @@ Example:
 
 		startTime := time.Now()
 
-		// Build cluster config (same as runCmd, using replayHorizon instead of simulationHorizon)
+		// Build cluster config (same as runCmd, using replayHorizon instead of simulationHorizon).
+		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/root.go (runCmd
+		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
 		config := cluster.DeploymentConfig{
 			SimConfig: sim.SimConfig{
 				Horizon: replayHorizon,
@@ -241,6 +466,20 @@ Example:
 			CounterfactualK:                 counterfactualK,
 			SnapshotRefreshInterval:         snapshotRefreshInterval,
 			CacheSignalDelay:                cacheSignalDelay,
+			PrefillInstances:                prefillInstances,
+			DecodeInstances:                 decodeInstances,
+			SharedInstances:                 prefillDecodeInstances,
+			EncodeInstances:                 encodeInstances,
+			EncodeDecider:                   encodeDecider,
+			PDDecider:                       pdDecider,
+			PDPrefixThreshold:               pdPrefixThreshold,
+			PDTransferBandwidthGBps:         pdTransferBandwidth,
+			PDTransferBaseLatencyMs:         pdTransferBaseLatency,
+			PDTransferContention:            pdTransferContention,
+			PrefillScorerConfigs:            prefillScorerCfgs,
+			DecodeScorerConfigs:             decodeScorerCfgs,
+			PrefillOverrides:                prefillOverrides,
+			DecodeOverrides:                 decodeOverrides,
 			FlowControlEnabled:              flowControlEnabled,
 			FlowControlDetector:             flowControlDetector,
 			FlowControlDispatchOrder:        flowControlDispatchOrder,
@@ -304,12 +543,24 @@ Example:
 			scheduler,
 			cs.RoutingRejections(),
 		)
+		// INV-13 SYNC POINT (metrics): keep in sync with cmd/root.go post-simulation block.
+		rawMetrics.PD = cluster.CollectPDMetrics(
+			cs.ParentRequests(),
+			cs.AggregatedMetrics(),
+			cs.PoolMembership(),
+			cs.PerInstanceMetricsByID(),
+		)
 		rawMetrics.ShedByTier = cs.ShedByTier()                           // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
 		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth()             // Issue #882: gateway queue depth at horizon
 		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()               // Issue #882: gateway queue shed count
 		rawMetrics.GatewayQueueRejected = cs.GatewayQueueRejected()       // Issue #1190: gateway queue rejected count
 		rawMetrics.GatewayEvicted = cs.GatewayEvicted()                   // Phase 4: in-flight eviction count (#1228)
 		rawMetrics.EncodeRoutingRejections = cs.EncodeRoutingRejections() // Issue #1264 (GAP-4): encode pool routing rejections
+
+		if rawMetrics.PD != nil && config.PDTransferContention {
+			rawMetrics.PD.PeakConcurrentTransfers = cs.PeakConcurrentTransfers()
+			rawMetrics.PD.MeanTransferQueueDepth = cs.MeanTransferQueueDepth()
+		}
 
 		// Print anomaly counters if any detected
 		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 || rawMetrics.GatewayQueueRejected > 0 || rawMetrics.GatewayEvicted > 0 || rawMetrics.EncodeRoutingRejections > 0 || rawMetrics.TimedOutRequests > 0 {
@@ -364,6 +615,8 @@ Example:
 		// Print session metrics if any request carries a session label (#1058)
 		sessionMetrics := cluster.ComputeSessionMetrics(cs.AggregatedMetrics())
 		printSessionMetrics(os.Stdout, sessionMetrics)
+
+		printPDMetrics(os.Stdout, rawMetrics.PD, config.PDTransferContention)
 
 		if cs.Trace() != nil && summarizeTrace {
 			traceSummary := trace.Summarize(cs.Trace())

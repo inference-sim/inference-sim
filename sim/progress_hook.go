@@ -15,8 +15,8 @@ type ProgressHook interface {
 
 // ProgressSnapshot captures simulation state at a point in time.
 // Scalar fields are independently copied on assignment. InstanceSnapshots is a
-// slice — do not mutate elements after receipt. Each OnProgress callback receives
-// a freshly allocated slice (BC-7).
+// freshly allocated slice — do not mutate elements after receipt (BC-7).
+// ShedByTier is a freshly allocated map (or nil) — do not mutate after receipt.
 type ProgressSnapshot struct {
 	Clock int64
 
@@ -38,12 +38,14 @@ type ProgressSnapshot struct {
 	TotalPreemptions  int64
 	InstanceSnapshots []InstanceSnapshot
 
-	// Cluster-mode only; always 0 in single-instance mode.
+	// Cluster-mode only; zero-value (0 for ints, nil for maps) in single-instance mode.
 	RejectedRequests  int
 	RoutingRejections int
 	GatewayQueueDepth int
 	GatewayQueueShed  int
 	GatewayEvicted    int
+	// ShedByTier: per-SLO-class cumulative count of admission rejections + gateway queue shed + in-flight evictions.
+	ShedByTier        map[string]int
 	ActivePDTransfers int
 
 	// ActiveInstances counts instances in Active or WarmingUp state.

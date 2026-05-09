@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1853,5 +1854,128 @@ func TestRealClient_Send_NilSLOMapDefensive(t *testing.T) {
 	// Verify sloMap was defensively initialized
 	if client.sloMap == nil {
 		t.Error("sloMap should have been initialized defensively, but is still nil")
+	}
+}
+
+// --- printObserveLatencySummary tests (BC-1, BC-2, BC-3) ---
+
+func TestPrintObserveLatencySummary_NoRecords_NothingPrinted(t *testing.T) {
+	// GIVEN zero records (BC-2)
+	var buf bytes.Buffer
+	printObserveLatencySummary(&buf, nil)
+	if buf.Len() != 0 {
+		t.Errorf("expected empty output, got: %q", buf.String())
+	}
+}
+
+func TestPrintObserveLatencySummary_MixedValidAndError_OnlyValidCounted(t *testing.T) {
+	// GIVEN one valid and one error record (BC-3)
+	// WHEN printObserveLatencySummary is called
+	// THEN only the valid record contributes to the summary
+	records := []workload.TraceRecord{
+		{RequestID: 0, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 100_000, LastChunkTimeUs: 400_000},
+		{RequestID: 1, Status: "error", SendTimeUs: 0, FirstChunkTimeUs: 200_000, LastChunkTimeUs: 800_000},
+	}
+	var buf bytes.Buffer
+	printObserveLatencySummary(&buf, records)
+	out := buf.String()
+	if !strings.Contains(out, "=== Observe Latency Summary (1 requests)") {
+		t.Errorf("expected exactly 1 valid request in summary (error excluded), got: %q", out)
+	}
+	// TTFT for ok record: 100_000us → 100.00ms
+	if !strings.Contains(out, "TTFT: mean=100.00ms") {
+		t.Errorf("expected TTFT 100.00ms from the valid record, got: %q", out)
+	}
+}
+
+func TestPrintObserveLatencySummary_ErrorRecordsExcluded(t *testing.T) {
+	// GIVEN only error-status records (BC-3)
+	records := []workload.TraceRecord{
+		{RequestID: 0, Status: "error", SendTimeUs: 0, FirstChunkTimeUs: 100_000, LastChunkTimeUs: 500_000},
+	}
+	var buf bytes.Buffer
+	printObserveLatencySummary(&buf, records)
+	if buf.Len() != 0 {
+		t.Errorf("expected empty output for error-only records, got: %q", buf.String())
+	}
+}
+
+func TestPrintObserveLatencySummary_ValidRecord_OutputContainsExpectedSections(t *testing.T) {
+	// GIVEN one valid record: TTFT=100ms (100_000us), E2E=500ms (500_000us) (BC-1)
+	// Single record: mean=p50=p90=p99 for both metrics.
+	records := []workload.TraceRecord{
+		{RequestID: 0, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 100_000, LastChunkTimeUs: 500_000},
+	}
+	var buf bytes.Buffer
+	printObserveLatencySummary(&buf, records)
+	out := buf.String()
+	// Header present
+	if !strings.Contains(out, "=== Observe Latency Summary") {
+		t.Errorf("missing header in output: %q", out)
+	}
+	// Numeric values anchored to label to distinguish TTFT from E2E.
+	// TTFT=100_000us/1000 = 100.00ms; E2E=500_000us/1000 = 500.00ms
+	if !strings.Contains(out, "TTFT: mean=100.00ms") {
+		t.Errorf("expected 'TTFT: mean=100.00ms' in output: %q", out)
+	}
+	if !strings.Contains(out, "E2E:  mean=500.00ms") {
+		t.Errorf("expected 'E2E:  mean=500.00ms' in output: %q", out)
+	}
+}
+
+func TestPrintObserveLatencySummary_ZeroLatency_Excluded(t *testing.T) {
+	// GIVEN a record where TTFT == 0 (SendTime == FirstChunkTime) (BC-3)
+	records := []workload.TraceRecord{
+		{RequestID: 0, Status: "ok", SendTimeUs: 100, FirstChunkTimeUs: 100, LastChunkTimeUs: 100},
+	}
+	var buf bytes.Buffer
+	printObserveLatencySummary(&buf, records)
+	if buf.Len() != 0 {
+		t.Errorf("expected empty output for zero-latency record, got: %q", buf.String())
+	}
+}
+
+func TestPrintObserveLatencySummary_EqualTTFTAndE2E_Included(t *testing.T) {
+	// GIVEN a record where FirstChunkTimeUs == LastChunkTimeUs > SendTimeUs
+	// (body read completed in the same microsecond as first byte — degenerate but valid).
+	// WHEN printObserveLatencySummary is called
+	// THEN the record is included (e2e < ttft is false when they're equal).
+	records := []workload.TraceRecord{
+		{RequestID: 0, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 200_000, LastChunkTimeUs: 200_000},
+	}
+	var buf bytes.Buffer
+	printObserveLatencySummary(&buf, records)
+	out := buf.String()
+	if !strings.Contains(out, "=== Observe Latency Summary") {
+		t.Errorf("record with TTFT==E2E>0 should be included, got: %q", out)
+	}
+}
+
+func TestPrintObserveLatencySummary_MalformedE2ELessThanTTFT_Excluded(t *testing.T) {
+	// GIVEN a malformed record where LastChunkTimeUs < FirstChunkTimeUs (BC-3)
+	records := []workload.TraceRecord{
+		{RequestID: 0, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 500_000, LastChunkTimeUs: 100_000},
+	}
+	var buf bytes.Buffer
+	printObserveLatencySummary(&buf, records)
+	if buf.Len() != 0 {
+		t.Errorf("expected empty output for malformed record (e2e < ttft), got: %q", buf.String())
+	}
+}
+
+// --- TestObserveRecordITLDefault (BC-4) ---
+
+func TestObserveRecordITLDefault_IsFalse(t *testing.T) {
+	// GIVEN a blis observe invocation with no --record-itl flag
+	// WHEN the command runs
+	// THEN ITL recording is off by default (opt-in, requires explicit --record-itl)
+	//
+	// Default is false to avoid silently forcing streaming on non-streaming workloads.
+	f := observeCmd.Flags().Lookup("record-itl")
+	if f == nil {
+		t.Fatal("--record-itl flag not found")
+	}
+	if f.DefValue != "false" {
+		t.Errorf("--record-itl should default to false (opt-in); got %q", f.DefValue)
 	}
 }
