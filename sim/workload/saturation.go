@@ -21,8 +21,7 @@ func ComputeSimEndUs(requests []*sim.Request, horizon int64) int64 {
 		completionUs := req.ArrivalTime
 		if req.TTFTSet {
 			completionUs += req.FirstTokenTime
-		}
-		if len(req.ITL) > 0 {
+			// Only sum ITL if request has valid TTFT (prevents malformed data from inflating simEndUs)
 			for _, itl := range req.ITL {
 				completionUs += itl
 			}
@@ -143,10 +142,12 @@ func RequestsToIntervals(requests []*sim.Request, simEndUs int64) []RequestInter
 				excluded++
 				continue
 			}
-			// Case 2: Horizon-truncated (StateRunning without TTFT) — use simEndUs as completion
+			// Case 2: Horizon-truncated (StateRunning without TTFT) — still in-flight at horizon.
+			// Use simEndUs+1 so half-open interval [arrival, simEndUs+1) is active at simEndUs.
+			// This ensures these requests are correctly counted in ActiveEnd of the last window.
 			intervals = append(intervals, RequestInterval{
 				ArrivalUs:    req.ArrivalTime,
-				CompletionUs: simEndUs,
+				CompletionUs: simEndUs + 1,
 			})
 		} else {
 			// Case 3: Completed (TTFTSet==true) — compute completion time
@@ -320,9 +321,15 @@ func classifyBacklogDrift(slope, slopeLower, slopeUpper float64,
 		return
 	}
 
+	// Guard against zero mean (prevents NaN in user-facing note)
+	if meanInFlight == 0 {
+		classification = "UNSATURATED"
+		note = "No active requests observed in any window."
+		recommendation = "System handled load without saturation. Current capacity is adequate."
+		return
+	}
+
 	// BC-6: TRANSIENT_BACKLOG — slope CI includes zero but peak exceeds threshold
-	// Safe division: if meanInFlight==0 then peakInFlight==0 (all ActiveEnd==0), giving 0/0=NaN.
-	// NaN > cfg.PeakRatio evaluates to false in Go, falling through to UNSATURATED (correct).
 	peakRatio := float64(peakInFlight) / meanInFlight
 
 	// Confidence band logic: Use tiebreaker when ratio is in borderline zone

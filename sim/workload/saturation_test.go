@@ -75,14 +75,14 @@ func TestBacklogDriftConfig_Validation_ValidConfig(t *testing.T) {
 func TestRequestsToIntervals_Eligibility_ThreeCases(t *testing.T) {
 	// GIVEN requests with different completion states
 	// WHEN building intervals
-	// THEN timed-out excluded, horizon-truncated use simEnd, completed use computed time
+	// THEN timed-out excluded, horizon-truncated use simEndUs+1, completed use computed time
 	simEndUs := int64(1000000)
 	requests := []*sim.Request{
 		// Case 1: Completed (TTFTSet=true)
 		{ArrivalTime: 100, FirstTokenTime: 200, ITL: []int64{50, 50}, TTFTSet: true, State: sim.StateCompleted},
 		// Case 2: Timed out before TTFT (TTFTSet=false, State=Timeout) — EXCLUDED
 		{ArrivalTime: 200, TTFTSet: false, State: sim.StateTimedOut},
-		// Case 3: Horizon-truncated (TTFTSet=false, State=Running) — use simEndUs
+		// Case 3: Horizon-truncated (TTFTSet=false, State=Running) — use simEndUs+1
 		{ArrivalTime: 300, TTFTSet: false, State: sim.StateRunning},
 	}
 
@@ -98,8 +98,8 @@ func TestRequestsToIntervals_Eligibility_ThreeCases(t *testing.T) {
 		t.Errorf("Case 1 mismatch: got (%d, %d)", intervals[0].ArrivalUs, intervals[0].CompletionUs)
 	}
 
-	// Case 3: arrival=300, completion=simEndUs=1000000
-	if intervals[1].ArrivalUs != 300 || intervals[1].CompletionUs != simEndUs {
+	// Case 3: arrival=300, completion=simEndUs+1=1000001 (still in-flight at horizon)
+	if intervals[1].ArrivalUs != 300 || intervals[1].CompletionUs != simEndUs+1 {
 		t.Errorf("Case 3 mismatch: got (%d, %d)", intervals[1].ArrivalUs, intervals[1].CompletionUs)
 	}
 }
@@ -938,12 +938,12 @@ func TestSaturationProgression_RealWorkloads(t *testing.T) {
 			expectPositiveCI: false,
 		},
 		{
-			name:             "Medium rate - approaching saturation",
+			name:             "Medium rate - persistent saturation",
 			rate:             100.0,
 			numRequests:      10000,
 			horizonUs:        60_000_000, // Truncate before drain
-			expectedClass:    "TRANSIENT_BACKLOG",
-			expectPositiveCI: false, // Slope near zero, high peak/mean
+			expectedClass:    "PERSISTENTLY_SATURATED",
+			expectPositiveCI: true, // After bug fix: running requests now correctly counted in ActiveEnd
 		},
 		{
 			name:             "High rate - persistent saturation",
@@ -1103,18 +1103,18 @@ func TestSaturationProgression_TransitionBoundaries(t *testing.T) {
 			expectedClass: "UNSATURATED",
 		},
 		{
-			name:          "After first transition - low transient",
+			name:          "After first transition - persistent (corrected after bug fix)",
 			rate:          60.0,
 			numRequests:   6000,
 			horizonUs:     60_000_000,
-			expectedClass: "TRANSIENT_BACKLOG",
+			expectedClass: "PERSISTENTLY_SATURATED",
 		},
 		{
-			name:          "Mid transient zone",
+			name:          "Mid persistent zone (corrected after bug fix)",
 			rate:          100.0,
 			numRequests:   10000,
 			horizonUs:     60_000_000,
-			expectedClass: "TRANSIENT_BACKLOG",
+			expectedClass: "PERSISTENTLY_SATURATED",
 		},
 		{
 			name:          "After second transition - early persistent",
