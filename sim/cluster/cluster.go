@@ -1839,7 +1839,8 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 		}
 	}
 	if decodeInst == nil {
-		// R6: routing policy must return a valid target from the provided snapshot set.
+		// The routing policy contract requires Route to return a TargetInstance from the
+		// provided snapshot set; a panic here indicates a policy implementation bug.
 		panic(fmt.Sprintf("executeDisaggregatedRouting: invalid decode TargetInstance %q returned by routing policy", decodeDecision.TargetInstance))
 	}
 
