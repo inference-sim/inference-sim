@@ -358,6 +358,35 @@ func TestClassifyBacklogDrift_PERSISTENTLY_SATURATED(t *testing.T) {
 	}
 }
 
+// verifyIntegralMetricsPopulated checks that MeanInFlight and PeakInFlight are computed
+// and satisfy basic invariants (BC-1, BC-2).
+func verifyIntegralMetricsPopulated(t *testing.T, report BacklogDriftReport) {
+	t.Helper()
+
+	for i, w := range report.Windows {
+		// BC-2: PeakInFlight >= max(ActiveStart, ActiveEnd)
+		minBoundary := w.ActiveStart
+		if w.ActiveEnd > minBoundary {
+			minBoundary = w.ActiveEnd
+		}
+		if w.PeakInFlight < minBoundary {
+			t.Errorf("Window %d: PeakInFlight (%d) < max(ActiveStart=%d, ActiveEnd=%d) — violates BC-2",
+				i, w.PeakInFlight, w.ActiveStart, w.ActiveEnd)
+		}
+
+		// MeanInFlight should be non-negative (negative would indicate a bug)
+		if w.MeanInFlight < 0 {
+			t.Errorf("Window %d: MeanInFlight (%.2f) < 0 — invalid", i, w.MeanInFlight)
+		}
+
+		// Peak should be >= Mean (for non-zero windows)
+		if w.MeanInFlight > 0 && float64(w.PeakInFlight) < w.MeanInFlight {
+			t.Errorf("Window %d: PeakInFlight (%d) < MeanInFlight (%.2f) — violates peak definition",
+				i, w.PeakInFlight, w.MeanInFlight)
+		}
+	}
+}
+
 func TestAnalyzeBacklogDrift_InsufficientData(t *testing.T) {
 	// GIVEN observation with fewer than MinWindows complete windows (BC-7)
 	// WHEN analyzing
@@ -442,6 +471,9 @@ func TestAnalyzeBacklogDrift_EndToEnd_PERSISTENTLY_SATURATED(t *testing.T) {
 	if len(report.Windows) < cfg.MinWindows {
 		t.Errorf("Expected at least %d windows, got %d", cfg.MinWindows, len(report.Windows))
 	}
+
+	// Verify new integral metrics are populated and satisfy invariants
+	verifyIntegralMetricsPopulated(t, report)
 }
 
 func TestAnalyzeBacklogDrift_EndToEnd_UNSATURATED(t *testing.T) {
@@ -471,6 +503,9 @@ func TestAnalyzeBacklogDrift_EndToEnd_UNSATURATED(t *testing.T) {
 	if len(report.Windows) < cfg.MinWindows {
 		t.Errorf("Expected at least %d windows, got %d", cfg.MinWindows, len(report.Windows))
 	}
+
+	// Verify new integral metrics are populated and satisfy invariants
+	verifyIntegralMetricsPopulated(t, report)
 }
 
 func TestWriteBacklogDriftReportJSON_RoundTrip(t *testing.T) {
