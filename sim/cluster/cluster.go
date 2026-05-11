@@ -450,6 +450,9 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		}
 		cs.gatewayQueue = gq
 		cs.requestTTL = config.FlowControlRequestTTL
+		if cs.requestTTL < 0 {
+			panic(fmt.Sprintf("ClusterSimulator: FlowControlRequestTTL must be >= 0, got %d", cs.requestTTL))
+		}
 		cs.saturationDetector = sim.NewSaturationDetector(
 			config.FlowControlDetector,
 			config.FlowControlQueueDepthThreshold,

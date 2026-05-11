@@ -841,9 +841,6 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		if flowControlFairnessPolicy != "global-strict" && flowControlFairnessPolicy != "round-robin" {
 			logrus.Fatalf("--fairness-policy must be 'global-strict' or 'round-robin', got %q", flowControlFairnessPolicy)
 		}
-		if flowControlRequestTTL < 0 {
-			logrus.Fatalf("--request-ttl must be >= 0, got %d", flowControlRequestTTL)
-		}
 		if flowControlUsageLimitThreshold < 1.0 && flowControlDispatchOrder == "fifo" {
 			logrus.Warnf("--usage-limit-threshold < 1.0 with --dispatch-order fifo: HoL blocking uses priority-order iteration, FIFO semantics will not apply to gating decisions")
 		}
@@ -863,6 +860,9 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		case "", "never":
 			logrus.Warnf("--flow-control enabled but --saturation-detector is %q (pass-through); specify 'utilization' or 'concurrency' for actual gating", flowControlDetector)
 		}
+	}
+	if flowControlRequestTTL < 0 {
+		logrus.Fatalf("--request-ttl must be >= 0, got %d", flowControlRequestTTL)
 	}
 	if flowControlRequestTTL > 0 && !flowControlEnabled {
 		logrus.Warnf("--request-ttl %d has no effect without --flow-control", flowControlRequestTTL)
