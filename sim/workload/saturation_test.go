@@ -701,6 +701,46 @@ func TestComputeWindowMetrics_SubWindowBurst_PeakCaptured(t *testing.T) {
 	}
 }
 
+func TestComputeWindowMetrics_EmptyWindow_UsesActiveStart(t *testing.T) {
+	// GIVEN window with no events inside but ActiveStart = 3
+	// WHEN computing window metrics
+	// THEN MeanInFlight == 3.0 (constant throughout), PeakInFlight == 3 (BC-6)
+	intervals := []RequestInterval{
+		{ArrivalUs: -10_000_000, CompletionUs: 70_000_000}, // Active before, during, and after window
+		{ArrivalUs: -20_000_000, CompletionUs: 80_000_000},
+		{ArrivalUs: -30_000_000, CompletionUs: 90_000_000},
+	}
+
+	windowSizeUs := int64(60_000_000)    // [0, 60s)
+	totalDurationUs := int64(60_000_000) // Single window
+
+	windows := computeWindowMetrics(intervals, windowSizeUs, totalDurationUs)
+
+	if len(windows) != 1 {
+		t.Fatalf("Expected 1 window, got %d", len(windows))
+	}
+
+	w := windows[0]
+
+	// Empty window (no transition events) → use ActiveStart as constant
+	const expectedMean = 3.0
+	const expectedPeak = 3
+
+	if math.Abs(w.MeanInFlight-expectedMean) > 0.01 {
+		t.Errorf("MeanInFlight: expected %.1f, got %.1f", expectedMean, w.MeanInFlight)
+	}
+	if w.PeakInFlight != expectedPeak {
+		t.Errorf("PeakInFlight: expected %d, got %d", expectedPeak, w.PeakInFlight)
+	}
+	// Verify ActiveStart/ActiveEnd are both 3
+	if w.ActiveStart != 3 {
+		t.Errorf("ActiveStart: expected 3, got %d", w.ActiveStart)
+	}
+	if w.ActiveEnd != 3 {
+		t.Errorf("ActiveEnd: expected 3, got %d", w.ActiveEnd)
+	}
+}
+
 // TestSaturationProgression_IncreasingRate demonstrates saturation classification
 // behavior under different load conditions.
 //
