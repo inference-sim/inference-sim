@@ -449,6 +449,9 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			panic(fmt.Sprintf("ClusterSimulator: unknown fairness policy %q (must be global-strict or round-robin)", config.FlowControlFairnessPolicy))
 		}
 		cs.gatewayQueue = gq
+		if config.FlowControlSLOTargets != nil {
+			gq.SetSLOTargets(config.FlowControlSLOTargets)
+		}
 		cs.requestTTL = config.FlowControlRequestTTL
 		if cs.requestTTL < 0 {
 			panic(fmt.Sprintf("ClusterSimulator: FlowControlRequestTTL must be >= 0, got %d", cs.requestTTL))
@@ -467,8 +470,8 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		if fairness == "" {
 			fairness = "global-strict"
 		}
-		logrus.Infof("[cluster] flow control enabled: detector=%q, dispatch=%q, fairness=%q, maxDepth=%d, perBandCapacity=%d, requestTTL=%d",
-			config.FlowControlDetector, dispatchOrder, fairness, config.FlowControlMaxQueueDepth, config.FlowControlPerBandCapacity, config.FlowControlRequestTTL)
+		logrus.Infof("[cluster] flow control enabled: detector=%q, dispatch=%q, fairness=%q, maxDepth=%d, perBandCapacity=%d, requestTTL=%d, sloTargets=%v",
+			config.FlowControlDetector, dispatchOrder, fairness, config.FlowControlMaxQueueDepth, config.FlowControlPerBandCapacity, config.FlowControlRequestTTL, config.FlowControlSLOTargets)
 	}
 
 	// Phase 1B-2a: initialize TenantTracker when TenantBudgets is configured (issue #811).

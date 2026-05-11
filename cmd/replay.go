@@ -494,6 +494,7 @@ Example:
 			FlowControlUsageLimitThreshold:  flowControlUsageLimitThreshold,
 			FlowControlFairnessPolicy:       flowControlFairnessPolicy,
 			FlowControlRequestTTL:           flowControlRequestTTL,
+			FlowControlSLOTargets:           flowControlSLOTargets,
 			TierShedThreshold:               tierShedThreshold,
 			TierShedMinPriority:             tierShedMinPriority,
 			GAIEQDThreshold:                 gaieQDThreshold,

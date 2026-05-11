@@ -920,3 +920,70 @@ func TestGatewayQueue_RemoveByRequestID_WithShed(t *testing.T) {
 		t.Fatalf("expected nil for shed request, got %v", got)
 	}
 }
+
+func TestGatewayQueue_SLODeadlineOrdering(t *testing.T) {
+	pm := sim.DefaultSLOPriorityMap()
+	q := NewGatewayQueue("slo-deadline", 0, pm)
+	q.SetSLOTargets(map[string]int64{"critical": 100_000, "batch": 5_000_000})
+
+	rBatch := &sim.Request{ID: "batch1", SLOClass: "batch", TenantID: "t1", GatewayEnqueueTime: 500}
+	rCrit := &sim.Request{ID: "crit1", SLOClass: "critical", TenantID: "t1", GatewayEnqueueTime: 1000}
+	q.Enqueue(rBatch, 1)
+	q.Enqueue(rCrit, 2)
+
+	got := q.Dequeue()
+	if got.ID != "crit1" {
+		t.Fatalf("expected crit1 (earlier deadline 101000 < 5000500), got %s", got.ID)
+	}
+	got = q.Dequeue()
+	if got.ID != "batch1" {
+		t.Fatalf("expected batch1, got %s", got.ID)
+	}
+}
+
+func TestGatewayQueue_SLODeadline_NoTarget_SortsToBack(t *testing.T) {
+	pm := sim.DefaultSLOPriorityMap()
+	q := NewGatewayQueue("slo-deadline", 0, pm)
+	q.SetSLOTargets(map[string]int64{"critical": 100_000})
+
+	rStd := &sim.Request{ID: "std1", SLOClass: "standard", TenantID: "t1", GatewayEnqueueTime: 100}
+	rCrit := &sim.Request{ID: "crit1", SLOClass: "critical", TenantID: "t1", GatewayEnqueueTime: 200}
+	q.Enqueue(rStd, 1)
+	q.Enqueue(rCrit, 2)
+
+	got := q.Dequeue()
+	if got.ID != "crit1" {
+		t.Fatalf("expected crit1 (has target), got %s", got.ID)
+	}
+}
+
+func TestGatewayQueue_SLODeadline_EqualDeadline_FCFSTiebreak(t *testing.T) {
+	pm := sim.DefaultSLOPriorityMap()
+	q := NewGatewayQueue("slo-deadline", 0, pm)
+	q.SetSLOTargets(map[string]int64{"critical": 100_000})
+
+	r1 := &sim.Request{ID: "c1", SLOClass: "critical", TenantID: "t1", GatewayEnqueueTime: 100}
+	r2 := &sim.Request{ID: "c2", SLOClass: "critical", TenantID: "t2", GatewayEnqueueTime: 200}
+	q.Enqueue(r1, 1)
+	q.Enqueue(r2, 2)
+
+	got := q.Dequeue()
+	if got.ID != "c1" {
+		t.Fatalf("expected c1 (earlier enqueue → earlier deadline), got %s", got.ID)
+	}
+}
+
+func TestGatewayQueue_FIFOAndPriority_Unchanged(t *testing.T) {
+	pm := sim.DefaultSLOPriorityMap()
+	for _, order := range []string{"fifo", "priority"} {
+		q := NewGatewayQueue(order, 0, pm)
+		r1 := &sim.Request{ID: "r1", SLOClass: "standard", TenantID: "t1"}
+		r2 := &sim.Request{ID: "r2", SLOClass: "standard", TenantID: "t1"}
+		q.Enqueue(r1, 1)
+		q.Enqueue(r2, 2)
+		got := q.Dequeue()
+		if got.ID != "r1" {
+			t.Fatalf("dispatch-order %s: expected r1, got %s", order, got.ID)
+		}
+	}
+}

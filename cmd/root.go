@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -98,6 +99,7 @@ var (
 	tierShedMinPriority   int                // Tier-shed minimum admitted priority under overload
 	tenantBudgets         map[string]float64 // Per-tenant fraction of total capacity (nil = no enforcement)
 	sloPriorityOverrides  map[string]int     // SLO class → priority overrides (nil = GAIE defaults)
+	flowControlSLOTargets map[string]int64   // SLO class → target latency µs (nil = no targets)
 	gaieQDThreshold       float64            // GAIE-legacy queue depth threshold per instance (default 5)
 	gaieKVThreshold       float64            // GAIE-legacy KV cache utilization threshold (default 0.8)
 
@@ -163,6 +165,7 @@ var (
 	flowControlUsageLimitThreshold  float64
 	flowControlFairnessPolicy       string
 	flowControlRequestTTL           int64
+	flowControlSLOTargetsRaw        string
 
 	// Per-pool hardware override config
 	prefillTP           int
@@ -672,6 +675,33 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 // tokenBucketCapacity, tokenBucketRefillRate, tierShedThreshold, tierShedMinPriority,
 // tenantBudgets package-level vars (from policy bundle).
 //
+// parseSLOTargets parses "critical=100000,batch=5000000" → map[string]int64.
+func parseSLOTargets(s string) (map[string]int64, error) {
+	if s == "" {
+		return nil, nil
+	}
+	result := make(map[string]int64)
+	for _, pair := range strings.Split(s, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		parts := strings.SplitN(pair, "=", 2)
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			return nil, fmt.Errorf("invalid entry %q (expected key=value)", pair)
+		}
+		v, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid value for %q: %v", parts[0], err)
+		}
+		if v <= 0 {
+			return nil, fmt.Errorf("value for %q must be > 0, got %d", parts[0], v)
+		}
+		result[parts[0]] = v
+	}
+	return result, nil
+}
+
 // Returns the parsed scorer configs for weighted routing (caller uses these in
 // DeploymentConfig.RoutingScorerConfigs) and the loaded policy bundle (nil if none).
 // Per-pool scorer configs (PD disaggregation) are NOT handled here — they remain inline
@@ -717,6 +747,14 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 			for k, v := range sloPriorityOverrides {
 				if v < -100 || v > 100 {
 					logrus.Fatalf("slo_priorities override for %q: value %d out of range [-100, 100]", k, v)
+				}
+			}
+		}
+		if bundle.Admission.SLOTargets != nil && !cmd.Flags().Changed("slo-targets") {
+			flowControlSLOTargetsRaw = "" // clear raw; use parsed bundle value directly
+			for k, v := range bundle.Admission.SLOTargets {
+				if v <= 0 {
+					logrus.Fatalf("slo_targets value for %q must be > 0, got %d", k, v)
 				}
 			}
 		}
@@ -826,8 +864,8 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		if !sim.IsValidSaturationDetector(flowControlDetector) {
 			logrus.Fatalf("Unknown saturation detector %q. Valid: %s", flowControlDetector, strings.Join(sim.ValidSaturationDetectorNames(), ", "))
 		}
-		if flowControlDispatchOrder != "fifo" && flowControlDispatchOrder != "priority" {
-			logrus.Fatalf("--dispatch-order must be 'fifo' or 'priority', got %q", flowControlDispatchOrder)
+		if flowControlDispatchOrder != "fifo" && flowControlDispatchOrder != "priority" && flowControlDispatchOrder != "slo-deadline" {
+			logrus.Fatalf("--dispatch-order must be 'fifo', 'priority', or 'slo-deadline', got %q", flowControlDispatchOrder)
 		}
 		if flowControlMaxQueueDepth < 0 {
 			logrus.Fatalf("--max-gateway-queue-depth must be >= 0, got %d", flowControlMaxQueueDepth)
@@ -866,6 +904,22 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 	}
 	if flowControlRequestTTL > 0 && !flowControlEnabled {
 		logrus.Warnf("--request-ttl %d has no effect without --flow-control", flowControlRequestTTL)
+	}
+	// Parse --slo-targets (CLI overrides bundle; bundle sets flowControlSLOTargetsRaw="" and loads directly)
+	if flowControlSLOTargetsRaw != "" {
+		var err error
+		flowControlSLOTargets, err = parseSLOTargets(flowControlSLOTargetsRaw)
+		if err != nil {
+			logrus.Fatalf("--slo-targets: %v", err)
+		}
+	} else if loadedBundle != nil && loadedBundle.Admission.SLOTargets != nil {
+		flowControlSLOTargets = loadedBundle.Admission.SLOTargets
+	}
+	if flowControlDispatchOrder == "slo-deadline" && len(flowControlSLOTargets) == 0 {
+		logrus.Warnf("--dispatch-order slo-deadline with no --slo-targets: all requests get far-future deadline (degenerates to FCFS)")
+	}
+	if len(flowControlSLOTargets) > 0 && !flowControlEnabled {
+		logrus.Warnf("--slo-targets has no effect without --flow-control")
 	}
 
 	logrus.Infof("Policy config: admission=%s, routing=%s, scheduler=%s, preemption=%s",
@@ -998,6 +1052,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&flowControlUsageLimitThreshold, "usage-limit-threshold", 1.0, "Per-band saturation ceiling for HoL blocking (1.0=no HoL, <1.0 gates lower-priority bands earlier)")
 	cmd.Flags().StringVar(&flowControlFairnessPolicy, "fairness-policy", "global-strict", "Intra-band dispatch fairness: global-strict, round-robin")
 	cmd.Flags().Int64Var(&flowControlRequestTTL, "request-ttl", 0, "Gateway queue request TTL in microseconds (0=disabled). Requires --flow-control.")
+	cmd.Flags().StringVar(&flowControlSLOTargetsRaw, "slo-targets", "", "SLO target latencies per tier (e.g., critical=100000,standard=500000,batch=5000000). Microseconds. Requires --flow-control --dispatch-order slo-deadline.")
 
 	// Per-pool hardware overrides
 	cmd.Flags().IntVar(&prefillTP, "prefill-tp", 0, "Tensor parallelism degree for prefill pool instances (0 = use global --tensor-parallelism)")
@@ -1601,6 +1656,7 @@ var runCmd = &cobra.Command{
 			FlowControlUsageLimitThreshold:  flowControlUsageLimitThreshold,
 			FlowControlFairnessPolicy:       flowControlFairnessPolicy,
 			FlowControlRequestTTL:           flowControlRequestTTL,
+			FlowControlSLOTargets:           flowControlSLOTargets,
 			ModelAutoscalerIntervalUs:       bundleAutoscalerIntervalUs,
 			ScaleUpStabilizationWindowUs:    bundleScaleUpStabilizationWindowUs,
 			ScaleDownStabilizationWindowUs:  bundleScaleDownStabilizationWindowUs,

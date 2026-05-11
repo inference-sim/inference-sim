@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"fmt"
+	"math"
 	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -145,18 +146,20 @@ type GatewayQueue struct {
 	rejectedCount        int
 	priorityMap          *sim.SLOPriorityMap
 	priorityMode         bool    // true for "priority", false for "fifo"
+	sloDeadlineMode      bool    // true for "slo-deadline"
 	usageLimitThreshold  float64 // per-band HoL blocking ceiling (default 1.0 = no HoL)
 	fairnessPolicy       FairnessPolicy
 	requestIndex         map[string]requestLocation // request ID → flow coordinates for TTL removal
+	sloTargets           map[string]int64           // SLO class → target latency µs (for slo-deadline ordering)
 }
 
 // NewGatewayQueue creates a gateway queue with the given dispatch order and max depth.
-// dispatchOrder: "fifo" or "priority". maxDepth: 0 = unlimited.
+// dispatchOrder: "fifo", "priority", or "slo-deadline". maxDepth: 0 = unlimited.
 // If priorityMap is nil, DefaultSLOPriorityMap() is used.
 // Panics if dispatchOrder is invalid or maxDepth < 0.
 func NewGatewayQueue(dispatchOrder string, maxDepth int, priorityMap *sim.SLOPriorityMap) *GatewayQueue {
-	if dispatchOrder != "fifo" && dispatchOrder != "priority" {
-		panic(fmt.Sprintf("GatewayQueue: unknown dispatch order %q (must be fifo or priority)", dispatchOrder))
+	if dispatchOrder != "fifo" && dispatchOrder != "priority" && dispatchOrder != "slo-deadline" {
+		panic(fmt.Sprintf("GatewayQueue: unknown dispatch order %q (must be fifo, priority, or slo-deadline)", dispatchOrder))
 	}
 	if maxDepth < 0 {
 		panic(fmt.Sprintf("GatewayQueue: maxDepth must be >= 0, got %d", maxDepth))
@@ -168,6 +171,7 @@ func NewGatewayQueue(dispatchOrder string, maxDepth int, priorityMap *sim.SLOPri
 		maxDepth:            maxDepth,
 		priorityMap:         priorityMap,
 		priorityMode:        dispatchOrder == "priority",
+		sloDeadlineMode:     dispatchOrder == "slo-deadline",
 		usageLimitThreshold: 1.0,
 		fairnessPolicy:      &GlobalStrictPolicy{},
 		requestIndex:        make(map[string]requestLocation),
@@ -367,7 +371,9 @@ func (q *GatewayQueue) Dequeue() *sim.Request {
 	}
 
 	var req *sim.Request
-	if q.priorityMode {
+	if q.sloDeadlineMode {
+		req = q.dequeueSLODeadline()
+	} else if q.priorityMode {
 		req = q.dequeuePriority()
 	} else {
 		req = q.dequeueFIFO()
@@ -418,7 +424,12 @@ func (q *GatewayQueue) DequeueGated(saturation float64) *sim.Request {
 		}
 
 		// Dispatch from this band.
-		req := q.dequeueFromBand(band)
+		var req *sim.Request
+		if q.sloDeadlineMode {
+			req = q.dequeueFromBandSLODeadline(band)
+		} else {
+			req = q.dequeueFromBand(band)
+		}
 		if req == nil {
 			panic(fmt.Sprintf("GatewayQueue.DequeueGated: band priority=%d has totalLen=%d but dequeueFromBand returned nil — counter desync", band.priority, band.totalLen))
 		}
@@ -528,6 +539,97 @@ func (q *GatewayQueue) HasNonSheddableWaiting() bool {
 		}
 	}
 	return false
+}
+
+// SetSLOTargets sets per-tier SLO target latencies for slo-deadline ordering.
+func (q *GatewayQueue) SetSLOTargets(targets map[string]int64) {
+	q.sloTargets = targets
+}
+
+// sloDeadline computes the SLO deadline for a request: enqueue_time + tier target.
+// Returns math.MaxInt64 if the tier has no configured target (sorts to back).
+func (q *GatewayQueue) sloDeadline(req *sim.Request) int64 {
+	if q.sloTargets != nil {
+		if target, ok := q.sloTargets[req.SLOClass]; ok {
+			return req.GatewayEnqueueTime + target
+		}
+	}
+	return math.MaxInt64
+}
+
+// dequeueSLODeadline scans all bands/flows for the request with the earliest SLO deadline.
+// Same structure as dequeueFIFO but compares by sloDeadline instead of seqID.
+func (q *GatewayQueue) dequeueSLODeadline() *sim.Request {
+	var bestEntry *flowEntry
+	var bestFlow *flowQueue
+	var bestBand *priorityBand
+	var bestDeadline int64
+
+	for _, band := range q.bands {
+		if band.totalLen == 0 {
+			continue
+		}
+		for _, tid := range sortedFlowKeys(band.flows) {
+			flow := band.flows[tid]
+			if len(flow.requests) == 0 {
+				continue
+			}
+			head := &flow.requests[0]
+			deadline := q.sloDeadline(head.request)
+			if bestEntry == nil || deadline < bestDeadline || (deadline == bestDeadline && head.seqID < bestEntry.seqID) {
+				bestEntry = head
+				bestFlow = flow
+				bestBand = band
+				bestDeadline = deadline
+			}
+		}
+	}
+	if bestEntry == nil {
+		return nil
+	}
+	req := bestEntry.request
+	delete(q.requestIndex, req.ID)
+	bestFlow.requests = bestFlow.requests[1:]
+	bestBand.totalLen--
+	q.totalLen--
+	if len(bestFlow.requests) == 0 {
+		delete(bestBand.flows, bestFlow.key.TenantID)
+	}
+	return req
+}
+
+// dequeueFromBandSLODeadline picks the flow whose head has the earliest SLO deadline.
+// Bypasses fairness policy — deadline ordering IS the flow selection (BC-6).
+func (q *GatewayQueue) dequeueFromBandSLODeadline(band *priorityBand) *sim.Request {
+	var bestEntry *flowEntry
+	var bestFlow *flowQueue
+	var bestDeadline int64
+
+	for _, tid := range sortedFlowKeys(band.flows) {
+		flow := band.flows[tid]
+		if len(flow.requests) == 0 {
+			continue
+		}
+		head := &flow.requests[0]
+		deadline := q.sloDeadline(head.request)
+		if bestEntry == nil || deadline < bestDeadline || (deadline == bestDeadline && head.seqID < bestEntry.seqID) {
+			bestEntry = head
+			bestFlow = flow
+			bestDeadline = deadline
+		}
+	}
+	if bestFlow == nil {
+		return nil
+	}
+	req := bestEntry.request
+	delete(q.requestIndex, req.ID)
+	bestFlow.requests = bestFlow.requests[1:]
+	band.totalLen--
+	q.totalLen--
+	if len(bestFlow.requests) == 0 {
+		delete(band.flows, bestFlow.key.TenantID)
+	}
+	return req
 }
 
 // RemoveByRequestID removes a specific request from the queue by its ID.
