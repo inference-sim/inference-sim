@@ -813,6 +813,86 @@ func TestAnalyzeBacklogDrift_RegressionUsesMeanInFlight(t *testing.T) {
 	}
 }
 
+func TestAnalyzeBacklogDrift_PeakMeanUsesPeakInFlight(t *testing.T) {
+	// GIVEN a workload with a sharp intra-window peak
+	// WHEN peak occurs between window boundaries (not at boundaries)
+	// THEN classification MUST use PeakInFlight, not max(ActiveEnd) (BC-6)
+	//
+	// Strategy: Create burst in middle of window 2
+	// If using PeakInFlight → TRANSIENT_BACKLOG (high peak/mean ratio)
+	// If using max(ActiveEnd) → UNSATURATED (boundary samples miss peak)
+
+	cfg := NewBacklogDriftConfig(10*time.Second, 3, 2.0, 0.2, 0.95)
+
+	// Window 1: 5 baseline requests active throughout all 3 windows
+	var requests []*sim.Request
+	for i := 0; i < 5; i++ {
+		// Requests arrive before window 1, complete after window 3
+		// So they span all 30 seconds (3 × 10s windows)
+		arrivalUs := int64(-5_000_000) // 5s before window 1 starts
+		completionUs := int64(35_000_000) // 5s after window 3 ends
+		ttftUs := int64(100_000)
+
+		requests = append(requests, &sim.Request{
+			ID:             fmt.Sprintf("baseline_%d", i),
+			ArrivalTime:    arrivalUs,
+			FirstTokenTime: ttftUs,
+			TTFTSet:        true,
+			ITL:            []int64{ttftUs, completionUs - arrivalUs - ttftUs}, // TTFT + remaining time
+			State:          sim.StateCompleted,
+			InputTokens:    []int{0},
+			OutputTokens:   []int{0},
+		})
+	}
+
+	// Window 2: Sharp burst at t=15s (mid-window 2: [10s, 20s))
+	for i := 0; i < 60; i++ {
+		arrivalUs := int64(15_000_000) // t=15s (middle of window 2)
+		ttftUs := int64(500_000) // 0.5s TTFT
+		completionUs := int64(16_000_000) // Complete at t=16s (1s burst duration)
+
+		requests = append(requests, &sim.Request{
+			ID:             fmt.Sprintf("burst_%d", i),
+			ArrivalTime:    arrivalUs,
+			FirstTokenTime: ttftUs,
+			TTFTSet:        true,
+			ITL:            []int64{ttftUs, completionUs - arrivalUs - ttftUs},
+			State:          sim.StateCompleted,
+			InputTokens:    []int{0},
+			OutputTokens:   []int{0},
+		})
+	}
+
+	// Window 3: Same 5 requests still active
+	// (No new requests needed — carryover from window 1)
+
+	simEndUs := int64(30_000_000) // 30 seconds (3 windows)
+	report := AnalyzeBacklogDrift(requests, simEndUs, cfg)
+
+	// At t=10s (boundary): 5 active
+	// At t=15s (mid-window 2): 5 + 60 = 65 active (PEAK)
+	// At t=16s: back to 5 active
+	// At t=20s (boundary): 5 active
+	// At t=30s (boundary): 0 active (all completed)
+
+	// Expected: PeakInFlight = 65 (from window 2)
+	//           MeanInFlight across windows ≈ (5 + (5+60*0.1) + 0) / 3 ≈ 3.7
+	//           Peak/Mean ≈ 65 / 3.7 ≈ 17.6 >> 2.0 → TRANSIENT_BACKLOG
+
+	if report.PeakInFlight < 60 {
+		t.Errorf("PeakInFlight: expected >= 60 (burst peak), got %d", report.PeakInFlight)
+	}
+
+	if report.Classification != "TRANSIENT_BACKLOG" {
+		peakRatio := 0.0
+		if report.MeanInFlight > 0 {
+			peakRatio = float64(report.PeakInFlight) / report.MeanInFlight
+		}
+		t.Errorf("Expected TRANSIENT_BACKLOG (high intra-window peak), got %s\nPeak=%d, Mean=%.2f, Ratio=%.2f\nNote: %s",
+			report.Classification, report.PeakInFlight, report.MeanInFlight, peakRatio, report.Note)
+	}
+}
+
 // TestSaturationProgression_IncreasingRate demonstrates saturation classification
 // behavior under different load conditions.
 //

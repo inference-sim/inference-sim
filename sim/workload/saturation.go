@@ -503,14 +503,16 @@ func AnalyzeBacklogDrift(requests []*sim.Request, simEndUs int64, cfg BacklogDri
 	initialBacklog := windows[0].ActiveStart
 	finalBacklog := windows[len(windows)-1].ActiveEnd
 	peakInFlight := 0
-	sumInFlight := 0
+	var sumInFlight float64
 	for _, w := range windows {
-		if w.ActiveEnd > peakInFlight {
-			peakInFlight = w.ActiveEnd
+		// BC-6: Use true intra-window peak, not boundary sample
+		if w.PeakInFlight > peakInFlight {
+			peakInFlight = w.PeakInFlight
 		}
-		sumInFlight += w.ActiveEnd
+		// BC-6: Use time-weighted mean for overall average
+		sumInFlight += w.MeanInFlight
 	}
-	meanInFlight := float64(sumInFlight) / float64(len(windows))
+	meanInFlight := sumInFlight / float64(len(windows))
 
 	// Step 6: Classify saturation state (BC-4/5/6)
 	classification, note, recommendation := classifyBacklogDrift(
