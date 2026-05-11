@@ -21,7 +21,7 @@ func newFlowControlTTLConfig(numInstances int, ttlUs int64, detector string) Dep
 func TestGatewayQueueTTL_ExpiresQueuedRequest(t *testing.T) {
 	cfg := newFlowControlTTLConfig(1, 5000, "concurrency")
 	cfg.FlowControlMaxConcurrency = 1
-	cfg.SimConfig.Horizon = 100_000
+	cfg.Horizon = 100_000
 	reqs := []*sim.Request{
 		{ID: "r1", ArrivalTime: 0, SLOClass: "standard",
 			InputTokens: make([]int, 10), OutputTokens: make([]int, 5), State: sim.StateQueued},
@@ -42,7 +42,7 @@ func TestGatewayQueueTTL_ExpiresQueuedRequest(t *testing.T) {
 
 func TestGatewayQueueTTL_NoOpWhenDispatched(t *testing.T) {
 	cfg := newFlowControlTTLConfig(1, 5000, "never")
-	cfg.SimConfig.Horizon = 100_000
+	cfg.Horizon = 100_000
 	reqs := newTestRequests(3)
 	cs := NewClusterSimulator(cfg, reqs, nil)
 	mustRun(t, cs)
@@ -54,7 +54,7 @@ func TestGatewayQueueTTL_NoOpWhenDispatched(t *testing.T) {
 
 func TestGatewayQueueTTL_DisabledByDefault(t *testing.T) {
 	cfg := newFlowControlTTLConfig(1, 0, "never")
-	cfg.SimConfig.Horizon = 100_000
+	cfg.Horizon = 100_000
 	reqs := newTestRequests(5)
 	cs := NewClusterSimulator(cfg, reqs, nil)
 	mustRun(t, cs)
