@@ -155,7 +155,7 @@ type EncodeRoutingRecord struct {
 
 Add a `RecordEncodeRouting` method on `SimulationTrace` and an `EncodeRoutings []EncodeRoutingRecord` slice on the trace struct.
 
-Add counter `encodeRoutingRejections int64` on `ClusterSimulator`. Expose via `EncodeRoutingRejections() int64`.
+Add counter `encodeRoutingRejections int` on `ClusterSimulator` (matching the `int` type of `routingRejections` / `rejectedRequests`). Expose via `EncodeRoutingRejections() int`.
 
 Add `encode_routing_rejections` to the INV-1 ledger in `sim/cluster/cluster_test.go` conservation checks and to any JSON output site that mirrors the ledger. Update `docs/contributing/standards/invariants.md` INV-1 text to list the new term.
 
@@ -214,7 +214,7 @@ On the disagg path only, set `parent.EncodeInstanceID = InstanceID(encodeInstanc
 Add corresponding fields to `ClusterSimulator`:
 - `encodeDecider sim.EncodeDecider`
 - `encodeRoutingPolicy sim.RoutingPolicy`
-- `encodeRoutingRejections int64`
+- `encodeRoutingRejections int` (matches the `int` type used by the other anomaly counters in `ClusterSimulator`).
 
 Initialize in `NewClusterSimulator` only when `config.EncodeInstances > 0`. Construct via `sim.NewEncodeDecider(config.EncodeDecider)`.
 

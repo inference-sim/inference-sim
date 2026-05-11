@@ -1429,6 +1429,9 @@ var runCmd = &cobra.Command{
 		if encodeDecider != "" && encodeDecider != "never" && encodeInstances == 0 {
 			logrus.Fatalf("--encode-decider=%q requires --encode-instances > 0 (the encode pool is disabled)", encodeDecider)
 		}
+		if encodeInstances > 0 && (encodeDecider == "" || encodeDecider == "never") {
+			logrus.Warnf("--encode-decider=%q has no effect because --encode-instances=%d but the decider never encodes; set --encode-decider=multimodal or always to activate the encode pool", encodeDecider, encodeInstances)
+		}
 
 		// Per-pool hardware override construction (R3): build PoolOverrides from CLI flags.
 		// Pointer fields use cmd.Flags().Changed() to distinguish "not set" from "set to value".
@@ -1643,6 +1646,7 @@ var runCmd = &cobra.Command{
 			cs.RejectedRequests(),
 			scheduler,
 			cs.RoutingRejections(),
+			cs.EncodeRoutingRejections(),
 		)
 
 		rawMetrics.PD = cluster.CollectPDMetrics(
@@ -1654,9 +1658,8 @@ var runCmd = &cobra.Command{
 		rawMetrics.ShedByTier = cs.ShedByTier()                     // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
 		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth()       // Issue #882: gateway queue depth at horizon
 		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()         // Issue #882: gateway queue shed count
-		rawMetrics.GatewayQueueRejected = cs.GatewayQueueRejected()       // Issue #1190: gateway queue rejected count
-		rawMetrics.GatewayEvicted = cs.GatewayEvicted()                   // Phase 4: in-flight eviction count (#1228)
-		rawMetrics.EncodeRoutingRejections = cs.EncodeRoutingRejections() // Issue #1264 (GAP-4): encode pool routing rejections
+		rawMetrics.GatewayQueueRejected = cs.GatewayQueueRejected() // Issue #1190: gateway queue rejected count
+		rawMetrics.GatewayEvicted = cs.GatewayEvicted()             // Phase 4: in-flight eviction count (#1228)
 
 		if rawMetrics.PD != nil && config.PDTransferContention {
 			rawMetrics.PD.PeakConcurrentTransfers = cs.PeakConcurrentTransfers()

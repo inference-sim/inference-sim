@@ -103,15 +103,15 @@ type RawMetrics struct {
 	RejectedRequests     int            // admission rejections
 	ShedByTier                map[string]int // per-SLOClass breakdown of all shedding events: admission rejections + gateway queue evictions (unconditional)
 	// INV-1 extended: injected == completed + running + queued + routing_rejections + dropped + timed_out + gw_depth + gw_shed + gw_rejected + gw_evicted
-	GatewayQueueDepth          int           // Requests still in gateway queue at horizon (issue #882)
-	GatewayQueueShed           int           // Requests shed (evicted victims) from gateway queue (issue #882)
-	GatewayQueueRejected       int           // Requests rejected from gateway queue — incoming could not displace any entry (#1190)
-	GatewayEvicted             int           // Requests evicted in-flight from instances (#1228)
-	RoutingRejections    int            // I13: routing rejections (no routable instances)
-	EncodeRoutingRejections int         // GAP-4 (#1264): encode pool routing rejections (no routable encode instances)
-	DroppedUnservable    int
-	LengthCappedRequests int
-	TimedOutRequests     int
+	GatewayQueueDepth       int // Requests still in gateway queue at horizon (issue #882)
+	GatewayQueueShed        int // Requests shed (evicted victims) from gateway queue (issue #882)
+	GatewayQueueRejected    int // Requests rejected from gateway queue — incoming could not displace any entry (#1190)
+	GatewayEvicted          int // Requests evicted in-flight from instances (#1228)
+	RoutingRejections       int // I13: routing rejections (no routable instances)
+	EncodeRoutingRejections int // GAP-4 (#1264): encode pool routing rejections (no routable encode instances)
+	DroppedUnservable       int
+	LengthCappedRequests    int
+	TimedOutRequests        int
 
 	// KV cache metrics (PR12)
 	CacheHitRate    float64
@@ -128,18 +128,15 @@ type RawMetrics struct {
 // when "fcfs" or "" (no priority ordering), inversions are
 // suppressed (always 0) since requests are served in arrival order and
 // E2E differences reflect workload variance, not scheduling unfairness.
-func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, rejectedRequests int, scheduler string, routingRejections int) *RawMetrics {
+func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, rejectedRequests int, scheduler string, routingRejections int, encodeRoutingRejections int) *RawMetrics {
 	raw := &RawMetrics{
-		RejectedRequests:     rejectedRequests,
-		RoutingRejections:    routingRejections,
-		DroppedUnservable:    aggregated.DroppedUnservable,
-		LengthCappedRequests: aggregated.LengthCappedRequests,
-		TimedOutRequests:     aggregated.TimedOutRequests,
+		RejectedRequests:        rejectedRequests,
+		RoutingRejections:       routingRejections,
+		EncodeRoutingRejections: encodeRoutingRejections,
+		DroppedUnservable:       aggregated.DroppedUnservable,
+		LengthCappedRequests:    aggregated.LengthCappedRequests,
+		TimedOutRequests:        aggregated.TimedOutRequests,
 	}
-	// EncodeRoutingRejections (GAP-4, #1264) is populated by the caller via
-	// ClusterSimulator.EncodeRoutingRejections() — kept out of this function
-	// signature so existing callers in tests and the replay pipeline do not
-	// need updating when the E/P/D pool is unused.
 
 	// Latency distributions
 	ttftValues := mapValues(aggregated.RequestTTFTs)
