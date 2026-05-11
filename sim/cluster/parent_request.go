@@ -39,6 +39,11 @@ type ParentRequest struct {
 	// before prefill routing begins. PrefillInstanceID is set by PrefillRoutingEvent.
 	PrefillInstanceID InstanceID
 	DecodeInstanceID  InstanceID
+
+	// EncodeInstanceID is set by the encode routing stage in executeDisaggregatedRouting
+	// when an encode decider approves. Zero value (empty) = encode did not fire for this
+	// request. GAP-4, issue #1264.
+	EncodeInstanceID InstanceID
 }
 
 // NewParentRequest creates a ParentRequest from the original request.

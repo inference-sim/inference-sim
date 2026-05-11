@@ -124,6 +124,7 @@ var (
 	validPreemptionPolicies  = map[string]bool{"": true, "fcfs": true, "priority": true}
 	validLatencyBackends          = map[string]bool{"": true, "roofline": true, "trained-physics": true}
 	validDisaggregationDeciders   = map[string]bool{"": true, "never": true, "always": true, "prefix-threshold": true}
+	validEncodeDeciders           = map[string]bool{"": true, "never": true, "always": true, "multimodal": true}
 	validSaturationDetectors      = map[string]bool{"": true, "never": true, "utilization": true, "concurrency": true}
 )
 
@@ -162,6 +163,12 @@ func IsValidDisaggregationDecider(name string) bool { return validDisaggregation
 
 // ValidDisaggregationDeciderNames returns sorted valid disaggregation decider names (excluding empty).
 func ValidDisaggregationDeciderNames() []string { return validNamesList(validDisaggregationDeciders) }
+
+// IsValidEncodeDecider returns true if name is a recognized encode decider (GAP-4, issue #1264).
+func IsValidEncodeDecider(name string) bool { return validEncodeDeciders[name] }
+
+// ValidEncodeDeciderNames returns sorted valid encode decider names (excluding empty).
+func ValidEncodeDeciderNames() []string { return validNamesList(validEncodeDeciders) }
 
 // IsValidSaturationDetector returns true if name is a recognized saturation detector.
 func IsValidSaturationDetector(name string) bool { return validSaturationDetectors[name] }

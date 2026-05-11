@@ -108,9 +108,9 @@ func TestValidatePoolTopology(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := ValidatePoolTopology(tc.prefill, tc.decode, tc.shared, tc.total)
+			err := ValidatePoolTopology(tc.prefill, tc.decode, tc.shared, 0, tc.total)
 			if (err != nil) != tc.wantErr {
-				t.Errorf("ValidatePoolTopology(%d, %d, %d, %d) error = %v, wantErr %v",
+				t.Errorf("ValidatePoolTopology(%d, %d, %d, 0, %d) error = %v, wantErr %v",
 					tc.prefill, tc.decode, tc.shared, tc.total, err, tc.wantErr)
 			}
 		})
@@ -149,7 +149,7 @@ func TestBuildPoolMembershipFromIndices(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			membership := BuildPoolMembershipFromIndices(tc.total, tc.prefill, tc.decode, 0)
+			membership := BuildPoolMembershipFromIndices(tc.total, tc.prefill, tc.decode, 0, 0)
 
 			// Verify total membership count
 			if len(membership) != tc.prefill+tc.decode {
@@ -321,7 +321,7 @@ func TestPoolRole_SharedEqualsUnion(t *testing.T) {
 // PoolRolePrefillDecode.
 func TestBuildPoolMembershipFromIndices_WithShared(t *testing.T) {
 	// Cluster of 5: 2 prefill-only + 2 decode-only + 1 shared.
-	membership := BuildPoolMembershipFromIndices(5, 2, 2, 1)
+	membership := BuildPoolMembershipFromIndices(5, 2, 2, 1, 0)
 
 	if len(membership) != 5 {
 		t.Fatalf("membership size = %d, want 5", len(membership))
@@ -343,7 +343,7 @@ func TestBuildPoolMembershipFromIndices_WithShared(t *testing.T) {
 	}
 
 	// Pure-shared cluster: all instances serve both stages.
-	pure := BuildPoolMembershipFromIndices(3, 0, 0, 3)
+	pure := BuildPoolMembershipFromIndices(3, 0, 0, 3, 0)
 	for i := 0; i < 3; i++ {
 		id := "instance_" + strconv.Itoa(i)
 		if got := pure[id]; got != PoolRolePrefillDecode {
@@ -444,10 +444,107 @@ func equalIDs(a, b []string) bool {
 	return true
 }
 
+// TestPoolRoleEncode_BitmaskIdentity verifies that PoolRoleEncode does not
+// overlap with PoolRolePrefill / PoolRoleDecode / PoolRolePrefillDecode — a
+// prerequisite for E/P/D set-membership filtering (GAP-4, issue #1264).
+func TestPoolRoleEncode_BitmaskIdentity(t *testing.T) {
+	if PoolRoleEncode == 0 {
+		t.Fatal("PoolRoleEncode must be non-zero")
+	}
+	// Self-membership: an encode-role pod satisfies an encode filter.
+	if !PoolRoleEncode.Has(PoolRoleEncode) {
+		t.Errorf("PoolRoleEncode.Has(PoolRoleEncode) = false, want true")
+	}
+	if PoolRoleEncode.Has(PoolRolePrefill) {
+		t.Errorf("PoolRoleEncode must not contain PoolRolePrefill bit")
+	}
+	if PoolRoleEncode.Has(PoolRoleDecode) {
+		t.Errorf("PoolRoleEncode must not contain PoolRoleDecode bit")
+	}
+	if PoolRolePrefill.Has(PoolRoleEncode) || PoolRoleDecode.Has(PoolRoleEncode) || PoolRolePrefillDecode.Has(PoolRoleEncode) {
+		t.Errorf("Prefill/Decode/Shared roles must not contain the encode bit")
+	}
+	if PoolRoleEncode.String() != "encode" {
+		t.Errorf("PoolRoleEncode.String() = %q, want %q", PoolRoleEncode.String(), "encode")
+	}
+}
+
+// TestValidatePoolTopology_Encode verifies the encode-instances validation rules.
+func TestValidatePoolTopology_Encode(t *testing.T) {
+	tests := []struct {
+		name                                           string
+		prefill, decode, shared, encode, total         int
+		wantErr                                        bool
+	}{
+		{"valid 1p/1d/0s/1e in total=3", 1, 1, 0, 1, 3, false},
+		{"decode-only + encode rejected by PD pair rule (shared=0 requires both p and d)", 0, 2, 0, 1, 3, true},
+		{"valid 2p/2d/0s/1e in total=5", 2, 2, 0, 1, 5, false},
+		{"encode only, no decode-capable pool — rejected", 0, 0, 0, 2, 2, true},
+		{"encode+shared valid", 0, 0, 2, 1, 3, false},
+		{"sum exceeds total with encode", 1, 1, 0, 2, 3, true},
+		{"negative encode", 1, 1, 0, -1, 3, true},
+		{"encode=0 backward compat (valid PD)", 1, 1, 0, 0, 2, false},
+		{"encode=0 all-zero disabled", 0, 0, 0, 0, 4, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidatePoolTopology(tc.prefill, tc.decode, tc.shared, tc.encode, tc.total)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("ValidatePoolTopology(p=%d,d=%d,s=%d,e=%d,t=%d) err=%v wantErr=%v",
+					tc.prefill, tc.decode, tc.shared, tc.encode, tc.total, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// TestBuildPoolMembershipFromIndices_Encode verifies the encode-only
+// assignment block follows the prefill/decode/shared ranges.
+func TestBuildPoolMembershipFromIndices_Encode(t *testing.T) {
+	// 1 prefill + 1 decode + 1 shared + 2 encode = 5 total.
+	membership := BuildPoolMembershipFromIndices(5, 1, 1, 1, 2)
+	if len(membership) != 5 {
+		t.Fatalf("membership size = %d, want 5", len(membership))
+	}
+	checks := []struct {
+		id   string
+		role PoolRole
+	}{
+		{"instance_0", PoolRolePrefill},
+		{"instance_1", PoolRoleDecode},
+		{"instance_2", PoolRolePrefillDecode},
+		{"instance_3", PoolRoleEncode},
+		{"instance_4", PoolRoleEncode},
+	}
+	for _, c := range checks {
+		if got := membership[c.id]; got != c.role {
+			t.Errorf("membership[%q] = %v, want %v", c.id, got, c.role)
+		}
+	}
+}
+
+// TestFilterSnapshotsByPool_Encode verifies encode-pool filtering returns
+// only encode-role instances and excludes prefill/decode/shared pods.
+func TestFilterSnapshotsByPool_Encode(t *testing.T) {
+	membership := map[string]PoolRole{
+		"p-only":   PoolRolePrefill,
+		"d-only":   PoolRoleDecode,
+		"shared":   PoolRolePrefillDecode,
+		"enc-pod":  PoolRoleEncode,
+		"enc-pod2": PoolRoleEncode,
+	}
+	snaps := []sim.RoutingSnapshot{
+		{ID: "p-only"}, {ID: "d-only"}, {ID: "shared"}, {ID: "enc-pod"}, {ID: "enc-pod2"},
+	}
+	got := FilterSnapshotsByPool(snaps, membership, PoolRoleEncode)
+	if len(got) != 2 || got[0].ID != "enc-pod" || got[1].ID != "enc-pod2" {
+		t.Errorf("encode filter = %v, want [enc-pod, enc-pod2]", idsOf(got))
+	}
+}
+
 // TestBuildPoolMembershipFromIndices_Immutability verifies the returned map can be copied
 // without aliasing (defensive copy contract).
 func TestBuildPoolMembershipFromIndices_Immutability(t *testing.T) {
-	membership := BuildPoolMembershipFromIndices(4, 2, 2, 0)
+	membership := BuildPoolMembershipFromIndices(4, 2, 2, 0, 0)
 
 	// Take a snapshot
 	snapshot := make(map[string]PoolRole, len(membership))

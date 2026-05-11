@@ -158,7 +158,7 @@ During PR reviews, check all Antipattern Prevention rules (R1-R23) in [`docs/con
 
 Full details (verification strategies, evidence): see [`docs/contributing/standards/invariants.md`](docs/contributing/standards/invariants.md).
 
-- **INV-1 Request conservation**: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out + routing_rejections + gateway_queue_depth + gateway_queue_shed + gateway_queue_rejected + gateway_evicted` at simulation end. Full pipeline: `num_requests == injected_requests + rejected_requests`.
+- **INV-1 Request conservation**: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out + routing_rejections + gateway_queue_depth + gateway_queue_shed + gateway_queue_rejected + gateway_evicted + encode_routing_rejections` at simulation end. Full pipeline: `num_requests == injected_requests + rejected_requests`. `encode_routing_rejections` (GAP-4, #1264) is always zero when `--encode-instances 0`.
 - **INV-2 Request lifecycle**: Requests transition queued → running → completed; not completed before horizon remain in current state
 - **INV-3 Clock monotonicity**: Simulation clock never decreases
 - **INV-4 KV cache conservation**: `allocated_blocks + free_blocks = total_blocks` at all times

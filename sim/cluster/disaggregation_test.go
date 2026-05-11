@@ -227,7 +227,13 @@ func TestDisaggregation_TransferConservation(t *testing.T) {
 	}
 }
 
-// assertINV1Conservation checks the full INV-1 conservation equation including TimedOutRequests.
+// assertINV1Conservation checks the sim-level INV-1 conservation equation:
+// completed + queued + running + dropped + timedOut == expected. This helper
+// covers the instance-facing terms only. Callers exercising cluster-level
+// rejection paths (routingRejections, gatewayQueue*, gatewayEvicted,
+// encodeRoutingRejections) must check those terms separately — see
+// TestEPD_EmptyEncodePool_RoutingRejection for an example of the full
+// cluster-level ledger.
 func assertINV1Conservation(t *testing.T, metrics *sim.Metrics, expected int, label string) {
 	t.Helper()
 	sum := metrics.CompletedRequests + metrics.StillQueued + metrics.StillRunning +

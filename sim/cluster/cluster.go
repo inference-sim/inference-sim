@@ -57,6 +57,11 @@ type ClusterSimulator struct {
 	prefillRoutingPolicy      sim.RoutingPolicy // nil = use main routingPolicy
 	decodeRoutingPolicy       sim.RoutingPolicy // nil = use main routingPolicy
 
+	// E/P/D disaggregation state (GAP-4, issue #1264).
+	// encodeDecider is nil when --encode-instances == 0, which disables the encode stage.
+	encodeDecider           sim.EncodeDecider
+	encodeRoutingRejections int // INV-1 term: requests rejected at encode routing (empty encode pool)
+
 	// Transfer contention state (--pd-transfer-contention flag, INV-P2-2)
 	activeTransfers                int
 	peakConcurrentTransfers        int
@@ -132,8 +137,8 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	}
 
 	// Validate pool topology and overrides early (before instance construction).
-	if config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 {
-		if err := ValidatePoolTopology(config.PrefillInstances, config.DecodeInstances, config.SharedInstances, config.NumInstances); err != nil {
+	if config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 || config.EncodeInstances > 0 {
+		if err := ValidatePoolTopology(config.PrefillInstances, config.DecodeInstances, config.SharedInstances, config.EncodeInstances, config.NumInstances); err != nil {
 			panic(fmt.Sprintf("ClusterSimulator: %v", err))
 		}
 		if err := config.PrefillOverrides.Validate("prefill pool"); err != nil {
@@ -168,8 +173,8 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 	// When disaggregation is disabled (all pool counts are 0), prePoolMembership is nil
 	// and all instances use the global config (backward-compatible).
 	var prePoolMembership map[string]PoolRole
-	if config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 {
-		prePoolMembership = BuildPoolMembershipFromIndices(config.NumInstances, config.PrefillInstances, config.DecodeInstances, config.SharedInstances)
+	if config.PrefillInstances > 0 || config.DecodeInstances > 0 || config.SharedInstances > 0 || config.EncodeInstances > 0 {
+		prePoolMembership = BuildPoolMembershipFromIndices(config.NumInstances, config.PrefillInstances, config.DecodeInstances, config.SharedInstances, config.EncodeInstances)
 	}
 
 	// instances and instanceMap are populated by the unified construction+placement loop below.
@@ -367,6 +372,15 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		default:
 			cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
 		}
+	}
+
+	// E/P/D disaggregation (GAP-4, issue #1264): construct the encode decider
+	// only when the encode pool is active. When EncodeInstances == 0, cs.encodeDecider
+	// stays nil and the encode stage in executeDisaggregatedRouting is a no-op,
+	// preserving byte-for-byte behavior for pre-PR runs (BC-EPD-1).
+	if config.EncodeInstances > 0 {
+		cs.encodeDecider = sim.NewEncodeDecider(config.EncodeDecider)
+		logrus.Infof("[cluster] E/P/D enabled: %d encode instances, decider=%q", config.EncodeInstances, config.EncodeDecider)
 	}
 
 	// Phase 1C: initialize autoscaler pipeline when ModelAutoscalerIntervalUs > 0 (issue #692).
@@ -1243,6 +1257,13 @@ func (c *ClusterSimulator) RoutingRejections() int {
 	return c.routingRejections
 }
 
+// EncodeRoutingRejections returns the count of requests rejected at the encode
+// routing stage because the encode pool has zero routable instances (GAP-4,
+// issue #1264). Always zero when --encode-instances 0.
+func (c *ClusterSimulator) EncodeRoutingRejections() int {
+	return c.encodeRoutingRejections
+}
+
 // ShedByTier returns a copy of per-SLOClass rejection counts recorded during admission.
 // Populated unconditionally for every admission rejection, regardless of policy.
 // Returns a defensive copy so callers cannot mutate the internal counter (R8).
@@ -1822,6 +1843,45 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 		panic(fmt.Sprintf("executeDisaggregatedRouting: invalid decode TargetInstance %q returned by routing policy", decodeDecision.TargetInstance))
 	}
 
+	// Encode stage (GAP-4, issue #1264). Synchronous under option A
+	// (zero-duration): we make a routing decision on the encode pool, record
+	// a trace entry, and carry the chosen encode instance ID forward to the
+	// parent (for the disagg path) or discard it after trace recording (for
+	// the non-disagg path). No encode sub-request is injected into an instance.
+	// No-op when cs.encodeDecider == nil (the default when --encode-instances 0),
+	// preserving byte-for-byte pre-PR behavior (BC-EPD-1).
+	var encodeInstanceID string
+	if cs.encodeDecider != nil && cs.encodeDecider.ShouldEncode(req, decodeDecision.TargetInstance) {
+		encodeSnapshots := cs.buildPoolFilteredSnapshots(PoolRoleEncode)
+		if len(encodeSnapshots) == 0 {
+			logrus.Warnf("[cluster] req %s: no routable instances in encode pool — request rejected at encode routing", req.ID)
+			cs.encodeRoutingRejections++
+			return
+		}
+		encodeState := &sim.RouterState{Snapshots: encodeSnapshots, Clock: cs.clock}
+		// Encode routing uses the main routingPolicy in this PR; per-pool scorer
+		// config is a follow-up (design doc D6).
+		encodeDecision := cs.routingPolicy.Route(req, encodeState)
+		encodeInstanceID = encodeDecision.TargetInstance
+		logrus.Debugf("[cluster] req %s: encode pod selected → %s", req.ID, encodeInstanceID)
+
+		if cs.trace != nil {
+			record := trace.EncodeRoutingRecord{
+				ParentRequestID: req.ID,
+				Clock:           cs.clock,
+				ChosenInstance:  encodeInstanceID,
+				Scores:          copyScores(encodeDecision.Scores),
+			}
+			if cs.trace.Config.CounterfactualK > 0 {
+				record.Candidates, record.Regret = computeCounterfactual(
+					encodeInstanceID, encodeDecision.Scores,
+					encodeSnapshots, cs.trace.Config.CounterfactualK,
+				)
+			}
+			cs.trace.RecordEncodeRouting(record)
+		}
+	}
+
 	if !disaggDecision.Disaggregate {
 		// Step 3a: local path — inject directly to the selected decode pod.
 		// Non-disaggregated requests route exclusively to the decode pool, not to all
@@ -1865,6 +1925,9 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 	// Step 3b: disaggregated path — decode pod pre-selected, route prefill next.
 	parent := NewParentRequest(req, cs.config.BlockSizeTokens)
 	parent.DecodeInstanceID = InstanceID(decodeDecision.TargetInstance)
+	if encodeInstanceID != "" {
+		parent.EncodeInstanceID = InstanceID(encodeInstanceID)
+	}
 	cs.parentRequests[parent.ID] = parent
 
 	// Create prefill sub-request: same input, no output (completes after prefill).

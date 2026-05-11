@@ -10,12 +10,14 @@ import (
 // by the routing policy. Empty string means "no override" — the caller keeps the
 // previously selected decode pod / applies normal prefill routing. Joint D+P
 // policies (future work) can populate these; the three built-in deciders always
-// leave them empty. PrefillPodHint is defined now to pre-empt a future interface
-// break; GAP-4 (encode pool) will consume it.
+// leave them empty. PrefillPodHint is defined to pre-empt a future interface
+// break and is reserved for future joint D+P policies. GAP-4 (encode pool, #1264)
+// does not consume this field — encode routing threads its decision via a local
+// variable and ParentRequest.EncodeInstanceID, not through DisaggregationDecision.
 type DisaggregationDecision struct {
 	Disaggregate      bool   // true = route to prefill pool, false = route to shared/decode pool
 	DecodePodOverride string // empty = keep pre-selected decode pod
-	PrefillPodHint    string // empty = normal prefill routing (GAP-4 will use this)
+	PrefillPodHint    string // empty = normal prefill routing (reserved for future joint D+P policies)
 }
 
 // DisaggregationDecider decides whether a request should be disaggregated
@@ -152,4 +154,76 @@ var (
 	_ DisaggregationDecider = (*NeverDisaggregate)(nil)
 	_ DisaggregationDecider = (*AlwaysDisaggregate)(nil)
 	_ DisaggregationDecider = (*PrefixThresholdDecider)(nil)
+)
+
+// ---------------------------------------------------------------------------
+// E/P/D disaggregation (GAP-4, issue #1264)
+// ---------------------------------------------------------------------------
+
+// EncodeDecider decides whether a request should be routed to the encode pool
+// before proceeding to prefill/decode. Modeled on llm-d's
+// AlwaysDisaggMultimodalDecider.disaggregate (Permalink 3 in issue #1264):
+// the single decodeInstanceID argument mirrors llm-d's
+// decodeRes.TargetEndpoints[0] — a pre-selected decode endpoint, not a snapshot.
+//
+// Implementations must not read Request.OutputTokens (INV-9 oracle boundary);
+// use input-only signals such as per-modality token counts, len(InputTokens),
+// MaxOutputLen, or the decode instance ID.
+type EncodeDecider interface {
+	ShouldEncode(req *Request, decodeInstanceID string) bool
+}
+
+// AlwaysEncode always returns true. Test-oriented decider for validating the
+// encode routing wiring end-to-end.
+type AlwaysEncode struct{}
+
+func (a *AlwaysEncode) ShouldEncode(_ *Request, _ string) bool { return true }
+
+// NeverEncode always returns false. Default when no encode decider is
+// configured, and useful for "flag enabled, decider off" wiring tests
+// (analogous to NeverDisaggregate).
+type NeverEncode struct{}
+
+func (n *NeverEncode) ShouldEncode(_ *Request, _ string) bool { return false }
+
+// MultimodalEncodeDecider triggers encoding when the request carries any
+// non-text modality. Matches llm-d's AlwaysDisaggMultimodalDecider
+// (always_disagg_mm_decider.go:47-49) + hasMultimodalContent
+// (multimodal_helpers.go:8-21), adapted to BLIS's token-count abstraction.
+type MultimodalEncodeDecider struct{}
+
+func (m *MultimodalEncodeDecider) ShouldEncode(req *Request, _ string) bool {
+	// Interface contract (parity with DisaggregationDecider): req is guaranteed
+	// non-nil at the call site. No defensive nil check here — symmetric with
+	// AlwaysEncode / NeverEncode.
+	return req.IsMultimodal()
+}
+
+// NewEncodeDecider creates an encode decider by name. Valid names are
+// defined in validEncodeDeciders (bundle.go). An empty string defaults to
+// NeverEncode. Panics on unrecognized names (R6).
+func NewEncodeDecider(name string) EncodeDecider {
+	if !IsValidEncodeDecider(name) {
+		panic(fmt.Sprintf("unknown encode decider %q", name))
+	}
+	switch name {
+	case "", "never":
+		return &NeverEncode{}
+	case "always":
+		return &AlwaysEncode{}
+	case "multimodal":
+		return &MultimodalEncodeDecider{}
+	default:
+		panic(fmt.Sprintf(
+			"encode decider %q is registered in validEncodeDeciders (bundle.go) "+
+				"but has no case in NewEncodeDecider; add a case here",
+			name))
+	}
+}
+
+// Compile-time interface compliance checks.
+var (
+	_ EncodeDecider = (*AlwaysEncode)(nil)
+	_ EncodeDecider = (*NeverEncode)(nil)
+	_ EncodeDecider = (*MultimodalEncodeDecider)(nil)
 )
