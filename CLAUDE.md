@@ -95,6 +95,11 @@ go build -o blis main.go
 # Run with flow control and request TTL (expire queued requests after 5 seconds)
 ./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
   --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 --request-ttl 5000000
+
+# Run with SLO-deadline dispatch ordering (tightest SLO target dispatches first)
+./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
+  --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 \
+  --dispatch-order slo-deadline --slo-targets "critical=100000,standard=500000"
 ```
 
 ## Testing

@@ -269,7 +269,7 @@ func TestParseTraceRecord_InvalidInteger_ReturnsError(t *testing.T) {
 	}
 
 	// WHEN parsing
-	_, err := parseTraceRecord(row, false)
+	_, err := parseTraceRecord(row, false, false)
 
 	// THEN error about invalid value
 	if err == nil {
@@ -288,7 +288,7 @@ func TestParseTraceRecord_InvalidDeadlineUs_ReturnsError(t *testing.T) {
 	}
 	row[17] = "not_a_number" // deadline_us column (shifted +1 by prefix_length)
 
-	_, err := parseTraceRecord(row, false)
+	_, err := parseTraceRecord(row, false, false)
 
 	if err == nil {
 		t.Fatal("expected error for non-numeric deadline_us, got nil")
@@ -306,7 +306,7 @@ func TestParseTraceRecord_InvalidServerInputTokens_ReturnsError(t *testing.T) {
 	}
 	row[18] = "not_a_number" // server_input_tokens column (shifted +1)
 
-	_, err := parseTraceRecord(row, false)
+	_, err := parseTraceRecord(row, false, false)
 
 	if err == nil {
 		t.Fatal("expected error for non-numeric server_input_tokens, got nil")
@@ -326,7 +326,7 @@ func TestParseTraceRecord_InvalidVLLMPriority_ReturnsError(t *testing.T) {
 	row[4] = "not_a_number" // vllm_priority column (index 4)
 
 	// WHEN parsing with hasVLLMPriority=true
-	_, err := parseTraceRecord(row, true)
+	_, err := parseTraceRecord(row, true, false)
 
 	// THEN error about invalid value
 	if err == nil {
@@ -347,7 +347,7 @@ func TestParseTraceRecord_NegativeVLLMPriority_ReturnsError(t *testing.T) {
 	row[4] = "-1" // negative vllm_priority
 
 	// WHEN parsing with hasVLLMPriority=true
-	_, err := parseTraceRecord(row, true)
+	_, err := parseTraceRecord(row, true, false)
 
 	// THEN error about negative value
 	if err == nil {
@@ -369,7 +369,7 @@ func TestParseTraceRecord_NegativeDeadlineUs_ReturnsError(t *testing.T) {
 	}
 	row[17] = "-1" // negative deadline_us (shifted +1)
 
-	_, err := parseTraceRecord(row, false)
+	_, err := parseTraceRecord(row, false, false)
 
 	if err == nil {
 		t.Fatal("expected error for negative deadline_us, got nil")
@@ -388,7 +388,7 @@ func TestParseTraceRecord_NegativeInputTokens_ReturnsError(t *testing.T) {
 	}
 	row[9] = "-1" // input_tokens column (shifted +1)
 
-	_, err := parseTraceRecord(row, false)
+	_, err := parseTraceRecord(row, false, false)
 
 	if err == nil {
 		t.Fatal("expected error for negative input_tokens, got nil")
@@ -407,7 +407,7 @@ func TestParseTraceRecord_NegativeOutputTokens_ReturnsError(t *testing.T) {
 	}
 	row[10] = "-1" // output_tokens column (shifted +1)
 
-	_, err := parseTraceRecord(row, false)
+	_, err := parseTraceRecord(row, false, false)
 
 	if err == nil {
 		t.Fatal("expected error for negative output_tokens, got nil")
@@ -426,7 +426,7 @@ func TestParseTraceRecord_NegativeServerInputTokens_ReturnsError(t *testing.T) {
 	}
 	row[18] = "-1" // server_input_tokens column (shifted +1)
 
-	_, err := parseTraceRecord(row, false)
+	_, err := parseTraceRecord(row, false, false)
 
 	if err == nil {
 		t.Fatal("expected error for negative server_input_tokens, got nil")
@@ -446,7 +446,7 @@ func TestParseTraceRecord_DeadlineBeforeArrival_ReturnsError(t *testing.T) {
 	row[17] = "1000" // deadline_us = 1000 (shifted +1)
 	row[19] = "5000" // arrival_time_us = 5000 (shifted +1)
 
-	_, err := parseTraceRecord(row, false)
+	_, err := parseTraceRecord(row, false, false)
 
 	if err == nil {
 		t.Fatal("expected error for deadline before arrival, got nil")
@@ -475,7 +475,7 @@ func TestParseTraceRecord_InvalidReasonRatio_ReturnsError(t *testing.T) {
 		}
 		row[15] = tc.value // reason_ratio column (shifted +1)
 
-		_, err := parseTraceRecord(row, false)
+		_, err := parseTraceRecord(row, false, false)
 
 		if err == nil {
 			t.Errorf("reason_ratio=%q: expected error, got nil", tc.value)

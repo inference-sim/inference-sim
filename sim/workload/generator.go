@@ -194,9 +194,10 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 						req.PrefixLength = len(prefix)
 					}
 				}
-				// Set Deadline on all reasoning requests (not set in reasoning.go)
+				// Set Deadline and SLOTargetUs on all reasoning requests (not set in reasoning.go)
 				for _, req := range reasoningReqs {
 					req.Deadline = computeDeadline(req.ArrivalTime, client.Timeout, true)
+					req.SLOTargetUs = derefInt64(client.SLOTargetUs)
 				}
 				for _, req := range reasoningReqs {
 					if req.ArrivalTime >= horizon {
@@ -251,9 +252,10 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 						req.PrefixLength = len(prefix)
 					}
 				}
-				// Set Deadline on all reasoning requests (not set in reasoning.go)
+				// Set Deadline and SLOTargetUs on all reasoning requests (not set in reasoning.go)
 				for _, req := range reasoningReqs {
 					req.Deadline = computeDeadline(req.ArrivalTime, client.Timeout, true)
+					req.SLOTargetUs = derefInt64(client.SLOTargetUs)
 				}
 				// Count all generated rounds for perClientCap safety (R19)
 				clientReqCount += int64(len(reasoningReqs))
@@ -345,6 +347,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				AudioTokenCount:  audioCount,
 				VideoTokenCount:  videoCount,
 				Deadline:         computeDeadline(currentTime, client.Timeout, isClosedLoop(client)),
+				SLOTargetUs:      derefInt64(client.SLOTargetUs),
 				ClientID:         client.ID,
 				PrefixGroup:      client.PrefixGroup,
 				PrefixLength:     prefixLength,
@@ -613,6 +616,7 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 				MaxOutputLen: len(outputTokens),
 				State:        sim.StateQueued,
 				Deadline:     computeDeadline(arrivalTime, client.Timeout, true),
+				SLOTargetUs:  derefInt64(client.SLOTargetUs),
 				TenantID:     client.TenantID,
 				SLOClass:     client.SLOClass,
 				Model:        client.Model,
@@ -722,6 +726,13 @@ func computeDeadline(arrivalTime int64, clientTimeout *int64, isSessionClient bo
 		return 0 // explicit no timeout
 	}
 	return arrivalTime + *clientTimeout
+}
+
+func derefInt64(p *int64) int64 {
+	if p == nil {
+		return 0
+	}
+	return *p
 }
 
 // isClosedLoop returns whether a client should use closed-loop session generation.
@@ -1030,6 +1041,7 @@ func generateRequestsForWindow(
 			ClientID:     client.ID,
 			Streaming:    client.Streaming,
 			Deadline:     0, // Set by caller if needed.
+			SLOTargetUs:  derefInt64(client.SLOTargetUs),
 		}
 		requests = append(requests, req)
 	}

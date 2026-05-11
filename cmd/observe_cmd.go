@@ -925,6 +925,7 @@ func requestToPending(req *sim.Request, reqIndex int, noStreaming, unconstrained
 		Unconstrained:   unconstrained,
 		MinTokens:       minTokens,
 		DeadlineUs:      req.Deadline,
+		SLOTargetUs:     req.SLOTargetUs,
 	}
 }
 

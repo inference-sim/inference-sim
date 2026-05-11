@@ -38,7 +38,8 @@ type AdmissionConfig struct {
 	GAIEKVThreshold *float64 `yaml:"gaie_kv_threshold"` // nil = use default (0.8)
 	// SLOPriorities overrides default SLO class → priority mappings.
 	// nil = use GAIE defaults (critical=4, standard=3, batch=-1, sheddable=-2, background=-3).
-	SLOPriorities map[string]int `yaml:"slo_priorities,omitempty"`
+	SLOPriorities map[string]int   `yaml:"slo_priorities,omitempty"`
+	SLOTargets    map[string]int64 `yaml:"slo_targets,omitempty"` // Per-SLO-class TTFT targets in µs for slo-deadline ordering
 }
 
 // RoutingConfig holds routing policy configuration.

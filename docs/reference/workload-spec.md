@@ -40,6 +40,8 @@ Each entry in the `clients` list defines a traffic source:
 | `lifecycle` | object | No | Activity window configuration |
 | `multimodal` | object | No | Multimodal token generation |
 | `reasoning` | object | No | Reasoning multi-turn behavior |
+| `timeout` | int64 | No | Per-request timeout in µs. nil = default (300s for sessions). 0 = no timeout |
+| `slo_target_us` | int64 | No | Per-request SLO TTFT target in µs. nil/0 = no target. Used by `--dispatch-order slo-deadline` |
 
 ## Arrival Process
 
@@ -107,6 +109,8 @@ Each entry in the `cohorts` list defines a population with lifecycle dynamics. C
 | `diurnal` | object | No | Sinusoidal rate modulation (see below) |
 | `spike` | object | No | Traffic spike configuration (see below) |
 | `drain` | object | No | Linear ramp-down to zero (see below) |
+| `timeout` | int64 | No | Per-request timeout in µs (same as Client) |
+| `slo_target_us` | int64 | No | Per-request SLO TTFT target in µs (same as Client) |
 
 ### Diurnal Pattern
 

@@ -102,6 +102,7 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 			ReasonRatio:      rec.ReasonRatio,
 			Model:            rec.Model,      // BC-3, BC-6: model identity from trace; empty = default model
 			Deadline:         rec.DeadlineUs, // BC-4, BC-5: client timeout; 0 = no timeout
+			SLOTargetUs:      rec.SLOTargetUs,
 			ClientID:         rec.ClientID,
 			PrefixGroup:      rec.PrefixGroup,
 			PrefixLength:     rec.PrefixLength,
@@ -255,6 +256,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			ReasonRatio:     r0.ReasonRatio,
 			Model:           r0.Model,
 			Deadline:        r0.DeadlineUs,
+			SLOTargetUs:     r0.SLOTargetUs,
 			ClientID:        r0.ClientID,
 			PrefixGroup:     r0.PrefixGroup,
 			PrefixLength:    r0.PrefixLength,
@@ -306,6 +308,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			ReasonRatio:     rec.ReasonRatio,
 			Model:           rec.Model,
 			Deadline:        rec.DeadlineUs,
+			SLOTargetUs:     rec.SLOTargetUs,
 			ClientID:        rec.ClientID,
 			PrefixGroup:     rec.PrefixGroup,
 			PrefixLength:    rec.PrefixLength,

@@ -76,6 +76,7 @@ type CohortSpec struct {
 	Reasoning    *ReasoningSpec  `yaml:"reasoning,omitempty"`
 	ClosedLoop   *bool           `yaml:"closed_loop,omitempty"`
 	Timeout      *int64          `yaml:"timeout,omitempty"`
+	SLOTargetUs  *int64          `yaml:"slo_target_us,omitempty"` // Per-request SLO TTFT target in µs. nil/0 = no target. (R9: pointer)
 	Network      *NetworkSpec    `yaml:"network,omitempty"`
 	Multimodal   *MultimodalSpec `yaml:"multimodal,omitempty"`
 }
@@ -121,6 +122,7 @@ type ClientSpec struct {
 	Multimodal   *MultimodalSpec `yaml:"multimodal,omitempty"`
 	Reasoning    *ReasoningSpec  `yaml:"reasoning,omitempty"`
 	Timeout      *int64          `yaml:"timeout,omitempty"`     // Per-request timeout in µs. nil = default (300s). 0 = no timeout. (R9: pointer for zero-value)
+	SLOTargetUs  *int64          `yaml:"slo_target_us,omitempty"` // Per-request SLO TTFT target in µs. nil/0 = no target. (R9: pointer)
 	ClosedLoop   *bool           `yaml:"closed_loop,omitempty"` // nil = default (true for reasoning/multi-turn). false = open-loop (all rounds pre-generated).
 	// CustomSamplerFactory allows programmatic injection of arrival sampler factories,
 	// bypassing the factory-based construction from Arrival.Process.
@@ -477,6 +479,9 @@ func validateClient(c *ClientSpec, idx int) error {
 	if c.Timeout != nil && *c.Timeout < 0 {
 		return fmt.Errorf("%s: timeout must be non-negative, got %d", prefix, *c.Timeout)
 	}
+	if c.SLOTargetUs != nil && *c.SLOTargetUs < 0 {
+		return fmt.Errorf("%s: slo_target_us must be non-negative, got %d", prefix, *c.SLOTargetUs)
+	}
 	// Validate MaxRounds for reasoning/multi-turn (prevents panic in NewSessionManager)
 	if c.Reasoning != nil && c.Reasoning.MultiTurn != nil && c.Reasoning.MultiTurn.MaxRounds < 1 {
 		return fmt.Errorf("%s: reasoning.multi_turn.max_rounds must be >= 1, got %d", prefix, c.Reasoning.MultiTurn.MaxRounds)
@@ -594,6 +599,9 @@ func validateCohort(c *CohortSpec, idx int) error {
 	}
 	if c.Timeout != nil && *c.Timeout < 0 {
 		return fmt.Errorf("%s: timeout must be non-negative, got %d", prefix, *c.Timeout)
+	}
+	if c.SLOTargetUs != nil && *c.SLOTargetUs < 0 {
+		return fmt.Errorf("%s: slo_target_us must be non-negative, got %d", prefix, *c.SLOTargetUs)
 	}
 	if c.Reasoning != nil && c.Reasoning.MultiTurn != nil && c.Reasoning.MultiTurn.MaxRounds < 1 {
 		return fmt.Errorf("%s: reasoning.multi_turn.max_rounds must be >= 1, got %d", prefix, c.Reasoning.MultiTurn.MaxRounds)

@@ -225,6 +225,39 @@ shedding of sheddable entries.
   --per-band-capacity 100 --max-gateway-queue-depth 500
 ```
 
+### SLO-Deadline Dispatch Ordering
+
+With `--dispatch-order slo-deadline`, the gateway queue dispatches requests with the tightest SLO targets first within each flow. This matches GIE's `slo-deadline-ordering-policy`.
+
+**How it works:**
+
+1. Fairness policy picks the flow (same as priority mode)
+2. Within the picked flow, dequeue the request with the earliest SLO deadline
+3. Deadline = `GatewayEnqueueTime + SLOTargetUs`
+4. Fallback hierarchy: per-request `SLOTargetUs` → per-tier `--slo-targets` → far-future (FCFS)
+5. Equal deadlines use arrival order (seqID) as tiebreaker
+
+**Setting SLO targets:**
+
+- **Per-request** (workload spec): `slo_target_us: 200000` on a cohort (200ms TTFT target)
+- **Per-tier** (CLI flag): `--slo-targets critical=100000,standard=500000` (fallback when workload spec doesn't set per-request targets)
+- **Per-tier** (policy bundle): `admission.slo_targets` in YAML
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--dispatch-order slo-deadline` | Enable SLO-deadline ordering | `fifo` |
+| `--slo-targets` | Per-SLO-class TTFT targets in µs (e.g., `critical=100000,standard=500000`) | none |
+
+**Example:**
+
+```bash
+./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
+  --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 \
+  --dispatch-order slo-deadline --slo-targets "critical=100000,standard=500000"
+```
+
+**Observe integration:** When `slo_target_us > 0`, `blis observe` injects the `x-slo-ttft-ms` HTTP header on outgoing requests, matching GIE's header convention.
+
 ### In-Flight Eviction
 
 When flow control is enabled and the system is saturated, BLIS can evict sheddable requests that are already running on instances to free capacity for higher-priority waiting requests. This matches GIE's eviction architecture.
@@ -252,7 +285,7 @@ When flow control is enabled and the system is saturated, BLIS can evict sheddab
 |--------|--------------------------------------|---------------------|
 | Admission | Separate from queuing | Queue IS admission |
 | Queue structure | None (admit/reject then route directly) | Per-priority-band, per-flow |
-| Dispatch order | N/A (no queue) | `--dispatch-order` (fifo/priority) |
+| Dispatch order | N/A (no queue) | `--dispatch-order` (fifo/priority/slo-deadline) |
 | Capacity | N/A (no queue) | Per-band + global |
 
 ## Pipeline Latency

@@ -69,6 +69,7 @@ type TraceRecord struct {
 	ReasonRatio       float64
 	Model             string // model name (e.g., "meta-llama/Llama-3.1-8B-Instruct"); empty = default model
 	DeadlineUs        int64  // absolute deadline timestamp in microseconds (same time origin as ArrivalTimeUs); 0 = no timeout
+	SLOTargetUs       int64  // per-request SLO TTFT target in microseconds; 0 = no target
 	ServerInputTokens int    // server-reported prompt_tokens; 0 = not recorded (e.g., generated traces)
 	ArrivalTimeUs     int64
 	SendTimeUs        int64
@@ -132,13 +133,26 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 		}
 	}
 
+	// Conditionally include slo_target_us column: present iff any record has non-zero SLO target.
+	includeSLOTarget := false
+	for _, r := range records {
+		if r.SLOTargetUs > 0 {
+			includeSLOTarget = true
+			break
+		}
+	}
+
 	// Build column header list
-	columns := make([]string, 0, len(traceV2Columns)+1)
+	columns := make([]string, 0, len(traceV2Columns)+2)
 	for i, col := range traceV2Columns {
 		columns = append(columns, col)
 		// Insert vllm_priority immediately after slo_class (index 3)
 		if i == 3 && includeVLLMPriority {
 			columns = append(columns, "vllm_priority")
+		}
+		// Insert slo_target_us immediately after deadline_us (index 17 in base columns)
+		if col == "deadline_us" && includeSLOTarget {
+			columns = append(columns, "slo_target_us")
 		}
 	}
 
@@ -175,6 +189,11 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 			strconv.FormatFloat(r.ReasonRatio, 'f', -1, 64),
 			r.Model,
 			strconv.FormatInt(r.DeadlineUs, 10),
+		)
+		if includeSLOTarget {
+			row = append(row, strconv.FormatInt(r.SLOTargetUs, 10))
+		}
+		row = append(row,
 			strconv.Itoa(r.ServerInputTokens),
 			strconv.FormatInt(r.ArrivalTimeUs, 10),   // integer format
 			strconv.FormatInt(r.SendTimeUs, 10),       // integer format
@@ -222,12 +241,15 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 		return nil, fmt.Errorf("reading CSV header: %w", err)
 	}
 
-	// Detect if vllm_priority column is present (appears after slo_class)
+	// Detect optional columns from header
 	hasVLLMPriority := false
+	hasSLOTarget := false
 	for _, col := range headerRow {
 		if col == "vllm_priority" {
 			hasVLLMPriority = true
-			break
+		}
+		if col == "slo_target_us" {
+			hasSLOTarget = true
 		}
 	}
 
@@ -242,13 +264,16 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 		}
 		minCols := len(traceV2Columns)
 		if hasVLLMPriority {
-			minCols++ // expect 28 columns when vllm_priority is present
+			minCols++
+		}
+		if hasSLOTarget {
+			minCols++
 		}
 		if len(row) < minCols {
 			return nil, fmt.Errorf("CSV row has %d columns, expected at least %d", len(row), minCols)
 		}
 
-		r, err := parseTraceRecord(row, hasVLLMPriority)
+		r, err := parseTraceRecord(row, hasVLLMPriority, hasSLOTarget)
 		if err != nil {
 			return nil, err
 		}
@@ -258,11 +283,12 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	return &TraceV2{Header: header, Records: records}, nil
 }
 
-// parseTraceRecord parses a CSV row. Handles both 27-column (without vllm_priority)
-// and 28-column (with vllm_priority after slo_class) schemas.
-func parseTraceRecord(row []string, hasVLLMPriority bool) (*TraceRecord, error) {
-	// Column offset: when vllm_priority is present at index 4, all columns after
-	// slo_class (index 3) shift by +1.
+// parseTraceRecord parses a CSV row. Handles optional columns vllm_priority
+// (after slo_class) and slo_target_us (after deadline_us).
+func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool) (*TraceRecord, error) {
+	// Column offset: optional columns shift subsequent indices.
+	// vllm_priority appears after slo_class (index 3) → shifts everything after by +1.
+	// slo_target_us appears after deadline_us (base index 17) → shifts everything after by +1.
 	offset := 0
 	if hasVLLMPriority {
 		offset = 1
@@ -360,6 +386,18 @@ func parseTraceRecord(row []string, hasVLLMPriority bool) (*TraceRecord, error) 
 	if deadlineUs < 0 {
 		return nil, fmt.Errorf("parsing deadline_us: negative value %d not allowed (use 0 for no timeout)", deadlineUs)
 	}
+	// Parse optional slo_target_us (appears after deadline_us when present)
+	var sloTargetUs int64
+	if hasSLOTarget {
+		sloTargetUs, err = strconv.ParseInt(row[18+offset], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("parsing slo_target_us %q: %w", row[18+offset], err)
+		}
+		if sloTargetUs < 0 {
+			return nil, fmt.Errorf("parsing slo_target_us: negative value %d not allowed (use 0 for no target)", sloTargetUs)
+		}
+		offset++
+	}
 	serverInputTokens, err := strconv.Atoi(row[18+offset])
 	if err != nil {
 		return nil, fmt.Errorf("parsing server_input_tokens %q: %w", row[18+offset], err)
@@ -418,6 +456,7 @@ func parseTraceRecord(row []string, hasVLLMPriority bool) (*TraceRecord, error) 
 		ReasonRatio:       reasonRatio,
 		Model:             row[16+offset],
 		DeadlineUs:        deadlineUs,
+		SLOTargetUs:       sloTargetUs,
 		ServerInputTokens: serverInputTokens,
 		ArrivalTimeUs:     arrivalTimeUs,
 		SendTimeUs:        sendTimeUs,
@@ -497,6 +536,7 @@ func RequestsToTraceRecords(requests []*sim.Request) []TraceRecord {
 			ReasonRatio:      req.ReasonRatio,
 			Model:            req.Model,
 			DeadlineUs:       req.Deadline,
+			SLOTargetUs:      req.SLOTargetUs,
 			ArrivalTimeUs:    req.ArrivalTime,
 			SendTimeUs:       req.ArrivalTime, // no real network send in simulation
 			FirstChunkTimeUs: firstChunkUs,

@@ -75,6 +75,11 @@ type Request struct {
 	// Computed during workload generation as ArrivalTime + timeout.
 	Deadline int64
 
+	// Per-request SLO TTFT target in microseconds (0 = no target).
+	// Used by slo-deadline dispatch ordering: deadline = GatewayEnqueueTime + SLOTargetUs.
+	// Distinct from Deadline (hard timeout). Set from workload spec or trace.
+	SLOTargetUs int64
+
 	// Redirected marks a request that was re-injected by the REDIRECT drain policy.
 	// The source instance never completes it (the request was in WaitQ at drain time,
 	// so it never ran on the source). The destination instance is the sole completion

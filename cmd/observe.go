@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -99,6 +100,7 @@ type PendingRequest struct {
 	Unconstrained   bool
 	MinTokens       int
 	DeadlineUs      int64
+	SLOTargetUs     int64
 }
 
 // RequestRecord captures one request-response cycle.
@@ -207,6 +209,9 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 	}
 	if req.SLOClass != "" {
 		httpReq.Header.Set("x-gateway-inference-objective", req.SLOClass)
+	}
+	if req.SLOTargetUs > 0 {
+		httpReq.Header.Set("x-slo-ttft-ms", strconv.FormatInt(req.SLOTargetUs/1000, 10))
 	}
 
 	// Record send time
@@ -459,6 +464,7 @@ func (r *Recorder) RecordRequest(pending *PendingRequest, result *RequestRecord,
 		InputTokens:       inputTokens,
 		OutputTokens:      result.OutputTokens,
 		DeadlineUs:        pending.DeadlineUs,
+		SLOTargetUs:       pending.SLOTargetUs,
 		ArrivalTimeUs:     arrivalTimeUs,
 		SendTimeUs:        result.SendTimeUs,
 		FirstChunkTimeUs:  result.FirstChunkTimeUs,

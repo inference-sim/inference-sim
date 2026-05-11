@@ -42,9 +42,10 @@ func ExpandCohorts(cohorts []CohortSpec, seed int64) []ClientSpec {
 				PrefixLength: cohort.PrefixLength,
 				// Pointer fields shared across all expanded clients.
 				// Safe: GenerateRequests reads but never mutates these fields.
-				Reasoning:  cohort.Reasoning,
-				ClosedLoop: cohort.ClosedLoop,
-				Timeout:    cohort.Timeout,
+				Reasoning:   cohort.Reasoning,
+				ClosedLoop:  cohort.ClosedLoop,
+				Timeout:     cohort.Timeout,
+				SLOTargetUs: cohort.SLOTargetUs,
 				Network:    cohort.Network,
 				Multimodal: cohort.Multimodal,
 			}
