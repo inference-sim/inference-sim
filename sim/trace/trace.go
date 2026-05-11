@@ -36,6 +36,7 @@ type SimulationTrace struct {
 	Disaggregations []DisaggregationRecord
 	PrefillRoutings []PrefillRoutingRecord
 	DecodeRoutings  []DecodeRoutingRecord
+	EncodeRoutings  []EncodeRoutingRecord // GAP-4 (issue #1264)
 	KVTransfers     []KVTransferRecord
 }
 
@@ -48,6 +49,7 @@ func NewSimulationTrace(config TraceConfig) *SimulationTrace {
 		Disaggregations: make([]DisaggregationRecord, 0),
 		PrefillRoutings: make([]PrefillRoutingRecord, 0),
 		DecodeRoutings:  make([]DecodeRoutingRecord, 0),
+		EncodeRoutings:  make([]EncodeRoutingRecord, 0),
 		KVTransfers:     make([]KVTransferRecord, 0),
 	}
 }
@@ -80,4 +82,9 @@ func (st *SimulationTrace) RecordDecodeRouting(record DecodeRoutingRecord) {
 // RecordKVTransfer appends a KV transfer event record.
 func (st *SimulationTrace) RecordKVTransfer(record KVTransferRecord) {
 	st.KVTransfers = append(st.KVTransfers, record)
+}
+
+// RecordEncodeRouting appends an encode pool routing decision record (GAP-4, #1264).
+func (st *SimulationTrace) RecordEncodeRouting(record EncodeRoutingRecord) {
+	st.EncodeRoutings = append(st.EncodeRoutings, record)
 }

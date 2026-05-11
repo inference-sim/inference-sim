@@ -144,6 +144,10 @@ var (
 	prefillRoutingScorers  string  // Scorer weights for prefill pool routing
 	decodeRoutingScorers   string  // Scorer weights for decode pool routing
 
+	// E/P/D disaggregation config (GAP-4, issue #1264)
+	encodeInstances int    // Number of instances dedicated to encoding multimodal input (0 = disabled)
+	encodeDecider   string // Encode decider name: "never" (default), "always", "multimodal"
+
 	// Autoscaler config (Phase 1C)
 	modelAutoscalerIntervalUs float64 // tick interval in μs; 0 = disabled
 
@@ -978,6 +982,10 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&prefillRoutingScorers, "prefill-routing-scorers", "", "Scorer weights for prefill pool routing (e.g., queue-depth:2,kv-utilization:2)")
 	cmd.Flags().StringVar(&decodeRoutingScorers, "decode-routing-scorers", "", "Scorer weights for decode pool routing (e.g., queue-depth:2,kv-utilization:2)")
 
+	// E/P/D disaggregation (GAP-4, issue #1264). Registered on both run and replay.
+	cmd.Flags().IntVar(&encodeInstances, "encode-instances", 0, "Number of instances dedicated to encoding multimodal input (0 = encode pool disabled, default)")
+	cmd.Flags().StringVar(&encodeDecider, "encode-decider", "never", "Encode decider: never (default), always, multimodal")
+
 	// Flow control config (issue #882, GIE parity)
 	cmd.Flags().BoolVar(&flowControlEnabled, "flow-control", false, "Enable gateway queue with saturation-gated dispatch (GIE flow control)")
 	cmd.Flags().StringVar(&flowControlDetector, "saturation-detector", "never", "Saturation detector: "+strings.Join(sim.ValidSaturationDetectorNames(), ", "))
@@ -1415,7 +1423,7 @@ var runCmd = &cobra.Command{
 		if !sim.IsValidDisaggregationDecider(pdDecider) {
 			logrus.Fatalf("Unknown PD decider %q. Valid: %s", pdDecider, strings.Join(sim.ValidDisaggregationDeciderNames(), ", "))
 		}
-		if err := cluster.ValidatePoolTopology(prefillInstances, decodeInstances, prefillDecodeInstances, numInstances); err != nil {
+		if err := cluster.ValidatePoolTopology(prefillInstances, decodeInstances, prefillDecodeInstances, encodeInstances, numInstances); err != nil {
 			logrus.Fatalf("Invalid PD pool topology: %v", err)
 		}
 		// PD transfer parameter validation (R3, R11)
@@ -1435,6 +1443,20 @@ var runCmd = &cobra.Command{
 		}
 		if pdDecider != "" && pdDecider != "never" && prefillInstances == 0 {
 			logrus.Warnf("--pd-decider=%q has no effect because --prefill-instances=0 (disaggregation is disabled); set --prefill-instances and --decode-instances to enable", pdDecider)
+		}
+
+		// E/P/D disaggregation validation (GAP-4, issue #1264).
+		if encodeInstances < 0 {
+			logrus.Fatalf("--encode-instances must be >= 0, got %d", encodeInstances)
+		}
+		if !sim.IsValidEncodeDecider(encodeDecider) {
+			logrus.Fatalf("Unknown encode decider %q. Valid: %s", encodeDecider, strings.Join(sim.ValidEncodeDeciderNames(), ", "))
+		}
+		if encodeDecider != "" && encodeDecider != "never" && encodeInstances == 0 {
+			logrus.Fatalf("--encode-decider=%q requires --encode-instances > 0 (the encode pool is disabled)", encodeDecider)
+		}
+		if encodeInstances > 0 && (encodeDecider == "" || encodeDecider == "never") {
+			logrus.Warnf("--encode-decider=%q has no effect because --encode-instances=%d but the decider never encodes; set --encode-decider=multimodal or always to activate the encode pool", encodeDecider, encodeInstances)
 		}
 
 		// Per-pool hardware override construction (R3): build PoolOverrides from CLI flags.
@@ -1552,6 +1574,8 @@ var runCmd = &cobra.Command{
 			PrefillInstances:                prefillInstances,
 			DecodeInstances:                 decodeInstances,
 			SharedInstances:                 prefillDecodeInstances,
+			EncodeInstances:                 encodeInstances,
+			EncodeDecider:                   encodeDecider,
 			PDDecider:                       pdDecider,
 			PDPrefixThreshold:               pdPrefixThreshold,
 			PDTransferBandwidthGBps:         pdTransferBandwidth,
@@ -1673,6 +1697,7 @@ var runCmd = &cobra.Command{
 			cs.RejectedRequests(),
 			scheduler,
 			cs.RoutingRejections(),
+			cs.EncodeRoutingRejections(),
 		)
 
 		rawMetrics.PD = cluster.CollectPDMetrics(
@@ -1685,8 +1710,8 @@ var runCmd = &cobra.Command{
 		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth()       // Issue #882: gateway queue depth at horizon
 		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()         // Issue #882: gateway queue shed count
 		rawMetrics.GatewayQueueRejected = cs.GatewayQueueRejected() // Issue #1190: gateway queue rejected count
-		rawMetrics.GatewayEvicted = cs.GatewayEvicted()              // Phase 4: in-flight eviction count (#1228)
-		rawMetrics.GatewayExpired = cs.GatewayExpired()              // Phase 6: TTL expiration count (#1193)
+		rawMetrics.GatewayEvicted = cs.GatewayEvicted()             // Phase 4: in-flight eviction count (#1228)
+		rawMetrics.GatewayExpired = cs.GatewayExpired()             // Phase 6: TTL expiration count (#1193)
 
 		if rawMetrics.PD != nil && config.PDTransferContention {
 			rawMetrics.PD.PeakConcurrentTransfers = cs.PeakConcurrentTransfers()
@@ -1716,7 +1741,7 @@ var runCmd = &cobra.Command{
 		}
 
 		// Print anomaly counters if any detected
-		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 || rawMetrics.GatewayQueueRejected > 0 || rawMetrics.GatewayEvicted > 0 || rawMetrics.GatewayExpired > 0 || rawMetrics.TimedOutRequests > 0 {
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 || rawMetrics.GatewayQueueRejected > 0 || rawMetrics.GatewayEvicted > 0 || rawMetrics.GatewayExpired > 0 || rawMetrics.EncodeRoutingRejections > 0 || rawMetrics.TimedOutRequests > 0 {
 			fmt.Println("=== Anomaly Counters ===")
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
@@ -1749,6 +1774,9 @@ var runCmd = &cobra.Command{
 			}
 			if rawMetrics.GatewayExpired > 0 {
 				fmt.Printf("Gateway Expired (TTL): %d\n", rawMetrics.GatewayExpired)
+			}
+			if rawMetrics.EncodeRoutingRejections > 0 {
+				fmt.Printf("Encode Routing Rejections: %d\n", rawMetrics.EncodeRoutingRejections)
 			}
 		}
 

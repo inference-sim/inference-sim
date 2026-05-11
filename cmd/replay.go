@@ -181,6 +181,23 @@ Example:
 			logrus.Fatalf("--horizon must be > 0, got %d", replayHorizon)
 		}
 
+		// E/P/D validation (GAP-4, issue #1264). Per INV-13 (run/replay parity,
+		// PR #1305), encode pool flags are supported in replay the same way PD
+		// disaggregation is: validate the decider name and the encode-instances /
+		// encode-decider pairing, then wire them into DeploymentConfig below.
+		if encodeInstances < 0 {
+			logrus.Fatalf("--encode-instances must be >= 0, got %d", encodeInstances)
+		}
+		if !sim.IsValidEncodeDecider(encodeDecider) {
+			logrus.Fatalf("Unknown encode decider %q. Valid: %s", encodeDecider, strings.Join(sim.ValidEncodeDeciderNames(), ", "))
+		}
+		if encodeDecider != "" && encodeDecider != "never" && encodeInstances == 0 {
+			logrus.Fatalf("--encode-decider=%q requires --encode-instances > 0 (the encode pool is disabled)", encodeDecider)
+		}
+		if encodeInstances > 0 && (encodeDecider == "" || encodeDecider == "never") {
+			logrus.Warnf("--encode-decider=%q has no effect because --encode-instances=%d but the decider never encodes; set --encode-decider=multimodal or always to activate the encode pool", encodeDecider, encodeInstances)
+		}
+
 		// Resolve policy configuration (single code path shared with runCmd).
 		// Autoscaler and node-pool configs are not supported in replay — fail fast
 		// rather than silently producing divergent results (INV-13, Track B).
@@ -210,7 +227,7 @@ Example:
 		if !sim.IsValidDisaggregationDecider(pdDecider) {
 			logrus.Fatalf("Unknown PD decider %q. Valid: %s", pdDecider, strings.Join(sim.ValidDisaggregationDeciderNames(), ", "))
 		}
-		if err := cluster.ValidatePoolTopology(prefillInstances, decodeInstances, prefillDecodeInstances, numInstances); err != nil {
+		if err := cluster.ValidatePoolTopology(prefillInstances, decodeInstances, prefillDecodeInstances, encodeInstances, numInstances); err != nil {
 			logrus.Fatalf("Invalid PD pool topology: %v", err)
 		}
 		if prefillInstances > 0 {
@@ -455,6 +472,8 @@ Example:
 			PrefillInstances:                prefillInstances,
 			DecodeInstances:                 decodeInstances,
 			SharedInstances:                 prefillDecodeInstances,
+			EncodeInstances:                 encodeInstances,
+			EncodeDecider:                   encodeDecider,
 			PDDecider:                       pdDecider,
 			PDPrefixThreshold:               pdPrefixThreshold,
 			PDTransferBandwidthGBps:         pdTransferBandwidth,
@@ -534,6 +553,7 @@ Example:
 			cs.RejectedRequests(),
 			scheduler,
 			cs.RoutingRejections(),
+			cs.EncodeRoutingRejections(),
 		)
 		// INV-13 SYNC POINT (metrics): keep in sync with cmd/root.go post-simulation block.
 		rawMetrics.PD = cluster.CollectPDMetrics(
@@ -542,12 +562,12 @@ Example:
 			cs.PoolMembership(),
 			cs.PerInstanceMetricsByID(),
 		)
-		rawMetrics.ShedByTier = cs.ShedByTier()               // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
-		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth() // Issue #882: gateway queue depth at horizon
+		rawMetrics.ShedByTier = cs.ShedByTier()                     // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
+		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth()       // Issue #882: gateway queue depth at horizon
 		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()         // Issue #882: gateway queue shed count
 		rawMetrics.GatewayQueueRejected = cs.GatewayQueueRejected() // Issue #1190: gateway queue rejected count
-		rawMetrics.GatewayEvicted = cs.GatewayEvicted()              // Phase 4: in-flight eviction count (#1228)
-		rawMetrics.GatewayExpired = cs.GatewayExpired()              // Phase 6: TTL expiration count (#1193)
+		rawMetrics.GatewayEvicted = cs.GatewayEvicted()             // Phase 4: in-flight eviction count (#1228)
+		rawMetrics.GatewayExpired = cs.GatewayExpired()             // Phase 6: TTL expiration count (#1193)
 
 		if rawMetrics.PD != nil && config.PDTransferContention {
 			rawMetrics.PD.PeakConcurrentTransfers = cs.PeakConcurrentTransfers()
@@ -555,7 +575,7 @@ Example:
 		}
 
 		// Print anomaly counters if any detected
-		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 || rawMetrics.GatewayQueueRejected > 0 || rawMetrics.GatewayEvicted > 0 || rawMetrics.GatewayExpired > 0 || rawMetrics.TimedOutRequests > 0 {
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 || rawMetrics.GatewayQueueRejected > 0 || rawMetrics.GatewayEvicted > 0 || rawMetrics.GatewayExpired > 0 || rawMetrics.EncodeRoutingRejections > 0 || rawMetrics.TimedOutRequests > 0 {
 			fmt.Println("=== Anomaly Counters ===")
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
@@ -588,6 +608,9 @@ Example:
 			}
 			if rawMetrics.GatewayExpired > 0 {
 				fmt.Printf("Gateway Expired (TTL): %d\n", rawMetrics.GatewayExpired)
+			}
+			if rawMetrics.EncodeRoutingRejections > 0 {
+				fmt.Printf("Encode Routing Rejections: %d\n", rawMetrics.EncodeRoutingRejections)
 			}
 		}
 

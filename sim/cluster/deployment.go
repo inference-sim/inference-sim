@@ -70,6 +70,12 @@ type DeploymentConfig struct {
 	PDDecider         string // Disaggregation decider: "" or "never" (default), "always", "prefix-threshold"
 	PDPrefixThreshold int    // Non-cached token threshold for prefix-threshold decider (PR6)
 
+	// E/P/D disaggregation configuration (GAP-4, issue #1264).
+	// When EncodeInstances == 0 (default), the encode stage is disabled and the
+	// pipeline is byte-identical to the pre-PR simulator (BC-EPD-1).
+	EncodeInstances int    // Number of instances dedicated to encoding multimodal input (0 = disabled)
+	EncodeDecider   string // Encode decider: "", "never" (default), "always", "multimodal"
+
 	// PD KV transfer configuration (PR2)
 	PDTransferBandwidthGBps float64 // Inter-instance KV transfer bandwidth in GB/s (default 25.0)
 	PDTransferBaseLatencyMs float64 // Inter-instance KV transfer base latency in ms (default 0.05)
@@ -171,6 +177,10 @@ func (d DeploymentConfig) resolveConfigForRole(role PoolRole) sim.SimConfig {
 		return ResolvePoolConfig(d.SimConfig, d.PrefillOverrides)
 	case PoolRoleDecode:
 		return ResolvePoolConfig(d.SimConfig, d.DecodeOverrides)
+	case PoolRoleEncode:
+		// Encode pool uses the global SimConfig in this PR; per-pool
+		// overrides are a follow-up (GAP-4 design doc D6).
+		return d.SimConfig
 	default:
 		return d.SimConfig
 	}
