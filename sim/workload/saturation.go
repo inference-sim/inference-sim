@@ -492,7 +492,8 @@ func AnalyzeBacklogDrift(requests []*sim.Request, simEndUs int64, cfg BacklogDri
 	for i, w := range windows {
 		// Use window midpoint as time coordinate
 		samples[i].timeUs = (w.StartUs + w.EndUs) / 2
-		samples[i].count = w.ActiveEnd
+		// BC-5: Use time-averaged load (MeanInFlight) instead of boundary sample (ActiveEnd)
+		samples[i].count = int(math.Round(w.MeanInFlight))
 	}
 
 	// Step 4: Fit linear regression (BC-3)
