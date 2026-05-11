@@ -609,6 +609,47 @@ func TestWindowMetrics_NewFields_Accessible(t *testing.T) {
 	}
 }
 
+func TestComputeWindowMetrics_ConstantLoad_IntegralCorrect(t *testing.T) {
+	// GIVEN 10 requests active for the entire window [0, 60s)
+	// WHEN computing window metrics
+	// THEN MeanInFlight == 10.0 and PeakInFlight == 10 (BC-3)
+	intervals := []RequestInterval{
+		{ArrivalUs: -10_000, CompletionUs: 70_000_000},   // Request 1: active throughout
+		{ArrivalUs: -9_000, CompletionUs: 70_000_000},    // Request 2: active throughout
+		{ArrivalUs: -8_000, CompletionUs: 70_000_000},    // Request 3
+		{ArrivalUs: -7_000, CompletionUs: 70_000_000},    // Request 4
+		{ArrivalUs: -6_000, CompletionUs: 70_000_000},    // Request 5
+		{ArrivalUs: -5_000, CompletionUs: 70_000_000},    // Request 6
+		{ArrivalUs: -4_000, CompletionUs: 70_000_000},    // Request 7
+		{ArrivalUs: -3_000, CompletionUs: 70_000_000},    // Request 8
+		{ArrivalUs: -2_000, CompletionUs: 70_000_000},    // Request 9
+		{ArrivalUs: -1_000, CompletionUs: 70_000_000},    // Request 10
+	}
+	windowSizeUs := int64(60_000_000) // 60 seconds
+	totalDurationUs := int64(60_000_000)
+
+	windows := computeWindowMetrics(intervals, windowSizeUs, totalDurationUs)
+
+	if len(windows) != 1 {
+		t.Fatalf("Expected 1 window, got %d", len(windows))
+	}
+
+	w := windows[0]
+	const expectedMean = 10.0
+	const expectedPeak = 10
+
+	if math.Abs(w.MeanInFlight-expectedMean) > 0.01 {
+		t.Errorf("MeanInFlight: expected %.2f, got %.2f", expectedMean, w.MeanInFlight)
+	}
+	if w.PeakInFlight != expectedPeak {
+		t.Errorf("PeakInFlight: expected %d, got %d", expectedPeak, w.PeakInFlight)
+	}
+	// Also verify continuity with existing fields
+	if w.ActiveStart != 10 || w.ActiveEnd != 10 {
+		t.Errorf("ActiveStart/ActiveEnd should be 10, got %d/%d", w.ActiveStart, w.ActiveEnd)
+	}
+}
+
 // TestSaturationProgression_IncreasingRate demonstrates saturation classification
 // behavior under different load conditions.
 //

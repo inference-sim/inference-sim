@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"sort"
 	"time"
 
 	sim "github.com/inference-sim/inference-sim/sim"
@@ -202,7 +203,7 @@ func computeWindowMetrics(intervals []RequestInterval, windowSizeUs, totalDurati
 			EndUs:   endUs,
 		}
 
-		// Compute metrics by scanning all intervals
+		// Compute existing metrics by scanning all intervals
 		for _, iv := range intervals {
 			// NumEntered: arrival in [startUs, endUs)
 			if iv.ArrivalUs >= startUs && iv.ArrivalUs < endUs {
@@ -221,6 +222,74 @@ func computeWindowMetrics(intervals []RequestInterval, windowSizeUs, totalDurati
 				w.ActiveEnd++
 			}
 		}
+
+		// Compute integral-based metrics (BC-1, BC-2)
+		// Step 1: Collect transition events within [startUs, endUs)
+		type event struct {
+			timeUs int64
+			delta  int // +1 for arrival, -1 for departure
+		}
+		events := make([]event, 0, len(intervals)*2)
+		for _, iv := range intervals {
+			// Arrival event
+			if iv.ArrivalUs >= startUs && iv.ArrivalUs < endUs {
+				events = append(events, event{timeUs: iv.ArrivalUs, delta: +1})
+			}
+			// Departure event
+			if iv.CompletionUs >= startUs && iv.CompletionUs < endUs {
+				events = append(events, event{timeUs: iv.CompletionUs, delta: -1})
+			}
+		}
+
+		// Step 2: Sort events by time (Go's sort.Slice is stable, so arrivals before departures at same time)
+		sort.Slice(events, func(i, j int) bool {
+			if events[i].timeUs != events[j].timeUs {
+				return events[i].timeUs < events[j].timeUs
+			}
+			// Stable sort ensures original order preserved for same timestamp
+			// If needed, explicit tiebreaker: arrivals (+1) before departures (-1)
+			return events[i].delta > events[j].delta
+		})
+
+		// Step 3: Walk events to compute integral and peak
+		currentCount := w.ActiveStart // Requests active at window start
+		area := int64(0)
+		peakCount := currentCount
+		prevTimeUs := startUs
+
+		for _, ev := range events {
+			// Accumulate area of rectangle [prevTimeUs, ev.timeUs) at height currentCount
+			deltaTime := ev.timeUs - prevTimeUs
+			area += int64(currentCount) * deltaTime
+			if currentCount > peakCount {
+				peakCount = currentCount
+			}
+
+			// Update count
+			currentCount += ev.delta
+			if currentCount > peakCount {
+				peakCount = currentCount
+			}
+
+			prevTimeUs = ev.timeUs
+		}
+
+		// Final segment [lastEvent, endUs) at height currentCount
+		deltaTime := endUs - prevTimeUs
+		area += int64(currentCount) * deltaTime
+		if currentCount > peakCount {
+			peakCount = currentCount
+		}
+
+		// Step 4: Compute derived metrics
+		windowDuration := endUs - startUs
+		if windowDuration > 0 {
+			w.MeanInFlight = float64(area) / float64(windowDuration)
+		} else {
+			// Degenerate case (should not occur): zero-duration window
+			w.MeanInFlight = 0.0
+		}
+		w.PeakInFlight = peakCount
 
 		// DeltaBacklog and DrainRatio
 		w.DeltaBacklog = w.ActiveEnd - w.ActiveStart
