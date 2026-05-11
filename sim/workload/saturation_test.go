@@ -93,9 +93,8 @@ func TestRequestsToIntervals_Eligibility_ThreeCases(t *testing.T) {
 		t.Fatalf("Expected 2 intervals, got %d", len(intervals))
 	}
 
-	// Case 1: arrival=100, completion=FirstTokenTime+ITL[0]+ITL[1]=200+50+50=300
-	// Note: FirstTokenTime is an absolute timestamp, not a duration from arrival
-	if intervals[0].ArrivalUs != 100 || intervals[0].CompletionUs != 300 {
+	// Case 1: arrival=100, completion=ArrivalTime+FirstTokenTime+ITL[0]+ITL[1]=100+200+50+50=400
+	if intervals[0].ArrivalUs != 100 || intervals[0].CompletionUs != 400 {
 		t.Errorf("Case 1 mismatch: got (%d, %d)", intervals[0].ArrivalUs, intervals[0].CompletionUs)
 	}
 
@@ -396,8 +395,8 @@ func TestAnalyzeBacklogDrift_InsufficientData(t *testing.T) {
 
 	// Very short observation: only 2 windows (< MinWindows=5)
 	requests := []*sim.Request{
-		{ArrivalTime: 0, FirstTokenTime: 10, ITL: []int64{5, 5}, TTFTSet: true, State: sim.StateCompleted},         // completion = 10+5+5=20
-		{ArrivalTime: 50, FirstTokenTime: 60, ITL: []int64{5}, TTFTSet: true, State: sim.StateCompleted},            // completion = 60+5=65
+		{ArrivalTime: 0, FirstTokenTime: 10, ITL: []int64{5, 5}, TTFTSet: true, State: sim.StateCompleted},
+		{ArrivalTime: 50, FirstTokenTime: 10, ITL: []int64{5}, TTFTSet: true, State: sim.StateCompleted},
 	}
 	simEndUs := int64(120_000_000) // 120 seconds (only 2 complete 60s windows)
 
@@ -486,11 +485,10 @@ func TestAnalyzeBacklogDrift_EndToEnd_UNSATURATED(t *testing.T) {
 	// Create requests that complete quickly — no backlog buildup
 	var requests []*sim.Request
 	for i := int64(0); i < 50; i++ {
-		arrivalTime := i * 10_000_000 // Every 10 seconds
 		requests = append(requests, &sim.Request{
-			ArrivalTime:    arrivalTime,
-			FirstTokenTime: arrivalTime + 1000,    // TTFT = 1ms after arrival
-			ITL:            []int64{100_000},      // 100ms completion
+			ArrivalTime:    i * 10_000_000, // Every 10 seconds
+			FirstTokenTime: 1000,
+			ITL:            []int64{100_000}, // 100ms completion
 			TTFTSet:        true,
 			State:          sim.StateCompleted,
 		})
@@ -812,7 +810,7 @@ func TestAnalyzeBacklogDrift_RegressionUsesMeanInFlight(t *testing.T) {
 		requests = append(requests, &sim.Request{
 			ID:             fmt.Sprintf("req_%d", i),
 			ArrivalTime:    arrivalUs,
-			FirstTokenTime: arrivalUs + 50_000, // Absolute time, not duration
+			FirstTokenTime: 50_000,
 			TTFTSet:        ttftSet,
 			ITL:            itl,
 			State:          state,
@@ -873,9 +871,9 @@ func TestAnalyzeBacklogDrift_PeakMeanUsesPeakInFlight(t *testing.T) {
 		requests = append(requests, &sim.Request{
 			ID:             fmt.Sprintf("baseline_%d", i),
 			ArrivalTime:    arrivalUs,
-			FirstTokenTime: arrivalUs + ttftUs, // Absolute time, not duration
+			FirstTokenTime: ttftUs,
 			TTFTSet:        true,
-			ITL:            []int64{completionUs - arrivalUs - ttftUs}, // Remaining time after TTFT
+			ITL:            []int64{ttftUs, completionUs - arrivalUs - ttftUs}, // TTFT + remaining time
 			State:          sim.StateCompleted,
 			InputTokens:    []int{0},
 			OutputTokens:   []int{0},
@@ -891,9 +889,9 @@ func TestAnalyzeBacklogDrift_PeakMeanUsesPeakInFlight(t *testing.T) {
 		requests = append(requests, &sim.Request{
 			ID:             fmt.Sprintf("burst_%d", i),
 			ArrivalTime:    arrivalUs,
-			FirstTokenTime: arrivalUs + ttftUs, // Absolute time, not duration
+			FirstTokenTime: ttftUs,
 			TTFTSet:        true,
-			ITL:            []int64{completionUs - arrivalUs - ttftUs}, // Remaining time after TTFT
+			ITL:            []int64{ttftUs, completionUs - arrivalUs - ttftUs},
 			State:          sim.StateCompleted,
 			InputTokens:    []int{0},
 			OutputTokens:   []int{0},
@@ -1069,7 +1067,7 @@ func generateSyntheticRequestsWithHorizon(arrivalRate float64, numRequests int) 
 		req := &sim.Request{
 			ID:             fmt.Sprintf("req_%d", i),
 			ArrivalTime:    arrivalTime,
-			FirstTokenTime: arrivalTime + actualTTFT, // Convert TTFT duration to absolute time
+			FirstTokenTime: actualTTFT,
 			TTFTSet:        state == sim.StateCompleted,
 			ITL:            itl,
 			State:          state,
@@ -1231,9 +1229,9 @@ func createManualRequests(timings []requestTiming) []*sim.Request {
 		requests[i] = &sim.Request{
 			ID:             fmt.Sprintf("req_%d", i),
 			ArrivalTime:    timing.arriveUs,
-			FirstTokenTime: timing.arriveUs + ttft/2, // Absolute time: arrival + TTFT duration
+			FirstTokenTime: ttft / 2,
 			TTFTSet:        true,
-			ITL:            []int64{ttft / 2},          // Remaining time after TTFT
+			ITL:            []int64{ttft / 2},
 			State:          sim.StateCompleted,
 			InputTokens:    []int{0},
 			OutputTokens:   []int{0},
@@ -1312,7 +1310,7 @@ func TestSaturationProgression_RealWorkloads(t *testing.T) {
 				// Use actual completion times
 				for _, req := range requests {
 					if req.TTFTSet {
-						completionUs := req.FirstTokenTime // FirstTokenTime is absolute, not duration
+						completionUs := req.ArrivalTime + req.FirstTokenTime
 						for _, itl := range req.ITL {
 							completionUs += itl
 						}
@@ -1393,7 +1391,7 @@ func generateTestWorkload(rate float64, numRequests int, horizonUs int64) []*sim
 		requests = append(requests, &sim.Request{
 			ID:             fmt.Sprintf("req_%d", i),
 			ArrivalTime:    arrivalUs,
-			FirstTokenTime: serviceStartUs + serviceTimeUs/2, // Absolute time, not duration
+			FirstTokenTime: serviceTimeUs / 2,
 			TTFTSet:        ttftSet,
 			ITL:            itl,
 			State:          state,
@@ -1448,8 +1446,8 @@ func TestSaturationProgression_TransitionBoundaries(t *testing.T) {
 			rate:          40.0,
 			numRequests:   4000,
 			horizonUs:     0,
-			// Updated after bug fix: integral metrics detect burst. Peak/Mean = 2.50 > 2.0.
-			expectedClass: "TRANSIENT_BACKLOG",
+			// Updated after FirstTokenTime duration fix: Peak/Mean = 1.57 < 2.0.
+			expectedClass: "UNSATURATED",
 		},
 		{
 			name:          "After first transition - persistent (corrected after bug fix)",
@@ -1537,14 +1535,14 @@ func TestMetricsMode_BoundaryVsIntegral(t *testing.T) {
 		// Baseline: 2 requests active throughout the observation period
 		{
 			ArrivalTime:    0,
-			FirstTokenTime: 1_000_000,  // TTFT = 1s
+			FirstTokenTime: 1_000_000,  // TTFT = 1s (duration)
 			ITL:            make([]int64, 59),  // 59 tokens over 59s
 			TTFTSet:        true,
 			State:          sim.StateCompleted,
 		},
 		{
 			ArrivalTime:    1 * 1e6,
-			FirstTokenTime: 2 * 1e6,     // TTFT = 1s
+			FirstTokenTime: 1_000_000,     // TTFT = 1s (duration)
 			ITL:            make([]int64, 58),  // 58 tokens over 58s
 			TTFTSet:        true,
 			State:          sim.StateCompleted,
@@ -1562,7 +1560,7 @@ func TestMetricsMode_BoundaryVsIntegral(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		requests = append(requests, &sim.Request{
 			ArrivalTime:    25 * 1e6,        // Burst at t=25s
-			FirstTokenTime: 25*1e6 + 10_000, // TTFT = 10ms
+			FirstTokenTime: 10_000, // TTFT = 10ms (duration)
 			ITL:            []int64{90_000}, // 1 token taking 90ms
 			TTFTSet:        true,
 			State:          sim.StateCompleted,

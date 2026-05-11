@@ -179,9 +179,8 @@ func RequestsToIntervals(requests []*sim.Request, simEndUs int64) []RequestInter
 			})
 		} else {
 			// Case 3: Completed (TTFTSet==true) — compute completion time
-			// Completion = FirstTokenTime (absolute) + Σ(inter-token latencies)
-			// Note: FirstTokenTime is an absolute timestamp, not a duration from arrival
-			completionUs := req.FirstTokenTime
+			// Completion = ArrivalTime + FirstTokenTime (duration) + Σ(inter-token latencies)
+			completionUs := req.ArrivalTime + req.FirstTokenTime
 			for _, itl := range req.ITL {
 				completionUs += itl
 			}
