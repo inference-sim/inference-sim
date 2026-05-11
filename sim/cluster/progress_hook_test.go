@@ -173,7 +173,7 @@ func TestClusterSimulator_ProgressHook_ShedByTier(t *testing.T) {
 		}
 	}
 
-	// Conservation invariant: sum(ShedByTier) == RejectedRequests + GatewayQueueShed + GatewayEvicted.
+	// Conservation invariant: sum(ShedByTier) == RejectedRequests + GatewayQueueShed + GatewayEvicted + GatewayExpired.
 	for i, snap := range snapshots {
 		if snap.ShedByTier == nil {
 			continue
@@ -182,10 +182,10 @@ func TestClusterSimulator_ProgressHook_ShedByTier(t *testing.T) {
 		for _, count := range snap.ShedByTier {
 			sum += count
 		}
-		expected := snap.RejectedRequests + snap.GatewayQueueShed + snap.GatewayEvicted
+		expected := snap.RejectedRequests + snap.GatewayQueueShed + snap.GatewayEvicted + snap.GatewayExpired
 		if sum != expected {
-			t.Errorf("snapshot[%d]: sum(ShedByTier)=%d != RejectedRequests(%d)+GatewayQueueShed(%d)+GatewayEvicted(%d)=%d",
-				i, sum, snap.RejectedRequests, snap.GatewayQueueShed, snap.GatewayEvicted, expected)
+			t.Errorf("snapshot[%d]: sum(ShedByTier)=%d != RejectedRequests(%d)+GatewayQueueShed(%d)+GatewayEvicted(%d)+GatewayExpired(%d)=%d",
+				i, sum, snap.RejectedRequests, snap.GatewayQueueShed, snap.GatewayEvicted, snap.GatewayExpired, expected)
 		}
 	}
 

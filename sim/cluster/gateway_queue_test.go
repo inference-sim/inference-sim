@@ -827,3 +827,96 @@ func TestGatewayQueue_RoundRobin_WithGatedDispatch(t *testing.T) {
 		t.Fatalf("want sB, got %s", got.ID)
 	}
 }
+
+func TestGatewayQueue_RemoveByRequestID(t *testing.T) {
+	pm := sim.DefaultSLOPriorityMap()
+	q := NewGatewayQueue("fifo", 0, pm)
+
+	r1 := &sim.Request{ID: "r1", SLOClass: "standard", TenantID: "t1"}
+	r2 := &sim.Request{ID: "r2", SLOClass: "standard", TenantID: "t1"}
+	r3 := &sim.Request{ID: "r3", SLOClass: "batch", TenantID: "t2"}
+	q.Enqueue(r1, 1)
+	q.Enqueue(r2, 2)
+	q.Enqueue(r3, 3)
+
+	if q.Len() != 3 {
+		t.Fatalf("expected 3, got %d", q.Len())
+	}
+
+	// Remove middle request from same flow as r1.
+	got := q.RemoveByRequestID("r2")
+	if got != r2 {
+		t.Fatalf("expected r2, got %v", got)
+	}
+	if q.Len() != 2 {
+		t.Fatalf("expected 2 after remove, got %d", q.Len())
+	}
+
+	// Remove non-existent → no-op, returns nil.
+	got = q.RemoveByRequestID("r999")
+	if got != nil {
+		t.Fatalf("expected nil for missing ID, got %v", got)
+	}
+	if q.Len() != 2 {
+		t.Fatalf("expected 2 unchanged, got %d", q.Len())
+	}
+
+	// Remaining requests dequeue in correct order.
+	d1 := q.Dequeue()
+	d2 := q.Dequeue()
+	if d1.ID != "r1" || d2.ID != "r3" {
+		t.Fatalf("expected r1, r3; got %s, %s", d1.ID, d2.ID)
+	}
+	if q.Len() != 0 {
+		t.Fatalf("expected 0, got %d", q.Len())
+	}
+}
+
+func TestGatewayQueue_RemoveByRequestID_HeadRemoval(t *testing.T) {
+	pm := sim.DefaultSLOPriorityMap()
+	q := NewGatewayQueue("fifo", 0, pm)
+
+	r1 := &sim.Request{ID: "r1", SLOClass: "standard", TenantID: "t1"}
+	r2 := &sim.Request{ID: "r2", SLOClass: "standard", TenantID: "t1"}
+	q.Enqueue(r1, 1)
+	q.Enqueue(r2, 2)
+
+	// Remove head of flow.
+	got := q.RemoveByRequestID("r1")
+	if got != r1 {
+		t.Fatalf("expected r1, got %v", got)
+	}
+	if q.Len() != 1 {
+		t.Fatalf("expected 1, got %d", q.Len())
+	}
+
+	d := q.Dequeue()
+	if d.ID != "r2" {
+		t.Fatalf("expected r2, got %s", d.ID)
+	}
+}
+
+func TestGatewayQueue_RemoveByRequestID_WithShed(t *testing.T) {
+	// Verify that shed victims are cleaned from the index, so subsequent
+	// RemoveByRequestID for the victim returns nil (no double-counting).
+	pm := sim.DefaultSLOPriorityMap()
+	q := NewGatewayQueue("fifo", 2, pm) // maxDepth=2
+
+	r1 := &sim.Request{ID: "r1", SLOClass: "sheddable", TenantID: "t1"}
+	r2 := &sim.Request{ID: "r2", SLOClass: "standard", TenantID: "t1"}
+	q.Enqueue(r1, 1)
+	q.Enqueue(r2, 2)
+
+	// Enqueue a third (higher priority) → should shed r1.
+	r3 := &sim.Request{ID: "r3", SLOClass: "critical", TenantID: "t1"}
+	outcome, victim := q.Enqueue(r3, 3)
+	if outcome != ShedVictim || victim.ID != "r1" {
+		t.Fatalf("expected ShedVictim/r1, got %v/%v", outcome, victim)
+	}
+
+	// r1 was shed — RemoveByRequestID should return nil.
+	got := q.RemoveByRequestID("r1")
+	if got != nil {
+		t.Fatalf("expected nil for shed request, got %v", got)
+	}
+}

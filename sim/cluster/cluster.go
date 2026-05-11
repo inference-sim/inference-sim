@@ -41,6 +41,8 @@ type ClusterSimulator struct {
 	inFlightRequests     map[string]int         // instance ID → dispatched-but-not-completed count (#463)
 	evictionTracker      *EvictionTracker       // tracks routed sheddable requests for in-flight eviction (nil when flow control disabled)
 	gatewayEvicted       int                    // count of requests evicted in-flight from instances (INV-1: gw_evicted)
+	gatewayExpired       int                    // count of requests expired from gateway queue via TTL (INV-1: gw_expired)
+	requestTTL           int64                  // gateway queue request TTL in microseconds; 0 = disabled
 	poolMembership       map[string]PoolRole    // instance ID → pool role (nil when disaggregation disabled)
 	disaggregationDecider sim.DisaggregationDecider // PD disaggregation decider (nil when disabled)
 
@@ -433,6 +435,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			panic(fmt.Sprintf("ClusterSimulator: unknown fairness policy %q (must be global-strict or round-robin)", config.FlowControlFairnessPolicy))
 		}
 		cs.gatewayQueue = gq
+		cs.requestTTL = config.FlowControlRequestTTL
 		cs.saturationDetector = sim.NewSaturationDetector(
 			config.FlowControlDetector,
 			config.FlowControlQueueDepthThreshold,
@@ -895,6 +898,7 @@ func (c *ClusterSimulator) maybeDeliverProgressSnapshot(isFinal bool) {
 		GatewayQueueDepth: gatewayQueueDepth,
 		GatewayQueueShed:  gatewayQueueShed,
 		GatewayEvicted:    c.gatewayEvicted,
+		GatewayExpired:    c.gatewayExpired,
 		ActivePDTransfers: c.activeTransfers,
 		ActiveInstances:   activeCount,
 		TotalInstances:    len(c.instances),
@@ -1355,6 +1359,12 @@ func (c *ClusterSimulator) GatewayQueueRejected() int {
 // due to gateway-level eviction (INV-1: gw_evicted bucket).
 func (c *ClusterSimulator) GatewayEvicted() int {
 	return c.gatewayEvicted
+}
+
+// GatewayExpired returns the number of requests expired from the gateway queue
+// via TTL (INV-1: gw_expired bucket).
+func (c *ClusterSimulator) GatewayExpired() int {
+	return c.gatewayExpired
 }
 
 // tryDispatchFromGatewayQueue attempts to dispatch one request from the gateway queue.

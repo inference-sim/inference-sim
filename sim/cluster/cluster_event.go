@@ -226,6 +226,17 @@ func (e *AdmissionDecisionEvent) Execute(cs *ClusterSimulator) {
 		default:
 			panic(fmt.Sprintf("unhandled FlowControlAdmission outcome: %v", cs.flowControlAdmission.LastOutcome()))
 		}
+		// Schedule TTL event for the incoming request if TTL is enabled and
+		// the request was accepted into the queue (Enqueued or ShedVictim).
+		if cs.requestTTL > 0 && cs.flowControlAdmission.LastOutcome() != Rejected {
+			heap.Push(&cs.clusterEvents, clusterEventEntry{
+				event: &GatewayQueueTTLEvent{
+					time:      cs.clock + cs.requestTTL,
+					requestID: e.request.ID,
+				},
+				seqID: cs.nextSeqID(),
+			})
+		}
 		cs.tryDispatchFromGatewayQueue()
 		return
 	}
@@ -311,6 +322,33 @@ func (e *GatewayEvictionEvent) Execute(cs *ClusterSimulator) {
 	cs.shedByTier[tier]++
 
 	// Re-trigger dispatch: freed capacity may allow waiting request to dispatch.
+	cs.tryDispatchFromGatewayQueue()
+}
+
+// GatewayQueueTTLEvent fires when a request's TTL expires while queued.
+// If the request is still in the gateway queue, it is removed and counted as expired.
+// If the request was already dispatched or shed, this is a no-op.
+// Priority 6: after eviction (5), before scaling (8).
+type GatewayQueueTTLEvent struct {
+	time      int64
+	requestID string
+}
+
+func (e *GatewayQueueTTLEvent) Timestamp() int64 { return e.time }
+func (e *GatewayQueueTTLEvent) Priority() int     { return 6 }
+
+func (e *GatewayQueueTTLEvent) Execute(cs *ClusterSimulator) {
+	req := cs.gatewayQueue.RemoveByRequestID(e.requestID)
+	if req == nil {
+		return
+	}
+	logrus.Debugf("[cluster] gateway TTL expiry: req %s expired at tick %d", e.requestID, e.time)
+	cs.gatewayExpired++
+	tier := req.SLOClass
+	if tier == "" {
+		tier = "standard"
+	}
+	cs.shedByTier[tier]++
 	cs.tryDispatchFromGatewayQueue()
 }
 
