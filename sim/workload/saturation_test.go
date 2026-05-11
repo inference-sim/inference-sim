@@ -1437,7 +1437,9 @@ func TestSaturationProgression_TransitionBoundaries(t *testing.T) {
 			rate:          10.0,
 			numRequests:   1000,
 			horizonUs:     0,
-			expectedClass: "UNSATURATED",
+			// Updated after integral metrics (PR #1316): PeakInFlight now detects
+			// intra-window bursts that boundary-sampling missed. Peak/Mean ≈ 2.73 > 2.0.
+			expectedClass: "TRANSIENT_BACKLOG",
 		},
 		{
 			name:          "Just before first transition",
