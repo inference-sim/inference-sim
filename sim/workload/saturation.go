@@ -101,6 +101,8 @@ type WindowMetrics struct {
 	ActiveEnd    int     // Active requests at window end
 	DeltaBacklog int     // ActiveEnd - ActiveStart (change in backlog over window, BC-1)
 	DrainRatio   float64 // NumLeft / NumEntered (NaN if NumEntered==0)
+	MeanInFlight float64 // Time-weighted average in-flight count over the window (BC-1)
+	PeakInFlight int     // Maximum in-flight count at any instant within the window (BC-2)
 }
 
 // BacklogDriftReport contains saturation classification results (BC-4, BC-5, BC-6, BC-7).

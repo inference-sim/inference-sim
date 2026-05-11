@@ -584,6 +584,31 @@ func TestWriteBacklogDriftReportJSON_SanitizesNaN(t *testing.T) {
 	}
 }
 
+func TestWindowMetrics_NewFields_Accessible(t *testing.T) {
+	// GIVEN a WindowMetrics struct
+	// WHEN setting MeanInFlight and PeakInFlight
+	// THEN fields are accessible and retain their values
+	w := WindowMetrics{
+		StartUs:      0,
+		EndUs:        60_000_000,
+		NumEntered:   10,
+		NumLeft:      8,
+		ActiveStart:  5,
+		ActiveEnd:    7,
+		DeltaBacklog: 2,
+		DrainRatio:   0.8,
+		MeanInFlight: 6.5,
+		PeakInFlight: 12,
+	}
+
+	if w.MeanInFlight != 6.5 {
+		t.Errorf("MeanInFlight: expected 6.5, got %f", w.MeanInFlight)
+	}
+	if w.PeakInFlight != 12 {
+		t.Errorf("PeakInFlight: expected 12, got %d", w.PeakInFlight)
+	}
+}
+
 // TestSaturationProgression_IncreasingRate demonstrates saturation classification
 // behavior under different load conditions.
 //
