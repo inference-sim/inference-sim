@@ -82,7 +82,8 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 			return
 		}
 	}
-	// R6: library panic on programming error — policy must return valid target
+	// The routing policy contract requires Route to return a TargetInstance from the
+	// provided snapshot set; a panic here indicates a policy implementation bug.
 	panic(fmt.Sprintf("PrefillRoutingEvent: invalid TargetInstance %q returned by routing policy", decision.TargetInstance))
 }
 
