@@ -665,6 +665,8 @@ Example:
 				saturationPeakBand,
 				saturationConfidence,
 			)
+			// Apply metrics mode from flag
+			cfg.MetricsMode = workload.MetricsMode(saturationMetricsMode)
 			report := workload.AnalyzeBacklogDrift(allRequests, simEndUs, cfg)
 			if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
 				logrus.Fatalf("Failed to write saturation report: %v", err)
