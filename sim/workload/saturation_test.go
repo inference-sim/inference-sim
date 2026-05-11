@@ -1760,3 +1760,102 @@ func TestMetricsMode_Default(t *testing.T) {
 		t.Errorf("DefaultBacklogDriftConfig should default to MetricsModeIntegral, got %q", cfgDefault.MetricsMode)
 	}
 }
+
+// TestSaturationClassification_MonotonicProgression_IntegralMode verifies that
+// integral mode classifications progress monotonically as arrival rate increases.
+// This is a regression test for issue #1316.
+//
+// Horizon is scaled appropriately for each rate to ensure complete observation.
+func TestSaturationClassification_MonotonicProgression_IntegralMode(t *testing.T) {
+	// GIVEN a sequence of increasing arrival rates with appropriate horizons
+	// WHEN classifying saturation at each rate
+	// THEN classifications should progress monotonically (never SATURATED → UNSATURATED)
+
+	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95)
+	cfg.MinMeanForPeakRatio = 5.0
+	cfg.MinMeanForSlope = 10.0
+
+	// Service time = 100ms, so capacity = 10 req/s
+	// Expected progression:
+	//   - Rates < 10: UNSATURATED
+	//   - Rates slightly > 10: TRANSIENT_BACKLOG or PERSISTENTLY_SATURATED (depends on confidence)
+	//   - Rates >> 10: PERSISTENTLY_SATURATED (clear growth)
+	tests := []struct {
+		rate     float64
+		horizonS float64 // Horizon scales with expected saturation time
+		expected string  // Expected classification (exact, not family)
+	}{
+		{2, 300, "UNSATURATED"},
+		{4, 300, "UNSATURATED"},
+		{6, 300, "UNSATURATED"},
+		{8, 300, "UNSATURATED"},
+		{9, 300, "UNSATURATED"},
+		{11, 400, "PERSISTENTLY_SATURATED"},  // Just above capacity - should show clear growth
+		{12, 500, "PERSISTENTLY_SATURATED"},  // 20% overload
+		{15, 600, "PERSISTENTLY_SATURATED"},  // 50% overload
+		{20, 700, "PERSISTENTLY_SATURATED"},  // 2x overload
+		{30, 800, "PERSISTENTLY_SATURATED"},  // 3x overload
+		{40, 900, "PERSISTENTLY_SATURATED"},  // 4x overload
+		{50, 1000, "PERSISTENTLY_SATURATED"}, // 5x overload
+	}
+
+	var results []struct {
+		rate           float64
+		classification string
+		meanInFlight   float64
+	}
+
+	for _, tt := range tests {
+		simEndUs := int64(tt.horizonS * 1e6)
+		numRequests := int(tt.rate * tt.horizonS)
+
+		// Use generateTestWorkload which simulates FIFO queueing
+		// Service time: 100ms. Capacity = 1/0.1s = 10 req/s
+		// Rates > 10 should saturate
+		requests := generateTestWorkload(tt.rate, numRequests, simEndUs)
+
+		report := AnalyzeBacklogDrift(requests, simEndUs, cfg)
+
+		results = append(results, struct {
+			rate           float64
+			classification string
+			meanInFlight   float64
+		}{tt.rate, report.Classification, report.MeanInFlight})
+
+		if report.Classification != tt.expected {
+			t.Errorf("Rate %.0f (horizon=%.0fs): expected %s, got %s (mean=%.1f)",
+				tt.rate, tt.horizonS, tt.expected, report.Classification, report.MeanInFlight)
+		}
+
+		t.Logf("Rate %3.0f (horizon=%4.0fs) → %-25s (mean: %6.1f)",
+			tt.rate, tt.horizonS, report.Classification, report.MeanInFlight)
+	}
+
+	// Verify monotonicity: once saturated, can never go back to unsaturated
+	saturatedSeen := false
+	for i, r := range results {
+		isSaturated := r.classification == "TRANSIENT_BACKLOG" || r.classification == "PERSISTENTLY_SATURATED"
+
+		if isSaturated {
+			saturatedSeen = true
+		}
+
+		if saturatedSeen && r.classification == "UNSATURATED" {
+			t.Errorf("MONOTONICITY VIOLATION at rate %.0f:\n"+
+				"  Previous rates were saturated, but rate %.0f classified as UNSATURATED\n"+
+				"  Full progression:",
+				r.rate, r.rate)
+			for j, prev := range results {
+				marker := ""
+				if j == i {
+					marker = " ← VIOLATION"
+				}
+				t.Logf("    Rate %3.0f: %-25s (mean: %.1f)%s",
+					prev.rate, prev.classification, prev.meanInFlight, marker)
+			}
+			t.FailNow()
+		}
+	}
+
+	t.Logf("✓ Monotonic progression verified across %d rates", len(results))
+}
