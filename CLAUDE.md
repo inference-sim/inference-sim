@@ -91,6 +91,10 @@ go build -o blis main.go
 # Run with concurrency-based flow control and priority dispatch ordering
 ./blis run --model qwen/qwen3-14b --flow-control --saturation-detector concurrency \
   --max-concurrency 64 --dispatch-order priority --max-gateway-queue-depth 1000
+
+# Run with flow control and request TTL (expire queued requests after 5 seconds)
+./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
+  --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 --request-ttl 5000000
 ```
 
 ## Testing
@@ -158,7 +162,7 @@ During PR reviews, check all Antipattern Prevention rules (R1-R23) in [`docs/con
 
 Full details (verification strategies, evidence): see [`docs/contributing/standards/invariants.md`](docs/contributing/standards/invariants.md).
 
-- **INV-1 Request conservation**: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out + routing_rejections + gateway_queue_depth + gateway_queue_shed + gateway_queue_rejected + gateway_evicted + encode_routing_rejections` at simulation end. Full pipeline: `num_requests == injected_requests + rejected_requests`. `encode_routing_rejections` (GAP-4, #1264) is always zero when `--encode-instances 0`.
+- **INV-1 Request conservation**: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out + routing_rejections + gateway_queue_depth + gateway_queue_shed + gateway_queue_rejected + gateway_evicted + gateway_expired + encode_routing_rejections` at simulation end. Full pipeline: `num_requests == injected_requests + rejected_requests`. `encode_routing_rejections` (GAP-4, #1264) is always zero when `--encode-instances 0`.
 - **INV-2 Request lifecycle**: Requests transition queued → running → completed; not completed before horizon remain in current state
 - **INV-3 Clock monotonicity**: Simulation clock never decreases
 - **INV-4 KV cache conservation**: `allocated_blocks + free_blocks = total_blocks` at all times

@@ -125,6 +125,12 @@ func (rr *RoundRobinPolicy) Pick(band *priorityBand) *flowQueue {
 	return nil
 }
 
+// requestLocation stores the flow coordinates for O(1) request lookup by ID.
+type requestLocation struct {
+	bandPriority int
+	tenantID     string
+}
+
 // GatewayQueue is a per-priority-band, per-flow queue for holding admitted requests
 // before routing. Replaces the flat heap with a hierarchical structure:
 // bands sorted descending by priority, each containing per-tenant flow queues.
@@ -141,6 +147,7 @@ type GatewayQueue struct {
 	priorityMode         bool    // true for "priority", false for "fifo"
 	usageLimitThreshold  float64 // per-band HoL blocking ceiling (default 1.0 = no HoL)
 	fairnessPolicy       FairnessPolicy
+	requestIndex         map[string]requestLocation // request ID → flow coordinates for TTL removal
 }
 
 // NewGatewayQueue creates a gateway queue with the given dispatch order and max depth.
@@ -163,6 +170,7 @@ func NewGatewayQueue(dispatchOrder string, maxDepth int, priorityMap *sim.SLOPri
 		priorityMode:        dispatchOrder == "priority",
 		usageLimitThreshold: 1.0,
 		fairnessPolicy:      &GlobalStrictPolicy{},
+		requestIndex:        make(map[string]requestLocation),
 	}
 }
 
@@ -270,6 +278,7 @@ func (q *GatewayQueue) Enqueue(req *sim.Request, seqID int64) (EnqueueOutcome, *
 	flow.requests = append(flow.requests, flowEntry{request: req, seqID: seqID})
 	band.totalLen++
 	q.totalLen++
+	q.requestIndex[req.ID] = requestLocation{bandPriority: priority, tenantID: tenantID}
 
 	if shedVictim != nil {
 		return ShedVictim, shedVictim
@@ -337,6 +346,7 @@ func (q *GatewayQueue) removeEntryByIndex(flow *flowQueue, band *priorityBand, i
 	if idx != last {
 		panic(fmt.Sprintf("removeEntryByIndex: idx=%d != last=%d — shed victim must be flow tail (seqID ordering violated)", idx, last))
 	}
+	delete(q.requestIndex, flow.requests[idx].request.ID)
 	flow.requests = flow.requests[:last]
 	band.totalLen--
 	q.totalLen--
@@ -457,6 +467,7 @@ func (q *GatewayQueue) dequeueFIFO() *sim.Request {
 	}
 	req := bestEntry.request
 	// Remove head (index 0).
+	delete(q.requestIndex, req.ID)
 	bestFlow.requests = bestFlow.requests[1:]
 	bestBand.totalLen--
 	q.totalLen--
@@ -473,6 +484,7 @@ func (q *GatewayQueue) dequeueFromBand(band *priorityBand) *sim.Request {
 		return nil
 	}
 	req := flow.requests[0].request
+	delete(q.requestIndex, req.ID)
 	flow.requests = flow.requests[1:]
 	band.totalLen--
 	q.totalLen--
@@ -516,4 +528,50 @@ func (q *GatewayQueue) HasNonSheddableWaiting() bool {
 		}
 	}
 	return false
+}
+
+// RemoveByRequestID removes a specific request from the queue by its ID.
+// Returns the request if found and removed, or nil if the request is not in
+// the queue (already dispatched, shed, or never enqueued). The nil case is
+// expected for TTL events that fire after dispatch — not an error.
+func (q *GatewayQueue) RemoveByRequestID(id string) *sim.Request {
+	loc, ok := q.requestIndex[id]
+	if !ok {
+		return nil
+	}
+
+	// Find the band.
+	var band *priorityBand
+	for _, b := range q.bands {
+		if b.priority == loc.bandPriority {
+			band = b
+			break
+		}
+	}
+	if band == nil {
+		panic(fmt.Sprintf("RemoveByRequestID: requestIndex references band priority=%d but band not found", loc.bandPriority))
+	}
+
+	flow, ok := band.flows[loc.tenantID]
+	if !ok {
+		panic(fmt.Sprintf("RemoveByRequestID: requestIndex references tenant %q in band %d but flow not found", loc.tenantID, loc.bandPriority))
+	}
+
+	// Scan the flow for the matching request ID.
+	for i, entry := range flow.requests {
+		if entry.request.ID == id {
+			req := entry.request
+			// Arbitrary-position removal: shift elements to preserve seqID ordering.
+			flow.requests = append(flow.requests[:i], flow.requests[i+1:]...)
+			delete(q.requestIndex, id)
+			band.totalLen--
+			q.totalLen--
+			if len(flow.requests) == 0 {
+				delete(band.flows, flow.key.TenantID)
+			}
+			return req
+		}
+	}
+
+	panic(fmt.Sprintf("RemoveByRequestID: requestIndex contains %q but request not found in flow (band=%d, tenant=%q)", id, loc.bandPriority, loc.tenantID))
 }

@@ -162,6 +162,7 @@ var (
 	flowControlPerBandCapacity      int
 	flowControlUsageLimitThreshold  float64
 	flowControlFairnessPolicy       string
+	flowControlRequestTTL           int64
 
 	// Per-pool hardware override config
 	prefillTP           int
@@ -860,6 +861,12 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 			logrus.Warnf("--flow-control enabled but --saturation-detector is %q (pass-through); specify 'utilization' or 'concurrency' for actual gating", flowControlDetector)
 		}
 	}
+	if flowControlRequestTTL < 0 {
+		logrus.Fatalf("--request-ttl must be >= 0, got %d", flowControlRequestTTL)
+	}
+	if flowControlRequestTTL > 0 && !flowControlEnabled {
+		logrus.Warnf("--request-ttl %d has no effect without --flow-control", flowControlRequestTTL)
+	}
 
 	logrus.Infof("Policy config: admission=%s, routing=%s, scheduler=%s, preemption=%s",
 		admissionPolicy, routingPolicy, scheduler, preemptionPolicy)
@@ -990,6 +997,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&flowControlPerBandCapacity, "per-band-capacity", 0, "Max requests per priority band when --flow-control is enabled (0=unlimited)")
 	cmd.Flags().Float64Var(&flowControlUsageLimitThreshold, "usage-limit-threshold", 1.0, "Per-band saturation ceiling for HoL blocking (1.0=no HoL, <1.0 gates lower-priority bands earlier)")
 	cmd.Flags().StringVar(&flowControlFairnessPolicy, "fairness-policy", "global-strict", "Intra-band dispatch fairness: global-strict, round-robin")
+	cmd.Flags().Int64Var(&flowControlRequestTTL, "request-ttl", 0, "Gateway queue request TTL in microseconds (0=disabled). Requires --flow-control.")
 
 	// Per-pool hardware overrides
 	cmd.Flags().IntVar(&prefillTP, "prefill-tp", 0, "Tensor parallelism degree for prefill pool instances (0 = use global --tensor-parallelism)")
@@ -1592,6 +1600,7 @@ var runCmd = &cobra.Command{
 			FlowControlPerBandCapacity:      flowControlPerBandCapacity,
 			FlowControlUsageLimitThreshold:  flowControlUsageLimitThreshold,
 			FlowControlFairnessPolicy:       flowControlFairnessPolicy,
+			FlowControlRequestTTL:           flowControlRequestTTL,
 			ModelAutoscalerIntervalUs:       bundleAutoscalerIntervalUs,
 			ScaleUpStabilizationWindowUs:    bundleScaleUpStabilizationWindowUs,
 			ScaleDownStabilizationWindowUs:  bundleScaleDownStabilizationWindowUs,
@@ -1702,6 +1711,7 @@ var runCmd = &cobra.Command{
 		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()         // Issue #882: gateway queue shed count
 		rawMetrics.GatewayQueueRejected = cs.GatewayQueueRejected() // Issue #1190: gateway queue rejected count
 		rawMetrics.GatewayEvicted = cs.GatewayEvicted()             // Phase 4: in-flight eviction count (#1228)
+		rawMetrics.GatewayExpired = cs.GatewayExpired()             // Phase 6: TTL expiration count (#1193)
 
 		if rawMetrics.PD != nil && config.PDTransferContention {
 			rawMetrics.PD.PeakConcurrentTransfers = cs.PeakConcurrentTransfers()
@@ -1731,7 +1741,7 @@ var runCmd = &cobra.Command{
 		}
 
 		// Print anomaly counters if any detected
-		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 || rawMetrics.GatewayQueueRejected > 0 || rawMetrics.GatewayEvicted > 0 || rawMetrics.EncodeRoutingRejections > 0 || rawMetrics.TimedOutRequests > 0 {
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 || rawMetrics.GatewayQueueRejected > 0 || rawMetrics.GatewayEvicted > 0 || rawMetrics.GatewayExpired > 0 || rawMetrics.EncodeRoutingRejections > 0 || rawMetrics.TimedOutRequests > 0 {
 			fmt.Println("=== Anomaly Counters ===")
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
@@ -1761,6 +1771,9 @@ var runCmd = &cobra.Command{
 			}
 			if rawMetrics.GatewayEvicted > 0 {
 				fmt.Printf("Gateway Evicted (in-flight): %d\n", rawMetrics.GatewayEvicted)
+			}
+			if rawMetrics.GatewayExpired > 0 {
+				fmt.Printf("Gateway Expired (TTL): %d\n", rawMetrics.GatewayExpired)
 			}
 			if rawMetrics.EncodeRoutingRejections > 0 {
 				fmt.Printf("Encode Routing Rejections: %d\n", rawMetrics.EncodeRoutingRejections)
