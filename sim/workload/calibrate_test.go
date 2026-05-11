@@ -1264,4 +1264,14 @@ func TestMapePct(t *testing.T) {
 			}
 		})
 	}
+
+	// Mismatched-length slices must panic (exported function contract)
+	t.Run("mismatched lengths panics", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("MapePct with len(real)!=len(sim) should panic, but did not")
+			}
+		}()
+		MapePct([]float64{100.0, 200.0}, []float64{120.0}) // len mismatch
+	})
 }

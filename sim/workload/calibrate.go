@@ -519,10 +519,14 @@ func pearsonCorrelation(x, y []float64) float64 {
 }
 
 // MapePct computes mean absolute percentage error between real and sim slices.
+// Panics if len(real) != len(sim) — slices must be parallel vectors.
 // Pairs where real==0, NaN, or Inf are skipped. Pairs where the computed
 // absolute error is NaN or Inf (e.g., sim is NaN or Inf) are also skipped.
 // Returns 0 if no valid pairs. Returns a fraction (not a percentage) — multiply by 100 for display.
 func MapePct(real, sim []float64) float64 {
+	if len(real) != len(sim) {
+		panic(fmt.Sprintf("MapePct: real and sim slices must have equal length, got real=%d sim=%d", len(real), len(sim)))
+	}
 	var sum float64
 	count := 0
 	for i := range real {

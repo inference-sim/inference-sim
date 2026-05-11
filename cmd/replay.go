@@ -38,7 +38,7 @@ exact request sequence captured in the trace. Unlike 'blis run', it does not gen
 requests from distributions — the request sequence is fully determined by the trace.
 
 Use --results-path to write per-request SimResult JSON (request_id, ttft_us, e2e_us,
-input_tokens, output_tokens) for downstream consumption by blis calibrate.
+input_tokens, output_tokens, slo_class, model, itl_mean_us) for downstream consumption by blis calibrate.
 
 Known limitations:
   - Warm-up requests: trace.Header.warm_up_requests is not filtered; blis calibrate
@@ -645,7 +645,7 @@ func init() {
 	registerSimConfigFlags(replayCmd)
 	replayCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "Path to TraceV2 header YAML file (required)")
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
-	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens) for blis calibrate consumption.")
+	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us) for blis calibrate consumption.")
 	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\"")
 	replayCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", `Session replay mode: "fixed" (pre-baked arrivals from trace) or "closed-loop" (load-adaptive follow-ups via SessionManager)`)
 	replayCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "Override think time between session rounds in milliseconds (0 = derive from trace inter-round arrival gaps; mutually exclusive with --think-time-dist; requires --session-mode closed-loop)")
@@ -752,7 +752,7 @@ func extractSimResults(m *sim.Metrics) []workload.SimResult {
 		logrus.Debugf("extractSimResults: excluded %d non-numeric-ID request(s) (session follow-ups)", nonNumericCount)
 	}
 	if len(m.RequestITLs) == 0 {
-		logrus.Debugf("extractSimResults: no ITL data recorded; ITLMeanUs will be 0 for all requests (use --record-itl in blis observe to capture ITL)")
+		logrus.Debugf("extractSimResults: RequestITLs is empty (no completed requests); ITLMeanUs will be 0 for all entries")
 	}
 	// Sort by RequestID for deterministic JSON output (R2, INV-6)
 	sort.Slice(results, func(i, j int) bool {
