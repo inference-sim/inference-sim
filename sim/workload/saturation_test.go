@@ -650,6 +650,57 @@ func TestComputeWindowMetrics_ConstantLoad_IntegralCorrect(t *testing.T) {
 	}
 }
 
+func TestComputeWindowMetrics_SubWindowBurst_PeakCaptured(t *testing.T) {
+	// GIVEN 1 baseline request + 50-request burst during [10s, 12s]
+	// WHEN computing window metrics for [0, 60s)
+	// THEN PeakInFlight == 51 (captures burst), MeanInFlight ≈ 2.67 (BC-4, BC-5)
+	intervals := []RequestInterval{
+		{ArrivalUs: -5_000_000, CompletionUs: 70_000_000}, // Baseline request active throughout
+	}
+	// Add 50 burst requests: arrive at 10s, complete at 12s
+	for i := 0; i < 50; i++ {
+		intervals = append(intervals, RequestInterval{
+			ArrivalUs:    10_000_000,
+			CompletionUs: 12_000_000,
+		})
+	}
+
+	windowSizeUs := int64(60_000_000)    // 60 seconds
+	totalDurationUs := int64(60_000_000) // Single window
+
+	windows := computeWindowMetrics(intervals, windowSizeUs, totalDurationUs)
+
+	if len(windows) != 1 {
+		t.Fatalf("Expected 1 window, got %d", len(windows))
+	}
+
+	w := windows[0]
+
+	// PeakInFlight should capture the burst peak
+	// During [10s, 12s], there are 51 requests active (1 baseline + 50 burst)
+	const expectedPeak = 51
+	if w.PeakInFlight != expectedPeak {
+		t.Errorf("PeakInFlight: expected %d, got %d", expectedPeak, w.PeakInFlight)
+	}
+
+	// MeanInFlight calculation:
+	// [0s, 10s):   1 request × 10s = 10 request-seconds
+	// [10s, 12s): 51 requests × 2s = 102 request-seconds
+	// [12s, 60s):  1 request × 48s = 48 request-seconds
+	// Total area = 10 + 102 + 48 = 160 request-seconds
+	// Mean = 160 / 60 ≈ 2.667
+	const expectedMean = 160.0 / 60.0
+	if math.Abs(w.MeanInFlight-expectedMean) > 0.01 {
+		t.Errorf("MeanInFlight: expected %.3f, got %.3f", expectedMean, w.MeanInFlight)
+	}
+
+	// Verify that point-sampling would miss this burst
+	// (ActiveEnd should be 1, not 51 - the burst ended before window end)
+	if w.ActiveEnd != 1 {
+		t.Errorf("ActiveEnd: expected 1 (burst ended), got %d", w.ActiveEnd)
+	}
+}
+
 // TestSaturationProgression_IncreasingRate demonstrates saturation classification
 // behavior under different load conditions.
 //
