@@ -102,8 +102,16 @@ type WindowMetrics struct {
 	ActiveEnd    int     // Active requests at window end
 	DeltaBacklog int     // ActiveEnd - ActiveStart (change in backlog over window, BC-1)
 	DrainRatio   float64 // NumLeft / NumEntered (NaN if NumEntered==0)
-	MeanInFlight float64 // Time-weighted average in-flight count over the window (BC-1)
-	PeakInFlight int     // Maximum in-flight count at any instant within the window (BC-2)
+
+	// MeanInFlight is the time-weighted average in-flight request count over the window.
+	// Unlike ActiveEnd (a boundary sample), MeanInFlight captures burst behavior within
+	// the window via integral computation. Use this for robust saturation metrics.
+	MeanInFlight float64
+
+	// PeakInFlight is the maximum in-flight request count at any instant within the window.
+	// Unlike max(ActiveEnd) across windows (which only samples boundaries), PeakInFlight
+	// detects transient bursts that occur between window boundaries. Used for TRANSIENT_BACKLOG classification.
+	PeakInFlight int
 }
 
 // BacklogDriftReport contains saturation classification results (BC-4, BC-5, BC-6, BC-7).
