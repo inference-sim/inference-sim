@@ -1385,7 +1385,7 @@
   <span class="md-ellipsis">
     
   
-    Supported Models
+    Model Compatibility
   
 
     
@@ -2102,6 +2102,28 @@
     <span class="md-ellipsis">
       
         INV-11: Session Completeness
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inv-12-phase-1-completeness-under-priority-preemption" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-12: Phase 1 Completeness Under Priority Preemption
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inv-13-runreplay-parity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-13: Run/Replay Parity
       
     </span>
   </a>
@@ -3007,6 +3029,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#inv-12-phase-1-completeness-under-priority-preemption" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-12: Phase 1 Completeness Under Priority Preemption
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inv-13-runreplay-parity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-13: Run/Replay Parity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pd-disaggregation-invariants" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3147,7 +3191,7 @@
 <p><strong>Hypothesis family mapping:</strong> INV-1 through INV-3, INV-5, and INV-6 belong to the <strong>Scheduler invariants (safety/liveness)</strong> family. INV-4 (KV cache conservation), INV-7 (signal freshness), INV-8 (work-conserving property), and INV-9 (oracle knowledge boundary) belong to the <strong>Structural model</strong> family. See <code>docs/contributing/standards/experiments.md</code> for hypothesis family definitions.</p>
 <h2 id="inv-1-request-conservation">INV-1: Request Conservation<a class="headerlink" href="#inv-1-request-conservation" title="Permanent link">&para;</a></h2>
 <p><strong>Statement:</strong> <code>injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out</code> at simulation end (all levels).</p>
-<p><strong>Cluster-level extension (issue #882):</strong> At cluster level, routing rejections and gateway queue add additional buckets: <code>injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out + routing_rejections + gateway_queue_depth + gateway_queue_shed</code>. <code>gateway_queue_depth</code> counts requests still in the gateway queue at horizon. <code>gateway_queue_shed</code> counts requests shed from the gateway queue due to capacity limits. Single-instance simulations have no gateway queue; both terms are always zero there.</p>
+<p><strong>Cluster-level extension (issues #882, #1190, #1228):</strong> At cluster level, routing rejections and gateway queue add additional buckets: <code>injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out + routing_rejections + gateway_queue_depth + gateway_queue_shed + gateway_queue_rejected + gateway_evicted</code>. <code>gateway_queue_depth</code> counts requests still in the gateway queue at horizon. <code>gateway_queue_shed</code> counts requests shed (evicted victims) from the gateway queue due to capacity limits. <code>gateway_queue_rejected</code> counts requests rejected from the gateway queue when no displaceable victim exists (either no sheddable entries, or all sheddable entries have equal/higher priority than the incoming request). <code>gateway_evicted</code> counts requests evicted in-flight from instances when the system is saturated and higher-priority requests are waiting (Phase 4, #1228). Single-instance simulations have no gateway queue; all four gateway terms are always zero there.</p>
 <p><strong>Full pipeline:</strong> <code>num_requests == injected_requests + rejected_requests</code> (from anomaly counters).</p>
 <p><strong>Verification:</strong> <code>sim/cluster/cluster_test.go</code> — conservation tests. Conservation fields (<code>still_queued</code>, <code>still_running</code>, <code>injected_requests</code>) are included in CLI JSON output.</p>
 <p><strong>Evidence:</strong> Issue #183 — a silently-dropped request violated conservation for months.</p>
@@ -3243,9 +3287,17 @@
 <td>Periodic (CacheBlocks interval, default 50ms)</td>
 <td><code>CachedSnapshotProvider.RefreshCacheIfNeeded()</code> in <code>buildRouterState()</code></td>
 </tr>
+<tr>
+<td>LoadingSnapshots (TotalKvCapacityTokens) ²</td>
+<td>Instance (direct accessor)</td>
+<td>Synchronous</td>
+<td>Synchronous</td>
+<td><code>buildRouterState()</code> reads <code>inst.TotalKvCapacityTokens()</code> directly — bypasses <code>snapshotProvider</code> entirely; unaffected by <code>--snapshot-refresh-interval</code> or <code>--cache-signal-delay</code></td>
+</tr>
 </tbody>
 </table>
 <p>¹ <code>cacheQueryFn</code> freshness is governed by <code>--cache-signal-delay</code> (default 50ms), which maps to <code>ObservabilityConfig.CacheBlocks</code>. The "interval=0" / "interval&gt;0" columns for this row refer to <code>--cache-signal-delay</code>. Cache block staleness is now managed by <code>CachedSnapshotProvider</code> alongside other signals (#1060).</p>
+<p>² <code>LoadingSnapshots</code> carries <code>Model</code>, <code>GPUType</code>, <code>TPDegree</code>, <code>CostPerHour</code>, and <code>TotalKvCapacityTokens</code>; this row covers <code>TotalKvCapacityTokens</code> freshness because it is the only autoscaler-relevant field that is derived at runtime (from KVCache), though stable after construction (the others are literal config constants set at <code>NewInstanceSimulator</code>). All fields are always synchronous regardless of observability configuration. Used by <code>DefaultCollector</code> to populate <code>ModelSignals.PendingTotalKvCapacityTokens</code> for pending supply accounting in <code>V2SaturationAnalyzer</code> (#1109).</p>
 <p><strong>Design implication:</strong> When <code>--snapshot-refresh-interval &gt; 0</code>, all Prometheus-sourced signals (QueueDepth, BatchSize, KVUtilization) share the same scrape interval — matching real vLLM deployments where all three are exposed via the same <code>/metrics</code> endpoint. <code>InFlightRequests</code> remains synchronous (gateway-local counter, not Prometheus-sourced). When <code>--cache-signal-delay &gt; 0</code> (default: 50ms), prefix cache query closures use periodic snapshots of each instance's <code>HashToBlock</code> map, managed by <code>CachedSnapshotProvider</code> alongside other signal snapshots. The 50ms default models aggregate signal staleness from production llm-d. Set <code>--cache-signal-delay 0</code> for oracle mode (live cache state).</p>
 <p><code>EffectiveLoad()</code> = <code>QueueDepth + BatchSize + InFlightRequests</code>. The synchronous <code>InFlightRequests</code> term compensates for Periodic staleness in the other two terms. The <code>queue-depth</code> scorer reads <code>QueueDepth</code> only (GIE parity); <code>EffectiveLoad()</code> is used by <code>load-balance</code>, <code>least-loaded</code>, <code>always-busiest</code>, and admission policies. The <code>active-requests</code> scorer reads <code>InFlightRequests</code> only (synchronous). The <code>running-requests</code> scorer reads <code>BatchSize</code> (Periodic/Immediate). The <code>load-aware</code> scorer reads <code>QueueDepth</code> only (Periodic/Immediate), with a linear threshold at 128.</p>
 <p><strong>Verification:</strong> H3 hypothesis experiment, H29 snapshot-staleness experiment (see <a href="https://github.com/inference-sim/inference-sim/tree/hypothesis-archive/hypotheses"><code>hypothesis-archive</code> branch</a>).</p>
@@ -3260,10 +3312,10 @@
 <p><strong>Hypothesis family:</strong> Structural model (same as INV-4, INV-7).</p>
 <hr />
 <h2 id="inv-9-oracle-knowledge-boundary">INV-9: Oracle Knowledge Boundary<a class="headerlink" href="#inv-9-oracle-knowledge-boundary" title="Permanent link">&para;</a></h2>
-<p><strong>Statement:</strong> Servability decisions — enqueue guard (<code>EnqueueRequest</code>), admission control (<code>AdmissionPolicy</code>), routing (<code>RoutingPolicy</code>), and priority scoring (<code>PriorityPolicy</code>) — must not read <code>Request.OutputTokens</code> or <code>len(Request.OutputTokens)</code>. The control plane uses <code>Request.MaxOutputLen</code> (client-declared output budget) for sequence-length checks against <code>MaxModelLen</code>. When <code>MaxOutputLen == 0</code> (no budget), only input length is checked; the proactive MaxModelLen cap in <code>FormBatch</code> (clamping to <code>maxModelLen-1-ProgressIndex</code>) and the completion boundary in <code>processCompletions</code> (<code>PI &gt;= maxModelLen-1</code>) enforce output growth limits. Only the execution engine (<code>executeBatchStep</code>, <code>processCompletions</code>, <code>recordRequestCompletion</code>, <code>FormBatch</code> step planning) may access <code>OutputTokens</code> for token generation, completion detection, and per-step resource allocation.</p>
+<p><strong>Statement:</strong> Servability decisions — enqueue guard (<code>EnqueueRequest</code>), admission control (<code>AdmissionPolicy</code>), routing (<code>RoutingPolicy</code>) — must not read <code>Request.OutputTokens</code> or <code>len(Request.OutputTokens)</code>. The control plane uses <code>Request.MaxOutputLen</code> (client-declared output budget) for sequence-length checks against <code>MaxModelLen</code>. When <code>MaxOutputLen == 0</code> (no budget), only input length is checked; the proactive MaxModelLen cap in <code>FormBatch</code> (clamping to <code>maxModelLen-1-ProgressIndex</code>) and the completion boundary in <code>processCompletions</code> (<code>PI &gt;= maxModelLen-1</code>) enforce output growth limits. Only the execution engine (<code>executeBatchStep</code>, <code>processCompletions</code>, <code>recordRequestCompletion</code>, <code>FormBatch</code> step planning) may access <code>OutputTokens</code> for token generation, completion detection, and per-step resource allocation.</p>
 <p><strong>Rationale:</strong> In real inference serving (vLLM), the engine does not know actual output length at admission time — only the client's declared <code>max_tokens</code> budget. BLIS's <code>Request.OutputTokens</code> is oracle knowledge (pre-determined for simulation). Using it for servability decisions would make the simulator's control plane behave differently from a real system, invalidating capacity planning results. See issue #567 ("Architectural Principle: Oracle Knowledge Boundary").</p>
 <p><strong>Scope:</strong> The boundary applies to <em>servability</em> decisions (admit/reject/route), not to all scheduler operations. <code>FormBatch</code> legitimately reads <code>OutputTokens</code> for decode-phase step planning (whether to allocate a decode token), which mirrors vLLM's scheduler reading sequence state for per-step execution. The distinction: "should this request enter the system?" (servability — no oracle) vs. "what should this request do in the current step?" (execution — oracle allowed).</p>
-<p><strong>Verification:</strong> <code>sim/simulator_test.go</code> — <code>TestEnqueueRequest_MaxOutputLen_OracleKnowledgeBoundary</code>: a request with <code>OutputTokens=1000</code> but <code>MaxOutputLen=0</code> and <code>MaxModelLen=512</code> is NOT rejected (input=200 &lt; 512 passes input-only check), proving the enqueue guard does not peek at <code>OutputTokens</code>. Grep-based verification: <code>admission.go</code>, <code>routing.go</code>, <code>routing_scorers.go</code>, <code>routing_prefix_scorer.go</code>, <code>scheduler.go</code>, <code>priority.go</code> contain zero references to <code>OutputTokens</code>.</p>
+<p><strong>Verification:</strong> <code>sim/simulator_test.go</code> — <code>TestEnqueueRequest_MaxOutputLen_OracleKnowledgeBoundary</code>: a request with <code>OutputTokens=1000</code> but <code>MaxOutputLen=0</code> and <code>MaxModelLen=512</code> is NOT rejected (input=200 &lt; 512 passes input-only check), proving the enqueue guard does not peek at <code>OutputTokens</code>. Grep-based verification: <code>admission.go</code>, <code>routing.go</code>, <code>routing_scorers.go</code>, <code>routing_prefix_scorer.go</code>, <code>scheduler.go</code>, <code>slo_priority.go</code> contain zero references to <code>OutputTokens</code>.</p>
 <p><strong>Evidence:</strong> Issue #567 — the original implementation's BC-4 fallback (<code>effectiveMaxOutput = len(r.OutputTokens)</code>) violated this boundary. Fixed in the same PR after convergence review caught it.</p>
 <p><strong>Hypothesis family:</strong> Structural model (same as INV-4, INV-7, INV-8).</p>
 <hr />
@@ -3279,11 +3331,24 @@
 <p><strong>Evidence:</strong> Design doc INV-11 definition. The <code>SessionManager.OnComplete</code> method transitions sessions to exactly one terminal state before returning nil. The <code>budget_exhausted</code> state is reached when the shared follow-up budget (set via <code>SetFollowUpBudget</code> for <code>--concurrency</code> mode) is depleted — the session's unlimited-rounds flag would otherwise continue generating follow-ups, but the global cap takes precedence.</p>
 <p><strong>Hypothesis family:</strong> Structural model — session lifecycle completeness.</p>
 <hr />
+<h2 id="inv-12-phase-1-completeness-under-priority-preemption">INV-12: Phase 1 Completeness Under Priority Preemption<a class="headerlink" href="#inv-12-phase-1-completeness-under-priority-preemption" title="Permanent link">&para;</a></h2>
+<p><strong>Statement:</strong> After Phase 1 of <code>FormBatch</code> completes, every non-preempted running request in decode phase has <code>NumNewTokens &gt; 0</code>, provided the token budget was not exhausted and <code>MaxModelLen</code> did not cap the request. No running request is silently skipped due to index drift from non-tail eviction.</p>
+<p><strong>Context:</strong> With <code>--preemption-policy priority</code>, the preemption victim may be at any index in the running batch (not just the tail). Removing an element at index <code>i &lt; reqIndex</code> shifts subsequent elements left by one. Without the <code>reqIndex -= adjustment</code> correction (analog of vLLM <code>scheduler.py:853</code> <code>req_index -= 1</code>), the Phase 1 loop skips the shifted element.</p>
+<p><strong>Verification:</strong> <code>sim/batch_formation_test.go</code> — <code>TestPreemption_Priority_Phase1Completeness</code>: verifies that after non-tail eviction where <code>victimIdx &lt; reqIndex</code>, ALL remaining running requests receive decode tokens (NumNewTokens &gt; 0). The index adjustment is tested with [bg, crit, std] batch where bg is evicted at index 0 while processing crit at index 1.</p>
+<p><strong>Trivially satisfied for FCFS:</strong> With <code>--preemption-policy fcfs</code> (default), victims are always at the batch tail (<code>victimIdx == len-1 &gt;= reqIndex</code>), so <code>adjustment == 0</code> and no element skipping is possible.</p>
+<p><strong>Hypothesis family:</strong> Structural model (same as INV-4, INV-7, INV-8, INV-9).</p>
+<hr />
+<h2 id="inv-13-runreplay-parity">INV-13: Run/Replay Parity<a class="headerlink" href="#inv-13-runreplay-parity" title="Permanent link">&para;</a></h2>
+<p><strong>Statement:</strong> For any configuration supported by both <code>blis run</code> and <code>blis replay</code>, a trace exported via <code>blis run --trace-output</code> and replayed via <code>blis replay --session-mode fixed</code> with identical flags MUST produce identical per-request TTFT, E2E, and aggregate metrics. Features not yet supported by replay (autoscaler, node pools) MUST cause a <code>logrus.Fatalf</code> at startup when those flags are explicitly set or when a policy bundle containing those features is passed — never silent degradation or a mere warning.</p>
+<p><strong>Verification:</strong> <code>cmd/replay_test.go</code> — <code>TestINV13_RunReplayParity_PD</code> verifies that a PD-disaggregated cluster produces matching <code>RequestTTFTs</code> and <code>RequestE2Es</code> maps when the same requests are run directly vs. through the trace-export-then-replay path. <code>TestReplayCmd_AutoscalerBundleFatal</code> and <code>TestReplayCmd_NodePoolsBundleFatal</code> verify fatal exit for unsupported features.</p>
+<p><strong>Evidence:</strong> <code>cmd/replay.go::replayCmd.Run</code> wires all 12 PD disaggregation fields to <code>cluster.DeploymentConfig</code> (same set as <code>runCmd</code>): <code>PrefillInstances</code>, <code>DecodeInstances</code>, <code>SharedInstances</code>, <code>PDDecider</code>, <code>PDPrefixThreshold</code>, <code>PDTransferBandwidthGBps</code>, <code>PDTransferBaseLatencyMs</code>, <code>PDTransferContention</code>, <code>PrefillScorerConfigs</code>, <code>DecodeScorerConfigs</code>, <code>PrefillOverrides</code>, <code>DecodeOverrides</code>. Autoscaler and node-pool checks use <code>logrus.Fatalf</code> to prevent silent divergence.</p>
+<p><strong>Hypothesis family:</strong> Scheduler invariants (safety/liveness) — same as INV-1, INV-5, INV-6.</p>
+<hr />
 <h2 id="pd-disaggregation-invariants">PD Disaggregation Invariants<a class="headerlink" href="#pd-disaggregation-invariants" title="Permanent link">&para;</a></h2>
 <h3 id="inv-pd-1-kv-completeness">INV-PD-1: KV Completeness<a class="headerlink" href="#inv-pd-1-kv-completeness" title="Permanent link">&para;</a></h3>
 <p><strong>Statement:</strong> For every disaggregated request, <code>decode_enqueue_time &gt;= kv_transfer_completion_time</code>. A decode sub-request must not be enqueued before its KV transfer completes.</p>
-<p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_RequestCompletesFullPath</code> checks DecodeEnqueueTime &gt;= TransferCompleteTime for every parent request. Runtime defensive check in <code>DecodeRoutingEvent.Execute()</code>.</p>
-<p><strong>Evidence:</strong> By event priority ordering: KVTransferCompletedEvent (priority 6) schedules DecodeRoutingEvent (priority 7) at the same timestamp. DecodeEnqueueTime is set in DecodeRoutingEvent which fires after transfer completion.</p>
+<p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_RequestCompletesFullPath</code> checks DecodeEnqueueTime &gt;= TransferCompleteTime for every parent request. Runtime defensive check in <code>KVTransferCompletedEvent.Execute()</code>.</p>
+<p><strong>Evidence:</strong> Both <code>TransferCompleteTime</code> and <code>DecodeEnqueueTime</code> are set in <code>KVTransferCompletedEvent.Execute()</code> at the same simulation tick (<code>e.time</code>), so the invariant holds by construction.</p>
 <h3 id="inv-pd-2-pool-exclusivity">INV-PD-2: Pool Exclusivity<a class="headerlink" href="#inv-pd-2-pool-exclusivity" title="Permanent link">&para;</a></h3>
 <p><strong>Statement:</strong> Prefill sub-requests route only to prefill pool instances; decode sub-requests route only to decode pool instances.</p>
 <p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_PrefillRoutedToPrefillPool</code> and <code>TestDisaggregation_DecodeRoutedToDecodePool</code> verify pool role for every parent request's prefill and decode instance assignments.</p>
@@ -3305,8 +3370,8 @@
 <p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_MetricProjection_NoSubRequestKeys</code> checks all six maps for suffix-free keys; <code>TestDisaggregation_MetricProjection_DroppedParent_NoSubRequestKeys</code> verifies the invariant holds when decode KV allocation fails. <code>TestDisaggregation_MetricProjection_NoOp</code> verifies the projection is a no-op for non-disaggregated clusters.</p>
 <p><strong>Evidence:</strong> <code>projectPDMetrics()</code> in <code>sim/cluster/cluster.go</code> is called after <code>aggregateMetrics()</code> and the conservation correction. It unconditionally deletes the <code>pfx</code> and <code>dec</code> keys for every parent request, and conditionally inserts a parent-keyed entry only for completed parents (<code>CompletionTime &gt; 0 &amp;&amp; DecodeInstanceID != ""</code>).</p>
 <h3 id="inv-pd-6b-completiontime-includes-postdecodefixedoverhead">INV-PD-6b: CompletionTime Includes PostDecodeFixedOverhead<a class="headerlink" href="#inv-pd-6b-completiontime-includes-postdecodefixedoverhead" title="Permanent link">&para;</a></h3>
-<p><strong>Statement:</strong> For all successfully decoded parent requests (<code>DecodeInstanceID != ""</code>), <code>parent.CompletionTime</code> equals the cluster clock at decode completion plus the decode instance's <code>PostDecodeFixedOverhead()</code>. For blackbox/roofline, overhead is 0, so <code>CompletionTime</code> equals the raw cluster clock tick. For trained-physics, overhead is α₁ (≈ 777 µs), so <code>CompletionTime</code> exceeds the raw clock by that amount. This ensures that <code>projectPDMetrics()</code> computes <code>RequestE2Es[parentID] = CompletionTime - ArrivalTime</code> consistently with how <code>recordRequestCompletion</code> computes non-PD E2E (which also adds <code>PostDecodeFixedOverhead</code>). Note: the non-PD path applies the overhead conditionally when <code>len(req.OutputTokens) &gt; 0</code>; the PD path applies it unconditionally, which is safe because decode sub-requests always inherit <code>OutputTokens</code> from the original request via <code>KVTransferCompletedEvent.Execute</code>.</p>
-<p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_CompletionTime_IncludesNonZeroOverhead</code> verifies that <code>E2E_with_overhead − E2E_without_overhead == overhead</code> exactly when overhead is non-zero (trained-physics, directly exercises the bug-fix site). <code>TestDisaggregation_CompletionTime_GeqAllPriorPhaseTimestamps</code> verifies <code>CompletionTime &gt;= DecodeEnqueueTime</code> and <code>CompletionTime &gt;= TransferCompleteTime</code> (phase causality preserved). <code>TestDisaggregation_E2E_IncludesOverhead_ZeroOverheadRegression</code> verifies <code>RequestE2Es[parentID] == CompletionTime − ArrivalTime</code> and <code>E2E &gt;= TTFT</code> for zero-overhead backends (blackbox, roofline).</p>
+<p><strong>Statement:</strong> For all successfully decoded parent requests (<code>DecodeInstanceID != ""</code>), <code>parent.CompletionTime</code> equals the cluster clock at decode completion plus the decode instance's <code>PostDecodeFixedOverhead()</code>. For roofline, overhead is 0, so <code>CompletionTime</code> equals the raw cluster clock tick. For trained-physics, overhead is α₁ (≈ 777 µs), so <code>CompletionTime</code> exceeds the raw clock by that amount. This ensures that <code>projectPDMetrics()</code> computes <code>RequestE2Es[parentID] = CompletionTime - ArrivalTime</code> consistently with how <code>recordRequestCompletion</code> computes non-PD E2E (which also adds <code>PostDecodeFixedOverhead</code>). Note: the non-PD path applies the overhead conditionally when <code>len(req.OutputTokens) &gt; 0</code>; the PD path applies it unconditionally, which is safe because decode sub-requests always inherit <code>OutputTokens</code> from the original request via <code>KVTransferCompletedEvent.Execute</code>.</p>
+<p><strong>Verification:</strong> <code>sim/cluster/disaggregation_test.go</code> — <code>TestDisaggregation_CompletionTime_IncludesNonZeroOverhead</code> verifies that <code>E2E_with_overhead − E2E_without_overhead == overhead</code> exactly when overhead is non-zero (trained-physics, directly exercises the bug-fix site). <code>TestDisaggregation_CompletionTime_GeqAllPriorPhaseTimestamps</code> verifies <code>CompletionTime &gt;= DecodeEnqueueTime</code> and <code>CompletionTime &gt;= TransferCompleteTime</code> (phase causality preserved). <code>TestDisaggregation_E2E_IncludesOverhead_ZeroOverheadRegression</code> verifies <code>RequestE2Es[parentID] == CompletionTime − ArrivalTime</code> and <code>E2E &gt;= TTFT</code> for zero-overhead backend (roofline).</p>
 <p><strong>Evidence:</strong> <code>detectDecodeCompletions()</code> in <code>sim/cluster/cluster.go</code> stamps <code>parent.CompletionTime = c.clock + inst.PostDecodeFixedOverhead()</code>. Fixed in issue #846.</p>
 <h3 id="inv-p2-1-pool-config-consistency">INV-P2-1: Pool-Config Consistency<a class="headerlink" href="#inv-p2-1-pool-config-consistency" title="Permanent link">&para;</a></h3>
 <p><strong>Statement:</strong> Per-pool hardware overrides produce a valid <code>SimConfig</code> for each pool role: zero-valued <code>PoolOverrides</code> is a no-op (backward-compatible), non-nil fields override only the specified fields, and the global <code>SimConfig</code> is never mutated.</p>

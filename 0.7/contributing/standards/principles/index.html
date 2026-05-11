@@ -1385,7 +1385,7 @@
   <span class="md-ellipsis">
     
   
-    Supported Models
+    Model Compatibility
   
 
     
@@ -2877,7 +2877,7 @@
 </ul>
 <h2 id="interface-design">Interface Design<a class="headerlink" href="#interface-design" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Single-method interfaces where possible (<code>AdmissionPolicy</code>, <code>RoutingPolicy</code>, <code>PriorityPolicy</code>, <code>InstanceScheduler</code>).</li>
+<li>Single-method interfaces where possible (<code>AdmissionPolicy</code>, <code>RoutingPolicy</code>, <code>InstanceScheduler</code>).</li>
 <li>Query methods must be pure — no side effects, no state mutation, no destructive reads. Separate <code>Get()</code> and <code>Consume()</code> for query-and-clear.</li>
 <li>Factory functions must validate inputs: <code>IsValid*()</code> check + switch/case + panic on unknown.</li>
 <li>Interfaces defined by behavioral contract, not one implementation's data model. <em>(Enforced by R13)</em></li>
@@ -2987,7 +2987,7 @@
 <td>CLAUDE.md (pointer), CONTRIBUTING.md (checklist), <code>.github/PULL_REQUEST_TEMPLATE.md</code> (PR checklist), <code>docs/contributing/templates/micro-plan-prompt.md</code> (Phase 8 checklist), <code>docs/contributing/templates/micro-plan.md</code> (Phase 8 checklist), <code>docs/contributing/index.md</code> (landing page table), <code>docs/guide/skills-and-plugins.md</code> (rules count)</td>
 </tr>
 <tr>
-<td>System invariants (INV-1–INV-11)</td>
+<td>System invariants (INV-1–INV-12)</td>
 <td><code>docs/contributing/standards/invariants.md</code></td>
 <td>CLAUDE.md (summary), <code>docs/concepts/core-engine.md</code> (formulas), <code>docs/concepts/architecture.md</code> (signal freshness)</td>
 </tr>

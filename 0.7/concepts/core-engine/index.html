@@ -1084,17 +1084,6 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#blackbox-model" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Blackbox Model
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#roofline-model-default" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1140,23 +1129,6 @@
       
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Scheduling Policies">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#priority-policies" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Priority Policies
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -1818,7 +1790,7 @@
   <span class="md-ellipsis">
     
   
-    Supported Models
+    Model Compatibility
   
 
     
@@ -3271,17 +3243,6 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#blackbox-model" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Blackbox Model
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#roofline-model-default" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3327,23 +3288,6 @@
       
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Scheduling Policies">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#priority-policies" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Priority Policies
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -3507,8 +3451,8 @@
     style P4 fill:#d0bfff</code></pre>
 <h3 id="phase-1-schedule-batch-schedulebatch">Phase 1: Schedule Batch (<code>scheduleBatch</code>)<a class="headerlink" href="#phase-1-schedule-batch-schedulebatch" title="Permanent link">&para;</a></h3>
 <ol>
-<li>Assign priority scores to all queued requests via the priority policy</li>
-<li>Reorder the wait queue via the scheduling policy (e.g., FCFS, SJF, priority-based)</li>
+<li>Reorder the wait queue via the scheduling policy (e.g., FCFS, SJF, priority-FCFS). Request priorities are <strong>static</strong> — set once at enqueue via <code>SLOPriorityMap.InvertForVLLM(SLOClass)</code>, not recomputed per step.</li>
+<li>(step loop reordering — see above)</li>
 <li>Invoke batch formation to select which requests enter the running batch</li>
 <li>Record preemption metrics for any evicted requests</li>
 <li>Schedule <code>ScheduledEvent</code> for any newly admitted requests</li>
@@ -3633,7 +3577,7 @@
 <p><strong>Causality invariant (INV-5):</strong> <code>arrival_time &lt;= enqueue_time &lt;= schedule_time &lt;= completion_time</code></p>
 <h3 id="preemption">Preemption<a class="headerlink" href="#preemption" title="Permanent link">&para;</a></h3>
 <p>When KV cache pressure forces eviction, running requests are preempted:
-1. Request is removed from the running batch (tail-first eviction)
+1. Request is removed from the running batch. By default (<code>--preemption-policy fcfs</code>), the tail of the batch is evicted. With <code>--preemption-policy priority</code>, the running request with the lowest SLO tier priority is evicted first (background before sheddable before batch before standard before critical); among equal-priority requests, the most recently arrived is evicted.
 2. Its KV blocks are freed
 3. It is re-enqueued at the front of the wait queue (not the back)
 4. A debug log is emitted and <code>PreemptionCount</code> is incremented</p>
@@ -3687,8 +3631,8 @@ Dequeue requests from the wait queue:
 </table>
 <h3 id="preemption-strategy">Preemption Strategy<a class="headerlink" href="#preemption-strategy" title="Permanent link">&para;</a></h3>
 <p>When KV allocation fails for a continuing request:
-1. Evict requests from the batch tail (reverse order of admission)
-2. Free their KV blocks
+1. Select a victim: by default (<code>--preemption-policy fcfs</code>), evict from the batch tail (reverse order of admission). With <code>--preemption-policy priority</code>, evict the running request with the lowest SLO tier priority (background before sheddable before batch before standard before critical); among equal-priority requests, the most recently arrived is evicted first. This matches vLLM's <code>--scheduling-policy priority</code> preemption behavior.
+2. Free the victim's KV blocks
 3. Re-enqueue evicted requests at the front of the wait queue
 4. Retry allocation for the original request
 5. <strong>Circuit breaker:</strong> Stop if allocation still fails after exhausting the batch, or if the request itself is unservable</p>
@@ -3715,24 +3659,11 @@ Dequeue requests from the wait queue:
 <li><strong>Thrashing detection:</strong> Blocks offloaded and reloaded within 1000 ticks (1ms) increment a thrashing counter</li>
 </ul>
 <h2 id="latency-models">Latency Models<a class="headerlink" href="#latency-models" title="Permanent link">&para;</a></h2>
-<p>BLIS predicts GPU step time through one of five latency model backends. The choice is made via the <code>--latency-model</code> flag or automatically based on available configuration.</p>
-<h3 id="blackbox-model">Blackbox Model<a class="headerlink" href="#blackbox-model" title="Permanent link">&para;</a></h3>
-<p>Uses trained regression coefficients to predict step time:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>StepTime    = beta0 + beta1 * cache_miss_tokens + beta2 * decode_tokens
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>QueueingTime = alpha0 + alpha1 * input_length
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>OutputTokenProcessingTime = alpha2
-</code></pre></div>
-<ul>
-<li><strong>Beta coefficients</strong> model GPU execution time as a linear function of batch composition</li>
-<li><strong>Alpha coefficients</strong> model non-GPU overhead (tokenization, API serialization, output processing)</li>
-<li>Coefficients are trained offline via Bayesian optimization against real vLLM measurements</li>
-<li>Pre-trained coefficients for common model/GPU combinations are shipped in <code>defaults.yaml</code></li>
-</ul>
-<p>See <a href="../../reference/configuration/#coefficient-calibration">Configuration Reference: Coefficient Calibration</a> for the training process.</p>
+<p>BLIS predicts GPU step time through two latency model backends. The choice is made via the <code>--latency-model</code> flag or automatically based on available configuration.</p>
 <h3 id="roofline-model-default">Roofline Model (Default)<a class="headerlink" href="#roofline-model-default" title="Permanent link">&para;</a></h3>
 <p>Uses analytical FLOPs/bandwidth estimation when no trained coefficients are available:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>Phase Time = max(total_FLOPs / peak_compute, total_bytes / peak_bandwidth)
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>Step Time  = Prefill Phase Time + Decode Phase Time
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>Phase Time = max(total_FLOPs / peak_compute, total_bytes / peak_bandwidth)
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>Step Time  = Prefill Phase Time + Decode Phase Time
 </code></pre></div>
 <ul>
 <li>Requires HuggingFace <code>config.json</code> (model architecture: layers, heads, hidden dim)</li>
@@ -3743,8 +3674,8 @@ Dequeue requests from the wait queue:
 <p>See <a href="../roofline/">Roofline Estimation</a> for implementation details.</p>
 <h3 id="trained-physics-mode-recommended">Trained-Physics Mode (Recommended)<a class="headerlink" href="#trained-physics-mode-recommended" title="Permanent link">&para;</a></h3>
 <p>Applies learned correction factors to roofline basis functions with additional architecture-aware terms:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>StepTime = β₁ × max(T_pf_compute, T_pf_kv) + β₂ × max(T_dc_compute, T_dc_kv)
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>         + β₃ × T_weight + β₄ × T_tp + β₅ × L + β₆ × B + β₇ + β₈ × nMoE
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>StepTime = β₁ × max(T_pf_compute, T_pf_kv) + β₂ × max(T_dc_compute, T_dc_kv)
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>         + β₃ × T_weight + β₄ × T_tp + β₅ × L + β₆ × B + β₇ + β₈ × nMoE
 </code></pre></div>
 <ul>
 <li><strong>13 global coefficients</strong> (8-10 beta for roofline corrections + 3 alpha for CPU overhead)</li>
@@ -3775,8 +3706,8 @@ Dequeue requests from the wait queue:
 </tr>
 <tr>
 <td><code>priority-fcfs</code></td>
-<td>Priority descending, then arrival ascending</td>
-<td>SLO-aware scheduling</td>
+<td>Priority <strong>ascending</strong> (lower value = more urgent, vLLM convention), then arrival ascending</td>
+<td>SLO-aware scheduling with <code>slo_class</code> in workload spec</td>
 </tr>
 <tr>
 <td><code>sjf</code></td>
@@ -3785,39 +3716,12 @@ Dequeue requests from the wait queue:
 </tr>
 <tr>
 <td><code>reverse-priority</code></td>
-<td>Priority ascending (starves high-priority)</td>
+<td>Priority descending (highest value = least urgent scheduled first)</td>
 <td>Pathological testing only</td>
 </tr>
 </tbody>
 </table>
-<h3 id="priority-policies">Priority Policies<a class="headerlink" href="#priority-policies" title="Permanent link">&para;</a></h3>
-<p>Priority policies assign a numeric score to each request before scheduling:</p>
-<table>
-<thead>
-<tr>
-<th>Policy</th>
-<th>Score Computation</th>
-<th>Behavior</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>constant</code></td>
-<td>Fixed score for all requests</td>
-<td>No differentiation (default)</td>
-</tr>
-<tr>
-<td><code>slo-based</code></td>
-<td><code>base + age_weight * (clock - arrival)</code></td>
-<td>Favors older requests, prevents starvation. Note: despite the name, does not currently use per-request SLO metadata.</td>
-</tr>
-<tr>
-<td><code>inverted-slo</code></td>
-<td><code>base - age_weight * age</code></td>
-<td>Starves older requests (pathological)</td>
-</tr>
-</tbody>
-</table>
+<p>Request priorities are <strong>static</strong> — set once at enqueue via <code>SLOPriorityMap.InvertForVLLM(SLOClass)</code> (vLLM convention: lower integer = more urgent). Default mapping: <code>critical=0</code>, <code>standard=1</code>, <code>batch=5</code>, <code>sheddable=6</code>, <code>background=7</code>. No per-step recomputation.</p>
 <h2 id="metrics">Metrics<a class="headerlink" href="#metrics" title="Permanent link">&para;</a></h2>
 <p>BLIS records per-request and aggregate metrics throughout the simulation.</p>
 <h3 id="per-request-metrics">Per-Request Metrics<a class="headerlink" href="#per-request-metrics" title="Permanent link">&para;</a></h3>

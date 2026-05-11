@@ -1049,10 +1049,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#available-schedulers" class="md-nav__link">
+  <a href="#how-priority-works" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Available Schedulers
+        How Priority Works
       
     </span>
   </a>
@@ -1060,10 +1060,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#priority-policies" class="md-nav__link">
+  <a href="#available-schedulers" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Priority Policies
+        Available Schedulers
       
     </span>
   </a>
@@ -1507,7 +1507,7 @@
   <span class="md-ellipsis">
     
   
-    Supported Models
+    Model Compatibility
   
 
     
@@ -2715,10 +2715,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#available-schedulers" class="md-nav__link">
+  <a href="#how-priority-works" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Available Schedulers
+        How Priority Works
       
     </span>
   </a>
@@ -2726,10 +2726,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#priority-policies" class="md-nav__link">
+  <a href="#available-schedulers" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Priority Policies
+        Available Schedulers
       
     </span>
   </a>
@@ -2807,11 +2807,34 @@
 
 
 <h1 id="scheduling-priority">Scheduling &amp; Priority<a class="headerlink" href="#scheduling-priority" title="Permanent link">&para;</a></h1>
-<p>Routing decides <strong>which instance</strong> receives a request. Scheduling decides <strong>what order</strong> requests are processed within an instance. These are independent policy axes -- you can combine any routing policy with any scheduler and any priority policy.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Priority-FCFS scheduling with age-based priority in a 4-instance cluster</span>
+<p>Routing decides <strong>which instance</strong> receives a request. Scheduling decides <strong>what order</strong> requests are processed within an instance. These are independent policy axes — you can combine any routing policy with any scheduler.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Priority-FCFS scheduling with SLO-class-based priority in a 4-instance cluster</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--num-instances<span class="w"> </span><span class="m">4</span><span class="w"> </span>--rate<span class="w"> </span><span class="m">100</span><span class="w"> </span>--num-requests<span class="w"> </span><span class="m">500</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span>--scheduler<span class="w"> </span>priority-fcfs<span class="w"> </span>--priority-policy<span class="w"> </span>slo-based
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span>--scheduler<span class="w"> </span>priority-fcfs
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># SLO class is set in the workload spec (slo_class: critical/standard/batch/etc.)</span>
+</code></pre></div>
+<h2 id="how-priority-works">How Priority Works<a class="headerlink" href="#how-priority-works" title="Permanent link">&para;</a></h2>
+<p>Request priority is <strong>static</strong> — set once when the request enters the instance, and never changed.</p>
+<p>At enqueue time (<code>EnqueueRequest</code> and <code>EnqueueDecodeSubRequest</code>), the simulator converts the request's <code>SLOClass</code> to a vLLM-convention priority value via <code>SLOPriorityMap.InvertForVLLM(SLOClass)</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>critical   → Priority 0.0  (most urgent)
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>standard   → Priority 1.0
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>batch      → Priority 5.0
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>sheddable  → Priority 6.0
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>background → Priority 7.0  (least urgent)
+</code></pre></div>
+<p>This follows <strong>vLLM's convention: lower integer = more urgent</strong>. The cluster layer (admission, routing, gateway queue) continues to use the llm-d convention (higher = more urgent); the inversion happens at the cluster→instance dispatch boundary.</p>
+<p>SLO class is set in your workload spec:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">clients</span><span class="p">:</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">slo_class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">critical</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">rate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">slo_class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">standard</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="nt">rate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+</code></pre></div>
+<p>Custom priority values can be overridden via the policy bundle:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">admission</span><span class="p">:</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">slo_priorities</span><span class="p">:</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">batch</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span><span class="w">   </span><span class="c1"># make batch non-sheddable</span>
 </code></pre></div>
 <h2 id="available-schedulers">Available Schedulers<a class="headerlink" href="#available-schedulers" title="Permanent link">&para;</a></h2>
 <p>Each scheduler implements the <code>InstanceScheduler</code> interface: a single <code>OrderQueue</code> method called every step to reorder the wait queue before batch formation.</p>
@@ -2828,71 +2851,38 @@
 <tr>
 <td><strong>FCFS</strong></td>
 <td><code>--scheduler fcfs</code></td>
-<td>First-Come-First-Served. No reordering -- requests are processed in arrival order.</td>
+<td>First-Come-First-Served. No reordering — requests are processed in arrival order.</td>
 <td>Default. Fair and predictable.</td>
 </tr>
 <tr>
 <td><strong>Priority-FCFS</strong></td>
 <td><code>--scheduler priority-fcfs</code></td>
-<td>Sort by priority descending, then by arrival time ascending within the same priority. Ties broken by request ID for determinism.</td>
-<td>Requires a non-constant priority policy to be useful. With <code>--priority-policy constant</code>, all scores are equal and this degrades to FCFS.</td>
+<td>Sort by priority <strong>ascending</strong> (lower value = more urgent, vLLM convention), then by arrival time ascending within the same priority. Ties broken by request ID for determinism.</td>
+<td>Useful when <code>SLOClass</code> is set in the workload spec. Without SLO classes, all requests get Priority=1.0 (standard) and this degrades to FCFS by arrival tiebreak.</td>
 </tr>
 <tr>
 <td><strong>SJF</strong></td>
 <td><code>--scheduler sjf</code></td>
 <td>Shortest Job First. Sort by input token count ascending, then by arrival time, then by ID.</td>
-<td>Optimizes TTFT for short requests but can starve long ones under sustained load. Ignores priority scores entirely.</td>
+<td>Optimizes TTFT for short requests but can starve long ones under sustained load. Ignores <code>Request.Priority</code> entirely.</td>
 </tr>
 <tr>
 <td><strong>Reverse-priority</strong></td>
 <td><code>--scheduler reverse-priority</code></td>
-<td>Lowest priority first. Sort by priority ascending, then by arrival time, then by ID.</td>
-<td>Pathological template for testing only. Causes priority inversions by design.</td>
+<td>Sort by priority <strong>descending</strong> (highest value = least urgent scheduled first).</td>
+<td>Pathological template for testing only — deliberately causes priority inversions.</td>
 </tr>
 </tbody>
 </table>
 <p>All schedulers use <code>sort.SliceStable</code> for deterministic ordering (INV-6).</p>
-<h2 id="priority-policies">Priority Policies<a class="headerlink" href="#priority-policies" title="Permanent link">&para;</a></h2>
-<p>Each priority policy implements the <code>PriorityPolicy</code> interface: a single <code>Compute</code> method that returns a <code>float64</code> score for a request at a given clock tick. Higher scores mean higher priority.</p>
-<table>
-<thead>
-<tr>
-<th>Policy</th>
-<th>Flag Value</th>
-<th>Formula</th>
-<th>Notes</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Constant</strong></td>
-<td><code>--priority-policy constant</code></td>
-<td>Returns <code>0.0</code> for all requests.</td>
-<td>Default. No differentiation -- all requests have equal priority.</td>
-</tr>
-<tr>
-<td><strong>SLO-based</strong></td>
-<td><code>--priority-policy slo-based</code></td>
-<td><code>BaseScore + AgeWeight * (clock - arrival_time)</code></td>
-<td>Favors older requests. With default <code>AgeWeight=1e-6</code>, a request waiting 1 second (1,000,000 ticks) gets +1.0 priority. Despite the name, does NOT currently use per-request SLO metadata (<code>Request.SLOClass</code> is available but unused by this policy).</td>
-</tr>
-<tr>
-<td><strong>Inverted-SLO</strong></td>
-<td><code>--priority-policy inverted-slo</code></td>
-<td><code>BaseScore - AgeWeight * (clock - arrival_time)</code></td>
-<td>Starves older requests -- newer requests get higher priority. Pathological template for testing only.</td>
-</tr>
-</tbody>
-</table>
-<p>Priority scores are recomputed every step before the scheduler orders the queue. This means SLO-based priority naturally ages: a request that has been waiting longer will have a higher score at the next step.</p>
 <h2 id="how-scheduling-and-priority-interact">How Scheduling and Priority Interact<a class="headerlink" href="#how-scheduling-and-priority-interact" title="Permanent link">&para;</a></h2>
-<p>The scheduler and priority policy are independent modules that compose at step time. The simulator calls them in sequence:</p>
+<p>The scheduler and priority are composed at each simulation step:</p>
 <ol>
-<li><strong>Priority assignment</strong>: For each queued request, call <code>PriorityPolicy.Compute()</code> and store the result on <code>Request.Priority</code>.</li>
+<li><strong>Priority is already set</strong> (static — set at enqueue via <code>SLOPriorityMap.InvertForVLLM</code>, not recomputed per step).</li>
 <li><strong>Queue reordering</strong>: Call <code>InstanceScheduler.OrderQueue()</code> on the wait queue.</li>
 <li><strong>Batch formation</strong>: Dequeue requests from the front of the reordered queue into the running batch.</li>
 </ol>
-<p>This means certain combinations are degenerate:</p>
+<p>Common combinations:</p>
 <table>
 <thead>
 <tr>
@@ -2902,31 +2892,32 @@
 </thead>
 <tbody>
 <tr>
-<td><code>priority-fcfs</code> + <code>constant</code></td>
-<td>FCFS (all priority scores are 0.0, so the descending sort changes nothing)</td>
+<td><code>priority-fcfs</code> + mixed SLO classes</td>
+<td>Critical requests scheduled first, background last.</td>
 </tr>
 <tr>
-<td><code>sjf</code> + any priority policy</td>
-<td>SJF (priority scores are computed but ignored -- SJF sorts by input token count)</td>
+<td><code>priority-fcfs</code> + uniform SLO class</td>
+<td>All priorities equal — degrades to FCFS by arrival time.</td>
 </tr>
 <tr>
-<td><code>fcfs</code> + <code>slo-based</code></td>
-<td>FCFS (priority scores are computed but FCFS does not reorder)</td>
+<td><code>sjf</code> + any SLO class</td>
+<td>SJF by input length (priority ignored).</td>
 </tr>
 <tr>
-<td><strong><code>priority-fcfs</code> + <code>slo-based</code></strong></td>
-<td><strong>The useful combination</strong>: older requests float to the top of the queue</td>
+<td><code>fcfs</code> + any SLO class</td>
+<td>FCFS by arrival time (priority computed but reordering skipped).</td>
 </tr>
 </tbody>
 </table>
 <h3 id="preemption-and-re-enqueueing">Preemption and Re-enqueueing<a class="headerlink" href="#preemption-and-re-enqueueing" title="Permanent link">&para;</a></h3>
-<p>BLIS models vLLM's two-queue architecture (WaitQ + RunningBatch), simplifying vLLM's three-queue model (waiting / running / swapped). When a request is preempted from the running batch due to KV cache pressure:</p>
+<p>BLIS models vLLM's two-queue architecture (WaitQ + RunningBatch). When a request is preempted from the running batch due to KV cache pressure:</p>
 <ul>
 <li>The request is placed at the <strong>front</strong> of the WaitQ (not the back).</li>
 <li>Its progress is reset to zero (recompute mode, matching vLLM's recompute preemption).</li>
 <li>On the next step, the scheduler reorders the full queue including the preempted request.</li>
 </ul>
-<p>This means preempted requests get implicit priority over fresh arrivals in FCFS mode. With priority-fcfs + slo-based, the preempted request's age still determines its position relative to other waiting requests.</p>
+<p>This means preempted requests get implicit priority over fresh arrivals in FCFS mode. With <code>priority-fcfs</code> and mixed SLO classes, the preempted request's static priority determines its position relative to other waiting requests.</p>
+<p>By default (<code>--preemption-policy fcfs</code>), the tail of the running batch is evicted. When <code>--preemption-policy priority</code> is set, the least-urgent running request is evicted — the one with the <strong>highest Priority value</strong> (vLLM convention: background=7 is least urgent and evicted first). Among equal-priority requests, the most recently arrived is evicted first. This matches vLLM's <code>--scheduling-policy priority</code> preemption behavior (<code>scheduler.py:1086</code>).</p>
 <h2 id="when-to-use-which">When to Use Which<a class="headerlink" href="#when-to-use-which" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2943,9 +2934,9 @@
 <td>No reordering needed. All requests are equivalent.</td>
 </tr>
 <tr>
-<td>Mixed SLO classes needing fairness</td>
-<td><code>--scheduler priority-fcfs --priority-policy slo-based</code></td>
-<td>Older requests float up, preventing starvation of any class.</td>
+<td>Mixed SLO classes (critical vs background)</td>
+<td><code>--scheduler priority-fcfs</code> with <code>slo_class</code> in workload spec</td>
+<td>Critical requests get Priority=0, scheduled before background (Priority=7).</td>
 </tr>
 <tr>
 <td>Latency-sensitive short requests</td>
@@ -2955,19 +2946,19 @@
 <tr>
 <td>Low load (&lt; ~10 req/s)</td>
 <td>Any</td>
-<td>Batch sizes are small enough that all schedulers pick the same requests. At low load, all four schedulers produce equivalent results within ~5%.</td>
+<td>Batch sizes are small enough that all schedulers pick the same requests. At low load, all schedulers produce equivalent results within ~5%.</td>
 </tr>
 </tbody>
 </table>
 <div class="admonition tip">
 <p class="admonition-title">SJF starvation risk</p>
-<p>Under sustained high load, SJF can indefinitely delay long-prompt requests as short ones keep arriving. BLIS does not currently implement aging or starvation guards for SJF. If your workload has a mix of short and long prompts at high utilization, prefer <code>priority-fcfs</code> + <code>slo-based</code> instead.</p>
+<p>Under sustained high load, SJF can indefinitely delay long-prompt requests as short ones keep arriving. BLIS does not currently implement aging or starvation guards for SJF. If your workload has a mix of short and long prompts at high utilization, prefer <code>--scheduler priority-fcfs</code> with SLO classes instead.</p>
 </div>
 <h2 id="further-reading">Further Reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>
 <ul>
-<li><a href="../routing/">Routing Policies</a> -- the upstream decision (which instance)</li>
-<li><a href="../cluster/">Cluster Simulation</a> -- the full request pipeline from arrival to completion</li>
-<li><a href="../../concepts/core-engine/#scheduling-policies">Core Engine: Scheduling Policies</a> -- implementation details and DES mechanics</li>
+<li><a href="../routing/">Routing Policies</a> — the upstream decision (which instance)</li>
+<li><a href="../cluster/">Cluster Simulation</a> — the full request pipeline from arrival to completion</li>
+<li><a href="../../concepts/core-engine/#scheduling-policies">Core Engine: Scheduling Policies</a> — implementation details and DES mechanics</li>
 </ul>
 
 

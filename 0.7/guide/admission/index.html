@@ -1187,6 +1187,89 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#flow-control-admission" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flow Control Admission
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Flow Control Admission">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How It Works
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fairness-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fairness Policy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#per-band-capacity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Band Capacity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#in-flight-eviction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In-Flight Eviction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#comparison-with-legacy-admission" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison with Legacy Admission
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pipeline-latency" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1623,7 +1706,7 @@
   <span class="md-ellipsis">
     
   
-    Supported Models
+    Model Compatibility
   
 
     
@@ -2997,6 +3080,89 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#flow-control-admission" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flow Control Admission
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Flow Control Admission">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How It Works
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fairness-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fairness Policy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#per-band-capacity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Band Capacity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#in-flight-eviction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In-Flight Eviction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#comparison-with-legacy-admission" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison with Legacy Admission
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pipeline-latency" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3118,7 +3284,7 @@
 <p class="admonition-title">Sizing the bucket</p>
 <p>With <code>--token-bucket-capacity 10000 --token-bucket-refill-rate 1000</code> and requests averaging 512 input tokens, the sustained admission rate is roughly <code>1000 / 512 ~ 1.95 req/s</code>. The bucket's capacity of 10000 tokens allows a burst of up to <code>10000 / 512 ~ 19</code> requests before rate-limiting kicks in.</p>
 </div>
-<p>Rejected requests are counted in the output anomaly counters (<code>Rejected Requests</code>) and in the full pipeline conservation formula (<code>num_requests == injected_requests + rejected_requests</code>), but they never enter the routing stage or any instance queue. Every rejection — regardless of admission policy — is also recorded in the per-SLO-class <code>ShedByTier</code> counter, so you can see which request classes are being rejected (e.g., <code>{"batch": 12, "sheddable": 8}</code>).</p>
+<p>Rejected requests are counted in the output anomaly counters (<code>Rejected Requests</code>) and in the full pipeline conservation formula (<code>num_requests == injected_requests + rejected_requests</code>), but they never enter the routing stage or any instance queue. Every rejection — regardless of admission policy — is also recorded in the per-SLO-class <code>ShedByTier</code> counter, so you can see which request classes are being rejected (e.g., <code>{"batch": 12, "sheddable": 8}</code>). <code>ShedByTier</code> is also exposed in periodic <code>ProgressSnapshot</code> callbacks, allowing live monitoring of per-tier shedding rates during simulation.</p>
 <h2 id="when-to-use-admission-control">When to Use Admission Control<a class="headerlink" href="#when-to-use-admission-control" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Overload protection.</strong> When the arrival rate significantly exceeds service capacity, unbounded queues grow without limit. Admission shedding keeps queue depth manageable.</li>
@@ -3306,6 +3472,119 @@
 <td><strong>Production parity</strong></td>
 <td>BLIS-specific</td>
 <td>Matches llm-d/GAIE</td>
+</tr>
+</tbody>
+</table>
+<h2 id="flow-control-admission">Flow Control Admission<a class="headerlink" href="#flow-control-admission" title="Permanent link">&para;</a></h2>
+<p>When <code>--flow-control</code> is enabled, the <code>FlowControlAdmission</code> policy replaces the configured
+admission policy. In this mode, admission and queuing are a single step -- the queue IS the
+admission decision, matching llm-d's <code>FlowControlAdmissionController</code>.</p>
+<h3 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Incoming request is enqueued into a per-priority-band, per-flow queue</li>
+<li>Each unique (TenantID, Priority) pair gets its own FIFO queue within a priority band</li>
+<li>Dispatch order follows <code>--dispatch-order</code>: with <code>priority</code>, iterates bands highest-priority first; with <code>fifo</code> (default), picks the globally-earliest arrival across all bands</li>
+<li>Within a band, <code>--fairness-policy</code> controls flow selection: <code>global-strict</code> (default) picks the earliest arrival (lowest sequence ID); <code>round-robin</code> cycles through tenants in sorted key order</li>
+<li>Saturation gating: dispatch only when cluster saturation &lt; 1.0</li>
+<li>Completion-triggered dispatch: each completion frees capacity and tries to dispatch from the queue</li>
+</ol>
+<h3 id="fairness-policy">Fairness Policy<a class="headerlink" href="#fairness-policy" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--fairness-policy</code></td>
+<td>Intra-band dispatch fairness: <code>global-strict</code>, <code>round-robin</code></td>
+<td><code>global-strict</code></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>global-strict</strong>: Picks the flow head with the earliest sequence ID (arrival order). Matches GIE's GlobalStrict.</li>
+<li><strong>round-robin</strong>: Cycles through tenants in sorted key order, skipping empty flows. Maintains a per-band cursor.</li>
+</ul>
+<h3 id="per-band-capacity">Per-Band Capacity<a class="headerlink" href="#per-band-capacity" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--per-band-capacity</code></td>
+<td>Max requests per priority band (0=unlimited)</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<p>When a band reaches its capacity limit, incoming requests for that band are rejected
+(all entries in a band share the same priority, so displacement is never possible).
+The global <code>--max-gateway-queue-depth</code> limit applies across all bands with cross-band
+shedding of sheddable entries.</p>
+<h3 id="example">Example<a class="headerlink" href="#example" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--flow-control<span class="w"> </span>--saturation-detector<span class="w"> </span>utilization<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--queue-depth-threshold<span class="w"> </span><span class="m">5</span><span class="w"> </span>--kv-cache-util-threshold<span class="w"> </span><span class="m">0</span>.8<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span>--per-band-capacity<span class="w"> </span><span class="m">100</span><span class="w"> </span>--max-gateway-queue-depth<span class="w"> </span><span class="m">500</span>
+</code></pre></div>
+<h3 id="in-flight-eviction">In-Flight Eviction<a class="headerlink" href="#in-flight-eviction" title="Permanent link">&para;</a></h3>
+<p>When flow control is enabled and the system is saturated, BLIS can evict sheddable requests that are already running on instances to free capacity for higher-priority waiting requests. This matches GIE's eviction architecture.</p>
+<p><strong>How it works:</strong></p>
+<ol>
+<li>When saturation &gt;= 1.0 and a non-sheddable request is waiting in the gateway queue</li>
+<li>The eviction trigger selects the most-evictable in-flight request:<ul>
+<li>Lowest priority first (background=-3 before sheddable=-2 before batch=-1)</li>
+<li>Among equal priority: newest dispatch time first (minimizes wasted compute)</li>
+</ul>
+</li>
+<li>The selected request is terminated on its instance (KV freed, resources released)</li>
+<li>The freed capacity allows the waiting higher-priority request to dispatch</li>
+</ol>
+<p><strong>Key properties:</strong></p>
+<ul>
+<li>Only sheddable requests (priority &lt; 0) can be evicted — critical and standard are always protected</li>
+<li>Eviction is automatic when <code>--flow-control</code> is active — no additional flag needed</li>
+<li>Evicted requests appear in the <code>Gateway Evicted (in-flight)</code> anomaly counter</li>
+<li>This is a terminal state — evicted requests are not requeued</li>
+<li>Eviction is distinct from instance-level KV preemption (<code>--preemption-policy</code>), which handles memory pressure and requeues victims</li>
+</ul>
+<h3 id="comparison-with-legacy-admission">Comparison with Legacy Admission<a class="headerlink" href="#comparison-with-legacy-admission" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Legacy (AlwaysAdmit, TierShed, etc.)</th>
+<th>FlowControlAdmission</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Admission</td>
+<td>Separate from queuing</td>
+<td>Queue IS admission</td>
+</tr>
+<tr>
+<td>Queue structure</td>
+<td>None (admit/reject then route directly)</td>
+<td>Per-priority-band, per-flow</td>
+</tr>
+<tr>
+<td>Dispatch order</td>
+<td>N/A (no queue)</td>
+<td><code>--dispatch-order</code> (fifo/priority)</td>
+</tr>
+<tr>
+<td>Capacity</td>
+<td>N/A (no queue)</td>
+<td>Per-band + global</td>
 </tr>
 </tbody>
 </table>

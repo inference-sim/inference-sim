@@ -1523,7 +1523,7 @@
   <span class="md-ellipsis">
     
   
-    Supported Models
+    Model Compatibility
   
 
     
@@ -2867,7 +2867,7 @@
 </tr>
 </tbody>
 </table>
-<p>*In blackbox mode (when using <code>--latency-model blackbox</code>), <code>defaults.yaml</code> overrides the 1,000,000 CLI default per model (e.g., Qwen3 14B / H100 / TP=1: 17,600 blocks). In roofline or trained-physics mode, the block count is auto-calculated from model architecture and GPU memory, superseding the <code>defaults.yaml</code> value. Explicit <code>--total-kv-blocks</code> always wins. See <a href="../../reference/configuration/#resolution-process">Configuration Reference</a>.</p>
+<p>*For roofline and trained-physics modes, the block count is auto-calculated from model architecture and GPU memory. Explicit <code>--total-kv-blocks</code> always wins. See <a href="../../reference/configuration/#resolution-process">Configuration Reference</a>.</p>
 <div class="admonition tip">
 <p class="admonition-title">Block size affects prefix cache granularity</p>
 <p>Prefix caching uses block-aligned hashing (<code>hash.ComputeBlockHashes</code>). Smaller block sizes increase cache hit granularity but also increase allocation overhead. Choose block size relative to your typical prefix lengths.</p>
