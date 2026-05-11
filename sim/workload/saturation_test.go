@@ -302,7 +302,7 @@ func TestClassifyBacklogDrift_UNSATURATED(t *testing.T) {
 	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95)
 
 	// Case 1: Negative slope (decreasing backlog)
-	classification, note, recommendation := classifyBacklogDrift(-0.01, -0.02, 0.0, 10, 5, 10, 8.0, cfg)
+	classification, note, recommendation := classifyBacklogDrift(-0.01, -0.02, 0.0, 10, 5, 10, 8.0, false, 0.0, cfg)
 	if classification != "UNSATURATED" {
 		t.Errorf("Case 1: Expected UNSATURATED, got %s", classification)
 	}
@@ -314,7 +314,7 @@ func TestClassifyBacklogDrift_UNSATURATED(t *testing.T) {
 	}
 
 	// Case 2: Flat slope (CI includes zero) with low peak ratio
-	classification, _, _ = classifyBacklogDrift(0.0, -0.01, 0.01, 10, 10, 15, 12.0, cfg)
+	classification, _, _ = classifyBacklogDrift(0.0, -0.01, 0.01, 10, 10, 15, 12.0, false, 0.0, cfg)
 	if classification != "UNSATURATED" {
 		t.Errorf("Case 2: Expected UNSATURATED, got %s", classification)
 	}
@@ -327,7 +327,7 @@ func TestClassifyBacklogDrift_TRANSIENT_BACKLOG(t *testing.T) {
 	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95)
 
 	// Flat slope with high peak: peak=25, mean=10, ratio=2.5 > 2.0
-	classification, note, recommendation := classifyBacklogDrift(0.0, -0.01, 0.01, 10, 10, 25, 10.0, cfg)
+	classification, note, recommendation := classifyBacklogDrift(0.0, -0.01, 0.01, 10, 10, 25, 10.0, false, 0.0, cfg)
 	if classification != "TRANSIENT_BACKLOG" {
 		t.Errorf("Expected TRANSIENT_BACKLOG, got %s", classification)
 	}
@@ -346,7 +346,7 @@ func TestClassifyBacklogDrift_PERSISTENTLY_SATURATED(t *testing.T) {
 	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95)
 
 	// Positive slope with CI excluding zero
-	classification, note, recommendation := classifyBacklogDrift(0.05, 0.02, 0.08, 10, 30, 35, 22.0, cfg)
+	classification, note, recommendation := classifyBacklogDrift(0.05, 0.02, 0.08, 10, 30, 35, 22.0, false, 0.0, cfg)
 	if classification != "PERSISTENTLY_SATURATED" {
 		t.Errorf("Expected PERSISTENTLY_SATURATED, got %s", classification)
 	}
@@ -858,6 +858,8 @@ func TestAnalyzeBacklogDrift_PeakMeanUsesPeakInFlight(t *testing.T) {
 	// If using max(ActiveEnd) → UNSATURATED (boundary samples miss peak)
 
 	cfg := NewBacklogDriftConfig(10*time.Second, 3, 2.0, 0.2, 0.95)
+	cfg.MetricsMode = MetricsModeIntegral // This test validates integral mode's burst detection
+	cfg.MinMeanForPeakRatio = 3.0         // Lower threshold to allow detection at mean≈3.7
 
 	// Window 1: 5 baseline requests active throughout all 3 windows
 	var requests []*sim.Request
@@ -1437,9 +1439,9 @@ func TestSaturationProgression_TransitionBoundaries(t *testing.T) {
 			rate:          10.0,
 			numRequests:   1000,
 			horizonUs:     0,
-			// Updated after integral metrics (PR #1316): PeakInFlight now detects
-			// intra-window bursts that boundary-sampling missed. Peak/Mean ≈ 2.73 > 2.0.
-			expectedClass: "TRANSIENT_BACKLOG",
+			// Updated after MinMeanForPeakRatio fix (PR #1316): Peak ratio test skipped
+			// when mean in-flight < 5.0, preventing false positives at very low load.
+			expectedClass: "UNSATURATED",
 		},
 		{
 			name:          "Just before first transition",
@@ -1516,6 +1518,113 @@ func TestSaturationProgression_TransitionBoundaries(t *testing.T) {
 			}
 
 			t.Logf("Rate %3.0f → %-25s ✓", tt.rate, report.Classification)
+		})
+	}
+}
+
+// TestSaturationClassification_MonotonicProgression verifies that classifications
+// progress monotonically as arrival rate increases (no impossible transitions).
+// This is a regression test for issue #1316 where integral mode produced:
+//   Rate 25 → PERSISTENT, Rate 30 → UNSATURATED (impossible!)
+//   Rate 60 → TRANSIENT, Rate 70 → UNSATURATED (impossible!)
+func TestSaturationClassification_MonotonicProgression(t *testing.T) {
+	// GIVEN a sequence of increasing arrival rates
+	// WHEN classifying saturation at each rate
+	// THEN classifications should never regress (SATURATED → UNSATURATED is impossible)
+
+	rates := []float64{10, 15, 20, 25, 30, 35, 40}
+	horizonSec := 300.0
+	simEndUs := int64(horizonSec * 1e6)
+	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95)
+	cfg.MetricsMode = MetricsModeBoundary // Test both modes
+	serviceDurationUs := int64(2_500_000)  // 2.5s TTFT
+
+	type rateResult struct {
+		rate           float64
+		classification string
+		meanInFlight   float64
+	}
+
+	testModes := []struct {
+		name string
+		mode MetricsMode
+	}{
+		{"boundary mode", MetricsModeBoundary},
+		{"integral mode", MetricsModeIntegral},
+	}
+
+	for _, tm := range testModes {
+		t.Run(tm.name, func(t *testing.T) {
+			cfg.MetricsMode = tm.mode
+			var results []rateResult
+
+			for _, rate := range rates {
+				arrivalIntervalUs := int64(1e6 / rate)
+				numRequests := int(rate * horizonSec)
+
+				var requests []*sim.Request
+				for i := 0; i < numRequests; i++ {
+					arrivalUs := int64(i) * arrivalIntervalUs
+					completionUs := arrivalUs + serviceDurationUs
+
+					req := &sim.Request{
+						ID:             fmt.Sprintf("req_%d", i),
+						ArrivalTime:    arrivalUs,
+						FirstTokenTime: serviceDurationUs,
+						TTFTSet:        true,
+						State:          sim.StateCompleted,
+						InputTokens:    []int{100},
+						OutputTokens:   []int{50},
+					}
+
+					if completionUs <= simEndUs {
+						req.State = sim.StateCompleted
+					} else if arrivalUs > simEndUs {
+						continue // Don't include requests that arrive after horizon
+					} else {
+						req.State = sim.StateQueued
+					}
+
+					requests = append(requests, req)
+				}
+
+				report := AnalyzeBacklogDrift(requests, simEndUs, cfg)
+				results = append(results, rateResult{
+					rate:           rate,
+					classification: report.Classification,
+					meanInFlight:   report.MeanInFlight,
+				})
+
+				t.Logf("  Rate %2.0f → %-25s (mean: %.1f)", rate, report.Classification, report.MeanInFlight)
+			}
+
+			// Verify monotonicity: once saturated, can't go back to unsaturated
+			saturatedSeen := false
+			for i, r := range results {
+				isSaturated := r.classification == "TRANSIENT_BACKLOG" || r.classification == "PERSISTENTLY_SATURATED"
+
+				if isSaturated {
+					saturatedSeen = true
+				}
+
+				if saturatedSeen && r.classification == "UNSATURATED" {
+					// This is the bug we're preventing: impossible transition
+					t.Errorf("MONOTONICITY VIOLATION at rate %.0f:\n"+
+						"  Previous rates were saturated, but rate %.0f classified as UNSATURATED\n"+
+						"  Full progression:",
+						r.rate, r.rate)
+					for j, prev := range results {
+						marker := ""
+						if j == i {
+							marker = " ← VIOLATION"
+						}
+						t.Logf("    Rate %2.0f: %s (mean: %.1f)%s", prev.rate, prev.classification, prev.meanInFlight, marker)
+					}
+					t.FailNow()
+				}
+			}
+
+			t.Logf("✓ Monotonic progression verified for %s", tm.name)
 		})
 	}
 }
@@ -1638,9 +1747,9 @@ func TestMetricsMode_Default(t *testing.T) {
 	// WHEN: Using NewBacklogDriftConfig constructor
 	cfg := NewBacklogDriftConfig(10*time.Second, 3, 2.0, 0.2, 0.95)
 
-	// THEN: MetricsMode should default to integral
-	if cfg.MetricsMode != MetricsModeIntegral {
-		t.Errorf("NewBacklogDriftConfig should default to MetricsModeIntegral, got %q", cfg.MetricsMode)
+	// THEN: MetricsMode should default to boundary (conservative choice until field-validated)
+	if cfg.MetricsMode != MetricsModeBoundary {
+		t.Errorf("NewBacklogDriftConfig should default to MetricsModeBoundary, got %q", cfg.MetricsMode)
 	}
 
 	// WHEN: Using DefaultBacklogDriftConfig

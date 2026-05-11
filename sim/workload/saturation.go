@@ -60,12 +60,14 @@ const (
 
 // BacklogDriftConfig configures the backlog-drift saturation analyzer.
 type BacklogDriftConfig struct {
-	WindowSize      time.Duration // Window width for sampling and per-window metrics (BC-1)
-	MinWindows      int           // Minimum complete windows required for classification (BC-7)
-	PeakRatio       float64       // Peak-to-mean threshold for TRANSIENT_BACKLOG detection (BC-6)
-	PeakRatioBand   float64       // Confidence band around PeakRatio (±band creates borderline zone)
-	ConfidenceCI    float64       // Confidence level for slope significance test (BC-3)
-	MetricsMode     MetricsMode   // Which metrics to use: "integral" (default) or "boundary" (legacy)
+	WindowSize           time.Duration // Window width for sampling and per-window metrics (BC-1)
+	MinWindows           int           // Minimum complete windows required for classification (BC-7)
+	PeakRatio            float64       // Peak-to-mean threshold for TRANSIENT_BACKLOG detection (BC-6)
+	PeakRatioBand        float64       // Confidence band around PeakRatio (±band creates borderline zone)
+	ConfidenceCI         float64       // Confidence level for slope significance test (BC-3)
+	MetricsMode          MetricsMode   // Which metrics to use: "integral" (default) or "boundary" (legacy)
+	MinMeanForPeakRatio  float64       // Minimum mean in-flight to apply peak ratio (prevents false positives at low load)
+	MinMeanForSlope      float64       // Minimum mean in-flight to trust slope analysis (prevents noise at very low loads)
 }
 
 // NewBacklogDriftConfig creates a BacklogDriftConfig with validation (BC-10, BC-14, R3).
@@ -88,12 +90,14 @@ func NewBacklogDriftConfig(windowSize time.Duration, minWindows int, peakRatio, 
 		panic(fmt.Sprintf("BacklogDriftConfig: ConfidenceCI must be in (0, 1), got %f", confidenceCI))
 	}
 	return BacklogDriftConfig{
-		WindowSize:     windowSize,
-		MinWindows:     minWindows,
-		PeakRatio:      peakRatio,
-		PeakRatioBand:  peakRatioBand,
-		ConfidenceCI:   confidenceCI,
-		MetricsMode:    MetricsModeIntegral, // Default to new algorithm
+		WindowSize:          windowSize,
+		MinWindows:          minWindows,
+		PeakRatio:           peakRatio,
+		PeakRatioBand:       peakRatioBand,
+		ConfidenceCI:        confidenceCI,
+		MetricsMode:         MetricsModeBoundary,   // Default to boundary (integral is experimental until validated)
+		MinMeanForPeakRatio: 5.0,                   // Minimum mean in-flight to apply peak ratio (prevents low-load false positives)
+		MinMeanForSlope:     10.0,                  // Minimum mean in-flight to trust slope analysis (prevents noise at very low loads)
 	}
 }
 
@@ -405,16 +409,24 @@ func fitSlopeRegression(samples []struct {
 // Returns (classification, note, recommendation).
 func classifyBacklogDrift(slope, slopeLower, slopeUpper float64,
 	initialBacklog, finalBacklog, peakInFlight int, meanInFlight float64,
+	horizonTruncated bool, truncatedFraction float64,
 	cfg BacklogDriftConfig) (classification, note, recommendation string) {
 
-	// BC-5: PERSISTENTLY_SATURATED — slope CI excludes zero (lower > 0)
-	if slopeLower > 0 {
-		classification = "PERSISTENTLY_SATURATED"
-		note = fmt.Sprintf("Backlog grew persistently (slope=%.2e req/µs, CI=[%.2e, %.2e] excludes zero). "+
-			"Initial=%d, Final=%d, Peak=%d.",
-			slope, slopeLower, slopeUpper, initialBacklog, finalBacklog, peakInFlight)
-		recommendation = "System is overloaded. Add capacity, reduce load, or increase request timeouts."
-		return
+	// Fix 2: Require minimum mean in-flight to trust slope analysis
+	// At very low loads (mean < MinMeanForSlope), slope variations are just noise
+	if meanInFlight < cfg.MinMeanForSlope {
+		// Skip slope-based classification - too low to have meaningful growth signal
+		// Fall through to peak ratio check or UNSATURATED
+	} else {
+		// BC-5: PERSISTENTLY_SATURATED — slope CI excludes zero (lower > 0)
+		if slopeLower > 0 {
+			classification = "PERSISTENTLY_SATURATED"
+			note = fmt.Sprintf("Backlog grew persistently (slope=%.2e req/µs, CI=[%.2e, %.2e] excludes zero). "+
+				"Initial=%d, Final=%d, Peak=%d.",
+				slope, slopeLower, slopeUpper, initialBacklog, finalBacklog, peakInFlight)
+			recommendation = "System is overloaded. Add capacity, reduce load, or increase request timeouts."
+			return
+		}
 	}
 
 	// Guard against zero mean (prevents NaN in user-facing note)
@@ -428,11 +440,15 @@ func classifyBacklogDrift(slope, slopeLower, slopeUpper float64,
 	// BC-6: TRANSIENT_BACKLOG — slope CI includes zero but peak exceeds threshold
 	peakRatio := float64(peakInFlight) / meanInFlight
 
+	// Only apply peak ratio test if mean in-flight is above threshold (prevents false positives at low load)
+	// When load is very low (e.g., mean < 1), even tiny variations create large ratios
+	applyPeakRatio := meanInFlight >= cfg.MinMeanForPeakRatio
+
 	// Confidence band logic: Use tiebreaker when ratio is in borderline zone
 	lowerBound := cfg.PeakRatio - cfg.PeakRatioBand
 	upperBound := cfg.PeakRatio + cfg.PeakRatioBand
 
-	if peakRatio > upperBound {
+	if applyPeakRatio && peakRatio > upperBound {
 		// Clearly above threshold → TRANSIENT_BACKLOG
 		classification = "TRANSIENT_BACKLOG"
 		note = fmt.Sprintf("Backlog did not grow on average (slope CI includes zero), but peak in-flight (%d) "+
@@ -440,7 +456,7 @@ func classifyBacklogDrift(slope, slopeLower, slopeUpper float64,
 			peakInFlight, cfg.PeakRatio, meanInFlight, peakRatio, cfg.PeakRatio)
 		recommendation = "System experienced transient congestion. Consider increasing burst capacity or smoothing load."
 		return
-	} else if peakRatio >= lowerBound && peakRatio <= upperBound {
+	} else if applyPeakRatio && peakRatio >= lowerBound && peakRatio <= upperBound {
 		// Borderline zone [threshold-band, threshold+band] → use slope as tiebreaker
 		if slope > 0 {
 			// Positive slope (getting worse) → classify as TRANSIENT
@@ -473,6 +489,16 @@ func classifyBacklogDrift(slope, slopeLower, slopeUpper float64,
 			slope, slopeLower, slopeUpper, peakRatio, cfg.PeakRatio)
 	}
 	recommendation = "System handled load without saturation. Current capacity is adequate."
+
+	// Fix 3: Add warning if horizon truncated (observation incomplete)
+	if horizonTruncated {
+		note += fmt.Sprintf(" WARNING: %.0f%% of requests incomplete at horizon end (still queued/running). "+
+			"Classification may be unreliable — observation window may have cut off before capturing full saturation dynamics. "+
+			"If queue was growing when observation ended, system may actually be saturated.",
+			truncatedFraction*100)
+		recommendation = "CAUTION: Observation was truncated. Re-run with longer horizon or higher rate to verify classification."
+	}
+
 	return
 }
 
@@ -480,6 +506,27 @@ func classifyBacklogDrift(slope, slopeLower, slopeUpper float64,
 // Orchestrates: eligibility filter → window metrics → regression → classification.
 // Returns UNSATURATED with note if observation has fewer than MinWindows complete windows (BC-7).
 func AnalyzeBacklogDrift(requests []*sim.Request, simEndUs int64, cfg BacklogDriftConfig) BacklogDriftReport {
+	// Fix 3: Check for horizon truncation (many requests still queued/running)
+	numQueued := 0
+	numRunning := 0
+	numCompleted := 0
+	for _, req := range requests {
+		switch req.State {
+		case sim.StateQueued:
+			numQueued++
+		case sim.StateRunning:
+			numRunning++
+		case sim.StateCompleted:
+			numCompleted++
+		}
+	}
+
+	totalRequests := len(requests)
+	incompleteRequests := numQueued + numRunning
+	truncatedFraction := float64(incompleteRequests) / float64(totalRequests)
+
+	horizonTruncated := truncatedFraction > 0.1 // More than 10% didn't complete
+
 	// Step 1: Filter eligible requests (BC-2, BC-13)
 	intervals := RequestsToIntervals(requests, simEndUs)
 
@@ -560,6 +607,7 @@ func AnalyzeBacklogDrift(requests []*sim.Request, simEndUs int64, cfg BacklogDri
 	classification, note, recommendation := classifyBacklogDrift(
 		slope, slopeLower, slopeUpper,
 		initialBacklog, finalBacklog, peakInFlight, meanInFlight,
+		horizonTruncated, truncatedFraction,
 		cfg,
 	)
 

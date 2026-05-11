@@ -183,7 +183,7 @@ var (
 	saturationPeakRatio float64 // Peak/mean ratio threshold for transient backlog detection (--saturation-peak-ratio)
 	saturationPeakBand float64 // Confidence band around peak ratio threshold (--saturation-peak-band)
 	saturationConfidence float64 // Confidence level for slope CI (--saturation-ci)
-	saturationMetricsMode string // Metrics mode for saturation detection: "integral" (default) or "boundary" (--saturation-metrics-mode)
+	saturationMetricsMode string // Metrics mode for saturation detection: "boundary" (default) or "integral" (experimental) (--saturation-metrics-mode)
 
 	// trace export
 	traceOutput string // File prefix for TraceV2 export (<prefix>.yaml + <prefix>.csv)
@@ -197,7 +197,7 @@ func registerSaturationFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&saturationPeakRatio, "saturation-peak-ratio", 2.0, "Peak/mean in-flight ratio threshold for TRANSIENT_BACKLOG detection")
 	cmd.Flags().Float64Var(&saturationPeakBand, "saturation-peak-band", 0.2, "Confidence band around peak-ratio threshold (creates borderline zone using slope as tiebreaker)")
 	cmd.Flags().Float64Var(&saturationConfidence, "saturation-ci", 0.95, "Confidence level for slope significance test (0.90, 0.95, or 0.99)")
-	cmd.Flags().StringVar(&saturationMetricsMode, "saturation-metrics-mode", "integral", "Metrics mode: 'integral' (time-weighted, burst-robust, default) or 'boundary' (point-sampled, legacy)")
+	cmd.Flags().StringVar(&saturationMetricsMode, "saturation-metrics-mode", "boundary", "Metrics mode: 'boundary' (point-sampled, default) or 'integral' (time-weighted, experimental)")
 }
 
 // applyRopeScaling applies rope_scaling factor to maxPosEmb if applicable.
