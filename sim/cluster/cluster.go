@@ -450,8 +450,8 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		if fairness == "" {
 			fairness = "global-strict"
 		}
-		logrus.Infof("[cluster] flow control enabled: detector=%q, dispatch=%q, fairness=%q, maxDepth=%d, perBandCapacity=%d",
-			config.FlowControlDetector, dispatchOrder, fairness, config.FlowControlMaxQueueDepth, config.FlowControlPerBandCapacity)
+		logrus.Infof("[cluster] flow control enabled: detector=%q, dispatch=%q, fairness=%q, maxDepth=%d, perBandCapacity=%d, requestTTL=%d",
+			config.FlowControlDetector, dispatchOrder, fairness, config.FlowControlMaxQueueDepth, config.FlowControlPerBandCapacity, config.FlowControlRequestTTL)
 	}
 
 	// Phase 1B-2a: initialize TenantTracker when TenantBudgets is configured (issue #811).

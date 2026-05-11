@@ -31,12 +31,12 @@ func TestGatewayQueueTTL_ExpiresQueuedRequest(t *testing.T) {
 	cs := NewClusterSimulator(cfg, reqs, nil)
 	mustRun(t, cs)
 
-	if cs.GatewayExpired() < 1 {
-		t.Fatalf("expected gatewayExpired >= 1, got %d", cs.GatewayExpired())
+	if cs.GatewayExpired() != 1 {
+		t.Fatalf("expected gatewayExpired=1, got %d", cs.GatewayExpired())
 	}
 	shed := cs.ShedByTier()
-	if shed["batch"] < 1 {
-		t.Fatalf("expected shedByTier[batch] >= 1, got %d", shed["batch"])
+	if shed["batch"] != 1 {
+		t.Fatalf("expected shedByTier[batch]=1, got %d", shed["batch"])
 	}
 }
 
