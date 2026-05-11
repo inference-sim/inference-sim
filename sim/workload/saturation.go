@@ -45,6 +45,19 @@ type RequestInterval struct {
 	CompletionUs int64
 }
 
+// MetricsMode selects which metrics to use for saturation classification.
+type MetricsMode string
+
+const (
+	// MetricsModeIntegral uses MeanInFlight and PeakInFlight (time-weighted, burst-robust).
+	// This is the recommended mode for production use (issue #1316).
+	MetricsModeIntegral MetricsMode = "integral"
+
+	// MetricsModeBoundary uses ActiveEnd for both regression and peak detection (legacy).
+	// Provided for backward compatibility and comparative analysis.
+	MetricsModeBoundary MetricsMode = "boundary"
+)
+
 // BacklogDriftConfig configures the backlog-drift saturation analyzer.
 type BacklogDriftConfig struct {
 	WindowSize      time.Duration // Window width for sampling and per-window metrics (BC-1)
@@ -52,10 +65,12 @@ type BacklogDriftConfig struct {
 	PeakRatio       float64       // Peak-to-mean threshold for TRANSIENT_BACKLOG detection (BC-6)
 	PeakRatioBand   float64       // Confidence band around PeakRatio (±band creates borderline zone)
 	ConfidenceCI    float64       // Confidence level for slope significance test (BC-3)
+	MetricsMode     MetricsMode   // Which metrics to use: "integral" (default) or "boundary" (legacy)
 }
 
 // NewBacklogDriftConfig creates a BacklogDriftConfig with validation (BC-10, BC-14, R3).
 // Panics if any parameter is invalid (NaN, Inf, out of range).
+// MetricsMode defaults to MetricsModeIntegral if empty.
 func NewBacklogDriftConfig(windowSize time.Duration, minWindows int, peakRatio, peakRatioBand, confidenceCI float64) BacklogDriftConfig {
 	if windowSize <= 0 {
 		panic(fmt.Sprintf("BacklogDriftConfig: WindowSize must be > 0, got %v", windowSize))
@@ -78,6 +93,7 @@ func NewBacklogDriftConfig(windowSize time.Duration, minWindows int, peakRatio, 
 		PeakRatio:      peakRatio,
 		PeakRatioBand:  peakRatioBand,
 		ConfidenceCI:   confidenceCI,
+		MetricsMode:    MetricsModeIntegral, // Default to new algorithm
 	}
 }
 
@@ -89,6 +105,7 @@ func DefaultBacklogDriftConfig() BacklogDriftConfig {
 		PeakRatio:      2.0,
 		PeakRatioBand:  0.2, // ±10% confidence band around threshold
 		ConfidenceCI:   0.95,
+		MetricsMode:    MetricsModeIntegral, // Default to new algorithm
 	}
 }
 
@@ -162,8 +179,9 @@ func RequestsToIntervals(requests []*sim.Request, simEndUs int64) []RequestInter
 			})
 		} else {
 			// Case 3: Completed (TTFTSet==true) — compute completion time
-			// Completion = ArrivalTime + FirstTokenTime + Σ(inter-token latencies)
-			completionUs := req.ArrivalTime + req.FirstTokenTime
+			// Completion = FirstTokenTime (absolute) + Σ(inter-token latencies)
+			// Note: FirstTokenTime is an absolute timestamp, not a duration from arrival
+			completionUs := req.FirstTokenTime
 			for _, itl := range req.ITL {
 				completionUs += itl
 			}
@@ -500,8 +518,15 @@ func AnalyzeBacklogDrift(requests []*sim.Request, simEndUs int64, cfg BacklogDri
 	for i, w := range windows {
 		// Use window midpoint as time coordinate
 		samples[i].timeUs = (w.StartUs + w.EndUs) / 2
-		// BC-5: Use time-averaged load (MeanInFlight) instead of boundary sample (ActiveEnd)
-		samples[i].count = int(math.Round(w.MeanInFlight))
+		// Select regression metric based on configured mode
+		if cfg.MetricsMode == MetricsModeBoundary {
+			// Legacy mode: Use boundary sample (ActiveEnd)
+			samples[i].count = w.ActiveEnd
+		} else {
+			// Integral mode (default): Use time-averaged load (MeanInFlight)
+			// BC-5: Captures true load including sub-window bursts
+			samples[i].count = int(math.Round(w.MeanInFlight))
+		}
 	}
 
 	// Step 4: Fit linear regression (BC-3)
@@ -512,13 +537,23 @@ func AnalyzeBacklogDrift(requests []*sim.Request, simEndUs int64, cfg BacklogDri
 	finalBacklog := windows[len(windows)-1].ActiveEnd
 	peakInFlight := 0
 	var sumInFlight float64
+
 	for _, w := range windows {
-		// BC-6: Use true intra-window peak, not boundary sample
-		if w.PeakInFlight > peakInFlight {
-			peakInFlight = w.PeakInFlight
+		// Select peak/mean metrics based on configured mode
+		if cfg.MetricsMode == MetricsModeBoundary {
+			// Legacy mode: Use boundary samples
+			if w.ActiveEnd > peakInFlight {
+				peakInFlight = w.ActiveEnd
+			}
+			sumInFlight += float64(w.ActiveEnd)
+		} else {
+			// Integral mode (default): Use integral-based metrics
+			// BC-6: Captures true intra-window peak and time-weighted mean
+			if w.PeakInFlight > peakInFlight {
+				peakInFlight = w.PeakInFlight
+			}
+			sumInFlight += w.MeanInFlight
 		}
-		// BC-6: Use time-weighted mean for overall average
-		sumInFlight += w.MeanInFlight
 	}
 	meanInFlight := sumInFlight / float64(len(windows))
 
