@@ -507,3 +507,62 @@ func RequestsToTraceRecords(requests []*sim.Request) []TraceRecord {
 	}
 	return records
 }
+
+// TraceRecordsToRequests converts TraceRecords to sim.Request objects for saturation analysis.
+// Maps observed timing data to Request fields as follows:
+//   - ArrivalTime: ArrivalTimeUs from trace
+//   - FirstTokenTime: FirstChunkTimeUs - ArrivalTimeUs (TTFT)
+//   - ITL: approximated as single value (LastChunkTimeUs - FirstChunkTimeUs) / (OutputTokens - 1)
+//   - TTFTSet: true if FirstChunkTimeUs > 0 (request reached first token)
+//   - State: derived from Status field ("ok" → Completed, "timeout" → TimedOut, "error" → TimedOut)
+//
+// Note: This is a lossy conversion — trace records don't store per-token ITL, so we use
+// a uniform approximation. For exact ITL data, use --record-itl during observe.
+// Returns empty slice if input is nil or empty.
+func TraceRecordsToRequests(records []TraceRecord) []*sim.Request {
+	if len(records) == 0 {
+		return []*sim.Request{}
+	}
+
+	requests := make([]*sim.Request, 0, len(records))
+	for _, rec := range records {
+		req := &sim.Request{
+			ArrivalTime:  rec.ArrivalTimeUs,
+			OutputTokens: []int{rec.OutputTokens},
+		}
+
+		// TTFTSet and FirstTokenTime
+		if rec.FirstChunkTimeUs > 0 {
+			req.TTFTSet = true
+			req.FirstTokenTime = rec.FirstChunkTimeUs - rec.ArrivalTimeUs
+		}
+
+		// State mapping
+		switch rec.Status {
+		case "ok":
+			req.State = sim.StateCompleted
+		case "timeout", "error":
+			req.State = sim.StateTimedOut
+		default:
+			req.State = sim.StateRunning // Unknown status, treat as running
+		}
+
+		// ITL approximation: distribute total decode time uniformly across output tokens
+		if rec.OutputTokens > 1 && rec.LastChunkTimeUs > rec.FirstChunkTimeUs {
+			totalDecodeUs := rec.LastChunkTimeUs - rec.FirstChunkTimeUs
+			numITL := rec.OutputTokens - 1 // N tokens = N-1 inter-token intervals
+			avgITL := totalDecodeUs / int64(numITL)
+			req.ITL = make([]int64, numITL)
+			for i := range req.ITL {
+				req.ITL[i] = avgITL
+			}
+		} else if rec.OutputTokens == 1 && req.TTFTSet {
+			// Single-token response: no ITL
+			req.ITL = []int64{}
+		}
+
+		requests = append(requests, req)
+	}
+
+	return requests
+}

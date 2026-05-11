@@ -60,6 +60,7 @@ var (
 	observeRecordITL           bool
 	observeITLOutput           string
 	observeTimeout             int
+	// saturationReport is declared in root.go and shared across run, replay, observe
 )
 
 var observeCmd = &cobra.Command{
@@ -156,6 +157,10 @@ func init() {
 	// ITL recording (opt-in; requires streaming)
 	observeCmd.Flags().BoolVar(&observeRecordITL, "record-itl", false, "Record per-chunk timestamps for ITL calibration (streaming only; forces streaming on non-streaming workloads)")
 	observeCmd.Flags().StringVar(&observeITLOutput, "itl-output", "", "Output path for ITL CSV file (default: <trace-data>.itl.csv if --record-itl is set)")
+
+	// Saturation analysis (optional)
+	observeCmd.Flags().StringVar(&saturationReport, "saturation-report", "", "File to write saturation analysis JSON (backlog-drift classification)")
+	registerSaturationFlags(observeCmd)
 
 	rootCmd.AddCommand(observeCmd)
 }
@@ -508,6 +513,39 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		}
 		logrus.Infof("ITL data exported: %s (%d records)", itlPath, len(itlRecords))
 	}
+
+	// Saturation analysis if requested (issue #1298)
+	if saturationReport != "" {
+		// Convert trace records to sim.Request objects for analysis
+		requests := workload.TraceRecordsToRequests(records)
+
+		// Compute sim end time from actual completion times
+		// (horizon is for generation bounding; actual completions may arrive later)
+		simEndUs := int64(0)
+		for _, rec := range records {
+			if rec.LastChunkTimeUs > simEndUs {
+				simEndUs = rec.LastChunkTimeUs
+			}
+		}
+		// Use horizon as floor if explicitly set and larger than actual completions
+		if observeHorizon > simEndUs {
+			simEndUs = observeHorizon
+		}
+
+		// Build saturation analysis config from flags (or defaults if not set)
+		cfg := workload.NewBacklogDriftConfig(
+			time.Duration(saturationWindowSec)*time.Second,
+			saturationMinWindows,
+			saturationPeakRatio,
+			saturationPeakBand,
+			saturationConfidence,
+		)
+		report := workload.AnalyzeBacklogDrift(requests, simEndUs, cfg)
+		if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
+			logrus.Fatalf("Failed to write saturation report: %v", err)
+		}
+		logrus.Infof("Saturation report written to %s (classification: %s)", saturationReport, report.Classification)
+	}
 }
 
 // completionEvent carries HTTP completion info to the serializer goroutine.
@@ -705,7 +743,7 @@ func runObserveOrchestrator(
 			if pendingFollowUps[0].ArrivalTime <= requests[preGenIdx].ArrivalTime {
 				nextReq = pendingFollowUps[0]
 				pendingFollowUps = pendingFollowUps[1:]
-	
+
 			} else {
 				nextReq = requests[preGenIdx]
 				preGenIdx++
@@ -725,7 +763,7 @@ func runObserveOrchestrator(
 					goto drain
 				}
 				nextReq = fu
-	
+
 			case <-ctx.Done():
 				goto drain
 			}
