@@ -238,6 +238,12 @@ Run lint locally before pushing: `golangci-lint run ./...`
 
 The following instructions are for Claude Code and other AI assistants working on this codebase. Human contributors can skip this section.
 
+### GitHub Action: Implementing Issues
+
+When triggered via `@claude /implement-issue` on a GitHub issue, you MUST invoke the `implement-issue` skill and follow it exactly. After implementation, you MUST create the pull request yourself using `gh pr create` — do NOT just push to a branch and leave it. Always open the PR programmatically, then invoke `/blis-pr-review` for self-review and iterate until READY TO MERGE.
+
+For all other triggers (questions, reviews, debugging, etc.), respond normally without creating a PR unless explicitly asked.
+
 ### Context Management
 
 When running multi-agent PR reviews, keep individual agent scopes narrow and summarize results concisely. Never try to synthesize all parallel agent outputs into one massive prompt. If hitting context limits, deliver incremental summaries per agent rather than a consolidated report.
