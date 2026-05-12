@@ -220,12 +220,12 @@ Separate prefill (prompt processing) and decode (token generation) onto dedicate
   --pd-decider prefix-threshold --pd-prefix-threshold 512 \
   --rate 100 --num-requests 1000
 
-# Heterogeneous pools: prefill on A100 (high compute), decode on H100 (high memory)
+# Heterogeneous pools: prefill on A100-80 (high compute), decode on H100 (high memory)
 ./blis run \
   --model qwen/qwen3-14b \
   --num-instances 4 \
   --prefill-instances 2 --decode-instances 2 \
-  --gpu a100 --decode-hardware h100 \
+  --hardware A100-80 --decode-hardware H100 \
   --pd-decider always \
   --rate 100 --num-requests 1000
 ```
@@ -252,7 +252,7 @@ autoscaler:
 
 node_pools:
   - name: standard
-    gpu_type: h100
+    gpu_type: H100
     gpus_per_node: 8
     gpu_memory_gib: 80
     initial_nodes: 1
