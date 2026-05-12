@@ -68,6 +68,15 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.LITELLM_API_KEY }}
           claude_args: '--model claude-sonnet-4-6 --allowed-tools Skill Agent Bash Read Edit Write'
+          prompt: |
+            IMPORTANT: When triggered on an issue (not a PR), you MUST create the pull request yourself using `gh pr create`. Do NOT just push to a branch and leave it — always open the PR.
+
+            When you see /implement-issue in the trigger comment, follow the implement-issue skill exactly. After implementation, you MUST:
+            1. Run `gh pr create` with a proper title and body
+            2. Then invoke /blis-pr-review for self-review
+            3. Fix any findings and iterate until READY TO MERGE
+
+            Never skip PR creation. The action's "Create PR" link is a fallback — you should always create the PR programmatically.
           plugin_marketplaces: |
             https://github.com/anthropics/claude-plugins-official.git
             https://github.com/obra/superpowers-marketplace.git
