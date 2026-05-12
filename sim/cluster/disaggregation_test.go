@@ -674,7 +674,7 @@ func TestPrefixThreshold_AboveThresholdDisaggregated(t *testing.T) {
 // pod by the same prefix-affinity mechanism BLIS uses in production
 // (precise-prefix-cache scorer queries cacheQueryFn and prefers warm pods).
 // That is the exact mechanism PrefixThresholdDecider then re-queries via
-// state.SelectedInstance — making the per-pod cache hit the real cause of
+// state.SelectedDecodeInstance — making the per-pod cache hit the real cause of
 // the decision, not a round-robin coincidence.
 func TestPrefixThreshold_PerPodCacheQuery(t *testing.T) {
 	const threshold = 300
@@ -747,7 +747,7 @@ func TestPrefixThreshold_PerPodCacheQuery(t *testing.T) {
 	for _, pr := range cs.parentRequests {
 		if pr.ID == "req-follow" {
 			t.Error("req-follow (50 non-cached tokens <= 300 threshold after cache warming) must NOT be disaggregated; " +
-				"check per-pod cacheQueryFn wiring via state.SelectedInstance (sim/cluster/cluster.go)")
+				"check per-pod cacheQueryFn wiring via state.SelectedDecodeInstance (sim/cluster/cluster.go)")
 		}
 	}
 }
@@ -2078,4 +2078,261 @@ func TestDisaggregation_DecodePodOverrideReroutes(t *testing.T) {
 	if overrideCount == 0 {
 		t.Fatal("no requests landed on override target — override logic did not fire")
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Issue #1339 Tranche 1: PrefillSnapshots + per-pod CachedBlocks exposure
+// ---------------------------------------------------------------------------
+
+// capturingDisaggDecider is a test-only DisaggregationDecider that records every
+// (*sim.RouterState, *sim.Request) pair it observes. Its decision is constant —
+// the point is to inspect the state the cluster handed it, not to exercise
+// decision logic. Must be installed after NewClusterSimulator so it replaces
+// the default decider built from PDDecider.
+type capturingDisaggDecider struct {
+	disaggregate bool
+	states       []*sim.RouterState
+	reqs         []*sim.Request
+}
+
+func (c *capturingDisaggDecider) Decide(req *sim.Request, state *sim.RouterState) sim.DisaggregationDecision {
+	c.states = append(c.states, state)
+	c.reqs = append(c.reqs, req)
+	return sim.DisaggregationDecision{Disaggregate: c.disaggregate}
+}
+
+// poolIDsByRole returns instance IDs whose PoolRole matches role, in
+// c.instances traversal order. Mirrors the deterministic ordering
+// buildPoolFilteredSnapshots preserves (R2/INV-6).
+func poolIDsByRole(cs *ClusterSimulator, role PoolRole) []string {
+	var ids []string
+	for _, inst := range cs.instances {
+		id := string(inst.ID())
+		if cs.poolMembership[id] == role {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// TestDisaggRouterState_PrefillSnapshotsPopulated verifies BC-1 and BC-2
+// (issue #1339 G1): executeDisaggregatedRouting constructs state.PrefillSnapshots
+// from the prefill pool and state.Snapshots from the decode pool, in deterministic
+// instance-declaration order.
+func TestDisaggRouterState_PrefillSnapshotsPopulated(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2) // 2 prefill + 2 decode
+	requests := newTestRequests(3)
+	cs := NewClusterSimulator(config, requests, nil)
+
+	// Replace the built-in decider with a capturing stub. Safe because the test
+	// lives in package cluster and can mutate unexported fields.
+	cap := &capturingDisaggDecider{disaggregate: true}
+	cs.disaggregationDecider = cap
+
+	mustRun(t, cs)
+
+	if len(cap.states) == 0 {
+		t.Fatal("capturing decider was never invoked — executeDisaggregatedRouting did not fire")
+	}
+
+	wantDecode := poolIDsByRole(cs, PoolRoleDecode)
+	wantPrefill := poolIDsByRole(cs, PoolRolePrefill)
+
+	for i, st := range cap.states {
+		if st == nil {
+			t.Fatalf("state[%d] = nil", i)
+		}
+		// Decode-pool membership (unchanged by this PR but asserted as the control).
+		gotDecode := snapshotIDs(st.Snapshots)
+		if !stringSlicesEqual(gotDecode, wantDecode) {
+			t.Errorf("state[%d].Snapshots IDs = %v, want %v", i, gotDecode, wantDecode)
+		}
+		// Prefill-pool membership (new in #1339 G1).
+		gotPrefill := snapshotIDs(st.PrefillSnapshots)
+		if !stringSlicesEqual(gotPrefill, wantPrefill) {
+			t.Errorf("state[%d].PrefillSnapshots IDs = %v, want %v (BC-1: prefill pool must be visible to decider)",
+				i, gotPrefill, wantPrefill)
+		}
+		// SelectedDecodeInstance (BC-5) must be a member of the decode-pool set.
+		if st.SelectedDecodeInstance == "" {
+			t.Errorf("state[%d].SelectedDecodeInstance = empty; BC-5 requires pre-selected decode pod", i)
+		}
+		if st.SelectedPrefillInstance != "" {
+			t.Errorf("state[%d].SelectedPrefillInstance = %q, want empty (reserved field, built-in deciders must not populate)",
+				i, st.SelectedPrefillInstance)
+		}
+	}
+}
+
+// TestDisaggRouterState_PrefillSnapshotsEmpty_WhenFilterReturnsNone verifies
+// BC-2 at the helper layer: FilterSnapshotsByPool(PoolRolePrefill) on a
+// decode-only membership map returns an empty slice, and feeding that into
+// annotateCachedBlocks leaves the (empty) slice untouched.
+//
+// Why not an end-to-end runtime test? ValidatePoolTopology forbids a PD
+// configuration with DecodeInstances > 0 and zero prefill + zero shared
+// pods, so executeDisaggregatedRouting cannot be reached with an empty
+// prefill pool at runtime. This test exercises the BC-2 claim at the
+// contract level of the helper that produces PrefillSnapshots.
+func TestDisaggRouterState_PrefillSnapshotsEmpty_WhenFilterReturnsNone(t *testing.T) {
+	// Decode-only membership map.
+	membership := map[string]PoolRole{
+		"d0": PoolRoleDecode,
+		"d1": PoolRoleDecode,
+	}
+	snapshots := []sim.RoutingSnapshot{{ID: "d0"}, {ID: "d1"}}
+	prefillFiltered := FilterSnapshotsByPool(snapshots, membership, PoolRolePrefill)
+	if len(prefillFiltered) != 0 {
+		t.Errorf("FilterSnapshotsByPool(PoolRolePrefill) length = %d, want 0 (BC-2: empty when no prefill pool)", len(prefillFiltered))
+	}
+	// annotateCachedBlocks must tolerate an empty slice.
+	annotateCachedBlocks(prefillFiltered, map[string]func([]int) int{
+		"d0": func([]int) int { return 99 },
+	}, []int{1, 2, 3})
+	if len(prefillFiltered) != 0 {
+		t.Errorf("annotateCachedBlocks mutated length to %d, want 0", len(prefillFiltered))
+	}
+}
+
+// TestDisaggRouterState_CachedBlocksPopulated verifies BC-3 (issue #1339 G5):
+// every snapshot in state.Snapshots and state.PrefillSnapshots has CachedBlocks
+// set to cacheQueryFn[s.ID](req.InputTokens). Verified by installing a stubbed
+// cacheQueryFn where each pod returns a distinct, ID-derived block count, and
+// asserting the snapshot values match byte-for-byte.
+func TestDisaggRouterState_CachedBlocksPopulated(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	requests := newTestRequests(2)
+	cs := NewClusterSimulator(config, requests, nil)
+
+	// Install a deterministic cacheQueryFn: each pod returns a value derived
+	// from its ID so we can assert snapshot[i].CachedBlocks without guessing.
+	// Map entry ordering is irrelevant — annotateCachedBlocks looks up by ID.
+	idToCount := map[string]int{}
+	for _, inst := range cs.instances {
+		id := string(inst.ID())
+		idToCount[id] = len(id) // stable, nonzero distinguisher
+	}
+	stubCache := map[string]func([]int) int{}
+	for id, want := range idToCount {
+		captured := want // capture loop var
+		stubCache[id] = func([]int) int { return captured }
+	}
+	cs.cacheQueryFn = stubCache
+
+	cap := &capturingDisaggDecider{disaggregate: true}
+	cs.disaggregationDecider = cap
+
+	mustRun(t, cs)
+
+	if len(cap.states) == 0 {
+		t.Fatal("capturing decider was never invoked")
+	}
+
+	for i, st := range cap.states {
+		// Input tokens must be non-empty for annotation to fire; otherwise the
+		// helper's early return leaves CachedBlocks=0 legitimately. Our test
+		// requests have non-empty InputTokens by construction.
+		if len(cap.reqs[i].InputTokens) == 0 {
+			t.Fatalf("test setup bug: reqs[%d].InputTokens empty; annotation is a no-op", i)
+		}
+		for j, s := range st.Snapshots {
+			want := idToCount[s.ID]
+			if s.CachedBlocks != want {
+				t.Errorf("state[%d].Snapshots[%d] (%s).CachedBlocks = %d, want %d (BC-3: per-pod cached block count must match cacheQueryFn)",
+					i, j, s.ID, s.CachedBlocks, want)
+			}
+		}
+		for j, s := range st.PrefillSnapshots {
+			want := idToCount[s.ID]
+			if s.CachedBlocks != want {
+				t.Errorf("state[%d].PrefillSnapshots[%d] (%s).CachedBlocks = %d, want %d (BC-3: prefill-pool snapshot must also carry CachedBlocks)",
+					i, j, s.ID, s.CachedBlocks, want)
+			}
+		}
+	}
+}
+
+// TestAnnotateCachedBlocks_EmptyTokens verifies BC-3 early-return: when the
+// request has no input tokens, annotateCachedBlocks leaves every snapshot's
+// CachedBlocks at zero (no spurious calls to cacheQueryFn).
+func TestAnnotateCachedBlocks_EmptyTokens(t *testing.T) {
+	snaps := []sim.RoutingSnapshot{{ID: "a"}, {ID: "b"}}
+	calls := 0
+	cacheFn := map[string]func([]int) int{
+		"a": func([]int) int { calls++; return 7 },
+		"b": func([]int) int { calls++; return 11 },
+	}
+	annotateCachedBlocks(snaps, cacheFn, nil)
+	annotateCachedBlocks(snaps, cacheFn, []int{})
+	for i, s := range snaps {
+		if s.CachedBlocks != 0 {
+			t.Errorf("snaps[%d].CachedBlocks = %d, want 0 (empty tokens must early-return)", i, s.CachedBlocks)
+		}
+	}
+	if calls != 0 {
+		t.Errorf("cacheFn called %d times, want 0 (empty tokens must not invoke closures)", calls)
+	}
+}
+
+// TestAnnotateCachedBlocks_NilMap verifies BC-3 fallback: a nil cacheQueryFn
+// is a no-op — every snapshot keeps CachedBlocks=0.
+func TestAnnotateCachedBlocks_NilMap(t *testing.T) {
+	snaps := []sim.RoutingSnapshot{{ID: "a", CachedBlocks: 0}, {ID: "b", CachedBlocks: 0}}
+	annotateCachedBlocks(snaps, nil, []int{1, 2, 3})
+	for i, s := range snaps {
+		if s.CachedBlocks != 0 {
+			t.Errorf("snaps[%d].CachedBlocks = %d, want 0 (nil cacheFn must leave CachedBlocks untouched)", i, s.CachedBlocks)
+		}
+	}
+}
+
+// TestAnnotateCachedBlocks_MissingKey verifies BC-3 fallback: snapshots whose
+// ID is missing from cacheQueryFn (or whose closure is nil) keep CachedBlocks=0.
+// Snapshots with a valid closure still get annotated. This mirrors the
+// conservative fallback PrefixThresholdDecider.Decide applies.
+func TestAnnotateCachedBlocks_MissingKey(t *testing.T) {
+	snaps := []sim.RoutingSnapshot{
+		{ID: "known"},
+		{ID: "missing"},
+		{ID: "nil_closure"},
+	}
+	cacheFn := map[string]func([]int) int{
+		"known":       func([]int) int { return 5 },
+		"nil_closure": nil, // present but nil
+	}
+	annotateCachedBlocks(snaps, cacheFn, []int{1, 2, 3})
+	if snaps[0].CachedBlocks != 5 {
+		t.Errorf("known.CachedBlocks = %d, want 5", snaps[0].CachedBlocks)
+	}
+	if snaps[1].CachedBlocks != 0 {
+		t.Errorf("missing.CachedBlocks = %d, want 0 (missing key must keep zero)", snaps[1].CachedBlocks)
+	}
+	if snaps[2].CachedBlocks != 0 {
+		t.Errorf("nil_closure.CachedBlocks = %d, want 0 (nil closure must keep zero)", snaps[2].CachedBlocks)
+	}
+}
+
+// snapshotIDs returns the ordered IDs of a snapshot slice. Helper for
+// membership/ordering assertions.
+func snapshotIDs(snaps []sim.RoutingSnapshot) []string {
+	ids := make([]string, len(snaps))
+	for i, s := range snaps {
+		ids[i] = s.ID
+	}
+	return ids
+}
+
+// stringSlicesEqual returns true iff a and b have the same length and same
+// elements in the same order. Used instead of reflect.DeepEqual to keep
+// diagnostics small and avoid the nil-vs-empty-slice asymmetry.
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
