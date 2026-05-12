@@ -179,14 +179,74 @@ Produce a structured verdict:
 
 ---
 
-## Step 9 — Act on Findings
+## Step 9 — Fix-and-Re-Review Loop (max 3 rounds)
 
-- **CRITICAL findings**: Fix immediately. Re-run tests. Amend or add a fixup commit.
-- **IMPORTANT findings**: Fix if straightforward. If complex, add a TODO comment referencing the issue.
-- **After fixes**: Re-run verification (`go test ./... && golangci-lint run ./...`) and update the PR.
+If the verdict is **CHANGES REQUIRED**, enter a convergence loop:
 
-If the PR is READY TO MERGE after addressing findings, post the verdict as a PR comment:
+**For each round:**
+
+1. **Fix findings:**
+   - CRITICAL: Fix immediately — these block merge.
+   - IMPORTANT: Fix if straightforward. If complex, add a TODO comment with issue reference.
+   - Suggestions: Skip — these are optional.
+
+2. **Re-run verification:**
+   ```bash
+   go build ./...
+   go test ./... -count=1
+   golangci-lint run ./...
+   ```
+   All three must pass before continuing.
+
+3. **Commit and push:**
+   ```bash
+   git add <fixed-files>
+   git commit -m "fix: address self-review findings (round N)"
+   git push
+   ```
+
+4. **Re-review:** Go back to Step 1 and perform the full review again on the updated diff.
+   ```bash
+   gh pr diff
+   ```
+
+5. **Produce a new verdict (Step 8).** If READY TO MERGE → exit loop. If CHANGES REQUIRED → next round.
+
+**Exit conditions:**
+- Verdict is **READY TO MERGE** → proceed to Step 10.
+- Max rounds (3) reached → proceed to Step 10 with remaining findings noted.
+
+---
+
+## Step 10 — Post Final Verdict
+
+Post the final verdict as a PR comment:
 
 ```bash
-gh pr comment --body "<verdict markdown>"
+gh pr comment --body "$(cat <<'EOF'
+## Self-Review Complete (Round N/3)
+
+<final verdict markdown from Step 8>
+
+---
+*Automated self-review by Claude. All critical/important findings addressed.*
+EOF
+)"
+```
+
+If findings remain after max rounds, note them explicitly:
+
+```bash
+gh pr comment --body "$(cat <<'EOF'
+## Self-Review Complete (3/3 rounds exhausted)
+
+<final verdict markdown>
+
+### Unresolved Findings
+- <remaining items that need human judgment>
+
+---
+*Automated self-review by Claude. Some findings require human review.*
+EOF
+)"
 ```

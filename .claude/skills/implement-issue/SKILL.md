@@ -165,15 +165,28 @@ EOF
 
 ---
 
-## Step 8 — Self-Review
+## Step 8 — Self-Review (Converge to READY TO MERGE)
 
-After the PR is created, invoke the project-specific self-review:
+After the PR is created, invoke the self-review skill. It will review, fix findings, and re-review in a loop until convergence:
 
 ```
 /blis-pr-review
 ```
 
-This triggers a comprehensive review against project standards, cross-path parity, preemption safety, and timeout consistency. Address any CRITICAL or IMPORTANT findings before requesting human review.
+The `blis-pr-review` skill handles the full fix-and-re-review cycle internally (up to 3 rounds). It posts the final verdict as a PR comment when done.
+
+---
+
+## Responding to Human Review Comments
+
+When this skill is triggered on a PR (via `@claude` in a review comment), instead of creating a new PR:
+
+1. Read the review comments and requested changes
+2. Implement the requested fixes
+3. Re-run verification (`go build && go test && golangci-lint`)
+4. Commit and push fixes
+5. Re-invoke `/blis-pr-review` to verify the fix doesn't introduce new issues
+6. Reply to each review comment confirming the fix or explaining why an alternative approach was taken
 
 ---
 
@@ -183,3 +196,4 @@ This triggers a comprehensive review against project standards, cross-path parit
 - If `golangci-lint` fails: fix lint issues, do not suppress with `//nolint`
 - If the issue is ambiguous: comment on the issue asking for clarification rather than guessing
 - If the scope is too large for a single PR: comment on the issue proposing a decomposition, implement only the first piece
+- If self-review loop exceeds 3 iterations: stop, post remaining findings, request human guidance
