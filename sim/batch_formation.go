@@ -159,9 +159,10 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		next := ctx.WaitQ.Peek()
 
 		// Handle decode-only requests (PD disaggregation: KV pre-allocated by transfer).
-		// IsDecodeSubRequest is set exclusively by KVTransferCompletedEvent, so this
-		// path fires only for requests that genuinely arrived via PD KV transfer.
-		// ProgressIndex has already been set to len(InputTokens) by AllocateTransferredKV.
+		// IsDecodeSubRequest is set exclusively by KVTransferStartedEvent when it
+		// reserves KV on the decode pod (issue #1343), so this path fires only for
+		// requests that genuinely arrived via PD KV transfer.
+		// ProgressIndex has already been set to len(InputTokens) by ReserveTransferredKV.
 		if next.IsDecodeSubRequest {
 			decodeTokens := int64(1)
 			if ok := ctx.KVCache.AllocateKVBlocks(next, next.ProgressIndex, next.ProgressIndex+decodeTokens, nil); !ok {

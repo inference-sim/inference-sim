@@ -9,7 +9,7 @@ type ParentRequest struct {
 	OriginalRequest *sim.Request // Pointer to the original request (for metadata)
 	PrefillSubReqID string
 	DecodeSubReqID  string
-	DecodeSubReq    *sim.Request // Pointer to the decode sub-request (set by KVTransferCompletedEvent)
+	DecodeSubReq    *sim.Request // Pointer to the decode sub-request. Set by KVTransferStartedEvent on successful ReserveTransferredKV (issue #1343); KVTransferCompletedEvent promotes it from StateWaitingForRemoteKVs to StateQueued and enqueues it on the decode instance. Nil after a late-drop (decode pod unroutable at transfer complete) when reserved KV is released.
 	NumKVBlocks     int64        // KV blocks to transfer (ceil(inputLen / blockSize))
 
 	// Phase timestamps (microseconds). Zero means phase not yet reached.
@@ -19,17 +19,21 @@ type ParentRequest struct {
 	TransferStartTime    int64
 	TransferCompleteTime int64
 	DecodeEnqueueTime    int64
-	// CompletionTime has three meanings depending on outcome:
+	// CompletionTime has four meanings depending on outcome:
 	//   - Successful decode: set by detectDecodeCompletions to
 	//     clusterClock + decodeInstance.PostDecodeFixedOverhead() when the decode
 	//     sub-request finishes its last step. Includes PostDecodeFixedOverhead so
 	//     that projectPDMetrics() computes the same client-visible E2E as non-PD
 	//     recordRequestCompletion (issue #846). For roofline (overhead=0), equals
 	//     the raw cluster clock tick.
-	//   - Dropped at decode KV allocation: set to the KVTransferCompletedEvent time (the
-	//     point when the drop was detected). Since decode never ran, this reflects
-	//     the drop-detection time, not a decode completion time.
-	//     Use DecodeInstanceID == "" to distinguish dropped requests.
+	//   - Dropped at transfer start (issue #1343): set to KVTransferStartedEvent
+	//     time when ReserveTransferredKV fails or the decode pod is non-routable.
+	//     Signature: TransferStartTime > 0 && CompletionTime == TransferStartTime
+	//     && TransferCompleteTime == 0. No KVTransferCompletedEvent is scheduled.
+	//   - Dropped at transfer complete: set to KVTransferCompletedEvent time when
+	//     the decode pod transitioned non-routable during the transfer window.
+	//     Reserved KV is released before the drop. Signature:
+	//     TransferCompleteTime > 0 && DecodeSubReq == nil.
 	//   - Decode timeout: set by detectDecodeCompletions to the cluster clock at
 	//     timeout detection time. The session is cancelled via sessionCallback.
 	CompletionTime int64

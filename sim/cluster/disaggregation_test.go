@@ -500,7 +500,7 @@ func TestReserveTransferredKV_Success(t *testing.T) {
 	req := &sim.Request{
 		ID:          "decode_sub_0",
 		InputTokens: make([]int, 100),
-		State:       sim.StateQueued,
+		State:       sim.StateWaitingForRemoteKVs,
 	}
 
 	ok := inst.ReserveTransferredKV(req)
@@ -529,7 +529,7 @@ func TestReserveTransferredKV_InsufficientCapacity(t *testing.T) {
 	req := &sim.Request{
 		ID:          "decode_sub_0",
 		InputTokens: make([]int, 100), // Needs 7 blocks but only 2 available
-		State:       sim.StateQueued,
+		State:       sim.StateWaitingForRemoteKVs,
 	}
 
 	ok := inst.ReserveTransferredKV(req)
