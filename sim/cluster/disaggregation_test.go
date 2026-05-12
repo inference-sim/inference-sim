@@ -67,7 +67,7 @@ func newTestDisaggDeploymentConfigWithOverhead(overhead float64) DeploymentConfi
 	}
 	hwCfg := sim.HardwareCalib{TFlopsPeak: 1.0, BwPeakTBs: 0.001}
 	betas := []float64{0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0} // β₅ = 100 µs/layer
-	alphas := []float64{0.0, overhead, 0.0}                   // α₁ = overhead (PostDecodeFixedOverhead)
+	alphas := []float64{0.0, overhead, 0.0}                 // α₁ = overhead (PostDecodeFixedOverhead)
 	return DeploymentConfig{
 		SimConfig: sim.SimConfig{
 			Horizon:             math.MaxInt64,
@@ -327,8 +327,8 @@ func TestDisaggregation_DroppedAtDecodeKV(t *testing.T) {
 	// when decode instances have insufficient KV capacity for transferred input.
 	// Strategy: 1 decode instance with only 3 blocks (48 tokens). Each request needs
 	// 2 blocks (20 tokens). First request fills 2/3 blocks, second request tries to
-	// allocate 2 more but only 1 free → AllocateTransferredKV fails.
-	config := newTestDisaggDeploymentConfig(3, 2, 1) // 2 prefill, 1 decode
+	// allocate 2 more but only 1 free → ReserveTransferredKV fails.
+	config := newTestDisaggDeploymentConfig(3, 2, 1)               // 2 prefill, 1 decode
 	config.KVCacheConfig = sim.NewKVCacheConfig(3, 16, 0, 0, 0, 0) // 3 blocks = 48 tokens
 
 	requests := newShortRequests(4)
@@ -486,7 +486,7 @@ func TestDisaggregation_PerPoolScorerConfigs(t *testing.T) {
 	}
 }
 
-func TestAllocateTransferredKV_Success(t *testing.T) {
+func TestReserveTransferredKV_Success(t *testing.T) {
 	cfg := sim.SimConfig{
 		Horizon:             1000000,
 		Seed:                42,
@@ -500,22 +500,22 @@ func TestAllocateTransferredKV_Success(t *testing.T) {
 	req := &sim.Request{
 		ID:          "decode_sub_0",
 		InputTokens: make([]int, 100),
-		State:       sim.StateQueued,
+		State:       sim.StateWaitingForRemoteKVs,
 	}
 
-	ok := inst.AllocateTransferredKV(req)
+	ok := inst.ReserveTransferredKV(req)
 	if !ok {
-		t.Fatal("AllocateTransferredKV returned false, want true")
+		t.Fatal("ReserveTransferredKV returned false, want true")
 	}
 	if req.ProgressIndex != 100 {
 		t.Errorf("ProgressIndex = %d, want 100", req.ProgressIndex)
 	}
 	if inst.sim.KVCache.UsedBlocks() == 0 {
-		t.Error("UsedBlocks = 0 after AllocateTransferredKV, want > 0")
+		t.Error("UsedBlocks = 0 after ReserveTransferredKV, want > 0")
 	}
 }
 
-func TestAllocateTransferredKV_InsufficientCapacity(t *testing.T) {
+func TestReserveTransferredKV_InsufficientCapacity(t *testing.T) {
 	cfg := sim.SimConfig{
 		Horizon:             1000000,
 		Seed:                42,
@@ -529,12 +529,12 @@ func TestAllocateTransferredKV_InsufficientCapacity(t *testing.T) {
 	req := &sim.Request{
 		ID:          "decode_sub_0",
 		InputTokens: make([]int, 100), // Needs 7 blocks but only 2 available
-		State:       sim.StateQueued,
+		State:       sim.StateWaitingForRemoteKVs,
 	}
 
-	ok := inst.AllocateTransferredKV(req)
+	ok := inst.ReserveTransferredKV(req)
 	if ok {
-		t.Error("AllocateTransferredKV returned true with insufficient capacity, want false")
+		t.Error("ReserveTransferredKV returned true with insufficient capacity, want false")
 	}
 }
 
@@ -1021,7 +1021,7 @@ func TestDisaggregation_TTFT_FallbackWhenDecodeDataMissing(t *testing.T) {
 			parent: &ParentRequest{
 				ID: "p1", PrefillSubReqID: "p1_prefill", DecodeSubReqID: "p1_decode",
 				OriginalRequest: origReq,
-				ArrivalTime: 0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				ArrivalTime:     0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
 				TransferStartTime: 0, TransferCompleteTime: 0,
 				DecodeSubReq: &sim.Request{ITL: []int64{100}},
 			},
@@ -1031,7 +1031,7 @@ func TestDisaggregation_TTFT_FallbackWhenDecodeDataMissing(t *testing.T) {
 			parent: &ParentRequest{
 				ID: "p2", PrefillSubReqID: "p2_prefill", DecodeSubReqID: "p2_decode",
 				OriginalRequest: origReq,
-				ArrivalTime: 0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				ArrivalTime:     0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
 				TransferStartTime: 100, TransferCompleteTime: 200,
 				DecodeSubReq: &sim.Request{ITL: nil},
 			},
@@ -1041,7 +1041,7 @@ func TestDisaggregation_TTFT_FallbackWhenDecodeDataMissing(t *testing.T) {
 			parent: &ParentRequest{
 				ID: "p3", PrefillSubReqID: "p3_prefill", DecodeSubReqID: "p3_decode",
 				OriginalRequest: origReq,
-				ArrivalTime: 0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				ArrivalTime:     0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
 				TransferStartTime: 100, TransferCompleteTime: 200,
 				DecodeSubReq: nil,
 			},
@@ -1051,7 +1051,7 @@ func TestDisaggregation_TTFT_FallbackWhenDecodeDataMissing(t *testing.T) {
 			parent: &ParentRequest{
 				ID: "p4", PrefillSubReqID: "p4_prefill", DecodeSubReqID: "p4_decode",
 				OriginalRequest: origReq,
-				ArrivalTime: 0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
+				ArrivalTime:     0, CompletionTime: 5000, DecodeInstanceID: "inst-0",
 				TransferStartTime: 100, TransferCompleteTime: 200,
 				DecodeSubReq: &sim.Request{ITL: []int64{100}},
 			},
@@ -1541,7 +1541,7 @@ func TestDisaggregation_SessionFollowUp_InjectsFollowUp(t *testing.T) {
 // THEN: callback fires for each completed request with SessionID preserved
 func TestDisaggregation_AggregateMode_Unaffected(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 0, 0) // no PD
-	config.PDDecider = ""                             // disable decider
+	config.PDDecider = ""                            // disable decider
 	reqs := newTestRequestsWithSession(3, "sess_agg")
 
 	var capture sessionCallbackCapture
@@ -1901,8 +1901,8 @@ func TestDisaggregation_NoDecodeRoutingEvent(t *testing.T) {
 // causality test (PrefillEnqueueTime >= ArrivalTime); this test asserts the
 // exact offset.
 func TestPDRouting_InjectionTimingPreserved(t *testing.T) {
-	const admissionLatency int64 = 50_000  // 50ms
-	const routingLatency int64 = 100_000   // 100ms
+	const admissionLatency int64 = 50_000 // 50ms
+	const routingLatency int64 = 100_000  // 100ms
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	config.AdmissionLatency = admissionLatency
 	config.RoutingLatency = routingLatency

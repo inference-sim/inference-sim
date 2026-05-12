@@ -333,11 +333,11 @@ func TestTransferContention_INVP22_EffectiveBandwidthFormula(t *testing.T) {
 		outputTokens[i] = i + 1
 	}
 	req := &sim.Request{
-		ID:          "request_0",
-		ArrivalTime: 0,
-		InputTokens: inputTokens,
+		ID:           "request_0",
+		ArrivalTime:  0,
+		InputTokens:  inputTokens,
 		OutputTokens: outputTokens,
-		State:       sim.StateQueued,
+		State:        sim.StateQueued,
 	}
 
 	config := newContentionConfig(4, 2, 2, 10.0) // 10 GB/s, zero base latency
@@ -427,14 +427,16 @@ func TestTransferContention_INVP22_N2FormulaExact(t *testing.T) {
 		ID:          "test-parent",
 		NumKVBlocks: 10,
 	}
-	event := &KVTransferStartedEvent{time: 0, parentReq: parentReq}
-	event.Execute(cs)
+	// Narrow unit test: exercise the duration formula in isolation. KV reservation
+	// is not relevant here (tested elsewhere), so bypass KVTransferStartedEvent.Execute
+	// and call scheduleTransferCompletion directly.
+	scheduleTransferCompletion(cs, parentReq, 0)
 
 	if len(cs.clusterEvents) != 1 {
 		t.Fatalf("expected 1 scheduled completion event, got %d", len(cs.clusterEvents))
 	}
 	completedAt := cs.clusterEvents[0].event.Timestamp()
-	duration := completedAt - event.time
+	duration := completedAt - 0
 
 	// N=2: 10 blocks × 16 tok/block × 512 B/tok = 81920 B; BW = 10/2 = 5 GB/s = 5000 B/µs
 	// duration = ceil(81920 / 5000) = ceil(16.384) = 17 µs
@@ -474,13 +476,13 @@ func TestTransferContention_PrefillOverridesTP_AffectsTransferDuration(t *testin
 		clusterEvents:   make(ClusterEventQueue, 0),
 	}
 	parentReq := &ParentRequest{ID: "test-tp-override", NumKVBlocks: 10}
-	event := &KVTransferStartedEvent{time: 0, parentReq: parentReq}
-	event.Execute(cs)
+	// Narrow duration-formula test: bypass KVTransferStartedEvent.Execute.
+	scheduleTransferCompletion(cs, parentReq, 0)
 
 	if len(cs.clusterEvents) != 1 {
 		t.Fatalf("expected 1 scheduled completion event, got %d", len(cs.clusterEvents))
 	}
-	duration := cs.clusterEvents[0].event.Timestamp() - event.time
+	duration := cs.clusterEvents[0].event.Timestamp() - 0
 
 	// With prefill TP=4: 10 blocks × 16 tok/block × 128 B/tok = 20480 B
 	// BW = 10 GB/s = 10000 B/µs; duration = ceil(20480/10000) = 3 µs
@@ -548,14 +550,14 @@ func TestTransferContention_DurationFloor_ZeroBlocks(t *testing.T) {
 		ID:          "test-parent",
 		NumKVBlocks: 0, // zero blocks → zero transfer bytes
 	}
-	event := &KVTransferStartedEvent{time: 100, parentReq: parentReq}
-	event.Execute(cs)
+	// Narrow duration-formula test: bypass KVTransferStartedEvent.Execute.
+	scheduleTransferCompletion(cs, parentReq, 100)
 
 	if len(cs.clusterEvents) != 1 {
 		t.Fatalf("expected 1 scheduled completion event, got %d", len(cs.clusterEvents))
 	}
 	completedAt := cs.clusterEvents[0].event.Timestamp()
-	duration := completedAt - event.time
+	duration := completedAt - 100
 
 	// 0 blocks → 0 bytes → ceil(0) = 0 → clamped to 1 µs minimum
 	const wantDur = int64(1)
@@ -612,6 +614,13 @@ func TestTransferContention_NegativeGuard_SetsCorruptionFlag(t *testing.T) {
 			InputTokens:  []int{1, 2, 3},
 			OutputTokens: []int{1},
 		},
+		// With #1343 WaitingForRemoteKVs parity, KVTransferCompletedEvent
+		// requires DecodeSubReq (attached at transfer start). A nil
+		// DecodeSubReq in production is a panic; narrow tests probing the
+		// contention negative-guard must provide one. This minimal fixture
+		// is sufficient because the routability check hits "no instance
+		// registered" before any sub-request state is read.
+		DecodeSubReq: &sim.Request{ID: "test-parent_decode"},
 	}
 	event := &KVTransferCompletedEvent{time: 100, parentReq: parentReq}
 	event.Execute(cs)
@@ -658,8 +667,8 @@ func TestTransferContention_INVP22_DivisorLaw(t *testing.T) {
 	getDuration := func(preExisting int) int64 {
 		cs := makeCS(preExisting)
 		parentReq := &ParentRequest{ID: "test", NumKVBlocks: 10}
-		event := &KVTransferStartedEvent{time: 0, parentReq: parentReq}
-		event.Execute(cs)
+		// Narrow duration-formula test: bypass KVTransferStartedEvent.Execute.
+		scheduleTransferCompletion(cs, parentReq, 0)
 		if len(cs.clusterEvents) != 1 {
 			t.Fatalf("N=%d: expected 1 completion event, got %d", preExisting+1, len(cs.clusterEvents))
 		}
@@ -725,13 +734,13 @@ func TestTransferContention_DurationFloor_ZeroBlocks_Invariant(t *testing.T) {
 			clusterEvents:   make(ClusterEventQueue, 0),
 		}
 		parentReq := &ParentRequest{ID: "test", NumKVBlocks: blocks}
-		event := &KVTransferStartedEvent{time: 100, parentReq: parentReq}
-		event.Execute(cs)
+		// Narrow duration-formula test: bypass KVTransferStartedEvent.Execute.
+		scheduleTransferCompletion(cs, parentReq, 100)
 
 		if len(cs.clusterEvents) != 1 {
 			t.Fatalf("blocks=%d: expected 1 completion event, got %d", blocks, len(cs.clusterEvents))
 		}
-		duration := cs.clusterEvents[0].event.Timestamp() - event.time
+		duration := cs.clusterEvents[0].event.Timestamp() - 100
 
 		// Floor invariant: duration >= 1 μs always.
 		if duration < 1 {
@@ -745,9 +754,8 @@ func TestTransferContention_DurationFloor_ZeroBlocks_Invariant(t *testing.T) {
 				clusterEvents: make(ClusterEventQueue, 0),
 			}
 			prevReq := &ParentRequest{ID: "test-prev", NumKVBlocks: blocks - 1}
-			prevEvent := &KVTransferStartedEvent{time: 100, parentReq: prevReq}
-			prevEvent.Execute(csPrev)
-			prevDur := csPrev.clusterEvents[0].event.Timestamp() - prevEvent.time
+			scheduleTransferCompletion(csPrev, prevReq, 100)
+			prevDur := csPrev.clusterEvents[0].event.Timestamp() - 100
 			if duration < prevDur {
 				t.Errorf("blocks=%d: duration=%d < blocks=%d duration=%d (monotonicity violated)",
 					blocks, duration, blocks-1, prevDur)
@@ -784,13 +792,13 @@ func TestTransferContention_ZeroBandwidth_FallsBackToBaseLatency(t *testing.T) {
 		clusterEvents:   make(ClusterEventQueue, 0),
 	}
 	parentReq := &ParentRequest{ID: "test-zero-bw", NumKVBlocks: 100}
-	event := &KVTransferStartedEvent{time: 0, parentReq: parentReq}
-	event.Execute(cs)
+	// Narrow duration-formula test: bypass KVTransferStartedEvent.Execute.
+	scheduleTransferCompletion(cs, parentReq, 0)
 
 	if len(cs.clusterEvents) != 1 {
 		t.Fatalf("expected 1 scheduled completion event, got %d", len(cs.clusterEvents))
 	}
-	duration := cs.clusterEvents[0].event.Timestamp() - event.time
+	duration := cs.clusterEvents[0].event.Timestamp() - 0
 
 	// With zero bandwidth: duration = ceil(10.0 * 1000) = 10000 µs
 	const wantDur = int64(10000)
@@ -833,13 +841,13 @@ func TestTransferContention_ZeroBandwidth_PayloadIndependence(t *testing.T) {
 			clusterEvents:   make(ClusterEventQueue, 0),
 		}
 		parentReq := &ParentRequest{ID: "test-payload-indep", NumKVBlocks: int64(blocks)}
-		event := &KVTransferStartedEvent{time: 0, parentReq: parentReq}
-		event.Execute(cs)
+		// Narrow duration-formula test: bypass KVTransferStartedEvent.Execute.
+		scheduleTransferCompletion(cs, parentReq, 0)
 
 		if len(cs.clusterEvents) != 1 {
 			t.Fatalf("blocks=%d: expected 1 scheduled completion event, got %d", blocks, len(cs.clusterEvents))
 		}
-		duration := cs.clusterEvents[0].event.Timestamp() - event.time
+		duration := cs.clusterEvents[0].event.Timestamp() - 0
 		if duration != wantDur {
 			t.Errorf("blocks=%d: duration=%d µs, want %d µs (zero bandwidth — duration must be independent of block count)",
 				blocks, duration, wantDur)

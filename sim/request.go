@@ -20,10 +20,11 @@ import (
 type RequestState string
 
 const (
-	StateQueued    RequestState = "queued"
-	StateRunning   RequestState = "running"
-	StateCompleted RequestState = "completed"
-	StateTimedOut  RequestState = "timed_out"
+	StateQueued              RequestState = "queued"
+	StateRunning             RequestState = "running"
+	StateCompleted           RequestState = "completed"
+	StateTimedOut            RequestState = "timed_out"
+	StateWaitingForRemoteKVs RequestState = "waiting_for_remote_kvs"
 )
 
 type Request struct {
@@ -34,7 +35,7 @@ type Request struct {
 	MaxOutputLen int   // Client output budget (vLLM max_tokens); 0 = no budget (input-only check, runtime stop enforces limit)
 
 	State         RequestState // queued, running, completed
-	ProgressIndex int64  // Total number of input tokens processed so far + number of output tokens generated so far
+	ProgressIndex int64        // Total number of input tokens processed so far + number of output tokens generated so far
 
 	TTFTSet          bool    // Tracks whether TTFT has been set
 	FirstTokenTime   int64   // Timestamp when first token was generated
@@ -43,8 +44,8 @@ type Request struct {
 	FinishedStepIdx  int     // Step index when this request finished (running -> completed)
 	NumNewTokens     int     // Number of new tokens to be generated in the current step
 	LengthCapped     bool    // Set when force-completed by runtime MaxModelLen cap (BC-5)
-	ITL              []int64  // List of inter-token latencies
-	Priority float64 // Instance-level scheduling priority (vLLM convention: lower = more urgent).
+	ITL              []int64 // List of inter-token latencies
+	Priority         float64 // Instance-level scheduling priority (vLLM convention: lower = more urgent).
 	// Set once at EnqueueRequest/EnqueueDecodeSubRequest via SLOPriorityMap.InvertForVLLM;
 	// not recomputed per step.
 

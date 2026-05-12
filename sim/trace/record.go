@@ -38,8 +38,13 @@ type RoutingRecord struct {
 // except in two drop scenarios:
 //
 //  1. No routable prefill pool instances (routingRejections++): no downstream records.
-//  2. Pre-selected decode pod became non-routable or AllocateTransferredKV fails
-//     (droppedAtDecodeKV++): PrefillRoutingRecord exists but KVTransferRecord is absent.
+//  2. Decode-side drop (droppedAtDecodeKV++): PrefillRoutingRecord exists but
+//     KVTransferRecord is absent. Two sub-cases, both counted the same:
+//     - At KVTransferStartedEvent: decode pod became non-routable, or
+//     ReserveTransferredKV fails (insufficient decode KV). Drop fires at
+//     transfer start; no KVTransferCompletedEvent is scheduled. Issue #1343.
+//     - At KVTransferCompletedEvent: decode pod became non-routable between
+//     transfer start and transfer complete. Reserved KV is released.
 //
 // To detect case 1: check for the absence of a PrefillRoutingRecord with a
 // matching ParentRequestID in the trace. To detect case 2: check the

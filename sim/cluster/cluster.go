@@ -25,39 +25,50 @@ type ClusterSimulator struct {
 	aggregatedMetrics *sim.Metrics
 
 	// Online routing pipeline fields
-	clusterEvents        ClusterEventQueue
-	seqCounter           int64
-	admissionLatency     int64
-	routingLatency       int64
-	admissionPolicy      sim.AdmissionPolicy
-	priorityMap          *sim.SLOPriorityMap
-	snapshotProvider     *CachedSnapshotProvider
-	routingPolicy        sim.RoutingPolicy
-	rejectedRequests     int                    // EC-2: count of requests rejected by admission policy
-	routingRejections    int                    // I13: count of requests rejected at routing (no routable instances)
-	shedByTier           map[string]int         // per-SLOClass shedding: admission rejections + gateway queue shed + in-flight evictions
-	trace                *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
-	preGeneratedRequests []*sim.Request         // Pre-generated requests (all workload paths unified)
-	inFlightRequests     map[string]int         // instance ID → dispatched-but-not-completed count (#463)
-	evictionTracker      *EvictionTracker       // tracks routed sheddable requests for in-flight eviction (nil when flow control disabled)
-	gatewayEvicted       int                    // count of requests evicted in-flight from instances (INV-1: gw_evicted)
-	gatewayExpired       int                    // count of requests expired from gateway queue via TTL (INV-1: gw_expired)
-	requestTTL           int64                  // gateway queue request TTL in microseconds; 0 = disabled
-	poolMembership       map[string]PoolRole    // instance ID → pool role (nil when disaggregation disabled)
+	clusterEvents         ClusterEventQueue
+	seqCounter            int64
+	admissionLatency      int64
+	routingLatency        int64
+	admissionPolicy       sim.AdmissionPolicy
+	priorityMap           *sim.SLOPriorityMap
+	snapshotProvider      *CachedSnapshotProvider
+	routingPolicy         sim.RoutingPolicy
+	rejectedRequests      int                       // EC-2: count of requests rejected by admission policy
+	routingRejections     int                       // I13: count of requests rejected at routing (no routable instances)
+	shedByTier            map[string]int            // per-SLOClass shedding: admission rejections + gateway queue shed + in-flight evictions
+	trace                 *trace.SimulationTrace    // nil when trace-level is "none" (BC-1: zero overhead)
+	preGeneratedRequests  []*sim.Request            // Pre-generated requests (all workload paths unified)
+	inFlightRequests      map[string]int            // instance ID → dispatched-but-not-completed count (#463)
+	evictionTracker       *EvictionTracker          // tracks routed sheddable requests for in-flight eviction (nil when flow control disabled)
+	gatewayEvicted        int                       // count of requests evicted in-flight from instances (INV-1: gw_evicted)
+	gatewayExpired        int                       // count of requests expired from gateway queue via TTL (INV-1: gw_expired)
+	requestTTL            int64                     // gateway queue request TTL in microseconds; 0 = disabled
+	poolMembership        map[string]PoolRole       // instance ID → pool role (nil when disaggregation disabled)
 	disaggregationDecider sim.DisaggregationDecider // PD disaggregation decider (nil when disabled)
 
 	// PD disaggregation state (PR2)
 	parentRequests            map[string]*ParentRequest // parent request ID → tracking record
 	pendingPrefillCompletions map[string]string         // prefill sub-req ID → parent ID
 	pendingDecodeCompletions  map[string]string         // decode sub-req ID → parent ID
-	transfersInitiated        int
-	transfersCompleted        int
-	pdPrefillCompletedCount   int               // prefill sub-requests that completed (for INV-1 correction)
-	pdDecodeCompletedCount    int               // decode sub-requests that completed (for INV-1 in-flight tracking)
-	pdDecodeTimedOutCount     int               // decode sub-requests that timed out (for INV-1 in-flight tracking)
-	droppedAtDecodeKV         int               // requests dropped due to insufficient KV at decode
-	prefillRoutingPolicy      sim.RoutingPolicy // nil = use main routingPolicy
-	decodeRoutingPolicy       sim.RoutingPolicy // nil = use main routingPolicy
+	// transfersInitiated counts every request that reaches
+	// KVTransferStartedEvent (issue #1343: both successful reservations
+	// that enter the transfer pipeline AND drop-at-start cases where the
+	// decode pod was unroutable or reservation failed — dropAtStart also
+	// bumps this counter). This preserves the pre-#1343 "attempts"
+	// semantics so INV-PD-3 (initiated == completed) still holds: every
+	// drop-at-start also schedules a zero-duration
+	// KVTransferCompletedEvent that increments transfersCompleted.
+	transfersInitiated int
+	// transfersCompleted counts every KVTransferCompletedEvent that fires —
+	// successful promotions, late drops (decode pod became non-routable
+	// mid-transfer), and degenerate completions scheduled by dropAtStart.
+	transfersCompleted      int
+	pdPrefillCompletedCount int               // prefill sub-requests that completed (for INV-1 correction)
+	pdDecodeCompletedCount  int               // decode sub-requests that completed (for INV-1 in-flight tracking)
+	pdDecodeTimedOutCount   int               // decode sub-requests that timed out (for INV-1 in-flight tracking)
+	droppedAtDecodeKV       int               // requests dropped due to insufficient KV at decode
+	prefillRoutingPolicy    sim.RoutingPolicy // nil = use main routingPolicy
+	decodeRoutingPolicy     sim.RoutingPolicy // nil = use main routingPolicy
 
 	// E/P/D disaggregation state (GAP-4, issue #1264).
 	// encodeDecider is nil when --encode-instances == 0, which disables the encode stage.
