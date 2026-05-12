@@ -25,7 +25,7 @@ func TestGatewayQueue_FIFO_DequeueOrder(t *testing.T) {
 }
 
 func TestGatewayQueue_Priority_DequeueOrder(t *testing.T) {
-	q := NewGatewayQueue("priority", 0, nil) // unlimited
+	q := NewGatewayQueue("priority", 0, nil)                            // unlimited
 	_, _ = q.Enqueue(&sim.Request{ID: "r1", SLOClass: "background"}, 1) // priority -3
 	_, _ = q.Enqueue(&sim.Request{ID: "r2", SLOClass: "critical"}, 2)   // priority 4
 	_, _ = q.Enqueue(&sim.Request{ID: "r3", SLOClass: "standard"}, 3)   // priority 3
@@ -918,5 +918,141 @@ func TestGatewayQueue_RemoveByRequestID_WithShed(t *testing.T) {
 	got := q.RemoveByRequestID("r1")
 	if got != nil {
 		t.Fatalf("expected nil for shed request, got %v", got)
+	}
+}
+
+// --- SLO-deadline ordering tests (BC-1 through BC-5, BC-9) ---
+
+func TestGatewayQueue_SLODeadline_EarliestFirst(t *testing.T) {
+	q := NewGatewayQueue("slo-deadline", 0, nil)
+	// R1: long SLO target → late deadline. R2: short SLO target → early deadline.
+	// Same flow (tenant), same priority (standard).
+	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "standard", TenantID: "t1", GatewayEnqueueTime: 100, SLOTargetUs: 500000}, 1)
+	q.Enqueue(&sim.Request{ID: "r2", SLOClass: "standard", TenantID: "t1", GatewayEnqueueTime: 200, SLOTargetUs: 100000}, 2)
+
+	// R2 deadline = 200+100000 = 100200. R1 deadline = 100+500000 = 500100. R2 first.
+	r := q.Dequeue()
+	if r.ID != "r2" {
+		t.Fatalf("expected r2 (earliest deadline), got %s", r.ID)
+	}
+	r = q.Dequeue()
+	if r.ID != "r1" {
+		t.Fatalf("expected r1, got %s", r.ID)
+	}
+}
+
+func TestGatewayQueue_SLODeadline_NoTarget_FarFuture(t *testing.T) {
+	q := NewGatewayQueue("slo-deadline", 0, nil)
+	// R1 has SLO target. R2 has none (0 → far-future → sorts to back).
+	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "standard", TenantID: "t1", GatewayEnqueueTime: 100, SLOTargetUs: 200000}, 1)
+	q.Enqueue(&sim.Request{ID: "r2", SLOClass: "standard", TenantID: "t1", GatewayEnqueueTime: 100, SLOTargetUs: 0}, 2)
+
+	r := q.Dequeue()
+	if r.ID != "r1" {
+		t.Fatalf("expected r1 (has target), got %s", r.ID)
+	}
+	r = q.Dequeue()
+	if r.ID != "r2" {
+		t.Fatalf("expected r2, got %s", r.ID)
+	}
+}
+
+func TestGatewayQueue_SLODeadline_EqualDeadline_FCFS(t *testing.T) {
+	q := NewGatewayQueue("slo-deadline", 0, nil)
+	// Same deadline, R1 enqueued first (lower seqID) → R1 dispatches first.
+	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "standard", TenantID: "t1", GatewayEnqueueTime: 100, SLOTargetUs: 200000}, 1)
+	q.Enqueue(&sim.Request{ID: "r2", SLOClass: "standard", TenantID: "t1", GatewayEnqueueTime: 100, SLOTargetUs: 200000}, 2)
+
+	r := q.Dequeue()
+	if r.ID != "r1" {
+		t.Fatalf("expected r1 (lower seqID), got %s", r.ID)
+	}
+}
+
+func TestGatewayQueue_SLODeadline_WithinFlowOnly(t *testing.T) {
+	q := NewGatewayQueue("slo-deadline", 0, nil)
+	// Two flows. Flow t1 head has seqID=1, flow t2 head has seqID=2.
+	// GlobalStrictPolicy picks t1 (earliest seqID head).
+	// t2's request has earlier deadline, but fairness picks t1 first.
+	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "standard", TenantID: "t1", GatewayEnqueueTime: 100, SLOTargetUs: 500000}, 1)
+	q.Enqueue(&sim.Request{ID: "r2", SLOClass: "standard", TenantID: "t2", GatewayEnqueueTime: 100, SLOTargetUs: 100000}, 2)
+
+	r := q.Dequeue()
+	if r.ID != "r1" {
+		t.Fatalf("expected r1 (fairness picks flow t1 by seqID), got %s", r.ID)
+	}
+}
+
+func TestGatewayQueue_SLODeadline_PerTierFallback(t *testing.T) {
+	q := NewGatewayQueue("slo-deadline", 0, nil)
+	q.SetSLOTargets(map[string]int64{"critical": 100000})
+	// R1: no per-request target but SLOClass=critical → fallback to 100000.
+	// R2: no per-request target, SLOClass=standard → no fallback → far-future.
+	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "critical", TenantID: "t1", GatewayEnqueueTime: 100, SLOTargetUs: 0}, 1)
+	q.Enqueue(&sim.Request{ID: "r2", SLOClass: "standard", TenantID: "t1", GatewayEnqueueTime: 100, SLOTargetUs: 0}, 2)
+
+	r := q.Dequeue()
+	if r.ID != "r1" {
+		t.Fatalf("expected r1 (per-tier fallback), got %s", r.ID)
+	}
+}
+
+func TestGatewayQueue_SLODeadline_PerRequestOverridesTier(t *testing.T) {
+	q := NewGatewayQueue("slo-deadline", 0, nil)
+	q.SetSLOTargets(map[string]int64{"standard": 500000})
+	// R1: per-request target 100000 (overrides tier). R2: tier fallback 500000.
+	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "standard", TenantID: "t1", GatewayEnqueueTime: 100, SLOTargetUs: 100000}, 1)
+	q.Enqueue(&sim.Request{ID: "r2", SLOClass: "standard", TenantID: "t1", GatewayEnqueueTime: 100, SLOTargetUs: 0}, 2)
+
+	r := q.Dequeue()
+	if r.ID != "r1" {
+		t.Fatalf("expected r1 (per-request overrides tier), got %s", r.ID)
+	}
+}
+
+func TestGatewayQueue_SLODeadline_NoTargets_DegeneratesToFCFS(t *testing.T) {
+	q := NewGatewayQueue("slo-deadline", 0, nil)
+	// No slo-targets set, no per-request targets → all deadlines are MaxInt64 → FCFS by seqID.
+	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "standard", TenantID: "t1", GatewayEnqueueTime: 100}, 1)
+	q.Enqueue(&sim.Request{ID: "r2", SLOClass: "standard", TenantID: "t1", GatewayEnqueueTime: 200}, 2)
+	q.Enqueue(&sim.Request{ID: "r3", SLOClass: "standard", TenantID: "t1", GatewayEnqueueTime: 50}, 3)
+
+	ids := []string{q.Dequeue().ID, q.Dequeue().ID, q.Dequeue().ID}
+	expected := []string{"r1", "r2", "r3"}
+	for i, id := range ids {
+		if id != expected[i] {
+			t.Fatalf("position %d: expected %s, got %s (all deadlines MaxInt64 → FCFS by seqID)", i, expected[i], id)
+		}
+	}
+}
+
+func TestGatewayQueue_SLODeadline_DequeueGated(t *testing.T) {
+	q := NewGatewayQueue("slo-deadline", 0, nil)
+	q.SetUsageLimitThreshold(0.5)
+	// Two requests in same flow, different deadlines.
+	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "standard", TenantID: "t1", GatewayEnqueueTime: 100, SLOTargetUs: 500000}, 1)
+	q.Enqueue(&sim.Request{ID: "r2", SLOClass: "standard", TenantID: "t1", GatewayEnqueueTime: 100, SLOTargetUs: 100000}, 2)
+
+	// Low saturation → should dispatch, and r2 (earlier deadline) first.
+	r := q.DequeueGated(0.3)
+	if r == nil {
+		t.Fatal("expected non-nil from DequeueGated at low saturation")
+	}
+	if r.ID != "r2" {
+		t.Fatalf("expected r2 (earliest deadline via DequeueGated), got %s", r.ID)
+	}
+
+	// Saturation >= ceiling (1.0 for single band) → should block.
+	r = q.DequeueGated(1.0)
+	if r != nil {
+		t.Fatalf("expected nil from DequeueGated at saturation >= ceiling, got %s", r.ID)
+	}
+}
+
+func TestGatewayQueue_SLODeadline_EmptyQueue(t *testing.T) {
+	q := NewGatewayQueue("slo-deadline", 0, nil)
+	r := q.Dequeue()
+	if r != nil {
+		t.Fatalf("expected nil from empty slo-deadline queue, got %v", r)
 	}
 }

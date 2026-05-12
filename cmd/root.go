@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -98,6 +99,7 @@ var (
 	tierShedMinPriority   int                // Tier-shed minimum admitted priority under overload
 	tenantBudgets         map[string]float64 // Per-tenant fraction of total capacity (nil = no enforcement)
 	sloPriorityOverrides  map[string]int     // SLO class → priority overrides (nil = GAIE defaults)
+	sloTargetsMap         map[string]int64   // SLO class → TTFT target µs for slo-deadline ordering (nil = disabled)
 	gaieQDThreshold       float64            // GAIE-legacy queue depth threshold per instance (default 5)
 	gaieKVThreshold       float64            // GAIE-legacy KV cache utilization threshold (default 0.8)
 
@@ -155,6 +157,7 @@ var (
 	flowControlEnabled              bool
 	flowControlDetector             string
 	flowControlDispatchOrder        string
+	flowControlSLOTargets           string
 	flowControlMaxQueueDepth        int
 	flowControlQueueDepthThreshold  float64
 	flowControlKVCacheUtilThreshold float64
@@ -178,15 +181,15 @@ var (
 	requestTimeoutSecs int
 
 	// output file paths
-	metricsPath string // File to write MetricsOutput JSON for blis run (--metrics-path)
-	resultsPath string // File to write []SimResult JSON for blis replay (--results-path)
+	metricsPath      string // File to write MetricsOutput JSON for blis run (--metrics-path)
+	resultsPath      string // File to write []SimResult JSON for blis replay (--results-path)
 	saturationReport string // File to write BacklogDriftReport JSON for saturation analysis (--saturation-report)
 
 	// saturation analysis configuration
-	saturationWindowSec int // Window size in seconds for backlog-drift analysis (--saturation-window)
-	saturationMinWindows int // Minimum number of windows required for classification (--saturation-min-windows)
-	saturationPeakRatio float64 // Peak/mean ratio threshold for transient backlog detection (--saturation-peak-ratio)
-	saturationPeakBand float64 // Confidence band around peak ratio threshold (--saturation-peak-band)
+	saturationWindowSec  int     // Window size in seconds for backlog-drift analysis (--saturation-window)
+	saturationMinWindows int     // Minimum number of windows required for classification (--saturation-min-windows)
+	saturationPeakRatio  float64 // Peak/mean ratio threshold for transient backlog detection (--saturation-peak-ratio)
+	saturationPeakBand   float64 // Confidence band around peak ratio threshold (--saturation-peak-band)
 	saturationConfidence float64 // Confidence level for slope CI (--saturation-ci)
 
 	// trace export
@@ -720,6 +723,9 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 				}
 			}
 		}
+		if bundle.Admission.SLOTargets != nil && sloTargetsMap == nil {
+			sloTargetsMap = bundle.Admission.SLOTargets
+		}
 		if bundle.Admission.GAIEQDThreshold != nil {
 			gaieQDThreshold = *bundle.Admission.GAIEQDThreshold
 		}
@@ -826,8 +832,8 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		if !sim.IsValidSaturationDetector(flowControlDetector) {
 			logrus.Fatalf("Unknown saturation detector %q. Valid: %s", flowControlDetector, strings.Join(sim.ValidSaturationDetectorNames(), ", "))
 		}
-		if flowControlDispatchOrder != "fifo" && flowControlDispatchOrder != "priority" {
-			logrus.Fatalf("--dispatch-order must be 'fifo' or 'priority', got %q", flowControlDispatchOrder)
+		if flowControlDispatchOrder != "fifo" && flowControlDispatchOrder != "priority" && flowControlDispatchOrder != "slo-deadline" {
+			logrus.Fatalf("--dispatch-order must be 'fifo', 'priority', or 'slo-deadline', got %q", flowControlDispatchOrder)
 		}
 		if flowControlMaxQueueDepth < 0 {
 			logrus.Fatalf("--max-gateway-queue-depth must be >= 0, got %d", flowControlMaxQueueDepth)
@@ -843,6 +849,28 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 		}
 		if flowControlUsageLimitThreshold < 1.0 && flowControlDispatchOrder == "fifo" {
 			logrus.Warnf("--usage-limit-threshold < 1.0 with --dispatch-order fifo: HoL blocking uses priority-order iteration, FIFO semantics will not apply to gating decisions")
+		}
+		// Parse --slo-targets into map (e.g. "critical=100000,standard=500000")
+		if flowControlSLOTargets != "" {
+			sloTargetsMap = make(map[string]int64)
+			for _, pair := range strings.Split(flowControlSLOTargets, ",") {
+				parts := strings.SplitN(strings.TrimSpace(pair), "=", 2)
+				if len(parts) != 2 {
+					logrus.Fatalf("--slo-targets: invalid format %q (expected key=value)", pair)
+				}
+				key := strings.TrimSpace(parts[0])
+				if key == "" {
+					logrus.Fatalf("--slo-targets: empty key in pair %q (expected key=value)", pair)
+				}
+				v, parseErr := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
+				if parseErr != nil || v <= 0 {
+					logrus.Fatalf("--slo-targets: value for %q must be a positive integer (µs), got %s", key, strings.TrimSpace(parts[1]))
+				}
+				sloTargetsMap[key] = v
+			}
+		}
+		if sloTargetsMap != nil && flowControlDispatchOrder != "slo-deadline" {
+			logrus.Warnf("--slo-targets has no effect without --dispatch-order slo-deadline")
 		}
 		// Validate only parameters consumed by the selected detector
 		switch flowControlDetector {
@@ -989,7 +1017,8 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// Flow control config (issue #882, GIE parity)
 	cmd.Flags().BoolVar(&flowControlEnabled, "flow-control", false, "Enable gateway queue with saturation-gated dispatch (GIE flow control)")
 	cmd.Flags().StringVar(&flowControlDetector, "saturation-detector", "never", "Saturation detector: "+strings.Join(sim.ValidSaturationDetectorNames(), ", "))
-	cmd.Flags().StringVar(&flowControlDispatchOrder, "dispatch-order", "fifo", "Gateway queue dispatch order: fifo, priority")
+	cmd.Flags().StringVar(&flowControlDispatchOrder, "dispatch-order", "fifo", "Gateway queue dispatch order: fifo, priority, slo-deadline")
+	cmd.Flags().StringVar(&flowControlSLOTargets, "slo-targets", "", "Per-SLO-class TTFT targets in µs for slo-deadline ordering (e.g., critical=100000,standard=500000)")
 	cmd.Flags().IntVar(&flowControlMaxQueueDepth, "max-gateway-queue-depth", 0, "Max gateway queue depth (0=unlimited)")
 	cmd.Flags().Float64Var(&flowControlQueueDepthThreshold, "queue-depth-threshold", 5, "Queue depth threshold for utilization detector")
 	cmd.Flags().Float64Var(&flowControlKVCacheUtilThreshold, "kv-cache-util-threshold", 0.8, "KV cache utilization threshold for utilization detector")
@@ -1593,6 +1622,7 @@ var runCmd = &cobra.Command{
 			FlowControlEnabled:              flowControlEnabled,
 			FlowControlDetector:             flowControlDetector,
 			FlowControlDispatchOrder:        flowControlDispatchOrder,
+			FlowControlSLOTargets:           sloTargetsMap,
 			FlowControlMaxQueueDepth:        flowControlMaxQueueDepth,
 			FlowControlQueueDepthThreshold:  flowControlQueueDepthThreshold,
 			FlowControlKVCacheUtilThreshold: flowControlKVCacheUtilThreshold,

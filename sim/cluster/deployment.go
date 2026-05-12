@@ -122,8 +122,9 @@ type DeploymentConfig struct {
 	// and requests flow directly from admission to routing (BC-1 pass-through).
 	FlowControlEnabled              bool    `yaml:"flow_control_enabled,omitempty"`
 	FlowControlDetector             string  `yaml:"flow_control_detector,omitempty"`                // "never" (default), "utilization", "concurrency"
-	FlowControlDispatchOrder        string  `yaml:"flow_control_dispatch_order,omitempty"`          // "fifo" (default), "priority"
-	FlowControlMaxQueueDepth        int     `yaml:"flow_control_max_queue_depth,omitempty"`         // 0 = unlimited
+	FlowControlDispatchOrder        string           `yaml:"flow_control_dispatch_order,omitempty"`  // "fifo" (default), "priority", "slo-deadline"
+	FlowControlSLOTargets           map[string]int64 `yaml:"flow_control_slo_targets,omitempty"`     // SLO class → TTFT target µs for slo-deadline ordering
+	FlowControlMaxQueueDepth        int              `yaml:"flow_control_max_queue_depth,omitempty"` // 0 = unlimited
 	FlowControlQueueDepthThreshold  float64 `yaml:"flow_control_queue_depth_threshold,omitempty"`   // for utilization detector
 	FlowControlKVCacheUtilThreshold float64 `yaml:"flow_control_kv_cache_util_threshold,omitempty"` // for utilization detector
 	FlowControlMaxConcurrency       int     `yaml:"flow_control_max_concurrency,omitempty"`         // for concurrency detector

@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -99,6 +100,7 @@ type PendingRequest struct {
 	Unconstrained   bool
 	MinTokens       int
 	DeadlineUs      int64
+	SLOTargetUs     int64
 }
 
 // RequestRecord captures one request-response cycle.
@@ -106,8 +108,8 @@ type RequestRecord struct {
 	RequestID         int
 	OutputTokens      int
 	ServerInputTokens int
-	VLLMPriority      int     // vLLM priority value (0=highest urgency, higher=lower urgency); 0 when not set
-	Status            string  // "ok", "error", "timeout"
+	VLLMPriority      int    // vLLM priority value (0=highest urgency, higher=lower urgency); 0 when not set
+	Status            string // "ok", "error", "timeout"
 	ErrorMessage      string
 	SendTimeUs        int64
 	FirstChunkTimeUs  int64
@@ -207,6 +209,10 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 	}
 	if req.SLOClass != "" {
 		httpReq.Header.Set("x-gateway-inference-objective", req.SLOClass)
+	}
+	if req.SLOTargetUs > 0 {
+		ms := (req.SLOTargetUs + 999) / 1000 // ceiling division: µs→ms
+		httpReq.Header.Set("x-slo-ttft-ms", strconv.FormatInt(ms, 10))
 	}
 
 	// Record send time
@@ -459,6 +465,7 @@ func (r *Recorder) RecordRequest(pending *PendingRequest, result *RequestRecord,
 		InputTokens:       inputTokens,
 		OutputTokens:      result.OutputTokens,
 		DeadlineUs:        pending.DeadlineUs,
+		SLOTargetUs:       pending.SLOTargetUs,
 		ArrivalTimeUs:     arrivalTimeUs,
 		SendTimeUs:        result.SendTimeUs,
 		FirstChunkTimeUs:  result.FirstChunkTimeUs,
@@ -514,4 +521,3 @@ func (r *Recorder) ITLRecords() []workload.ITLRecord {
 func (r *Recorder) ExportITL(path string) error {
 	return workload.ExportITL(r.ITLRecords(), path)
 }
-

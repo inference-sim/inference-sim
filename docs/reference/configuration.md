@@ -236,7 +236,7 @@ admission:
 |-----------|------|----------------------|
 | Tier-shed admission | `sim/admission.go` | Rejects requests with `Priority(class) < MinAdmitPriority` under overload |
 | Tenant budget enforcement | `sim/cluster/cluster_event.go` | Sheds over-budget requests where `IsSheddable(class)` is true (priority < 0) |
-| Gateway queue dispatch | `sim/cluster/gateway_queue.go` | Priority-ordered dispatch: higher priority dequeued first; capacity shedding evicts lowest priority |
+| Gateway queue dispatch | `sim/cluster/gateway_queue.go` | Priority-ordered or SLO-deadline dispatch: higher priority dequeued first (priority mode), earliest SLO deadline within flow (slo-deadline mode); capacity shedding evicts lowest priority |
 | Backward compatibility | `sim/admission.go` | `SLOTierPriority()` delegates to `DefaultSLOPriorityMap().Priority()` |
 
 **Per-tenant fair-share budgets** (`tenant_budgets`): A secondary admission layer that runs *after* the admission policy. If the admission policy rejects a request, tenant budgets are not consulted. If the admission policy admits a request, tenant budgets then apply: over-budget tenants have sheddable requests (`IsSheddable(class) = priority < 0`) preferentially shed, while non-sheddable traffic (critical, standard) is always protected. Configured via `--policy-config` YAML only (no CLI flag):
@@ -254,6 +254,9 @@ admission:
   tier_shed_min_priority: 3  # admit standard(3) and critical(4); shed sheddable tiers (priority < 0)
   slo_priorities:             # optional: override specific priorities
     batch: 0                  # promote batch to non-sheddable
+  slo_targets:                # optional: per-class TTFT targets in µs for slo-deadline ordering
+    critical: 100000          # 100ms TTFT target
+    standard: 500000          # 500ms TTFT target
 
 tenant_budgets:
   alice: 0.3   # alice may use at most 30% of total cluster capacity
@@ -271,7 +274,8 @@ When `--flow-control` is enabled, admission IS the queue — requests are enqueu
 | `--queue-depth-threshold` | int | 5 | Queue depth threshold for utilization-based saturation |
 | `--kv-cache-util-threshold` | float64 | 0.8 | KV cache utilization threshold for saturation |
 | `--max-concurrency` | int | 64 | Max in-flight requests for concurrency-based saturation |
-| `--dispatch-order` | string | "fifo" | Cross-band dispatch: `fifo` (globally-earliest), `priority` (highest band first) |
+| `--dispatch-order` | string | "fifo" | Cross-band dispatch: `fifo` (globally-earliest), `priority` (highest band first), `slo-deadline` (earliest SLO deadline within flow) |
+| `--slo-targets` | string | "" | Per-SLO-class TTFT targets in µs for slo-deadline ordering (e.g., `critical=100000,standard=500000`) |
 | `--fairness-policy` | string | "global-strict" | Intra-band flow selection: `global-strict` (earliest seqID), `round-robin` (tenant cycling) |
 | `--per-band-capacity` | int | 0 | Max requests per priority band (0=unlimited) |
 | `--max-gateway-queue-depth` | int | 0 | Global queue depth limit (0=unlimited) |

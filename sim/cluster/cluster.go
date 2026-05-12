@@ -434,6 +434,9 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		}
 		cs.flowControlEnabled = true
 		gq := NewGatewayQueue(dispatchOrder, config.FlowControlMaxQueueDepth, cs.priorityMap)
+		if config.FlowControlSLOTargets != nil {
+			gq.SetSLOTargets(config.FlowControlSLOTargets)
+		}
 		if config.FlowControlPerBandCapacity > 0 {
 			gq.SetPerBandCapacity(config.FlowControlPerBandCapacity)
 		}
