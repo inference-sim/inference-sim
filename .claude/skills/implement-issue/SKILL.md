@@ -167,23 +167,13 @@ EOF
 
 ## Step 8 — Self-Review (Converge to READY TO MERGE)
 
-After the PR is created, invoke the self-review skill in a loop until the PR is merge-ready.
+After the PR is created, invoke the self-review skill. It will review, fix findings, and re-review in a loop until convergence:
 
-**Outer loop (max 3 invocations):**
+```
+/blis-pr-review
+```
 
-1. Invoke the self-review:
-   ```
-   /blis-pr-review
-   ```
-   (The skill runs its own internal fix-and-re-review cycle, up to 3 inner rounds.)
-
-2. Check the final verdict posted by `blis-pr-review`:
-   - **READY TO MERGE** → exit loop. Done.
-   - **CHANGES REQUIRED** or unresolved findings remain → re-invoke `/blis-pr-review` (next outer iteration).
-
-3. If all outer invocations exhausted without convergence, post a comment requesting human guidance.
-
-This gives up to 9 total review-fix cycles (3 outer × 3 inner) before escalating to a human.
+The `blis-pr-review` skill handles the full fix-and-re-review cycle internally (up to 3 rounds). It posts the final verdict as a PR comment when done.
 
 ---
 
