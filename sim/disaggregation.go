@@ -156,6 +156,66 @@ var (
 	_ DisaggregationDecider = (*PrefixThresholdDecider)(nil)
 )
 
+// Outcome carries deterministic per-request completion data reported to a
+// DisaggregationObserver at terminal success. All fields are derived from
+// sim-clock counters and request/parent state — no wall-clock or RNG input —
+// preserving INV-6 determinism.
+//
+// Field semantics:
+//   - TTFT:               user-visible time-to-first-token (microseconds as float64,
+//                         matching Metrics.RequestTTFTs).
+//   - CompletionTime:     terminal completion time on the sim clock (microseconds).
+//   - TransferDurationUs: KV transfer duration (microseconds); zero when Disaggregated=false.
+//   - Disaggregated:      true iff the request flowed through prefill → transfer → decode.
+//   - DecodeInstanceID:   ID of the pod that handled decode (non-empty at terminal success).
+//   - PrefillInstanceID:  ID of the pod that handled prefill; empty when Disaggregated=false.
+type Outcome struct {
+	TTFT               float64
+	CompletionTime     int64
+	TransferDurationUs int64
+	Disaggregated      bool
+	DecodeInstanceID   string
+	PrefillInstanceID  string
+}
+
+// DisaggregationObserver is an OPTIONAL second interface a DisaggregationDecider
+// may additionally implement to receive per-request completion feedback. The
+// cluster type-asserts the configured decider against this interface. When the
+// assertion fails, no callback ever fires — this preserves byte-identical
+// behavior for built-in deciders (NeverDisaggregate, AlwaysDisaggregate,
+// PrefixThresholdDecider) which do NOT implement this interface.
+//
+// Invocation contract:
+//   - OnOutcome fires exactly once per request at terminal success.
+//   - OnOutcome does NOT fire for dropped, timed-out, or otherwise non-successful
+//     requests.
+//   - On the disaggregated path, OnOutcome fires once per parent request (after
+//     the cluster projects sub-request metrics to parent granularity).
+//   - On the non-disaggregated path (a request that flowed through the PD
+//     routing entry point but the decider returned Disaggregate=false),
+//     OnOutcome fires once when the request completes on its decode pod.
+//
+// Determinism (INV-6): callback invocations are ordered deterministically by
+// request ID within each phase, so observer-accumulated state remains a pure
+// function of the (ordered) sequence of prior outcomes.
+//
+// Oracle boundary (INV-9): Outcome is populated post-execution, so fields
+// derived from req.OutputTokens (e.g., CompletionTime and TTFT, which depend
+// on the number of tokens generated) are permissible inside Outcome. However,
+// any feedback-driven decider that consumes observer-accumulated state inside
+// Decide(req, state) must still avoid reading req.OutputTokens at decision
+// time; observer state derived from PRIOR requests' outcomes is fine — the
+// oracle boundary applies to the current request being decided.
+//
+// Run/replay parity (INV-13): built-in deciders do not implement this
+// interface, so no callbacks fire and per-request metrics are byte-identical
+// across `blis run` and `blis replay` with identical flags. Feedback-driven
+// observer-aware deciders must reuse the same decider instance (and any
+// learned state) across the two commands for parity; this is follow-up work.
+type DisaggregationObserver interface {
+	OnOutcome(req *Request, decision DisaggregationDecision, observed Outcome)
+}
+
 // ---------------------------------------------------------------------------
 // E/P/D disaggregation (GAP-4, issue #1264)
 // ---------------------------------------------------------------------------
