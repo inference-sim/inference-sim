@@ -1880,9 +1880,17 @@ func (c *ClusterSimulator) projectPDMetrics() {
 				// guard here in case that loop is refactored.
 				continue
 			}
+			// Deliver the original DisaggregationDecision captured at routing
+			// time (#1340). Falls back to {Disaggregate: true} if the decision
+			// was not recorded (legacy test fixtures that construct parents
+			// directly). For production code the field is always populated.
+			decision := parent.DisaggDecision
+			if !decision.Disaggregate {
+				decision = sim.DisaggregationDecision{Disaggregate: true}
+			}
 			observer.OnOutcome(
 				parent.OriginalRequest,
-				sim.DisaggregationDecision{Disaggregate: true},
+				decision,
 				sim.Outcome{
 					TTFT:               ttft,
 					CompletionTime:     parent.CompletionTime,
@@ -2134,6 +2142,10 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 	if encodeInstanceID != "" {
 		parent.EncodeInstanceID = InstanceID(encodeInstanceID)
 	}
+	// #1340: persist the full DisaggregationDecision so the optional observer
+	// callback at parent completion can receive the original
+	// DecodePodOverride / PrefillPodHint fields (empty for built-ins).
+	parent.DisaggDecision = disaggDecision
 	cs.parentRequests[parent.ID] = parent
 
 	// Create prefill sub-request: same input, no output (completes after prefill).

@@ -163,7 +163,12 @@ var (
 //
 // Field semantics:
 //   - TTFT:               user-visible time-to-first-token (microseconds as float64,
-//                         matching Metrics.RequestTTFTs).
+//                         matching Metrics.RequestTTFTs). Zero when no TTFT was
+//                         recorded for the request — this is rare but can occur
+//                         for prefill-only parents or pathological workloads
+//                         where the first output token was never observed by the
+//                         metrics layer. Observer implementations that drive
+//                         control decisions should guard against TTFT == 0.
 //   - CompletionTime:     terminal completion time on the sim clock (microseconds).
 //   - TransferDurationUs: KV transfer duration (microseconds); zero when Disaggregated=false.
 //   - Disaggregated:      true iff the request flowed through prefill → transfer → decode.
@@ -197,7 +202,13 @@ type Outcome struct {
 //
 // Determinism (INV-6): callback invocations are ordered deterministically by
 // request ID within each phase, so observer-accumulated state remains a pure
-// function of the (ordered) sequence of prior outcomes.
+// function of the (ordered) sequence of prior outcomes. Scope note: ordering
+// by request ID is scoped to a single dispatch site (one per-instance tick on
+// the non-disagg path; one end-of-run pass on the disagg path). Across
+// instances within the same tick, callbacks fire in instance-index order —
+// deterministic across runs (cs.instances is a fixed slice), but not strictly
+// globally ID-sorted. Observer implementations that compare ordered outcomes
+// across pods should sort by request ID themselves.
 //
 // Oracle boundary (INV-9): Outcome is populated post-execution, so fields
 // derived from req.OutputTokens (e.g., CompletionTime and TTFT, which depend

@@ -44,6 +44,17 @@ type ParentRequest struct {
 	// when an encode decider approves. Zero value (empty) = encode did not fire for this
 	// request. GAP-4, issue #1264.
 	EncodeInstanceID InstanceID
+
+	// DisaggDecision is the full DisaggregationDecision returned by the decider
+	// at routing time — captured so it can be delivered verbatim to an optional
+	// DisaggregationObserver.OnOutcome callback (#1340). Built-in deciders
+	// always set Disaggregate=true here (parents are only constructed on the
+	// disagg branch) with DecodePodOverride and PrefillPodHint empty. Future
+	// joint D+P deciders may set the override/hint fields; persisting the full
+	// struct avoids stripping those fields across the async prefill → transfer
+	// → decode → completion lifecycle. Zero value means the parent was
+	// constructed without a recorded decision (e.g., legacy test fixtures).
+	DisaggDecision sim.DisaggregationDecision
 }
 
 // NewParentRequest creates a ParentRequest from the original request.

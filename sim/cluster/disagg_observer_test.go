@@ -229,6 +229,8 @@ func TestObserver_BuiltinsDoNotTriggerObserverPath(t *testing.T) {
 
 // TestObserver_Determinism (BC-6) verifies the observer sees the exact same
 // sequence of (ReqID, Outcome) pairs across repeated runs with the same seed.
+// Disagg-path variant: all requests flow through the end-of-run
+// projectPDMetrics dispatch (AlwaysDisaggregate).
 func TestObserver_Determinism(t *testing.T) {
 	run := func() []fakeObserverCall {
 		obs := &fakeObserverDecider{DisaggregationDecider: &sim.AlwaysDisaggregate{}}
@@ -246,6 +248,79 @@ func TestObserver_Determinism(t *testing.T) {
 			t.Errorf("call[%d] differs:\n  run1=%+v\n  run2=%+v", i, got1[i], got2[i])
 		}
 	}
+}
+
+// TestObserver_NonDisagg_Determinism (BC-6) is the symmetric determinism check
+// for the non-disagg path: all requests are routed locally (NeverDisaggregate),
+// so callbacks fire from detectNonDisaggObserverCompletions across per-instance
+// event-loop ticks. Pins the deterministic-dispatch guarantee across runs.
+func TestObserver_NonDisagg_Determinism(t *testing.T) {
+	run := func() []fakeObserverCall {
+		obs := &fakeObserverDecider{DisaggregationDecider: &sim.NeverDisaggregate{}}
+		cs, _ := newPDClusterWithObserver(t, obs, 5)
+		mustRun(t, cs)
+		return obs.Calls
+	}
+	got1 := run()
+	got2 := run()
+	if len(got1) != len(got2) {
+		t.Fatalf("call count differs across runs: run1=%d run2=%d", len(got1), len(got2))
+	}
+	for i := range got1 {
+		if got1[i] != got2[i] {
+			t.Errorf("call[%d] differs:\n  run1=%+v\n  run2=%+v", i, got1[i], got2[i])
+		}
+	}
+}
+
+// TestObserver_DisaggPath_PreservesOriginalDecision (addresses PR #1346 review,
+// finding MODERATE): the DisaggregationDecision delivered to OnOutcome on the
+// disagg path must equal the decision returned by Decide() at routing time —
+// including any DecodePodOverride or PrefillPodHint fields set by a joint D+P
+// decider. Prior to persisting parent.DisaggDecision, the observer dispatch
+// synthesized {Disaggregate: true} and stripped these fields.
+func TestObserver_DisaggPath_PreservesOriginalDecision(t *testing.T) {
+	// A decider that always returns Disaggregate=true AND sets a
+	// PrefillPodHint so we can verify the hint round-trips through
+	// ParentRequest into OnOutcome.
+	obs := &hintedObserverDecider{prefillHint: "instance_0"}
+	cs, _ := newPDClusterWithObserver(t, obs, 3)
+	mustRun(t, cs)
+
+	if len(obs.Calls) == 0 {
+		t.Fatal("no observer callbacks fired; expected at least one")
+	}
+	for i, c := range obs.Calls {
+		if !c.Decision.Disaggregate {
+			t.Errorf("call[%d] decision.Disaggregate = false, want true", i)
+		}
+		if c.Decision.PrefillPodHint != "instance_0" {
+			t.Errorf("call[%d] decision.PrefillPodHint = %q, want %q (decision stripped across projection)",
+				i, c.Decision.PrefillPodHint, "instance_0")
+		}
+	}
+}
+
+// hintedObserverDecider is a test-only decider that records every OnOutcome
+// call and returns Disaggregate=true with a non-empty PrefillPodHint to
+// exercise the decision-round-trip guarantee.
+type hintedObserverDecider struct {
+	prefillHint string
+	mu          sync.Mutex
+	Calls       []fakeObserverCall
+}
+
+func (h *hintedObserverDecider) Decide(_ *sim.Request, _ *sim.RouterState) sim.DisaggregationDecision {
+	return sim.DisaggregationDecision{
+		Disaggregate:   true,
+		PrefillPodHint: h.prefillHint,
+	}
+}
+
+func (h *hintedObserverDecider) OnOutcome(req *sim.Request, d sim.DisaggregationDecision, o sim.Outcome) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.Calls = append(h.Calls, fakeObserverCall{ReqID: req.ID, Decision: d, Outcome: o})
 }
 
 // TestObserver_DisaggAndNonDisaggMixed verifies that a decider that flips
