@@ -1085,3 +1085,193 @@ func TestMetricComparison_JSONRoundTrip_IncludesTailPercentileErrors(t *testing.
 		}
 	}
 }
+
+func TestPrepareCalibrationPairs_SLOBreakdown(t *testing.T) {
+	// GIVEN 4 matched requests with two SLO classes
+	realRecords := []TraceRecord{
+		{RequestID: 0, FirstChunkTimeUs: 500, LastChunkTimeUs: 1000, SendTimeUs: 0},
+		{RequestID: 1, FirstChunkTimeUs: 1500, LastChunkTimeUs: 2000, SendTimeUs: 1000},
+		{RequestID: 2, FirstChunkTimeUs: 2500, LastChunkTimeUs: 3000, SendTimeUs: 2000},
+		{RequestID: 3, FirstChunkTimeUs: 3500, LastChunkTimeUs: 4000, SendTimeUs: 3000},
+	}
+	simResults := []SimResult{
+		{RequestID: 0, TTFT: 450, E2E: 900, SLOClass: "standard"},
+		{RequestID: 1, TTFT: 480, E2E: 950, SLOClass: "batch"},
+		{RequestID: 2, TTFT: 460, E2E: 920, SLOClass: "standard"},
+		{RequestID: 3, TTFT: 490, E2E: 960, SLOClass: "batch"},
+	}
+
+	// WHEN PrepareCalibrationPairs runs
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, &CalibrationConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// THEN BySLO["standard"] contains 2 pairs, BySLO["batch"] contains 2 pairs (BC-3)
+	if len(pairs.BySLO) != 2 {
+		t.Fatalf("BySLO len: got %d, want 2", len(pairs.BySLO))
+	}
+	stdPairs, ok := pairs.BySLO["standard"]
+	if !ok {
+		t.Fatal("BySLO missing 'standard' key")
+	}
+	if len(stdPairs.TTFT.Real) != 2 {
+		t.Errorf("BySLO[standard] TTFT count: got %d, want 2", len(stdPairs.TTFT.Real))
+	}
+	if len(stdPairs.E2E.Real) != 2 {
+		t.Errorf("BySLO[standard] E2E count: got %d, want 2", len(stdPairs.E2E.Real))
+	}
+	batchPairs, ok := pairs.BySLO["batch"]
+	if !ok {
+		t.Fatal("BySLO missing 'batch' key")
+	}
+	if len(batchPairs.TTFT.Real) != 2 {
+		t.Errorf("BySLO[batch] TTFT count: got %d, want 2", len(batchPairs.TTFT.Real))
+	}
+	// Sim slices must be parallel to Real slices (length symmetry invariant)
+	if len(stdPairs.TTFT.Sim) != len(stdPairs.TTFT.Real) {
+		t.Errorf("BySLO[standard] TTFT Real/Sim length mismatch: Real=%d Sim=%d", len(stdPairs.TTFT.Real), len(stdPairs.TTFT.Sim))
+	}
+	if len(stdPairs.E2E.Sim) != len(stdPairs.E2E.Real) {
+		t.Errorf("BySLO[standard] E2E Real/Sim length mismatch: Real=%d Sim=%d", len(stdPairs.E2E.Real), len(stdPairs.E2E.Sim))
+	}
+}
+
+func TestPrepareCalibrationPairs_ModelBreakdown(t *testing.T) {
+	// GIVEN 3 matched requests with two model tags
+	realRecords := []TraceRecord{
+		{RequestID: 0, FirstChunkTimeUs: 500, LastChunkTimeUs: 1000, SendTimeUs: 0},
+		{RequestID: 1, FirstChunkTimeUs: 1500, LastChunkTimeUs: 2000, SendTimeUs: 1000},
+		{RequestID: 2, FirstChunkTimeUs: 2500, LastChunkTimeUs: 3000, SendTimeUs: 2000},
+	}
+	simResults := []SimResult{
+		{RequestID: 0, TTFT: 450, E2E: 900, Model: "qwen3-14b"},
+		{RequestID: 1, TTFT: 480, E2E: 950, Model: "llama3-8b"},
+		{RequestID: 2, TTFT: 460, E2E: 920, Model: "qwen3-14b"},
+	}
+
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, &CalibrationConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// THEN ByModel["qwen3-14b"] has 2 pairs, ByModel["llama3-8b"] has 1 pair (BC-4)
+	if len(pairs.ByModel) != 2 {
+		t.Fatalf("ByModel len: got %d, want 2", len(pairs.ByModel))
+	}
+	q, ok := pairs.ByModel["qwen3-14b"]
+	if !ok {
+		t.Fatal("ByModel missing 'qwen3-14b'")
+	}
+	if len(q.TTFT.Real) != 2 {
+		t.Errorf("ByModel[qwen3-14b] TTFT count: got %d, want 2", len(q.TTFT.Real))
+	}
+	l, ok := pairs.ByModel["llama3-8b"]
+	if !ok {
+		t.Fatal("ByModel missing 'llama3-8b'")
+	}
+	if len(l.TTFT.Real) != 1 {
+		t.Errorf("ByModel[llama3-8b] TTFT count: got %d, want 1", len(l.TTFT.Real))
+	}
+}
+
+func TestPrepareCalibrationPairs_EmptySLOAndModel_NoBreakdown(t *testing.T) {
+	// GIVEN requests with no SLO class and no model tag (BC-5)
+	realRecords := []TraceRecord{
+		{RequestID: 0, FirstChunkTimeUs: 500, LastChunkTimeUs: 1000, SendTimeUs: 0},
+		{RequestID: 1, FirstChunkTimeUs: 1500, LastChunkTimeUs: 2000, SendTimeUs: 1000},
+	}
+	simResults := []SimResult{
+		{RequestID: 0, TTFT: 450, E2E: 900, SLOClass: "", Model: ""},
+		{RequestID: 1, TTFT: 480, E2E: 950, SLOClass: "", Model: ""},
+	}
+
+	pairs, _, err := PrepareCalibrationPairs(realRecords, simResults, &CalibrationConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// THEN BySLO and ByModel are both empty (no panic)
+	if len(pairs.BySLO) != 0 {
+		t.Errorf("BySLO should be empty for requests without SLO class, got len=%d", len(pairs.BySLO))
+	}
+	if len(pairs.ByModel) != 0 {
+		t.Errorf("ByModel should be empty for requests without model tag, got len=%d", len(pairs.ByModel))
+	}
+}
+
+func TestMapePct(t *testing.T) {
+	tests := []struct {
+		name string
+		real []float64
+		sim  []float64
+		want float64
+	}{
+		{
+			name: "normal case: known 20% error",
+			real: []float64{100.0, 200.0},
+			sim:  []float64{120.0, 240.0},
+			want: 0.20,
+		},
+		{
+			name: "all-zero denominators returns 0",
+			real: []float64{0.0, 0.0},
+			sim:  []float64{100.0, 200.0},
+			want: 0.0,
+		},
+		{
+			name: "empty slices returns 0",
+			real: []float64{},
+			sim:  []float64{},
+			want: 0.0,
+		},
+		{
+			name: "NaN in real skipped",
+			real: []float64{100.0, math.NaN()},
+			sim:  []float64{120.0, 200.0},
+			want: 0.20,
+		},
+		{
+			name: "Inf in real skipped",
+			real: []float64{100.0, math.Inf(1)},
+			sim:  []float64{120.0, 200.0},
+			want: 0.20,
+		},
+		{
+			name: "NaN in sim skipped via err-guard",
+			real: []float64{100.0, 200.0},
+			sim:  []float64{120.0, math.NaN()},
+			want: 0.20, // second pair produces NaN err, skipped; only first pair contributes
+		},
+		{
+			name: "Inf in sim skipped via err-guard",
+			real: []float64{100.0, 200.0},
+			sim:  []float64{120.0, math.Inf(1)},
+			want: 0.20, // second pair produces Inf err, skipped; only first pair contributes
+		},
+		{
+			name: "perfect match returns 0",
+			real: []float64{100.0, 200.0, 300.0},
+			sim:  []float64{100.0, 200.0, 300.0},
+			want: 0.0,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := MapePct(tc.real, tc.sim)
+			if math.Abs(got-tc.want) > 1e-9 {
+				t.Errorf("MapePct(%v, %v) = %f, want %f", tc.real, tc.sim, got, tc.want)
+			}
+		})
+	}
+
+	// Mismatched-length slices must panic (exported function contract)
+	t.Run("mismatched lengths panics", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("MapePct with len(real)!=len(sim) should panic, but did not")
+			}
+		}()
+		MapePct([]float64{100.0, 200.0}, []float64{120.0}) // len mismatch
+	})
+}

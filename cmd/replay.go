@@ -39,7 +39,7 @@ exact request sequence captured in the trace. Unlike 'blis run', it does not gen
 requests from distributions — the request sequence is fully determined by the trace.
 
 Use --results-path to write per-request SimResult JSON (request_id, ttft_us, e2e_us,
-input_tokens, output_tokens) for downstream consumption by blis calibrate.
+input_tokens, output_tokens, slo_class, model, itl_mean_us) for downstream consumption by blis calibrate.
 
 Known limitations:
   - Warm-up requests: trace.Header.warm_up_requests is not filtered; blis calibrate
@@ -708,7 +708,7 @@ func init() {
 	registerSimConfigFlags(replayCmd)
 	replayCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "Path to TraceV2 header YAML file (required)")
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
-	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens) for blis calibrate consumption.")
+	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us) for blis calibrate consumption.")
 	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\"")
 	replayCmd.Flags().StringVar(&saturationReport, "saturation-report", "", "File to write saturation analysis JSON (backlog-drift classification)")
 	registerSaturationFlags(replayCmd)
@@ -802,6 +802,9 @@ func extractSimResults(m *sim.Metrics) []workload.SimResult {
 			E2E:          e2eUs,
 			InputTokens:  rm.NumPrefillTokens,
 			OutputTokens: rm.NumDecodeTokens,
+			SLOClass:     rm.SLOClass,
+			Model:        rm.Model,
+			ITLMeanUs:    m.RequestITLs[reqID], // already in ticks (µs), same as TTFT/E2E; 0 if not computed
 		})
 	}
 	// Log all exclusions at Debug level for observability (R1: no silent data loss)
@@ -813,6 +816,9 @@ func extractSimResults(m *sim.Metrics) []workload.SimResult {
 	}
 	if nonNumericCount > 0 {
 		logrus.Debugf("extractSimResults: excluded %d non-numeric-ID request(s) (session follow-ups)", nonNumericCount)
+	}
+	if len(m.RequestITLs) == 0 {
+		logrus.Debugf("extractSimResults: RequestITLs is empty (no completed requests); ITLMeanUs will be 0 for all entries")
 	}
 	// Sort by RequestID for deterministic JSON output (R2, INV-6)
 	sort.Slice(results, func(i, j int) bool {

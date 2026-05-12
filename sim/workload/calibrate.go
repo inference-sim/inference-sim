@@ -82,12 +82,17 @@ type CalibrationConfig struct {
 
 // SimResult holds per-request sim output for calibration matching.
 // TTFT and E2E are server-side latencies in microseconds (simulation ticks).
+// SLOClass, Model, and ITLMeanUs are optional — omitted from JSON when zero/empty
+// so existing consumers that do not set these fields are unaffected (backward-compatible).
 type SimResult struct {
 	RequestID    int     `json:"request_id"`
 	TTFT         float64 `json:"ttft_us"` // server-side TTFT in microseconds
 	E2E          float64 `json:"e2e_us"`  // server-side E2E in microseconds
 	InputTokens  int     `json:"input_tokens"`
 	OutputTokens int     `json:"output_tokens"`
+	SLOClass     string  `json:"slo_class,omitempty"` // SLO tier (e.g., "standard", "batch"); empty if not set
+	Model        string  `json:"model,omitempty"`     // model tag; empty if not set
+	ITLMeanUs    float64 `json:"itl_mean_us,omitempty"` // mean ITL in microseconds; 0 if not recorded
 }
 
 // LatencyPair holds matched real-vs-sim latency vectors.
@@ -96,11 +101,20 @@ type LatencyPair struct {
 	Sim  []float64
 }
 
+// BreakdownPairs holds matched real-vs-sim latency vectors for a single breakdown dimension
+// (e.g., one SLO class or one model tag). Tracks TTFT and E2E separately.
+type BreakdownPairs struct {
+	TTFT LatencyPair
+	E2E  LatencyPair
+}
+
 // CalibrationPairs holds matched, normalized real-vs-sim latency vectors.
 type CalibrationPairs struct {
 	TTFT               LatencyPair
 	E2E                LatencyPair
 	ITL                LatencyPair
+	BySLO              map[string]*BreakdownPairs // keyed by SLOClass; only populated when SLOClass is non-empty
+	ByModel            map[string]*BreakdownPairs // keyed by Model; only populated when Model is non-empty
 	TokenMismatchCount int
 	ExcludedWarmUp     int
 	MatchedCount       int
@@ -127,7 +141,10 @@ func PrepareCalibrationPairs(
 		simByID[sr.RequestID] = sr
 	}
 
-	pairs := &CalibrationPairs{}
+	pairs := &CalibrationPairs{
+		BySLO:   make(map[string]*BreakdownPairs),
+		ByModel: make(map[string]*BreakdownPairs),
+	}
 	matchedSimIDs := make(map[int]bool)
 
 	for _, rec := range realRecords {
@@ -178,6 +195,31 @@ func PrepareCalibrationPairs(
 		pairs.TTFT.Sim = append(pairs.TTFT.Sim, simTTFT)
 		pairs.E2E.Real = append(pairs.E2E.Real, realE2E)
 		pairs.E2E.Sim = append(pairs.E2E.Sim, simE2E)
+
+		// Per-SLO breakdown (only when SLOClass is set)
+		if sr.SLOClass != "" {
+			bp, ok := pairs.BySLO[sr.SLOClass]
+			if !ok {
+				bp = &BreakdownPairs{}
+				pairs.BySLO[sr.SLOClass] = bp
+			}
+			bp.TTFT.Real = append(bp.TTFT.Real, realTTFT)
+			bp.TTFT.Sim = append(bp.TTFT.Sim, simTTFT)
+			bp.E2E.Real = append(bp.E2E.Real, realE2E)
+			bp.E2E.Sim = append(bp.E2E.Sim, simE2E)
+		}
+		// Per-model breakdown (only when Model is set)
+		if sr.Model != "" {
+			bp, ok := pairs.ByModel[sr.Model]
+			if !ok {
+				bp = &BreakdownPairs{}
+				pairs.ByModel[sr.Model] = bp
+			}
+			bp.TTFT.Real = append(bp.TTFT.Real, realTTFT)
+			bp.TTFT.Sim = append(bp.TTFT.Sim, simTTFT)
+			bp.E2E.Real = append(bp.E2E.Real, realE2E)
+			bp.E2E.Sim = append(bp.E2E.Sim, simE2E)
+		}
 	}
 
 	// Count unmatched sim results
@@ -474,6 +516,34 @@ func pearsonCorrelation(x, y []float64) float64 {
 		return 0
 	}
 	return num / den
+}
+
+// MapePct computes mean absolute percentage error between real and sim slices.
+// Panics if len(real) != len(sim) — slices must be parallel vectors.
+// Pairs where real==0, NaN, or Inf are skipped. Pairs where the computed
+// absolute error is NaN or Inf (e.g., sim is NaN or Inf) are also skipped.
+// Returns 0 if no valid pairs. Returns a fraction (not a percentage) — multiply by 100 for display.
+func MapePct(real, sim []float64) float64 {
+	if len(real) != len(sim) {
+		panic(fmt.Sprintf("MapePct: real and sim slices must have equal length, got real=%d sim=%d", len(real), len(sim)))
+	}
+	var sum float64
+	count := 0
+	for i := range real {
+		if real[i] == 0 || math.IsNaN(real[i]) || math.IsInf(real[i], 0) {
+			continue
+		}
+		err := math.Abs(real[i]-sim[i]) / real[i]
+		if math.IsNaN(err) || math.IsInf(err, 0) {
+			continue
+		}
+		sum += err
+		count++
+	}
+	if count == 0 {
+		return 0
+	}
+	return sum / float64(count)
 }
 
 func qualityRating(mape, pearsonR float64) string {
