@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -920,16 +921,6 @@ func runWithActiveTransfersRecorder(t *testing.T, config DeploymentConfig, numRe
 	return rec.seen
 }
 
-func maxInt(xs []int) int {
-	m := xs[0]
-	for _, x := range xs[1:] {
-		if x > m {
-			m = x
-		}
-	}
-	return m
-}
-
 // TestRouterState_ActiveTransfers_PopulatedWhenContentionEnabled verifies BC-1:
 // when --pd-transfer-contention is enabled, executeDisaggregatedRouting snapshots
 // the current cluster-wide activeTransfers count into RouterState.ActiveTransfers
@@ -1024,7 +1015,7 @@ func TestRouterState_ActiveTransfers_EndToEnd_PopulatedUnderContention(t *testin
 	if len(seen) == 0 {
 		t.Fatal("decider was never invoked — test setup did not exercise executeDisaggregatedRouting")
 	}
-	if m := maxInt(seen); m == 0 {
+	if m := slices.Max(seen); m == 0 {
 		t.Errorf("max observed RouterState.ActiveTransfers = 0 across %d Decide calls, want > 0 (contention enabled with overlapping transfers)", len(seen))
 	}
 }
@@ -1032,33 +1023,53 @@ func TestRouterState_ActiveTransfers_EndToEnd_PopulatedUnderContention(t *testin
 // TestRouterState_ActiveTransfers_BuiltinDeciderParity verifies BC-3:
 // the built-in deciders (never, always, prefix-threshold) never read
 // RouterState.ActiveTransfers, so their externally-observable decision
-// output is unchanged by toggling --pd-transfer-contention. We assert
-// this behaviorally: activeTransfersRecorder delegates to an inner built-in,
-// and the returned Disaggregate values do not depend on the observed
-// ActiveTransfers value. Issue #1342.
+// output is unchanged by toggling --pd-transfer-contention. Issue #1342.
 //
 // This is a law test, not a golden test: we assert the property that for
 // each built-in, the disaggregation decision is a pure function of inputs
 // the built-in already reads — regardless of what ActiveTransfers is set to.
+//
+// prefix-threshold is covered by two cases that exercise distinct paths
+// through PrefixThresholdDecider.Decide:
+//
+//   - "prefix-threshold-nil-cache": nil cacheQuery triggers the conservative
+//     fallback (Disaggregate=false), invariant of ActiveTransfers.
+//   - "prefix-threshold-over": non-nil cacheQuery reporting zero cached blocks
+//     plus threshold=0 drives the positive arm of the decider (Disaggregate=true
+//     because nonCachedTokens > threshold), also invariant of ActiveTransfers.
 func TestRouterState_ActiveTransfers_BuiltinDeciderParity(t *testing.T) {
 	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3}, MaxOutputLen: 4}
 
+	// For prefix-threshold-over, a cacheQuery keyed by the SelectedInstance used
+	// in the per-case state below, always reporting zero cached blocks so the
+	// decider's positive arm fires (nonCachedTokens=3 > threshold=0).
+	const selectedInst = "inst-0"
+	cacheQueryZero := map[string]func([]int) int{
+		selectedInst: func(_ []int) int { return 0 },
+	}
+
 	cases := []struct {
-		name       string
-		decider    sim.DisaggregationDecider
-		wantDisagg bool
+		name         string
+		decider      sim.DisaggregationDecider
+		selectedInst string
+		wantDisagg   bool
 	}{
-		{"never", &sim.NeverDisaggregate{}, false},
-		{"always", &sim.AlwaysDisaggregate{}, true},
+		{"never", &sim.NeverDisaggregate{}, "", false},
+		{"always", &sim.AlwaysDisaggregate{}, "", true},
+		{"prefix-threshold-nil-cache", sim.NewPrefixThresholdDecider(0, 16, nil), selectedInst, false},
+		{"prefix-threshold-over", sim.NewPrefixThresholdDecider(0, 16, cacheQueryZero), selectedInst, true},
 	}
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			for _, at := range []int{0, 1, 5, 100} {
-				state := &sim.RouterState{ActiveTransfers: at}
+				state := &sim.RouterState{
+					ActiveTransfers:  at,
+					SelectedInstance: tc.selectedInst,
+				}
 				got := tc.decider.Decide(req, state)
 				if got.Disaggregate != tc.wantDisagg {
-					t.Errorf("%s decider with ActiveTransfers=%d: Disaggregate = %v, want %v",
+					t.Errorf("%s decider with ActiveTransfers=%d: Disaggregate = %v, want %v (built-in must not depend on ActiveTransfers)",
 						tc.name, at, got.Disaggregate, tc.wantDisagg)
 				}
 			}
