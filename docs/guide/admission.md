@@ -192,7 +192,7 @@ admission decision, matching llm-d's `FlowControlAdmissionController`.
 
 1. Incoming request is enqueued into a per-priority-band, per-flow queue
 2. Each unique (TenantID, Priority) pair gets its own FIFO queue within a priority band
-3. Dispatch order follows `--dispatch-order`: with `priority`, iterates bands highest-priority first; with `fifo` (default), picks the globally-earliest arrival across all bands
+3. Dispatch order follows `--dispatch-order`: with `priority`, iterates bands highest-priority first; with `fifo` (default), picks the globally-earliest arrival across all bands; with `slo-deadline`, dispatches the request with the earliest SLO deadline within each flow (see [SLO-Deadline Dispatch Ordering](#slo-deadline-dispatch-ordering) below)
 4. Within a band, `--fairness-policy` controls flow selection: `global-strict` (default) picks the earliest arrival (lowest sequence ID); `round-robin` cycles through tenants in sorted key order
 5. Saturation gating: dispatch only when cluster saturation < 1.0
 6. Completion-triggered dispatch: each completion frees capacity and tries to dispatch from the queue
@@ -227,7 +227,7 @@ shedding of sheddable entries.
 
 ### SLO-Deadline Dispatch Ordering
 
-With `--dispatch-order slo-deadline`, the gateway queue dispatches requests with the tightest SLO targets first within each flow. This matches GIE's `slo-deadline-ordering-policy`.
+With `--dispatch-order slo-deadline`, the gateway queue dispatches the request with the earliest SLO deadline first within each flow. This matches GIE's `slo-deadline-ordering-policy`.
 
 **How it works:**
 

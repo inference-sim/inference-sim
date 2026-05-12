@@ -123,8 +123,8 @@ func TestTraceV2_RoundTrip_NewFields(t *testing.T) {
 		},
 		{
 			RequestID:         1,
-			Model:             "",  // zero value: default model
-			DeadlineUs:        0,   // zero value: no timeout
+			Model:             "", // zero value: default model
+			DeadlineUs:        0,  // zero value: no timeout
 			ServerInputTokens: 0,  // zero value: not recorded
 			InputTokens:       128,
 			OutputTokens:      32,
@@ -134,7 +134,7 @@ func TestTraceV2_RoundTrip_NewFields(t *testing.T) {
 		{
 			RequestID:         2,
 			Model:             "org/model,with-comma", // CSV-special: encoding/csv quotes automatically
-			DeadlineUs:        9000, // > ArrivalTimeUs (6000) — valid per cross-field invariant
+			DeadlineUs:        9000,                   // > ArrivalTimeUs (6000) — valid per cross-field invariant
 			ServerInputTokens: 0,
 			InputTokens:       64,
 			OutputTokens:      16,
@@ -263,7 +263,7 @@ func TestLoadTraceV2_UnknownYAMLField_ReturnsError(t *testing.T) {
 func TestParseTraceRecord_InvalidInteger_ReturnsError(t *testing.T) {
 	// GIVEN a row with a non-numeric request_id
 	row := make([]string, 27) // must match current column count
-	row[0] = "abc"             // request_id should be integer
+	row[0] = "abc"            // request_id should be integer
 	for i := 1; i < len(row); i++ {
 		row[i] = "0"
 	}
@@ -490,9 +490,9 @@ func TestParseTraceRecord_InvalidReasonRatio_ReturnsError(t *testing.T) {
 func TestTraceV2_FinishReason_RoundTrip(t *testing.T) {
 	header := &TraceHeader{Version: 1, TimeUnit: "us", Mode: "real"}
 	records := []TraceRecord{{
-		RequestID:    1,
-		InputTokens:  10,
-		OutputTokens: 5,
+		RequestID:     1,
+		InputTokens:   10,
+		OutputTokens:  5,
 		ArrivalTimeUs: 1000,
 		SendTimeUs:    2000,
 		Status:        "ok",
@@ -807,7 +807,7 @@ func TestRequestsToTraceRecords_RoundTrip(t *testing.T) {
 			ClientID:       "c1",
 			Streaming:      true,
 			Model:          "test-model",
-			Deadline:        50000,
+			Deadline:       50000,
 		},
 		{
 			ID:           "request_1",
@@ -1106,7 +1106,7 @@ func TestExportTraceV2_VLLMPriority_ConditionalColumn(t *testing.T) {
 		}
 		row1 := strings.Split(lines[1], ",")
 		row2 := strings.Split(lines[2], ",")
-		
+
 		if row1[vllmIdx] != "0" {
 			t.Errorf("Row 1 vllm_priority: got %q, want \"0\"", row1[vllmIdx])
 		}
@@ -1174,7 +1174,7 @@ func TestLoadTraceV2Requests_IgnoresVLLMPriority_SimulationIsolation(t *testing.
 	// BC-5: LoadTraceV2Requests must NOT read VLLMPriority into Request.Priority
 	// This is a simulation isolation requirement — observability metadata must
 	// not affect simulation behavior.
-	
+
 	trace := &TraceV2{
 		Header: TraceHeader{Version: 2, TimeUnit: "us"},
 		Records: []TraceRecord{
@@ -1211,7 +1211,7 @@ func TestLoadTraceV2Requests_IgnoresVLLMPriority_SimulationIsolation(t *testing.
 func TestLoadTraceV2SessionBlueprints_IgnoresVLLMPriority_SimulationIsolation(t *testing.T) {
 	// BC-6: LoadTraceV2SessionBlueprints must NOT read VLLMPriority
 	// Same simulation isolation requirement as BC-5, but for session blueprints.
-	
+
 	trace := &TraceV2{
 		Header: TraceHeader{Version: 2, TimeUnit: "us"},
 		Records: []TraceRecord{
@@ -1250,5 +1250,117 @@ func TestLoadTraceV2SessionBlueprints_IgnoresVLLMPriority_SimulationIsolation(t 
 	// AND request should have SLOClass preserved
 	if requests[0].SLOClass != "critical" {
 		t.Errorf("Request 0 SLOClass=%q, want %q", requests[0].SLOClass, "critical")
+	}
+}
+
+func TestTraceV2_SLOTargetUs_RoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "h.yaml")
+	dataPath := filepath.Join(dir, "d.csv")
+
+	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated"}
+	records := []TraceRecord{
+		{RequestID: 0, SLOTargetUs: 200000, DeadlineUs: 500000, ArrivalTimeUs: 100, Status: "ok"},
+		{RequestID: 1, SLOTargetUs: 0, DeadlineUs: 300000, ArrivalTimeUs: 200, Status: "ok"},
+	}
+
+	if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	loaded, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(loaded.Records) != 2 {
+		t.Fatalf("expected 2 records, got %d", len(loaded.Records))
+	}
+	if loaded.Records[0].SLOTargetUs != 200000 {
+		t.Errorf("record 0 SLOTargetUs=%d, want 200000", loaded.Records[0].SLOTargetUs)
+	}
+	if loaded.Records[1].SLOTargetUs != 0 {
+		t.Errorf("record 1 SLOTargetUs=%d, want 0", loaded.Records[1].SLOTargetUs)
+	}
+	// Verify other fields survived the offset shift
+	if loaded.Records[0].DeadlineUs != 500000 {
+		t.Errorf("record 0 DeadlineUs=%d, want 500000", loaded.Records[0].DeadlineUs)
+	}
+	if loaded.Records[0].ArrivalTimeUs != 100 {
+		t.Errorf("record 0 ArrivalTimeUs=%d, want 100", loaded.Records[0].ArrivalTimeUs)
+	}
+}
+
+func TestTraceV2_SLOTargetUs_AllZero_ColumnOmitted(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "h.yaml")
+	dataPath := filepath.Join(dir, "d.csv")
+
+	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated"}
+	records := []TraceRecord{
+		{RequestID: 0, SLOTargetUs: 0, ArrivalTimeUs: 100, Status: "ok"},
+	}
+
+	if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	// Read raw CSV to verify column is absent
+	data, _ := os.ReadFile(dataPath)
+	if strings.Contains(string(data), "slo_target_us") {
+		t.Error("slo_target_us column should be omitted when all values are 0")
+	}
+
+	// Verify it still loads correctly
+	loaded, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if loaded.Records[0].SLOTargetUs != 0 {
+		t.Errorf("SLOTargetUs=%d, want 0", loaded.Records[0].SLOTargetUs)
+	}
+}
+
+func TestTraceV2_SLOTargetUs_WithVLLMPriority_DoubleOffset(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "h.yaml")
+	dataPath := filepath.Join(dir, "d.csv")
+
+	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "real"}
+	records := []TraceRecord{
+		{
+			RequestID: 0, SLOClass: "critical", VLLMPriority: 4,
+			SLOTargetUs: 150000, DeadlineUs: 400000,
+			ArrivalTimeUs: 1000, SendTimeUs: 1100,
+			FirstChunkTimeUs: 2000, LastChunkTimeUs: 3000,
+			NumChunks: 5, Status: "ok",
+		},
+	}
+
+	if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	loaded, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	r := loaded.Records[0]
+	if r.VLLMPriority != 4 {
+		t.Errorf("VLLMPriority=%d, want 4", r.VLLMPriority)
+	}
+	if r.SLOTargetUs != 150000 {
+		t.Errorf("SLOTargetUs=%d, want 150000", r.SLOTargetUs)
+	}
+	if r.DeadlineUs != 400000 {
+		t.Errorf("DeadlineUs=%d, want 400000", r.DeadlineUs)
+	}
+	if r.ArrivalTimeUs != 1000 {
+		t.Errorf("ArrivalTimeUs=%d, want 1000 (double-offset corruption)", r.ArrivalTimeUs)
+	}
+	if r.SendTimeUs != 1100 {
+		t.Errorf("SendTimeUs=%d, want 1100 (double-offset corruption)", r.SendTimeUs)
+	}
+	if r.NumChunks != 5 {
+		t.Errorf("NumChunks=%d, want 5 (double-offset corruption)", r.NumChunks)
 	}
 }

@@ -46,8 +46,8 @@ func ExpandCohorts(cohorts []CohortSpec, seed int64) []ClientSpec {
 				ClosedLoop:  cohort.ClosedLoop,
 				Timeout:     cohort.Timeout,
 				SLOTargetUs: cohort.SLOTargetUs,
-				Network:    cohort.Network,
-				Multimodal: cohort.Multimodal,
+				Network:     cohort.Network,
+				Multimodal:  cohort.Multimodal,
 			}
 
 			// Build lifecycle windows from cohort patterns

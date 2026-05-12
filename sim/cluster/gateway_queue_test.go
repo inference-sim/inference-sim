@@ -25,7 +25,7 @@ func TestGatewayQueue_FIFO_DequeueOrder(t *testing.T) {
 }
 
 func TestGatewayQueue_Priority_DequeueOrder(t *testing.T) {
-	q := NewGatewayQueue("priority", 0, nil) // unlimited
+	q := NewGatewayQueue("priority", 0, nil)                            // unlimited
 	_, _ = q.Enqueue(&sim.Request{ID: "r1", SLOClass: "background"}, 1) // priority -3
 	_, _ = q.Enqueue(&sim.Request{ID: "r2", SLOClass: "critical"}, 2)   // priority 4
 	_, _ = q.Enqueue(&sim.Request{ID: "r3", SLOClass: "standard"}, 3)   // priority 3
@@ -1023,5 +1023,36 @@ func TestGatewayQueue_SLODeadline_NoTargets_DegeneratesToFCFS(t *testing.T) {
 		if id != expected[i] {
 			t.Fatalf("position %d: expected %s, got %s (all deadlines MaxInt64 → FCFS by seqID)", i, expected[i], id)
 		}
+	}
+}
+
+func TestGatewayQueue_SLODeadline_DequeueGated(t *testing.T) {
+	q := NewGatewayQueue("slo-deadline", 0, nil)
+	q.SetUsageLimitThreshold(0.5)
+	// Two requests in same flow, different deadlines.
+	q.Enqueue(&sim.Request{ID: "r1", SLOClass: "standard", TenantID: "t1", GatewayEnqueueTime: 100, SLOTargetUs: 500000}, 1)
+	q.Enqueue(&sim.Request{ID: "r2", SLOClass: "standard", TenantID: "t1", GatewayEnqueueTime: 100, SLOTargetUs: 100000}, 2)
+
+	// Low saturation → should dispatch, and r2 (earlier deadline) first.
+	r := q.DequeueGated(0.3)
+	if r == nil {
+		t.Fatal("expected non-nil from DequeueGated at low saturation")
+	}
+	if r.ID != "r2" {
+		t.Fatalf("expected r2 (earliest deadline via DequeueGated), got %s", r.ID)
+	}
+
+	// Saturation >= ceiling (1.0 for single band) → should block.
+	r = q.DequeueGated(1.0)
+	if r != nil {
+		t.Fatalf("expected nil from DequeueGated at saturation >= ceiling, got %s", r.ID)
+	}
+}
+
+func TestGatewayQueue_SLODeadline_EmptyQueue(t *testing.T) {
+	q := NewGatewayQueue("slo-deadline", 0, nil)
+	r := q.Dequeue()
+	if r != nil {
+		t.Fatalf("expected nil from empty slo-deadline queue, got %v", r)
 	}
 }

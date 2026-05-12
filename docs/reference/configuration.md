@@ -236,7 +236,7 @@ admission:
 |-----------|------|----------------------|
 | Tier-shed admission | `sim/admission.go` | Rejects requests with `Priority(class) < MinAdmitPriority` under overload |
 | Tenant budget enforcement | `sim/cluster/cluster_event.go` | Sheds over-budget requests where `IsSheddable(class)` is true (priority < 0) |
-| Gateway queue dispatch | `sim/cluster/gateway_queue.go` | Priority-ordered dispatch: higher priority dequeued first; capacity shedding evicts lowest priority |
+| Gateway queue dispatch | `sim/cluster/gateway_queue.go` | Priority-ordered or SLO-deadline dispatch: higher priority dequeued first (priority mode), earliest SLO deadline within flow (slo-deadline mode); capacity shedding evicts lowest priority |
 | Backward compatibility | `sim/admission.go` | `SLOTierPriority()` delegates to `DefaultSLOPriorityMap().Priority()` |
 
 **Per-tenant fair-share budgets** (`tenant_budgets`): A secondary admission layer that runs *after* the admission policy. If the admission policy rejects a request, tenant budgets are not consulted. If the admission policy admits a request, tenant budgets then apply: over-budget tenants have sheddable requests (`IsSheddable(class) = priority < 0`) preferentially shed, while non-sheddable traffic (critical, standard) is always protected. Configured via `--policy-config` YAML only (no CLI flag):

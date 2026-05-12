@@ -22,8 +22,8 @@ import (
 )
 
 var (
-	traceHeaderPath string
-	traceDataPath   string
+	traceHeaderPath     string
+	traceDataPath       string
 	replayTraceOutput   string // File prefix for TraceV2 re-export (<prefix>.yaml + <prefix>.csv)
 	replaySessionMode   string
 	replayThinkTimeMs   int
@@ -486,6 +486,7 @@ Example:
 			FlowControlEnabled:              flowControlEnabled,
 			FlowControlDetector:             flowControlDetector,
 			FlowControlDispatchOrder:        flowControlDispatchOrder,
+			FlowControlSLOTargets:           sloTargetsMap,
 			FlowControlMaxQueueDepth:        flowControlMaxQueueDepth,
 			FlowControlQueueDepthThreshold:  flowControlQueueDepthThreshold,
 			FlowControlKVCacheUtilThreshold: flowControlKVCacheUtilThreshold,

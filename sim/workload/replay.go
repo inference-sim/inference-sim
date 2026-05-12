@@ -238,12 +238,12 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 		}
 
 		req := &sim.Request{
-			ID:              fmt.Sprintf("request_%d", r0.RequestID),
-			ArrivalTime:     injectionTime(r0),
-			InputTokens:     inputTokens,
-			OutputTokens:    outputTokens,
-			MaxOutputLen:    len(outputTokens),
-			State:           sim.StateQueued,
+			ID:           fmt.Sprintf("request_%d", r0.RequestID),
+			ArrivalTime:  injectionTime(r0),
+			InputTokens:  inputTokens,
+			OutputTokens: outputTokens,
+			MaxOutputLen: len(outputTokens),
+			State:        sim.StateQueued,
 			// ScheduledStepIdx, FinishedStepIdx default to 0 (R4: consistent with LoadTraceV2Requests)
 			TenantID:        r0.TenantID,
 			SLOClass:        r0.SLOClass,
@@ -277,6 +277,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			TenantID:         r0.TenantID,
 			SLOClass:         r0.SLOClass,
 			Model:            r0.Model,
+			SLOTargetUs:      r0.SLOTargetUs,
 		}
 		blueprints = append(blueprints, bp)
 	}

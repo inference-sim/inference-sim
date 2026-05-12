@@ -181,15 +181,15 @@ var (
 	requestTimeoutSecs int
 
 	// output file paths
-	metricsPath string // File to write MetricsOutput JSON for blis run (--metrics-path)
-	resultsPath string // File to write []SimResult JSON for blis replay (--results-path)
+	metricsPath      string // File to write MetricsOutput JSON for blis run (--metrics-path)
+	resultsPath      string // File to write []SimResult JSON for blis replay (--results-path)
 	saturationReport string // File to write BacklogDriftReport JSON for saturation analysis (--saturation-report)
 
 	// saturation analysis configuration
-	saturationWindowSec int // Window size in seconds for backlog-drift analysis (--saturation-window)
-	saturationMinWindows int // Minimum number of windows required for classification (--saturation-min-windows)
-	saturationPeakRatio float64 // Peak/mean ratio threshold for transient backlog detection (--saturation-peak-ratio)
-	saturationPeakBand float64 // Confidence band around peak ratio threshold (--saturation-peak-band)
+	saturationWindowSec  int     // Window size in seconds for backlog-drift analysis (--saturation-window)
+	saturationMinWindows int     // Minimum number of windows required for classification (--saturation-min-windows)
+	saturationPeakRatio  float64 // Peak/mean ratio threshold for transient backlog detection (--saturation-peak-ratio)
+	saturationPeakBand   float64 // Confidence band around peak ratio threshold (--saturation-peak-band)
 	saturationConfidence float64 // Confidence level for slope CI (--saturation-ci)
 
 	// trace export
@@ -724,9 +724,9 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 			}
 		}
 		if bundle.Admission.SLOTargets != nil && sloTargetsMap == nil {
-				sloTargetsMap = bundle.Admission.SLOTargets
-			}
-			if bundle.Admission.GAIEQDThreshold != nil {
+			sloTargetsMap = bundle.Admission.SLOTargets
+		}
+		if bundle.Admission.GAIEQDThreshold != nil {
 			gaieQDThreshold = *bundle.Admission.GAIEQDThreshold
 		}
 		if bundle.Admission.GAIEKVThreshold != nil {
@@ -858,12 +858,19 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 				if len(parts) != 2 {
 					logrus.Fatalf("--slo-targets: invalid format %q (expected key=value)", pair)
 				}
-				v, parseErr := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
-				if parseErr != nil || v < 0 {
-					logrus.Fatalf("--slo-targets: invalid value for %q: %s", strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
+				key := strings.TrimSpace(parts[0])
+				if key == "" {
+					logrus.Fatalf("--slo-targets: empty key in pair %q (expected key=value)", pair)
 				}
-				sloTargetsMap[strings.TrimSpace(parts[0])] = v
+				v, parseErr := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
+				if parseErr != nil || v <= 0 {
+					logrus.Fatalf("--slo-targets: value for %q must be a positive integer (µs), got %s", key, strings.TrimSpace(parts[1]))
+				}
+				sloTargetsMap[key] = v
 			}
+		}
+		if sloTargetsMap != nil && flowControlDispatchOrder != "slo-deadline" {
+			logrus.Warnf("--slo-targets has no effect without --dispatch-order slo-deadline")
 		}
 		// Validate only parameters consumed by the selected detector
 		switch flowControlDetector {

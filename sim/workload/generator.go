@@ -378,8 +378,8 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 
 // GeneratedWorkload holds the output of GenerateWorkload: requests plus session blueprints.
 type GeneratedWorkload struct {
-	Requests       []*sim.Request
-	Sessions       []SessionBlueprint // nil for non-session workloads
+	Requests []*sim.Request
+	Sessions []SessionBlueprint // nil for non-session workloads
 	// FollowUpBudget is the cap on follow-up requests for concurrency sessions.
 	// -1 = no cap (maxRequests was 0/unlimited, or only closed-loop multi-turn clients present).
 	//  0 = no follow-ups allowed (seeds consumed the entire budget, or no sessions at all).
@@ -523,6 +523,7 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 				TenantID:      client.TenantID,
 				SLOClass:      client.SLOClass,
 				Model:         client.Model,
+				SLOTargetUs:   derefInt64(client.SLOTargetUs),
 			})
 		}
 	}
@@ -646,6 +647,7 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 				TenantID:        client.TenantID,
 				SLOClass:        client.SLOClass,
 				Model:           client.Model,
+				SLOTargetUs:     derefInt64(client.SLOTargetUs),
 			})
 		}
 		totalConcurrencyUsers += client.Concurrency

@@ -108,8 +108,8 @@ type RequestRecord struct {
 	RequestID         int
 	OutputTokens      int
 	ServerInputTokens int
-	VLLMPriority      int     // vLLM priority value (0=highest urgency, higher=lower urgency); 0 when not set
-	Status            string  // "ok", "error", "timeout"
+	VLLMPriority      int    // vLLM priority value (0=highest urgency, higher=lower urgency); 0 when not set
+	Status            string // "ok", "error", "timeout"
 	ErrorMessage      string
 	SendTimeUs        int64
 	FirstChunkTimeUs  int64
@@ -211,7 +211,8 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 		httpReq.Header.Set("x-gateway-inference-objective", req.SLOClass)
 	}
 	if req.SLOTargetUs > 0 {
-		httpReq.Header.Set("x-slo-ttft-ms", strconv.FormatInt(req.SLOTargetUs/1000, 10))
+		ms := (req.SLOTargetUs + 999) / 1000 // ceiling division: µs→ms
+		httpReq.Header.Set("x-slo-ttft-ms", strconv.FormatInt(ms, 10))
 	}
 
 	// Record send time
@@ -520,4 +521,3 @@ func (r *Recorder) ITLRecords() []workload.ITLRecord {
 func (r *Recorder) ExportITL(path string) error {
 	return workload.ExportITL(r.ITLRecords(), path)
 }
-
