@@ -674,3 +674,31 @@ func TestNewEncodeDecider(t *testing.T) {
 	}()
 	_ = NewEncodeDecider("bogus")
 }
+
+// TestDisaggregationObserver_BuiltinsDoNotImplement (BC-1, BC-5) verifies that
+// the three built-in deciders do NOT implement the optional DisaggregationObserver
+// interface. This is the load-bearing assertion behind the parity guarantee:
+// the cluster's type assertion returns ok==false, so no callback fires, so
+// per-request metrics are byte-identical to pre-PR runs.
+func TestDisaggregationObserver_BuiltinsDoNotImplement(t *testing.T) {
+	builtins := []DisaggregationDecider{
+		&NeverDisaggregate{},
+		&AlwaysDisaggregate{},
+		NewPrefixThresholdDecider(16, 16, nil),
+	}
+	for _, d := range builtins {
+		if _, ok := d.(DisaggregationObserver); ok {
+			t.Errorf("%T must not implement DisaggregationObserver (BC-1/BC-5)", d)
+		}
+	}
+}
+
+// TestOutcome_FieldsZeroDefault verifies the zero value of Outcome is the
+// documented "no data" state. Feedback-driven deciders can rely on this.
+func TestOutcome_FieldsZeroDefault(t *testing.T) {
+	var o Outcome
+	if o.TTFT != 0 || o.CompletionTime != 0 || o.TransferDurationUs != 0 ||
+		o.Disaggregated || o.DecodeInstanceID != "" || o.PrefillInstanceID != "" {
+		t.Errorf("Outcome zero value must be all-zeroes, got %+v", o)
+	}
+}

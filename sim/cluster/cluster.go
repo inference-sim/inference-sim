@@ -44,7 +44,15 @@ type ClusterSimulator struct {
 	gatewayExpired       int                    // count of requests expired from gateway queue via TTL (INV-1: gw_expired)
 	requestTTL           int64                  // gateway queue request TTL in microseconds; 0 = disabled
 	poolMembership       map[string]PoolRole    // instance ID → pool role (nil when disaggregation disabled)
-	disaggregationDecider sim.DisaggregationDecider // PD disaggregation decider (nil when disabled)
+	disaggregationDecider sim.DisaggregationDecider // PD disaggregation decider (nil when disabled). May optionally implement sim.DisaggregationObserver for outcome-feedback hooks (#1340).
+
+	// nonDisaggObservations tracks requests whose configured disaggregation
+	// decider returned Disaggregate=false, pending their terminal completion on
+	// the decode pod. Populated only when cs.disaggregationDecider implements
+	// sim.DisaggregationObserver (nil otherwise, preserving zero-cost behavior
+	// for built-in deciders — BC-5, INV-6 parity). Keyed by request ID. See
+	// issue #1340.
+	nonDisaggObservations map[string]nonDisaggPendingObservation
 
 	// PD disaggregation state (PR2)
 	parentRequests            map[string]*ParentRequest // parent request ID → tracking record
@@ -374,6 +382,14 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		default:
 			cs.disaggregationDecider = sim.NewDisaggregationDecider(config.PDDecider)
 		}
+
+		// Observer-aware deciders (#1340): allocate the non-disagg tracking map
+		// only when the concrete decider implements DisaggregationObserver.
+		// Built-ins do not implement it → map stays nil → every call site short-
+		// circuits → byte-identical behavior (BC-5). Tests that inject a custom
+		// observer decider after construction must also allocate this map (or
+		// rely on the lazy init in executeDisaggregatedRouting).
+		cs.maybeInitNonDisaggObservations()
 	}
 
 	// E/P/D disaggregation (GAP-4, issue #1264): construct the encode decider
@@ -733,6 +749,14 @@ func (c *ClusterSimulator) Run() error {
 					c.detectDecodeCompletions(inst)
 				}
 			}
+
+			// DisaggregationObserver (#1340): fire OnOutcome for non-disagg
+			// requests that have just completed on this instance. No-op when
+			// the configured decider does not implement the observer interface
+			// (built-in default, BC-5). Call unconditionally — the guard is
+			// inside detectNonDisaggObserverCompletions so the map-driven
+			// short-circuit is local.
+			c.detectNonDisaggObserverCompletions(inst)
 		}
 
 		c.maybeDeliverProgressSnapshot(false)
@@ -1236,6 +1260,101 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 	}
 }
 
+// nonDisaggPendingObservation is the per-request record tracked between a
+// Disaggregate=false decision and the request's terminal completion on the
+// decode pod. Only allocated when the configured DisaggregationDecider
+// implements DisaggregationObserver (#1340).
+type nonDisaggPendingObservation struct {
+	req      *sim.Request
+	decision sim.DisaggregationDecision
+}
+
+// maybeInitNonDisaggObservations lazily allocates the non-disagg observation
+// tracking map iff cs.disaggregationDecider satisfies DisaggregationObserver.
+// Safe to call multiple times (idempotent). Used by both NewClusterSimulator
+// and executeDisaggregatedRouting so tests that inject an observer decider
+// after construction still get tracking.
+func (cs *ClusterSimulator) maybeInitNonDisaggObservations() {
+	if cs.nonDisaggObservations != nil {
+		return
+	}
+	if cs.disaggregationDecider == nil {
+		return
+	}
+	if _, ok := cs.disaggregationDecider.(sim.DisaggregationObserver); !ok {
+		return
+	}
+	cs.nonDisaggObservations = make(map[string]nonDisaggPendingObservation)
+}
+
+// detectNonDisaggObserverCompletions fires DisaggregationObserver.OnOutcome
+// for any non-disaggregated requests that have just completed on this
+// instance (BC-3). A no-op when no observer-aware decider is configured,
+// which is the default for all three built-in deciders (BC-5).
+//
+// Filter symmetry with the disagg path (BC-4): only successful completions
+// fire the callback; timed-out or dropped requests do NOT — the instance
+// never records them in RequestCompletionTimes (see TimeoutEvent.Execute
+// in sim/event.go, which sets StateTimedOut and does not append to the
+// completions map).
+//
+// Map lifetime: tracked entries for requests that never reach terminal
+// success (timeouts, drops, horizon-interrupted runs) remain in
+// cs.nonDisaggObservations until the simulator is garbage-collected at
+// sim end. This is BOUNDED by the total request count — not an unbounded
+// leak — and has no observable effect (no callback fires). A stricter
+// lifetime would require hooking the timeout/drop paths; deliberately
+// deferred for the minimal interface-extension scope of #1340.
+//
+// Determinism (INV-6, R2): the ready-to-fire request IDs are collected into
+// a sorted slice before dispatch so the callback invocation order is a pure
+// function of request IDs — not Go map iteration order.
+func (cs *ClusterSimulator) detectNonDisaggObserverCompletions(inst *InstanceSimulator) {
+	if len(cs.nonDisaggObservations) == 0 {
+		return
+	}
+	observer, ok := cs.disaggregationDecider.(sim.DisaggregationObserver)
+	if !ok {
+		// Defensive: the map is only populated when the decider is an observer.
+		// Reaching here would indicate an observer decider was swapped out after
+		// tracking started — treat as a drop (no callback, no leak beyond sim
+		// lifetime).
+		return
+	}
+	instID := string(inst.ID())
+	m := inst.Metrics()
+
+	var readyIDs []string
+	for reqID, p := range cs.nonDisaggObservations {
+		if p.req.AssignedInstance != instID {
+			continue
+		}
+		if _, completed := m.RequestCompletionTimes[reqID]; !completed {
+			continue
+		}
+		readyIDs = append(readyIDs, reqID)
+	}
+	if len(readyIDs) == 0 {
+		return
+	}
+	sort.Strings(readyIDs)
+
+	for _, reqID := range readyIDs {
+		p := cs.nonDisaggObservations[reqID]
+		completionTime := int64(m.RequestCompletionTimes[reqID])
+		ttft := m.RequestTTFTs[reqID] // zero if absent; callback may choose to ignore
+		observer.OnOutcome(p.req, p.decision, sim.Outcome{
+			TTFT:               ttft,
+			CompletionTime:     completionTime,
+			TransferDurationUs: 0,
+			Disaggregated:      false,
+			DecodeInstanceID:   instID,
+			PrefillInstanceID:  "",
+		})
+		delete(cs.nonDisaggObservations, reqID)
+	}
+}
+
 // Clock returns the cluster's current simulation clock.
 func (c *ClusterSimulator) Clock() int64 {
 	return c.clock
@@ -1632,6 +1751,16 @@ func (c *ClusterSimulator) projectPDMetrics() {
 	}
 	m := c.aggregatedMetrics
 
+	// #1340: collect projected parent TTFTs in the existing pass so the
+	// observer dispatch below reports the SAME value that was written to
+	// m.RequestTTFTs[pid]. Only allocated when the decider is an observer
+	// (zero cost for built-ins — BC-5 parity).
+	observer, hasObserver := c.disaggregationDecider.(sim.DisaggregationObserver)
+	var projectedTTFTs map[string]float64
+	if hasObserver {
+		projectedTTFTs = make(map[string]float64, len(c.parentRequests))
+	}
+
 	for _, parent := range c.parentRequests {
 		pfx := parent.PrefillSubReqID // "req_N_prefill"
 		dec := parent.DecodeSubReqID  // "req_N_decode"
@@ -1673,10 +1802,16 @@ func (c *ClusterSimulator) projectPDMetrics() {
 				m.RequestTTFTs[pid] = newTTFT
 				// BC-3: Keep TTFTSum consistent with the TTFT adjustment.
 				m.TTFTSum += int64(newTTFT - prefillTTFT)
+				if hasObserver {
+					projectedTTFTs[pid] = newTTFT
+				}
 			} else if hasPrefillTTFT {
 				// Defensive fallback: use prefill-only TTFT if decode data unavailable.
 				m.RequestTTFTs[pid] = prefillTTFT
 				logrus.Warnf("[cluster] projectPDMetrics: parent %s missing decode ITL or TransferCompleteTime; using prefill TTFT", pid)
+				if hasObserver {
+					projectedTTFTs[pid] = prefillTTFT
+				}
 			} else {
 				logrus.Warnf("[cluster] projectPDMetrics: completed parent %s has no prefill TTFT (key %s)", pid, pfx)
 			}
@@ -1716,6 +1851,66 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		delete(m.RequestCompletionTimes, dec)
 		if completed {
 			m.RequestCompletionTimes[pid] = float64(parent.CompletionTime)
+		}
+	}
+
+	// DisaggregationObserver (#1340): fire OnOutcome exactly once per
+	// successfully-completed parent request, in sorted parent-ID order for
+	// determinism (INV-6). No-op when the configured decider does not
+	// implement the observer interface — the three built-in deciders never
+	// implement it, so this loop body is skipped and per-request metrics are
+	// byte-identical to pre-#1340 runs (BC-5).
+	if hasObserver {
+		parentIDs := make([]string, 0, len(c.parentRequests))
+		for pid := range c.parentRequests {
+			parentIDs = append(parentIDs, pid)
+		}
+		sort.Strings(parentIDs)
+		for _, pid := range parentIDs {
+			parent := c.parentRequests[pid]
+			// BC-4: fire only on terminal SUCCESS — not on drops or timeouts.
+			// Note: the projection loop above uses a looser `completed` gate
+			// (CompletionTime > 0 && DecodeInstanceID != "") which also matches
+			// timed-out decode sub-requests, because detectDecodeCompletions
+			// stamps parent.CompletionTime on both successful completion AND
+			// timeout (see sim/cluster/cluster.go detectDecodeCompletions
+			// Phase 3). Tightening the observer filter here keeps BC-4
+			// symmetric with the non-disagg path.
+			if parent.DecodeSubReq == nil || parent.DecodeSubReq.State != sim.StateCompleted {
+				continue
+			}
+			ttft, ok := projectedTTFTs[pid]
+			if !ok {
+				// Completed parent with no prefill TTFT (warn-logged above).
+				// Filter out of observer dispatch — firing with a zero TTFT
+				// would misrepresent the outcome to a feedback-driven decider.
+				continue
+			}
+			if parent.OriginalRequest == nil {
+				// Already panicked above in the projection loop; defensive
+				// guard here in case that loop is refactored.
+				continue
+			}
+			// Deliver the original DisaggregationDecision captured at routing
+			// time (#1340). Falls back to {Disaggregate: true} if the decision
+			// was not recorded (legacy test fixtures that construct parents
+			// directly). For production code the field is always populated.
+			decision := parent.DisaggDecision
+			if !decision.Disaggregate {
+				decision = sim.DisaggregationDecision{Disaggregate: true}
+			}
+			observer.OnOutcome(
+				parent.OriginalRequest,
+				decision,
+				sim.Outcome{
+					TTFT:               ttft,
+					CompletionTime:     parent.CompletionTime,
+					TransferDurationUs: parent.TransferCompleteTime - parent.TransferStartTime,
+					Disaggregated:      true,
+					DecodeInstanceID:   string(parent.DecodeInstanceID),
+					PrefillInstanceID:  string(parent.PrefillInstanceID),
+				},
+			)
 		}
 	}
 }
@@ -1936,6 +2131,19 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 		if cs.evictionTracker != nil {
 			cs.evictionTracker.Track(req, decodeDecision.TargetInstance, cs.priorityMap)
 		}
+
+		// Observer hook (#1340): if the configured decider implements
+		// DisaggregationObserver, track this request so we fire OnOutcome at
+		// terminal completion. The map is nil for built-in deciders (zero
+		// cost). Lazily allocate in case an observer decider was injected
+		// after NewClusterSimulator ran (supported for test wiring).
+		cs.maybeInitNonDisaggObservations()
+		if cs.nonDisaggObservations != nil {
+			cs.nonDisaggObservations[req.ID] = nonDisaggPendingObservation{
+				req:      req,
+				decision: disaggDecision,
+			}
+		}
 		return
 	}
 
@@ -1945,6 +2153,10 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 	if encodeInstanceID != "" {
 		parent.EncodeInstanceID = InstanceID(encodeInstanceID)
 	}
+	// #1340: persist the full DisaggregationDecision so the optional observer
+	// callback at parent completion can receive the original
+	// DecodePodOverride / PrefillPodHint fields (empty for built-ins).
+	parent.DisaggDecision = disaggDecision
 	cs.parentRequests[parent.ID] = parent
 
 	// Create prefill sub-request: same input, no output (completes after prefill).
