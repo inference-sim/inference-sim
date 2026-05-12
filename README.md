@@ -193,6 +193,107 @@ Merge workload spec YAMLs produced by `blis convert` or written by hand (see [Wo
 
 For comprehensive usage guides, see the [Documentation](#documentation) section below.
 
+### PD disaggregation (prefill/decode pool separation)
+
+Separate prefill (prompt processing) and decode (token generation) onto dedicated instance pools, connected by a simulated KV cache transfer network. Useful for long-context workloads where prefill computation dominates, or when co-location interference is significant.
+
+```bash
+# Baseline: 4 co-located instances (no disaggregation)
+./blis run \
+  --model qwen/qwen3-14b \
+  --num-instances 4 --rate 100 --num-requests 1000
+
+# PD disaggregation: 2 prefill + 2 decode, always disaggregate
+./blis run \
+  --model qwen/qwen3-14b \
+  --num-instances 4 \
+  --prefill-instances 2 --decode-instances 2 \
+  --pd-decider always \
+  --pd-transfer-bandwidth 25 --pd-transfer-base-latency 0.05 \
+  --rate 100 --num-requests 1000
+
+# Selective disaggregation: only disaggregate when non-cached token count exceeds threshold
+./blis run \
+  --model qwen/qwen3-14b \
+  --num-instances 4 \
+  --prefill-instances 2 --decode-instances 2 \
+  --pd-decider prefix-threshold --pd-prefix-threshold 512 \
+  --rate 100 --num-requests 1000
+
+# Heterogeneous pools: prefill on A100 (high compute), decode on H100 (high memory)
+./blis run \
+  --model qwen/qwen3-14b \
+  --num-instances 4 \
+  --prefill-instances 2 --decode-instances 2 \
+  --gpu a100 --decode-hardware h100 \
+  --pd-decider always \
+  --rate 100 --num-requests 1000
+```
+
+See `examples/pd-disaggregation-demo.yaml` for a full policy configuration.
+
+### Autoscaling
+
+Simulate horizontal pod autoscaling (HPA) with configurable node pools, provisioning delays, and scale-up/down thresholds. Use a `--policy-config` YAML to configure the autoscaler:
+
+```yaml
+# autoscaler-demo.yaml
+autoscaler:
+  interval_us: 10000000        # tick every 10 seconds
+  scale_up_stabilization_window_us: 0
+  scale_down_stabilization_window_us: 300000000  # 5-minute cooldown (Kubernetes HPA default)
+  hpa_scrape_delay:
+    mean: 15.0    # 15-second scrape delay (seconds)
+    stddev: 2.0
+  analyzer:
+    scale_up_threshold: 0.8    # scale up when KV utilization > 80%
+    scale_down_boundary: 0.3   # scale down when KV utilization < 30%
+    avg_input_tokens: 512
+
+node_pools:
+  - name: standard
+    gpu_type: h100
+    gpus_per_node: 8
+    gpu_memory_gib: 80
+    initial_nodes: 1
+    min_nodes: 1
+    max_nodes: 8
+    provisioning_delay:
+      mean: 120.0    # 2-minute provisioning delay (seconds)
+      stddev: 30.0
+    cost_per_hour: 32.77
+
+admission:
+  policy: always-admit
+
+routing:
+  policy: weighted
+  scorers:
+    - name: queue-depth
+      weight: 1.0
+    - name: kv-utilization
+      weight: 1.0
+```
+
+```bash
+# Run with autoscaler enabled via policy config
+./blis run \
+  --model qwen/qwen3-14b \
+  --num-instances 1 \
+  --policy-config autoscaler-demo.yaml \
+  --workload-spec examples/regression_workload_load_spikes.yaml
+
+# Override the autoscaler tick interval from the CLI
+./blis run \
+  --model qwen/qwen3-14b \
+  --num-instances 1 \
+  --policy-config autoscaler-demo.yaml \
+  --model-autoscaler-interval-us 5000000 \
+  --workload-spec examples/regression_workload_load_spikes.yaml
+```
+
+The standard output fields (`responses_per_sec`, `e2e_mean_ms`, `e2e_p99_ms`, etc.) reflect the autoscaler's effect: watch throughput and latency change as instances are added or removed during the simulation horizon.
+
 ---
 
 ## Documentation
