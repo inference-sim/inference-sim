@@ -16,12 +16,12 @@ import (
 // Priority 4: after RoutingDecisionEvent (2), before KV transfer events.
 type PrefillRoutingEvent struct {
 	time      int64
-	request   *sim.Request   // Prefill sub-request
+	request   *sim.Request // Prefill sub-request
 	parentReq *ParentRequest
 }
 
 func (e *PrefillRoutingEvent) Timestamp() int64 { return e.time }
-func (e *PrefillRoutingEvent) Priority() int     { return 4 }
+func (e *PrefillRoutingEvent) Priority() int    { return 4 }
 
 // Execute routes the prefill sub-request to a prefill pool instance using pool-filtered snapshots.
 func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
@@ -88,20 +88,94 @@ func (e *PrefillRoutingEvent) Execute(cs *ClusterSimulator) {
 }
 
 // KVTransferStartedEvent fires when a prefill sub-request completes.
-// Records transfer initiation, computes duration, schedules completion.
-// Priority 5: after prefill routing.
+// Records transfer initiation, computes duration, reserves KV blocks on the
+// decode instance (issue #1343 vLLM WAITING_FOR_REMOTE_KVS parity), and
+// schedules completion. Priority 5: after prefill routing.
 type KVTransferStartedEvent struct {
 	time      int64
 	parentReq *ParentRequest
 }
 
 func (e *KVTransferStartedEvent) Timestamp() int64 { return e.time }
-func (e *KVTransferStartedEvent) Priority() int     { return 5 }
+func (e *KVTransferStartedEvent) Priority() int    { return 5 }
 
-// Execute computes transfer duration and schedules KVTransferCompletedEvent.
+// Execute reserves KV blocks on the decode instance in a
+// WaitingForRemoteKVs sub-request, then schedules
+// KVTransferCompletedEvent via scheduleTransferCompletion. If the decode
+// pod has become non-routable or lacks capacity for the reservation, the
+// request is dropped immediately — no KVTransferCompletedEvent is
+// scheduled, and no contention bookkeeping is touched. This mirrors
+// vLLM v1 scheduler behavior where decode-side block allocation happens
+// as the transfer begins (permalink 1, permalink 3 in issue #1343), so
+// reserved blocks reduce available decode-pod KV capacity for the
+// transfer window rather than only at transfer completion.
 func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
+	// OriginalRequest is always set by NewParentRequest in production;
+	// narrow unit tests that exercise the duration formula in isolation
+	// bypass this Execute() method and call scheduleTransferCompletion
+	// directly to avoid constructing the full decode-side fixtures.
+	orig := e.parentReq.OriginalRequest
+
+	decodeSubReq := &sim.Request{
+		ID:                 e.parentReq.DecodeSubReqID,
+		InputTokens:        orig.InputTokens,
+		OutputTokens:       orig.OutputTokens,
+		MaxOutputLen:       orig.MaxOutputLen,
+		Deadline:           orig.Deadline,
+		PrefixGroup:        orig.PrefixGroup,
+		State:              sim.StateWaitingForRemoteKVs,
+		ArrivalTime:        orig.ArrivalTime,
+		TenantID:           orig.TenantID,
+		SLOClass:           orig.SLOClass,
+		Model:              orig.Model,
+		IsDecodeSubRequest: true,
+	}
+
+	decodeInstID := string(e.parentReq.DecodeInstanceID)
+	var decodeInst *InstanceSimulator
+	for _, inst := range cs.instances {
+		if string(inst.ID()) == decodeInstID {
+			decodeInst = inst
+			break
+		}
+	}
+
+	if decodeInst == nil || !decodeInst.IsRoutable() {
+		logrus.Warnf("[cluster] decode instance %s for %s is no longer routable at transfer start — request dropped",
+			decodeInstID, e.parentReq.ID)
+		cs.droppedAtDecodeKV++
+		e.parentReq.TransferStartTime = e.time
+		e.parentReq.CompletionTime = e.time
+		return
+	}
+
+	if ok := decodeInst.ReserveTransferredKV(decodeSubReq); !ok {
+		logrus.Warnf("[cluster] decode instance %s: insufficient KV capacity for %s (%d input tokens) at transfer start",
+			decodeInstID, decodeSubReq.ID, len(decodeSubReq.InputTokens))
+		// R1/INV-1: count the drop so aggregated DroppedUnservable remains accurate.
+		cs.droppedAtDecodeKV++
+		e.parentReq.TransferStartTime = e.time
+		e.parentReq.CompletionTime = e.time
+		return
+	}
+
+	// Reservation succeeded: attach the sub-request to the parent. The
+	// KVTransferCompletedEvent promotes it to StateQueued and enqueues
+	// without re-allocating KV.
+	e.parentReq.DecodeSubReq = decodeSubReq
+	scheduleTransferCompletion(cs, e.parentReq, e.time)
+}
+
+// scheduleTransferCompletion performs the contention-tracking, duration
+// calculation, and KVTransferCompletedEvent scheduling half of the
+// transfer-start pipeline. Factored out of Execute so that narrow unit
+// tests can exercise the duration formula without constructing full
+// decode-side reservation fixtures. Production callers always reach
+// this via KVTransferStartedEvent.Execute after a successful decode-side
+// KV reservation.
+func scheduleTransferCompletion(cs *ClusterSimulator, parentReq *ParentRequest, startTime int64) {
 	cs.transfersInitiated++
-	e.parentReq.TransferStartTime = e.time
+	parentReq.TransferStartTime = startTime
 
 	// Contention tracking (INV-P2-2): increment before duration calculation so the
 	// divisor reflects the active count including this transfer.
@@ -121,10 +195,10 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 		// Unreachable: NewClusterSimulator validates KVBytesPerToken at construction time
 		// when PD disaggregation is enabled. If this fires, it indicates a missing
 		// validation in the construction path.
-		panic(fmt.Sprintf("unreachable: KVTransferStartedEvent: failed to derive KV bytes per token: %v", err))
+		panic(fmt.Sprintf("unreachable: scheduleTransferCompletion: failed to derive KV bytes per token: %v", err))
 	}
 
-	numBlocks := e.parentReq.NumKVBlocks
+	numBlocks := parentReq.NumKVBlocks
 	// Defer truncation: multiply float64 kvBytesPerToken by blockSize before converting,
 	// matching the CalculateKVBlocks pattern to avoid precision loss for fractional
 	// BytesPerParam (e.g., INT4=0.5 at high TP).
@@ -132,7 +206,7 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 	transferBytes := float64(numBlocks) * blockSizeBytesF
 
 	bandwidthBytesPerUs := cs.config.PDTransferBandwidthGBps * 1000.0 // GB/s → bytes/μs
-	baseLatUs := cs.config.PDTransferBaseLatencyMs * 1000.0            // ms → μs
+	baseLatUs := cs.config.PDTransferBaseLatencyMs * 1000.0           // ms → μs
 
 	// Fair-share: divide effective bandwidth by number of concurrent transfers (INV-P2-2)
 	if cs.config.PDTransferContention && cs.activeTransfers > 1 {
@@ -151,23 +225,28 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 
 	if cs.config.PDTransferContention {
 		logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs, activeTransfers=%d",
-			e.parentReq.ID, numBlocks, duration, cs.activeTransfers)
+			parentReq.ID, numBlocks, duration, cs.activeTransfers)
 	} else {
 		logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs",
-			e.parentReq.ID, numBlocks, duration)
+			parentReq.ID, numBlocks, duration)
 	}
 
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &KVTransferCompletedEvent{
-			time:      e.time + duration,
-			parentReq: e.parentReq,
+			time:      startTime + duration,
+			parentReq: parentReq,
 		},
 		seqID: cs.nextSeqID(),
 	})
 }
 
 // KVTransferCompletedEvent fires after transfer duration elapses.
-// Creates decode sub-request, schedules decode routing.
+// Promotes the pre-reserved decode sub-request (created and KV-reserved
+// by KVTransferStartedEvent, per issue #1343 vLLM WAITING_FOR_REMOTE_KVS
+// parity) from StateWaitingForRemoteKVs to StateQueued and enqueues it on
+// the decode instance. No KV (re-)allocation happens here — blocks are
+// already held by the request.
+//
 // Priority 6: after transfer start.
 type KVTransferCompletedEvent struct {
 	time      int64
@@ -175,11 +254,13 @@ type KVTransferCompletedEvent struct {
 }
 
 func (e *KVTransferCompletedEvent) Timestamp() int64 { return e.time }
-func (e *KVTransferCompletedEvent) Priority() int     { return 6 }
+func (e *KVTransferCompletedEvent) Priority() int    { return 6 }
 
-// Execute creates the decode sub-request and injects it directly into the pre-selected
-// decode pod (stored in parentReq.DecodeInstanceID by executeDisaggregatedRouting).
-// This eliminates the former DecodeRoutingEvent (second routing decision), fixing P2.
+// Execute promotes the pre-reserved decode sub-request to StateQueued and
+// injects it into the decode instance. If the decode instance has
+// transitioned to a non-routable state during the transfer window, the
+// reserved KV blocks are released and the request is dropped (counted as
+// droppedAtDecodeKV). KV was reserved at KVTransferStartedEvent.
 func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	cs.transfersCompleted++
 	e.parentReq.TransferCompleteTime = e.time
@@ -199,25 +280,19 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 		}
 	}
 
-	orig := e.parentReq.OriginalRequest
-	decodeSubReq := &sim.Request{
-		ID:                 e.parentReq.DecodeSubReqID,
-		InputTokens:        orig.InputTokens,
-		OutputTokens:       orig.OutputTokens,
-		MaxOutputLen:       orig.MaxOutputLen,
-		Deadline:           orig.Deadline,
-		PrefixGroup:        orig.PrefixGroup,
-		State:              sim.StateQueued,
-		ArrivalTime:        orig.ArrivalTime,
-		TenantID:           orig.TenantID,
-		SLOClass:           orig.SLOClass,
-		Model:              orig.Model,
-		IsDecodeSubRequest: true,
+	decodeSubReq := e.parentReq.DecodeSubReq
+	if decodeSubReq == nil {
+		// KVTransferStartedEvent attaches DecodeSubReq on successful
+		// reservation and schedules this event only in that case — so a nil
+		// DecodeSubReq indicates a programming error in the event
+		// pipeline, not a recoverable runtime condition.
+		panic(fmt.Sprintf("KVTransferCompletedEvent: nil DecodeSubReq for parent %s — KVTransferStartedEvent should have attached it on successful reservation",
+			e.parentReq.ID))
 	}
 
-	// Look up the pre-selected decode instance (set at executeDisaggregatedRouting time).
 	decodeInstID := string(e.parentReq.DecodeInstanceID)
-	logrus.Debugf("[cluster] KV transfer completed for %s, injecting to pre-selected decode pod %s", e.parentReq.ID, decodeInstID)
+	logrus.Debugf("[cluster] KV transfer completed for %s, promoting decode sub-req on decode pod %s",
+		e.parentReq.ID, decodeInstID)
 
 	var decodeInst *InstanceSimulator
 	for _, inst := range cs.instances {
@@ -228,35 +303,32 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	}
 
 	if decodeInst == nil || !decodeInst.IsRoutable() {
-		// The pre-selected decode pod became non-routable (e.g., terminated) during KV transfer.
-		logrus.Warnf("[cluster] decode instance %s for %s is no longer routable — request dropped",
+		// The decode pod became non-routable mid-transfer (e.g., drained or
+		// terminated). Release reserved blocks and drop.
+		logrus.Warnf("[cluster] decode instance %s for %s is no longer routable at transfer complete — releasing reserved KV and dropping",
 			decodeInstID, e.parentReq.ID)
+		if decodeInst != nil {
+			decodeInst.ReleaseReservedKV(decodeSubReq)
+		}
 		cs.droppedAtDecodeKV++
 		e.parentReq.CompletionTime = e.time
+		e.parentReq.DecodeSubReq = nil
 		return
 	}
 
-	// Pre-allocate KV blocks for the transferred input.
-	if ok := decodeInst.AllocateTransferredKV(decodeSubReq); !ok {
-		logrus.Warnf("[cluster] decode instance %s: insufficient KV capacity for %s (%d input tokens)",
-			decodeInstID, decodeSubReq.ID, len(decodeSubReq.InputTokens))
-		// R1/INV-1: count the drop so aggregated DroppedUnservable remains accurate.
-		cs.droppedAtDecodeKV++
-		// Mark parent CompletionTime so ParentRequests() doesn't contain records in limbo.
-		e.parentReq.CompletionTime = e.time
-		return
-	}
-
-	// Successful KV allocation: set state and record trace (R5: no partial state on failure path).
+	// Promote StateWaitingForRemoteKVs → StateQueued. KV blocks remain
+	// allocated; EnqueueDecodeSubRequest (via InjectDecodeOnline) does not
+	// re-allocate.
+	decodeSubReq.State = sim.StateQueued
 	decodeSubReq.AssignedInstance = decodeInstID
 	e.parentReq.DecodeEnqueueTime = e.time
 
 	// INV-PD-1 structural guarantee: DecodeEnqueueTime >= TransferCompleteTime.
 	// Both TransferCompleteTime and DecodeEnqueueTime are set in this event at the same tick.
 
-	// Record KV transfer after successful allocation (BC-PD-17).
-	// Placement after AllocateTransferredKV ensures no KVTransferRecord is written for
-	// a request that will not begin the decode phase.
+	// Record KV transfer after successful promotion (BC-PD-17).
+	// Placement here ensures no KVTransferRecord is written for a request
+	// whose decode pod became non-routable during the transfer window.
 	if cs.trace != nil {
 		// INV-PD-4: transfer_start ≤ transfer_complete by timestamp sequencing.
 		// Defensive clamp: warn and record 0 if violated.
@@ -277,16 +349,17 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	}
 
 	cs.inFlightRequests[decodeInstID]++
-	// Phase 1B-2a: track decode slot for fair-share (see PrefillRoutingEvent comment
-	// for PD slot-doubling semantics). OnStart placement here (after AllocateTransferredKV)
-	// ensures balance: a failed KV allocation returns early above without calling OnStart,
-	// matching the zero OnComplete calls for the dropped decode sub-request.
+	// Phase 1B-2a: track decode slot for fair-share (see PrefillRoutingEvent
+	// comment for PD slot-doubling semantics). OnStart placement here (after
+	// routability re-check) ensures balance: a failed late-drop releases KV
+	// without calling OnStart, matching the zero OnComplete calls for the
+	// dropped decode sub-request.
 	if cs.tenantTracker != nil {
 		cs.tenantTracker.OnStart(decodeSubReq.TenantID)
 	}
-	// Register decode sub-request so detectDecodeCompletions can stamp ParentRequest.CompletionTime
-	// and read DecodeSubReq.State/ProgressIndex for timeout detection and context accumulation.
-	e.parentReq.DecodeSubReq = decodeSubReq
+	// Register decode sub-request so detectDecodeCompletions can stamp
+	// ParentRequest.CompletionTime and read DecodeSubReq.State/ProgressIndex
+	// for timeout detection and context accumulation.
 	cs.pendingDecodeCompletions[decodeSubReq.ID] = e.parentReq.ID
 	decodeInst.InjectDecodeOnline(decodeSubReq, e.time)
 }

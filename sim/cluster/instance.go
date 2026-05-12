@@ -28,13 +28,13 @@ type InstanceSimulator struct {
 
 	// Phase 1A: lifecycle and placement fields.
 	// All zero-value safe (backward-compatible with no-node-pool mode).
-	Model            string        // target model identifier (empty = default/single-model)
+	Model            string            // target model identifier (empty = default/single-model)
 	State            sim.InstanceState // lifecycle state; empty = untracked (backward-compat)
-	warmUpRemaining  int           // requests remaining in warm-up phase; 0 = no warm-up
-	warmUpRequestIDs []string      // IDs of requests served during warm-up (for TTFT factor)
-	nodeID           string        // node this instance is placed on (empty = unplaced)
-	allocatedGPUIDs  []string      // GPU IDs allocated to this instance
-	gpu              string        // GPU type used for this instance (set from pool gpu_type, or config.GPU)
+	warmUpRemaining  int               // requests remaining in warm-up phase; 0 = no warm-up
+	warmUpRequestIDs []string          // IDs of requests served during warm-up (for TTFT factor)
+	nodeID           string            // node this instance is placed on (empty = unplaced)
+	allocatedGPUIDs  []string          // GPU IDs allocated to this instance
+	gpu              string            // GPU type used for this instance (set from pool gpu_type, or config.GPU)
 
 	// Phase 1C: hardware variant fields (set at placement time in cluster.go).
 	// Used by buildRouterState() to populate RoutingSnapshot for the autoscaler Collector.
@@ -419,10 +419,20 @@ func (i *InstanceSimulator) TransitionTo(state sim.InstanceState) {
 	i.State = state
 }
 
-// AllocateTransferredKV simulates receiving transferred KV cache data from a prefill instance.
-// Pre-allocates KV blocks for the request's input tokens and sets ProgressIndex past input.
-// Returns false if insufficient KV capacity on this instance.
-func (i *InstanceSimulator) AllocateTransferredKV(req *sim.Request) bool {
+// ReserveTransferredKV reserves KV cache blocks on this instance for a decode
+// sub-request whose KV transfer is in flight (issue #1343, vLLM
+// WAITING_FOR_REMOTE_KVS parity). Blocks are allocated immediately so they
+// reduce available capacity for other requests during the transfer window.
+// ProgressIndex is advanced past the input so batch formation treats the
+// request as decode-ready once the transfer completes and the state is
+// promoted to StateQueued. Returns false if insufficient KV capacity on this
+// instance.
+//
+// Caller is responsible for calling ReleaseReservedKV (or the equivalent
+// KVCache.ReleaseKVBlocks) if the reservation must be undone — e.g., when
+// the decode instance becomes non-routable between KVTransferStartedEvent
+// and KVTransferCompletedEvent.
+func (i *InstanceSimulator) ReserveTransferredKV(req *sim.Request) bool {
 	inputLen := int64(len(req.InputTokens))
 	if inputLen == 0 {
 		req.ProgressIndex = 0
@@ -433,6 +443,14 @@ func (i *InstanceSimulator) AllocateTransferredKV(req *sim.Request) bool {
 		req.ProgressIndex = inputLen
 	}
 	return ok
+}
+
+// ReleaseReservedKV frees KV blocks previously reserved via ReserveTransferredKV.
+// Used when a reservation must be undone (e.g., decode instance transitioned
+// to a non-routable state mid-transfer). Safe to call when the request holds
+// no blocks.
+func (i *InstanceSimulator) ReleaseReservedKV(req *sim.Request) {
+	i.sim.KVCache.ReleaseKVBlocks(req)
 }
 
 // InjectDecodeOnline injects a decode sub-request with pre-allocated KV.
