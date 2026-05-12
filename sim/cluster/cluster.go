@@ -50,8 +50,8 @@ type ClusterSimulator struct {
 	// decider returned Disaggregate=false, pending their terminal completion on
 	// the decode pod. Populated only when cs.disaggregationDecider implements
 	// sim.DisaggregationObserver (nil otherwise, preserving zero-cost behavior
-	// for built-in deciders — BC-5, INV-6 parity). Keyed by request ID.
-	// See docs/plans/pr1340-disagg-observer-plan.md.
+	// for built-in deciders — BC-5, INV-6 parity). Keyed by request ID. See
+	// issue #1340.
 	nonDisaggObservations map[string]nonDisaggPendingObservation
 
 	// PD disaggregation state (PR2)
@@ -1294,6 +1294,14 @@ func (cs *ClusterSimulator) maybeInitNonDisaggObservations() {
 // never records them in RequestCompletionTimes (see TimeoutEvent.Execute
 // in sim/event.go, which sets StateTimedOut and does not append to the
 // completions map).
+//
+// Map lifetime: tracked entries for requests that never reach terminal
+// success (timeouts, drops, horizon-interrupted runs) remain in
+// cs.nonDisaggObservations until the simulator is garbage-collected at
+// sim end. This is BOUNDED by the total request count — not an unbounded
+// leak — and has no observable effect (no callback fires). A stricter
+// lifetime would require hooking the timeout/drop paths; deliberately
+// deferred for the minimal interface-extension scope of #1340.
 //
 // Determinism (INV-6, R2): the ready-to-fire request IDs are collected into
 // a sorted slice before dispatch so the callback invocation order is a pure
