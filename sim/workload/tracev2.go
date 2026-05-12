@@ -150,7 +150,7 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 		if i == 3 && includeVLLMPriority {
 			columns = append(columns, "vllm_priority")
 		}
-		// Insert slo_target_us immediately after deadline_us (index 17 in base columns)
+		// Insert slo_target_us immediately after deadline_us (matched by name)
 		if col == "deadline_us" && includeSLOTarget {
 			columns = append(columns, "slo_target_us")
 		}
@@ -288,7 +288,7 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool) (*TraceRecord, error) {
 	// Column offset: optional columns shift subsequent indices.
 	// vllm_priority appears after slo_class (index 3) → shifts everything after by +1.
-	// slo_target_us appears after deadline_us (base index 17) → shifts everything after by +1.
+	// slo_target_us appears after deadline_us → shifts everything after by +1.
 	offset := 0
 	if hasVLLMPriority {
 		offset = 1
