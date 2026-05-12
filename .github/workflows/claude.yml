@@ -68,6 +68,7 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.LITELLM_API_KEY }}
           claude_args: '--model claude-sonnet-4-6 --allowed-tools Skill Agent Bash Read Edit Write'
+          show_full_output: true
           prompt: |
             When the trigger comment contains /implement-issue, you MUST follow the implement-issue skill exactly and create the pull request yourself using `gh pr create`. Do NOT just push to a branch and leave it — always open the PR programmatically, then invoke /blis-pr-review for self-review and iterate until READY TO MERGE.
 
