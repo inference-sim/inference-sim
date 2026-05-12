@@ -207,7 +207,7 @@ Invariants are properties that must hold at all times during and after simulatio
 
 **Verification:** `sim/cluster/disaggregation_test.go` — `TestDisaggregation_TransferConservation` asserts equality and expected count (uses unbounded horizon).
 
-**Evidence:** `transfersInitiated` incremented in `KVTransferStartedEvent.Execute()`, `transfersCompleted` incremented in `KVTransferCompletedEvent.Execute()`. Every started event schedules exactly one completed event.
+**Evidence:** `transfersInitiated` incremented on every entry to `KVTransferStartedEvent.Execute()` — both the happy path (via `scheduleTransferCompletion`) and the drop-at-start path (via `dropAtStart`, issue #1343). `transfersCompleted` incremented on every entry to `KVTransferCompletedEvent.Execute()`. Every started event schedules exactly one completed event — successful reservations schedule a real completion at `start + duration`; drop-at-start schedules a zero-duration degenerate completion at the same tick so the counters stay paired even when decode-side reservation fails.
 
 ### INV-PD-4: Phase Causality
 

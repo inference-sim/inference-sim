@@ -103,17 +103,25 @@ func (e *KVTransferStartedEvent) Priority() int    { return 5 }
 // WaitingForRemoteKVs sub-request, then schedules
 // KVTransferCompletedEvent via scheduleTransferCompletion. If the decode
 // pod has become non-routable or lacks capacity for the reservation, the
-// request is dropped immediately — no KVTransferCompletedEvent is
-// scheduled, and no contention bookkeeping is touched. This mirrors
-// vLLM v1 scheduler behavior where decode-side block allocation happens
-// as the transfer begins (permalink 1, permalink 3 in issue #1343), so
-// reserved blocks reduce available decode-pod KV capacity for the
-// transfer window rather than only at transfer completion.
+// request is dropped immediately and a degenerate completion event is
+// scheduled at the same tick so INV-PD-3 (initiated == completed) still
+// holds and in-flight accounting stays correct. This mirrors vLLM v1
+// scheduler behavior where decode-side block allocation happens as the
+// transfer begins (permalink 1, permalink 3 in issue #1343), so reserved
+// blocks reduce available decode-pod KV capacity for the transfer window
+// rather than only at transfer completion.
 func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
-	// OriginalRequest is always set by NewParentRequest in production;
-	// narrow unit tests that exercise the duration formula in isolation
+	// OriginalRequest is always set by NewParentRequest in production.
+	// Narrow unit tests that exercise the duration formula in isolation
 	// bypass this Execute() method and call scheduleTransferCompletion
-	// directly to avoid constructing the full decode-side fixtures.
+	// directly to avoid constructing the full decode-side fixtures — so a
+	// nil here indicates a programming error in the event pipeline (parent
+	// created without an OriginalRequest), not a recoverable runtime
+	// condition.
+	if e.parentReq.OriginalRequest == nil {
+		panic(fmt.Sprintf("KVTransferStartedEvent: nil OriginalRequest for parent %s — NewParentRequest should have attached it",
+			e.parentReq.ID))
+	}
 	orig := e.parentReq.OriginalRequest
 
 	decodeSubReq := &sim.Request{
@@ -140,22 +148,27 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 		}
 	}
 
-	if decodeInst == nil || !decodeInst.IsRoutable() {
+	// Split diagnostics for the two failure modes: a nil instance is a
+	// programming error (routing policy returned an ID not in cs.instances);
+	// a non-routable instance is a legitimate drain/terminate event during
+	// the transfer window.
+	if decodeInst == nil {
+		logrus.Errorf("[cluster] decode instance %q for %s not found in cs.instances — routing invariant violated; dropping request",
+			decodeInstID, e.parentReq.ID)
+		e.dropAtStart(cs)
+		return
+	}
+	if !decodeInst.IsRoutable() {
 		logrus.Warnf("[cluster] decode instance %s for %s is no longer routable at transfer start — request dropped",
 			decodeInstID, e.parentReq.ID)
-		cs.droppedAtDecodeKV++
-		e.parentReq.TransferStartTime = e.time
-		e.parentReq.CompletionTime = e.time
+		e.dropAtStart(cs)
 		return
 	}
 
 	if ok := decodeInst.ReserveTransferredKV(decodeSubReq); !ok {
 		logrus.Warnf("[cluster] decode instance %s: insufficient KV capacity for %s (%d input tokens) at transfer start",
 			decodeInstID, decodeSubReq.ID, len(decodeSubReq.InputTokens))
-		// R1/INV-1: count the drop so aggregated DroppedUnservable remains accurate.
-		cs.droppedAtDecodeKV++
-		e.parentReq.TransferStartTime = e.time
-		e.parentReq.CompletionTime = e.time
+		e.dropAtStart(cs)
 		return
 	}
 
@@ -164,6 +177,35 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 	// without re-allocating KV.
 	e.parentReq.DecodeSubReq = decodeSubReq
 	scheduleTransferCompletion(cs, e.parentReq, e.time)
+}
+
+// dropAtStart records a drop-at-transfer-start outcome: decode pod
+// unroutable or reservation failed. The parent's TransferStartTime and
+// CompletionTime are stamped at this tick (no TransferCompleteTime is
+// set, so post-sim detection can distinguish a start-drop from a
+// late-drop). Increments cs.droppedAtDecodeKV for INV-1 accounting
+// (flowed into DroppedUnservable at finalization).
+//
+// Also increments cs.transfersInitiated so the counter's original
+// "attempts" semantics — every request reaching KVTransferStartedEvent
+// — is preserved across the reservation-at-start change introduced in
+// issue #1343. INV-PD-3 (initiated == completed) is maintained by
+// scheduling a degenerate KVTransferCompletedEvent at the same tick;
+// that event detects the drop via DecodeSubReq == nil and returns after
+// incrementing transfersCompleted, without attempting to release KV
+// (nothing was reserved) or promote state.
+func (e *KVTransferStartedEvent) dropAtStart(cs *ClusterSimulator) {
+	cs.droppedAtDecodeKV++
+	cs.transfersInitiated++
+	e.parentReq.TransferStartTime = e.time
+	e.parentReq.CompletionTime = e.time
+	heap.Push(&cs.clusterEvents, clusterEventEntry{
+		event: &KVTransferCompletedEvent{
+			time:      e.time,
+			parentReq: e.parentReq,
+		},
+		seqID: cs.nextSeqID(),
+	})
 }
 
 // scheduleTransferCompletion performs the contention-tracking, duration
@@ -261,8 +303,27 @@ func (e *KVTransferCompletedEvent) Priority() int    { return 6 }
 // transitioned to a non-routable state during the transfer window, the
 // reserved KV blocks are released and the request is dropped (counted as
 // droppedAtDecodeKV). KV was reserved at KVTransferStartedEvent.
+//
+// Degenerate path (issue #1343): when the parent's DecodeSubReq is nil,
+// this event was scheduled by KVTransferStartedEvent.dropAtStart as a
+// zero-duration "completion" so INV-PD-3 (initiated == completed) holds
+// across the reservation-failed drop. In that case bookkeeping was
+// already done at transfer-start time (droppedAtDecodeKV++,
+// CompletionTime stamped, no contention increment), so this branch only
+// bumps transfersCompleted and returns without touching KV or state.
 func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	cs.transfersCompleted++
+
+	// Degenerate completion for drop-at-transfer-start (issue #1343).
+	// dropAtStart did not call scheduleTransferCompletion, so activeTransfers
+	// was never incremented for this transfer and must not be decremented
+	// here. TransferCompleteTime intentionally stays 0 — downstream code
+	// uses "TransferCompleteTime == 0 && TransferStartTime > 0" to
+	// distinguish a start-drop from a completed (or late-dropped) transfer.
+	if e.parentReq.DecodeSubReq == nil {
+		return
+	}
+	decodeSubReq := e.parentReq.DecodeSubReq
 	e.parentReq.TransferCompleteTime = e.time
 
 	// Contention decrement with negative guard (INV-P2-2).
@@ -280,16 +341,6 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 		}
 	}
 
-	decodeSubReq := e.parentReq.DecodeSubReq
-	if decodeSubReq == nil {
-		// KVTransferStartedEvent attaches DecodeSubReq on successful
-		// reservation and schedules this event only in that case — so a nil
-		// DecodeSubReq indicates a programming error in the event
-		// pipeline, not a recoverable runtime condition.
-		panic(fmt.Sprintf("KVTransferCompletedEvent: nil DecodeSubReq for parent %s — KVTransferStartedEvent should have attached it on successful reservation",
-			e.parentReq.ID))
-	}
-
 	decodeInstID := string(e.parentReq.DecodeInstanceID)
 	logrus.Debugf("[cluster] KV transfer completed for %s, promoting decode sub-req on decode pod %s",
 		e.parentReq.ID, decodeInstID)
@@ -302,14 +353,24 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 		}
 	}
 
-	if decodeInst == nil || !decodeInst.IsRoutable() {
+	// Split diagnostics: nil instance = programming error (routing returned
+	// an ID not in cs.instances); non-routable = legitimate drain/terminate
+	// during the transfer window. Both paths release KV (when the instance
+	// exists) and drop.
+	if decodeInst == nil {
+		logrus.Errorf("[cluster] decode instance %q for %s not found in cs.instances at transfer complete — routing invariant violated; KV cannot be released",
+			decodeInstID, e.parentReq.ID)
+		cs.droppedAtDecodeKV++
+		e.parentReq.CompletionTime = e.time
+		e.parentReq.DecodeSubReq = nil
+		return
+	}
+	if !decodeInst.IsRoutable() {
 		// The decode pod became non-routable mid-transfer (e.g., drained or
 		// terminated). Release reserved blocks and drop.
 		logrus.Warnf("[cluster] decode instance %s for %s is no longer routable at transfer complete — releasing reserved KV and dropping",
 			decodeInstID, e.parentReq.ID)
-		if decodeInst != nil {
-			decodeInst.ReleaseReservedKV(decodeSubReq)
-		}
+		decodeInst.ReleaseReservedKV(decodeSubReq)
 		cs.droppedAtDecodeKV++
 		e.parentReq.CompletionTime = e.time
 		e.parentReq.DecodeSubReq = nil

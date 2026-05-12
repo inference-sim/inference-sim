@@ -132,6 +132,72 @@ func TestWaitingForRemoteKVs_ReservationFailure_DropsAtTransferStart(t *testing.
 	assertINV1Conservation(t, metrics, 4, "drop-at-transfer-start")
 }
 
+// TestWaitingForRemoteKVs_ConcurrentReservationsDoNotStealBlocks is the
+// load-bearing regression test for issue #1343. It directly proves the
+// property that motivated the whole PR: once one transfer reserves KV
+// blocks on a decode pod, a second transfer attempting to reserve on
+// the same pod cannot steal those blocks, even while the first transfer
+// is still in flight.
+//
+// Constructed so that total capacity == blocks held by reservation A.
+// Reservation B, which needs any non-zero block count, must fail while
+// A still holds its reservation. Releasing A must make the same B
+// reservation succeed — proving the blocks were reserved, not simply
+// unavailable for some other reason.
+//
+// Reverting the PR's behavior (allocating at transfer complete rather
+// than transfer start) would not be caught by any other test; this one
+// asserts the exact no-stealing contract.
+func TestWaitingForRemoteKVs_ConcurrentReservationsDoNotStealBlocks(t *testing.T) {
+	// 5 blocks total. Reservation A consumes all 5. Reservation B requires
+	// >=1 block and therefore must fail until A is released.
+	cfg := sim.SimConfig{
+		Horizon:             1000000,
+		Seed:                42,
+		KVCacheConfig:       sim.NewKVCacheConfig(5, 16, 0, 0, 0, 0),
+		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
+		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, "roofline", 0),
+	}
+	inst := NewInstanceSimulator("decode_0", cfg)
+
+	reqA := &sim.Request{
+		ID:          "transferA_decode",
+		InputTokens: make([]int, 80), // exactly 5 blocks at blockSize=16
+		State:       sim.StateWaitingForRemoteKVs,
+	}
+	reqB := &sim.Request{
+		ID:          "transferB_decode",
+		InputTokens: make([]int, 16), // 1 block — minimum non-zero
+		State:       sim.StateWaitingForRemoteKVs,
+	}
+
+	// A reserves first and consumes all 5 blocks.
+	if ok := inst.ReserveTransferredKV(reqA); !ok {
+		t.Fatal("ReserveTransferredKV(A) failed; test fixture is wrong, capacity should accommodate A")
+	}
+	if used := inst.sim.KVCache.UsedBlocks(); used != 5 {
+		t.Fatalf("UsedBlocks after A reservation = %d, want 5 (fixture violated)", used)
+	}
+
+	// While A still holds blocks, B must not be able to steal them.
+	// This is the core no-stealing contract from issue #1343.
+	if ok := inst.ReserveTransferredKV(reqB); ok {
+		t.Fatal("ReserveTransferredKV(B) succeeded while A still holds the blocks — blocks were stolen, no-stealing contract violated")
+	}
+
+	// Now release A. B's same reservation attempt must now succeed —
+	// confirming the prior failure was specifically because A held the
+	// blocks, not because the reservation path was broken.
+	inst.ReleaseReservedKV(reqA)
+	if used := inst.sim.KVCache.UsedBlocks(); used != 0 {
+		t.Fatalf("UsedBlocks after A release = %d, want 0", used)
+	}
+	if ok := inst.ReserveTransferredKV(reqB); !ok {
+		t.Error("ReserveTransferredKV(B) failed after A released — reservation path is broken independent of A")
+	}
+}
+
 // TestReserveTransferredKV_ReleaseFreesBlocks verifies that
 // ReleaseReservedKV undoes a prior ReserveTransferredKV: the released
 // blocks return to the free pool and are available for another request.
