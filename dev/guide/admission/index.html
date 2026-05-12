@@ -1243,6 +1243,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#slo-deadline-dispatch-ordering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SLO-Deadline Dispatch Ordering
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#in-flight-eviction" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3136,6 +3147,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#slo-deadline-dispatch-ordering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SLO-Deadline Dispatch Ordering
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#in-flight-eviction" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3483,7 +3505,7 @@ admission decision, matching llm-d's <code>FlowControlAdmissionController</code>
 <ol>
 <li>Incoming request is enqueued into a per-priority-band, per-flow queue</li>
 <li>Each unique (TenantID, Priority) pair gets its own FIFO queue within a priority band</li>
-<li>Dispatch order follows <code>--dispatch-order</code>: with <code>priority</code>, iterates bands highest-priority first; with <code>fifo</code> (default), picks the globally-earliest arrival across all bands</li>
+<li>Dispatch order follows <code>--dispatch-order</code>: with <code>priority</code>, iterates bands highest-priority first; with <code>fifo</code> (default), picks the globally-earliest arrival across all bands; with <code>slo-deadline</code>, dispatches the request with the earliest SLO deadline within each flow (see <a href="#slo-deadline-dispatch-ordering">SLO-Deadline Dispatch Ordering</a> below)</li>
 <li>Within a band, <code>--fairness-policy</code> controls flow selection: <code>global-strict</code> (default) picks the earliest arrival (lowest sequence ID); <code>round-robin</code> cycles through tenants in sorted key order</li>
 <li>Saturation gating: dispatch only when cluster saturation &lt; 1.0</li>
 <li>Completion-triggered dispatch: each completion frees capacity and tries to dispatch from the queue</li>
@@ -3535,6 +3557,49 @@ shedding of sheddable entries.</p>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--queue-depth-threshold<span class="w"> </span><span class="m">5</span><span class="w"> </span>--kv-cache-util-threshold<span class="w"> </span><span class="m">0</span>.8<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span>--per-band-capacity<span class="w"> </span><span class="m">100</span><span class="w"> </span>--max-gateway-queue-depth<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
+<h3 id="slo-deadline-dispatch-ordering">SLO-Deadline Dispatch Ordering<a class="headerlink" href="#slo-deadline-dispatch-ordering" title="Permanent link">&para;</a></h3>
+<p>With <code>--dispatch-order slo-deadline</code>, the gateway queue dispatches the request with the earliest SLO deadline first within each flow. This matches GIE's <code>slo-deadline-ordering-policy</code>.</p>
+<p><strong>How it works:</strong></p>
+<ol>
+<li>Fairness policy picks the flow (same as priority mode)</li>
+<li>Within the picked flow, dequeue the request with the earliest SLO deadline</li>
+<li>Deadline = <code>GatewayEnqueueTime + SLOTargetUs</code></li>
+<li>Fallback hierarchy: per-request <code>SLOTargetUs</code> → per-tier <code>--slo-targets</code> → far-future (FCFS)</li>
+<li>Equal deadlines use arrival order (seqID) as tiebreaker</li>
+</ol>
+<p><strong>Setting SLO targets:</strong></p>
+<ul>
+<li><strong>Per-request</strong> (workload spec): <code>slo_target_us: 200000</code> on a cohort (200ms TTFT target)</li>
+<li><strong>Per-tier</strong> (CLI flag): <code>--slo-targets critical=100000,standard=500000</code> (fallback when workload spec doesn't set per-request targets)</li>
+<li><strong>Per-tier</strong> (policy bundle): <code>admission.slo_targets</code> in YAML</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--dispatch-order slo-deadline</code></td>
+<td>Enable SLO-deadline ordering</td>
+<td><code>fifo</code></td>
+</tr>
+<tr>
+<td><code>--slo-targets</code></td>
+<td>Per-SLO-class TTFT targets in µs (e.g., <code>critical=100000,standard=500000</code>)</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--flow-control<span class="w"> </span>--saturation-detector<span class="w"> </span>utilization<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span>--queue-depth-threshold<span class="w"> </span><span class="m">5</span><span class="w"> </span>--kv-cache-util-threshold<span class="w"> </span><span class="m">0</span>.8<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span>--dispatch-order<span class="w"> </span>slo-deadline<span class="w"> </span>--slo-targets<span class="w"> </span><span class="s2">&quot;critical=100000,standard=500000&quot;</span>
+</code></pre></div>
+<p><strong>Observe integration:</strong> When <code>slo_target_us &gt; 0</code>, <code>blis observe</code> injects the <code>x-slo-ttft-ms</code> HTTP header on outgoing requests, matching GIE's header convention.</p>
 <h3 id="in-flight-eviction">In-Flight Eviction<a class="headerlink" href="#in-flight-eviction" title="Permanent link">&para;</a></h3>
 <p>When flow control is enabled and the system is saturated, BLIS can evict sheddable requests that are already running on instances to free capacity for higher-priority waiting requests. This matches GIE's eviction architecture.</p>
 <p><strong>How it works:</strong></p>
@@ -3579,7 +3644,7 @@ shedding of sheddable entries.</p>
 <tr>
 <td>Dispatch order</td>
 <td>N/A (no queue)</td>
-<td><code>--dispatch-order</code> (fifo/priority)</td>
+<td><code>--dispatch-order</code> (fifo/priority/slo-deadline)</td>
 </tr>
 <tr>
 <td>Capacity</td>

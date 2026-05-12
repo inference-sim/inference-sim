@@ -4290,7 +4290,7 @@
 <tr>
 <td>Gateway queue dispatch</td>
 <td><code>sim/cluster/gateway_queue.go</code></td>
-<td>Priority-ordered dispatch: higher priority dequeued first; capacity shedding evicts lowest priority</td>
+<td>Priority-ordered or SLO-deadline dispatch: higher priority dequeued first (priority mode), earliest SLO deadline within flow (slo-deadline mode); capacity shedding evicts lowest priority</td>
 </tr>
 <tr>
 <td>Backward compatibility</td>
@@ -4325,10 +4325,13 @@
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">tier_shed_min_priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span><span class="w">  </span><span class="c1"># admit standard(3) and critical(4); shed sheddable tiers (priority &lt; 0)</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">slo_priorities</span><span class="p">:</span><span class="w">             </span><span class="c1"># optional: override specific priorities</span>
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="nt">batch</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span><span class="w">                  </span><span class="c1"># promote batch to non-sheddable</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="nt">tenant_budgets</span><span class="p">:</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="nt">alice</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.3</span><span class="w">   </span><span class="c1"># alice may use at most 30% of total cluster capacity</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">  </span><span class="nt">bob</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.7</span><span class="w">     </span><span class="c1"># bob may use at most 70% of total cluster capacity</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">slo_targets</span><span class="p">:</span><span class="w">                </span><span class="c1"># optional: per-class TTFT targets in µs for slo-deadline ordering</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">    </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100000</span><span class="w">          </span><span class="c1"># 100ms TTFT target</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="nt">standard</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500000</span><span class="w">          </span><span class="c1"># 500ms TTFT target</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="nt">tenant_budgets</span><span class="p">:</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span><span class="nt">alice</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.3</span><span class="w">   </span><span class="c1"># alice may use at most 30% of total cluster capacity</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span><span class="nt">bob</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.7</span><span class="w">     </span><span class="c1"># bob may use at most 70% of total cluster capacity</span>
 </code></pre></div>
 <h2 id="flow-control-gateway-queue">Flow Control (Gateway Queue)<a class="headerlink" href="#flow-control-gateway-queue" title="Permanent link">&para;</a></h2>
 <p>When <code>--flow-control</code> is enabled, admission IS the queue — requests are enqueued into per-priority-band, per-tenant flow queues and dispatched under saturation gating. See <a href="../../guide/admission/#flow-control-mode">Admission: Flow Control</a>.</p>
@@ -4376,7 +4379,13 @@
 <td><code>--dispatch-order</code></td>
 <td>string</td>
 <td>"fifo"</td>
-<td>Cross-band dispatch: <code>fifo</code> (globally-earliest), <code>priority</code> (highest band first)</td>
+<td>Cross-band dispatch: <code>fifo</code> (globally-earliest), <code>priority</code> (highest band first), <code>slo-deadline</code> (earliest SLO deadline within flow)</td>
+</tr>
+<tr>
+<td><code>--slo-targets</code></td>
+<td>string</td>
+<td>""</td>
+<td>Per-SLO-class TTFT targets in µs for slo-deadline ordering (e.g., <code>critical=100000,standard=500000</code>)</td>
 </tr>
 <tr>
 <td><code>--fairness-policy</code></td>
