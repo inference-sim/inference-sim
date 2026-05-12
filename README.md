@@ -191,6 +191,99 @@ Merge workload spec YAMLs produced by `blis convert` or written by hand (see [Wo
 ./blis compose --from spec1.yaml --from spec2.yaml
 ```
 
+### PD disaggregation (prefill/decode pool separation)
+
+Run with dedicated prefill and decode instance pools, connected by a simulated KV transfer network. Useful for modeling [llm-d](https://github.com/llm-d/llm-d)-style disaggregated serving:
+
+```bash
+# 2 prefill + 2 decode instances, always disaggregate
+./blis run --model qwen/qwen3-14b \
+  --num-instances 4 \
+  --prefill-instances 2 --decode-instances 2 \
+  --pd-decider always \
+  --pd-transfer-bandwidth 25 --pd-transfer-base-latency 0.05 \
+  --rate 100 --num-requests 1000
+```
+
+Use `--pd-decider prefix-threshold` to selectively disaggregate only long-context requests (those with more uncached tokens than the threshold):
+
+```bash
+# Disaggregate requests with > 512 uncached input tokens
+./blis run --model qwen/qwen3-14b \
+  --num-instances 6 \
+  --prefill-instances 2 --decode-instances 4 \
+  --pd-decider prefix-threshold --pd-prefix-threshold 512 \
+  --pd-transfer-bandwidth 25 --pd-transfer-base-latency 0.05 \
+  --prefill-routing-scorers "queue-depth:2,kv-utilization:2" \
+  --decode-routing-scorers "precise-prefix-cache:2,queue-depth:1" \
+  --rate 100 --num-requests 1000
+```
+
+Enable bandwidth contention modeling for concurrent KV transfers (fair-share model):
+
+```bash
+./blis run --model qwen/qwen3-14b \
+  --num-instances 4 \
+  --prefill-instances 2 --decode-instances 2 \
+  --pd-decider always \
+  --pd-transfer-bandwidth 25 --pd-transfer-base-latency 0.05 \
+  --pd-transfer-contention \
+  --rate 100 --num-requests 1000
+```
+
+When PD disaggregation is active, `blis run` prints a `=== PD Metrics ===` block alongside the standard results, reporting disaggregated request counts, prefill/decode throughput, load imbalance ratio, KV transfer duration distribution, and client-visible parent TTFT.
+
+See `examples/pd-disaggregation-demo.yaml` for a policy configuration template and the [Metrics & Results](docs/guide/results.md) guide for a full field reference.
+
+### Autoscaling
+
+Simulate dynamic instance provisioning using the model autoscaler. Node pools define the available hardware inventory; the autoscaler periodically evaluates KV utilization and queue depth and issues scale-up or scale-down decisions:
+
+```bash
+# Autoscaling via policy-config YAML (recommended)
+./blis run --model qwen/qwen3-14b \
+  --policy-config examples/autoscaler-policy.yaml \
+  --rate 100 --num-requests 2000
+```
+
+Where `examples/autoscaler-policy.yaml` contains:
+
+```yaml
+autoscaler:
+  interval_us: 30000000       # evaluate every 30 seconds
+  scale_up_stabilization_window_us: 60000000    # 1 min scale-up cooldown
+  scale_down_stabilization_window_us: 300000000 # 5 min scale-down cooldown (Kubernetes HPA default)
+  analyzer:
+    kv_cache_threshold: 0.8   # scale up when KV utilization exceeds 80%
+    scale_up_threshold: 0.8
+    scale_down_boundary: 0.4
+    avg_input_tokens: 512.0
+
+node_pools:
+  - name: h100-pool
+    gpu_type: H100
+    gpus_per_node: 8
+    gpu_memory_gib: 80.0
+    initial_nodes: 1
+    min_nodes: 1
+    max_nodes: 8
+    cost_per_hour: 32.0
+    provisioning_delay:
+      mean: 30.0    # 30-second mean provisioning time
+      stddev: 5.0
+```
+
+To quickly override the autoscaler tick interval from the CLI without modifying the YAML:
+
+```bash
+./blis run --model qwen/qwen3-14b \
+  --policy-config examples/autoscaler-policy.yaml \
+  --model-autoscaler-interval-us 10000000 \
+  --rate 100 --num-requests 2000
+```
+
+> **Note:** The autoscaler is only supported by `blis run`. Passing autoscaler or node pool configuration to `blis replay` will cause a fatal error at startup — use `blis run` for autoscaling experiments.
+
 For comprehensive usage guides, see the [Documentation](#documentation) section below.
 
 ---
@@ -308,6 +401,8 @@ inference-sim/
 │   ├── epp-estimate-prefix.yaml
 │   ├── epp-precise-prefix.yaml
 │   ├── inference-perf-shared-prefix.yaml
+│   ├── pd-disaggregation-demo.yaml
+│   ├── autoscaler-policy.yaml
 │   ├── regression_workload_cache_warmup.yaml
 │   ├── regression_workload_load_spikes.yaml
 │   └── regression_workload_multiturn.yaml

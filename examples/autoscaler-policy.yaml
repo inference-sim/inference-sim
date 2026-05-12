@@ -1,0 +1,85 @@
+# BLIS Autoscaler Policy Configuration
+#
+# Use with: ./blis run --model <model> --policy-config autoscaler-policy.yaml
+#
+# This example configures the model autoscaler with a single H100 node pool
+# that can scale from 1 to 8 nodes based on KV utilization and queue depth.
+#
+# The autoscaler pipeline:
+#   Collector → Analyzer → Engine → Actuator
+#
+# Each tick (interval_us), the autoscaler:
+#   1. Collects per-replica KV utilization, queue depth, and in-flight counts
+#   2. Analyzes aggregate demand vs. supply
+#   3. Decides to scale up, scale down, or hold
+#   4. Issues provisioning or drain events to the node pool
+#
+# ============================================================================
+# TRY IT: Compare fixed vs. autoscaled cluster under a load spike
+# ============================================================================
+#
+#   # Fixed 2-instance cluster (no autoscaling)
+#   ./blis run --model qwen/qwen3-14b \
+#     --num-instances 2 --rate 80 --num-requests 2000
+#
+#   # Autoscaled cluster (starts at 1 node, can grow to 8)
+#   ./blis run --model qwen/qwen3-14b \
+#     --policy-config examples/autoscaler-policy.yaml \
+#     --rate 80 --num-requests 2000
+#
+# ============================================================================
+# Quick CLI override (no need to edit YAML)
+# ============================================================================
+#
+#   # Override autoscaler interval to 10 seconds:
+#   ./blis run --model qwen/qwen3-14b \
+#     --policy-config examples/autoscaler-policy.yaml \
+#     --model-autoscaler-interval-us 10000000 \
+#     --rate 80 --num-requests 2000
+#
+# NOTE: The autoscaler is supported by `blis run` only. Passing this config
+# to `blis replay` will cause a fatal error at startup.
+
+autoscaler:
+  interval_us: 30000000                       # evaluate every 30 seconds
+  scale_up_stabilization_window_us: 60000000  # 1-minute scale-up cooldown
+  scale_down_stabilization_window_us: 300000000 # 5-minute scale-down cooldown (Kubernetes HPA default)
+  hpa_scrape_delay:
+    mean: 10.0    # 10-second mean metrics collection delay
+    stddev: 2.0
+  analyzer:
+    kv_cache_threshold: 0.8  # scale up when KV utilization exceeds 80%
+    scale_up_threshold: 0.8
+    scale_down_boundary: 0.4 # scale down when utilization drops below 40%
+    avg_input_tokens: 512.0  # expected average input length for capacity math
+
+node_pools:
+  - name: h100-pool
+    gpu_type: H100
+    gpus_per_node: 8
+    gpu_memory_gib: 80.0
+    initial_nodes: 1    # start with 1 node
+    min_nodes: 1        # never scale below 1 node
+    max_nodes: 8        # scale up to 8 nodes
+    cost_per_hour: 32.0 # $/hr per node (used for cost reporting)
+    provisioning_delay:
+      mean: 30.0    # 30-second mean provisioning time
+      stddev: 5.0   # ±5-second standard deviation
+
+admission:
+  policy: always-admit
+
+routing:
+  policy: weighted
+  scorers:
+    - name: precise-prefix-cache
+      weight: 2.0
+    - name: queue-depth
+      weight: 1.0
+    - name: kv-utilization
+      weight: 1.0
+
+priority:
+  policy: constant
+
+scheduler: fcfs
