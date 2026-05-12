@@ -49,6 +49,7 @@ jobs:
     needs: check-permissions
     if: needs.check-permissions.outputs.allowed == 'true'
     runs-on: [self-hosted]
+    timeout-minutes: 60
     permissions:
       contents: write
       pull-requests: write
@@ -66,7 +67,7 @@ jobs:
           CLAUDE_CODE_DISABLE_THINKING: "1"
         with:
           anthropic_api_key: ${{ secrets.LITELLM_API_KEY }}
-          claude_args: '--model claude-sonnet-4-6 --allowed-tools Skill Agent Bash'
+          claude_args: '--model claude-sonnet-4-6 --allowed-tools Skill Agent Bash Read Edit Write'
           plugin_marketplaces: |
             https://github.com/anthropics/claude-plugins-official.git
             https://github.com/obra/superpowers-marketplace.git
