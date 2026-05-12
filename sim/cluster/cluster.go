@@ -1823,6 +1823,12 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 	// pod's cacheQueryFn closure for per-pod prefix cache state (matches llm-d's
 	// PrefixBasedPDDecider reading endpoint.Get(PrefixCacheMatchInfoKey)).
 	state.SelectedInstance = decodeDecision.TargetInstance
+	// Snapshot the cluster-wide in-flight KV-transfer count for the decider.
+	// Guarded by PDTransferContention so that disabling contention produces
+	// byte-identical decider inputs to the pre-change baseline. See #1342.
+	if cs.config.PDTransferContention {
+		state.ActiveTransfers = cs.activeTransfers
+	}
 	disaggDecision := cs.disaggregationDecider.Decide(req, state)
 	logrus.Debugf("[cluster] req %s: disaggregate=%v", req.ID, disaggDecision.Disaggregate)
 
