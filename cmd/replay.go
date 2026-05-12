@@ -205,12 +205,20 @@ Example:
 		if cmd.Flags().Changed("model-autoscaler-interval-us") {
 			logrus.Fatalf("--model-autoscaler-interval-us is not supported in blis replay; remove this flag or use blis run instead")
 		}
+		var bundleInstanceLifecycle cluster.InstanceLifecycleConfig
 		if bundle != nil {
 			if bundle.Autoscaler.IntervalUs > 0 {
 				logrus.Fatalf("blis replay does not support autoscaler config (policy bundle interval_us=%g); remove the autoscaler section from the policy bundle or use blis run instead", bundle.Autoscaler.IntervalUs)
 			}
 			if len(bundle.NodePools) > 0 {
 				logrus.Fatalf("blis replay does not support node_pools config (%d pool(s) in policy bundle); remove the node_pools section from the policy bundle or use blis run instead", len(bundle.NodePools))
+			}
+			bundleInstanceLifecycle = cluster.InstanceLifecycleConfig{
+				LoadingDelay: cluster.DelaySpec{
+					Mean:   bundle.InstanceLifecycle.LoadingDelay.Mean,
+					Stddev: bundle.InstanceLifecycle.LoadingDelay.Stddev,
+				},
+				WarmStartInitialInstances: bundle.InstanceLifecycle.WarmStartInitialInstances,
 			}
 		}
 
@@ -500,6 +508,7 @@ Example:
 			GAIEQDThreshold:                 gaieQDThreshold,
 			GAIEKVThreshold:                 gaieKVThreshold,
 			TenantBudgets:                   tenantBudgets,
+			InstanceLifecycle:               bundleInstanceLifecycle,
 		}
 
 		// Run simulation — wire SessionManager for closed-loop, nil for fixed mode
