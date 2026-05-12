@@ -33,7 +33,7 @@ inference-sim/
 │   ├── slo_priority.go        # SLOPriorityMap: BLIS/llm-d convention (higher=urgent) for cluster layer; InvertForVLLM() converts to vLLM convention (lower=urgent) at instance entry (EnqueueRequest)
 │   ├── scheduler.go           # InstanceScheduler interface with FCFSScheduler, PriorityFCFSScheduler, SJFScheduler, and ReversePriority templates, NewScheduler factory
 │   ├── latency_model.go       # LatencyModel interface (3 methods), NewLatencyModelFunc registration variable, MustNewLatencyModel nil-guarded wrapper
-│   ├── router_state.go        # RouterState bridge type (Snapshots + Clock) for cluster-level policies
+│   ├── router_state.go        # RouterState bridge type (Snapshots, PrefillSnapshots, LoadingSnapshots, Clock, SelectedDecodeInstance, SelectedPrefillInstance) for cluster-level policies
 │   ├── bundle.go              # PolicyBundle YAML loading, LoadPolicyBundle, Validate
 │   ├── event.go               # Event types (Arrival, Queued, Step, Scheduled, RequestLeft, Timeout) with (timestamp, priority, seqID) ordering
 │   ├── request.go             # RequestState typed constants (StateQueued, StateRunning, StateCompleted, StateTimedOut), Request lifecycle and state machine, Deadline field for client timeout, Priority field for scheduler-aware ordering, AssignedInstance for cluster routing provenance (#181), workload metadata (TenantID, SLOClass, etc.), MaxOutputLen (client output budget for enqueue guard)

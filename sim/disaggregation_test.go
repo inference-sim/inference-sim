@@ -149,7 +149,7 @@ func TestDisaggregationDecider_INV9_OracleBoundary(t *testing.T) {
 	}
 	state := &RouterState{
 		Snapshots:        []RoutingSnapshot{{ID: "decode_0"}},
-		SelectedInstance: "decode_0",
+		SelectedDecodeInstance: "decode_0",
 	}
 
 	deciders := []DisaggregationDecider{
@@ -170,7 +170,7 @@ func TestDisaggregationDecider_INV9_OracleBoundary(t *testing.T) {
 // TestDisaggregationDecider_StateAgnostic verifies BC-2 (from PR #1265 / GAP-2):
 // NeverDisaggregate and AlwaysDisaggregate ignore state entirely — nil vs populated
 // state yields identical decisions. PrefixThresholdDecider is intentionally NOT in
-// this list anymore: after GAP-3, its decision depends on state.SelectedInstance
+// this list anymore: after GAP-3, its decision depends on state.SelectedDecodeInstance
 // and the cache query map; it has its own dedicated tests below.
 func TestDisaggregationDecider_StateAgnostic(t *testing.T) {
 	req := &Request{ID: "req-1", InputTokens: make([]int, 100)}
@@ -181,7 +181,7 @@ func TestDisaggregationDecider_StateAgnostic(t *testing.T) {
 			{ID: "decode_1", QueueDepth: 2, KVUtilization: 0.9},
 		},
 		Clock:            12345,
-		SelectedInstance: "decode_1",
+		SelectedDecodeInstance: "decode_1",
 	}
 
 	deciders := []DisaggregationDecider{
@@ -211,7 +211,7 @@ func TestDisaggregationDecider_BuiltinsReturnNoOverrides(t *testing.T) {
 	}
 	state := &RouterState{
 		Snapshots:        []RoutingSnapshot{{ID: "decode_0"}},
-		SelectedInstance: "decode_0",
+		SelectedDecodeInstance: "decode_0",
 	}
 
 	deciders := []DisaggregationDecider{
@@ -252,7 +252,7 @@ func TestNewPrefixThresholdDecider_PanicsOnZeroBlockSize(t *testing.T) {
 	NewPrefixThresholdDecider(512, 0, nil)
 }
 
-// coldState builds a RouterState with SelectedInstance set to selectedID.
+// coldState builds a RouterState with SelectedDecodeInstance set to selectedID.
 // Pair with a coldCache(selectedID)-constructed decider to exercise the
 // formula with cachedBlocks=0 (so nonCachedTokens == len(InputTokens)).
 // RouterState itself carries no cache query; the cache query lives on the
@@ -260,7 +260,7 @@ func TestNewPrefixThresholdDecider_PanicsOnZeroBlockSize(t *testing.T) {
 func coldState(selectedID string) *RouterState {
 	return &RouterState{
 		Snapshots:        []RoutingSnapshot{{ID: selectedID}},
-		SelectedInstance: selectedID,
+		SelectedDecodeInstance: selectedID,
 	}
 }
 
@@ -362,8 +362,8 @@ func TestPrefixThresholdDecider_BelowOrAtThreshold(t *testing.T) {
 //   - Request has 840 input tokens.
 //
 // Expected:
-//   - SelectedInstance="decode_A": nonCached = 840 - 40*16 = 200 ≤ 512 → false.
-//   - SelectedInstance="decode_B": nonCached = 840 - 0*16  = 840 > 512 → true.
+//   - SelectedDecodeInstance="decode_A": nonCached = 840 - 40*16 = 200 ≤ 512 → false.
+//   - SelectedDecodeInstance="decode_B": nonCached = 840 - 0*16  = 840 > 512 → true.
 func TestPrefixThresholdDecider_PerPodCacheQuery(t *testing.T) {
 	const blockSize = 16
 	const threshold = 512
@@ -394,11 +394,11 @@ func TestPrefixThresholdDecider_PerPodCacheQuery(t *testing.T) {
 					{ID: "decode_A"},
 					{ID: "decode_B"},
 				},
-				SelectedInstance: tc.selectedInstance,
+				SelectedDecodeInstance: tc.selectedInstance,
 			}
 			got := decider.Decide(req, state).Disaggregate
 			if got != tc.wantDisagg {
-				t.Errorf("SelectedInstance=%s: Disaggregate=%v, want %v (%s)",
+				t.Errorf("SelectedDecodeInstance=%s: Disaggregate=%v, want %v (%s)",
 					tc.selectedInstance, got, tc.wantDisagg, tc.reason)
 			}
 		})
@@ -409,9 +409,9 @@ func TestPrefixThresholdDecider_PerPodCacheQuery(t *testing.T) {
 // conservative-cold fallback paths. In any of these five scenarios the decider
 // cannot locate a valid per-pod cache closure, so it returns Disaggregate=false:
 //  1. state == nil
-//  2. state.SelectedInstance == "" (upstream made no selection)
-//  3. state.SelectedInstance is not a key in cacheQuery
-//  4. cacheQuery[SelectedInstance] is nil (closure missing at the key)
+//  2. state.SelectedDecodeInstance == "" (upstream made no selection)
+//  3. state.SelectedDecodeInstance is not a key in cacheQuery
+//  4. cacheQuery[SelectedDecodeInstance] is nil (closure missing at the key)
 //  5. cacheQuery itself is nil (unit tests without cluster state)
 func TestPrefixThresholdDecider_MissingSelection_ReturnsFalse(t *testing.T) {
 	const threshold = 100
@@ -438,12 +438,12 @@ func TestPrefixThresholdDecider_MissingSelection_ReturnsFalse(t *testing.T) {
 		{
 			name:       "empty_selected_instance",
 			cacheQuery: coldCache("decode_0"),
-			state:      &RouterState{Snapshots: []RoutingSnapshot{{ID: "decode_0"}}, SelectedInstance: ""},
+			state:      &RouterState{Snapshots: []RoutingSnapshot{{ID: "decode_0"}}, SelectedDecodeInstance: ""},
 		},
 		{
 			name:       "unknown_selected_instance",
 			cacheQuery: coldCache("decode_0"),
-			state:      &RouterState{Snapshots: []RoutingSnapshot{{ID: "decode_0"}}, SelectedInstance: "decode_X"},
+			state:      &RouterState{Snapshots: []RoutingSnapshot{{ID: "decode_0"}}, SelectedDecodeInstance: "decode_X"},
 		},
 		{
 			name: "nil_closure_in_map",
@@ -506,7 +506,7 @@ func TestPrefixThresholdDecider_ZeroThreshold(t *testing.T) {
 }
 
 // TestPrefixThresholdDecider_QueriesOnlySelectedPod verifies BC-1 (isolation): when
-// Decide runs, it invokes the closure for SelectedInstance exactly once and does not
+// Decide runs, it invokes the closure for SelectedDecodeInstance exactly once and does not
 // invoke closures for any other instance in the map. This guards against an accidental
 // "scan all pods" regression (option (b) in the #1265 review comment was explicitly
 // rejected; we implement option (a) — query only the selected pod).
@@ -527,7 +527,7 @@ func TestPrefixThresholdDecider_QueriesOnlySelectedPod(t *testing.T) {
 			{ID: "decode_A"},
 			{ID: "decode_B"},
 		},
-		SelectedInstance: "decode_A",
+		SelectedDecodeInstance: "decode_A",
 	}
 	decider.Decide(req, state)
 
@@ -536,6 +536,66 @@ func TestPrefixThresholdDecider_QueriesOnlySelectedPod(t *testing.T) {
 	}
 	if bCalls != 0 {
 		t.Errorf("decode_B closure called %d times, want 0 (must not query non-selected pods)", bCalls)
+	}
+}
+
+// TestDisaggregationDecider_IgnoresNewFields verifies BC-4 (issue #1339):
+// built-in deciders (never, always, prefix-threshold) produce byte-identical
+// decisions regardless of PrefillSnapshots content, per-snapshot CachedBlocks,
+// or SelectedPrefillInstance. This pins the parity contract: the new
+// cross-pool signal envelope is additive, and adopting it cannot regress
+// existing decisions.
+func TestDisaggregationDecider_IgnoresNewFields(t *testing.T) {
+	tokens := make([]int, 200)
+	for i := range tokens {
+		tokens[i] = i + 1
+	}
+	req := &Request{ID: "req-parity", InputTokens: tokens}
+
+	// Decode-pool snapshot with known CachedBlocks=0 (bare) vs non-zero (populated).
+	decodeBare := []RoutingSnapshot{{ID: "decode_0"}, {ID: "decode_1"}}
+	decodePopulated := []RoutingSnapshot{
+		{ID: "decode_0", CachedBlocks: 3, KVUtilization: 0.4},
+		{ID: "decode_1", CachedBlocks: 7, KVUtilization: 0.7},
+	}
+	prefillPopulated := []RoutingSnapshot{
+		{ID: "prefill_0", CachedBlocks: 5, QueueDepth: 2},
+		{ID: "prefill_1", CachedBlocks: 0, QueueDepth: 4},
+	}
+
+	// cacheQuery used only by prefix-threshold. Wire decode_0 to 0 blocks so the
+	// decision depends solely on len(InputTokens) > threshold (200 > 100 → true).
+	cacheQuery := map[string]func([]int) int{
+		"decode_0": func([]int) int { return 0 },
+		"decode_1": func([]int) int { return 0 },
+	}
+
+	stateBare := &RouterState{
+		Snapshots:              decodeBare,
+		SelectedDecodeInstance: "decode_0",
+	}
+	statePopulated := &RouterState{
+		Snapshots:               decodePopulated,
+		PrefillSnapshots:        prefillPopulated,
+		SelectedDecodeInstance:  "decode_0",
+		SelectedPrefillInstance: "prefill_0", // intentionally non-empty to prove built-ins ignore it
+		Clock:                   12345,
+	}
+
+	deciders := []DisaggregationDecider{
+		&NeverDisaggregate{},
+		&AlwaysDisaggregate{},
+		NewPrefixThresholdDecider(100, 16, cacheQuery),
+	}
+	for _, d := range deciders {
+		bare := d.Decide(req, stateBare)
+		populated := d.Decide(req, statePopulated)
+		if bare != populated {
+			t.Errorf("%T: decision differs between bare and populated state "+
+				"(bare=%+v, populated=%+v); BC-4 requires built-in deciders to ignore "+
+				"PrefillSnapshots, per-snapshot CachedBlocks, and SelectedPrefillInstance",
+				d, bare, populated)
+		}
 	}
 }
 
