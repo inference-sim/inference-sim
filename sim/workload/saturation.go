@@ -279,13 +279,15 @@ func computeWindowMetrics(intervals []RequestInterval, windowSizeUs, totalDurati
 			}
 		}
 
-		// Step 2: Sort events by time (Go's sort.Slice is stable, so arrivals before departures at same time)
+		// Step 2: Sort events by time
+		// Note: sort.Slice is NOT stable in Go (uses quicksort). The explicit tiebreaker
+		// (events[i].delta > events[j].delta) ensures arrivals (+1) come before departures (-1)
+		// at the same timestamp, which is required for correct in-flight counting.
 		sort.Slice(events, func(i, j int) bool {
 			if events[i].timeUs != events[j].timeUs {
 				return events[i].timeUs < events[j].timeUs
 			}
-			// Stable sort ensures original order preserved for same timestamp
-			// If needed, explicit tiebreaker: arrivals (+1) before departures (-1)
+			// Explicit tiebreaker: arrivals (+1) before departures (-1) at same timestamp
 			return events[i].delta > events[j].delta
 		})
 
@@ -421,6 +423,18 @@ func classifyBacklogDrift(slope, slopeLower, slopeUpper float64,
 	horizonTruncated bool, truncatedFraction float64,
 	cfg BacklogDriftConfig) (classification, note, recommendation string) {
 
+	// Defer: Append horizon truncation warning to all classification paths
+	defer func() {
+		if horizonTruncated {
+			note += fmt.Sprintf(" WARNING: %.0f%% of requests incomplete at horizon end (still queued/running). "+
+				"Classification may be unreliable — observation window may have cut off before capturing full saturation dynamics. "+
+				"If queue was growing when observation ended, system may actually be saturated.",
+				truncatedFraction*100)
+			// Override recommendation for truncated observations
+			recommendation = "CAUTION: Observation was truncated. Re-run with longer horizon or higher rate to verify classification."
+		}
+	}()
+
 	// BC-5: Check for persistent growth (slope CI excludes zero)
 	// This is horizon-independent: detects overload (rate > capacity) as soon as trend is statistically significant
 	if slopeLower > 0 {
@@ -510,15 +524,6 @@ func classifyBacklogDrift(slope, slopeLower, slopeUpper float64,
 	}
 	recommendation = "System handled load without saturation. Current capacity is adequate."
 
-	// Fix 3: Add warning if horizon truncated (observation incomplete)
-	if horizonTruncated {
-		note += fmt.Sprintf(" WARNING: %.0f%% of requests incomplete at horizon end (still queued/running). "+
-			"Classification may be unreliable — observation window may have cut off before capturing full saturation dynamics. "+
-			"If queue was growing when observation ended, system may actually be saturated.",
-			truncatedFraction*100)
-		recommendation = "CAUTION: Observation was truncated. Re-run with longer horizon or higher rate to verify classification."
-	}
-
 	return
 }
 
@@ -543,9 +548,17 @@ func AnalyzeBacklogDrift(requests []*sim.Request, simEndUs int64, cfg BacklogDri
 
 	totalRequests := len(requests)
 	incompleteRequests := numQueued + numRunning
-	truncatedFraction := float64(incompleteRequests) / float64(totalRequests)
 
-	horizonTruncated := truncatedFraction > 0.1 // More than 10% didn't complete
+	var truncatedFraction float64
+	var horizonTruncated bool
+	if totalRequests == 0 {
+		// No requests to analyze - not truncated, just empty
+		truncatedFraction = 0.0
+		horizonTruncated = false
+	} else {
+		truncatedFraction = float64(incompleteRequests) / float64(totalRequests)
+		horizonTruncated = truncatedFraction > 0.1 // More than 10% didn't complete
+	}
 
 	// Step 1: Filter eligible requests (BC-2, BC-13)
 	intervals := RequestsToIntervals(requests, simEndUs)

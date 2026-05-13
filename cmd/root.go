@@ -1639,7 +1639,10 @@ var runCmd = &cobra.Command{
 				saturationPeakBand,
 				saturationConfidence,
 			)
-			// Apply metrics mode from flag
+			// Apply metrics mode from flag (validate first)
+			if saturationMetricsMode != "boundary" && saturationMetricsMode != "integral" {
+				logrus.Fatalf("Invalid --saturation-metrics-mode: %q (must be 'boundary' or 'integral')", saturationMetricsMode)
+			}
 			cfg.MetricsMode = workload.MetricsMode(saturationMetricsMode)
 			report := workload.AnalyzeBacklogDrift(allRequests, simEndUs, cfg)
 			if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
