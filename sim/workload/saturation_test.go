@@ -1847,3 +1847,52 @@ func TestSaturationClassification_MonotonicProgression_IntegralMode(t *testing.T
 
 	t.Logf("✓ Monotonic progression verified across %d rates", len(results))
 }
+
+
+// TestComputeWindowMetrics_ArrivalAtWindowStart_NoDoubleCount is a regression test
+// for the boundary double-count bug where requests arriving exactly at window start
+// were counted twice: once in ActiveStart, once in the event sweep.
+//
+// Correct behavior: ActiveStart includes arrivals <= startUs, so event sweep must
+// use ArrivalUs > startUs (not >= startUs) to avoid double-counting.
+func TestComputeWindowMetrics_ArrivalAtWindowStart_NoDoubleCount(t *testing.T) {
+	// Create a request arriving exactly at window start (t=0), completing at 10s
+	interval := RequestInterval{
+		ArrivalUs:    0,
+		CompletionUs: 10_000_000, // 10s
+	}
+
+	// Single 10s window: [0µs, 10s)
+	windowSizeUs := int64(10_000_000)
+	horizonUs := int64(10_000_000)
+
+	windows := computeWindowMetrics([]RequestInterval{interval}, windowSizeUs, horizonUs)
+
+	if len(windows) != 1 {
+		t.Fatalf("Expected 1 window, got %d", len(windows))
+	}
+
+	w := windows[0]
+
+	// The request arrives AT window start, so ActiveStart should be 1
+	if w.ActiveStart != 1 {
+		t.Errorf("ActiveStart=%d, expected 1 (request arrives at t=0)", w.ActiveStart)
+	}
+
+	// For integral mode, MeanInFlight should be ~1.0 (not 2.0 which would indicate double-count)
+	expectedMean := 1.0
+	if math.Abs(w.MeanInFlight-expectedMean) > 0.01 {
+		t.Errorf("Double-count detected:\n"+
+			"  Request arrives at t=0 (window start)\n"+
+			"  ActiveStart=1 (already counted)\n"+
+			"  MeanInFlight=%.2f (expected %.2f)\n"+
+			"  If > %.2f, the event sweep emitted an extra arrival event (bug: ArrivalUs >= startUs)",
+			w.MeanInFlight, expectedMean, expectedMean)
+	}
+
+	// Also verify PeakInFlight
+	expectedPeak := 1
+	if w.PeakInFlight != expectedPeak {
+		t.Errorf("PeakInFlight=%d, expected %d", w.PeakInFlight, expectedPeak)
+	}
+}

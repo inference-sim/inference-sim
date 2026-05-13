@@ -270,7 +270,7 @@ func computeWindowMetrics(intervals []RequestInterval, windowSizeUs, totalDurati
 		events := make([]event, 0, len(intervals)*2)
 		for _, iv := range intervals {
 			// Arrival event
-			if iv.ArrivalUs >= startUs && iv.ArrivalUs < endUs {
+			if iv.ArrivalUs > startUs && iv.ArrivalUs < endUs {
 				events = append(events, event{timeUs: iv.ArrivalUs, delta: +1})
 			}
 			// Departure event
@@ -517,6 +517,10 @@ func classifyBacklogDrift(slope, slopeLower, slopeUpper float64,
 		note = fmt.Sprintf("Backlog decreased (slope=%.2e req/µs, CI=[%.2e, %.2e] excludes zero). "+
 			"Initial=%d, Final=%d, Peak=%d.",
 			slope, slopeLower, slopeUpper, initialBacklog, finalBacklog, peakInFlight)
+	} else if slopeLower > 0 {
+		note = fmt.Sprintf("Backlog growing but insufficient load (slope=%.2e req/µs, CI=[%.2e, %.2e] excludes zero). "+
+			"Mean in-flight=%.1f < %.1f threshold.",
+			slope, slopeLower, slopeUpper, meanInFlight, cfg.MinMeanForPeakRatio)
 	} else {
 		note = fmt.Sprintf("Backlog remained stable (slope=%.2e req/µs, CI=[%.2e, %.2e] includes zero). "+
 			"Peak/mean ratio=%.2f <= %.2f.",
