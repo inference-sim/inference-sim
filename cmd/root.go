@@ -1402,6 +1402,7 @@ var runCmd = &cobra.Command{
 			bundleHPAScrapeDelayStddev           float64
 			bundleAnalyzerCfg                    cluster.V2SaturationAnalyzerConfig
 			bundleNodePools                      []cluster.NodePoolConfig
+			bundleInstanceLifecycle              cluster.InstanceLifecycleConfig
 		)
 		if bundle != nil {
 			if bundle.Autoscaler.IntervalUs > 0 {
@@ -1432,6 +1433,13 @@ var runCmd = &cobra.Command{
 					},
 					CostPerHour: np.CostPerHour,
 				})
+			}
+			bundleInstanceLifecycle = cluster.InstanceLifecycleConfig{
+				LoadingDelay: cluster.DelaySpec{
+					Mean:   bundle.InstanceLifecycle.LoadingDelay.Mean,
+					Stddev: bundle.InstanceLifecycle.LoadingDelay.Stddev,
+				},
+				WarmStartInitialInstances: bundle.InstanceLifecycle.WarmStartInitialInstances,
 			}
 		}
 		// CLI flag overrides bundle value when explicitly set.
@@ -1637,6 +1645,7 @@ var runCmd = &cobra.Command{
 			HPAScrapeDelay:                  cluster.DelaySpec{Mean: bundleHPAScrapeDelayMean, Stddev: bundleHPAScrapeDelayStddev},
 			AutoscalerAnalyzerConfig:        bundleAnalyzerCfg,
 			NodePools:                       bundleNodePools,
+			InstanceLifecycle:               bundleInstanceLifecycle,
 		}
 		// Session callback installation (Constraint 3 fix):
 		// Follow-up collection must be UNCONDITIONAL for saturation analysis correctness.
