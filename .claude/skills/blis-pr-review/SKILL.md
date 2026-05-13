@@ -75,27 +75,13 @@ Also identify any risks, edge cases, or missing considerations.
 Finally, provide a clear verdict: Is this PR ready to merge? If not, what specific changes are required?
 ```
 
-## Post-Review Behavior
+## Output
 
-**Before acting on findings, determine PR ownership:**
+Post the review verdict as a PR comment. This skill is READ-ONLY:
 
-```bash
-gh pr view --json author,headRefName --jq '{author: .author.login, branch: .headRefName}'
-```
+- Do NOT modify any code
+- Do NOT run `git commit` or `git push`
+- Do NOT use the Edit or Write tools
+- Do NOT fix findings — only report them
 
-### If this is Claude's own PR (author is `claude[bot]` OR branch starts with `claude/` or `issue-`):
-
-Enter the fix-and-re-review loop (max 3 rounds):
-
-1. Fix CRITICAL findings immediately. Fix IMPORTANT findings if straightforward.
-2. Re-run verification: `go build ./... && go test ./... -count=1 && golangci-lint run ./...`
-3. Commit: `git commit -m "fix: address review findings (round N)"` and push.
-4. Re-invoke this skill for another round.
-
-### If this is a human PR:
-
-**Do NOT modify code, push commits, or make any changes.** Only:
-
-1. Post the review verdict as a PR comment with all findings.
-2. If findings exist, clearly list what needs to change — but let the human author fix it.
-3. Never push to a human's branch.
+The caller (e.g., `/implement-issue`) is responsible for acting on findings.

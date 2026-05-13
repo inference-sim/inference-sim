@@ -165,25 +165,39 @@ EOF
 
 ---
 
-## Step 8 — Self-Review (Converge to READY TO MERGE)
+## Step 8 — Self-Review and Fix Loop (Converge to READY TO MERGE)
 
-After the PR is created, invoke the self-review skill in a loop until the PR is merge-ready.
+After the PR is created, YOU (implement-issue) own the fix loop. The review skill only produces findings — it never modifies code.
 
-**Outer loop (max 3 invocations):**
+**Loop (max 3 rounds):**
 
-1. Invoke the self-review:
+1. **Invoke the review:**
    ```
    /blis-pr-review
    ```
-   (The skill runs its own internal fix-and-re-review cycle, up to 3 inner rounds.)
+   This posts a verdict as a PR comment. It does NOT fix anything.
 
-2. Check the final verdict posted by `blis-pr-review`:
-   - **READY TO MERGE** → exit loop. Done.
-   - **CHANGES REQUIRED** or unresolved findings remain → re-invoke `/blis-pr-review` (next outer iteration).
+2. **Read the verdict.** If **READY TO MERGE** → exit loop. Done.
 
-3. If all outer invocations exhausted without convergence, post a comment requesting human guidance.
+3. **If CHANGES REQUIRED — fix the findings yourself:**
+   - Fix all CRITICAL findings immediately.
+   - Fix IMPORTANT findings if straightforward.
+   - Re-run verification:
+     ```bash
+     go build ./...
+     go test ./... -count=1
+     golangci-lint run ./...
+     ```
+   - Commit and push:
+     ```bash
+     git add <fixed-files>
+     git commit -m "fix: address review findings (round N)"
+     git push
+     ```
 
-This gives up to 9 total review-fix cycles (3 outer × 3 inner) before escalating to a human.
+4. **Loop back to step 1** for re-review.
+
+5. If max rounds exhausted without convergence, post a comment requesting human guidance.
 
 ---
 
