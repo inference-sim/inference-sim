@@ -1699,9 +1699,9 @@ func TestMetricsMode_Default(t *testing.T) {
 	// WHEN: Using NewBacklogDriftConfig constructor
 	cfg := NewBacklogDriftConfig(10*time.Second, 3, 2.0, 0.2, 0.95)
 
-	// THEN: MetricsMode should default to boundary (conservative choice until field-validated)
-	if cfg.MetricsMode != MetricsModeBoundary {
-		t.Errorf("NewBacklogDriftConfig should default to MetricsModeBoundary, got %q", cfg.MetricsMode)
+	// THEN: MetricsMode should default to integral (burst-robust, issue #1316)
+	if cfg.MetricsMode != MetricsModeIntegral {
+		t.Errorf("NewBacklogDriftConfig should default to MetricsModeIntegral, got %q", cfg.MetricsMode)
 	}
 
 	// WHEN: Using DefaultBacklogDriftConfig

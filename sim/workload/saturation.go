@@ -50,11 +50,12 @@ type MetricsMode string
 
 const (
 	// MetricsModeIntegral uses MeanInFlight and PeakInFlight (time-weighted, burst-robust).
-	// This is the recommended mode for production use (issue #1316).
+	// This is the default and recommended mode for all use cases (issue #1316).
 	MetricsModeIntegral MetricsMode = "integral"
 
 	// MetricsModeBoundary uses ActiveEnd for both regression and peak detection (legacy).
-	// Provided for backward compatibility and comparative analysis.
+	// Deprecated: Only provided for regression testing. Do not use in production.
+	// This mode suffers from burst blindness (sub-window bursts invisible).
 	MetricsModeBoundary MetricsMode = "boundary"
 )
 
@@ -72,7 +73,10 @@ type BacklogDriftConfig struct {
 
 // NewBacklogDriftConfig creates a BacklogDriftConfig with validation (BC-10, BC-14, R3).
 // Panics if any parameter is invalid (NaN, Inf, out of range).
-// MetricsMode defaults to MetricsModeIntegral if empty.
+//
+// Note: This constructor uses conservative default thresholds (MinMeanForSlope=10.0, MinMeanForPeakRatio=5.0)
+// suitable for testing. For production use, prefer DefaultBacklogDriftConfig which uses production-calibrated
+// thresholds based on 5s TTFT target with 100ms service time (MinMeanForSlope=49.5).
 func NewBacklogDriftConfig(windowSize time.Duration, minWindows int, peakRatio, peakRatioBand, confidenceCI float64) BacklogDriftConfig {
 	if windowSize <= 0 {
 		panic(fmt.Sprintf("BacklogDriftConfig: WindowSize must be > 0, got %v", windowSize))
@@ -95,20 +99,26 @@ func NewBacklogDriftConfig(windowSize time.Duration, minWindows int, peakRatio, 
 		PeakRatio:           peakRatio,
 		PeakRatioBand:       peakRatioBand,
 		ConfidenceCI:        confidenceCI,
-		MetricsMode:         MetricsModeBoundary,   // Default to boundary (integral is experimental until validated)
-		MinMeanForPeakRatio: 5.0,                   // Minimum mean in-flight to apply peak ratio (prevents low-load false positives)
-		MinMeanForSlope:     10.0,                  // Minimum mean in-flight to trust slope analysis (prevents noise at very low loads)
+		MetricsMode:         MetricsModeIntegral,   // Default to integral (burst-robust, issue #1316)
+		MinMeanForPeakRatio: 5.0,                   // Test-appropriate threshold (conservative for unit tests)
+		MinMeanForSlope:     10.0,                  // Test-appropriate threshold (conservative for unit tests)
 	}
 }
 
 // DefaultBacklogDriftConfig returns the default configuration per issue #1298.
 //
-// Threshold rationale: For service_time=100ms and target TTFT=5s, the mathematical
-// relationship TTFT = mean_in_flight × service_time + service_time/2 gives us:
-//   mean_in_flight = (5000ms - 50ms) / 100ms = 49.5 requests
+// Threshold rationale (model-specific assumption):
+// These thresholds assume service_time=100ms (typical for mid-size LLMs on A100 GPUs).
+// The M/M/1 queueing formula TTFT = mean_in_flight × service_time + service_time/2 gives:
+//   For target TTFT=5s: mean_in_flight = (5000ms - 50ms) / 100ms = 49.5 requests
+//   For target TTFT=2.5s: mean_in_flight = (2500ms - 50ms) / 100ms = 24.75 requests
 //
 // MinMeanForSlope=49.5 triggers PERSISTENTLY_SATURATED when mean TTFT reaches ~5s.
-// MinMeanForPeakRatio=24.75 (half of slope threshold) detects transient spikes earlier.
+// MinMeanForPeakRatio=24.75 triggers TRANSIENT_BACKLOG when mean TTFT reaches ~2.5s.
+//
+// For deployments with different service times, override these thresholds:
+//   MinMeanForSlope = (target_ttft_ms - service_time_ms/2) / service_time_ms
+//   MinMeanForPeakRatio = MinMeanForSlope / 2
 func DefaultBacklogDriftConfig() BacklogDriftConfig {
 	return BacklogDriftConfig{
 		WindowSize:          60 * time.Second,
@@ -252,10 +262,14 @@ func computeWindowMetrics(intervals []RequestInterval, windowSizeUs, totalDurati
 				w.NumLeft++
 			}
 			// ActiveStart: interval contains startUs (arrival <= startUs < completion)
+			// Includes requests arriving exactly at startUs (closed left boundary for half-open window [startUs, endUs))
 			if iv.ArrivalUs <= startUs && startUs < iv.CompletionUs {
 				w.ActiveStart++
 			}
-			// ActiveEnd: interval contains endUs (but arrived before endUs to match event sweep bounds)
+			// ActiveEnd: interval contains endUs (arrival < endUs < completion)
+			// Excludes requests arriving exactly at endUs (they belong to next window for conservation)
+			// This asymmetry with ActiveStart is CORRECT: for adjacent windows [0,60) and [60,120),
+			// a request arriving at t=60 is counted in window2's ActiveStart but NOT window1's ActiveEnd.
 			if iv.ArrivalUs < endUs && endUs < iv.CompletionUs {
 				w.ActiveEnd++
 			}
@@ -459,8 +473,17 @@ func classifyBacklogDrift(slope, slopeLower, slopeUpper float64,
 				initialBacklog, finalBacklog, peakInFlight)
 			recommendation = "System is overloaded but latency degradation is moderate. Monitor closely and add capacity if mean TTFT approaches 5s."
 			return
+		} else {
+			// Backlog growing but mean in-flight very low (< MinMeanForPeakRatio=24.75)
+			// This indicates overload at early stages. Still transient since latency impact is minimal.
+			classification = "TRANSIENT_BACKLOG"
+			note = fmt.Sprintf("Backlog growing (slope=%.2e req/µs, CI=[%.2e, %.2e] excludes zero) "+
+				"but latency impact minimal (mean in-flight=%.1f < %.1f). Initial=%d, Final=%d, Peak=%d.",
+				slope, slopeLower, slopeUpper, meanInFlight, cfg.MinMeanForPeakRatio,
+				initialBacklog, finalBacklog, peakInFlight)
+			recommendation = "System showing early signs of overload. Monitor mean TTFT and add capacity if degradation worsens."
+			return
 		}
-		// else: mean too low (< MinMeanForPeakRatio), likely noise at very low loads - fall through
 	}
 
 	// Guard against zero mean (prevents NaN in user-facing note)
@@ -538,20 +561,22 @@ func AnalyzeBacklogDrift(requests []*sim.Request, simEndUs int64, cfg BacklogDri
 	// Fix 3: Check for horizon truncation (many requests still queued/running)
 	numQueued := 0
 	numRunning := 0
-	numCompleted := 0
+	numWaitingForRemoteKVs := 0
 	for _, req := range requests {
 		switch req.State {
 		case sim.StateQueued:
 			numQueued++
 		case sim.StateRunning:
 			numRunning++
+		case sim.StateWaitingForRemoteKVs:
+			numWaitingForRemoteKVs++
 		case sim.StateCompleted:
-			numCompleted++
+			// Completed requests don't count as incomplete
 		}
 	}
 
 	totalRequests := len(requests)
-	incompleteRequests := numQueued + numRunning
+	incompleteRequests := numQueued + numRunning + numWaitingForRemoteKVs
 
 	var truncatedFraction float64
 	var horizonTruncated bool
