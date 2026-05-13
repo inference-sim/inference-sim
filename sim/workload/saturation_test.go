@@ -1265,60 +1265,55 @@ func TestSaturationProgression_RealWorkloads(t *testing.T) {
 		0.95,           // confidence level
 	)
 
-	// Test cases demonstrate complete saturation progression across all 3 classifications
-	// Capacity = 10 req/s (100ms service time in generateTestWorkload)
-	// Window size = 60s to allow sufficient backlog buildup for mean > MinMeanForPeakRatio (5.0)
+	// FIXED HORIZON: All tests use 300s observation window (5 windows × 60s)
+	// With new slope-based detection + mean threshold gating (MinMeanForSlope from DefaultBacklogDriftConfig):
+	//   - Rate 5.0: UNSATURATED (no growth)
+	//   - Rate 10.1: TRANSIENT_BACKLOG (slope > 0, mean < 49.5)
+	//   - Rate 15+: PERSISTENTLY_SATURATED (slope > 0, mean ≥ 49.5)
+	const fixedHorizonUs int64 = 300_000_000 // 300s = 5 windows
+
 	tests := []struct {
 		name             string
 		rate             float64
-		numRequests      int
-		horizonUs        int64
 		expectedClass    string
 		expectPositiveCI bool // CI lower bound > 0
 	}{
 		{
 			name:             "Low rate - unsaturated",
 			rate:             5.0,
-			numRequests:      1500,  // Increased to cover 5 windows at 300s
-			horizonUs:        0, // Run to completion
 			expectedClass:    "UNSATURATED",
 			expectPositiveCI: false,
 		},
 		{
 			name:             "Just above capacity - transient backlog",
 			rate:             10.1,
-			numRequests:      3535,
-			horizonUs:        350_000_000, // 350s = 5.8 windows (meets MinWindows=5)
 			expectedClass:    "TRANSIENT_BACKLOG",
-			expectPositiveCI: false, // Slope CI may include zero, but peak/mean ratio triggers transient
+			expectPositiveCI: true, // Slope > 0 but mean < 49.5
 		},
 		{
 			name:             "Moderate overload - persistent saturation",
 			rate:             15.0,
-			numRequests:      9000,
-			horizonUs:        600_000_000,
 			expectedClass:    "PERSISTENTLY_SATURATED",
-			expectPositiveCI: true, // Clear positive slope
+			expectPositiveCI: true, // Slope > 0 and mean ≥ 49.5
 		},
 		{
 			name:             "Heavy overload - persistent saturation",
 			rate:             50.0,
-			numRequests:      50000,
-			horizonUs:        1000_000_000,
 			expectedClass:    "PERSISTENTLY_SATURATED",
-			expectPositiveCI: true, // CI excludes zero
+			expectPositiveCI: true, // Slope > 0 and mean >> 49.5
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Generate workload
-			requests := generateTestWorkload(tt.rate, tt.numRequests, tt.horizonUs)
+			// Generate workload with fixed horizon
+			numRequests := int(tt.rate * float64(fixedHorizonUs) / 1e6)
+			requests := generateTestWorkload(tt.rate, numRequests, fixedHorizonUs)
 
-			// Compute simEndUs
-			simEndUs := tt.horizonUs
+			// Use fixed horizon for all tests
+			simEndUs := fixedHorizonUs
 			if simEndUs == 0 {
-				// Use actual completion times
+				// Fallback: use actual completion times
 				for _, req := range requests {
 					if req.TTFTSet {
 						completionUs := req.ArrivalTime + req.FirstTokenTime
@@ -1435,80 +1430,53 @@ func TestSaturationProgression_TransitionBoundaries(t *testing.T) {
 		0.95,
 	)
 
-	// Test all three classification levels across the full progression
-	// Capacity = 10 req/s (100ms service time)
-	// Window size = 60s to allow sufficient backlog buildup for mean > MinMeanForPeakRatio (5.0)
+	// FIXED HORIZON: All tests use 300s observation window (5 windows × 60s)
+	// Demonstrates horizon-independent classification based on slope + mean threshold
+	const fixedHorizonUs int64 = 300_000_000 // 300s
+
 	tests := []struct {
 		name          string
 		rate          float64
-		numRequests   int
-		horizonUs     int64
 		expectedClass string
 	}{
 		{
 			name:          "Well below capacity - unsaturated",
 			rate:          5.0,
-			numRequests:   1500,  // Increased to cover 5 windows at 300s
-			horizonUs:     0,
 			expectedClass: "UNSATURATED",
 		},
 		{
 			name:          "Below capacity - unsaturated",
 			rate:          8.0,
-			numRequests:   2400,  // Increased to cover 5 windows at 300s
-			horizonUs:     0,
 			expectedClass: "UNSATURATED",
 		},
 		{
 			name:          "Just above capacity - transient backlog",
 			rate:          10.1,
-			numRequests:   3535,  // Increased to match passing test
-			horizonUs:     350_000_000,  // Increased to 350s = 5.8 windows
 			expectedClass: "TRANSIENT_BACKLOG",
 		},
 		{
 			name:          "Moderate overload - persistent saturation",
 			rate:          12.0,
-			numRequests:   6000,
-			horizonUs:     500_000_000,
 			expectedClass: "PERSISTENTLY_SATURATED",
 		},
 		{
 			name:          "Heavy overload - persistent saturation",
 			rate:          20.0,
-			numRequests:   14000,
-			horizonUs:     700_000_000,
 			expectedClass: "PERSISTENTLY_SATURATED",
 		},
 		{
 			name:          "Very heavy overload - persistent saturation",
 			rate:          50.0,
-			numRequests:   50000,
-			horizonUs:     1000_000_000,
 			expectedClass: "PERSISTENTLY_SATURATED",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			requests := generateTestWorkload(tt.rate, tt.numRequests, tt.horizonUs)
+			numRequests := int(tt.rate * float64(fixedHorizonUs) / 1e6)
+			requests := generateTestWorkload(tt.rate, numRequests, fixedHorizonUs)
 
-			simEndUs := tt.horizonUs
-			if simEndUs == 0 {
-				for _, req := range requests {
-					if req.TTFTSet {
-						completionUs := req.ArrivalTime + req.FirstTokenTime
-						for _, itl := range req.ITL {
-							completionUs += itl
-						}
-						if completionUs > simEndUs {
-							simEndUs = completionUs
-						}
-					}
-				}
-			}
-
-			report := AnalyzeBacklogDrift(requests, simEndUs, cfg)
+			report := AnalyzeBacklogDrift(requests, fixedHorizonUs, cfg)
 
 			if report.Classification != tt.expectedClass {
 				t.Errorf("Rate %.0f req/s:\n  Expected: %s\n  Got:      %s\n  Slope:    %.3e (CI: [%.3e, %.3e])\n  Peak/Mean: %.2f\n  Note:     %s",
@@ -1785,28 +1753,38 @@ func TestSaturationClassification_MonotonicProgression_IntegralMode(t *testing.T
 	//   - Rates slightly > 10: TRANSIENT_BACKLOG or PERSISTENTLY_SATURATED (depends on confidence)
 	//   - Rates >> 10: PERSISTENTLY_SATURATED (clear growth)
 	// Service time = 100ms → capacity = 10 req/s
-	// Expected full progression (all 3 classifications):
-	//   - Rates < 10: UNSATURATED (below capacity)
-	//   - Rate ~10.1: TRANSIENT_BACKLOG (barely above capacity, high peak/mean ratio)
-	//   - Rates > 10.2: PERSISTENTLY_SATURATED (clear sustained growth)
+	// FIXED HORIZON TEST: All rates use the same 300s observation window.
+	// With the new slope-based detection + mean threshold gating:
+	//   - Rates < 10: UNSATURATED (no growth, system stable)
+	//   - Rate 10.1: TRANSIENT_BACKLOG (slope > 0, but mean=15 < 49.5)
+	//   - Rates ≥ 11: PERSISTENTLY_SATURATED (slope > 0, mean ≥ 150 > 49.5)
+	//
+	// Key insight: mean = (rate - 10) * 300/2 for rates > 10
+	//   - Rate 10.1: mean = 0.1 * 150 = 15
+	//   - Rate 11: mean = 1.0 * 150 = 150
+	//   - Rate 12: mean = 2.0 * 150 = 300
+	//
+	// This demonstrates horizon-independent detection: classification is based on
+	// slope (rate > capacity) and severity (mean ≥ 49.5 ≈ TTFT ≥ 5s), not on
+	// how long we observe.
+	const fixedHorizonS = 300.0
 	tests := []struct {
 		rate     float64
-		horizonS float64 // Horizon scales with expected saturation time
-		expected string  // Expected classification (exact, not family)
+		expected string // Expected classification
 	}{
-		{2, 300, "UNSATURATED"},
-		{4, 300, "UNSATURATED"},
-		{6, 300, "UNSATURATED"},
-		{8, 300, "UNSATURATED"},
-		{9, 300, "UNSATURATED"},
-		{10.1, 350, "TRANSIENT_BACKLOG"},     // Just above capacity - high peak/mean, small slope
-		{11, 400, "PERSISTENTLY_SATURATED"},  // Clear growth (10% overload)
-		{12, 500, "PERSISTENTLY_SATURATED"},  // 20% overload
-		{15, 600, "PERSISTENTLY_SATURATED"},  // 50% overload
-		{20, 700, "PERSISTENTLY_SATURATED"},  // 2x overload
-		{30, 800, "PERSISTENTLY_SATURATED"},  // 3x overload
-		{40, 900, "PERSISTENTLY_SATURATED"},  // 4x overload
-		{50, 1000, "PERSISTENTLY_SATURATED"}, // 5x overload
+		{2, "UNSATURATED"},
+		{4, "UNSATURATED"},
+		{6, "UNSATURATED"},
+		{8, "UNSATURATED"},
+		{9, "UNSATURATED"},
+		{10.1, "TRANSIENT_BACKLOG"},      // mean=15 < 49.5
+		{11, "PERSISTENTLY_SATURATED"},   // mean=150 > 49.5
+		{12, "PERSISTENTLY_SATURATED"},   // mean=300 > 49.5
+		{15, "PERSISTENTLY_SATURATED"},   // mean=750 > 49.5
+		{20, "PERSISTENTLY_SATURATED"},   // mean=1500 > 49.5
+		{30, "PERSISTENTLY_SATURATED"},   // mean=3000 > 49.5
+		{40, "PERSISTENTLY_SATURATED"},   // mean=4500 > 49.5
+		{50, "PERSISTENTLY_SATURATED"},   // mean=6000 > 49.5
 	}
 
 	var results []struct {
@@ -1816,8 +1794,8 @@ func TestSaturationClassification_MonotonicProgression_IntegralMode(t *testing.T
 	}
 
 	for _, tt := range tests {
-		simEndUs := int64(tt.horizonS * 1e6)
-		numRequests := int(tt.rate * tt.horizonS)
+		simEndUs := int64(fixedHorizonS * 1e6)
+		numRequests := int(tt.rate * fixedHorizonS)
 
 		// Use generateTestWorkload which simulates FIFO queueing
 		// Service time: 100ms. Capacity = 1/0.1s = 10 req/s
@@ -1833,12 +1811,12 @@ func TestSaturationClassification_MonotonicProgression_IntegralMode(t *testing.T
 		}{tt.rate, report.Classification, report.MeanInFlight})
 
 		if report.Classification != tt.expected {
-			t.Errorf("Rate %.0f (horizon=%.0fs): expected %s, got %s (mean=%.1f)",
-				tt.rate, tt.horizonS, tt.expected, report.Classification, report.MeanInFlight)
+			t.Errorf("Rate %.0f (fixed horizon=%.0fs): expected %s, got %s (mean=%.1f)",
+				tt.rate, fixedHorizonS, tt.expected, report.Classification, report.MeanInFlight)
 		}
 
-		t.Logf("Rate %3.0f (horizon=%4.0fs) → %-25s (mean: %6.1f)",
-			tt.rate, tt.horizonS, report.Classification, report.MeanInFlight)
+		t.Logf("Rate %3.0f (fixed horizon=%4.0fs) → %-25s (mean: %6.1f)",
+			tt.rate, fixedHorizonS, report.Classification, report.MeanInFlight)
 	}
 
 	// Verify monotonicity: once saturated, can never go back to unsaturated

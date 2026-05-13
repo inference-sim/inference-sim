@@ -102,14 +102,23 @@ func NewBacklogDriftConfig(windowSize time.Duration, minWindows int, peakRatio, 
 }
 
 // DefaultBacklogDriftConfig returns the default configuration per issue #1298.
+//
+// Threshold rationale: For service_time=100ms and target TTFT=5s, the mathematical
+// relationship TTFT = mean_in_flight × service_time + service_time/2 gives us:
+//   mean_in_flight = (5000ms - 50ms) / 100ms = 49.5 requests
+//
+// MinMeanForSlope=49.5 triggers PERSISTENTLY_SATURATED when mean TTFT reaches ~5s.
+// MinMeanForPeakRatio=24.75 (half of slope threshold) detects transient spikes earlier.
 func DefaultBacklogDriftConfig() BacklogDriftConfig {
 	return BacklogDriftConfig{
-		WindowSize:     60 * time.Second,
-		MinWindows:     5,
-		PeakRatio:      2.0,
-		PeakRatioBand:  0.2, // ±10% confidence band around threshold
-		ConfidenceCI:   0.95,
-		MetricsMode:    MetricsModeIntegral, // Default to new algorithm
+		WindowSize:          60 * time.Second,
+		MinWindows:          5,
+		PeakRatio:           2.0,
+		PeakRatioBand:       0.2, // ±10% confidence band around threshold
+		ConfidenceCI:        0.95,
+		MetricsMode:         MetricsModeIntegral,  // Default to new algorithm
+		MinMeanForSlope:     49.5,                  // Equivalent to mean TTFT = 5s (with 100ms service time)
+		MinMeanForPeakRatio: 24.75,                 // Half of slope threshold for earlier transient detection
 	}
 }
 
@@ -412,21 +421,32 @@ func classifyBacklogDrift(slope, slopeLower, slopeUpper float64,
 	horizonTruncated bool, truncatedFraction float64,
 	cfg BacklogDriftConfig) (classification, note, recommendation string) {
 
-	// Fix 2: Require minimum mean in-flight to trust slope analysis
-	// At very low loads (mean < MinMeanForSlope), slope variations are just noise
-	if meanInFlight < cfg.MinMeanForSlope {
-		// Skip slope-based classification - too low to have meaningful growth signal
-		// Fall through to peak ratio check or UNSATURATED
-	} else {
-		// BC-5: PERSISTENTLY_SATURATED — slope CI excludes zero (lower > 0)
-		if slopeLower > 0 {
+	// BC-5: Check for persistent growth (slope CI excludes zero)
+	// This is horizon-independent: detects overload (rate > capacity) as soon as trend is statistically significant
+	if slopeLower > 0 {
+		// System is overloaded (backlog growing persistently)
+		// Classify severity based on accumulated latency impact
+		if meanInFlight >= cfg.MinMeanForSlope {
+			// Severe: mean in-flight ≥ 49.5 → mean TTFT ≈ 5s (for 100ms service time)
 			classification = "PERSISTENTLY_SATURATED"
-			note = fmt.Sprintf("Backlog grew persistently (slope=%.2e req/µs, CI=[%.2e, %.2e] excludes zero). "+
-				"Initial=%d, Final=%d, Peak=%d.",
-				slope, slopeLower, slopeUpper, initialBacklog, finalBacklog, peakInFlight)
-			recommendation = "System is overloaded. Add capacity, reduce load, or increase request timeouts."
+			note = fmt.Sprintf("Backlog grew persistently (slope=%.2e req/µs, CI=[%.2e, %.2e] excludes zero) "+
+				"with severe latency impact (mean in-flight=%.1f ≥ %.1f). Initial=%d, Final=%d, Peak=%d.",
+				slope, slopeLower, slopeUpper, meanInFlight, cfg.MinMeanForSlope,
+				initialBacklog, finalBacklog, peakInFlight)
+			recommendation = "System is overloaded with severe latency degradation (mean TTFT likely > 5s). " +
+				"Add capacity, reduce load, or increase request timeouts."
+			return
+		} else if meanInFlight >= cfg.MinMeanForPeakRatio {
+			// Growing but not yet severe: classify as transient
+			classification = "TRANSIENT_BACKLOG"
+			note = fmt.Sprintf("Backlog grew persistently (slope=%.2e req/µs, CI=[%.2e, %.2e] excludes zero) "+
+				"but latency impact not yet severe (mean in-flight=%.1f < %.1f). Initial=%d, Final=%d, Peak=%d.",
+				slope, slopeLower, slopeUpper, meanInFlight, cfg.MinMeanForSlope,
+				initialBacklog, finalBacklog, peakInFlight)
+			recommendation = "System is overloaded but latency degradation is moderate. Monitor closely and add capacity if mean TTFT approaches 5s."
 			return
 		}
+		// else: mean too low (< MinMeanForPeakRatio), likely noise at very low loads - fall through
 	}
 
 	// Guard against zero mean (prevents NaN in user-facing note)
