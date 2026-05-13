@@ -619,31 +619,6 @@ func TestWriteBacklogDriftReportJSON_SanitizesNaN(t *testing.T) {
 	}
 }
 
-func TestWindowMetrics_NewFields_Accessible(t *testing.T) {
-	// GIVEN a WindowMetrics struct
-	// WHEN setting MeanInFlight and PeakInFlight
-	// THEN fields are accessible and retain their values
-	w := WindowMetrics{
-		StartUs:      0,
-		EndUs:        60_000_000,
-		NumEntered:   10,
-		NumLeft:      8,
-		ActiveStart:  5,
-		ActiveEnd:    7,
-		DeltaBacklog: 2,
-		DrainRatio:   0.8,
-		MeanInFlight: 6.5,
-		PeakInFlight: 12,
-	}
-
-	if w.MeanInFlight != 6.5 {
-		t.Errorf("MeanInFlight: expected 6.5, got %f", w.MeanInFlight)
-	}
-	if w.PeakInFlight != 12 {
-		t.Errorf("PeakInFlight: expected 12, got %d", w.PeakInFlight)
-	}
-}
-
 func TestComputeWindowMetrics_ConstantLoad_IntegralCorrect(t *testing.T) {
 	// GIVEN 10 requests active for the entire window [0, 60s)
 	// WHEN computing window metrics
@@ -786,6 +761,7 @@ func TestAnalyzeBacklogDrift_RegressionUsesMeanInFlight(t *testing.T) {
 	// If regression uses ActiveEnd → slope may be zero or negative
 
 	cfg := NewBacklogDriftConfig(10*time.Second, 3, 2.0, 0.2, 0.95)
+	cfg.MetricsMode = MetricsModeIntegral
 
 	// Create 40-second workload: arrivals at 20 req/s, completions staggered to create growing backlog
 	var requests []*sim.Request
@@ -1652,21 +1628,25 @@ func TestMetricsMode_BoundaryVsIntegral(t *testing.T) {
 	// Create two configs: one with boundary mode, one with integral mode
 	// Window [20s, 30s) captures the t=25s burst mid-window (burst completes by t=25.1s)
 	cfgBoundary := BacklogDriftConfig{
-		WindowSize:    10 * time.Second,  // Window [20s, 30s)
-		MinWindows:    1,
-		PeakRatio:     2.0,
-		PeakRatioBand: 0.2,
-		ConfidenceCI:  0.95,
-		MetricsMode:   MetricsModeBoundary,  // Old algorithm
+		WindowSize:          10 * time.Second,  // Window [20s, 30s)
+		MinWindows:          1,
+		PeakRatio:           2.0,
+		PeakRatioBand:       0.2,
+		ConfidenceCI:        0.95,
+		MetricsMode:         MetricsModeBoundary,  // Old algorithm
+		MinMeanForSlope:     49.5,
+		MinMeanForPeakRatio: 24.75,
 	}
 
 	cfgIntegral := BacklogDriftConfig{
-		WindowSize:    10 * time.Second,  // Window [20s, 30s)
-		MinWindows:    1,
-		PeakRatio:     2.0,
-		PeakRatioBand: 0.2,
-		ConfidenceCI:  0.95,
-		MetricsMode:   MetricsModeIntegral,  // New algorithm
+		WindowSize:          10 * time.Second,  // Window [20s, 30s)
+		MinWindows:          1,
+		PeakRatio:           2.0,
+		PeakRatioBand:       0.2,
+		ConfidenceCI:        0.95,
+		MetricsMode:         MetricsModeIntegral,  // New algorithm
+		MinMeanForSlope:     49.5,
+		MinMeanForPeakRatio: 24.75,
 	}
 
 	// WHEN: Running analysis with both modes
