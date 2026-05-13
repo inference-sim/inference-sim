@@ -255,8 +255,8 @@ func computeWindowMetrics(intervals []RequestInterval, windowSizeUs, totalDurati
 			if iv.ArrivalUs <= startUs && startUs < iv.CompletionUs {
 				w.ActiveStart++
 			}
-			// ActiveEnd: interval contains endUs
-			if iv.ArrivalUs <= endUs && endUs < iv.CompletionUs {
+			// ActiveEnd: interval contains endUs (but arrived before endUs to match event sweep bounds)
+			if iv.ArrivalUs < endUs && endUs < iv.CompletionUs {
 				w.ActiveEnd++
 			}
 		}
