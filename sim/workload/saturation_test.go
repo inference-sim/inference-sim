@@ -1634,8 +1634,8 @@ func TestMetricsMode_BoundaryVsIntegral(t *testing.T) {
 		PeakRatioBand:       0.2,
 		ConfidenceCI:        0.95,
 		MetricsMode:         MetricsModeBoundary,  // Old algorithm
-		MinMeanForSlope:     49.5,
-		MinMeanForPeakRatio: 24.75,
+		MinMeanForSlope:     5.0,   // Low threshold for this test to demonstrate burst detection
+		MinMeanForPeakRatio: 1.0,   // Low threshold allows Mean~2 to trigger TRANSIENT_BACKLOG
 	}
 
 	cfgIntegral := BacklogDriftConfig{
@@ -1645,8 +1645,8 @@ func TestMetricsMode_BoundaryVsIntegral(t *testing.T) {
 		PeakRatioBand:       0.2,
 		ConfidenceCI:        0.95,
 		MetricsMode:         MetricsModeIntegral,  // New algorithm
-		MinMeanForSlope:     49.5,
-		MinMeanForPeakRatio: 24.75,
+		MinMeanForSlope:     5.0,   // Low threshold for this test to demonstrate burst detection
+		MinMeanForPeakRatio: 1.0,   // Low threshold allows Mean~2 to trigger TRANSIENT_BACKLOG
 	}
 
 	// WHEN: Running analysis with both modes
