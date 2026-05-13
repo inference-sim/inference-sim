@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"sort"
 	"time"
 
 	sim "github.com/inference-sim/inference-sim/sim"
@@ -44,17 +45,34 @@ type RequestInterval struct {
 	CompletionUs int64
 }
 
+// MetricsMode selects which metrics to use for saturation classification.
+type MetricsMode string
+
+const (
+	// MetricsModeIntegral uses MeanInFlight and PeakInFlight (time-weighted, burst-robust).
+	// This is the recommended mode for production use (issue #1316).
+	MetricsModeIntegral MetricsMode = "integral"
+
+	// MetricsModeBoundary uses ActiveEnd for both regression and peak detection (legacy).
+	// Provided for backward compatibility and comparative analysis.
+	MetricsModeBoundary MetricsMode = "boundary"
+)
+
 // BacklogDriftConfig configures the backlog-drift saturation analyzer.
 type BacklogDriftConfig struct {
-	WindowSize      time.Duration // Window width for sampling and per-window metrics (BC-1)
-	MinWindows      int           // Minimum complete windows required for classification (BC-7)
-	PeakRatio       float64       // Peak-to-mean threshold for TRANSIENT_BACKLOG detection (BC-6)
-	PeakRatioBand   float64       // Confidence band around PeakRatio (±band creates borderline zone)
-	ConfidenceCI    float64       // Confidence level for slope significance test (BC-3)
+	WindowSize           time.Duration // Window width for sampling and per-window metrics (BC-1)
+	MinWindows           int           // Minimum complete windows required for classification (BC-7)
+	PeakRatio            float64       // Peak-to-mean threshold for TRANSIENT_BACKLOG detection (BC-6)
+	PeakRatioBand        float64       // Confidence band around PeakRatio (±band creates borderline zone)
+	ConfidenceCI         float64       // Confidence level for slope significance test (BC-3)
+	MetricsMode          MetricsMode   // Which metrics to use: "integral" (default) or "boundary" (legacy)
+	MinMeanForPeakRatio  float64       // Minimum mean in-flight to apply peak ratio (prevents false positives at low load)
+	MinMeanForSlope      float64       // Minimum mean in-flight to trust slope analysis (prevents noise at very low loads)
 }
 
 // NewBacklogDriftConfig creates a BacklogDriftConfig with validation (BC-10, BC-14, R3).
 // Panics if any parameter is invalid (NaN, Inf, out of range).
+// MetricsMode defaults to MetricsModeIntegral if empty.
 func NewBacklogDriftConfig(windowSize time.Duration, minWindows int, peakRatio, peakRatioBand, confidenceCI float64) BacklogDriftConfig {
 	if windowSize <= 0 {
 		panic(fmt.Sprintf("BacklogDriftConfig: WindowSize must be > 0, got %v", windowSize))
@@ -72,35 +90,58 @@ func NewBacklogDriftConfig(windowSize time.Duration, minWindows int, peakRatio, 
 		panic(fmt.Sprintf("BacklogDriftConfig: ConfidenceCI must be in (0, 1), got %f", confidenceCI))
 	}
 	return BacklogDriftConfig{
-		WindowSize:     windowSize,
-		MinWindows:     minWindows,
-		PeakRatio:      peakRatio,
-		PeakRatioBand:  peakRatioBand,
-		ConfidenceCI:   confidenceCI,
+		WindowSize:          windowSize,
+		MinWindows:          minWindows,
+		PeakRatio:           peakRatio,
+		PeakRatioBand:       peakRatioBand,
+		ConfidenceCI:        confidenceCI,
+		MetricsMode:         MetricsModeBoundary,   // Default to boundary (integral is experimental until validated)
+		MinMeanForPeakRatio: 5.0,                   // Minimum mean in-flight to apply peak ratio (prevents low-load false positives)
+		MinMeanForSlope:     10.0,                  // Minimum mean in-flight to trust slope analysis (prevents noise at very low loads)
 	}
 }
 
 // DefaultBacklogDriftConfig returns the default configuration per issue #1298.
+//
+// Threshold rationale: For service_time=100ms and target TTFT=5s, the mathematical
+// relationship TTFT = mean_in_flight × service_time + service_time/2 gives us:
+//   mean_in_flight = (5000ms - 50ms) / 100ms = 49.5 requests
+//
+// MinMeanForSlope=49.5 triggers PERSISTENTLY_SATURATED when mean TTFT reaches ~5s.
+// MinMeanForPeakRatio=24.75 (half of slope threshold) detects transient spikes earlier.
 func DefaultBacklogDriftConfig() BacklogDriftConfig {
 	return BacklogDriftConfig{
-		WindowSize:     60 * time.Second,
-		MinWindows:     5,
-		PeakRatio:      2.0,
-		PeakRatioBand:  0.2, // ±10% confidence band around threshold
-		ConfidenceCI:   0.95,
+		WindowSize:          60 * time.Second,
+		MinWindows:          5,
+		PeakRatio:           2.0,
+		PeakRatioBand:       0.2, // ±10% confidence band around threshold
+		ConfidenceCI:        0.95,
+		MetricsMode:         MetricsModeIntegral,  // Default to new algorithm
+		MinMeanForSlope:     49.5,                  // Equivalent to mean TTFT = 5s (with 100ms service time)
+		MinMeanForPeakRatio: 24.75,                 // Half of slope threshold for earlier transient detection
 	}
 }
 
 // WindowMetrics captures per-window saturation metrics (BC-1).
 type WindowMetrics struct {
-	StartUs      int64   // Window start timestamp (µs)
-	EndUs        int64   // Window end timestamp (µs)
-	NumEntered   int     // Requests with arrival in [start, end)
-	NumLeft      int     // Requests with completion in [start, end)
-	ActiveStart  int     // Active requests at window start
-	ActiveEnd    int     // Active requests at window end
-	DeltaBacklog int     // ActiveEnd - ActiveStart (change in backlog over window, BC-1)
-	DrainRatio   float64 // NumLeft / NumEntered (NaN if NumEntered==0)
+	StartUs      int64   `json:"start_us"`       // Window start timestamp (µs)
+	EndUs        int64   `json:"end_us"`         // Window end timestamp (µs)
+	NumEntered   int     `json:"num_entered"`    // Requests with arrival in [start, end)
+	NumLeft      int     `json:"num_left"`       // Requests with completion in [start, end)
+	ActiveStart  int     `json:"active_start"`   // Active requests at window start
+	ActiveEnd    int     `json:"active_end"`     // Active requests at window end
+	DeltaBacklog int     `json:"delta_backlog"`  // ActiveEnd - ActiveStart (change in backlog over window, BC-1)
+	DrainRatio   float64 `json:"drain_ratio"`    // NumLeft / NumEntered (NaN if NumEntered==0)
+
+	// MeanInFlight is the time-weighted average in-flight request count over the window.
+	// Unlike ActiveEnd (a boundary sample), MeanInFlight captures burst behavior within
+	// the window via integral computation. Use this for robust saturation metrics.
+	MeanInFlight float64 `json:"mean_in_flight"`
+
+	// PeakInFlight is the maximum in-flight request count at any instant within the window.
+	// Unlike max(ActiveEnd) across windows (which only samples boundaries), PeakInFlight
+	// detects transient bursts that occur between window boundaries. Used for TRANSIENT_BACKLOG classification.
+	PeakInFlight int `json:"peak_in_flight"`
 }
 
 // BacklogDriftReport contains saturation classification results (BC-4, BC-5, BC-6, BC-7).
@@ -151,7 +192,7 @@ func RequestsToIntervals(requests []*sim.Request, simEndUs int64) []RequestInter
 			})
 		} else {
 			// Case 3: Completed (TTFTSet==true) — compute completion time
-			// Completion = ArrivalTime + FirstTokenTime + Σ(inter-token latencies)
+			// Completion = ArrivalTime + FirstTokenTime (duration) + Σ(inter-token latencies)
 			completionUs := req.ArrivalTime + req.FirstTokenTime
 			for _, itl := range req.ITL {
 				completionUs += itl
@@ -200,7 +241,7 @@ func computeWindowMetrics(intervals []RequestInterval, windowSizeUs, totalDurati
 			EndUs:   endUs,
 		}
 
-		// Compute metrics by scanning all intervals
+		// Compute existing metrics by scanning all intervals
 		for _, iv := range intervals {
 			// NumEntered: arrival in [startUs, endUs)
 			if iv.ArrivalUs >= startUs && iv.ArrivalUs < endUs {
@@ -214,11 +255,81 @@ func computeWindowMetrics(intervals []RequestInterval, windowSizeUs, totalDurati
 			if iv.ArrivalUs <= startUs && startUs < iv.CompletionUs {
 				w.ActiveStart++
 			}
-			// ActiveEnd: interval contains endUs
-			if iv.ArrivalUs <= endUs && endUs < iv.CompletionUs {
+			// ActiveEnd: interval contains endUs (but arrived before endUs to match event sweep bounds)
+			if iv.ArrivalUs < endUs && endUs < iv.CompletionUs {
 				w.ActiveEnd++
 			}
 		}
+
+		// Compute integral-based metrics (BC-1, BC-2)
+		// Step 1: Collect transition events within [startUs, endUs)
+		type event struct {
+			timeUs int64
+			delta  int // +1 for arrival, -1 for departure
+		}
+		events := make([]event, 0, len(intervals)*2)
+		for _, iv := range intervals {
+			// Arrival event
+			if iv.ArrivalUs > startUs && iv.ArrivalUs < endUs {
+				events = append(events, event{timeUs: iv.ArrivalUs, delta: +1})
+			}
+			// Departure event
+			if iv.CompletionUs > startUs && iv.CompletionUs < endUs {
+				events = append(events, event{timeUs: iv.CompletionUs, delta: -1})
+			}
+		}
+
+		// Step 2: Sort events by time
+		// Note: sort.Slice is NOT stable in Go (uses quicksort). The explicit tiebreaker
+		// (events[i].delta > events[j].delta) ensures arrivals (+1) come before departures (-1)
+		// at the same timestamp, which is required for correct in-flight counting.
+		sort.Slice(events, func(i, j int) bool {
+			if events[i].timeUs != events[j].timeUs {
+				return events[i].timeUs < events[j].timeUs
+			}
+			// Explicit tiebreaker: arrivals (+1) before departures (-1) at same timestamp
+			return events[i].delta > events[j].delta
+		})
+
+		// Step 3: Walk events to compute integral and peak
+		currentCount := w.ActiveStart // Requests active at window start
+		area := int64(0)
+		peakCount := currentCount
+		prevTimeUs := startUs
+
+		for _, ev := range events {
+			// Accumulate area of rectangle [prevTimeUs, ev.timeUs) at height currentCount
+			deltaTime := ev.timeUs - prevTimeUs
+			area += int64(currentCount) * deltaTime
+			if currentCount > peakCount {
+				peakCount = currentCount
+			}
+
+			// Update count
+			currentCount += ev.delta
+			if currentCount > peakCount {
+				peakCount = currentCount
+			}
+
+			prevTimeUs = ev.timeUs
+		}
+
+		// Final segment [lastEvent, endUs) at height currentCount
+		deltaTime := endUs - prevTimeUs
+		area += int64(currentCount) * deltaTime
+		if currentCount > peakCount {
+			peakCount = currentCount
+		}
+
+		// Step 4: Compute derived metrics
+		windowDuration := endUs - startUs
+		if windowDuration > 0 {
+			w.MeanInFlight = float64(area) / float64(windowDuration)
+		} else {
+			// Degenerate case (should not occur): zero-duration window
+			w.MeanInFlight = 0.0
+		}
+		w.PeakInFlight = peakCount
 
 		// DeltaBacklog and DrainRatio
 		w.DeltaBacklog = w.ActiveEnd - w.ActiveStart
@@ -309,16 +420,47 @@ func fitSlopeRegression(samples []struct {
 // Returns (classification, note, recommendation).
 func classifyBacklogDrift(slope, slopeLower, slopeUpper float64,
 	initialBacklog, finalBacklog, peakInFlight int, meanInFlight float64,
+	horizonTruncated bool, truncatedFraction float64,
 	cfg BacklogDriftConfig) (classification, note, recommendation string) {
 
-	// BC-5: PERSISTENTLY_SATURATED — slope CI excludes zero (lower > 0)
+	// Defer: Append horizon truncation warning to all classification paths
+	defer func() {
+		if horizonTruncated {
+			note += fmt.Sprintf(" WARNING: %.0f%% of requests incomplete at horizon end (still queued/running). "+
+				"Classification may be unreliable — observation window may have cut off before capturing full saturation dynamics. "+
+				"If queue was growing when observation ended, system may actually be saturated.",
+				truncatedFraction*100)
+			// Override recommendation for truncated observations
+			recommendation = "CAUTION: Observation was truncated. Re-run with longer horizon or higher rate to verify classification."
+		}
+	}()
+
+	// BC-5: Check for persistent growth (slope CI excludes zero)
+	// This is horizon-independent: detects overload (rate > capacity) as soon as trend is statistically significant
 	if slopeLower > 0 {
-		classification = "PERSISTENTLY_SATURATED"
-		note = fmt.Sprintf("Backlog grew persistently (slope=%.2e req/µs, CI=[%.2e, %.2e] excludes zero). "+
-			"Initial=%d, Final=%d, Peak=%d.",
-			slope, slopeLower, slopeUpper, initialBacklog, finalBacklog, peakInFlight)
-		recommendation = "System is overloaded. Add capacity, reduce load, or increase request timeouts."
-		return
+		// System is overloaded (backlog growing persistently)
+		// Classify severity based on accumulated latency impact
+		if meanInFlight >= cfg.MinMeanForSlope {
+			// Severe: mean in-flight ≥ 49.5 → mean TTFT ≈ 5s (for 100ms service time)
+			classification = "PERSISTENTLY_SATURATED"
+			note = fmt.Sprintf("Backlog grew persistently (slope=%.2e req/µs, CI=[%.2e, %.2e] excludes zero) "+
+				"with severe latency impact (mean in-flight=%.1f ≥ %.1f). Initial=%d, Final=%d, Peak=%d.",
+				slope, slopeLower, slopeUpper, meanInFlight, cfg.MinMeanForSlope,
+				initialBacklog, finalBacklog, peakInFlight)
+			recommendation = "System is overloaded with severe latency degradation (mean TTFT likely > 5s). " +
+				"Add capacity, reduce load, or increase request timeouts."
+			return
+		} else if meanInFlight >= cfg.MinMeanForPeakRatio {
+			// Growing but not yet severe: classify as transient
+			classification = "TRANSIENT_BACKLOG"
+			note = fmt.Sprintf("Backlog grew persistently (slope=%.2e req/µs, CI=[%.2e, %.2e] excludes zero) "+
+				"but latency impact not yet severe (mean in-flight=%.1f < %.1f). Initial=%d, Final=%d, Peak=%d.",
+				slope, slopeLower, slopeUpper, meanInFlight, cfg.MinMeanForSlope,
+				initialBacklog, finalBacklog, peakInFlight)
+			recommendation = "System is overloaded but latency degradation is moderate. Monitor closely and add capacity if mean TTFT approaches 5s."
+			return
+		}
+		// else: mean too low (< MinMeanForPeakRatio), likely noise at very low loads - fall through
 	}
 
 	// Guard against zero mean (prevents NaN in user-facing note)
@@ -332,11 +474,15 @@ func classifyBacklogDrift(slope, slopeLower, slopeUpper float64,
 	// BC-6: TRANSIENT_BACKLOG — slope CI includes zero but peak exceeds threshold
 	peakRatio := float64(peakInFlight) / meanInFlight
 
+	// Only apply peak ratio test if mean in-flight is above threshold (prevents false positives at low load)
+	// When load is very low (e.g., mean < 1), even tiny variations create large ratios
+	applyPeakRatio := meanInFlight >= cfg.MinMeanForPeakRatio
+
 	// Confidence band logic: Use tiebreaker when ratio is in borderline zone
 	lowerBound := cfg.PeakRatio - cfg.PeakRatioBand
 	upperBound := cfg.PeakRatio + cfg.PeakRatioBand
 
-	if peakRatio > upperBound {
+	if applyPeakRatio && peakRatio > upperBound {
 		// Clearly above threshold → TRANSIENT_BACKLOG
 		classification = "TRANSIENT_BACKLOG"
 		note = fmt.Sprintf("Backlog did not grow on average (slope CI includes zero), but peak in-flight (%d) "+
@@ -344,7 +490,7 @@ func classifyBacklogDrift(slope, slopeLower, slopeUpper float64,
 			peakInFlight, cfg.PeakRatio, meanInFlight, peakRatio, cfg.PeakRatio)
 		recommendation = "System experienced transient congestion. Consider increasing burst capacity or smoothing load."
 		return
-	} else if peakRatio >= lowerBound && peakRatio <= upperBound {
+	} else if applyPeakRatio && peakRatio >= lowerBound && peakRatio <= upperBound {
 		// Borderline zone [threshold-band, threshold+band] → use slope as tiebreaker
 		if slope > 0 {
 			// Positive slope (getting worse) → classify as TRANSIENT
@@ -371,12 +517,17 @@ func classifyBacklogDrift(slope, slopeLower, slopeUpper float64,
 		note = fmt.Sprintf("Backlog decreased (slope=%.2e req/µs, CI=[%.2e, %.2e] excludes zero). "+
 			"Initial=%d, Final=%d, Peak=%d.",
 			slope, slopeLower, slopeUpper, initialBacklog, finalBacklog, peakInFlight)
+	} else if slopeLower > 0 {
+		note = fmt.Sprintf("Backlog growing but insufficient load (slope=%.2e req/µs, CI=[%.2e, %.2e] excludes zero). "+
+			"Mean in-flight=%.1f < %.1f threshold.",
+			slope, slopeLower, slopeUpper, meanInFlight, cfg.MinMeanForPeakRatio)
 	} else {
 		note = fmt.Sprintf("Backlog remained stable (slope=%.2e req/µs, CI=[%.2e, %.2e] includes zero). "+
 			"Peak/mean ratio=%.2f <= %.2f.",
 			slope, slopeLower, slopeUpper, peakRatio, cfg.PeakRatio)
 	}
 	recommendation = "System handled load without saturation. Current capacity is adequate."
+
 	return
 }
 
@@ -384,6 +535,35 @@ func classifyBacklogDrift(slope, slopeLower, slopeUpper float64,
 // Orchestrates: eligibility filter → window metrics → regression → classification.
 // Returns UNSATURATED with note if observation has fewer than MinWindows complete windows (BC-7).
 func AnalyzeBacklogDrift(requests []*sim.Request, simEndUs int64, cfg BacklogDriftConfig) BacklogDriftReport {
+	// Fix 3: Check for horizon truncation (many requests still queued/running)
+	numQueued := 0
+	numRunning := 0
+	numCompleted := 0
+	for _, req := range requests {
+		switch req.State {
+		case sim.StateQueued:
+			numQueued++
+		case sim.StateRunning:
+			numRunning++
+		case sim.StateCompleted:
+			numCompleted++
+		}
+	}
+
+	totalRequests := len(requests)
+	incompleteRequests := numQueued + numRunning
+
+	var truncatedFraction float64
+	var horizonTruncated bool
+	if totalRequests == 0 {
+		// No requests to analyze - not truncated, just empty
+		truncatedFraction = 0.0
+		horizonTruncated = false
+	} else {
+		truncatedFraction = float64(incompleteRequests) / float64(totalRequests)
+		horizonTruncated = truncatedFraction > 0.1 // More than 10% didn't complete
+	}
+
 	// Step 1: Filter eligible requests (BC-2, BC-13)
 	intervals := RequestsToIntervals(requests, simEndUs)
 
@@ -421,7 +601,15 @@ func AnalyzeBacklogDrift(requests []*sim.Request, simEndUs int64, cfg BacklogDri
 	for i, w := range windows {
 		// Use window midpoint as time coordinate
 		samples[i].timeUs = (w.StartUs + w.EndUs) / 2
-		samples[i].count = w.ActiveEnd
+		// Select regression metric based on configured mode
+		if cfg.MetricsMode == MetricsModeBoundary {
+			// Legacy mode: Use boundary sample (ActiveEnd)
+			samples[i].count = w.ActiveEnd
+		} else {
+			// Integral mode (default): Use time-averaged load (MeanInFlight)
+			// BC-5: Captures true load including sub-window bursts
+			samples[i].count = int(math.Round(w.MeanInFlight))
+		}
 	}
 
 	// Step 4: Fit linear regression (BC-3)
@@ -431,19 +619,32 @@ func AnalyzeBacklogDrift(requests []*sim.Request, simEndUs int64, cfg BacklogDri
 	initialBacklog := windows[0].ActiveStart
 	finalBacklog := windows[len(windows)-1].ActiveEnd
 	peakInFlight := 0
-	sumInFlight := 0
+	var sumInFlight float64
+
 	for _, w := range windows {
-		if w.ActiveEnd > peakInFlight {
-			peakInFlight = w.ActiveEnd
+		// Select peak/mean metrics based on configured mode
+		if cfg.MetricsMode == MetricsModeBoundary {
+			// Legacy mode: Use boundary samples
+			if w.ActiveEnd > peakInFlight {
+				peakInFlight = w.ActiveEnd
+			}
+			sumInFlight += float64(w.ActiveEnd)
+		} else {
+			// Integral mode (default): Use integral-based metrics
+			// BC-6: Captures true intra-window peak and time-weighted mean
+			if w.PeakInFlight > peakInFlight {
+				peakInFlight = w.PeakInFlight
+			}
+			sumInFlight += w.MeanInFlight
 		}
-		sumInFlight += w.ActiveEnd
 	}
-	meanInFlight := float64(sumInFlight) / float64(len(windows))
+	meanInFlight := sumInFlight / float64(len(windows))
 
 	// Step 6: Classify saturation state (BC-4/5/6)
 	classification, note, recommendation := classifyBacklogDrift(
 		slope, slopeLower, slopeUpper,
 		initialBacklog, finalBacklog, peakInFlight, meanInFlight,
+		horizonTruncated, truncatedFraction,
 		cfg,
 	)
 
