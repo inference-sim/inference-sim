@@ -22,8 +22,8 @@ import (
 )
 
 var (
-	traceHeaderPath string
-	traceDataPath   string
+	traceHeaderPath     string
+	traceDataPath       string
 	replayTraceOutput   string // File prefix for TraceV2 re-export (<prefix>.yaml + <prefix>.csv)
 	replaySessionMode   string
 	replayThinkTimeMs   int
@@ -39,7 +39,7 @@ exact request sequence captured in the trace. Unlike 'blis run', it does not gen
 requests from distributions — the request sequence is fully determined by the trace.
 
 Use --results-path to write per-request SimResult JSON (request_id, ttft_us, e2e_us,
-input_tokens, output_tokens) for downstream consumption by blis calibrate.
+input_tokens, output_tokens, slo_class, model, itl_mean_us) for downstream consumption by blis calibrate.
 
 Known limitations:
   - Warm-up requests: trace.Header.warm_up_requests is not filtered; blis calibrate
@@ -181,6 +181,23 @@ Example:
 			logrus.Fatalf("--horizon must be > 0, got %d", replayHorizon)
 		}
 
+		// E/P/D validation (GAP-4, issue #1264). Per INV-13 (run/replay parity,
+		// PR #1305), encode pool flags are supported in replay the same way PD
+		// disaggregation is: validate the decider name and the encode-instances /
+		// encode-decider pairing, then wire them into DeploymentConfig below.
+		if encodeInstances < 0 {
+			logrus.Fatalf("--encode-instances must be >= 0, got %d", encodeInstances)
+		}
+		if !sim.IsValidEncodeDecider(encodeDecider) {
+			logrus.Fatalf("Unknown encode decider %q. Valid: %s", encodeDecider, strings.Join(sim.ValidEncodeDeciderNames(), ", "))
+		}
+		if encodeDecider != "" && encodeDecider != "never" && encodeInstances == 0 {
+			logrus.Fatalf("--encode-decider=%q requires --encode-instances > 0 (the encode pool is disabled)", encodeDecider)
+		}
+		if encodeInstances > 0 && (encodeDecider == "" || encodeDecider == "never") {
+			logrus.Warnf("--encode-decider=%q has no effect because --encode-instances=%d but the decider never encodes; set --encode-decider=multimodal or always to activate the encode pool", encodeDecider, encodeInstances)
+		}
+
 		// Resolve policy configuration (single code path shared with runCmd).
 		// Autoscaler and node-pool configs are not supported in replay — fail fast
 		// rather than silently producing divergent results (INV-13, Track B).
@@ -188,12 +205,20 @@ Example:
 		if cmd.Flags().Changed("model-autoscaler-interval-us") {
 			logrus.Fatalf("--model-autoscaler-interval-us is not supported in blis replay; remove this flag or use blis run instead")
 		}
+		var bundleInstanceLifecycle cluster.InstanceLifecycleConfig
 		if bundle != nil {
 			if bundle.Autoscaler.IntervalUs > 0 {
 				logrus.Fatalf("blis replay does not support autoscaler config (policy bundle interval_us=%g); remove the autoscaler section from the policy bundle or use blis run instead", bundle.Autoscaler.IntervalUs)
 			}
 			if len(bundle.NodePools) > 0 {
 				logrus.Fatalf("blis replay does not support node_pools config (%d pool(s) in policy bundle); remove the node_pools section from the policy bundle or use blis run instead", len(bundle.NodePools))
+			}
+			bundleInstanceLifecycle = cluster.InstanceLifecycleConfig{
+				LoadingDelay: cluster.DelaySpec{
+					Mean:   bundle.InstanceLifecycle.LoadingDelay.Mean,
+					Stddev: bundle.InstanceLifecycle.LoadingDelay.Stddev,
+				},
+				WarmStartInitialInstances: bundle.InstanceLifecycle.WarmStartInitialInstances,
 			}
 		}
 
@@ -210,7 +235,7 @@ Example:
 		if !sim.IsValidDisaggregationDecider(pdDecider) {
 			logrus.Fatalf("Unknown PD decider %q. Valid: %s", pdDecider, strings.Join(sim.ValidDisaggregationDeciderNames(), ", "))
 		}
-		if err := cluster.ValidatePoolTopology(prefillInstances, decodeInstances, prefillDecodeInstances, numInstances); err != nil {
+		if err := cluster.ValidatePoolTopology(prefillInstances, decodeInstances, prefillDecodeInstances, encodeInstances, numInstances); err != nil {
 			logrus.Fatalf("Invalid PD pool topology: %v", err)
 		}
 		if prefillInstances > 0 {
@@ -455,6 +480,8 @@ Example:
 			PrefillInstances:                prefillInstances,
 			DecodeInstances:                 decodeInstances,
 			SharedInstances:                 prefillDecodeInstances,
+			EncodeInstances:                 encodeInstances,
+			EncodeDecider:                   encodeDecider,
 			PDDecider:                       pdDecider,
 			PDPrefixThreshold:               pdPrefixThreshold,
 			PDTransferBandwidthGBps:         pdTransferBandwidth,
@@ -467,6 +494,7 @@ Example:
 			FlowControlEnabled:              flowControlEnabled,
 			FlowControlDetector:             flowControlDetector,
 			FlowControlDispatchOrder:        flowControlDispatchOrder,
+			FlowControlSLOTargets:           sloTargetsMap,
 			FlowControlMaxQueueDepth:        flowControlMaxQueueDepth,
 			FlowControlQueueDepthThreshold:  flowControlQueueDepthThreshold,
 			FlowControlKVCacheUtilThreshold: flowControlKVCacheUtilThreshold,
@@ -474,11 +502,13 @@ Example:
 			FlowControlPerBandCapacity:      flowControlPerBandCapacity,
 			FlowControlUsageLimitThreshold:  flowControlUsageLimitThreshold,
 			FlowControlFairnessPolicy:       flowControlFairnessPolicy,
+			FlowControlRequestTTL:           flowControlRequestTTL,
 			TierShedThreshold:               tierShedThreshold,
 			TierShedMinPriority:             tierShedMinPriority,
 			GAIEQDThreshold:                 gaieQDThreshold,
 			GAIEKVThreshold:                 gaieKVThreshold,
 			TenantBudgets:                   tenantBudgets,
+			InstanceLifecycle:               bundleInstanceLifecycle,
 		}
 
 		// Run simulation — wire SessionManager for closed-loop, nil for fixed mode
@@ -533,6 +563,7 @@ Example:
 			cs.RejectedRequests(),
 			scheduler,
 			cs.RoutingRejections(),
+			cs.EncodeRoutingRejections(),
 		)
 		// INV-13 SYNC POINT (metrics): keep in sync with cmd/root.go post-simulation block.
 		rawMetrics.PD = cluster.CollectPDMetrics(
@@ -541,11 +572,12 @@ Example:
 			cs.PoolMembership(),
 			cs.PerInstanceMetricsByID(),
 		)
-		rawMetrics.ShedByTier = cs.ShedByTier()               // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
-		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth() // Issue #882: gateway queue depth at horizon
+		rawMetrics.ShedByTier = cs.ShedByTier()                     // Phase 1B-1a: tier-shed per-tier breakdown (SC-004)
+		rawMetrics.GatewayQueueDepth = cs.GatewayQueueDepth()       // Issue #882: gateway queue depth at horizon
 		rawMetrics.GatewayQueueShed = cs.GatewayQueueShed()         // Issue #882: gateway queue shed count
 		rawMetrics.GatewayQueueRejected = cs.GatewayQueueRejected() // Issue #1190: gateway queue rejected count
-		rawMetrics.GatewayEvicted = cs.GatewayEvicted()              // Phase 4: in-flight eviction count (#1228)
+		rawMetrics.GatewayEvicted = cs.GatewayEvicted()             // Phase 4: in-flight eviction count (#1228)
+		rawMetrics.GatewayExpired = cs.GatewayExpired()             // Phase 6: TTL expiration count (#1193)
 
 		if rawMetrics.PD != nil && config.PDTransferContention {
 			rawMetrics.PD.PeakConcurrentTransfers = cs.PeakConcurrentTransfers()
@@ -553,7 +585,7 @@ Example:
 		}
 
 		// Print anomaly counters if any detected
-		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 || rawMetrics.GatewayQueueRejected > 0 || rawMetrics.GatewayEvicted > 0 || rawMetrics.TimedOutRequests > 0 {
+		if rawMetrics.PriorityInversions > 0 || rawMetrics.HOLBlockingEvents > 0 || rawMetrics.RejectedRequests > 0 || rawMetrics.RoutingRejections > 0 || rawMetrics.DroppedUnservable > 0 || rawMetrics.LengthCappedRequests > 0 || rawMetrics.GatewayQueueDepth > 0 || rawMetrics.GatewayQueueShed > 0 || rawMetrics.GatewayQueueRejected > 0 || rawMetrics.GatewayEvicted > 0 || rawMetrics.GatewayExpired > 0 || rawMetrics.EncodeRoutingRejections > 0 || rawMetrics.TimedOutRequests > 0 {
 			fmt.Println("=== Anomaly Counters ===")
 			fmt.Printf("Priority Inversions: %d\n", rawMetrics.PriorityInversions)
 			fmt.Printf("HOL Blocking Events: %d\n", rawMetrics.HOLBlockingEvents)
@@ -583,6 +615,12 @@ Example:
 			}
 			if rawMetrics.GatewayEvicted > 0 {
 				fmt.Printf("Gateway Evicted (in-flight): %d\n", rawMetrics.GatewayEvicted)
+			}
+			if rawMetrics.GatewayExpired > 0 {
+				fmt.Printf("Gateway Expired (TTL): %d\n", rawMetrics.GatewayExpired)
+			}
+			if rawMetrics.EncodeRoutingRejections > 0 {
+				fmt.Printf("Encode Routing Rejections: %d\n", rawMetrics.EncodeRoutingRejections)
 			}
 		}
 
@@ -657,16 +695,15 @@ Example:
 
 			simEndUs := workload.ComputeSimEndUs(allRequests, config.Horizon)
 
-			// Build saturation analysis config: use DefaultBacklogDriftConfig (integral mode with production thresholds)
-			// and override window/CI parameters from flags
-			cfg := workload.DefaultBacklogDriftConfig()
-			cfg.WindowSize = time.Duration(saturationWindowSec) * time.Second
-			cfg.MinWindows = saturationMinWindows
-			cfg.PeakRatio = saturationPeakRatio
-			cfg.PeakRatioBand = saturationPeakBand
-			cfg.ConfidenceCI = saturationConfidence
+			// Use default config (integral mode with production thresholds) and override user-configurable fields
+			satCfg := workload.DefaultBacklogDriftConfig()
+			satCfg.WindowSize = time.Duration(saturationWindowSec) * time.Second
+			satCfg.MinWindows = saturationMinWindows
+			satCfg.PeakRatio = saturationPeakRatio
+			satCfg.PeakRatioBand = saturationPeakBand
+			satCfg.ConfidenceCI = saturationConfidence
 
-			report := workload.AnalyzeBacklogDrift(allRequests, simEndUs, cfg)
+			report := workload.AnalyzeBacklogDrift(allRequests, simEndUs, satCfg)
 			if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
 				logrus.Fatalf("Failed to write saturation report: %v", err)
 			}
@@ -681,7 +718,7 @@ func init() {
 	registerSimConfigFlags(replayCmd)
 	replayCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "Path to TraceV2 header YAML file (required)")
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
-	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens) for blis calibrate consumption.")
+	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "File to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us) for blis calibrate consumption.")
 	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\"")
 	replayCmd.Flags().StringVar(&saturationReport, "saturation-report", "", "File to write saturation analysis JSON (backlog-drift classification)")
 	registerSaturationFlags(replayCmd)
@@ -775,6 +812,9 @@ func extractSimResults(m *sim.Metrics) []workload.SimResult {
 			E2E:          e2eUs,
 			InputTokens:  rm.NumPrefillTokens,
 			OutputTokens: rm.NumDecodeTokens,
+			SLOClass:     rm.SLOClass,
+			Model:        rm.Model,
+			ITLMeanUs:    m.RequestITLs[reqID], // already in ticks (µs), same as TTFT/E2E; 0 if not computed
 		})
 	}
 	// Log all exclusions at Debug level for observability (R1: no silent data loss)
@@ -786,6 +826,9 @@ func extractSimResults(m *sim.Metrics) []workload.SimResult {
 	}
 	if nonNumericCount > 0 {
 		logrus.Debugf("extractSimResults: excluded %d non-numeric-ID request(s) (session follow-ups)", nonNumericCount)
+	}
+	if len(m.RequestITLs) == 0 {
+		logrus.Debugf("extractSimResults: RequestITLs is empty (no completed requests); ITLMeanUs will be 0 for all entries")
 	}
 	// Sort by RequestID for deterministic JSON output (R2, INV-6)
 	sort.Slice(results, func(i, j int) bool {

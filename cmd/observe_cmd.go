@@ -532,16 +532,15 @@ func runObserve(cmd *cobra.Command, _ []string) {
 			simEndUs = observeHorizon
 		}
 
-		// Build saturation analysis config: use DefaultBacklogDriftConfig (integral mode with production thresholds)
-		// and override window/CI parameters from flags
-		cfg := workload.DefaultBacklogDriftConfig()
-		cfg.WindowSize = time.Duration(saturationWindowSec) * time.Second
-		cfg.MinWindows = saturationMinWindows
-		cfg.PeakRatio = saturationPeakRatio
-		cfg.PeakRatioBand = saturationPeakBand
-		cfg.ConfidenceCI = saturationConfidence
+		// Use default config (integral mode with production thresholds) and override user-configurable fields
+		satCfg := workload.DefaultBacklogDriftConfig()
+		satCfg.WindowSize = time.Duration(saturationWindowSec) * time.Second
+		satCfg.MinWindows = saturationMinWindows
+		satCfg.PeakRatio = saturationPeakRatio
+		satCfg.PeakRatioBand = saturationPeakBand
+		satCfg.ConfidenceCI = saturationConfidence
 
-		report := workload.AnalyzeBacklogDrift(requests, simEndUs, cfg)
+		report := workload.AnalyzeBacklogDrift(requests, simEndUs, satCfg)
 		if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
 			logrus.Fatalf("Failed to write saturation report: %v", err)
 		}
@@ -926,6 +925,7 @@ func requestToPending(req *sim.Request, reqIndex int, noStreaming, unconstrained
 		Unconstrained:   unconstrained,
 		MinTokens:       minTokens,
 		DeadlineUs:      req.Deadline,
+		SLOTargetUs:     req.SLOTargetUs,
 	}
 }
 
