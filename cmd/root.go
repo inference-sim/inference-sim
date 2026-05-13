@@ -183,7 +183,6 @@ var (
 	saturationPeakRatio float64 // Peak/mean ratio threshold for transient backlog detection (--saturation-peak-ratio)
 	saturationPeakBand float64 // Confidence band around peak ratio threshold (--saturation-peak-band)
 	saturationConfidence float64 // Confidence level for slope CI (--saturation-ci)
-	saturationMetricsMode string // Metrics mode for saturation detection: "boundary" (default) or "integral" (experimental) (--saturation-metrics-mode)
 
 	// trace export
 	traceOutput string // File prefix for TraceV2 export (<prefix>.yaml + <prefix>.csv)
@@ -197,7 +196,6 @@ func registerSaturationFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&saturationPeakRatio, "saturation-peak-ratio", 2.0, "Peak/mean in-flight ratio threshold for TRANSIENT_BACKLOG detection")
 	cmd.Flags().Float64Var(&saturationPeakBand, "saturation-peak-band", 0.2, "Confidence band around peak-ratio threshold (creates borderline zone using slope as tiebreaker)")
 	cmd.Flags().Float64Var(&saturationConfidence, "saturation-ci", 0.95, "Confidence level for slope significance test (0.90, 0.95, or 0.99)")
-	cmd.Flags().StringVar(&saturationMetricsMode, "saturation-metrics-mode", "boundary", "Metrics mode: 'boundary' (point-sampled, default) or 'integral' (time-weighted, experimental)")
 }
 
 // applyRopeScaling applies rope_scaling factor to maxPosEmb if applicable.
@@ -1631,19 +1629,15 @@ var runCmd = &cobra.Command{
 		if saturationReport != "" {
 			simEndUs := workload.ComputeSimEndUs(allRequests, config.Horizon)
 
-			// Build saturation analysis config from flags (or defaults if not set)
-			cfg := workload.NewBacklogDriftConfig(
-				time.Duration(saturationWindowSec)*time.Second,
-				saturationMinWindows,
-				saturationPeakRatio,
-				saturationPeakBand,
-				saturationConfidence,
-			)
-			// Apply metrics mode from flag (validate first)
-			if saturationMetricsMode != "boundary" && saturationMetricsMode != "integral" {
-				logrus.Fatalf("Invalid --saturation-metrics-mode: %q (must be 'boundary' or 'integral')", saturationMetricsMode)
-			}
-			cfg.MetricsMode = workload.MetricsMode(saturationMetricsMode)
+			// Build saturation analysis config: use DefaultBacklogDriftConfig (integral mode with production thresholds)
+			// and override window/CI parameters from flags
+			cfg := workload.DefaultBacklogDriftConfig()
+			cfg.WindowSize = time.Duration(saturationWindowSec) * time.Second
+			cfg.MinWindows = saturationMinWindows
+			cfg.PeakRatio = saturationPeakRatio
+			cfg.PeakRatioBand = saturationPeakBand
+			cfg.ConfidenceCI = saturationConfidence
+
 			report := workload.AnalyzeBacklogDrift(allRequests, simEndUs, cfg)
 			if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
 				logrus.Fatalf("Failed to write saturation report: %v", err)

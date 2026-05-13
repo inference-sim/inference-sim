@@ -124,24 +124,24 @@ func DefaultBacklogDriftConfig() BacklogDriftConfig {
 
 // WindowMetrics captures per-window saturation metrics (BC-1).
 type WindowMetrics struct {
-	StartUs      int64   // Window start timestamp (µs)
-	EndUs        int64   // Window end timestamp (µs)
-	NumEntered   int     // Requests with arrival in [start, end)
-	NumLeft      int     // Requests with completion in [start, end)
-	ActiveStart  int     // Active requests at window start
-	ActiveEnd    int     // Active requests at window end
-	DeltaBacklog int     // ActiveEnd - ActiveStart (change in backlog over window, BC-1)
-	DrainRatio   float64 // NumLeft / NumEntered (NaN if NumEntered==0)
+	StartUs      int64   `json:"start_us"`       // Window start timestamp (µs)
+	EndUs        int64   `json:"end_us"`         // Window end timestamp (µs)
+	NumEntered   int     `json:"num_entered"`    // Requests with arrival in [start, end)
+	NumLeft      int     `json:"num_left"`       // Requests with completion in [start, end)
+	ActiveStart  int     `json:"active_start"`   // Active requests at window start
+	ActiveEnd    int     `json:"active_end"`     // Active requests at window end
+	DeltaBacklog int     `json:"delta_backlog"`  // ActiveEnd - ActiveStart (change in backlog over window, BC-1)
+	DrainRatio   float64 `json:"drain_ratio"`    // NumLeft / NumEntered (NaN if NumEntered==0)
 
 	// MeanInFlight is the time-weighted average in-flight request count over the window.
 	// Unlike ActiveEnd (a boundary sample), MeanInFlight captures burst behavior within
 	// the window via integral computation. Use this for robust saturation metrics.
-	MeanInFlight float64
+	MeanInFlight float64 `json:"mean_in_flight"`
 
 	// PeakInFlight is the maximum in-flight request count at any instant within the window.
 	// Unlike max(ActiveEnd) across windows (which only samples boundaries), PeakInFlight
 	// detects transient bursts that occur between window boundaries. Used for TRANSIENT_BACKLOG classification.
-	PeakInFlight int
+	PeakInFlight int `json:"peak_in_flight"`
 }
 
 // BacklogDriftReport contains saturation classification results (BC-4, BC-5, BC-6, BC-7).
@@ -274,7 +274,7 @@ func computeWindowMetrics(intervals []RequestInterval, windowSizeUs, totalDurati
 				events = append(events, event{timeUs: iv.ArrivalUs, delta: +1})
 			}
 			// Departure event
-			if iv.CompletionUs >= startUs && iv.CompletionUs < endUs {
+			if iv.CompletionUs > startUs && iv.CompletionUs < endUs {
 				events = append(events, event{timeUs: iv.CompletionUs, delta: -1})
 			}
 		}

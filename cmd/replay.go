@@ -657,19 +657,15 @@ Example:
 
 			simEndUs := workload.ComputeSimEndUs(allRequests, config.Horizon)
 
-			// Build saturation analysis config from flags (or defaults if not set)
-			cfg := workload.NewBacklogDriftConfig(
-				time.Duration(saturationWindowSec)*time.Second,
-				saturationMinWindows,
-				saturationPeakRatio,
-				saturationPeakBand,
-				saturationConfidence,
-			)
-			// Apply metrics mode from flag (validate first)
-			if saturationMetricsMode != "boundary" && saturationMetricsMode != "integral" {
-				logrus.Fatalf("Invalid --saturation-metrics-mode: %q (must be 'boundary' or 'integral')", saturationMetricsMode)
-			}
-			cfg.MetricsMode = workload.MetricsMode(saturationMetricsMode)
+			// Build saturation analysis config: use DefaultBacklogDriftConfig (integral mode with production thresholds)
+			// and override window/CI parameters from flags
+			cfg := workload.DefaultBacklogDriftConfig()
+			cfg.WindowSize = time.Duration(saturationWindowSec) * time.Second
+			cfg.MinWindows = saturationMinWindows
+			cfg.PeakRatio = saturationPeakRatio
+			cfg.PeakRatioBand = saturationPeakBand
+			cfg.ConfidenceCI = saturationConfidence
+
 			report := workload.AnalyzeBacklogDrift(allRequests, simEndUs, cfg)
 			if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
 				logrus.Fatalf("Failed to write saturation report: %v", err)
