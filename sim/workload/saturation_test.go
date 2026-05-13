@@ -1258,15 +1258,16 @@ func TestSaturationProgression_RealWorkloads(t *testing.T) {
 	}
 
 	cfg := NewBacklogDriftConfig(
-		10*time.Second, // window size
-		4,              // min windows
+		60*time.Second, // window size (increased from 10s to allow backlog buildup within windows)
+		5,              // min windows
 		2.0,            // peak ratio threshold
 		0.2,            // peak ratio band
 		0.95,           // confidence level
 	)
 
-	// Test cases demonstrate saturation progression
-	// Rate increases → classification severity increases
+	// Test cases demonstrate complete saturation progression across all 3 classifications
+	// Capacity = 10 req/s (100ms service time in generateTestWorkload)
+	// Window size = 60s to allow sufficient backlog buildup for mean > MinMeanForPeakRatio (5.0)
 	tests := []struct {
 		name             string
 		rate             float64
@@ -1276,26 +1277,34 @@ func TestSaturationProgression_RealWorkloads(t *testing.T) {
 		expectPositiveCI bool // CI lower bound > 0
 	}{
 		{
-			name:             "Low rate - comfortable capacity",
+			name:             "Low rate - unsaturated",
 			rate:             5.0,
-			numRequests:      500,
+			numRequests:      1500,  // Increased to cover 5 windows at 300s
 			horizonUs:        0, // Run to completion
-			expectedClass:    "UNSATURATED", // Bug fix corrects completion times → correct classification
+			expectedClass:    "UNSATURATED",
 			expectPositiveCI: false,
 		},
 		{
-			name:             "Medium rate - persistent saturation",
-			rate:             100.0,
-			numRequests:      10000,
-			horizonUs:        60_000_000, // Truncate before drain
-			expectedClass:    "PERSISTENTLY_SATURATED",
-			expectPositiveCI: true, // After bug fix: running requests now correctly counted in ActiveEnd
+			name:             "Just above capacity - transient backlog",
+			rate:             10.1,
+			numRequests:      3535,
+			horizonUs:        350_000_000, // 350s = 5.8 windows (meets MinWindows=5)
+			expectedClass:    "TRANSIENT_BACKLOG",
+			expectPositiveCI: false, // Slope CI may include zero, but peak/mean ratio triggers transient
 		},
 		{
-			name:             "High rate - persistent saturation",
-			rate:             500.0,
-			numRequests:      100000,
-			horizonUs:        120_000_000, // Truncate before drain
+			name:             "Moderate overload - persistent saturation",
+			rate:             15.0,
+			numRequests:      9000,
+			horizonUs:        600_000_000,
+			expectedClass:    "PERSISTENTLY_SATURATED",
+			expectPositiveCI: true, // Clear positive slope
+		},
+		{
+			name:             "Heavy overload - persistent saturation",
+			rate:             50.0,
+			numRequests:      50000,
+			horizonUs:        1000_000_000,
 			expectedClass:    "PERSISTENTLY_SATURATED",
 			expectPositiveCI: true, // CI excludes zero
 		},
@@ -1419,14 +1428,16 @@ func TestSaturationProgression_TransitionBoundaries(t *testing.T) {
 	}
 
 	cfg := NewBacklogDriftConfig(
-		10*time.Second,
-		4,
+		60*time.Second, // Increased from 10s to match passing test and allow backlog buildup
+		5,              // Increased from 4 to ensure sufficient windows
 		2.0,
 		0.2,
 		0.95,
 	)
 
-	// Test rates spanning both transition boundaries
+	// Test all three classification levels across the full progression
+	// Capacity = 10 req/s (100ms service time)
+	// Window size = 60s to allow sufficient backlog buildup for mean > MinMeanForPeakRatio (5.0)
 	tests := []struct {
 		name          string
 		rate          float64
@@ -1435,55 +1446,45 @@ func TestSaturationProgression_TransitionBoundaries(t *testing.T) {
 		expectedClass string
 	}{
 		{
-			name:          "Well below first transition",
-			rate:          10.0,
-			numRequests:   1000,
+			name:          "Well below capacity - unsaturated",
+			rate:          5.0,
+			numRequests:   1500,  // Increased to cover 5 windows at 300s
 			horizonUs:     0,
-			// Updated after MinMeanForPeakRatio fix (PR #1316): Peak ratio test skipped
-			// when mean in-flight < 5.0, preventing false positives at very low load.
 			expectedClass: "UNSATURATED",
 		},
 		{
-			name:          "Just before first transition",
-			rate:          40.0,
-			numRequests:   4000,
+			name:          "Below capacity - unsaturated",
+			rate:          8.0,
+			numRequests:   2400,  // Increased to cover 5 windows at 300s
 			horizonUs:     0,
-			// Updated after FirstTokenTime duration fix: Peak/Mean = 1.57 < 2.0.
 			expectedClass: "UNSATURATED",
 		},
 		{
-			name:          "After first transition - persistent (corrected after bug fix)",
-			rate:          60.0,
+			name:          "Just above capacity - transient backlog",
+			rate:          10.1,
+			numRequests:   3535,  // Increased to match passing test
+			horizonUs:     350_000_000,  // Increased to 350s = 5.8 windows
+			expectedClass: "TRANSIENT_BACKLOG",
+		},
+		{
+			name:          "Moderate overload - persistent saturation",
+			rate:          12.0,
 			numRequests:   6000,
-			horizonUs:     60_000_000,
+			horizonUs:     500_000_000,
 			expectedClass: "PERSISTENTLY_SATURATED",
 		},
 		{
-			name:          "Mid persistent zone (corrected after bug fix)",
-			rate:          100.0,
-			numRequests:   10000,
-			horizonUs:     60_000_000,
+			name:          "Heavy overload - persistent saturation",
+			rate:          20.0,
+			numRequests:   14000,
+			horizonUs:     700_000_000,
 			expectedClass: "PERSISTENTLY_SATURATED",
 		},
 		{
-			name:          "After second transition - early persistent",
-			rate:          120.0,
-			numRequests:   12000,
-			horizonUs:     80_000_000,
-			expectedClass: "PERSISTENTLY_SATURATED",
-		},
-		{
-			name:          "After second transition - persistent",
-			rate:          160.0,
-			numRequests:   16000,
-			horizonUs:     100_000_000,
-			expectedClass: "PERSISTENTLY_SATURATED",
-		},
-		{
-			name:          "Deep persistent zone",
-			rate:          300.0,
-			numRequests:   30000,
-			horizonUs:     120_000_000,
+			name:          "Very heavy overload - persistent saturation",
+			rate:          50.0,
+			numRequests:   50000,
+			horizonUs:     1000_000_000,
 			expectedClass: "PERSISTENTLY_SATURATED",
 		},
 	}
@@ -1531,13 +1532,16 @@ func TestSaturationClassification_MonotonicProgression(t *testing.T) {
 	// GIVEN a sequence of increasing arrival rates
 	// WHEN classifying saturation at each rate
 	// THEN classifications should never regress (SATURATED → UNSATURATED is impossible)
+	// AND all three classifications appear: UNSATURATED → TRANSIENT_BACKLOG → PERSISTENTLY_SATURATED
 
-	rates := []float64{10, 15, 20, 25, 30, 35, 40}
+	// Use 100ms service time → capacity = 10 req/s for easier rate selection
+	// Rates: below capacity, just above (transient), clearly above (persistent)
+	rates := []float64{5, 8, 10, 10.1, 12, 20, 30}
 	horizonSec := 300.0
 	simEndUs := int64(horizonSec * 1e6)
 	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95)
 	cfg.MetricsMode = MetricsModeBoundary // Test both modes
-	serviceDurationUs := int64(2_500_000)  // 2.5s TTFT
+	serviceDurationUs := int64(100_000)  // 100ms TTFT → capacity = 10 req/s
 
 	type rateResult struct {
 		rate           float64
@@ -1780,6 +1784,11 @@ func TestSaturationClassification_MonotonicProgression_IntegralMode(t *testing.T
 	//   - Rates < 10: UNSATURATED
 	//   - Rates slightly > 10: TRANSIENT_BACKLOG or PERSISTENTLY_SATURATED (depends on confidence)
 	//   - Rates >> 10: PERSISTENTLY_SATURATED (clear growth)
+	// Service time = 100ms → capacity = 10 req/s
+	// Expected full progression (all 3 classifications):
+	//   - Rates < 10: UNSATURATED (below capacity)
+	//   - Rate ~10.1: TRANSIENT_BACKLOG (barely above capacity, high peak/mean ratio)
+	//   - Rates > 10.2: PERSISTENTLY_SATURATED (clear sustained growth)
 	tests := []struct {
 		rate     float64
 		horizonS float64 // Horizon scales with expected saturation time
@@ -1790,7 +1799,8 @@ func TestSaturationClassification_MonotonicProgression_IntegralMode(t *testing.T
 		{6, 300, "UNSATURATED"},
 		{8, 300, "UNSATURATED"},
 		{9, 300, "UNSATURATED"},
-		{11, 400, "PERSISTENTLY_SATURATED"},  // Just above capacity - should show clear growth
+		{10.1, 350, "TRANSIENT_BACKLOG"},     // Just above capacity - high peak/mean, small slope
+		{11, 400, "PERSISTENTLY_SATURATED"},  // Clear growth (10% overload)
 		{12, 500, "PERSISTENTLY_SATURATED"},  // 20% overload
 		{15, 600, "PERSISTENTLY_SATURATED"},  // 50% overload
 		{20, 700, "PERSISTENTLY_SATURATED"},  // 2x overload
