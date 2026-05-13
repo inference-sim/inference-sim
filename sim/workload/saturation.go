@@ -534,17 +534,16 @@ func classifyBacklogDrift(slope, slopeLower, slopeUpper float64,
 		}
 	}
 
-	// BC-4: UNSATURATED — slope CI excludes positive or includes zero with low peak
+	// BC-4: UNSATURATED — slope CI excludes negative (decreasing) or includes zero (stable) with low peak
+	// Note: slopeLower > 0 case returns early at line 454, so this path only handles decreasing or stable
 	classification = "UNSATURATED"
 	if slopeUpper < 0 {
+		// Backlog decreasing (CI excludes zero, entirely negative)
 		note = fmt.Sprintf("Backlog decreased (slope=%.2e req/µs, CI=[%.2e, %.2e] excludes zero). "+
 			"Initial=%d, Final=%d, Peak=%d.",
 			slope, slopeLower, slopeUpper, initialBacklog, finalBacklog, peakInFlight)
-	} else if slopeLower > 0 {
-		note = fmt.Sprintf("Backlog growing but insufficient load (slope=%.2e req/µs, CI=[%.2e, %.2e] excludes zero). "+
-			"Mean in-flight=%.1f < %.1f threshold.",
-			slope, slopeLower, slopeUpper, meanInFlight, cfg.MinMeanForPeakRatio)
 	} else {
+		// Backlog stable (CI includes zero)
 		note = fmt.Sprintf("Backlog remained stable (slope=%.2e req/µs, CI=[%.2e, %.2e] includes zero). "+
 			"Peak/mean ratio=%.2f <= %.2f.",
 			slope, slopeLower, slopeUpper, peakRatio, cfg.PeakRatio)
@@ -558,10 +557,11 @@ func classifyBacklogDrift(slope, slopeLower, slopeUpper float64,
 // Orchestrates: eligibility filter → window metrics → regression → classification.
 // Returns UNSATURATED with note if observation has fewer than MinWindows complete windows (BC-7).
 func AnalyzeBacklogDrift(requests []*sim.Request, simEndUs int64, cfg BacklogDriftConfig) BacklogDriftReport {
-	// Fix 3: Check for horizon truncation (many requests still queued/running)
+	// Fix 3: Check for horizon truncation (many requests still queued/running/timed-out)
 	numQueued := 0
 	numRunning := 0
 	numWaitingForRemoteKVs := 0
+	numTimedOut := 0
 	for _, req := range requests {
 		switch req.State {
 		case sim.StateQueued:
@@ -570,13 +570,15 @@ func AnalyzeBacklogDrift(requests []*sim.Request, simEndUs int64, cfg BacklogDri
 			numRunning++
 		case sim.StateWaitingForRemoteKVs:
 			numWaitingForRemoteKVs++
+		case sim.StateTimedOut:
+			numTimedOut++
 		case sim.StateCompleted:
 			// Completed requests don't count as incomplete
 		}
 	}
 
 	totalRequests := len(requests)
-	incompleteRequests := numQueued + numRunning + numWaitingForRemoteKVs
+	incompleteRequests := numQueued + numRunning + numWaitingForRemoteKVs + numTimedOut
 
 	var truncatedFraction float64
 	var horizonTruncated bool

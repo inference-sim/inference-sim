@@ -1176,7 +1176,7 @@ func TestSaturationClassification_ManualScenarios(t *testing.T) {
 			requests = append(requests, &sim.Request{
 				ID:             fmt.Sprintf("req_%d", i),
 				ArrivalTime:    arrivalUs,
-				FirstTokenTime: arrivalUs + 50_000, // Absolute time, not duration
+				FirstTokenTime: 50_000, // 50ms TTFT duration (not absolute timestamp)
 				TTFTSet:        ttftSet,
 				ITL:            itl,
 				State:          state,
