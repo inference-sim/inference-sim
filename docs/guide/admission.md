@@ -91,7 +91,7 @@ Priorities affect three components:
 
 2. **Tenant budget enforcement** (`sim/cluster/cluster_event.go`): When a tenant exceeds their capacity budget, only sheddable requests (`IsSheddable = priority < 0`) are shed. Critical and standard traffic is always protected regardless of budget.
 
-3. **Gateway queue dispatch** (`sim/cluster/gateway_queue.go`): In `priority` dispatch mode, higher-priority requests are dequeued first. When the queue is at capacity, the lowest-priority request is evicted.
+3. **Gateway queue dispatch** (`sim/cluster/gateway_queue.go`): In `priority` dispatch mode, higher-priority requests are dequeued first. When the queue is at capacity, the request is **rejected** by default (llm-d parity). With `--queue-shedding`, the lowest-priority sheddable request is evicted instead (BLIS-extra experimental feature, not in llm-d).
 
 ## Tier-Shed Admission
 
@@ -188,6 +188,25 @@ When `--flow-control` is enabled, the `FlowControlAdmission` policy replaces the
 admission policy. In this mode, admission and queuing are a single step -- the queue IS the
 admission decision, matching llm-d's `FlowControlAdmissionController`.
 
+### llm-d Parity Summary
+
+BLIS's default flow control behavior matches llm-d's `ShardProcessor`. BLIS-extra features are off by default and require explicit flags.
+
+| Behavior | llm-d | BLIS default | BLIS opt-in flag |
+|----------|-------|-------------|-----------------|
+| Queue full → reject | Yes | **Yes** | — |
+| Queue full → shed victim | No | No | `--queue-shedding` |
+| Dispatch on enqueue | Yes | **Yes** | — |
+| Dispatch via periodic tick (1ms) | Yes | **Yes** | `--dispatch-tick-interval` to tune |
+| Dispatch on completion | No | No | — |
+| Dispatch on eviction/TTL | No | No | — |
+| Band ceilings: constant | Yes | **Yes** | — |
+| Band ceilings: interpolated | Interface only, no impl | No | `--usage-limit-threshold < 1.0` |
+| Fairness: global-strict | Yes (plugin) | **Yes** | — |
+| Fairness: round-robin | Yes (plugin) | No | `--fairness-policy round-robin` |
+
+**Bold** = llm-d parity. BLIS-extra features are documented in code comments and only activate when explicitly enabled.
+
 ### How It Works
 
 1. Incoming request is enqueued into a per-priority-band, per-flow queue
@@ -195,7 +214,7 @@ admission decision, matching llm-d's `FlowControlAdmissionController`.
 3. Dispatch order follows `--dispatch-order`: with `priority`, iterates bands highest-priority first; with `fifo` (default), picks the globally-earliest arrival across all bands; with `slo-deadline`, dispatches the request with the earliest SLO deadline within each flow (see [SLO-Deadline Dispatch Ordering](#slo-deadline-dispatch-ordering) below)
 4. Within a band, `--fairness-policy` controls flow selection: `global-strict` (default) picks the earliest arrival (lowest sequence ID); `round-robin` cycles through tenants in sorted key order
 5. Saturation gating: dispatch only when cluster saturation < 1.0
-6. Completion-triggered dispatch: each completion frees capacity and tries to dispatch from the queue
+6. Dispatch triggers (llm-d parity): on-enqueue dispatch + periodic dispatch tick (default 1ms, configurable via `--dispatch-tick-interval`). The tick is demand-driven — only active while the queue is non-empty.
 
 ### Fairness Policy
 
@@ -214,8 +233,20 @@ admission decision, matching llm-d's `FlowControlAdmissionController`.
 
 When a band reaches its capacity limit, incoming requests for that band are rejected
 (all entries in a band share the same priority, so displacement is never possible).
-The global `--max-gateway-queue-depth` limit applies across all bands with cross-band
-shedding of sheddable entries.
+The global `--max-gateway-queue-depth` limit applies across all bands. When at capacity,
+requests are **rejected** by default (llm-d parity). With `--queue-shedding`, cross-band
+shedding of sheddable entries is enabled (BLIS-extra experimental feature).
+
+### Queue Shedding and Dispatch Tick
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--queue-shedding` | Enable cross-band victim shedding when queue is full (BLIS-extra, not in llm-d) | `false` |
+| `--dispatch-tick-interval` | Microseconds between periodic dispatch ticks | `1000` (1ms, llm-d parity) |
+
+**Queue shedding** (`--queue-shedding`): When enabled, a full queue searches all bands for the lowest-priority sheddable request and evicts it to make room. This feature is not present in llm-d and is provided as an experimental option. Without this flag, full queues simply reject incoming requests.
+
+**Dispatch tick** (`--dispatch-tick-interval`): The periodic DES event that triggers dispatch attempts from the gateway queue. Matches llm-d's 1ms `dispatchTicker`. The tick is demand-driven — only active while the queue is non-empty, and only when flow control is enabled. Default is 1000µs (1ms); omitting the flag or setting 0 in YAML both use this default.
 
 ### Example
 

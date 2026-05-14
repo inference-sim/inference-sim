@@ -167,6 +167,7 @@ func TestBothCommands_SimConfigFlagsHaveIdenticalDefaults(t *testing.T) {
 		"max-gateway-queue-depth", "queue-depth-threshold",
 		"kv-cache-util-threshold", "max-concurrency",
 		"per-band-capacity", "usage-limit-threshold",
+		"queue-shedding", "dispatch-tick-interval",
 	}
 	for _, name := range sharedFlags {
 		runFlag := runCmd.Flags().Lookup(name)

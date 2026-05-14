@@ -56,6 +56,7 @@ func TestFlowControlAdmission_QueueRejection(t *testing.T) {
 func TestFlowControlAdmission_ShedVictim(t *testing.T) {
 	pm := sim.DefaultSLOPriorityMap()
 	q := NewGatewayQueue("priority", 1, pm) // maxDepth=1
+	q.SetSheddingEnabled(true)
 	fc := NewFlowControlAdmission(q)
 
 	fc.Admit(&sim.Request{ID: "r1", SLOClass: "batch"}, &sim.RouterState{Clock: 100})

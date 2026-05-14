@@ -321,8 +321,6 @@ func (e *GatewayEvictionEvent) Execute(cs *ClusterSimulator) {
 	}
 	cs.shedByTier[tier]++
 
-	// Re-trigger dispatch: freed capacity may allow waiting request to dispatch.
-	cs.tryDispatchFromGatewayQueue()
 }
 
 // GatewayQueueTTLEvent fires when a request's TTL expires while queued.
@@ -349,7 +347,39 @@ func (e *GatewayQueueTTLEvent) Execute(cs *ClusterSimulator) {
 		tier = "standard"
 	}
 	cs.shedByTier[tier]++
-	cs.tryDispatchFromGatewayQueue()
+}
+
+// GatewayDispatchTickEvent is a periodic dispatch trigger for the gateway queue.
+// DES equivalent of llm-d's 1ms dispatchTicker (processor.go:179).
+// Demand-driven: only active when flow control enabled AND queue non-empty.
+// Self-scheduling: reschedules while queue has requests, stops when drained.
+// Priority 7: after TTL expiry (6), before scaling (8).
+type GatewayDispatchTickEvent struct {
+	At       int64
+	Interval int64
+}
+
+func (e *GatewayDispatchTickEvent) Timestamp() int64 { return e.At }
+func (e *GatewayDispatchTickEvent) Priority() int     { return 7 }
+
+func (e *GatewayDispatchTickEvent) Execute(cs *ClusterSimulator) {
+	if cs.gatewayQueue == nil {
+		cs.dispatchTickPending = false
+		return
+	}
+
+	if cs.gatewayQueue.Len() > 0 {
+		cs.tryDispatchFromGatewayQueue()
+	}
+
+	if cs.gatewayQueue.Len() > 0 {
+		heap.Push(&cs.clusterEvents, clusterEventEntry{
+			event: &GatewayDispatchTickEvent{At: e.At + e.Interval, Interval: e.Interval},
+			seqID: cs.nextSeqID(),
+		})
+	} else {
+		cs.dispatchTickPending = false
+	}
 }
 
 // DisaggregationDecisionEvent represents the PD disaggregation decision point for a request.

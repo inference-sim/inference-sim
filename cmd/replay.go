@@ -503,6 +503,8 @@ Example:
 			FlowControlUsageLimitThreshold:  flowControlUsageLimitThreshold,
 			FlowControlFairnessPolicy:       flowControlFairnessPolicy,
 			FlowControlRequestTTL:           flowControlRequestTTL,
+			FlowControlQueueShedding:        flowControlQueueShedding,
+			FlowControlDispatchTickInterval: flowControlDispatchTickInterval,
 			TierShedThreshold:               tierShedThreshold,
 			TierShedMinPriority:             tierShedMinPriority,
 			GAIEQDThreshold:                 gaieQDThreshold,

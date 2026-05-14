@@ -43,6 +43,8 @@ type ClusterSimulator struct {
 	gatewayEvicted        int                       // count of requests evicted in-flight from instances (INV-1: gw_evicted)
 	gatewayExpired        int                       // count of requests expired from gateway queue via TTL (INV-1: gw_expired)
 	requestTTL            int64                     // gateway queue request TTL in microseconds; 0 = disabled
+	dispatchTickInterval  int64                     // µs between periodic dispatch ticks (default 1000 = 1ms, llm-d parity)
+	dispatchTickPending   bool                      // true when a GatewayDispatchTickEvent is already scheduled
 	poolMembership        map[string]PoolRole       // instance ID → pool role (nil when disaggregation disabled)
 	disaggregationDecider sim.DisaggregationDecider // PD disaggregation decider (nil when disabled)
 
@@ -477,6 +479,16 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		if cs.requestTTL < 0 {
 			panic(fmt.Sprintf("ClusterSimulator: FlowControlRequestTTL must be >= 0, got %d", cs.requestTTL))
 		}
+		if config.FlowControlQueueShedding {
+			gq.SetSheddingEnabled(true)
+		}
+		cs.dispatchTickInterval = config.FlowControlDispatchTickInterval
+		if cs.dispatchTickInterval < 0 {
+			panic(fmt.Sprintf("ClusterSimulator: FlowControlDispatchTickInterval must be >= 0, got %d", cs.dispatchTickInterval))
+		}
+		if cs.dispatchTickInterval == 0 {
+			cs.dispatchTickInterval = 1000 // default 1ms (llm-d parity)
+		}
 		cs.saturationDetector = sim.NewSaturationDetector(
 			config.FlowControlDetector,
 			config.FlowControlQueueDepthThreshold,
@@ -710,20 +722,6 @@ func (c *ClusterSimulator) Run() error {
 					}
 				}
 
-				// Flow control: completion-triggered dispatch (BC-4).
-				// Each completion opens capacity — try to dequeue from gateway queue.
-				// Loop up to delta times so batch completions can dispatch multiple requests.
-				// Early-exit when saturated or queue empty to avoid redundant buildRouterState calls.
-				if c.flowControlEnabled {
-					for i := 0; i < delta; i++ {
-						if c.gatewayQueue.Len() == 0 {
-							break
-						}
-						if !c.tryDispatchFromGatewayQueue() {
-							break // saturated — no point rebuilding state for remaining iterations
-						}
-					}
-				}
 			}
 
 			// T042: drain completion accounting (Phase 1A).
@@ -1416,12 +1414,24 @@ func (c *ClusterSimulator) GatewayExpired() int {
 }
 
 // tryDispatchFromGatewayQueue attempts to dispatch one request from the gateway queue.
-// Called after each completion (BC-4) and after each enqueue (for NeverSaturated pass-through).
+// Called on enqueue and by the periodic GatewayDispatchTickEvent (llm-d parity).
 // Builds fresh RouterState at dispatch time for late binding (BC-3).
 // Returns true if a request was dispatched, false if saturated or queue empty.
 func (c *ClusterSimulator) tryDispatchFromGatewayQueue() bool {
 	if c.gatewayQueue == nil || c.gatewayQueue.Len() == 0 {
 		return false
+	}
+	// Schedule periodic dispatch tick if not already pending (BC-3).
+	// Demand-driven: only active while queue is non-empty.
+	if c.dispatchTickInterval > 0 && !c.dispatchTickPending {
+		c.dispatchTickPending = true
+		heap.Push(&c.clusterEvents, clusterEventEntry{
+			event: &GatewayDispatchTickEvent{
+				At:       c.clock + c.dispatchTickInterval,
+				Interval: c.dispatchTickInterval,
+			},
+			seqID: c.nextSeqID(),
+		})
 	}
 	// Build fresh state for late binding (BC-3)
 	state := buildRouterState(c, nil)

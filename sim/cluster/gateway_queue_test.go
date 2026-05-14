@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -130,6 +131,7 @@ func TestGatewayQueue_CriticalityProtection_NonSheddableNeverEvicted(t *testing.
 func TestGatewayQueue_CriticalityProtection_SheddableEvicted(t *testing.T) {
 	pm := sim.DefaultSLOPriorityMap()
 	q := NewGatewayQueue("priority", 2, pm)
+	q.SetSheddingEnabled(true)
 
 	_, _ = q.Enqueue(&sim.Request{ID: "r1", SLOClass: "batch"}, 1)    // priority=-1 (sheddable)
 	_, _ = q.Enqueue(&sim.Request{ID: "r2", SLOClass: "standard"}, 2) // priority=3
@@ -178,6 +180,7 @@ func TestGatewayQueue_CriticalityProtection_LowerSheddableDoesNotEvictHigherShed
 func TestGatewayQueue_CriticalityProtection_HigherSheddableDisplacesLowerSheddable(t *testing.T) {
 	pm := sim.DefaultSLOPriorityMap()
 	q := NewGatewayQueue("priority", 2, pm)
+	q.SetSheddingEnabled(true)
 
 	_, _ = q.Enqueue(&sim.Request{ID: "r1", SLOClass: "background"}, 1) // priority=-3 (sheddable)
 	_, _ = q.Enqueue(&sim.Request{ID: "r2", SLOClass: "standard"}, 2)   // priority=3 (non-sheddable)
@@ -203,6 +206,7 @@ func TestGatewayQueue_CriticalityProtection_HigherSheddableDisplacesLowerSheddab
 func TestGatewayQueue_CriticalityProtection_EqualPrioritySheddableTieBreak(t *testing.T) {
 	pm := sim.DefaultSLOPriorityMap()
 	q := NewGatewayQueue("priority", 2, pm)
+	q.SetSheddingEnabled(true)
 
 	_, _ = q.Enqueue(&sim.Request{ID: "r1", SLOClass: "batch"}, 10) // priority=-1, seqID=10
 	_, _ = q.Enqueue(&sim.Request{ID: "r2", SLOClass: "batch"}, 20) // priority=-1, seqID=20
@@ -223,6 +227,55 @@ func TestGatewayQueue_CriticalityProtection_EqualPrioritySheddableTieBreak(t *te
 	}
 	if victim != nil {
 		t.Error("no victim expected for rejection")
+	}
+}
+
+func TestGatewayQueue_SheddingDisabled_RejectsInsteadOfShed(t *testing.T) {
+	q := NewGatewayQueue("priority", 2, nil) // maxDepth=2, sheddingEnabled=false (default)
+	_, _ = q.Enqueue(&sim.Request{ID: "r1", SLOClass: "standard"}, 1)
+	_, _ = q.Enqueue(&sim.Request{ID: "r2", SLOClass: "sheddable"}, 2)
+
+	outcome, victim := q.Enqueue(&sim.Request{ID: "r3", SLOClass: "critical"}, 3)
+	if outcome != Rejected {
+		t.Errorf("shedding disabled: expected Rejected, got %v", outcome)
+	}
+	if victim != nil {
+		t.Error("shedding disabled: expected nil victim")
+	}
+	if q.ShedCount() != 0 {
+		t.Errorf("shedding disabled: ShedCount should be 0, got %d", q.ShedCount())
+	}
+	if q.RejectedCount() != 1 {
+		t.Errorf("shedding disabled: RejectedCount should be 1, got %d", q.RejectedCount())
+	}
+}
+
+func TestGatewayQueue_SheddingEnabled_ShedsVictim(t *testing.T) {
+	q := NewGatewayQueue("priority", 2, nil)
+	q.SetSheddingEnabled(true)
+	_, _ = q.Enqueue(&sim.Request{ID: "r1", SLOClass: "standard"}, 1)
+	_, _ = q.Enqueue(&sim.Request{ID: "r2", SLOClass: "sheddable"}, 2)
+
+	outcome, victim := q.Enqueue(&sim.Request{ID: "r3", SLOClass: "critical"}, 3)
+	if outcome != ShedVictim {
+		t.Errorf("shedding enabled: expected ShedVictim, got %v", outcome)
+	}
+	if victim == nil || victim.ID != "r2" {
+		t.Errorf("shedding enabled: expected victim r2, got %v", victim)
+	}
+	if q.ShedCount() != 1 {
+		t.Errorf("shedding enabled: ShedCount should be 1, got %d", q.ShedCount())
+	}
+}
+
+func TestGatewayQueue_SheddingEnabled_DefaultFalse(t *testing.T) {
+	q := NewGatewayQueue("fifo", 10, nil)
+	for i := 0; i < 10; i++ {
+		q.Enqueue(&sim.Request{ID: fmt.Sprintf("r%d", i), SLOClass: "sheddable"}, int64(i))
+	}
+	outcome, _ := q.Enqueue(&sim.Request{ID: "overflow", SLOClass: "critical"}, 100)
+	if outcome != Rejected {
+		t.Errorf("default queue should reject (not shed) when full, got %v", outcome)
 	}
 }
 
@@ -901,6 +954,7 @@ func TestGatewayQueue_RemoveByRequestID_WithShed(t *testing.T) {
 	// RemoveByRequestID for the victim returns nil (no double-counting).
 	pm := sim.DefaultSLOPriorityMap()
 	q := NewGatewayQueue("fifo", 2, pm) // maxDepth=2
+	q.SetSheddingEnabled(true)
 
 	r1 := &sim.Request{ID: "r1", SLOClass: "sheddable", TenantID: "t1"}
 	r2 := &sim.Request{ID: "r2", SLOClass: "standard", TenantID: "t1"}

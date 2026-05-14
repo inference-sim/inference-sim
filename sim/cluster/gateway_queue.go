@@ -151,6 +151,7 @@ type GatewayQueue struct {
 	usageLimitThreshold  float64            // per-band HoL blocking ceiling (default 1.0 = no HoL)
 	fairnessPolicy       FairnessPolicy
 	requestIndex         map[string]requestLocation // request ID → flow coordinates for TTL removal
+	sheddingEnabled      bool                       // BLIS-extra: cross-band shedding on enqueue (not in llm-d). Requires --queue-shedding.
 }
 
 // NewGatewayQueue creates a gateway queue with the given dispatch order and max depth.
@@ -200,6 +201,13 @@ func (q *GatewayQueue) SetPerBandCapacity(n int) {
 		panic(fmt.Sprintf("GatewayQueue: maxBandCapacity must be >= 0, got %d", n))
 	}
 	q.maxBandCapacity = n
+}
+
+// SetSheddingEnabled enables or disables cross-band victim shedding on enqueue.
+// BLIS-extra feature not present in llm-d. When false (default), global capacity full → reject.
+// When true, the queue searches all bands for a sheddable victim (--queue-shedding).
+func (q *GatewayQueue) SetSheddingEnabled(enabled bool) {
+	q.sheddingEnabled = enabled
 }
 
 // SetUsageLimitThreshold sets the per-band saturation ceiling for HoL blocking.
@@ -265,10 +273,15 @@ func (q *GatewayQueue) Enqueue(req *sim.Request, seqID int64) (EnqueueOutcome, *
 		return Rejected, nil
 	}
 
-	// Step 2: Global capacity check (cross-band shedding).
-	// Evict the lowest-priority sheddable entry globally to make room.
+	// Step 2: Global capacity check.
+	// Default (llm-d parity): reject when full.
+	// With --queue-shedding (BLIS-extra, not in llm-d): search all bands for a sheddable victim.
 	var shedVictim *sim.Request
 	if q.maxDepth > 0 && q.totalLen >= q.maxDepth {
+		if !q.sheddingEnabled {
+			q.rejectedCount++
+			return Rejected, nil
+		}
 		victim, victimFlow, victimBand, victimIdx := q.findGlobalShedVictim(priority, seqID)
 		if victim == nil {
 			q.rejectedCount++

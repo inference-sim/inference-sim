@@ -100,6 +100,16 @@ go build -o blis main.go
 ./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
   --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 \
   --dispatch-order slo-deadline --slo-targets "critical=100000,standard=500000"
+
+# Run with flow control and opt-in queue shedding (BLIS-extra, not in llm-d)
+./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
+  --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 \
+  --max-gateway-queue-depth 1000 --queue-shedding
+
+# Run with custom dispatch tick interval (default 1000µs = 1ms, llm-d parity)
+./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
+  --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 \
+  --dispatch-tick-interval 5000
 ```
 
 ## Testing
