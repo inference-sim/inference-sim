@@ -188,6 +188,25 @@ When `--flow-control` is enabled, the `FlowControlAdmission` policy replaces the
 admission policy. In this mode, admission and queuing are a single step -- the queue IS the
 admission decision, matching llm-d's `FlowControlAdmissionController`.
 
+### llm-d Parity Summary
+
+BLIS's default flow control behavior matches llm-d's `ShardProcessor`. BLIS-extra features are off by default and require explicit flags.
+
+| Behavior | llm-d | BLIS default | BLIS opt-in flag |
+|----------|-------|-------------|-----------------|
+| Queue full → reject | Yes | **Yes** | — |
+| Queue full → shed victim | No | No | `--queue-shedding` |
+| Dispatch on enqueue | Yes | **Yes** | — |
+| Dispatch via periodic tick (1ms) | Yes | **Yes** | `--dispatch-tick-interval` to tune |
+| Dispatch on completion | No | No | — |
+| Dispatch on eviction/TTL | No | No | — |
+| Band ceilings: constant | Yes | **Yes** | — |
+| Band ceilings: interpolated | Interface only, no impl | No | `--usage-limit-threshold < 1.0` |
+| Fairness: global-strict | Yes (plugin) | **Yes** | — |
+| Fairness: round-robin | Yes (plugin) | No | `--fairness-policy round-robin` |
+
+**Bold** = llm-d parity. BLIS-extra features are documented in code comments and only activate when explicitly enabled.
+
 ### How It Works
 
 1. Incoming request is enqueued into a per-priority-band, per-flow queue
