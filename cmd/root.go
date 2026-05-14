@@ -1036,7 +1036,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&flowControlFairnessPolicy, "fairness-policy", "global-strict", "Intra-band dispatch fairness: global-strict, round-robin")
 	cmd.Flags().Int64Var(&flowControlRequestTTL, "request-ttl", 0, "Gateway queue request TTL in microseconds (0=disabled). Requires --flow-control.")
 	cmd.Flags().BoolVar(&flowControlQueueShedding, "queue-shedding", false, "Enable cross-band victim shedding when gateway queue is full (BLIS-extra, not in llm-d; default: reject)")
-	cmd.Flags().Int64Var(&flowControlDispatchTickInterval, "dispatch-tick-interval", 1000, "Microseconds between periodic gateway dispatch ticks (llm-d parity: 1000µs = 1ms)")
+	cmd.Flags().Int64Var(&flowControlDispatchTickInterval, "dispatch-tick-interval", 1000, "Microseconds between periodic gateway dispatch ticks (0 = use default 1ms; llm-d parity)")
 
 	// Per-pool hardware overrides
 	cmd.Flags().IntVar(&prefillTP, "prefill-tp", 0, "Tensor parallelism degree for prefill pool instances (0 = use global --tensor-parallelism)")
