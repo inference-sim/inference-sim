@@ -166,6 +166,8 @@ var (
 	flowControlUsageLimitThreshold  float64
 	flowControlFairnessPolicy       string
 	flowControlRequestTTL           int64
+	flowControlQueueShedding        bool
+	flowControlDispatchTickInterval int64
 
 	// Per-pool hardware override config
 	prefillTP           int
@@ -895,6 +897,12 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 	if flowControlRequestTTL > 0 && !flowControlEnabled {
 		logrus.Warnf("--request-ttl %d has no effect without --flow-control", flowControlRequestTTL)
 	}
+	if flowControlDispatchTickInterval < 0 {
+		logrus.Fatalf("--dispatch-tick-interval must be >= 0, got %d", flowControlDispatchTickInterval)
+	}
+	if flowControlQueueShedding && !flowControlEnabled {
+		logrus.Warnf("--queue-shedding has no effect without --flow-control")
+	}
 
 	logrus.Infof("Policy config: admission=%s, routing=%s, scheduler=%s, preemption=%s",
 		admissionPolicy, routingPolicy, scheduler, preemptionPolicy)
@@ -1027,6 +1035,8 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Float64Var(&flowControlUsageLimitThreshold, "usage-limit-threshold", 1.0, "Per-band saturation ceiling for HoL blocking (1.0=no HoL, <1.0 gates lower-priority bands earlier)")
 	cmd.Flags().StringVar(&flowControlFairnessPolicy, "fairness-policy", "global-strict", "Intra-band dispatch fairness: global-strict, round-robin")
 	cmd.Flags().Int64Var(&flowControlRequestTTL, "request-ttl", 0, "Gateway queue request TTL in microseconds (0=disabled). Requires --flow-control.")
+	cmd.Flags().BoolVar(&flowControlQueueShedding, "queue-shedding", false, "Enable cross-band victim shedding when gateway queue is full (BLIS-extra, not in llm-d; default: reject)")
+	cmd.Flags().Int64Var(&flowControlDispatchTickInterval, "dispatch-tick-interval", 1000, "Microseconds between periodic gateway dispatch ticks (llm-d parity: 1000µs = 1ms)")
 
 	// Per-pool hardware overrides
 	cmd.Flags().IntVar(&prefillTP, "prefill-tp", 0, "Tensor parallelism degree for prefill pool instances (0 = use global --tensor-parallelism)")
@@ -1639,6 +1649,8 @@ var runCmd = &cobra.Command{
 			FlowControlUsageLimitThreshold:  flowControlUsageLimitThreshold,
 			FlowControlFairnessPolicy:       flowControlFairnessPolicy,
 			FlowControlRequestTTL:           flowControlRequestTTL,
+			FlowControlQueueShedding:        flowControlQueueShedding,
+			FlowControlDispatchTickInterval: flowControlDispatchTickInterval,
 			ModelAutoscalerIntervalUs:       bundleAutoscalerIntervalUs,
 			ScaleUpStabilizationWindowUs:    bundleScaleUpStabilizationWindowUs,
 			ScaleDownStabilizationWindowUs:  bundleScaleDownStabilizationWindowUs,
