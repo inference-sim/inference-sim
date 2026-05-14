@@ -1,0 +1,53 @@
+version: '2'
+seed: 42
+category: ''
+clients: []
+cohorts:
+- id: midnight-background
+  population: 1
+  slo_class: background
+  arrival:
+    process: gamma
+    cv: 2.9339483383006053
+    shape: 0.714961370666108
+    scale: 8708136.50958363
+  input_distribution:
+    type: lognormal
+    params:
+      mu: 6.610131270421692
+      sigma: 0.6576031777938421
+  output_distribution:
+    type: lognormal
+    params:
+      mu: 4.32492968089212
+      sigma: 1.0088905725202169
+  streaming: true
+  rate_fraction: 1
+  spike:
+    start_time_us: 0
+    duration_us: 600000000
+    trace_rate: 89.05593406593407
+- id: midnight-batch
+  population: 1
+  slo_class: batch
+  arrival:
+    process: gamma
+    cv: 7.034030415844087
+    shape: 0.7839823645040713
+    scale: 2871411.8201057566
+  input_distribution:
+    type: lognormal
+    params:
+      mu: 6.488089395455002
+      sigma: 0.6732277572485516
+  output_distribution:
+    type: lognormal
+    params:
+      mu: 4.608449503988957
+      sigma: 1.0268817233958354
+  streaming: true
+  rate_fraction: 1
+  spike:
+    start_time_us: 0
+    duration_us: 600000000
+    trace_rate: 1166.2816964285714
