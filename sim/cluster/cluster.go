@@ -483,6 +483,9 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 			gq.SetSheddingEnabled(true)
 		}
 		cs.dispatchTickInterval = config.FlowControlDispatchTickInterval
+		if cs.dispatchTickInterval < 0 {
+			panic(fmt.Sprintf("ClusterSimulator: FlowControlDispatchTickInterval must be >= 0, got %d", cs.dispatchTickInterval))
+		}
 		if cs.dispatchTickInterval == 0 {
 			cs.dispatchTickInterval = 1000 // default 1ms (llm-d parity)
 		}
