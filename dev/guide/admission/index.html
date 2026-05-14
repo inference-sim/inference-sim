@@ -1199,6 +1199,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#llm-d-parity-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        llm-d Parity Summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#how-it-works" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1225,6 +1236,17 @@
     <span class="md-ellipsis">
       
         Per-Band Capacity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#queue-shedding-and-dispatch-tick" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Queue Shedding and Dispatch Tick
       
     </span>
   </a>
@@ -3103,6 +3125,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#llm-d-parity-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        llm-d Parity Summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#how-it-works" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3129,6 +3162,17 @@
     <span class="md-ellipsis">
       
         Per-Band Capacity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#queue-shedding-and-dispatch-tick" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Queue Shedding and Dispatch Tick
       
     </span>
   </a>
@@ -3378,7 +3422,7 @@
 <p><strong>Tenant budget enforcement</strong> (<code>sim/cluster/cluster_event.go</code>): When a tenant exceeds their capacity budget, only sheddable requests (<code>IsSheddable = priority &lt; 0</code>) are shed. Critical and standard traffic is always protected regardless of budget.</p>
 </li>
 <li>
-<p><strong>Gateway queue dispatch</strong> (<code>sim/cluster/gateway_queue.go</code>): In <code>priority</code> dispatch mode, higher-priority requests are dequeued first. When the queue is at capacity, the lowest-priority request is evicted.</p>
+<p><strong>Gateway queue dispatch</strong> (<code>sim/cluster/gateway_queue.go</code>): In <code>priority</code> dispatch mode, higher-priority requests are dequeued first. When the queue is at capacity, the request is <strong>rejected</strong> by default (llm-d parity). With <code>--queue-shedding</code>, the lowest-priority sheddable request is evicted instead (BLIS-extra experimental feature, not in llm-d).</p>
 </li>
 </ol>
 <h2 id="tier-shed-admission">Tier-Shed Admission<a class="headerlink" href="#tier-shed-admission" title="Permanent link">&para;</a></h2>
@@ -3501,6 +3545,81 @@
 <p>When <code>--flow-control</code> is enabled, the <code>FlowControlAdmission</code> policy replaces the configured
 admission policy. In this mode, admission and queuing are a single step -- the queue IS the
 admission decision, matching llm-d's <code>FlowControlAdmissionController</code>.</p>
+<h3 id="llm-d-parity-summary">llm-d Parity Summary<a class="headerlink" href="#llm-d-parity-summary" title="Permanent link">&para;</a></h3>
+<p>BLIS's default flow control behavior matches llm-d's <code>ShardProcessor</code>. BLIS-extra features are off by default and require explicit flags.</p>
+<table>
+<thead>
+<tr>
+<th>Behavior</th>
+<th>llm-d</th>
+<th>BLIS default</th>
+<th>BLIS opt-in flag</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Queue full → reject</td>
+<td>Yes</td>
+<td><strong>Yes</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Queue full → shed victim</td>
+<td>No</td>
+<td>No</td>
+<td><code>--queue-shedding</code></td>
+</tr>
+<tr>
+<td>Dispatch on enqueue</td>
+<td>Yes</td>
+<td><strong>Yes</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Dispatch via periodic tick (1ms)</td>
+<td>Yes</td>
+<td><strong>Yes</strong></td>
+<td><code>--dispatch-tick-interval</code> to tune</td>
+</tr>
+<tr>
+<td>Dispatch on completion</td>
+<td>No</td>
+<td>No</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Dispatch on eviction/TTL</td>
+<td>No</td>
+<td>No</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Band ceilings: constant</td>
+<td>Yes</td>
+<td><strong>Yes</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Band ceilings: interpolated</td>
+<td>Interface only, no impl</td>
+<td>No</td>
+<td><code>--usage-limit-threshold &lt; 1.0</code></td>
+</tr>
+<tr>
+<td>Fairness: global-strict</td>
+<td>Yes (plugin)</td>
+<td><strong>Yes</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Fairness: round-robin</td>
+<td>Yes (plugin)</td>
+<td>No</td>
+<td><code>--fairness-policy round-robin</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Bold</strong> = llm-d parity. BLIS-extra features are documented in code comments and only activate when explicitly enabled.</p>
 <h3 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Incoming request is enqueued into a per-priority-band, per-flow queue</li>
@@ -3508,7 +3627,7 @@ admission decision, matching llm-d's <code>FlowControlAdmissionController</code>
 <li>Dispatch order follows <code>--dispatch-order</code>: with <code>priority</code>, iterates bands highest-priority first; with <code>fifo</code> (default), picks the globally-earliest arrival across all bands; with <code>slo-deadline</code>, dispatches the request with the earliest SLO deadline within each flow (see <a href="#slo-deadline-dispatch-ordering">SLO-Deadline Dispatch Ordering</a> below)</li>
 <li>Within a band, <code>--fairness-policy</code> controls flow selection: <code>global-strict</code> (default) picks the earliest arrival (lowest sequence ID); <code>round-robin</code> cycles through tenants in sorted key order</li>
 <li>Saturation gating: dispatch only when cluster saturation &lt; 1.0</li>
-<li>Completion-triggered dispatch: each completion frees capacity and tries to dispatch from the queue</li>
+<li>Dispatch triggers (llm-d parity): on-enqueue dispatch + periodic dispatch tick (default 1ms, configurable via <code>--dispatch-tick-interval</code>). The tick is demand-driven — only active while the queue is non-empty.</li>
 </ol>
 <h3 id="fairness-policy">Fairness Policy<a class="headerlink" href="#fairness-policy" title="Permanent link">&para;</a></h3>
 <table>
@@ -3550,8 +3669,33 @@ admission decision, matching llm-d's <code>FlowControlAdmissionController</code>
 </table>
 <p>When a band reaches its capacity limit, incoming requests for that band are rejected
 (all entries in a band share the same priority, so displacement is never possible).
-The global <code>--max-gateway-queue-depth</code> limit applies across all bands with cross-band
-shedding of sheddable entries.</p>
+The global <code>--max-gateway-queue-depth</code> limit applies across all bands. When at capacity,
+requests are <strong>rejected</strong> by default (llm-d parity). With <code>--queue-shedding</code>, cross-band
+shedding of sheddable entries is enabled (BLIS-extra experimental feature).</p>
+<h3 id="queue-shedding-and-dispatch-tick">Queue Shedding and Dispatch Tick<a class="headerlink" href="#queue-shedding-and-dispatch-tick" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--queue-shedding</code></td>
+<td>Enable cross-band victim shedding when queue is full (BLIS-extra, not in llm-d)</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>--dispatch-tick-interval</code></td>
+<td>Microseconds between periodic dispatch ticks</td>
+<td><code>1000</code> (1ms, llm-d parity)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Queue shedding</strong> (<code>--queue-shedding</code>): When enabled, a full queue searches all bands for the lowest-priority sheddable request and evicts it to make room. This feature is not present in llm-d and is provided as an experimental option. Without this flag, full queues simply reject incoming requests.</p>
+<p><strong>Dispatch tick</strong> (<code>--dispatch-tick-interval</code>): The periodic DES event that triggers dispatch attempts from the gateway queue. Matches llm-d's 1ms <code>dispatchTicker</code>. The tick is demand-driven — only active while the queue is non-empty, and only when flow control is enabled. Default is 1000µs (1ms); omitting the flag or setting 0 in YAML both use this default.</p>
 <h3 id="example">Example<a class="headerlink" href="#example" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--flow-control<span class="w"> </span>--saturation-detector<span class="w"> </span>utilization<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--queue-depth-threshold<span class="w"> </span><span class="m">5</span><span class="w"> </span>--kv-cache-util-threshold<span class="w"> </span><span class="m">0</span>.8<span class="w"> </span><span class="se">\</span>
