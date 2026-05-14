@@ -246,7 +246,7 @@ shedding of sheddable entries is enabled (BLIS-extra experimental feature).
 
 **Queue shedding** (`--queue-shedding`): When enabled, a full queue searches all bands for the lowest-priority sheddable request and evicts it to make room. This feature is not present in llm-d and is provided as an experimental option. Without this flag, full queues simply reject incoming requests.
 
-**Dispatch tick** (`--dispatch-tick-interval`): The periodic DES event that triggers dispatch attempts from the gateway queue. Matches llm-d's 1ms `dispatchTicker`. The tick is demand-driven — only active while the queue is non-empty, and only when flow control is enabled. Set to 0 to disable periodic ticking (on-enqueue dispatch only).
+**Dispatch tick** (`--dispatch-tick-interval`): The periodic DES event that triggers dispatch attempts from the gateway queue. Matches llm-d's 1ms `dispatchTicker`. The tick is demand-driven — only active while the queue is non-empty, and only when flow control is enabled. Default is 1000µs (1ms); omitting the flag or setting 0 in YAML both use this default.
 
 ### Example
 
