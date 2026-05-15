@@ -83,6 +83,58 @@ func TestCompositeDetector_ClassifyOverloaded(t *testing.T) {
 	}
 }
 
+// TestCompositeDetector_ObserveDetectStable verifies I7: Stable via Observe/Detect (streaming mode)
+func TestCompositeDetector_ObserveDetectStable(t *testing.T) {
+	det := NewCompositeDetector()
+
+	// 4 arrivals, all complete with stable latency
+	det.Observe(Event{Timestamp: 0, Type: Arrival, RequestID: "r1"})
+	det.Observe(Event{Timestamp: 100000, Type: Arrival, RequestID: "r2"})
+	det.Observe(Event{Timestamp: 200000, Type: Arrival, RequestID: "r3"})
+	det.Observe(Event{Timestamp: 300000, Type: Arrival, RequestID: "r4"})
+
+	det.Observe(Event{Timestamp: 100000, Type: Completion, RequestID: "r1", LatencyMs: 100})
+	det.Observe(Event{Timestamp: 200000, Type: Completion, RequestID: "r2", LatencyMs: 100})
+	det.Observe(Event{Timestamp: 300000, Type: Completion, RequestID: "r3", LatencyMs: 100})
+	det.Observe(Event{Timestamp: 400000, Type: Completion, RequestID: "r4", LatencyMs: 100})
+
+	result := det.Detect()
+
+	if result.Level != Stable {
+		t.Errorf("Expected STABLE, got %v (score=%.2f)", result.Level, result.Score)
+	}
+	if result.Score >= 0.5 {
+		t.Errorf("Expected score < 0.5 for stable, got %.2f", result.Score)
+	}
+}
+
+// TestCompositeDetector_ObserveDetectBacklogged verifies I7: Backlogged via Observe/Detect (streaming mode)
+func TestCompositeDetector_ObserveDetectBacklogged(t *testing.T) {
+	det := NewCompositeDetector()
+
+	// 4 arrivals, all complete but latency significantly increasing
+	// First half: (100+110)/2 = 105, Second half: (160+170)/2 = 165
+	// Trend: (165-105)/105 = 0.57 → should give Backlogged
+	det.Observe(Event{Timestamp: 0, Type: Arrival, RequestID: "r1"})
+	det.Observe(Event{Timestamp: 100000, Type: Arrival, RequestID: "r2"})
+	det.Observe(Event{Timestamp: 200000, Type: Arrival, RequestID: "r3"})
+	det.Observe(Event{Timestamp: 300000, Type: Arrival, RequestID: "r4"})
+
+	det.Observe(Event{Timestamp: 100000, Type: Completion, RequestID: "r1", LatencyMs: 100})
+	det.Observe(Event{Timestamp: 200000, Type: Completion, RequestID: "r2", LatencyMs: 110})
+	det.Observe(Event{Timestamp: 300000, Type: Completion, RequestID: "r3", LatencyMs: 160})
+	det.Observe(Event{Timestamp: 400000, Type: Completion, RequestID: "r4", LatencyMs: 170})
+
+	result := det.Detect()
+
+	if result.Level != Backlogged {
+		t.Errorf("Expected BACKLOGGED, got %v (score=%.2f)", result.Level, result.Score)
+	}
+	if result.Score < 0.5 || result.Score >= 0.75 {
+		t.Errorf("Expected score in [0.5, 0.75) for backlogged, got %.2f", result.Score)
+	}
+}
+
 // TestCompositeDetector_OverloadedCase verifies BC-3: overloaded when both signals saturated (streaming mode)
 func TestCompositeDetector_OverloadedCase(t *testing.T) {
 	// Use Observe/Detect to test overload with both rate deficit and latency trend
@@ -132,16 +184,21 @@ func TestCompositeDetector_NoiseFloor(t *testing.T) {
 	}
 }
 
-// TestCompositeDetector_Reset verifies BC-9: Reset clears state
+// TestCompositeDetector_Reset verifies BC-9: Reset clears state (I8)
 func TestCompositeDetector_Reset(t *testing.T) {
 	det := NewCompositeDetector()
 
-	// Observe some events
+	// Observe events that produce non-stable state
 	det.Observe(Event{Timestamp: 0, Type: Arrival, RequestID: "r1"})
+	det.Observe(Event{Timestamp: 0, Type: Arrival, RequestID: "r2"})
 	det.Observe(Event{Timestamp: 100000, Type: Completion, RequestID: "r1", LatencyMs: 100})
+	// Only 1 completion for 2 arrivals → rate deficit > 0
 
-	// Detect should show some state
+	// Verify detector has non-empty state before reset
 	result1 := det.Detect()
+	if result1.Level == Stable && result1.Score == 0 {
+		t.Error("Expected non-zero state before reset")
+	}
 
 	// Reset
 	det.Reset()

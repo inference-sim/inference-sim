@@ -1,5 +1,11 @@
 // Package saturation provides post-hoc saturation detection for completed traces.
-// Distinct from sim.SaturationDetector (real-time flow control).
+//
+// NAMING NOTE (I6): This package shares the "saturation" name with sim.SaturationDetector
+// (real-time flow control used by gateway queue). They serve different purposes:
+//   - sim.SaturationDetector: real-time signal (float64) for admission control
+//   - saturation.Detector: post-hoc classification (Result) for trace analysis
+//
+// Import as "github.com/inference-sim/inference-sim/sim/saturation" to disambiguate.
 package saturation
 
 import "github.com/inference-sim/inference-sim/sim"
