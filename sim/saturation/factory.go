@@ -35,17 +35,3 @@ func (n *NoOpDetector) Detect() Result                                  { return
 func (n *NoOpDetector) Classify(requests []sim.RequestMetrics) Result { return Result{Level: Stable, Score: 0, Confidence: 0, Signals: make(map[string]float64)} }
 func (n *NoOpDetector) Reset()                                          {}
 
-func NewThresholdDetector(thresholdMs float64) Detector {
-	return &ThresholdDetectorStub{thresholdMs: thresholdMs}
-}
-
-// ThresholdDetectorStub is a temporary stub returning correct name
-type ThresholdDetectorStub struct {
-	thresholdMs float64
-}
-
-func (t *ThresholdDetectorStub) Name() string                                    { return "threshold" }
-func (t *ThresholdDetectorStub) Observe(event Event)                             {}
-func (t *ThresholdDetectorStub) Detect() Result                                  { return Result{Level: Stable, Score: 0, Confidence: 0, Signals: make(map[string]float64)} }
-func (t *ThresholdDetectorStub) Classify(requests []sim.RequestMetrics) Result { return Result{Level: Stable, Score: 0, Confidence: 0, Signals: make(map[string]float64)} }
-func (t *ThresholdDetectorStub) Reset()                                          {}
