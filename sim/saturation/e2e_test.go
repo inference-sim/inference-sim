@@ -2,6 +2,8 @@
 package saturation_test
 
 import (
+	"encoding/json"
+	"os"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -10,7 +12,7 @@ import (
 
 
 // TestE2E_CompositeDetector_WithMetrics verifies BC-6: end-to-end flow
-// with CompositeDetector via SaveResults integration
+// with CompositeDetector via SaveResults integration (C6: with behavioral assertions)
 func TestE2E_CompositeDetector_WithMetrics(t *testing.T) {
 	// Create metrics with some completed requests
 	m := &sim.Metrics{
@@ -34,12 +36,47 @@ func TestE2E_CompositeDetector_WithMetrics(t *testing.T) {
 	// Create detector
 	det := saturation.NewDetector("composite", saturation.DetectorOpts{})
 
-	// Call SaveResults with detector (should populate saturation field)
-	if err := m.SaveResults("test", 5000000, 1000, "", det); err != nil {
+	// Write to temp file and verify JSON output (C6: behavioral assertion)
+	tmpFile := t.TempDir() + "/metrics.json"
+	if err := m.SaveResults("test", 5000000, 1000, tmpFile, det); err != nil {
 		t.Fatalf("SaveResults failed: %v", err)
 	}
-	// Note: SaveResults outputs to stdout, actual verification would need
-	// to capture output or use file path. This test just ensures no panic.
+
+	// Read and parse the output JSON
+	data, err := os.ReadFile(tmpFile)
+	if err != nil {
+		t.Fatalf("Failed to read output file: %v", err)
+	}
+
+	var output struct {
+		Saturation *saturation.Result `json:"saturation"`
+	}
+	if err := json.Unmarshal(data, &output); err != nil {
+		t.Fatalf("Failed to unmarshal JSON: %v", err)
+	}
+
+	// Verify saturation field is populated
+	if output.Saturation == nil {
+		t.Fatal("Saturation field is nil in output JSON")
+	}
+
+	// Latency increases from 100→150→200ms
+	// First half: (100+150)/2 = 125, Second half: 200
+	// Trend: (200-125)/125 = 0.6, but only second half used (N=1)
+	// Actual trend: (200-150)/150 = 0.333... but calculation is over sorted data
+	// With only 3 requests: midpoint=1, first=[100,150], second=[200]
+	// First mean: 125, Second mean: 200, Trend: (200-125)/125 = 0.6
+	// But when sorted by ArrivedAt: [r1:100, r2:150, r3:200]
+	// midpoint=1, first=[100], second=[150,200]
+	// First mean: 100, Second mean: 175, Trend: (175-100)/100 = 0.75 → OVERLOADED
+	if output.Saturation.Level != saturation.Overloaded {
+		t.Errorf("Expected Overloaded, got %v (score=%.2f)", output.Saturation.Level, output.Saturation.Score)
+	}
+
+	// Verify score is at the overload threshold
+	if output.Saturation.Score < 0.75 {
+		t.Errorf("Expected score >= 0.75 for overloaded, got %.2f", output.Saturation.Score)
+	}
 }
 
 // TestE2E_ThresholdDetector_BelowThreshold verifies threshold detector

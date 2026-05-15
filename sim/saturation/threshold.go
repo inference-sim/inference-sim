@@ -10,6 +10,10 @@ import (
 // ThresholdDetector uses a simple mean E2E latency threshold.
 // BC-4: STABLE when mean E2E < threshold
 // BC-5: OVERLOADED when mean E2E > threshold
+//
+// Note (I1): ThresholdDetector is binary — it returns only STABLE or OVERLOADED.
+// BACKLOGGED is never emitted by this detector. For multi-level classification,
+// use CompositeDetector.
 type ThresholdDetector struct {
 	thresholdMs float64
 	completions []Event

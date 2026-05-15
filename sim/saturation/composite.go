@@ -103,7 +103,7 @@ func (c *CompositeDetector) Classify(requests []sim.RequestMetrics) interface{} 
 
 	// For batch (post-hoc) mode, we don't have total arrivals, so rate deficit is unavailable.
 	// Use latency trend as the primary signal (C2 fix: makes Overloaded reachable).
-	// Normalize latency trend assuming trend > 1.0 indicates overload (2x latency increase).
+	// Score = capped latency trend: 100% increase (trend=1.0) saturates to score=1.0 (N1).
 	normalizedLatencyTrend := math.Min(1.0, math.Max(0, latencyTrend/1.0))
 	score := normalizedLatencyTrend
 

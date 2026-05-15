@@ -211,7 +211,4 @@ func TestCompositeDetector_Reset(t *testing.T) {
 	if result2.Score != 0 {
 		t.Errorf("After reset, expected score=0, got %.2f", result2.Score)
 	}
-
-	// Verify result1 had some data (this test will need adjustment once Observe is implemented)
-	_ = result1
 }
