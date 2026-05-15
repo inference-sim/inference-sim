@@ -105,7 +105,8 @@ func computeComposite(arrivals, completions int, sortedLatencies []float64) Resu
 	quartileMonotone := false
 	n := len(sortedLatencies)
 
-	if n >= 20 {
+	// Base LT computation (works for any n >= 2, per issue #1369 comment 4462467580)
+	if n >= 2 {
 		// 2a: Raw LT (half-window split)
 		mid := n / 2
 		lFirst := mean(sortedLatencies[:mid])
@@ -114,19 +115,25 @@ func computeComposite(arrivals, completions int, sortedLatencies []float64) Resu
 			ltRaw = math.Max(0.0, (lSecond-lFirst)/lFirst)
 		}
 
-		// 2b: Quartile monotonicity check
-		qSize := n / 4
-		if qSize >= 5 {
+		// Start with raw LT (trust by default)
+		lt = ltRaw
+
+		// 2b: Quartile monotonicity filter (Issue #2) - only applies at n >= 20
+		if n >= 20 {
+			qSize := n / 4
 			q1 := mean(sortedLatencies[0:qSize])
 			q2 := mean(sortedLatencies[qSize : 2*qSize])
 			q3 := mean(sortedLatencies[2*qSize : 3*qSize])
 			q4 := mean(sortedLatencies[3*qSize:])
 			quartileMonotone = (q1 < q2) && (q2 < q3) && (q3 < q4)
-		}
 
-		// 2c: Apply filter
-		if quartileMonotone {
-			lt = ltRaw
+			// 2c: If quartile filter fails, veto LT (set to 0)
+			if !quartileMonotone {
+				lt = 0.0
+			}
+		} else {
+			// For n < 20, quartile filter doesn't apply - mark as N/A (not failed)
+			quartileMonotone = true
 		}
 	}
 
@@ -159,7 +166,8 @@ func computeComposite(arrivals, completions int, sortedLatencies []float64) Resu
 	}
 
 	// --- Confidence ---
-	confidence := math.Min(1.0, float64(completions)/20.0)
+	// Per spec: confidence = min(1.0, arrivals / 20.0)
+	confidence := math.Min(1.0, float64(arrivals)/20.0)
 
 	return Result{
 		Level:      level,
