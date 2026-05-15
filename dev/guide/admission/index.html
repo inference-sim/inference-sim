@@ -3745,7 +3745,7 @@ shedding of sheddable entries is enabled (BLIS-extra experimental feature).</p>
 </code></pre></div>
 <p><strong>Observe integration:</strong> When <code>slo_target_us &gt; 0</code>, <code>blis observe</code> injects the <code>x-slo-ttft-ms</code> HTTP header on outgoing requests, matching GIE's header convention.</p>
 <h3 id="in-flight-eviction">In-Flight Eviction<a class="headerlink" href="#in-flight-eviction" title="Permanent link">&para;</a></h3>
-<p>When flow control is enabled and the system is saturated, BLIS can evict sheddable requests that are already running on instances to free capacity for higher-priority waiting requests. This matches GIE's eviction architecture.</p>
+<p>When flow control is enabled and the system is saturated, BLIS can evict sheddable requests that are already running on instances to free capacity for higher-priority waiting requests. This is a BLIS-extra feature, not present in llm-d (llm-d's <code>RequestEvictor</code>/<code>EvictN</code> exists in code but has zero non-test callers in the production dispatch path).</p>
 <p><strong>How it works:</strong></p>
 <ol>
 <li>When saturation &gt;= 1.0 and a non-sheddable request is waiting in the gateway queue</li>
@@ -3760,7 +3760,7 @@ shedding of sheddable entries is enabled (BLIS-extra experimental feature).</p>
 <p><strong>Key properties:</strong></p>
 <ul>
 <li>Only sheddable requests (priority &lt; 0) can be evicted — critical and standard are always protected</li>
-<li>Eviction is automatic when <code>--flow-control</code> is active — no additional flag needed</li>
+<li>Disabled by default (llm-d parity). Enable with <code>--in-flight-eviction</code> (requires <code>--flow-control</code>)</li>
 <li>Evicted requests appear in the <code>Gateway Evicted (in-flight)</code> anomaly counter</li>
 <li>This is a terminal state — evicted requests are not requeued</li>
 <li>Eviction is distinct from instance-level KV preemption (<code>--preemption-policy</code>), which handles memory pressure and requeues victims</li>
