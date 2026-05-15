@@ -1519,13 +1519,13 @@ func TestRealClient_Send_CustomSLOPriorities(t *testing.T) {
 		WithSLOPriorityMap(customMap))
 
 	tests := []struct {
-		name          string
-		sloClass      string
-		expectedPrio  int
+		name         string
+		sloClass     string
+		expectedPrio int
 	}{
-		{"critical with custom override", "critical", 0},  // 10 - 10 = 0
-		{"standard with default", "standard", 7},          // 10 - 3 = 7 (max is now 10)
-		{"batch with custom override", "batch", 10},       // 10 - 0 = 10
+		{"critical with custom override", "critical", 0}, // 10 - 10 = 0
+		{"standard with default", "standard", 7},         // 10 - 3 = 7 (max is now 10)
+		{"batch with custom override", "batch", 10},      // 10 - 0 = 10
 	}
 
 	for _, tt := range tests {
@@ -1636,9 +1636,9 @@ func TestRealClient_Send_VLLMPriority_Captured(t *testing.T) {
 	sloMap := sim.DefaultSLOPriorityMap()
 	client := NewRealClient(
 		server.URL,
-		"",            // apiKey (empty for test)
-		"test-model",  // modelName
-		"",            // serverType (empty for test)
+		"",           // apiKey (empty for test)
+		"test-model", // modelName
+		"",           // serverType (empty for test)
 		WithHTTPTimeout(5*time.Second),
 		WithAPIFormat("completions"),
 		WithSLOPriorityMap(sloMap),
@@ -1649,12 +1649,12 @@ func TestRealClient_Send_VLLMPriority_Captured(t *testing.T) {
 		sloClass         string
 		expectedPriority int
 	}{
-		{"critical", "critical", 0},  // 4 - 4 = 0
-		{"standard", "standard", 1},  // 4 - 3 = 1
-		{"batch", "batch", 5},        // 4 - (-1) = 5
-		{"sheddable", "sheddable", 6}, // 4 - (-2) = 6
+		{"critical", "critical", 0},     // 4 - 4 = 0
+		{"standard", "standard", 1},     // 4 - 3 = 1
+		{"batch", "batch", 5},           // 4 - (-1) = 5
+		{"sheddable", "sheddable", 6},   // 4 - (-2) = 6
 		{"background", "background", 7}, // 4 - (-3) = 7
-		{"empty", "", 0},             // not set → 0
+		{"empty", "", 0},                // not set → 0
 	}
 
 	ctx := context.Background()
@@ -1686,7 +1686,7 @@ func TestObserveRecorder_VLLMPriority_EndToEndFlow(t *testing.T) {
 	// BC-7: End-to-end test verifying vllm_priority flows from RealClient.Send()
 	// through Recorder.RecordRequest() to TraceRecord, then through ExportTraceV2 to CSV,
 	// and finally back through LoadTraceV2.
-	
+
 	// Setup: mock server
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -1717,9 +1717,9 @@ func TestObserveRecorder_VLLMPriority_EndToEndFlow(t *testing.T) {
 	sloMap := sim.DefaultSLOPriorityMap()
 	client := NewRealClient(
 		server.URL,
-		"",            // apiKey (empty for test)
-		"test-model",  // modelName
-		"",            // serverType (empty for test)
+		"",           // apiKey (empty for test)
+		"test-model", // modelName
+		"",           // serverType (empty for test)
 		WithHTTPTimeout(5*time.Second),
 		WithAPIFormat("completions"),
 		WithSLOPriorityMap(sloMap),
