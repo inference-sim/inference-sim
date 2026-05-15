@@ -509,7 +509,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 			itlPath = strings.TrimSuffix(observeTraceData, ".csv") + ".itl.csv"
 		}
 
-		itlRecords := recorder.ITLRecords()
+		// Reuse itlRecords from line 496 (already fetched)
 		if len(itlRecords) == 0 {
 			logrus.Warnf("--record-itl was set but no ITL data recorded (non-streaming requests?)")
 		}
@@ -590,8 +590,16 @@ func printObserveMetrics(w io.Writer, records []workload.TraceRecord, wallClockD
 		itlByRequest[rec.RequestID] = append(itlByRequest[rec.RequestID], rec)
 	}
 
+	// R2: Sort request IDs for deterministic iteration order
+	requestIDs := make([]int, 0, len(itlByRequest))
+	for id := range itlByRequest {
+		requestIDs = append(requestIDs, id)
+	}
+	sort.Ints(requestIDs)
+
 	var itlsUs []int64
-	for _, chunks := range itlByRequest {
+	for _, id := range requestIDs {
+		chunks := itlByRequest[id]
 		if len(chunks) < 2 {
 			continue // Need at least 2 chunks to compute ITL
 		}
@@ -639,38 +647,29 @@ func printObserveMetrics(w io.Writer, records []workload.TraceRecord, wallClockD
 		tokensPerSec = float64(totalOutputTokens) / wallClockDurationSec
 	}
 
-	// Build output struct (BC-1, BC-2)
-	output := map[string]interface{}{
-		"completed_requests": len(ttftsUs),
-		"ttft_mean_ms":       ttftMeanMs,
-		"ttft_p90_ms":        0.0,
-		"ttft_p95_ms":        0.0,
-		"ttft_p99_ms":        0.0,
-		"e2e_mean_ms":        e2eMeanMs,
-		"e2e_p90_ms":         0.0,
-		"e2e_p95_ms":         0.0,
-		"e2e_p99_ms":         0.0,
-		"itl_mean_ms":        itlMeanMs,
-		"itl_p90_ms":         0.0,
-		"itl_p95_ms":         0.0,
-		"itl_p99_ms":         0.0,
-		"responses_per_sec":  responsesPerSec,
-		"tokens_per_sec":     tokensPerSec,
+	// Build output struct using sim.MetricsOutput for compile-time type safety (BC-1, BC-2)
+	output := sim.MetricsOutput{
+		CompletedRequests: len(ttftsUs),
+		TTFTMeanMs:        ttftMeanMs,
+		E2EMeanMs:         e2eMeanMs,
+		ITLMeanMs:         itlMeanMs,
+		ResponsesPerSec:   responsesPerSec,
+		TokensPerSec:      tokensPerSec,
 	}
 
 	// Compute percentiles if data available
 	if len(ttftsUs) > 0 {
-		output["ttft_p90_ms"] = sim.CalculatePercentile(ttftsUs, 90)
-		output["ttft_p95_ms"] = sim.CalculatePercentile(ttftsUs, 95)
-		output["ttft_p99_ms"] = sim.CalculatePercentile(ttftsUs, 99)
-		output["e2e_p90_ms"] = sim.CalculatePercentile(e2esUs, 90)
-		output["e2e_p95_ms"] = sim.CalculatePercentile(e2esUs, 95)
-		output["e2e_p99_ms"] = sim.CalculatePercentile(e2esUs, 99)
+		output.TTFTP90Ms = sim.CalculatePercentile(ttftsUs, 90)
+		output.TTFTP95Ms = sim.CalculatePercentile(ttftsUs, 95)
+		output.TTFTP99Ms = sim.CalculatePercentile(ttftsUs, 99)
+		output.E2EP90Ms = sim.CalculatePercentile(e2esUs, 90)
+		output.E2EP95Ms = sim.CalculatePercentile(e2esUs, 95)
+		output.E2EP99Ms = sim.CalculatePercentile(e2esUs, 99)
 	}
 	if len(itlsUs) > 0 {
-		output["itl_p90_ms"] = sim.CalculatePercentile(itlsUs, 90)
-		output["itl_p95_ms"] = sim.CalculatePercentile(itlsUs, 95)
-		output["itl_p99_ms"] = sim.CalculatePercentile(itlsUs, 99)
+		output.ITLP90Ms = sim.CalculatePercentile(itlsUs, 90)
+		output.ITLP95Ms = sim.CalculatePercentile(itlsUs, 95)
+		output.ITLP99Ms = sim.CalculatePercentile(itlsUs, 99)
 	}
 
 	// Marshal to JSON
