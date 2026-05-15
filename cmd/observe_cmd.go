@@ -490,7 +490,12 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	records := recorder.Records()
 	logrus.Infof("Trace exported: %d records to %s / %s", len(records), observeTraceHeader, observeTraceData)
 
-	printObserveLatencySummary(os.Stdout, records)
+	wallClockDurationSec := time.Since(startTime).Seconds()
+	var itlRecords []workload.ITLRecord
+	if observeRecordITL {
+		itlRecords = recorder.ITLRecords()
+	}
+	printObserveMetrics(os.Stdout, records, wallClockDurationSec, itlRecords)
 
 	// Print session metrics if any record carries a session label (#1058)
 	sessionMetrics := computeSessionMetricsFromTrace(records)
