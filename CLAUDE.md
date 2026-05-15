@@ -114,6 +114,16 @@ go build -o blis main.go
 # Run with opt-in in-flight eviction of sheddable requests (BLIS-extra, not in llm-d)
 ./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
   --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 --in-flight-eviction
+
+# Run with post-hoc saturation detection (composite detector, #1369)
+./blis run --model qwen/qwen3-14b --post-hoc-detector composite
+
+# Run with post-hoc saturation detection (threshold detector with custom threshold)
+./blis run --model qwen/qwen3-14b --post-hoc-detector threshold --saturation-threshold-ms 3000
+
+# Replay with post-hoc saturation detection
+./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
+  --post-hoc-detector composite
 ```
 
 ## Testing
@@ -294,6 +304,40 @@ Every issue must have at least one label. Use `gh issue create --template "Templ
 - **Scripts**: `.specify/scripts/bash/` — feature branch creation, plan setup, and agent context update automation
 
 Speckit does not affect Go build, test, or lint. All `.specify/` artifacts are opt-in for AI-assisted workflows.
+
+## Post-Hoc Saturation Detection
+
+BLIS includes post-hoc saturation detection for analyzing completed simulation runs (#1369). This is distinct from the real-time flow control saturation detector used for admission control.
+
+**Package**: `sim/saturation/`
+
+**Detectors**:
+- **composite**: Combines rate deficit (1 - completions/arrivals) and latency trend (second-half vs first-half mean). Zero parameters. Classifies as STABLE (score < 0.5), BACKLOGGED (0.5 ≤ score < 0.75), or OVERLOADED (score ≥ 0.75).
+- **threshold**: Simple mean E2E latency comparison. Configurable threshold (default 5000ms). STABLE when mean < threshold, OVERLOADED when mean > threshold.
+- **none**: No-op detector (default). Always returns STABLE with zero score.
+
+**CLI flags** (available on `run`, `observe`, `replay`):
+- `--post-hoc-detector <name>`: Detector to use (composite, threshold, none)
+- `--saturation-threshold-ms <ms>`: Threshold for threshold detector (default 5000)
+
+**Output**: Saturation results appear in `MetricsOutput.saturation` field as JSON with `level`, `score`, `confidence`, and `signals` (detector-specific metrics).
+
+**Example**:
+```json
+{
+  "saturation": {
+    "level": "STABLE",
+    "score": 0.35,
+    "confidence": 0.95,
+    "signals": {
+      "rate_deficit": 0.0,
+      "latency_trend": 0.12
+    }
+  }
+}
+```
+
+**Use cases**: Automated classification of simulation runs, detecting queue buildup or throughput saturation in capacity planning experiments.
 
 ## File Organization
 
