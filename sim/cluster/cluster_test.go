@@ -3143,6 +3143,10 @@ func TestClusterSimulator_FlowControl_NoEviction_Default(t *testing.T) {
 	if injected != accounted {
 		t.Errorf("INV-1 violated: injected=%d != accounted=%d", injected, accounted)
 	}
+
+	if m.CompletedRequests != len(requests) {
+		t.Errorf("expected all %d requests to complete when eviction disabled, got %d completed", len(requests), m.CompletedRequests)
+	}
 }
 
 // TestClusterSimulator_FlowControl_Eviction_PD verifies that eviction tracking
