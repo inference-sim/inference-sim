@@ -46,12 +46,18 @@ func (c *CompositeDetector) Detect() Result {
 		return Result{Level: Stable, Score: 0, Confidence: 0, Signals: make(map[string]float64)}
 	}
 
-	// Extract latencies sorted by completion time
-	sortedLatencies := make([]float64, len(c.completions))
-	for i, e := range c.completions {
+	// Sort completions by timestamp (completion time), not by latency value
+	sorted := make([]Event, len(c.completions))
+	copy(sorted, c.completions)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Timestamp < sorted[j].Timestamp
+	})
+
+	// Extract latencies in temporal order
+	sortedLatencies := make([]float64, len(sorted))
+	for i, e := range sorted {
 		sortedLatencies[i] = e.LatencyMs
 	}
-	sort.Float64s(sortedLatencies)
 
 	return computeComposite(arrivals, completions, sortedLatencies)
 }
