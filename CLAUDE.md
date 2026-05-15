@@ -110,6 +110,10 @@ go build -o blis main.go
 ./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
   --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 \
   --dispatch-tick-interval 5000
+
+# Run with opt-in in-flight eviction of sheddable requests (BLIS-extra, not in llm-d)
+./blis run --model qwen/qwen3-14b --flow-control --saturation-detector utilization \
+  --queue-depth-threshold 5 --kv-cache-util-threshold 0.8 --in-flight-eviction
 ```
 
 ## Testing

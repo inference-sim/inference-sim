@@ -136,6 +136,7 @@ func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
 		"kv-cache-util-threshold", "max-concurrency",
 		"per-band-capacity", "usage-limit-threshold",
 		"queue-shedding", "dispatch-tick-interval",
+		"in-flight-eviction",
 
 		// replay-specific: results
 		"results-path",
