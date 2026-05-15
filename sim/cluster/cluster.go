@@ -39,7 +39,7 @@ type ClusterSimulator struct {
 	trace                 *trace.SimulationTrace    // nil when trace-level is "none" (BC-1: zero overhead)
 	preGeneratedRequests  []*sim.Request            // Pre-generated requests (all workload paths unified)
 	inFlightRequests      map[string]int            // instance ID → dispatched-but-not-completed count (#463)
-	evictionTracker       *EvictionTracker          // tracks routed sheddable requests for in-flight eviction (nil when flow control disabled)
+	evictionTracker       *EvictionTracker          // tracks routed sheddable requests for in-flight eviction (nil unless --in-flight-eviction set)
 	gatewayEvicted        int                       // count of requests evicted in-flight from instances (INV-1: gw_evicted)
 	gatewayExpired        int                       // count of requests expired from gateway queue via TTL (INV-1: gw_expired)
 	requestTTL            int64                     // gateway queue request TTL in microseconds; 0 = disabled
@@ -498,13 +498,15 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		fcAdmission := NewFlowControlAdmission(gq)
 		cs.flowControlAdmission = fcAdmission
 		cs.admissionPolicy = fcAdmission
-		cs.evictionTracker = NewEvictionTracker()
+		if config.FlowControlInFlightEviction {
+			cs.evictionTracker = NewEvictionTracker()
+		}
 		fairness := config.FlowControlFairnessPolicy
 		if fairness == "" {
 			fairness = "global-strict"
 		}
-		logrus.Infof("[cluster] flow control enabled: detector=%q, dispatch=%q, fairness=%q, maxDepth=%d, perBandCapacity=%d, requestTTL=%d",
-			config.FlowControlDetector, dispatchOrder, fairness, config.FlowControlMaxQueueDepth, config.FlowControlPerBandCapacity, config.FlowControlRequestTTL)
+		logrus.Infof("[cluster] flow control enabled: detector=%q, dispatch=%q, fairness=%q, maxDepth=%d, perBandCapacity=%d, requestTTL=%d, queueShedding=%v, inFlightEviction=%v",
+			config.FlowControlDetector, dispatchOrder, fairness, config.FlowControlMaxQueueDepth, config.FlowControlPerBandCapacity, config.FlowControlRequestTTL, config.FlowControlQueueShedding, config.FlowControlInFlightEviction)
 	}
 
 	// Phase 1B-2a: initialize TenantTracker when TenantBudgets is configured (issue #811).

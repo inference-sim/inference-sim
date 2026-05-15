@@ -168,6 +168,7 @@ var (
 	flowControlRequestTTL           int64
 	flowControlQueueShedding        bool
 	flowControlDispatchTickInterval int64
+	flowControlInFlightEviction     bool
 
 	// Per-pool hardware override config
 	prefillTP           int
@@ -903,6 +904,9 @@ func resolvePolicies(cmd *cobra.Command) ([]sim.ScorerConfig, *sim.PolicyBundle)
 	if flowControlQueueShedding && !flowControlEnabled {
 		logrus.Warnf("--queue-shedding has no effect without --flow-control")
 	}
+	if flowControlInFlightEviction && !flowControlEnabled {
+		logrus.Warnf("--in-flight-eviction has no effect without --flow-control")
+	}
 
 	logrus.Infof("Policy config: admission=%s, routing=%s, scheduler=%s, preemption=%s",
 		admissionPolicy, routingPolicy, scheduler, preemptionPolicy)
@@ -1037,6 +1041,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&flowControlRequestTTL, "request-ttl", 0, "Gateway queue request TTL in microseconds (0=disabled). Requires --flow-control.")
 	cmd.Flags().BoolVar(&flowControlQueueShedding, "queue-shedding", false, "Enable cross-band victim shedding when gateway queue is full (BLIS-extra, not in llm-d; default: reject)")
 	cmd.Flags().Int64Var(&flowControlDispatchTickInterval, "dispatch-tick-interval", 1000, "Microseconds between periodic gateway dispatch ticks (0 = use default 1ms; llm-d parity)")
+	cmd.Flags().BoolVar(&flowControlInFlightEviction, "in-flight-eviction", false, "Enable in-flight eviction of sheddable requests when saturated (BLIS-extra, not in llm-d; requires --flow-control)")
 
 	// Per-pool hardware overrides
 	cmd.Flags().IntVar(&prefillTP, "prefill-tp", 0, "Tensor parallelism degree for prefill pool instances (0 = use global --tensor-parallelism)")
@@ -1651,6 +1656,7 @@ var runCmd = &cobra.Command{
 			FlowControlRequestTTL:           flowControlRequestTTL,
 			FlowControlQueueShedding:        flowControlQueueShedding,
 			FlowControlDispatchTickInterval: flowControlDispatchTickInterval,
+			FlowControlInFlightEviction:     flowControlInFlightEviction,
 			ModelAutoscalerIntervalUs:       bundleAutoscalerIntervalUs,
 			ScaleUpStabilizationWindowUs:    bundleScaleUpStabilizationWindowUs,
 			ScaleDownStabilizationWindowUs:  bundleScaleDownStabilizationWindowUs,

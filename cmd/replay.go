@@ -505,6 +505,7 @@ Example:
 			FlowControlRequestTTL:           flowControlRequestTTL,
 			FlowControlQueueShedding:        flowControlQueueShedding,
 			FlowControlDispatchTickInterval: flowControlDispatchTickInterval,
+			FlowControlInFlightEviction:     flowControlInFlightEviction,
 			TierShedThreshold:               tierShedThreshold,
 			TierShedMinPriority:             tierShedMinPriority,
 			GAIEQDThreshold:                 gaieQDThreshold,

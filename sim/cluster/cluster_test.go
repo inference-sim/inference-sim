@@ -3002,6 +3002,7 @@ func TestClusterSimulator_FlowControl_Eviction_Conservation(t *testing.T) {
 	config.FlowControlMaxConcurrency = 1
 	config.FlowControlDispatchOrder = "priority"
 	config.FlowControlMaxQueueDepth = 100
+	config.FlowControlInFlightEviction = true
 
 	// Mix of sheddable and critical requests. Sheddable arrive first to fill capacity,
 	// then critical arrive and trigger eviction.
@@ -3084,6 +3085,70 @@ func TestClusterSimulator_FlowControl_Eviction_Conservation(t *testing.T) {
 		m.CompletedRequests, gwEvicted, gwShed, gwDepth, criticalCompleted)
 }
 
+// TestClusterSimulator_FlowControl_NoEviction_Default verifies that in-flight
+// eviction does not fire when FlowControlInFlightEviction is false (default, llm-d parity).
+func TestClusterSimulator_FlowControl_NoEviction_Default(t *testing.T) {
+	config := newTestDeploymentConfig(1)
+	config.FlowControlEnabled = true
+	config.FlowControlDetector = "concurrency"
+	config.FlowControlMaxConcurrency = 1
+	config.FlowControlDispatchOrder = "priority"
+	config.FlowControlMaxQueueDepth = 100
+	// FlowControlInFlightEviction defaults to false
+
+	requests := make([]*sim.Request, 0, 6)
+	longOutput := make([]int, 200)
+	for j := range longOutput {
+		longOutput[j] = j + 1
+	}
+	for i := 0; i < 3; i++ {
+		out := make([]int, len(longOutput))
+		copy(out, longOutput)
+		requests = append(requests, &sim.Request{
+			ID:           fmt.Sprintf("shed-%d", i),
+			ArrivalTime:  int64(i * 1000),
+			SLOClass:     "sheddable",
+			InputTokens:  []int{1, 2, 3, 4, 5},
+			OutputTokens: out,
+		})
+	}
+	for i := 0; i < 3; i++ {
+		requests = append(requests, &sim.Request{
+			ID:           fmt.Sprintf("crit-%d", i),
+			ArrivalTime:  int64(50000 + i*1000),
+			SLOClass:     "critical",
+			InputTokens:  []int{1, 2, 3},
+			OutputTokens: []int{1, 2, 3},
+		})
+	}
+
+	cs := NewClusterSimulator(config, requests, nil)
+	mustRun(t, cs)
+
+	gwEvicted := cs.GatewayEvicted()
+	if gwEvicted != 0 {
+		t.Errorf("expected gwEvicted=0 when in-flight eviction disabled (llm-d parity), got %d", gwEvicted)
+	}
+
+	m := cs.AggregatedMetrics()
+	gwDepth := cs.GatewayQueueDepth()
+	gwShed := cs.GatewayQueueShed()
+	gwRejected := cs.GatewayQueueRejected()
+	gwExpired := cs.GatewayExpired()
+	encRej := cs.EncodeRoutingRejections()
+	injected := len(requests) - cs.RejectedRequests()
+	accounted := m.CompletedRequests + m.StillQueued + m.StillRunning +
+		m.DroppedUnservable + m.TimedOutRequests + cs.RoutingRejections() +
+		gwDepth + gwShed + gwRejected + gwEvicted + gwExpired + encRej
+	if injected != accounted {
+		t.Errorf("INV-1 violated: injected=%d != accounted=%d", injected, accounted)
+	}
+
+	if m.CompletedRequests != len(requests) {
+		t.Errorf("expected all %d requests to complete when eviction disabled, got %d completed", len(requests), m.CompletedRequests)
+	}
+}
+
 // TestClusterSimulator_FlowControl_Eviction_PD verifies that eviction tracking
 // works when requests are routed through the PD disaggregation path (non-disaggregated).
 func TestClusterSimulator_FlowControl_Eviction_PD(t *testing.T) {
@@ -3093,6 +3158,7 @@ func TestClusterSimulator_FlowControl_Eviction_PD(t *testing.T) {
 	config.FlowControlMaxConcurrency = 1 // saturation = totalInFlight / (numInstances * maxConcurrency) — saturates at 2 in-flight
 	config.FlowControlDispatchOrder = "priority"
 	config.FlowControlMaxQueueDepth = 100
+	config.FlowControlInFlightEviction = true
 	config.PDDecider = "never" // non-disaggregated: requests go directly to decode pod
 
 	longOutput := make([]int, 200)

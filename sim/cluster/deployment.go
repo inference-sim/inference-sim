@@ -134,6 +134,7 @@ type DeploymentConfig struct {
 	FlowControlRequestTTL           int64   `yaml:"flow_control_request_ttl,omitempty"`             // microseconds; 0 = disabled (default). GIE parity: DefaultRequestTTL.
 	FlowControlQueueShedding        bool    `yaml:"flow_control_queue_shedding,omitempty"`          // BLIS-extra: cross-band shedding on full queue (not in llm-d). Default false.
 	FlowControlDispatchTickInterval int64   `yaml:"flow_control_dispatch_tick_interval,omitempty"`  // µs between periodic dispatch ticks (default 1000 = 1ms, llm-d parity). 0 = use default.
+	FlowControlInFlightEviction     bool    `yaml:"flow_control_in_flight_eviction,omitempty"`      // BLIS-extra: evict sheddable in-flight requests when saturated (not in llm-d). Default false.
 
 	// Issue #893: per-GPU-type hardware calibration for roofline and trained-physics backends.
 	// Key: GPU type string (e.g., "A100", "H100"). Value: HardwareCalib for that GPU.
