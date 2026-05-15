@@ -1912,8 +1912,13 @@ func TestPrintObserveMetrics_ValidRecords(t *testing.T) {
 	if metrics["ttft_mean_ms"].(float64) == 0 {
 		t.Errorf("Expected non-zero ttft_mean_ms")
 	}
-	if metrics["responses_per_sec"].(float64) == 0 {
-		t.Errorf("Expected non-zero responses_per_sec")
+	// BC-7: With wallClockDurationSec=1.0 and 2 completed requests, expect exactly 2.0 rps
+	if metrics["responses_per_sec"].(float64) != 2.0 {
+		t.Errorf("Expected responses_per_sec=2.0, got %v", metrics["responses_per_sec"])
+	}
+	// BC-7: With wallClockDurationSec=1.0 and 220 total output tokens, expect exactly 220.0 tps
+	if metrics["tokens_per_sec"].(float64) != 220.0 {
+		t.Errorf("Expected tokens_per_sec=220.0, got %v", metrics["tokens_per_sec"])
 	}
 }
 
@@ -1942,6 +1947,41 @@ func TestPrintObserveMetrics_ZeroRecords(t *testing.T) {
 
 	if metrics["completed_requests"].(float64) != 0 {
 		t.Errorf("Expected completed_requests=0, got %v", metrics["completed_requests"])
+	}
+}
+
+func TestPrintObserveMetrics_ErrorOnlyRecords(t *testing.T) {
+	// GIVEN observe records where all requests failed (error status)
+	// WHEN printObserveMetrics is called
+	// THEN header emits with completed_requests=0 (issue #1313 acceptance criterion 1)
+	records := []workload.TraceRecord{
+		{Status: "error", SendTimeUs: 0, FirstChunkTimeUs: 0, LastChunkTimeUs: 0, OutputTokens: 0},
+		{Status: "timeout", SendTimeUs: 0, FirstChunkTimeUs: 0, LastChunkTimeUs: 0, OutputTokens: 0},
+	}
+	var buf bytes.Buffer
+	printObserveMetrics(&buf, records, 1.0, nil)
+
+	output := buf.String()
+	if !strings.Contains(output, "=== Simulation Metrics ===") {
+		t.Errorf("Missing section header for error-only records")
+	}
+
+	var metrics map[string]interface{}
+	lines := strings.Split(output, "\n")
+	jsonStart := -1
+	for i, line := range lines {
+		if strings.Contains(line, "=== Simulation Metrics ===") {
+			jsonStart = i + 1
+			break
+		}
+	}
+	jsonStr := strings.Join(lines[jsonStart:], "\n")
+	if err := json.Unmarshal([]byte(jsonStr), &metrics); err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	if metrics["completed_requests"].(float64) != 0 {
+		t.Errorf("Expected completed_requests=0 when all records have error status, got %v", metrics["completed_requests"])
 	}
 }
 

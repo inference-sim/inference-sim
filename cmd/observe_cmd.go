@@ -648,6 +648,10 @@ func printObserveMetrics(w io.Writer, records []workload.TraceRecord, wallClockD
 	}
 
 	// Build output struct using sim.MetricsOutput for compile-time type safety (BC-1, BC-2)
+	// Note: TotalOutputTokens field is intentionally left as zero (omitempty suppresses it).
+	// The observe path computes tokens_per_sec directly from totalOutputTokens local variable,
+	// but doesn't expose the raw count to distinguish throughput (rate) from cumulative count.
+	// Run/replay paths populate this field from DES metrics.
 	output := sim.MetricsOutput{
 		CompletedRequests: len(ttftsUs),
 		TTFTMeanMs:        ttftMeanMs,
