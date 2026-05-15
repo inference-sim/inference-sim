@@ -291,7 +291,7 @@ With `--dispatch-order slo-deadline`, the gateway queue dispatches the request w
 
 ### In-Flight Eviction
 
-When flow control is enabled and the system is saturated, BLIS can evict sheddable requests that are already running on instances to free capacity for higher-priority waiting requests. This matches GIE's eviction architecture.
+When flow control is enabled and the system is saturated, BLIS can evict sheddable requests that are already running on instances to free capacity for higher-priority waiting requests. This is a BLIS-extra feature, not present in llm-d (llm-d's `RequestEvictor`/`EvictN` exists in code but has zero non-test callers in the production dispatch path).
 
 **How it works:**
 
@@ -305,7 +305,7 @@ When flow control is enabled and the system is saturated, BLIS can evict sheddab
 **Key properties:**
 
 - Only sheddable requests (priority < 0) can be evicted — critical and standard are always protected
-- Eviction is automatic when `--flow-control` is active — no additional flag needed
+- Disabled by default (llm-d parity). Enable with `--in-flight-eviction` (requires `--flow-control`)
 - Evicted requests appear in the `Gateway Evicted (in-flight)` anomaly counter
 - This is a terminal state — evicted requests are not requeued
 - Eviction is distinct from instance-level KV preemption (`--preemption-policy`), which handles memory pressure and requeues victims
