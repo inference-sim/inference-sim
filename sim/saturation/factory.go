@@ -22,16 +22,15 @@ func NewDetector(name string, opts DetectorOpts) Detector {
 		return NewThresholdDetector(threshold)
 	case "none":
 		return &NoOpDetector{}
-	default:
-		panic(fmt.Sprintf("unknown saturation detector %q", name))
 	}
+	panic(fmt.Sprintf("unknown saturation detector %q", name))
 }
 
 type NoOpDetector struct{}
 
-func (n *NoOpDetector) Name() string                                    { return "none" }
-func (n *NoOpDetector) Observe(event Event)                             {}
-func (n *NoOpDetector) Detect() Result                                  { return Result{Level: Stable, Score: 0, Confidence: 0, Signals: make(map[string]float64)} }
-func (n *NoOpDetector) Classify(requests []sim.RequestMetrics) Result { return Result{Level: Stable, Score: 0, Confidence: 0, Signals: make(map[string]float64)} }
-func (n *NoOpDetector) Reset()                                          {}
+func (n *NoOpDetector) Name() string                                       { return "none" }
+func (n *NoOpDetector) Observe(event Event)                                {}
+func (n *NoOpDetector) Detect() Result                                     { return Result{Level: Stable, Score: 0, Confidence: 0, Signals: make(map[string]float64)} }
+func (n *NoOpDetector) Classify(requests []sim.RequestMetrics) interface{} { return Result{Level: Stable, Score: 0, Confidence: 0, Signals: make(map[string]float64)} }
+func (n *NoOpDetector) Reset()                                             {}
 

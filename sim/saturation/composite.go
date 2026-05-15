@@ -66,8 +66,8 @@ func (c *CompositeDetector) Detect() Result {
 	// Classify based on both signals
 	score, level := classifyComposite(rateDeficit, latencyTrend)
 
-	// Confidence inversely proportional to 1/sqrt(N) noise floor
-	confidence := math.Min(1.0, math.Sqrt(float64(len(c.arrivals))))
+	// Confidence formula: 1 - 1/sqrt(N+1), increases with sample size (C5 fix)
+	confidence := 1.0 - 1.0/math.Sqrt(float64(len(c.arrivals))+1.0)
 
 	return Result{
 		Level:      level,
@@ -81,16 +81,10 @@ func (c *CompositeDetector) Detect() Result {
 }
 
 // Classify performs batch post-hoc classification on completed requests.
-func (c *CompositeDetector) Classify(requests []sim.RequestMetrics) Result {
+func (c *CompositeDetector) Classify(requests []sim.RequestMetrics) interface{} {
 	if len(requests) == 0 {
 		return Result{Level: Stable, Score: 0, Confidence: 0, Signals: make(map[string]float64)}
 	}
-
-	// For post-hoc classification, we only have completed requests
-	// Rate deficit: we assume arrivals == completions for batch analysis
-	// (The issue says Classify signature needs totalArrivals, but current interface doesn't have it)
-	// For now, we set rate deficit to 0 for batch mode
-	rateDeficit := 0.0
 
 	// Calculate latency trend: (second_half_mean - first_half_mean) / first_half_mean
 	latencyTrend := 0.0
@@ -107,18 +101,30 @@ func (c *CompositeDetector) Classify(requests []sim.RequestMetrics) Result {
 		}
 	}
 
-	// Classify based on both signals
-	score, level := classifyComposite(rateDeficit, latencyTrend)
+	// For batch (post-hoc) mode, we don't have total arrivals, so rate deficit is unavailable.
+	// Use latency trend as the primary signal (C2 fix: makes Overloaded reachable).
+	// Normalize latency trend assuming trend > 1.0 indicates overload (2x latency increase).
+	normalizedLatencyTrend := math.Min(1.0, math.Max(0, latencyTrend/1.0))
+	score := normalizedLatencyTrend
 
-	// Confidence inversely proportional to 1/sqrt(N) noise floor
-	confidence := math.Min(1.0, math.Sqrt(float64(len(requests))))
+	// Classify based on score thresholds
+	var level Level
+	if score < 0.5 {
+		level = Stable
+	} else if score < 0.75 {
+		level = Backlogged
+	} else {
+		level = Overloaded
+	}
+
+	// Confidence formula: 1 - 1/sqrt(N+1), increases with sample size (C5 fix)
+	confidence := 1.0 - 1.0/math.Sqrt(float64(len(requests))+1.0)
 
 	return Result{
 		Level:      level,
 		Score:      score,
 		Confidence: confidence,
 		Signals: map[string]float64{
-			"rate_deficit":  rateDeficit,
 			"latency_trend": latencyTrend,
 		},
 	}

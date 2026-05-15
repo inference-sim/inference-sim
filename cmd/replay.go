@@ -548,8 +548,18 @@ Example:
 			logrus.Infof("Trace exported: %s.yaml, %s.csv (%d records)", replayTraceOutput, replayTraceOutput, len(records))
 		}
 
-		// Instantiate post-hoc saturation detector from CLI flags (#1369)
-		var saturationDetector interface{}
+		// Validate and instantiate post-hoc saturation detector from CLI flags (#1369, C3)
+		validPostHocDetectors := map[string]bool{"none": true, "composite": true, "threshold": true}
+		if !validPostHocDetectors[postHocDetector] {
+			logrus.Fatalf("--post-hoc-detector %q not recognized. Valid: composite, threshold, none", postHocDetector)
+		}
+
+		// Validate saturation threshold for negative values (I4)
+		if saturationThreshold < 0 {
+			logrus.Fatalf("--saturation-threshold-ms must be non-negative, got %.2f", saturationThreshold)
+		}
+
+		var saturationDetector sim.BatchClassifier
 		if postHocDetector != "none" {
 			saturationDetector = saturation.NewDetector(postHocDetector, saturation.DetectorOpts{
 				ThresholdMs: saturationThreshold,

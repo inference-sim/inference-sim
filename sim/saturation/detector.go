@@ -46,6 +46,27 @@ func (l Level) MarshalJSON() ([]byte, error) {
 	return []byte(`"` + l.String() + `"`), nil
 }
 
+// UnmarshalJSON implements json.Unmarshaler for Level enum (I3).
+func (l *Level) UnmarshalJSON(data []byte) error {
+	// Remove quotes
+	s := string(data)
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		s = s[1 : len(s)-1]
+	}
+
+	switch s {
+	case "STABLE":
+		*l = Stable
+	case "BACKLOGGED":
+		*l = Backlogged
+	case "OVERLOADED":
+		*l = Overloaded
+	default:
+		*l = Stable // Default to stable for unknown values
+	}
+	return nil
+}
+
 type Result struct {
 	Level      Level              `json:"level"`
 	Score      float64            `json:"score"`
@@ -57,6 +78,8 @@ type Detector interface {
 	Name() string
 	Observe(event Event)
 	Detect() Result
-	Classify(requests []sim.RequestMetrics) Result
+	// Classify performs batch classification. Returns interface{} to implement sim.BatchClassifier.
+	// Actual return type is Result.
+	Classify(requests []sim.RequestMetrics) interface{}
 	Reset()
 }

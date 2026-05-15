@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"reflect"
 	"slices"
 	"sort"
 
@@ -66,7 +65,7 @@ func NewMetrics() *Metrics {
 
 // SaveResults computes aggregate metrics and optionally runs post-hoc saturation detection.
 // saturationDetector should be a saturation.Detector or nil to skip saturation analysis.
-func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int64, outputFilePath string, saturationDetector interface{}) error {
+func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int64, outputFilePath string, saturationDetector BatchClassifier) error {
 	vllmRuntime := float64(m.SimEndedTime) / float64(1e6)
 
 	// Create an instance of our output struct to populate
@@ -133,7 +132,7 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 	// Run post-hoc saturation detection if detector provided (#1369)
 	if saturationDetector != nil {
 		// Extract completed request metrics for classification
-		// Only include completed requests (those with non-zero E2E)
+		// Sort by ArrivedAt to ensure chronological order for trend analysis (I2)
 		completedReqs := make([]RequestMetrics, 0, m.CompletedRequests)
 		for _, id := range sortedRequestIDs(m.Requests) {
 			if m.RequestE2Es[id] > 0 { // Only completed requests
@@ -144,17 +143,13 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 			}
 		}
 
-		// Call Classify method via reflection to avoid import cycle
-		// saturationDetector is saturation.Detector, which has Classify([]RequestMetrics) Result
-		classifyMethod := reflect.ValueOf(saturationDetector).MethodByName("Classify")
-		if classifyMethod.IsValid() {
-			// Call Classify with completedReqs
-			args := []reflect.Value{reflect.ValueOf(completedReqs)}
-			results := classifyMethod.Call(args)
-			if len(results) == 1 {
-				output.Saturation = results[0].Interface()
-			}
-		}
+		// Sort by arrival time for chronological trend analysis
+		sort.Slice(completedReqs, func(i, j int) bool {
+			return completedReqs[i].ArrivedAt < completedReqs[j].ArrivedAt
+		})
+
+		// Call Classify using typed interface (C1: no reflection, compile-time safety)
+		output.Saturation = saturationDetector.Classify(completedReqs)
 	}
 
 	// Always emit the metrics section so callers can reliably parse output,

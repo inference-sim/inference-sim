@@ -7,6 +7,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
+
 // TestCompositeDetector_StableCase verifies BC-1: stable when completions match arrivals
 func TestCompositeDetector_StableCase(t *testing.T) {
 	requests := []sim.RequestMetrics{
@@ -17,7 +18,8 @@ func TestCompositeDetector_StableCase(t *testing.T) {
 	}
 
 	det := NewCompositeDetector()
-	result := det.Classify(requests)
+	rawResult := det.Classify(requests)
+	result := asResult(t, rawResult)
 
 	if result.Level != Stable {
 		t.Errorf("Expected STABLE, got %v", result.Level)
@@ -28,37 +30,60 @@ func TestCompositeDetector_StableCase(t *testing.T) {
 	if result.Confidence <= 0 {
 		t.Errorf("Expected confidence > 0, got %.2f", result.Confidence)
 	}
-	// Verify signals exist
-	if _, ok := result.Signals["rate_deficit"]; !ok {
-		t.Error("Missing rate_deficit signal")
-	}
+	// Verify signals exist (C2: batch mode uses latency trend only)
 	if _, ok := result.Signals["latency_trend"]; !ok {
 		t.Error("Missing latency_trend signal")
 	}
 }
 
-// TestCompositeDetector_BackloggedCase verifies BC-2: backlogged when one signal saturated
+// TestCompositeDetector_BackloggedCase verifies BC-2: backlogged when latency trend indicates moderate degradation
 func TestCompositeDetector_BackloggedCase(t *testing.T) {
-	// Latency increasing but completions match arrivals
+	// Moderate latency increase: 100ms → 170ms (70% increase over first half mean)
+	// First half: (100+110)/2 = 105, Second half: (160+170)/2 = 165
+	// Trend: (165-105)/105 = 0.57 → normalized score = 0.57
 	requests := []sim.RequestMetrics{
 		{E2E: 100, ArrivedAt: 0},
-		{E2E: 150, ArrivedAt: 0.1},
-		{E2E: 200, ArrivedAt: 0.2},
-		{E2E: 250, ArrivedAt: 0.3},
+		{E2E: 110, ArrivedAt: 0.1},
+		{E2E: 160, ArrivedAt: 0.2},
+		{E2E: 170, ArrivedAt: 0.3},
 	}
 
 	det := NewCompositeDetector()
-	result := det.Classify(requests)
+	rawResult := det.Classify(requests)
+	result := asResult(t, rawResult)
 
 	if result.Level != Backlogged {
-		t.Errorf("Expected BACKLOGGED, got %v", result.Level)
+		t.Errorf("Expected BACKLOGGED, got %v (score=%.2f)", result.Level, result.Score)
 	}
-	if result.Score < 0.25 || result.Score >= 0.75 {
-		t.Errorf("Expected score in [0.25, 0.75) for backlogged, got %.2f", result.Score)
+	if result.Score < 0.5 || result.Score >= 0.75 {
+		t.Errorf("Expected score in [0.5, 0.75) for backlogged, got %.2f", result.Score)
 	}
 }
 
-// TestCompositeDetector_OverloadedCase verifies BC-3: overloaded when both signals saturated
+// TestCompositeDetector_ClassifyOverloaded verifies C2: Classify can reach Overloaded via latency trend
+func TestCompositeDetector_ClassifyOverloaded(t *testing.T) {
+	// Large latency increase: 100ms → 300ms (200% increase, normalized to 2.0, capped to 1.0)
+	// Should produce score >= 0.75 → OVERLOADED
+	requests := []sim.RequestMetrics{
+		{E2E: 100, ArrivedAt: 0},
+		{E2E: 120, ArrivedAt: 0.1},
+		{E2E: 250, ArrivedAt: 0.2},
+		{E2E: 300, ArrivedAt: 0.3},
+	}
+
+	det := NewCompositeDetector()
+	rawResult := det.Classify(requests)
+	result := asResult(t, rawResult)
+
+	if result.Level != Overloaded {
+		t.Errorf("Expected OVERLOADED from Classify, got %v (score=%.2f)", result.Level, result.Score)
+	}
+	if result.Score < 0.75 {
+		t.Errorf("Expected score >= 0.75 for overloaded, got %.2f", result.Score)
+	}
+}
+
+// TestCompositeDetector_OverloadedCase verifies BC-3: overloaded when both signals saturated (streaming mode)
 func TestCompositeDetector_OverloadedCase(t *testing.T) {
 	// Use Observe/Detect to test overload with both rate deficit and latency trend
 	det := NewCompositeDetector()
@@ -83,18 +108,27 @@ func TestCompositeDetector_OverloadedCase(t *testing.T) {
 	}
 }
 
-// TestCompositeDetector_NoiseFloor verifies BC-10: confidence uses 1/sqrt(N) noise floor
+// TestCompositeDetector_NoiseFloor verifies C5: confidence formula 1 - 1/sqrt(N+1)
 func TestCompositeDetector_NoiseFloor(t *testing.T) {
-	requests := []sim.RequestMetrics{
-		{E2E: 100, ArrivedAt: 0},
+	// N=1: confidence should be low (< 0.5)
+	requests1 := []sim.RequestMetrics{{E2E: 100, ArrivedAt: 0}}
+	det1 := NewCompositeDetector()
+	result1 := asResult(t, det1.Classify(requests1))
+
+	if result1.Confidence >= 0.5 {
+		t.Errorf("Expected confidence < 0.5 for N=1, got %.2f", result1.Confidence)
 	}
 
-	det := NewCompositeDetector()
-	result := det.Classify(requests)
+	// N=100: confidence should be high (> 0.9)
+	requests100 := make([]sim.RequestMetrics, 100)
+	for i := range requests100 {
+		requests100[i] = sim.RequestMetrics{E2E: 100, ArrivedAt: float64(i)}
+	}
+	det100 := NewCompositeDetector()
+	result100 := asResult(t, det100.Classify(requests100))
 
-	// With N=1, noise floor is 1.0, so confidence should be capped
-	if result.Confidence > 1.0 {
-		t.Errorf("Expected confidence <= 1.0, got %.2f", result.Confidence)
+	if result100.Confidence <= 0.9 {
+		t.Errorf("Expected confidence > 0.9 for N=100, got %.2f", result100.Confidence)
 	}
 }
 

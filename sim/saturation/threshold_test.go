@@ -7,6 +7,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
+
 // TestThresholdDetector_BelowThreshold verifies BC-4: STABLE when mean E2E < threshold
 func TestThresholdDetector_BelowThreshold(t *testing.T) {
 	requests := []sim.RequestMetrics{
@@ -17,7 +18,8 @@ func TestThresholdDetector_BelowThreshold(t *testing.T) {
 	}
 
 	det := NewThresholdDetector(5000.0)
-	result := det.Classify(requests)
+	rawResult := det.Classify(requests)
+	result := asResult(t, rawResult)
 
 	if result.Level != Stable {
 		t.Errorf("Expected STABLE, got %v", result.Level)
@@ -43,7 +45,8 @@ func TestThresholdDetector_AboveThreshold(t *testing.T) {
 	}
 
 	det := NewThresholdDetector(5000.0)
-	result := det.Classify(requests)
+	rawResult := det.Classify(requests)
+	result := asResult(t, rawResult)
 
 	if result.Level != Overloaded {
 		t.Errorf("Expected OVERLOADED, got %v", result.Level)
@@ -62,7 +65,8 @@ func TestThresholdDetector_DefaultThreshold(t *testing.T) {
 		{E2E: 4500},
 	}
 
-	result := det.Classify(requests)
+	rawResult := det.Classify(requests)
+	result := asResult(t, rawResult)
 	if result.Level != Stable {
 		t.Errorf("Expected STABLE with default threshold, got %v", result.Level)
 	}

@@ -47,8 +47,8 @@ func (t *ThresholdDetector) Detect() Result {
 	meanE2E := meanLatency(t.completions)
 	score, level := classifyThreshold(meanE2E, t.thresholdMs)
 
-	// Confidence inversely proportional to 1/sqrt(N) noise floor
-	confidence := math.Min(1.0, math.Sqrt(float64(len(t.completions))))
+	// Confidence formula: 1 - 1/sqrt(N+1), increases with sample size (C5 fix)
+	confidence := 1.0 - 1.0/math.Sqrt(float64(len(t.completions))+1.0)
 
 	return Result{
 		Level:      level,
@@ -62,7 +62,7 @@ func (t *ThresholdDetector) Detect() Result {
 }
 
 // Classify performs batch post-hoc classification on completed requests.
-func (t *ThresholdDetector) Classify(requests []sim.RequestMetrics) Result {
+func (t *ThresholdDetector) Classify(requests []sim.RequestMetrics) interface{} {
 	if len(requests) == 0 {
 		return Result{Level: Stable, Score: 0, Confidence: 0, Signals: make(map[string]float64)}
 	}
@@ -70,8 +70,8 @@ func (t *ThresholdDetector) Classify(requests []sim.RequestMetrics) Result {
 	meanE2E := meanE2E(requests)
 	score, level := classifyThreshold(meanE2E, t.thresholdMs)
 
-	// Confidence inversely proportional to 1/sqrt(N) noise floor
-	confidence := math.Min(1.0, math.Sqrt(float64(len(requests))))
+	// Confidence formula: 1 - 1/sqrt(N+1), increases with sample size (C5 fix)
+	confidence := 1.0 - 1.0/math.Sqrt(float64(len(requests))+1.0)
 
 	return Result{
 		Level:      level,

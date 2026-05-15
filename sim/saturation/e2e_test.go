@@ -8,6 +8,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim/saturation"
 )
 
+
 // TestE2E_CompositeDetector_WithMetrics verifies BC-6: end-to-end flow
 // with CompositeDetector via SaveResults integration
 func TestE2E_CompositeDetector_WithMetrics(t *testing.T) {
@@ -51,7 +52,7 @@ func TestE2E_ThresholdDetector_BelowThreshold(t *testing.T) {
 	}
 
 	det := saturation.NewDetector("threshold", saturation.DetectorOpts{ThresholdMs: 5000})
-	result := det.Classify(requests)
+	result := det.Classify(requests).(saturation.Result)
 
 	if result.Level != saturation.Stable {
 		t.Errorf("Expected STABLE for mean < threshold, got %v", result.Level)
@@ -68,7 +69,7 @@ func TestE2E_ThresholdDetector_AboveThreshold(t *testing.T) {
 	}
 
 	det := saturation.NewDetector("threshold", saturation.DetectorOpts{ThresholdMs: 5000})
-	result := det.Classify(requests)
+	result := det.Classify(requests).(saturation.Result)
 
 	if result.Level != saturation.Overloaded {
 		t.Errorf("Expected OVERLOADED for mean > threshold, got %v", result.Level)
@@ -86,7 +87,7 @@ func TestE2E_NoOpDetector(t *testing.T) {
 	}
 
 	det := saturation.NewDetector("none", saturation.DetectorOpts{})
-	result := det.Classify(requests)
+	result := det.Classify(requests).(saturation.Result)
 
 	if result.Level != saturation.Stable {
 		t.Errorf("NoOp detector should always return STABLE, got %v", result.Level)
