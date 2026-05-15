@@ -1519,13 +1519,13 @@ func TestRealClient_Send_CustomSLOPriorities(t *testing.T) {
 		WithSLOPriorityMap(customMap))
 
 	tests := []struct {
-		name          string
-		sloClass      string
-		expectedPrio  int
+		name         string
+		sloClass     string
+		expectedPrio int
 	}{
-		{"critical with custom override", "critical", 0},  // 10 - 10 = 0
-		{"standard with default", "standard", 7},          // 10 - 3 = 7 (max is now 10)
-		{"batch with custom override", "batch", 10},       // 10 - 0 = 10
+		{"critical with custom override", "critical", 0}, // 10 - 10 = 0
+		{"standard with default", "standard", 7},         // 10 - 3 = 7 (max is now 10)
+		{"batch with custom override", "batch", 10},      // 10 - 0 = 10
 	}
 
 	for _, tt := range tests {
@@ -1636,9 +1636,9 @@ func TestRealClient_Send_VLLMPriority_Captured(t *testing.T) {
 	sloMap := sim.DefaultSLOPriorityMap()
 	client := NewRealClient(
 		server.URL,
-		"",            // apiKey (empty for test)
-		"test-model",  // modelName
-		"",            // serverType (empty for test)
+		"",           // apiKey (empty for test)
+		"test-model", // modelName
+		"",           // serverType (empty for test)
 		WithHTTPTimeout(5*time.Second),
 		WithAPIFormat("completions"),
 		WithSLOPriorityMap(sloMap),
@@ -1649,12 +1649,12 @@ func TestRealClient_Send_VLLMPriority_Captured(t *testing.T) {
 		sloClass         string
 		expectedPriority int
 	}{
-		{"critical", "critical", 0},  // 4 - 4 = 0
-		{"standard", "standard", 1},  // 4 - 3 = 1
-		{"batch", "batch", 5},        // 4 - (-1) = 5
-		{"sheddable", "sheddable", 6}, // 4 - (-2) = 6
+		{"critical", "critical", 0},     // 4 - 4 = 0
+		{"standard", "standard", 1},     // 4 - 3 = 1
+		{"batch", "batch", 5},           // 4 - (-1) = 5
+		{"sheddable", "sheddable", 6},   // 4 - (-2) = 6
 		{"background", "background", 7}, // 4 - (-3) = 7
-		{"empty", "", 0},             // not set → 0
+		{"empty", "", 0},                // not set → 0
 	}
 
 	ctx := context.Background()
@@ -1686,7 +1686,7 @@ func TestObserveRecorder_VLLMPriority_EndToEndFlow(t *testing.T) {
 	// BC-7: End-to-end test verifying vllm_priority flows from RealClient.Send()
 	// through Recorder.RecordRequest() to TraceRecord, then through ExportTraceV2 to CSV,
 	// and finally back through LoadTraceV2.
-	
+
 	// Setup: mock server
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -1717,9 +1717,9 @@ func TestObserveRecorder_VLLMPriority_EndToEndFlow(t *testing.T) {
 	sloMap := sim.DefaultSLOPriorityMap()
 	client := NewRealClient(
 		server.URL,
-		"",            // apiKey (empty for test)
-		"test-model",  // modelName
-		"",            // serverType (empty for test)
+		"",           // apiKey (empty for test)
+		"test-model", // modelName
+		"",           // serverType (empty for test)
 		WithHTTPTimeout(5*time.Second),
 		WithAPIFormat("completions"),
 		WithSLOPriorityMap(sloMap),
@@ -1857,112 +1857,6 @@ func TestRealClient_Send_NilSLOMapDefensive(t *testing.T) {
 	}
 }
 
-// --- printObserveLatencySummary tests (BC-1, BC-2, BC-3) ---
-
-func TestPrintObserveLatencySummary_NoRecords_NothingPrinted(t *testing.T) {
-	// GIVEN zero records (BC-2)
-	var buf bytes.Buffer
-	printObserveLatencySummary(&buf, nil)
-	if buf.Len() != 0 {
-		t.Errorf("expected empty output, got: %q", buf.String())
-	}
-}
-
-func TestPrintObserveLatencySummary_MixedValidAndError_OnlyValidCounted(t *testing.T) {
-	// GIVEN one valid and one error record (BC-3)
-	// WHEN printObserveLatencySummary is called
-	// THEN only the valid record contributes to the summary
-	records := []workload.TraceRecord{
-		{RequestID: 0, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 100_000, LastChunkTimeUs: 400_000},
-		{RequestID: 1, Status: "error", SendTimeUs: 0, FirstChunkTimeUs: 200_000, LastChunkTimeUs: 800_000},
-	}
-	var buf bytes.Buffer
-	printObserveLatencySummary(&buf, records)
-	out := buf.String()
-	if !strings.Contains(out, "=== Observe Latency Summary (1 requests)") {
-		t.Errorf("expected exactly 1 valid request in summary (error excluded), got: %q", out)
-	}
-	// TTFT for ok record: 100_000us → 100.00ms
-	if !strings.Contains(out, "TTFT: mean=100.00ms") {
-		t.Errorf("expected TTFT 100.00ms from the valid record, got: %q", out)
-	}
-}
-
-func TestPrintObserveLatencySummary_ErrorRecordsExcluded(t *testing.T) {
-	// GIVEN only error-status records (BC-3)
-	records := []workload.TraceRecord{
-		{RequestID: 0, Status: "error", SendTimeUs: 0, FirstChunkTimeUs: 100_000, LastChunkTimeUs: 500_000},
-	}
-	var buf bytes.Buffer
-	printObserveLatencySummary(&buf, records)
-	if buf.Len() != 0 {
-		t.Errorf("expected empty output for error-only records, got: %q", buf.String())
-	}
-}
-
-func TestPrintObserveLatencySummary_ValidRecord_OutputContainsExpectedSections(t *testing.T) {
-	// GIVEN one valid record: TTFT=100ms (100_000us), E2E=500ms (500_000us) (BC-1)
-	// Single record: mean=p50=p90=p99 for both metrics.
-	records := []workload.TraceRecord{
-		{RequestID: 0, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 100_000, LastChunkTimeUs: 500_000},
-	}
-	var buf bytes.Buffer
-	printObserveLatencySummary(&buf, records)
-	out := buf.String()
-	// Header present
-	if !strings.Contains(out, "=== Observe Latency Summary") {
-		t.Errorf("missing header in output: %q", out)
-	}
-	// Numeric values anchored to label to distinguish TTFT from E2E.
-	// TTFT=100_000us/1000 = 100.00ms; E2E=500_000us/1000 = 500.00ms
-	if !strings.Contains(out, "TTFT: mean=100.00ms") {
-		t.Errorf("expected 'TTFT: mean=100.00ms' in output: %q", out)
-	}
-	if !strings.Contains(out, "E2E:  mean=500.00ms") {
-		t.Errorf("expected 'E2E:  mean=500.00ms' in output: %q", out)
-	}
-}
-
-func TestPrintObserveLatencySummary_ZeroLatency_Excluded(t *testing.T) {
-	// GIVEN a record where TTFT == 0 (SendTime == FirstChunkTime) (BC-3)
-	records := []workload.TraceRecord{
-		{RequestID: 0, Status: "ok", SendTimeUs: 100, FirstChunkTimeUs: 100, LastChunkTimeUs: 100},
-	}
-	var buf bytes.Buffer
-	printObserveLatencySummary(&buf, records)
-	if buf.Len() != 0 {
-		t.Errorf("expected empty output for zero-latency record, got: %q", buf.String())
-	}
-}
-
-func TestPrintObserveLatencySummary_EqualTTFTAndE2E_Included(t *testing.T) {
-	// GIVEN a record where FirstChunkTimeUs == LastChunkTimeUs > SendTimeUs
-	// (body read completed in the same microsecond as first byte — degenerate but valid).
-	// WHEN printObserveLatencySummary is called
-	// THEN the record is included (e2e < ttft is false when they're equal).
-	records := []workload.TraceRecord{
-		{RequestID: 0, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 200_000, LastChunkTimeUs: 200_000},
-	}
-	var buf bytes.Buffer
-	printObserveLatencySummary(&buf, records)
-	out := buf.String()
-	if !strings.Contains(out, "=== Observe Latency Summary") {
-		t.Errorf("record with TTFT==E2E>0 should be included, got: %q", out)
-	}
-}
-
-func TestPrintObserveLatencySummary_MalformedE2ELessThanTTFT_Excluded(t *testing.T) {
-	// GIVEN a malformed record where LastChunkTimeUs < FirstChunkTimeUs (BC-3)
-	records := []workload.TraceRecord{
-		{RequestID: 0, Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 500_000, LastChunkTimeUs: 100_000},
-	}
-	var buf bytes.Buffer
-	printObserveLatencySummary(&buf, records)
-	if buf.Len() != 0 {
-		t.Errorf("expected empty output for malformed record (e2e < ttft), got: %q", buf.String())
-	}
-}
-
 // --- TestObserveRecordITLDefault (BC-4) ---
 
 func TestObserveRecordITLDefault_IsFalse(t *testing.T) {
@@ -1977,5 +1871,173 @@ func TestObserveRecordITLDefault_IsFalse(t *testing.T) {
 	}
 	if f.DefValue != "false" {
 		t.Errorf("--record-itl should default to false (opt-in); got %q", f.DefValue)
+	}
+}
+
+// --- printObserveMetrics tests (BC-1, BC-2, BC-5, BC-6, BC-7) ---
+
+func TestPrintObserveMetrics_ValidRecords(t *testing.T) {
+	records := []workload.TraceRecord{
+		{Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 50000, LastChunkTimeUs: 200000, OutputTokens: 100},
+		{Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 60000, LastChunkTimeUs: 210000, OutputTokens: 120},
+	}
+	var buf bytes.Buffer
+	printObserveMetrics(&buf, records, 1.0, nil)
+
+	output := buf.String()
+	if !strings.Contains(output, "=== Simulation Metrics ===") {
+		t.Errorf("Missing section header")
+	}
+
+	var metrics map[string]interface{}
+	lines := strings.Split(output, "\n")
+	jsonStart := -1
+	for i, line := range lines {
+		if strings.Contains(line, "=== Simulation Metrics ===") {
+			jsonStart = i + 1
+			break
+		}
+	}
+	if jsonStart < 0 {
+		t.Fatal("Could not find JSON start")
+	}
+	jsonStr := strings.Join(lines[jsonStart:], "\n")
+	if err := json.Unmarshal([]byte(jsonStr), &metrics); err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	if metrics["completed_requests"].(float64) != 2 {
+		t.Errorf("Expected completed_requests=2, got %v", metrics["completed_requests"])
+	}
+	if metrics["ttft_mean_ms"].(float64) == 0 {
+		t.Errorf("Expected non-zero ttft_mean_ms")
+	}
+	// BC-7: With wallClockDurationSec=1.0 and 2 completed requests, expect exactly 2.0 rps
+	if metrics["responses_per_sec"].(float64) != 2.0 {
+		t.Errorf("Expected responses_per_sec=2.0, got %v", metrics["responses_per_sec"])
+	}
+	// BC-7: With wallClockDurationSec=1.0 and 220 total output tokens, expect exactly 220.0 tps
+	if metrics["tokens_per_sec"].(float64) != 220.0 {
+		t.Errorf("Expected tokens_per_sec=220.0, got %v", metrics["tokens_per_sec"])
+	}
+}
+
+func TestPrintObserveMetrics_ZeroRecords(t *testing.T) {
+	var buf bytes.Buffer
+	printObserveMetrics(&buf, []workload.TraceRecord{}, 1.0, nil)
+
+	output := buf.String()
+	if !strings.Contains(output, "=== Simulation Metrics ===") {
+		t.Errorf("Missing section header for zero records")
+	}
+
+	var metrics map[string]interface{}
+	lines := strings.Split(output, "\n")
+	jsonStart := -1
+	for i, line := range lines {
+		if strings.Contains(line, "=== Simulation Metrics ===") {
+			jsonStart = i + 1
+			break
+		}
+	}
+	jsonStr := strings.Join(lines[jsonStart:], "\n")
+	if err := json.Unmarshal([]byte(jsonStr), &metrics); err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	if metrics["completed_requests"].(float64) != 0 {
+		t.Errorf("Expected completed_requests=0, got %v", metrics["completed_requests"])
+	}
+}
+
+func TestPrintObserveMetrics_ErrorOnlyRecords(t *testing.T) {
+	// GIVEN observe records where all requests failed (error status)
+	// WHEN printObserveMetrics is called
+	// THEN header emits with completed_requests=0 (issue #1313 acceptance criterion 1)
+	records := []workload.TraceRecord{
+		{Status: "error", SendTimeUs: 0, FirstChunkTimeUs: 0, LastChunkTimeUs: 0, OutputTokens: 0},
+		{Status: "timeout", SendTimeUs: 0, FirstChunkTimeUs: 0, LastChunkTimeUs: 0, OutputTokens: 0},
+	}
+	var buf bytes.Buffer
+	printObserveMetrics(&buf, records, 1.0, nil)
+
+	output := buf.String()
+	if !strings.Contains(output, "=== Simulation Metrics ===") {
+		t.Errorf("Missing section header for error-only records")
+	}
+
+	var metrics map[string]interface{}
+	lines := strings.Split(output, "\n")
+	jsonStart := -1
+	for i, line := range lines {
+		if strings.Contains(line, "=== Simulation Metrics ===") {
+			jsonStart = i + 1
+			break
+		}
+	}
+	jsonStr := strings.Join(lines[jsonStart:], "\n")
+	if err := json.Unmarshal([]byte(jsonStr), &metrics); err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	if metrics["completed_requests"].(float64) != 0 {
+		t.Errorf("Expected completed_requests=0 when all records have error status, got %v", metrics["completed_requests"])
+	}
+}
+
+func TestPrintObserveMetrics_ITLPresent(t *testing.T) {
+	records := []workload.TraceRecord{
+		{Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 50000, LastChunkTimeUs: 200000, OutputTokens: 100},
+	}
+	itlRecords := []workload.ITLRecord{
+		{RequestID: 0, ChunkIndex: 0, TimestampUs: 50000},
+		{RequestID: 0, ChunkIndex: 1, TimestampUs: 65000},
+		{RequestID: 0, ChunkIndex: 2, TimestampUs: 83000},
+	}
+	var buf bytes.Buffer
+	printObserveMetrics(&buf, records, 1.0, itlRecords)
+
+	var metrics map[string]interface{}
+	lines := strings.Split(buf.String(), "\n")
+	jsonStart := -1
+	for i, line := range lines {
+		if strings.Contains(line, "=== Simulation Metrics ===") {
+			jsonStart = i + 1
+			break
+		}
+	}
+	jsonStr := strings.Join(lines[jsonStart:], "\n")
+	if err := json.Unmarshal([]byte(jsonStr), &metrics); err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	if metrics["itl_mean_ms"].(float64) == 0 {
+		t.Errorf("Expected non-zero itl_mean_ms when ITL records provided")
+	}
+}
+
+func TestPrintObserveMetrics_ITLAbsent(t *testing.T) {
+	records := []workload.TraceRecord{
+		{Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 50000, LastChunkTimeUs: 200000, OutputTokens: 100},
+	}
+	var buf bytes.Buffer
+	printObserveMetrics(&buf, records, 1.0, nil)
+
+	var metrics map[string]interface{}
+	lines := strings.Split(buf.String(), "\n")
+	jsonStart := -1
+	for i, line := range lines {
+		if strings.Contains(line, "=== Simulation Metrics ===") {
+			jsonStart = i + 1
+			break
+		}
+	}
+	jsonStr := strings.Join(lines[jsonStart:], "\n")
+	if err := json.Unmarshal([]byte(jsonStr), &metrics); err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	if metrics["itl_mean_ms"].(float64) != 0 {
+		t.Errorf("Expected itl_mean_ms=0 when no ITL records provided")
 	}
 }

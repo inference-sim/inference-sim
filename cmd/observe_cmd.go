@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -40,15 +41,15 @@ var (
 	observeNumRequests  int
 	// Distribution synthesis flags — same names and defaults as blis run.
 	// Default values are defined in root.go (distDefaults const block).
-	observePromptTokens  int
-	observePromptStdDev  int
-	observePromptMin     int
-	observePromptMax     int
-	observeOutputTokens  int
-	observeOutputStdDev  int
-	observeOutputMin     int
-	observeOutputMax     int
-	observePrefixTokens  int // hardcoded 0 — not in distDefaults (feature toggle, not distribution shape)
+	observePromptTokens        int
+	observePromptStdDev        int
+	observePromptMin           int
+	observePromptMax           int
+	observeOutputTokens        int
+	observeOutputStdDev        int
+	observeOutputMin           int
+	observeOutputMax           int
+	observePrefixTokens        int // hardcoded 0 — not in distDefaults (feature toggle, not distribution shape)
 	observeAPIFormat           string
 	observeUnconstrainedOutput bool
 	observeRttMs               float64
@@ -489,7 +490,12 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	records := recorder.Records()
 	logrus.Infof("Trace exported: %d records to %s / %s", len(records), observeTraceHeader, observeTraceData)
 
-	printObserveLatencySummary(os.Stdout, records)
+	wallClockDurationSec := time.Since(startTime).Seconds()
+	var itlRecords []workload.ITLRecord
+	if observeRecordITL {
+		itlRecords = recorder.ITLRecords()
+	}
+	printObserveMetrics(os.Stdout, records, wallClockDurationSec, itlRecords)
 
 	// Print session metrics if any record carries a session label (#1058)
 	sessionMetrics := computeSessionMetricsFromTrace(records)
@@ -503,7 +509,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 			itlPath = strings.TrimSuffix(observeTraceData, ".csv") + ".itl.csv"
 		}
 
-		itlRecords := recorder.ITLRecords()
+		// Reuse itlRecords from line 496 (already fetched)
 		if len(itlRecords) == 0 {
 			logrus.Warnf("--record-itl was set but no ITL data recorded (non-streaming requests?)")
 		}
@@ -555,57 +561,130 @@ type completionEvent struct {
 	wallClock int64 // wall-clock microseconds at completion
 }
 
-// printObserveLatencySummary prints TTFT and E2E statistics for the given records,
-// excluding error records and records with zero, negative, or inverted latency.
-// Warmup records are excluded at recording time and never appear in records.
-// Prints nothing if there are no valid records.
-func printObserveLatencySummary(w io.Writer, records []workload.TraceRecord) {
+// printObserveMetrics prints the observe latency summary in the same JSON format
+// as blis run and blis replay (=== Simulation Metrics === header + JSON body).
+// Always emits the header even when no valid records exist (BC-5).
+func printObserveMetrics(w io.Writer, records []workload.TraceRecord, wallClockDurationSec float64, itlRecords []workload.ITLRecord) {
 	var ttftsUs, e2esUs []int64
+	totalOutputTokens := 0
+
 	for _, rec := range records {
 		if rec.Status != "ok" {
-			continue // error record
+			continue
 		}
 		ttft := rec.FirstChunkTimeUs - rec.SendTimeUs
 		e2e := rec.LastChunkTimeUs - rec.SendTimeUs
 		if ttft <= 0 || e2e <= 0 || e2e < ttft {
-			continue // zero/negative latency (clock skew or unrecorded) or malformed record (e2e < ttft)
+			continue
 		}
 		ttftsUs = append(ttftsUs, ttft)
 		e2esUs = append(e2esUs, e2e)
+		totalOutputTokens += rec.OutputTokens
 	}
-	if len(ttftsUs) == 0 {
-		// Warn when records exist but all were filtered, so the user knows
-		// the missing summary is not a bug.
-		if len(records) > 0 {
-			logrus.Warnf("Latency summary skipped: all %d records were filtered (errors or invalid timestamps)", len(records))
+
+	// Compute ITL statistics if ITL records are provided
+	// ITL = inter-chunk latency (delta between consecutive chunk timestamps)
+	// Group by request ID and compute deltas
+	itlByRequest := make(map[int][]workload.ITLRecord)
+	for _, rec := range itlRecords {
+		itlByRequest[rec.RequestID] = append(itlByRequest[rec.RequestID], rec)
+	}
+
+	// R2: Sort request IDs for deterministic iteration order
+	requestIDs := make([]int, 0, len(itlByRequest))
+	for id := range itlByRequest {
+		requestIDs = append(requestIDs, id)
+	}
+	sort.Ints(requestIDs)
+
+	var itlsUs []int64
+	for _, id := range requestIDs {
+		chunks := itlByRequest[id]
+		if len(chunks) < 2 {
+			continue // Need at least 2 chunks to compute ITL
 		}
-		return
+		// Sort by chunk index
+		sort.Slice(chunks, func(i, j int) bool { return chunks[i].ChunkIndex < chunks[j].ChunkIndex })
+
+		// Compute deltas (skip first chunk which represents TTFT)
+		for i := 1; i < len(chunks); i++ {
+			delta := chunks[i].TimestampUs - chunks[i-1].TimestampUs
+			if delta > 0 {
+				itlsUs = append(itlsUs, delta)
+			}
+		}
 	}
+	sort.Slice(itlsUs, func(i, j int) bool { return itlsUs[i] < itlsUs[j] })
+
+	// Sort latencies for percentile calculation
 	sort.Slice(ttftsUs, func(i, j int) bool { return ttftsUs[i] < ttftsUs[j] })
 	sort.Slice(e2esUs, func(i, j int) bool { return e2esUs[i] < e2esUs[j] })
 
-	var ttftSum, e2eSum int64
-	for i := range ttftsUs {
-		ttftSum += ttftsUs[i]
-		e2eSum += e2esUs[i]
+	// Compute means
+	var ttftMeanMs, e2eMeanMs, itlMeanMs float64
+	if len(ttftsUs) > 0 {
+		var ttftSum, e2eSum int64
+		for i := range ttftsUs {
+			ttftSum += ttftsUs[i]
+			e2eSum += e2esUs[i]
+		}
+		ttftMeanMs = float64(ttftSum) / float64(len(ttftsUs)) / 1000.0
+		e2eMeanMs = float64(e2eSum) / float64(len(e2esUs)) / 1000.0
 	}
-	n := len(ttftsUs)
-	ttftMeanMs := float64(ttftSum) / float64(n) / 1000.0
-	e2eMeanMs := float64(e2eSum) / float64(n) / 1000.0
+	if len(itlsUs) > 0 {
+		var itlSum int64
+		for _, itl := range itlsUs {
+			itlSum += itl
+		}
+		itlMeanMs = float64(itlSum) / float64(len(itlsUs)) / 1000.0
+	}
 
-	_, _ = fmt.Fprintf(w, "=== Observe Latency Summary (%d requests) ===\n", n)
-	_, _ = fmt.Fprintf(w, "TTFT: mean=%.2fms  p50=%.2fms  p90=%.2fms  p99=%.2fms\n",
-		ttftMeanMs,
-		sim.CalculatePercentile(ttftsUs, 50),
-		sim.CalculatePercentile(ttftsUs, 90),
-		sim.CalculatePercentile(ttftsUs, 99),
-	)
-	_, _ = fmt.Fprintf(w, "E2E:  mean=%.2fms  p50=%.2fms  p90=%.2fms  p99=%.2fms\n",
-		e2eMeanMs,
-		sim.CalculatePercentile(e2esUs, 50),
-		sim.CalculatePercentile(e2esUs, 90),
-		sim.CalculatePercentile(e2esUs, 99),
-	)
+	// Compute throughput
+	responsesPerSec := 0.0
+	tokensPerSec := 0.0
+	if wallClockDurationSec > 0 {
+		responsesPerSec = float64(len(ttftsUs)) / wallClockDurationSec
+		tokensPerSec = float64(totalOutputTokens) / wallClockDurationSec
+	}
+
+	// Build output struct using sim.MetricsOutput for compile-time type safety (BC-1, BC-2)
+	// Note: TotalOutputTokens field is intentionally left as zero (omitempty suppresses it).
+	// The observe path computes tokens_per_sec directly from totalOutputTokens local variable,
+	// but doesn't expose the raw count to distinguish throughput (rate) from cumulative count.
+	// Run/replay paths populate this field from DES metrics.
+	output := sim.MetricsOutput{
+		CompletedRequests: len(ttftsUs),
+		TTFTMeanMs:        ttftMeanMs,
+		E2EMeanMs:         e2eMeanMs,
+		ITLMeanMs:         itlMeanMs,
+		ResponsesPerSec:   responsesPerSec,
+		TokensPerSec:      tokensPerSec,
+	}
+
+	// Compute percentiles if data available
+	if len(ttftsUs) > 0 {
+		output.TTFTP90Ms = sim.CalculatePercentile(ttftsUs, 90)
+		output.TTFTP95Ms = sim.CalculatePercentile(ttftsUs, 95)
+		output.TTFTP99Ms = sim.CalculatePercentile(ttftsUs, 99)
+		output.E2EP90Ms = sim.CalculatePercentile(e2esUs, 90)
+		output.E2EP95Ms = sim.CalculatePercentile(e2esUs, 95)
+		output.E2EP99Ms = sim.CalculatePercentile(e2esUs, 99)
+	}
+	if len(itlsUs) > 0 {
+		output.ITLP90Ms = sim.CalculatePercentile(itlsUs, 90)
+		output.ITLP95Ms = sim.CalculatePercentile(itlsUs, 95)
+		output.ITLP99Ms = sim.CalculatePercentile(itlsUs, 99)
+	}
+
+	// Marshal to JSON
+	jsonBytes, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		logrus.Warnf("Failed to marshal observe metrics to JSON: %v", err)
+		return
+	}
+
+	// Print with section header (BC-5)
+	_, _ = fmt.Fprintf(w, "=== Simulation Metrics ===\n%s\n", string(jsonBytes))
 }
 
 // runObserveOrchestrator implements the dispatch loop with session support.
