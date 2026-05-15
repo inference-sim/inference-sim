@@ -50,7 +50,7 @@ func TestSaveResults_MetricsPrintedToStdout(t *testing.T) {
 	os.Stdout = w
 
 	// WHEN SaveResults is called
-	if err := m.SaveResults("test", 1_000_000, 1000, ""); err != nil {
+	if err := m.SaveResults("test", 1_000_000, 1000, "", nil); err != nil {
 		t.Fatalf("SaveResults returned error: %v", err)
 	}
 

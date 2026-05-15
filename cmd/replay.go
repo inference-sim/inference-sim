@@ -550,13 +550,13 @@ Example:
 		// Save aggregate metrics to stdout (same as runCmd)
 		if numInstances > 1 {
 			for _, inst := range cs.Instances() {
-				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, ""); err != nil {
+				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, "", nil); err != nil {
 					logrus.Fatalf("SaveResults for instance %s: %v", inst.ID(), err)
 				}
 			}
 		}
 		// Save aggregate (always print to stdout; SimResult output uses separate file)
-		if err := cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, ""); err != nil {
+		if err := cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, "", nil); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 

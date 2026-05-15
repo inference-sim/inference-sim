@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"slices"
 	"sort"
 
@@ -63,7 +64,9 @@ func NewMetrics() *Metrics {
 	}
 }
 
-func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int64, outputFilePath string) error {
+// SaveResults computes aggregate metrics and optionally runs post-hoc saturation detection.
+// saturationDetector should be a saturation.Detector or nil to skip saturation analysis.
+func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int64, outputFilePath string, saturationDetector interface{}) error {
 	vllmRuntime := float64(m.SimEndedTime) / float64(1e6)
 
 	// Create an instance of our output struct to populate
@@ -124,6 +127,33 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 		if vllmRuntime > 0 {
 			output.ResponsesPerSec = float64(m.CompletedRequests) / vllmRuntime
 			output.TokensPerSec = float64(m.TotalOutputTokens) / vllmRuntime
+		}
+	}
+
+	// Run post-hoc saturation detection if detector provided (#1369)
+	if saturationDetector != nil {
+		// Extract completed request metrics for classification
+		// Only include completed requests (those with non-zero E2E)
+		completedReqs := make([]RequestMetrics, 0, m.CompletedRequests)
+		for _, id := range sortedRequestIDs(m.Requests) {
+			if m.RequestE2Es[id] > 0 { // Only completed requests
+				rm := m.Requests[id]
+				rm.E2E = m.RequestE2Es[id] / 1e3    // ticks → ms
+				rm.TTFT = m.RequestTTFTs[id] / 1e3  // ticks → ms
+				completedReqs = append(completedReqs, rm)
+			}
+		}
+
+		// Call Classify method via reflection to avoid import cycle
+		// saturationDetector is saturation.Detector, which has Classify([]RequestMetrics) Result
+		classifyMethod := reflect.ValueOf(saturationDetector).MethodByName("Classify")
+		if classifyMethod.IsValid() {
+			// Call Classify with completedReqs
+			args := []reflect.Value{reflect.ValueOf(completedReqs)}
+			results := classifyMethod.Call(args)
+			if len(results) == 1 {
+				output.Saturation = results[0].Interface()
+			}
 		}
 	}
 

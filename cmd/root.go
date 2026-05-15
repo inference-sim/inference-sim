@@ -19,6 +19,7 @@ import (
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/latency"
+	"github.com/inference-sim/inference-sim/sim/saturation"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -1738,16 +1739,24 @@ var runCmd = &cobra.Command{
 			logrus.Infof("Saturation report written to %s (classification: %s)", saturationReport, report.Classification)
 		}
 
+		// Instantiate post-hoc saturation detector from CLI flags (#1369)
+		var saturationDetector interface{}
+		if postHocDetector != "none" {
+			saturationDetector = saturation.NewDetector(postHocDetector, saturation.DetectorOpts{
+				ThresholdMs: saturationThreshold,
+			})
+		}
+
 		if numInstances > 1 {
 			// Print per-instance metrics to stdout (multi-instance only)
 			for _, inst := range cs.Instances() {
-				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, ""); err != nil {
+				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, "", saturationDetector); err != nil {
 					logrus.Fatalf("SaveResults for instance %s: %v", inst.ID(), err)
 				}
 			}
 		}
 		// Save aggregated metrics (prints to stdout + saves to file if metricsPath set)
-		if err := cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, metricsPath); err != nil {
+		if err := cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, metricsPath, saturationDetector); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
