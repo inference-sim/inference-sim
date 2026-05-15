@@ -195,6 +195,10 @@ var (
 	saturationPeakBand   float64 // Confidence band around peak ratio threshold (--saturation-peak-band)
 	saturationConfidence float64 // Confidence level for slope CI (--saturation-ci)
 
+	// post-hoc saturation detector configuration (#1369)
+	postHocDetector      string  // Post-hoc saturation detector: "composite", "threshold", "none" (--post-hoc-detector)
+	saturationThreshold float64 // Threshold in ms for threshold detector (--saturation-threshold-ms)
+
 	// trace export
 	traceOutput string // File prefix for TraceV2 export (<prefix>.yaml + <prefix>.csv)
 )
@@ -2055,6 +2059,11 @@ func init() {
 	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")
 	runCmd.Flags().StringVar(&metricsPath, "metrics-path", "", "File to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats). Use --results-path on blis replay for per-request SimResult JSON.")
 	runCmd.Flags().StringVar(&saturationReport, "saturation-report", "", "File to write saturation analysis JSON (backlog-drift classification)")
+
+	// Post-hoc saturation detector flags (#1369)
+	runCmd.Flags().StringVar(&postHocDetector, "post-hoc-detector", "none", "Post-hoc saturation detector: composite, threshold, none")
+	runCmd.Flags().Float64Var(&saturationThreshold, "saturation-threshold-ms", 5000.0, "Threshold in ms for threshold detector (default 5000ms)")
+
 	registerSaturationFlags(runCmd)
 
 	// Attach `run` as a subcommand to `root`
