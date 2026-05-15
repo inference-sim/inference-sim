@@ -65,8 +65,9 @@ func (t *ThresholdDetector) Detect() Result {
 	}
 }
 
-// Classify performs batch post-hoc classification on completed requests.
-func (t *ThresholdDetector) Classify(requests []sim.RequestMetrics) interface{} {
+// Classify performs batch post-hoc classification on completed requests (Issue #6: returns Result).
+// totalArrivals parameter is unused by threshold detector but required by interface.
+func (t *ThresholdDetector) Classify(requests []sim.RequestMetrics, totalArrivals int) interface{} {
 	if len(requests) == 0 {
 		return Result{Level: Stable, Score: 0, Confidence: 0, Signals: make(map[string]float64)}
 	}
@@ -106,4 +107,28 @@ func classifyThreshold(meanE2E, threshold float64) (float64, Level) {
 		score := 0.75 + math.Min(0.25, (meanE2E-threshold)/threshold/4.0)
 		return score, Overloaded
 	}
+}
+
+// meanLatency calculates mean latency from completion events (streaming mode).
+func meanLatency(events []Event) float64 {
+	if len(events) == 0 {
+		return 0
+	}
+	sum := 0.0
+	for _, e := range events {
+		sum += e.LatencyMs
+	}
+	return sum / float64(len(events))
+}
+
+// meanE2E calculates mean E2E from request metrics (batch mode).
+func meanE2E(requests []sim.RequestMetrics) float64 {
+	if len(requests) == 0 {
+		return 0
+	}
+	sum := 0.0
+	for _, r := range requests {
+		sum += r.E2E
+	}
+	return sum / float64(len(requests))
 }

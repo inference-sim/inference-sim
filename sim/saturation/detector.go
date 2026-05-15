@@ -84,8 +84,8 @@ type Detector interface {
 	Name() string
 	Observe(event Event)
 	Detect() Result
-	// Classify performs batch classification. Returns interface{} to implement sim.BatchClassifier.
-	// Actual return type is Result.
-	Classify(requests []sim.RequestMetrics) interface{}
+	// Classify performs batch classification with total arrivals for rate deficit computation (Issue #4).
+	// Returns interface{} for BatchClassifier compatibility (Result in practice).
+	Classify(requests []sim.RequestMetrics, totalArrivals int) interface{}
 	Reset()
 }

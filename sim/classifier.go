@@ -6,8 +6,9 @@ package sim
 // while maintaining compile-time type safety for the SaveResults integration.
 type BatchClassifier interface {
 	// Classify analyzes completed requests and returns a classification result.
+	// totalArrivals includes all injected requests (completed + timed out + dropped).
 	// The result is serialized as interface{} to avoid exposing saturation-specific
 	// types in sim/ (would create reverse dependency). Callers should treat this
 	// as opaque JSON payload.
-	Classify(requests []RequestMetrics) interface{}
+	Classify(requests []RequestMetrics, totalArrivals int) interface{}
 }

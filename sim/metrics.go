@@ -132,7 +132,6 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 	// Run post-hoc saturation detection if detector provided (#1369)
 	if saturationDetector != nil {
 		// Extract completed request metrics for classification
-		// Sort by ArrivedAt to ensure chronological order for trend analysis (I2)
 		completedReqs := make([]RequestMetrics, 0, m.CompletedRequests)
 		for _, id := range sortedRequestIDs(m.Requests) {
 			if m.RequestE2Es[id] > 0 { // Only completed requests
@@ -143,13 +142,12 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 			}
 		}
 
-		// Sort by arrival time for chronological trend analysis
-		sort.Slice(completedReqs, func(i, j int) bool {
-			return completedReqs[i].ArrivedAt < completedReqs[j].ArrivedAt
-		})
+		// Calculate total arrivals (Issue #4: needed for rate deficit in batch mode)
+		totalArrivals := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests
 
-		// Call Classify using typed interface (C1: no reflection, compile-time safety)
-		output.Saturation = saturationDetector.Classify(completedReqs)
+		// Call Classify with total arrivals (Issues #4, #6: typed interface, rate deficit available)
+		// Note: Sorting by completion time is now handled inside Classify (Issue #5)
+		output.Saturation = saturationDetector.Classify(completedReqs, totalArrivals)
 	}
 
 	// Always emit the metrics section so callers can reliably parse output,

@@ -3,6 +3,7 @@ package saturation_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"testing"
 
@@ -14,23 +15,24 @@ import (
 // TestE2E_CompositeDetector_WithMetrics verifies BC-6: end-to-end flow
 // with CompositeDetector via SaveResults integration (C6: with behavioral assertions)
 func TestE2E_CompositeDetector_WithMetrics(t *testing.T) {
-	// Create metrics with some completed requests
+	// Create metrics with 24 completed requests showing smooth monotonic increase
+	// This ensures quartile monotonicity: Q1 < Q2 < Q3 < Q4
+	// Latencies: 100, 105, 110, ..., 215 (24 values, increasing by 5ms each)
 	m := &sim.Metrics{
-		CompletedRequests: 3,
-		SimEndedTime:      5000000, // 5 seconds
-		Requests: map[string]sim.RequestMetrics{
-			"r1": {ID: "r1", ArrivedAt: 0},
-			"r2": {ID: "r2", ArrivedAt: 1},
-			"r3": {ID: "r3", ArrivedAt: 2},
-		},
-		RequestE2Es: map[string]float64{
-			"r1": 100000, // 100ms
-			"r2": 150000, // 150ms
-			"r3": 200000, // 200ms
-		},
-		RequestTTFTs:            map[string]float64{},
-		RequestITLs:             map[string]float64{},
-		RequestSchedulingDelays: map[string]int64{},
+		CompletedRequests:       24,
+		SimEndedTime:            5000000, // 5 seconds
+		Requests:                make(map[string]sim.RequestMetrics),
+		RequestE2Es:             make(map[string]float64),
+		RequestTTFTs:            make(map[string]float64),
+		RequestITLs:             make(map[string]float64),
+		RequestSchedulingDelays: make(map[string]int64),
+	}
+
+	// 24 requests with smoothly increasing latency (100, 105, 110, ..., 215)
+	for i := 0; i < 24; i++ {
+		id := fmt.Sprintf("r%d", i)
+		m.Requests[id] = sim.RequestMetrics{ID: id, ArrivedAt: float64(i)}
+		m.RequestE2Es[id] = float64(100000 + i*5000) // 100ms + i*5ms in ticks
 	}
 
 	// Create detector
@@ -60,22 +62,30 @@ func TestE2E_CompositeDetector_WithMetrics(t *testing.T) {
 		t.Fatal("Saturation field is nil in output JSON")
 	}
 
-	// Latency increases from 100→150→200ms
-	// First half: (100+150)/2 = 125, Second half: 200
-	// Trend: (200-125)/125 = 0.6, but only second half used (N=1)
-	// Actual trend: (200-150)/150 = 0.333... but calculation is over sorted data
-	// With only 3 requests: midpoint=1, first=[100,150], second=[200]
-	// First mean: 125, Second mean: 200, Trend: (200-125)/125 = 0.6
-	// But when sorted by ArrivedAt: [r1:100, r2:150, r3:200]
-	// midpoint=1, first=[100], second=[150,200]
-	// First mean: 100, Second mean: 175, Trend: (175-100)/100 = 0.75 → OVERLOADED
+	// With 24 requests (smoothly increasing 100→215ms), quartile monotonicity satisfied
+	// Actual calculation will depend on Classify sorting by completion time (Issue #5)
+	// Noise floor = 1/sqrt(24) = 0.204
+	// Classification: score >= noise_floor and lt > noise_floor → OVERLOADED
 	if output.Saturation.Level != saturation.Overloaded {
-		t.Errorf("Expected Overloaded, got %v (score=%.2f)", output.Saturation.Level, output.Saturation.Score)
+		t.Errorf("Expected Overloaded from latency trend, got %v (score=%.2f, lt=%.2f)",
+			output.Saturation.Level, output.Saturation.Score, output.Saturation.Signals["latency_trend"])
 	}
 
-	// Verify score is at the overload threshold
-	if output.Saturation.Score < 0.75 {
-		t.Errorf("Expected score >= 0.75 for overloaded, got %.2f", output.Saturation.Score)
+	// Verify score above noise floor
+	noiseFloor := output.Saturation.Signals["noise_floor"]
+	if output.Saturation.Score < noiseFloor {
+		t.Errorf("Expected score >= noise_floor (%.2f) for detectable trend, got %.2f", noiseFloor, output.Saturation.Score)
+	}
+
+	// Verify latency trend was detected (quartile_monotone should be 1)
+	if output.Saturation.Signals["quartile_monotone"] != 1.0 {
+		t.Errorf("Expected quartile_monotone=1 for smooth increase, got %.2f", output.Saturation.Signals["quartile_monotone"])
+	}
+
+	// Verify latency trend above noise floor (needed for OVERLOADED classification)
+	if output.Saturation.Signals["latency_trend"] <= noiseFloor {
+		t.Errorf("Expected latency_trend > noise_floor for OVERLOADED, got lt=%.2f, noise=%.2f",
+			output.Saturation.Signals["latency_trend"], noiseFloor)
 	}
 }
 
@@ -89,7 +99,7 @@ func TestE2E_ThresholdDetector_BelowThreshold(t *testing.T) {
 	}
 
 	det := saturation.NewDetector("threshold", saturation.DetectorOpts{ThresholdMs: 5000})
-	result := det.Classify(requests).(saturation.Result)
+	result := det.Classify(requests, len(requests)).(saturation.Result) // Issue #4: pass totalArrivals
 
 	if result.Level != saturation.Stable {
 		t.Errorf("Expected STABLE for mean < threshold, got %v", result.Level)
@@ -106,7 +116,7 @@ func TestE2E_ThresholdDetector_AboveThreshold(t *testing.T) {
 	}
 
 	det := saturation.NewDetector("threshold", saturation.DetectorOpts{ThresholdMs: 5000})
-	result := det.Classify(requests).(saturation.Result)
+	result := det.Classify(requests, len(requests)).(saturation.Result) // Issue #4: pass totalArrivals
 
 	if result.Level != saturation.Overloaded {
 		t.Errorf("Expected OVERLOADED for mean > threshold, got %v", result.Level)
@@ -124,7 +134,7 @@ func TestE2E_NoOpDetector(t *testing.T) {
 	}
 
 	det := saturation.NewDetector("none", saturation.DetectorOpts{})
-	result := det.Classify(requests).(saturation.Result)
+	result := det.Classify(requests, len(requests)).(saturation.Result) // Issue #4: pass totalArrivals
 
 	if result.Level != saturation.Stable {
 		t.Errorf("NoOp detector should always return STABLE, got %v", result.Level)

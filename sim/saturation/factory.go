@@ -28,9 +28,11 @@ func NewDetector(name string, opts DetectorOpts) Detector {
 
 type NoOpDetector struct{}
 
-func (n *NoOpDetector) Name() string                                       { return "none" }
-func (n *NoOpDetector) Observe(event Event)                                {}
-func (n *NoOpDetector) Detect() Result                                     { return Result{Level: Stable, Score: 0, Confidence: 0, Signals: make(map[string]float64)} }
-func (n *NoOpDetector) Classify(requests []sim.RequestMetrics) interface{} { return Result{Level: Stable, Score: 0, Confidence: 0, Signals: make(map[string]float64)} }
-func (n *NoOpDetector) Reset()                                             {}
+func (n *NoOpDetector) Name() string                { return "none" }
+func (n *NoOpDetector) Observe(event Event)         {}
+func (n *NoOpDetector) Detect() Result              { return Result{Level: Stable, Score: 0, Confidence: 0, Signals: make(map[string]float64)} }
+func (n *NoOpDetector) Classify(requests []sim.RequestMetrics, totalArrivals int) interface{} {
+	return Result{Level: Stable, Score: 0, Confidence: 0, Signals: make(map[string]float64)}
+}
+func (n *NoOpDetector) Reset() {}
 

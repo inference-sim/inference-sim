@@ -18,7 +18,7 @@ func TestThresholdDetector_BelowThreshold(t *testing.T) {
 	}
 
 	det := NewThresholdDetector(5000.0)
-	rawResult := det.Classify(requests)
+	rawResult := det.Classify(requests, len(requests)) // Issue #4: pass totalArrivals
 	result := asResult(t, rawResult)
 
 	if result.Level != Stable {
@@ -45,7 +45,7 @@ func TestThresholdDetector_AboveThreshold(t *testing.T) {
 	}
 
 	det := NewThresholdDetector(5000.0)
-	rawResult := det.Classify(requests)
+	rawResult := det.Classify(requests, len(requests)) // Issue #4: pass totalArrivals
 	result := asResult(t, rawResult)
 
 	if result.Level != Overloaded {
@@ -65,7 +65,7 @@ func TestThresholdDetector_DefaultThreshold(t *testing.T) {
 		{E2E: 4500},
 	}
 
-	rawResult := det.Classify(requests)
+	rawResult := det.Classify(requests, len(requests)) // Issue #4: pass totalArrivals
 	result := asResult(t, rawResult)
 	if result.Level != Stable {
 		t.Errorf("Expected STABLE with default threshold, got %v", result.Level)
