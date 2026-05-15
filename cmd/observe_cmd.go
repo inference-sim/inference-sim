@@ -561,59 +561,6 @@ type completionEvent struct {
 	wallClock int64 // wall-clock microseconds at completion
 }
 
-// printObserveLatencySummary prints TTFT and E2E statistics for the given records,
-// excluding error records and records with zero, negative, or inverted latency.
-// Warmup records are excluded at recording time and never appear in records.
-// Prints nothing if there are no valid records.
-func printObserveLatencySummary(w io.Writer, records []workload.TraceRecord) {
-	var ttftsUs, e2esUs []int64
-	for _, rec := range records {
-		if rec.Status != "ok" {
-			continue // error record
-		}
-		ttft := rec.FirstChunkTimeUs - rec.SendTimeUs
-		e2e := rec.LastChunkTimeUs - rec.SendTimeUs
-		if ttft <= 0 || e2e <= 0 || e2e < ttft {
-			continue // zero/negative latency (clock skew or unrecorded) or malformed record (e2e < ttft)
-		}
-		ttftsUs = append(ttftsUs, ttft)
-		e2esUs = append(e2esUs, e2e)
-	}
-	if len(ttftsUs) == 0 {
-		// Warn when records exist but all were filtered, so the user knows
-		// the missing summary is not a bug.
-		if len(records) > 0 {
-			logrus.Warnf("Latency summary skipped: all %d records were filtered (errors or invalid timestamps)", len(records))
-		}
-		return
-	}
-	sort.Slice(ttftsUs, func(i, j int) bool { return ttftsUs[i] < ttftsUs[j] })
-	sort.Slice(e2esUs, func(i, j int) bool { return e2esUs[i] < e2esUs[j] })
-
-	var ttftSum, e2eSum int64
-	for i := range ttftsUs {
-		ttftSum += ttftsUs[i]
-		e2eSum += e2esUs[i]
-	}
-	n := len(ttftsUs)
-	ttftMeanMs := float64(ttftSum) / float64(n) / 1000.0
-	e2eMeanMs := float64(e2eSum) / float64(n) / 1000.0
-
-	_, _ = fmt.Fprintf(w, "=== Observe Latency Summary (%d requests) ===\n", n)
-	_, _ = fmt.Fprintf(w, "TTFT: mean=%.2fms  p50=%.2fms  p90=%.2fms  p99=%.2fms\n",
-		ttftMeanMs,
-		sim.CalculatePercentile(ttftsUs, 50),
-		sim.CalculatePercentile(ttftsUs, 90),
-		sim.CalculatePercentile(ttftsUs, 99),
-	)
-	_, _ = fmt.Fprintf(w, "E2E:  mean=%.2fms  p50=%.2fms  p90=%.2fms  p99=%.2fms\n",
-		e2eMeanMs,
-		sim.CalculatePercentile(e2esUs, 50),
-		sim.CalculatePercentile(e2esUs, 90),
-		sim.CalculatePercentile(e2esUs, 99),
-	)
-}
-
 // printObserveMetrics prints the observe latency summary in the same JSON format
 // as blis run and blis replay (=== Simulation Metrics === header + JSON body).
 // Always emits the header even when no valid records exist (BC-5).
