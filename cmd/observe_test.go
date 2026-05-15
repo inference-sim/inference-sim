@@ -1979,3 +1979,46 @@ func TestObserveRecordITLDefault_IsFalse(t *testing.T) {
 		t.Errorf("--record-itl should default to false (opt-in); got %q", f.DefValue)
 	}
 }
+
+// --- printObserveMetrics tests (BC-1, BC-2, BC-5, BC-6, BC-7) ---
+
+func TestPrintObserveMetrics_ValidRecords(t *testing.T) {
+	records := []workload.TraceRecord{
+		{Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 50000, LastChunkTimeUs: 200000, OutputTokens: 100},
+		{Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 60000, LastChunkTimeUs: 210000, OutputTokens: 120},
+	}
+	var buf bytes.Buffer
+	printObserveMetrics(&buf, records, 1.0, nil)
+
+	output := buf.String()
+	if !strings.Contains(output, "=== Simulation Metrics ===") {
+		t.Errorf("Missing section header")
+	}
+
+	var metrics map[string]interface{}
+	lines := strings.Split(output, "\n")
+	jsonStart := -1
+	for i, line := range lines {
+		if strings.Contains(line, "=== Simulation Metrics ===") {
+			jsonStart = i + 1
+			break
+		}
+	}
+	if jsonStart < 0 {
+		t.Fatal("Could not find JSON start")
+	}
+	jsonStr := strings.Join(lines[jsonStart:], "\n")
+	if err := json.Unmarshal([]byte(jsonStr), &metrics); err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	if metrics["completed_requests"].(float64) != 2 {
+		t.Errorf("Expected completed_requests=2, got %v", metrics["completed_requests"])
+	}
+	if metrics["ttft_mean_ms"].(float64) == 0 {
+		t.Errorf("Expected non-zero ttft_mean_ms")
+	}
+	if metrics["responses_per_sec"].(float64) == 0 {
+		t.Errorf("Expected non-zero responses_per_sec")
+	}
+}

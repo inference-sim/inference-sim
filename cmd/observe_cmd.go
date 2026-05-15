@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -606,6 +607,129 @@ func printObserveLatencySummary(w io.Writer, records []workload.TraceRecord) {
 		sim.CalculatePercentile(e2esUs, 90),
 		sim.CalculatePercentile(e2esUs, 99),
 	)
+}
+
+// printObserveMetrics prints the observe latency summary in the same JSON format
+// as blis run and blis replay (=== Simulation Metrics === header + JSON body).
+// Always emits the header even when no valid records exist (BC-5).
+func printObserveMetrics(w io.Writer, records []workload.TraceRecord, wallClockDurationSec float64, itlRecords []workload.ITLRecord) {
+	var ttftsUs, e2esUs []int64
+	totalOutputTokens := 0
+
+	for _, rec := range records {
+		if rec.Status != "ok" {
+			continue
+		}
+		ttft := rec.FirstChunkTimeUs - rec.SendTimeUs
+		e2e := rec.LastChunkTimeUs - rec.SendTimeUs
+		if ttft <= 0 || e2e <= 0 || e2e < ttft {
+			continue
+		}
+		ttftsUs = append(ttftsUs, ttft)
+		e2esUs = append(e2esUs, e2e)
+		totalOutputTokens += rec.OutputTokens
+	}
+
+	// Compute ITL statistics if ITL records are provided
+	// ITL = inter-chunk latency (delta between consecutive chunk timestamps)
+	// Group by request ID and compute deltas
+	itlByRequest := make(map[int][]workload.ITLRecord)
+	for _, rec := range itlRecords {
+		itlByRequest[rec.RequestID] = append(itlByRequest[rec.RequestID], rec)
+	}
+
+	var itlsUs []int64
+	for _, chunks := range itlByRequest {
+		if len(chunks) < 2 {
+			continue // Need at least 2 chunks to compute ITL
+		}
+		// Sort by chunk index
+		sort.Slice(chunks, func(i, j int) bool { return chunks[i].ChunkIndex < chunks[j].ChunkIndex })
+
+		// Compute deltas (skip first chunk which represents TTFT)
+		for i := 1; i < len(chunks); i++ {
+			delta := chunks[i].TimestampUs - chunks[i-1].TimestampUs
+			if delta > 0 {
+				itlsUs = append(itlsUs, delta)
+			}
+		}
+	}
+	sort.Slice(itlsUs, func(i, j int) bool { return itlsUs[i] < itlsUs[j] })
+
+	// Sort latencies for percentile calculation
+	sort.Slice(ttftsUs, func(i, j int) bool { return ttftsUs[i] < ttftsUs[j] })
+	sort.Slice(e2esUs, func(i, j int) bool { return e2esUs[i] < e2esUs[j] })
+
+	// Compute means
+	var ttftMeanMs, e2eMeanMs, itlMeanMs float64
+	if len(ttftsUs) > 0 {
+		var ttftSum, e2eSum int64
+		for i := range ttftsUs {
+			ttftSum += ttftsUs[i]
+			e2eSum += e2esUs[i]
+		}
+		ttftMeanMs = float64(ttftSum) / float64(len(ttftsUs)) / 1000.0
+		e2eMeanMs = float64(e2eSum) / float64(len(e2esUs)) / 1000.0
+	}
+	if len(itlsUs) > 0 {
+		var itlSum int64
+		for _, itl := range itlsUs {
+			itlSum += itl
+		}
+		itlMeanMs = float64(itlSum) / float64(len(itlsUs)) / 1000.0
+	}
+
+	// Compute throughput
+	responsesPerSec := 0.0
+	tokensPerSec := 0.0
+	if wallClockDurationSec > 0 {
+		responsesPerSec = float64(len(ttftsUs)) / wallClockDurationSec
+		tokensPerSec = float64(totalOutputTokens) / wallClockDurationSec
+	}
+
+	// Build output struct (BC-1, BC-2)
+	output := map[string]interface{}{
+		"completed_requests": len(ttftsUs),
+		"ttft_mean_ms":       ttftMeanMs,
+		"ttft_p90_ms":        0.0,
+		"ttft_p95_ms":        0.0,
+		"ttft_p99_ms":        0.0,
+		"e2e_mean_ms":        e2eMeanMs,
+		"e2e_p90_ms":         0.0,
+		"e2e_p95_ms":         0.0,
+		"e2e_p99_ms":         0.0,
+		"itl_mean_ms":        itlMeanMs,
+		"itl_p90_ms":         0.0,
+		"itl_p95_ms":         0.0,
+		"itl_p99_ms":         0.0,
+		"responses_per_sec":  responsesPerSec,
+		"tokens_per_sec":     tokensPerSec,
+	}
+
+	// Compute percentiles if data available
+	if len(ttftsUs) > 0 {
+		output["ttft_p90_ms"] = sim.CalculatePercentile(ttftsUs, 90)
+		output["ttft_p95_ms"] = sim.CalculatePercentile(ttftsUs, 95)
+		output["ttft_p99_ms"] = sim.CalculatePercentile(ttftsUs, 99)
+		output["e2e_p90_ms"] = sim.CalculatePercentile(e2esUs, 90)
+		output["e2e_p95_ms"] = sim.CalculatePercentile(e2esUs, 95)
+		output["e2e_p99_ms"] = sim.CalculatePercentile(e2esUs, 99)
+	}
+	if len(itlsUs) > 0 {
+		output["itl_p90_ms"] = sim.CalculatePercentile(itlsUs, 90)
+		output["itl_p95_ms"] = sim.CalculatePercentile(itlsUs, 95)
+		output["itl_p99_ms"] = sim.CalculatePercentile(itlsUs, 99)
+	}
+
+	// Marshal to JSON
+	jsonBytes, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		logrus.Warnf("Failed to marshal observe metrics to JSON: %v", err)
+		return
+	}
+
+	// Print with section header (BC-5)
+	_, _ = fmt.Fprintf(w, "=== Simulation Metrics ===\n%s\n", string(jsonBytes))
 }
 
 // runObserveOrchestrator implements the dispatch loop with session support.
