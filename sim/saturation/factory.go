@@ -20,6 +20,8 @@ func NewDetector(name string, opts DetectorOpts) Detector {
 			threshold = 5000.0
 		}
 		return NewThresholdDetector(threshold)
+	case "backlog-drift":
+		return NewBacklogDriftDetector()
 	case "none":
 		return &NoOpDetector{}
 	}

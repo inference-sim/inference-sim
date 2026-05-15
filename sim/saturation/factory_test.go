@@ -21,7 +21,7 @@ func TestNewDetector_UnknownName_Panics(t *testing.T) {
 }
 
 func TestNewDetector_ValidNames(t *testing.T) {
-	tests := []string{"composite", "threshold", "none"}
+	tests := []string{"composite", "threshold", "backlog-drift", "none"}
 	for _, name := range tests {
 		det := NewDetector(name, DetectorOpts{ThresholdMs: 5000})
 		if det == nil {
