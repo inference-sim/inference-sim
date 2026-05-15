@@ -1944,3 +1944,56 @@ func TestPrintObserveMetrics_ZeroRecords(t *testing.T) {
 		t.Errorf("Expected completed_requests=0, got %v", metrics["completed_requests"])
 	}
 }
+
+func TestPrintObserveMetrics_ITLPresent(t *testing.T) {
+	records := []workload.TraceRecord{
+		{Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 50000, LastChunkTimeUs: 200000, OutputTokens: 100},
+	}
+	itlRecords := []workload.ITLRecord{
+		{RequestID: 0, ChunkIndex: 0, TimestampUs: 50000},
+		{RequestID: 0, ChunkIndex: 1, TimestampUs: 65000},
+		{RequestID: 0, ChunkIndex: 2, TimestampUs: 83000},
+	}
+	var buf bytes.Buffer
+	printObserveMetrics(&buf, records, 1.0, itlRecords)
+
+	var metrics map[string]interface{}
+	lines := strings.Split(buf.String(), "\n")
+	jsonStart := -1
+	for i, line := range lines {
+		if strings.Contains(line, "=== Simulation Metrics ===") {
+			jsonStart = i + 1
+			break
+		}
+	}
+	jsonStr := strings.Join(lines[jsonStart:], "\n")
+	json.Unmarshal([]byte(jsonStr), &metrics)
+
+	if metrics["itl_mean_ms"].(float64) == 0 {
+		t.Errorf("Expected non-zero itl_mean_ms when ITL records provided")
+	}
+}
+
+func TestPrintObserveMetrics_ITLAbsent(t *testing.T) {
+	records := []workload.TraceRecord{
+		{Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 50000, LastChunkTimeUs: 200000, OutputTokens: 100},
+	}
+	var buf bytes.Buffer
+	printObserveMetrics(&buf, records, 1.0, nil)
+
+	var metrics map[string]interface{}
+	lines := strings.Split(buf.String(), "\n")
+	jsonStart := -1
+	for i, line := range lines {
+		if strings.Contains(line, "=== Simulation Metrics ===") {
+			jsonStart = i + 1
+			break
+		}
+	}
+	jsonStr := strings.Join(lines[jsonStart:], "\n")
+	json.Unmarshal([]byte(jsonStr), &metrics)
+
+	if metrics["itl_mean_ms"].(float64) != 0 {
+		t.Errorf("Expected itl_mean_ms=0 when no ITL records provided")
+	}
+}
