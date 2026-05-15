@@ -30,9 +30,10 @@ func (c *CompositeDetector) Name() string {
 
 // Observe records an arrival or completion event for streaming detection.
 func (c *CompositeDetector) Observe(event Event) {
-	if event.Type == Arrival {
+	switch event.Type {
+	case Arrival:
 		c.arrivals = append(c.arrivals, event)
-	} else if event.Type == Completion {
+	case Completion:
 		c.completions = append(c.completions, event)
 	}
 }
