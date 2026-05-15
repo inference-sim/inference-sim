@@ -1967,7 +1967,9 @@ func TestPrintObserveMetrics_ITLPresent(t *testing.T) {
 		}
 	}
 	jsonStr := strings.Join(lines[jsonStart:], "\n")
-	json.Unmarshal([]byte(jsonStr), &metrics)
+	if err := json.Unmarshal([]byte(jsonStr), &metrics); err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
 
 	if metrics["itl_mean_ms"].(float64) == 0 {
 		t.Errorf("Expected non-zero itl_mean_ms when ITL records provided")
@@ -1991,7 +1993,9 @@ func TestPrintObserveMetrics_ITLAbsent(t *testing.T) {
 		}
 	}
 	jsonStr := strings.Join(lines[jsonStart:], "\n")
-	json.Unmarshal([]byte(jsonStr), &metrics)
+	if err := json.Unmarshal([]byte(jsonStr), &metrics); err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
 
 	if metrics["itl_mean_ms"].(float64) != 0 {
 		t.Errorf("Expected itl_mean_ms=0 when no ITL records provided")
