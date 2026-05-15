@@ -35,22 +35,9 @@ func (n *NoOpDetector) Detect() Result                                  { return
 func (n *NoOpDetector) Classify(requests []sim.RequestMetrics) Result { return Result{Level: Stable, Score: 0, Confidence: 0, Signals: make(map[string]float64)} }
 func (n *NoOpDetector) Reset()                                          {}
 
-func NewCompositeDetector() Detector {
-	return &CompositeDetectorStub{}
-}
-
 func NewThresholdDetector(thresholdMs float64) Detector {
 	return &ThresholdDetectorStub{thresholdMs: thresholdMs}
 }
-
-// CompositeDetectorStub is a temporary stub returning correct name
-type CompositeDetectorStub struct{}
-
-func (c *CompositeDetectorStub) Name() string                                    { return "composite" }
-func (c *CompositeDetectorStub) Observe(event Event)                             {}
-func (c *CompositeDetectorStub) Detect() Result                                  { return Result{Level: Stable, Score: 0, Confidence: 0, Signals: make(map[string]float64)} }
-func (c *CompositeDetectorStub) Classify(requests []sim.RequestMetrics) Result { return Result{Level: Stable, Score: 0, Confidence: 0, Signals: make(map[string]float64)} }
-func (c *CompositeDetectorStub) Reset()                                          {}
 
 // ThresholdDetectorStub is a temporary stub returning correct name
 type ThresholdDetectorStub struct {
