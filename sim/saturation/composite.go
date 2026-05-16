@@ -113,7 +113,7 @@ func computeComposite(arrivals, completions int, sortedLatencies []float64) Resu
 
 	// Base LT computation (works for any n >= 2, per issue #1369 comment 4462467580)
 	if n >= 2 {
-		// 2a: Raw LT (half-window split)
+		// 2a: Raw LT — always compute for diagnostics (reported in signals)
 		mid := n / 2
 		lFirst := mean(sortedLatencies[:mid])
 		lSecond := mean(sortedLatencies[mid:])
@@ -121,10 +121,7 @@ func computeComposite(arrivals, completions int, sortedLatencies []float64) Resu
 			ltRaw = math.Max(0.0, (lSecond-lFirst)/lFirst)
 		}
 
-		// Start with raw LT (trust by default)
-		lt = ltRaw
-
-		// 2b: Quartile monotonicity filter (Issue #2) - only applies at n >= 20
+		// 2b: LT only affects classification when quartile filter can validate it
 		if n >= 20 {
 			qSize := n / 4
 			q1 := mean(sortedLatencies[0:qSize])
@@ -133,14 +130,12 @@ func computeComposite(arrivals, completions int, sortedLatencies []float64) Resu
 			q4 := mean(sortedLatencies[3*qSize:])
 			quartileMonotone = (q1 < q2) && (q2 < q3) && (q3 < q4)
 
-			// 2c: If quartile filter fails, veto LT (set to 0)
-			if !quartileMonotone {
-				lt = 0.0
+			if quartileMonotone {
+				lt = ltRaw
 			}
-		} else {
-			// For n < 20, quartile filter doesn't apply - mark as N/A (not failed)
-			quartileMonotone = true
+			// If !quartileMonotone: lt stays 0 (filter vetoed)
 		}
+		// If n < 20: lt stays 0 (insufficient data for reliable trend)
 	}
 
 	signals["latency_trend_raw"] = math.Min(ltRaw, 1.0)

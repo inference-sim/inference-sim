@@ -112,15 +112,15 @@ func TestCompositeDetector_StrongRateDeficit(t *testing.T) {
 	}
 }
 
-// TestCompositeDetector_SmallSampleLatencyTrend verifies LT works for n < 20 (no quartile filter)
+// TestCompositeDetector_SmallSampleLatencyTrend verifies LT=0 for n < 20 (spec compliance)
 func TestCompositeDetector_SmallSampleLatencyTrend(t *testing.T) {
 	// 4 requests with increasing latency: 100 → 300ms
-	// First half: [100, 150], mean = 125
-	// Second half: [200, 300], mean = 250
-	// LT = (250 - 125) / 125 = 1.0
-	// RD = 0, score = max(0, 1.0) = 1.0
+	// ltRaw = (250 - 125) / 125 = 1.0 (computed for diagnostics)
+	// But: n=4 < 20, so lt=0 (quartile filter can't validate, rely on RD only)
+	// RD = 0 (all requests completed)
+	// score = max(0, 0) = 0
 	// noise_floor = 1/sqrt(4) = 0.5
-	// Classification: score >= noise_floor and LT > noise_floor → OVERLOADED
+	// Classification: score < noise_floor → STABLE
 	requests := []sim.RequestMetrics{
 		{E2E: 100, ArrivedAt: 0},
 		{E2E: 150, ArrivedAt: 1},
@@ -132,20 +132,25 @@ func TestCompositeDetector_SmallSampleLatencyTrend(t *testing.T) {
 	rawResult := det.Classify(requests, len(requests))
 	result := asResult(t, rawResult)
 
-	// Should detect strong latency trend
-	if result.Signals["latency_trend"] <= 0.5 {
-		t.Errorf("Expected latency_trend > 0.5 for 100→300ms increase, got %.2f", result.Signals["latency_trend"])
+	// ltRaw should be computed (for diagnostics)
+	if result.Signals["latency_trend_raw"] <= 0.5 {
+		t.Errorf("Expected latency_trend_raw > 0.5 for 100→300ms increase, got %.2f", result.Signals["latency_trend_raw"])
 	}
 
-	// With n=4 < 20, quartile filter doesn't apply (marked as N/A = true)
-	if result.Signals["quartile_monotone"] != 1.0 {
-		t.Errorf("Expected quartile_monotone = 1 (N/A) for n < 20, got %.2f", result.Signals["quartile_monotone"])
+	// But lt (used for classification) should be 0 for n < 20
+	if result.Signals["latency_trend"] != 0.0 {
+		t.Errorf("Expected latency_trend = 0 for n < 20 (spec compliance), got %.2f", result.Signals["latency_trend"])
 	}
 
-	// Should classify as OVERLOADED (LT > noise_floor)
-	if result.Level != Overloaded {
-		t.Errorf("Expected OVERLOADED from latency trend, got %v (score=%.2f, lt=%.2f)",
-			result.Level, result.Score, result.Signals["latency_trend"])
+	// With n=4 < 20, quartile_monotone is false (filter didn't run)
+	if result.Signals["quartile_monotone"] != 0.0 {
+		t.Errorf("Expected quartile_monotone = 0 for n < 20, got %.2f", result.Signals["quartile_monotone"])
+	}
+
+	// Should classify as STABLE (score=0 < noise_floor=0.5, RD=0, lt=0)
+	if result.Level != Stable {
+		t.Errorf("Expected STABLE (n < 20, RD=0, lt=0), got %v (score=%.2f)",
+			result.Level, result.Score)
 	}
 }
 
