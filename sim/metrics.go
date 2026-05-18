@@ -63,7 +63,9 @@ func NewMetrics() *Metrics {
 	}
 }
 
-func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int64, outputFilePath string) error {
+// SaveResults computes aggregate metrics and optionally runs post-hoc saturation detection.
+// saturationDetector should be a saturation.Detector or nil to skip saturation analysis.
+func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int64, outputFilePath string, saturationDetector BatchClassifier) error {
 	vllmRuntime := float64(m.SimEndedTime) / float64(1e6)
 
 	// Create an instance of our output struct to populate
@@ -125,6 +127,27 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 			output.ResponsesPerSec = float64(m.CompletedRequests) / vllmRuntime
 			output.TokensPerSec = float64(m.TotalOutputTokens) / vllmRuntime
 		}
+	}
+
+	// Run post-hoc saturation detection if detector provided (#1369)
+	if saturationDetector != nil {
+		// Extract completed request metrics for classification
+		completedReqs := make([]RequestMetrics, 0, m.CompletedRequests)
+		for _, id := range sortedRequestIDs(m.Requests) {
+			if m.RequestE2Es[id] > 0 { // Only completed requests
+				rm := m.Requests[id]
+				rm.E2E = m.RequestE2Es[id] / 1e3    // ticks → ms
+				rm.TTFT = m.RequestTTFTs[id] / 1e3  // ticks → ms
+				completedReqs = append(completedReqs, rm)
+			}
+		}
+
+		// Calculate total arrivals (Issue #4: needed for rate deficit in batch mode)
+		totalArrivals := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests
+
+		// Call Classify with total arrivals (Issues #4, #6: typed interface, rate deficit available)
+		// Note: Sorting by completion time is now handled inside Classify (Issue #5)
+		output.Saturation = saturationDetector.Classify(completedReqs, totalArrivals)
 	}
 
 	// Always emit the metrics section so callers can reliably parse output,

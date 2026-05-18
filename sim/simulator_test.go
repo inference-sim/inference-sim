@@ -1119,7 +1119,7 @@ func TestSimulator_Determinism_ByteIdenticalJSON(t *testing.T) {
 	injectRequests(sim1, requests1)
 	sim1.Run()
 	f1 := t.TempDir() + "/run1.json"
-	if err := sim1.Metrics.SaveResults("determinism-test", cfg.Horizon, cfg.TotalKVBlocks, f1); err != nil {
+	if err := sim1.Metrics.SaveResults("determinism-test", cfg.Horizon, cfg.TotalKVBlocks, f1, nil); err != nil {
 		t.Fatalf("SaveResults run1: %v", err)
 	}
 
@@ -1130,7 +1130,7 @@ func TestSimulator_Determinism_ByteIdenticalJSON(t *testing.T) {
 	injectRequests(sim2, requests2)
 	sim2.Run()
 	f2 := t.TempDir() + "/run2.json"
-	if err := sim2.Metrics.SaveResults("determinism-test", cfg.Horizon, cfg.TotalKVBlocks, f2); err != nil {
+	if err := sim2.Metrics.SaveResults("determinism-test", cfg.Horizon, cfg.TotalKVBlocks, f2, nil); err != nil {
 		t.Fatalf("SaveResults run2: %v", err)
 	}
 

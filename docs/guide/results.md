@@ -44,6 +44,7 @@ The JSON output on stdout (and in the `--metrics-path` file when set) contains:
 | `dropped_unservable` | count | Requests dropped at enqueue due to context limit violations |
 | `length_capped_requests` | count | Requests force-completed at `MaxModelLen` |
 | `timed_out_requests` | count | Requests that exceeded their deadline |
+| `saturation` | object | Post-hoc saturation detection result (omitted when `--post-hoc-detector none`; see [Saturation Detection](#saturation-detection)) |
 | `requests` | array | Per-request detail records (omitted when empty; see [Per-Request Fields](#per-request-fields)) |
 
 ### Scheduling Delay
@@ -52,6 +53,59 @@ Scheduling delay isolates the WaitQ wait time from compute time. High scheduling
 
 !!! warning "Per-request units"
     All per-request latency fields (`ttft_ms`, `e2e_ms`, `itl_ms`, `scheduling_delay_ms`) are in **milliseconds** — converted from internal ticks by dividing by 1,000. Aggregate metrics (`scheduling_delay_p99_ms`, etc.) are also in milliseconds. See [Known Unit Gotchas](../reference/configuration.md#known-unit-gotchas) for the full unit reference. Note: hypothesis scripts written before BC-14 may divide `scheduling_delay_ms` by 1,000 unnecessarily — that field is now already in ms.
+
+### Saturation Detection
+
+The `saturation` field provides automated classification of simulation runs using post-hoc analysis (#1369). This is enabled via the `--post-hoc-detector` flag and is distinct from the real-time flow control saturation detector.
+
+**Structure:**
+```json
+{
+  "saturation": {
+    "level": "STABLE",
+    "score": 0.35,
+    "confidence": 0.95,
+    "signals": {
+      "rate_deficit": 0.0,
+      "latency_trend": 0.12
+    }
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `level` | string | Classification: `STABLE`, `BACKLOGGED`, or `OVERLOADED` |
+| `score` | float | Composite score in [0, 1] range. STABLE: < 0.5, BACKLOGGED: [0.5, 0.75), OVERLOADED: ≥ 0.75 |
+| `confidence` | float | Statistical confidence based on sample size (min(1.0, sqrt(N))) |
+| `signals` | object | Detector-specific metrics (varies by detector type) |
+
+**Detectors:**
+
+- **composite** (default when `--post-hoc-detector composite`): Combines two signals:
+  - `rate_deficit`: max(0, 1 - completions/arrivals) — measures throughput saturation
+  - `latency_trend`: (second_half_mean - first_half_mean) / first_half_mean — detects queue buildup
+
+- **threshold** (when `--post-hoc-detector threshold`): Simple mean E2E comparison against `--saturation-threshold-ms` (default 5000ms):
+  - `mean_e2e`: Mean end-to-end latency across all completed requests
+  - `threshold`: Configured threshold value
+  - STABLE when mean_e2e < threshold, OVERLOADED when mean_e2e > threshold
+
+- **none** (default): No saturation analysis performed, `saturation` field omitted from output
+
+**Usage:**
+```bash
+# Run with composite detector
+./blis run --model qwen/qwen3-14b --post-hoc-detector composite
+
+# Run with threshold detector (custom threshold)
+./blis run --model qwen/qwen3-14b --post-hoc-detector threshold --saturation-threshold-ms 3000
+```
+
+**Use cases:**
+- Automated capacity planning: classify runs as under-provisioned (OVERLOADED), near-capacity (BACKLOGGED), or healthy (STABLE)
+- Experiment analysis: quickly identify which configurations saturate the system
+- CI/CD gates: fail builds if saturation score exceeds threshold
 
 ### Per-Request Fields
 

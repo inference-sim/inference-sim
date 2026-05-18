@@ -29,6 +29,7 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 - **Decision tracing and counterfactual analysis**: record routing decisions and evaluate alternative choices
 - **Fitness evaluation**: weighted multi-objective scoring with configurable metric weights
 - **Per-SLO-class metrics**: breakdown by SLO class with Jain fairness index
+- **Post-hoc saturation detection**: automated classification of simulation runs (STABLE/BACKLOGGED/OVERLOADED) using composite or threshold detectors
 
 ---
 

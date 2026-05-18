@@ -43,7 +43,7 @@ func TestSaveResults_InstanceID_InJSON(t *testing.T) {
 	outputPath := filepath.Join(tmpDir, "test_output.json")
 
 	// WHEN SaveResults is called with instanceID "test-instance"
-	if err := m.SaveResults("test-instance", 1000000, 1000, outputPath); err != nil {
+	if err := m.SaveResults("test-instance", 1000000, 1000, outputPath, nil); err != nil {
 		t.Fatalf("SaveResults returned error: %v", err)
 	}
 
@@ -93,7 +93,7 @@ func TestSaveResults_InstanceID_Empty(t *testing.T) {
 	outputPath := filepath.Join(tmpDir, "test_output.json")
 
 	// WHEN SaveResults is called with empty instanceID
-	if err := m.SaveResults("", 1000000, 1000, outputPath); err != nil {
+	if err := m.SaveResults("", 1000000, 1000, outputPath, nil); err != nil {
 		t.Fatalf("SaveResults returned error: %v", err)
 	}
 
@@ -143,7 +143,7 @@ func TestSaveResults_InstanceID_Default(t *testing.T) {
 	outputPath := filepath.Join(tmpDir, "test_output.json")
 
 	// WHEN SaveResults is called with instanceID "default"
-	if err := m.SaveResults("default", 1000000, 1000, outputPath); err != nil {
+	if err := m.SaveResults("default", 1000000, 1000, outputPath, nil); err != nil {
 		t.Fatalf("SaveResults returned error: %v", err)
 	}
 
@@ -189,7 +189,7 @@ func TestSaveResults_IncludesIncompleteRequests(t *testing.T) {
 	// WHEN SaveResults writes to a temp file
 	tmpDir := t.TempDir()
 	outPath := filepath.Join(tmpDir, "results.json")
-	if err := m.SaveResults("test-instance", 10_000_000, 100, outPath); err != nil {
+	if err := m.SaveResults("test-instance", 10_000_000, 100, outPath, nil); err != nil {
 		t.Fatalf("SaveResults returned error: %v", err)
 	}
 
@@ -236,7 +236,7 @@ func TestSaveResults_NoWallClockFields(t *testing.T) {
 	outPath := filepath.Join(tmpDir, "results.json")
 
 	// WHEN SaveResults writes output
-	if err := m.SaveResults("test", 1_000_000, 1000, outPath); err != nil {
+	if err := m.SaveResults("test", 1_000_000, 1000, outPath, nil); err != nil {
 		t.Fatalf("SaveResults returned error: %v", err)
 	}
 
@@ -273,7 +273,7 @@ func TestSaveResults_ConservationFields(t *testing.T) {
 	outPath := filepath.Join(tmpDir, "results.json")
 
 	// WHEN SaveResults writes output
-	if err := m.SaveResults("test", 5_000_000, 1000, outPath); err != nil {
+	if err := m.SaveResults("test", 5_000_000, 1000, outPath, nil); err != nil {
 		t.Fatalf("SaveResults returned error: %v", err)
 	}
 
@@ -309,7 +309,7 @@ func TestSaveResults_PerRequestITL_InMilliseconds(t *testing.T) {
 	m.AllITLs = []int64{5000}
 
 	outputPath := filepath.Join(t.TempDir(), "results.json")
-	if err := m.SaveResults("test", 1e15, 100, outputPath); err != nil {
+	if err := m.SaveResults("test", 1e15, 100, outputPath, nil); err != nil {
 		t.Fatalf("SaveResults returned error: %v", err)
 	}
 
@@ -343,7 +343,7 @@ func TestSaveResults_ZeroRuntime_NoInfinity(t *testing.T) {
 	m.RequestSchedulingDelays["r1"] = 100
 	m.Requests["r1"] = NewRequestMetrics(&Request{ID: "r1", InputTokens: make([]int, 10), OutputTokens: make([]int, 5)}, 0)
 
-	err := m.SaveResults("test", 1000000, 100, "")
+	err := m.SaveResults("test", 1000000, 100, "", nil)
 	if err != nil {
 		t.Fatalf("SaveResults returned error for zero runtime: %v", err)
 	}
@@ -359,7 +359,7 @@ func TestSaveResults_DroppedUnservable_InJSON(t *testing.T) {
 
 	// WHEN saving results to a temp file
 	tmpFile := filepath.Join(t.TempDir(), "test_output.json")
-	if err := m.SaveResults("test", 10_000_000, 100, tmpFile); err != nil {
+	if err := m.SaveResults("test", 10_000_000, 100, tmpFile, nil); err != nil {
 		t.Fatalf("SaveResults returned error: %v", err)
 	}
 
@@ -402,7 +402,7 @@ func TestSaveResults_AlwaysEmitsHeader_ZeroCompletions(t *testing.T) {
 	require.NoError(t, err)
 	os.Stdout = w
 
-	saveErr := m.SaveResults("test", 10_000_000, 100, "")
+	saveErr := m.SaveResults("test", 10_000_000, 100, "", nil)
 
 	require.NoError(t, w.Close())
 	os.Stdout = origStdout
@@ -434,7 +434,7 @@ func TestSaveResults_LengthCappedRequests_InJSON(t *testing.T) {
 	m.SimEndedTime = 1_000_000
 
 	tmpFile := filepath.Join(t.TempDir(), "test_output.json")
-	if err := m.SaveResults("test", 10_000_000, 100, tmpFile); err != nil {
+	if err := m.SaveResults("test", 10_000_000, 100, tmpFile, nil); err != nil {
 		t.Fatalf("SaveResults returned error: %v", err)
 	}
 

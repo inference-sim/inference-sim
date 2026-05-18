@@ -19,6 +19,7 @@ import (
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/latency"
+	"github.com/inference-sim/inference-sim/sim/saturation"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -194,6 +195,10 @@ var (
 	saturationPeakRatio  float64 // Peak/mean ratio threshold for transient backlog detection (--saturation-peak-ratio)
 	saturationPeakBand   float64 // Confidence band around peak ratio threshold (--saturation-peak-band)
 	saturationConfidence float64 // Confidence level for slope CI (--saturation-ci)
+
+	// post-hoc saturation detector configuration (#1369)
+	postHocDetector      string  // Post-hoc saturation detector: "composite", "threshold", "none" (--post-hoc-detector)
+	saturationThreshold float64 // Threshold in ms for threshold detector (--saturation-threshold-ms)
 
 	// trace export
 	traceOutput string // File prefix for TraceV2 export (<prefix>.yaml + <prefix>.csv)
@@ -1734,16 +1739,34 @@ var runCmd = &cobra.Command{
 			logrus.Infof("Saturation report written to %s (classification: %s)", saturationReport, report.Classification)
 		}
 
+		// Validate and instantiate post-hoc saturation detector from CLI flags (#1369, C3)
+		validPostHocDetectors := map[string]bool{"none": true, "composite": true, "threshold": true}
+		if !validPostHocDetectors[postHocDetector] {
+			logrus.Fatalf("--post-hoc-detector %q not recognized. Valid: composite, threshold, none", postHocDetector)
+		}
+
+		// Validate saturation threshold for negative values (I4)
+		if saturationThreshold < 0 {
+			logrus.Fatalf("--saturation-threshold-ms must be non-negative, got %.2f", saturationThreshold)
+		}
+
+		var saturationDetector sim.BatchClassifier
+		if postHocDetector != "none" {
+			saturationDetector = saturation.NewDetector(postHocDetector, saturation.DetectorOpts{
+				ThresholdMs: saturationThreshold,
+			})
+		}
+
 		if numInstances > 1 {
 			// Print per-instance metrics to stdout (multi-instance only)
 			for _, inst := range cs.Instances() {
-				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, ""); err != nil {
+				if err := inst.Metrics().SaveResults(string(inst.ID()), config.Horizon, totalKVBlocks, "", saturationDetector); err != nil {
 					logrus.Fatalf("SaveResults for instance %s: %v", inst.ID(), err)
 				}
 			}
 		}
 		// Save aggregated metrics (prints to stdout + saves to file if metricsPath set)
-		if err := cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, metricsPath); err != nil {
+		if err := cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, metricsPath, saturationDetector); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
@@ -2055,6 +2078,11 @@ func init() {
 	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")
 	runCmd.Flags().StringVar(&metricsPath, "metrics-path", "", "File to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats). Use --results-path on blis replay for per-request SimResult JSON.")
 	runCmd.Flags().StringVar(&saturationReport, "saturation-report", "", "File to write saturation analysis JSON (backlog-drift classification)")
+
+	// Post-hoc saturation detector flags (#1369)
+	runCmd.Flags().StringVar(&postHocDetector, "post-hoc-detector", "none", "Post-hoc saturation detector: composite, threshold, none")
+	runCmd.Flags().Float64Var(&saturationThreshold, "saturation-threshold-ms", 5000.0, "Threshold in ms for threshold detector (default 5000ms)")
+
 	registerSaturationFlags(runCmd)
 
 	// Attach `run` as a subcommand to `root`

@@ -161,6 +161,12 @@ func init() {
 
 	// Saturation analysis (optional)
 	observeCmd.Flags().StringVar(&saturationReport, "saturation-report", "", "File to write saturation analysis JSON (backlog-drift classification)")
+
+	// Note: Post-hoc saturation detector flags (--post-hoc-detector, --saturation-threshold-ms)
+	// are NOT registered for observe. The observe command doesn't call SaveResults with classification.
+	// For post-hoc analysis of observed traces, use: blis replay --trace-header h.yaml --trace-data d.csv
+	// --post-hoc-detector composite (C4 fix)
+
 	registerSaturationFlags(observeCmd)
 
 	rootCmd.AddCommand(observeCmd)
