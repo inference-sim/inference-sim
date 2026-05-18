@@ -3,6 +3,7 @@ package saturation
 
 import (
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -82,8 +83,10 @@ func TestCompositeDetector_BackloggedRateDeficit(t *testing.T) {
 	if result2.Level != Backlogged {
 		t.Errorf("Expected BACKLOGGED with strong RD, got %v (score=%.2f)", result2.Level, result2.Score)
 	}
-	if result2.Score < 0.5 || result2.Score >= 0.75 {
-		t.Errorf("Expected score in [0.5, 0.75) for backlogged, got %.2f", result2.Score)
+	// Verify score is dominated by RD (0.6) since lt=0 for n=4 < 20
+	expectedScore := 0.6
+	if math.Abs(result2.Score-expectedScore) > 0.01 {
+		t.Errorf("Expected score ≈ %.2f (RD), got %.2f", expectedScore, result2.Score)
 	}
 }
 
@@ -224,12 +227,15 @@ func TestCompositeDetector_ObserveDetectBacklogged(t *testing.T) {
 
 	result := det.Detect()
 
-	// RD = 1 - 4/10 = 0.6, noise_floor = 0.316, 0.5 <= 0.6 < 0.75 → BACKLOGGED
+	// RD = 1 - 4/10 = 0.6, lt=0 (n=4 < 20), noise_floor = 0.316
+	// score = 0.6 > noise_floor and lt < noise_floor → BACKLOGGED
 	if result.Level != Backlogged {
 		t.Errorf("Expected BACKLOGGED, got %v (score=%.2f)", result.Level, result.Score)
 	}
-	if result.Score < 0.5 || result.Score >= 0.75 {
-		t.Errorf("Expected score in [0.5, 0.75) for backlogged, got %.2f", result.Score)
+	// Verify score is dominated by RD (0.6) since lt=0 for n=4 < 20
+	expectedScore := 0.6
+	if math.Abs(result.Score-expectedScore) > 0.01 {
+		t.Errorf("Expected score ≈ %.2f (RD), got %.2f", expectedScore, result.Score)
 	}
 }
 
