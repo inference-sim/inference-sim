@@ -217,7 +217,7 @@ Separate prefill (prompt processing) and decode (token generation) onto dedicate
   --model qwen/qwen3-14b \
   --num-instances 4 \
   --prefill-instances 2 --decode-instances 2 \
-  --pd-decider prefix-threshold --pd-prefix-threshold 512 \
+  --pd-decider prefix-threshold --pd-prefix-threshold 16 \
   --rate 100 --num-requests 1000
 
 # Heterogeneous pools: prefill on A100-80 (high compute), decode on H100 (high memory)
