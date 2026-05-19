@@ -519,61 +519,11 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Fatalf("--saturation-threshold-ms must be non-negative, got %.2f", saturationThreshold)
 	}
 
-	// Saturation analysis (unified via --saturation-report; detector type controlled by --post-hoc-detector)
+	// Saturation analysis
 	var saturationResult interface{} // For stdout JSON (run/replay parity)
-	if saturationReport != "" {
-		// --saturation-report is specified: write detector output to file
-		if postHocDetector != "none" {
-			// Use post-hoc detector (composite, threshold)
-			requestMetrics := workload.TraceRecordsToRequestMetrics(records)
-			totalArrivals := len(records)
 
-			if len(requestMetrics) == 0 && totalArrivals > 0 {
-				logrus.Warnf("--post-hoc-detector: 0 completed requests out of %d arrivals; saturation result has zero confidence", totalArrivals)
-			}
-
-			detector := saturation.NewDetector(postHocDetector, saturation.DetectorOpts{
-				ThresholdMs: saturationThreshold,
-			})
-			result := detector.Classify(requestMetrics, totalArrivals)
-
-			// Write to file
-			satBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				logrus.Fatalf("Failed to marshal saturation result: %v", err)
-			}
-			if err := os.WriteFile(saturationReport, satBytes, 0644); err != nil {
-				logrus.Fatalf("Failed to write saturation report to %s: %v", saturationReport, err)
-			}
-			logrus.Infof("Saturation report written to %s (detector: %s)", saturationReport, postHocDetector)
-		} else {
-			// Use backlog-drift detector (backward compatible)
-			requests := workload.TraceRecordsToRequests(records)
-			simEndUs := int64(0)
-			for _, rec := range records {
-				if rec.LastChunkTimeUs > simEndUs {
-					simEndUs = rec.LastChunkTimeUs
-				}
-			}
-			if observeHorizon > simEndUs {
-				simEndUs = observeHorizon
-			}
-
-			cfg := workload.NewBacklogDriftConfig(
-				time.Duration(saturationWindowSec)*time.Second,
-				saturationMinWindows,
-				saturationPeakRatio,
-				saturationPeakBand,
-				saturationConfidence,
-			)
-			report := workload.AnalyzeBacklogDrift(requests, simEndUs, cfg)
-			if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
-				logrus.Fatalf("Failed to write saturation report: %v", err)
-			}
-			logrus.Infof("Saturation report written to %s (detector: backlog-drift, classification: %s)", saturationReport, report.Classification)
-		}
-	} else if postHocDetector != "none" {
-		// --saturation-report NOT specified but --post-hoc-detector is set: put in stdout JSON (run/replay parity)
+	// Post-hoc detector: always populate saturationResult for stdout JSON when enabled
+	if postHocDetector != "none" {
 		requestMetrics := workload.TraceRecordsToRequestMetrics(records)
 		totalArrivals := len(records)
 
@@ -585,6 +535,46 @@ func runObserve(cmd *cobra.Command, _ []string) {
 			ThresholdMs: saturationThreshold,
 		})
 		saturationResult = detector.Classify(requestMetrics, totalArrivals)
+
+		// If --saturation-report is also specified, write the result to file (cluster pod use case)
+		// We still populate saturationResult above to maintain run/replay parity: when --post-hoc-detector
+		// is enabled, the result ALWAYS appears in stdout JSON, regardless of --saturation-report.
+		// This ensures scripts consuming stdout.saturation work identically across run/replay/observe.
+		if saturationReport != "" {
+			satBytes, err := json.MarshalIndent(saturationResult, "", "  ")
+			if err != nil {
+				logrus.Fatalf("Failed to marshal saturation result: %v", err)
+			}
+			if err := os.WriteFile(saturationReport, satBytes, 0644); err != nil {
+				logrus.Fatalf("Failed to write saturation report to %s: %v", saturationReport, err)
+			}
+			logrus.Infof("Saturation report written to %s (detector: %s)", saturationReport, postHocDetector)
+		}
+	} else if saturationReport != "" {
+		// --saturation-report specified but --post-hoc-detector is "none" (default): use backlog-drift (backward compatible)
+		requests := workload.TraceRecordsToRequests(records)
+		simEndUs := int64(0)
+		for _, rec := range records {
+			if rec.LastChunkTimeUs > simEndUs {
+				simEndUs = rec.LastChunkTimeUs
+			}
+		}
+		if observeHorizon > simEndUs {
+			simEndUs = observeHorizon
+		}
+
+		cfg := workload.NewBacklogDriftConfig(
+			time.Duration(saturationWindowSec)*time.Second,
+			saturationMinWindows,
+			saturationPeakRatio,
+			saturationPeakBand,
+			saturationConfidence,
+		)
+		report := workload.AnalyzeBacklogDrift(requests, simEndUs, cfg)
+		if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
+			logrus.Fatalf("Failed to write saturation report: %v", err)
+		}
+		logrus.Infof("Saturation report written to %s (detector: backlog-drift, classification: %s)", saturationReport, report.Classification)
 	}
 
 	printObserveMetrics(os.Stdout, records, wallClockDurationSec, itlRecords, saturationResult)
