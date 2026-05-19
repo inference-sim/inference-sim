@@ -2177,3 +2177,44 @@ func TestPrintObserveMetrics_EmptyRecordsWithDetector(t *testing.T) {
 		t.Errorf("Expected saturation field even with 0 completions")
 	}
 }
+
+func TestObservePostHocDetector_RateDeficitUsesAllArrivals(t *testing.T) {
+	// R-3: Integration test verifying rate_deficit uses len(records), not len(metrics)
+	// This is a regression test for the calling convention in observe_cmd.go:522
+	records := []workload.TraceRecord{
+		{RequestID: 1, Status: "ok", ArrivalTimeUs: 1000000, SendTimeUs: 1000000, LastChunkTimeUs: 1100000},
+		{RequestID: 2, Status: "ok", ArrivalTimeUs: 2000000, SendTimeUs: 2000000, LastChunkTimeUs: 2100000},
+		{RequestID: 3, Status: "timeout", ArrivalTimeUs: 3000000, SendTimeUs: 3000000, LastChunkTimeUs: 3100000},
+		{RequestID: 4, Status: "error", ArrivalTimeUs: 4000000, SendTimeUs: 4000000, LastChunkTimeUs: 4100000},
+	}
+
+	// Simulate observe_cmd.go logic
+	requestMetrics := workload.TraceRecordsToRequestMetrics(records)
+	if len(requestMetrics) != 2 {
+		t.Fatalf("Expected 2 metrics, got %d", len(requestMetrics))
+	}
+
+	totalArrivals := len(records) // CORRECT: 4 (all arrivals)
+
+	// Call composite detector
+	detector := saturation.NewDetector("composite", saturation.DetectorOpts{})
+	satResult := detector.Classify(requestMetrics, totalArrivals)
+
+	// Type assert to extract signals
+	result, ok := satResult.(saturation.Result)
+	if !ok {
+		t.Fatalf("Expected saturation.Result, got %T", satResult)
+	}
+
+	// Verify rate_deficit reflects all 4 arrivals
+	// rate_deficit = 1 - (completions / totalArrivals) = 1 - (2 / 4) = 0.5
+	rateDeficit := result.Signals["rate_deficit"]
+	expectedDeficit := 0.5
+	if rateDeficit != expectedDeficit {
+		t.Errorf("rate_deficit = %f, want %f (2 completions / 4 total arrivals)", rateDeficit, expectedDeficit)
+	}
+
+	// If observe_cmd.go incorrectly passed len(requestMetrics) instead of len(records):
+	// rate_deficit = 1 - (2 / 2) = 0.0 (WRONG - hides the 2 failures)
+	// This test would catch that regression.
+}

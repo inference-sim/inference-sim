@@ -516,10 +516,16 @@ func runObserve(cmd *cobra.Command, _ []string) {
 
 	var saturationResult interface{}
 	if postHocDetector != "none" {
-		// Convert trace records to RequestMetrics (only "ok" records; BC-4)
+		// Convert trace records to RequestMetrics (only "ok" records with valid E2E > 0; BC-4)
 		requestMetrics := workload.TraceRecordsToRequestMetrics(records)
 		// totalArrivals must count ALL records including timeouts/errors (BC-4)
+		// Note: requestMetrics may have fewer entries than "ok" records if some have E2E <= 0
 		totalArrivals := len(records)
+
+		// Warn if all requests failed (zero confidence result)
+		if len(requestMetrics) == 0 && totalArrivals > 0 {
+			logrus.Warnf("--post-hoc-detector: 0 completed requests out of %d arrivals; saturation result has zero confidence", totalArrivals)
+		}
 
 		detector := saturation.NewDetector(postHocDetector, saturation.DetectorOpts{
 			ThresholdMs: saturationThreshold,

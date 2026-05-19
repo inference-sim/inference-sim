@@ -608,7 +608,8 @@ func TraceRecordsToRequests(records []TraceRecord) []*sim.Request {
 }
 
 // TraceRecordsToRequestMetrics converts trace records to RequestMetrics for saturation detectors.
-// Only includes completed requests (Status == "ok").
+// Only includes completed requests (Status == "ok") with valid E2E latency (> 0).
+// This matches the filtering logic in printObserveMetrics (observe_cmd.go:610).
 // CRITICAL UNITS: ArrivedAt is in SECONDS (not milliseconds), E2E is in milliseconds.
 // This matches the canonical constructor in sim/simulator.go:261 which sets ArrivedAt as float64(req.ArrivalTime)/1e6.
 func TraceRecordsToRequestMetrics(records []TraceRecord) []sim.RequestMetrics {
@@ -617,9 +618,14 @@ func TraceRecordsToRequestMetrics(records []TraceRecord) []sim.RequestMetrics {
 		if rec.Status != "ok" {
 			continue // Only include completed requests
 		}
+		// Compute E2E and filter invalid latencies (clock skew, malformed records)
+		e2eMs := float64(rec.LastChunkTimeUs-rec.SendTimeUs) / 1000.0
+		if e2eMs <= 0 {
+			continue // Skip records with non-positive E2E (matches printObserveMetrics filter)
+		}
 		metrics = append(metrics, sim.RequestMetrics{
-			ArrivedAt: float64(rec.ArrivalTimeUs) / 1e6,                                // µs → seconds (CRITICAL: not ms!)
-			E2E:       float64(rec.LastChunkTimeUs-rec.SendTimeUs) / 1000.0, // µs → ms
+			ArrivedAt: float64(rec.ArrivalTimeUs) / 1e6, // µs → seconds (CRITICAL: not ms!)
+			E2E:       e2eMs,                            // µs → ms
 		})
 	}
 	return metrics

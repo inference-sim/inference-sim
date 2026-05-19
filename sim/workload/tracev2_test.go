@@ -1395,13 +1395,28 @@ func TestTraceRecordsToRequestMetrics_UnitsAndFiltering(t *testing.T) {
 			SendTimeUs:       4000000,
 			LastChunkTimeUs:  4050000,
 		},
+		{
+			RequestID:        5,
+			Status:           "ok",
+			ArrivalTimeUs:    5000000,
+			SendTimeUs:       5000000,
+			LastChunkTimeUs:  5000000, // E2E = 0 (clock skew or malformed)
+		},
+		{
+			RequestID:        6,
+			Status:           "ok",
+			ArrivalTimeUs:    6000000,
+			SendTimeUs:       6100000,
+			LastChunkTimeUs:  6050000, // E2E < 0 (clock skew)
+		},
 	}
 
 	metrics := TraceRecordsToRequestMetrics(records)
 
-	// BC-4: Only "ok" records should be converted
+	// BC-4: Only "ok" records with valid E2E > 0 should be converted
+	// Records 1 and 3 are ok with valid E2E, records 5 and 6 have E2E <= 0
 	if len(metrics) != 2 {
-		t.Fatalf("got %d metrics, want 2 (only 'ok' records)", len(metrics))
+		t.Fatalf("got %d metrics, want 2 (only 'ok' records with E2E > 0)", len(metrics))
 	}
 
 	// Verify first metric (RequestID 1)
