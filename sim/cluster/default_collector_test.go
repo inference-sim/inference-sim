@@ -6,6 +6,9 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
+// NOTE: After #1382, latency fields in RoutingSnapshot are always zero in production
+// (buildRouterState no longer calls LatencyStats). This test validates the collector's
+// mechanical pass-through behavior, not end-to-end latency signal flow.
 func TestDefaultCollectorMapsLatencyFields(t *testing.T) {
 	state := &sim.RouterState{
 		Snapshots: []sim.RoutingSnapshot{

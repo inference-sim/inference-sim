@@ -14,7 +14,7 @@ import (
 // snapshots with TotalKvCapacityTokens <= 0), emitting a Debugf for each skip. All valid
 // signals pass through unmodified — no thresholding, no business-logic suppression.
 // Latency fields (TTFT, ITL, DispatchRate, AvgInTokens, AvgOutTokens) are always zero
-// after #1381 removed LatencyStats() from buildRouterState(). MaxBatchSize is still populated.
+// after #1382 removed LatencyStats() from buildRouterState(). MaxBatchSize is still populated.
 type DefaultCollector struct{}
 
 // Collect produces one ModelSignals per model present in either routable or loading snapshots.

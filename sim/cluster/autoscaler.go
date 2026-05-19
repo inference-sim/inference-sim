@@ -46,7 +46,7 @@ type ReplicaMetrics struct {
 	InFlightCount int
 	CostPerHour   float64 // $/hr from NodePool; used for CostPerReplica in VariantCapacity
 	// Latency fields are always zero in the current implementation (LatencyStats() was removed
-	// from buildRouterState() in #1381). Retained for future use if incremental latency
+	// from buildRouterState() in #1382). Retained for future use if incremental latency
 	// tracking is added to CachedSnapshotProvider.
 	TTFT                  float64 // μs — zero until first completion; Analyze() must guard against zero before dividing
 	DispatchRate          float64 // req/s — zero until first completion; Analyze() must guard against zero before dividing
