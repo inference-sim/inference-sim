@@ -4440,8 +4440,8 @@
 <tr>
 <td><code>--snapshot-refresh-interval</code></td>
 <td>int64</td>
-<td>0</td>
-<td>Prometheus snapshot refresh interval for all instance metrics (QueueDepth, BatchSize, KVUtilization, PreemptionCount) in microseconds. 0 = immediate.</td>
+<td>50000</td>
+<td>Prometheus snapshot refresh interval for all instance metrics (QueueDepth, BatchSize, KVUtilization, PreemptionCount) in microseconds. Default 50ms = llm-d parity. 0 = immediate/oracle mode.</td>
 </tr>
 </tbody>
 </table>
