@@ -469,7 +469,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 			missing = append(missing, "--tp (tensor parallelism)")
 		}
 		if len(missing) > 0 {
-			logrus.Fatalf("Roofline mode (the default) requires %s. No defaults found in defaults.yaml for model=%s. "+
+			logrus.Fatalf("Roofline mode requires %s. No defaults found in defaults.yaml for model=%s. "+
 				"Provide these flags explicitly, or use --latency-model trained-physics for coefficient-based estimation",
 				strings.Join(missing, " and "), model)
 		}
@@ -973,7 +973,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
 	cmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
 	cmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
-	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "roofline", "Latency model backend: roofline (default), trained-physics")
+	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "trained-physics", "Latency model backend: trained-physics (default), roofline")
 	cmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for analytical backends when not set.")
 
 	// Cluster config

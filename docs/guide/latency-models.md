@@ -1,21 +1,32 @@
 # Latency Models
 
-The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships two backends -- roofline (analytical) and trained-physics (physics-informed roofline with MoE-aware corrections) -- and the pluggable architecture supports adding custom backends.
+The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships two backends -- **trained-physics** (default, physics-informed roofline with MoE-aware corrections) and **roofline** (pure analytical) -- and the pluggable architecture supports adding custom backends.
 
 **Migration note:** Three legacy backends have been removed (`blackbox`, `crossmodel`, `trained-roofline`). Use `--latency-model trained-physics` instead, which supersedes all three with improved accuracy and MoE support.
 
 ```bash
-# Roofline mode (default) — analytical estimation from model architecture
+# Trained-physics mode (default) — roofline × architecture-aware basis functions × learned corrections
 ./blis run --model qwen/qwen3-14b \
   --num-instances 4 --rate 100 --num-requests 500
 
-# Trained-physics mode (recommended) — roofline × architecture-aware basis functions × learned corrections
+# Roofline mode — pure analytical estimation from model architecture (explicit flag)
 ./blis run --model qwen/qwen3-14b \
-  --latency-model trained-physics --hardware H100 --tp 1 \
+  --latency-model roofline --hardware H100 --tp 1 \
   --num-instances 4 --rate 100 --num-requests 500
 ```
 
-## Roofline Mode (Default)
+## Trained-Physics Mode (Default)
+
+Trained-physics mode combines roofline basis functions with learned correction coefficients. It provides better out-of-box accuracy than pure roofline by capturing architecture-specific overheads (MoE routing, memory access patterns) that analytical models miss.
+
+**Benefits:**
+- Better generalization across model architectures and TP configurations
+- Lower MAPE in practice compared to pure roofline
+- No per-model calibration needed
+
+Use this for capacity planning and what-if analysis unless you specifically need pure analytical estimates.
+
+## Roofline Mode
 
 Roofline mode computes step time analytically from model architecture (FLOPs, parameter count) and hardware specifications (compute throughput, memory bandwidth). It does not require pre-trained coefficients, making it suitable for new models.
 
@@ -84,18 +95,11 @@ When choosing between TP and replication (more instances): TP reduces per-reques
     For both latency backends (roofline, trained-physics), `--total-kv-blocks` is automatically derived from model architecture and GPU memory if not explicitly set. The auto-calculated value accounts for TP (KV heads are sharded across ranks; total GPU memory scales with GPU count). Override with `--total-kv-blocks <N>` for non-standard deployments. The auto-calculation uses reference constants (90% GPU utilization, standard activation/overhead budgets matching the llm-d-benchmark capacity planner) and requires SwiGLU-family activations.
 
 !!! note "Automatic MaxModelLen derivation"
-    When using roofline or trained-physics mode and `--max-model-len` is not explicitly set, BLIS auto-derives it from `max_position_embeddings` in the HuggingFace `config.json`. For models with `rope_scaling`, the scaling factor is applied based on vLLM's blacklist approach: types `linear`, `dynamic`, `yarn`, `default`, and `mrope` apply the factor; types `su`, `longrope`, and `llama3` are excluded (these encode the full context in `max_position_embeddings`). For `yarn`, `original_max_position_embeddings` is used as the base when present. `gemma3` models skip `rope_scaling` entirely (`max_position_embeddings` is pre-scaled). The derived value is then capped at the KV-feasible maximum (`total_kv_blocks * block_size`) to prevent context windows from exceeding GPU memory capacity. Override with `--max-model-len <N>` when needed.
+    When using roofline or trained-physics mode and `--max-model-len` is not explicitly set, BLIS auto-derives it from `max_position_embeddings` in the HuggingFace `config.json`. For models with `rope_scaling`, the scaling factor is applied based on vLLM's blacklist approach: types `linear`, `dynamic`, `yarn`, `default`, and `mrope` apply the factor; types `su`, `longrope`, and `llama3` are excluded (these encode the full context in `max_position_embeddings`). For `yarn`, `original_max_position_embeddings` is used as the base when present. `gemma3` models skip `rope_scaling` entirely (`max_position_embeddings` is pre-scaled). The derived value is then capped at the KV-feasible maximum (`total_kv_blocks * block_size`) to prevent context windows from exceeding GPU memory capacity. Override with `--max-model-len` <N>` when needed.
 
-## Trained-Physics Mode (Recommended for New Models)
+## How Trained-Physics Works
 
 Trained-physics mode applies **learned correction factors** to analytical roofline basis functions, combining the physical grounding of roofline with the accuracy of data-driven fitting. Coefficients are fitted from real vLLM measurements and generalize across model architectures, workloads, and TP configurations.
-
-```bash
-./blis run --model qwen/qwen3-14b \
-  --latency-model trained-physics --hardware H100 --tp 1
-```
-
-Same auto-fetch chain as roofline mode (HuggingFace config + hardware config resolution).
 
 **StepTime formula** (10 beta coefficients in bundled defaults):
 
@@ -163,7 +167,7 @@ The model automatically detects MoE configuration from `config.json` (`num_local
 - **Mixed batches** (concurrent prefill/decode): Production serving with heterogeneous requests
 - **TP configurations**: TP=1, TP=2, TP=4, TP=8 (All-Reduce overhead scales via β₄)
 
-**Why "recommended" over roofline:**
+**Why trained-physics over roofline:**
 
 Trained-physics uses **13 coefficients** (10 beta: prefill compute/memory split, decode compute/memory split, weight, TP, layer overhead, batch overhead, step overhead, MoE overhead; 3 alpha: queueing, post-decode, per-token) that capture more architectural detail than pure roofline (no learned corrections). The prefill/decode split (β₁ₐ/β₁ᵦ, β₂ₐ/β₂ᵦ) and MoE-specific overhead (β₈) enable better generalization to unseen model architectures (especially interleaved MoE) and batch compositions (mixed prefill/decode).
 
@@ -172,9 +176,9 @@ Trained-physics uses **13 coefficients** (10 beta: prefill compute/memory split,
 
 ## When to Use Which
 
-| Aspect | Roofline (default) | Trained-Physics (recommended) |
-|--------|-------------------|-------------------------------|
-| **When to use** | Quick analytical estimate | **Recommended** for new models (generalizes across architectures, workloads, TP) |
+| Aspect | Roofline | Trained-Physics (default) |
+|--------|----------|---------------------------|
+| **When to use** | Quick analytical estimate | Default (generalizes across architectures, workloads, TP) |
 | **Data required** | HF `config.json` + `--hardware` + `--tp` | HF `config.json` + `--hardware` + `--tp` (global coefficients bundled) |
 | **GPU step time accuracy** | Good (analytical) | Better (13 global params, physics-informed basis functions) |
 | **MoE support** | Yes (per-expert FLOPs + effective expert count) | Yes (per-expert FLOPs + effective expert count + β₈ per-MoE-layer overhead) |
@@ -182,7 +186,7 @@ Trained-physics uses **13 coefficients** (10 beta: prefill compute/memory split,
 | **PostDecodeFixedOverhead** | 0 | α₁ (~777µs) |
 
 !!! tip "Choosing the right mode"
-    **Trained-physics** is the recommended default for any model with a HuggingFace `config.json` (generalizes across architectures, workloads, and TP configurations without per-model calibration). **Roofline** for pure analytical estimates when no learned corrections are desired.
+    **Trained-physics** is the default for any model with a HuggingFace `config.json` (generalizes across architectures, workloads, and TP configurations without per-model calibration). **Roofline** for pure analytical estimates when no learned corrections are desired.
 
 !!! warning "Current limitations"
     All analytical latency models support tensor parallelism (TP). Data parallelism (DP) and expert parallelism (EP) scheduling overhead are not yet modeled. Quantized weight precision (GPTQ, AWQ, FP8, compressed-tensors) is auto-detected from `quantization_config`, model name conventions (e.g., `w4a16`, `FP8`), or `torch_dtype` fallback, and is used for weight bandwidth and KV capacity calculations. MFU calibration values are still derived from FP16/BF16 measurements.

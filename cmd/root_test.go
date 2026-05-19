@@ -32,6 +32,20 @@ func TestRunCmd_DefaultLogLevel_RemainsWarn(t *testing.T) {
 		"default log level must remain 'warn'; simulation results use fmt.Println to bypass logrus")
 }
 
+func TestRunCmd_LatencyModelDefault_IsTrainedPhysics(t *testing.T) {
+	// GIVEN the run command with its registered flags
+	flag := runCmd.Flags().Lookup("latency-model")
+
+	// WHEN we check the default value
+	// THEN it MUST be "trained-physics" (BC-1: CLI default switched)
+	// Trained-physics provides better out-of-box accuracy with learned correction
+	// coefficients on top of roofline basis functions. Users can still explicitly
+	// pass --latency-model roofline for pure analytical estimation.
+	assert.NotNil(t, flag, "latency-model flag must be registered")
+	assert.Equal(t, "trained-physics", flag.DefValue,
+		"default latency model must be 'trained-physics' for better out-of-box accuracy (#1383)")
+}
+
 func TestSaveResults_MetricsPrintedToStdout(t *testing.T) {
 	// GIVEN a Metrics struct with completed requests
 	m := sim.NewMetrics()

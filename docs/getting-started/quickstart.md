@@ -14,7 +14,7 @@ export HF_TOKEN=your_token_here
 ./blis run --model qwen/qwen3-14b
 ```
 
-This runs 100 requests through a single inference instance using roofline mode (analytical estimation) for Qwen3 14B on an H100 GPU with TP=1.
+This runs 100 requests through a single inference instance using the default trained-physics latency model for Qwen3 14B on an H100 GPU with TP=1.
 
 !!! note "First-run HuggingFace fetch"
     On first use, BLIS auto-fetches the model's `config.json` from HuggingFace (~1 second for public models). Subsequent runs use the cached config in `model_configs/`. For air-gapped environments, pre-populate `model_configs/<model>/config.json` and use `--model-config-folder`.
