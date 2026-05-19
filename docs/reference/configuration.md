@@ -561,7 +561,7 @@ Before any backend-specific logic runs, BLIS loads hardware/TP/vLLM-version defa
 
 **Backend-specific resolution:**
 
-1. If `--latency-model roofline` (default) or `trained-physics`:
+1. If `--latency-model trained-physics` (default) or `roofline`:
    - Auto-resolve model config: check `model_configs/` for existing `config.json`, fetch from HuggingFace on miss (set `HF_TOKEN` for gated models)
    - Auto-resolve hardware config from bundled `hardware_config.json`
    - For roofline: beta coefficients are computed analytically from model architecture and hardware specs
