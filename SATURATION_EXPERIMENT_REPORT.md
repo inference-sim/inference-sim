@@ -76,6 +76,17 @@ We used BLIS's automated saturation search on two different model configurations
 
 ---
 
+## BLIS Calibration: Sim-to-Real Accuracy
+
+| Exp | Model | Rate | State | e2e Error | ttft Error | itl Error | e2e R |
+|-----|-------|------|-------|-----------|-----------|-----------|-------|
+| exp1-sat | Llama-3.1-8B | 12.41 | STABLE | **-86.5%** | -99.1% | -72.4% | 0.554 |
+| exp1-over | Llama-3.1-8B | 12.97 | STABLE | **-86.2%** | -99.1% | -71.9% | 0.568 |
+| exp2-sat | Qwen3-14B | 1.63 | STABLE | **-25.6%** | -64.9% | -24.6% | 0.990 |
+| exp2-over | Qwen3-14B | 2.45 | OVERLOAD | **-49.9%** | -79.4% | -50.1% | 0.969 |
+
+---
+
 ## Analytical Estimators: Blind to Saturation
 
 Tested aiconfigurator and llm-optimizer at rates BLIS identified as stability boundaries.
