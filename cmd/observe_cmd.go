@@ -160,21 +160,19 @@ func init() {
 	observeCmd.Flags().BoolVar(&observeRecordITL, "record-itl", false, "Record per-chunk timestamps for ITL calibration (streaming only; forces streaming on non-streaming workloads)")
 	observeCmd.Flags().StringVar(&observeITLOutput, "itl-output", "", "Output path for ITL CSV file (default: <trace-data>.itl.csv if --record-itl is set)")
 
-	// Saturation analysis (optional)
-	// --saturation-report requires --post-hoc-detector to be explicitly set (composite/threshold).
+	// Saturation analysis (optional, run/replay parity)
 	// Behavior:
 	//   - --post-hoc-detector set + --saturation-report: detector output to both stdout JSON and file
-	//   - --post-hoc-detector set alone: detector output to stdout JSON only (run/replay parity)
-	//   - --saturation-report without --post-hoc-detector: validation error at startup
-	observeCmd.Flags().StringVar(&saturationReport, "saturation-report", "", "File to write saturation detector output JSON (requires --post-hoc-detector)")
+	//   - --post-hoc-detector set alone: detector output to stdout JSON only
+	//   - --saturation-report alone: backlog-drift output to file (backward compatible)
+	observeCmd.Flags().StringVar(&saturationReport, "saturation-report", "", "File to write saturation analysis JSON (backlog-drift or post-hoc detector)")
 
 	// Post-hoc saturation detector flags (same as blis run/replay; #1379)
 	observeCmd.Flags().StringVar(&postHocDetector, "post-hoc-detector", "none", "Post-hoc saturation detector: composite, threshold, none")
 	observeCmd.Flags().Float64Var(&saturationThreshold, "saturation-threshold-ms", 5000.0, "Threshold in ms for threshold detector (default 5000ms)")
 
-	// Note: registerSaturationFlags (backlog-drift params) NOT called on observe — observe only supports
-	// post-hoc detectors via --post-hoc-detector. Backlog-drift flags (--saturation-window, etc.) are
-	// run/replay-only, kept for backward compatibility with existing backlog-drift workflows on those paths.
+	// Backlog-drift saturation flags (run/replay parity)
+	registerSaturationFlags(observeCmd)
 
 	rootCmd.AddCommand(observeCmd)
 }
@@ -521,12 +519,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Fatalf("--saturation-threshold-ms must be non-negative, got %.2f", saturationThreshold)
 	}
 
-	// Validate --saturation-report requires explicit --post-hoc-detector
-	if saturationReport != "" && postHocDetector == "none" {
-		logrus.Fatalf("--saturation-report requires --post-hoc-detector to be explicitly set (composite, threshold, etc.); got 'none' (default)")
-	}
-
-	// Saturation analysis
+	// Saturation analysis (run/replay parity)
 	var saturationResult interface{} // For stdout JSON (run/replay parity)
 
 	// Post-hoc detector: always populate saturationResult for stdout JSON when enabled
@@ -560,6 +553,31 @@ func runObserve(cmd *cobra.Command, _ []string) {
 			}
 			logrus.Infof("Saturation report written to %s (detector: %s)", saturationReport, postHocDetector)
 		}
+	} else if saturationReport != "" {
+		// --saturation-report specified but --post-hoc-detector is "none" (default): use backlog-drift (run/replay parity)
+		requests := workload.TraceRecordsToRequests(records)
+		simEndUs := int64(0)
+		for _, rec := range records {
+			if rec.LastChunkTimeUs > simEndUs {
+				simEndUs = rec.LastChunkTimeUs
+			}
+		}
+		if observeHorizon > simEndUs {
+			simEndUs = observeHorizon
+		}
+
+		cfg := workload.NewBacklogDriftConfig(
+			time.Duration(saturationWindowSec)*time.Second,
+			saturationMinWindows,
+			saturationPeakRatio,
+			saturationPeakBand,
+			saturationConfidence,
+		)
+		report := workload.AnalyzeBacklogDrift(requests, simEndUs, cfg)
+		if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
+			logrus.Fatalf("Failed to write saturation report: %v", err)
+		}
+		logrus.Infof("Saturation report written to %s (detector: backlog-drift, classification: %s)", saturationReport, report.Classification)
 	}
 
 	printObserveMetrics(os.Stdout, records, wallClockDurationSec, itlRecords, saturationResult)
