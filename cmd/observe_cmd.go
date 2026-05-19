@@ -541,7 +541,10 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		})
 		saturationResult = detector.Classify(requestMetrics, totalArrivals)
 
-		// If --saturation-report is also specified, write the result to file (cluster pod use case)
+		// If --saturation-report is also specified, write the result to file (cluster pod use case).
+		// In production, observe runs in cluster pods where parsing stdout from logs is impractical;
+		// file output enables direct artifact collection without log scraping.
+		//
 		// We still populate saturationResult above to maintain run/replay parity: when --post-hoc-detector
 		// is enabled, the result ALWAYS appears in stdout JSON, regardless of --saturation-report.
 		// This ensures scripts consuming stdout.saturation work identically across run/replay/observe.
