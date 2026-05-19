@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/saturation"
 	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/sirupsen/logrus"
 )
@@ -2039,5 +2040,85 @@ func TestPrintObserveMetrics_ITLAbsent(t *testing.T) {
 
 	if metrics["itl_mean_ms"].(float64) != 0 {
 		t.Errorf("Expected itl_mean_ms=0 when no ITL records provided")
+	}
+}
+
+func TestPrintObserveMetrics_WithSaturationResult(t *testing.T) {
+	// BC-1/BC-2: Verify saturation field appears in JSON when detector is specified
+	records := []workload.TraceRecord{
+		{Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 50000, LastChunkTimeUs: 200000, OutputTokens: 100},
+	}
+	sat := saturation.Result{
+		Level:      saturation.Stable,
+		Score:      0.1,
+		Confidence: 0.9,
+		Signals:    map[string]float64{"rate_deficit": 0.0, "latency_trend": 0.05},
+	}
+	var buf bytes.Buffer
+	printObserveMetrics(&buf, records, 1.0, nil, sat)
+
+	// Parse JSON output
+	var metrics map[string]interface{}
+	lines := strings.Split(buf.String(), "\n")
+	jsonStart := -1
+	for i, line := range lines {
+		if strings.Contains(line, "=== Simulation Metrics ===") {
+			jsonStart = i + 1
+			break
+		}
+	}
+	jsonStr := strings.Join(lines[jsonStart:], "\n")
+	if err := json.Unmarshal([]byte(jsonStr), &metrics); err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	// Assert saturation field is present
+	satField, exists := metrics["saturation"]
+	if !exists {
+		t.Fatalf("Expected 'saturation' field in JSON output, not found")
+	}
+
+	// Verify saturation structure
+	satMap, ok := satField.(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected saturation to be an object, got %T", satField)
+	}
+
+	// Verify level field
+	level, ok := satMap["level"].(string)
+	if !ok {
+		t.Fatalf("Expected saturation.level to be string, got %T", satMap["level"])
+	}
+	if level != "STABLE" {
+		t.Errorf("Expected saturation.level='STABLE', got %q", level)
+	}
+}
+
+func TestPrintObserveMetrics_SaturationAbsentByDefault(t *testing.T) {
+	// BC-3: Verify saturation field is absent when detector is "none" (backward compatibility)
+	records := []workload.TraceRecord{
+		{Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 50000, LastChunkTimeUs: 200000, OutputTokens: 100},
+	}
+	var buf bytes.Buffer
+	printObserveMetrics(&buf, records, 1.0, nil, nil) // nil saturationResult = detector "none"
+
+	// Parse JSON output
+	var metrics map[string]interface{}
+	lines := strings.Split(buf.String(), "\n")
+	jsonStart := -1
+	for i, line := range lines {
+		if strings.Contains(line, "=== Simulation Metrics ===") {
+			jsonStart = i + 1
+			break
+		}
+	}
+	jsonStr := strings.Join(lines[jsonStart:], "\n")
+	if err := json.Unmarshal([]byte(jsonStr), &metrics); err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	// Assert saturation field is NOT present (omitempty behavior)
+	if _, exists := metrics["saturation"]; exists {
+		t.Errorf("Expected 'saturation' field to be absent when detector is 'none', but found it")
 	}
 }
