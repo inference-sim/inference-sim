@@ -1199,6 +1199,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#llm-d-parity-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        llm-d Parity Summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#how-it-works" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1232,10 +1243,32 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#queue-shedding-and-dispatch-tick" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Queue Shedding and Dispatch Tick
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#example" class="md-nav__link">
     <span class="md-ellipsis">
       
         Example
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#slo-deadline-dispatch-ordering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SLO-Deadline Dispatch Ordering
       
     </span>
   </a>
@@ -3092,6 +3125,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#llm-d-parity-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        llm-d Parity Summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#how-it-works" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3125,10 +3169,32 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#queue-shedding-and-dispatch-tick" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Queue Shedding and Dispatch Tick
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#example" class="md-nav__link">
     <span class="md-ellipsis">
       
         Example
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#slo-deadline-dispatch-ordering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SLO-Deadline Dispatch Ordering
       
     </span>
   </a>
@@ -3356,7 +3422,7 @@
 <p><strong>Tenant budget enforcement</strong> (<code>sim/cluster/cluster_event.go</code>): When a tenant exceeds their capacity budget, only sheddable requests (<code>IsSheddable = priority &lt; 0</code>) are shed. Critical and standard traffic is always protected regardless of budget.</p>
 </li>
 <li>
-<p><strong>Gateway queue dispatch</strong> (<code>sim/cluster/gateway_queue.go</code>): In <code>priority</code> dispatch mode, higher-priority requests are dequeued first. When the queue is at capacity, the lowest-priority request is evicted.</p>
+<p><strong>Gateway queue dispatch</strong> (<code>sim/cluster/gateway_queue.go</code>): In <code>priority</code> dispatch mode, higher-priority requests are dequeued first. When the queue is at capacity, the request is <strong>rejected</strong> by default (llm-d parity). With <code>--queue-shedding</code>, the lowest-priority sheddable request is evicted instead (BLIS-extra experimental feature, not in llm-d).</p>
 </li>
 </ol>
 <h2 id="tier-shed-admission">Tier-Shed Admission<a class="headerlink" href="#tier-shed-admission" title="Permanent link">&para;</a></h2>
@@ -3479,14 +3545,89 @@
 <p>When <code>--flow-control</code> is enabled, the <code>FlowControlAdmission</code> policy replaces the configured
 admission policy. In this mode, admission and queuing are a single step -- the queue IS the
 admission decision, matching llm-d's <code>FlowControlAdmissionController</code>.</p>
+<h3 id="llm-d-parity-summary">llm-d Parity Summary<a class="headerlink" href="#llm-d-parity-summary" title="Permanent link">&para;</a></h3>
+<p>BLIS's default flow control behavior matches llm-d's <code>ShardProcessor</code>. BLIS-extra features are off by default and require explicit flags.</p>
+<table>
+<thead>
+<tr>
+<th>Behavior</th>
+<th>llm-d</th>
+<th>BLIS default</th>
+<th>BLIS opt-in flag</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Queue full → reject</td>
+<td>Yes</td>
+<td><strong>Yes</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Queue full → shed victim</td>
+<td>No</td>
+<td>No</td>
+<td><code>--queue-shedding</code></td>
+</tr>
+<tr>
+<td>Dispatch on enqueue</td>
+<td>Yes</td>
+<td><strong>Yes</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Dispatch via periodic tick (1ms)</td>
+<td>Yes</td>
+<td><strong>Yes</strong></td>
+<td><code>--dispatch-tick-interval</code> to tune</td>
+</tr>
+<tr>
+<td>Dispatch on completion</td>
+<td>No</td>
+<td>No</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Dispatch on eviction/TTL</td>
+<td>No</td>
+<td>No</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Band ceilings: constant</td>
+<td>Yes</td>
+<td><strong>Yes</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Band ceilings: interpolated</td>
+<td>Interface only, no impl</td>
+<td>No</td>
+<td><code>--usage-limit-threshold &lt; 1.0</code></td>
+</tr>
+<tr>
+<td>Fairness: global-strict</td>
+<td>Yes (plugin)</td>
+<td><strong>Yes</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Fairness: round-robin</td>
+<td>Yes (plugin)</td>
+<td>No</td>
+<td><code>--fairness-policy round-robin</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Bold</strong> = llm-d parity. BLIS-extra features are documented in code comments and only activate when explicitly enabled.</p>
 <h3 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Incoming request is enqueued into a per-priority-band, per-flow queue</li>
 <li>Each unique (TenantID, Priority) pair gets its own FIFO queue within a priority band</li>
-<li>Dispatch order follows <code>--dispatch-order</code>: with <code>priority</code>, iterates bands highest-priority first; with <code>fifo</code> (default), picks the globally-earliest arrival across all bands</li>
+<li>Dispatch order follows <code>--dispatch-order</code>: with <code>priority</code>, iterates bands highest-priority first; with <code>fifo</code> (default), picks the globally-earliest arrival across all bands; with <code>slo-deadline</code>, dispatches the request with the earliest SLO deadline within each flow (see <a href="#slo-deadline-dispatch-ordering">SLO-Deadline Dispatch Ordering</a> below)</li>
 <li>Within a band, <code>--fairness-policy</code> controls flow selection: <code>global-strict</code> (default) picks the earliest arrival (lowest sequence ID); <code>round-robin</code> cycles through tenants in sorted key order</li>
 <li>Saturation gating: dispatch only when cluster saturation &lt; 1.0</li>
-<li>Completion-triggered dispatch: each completion frees capacity and tries to dispatch from the queue</li>
+<li>Dispatch triggers (llm-d parity): on-enqueue dispatch + periodic dispatch tick (default 1ms, configurable via <code>--dispatch-tick-interval</code>). The tick is demand-driven — only active while the queue is non-empty.</li>
 </ol>
 <h3 id="fairness-policy">Fairness Policy<a class="headerlink" href="#fairness-policy" title="Permanent link">&para;</a></h3>
 <table>
@@ -3528,15 +3669,83 @@ admission decision, matching llm-d's <code>FlowControlAdmissionController</code>
 </table>
 <p>When a band reaches its capacity limit, incoming requests for that band are rejected
 (all entries in a band share the same priority, so displacement is never possible).
-The global <code>--max-gateway-queue-depth</code> limit applies across all bands with cross-band
-shedding of sheddable entries.</p>
+The global <code>--max-gateway-queue-depth</code> limit applies across all bands. When at capacity,
+requests are <strong>rejected</strong> by default (llm-d parity). With <code>--queue-shedding</code>, cross-band
+shedding of sheddable entries is enabled (BLIS-extra experimental feature).</p>
+<h3 id="queue-shedding-and-dispatch-tick">Queue Shedding and Dispatch Tick<a class="headerlink" href="#queue-shedding-and-dispatch-tick" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--queue-shedding</code></td>
+<td>Enable cross-band victim shedding when queue is full (BLIS-extra, not in llm-d)</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>--dispatch-tick-interval</code></td>
+<td>Microseconds between periodic dispatch ticks</td>
+<td><code>1000</code> (1ms, llm-d parity)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Queue shedding</strong> (<code>--queue-shedding</code>): When enabled, a full queue searches all bands for the lowest-priority sheddable request and evicts it to make room. This feature is not present in llm-d and is provided as an experimental option. Without this flag, full queues simply reject incoming requests.</p>
+<p><strong>Dispatch tick</strong> (<code>--dispatch-tick-interval</code>): The periodic DES event that triggers dispatch attempts from the gateway queue. Matches llm-d's 1ms <code>dispatchTicker</code>. The tick is demand-driven — only active while the queue is non-empty, and only when flow control is enabled. Default is 1000µs (1ms); omitting the flag or setting 0 in YAML both use this default.</p>
 <h3 id="example">Example<a class="headerlink" href="#example" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--flow-control<span class="w"> </span>--saturation-detector<span class="w"> </span>utilization<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--queue-depth-threshold<span class="w"> </span><span class="m">5</span><span class="w"> </span>--kv-cache-util-threshold<span class="w"> </span><span class="m">0</span>.8<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span>--per-band-capacity<span class="w"> </span><span class="m">100</span><span class="w"> </span>--max-gateway-queue-depth<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
+<h3 id="slo-deadline-dispatch-ordering">SLO-Deadline Dispatch Ordering<a class="headerlink" href="#slo-deadline-dispatch-ordering" title="Permanent link">&para;</a></h3>
+<p>With <code>--dispatch-order slo-deadline</code>, the gateway queue dispatches the request with the earliest SLO deadline first within each flow. This matches GIE's <code>slo-deadline-ordering-policy</code>.</p>
+<p><strong>How it works:</strong></p>
+<ol>
+<li>Fairness policy picks the flow (same as priority mode)</li>
+<li>Within the picked flow, dequeue the request with the earliest SLO deadline</li>
+<li>Deadline = <code>GatewayEnqueueTime + SLOTargetUs</code></li>
+<li>Fallback hierarchy: per-request <code>SLOTargetUs</code> → per-tier <code>--slo-targets</code> → far-future (FCFS)</li>
+<li>Equal deadlines use arrival order (seqID) as tiebreaker</li>
+</ol>
+<p><strong>Setting SLO targets:</strong></p>
+<ul>
+<li><strong>Per-request</strong> (workload spec): <code>slo_target_us: 200000</code> on a cohort (200ms TTFT target)</li>
+<li><strong>Per-tier</strong> (CLI flag): <code>--slo-targets critical=100000,standard=500000</code> (fallback when workload spec doesn't set per-request targets)</li>
+<li><strong>Per-tier</strong> (policy bundle): <code>admission.slo_targets</code> in YAML</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--dispatch-order slo-deadline</code></td>
+<td>Enable SLO-deadline ordering</td>
+<td><code>fifo</code></td>
+</tr>
+<tr>
+<td><code>--slo-targets</code></td>
+<td>Per-SLO-class TTFT targets in µs (e.g., <code>critical=100000,standard=500000</code>)</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--flow-control<span class="w"> </span>--saturation-detector<span class="w"> </span>utilization<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span>--queue-depth-threshold<span class="w"> </span><span class="m">5</span><span class="w"> </span>--kv-cache-util-threshold<span class="w"> </span><span class="m">0</span>.8<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span>--dispatch-order<span class="w"> </span>slo-deadline<span class="w"> </span>--slo-targets<span class="w"> </span><span class="s2">&quot;critical=100000,standard=500000&quot;</span>
+</code></pre></div>
+<p><strong>Observe integration:</strong> When <code>slo_target_us &gt; 0</code>, <code>blis observe</code> injects the <code>x-slo-ttft-ms</code> HTTP header on outgoing requests, matching GIE's header convention.</p>
 <h3 id="in-flight-eviction">In-Flight Eviction<a class="headerlink" href="#in-flight-eviction" title="Permanent link">&para;</a></h3>
-<p>When flow control is enabled and the system is saturated, BLIS can evict sheddable requests that are already running on instances to free capacity for higher-priority waiting requests. This matches GIE's eviction architecture.</p>
+<p>When flow control is enabled and the system is saturated, BLIS can evict sheddable requests that are already running on instances to free capacity for higher-priority waiting requests. This is a BLIS-extra feature, not present in llm-d (llm-d's <code>RequestEvictor</code>/<code>EvictN</code> exists in code but has zero non-test callers in the production dispatch path).</p>
 <p><strong>How it works:</strong></p>
 <ol>
 <li>When saturation &gt;= 1.0 and a non-sheddable request is waiting in the gateway queue</li>
@@ -3551,7 +3760,7 @@ shedding of sheddable entries.</p>
 <p><strong>Key properties:</strong></p>
 <ul>
 <li>Only sheddable requests (priority &lt; 0) can be evicted — critical and standard are always protected</li>
-<li>Eviction is automatic when <code>--flow-control</code> is active — no additional flag needed</li>
+<li>Disabled by default (llm-d parity). Enable with <code>--in-flight-eviction</code> (requires <code>--flow-control</code>)</li>
 <li>Evicted requests appear in the <code>Gateway Evicted (in-flight)</code> anomaly counter</li>
 <li>This is a terminal state — evicted requests are not requeued</li>
 <li>Eviction is distinct from instance-level KV preemption (<code>--preemption-policy</code>), which handles memory pressure and requeues victims</li>
@@ -3579,7 +3788,7 @@ shedding of sheddable entries.</p>
 <tr>
 <td>Dispatch order</td>
 <td>N/A (no queue)</td>
-<td><code>--dispatch-order</code> (fifo/priority)</td>
+<td><code>--dispatch-order</code> (fifo/priority/slo-deadline)</td>
 </tr>
 <tr>
 <td>Capacity</td>

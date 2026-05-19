@@ -3350,6 +3350,18 @@
 <td>No</td>
 <td>Reasoning multi-turn behavior</td>
 </tr>
+<tr>
+<td><code>timeout</code></td>
+<td>int64</td>
+<td>No</td>
+<td>Per-request timeout in µs. nil = default (300s for sessions). 0 = no timeout</td>
+</tr>
+<tr>
+<td><code>slo_target_us</code></td>
+<td>int64</td>
+<td>No</td>
+<td>Per-request SLO TTFT target in µs. nil/0 = no target. Used by <code>--dispatch-order slo-deadline</code></td>
+</tr>
 </tbody>
 </table>
 <h2 id="arrival-process">Arrival Process<a class="headerlink" href="#arrival-process" title="Permanent link">&para;</a></h2>
@@ -3599,6 +3611,18 @@
 <td>object</td>
 <td>No</td>
 <td>Linear ramp-down to zero (see below)</td>
+</tr>
+<tr>
+<td><code>timeout</code></td>
+<td>int64</td>
+<td>No</td>
+<td>Per-request timeout in µs (same as Client)</td>
+</tr>
+<tr>
+<td><code>slo_target_us</code></td>
+<td>int64</td>
+<td>No</td>
+<td>Per-request SLO TTFT target in µs (same as Client)</td>
 </tr>
 </tbody>
 </table>
