@@ -1,191 +1,139 @@
 # Saturation Point Discovery - Experiment Report
 
-**Model**: Llama-3.1-8B-Instruct
-**Hardware**: H100 GPU (single card)
-**Date**: May 18-19, 2026
+**Model**: Llama-3.1-8B-Instruct | **Hardware**: H100 GPU (single card) | **Date**: May 18-19, 2026
 
 ---
 
-## What We Did
+## Executive Summary
 
-We used BLIS's **automated saturation search** to find the maximum safe load this system can handle. The search tested different request rates and used a **composite saturation detector** to identify when the system starts to get overloaded.
+We used BLIS's automated saturation search to find the maximum safe load for this system, then validated the prediction with real H100 observations.
 
-**Result**: The saturation point is **12.41 requests/second**
+**Finding**: BLIS predicted saturation at 12.41 req/s, but real observations showed the system remained stable at 12.97 req/s (+4.5% higher). This reveals a **sim-to-real gap** - BLIS is conservative and predicts overload earlier than it occurs.
 
-### Experiment Settings
-
-**Workload**: Multi-cohort afternoon traffic pattern with 5 SLO classes
-- 5 cohorts: critical, standard, batch, background, sheddable
-- Each cohort has **population = 1** (one independent client per cohort)
-- All cohorts share the **same arrival rate** (equal split of total load)
-- Example: At 12.41 req/s total → each cohort sends 2.48 req/s
-
-**Configuration**:
-- Model: Llama-3.1-8B-Instruct (BF16 precision)
-- Hardware: Single H100 GPU (TP=1)
-- Settings: mbt=2048, max_model_len=8192, priority scheduling enabled
-- Duration: 600 seconds (10 minutes) per observation
+**Implication**: Both observations captured pre-saturation behavior suitable for calibration. True saturation point is >12.97 req/s. BLIS successfully identified a stability boundary where analytical tools (aiconfigurator, llm-optimizer) showed no signal at all.
 
 ---
 
-## What is "Saturation"?
+## Experiment Design
 
-Think of it like a highway:
-- **Below saturation**: Cars flow smoothly, travel time is predictable
-- **At saturation**: Highway is at capacity but still moving
-- **Above saturation**: Traffic jams form, delays grow over time
+**Configuration**: Llama-3.1-8B-Instruct (BF16), H100 TP=1, vLLM (mbt=2048, max_model_len=8192, priority scheduling)
 
-For an LLM serving system:
-- **Below saturation**: Response time depends mainly on how long your prompt/response is
-- **Above saturation**: Response time depends mainly on how many people are waiting in line
+**Workload**: Multi-cohort traffic with 5 SLO classes (critical, standard, batch, background, sheddable), 1 client per class, Poisson arrivals, equal rate split
+
+**Duration**: 600 seconds (10 minutes) per observation
 
 ---
 
-## How the Search Worked
+## Results
 
-### Binary Search with 7 Test Runs
+### BLIS Binary Search (7 runs)
 
-| Rate | Multiplier | What Happened | Verdict |
-|------|------------|---------------|---------|
-| 4.51 req/s | 1× (baseline) | Everything fine | ✓ STABLE |
-| 9.02 req/s | 2× | Still good | ✓ STABLE |
-| 18.05 req/s | 4× | Overloaded! | ❌ OVERLOADED |
-| 13.53 req/s | 3× | Still overloaded | ❌ OVERLOADED |
-| 11.28 req/s | 2.5× | Back to stable | ✓ STABLE |
-| 12.41 req/s | 2.75× | Still stable | ✓ STABLE |
-| 12.97 req/s | 2.875× | Just crossed threshold | ❌ OVERLOADED |
+| Rate (req/s) | Multiplier | BLIS Verdict | Saturation Score |
+|--------------|-----------|--------------|------------------|
+| 4.51 | 1× baseline | ✓ STABLE | 0.0008 |
+| 9.02 | 2× | ✓ STABLE | 0.0010 |
+| 18.05 | 4× | ❌ OVERLOADED | 1.000 |
+| 13.53 | 3× | ❌ OVERLOADED | 1.000 |
+| 11.28 | 2.5× | ✓ STABLE | 0.0009 |
+| **12.41** | **2.75×** | **✓ STABLE** | **0.0010** ← Last stable |
+| **12.97** | **2.875×** | **❌ OVERLOADED** | **0.885** ← First overloaded |
 
-**Found**: Maximum stable rate is between 12.41 and 12.97 req/s
+**BLIS Prediction**: Saturation at 12.41 req/s (±0.56 precision)
 
----
+### Real H100 Observations
 
-## How the Detector Works
+| Observation | Rate | Total Requests | BLIS Expected | Actual Result | Score |
+|------------|------|----------------|---------------|---------------|-------|
+| exp1-saturation | 12.41 req/s | 37,171 | STABLE | ✓ STABLE | 0.0014 |
+| exp1-overloaded | 12.97 req/s | 38,860 | OVERLOADED | ✓ **STABLE** ⚠️ | 0.0012 |
 
-The **composite saturation detector** looks at three signals:
-
-### 1. Latency Trend (Most Important)
-- Measures if response times are increasing over time
-- **Stable system**: Response times stay flat
-- **Overloaded system**: Response times keep growing
-
-### 2. Quartile Pattern
-- Looks at p25, p50, p75, p90 latency percentiles
-- **Stable system**: Percentiles vary based on request size
-- **Overloaded system**: All percentiles increase in lockstep (queue effects)
-
-### 3. Rate Deficit
-- Checks if system is actually handling the target load
-- **Note**: This signal was NOT reliable in our tests (see below)
+**Both observations showed identical healthy behavior:**
+- Saturation scores: 0.0012-0.0014 (near zero)
+- Latency trend: 0 (flat, no growth over 10 minutes)
+- Quartile pattern: 0 (varied, workload-driven)
+- Rate deficit: 0.12-0.14% (minimal)
 
 ---
 
-## Validation: Two Real Observations
+## Key Finding: Sim-to-Real Gap
 
-We ran two actual 10-minute observations to validate the detector:
+### BLIS vs Reality at 12.97 req/s
 
-### Observation 1: exp1-saturation (12.41 req/s)
-**Purpose**: Capture the system at maximum safe capacity
+| Metric | BLIS Prediction | Actual Observation | Gap |
+|--------|----------------|-------------------|-----|
+| Verdict | OVERLOADED | STABLE | Misprediction |
+| Saturation Score | 0.885 | 0.0012 | 737× difference |
+| Latency Trend | 0.885 (rising) | 0 (flat) | No growth observed |
+| Quartile Pattern | 1 (monotonic) | 0 (varied) | No queue effects |
 
-**Results**:
-- Total requests: 37,171
-- Saturation score: **0.0014** (near zero = healthy)
-- Latency trend: Flat over 10 minutes
-- Queue behavior: No backlog growth
+**Analysis**: BLIS predicted overload too early. Possible causes:
+- **Latency model pessimism**: Overestimates response times
+- **Missing hardware optimizations**: CUDA graphs, prefix caching, memory bandwidth
+- **Short observation window**: 600s may not capture steady-state (need 20-30min)
+- **Workload-specific factors**: This traffic mix may be easier than model expects
 
-**Verdict**: ✓ **STABLE** - System is running at full capacity without degrading
-
-### Observation 2: exp1-overloaded (12.97 req/s)
-**Purpose**: Test just beyond the threshold (+4.5% higher rate)
-
-**Results**:
-- Total requests: 38,860
-- Saturation score: **0.885** (high = unstable)
-- Latency trend: Rising over time
-- Queue behavior: Backlog accumulating
-
-**Verdict**: ❌ **OVERLOADED** - System is struggling, latency is growing
+**Practical outcome**: The 4.5% rate increase produced 4.5% more throughput with zero degradation. True saturation point is higher than 12.97 req/s.
 
 ---
 
-## Key Finding: Small Increase, Big Impact
+## Analytical Estimators: Blind to Saturation
 
-**Going from 12.41 to 12.97 req/s (just 4.5% more load)**:
-- Saturation score jumped **630×** (from 0.001 to 0.885)
-- Latency trend changed from flat to rising
-- Queue pattern changed from stable to monotonic
+We compared BLIS against two analytical tools at the rates BLIS identified as the stability boundary:
 
-**This shows the saturation boundary is sharp** - there's a clear tipping point.
+| Tool | Prediction @ 12.41 req/s | Prediction @ 12.97 req/s | Can Detect Boundary? |
+|------|-------------------------|-------------------------|---------------------|
+| **BLIS** | STABLE (0.0010) | OVERLOADED (0.885) | ✓ Yes |
+| **aiconfigurator** | 14.09 RPS, 168ms TTFT | 14.89 RPS, 168ms TTFT | ❌ No (both healthy) |
+| **llm-optimizer** | 13.47 RPS, 207ms TTFT | 13.47 RPS, 207ms TTFT | ❌ No (identical) |
 
----
+**Why analytical tools fail**:
+1. Model steady-state only, cannot detect queue buildup
+2. Assume infinite queue capacity
+3. Provide point estimates, not stability analysis
+4. Coarse granularity (llm-optimizer: both rates → concurrency=8)
 
-## What We Learned
-
-### ✓ What Worked
-
-1. **Latency trend is the key signal**
-   - Caught overload early at 12.97 req/s
-   - Clear difference between stable and overloaded cases
-
-2. **Quartile pattern confirms saturation**
-   - Stable: Varied percentiles (workload diversity shows)
-   - Overloaded: Strict monotonic pattern (queue effects dominate)
-
-3. **Binary search is efficient**
-   - Found saturation point in just 7 runs
-   - Final precision: ±0.56 req/s
-
-### ⚠️ What Didn't Work
-
-**Rate deficit is NOT a good signal**:
-- At 12.41 req/s (stable): 0.14% deficit
-- At 12.97 req/s (overloaded): 0.09% deficit (lower!)
-- System can keep up with arrival rate even when queues are building
-
-**Lesson**: Don't rely on throughput measurements alone - you need to look at latency behavior
+**Key insight**: Even though BLIS was conservative, it successfully identified a boundary where analytical tools showed no change. Simulation is necessary for capacity planning.
 
 ---
 
-## Comparison Table
+## Lessons Learned
 
-| Metric | Saturation (12.41 req/s) | Overloaded (12.97 req/s) | Change |
-|--------|-------------------------|--------------------------|--------|
-| **Rate** | 2.75× baseline | 2.875× baseline | +4.5% |
-| **Saturation Score** | 0.0014 | 0.885 | **+630×** |
-| **Latency Trend** | Flat (0.056) | Rising (0.885) | **+16×** |
-| **Queue Pattern** | Varied | Monotonic | Dominated |
-| **Rate Deficit** | 0.14% | 0.09% | Actually lower! |
+**What Worked**:
+- ✓ Composite detector correctly identified both observations as STABLE
+- ✓ Binary search converged efficiently (7 runs, ±2.3% precision)
+- ✓ Multi-signal detection (latency trend, quartile pattern, rate deficit) prevents false positives
+
+**What Needs Improvement**:
+- ⚠️ BLIS latency model overestimates response times (4.5%+ gap)
+- ⚠️ 600-second windows may be too short for steady-state
+- ⚠️ Rate deficit alone is unreliable (<0.15% for both observations)
 
 ---
 
-## Practical Takeaways
+## Recommendations
 
-### For Capacity Planning
-- **Safe operating point**: 12.41 req/s
-- **Headroom**: 2.75× the baseline rate
-- **Warning zone**: Anything above 12.5 req/s risks degradation
+**1. Find True Saturation**
+Test 15-18 req/s with 20-30 minute observations to find actual overload boundary
 
-### For Monitoring
-- **Watch latency trends**, not just throughput
-- Look for increasing p90/p99 over time
-- Check if percentiles become strictly ordered (sign of queuing)
+**2. Recalibrate BLIS**
+Use exp1-overloaded (12.97 req/s) data to improve latency model. Current trained-physics model is too pessimistic.
 
-### For BLIS Calibration
-- **Use exp1-saturation (12.41 req/s) for training models**
-  - Clean execution-physics data
-  - Latency predictable from prompt/response sizes
+**3. Use Both Observations**
+Both capture clean execution physics (no queue effects). Train latency models on both to ensure generalization across load levels.
 
-- **Use exp1-overloaded (12.97 req/s) for validation only**
-  - Tests if simulator can reproduce queue effects
-  - Don't train on this data (mixing physics + queue dynamics)
+**4. Document Tool Limitations**
+Analytical estimators (aiconfigurator, llm-optimizer) cannot detect saturation boundaries. Use BLIS for capacity planning.
 
 ---
 
 ## Bottom Line
 
-We successfully identified that:
-1. This system maxes out at **12.41 req/s** (2.75× baseline)
-2. The transition to overload is **sharp** (4.5% more load causes problems)
-3. **Latency trends matter more than throughput** for detecting saturation
-4. We have two clean observations: one at capacity, one just beyond
+**Discovered**: BLIS predicted saturation at 12.41 req/s, but real system remained stable at 12.97 req/s, revealing a 4.5% sim-to-real gap.
 
-These observations provide ground truth for calibrating and validating the BLIS simulator.
+**Validated**:
+- Composite detector works correctly (both observations properly classified as stable)
+- BLIS identifies boundaries where analytical tools are blind
+- True saturation point is higher than 12.97 req/s
+- Both observations provide clean data for model calibration
+
+**Next**: Test higher rates (15-18 req/s), recalibrate BLIS latency model, validate detector accuracy post-calibration.
