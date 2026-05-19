@@ -59,8 +59,9 @@ This matches the llm-d production scoring pipeline. Weights are relative — onl
 BLIS supports vLLM's internal load-balancing algorithm via the `vllm-dp` scorer:
 
 ```bash
-# Oracle mode (immediate signals, default — best for algorithmic studies):
-./blis run --model qwen/qwen3-14b --routing-scorers "vllm-dp:1"
+# Oracle mode (immediate signals — best for algorithmic studies):
+./blis run --model qwen/qwen3-14b --routing-scorers "vllm-dp:1" \
+  --snapshot-refresh-interval 0
 
 # Staleness-matched mode (matches vLLM's 100ms coordinator interval):
 ./blis run --model qwen/qwen3-14b --routing-scorers "vllm-dp:1" \
@@ -69,7 +70,7 @@ BLIS supports vLLM's internal load-balancing algorithm via the `vllm-dp` scorer:
 
 This replicates vLLM's `DPLBAsyncMPClient` formula: selecting the instance with the lowest `waiting × 4 + running` score. The scorer applies inverted min-max normalization to convert vLLM's argmin selection to BLIS's argmax routing framework.
 
-**Signal staleness:** vLLM's coordinator publishes instance stats every 100ms by default (`min_stats_update_interval_ms`). Using `--snapshot-refresh-interval 100000` matches this staleness interval. The default `0` (immediate mode) represents oracle routing with no signal staleness — this is the cleanest baseline for algorithmic comparisons.
+**Signal staleness:** vLLM's coordinator publishes instance stats every 100ms by default (`min_stats_update_interval_ms`). Using `--snapshot-refresh-interval 100000` matches this staleness interval. The default 50ms (`--snapshot-refresh-interval 50000`) matches llm-d's `RefreshMetricsInterval`. Pass `--snapshot-refresh-interval 0` for oracle mode (immediate signals, no staleness) — the cleanest baseline for algorithmic comparisons.
 
 **Known limitation:** vLLM's client speculatively increments its cached waiting count after each routing decision (`current_counts[eng_index][0] += client_count`, `core_client.py:1225`) to spread traffic within the 100ms window. BLIS does not model this because BLIS's DES is sequential — requests route one at a time, so the concurrent-routing scenario doesn't arise. In staleness-matched mode, BLIS will concentrate more traffic per snapshot window than real vLLM would.
 
@@ -94,7 +95,7 @@ BLIS models three signal freshness tiers:
 | Tier | Signals | Source | Freshness |
 |------|---------|--------|-----------|
 | **Router-local** | InFlightRequests, prefix cache index | Router increments InFlightRequests at dispatch, decrements at completion; prefix cache updated after each routing decision | Always fresh — router owns this state |
-| **Instance-reported (Immediate/Periodic)** | QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate, PreemptionCount | Instance-internal state (scheduler queue, running batch, KV cache) | When `--snapshot-refresh-interval=0` (default): Immediate (read from instance at routing time). When `>0`: all Prometheus-sourced signals share the same Periodic refresh interval, matching real vLLM's single `/metrics` endpoint. |
+| **Instance-reported (Immediate/Periodic)** | QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate, PreemptionCount | Instance-internal state (scheduler queue, running batch, KV cache) | Default (`--snapshot-refresh-interval 50000`): Periodic at 50ms (llm-d parity). When `--snapshot-refresh-interval 0`: Immediate (read from instance at routing time). All Prometheus-sourced signals share the same refresh interval, matching real vLLM's single `/metrics` endpoint. |
 
 !!! info "DES semantics of 'Immediate' mode"
     "Immediate" means "re-read from the instance object at query time" — NOT "perfectly synchronized with the simulation clock." At the same clock tick, cluster events are processed before instance events (determinism rule). So a routing decision at time T sees QueueDepth that hasn't yet processed instance events at time T. This is a determinism mechanism (INV-6), not a freshness guarantee.
