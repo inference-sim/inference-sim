@@ -606,3 +606,21 @@ func TraceRecordsToRequests(records []TraceRecord) []*sim.Request {
 
 	return requests
 }
+
+// TraceRecordsToRequestMetrics converts trace records to RequestMetrics for saturation detectors.
+// Only includes completed requests (Status == "ok").
+// CRITICAL UNITS: ArrivedAt is in SECONDS (not milliseconds), E2E is in milliseconds.
+// This matches the canonical constructor in sim/simulator.go:261 which sets ArrivedAt as float64(req.ArrivalTime)/1e6.
+func TraceRecordsToRequestMetrics(records []TraceRecord) []sim.RequestMetrics {
+	metrics := make([]sim.RequestMetrics, 0, len(records))
+	for _, rec := range records {
+		if rec.Status != "ok" {
+			continue // Only include completed requests
+		}
+		metrics = append(metrics, sim.RequestMetrics{
+			ArrivedAt: float64(rec.ArrivalTimeUs) / 1e6,                                // µs → seconds (CRITICAL: not ms!)
+			E2E:       float64(rec.LastChunkTimeUs-rec.SendTimeUs) / 1000.0, // µs → ms
+		})
+	}
+	return metrics
+}

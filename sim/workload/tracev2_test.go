@@ -1364,3 +1364,89 @@ func TestTraceV2_SLOTargetUs_WithVLLMPriority_DoubleOffset(t *testing.T) {
 		t.Errorf("NumChunks=%d, want 5 (double-offset corruption)", r.NumChunks)
 	}
 }
+
+func TestTraceRecordsToRequestMetrics_UnitsAndFiltering(t *testing.T) {
+	records := []TraceRecord{
+		{
+			RequestID:        1,
+			Status:           "ok",
+			ArrivalTimeUs:    1000000, // 1 second in microseconds
+			SendTimeUs:       1000000,
+			LastChunkTimeUs:  1150000, // E2E = 150ms
+		},
+		{
+			RequestID:        2,
+			Status:           "timeout",
+			ArrivalTimeUs:    2000000,
+			SendTimeUs:       2000000,
+			LastChunkTimeUs:  2100000,
+		},
+		{
+			RequestID:        3,
+			Status:           "ok",
+			ArrivalTimeUs:    3000000, // 3 seconds in microseconds
+			SendTimeUs:       3000000,
+			LastChunkTimeUs:  3200000, // E2E = 200ms
+		},
+		{
+			RequestID:        4,
+			Status:           "error",
+			ArrivalTimeUs:    4000000,
+			SendTimeUs:       4000000,
+			LastChunkTimeUs:  4050000,
+		},
+	}
+
+	metrics := TraceRecordsToRequestMetrics(records)
+
+	// BC-4: Only "ok" records should be converted
+	if len(metrics) != 2 {
+		t.Fatalf("got %d metrics, want 2 (only 'ok' records)", len(metrics))
+	}
+
+	// Verify first metric (RequestID 1)
+	m0 := metrics[0]
+	// CRITICAL: ArrivedAt must be in SECONDS (not milliseconds)
+	// 1000000 µs / 1e6 = 1.0 seconds
+	if m0.ArrivedAt != 1.0 {
+		t.Errorf("metrics[0].ArrivedAt = %f, want 1.0 seconds", m0.ArrivedAt)
+	}
+	// E2E must be in milliseconds
+	// (1150000 - 1000000) µs / 1000 = 150.0 ms
+	if m0.E2E != 150.0 {
+		t.Errorf("metrics[0].E2E = %f ms, want 150.0 ms", m0.E2E)
+	}
+
+	// Verify second metric (RequestID 3)
+	m1 := metrics[1]
+	// 3000000 µs / 1e6 = 3.0 seconds
+	if m1.ArrivedAt != 3.0 {
+		t.Errorf("metrics[1].ArrivedAt = %f, want 3.0 seconds", m1.ArrivedAt)
+	}
+	// (3200000 - 3000000) µs / 1000 = 200.0 ms
+	if m1.E2E != 200.0 {
+		t.Errorf("metrics[1].E2E = %f ms, want 200.0 ms", m1.E2E)
+	}
+}
+
+func TestTraceRecordsToRequestMetrics_AllStatusesForTotalArrivals(t *testing.T) {
+	records := []TraceRecord{
+		{RequestID: 1, Status: "ok", ArrivalTimeUs: 1000, SendTimeUs: 1000, LastChunkTimeUs: 2000},
+		{RequestID: 2, Status: "timeout", ArrivalTimeUs: 2000, SendTimeUs: 2000, LastChunkTimeUs: 3000},
+		{RequestID: 3, Status: "error", ArrivalTimeUs: 3000, SendTimeUs: 3000, LastChunkTimeUs: 4000},
+		{RequestID: 4, Status: "ok", ArrivalTimeUs: 4000, SendTimeUs: 4000, LastChunkTimeUs: 5000},
+	}
+
+	// Converted metrics should only include "ok" records
+	metrics := TraceRecordsToRequestMetrics(records)
+	if len(metrics) != 2 {
+		t.Errorf("got %d metrics, want 2", len(metrics))
+	}
+
+	// BC-4: totalArrivals for detector.Classify() must be len(records) = 4, not len(metrics) = 2
+	// This test documents that the caller is responsible for passing len(records) as totalArrivals
+	totalArrivals := len(records)
+	if totalArrivals != 4 {
+		t.Errorf("totalArrivals = %d, want 4 (all records including timeouts/errors)", totalArrivals)
+	}
+}

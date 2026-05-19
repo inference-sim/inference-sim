@@ -1882,7 +1882,7 @@ func TestPrintObserveMetrics_ValidRecords(t *testing.T) {
 		{Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 60000, LastChunkTimeUs: 210000, OutputTokens: 120},
 	}
 	var buf bytes.Buffer
-	printObserveMetrics(&buf, records, 1.0, nil)
+	printObserveMetrics(&buf, records, 1.0, nil, nil)
 
 	output := buf.String()
 	if !strings.Contains(output, "=== Simulation Metrics ===") {
@@ -1924,7 +1924,7 @@ func TestPrintObserveMetrics_ValidRecords(t *testing.T) {
 
 func TestPrintObserveMetrics_ZeroRecords(t *testing.T) {
 	var buf bytes.Buffer
-	printObserveMetrics(&buf, []workload.TraceRecord{}, 1.0, nil)
+	printObserveMetrics(&buf, []workload.TraceRecord{}, 1.0, nil, nil)
 
 	output := buf.String()
 	if !strings.Contains(output, "=== Simulation Metrics ===") {
@@ -1959,7 +1959,7 @@ func TestPrintObserveMetrics_ErrorOnlyRecords(t *testing.T) {
 		{Status: "timeout", SendTimeUs: 0, FirstChunkTimeUs: 0, LastChunkTimeUs: 0, OutputTokens: 0},
 	}
 	var buf bytes.Buffer
-	printObserveMetrics(&buf, records, 1.0, nil)
+	printObserveMetrics(&buf, records, 1.0, nil, nil)
 
 	output := buf.String()
 	if !strings.Contains(output, "=== Simulation Metrics ===") {
@@ -1995,7 +1995,7 @@ func TestPrintObserveMetrics_ITLPresent(t *testing.T) {
 		{RequestID: 0, ChunkIndex: 2, TimestampUs: 83000},
 	}
 	var buf bytes.Buffer
-	printObserveMetrics(&buf, records, 1.0, itlRecords)
+	printObserveMetrics(&buf, records, 1.0, itlRecords, nil)
 
 	var metrics map[string]interface{}
 	lines := strings.Split(buf.String(), "\n")
@@ -2021,7 +2021,7 @@ func TestPrintObserveMetrics_ITLAbsent(t *testing.T) {
 		{Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 50000, LastChunkTimeUs: 200000, OutputTokens: 100},
 	}
 	var buf bytes.Buffer
-	printObserveMetrics(&buf, records, 1.0, nil)
+	printObserveMetrics(&buf, records, 1.0, nil, nil)
 
 	var metrics map[string]interface{}
 	lines := strings.Split(buf.String(), "\n")
