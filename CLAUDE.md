@@ -124,6 +124,21 @@ go build -o blis main.go
 # Replay with post-hoc saturation detection
 ./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
   --post-hoc-detector composite
+
+# Observe with post-hoc saturation detection - stdout JSON (interactive, #1379)
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --workload-spec workload.yaml --trace-header trace.yaml --trace-data trace.csv \
+  --post-hoc-detector composite
+
+# Observe with post-hoc saturation detection - file output (cluster pods, #1379)
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --rate 10 --num-requests 100 --trace-header trace.yaml --trace-data trace.csv \
+  --post-hoc-detector composite --saturation-report saturation.json
+
+# Observe with backlog-drift detector - file output (run/replay parity)
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --workload-spec workload.yaml --trace-header trace.yaml --trace-data trace.csv \
+  --saturation-report saturation.json
 ```
 
 ## Testing
@@ -319,8 +334,11 @@ BLIS includes post-hoc saturation detection for analyzing completed simulation r
 **CLI flags** (available on `run`, `observe`, `replay`):
 - `--post-hoc-detector <name>`: Detector to use (composite, threshold, none)
 - `--saturation-threshold-ms <ms>`: Threshold for threshold detector (default 5000)
+- `--saturation-report <path>`: Write saturation analysis to file (optional). **File format varies by command:**
+  - On `run`/`replay`: always writes BacklogDriftReport JSON (regardless of `--post-hoc-detector`)
+  - On `observe`: writes BacklogDriftReport when `--post-hoc-detector=none`, else writes saturation.Result JSON
 
-**Output**: Saturation results appear in `MetricsOutput.saturation` field as JSON with `level`, `score`, `confidence`, and `signals` (detector-specific metrics).
+**Output**: Saturation results appear in `MetricsOutput.saturation` field as JSON with `level`, `score`, `confidence`, and `signals` (detector-specific metrics). This stdout JSON format is consistent across all three commands (INV-13 parity).
 
 **Example**:
 ```json

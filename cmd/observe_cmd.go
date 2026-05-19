@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/saturation"
 	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -159,14 +160,18 @@ func init() {
 	observeCmd.Flags().BoolVar(&observeRecordITL, "record-itl", false, "Record per-chunk timestamps for ITL calibration (streaming only; forces streaming on non-streaming workloads)")
 	observeCmd.Flags().StringVar(&observeITLOutput, "itl-output", "", "Output path for ITL CSV file (default: <trace-data>.itl.csv if --record-itl is set)")
 
-	// Saturation analysis (optional)
-	observeCmd.Flags().StringVar(&saturationReport, "saturation-report", "", "File to write saturation analysis JSON (backlog-drift classification)")
+	// Saturation analysis (optional, run/replay parity)
+	// Behavior:
+	//   - --post-hoc-detector set + --saturation-report: detector output to both stdout JSON and file
+	//   - --post-hoc-detector set alone: detector output to stdout JSON only
+	//   - --saturation-report alone: backlog-drift output to file (backward compatible)
+	observeCmd.Flags().StringVar(&saturationReport, "saturation-report", "", "File to write saturation analysis JSON (backlog-drift or post-hoc detector)")
 
-	// Note: Post-hoc saturation detector flags (--post-hoc-detector, --saturation-threshold-ms)
-	// are NOT registered for observe. The observe command doesn't call SaveResults with classification.
-	// For post-hoc analysis of observed traces, use: blis replay --trace-header h.yaml --trace-data d.csv
-	// --post-hoc-detector composite (C4 fix)
+	// Post-hoc saturation detector flags (same as blis run/replay; #1379)
+	observeCmd.Flags().StringVar(&postHocDetector, "post-hoc-detector", "none", "Post-hoc saturation detector: composite, threshold, none")
+	observeCmd.Flags().Float64Var(&saturationThreshold, "saturation-threshold-ms", 5000.0, "Threshold in ms for threshold detector (default 5000ms)")
 
+	// Backlog-drift saturation flags (run/replay parity)
 	registerSaturationFlags(observeCmd)
 
 	rootCmd.AddCommand(observeCmd)
@@ -501,7 +506,80 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	if observeRecordITL {
 		itlRecords = recorder.ITLRecords()
 	}
-	printObserveMetrics(os.Stdout, records, wallClockDurationSec, itlRecords)
+
+	// Post-hoc saturation detection (#1379: run/replay parity)
+	// Validate and instantiate detector from CLI flags
+	if !saturation.ValidDetectorNames()[postHocDetector] {
+		logrus.Fatalf("--post-hoc-detector %q not recognized. Valid: composite, threshold, none", postHocDetector)
+	}
+
+	// Validate saturation threshold for negative values
+	if saturationThreshold < 0 {
+		logrus.Fatalf("--saturation-threshold-ms must be non-negative, got %.2f", saturationThreshold)
+	}
+
+	// Saturation analysis (run/replay parity)
+	var saturationResult interface{} // For stdout JSON (run/replay parity)
+
+	// Post-hoc detector: always populate saturationResult for stdout JSON when enabled
+	if postHocDetector != "none" {
+		requestMetrics := workload.TraceRecordsToRequestMetrics(records)
+		totalArrivals := len(records)
+
+		if len(requestMetrics) == 0 && totalArrivals > 0 {
+			logrus.Warnf("--post-hoc-detector: 0 completed requests out of %d arrivals; saturation result has zero confidence", totalArrivals)
+		}
+
+		detector := saturation.NewDetector(postHocDetector, saturation.DetectorOpts{
+			ThresholdMs: saturationThreshold,
+		})
+		saturationResult = detector.Classify(requestMetrics, totalArrivals)
+
+		// If --saturation-report is also specified, write the result to file (cluster pod use case).
+		// In production, observe runs in cluster pods where parsing stdout from logs is impractical;
+		// file output enables direct artifact collection without log scraping.
+		//
+		// We still populate saturationResult above to maintain run/replay parity: when --post-hoc-detector
+		// is enabled, the result ALWAYS appears in stdout JSON, regardless of --saturation-report.
+		// This ensures scripts consuming stdout.saturation work identically across run/replay/observe.
+		if saturationReport != "" {
+			satBytes, err := json.MarshalIndent(saturationResult, "", "  ")
+			if err != nil {
+				logrus.Fatalf("Failed to marshal saturation result: %v", err)
+			}
+			if err := os.WriteFile(saturationReport, satBytes, 0644); err != nil {
+				logrus.Fatalf("Failed to write saturation report to %s: %v", saturationReport, err)
+			}
+			logrus.Infof("Saturation report written to %s (detector: %s)", saturationReport, postHocDetector)
+		}
+	} else if saturationReport != "" {
+		// --saturation-report specified but --post-hoc-detector is "none" (default): use backlog-drift (run/replay parity)
+		requests := workload.TraceRecordsToRequests(records)
+		simEndUs := int64(0)
+		for _, rec := range records {
+			if rec.LastChunkTimeUs > simEndUs {
+				simEndUs = rec.LastChunkTimeUs
+			}
+		}
+		if observeHorizon > simEndUs {
+			simEndUs = observeHorizon
+		}
+
+		cfg := workload.NewBacklogDriftConfig(
+			time.Duration(saturationWindowSec)*time.Second,
+			saturationMinWindows,
+			saturationPeakRatio,
+			saturationPeakBand,
+			saturationConfidence,
+		)
+		report := workload.AnalyzeBacklogDrift(requests, simEndUs, cfg)
+		if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
+			logrus.Fatalf("Failed to write saturation report: %v", err)
+		}
+		logrus.Infof("Saturation report written to %s (detector: backlog-drift, classification: %s)", saturationReport, report.Classification)
+	}
+
+	printObserveMetrics(os.Stdout, records, wallClockDurationSec, itlRecords, saturationResult)
 
 	// Print session metrics if any record carries a session label (#1058)
 	sessionMetrics := computeSessionMetricsFromTrace(records)
@@ -526,38 +604,6 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Infof("ITL data exported: %s (%d records)", itlPath, len(itlRecords))
 	}
 
-	// Saturation analysis if requested (issue #1298)
-	if saturationReport != "" {
-		// Convert trace records to sim.Request objects for analysis
-		requests := workload.TraceRecordsToRequests(records)
-
-		// Compute sim end time from actual completion times
-		// (horizon is for generation bounding; actual completions may arrive later)
-		simEndUs := int64(0)
-		for _, rec := range records {
-			if rec.LastChunkTimeUs > simEndUs {
-				simEndUs = rec.LastChunkTimeUs
-			}
-		}
-		// Use horizon as floor if explicitly set and larger than actual completions
-		if observeHorizon > simEndUs {
-			simEndUs = observeHorizon
-		}
-
-		// Build saturation analysis config from flags (or defaults if not set)
-		cfg := workload.NewBacklogDriftConfig(
-			time.Duration(saturationWindowSec)*time.Second,
-			saturationMinWindows,
-			saturationPeakRatio,
-			saturationPeakBand,
-			saturationConfidence,
-		)
-		report := workload.AnalyzeBacklogDrift(requests, simEndUs, cfg)
-		if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
-			logrus.Fatalf("Failed to write saturation report: %v", err)
-		}
-		logrus.Infof("Saturation report written to %s (classification: %s)", saturationReport, report.Classification)
-	}
 }
 
 // completionEvent carries HTTP completion info to the serializer goroutine.
@@ -570,7 +616,8 @@ type completionEvent struct {
 // printObserveMetrics prints the observe latency summary in the same JSON format
 // as blis run and blis replay (=== Simulation Metrics === header + JSON body).
 // Always emits the header even when no valid records exist (BC-5).
-func printObserveMetrics(w io.Writer, records []workload.TraceRecord, wallClockDurationSec float64, itlRecords []workload.ITLRecord) {
+// saturationResult is optional (can be nil); when provided, it's populated in output.Saturation field.
+func printObserveMetrics(w io.Writer, records []workload.TraceRecord, wallClockDurationSec float64, itlRecords []workload.ITLRecord, saturationResult interface{}) {
 	var ttftsUs, e2esUs []int64
 	totalOutputTokens := 0
 
@@ -665,6 +712,7 @@ func printObserveMetrics(w io.Writer, records []workload.TraceRecord, wallClockD
 		ITLMeanMs:         itlMeanMs,
 		ResponsesPerSec:   responsesPerSec,
 		TokensPerSec:      tokensPerSec,
+		Saturation:        saturationResult, // #1379: populated when --post-hoc-detector is specified
 	}
 
 	// Compute percentiles if data available

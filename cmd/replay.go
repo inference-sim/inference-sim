@@ -549,8 +549,7 @@ Example:
 		}
 
 		// Validate and instantiate post-hoc saturation detector from CLI flags (#1369, C3)
-		validPostHocDetectors := map[string]bool{"none": true, "composite": true, "threshold": true}
-		if !validPostHocDetectors[postHocDetector] {
+		if !saturation.ValidDetectorNames()[postHocDetector] {
 			logrus.Fatalf("--post-hoc-detector %q not recognized. Valid: composite, threshold, none", postHocDetector)
 		}
 

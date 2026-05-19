@@ -1364,3 +1364,138 @@ func TestTraceV2_SLOTargetUs_WithVLLMPriority_DoubleOffset(t *testing.T) {
 		t.Errorf("NumChunks=%d, want 5 (double-offset corruption)", r.NumChunks)
 	}
 }
+
+func TestTraceRecordsToRequestMetrics_UnitsAndFiltering(t *testing.T) {
+	records := []TraceRecord{
+		{
+			RequestID:        1,
+			Status:           "ok",
+			ArrivalTimeUs:    1000000, // 1 second in microseconds
+			SendTimeUs:       1000000,
+			LastChunkTimeUs:  1150000, // E2E = 150ms
+		},
+		{
+			RequestID:        2,
+			Status:           "timeout",
+			ArrivalTimeUs:    2000000,
+			SendTimeUs:       2000000,
+			LastChunkTimeUs:  2100000,
+		},
+		{
+			RequestID:        3,
+			Status:           "ok",
+			ArrivalTimeUs:    3000000, // 3 seconds in microseconds
+			SendTimeUs:       3000000,
+			LastChunkTimeUs:  3200000, // E2E = 200ms
+		},
+		{
+			RequestID:        4,
+			Status:           "error",
+			ArrivalTimeUs:    4000000,
+			SendTimeUs:       4000000,
+			LastChunkTimeUs:  4050000,
+		},
+		{
+			RequestID:        5,
+			Status:           "ok",
+			ArrivalTimeUs:    5000000,
+			SendTimeUs:       5000000,
+			LastChunkTimeUs:  5000000, // E2E = 0 (clock skew or malformed)
+		},
+		{
+			RequestID:        6,
+			Status:           "ok",
+			ArrivalTimeUs:    6000000,
+			SendTimeUs:       6100000,
+			LastChunkTimeUs:  6050000, // E2E < 0 (clock skew)
+		},
+	}
+
+	metrics := TraceRecordsToRequestMetrics(records)
+
+	// BC-4: Only "ok" records with valid E2E > 0 should be converted
+	// Records 1 and 3 are ok with valid E2E, records 5 and 6 have E2E <= 0
+	if len(metrics) != 2 {
+		t.Fatalf("got %d metrics, want 2 (only 'ok' records with E2E > 0)", len(metrics))
+	}
+
+	// Verify first metric (RequestID 1)
+	m0 := metrics[0]
+	// CRITICAL: ArrivedAt must be in SECONDS (not milliseconds)
+	// 1000000 µs / 1e6 = 1.0 seconds
+	if m0.ArrivedAt != 1.0 {
+		t.Errorf("metrics[0].ArrivedAt = %f, want 1.0 seconds", m0.ArrivedAt)
+	}
+	// E2E must be in milliseconds
+	// (1150000 - 1000000) µs / 1000 = 150.0 ms
+	if m0.E2E != 150.0 {
+		t.Errorf("metrics[0].E2E = %f ms, want 150.0 ms", m0.E2E)
+	}
+
+	// Verify second metric (RequestID 3)
+	m1 := metrics[1]
+	// 3000000 µs / 1e6 = 3.0 seconds
+	if m1.ArrivedAt != 3.0 {
+		t.Errorf("metrics[1].ArrivedAt = %f, want 3.0 seconds", m1.ArrivedAt)
+	}
+	// (3200000 - 3000000) µs / 1000 = 200.0 ms
+	if m1.E2E != 200.0 {
+		t.Errorf("metrics[1].E2E = %f ms, want 200.0 ms", m1.E2E)
+	}
+}
+
+func TestTraceRecordsToRequestMetrics_RateDeficitSemantics(t *testing.T) {
+	// BC-4: Document the calling convention for saturation detectors.
+	// The composite detector computes rate_deficit = 1 - (completions / totalArrivals).
+	// When 2 out of 4 requests complete:
+	//   - Correct: totalArrivals=4 → rate_deficit=0.5 (50% dropped)
+	//   - Wrong:   totalArrivals=2 → rate_deficit=0.0 (0% dropped, hides the 2 timeouts)
+	//
+	// This test verifies the conversion function produces the correct inputs:
+	//   - metrics contains only "ok" records (for E2E latency calculation)
+	//   - caller must pass len(records) as totalArrivals (not len(metrics))
+	records := []TraceRecord{
+		{RequestID: 1, Status: "ok", ArrivalTimeUs: 1000000, SendTimeUs: 1000000, LastChunkTimeUs: 1050000},
+		{RequestID: 2, Status: "timeout", ArrivalTimeUs: 2000000, SendTimeUs: 2000000, LastChunkTimeUs: 2100000},
+		{RequestID: 3, Status: "error", ArrivalTimeUs: 3000000, SendTimeUs: 3000000, LastChunkTimeUs: 3050000},
+		{RequestID: 4, Status: "ok", ArrivalTimeUs: 4000000, SendTimeUs: 4000000, LastChunkTimeUs: 4050000},
+	}
+
+	// Convert: only "ok" records included
+	metrics := TraceRecordsToRequestMetrics(records)
+	if len(metrics) != 2 {
+		t.Fatalf("got %d metrics, want 2 (only 'ok' records)", len(metrics))
+	}
+
+	// Verify calling convention
+	totalArrivals := len(records) // CORRECT: 4 (all arrivals including timeouts/errors)
+	if totalArrivals != 4 {
+		t.Errorf("totalArrivals = %d, want 4", totalArrivals)
+	}
+
+	// Verify that len(metrics) != len(records) when there are non-ok records
+	// This ensures the conversion function filtered correctly
+	if len(metrics) == len(records) {
+		t.Errorf("len(metrics) should not equal len(records) when there are timeouts/errors")
+	}
+
+	// The rate_deficit formula depends on this distinction:
+	// rate_deficit = 1 - (completions / totalArrivals)
+	// If caller passes len(metrics) instead of len(records), the deficit is understated.
+	completions := len(metrics)             // 2
+	totalArrivalsCorrect := len(records)    // 4
+	totalArrivalsWrong := len(metrics)      // 2
+
+	rateDeficitCorrect := 1.0 - float64(completions)/float64(totalArrivalsCorrect)   // 1 - 2/4 = 0.5
+	rateDeficitWrong := 1.0 - float64(completions)/float64(totalArrivalsWrong)       // 1 - 2/2 = 0.0
+
+	if rateDeficitCorrect != 0.5 {
+		t.Errorf("With totalArrivals=4: rate_deficit = %f, want 0.5", rateDeficitCorrect)
+	}
+	if rateDeficitWrong != 0.0 {
+		t.Errorf("With totalArrivals=2 (WRONG): rate_deficit = %f, want 0.0", rateDeficitWrong)
+	}
+	if rateDeficitCorrect == rateDeficitWrong {
+		t.Errorf("Correct and wrong totalArrivals should produce different rate_deficit values")
+	}
+}

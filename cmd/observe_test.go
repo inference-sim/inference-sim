@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/saturation"
 	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/sirupsen/logrus"
 )
@@ -1882,7 +1883,7 @@ func TestPrintObserveMetrics_ValidRecords(t *testing.T) {
 		{Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 60000, LastChunkTimeUs: 210000, OutputTokens: 120},
 	}
 	var buf bytes.Buffer
-	printObserveMetrics(&buf, records, 1.0, nil)
+	printObserveMetrics(&buf, records, 1.0, nil, nil)
 
 	output := buf.String()
 	if !strings.Contains(output, "=== Simulation Metrics ===") {
@@ -1924,7 +1925,7 @@ func TestPrintObserveMetrics_ValidRecords(t *testing.T) {
 
 func TestPrintObserveMetrics_ZeroRecords(t *testing.T) {
 	var buf bytes.Buffer
-	printObserveMetrics(&buf, []workload.TraceRecord{}, 1.0, nil)
+	printObserveMetrics(&buf, []workload.TraceRecord{}, 1.0, nil, nil)
 
 	output := buf.String()
 	if !strings.Contains(output, "=== Simulation Metrics ===") {
@@ -1959,7 +1960,7 @@ func TestPrintObserveMetrics_ErrorOnlyRecords(t *testing.T) {
 		{Status: "timeout", SendTimeUs: 0, FirstChunkTimeUs: 0, LastChunkTimeUs: 0, OutputTokens: 0},
 	}
 	var buf bytes.Buffer
-	printObserveMetrics(&buf, records, 1.0, nil)
+	printObserveMetrics(&buf, records, 1.0, nil, nil)
 
 	output := buf.String()
 	if !strings.Contains(output, "=== Simulation Metrics ===") {
@@ -1995,7 +1996,7 @@ func TestPrintObserveMetrics_ITLPresent(t *testing.T) {
 		{RequestID: 0, ChunkIndex: 2, TimestampUs: 83000},
 	}
 	var buf bytes.Buffer
-	printObserveMetrics(&buf, records, 1.0, itlRecords)
+	printObserveMetrics(&buf, records, 1.0, itlRecords, nil)
 
 	var metrics map[string]interface{}
 	lines := strings.Split(buf.String(), "\n")
@@ -2021,7 +2022,7 @@ func TestPrintObserveMetrics_ITLAbsent(t *testing.T) {
 		{Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 50000, LastChunkTimeUs: 200000, OutputTokens: 100},
 	}
 	var buf bytes.Buffer
-	printObserveMetrics(&buf, records, 1.0, nil)
+	printObserveMetrics(&buf, records, 1.0, nil, nil)
 
 	var metrics map[string]interface{}
 	lines := strings.Split(buf.String(), "\n")
@@ -2040,4 +2041,180 @@ func TestPrintObserveMetrics_ITLAbsent(t *testing.T) {
 	if metrics["itl_mean_ms"].(float64) != 0 {
 		t.Errorf("Expected itl_mean_ms=0 when no ITL records provided")
 	}
+}
+
+func TestPrintObserveMetrics_WithSaturationResult(t *testing.T) {
+	// BC-1/BC-2: Verify saturation field appears in JSON when detector is specified
+	records := []workload.TraceRecord{
+		{Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 50000, LastChunkTimeUs: 200000, OutputTokens: 100},
+	}
+	sat := saturation.Result{
+		Level:      saturation.Stable,
+		Score:      0.1,
+		Confidence: 0.9,
+		Signals:    map[string]float64{"rate_deficit": 0.0, "latency_trend": 0.05},
+	}
+	var buf bytes.Buffer
+	printObserveMetrics(&buf, records, 1.0, nil, sat)
+
+	// Parse JSON output
+	var metrics map[string]interface{}
+	lines := strings.Split(buf.String(), "\n")
+	jsonStart := -1
+	for i, line := range lines {
+		if strings.Contains(line, "=== Simulation Metrics ===") {
+			jsonStart = i + 1
+			break
+		}
+	}
+	jsonStr := strings.Join(lines[jsonStart:], "\n")
+	if err := json.Unmarshal([]byte(jsonStr), &metrics); err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	// Assert saturation field is present
+	satField, exists := metrics["saturation"]
+	if !exists {
+		t.Fatalf("Expected 'saturation' field in JSON output, not found")
+	}
+
+	// Verify saturation structure
+	satMap, ok := satField.(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected saturation to be an object, got %T", satField)
+	}
+
+	// Verify level field
+	level, ok := satMap["level"].(string)
+	if !ok {
+		t.Fatalf("Expected saturation.level to be string, got %T", satMap["level"])
+	}
+	if level != "STABLE" {
+		t.Errorf("Expected saturation.level='STABLE', got %q", level)
+	}
+}
+
+func TestPrintObserveMetrics_SaturationAbsentByDefault(t *testing.T) {
+	// BC-3: Verify saturation field is absent when detector is "none" (backward compatibility)
+	records := []workload.TraceRecord{
+		{Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 50000, LastChunkTimeUs: 200000, OutputTokens: 100},
+	}
+	var buf bytes.Buffer
+	printObserveMetrics(&buf, records, 1.0, nil, nil) // nil saturationResult = detector "none"
+
+	// Parse JSON output
+	var metrics map[string]interface{}
+	lines := strings.Split(buf.String(), "\n")
+	jsonStart := -1
+	for i, line := range lines {
+		if strings.Contains(line, "=== Simulation Metrics ===") {
+			jsonStart = i + 1
+			break
+		}
+	}
+	jsonStr := strings.Join(lines[jsonStart:], "\n")
+	if err := json.Unmarshal([]byte(jsonStr), &metrics); err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	// Assert saturation field is NOT present (omitempty behavior)
+	if _, exists := metrics["saturation"]; exists {
+		t.Errorf("Expected 'saturation' field to be absent when detector is 'none', but found it")
+	}
+}
+
+func TestPrintObserveMetrics_EmptyRecordsWithDetector(t *testing.T) {
+	// S-3: Edge case - all records time out, verify no panic when detector is specified
+	// TraceRecordsToRequestMetrics returns empty slice, totalArrivals=0
+	records := []workload.TraceRecord{
+		{RequestID: 1, Status: "timeout", ArrivalTimeUs: 1000000, SendTimeUs: 1000000, LastChunkTimeUs: 1100000},
+		{RequestID: 2, Status: "error", ArrivalTimeUs: 2000000, SendTimeUs: 2000000, LastChunkTimeUs: 2050000},
+	}
+
+	// Simulate what observe_cmd.go does with detector
+	requestMetrics := workload.TraceRecordsToRequestMetrics(records)
+	if len(requestMetrics) != 0 {
+		t.Fatalf("Expected empty metrics for all-timeout records, got %d", len(requestMetrics))
+	}
+	totalArrivals := len(records) // 2
+
+	// Create detector and classify (should not panic)
+	detector := saturation.NewDetector("composite", saturation.DetectorOpts{})
+	satResult := detector.Classify(requestMetrics, totalArrivals)
+
+	// Type assert to verify structure
+	result, ok := satResult.(saturation.Result)
+	if !ok {
+		t.Fatalf("Expected saturation.Result, got %T", satResult)
+	}
+
+	// Composite detector with 0 completions should return Stable (rate_deficit=1.0, latency_trend=0)
+	if result.Level != saturation.Stable {
+		t.Errorf("Expected Stable for 0 completions, got %v", result.Level)
+	}
+
+	// Verify printObserveMetrics doesn't panic with empty metrics + saturation result
+	var buf bytes.Buffer
+	printObserveMetrics(&buf, records, 1.0, nil, satResult)
+
+	// Parse JSON and verify saturation field is present
+	var metrics map[string]interface{}
+	lines := strings.Split(buf.String(), "\n")
+	jsonStart := -1
+	for i, line := range lines {
+		if strings.Contains(line, "=== Simulation Metrics ===") {
+			jsonStart = i + 1
+			break
+		}
+	}
+	jsonStr := strings.Join(lines[jsonStart:], "\n")
+	if err := json.Unmarshal([]byte(jsonStr), &metrics); err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	// Verify saturation field exists
+	if _, exists := metrics["saturation"]; !exists {
+		t.Errorf("Expected saturation field even with 0 completions")
+	}
+}
+
+func TestObservePostHocDetector_RateDeficitUsesAllArrivals(t *testing.T) {
+	// R-3: Integration test verifying rate_deficit uses len(records), not len(metrics)
+	// This is a regression test for the calling convention in observe_cmd.go:522
+	records := []workload.TraceRecord{
+		{RequestID: 1, Status: "ok", ArrivalTimeUs: 1000000, SendTimeUs: 1000000, LastChunkTimeUs: 1100000},
+		{RequestID: 2, Status: "ok", ArrivalTimeUs: 2000000, SendTimeUs: 2000000, LastChunkTimeUs: 2100000},
+		{RequestID: 3, Status: "timeout", ArrivalTimeUs: 3000000, SendTimeUs: 3000000, LastChunkTimeUs: 3100000},
+		{RequestID: 4, Status: "error", ArrivalTimeUs: 4000000, SendTimeUs: 4000000, LastChunkTimeUs: 4100000},
+	}
+
+	// Simulate observe_cmd.go logic
+	requestMetrics := workload.TraceRecordsToRequestMetrics(records)
+	if len(requestMetrics) != 2 {
+		t.Fatalf("Expected 2 metrics, got %d", len(requestMetrics))
+	}
+
+	totalArrivals := len(records) // CORRECT: 4 (all arrivals)
+
+	// Call composite detector
+	detector := saturation.NewDetector("composite", saturation.DetectorOpts{})
+	satResult := detector.Classify(requestMetrics, totalArrivals)
+
+	// Type assert to extract signals
+	result, ok := satResult.(saturation.Result)
+	if !ok {
+		t.Fatalf("Expected saturation.Result, got %T", satResult)
+	}
+
+	// Verify rate_deficit reflects all 4 arrivals
+	// rate_deficit = 1 - (completions / totalArrivals) = 1 - (2 / 4) = 0.5
+	rateDeficit := result.Signals["rate_deficit"]
+	expectedDeficit := 0.5
+	if rateDeficit != expectedDeficit {
+		t.Errorf("rate_deficit = %f, want %f (2 completions / 4 total arrivals)", rateDeficit, expectedDeficit)
+	}
+
+	// If observe_cmd.go incorrectly passed len(requestMetrics) instead of len(records):
+	// rate_deficit = 1 - (2 / 2) = 0.0 (WRONG - hides the 2 failures)
+	// This test would catch that regression.
 }

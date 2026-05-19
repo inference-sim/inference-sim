@@ -10,6 +10,17 @@ type DetectorOpts struct {
 	ThresholdMs float64
 }
 
+// ValidDetectorNames returns the set of recognized post-hoc detector names.
+// Used by CLI validation in cmd/root.go, cmd/replay.go, and cmd/observe_cmd.go.
+func ValidDetectorNames() map[string]bool {
+	return map[string]bool{
+		"none":           true,
+		"composite":      true,
+		"threshold":      true,
+		"backlog-drift":  true,
+	}
+}
+
 func NewDetector(name string, opts DetectorOpts) Detector {
 	switch name {
 	case "composite":
