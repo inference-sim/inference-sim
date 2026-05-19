@@ -134,11 +134,6 @@ go build -o blis main.go
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --rate 10 --num-requests 100 --trace-header trace.yaml --trace-data trace.csv \
   --post-hoc-detector composite --saturation-report saturation.json
-
-# Observe with backlog-drift detector (backward compatible)
-./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
-  --workload-spec workload.yaml --trace-header trace.yaml --trace-data trace.csv \
-  --saturation-report saturation.json
 ```
 
 ## Testing
