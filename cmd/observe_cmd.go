@@ -172,7 +172,9 @@ func init() {
 	observeCmd.Flags().StringVar(&postHocDetector, "post-hoc-detector", "none", "Post-hoc saturation detector: composite, threshold, none")
 	observeCmd.Flags().Float64Var(&saturationThreshold, "saturation-threshold-ms", 5000.0, "Threshold in ms for threshold detector (default 5000ms)")
 
-	registerSaturationFlags(observeCmd)
+	// Note: registerSaturationFlags (backlog-drift params) NOT called on observe — observe only supports
+	// post-hoc detectors via --post-hoc-detector. Backlog-drift flags (--saturation-window, etc.) are
+	// run/replay-only, kept for backward compatibility with existing backlog-drift workflows on those paths.
 
 	rootCmd.AddCommand(observeCmd)
 }
