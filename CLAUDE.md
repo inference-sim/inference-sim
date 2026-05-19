@@ -334,9 +334,11 @@ BLIS includes post-hoc saturation detection for analyzing completed simulation r
 **CLI flags** (available on `run`, `observe`, `replay`):
 - `--post-hoc-detector <name>`: Detector to use (composite, threshold, none)
 - `--saturation-threshold-ms <ms>`: Threshold for threshold detector (default 5000)
-- `--saturation-report <path>`: Write saturation result to file (optional; backlog-drift when `--post-hoc-detector=none`, else post-hoc detector result)
+- `--saturation-report <path>`: Write saturation analysis to file (optional). **File format varies by command:**
+  - On `run`/`replay`: always writes BacklogDriftReport JSON (regardless of `--post-hoc-detector`)
+  - On `observe`: writes BacklogDriftReport when `--post-hoc-detector=none`, else writes saturation.Result JSON
 
-**Output**: Saturation results appear in `MetricsOutput.saturation` field as JSON with `level`, `score`, `confidence`, and `signals` (detector-specific metrics).
+**Output**: Saturation results appear in `MetricsOutput.saturation` field as JSON with `level`, `score`, `confidence`, and `signals` (detector-specific metrics). This stdout JSON format is consistent across all three commands (INV-13 parity).
 
 **Example**:
 ```json
