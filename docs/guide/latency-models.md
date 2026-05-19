@@ -1,21 +1,32 @@
 # Latency Models
 
-The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships two backends -- roofline (analytical) and trained-physics (physics-informed roofline with MoE-aware corrections) -- and the pluggable architecture supports adding custom backends.
+The `LatencyModel` interface determines how BLIS estimates GPU step time for each batch iteration. BLIS ships two backends -- **trained-physics** (default, physics-informed roofline with MoE-aware corrections) and **roofline** (pure analytical) -- and the pluggable architecture supports adding custom backends.
 
 **Migration note:** Three legacy backends have been removed (`blackbox`, `crossmodel`, `trained-roofline`). Use `--latency-model trained-physics` instead, which supersedes all three with improved accuracy and MoE support.
 
 ```bash
-# Roofline mode (default) — analytical estimation from model architecture
+# Trained-physics mode (default) — roofline × architecture-aware basis functions × learned corrections
 ./blis run --model qwen/qwen3-14b \
   --num-instances 4 --rate 100 --num-requests 500
 
-# Trained-physics mode (recommended) — roofline × architecture-aware basis functions × learned corrections
+# Roofline mode — pure analytical estimation from model architecture (explicit flag)
 ./blis run --model qwen/qwen3-14b \
-  --latency-model trained-physics --hardware H100 --tp 1 \
+  --latency-model roofline --hardware H100 --tp 1 \
   --num-instances 4 --rate 100 --num-requests 500
 ```
 
-## Roofline Mode (Default)
+## Trained-Physics Mode (Default)
+
+Trained-physics mode combines roofline basis functions with learned correction coefficients. It provides better out-of-box accuracy than pure roofline by capturing architecture-specific overheads (MoE routing, memory access patterns) that analytical models miss.
+
+**Benefits:**
+- Better generalization across model architectures and TP configurations
+- Lower MAPE in practice compared to pure roofline
+- No per-model calibration needed
+
+Use this for capacity planning and what-if analysis unless you specifically need pure analytical estimates.
+
+## Roofline Mode
 
 Roofline mode computes step time analytically from model architecture (FLOPs, parameter count) and hardware specifications (compute throughput, memory bandwidth). It does not require pre-trained coefficients, making it suitable for new models.
 
