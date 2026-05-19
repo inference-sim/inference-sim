@@ -125,15 +125,20 @@ go build -o blis main.go
 ./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
   --post-hoc-detector composite
 
-# Observe with post-hoc saturation detection (composite detector, #1379)
+# Observe with post-hoc saturation detection - stdout JSON (interactive, #1379)
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --workload-spec workload.yaml --trace-header trace.yaml --trace-data trace.csv \
   --post-hoc-detector composite
 
-# Observe with post-hoc saturation detection (threshold detector with custom threshold)
+# Observe with post-hoc saturation detection - file output (cluster pods, #1379)
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --rate 10 --num-requests 100 --trace-header trace.yaml --trace-data trace.csv \
-  --post-hoc-detector threshold --saturation-threshold-ms 3000
+  --post-hoc-detector composite --saturation-report saturation.json
+
+# Observe with backlog-drift detector (backward compatible)
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --workload-spec workload.yaml --trace-header trace.yaml --trace-data trace.csv \
+  --saturation-report saturation.json
 ```
 
 ## Testing
