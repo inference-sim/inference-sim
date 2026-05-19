@@ -32,3 +32,23 @@ func TestNewDetector_ValidNames(t *testing.T) {
 		}
 	}
 }
+
+func TestValidDetectorNames_CoversAllFactoryNames(t *testing.T) {
+	// BC-1: ValidDetectorNames() must include all names accepted by NewDetector
+	valid := ValidDetectorNames()
+	factoryNames := []string{"composite", "threshold", "backlog-drift", "none"}
+
+	for _, name := range factoryNames {
+		if !valid[name] {
+			t.Errorf("ValidDetectorNames() missing factory-supported name %q", name)
+		}
+	}
+
+	// BC-2: All names in ValidDetectorNames() must be accepted by NewDetector (no false positives)
+	for name := range valid {
+		det := NewDetector(name, DetectorOpts{ThresholdMs: 5000})
+		if det == nil {
+			t.Errorf("ValidDetectorNames() includes %q but NewDetector panics/returns nil", name)
+		}
+	}
+}

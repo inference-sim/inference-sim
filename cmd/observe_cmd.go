@@ -509,8 +509,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 
 	// Post-hoc saturation detection (#1379: run/replay parity)
 	// Validate and instantiate detector from CLI flags
-	validPostHocDetectors := map[string]bool{"none": true, "composite": true, "threshold": true}
-	if !validPostHocDetectors[postHocDetector] {
+	if !saturation.ValidDetectorNames()[postHocDetector] {
 		logrus.Fatalf("--post-hoc-detector %q not recognized. Valid: composite, threshold, none", postHocDetector)
 	}
 
