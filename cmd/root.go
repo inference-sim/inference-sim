@@ -469,7 +469,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 			missing = append(missing, "--tp (tensor parallelism)")
 		}
 		if len(missing) > 0 {
-			logrus.Fatalf("Roofline mode (the default) requires %s. No defaults found in defaults.yaml for model=%s. "+
+			logrus.Fatalf("Roofline mode requires %s. No defaults found in defaults.yaml for model=%s. "+
 				"Provide these flags explicitly, or use --latency-model trained-physics for coefficient-based estimation",
 				strings.Join(missing, " and "), model)
 		}

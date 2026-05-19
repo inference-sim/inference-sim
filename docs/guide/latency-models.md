@@ -97,16 +97,9 @@ When choosing between TP and replication (more instances): TP reduces per-reques
 !!! note "Automatic MaxModelLen derivation"
     When using roofline or trained-physics mode and `--max-model-len` is not explicitly set, BLIS auto-derives it from `max_position_embeddings` in the HuggingFace `config.json`. For models with `rope_scaling`, the scaling factor is applied based on vLLM's blacklist approach: types `linear`, `dynamic`, `yarn`, `default`, and `mrope` apply the factor; types `su`, `longrope`, and `llama3` are excluded (these encode the full context in `max_position_embeddings`). For `yarn`, `original_max_position_embeddings` is used as the base when present. `gemma3` models skip `rope_scaling` entirely (`max_position_embeddings` is pre-scaled). The derived value is then capped at the KV-feasible maximum (`total_kv_blocks * block_size`) to prevent context windows from exceeding GPU memory capacity. Override with `--max-model-len <N>` when needed.
 
-## Trained-Physics Mode (Recommended for New Models)
+### How Trained-Physics Works
 
 Trained-physics mode applies **learned correction factors** to analytical roofline basis functions, combining the physical grounding of roofline with the accuracy of data-driven fitting. Coefficients are fitted from real vLLM measurements and generalize across model architectures, workloads, and TP configurations.
-
-```bash
-./blis run --model qwen/qwen3-14b \
-  --latency-model trained-physics --hardware H100 --tp 1
-```
-
-Same auto-fetch chain as roofline mode (HuggingFace config + hardware config resolution).
 
 **StepTime formula** (10 beta coefficients in bundled defaults):
 
@@ -183,9 +176,9 @@ Trained-physics uses **13 coefficients** (10 beta: prefill compute/memory split,
 
 ## When to Use Which
 
-| Aspect | Roofline (default) | Trained-Physics (recommended) |
-|--------|-------------------|-------------------------------|
-| **When to use** | Quick analytical estimate | **Recommended** for new models (generalizes across architectures, workloads, TP) |
+| Aspect | Roofline | Trained-Physics (default) |
+|--------|----------|---------------------------|
+| **When to use** | Quick analytical estimate | Default (generalizes across architectures, workloads, TP) |
 | **Data required** | HF `config.json` + `--hardware` + `--tp` | HF `config.json` + `--hardware` + `--tp` (global coefficients bundled) |
 | **GPU step time accuracy** | Good (analytical) | Better (13 global params, physics-informed basis functions) |
 | **MoE support** | Yes (per-expert FLOPs + effective expert count) | Yes (per-expert FLOPs + effective expert count + β₈ per-MoE-layer overhead) |
@@ -193,7 +186,7 @@ Trained-physics uses **13 coefficients** (10 beta: prefill compute/memory split,
 | **PostDecodeFixedOverhead** | 0 | α₁ (~777µs) |
 
 !!! tip "Choosing the right mode"
-    **Trained-physics** is the recommended default for any model with a HuggingFace `config.json` (generalizes across architectures, workloads, and TP configurations without per-model calibration). **Roofline** for pure analytical estimates when no learned corrections are desired.
+    **Trained-physics** is the default for any model with a HuggingFace `config.json` (generalizes across architectures, workloads, and TP configurations without per-model calibration). **Roofline** for pure analytical estimates when no learned corrections are desired.
 
 !!! warning "Current limitations"
     All analytical latency models support tensor parallelism (TP). Data parallelism (DP) and expert parallelism (EP) scheduling overhead are not yet modeled. Quantized weight precision (GPTQ, AWQ, FP8, compressed-tensors) is auto-detected from `quantization_config`, model name conventions (e.g., `w4a16`, `FP8`), or `torch_dtype` fallback, and is used for weight bandwidth and KV capacity calculations. MFU calibration values are still derived from FP16/BF16 measurements.
