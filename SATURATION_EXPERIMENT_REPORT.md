@@ -20,7 +20,7 @@ We used BLIS's automated saturation search to find the maximum safe load for thi
 
 **Workload**: Multi-cohort traffic with 5 SLO classes (critical, standard, batch, background, sheddable), 1 client per class, Poisson arrivals, equal rate split
 
-**Duration**: 600 seconds (10 minutes) per observation
+**Duration**: 1500 seconds (25 minutes) per observation
 
 ---
 
@@ -128,7 +128,7 @@ Analytical estimators (aiconfigurator, llm-optimizer) cannot detect saturation b
 
 ## Bottom Line
 
-**Discovered**: BLIS predicted saturation at 12.41 req/s, but real system remained stable at 12.97 req/s, revealing a 4.5% sim-to-real gap.
+**Discovered**: BLIS predicted saturation at 12.41 req/s, but real system remained stable at 12.97 req/s, revealing a critical sim-to-real gap.
 
 **Validated**:
 - Composite detector works correctly (both observations properly classified as stable)
