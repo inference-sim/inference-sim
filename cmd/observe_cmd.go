@@ -164,8 +164,8 @@ func init() {
 	observeCmd.Flags().StringVar(&saturationReport, "saturation-report", "", "File to write saturation analysis JSON (backlog-drift classification)")
 
 	// Post-hoc saturation detector flags (same as blis run/replay; #1379)
-	observeCmd.Flags().StringVar(&postHocDetector, "post-hoc-detector", "none", "Post-hoc saturation detector: composite, threshold, none (default: none)")
-	observeCmd.Flags().Float64Var(&saturationThreshold, "saturation-threshold-ms", 5000, "Latency threshold for threshold detector (ms)")
+	observeCmd.Flags().StringVar(&postHocDetector, "post-hoc-detector", "none", "Post-hoc saturation detector: composite, threshold, none")
+	observeCmd.Flags().Float64Var(&saturationThreshold, "saturation-threshold-ms", 5000.0, "Threshold in ms for threshold detector (default 5000ms)")
 
 	registerSaturationFlags(observeCmd)
 

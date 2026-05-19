@@ -2122,3 +2122,58 @@ func TestPrintObserveMetrics_SaturationAbsentByDefault(t *testing.T) {
 		t.Errorf("Expected 'saturation' field to be absent when detector is 'none', but found it")
 	}
 }
+
+func TestPrintObserveMetrics_EmptyRecordsWithDetector(t *testing.T) {
+	// S-3: Edge case - all records time out, verify no panic when detector is specified
+	// TraceRecordsToRequestMetrics returns empty slice, totalArrivals=0
+	records := []workload.TraceRecord{
+		{RequestID: 1, Status: "timeout", ArrivalTimeUs: 1000000, SendTimeUs: 1000000, LastChunkTimeUs: 1100000},
+		{RequestID: 2, Status: "error", ArrivalTimeUs: 2000000, SendTimeUs: 2000000, LastChunkTimeUs: 2050000},
+	}
+
+	// Simulate what observe_cmd.go does with detector
+	requestMetrics := workload.TraceRecordsToRequestMetrics(records)
+	if len(requestMetrics) != 0 {
+		t.Fatalf("Expected empty metrics for all-timeout records, got %d", len(requestMetrics))
+	}
+	totalArrivals := len(records) // 2
+
+	// Create detector and classify (should not panic)
+	detector := saturation.NewDetector("composite", saturation.DetectorOpts{})
+	satResult := detector.Classify(requestMetrics, totalArrivals)
+
+	// Type assert to verify structure
+	result, ok := satResult.(saturation.Result)
+	if !ok {
+		t.Fatalf("Expected saturation.Result, got %T", satResult)
+	}
+
+	// Composite detector with 0 completions should return Stable (rate_deficit=1.0, latency_trend=0)
+	if result.Level != saturation.Stable {
+		t.Errorf("Expected Stable for 0 completions, got %v", result.Level)
+	}
+
+	// Verify printObserveMetrics doesn't panic with empty metrics + saturation result
+	var buf bytes.Buffer
+	printObserveMetrics(&buf, records, 1.0, nil, satResult)
+
+	// Parse JSON and verify saturation field is present
+	var metrics map[string]interface{}
+	lines := strings.Split(buf.String(), "\n")
+	jsonStart := -1
+	for i, line := range lines {
+		if strings.Contains(line, "=== Simulation Metrics ===") {
+			jsonStart = i + 1
+			break
+		}
+	}
+	jsonStr := strings.Join(lines[jsonStart:], "\n")
+	if err := json.Unmarshal([]byte(jsonStr), &metrics); err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	// Verify saturation field exists
+	if _, exists := metrics["saturation"]; !exists {
+		t.Errorf("Expected saturation field even with 0 completions")
+	}
+}
