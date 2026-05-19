@@ -154,7 +154,7 @@ For analytical step time estimation without trained coefficients.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--latency-model` | string | "roofline" | Latency model backend: `roofline` (default), `trained-physics`. Both backends auto-fetch HuggingFace config.json for KV block auto-calculation (may require network access). Both require `config.json` for latency estimation and KV sizing. Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. `trained-physics` is recommended for new models. |
+| `--latency-model` | string | "trained-physics" | Latency model backend: `trained-physics` (default), `roofline`. Both backends auto-fetch HuggingFace config.json for KV block auto-calculation (may require network access). Both require `config.json` for latency estimation and KV sizing. Requires `--hardware` and `--tp`. Set `HF_TOKEN` for gated models. |
 | `--model-config-folder` | string | "" | Path to folder containing HuggingFace `config.json`. Overrides `--latency-model` auto-resolution. |
 | `--hardware-config` | string | "" | Path to `hardware_config.json` with GPU specifications. Overrides `--latency-model` auto-resolution. |
 
@@ -164,8 +164,8 @@ See [Roofline Estimation](../concepts/roofline.md) for details on the analytical
 
 The latency model mode is selected based on available configuration:
 
-1. **Roofline mode** (default): Auto-resolves model config from HuggingFace and hardware config from bundled `hardware_config.json`. Requires `--hardware` and `--tp` (loaded from `defaults.yaml` when available).
-2. **Trained-physics mode** (recommended for new models): If `--latency-model trained-physics` is set with `--hardware` and `--tp`. Uses 13 globally-fitted coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from `trained_physics_coefficients` in `defaults.yaml`. Physics-informed basis functions with learned corrections.
+1. **Trained-physics mode** (default): Auto-resolves model config from HuggingFace and hardware config from bundled `hardware_config.json`. Requires `--hardware` and `--tp` (loaded from `defaults.yaml` when available). Uses 13 globally-fitted coefficients (10 beta for roofline corrections with architecture-aware MoE scaling + 3 alpha for CPU overhead) from `trained_physics_coefficients` in `defaults.yaml`. Physics-informed basis functions with learned corrections.
+2. **Roofline mode**: If `--latency-model roofline` is explicitly set with `--hardware` and `--tp`. Pure analytical estimation from model architecture and hardware specifications.
 
 ## Cluster Configuration
 
@@ -561,7 +561,7 @@ Before any backend-specific logic runs, BLIS loads hardware/TP/vLLM-version defa
 
 **Backend-specific resolution:**
 
-1. If `--latency-model roofline` (default) or `trained-physics`:
+1. If `--latency-model trained-physics` (default) or `roofline`:
    - Auto-resolve model config: check `model_configs/` for existing `config.json`, fetch from HuggingFace on miss (set `HF_TOKEN` for gated models)
    - Auto-resolve hardware config from bundled `hardware_config.json`
    - For roofline: beta coefficients are computed analytically from model architecture and hardware specs

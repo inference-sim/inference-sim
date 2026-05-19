@@ -358,6 +358,23 @@ func TestExtractSimResults_DeterminismInvariant(t *testing.T) {
 	}
 }
 
+func TestReplayCmd_LatencyModelDefault_IsTrainedPhysics(t *testing.T) {
+	// GIVEN the replay command with its registered flags
+	flag := replayCmd.Flags().Lookup("latency-model")
+
+	// WHEN we check the default value
+	// THEN it MUST be "trained-physics" (BC-1: CLI default switched)
+	// This test ensures run/replay parity for the latency model default.
+	// Both commands share registerSimConfigFlags, but explicit per-command
+	// assertions match the project's flag testing pattern.
+	if flag == nil {
+		t.Fatal("replayCmd missing --latency-model flag")
+	}
+	if flag.DefValue != "trained-physics" {
+		t.Errorf("default latency model must be 'trained-physics', got %q (#1383)", flag.DefValue)
+	}
+}
+
 // TestReplayCmd_TraceOutputFlag_Registered verifies BC-6:
 // --trace-output is registered with empty default (flag is optional).
 func TestReplayCmd_TraceOutputFlag_Registered(t *testing.T) {
