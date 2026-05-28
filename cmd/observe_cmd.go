@@ -565,14 +565,25 @@ func runObserve(cmd *cobra.Command, _ []string) {
 			simEndUs = observeHorizon
 		}
 
+		// Validate classifier name (CLI gate; library factory panics on unknown).
+		if !sim.IsValidBacklogClassifier(saturationClassifier) {
+			logrus.Fatalf("Unknown --saturation-classifier %q. Valid: %s",
+				saturationClassifier, strings.Join(sim.ValidBacklogClassifierNames(), ", "))
+		}
+		classifier := workload.NewBacklogClassifier(saturationClassifier)
+
 		cfg := workload.NewBacklogDriftConfig(
 			time.Duration(saturationWindowSec)*time.Second,
 			saturationMinWindows,
 			saturationPeakRatio,
 			saturationPeakBand,
 			saturationConfidence,
+			saturationWarmupWindows,
+			saturationTailWindows,
+			saturationSaturatedRatio,
+			saturationTransientRatio,
 		)
-		report := workload.AnalyzeBacklogDrift(requests, simEndUs, cfg)
+		report := workload.AnalyzeBacklogDriftWithClassifier(requests, simEndUs, cfg, classifier)
 		if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
 			logrus.Fatalf("Failed to write saturation report: %v", err)
 		}

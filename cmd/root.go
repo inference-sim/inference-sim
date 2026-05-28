@@ -196,6 +196,13 @@ var (
 	saturationPeakBand   float64 // Confidence band around peak ratio threshold (--saturation-peak-band)
 	saturationConfidence float64 // Confidence level for slope CI (--saturation-ci)
 
+	// post-hoc backlog classifier policy (#1391, #1392)
+	saturationClassifier      string  // Classifier name: "drain-ratio" (default) or "slope-based" (--saturation-classifier)
+	saturationWarmupWindows   int     // Inject windows skipped as warmup (drain-ratio only) (--saturation-warmup-windows)
+	saturationTailWindows     int     // Inject windows skipped as tail (drain-ratio only) (--saturation-tail-windows)
+	saturationSaturatedRatio  float64 // DrainRatio < this → PERSISTENTLY_SATURATED (--saturation-drain-ratio-saturated)
+	saturationTransientRatio  float64 // DrainRatio < this → TRANSIENT_BACKLOG (--saturation-drain-ratio-transient)
+
 	// post-hoc saturation detector configuration (#1369)
 	postHocDetector      string  // Post-hoc saturation detector: "composite", "threshold", "none" (--post-hoc-detector)
 	saturationThreshold float64 // Threshold in ms for threshold detector (--saturation-threshold-ms)
@@ -204,14 +211,24 @@ var (
 	traceOutput string // File prefix for TraceV2 export (<prefix>.yaml + <prefix>.csv)
 )
 
-// registerSaturationFlags registers the 5 saturation analysis config flags on the given command.
-// These flags control backlog-drift analysis behavior and are shared across run, replay, and observe.
+// registerSaturationFlags registers backlog-drift analysis flags on the given command.
+// These flags control post-hoc saturation classification and are shared across run, replay, and observe.
+//
+// Two classifier families are supported (#1391, #1392):
+//   - "drain-ratio" (default): mean per-window NumLeft/NumEntered → quantified ρ = 1/DrainRatio
+//   - "slope-based": OLS regression CI on ActiveEnd over inject-phase windows
 func registerSaturationFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&saturationWindowSec, "saturation-window", 60, "Window size in seconds for backlog-drift analysis")
 	cmd.Flags().IntVar(&saturationMinWindows, "saturation-min-windows", 5, "Minimum number of complete windows required for reliable classification")
-	cmd.Flags().Float64Var(&saturationPeakRatio, "saturation-peak-ratio", 2.0, "Peak/mean in-flight ratio threshold for TRANSIENT_BACKLOG detection")
-	cmd.Flags().Float64Var(&saturationPeakBand, "saturation-peak-band", 0.2, "Confidence band around peak-ratio threshold (creates borderline zone using slope as tiebreaker)")
-	cmd.Flags().Float64Var(&saturationConfidence, "saturation-ci", 0.95, "Confidence level for slope significance test (0.90, 0.95, or 0.99)")
+	cmd.Flags().Float64Var(&saturationPeakRatio, "saturation-peak-ratio", 2.0, "Peak/mean in-flight ratio threshold for TRANSIENT_BACKLOG detection (slope-based classifier only)")
+	cmd.Flags().Float64Var(&saturationPeakBand, "saturation-peak-band", 0.2, "Confidence band around peak-ratio threshold (slope-based classifier only)")
+	cmd.Flags().Float64Var(&saturationConfidence, "saturation-ci", 0.95, "Confidence level for slope significance test (0.90, 0.95, or 0.99) (slope-based classifier only)")
+	cmd.Flags().StringVar(&saturationClassifier, "saturation-classifier", "drain-ratio",
+		"Backlog classifier: "+strings.Join(sim.ValidBacklogClassifierNames(), ", "))
+	cmd.Flags().IntVar(&saturationWarmupWindows, "saturation-warmup-windows", 2, "Inject windows skipped as warmup (drain-ratio classifier only)")
+	cmd.Flags().IntVar(&saturationTailWindows, "saturation-tail-windows", 1, "Inject windows skipped as tail boundary (drain-ratio classifier only)")
+	cmd.Flags().Float64Var(&saturationSaturatedRatio, "saturation-drain-ratio-saturated", 0.95, "Mean DrainRatio threshold below which run is PERSISTENTLY_SATURATED (drain-ratio classifier only)")
+	cmd.Flags().Float64Var(&saturationTransientRatio, "saturation-drain-ratio-transient", 0.98, "Mean DrainRatio threshold below which run is TRANSIENT_BACKLOG (drain-ratio classifier only)")
 }
 
 // applyRopeScaling applies rope_scaling factor to maxPosEmb if applicable.
@@ -1720,9 +1737,16 @@ var runCmd = &cobra.Command{
 			logrus.Infof("Trace exported: %s.yaml, %s.csv (%d records)", traceOutput, traceOutput, len(records))
 		}
 
-		// Saturation analysis if requested (issue #1298)
+		// Saturation analysis if requested (issue #1298, #1391, #1392)
 		if saturationReport != "" {
 			simEndUs := workload.ComputeSimEndUs(allRequests, config.Horizon)
+
+			// Validate classifier name (CLI gate; library factory panics on unknown).
+			if !sim.IsValidBacklogClassifier(saturationClassifier) {
+				logrus.Fatalf("Unknown --saturation-classifier %q. Valid: %s",
+					saturationClassifier, strings.Join(sim.ValidBacklogClassifierNames(), ", "))
+			}
+			classifier := workload.NewBacklogClassifier(saturationClassifier)
 
 			// Build saturation analysis config from flags (or defaults if not set)
 			cfg := workload.NewBacklogDriftConfig(
@@ -1731,8 +1755,12 @@ var runCmd = &cobra.Command{
 				saturationPeakRatio,
 				saturationPeakBand,
 				saturationConfidence,
+				saturationWarmupWindows,
+				saturationTailWindows,
+				saturationSaturatedRatio,
+				saturationTransientRatio,
 			)
-			report := workload.AnalyzeBacklogDrift(allRequests, simEndUs, cfg)
+			report := workload.AnalyzeBacklogDriftWithClassifier(allRequests, simEndUs, cfg, classifier)
 			if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
 				logrus.Fatalf("Failed to write saturation report: %v", err)
 			}

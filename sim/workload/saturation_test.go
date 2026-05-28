@@ -23,7 +23,7 @@ func TestBacklogDriftConfig_Validation_ZeroWindow(t *testing.T) {
 			t.Fatalf("Wrong panic message: %v", r)
 		}
 	}()
-	_ = NewBacklogDriftConfig(0, 5, 2.0, 0.2, 0.95)
+	_ = NewBacklogDriftConfig(0, 5, 2.0, 0.2, 0.95, 2, 1, 0.95, 0.98)
 }
 
 func TestBacklogDriftConfig_Validation_NegativeMinWindows(t *testing.T) {
@@ -35,7 +35,7 @@ func TestBacklogDriftConfig_Validation_NegativeMinWindows(t *testing.T) {
 			t.Fatal("Expected panic for negative MinWindows")
 		}
 	}()
-	_ = NewBacklogDriftConfig(60*time.Second, 0, 2.0, 0.2, 0.95)
+	_ = NewBacklogDriftConfig(60*time.Second, 0, 2.0, 0.2, 0.95, 2, 1, 0.95, 0.98)
 }
 
 func TestBacklogDriftConfig_Validation_NaNPeakRatio(t *testing.T) {
@@ -47,7 +47,7 @@ func TestBacklogDriftConfig_Validation_NaNPeakRatio(t *testing.T) {
 			t.Fatal("Expected panic for NaN PeakRatio")
 		}
 	}()
-	_ = NewBacklogDriftConfig(60*time.Second, 5, math.NaN(), 0.2, 0.95)
+	_ = NewBacklogDriftConfig(60*time.Second, 5, math.NaN(), 0.2, 0.95, 2, 1, 0.95, 0.98)
 }
 
 func TestBacklogDriftConfig_Validation_CIOutOfRange(t *testing.T) {
@@ -59,14 +59,14 @@ func TestBacklogDriftConfig_Validation_CIOutOfRange(t *testing.T) {
 			t.Fatal("Expected panic for CI=1.5")
 		}
 	}()
-	_ = NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 1.5)
+	_ = NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 1.5, 2, 1, 0.95, 0.98)
 }
 
 func TestBacklogDriftConfig_Validation_ValidConfig(t *testing.T) {
 	// GIVEN all parameters valid
 	// WHEN constructing config
 	// THEN succeeds without panic
-	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95)
+	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95, 2, 1, 0.95, 0.98)
 	if cfg.WindowSize != 60*time.Second {
 		t.Errorf("WindowSize mismatch: got %v", cfg.WindowSize)
 	}
@@ -101,6 +101,53 @@ func TestRequestsToIntervals_Eligibility_ThreeCases(t *testing.T) {
 	// Case 3: arrival=300, completion=simEndUs+1=1000001 (still in-flight at horizon)
 	if intervals[1].ArrivalUs != 300 || intervals[1].CompletionUs != simEndUs+1 {
 		t.Errorf("Case 3 mismatch: got (%d, %d)", intervals[1].ArrivalUs, intervals[1].CompletionUs)
+	}
+}
+
+func TestRequestsToIntervals_StateQueued_IncludedAsHorizonTruncated(t *testing.T) {
+	// BC-1 (#1389): GIVEN a request still in StateQueued at horizon (never scheduled)
+	// WHEN building intervals
+	// THEN it is included with CompletionUs = simEndUs+1, exactly like StateRunning,
+	// because for backlog analysis a queued-at-horizon request is in-flight.
+	simEndUs := int64(1_000_000)
+	requests := []*sim.Request{
+		// Queued at horizon: TTFTSet=false, State=Queued — INCLUDED with simEndUs+1
+		{ArrivalTime: 100, TTFTSet: false, State: sim.StateQueued},
+	}
+
+	intervals := RequestsToIntervals(requests, simEndUs)
+
+	if len(intervals) != 1 {
+		t.Fatalf("Expected 1 interval (queued included), got %d", len(intervals))
+	}
+	if intervals[0].ArrivalUs != 100 || intervals[0].CompletionUs != simEndUs+1 {
+		t.Errorf("Queued mismatch: got (%d, %d), want (100, %d)",
+			intervals[0].ArrivalUs, intervals[0].CompletionUs, simEndUs+1)
+	}
+}
+
+func TestRequestsToIntervals_Conservation_QueuedAndRunningBothCounted(t *testing.T) {
+	// BC-1 (#1389) conservation invariant precursor: GIVEN N requests with M timed out
+	// WHEN building intervals
+	// THEN len(intervals) == N - M (only TimedOut is excluded; Queued and Running both included).
+	simEndUs := int64(1_000_000)
+	requests := []*sim.Request{
+		{ArrivalTime: 100, FirstTokenTime: 200, ITL: []int64{50}, TTFTSet: true, State: sim.StateCompleted},
+		{ArrivalTime: 200, TTFTSet: false, State: sim.StateTimedOut},  // excluded
+		{ArrivalTime: 300, TTFTSet: false, State: sim.StateRunning},
+		{ArrivalTime: 400, TTFTSet: false, State: sim.StateQueued},
+		{ArrivalTime: 500, TTFTSet: false, State: sim.StateTimedOut},  // excluded
+		{ArrivalTime: 600, TTFTSet: false, State: sim.StateQueued},
+	}
+	const totalRequests = 6
+	const timedOut = 2
+	const expected = totalRequests - timedOut
+
+	intervals := RequestsToIntervals(requests, simEndUs)
+
+	if len(intervals) != expected {
+		t.Fatalf("Conservation violation: got %d intervals, want %d (N=%d, timed_out=%d)",
+			len(intervals), expected, totalRequests, timedOut)
 	}
 }
 
@@ -299,10 +346,10 @@ func TestClassifyBacklogDrift_UNSATURATED(t *testing.T) {
 	// GIVEN slope CI excludes positive values (upper < 0) or includes zero with low peak
 	// WHEN classifying
 	// THEN returns UNSATURATED
-	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95)
+	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95, 2, 1, 0.95, 0.98)
 
 	// Case 1: Negative slope (decreasing backlog)
-	classification, note, recommendation := classifyBacklogDrift(-0.01, -0.02, 0.0, 10, 5, 10, 8.0, cfg)
+	classification, note, recommendation := classifyBacklogDriftSlopeBased(-0.01, -0.02, 0.0, 10, 5, 10, 8.0, cfg)
 	if classification != "UNSATURATED" {
 		t.Errorf("Case 1: Expected UNSATURATED, got %s", classification)
 	}
@@ -314,7 +361,7 @@ func TestClassifyBacklogDrift_UNSATURATED(t *testing.T) {
 	}
 
 	// Case 2: Flat slope (CI includes zero) with low peak ratio
-	classification, _, _ = classifyBacklogDrift(0.0, -0.01, 0.01, 10, 10, 15, 12.0, cfg)
+	classification, _, _ = classifyBacklogDriftSlopeBased(0.0, -0.01, 0.01, 10, 10, 15, 12.0, cfg)
 	if classification != "UNSATURATED" {
 		t.Errorf("Case 2: Expected UNSATURATED, got %s", classification)
 	}
@@ -324,10 +371,10 @@ func TestClassifyBacklogDrift_TRANSIENT_BACKLOG(t *testing.T) {
 	// GIVEN slope CI includes zero but peak > PeakRatio * mean
 	// WHEN classifying
 	// THEN returns TRANSIENT_BACKLOG
-	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95)
+	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95, 2, 1, 0.95, 0.98)
 
 	// Flat slope with high peak: peak=25, mean=10, ratio=2.5 > 2.0
-	classification, note, recommendation := classifyBacklogDrift(0.0, -0.01, 0.01, 10, 10, 25, 10.0, cfg)
+	classification, note, recommendation := classifyBacklogDriftSlopeBased(0.0, -0.01, 0.01, 10, 10, 25, 10.0, cfg)
 	if classification != "TRANSIENT_BACKLOG" {
 		t.Errorf("Expected TRANSIENT_BACKLOG, got %s", classification)
 	}
@@ -343,10 +390,10 @@ func TestClassifyBacklogDrift_PERSISTENTLY_SATURATED(t *testing.T) {
 	// GIVEN slope CI excludes zero (lower > 0) — statistically significant positive drift
 	// WHEN classifying
 	// THEN returns PERSISTENTLY_SATURATED
-	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95)
+	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95, 2, 1, 0.95, 0.98)
 
 	// Positive slope with CI excluding zero
-	classification, note, recommendation := classifyBacklogDrift(0.05, 0.02, 0.08, 10, 30, 35, 22.0, cfg)
+	classification, note, recommendation := classifyBacklogDriftSlopeBased(0.05, 0.02, 0.08, 10, 30, 35, 22.0, cfg)
 	if classification != "PERSISTENTLY_SATURATED" {
 		t.Errorf("Expected PERSISTENTLY_SATURATED, got %s", classification)
 	}
@@ -362,7 +409,7 @@ func TestAnalyzeBacklogDrift_InsufficientData(t *testing.T) {
 	// GIVEN observation with fewer than MinWindows complete windows (BC-7)
 	// WHEN analyzing
 	// THEN returns UNSATURATED with note explaining insufficient data
-	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95)
+	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95, 2, 1, 0.95, 0.98)
 
 	// Very short observation: only 2 windows (< MinWindows=5)
 	requests := []*sim.Request{
@@ -389,7 +436,7 @@ func TestAnalyzeBacklogDrift_AllExcluded(t *testing.T) {
 	// GIVEN all requests timed out before TTFT (BC-15: no eligible requests)
 	// WHEN analyzing
 	// THEN returns UNSATURATED with note "no eligible requests for saturation analysis"
-	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95)
+	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95, 2, 1, 0.95, 0.98)
 
 	// All requests timed out before TTFT
 	requests := []*sim.Request{
@@ -418,7 +465,7 @@ func TestAnalyzeBacklogDrift_EndToEnd_PERSISTENTLY_SATURATED(t *testing.T) {
 	// THEN returns PERSISTENTLY_SATURATED classification
 
 	// Use same config as RealWorkloads test: 10s windows instead of 60s
-	cfg := NewBacklogDriftConfig(10*time.Second, 4, 2.0, 0.2, 0.95)
+	cfg := NewBacklogDriftConfig(10*time.Second, 4, 2.0, 0.2, 0.95, 2, 1, 0.95, 0.98)
 
 	// Same parameters as RealWorkloads "High rate - persistent saturation" test
 	rate := 500.0
@@ -448,7 +495,7 @@ func TestAnalyzeBacklogDrift_EndToEnd_UNSATURATED(t *testing.T) {
 	// GIVEN requests with stable backlog
 	// WHEN analyzing
 	// THEN returns UNSATURATED classification
-	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95)
+	cfg := NewBacklogDriftConfig(60*time.Second, 5, 2.0, 0.2, 0.95, 2, 1, 0.95, 0.98)
 
 	// Create requests that complete quickly — no backlog buildup
 	var requests []*sim.Request
@@ -608,6 +655,10 @@ func TestSaturationProgression_Demonstration(t *testing.T) {
 		2.0,            // peak ratio threshold
 		0.2,            // peak ratio band
 		0.95,           // confidence level
+		2,              // warmup windows
+		1,              // tail windows
+		0.95,           // saturated drain ratio
+		0.98,           // transient drain ratio
 	)
 
 	// Three scenarios: low, medium, high rate
@@ -748,6 +799,10 @@ func TestSaturationClassification_ManualScenarios(t *testing.T) {
 		2.0,            // peak ratio threshold
 		0.2,            // peak ratio band
 		0.95,           // confidence level
+		2,              // warmup windows
+		1,              // tail windows
+		0.95,           // saturated drain ratio
+		0.98,           // transient drain ratio
 	)
 
 	t.Run("UNSATURATED - stable low backlog", func(t *testing.T) {
@@ -917,6 +972,10 @@ func TestSaturationProgression_RealWorkloads(t *testing.T) {
 		2.0,            // peak ratio threshold
 		0.2,            // peak ratio band
 		0.95,           // confidence level
+		2,              // warmup windows
+		1,              // tail windows
+		0.95,           // saturated drain ratio
+		0.98,           // transient drain ratio
 	)
 
 	// Test cases demonstrate saturation progression
@@ -1078,6 +1137,10 @@ func TestSaturationProgression_TransitionBoundaries(t *testing.T) {
 		2.0,
 		0.2,
 		0.95,
+		2,
+		1,
+		0.95,
+		0.98,
 	)
 
 	// Test rates spanning both transition boundaries
