@@ -128,3 +128,7 @@ vllm/
 
 # Plans
 docs/plans/
+
+# Nous campaign orchestration (experiment worktrees + state, not committed)
+.nous-experiments/
+.nous/
