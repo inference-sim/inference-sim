@@ -6,18 +6,40 @@ import (
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
-// BacklogDriftDetector wraps the workload.AnalyzeBacklogDrift logic
+// BacklogDriftDetector wraps the workload.AnalyzeBacklogDriftWithClassifier logic
 // as a post-hoc saturation detector (Issue #7).
 // This detector is stateless - it performs regression analysis over
 // completed request intervals during Classify().
+//
+// The classifier is configurable (#1392): defaults to drain-ratio (matching the
+// CLI default for --saturation-classifier) so that the post-hoc detector path
+// stays consistent with the primary --saturation-report path. Pass an explicit
+// classifier via NewBacklogDriftDetectorWithClassifier when slope-based behavior
+// is preferred.
 type BacklogDriftDetector struct {
-	config workload.BacklogDriftConfig
+	config     workload.BacklogDriftConfig
+	classifier workload.BacklogClassifier
 }
 
-// NewBacklogDriftDetector creates a BacklogDriftDetector with default configuration.
+// NewBacklogDriftDetector creates a BacklogDriftDetector with default configuration
+// and the default classifier (drain-ratio, matching --saturation-classifier default).
 func NewBacklogDriftDetector() Detector {
 	return &BacklogDriftDetector{
-		config: workload.DefaultBacklogDriftConfig(),
+		config:     workload.DefaultBacklogDriftConfig(),
+		classifier: workload.NewBacklogClassifier(""), // empty string → drain-ratio default
+	}
+}
+
+// NewBacklogDriftDetectorWithClassifier creates a BacklogDriftDetector with an
+// explicit classifier. Use this for callers that want to opt into slope-based
+// or any future BacklogClassifier implementation.
+func NewBacklogDriftDetectorWithClassifier(classifier workload.BacklogClassifier) Detector {
+	if classifier == nil {
+		classifier = workload.NewBacklogClassifier("")
+	}
+	return &BacklogDriftDetector{
+		config:     workload.DefaultBacklogDriftConfig(),
+		classifier: classifier,
 	}
 }
 
@@ -78,8 +100,8 @@ func (b *BacklogDriftDetector) Classify(requests []sim.RequestMetrics, totalArri
 		}
 	}
 
-	// Run backlog-drift analysis
-	report := workload.AnalyzeBacklogDrift(reqs, simEndUs, b.config)
+	// Run backlog-drift analysis with the configured classifier (#1392).
+	report := workload.AnalyzeBacklogDriftWithClassifier(reqs, simEndUs, b.config, b.classifier)
 
 	// Map classification to Level
 	var level Level

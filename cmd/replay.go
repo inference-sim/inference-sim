@@ -704,7 +704,7 @@ Example:
 			logrus.Infof("SimResults written to %s (%d entries)", resultsPath, len(simResults))
 		}
 
-		// Saturation analysis if requested (issue #1298)
+		// Saturation analysis if requested (issue #1298, #1391, #1392)
 		if saturationReport != "" {
 			// Assemble all requests (original + follow-ups)
 			allRequests := make([]*sim.Request, 0, len(requests)+len(followUpRequests))
@@ -716,6 +716,13 @@ Example:
 
 			simEndUs := workload.ComputeSimEndUs(allRequests, config.Horizon)
 
+			// Validate classifier name (CLI gate; library factory panics on unknown).
+			if !sim.IsValidBacklogClassifier(saturationClassifier) {
+				logrus.Fatalf("Unknown --saturation-classifier %q. Valid: %s",
+					saturationClassifier, strings.Join(sim.ValidBacklogClassifierNames(), ", "))
+			}
+			classifier := workload.NewBacklogClassifier(saturationClassifier)
+
 			// Build saturation analysis config from flags (or defaults if not set)
 			cfg := workload.NewBacklogDriftConfig(
 				time.Duration(saturationWindowSec)*time.Second,
@@ -723,8 +730,12 @@ Example:
 				saturationPeakRatio,
 				saturationPeakBand,
 				saturationConfidence,
+				saturationWarmupWindows,
+				saturationTailWindows,
+				saturationSaturatedRatio,
+				saturationTransientRatio,
 			)
-			report := workload.AnalyzeBacklogDrift(allRequests, simEndUs, cfg)
+			report := workload.AnalyzeBacklogDriftWithClassifier(allRequests, simEndUs, cfg, classifier)
 			if err := workload.WriteBacklogDriftReportJSON(saturationReport, report); err != nil {
 				logrus.Fatalf("Failed to write saturation report: %v", err)
 			}

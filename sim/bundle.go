@@ -135,6 +135,9 @@ var (
 	validDisaggregationDeciders   = map[string]bool{"": true, "never": true, "always": true, "prefix-threshold": true}
 	validEncodeDeciders           = map[string]bool{"": true, "never": true, "always": true, "multimodal": true}
 	validSaturationDetectors      = map[string]bool{"": true, "never": true, "utilization": true, "concurrency": true}
+	// Post-hoc backlog classifiers selected via --saturation-classifier (#1391, #1392).
+	// Distinct from validSaturationDetectors (runtime, used by --flow-control).
+	validBacklogClassifiers       = map[string]bool{"": true, "slope-based": true, "drain-ratio": true}
 )
 
 // IsValidAdmissionPolicy returns true if name is a recognized admission policy.
@@ -184,6 +187,12 @@ func IsValidSaturationDetector(name string) bool { return validSaturationDetecto
 
 // ValidSaturationDetectorNames returns sorted valid saturation detector names (excluding empty).
 func ValidSaturationDetectorNames() []string { return validNamesList(validSaturationDetectors) }
+
+// IsValidBacklogClassifier returns true if name is a recognized post-hoc backlog classifier (#1391).
+func IsValidBacklogClassifier(name string) bool { return validBacklogClassifiers[name] }
+
+// ValidBacklogClassifierNames returns sorted valid backlog classifier names (excluding empty).
+func ValidBacklogClassifierNames() []string { return validNamesList(validBacklogClassifiers) }
 
 // validNamesList returns sorted non-empty keys from a validity map.
 func validNamesList(m map[string]bool) []string {
