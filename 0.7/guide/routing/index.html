@@ -3044,15 +3044,16 @@
 <p>This matches the llm-d production scoring pipeline. Weights are relative — only ratios matter. <code>[2, 1, 1]</code> behaves identically to <code>[0.5, 0.25, 0.25]</code>.</p>
 <h2 id="vllm-data-parallel-routing">vLLM Data-Parallel Routing<a class="headerlink" href="#vllm-data-parallel-routing" title="Permanent link">&para;</a></h2>
 <p>BLIS supports vLLM's internal load-balancing algorithm via the <code>vllm-dp</code> scorer:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Oracle mode (immediate signals, default — best for algorithmic studies):</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--routing-scorers<span class="w"> </span><span class="s2">&quot;vllm-dp:1&quot;</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Staleness-matched mode (matches vLLM&#39;s 100ms coordinator interval):</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--routing-scorers<span class="w"> </span><span class="s2">&quot;vllm-dp:1&quot;</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span>--snapshot-refresh-interval<span class="w"> </span><span class="m">100000</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Oracle mode (immediate signals — best for algorithmic studies):</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--routing-scorers<span class="w"> </span><span class="s2">&quot;vllm-dp:1&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>--snapshot-refresh-interval<span class="w"> </span><span class="m">0</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="c1"># Staleness-matched mode (matches vLLM&#39;s 100ms coordinator interval):</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>./blis<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen/qwen3-14b<span class="w"> </span>--routing-scorers<span class="w"> </span><span class="s2">&quot;vllm-dp:1&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span>--snapshot-refresh-interval<span class="w"> </span><span class="m">100000</span>
 </code></pre></div>
 <p>This replicates vLLM's <code>DPLBAsyncMPClient</code> formula: selecting the instance with the lowest <code>waiting × 4 + running</code> score. The scorer applies inverted min-max normalization to convert vLLM's argmin selection to BLIS's argmax routing framework.</p>
-<p><strong>Signal staleness:</strong> vLLM's coordinator publishes instance stats every 100ms by default (<code>min_stats_update_interval_ms</code>). Using <code>--snapshot-refresh-interval 100000</code> matches this staleness interval. The default <code>0</code> (immediate mode) represents oracle routing with no signal staleness — this is the cleanest baseline for algorithmic comparisons.</p>
+<p><strong>Signal staleness:</strong> vLLM's coordinator publishes instance stats every 100ms by default (<code>min_stats_update_interval_ms</code>). Using <code>--snapshot-refresh-interval 100000</code> matches this staleness interval. The default 50ms (<code>--snapshot-refresh-interval 50000</code>) matches llm-d's <code>RefreshMetricsInterval</code>. Pass <code>--snapshot-refresh-interval 0</code> for oracle mode (immediate signals, no staleness) — the cleanest baseline for algorithmic comparisons.</p>
 <p><strong>Known limitation:</strong> vLLM's client speculatively increments its cached waiting count after each routing decision (<code>current_counts[eng_index][0] += client_count</code>, <code>core_client.py:1225</code>) to spread traffic within the 100ms window. BLIS does not model this because BLIS's DES is sequential — requests route one at a time, so the concurrent-routing scenario doesn't arise. In staleness-matched mode, BLIS will concentrate more traffic per snapshot window than real vLLM would.</p>
 <p><strong>Note:</strong> Do not compose <code>vllm-dp</code> with other scorers unless comparing hybrid strategies. For vLLM parity, use <code>vllm-dp:1</code> alone — composing with other scorers double-normalizes dimensions and breaks vLLM fidelity.</p>
 <h2 id="signal-freshness">Signal Freshness<a class="headerlink" href="#signal-freshness" title="Permanent link">&para;</a></h2>
@@ -3090,7 +3091,7 @@
 <td><strong>Instance-reported (Immediate/Periodic)</strong></td>
 <td>QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate, PreemptionCount</td>
 <td>Instance-internal state (scheduler queue, running batch, KV cache)</td>
-<td>When <code>--snapshot-refresh-interval=0</code> (default): Immediate (read from instance at routing time). When <code>&gt;0</code>: all Prometheus-sourced signals share the same Periodic refresh interval, matching real vLLM's single <code>/metrics</code> endpoint.</td>
+<td>Default (<code>--snapshot-refresh-interval 50000</code>): Periodic at 50ms (llm-d parity). When <code>--snapshot-refresh-interval 0</code>: Immediate (read from instance at routing time). All Prometheus-sourced signals share the same refresh interval, matching real vLLM's single <code>/metrics</code> endpoint.</td>
 </tr>
 </tbody>
 </table>
