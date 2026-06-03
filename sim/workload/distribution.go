@@ -248,6 +248,9 @@ func NewLengthSampler(spec DistSpec) (LengthSampler, error) {
 		if v, ok := spec.Params["max"]; ok {
 			s.max = int(v)
 		}
+		if s.min > 0 && s.max > 0 && s.min > s.max {
+			return nil, fmt.Errorf("exponential: min (%d) must be <= max (%d)", s.min, s.max)
+		}
 		return s, nil
 
 	case "pareto_lognormal":
@@ -275,6 +278,9 @@ func NewLengthSampler(spec DistSpec) (LengthSampler, error) {
 		}
 		if v, ok := spec.Params["max"]; ok {
 			s.max = int(v)
+		}
+		if s.min > 0 && s.max > 0 && s.min > s.max {
+			return nil, fmt.Errorf("lognormal: min (%d) must be <= max (%d)", s.min, s.max)
 		}
 		return s, nil
 

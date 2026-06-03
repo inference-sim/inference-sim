@@ -142,6 +142,36 @@ func TestExponentialSampler_MaxOnly(t *testing.T) {
 	}
 }
 
+// TestExponentialSampler_MinGreaterThanMax_ReturnsError verifies that inverted bounds
+// are rejected rather than silently producing corrupt output (R3).
+func TestExponentialSampler_MinGreaterThanMax_ReturnsError(t *testing.T) {
+	_, err := NewLengthSampler(DistSpec{
+		Type:   "exponential",
+		Params: map[string]float64{"mean": 100, "min": 5000, "max": 50},
+	})
+	if err == nil {
+		t.Fatal("expected error for min > max, got nil")
+	}
+	if !strings.Contains(err.Error(), "min") || !strings.Contains(err.Error(), "max") {
+		t.Errorf("error %q should mention both min and max", err.Error())
+	}
+}
+
+// TestNewLengthSampler_Lognormal_MinGreaterThanMax_ReturnsError verifies the same guard
+// for the lognormal case (consistency with exponential and ParseThinkTimeDist).
+func TestNewLengthSampler_Lognormal_MinGreaterThanMax_ReturnsError(t *testing.T) {
+	_, err := NewLengthSampler(DistSpec{
+		Type:   "lognormal",
+		Params: map[string]float64{"mu": 6.0, "sigma": 0.5, "min": 5000, "max": 50},
+	})
+	if err == nil {
+		t.Fatal("expected error for min > max, got nil")
+	}
+	if !strings.Contains(err.Error(), "min") || !strings.Contains(err.Error(), "max") {
+		t.Errorf("error %q should mention both min and max", err.Error())
+	}
+}
+
 // TestExponentialSampler_NoBounds_BackwardsCompat verifies BC-2: no min/max means no change.
 func TestExponentialSampler_NoBounds_BackwardsCompat(t *testing.T) {
 	rng1 := rand.New(rand.NewSource(42))
