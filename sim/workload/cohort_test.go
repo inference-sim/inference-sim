@@ -1,7 +1,9 @@
 package workload
 
 import (
+	"fmt"
 	"math"
+	"math/rand"
 	"reflect"
 	"strings"
 	"testing"
@@ -500,6 +502,124 @@ func TestGenerateRequests_WithCohorts_MergesWithExplicitClients(t *testing.T) {
 			t.Errorf("requests not sorted: request[%d].ArrivalTime=%d < request[%d].ArrivalTime=%d",
 				i, requests[i].ArrivalTime, i-1, requests[i-1].ArrivalTime)
 		}
+	}
+}
+
+// --- PrefixGroup per-member uniqueness tests ---
+
+func TestExpandCohorts_PrefixGroup_EachMemberGetsUniqueGroup(t *testing.T) {
+	// GIVEN a cohort with prefix_group "session" and population 4
+	cohorts := []CohortSpec{
+		{
+			ID: "code-gen", Population: 4, RateFraction: 1.0,
+			PrefixGroup: "session",
+			Arrival:     ArrivalSpec{Process: "poisson"},
+			InputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+		},
+	}
+
+	// WHEN expanded
+	result := ExpandCohorts(cohorts, 42)
+
+	// THEN each member has a non-empty and distinct prefix group
+	if len(result) != 4 {
+		t.Fatalf("expected 4 clients, got %d", len(result))
+	}
+	groups := make(map[string]bool)
+	for _, c := range result {
+		if c.PrefixGroup == "" {
+			t.Errorf("client %s has empty PrefixGroup; expected non-empty", c.ID)
+		}
+		if groups[c.PrefixGroup] {
+			t.Errorf("duplicate PrefixGroup %q in expanded clients", c.PrefixGroup)
+		}
+		groups[c.PrefixGroup] = true
+	}
+	if len(groups) != 4 {
+		t.Errorf("expected 4 distinct prefix groups, got %d: %v", len(groups), groups)
+	}
+}
+
+func TestExpandCohorts_PrefixGroup_NamePattern(t *testing.T) {
+	// GIVEN a cohort with PrefixGroup "ctx" and population 3
+	cohorts := []CohortSpec{
+		{
+			ID: "chat", Population: 3, RateFraction: 1.0,
+			PrefixGroup: "ctx",
+			Arrival:     ArrivalSpec{Process: "poisson"},
+			InputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+		},
+	}
+
+	// WHEN expanded
+	result := ExpandCohorts(cohorts, 42)
+
+	// THEN each member's prefix group follows the "<prefix_group>-<j>" pattern
+	for i, c := range result {
+		want := fmt.Sprintf("ctx-%d", i)
+		if c.PrefixGroup != want {
+			t.Errorf("member %d: PrefixGroup = %q; want %q", i, c.PrefixGroup, want)
+		}
+	}
+}
+
+func TestExpandCohorts_NoPrefixGroup_RemainsEmpty(t *testing.T) {
+	// GIVEN a cohort without a prefix_group
+	cohorts := []CohortSpec{
+		{
+			ID: "no-prefix", Population: 3, RateFraction: 1.0,
+			// PrefixGroup intentionally not set
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+		},
+	}
+
+	// WHEN expanded
+	result := ExpandCohorts(cohorts, 42)
+
+	// THEN each member has an empty PrefixGroup (no unintended groups created)
+	for _, c := range result {
+		if c.PrefixGroup != "" {
+			t.Errorf("client %s: PrefixGroup = %q; expected empty", c.ID, c.PrefixGroup)
+		}
+	}
+}
+
+func TestExpandCohorts_PrefixGroup_DistinctTokenSequences(t *testing.T) {
+	// GIVEN a cohort with prefix_group "session" and population 2
+	cohorts := []CohortSpec{
+		{
+			ID: "deep-research", Population: 2, RateFraction: 1.0,
+			PrefixGroup:  "session",
+			PrefixLength: 64,
+			Arrival:      ArrivalSpec{Process: "poisson"},
+			InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist:   DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+		},
+	}
+
+	// WHEN expanded and prefix tokens generated
+	clients := ExpandCohorts(cohorts, 42)
+	if len(clients) != 2 {
+		t.Fatalf("expected 2 clients, got %d", len(clients))
+	}
+
+	// THEN generatePrefixTokens produces distinct token sequences per member
+	rng := rand.New(rand.NewSource(42))
+	prefixes := generatePrefixTokens(clients, rng)
+	if len(prefixes) != 2 {
+		t.Fatalf("expected 2 prefix token sequences, got %d", len(prefixes))
+	}
+	seq0, ok0 := prefixes[clients[0].PrefixGroup]
+	seq1, ok1 := prefixes[clients[1].PrefixGroup]
+	if !ok0 || !ok1 {
+		t.Fatalf("missing prefix entries: ok0=%v ok1=%v", ok0, ok1)
+	}
+	if reflect.DeepEqual(seq0, seq1) {
+		t.Error("members have identical prefix token sequences; expected distinct sequences per member")
 	}
 }
 

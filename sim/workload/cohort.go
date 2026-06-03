@@ -28,6 +28,14 @@ func ExpandCohorts(cohorts []CohortSpec, seed int64) []ClientSpec {
 		for j := 0; j < cohort.Population; j++ {
 			clientID := fmt.Sprintf("%s-%d", cohort.ID, j)
 
+			// Each member gets its own prefix group so generatePrefixTokens produces
+			// one unique token sequence per member. Without this, all members share
+			// one KV cache entry — inflating prefix cache hit rates in experiments.
+			prefixGroup := ""
+			if cohort.PrefixGroup != "" {
+				prefixGroup = fmt.Sprintf("%s-%d", cohort.PrefixGroup, j)
+			}
+
 			client := ClientSpec{
 				ID:           clientID,
 				TenantID:     cohort.TenantID,
@@ -37,7 +45,7 @@ func ExpandCohorts(cohorts []CohortSpec, seed int64) []ClientSpec {
 				Arrival:      cohort.Arrival,
 				InputDist:    cohort.InputDist,
 				OutputDist:   cohort.OutputDist,
-				PrefixGroup:  cohort.PrefixGroup,
+				PrefixGroup:  prefixGroup,
 				Streaming:    cohort.Streaming,
 				PrefixLength: cohort.PrefixLength,
 				// Pointer fields shared across all expanded clients.
