@@ -3,7 +3,6 @@ package workload
 import (
 	"fmt"
 	"math"
-	"math/rand"
 	"reflect"
 	"strings"
 	"testing"
@@ -625,6 +624,7 @@ func TestExpandCohorts_PrefixSharing_SharedDefault_AllMembersShareGroup(t *testi
 }
 
 func TestCohortValidation_PrefixSharing_InvalidValue_ReturnsError(t *testing.T) {
+	// GIVEN a cohort with an unrecognised prefix_sharing value
 	spec := &WorkloadSpec{
 		Version:       "2",
 		AggregateRate: 10.0,
@@ -639,7 +639,11 @@ func TestCohortValidation_PrefixSharing_InvalidValue_ReturnsError(t *testing.T) 
 			},
 		},
 	}
+
+	// WHEN validated
 	err := spec.Validate()
+
+	// THEN an error is returned mentioning prefix_sharing
 	if err == nil {
 		t.Fatal("expected error for invalid prefix_sharing value")
 	}
@@ -649,13 +653,15 @@ func TestCohortValidation_PrefixSharing_InvalidValue_ReturnsError(t *testing.T) 
 }
 
 func TestCohortValidation_PrefixSharing_PerMemberWithoutPrefixGroup_ReturnsError(t *testing.T) {
+	// GIVEN a cohort with prefix_sharing "per_member" but no prefix_group
 	spec := &WorkloadSpec{
 		Version:       "2",
 		AggregateRate: 10.0,
 		Cohorts: []CohortSpec{
 			{
-				ID: "test", Population: 3, RateFraction: 1.0,
-				// No PrefixGroup — per_member requires one
+				ID:            "test",
+				Population:    3,
+				RateFraction:  1.0,
 				PrefixSharing: "per_member",
 				Arrival:       ArrivalSpec{Process: "poisson"},
 				InputDist:     DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
@@ -663,7 +669,11 @@ func TestCohortValidation_PrefixSharing_PerMemberWithoutPrefixGroup_ReturnsError
 			},
 		},
 	}
+
+	// WHEN validated
 	err := spec.Validate()
+
+	// THEN an error is returned mentioning prefix_group
 	if err == nil {
 		t.Fatal("expected error for per_member without prefix_group")
 	}
@@ -673,6 +683,7 @@ func TestCohortValidation_PrefixSharing_PerMemberWithoutPrefixGroup_ReturnsError
 }
 
 func TestCohortSpec_YAML_PrefixSharing_RoundTrip(t *testing.T) {
+	// GIVEN a YAML cohort spec with prefix_sharing: per_member
 	yamlStr := `
 version: "2"
 aggregate_rate: 10.0
@@ -699,11 +710,15 @@ cohorts:
         min: 1
         max: 100
 `
+	// WHEN decoded with strict YAML (R10: KnownFields)
 	var spec WorkloadSpec
-	err := yaml.Unmarshal([]byte(yamlStr), &spec)
-	if err != nil {
+	decoder := yaml.NewDecoder(strings.NewReader(yamlStr))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&spec); err != nil {
 		t.Fatalf("YAML parse failed: %v", err)
 	}
+
+	// THEN PrefixSharing is preserved
 	if len(spec.Cohorts) != 1 {
 		t.Fatalf("expected 1 cohort, got %d", len(spec.Cohorts))
 	}
@@ -712,39 +727,120 @@ cohorts:
 	}
 }
 
-func TestExpandCohorts_PrefixGroup_DistinctTokenSequences(t *testing.T) {
-	// GIVEN a cohort with prefix_group "session", prefix_sharing "per_member", and population 2
+func TestGenerateRequests_CohortPerMember_EachMemberHasDistinctPrefixTokens(t *testing.T) {
+	// GIVEN a workload spec with a per_member cohort (population 3, prefix_length 32)
+	spec := &WorkloadSpec{
+		Version:       "2",
+		Seed:          42,
+		AggregateRate: 10.0,
+		Cohorts: []CohortSpec{
+			{
+				ID:            "interactive-chat",
+				Population:    3,
+				RateFraction:  1.0,
+				PrefixGroup:   "session",
+				PrefixSharing: "per_member",
+				PrefixLength:  32,
+				Arrival:       ArrivalSpec{Process: "constant"},
+				InputDist:     DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				OutputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+			},
+		},
+	}
+
+	// WHEN requests are generated
+	requests, err := GenerateRequests(spec, 5_000_000, 50)
+	if err != nil {
+		t.Fatalf("GenerateRequests failed: %v", err)
+	}
+	if len(requests) == 0 {
+		t.Fatal("expected non-empty request list")
+	}
+
+	// THEN requests carry 3 distinct PrefixGroup values (one per member)
+	groups := make(map[string]bool)
+	for _, r := range requests {
+		if r.PrefixGroup != "" {
+			groups[r.PrefixGroup] = true
+		}
+	}
+	if len(groups) != 3 {
+		t.Errorf("expected 3 distinct PrefixGroup values (one per member), got %d: %v", len(groups), groups)
+	}
+}
+
+func TestExpandCohorts_PrefixGroup_PerMember_SingleMember_GetsIndexedGroup(t *testing.T) {
+	// GIVEN a cohort with per_member and population 1
 	cohorts := []CohortSpec{
 		{
-			ID: "deep-research", Population: 2, RateFraction: 1.0,
-			PrefixGroup:   "session",
+			ID: "solo", Population: 1, RateFraction: 1.0,
+			PrefixGroup:   "ctx",
 			PrefixSharing: "per_member",
-			PrefixLength:  64,
 			Arrival:       ArrivalSpec{Process: "poisson"},
 			InputDist:     DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
 			OutputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
 		},
 	}
 
-	// WHEN expanded and prefix tokens generated
-	clients := ExpandCohorts(cohorts, 42)
-	if len(clients) != 2 {
-		t.Fatalf("expected 2 clients, got %d", len(clients))
+	// WHEN expanded
+	result := ExpandCohorts(cohorts, 42)
+
+	// THEN the single member gets "ctx-0" (not "ctx")
+	if len(result) != 1 {
+		t.Fatalf("expected 1 client, got %d", len(result))
+	}
+	if result[0].PrefixGroup != "ctx-0" {
+		t.Errorf("PrefixGroup = %q; want %q", result[0].PrefixGroup, "ctx-0")
+	}
+}
+
+func TestExpandCohorts_MixedPrefixSharing_EachCohortBehavesIndependently(t *testing.T) {
+	// GIVEN two cohorts: one "shared", one "per_member"
+	cohorts := []CohortSpec{
+		{
+			ID: "global-prompt", Population: 3, RateFraction: 0.5,
+			PrefixGroup:   "system-prompt",
+			PrefixSharing: "shared",
+			Arrival:       ArrivalSpec{Process: "poisson"},
+			InputDist:     DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+		},
+		{
+			ID: "per-user", Population: 3, RateFraction: 0.5,
+			PrefixGroup:   "user-ctx",
+			PrefixSharing: "per_member",
+			Arrival:       ArrivalSpec{Process: "poisson"},
+			InputDist:     DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+			OutputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
+		},
 	}
 
-	// THEN generatePrefixTokens produces distinct token sequences per member
-	rng := rand.New(rand.NewSource(42))
-	prefixes := generatePrefixTokens(clients, rng)
-	if len(prefixes) != 2 {
-		t.Fatalf("expected 2 prefix token sequences, got %d", len(prefixes))
+	// WHEN expanded
+	result := ExpandCohorts(cohorts, 42)
+	if len(result) != 6 {
+		t.Fatalf("expected 6 clients, got %d", len(result))
 	}
-	seq0, ok0 := prefixes[clients[0].PrefixGroup]
-	seq1, ok1 := prefixes[clients[1].PrefixGroup]
-	if !ok0 || !ok1 {
-		t.Fatalf("missing prefix entries: ok0=%v ok1=%v", ok0, ok1)
+
+	// THEN shared-cohort members all carry the original group name
+	for _, c := range result[:3] {
+		if c.PrefixGroup != "system-prompt" {
+			t.Errorf("shared member %s: PrefixGroup = %q; want %q", c.ID, c.PrefixGroup, "system-prompt")
+		}
 	}
-	if reflect.DeepEqual(seq0, seq1) {
-		t.Error("members have identical prefix token sequences; expected distinct sequences per member")
+
+	// AND per_member cohort members each carry a distinct indexed group name
+	perMemberGroups := make(map[string]bool)
+	for _, c := range result[3:] {
+		if c.PrefixGroup == "user-ctx" {
+			t.Errorf("per_member member %s still has bare group name %q; want indexed", c.ID, c.PrefixGroup)
+		}
+		if perMemberGroups[c.PrefixGroup] {
+			t.Errorf("per_member member %s: duplicate PrefixGroup %q", c.ID, c.PrefixGroup)
+		}
+		perMemberGroups[c.PrefixGroup] = true
+	}
+	if len(perMemberGroups) != 3 {
+		t.Errorf("expected 3 distinct per_member groups, got %d: %v", len(perMemberGroups), perMemberGroups)
 	}
 }
 
