@@ -28,6 +28,18 @@ func ExpandCohorts(cohorts []CohortSpec, seed int64) []ClientSpec {
 		for j := 0; j < cohort.Population; j++ {
 			clientID := fmt.Sprintf("%s-%d", cohort.ID, j)
 
+			// Determine the effective prefix group for this member.
+			// "per_member": each member gets its own group ("<prefix_group>-<j>"),
+			// producing one distinct KV cache entry per member — correct for
+			// per-session contexts (code-gen repo map, per-user chat history).
+			// Default ("shared" or ""): all members share one group string and
+			// one KV cache entry — correct for a global system prompt shared by
+			// every user in the cohort.
+			prefixGroup := cohort.PrefixGroup
+			if cohort.PrefixSharing == "per_member" && cohort.PrefixGroup != "" {
+				prefixGroup = fmt.Sprintf("%s-%d", cohort.PrefixGroup, j)
+			}
+
 			client := ClientSpec{
 				ID:           clientID,
 				TenantID:     cohort.TenantID,
@@ -37,7 +49,7 @@ func ExpandCohorts(cohorts []CohortSpec, seed int64) []ClientSpec {
 				Arrival:      cohort.Arrival,
 				InputDist:    cohort.InputDist,
 				OutputDist:   cohort.OutputDist,
-				PrefixGroup:  cohort.PrefixGroup,
+				PrefixGroup:  prefixGroup,
 				Streaming:    cohort.Streaming,
 				PrefixLength: cohort.PrefixLength,
 				// Pointer fields shared across all expanded clients.

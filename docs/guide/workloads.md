@@ -414,6 +414,7 @@ Cohorts support the same advanced client features as explicit clients. The field
 | `closed_loop` | \*bool | `null` (omitted): `true` for multi-turn, `false` for all others. `true`: each round waits for the previous reply. `false`: all rounds pre-generated at open-loop arrival times |
 | `timeout` | \*int64 | Per-request timeout in µs. `null`: 300 s default when closed-loop; no deadline when open-loop. `0` = no timeout |
 | `prefix_length` | int | Shared prefix token count prepended to every request |
+| `prefix_sharing` | string | `"shared"` (default, omit to use): all members share one prefix group → one KV cache entry, modelling a global system prompt. `"per_member"`: each member gets an independent prefix group → independent KV cache entries, modelling per-session contexts (code-gen repo map, per-user chat history). Requires `prefix_group`. |
 | `network` | object | Client-side network RTT and bandwidth simulation |
 | `multimodal` | object | Mixed-modality token generation (text + image/audio/video) |
 

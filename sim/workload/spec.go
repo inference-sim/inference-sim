@@ -58,27 +58,28 @@ type WorkloadSpec struct {
 // ExpandCohorts) and Lifecycle (synthesized from Diurnal/Spike/Drain — exposing
 // Lifecycle directly would create two conflicting paths to the same effect).
 type CohortSpec struct {
-	ID           string          `yaml:"id"`
-	Population   int             `yaml:"population"`
-	TenantID     string          `yaml:"tenant_id,omitempty"`
-	SLOClass     string          `yaml:"slo_class,omitempty"`
-	Model        string          `yaml:"model,omitempty"`
-	Arrival      ArrivalSpec     `yaml:"arrival"`
-	InputDist    DistSpec        `yaml:"input_distribution"`
-	OutputDist   DistSpec        `yaml:"output_distribution"`
-	PrefixGroup  string          `yaml:"prefix_group,omitempty"`
-	Streaming    bool            `yaml:"streaming,omitempty"`
-	RateFraction float64         `yaml:"rate_fraction"`
-	Diurnal      *DiurnalSpec    `yaml:"diurnal,omitempty"`
-	Spike        *SpikeSpec      `yaml:"spike,omitempty"`
-	Drain        *DrainSpec      `yaml:"drain,omitempty"`
-	PrefixLength int             `yaml:"prefix_length,omitempty"`
-	Reasoning    *ReasoningSpec  `yaml:"reasoning,omitempty"`
-	ClosedLoop   *bool           `yaml:"closed_loop,omitempty"`
-	Timeout      *int64          `yaml:"timeout,omitempty"`
-	SLOTargetUs  *int64          `yaml:"slo_target_us,omitempty"` // Per-request SLO TTFT target in µs. nil/0 = no target. (R9: pointer)
-	Network      *NetworkSpec    `yaml:"network,omitempty"`
-	Multimodal   *MultimodalSpec `yaml:"multimodal,omitempty"`
+	ID            string          `yaml:"id"`
+	Population    int             `yaml:"population"`
+	TenantID      string          `yaml:"tenant_id,omitempty"`
+	SLOClass      string          `yaml:"slo_class,omitempty"`
+	Model         string          `yaml:"model,omitempty"`
+	Arrival       ArrivalSpec     `yaml:"arrival"`
+	InputDist     DistSpec        `yaml:"input_distribution"`
+	OutputDist    DistSpec        `yaml:"output_distribution"`
+	PrefixGroup   string          `yaml:"prefix_group,omitempty"`
+	PrefixSharing string          `yaml:"prefix_sharing,omitempty"` // "shared" (default) or "per_member"
+	Streaming     bool            `yaml:"streaming,omitempty"`
+	RateFraction  float64         `yaml:"rate_fraction"`
+	Diurnal       *DiurnalSpec    `yaml:"diurnal,omitempty"`
+	Spike         *SpikeSpec      `yaml:"spike,omitempty"`
+	Drain         *DrainSpec      `yaml:"drain,omitempty"`
+	PrefixLength  int             `yaml:"prefix_length,omitempty"`
+	Reasoning     *ReasoningSpec  `yaml:"reasoning,omitempty"`
+	ClosedLoop    *bool           `yaml:"closed_loop,omitempty"`
+	Timeout       *int64          `yaml:"timeout,omitempty"`
+	SLOTargetUs   *int64          `yaml:"slo_target_us,omitempty"` // Per-request SLO TTFT target in µs. nil/0 = no target. (R9: pointer)
+	Network       *NetworkSpec    `yaml:"network,omitempty"`
+	Multimodal    *MultimodalSpec `yaml:"multimodal,omitempty"`
 }
 
 // DiurnalSpec configures sinusoidal rate modulation over a 24-hour cycle.
@@ -121,9 +122,9 @@ type ClientSpec struct {
 	Lifecycle    *LifecycleSpec  `yaml:"lifecycle,omitempty"`
 	Multimodal   *MultimodalSpec `yaml:"multimodal,omitempty"`
 	Reasoning    *ReasoningSpec  `yaml:"reasoning,omitempty"`
-	Timeout      *int64          `yaml:"timeout,omitempty"`     // Per-request timeout in µs. nil = default (300s). 0 = no timeout. (R9: pointer for zero-value)
+	Timeout      *int64          `yaml:"timeout,omitempty"`       // Per-request timeout in µs. nil = default (300s). 0 = no timeout. (R9: pointer for zero-value)
 	SLOTargetUs  *int64          `yaml:"slo_target_us,omitempty"` // Per-request SLO TTFT target in µs. nil/0 = no target. (R9: pointer)
-	ClosedLoop   *bool           `yaml:"closed_loop,omitempty"` // nil = default (true for reasoning/multi-turn). false = open-loop (all rounds pre-generated).
+	ClosedLoop   *bool           `yaml:"closed_loop,omitempty"`   // nil = default (true for reasoning/multi-turn). false = open-loop (all rounds pre-generated).
 	// CustomSamplerFactory allows programmatic injection of arrival sampler factories,
 	// bypassing the factory-based construction from Arrival.Process.
 	//
@@ -216,12 +217,12 @@ type MultiTurnSpec struct {
 // ServeGenDataSpec configures native ServeGen data file loading.
 // Used during conversion; not persisted in output YAML.
 type ServeGenDataSpec struct {
-	Path                string `yaml:"path,omitempty"`
-	TimeWindow          string `yaml:"time_window,omitempty"`          // Deprecated (single-period mode)
-	SpanStart           int64  `yaml:"span_start,omitempty"`           // Internal: computed from TimeWindow
-	SpanEnd             int64  `yaml:"span_end,omitempty"`             // Internal: computed from TimeWindow
-	WindowDurationSecs  int    `yaml:"window_duration_secs,omitempty"` // Multi-period: duration of each period
-	DrainTimeoutSecs    int    `yaml:"drain_timeout_secs,omitempty"`   // Multi-period: gap between periods
+	Path               string `yaml:"path,omitempty"`
+	TimeWindow         string `yaml:"time_window,omitempty"`          // Deprecated (single-period mode)
+	SpanStart          int64  `yaml:"span_start,omitempty"`           // Internal: computed from TimeWindow
+	SpanEnd            int64  `yaml:"span_end,omitempty"`             // Internal: computed from TimeWindow
+	WindowDurationSecs int    `yaml:"window_duration_secs,omitempty"` // Multi-period: duration of each period
+	DrainTimeoutSecs   int    `yaml:"drain_timeout_secs,omitempty"`   // Multi-period: gap between periods
 }
 
 // Valid value registries.
@@ -596,6 +597,12 @@ func validateCohort(c *CohortSpec, idx int) error {
 	}
 	if c.PrefixLength < 0 {
 		return fmt.Errorf("%s: prefix_length must be non-negative, got %d", prefix, c.PrefixLength)
+	}
+	if c.PrefixSharing != "" && c.PrefixSharing != "shared" && c.PrefixSharing != "per_member" {
+		return fmt.Errorf("%s: prefix_sharing must be \"shared\" or \"per_member\", got %q", prefix, c.PrefixSharing)
+	}
+	if c.PrefixSharing == "per_member" && c.PrefixGroup == "" {
+		return fmt.Errorf("%s: prefix_sharing \"per_member\" requires prefix_group to be set", prefix)
 	}
 	if c.Timeout != nil && *c.Timeout < 0 {
 		return fmt.Errorf("%s: timeout must be non-negative, got %d", prefix, *c.Timeout)
