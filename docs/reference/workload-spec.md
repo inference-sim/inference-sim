@@ -104,6 +104,7 @@ Each entry in the `cohorts` list defines a population with lifecycle dynamics. C
 | `input_distribution` | object | **Yes** | Input token length distribution |
 | `output_distribution` | object | **Yes** | Output token length distribution |
 | `prefix_group` | string | No | Prefix group name |
+| `prefix_sharing` | string | No | `"shared"` (default): all members share one prefix. `"per_member"`: each member gets its own prefix. Requires `prefix_group`. |
 | `streaming` | bool | No | Whether to simulate streaming output |
 | `rate_fraction` | float64 | **Yes** | Fraction of `aggregate_rate` for each client in this cohort |
 | `diurnal` | object | No | Sinusoidal rate modulation (see below) |
