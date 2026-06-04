@@ -66,9 +66,10 @@ type CohortSpec struct {
 	Arrival      ArrivalSpec     `yaml:"arrival"`
 	InputDist    DistSpec        `yaml:"input_distribution"`
 	OutputDist   DistSpec        `yaml:"output_distribution"`
-	PrefixGroup  string          `yaml:"prefix_group,omitempty"`
-	Streaming    bool            `yaml:"streaming,omitempty"`
-	RateFraction float64         `yaml:"rate_fraction"`
+	PrefixGroup   string          `yaml:"prefix_group,omitempty"`
+	PrefixSharing string          `yaml:"prefix_sharing,omitempty"` // "shared" (default) or "per_member"
+	Streaming     bool            `yaml:"streaming,omitempty"`
+	RateFraction  float64         `yaml:"rate_fraction"`
 	Diurnal      *DiurnalSpec    `yaml:"diurnal,omitempty"`
 	Spike        *SpikeSpec      `yaml:"spike,omitempty"`
 	Drain        *DrainSpec      `yaml:"drain,omitempty"`
@@ -596,6 +597,12 @@ func validateCohort(c *CohortSpec, idx int) error {
 	}
 	if c.PrefixLength < 0 {
 		return fmt.Errorf("%s: prefix_length must be non-negative, got %d", prefix, c.PrefixLength)
+	}
+	if c.PrefixSharing != "" && c.PrefixSharing != "shared" && c.PrefixSharing != "per_member" {
+		return fmt.Errorf("%s: prefix_sharing must be \"shared\" or \"per_member\", got %q", prefix, c.PrefixSharing)
+	}
+	if c.PrefixSharing == "per_member" && c.PrefixGroup == "" {
+		return fmt.Errorf("%s: prefix_sharing \"per_member\" requires prefix_group to be set", prefix)
 	}
 	if c.Timeout != nil && *c.Timeout < 0 {
 		return fmt.Errorf("%s: timeout must be non-negative, got %d", prefix, *c.Timeout)
