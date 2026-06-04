@@ -1235,3 +1235,97 @@ func TestSaturationProgression_TransitionBoundaries(t *testing.T) {
 		})
 	}
 }
+
+func TestAnalyzeBacklogDrift_AbsoluteTimestamps(t *testing.T) {
+	// GIVEN requests with absolute Unix µs timestamps (as produced by blis observe)
+	// WHEN AnalyzeBacklogDrift is called
+	// THEN the report produces non-empty windows covering the actual observation duration
+	//
+	// This tests the fix for issue #1405: the backlog-drift detector assumed clock starts
+	// at 0, but observe traces preserve absolute Unix timestamps (~1.78e15 µs).
+	cfg := NewBacklogDriftConfig(10*time.Second, 4, 2.0, 0.2, 0.95, 2, 1, 0.95, 0.98)
+
+	// Simulate an observe trace: absolute Unix timestamp base (~June 2026)
+	// with requests spanning 120 seconds of real observation
+	const baseTimeUs = int64(1_780_000_000_000_000) // ~June 2026 in µs
+	var requests []*sim.Request
+	for i := int64(0); i < 50; i++ {
+		requests = append(requests, &sim.Request{
+			ArrivalTime:    baseTimeUs + i*2_400_000, // Every 2.4 seconds over 120s
+			FirstTokenTime: 50_000,                   // 50ms TTFT
+			ITL:            []int64{10_000},           // 10ms per token
+			TTFTSet:        true,
+			State:          sim.StateCompleted,
+		})
+	}
+	// simEndUs is also absolute (as ComputeSimEndUs would return)
+	simEndUs := baseTimeUs + 120_000_000 // base + 120 seconds
+
+	report := AnalyzeBacklogDrift(requests, simEndUs, cfg)
+
+	// BC-1: Must produce non-empty windows (not trigger the 7-day guard)
+	if len(report.Windows) == 0 {
+		t.Fatalf("Expected non-empty windows for absolute-timestamp trace, got 0 windows.\nNote: %s\nRecommendation: %s",
+			report.Note, report.Recommendation)
+	}
+
+	// The actual observation is 120s with 10s windows → should have ~12 windows
+	if len(report.Windows) < 4 {
+		t.Errorf("Expected at least 4 windows for 120s observation with 10s window, got %d", len(report.Windows))
+	}
+
+	// Windows should cover relative time domain [0, ~120s], not absolute Unix timestamps
+	firstWindow := report.Windows[0]
+	if firstWindow.StartUs > 10_000_000 { // 10 seconds — should be near 0
+		t.Errorf("First window StartUs should be near 0 (relative), got %d", firstWindow.StartUs)
+	}
+}
+
+func TestAnalyzeBacklogDrift_AbsoluteTimestamps_ClassificationPreserved(t *testing.T) {
+	// GIVEN a saturated workload pattern with absolute timestamps
+	// WHEN AnalyzeBacklogDrift is called
+	// THEN classification matches the equivalent relative-timestamp result
+	cfg := NewBacklogDriftConfig(10*time.Second, 4, 2.0, 0.2, 0.95, 2, 1, 0.95, 0.98)
+
+	// Generate a workload pattern at relative timestamps
+	rate := 500.0
+	numRequests := 100000
+	horizonUs := int64(120_000_000) // 120s
+	relativeRequests := generateTestWorkload(rate, numRequests, horizonUs)
+	relativeReport := AnalyzeBacklogDrift(relativeRequests, horizonUs, cfg)
+
+	// Now generate the same pattern but offset by a large absolute timestamp
+	const baseTimeUs = int64(1_780_000_000_000_000)
+	absoluteRequests := generateTestWorkload(rate, numRequests, horizonUs)
+	for i := range absoluteRequests {
+		absoluteRequests[i].ArrivalTime += baseTimeUs
+	}
+	absoluteSimEnd := horizonUs + baseTimeUs
+	absoluteReport := AnalyzeBacklogDrift(absoluteRequests, absoluteSimEnd, cfg)
+
+	// BC-3: Classification must be identical
+	if absoluteReport.Classification != relativeReport.Classification {
+		t.Errorf("Classification mismatch:\n  Relative: %s\n  Absolute: %s",
+			relativeReport.Classification, absoluteReport.Classification)
+	}
+
+	// Window count should be equal
+	if len(absoluteReport.Windows) != len(relativeReport.Windows) {
+		t.Errorf("Window count mismatch: relative=%d, absolute=%d",
+			len(relativeReport.Windows), len(absoluteReport.Windows))
+	}
+
+	// Slope and metrics must be identical (same data, just offset)
+	if absoluteReport.Slope != relativeReport.Slope {
+		t.Errorf("Slope mismatch: relative=%e, absolute=%e",
+			relativeReport.Slope, absoluteReport.Slope)
+	}
+	if absoluteReport.PeakInFlight != relativeReport.PeakInFlight {
+		t.Errorf("PeakInFlight mismatch: relative=%d, absolute=%d",
+			relativeReport.PeakInFlight, absoluteReport.PeakInFlight)
+	}
+	if absoluteReport.MeanInFlight != relativeReport.MeanInFlight {
+		t.Errorf("MeanInFlight mismatch: relative=%f, absolute=%f",
+			relativeReport.MeanInFlight, absoluteReport.MeanInFlight)
+	}
+}

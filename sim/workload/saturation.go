@@ -686,6 +686,23 @@ func AnalyzeBacklogDriftWithClassifier(requests []*sim.Request, simEndUs int64, 
 		}
 	}
 
+	// Relativize time domain: shift intervals and simEndUs so windowing starts at 0.
+	// This handles absolute Unix timestamps from observe-derived traces (#1405) while
+	// being a no-op when the DES clock already starts at 0 (blis run).
+	minArrival := intervals[0].ArrivalUs
+	for _, iv := range intervals {
+		if iv.ArrivalUs < minArrival {
+			minArrival = iv.ArrivalUs
+		}
+	}
+	if minArrival > 0 {
+		for i := range intervals {
+			intervals[i].ArrivalUs -= minArrival
+			intervals[i].CompletionUs -= minArrival
+		}
+		simEndUs -= minArrival
+	}
+
 	// Step 2: Compute per-window metrics (BC-1)
 	windowSizeUs := int64(cfg.WindowSize / time.Microsecond)
 	windows := computeWindowMetrics(intervals, windowSizeUs, simEndUs)
