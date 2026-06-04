@@ -35,13 +35,21 @@ func (s *GaussianSampler) Sample(rng *rand.Rand) int {
 }
 
 // ExponentialSampler produces exponentially-distributed token lengths.
+// Optional min/max clamp (0 = no bound). Output is always >= 1.
 type ExponentialSampler struct {
-	mean float64
+	mean     float64
+	min, max int // 0 = no bound; applied after rounding
 }
 
 func (s *ExponentialSampler) Sample(rng *rand.Rand) int {
 	val := rng.ExpFloat64() * s.mean
 	result := int(math.Round(val))
+	if s.min > 0 && result < s.min {
+		result = s.min
+	}
+	if s.max > 0 && result > s.max {
+		result = s.max
+	}
 	if result < 1 {
 		return 1
 	}
@@ -233,9 +241,17 @@ func NewLengthSampler(spec DistSpec) (LengthSampler, error) {
 		if err := requireParam(spec.Params, "mean"); err != nil {
 			return nil, err
 		}
-		return &ExponentialSampler{
-			mean: spec.Params["mean"],
-		}, nil
+		s := &ExponentialSampler{mean: spec.Params["mean"]}
+		if v, ok := spec.Params["min"]; ok {
+			s.min = int(v)
+		}
+		if v, ok := spec.Params["max"]; ok {
+			s.max = int(v)
+		}
+		if s.min > 0 && s.max > 0 && s.min > s.max {
+			return nil, fmt.Errorf("exponential: min (%d) must be <= max (%d)", s.min, s.max)
+		}
+		return s, nil
 
 	case "pareto_lognormal":
 		if err := requireParam(spec.Params, "alpha", "xm", "mu", "sigma", "mix_weight"); err != nil {
@@ -262,6 +278,9 @@ func NewLengthSampler(spec DistSpec) (LengthSampler, error) {
 		}
 		if v, ok := spec.Params["max"]; ok {
 			s.max = int(v)
+		}
+		if s.min > 0 && s.max > 0 && s.min > s.max {
+			return nil, fmt.Errorf("lognormal: min (%d) must be <= max (%d)", s.min, s.max)
 		}
 		return s, nil
 

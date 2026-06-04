@@ -85,6 +85,115 @@ func TestExponentialSampler_AlwaysPositive(t *testing.T) {
 	}
 }
 
+// TestExponentialSampler_ClampedToRange verifies BC-1: all samples fall within [min, max].
+func TestExponentialSampler_ClampedToRange(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	s, err := NewLengthSampler(DistSpec{
+		Type:   "exponential",
+		Params: map[string]float64{"mean": 8000, "min": 500, "max": 32000},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for i := 0; i < 10000; i++ {
+		v := s.Sample(rng)
+		if v < 500 || v > 32000 {
+			t.Errorf("sample %d: %d outside [500, 32000]", i, v)
+			break
+		}
+	}
+}
+
+// TestExponentialSampler_MinOnly verifies BC-1 subset: only min bound applied.
+func TestExponentialSampler_MinOnly(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	s, err := NewLengthSampler(DistSpec{
+		Type:   "exponential",
+		Params: map[string]float64{"mean": 5, "min": 10},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for i := 0; i < 10000; i++ {
+		v := s.Sample(rng)
+		if v < 10 {
+			t.Errorf("sample %d: %d below min=10", i, v)
+			break
+		}
+	}
+}
+
+// TestExponentialSampler_MaxOnly verifies BC-1 subset: only max bound applied.
+func TestExponentialSampler_MaxOnly(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	s, err := NewLengthSampler(DistSpec{
+		Type:   "exponential",
+		Params: map[string]float64{"mean": 100, "max": 50},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for i := 0; i < 10000; i++ {
+		v := s.Sample(rng)
+		if v > 50 {
+			t.Errorf("sample %d: %d above max=50", i, v)
+			break
+		}
+	}
+}
+
+// TestExponentialSampler_MinGreaterThanMax_ReturnsError verifies that inverted bounds
+// are rejected rather than silently producing corrupt output (R3).
+func TestExponentialSampler_MinGreaterThanMax_ReturnsError(t *testing.T) {
+	_, err := NewLengthSampler(DistSpec{
+		Type:   "exponential",
+		Params: map[string]float64{"mean": 100, "min": 5000, "max": 50},
+	})
+	if err == nil {
+		t.Fatal("expected error for min > max, got nil")
+	}
+	if !strings.Contains(err.Error(), "min") || !strings.Contains(err.Error(), "max") {
+		t.Errorf("error %q should mention both min and max", err.Error())
+	}
+}
+
+// TestNewLengthSampler_Lognormal_MinGreaterThanMax_ReturnsError verifies the same guard
+// for the lognormal case (consistency with exponential and ParseThinkTimeDist).
+func TestNewLengthSampler_Lognormal_MinGreaterThanMax_ReturnsError(t *testing.T) {
+	_, err := NewLengthSampler(DistSpec{
+		Type:   "lognormal",
+		Params: map[string]float64{"mu": 6.0, "sigma": 0.5, "min": 5000, "max": 50},
+	})
+	if err == nil {
+		t.Fatal("expected error for min > max, got nil")
+	}
+	if !strings.Contains(err.Error(), "min") || !strings.Contains(err.Error(), "max") {
+		t.Errorf("error %q should mention both min and max", err.Error())
+	}
+}
+
+// TestExponentialSampler_NoBounds_BackwardsCompat verifies BC-2: no min/max means no change.
+func TestExponentialSampler_NoBounds_BackwardsCompat(t *testing.T) {
+	rng1 := rand.New(rand.NewSource(42))
+	s1, _ := NewLengthSampler(DistSpec{
+		Type:   "exponential",
+		Params: map[string]float64{"mean": 256},
+	})
+	rng2 := rand.New(rand.NewSource(42))
+	s2, _ := NewLengthSampler(DistSpec{
+		Type:   "exponential",
+		Params: map[string]float64{"mean": 256, "min": 0, "max": 0},
+	})
+	for i := 0; i < 1000; i++ {
+		v1 := s1.Sample(rng1)
+		v2 := s2.Sample(rng2)
+		if v1 != v2 {
+			t.Errorf("sample %d: with-zero-bounds=%d, no-bounds=%d; should be identical", i, v2, v1)
+			break
+		}
+	}
+}
+
 func TestParetoLogNormalSampler_ProducesPositiveValues(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
 	s, err := NewLengthSampler(DistSpec{
