@@ -174,6 +174,11 @@ func init() {
 	// Backlog-drift saturation flags (run/replay parity)
 	registerSaturationFlags(observeCmd)
 
+	// Goodput SLO targets (#1413)
+	observeCmd.Flags().StringVar(&goodputSLOTTFT, "slo-ttft", "", "Per-class TTFT goodput thresholds (e.g. \"critical=100ms,standard=500ms\"). Persisted in trace header for downstream replay/calibrate.")
+	observeCmd.Flags().StringVar(&goodputSLOITL, "slo-itl", "", "Per-class mean ITL goodput thresholds. Requires --record-itl for in-process attainment; otherwise dropped from observe-side goodput with a warning. Header export still carries the user-supplied value.")
+	observeCmd.Flags().StringVar(&goodputSLOE2E, "slo-e2e", "", "Per-class E2E goodput thresholds (e.g. \"critical=5s,standard=30s\").")
+
 	rootCmd.AddCommand(observeCmd)
 }
 
@@ -470,13 +475,26 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, observeNoStreaming, observeMaxConcur, observeWarmup, prefixes, prefixLengths, observeUnconstrainedOutput, observeRecordITL, tokensPerWord)
 	logrus.Infof("Observation wall-clock time: %.3fs", time.Since(startTime).Seconds())
 
+	// Resolve goodput SLO targets (#1413, BC-1, BC-7). Observe has no trace
+	// header at invocation; precedence is CLI > workload spec.
+	cliTTFT, cliITL, cliE2E, gpErr := resolveGoodputCLIFlags(goodputSLOTTFT, goodputSLOITL, goodputSLOE2E)
+	if gpErr != nil {
+		logrus.Fatalf("%v", gpErr)
+	}
+	var specTargets map[string]workload.SLODimTargets
+	if spec != nil {
+		specTargets = spec.GoodputSLOTargets
+	}
+	headerGoodputTargets := mergeGoodputTargets(cliTTFT, cliITL, cliE2E, nil, specTargets)
+
 	// Export trace (BC-4)
 	header := &workload.TraceHeader{
-		Version:        3,
-		TimeUnit:       "us",
-		CreatedAt:      time.Now().UTC().Format(time.RFC3339),
-		Mode:           "real",
-		WarmUpRequests: observeWarmup,
+		Version:           3,
+		TimeUnit:          "us",
+		CreatedAt:         time.Now().UTC().Format(time.RFC3339),
+		Mode:              "real",
+		WarmUpRequests:    observeWarmup,
+		GoodputSLOTargets: headerGoodputTargets, // BC-7: persist user-supplied targets so downstream replay/calibrate inherit them
 		Server: &workload.TraceServerConfig{
 			Type:  observeServerType,
 			Model: observeModel,
@@ -590,7 +608,27 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Infof("Saturation report written to %s (detector: backlog-drift, classification: %s)", saturationReport, report.Classification)
 	}
 
-	printObserveMetrics(os.Stdout, records, wallClockDurationSec, itlRecords, saturationResult)
+	// In-process goodput targets (BC-6): if --record-itl was not set but the user
+	// specified ITL thresholds, drop ITL from the in-process attainment copy and
+	// warn. The trace header still carries the original user-supplied targets.
+	inProcGoodputTargets := headerGoodputTargets
+	if len(headerGoodputTargets) > 0 && !observeRecordITL {
+		var hasITL bool
+		stripped := make(map[string]workload.SLODimTargets, len(headerGoodputTargets))
+		for cls, t := range headerGoodputTargets {
+			if t.ITLMs > 0 {
+				hasITL = true
+				t.ITLMs = 0
+			}
+			stripped[cls] = t
+		}
+		if hasITL {
+			logrus.Warnf("--slo-itl set without --record-itl: ITL goodput attainment cannot be computed; using TTFT/E2E only for in-process goodput. Trace header still carries the original ITL thresholds for downstream replay/calibrate.")
+			inProcGoodputTargets = stripped
+		}
+	}
+
+	printObserveMetrics(os.Stdout, records, wallClockDurationSec, itlRecords, saturationResult, inProcGoodputTargets)
 
 	// Print session metrics if any record carries a session label (#1058)
 	sessionMetrics := computeSessionMetricsFromTrace(records)
@@ -628,7 +666,9 @@ type completionEvent struct {
 // as blis run and blis replay (=== Simulation Metrics === header + JSON body).
 // Always emits the header even when no valid records exist (BC-5).
 // saturationResult is optional (can be nil); when provided, it's populated in output.Saturation field.
-func printObserveMetrics(w io.Writer, records []workload.TraceRecord, wallClockDurationSec float64, itlRecords []workload.ITLRecord, saturationResult interface{}) {
+// goodputTargets is optional; when non-empty, emits goodput_rps/slo_attainment/per_class fields
+// computed from records and itlRecords (#1413, BC-2).
+func printObserveMetrics(w io.Writer, records []workload.TraceRecord, wallClockDurationSec float64, itlRecords []workload.ITLRecord, saturationResult interface{}, goodputTargets map[string]workload.SLODimTargets) {
 	var ttftsUs, e2esUs []int64
 	totalOutputTokens := 0
 
@@ -740,6 +780,9 @@ func printObserveMetrics(w io.Writer, records []workload.TraceRecord, wallClockD
 		output.ITLP95Ms = sim.CalculatePercentile(itlsUs, 95)
 		output.ITLP99Ms = sim.CalculatePercentile(itlsUs, 99)
 	}
+
+	// Emit goodput fields when targets are configured (#1413, BC-2).
+	emitObserveGoodput(&output, records, itlRecords, wallClockDurationSec, goodputTargets)
 
 	// Marshal to JSON
 	jsonBytes, err := json.MarshalIndent(output, "", "  ")

@@ -48,8 +48,8 @@ func TestPrintPerSLOMetrics_MultipleClasses_PrintsSorted(t *testing.T) {
 		},
 	}
 
-	// WHEN we print per-SLO metrics
-	printPerSLOMetrics(&buf, sloMetrics)
+	// WHEN we print per-SLO metrics (no goodput configured; multi-class path always prints)
+	printPerSLOMetrics(&buf, sloMetrics, false)
 
 	// THEN output must contain the section and classes in sorted order
 	output := buf.String()
@@ -58,6 +58,8 @@ func TestPrintPerSLOMetrics_MultipleClasses_PrintsSorted(t *testing.T) {
 	batchIdx := bytes.Index([]byte(output), []byte("batch"))
 	realtimeIdx := bytes.Index([]byte(output), []byte("realtime"))
 	assert.True(t, batchIdx < realtimeIdx, "SLO classes must be sorted alphabetically")
+	// ITL line is part of the section now (#1413, BC-5)
+	assert.Contains(t, output, "ITL:", "ITL line must be present")
 }
 
 func TestPrintPerSLOMetrics_SingleClass_NoOutput(t *testing.T) {
@@ -70,11 +72,24 @@ func TestPrintPerSLOMetrics_SingleClass_NoOutput(t *testing.T) {
 		},
 	}
 
-	// WHEN we print per-SLO metrics
-	printPerSLOMetrics(&buf, sloMetrics)
+	// WHEN we print per-SLO metrics (no goodput configured)
+	printPerSLOMetrics(&buf, sloMetrics, false)
 
-	// THEN no output (single class = no differentiation)
+	// THEN no output (single class = no differentiation, legacy suppression preserved)
 	assert.Empty(t, buf.String())
+
+	// WHEN we print again with goodput configured (#1413, BC-5)
+	buf.Reset()
+	printPerSLOMetrics(&buf, sloMetrics, true)
+
+	// THEN the section prints even for a single class so operators can see
+	// the dimensions gating their goodput score.
+	output := buf.String()
+	assert.Contains(t, output, "=== Per-SLO Metrics ===")
+	assert.Contains(t, output, "default")
+	assert.Contains(t, output, "TTFT:")
+	assert.Contains(t, output, "ITL:")
+	assert.Contains(t, output, "E2E:")
 }
 
 // BC-T6: printPerTenantMetrics is a no-op when map is nil.

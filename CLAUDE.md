@@ -17,11 +17,24 @@ go build -o blis main.go
 # Run with default model
 ./blis run --model qwen/qwen3-14b
 
+# Run with goodput SLO targets (#1413). --slo-ttft / --slo-itl / --slo-e2e accept
+# class=duration[,class=duration...] using Go duration syntax. Precedence:
+# CLI > trace header > workload spec. Distinct from --slo-targets (dispatch ordering).
+./blis run --model qwen/qwen3-14b \
+  --slo-ttft "critical=100ms,standard=500ms" \
+  --slo-itl  "critical=50ms,standard=150ms" \
+  --slo-e2e  "critical=5s,standard=30s"
+
 # Run and export workload as TraceV2 (prefix auto-appends .yaml/.csv)
 ./blis run --model qwen/qwen3-14b --trace-output traces/run1
 
 # Replay a captured TraceV2 file through the DES (fixed timing from trace)
 ./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b
+
+# Replay with goodput SLO targets (#1413). When the trace header carries
+# goodput_slo_targets the CLI flags are not required (header is the fallback).
+./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
+  --slo-ttft "critical=100ms" --slo-e2e "critical=5s"
 
 # Replay and re-export trace with simulation-computed timing (mode: replayed)
 ./blis replay --trace-header t.yaml --trace-data d.csv --model qwen/qwen3-14b \
@@ -38,6 +51,14 @@ go build -o blis main.go
 # Observe real server latency and record timing into TraceV2
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --workload-spec workload.yaml --trace-header trace.yaml --trace-data trace.csv
+
+# Observe with goodput SLO targets (#1413). Resolved targets are persisted into
+# the exported TraceHeader so downstream replay/calibrate inherit them. ITL
+# attainment requires --record-itl; otherwise it's skipped with a warning.
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --workload chatbot --rate 10 --num-requests 100 \
+  --slo-ttft "critical=100ms" --slo-e2e "critical=5s" \
+  --trace-header trace.yaml --trace-data trace.csv
 
 # Observe with chat completions endpoint and network RTT
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
@@ -76,6 +97,12 @@ go build -o blis main.go
 # Compare with ITL metric included (requires observe --record-itl)
 ./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json \
   --itl-data trace.itl.csv --report calibration.json
+
+# Compare goodput per SLO class (#1413). Targets default to the trace header's
+# goodput_slo_targets; CLI flags override per-dimension. Skipped with a warning
+# when ITL is configured but absent.
+./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json \
+  --slo-ttft "critical=100ms" --slo-e2e "critical=5s" --report calibration.json
 
 # Convert workload formats
 ./blis convert preset --name chatbot --rate 10 --num-requests 100

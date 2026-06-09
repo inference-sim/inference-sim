@@ -20,6 +20,11 @@ var (
 	calibrateNetworkRTTUs         int64
 	calibrateNetworkBandwidthMbps float64
 	calibrateITLDataPath          string
+	// Goodput SLO targets (#1413). CLI > trace header precedence in calibrate
+	// (no workload spec on calibrate path).
+	calibrateGoodputSLOTTFT string
+	calibrateGoodputSLOITL  string
+	calibrateGoodputSLOE2E  string
 )
 
 var calibrateCmd = &cobra.Command{
@@ -145,6 +150,59 @@ Example:
 			logrus.Fatalf("Failed to build calibration report: %v", err)
 		}
 
+		// Step 6.5: Goodput comparison (#1413, BC-9). Resolve targets from CLI > trace header.
+		cliTTFT, cliITL, cliE2E, gpErr := resolveGoodputCLIFlags(calibrateGoodputSLOTTFT, calibrateGoodputSLOITL, calibrateGoodputSLOE2E)
+		if gpErr != nil {
+			logrus.Fatalf("%v", gpErr)
+		}
+		goodputTargets := mergeGoodputTargets(cliTTFT, cliITL, cliE2E, trace.Header.GoodputSLOTargets, nil)
+		if len(goodputTargets) > 0 {
+			// Build matched-set: trace records whose RequestID has a matching SimResult
+			// AND that survived warm-up exclusion. Also need an ITL index by RequestID.
+			simByID := make(map[int]workload.SimResult, len(simResults))
+			for _, sr := range simResults {
+				simByID[sr.RequestID] = sr
+			}
+			matched := make(map[int]bool, pairs.MatchedCount)
+			for _, rec := range trace.Records {
+				if rec.RequestID < warmUp {
+					continue
+				}
+				if _, ok := simByID[rec.RequestID]; ok {
+					matched[rec.RequestID] = true
+				}
+			}
+			itlByRequest := make(map[int][]workload.ITLRecord)
+			for _, r := range itlRecords {
+				itlByRequest[r.RequestID] = append(itlByRequest[r.RequestID], r)
+			}
+			// Real-side runtime: span from earliest send to latest last-chunk over matched set.
+			var firstSend, lastChunk int64
+			firstSend = -1
+			for _, rec := range trace.Records {
+				if !matched[rec.RequestID] {
+					continue
+				}
+				if firstSend == -1 || rec.SendTimeUs < firstSend {
+					firstSend = rec.SendTimeUs
+				}
+				if rec.LastChunkTimeUs > lastChunk {
+					lastChunk = rec.LastChunkTimeUs
+				}
+			}
+			runtimeSec := 0.0
+			if firstSend >= 0 && lastChunk > firstSend {
+				runtimeSec = float64(lastChunk-firstSend) / 1e6
+			}
+
+			report.Goodput = workload.ComputeGoodputComparison(
+				trace.Records, simByID, matched, itlByRequest, goodputTargets, runtimeSec,
+			)
+			if report.Goodput != nil && report.Goodput.SkippedITL {
+				logrus.Warn("calibrate goodput: ITL gating skipped — ITL data missing on real or sim side; TTFT/E2E rows still computed.")
+			}
+		}
+
 		// Step 7: Write report JSON
 		reportData, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
@@ -232,6 +290,21 @@ Example:
 					workload.MapePct(p.E2E.Real, p.E2E.Sim)*100)
 			}
 		}
+		// Per-class goodput summary (#1413, BC-9)
+		if report.Goodput != nil && len(report.Goodput.PerClass) > 0 {
+			logrus.Infof("Per-SLO-class goodput (real vs sim):")
+			classKeys := make([]string, 0, len(report.Goodput.PerClass))
+			for k := range report.Goodput.PerClass {
+				classKeys = append(classKeys, k)
+			}
+			sort.Strings(classKeys)
+			for _, cls := range classKeys {
+				gc := report.Goodput.PerClass[cls]
+				logrus.Infof("  %s: count=%d real_attain=%.3f sim_attain=%.3f real_rps=%.3f sim_rps=%.3f",
+					cls, gc.Count, gc.RealSLOAttainment, gc.SimSLOAttainment, gc.RealGoodputRPS, gc.SimGoodputRPS)
+			}
+		}
+
 		// Per-model breakdown (when data present)
 		if len(pairs.ByModel) > 0 {
 			modelKeys := make([]string, 0, len(pairs.ByModel))
@@ -263,5 +336,8 @@ func init() {
 	calibrateCmd.Flags().Int64Var(&calibrateNetworkRTTUs, "network-rtt-us", -1, "Network RTT in microseconds added to sim-side latencies (default: from trace header network.measured_rtt_ms)")
 	calibrateCmd.Flags().Float64Var(&calibrateNetworkBandwidthMbps, "network-bandwidth-mbps", 0, "Network bandwidth in Mbps for upload/download delay calculation (default: 0 = no delay)")
 	calibrateCmd.Flags().StringVar(&calibrateITLDataPath, "itl-data", "", "Optional path to ITL CSV file (from blis observe --record-itl) to include ITL metric in calibration report")
+	calibrateCmd.Flags().StringVar(&calibrateGoodputSLOTTFT, "slo-ttft", "", "Per-class TTFT goodput thresholds (e.g. \"critical=100ms,standard=500ms\"). Precedence: CLI > trace header.")
+	calibrateCmd.Flags().StringVar(&calibrateGoodputSLOITL, "slo-itl", "", "Per-class mean ITL goodput thresholds. Skipped with a warning when ITL data is absent on either side.")
+	calibrateCmd.Flags().StringVar(&calibrateGoodputSLOE2E, "slo-e2e", "", "Per-class E2E goodput thresholds (e.g. \"critical=5s,standard=30s\").")
 	rootCmd.AddCommand(calibrateCmd)
 }
