@@ -394,32 +394,40 @@ type SLOClassAttainment struct {
 	ByDim    map[string]float64 // keys: "ttft", "itl", "e2e" (only non-zero dims present)
 }
 
-// requestLatency is a per-request latency view used by SLOAttainmentMultiDim.
-// Exported via BuildLatencyResults for callers that build it from sim.Metrics.
-type requestLatency struct {
-	class           string
-	ttftMs          float64
-	itlMs           float64
-	e2eMs           float64
-	hasTTFT, hasITL bool
+// RequestLatency is a per-request latency view consumed by SLOAttainmentMultiDim.
+// All latency fields are in milliseconds — BuildLatencyResults converts from
+// the µs ticks stored in sim.Metrics.{RequestTTFTs,RequestITLs,RequestE2Es}.
+// The struct is exported so PR2's cmd/ wiring can construct fixtures and
+// alternate observe-path views without going through sim.Metrics.
+type RequestLatency struct {
+	Class           string
+	TTFTMs          float64
+	ITLMs           float64
+	E2EMs           float64
+	HasTTFT, HasITL bool
 }
 
 // BuildLatencyResults extracts per-request latency views from sim.Metrics for
 // SLOAttainmentMultiDim. Iterates RequestE2Es (E2E is the basic completion signal).
-func BuildLatencyResults(m *sim.Metrics) map[string]requestLatency {
-	out := make(map[string]requestLatency, len(m.RequestE2Es))
+//
+// Unit handling: sim.Metrics stores TTFT/ITL/E2E in µs ticks (see sim/simulator.go
+// :623, :784 and the /1e3 conversions at sim/metrics.go:139-171). This function
+// converts to milliseconds so RequestLatency fields match the ms-denominated
+// thresholds in workload.SLODimTargets.
+func BuildLatencyResults(m *sim.Metrics) map[string]RequestLatency {
+	out := make(map[string]RequestLatency, len(m.RequestE2Es))
 	for id, e2e := range m.RequestE2Es {
-		rl := requestLatency{e2eMs: e2e}
+		rl := RequestLatency{E2EMs: e2e / 1e3}
 		if rm, ok := m.Requests[id]; ok {
-			rl.class = rm.SLOClass
+			rl.Class = rm.SLOClass
 		}
 		if t, ok := m.RequestTTFTs[id]; ok {
-			rl.ttftMs = t
-			rl.hasTTFT = true
+			rl.TTFTMs = t / 1e3
+			rl.HasTTFT = true
 		}
 		if i, ok := m.RequestITLs[id]; ok {
-			rl.itlMs = i
-			rl.hasITL = true
+			rl.ITLMs = i / 1e3
+			rl.HasITL = true
 		}
 		out[id] = rl
 	}
@@ -448,7 +456,7 @@ func BuildLatencyResults(m *sim.Metrics) map[string]requestLatency {
 // Determinism (R2): map iteration mutates only integer counters per class; division
 // happens once at the end on stable integer sums.
 func SLOAttainmentMultiDim(
-	results map[string]requestLatency,
+	results map[string]RequestLatency,
 	injectedByClass map[string]int64,
 	targets map[string]workload.SLODimTargets,
 ) (overall float64, perClass map[string]SLOClassAttainment) {
@@ -458,14 +466,24 @@ func SLOAttainmentMultiDim(
 	}
 
 	type acc struct {
-		good                                                 int
-		ttftMet, ttftCount, itlMet, itlCount, e2eMet, e2eCnt int
+		good      int
+		ttftMet   int
+		ttftCount int
+		itlMet    int
+		itlCount  int
+		e2eMet    int
+		e2eCount  int
 	}
 	accs := make(map[string]*acc, len(targets))
 	for cls := range targets {
 		accs[cls] = &acc{}
 	}
 
+	// lookup folds empty SLOClass to "default" for target lookup. Note that an
+	// explicit "" key in targets is never produced by YAML decoding (map keys
+	// in YAML cannot be empty strings as user values), and a programmatically
+	// supplied "" target would be unreachable here because it never matches —
+	// empty-class requests get their class rewritten to "default" before lookup.
 	lookup := func(cls string) (workload.SLODimTargets, string, bool) {
 		if cls == "" {
 			cls = "default"
@@ -477,7 +495,7 @@ func SLOAttainmentMultiDim(
 	}
 
 	for _, rl := range results {
-		t, cls, ok := lookup(rl.class)
+		t, cls, ok := lookup(rl.Class)
 		if !ok {
 			continue
 		}
@@ -486,7 +504,7 @@ func SLOAttainmentMultiDim(
 
 		if t.TTFTMs > 0 {
 			a.ttftCount++
-			if rl.hasTTFT && rl.ttftMs <= t.TTFTMs {
+			if rl.HasTTFT && rl.TTFTMs <= t.TTFTMs {
 				a.ttftMet++
 			} else {
 				good = false
@@ -494,15 +512,15 @@ func SLOAttainmentMultiDim(
 		}
 		if t.ITLMs > 0 {
 			a.itlCount++
-			if rl.hasITL && rl.itlMs <= t.ITLMs {
+			if rl.HasITL && rl.ITLMs <= t.ITLMs {
 				a.itlMet++
 			} else {
 				good = false
 			}
 		}
 		if t.E2EMs > 0 {
-			a.e2eCnt++
-			if rl.e2eMs <= t.E2EMs {
+			a.e2eCount++
+			if rl.E2EMs <= t.E2EMs {
 				a.e2eMet++
 			} else {
 				good = false
@@ -543,7 +561,7 @@ func SLOAttainmentMultiDim(
 			sca.ByDim["itl"] = safeFrac(a.itlMet, a.itlCount)
 		}
 		if t.E2EMs > 0 {
-			sca.ByDim["e2e"] = safeFrac(a.e2eMet, a.e2eCnt)
+			sca.ByDim["e2e"] = safeFrac(a.e2eMet, a.e2eCount)
 		}
 		perClass[cls] = sca
 		totalGood += a.good

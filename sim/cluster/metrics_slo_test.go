@@ -110,14 +110,45 @@ func TestComputePerSLODistributions_MissingRequests_StillComputesPresent(t *test
 	}
 }
 
+// TestBuildLatencyResults_ConvertsTicksToMs is the unit-correctness guard
+// for the µs-ticks → ms conversion. sim.Metrics stores latencies in µs ticks
+// (sim/simulator.go:623, :784); workload.SLODimTargets thresholds are in ms.
+// Without conversion, every request would appear to violate every SLO.
+func TestBuildLatencyResults_ConvertsTicksToMs(t *testing.T) {
+	m := sim.NewMetrics()
+	m.Requests["r1"] = sim.RequestMetrics{ID: "r1", SLOClass: "critical"}
+	m.RequestTTFTs["r1"] = 50_000 // 50 ms in µs ticks
+	m.RequestITLs["r1"] = 30_000  // 30 ms in µs ticks
+	m.RequestE2Es["r1"] = 2_000_000 // 2 s in µs ticks
+
+	rl := BuildLatencyResults(m)["r1"]
+	if rl.TTFTMs != 50 {
+		t.Errorf("TTFTMs = %f, want 50 (50_000 µs / 1e3)", rl.TTFTMs)
+	}
+	if rl.ITLMs != 30 {
+		t.Errorf("ITLMs = %f, want 30", rl.ITLMs)
+	}
+	if rl.E2EMs != 2000 {
+		t.Errorf("E2EMs = %f, want 2000", rl.E2EMs)
+	}
+	if !rl.HasTTFT || !rl.HasITL {
+		t.Error("HasTTFT and HasITL must be true when source maps populate the request")
+	}
+	if rl.Class != "critical" {
+		t.Errorf("Class = %q, want %q", rl.Class, "critical")
+	}
+}
+
 // --- SLOAttainmentMultiDim tests (BC-1..4, BC-N2) -------------------------
 
-// makeMetrics builds a sim.Metrics with the given per-class requests and latencies.
-// Each entry: class string, count int, ttftMs, itlMs, e2eMs float64 (per request).
+// makeMetricsForSLO builds a sim.Metrics with the given per-class requests and
+// latencies. Test-side fields are in milliseconds; the helper multiplies by 1e3
+// to populate sim.Metrics in µs ticks (the production unit), so that
+// BuildLatencyResults' conversion is exercised on every assertion.
 func makeMetricsForSLO(t *testing.T, entries []struct {
-	class                  string
-	count                  int
-	ttftMs, itlMs, e2eMs   float64
+	class                string
+	count                int
+	ttftMs, itlMs, e2eMs float64
 }) *sim.Metrics {
 	t.Helper()
 	m := sim.NewMetrics()
@@ -127,9 +158,9 @@ func makeMetricsForSLO(t *testing.T, entries []struct {
 			id := fmt.Sprintf("%s_%d", e.class, idx)
 			idx++
 			m.Requests[id] = sim.RequestMetrics{ID: id, SLOClass: e.class}
-			m.RequestTTFTs[id] = e.ttftMs
-			m.RequestITLs[id] = e.itlMs
-			m.RequestE2Es[id] = e.e2eMs
+			m.RequestTTFTs[id] = e.ttftMs * 1e3
+			m.RequestITLs[id] = e.itlMs * 1e3
+			m.RequestE2Es[id] = e.e2eMs * 1e3
 		}
 	}
 	return m
@@ -192,20 +223,22 @@ func TestSLOAttainmentMultiDim_PartialDims_OnlyConfiguredGate(t *testing.T) {
 func TestSLOAttainmentMultiDim_AndCombination_AllDimsMustPass(t *testing.T) {
 	// BC-4: a request good only if every non-zero dim passes.
 	// 10 requests in class A: 5 with all dims passing, 5 fail TTFT only.
+	// All RequestTTFTs/ITLs/E2Es values are in µs ticks (sim/simulator.go:623, :784).
+	// Helpers below match that unit; thresholds in workload.SLODimTargets are in ms.
 	m := sim.NewMetrics()
 	for i := 0; i < 5; i++ {
 		id := fmt.Sprintf("good_%d", i)
 		m.Requests[id] = sim.RequestMetrics{ID: id, SLOClass: "A"}
-		m.RequestTTFTs[id] = 50
-		m.RequestITLs[id] = 30
-		m.RequestE2Es[id] = 2000
+		m.RequestTTFTs[id] = 50 * 1e3   // 50 ms
+		m.RequestITLs[id] = 30 * 1e3    // 30 ms
+		m.RequestE2Es[id] = 2000 * 1e3  // 2 s
 	}
 	for i := 0; i < 5; i++ {
 		id := fmt.Sprintf("bad_%d", i)
 		m.Requests[id] = sim.RequestMetrics{ID: id, SLOClass: "A"}
-		m.RequestTTFTs[id] = 999 // exceeds threshold
-		m.RequestITLs[id] = 30
-		m.RequestE2Es[id] = 2000
+		m.RequestTTFTs[id] = 999 * 1e3 // 999 ms — exceeds 100 ms threshold
+		m.RequestITLs[id] = 30 * 1e3
+		m.RequestE2Es[id] = 2000 * 1e3
 	}
 	results := BuildLatencyResults(m)
 	injected := map[string]int64{"A": 10}
