@@ -538,7 +538,7 @@ Example:
 		if replayTraceOutput != "" {
 			records := workload.RequestsToTraceRecords(requests)
 			header := &workload.TraceHeader{
-				Version:  2,
+				Version:  3,
 				TimeUnit: "microseconds",
 				Mode:     "replayed",
 			}
@@ -585,6 +585,7 @@ Example:
 			scheduler,
 			cs.RoutingRejections(),
 			cs.EncodeRoutingRejections(),
+			cs.InjectedByClass(),
 		)
 		// INV-13 SYNC POINT (metrics): keep in sync with cmd/root.go post-simulation block.
 		rawMetrics.PD = cluster.CollectPDMetrics(

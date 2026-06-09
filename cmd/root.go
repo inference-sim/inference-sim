@@ -1726,7 +1726,7 @@ var runCmd = &cobra.Command{
 		if traceOutput != "" {
 			records := workload.RequestsToTraceRecords(allRequests)
 			header := &workload.TraceHeader{
-				Version:      2,
+				Version:      3,
 				TimeUnit:     "microseconds",
 				Mode:         "generated",
 				WorkloadSeed: &spec.Seed,
@@ -1805,6 +1805,7 @@ var runCmd = &cobra.Command{
 			scheduler,
 			cs.RoutingRejections(),
 			cs.EncodeRoutingRejections(),
+			cs.InjectedByClass(),
 		)
 
 		rawMetrics.PD = cluster.CollectPDMetrics(

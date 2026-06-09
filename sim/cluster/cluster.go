@@ -36,6 +36,9 @@ type ClusterSimulator struct {
 	rejectedRequests      int                       // EC-2: count of requests rejected by admission policy
 	routingRejections     int                       // I13: count of requests rejected at routing (no routable instances)
 	shedByTier            map[string]int            // per-SLOClass shedding: admission rejections + gateway queue shed + in-flight evictions
+	// injectedByClass: per-SLOClass arrival counter. Incremented in ClusterArrivalEvent.Execute
+	// before any drop/route/admission decision. Goodput denominator (issue #1409, BC-5).
+	injectedByClass map[string]int64
 	trace                 *trace.SimulationTrace    // nil when trace-level is "none" (BC-1: zero overhead)
 	preGeneratedRequests  []*sim.Request            // Pre-generated requests (all workload paths unified)
 	inFlightRequests      map[string]int            // instance ID → dispatched-but-not-completed count (#463)
@@ -250,6 +253,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		trace:                simTrace,
 		inFlightRequests:     make(map[string]int, config.NumInstances),
 		shedByTier:           make(map[string]int),
+		injectedByClass:      make(map[string]int64),
 	}
 
 	// PD disaggregation: set pool membership (topology already validated above).
@@ -1305,6 +1309,21 @@ func (c *ClusterSimulator) ShedByTier() map[string]int {
 	}
 	result := make(map[string]int, len(c.shedByTier))
 	for k, v := range c.shedByTier {
+		result[k] = v
+	}
+	return result
+}
+
+// InjectedByClass returns a defensive copy of the per-SLOClass arrival counter.
+// Incremented in ClusterArrivalEvent.Execute before any drop/route/admission
+// decision; used as the goodput denominator (issue #1409, BC-5/BC-6).
+// Panics if called before Run() completes (R8 mirror of ShedByTier).
+func (c *ClusterSimulator) InjectedByClass() map[string]int64 {
+	if !c.hasRun {
+		panic("ClusterSimulator.InjectedByClass() called before Run()")
+	}
+	result := make(map[string]int64, len(c.injectedByClass))
+	for k, v := range c.injectedByClass {
 		result[k] = v
 	}
 	return result

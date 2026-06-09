@@ -472,7 +472,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 
 	// Export trace (BC-4)
 	header := &workload.TraceHeader{
-		Version:        2,
+		Version:        3,
 		TimeUnit:       "us",
 		CreatedAt:      time.Now().UTC().Format(time.RFC3339),
 		Mode:           "real",

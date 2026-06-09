@@ -11,8 +11,12 @@ import (
 
 func TestTraceV2_RoundTrip_PreservesAllFields(t *testing.T) {
 	header := &TraceHeader{
-		Version: 2, TimeUnit: "microseconds", Mode: "generated",
+		Version: 3, TimeUnit: "microseconds", Mode: "generated",
 		WarmUpRequests: 5, WorkloadSpec: "test.yaml",
+		GoodputSLOTargets: map[string]SLODimTargets{
+			"critical": {TTFTMs: 100, ITLMs: 50, E2EMs: 5000},
+			"batch":    {E2EMs: 120000},
+		},
 	}
 	records := []TraceRecord{
 		{RequestID: 0, ClientID: "c1", TenantID: "t1", SLOClass: "batch",
@@ -35,11 +39,28 @@ func TestTraceV2_RoundTrip_PreservesAllFields(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if loaded.Header.Version != 2 {
-		t.Errorf("version = %d, want 2", loaded.Header.Version)
+	if loaded.Header.Version != 3 {
+		t.Errorf("version = %d, want 3", loaded.Header.Version)
 	}
 	if loaded.Header.WarmUpRequests != 5 {
 		t.Errorf("warm_up = %d, want 5", loaded.Header.WarmUpRequests)
+	}
+	// BC-8: GoodputSLOTargets round-trips per (class, dimension).
+	if got := loaded.Header.GoodputSLOTargets["critical"].TTFTMs; got != 100 {
+		t.Errorf("critical.TTFTMs = %f, want 100", got)
+	}
+	if got := loaded.Header.GoodputSLOTargets["critical"].ITLMs; got != 50 {
+		t.Errorf("critical.ITLMs = %f, want 50", got)
+	}
+	if got := loaded.Header.GoodputSLOTargets["critical"].E2EMs; got != 5000 {
+		t.Errorf("critical.E2EMs = %f, want 5000", got)
+	}
+	if got := loaded.Header.GoodputSLOTargets["batch"].E2EMs; got != 120000 {
+		t.Errorf("batch.E2EMs = %f, want 120000", got)
+	}
+	// BC-3 surface: zero is "not gated" — survives round-trip.
+	if got := loaded.Header.GoodputSLOTargets["batch"].ITLMs; got != 0 {
+		t.Errorf("batch.ITLMs = %f, want 0 (not gated)", got)
 	}
 	if len(loaded.Records) != 2 {
 		t.Fatalf("records = %d, want 2", len(loaded.Records))
@@ -68,6 +89,28 @@ func TestTraceV2_RoundTrip_PreservesAllFields(t *testing.T) {
 	}
 	if r1.NumChunks != 5 {
 		t.Errorf("record 1 chunks = %d, want 5", r1.NumChunks)
+	}
+}
+
+// TestTraceV2_LoadHeader_UnknownField_ReturnsError verifies BC-N3: KnownFields(true)
+// causes an old binary reading a header with an unknown field (e.g. a future
+// schema addition past v3) to hard-fail rather than silently dropping the field.
+// Strict parsing is enforced at sim/workload/tracev2.go:223; the trace Version
+// field is the schema-change signal.
+func TestTraceV2_LoadHeader_UnknownField_ReturnsError(t *testing.T) {
+	yamlText := []byte("trace_version: 99\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\nbogus_unknown_field: 42\n")
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "header.yaml")
+	if err := os.WriteFile(headerPath, yamlText, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dataPath := filepath.Join(dir, "data.csv")
+	if err := os.WriteFile(dataPath, []byte("request_id\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadTraceV2(headerPath, dataPath); err == nil ||
+		!strings.Contains(err.Error(), "field") {
+		t.Errorf("expected unknown-field error, got %v", err)
 	}
 }
 

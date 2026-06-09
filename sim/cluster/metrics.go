@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/sirupsen/logrus"
 )
 
@@ -81,6 +82,7 @@ func percentile(sorted []float64, p float64) float64 {
 // SLOMetrics holds per-SLO-class latency distributions.
 type SLOMetrics struct {
 	TTFT Distribution
+	ITL  Distribution // issue #1409: populated alongside TTFT/E2E for goodput ITL gating (BC-7)
 	E2E  Distribution
 }
 
@@ -102,6 +104,10 @@ type RawMetrics struct {
 	HOLBlockingEvents    int
 	RejectedRequests     int            // admission rejections
 	ShedByTier                map[string]int // per-SLOClass breakdown of all shedding events: admission rejections + gateway queue evictions (unconditional)
+	// InjectedByClass: per-SLOClass arrival counter; populated by ClusterArrivalEvent.Execute
+	// before any drop/route decision. Used as the goodput denominator (issue #1409, BC-6).
+	// Empty SLOClass requests appear under the "" key.
+	InjectedByClass map[string]int64
 	// INV-1 extended: injected == completed + running + queued + routing_rejections + dropped + timed_out + gw_depth + gw_shed + gw_rejected + gw_evicted + gw_expired + encode_routing_rejections
 	GatewayQueueDepth       int // Requests still in gateway queue at horizon (issue #882)
 	GatewayQueueShed        int // Requests shed (evicted victims) from gateway queue (issue #882)
@@ -129,7 +135,7 @@ type RawMetrics struct {
 // when "fcfs" or "" (no priority ordering), inversions are
 // suppressed (always 0) since requests are served in arrival order and
 // E2E differences reflect workload variance, not scheduling unfairness.
-func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, rejectedRequests int, scheduler string, routingRejections int, encodeRoutingRejections int) *RawMetrics {
+func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, rejectedRequests int, scheduler string, routingRejections int, encodeRoutingRejections int, injectedByClass map[string]int64) *RawMetrics {
 	raw := &RawMetrics{
 		RejectedRequests:        rejectedRequests,
 		RoutingRejections:       routingRejections,
@@ -137,6 +143,14 @@ func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, reje
 		DroppedUnservable:       aggregated.DroppedUnservable,
 		LengthCappedRequests:    aggregated.LengthCappedRequests,
 		TimedOutRequests:        aggregated.TimedOutRequests,
+	}
+
+	// Defensive copy of per-class injection counter for goodput denominator (BC-6).
+	if len(injectedByClass) > 0 {
+		raw.InjectedByClass = make(map[string]int64, len(injectedByClass))
+		for k, v := range injectedByClass {
+			raw.InjectedByClass[k] = v
+		}
 	}
 
 	// Latency distributions
@@ -290,10 +304,11 @@ func detectHOLBlocking(perInstance []*sim.Metrics) int {
 }
 
 // ComputePerSLODistributions builds per-SLO-class latency distributions.
-// Filters requests by their SLOClass field and computes distributions per class.
+// Filters requests by their SLOClass field and computes TTFT, ITL, and E2E
+// distributions per class (issue #1409, BC-7: ITL added alongside TTFT/E2E).
 func ComputePerSLODistributions(aggregated *sim.Metrics) map[string]*SLOMetrics {
-	// Group TTFT and E2E values by SLO class
 	ttftByClass := make(map[string][]float64)
+	itlByClass := make(map[string][]float64)
 	e2eByClass := make(map[string][]float64)
 
 	droppedTTFT := 0
@@ -311,6 +326,22 @@ func ComputePerSLODistributions(aggregated *sim.Metrics) map[string]*SLOMetrics 
 	}
 	if droppedTTFT > 0 {
 		logrus.Warnf("ComputePerSLODistributions: %d requests in RequestTTFTs missing from Requests map", droppedTTFT)
+	}
+	droppedITL := 0
+	for reqID, itl := range aggregated.RequestITLs {
+		req, ok := aggregated.Requests[reqID]
+		if !ok {
+			droppedITL++
+			continue
+		}
+		sloClass := req.SLOClass
+		if sloClass == "" {
+			sloClass = "default"
+		}
+		itlByClass[sloClass] = append(itlByClass[sloClass], itl)
+	}
+	if droppedITL > 0 {
+		logrus.Warnf("ComputePerSLODistributions: %d requests in RequestITLs missing from Requests map", droppedITL)
 	}
 	droppedE2E := 0
 	for reqID, e2e := range aggregated.RequestE2Es {
@@ -330,9 +361,11 @@ func ComputePerSLODistributions(aggregated *sim.Metrics) map[string]*SLOMetrics 
 	}
 
 	result := make(map[string]*SLOMetrics)
-	// Collect all classes from both maps
 	allClasses := make(map[string]bool)
 	for k := range ttftByClass {
+		allClasses[k] = true
+	}
+	for k := range itlByClass {
 		allClasses[k] = true
 	}
 	for k := range e2eByClass {
@@ -341,48 +374,211 @@ func ComputePerSLODistributions(aggregated *sim.Metrics) map[string]*SLOMetrics 
 	for cls := range allClasses {
 		result[cls] = &SLOMetrics{
 			TTFT: NewDistribution(ttftByClass[cls]),
+			ITL:  NewDistribution(itlByClass[cls]),
 			E2E:  NewDistribution(e2eByClass[cls]),
 		}
 	}
 	return result
 }
 
-// SLOAttainment computes the fraction of requests meeting their SLO target.
-// targets maps SLO class to max acceptable E2E latency (in ticks).
-// Returns a value in [0.0, 1.0].
-// Requests in RequestE2Es that are missing from Requests map are counted
-// as SLO violations (conservative: missing data = violation).
-func SLOAttainment(aggregated *sim.Metrics, targets map[string]float64) float64 {
-	if len(aggregated.RequestE2Es) == 0 {
-		return 0
+// SLOClassAttainment is the per-class result of SLOAttainmentMultiDim.
+//
+//	Good     — number of completed requests for this class that met every non-zero dimension.
+//	Injected — denominator: total arrivals on this class (passed in by the caller from
+//	           ClusterSimulator.injectedByClass). Includes drops/timeouts.
+//	ByDim    — per-dimension attainment fraction (numerator / count of completed-and-class-matched
+//	           requests that had data for that dim). Populated only for non-zero dimensions.
+type SLOClassAttainment struct {
+	Good     int
+	Injected int64
+	ByDim    map[string]float64 // keys: "ttft", "itl", "e2e" (only non-zero dims present)
+}
+
+// RequestLatency is a per-request latency view consumed by SLOAttainmentMultiDim.
+// All latency fields are in milliseconds — BuildLatencyResults converts from
+// the µs ticks stored in sim.Metrics.{RequestTTFTs,RequestITLs,RequestE2Es}.
+// The struct is exported so PR2's cmd/ wiring can construct fixtures and
+// alternate observe-path views without going through sim.Metrics.
+type RequestLatency struct {
+	Class           string
+	TTFTMs          float64
+	ITLMs           float64
+	E2EMs           float64
+	HasTTFT, HasITL bool
+}
+
+// BuildLatencyResults extracts per-request latency views from sim.Metrics for
+// SLOAttainmentMultiDim. Iterates RequestE2Es (E2E is the basic completion signal).
+//
+// Unit handling: sim.Metrics stores TTFT/ITL/E2E in µs ticks (see sim/simulator.go
+// :623, :784 and the /1e3 conversions at sim/metrics.go:139-171). This function
+// converts to milliseconds so RequestLatency fields match the ms-denominated
+// thresholds in workload.SLODimTargets.
+func BuildLatencyResults(m *sim.Metrics) map[string]RequestLatency {
+	out := make(map[string]RequestLatency, len(m.RequestE2Es))
+	for id, e2e := range m.RequestE2Es {
+		rl := RequestLatency{E2EMs: e2e / 1e3}
+		if rm, ok := m.Requests[id]; ok {
+			rl.Class = rm.SLOClass
+		}
+		if t, ok := m.RequestTTFTs[id]; ok {
+			rl.TTFTMs = t / 1e3
+			rl.HasTTFT = true
+		}
+		if i, ok := m.RequestITLs[id]; ok {
+			rl.ITLMs = i / 1e3
+			rl.HasITL = true
+		}
+		out[id] = rl
 	}
-	met := 0
-	total := 0
-	droppedCount := 0
-	for reqID, e2e := range aggregated.RequestE2Es {
-		total++
-		req, ok := aggregated.Requests[reqID]
+	return out
+}
+
+// SLOAttainmentMultiDim returns overall attainment and per-class breakdown across
+// TTFT, ITL, and E2E dimensions (issue #1409, BC-1..4, BC-N2).
+//
+// Inputs:
+//
+//	results          — completed-request latency views (built by BuildLatencyResults).
+//	injectedByClass  — count of arrivals per class. The denominator. Comes from
+//	                   ClusterSimulator.injectedByClass and includes drops/timeouts.
+//	targets          — per-class thresholds. Empty SLOClass on a request maps to "default".
+//	                   A class missing from targets (and missing a "default" entry) is
+//	                   excluded from BOTH numerator and denominator (BC-N2).
+//
+// Returns:
+//
+//	overall  — sum(perClass[*].Good) / sum(perClass[*].Injected) over configured classes;
+//	           0 if no class is configured or denominator is 0.
+//	perClass — keyed by configured class (only). ByDim populated only for non-zero
+//	           dimensions in that class's target.
+//
+// Determinism (R2): map iteration mutates only integer counters per class; division
+// happens once at the end on stable integer sums.
+func SLOAttainmentMultiDim(
+	results map[string]RequestLatency,
+	injectedByClass map[string]int64,
+	targets map[string]workload.SLODimTargets,
+) (overall float64, perClass map[string]SLOClassAttainment) {
+	perClass = make(map[string]SLOClassAttainment, len(targets))
+	if len(targets) == 0 {
+		return 0, perClass
+	}
+
+	type acc struct {
+		good      int
+		ttftMet   int
+		ttftCount int
+		itlMet    int
+		itlCount  int
+		e2eMet    int
+		e2eCount  int
+	}
+	accs := make(map[string]*acc, len(targets))
+	for cls := range targets {
+		accs[cls] = &acc{}
+	}
+
+	// lookup folds empty SLOClass to "default" for target lookup. Note that an
+	// explicit "" key in targets is never produced by YAML decoding (map keys
+	// in YAML cannot be empty strings as user values), and a programmatically
+	// supplied "" target would be unreachable here because it never matches —
+	// empty-class requests get their class rewritten to "default" before lookup.
+	lookup := func(cls string) (workload.SLODimTargets, string, bool) {
+		if cls == "" {
+			cls = "default"
+		}
+		if t, ok := targets[cls]; ok {
+			return t, cls, true
+		}
+		return workload.SLODimTargets{}, cls, false
+	}
+
+	for _, rl := range results {
+		t, cls, ok := lookup(rl.Class)
 		if !ok {
-			droppedCount++
-			continue // counted in total but not in met (= violation)
+			continue
 		}
-		sloClass := req.SLOClass
-		if target, ok := targets[sloClass]; ok {
-			if e2e <= target {
-				met++
+		a := accs[cls]
+		good := true
+
+		if t.TTFTMs > 0 {
+			a.ttftCount++
+			if rl.HasTTFT && rl.TTFTMs <= t.TTFTMs {
+				a.ttftMet++
+			} else {
+				good = false
 			}
-		} else {
-			// No target for this class = always meets SLO
-			met++
+		}
+		if t.ITLMs > 0 {
+			a.itlCount++
+			if rl.HasITL && rl.ITLMs <= t.ITLMs {
+				a.itlMet++
+			} else {
+				good = false
+			}
+		}
+		if t.E2EMs > 0 {
+			a.e2eCount++
+			if rl.E2EMs <= t.E2EMs {
+				a.e2eMet++
+			} else {
+				good = false
+			}
+		}
+		if good {
+			a.good++
 		}
 	}
-	if droppedCount > 0 {
-		logrus.Warnf("SLOAttainment: %d requests in RequestE2Es missing from Requests map (counted as violations)", droppedCount)
+
+	// Build per-class result with deterministic key set (R2: sort target keys).
+	targetKeys := make([]string, 0, len(targets))
+	for k := range targets {
+		targetKeys = append(targetKeys, k)
 	}
-	if total == 0 {
+	sort.Strings(targetKeys)
+
+	// Normalize denominator: when a "default" target is configured, fold
+	// the empty-SLOClass injection bucket into it (matches the request-side
+	// fold in `lookup`). Without this, empty-class arrivals would be missing
+	// from the denominator even though their completions count under "default".
+	_, defaultConfigured := targets["default"]
+
+	var totalGood int
+	var totalInjected int64
+	for _, cls := range targetKeys {
+		a := accs[cls]
+		injected := injectedByClass[cls]
+		if cls == "default" && defaultConfigured {
+			injected += injectedByClass[""]
+		}
+		sca := SLOClassAttainment{Good: a.good, Injected: injected, ByDim: make(map[string]float64)}
+		t := targets[cls]
+		if t.TTFTMs > 0 {
+			sca.ByDim["ttft"] = safeFrac(a.ttftMet, a.ttftCount)
+		}
+		if t.ITLMs > 0 {
+			sca.ByDim["itl"] = safeFrac(a.itlMet, a.itlCount)
+		}
+		if t.E2EMs > 0 {
+			sca.ByDim["e2e"] = safeFrac(a.e2eMet, a.e2eCount)
+		}
+		perClass[cls] = sca
+		totalGood += a.good
+		totalInjected += injected
+	}
+
+	if totalInjected > 0 {
+		overall = float64(totalGood) / float64(totalInjected)
+	}
+	return overall, perClass
+}
+
+func safeFrac(num, denom int) float64 {
+	if denom == 0 {
 		return 0
 	}
-	return float64(met) / float64(total)
+	return float64(num) / float64(denom)
 }
 
 // JainFairnessIndex computes the Jain's fairness index across tenant throughputs.

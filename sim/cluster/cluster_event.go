@@ -126,8 +126,11 @@ func (e *ClusterArrivalEvent) Timestamp() int64 { return e.time }
 func (e *ClusterArrivalEvent) Priority() int     { return 0 }
 
 // Execute schedules an AdmissionDecisionEvent with the configured admission latency.
+// Records the request as injected on its SLO class BEFORE any admission/routing
+// decision so that drops and timeouts count against goodput (issue #1409, BC-5).
 func (e *ClusterArrivalEvent) Execute(cs *ClusterSimulator) {
 	cs.pendingArrivals--
+	cs.injectedByClass[e.request.SLOClass]++
 	logrus.Debugf("[cluster] req %s arrived at tick %d", e.request.ID, e.time)
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &AdmissionDecisionEvent{

@@ -30,6 +30,12 @@ type TraceHeader struct {
 
 	Server  *TraceServerConfig  `yaml:"server,omitempty"`
 	Network *TraceNetworkConfig `yaml:"network,omitempty"`
+	// GoodputSLOTargets: per-SLO-class TTFT/ITL/E2E thresholds for goodput
+	// measurement (issue #1409, BC-8). Persisted in trace headers so observe →
+	// replay → calibrate carry the same SLO definition. Schema bump to trace
+	// version 3; old binaries reading new traces will hard-fail under
+	// KnownFields(true) — intentional, signaled by Version (BC-N3).
+	GoodputSLOTargets map[string]SLODimTargets `yaml:"goodput_slo_targets,omitempty"`
 }
 
 // TraceServerConfig captures server configuration in trace header.
