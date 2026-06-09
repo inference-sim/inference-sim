@@ -50,6 +50,11 @@ type WorkloadSpec struct {
 	NumRequests   int64              `yaml:"num_requests,omitempty"` // 0 = unlimited (use horizon only)
 	ServeGenData  *ServeGenDataSpec  `yaml:"servegen_data,omitempty"`
 	InferencePerf *InferencePerfSpec `yaml:"inference_perf,omitempty"`
+	// GoodputSLOTargets: per-SLO-class TTFT/ITL/E2E thresholds for goodput
+	// measurement (issue #1409, BC-8). PR1 reserves the schema slot; the
+	// targets are consumed by PR2's CLI/output wiring. Distinct from the
+	// dispatch-ordering --slo-targets flag.
+	GoodputSLOTargets map[string]SLODimTargets `yaml:"goodput_slo_targets,omitempty"`
 }
 
 // CohortSpec describes a population of clients that share arrival behavior

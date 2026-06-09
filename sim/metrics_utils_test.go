@@ -1,6 +1,10 @@
 package sim
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 // TestNewRequestMetrics_PropagatesAllFields is intentionally a construction-site guard test
 // (CLAUDE.md antipattern #4). It verifies the canonical constructor propagates all fields,
@@ -163,5 +167,42 @@ func TestCalculatePercentile_SingleElement_ReturnsScaled(t *testing.T) {
 	// THEN it returns the element divided by 1000 (ms conversion)
 	if result != 1.0 {
 		t.Errorf("expected 1.0 for single element 1000.0, got %f", result)
+	}
+}
+
+// TestMetricsOutput_GoodputFields_OmittedWhenZero verifies BC-10: zero-valued
+// goodput fields are absent from the JSON to avoid breaking existing consumers.
+func TestMetricsOutput_GoodputFields_OmittedWhenZero(t *testing.T) {
+	m := MetricsOutput{InstanceID: "i0"}
+	out, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, f := range []string{"goodput_rps", "slo_attainment", "per_class"} {
+		if strings.Contains(s, f) {
+			t.Errorf("zero-value MetricsOutput emitted %q in JSON: %s", f, s)
+		}
+	}
+}
+
+// TestMetricsOutput_GoodputFields_PresentWhenSet verifies the schema slot accepts
+// PR2-shaped values: float scalars and a heterogeneous PerClass payload.
+func TestMetricsOutput_GoodputFields_PresentWhenSet(t *testing.T) {
+	m := MetricsOutput{
+		InstanceID:    "i0",
+		GoodputRPS:    42.1,
+		SLOAttainment: 0.88,
+		PerClass:      map[string]any{"critical": map[string]float64{"goodput_rps": 18.3}},
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, want := range []string{`"goodput_rps":42.1`, `"slo_attainment":0.88`, `"per_class"`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("MetricsOutput JSON missing %q: %s", want, s)
+		}
 	}
 }

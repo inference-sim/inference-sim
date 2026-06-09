@@ -85,6 +85,13 @@ type MetricsOutput struct {
 	TimedOutRequests        int              `json:"timed_out_requests"`
 	Requests                []RequestMetrics `json:"requests,omitempty"`
 	Saturation              interface{}      `json:"saturation,omitempty"` // saturation.Result, using interface{} to avoid import cycle
+	// Goodput fields (issue #1409). Populated by PR2's CLI/output wiring;
+	// left zero (and omitempty) by PR1. PerClass holds map[string]cluster.SLOClassAttainment;
+	// typed as interface{} to mirror the Saturation field above and avoid a
+	// sim → sim/cluster import cycle.
+	GoodputRPS    float64     `json:"goodput_rps,omitempty"`
+	SLOAttainment float64     `json:"slo_attainment,omitempty"`
+	PerClass      interface{} `json:"per_class,omitempty"`
 }
 
 // CalculatePercentile is a util function that calculates the p-th percentile of a data list
