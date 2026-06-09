@@ -611,21 +611,9 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	// In-process goodput targets (BC-6): if --record-itl was not set but the user
 	// specified ITL thresholds, drop ITL from the in-process attainment copy and
 	// warn. The trace header still carries the original user-supplied targets.
-	inProcGoodputTargets := headerGoodputTargets
-	if len(headerGoodputTargets) > 0 && !observeRecordITL {
-		var hasITL bool
-		stripped := make(map[string]workload.SLODimTargets, len(headerGoodputTargets))
-		for cls, t := range headerGoodputTargets {
-			if t.ITLMs > 0 {
-				hasITL = true
-				t.ITLMs = 0
-			}
-			stripped[cls] = t
-		}
-		if hasITL {
-			logrus.Warnf("--slo-itl set without --record-itl: ITL goodput attainment cannot be computed; using TTFT/E2E only for in-process goodput. Trace header still carries the original ITL thresholds for downstream replay/calibrate.")
-			inProcGoodputTargets = stripped
-		}
+	inProcGoodputTargets, strippedITL := stripITLForObserveFallback(headerGoodputTargets, observeRecordITL)
+	if strippedITL {
+		logrus.Warnf("--slo-itl set without --record-itl: ITL goodput attainment cannot be computed; using TTFT/E2E only for in-process goodput. Trace header still carries the original ITL thresholds for downstream replay/calibrate.")
 	}
 
 	printObserveMetrics(os.Stdout, records, wallClockDurationSec, itlRecords, saturationResult, inProcGoodputTargets)

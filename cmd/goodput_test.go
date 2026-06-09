@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -226,6 +227,80 @@ func TestEmitObserveGoodput_OkErrorTimeoutDenominator(t *testing.T) {
 	}
 }
 
+// TestStripITLForObserveFallback_StripsAndSignals verifies BC-6: when
+// --record-itl is false and any class carries an ITL threshold, the helper
+// returns a fresh map with ITL zeroed and signals the strip so the caller can
+// emit the warning. The TTFT/E2E thresholds on the same class must be preserved.
+func TestStripITLForObserveFallback_StripsAndSignals(t *testing.T) {
+	in := map[string]workload.SLODimTargets{
+		"critical": {TTFTMs: 100, ITLMs: 50, E2EMs: 5000},
+		"batch":    {E2EMs: 60000}, // no ITL configured for this class
+	}
+	got, stripped := stripITLForObserveFallback(in, false /* recordITL */)
+	if !stripped {
+		t.Fatalf("expected stripped=true when at least one class has ITL configured")
+	}
+	if got["critical"].ITLMs != 0 {
+		t.Errorf("critical ITLMs: got %v, want 0 (stripped)", got["critical"].ITLMs)
+	}
+	if got["critical"].TTFTMs != 100 {
+		t.Errorf("critical TTFTMs: got %v, want 100 (preserved)", got["critical"].TTFTMs)
+	}
+	if got["critical"].E2EMs != 5000 {
+		t.Errorf("critical E2EMs: got %v, want 5000 (preserved)", got["critical"].E2EMs)
+	}
+	if got["batch"].E2EMs != 60000 {
+		t.Errorf("batch E2EMs: got %v, want 60000 (preserved)", got["batch"].E2EMs)
+	}
+	// Critical: input map must NOT be mutated (header still carries original ITL).
+	if in["critical"].ITLMs != 50 {
+		t.Errorf("input map mutated: in[critical].ITLMs = %v, want 50", in["critical"].ITLMs)
+	}
+}
+
+// TestStripITLForObserveFallback_NoOpWhenRecordITL verifies BC-6: with
+// --record-itl true, targets pass through unchanged and stripped=false.
+func TestStripITLForObserveFallback_NoOpWhenRecordITL(t *testing.T) {
+	in := map[string]workload.SLODimTargets{
+		"critical": {TTFTMs: 100, ITLMs: 50, E2EMs: 5000},
+	}
+	got, stripped := stripITLForObserveFallback(in, true /* recordITL */)
+	if stripped {
+		t.Errorf("expected stripped=false when recordITL is true")
+	}
+	if got["critical"].ITLMs != 50 {
+		t.Errorf("ITLMs should pass through when recordITL is true; got %v, want 50", got["critical"].ITLMs)
+	}
+}
+
+// TestStripITLForObserveFallback_NoOpWhenNoITLConfigured verifies BC-6: when
+// targets exist but no class has an ITL threshold, the helper returns the
+// original map (no copy) and stripped=false (no warning needed).
+func TestStripITLForObserveFallback_NoOpWhenNoITLConfigured(t *testing.T) {
+	in := map[string]workload.SLODimTargets{
+		"default": {E2EMs: 5000}, // no ITLMs
+	}
+	got, stripped := stripITLForObserveFallback(in, false)
+	if stripped {
+		t.Errorf("expected stripped=false when no class has ITL configured")
+	}
+	if got["default"].E2EMs != 5000 {
+		t.Errorf("default E2EMs: got %v, want 5000", got["default"].E2EMs)
+	}
+}
+
+// TestStripITLForObserveFallback_EmptyTargetsNoOp verifies the empty-input edge case.
+func TestStripITLForObserveFallback_EmptyTargetsNoOp(t *testing.T) {
+	got, stripped := stripITLForObserveFallback(nil, false)
+	if stripped || got != nil {
+		t.Errorf("nil input: expected (nil, false), got (%v, %v)", got, stripped)
+	}
+	got, stripped = stripITLForObserveFallback(map[string]workload.SLODimTargets{}, false)
+	if stripped {
+		t.Errorf("empty input: expected stripped=false, got true")
+	}
+}
+
 // TestEmitObserveGoodput_NoOpWhenTargetsEmpty verifies BC-3 on observe path.
 func TestEmitObserveGoodput_NoOpWhenTargetsEmpty(t *testing.T) {
 	out := sim.MetricsOutput{}
@@ -263,6 +338,58 @@ func TestRunReplayParity_SameTargets_SameOutput(t *testing.T) {
 	}
 	if runOut.SLOAttainment != replayOut.SLOAttainment {
 		t.Errorf("BC-4: SLOAttainment differs (run=%v replay=%v)", runOut.SLOAttainment, replayOut.SLOAttainment)
+	}
+}
+
+// TestGoodputTargets_ObserveExportReplayLoad_RoundTrip verifies BC-7 end-to-end:
+// CLI flags → merger → exported TraceHeader (via observe path) → loaded TraceHeader
+// (via replay path) → merger again. The downstream merger sees the same per-class
+// thresholds without requiring CLI flags on the replay side.
+//
+// This is the contract that makes a captured-real-server trace replayable for
+// goodput measurement out-of-the-box: the observe-side intent is preserved.
+func TestGoodputTargets_ObserveExportReplayLoad_RoundTrip(t *testing.T) {
+	// Step 1: simulate the observe-side merger from CLI flags + (no) workload spec.
+	cliTTFT := map[string]time.Duration{"critical": 100 * time.Millisecond, "standard": 500 * time.Millisecond}
+	cliE2E := map[string]time.Duration{"critical": 5 * time.Second}
+	observeMerged := mergeGoodputTargets(cliTTFT, nil, cliE2E, nil, nil)
+
+	// Step 2: write a TraceV2 carrying these targets in its header (observe export path).
+	tmp := t.TempDir()
+	headerPath := filepath.Join(tmp, "trace.yaml")
+	dataPath := filepath.Join(tmp, "trace.csv")
+	exportHeader := &workload.TraceHeader{
+		Version:           3,
+		TimeUnit:          "us",
+		Mode:              "real",
+		GoodputSLOTargets: observeMerged,
+	}
+	if err := workload.ExportTraceV2(exportHeader, []workload.TraceRecord{}, headerPath, dataPath); err != nil {
+		t.Fatalf("ExportTraceV2: %v", err)
+	}
+
+	// Step 3: load the trace as replay/calibrate would.
+	loaded, err := workload.LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatalf("LoadTraceV2: %v", err)
+	}
+
+	// Step 4: replay-side merger (no CLI overrides) — header must be the only source.
+	replayMerged := mergeGoodputTargets(nil, nil, nil, loaded.Header.GoodputSLOTargets, nil)
+	if !reflect.DeepEqual(replayMerged, observeMerged) {
+		t.Fatalf("BC-7 round-trip drift:\n  observe-side: %#v\n  replay-side:  %#v", observeMerged, replayMerged)
+	}
+
+	// Spot-check: per-class per-dimension values match the original CLI input
+	// (proves the merger isn't silently coercing values).
+	if replayMerged["critical"].TTFTMs != 100 {
+		t.Errorf("critical TTFTMs: got %v, want 100", replayMerged["critical"].TTFTMs)
+	}
+	if replayMerged["critical"].E2EMs != 5000 {
+		t.Errorf("critical E2EMs: got %v, want 5000", replayMerged["critical"].E2EMs)
+	}
+	if replayMerged["standard"].TTFTMs != 500 {
+		t.Errorf("standard TTFTMs: got %v, want 500", replayMerged["standard"].TTFTMs)
 	}
 }
 

@@ -501,6 +501,41 @@ func safeFraction(num, denom int) float64 {
 	return float64(num) / float64(denom)
 }
 
+// stripITLForObserveFallback returns a copy of targets with ITL stripped from
+// every class, when --record-itl was not set. Used by the observe path
+// (#1413, BC-6): without recorded ITL data, in-process goodput attainment
+// cannot be computed for ITL, so we drop it from the in-process targets while
+// leaving the unmodified user-supplied targets to flow into the exported
+// TraceHeader for downstream replay/calibrate.
+//
+// Returns (targets-unchanged, hasITL=false) when targets is empty, recordITL
+// is true, or no class has a non-zero ITL threshold — letting the caller
+// distinguish a no-op from an actual strip and decide whether to emit a warning.
+// The first return is always safe to pass to emitObserveGoodput; the returned
+// map is a fresh allocation when stripped (never mutates the input).
+func stripITLForObserveFallback(
+	targets map[string]workload.SLODimTargets,
+	recordITL bool,
+) (map[string]workload.SLODimTargets, bool) {
+	if len(targets) == 0 || recordITL {
+		return targets, false
+	}
+	var hasITL bool
+	stripped := make(map[string]workload.SLODimTargets, len(targets))
+	for cls, t := range targets {
+		if t.ITLMs > 0 {
+			hasITL = true
+			t.ITLMs = 0
+		}
+		stripped[cls] = t
+	}
+	if !hasITL {
+		// No ITL was configured — return the original map, no copy needed.
+		return targets, false
+	}
+	return stripped, true
+}
+
 // resolveGoodputCLIFlags parses the three CLI string flags into duration maps.
 // Returns nil maps when the flag is empty. On parse error it returns the
 // per-flag error so callers can logrus.Fatalf with the right flag name.
