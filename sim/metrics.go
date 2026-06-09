@@ -63,12 +63,15 @@ func NewMetrics() *Metrics {
 	}
 }
 
-// SaveResults computes aggregate metrics and optionally runs post-hoc saturation detection.
-// saturationDetector should be a saturation.Detector or nil to skip saturation analysis.
-func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int64, outputFilePath string, saturationDetector BatchClassifier) error {
+// BuildOutput populates and returns a MetricsOutput from m, including aggregate
+// percentiles, per-request rows (sorted by arrival), and an optional saturation
+// classification when saturationDetector is non-nil. It does NOT write anywhere
+// — callers (SaveResults, cmd/-side goodput emitters) handle stdout and file
+// output. Splitting build-from-emit lets cmd/ inject goodput fields between the
+// two steps without changing SaveResults's signature (#1413).
+func (m *Metrics) BuildOutput(instanceID string, saturationDetector BatchClassifier) MetricsOutput {
 	vllmRuntime := float64(m.SimEndedTime) / float64(1e6)
 
-	// Create an instance of our output struct to populate
 	output := MetricsOutput{
 		InstanceID:           instanceID,
 		CompletedRequests:    m.CompletedRequests,
@@ -150,6 +153,15 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 		output.Saturation = saturationDetector.Classify(completedReqs, totalArrivals)
 	}
 
+	return output
+}
+
+// EmitOutput writes a populated MetricsOutput to stdout (always) and an
+// optional file (when outputFilePath != ""). The file variant additionally
+// embeds per-request rows sorted by ArrivedAt for downstream tooling. Callers
+// that want goodput fields populated should call BuildOutput, mutate the
+// returned struct, then call this method (#1413).
+func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string) error {
 	// Always emit the metrics section so callers can reliably parse output,
 	// even when CompletedRequests == 0 (e.g., all requests dropped as unservable).
 	fmt.Println("=== Simulation Metrics ===")
@@ -159,21 +171,19 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 	}
 	fmt.Println(string(data))
 
-	// --- Write to JSON File ---
 	if outputFilePath != "" {
 		// request-level metrics for detailed output in file
 		// Iterate over all registered requests (not just completed prefill)
 		// so incomplete requests appear with zero-valued metrics.
 		for _, id := range sortedRequestIDs(m.Requests) {
 			detail := m.Requests[id]
-			detail.TTFT = m.RequestTTFTs[id] / 1e3   // zero if not in map
-			detail.E2E = m.RequestE2Es[id] / 1e3      // zero if not in map
-			detail.ITL = m.RequestITLs[id] / 1e3             // ticks → ms (consistent with TTFT, E2E)
+			detail.TTFT = m.RequestTTFTs[id] / 1e3                               // zero if not in map
+			detail.E2E = m.RequestE2Es[id] / 1e3                                 // zero if not in map
+			detail.ITL = m.RequestITLs[id] / 1e3                                 // ticks → ms (consistent with TTFT, E2E)
 			detail.SchedulingDelay = float64(m.RequestSchedulingDelays[id]) / 1e3 // ticks → ms
 			output.Requests = append(output.Requests, detail)
 		}
 
-		// 2. Sort by ArrivedAt (Ascending)
 		sort.Slice(output.Requests, func(i, j int) bool {
 			return output.Requests[i].ArrivedAt < output.Requests[j].ArrivedAt
 		})
@@ -190,6 +200,19 @@ func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int6
 		logrus.Infof("Metrics written to: %s", outputFilePath)
 	}
 	return nil
+}
+
+// SaveResults computes aggregate metrics and optionally runs post-hoc saturation detection.
+// saturationDetector should be a saturation.Detector or nil to skip saturation analysis.
+// This is a thin wrapper around BuildOutput + EmitOutput; see those methods for the
+// extension hook used by goodput wiring (#1413). The horizon and totalBlocks parameters
+// are retained for backwards compatibility with existing callers but are unused — they
+// were never read by SaveResults.
+func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int64, outputFilePath string, saturationDetector BatchClassifier) error {
+	_ = horizon
+	_ = totalBlocks
+	output := m.BuildOutput(instanceID, saturationDetector)
+	return m.EmitOutput(output, outputFilePath)
 }
 
 // sortedRequestIDs returns request IDs from the Requests map in sorted order.

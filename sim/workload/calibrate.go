@@ -65,6 +65,32 @@ type CalibrationReport struct {
 	Metrics          map[string]*MetricComparison `json:"metrics"`
 	ConfigMatch      ConfigMatchInfo              `json:"config_match"`
 	KnownLimitations []string                     `json:"known_limitations"`
+	// Goodput holds per-class observed-vs-simulated goodput comparison when
+	// goodput targets were configured (issue #1413, BC-9). Omitted when targets
+	// are absent so old consumers see the legacy report shape unchanged.
+	Goodput *GoodputComparisonReport `json:"goodput,omitempty"`
+}
+
+// GoodputComparisonReport summarizes observed-vs-simulated goodput per SLO class.
+// All ratios are in [0, 1]; absolute counts/RPS use the natural scale.
+type GoodputComparisonReport struct {
+	Targets  map[string]SLODimTargets         `json:"targets"`
+	PerClass map[string]GoodputClassComparison `json:"per_class"`
+	// SkippedITL is true when --slo-itl was configured but ITL data was
+	// missing on either side (real or sim); the ITL row is omitted with a
+	// stderr warning.
+	SkippedITL bool `json:"skipped_itl,omitempty"`
+}
+
+// GoodputClassComparison holds per-class observed/simulated goodput numbers.
+type GoodputClassComparison struct {
+	Count                   int     `json:"count"`
+	RealSLOAttainment       float64 `json:"real_slo_attainment"`
+	SimSLOAttainment        float64 `json:"sim_slo_attainment"`
+	RealGoodputRPS          float64 `json:"real_goodput_rps"`
+	SimGoodputRPS           float64 `json:"sim_goodput_rps"`
+	RealAttainmentByDim     map[string]float64 `json:"real_attainment_by_dim,omitempty"`
+	SimAttainmentByDim      map[string]float64 `json:"sim_attainment_by_dim,omitempty"`
 }
 
 // ConfigMatchInfo documents which sim params matched the trace header.

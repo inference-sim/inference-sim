@@ -184,6 +184,13 @@ var (
 	// per-request timeout override for blis run (seconds; negative = disabled, 0 is rejected)
 	requestTimeoutSecs int
 
+	// Goodput SLO targets (issue #1413). Each is "class=duration[,class=duration...]" using
+	// Go duration syntax. Distinct from --slo-targets (dispatch ordering, µs); these gate
+	// goodput emission. Precedence: CLI > trace header > workload spec.
+	goodputSLOTTFT string
+	goodputSLOITL  string
+	goodputSLOE2E  string
+
 	// output file paths
 	metricsPath      string // File to write MetricsOutput JSON for blis run (--metrics-path)
 	resultsPath      string // File to write []SimResult JSON for blis replay (--results-path)
@@ -1710,6 +1717,19 @@ var runCmd = &cobra.Command{
 		// Wall-clock timing on stderr (BC-6); stdout remains deterministic (BC-7)
 		logrus.Infof("Simulation wall-clock time: %.3fs", time.Since(startTime).Seconds())
 
+		// Resolve goodput SLO targets early so the trace export and aggregate metrics
+		// see the same merged map (#1413, BC-1). Run has no trace header; precedence
+		// here is CLI > workload spec.
+		cliTTFT, cliITL, cliE2E, gpErr := resolveGoodputCLIFlags(goodputSLOTTFT, goodputSLOITL, goodputSLOE2E)
+		if gpErr != nil {
+			logrus.Fatalf("%v", gpErr)
+		}
+		var specTargets map[string]workload.SLODimTargets
+		if spec != nil {
+			specTargets = spec.GoodputSLOTargets
+		}
+		goodputTargets := mergeGoodputTargets(cliTTFT, cliITL, cliE2E, nil, specTargets)
+
 		// Assemble allRequests if trace export or saturation analysis requested (BC-12, issue #1298)
 		var allRequests []*sim.Request
 		if traceOutput != "" || saturationReport != "" {
@@ -1726,10 +1746,11 @@ var runCmd = &cobra.Command{
 		if traceOutput != "" {
 			records := workload.RequestsToTraceRecords(allRequests)
 			header := &workload.TraceHeader{
-				Version:      3,
-				TimeUnit:     "microseconds",
-				Mode:         "generated",
-				WorkloadSeed: &spec.Seed,
+				Version:           3,
+				TimeUnit:          "microseconds",
+				Mode:              "generated",
+				WorkloadSeed:      &spec.Seed,
+				GoodputSLOTargets: goodputTargets, // #1413, BC-7: persist resolved targets for downstream replay/calibrate
 			}
 			if err := workload.ExportTraceV2(header, records, traceOutput+".yaml", traceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)
@@ -1792,8 +1813,12 @@ var runCmd = &cobra.Command{
 				}
 			}
 		}
-		// Save aggregated metrics (prints to stdout + saves to file if metricsPath set)
-		if err := cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, metricsPath, saturationDetector); err != nil {
+		// Build aggregate output, inject goodput, then emit (#1413).
+		aggregated := cs.AggregatedMetrics()
+		clusterOutput := aggregated.BuildOutput("cluster", saturationDetector)
+		emitGoodput(&clusterOutput, aggregated, cs.InjectedByClass(),
+			float64(aggregated.SimEndedTime)/1e6, goodputTargets)
+		if err := aggregated.EmitOutput(clusterOutput, metricsPath); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
@@ -1891,9 +1916,11 @@ var runCmd = &cobra.Command{
 		// Print KV cache metrics if any nonzero (BC-1, BC-2)
 		printKVCacheMetrics(os.Stdout, rawMetrics.PreemptionRate, rawMetrics.CacheHitRate, rawMetrics.KVThrashingRate)
 
-		// Print per-SLO metrics if multiple SLO classes present (BC-3, BC-4, BC-10)
+		// Print per-SLO metrics. With goodput targets configured, the section prints
+		// even for a single class (#1413, BC-5). Without goodput, the legacy
+		// suppression for ≤1 class is preserved.
 		sloDistributions := cluster.ComputePerSLODistributions(cs.AggregatedMetrics())
-		printPerSLOMetrics(os.Stdout, sloDistributions)
+		printPerSLOMetrics(os.Stdout, sloDistributions, len(goodputTargets) > 0)
 
 		// Print per-model metrics if requests carry model tags (Phase 1A, FR-011)
 		perModelMetrics := cluster.ComputePerModelMetrics(cs.AggregatedMetrics())
@@ -1948,13 +1975,19 @@ func printKVCacheMetrics(w io.Writer, preemptionRate, cacheHitRate, kvThrashingR
 	_, _ = fmt.Fprintf(w, "KV Thrashing Rate: %.4f\n", kvThrashingRate)
 }
 
-// printPerSLOMetrics prints per-SLO-class latency distributions when multiple classes exist.
-func printPerSLOMetrics(w io.Writer, sloMetrics map[string]*cluster.SLOMetrics) {
-	if len(sloMetrics) <= 1 {
+// printPerSLOMetrics prints per-SLO-class latency distributions. Without
+// goodput targets configured, the section is suppressed for ≤1 class (the
+// legacy no-spurious-section behavior). With goodput targets configured, the
+// section prints even for a single class so operators see the dimensions
+// gating their goodput score (#1413, BC-5).
+func printPerSLOMetrics(w io.Writer, sloMetrics map[string]*cluster.SLOMetrics, goodputConfigured bool) {
+	if len(sloMetrics) == 0 {
+		return
+	}
+	if len(sloMetrics) == 1 && !goodputConfigured {
 		return
 	}
 	_, _ = fmt.Fprintln(w, "=== Per-SLO Metrics ===")
-	// Sort keys for deterministic output (antipattern rule 2)
 	keys := make([]string, 0, len(sloMetrics))
 	for k := range sloMetrics {
 		keys = append(keys, k)
@@ -1967,6 +2000,7 @@ func printPerSLOMetrics(w io.Writer, sloMetrics map[string]*cluster.SLOMetrics) 
 		}
 		_, _ = fmt.Fprintf(w, "  %s:\n", cls)
 		_, _ = fmt.Fprintf(w, "    TTFT: mean=%.2f p99=%.2f (n=%d)\n", m.TTFT.Mean, m.TTFT.P99, m.TTFT.Count)
+		_, _ = fmt.Fprintf(w, "    ITL:  mean=%.2f p99=%.2f (n=%d)\n", m.ITL.Mean, m.ITL.P99, m.ITL.Count)
 		_, _ = fmt.Fprintf(w, "    E2E:  mean=%.2f p99=%.2f (n=%d)\n", m.E2E.Mean, m.E2E.P99, m.E2E.Count)
 	}
 }
@@ -2101,6 +2135,9 @@ func init() {
 	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", defaultOutputMax, "Max Output Token Count")
 	runCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "Path to YAML workload specification file (overrides --workload)")
 	runCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "Per-request deadline in seconds (default 300s matches the session-client default in computeDeadline). Negative = disabled; 0 is rejected. Consistent with blis observe: both commands reject 0.")
+	runCmd.Flags().StringVar(&goodputSLOTTFT, "slo-ttft", "", "Per-class TTFT goodput thresholds (e.g. \"critical=100ms,standard=500ms\"). Precedence: CLI > trace header > workload spec.")
+	runCmd.Flags().StringVar(&goodputSLOITL, "slo-itl", "", "Per-class mean ITL goodput thresholds (e.g. \"critical=50ms,standard=150ms\").")
+	runCmd.Flags().StringVar(&goodputSLOE2E, "slo-e2e", "", "Per-class E2E goodput thresholds (e.g. \"critical=5s,standard=30s\").")
 
 	// Run-specific export
 	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")

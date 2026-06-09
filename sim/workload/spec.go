@@ -51,8 +51,8 @@ type WorkloadSpec struct {
 	ServeGenData  *ServeGenDataSpec  `yaml:"servegen_data,omitempty"`
 	InferencePerf *InferencePerfSpec `yaml:"inference_perf,omitempty"`
 	// GoodputSLOTargets: per-SLO-class TTFT/ITL/E2E thresholds for goodput
-	// measurement (issue #1409, BC-8). PR1 reserves the schema slot; the
-	// targets are consumed by PR2's CLI/output wiring. Distinct from the
+	// measurement (issue #1409). Consumed by cmd/-side goodput wiring with
+	// CLI > trace header > workload spec precedence. Distinct from the
 	// dispatch-ordering --slo-targets flag.
 	GoodputSLOTargets map[string]SLODimTargets `yaml:"goodput_slo_targets,omitempty"`
 }

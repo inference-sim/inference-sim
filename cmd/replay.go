@@ -534,13 +534,22 @@ Example:
 
 		logrus.Infof("Replay wall-clock time: %.3fs", time.Since(startTime).Seconds())
 
+		// Resolve goodput SLO targets early so the re-export header carries them (#1413, BC-7).
+		// Replay precedence: CLI > trace header. (No workload spec in replay path.)
+		cliTTFT, cliITL, cliE2E, gpErr := resolveGoodputCLIFlags(goodputSLOTTFT, goodputSLOITL, goodputSLOE2E)
+		if gpErr != nil {
+			logrus.Fatalf("%v", gpErr)
+		}
+		goodputTargets := mergeGoodputTargets(cliTTFT, cliITL, cliE2E, traceData.Header.GoodputSLOTargets, nil)
+
 		// Export trace if requested (BC-1, BC-2, BC-3)
 		if replayTraceOutput != "" {
 			records := workload.RequestsToTraceRecords(requests)
 			header := &workload.TraceHeader{
-				Version:  3,
-				TimeUnit: "microseconds",
-				Mode:     "replayed",
+				Version:           3,
+				TimeUnit:          "microseconds",
+				Mode:              "replayed",
+				GoodputSLOTargets: goodputTargets, // #1413, BC-7
 			}
 			if err := workload.ExportTraceV2(header, records, replayTraceOutput+".yaml", replayTraceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)
@@ -574,7 +583,12 @@ Example:
 			}
 		}
 		// Save aggregate (always print to stdout; SimResult output uses separate file)
-		if err := cs.AggregatedMetrics().SaveResults("cluster", config.Horizon, totalKVBlocks, "", saturationDetector); err != nil {
+		// goodputTargets resolved above for trace re-export; reused here (#1413, BC-1, BC-4).
+		aggregated := cs.AggregatedMetrics()
+		clusterOutput := aggregated.BuildOutput("cluster", saturationDetector)
+		emitGoodput(&clusterOutput, aggregated, cs.InjectedByClass(),
+			float64(aggregated.SimEndedTime)/1e6, goodputTargets)
+		if err := aggregated.EmitOutput(clusterOutput, ""); err != nil {
 			logrus.Fatalf("SaveResults: %v", err)
 		}
 
@@ -649,7 +663,7 @@ Example:
 		printKVCacheMetrics(os.Stdout, rawMetrics.PreemptionRate, rawMetrics.CacheHitRate, rawMetrics.KVThrashingRate)
 
 		sloDistributions := cluster.ComputePerSLODistributions(cs.AggregatedMetrics())
-		printPerSLOMetrics(os.Stdout, sloDistributions)
+		printPerSLOMetrics(os.Stdout, sloDistributions, len(goodputTargets) > 0)
 
 		// Print per-model metrics if requests carry model tags (Phase 1A, FR-011)
 		perModelMetrics := cluster.ComputePerModelMetrics(cs.AggregatedMetrics())
@@ -764,6 +778,9 @@ func init() {
 	replayCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", `Session replay mode: "fixed" (pre-baked arrivals from trace) or "closed-loop" (load-adaptive follow-ups via SessionManager)`)
 	replayCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "Override think time between session rounds in milliseconds (0 = derive from trace inter-round arrival gaps; mutually exclusive with --think-time-dist; requires --session-mode closed-loop)")
 	replayCmd.Flags().StringVar(&replayThinkTimeDist, "think-time-dist", "", `Think-time distribution spec for closed-loop replay (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s" or "constant:value=500ms"). Mutually exclusive with --think-time-ms. Requires --session-mode closed-loop.`)
+	replayCmd.Flags().StringVar(&goodputSLOTTFT, "slo-ttft", "", "Per-class TTFT goodput thresholds (e.g. \"critical=100ms,standard=500ms\"). Precedence: CLI > trace header > workload spec.")
+	replayCmd.Flags().StringVar(&goodputSLOITL, "slo-itl", "", "Per-class mean ITL goodput thresholds (e.g. \"critical=50ms,standard=150ms\").")
+	replayCmd.Flags().StringVar(&goodputSLOE2E, "slo-e2e", "", "Per-class E2E goodput thresholds (e.g. \"critical=5s,standard=30s\").")
 	rootCmd.AddCommand(replayCmd)
 }
 

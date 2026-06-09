@@ -187,7 +187,7 @@ func TestMetricsOutput_GoodputFields_OmittedWhenZero(t *testing.T) {
 }
 
 // TestMetricsOutput_GoodputFields_PresentWhenSet verifies the schema slot accepts
-// PR2-shaped values: float scalars and a heterogeneous PerClass payload.
+// goodput-shaped values: float scalars and a heterogeneous PerClass payload.
 func TestMetricsOutput_GoodputFields_PresentWhenSet(t *testing.T) {
 	m := MetricsOutput{
 		InstanceID:    "i0",

@@ -397,7 +397,7 @@ type SLOClassAttainment struct {
 // RequestLatency is a per-request latency view consumed by SLOAttainmentMultiDim.
 // All latency fields are in milliseconds — BuildLatencyResults converts from
 // the µs ticks stored in sim.Metrics.{RequestTTFTs,RequestITLs,RequestE2Es}.
-// The struct is exported so PR2's cmd/ wiring can construct fixtures and
+// The struct is exported so cmd/-side goodput wiring can construct fixtures and
 // alternate observe-path views without going through sim.Metrics.
 type RequestLatency struct {
 	Class           string

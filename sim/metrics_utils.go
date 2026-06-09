@@ -85,8 +85,10 @@ type MetricsOutput struct {
 	TimedOutRequests        int              `json:"timed_out_requests"`
 	Requests                []RequestMetrics `json:"requests,omitempty"`
 	Saturation              interface{}      `json:"saturation,omitempty"` // saturation.Result, using interface{} to avoid import cycle
-	// Goodput fields (issue #1409). Populated by PR2's CLI/output wiring;
-	// left zero (and omitempty) by PR1. PerClass holds map[string]cluster.SLOClassAttainment;
+	// Goodput fields (issue #1409). Populated by cmd/-side goodput wiring when
+	// --slo-ttft/itl/e2e flags or workload-spec/trace-header goodput_slo_targets
+	// are configured; otherwise left zero and suppressed by omitempty.
+	// PerClass holds map[string]map[string]any (per-class goodput summary);
 	// typed as interface{} to mirror the Saturation field above and avoid a
 	// sim → sim/cluster import cycle.
 	GoodputRPS    float64     `json:"goodput_rps,omitempty"`

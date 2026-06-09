@@ -1883,7 +1883,7 @@ func TestPrintObserveMetrics_ValidRecords(t *testing.T) {
 		{Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 60000, LastChunkTimeUs: 210000, OutputTokens: 120},
 	}
 	var buf bytes.Buffer
-	printObserveMetrics(&buf, records, 1.0, nil, nil)
+	printObserveMetrics(&buf, records, 1.0, nil, nil, nil)
 
 	output := buf.String()
 	if !strings.Contains(output, "=== Simulation Metrics ===") {
@@ -1925,7 +1925,7 @@ func TestPrintObserveMetrics_ValidRecords(t *testing.T) {
 
 func TestPrintObserveMetrics_ZeroRecords(t *testing.T) {
 	var buf bytes.Buffer
-	printObserveMetrics(&buf, []workload.TraceRecord{}, 1.0, nil, nil)
+	printObserveMetrics(&buf, []workload.TraceRecord{}, 1.0, nil, nil, nil)
 
 	output := buf.String()
 	if !strings.Contains(output, "=== Simulation Metrics ===") {
@@ -1960,7 +1960,7 @@ func TestPrintObserveMetrics_ErrorOnlyRecords(t *testing.T) {
 		{Status: "timeout", SendTimeUs: 0, FirstChunkTimeUs: 0, LastChunkTimeUs: 0, OutputTokens: 0},
 	}
 	var buf bytes.Buffer
-	printObserveMetrics(&buf, records, 1.0, nil, nil)
+	printObserveMetrics(&buf, records, 1.0, nil, nil, nil)
 
 	output := buf.String()
 	if !strings.Contains(output, "=== Simulation Metrics ===") {
@@ -1996,7 +1996,7 @@ func TestPrintObserveMetrics_ITLPresent(t *testing.T) {
 		{RequestID: 0, ChunkIndex: 2, TimestampUs: 83000},
 	}
 	var buf bytes.Buffer
-	printObserveMetrics(&buf, records, 1.0, itlRecords, nil)
+	printObserveMetrics(&buf, records, 1.0, itlRecords, nil, nil)
 
 	var metrics map[string]interface{}
 	lines := strings.Split(buf.String(), "\n")
@@ -2022,7 +2022,7 @@ func TestPrintObserveMetrics_ITLAbsent(t *testing.T) {
 		{Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 50000, LastChunkTimeUs: 200000, OutputTokens: 100},
 	}
 	var buf bytes.Buffer
-	printObserveMetrics(&buf, records, 1.0, nil, nil)
+	printObserveMetrics(&buf, records, 1.0, nil, nil, nil)
 
 	var metrics map[string]interface{}
 	lines := strings.Split(buf.String(), "\n")
@@ -2055,7 +2055,7 @@ func TestPrintObserveMetrics_WithSaturationResult(t *testing.T) {
 		Signals:    map[string]float64{"rate_deficit": 0.0, "latency_trend": 0.05},
 	}
 	var buf bytes.Buffer
-	printObserveMetrics(&buf, records, 1.0, nil, sat)
+	printObserveMetrics(&buf, records, 1.0, nil, sat, nil)
 
 	// Parse JSON output
 	var metrics map[string]interface{}
@@ -2100,7 +2100,7 @@ func TestPrintObserveMetrics_SaturationAbsentByDefault(t *testing.T) {
 		{Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 50000, LastChunkTimeUs: 200000, OutputTokens: 100},
 	}
 	var buf bytes.Buffer
-	printObserveMetrics(&buf, records, 1.0, nil, nil) // nil saturationResult = detector "none"
+	printObserveMetrics(&buf, records, 1.0, nil, nil, nil) // nil saturationResult = detector "none"
 
 	// Parse JSON output
 	var metrics map[string]interface{}
@@ -2155,7 +2155,7 @@ func TestPrintObserveMetrics_EmptyRecordsWithDetector(t *testing.T) {
 
 	// Verify printObserveMetrics doesn't panic with empty metrics + saturation result
 	var buf bytes.Buffer
-	printObserveMetrics(&buf, records, 1.0, nil, satResult)
+	printObserveMetrics(&buf, records, 1.0, nil, satResult, nil)
 
 	// Parse JSON and verify saturation field is present
 	var metrics map[string]interface{}
