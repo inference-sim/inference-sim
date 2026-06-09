@@ -295,7 +295,7 @@ func TestStripITLForObserveFallback_EmptyTargetsNoOp(t *testing.T) {
 	if stripped || got != nil {
 		t.Errorf("nil input: expected (nil, false), got (%v, %v)", got, stripped)
 	}
-	got, stripped = stripITLForObserveFallback(map[string]workload.SLODimTargets{}, false)
+	_, stripped = stripITLForObserveFallback(map[string]workload.SLODimTargets{}, false)
 	if stripped {
 		t.Errorf("empty input: expected stripped=false, got true")
 	}
