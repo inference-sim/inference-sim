@@ -25,7 +25,7 @@
     
     
       
-        <title>System Invariants (INV-1-INV-11) - BLIS — Blackbox Inference Simulator</title>
+        <title>System Invariants (INV-1-INV-13) - BLIS — Blackbox Inference Simulator</title>
       
     
     
@@ -116,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              System Invariants (INV-1-INV-11)
+              System Invariants (INV-1-INV-13)
             
           </span>
         </div>
@@ -1944,7 +1944,7 @@
   <span class="md-ellipsis">
     
   
-    System Invariants (INV-1-INV-11)
+    System Invariants (INV-1-INV-13)
   
 
     
@@ -1962,7 +1962,7 @@
   <span class="md-ellipsis">
     
   
-    System Invariants (INV-1-INV-11)
+    System Invariants (INV-1-INV-13)
   
 
     
@@ -3188,7 +3188,7 @@
 
 <h1 id="blis-system-invariants">BLIS System Invariants<a class="headerlink" href="#blis-system-invariants" title="Permanent link">&para;</a></h1>
 <p>Invariants are properties that must hold at all times during and after simulation. They are verified by invariant tests (see R7) and checked during self-audit (Step 4.75).</p>
-<p><strong>Hypothesis family mapping:</strong> INV-1 through INV-3, INV-5, and INV-6 belong to the <strong>Scheduler invariants (safety/liveness)</strong> family. INV-4 (KV cache conservation), INV-7 (signal freshness), INV-8 (work-conserving property), and INV-9 (oracle knowledge boundary) belong to the <strong>Structural model</strong> family. See <code>docs/contributing/standards/experiments.md</code> for hypothesis family definitions.</p>
+<p><strong>Hypothesis family mapping:</strong> INV-1 through INV-3, INV-5, INV-6, INV-10 (session causality), and INV-13 (run/replay parity) belong to the <strong>Scheduler invariants (safety/liveness)</strong> family. INV-4 (KV cache conservation), INV-7 (signal freshness), INV-8 (work-conserving property), INV-9 (oracle knowledge boundary), INV-11 (session completeness), and INV-12 (Phase 1 completeness under priority preemption) belong to the <strong>Structural model</strong> family. The PD disaggregation invariants (INV-PD-<em>) and pool/transfer invariants (INV-P2-</em>) below are feature-scoped structural invariants for disaggregated serving. See <code>docs/contributing/standards/experiments.md</code> for hypothesis family definitions.</p>
 <h2 id="inv-1-request-conservation">INV-1: Request Conservation<a class="headerlink" href="#inv-1-request-conservation" title="Permanent link">&para;</a></h2>
 <p><strong>Statement:</strong> <code>injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out</code> at simulation end (all levels).</p>
 <p><strong>Cluster-level extension (issues #882, #1190, #1228, #1193, #1264):</strong> At cluster level, routing rejections, gateway queue, in-flight gateway eviction, TTL expiry, and encode-pool routing add additional buckets: <code>injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out + routing_rejections + gateway_queue_depth + gateway_queue_shed + gateway_queue_rejected + gateway_evicted + gateway_expired + encode_routing_rejections</code>. <code>gateway_queue_depth</code> counts requests still in the gateway queue at horizon. <code>gateway_queue_shed</code> counts requests shed (evicted victims) from the gateway queue due to capacity limits. <code>gateway_queue_rejected</code> counts requests rejected from the gateway queue when no displaceable victim exists (either no sheddable entries, or all sheddable entries have equal/higher priority than the incoming request). <code>gateway_evicted</code> counts requests evicted in-flight from instances when the system is saturated and higher-priority requests are waiting (Phase 4, #1228). <code>gateway_expired</code> counts requests removed from the gateway queue when their TTL expires (Phase 6, #1193); default off (TTL=0). <code>encode_routing_rejections</code> (GAP-4, #1264) counts requests rejected at the encode routing stage when the encode pool has zero routable instances; the term is always zero when <code>--encode-instances 0</code> (default). Each terminal bucket is mutually exclusive — a request lands in exactly one. Single-instance simulations have no gateway queue and no encode pool; all six terms are always zero there.</p>
@@ -3341,7 +3341,7 @@
 <h2 id="inv-13-runreplay-parity">INV-13: Run/Replay Parity<a class="headerlink" href="#inv-13-runreplay-parity" title="Permanent link">&para;</a></h2>
 <p><strong>Statement:</strong> For any configuration supported by both <code>blis run</code> and <code>blis replay</code>, a trace exported via <code>blis run --trace-output</code> and replayed via <code>blis replay --session-mode fixed</code> with identical flags MUST produce identical per-request TTFT, E2E, and aggregate metrics. Features not yet supported by replay (autoscaler, node pools) MUST cause a <code>logrus.Fatalf</code> at startup when those flags are explicitly set or when a policy bundle containing those features is passed — never silent degradation or a mere warning.</p>
 <p><strong>Verification:</strong> <code>cmd/replay_test.go</code> — <code>TestINV13_RunReplayParity_PD</code> verifies that a PD-disaggregated cluster produces matching <code>RequestTTFTs</code> and <code>RequestE2Es</code> maps when the same requests are run directly vs. through the trace-export-then-replay path. <code>TestReplayCmd_AutoscalerBundleFatal</code> and <code>TestReplayCmd_NodePoolsBundleFatal</code> verify fatal exit for unsupported features.</p>
-<p><strong>Evidence:</strong> <code>cmd/replay.go::replayCmd.Run</code> wires all 12 PD disaggregation fields to <code>cluster.DeploymentConfig</code> (same set as <code>runCmd</code>): <code>PrefillInstances</code>, <code>DecodeInstances</code>, <code>SharedInstances</code>, <code>PDDecider</code>, <code>PDPrefixThreshold</code>, <code>PDTransferBandwidthGBps</code>, <code>PDTransferBaseLatencyMs</code>, <code>PDTransferContention</code>, <code>PrefillScorerConfigs</code>, <code>DecodeScorerConfigs</code>, <code>PrefillOverrides</code>, <code>DecodeOverrides</code>. Autoscaler and node-pool checks use <code>logrus.Fatalf</code> to prevent silent divergence.</p>
+<p><strong>Evidence:</strong> <code>cmd/replay.go::replayCmd.Run</code> wires the same <code>cluster.DeploymentConfig</code> field set as <code>runCmd</code> (<code>cmd/root.go</code>). This parity surface is broader than PD disaggregation alone: it spans PD fields (<code>PrefillInstances</code>, <code>DecodeInstances</code>, <code>SharedInstances</code>, <code>PDDecider</code>, <code>PDPrefixThreshold</code>, <code>PDTransferBandwidthGBps</code>, <code>PDTransferBaseLatencyMs</code>, <code>PDTransferContention</code>, <code>PrefillScorerConfigs</code>, <code>DecodeScorerConfigs</code>, <code>PrefillOverrides</code>, <code>DecodeOverrides</code>), encode-stage fields (<code>EncodeInstances</code>, <code>EncodeDecider</code>), the flow-control fields, tier-shedding (<code>TierShedThreshold</code>, <code>TierShedMinPriority</code>), GAIE thresholds (<code>GAIEQDThreshold</code>, <code>GAIEKVThreshold</code>), <code>TenantBudgets</code>, and <code>InstanceLifecycle</code>. Both call sites carry an <code>INV-13 SYNC POINT</code> comment marking the literal that must stay in sync; treat that comment — not a fixed field count — as the authoritative enumeration, since it grows as features are added. Autoscaler and node-pool checks use <code>logrus.Fatalf</code> to prevent silent divergence.</p>
 <p><strong>Hypothesis family:</strong> Scheduler invariants (safety/liveness) — same as INV-1, INV-5, INV-6.</p>
 <hr />
 <h2 id="pd-disaggregation-invariants">PD Disaggregation Invariants<a class="headerlink" href="#pd-disaggregation-invariants" title="Permanent link">&para;</a></h2>

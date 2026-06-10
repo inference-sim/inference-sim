@@ -1923,7 +1923,7 @@
   <span class="md-ellipsis">
     
   
-    System Invariants (INV-1-INV-11)
+    System Invariants (INV-1-INV-13)
   
 
     
@@ -3069,7 +3069,7 @@ PHASE 6 — TEST STRATEGY
    (not from running the code). Invariant tests answer "is the code correct?"
    while golden tests answer "did the code change?"</p>
 <p>Key invariants for this simulator (derived from CLAUDE.md):
-   - <strong>Request conservation:</strong> completed + still_queued + still_running + dropped_unservable = injected
+   - <strong>Request conservation (INV-1):</strong> completed + still_queued + still_running + dropped_unservable + timed_out = injected (cluster runs add gateway/routing/encode buckets — see canonical INV-1)
    - <strong>KV block conservation:</strong> allocated_blocks + free_blocks = total_blocks
    - <strong>Clock monotonicity:</strong> simulation clock never decreases
    - <strong>Causality:</strong> arrival_time ≤ enqueue_time ≤ schedule_time ≤ completion_time

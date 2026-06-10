@@ -1935,7 +1935,7 @@
   <span class="md-ellipsis">
     
   
-    System Invariants (INV-1-INV-11)
+    System Invariants (INV-1-INV-13)
   
 
     
@@ -3955,7 +3955,7 @@
 <tr>
 <td><strong>Scheduler invariants</strong></td>
 <td>"For ALL configurations C, invariant I holds at simulation end"</td>
-<td>"For all routing × scheduling × admission combinations, injected == completed + queued + running"</td>
+<td>"For all routing × scheduling × admission combinations, injected == completed + still_queued + still_running + dropped_unservable + timed_out (+ gateway/routing/encode buckets for cluster runs)"</td>
 </tr>
 <tr>
 <td><strong>Performance-regime</strong></td>
@@ -4002,7 +4002,7 @@
 </tr>
 <tr>
 <td>Scheduler invariants</td>
-<td><strong>Primary</strong> (INV-1 through INV-6)</td>
+<td><strong>Primary</strong> (INV-1–INV-3, INV-5, INV-6, INV-10, INV-13)</td>
 <td>—</td>
 <td>—</td>
 <td>—</td>
@@ -4063,17 +4063,17 @@
 <tbody>
 <tr>
 <td>Scheduler invariants</td>
-<td>INV-1 (conservation), INV-2 (lifecycle), INV-3 (clock monotonicity), INV-5 (causality), INV-6 (determinism)</td>
+<td>INV-1 (conservation), INV-2 (lifecycle), INV-3 (clock monotonicity), INV-5 (causality), INV-6 (determinism), INV-10 (session causality), INV-13 (run/replay parity)</td>
 <td>R1 (no silent data loss), R5 (transactional mutation), R21 (mutable slice iteration)</td>
 </tr>
 <tr>
 <td>Performance-regime</td>
-<td>INV-8 (work-conserving)</td>
+<td>— (uses scaling curves, not a dedicated invariant)</td>
 <td>—</td>
 </tr>
 <tr>
 <td>Structural model</td>
-<td>INV-4 (KV conservation), INV-7 (signal freshness)</td>
+<td>INV-4 (KV conservation), INV-7 (signal freshness), INV-8 (work-conserving), INV-9 (oracle knowledge boundary), INV-11 (session completeness), INV-12 (Phase 1 completeness), plus PD disaggregation INV-PD-<em> / pool INV-P2-</em></td>
 <td>R2 (sort map keys), R11 (guard division), R17 (signal freshness), R22 (pre-check consistency)</td>
 </tr>
 <tr>
