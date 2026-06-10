@@ -43,17 +43,152 @@ func TestNewLatencyCoeffs_FieldEquivalence(t *testing.T) {
 func TestNewModelHardwareConfig_FieldEquivalence(t *testing.T) {
 	mc := ModelConfig{NumLayers: 32}
 	hw := HardwareCalib{TFlopsPeak: 1000.0, MemoryGiB: 80.0}
-	got := NewModelHardwareConfig(mc, hw, "llama", "H100", 2, "roofline", 8192)
+	got := NewModelHardwareConfig(mc, hw, "llama", "H100", 2, 1, false, "roofline", 8192)
 	want := ModelHardwareConfig{
-		ModelConfig: mc,
-		HWConfig:    hw,
-		Model:       "llama",
-		GPU:         "H100",
-		TP:          2,
-		Backend:     "roofline",
-		MaxModelLen: 8192,
+		ModelConfig:          mc,
+		HWConfig:             hw,
+		Model:                "llama",
+		GPU:                  "H100",
+		TP:                   2,
+		DP:                   1,
+		EnableExpertParallel: false,
+		Backend:              "roofline",
+		MaxModelLen:          8192,
 	}
 	assert.Equal(t, want, got)
+}
+
+// TestModelHardwareConfig_ParallelismHelpers verifies the DP/EP group-size
+// helpers against vLLM's flattened-MoE-group semantics (#1417 / design §3).
+//
+// Laws asserted (behavioral, refactor-survivable):
+//   - EffectiveDP clamps to >= 1.
+//   - Dense EffectiveMoEGroupSize == TP regardless of DP/EP (dense never flattens).
+//   - MoE EffectiveMoEGroupSize == TP·DP (the flattened group).
+//   - EffectiveEP is in {1, EffectiveMoEGroupSize} and equals the group size
+//     IFF expert parallelism is enabled on an MoE model.
+func TestModelHardwareConfig_ParallelismHelpers(t *testing.T) {
+	dense := ModelConfig{NumLayers: 32}                   // NumLocalExperts == 0 → dense
+	moe := ModelConfig{NumLayers: 32, NumLocalExperts: 8} // MoE
+
+	tests := []struct {
+		name         string
+		mc           ModelConfig
+		tp, dp       int
+		ep           bool
+		wantDP       int
+		wantMoEGroup int
+		wantEP       int
+	}{
+		// Degenerate / single-GPU.
+		{"dense_tp1_dp1", dense, 1, 1, false, 1, 1, 1},
+		{"moe_tp1_dp1_ep_off", moe, 1, 1, false, 1, 1, 1},
+		{"moe_tp1_dp1_ep_on", moe, 1, 1, true, 1, 1, 1},
+
+		// Dense never flattens: group stays TP, EP stays 1 even if requested.
+		{"dense_tp2_dp1", dense, 2, 1, false, 1, 2, 1},
+		{"dense_tp4_ep_on_ignored", dense, 4, 1, true, 1, 4, 1},
+
+		// MoE EP-off: group flattens to TP·DP; EP predicate is 1.
+		{"moe_tp2_dp1_ep_off", moe, 2, 1, false, 1, 2, 1},
+		{"moe_tp2_dp2_ep_off", moe, 2, 2, false, 2, 4, 1},
+
+		// MoE EP-on: group flattens to TP·DP; EP equals the group size.
+		{"moe_tp2_dp1_ep_on", moe, 2, 1, true, 1, 2, 2},
+		{"moe_tp2_dp2_ep_on", moe, 2, 2, true, 2, 4, 4},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := NewModelHardwareConfig(tc.mc, HardwareCalib{}, "m", "H100", tc.tp, tc.dp, tc.ep, "trained-physics", 0)
+			assert.Equal(t, tc.wantDP, c.EffectiveDP(), "EffectiveDP")
+			assert.Equal(t, tc.wantMoEGroup, c.EffectiveMoEGroupSize(), "EffectiveMoEGroupSize")
+			assert.Equal(t, tc.wantEP, c.EffectiveEP(), "EffectiveEP")
+
+			// Law: EP is either disabled (1) or exactly the flattened group.
+			if c.EffectiveEP() != 1 {
+				assert.Equal(t, c.EffectiveMoEGroupSize(), c.EffectiveEP(),
+					"when EP is active it must equal the flattened MoE group size")
+			}
+		})
+	}
+}
+
+// TestEffectiveDP_ClampsUnsetDP verifies that a zero/unset DP field (e.g. a
+// zero-valued struct built outside the constructor) is treated as a single rank.
+// The constructor rejects DP < 1, so this law is exercised via a direct literal.
+func TestEffectiveDP_ClampsUnsetDP(t *testing.T) {
+	moe := ModelConfig{NumLayers: 32, NumLocalExperts: 8}
+	c := ModelHardwareConfig{ModelConfig: moe, TP: 2, DP: 0} // DP unset
+	assert.Equal(t, 1, c.EffectiveDP(), "unset DP must clamp to 1")
+	assert.Equal(t, 2, c.EffectiveMoEGroupSize(), "TP·EffectiveDP = 2·1")
+}
+
+// TestNewModelHardwareConfig_DPValidation verifies the construction-time panics
+// for invalid DP configurations (library boundary → panic).
+func TestNewModelHardwareConfig_DPValidation(t *testing.T) {
+	dense := ModelConfig{NumLayers: 32}
+	moe := ModelConfig{NumLayers: 32, NumLocalExperts: 8}
+
+	tests := []struct {
+		name         string
+		mc           ModelConfig
+		dp           int
+		wantContains string
+	}{
+		{"dp_zero", moe, 0, "DP must be >= 1"},
+		{"dp_negative", moe, -1, "DP must be >= 1"},
+		{"dense_dp2", dense, 2, "only supported for MoE"},
+		{"dense_dp8", dense, 8, "only supported for MoE"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				r := recover()
+				if r == nil {
+					t.Fatal("expected panic")
+				}
+				msg := fmt.Sprintf("%v", r)
+				if !strings.Contains(msg, tc.wantContains) {
+					t.Errorf("panic message %q should contain %q", msg, tc.wantContains)
+				}
+				if !strings.Contains(msg, "NewModelHardwareConfig") {
+					t.Errorf("panic message %q should contain constructor name", msg)
+				}
+			}()
+			NewModelHardwareConfig(tc.mc, HardwareCalib{}, "m", "H100", 2, tc.dp, false, "trained-physics", 0)
+		})
+	}
+}
+
+// TestNewModelHardwareConfig_MoE_DPAllowed verifies that DP > 1 is permitted for
+// MoE models with either EP setting (no panic).
+func TestNewModelHardwareConfig_MoE_DPAllowed(t *testing.T) {
+	moe := ModelConfig{NumLayers: 32, NumLocalExperts: 8}
+	for _, ep := range []bool{false, true} {
+		c := NewModelHardwareConfig(moe, HardwareCalib{}, "m", "H100", 2, 4, ep, "trained-physics", 0)
+		assert.Equal(t, 4, c.DP)
+		assert.Equal(t, ep, c.EnableExpertParallel)
+		assert.Equal(t, 8, c.EffectiveMoEGroupSize()) // TP·DP = 2·4
+	}
+}
+
+// TestEffectiveMoEGroupSize_EPModeIndependent locks in the design's load-bearing
+// law (design §5 truth table): the flattened MoE group is TP·DP and is
+// IDENTICAL whether expert parallelism is on or off — EP only relabels how that
+// group is partitioned, never its size. A future latency-model change is most
+// likely to break exactly this equality, so it is asserted directly rather than
+// inferred from two independent expected numbers.
+func TestEffectiveMoEGroupSize_EPModeIndependent(t *testing.T) {
+	moe := ModelConfig{NumLayers: 32, NumLocalExperts: 8}
+	for _, tc := range []struct{ tp, dp int }{{2, 2}, {4, 2}, {1, 4}, {2, 1}} {
+		off := NewModelHardwareConfig(moe, HardwareCalib{}, "m", "H100", tc.tp, tc.dp, false, "trained-physics", 0)
+		on := NewModelHardwareConfig(moe, HardwareCalib{}, "m", "H100", tc.tp, tc.dp, true, "trained-physics", 0)
+		assert.Equalf(t, off.EffectiveMoEGroupSize(), on.EffectiveMoEGroupSize(),
+			"flattened MoE group must be EP-mode-independent at TP=%d,DP=%d", tc.tp, tc.dp)
+		// And when EP is on, EP equals that same group.
+		assert.Equal(t, on.EffectiveMoEGroupSize(), on.EffectiveEP(),
+			"EP-on group must equal the flattened MoE group")
+	}
 }
 
 func TestNewPolicyConfig_FieldEquivalence(t *testing.T) {

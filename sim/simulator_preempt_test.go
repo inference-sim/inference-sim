@@ -13,7 +13,7 @@ func TestPreempt_EmptyBatch_ReturnsFalse(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(2, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "roofline", 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(config.TotalKVBlocks, config.BlockSizeTokens)
@@ -68,7 +68,7 @@ func TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(2, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "roofline", 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(config.TotalKVBlocks, config.BlockSizeTokens)
@@ -139,12 +139,12 @@ func TestNewSimulator_CustomSLOPriorityMap_AffectsPreemption(t *testing.T) {
 	// Phase 1: crit decode uses the 1 free block (10/10 used).
 	// Phase 1: bg decode → full → preemption. With override: batch(-1) < bg(10) → batch-req evicted.
 	cfg := SimConfig{
-		Horizon:             100_000_000,
-		KVCacheConfig:       NewKVCacheConfig(10, 16, 0, 0.0, 0.0, 0.0),
-		BatchConfig:         NewBatchConfig(10, 10000, 0),
-		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 0, 0}, []float64{100, 1, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
-		PolicyConfig:        NewPolicyConfig("fcfs", "priority"),
+		Horizon:              100_000_000,
+		KVCacheConfig:        NewKVCacheConfig(10, 16, 0, 0.0, 0.0, 0.0),
+		BatchConfig:          NewBatchConfig(10, 10000, 0),
+		LatencyCoeffs:        NewLatencyCoeffs([]float64{0, 0, 0}, []float64{100, 1, 0}),
+		ModelHardwareConfig:  NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "roofline", 0),
+		PolicyConfig:         NewPolicyConfig("fcfs", "priority"),
 		SLOPriorityOverrides: map[string]int{"background": 10}, // promote background above batch(-1)
 	}
 	s := mustNewSimulator(t, cfg)

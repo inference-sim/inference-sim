@@ -82,9 +82,11 @@ var (
 	latencyModelBackend       string    // CLI --latency-model flag: selects latency model backend (Cobra-bound, NEVER mutated inside Run)
 	maxModelLen               int64     // CLI --max-model-len: max total sequence length (input + output); 0 = unlimited
 	// CLI flags for model, GPU, TP
-	model             string // LLM name
-	gpu               string // GPU type
-	tensorParallelism int    // TP value
+	model                string // LLM name
+	gpu                  string // GPU type
+	tensorParallelism    int    // TP value
+	dataParallelism      int    // DP value (MoE only; trained-physics backend only)
+	enableExpertParallel bool   // EP mode (MoE only; trained-physics backend only)
 
 	// cluster config
 	numInstances int // Number of instances in the cluster
@@ -203,14 +205,14 @@ var (
 	saturationConfidence float64 // Confidence level for slope CI (--saturation-ci)
 
 	// post-hoc backlog classifier policy (#1391, #1392)
-	saturationClassifier      string  // Classifier name: "drain-ratio" (default) or "slope-based" (--saturation-classifier)
-	saturationWarmupWindows   int     // Inject windows skipped as warmup (drain-ratio only) (--saturation-warmup-windows)
-	saturationTailWindows     int     // Inject windows skipped as tail (drain-ratio only) (--saturation-tail-windows)
-	saturationSaturatedRatio  float64 // DrainRatio < this → PERSISTENTLY_SATURATED (--saturation-drain-ratio-saturated)
-	saturationTransientRatio  float64 // DrainRatio < this → TRANSIENT_BACKLOG (--saturation-drain-ratio-transient)
+	saturationClassifier     string  // Classifier name: "drain-ratio" (default) or "slope-based" (--saturation-classifier)
+	saturationWarmupWindows  int     // Inject windows skipped as warmup (drain-ratio only) (--saturation-warmup-windows)
+	saturationTailWindows    int     // Inject windows skipped as tail (drain-ratio only) (--saturation-tail-windows)
+	saturationSaturatedRatio float64 // DrainRatio < this → PERSISTENTLY_SATURATED (--saturation-drain-ratio-saturated)
+	saturationTransientRatio float64 // DrainRatio < this → TRANSIENT_BACKLOG (--saturation-drain-ratio-transient)
 
 	// post-hoc saturation detector configuration (#1369)
-	postHocDetector      string  // Post-hoc saturation detector: "composite", "threshold", "none" (--post-hoc-detector)
+	postHocDetector     string  // Post-hoc saturation detector: "composite", "threshold", "none" (--post-hoc-detector)
 	saturationThreshold float64 // Threshold in ms for threshold detector (--saturation-threshold-ms)
 
 	// trace export
@@ -679,6 +681,36 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		logrus.Fatalf("--max-model-len must be >= 0, got %d", maxModelLen)
 	}
 
+	// DP/EP validation (single shared path for run and replay → INV-13 parity).
+	// Mirrors the construction-time panics in sim.NewModelHardwareConfig but emits
+	// clean CLI errors. modelConfig.NumLocalExperts is populated for the analytical
+	// backends above; it is 0 (dense-equivalent) when no model config was resolved.
+	if dataParallelism < 1 {
+		logrus.Fatalf("--dp must be >= 1, got %d", dataParallelism)
+	}
+	if (dataParallelism > 1 || enableExpertParallel) && backend != "trained-physics" {
+		// INV BC-ROOFLINE: roofline does not model DP/EP step-time effects, so
+		// accepting these flags there would imply unsupported latency semantics.
+		logrus.Fatalf("--dp > 1 and --enable-expert-parallel require --latency-model trained-physics "+
+			"(got --dp=%d, --enable-expert-parallel=%t, --latency-model %s). The roofline backend is "+
+			"DP/EP-blind for step time.",
+			dataParallelism, enableExpertParallel, backend)
+	}
+	if dataParallelism > 1 && modelConfig.NumLocalExperts <= 1 {
+		// Dense DP is the router-replica mechanism, not a latency divisor (vLLM
+		// treats non-MoE DP as N independent engines).
+		logrus.Fatalf("--dp > 1 is only supported for MoE models (got --dp=%d for a dense model). "+
+			"Dense data parallelism is expressed via router replicas (--num-instances), not the latency model.",
+			dataParallelism)
+	}
+	if enableExpertParallel && modelConfig.NumLocalExperts <= 1 {
+		// EP is a no-op for dense models (EffectiveEP stays 1); warn so a likely
+		// misconfiguration is visible rather than silently ignored. Not fatal:
+		// the flag is harmless here and rejecting it would over-constrain. Warning
+		// goes to stderr, so deterministic stdout (INV-6) is unaffected.
+		logrus.Warnf("--enable-expert-parallel has no effect on dense model %q (no MoE experts); ignoring.", model)
+	}
+
 	return latencyResolution{
 		Backend:     backend,
 		ModelConfig: modelConfig,
@@ -990,6 +1022,8 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&model, "model", "", "LLM name")
 	cmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
 	cmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
+	cmd.Flags().IntVar(&dataParallelism, "dp", 1, "Data parallelism degree (MoE models only; --latency-model trained-physics only)")
+	cmd.Flags().BoolVar(&enableExpertParallel, "enable-expert-parallel", false, "Enable expert parallelism for MoE models (mirrors vLLM --enable-expert-parallel; --latency-model trained-physics only)")
 	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "trained-physics", "Latency model backend: trained-physics (default), roofline")
 	cmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for analytical backends when not set.")
 
@@ -1629,7 +1663,7 @@ var runCmd = &cobra.Command{
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
 				BatchConfig:          sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:        sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
-				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, lr.Backend, maxModelLen),
+				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dataParallelism, enableExpertParallel, lr.Backend, maxModelLen),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				SLOPriorityOverrides: sloPriorityOverrides,
 			},

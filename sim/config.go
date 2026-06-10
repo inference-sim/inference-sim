@@ -101,27 +101,101 @@ type ModelHardwareConfig struct {
 	Model       string        // model name (e.g., "meta-llama/llama-3.1-8b-instruct")
 	GPU         string        // GPU type (e.g., "H100")
 	TP          int           // tensor parallelism degree
-	Backend     string        // latency model backend: "" or "roofline" (default), "trained-physics"
-	MaxModelLen int64         // max total sequence length (input + output); 0 = unlimited (mirrors vLLM --max-model-len)
+
+	// DP is the data-parallel degree (default 1). DP > 1 is only meaningful for
+	// MoE models — vLLM treats non-MoE DP as N independent engines, which BLIS
+	// already expresses via the router-replica mechanism — and only affects the
+	// trained-physics latency backend.
+	DP int
+	// EnableExpertParallel mirrors vLLM --enable-expert-parallel. When true (and
+	// the model is MoE), the flattened TP·DP MoE group is used as the
+	// expert-parallel group. Only affects the trained-physics latency backend.
+	EnableExpertParallel bool
+
+	Backend     string // latency model backend: "" or "roofline" (default), "trained-physics"
+	MaxModelLen int64  // max total sequence length (input + output); 0 = unlimited (mirrors vLLM --max-model-len)
 }
 
 // NewModelHardwareConfig creates a ModelHardwareConfig with all fields explicitly set.
 // This is the canonical constructor — all construction sites must use it (R4).
 // Parameter order matches struct field order.
+//
+// Validation (library boundary → panic): MaxModelLen must be >= 0; DP must be >= 1;
+// DP > 1 is rejected for dense models (NumLocalExperts <= 1) because dense data
+// parallelism is the router-replica mechanism, not a latency divisor. DP > 1 is
+// allowed for MoE models with either EnableExpertParallel setting.
+//
+// TP is intentionally NOT validated here: TP=0 is a meaningful "invalid config"
+// vehicle that the latency-model factory (NewLatencyModel → trained-physics/roofline)
+// rejects with an error, and several tests rely on that factory-validation seam.
+// Every consumer of the TP-based helpers (EffectiveMoEGroupSize/EffectiveEP) goes
+// through NewLatencyModel, so a zero-TP divisor cannot reach latency math.
 func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
-	model, gpu string, tp int, backend string, maxModelLen int64) ModelHardwareConfig {
+	model, gpu string, tp, dp int, enableExpertParallel bool,
+	backend string, maxModelLen int64) ModelHardwareConfig {
 	if maxModelLen < 0 {
 		panic(fmt.Sprintf("NewModelHardwareConfig: MaxModelLen must be >= 0, got %d", maxModelLen))
 	}
-	return ModelHardwareConfig{
-		ModelConfig: modelConfig,
-		HWConfig:    hwConfig,
-		Model:       model,
-		GPU:         gpu,
-		TP:          tp,
-		Backend:     backend,
-		MaxModelLen: maxModelLen,
+	if dp < 1 {
+		panic(fmt.Sprintf("NewModelHardwareConfig: DP must be >= 1, got %d", dp))
 	}
+	if dp > 1 && modelConfig.NumLocalExperts <= 1 {
+		panic(fmt.Sprintf("NewModelHardwareConfig: DP > 1 is only supported for MoE models "+
+			"(NumLocalExperts > 1), got DP=%d with NumLocalExperts=%d. Dense data parallelism "+
+			"is expressed via router replicas, not the latency model.", dp, modelConfig.NumLocalExperts))
+	}
+	return ModelHardwareConfig{
+		ModelConfig:          modelConfig,
+		HWConfig:             hwConfig,
+		Model:                model,
+		GPU:                  gpu,
+		TP:                   tp,
+		DP:                   dp,
+		EnableExpertParallel: enableExpertParallel,
+		Backend:              backend,
+		MaxModelLen:          maxModelLen,
+	}
+}
+
+// isMoE reports whether the model is a mixture-of-experts model. The threshold
+// (NumLocalExperts > 1) matches the parsing layer (sim/latency/config.go) and
+// ExtractKVCapacityParams: single-expert configs are dense-equivalent.
+func (c ModelHardwareConfig) isMoE() bool {
+	return c.ModelConfig.NumLocalExperts > 1
+}
+
+// EffectiveDP returns the data-parallel degree, clamped to a minimum of 1. The
+// canonical constructor already rejects DP < 1, so this clamp only guards a
+// zero-valued struct built directly (bypassing NewModelHardwareConfig, which R4
+// discourages) — there it treats an unset DP as a single rank.
+func (c ModelHardwareConfig) EffectiveDP() int {
+	if c.DP < 1 {
+		return 1
+	}
+	return c.DP
+}
+
+// EffectiveMoEGroupSize returns the size of the flattened MoE tensor-parallel
+// group. For MoE models this is TP·DP (mirroring vLLM's flattened dp·pcp·tp MoE
+// group; PCP is not modeled here and is assumed 1), used by both the EP-off and
+// EP-on MoE paths. For dense models it is just TP. This is the sharding divisor
+// for routed-expert weights/compute.
+func (c ModelHardwareConfig) EffectiveMoEGroupSize() int {
+	if c.isMoE() {
+		return c.TP * c.EffectiveDP()
+	}
+	return c.TP
+}
+
+// EffectiveEP returns the expert-parallel group size: TP·DP when expert
+// parallelism is enabled for an MoE model, else 1. This is an EP-mode
+// predicate/size only — it is NOT the EP-off sharding divisor (that is
+// EffectiveMoEGroupSize).
+func (c ModelHardwareConfig) EffectiveEP() int {
+	if c.EnableExpertParallel && c.isMoE() {
+		return c.TP * c.EffectiveDP()
+	}
+	return 1
 }
 
 // PolicyConfig groups scheduling and preemption policy selection.

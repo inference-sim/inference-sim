@@ -27,13 +27,12 @@ func newTestDeploymentConfig(numInstances int) DeploymentConfig {
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 1, "roofline", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 1, 1, false, "roofline", 0),
 		},
 		NumInstances:     numInstances,
 		CacheSignalDelay: DefaultCacheSignalDelay,
 	}
 }
-
 
 // mustRun is a test helper that calls Run and fails the test on error.
 func mustRun(t *testing.T, cs *ClusterSimulator) {
@@ -65,7 +64,7 @@ func TestDeploymentConfig_ToSimConfig_ReturnsEmbeddedSimConfig(t *testing.T) {
 			KVCacheConfig:       sim.NewKVCacheConfig(500, 32, 0, 0, 0, 42),
 			BatchConfig:         sim.NewBatchConfig(128, 4096, 512),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1, 2, 3}, []float64{4, 5, 6}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 2, "roofline", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 2, 1, false, "roofline", 0),
 			PolicyConfig:        sim.NewPolicyConfig("priority-fcfs", ""),
 		},
 		NumInstances:    3,
@@ -143,7 +142,7 @@ func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
 					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
 					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
 					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
-					ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, "roofline", 0),
+					ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, 1, false, "roofline", 0),
 				},
 				NumInstances: 1,
 			}
@@ -171,7 +170,7 @@ func TestClusterSimulator_SingleInstance_GoldenEquivalence(t *testing.T) {
 			}
 			// Verify timing: SimEndedTime must match golden vllm_estimated_duration_s
 			vllmRuntime := float64(m.SimEndedTime) / 1e6
-			testutil.AssertFloat64Equal(t,"vllm_estimated_duration_s",
+			testutil.AssertFloat64Equal(t, "vllm_estimated_duration_s",
 				tc.Metrics.VllmEstimatedDurationS, vllmRuntime, 1e-9)
 		})
 	}
@@ -193,7 +192,7 @@ func TestClusterSimulator_SingleInstance_GoldenInvariants(t *testing.T) {
 					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
 					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
 					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
-					ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, "roofline", 0),
+					ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, 1, false, "roofline", 0),
 				},
 				NumInstances: 1,
 			}
@@ -1371,9 +1370,9 @@ func TestClusterSimulator_AdmissionLatency_ExactOffset(t *testing.T) {
 		return cs.AggregatedMetrics()
 	}
 
-	mA := runWithLatency(0)      // baseline
-	mB := runWithLatency(10000)  // 10ms
-	mC := runWithLatency(50000)  // 50ms
+	mA := runWithLatency(0)     // baseline
+	mB := runWithLatency(10000) // 10ms
+	mC := runWithLatency(50000) // 50ms
 
 	// Compute mean TTFT and E2E (in ticks/microseconds), convert to ms
 	ttftA := meanMapValues(mA.RequestTTFTs) / 1000.0
@@ -1570,7 +1569,7 @@ func TestClusterSimulator_MaxModelLen_DroppedUnservable(t *testing.T) {
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}), // zero alpha
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, "roofline", maxModelLen),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "roofline", maxModelLen),
 		},
 		NumInstances: 2,
 	}
@@ -1841,7 +1840,7 @@ func TestNewClusterSimulator_UsesPoolGPUType(t *testing.T) {
 	sharedConfig := sim.SimConfig{
 		Horizon:             1_000_000,
 		Seed:                42,
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 1, "roofline", 0),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 1, 1, false, "roofline", 0),
 		KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         sim.NewBatchConfig(4, 2048, 0),
 		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
@@ -1971,7 +1970,7 @@ func TestNewClusterSimulator_RooflineUsesPoolHWConfig(t *testing.T) {
 	baseSimCfg := sim.SimConfig{
 		Horizon:             1_000_000, // 1 second
 		Seed:                42,
-		ModelHardwareConfig: sim.NewModelHardwareConfig(mc, fastH100, "test-model", "H100", 1, "roofline", 0),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(mc, fastH100, "test-model", "H100", 1, 1, false, "roofline", 0),
 		KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         sim.NewBatchConfig(8, 2048, 0),
 		LatencyCoeffs:       sim.NewLatencyCoeffs(nil, []float64{0, 0, 0}),
@@ -2040,7 +2039,7 @@ func TestNodeReadyEvent_RooflineUsesPoolHWConfig(t *testing.T) {
 	baseSimCfg := sim.SimConfig{
 		Horizon:             1_000_000,
 		Seed:                42,
-		ModelHardwareConfig: sim.NewModelHardwareConfig(mc, fastH100, "test-model", "H100", 1, "roofline", 0),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(mc, fastH100, "test-model", "H100", 1, 1, false, "roofline", 0),
 		KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         sim.NewBatchConfig(8, 2048, 0),
 		LatencyCoeffs:       sim.NewLatencyCoeffs(nil, []float64{0, 0, 0}),
@@ -2132,7 +2131,7 @@ func TestClusterRun_E2E_NodePoolsHWConfig_TTFTReflectsPoolHardware(t *testing.T)
 	baseSimCfg := sim.SimConfig{
 		Horizon:             horizon,
 		Seed:                42,
-		ModelHardwareConfig: sim.NewModelHardwareConfig(mc, fastGPU, "test-model", "fast-gpu", 1, "roofline", 0),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(mc, fastGPU, "test-model", "fast-gpu", 1, 1, false, "roofline", 0),
 		KVCacheConfig:       sim.NewKVCacheConfig(200, 16, 0, 0, 0, 0),
 		BatchConfig:         sim.NewBatchConfig(8, 2048, 0),
 		LatencyCoeffs:       sim.NewLatencyCoeffs(nil, []float64{0, 0, 0}),
@@ -2197,7 +2196,7 @@ func TestNodeReadyEvent_DeferredConstruction_UsesPoolGPUType(t *testing.T) {
 		SimConfig: sim.SimConfig{
 			Horizon:             1_000_000,
 			Seed:                42,
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 1, "roofline", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 1, 1, false, "roofline", 0),
 			KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(4, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
@@ -2755,7 +2754,7 @@ func TestClusterSimulator_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, "roofline", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "roofline", 0),
 		},
 		NumInstances: 2,
 	}
@@ -2821,7 +2820,7 @@ func TestClusterSimulator_MixedOrphanedAndGenuineTimeout_CorrectMetrics(t *testi
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(1, 2048, 0), // max 1 running — forces queuing
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{0, 0, 0}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, "roofline", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "roofline", 0),
 		},
 		NumInstances: 1,
 	}
@@ -3016,10 +3015,10 @@ func TestClusterSimulator_FlowControl_Eviction_Conservation(t *testing.T) {
 		out := make([]int, len(longOutput))
 		copy(out, longOutput)
 		r := &sim.Request{
-			ID:          fmt.Sprintf("shed-%d", i),
-			ArrivalTime: int64(i * 1000), // arrive close together
-			SLOClass:    "sheddable",
-			InputTokens: []int{1, 2, 3, 4, 5},
+			ID:           fmt.Sprintf("shed-%d", i),
+			ArrivalTime:  int64(i * 1000), // arrive close together
+			SLOClass:     "sheddable",
+			InputTokens:  []int{1, 2, 3, 4, 5},
 			OutputTokens: out,
 		}
 		requests = append(requests, r)
@@ -3027,10 +3026,10 @@ func TestClusterSimulator_FlowControl_Eviction_Conservation(t *testing.T) {
 	// Critical requests arrive while sheddable is occupying the instance
 	for i := 0; i < 3; i++ {
 		r := &sim.Request{
-			ID:          fmt.Sprintf("crit-%d", i),
-			ArrivalTime: int64(50000 + i*1000), // arrive after sheddables are running
-			SLOClass:    "critical",
-			InputTokens: []int{1, 2, 3},
+			ID:           fmt.Sprintf("crit-%d", i),
+			ArrivalTime:  int64(50000 + i*1000), // arrive after sheddables are running
+			SLOClass:     "critical",
+			InputTokens:  []int{1, 2, 3},
 			OutputTokens: []int{1, 2, 3},
 		}
 		requests = append(requests, r)
@@ -3214,4 +3213,3 @@ func TestClusterSimulator_FlowControl_Eviction_PD(t *testing.T) {
 
 	t.Logf("PD+FC results: completed=%d gwEvicted=%d", m.CompletedRequests, gwEvicted)
 }
-

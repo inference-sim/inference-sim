@@ -11,12 +11,12 @@ func TestClusterSimulator_TraceLevelNone_NilTrace(t *testing.T) {
 	// GIVEN trace level none (default)
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:       1000000,
-			Seed:          42,
-			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
-			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "", "", 1, "roofline", 0),
+			Horizon:             1000000,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(10, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "", "", 1, 1, false, "roofline", 0),
 		},
 		NumInstances: 2,
 		TraceLevel:   "none",
@@ -38,12 +38,12 @@ func TestClusterSimulator_TraceLevelDecisions_RecordsAllEvents(t *testing.T) {
 	// GIVEN trace level decisions with 5 requests and 2 instances
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:       10000000,
-			Seed:          42,
-			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
-			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "", "", 1, "roofline", 0),
+			Horizon:             10000000,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(10, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "", "", 1, 1, false, "roofline", 0),
 		},
 		NumInstances:    2,
 		TraceLevel:      "decisions",
@@ -80,12 +80,12 @@ func TestClusterSimulator_TraceLevelDecisions_WithCounterfactual(t *testing.T) {
 	// GIVEN trace with counterfactual k=2 and weighted scoring
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:       10000000,
-			Seed:          42,
-			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
-			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "", "", 1, "roofline", 0),
+			Horizon:             10000000,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(10, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "", "", 1, 1, false, "roofline", 0),
 		},
 		NumInstances:         2,
 		RoutingPolicy:        "weighted",
@@ -119,12 +119,12 @@ func TestClusterSimulator_TraceWithTokenBucket_RecordsRejections(t *testing.T) {
 	// GIVEN token bucket admission that rejects some requests
 	config := DeploymentConfig{
 		SimConfig: sim.SimConfig{
-			Horizon:       5000000,
-			Seed:          42,
-			KVCacheConfig: sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
-			BatchConfig:   sim.NewBatchConfig(10, 2048, 0),
-			LatencyCoeffs: sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "", "", 1, "roofline", 0),
+			Horizon:             5000000,
+			Seed:                42,
+			KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
+			BatchConfig:         sim.NewBatchConfig(10, 2048, 0),
+			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "", "", 1, 1, false, "roofline", 0),
 		},
 		NumInstances:          1,
 		AdmissionPolicy:       "token-bucket",

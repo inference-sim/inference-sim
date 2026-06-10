@@ -17,7 +17,7 @@ func newTestDeploymentConfigWithModel(numInstances int, model string) Deployment
 		KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), model, "H100", 1, "roofline", 0),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), model, "H100", 1, 1, false, "roofline", 0),
 	}
 	return cfg
 }
@@ -25,12 +25,12 @@ func newTestDeploymentConfigWithModel(numInstances int, model string) Deployment
 // newModelRequest creates a minimal test request tagged with the given model.
 func newModelRequest(id, model string, arrivalTime int64) *sim.Request {
 	return &sim.Request{
-		ID:          id,
-		Model:       model,
-		ArrivalTime: arrivalTime,
-		InputTokens: []int{1, 2, 3, 4, 5},
+		ID:           id,
+		Model:        model,
+		ArrivalTime:  arrivalTime,
+		InputTokens:  []int{1, 2, 3, 4, 5},
 		OutputTokens: []int{1, 2, 3},
-		State:       sim.StateQueued,
+		State:        sim.StateQueued,
 	}
 }
 

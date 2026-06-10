@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-
 // TestResolveLatencyConfig_SignatureCheck is a compile-time guard: if resolveLatencyConfig
 // is removed or its signature changes, this file will not compile. The function value
 // assignment is intentional — it documents the expected signature for code readers.
@@ -74,7 +73,8 @@ func TestRunCmd_SimConfigFlagsParity(t *testing.T) {
 	// WHEN we check for latency-model related flags
 	// THEN both commands must have the exact same set (registered via registerSimConfigFlags)
 	latencyFlags := []string{
-		"latency-model", "hardware", "tp", "alpha-coeffs", "beta-coeffs",
+		"latency-model", "hardware", "tp", "dp", "enable-expert-parallel",
+		"alpha-coeffs", "beta-coeffs",
 		"total-kv-blocks", "block-size-in-tokens", "max-model-len",
 		"gpu-memory-utilization", "model-config-folder", "hardware-config",
 	}
@@ -152,7 +152,8 @@ func TestReplayCmd_SourceContainsNoPolicyInlineBlocks(t *testing.T) {
 // and resolvePolicies have identical default values in runCmd and replayCmd.
 func TestBothCommands_SimConfigFlagsHaveIdenticalDefaults(t *testing.T) {
 	sharedFlags := []string{
-		"latency-model", "hardware", "tp", "alpha-coeffs", "beta-coeffs",
+		"latency-model", "hardware", "tp", "dp", "enable-expert-parallel",
+		"alpha-coeffs", "beta-coeffs",
 		"total-kv-blocks", "block-size-in-tokens", "max-model-len",
 		"gpu-memory-utilization", "model-config-folder", "hardware-config",
 		"admission-policy", "routing-policy", "scheduler", "preemption-policy",

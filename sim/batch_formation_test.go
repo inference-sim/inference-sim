@@ -14,7 +14,7 @@ func TestVLLMBatchFormation_ImplementsInterface(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "roofline", 0),
 	}
 	bf := NewBatchFormation("")
 	if bf == nil {
@@ -50,7 +50,7 @@ func TestVLLMBatchFormation_TokenBudgetEnforced(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 50, 0), // tight token budget
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "roofline", 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -104,7 +104,7 @@ func TestVLLMBatchFormation_BatchSizeEnforced(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(200, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(2, 10000, 0), // tight batch size limit
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "roofline", 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -160,7 +160,7 @@ func TestVLLMBatchFormation_PreemptionReleasesKV(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(3, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "roofline", 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -227,7 +227,7 @@ func TestVLLMBatchFormation_PreemptionStopsDequeue(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(3, 16, 0, 0, 0, 0), // very tight
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "roofline", 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -283,7 +283,7 @@ func TestVLLMBatchFormation_CircuitBreaker(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(2, 16, 0, 0, 0, 0), // very small
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "roofline", 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -329,7 +329,7 @@ func TestVLLMBatchFormation_KVAllocationFailure_StopsDequeue(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(3, 16, 0, 0, 0, 0), // limited KV blocks
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{100, 1, 1}, []float64{100, 1, 100}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "roofline", 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -439,7 +439,7 @@ func TestVLLMBatchFormation_Phase1_EvictedNotRevisited(t *testing.T) {
 		KVCacheConfig:       NewKVCacheConfig(6, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(10, 10000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs([]float64{0, 0, 0}, []float64{100, 1, 0}),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "roofline", 0),
 	}
 	bf := NewBatchFormation("")
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
@@ -557,7 +557,7 @@ func TestVLLMBatchFormation_LivelockResolution(t *testing.T) {
 			[]float64{5752.705191348184, 17.25086436834028, 5.999143920128404},   // beta
 			[]float64{232.46191091038054, 1.752360364195244, 3357.4400353290152}, // alpha
 		),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "", "", 1, 1, false, "roofline", 0),
 		PolicyConfig:        NewPolicyConfig("fcfs", ""),
 	}
 
@@ -569,7 +569,7 @@ func TestVLLMBatchFormation_LivelockResolution(t *testing.T) {
 	wlRng := rng.ForSubsystem(SubsystemWorkload)
 	arrivalTime := int64(0)
 	for i := 0; i < 30; i++ {
-		inputLen := 200 + wlRng.Intn(201)  // 200-400
+		inputLen := 200 + wlRng.Intn(201)   // 200-400
 		outputLen := 3200 + wlRng.Intn(397) // 3200-3596
 		req := &Request{
 			ID:           fmt.Sprintf("req_%d", i),
@@ -626,16 +626,16 @@ func TestVLLMBatchFormation_MaxModelLen_ProactiveCap_Decode(t *testing.T) {
 	}
 
 	ctx := BatchContext{
-		RunningBatch:       &Batch{Requests: []*Request{req}},
-		WaitQ:              &WaitQueue{},
-		KVCache:            kvStore,
-		MaxScheduledTokens: 2048,
-		MaxRunningReqs:     256,
+		RunningBatch:          &Batch{Requests: []*Request{req}},
+		WaitQ:                 &WaitQueue{},
+		KVCache:               kvStore,
+		MaxScheduledTokens:    2048,
+		MaxRunningReqs:        256,
 		PrefillTokenThreshold: 0,
-		MaxModelLen:        100,
-		Now:                0,
-		StepCount:          0,
-		ComputedTokens:     make(map[string]int64),
+		MaxModelLen:           100,
+		Now:                   0,
+		StepCount:             0,
+		ComputedTokens:        make(map[string]int64),
 	}
 	bf.FormBatch(ctx)
 
@@ -662,16 +662,16 @@ func TestVLLMBatchFormation_MaxModelLen_ProactiveCap_Phase2(t *testing.T) {
 	wq.Enqueue(req)
 
 	ctx := BatchContext{
-		RunningBatch:       &Batch{},
-		WaitQ:              wq,
-		KVCache:            kvStore,
-		MaxScheduledTokens: 2048,
-		MaxRunningReqs:     256,
+		RunningBatch:          &Batch{},
+		WaitQ:                 wq,
+		KVCache:               kvStore,
+		MaxScheduledTokens:    2048,
+		MaxRunningReqs:        256,
 		PrefillTokenThreshold: 0,
-		MaxModelLen:        50,
-		Now:                0,
-		StepCount:          0,
-		ComputedTokens:     make(map[string]int64),
+		MaxModelLen:           50,
+		Now:                   0,
+		StepCount:             0,
+		ComputedTokens:        make(map[string]int64),
 	}
 	bf.FormBatch(ctx)
 
@@ -696,16 +696,16 @@ func TestVLLMBatchFormation_MaxModelLen_Zero_NoClamp(t *testing.T) {
 	wq.Enqueue(req)
 
 	ctx := BatchContext{
-		RunningBatch:       &Batch{},
-		WaitQ:              wq,
-		KVCache:            kvStore,
-		MaxScheduledTokens: 10000,
-		MaxRunningReqs:     256,
+		RunningBatch:          &Batch{},
+		WaitQ:                 wq,
+		KVCache:               kvStore,
+		MaxScheduledTokens:    10000,
+		MaxRunningReqs:        256,
 		PrefillTokenThreshold: 0,
-		MaxModelLen:        0, // unlimited
-		Now:                0,
-		StepCount:          0,
-		ComputedTokens:     make(map[string]int64),
+		MaxModelLen:           0, // unlimited
+		Now:                   0,
+		StepCount:             0,
+		ComputedTokens:        make(map[string]int64),
 	}
 	bf.FormBatch(ctx)
 
@@ -840,9 +840,9 @@ func TestPreemption_Priority_EvictsLeastUrgent(t *testing.T) {
 	// bg (background, vLLM Priority=7) must be evicted before crit (critical=0) and std (standard=1).
 	// shed (sheddable, vLLM Priority=6) is more urgent than bg but less urgent than std (Priority=1).
 	tests := []struct {
-		name    string
-		order   []string // order of requests in batch: [sloClass, ...]
-		wantID  string
+		name   string
+		order  []string // order of requests in batch: [sloClass, ...]
+		wantID string
 	}{
 		{"bg victim at head", []string{"background", "critical", "standard"}, "bg"},
 		{"bg victim in middle", []string{"critical", "background", "standard"}, "bg"},
@@ -907,8 +907,8 @@ func TestPreemption_Priority_SelfPreemption(t *testing.T) {
 	// Cache is full → preemption: selectPriorityVictim returns bg (background=-3, least urgent).
 	// victimIdx=0 == reqIndex=0 → self-eviction fires. bg goes to WaitQ.
 	kvCache := MustNewKVCacheState(10, 16)
-	bg := makeRunningRequest("bg", "background", 100, 64, kvCache)   // 4 blocks
-	crit := makeRunningRequest("crit", "critical", 200, 48, kvCache)  // 3 blocks
+	bg := makeRunningRequest("bg", "background", 100, 64, kvCache)     // 4 blocks
+	crit := makeRunningRequest("crit", "critical", 200, 48, kvCache)   // 3 blocks
 	dummy := makeRunningRequest("dummy", "standard", 300, 48, kvCache) // 3 blocks → total 10
 
 	wq := &WaitQueue{}
@@ -955,8 +955,8 @@ func TestPreemption_Priority_TiebreakByLatestArrival(t *testing.T) {
 	// Three standard requests (SLO=3), arrival times 100/200/300.
 	// "new" (arrival=300) should be evicted before "mid" (200) and "old" (100).
 	kvCache := MustNewKVCacheState(10, 16)
-	old := makeRunningRequest("old", "standard", 100, 48, kvCache) // 3 blocks
-	mid := makeRunningRequest("mid", "standard", 200, 48, kvCache) // 3 blocks
+	old := makeRunningRequest("old", "standard", 100, 48, kvCache)  // 3 blocks
+	mid := makeRunningRequest("mid", "standard", 200, 48, kvCache)  // 3 blocks
 	new_ := makeRunningRequest("new", "standard", 300, 48, kvCache) // 3 blocks → 9 used, 1 free
 
 	wq := &WaitQueue{}
@@ -993,7 +993,7 @@ func TestPreemption_Priority_KVConservation(t *testing.T) {
 	// usedAfter < usedBefore confirms blocks were freed.
 	kvCache := MustNewKVCacheState(10, 16)
 	bg := makeRunningRequest("bg", "background", 100, 96, kvCache)   // 6 blocks
-	crit := makeRunningRequest("crit", "critical", 200, 48, kvCache)  // 3 blocks → 9 used, 1 free
+	crit := makeRunningRequest("crit", "critical", 200, 48, kvCache) // 3 blocks → 9 used, 1 free
 
 	usedBefore := kvCache.UsedBlocks()
 
@@ -1076,8 +1076,8 @@ func TestPreemption_Priority_Phase1Completeness(t *testing.T) {
 	// reqIndex++ → 2. 2 < 2 → exit. std is NEVER visited. std.NumNewTokens=0.
 	kvCache := MustNewKVCacheState(10, 16)
 	bg := makeRunningRequest("bg", "background", 100, 48, kvCache)   // 3 blocks
-	crit := makeRunningRequest("crit", "critical", 200, 48, kvCache)  // 3 blocks
-	std := makeRunningRequest("std", "standard", 300, 48, kvCache)    // 3 blocks → 9 used, 1 free
+	crit := makeRunningRequest("crit", "critical", 200, 48, kvCache) // 3 blocks
+	std := makeRunningRequest("std", "standard", 300, 48, kvCache)   // 3 blocks → 9 used, 1 free
 
 	wq := &WaitQueue{}
 	wq.Enqueue(&Request{ID: "new", InputTokens: make([]int, 16), OutputTokens: make([]int, 1), State: StateQueued})
@@ -1139,7 +1139,7 @@ func TestPreemption_Priority_MultiEvictionOrdering(t *testing.T) {
 	kvCache := MustNewKVCacheState(4, 16)
 	// bg and shed are small decode-phase requests
 	bg := makeRunningRequest("bg", "background", 100, 16, kvCache)    // 1 block
-	shed := makeRunningRequest("shed", "sheddable", 200, 16, kvCache)  // 1 block → 2/4 used
+	shed := makeRunningRequest("shed", "sheddable", 200, 16, kvCache) // 1 block → 2/4 used
 	// crit is still in prefill: ProgressIndex=0, needs all 64 tokens allocated
 	crit := &Request{
 		ID: "crit", SLOClass: "critical", ArrivalTime: 300, State: StateRunning,
