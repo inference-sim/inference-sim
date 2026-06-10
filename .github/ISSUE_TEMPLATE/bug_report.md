@@ -17,7 +17,7 @@ What is wrong? Be specific about the incorrect behavior.
 
 **Expected behavior**
 What should happen? Reference an invariant if applicable:
-- Request conservation: injected == completed + queued + running
+- Request conservation: injected == completed + still_queued + still_running + dropped_unservable + timed_out (+ gateway/routing/encode buckets for cluster runs)
 - Request lifecycle: queued -> running -> completed (no invalid transitions)
 - KV block conservation: allocated + free == total
 - Causality: arrival <= schedule <= completion

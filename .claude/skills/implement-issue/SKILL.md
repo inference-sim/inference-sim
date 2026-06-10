@@ -37,7 +37,7 @@ Read the issue and determine:
 
 1. **Issue type**: bug fix, feature (policy template, subsystem module, backend swap, tier composition), refactoring, hardening
 2. **Affected modules**: which BLIS modules are touched (router, scheduler, KV cache, latency model, workload, batch formation, etc.)
-3. **Invariants at risk**: which of INV-1 through INV-12 could be affected
+3. **Invariants at risk**: which of INV-1 through INV-13 (plus PD disaggregation INV-PD-* / pool INV-P2-*) could be affected
 4. **Cross-path parity**: does this change apply to `run`, `replay`, `observe`, or multiple paths?
 5. **Extension type**: if a new feature, which extension recipe applies (see `docs/contributing/extension-recipes.md`)
 

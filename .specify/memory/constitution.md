@@ -180,7 +180,9 @@ have invariant tests verifying them.
 | **INV-8** | After every step completion, if `WaitQ.Len() > 0`, a `StepEvent` must exist in the event queue. The simulator MUST NOT idle while work is waiting. |
 | **INV-9** | Servability decisions (enqueue guard, admission, routing, priority) MUST NOT read `Request.OutputTokens`. Only the execution engine may access it. |
 | **INV-10** | Session causality: for all rounds N in a closed-loop session, `round[N+1].ArrivalTime >= round[N].CompletionTime + ThinkTimeUs`. |
-| **INV-11** | Session completeness: every session reaches exactly one terminal state (completed, cancelled, or horizon-interrupted). No session is silently abandoned. |
+| **INV-11** | Session completeness: every session reaches exactly one terminal state (completed, cancelled, horizon-interrupted, or budget-exhausted). No session is silently abandoned. |
+| **INV-12** | Phase 1 completeness under priority preemption: after Phase 1 of `FormBatch`, every non-preempted running request in decode phase has `NumNewTokens > 0` (token budget / `MaxModelLen` permitting). No request silently skipped due to index drift from non-tail eviction. Trivially satisfied for FCFS. |
+| **INV-13** | Run/replay parity: a trace exported via `blis run --trace-output` and replayed with identical flags MUST produce identical per-request metrics. Unsupported replay features (autoscaler, node pools) MUST `logrus.Fatalf` at startup — never silent degradation. |
 
 *Rationale*: Invariants are the ground truth for correctness. Golden tests verify
 output stability; invariant tests verify semantic correctness.

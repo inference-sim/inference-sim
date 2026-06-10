@@ -2,7 +2,7 @@
 
 This page describes BLIS's single-instance discrete event simulation engine. For multi-instance cluster orchestration, see [Cluster Architecture](architecture.md).
 
-> **Canonical sources:** System invariants (INV-1 through INV-11) are defined in [`docs/contributing/standards/invariants.md`](../contributing/standards/invariants.md). If invariant descriptions here diverge, `invariants.md` is authoritative.
+> **Canonical sources:** System invariants (INV-1 through INV-13, plus PD disaggregation INV-PD-* and pool/transfer INV-P2-*) are defined in [`docs/contributing/standards/invariants.md`](../contributing/standards/invariants.md). If invariant descriptions here diverge, `invariants.md` is authoritative.
 
 ## Overview
 
@@ -319,7 +319,9 @@ BLIS records per-request and aggregate metrics throughout the simulation.
 
 ### Conservation Invariant (INV-1)
 
-At simulation end: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable`
+At simulation end: `injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out`
+
+Cluster runs add gateway-queue, routing-rejection, and encode-pool buckets to the right-hand side — see canonical [INV-1](../contributing/standards/invariants.md) for the full multi-instance accounting formula.
 
 This is the fundamental accounting invariant that ensures no requests are silently lost.
 
