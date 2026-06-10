@@ -170,13 +170,13 @@ have invariant tests verifying them.
 
 | ID | Invariant |
 |----|-----------|
-| **INV-1** | `injected_requests == completed + queued + running + dropped + timed_out` at simulation end. Full pipeline: `num_requests == injected + rejected`. |
+| **INV-1** | `injected_requests == completed_requests + still_queued + still_running + dropped_unservable + timed_out` at simulation end (base; cluster mode adds gateway/routing/encode buckets — see `invariants.md`). Full pipeline: `num_requests == injected_requests + rejected_requests`. |
 | **INV-2** | Requests transition `queued → running → completed`. No invalid transitions. |
 | **INV-3** | Simulation clock never decreases. Every event timestamp ≥ previous event timestamp. |
 | **INV-4** | `allocated_blocks + free_blocks = total_blocks` at all times. |
 | **INV-5** | `arrival_time ≤ enqueue_time ≤ schedule_time ≤ completion_time` for every request. |
 | **INV-6** | Same seed produces byte-identical stdout across runs. |
-| **INV-7** | Routing snapshot signals have tiered freshness: `InFlightRequests` is synchronous; `QueueDepth`, `BatchSize`, `KVUtilization` are Immediate (interval=0) or Periodic (interval>0). |
+| **INV-7** | Routing snapshot signals have tiered freshness: `InFlightRequests` and the router-local `prefix-affinity` cache index are synchronous; `QueueDepth`, `BatchSize`, `KVUtilization` are Immediate (interval=0) or Periodic (interval>0); the `precise-prefix-cache` / `no-hit-lru` query of actual instance KV state is periodic, governed by `--cache-signal-delay`. |
 | **INV-8** | After every step completion, if `WaitQ.Len() > 0`, a `StepEvent` must exist in the event queue. The simulator MUST NOT idle while work is waiting. |
 | **INV-9** | Servability decisions (enqueue guard, admission, routing, priority) MUST NOT read `Request.OutputTokens`. Only the execution engine may access it. |
 | **INV-10** | Session causality: for all rounds N in a closed-loop session, `round[N+1].ArrivalTime >= round[N].CompletionTime + ThinkTimeUs`. |
