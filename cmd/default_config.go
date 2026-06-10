@@ -44,11 +44,10 @@ type TrainedPhysicsDefaults struct {
 type DefaultConfig struct {
 	GPU               string `yaml:"GPU"`
 	TensorParallelism int    `yaml:"tensor_parallelism"`
-	VLLMVersion       string `yaml:"vllm_version"`
 	HFRepo            string `yaml:"hf_repo,omitempty"`
 }
 
-func GetDefaultSpecs(LLM string) (GPU string, TensorParallelism int, VLLMVersion string) {
+func GetDefaultSpecs(LLM string) (GPU string, TensorParallelism int) {
 	data, err := os.ReadFile(defaultsFilePath)
 	if err != nil {
 		logrus.Fatalf("Failed to read defaults file: %v", err)
@@ -63,9 +62,9 @@ func GetDefaultSpecs(LLM string) (GPU string, TensorParallelism int, VLLMVersion
 	}
 
 	if _, modelExists := cfg.Defaults[LLM]; modelExists {
-		return cfg.Defaults[LLM].GPU, cfg.Defaults[LLM].TensorParallelism, cfg.Defaults[LLM].VLLMVersion
+		return cfg.Defaults[LLM].GPU, cfg.Defaults[LLM].TensorParallelism
 	} else {
-		return "", 0, ""
+		return "", 0
 	}
 }
 

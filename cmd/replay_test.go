@@ -97,7 +97,7 @@ func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
 		"long-prefill-token-threshold",
 
 		// registerSimConfigFlags: BLIS model configs
-		"model", "hardware", "tp", "vllm-version",
+		"model", "hardware", "tp",
 		"latency-model", "max-model-len",
 
 		// registerSimConfigFlags: cluster config
