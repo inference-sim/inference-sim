@@ -658,7 +658,8 @@ func TestClusterConservation_AcrossPolicyCombinations(t *testing.T) {
     for _, cfg := range configs {
         t.Run(cfg.routing+"/"+cfg.scheduler+"/"+cfg.admission, func(t *testing.T) {
             // Run cluster simulation
-            // Assert: injected == completed + still_queued + still_running
+            // Assert INV-1: injected == completed + still_queued + still_running + dropped_unservable + timed_out
+            //   (cluster runs add gateway/routing/encode buckets — see canonical INV-1)
         })
     }
 }

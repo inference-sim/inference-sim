@@ -183,10 +183,13 @@ Routing decisions depend on instance state signals with different freshness guar
 
 | Tier | Signals | Update Mechanism | Staleness |
 |------|---------|------------------|-----------|
-| **Synchronous** (router-local) | InFlightRequests, prefix cache index | Router increments InFlightRequests at dispatch, decrements at completion; prefix cache updated after each routing decision | None — router owns this state |
+| **Synchronous** (router-local) | InFlightRequests, `prefix-affinity` router-side cache index | Router increments InFlightRequests at dispatch, decrements at completion; the `prefix-affinity` scorer's router-side LRU index is updated after each routing decision | None — router owns this state |
 | **Immediate/Periodic** (instance-reported) | QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate, PreemptionCount | Default (`--snapshot-refresh-interval 50000`): Periodic at 50ms (llm-d parity). When `--snapshot-refresh-interval 0`: Immediate (read from instance at routing time). All instance-reported signals share the same Periodic refresh interval, matching real vLLM's single `/metrics` endpoint (#463). | Immediate: current within tick. Periodic: stale up to interval. |
+| **Periodic** (precise prefix-cache query) | `precise-prefix-cache` / `no-hit-lru` cache-block hit counts | The `precise-prefix-cache` and `no-hit-lru` scorers query actual instance KV cache state via `CachedSnapshotProvider`, governed by `--cache-signal-delay` (default 50ms, maps to `ObservabilityConfig.CacheBlocks`). Set `--cache-signal-delay 0` for synchronous ground-truth queries. | Stale up to `--cache-signal-delay`. |
 
 The `--snapshot-refresh-interval` flag controls how frequently instance-reported signals (QueueDepth, BatchSize, KVUtilization, PreemptionCount, etc.) are re-read from instances. The default is 50000µs (50ms), matching llm-d's `RefreshMetricsInterval`. Setting it to 0 makes all signals Immediate (oracle mode). Non-zero values introduce realistic staleness matching real vLLM Prometheus scrape intervals.
+
+> **Two distinct "prefix cache" mechanisms:** The router-local **`prefix-affinity` cache index** (synchronous tier, above) is a lightweight LRU the router maintains itself and is always fresh. It is *not* the same as the **`precise-prefix-cache` query** (periodic tier), which reads real instance KV-cache hit counts and carries `--cache-signal-delay` staleness. See canonical [INV-7](../contributing/standards/invariants.md) for the full per-signal freshness hierarchy.
 
 ## Counterfactual Regret
 

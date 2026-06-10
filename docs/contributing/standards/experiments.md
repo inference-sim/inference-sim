@@ -179,7 +179,7 @@ Use these templates when generating new hypotheses. Each family has a characteri
 | Family | Sentence pattern | Example |
 |--------|-----------------|---------|
 | **Workload/arrival** | "Generator G with parameters P should produce distribution D with property X within tolerance T" | "Gamma sampler with CV=3.5 should produce inter-arrival times with CV within 10% of 3.5 over 10K samples" |
-| **Scheduler invariants** | "For ALL configurations C, invariant I holds at simulation end" | "For all routing × scheduling × admission combinations, injected == completed + queued + running" |
+| **Scheduler invariants** | "For ALL configurations C, invariant I holds at simulation end" | "For all routing × scheduling × admission combinations, injected == completed + still_queued + still_running + dropped_unservable + timed_out (+ gateway/routing/encode buckets for cluster runs)" |
 | **Performance-regime** | "Metric M should be monotonically non-decreasing/non-increasing in parameter P across range [a, b]" | "TTFT P99 should be monotonically non-decreasing in offered load from 500 to 5000 req/s" |
 | **Structural model** | "Component C should behave according to assumption A, verified by observable O" | "Prefill time should be proportional to input token count (R² > 0.95 for linear fit)" |
 | **Robustness** | "Under stress condition S, the system should exhibit behavior B and NOT exhibit behavior X" | "Under 10x overload, the system should reject excess requests and NOT deadlock or panic" |
@@ -190,7 +190,7 @@ Use these templates when generating new hypotheses. Each family has a characteri
 | | Deterministic | Statistical/Dominance | Statistical/Monotonicity | Statistical/Equivalence | Statistical/Pareto |
 |---|---|---|---|---|---|
 | Workload/arrival | Seed reproducibility | Distribution match | Rate scaling | — | — |
-| Scheduler invariants | **Primary** (INV-1 through INV-6) | — | — | — | — |
+| Scheduler invariants | **Primary** (INV-1–INV-3, INV-5, INV-6, INV-10, INV-13) | — | — | — | — |
 | Performance-regime | — | — | **Primary** (scaling curves) | Baseline sanity | Knee behavior |
 | Structural model | Phase structure | Signal freshness | Cache effectiveness | — | — |
 | Robustness | Input validation | Overload behavior | — | — | — |
@@ -209,9 +209,9 @@ Use these templates when generating new hypotheses. Each family has a characteri
 
 | Family | Related invariants | Related rules |
 |--------|-------------------|---------------|
-| Scheduler invariants | INV-1 (conservation), INV-2 (lifecycle), INV-3 (clock monotonicity), INV-5 (causality), INV-6 (determinism) | R1 (no silent data loss), R5 (transactional mutation), R21 (mutable slice iteration) |
-| Performance-regime | INV-8 (work-conserving) | — |
-| Structural model | INV-4 (KV conservation), INV-7 (signal freshness) | R2 (sort map keys), R11 (guard division), R17 (signal freshness), R22 (pre-check consistency) |
+| Scheduler invariants | INV-1 (conservation), INV-2 (lifecycle), INV-3 (clock monotonicity), INV-5 (causality), INV-6 (determinism), INV-10 (session causality), INV-13 (run/replay parity) | R1 (no silent data loss), R5 (transactional mutation), R21 (mutable slice iteration) |
+| Performance-regime | — (uses scaling curves, not a dedicated invariant) | — |
+| Structural model | INV-4 (KV conservation), INV-7 (signal freshness), INV-8 (work-conserving), INV-9 (oracle knowledge boundary), INV-11 (session completeness), INV-12 (Phase 1 completeness), plus PD disaggregation INV-PD-* / pool INV-P2-* | R2 (sort map keys), R11 (guard division), R17 (signal freshness), R22 (pre-check consistency) |
 | Workload/arrival | — | R23 (code path parity) |
 | Robustness | — | R3 (validate numeric parameters), R19 (livelock protection), R20 (degenerate inputs) |
 | Cross-policy | — | R18 (CLI flag precedence) |

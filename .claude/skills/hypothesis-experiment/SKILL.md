@@ -31,7 +31,7 @@ You are running the hypothesis experiment workflow for hypothesis **$ARGUMENTS**
 - **`--stderr` must come BEFORE other flags** in `blis_run` calls — harness checks position 3 only
 - **CLI defaults vs workload-spec YAML**: `--rate` mode uses CLI defaults (512/512 tokens). Workload YAMLs define own distributions. Capacity estimates MUST match the actual workload.
 - **`--total-kv-blocks` default is context-dependent**: CLI default 1000000 but `defaults.yaml` overrides to 132139 for llama/H100/TP=2. Check defaults.yaml.
-- **Conservation formula**: Always 4-term INV-1: `injected == completed + queued + running + dropped_unservable`. `parse_blis_output` does NOT extract `dropped_unservable` — parse it separately.
+- **Conservation formula**: Canonical INV-1 base formula is 5-term: `injected == completed + still_queued + still_running + dropped_unservable + timed_out` (cluster runs add gateway/routing/encode buckets — see canonical INV-1 in `docs/contributing/standards/invariants.md`). `parse_blis_output` does NOT extract `dropped_unservable` or `timed_out` — parse them separately.
 - **Analyzer verdict must match FINDINGS status**: If `analyze.py` produces a different verdict than FINDINGS.md, acknowledge the discrepancy explicitly.
 - **Think before coding calibration**: Compute parameters analytically from alpha/beta coefficients FIRST, then validate with a tiny run.
 - **Beta coefficients** (llama-3.1-8b, H100, TP=2): `[6910.42, 17.67, 2.84]` -> stepTime = beta0 + beta1*cacheMissTokens + beta2*decodeTokens
@@ -158,7 +158,7 @@ from analyze_helpers import parse_blis_output, check_for_timeout
 - Use `parse_blis_output()` for all metric extraction
 - Check `metrics["timed_out"]` before computing ratios
 - Print warnings to stderr, results to stdout
-- Verify INV-1 conservation (4-term formula) for every run
+- Verify INV-1 conservation (5-term base formula: `completed + still_queued + still_running + dropped_unservable + timed_out`; add gateway/routing/encode buckets for cluster runs) for every run
 
 ---
 

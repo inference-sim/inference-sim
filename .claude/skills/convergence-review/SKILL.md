@@ -152,7 +152,7 @@ These rules are identical across all gates. No exceptions. No shortcuts.
 
 ### Behavioral Invariants
 
-The skill MUST maintain these properties (SK-INV = skill invariant, separate from DES invariants INV-1 through INV-11):
+The skill MUST maintain these properties (SK-INV = skill invariant, separate from DES invariants INV-1 through INV-13):
 
 - **SK-INV-1 Loop integrity:** The skill MUST never exit with status `not-converged`. The only exits are `converged` (0/0 in-scope), `stalled` (round > 10), or unresolvable verification failure (user decision).
 - **SK-INV-2 Round monotonicity:** The round counter MUST never decrease within a single state file lifetime (stale-commit reset creates a new state file).

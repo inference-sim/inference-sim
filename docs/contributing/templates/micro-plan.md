@@ -188,7 +188,7 @@ Map contracts to tasks and tests. Include invariant tests alongside golden tests
 
 Key invariants for this simulator (see [standards/invariants.md](../standards/invariants.md)):
 
-- **Request conservation (INV-1):** completed + still_queued + still_running + dropped_unservable = injected
+- **Request conservation (INV-1):** completed + still_queued + still_running + dropped_unservable + timed_out = injected (cluster runs add gateway/routing/encode buckets — see canonical INV-1)
 - **KV block conservation (INV-4):** allocated_blocks + free_blocks = total_blocks
 - **Clock monotonicity (INV-3):** simulation clock never decreases
 - **Causality (INV-5):** arrival_time ≤ enqueue_time ≤ schedule_time ≤ completion_time

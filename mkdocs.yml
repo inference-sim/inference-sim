@@ -135,7 +135,7 @@ nav:
       - Convergence Protocol: contributing/convergence.md
       - Standards:
           - "Antipattern Rules (R1-R23)": contributing/standards/rules.md
-          - "System Invariants (INV-1-INV-11)": contributing/standards/invariants.md
+          - "System Invariants (INV-1-INV-13)": contributing/standards/invariants.md
           - Engineering Principles: contributing/standards/principles.md
           - Experiment Standards: contributing/standards/experiments.md
       - Templates:
