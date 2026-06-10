@@ -25,7 +25,7 @@ The general precedence (CLI → YAML → hardcoded) applies everywhere, but each
 1. Explicit CLI flags — if passed, used directly (no `defaults.yaml` lookup)
 2. Analytical computation — roofline or trained-physics backends compute from architecture + hardware specs
 
-**Hardware and TP** (`--hardware`, `--tp`, `--vllm-version`):
+**Hardware and TP** (`--hardware`, `--tp`):
 
 1. Explicit CLI flags
 2. `defaults.yaml` `defaults[]` entry — matched by `--model`
@@ -145,7 +145,6 @@ Maps to `ModelHardwareConfig`.
 | `--model` | string | (required) | LLM model name (e.g., `qwen/qwen3-14b`). |
 | `--hardware` | string | "" | GPU type. Bundled options: `H100`, `A100-SXM`, `A100-80`. If empty, loaded from `defaults.yaml`. Add new GPUs to `hardware_config.json`. |
 | `--tp` | int | 0 | Tensor parallelism degree. If 0, loaded from `defaults.yaml`. |
-| `--vllm-version` | string | "" | vLLM version string. If empty, loaded from `defaults.yaml`. |
 | `--max-model-len` | int64 | 0 | Max total sequence length (input + output) in tokens. 0 = unlimited. Mirrors vLLM's `--max-model-len`. Auto-derived from `max_position_embeddings` in HuggingFace `config.json` for roofline/trained-physics backends. Applies `rope_scaling` factor for types `linear`, `dynamic`, `yarn`, `default`, `mrope`; excludes `su`, `longrope`, `llama3`; skips entirely for `gemma3` models. Capped at KV-feasible maximum. |
 
 ### Roofline Mode
@@ -529,7 +528,6 @@ defaults:
   qwen/qwen3-14b:
     GPU: H100
     tensor_parallelism: 1
-    vllm_version: vllm/vllm-openai:v0.11.0
     hf_repo: Qwen/Qwen3-14B
 
 # Section 2: Workload presets
@@ -546,7 +544,6 @@ models:
   - id: qwen/qwen3-14b
     GPU: H100
     tensor_parallelism: 1
-    vllm_version: vllm/vllm-openai:v0.11.0
     alpha_coeffs: [8888.09, 0.18, 0.0]
     beta_coeffs: [13578.19, 39.44, 27.32]
 ```
@@ -597,7 +594,7 @@ For environments where live profiling is not feasible, the [Roofline model](../c
 | **KVCacheConfig** | `--total-kv-blocks`, `--block-size-in-tokens`, `--kv-cpu-blocks`, `--kv-offload-threshold`, `--kv-transfer-bandwidth`, `--kv-transfer-base-latency` |
 | **BatchConfig** | `--max-num-running-reqs`, `--max-num-scheduled-tokens`, `--long-prefill-token-threshold` |
 | **LatencyCoeffs** | `--alpha-coeffs`, `--beta-coeffs` |
-| **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--vllm-version`, `--latency-model`, `--model-config-folder`, `--hardware-config`, `--max-model-len` |
+| **ModelHardwareConfig** | `--model`, `--hardware`, `--tp`, `--latency-model`, `--model-config-folder`, `--hardware-config`, `--max-model-len` |
 | **PolicyConfig** | `--scheduler`, `--preemption-policy` |
 | **WorkloadConfig** | `--workload`, `--workload-spec`, `--defaults-filepath`, `--rate`, `--num-requests`, `--prompt-tokens*`, `--output-tokens*`, `--prefix-tokens` |
 | **DeploymentConfig** | `--num-instances`, `--admission-policy`, `--admission-latency`, `--token-bucket-capacity`, `--token-bucket-refill-rate`, `--routing-policy`, `--routing-latency`, `--routing-scorers`, `--snapshot-refresh-interval`, `--trace-level`, `--counterfactual-k` | YAML-only (no CLI flag): `node_pools`, `instance_lifecycle`, `hw_config_by_gpu` |

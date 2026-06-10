@@ -278,7 +278,7 @@ BLIS has four extension types. Identify which type your change is, then follow t
 
 When adding a new model configuration:
 
-1. Add an entry to the `defaults:` section with `GPU`, `tensor_parallelism`, and `vllm_version`
+1. Add an entry to the `defaults:` section with `GPU` and `tensor_parallelism`
 2. Add an `hf_repo` field mapping the BLIS model name (lowercase) to the case-sensitive HuggingFace repository path (e.g., `hf_repo: Qwen/Qwen3-14B`). This enables `--latency-model roofline` auto-fetch. Models without real HuggingFace repos (e.g., synthetic benchmarks) may omit `hf_repo` — document why with a YAML comment.
 3. If trained coefficients exist, add a corresponding entry to the `models:` list
 

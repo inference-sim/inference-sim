@@ -470,7 +470,6 @@ func TestGetHFRepo_ValidModel(t *testing.T) {
   test-org/test-model:
     GPU: H100
     tensor_parallelism: 2
-    vllm_version: vllm/vllm-openai:v0.8.4
     hf_repo: TestOrg/Test-Model
 workloads: {}
 version: "0.0.1"
@@ -495,7 +494,6 @@ func TestGetHFRepo_ModelWithoutHFRepo(t *testing.T) {
   test-org/test-model:
     GPU: H100
     tensor_parallelism: 2
-    vllm_version: vllm/vllm-openai:v0.8.4
 workloads: {}
 version: "0.0.1"
 `
@@ -519,7 +517,6 @@ func TestGetHFRepo_ModelNotFound(t *testing.T) {
   other-model:
     GPU: H100
     tensor_parallelism: 2
-    vllm_version: vllm/vllm-openai:v0.8.4
 workloads: {}
 version: "0.0.1"
 `

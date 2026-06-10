@@ -81,11 +81,10 @@ var (
 	outputTokensMax           int       // Max Output Token Count
 	latencyModelBackend       string    // CLI --latency-model flag: selects latency model backend (Cobra-bound, NEVER mutated inside Run)
 	maxModelLen               int64     // CLI --max-model-len: max total sequence length (input + output); 0 = unlimited
-	// CLI flags for model, GPU, TP, vllm version
+	// CLI flags for model, GPU, TP
 	model             string // LLM name
 	gpu               string // GPU type
 	tensorParallelism int    // TP value
-	vllmVersion       string // vllm version
 
 	// cluster config
 	numInstances int // Number of instances in the cluster
@@ -393,7 +392,7 @@ type latencyResolution struct {
 // What it does:
 //   - Normalizes model name to lowercase
 //   - Validates gpuMemoryUtilization and blockSizeTokens (used in KV auto-calc)
-//   - Applies defaults.yaml for GPU, TP, and vllmVersion when not set via CLI
+//   - Applies defaults.yaml for GPU and TP when not set via CLI
 //   - Validates alpha/beta coefficients and auto-detects trained-physics mode when coefficients are provided
 //   - For roofline/trained-physics: resolves model config folder and
 //     hardware config, loads coefficients from defaults.yaml, auto-calculates
@@ -401,7 +400,7 @@ type latencyResolution struct {
 //
 // Side effects (package-level vars mutated):
 //
-//	model, gpu, tensorParallelism, vllmVersion, modelConfigFolder, hwConfigPath,
+//	model, gpu, tensorParallelism, modelConfigFolder, hwConfigPath,
 //	totalKVBlocks, maxModelLen
 //
 // Returns values that cannot be stored as package-level vars (local coeff copies,
@@ -462,10 +461,10 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	var modelConfig sim.ModelConfig
 	var hwConfig sim.HardwareCalib
 
-	// Early defaults resolution: load hardware/TP/vllmVersion from defaults.yaml
+	// Early defaults resolution: load hardware/TP from defaults.yaml
 	// when not explicitly set via CLI flags.
 	if _, statErr := os.Stat(defaultsFilePath); statErr == nil {
-		hardware, tp, version := GetDefaultSpecs(model)
+		hardware, tp := GetDefaultSpecs(model)
 		if tensorParallelism == 0 && tp > 0 {
 			logrus.Warnf("Finding default values of TP for model=%v", model)
 			logrus.Warnf("Using default tp=%v", tp)
@@ -475,11 +474,6 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 			logrus.Warnf("Finding default values of hardware for model=%v", model)
 			logrus.Warnf("Using default GPU=%v", hardware)
 			gpu = hardware
-		}
-		if vllmVersion == "" && len(version) > 0 {
-			logrus.Warnf("Finding default values of vLLM version for model=%v", model)
-			logrus.Warnf("Using default vLLM version=%v", version)
-			vllmVersion = version
 		}
 	}
 
@@ -996,7 +990,6 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&model, "model", "", "LLM name")
 	cmd.Flags().StringVar(&gpu, "hardware", "", "GPU type")
 	cmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
-	cmd.Flags().StringVar(&vllmVersion, "vllm-version", "", "vLLM version")
 	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "trained-physics", "Latency model backend: trained-physics (default), roofline")
 	cmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for analytical backends when not set.")
 
