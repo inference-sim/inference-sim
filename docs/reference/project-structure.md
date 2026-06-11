@@ -76,7 +76,7 @@ inference-sim/
 │   ├── client.go              # Rate normalization, prefix group management
 │   ├── generator.go           # GenerateRequests pipeline with client decomposition
 │   ├── servegen.go            # Native ServeGen data file loading (chunk-*-trace.csv + dataset.json)
-│   ├── tracev2.go             # Trace v2 format (YAML header + CSV data); 26-column schema including finish_reason (backward-compat with 25-column pre-finish_reason traces)
+│   ├── tracev2.go             # Trace v2 format (YAML header + CSV data); 27-column schema including finish_reason (backward-compat with 26-column pre-finish_reason traces)
 │   ├── replay.go              # Trace v2 → sim.Request with synthetic token IDs
 │   ├── calibrate.go           # CalibrationReport, PrepareCalibrationPairs, MAPE/Pearson r
 │   ├── multimodal.go          # Multimodal token generation (text+image+audio+video)

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/sirupsen/logrus"
@@ -111,6 +112,7 @@ type RequestRecord struct {
 	VLLMPriority      int    // vLLM priority value (0=highest urgency, higher=lower urgency); 0 when not set
 	Status            string // "ok", "error", "timeout"
 	ErrorMessage      string
+	XRequestID        string // client-generated UUID sent as x-request-id header (issue #1428)
 	SendTimeUs        int64
 	FirstChunkTimeUs  int64
 	LastChunkTimeUs   int64
@@ -196,6 +198,13 @@ func (c *RealClient) Send(ctx context.Context, req *PendingRequest) (*RequestRec
 		return record, nil
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	// Per-request UUID for joining client traces to EPP routing logs (issue #1428).
+	// Generated and recorded BEFORE httpClient.Do so timeouts/errors retain the ID
+	// (response-side capture would lose attribution for the requests we most want
+	// to trace).
+	xRequestID := uuid.NewString()
+	httpReq.Header.Set("x-request-id", xRequestID)
+	record.XRequestID = xRequestID
 	if c.apiKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
@@ -474,6 +483,7 @@ func (r *Recorder) RecordRequest(pending *PendingRequest, result *RequestRecord,
 		Status:            result.Status,
 		ErrorMessage:      result.ErrorMessage,
 		FinishReason:      result.FinishReason,
+		XRequestID:        result.XRequestID,
 		SessionID:         sessionID,
 		RoundIndex:        roundIndex,
 	})

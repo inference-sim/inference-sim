@@ -2218,3 +2218,115 @@ func TestObservePostHocDetector_RateDeficitUsesAllArrivals(t *testing.T) {
 	// rate_deficit = 1 - (2 / 2) = 0.0 (WRONG - hides the 2 failures)
 	// This test would catch that regression.
 }
+
+// TestRealClient_SetsXRequestIDHeader verifies issue #1428 AC: every outgoing
+// request carries an x-request-id header whose value matches record.XRequestID.
+func TestRealClient_SetsXRequestIDHeader(t *testing.T) {
+	var capturedHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeader = r.Header.Get("x-request-id")
+		resp := map[string]interface{}{
+			"choices": []map[string]interface{}{{"text": "hello"}},
+			"usage":   map[string]interface{}{"prompt_tokens": 10.0, "completion_tokens": 5.0},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	record, err := client.Send(context.Background(), &PendingRequest{
+		RequestID: 0, InputTokens: 10, Streaming: false,
+		Prompt: "hello",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.XRequestID == "" {
+		t.Fatal("record.XRequestID is empty; expected a generated UUID")
+	}
+	if capturedHeader == "" {
+		t.Fatal("server did not receive x-request-id header")
+	}
+	if capturedHeader != record.XRequestID {
+		t.Errorf("header (%q) and record.XRequestID (%q) must match", capturedHeader, record.XRequestID)
+	}
+}
+
+// TestRealClient_XRequestID_IsUnique verifies that each request gets a fresh UUID.
+func TestRealClient_XRequestID_IsUnique(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]interface{}{
+			"choices": []map[string]interface{}{{"text": "x"}},
+			"usage":   map[string]interface{}{"prompt_tokens": 5.0, "completion_tokens": 1.0},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	seen := map[string]struct{}{}
+	for i := 0; i < 5; i++ {
+		record, err := client.Send(context.Background(), &PendingRequest{
+			RequestID: i, InputTokens: 5, Streaming: false, Prompt: "x",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, dup := seen[record.XRequestID]; dup {
+			t.Fatalf("duplicate XRequestID %q on request %d", record.XRequestID, i)
+		}
+		seen[record.XRequestID] = struct{}{}
+	}
+}
+
+// TestRealClient_XRequestID_RetainedOnServerError verifies that the UUID is
+// recorded even when the request fails — this is the "covers timeouts and
+// errors" property from the issue's design rationale.
+func TestRealClient_XRequestID_RetainedOnServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	record, err := client.Send(context.Background(), &PendingRequest{
+		RequestID: 99, InputTokens: 5, Streaming: false, Prompt: "x",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Status != "error" {
+		t.Errorf("status = %q, want error", record.Status)
+	}
+	if record.XRequestID == "" {
+		t.Error("XRequestID must be populated even on server error (issue #1428)")
+	}
+}
+
+// TestRecorder_PropagatesXRequestID verifies issue #1428: Recorder.RecordRequest
+// copies XRequestID from RequestRecord into the workload.TraceRecord.
+func TestRecorder_PropagatesXRequestID(t *testing.T) {
+	recorder := &Recorder{}
+	pending := &PendingRequest{
+		RequestID:   42,
+		InputTokens: 100,
+	}
+	result := &RequestRecord{
+		RequestID:    42,
+		Status:       "ok",
+		OutputTokens: 50,
+		XRequestID:   "uuid-test-value",
+		SendTimeUs:   1000,
+	}
+	recorder.RecordRequest(pending, result, 500, "session-x", 0)
+
+	records := recorder.Records()
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	if records[0].XRequestID != "uuid-test-value" {
+		t.Errorf("TraceRecord.XRequestID: got %q, want %q", records[0].XRequestID, "uuid-test-value")
+	}
+}
