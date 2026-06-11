@@ -813,6 +813,8 @@ func runPrewarm(ctx context.Context, client *RealClient, duration time.Duration)
 	timer := time.AfterFunc(duration, func() { close(done) })
 	defer timer.Stop()
 
+	var totalRequests, totalErrors atomic.Int64
+
 	var wg sync.WaitGroup
 	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
@@ -833,13 +835,34 @@ func runPrewarm(ctx context.Context, client *RealClient, duration time.Duration)
 					MaxOutputTokens: maxOutputTokens,
 					Prompt:          prompt,
 				}
-				_, _ = client.Send(ctx, req)
+				rec, _ := client.Send(ctx, req)
+				totalRequests.Add(1)
+				if rec != nil && rec.Status != "ok" {
+					totalErrors.Add(1)
+					// Back off on errors to avoid CPU spin when server is unreachable.
+					select {
+					case <-done:
+						return
+					case <-ctx.Done():
+						return
+					case <-time.After(500 * time.Millisecond):
+					}
+				}
 			}
 		}()
 	}
 
 	wg.Wait()
-	logrus.Infof("Prewarm complete")
+
+	sent := totalRequests.Load()
+	errs := totalErrors.Load()
+	if sent == 0 || errs == sent {
+		logrus.Warnf("Prewarm: %d/%d requests failed (is the server reachable at %s?)", errs, sent, client.baseURL)
+	} else if errs > 0 {
+		logrus.Infof("Prewarm complete: %d requests sent, %d errors", sent, errs)
+	} else {
+		logrus.Infof("Prewarm complete: %d requests sent", sent)
+	}
 }
 
 // runObserveOrchestrator implements the dispatch loop with session support.
