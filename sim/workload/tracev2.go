@@ -79,6 +79,7 @@ type TraceRecord struct {
 	Status            string // "ok", "error", "timeout"
 	ErrorMessage      string
 	FinishReason      string // server-reported finish_reason ("stop", "length", "abort", etc.); empty = not recorded
+	XRequestID        string // client-generated UUID sent as x-request-id header (real-mode only); empty = not recorded
 }
 
 // TraceV2 combines header and records for a complete trace.
@@ -119,6 +120,29 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
+	// Conditionally include slo_target_us column: present iff any record has non-zero SLO target.
+	includeSLOTarget := false
+	for _, r := range records {
+		if r.SLOTargetUs > 0 {
+			includeSLOTarget = true
+			break
+		}
+	}
+
+	// Conditionally include x_request_id column: present iff any record has a non-empty
+	// UUID AND the trace is from a real run. Mode-gated to ensure replay re-exports never
+	// emit UUIDs (which would no longer correspond to real EPP routing decisions).
+	// Issue #1428.
+	includeXRequestID := false
+	if header.Mode == "real" {
+		for _, r := range records {
+			if r.XRequestID != "" {
+				includeXRequestID = true
+				break
+			}
+		}
+	}
+
 	// Conditionally include vllm_priority column: present iff priority was actually computed.
 	// Include when either:
 	// 1. Any record has non-zero priority (batch, standard, sheddable, background from observe)
@@ -133,17 +157,8 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 		}
 	}
 
-	// Conditionally include slo_target_us column: present iff any record has non-zero SLO target.
-	includeSLOTarget := false
-	for _, r := range records {
-		if r.SLOTargetUs > 0 {
-			includeSLOTarget = true
-			break
-		}
-	}
-
 	// Build column header list
-	columns := make([]string, 0, len(traceV2Columns)+2)
+	columns := make([]string, 0, len(traceV2Columns)+3)
 	for i, col := range traceV2Columns {
 		columns = append(columns, col)
 		// Insert vllm_priority immediately after slo_class (index 3)
@@ -154,6 +169,11 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 		if col == "deadline_us" && includeSLOTarget {
 			columns = append(columns, "slo_target_us")
 		}
+	}
+	// Append x_request_id at end (issue #1428): trailing position avoids shifting
+	// indices in the positional parser.
+	if includeXRequestID {
+		columns = append(columns, "x_request_id")
 	}
 
 	// Write header row
@@ -204,6 +224,10 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 			r.ErrorMessage,
 			r.FinishReason,
 		)
+		// Append x_request_id at end (issue #1428).
+		if includeXRequestID {
+			row = append(row, r.XRequestID)
+		}
 		if err := writer.Write(row); err != nil {
 			return fmt.Errorf("writing CSV row %d: %w", r.RequestID, err)
 		}
@@ -244,12 +268,15 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	// Detect optional columns from header
 	hasVLLMPriority := false
 	hasSLOTarget := false
-	for _, col := range headerRow {
-		if col == "vllm_priority" {
+	xRequestIDIdx := -1 // header-position lookup; -1 = absent (issue #1428)
+	for i, col := range headerRow {
+		switch col {
+		case "vllm_priority":
 			hasVLLMPriority = true
-		}
-		if col == "slo_target_us" {
+		case "slo_target_us":
 			hasSLOTarget = true
+		case "x_request_id":
+			xRequestIDIdx = i
 		}
 	}
 
@@ -269,11 +296,14 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 		if hasSLOTarget {
 			minCols++
 		}
+		if xRequestIDIdx >= 0 {
+			minCols++
+		}
 		if len(row) < minCols {
 			return nil, fmt.Errorf("CSV row has %d columns, expected at least %d", len(row), minCols)
 		}
 
-		r, err := parseTraceRecord(row, hasVLLMPriority, hasSLOTarget)
+		r, err := parseTraceRecord(row, hasVLLMPriority, hasSLOTarget, xRequestIDIdx)
 		if err != nil {
 			return nil, err
 		}
@@ -284,8 +314,10 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 }
 
 // parseTraceRecord parses a CSV row. Handles optional columns vllm_priority
-// (after slo_class) and slo_target_us (after deadline_us).
-func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool) (*TraceRecord, error) {
+// (after slo_class), slo_target_us (after deadline_us), and x_request_id
+// (trailing). xRequestIDIdx is the absolute column index in the row, or -1
+// if the column is absent.
+func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequestIDIdx int) (*TraceRecord, error) {
 	// Column offset: optional columns shift subsequent indices.
 	// vllm_priority appears after slo_class (index 3) → shifts everything after by +1.
 	// slo_target_us appears after deadline_us → shifts everything after by +1.
@@ -436,6 +468,13 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool) (*TraceR
 	}
 	finishReason := strings.TrimSpace(row[26+offset])
 
+	// Optional x_request_id at trailing column (issue #1428): looked up by
+	// absolute header position so the index math above is unaffected.
+	var xRequestID string
+	if xRequestIDIdx >= 0 && xRequestIDIdx < len(row) {
+		xRequestID = strings.TrimSpace(row[xRequestIDIdx])
+	}
+
 	return &TraceRecord{
 		RequestID:         requestID,
 		ClientID:          row[1],
@@ -466,6 +505,7 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool) (*TraceR
 		Status:            row[24+offset],
 		ErrorMessage:      strings.TrimSpace(row[25+offset]),
 		FinishReason:      finishReason,
+		XRequestID:        xRequestID,
 	}, nil
 }
 
