@@ -95,6 +95,7 @@ Four input modes are available. At least one must be provided per invocation:
 | `--server-type` | `string` | `"vllm"` | Server type (vllm, tgi, etc.) |
 | `--max-concurrency` | `int` | `256` | Maximum simultaneous in-flight requests |
 | `--warmup-requests` | `int` | `0` | Number of initial requests to exclude from trace |
+| `--prewarm-duration` | `duration` | `0` | System priming phase before real workload (e.g., `60s`). Sends small fixed requests at low concurrency to warm CUDA/EPP/memory. 0 = disabled |
 | `--no-streaming` | `bool` | `false` | Disable streaming (use non-streaming HTTP) |
 | `--seed` | `int64` | `42` | RNG seed for workload generation |
 | `--horizon` | `int64` | `0` | Observation horizon in microseconds (0 = from spec or unlimited) |
@@ -184,6 +185,23 @@ Used when `--rate` or `--concurrency` mode is active (ignored when `--workload-s
 
 !!! info "Session support"
     If the workload spec contains session clients, observe runs in closed-loop mode: each completed request may trigger follow-up requests from the session manager, interleaved with pre-generated arrivals by arrival time.
+
+### System Prewarming
+
+When targeting a cold system (fresh vLLM restart, new EPP connections), the first 30-60s of requests typically see 20-25x worse latency due to CUDA kernel compilation, memory allocator priming, and connection establishment. At high target rates, this cold-start transient can even trigger queue collapse.
+
+The `--prewarm-duration` flag addresses this by running a fixed priming phase before measurement begins:
+
+```bash
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --prewarm-duration 60s \
+  --workload chatbot --rate 20 --num-requests 500 \
+  --trace-header trace.yaml --trace-data trace.csv
+```
+
+The prewarm phase sends small, fixed requests (256 input tokens, 64 output tokens) at low concurrency (4 simultaneous requests). This exercises the full request path without risking overload, regardless of the real workload's rate or token sizes. Prewarm requests never appear in `trace_data.csv`.
+
+The `--prewarm-duration` flag is independent of `--warmup-requests` — both can be used together. Use `--prewarm-duration` for system-level warming (CUDA, connections) and `--warmup-requests` for workload-level exclusion (initial ramp-up).
 
 ---
 

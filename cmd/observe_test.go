@@ -2330,3 +2330,59 @@ func TestRecorder_PropagatesXRequestID(t *testing.T) {
 		t.Errorf("TraceRecord.XRequestID: got %q, want %q", records[0].XRequestID, "uuid-test-value")
 	}
 }
+
+func TestRunPrewarm_SendsRequestsForDuration(t *testing.T) {
+	var mu sync.Mutex
+	var count int
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		count++
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"choices":[{"text":"ok","finish_reason":"stop"}],"usage":{"prompt_tokens":256,"completion_tokens":10}}`)
+	}))
+	defer srv.Close()
+
+	client := NewRealClient(srv.URL, "", "qwen/qwen3-14b", "completions")
+
+	start := time.Now()
+	runPrewarm(context.Background(), client, 2*time.Second)
+	elapsed := time.Since(start)
+
+	mu.Lock()
+	finalCount := count
+	mu.Unlock()
+
+	if finalCount < 1 {
+		t.Errorf("Expected at least 1 prewarm request, got %d", finalCount)
+	}
+	if elapsed < 1900*time.Millisecond || elapsed > 4*time.Second {
+		t.Errorf("Expected ~2s duration, got %v", elapsed)
+	}
+}
+
+func TestRunPrewarm_RespectsContextCancellation(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"choices":[{"text":"ok","finish_reason":"stop"}],"usage":{"prompt_tokens":256,"completion_tokens":10}}`)
+	}))
+	defer srv.Close()
+
+	client := NewRealClient(srv.URL, "", "qwen/qwen3-14b", "completions")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		cancel()
+	}()
+
+	start := time.Now()
+	runPrewarm(ctx, client, 30*time.Second)
+	elapsed := time.Since(start)
+
+	if elapsed > 2*time.Second {
+		t.Errorf("Expected prewarm to stop within ~500ms of cancel, took %v", elapsed)
+	}
+}
