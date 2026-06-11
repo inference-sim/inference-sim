@@ -140,6 +140,22 @@ func TestResolveLatencyConfig_DPEP_RooflineRejected(t *testing.T) {
 	runFatalSubprocess(t, "TestResolveLatencyConfig_DPEP_RooflineRejected", "roofline-ep", "trained-physics")
 }
 
+// TestResolveLatencyConfig_DPEP_ZeroDPRejected verifies the first DP gate:
+// an explicit --dp 0 (below the >= 1 floor) fatals at the CLI. The Cobra default
+// of 1 only applies when the flag is omitted; a user who types --dp 0 must still
+// be rejected. This gate fires before any model config is consulted, so the MoE
+// fixture is incidental. Mirrors the constructor-level panic guard
+// (TestNewModelHardwareConfig_DPValidation) at the CLI boundary.
+func TestResolveLatencyConfig_DPEP_ZeroDPRejected(t *testing.T) {
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		if os.Getenv("BLIS_DPEP_SCENARIO") == "zero-dp" {
+			dpEPResolve(t, "trained-physics", 0, false, true)
+		}
+		return
+	}
+	runFatalSubprocess(t, "TestResolveLatencyConfig_DPEP_ZeroDPRejected", "zero-dp", "--dp must be >= 1")
+}
+
 // TestResolveLatencyConfig_DPEP_DenseDPRejected verifies that --dp > 1 on a
 // dense model fatals (dense DP is the router-replica mechanism, not a divisor).
 func TestResolveLatencyConfig_DPEP_DenseDPRejected(t *testing.T) {
