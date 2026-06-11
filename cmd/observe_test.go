@@ -2340,7 +2340,7 @@ func TestRunPrewarm_SendsRequestsForDuration(t *testing.T) {
 		count++
 		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"choices":[{"text":"ok","finish_reason":"stop"}],"usage":{"prompt_tokens":256,"completion_tokens":10}}`)
+		_, _ = fmt.Fprintf(w, `{"choices":[{"text":"ok","finish_reason":"stop"}],"usage":{"prompt_tokens":256,"completion_tokens":10}}`)
 	}))
 	defer srv.Close()
 
@@ -2366,7 +2366,7 @@ func TestRunPrewarm_RespectsContextCancellation(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(100 * time.Millisecond)
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"choices":[{"text":"ok","finish_reason":"stop"}],"usage":{"prompt_tokens":256,"completion_tokens":10}}`)
+		_, _ = fmt.Fprintf(w, `{"choices":[{"text":"ok","finish_reason":"stop"}],"usage":{"prompt_tokens":256,"completion_tokens":10}}`)
 	}))
 	defer srv.Close()
 
