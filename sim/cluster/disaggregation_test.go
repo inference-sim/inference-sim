@@ -75,7 +75,7 @@ func newTestDisaggDeploymentConfigWithOverhead(overhead float64) DeploymentConfi
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs(betas, alphas),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(modelCfg, hwCfg, "test-model", "H100", 1, 1, false, "trained-physics", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(modelCfg, hwCfg, "test-model", "H100", 1, 1, false, "", "trained-physics", 0),
 		},
 		NumInstances:            4,
 		PrefillInstances:        2,
@@ -113,7 +113,7 @@ func newTestDisaggDeploymentConfig(numInstances, prefill, decode int) Deployment
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs(betas, alphas),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(modelCfg, hwCfg, "test-model", "H100", 1, 1, false, "trained-physics", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(modelCfg, hwCfg, "test-model", "H100", 1, 1, false, "", "trained-physics", 0),
 		},
 		NumInstances:            numInstances,
 		PrefillInstances:        prefill,
@@ -129,7 +129,7 @@ func TestNewClusterSimulator_PDEnabled_InvalidModelConfig_Panics(t *testing.T) {
 	cfg := newTestDisaggDeploymentConfig(2, 1, 1)
 	// Replace the valid ModelConfig with a zero-value one to trigger the PD guard.
 	// PD mode requires valid ModelConfig for KV transfer size calculation.
-	cfg.ModelHardwareConfig = sim.NewModelHardwareConfig(sim.ModelConfig{}, testRooflineHWCalib(), "test", "H100", 1, 1, false, "roofline", 0)
+	cfg.ModelHardwareConfig = sim.NewModelHardwareConfig(sim.ModelConfig{}, testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0)
 	defer func() {
 		if r := recover(); r == nil {
 			t.Error("expected panic for PD with zero ModelConfig, got none")
@@ -438,7 +438,7 @@ func TestDisaggregation_BackwardCompatibility(t *testing.T) {
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 1, 1, false, "roofline", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 1, 1, false, "", "roofline", 0),
 		},
 		NumInstances:  4,
 		RoutingPolicy: "round-robin",
@@ -493,7 +493,7 @@ func TestReserveTransferredKV_Success(t *testing.T) {
 		KVCacheConfig:       sim.NewKVCacheConfig(1000, 16, 0, 0, 0, 0),
 		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "roofline", 0),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
 	}
 	inst := NewInstanceSimulator("decode_0", cfg)
 
@@ -522,7 +522,7 @@ func TestReserveTransferredKV_InsufficientCapacity(t *testing.T) {
 		KVCacheConfig:       sim.NewKVCacheConfig(2, 16, 0, 0, 0, 0), // Only 2 blocks
 		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "roofline", 0),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "", "roofline", 0),
 	}
 	inst := NewInstanceSimulator("decode_0", cfg)
 

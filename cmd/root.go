@@ -87,6 +87,7 @@ var (
 	tensorParallelism    int    // TP value
 	dataParallelism      int    // DP value (MoE only; trained-physics backend only)
 	enableExpertParallel bool   // EP mode (MoE only; trained-physics backend only)
+	moeCommBackend       string // MoE all-to-all comm backend (MoE only; trained-physics backend only)
 
 	// cluster config
 	numInstances int // Number of instances in the cluster
@@ -1667,7 +1668,7 @@ var runCmd = &cobra.Command{
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
 				BatchConfig:          sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:        sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
-				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dataParallelism, enableExpertParallel, lr.Backend, maxModelLen),
+				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dataParallelism, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				SLOPriorityOverrides: sloPriorityOverrides,
 			},

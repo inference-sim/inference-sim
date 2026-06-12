@@ -112,6 +112,13 @@ type ModelHardwareConfig struct {
 	// expert-parallel group. Only affects the trained-physics latency backend.
 	EnableExpertParallel bool
 
+	// MoECommBackend mirrors vLLM VLLM_ALL2ALL_BACKEND. It selects the MoE
+	// dispatch/combine communication cost model used by the trained-physics
+	// backend when DP > 1. Empty string resolves to the vLLM default
+	// (allgather_reducescatter) at the latency-model factory. Only meaningful for
+	// MoE models on the trained-physics backend.
+	MoECommBackend string
+
 	Backend     string // latency model backend: "" or "roofline" (default), "trained-physics"
 	MaxModelLen int64  // max total sequence length (input + output); 0 = unlimited (mirrors vLLM --max-model-len)
 }
@@ -132,7 +139,7 @@ type ModelHardwareConfig struct {
 // through NewLatencyModel, so a zero-TP divisor cannot reach latency math.
 func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 	model, gpu string, tp, dp int, enableExpertParallel bool,
-	backend string, maxModelLen int64) ModelHardwareConfig {
+	moeCommBackend, backend string, maxModelLen int64) ModelHardwareConfig {
 	if maxModelLen < 0 {
 		panic(fmt.Sprintf("NewModelHardwareConfig: MaxModelLen must be >= 0, got %d", maxModelLen))
 	}
@@ -152,6 +159,7 @@ func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 		TP:                   tp,
 		DP:                   dp,
 		EnableExpertParallel: enableExpertParallel,
+		MoECommBackend:       moeCommBackend,
 		Backend:              backend,
 		MaxModelLen:          maxModelLen,
 	}

@@ -101,7 +101,7 @@ func TestDPEPConfig_RealFixtures(t *testing.T) {
 			// All four fixtures are MoE (NumLocalExperts > 1).
 			for _, tr := range triples {
 				hw := sim.NewModelHardwareConfig(*mc, sim.HardwareCalib{}, f.name, "H100",
-					tr.tp, tr.dp, tr.ep, "trained-physics", 0)
+					tr.tp, tr.dp, tr.ep, "", "trained-physics", 0)
 				if got := hw.EffectiveMoEGroupSize(); got != tr.wantMoEGroup {
 					t.Errorf("(TP=%d,DP=%d,EP=%t) EffectiveMoEGroupSize: got %d, want %d",
 						tr.tp, tr.dp, tr.ep, got, tr.wantMoEGroup)
