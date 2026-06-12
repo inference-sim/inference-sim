@@ -150,6 +150,35 @@ func TestMoEDispatchBasis_PerFamilyVolume(t *testing.T) {
 		"all2all/all-gather dispatch volume ratio must equal kEff")
 }
 
+// TestMoEDispatchBasis_UsesActivationDtypeNotWeightDtype guards that the MoE
+// dispatch/combine comm sizes hidden-state ACTIVATIONS by the compute dtype
+// (BytesPerParam), not the quantized weight dtype (#1419). vLLM dispatches BF16
+// hidden states regardless of weight quantization (NaiveAll2AllManager.naive_multicast
+// allocates dtype=x.dtype). For a quantized-weight MoE (weightBPP != BytesPerParam),
+// the dispatch volume must scale with BytesPerParam — a bug here would silently
+// mis-size comm by the weight/activation dtype ratio (e.g. 2× for FP8, 4× for W4A16),
+// invisible to the FP16-only test matrix.
+func TestMoEDispatchBasis_UsesActivationDtypeNotWeightDtype(t *testing.T) {
+	const tp, dp = 2, 2
+	moeGroup := float64(tp * dp)
+	hidden := 4096.0
+	kEff := 2.0
+	globalTokens := 100.0
+	bwHbmUs := dpepTestHW().BwPeakTBs * 1e6
+	activationBPP := 2.0 // BF16 compute dtype
+
+	// FP8-weight MoE: weightBPP=1.0 but activations stay BF16 (BytesPerParam=2.0).
+	mc := dpepMoEModelConfig()
+	mc.BytesPerParam = activationBPP
+	mc.WeightBytesPerParam = 1.0 // quantized weights → weightBPP=1.0 != activationBPP
+
+	m := newDPEPModel(t, mc, tp, dp, false, "allgather_reducescatter")
+	// The dispatch basis must use activationBPP (2.0), independent of the 1.0 weight dtype.
+	want := (globalTokens / dp) * (moeGroup - 1) / moeGroup * 2 * hidden * activationBPP / bwHbmUs
+	assert.InDelta(t, want, m.moeDispatchBasis(globalTokens, kEff), 1e-6,
+		"dispatch comm must size hidden states by the activation dtype (BytesPerParam=2.0), not weightBPP=1.0")
+}
+
 // TestSharedExpert_PresentVsAbsent verifies the B3 shared-expert term (#1419): a
 // config WITH a shared-expert FFN dim must cost strictly more than an identical
 // config without one (the shared expert runs for every token on every MoE layer),

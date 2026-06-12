@@ -152,7 +152,8 @@ type TrainedPhysicsModel struct {
 	isMoE             bool    // ModelConfig.IsMoE() (NumLocalExperts >= MoEMinExperts)
 	hasInterleavedMoE bool    // InterleaveMoELayerStep > 0 && ModelConfig.IsMoE() (Scout-style alternating MoE/dense)
 	tp                int     // Tensor parallelism degree
-	weightBPP         float64 // EffectiveWeightBytesPerParam (FP8-aware)
+	weightBPP         float64 // EffectiveWeightBytesPerParam (FP8-aware) — weight memory only
+	activationBPP     float64 // BytesPerParam (compute/activation dtype) — hidden-state comm volume
 
 	// DP/EP features (#1419), frozen at construction.
 	//
@@ -457,12 +458,17 @@ func (m *TrainedPhysicsModel) moeDispatchBasis(globalTokens, kEff float64) float
 	hidden := float64(m.hiddenDim)
 	group := float64(m.moeGroup)
 	dpf := float64(m.dp)
+	// Dispatch/combine moves hidden-state ACTIVATIONS, so size them with the
+	// compute/activation dtype (BytesPerParam), NOT the quantized weight dtype —
+	// matching tpAllReduceBasis and the KV terms (vLLM dispatches the BF16 hidden
+	// states: NaiveAll2AllManager.naive_multicast allocates dtype=x.dtype; the
+	// quantized post_quant_allgather path is an explicit opt-in, not the default).
 	switch m.commFamily {
 	case commFamilyAll2All:
 		load := m.placement.Resolve(globalTokens, kEff, m.numExperts, m.moeGroup, m.dp)
-		return load.PerGPUCommTokens * hidden * m.weightBPP / m.bwHbmUs
+		return load.PerGPUCommTokens * hidden * m.activationBPP / m.bwHbmUs
 	default: // commFamilyAllGather: dense hidden-state volume, no top_k
-		return (globalTokens / dpf) * (group - 1) / group * 2 * hidden * m.weightBPP / m.bwHbmUs
+		return (globalTokens / dpf) * (group - 1) / group * 2 * hidden * m.activationBPP / m.bwHbmUs
 	}
 }
 
@@ -644,6 +650,7 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 		isMoE:              hw.ModelConfig.IsMoE(),
 		tp:                 hw.TP,
 		weightBPP:          weightBPP,
+		activationBPP:      hw.ModelConfig.BytesPerParam,
 		dp:                 hw.EffectiveDP(),
 		moeGroup:           hw.EffectiveMoEGroupSize(),
 		sharedExpertFFNDim: hw.ModelConfig.SharedExpertFFNDim,
