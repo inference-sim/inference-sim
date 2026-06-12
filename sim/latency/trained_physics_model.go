@@ -420,11 +420,11 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 	// Determine MoE/dense layer split (#877)
 	numMoELayers := 0
 	numDenseLayers := hw.ModelConfig.NumLayers
-	if hw.ModelConfig.InterleaveMoELayerStep > 0 && hw.ModelConfig.NumLocalExperts > 1 {
+	if hw.ModelConfig.InterleaveMoELayerStep > 0 && hw.ModelConfig.IsMoE() {
 		step := hw.ModelConfig.InterleaveMoELayerStep
 		numMoELayers = hw.ModelConfig.NumLayers / (step + 1)
 		numDenseLayers = hw.ModelConfig.NumLayers - numMoELayers
-	} else if hw.ModelConfig.NumLocalExperts > 1 {
+	} else if hw.ModelConfig.IsMoE() {
 		numMoELayers = hw.ModelConfig.NumLayers
 		numDenseLayers = 0
 	}
@@ -463,8 +463,8 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 		dFFDense:          dFFDense,
 		kEff:              max(1, hw.ModelConfig.NumExpertsPerTok),
 		numExperts:        hw.ModelConfig.NumLocalExperts,
-		hasInterleavedMoE: hw.ModelConfig.InterleaveMoELayerStep > 0 && hw.ModelConfig.NumLocalExperts > 1,
-		isMoE:             hw.ModelConfig.NumLocalExperts > 1,
+		hasInterleavedMoE: hw.ModelConfig.InterleaveMoELayerStep > 0 && hw.ModelConfig.IsMoE(),
+		isMoE:             hw.ModelConfig.IsMoE(),
 		tp:                hw.TP,
 		weightBPP:         weightBPP,
 		flopsPeakUs:       peakFlops,

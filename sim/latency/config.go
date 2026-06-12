@@ -68,6 +68,35 @@ func (c *HFConfig) MustGetInt(key string, def int) int {
 	return def
 }
 
+// ResolveNumExperts returns the total routed-expert count for the model, trying
+// the known architecture-specific field names in turn. The primary field is
+// num_local_experts (Mixtral); if it is below the MoE threshold (dense or
+// single-expert) the alias chain [num_routed_experts, n_routed_experts,
+// num_experts] is consulted, taking the first value that meets the threshold.
+// Returns 0 for dense models (no expert field present).
+//
+// This is the single source of truth for expert-count resolution, shared by
+// GetModelConfigFromHF and ExtractKVCapacityParams so the two cannot desync
+// (R23 code-path parity). The threshold is sim.MoEMinExperts — the same constant
+// behind ModelConfig.IsMoE — so a single-expert config resolves to its literal
+// count and is later classified dense, keeping N=1 out of the MoE formulas.
+//
+// NOTE: BLIS's field order differs from vLLM's get_num_experts
+// (transformers_utils/model_arch_config_convertor.py) and omits moe_num_experts
+// (Dbrx). On every real model this is behaviorally identical because no real HF
+// config sets more than one of these fields.
+func (c *HFConfig) ResolveNumExperts() int {
+	n := c.MustGetInt("num_local_experts", 0)
+	if n < sim.MoEMinExperts {
+		for _, key := range []string{"num_routed_experts", "n_routed_experts", "num_experts"} {
+			if v := c.MustGetInt(key, 0); v >= sim.MoEMinExperts {
+				return v
+			}
+		}
+	}
+	return n
+}
+
 func parseHWConfig(HWConfigFilePath string) (map[string]sim.HardwareCalib, error) {
 	data, err := os.ReadFile(HWConfigFilePath)
 	if err != nil {
@@ -239,18 +268,9 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	// Intermediate dim: Falcon/GLM use "ffn_hidden_size" instead of "intermediate_size".
 	intermediateDim := getIntWithFallbacks("intermediate_size", "ffn_hidden_size")
 
-	// MoE expert count: extended resolution chain (design D4).
-	// Threshold is > 1: single-expert models (num_local_experts=1) are dense-equivalent.
-	// This matches ExtractKVCapacityParams semantics (R23 code path parity).
-	numLocalExperts := getInt("num_local_experts")
-	if numLocalExperts <= 1 {
-		for _, key := range []string{"num_routed_experts", "n_routed_experts", "num_experts"} {
-			if v := getInt(key); v > 1 {
-				numLocalExperts = v
-				break
-			}
-		}
-	}
+	// MoE expert count: resolved via the shared chain (R23 code-path parity with
+	// ExtractKVCapacityParams). Single-expert models are dense-equivalent.
+	numLocalExperts := hf.ResolveNumExperts()
 	numExpertsPerTok := getInt("num_experts_per_tok")
 
 	// MoE per-expert FFN dimension (design Section 4.2)

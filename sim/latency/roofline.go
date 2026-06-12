@@ -116,12 +116,12 @@ func calculateTransformerFlops(config sim.ModelConfig, sequenceLength int64, new
 		// Determine MoE/dense layer split for interleaved architectures (#877)
 		numMoELayers := 0
 		numDenseLayers := int(nLayers)
-		if config.InterleaveMoELayerStep > 0 && config.NumLocalExperts > 1 {
+		if config.InterleaveMoELayerStep > 0 && config.IsMoE() {
 			// Interleaved: step=1 means alternate (24 MoE + 24 dense for 48 layers)
 			step := config.InterleaveMoELayerStep
 			numMoELayers = int(nLayers) / (step + 1)
 			numDenseLayers = int(nLayers) - numMoELayers
-		} else if config.NumLocalExperts > 1 {
+		} else if config.IsMoE() {
 			// Uniform MoE: all layers are MoE
 			numMoELayers = int(nLayers)
 			numDenseLayers = 0
@@ -190,12 +190,12 @@ func calculateMemoryAccessBytes(
 	// Determine MoE/dense layer split for interleaved architectures (#877)
 	numMoELayers := 0
 	numDenseLayers := int(nLayers)
-	if config.InterleaveMoELayerStep > 0 && config.NumLocalExperts > 1 {
+	if config.InterleaveMoELayerStep > 0 && config.IsMoE() {
 		// Interleaved: step=1 means alternate (24 MoE + 24 dense for 48 layers)
 		step := config.InterleaveMoELayerStep
 		numMoELayers = int(nLayers) / (step + 1)
 		numDenseLayers = int(nLayers) - numMoELayers
-	} else if config.NumLocalExperts > 1 {
+	} else if config.IsMoE() {
 		// Uniform MoE: all layers are MoE
 		numMoELayers = int(nLayers)
 		numDenseLayers = 0

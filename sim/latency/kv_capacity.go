@@ -340,21 +340,12 @@ func ExtractKVCapacityParams(hf *HFConfig) (KVCapacityParams, error) {
 		tieWordEmbeddings = tied
 	}
 
-	// MoE detection: check multiple field names used by different architectures.
-	// Extended resolution chain (design D4): parity with GetModelConfigFromHF.
-	// Threshold is > 1: single-expert models (num_local_experts=1) are dense-equivalent
-	// and should not enter the MoE weight estimation path.
-	numLocalExperts := hf.MustGetInt("num_local_experts", 0)
-	if numLocalExperts <= 1 {
-		for _, key := range []string{"num_routed_experts", "n_routed_experts", "num_experts"} {
-			if v := hf.MustGetInt(key, 0); v > 1 {
-				numLocalExperts = v
-				break
-			}
-		}
-	}
+	// MoE expert count: resolved via the shared chain (R23 code-path parity with
+	// GetModelConfigFromHF). Single-expert models are dense-equivalent and must not
+	// enter the MoE weight-estimation path below.
+	numLocalExperts := hf.ResolveNumExperts()
 
-	if numLocalExperts > 1 {
+	if numLocalExperts >= sim.MoEMinExperts {
 		// Extract per-expert and shared expert dims for weight estimation
 		moeExpertFFNDim := hf.MustGetInt("moe_intermediate_size", 0)
 		var sharedExpertFFNDim int

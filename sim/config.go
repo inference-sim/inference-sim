@@ -139,10 +139,10 @@ func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 	if dp < 1 {
 		panic(fmt.Sprintf("NewModelHardwareConfig: DP must be >= 1, got %d", dp))
 	}
-	if dp > 1 && modelConfig.NumLocalExperts <= 1 {
+	if dp > 1 && !modelConfig.IsMoE() {
 		panic(fmt.Sprintf("NewModelHardwareConfig: DP > 1 is only supported for MoE models "+
-			"(NumLocalExperts > 1), got DP=%d with NumLocalExperts=%d. Dense data parallelism "+
-			"is expressed via router replicas, not the latency model.", dp, modelConfig.NumLocalExperts))
+			"(NumLocalExperts >= %d), got DP=%d with NumLocalExperts=%d. Dense data parallelism "+
+			"is expressed via router replicas, not the latency model.", MoEMinExperts, dp, modelConfig.NumLocalExperts))
 	}
 	return ModelHardwareConfig{
 		ModelConfig:          modelConfig,
@@ -157,16 +157,11 @@ func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 	}
 }
 
-// isMoE reports whether the model is a mixture-of-experts model. The threshold
-// (NumLocalExperts > 1) matches the parsing layer (sim/latency/config.go) and
-// ExtractKVCapacityParams: single-expert configs are dense-equivalent.
-//
-// Known divergence from vLLM: vLLM's is_moe uses get_num_experts() > 0, so a
-// hypothetical model with num_local_experts=1 would be MoE in vLLM but dense
-// here. No real production model has num_local_experts=1 in its HF config
-// (the smallest known case is Llama-4 Scout at 16), so this is theoretical.
+// isMoE reports whether the model is a mixture-of-experts model. It delegates to
+// the canonical predicate ModelConfig.IsMoE (threshold MoEMinExperts); see that
+// constant for the rationale and the documented vLLM divergence.
 func (c ModelHardwareConfig) isMoE() bool {
-	return c.ModelConfig.NumLocalExperts > 1
+	return c.ModelConfig.IsMoE()
 }
 
 // EffectiveDP returns the data-parallel degree, clamped to a minimum of 1. The

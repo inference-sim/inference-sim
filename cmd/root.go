@@ -596,7 +596,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 
 		applyWeightPrecisionFallback(&modelConfig, model, hfConfig.Raw)
 
-		if backend == "roofline" && modelConfig.NumLocalExperts > 1 {
+		if backend == "roofline" && modelConfig.IsMoE() {
 			logrus.Infof("--latency-model: MoE model detected (%d experts, top_%d). "+
 				"Roofline models per-expert FLOPs and active weights; dispatch overhead is not modeled",
 				modelConfig.NumLocalExperts, modelConfig.NumExpertsPerTok)
@@ -696,7 +696,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 			"DP/EP-blind for step time.",
 			dataParallelism, enableExpertParallel, backend)
 	}
-	if dataParallelism > 1 && modelConfig.NumLocalExperts <= 1 {
+	if dataParallelism > 1 && !modelConfig.IsMoE() {
 		// Dense DP is the router-replica mechanism, not a latency divisor. vLLM
 		// online serving allows --data-parallel-size > 1 on dense models by
 		// spinning up N independent engines with an internal LB — the BLIS
@@ -706,7 +706,7 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 			"the BLIS equivalent is --num-instances (router replicas), not --dp.",
 			dataParallelism)
 	}
-	if enableExpertParallel && modelConfig.NumLocalExperts <= 1 {
+	if enableExpertParallel && !modelConfig.IsMoE() {
 		// vLLM fatally rejects --enable-expert-parallel on dense models
 		// (config/model.py:_verify_with_expert_parallelism raises ValueError,
 		// killing the process before serving). Match that signal so BLIS doesn't

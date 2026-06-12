@@ -33,6 +33,33 @@ func (mc ModelConfig) EffectiveWeightBytesPerParam() float64 {
 	return mc.BytesPerParam
 }
 
+// MoEMinExperts is the minimum NumLocalExperts for a model to be treated as MoE.
+// It is the single source of truth for the MoE-vs-dense boundary across BLIS:
+// the detection predicate (IsMoE), the parse-time expert-count resolver
+// (latency.HFConfig.ResolveNumExperts), and the KV-capacity MoE branch all key
+// off this constant.
+//
+// Single-expert configs (NumLocalExperts == 1) are dense-equivalent in BLIS. The
+// MoE weight/FLOP formulas (sim/latency/kv_capacity.go, roofline.go,
+// trained_physics_model.go) read NumLocalExperts as a multiplier/divisor and would
+// MISESTIMATE at N=1 (e.g. MoE weight 3·h·f_expert·1 + router ≠ dense 3·h·f_dense).
+// The >= 2 threshold keeps N=1 out of those formulas.
+//
+// This is an intentional, documented divergence from vLLM, whose is_moe is
+// get_num_experts() > 0 and which builds a well-defined degenerate 1-expert
+// FusedMoE kernel. On every real model the two thresholds agree — no real HF config
+// has NumLocalExperts == 1 — so keeping >= 2 loses no parity and preserves BLIS's
+// analytic correctness.
+const MoEMinExperts = 2
+
+// IsMoE reports whether the model is a mixture-of-experts model
+// (NumLocalExperts >= MoEMinExperts). See MoEMinExperts for the threshold rationale
+// and the vLLM divergence note. This is the canonical MoE-detection predicate;
+// callers must not re-encode the threshold inline.
+func (mc ModelConfig) IsMoE() bool {
+	return mc.NumLocalExperts >= MoEMinExperts
+}
+
 // HardwareCalib holds GPU hardware calibration parameters.
 // Used by the roofline latency model for compute/memory bandwidth estimation.
 // Parsing functions are in sim/latency/config.go.

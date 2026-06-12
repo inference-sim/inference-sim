@@ -191,6 +191,25 @@ func TestEffectiveMoEGroupSize_EPModeIndependent(t *testing.T) {
 	}
 }
 
+// TestIsMoE_Boundary pins the canonical MoE-detection boundary (observable behavior,
+// not the const value): 0 and 1 experts are dense; 2+ is MoE. This is the keystone
+// guarding the intentional >= MoEMinExperts (not vLLM's > 0) threshold — see
+// MoEMinExperts. A refactor that preserves the boundary keeps this green.
+func TestIsMoE_Boundary(t *testing.T) {
+	for _, tc := range []struct {
+		experts int
+		want    bool
+	}{
+		{0, false}, // dense (no expert fields)
+		{1, false}, // single-expert is dense-equivalent in BLIS
+		{2, true},  // smallest MoE
+		{8, true},  // typical MoE (Mixtral)
+	} {
+		got := ModelConfig{NumLocalExperts: tc.experts}.IsMoE()
+		assert.Equalf(t, tc.want, got, "IsMoE() for NumLocalExperts=%d", tc.experts)
+	}
+}
+
 func TestNewPolicyConfig_FieldEquivalence(t *testing.T) {
 	got := NewPolicyConfig("priority-fcfs", "")
 	want := PolicyConfig{Scheduler: "priority-fcfs", PreemptionPolicy: ""}
