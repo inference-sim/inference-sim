@@ -47,6 +47,14 @@ var ValidMoECommBackends = []string{
 	"flashinfer_all2allv",
 }
 
+// IsValidMoECommBackend reports whether name is a recognized vLLM MoE all-to-all
+// backend. Used by the CLI to validate --moe-comm-backend before constructing the
+// model (the constructor performs the same check via moeCommFamilyFor).
+func IsValidMoECommBackend(name string) bool {
+	_, err := moeCommFamilyFor(name)
+	return err == nil
+}
+
 // moeCommFamilyFor maps a vLLM backend name to its communication-volume family.
 // An unrecognized name is a hard error (R1): a typo in the --moe-comm-backend flag
 // must surface, not silently fall back to a default volume model.
