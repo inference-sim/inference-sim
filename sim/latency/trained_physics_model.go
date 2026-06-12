@@ -263,24 +263,30 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	// T_tp: TP All-Reduce communication time (µs)
 	//
 	// Each transformer layer performs All-Reduces over NVLink for the attention
-	// sublayers. Dense layers also All-Reduce their FFN; MoE layers use EP
-	// All-to-All instead (captured by β₈). We count All-Reduce "units" as:
+	// sublayers. Dense layers also All-Reduce their FFN. We count All-Reduce "units":
 	//   dense layer → 2 units (attention + FFN)
-	//   MoE layer   → 1 unit  (attention only; FFN replaced by EP All-to-All)
+	//   MoE layer   → 1 unit  (attention only; MoE-FFN comm handled separately, #1419)
 	//
-	// Volume per unit: totalTokens × hiddenDim × 2 bytes (BF16) × 2 (ring phases)
-	// Denominator: bwHbmUs normalises to µs; β₄ absorbs NVLink/HBM ratio (~0.27 on H100)
+	// The previously-monolithic term is split here into per-class terms so DP and the
+	// MoE comm taxonomy can scale each independently (#1419):
+	//   tTpAttention — attention all-reduce, one unit per layer.
+	//   tTpDenseFFN  — dense-FFN all-reduce, one unit per dense layer.
+	// MoE-FFN communication (tMoEReduce at DP=1 / tMoEDispatch at DP>1) is added in a
+	// later task; today numMoELayers contributes nothing here, exactly as before.
 	//
-	// Generalisation:
-	//   TP=1 → (TP-1)/TP = 0 → tTp = 0 (no communication)
-	//   Dense-only model → numMoELayers=0 → units = 2·numDenseLayers
-	//   Mixtral (all MoE) → numDenseLayers=0 → units = numMoELayers (half of dense equivalent)
-	var tTp float64
+	// tpAllReduceBasis(units, tokens, tp) is the ring-all-reduce basis: units × tokens ×
+	// hidden × 2 bytes (BF16) × 2 (ring phases) × (tp-1)/tp / bwHbmUs. β₄ absorbs the
+	// NVLink/HBM ratio (~0.27 on H100). TP=1 → (tp-1)/tp = 0 → no communication.
+	//
+	// INV BC-DP1: for a dense model, tTpAttention + tTpDenseFFN =
+	// V(numLayers, tp) + V(numDenseLayers, tp) = V(2·numLayers, tp) (numDenseLayers ==
+	// numLayers, numMoELayers == 0) — byte-identical to the pre-#C monolithic term
+	// (allReduceUnits = 2·numDenseLayers + numMoELayers = 2·numLayers).
+	totalTokens := totalPrefillTokens + totalDecodeTokens
+	var tTpAttention, tTpDenseFFN float64
 	if m.tp > 1 {
-		totalTokens := totalPrefillTokens + totalDecodeTokens
-		allReduceUnits := float64(2*m.numDenseLayers + m.numMoELayers)
-		tpFactor := float64(m.tp-1) / float64(m.tp)
-		tTp = allReduceUnits * totalTokens * float64(m.hiddenDim) * 2.0 * 2.0 * tpFactor / m.bwHbmUs
+		tTpAttention = m.tpAllReduceBasis(float64(m.numLayers), totalTokens)
+		tTpDenseFFN = m.tpAllReduceBasis(float64(m.numDenseLayers), totalTokens)
 	}
 
 	// ─── Step-time formula ─────────────────────────────────────────────
@@ -321,13 +327,29 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	stepTime := prefillTerm +
 		decodeTerm +
 		m.Beta[2]*tWeight +
-		m.Beta[3]*tTp +
+		m.Beta[3]*(tTpAttention+tTpDenseFFN) +
 		m.Beta[4]*L +
 		m.Beta[5]*batchSize +
 		m.Beta[6] +
 		m.Beta[7]*moeScaling*float64(m.numMoELayers) // β₈: per-MoE-layer overhead (interleaved archs only)
 
 	return max(1, clampToInt64(stepTime))
+}
+
+// tpAllReduceBasis is the ring-all-reduce communication basis V(units, tokens):
+//
+//	units · tokens · hidden · 2 (BF16 bytes) · 2 (ring phases) · (tp-1)/tp / bwHbmUs
+//
+// in raw µs before the β₄ coefficient. It is the shared basis for every
+// all-reduce-class TP communication term (attention, dense-FFN, and the DP=1
+// MoE-FFN reduction). Returns 0 at tp == 1 (no communication). β₄ absorbs the
+// NVLink/HBM bandwidth ratio (~0.27 on H100) and ring-collective efficiency.
+func (m *TrainedPhysicsModel) tpAllReduceBasis(units, tokens float64) float64 {
+	if m.tp <= 1 {
+		return 0
+	}
+	tpFactor := float64(m.tp-1) / float64(m.tp)
+	return units * tokens * float64(m.hiddenDim) * 2.0 * 2.0 * tpFactor / m.bwHbmUs
 }
 
 // QueueingTime computes request-level overhead (ARRIVED → QUEUED).
