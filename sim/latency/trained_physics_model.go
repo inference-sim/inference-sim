@@ -23,16 +23,19 @@ import (
 // The model supports 8, 9, or 10 beta coefficients for increasing fidelity:
 //
 // 8-beta (default):
-//   T_step = β₁·max(T_pf_compute, T_pf_kv) + β₂·max(T_dc_compute, T_dc_kv)
-//            + β₃·T_weight + β₄·T_tp + β₅·L + β₆·B + β₇ + β₈·nMoE
+//
+//	T_step = β₁·max(T_pf_compute, T_pf_kv) + β₂·max(T_dc_compute, T_dc_kv)
+//	         + β₃·T_weight + β₄·T_tp + β₅·L + β₆·B + β₇ + β₈·nMoE
 //
 // 9-beta (prefill split):
-//   T_step = β₁ₐ·T_pf_compute + β₁ᵦ·T_pf_kv + β₂·max(T_dc_compute, T_dc_kv)
-//            + β₃·T_weight + β₄·T_tp + β₅·L + β₆·B + β₇ + β₈·nMoE
+//
+//	T_step = β₁ₐ·T_pf_compute + β₁ᵦ·T_pf_kv + β₂·max(T_dc_compute, T_dc_kv)
+//	         + β₃·T_weight + β₄·T_tp + β₅·L + β₆·B + β₇ + β₈·nMoE
 //
 // 10-beta (prefill + decode split):
-//   T_step = β₁ₐ·T_pf_compute + β₁ᵦ·T_pf_kv + β₂ₐ·T_dc_compute + β₂ᵦ·T_dc_kv
-//            + β₃·T_weight + β₄·T_tp + β₅·L + β₆·B + β₇ + β₈·nMoE
+//
+//	T_step = β₁ₐ·T_pf_compute + β₁ᵦ·T_pf_kv + β₂ₐ·T_dc_compute + β₂ᵦ·T_dc_kv
+//	         + β₃·T_weight + β₄·T_tp + β₅·L + β₆·B + β₇ + β₈·nMoE
 //
 // Where:
 //   - T_pf_compute: Prefill compute time (FlashAttention FLOPs + MLP FLOPs)
@@ -48,74 +51,87 @@ import (
 // # Beta Coefficients (Roofline Corrections + Overheads)
 //
 // β₁ (or β₁ₐ): Prefill compute correction (dimensionless, ~1.0)
-//   Corrects analytical FlashAttention + MLP FLOP estimates. Accounts for kernel
-//   efficiency, memory access patterns, and instruction-level parallelism.
+//
+//	Corrects analytical FlashAttention + MLP FLOP estimates. Accounts for kernel
+//	efficiency, memory access patterns, and instruction-level parallelism.
 //
 // β₁ᵦ (β₉): Prefill memory correction (dimensionless, ~0.0 when compute-bound)
-//   Corrects KV cache write bandwidth. Typically zero since prefill is compute-bound.
+//
+//	Corrects KV cache write bandwidth. Typically zero since prefill is compute-bound.
 //
 // β₂ (or β₂ₐ): Decode compute correction (dimensionless, ~0.0 when memory-bound)
-//   Corrects single-token attention + MLP FLOPs. Typically zero since decode is
-//   memory-bound (bandwidth-limited by KV cache reads).
+//
+//	Corrects single-token attention + MLP FLOPs. Typically zero since decode is
+//	memory-bound (bandwidth-limited by KV cache reads).
 //
 // β₂ᵦ (β₁₀): Decode memory correction (dimensionless, ~1.0-2.0)
-//   Corrects KV cache read bandwidth. Primary decode bottleneck.
+//
+//	Corrects KV cache read bandwidth. Primary decode bottleneck.
 //
 // β₃: Weight loading correction (dimensionless, ~1.0-1.5)
-//   Corrects model weight bandwidth (loaded once per step). Accounts for cache
-//   effects, prefetching, and HBM contention with KV cache traffic.
+//
+//	Corrects model weight bandwidth (loaded once per step). Accounts for cache
+//	effects, prefetching, and HBM contention with KV cache traffic.
 //
 // β₄: TP All-Reduce correction (dimensionless, ~0.3-0.8)
-//   Corrects tensor-parallel communication overhead. Absorbs NVLink/HBM bandwidth
-//   ratio and collective communication efficiency (ring, tree, etc.).
+//
+//	Corrects tensor-parallel communication overhead. Absorbs NVLink/HBM bandwidth
+//	ratio and collective communication efficiency (ring, tree, etc.).
 //
 // β₅: Per-layer overhead (µs/layer)
-//   Fixed overhead per transformer layer: kernel launch latency, CUDA graph overhead,
-//   residual connections, layer normalization. Typically ~30-60 µs/layer.
+//
+//	Fixed overhead per transformer layer: kernel launch latency, CUDA graph overhead,
+//	residual connections, layer normalization. Typically ~30-60 µs/layer.
 //
 // β₆: Per-request overhead (µs/request)
-//   Scheduling and dispatch overhead per request in batch: queue management, attention
-//   mask construction, token ID lookup. Typically ~3-5 µs/request.
+//
+//	Scheduling and dispatch overhead per request in batch: queue management, attention
+//	mask construction, token ID lookup. Typically ~3-5 µs/request.
 //
 // β₇: Per-step constant overhead (µs/step)
-//   Fixed overhead per step independent of batch/model size: CUDA synchronization,
-//   sampler invocation, logging. Typically ~100-200 µs/step.
+//
+//	Fixed overhead per step independent of batch/model size: CUDA synchronization,
+//	sampler invocation, logging. Typically ~100-200 µs/step.
 //
 // β₈: MoE-layer overhead (µs/MoE-layer, architecture-aware)
-//   Per-MoE-layer overhead: router gating, token permutation, expert-parallel
-//   communication. Applies only to interleaved architectures (InterleaveMoELayerStep > 0).
-//   Zero for uniform MoE (all layers are MoE) and dense models. Typically ~400-500 µs/layer.
+//
+//	Per-MoE-layer overhead: router gating, token permutation, expert-parallel
+//	communication. Applies only to interleaved architectures (InterleaveMoELayerStep > 0).
+//	Zero for uniform MoE (all layers are MoE) and dense models. Typically ~400-500 µs/layer.
 //
 // # Alpha Coefficients (API/Framework Overheads)
 //
 // α₀: QueueingTime (µs)
-//   Fixed per-request API processing: HTTP parsing, request validation, queue
-//   insertion. Independent of model/batch size. Typically ~15,000 µs (15ms).
+//
+//	Fixed per-request API processing: HTTP parsing, request validation, queue
+//	insertion. Independent of model/batch size. Typically ~15,000 µs (15ms).
 //
 // α₁: PostDecodeFixedOverhead (µs)
-//   Fixed per-request post-decode overhead: detokenization setup, finish reason
-//   determination, response serialization. Typically ~777 µs.
+//
+//	Fixed per-request post-decode overhead: detokenization setup, finish reason
+//	determination, response serialization. Typically ~777 µs.
 //
 // α₂: OutputTokenProcessingTime (µs/token)
-//   Per-output-token overhead: streaming token transmission, incremental detokenization.
-//   Typically ~50 µs/token.
+//
+//	Per-output-token overhead: streaming token transmission, incremental detokenization.
+//	Typically ~50 µs/token.
 //
 // # Architecture-Aware Features
 //
-// 1. Interleaved MoE/Dense Layers: Models like Scout alternate MoE and dense layers.
-//    The model splits FLOPs and weight bandwidth calculations by layer type, using
-//    DenseIntermediateDim for dense layers and MoEExpertFFNDim for MoE layers.
-//    β₈ overhead applies only to MoE layers in interleaved architectures.
+//  1. Interleaved MoE/Dense Layers: Models like Scout alternate MoE and dense layers.
+//     The model splits FLOPs and weight bandwidth calculations by layer type, using
+//     DenseIntermediateDim for dense layers and MoEExpertFFNDim for MoE layers.
+//     β₈ overhead applies only to MoE layers in interleaved architectures.
 //
-// 2. Quantization-Aware Weights: Uses EffectiveWeightBytesPerParam for weight
-//    bandwidth (e.g., 1 byte for FP8, 0.5 for W4A16), while KV cache always uses
-//    FP16 (2 bytes). Automatically selects TFlopsFP8 for FP8 models on H100.
+//  2. Quantization-Aware Weights: Uses EffectiveWeightBytesPerParam for weight
+//     bandwidth (e.g., 1 byte for FP8, 0.5 for W4A16), while KV cache always uses
+//     FP16 (2 bytes). Automatically selects TFlopsFP8 for FP8 models on H100.
 //
-// 3. Tensor Parallelism Scaling: All compute and bandwidth terms are divided by TP
-//    degree, while β₄ captures All-Reduce communication overhead explicitly.
+//  3. Tensor Parallelism Scaling: All compute and bandwidth terms are divided by TP
+//     degree, while β₄ captures All-Reduce communication overhead explicitly.
 type TrainedPhysicsModel struct {
 	Alpha [3]float64 // [α₀, α₁, α₂]
-	Beta  []float64  // [β₁..β₁₀] — 7-10 coefficients (7→β₈=0, 8→MoE, 9→pf split, 10→dc split)
+	Beta  []float64  // [β₁..β_EP] — length 11 (7→β₈=0, 8→MoE, 9→pf split, 10→dc split, 11→β_EP; β_EP defaults to β₄)
 
 	// Mode flags.
 	prefillSplit bool // true when ≥9 betas: β₁ₐ·compute + β₁ᵦ·kv instead of β₁·max
@@ -139,11 +155,17 @@ type TrainedPhysicsModel struct {
 	weightBPP         float64 // EffectiveWeightBytesPerParam (FP8-aware)
 
 	// DP/EP features (#1419), frozen at construction.
-	dp                 int               // Data parallelism degree (>= 1)
-	moeGroup           int               // Flattened MoE group = TP·DP for MoE, TP for dense (EffectiveMoEGroupSize)
-	ep                 int               // EP group size: TP·DP when EP enabled on MoE, else 1 (EffectiveEP)
-	sharedExpertFFNDim int               // Shared-expert FFN dim; 0 = no shared experts (B3 gate)
-	commFamily         moeCommFamily     // MoE dispatch/combine volume family (resolved from MoECommBackend)
+	//
+	// Note: there is intentionally no `ep` field. Expert parallelism does not enter
+	// the cost model as a separate divisor — routed-expert weight/compute are scoped
+	// to the flattened moeGroup = TP·DP (EP-mode-agnostic: EP-off tensor-shards experts,
+	// EP-on owns whole experts, identical per-GPU bytes), and the dispatch gate is DP>1,
+	// not EP. EnableExpertParallel therefore has no step-time effect today; if a future
+	// per-EP-mode profile is added, read it from the ModelHardwareConfig at that point.
+	dp                 int                 // Data parallelism degree (>= 1)
+	moeGroup           int                 // Flattened MoE group = TP·DP for MoE, TP for dense (EffectiveMoEGroupSize)
+	sharedExpertFFNDim int                 // Shared-expert FFN dim; 0 = no shared experts (B3 gate)
+	commFamily         moeCommFamily       // MoE dispatch/combine volume family (resolved from MoECommBackend)
 	placement          sim.ExpertPlacement // Maps routed-token population → per-GPU MoE load (default BalancedPlacement)
 
 	// Pre-converted hardware specs for hot-path efficiency.
@@ -603,32 +625,31 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 	}
 
 	return &TrainedPhysicsModel{
-		Alpha:             [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
-		Beta:              betaSlice,
-		prefillSplit:      len(coeffs.BetaCoeffs) >= 9,
-		decodeSplit:       len(coeffs.BetaCoeffs) >= 10,
-		numLayers:         hw.ModelConfig.NumLayers,
-		numMoELayers:      numMoELayers,
-		numDenseLayers:    numDenseLayers,
-		hiddenDim:         hw.ModelConfig.HiddenDim,
-		numHeads:          hw.ModelConfig.NumHeads,
-		headDim:           headDim,
-		dKV:               numKVHeads * headDim,
-		dFFMoE:            dFFMoE,
-		dFFDense:          dFFDense,
-		kEff:              max(1, hw.ModelConfig.NumExpertsPerTok),
-		numExperts:        hw.ModelConfig.NumLocalExperts,
-		hasInterleavedMoE: hw.ModelConfig.InterleaveMoELayerStep > 0 && hw.ModelConfig.IsMoE(),
-		isMoE:             hw.ModelConfig.IsMoE(),
-		tp:                hw.TP,
-		weightBPP:         weightBPP,
-		dp:                hw.EffectiveDP(),
-		moeGroup:          hw.EffectiveMoEGroupSize(),
-		ep:                hw.EffectiveEP(),
+		Alpha:              [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
+		Beta:               betaSlice,
+		prefillSplit:       len(coeffs.BetaCoeffs) >= 9,
+		decodeSplit:        len(coeffs.BetaCoeffs) >= 10,
+		numLayers:          hw.ModelConfig.NumLayers,
+		numMoELayers:       numMoELayers,
+		numDenseLayers:     numDenseLayers,
+		hiddenDim:          hw.ModelConfig.HiddenDim,
+		numHeads:           hw.ModelConfig.NumHeads,
+		headDim:            headDim,
+		dKV:                numKVHeads * headDim,
+		dFFMoE:             dFFMoE,
+		dFFDense:           dFFDense,
+		kEff:               max(1, hw.ModelConfig.NumExpertsPerTok),
+		numExperts:         hw.ModelConfig.NumLocalExperts,
+		hasInterleavedMoE:  hw.ModelConfig.InterleaveMoELayerStep > 0 && hw.ModelConfig.IsMoE(),
+		isMoE:              hw.ModelConfig.IsMoE(),
+		tp:                 hw.TP,
+		weightBPP:          weightBPP,
+		dp:                 hw.EffectiveDP(),
+		moeGroup:           hw.EffectiveMoEGroupSize(),
 		sharedExpertFFNDim: hw.ModelConfig.SharedExpertFFNDim,
-		commFamily:        commFamily,
-		placement:         sim.BalancedPlacement{},
-		flopsPeakUs:       peakFlops,
-		bwHbmUs:           hw.HWConfig.BwPeakTBs * 1e6,
+		commFamily:         commFamily,
+		placement:          sim.BalancedPlacement{},
+		flopsPeakUs:        peakFlops,
+		bwHbmUs:            hw.HWConfig.BwPeakTBs * 1e6,
 	}, nil
 }
