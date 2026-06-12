@@ -19,8 +19,8 @@ import (
 
 // rooflineGoldenDataset is the root structure of testdata/roofline_iter29.json.
 type rooflineGoldenDataset struct {
-	Description string                   `json:"description"`
-	Backend     string                   `json:"backend"`
+	Description string                     `json:"description"`
+	Backend     string                     `json:"backend"`
 	Experiments []rooflineGoldenExperiment `json:"experiments"`
 }
 
@@ -137,7 +137,7 @@ func TestRoofline_GoldenDataset(t *testing.T) {
 				[]float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // beta coeffs (unused in roofline)
 				[]float64{0, 0, 0},                      // alpha coeffs (unused in roofline)
 			)
-			hwCfg := sim.NewModelHardwareConfig(*mc, hc, exp.Model, exp.Hardware, exp.TP, ds.Backend, 0)
+			hwCfg := sim.NewModelHardwareConfig(*mc, hc, exp.Model, exp.Hardware, exp.TP, 1, false, ds.Backend, 0)
 
 			// Validate that the backend is accepted; fail fast with a clear error.
 			if _, err := latency.NewLatencyModel(coeffs, hwCfg); err != nil {
@@ -286,4 +286,3 @@ func TestRoofline_GoldenDataset(t *testing.T) {
 		})
 	}
 }
-

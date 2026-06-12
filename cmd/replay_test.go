@@ -1920,7 +1920,7 @@ func TestINV13_RunReplayParity_PD(t *testing.T) {
 			KVCacheConfig:       sim.NewKVCacheConfig(1000, 16, 0, 0.9, 100.0, 0),
 			BatchConfig:         sim.NewBatchConfig(64, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs(betaCfg, alphaCfg),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(*mc, hwCfg, "test-model", "H100", 1, "trained-physics", 4096),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(*mc, hwCfg, "test-model", "H100", 1, 1, false, "trained-physics", 4096),
 			PolicyConfig:        sim.NewPolicyConfig("fcfs", ""),
 		},
 		NumInstances:            2,
@@ -2058,7 +2058,7 @@ func TestINV13_RunReplayParity_PD_CLI(t *testing.T) {
 			KVCacheConfig:       sim.NewKVCacheConfig(1000, 16, 0, 0.9, 100.0, 0),
 			BatchConfig:         sim.NewBatchConfig(64, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs(betaCfg, alphaCfg),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(*mc, hwCfg, "test-model", "H100", 1, "trained-physics", 4096),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(*mc, hwCfg, "test-model", "H100", 1, 1, false, "trained-physics", 4096),
 			PolicyConfig:        sim.NewPolicyConfig("fcfs", ""),
 		},
 		NumInstances:            2,
@@ -2114,73 +2114,143 @@ func TestINV13_RunReplayParity_PD_CLI(t *testing.T) {
 		prefillRoutingScorers = origPrefillScorers
 		decodeRoutingScorers = origDecodeScorers
 	}()
-	origModel := model; origBackend := latencyModelBackend; origBeta := betaCoeffs
-	origAlpha := alphaCoeffs; origTotalKV := totalKVBlocks; origBlockSize := blockSizeTokens
-	origMaxRunning := maxRunningReqs; origMaxSched := maxScheduledTokens
-	origInstances := numInstances; origSeedV := seed; origResults := resultsPath
-	origThreshold := longPrefillTokenThreshold; origKVCPU := kvCPUBlocks
-	origOffload := kvOffloadThreshold; origBandwidth := kvTransferBandwidth
-	origBaseLatency := kvTransferBaseLatency; origSnapRefresh := snapshotRefreshInterval
-	origAdmission := admissionPolicy; origRouting := routingPolicy
-	origScheduler := scheduler; origPolicyConfig := policyConfigPath
-	origMaxModelLen := maxModelLen; origTraceLevel := traceLevel
-	origCounterfactualK := counterfactualK; origTraceHeader := traceHeaderPath
-	origTraceData := traceDataPath; origSimHorizon := simulationHorizon
-	origTraceOutput := replayTraceOutput; origCacheSignalDelay := cacheSignalDelay
-	origFlowControlEnabled := flowControlEnabled; origFlowControlDetector := flowControlDetector
+	origModel := model
+	origBackend := latencyModelBackend
+	origBeta := betaCoeffs
+	origAlpha := alphaCoeffs
+	origTotalKV := totalKVBlocks
+	origBlockSize := blockSizeTokens
+	origMaxRunning := maxRunningReqs
+	origMaxSched := maxScheduledTokens
+	origInstances := numInstances
+	origSeedV := seed
+	origResults := resultsPath
+	origThreshold := longPrefillTokenThreshold
+	origKVCPU := kvCPUBlocks
+	origOffload := kvOffloadThreshold
+	origBandwidth := kvTransferBandwidth
+	origBaseLatency := kvTransferBaseLatency
+	origSnapRefresh := snapshotRefreshInterval
+	origAdmission := admissionPolicy
+	origRouting := routingPolicy
+	origScheduler := scheduler
+	origPolicyConfig := policyConfigPath
+	origMaxModelLen := maxModelLen
+	origTraceLevel := traceLevel
+	origCounterfactualK := counterfactualK
+	origTraceHeader := traceHeaderPath
+	origTraceData := traceDataPath
+	origSimHorizon := simulationHorizon
+	origTraceOutput := replayTraceOutput
+	origCacheSignalDelay := cacheSignalDelay
+	origFlowControlEnabled := flowControlEnabled
+	origFlowControlDetector := flowControlDetector
 	origFlowControlDispatchOrder := flowControlDispatchOrder
 	origFlowControlMaxQueueDepth := flowControlMaxQueueDepth
 	origFlowControlQueueDepthThreshold := flowControlQueueDepthThreshold
 	origFlowControlKVCacheUtilThreshold := flowControlKVCacheUtilThreshold
 	origFlowControlMaxConcurrency := flowControlMaxConcurrency
-	origModelConfigFolder := modelConfigFolder; origHwConfigPath := hwConfigPath
-	origGPU := gpu; origTP := tensorParallelism; origDefaultsFilePath := defaultsFilePath
-	origSessionMode := replaySessionMode; origThinkTimeMs := replayThinkTimeMs
+	origModelConfigFolder := modelConfigFolder
+	origHwConfigPath := hwConfigPath
+	origGPU := gpu
+	origTP := tensorParallelism
+	origDefaultsFilePath := defaultsFilePath
+	origSessionMode := replaySessionMode
+	origThinkTimeMs := replayThinkTimeMs
 	origThinkTimeDist := replayThinkTimeDist
 	defer func() {
-		model = origModel; latencyModelBackend = origBackend; betaCoeffs = origBeta
-		alphaCoeffs = origAlpha; totalKVBlocks = origTotalKV; blockSizeTokens = origBlockSize
-		maxRunningReqs = origMaxRunning; maxScheduledTokens = origMaxSched
-		numInstances = origInstances; seed = origSeedV; resultsPath = origResults
-		longPrefillTokenThreshold = origThreshold; kvCPUBlocks = origKVCPU
-		kvOffloadThreshold = origOffload; kvTransferBandwidth = origBandwidth
-		kvTransferBaseLatency = origBaseLatency; snapshotRefreshInterval = origSnapRefresh
-		admissionPolicy = origAdmission; routingPolicy = origRouting
-		scheduler = origScheduler; policyConfigPath = origPolicyConfig
-		maxModelLen = origMaxModelLen; traceLevel = origTraceLevel
-		counterfactualK = origCounterfactualK; traceHeaderPath = origTraceHeader
-		traceDataPath = origTraceData; simulationHorizon = origSimHorizon
-		replayTraceOutput = origTraceOutput; cacheSignalDelay = origCacheSignalDelay
-		flowControlEnabled = origFlowControlEnabled; flowControlDetector = origFlowControlDetector
+		model = origModel
+		latencyModelBackend = origBackend
+		betaCoeffs = origBeta
+		alphaCoeffs = origAlpha
+		totalKVBlocks = origTotalKV
+		blockSizeTokens = origBlockSize
+		maxRunningReqs = origMaxRunning
+		maxScheduledTokens = origMaxSched
+		numInstances = origInstances
+		seed = origSeedV
+		resultsPath = origResults
+		longPrefillTokenThreshold = origThreshold
+		kvCPUBlocks = origKVCPU
+		kvOffloadThreshold = origOffload
+		kvTransferBandwidth = origBandwidth
+		kvTransferBaseLatency = origBaseLatency
+		snapshotRefreshInterval = origSnapRefresh
+		admissionPolicy = origAdmission
+		routingPolicy = origRouting
+		scheduler = origScheduler
+		policyConfigPath = origPolicyConfig
+		maxModelLen = origMaxModelLen
+		traceLevel = origTraceLevel
+		counterfactualK = origCounterfactualK
+		traceHeaderPath = origTraceHeader
+		traceDataPath = origTraceData
+		simulationHorizon = origSimHorizon
+		replayTraceOutput = origTraceOutput
+		cacheSignalDelay = origCacheSignalDelay
+		flowControlEnabled = origFlowControlEnabled
+		flowControlDetector = origFlowControlDetector
 		flowControlDispatchOrder = origFlowControlDispatchOrder
 		flowControlMaxQueueDepth = origFlowControlMaxQueueDepth
 		flowControlQueueDepthThreshold = origFlowControlQueueDepthThreshold
 		flowControlKVCacheUtilThreshold = origFlowControlKVCacheUtilThreshold
 		flowControlMaxConcurrency = origFlowControlMaxConcurrency
-		modelConfigFolder = origModelConfigFolder; hwConfigPath = origHwConfigPath
-		gpu = origGPU; tensorParallelism = origTP; defaultsFilePath = origDefaultsFilePath
-		replaySessionMode = origSessionMode; replayThinkTimeMs = origThinkTimeMs
+		modelConfigFolder = origModelConfigFolder
+		hwConfigPath = origHwConfigPath
+		gpu = origGPU
+		tensorParallelism = origTP
+		defaultsFilePath = origDefaultsFilePath
+		replaySessionMode = origSessionMode
+		replayThinkTimeMs = origThinkTimeMs
 		replayThinkTimeDist = origThinkTimeDist
 	}()
 
-	model = "test-model"; latencyModelBackend = "trained-physics"
-	totalKVBlocks = 1000; blockSizeTokens = 16; maxRunningReqs = 64
-	maxScheduledTokens = 2048; numInstances = 2; seed = fixedSeed
-	resultsPath = resultsFile; longPrefillTokenThreshold = 0; kvCPUBlocks = 0
-	kvOffloadThreshold = 0.9; kvTransferBandwidth = 100.0; kvTransferBaseLatency = 0
-	snapshotRefreshInterval = 0; admissionPolicy = "always-admit"
-	routingPolicy = "round-robin"; scheduler = "fcfs"; policyConfigPath = ""
-	maxModelLen = 0; traceLevel = "none"; counterfactualK = 0
-	traceHeaderPath = traceHeaderFile; traceDataPath = traceDataFile
-	simulationHorizon = 10_000_000; replayTraceOutput = ""
-	modelConfigFolder = mcFolder; hwConfigPath = hwPath
-	gpu = "H100"; tensorParallelism = 1; defaultsFilePath = defaultsPath
-	replaySessionMode = "fixed"; replayThinkTimeMs = 0; replayThinkTimeDist = ""
-	cacheSignalDelay = 0; flowControlEnabled = false
-	prefillInstances = 1; decodeInstances = 1; prefillDecodeInstances = 0
-	pdDecider = "always"; pdTransferBandwidth = 25.0; pdTransferBaseLatency = 0.05
-	pdTransferContention = false; pdPrefixThreshold = 0
-	prefillRoutingScorers = ""; decodeRoutingScorers = ""
+	model = "test-model"
+	latencyModelBackend = "trained-physics"
+	totalKVBlocks = 1000
+	blockSizeTokens = 16
+	maxRunningReqs = 64
+	maxScheduledTokens = 2048
+	numInstances = 2
+	seed = fixedSeed
+	resultsPath = resultsFile
+	longPrefillTokenThreshold = 0
+	kvCPUBlocks = 0
+	kvOffloadThreshold = 0.9
+	kvTransferBandwidth = 100.0
+	kvTransferBaseLatency = 0
+	snapshotRefreshInterval = 0
+	admissionPolicy = "always-admit"
+	routingPolicy = "round-robin"
+	scheduler = "fcfs"
+	policyConfigPath = ""
+	maxModelLen = 0
+	traceLevel = "none"
+	counterfactualK = 0
+	traceHeaderPath = traceHeaderFile
+	traceDataPath = traceDataFile
+	simulationHorizon = 10_000_000
+	replayTraceOutput = ""
+	modelConfigFolder = mcFolder
+	hwConfigPath = hwPath
+	gpu = "H100"
+	tensorParallelism = 1
+	defaultsFilePath = defaultsPath
+	replaySessionMode = "fixed"
+	replayThinkTimeMs = 0
+	replayThinkTimeDist = ""
+	cacheSignalDelay = 0
+	flowControlEnabled = false
+	prefillInstances = 1
+	decodeInstances = 1
+	prefillDecodeInstances = 0
+	pdDecider = "always"
+	pdTransferBandwidth = 25.0
+	pdTransferBaseLatency = 0.05
+	pdTransferContention = false
+	pdPrefixThreshold = 0
+	prefillRoutingScorers = ""
+	decodeRoutingScorers = ""
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)

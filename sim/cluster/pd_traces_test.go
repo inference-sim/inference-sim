@@ -18,7 +18,7 @@ func TestPDTrace_NonDisaggMode_NoDisaggRecords(t *testing.T) {
 			KVCacheConfig:       sim.NewKVCacheConfig(100, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(10, 2048, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 1, "roofline", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "H100", 1, 1, false, "roofline", 0),
 		},
 		NumInstances: 4,
 		TraceLevel:   "decisions",
@@ -374,4 +374,3 @@ func TestPDTrace_NormalMode_NoDroppedUnservable(t *testing.T) {
 		t.Errorf("expected 5 KV transfer records under ample capacity, got %d", len(tr.KVTransfers))
 	}
 }
-

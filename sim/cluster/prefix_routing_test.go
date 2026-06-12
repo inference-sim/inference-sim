@@ -63,7 +63,7 @@ func baseDeploymentConfig(numInstances int) DeploymentConfig {
 			KVCacheConfig:       sim.NewKVCacheConfig(2000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(64, 65536, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 50, 25}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "", 1, "roofline", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "", 1, 1, false, "roofline", 0),
 		},
 		NumInstances: numInstances,
 		TraceLevel:   "decisions",
@@ -85,11 +85,11 @@ func TestPrefixAffinityRouting_LongPrefix_ConcentratesVsLoadOnly(t *testing.T) {
 	// At 500µs between requests (2000 req/s), queues build up with realistic betas.
 	requests := makeSharedPrefixRequests(
 		numRequests,
-		1.0,   // 100% shared prefix for maximum signal
-		256,   // prefixLen
-		64,    // suffixLen
-		16,    // outputLen
-		500,   // 500µs interarrival = 2000 req/s
+		1.0, // 100% shared prefix for maximum signal
+		256, // prefixLen
+		64,  // suffixLen
+		16,  // outputLen
+		500, // 500µs interarrival = 2000 req/s
 	)
 
 	config := baseDeploymentConfig(numInstances)

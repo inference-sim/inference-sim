@@ -276,7 +276,12 @@ func computeModelWeightBytes(mc sim.ModelConfig, params KVCapacityParams) int64 
 	// NOTE: roofline step time (mlpMatrixCount in roofline.go) uses 2-matrix convention for
 	// FLOPs/bandwidth — see that function's comment for the calibration rationale.
 	var mlpPerLayer int64
-	if params.IsMoE && params.NumLocalExperts > 1 {
+	// The NumLocalExperts >= MoEMinExperts clause is a defensive guard, not a
+	// duplicate of IsMoE: NewKVCapacityParams is a public positional constructor, so
+	// a caller could pass an inconsistent (IsMoE=true, NumLocalExperts<2) pair. The
+	// MoE arithmetic below multiplies by NumLocalExperts, so a degenerate count would
+	// silently produce zero/under-weighted MLP bytes — this keeps it on the dense path.
+	if params.IsMoE && params.NumLocalExperts >= sim.MoEMinExperts {
 		// MoE: use per-expert FFN dim for routed experts, add shared and gate
 		expertFFNDim := intermediateDim // Mixtral convention: IntermediateDim IS per-expert
 		if params.MoEExpertFFNDim > 0 {
@@ -329,8 +334,8 @@ func ExtractKVCapacityParamsFromFile(hfConfigPath string) (KVCapacityParams, err
 }
 
 // ExtractKVCapacityParams extracts KVCapacityParams from a parsed HFConfig.
-// MoE detection: checks num_local_experts > 1, then falls back to
-// num_routed_experts, n_routed_experts, num_experts. Returns an error if MoE
+// MoE detection uses the shared (*HFConfig).ResolveNumExperts (>= MoEMinExperts);
+// see that method for the field set and resolution order. Returns an error if MoE
 // is detected via activation-count fields (n_shared_experts, num_experts_per_tok)
 // without a total expert count — weight estimation requires the count.
 func ExtractKVCapacityParams(hf *HFConfig) (KVCapacityParams, error) {
@@ -340,21 +345,12 @@ func ExtractKVCapacityParams(hf *HFConfig) (KVCapacityParams, error) {
 		tieWordEmbeddings = tied
 	}
 
-	// MoE detection: check multiple field names used by different architectures.
-	// Extended resolution chain (design D4): parity with GetModelConfigFromHF.
-	// Threshold is > 1: single-expert models (num_local_experts=1) are dense-equivalent
-	// and should not enter the MoE weight estimation path.
-	numLocalExperts := hf.MustGetInt("num_local_experts", 0)
-	if numLocalExperts <= 1 {
-		for _, key := range []string{"num_routed_experts", "n_routed_experts", "num_experts"} {
-			if v := hf.MustGetInt(key, 0); v > 1 {
-				numLocalExperts = v
-				break
-			}
-		}
-	}
+	// MoE expert count: resolved via the shared chain (R23 code-path parity with
+	// GetModelConfigFromHF). Single-expert models are dense-equivalent and must not
+	// enter the MoE weight-estimation path below.
+	numLocalExperts := hf.ResolveNumExperts()
 
-	if numLocalExperts > 1 {
+	if numLocalExperts >= sim.MoEMinExperts {
 		// Extract per-expert and shared expert dims for weight estimation
 		moeExpertFFNDim := hf.MustGetInt("moe_intermediate_size", 0)
 		var sharedExpertFFNDim int

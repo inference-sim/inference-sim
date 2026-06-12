@@ -21,7 +21,7 @@ func newTestSimConfig() sim.SimConfig {
 		KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         sim.NewBatchConfig(256, 2048, 0),
 		LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{1000, 10, 5}, []float64{100, 1, 100}),
-		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, "roofline", 0),
+		ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test", "H100", 1, 1, false, "roofline", 0),
 	}
 }
 
@@ -53,7 +53,7 @@ func TestInstanceSimulator_GoldenDataset_Equivalence(t *testing.T) {
 					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
 					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
 					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
-					ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, "roofline", tc.MaxModelLen),
+					ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, 1, false, "roofline", tc.MaxModelLen),
 				},
 			)
 
@@ -107,7 +107,7 @@ func TestInstanceSimulator_GoldenDataset_Invariants(t *testing.T) {
 					KVCacheConfig:       sim.NewKVCacheConfig(tc.TotalKVBlocks, tc.BlockSizeInTokens, 0, 0, 0, 0),
 					BatchConfig:         sim.NewBatchConfig(tc.MaxNumRunningReqs, tc.MaxNumScheduledTokens, tc.LongPrefillTokenThreshold),
 					LatencyCoeffs:       sim.NewLatencyCoeffs(tc.BetaCoeffs, tc.AlphaCoeffs),
-					ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, "roofline", tc.MaxModelLen),
+					ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), tc.Model, tc.Hardware, tc.TP, 1, false, "roofline", tc.MaxModelLen),
 				},
 			)
 

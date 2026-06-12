@@ -39,7 +39,7 @@ type trainedPhysicsExperiment struct {
 	TotalKVBlocks       int64           `json:"total_kv_blocks"`
 	CPUKVBlocks         int64           `json:"cpu_kv_blocks"`
 	Workload            json.RawMessage `json:"workload"`
-	Expected            goldenExpected `json:"expected"`
+	Expected            goldenExpected  `json:"expected"`
 }
 
 // loadTrainedPhysicsGoldenDataset reads testdata/trained_physics_iter29.json.
@@ -133,7 +133,7 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 			// ── Build trained-physics latency model with iter29 coefficients ─
 			// Note: NewLatencyCoeffs(betaCoeffs, alphaCoeffs) — order matters.
 			coeffs := sim.NewLatencyCoeffs(ds.BetaCoeffs, ds.AlphaCoeffs)
-			hwCfg := sim.NewModelHardwareConfig(*mc, hc, exp.Model, exp.Hardware, exp.TP, ds.Backend, 0)
+			hwCfg := sim.NewModelHardwareConfig(*mc, hc, exp.Model, exp.Hardware, exp.TP, 1, false, ds.Backend, 0)
 
 			// Validate that the backend is accepted; fail fast with a clear error.
 			if _, err := latency.NewLatencyModel(coeffs, hwCfg); err != nil {
@@ -183,12 +183,12 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 			// ── Configure and run ClusterSimulator ──────────────────────────
 			cfg := DeploymentConfig{
 				SimConfig: sim.SimConfig{
-					Horizon:       math.MaxInt64,
-					Seed:          ws.Seed,
+					Horizon: math.MaxInt64,
+					Seed:    ws.Seed,
 					// KV offload/transfer parameters match the training runner's constants
-				// (--kv-offload-threshold 0.9, --kv-transfer-bandwidth 0.2).
-				KVCacheConfig: sim.NewKVCacheConfig(exp.TotalKVBlocks, 16, exp.CPUKVBlocks, 0.9, 0.2, 0),
-					BatchConfig:   sim.NewBatchConfig(int64(exp.MaxNumSeqs), int64(exp.MaxNumBatchedTokens), 0),
+					// (--kv-offload-threshold 0.9, --kv-transfer-bandwidth 0.2).
+					KVCacheConfig:       sim.NewKVCacheConfig(exp.TotalKVBlocks, 16, exp.CPUKVBlocks, 0.9, 0.2, 0),
+					BatchConfig:         sim.NewBatchConfig(int64(exp.MaxNumSeqs), int64(exp.MaxNumBatchedTokens), 0),
 					LatencyCoeffs:       coeffs,
 					ModelHardwareConfig: hwCfg,
 				},

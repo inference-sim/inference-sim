@@ -2,11 +2,12 @@
 //
 // Cluster-level metrics substrate verification.
 // Behavioral contracts verified at the cluster aggregation boundary:
-//   BC-MS-1c: E2E identity holds in aggregated cluster metrics
-//   BC-MS-4c: sum(AllITLs) == sum(E2E-TTFT) in aggregated cluster metrics
-//   BC-MS-14c: E2E >= TTFT for every request in aggregated cluster metrics
-//   BC-MS-7c: CacheHitRate ∈ [0, 1] in aggregated cluster metrics
-//   BC-MS-10c: PeakKVBlocksUsed bounded by total capacity per instance
+//
+//	BC-MS-1c: E2E identity holds in aggregated cluster metrics
+//	BC-MS-4c: sum(AllITLs) == sum(E2E-TTFT) in aggregated cluster metrics
+//	BC-MS-14c: E2E >= TTFT for every request in aggregated cluster metrics
+//	BC-MS-7c: CacheHitRate ∈ [0, 1] in aggregated cluster metrics
+//	BC-MS-10c: PeakKVBlocksUsed bounded by total capacity per instance
 package cluster
 
 import (
@@ -25,7 +26,7 @@ func msClusterConfig(numInstances int) DeploymentConfig {
 			KVCacheConfig:       sim.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 			BatchConfig:         sim.NewBatchConfig(256, 100000, 0),
 			LatencyCoeffs:       sim.NewLatencyCoeffs([]float64{5000, 10, 3}, []float64{1000, 2, 500}),
-			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "test-gpu", 1, "roofline", 0),
+			ModelHardwareConfig: sim.NewModelHardwareConfig(testRooflineModelConfig(), testRooflineHWCalib(), "test-model", "test-gpu", 1, 1, false, "roofline", 0),
 			PolicyConfig:        sim.NewPolicyConfig("fcfs", ""),
 		},
 		NumInstances:    numInstances,

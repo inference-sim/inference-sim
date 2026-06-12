@@ -68,6 +68,48 @@ func (c *HFConfig) MustGetInt(key string, def int) int {
 	return def
 }
 
+// moeExpertCountFields lists the HF config field names that carry the total
+// routed-expert count, in the resolution order used by vLLM's get_num_experts
+// (vllm/transformers_utils/model_arch_config_convertor.py): num_experts (Jamba),
+// moe_num_experts (Dbrx), n_routed_experts (DeepSeek), num_local_experts (Mixtral).
+// num_routed_experts is a BLIS-historical alias retained at the end for
+// compatibility. NumExpertsPerTok / n_shared_experts are activation counts, NOT
+// totals, and are deliberately excluded.
+var moeExpertCountFields = []string{
+	"num_experts",       // Jamba
+	"moe_num_experts",   // Dbrx
+	"n_routed_experts",  // DeepSeek
+	"num_local_experts", // Mixtral
+	"num_routed_experts", // BLIS-historical alias
+}
+
+// ResolveNumExperts returns the total routed-expert count for the model, trying the
+// known architecture-specific field names (moeExpertCountFields) in order and
+// returning the first value that meets the MoE threshold (sim.MoEMinExperts).
+// Returns 0 for dense models — including single-expert configs, which are
+// dense-equivalent in BLIS — so the count fed downstream never enters the MoE
+// weight/FLOP formulas at N < 2 (see sim.MoEMinExperts for why N=1 must not).
+//
+// This is the single source of truth for expert-count resolution, shared by
+// GetModelConfigFromHF and ExtractKVCapacityParams so the two cannot desync
+// (R23 code-path parity).
+//
+// Parity with vLLM: the field set and order match vLLM's get_num_experts. The one
+// intentional difference is the selection rule — vLLM returns the first field that
+// EXISTS (then classifies via is_moe == count > 0), whereas BLIS returns the first
+// field that is >= MoEMinExperts. On every real model the two rules pick the same
+// field, because no real HF config sets a total-count field to 0 or 1 (verified
+// against vLLM's config classes and fixtures). BLIS's threshold rule additionally
+// protects its analytic formulas from a degenerate N=1, which vLLM does not need.
+func (c *HFConfig) ResolveNumExperts() int {
+	for _, key := range moeExpertCountFields {
+		if v := c.MustGetInt(key, 0); v >= sim.MoEMinExperts {
+			return v
+		}
+	}
+	return 0
+}
+
 func parseHWConfig(HWConfigFilePath string) (map[string]sim.HardwareCalib, error) {
 	data, err := os.ReadFile(HWConfigFilePath)
 	if err != nil {
@@ -239,18 +281,9 @@ func GetModelConfigFromHF(hf *HFConfig) (*sim.ModelConfig, error) {
 	// Intermediate dim: Falcon/GLM use "ffn_hidden_size" instead of "intermediate_size".
 	intermediateDim := getIntWithFallbacks("intermediate_size", "ffn_hidden_size")
 
-	// MoE expert count: extended resolution chain (design D4).
-	// Threshold is > 1: single-expert models (num_local_experts=1) are dense-equivalent.
-	// This matches ExtractKVCapacityParams semantics (R23 code path parity).
-	numLocalExperts := getInt("num_local_experts")
-	if numLocalExperts <= 1 {
-		for _, key := range []string{"num_routed_experts", "n_routed_experts", "num_experts"} {
-			if v := getInt(key); v > 1 {
-				numLocalExperts = v
-				break
-			}
-		}
-	}
+	// MoE expert count: resolved via the shared chain (R23 code-path parity with
+	// ExtractKVCapacityParams). Single-expert models are dense-equivalent.
+	numLocalExperts := hf.ResolveNumExperts()
 	numExpertsPerTok := getInt("num_experts_per_tok")
 
 	// MoE per-expert FFN dimension (design Section 4.2)

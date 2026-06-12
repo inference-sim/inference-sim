@@ -490,7 +490,7 @@ func TestNewLatencyModel_RooflineZeroNumHeads_ReturnsError(t *testing.T) {
 	hw := sim.NewModelHardwareConfig(
 		sim.ModelConfig{NumHeads: 0, NumLayers: 32, HiddenDim: 4096},
 		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0},
-		"", "", 1, "roofline", 0,
+		"", "", 1, 1, false, "roofline", 0,
 	)
 
 	// WHEN NewLatencyModel is called (roofline validation happens here)
@@ -511,7 +511,7 @@ func TestNewLatencyModel_RooflineZeroTP_ReturnsError(t *testing.T) {
 	hw := sim.NewModelHardwareConfig(
 		sim.ModelConfig{NumHeads: 32, NumLayers: 32, HiddenDim: 4096},
 		sim.HardwareCalib{TFlopsPeak: 1000, BwPeakTBs: 3.35, MfuPrefill: 0.5, MfuDecode: 0.3, MemoryGiB: 80.0},
-		"", "", 0, "roofline", 0,
+		"", "", 0, 1, false, "roofline", 0,
 	)
 
 	// WHEN NewLatencyModel is called (roofline validation happens here)
@@ -1184,5 +1184,106 @@ func TestValidateRooflineConfig_MoE_ValidConfig_ReturnsNil(t *testing.T) {
 	err := latency.ValidateRooflineConfig(mc, hc)
 	if err != nil {
 		t.Errorf("expected nil error for valid MoE config, got: %v", err)
+	}
+}
+
+// TestResolveNumExperts_ParityAcrossEntryPoints is the R23 code-path-parity guard
+// for the shared (*HFConfig).ResolveNumExperts. The two consumers — GetModelConfigFromHF
+// (the run/replay parse path) and ExtractKVCapacityParams (the KV-capacity path) — now
+// call the same resolver, so they MUST agree on the MoE classification and, when MoE,
+// on the exact expert count.
+//
+// Because ResolveNumExperts canonicalizes any sub-threshold config (dense AND
+// single-expert) to 0, both consumers report NumLocalExperts=0 for every dense
+// config — there is no surviving dense-count divergence. The test asserts the raw
+// resolver output (wantResolved), the MoE classification at both entry points
+// (wantMoE), and exact count equality between the two on the MoE side.
+//
+// Fields are float64 to mirror how encoding/json populates HFConfig.Raw.
+func TestResolveNumExperts_ParityAcrossEntryPoints(t *testing.T) {
+	// minimal non-MoE scaffolding so both functions parse without unrelated errors
+	base := func(extra map[string]any) map[string]any {
+		m := map[string]any{
+			"num_hidden_layers":   float64(4),
+			"hidden_size":         float64(128),
+			"num_attention_heads": float64(8),
+			"intermediate_size":   float64(256),
+			"hidden_act":          "silu",
+		}
+		for k, v := range extra {
+			m[k] = v
+		}
+		return m
+	}
+
+	tests := []struct {
+		name string
+		raw  map[string]any
+		// wantResolved is the raw resolver output (latency.HFConfig.ResolveNumExperts).
+		wantResolved int
+		// wantMoE is the expected MoE classification at both entry points.
+		wantMoE bool
+	}{
+		{"dense_no_expert_fields", base(nil), 0, false},
+		// Single-expert configs are dense-equivalent: resolver canonicalizes to 0
+		// (below MoEMinExperts), so both entry points classify dense.
+		{"single_expert_is_dense", base(map[string]any{"num_local_experts": float64(1)}), 0, false},
+		{"mixtral_num_local_experts", base(map[string]any{"num_local_experts": float64(8)}), 8, true},
+		{"deepseek_n_routed_experts", base(map[string]any{"n_routed_experts": float64(64)}), 64, true},
+		{"dbrx_moe_num_experts", base(map[string]any{"moe_num_experts": float64(16)}), 16, true},
+		{"jamba_num_experts", base(map[string]any{"num_experts": float64(8)}), 8, true},
+		{"blis_alias_num_routed_experts", base(map[string]any{"num_routed_experts": float64(32)}), 32, true},
+		// Two fields set: num_local_experts is below threshold, so the chain resolves
+		// the >=2 value from a later field. Locks the resolution order/semantics.
+		{"two_fields_local_below_threshold_uses_other",
+			base(map[string]any{"num_local_experts": float64(1), "n_routed_experts": float64(64)}), 64, true},
+		// ORDER GUARD (synthetic — no real model sets two total-count fields to
+		// different >=2 values). num_experts precedes num_local_experts in the vLLM
+		// resolution order, so num_experts wins. This pins the order against an
+		// accidental future reshuffle of moeExpertCountFields.
+		{"two_fields_both_moe_num_experts_wins_by_order",
+			base(map[string]any{"num_experts": float64(4), "num_local_experts": float64(8)}), 4, true},
+		// moe_num_experts (Dbrx, position 2) precedes n_routed_experts (position 3).
+		{"two_fields_moe_num_experts_precedes_n_routed",
+			base(map[string]any{"moe_num_experts": float64(16), "n_routed_experts": float64(64)}), 16, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Direct resolver check.
+			if got := (&latency.HFConfig{Raw: tt.raw}).ResolveNumExperts(); got != tt.wantResolved {
+				t.Errorf("ResolveNumExperts() = %d, want %d", got, tt.wantResolved)
+			}
+
+			// Entry-point 1: GetModelConfigFromHF (preserves raw resolved count).
+			mc, err := latency.GetModelConfigFromHF(&latency.HFConfig{Raw: tt.raw})
+			if err != nil {
+				t.Fatalf("GetModelConfigFromHF: %v", err)
+			}
+			// Entry-point 2: ExtractKVCapacityParams (canonicalizes dense to 0).
+			kv, err := latency.ExtractKVCapacityParams(&latency.HFConfig{Raw: tt.raw})
+			if err != nil {
+				t.Fatalf("ExtractKVCapacityParams: %v", err)
+			}
+
+			// GetModelConfigFromHF preserves the raw resolved count exactly.
+			if mc.NumLocalExperts != tt.wantResolved {
+				t.Errorf("GetModelConfigFromHF NumLocalExperts = %d, want %d", mc.NumLocalExperts, tt.wantResolved)
+			}
+
+			// Both entry points MUST agree on MoE classification (the R23 guarantee).
+			if mc.IsMoE() != tt.wantMoE {
+				t.Errorf("GetModelConfigFromHF IsMoE() = %v, want %v", mc.IsMoE(), tt.wantMoE)
+			}
+			if kv.IsMoE != tt.wantMoE {
+				t.Errorf("ExtractKVCapacityParams IsMoE = %v, want %v", kv.IsMoE, tt.wantMoE)
+			}
+
+			// When MoE, both MUST carry the identical expert count.
+			if tt.wantMoE && mc.NumLocalExperts != kv.NumLocalExperts {
+				t.Errorf("MoE count parity violation: GetModelConfigFromHF=%d != ExtractKVCapacityParams=%d",
+					mc.NumLocalExperts, kv.NumLocalExperts)
+			}
+		})
 	}
 }

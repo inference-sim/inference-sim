@@ -8,25 +8,27 @@
 // the implementation were completely rewritten but the behavior preserved?"
 //
 // Behavioral contracts verified:
-//   BC-MS-1: E2E = TTFT + total decode latency (E2E identity)
-//   BC-MS-2: Mean ITL × (output_tokens - 1) = E2E - TTFT (mean ITL consistency)
-//   BC-MS-3: TTFT recorded exactly once per request (chunked or not)
-//   BC-MS-4: sum(AllITLs) = sum(E2E - TTFT) across completed requests
-//   BC-MS-5: Scheduling delay monotonically increases with input length
-//   BC-MS-6: Scheduling delay for an isolated request equals alpha overhead
-//   BC-MS-7: CacheHitRate ∈ [0, 1] (range invariant)
-//   BC-MS-8: Unit conversion is consistent: ticks/1000 = ticks/1e3
-//   BC-MS-9: Zero-output requests have TTFT > 0 and E2E >= TTFT
-//   BC-MS-10: PeakKVBlocksUsed ∈ (0, TotalKVBlocks] and 0 after completion
-//   BC-MS-11: TTFT monotonically increases with input length (isolated requests)
-//   BC-MS-12: Percentiles are monotonically ordered (p50 ≤ p90 ≤ p95 ≤ p99)
-//   BC-MS-13: Chunked prefill preserves request conservation
-//   BC-MS-14: E2E ≥ TTFT for every completed request (causality)
+//
+//	BC-MS-1: E2E = TTFT + total decode latency (E2E identity)
+//	BC-MS-2: Mean ITL × (output_tokens - 1) = E2E - TTFT (mean ITL consistency)
+//	BC-MS-3: TTFT recorded exactly once per request (chunked or not)
+//	BC-MS-4: sum(AllITLs) = sum(E2E - TTFT) across completed requests
+//	BC-MS-5: Scheduling delay monotonically increases with input length
+//	BC-MS-6: Scheduling delay for an isolated request equals alpha overhead
+//	BC-MS-7: CacheHitRate ∈ [0, 1] (range invariant)
+//	BC-MS-8: Unit conversion is consistent: ticks/1000 = ticks/1e3
+//	BC-MS-9: Zero-output requests have TTFT > 0 and E2E >= TTFT
+//	BC-MS-10: PeakKVBlocksUsed ∈ (0, TotalKVBlocks] and 0 after completion
+//	BC-MS-11: TTFT monotonically increases with input length (isolated requests)
+//	BC-MS-12: Percentiles are monotonically ordered (p50 ≤ p90 ≤ p95 ≤ p99)
+//	BC-MS-13: Chunked prefill preserves request conservation
+//	BC-MS-14: E2E ≥ TTFT for every completed request (causality)
 //
 // Test coefficients:
-//   alpha = [1000, 2, 500]  →  QueueingTime = 1000 + 2*inputLen
-//   beta  = [5000, 10, 3]   →  StepTime = 5000 + 10*cacheMiss + 3*decode
-//   Block size = 16 tokens.
+//
+//	alpha = [1000, 2, 500]  →  QueueingTime = 1000 + 2*inputLen
+//	beta  = [5000, 10, 3]   →  StepTime = 5000 + 10*cacheMiss + 3*decode
+//	Block size = 16 tokens.
 package sim
 
 import (
@@ -51,7 +53,7 @@ func msConfig(horizon int64) SimConfig {
 		KVCacheConfig:       NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
 		BatchConfig:         NewBatchConfig(256, 100000, 0),
 		LatencyCoeffs:       NewLatencyCoeffs(msBeta(), msAlpha()),
-		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-model", "test-gpu", 1, "roofline", 0),
+		ModelHardwareConfig: NewModelHardwareConfig(rooflineModelConfig(), rooflineHWCalib(), "test-model", "test-gpu", 1, 1, false, "roofline", 0),
 		PolicyConfig:        NewPolicyConfig("fcfs", ""),
 		WorkloadConfig:      NewWorkloadConfig(),
 	}
