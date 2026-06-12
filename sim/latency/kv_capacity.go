@@ -334,8 +334,8 @@ func ExtractKVCapacityParamsFromFile(hfConfigPath string) (KVCapacityParams, err
 }
 
 // ExtractKVCapacityParams extracts KVCapacityParams from a parsed HFConfig.
-// MoE detection: checks num_local_experts > 1, then falls back to
-// num_routed_experts, n_routed_experts, num_experts. Returns an error if MoE
+// MoE detection uses the shared (*HFConfig).ResolveNumExperts (>= MoEMinExperts);
+// see that method for the field set and resolution order. Returns an error if MoE
 // is detected via activation-count fields (n_shared_experts, num_experts_per_tok)
 // without a total expert count — weight estimation requires the count.
 func ExtractKVCapacityParams(hf *HFConfig) (KVCapacityParams, error) {

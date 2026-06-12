@@ -1193,12 +1193,11 @@ func TestValidateRooflineConfig_MoE_ValidConfig_ReturnsNil(t *testing.T) {
 // call the same resolver, so they MUST agree on the MoE classification and, when MoE,
 // on the exact expert count.
 //
-// Note the two consumers intentionally differ for DENSE configs: GetModelConfigFromHF
-// preserves the raw resolved count (e.g. 1 for a single-expert config), while
-// ExtractKVCapacityParams canonicalizes every dense config to NumLocalExperts=0 (the
-// dense KV-capacity path). That predates this refactor and is unrelated to resolution,
-// so this test asserts the classification (wantMoE) plus the count only on the MoE side
-// (wantExpertsWhenMoE), not raw dense-count equality.
+// Because ResolveNumExperts canonicalizes any sub-threshold config (dense AND
+// single-expert) to 0, both consumers report NumLocalExperts=0 for every dense
+// config — there is no surviving dense-count divergence. The test asserts the raw
+// resolver output (wantResolved), the MoE classification at both entry points
+// (wantMoE), and exact count equality between the two on the MoE side.
 //
 // Fields are float64 to mirror how encoding/json populates HFConfig.Raw.
 func TestResolveNumExperts_ParityAcrossEntryPoints(t *testing.T) {

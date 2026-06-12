@@ -46,16 +46,19 @@ func (mc ModelConfig) EffectiveWeightBytesPerParam() float64 {
 // The >= 2 threshold keeps N=1 out of those formulas.
 //
 // This is an intentional, documented divergence from vLLM, whose is_moe is
-// get_num_experts() > 0 and which builds a well-defined degenerate 1-expert
-// FusedMoE kernel. On every real model the two thresholds agree — no real HF config
-// has NumLocalExperts == 1 — so keeping >= 2 loses no parity and preserves BLIS's
+// get_num_experts() > 0 and which does not reject a 1-expert FusedMoE (no
+// num_experts==1 guard exists), so it would construct one rather than fall back to
+// dense. On every real model the two thresholds agree — no real HF config has
+// NumLocalExperts == 1 — so keeping >= 2 loses no parity and preserves BLIS's
 // analytic correctness.
 const MoEMinExperts = 2
 
 // IsMoE reports whether the model is a mixture-of-experts model
 // (NumLocalExperts >= MoEMinExperts). See MoEMinExperts for the threshold rationale
-// and the vLLM divergence note. This is the canonical MoE-detection predicate;
-// callers must not re-encode the threshold inline.
+// and the vLLM divergence note. This is the canonical MoE-detection predicate:
+// prefer it over inline NumLocalExperts comparisons at detection sites. Validation
+// code that compares the count against other expert quantities (e.g. NumExpertsPerTok)
+// legitimately reads the raw field instead.
 func (mc ModelConfig) IsMoE() bool {
 	return mc.NumLocalExperts >= MoEMinExperts
 }
