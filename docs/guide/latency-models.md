@@ -116,7 +116,7 @@ StepTime = β₁ₐ × T_pf_compute                  # prefill compute only
          + β₈ × nMoE                           # per-MoE-layer overhead (µs/layer)
 ```
 
-The model supports 7-10 beta coefficients. Bundled defaults use 10 coefficients with prefill/decode split.
+The model supports 7-11 beta coefficients. Bundled defaults use 11 coefficients (prefill/decode split + the MoE expert-parallel dispatch correction β_EP).
 
 **Beta coefficients:**
 
@@ -181,7 +181,7 @@ For MoE deployments, trained-physics models data parallelism (`--dp`) and expert
 
 - **Routed-expert weight/compute** are scoped to the flattened MoE group `moeGroup = TP·DP` via the `ExpertPlacement` seam: each GPU holds `numExperts/moeGroup` full-expert-equivalents (EP-off tensor-shards them; EP-on owns whole experts — the per-GPU bytes are identical). This replaces a batch-dependent heuristic and is **EP-mode-agnostic**, so MoE step time at `DP=1` intentionally differs from pre-DP/EP BLIS (a deliberate fidelity fix). Dense models at `DP=1` are byte-identical (INV-BC-DP1).
 - **Sequence-split terms** (attention/dense-FFN compute, KV read/write) gain a `/dp` factor — each DP rank processes ~`1/dp` of the tokens. Weights stay `/tp` (replicated across DP groups).
-- **Shared experts** (DeepSeek/Qwen-style) are charged for every token when the model exposes a shared-expert FFN dim; a no-op otherwise (including Llama-4 Scout until its `intermediate_size_mlp` is mapped).
+- **Shared experts** (DeepSeek/Qwen-style) are charged for every token when the model exposes a shared-expert FFN dim; a no-op otherwise (including Llama-4 Scout until its shared-expert dim — `config.intermediate_size`, not `intermediate_size_mlp` which is the dense-layer FFN — is mapped).
 - **MoE-FFN communication** partitions on the `DP` boundary: at `DP=1, TP>1` an all-reduce over the TP group; at `DP>1` a dispatch/combine all-to-all (β_EP).
 
 **`--moe-comm-backend`** selects the dispatch/combine cost model (mirrors vLLM `VLLM_ALL2ALL_BACKEND`). The seven names map to two physical volume families:

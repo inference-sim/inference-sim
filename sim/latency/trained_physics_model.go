@@ -20,22 +20,16 @@ import (
 //
 // # Step-Time Formula
 //
-// The model supports 8, 9, or 10 beta coefficients for increasing fidelity:
+// The model supports 8 through 11 beta coefficients for increasing fidelity. The
+// 10-beta form (bundled default) plus the optional 11th β_EP is shown below; the 8-
+// and 9-beta forms collapse the prefill/decode compute/memory splits into β₁·max(...)
+// and β₂·max(...) respectively (β_EP still defaults in — see the constructor).
 //
-// 8-beta (default):
-//
-//	T_step = β₁·max(T_pf_compute, T_pf_kv) + β₂·max(T_dc_compute, T_dc_kv)
-//	         + β₃·T_weight + β₄·T_tp + β₅·L + β₆·B + β₇ + β₈·nMoE
-//
-// 9-beta (prefill split):
-//
-//	T_step = β₁ₐ·T_pf_compute + β₁ᵦ·T_pf_kv + β₂·max(T_dc_compute, T_dc_kv)
-//	         + β₃·T_weight + β₄·T_tp + β₅·L + β₆·B + β₇ + β₈·nMoE
-//
-// 10-beta (prefill + decode split):
+// 11-beta (prefill + decode split, MoE DP/EP comm):
 //
 //	T_step = β₁ₐ·T_pf_compute + β₁ᵦ·T_pf_kv + β₂ₐ·T_dc_compute + β₂ᵦ·T_dc_kv
-//	         + β₃·T_weight + β₄·T_tp + β₅·L + β₆·B + β₇ + β₈·nMoE
+//	         + β₃·T_weight + β₄·(T_tp_attn + T_tp_denseFFN + T_moe_reduce)
+//	         + β_EP·T_moe_dispatch + β₅·L + β₆·B + β₇ + β₈·nMoE
 //
 // Where:
 //   - T_pf_compute: Prefill compute time (FlashAttention FLOPs + MLP FLOPs)
@@ -43,7 +37,10 @@ import (
 //   - T_dc_compute: Decode compute time (single-token attention + MLP)
 //   - T_dc_kv: Decode KV cache read bandwidth (past tokens)
 //   - T_weight: Model weight loading bandwidth (per-step fixed cost)
-//   - T_tp: Tensor-parallel All-Reduce communication time
+//   - T_tp_attn, T_tp_denseFFN: attention / dense-FFN tensor-parallel all-reduce
+//     (the pre-#1419 monolithic T_tp, split so DP scales each by /dp)
+//   - T_moe_reduce: MoE-FFN all-reduce, charged only at DP=1, TP>1 (#1419)
+//   - T_moe_dispatch: MoE dispatch/combine all-to-all, charged only at DP>1 (#1419)
 //   - L: Number of transformer layers
 //   - B: Batch size (number of requests)
 //   - nMoE: Number of MoE layers (0 for dense models)
@@ -203,12 +200,18 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	kEff := float64(m.kEff)
 	hPerGPU := float64(m.numHeads) / tp
 
-	// DP scaling (#1419): sequences are split disjointly across DP ranks, so each
-	// rank processes ~1/dp of the tokens. Token-population terms (projection compute,
-	// dense/shared-FFN compute, KV read/write) gain a /dp factor; weight-loading terms
-	// stay /tp (weights are replicated across DP groups). The head-sharded attention
-	// FLOPs (hPerGPU path) are NOT divided by dp — DP does not shard heads; its effect
-	// rides the token-count path. tpdp = tp·dp is the combined data+tensor divisor.
+	// DP scaling (#1419): sequences are split disjointly across DP ranks (each rank is
+	// an independent EngineCore over its own requests — vllm v1/engine/core.py
+	// DPEngineCoreProc; num_tokens_across_dp[dp_rank]), so each rank processes ~1/dp of
+	// the tokens. EVERY token-population term gains a /dp factor: projection compute,
+	// attention compute, dense/shared-FFN compute, and KV read/write. Weight-loading
+	// terms stay /tp (weights are replicated across DP groups).
+	//
+	// Heads are sharded by TP only (not DP) — that is the /tp in hPerGPU. DP's effect is
+	// orthogonal and rides the token-count axis: attention FLOPs scale with the rank's
+	// token slice, so the head-sharded attention FLOPs still divide by dp via their token
+	// factor (applied at the flopsAttn use sites below), exactly like projection and KV.
+	// tpdp = tp·dp is the combined data+tensor divisor for the token-population terms.
 	dpf := float64(m.dp)
 	tpdp := tp * dpf
 
@@ -233,7 +236,7 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	var tPfCompute float64
 	if totalPrefillTokens > 0 {
 		flopsProj := L * 2 * totalPrefillTokens * d * (2*d + 2*dKV) / tpdp
-		flopsAttn := L * prefillAttnFlops
+		flopsAttn := L * prefillAttnFlops / dpf // /dp: each rank attends only its token slice
 
 		// MLP FLOPs: split between MoE and dense layers (#877 fix). MoE-FFN compute
 		// is scoped to the busiest GPU's routed token·activation load via ExpertPlacement
@@ -266,7 +269,7 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	var tDcCompute float64
 	if totalDecodeTokens > 0 {
 		flopsProj := L * 2 * totalDecodeTokens * d * (2*d + 2*dKV) / tpdp
-		flopsAttn := L * 4 * hPerGPU * sumCtx * dH
+		flopsAttn := L * 4 * hPerGPU * sumCtx * dH / dpf // /dp: each rank attends only its token slice
 
 		// MoE-FFN compute via ExpertPlacement on the decode population (B1, R-SPLIT:
 		// a separate Resolve call from prefill so the two populations are not conflated).
@@ -328,11 +331,11 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	//   MoE layer   → 1 unit  (attention only; MoE-FFN comm handled separately, #1419)
 	//
 	// The previously-monolithic term is split here into per-class terms so DP and the
-	// MoE comm taxonomy can scale each independently (#1419):
-	//   tTpAttention — attention all-reduce, one unit per layer.
-	//   tTpDenseFFN  — dense-FFN all-reduce, one unit per dense layer.
-	// MoE-FFN communication (tMoEReduce at DP=1 / tMoEDispatch at DP>1) is added in a
-	// later task; today numMoELayers contributes nothing here, exactly as before.
+	// MoE comm taxonomy scale each independently (#1419):
+	//   tTpAttention — attention all-reduce, one unit per layer (computed here).
+	//   tTpDenseFFN  — dense-FFN all-reduce, one unit per dense layer (computed here).
+	//   tMoEReduce / tMoEDispatch — MoE-FFN communication, computed just below and
+	//     partitioned on the DP boundary (DP=1 all-reduce vs DP>1 dispatch/combine).
 	//
 	// tpAllReduceBasis(units, tokens, tp) is the ring-all-reduce basis: units × tokens ×
 	// hidden × 2 bytes (BF16) × 2 (ring phases) × (tp-1)/tp / bwHbmUs. β₄ absorbs the
@@ -352,14 +355,15 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	}
 
 	// MoE-FFN communication partitions on the DP boundary (vLLM, #1419), so exactly
-	// one of these fires for an MoE model:
+	// one of the two terms below fires for an MoE model:
 	//   tMoEReduce (DP==1, TP>1): the MoE FFN all-reduces over the TP group, exactly
 	//     like a dense FFN unit. vLLM reduces over tp_size or ep_size (both = TP here).
 	//     This was previously unmodeled (deferred to β₈, which is 0 for uniform MoE) —
 	//     charging it is a deliberate fidelity gain.
-	//   tMoEDispatch (DP>1): dispatch/combine all-to-all, added in T5.
-	// gateReduce and gateDispatch are mutually exclusive and exhaustive over the
-	// MoE-FFN comm, so it is charged exactly once.
+	//   tMoEDispatch (DP>1): dispatch/combine all-to-all (see below).
+	// Their gates (dp==1 && tp>1) and (dp>1) are mutually exclusive and, together with
+	// the dp==1,tp==1 single-GPU case (no comm), exhaustive — so the MoE-FFN comm is
+	// charged exactly once.
 	var tMoEReduce float64
 	if m.isMoE && m.numMoELayers > 0 && m.dp == 1 && m.tp > 1 {
 		tMoEReduce = m.tpAllReduceBasis(float64(m.numMoELayers), totalTokens)
@@ -428,7 +432,9 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 // sharedExpertFFNDim, sharded over the TP·DP group like other token-population
 // compute. Returns 0 when sharedExpertFFNDim == 0 (no shared experts — e.g.
 // Mixtral, and Llama-4 Scout until the distill-model-config parser maps its
-// intermediate_size_mlp; a documented no-op).
+// shared-expert dim. NOTE: Scout's shared expert reuses config.intermediate_size
+// (vllm llama4.py:94,105), NOT intermediate_size_mlp — the latter is the dense-layer
+// FFN, already mapped to DenseIntermediateDim. Mapping it is the deferred follow-up.
 func (m *TrainedPhysicsModel) sharedExpertCompute(tokens, d, tpdp float64) float64 {
 	if m.sharedExpertFFNDim == 0 {
 		return 0

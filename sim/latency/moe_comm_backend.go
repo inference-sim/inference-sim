@@ -34,18 +34,34 @@ const (
 // value resolves to this.
 const DefaultMoECommBackend = "allgather_reducescatter"
 
-// ValidMoECommBackends is the set of accepted --moe-comm-backend values, mirroring
-// vLLM's VLLM_ALL2ALL_BACKEND choices (vllm@f6ec81c7 vllm/envs.py:186). The CLI
-// validator and moeCommFamilyFor share this list so they cannot disagree.
-var ValidMoECommBackends = []string{
-	"naive",
-	"allgather_reducescatter",
-	"pplx",
-	"deepep_high_throughput",
-	"deepep_low_latency",
-	"mori",
-	"flashinfer_all2allv",
+// moeCommBackends is the single source of truth for the accepted --moe-comm-backend
+// values and their volume families, mirroring vLLM's VLLM_ALL2ALL_BACKEND choices
+// (vllm@f6ec81c7 vllm/envs.py:186), in vLLM's declared order. ValidMoECommBackends
+// (the display/validation list) and moeCommFamilyFor (the family lookup) are both
+// derived from this slice, so they cannot drift apart.
+var moeCommBackends = []struct {
+	name   string
+	family moeCommFamily
+}{
+	{"naive", commFamilyAllGather},
+	{"allgather_reducescatter", commFamilyAllGather},
+	{"pplx", commFamilyAll2All},
+	{"deepep_high_throughput", commFamilyAll2All},
+	{"deepep_low_latency", commFamilyAll2All},
+	{"mori", commFamilyAll2All},
+	{"flashinfer_all2allv", commFamilyAll2All},
 }
+
+// ValidMoECommBackends is the ordered list of accepted --moe-comm-backend values,
+// derived from moeCommBackends (the single source of truth). Order is deterministic
+// (R2) for stable CLI help and error messages.
+var ValidMoECommBackends = func() []string {
+	names := make([]string, len(moeCommBackends))
+	for i, b := range moeCommBackends {
+		names[i] = b.name
+	}
+	return names
+}()
 
 // IsValidMoECommBackend reports whether name is a recognized vLLM MoE all-to-all
 // backend. Used by the CLI to validate --moe-comm-backend before constructing the
@@ -55,16 +71,15 @@ func IsValidMoECommBackend(name string) bool {
 	return err == nil
 }
 
-// moeCommFamilyFor maps a vLLM backend name to its communication-volume family.
-// An unrecognized name is a hard error (R1): a typo in the --moe-comm-backend flag
-// must surface, not silently fall back to a default volume model.
+// moeCommFamilyFor maps a vLLM backend name to its communication-volume family,
+// looking it up in moeCommBackends. An unrecognized name is a hard error (R1): a
+// typo in the --moe-comm-backend flag must surface, not silently fall back to a
+// default volume model.
 func moeCommFamilyFor(name string) (moeCommFamily, error) {
-	switch name {
-	case "naive", "allgather_reducescatter":
-		return commFamilyAllGather, nil
-	case "pplx", "deepep_high_throughput", "deepep_low_latency", "mori", "flashinfer_all2allv":
-		return commFamilyAll2All, nil
-	default:
-		return 0, fmt.Errorf("unknown MoE comm backend %q (valid: %v)", name, ValidMoECommBackends)
+	for _, b := range moeCommBackends {
+		if b.name == name {
+			return b.family, nil
+		}
 	}
+	return 0, fmt.Errorf("unknown MoE comm backend %q (valid: %v)", name, ValidMoECommBackends)
 }
