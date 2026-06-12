@@ -177,5 +177,11 @@ trained_physics_coefficients:
   # β₈: per-MoE-layer overhead - architecture-aware (µs/MoE-layer, interleaved only)
   # β₁ᵦ (β₉): prefill memory correction (dimensionless, unused in 10-beta mode)
   # β₂ᵦ (β₁₀): decode memory correction (dimensionless)
-  beta_coeffs: [0.152128, 0.0, 1.36252915, 0.752037, 32.09546717, 4.41684444, 126.024825, 481.8613888, 0.0, 1.94710771]
+  # β_EP (β₁₁): MoE dispatch/combine all-to-all comm correction (dimensionless, #1419).
+  #   Seeded to β₄ (0.752037): both comm families run over the same NVLink fabric β₄
+  #   calibrates, and NCCL's bus-bandwidth model gives all-gather/reduce-scatter and
+  #   all-to-all the same (n-1)/n per-phase efficiency as the ring all-reduce β₄ corrects.
+  #   The comm-family VOLUME difference lives in the dispatch basis, not this coefficient.
+  #   Per-family efficiency refit is deferred to #E; omitting the 11th value defaults to β₄.
+  beta_coeffs: [0.152128, 0.0, 1.36252915, 0.752037, 32.09546717, 4.41684444, 126.024825, 481.8613888, 0.0, 1.94710771, 0.752037]
 version: 0.0.1

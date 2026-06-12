@@ -130,6 +130,7 @@ The model supports 7-10 beta coefficients. Bundled defaults use 10 coefficients 
 - **β₆** (per-request, ~4 µs/request): Scheduling overhead per request: queue management, attention mask construction.
 - **β₇** (per-step, ~126 µs/step): Fixed overhead per step: CUDA synchronization, sampler invocation.
 - **β₈** (MoE-layer, ~482 µs/layer): Per-MoE-layer overhead for router gating, token permutation. Architecture-aware: applies only to interleaved MoE architectures (InterleaveMoELayerStep > 0). Zero for uniform MoE and dense models.
+- **β_EP** (MoE dispatch/combine, defaults to β₄): Corrects MoE expert-/data-parallel dispatch+combine all-to-all communication. Active only for MoE models with `--dp > 1`. Defaults to β₄ because both comm-backend families run over the same NVLink fabric and share the ring-collective per-phase efficiency β₄ captures (the per-family *volume* difference is in the basis, not the coefficient). The 11th coefficient overrides the default.
 
 **Alpha coefficients** (3 terms, API/framework overheads in µs):
 
@@ -169,10 +170,28 @@ The model automatically detects MoE configuration from `config.json` (`num_local
 
 **Why trained-physics over roofline:**
 
-Trained-physics uses **13 coefficients** (10 beta: prefill compute/memory split, decode compute/memory split, weight, TP, layer overhead, batch overhead, step overhead, MoE overhead; 3 alpha: queueing, post-decode, per-token) that capture more architectural detail than pure roofline (no learned corrections). The prefill/decode split (β₁ₐ/β₁ᵦ, β₂ₐ/β₂ᵦ) and MoE-specific overhead (β₈) enable better generalization to unseen model architectures (especially interleaved MoE) and batch compositions (mixed prefill/decode).
+Trained-physics uses up to **14 coefficients** (11 beta: prefill compute/memory split, decode compute/memory split, weight, TP, layer overhead, batch overhead, step overhead, MoE overhead, and the MoE expert-parallel dispatch correction β_EP; 3 alpha: queueing, post-decode, per-token) that capture more architectural detail than pure roofline (no learned corrections). The prefill/decode split (β₁ₐ/β₁ᵦ, β₂ₐ/β₂ᵦ) and MoE-specific overhead (β₈) enable better generalization to unseen model architectures (especially interleaved MoE) and batch compositions (mixed prefill/decode).
 
 !!! note "MoE architecture detection"
     β₈ applies conditionally based on `InterleaveMoELayerStep` from the model's `config.json`: 0 = uniform MoE (β₈ skipped), 1 = alternating MoE/dense (β₈ × 24 layers for Scout's 48 total), 2 = every 3rd layer is MoE, etc. This prevents over-penalizing uniform MoE models like Mixtral where expert routing overhead is amortized across all layers.
+
+### Data + Expert Parallelism for MoE (trained-physics only)
+
+For MoE deployments, trained-physics models data parallelism (`--dp`) and expert parallelism (`--enable-expert-parallel`) the way vLLM does (mirrors `vllm-project/vllm`):
+
+- **Routed-expert weight/compute** are scoped to the flattened MoE group `moeGroup = TP·DP` via the `ExpertPlacement` seam: each GPU holds `numExperts/moeGroup` full-expert-equivalents (EP-off tensor-shards them; EP-on owns whole experts — the per-GPU bytes are identical). This replaces a batch-dependent heuristic and is **EP-mode-agnostic**, so MoE step time at `DP=1` intentionally differs from pre-DP/EP BLIS (a deliberate fidelity fix). Dense models at `DP=1` are byte-identical (INV-BC-DP1).
+- **Sequence-split terms** (attention/dense-FFN compute, KV read/write) gain a `/dp` factor — each DP rank processes ~`1/dp` of the tokens. Weights stay `/tp` (replicated across DP groups).
+- **Shared experts** (DeepSeek/Qwen-style) are charged for every token when the model exposes a shared-expert FFN dim; a no-op otherwise (including Llama-4 Scout until its `intermediate_size_mlp` is mapped).
+- **MoE-FFN communication** partitions on the `DP` boundary: at `DP=1, TP>1` an all-reduce over the TP group; at `DP>1` a dispatch/combine all-to-all (β_EP).
+
+**`--moe-comm-backend`** selects the dispatch/combine cost model (mirrors vLLM `VLLM_ALL2ALL_BACKEND`). The seven names map to two physical volume families:
+
+| Family | Backends | Per-rank dispatch volume |
+|--------|----------|--------------------------|
+| all-gather | `naive`, `allgather_reducescatter` (default) | dense hidden states, **no top_k** |
+| modular all-to-all | `pplx`, `deepep_high_throughput`, `deepep_low_latency`, `mori`, `flashinfer_all2allv` | top_k-routed tokens (carries `kEff`) |
+
+DP/EP and `--moe-comm-backend` require `--latency-model trained-physics` (roofline is DP/EP-blind for step time) and are rejected on dense models for `--dp > 1` (dense data parallelism is the router-replica mechanism — use `--num-instances`). Absolute MoE communication magnitudes are physics-estimated with β_EP defaulted to β₄; an empirical re-fit is future work.
 
 ## When to Use Which
 
