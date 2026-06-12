@@ -1238,6 +1238,15 @@ func TestResolveNumExperts_ParityAcrossEntryPoints(t *testing.T) {
 		// the >=2 value from a later field. Locks the resolution order/semantics.
 		{"two_fields_local_below_threshold_uses_other",
 			base(map[string]any{"num_local_experts": float64(1), "n_routed_experts": float64(64)}), 64, true},
+		// ORDER GUARD (synthetic — no real model sets two total-count fields to
+		// different >=2 values). num_experts precedes num_local_experts in the vLLM
+		// resolution order, so num_experts wins. This pins the order against an
+		// accidental future reshuffle of moeExpertCountFields.
+		{"two_fields_both_moe_num_experts_wins_by_order",
+			base(map[string]any{"num_experts": float64(4), "num_local_experts": float64(8)}), 4, true},
+		// moe_num_experts (Dbrx, position 2) precedes n_routed_experts (position 3).
+		{"two_fields_moe_num_experts_precedes_n_routed",
+			base(map[string]any{"moe_num_experts": float64(16), "n_routed_experts": float64(64)}), 16, true},
 	}
 
 	for _, tt := range tests {

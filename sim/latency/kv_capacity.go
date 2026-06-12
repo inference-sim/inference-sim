@@ -276,7 +276,12 @@ func computeModelWeightBytes(mc sim.ModelConfig, params KVCapacityParams) int64 
 	// NOTE: roofline step time (mlpMatrixCount in roofline.go) uses 2-matrix convention for
 	// FLOPs/bandwidth — see that function's comment for the calibration rationale.
 	var mlpPerLayer int64
-	if params.IsMoE && params.NumLocalExperts > 1 {
+	// The NumLocalExperts >= MoEMinExperts clause is a defensive guard, not a
+	// duplicate of IsMoE: NewKVCapacityParams is a public positional constructor, so
+	// a caller could pass an inconsistent (IsMoE=true, NumLocalExperts<2) pair. The
+	// MoE arithmetic below multiplies by NumLocalExperts, so a degenerate count would
+	// silently produce zero/under-weighted MLP bytes — this keeps it on the dense path.
+	if params.IsMoE && params.NumLocalExperts >= sim.MoEMinExperts {
 		// MoE: use per-expert FFN dim for routed experts, add shared and gate
 		expertFFNDim := intermediateDim // Mixtral convention: IntermediateDim IS per-expert
 		if params.MoEExpertFFNDim > 0 {
