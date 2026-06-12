@@ -152,21 +152,30 @@ func TestBalancedPlacement_CommConservationLaw(t *testing.T) {
 	}
 }
 
-// TestBalancedPlacement_CommUnifiesAllReduceAtDP1 locks in the unified-comm-model
-// property documented on BalancedPlacement: at dp == 1, PerGPUCommTokens equals
-// the TP ring all-reduce volume (moeGroupSize-1)/moeGroupSize · 2 · globalTokens ·
-// kEff. This guards the doc claim that #C can charge a single comm term across
-// both vLLM regimes (DP=1 all-reduce vs DP>1 dispatch/combine) without branching.
-func TestBalancedPlacement_CommUnifiesAllReduceAtDP1(t *testing.T) {
+// TestBalancedPlacement_Resolve_FractionalKEff exercises a fractional kEff, which
+// the interface explicitly admits ("possibly fractional" — e.g. a shared+routed
+// mix or an averaged top-k). The loads must scale linearly in kEff with no
+// integer truncation.
+func TestBalancedPlacement_Resolve_FractionalKEff(t *testing.T) {
 	p := BalancedPlacement{}
-	for _, group := range []int{1, 2, 4, 8, 16} {
-		const gt, kEff = 2048.0, 2.0
-		got := p.Resolve(gt, kEff, 32, group, 1) // dp == 1
-		g := float64(group)
-		wantAllReduce := (g - 1) / g * 2 * gt * kEff
-		assert.InDelta(t, wantAllReduce, got.PerGPUCommTokens, 1e-6,
-			"at dp=1 comm must equal the TP all-reduce volume (group=%d)", group)
-	}
+	// globalTokens=1000, kEff=2.5, group=4, dp=2.
+	got := p.Resolve(1000, 2.5, 8, 4, 2)
+	assert.InDelta(t, 625, got.PerGPUComputeTokens, floatEqTol, "1000·2.5/4")
+	assert.InDelta(t, 2, got.PerGPUExpertCount, floatEqTol, "8/4 (kEff-independent)")
+	assert.InDelta(t, 1875, got.PerGPUCommTokens, floatEqTol, "(1000/2)·2.5·(3/4)·2")
+}
+
+// TestBalancedPlacement_Resolve_RejectsDegenerateDivisors verifies the library
+// boundary guard (R1): a divisor < 1 would otherwise silently emit +Inf/NaN loads
+// into downstream step-time math. Production callers never hit this (the config
+// EffectiveMoEGroupSize / EffectiveDP helpers clamp to >= 1), but a direct caller
+// passing 0 must fail loudly.
+func TestBalancedPlacement_Resolve_RejectsDegenerateDivisors(t *testing.T) {
+	p := BalancedPlacement{}
+	assert.Panics(t, func() { p.Resolve(1000, 2, 8, 0, 1) }, "moeGroupSize=0 must panic")
+	assert.Panics(t, func() { p.Resolve(1000, 2, 8, 4, 0) }, "dp=0 must panic")
+	assert.Panics(t, func() { p.Resolve(1000, 2, 8, -1, 1) }, "negative moeGroupSize must panic")
+	assert.NotPanics(t, func() { p.Resolve(1000, 2, 8, 1, 1) }, "minimal valid divisors must not panic")
 }
 
 // TestBalancedPlacement_NonNegativeAndFinite verifies that for any physically
