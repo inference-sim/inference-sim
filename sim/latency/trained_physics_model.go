@@ -180,6 +180,15 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	kEff := float64(m.kEff)
 	hPerGPU := float64(m.numHeads) / tp
 
+	// DP scaling (#1419): sequences are split disjointly across DP ranks, so each
+	// rank processes ~1/dp of the tokens. Token-population terms (projection compute,
+	// dense/shared-FFN compute, KV read/write) gain a /dp factor; weight-loading terms
+	// stay /tp (weights are replicated across DP groups). The head-sharded attention
+	// FLOPs (hPerGPU path) are NOT divided by dp — DP does not shard heads; its effect
+	// rides the token-count path. tpdp = tp·dp is the combined data+tensor divisor.
+	dpf := float64(m.dp)
+	tpdp := tp * dpf
+
 	for _, req := range batch {
 		if req.ProgressIndex < util.Len64(req.InputTokens) {
 			// Prefill
@@ -200,16 +209,20 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	// Enhancement: split FLOPs between MoE and dense layers for interleaved architectures.
 	var tPfCompute float64
 	if totalPrefillTokens > 0 {
-		flopsProj := L * 2 * totalPrefillTokens * d * (2*d + 2*dKV) / tp
+		flopsProj := L * 2 * totalPrefillTokens * d * (2*d + 2*dKV) / tpdp
 		flopsAttn := L * prefillAttnFlops
 
-		// MLP FLOPs: split between MoE and dense layers (#877 fix)
+		// MLP FLOPs: split between MoE and dense layers (#877 fix). MoE-FFN compute
+		// is scoped to the busiest GPU's routed token·activation load via ExpertPlacement
+		// (B1, #1419): PerGPUComputeTokens = globalTokens·kEff/moeGroup replaces the old
+		// tokens·kEff/tp. Dense-FFN compute gains /dp like other token-population terms.
 		var flopsFfn float64
 		if m.numMoELayers > 0 {
-			flopsFfn += float64(m.numMoELayers) * totalPrefillTokens * kEff * 6 * d * float64(m.dFFMoE) / tp
+			pfLoad := m.placement.Resolve(totalPrefillTokens, kEff, m.numExperts, m.moeGroup, m.dp)
+			flopsFfn += float64(m.numMoELayers) * pfLoad.PerGPUComputeTokens * 6 * d * float64(m.dFFMoE)
 		}
 		if m.numDenseLayers > 0 {
-			flopsFfn += float64(m.numDenseLayers) * totalPrefillTokens * 1 * 6 * d * float64(m.dFFDense) / tp
+			flopsFfn += float64(m.numDenseLayers) * totalPrefillTokens * 1 * 6 * d * float64(m.dFFDense) / tpdp
 		}
 
 		tPfCompute = (flopsProj + flopsAttn + flopsFfn) / m.flopsPeakUs
@@ -218,7 +231,7 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	// T_pf_kv: prefill KV cache write bandwidth (µs)
 	var tPfKv float64
 	if totalPrefillTokens > 0 {
-		bytesPfKv := L * 2 * (dKV / tp) * totalPrefillTokens * bytesPerKVElement
+		bytesPfKv := L * 2 * (dKV / tpdp) * totalPrefillTokens * bytesPerKVElement
 		tPfKv = bytesPfKv / m.bwHbmUs
 	}
 
@@ -226,15 +239,18 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	// Enhancement: split FLOPs between MoE and dense layers.
 	var tDcCompute float64
 	if totalDecodeTokens > 0 {
-		flopsProj := L * 2 * totalDecodeTokens * d * (2*d + 2*dKV) / tp
+		flopsProj := L * 2 * totalDecodeTokens * d * (2*d + 2*dKV) / tpdp
 		flopsAttn := L * 4 * hPerGPU * sumCtx * dH
 
+		// MoE-FFN compute via ExpertPlacement on the decode population (B1, R-SPLIT:
+		// a separate Resolve call from prefill so the two populations are not conflated).
 		var flopsFfn float64
 		if m.numMoELayers > 0 {
-			flopsFfn += float64(m.numMoELayers) * totalDecodeTokens * kEff * 6 * d * float64(m.dFFMoE) / tp
+			dcLoad := m.placement.Resolve(totalDecodeTokens, kEff, m.numExperts, m.moeGroup, m.dp)
+			flopsFfn += float64(m.numMoELayers) * dcLoad.PerGPUComputeTokens * 6 * d * float64(m.dFFMoE)
 		}
 		if m.numDenseLayers > 0 {
-			flopsFfn += float64(m.numDenseLayers) * totalDecodeTokens * 1 * 6 * d * float64(m.dFFDense) / tp
+			flopsFfn += float64(m.numDenseLayers) * totalDecodeTokens * 1 * 6 * d * float64(m.dFFDense) / tpdp
 		}
 
 		tDcCompute = (flopsProj + flopsAttn + flopsFfn) / m.flopsPeakUs
@@ -243,25 +259,29 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	// T_dc_kv: decode KV cache read+write bandwidth (µs)
 	var tDcKv float64
 	if totalDecodeTokens > 0 {
-		bytesDcKv := L * 2 * (dKV / tp) * bytesPerKVElement * (sumCtx + totalDecodeTokens)
+		bytesDcKv := L * 2 * (dKV / tpdp) * bytesPerKVElement * (sumCtx + totalDecodeTokens)
 		tDcKv = bytesDcKv / m.bwHbmUs
 	}
 
 	// T_weight: weight loading time (µs)
 	// Enhancement: use EffectiveWeightBytesPerParam (FP8-aware) and split MoE/dense.
-	// MoE: nEff = min(N, max(k, B*k)) effective experts per step.
-	nEff := 1.0
-	if m.isMoE {
-		B := totalPrefillTokens + totalDecodeTokens
-		nEff = math.Min(float64(m.numExperts), math.Max(kEff, B*kEff))
-	}
+	//
+	// Routed-expert weight bytes are scoped via ExpertPlacement (B1 fix, #1419):
+	// PerGPUExpertCount = numExperts/moeGroup full-expert-equivalents resident per GPU,
+	// replacing the old batch-dependent nEff = min(N, max(k, B·k))/tp. This matches both
+	// vLLM EP modes (EP-off tensor-shards experts over the flattened TP·DP group; EP-on
+	// owns numExperts/(TP·DP) whole experts) and is applied unconditionally for MoE,
+	// including DP=1/EP-off. It is the saturation-point behaviour the model targets and
+	// INTENTIONALLY changes MoE step-time output versus the old batch-dependent term.
+	// Weight loading is /tp (not /dp): weights are replicated across DP groups.
 	bpp := m.weightBPP
 	bytesAttn := L * d * (2*d + 2*dKV) * bpp / tp
 
-	// MoE and dense layers have different FFN dims and different weight loading
+	// MoE and dense layers have different FFN dims and different weight loading.
 	var bytesFfn float64
 	if m.numMoELayers > 0 {
-		bytesFfn += float64(m.numMoELayers) * nEff * 3 * d * float64(m.dFFMoE) * bpp / tp
+		wLoad := m.placement.Resolve(totalPrefillTokens+totalDecodeTokens, kEff, m.numExperts, m.moeGroup, m.dp)
+		bytesFfn += float64(m.numMoELayers) * wLoad.PerGPUExpertCount * 3 * d * float64(m.dFFMoE) * bpp
 	}
 	if m.numDenseLayers > 0 {
 		bytesFfn += float64(m.numDenseLayers) * 1 * 3 * d * float64(m.dFFDense) * bpp / tp
@@ -290,11 +310,27 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	// V(numLayers, tp) + V(numDenseLayers, tp) = V(2·numLayers, tp) (numDenseLayers ==
 	// numLayers, numMoELayers == 0) — byte-identical to the pre-#C monolithic term
 	// (allReduceUnits = 2·numDenseLayers + numMoELayers = 2·numLayers).
+	// Attention and dense-FFN all-reduces are scaled by /dp: each DP rank all-reduces
+	// only its local ~totalTokens/dp tokens, and DP groups run in parallel.
 	totalTokens := totalPrefillTokens + totalDecodeTokens
 	var tTpAttention, tTpDenseFFN float64
 	if m.tp > 1 {
-		tTpAttention = m.tpAllReduceBasis(float64(m.numLayers), totalTokens)
-		tTpDenseFFN = m.tpAllReduceBasis(float64(m.numDenseLayers), totalTokens)
+		tTpAttention = m.tpAllReduceBasis(float64(m.numLayers), totalTokens) / dpf
+		tTpDenseFFN = m.tpAllReduceBasis(float64(m.numDenseLayers), totalTokens) / dpf
+	}
+
+	// MoE-FFN communication partitions on the DP boundary (vLLM, #1419), so exactly
+	// one of these fires for an MoE model:
+	//   tMoEReduce (DP==1, TP>1): the MoE FFN all-reduces over the TP group, exactly
+	//     like a dense FFN unit. vLLM reduces over tp_size or ep_size (both = TP here).
+	//     This was previously unmodeled (deferred to β₈, which is 0 for uniform MoE) —
+	//     charging it is a deliberate fidelity gain.
+	//   tMoEDispatch (DP>1): dispatch/combine all-to-all, added in T5.
+	// gateReduce and gateDispatch are mutually exclusive and exhaustive over the
+	// MoE-FFN comm, so it is charged exactly once.
+	var tMoEReduce float64
+	if m.isMoE && m.numMoELayers > 0 && m.dp == 1 && m.tp > 1 {
+		tMoEReduce = m.tpAllReduceBasis(float64(m.numMoELayers), totalTokens)
 	}
 
 	// ─── Step-time formula ─────────────────────────────────────────────
@@ -335,7 +371,7 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	stepTime := prefillTerm +
 		decodeTerm +
 		m.Beta[2]*tWeight +
-		m.Beta[3]*(tTpAttention+tTpDenseFFN) +
+		m.Beta[3]*(tTpAttention+tTpDenseFFN+tMoEReduce) +
 		m.Beta[4]*L +
 		m.Beta[5]*batchSize +
 		m.Beta[6] +

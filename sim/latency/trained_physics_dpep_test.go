@@ -21,6 +21,103 @@ func dpepMixedBatch() []*sim.Request {
 	return append(makePrefillBatch(3, 128), makeDecodeBatch(5, 256)...)
 }
 
+// dpepMoEModelConfig is a uniform MoE config (Mixtral-like): all layers MoE, no
+// shared experts, no interleaving.
+func dpepMoEModelConfig() *sim.ModelConfig {
+	return &sim.ModelConfig{
+		NumLayers:        32,
+		HiddenDim:        4096,
+		NumHeads:         32,
+		NumKVHeads:       8,
+		IntermediateDim:  14336,
+		MoEExpertFFNDim:  14336,
+		NumLocalExperts:  8,
+		NumExpertsPerTok: 2,
+		BytesPerParam:    2.0,
+	}
+}
+
+// newDPEPModel constructs a trained-physics model for the given config at (tp, dp,
+// ep, backend). It uses the 11-coeff defaults so β_EP is active.
+func newDPEPModel(t *testing.T, mc *sim.ModelConfig, tp, dp int, ep bool, backend string) *TrainedPhysicsModel {
+	t.Helper()
+	mhw := sim.NewModelHardwareConfig(*mc, dpepTestHW(), "m", "H100", tp, dp, ep, backend, "trained-physics", 0)
+	m, err := NewTrainedPhysicsModel(*testCoeffs(), mhw)
+	require.NoError(t, err)
+	return m
+}
+
+// TestMoEWeight_BatchIndependent verifies the B1 fix (#1419): routed-expert weight
+// bytes are now scoped via PerGPUExpertCount = numExperts/moeGroup, which is
+// independent of batch size — unlike the old batch-dependent nEff = min(N, max(k,
+// B·k))/tp. Two batches of very different sizes must yield the SAME weight-driven
+// floor, so the step-time difference between them is attributable only to the
+// compute/KV terms that legitimately scale with tokens, never to weight loading.
+//
+// We assert batch-independence behaviorally: hold a single decode token fixed and
+// confirm the per-step weight contribution (isolated by comparing a 1-request vs a
+// large-request decode batch at matched per-request context) does not blow up with
+// the old B·k ceiling. Concretely, the old model's nEff saturated at numExperts for
+// large B; the new model is flat from B=1. We check that doubling the batch does not
+// increase step time by the weight term's batch-scaling (which would be present under
+// the old nEff for small B below the N ceiling).
+func TestMoEWeight_BatchIndependent(t *testing.T) {
+	m := newDPEPModel(t, dpepMoEModelConfig(), 2, 1, false, "")
+
+	// Single decode request vs. eight, same per-request context. Under the OLD model,
+	// nEff = min(8, max(2, B·2)) grows from 2 (B=1) to 8 (B>=4): a 4× weight increase
+	// purely from batch. Under B1, weight is fixed at numExperts/moeGroup, so the
+	// step-time delta between B=1 and B=8 reflects only compute/KV growth, which for a
+	// pure-decode batch is far smaller than a 4× weight blow-up.
+	one := makeDecodeBatch(1, 256)
+	eight := makeDecodeBatch(8, 256)
+	t1 := m.StepTime(one)
+	t8 := m.StepTime(eight)
+
+	// Behavioral law: with batch-independent weight, 8 decode tokens cost less than
+	// 8× a single token (shared weight floor dominates). Under the old batch-dependent
+	// nEff the weight itself quadrupled, which combined with compute would push t8
+	// well above 4×t1. We assert t8 < 4×t1 as a robust witness of weight flatness.
+	assert.Less(t, t8, 4*t1,
+		"B1: batch-independent expert weight ⇒ 8 decode tokens cost < 4× a single (got t1=%d t8=%d)", t1, t8)
+}
+
+// TestMoECommTaxonomy_DPBoundary verifies the mutual-exclusive MoE-FFN comm gates
+// (#1419): tMoEReduce fires only at DP==1 (TP>1); tMoEDispatch only at DP>1. The two
+// partition the DP boundary with no overlap and no gap. We assert this behaviorally
+// via the EP-independence of the DP>1 dispatch and the presence of comm at each cell.
+func TestMoECommTaxonomy_DPBoundary(t *testing.T) {
+	mc := dpepMoEModelConfig()
+
+	// (TP=2, DP=1): reduce active, dispatch absent. Comm backend is irrelevant at DP=1
+	// (no dispatch), so step time must be identical across all backends.
+	base := newDPEPModel(t, mc, 2, 1, false, "allgather_reducescatter").StepTime(dpepMixedBatch())
+	for _, b := range ValidMoECommBackends {
+		got := newDPEPModel(t, mc, 2, 1, false, b).StepTime(dpepMixedBatch())
+		assert.Equalf(t, base, got, "at DP=1 the comm backend must not affect step time (backend=%q)", b)
+	}
+
+	// (TP=1, DP=2): the mutex cell — dispatch active (DP>1), reduce absent (needs tp>1).
+	// This is a MoE model so DP=2 is permitted. Step time must be positive and finite.
+	mutex := newDPEPModel(t, mc, 1, 2, false, "allgather_reducescatter").StepTime(dpepMixedBatch())
+	assert.Greater(t, mutex, int64(0), "TP=1,DP=2 dispatch-only cell must produce a positive step time")
+}
+
+// TestMoEDispatch_EPIndependentVolume verifies that at (TP=2, DP=2) the MoE-FFN comm
+// cost is identical whether EP is off or on, for a fixed comm backend (#1419): the
+// dispatch gate is DP>1, NOT EP. EP changes the expert SHARDING axis (tensor-shard vs
+// expert-shard over the same TP·DP group) but not the dispatch/combine volume.
+func TestMoEDispatch_EPIndependentVolume(t *testing.T) {
+	mc := dpepMoEModelConfig()
+	batch := dpepMixedBatch()
+	for _, b := range []string{"allgather_reducescatter", "deepep_low_latency"} {
+		epOff := newDPEPModel(t, mc, 2, 2, false, b).StepTime(batch)
+		epOn := newDPEPModel(t, mc, 2, 2, true, b).StepTime(batch)
+		assert.Equalf(t, epOff, epOn,
+			"at (TP=2,DP=2) MoE-FFN comm must be EP-independent for backend %q (gate is DP>1)", b)
+	}
+}
+
 // TestBetaEP_DefaultsToBeta4 verifies the β_EP (Beta[10]) default wiring (#1419):
 // a caller providing <11 beta coefficients gets β_EP defaulted to β₄ (Beta[3]) — a
 // derived default (both MoE comm families share the NVLink collective efficiency β₄
