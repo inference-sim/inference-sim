@@ -1226,14 +1226,17 @@ func TestResolveNumExperts_ParityAcrossEntryPoints(t *testing.T) {
 		wantMoE bool
 	}{
 		{"dense_no_expert_fields", base(nil), 0, false},
-		{"single_expert_is_dense", base(map[string]any{"num_local_experts": float64(1)}), 1, false},
+		// Single-expert configs are dense-equivalent: resolver canonicalizes to 0
+		// (below MoEMinExperts), so both entry points classify dense.
+		{"single_expert_is_dense", base(map[string]any{"num_local_experts": float64(1)}), 0, false},
 		{"mixtral_num_local_experts", base(map[string]any{"num_local_experts": float64(8)}), 8, true},
 		{"deepseek_n_routed_experts", base(map[string]any{"n_routed_experts": float64(64)}), 64, true},
-		{"num_routed_experts", base(map[string]any{"num_routed_experts": float64(32)}), 32, true},
-		{"dbrx_num_experts", base(map[string]any{"num_experts": float64(16)}), 16, true},
-		// Two fields set: num_local_experts is below threshold, so the fallback chain
-		// resolves the >=2 value. Locks the chosen resolution order/semantics.
-		{"two_fields_local_below_threshold_uses_fallback",
+		{"dbrx_moe_num_experts", base(map[string]any{"moe_num_experts": float64(16)}), 16, true},
+		{"jamba_num_experts", base(map[string]any{"num_experts": float64(8)}), 8, true},
+		{"blis_alias_num_routed_experts", base(map[string]any{"num_routed_experts": float64(32)}), 32, true},
+		// Two fields set: num_local_experts is below threshold, so the chain resolves
+		// the >=2 value from a later field. Locks the resolution order/semantics.
+		{"two_fields_local_below_threshold_uses_other",
 			base(map[string]any{"num_local_experts": float64(1), "n_routed_experts": float64(64)}), 64, true},
 	}
 

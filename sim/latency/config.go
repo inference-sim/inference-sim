@@ -68,33 +68,46 @@ func (c *HFConfig) MustGetInt(key string, def int) int {
 	return def
 }
 
-// ResolveNumExperts returns the total routed-expert count for the model, trying
-// the known architecture-specific field names in turn. The primary field is
-// num_local_experts (Mixtral); if it is below the MoE threshold (dense or
-// single-expert) the alias chain [num_routed_experts, n_routed_experts,
-// num_experts] is consulted, taking the first value that meets the threshold.
-// Returns 0 for dense models (no expert field present).
+// moeExpertCountFields lists the HF config field names that carry the total
+// routed-expert count, in the resolution order used by vLLM's get_num_experts
+// (vllm/transformers_utils/model_arch_config_convertor.py): num_experts (Jamba),
+// moe_num_experts (Dbrx), n_routed_experts (DeepSeek), num_local_experts (Mixtral).
+// num_routed_experts is a BLIS-historical alias retained at the end for
+// compatibility. NumExpertsPerTok / n_shared_experts are activation counts, NOT
+// totals, and are deliberately excluded.
+var moeExpertCountFields = []string{
+	"num_experts",       // Jamba
+	"moe_num_experts",   // Dbrx
+	"n_routed_experts",  // DeepSeek
+	"num_local_experts", // Mixtral
+	"num_routed_experts", // BLIS-historical alias
+}
+
+// ResolveNumExperts returns the total routed-expert count for the model, trying the
+// known architecture-specific field names (moeExpertCountFields) in order and
+// returning the first value that meets the MoE threshold (sim.MoEMinExperts).
+// Returns 0 for dense models — including single-expert configs, which are
+// dense-equivalent in BLIS — so the count fed downstream never enters the MoE
+// weight/FLOP formulas at N < 2 (see sim.MoEMinExperts for why N=1 must not).
 //
 // This is the single source of truth for expert-count resolution, shared by
 // GetModelConfigFromHF and ExtractKVCapacityParams so the two cannot desync
-// (R23 code-path parity). The threshold is sim.MoEMinExperts — the same constant
-// behind ModelConfig.IsMoE — so a single-expert config resolves to its literal
-// count and is later classified dense, keeping N=1 out of the MoE formulas.
+// (R23 code-path parity).
 //
-// NOTE: BLIS's field order differs from vLLM's get_num_experts
-// (transformers_utils/model_arch_config_convertor.py) and omits moe_num_experts
-// (Dbrx). On every real model this is behaviorally identical because no real HF
-// config sets more than one of these fields.
+// Parity with vLLM: the field set and order match vLLM's get_num_experts. The one
+// intentional difference is the selection rule — vLLM returns the first field that
+// EXISTS (then classifies via is_moe == count > 0), whereas BLIS returns the first
+// field that is >= MoEMinExperts. On every real model the two rules pick the same
+// field, because no real HF config sets a total-count field to 0 or 1 (verified
+// against vLLM's config classes and fixtures). BLIS's threshold rule additionally
+// protects its analytic formulas from a degenerate N=1, which vLLM does not need.
 func (c *HFConfig) ResolveNumExperts() int {
-	n := c.MustGetInt("num_local_experts", 0)
-	if n < sim.MoEMinExperts {
-		for _, key := range []string{"num_routed_experts", "n_routed_experts", "num_experts"} {
-			if v := c.MustGetInt(key, 0); v >= sim.MoEMinExperts {
-				return v
-			}
+	for _, key := range moeExpertCountFields {
+		if v := c.MustGetInt(key, 0); v >= sim.MoEMinExperts {
+			return v
 		}
 	}
-	return n
+	return 0
 }
 
 func parseHWConfig(HWConfigFilePath string) (map[string]sim.HardwareCalib, error) {
