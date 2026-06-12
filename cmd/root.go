@@ -704,11 +704,12 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 			dataParallelism)
 	}
 	if enableExpertParallel && modelConfig.NumLocalExperts <= 1 {
-		// EP is a no-op for dense models (EffectiveEP stays 1); warn so a likely
-		// misconfiguration is visible rather than silently ignored. Not fatal:
-		// the flag is harmless here and rejecting it would over-constrain. Warning
-		// goes to stderr, so deterministic stdout (INV-6) is unaffected.
-		logrus.Warnf("--enable-expert-parallel has no effect on dense model %q (no MoE experts); ignoring.", model)
+		// vLLM fatally rejects --enable-expert-parallel on dense models
+		// (config/model.py:_verify_with_expert_parallelism raises ValueError,
+		// killing the process before serving). Match that signal so BLIS doesn't
+		// simulate a deployment that cannot exist in production.
+		logrus.Fatalf("--enable-expert-parallel requires a MoE model (got dense model %q with no experts); "+
+			"vLLM fatally rejects this configuration.", model)
 	}
 
 	return latencyResolution{

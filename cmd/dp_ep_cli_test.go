@@ -208,43 +208,17 @@ func TestResolveLatencyConfig_DPEP_DefaultsAccepted(t *testing.T) {
 	}
 }
 
-// TestResolveLatencyConfig_DenseEP_NoFatal verifies that --enable-expert-parallel
-// on a DENSE model at DP=1 is accepted (a warned no-op), NOT a fatal. The issue
-// only mandates rejecting dense DP>1; dense EP is harmless (EffectiveEP stays 1)
-// and rejecting it would over-constrain. Runs in-process: if it fataled, the
-// process would exit and the test would fail to reach the assertion.
-func TestResolveLatencyConfig_DenseEP_NoFatal(t *testing.T) {
-	mcFolder, hwPath := setupTrainedPhysicsTestFixtures(t) // dense fixture
-
-	model = "test-model"
-	latencyModelBackend = "trained-physics"
-	gpu = "H100"
-	tensorParallelism = 2
-	dataParallelism = 1 // DP=1 so the dense-DP gate does not trip
-	enableExpertParallel = true
-	totalKVBlocks = 1000
-	blockSizeTokens = 16
-	maxModelLen = 0
-	gpuMemoryUtilization = 0.9
-	modelConfigFolder = mcFolder
-	hwConfigPath = hwPath
-	defaultsFilePath = "../defaults.yaml"
-
-	testCmd := &cobra.Command{}
-	registerSimConfigFlags(testCmd)
-	if err := testCmd.ParseFlags([]string{
-		"--model", "test-model", "--latency-model", "trained-physics",
-		"--hardware", "H100", "--tp", "2", "--enable-expert-parallel",
-		"--model-config-folder", mcFolder, "--hardware-config", hwPath,
-		"--total-kv-blocks", "1000", "--defaults-filepath", "../defaults.yaml",
-	}); err != nil {
-		t.Fatalf("ParseFlags: %v", err)
+// TestResolveLatencyConfig_DenseEP_Rejected verifies that --enable-expert-parallel
+// on a DENSE model fatals with a message matching vLLM's fatal rejection — the
+// simulator must not simulate a deployment that vLLM would crash-loop at startup.
+func TestResolveLatencyConfig_DenseEP_Rejected(t *testing.T) {
+	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
+		if os.Getenv("BLIS_DPEP_SCENARIO") == "dense-ep" {
+			dpEPResolve(t, "trained-physics", 1, true, false) // dense fixture, EP on
+		}
+		return
 	}
-
-	lr := resolveLatencyConfig(testCmd) // must NOT fatal (warns instead)
-	if lr.Backend != "trained-physics" {
-		t.Errorf("backend: got %q, want trained-physics", lr.Backend)
-	}
+	runFatalSubprocess(t, "TestResolveLatencyConfig_DenseEP_Rejected", "dense-ep", "vLLM fatally rejects")
 }
 
 // TestRunReplay_DPEPFlags_BothRegistered verifies INV-13 parity at the flag
