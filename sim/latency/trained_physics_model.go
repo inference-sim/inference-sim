@@ -220,6 +220,9 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 		if m.numMoELayers > 0 {
 			pfLoad := m.placement.Resolve(totalPrefillTokens, kEff, m.numExperts, m.moeGroup, m.dp)
 			flopsFfn += float64(m.numMoELayers) * pfLoad.PerGPUComputeTokens * 6 * d * float64(m.dFFMoE)
+			// Shared-expert compute (B3): runs for EVERY token (not the routed kEff
+			// subset), on each MoE layer, TP+DP-sharded like a dense FFN.
+			flopsFfn += m.sharedExpertCompute(totalPrefillTokens, d, tpdp)
 		}
 		if m.numDenseLayers > 0 {
 			flopsFfn += float64(m.numDenseLayers) * totalPrefillTokens * 1 * 6 * d * float64(m.dFFDense) / tpdp
@@ -248,6 +251,7 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 		if m.numMoELayers > 0 {
 			dcLoad := m.placement.Resolve(totalDecodeTokens, kEff, m.numExperts, m.moeGroup, m.dp)
 			flopsFfn += float64(m.numMoELayers) * dcLoad.PerGPUComputeTokens * 6 * d * float64(m.dFFMoE)
+			flopsFfn += m.sharedExpertCompute(totalDecodeTokens, d, tpdp) // B3
 		}
 		if m.numDenseLayers > 0 {
 			flopsFfn += float64(m.numDenseLayers) * totalDecodeTokens * 1 * 6 * d * float64(m.dFFDense) / tpdp
@@ -282,6 +286,11 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	if m.numMoELayers > 0 {
 		wLoad := m.placement.Resolve(totalPrefillTokens+totalDecodeTokens, kEff, m.numExperts, m.moeGroup, m.dp)
 		bytesFfn += float64(m.numMoELayers) * wLoad.PerGPUExpertCount * 3 * d * float64(m.dFFMoE) * bpp
+		// Shared-expert weight (B3): a standard MLP sharded over the attention TP group
+		// (size tp, NOT the flattened MoE group), loaded once per MoE layer.
+		if m.sharedExpertFFNDim > 0 {
+			bytesFfn += float64(m.numMoELayers) * 3 * d * float64(m.sharedExpertFFNDim) * bpp / tp
+		}
 	}
 	if m.numDenseLayers > 0 {
 		bytesFfn += float64(m.numDenseLayers) * 1 * 3 * d * float64(m.dFFDense) * bpp / tp
@@ -333,6 +342,15 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 		tMoEReduce = m.tpAllReduceBasis(float64(m.numMoELayers), totalTokens)
 	}
 
+	// tMoEDispatch (B2, #1419): MoE dispatch/combine all-to-all, charged under β_EP
+	// (Beta[10]) whenever DP>1. The per-rank byte volume depends on the comm backend
+	// family (see moeDispatchBasis) — all-gather backends move dense hidden states
+	// (no top_k), modular all-to-all backends move top_k-routed tokens.
+	var tMoEDispatch float64
+	if m.isMoE && m.dp > 1 {
+		tMoEDispatch = m.moeDispatchBasis(totalTokens, kEff) * float64(m.numMoELayers)
+	}
+
 	// ─── Step-time formula ─────────────────────────────────────────────
 	//
 	// Prefill term: β₁·max(compute, kv) when 8 betas,
@@ -372,12 +390,58 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 		decodeTerm +
 		m.Beta[2]*tWeight +
 		m.Beta[3]*(tTpAttention+tTpDenseFFN+tMoEReduce) +
+		m.Beta[10]*tMoEDispatch + // β_EP: MoE dispatch/combine all-to-all (DP>1)
 		m.Beta[4]*L +
 		m.Beta[5]*batchSize +
 		m.Beta[6] +
 		m.Beta[7]*moeScaling*float64(m.numMoELayers) // β₈: per-MoE-layer overhead (interleaved archs only)
 
 	return max(1, clampToInt64(stepTime))
+}
+
+// sharedExpertCompute returns the shared-expert FFN compute basis (raw FLOPs) for
+// the given token population (B3, #1419). Shared experts run for EVERY token on
+// every MoE layer (DeepSeek/Qwen-style), structured as a dense FFN of dimension
+// sharedExpertFFNDim, sharded over the TP·DP group like other token-population
+// compute. Returns 0 when sharedExpertFFNDim == 0 (no shared experts — e.g.
+// Mixtral, and Llama-4 Scout until the distill-model-config parser maps its
+// intermediate_size_mlp; a documented no-op).
+func (m *TrainedPhysicsModel) sharedExpertCompute(tokens, d, tpdp float64) float64 {
+	if m.sharedExpertFFNDim == 0 {
+		return 0
+	}
+	return float64(m.numMoELayers) * tokens * 6 * d * float64(m.sharedExpertFFNDim) / tpdp
+}
+
+// moeDispatchBasis returns the per-step MoE dispatch/combine communication basis
+// (raw µs before β_EP) for a single MoE layer, selected by the comm-backend family
+// (B2, #1419). Verified against vllm@f6ec81c7:
+//
+//   - all-gather family (naive, allgather_reducescatter): dispatch all-gathers /
+//     combine reduce-scatters the dense per-token hidden states across the DP group.
+//     Volume ∝ tokens·hidden, with NO top_k factor:
+//     (globalTokens/dp)·(moeGroup-1)/moeGroup·2·hidden·bpp / bwHbmUs.
+//   - modular all-to-all family (pplx, deepep_*, mori, flashinfer): each token is
+//     routed to its top_k expert-owning ranks, so the volume carries kEff. This is
+//     exactly PerGPUCommTokens from ExpertPlacement (which already folds in the
+//     per-source-rank top_k and the (moeGroup-1)/moeGroup·2 dispatch+combine factor):
+//     PerGPUCommTokens·hidden·bpp / bwHbmUs. Do NOT re-multiply by kEff.
+//
+// Both families share the β_EP coefficient: NCCL's bus-bandwidth model gives
+// all-gather/reduce-scatter and all-to-all the same (n-1)/n per-phase NVLink
+// efficiency (ring all-reduce, which β_EP defaults to β₄ from, IS reduce-scatter+
+// all-gather), so only the volume basis differs between families.
+func (m *TrainedPhysicsModel) moeDispatchBasis(globalTokens, kEff float64) float64 {
+	hidden := float64(m.hiddenDim)
+	group := float64(m.moeGroup)
+	dpf := float64(m.dp)
+	switch m.commFamily {
+	case commFamilyAll2All:
+		load := m.placement.Resolve(globalTokens, kEff, m.numExperts, m.moeGroup, m.dp)
+		return load.PerGPUCommTokens * hidden * m.weightBPP / m.bwHbmUs
+	default: // commFamilyAllGather: dense hidden-state volume, no top_k
+		return (globalTokens / dpf) * (group - 1) / group * 2 * hidden * m.weightBPP / m.bwHbmUs
+	}
 }
 
 // tpAllReduceBasis is the ring-all-reduce communication basis V(units, tokens):

@@ -118,6 +118,94 @@ func TestMoEDispatch_EPIndependentVolume(t *testing.T) {
 	}
 }
 
+// TestMoEDispatchBasis_PerFamilyVolume pins the two comm-family dispatch volume
+// FORMULAS exactly (not an inequality), at (TP=2, DP=2) so moeGroup=4, dp=2 (#1419).
+// This is the accuracy contract: all-gather moves dense hidden states (no top_k);
+// modular all-to-all moves top_k-routed tokens (carries kEff).
+func TestMoEDispatchBasis_PerFamilyVolume(t *testing.T) {
+	mc := dpepMoEModelConfig() // hidden=4096, kEff=2, bpp=2
+	const tp, dp = 2, 2
+	moeGroup := float64(tp * dp) // 4
+	hidden, bpp := 4096.0, 2.0
+	kEff := 2.0
+	globalTokens := 100.0
+	bwHbmUs := dpepTestHW().BwPeakTBs * 1e6
+
+	// All-gather family: (globalTokens/dp)·(moeGroup-1)/moeGroup·2·hidden·bpp / bwHbmUs.
+	mAG := newDPEPModel(t, mc, tp, dp, false, "allgather_reducescatter")
+	wantAG := (globalTokens / dp) * (moeGroup - 1) / moeGroup * 2 * hidden * bpp / bwHbmUs
+	assert.InDelta(t, wantAG, mAG.moeDispatchBasis(globalTokens, kEff), 1e-6,
+		"all-gather dispatch basis must be dense-hidden volume with NO kEff factor")
+
+	// Modular all-to-all family: PerGPUCommTokens·hidden·bpp / bwHbmUs, where
+	// PerGPUCommTokens = (globalTokens/dp)·kEff·(moeGroup-1)/moeGroup·2 (carries kEff).
+	mA2A := newDPEPModel(t, mc, tp, dp, true, "deepep_low_latency")
+	perGPUComm := (globalTokens / dp) * kEff * (moeGroup - 1) / moeGroup * 2
+	wantA2A := perGPUComm * hidden * bpp / bwHbmUs
+	assert.InDelta(t, wantA2A, mA2A.moeDispatchBasis(globalTokens, kEff), 1e-6,
+		"all2all dispatch basis must carry the top_k (kEff) factor via PerGPUCommTokens")
+
+	// Law: the two families differ by exactly the kEff factor (here ×2).
+	assert.InDelta(t, kEff, wantA2A/wantAG, 1e-9,
+		"all2all/all-gather dispatch volume ratio must equal kEff")
+}
+
+// TestSharedExpert_PresentVsAbsent verifies the B3 shared-expert term (#1419): a
+// config WITH a shared-expert FFN dim must cost strictly more than an identical
+// config without one (the shared expert runs for every token on every MoE layer),
+// while a config without it is unchanged. Mixtral-style (no shared expert) is the
+// absent case; a DeepSeek-style shared dim is the present case.
+func TestSharedExpert_PresentVsAbsent(t *testing.T) {
+	batch := dpepMixedBatch()
+
+	absent := dpepMoEModelConfig() // SharedExpertFFNDim == 0
+	present := dpepMoEModelConfig()
+	present.SharedExpertFFNDim = 2048
+
+	tAbsent := newDPEPModel(t, absent, 2, 1, false, "").StepTime(batch)
+	tPresent := newDPEPModel(t, present, 2, 1, false, "").StepTime(batch)
+
+	assert.Greater(t, tPresent, tAbsent,
+		"a shared-expert FFN dim must add compute+weight cost (B3): present=%d absent=%d", tPresent, tAbsent)
+}
+
+// TestSharedExpert_ScoutNoOp documents that Llama-4 Scout's shared expert is a no-op
+// in the current model: its config exposes no shared_expert_intermediate_size /
+// n_shared_experts (its real shared dim, intermediate_size_mlp, is not yet mapped —
+// a known parser gap deferred to distill-model-config). A Scout-like interleaved MoE
+// config with SharedExpertFFNDim==0 must therefore charge no shared-expert term, i.e.
+// be identical to the same config regardless of the (zero) shared dim.
+func TestSharedExpert_ScoutNoOp(t *testing.T) {
+	scout := &sim.ModelConfig{
+		NumLayers: 48, HiddenDim: 5120, NumHeads: 40, NumKVHeads: 8,
+		IntermediateDim: 8192, MoEExpertFFNDim: 8192,
+		NumLocalExperts: 16, NumExpertsPerTok: 1,
+		InterleaveMoELayerStep: 1, // Scout-style alternating MoE/dense
+		SharedExpertFFNDim:     0, // documented parser gap → no-op
+		BytesPerParam:          2.0,
+	}
+	m := newDPEPModel(t, scout, 2, 1, false, "")
+	assert.Zero(t, m.sharedExpertCompute(128, float64(scout.HiddenDim), 2),
+		"Scout shared-expert compute must be 0 while SharedExpertFFNDim is unmapped (documented no-op)")
+}
+
+// TestMoEWorkedExample_TP2DP2 encodes the design's fully-worked (TP=2, DP=2) example
+// (proposal §6.5) as exact hand-arithmetic on the ExpertLoad seam, the load-bearing
+// numbers the whole #C refactor rests on. moeGroup = TP·DP = 4, dp = 2.
+func TestMoEWorkedExample_TP2DP2(t *testing.T) {
+	mc := dpepMoEModelConfig() // numExperts=8, kEff=2, dFFMoE=14336, hidden=4096
+	m := newDPEPModel(t, mc, 2, 2, true, "deepep_low_latency")
+	// 100 decode tokens (1 per request).
+	load := m.placement.Resolve(100, 2, 8, m.moeGroup, m.dp)
+
+	// PerGPUExpertCount = numExperts/moeGroup = 8/4 = 2 (vs the OLD buggy nEff/tp = 4).
+	assert.InDelta(t, 2.0, load.PerGPUExpertCount, 1e-9, "B1: 8 experts / moeGroup 4 = 2 per GPU")
+	// PerGPUComputeTokens = globalTokens·kEff/moeGroup = 100·2/4 = 50.
+	assert.InDelta(t, 50.0, load.PerGPUComputeTokens, 1e-9, "100·2/4 = 50 token-expert pairs per GPU")
+	// PerGPUCommTokens = (100/2)·2·(3/4)·2 = 150.
+	assert.InDelta(t, 150.0, load.PerGPUCommTokens, 1e-9, "(100/2)·2·(3/4)·2 = 150")
+}
+
 // TestBetaEP_DefaultsToBeta4 verifies the β_EP (Beta[10]) default wiring (#1419):
 // a caller providing <11 beta coefficients gets β_EP defaulted to β₄ (Beta[3]) — a
 // derived default (both MoE comm families share the NVLink collective efficiency β₄
