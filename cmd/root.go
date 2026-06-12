@@ -697,10 +697,13 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 			dataParallelism, enableExpertParallel, backend)
 	}
 	if dataParallelism > 1 && modelConfig.NumLocalExperts <= 1 {
-		// Dense DP is the router-replica mechanism, not a latency divisor (vLLM
-		// treats non-MoE DP as N independent engines).
+		// Dense DP is the router-replica mechanism, not a latency divisor. vLLM
+		// online serving allows --data-parallel-size > 1 on dense models by
+		// spinning up N independent engines with an internal LB — the BLIS
+		// equivalent is N instances via --num-instances.
 		logrus.Fatalf("--dp > 1 is only supported for MoE models (got --dp=%d for a dense model). "+
-			"Dense data parallelism is expressed via router replicas (--num-instances), not the latency model.",
+			"In vLLM online serving, --data-parallel-size on a dense model creates N independent engines; "+
+			"the BLIS equivalent is --num-instances (router replicas), not --dp.",
 			dataParallelism)
 	}
 	if enableExpertParallel && modelConfig.NumLocalExperts <= 1 {
