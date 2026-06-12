@@ -160,6 +160,11 @@ func NewModelHardwareConfig(modelConfig ModelConfig, hwConfig HardwareCalib,
 // isMoE reports whether the model is a mixture-of-experts model. The threshold
 // (NumLocalExperts > 1) matches the parsing layer (sim/latency/config.go) and
 // ExtractKVCapacityParams: single-expert configs are dense-equivalent.
+//
+// Known divergence from vLLM: vLLM's is_moe uses get_num_experts() > 0, so a
+// hypothetical model with num_local_experts=1 would be MoE in vLLM but dense
+// here. No real production model has num_local_experts=1 in its HF config
+// (the smallest known case is Llama-4 Scout at 16), so this is theoretical.
 func (c ModelHardwareConfig) isMoE() bool {
 	return c.ModelConfig.NumLocalExperts > 1
 }
