@@ -115,6 +115,60 @@ func TestBalancedPlacement_ComputeConservationLaw(t *testing.T) {
 	}
 }
 
+// TestBalancedPlacement_CommConservationLaw is the comm-term companion to the
+// compute conservation law (CLAUDE.md BDD/TDD rule 4): it validates the dp and
+// moeGroupSize scaling of PerGPUCommTokens from first principles rather than
+// re-encoding the golden-table arithmetic.
+//
+// Multiplying the busiest-GPU per-rank comm volume back up by the group size and
+// the dp degree must recover the dp/group-independent total dispatch+combine
+// volume:
+//
+//	PerGPUCommTokens · moeGroupSize · dp == globalTokens · kEff · (moeGroupSize-1) · 2
+//
+// The right-hand side has no dp or 1/moeGroupSize dependence, so this independently
+// pins both the /dp per-rank split and the (group-1)/group all-to-all factor.
+func TestBalancedPlacement_CommConservationLaw(t *testing.T) {
+	cases := []struct {
+		globalTokens float64
+		kEff         float64
+		numExperts   int
+		moeGroupSize int
+		dp           int
+	}{
+		{1000, 2, 8, 4, 2},
+		{512, 4, 16, 1, 1}, // degenerate: both sides collapse to 0
+		{2048, 1, 64, 8, 1},
+		{4000, 2, 128, 8, 4},
+		{333, 3, 7, 5, 5},
+	}
+
+	p := BalancedPlacement{}
+	for _, c := range cases {
+		got := p.Resolve(c.globalTokens, c.kEff, c.numExperts, c.moeGroupSize, c.dp)
+		want := c.globalTokens * c.kEff * float64(c.moeGroupSize-1) * 2
+		assert.InDelta(t, want, got.PerGPUCommTokens*float64(c.moeGroupSize)*float64(c.dp), 1e-6,
+			"dispatch+combine comm volume must be conserved across the MoE group and dp ranks")
+	}
+}
+
+// TestBalancedPlacement_CommUnifiesAllReduceAtDP1 locks in the unified-comm-model
+// property documented on BalancedPlacement: at dp == 1, PerGPUCommTokens equals
+// the TP ring all-reduce volume (moeGroupSize-1)/moeGroupSize · 2 · globalTokens ·
+// kEff. This guards the doc claim that #C can charge a single comm term across
+// both vLLM regimes (DP=1 all-reduce vs DP>1 dispatch/combine) without branching.
+func TestBalancedPlacement_CommUnifiesAllReduceAtDP1(t *testing.T) {
+	p := BalancedPlacement{}
+	for _, group := range []int{1, 2, 4, 8, 16} {
+		const gt, kEff = 2048.0, 2.0
+		got := p.Resolve(gt, kEff, 32, group, 1) // dp == 1
+		g := float64(group)
+		wantAllReduce := (g - 1) / g * 2 * gt * kEff
+		assert.InDelta(t, wantAllReduce, got.PerGPUCommTokens, 1e-6,
+			"at dp=1 comm must equal the TP all-reduce volume (group=%d)", group)
+	}
+}
+
 // TestBalancedPlacement_NonNegativeAndFinite verifies that for any physically
 // meaningful input (group >= 1, dp >= 1, tokens/kEff >= 0) every returned load
 // is non-negative and finite — guarding against a sign error or a divide-by-zero

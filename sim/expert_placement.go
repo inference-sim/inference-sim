@@ -59,6 +59,14 @@ type ExpertLoad struct {
 // factor is the standard dispatch+combine all-to-all volume over the flattened
 // group: a GPU sends to the other moeGroupSize-1 members on dispatch and receives
 // back on combine.
+//
+// This single expression is a unified comm model across vLLM's two MoE-FFN comm
+// regimes, not just the DP>1 dispatch/combine path: at dp == 1 it reduces to
+// (moeGroupSize-1)/moeGroupSize · 2 · globalTokens · kEff, which is exactly the
+// ring all-reduce volume vLLM pays over the TP group when DP==1 (the two
+// expressions are numerically identical). So PerGPUCommTokens is physically
+// accurate for all dp, and #C can charge it unconditionally without branching on
+// the comm regime.
 type BalancedPlacement struct{}
 
 // Resolve computes the balanced per-GPU MoE load. moeGroupSize and dp are assumed
