@@ -21,6 +21,48 @@ func dpepMixedBatch() []*sim.Request {
 	return append(makePrefillBatch(3, 128), makeDecodeBatch(5, 256)...)
 }
 
+// TestBetaEP_DefaultsToBeta4 verifies the β_EP (Beta[10]) default wiring (#1419):
+// a caller providing <11 beta coefficients gets β_EP defaulted to β₄ (Beta[3]) — a
+// derived default (both MoE comm families share the NVLink collective efficiency β₄
+// encodes; the volume difference lives in the dispatch basis). A passive zero-fill
+// would instead silently disable MoE dispatch comm. An explicit 11th coeff overrides.
+func TestBetaEP_DefaultsToBeta4(t *testing.T) {
+	mc := trainedPhysicsTestModelConfig()
+	hw := dpepTestHW()
+	mhw := sim.NewModelHardwareConfig(*mc, hw, "m", "H100", 1, 1, false, "", "trained-physics", 0)
+
+	// 10-coeff caller: β_EP must default to β₄.
+	c10 := &sim.LatencyCoeffs{
+		AlphaCoeffs: []float64{15563.199579, 777.3455, 45.907545},
+		BetaCoeffs:  []float64{0.152128, 0.0, 1.36252915, 0.752037, 32.09546717, 4.41684444, 126.024825, 481.8613888, 0.0, 1.94710771},
+	}
+	m10, err := NewTrainedPhysicsModel(*c10, mhw)
+	require.NoError(t, err)
+	require.Len(t, m10.Beta, 11, "Beta slice must grow to 11 for β_EP")
+	assert.Equal(t, m10.Beta[3], m10.Beta[10], "β_EP must default to β₄ when not provided")
+
+	// 11-coeff caller: β_EP must be the provided value (not β₄).
+	c11 := &sim.LatencyCoeffs{
+		AlphaCoeffs: c10.AlphaCoeffs,
+		BetaCoeffs:  append(append([]float64{}, c10.BetaCoeffs...), 0.9999),
+	}
+	m11, err := NewTrainedPhysicsModel(*c11, mhw)
+	require.NoError(t, err)
+	assert.InDelta(t, 0.9999, m11.Beta[10], 1e-12, "explicit β_EP must override the β₄ default")
+	assert.NotEqual(t, m11.Beta[3], m11.Beta[10], "provided β_EP differs from β₄ here")
+}
+
+// TestNewTrainedPhysicsModel_RejectsUnknownCommBackend verifies the constructor
+// surfaces an unknown --moe-comm-backend as an error (R1), not a silent fallback.
+func TestNewTrainedPhysicsModel_RejectsUnknownCommBackend(t *testing.T) {
+	mc := trainedPhysicsTestModelConfig()
+	hw := dpepTestHW()
+	mhw := sim.NewModelHardwareConfig(*mc, hw, "m", "H100", 1, 1, false, "not-a-backend", "trained-physics", 0)
+	_, err := NewTrainedPhysicsModel(*testCoeffs(), mhw)
+	require.Error(t, err, "unknown MoE comm backend must be rejected")
+	assert.Contains(t, err.Error(), "not-a-backend")
+}
+
 // TestINVBCDP1_DenseStepTimeByteIdentical is the INV BC-DP1 golden (issue #1419):
 // for a DENSE model at DP=1 (EP off), the #C refactor must be byte-identical to the
 // pre-#C step time across the TP matrix. The TP-comm split (monolithic tTp →

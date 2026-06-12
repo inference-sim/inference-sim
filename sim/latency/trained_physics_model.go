@@ -138,6 +138,14 @@ type TrainedPhysicsModel struct {
 	tp                int     // Tensor parallelism degree
 	weightBPP         float64 // EffectiveWeightBytesPerParam (FP8-aware)
 
+	// DP/EP features (#1419), frozen at construction.
+	dp                 int               // Data parallelism degree (>= 1)
+	moeGroup           int               // Flattened MoE group = TP·DP for MoE, TP for dense (EffectiveMoEGroupSize)
+	ep                 int               // EP group size: TP·DP when EP enabled on MoE, else 1 (EffectiveEP)
+	sharedExpertFFNDim int               // Shared-expert FFN dim; 0 = no shared experts (B3 gate)
+	commFamily         moeCommFamily     // MoE dispatch/combine volume family (resolved from MoECommBackend)
+	placement          sim.ExpertPlacement // Maps routed-token population → per-GPU MoE load (default BalancedPlacement)
+
 	// Pre-converted hardware specs for hot-path efficiency.
 	flopsPeakUs float64 // FLOP/µs (divide FLOPs by this → µs)
 	bwHbmUs     float64 // bytes/µs (divide bytes by this → µs)
@@ -387,9 +395,34 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 		return nil, fmt.Errorf("trained-physics model: BetaCoeffs requires at least 7 elements, got %d (expected β₁-β₇, optionally β₈)", len(coeffs.BetaCoeffs))
 	}
 
-	// Backward compatible: 7→β₈=0, 8→no prefill split, 9→prefill split active
-	betaSlice := make([]float64, 10)
-	copy(betaSlice, coeffs.BetaCoeffs[:min(10, len(coeffs.BetaCoeffs))])
+	// Backward compatible: 7→β₈=0, 8→no prefill split, 9→prefill split active,
+	// 10→decode split active, 11→β_EP (MoE dispatch/combine comm) provided.
+	//
+	// β_EP (Beta[10], #1419) defaults to β₄ (Beta[3]) when not explicitly provided.
+	// This is a derived default, not a placeholder: both MoE comm families run over the
+	// same NVLink fabric β₄ calibrates, and NCCL's bus-bandwidth model gives all-gather/
+	// reduce-scatter and all-to-all the same (n-1)/n per-phase efficiency as the ring
+	// all-reduce β₄ corrects (ring all-reduce IS reduce-scatter+all-gather). The volume
+	// difference between comm families lives in the dispatch BASIS, not this coefficient,
+	// so β_EP = β₄ for both families. A passive zero-fill would instead silently disable
+	// MoE dispatch comm. An explicit 11th coefficient overrides.
+	betaSlice := make([]float64, 11)
+	copy(betaSlice, coeffs.BetaCoeffs[:min(11, len(coeffs.BetaCoeffs))])
+	if len(coeffs.BetaCoeffs) < 11 {
+		betaSlice[10] = betaSlice[3] // β_EP defaults to β₄
+	}
+
+	// Resolve the MoE comm backend to its volume family. Empty string → vLLM default
+	// (allgather_reducescatter). An unknown name is a hard error (R1) — a typo'd CLI
+	// flag must surface, not silently fall back to a default volume model.
+	commBackend := hw.MoECommBackend
+	if commBackend == "" {
+		commBackend = DefaultMoECommBackend
+	}
+	commFamily, err := moeCommFamilyFor(commBackend)
+	if err != nil {
+		return nil, fmt.Errorf("trained-physics model: %w", err)
+	}
 
 	// Validate hardware config
 	if hw.TP <= 0 {
@@ -489,6 +522,12 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 		isMoE:             hw.ModelConfig.IsMoE(),
 		tp:                hw.TP,
 		weightBPP:         weightBPP,
+		dp:                hw.EffectiveDP(),
+		moeGroup:          hw.EffectiveMoEGroupSize(),
+		ep:                hw.EffectiveEP(),
+		sharedExpertFFNDim: hw.ModelConfig.SharedExpertFFNDim,
+		commFamily:        commFamily,
+		placement:         sim.BalancedPlacement{},
 		flopsPeakUs:       peakFlops,
 		bwHbmUs:           hw.HWConfig.BwPeakTBs * 1e6,
 	}, nil
