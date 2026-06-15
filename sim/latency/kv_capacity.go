@@ -127,19 +127,32 @@ func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
 //   - mc: model architecture (layers, heads, dims, precision)
 //   - hc: GPU hardware calibration (must include MemoryGiB)
 //   - tp: tensor parallelism degree (must be > 0)
+//   - dp: data parallelism degree (must be > 0). For an MoE model with dp > 1 the
+//     aggregate usable KV-block count scales by dp: each DP rank is a separate vLLM
+//     EngineCore with its own full KV budget on its own GPUs, and requests split
+//     disjointly across ranks (vllm@f6ec81c7 v1/engine/core.py:1243-1276). Per-GPU KV
+//     bytes are unaffected (sized by attention TP only), so dp multiplies only the
+//     final block total. KV capacity is EP-mode-independent — EP shards only MoE
+//     experts, never attention/KV — so there is intentionally no EP parameter. Dense
+//     dp > 1 is rejected upstream (#A) and never reaches here; the isMoE gate below is
+//     the final guard. Callers on the roofline backend pass dp = 1 (roofline is
+//     DP-blind for step time; #A rejects --dp > 1 there).
 //   - blockSize: tokens per KV cache block (must be > 0)
 //   - gpuMemoryUtilization: fraction of GPU HBM available for KV cache (must be in (0, 1.0])
 //   - params: MoE indicators, activation type, embedding tying
 //
 // Returns the number of blocks, or an error if inputs are invalid or memory
 // budget is insufficient.
-func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSize int64, gpuMemoryUtilization float64, params KVCapacityParams) (int64, error) {
+func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, dp int, blockSize int64, gpuMemoryUtilization float64, params KVCapacityParams) (int64, error) {
 	// --- Input validation (R3, R11) ---
 	if gpuMemoryUtilization <= 0 || gpuMemoryUtilization > 1.0 || math.IsNaN(gpuMemoryUtilization) || math.IsInf(gpuMemoryUtilization, 0) {
 		return 0, fmt.Errorf("CalculateKVBlocks: gpuMemoryUtilization must be in (0, 1.0], got %v", gpuMemoryUtilization)
 	}
 	if blockSize <= 0 {
 		return 0, fmt.Errorf("CalculateKVBlocks: block size must be > 0, got %d", blockSize)
+	}
+	if dp < 1 {
+		return 0, fmt.Errorf("CalculateKVBlocks: dp must be >= 1, got %d", dp)
 	}
 	if mc.IntermediateDim <= 0 {
 		return 0, fmt.Errorf("CalculateKVBlocks: intermediate_dim must be > 0, got %d", mc.IntermediateDim)
@@ -188,7 +201,9 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSi
 	modelWeightBytes := computeModelWeightBytes(mc, params)
 	modelWeightGiB := float64(modelWeightBytes) / float64(gibToBytes)
 
-	// Activation memory: per-replica constant (dp=1 in BLIS), NOT multiplied by TP
+	// Activation memory: per-replica constant, NOT multiplied by TP. This budget is
+	// computed per DP rank; dp scaling (#1420) applies only to the final block count,
+	// not to per-rank overhead (each rank has its own GPUs with this same overhead).
 	var activationGiB float64
 	if params.IsMoE {
 		activationGiB = activationMemoryMoEGiB
@@ -236,12 +251,22 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, blockSi
 	allocatableGiB := totalAvailableGiB - overheadGiB
 	allocatableBytes := int64(allocatableGiB * float64(gibToBytes))
 
-	// --- Step 5: Total blocks ---
+	// --- Step 5: Total blocks (per DP rank) ---
 	totalBlocks := allocatableBytes / perBlockBytes
 	if totalBlocks <= 0 {
 		return 0, fmt.Errorf(
 			"CalculateKVBlocks: computed 0 blocks (allocatable=%.2f GiB, per_block=%d bytes)",
 			allocatableGiB, perBlockBytes)
+	}
+
+	// --- Step 6: DP scaling (#1420) ---
+	// All sizing above is per DP rank (one EngineCore on its own TP GPUs). For an MoE
+	// model with dp > 1, vLLM runs dp independent EngineCores each with this full KV
+	// budget and splits requests disjointly across them, so the aggregate usable block
+	// count scales by dp. Gate on IsMoE: dense dp > 1 is rejected upstream (#A) and the
+	// roofline backend passes dp = 1, so this is the final guard, not the enforcement.
+	if params.IsMoE && dp > 1 {
+		totalBlocks *= int64(dp)
 	}
 
 	return totalBlocks, nil
