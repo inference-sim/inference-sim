@@ -133,7 +133,7 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 			// ── Build trained-physics latency model with iter29 coefficients ─
 			// Note: NewLatencyCoeffs(betaCoeffs, alphaCoeffs) — order matters.
 			coeffs := sim.NewLatencyCoeffs(ds.BetaCoeffs, ds.AlphaCoeffs)
-			hwCfg := sim.NewModelHardwareConfig(*mc, hc, exp.Model, exp.Hardware, exp.TP, 1, false, ds.Backend, 0)
+			hwCfg := sim.NewModelHardwareConfig(*mc, hc, exp.Model, exp.Hardware, exp.TP, 1, false, "", ds.Backend, 0)
 
 			// Validate that the backend is accepted; fail fast with a clear error.
 			if _, err := latency.NewLatencyModel(coeffs, hwCfg); err != nil {

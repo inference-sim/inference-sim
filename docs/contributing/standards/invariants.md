@@ -183,6 +183,20 @@ Invariants are properties that must hold at all times during and after simulatio
 
 ---
 
+## INV-BC-DP1: Dense DP=1 Step-Time Byte-Identity
+
+**Statement:** For a **dense** model (`NumLocalExperts < MoEMinExperts`) at `DP=1` with expert parallelism off, the `trained-physics` `StepTime` MUST be byte-identical to the pre-#1419 value across the full TP matrix. The DP/EP refactor (#1419) splits the monolithic TP all-reduce term into per-class terms (`tTpAttention + tTpDenseFFN [+ tMoEReduce]`) and routes MoE expert cost through `sim.ExpertPlacement`; for dense `DP=1` this is value-preserving: `tTpAttention + tTpDenseFFN = V(numLayers, tp) + V(numDenseLayers, tp) = V(2·numLayers, tp)` (since `numDenseLayers == numLayers`, `numMoELayers == 0`), exactly the old `allReduceUnits = 2·numDenseLayers + numMoELayers` term, and every `/(tp·dp)` divisor reduces to `/tp` at `dp=1`.
+
+MoE-model step time **intentionally changes** at `DP=1`/EP-off (B1 routed-expert weight scoping + the newly-charged `tMoEReduce`); that is a deliberate fidelity gain, not a parity regression.
+
+**Verification:** `sim/latency/trained_physics_dpep_test.go` — `TestINVBCDP1_DenseStepTimeByteIdentical` (golden across TP∈{1,2,4,8}) with companion `TestINVBCDP1_DenseDP1Determinism` (dense step time is invariant to the EP flag and the MoE comm backend, and deterministic across calls).
+
+**Evidence:** Dense experiments in the trained-physics golden dataset (`testdata/trained_physics_iter29.json`) are unchanged across the #1419 refactor; only the four Llama-4 Scout (MoE) experiments shift.
+
+**Hypothesis family:** Latency-model invariants (correctness/conservation).
+
+---
+
 ## PD Disaggregation Invariants
 
 ### INV-PD-1: KV Completeness

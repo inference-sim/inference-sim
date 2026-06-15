@@ -43,7 +43,7 @@ func TestNewLatencyCoeffs_FieldEquivalence(t *testing.T) {
 func TestNewModelHardwareConfig_FieldEquivalence(t *testing.T) {
 	mc := ModelConfig{NumLayers: 32}
 	hw := HardwareCalib{TFlopsPeak: 1000.0, MemoryGiB: 80.0}
-	got := NewModelHardwareConfig(mc, hw, "llama", "H100", 2, 1, false, "roofline", 8192)
+	got := NewModelHardwareConfig(mc, hw, "llama", "H100", 2, 1, false, "", "roofline", 8192)
 	want := ModelHardwareConfig{
 		ModelConfig:          mc,
 		HWConfig:             hw,
@@ -99,7 +99,7 @@ func TestModelHardwareConfig_ParallelismHelpers(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			c := NewModelHardwareConfig(tc.mc, HardwareCalib{}, "m", "H100", tc.tp, tc.dp, tc.ep, "trained-physics", 0)
+			c := NewModelHardwareConfig(tc.mc, HardwareCalib{}, "m", "H100", tc.tp, tc.dp, tc.ep, "", "trained-physics", 0)
 			assert.Equal(t, tc.wantDP, c.EffectiveDP(), "EffectiveDP")
 			assert.Equal(t, tc.wantMoEGroup, c.EffectiveMoEGroupSize(), "EffectiveMoEGroupSize")
 			assert.Equal(t, tc.wantEP, c.EffectiveEP(), "EffectiveEP")
@@ -155,7 +155,7 @@ func TestNewModelHardwareConfig_DPValidation(t *testing.T) {
 					t.Errorf("panic message %q should contain constructor name", msg)
 				}
 			}()
-			NewModelHardwareConfig(tc.mc, HardwareCalib{}, "m", "H100", 2, tc.dp, false, "trained-physics", 0)
+			NewModelHardwareConfig(tc.mc, HardwareCalib{}, "m", "H100", 2, tc.dp, false, "", "trained-physics", 0)
 		})
 	}
 }
@@ -165,7 +165,7 @@ func TestNewModelHardwareConfig_DPValidation(t *testing.T) {
 func TestNewModelHardwareConfig_MoE_DPAllowed(t *testing.T) {
 	moe := ModelConfig{NumLayers: 32, NumLocalExperts: 8}
 	for _, ep := range []bool{false, true} {
-		c := NewModelHardwareConfig(moe, HardwareCalib{}, "m", "H100", 2, 4, ep, "trained-physics", 0)
+		c := NewModelHardwareConfig(moe, HardwareCalib{}, "m", "H100", 2, 4, ep, "", "trained-physics", 0)
 		assert.Equal(t, 4, c.DP)
 		assert.Equal(t, ep, c.EnableExpertParallel)
 		assert.Equal(t, 8, c.EffectiveMoEGroupSize()) // TP·DP = 2·4
@@ -181,8 +181,8 @@ func TestNewModelHardwareConfig_MoE_DPAllowed(t *testing.T) {
 func TestEffectiveMoEGroupSize_EPModeIndependent(t *testing.T) {
 	moe := ModelConfig{NumLayers: 32, NumLocalExperts: 8}
 	for _, tc := range []struct{ tp, dp int }{{2, 2}, {4, 2}, {1, 4}, {2, 1}} {
-		off := NewModelHardwareConfig(moe, HardwareCalib{}, "m", "H100", tc.tp, tc.dp, false, "trained-physics", 0)
-		on := NewModelHardwareConfig(moe, HardwareCalib{}, "m", "H100", tc.tp, tc.dp, true, "trained-physics", 0)
+		off := NewModelHardwareConfig(moe, HardwareCalib{}, "m", "H100", tc.tp, tc.dp, false, "", "trained-physics", 0)
+		on := NewModelHardwareConfig(moe, HardwareCalib{}, "m", "H100", tc.tp, tc.dp, true, "", "trained-physics", 0)
 		assert.Equalf(t, off.EffectiveMoEGroupSize(), on.EffectiveMoEGroupSize(),
 			"flattened MoE group must be EP-mode-independent at TP=%d,DP=%d", tc.tp, tc.dp)
 		// And when EP is on, EP equals that same group.

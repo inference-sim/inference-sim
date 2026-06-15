@@ -87,6 +87,7 @@ var (
 	tensorParallelism    int    // TP value
 	dataParallelism      int    // DP value (MoE only; trained-physics backend only)
 	enableExpertParallel bool   // EP mode (MoE only; trained-physics backend only)
+	moeCommBackend       string // MoE all-to-all comm backend (MoE only; trained-physics backend only)
 
 	// cluster config
 	numInstances int // Number of instances in the cluster
@@ -714,6 +715,31 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 		logrus.Fatalf("--enable-expert-parallel requires a MoE model (got dense model %q with no experts); "+
 			"vLLM fatally rejects this configuration.", model)
 	}
+	// --moe-comm-backend selects the MoE dispatch/combine cost model (trained-physics
+	// only, DP>1). Validate the name and reject non-default values on other backends so
+	// the flag never silently no-ops. Empty string defers to the model factory's default.
+	if moeCommBackend != "" {
+		if !latency.IsValidMoECommBackend(moeCommBackend) {
+			logrus.Fatalf("--moe-comm-backend %q is not a recognized vLLM MoE all-to-all backend (valid: %s).",
+				moeCommBackend, strings.Join(latency.ValidMoECommBackends, ", "))
+		}
+		if backend != "trained-physics" {
+			logrus.Fatalf("--moe-comm-backend requires --latency-model trained-physics "+
+				"(got --moe-comm-backend=%s, --latency-model=%s). The roofline backend does not model "+
+				"MoE communication.", moeCommBackend, backend)
+		}
+		// The flag is harmless but inert unless the MoE dispatch/combine term is actually
+		// charged (isMoE && DP>1). Warn (not fatal) on the no-op cases so a user does not
+		// believe a backend choice is affecting a run where it cannot.
+		if !modelConfig.IsMoE() {
+			logrus.Warnf("--moe-comm-backend=%s has no effect on a dense model; "+
+				"MoE dispatch/combine comm is only charged for MoE models.", moeCommBackend)
+		} else if dataParallelism <= 1 {
+			logrus.Warnf("--moe-comm-backend=%s has no effect at --dp=%d; "+
+				"MoE dispatch/combine comm is only charged when DP > 1 (at DP=1 the MoE FFN "+
+				"all-reduces over the TP group instead).", moeCommBackend, dataParallelism)
+		}
+	}
 
 	return latencyResolution{
 		Backend:     backend,
@@ -1028,6 +1054,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&tensorParallelism, "tp", 0, "Tensor parallelism")
 	cmd.Flags().IntVar(&dataParallelism, "dp", 1, "Data parallelism degree (MoE models only; --latency-model trained-physics only)")
 	cmd.Flags().BoolVar(&enableExpertParallel, "enable-expert-parallel", false, "Enable expert parallelism for MoE models (mirrors vLLM --enable-expert-parallel; --latency-model trained-physics only)")
+	cmd.Flags().StringVar(&moeCommBackend, "moe-comm-backend", "", "MoE all-to-all comm backend for dispatch/combine cost (mirrors vLLM VLLM_ALL2ALL_BACKEND: naive, allgather_reducescatter [default], pplx, deepep_high_throughput, deepep_low_latency, mori, flashinfer_all2allv; MoE + --latency-model trained-physics + --dp > 1)")
 	cmd.Flags().StringVar(&latencyModelBackend, "latency-model", "trained-physics", "Latency model backend: trained-physics (default), roofline")
 	cmd.Flags().Int64Var(&maxModelLen, "max-model-len", 0, "Max total sequence length (input + output); 0 = unlimited. Auto-derived from HF config for analytical backends when not set.")
 
@@ -1667,7 +1694,7 @@ var runCmd = &cobra.Command{
 					kvOffloadThreshold, kvTransferBandwidth, kvTransferBaseLatency),
 				BatchConfig:          sim.NewBatchConfig(maxRunningReqs, maxScheduledTokens, longPrefillTokenThreshold),
 				LatencyCoeffs:        sim.NewLatencyCoeffs(lr.BetaCoeffs, lr.AlphaCoeffs),
-				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dataParallelism, enableExpertParallel, lr.Backend, maxModelLen),
+				ModelHardwareConfig:  sim.NewModelHardwareConfig(lr.ModelConfig, lr.HWConfig, model, gpu, tensorParallelism, dataParallelism, enableExpertParallel, moeCommBackend, lr.Backend, maxModelLen),
 				PolicyConfig:         sim.NewPolicyConfig(scheduler, preemptionPolicy),
 				SLOPriorityOverrides: sloPriorityOverrides,
 			},

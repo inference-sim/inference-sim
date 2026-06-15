@@ -246,6 +246,7 @@ Full details (verification strategies, evidence): see [`docs/contributing/standa
 - **INV-11 Session completeness**: Every session reaches exactly one terminal state: completed, cancelled, horizon-interrupted, or budget-exhausted (concurrency mode: global request cap reached). No session is silently abandoned. See `docs/contributing/standards/invariants.md`.
 - **INV-12 Phase 1 Completeness**: After Phase 1 of `FormBatch`, every non-preempted running request in decode phase has `NumNewTokens > 0`. No request silently skipped due to index drift from non-tail eviction. Trivially satisfied for FCFS. See `docs/contributing/standards/invariants.md`.
 - **INV-13 Run/Replay parity**: For any configuration supported by both `blis run` and `blis replay`, a trace exported via `--trace-output` and replayed with identical flags MUST produce identical per-request metrics. Unsupported replay features (autoscaler, node pools) MUST `logrus.Fatalf` at startup — never silent degradation. See `docs/contributing/standards/invariants.md`.
+- **INV-BC-DP1 Dense DP=1 step-time byte-identity**: For a dense model at `DP=1` (EP off), `trained-physics` `StepTime` MUST be byte-identical to the pre-#1419 value across the TP matrix (the DP/EP term split is value-preserving for dense). MoE step time intentionally changes (B1 expert-weight scoping + newly-charged MoE-FFN reduction) — a deliberate fidelity gain. See `docs/contributing/standards/invariants.md`.
 
 ### Engineering Principles
 

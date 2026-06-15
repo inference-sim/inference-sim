@@ -20,19 +20,16 @@ import (
 //
 // # Step-Time Formula
 //
-// The model supports 8, 9, or 10 beta coefficients for increasing fidelity:
+// The model supports 8 through 11 beta coefficients for increasing fidelity. The
+// 10-beta form (bundled default) plus the optional 11th β_EP is shown below; the 8-
+// and 9-beta forms collapse the prefill/decode compute/memory splits into β₁·max(...)
+// and β₂·max(...) respectively (β_EP still defaults in — see the constructor).
 //
-// 8-beta (default):
-//   T_step = β₁·max(T_pf_compute, T_pf_kv) + β₂·max(T_dc_compute, T_dc_kv)
-//            + β₃·T_weight + β₄·T_tp + β₅·L + β₆·B + β₇ + β₈·nMoE
+// 11-beta (prefill + decode split, MoE DP/EP comm):
 //
-// 9-beta (prefill split):
-//   T_step = β₁ₐ·T_pf_compute + β₁ᵦ·T_pf_kv + β₂·max(T_dc_compute, T_dc_kv)
-//            + β₃·T_weight + β₄·T_tp + β₅·L + β₆·B + β₇ + β₈·nMoE
-//
-// 10-beta (prefill + decode split):
-//   T_step = β₁ₐ·T_pf_compute + β₁ᵦ·T_pf_kv + β₂ₐ·T_dc_compute + β₂ᵦ·T_dc_kv
-//            + β₃·T_weight + β₄·T_tp + β₅·L + β₆·B + β₇ + β₈·nMoE
+//	T_step = β₁ₐ·T_pf_compute + β₁ᵦ·T_pf_kv + β₂ₐ·T_dc_compute + β₂ᵦ·T_dc_kv
+//	         + β₃·T_weight + β₄·(T_tp_attn + T_tp_denseFFN + T_moe_reduce)
+//	         + β_EP·T_moe_dispatch + β₅·L + β₆·B + β₇ + β₈·nMoE
 //
 // Where:
 //   - T_pf_compute: Prefill compute time (FlashAttention FLOPs + MLP FLOPs)
@@ -40,7 +37,10 @@ import (
 //   - T_dc_compute: Decode compute time (single-token attention + MLP)
 //   - T_dc_kv: Decode KV cache read bandwidth (past tokens)
 //   - T_weight: Model weight loading bandwidth (per-step fixed cost)
-//   - T_tp: Tensor-parallel All-Reduce communication time
+//   - T_tp_attn, T_tp_denseFFN: attention / dense-FFN tensor-parallel all-reduce
+//     (the pre-#1419 monolithic T_tp, split so DP scales each by /dp)
+//   - T_moe_reduce: MoE-FFN all-reduce, charged only at DP=1, TP>1 (#1419)
+//   - T_moe_dispatch: MoE dispatch/combine all-to-all, charged only at DP>1 (#1419)
 //   - L: Number of transformer layers
 //   - B: Batch size (number of requests)
 //   - nMoE: Number of MoE layers (0 for dense models)
@@ -48,74 +48,87 @@ import (
 // # Beta Coefficients (Roofline Corrections + Overheads)
 //
 // β₁ (or β₁ₐ): Prefill compute correction (dimensionless, ~1.0)
-//   Corrects analytical FlashAttention + MLP FLOP estimates. Accounts for kernel
-//   efficiency, memory access patterns, and instruction-level parallelism.
+//
+//	Corrects analytical FlashAttention + MLP FLOP estimates. Accounts for kernel
+//	efficiency, memory access patterns, and instruction-level parallelism.
 //
 // β₁ᵦ (β₉): Prefill memory correction (dimensionless, ~0.0 when compute-bound)
-//   Corrects KV cache write bandwidth. Typically zero since prefill is compute-bound.
+//
+//	Corrects KV cache write bandwidth. Typically zero since prefill is compute-bound.
 //
 // β₂ (or β₂ₐ): Decode compute correction (dimensionless, ~0.0 when memory-bound)
-//   Corrects single-token attention + MLP FLOPs. Typically zero since decode is
-//   memory-bound (bandwidth-limited by KV cache reads).
+//
+//	Corrects single-token attention + MLP FLOPs. Typically zero since decode is
+//	memory-bound (bandwidth-limited by KV cache reads).
 //
 // β₂ᵦ (β₁₀): Decode memory correction (dimensionless, ~1.0-2.0)
-//   Corrects KV cache read bandwidth. Primary decode bottleneck.
+//
+//	Corrects KV cache read bandwidth. Primary decode bottleneck.
 //
 // β₃: Weight loading correction (dimensionless, ~1.0-1.5)
-//   Corrects model weight bandwidth (loaded once per step). Accounts for cache
-//   effects, prefetching, and HBM contention with KV cache traffic.
+//
+//	Corrects model weight bandwidth (loaded once per step). Accounts for cache
+//	effects, prefetching, and HBM contention with KV cache traffic.
 //
 // β₄: TP All-Reduce correction (dimensionless, ~0.3-0.8)
-//   Corrects tensor-parallel communication overhead. Absorbs NVLink/HBM bandwidth
-//   ratio and collective communication efficiency (ring, tree, etc.).
+//
+//	Corrects tensor-parallel communication overhead. Absorbs NVLink/HBM bandwidth
+//	ratio and collective communication efficiency (ring, tree, etc.).
 //
 // β₅: Per-layer overhead (µs/layer)
-//   Fixed overhead per transformer layer: kernel launch latency, CUDA graph overhead,
-//   residual connections, layer normalization. Typically ~30-60 µs/layer.
+//
+//	Fixed overhead per transformer layer: kernel launch latency, CUDA graph overhead,
+//	residual connections, layer normalization. Typically ~30-60 µs/layer.
 //
 // β₆: Per-request overhead (µs/request)
-//   Scheduling and dispatch overhead per request in batch: queue management, attention
-//   mask construction, token ID lookup. Typically ~3-5 µs/request.
+//
+//	Scheduling and dispatch overhead per request in batch: queue management, attention
+//	mask construction, token ID lookup. Typically ~3-5 µs/request.
 //
 // β₇: Per-step constant overhead (µs/step)
-//   Fixed overhead per step independent of batch/model size: CUDA synchronization,
-//   sampler invocation, logging. Typically ~100-200 µs/step.
+//
+//	Fixed overhead per step independent of batch/model size: CUDA synchronization,
+//	sampler invocation, logging. Typically ~100-200 µs/step.
 //
 // β₈: MoE-layer overhead (µs/MoE-layer, architecture-aware)
-//   Per-MoE-layer overhead: router gating, token permutation, expert-parallel
-//   communication. Applies only to interleaved architectures (InterleaveMoELayerStep > 0).
-//   Zero for uniform MoE (all layers are MoE) and dense models. Typically ~400-500 µs/layer.
+//
+//	Per-MoE-layer overhead: router gating, token permutation, expert-parallel
+//	communication. Applies only to interleaved architectures (InterleaveMoELayerStep > 0).
+//	Zero for uniform MoE (all layers are MoE) and dense models. Typically ~400-500 µs/layer.
 //
 // # Alpha Coefficients (API/Framework Overheads)
 //
 // α₀: QueueingTime (µs)
-//   Fixed per-request API processing: HTTP parsing, request validation, queue
-//   insertion. Independent of model/batch size. Typically ~15,000 µs (15ms).
+//
+//	Fixed per-request API processing: HTTP parsing, request validation, queue
+//	insertion. Independent of model/batch size. Typically ~15,000 µs (15ms).
 //
 // α₁: PostDecodeFixedOverhead (µs)
-//   Fixed per-request post-decode overhead: detokenization setup, finish reason
-//   determination, response serialization. Typically ~777 µs.
+//
+//	Fixed per-request post-decode overhead: detokenization setup, finish reason
+//	determination, response serialization. Typically ~777 µs.
 //
 // α₂: OutputTokenProcessingTime (µs/token)
-//   Per-output-token overhead: streaming token transmission, incremental detokenization.
-//   Typically ~50 µs/token.
+//
+//	Per-output-token overhead: streaming token transmission, incremental detokenization.
+//	Typically ~50 µs/token.
 //
 // # Architecture-Aware Features
 //
-// 1. Interleaved MoE/Dense Layers: Models like Scout alternate MoE and dense layers.
-//    The model splits FLOPs and weight bandwidth calculations by layer type, using
-//    DenseIntermediateDim for dense layers and MoEExpertFFNDim for MoE layers.
-//    β₈ overhead applies only to MoE layers in interleaved architectures.
+//  1. Interleaved MoE/Dense Layers: Models like Scout alternate MoE and dense layers.
+//     The model splits FLOPs and weight bandwidth calculations by layer type, using
+//     DenseIntermediateDim for dense layers and MoEExpertFFNDim for MoE layers.
+//     β₈ overhead applies only to MoE layers in interleaved architectures.
 //
-// 2. Quantization-Aware Weights: Uses EffectiveWeightBytesPerParam for weight
-//    bandwidth (e.g., 1 byte for FP8, 0.5 for W4A16), while KV cache always uses
-//    FP16 (2 bytes). Automatically selects TFlopsFP8 for FP8 models on H100.
+//  2. Quantization-Aware Weights: Uses EffectiveWeightBytesPerParam for weight
+//     bandwidth (e.g., 1 byte for FP8, 0.5 for W4A16), while KV cache always uses
+//     FP16 (2 bytes). Automatically selects TFlopsFP8 for FP8 models on H100.
 //
-// 3. Tensor Parallelism Scaling: All compute and bandwidth terms are divided by TP
-//    degree, while β₄ captures All-Reduce communication overhead explicitly.
+//  3. Tensor Parallelism Scaling: All compute and bandwidth terms are divided by TP
+//     degree, while β₄ captures All-Reduce communication overhead explicitly.
 type TrainedPhysicsModel struct {
 	Alpha [3]float64 // [α₀, α₁, α₂]
-	Beta  []float64  // [β₁..β₁₀] — 7-10 coefficients (7→β₈=0, 8→MoE, 9→pf split, 10→dc split)
+	Beta  []float64  // [β₁..β_EP] — length 11 (7→β₈=0, 8→MoE, 9→pf split, 10→dc split, 11→β_EP; β_EP defaults to β₄)
 
 	// Mode flags.
 	prefillSplit bool // true when ≥9 betas: β₁ₐ·compute + β₁ᵦ·kv instead of β₁·max
@@ -136,7 +149,22 @@ type TrainedPhysicsModel struct {
 	isMoE             bool    // ModelConfig.IsMoE() (NumLocalExperts >= MoEMinExperts)
 	hasInterleavedMoE bool    // InterleaveMoELayerStep > 0 && ModelConfig.IsMoE() (Scout-style alternating MoE/dense)
 	tp                int     // Tensor parallelism degree
-	weightBPP         float64 // EffectiveWeightBytesPerParam (FP8-aware)
+	weightBPP         float64 // EffectiveWeightBytesPerParam (FP8-aware) — weight memory only
+	activationBPP     float64 // BytesPerParam (compute/activation dtype) — hidden-state comm volume
+
+	// DP/EP features (#1419), frozen at construction.
+	//
+	// Note: there is intentionally no `ep` field. Expert parallelism does not enter
+	// the cost model as a separate divisor — routed-expert weight/compute are scoped
+	// to the flattened moeGroup = TP·DP (EP-mode-agnostic: EP-off tensor-shards experts,
+	// EP-on owns whole experts, identical per-GPU bytes), and the dispatch gate is DP>1,
+	// not EP. EnableExpertParallel therefore has no step-time effect today; if a future
+	// per-EP-mode profile is added, read it from the ModelHardwareConfig at that point.
+	dp                 int                 // Data parallelism degree (>= 1)
+	moeGroup           int                 // Flattened MoE group = TP·DP for MoE, TP for dense (EffectiveMoEGroupSize)
+	sharedExpertFFNDim int                 // Shared-expert FFN dim; 0 = no shared experts (B3 gate)
+	commFamily         moeCommFamily       // MoE dispatch/combine volume family (resolved from MoECommBackend)
+	placement          sim.ExpertPlacement // Maps routed-token population → per-GPU MoE load (default BalancedPlacement)
 
 	// Pre-converted hardware specs for hot-path efficiency.
 	flopsPeakUs float64 // FLOP/µs (divide FLOPs by this → µs)
@@ -172,6 +200,21 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	kEff := float64(m.kEff)
 	hPerGPU := float64(m.numHeads) / tp
 
+	// DP scaling (#1419): sequences are split disjointly across DP ranks (each rank is
+	// an independent EngineCore over its own requests — vllm v1/engine/core.py
+	// DPEngineCoreProc; num_tokens_across_dp[dp_rank]), so each rank processes ~1/dp of
+	// the tokens. EVERY token-population term gains a /dp factor: projection compute,
+	// attention compute, dense/shared-FFN compute, and KV read/write. Weight-loading
+	// terms stay /tp (weights are replicated across DP groups).
+	//
+	// Heads are sharded by TP only (not DP) — that is the /tp in hPerGPU. DP's effect is
+	// orthogonal and rides the token-count axis: attention FLOPs scale with the rank's
+	// token slice, so the head-sharded attention FLOPs still divide by dp via their token
+	// factor (applied at the flopsAttn use sites below), exactly like projection and KV.
+	// tpdp = tp·dp is the combined data+tensor divisor for the token-population terms.
+	dpf := float64(m.dp)
+	tpdp := tp * dpf
+
 	for _, req := range batch {
 		if req.ProgressIndex < util.Len64(req.InputTokens) {
 			// Prefill
@@ -192,16 +235,23 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	// Enhancement: split FLOPs between MoE and dense layers for interleaved architectures.
 	var tPfCompute float64
 	if totalPrefillTokens > 0 {
-		flopsProj := L * 2 * totalPrefillTokens * d * (2*d + 2*dKV) / tp
-		flopsAttn := L * prefillAttnFlops
+		flopsProj := L * 2 * totalPrefillTokens * d * (2*d + 2*dKV) / tpdp
+		flopsAttn := L * prefillAttnFlops / dpf // /dp: each rank attends only its token slice
 
-		// MLP FLOPs: split between MoE and dense layers (#877 fix)
+		// MLP FLOPs: split between MoE and dense layers (#877 fix). MoE-FFN compute
+		// is scoped to the busiest GPU's routed token·activation load via ExpertPlacement
+		// (B1, #1419): PerGPUComputeTokens = globalTokens·kEff/moeGroup replaces the old
+		// tokens·kEff/tp. Dense-FFN compute gains /dp like other token-population terms.
 		var flopsFfn float64
 		if m.numMoELayers > 0 {
-			flopsFfn += float64(m.numMoELayers) * totalPrefillTokens * kEff * 6 * d * float64(m.dFFMoE) / tp
+			pfLoad := m.placement.Resolve(totalPrefillTokens, kEff, m.numExperts, m.moeGroup, m.dp)
+			flopsFfn += float64(m.numMoELayers) * pfLoad.PerGPUComputeTokens * 6 * d * float64(m.dFFMoE)
+			// Shared-expert compute (B3): runs for EVERY token (not the routed kEff
+			// subset), on each MoE layer, TP+DP-sharded like a dense FFN.
+			flopsFfn += m.sharedExpertCompute(totalPrefillTokens, d, tpdp)
 		}
 		if m.numDenseLayers > 0 {
-			flopsFfn += float64(m.numDenseLayers) * totalPrefillTokens * 1 * 6 * d * float64(m.dFFDense) / tp
+			flopsFfn += float64(m.numDenseLayers) * totalPrefillTokens * 1 * 6 * d * float64(m.dFFDense) / tpdp
 		}
 
 		tPfCompute = (flopsProj + flopsAttn + flopsFfn) / m.flopsPeakUs
@@ -210,7 +260,7 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	// T_pf_kv: prefill KV cache write bandwidth (µs)
 	var tPfKv float64
 	if totalPrefillTokens > 0 {
-		bytesPfKv := L * 2 * (dKV / tp) * totalPrefillTokens * bytesPerKVElement
+		bytesPfKv := L * 2 * (dKV / tpdp) * totalPrefillTokens * bytesPerKVElement
 		tPfKv = bytesPfKv / m.bwHbmUs
 	}
 
@@ -218,15 +268,19 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	// Enhancement: split FLOPs between MoE and dense layers.
 	var tDcCompute float64
 	if totalDecodeTokens > 0 {
-		flopsProj := L * 2 * totalDecodeTokens * d * (2*d + 2*dKV) / tp
-		flopsAttn := L * 4 * hPerGPU * sumCtx * dH
+		flopsProj := L * 2 * totalDecodeTokens * d * (2*d + 2*dKV) / tpdp
+		flopsAttn := L * 4 * hPerGPU * sumCtx * dH / dpf // /dp: each rank attends only its token slice
 
+		// MoE-FFN compute via ExpertPlacement on the decode population (B1, R-SPLIT:
+		// a separate Resolve call from prefill so the two populations are not conflated).
 		var flopsFfn float64
 		if m.numMoELayers > 0 {
-			flopsFfn += float64(m.numMoELayers) * totalDecodeTokens * kEff * 6 * d * float64(m.dFFMoE) / tp
+			dcLoad := m.placement.Resolve(totalDecodeTokens, kEff, m.numExperts, m.moeGroup, m.dp)
+			flopsFfn += float64(m.numMoELayers) * dcLoad.PerGPUComputeTokens * 6 * d * float64(m.dFFMoE)
+			flopsFfn += m.sharedExpertCompute(totalDecodeTokens, d, tpdp) // B3
 		}
 		if m.numDenseLayers > 0 {
-			flopsFfn += float64(m.numDenseLayers) * totalDecodeTokens * 1 * 6 * d * float64(m.dFFDense) / tp
+			flopsFfn += float64(m.numDenseLayers) * totalDecodeTokens * 1 * 6 * d * float64(m.dFFDense) / tpdp
 		}
 
 		tDcCompute = (flopsProj + flopsAttn + flopsFfn) / m.flopsPeakUs
@@ -235,25 +289,34 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	// T_dc_kv: decode KV cache read+write bandwidth (µs)
 	var tDcKv float64
 	if totalDecodeTokens > 0 {
-		bytesDcKv := L * 2 * (dKV / tp) * bytesPerKVElement * (sumCtx + totalDecodeTokens)
+		bytesDcKv := L * 2 * (dKV / tpdp) * bytesPerKVElement * (sumCtx + totalDecodeTokens)
 		tDcKv = bytesDcKv / m.bwHbmUs
 	}
 
 	// T_weight: weight loading time (µs)
 	// Enhancement: use EffectiveWeightBytesPerParam (FP8-aware) and split MoE/dense.
-	// MoE: nEff = min(N, max(k, B*k)) effective experts per step.
-	nEff := 1.0
-	if m.isMoE {
-		B := totalPrefillTokens + totalDecodeTokens
-		nEff = math.Min(float64(m.numExperts), math.Max(kEff, B*kEff))
-	}
+	//
+	// Routed-expert weight bytes are scoped via ExpertPlacement (B1 fix, #1419):
+	// PerGPUExpertCount = numExperts/moeGroup full-expert-equivalents resident per GPU,
+	// replacing the old batch-dependent nEff = min(N, max(k, B·k))/tp. This matches both
+	// vLLM EP modes (EP-off tensor-shards experts over the flattened TP·DP group; EP-on
+	// owns numExperts/(TP·DP) whole experts) and is applied unconditionally for MoE,
+	// including DP=1/EP-off. It is the saturation-point behaviour the model targets and
+	// INTENTIONALLY changes MoE step-time output versus the old batch-dependent term.
+	// Weight loading is /tp (not /dp): weights are replicated across DP groups.
 	bpp := m.weightBPP
 	bytesAttn := L * d * (2*d + 2*dKV) * bpp / tp
 
-	// MoE and dense layers have different FFN dims and different weight loading
+	// MoE and dense layers have different FFN dims and different weight loading.
 	var bytesFfn float64
 	if m.numMoELayers > 0 {
-		bytesFfn += float64(m.numMoELayers) * nEff * 3 * d * float64(m.dFFMoE) * bpp / tp
+		wLoad := m.placement.Resolve(totalPrefillTokens+totalDecodeTokens, kEff, m.numExperts, m.moeGroup, m.dp)
+		bytesFfn += float64(m.numMoELayers) * wLoad.PerGPUExpertCount * 3 * d * float64(m.dFFMoE) * bpp
+		// Shared-expert weight (B3): a standard MLP sharded over the attention TP group
+		// (size tp, NOT the flattened MoE group), loaded once per MoE layer.
+		if m.sharedExpertFFNDim > 0 {
+			bytesFfn += float64(m.numMoELayers) * 3 * d * float64(m.sharedExpertFFNDim) * bpp / tp
+		}
 	}
 	if m.numDenseLayers > 0 {
 		bytesFfn += float64(m.numDenseLayers) * 1 * 3 * d * float64(m.dFFDense) * bpp / tp
@@ -263,24 +326,56 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	// T_tp: TP All-Reduce communication time (µs)
 	//
 	// Each transformer layer performs All-Reduces over NVLink for the attention
-	// sublayers. Dense layers also All-Reduce their FFN; MoE layers use EP
-	// All-to-All instead (captured by β₈). We count All-Reduce "units" as:
+	// sublayers. Dense layers also All-Reduce their FFN. We count All-Reduce "units":
 	//   dense layer → 2 units (attention + FFN)
-	//   MoE layer   → 1 unit  (attention only; FFN replaced by EP All-to-All)
+	//   MoE layer   → 1 unit  (attention only; MoE-FFN comm handled separately, #1419)
 	//
-	// Volume per unit: totalTokens × hiddenDim × 2 bytes (BF16) × 2 (ring phases)
-	// Denominator: bwHbmUs normalises to µs; β₄ absorbs NVLink/HBM ratio (~0.27 on H100)
+	// The previously-monolithic term is split here into per-class terms so DP and the
+	// MoE comm taxonomy scale each independently (#1419):
+	//   tTpAttention — attention all-reduce, one unit per layer (computed here).
+	//   tTpDenseFFN  — dense-FFN all-reduce, one unit per dense layer (computed here).
+	//   tMoEReduce / tMoEDispatch — MoE-FFN communication, computed just below and
+	//     partitioned on the DP boundary (DP=1 all-reduce vs DP>1 dispatch/combine).
 	//
-	// Generalisation:
-	//   TP=1 → (TP-1)/TP = 0 → tTp = 0 (no communication)
-	//   Dense-only model → numMoELayers=0 → units = 2·numDenseLayers
-	//   Mixtral (all MoE) → numDenseLayers=0 → units = numMoELayers (half of dense equivalent)
-	var tTp float64
+	// tpAllReduceBasis(units, tokens, tp) is the ring-all-reduce basis: units × tokens ×
+	// hidden × activationBPP × 2 (ring phases) × (tp-1)/tp / bwHbmUs. β₄ absorbs the
+	// NVLink/HBM ratio (~0.27 on H100). TP=1 → (tp-1)/tp = 0 → no communication.
+	//
+	// INV BC-DP1: for a dense model, tTpAttention + tTpDenseFFN =
+	// V(numLayers, tp) + V(numDenseLayers, tp) = V(2·numLayers, tp) (numDenseLayers ==
+	// numLayers, numMoELayers == 0) — byte-identical to the pre-#C monolithic term
+	// (allReduceUnits = 2·numDenseLayers + numMoELayers = 2·numLayers).
+	// Attention and dense-FFN all-reduces are scaled by /dp: each DP rank all-reduces
+	// only its local ~totalTokens/dp tokens, and DP groups run in parallel.
+	totalTokens := totalPrefillTokens + totalDecodeTokens
+	var tTpAttention, tTpDenseFFN float64
 	if m.tp > 1 {
-		totalTokens := totalPrefillTokens + totalDecodeTokens
-		allReduceUnits := float64(2*m.numDenseLayers + m.numMoELayers)
-		tpFactor := float64(m.tp-1) / float64(m.tp)
-		tTp = allReduceUnits * totalTokens * float64(m.hiddenDim) * 2.0 * 2.0 * tpFactor / m.bwHbmUs
+		tTpAttention = m.tpAllReduceBasis(float64(m.numLayers), totalTokens) / dpf
+		tTpDenseFFN = m.tpAllReduceBasis(float64(m.numDenseLayers), totalTokens) / dpf
+	}
+
+	// MoE-FFN communication partitions on the DP boundary (vLLM, #1419), so exactly
+	// one of the two terms below fires for an MoE model:
+	//   tMoEReduce (DP==1, TP>1): the MoE FFN all-reduces over the TP group, exactly
+	//     like a dense FFN unit. vLLM reduces over tp_size or ep_size (both = TP here).
+	//     This was previously unmodeled (deferred to β₈, which is 0 for uniform MoE) —
+	//     charging it is a deliberate fidelity gain.
+	//   tMoEDispatch (DP>1): dispatch/combine all-to-all (see below).
+	// Their gates (dp==1 && tp>1) and (dp>1) are mutually exclusive and, together with
+	// the dp==1,tp==1 single-GPU case (no comm), exhaustive — so the MoE-FFN comm is
+	// charged exactly once.
+	var tMoEReduce float64
+	if m.isMoE && m.numMoELayers > 0 && m.dp == 1 && m.tp > 1 {
+		tMoEReduce = m.tpAllReduceBasis(float64(m.numMoELayers), totalTokens)
+	}
+
+	// tMoEDispatch (B2, #1419): MoE dispatch/combine all-to-all, charged under β_EP
+	// (Beta[10]) whenever DP>1. The per-rank byte volume depends on the comm backend
+	// family (see moeDispatchBasis) — all-gather backends move dense hidden states
+	// (no top_k), modular all-to-all backends move top_k-routed tokens.
+	var tMoEDispatch float64
+	if m.isMoE && m.dp > 1 {
+		tMoEDispatch = m.moeDispatchBasis(totalTokens, kEff) * float64(m.numMoELayers)
 	}
 
 	// ─── Step-time formula ─────────────────────────────────────────────
@@ -321,13 +416,91 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	stepTime := prefillTerm +
 		decodeTerm +
 		m.Beta[2]*tWeight +
-		m.Beta[3]*tTp +
+		m.Beta[3]*(tTpAttention+tTpDenseFFN+tMoEReduce) +
+		m.Beta[10]*tMoEDispatch + // β_EP: MoE dispatch/combine all-to-all (DP>1)
 		m.Beta[4]*L +
 		m.Beta[5]*batchSize +
 		m.Beta[6] +
 		m.Beta[7]*moeScaling*float64(m.numMoELayers) // β₈: per-MoE-layer overhead (interleaved archs only)
 
 	return max(1, clampToInt64(stepTime))
+}
+
+// sharedExpertCompute returns the shared-expert FFN compute basis (raw FLOPs) for
+// the given token population (B3, #1419). Shared experts run for EVERY token on
+// every MoE layer (DeepSeek/Qwen-style), structured as a dense FFN of dimension
+// sharedExpertFFNDim, sharded over the TP·DP group like other token-population
+// compute. Returns 0 when sharedExpertFFNDim == 0 (no shared experts — e.g.
+// Mixtral, and Llama-4 Scout until the distill-model-config parser maps its
+// shared-expert dim. NOTE: Scout's shared expert reuses config.intermediate_size
+// (vllm llama4.py:94,105), NOT intermediate_size_mlp — the latter is the dense-layer
+// FFN, already mapped to DenseIntermediateDim. Mapping it is the deferred follow-up.
+func (m *TrainedPhysicsModel) sharedExpertCompute(tokens, d, tpdp float64) float64 {
+	if m.sharedExpertFFNDim == 0 {
+		return 0
+	}
+	return float64(m.numMoELayers) * tokens * 6 * d * float64(m.sharedExpertFFNDim) / tpdp
+}
+
+// moeDispatchBasis returns the per-step MoE dispatch/combine communication basis
+// (raw µs before β_EP) for a single MoE layer, selected by the comm-backend family
+// (B2, #1419). Verified against vllm@f6ec81c7:
+//
+//   - all-gather family (naive, allgather_reducescatter): dispatch all-gathers /
+//     combine reduce-scatters the dense per-token hidden states across the DP group.
+//     Volume ∝ tokens·hidden, with NO top_k factor:
+//     (globalTokens/dp)·(moeGroup-1)/moeGroup·2·hidden·bpp / bwHbmUs.
+//   - modular all-to-all family (pplx, deepep_*, mori, flashinfer): each token is
+//     routed to its top_k expert-owning ranks, so the volume carries kEff. This is
+//     exactly PerGPUCommTokens from ExpertPlacement (which already folds in the
+//     per-source-rank top_k and the (moeGroup-1)/moeGroup·2 dispatch+combine factor):
+//     PerGPUCommTokens·hidden·bpp / bwHbmUs. Do NOT re-multiply by kEff.
+//
+// Both families share the β_EP coefficient: NCCL's bus-bandwidth model gives
+// all-gather/reduce-scatter and all-to-all the same (n-1)/n per-phase NVLink
+// efficiency (ring all-reduce, which β_EP defaults to β₄ from, IS reduce-scatter+
+// all-gather), so only the volume basis differs between families.
+func (m *TrainedPhysicsModel) moeDispatchBasis(globalTokens, kEff float64) float64 {
+	hidden := float64(m.hiddenDim)
+	group := float64(m.moeGroup)
+	dpf := float64(m.dp)
+	// Dispatch/combine moves hidden-state ACTIVATIONS, so size them with the
+	// compute/activation dtype (BytesPerParam), NOT the quantized weight dtype —
+	// matching tpAllReduceBasis and the KV terms (vLLM dispatches the BF16 hidden
+	// states: NaiveAll2AllManager.naive_multicast allocates dtype=x.dtype; the
+	// quantized post_quant_allgather path is an explicit opt-in, not the default).
+	switch m.commFamily {
+	case commFamilyAllGather: // dense hidden-state volume, no top_k
+		return (globalTokens / dpf) * (group - 1) / group * 2 * hidden * m.activationBPP / m.bwHbmUs
+	case commFamilyAll2All:
+		load := m.placement.Resolve(globalTokens, kEff, m.numExperts, m.moeGroup, m.dp)
+		return load.PerGPUCommTokens * hidden * m.activationBPP / m.bwHbmUs
+	default:
+		// Unreachable: commFamily is set once at construction from moeCommFamilyFor,
+		// which only yields the two families above. Panic on a future 3rd family so a
+		// new volume model is added here deliberately, rather than silently inheriting
+		// the all-gather (no-kEff) cost — a quiet factor-of-kEff error.
+		panic(fmt.Sprintf("moeDispatchBasis: unhandled commFamily %d", m.commFamily))
+	}
+}
+
+// tpAllReduceBasis is the ring-all-reduce communication basis V(units, tokens):
+//
+//	units · tokens · hidden · activationBPP · 2 (ring phases) · (tp-1)/tp / bwHbmUs
+//
+// in raw µs before the β₄ coefficient. It is the shared basis for every
+// all-reduce-class TP communication term (attention, dense-FFN, and the DP=1
+// MoE-FFN reduction). Returns 0 at tp == 1 (no communication). β₄ absorbs the
+// NVLink/HBM bandwidth ratio (~0.27 on H100) and ring-collective efficiency.
+func (m *TrainedPhysicsModel) tpAllReduceBasis(units, tokens float64) float64 {
+	if m.tp <= 1 {
+		return 0
+	}
+	tpFactor := float64(m.tp-1) / float64(m.tp)
+	// activationBPP (compute dtype) sizes the moved hidden states, not the weight dtype
+	// — same convention as moeDispatchBasis and the KV terms. The trailing 2.0 is the
+	// ring all-reduce phase count (reduce-scatter + all-gather), not a byte width.
+	return units * tokens * float64(m.hiddenDim) * m.activationBPP * 2.0 * tpFactor / m.bwHbmUs
 }
 
 // QueueingTime computes request-level overhead (ARRIVED → QUEUED).
@@ -365,9 +538,34 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 		return nil, fmt.Errorf("trained-physics model: BetaCoeffs requires at least 7 elements, got %d (expected β₁-β₇, optionally β₈)", len(coeffs.BetaCoeffs))
 	}
 
-	// Backward compatible: 7→β₈=0, 8→no prefill split, 9→prefill split active
-	betaSlice := make([]float64, 10)
-	copy(betaSlice, coeffs.BetaCoeffs[:min(10, len(coeffs.BetaCoeffs))])
+	// Backward compatible: 7→β₈=0, 8→no prefill split, 9→prefill split active,
+	// 10→decode split active, 11→β_EP (MoE dispatch/combine comm) provided.
+	//
+	// β_EP (Beta[10], #1419) defaults to β₄ (Beta[3]) when not explicitly provided.
+	// This is a derived default, not a placeholder: both MoE comm families run over the
+	// same NVLink fabric β₄ calibrates, and NCCL's bus-bandwidth model gives all-gather/
+	// reduce-scatter and all-to-all the same (n-1)/n per-phase efficiency as the ring
+	// all-reduce β₄ corrects (ring all-reduce IS reduce-scatter+all-gather). The volume
+	// difference between comm families lives in the dispatch BASIS, not this coefficient,
+	// so β_EP = β₄ for both families. A passive zero-fill would instead silently disable
+	// MoE dispatch comm. An explicit 11th coefficient overrides.
+	betaSlice := make([]float64, 11)
+	copy(betaSlice, coeffs.BetaCoeffs[:min(11, len(coeffs.BetaCoeffs))])
+	if len(coeffs.BetaCoeffs) < 11 {
+		betaSlice[10] = betaSlice[3] // β_EP defaults to β₄
+	}
+
+	// Resolve the MoE comm backend to its volume family. Empty string → vLLM default
+	// (allgather_reducescatter). An unknown name is a hard error (R1) — a typo'd CLI
+	// flag must surface, not silently fall back to a default volume model.
+	commBackend := hw.MoECommBackend
+	if commBackend == "" {
+		commBackend = DefaultMoECommBackend
+	}
+	commFamily, err := moeCommFamilyFor(commBackend)
+	if err != nil {
+		return nil, fmt.Errorf("trained-physics model: %w", err)
+	}
 
 	// Validate hardware config
 	if hw.TP <= 0 {
@@ -400,6 +598,14 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 	}
 	if hw.HWConfig.BwPeakTBs <= 0 || math.IsNaN(hw.HWConfig.BwPeakTBs) || math.IsInf(hw.HWConfig.BwPeakTBs, 0) {
 		return nil, fmt.Errorf("trained-physics model: BwPeakTBs must be valid positive, got %v", hw.HWConfig.BwPeakTBs)
+	}
+	// BytesPerParam is the compute/activation dtype width; it sizes every activation-
+	// movement term (KV, TP all-reduce, MoE dispatch comm). A zero value — reachable
+	// when the HF parser sees an unrecognized torch_dtype (config.go) — would silently
+	// zero those terms (step time stays positive from other terms, so no panic). Reject
+	// it at construction, mirroring the TFlopsPeak/BwPeakTBs guards above.
+	if hw.ModelConfig.BytesPerParam <= 0 || math.IsNaN(hw.ModelConfig.BytesPerParam) || math.IsInf(hw.ModelConfig.BytesPerParam, 0) {
+		return nil, fmt.Errorf("trained-physics model: BytesPerParam (activation dtype width) must be valid positive, got %v", hw.ModelConfig.BytesPerParam)
 	}
 
 	// Validate MoE consistency (same check as ValidateRooflineConfig)
@@ -448,26 +654,32 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 	}
 
 	return &TrainedPhysicsModel{
-		Alpha:             [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
-		Beta:              betaSlice,
-		prefillSplit:      len(coeffs.BetaCoeffs) >= 9,
-		decodeSplit:       len(coeffs.BetaCoeffs) >= 10,
-		numLayers:         hw.ModelConfig.NumLayers,
-		numMoELayers:      numMoELayers,
-		numDenseLayers:    numDenseLayers,
-		hiddenDim:         hw.ModelConfig.HiddenDim,
-		numHeads:          hw.ModelConfig.NumHeads,
-		headDim:           headDim,
-		dKV:               numKVHeads * headDim,
-		dFFMoE:            dFFMoE,
-		dFFDense:          dFFDense,
-		kEff:              max(1, hw.ModelConfig.NumExpertsPerTok),
-		numExperts:        hw.ModelConfig.NumLocalExperts,
-		hasInterleavedMoE: hw.ModelConfig.InterleaveMoELayerStep > 0 && hw.ModelConfig.IsMoE(),
-		isMoE:             hw.ModelConfig.IsMoE(),
-		tp:                hw.TP,
-		weightBPP:         weightBPP,
-		flopsPeakUs:       peakFlops,
-		bwHbmUs:           hw.HWConfig.BwPeakTBs * 1e6,
+		Alpha:              [3]float64{coeffs.AlphaCoeffs[0], coeffs.AlphaCoeffs[1], coeffs.AlphaCoeffs[2]},
+		Beta:               betaSlice,
+		prefillSplit:       len(coeffs.BetaCoeffs) >= 9,
+		decodeSplit:        len(coeffs.BetaCoeffs) >= 10,
+		numLayers:          hw.ModelConfig.NumLayers,
+		numMoELayers:       numMoELayers,
+		numDenseLayers:     numDenseLayers,
+		hiddenDim:          hw.ModelConfig.HiddenDim,
+		numHeads:           hw.ModelConfig.NumHeads,
+		headDim:            headDim,
+		dKV:                numKVHeads * headDim,
+		dFFMoE:             dFFMoE,
+		dFFDense:           dFFDense,
+		kEff:               max(1, hw.ModelConfig.NumExpertsPerTok),
+		numExperts:         hw.ModelConfig.NumLocalExperts,
+		hasInterleavedMoE:  hw.ModelConfig.InterleaveMoELayerStep > 0 && hw.ModelConfig.IsMoE(),
+		isMoE:              hw.ModelConfig.IsMoE(),
+		tp:                 hw.TP,
+		weightBPP:          weightBPP,
+		activationBPP:      hw.ModelConfig.BytesPerParam,
+		dp:                 hw.EffectiveDP(),
+		moeGroup:           hw.EffectiveMoEGroupSize(),
+		sharedExpertFFNDim: hw.ModelConfig.SharedExpertFFNDim,
+		commFamily:         commFamily,
+		placement:          sim.BalancedPlacement{},
+		flopsPeakUs:        peakFlops,
+		bwHbmUs:            hw.HWConfig.BwPeakTBs * 1e6,
 	}, nil
 }
