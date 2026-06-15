@@ -623,8 +623,8 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 				}
 				totalKVBlocks = autoBlocks
 				logrus.Infof("--gpu-memory-utilization: %.2f used for KV block auto-calculation", gpuMemoryUtilization)
-				logrus.Infof("--latency-model: auto-calculated total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, block_size=%d, MoE=%v)",
-					totalKVBlocks, hwConfig.MemoryGiB, tensorParallelism, blockSizeTokens, kvParams.IsMoE)
+				logrus.Infof("--latency-model: auto-calculated total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d, block_size=%d, MoE=%v)",
+					totalKVBlocks, hwConfig.MemoryGiB, tensorParallelism, dataParallelism, blockSizeTokens, kvParams.IsMoE)
 			}
 		}
 
@@ -1272,8 +1272,8 @@ var runCmd = &cobra.Command{
 								logrus.Fatalf("--prefill-tp/--prefill-hardware: KV capacity auto-calculation failed for prefill pool: %v", calcErr)
 							} else {
 								prefillOverrides.TotalKVBlocks = &poolBlocks
-								logrus.Infof("--prefill-tp/--prefill-hardware: auto-calculated prefill pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d)",
-									poolBlocks, poolHC.MemoryGiB, poolPrefillTP)
+								logrus.Infof("--prefill-tp/--prefill-hardware: auto-calculated prefill pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d)",
+									poolBlocks, poolHC.MemoryGiB, poolPrefillTP, dataParallelism)
 								if !cmd.Flags().Changed("prefill-max-model-len") {
 									kvFeasibleMax := poolBlocks * int64(blockSizeTokens)
 									if kvFeasibleMax < maxModelLen {
@@ -1307,8 +1307,8 @@ var runCmd = &cobra.Command{
 								logrus.Fatalf("--decode-tp/--decode-hardware: KV capacity auto-calculation failed for decode pool: %v", calcErr)
 							} else {
 								decodeOverrides.TotalKVBlocks = &poolBlocks
-								logrus.Infof("--decode-tp/--decode-hardware: auto-calculated decode pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d)",
-									poolBlocks, poolHC.MemoryGiB, poolDecodeTP)
+								logrus.Infof("--decode-tp/--decode-hardware: auto-calculated decode pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d)",
+									poolBlocks, poolHC.MemoryGiB, poolDecodeTP, dataParallelism)
 								if !cmd.Flags().Changed("decode-max-model-len") {
 									kvFeasibleMax := poolBlocks * int64(blockSizeTokens)
 									if kvFeasibleMax < maxModelLen {

@@ -140,11 +140,12 @@ func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
 //     experts, never attention/KV — so there is intentionally no EP parameter.
 //
 //     The isMoE gate below is the active correctness guard for dense dp > 1: the CLI
-//     also rejects dense dp > 1 and roofline dp > 1 (#A), but on the run whole-instance
-//     auto-capacity path that rejection fires slightly AFTER this call (same resolver
-//     function). So this call must itself be safe: dense → not scaled (gate), roofline
-//     MoE → scaled but the result is discarded when the CLI aborts. The gate is
-//     load-bearing, not merely redundant.
+//     also rejects dense dp > 1 and roofline dp > 1 (in resolveLatencyConfig,
+//     cmd/root.go; added in #1417), but on the run whole-instance auto-capacity path
+//     that rejection fires slightly AFTER this call (same resolver function). So this
+//     call must itself be safe: dense → not scaled (gate), roofline MoE → scaled but
+//     the result is discarded when the CLI aborts. The gate is load-bearing, not
+//     merely redundant.
 //
 //   - blockSize: tokens per KV cache block (must be > 0)
 //

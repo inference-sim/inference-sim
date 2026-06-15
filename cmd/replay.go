@@ -323,8 +323,8 @@ Example:
 								logrus.Fatalf("--prefill-tp/--prefill-hardware: KV capacity auto-calculation failed for prefill pool: %v", calcErr)
 							} else {
 								prefillOverrides.TotalKVBlocks = &poolBlocks
-								logrus.Infof("--prefill-tp/--prefill-hardware: auto-calculated prefill pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d)",
-									poolBlocks, poolHC.MemoryGiB, poolPrefillTP)
+								logrus.Infof("--prefill-tp/--prefill-hardware: auto-calculated prefill pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d)",
+									poolBlocks, poolHC.MemoryGiB, poolPrefillTP, dataParallelism)
 								if !cmd.Flags().Changed("prefill-max-model-len") {
 									kvFeasibleMax := poolBlocks * int64(blockSizeTokens)
 									if kvFeasibleMax < maxModelLen {
@@ -358,8 +358,8 @@ Example:
 								logrus.Fatalf("--decode-tp/--decode-hardware: KV capacity auto-calculation failed for decode pool: %v", calcErr)
 							} else {
 								decodeOverrides.TotalKVBlocks = &poolBlocks
-								logrus.Infof("--decode-tp/--decode-hardware: auto-calculated decode pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d)",
-									poolBlocks, poolHC.MemoryGiB, poolDecodeTP)
+								logrus.Infof("--decode-tp/--decode-hardware: auto-calculated decode pool total-kv-blocks=%d (GPU=%.0f GiB, TP=%d, DP=%d)",
+									poolBlocks, poolHC.MemoryGiB, poolDecodeTP, dataParallelism)
 								if !cmd.Flags().Changed("decode-max-model-len") {
 									kvFeasibleMax := poolBlocks * int64(blockSizeTokens)
 									if kvFeasibleMax < maxModelLen {

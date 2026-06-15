@@ -263,6 +263,40 @@ func TestRunReplay_DPEPFlags_ThreadedIntoConstructor(t *testing.T) {
 	}
 }
 
+// TestPerPoolKVBlocks_ThreadsGlobalDP is a source-level wiring guard for the per-pool
+// KV-capacity call sites (#1420). The four per-pool CalculateKVBlocks calls (run +
+// replay × prefill + decode) pass per-pool TP but GLOBAL dataParallelism — an
+// intentional asymmetry (per-pool DP is out of scope). No behavioral test exercises
+// dp>1 on the pool path (the cmd dp>1 scenarios pin --total-kv-blocks, short-circuiting
+// auto-calc), so a regression that dropped dataParallelism or passed a literal 1 here
+// would scale pool capacity wrong and pass every other test. This guard asserts each
+// pool site threads `<poolTP>, dataParallelism,` in order, in both run and replay
+// (INV-13 parity). Mirrors TestRunReplay_DPEPFlags_ThreadedIntoConstructor.
+func TestPerPoolKVBlocks_ThreadsGlobalDP(t *testing.T) {
+	// Each per-pool CalculateKVBlocks call must pass per-pool TP immediately followed
+	// by the global dataParallelism var.
+	wantWirings := []string{
+		"poolPrefillTP, dataParallelism,",
+		"poolDecodeTP, dataParallelism,",
+	}
+	for _, src := range []string{"root.go", "replay.go"} {
+		data, err := os.ReadFile(src)
+		if err != nil {
+			t.Fatalf("read %s: %v", src, err)
+		}
+		content := string(data)
+		if !strings.Contains(content, "latency.CalculateKVBlocks(") {
+			t.Fatalf("%s: expected a CalculateKVBlocks call site", src)
+		}
+		for _, want := range wantWirings {
+			if !strings.Contains(content, want) {
+				t.Errorf("%s: per-pool CalculateKVBlocks must thread per-pool TP then global DP %q "+
+					"(per-pool TP, global dp; #1420 / INV-13 parity)", src, want)
+			}
+		}
+	}
+}
+
 // TestResolveLatencyConfig_DPScalesAutoKVCapacity is the cmd-level end-to-end check
 // that --dp threads through resolveLatencyConfig into a DP-scaled auto-derived KV
 // capacity (#1420). It resolves the same MoE fixture at dp=1 and dp=2 WITHOUT an
