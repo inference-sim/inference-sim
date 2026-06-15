@@ -85,7 +85,10 @@ go build -o blis main.go
   --trace-header trace.yaml --trace-data trace.csv
 
 # Observe with system prewarm (recommended for cold systems, #1430)
-# Sends small fixed requests at low concurrency to warm CUDA/EPP/memory before measurement
+# --prewarm-duration: warms infrastructure (EPP/gateway connections, TCP pools)
+#   before measurement. Use for cold systems. Shape-independent.
+# --warmup-requests: excludes first N real-workload requests from trace.
+#   Use for statistical trimming. Rarely needed if --prewarm-duration is set.
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
   --prewarm-duration 60s \
   --workload chatbot --rate 10 --num-requests 100 \

@@ -201,7 +201,7 @@ The `--prewarm-duration` flag addresses this by running a fixed priming phase be
 
 The prewarm phase sends small, fixed requests (256 input tokens, 64 output tokens) at low concurrency (4 simultaneous requests). This exercises the full request path without risking overload, regardless of the real workload's rate or token sizes. Prewarm requests never appear in `trace_data.csv`.
 
-The `--prewarm-duration` flag is independent of `--warmup-requests` — both can be used together. Use `--prewarm-duration` for system-level warming (CUDA, connections) and `--warmup-requests` for workload-level exclusion (initial ramp-up).
+**Which warmup flag?** Use `--prewarm-duration` when targeting a cold system (fresh restart, new connections). Use `--warmup-requests` only if you need to exclude initial requests for other reasons (e.g., rate ramp-up). You typically don't need both.
 
 ---
 
