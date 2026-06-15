@@ -193,6 +193,16 @@ For MoE deployments, trained-physics models data parallelism (`--dp`) and expert
 
 DP/EP and `--moe-comm-backend` require `--latency-model trained-physics` (roofline is DP/EP-blind for step time) and are rejected on dense models for `--dp > 1` (dense data parallelism is the router-replica mechanism — use `--num-instances`). Absolute MoE communication magnitudes are physics-estimated with β_EP defaulted to β₄; an empirical re-fit is future work.
 
+#### Calibrating β_EP
+
+The β₄ default assumes the dispatch/combine collective runs at the same per-byte efficiency as the TP all-reduce — true when both share one NVLink fabric, but not when EP spans nodes (e.g. inter-node InfiniBand for EP while TP stays intra-node NVLink). To fit β_EP for such a deployment:
+
+1. Collect real per-step latencies for a **MoE model at `--dp > 1`** with a fixed `--moe-comm-backend`, holding everything else constant.
+2. Freeze the other 10 β coefficients (and the α coefficients) at their bundled values.
+3. Fit only β_EP to the residual between observed step time and the model's prediction with the dispatch term zeroed — i.e. attribute the leftover to `β_EP · tMoEDispatch`.
+
+Because the dispatch term is the *only* term gated on `DP > 1`, the residual isolates it cleanly. Fit per comm-backend *family* (all-gather vs all-to-all), not per backend name; see the PR #1433 discussion for why per-backend scalars are the wrong granularity (the within-family differences are prefill/decode shape effects a single scalar cannot represent).
+
 ## When to Use Which
 
 | Aspect | Roofline | Trained-Physics (default) |

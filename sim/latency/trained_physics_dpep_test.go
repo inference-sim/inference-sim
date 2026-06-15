@@ -422,3 +422,67 @@ func TestINVBCDP1_DenseDP1Determinism(t *testing.T) {
 		assert.Equal(t, want, mBase.StepTime(batch), "repeated StepTime must be identical (tp=%d)", tp)
 	}
 }
+
+// TestNewTrainedPhysicsModel_RejectsZeroBytesPerParam guards the constructor against
+// a zero activation dtype (#1433 review): BytesPerParam == 0 is reachable when the HF
+// parser sees an unrecognized torch_dtype, and it would silently zero every
+// activation-movement term (KV, TP all-reduce, MoE dispatch comm) while leaving step
+// time positive (no panic). The constructor must reject it, like TFlopsPeak/BwPeakTBs.
+func TestNewTrainedPhysicsModel_RejectsZeroBytesPerParam(t *testing.T) {
+	mc := dpepMoEModelConfig()
+	mc.BytesPerParam = 0 // unrecognized/missing torch_dtype
+	mhw := sim.NewModelHardwareConfig(*mc, dpepTestHW(), "m", "H100", 1, 1, false, "", "trained-physics", 0)
+	_, err := NewTrainedPhysicsModel(*testCoeffs(), mhw)
+	require.Error(t, err, "zero BytesPerParam must be rejected at construction")
+	assert.Contains(t, err.Error(), "BytesPerParam")
+}
+
+// TestStepTime_EmptyBatch_MoE verifies StepTime handles an empty/nil batch on a MoE
+// model without reaching ExpertPlacement.Resolve(0, ...) or panicking (#1433 review
+// suggestion). The empty-batch guard must short-circuit before any MoE term.
+func TestStepTime_EmptyBatch_MoE(t *testing.T) {
+	m := newDPEPModel(t, dpepMoEModelConfig(), 2, 2, true, "deepep_low_latency")
+	assert.NotPanics(t, func() {
+		assert.Equal(t, int64(1), m.StepTime(nil), "nil batch → 1")
+		assert.Equal(t, int64(1), m.StepTime([]*sim.Request{}), "empty batch → 1")
+	})
+}
+
+// TestStepTime_InterleavedMoE_DP2 exercises a Scout-style interleaved MoE config
+// (numMoELayers > 0 AND numDenseLayers > 0) at DP=2, so tTpDenseFFN (dense layers,
+// /dp) and tMoEDispatch (MoE layers, DP>1) are charged simultaneously — the most
+// intricate term combination, untested elsewhere (#1433 review suggestion). Asserts a
+// positive, finite step time and that the comm-backend family still moves it.
+func TestStepTime_InterleavedMoE_DP2(t *testing.T) {
+	// Interleaved MoE with top-2 routing (kEff>1) so the all-gather vs all-to-all volume
+	// families genuinely differ (at kEff=1 each token routes to a single expert and the
+	// two families move identical volume — equal step time would be correct, not a bug).
+	scout := &sim.ModelConfig{
+		NumLayers: 48, HiddenDim: 5120, NumHeads: 40, NumKVHeads: 8,
+		IntermediateDim: 8192, MoEExpertFFNDim: 8192, DenseIntermediateDim: 16384,
+		NumLocalExperts: 16, NumExpertsPerTok: 2,
+		InterleaveMoELayerStep: 1, // alternating MoE/dense → both layer types present
+		BytesPerParam:          2.0,
+	}
+	batch := makePrefillBatch(64, 512)
+	allgather := newDPEPModel(t, scout, 2, 2, false, "allgather_reducescatter").StepTime(batch)
+	all2all := newDPEPModel(t, scout, 2, 2, true, "deepep_low_latency").StepTime(batch)
+	assert.Greater(t, allgather, int64(0), "interleaved MoE DP=2 must produce a positive step time")
+	assert.Greater(t, all2all, allgather,
+		"comm-backend family must still affect an interleaved-MoE DP>1 step (got all2all=%d allgather=%d)", all2all, allgather)
+}
+
+// TestStepTime_CommFamiliesConvergeAtTopK1 documents a correctness property: at top-1
+// routing (kEff=1) the all-gather and all-to-all families move identical volume (each
+// token routes to exactly one expert), so they MUST produce identical step time. This
+// is the kEff=1 boundary of the (all2all/all-gather == kEff) ratio law — equal step
+// time here is correct physics, not a missing distinction.
+func TestStepTime_CommFamiliesConvergeAtTopK1(t *testing.T) {
+	mc := dpepMoEModelConfig()
+	mc.NumExpertsPerTok = 1 // top-1 routing → kEff = 1
+	batch := makePrefillBatch(64, 512)
+	allgather := newDPEPModel(t, mc, 2, 2, false, "allgather_reducescatter").StepTime(batch)
+	all2all := newDPEPModel(t, mc, 2, 2, true, "deepep_low_latency").StepTime(batch)
+	assert.Equal(t, allgather, all2all,
+		"at kEff=1 the comm families move identical volume and must give identical step time")
+}

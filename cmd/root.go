@@ -728,6 +728,17 @@ func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 				"(got --moe-comm-backend=%s, --latency-model=%s). The roofline backend does not model "+
 				"MoE communication.", moeCommBackend, backend)
 		}
+		// The flag is harmless but inert unless the MoE dispatch/combine term is actually
+		// charged (isMoE && DP>1). Warn (not fatal) on the no-op cases so a user does not
+		// believe a backend choice is affecting a run where it cannot.
+		if !modelConfig.IsMoE() {
+			logrus.Warnf("--moe-comm-backend=%s has no effect on a dense model; "+
+				"MoE dispatch/combine comm is only charged for MoE models.", moeCommBackend)
+		} else if dataParallelism <= 1 {
+			logrus.Warnf("--moe-comm-backend=%s has no effect at --dp=%d; "+
+				"MoE dispatch/combine comm is only charged when DP > 1 (at DP=1 the MoE FFN "+
+				"all-reduces over the TP group instead).", moeCommBackend, dataParallelism)
+		}
 	}
 
 	return latencyResolution{

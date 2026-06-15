@@ -338,7 +338,7 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	//     partitioned on the DP boundary (DP=1 all-reduce vs DP>1 dispatch/combine).
 	//
 	// tpAllReduceBasis(units, tokens, tp) is the ring-all-reduce basis: units × tokens ×
-	// hidden × 2 bytes (BF16) × 2 (ring phases) × (tp-1)/tp / bwHbmUs. β₄ absorbs the
+	// hidden × activationBPP × 2 (ring phases) × (tp-1)/tp / bwHbmUs. β₄ absorbs the
 	// NVLink/HBM ratio (~0.27 on H100). TP=1 → (tp-1)/tp = 0 → no communication.
 	//
 	// INV BC-DP1: for a dense model, tTpAttention + tTpDenseFFN =
@@ -470,17 +470,23 @@ func (m *TrainedPhysicsModel) moeDispatchBasis(globalTokens, kEff float64) float
 	// states: NaiveAll2AllManager.naive_multicast allocates dtype=x.dtype; the
 	// quantized post_quant_allgather path is an explicit opt-in, not the default).
 	switch m.commFamily {
+	case commFamilyAllGather: // dense hidden-state volume, no top_k
+		return (globalTokens / dpf) * (group - 1) / group * 2 * hidden * m.activationBPP / m.bwHbmUs
 	case commFamilyAll2All:
 		load := m.placement.Resolve(globalTokens, kEff, m.numExperts, m.moeGroup, m.dp)
 		return load.PerGPUCommTokens * hidden * m.activationBPP / m.bwHbmUs
-	default: // commFamilyAllGather: dense hidden-state volume, no top_k
-		return (globalTokens / dpf) * (group - 1) / group * 2 * hidden * m.activationBPP / m.bwHbmUs
+	default:
+		// Unreachable: commFamily is set once at construction from moeCommFamilyFor,
+		// which only yields the two families above. Panic on a future 3rd family so a
+		// new volume model is added here deliberately, rather than silently inheriting
+		// the all-gather (no-kEff) cost — a quiet factor-of-kEff error.
+		panic(fmt.Sprintf("moeDispatchBasis: unhandled commFamily %d", m.commFamily))
 	}
 }
 
 // tpAllReduceBasis is the ring-all-reduce communication basis V(units, tokens):
 //
-//	units · tokens · hidden · 2 (BF16 bytes) · 2 (ring phases) · (tp-1)/tp / bwHbmUs
+//	units · tokens · hidden · activationBPP · 2 (ring phases) · (tp-1)/tp / bwHbmUs
 //
 // in raw µs before the β₄ coefficient. It is the shared basis for every
 // all-reduce-class TP communication term (attention, dense-FFN, and the DP=1
@@ -491,7 +497,10 @@ func (m *TrainedPhysicsModel) tpAllReduceBasis(units, tokens float64) float64 {
 		return 0
 	}
 	tpFactor := float64(m.tp-1) / float64(m.tp)
-	return units * tokens * float64(m.hiddenDim) * 2.0 * 2.0 * tpFactor / m.bwHbmUs
+	// activationBPP (compute dtype) sizes the moved hidden states, not the weight dtype
+	// — same convention as moeDispatchBasis and the KV terms. The trailing 2.0 is the
+	// ring all-reduce phase count (reduce-scatter + all-gather), not a byte width.
+	return units * tokens * float64(m.hiddenDim) * m.activationBPP * 2.0 * tpFactor / m.bwHbmUs
 }
 
 // QueueingTime computes request-level overhead (ARRIVED → QUEUED).
@@ -589,6 +598,14 @@ func NewTrainedPhysicsModel(coeffs sim.LatencyCoeffs, hw sim.ModelHardwareConfig
 	}
 	if hw.HWConfig.BwPeakTBs <= 0 || math.IsNaN(hw.HWConfig.BwPeakTBs) || math.IsInf(hw.HWConfig.BwPeakTBs, 0) {
 		return nil, fmt.Errorf("trained-physics model: BwPeakTBs must be valid positive, got %v", hw.HWConfig.BwPeakTBs)
+	}
+	// BytesPerParam is the compute/activation dtype width; it sizes every activation-
+	// movement term (KV, TP all-reduce, MoE dispatch comm). A zero value — reachable
+	// when the HF parser sees an unrecognized torch_dtype (config.go) — would silently
+	// zero those terms (step time stays positive from other terms, so no panic). Reject
+	// it at construction, mirroring the TFlopsPeak/BwPeakTBs guards above.
+	if hw.ModelConfig.BytesPerParam <= 0 || math.IsNaN(hw.ModelConfig.BytesPerParam) || math.IsInf(hw.ModelConfig.BytesPerParam, 0) {
+		return nil, fmt.Errorf("trained-physics model: BytesPerParam (activation dtype width) must be valid positive, got %v", hw.ModelConfig.BytesPerParam)
 	}
 
 	// Validate MoE consistency (same check as ValidateRooflineConfig)
