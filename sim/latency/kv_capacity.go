@@ -124,21 +124,32 @@ func KVBytesPerToken(mc sim.ModelConfig, tp int) (float64, error) {
 // capacity_planner.py reference.
 //
 // Parameters:
+//
 //   - mc: model architecture (layers, heads, dims, precision)
+//
 //   - hc: GPU hardware calibration (must include MemoryGiB)
+//
 //   - tp: tensor parallelism degree (must be > 0)
+//
 //   - dp: data parallelism degree (must be > 0). For an MoE model with dp > 1 the
 //     aggregate usable KV-block count scales by dp: each DP rank is a separate vLLM
 //     EngineCore with its own full KV budget on its own GPUs, and requests split
 //     disjointly across ranks (vllm@f6ec81c7 v1/engine/core.py:1243-1276). Per-GPU KV
 //     bytes are unaffected (sized by attention TP only), so dp multiplies only the
 //     final block total. KV capacity is EP-mode-independent — EP shards only MoE
-//     experts, never attention/KV — so there is intentionally no EP parameter. Dense
-//     dp > 1 is rejected upstream (#A) and never reaches here; the isMoE gate below is
-//     the final guard. Callers on the roofline backend pass dp = 1 (roofline is
-//     DP-blind for step time; #A rejects --dp > 1 there).
+//     experts, never attention/KV — so there is intentionally no EP parameter.
+//
+//     The isMoE gate below is the active correctness guard for dense dp > 1: the CLI
+//     also rejects dense dp > 1 and roofline dp > 1 (#A), but on the run whole-instance
+//     auto-capacity path that rejection fires slightly AFTER this call (same resolver
+//     function). So this call must itself be safe: dense → not scaled (gate), roofline
+//     MoE → scaled but the result is discarded when the CLI aborts. The gate is
+//     load-bearing, not merely redundant.
+//
 //   - blockSize: tokens per KV cache block (must be > 0)
+//
 //   - gpuMemoryUtilization: fraction of GPU HBM available for KV cache (must be in (0, 1.0])
+//
 //   - params: MoE indicators, activation type, embedding tying
 //
 // Returns the number of blocks, or an error if inputs are invalid or memory
@@ -263,8 +274,9 @@ func CalculateKVBlocks(mc sim.ModelConfig, hc sim.HardwareCalib, tp int, dp int,
 	// All sizing above is per DP rank (one EngineCore on its own TP GPUs). For an MoE
 	// model with dp > 1, vLLM runs dp independent EngineCores each with this full KV
 	// budget and splits requests disjointly across them, so the aggregate usable block
-	// count scales by dp. Gate on IsMoE: dense dp > 1 is rejected upstream (#A) and the
-	// roofline backend passes dp = 1, so this is the final guard, not the enforcement.
+	// count scales by dp. The IsMoE gate is the active guard: it ensures a dense model
+	// is never scaled even if dp > 1 reaches here (which can happen on the run
+	// whole-instance path, where this call precedes the CLI's dense-dp>1 rejection).
 	if params.IsMoE && dp > 1 {
 		totalBlocks *= int64(dp)
 	}

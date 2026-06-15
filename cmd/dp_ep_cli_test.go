@@ -262,3 +262,85 @@ func TestRunReplay_DPEPFlags_ThreadedIntoConstructor(t *testing.T) {
 		}
 	}
 }
+
+// TestResolveLatencyConfig_DPScalesAutoKVCapacity is the cmd-level end-to-end check
+// that --dp threads through resolveLatencyConfig into a DP-scaled auto-derived KV
+// capacity (#1420). It resolves the same MoE fixture at dp=1 and dp=2 WITHOUT an
+// explicit --total-kv-blocks (so the auto-capacity path runs) and asserts the resolved
+// block count exactly doubles. This closes the gap between the unit test on
+// CalculateKVBlocks and the CLI threading.
+func TestResolveLatencyConfig_DPScalesAutoKVCapacity(t *testing.T) {
+	dir := t.TempDir()
+	// A complete MoE fixture: the auto-capacity path needs vocab_size (which the
+	// validation-only writeMoEConfigFixture omits) and realistic dims so the derived
+	// block count is comfortably positive on an 80 GiB GPU.
+	mcDir := filepath.Join(dir, "config")
+	if err := os.MkdirAll(mcDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	configJSON := `{
+  "architectures": ["MixtralForCausalLM"],
+  "num_attention_heads": 32,
+  "num_hidden_layers": 32,
+  "hidden_size": 4096,
+  "intermediate_size": 14336,
+  "num_key_value_heads": 8,
+  "num_local_experts": 8,
+  "num_experts_per_tok": 2,
+  "vocab_size": 32000,
+  "hidden_act": "silu",
+  "torch_dtype": "float16",
+  "max_position_embeddings": 4096
+}`
+	if err := os.WriteFile(filepath.Join(mcDir, "config.json"), []byte(configJSON), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	hwPath := filepath.Join(dir, "hw.json")
+	if err := os.WriteFile(hwPath, []byte(`{"H100": {"MemoryGiB": 80.0, "TFlopsPeak": 989.5, "BwPeakTBs": 3.35}}`), 0644); err != nil {
+		t.Fatalf("write hw: %v", err)
+	}
+	mcFolder := mcDir
+
+	resolve := func(dp int) int64 {
+		// Reset the package-level vars resolveLatencyConfig reads.
+		model = "test-model"
+		latencyModelBackend = "trained-physics"
+		gpu = "H100"
+		tensorParallelism = 2 // TP=2 so the 8x7B MoE weights fit in 80 GiB per GPU
+		dataParallelism = dp
+		enableExpertParallel = false
+		moeCommBackend = ""
+		totalKVBlocks = 0 // auto-derive
+		blockSizeTokens = 16
+		maxModelLen = 0
+		gpuMemoryUtilization = 0.9
+		modelConfigFolder = mcFolder
+		hwConfigPath = hwPath
+		defaultsFilePath = "../defaults.yaml"
+
+		testCmd := &cobra.Command{}
+		registerSimConfigFlags(testCmd)
+		// Note: NO --total-kv-blocks, so Changed("total-kv-blocks") is false and the
+		// auto-capacity path (which calls CalculateKVBlocks with dataParallelism) runs.
+		args := []string{
+			"--model", "test-model", "--latency-model", "trained-physics",
+			"--hardware", "H100", "--tp", "2", "--dp", fmt.Sprintf("%d", dp),
+			"--model-config-folder", mcFolder, "--hardware-config", hwPath,
+			"--defaults-filepath", "../defaults.yaml",
+		}
+		if err := testCmd.ParseFlags(args); err != nil {
+			t.Fatalf("dp=%d ParseFlags: %v", dp, err)
+		}
+		resolveLatencyConfig(testCmd)
+		return totalKVBlocks
+	}
+
+	dp1 := resolve(1)
+	dp2 := resolve(2)
+	if dp1 <= 0 {
+		t.Fatalf("dp=1 auto KV capacity must be positive, got %d", dp1)
+	}
+	if dp2 != dp1*2 {
+		t.Errorf("--dp 2 must double auto-derived KV capacity: dp=1 gave %d, dp=2 gave %d (want %d)", dp1, dp2, dp1*2)
+	}
+}
