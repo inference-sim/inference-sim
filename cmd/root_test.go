@@ -606,12 +606,12 @@ func TestAutoCalcKVBlocks_RespectsBlockSizeAndGPUMemUtil(t *testing.T) {
 	const tp = 1
 
 	// Test BC-1: Different block-size values produce different block counts
-	blocks64, err := latency.CalculateKVBlocks(mc, hc, tp, 64, 0.9, params)
+	blocks64, err := latency.CalculateKVBlocks(mc, hc, tp, 1, 64, 0.9, params)
 	if err != nil {
 		t.Fatalf("CalculateKVBlocks with block-size=64: %v", err)
 	}
 
-	blocks128, err := latency.CalculateKVBlocks(mc, hc, tp, 128, 0.9, params)
+	blocks128, err := latency.CalculateKVBlocks(mc, hc, tp, 1, 128, 0.9, params)
 	if err != nil {
 		t.Fatalf("CalculateKVBlocks with block-size=128: %v", err)
 	}
@@ -623,12 +623,12 @@ func TestAutoCalcKVBlocks_RespectsBlockSizeAndGPUMemUtil(t *testing.T) {
 	}
 
 	// Test BC-2: Different gpu-memory-utilization values produce different block counts
-	blocks85pct, err := latency.CalculateKVBlocks(mc, hc, tp, 64, 0.85, params)
+	blocks85pct, err := latency.CalculateKVBlocks(mc, hc, tp, 1, 64, 0.85, params)
 	if err != nil {
 		t.Fatalf("CalculateKVBlocks with gpu-util=0.85: %v", err)
 	}
 
-	blocks95pct, err := latency.CalculateKVBlocks(mc, hc, tp, 64, 0.95, params)
+	blocks95pct, err := latency.CalculateKVBlocks(mc, hc, tp, 1, 64, 0.95, params)
 	if err != nil {
 		t.Fatalf("CalculateKVBlocks with gpu-util=0.95: %v", err)
 	}
