@@ -2334,7 +2334,7 @@
   <span class="md-ellipsis">
     
   
-    System Invariants (INV-1-INV-11)
+    System Invariants (INV-1-INV-13)
   
 
     
@@ -3880,6 +3880,11 @@
 <td><code>prefix_length</code></td>
 <td>int</td>
 <td>Shared prefix token count prepended to every request</td>
+</tr>
+<tr>
+<td><code>prefix_sharing</code></td>
+<td>string</td>
+<td><code>"shared"</code> (default, omit to use): all members share one prefix group → one KV cache entry, modelling a global system prompt. <code>"per_member"</code>: each member gets an independent prefix group → independent KV cache entries, modelling per-session contexts (code-gen repo map, per-user chat history). Requires <code>prefix_group</code>.</td>
 </tr>
 <tr>
 <td><code>network</code></td>

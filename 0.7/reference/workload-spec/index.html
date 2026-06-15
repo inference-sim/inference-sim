@@ -2234,7 +2234,7 @@
   <span class="md-ellipsis">
     
   
-    System Invariants (INV-1-INV-11)
+    System Invariants (INV-1-INV-13)
   
 
     
@@ -3581,6 +3581,12 @@
 <td>string</td>
 <td>No</td>
 <td>Prefix group name</td>
+</tr>
+<tr>
+<td><code>prefix_sharing</code></td>
+<td>string</td>
+<td>No</td>
+<td><code>"shared"</code> (default): all members share one prefix. <code>"per_member"</code>: each member gets its own prefix. Requires <code>prefix_group</code>.</td>
 </tr>
 <tr>
 <td><code>streaming</code></td>

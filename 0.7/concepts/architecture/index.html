@@ -2218,7 +2218,7 @@
   <span class="md-ellipsis">
     
   
-    System Invariants (INV-1-INV-11)
+    System Invariants (INV-1-INV-13)
   
 
     
@@ -3389,8 +3389,8 @@
 <tbody>
 <tr>
 <td><strong>Synchronous</strong> (router-local)</td>
-<td>InFlightRequests, prefix cache index</td>
-<td>Router increments InFlightRequests at dispatch, decrements at completion; prefix cache updated after each routing decision</td>
+<td>InFlightRequests, <code>prefix-affinity</code> router-side cache index</td>
+<td>Router increments InFlightRequests at dispatch, decrements at completion; the <code>prefix-affinity</code> scorer's router-side LRU index is updated after each routing decision</td>
 <td>None — router owns this state</td>
 </tr>
 <tr>
@@ -3399,9 +3399,18 @@
 <td>Default (<code>--snapshot-refresh-interval 50000</code>): Periodic at 50ms (llm-d parity). When <code>--snapshot-refresh-interval 0</code>: Immediate (read from instance at routing time). All instance-reported signals share the same Periodic refresh interval, matching real vLLM's single <code>/metrics</code> endpoint (#463).</td>
 <td>Immediate: current within tick. Periodic: stale up to interval.</td>
 </tr>
+<tr>
+<td><strong>Periodic</strong> (precise prefix-cache query)</td>
+<td><code>precise-prefix-cache</code> / <code>no-hit-lru</code> cache-block hit counts</td>
+<td>The <code>precise-prefix-cache</code> and <code>no-hit-lru</code> scorers query actual instance KV cache state via <code>CachedSnapshotProvider</code>, governed by <code>--cache-signal-delay</code> (default 50ms, maps to <code>ObservabilityConfig.CacheBlocks</code>). Set <code>--cache-signal-delay 0</code> for synchronous ground-truth queries.</td>
+<td>Stale up to <code>--cache-signal-delay</code>.</td>
+</tr>
 </tbody>
 </table>
 <p>The <code>--snapshot-refresh-interval</code> flag controls how frequently instance-reported signals (QueueDepth, BatchSize, KVUtilization, PreemptionCount, etc.) are re-read from instances. The default is 50000µs (50ms), matching llm-d's <code>RefreshMetricsInterval</code>. Setting it to 0 makes all signals Immediate (oracle mode). Non-zero values introduce realistic staleness matching real vLLM Prometheus scrape intervals.</p>
+<blockquote>
+<p><strong>Two distinct "prefix cache" mechanisms:</strong> The router-local <strong><code>prefix-affinity</code> cache index</strong> (synchronous tier, above) is a lightweight LRU the router maintains itself and is always fresh. It is <em>not</em> the same as the <strong><code>precise-prefix-cache</code> query</strong> (periodic tier), which reads real instance KV-cache hit counts and carries <code>--cache-signal-delay</code> staleness. See canonical <a href="../../contributing/standards/invariants/">INV-7</a> for the full per-signal freshness hierarchy.</p>
+</blockquote>
 <h2 id="counterfactual-regret">Counterfactual Regret<a class="headerlink" href="#counterfactual-regret" title="Permanent link">&para;</a></h2>
 <p>When decision tracing is enabled (<code>--trace-level decisions</code>), BLIS computes counterfactual regret for each routing decision. This measures how much better an alternative routing choice could have been.</p>
 <p><strong>Computation:</strong>

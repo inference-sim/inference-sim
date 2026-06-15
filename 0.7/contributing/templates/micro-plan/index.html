@@ -1935,7 +1935,7 @@
   <span class="md-ellipsis">
     
   
-    System Invariants (INV-1-INV-11)
+    System Invariants (INV-1-INV-13)
   
 
     
@@ -3263,7 +3263,7 @@ The agent prompt version is at <a href="../micro-plan-prompt/"><code>micro-plan-
 </table>
 <p>Key invariants for this simulator (see <a href="../../standards/invariants/">standards/invariants.md</a>):</p>
 <ul>
-<li><strong>Request conservation (INV-1):</strong> completed + still_queued + still_running + dropped_unservable = injected</li>
+<li><strong>Request conservation (INV-1):</strong> completed + still_queued + still_running + dropped_unservable + timed_out = injected (cluster runs add gateway/routing/encode buckets — see canonical INV-1)</li>
 <li><strong>KV block conservation (INV-4):</strong> allocated_blocks + free_blocks = total_blocks</li>
 <li><strong>Clock monotonicity (INV-3):</strong> simulation clock never decreases</li>
 <li><strong>Causality (INV-5):</strong> arrival_time ≤ enqueue_time ≤ schedule_time ≤ completion_time</li>

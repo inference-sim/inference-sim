@@ -2112,7 +2112,7 @@
   <span class="md-ellipsis">
     
   
-    System Invariants (INV-1-INV-11)
+    System Invariants (INV-1-INV-13)
   
 
     
@@ -3083,8 +3083,8 @@
 <tbody>
 <tr>
 <td><strong>Router-local</strong></td>
-<td>InFlightRequests, prefix cache index</td>
-<td>Router increments InFlightRequests at dispatch, decrements at completion; prefix cache updated after each routing decision</td>
+<td>InFlightRequests, <code>prefix-affinity</code> router-side cache index</td>
+<td>Router increments InFlightRequests at dispatch, decrements at completion; the <code>prefix-affinity</code> scorer's router-side LRU index is updated after each routing decision</td>
 <td>Always fresh — router owns this state</td>
 </tr>
 <tr>
@@ -3092,6 +3092,12 @@
 <td>QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate, PreemptionCount</td>
 <td>Instance-internal state (scheduler queue, running batch, KV cache)</td>
 <td>Default (<code>--snapshot-refresh-interval 50000</code>): Periodic at 50ms (llm-d parity). When <code>--snapshot-refresh-interval 0</code>: Immediate (read from instance at routing time). All Prometheus-sourced signals share the same refresh interval, matching real vLLM's single <code>/metrics</code> endpoint.</td>
+</tr>
+<tr>
+<td><strong>Periodic (precise prefix-cache query)</strong></td>
+<td><code>precise-prefix-cache</code> / <code>no-hit-lru</code> cache-block hit counts</td>
+<td>Actual instance KV cache state (via <code>CachedSnapshotProvider</code>)</td>
+<td>Governed by <code>--cache-signal-delay</code> (default 50ms; set to 0 for synchronous ground-truth queries). Distinct from the router-local <code>prefix-affinity</code> index above.</td>
 </tr>
 </tbody>
 </table>

@@ -1171,6 +1171,34 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#data-expert-parallelism-for-moe-trained-physics-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data + Expert Parallelism for MoE (trained-physics only)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Data + Expert Parallelism for MoE (trained-physics only)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#calibrating-_ep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Calibrating β_EP
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2112,7 +2140,7 @@
   <span class="md-ellipsis">
     
   
-    System Invariants (INV-1-INV-11)
+    System Invariants (INV-1-INV-13)
   
 
     
@@ -2870,6 +2898,34 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#data-expert-parallelism-for-moe-trained-physics-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data + Expert Parallelism for MoE (trained-physics only)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Data + Expert Parallelism for MoE (trained-physics only)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#calibrating-_ep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Calibrating β_EP
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3016,7 +3072,7 @@
 <a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>         + β₇                                  # per-step fixed overhead (µs)
 <a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>         + β₈ × nMoE                           # per-MoE-layer overhead (µs/layer)
 </code></pre></div>
-<p>The model supports 7-10 beta coefficients. Bundled defaults use 10 coefficients with prefill/decode split.</p>
+<p>The model supports 7-11 beta coefficients. Bundled defaults use 11 coefficients (prefill/decode split + the MoE expert-parallel dispatch correction β_EP).</p>
 <p><strong>Beta coefficients:</strong></p>
 <ul>
 <li><strong>β₁ₐ</strong> (prefill compute, ~0.15): Corrects analytical FlashAttention + MLP FLOP estimates for kernel efficiency, memory access patterns.</li>
@@ -3029,6 +3085,7 @@
 <li><strong>β₆</strong> (per-request, ~4 µs/request): Scheduling overhead per request: queue management, attention mask construction.</li>
 <li><strong>β₇</strong> (per-step, ~126 µs/step): Fixed overhead per step: CUDA synchronization, sampler invocation.</li>
 <li><strong>β₈</strong> (MoE-layer, ~482 µs/layer): Per-MoE-layer overhead for router gating, token permutation. Architecture-aware: applies only to interleaved MoE architectures (InterleaveMoELayerStep &gt; 0). Zero for uniform MoE and dense models.</li>
+<li><strong>β_EP</strong> (MoE dispatch/combine, defaults to β₄): Corrects MoE expert-/data-parallel dispatch+combine all-to-all communication. Active only for MoE models with <code>--dp &gt; 1</code>. Defaults to β₄ because both comm-backend families run over the same NVLink fabric and share the ring-collective per-phase efficiency β₄ captures (the per-family <em>volume</em> difference is in the basis, not the coefficient). The 11th coefficient overrides the default.</li>
 </ul>
 <p><strong>Alpha coefficients</strong> (3 terms, API/framework overheads in µs):</p>
 <ul>
@@ -3062,11 +3119,50 @@
 <li><strong>TP configurations</strong>: TP=1, TP=2, TP=4, TP=8 (All-Reduce overhead scales via β₄)</li>
 </ul>
 <p><strong>Why trained-physics over roofline:</strong></p>
-<p>Trained-physics uses <strong>13 coefficients</strong> (10 beta: prefill compute/memory split, decode compute/memory split, weight, TP, layer overhead, batch overhead, step overhead, MoE overhead; 3 alpha: queueing, post-decode, per-token) that capture more architectural detail than pure roofline (no learned corrections). The prefill/decode split (β₁ₐ/β₁ᵦ, β₂ₐ/β₂ᵦ) and MoE-specific overhead (β₈) enable better generalization to unseen model architectures (especially interleaved MoE) and batch compositions (mixed prefill/decode).</p>
+<p>Trained-physics uses up to <strong>14 coefficients</strong> (11 beta: prefill compute/memory split, decode compute/memory split, weight, TP, layer overhead, batch overhead, step overhead, MoE overhead, and the MoE expert-parallel dispatch correction β_EP; 3 alpha: queueing, post-decode, per-token) that capture more architectural detail than pure roofline (no learned corrections). The prefill/decode split (β₁ₐ/β₁ᵦ, β₂ₐ/β₂ᵦ) and MoE-specific overhead (β₈) enable better generalization to unseen model architectures (especially interleaved MoE) and batch compositions (mixed prefill/decode).</p>
 <div class="admonition note">
 <p class="admonition-title">MoE architecture detection</p>
 <p>β₈ applies conditionally based on <code>InterleaveMoELayerStep</code> from the model's <code>config.json</code>: 0 = uniform MoE (β₈ skipped), 1 = alternating MoE/dense (β₈ × 24 layers for Scout's 48 total), 2 = every 3rd layer is MoE, etc. This prevents over-penalizing uniform MoE models like Mixtral where expert routing overhead is amortized across all layers.</p>
 </div>
+<h3 id="data-expert-parallelism-for-moe-trained-physics-only">Data + Expert Parallelism for MoE (trained-physics only)<a class="headerlink" href="#data-expert-parallelism-for-moe-trained-physics-only" title="Permanent link">&para;</a></h3>
+<p>For MoE deployments, trained-physics models data parallelism (<code>--dp</code>) and expert parallelism (<code>--enable-expert-parallel</code>) the way vLLM does (mirrors <code>vllm-project/vllm</code>):</p>
+<ul>
+<li><strong>Routed-expert weight/compute</strong> are scoped to the flattened MoE group <code>moeGroup = TP·DP</code> via the <code>ExpertPlacement</code> seam: each GPU holds <code>numExperts/moeGroup</code> full-expert-equivalents (EP-off tensor-shards them; EP-on owns whole experts — the per-GPU bytes are identical). This replaces a batch-dependent heuristic and is <strong>EP-mode-agnostic</strong>, so MoE step time at <code>DP=1</code> intentionally differs from pre-DP/EP BLIS (a deliberate fidelity fix). Dense models at <code>DP=1</code> are byte-identical (INV-BC-DP1).</li>
+<li><strong>Sequence-split terms</strong> (attention/dense-FFN compute, KV read/write) gain a <code>/dp</code> factor — each DP rank processes ~<code>1/dp</code> of the tokens. Weights stay <code>/tp</code> (replicated across DP groups).</li>
+<li><strong>Shared experts</strong> (DeepSeek/Qwen-style) are charged for every token when the model exposes a shared-expert FFN dim; a no-op otherwise (including Llama-4 Scout until its shared-expert dim — <code>config.intermediate_size</code>, not <code>intermediate_size_mlp</code> which is the dense-layer FFN — is mapped).</li>
+<li><strong>MoE-FFN communication</strong> partitions on the <code>DP</code> boundary: at <code>DP=1, TP&gt;1</code> an all-reduce over the TP group; at <code>DP&gt;1</code> a dispatch/combine all-to-all (β_EP).</li>
+</ul>
+<p><strong><code>--moe-comm-backend</code></strong> selects the dispatch/combine cost model (mirrors vLLM <code>VLLM_ALL2ALL_BACKEND</code>). The seven names map to two physical volume families:</p>
+<table>
+<thead>
+<tr>
+<th>Family</th>
+<th>Backends</th>
+<th>Per-rank dispatch volume</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>all-gather</td>
+<td><code>naive</code>, <code>allgather_reducescatter</code> (default)</td>
+<td>dense hidden states, <strong>no top_k</strong></td>
+</tr>
+<tr>
+<td>modular all-to-all</td>
+<td><code>pplx</code>, <code>deepep_high_throughput</code>, <code>deepep_low_latency</code>, <code>mori</code>, <code>flashinfer_all2allv</code></td>
+<td>top_k-routed tokens (carries <code>kEff</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>DP/EP and <code>--moe-comm-backend</code> require <code>--latency-model trained-physics</code> (roofline is DP/EP-blind for step time) and are rejected on dense models for <code>--dp &gt; 1</code> (dense data parallelism is the router-replica mechanism — use <code>--num-instances</code>). Absolute MoE communication magnitudes are physics-estimated with β_EP defaulted to β₄; an empirical re-fit is future work.</p>
+<h4 id="calibrating-_ep">Calibrating β_EP<a class="headerlink" href="#calibrating-_ep" title="Permanent link">&para;</a></h4>
+<p>The β₄ default assumes the dispatch/combine collective runs at the same per-byte efficiency as the TP all-reduce — true when both share one NVLink fabric, but not when EP spans nodes (e.g. inter-node InfiniBand for EP while TP stays intra-node NVLink). To fit β_EP for such a deployment:</p>
+<ol>
+<li>Collect real per-step latencies for a <strong>MoE model at <code>--dp &gt; 1</code></strong> with a fixed <code>--moe-comm-backend</code>, holding everything else constant.</li>
+<li>Freeze the other 10 β coefficients (and the α coefficients) at their bundled values.</li>
+<li>Fit only β_EP to the residual between observed step time and the model's prediction with the dispatch term zeroed — i.e. attribute the leftover to <code>β_EP · tMoEDispatch</code>.</li>
+</ol>
+<p>Because the dispatch term is the <em>only</em> term gated on <code>DP &gt; 1</code>, the residual isolates it cleanly. Fit per comm-backend <em>family</em> (all-gather vs all-to-all), not per backend name; see the PR #1433 discussion for why per-backend scalars are the wrong granularity (the within-family differences are prefill/decode shape effects a single scalar cannot represent).</p>
 <h2 id="when-to-use-which">When to Use Which<a class="headerlink" href="#when-to-use-which" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
