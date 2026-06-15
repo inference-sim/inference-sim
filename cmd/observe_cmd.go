@@ -62,6 +62,7 @@ var (
 	observeRecordITL           bool
 	observeITLOutput           string
 	observeTimeout             int
+	observePrewarmDuration     time.Duration
 	// saturationReport is declared in root.go and shared across run, replay, observe
 )
 
@@ -128,6 +129,7 @@ func init() {
 	observeCmd.Flags().StringVar(&observeServerType, "server-type", "vllm", "Server type (vllm, tgi, etc.)")
 	observeCmd.Flags().IntVar(&observeMaxConcur, "max-concurrency", 256, "Maximum simultaneous in-flight requests")
 	observeCmd.Flags().IntVar(&observeWarmup, "warmup-requests", 0, "Number of initial requests to exclude from trace")
+	observeCmd.Flags().DurationVar(&observePrewarmDuration, "prewarm-duration", 0, "Duration of system priming phase before real workload (e.g., 60s). Sends small fixed requests at low concurrency to warm CUDA/EPP/memory. 0 = disabled.")
 	observeCmd.Flags().BoolVar(&observeNoStreaming, "no-streaming", false, "Disable streaming (use non-streaming HTTP)")
 	observeCmd.Flags().Int64Var(&observeSeed, "seed", 42, "RNG seed for workload generation")
 	observeCmd.Flags().Int64Var(&observeHorizon, "horizon", 0, "Observation horizon in microseconds (0 = from spec or unlimited)")
@@ -293,6 +295,9 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	}
 	if observeWarmup < 0 {
 		logrus.Fatalf("--warmup-requests must be >= 0, got %d", observeWarmup)
+	}
+	if observePrewarmDuration < 0 {
+		logrus.Fatalf("--prewarm-duration must be >= 0, got %v", observePrewarmDuration)
 	}
 	if cmd.Flags().Changed("rate") && (observeRate <= 0 || math.IsNaN(observeRate) || math.IsInf(observeRate, 0)) {
 		logrus.Fatalf("--rate must be a finite value > 0, got %v", observeRate)
@@ -469,6 +474,11 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Warn("Received interrupt signal, cancelling observation...")
 		cancel()
 	}()
+
+	// Prewarm if requested (#1430)
+	if observePrewarmDuration > 0 {
+		runPrewarm(ctx, client, observePrewarmDuration)
+	}
 
 	// Run orchestrator
 	startTime := time.Now()
@@ -781,6 +791,78 @@ func printObserveMetrics(w io.Writer, records []workload.TraceRecord, wallClockD
 
 	// Print with section header (BC-5)
 	_, _ = fmt.Fprintf(w, "=== Simulation Metrics ===\n%s\n", string(jsonBytes))
+}
+
+// runPrewarm sends small, fixed requests to warm the target system before the
+// real workload begins. Uses low concurrency and small token counts that cannot
+// overload the system regardless of the real workload's rate.
+func runPrewarm(ctx context.Context, client *RealClient, duration time.Duration) {
+	const (
+		concurrency     = 4
+		inputTokens     = 256
+		maxOutputTokens = 64
+	)
+
+	logrus.Infof("Prewarming system for %v (concurrency=%d, input=%d, output=%d tokens)...",
+		duration, concurrency, inputTokens, maxOutputTokens)
+
+	prompt := strings.Repeat("warm ", inputTokens)
+
+	// done channel is closed when duration elapses — all goroutines see the close.
+	done := make(chan struct{})
+	timer := time.AfterFunc(duration, func() { close(done) })
+	defer timer.Stop()
+
+	var totalRequests, totalErrors atomic.Int64
+
+	var wg sync.WaitGroup
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-done:
+					return
+				case <-ctx.Done():
+					return
+				default:
+				}
+
+				req := &PendingRequest{
+					RequestID:       -1,
+					Streaming:       false,
+					MaxOutputTokens: maxOutputTokens,
+					Prompt:          prompt,
+				}
+				rec, _ := client.Send(ctx, req)
+				totalRequests.Add(1)
+				if rec != nil && rec.Status != "ok" {
+					totalErrors.Add(1)
+					// Back off on errors to avoid CPU spin when server is unreachable.
+					select {
+					case <-done:
+						return
+					case <-ctx.Done():
+						return
+					case <-time.After(500 * time.Millisecond):
+					}
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	sent := totalRequests.Load()
+	errs := totalErrors.Load()
+	if sent == 0 || errs == sent {
+		logrus.Warnf("Prewarm: %d/%d requests failed (is the server reachable at %s?)", errs, sent, client.baseURL)
+	} else if errs > 0 {
+		logrus.Infof("Prewarm complete: %d requests sent, %d errors", sent, errs)
+	} else {
+		logrus.Infof("Prewarm complete: %d requests sent", sent)
+	}
 }
 
 // runObserveOrchestrator implements the dispatch loop with session support.

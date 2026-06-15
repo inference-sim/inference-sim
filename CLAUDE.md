@@ -84,6 +84,16 @@ go build -o blis main.go
   --think-time-dist "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s" \
   --trace-header trace.yaml --trace-data trace.csv
 
+# Observe with system prewarm (recommended for cold systems, #1430)
+# --prewarm-duration: warms infrastructure (EPP/gateway connections, TCP pools)
+#   before measurement. Use for cold systems. Shape-independent.
+# --warmup-requests: excludes first N real-workload requests from trace.
+#   Use for statistical trimming. Rarely needed if --prewarm-duration is set.
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --prewarm-duration 60s \
+  --workload chatbot --rate 10 --num-requests 100 \
+  --trace-header trace.yaml --trace-data trace.csv
+
 # Observe with ITL (inter-token latency) recording for streaming requests
 # --record-itl forces streaming on non-streaming workloads to capture per-chunk timestamps
 ./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
