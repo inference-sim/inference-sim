@@ -2,7 +2,7 @@
 
 # ── Build stage ────────────────────────────────────────────────────────────────
 # Keep base image Go version in sync with the 'go' directive in go.mod.
-FROM golang:1.21-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 # TARGETOS/TARGETARCH are injected by Buildx for each platform in a multi-arch
 # build (e.g. linux/amd64, linux/arm64). Declaring them as ARGs makes them
