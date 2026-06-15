@@ -2131,6 +2131,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#inv-bc-dp1-dense-dp1-step-time-byte-identity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-BC-DP1: Dense DP=1 Step-Time Byte-Identity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pd-disaggregation-invariants" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3051,6 +3062,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#inv-bc-dp1-dense-dp1-step-time-byte-identity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INV-BC-DP1: Dense DP=1 Step-Time Byte-Identity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pd-disaggregation-invariants" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3343,6 +3365,13 @@
 <p><strong>Verification:</strong> <code>cmd/replay_test.go</code> — <code>TestINV13_RunReplayParity_PD</code> verifies that a PD-disaggregated cluster produces matching <code>RequestTTFTs</code> and <code>RequestE2Es</code> maps when the same requests are run directly vs. through the trace-export-then-replay path. <code>TestReplayCmd_AutoscalerBundleFatal</code> and <code>TestReplayCmd_NodePoolsBundleFatal</code> verify fatal exit for unsupported features.</p>
 <p><strong>Evidence:</strong> <code>cmd/replay.go::replayCmd.Run</code> wires the same <code>cluster.DeploymentConfig</code> field set as <code>runCmd</code> (<code>cmd/root.go</code>). This parity surface is broader than PD disaggregation alone: it spans PD fields (<code>PrefillInstances</code>, <code>DecodeInstances</code>, <code>SharedInstances</code>, <code>PDDecider</code>, <code>PDPrefixThreshold</code>, <code>PDTransferBandwidthGBps</code>, <code>PDTransferBaseLatencyMs</code>, <code>PDTransferContention</code>, <code>PrefillScorerConfigs</code>, <code>DecodeScorerConfigs</code>, <code>PrefillOverrides</code>, <code>DecodeOverrides</code>), encode-stage fields (<code>EncodeInstances</code>, <code>EncodeDecider</code>), the flow-control fields, tier-shedding (<code>TierShedThreshold</code>, <code>TierShedMinPriority</code>), GAIE thresholds (<code>GAIEQDThreshold</code>, <code>GAIEKVThreshold</code>), <code>TenantBudgets</code>, and <code>InstanceLifecycle</code>. Both call sites carry an <code>INV-13 SYNC POINT</code> comment marking the literal that must stay in sync; treat that comment — not a fixed field count — as the authoritative enumeration, since it grows as features are added. Autoscaler and node-pool checks use <code>logrus.Fatalf</code> to prevent silent divergence.</p>
 <p><strong>Hypothesis family:</strong> Scheduler invariants (safety/liveness) — same as INV-1, INV-5, INV-6.</p>
+<hr />
+<h2 id="inv-bc-dp1-dense-dp1-step-time-byte-identity">INV-BC-DP1: Dense DP=1 Step-Time Byte-Identity<a class="headerlink" href="#inv-bc-dp1-dense-dp1-step-time-byte-identity" title="Permanent link">&para;</a></h2>
+<p><strong>Statement:</strong> For a <strong>dense</strong> model (<code>NumLocalExperts &lt; MoEMinExperts</code>) at <code>DP=1</code> with expert parallelism off, the <code>trained-physics</code> <code>StepTime</code> MUST be byte-identical to the pre-#1419 value across the full TP matrix. The DP/EP refactor (#1419) splits the monolithic TP all-reduce term into per-class terms (<code>tTpAttention + tTpDenseFFN [+ tMoEReduce]</code>) and routes MoE expert cost through <code>sim.ExpertPlacement</code>; for dense <code>DP=1</code> this is value-preserving: <code>tTpAttention + tTpDenseFFN = V(numLayers, tp) + V(numDenseLayers, tp) = V(2·numLayers, tp)</code> (since <code>numDenseLayers == numLayers</code>, <code>numMoELayers == 0</code>), exactly the old <code>allReduceUnits = 2·numDenseLayers + numMoELayers</code> term, and every <code>/(tp·dp)</code> divisor reduces to <code>/tp</code> at <code>dp=1</code>.</p>
+<p>MoE-model step time <strong>intentionally changes</strong> at <code>DP=1</code>/EP-off (B1 routed-expert weight scoping + the newly-charged <code>tMoEReduce</code>); that is a deliberate fidelity gain, not a parity regression.</p>
+<p><strong>Verification:</strong> <code>sim/latency/trained_physics_dpep_test.go</code> — <code>TestINVBCDP1_DenseStepTimeByteIdentical</code> (golden across TP∈{1,2,4,8}) with companion <code>TestINVBCDP1_DenseDP1Determinism</code> (dense step time is invariant to the EP flag and the MoE comm backend, and deterministic across calls).</p>
+<p><strong>Evidence:</strong> Dense experiments in the trained-physics golden dataset (<code>testdata/trained_physics_iter29.json</code>) are unchanged across the #1419 refactor; only the four Llama-4 Scout (MoE) experiments shift.</p>
+<p><strong>Hypothesis family:</strong> Latency-model invariants (correctness/conservation).</p>
 <hr />
 <h2 id="pd-disaggregation-invariants">PD Disaggregation Invariants<a class="headerlink" href="#pd-disaggregation-invariants" title="Permanent link">&para;</a></h2>
 <h3 id="inv-pd-1-kv-completeness">INV-PD-1: KV Completeness<a class="headerlink" href="#inv-pd-1-kv-completeness" title="Permanent link">&para;</a></h3>
