@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -888,5 +889,198 @@ func TestTransferContention_INV6_Determinism(t *testing.T) {
 	if init1 != init2 || done1 != done2 {
 		t.Errorf("INV-6: transfer counts diverged: initiated %d vs %d, completed %d vs %d",
 			init1, init2, done1, done2)
+	}
+}
+
+// activeTransfersRecorder wraps a DisaggregationDecider and records the
+// RouterState.ActiveTransfers value observed at each Decide call. Used by the
+// tests below to verify executeDisaggregatedRouting populates the field only
+// when --pd-transfer-contention is enabled (issue #1342).
+type activeTransfersRecorder struct {
+	inner sim.DisaggregationDecider
+	seen  []int
+}
+
+func (r *activeTransfersRecorder) Decide(req *sim.Request, state *sim.RouterState) sim.DisaggregationDecision {
+	r.seen = append(r.seen, state.ActiveTransfers)
+	return r.inner.Decide(req, state)
+}
+
+// runWithActiveTransfersRecorder installs an activeTransfersRecorder wrapping
+// the supplied inner decider on a fresh ClusterSimulator, runs it, and returns
+// the sequence of ActiveTransfers values observed at each Decide call. Arrival
+// times may be overridden by the caller via arrivalTimes (one entry per request);
+// pass nil to use the arrival times produced by newTestRequests.
+func runWithActiveTransfersRecorder(t *testing.T, config DeploymentConfig, numRequests int, inner sim.DisaggregationDecider, arrivalTimes []int64) []int {
+	t.Helper()
+	requests := newTestRequests(numRequests)
+	if arrivalTimes != nil {
+		if len(arrivalTimes) != len(requests) {
+			t.Fatalf("arrivalTimes length %d != numRequests %d", len(arrivalTimes), len(requests))
+		}
+		for i, r := range requests {
+			r.ArrivalTime = arrivalTimes[i]
+		}
+	}
+	cs := NewClusterSimulator(config, requests, nil)
+	rec := &activeTransfersRecorder{inner: inner}
+	cs.disaggregationDecider = rec
+	mustRun(t, cs)
+	return rec.seen
+}
+
+// TestRouterState_ActiveTransfers_PopulatedWhenContentionEnabled verifies BC-1:
+// when --pd-transfer-contention is enabled, executeDisaggregatedRouting snapshots
+// the current cluster-wide activeTransfers count into RouterState.ActiveTransfers
+// at the moment Decide is called. Issue #1342.
+//
+// We use direct invocation of executeDisaggregatedRouting rather than a full Run()
+// because the snapshot occurs at Decide call time — which, under a natural workload,
+// is always before that request's own transfer starts. Setting activeTransfers
+// directly simulates the presence of prior in-flight transfers from other requests
+// and makes the snapshot behavior observable independent of scheduling latency.
+func TestRouterState_ActiveTransfers_PopulatedWhenContentionEnabled(t *testing.T) {
+	config := newContentionConfig(4, 2, 2, 25.0)
+	cs := NewClusterSimulator(config, []*sim.Request{}, nil)
+	rec := &activeTransfersRecorder{inner: &sim.AlwaysDisaggregate{}}
+	cs.disaggregationDecider = rec
+
+	// Simulate the presence of three prior in-flight transfers (started by earlier
+	// requests not modeled in this test). Also advance bookkeeping counters so the
+	// end-of-run conservation check (initiated == completed) is not violated; this
+	// test does not run the simulation to completion.
+	cs.activeTransfers = 3
+	cs.transfersInitiated = 3
+
+	req := &sim.Request{
+		ID:           "unit-req-1",
+		InputTokens:  []int{1, 2, 3, 4},
+		MaxOutputLen: 8,
+		ArrivalTime:  0,
+	}
+	cs.executeDisaggregatedRouting(req, 0)
+
+	if len(rec.seen) != 1 {
+		t.Fatalf("expected 1 Decide call, got %d", len(rec.seen))
+	}
+	if rec.seen[0] != 3 {
+		t.Errorf("RouterState.ActiveTransfers at Decide = %d, want 3 (mirrors cs.activeTransfers)", rec.seen[0])
+	}
+}
+
+// TestRouterState_ActiveTransfers_ZeroWhenContentionDisabled verifies BC-2:
+// when --pd-transfer-contention is disabled, executeDisaggregatedRouting does
+// NOT populate RouterState.ActiveTransfers even when cs.activeTransfers would
+// otherwise be non-zero. The field remains at its Go zero value. Issue #1342.
+func TestRouterState_ActiveTransfers_ZeroWhenContentionDisabled(t *testing.T) {
+	config := newTestDisaggDeploymentConfig(4, 2, 2)
+	// PDTransferContention defaults to false — leave it that way.
+	cs := NewClusterSimulator(config, []*sim.Request{}, nil)
+	rec := &activeTransfersRecorder{inner: &sim.AlwaysDisaggregate{}}
+	cs.disaggregationDecider = rec
+
+	// Even if cs.activeTransfers somehow were non-zero (it cannot be when
+	// contention is disabled, but we set it to make the assertion unambiguous),
+	// the field must not leak into RouterState.
+	cs.activeTransfers = 7
+
+	req := &sim.Request{
+		ID:           "unit-req-1",
+		InputTokens:  []int{1, 2, 3, 4},
+		MaxOutputLen: 8,
+		ArrivalTime:  0,
+	}
+	cs.executeDisaggregatedRouting(req, 0)
+
+	if len(rec.seen) != 1 {
+		t.Fatalf("expected 1 Decide call, got %d", len(rec.seen))
+	}
+	if rec.seen[0] != 0 {
+		t.Errorf("RouterState.ActiveTransfers at Decide = %d, want 0 (contention disabled)", rec.seen[0])
+	}
+}
+
+// TestRouterState_ActiveTransfers_EndToEnd_PopulatedUnderContention is an
+// end-to-end companion to the unit tests above. It runs a full simulation with
+// --pd-transfer-contention enabled and a sparse arrival pattern chosen so that
+// at least one Decide call occurs while a prior request's transfer is in flight.
+// If the assertion here ever regresses it will point to a change in the pipeline
+// ordering (arrival → routing → prefill → transfer start) that breaks the
+// ability of deciders to observe concurrent transfers through RouterState.
+func TestRouterState_ActiveTransfers_EndToEnd_PopulatedUnderContention(t *testing.T) {
+	// Low bandwidth + low-overhead base latency keeps transfers in flight for
+	// milliseconds. Spread arrivals over ~200ms so later arrivals' Decide calls
+	// overlap with earlier requests' transfers.
+	config := newContentionConfig(4, 2, 2, 0.001)
+
+	const n = 8
+	arrivals := make([]int64, n)
+	for i := range arrivals {
+		arrivals[i] = int64(i) * 30_000 // 30 ms apart, in microseconds
+	}
+	seen := runWithActiveTransfersRecorder(t, config, n, &sim.AlwaysDisaggregate{}, arrivals)
+
+	if len(seen) == 0 {
+		t.Fatal("decider was never invoked — test setup did not exercise executeDisaggregatedRouting")
+	}
+	if m := slices.Max(seen); m == 0 {
+		t.Errorf("max observed RouterState.ActiveTransfers = 0 across %d Decide calls, want > 0 (contention enabled with overlapping transfers)", len(seen))
+	}
+}
+
+// TestRouterState_ActiveTransfers_BuiltinDeciderParity verifies BC-3:
+// the built-in deciders (never, always, prefix-threshold) never read
+// RouterState.ActiveTransfers, so their externally-observable decision
+// output is unchanged by toggling --pd-transfer-contention. Issue #1342.
+//
+// This is a law test, not a golden test: we assert the property that for
+// each built-in, the disaggregation decision is a pure function of inputs
+// the built-in already reads — regardless of what ActiveTransfers is set to.
+//
+// prefix-threshold is covered by two cases that exercise distinct paths
+// through PrefixThresholdDecider.Decide:
+//
+//   - "prefix-threshold-nil-cache": nil cacheQuery triggers the conservative
+//     fallback (Disaggregate=false), invariant of ActiveTransfers.
+//   - "prefix-threshold-over": non-nil cacheQuery reporting zero cached blocks
+//     plus threshold=0 drives the positive arm of the decider (Disaggregate=true
+//     because nonCachedTokens > threshold), also invariant of ActiveTransfers.
+func TestRouterState_ActiveTransfers_BuiltinDeciderParity(t *testing.T) {
+	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3}, MaxOutputLen: 4}
+
+	// For prefix-threshold-over, a cacheQuery keyed by the SelectedInstance used
+	// in the per-case state below, always reporting zero cached blocks so the
+	// decider's positive arm fires (nonCachedTokens=3 > threshold=0).
+	const selectedInst = "inst-0"
+	cacheQueryZero := map[string]func([]int) int{
+		selectedInst: func(_ []int) int { return 0 },
+	}
+
+	cases := []struct {
+		name         string
+		decider      sim.DisaggregationDecider
+		selectedInst string
+		wantDisagg   bool
+	}{
+		{"never", &sim.NeverDisaggregate{}, "", false},
+		{"always", &sim.AlwaysDisaggregate{}, "", true},
+		{"prefix-threshold-nil-cache", sim.NewPrefixThresholdDecider(0, 16, nil), selectedInst, false},
+		{"prefix-threshold-over", sim.NewPrefixThresholdDecider(0, 16, cacheQueryZero), selectedInst, true},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			for _, at := range []int{0, 1, 5, 100} {
+				state := &sim.RouterState{
+					ActiveTransfers:  at,
+					SelectedInstance: tc.selectedInst,
+				}
+				got := tc.decider.Decide(req, state)
+				if got.Disaggregate != tc.wantDisagg {
+					t.Errorf("%s decider with ActiveTransfers=%d: Disaggregate = %v, want %v (built-in must not depend on ActiveTransfers)",
+						tc.name, at, got.Disaggregate, tc.wantDisagg)
+				}
+			}
+		})
 	}
 }
