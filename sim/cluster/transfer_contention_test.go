@@ -46,7 +46,7 @@ func TestTransferContention_INVP22_FairShareBandwidth(t *testing.T) {
 		r.ArrivalTime = 0
 	}
 
-	cs := NewClusterSimulator(config, requests, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	parents := cs.ParentRequests()
@@ -95,9 +95,9 @@ func TestTransferContention_BCP25_SingleTransferIdentical(t *testing.T) {
 		requests2[i] = &cp
 	}
 
-	cs1 := NewClusterSimulator(configNoContention, requests1, nil)
+	cs1 := NewClusterSimulator(configNoContention, NewSliceRequestSource(requests1), nil)
 	mustRun(t, cs1)
-	cs2 := NewClusterSimulator(configContention, requests2, nil)
+	cs2 := NewClusterSimulator(configContention, NewSliceRequestSource(requests2), nil)
 	mustRun(t, cs2)
 
 	parents1 := cs1.ParentRequests()
@@ -130,7 +130,7 @@ func TestTransferContention_BCP26_FairShareDivision(t *testing.T) {
 		r.ArrivalTime = 0
 	}
 
-	cs := NewClusterSimulator(config, requests, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	parents := cs.ParentRequests()
@@ -155,7 +155,7 @@ func TestTransferContention_BCP26_FairShareDivision(t *testing.T) {
 		r.ArrivalTime = 0
 	}
 
-	csNoContention := NewClusterSimulator(configNoContention, requestsCopy, nil)
+	csNoContention := NewClusterSimulator(configNoContention, NewSliceRequestSource(requestsCopy), nil)
 	mustRun(t, csNoContention)
 
 	parentsNC := csNoContention.ParentRequests()
@@ -201,7 +201,7 @@ func TestTransferContention_BCP27_INVPD3_Holds(t *testing.T) {
 		r.ArrivalTime = 0
 	}
 
-	cs := NewClusterSimulator(config, requests, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 	// Run() returns non-nil only if contention bookkeeping was corrupted; err == nil
 	// rules out that failure path but does not by itself prove INV-PD-3.
 	if err := cs.Run(); err != nil {
@@ -225,7 +225,7 @@ func TestTransferContention_BCP28_MetricsAvailable(t *testing.T) {
 		r.ArrivalTime = 0
 	}
 
-	cs := NewClusterSimulator(config, requests, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	pd := CollectPDMetrics(
@@ -257,7 +257,7 @@ func TestTransferContention_DisabledByDefault(t *testing.T) {
 	// PDTransferContention defaults to false
 	requests := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, requests, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	if cs.PeakConcurrentTransfers() != 0 {
@@ -276,7 +276,7 @@ func TestTransferContention_ActiveTransfersZeroAtEnd(t *testing.T) {
 	config := newContentionConfig(4, 2, 2, 25.0)
 	requests := newTestRequests(5)
 
-	cs := NewClusterSimulator(config, requests, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	// After simulation completes, activeTransfers should be back to 0
@@ -299,7 +299,7 @@ func TestTransferContention_HorizonCutoff_RunReturnsNil(t *testing.T) {
 	config := newContentionConfig(4, 2, 2, 25.0)
 	// Empty request set: simulation finishes immediately without any events,
 	// leaving activeTransfers untouched at whatever we set before Run().
-	cs := NewClusterSimulator(config, newTestRequests(0), nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(newTestRequests(0)), nil)
 	// Pre-set to simulate a horizon that cut off one in-flight transfer.
 	cs.activeTransfers = 1
 
@@ -341,7 +341,7 @@ func TestTransferContention_INVP22_EffectiveBandwidthFormula(t *testing.T) {
 	}
 
 	config := newContentionConfig(4, 2, 2, 10.0) // 10 GB/s, zero base latency
-	cs := NewClusterSimulator(config, []*sim.Request{req}, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource([]*sim.Request{req}), nil)
 	mustRun(t, cs)
 
 	parents := cs.ParentRequests()
@@ -387,7 +387,7 @@ func TestTransferContention_MeanQueueDepthCalculation(t *testing.T) {
 // so no transfers are ever started.
 func TestTransferContention_MeanQueueDepthZeroTransfers(t *testing.T) {
 	config := newContentionConfig(4, 2, 2, 25.0)
-	cs := NewClusterSimulator(config, []*sim.Request{}, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource([]*sim.Request{}), nil)
 	mustRun(t, cs)
 	got := cs.MeanTransferQueueDepth()
 	if got != 0 {
@@ -511,7 +511,7 @@ func TestTransferContention_CorruptionFlagCausesRunError(t *testing.T) {
 	// Use 1 request so the simulation completes quickly and INV-PD-3 holds.
 	requests := newTestRequests(1)
 
-	cs := NewClusterSimulator(config, requests, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 	// Inject corruption flag before Run(). The event loop will execute normally,
 	// but the post-loop check should detect the corruption and return an error.
 	cs.contentionBookkeepingCorrupted = true
@@ -588,7 +588,7 @@ func TestTransferContention_F1_RequiresPDEnabled(t *testing.T) {
 	config := newTestDeploymentConfig(2)
 	config.PDTransferContention = true
 	// This must panic because PD is not active.
-	NewClusterSimulator(config, []*sim.Request{}, nil)
+	NewClusterSimulator(config, NewSliceRequestSource([]*sim.Request{}), nil)
 }
 
 // TestTransferContention_NegativeGuard_SetsCorruptionFlag verifies that when
@@ -870,7 +870,7 @@ func TestTransferContention_INV6_Determinism(t *testing.T) {
 		for _, r := range requests {
 			r.ArrivalTime = 0
 		}
-		cs := NewClusterSimulator(config, requests, nil)
+		cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 		mustRun(t, cs)
 		return cs.PeakConcurrentTransfers(), cs.MeanTransferQueueDepth(),
 			cs.transfersInitiated, cs.transfersCompleted

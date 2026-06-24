@@ -715,12 +715,12 @@ func TestCluster_CacheSignalDelay_StaleRouting(t *testing.T) {
 	}
 
 	// Oracle mode: delay=0
-	csOracle := NewClusterSimulator(makeConfig(0), makeRequests(), nil)
+	csOracle := NewClusterSimulator(makeConfig(0), NewSliceRequestSource(makeRequests()), nil)
 	require.NoError(t, csOracle.Run())
 	oraclePerInst := csOracle.PerInstanceMetrics()
 
 	// Stale mode: delay=50s (much larger than total workload span)
-	csStale := NewClusterSimulator(makeConfig(50_000_000), makeRequests(), nil)
+	csStale := NewClusterSimulator(makeConfig(50_000_000), NewSliceRequestSource(makeRequests()), nil)
 	require.NoError(t, csStale.Run())
 	stalePerInst := csStale.PerInstanceMetrics()
 
@@ -776,7 +776,7 @@ func TestCluster_CacheSignalDelay_Zero_OracleBehavior(t *testing.T) {
 		{ID: "r2", ArrivalTime: 100_000, InputTokens: tokens, OutputTokens: []int{1}, State: sim.StateQueued},
 	}
 
-	cs := NewClusterSimulator(config, requests, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 	err := cs.Run()
 	require.NoError(t, err)
 

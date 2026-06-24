@@ -40,7 +40,7 @@ func TestFullPipelineEndToEnd(t *testing.T) {
 		}
 	}
 
-	cs := NewClusterSimulator(cfg, requests, nil)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(requests), nil)
 
 	// Wire the real pipeline
 	collector := &DefaultCollector{}

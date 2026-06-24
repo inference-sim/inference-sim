@@ -40,7 +40,7 @@ type ClusterSimulator struct {
 	// before any drop/route/admission decision. Goodput denominator (issue #1409, BC-5).
 	injectedByClass map[string]int64
 	trace                 *trace.SimulationTrace    // nil when trace-level is "none" (BC-1: zero overhead)
-	preGeneratedRequests  []*sim.Request            // Pre-generated requests (all workload paths unified)
+	requestSource         RequestSource             // Source of requests to inject as arrival events. Drained once by Run().
 	inFlightRequests      map[string]int            // instance ID → dispatched-but-not-completed count (#463)
 	evictionTracker       *EvictionTracker          // tracks routed sheddable requests for in-flight eviction (nil unless --in-flight-eviction set)
 	gatewayEvicted        int                       // count of requests evicted in-flight from instances (INV-1: gw_evicted)
@@ -143,13 +143,16 @@ func effectiveAnalyzerConfig(cfg V2SaturationAnalyzerConfig) V2SaturationAnalyze
 }
 
 // NewClusterSimulator creates a ClusterSimulator with N instances.
-// All workload generation now happens externally — requests are passed in directly.
+// Requests are pulled from requestSource (which yields in non-decreasing
+// ArrivalTime order, exactly once each) at the start of Run().
+//
 // onRequestDone is an optional callback invoked when a request reaches a terminal state
 // (completed, length-capped, timed out, or dropped). The callback returns follow-up
 // requests which are routed through the cluster pipeline (not injected locally).
 // Pass nil for non-session workloads.
+//
 // Panics if config.NumInstances < 1.
-func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onRequestDone func(*sim.Request, int64) []*sim.Request) *ClusterSimulator {
+func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, onRequestDone func(*sim.Request, int64) []*sim.Request) *ClusterSimulator {
 	if config.NumInstances < 1 {
 		panic("ClusterSimulator: NumInstances must be >= 1")
 	}
@@ -242,7 +245,7 @@ func NewClusterSimulator(config DeploymentConfig, requests []*sim.Request, onReq
 		config:               config,
 		instances:            make([]*InstanceSimulator, 0, config.NumInstances),
 		rng:                  rng,
-		preGeneratedRequests: requests,
+		requestSource:        requestSource,
 		clusterEvents:        make(ClusterEventQueue, 0),
 		admissionLatency:     config.AdmissionLatency,
 		routingLatency:       config.RoutingLatency,
@@ -609,9 +612,9 @@ func (cs *ClusterSimulator) pushArrival(req *sim.Request, timeUs int64) {
 	cs.pendingArrivals++
 }
 
-// Run executes the cluster simulation using online routing pipeline:
-// generates requests centrally, schedules ClusterArrivalEvents, runs a shared-clock
-// event loop processing cluster events before instance events, then finalizes.
+// Run executes the cluster simulation using online routing pipeline: drains the
+// configured RequestSource into ClusterArrivalEvents, runs a shared-clock event
+// loop processing cluster events before instance events, then finalizes.
 // Panics if called more than once.
 func (c *ClusterSimulator) Run() error {
 	if c.hasRun {
@@ -619,13 +622,7 @@ func (c *ClusterSimulator) Run() error {
 	}
 	c.hasRun = true
 
-	// 1. Use pre-generated requests (all workload paths now pre-generate)
-	requests := c.preGeneratedRequests
-	if len(requests) == 0 {
-		logrus.Warn("[cluster] no requests provided — simulation will produce zero results")
-	}
-
-	// 2. Schedule ClusterArrivalEvents (NC-1: no pre-dispatch before event loop)
+	// 1. Schedule ClusterArrivalEvents (NC-1: no pre-dispatch before event loop)
 	heap.Init(&c.clusterEvents)
 
 	// Phase 1C: schedule the first ScalingTickEvent when the autoscaler is enabled (T015).
@@ -638,8 +635,20 @@ func (c *ClusterSimulator) Run() error {
 		})
 	}
 
-	for _, req := range requests {
+	// 2. Drain the request source to schedule arrival events. The source is
+	// guaranteed to yield in non-decreasing ArrivalTime order (RequestSource
+	// contract); we count emissions to preserve today's "no requests" warning.
+	arrivalCount := 0
+	for {
+		req, ok := c.requestSource.Next()
+		if !ok {
+			break
+		}
 		c.pushArrival(req, req.ArrivalTime)
+		arrivalCount++
+	}
+	if arrivalCount == 0 {
+		logrus.Warn("[cluster] no requests provided — simulation will produce zero results")
 	}
 
 	// 3. Shared-clock event loop (BC-4: cluster events before instance events)

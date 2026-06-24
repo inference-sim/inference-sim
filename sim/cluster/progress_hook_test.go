@@ -21,7 +21,7 @@ var _ sim.ProgressHook = (*clusterCollectingHook)(nil)
 func TestClusterSimulator_ProgressHook_FiresWithInstances(t *testing.T) {
 	config := newTestDeploymentConfig(2)
 	reqs := newTestRequests(10)
-	cs := NewClusterSimulator(config, reqs, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(reqs), nil)
 
 	var snapshots []sim.ProgressSnapshot
 	cs.SetProgressHook(&clusterCollectingHook{snapshots: &snapshots}, 500_000)
@@ -55,7 +55,7 @@ func TestClusterSimulator_ProgressHook_FiresWithInstances(t *testing.T) {
 func TestClusterSimulator_ProgressHook_NilHookNoImpact(t *testing.T) {
 	config := newTestDeploymentConfig(2)
 	reqs := newTestRequests(10)
-	cs := NewClusterSimulator(config, reqs, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(reqs), nil)
 
 	mustRun(t, cs)
 
@@ -68,7 +68,7 @@ func TestClusterSimulator_ProgressHook_NilHookNoImpact(t *testing.T) {
 func TestClusterSimulator_ProgressHook_ZeroIntervalOnlyFinal(t *testing.T) {
 	config := newTestDeploymentConfig(1)
 	reqs := newTestRequests(5)
-	cs := NewClusterSimulator(config, reqs, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(reqs), nil)
 
 	var snapshots []sim.ProgressSnapshot
 	cs.SetProgressHook(&clusterCollectingHook{snapshots: &snapshots}, 0)
@@ -86,7 +86,7 @@ func TestClusterSimulator_ProgressHook_ZeroIntervalOnlyFinal(t *testing.T) {
 func TestClusterSimulator_ProgressHook_SnapshotClockMonotonicity(t *testing.T) {
 	config := newTestDeploymentConfig(2)
 	reqs := newTestRequests(20)
-	cs := NewClusterSimulator(config, reqs, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(reqs), nil)
 
 	var snapshots []sim.ProgressSnapshot
 	cs.SetProgressHook(&clusterCollectingHook{snapshots: &snapshots}, 100_000)
@@ -105,7 +105,7 @@ func TestClusterSimulator_ProgressHook_FinalSnapshotOnHorizon(t *testing.T) {
 	config := newTestDeploymentConfig(1)
 	config.Horizon = 1_000_000
 	reqs := newTestRequests(100)
-	cs := NewClusterSimulator(config, reqs, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(reqs), nil)
 
 	var snapshots []sim.ProgressSnapshot
 	cs.SetProgressHook(&clusterCollectingHook{snapshots: &snapshots}, 100_000)
@@ -138,7 +138,7 @@ func TestClusterSimulator_ProgressHook_ShedByTier(t *testing.T) {
 	}
 
 	cfg := newTierShedConfig(0, 3) // MinAdmitPriority=3 → sheddable is rejected
-	cs := NewClusterSimulator(cfg, requests, nil)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(requests), nil)
 
 	var snapshots []sim.ProgressSnapshot
 	cs.SetProgressHook(&clusterCollectingHook{snapshots: &snapshots}, 500_000)
@@ -214,7 +214,7 @@ func TestClusterSimulator_ProgressHook_ShedByTierNilWhenNoShedding(t *testing.T)
 	// BC-2: always-admit produces nil ShedByTier in all snapshots.
 	config := newTestDeploymentConfig(2)
 	reqs := newTestRequests(10)
-	cs := NewClusterSimulator(config, reqs, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(reqs), nil)
 
 	var snapshots []sim.ProgressSnapshot
 	cs.SetProgressHook(&clusterCollectingHook{snapshots: &snapshots}, 100_000)
@@ -247,7 +247,7 @@ func TestClusterSimulator_ProgressHook_ShedByTierDeterminism(t *testing.T) {
 
 	run := func(withHook bool) map[string]int {
 		cfg := newTierShedConfig(0, 3)
-		cs := NewClusterSimulator(cfg, makeRequests(), nil)
+		cs := NewClusterSimulator(cfg, NewSliceRequestSource(makeRequests()), nil)
 		if withHook {
 			var snapshots []sim.ProgressSnapshot
 			cs.SetProgressHook(&clusterCollectingHook{snapshots: &snapshots}, 500_000)
@@ -276,7 +276,7 @@ func TestClusterSimulator_ProgressHook_Determinism(t *testing.T) {
 		config := newTestDeploymentConfig(2)
 		config.Horizon = math.MaxInt64
 		reqs := newTestRequests(10)
-		cs := NewClusterSimulator(config, reqs, nil)
+		cs := NewClusterSimulator(config, NewSliceRequestSource(reqs), nil)
 		if withHook {
 			var snapshots []sim.ProgressSnapshot
 			cs.SetProgressHook(&clusterCollectingHook{snapshots: &snapshots}, 100_000)

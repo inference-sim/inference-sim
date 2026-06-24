@@ -59,7 +59,7 @@ func TestTierShed_MonotonicSheddingOrder(t *testing.T) {
 
 	// tier-shed: MinAdmitPriority=3 → Standard and above pass, Sheddable shed.
 	cfg := newTierShedConfig(0, 3)
-	cs := NewClusterSimulator(cfg, requests, nil)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	shedCounts := cs.ShedByTier()
@@ -97,12 +97,12 @@ func TestTierShed_NoRegressionWithDefaultPolicy(t *testing.T) {
 
 	// Run 1: default admission (always-admit)
 	cfg1 := newTestDeploymentConfig(2)
-	cs1 := NewClusterSimulator(cfg1, requests1, nil)
+	cs1 := NewClusterSimulator(cfg1, NewSliceRequestSource(requests1), nil)
 	mustRun(t, cs1)
 
 	// Run 2: same config, same seed, same requests — must be byte-identical
 	cfg2 := newTestDeploymentConfig(2)
-	cs2 := NewClusterSimulator(cfg2, requests2, nil)
+	cs2 := NewClusterSimulator(cfg2, NewSliceRequestSource(requests2), nil)
 	mustRun(t, cs2)
 
 	m1, err1 := json.Marshal(cs1.AggregatedMetrics())
@@ -133,7 +133,7 @@ func TestTierShed_BatchBackgroundShedUnderOverload(t *testing.T) {
 	}
 
 	cfg := newTierShedConfig(0, 3) // MinAdmitPriority=3 rejects batch(-1) and background(-3)
-	cs := NewClusterSimulator(cfg, requests, nil)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	// With MinAdmitPriority=3, batch(priority=-1) and background(priority=-3) should be rejected
@@ -146,7 +146,7 @@ func TestTierShed_BatchBackgroundShedUnderOverload(t *testing.T) {
 func TestTierShed_HighThresholdNeverSheds(t *testing.T) {
 	requests := newTierTestRequests(20, "sheddable")
 	cfg := newTierShedConfig(math.MaxInt32, 3)
-	cs := NewClusterSimulator(cfg, requests, nil)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	if shed := cs.ShedByTier()["sheddable"]; shed > 0 {
@@ -186,7 +186,7 @@ func TestGAIELegacy_INV1_Conservation(t *testing.T) {
 
 	// Use low QD threshold (1) so saturation triggers easily under queue buildup.
 	cfg := newGAIELegacyConfig(2, 1)
-	cs := NewClusterSimulator(cfg, requests, nil)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	// Full-pipeline INV-1 conservation: num_requests == injected_requests + rejected_requests,
@@ -233,7 +233,7 @@ func TestGAIELegacy_INV1_Conservation(t *testing.T) {
 func TestGAIELegacy_LightLoadAdmitsAll(t *testing.T) {
 	requests := newTierTestRequests(5, "sheddable")
 	cfg := newGAIELegacyConfig(2, 5)
-	cs := NewClusterSimulator(cfg, requests, nil)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	if rejected := cs.RejectedRequests(); rejected > 0 {
@@ -251,7 +251,7 @@ func TestShedByTier_RejectAll_PopulatesTierCounts(t *testing.T) {
 	}
 	cfg := newTestDeploymentConfig(2)
 	cfg.AdmissionPolicy = "reject-all"
-	cs := NewClusterSimulator(cfg, requests, nil)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	if cs.RejectedRequests() != 3 {

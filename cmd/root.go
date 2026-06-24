@@ -1770,7 +1770,7 @@ var runCmd = &cobra.Command{
 				return followUps
 			}
 		}
-		cs := cluster.NewClusterSimulator(config, preGeneratedRequests, onRequestDone)
+		cs := cluster.NewClusterSimulator(config, cluster.NewSliceRequestSource(preGeneratedRequests), onRequestDone)
 		if err := cs.Run(); err != nil {
 			logrus.Fatalf("Simulation failed: %v", err)
 		}

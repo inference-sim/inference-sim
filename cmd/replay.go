@@ -530,7 +530,7 @@ Example:
 				return followUps
 			}
 		}
-		cs := cluster.NewClusterSimulator(config, requests, onRequestDone)
+		cs := cluster.NewClusterSimulator(config, cluster.NewSliceRequestSource(requests), onRequestDone)
 		if err := cs.Run(); err != nil {
 			logrus.Fatalf("Replay simulation failed: %v", err)
 		}

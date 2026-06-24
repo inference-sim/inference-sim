@@ -194,7 +194,7 @@ func TestTrainedPhysics_GoldenDataset(t *testing.T) {
 				},
 				NumInstances: 1,
 			}
-			cs := NewClusterSimulator(cfg, wl.Requests, onDone)
+			cs := NewClusterSimulator(cfg, NewSliceRequestSource(wl.Requests), onDone)
 			if err := cs.Run(); err != nil {
 				t.Fatalf("ClusterSimulator.Run: %v", err)
 			}

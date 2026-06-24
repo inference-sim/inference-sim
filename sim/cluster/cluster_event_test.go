@@ -157,7 +157,7 @@ func TestClusterEventPriorities(t *testing.T) {
 // buildRouterState must produce a RouterState with one snapshot per instance and the current clock.
 func TestBuildRouterState_PopulatesSnapshots(t *testing.T) {
 	config := newTestDeploymentConfig(3)
-	cs := NewClusterSimulator(config, newTestRequests(1), nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(newTestRequests(1)), nil)
 
 	state := buildRouterState(cs, nil)
 
@@ -182,7 +182,7 @@ func TestBuildRouterState_PopulatesSnapshots(t *testing.T) {
 func TestBuildRouterState_LoadingSnapshot_PopulatedNotInSnapshots(t *testing.T) {
 	// newTestDeploymentConfig(1) creates one instance that starts Active (no NodePools).
 	// We manually force it to Loading state to simulate an in-flight scale-up.
-	cs := NewClusterSimulator(newTestDeploymentConfig(1), nil, nil)
+	cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
 	for _, inst := range cs.instances {
 		inst.State = sim.InstanceStateLoading
 	}
@@ -235,7 +235,7 @@ func TestBuildRouterState_LoadingSnapshot_PopulatedNotInSnapshots(t *testing.T) 
 // has both Active and Loading instances, they appear in the correct slices.
 func TestBuildRouterState_ActiveAndLoadingMixed_SeparateBuckets(t *testing.T) {
 	// Start with 2 instances, force one to Loading and leave the other Active.
-	cs := NewClusterSimulator(newTestDeploymentConfig(2), nil, nil)
+	cs := NewClusterSimulator(newTestDeploymentConfig(2), NewSliceRequestSource(nil), nil)
 	cs.instances[0].State = sim.InstanceStateActive
 	cs.instances[1].State = sim.InstanceStateLoading
 

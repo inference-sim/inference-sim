@@ -38,7 +38,7 @@ func TestInstanceLifecycle_WarmUpTTFTPenalty(t *testing.T) {
 		},
 	}
 
-	cs := NewClusterSimulator(cfg, requests, nil)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(requests), nil)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("Run() failed: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestInstanceLifecycle_RedirectDrainPreservesConservation(t *testing.T) {
 	const numSeeded = 3
 	seeded := newTestRequests(numSeeded)
 
-	cs := NewClusterSimulator(cfg, []*sim.Request{}, nil)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource([]*sim.Request{}), nil)
 	inst0 := cs.instances[0]
 
 	// Seed requests directly into inst0's WaitQ (bypassing admission/routing),
