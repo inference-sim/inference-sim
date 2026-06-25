@@ -1144,6 +1144,188 @@ func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
 	}
 }
 
+// TestRunCmd_TraceOutput_RecordCountMatchesRequests verifies the issue
+// #1440 end-to-end contract: when `blis run --trace-output X` is used,
+// the exported `X.csv` contains exactly one TraceV2 record per request
+// produced by the workload generator. The hook installed in cmd/root.go
+// replaced the eager `preGeneratedRequests + followUpRequests + sort +
+// RequestsToTraceRecords` path; this test guards the substitution against
+// silent record-count drift (would corrupt INV-13 replay parity).
+// NOTE: Do NOT use t.Parallel() — mutates package-level vars.
+func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
+	tmpDir := t.TempDir()
+	tracePrefix := filepath.Join(tmpDir, "trace")
+
+	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
+	// Save and restore the package-level flag vars runCmd.Run mutates.
+	// Same list as TestRunCmd_MetricsPath_WritesMetricsOutput, with
+	// traceOutput added.
+	origMetrics := metricsPath
+	origModel := model
+	origBackend := latencyModelBackend
+	origBeta := betaCoeffs
+	origAlpha := alphaCoeffs
+	origTotalKV := totalKVBlocks
+	origBlockSize := blockSizeTokens
+	origMaxRunning := maxRunningReqs
+	origMaxSched := maxScheduledTokens
+	origInstances := numInstances
+	origSeed := seed
+	origResults := resultsPath
+	origThreshold := longPrefillTokenThreshold
+	origKVCPU := kvCPUBlocks
+	origOffload := kvOffloadThreshold
+	origBandwidth := kvTransferBandwidth
+	origBaseLatency := kvTransferBaseLatency
+	origSnapRefresh := snapshotRefreshInterval
+	origAdmission := admissionPolicy
+	origRouting := routingPolicy
+	origScheduler := scheduler
+	origPolicyConfig := policyConfigPath
+	origMaxModelLen := maxModelLen
+	origTraceLevel := traceLevel
+	origCounterfactualK := counterfactualK
+	origSimHorizon := simulationHorizon
+	origWorkloadType := workloadType
+	origRate := rate
+	origNumReqs := numRequests
+	origConcurrency := concurrency
+	origThinkTime := thinkTimeMs
+	origPrefix := prefixTokens
+	origPromptMean := promptTokensMean
+	origPromptStdev := promptTokensStdev
+	origPromptMin := promptTokensMin
+	origPromptMax := promptTokensMax
+	origOutputMean := outputTokensMean
+	origOutputStdev := outputTokensStdev
+	origOutputMin := outputTokensMin
+	origOutputMax := outputTokensMax
+	origWorkloadSpec := workloadSpecPath
+	origRequestTimeout := requestTimeoutSecs
+	origTraceOut := traceOutput
+	origLogLevel := logLevel
+	origModelConfigFolder := modelConfigFolder
+	origHwConfigPath := hwConfigPath
+	origGPU := gpu
+	origTP := tensorParallelism
+	defer func() {
+		metricsPath = origMetrics
+		model = origModel
+		latencyModelBackend = origBackend
+		betaCoeffs = origBeta
+		alphaCoeffs = origAlpha
+		totalKVBlocks = origTotalKV
+		blockSizeTokens = origBlockSize
+		maxRunningReqs = origMaxRunning
+		maxScheduledTokens = origMaxSched
+		numInstances = origInstances
+		seed = origSeed
+		resultsPath = origResults
+		longPrefillTokenThreshold = origThreshold
+		kvCPUBlocks = origKVCPU
+		kvOffloadThreshold = origOffload
+		kvTransferBandwidth = origBandwidth
+		kvTransferBaseLatency = origBaseLatency
+		snapshotRefreshInterval = origSnapRefresh
+		admissionPolicy = origAdmission
+		routingPolicy = origRouting
+		scheduler = origScheduler
+		policyConfigPath = origPolicyConfig
+		maxModelLen = origMaxModelLen
+		traceLevel = origTraceLevel
+		counterfactualK = origCounterfactualK
+		simulationHorizon = origSimHorizon
+		workloadType = origWorkloadType
+		rate = origRate
+		numRequests = origNumReqs
+		concurrency = origConcurrency
+		thinkTimeMs = origThinkTime
+		prefixTokens = origPrefix
+		promptTokensMean = origPromptMean
+		promptTokensStdev = origPromptStdev
+		promptTokensMin = origPromptMin
+		promptTokensMax = origPromptMax
+		outputTokensMean = origOutputMean
+		outputTokensStdev = origOutputStdev
+		outputTokensMin = origOutputMin
+		outputTokensMax = origOutputMax
+		workloadSpecPath = origWorkloadSpec
+		requestTimeoutSecs = origRequestTimeout
+		traceOutput = origTraceOut
+		logLevel = origLogLevel
+		modelConfigFolder = origModelConfigFolder
+		hwConfigPath = origHwConfigPath
+		gpu = origGPU
+		tensorParallelism = origTP
+	}()
+
+	// 5 distribution-mode requests — non-session workload, so each
+	// initial request emits exactly one trace record.
+	const wantRecords = 5
+	traceOutput = tracePrefix
+	workloadType = "distribution"
+	rate = 1.0
+	numRequests = wantRecords
+	promptTokensMean = 512
+	promptTokensStdev = 256
+	promptTokensMin = 2
+	promptTokensMax = 7000
+	outputTokensMean = 512
+	outputTokensStdev = 256
+	outputTokensMin = 2
+	outputTokensMax = 7000
+
+	testCmd := &cobra.Command{}
+	registerSimConfigFlags(testCmd)
+	testCmd.Flags().IntVar(&numRequests, "num-requests", 0, "")
+	testCmd.Flags().Float64Var(&rate, "rate", 0, "")
+	testCmd.Flags().StringVar(&workloadType, "workload", "", "")
+	testCmd.Flags().StringVar(&traceOutput, "trace-output", "", "")
+	if err := testCmd.ParseFlags([]string{
+		"--model", "qwen/qwen3-14b",
+		"--latency-model", "trained-physics",
+		"--defaults-filepath", defaultsPath,
+		"--model-config-folder", mcFolder,
+		"--hardware-config", hwPath,
+		"--hardware", "H100",
+		"--tp", "1",
+		"--total-kv-blocks", "1000",
+		"--num-requests", strconv.Itoa(wantRecords),
+		"--seed", "42",
+		"--rate", "1.0",
+		"--workload", "distribution",
+		"--trace-output", tracePrefix,
+	}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+
+	runCmd.Run(testCmd, nil)
+
+	// Read back the exported trace and assert exactly one record per
+	// generated request — the key INV-13 contract guarded by the hook
+	// substitution.
+	trace, err := workload.LoadTraceV2(tracePrefix+".yaml", tracePrefix+".csv")
+	if err != nil {
+		t.Fatalf("LoadTraceV2: %v", err)
+	}
+	if got := len(trace.Records); got != wantRecords {
+		t.Fatalf("trace contains %d records, want %d (one per generated request); hook may have dropped or duplicated arrivals", got, wantRecords)
+	}
+
+	// Records are written in arrival-hook fire order, which is
+	// clock-monotonic per INV-3. Assert ArrivalTimeUs is non-decreasing
+	// (a defensive check that the hook stream did not get reordered).
+	var prev int64
+	for i, rec := range trace.Records {
+		if rec.ArrivalTimeUs < prev {
+			t.Fatalf("trace record[%d] ArrivalTimeUs=%d regressed from %d — INV-3/INV-13 violation",
+				i, rec.ArrivalTimeUs, prev)
+		}
+		prev = rec.ArrivalTimeUs
+	}
+}
+
 func TestRunCmd_ModelAutoscalerIntervalUs_FlagRegistered(t *testing.T) {
 	flag := runCmd.Flags().Lookup("model-autoscaler-interval-us")
 	assert.NotNil(t, flag, "model-autoscaler-interval-us flag must be registered")

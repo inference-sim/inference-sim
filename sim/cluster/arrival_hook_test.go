@@ -149,10 +149,89 @@ func TestArrivalHook_FiresForSessionFollowUps(t *testing.T) {
 	})
 	mustRun(t, cs)
 
-	wantMin := len(initial)                                                 // every initial fires
-	wantMax := len(initial) + 3                                              // plus the follow-up budget
-	if calls < wantMin || calls > wantMax {
-		t.Fatalf("arrival hook fired %d times, want in [%d, %d]: initial=%d, follow-up budget=3",
-			calls, wantMin, wantMax, len(initial))
+	// The follow-up budget is fully consumed (each of the 3 initial
+	// requests yields one follow-up before remaining hits 0), so the
+	// exact expected count is initial + budget.
+	const followUpBudget = 3
+	if want := len(initial) + followUpBudget; calls != want {
+		t.Fatalf("arrival hook fired %d times, want %d (initial=%d, follow-up budget=%d consumed)",
+			calls, want, len(initial), followUpBudget)
+	}
+}
+
+// TestArrivalHook_BeyondHorizonFollowUpsExcluded asserts the documented
+// behavior shift introduced by issue #1440: a closed-loop follow-up whose
+// scheduled ArrivalTime exceeds config.Horizon never executes in the DES
+// event loop, so the hook does not see it. This is intentional — the
+// old eager `preGeneratedRequests + followUpRequests` assembly emitted
+// trace records for these never-arrived requests; the hook does not.
+// Excluding them strengthens INV-13 (replay reads the same trace the
+// run produced).
+func TestArrivalHook_BeyondHorizonFollowUpsExcluded(t *testing.T) {
+	cfg := newTestDeploymentConfig(1)
+	cfg.Horizon = 100_000 // 100ms — small enough that follow-ups can land past it
+	initial := newTestRequests(2)
+
+	// Always emit a follow-up at clock+1 hour. With Horizon=100ms the
+	// resulting ClusterArrivalEvent never executes and the hook never
+	// sees this request.
+	const beyondHorizonOffsetUs = int64(60 * 60 * 1_000_000) // 1 hour
+	beyondHorizonID := "fu-beyond-horizon"
+	emitted := false
+	onRequestDone := func(req *sim.Request, clock int64) []*sim.Request {
+		if emitted {
+			return nil
+		}
+		emitted = true
+		return []*sim.Request{{
+			ID:           beyondHorizonID,
+			ArrivalTime:  clock + beyondHorizonOffsetUs,
+			InputTokens:  []int{1, 2, 3},
+			OutputTokens: []int{4, 5},
+			Model:        req.Model,
+		}}
+	}
+
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(initial), onRequestDone)
+
+	seenIDs := make(map[string]int)
+	cs.SetArrivalHook(func(req *sim.Request) {
+		seenIDs[req.ID]++
+	})
+	mustRun(t, cs)
+
+	if got := seenIDs[beyondHorizonID]; got != 0 {
+		t.Fatalf("beyond-horizon follow-up %q must not reach the arrival hook; got %d fire(s)", beyondHorizonID, got)
+	}
+	// Sanity: at least the initial requests still fire.
+	for _, req := range initial {
+		if seenIDs[req.ID] != 1 {
+			t.Fatalf("initial request %q: hook fired %d times, want 1", req.ID, seenIDs[req.ID])
+		}
+	}
+}
+
+// TestSetArrivalHook_NilClearResetsMonotonicityFloor verifies the reset
+// behavior of SetArrivalHook(nil): a subsequently installed hook must
+// not inherit the previous hook's last-seen ArrivalTime, otherwise
+// callers re-using a ClusterSimulator instance to set up scenarios
+// would see spurious panics from the monotonicity guard.
+func TestSetArrivalHook_NilClearResetsMonotonicityFloor(t *testing.T) {
+	cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
+
+	// First hook sees a high timestamp, then is cleared.
+	cs.SetArrivalHook(func(req *sim.Request) {})
+	cs.fireArrivalHook(&sim.Request{ID: "r1", ArrivalTime: 1_000_000}, 1_000_000)
+	cs.SetArrivalHook(nil)
+
+	// Install a new hook and fire an EARLIER timestamp. Without the
+	// reset, this would panic — the prior watermark of 1_000_000 would
+	// still be in place.
+	calls := 0
+	cs.SetArrivalHook(func(req *sim.Request) { calls++ })
+	cs.fireArrivalHook(&sim.Request{ID: "r2", ArrivalTime: 10}, 10)
+
+	if calls != 1 {
+		t.Fatalf("after nil-clear + reinstall, hook fired %d times, want 1 (monotonicity floor was not reset)", calls)
 	}
 }

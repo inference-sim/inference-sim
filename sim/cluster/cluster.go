@@ -642,6 +642,13 @@ func (cs *ClusterSimulator) pushArrival(req *sim.Request, timeUs int64) {
 // records emerge already in arrival order without a downstream sort.
 // REDIRECT re-injections are skipped: the same logical request was observed
 // on its original arrival, and its trace identity must not duplicate.
+//
+// Horizon semantics: ClusterArrivalEvents whose timestamp exceeds
+// config.Horizon never execute (cluster.go event loop short-circuits past
+// Horizon), so the hook does NOT see beyond-horizon follow-ups. This is
+// intentional — a request that never arrived to the cluster has no place
+// in the exported trace, and excluding it strengthens INV-13 (replay reads
+// the same trace the run produced).
 func (cs *ClusterSimulator) fireArrivalHook(req *sim.Request, timeUs int64) {
 	if cs.arrivalHook == nil || req.Redirected {
 		return
@@ -658,7 +665,9 @@ func (cs *ClusterSimulator) fireArrivalHook(req *sim.Request, timeUs int64) {
 // (initial workload + closed-loop session follow-ups). The hook does NOT
 // fire for requests re-injected by the REDIRECT drain policy.
 //
-// Must be called before Run(); panics otherwise. Pass nil to clear.
+// Must be called before Run(); panics otherwise. Pass nil to clear; the
+// monotonicity guard (lastArrivalHookTime) is reset to zero on clear so
+// a subsequently installed hook starts from a clean baseline.
 //
 // Used by `blis run` to capture TraceV2 records at the arrival boundary
 // (issue #1440), replacing the eager post-run RequestsToTraceRecords pass.
@@ -667,6 +676,11 @@ func (cs *ClusterSimulator) SetArrivalHook(hook func(*sim.Request)) {
 		panic("ClusterSimulator: SetArrivalHook must be called before Run()")
 	}
 	cs.arrivalHook = hook
+	if hook == nil {
+		// Reset the monotonicity floor so a future hook installation does
+		// not inherit the previous hook's timestamp watermark.
+		cs.lastArrivalHookTime = 0
+	}
 }
 
 // Run executes the cluster simulation using online routing pipeline: drains the
