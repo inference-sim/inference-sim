@@ -129,8 +129,9 @@ type ClusterSimulator struct {
 	//
 	// Contract:
 	//   - Fires at most once per (logical) request.
-	//   - Called from pushArrival on the cluster's single Run() goroutine
-	//     (no concurrency).
+	//   - Called from ClusterArrivalEvent.Execute on the cluster's single
+	//     Run() goroutine (no concurrency). Firing at execute time — not
+	//     push time — is what makes the hook clock-monotonic per INV-3.
 	//   - Must be cheap (recording-only). Heavy work belongs in Run finalization.
 	//   - Receives the *sim.Request pointer the cluster will inject. The hook
 	//     must not mutate the request — it is shared with the cluster pipeline.
