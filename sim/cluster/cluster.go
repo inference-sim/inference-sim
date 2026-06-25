@@ -137,8 +137,8 @@ type ClusterSimulator struct {
 	//     must not mutate the request — it is shared with the cluster pipeline.
 	//
 	// Determinism (INV-6): the hook sees requests in the same monotonic
-	// non-decreasing ArrivalTime order the cluster enqueues them. Run() panics
-	// on a regression.
+	// non-decreasing ArrivalTime order the cluster enqueues them.
+	// fireArrivalHook() panics on a regression.
 	arrivalHook         func(*sim.Request)
 	lastArrivalHookTime int64 // monotonicity guard for arrivalHook (us)
 }

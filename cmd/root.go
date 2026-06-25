@@ -1812,10 +1812,8 @@ var runCmd = &cobra.Command{
 
 		// Assemble allRequests for saturation analysis (BC-12, issue #1298).
 		// Trace export is now driven by the arrival hook above and no longer
-		// shares this slice (issue #1440). NOTE: allRequests is nil when
-		// --saturation-report is not set — any new downstream consumer must
-		// either trigger this assembly path or source its data elsewhere
-		// (the hook buffer for trace, or aggregateMetrics for per-instance).
+		// shares this slice (issue #1440). allRequests is nil when
+		// --saturation-report is not set.
 		var allRequests []*sim.Request
 		if saturationReport != "" {
 			allRequests = make([]*sim.Request, 0, len(preGeneratedRequests)+len(followUpRequests))
