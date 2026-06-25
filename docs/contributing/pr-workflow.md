@@ -53,8 +53,7 @@ cd .worktrees/pr<N>-<feature-name>
 ```
 
 **Why first?** This ensures:
-- Main worktree stays clean (no uncommitted plans or code)
-- Plan document committed on feature branch (not main)
+- Main worktree stays clean (no uncommitted code)
 - Complete isolation for entire PR lifecycle (planning + implementation)
 - Ability to work on multiple PRs in parallel
 
@@ -207,8 +206,6 @@ For compact-format plans (Small tier): review only behavioral contracts (from it
 - Dead code or scaffolding
 
 **Outcome:** ✅ Approve plan → proceed to Step 4 (implementation). ❌ Need revisions → iterate, re-review (Step 2.5), then approve.
-
-**Note:** The plan will be committed together with the implementation in Step 5 (single commit for entire PR).
 
 ---
 
