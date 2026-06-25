@@ -2,9 +2,16 @@ package cluster
 
 import "github.com/inference-sim/inference-sim/sim"
 
-// RequestSource yields requests in non-decreasing ArrivalTime order, exactly
-// once each. Next returns (nil, false) when the source is exhausted; subsequent
-// calls also return (nil, false).
+// RequestSource is a pull-style stream of *sim.Request values for the cluster
+// arrival pump.
+//
+// Implementations MUST:
+//   - Yield each request exactly once, in non-decreasing ArrivalTime order.
+//     Run() relies on this and does not verify or re-sort it.
+//   - Return (nil, false) when exhausted. Subsequent calls MUST also return
+//     (nil, false) — exhaustion is sticky.
+//   - Never return (nil, true). Run() dereferences the returned request and
+//     would panic on a nil with ok=true.
 //
 // Implementations are not expected to be safe for concurrent use. The cluster's
 // Run() loop consumes a source from a single goroutine.

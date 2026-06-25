@@ -151,10 +151,13 @@ func effectiveAnalyzerConfig(cfg V2SaturationAnalyzerConfig) V2SaturationAnalyze
 // requests which are routed through the cluster pipeline (not injected locally).
 // Pass nil for non-session workloads.
 //
-// Panics if config.NumInstances < 1.
+// Panics if config.NumInstances < 1 or if requestSource is nil.
 func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, onRequestDone func(*sim.Request, int64) []*sim.Request) *ClusterSimulator {
 	if config.NumInstances < 1 {
 		panic("ClusterSimulator: NumInstances must be >= 1")
+	}
+	if requestSource == nil {
+		panic("ClusterSimulator: requestSource must not be nil (use NewSliceRequestSource(nil) for an empty workload)")
 	}
 
 	// Validate pool topology and overrides early (before instance construction).
@@ -636,8 +639,9 @@ func (c *ClusterSimulator) Run() error {
 	}
 
 	// 2. Drain the request source to schedule arrival events. The source is
-	// guaranteed to yield in non-decreasing ArrivalTime order (RequestSource
-	// contract); we count emissions to preserve today's "no requests" warning.
+	// required to yield in non-decreasing ArrivalTime order (RequestSource
+	// contract — caller obligation, not verified here); we count emissions to
+	// preserve today's "no requests" warning.
 	arrivalCount := 0
 	for {
 		req, ok := c.requestSource.Next()

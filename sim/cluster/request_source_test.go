@@ -87,6 +87,24 @@ func (f *fakeCountingSource) Next() (*sim.Request, bool) {
 	return r, ok
 }
 
+func TestNewClusterSimulator_PanicsOnNilRequestSource(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic on nil RequestSource, got none")
+		}
+		msg, ok := r.(string)
+		if !ok {
+			t.Fatalf("expected string panic value, got %T: %v", r, r)
+		}
+		// Caller-friendly hint matters: we want the message to point at the fix.
+		if msg == "" {
+			t.Errorf("panic message is empty")
+		}
+	}()
+	NewClusterSimulator(newTestDeploymentConfig(1), nil, nil)
+}
+
 func TestSliceRequestSource_CountingWrapperIntegrates(t *testing.T) {
 	reqs := []*sim.Request{
 		{ID: "r0", ArrivalTime: 0},
