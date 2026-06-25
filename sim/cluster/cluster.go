@@ -121,6 +121,25 @@ type ClusterSimulator struct {
 	progressHook               sim.ProgressHook
 	simClockProgressIntervalUs int64
 	nextSnapshotClockUs        int64
+
+	// arrivalHook fires once per fresh arrival (initial workload and
+	// follow-ups from closed-loop sessions). It does NOT fire for requests
+	// re-injected by the REDIRECT drain policy — those are the same logical
+	// request already observed. Nil unless SetArrivalHook was called.
+	//
+	// Contract:
+	//   - Fires at most once per (logical) request.
+	//   - Called from pushArrival on the cluster's single Run() goroutine
+	//     (no concurrency).
+	//   - Must be cheap (recording-only). Heavy work belongs in Run finalization.
+	//   - Receives the *sim.Request pointer the cluster will inject. The hook
+	//     must not mutate the request — it is shared with the cluster pipeline.
+	//
+	// Determinism (INV-6): the hook sees requests in the same monotonic
+	// non-decreasing ArrivalTime order the cluster enqueues them. Run() panics
+	// on a regression.
+	arrivalHook         func(*sim.Request)
+	lastArrivalHookTime int64 // monotonicity guard for arrivalHook (us)
 }
 
 // effectiveAnalyzerConfig applies WVA reference defaults to zero-valued fields.
@@ -613,6 +632,40 @@ func (cs *ClusterSimulator) pushArrival(req *sim.Request, timeUs int64) {
 		seqID: cs.nextSeqID(),
 	})
 	cs.pendingArrivals++
+}
+
+// fireArrivalHook is called from ClusterArrivalEvent.Execute on the single
+// path that all fresh arrivals (initial workload and closed-loop follow-ups)
+// traverse at their effective arrival time. Firing here — rather than at
+// pushArrival — gives the hook a clock-monotonic stream (INV-3), so trace
+// records emerge already in arrival order without a downstream sort.
+// REDIRECT re-injections are skipped: the same logical request was observed
+// on its original arrival, and its trace identity must not duplicate.
+func (cs *ClusterSimulator) fireArrivalHook(req *sim.Request, timeUs int64) {
+	if cs.arrivalHook == nil || req.Redirected {
+		return
+	}
+	if timeUs < cs.lastArrivalHookTime {
+		panic(fmt.Sprintf("ClusterSimulator: arrival hook received out-of-order request %q (timeUs=%d < last=%d) — INV-3/INV-6 violation: arrivals must be non-decreasing in ArrivalTime",
+			req.ID, timeUs, cs.lastArrivalHookTime))
+	}
+	cs.lastArrivalHookTime = timeUs
+	cs.arrivalHook(req)
+}
+
+// SetArrivalHook installs a callback fired once per fresh request arrival
+// (initial workload + closed-loop session follow-ups). The hook does NOT
+// fire for requests re-injected by the REDIRECT drain policy.
+//
+// Must be called before Run(); panics otherwise. Pass nil to clear.
+//
+// Used by `blis run` to capture TraceV2 records at the arrival boundary
+// (issue #1440), replacing the eager post-run RequestsToTraceRecords pass.
+func (cs *ClusterSimulator) SetArrivalHook(hook func(*sim.Request)) {
+	if cs.hasRun {
+		panic("ClusterSimulator: SetArrivalHook must be called before Run()")
+	}
+	cs.arrivalHook = hook
 }
 
 // Run executes the cluster simulation using online routing pipeline: drains the

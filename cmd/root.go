@@ -1771,6 +1771,25 @@ var runCmd = &cobra.Command{
 			}
 		}
 		cs := cluster.NewClusterSimulator(config, cluster.NewSliceRequestSource(preGeneratedRequests), onRequestDone)
+
+		// Arrival hook: capture trace-emission references at the cluster's
+		// single arrival boundary so the trace exporter no longer relies on
+		// the eager preGeneratedRequests + followUpRequests list assembly
+		// (issue #1440). The hook fires once per fresh arrival in
+		// clock-monotonic order — see ClusterArrivalEvent.Execute. We hold
+		// pointers (not copies) so the request's final state (set by the
+		// event loop) is visible at export time.
+		//
+		// Only install when --trace-output is set (BC-1: zero overhead when
+		// trace is disabled). Saturation analysis continues to use the
+		// preGeneratedRequests + followUpRequests path below — those slices
+		// remain populated for that purpose only.
+		var traceArrivals []*sim.Request
+		if traceOutput != "" {
+			cs.SetArrivalHook(func(req *sim.Request) {
+				traceArrivals = append(traceArrivals, req)
+			})
+		}
 		if err := cs.Run(); err != nil {
 			logrus.Fatalf("Simulation failed: %v", err)
 		}
@@ -1791,9 +1810,11 @@ var runCmd = &cobra.Command{
 		}
 		goodputTargets := mergeGoodputTargets(cliTTFT, cliITL, cliE2E, nil, specTargets)
 
-		// Assemble allRequests if trace export or saturation analysis requested (BC-12, issue #1298)
+		// Assemble allRequests for saturation analysis (BC-12, issue #1298).
+		// Trace export is now driven by the arrival hook above and no longer
+		// shares this slice (issue #1440).
 		var allRequests []*sim.Request
-		if traceOutput != "" || saturationReport != "" {
+		if saturationReport != "" {
 			allRequests = make([]*sim.Request, 0, len(preGeneratedRequests)+len(followUpRequests))
 			allRequests = append(allRequests, preGeneratedRequests...)
 			allRequests = append(allRequests, followUpRequests...)
@@ -1803,9 +1824,11 @@ var runCmd = &cobra.Command{
 			})
 		}
 
-		// Export trace if requested (BC-1, BC-7)
+		// Export trace if requested (BC-1, BC-7). Records are sourced from
+		// the arrival hook (issue #1440) — already in clock-monotonic order
+		// per INV-3, so no sort is required.
 		if traceOutput != "" {
-			records := workload.RequestsToTraceRecords(allRequests)
+			records := workload.RequestsToTraceRecords(traceArrivals)
 			header := &workload.TraceHeader{
 				Version:           3,
 				TimeUnit:          "microseconds",
