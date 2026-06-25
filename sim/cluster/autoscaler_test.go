@@ -113,7 +113,7 @@ func wireAutoscaler(cs *ClusterSimulator) *countingCollector {
 func TestScalingTickScheduling(t *testing.T) {
 	t.Run("a_zero_interval_no_tick", func(t *testing.T) {
 		cfg := newAutoscalerTestConfig(0)
-		cs := NewClusterSimulator(cfg, nil, nil)
+		cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
 		collector := wireAutoscaler(cs)
 		if err := cs.Run(); err != nil {
 			t.Fatalf("Run: %v", err)
@@ -126,7 +126,7 @@ func TestScalingTickScheduling(t *testing.T) {
 	t.Run("b_60s_interval_200s_horizon_fires_4_ticks", func(t *testing.T) {
 		const intervalUs = 60_000_000.0 // 60s
 		cfg := newAutoscalerTestConfig(intervalUs)
-		cs := NewClusterSimulator(cfg, nil, nil)
+		cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
 		collector := wireAutoscaler(cs)
 		if err := cs.Run(); err != nil {
 			t.Fatalf("Run: %v", err)
@@ -146,7 +146,7 @@ func TestScalingTickScheduling(t *testing.T) {
 		cfg := newAutoscalerTestConfig(intervalUs)
 		cfg.Horizon = 1 // 1µs horizon: only first tick at t=0 fires
 		cfg.HPAScrapeDelay = DelaySpec{Mean: 0, Stddev: 0}
-		cs := NewClusterSimulator(cfg, nil, nil)
+		cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
 
 		actuator := newRecordingActuator()
 		cs.autoscaler = newTestPipeline(&countingCollector{}, &nopAnalyzer{}, &onceEngine{delta: 1}, actuator)
@@ -169,7 +169,7 @@ func TestScalingTickScheduling(t *testing.T) {
 		cfg := newAutoscalerTestConfig(intervalUs)
 		cfg.Horizon = horizonUs
 		cfg.HPAScrapeDelay = DelaySpec{Mean: 30, Stddev: 0} // 30s deterministic delay
-		cs := NewClusterSimulator(cfg, nil, nil)
+		cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
 
 		actuator := newRecordingActuator()
 		cs.autoscaler = newTestPipeline(&countingCollector{}, &nopAnalyzer{}, &onceEngine{delta: 1}, actuator)
@@ -204,7 +204,7 @@ func TestNoOpPipelineDeterminism(t *testing.T) {
 		cfg := newTestDeploymentConfig(1)
 		cfg.ModelAutoscalerIntervalUs = intervalUs
 		cfg.Horizon = horizonUs
-		cs := NewClusterSimulator(cfg, newTestRequests(20), nil)
+		cs := NewClusterSimulator(cfg, NewSliceRequestSource(newTestRequests(20)), nil)
 		wireAutoscaler(cs)
 		if err := cs.Run(); err != nil {
 			t.Fatalf("Run %s: %v", label, err)
@@ -266,7 +266,7 @@ func TestNilComponentGuard(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			const intervalUs = 60_000_000.0
 			cfg := newAutoscalerTestConfig(intervalUs)
-			cs := NewClusterSimulator(cfg, nil, nil)
+			cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
 
 			var col Collector = tc.wiredCollector
 			if tc.nilCollector {
@@ -315,7 +315,7 @@ func TestStabilizationWindowFilter(t *testing.T) {
 		cfg.ScaleUpStabilizationWindowUs = 0 // zero window: immediate
 
 		applied := 0
-		cs := NewClusterSimulator(cfg, nil, nil)
+		cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
 		cs.autoscaler = newTestPipeline(&countingCollector{}, &nopAnalyzer{}, &alwaysScaleUpEngine{}, &countingApplyActuator{count: &applied})
 		if err := cs.Run(); err != nil {
 			t.Fatalf("Run: %v", err)
@@ -332,7 +332,7 @@ func TestStabilizationWindowFilter(t *testing.T) {
 		cfg.ScaleUpStabilizationWindowUs = windowUs
 
 		applied := 0
-		cs := NewClusterSimulator(cfg, nil, nil)
+		cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
 		cs.autoscaler = newTestPipeline(&countingCollector{}, &nopAnalyzer{}, &alwaysScaleUpEngine{}, &countingApplyActuator{count: &applied})
 		if err := cs.Run(); err != nil {
 			t.Fatalf("Run: %v", err)
@@ -353,7 +353,7 @@ func TestStabilizationWindowFilter(t *testing.T) {
 		cfg.ScaleDownStabilizationWindowUs = windowUs
 
 		applied := 0
-		cs := NewClusterSimulator(cfg, nil, nil)
+		cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
 		cs.autoscaler = newTestPipeline(&countingCollector{}, &nopAnalyzer{}, &alwaysScaleDownEngine{}, &countingApplyActuator{count: &applied})
 		if err := cs.Run(); err != nil {
 			t.Fatalf("Run: %v", err)
@@ -373,7 +373,7 @@ func TestStabilizationWindowFilter(t *testing.T) {
 		engine := &interruptAtTickEngine{skipTick: 1, delta: 1} // skip second tick (t=60s)
 
 		applied := 0
-		cs := NewClusterSimulator(cfg, nil, nil)
+		cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
 		cs.autoscaler = newTestPipeline(&countingCollector{}, &nopAnalyzer{}, engine, &countingApplyActuator{count: &applied})
 		if err := cs.Run(); err != nil {
 			t.Fatalf("Run: %v", err)
@@ -398,7 +398,7 @@ func TestStabilizationWindowFilter(t *testing.T) {
 		engine := &directionFlipEngine{flipAtTick: 2}
 
 		scaleUpApplied, scaleDownApplied := 0, 0
-		cs := NewClusterSimulator(cfg, nil, nil)
+		cs := NewClusterSimulator(cfg, NewSliceRequestSource(nil), nil)
 		cs.autoscaler = newTestPipeline(
 			&countingCollector{}, &nopAnalyzer{}, engine,
 			&splitCountingActuator{scaleUp: &scaleUpApplied, scaleDown: &scaleDownApplied},
@@ -529,7 +529,7 @@ func TestGPUInventory(t *testing.T) {
 
 	t.Run("no_placement_returns_empty", func(t *testing.T) {
 		// Without NodePools, gpuInventory returns an empty inventory.
-		cs := NewClusterSimulator(newTestDeploymentConfig(1), nil, nil)
+		cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
 		if got := cs.gpuInventory().Variants(); len(got) != 0 {
 			t.Errorf("no placement: expected empty inventory, got %v", got)
 		}
@@ -538,7 +538,7 @@ func TestGPUInventory(t *testing.T) {
 	t.Run("zero_instances_seeds_from_ready_nodes", func(t *testing.T) {
 		// Pool has 1 Ready node with 8 GPUs; no active instances.
 		// Inventory must include the variant so scale-from-zero is possible.
-		cs := NewClusterSimulator(newPoolCfg(1), nil, nil)
+		cs := NewClusterSimulator(newPoolCfg(1), NewSliceRequestSource(nil), nil)
 		cs.instances = nil // clear the 1 placed instance
 		v := NewVariantSpec("A100", 1)
 		if got := cs.gpuInventory().FreeSlots(v); got != 8 {
@@ -548,7 +548,7 @@ func TestGPUInventory(t *testing.T) {
 
 	t.Run("active_instances_subtract_gpus", func(t *testing.T) {
 		// 1 Active instance with TPDegree=2 uses 2 of 8 GPUs → 6 free.
-		cs := NewClusterSimulator(newPoolCfg(2), nil, nil)
+		cs := NewClusterSimulator(newPoolCfg(2), NewSliceRequestSource(nil), nil)
 		cs.instances = []*InstanceSimulator{newA100Inst("inst-a", 2, sim.InstanceStateActive)}
 		v := NewVariantSpec("A100", 2)
 		if got := cs.gpuInventory().FreeSlots(v); got != 6 {
@@ -560,7 +560,7 @@ func TestGPUInventory(t *testing.T) {
 		// Loading, WarmingUp, Active, Draining each use 1 GPU (4 total).
 		// Scheduling and Terminated do NOT subtract.
 		// Pool: 8 GPUs → 8 - 4 = 4 free.
-		cs := NewClusterSimulator(newPoolCfg(1), nil, nil)
+		cs := NewClusterSimulator(newPoolCfg(1), NewSliceRequestSource(nil), nil)
 		cs.instances = []*InstanceSimulator{
 			newA100Inst("loading", 1, sim.InstanceStateLoading),
 			newA100Inst("warmup", 1, sim.InstanceStateWarmingUp),
@@ -578,7 +578,7 @@ func TestGPUInventory(t *testing.T) {
 	t.Run("tp_fallback_when_config_tp_zero", func(t *testing.T) {
 		// config.TP=0 triggers clusterTPDegree=1 fallback; variant A100/TP=1 must appear.
 		// Construct with TP=1 (roofline requires TP > 0), then override to test fallback.
-		cs := NewClusterSimulator(newPoolCfg(1), nil, nil)
+		cs := NewClusterSimulator(newPoolCfg(1), NewSliceRequestSource(nil), nil)
 		cs.config.TP = 0
 		cs.instances = nil // clear placed instance so all 8 GPUs are free
 		v := NewVariantSpec("A100", 1)
@@ -590,7 +590,7 @@ func TestGPUInventory(t *testing.T) {
 	t.Run("negative_free_slots_clamped_to_zero", func(t *testing.T) {
 		// 10 active instances × 1 GPU, but pool only has 8 → over-subscription.
 		// gpuInventory must clamp to 0, not return negative.
-		cs := NewClusterSimulator(newPoolCfg(1), nil, nil)
+		cs := NewClusterSimulator(newPoolCfg(1), NewSliceRequestSource(nil), nil)
 		cs.instances = nil
 		for i := 0; i < 10; i++ {
 			cs.instances = append(cs.instances, newA100Inst("over-"+string(rune('a'+i)), 1, sim.InstanceStateActive))

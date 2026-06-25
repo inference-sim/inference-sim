@@ -200,7 +200,7 @@ func TestFlowControlAdmission_INV1_Conservation(t *testing.T) {
 			}
 		}
 
-		cs := NewClusterSimulator(config, requests, nil)
+		cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 		mustRun(t, cs)
 		verifyINV1Conservation(t, cs, requests)
 	})
@@ -231,7 +231,7 @@ func TestFlowControlAdmission_INV1_Conservation(t *testing.T) {
 			}
 		}
 
-		cs := NewClusterSimulator(config, requests, nil)
+		cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 		mustRun(t, cs)
 		verifyINV1Conservation(t, cs, requests)
 	})
@@ -260,7 +260,7 @@ func TestFlowControlAdmission_INV1_Conservation(t *testing.T) {
 			}
 		}
 
-		cs := NewClusterSimulator(config, requests, nil)
+		cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 		mustRun(t, cs)
 		verifyINV1Conservation(t, cs, requests)
 	})

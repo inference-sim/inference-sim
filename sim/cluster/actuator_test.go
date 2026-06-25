@@ -24,7 +24,7 @@ func TestDirectActuatorApply(t *testing.T) {
 	t.Run("scale_down_transitions_to_draining", func(t *testing.T) {
 		// Two active instances for model "m1" with variant A100/TP=1.
 		// Scale-down should drain the lexicographically first (oldest) instance.
-		cs := NewClusterSimulator(newTestDeploymentConfig(1), nil, nil)
+		cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
 		inst1 := newActiveInst("inst-b", "m1", "A100", 1)
 		inst2 := newActiveInst("inst-a", "m1", "A100", 1)
 		cs.instances = []*InstanceSimulator{inst1, inst2}
@@ -48,7 +48,7 @@ func TestDirectActuatorApply(t *testing.T) {
 
 	t.Run("scale_down_no_match_returns_error", func(t *testing.T) {
 		// No active instances matching the variant — should return error.
-		cs := NewClusterSimulator(newTestDeploymentConfig(1), nil, nil)
+		cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
 		inst := newActiveInst("inst-1", "m1", "H100", 2) // wrong variant
 		cs.instances = []*InstanceSimulator{inst}
 
@@ -63,7 +63,7 @@ func TestDirectActuatorApply(t *testing.T) {
 
 	t.Run("scale_down_skips_non_active_instances", func(t *testing.T) {
 		// One Draining instance, one Active — should only drain the Active one.
-		cs := NewClusterSimulator(newTestDeploymentConfig(1), nil, nil)
+		cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
 		draining := newActiveInst("inst-a", "m1", "A100", 1)
 		draining.State = sim.InstanceStateDraining
 		active := newActiveInst("inst-b", "m1", "A100", 1)
@@ -83,7 +83,7 @@ func TestDirectActuatorApply(t *testing.T) {
 
 	t.Run("scale_up_nil_placement_returns_error", func(t *testing.T) {
 		// No PlacementManager — scale-up should return error.
-		cs := NewClusterSimulator(newTestDeploymentConfig(1), nil, nil)
+		cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
 		cs.placement = nil
 
 		actuator := NewDirectActuator(cs)
@@ -98,7 +98,7 @@ func TestDirectActuatorApply(t *testing.T) {
 	t.Run("scale_down_continue_not_return", func(t *testing.T) {
 		// Delta=-2 but only 1 matching active instance.
 		// First iteration drains it, second finds no match → error, but first drain still applied.
-		cs := NewClusterSimulator(newTestDeploymentConfig(1), nil, nil)
+		cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
 		inst := newActiveInst("inst-a", "m1", "A100", 1)
 		cs.instances = []*InstanceSimulator{inst}
 
@@ -127,7 +127,7 @@ func TestDirectActuatorApply(t *testing.T) {
 	t.Run("id_format_is_zero_padded", func(t *testing.T) {
 		// Verify that instance IDs use zero-padded format (%06d) so lexicographic
 		// sort matches creation order even past single digits.
-		cs := NewClusterSimulator(newTestDeploymentConfig(1), nil, nil)
+		cs := NewClusterSimulator(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
 		actuator := NewDirectActuator(cs)
 
 		// Manually increment seq and check ID format
@@ -148,7 +148,7 @@ func TestDirectActuatorApply(t *testing.T) {
 		base.NodePools = []NodePoolConfig{
 			{Name: "a100-pool", GPUType: "A100-80", GPUsPerNode: 2, InitialNodes: 1, MaxNodes: 2, GPUMemoryGiB: 80},
 		}
-		cs := NewClusterSimulator(base, nil, nil)
+		cs := NewClusterSimulator(base, NewSliceRequestSource(nil), nil)
 		cs.instances = []*InstanceSimulator{} // Clear initial instances to simulate scale-up from empty
 
 		// WHEN: scaleUp is called for 1 instance.
@@ -200,7 +200,7 @@ func TestDirectActuatorApply(t *testing.T) {
 		base.NodePools = []NodePoolConfig{
 			{Name: "a100-pool", GPUType: "A100-80", GPUsPerNode: 4, InitialNodes: 1, MaxNodes: 2, GPUMemoryGiB: 80},
 		}
-		cs := NewClusterSimulator(base, nil, nil)
+		cs := NewClusterSimulator(base, NewSliceRequestSource(nil), nil)
 		cs.instances = []*InstanceSimulator{} // Clear initial instances to simulate scale-up from empty
 
 		actuator := NewDirectActuator(cs)
@@ -230,7 +230,7 @@ func TestDirectActuatorApply(t *testing.T) {
 		base.NodePools = []NodePoolConfig{
 			{Name: "tiny-pool", GPUType: "A100-80", GPUsPerNode: 2, InitialNodes: 1, MaxNodes: 1, GPUMemoryGiB: 80},
 		}
-		cs := NewClusterSimulator(base, nil, nil)
+		cs := NewClusterSimulator(base, NewSliceRequestSource(nil), nil)
 		cs.instances = []*InstanceSimulator{} // Clear initial instances; placement already consumed 1 slot
 
 		actuator := NewDirectActuator(cs)

@@ -1934,7 +1934,7 @@ func TestINV13_RunReplayParity_PD(t *testing.T) {
 	}
 
 	// WHEN: direct run.
-	cs1 := cluster.NewClusterSimulator(cfg, requests, nil)
+	cs1 := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(requests), nil)
 	if err := cs1.Run(); err != nil {
 		t.Fatalf("direct run failed: %v", err)
 	}
@@ -1962,7 +1962,7 @@ func TestINV13_RunReplayParity_PD(t *testing.T) {
 		t.Fatalf("LoadTraceV2Requests: %v", err)
 	}
 
-	cs2 := cluster.NewClusterSimulator(cfg, replayReqs, nil)
+	cs2 := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(replayReqs), nil)
 	if err := cs2.Run(); err != nil {
 		t.Fatalf("replay run failed: %v", err)
 	}
@@ -2070,7 +2070,7 @@ func TestINV13_RunReplayParity_PD_CLI(t *testing.T) {
 		PDTransferBandwidthGBps: 25.0,
 		PDTransferBaseLatencyMs: 0.05,
 	}
-	cs1 := cluster.NewClusterSimulator(cfg, requests, nil)
+	cs1 := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(requests), nil)
 	if err := cs1.Run(); err != nil {
 		t.Fatalf("direct run failed: %v", err)
 	}

@@ -42,7 +42,7 @@ func msClusterConfig(numInstances int) DeploymentConfig {
 func TestClusterMetrics_E2E_Identity_AcrossInstances(t *testing.T) {
 	cfg := msClusterConfig(4)
 	requests := newTestRequests(20)
-	cs := NewClusterSimulator(cfg, requests, nil)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(requests), nil)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestClusterMetrics_E2E_Identity_AcrossInstances(t *testing.T) {
 func TestClusterMetrics_AllITLs_Sum_Consistency(t *testing.T) {
 	cfg := msClusterConfig(2)
 	requests := newTestRequests(15)
-	cs := NewClusterSimulator(cfg, requests, nil)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(requests), nil)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestClusterMetrics_AllITLs_Sum_Consistency(t *testing.T) {
 func TestClusterMetrics_CacheHitRate_Bounded(t *testing.T) {
 	cfg := msClusterConfig(2)
 	requests := newTestRequests(10)
-	cs := NewClusterSimulator(cfg, requests, nil)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(requests), nil)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestClusterMetrics_ZeroOutput_NoPollution(t *testing.T) {
 		{ID: "n4", InputTokens: makeTokens(32), OutputTokens: makeTokens(5), ArrivalTime: 400000, State: sim.StateQueued},
 		{ID: "z5", InputTokens: makeTokens(16), OutputTokens: []int{}, ArrivalTime: 500000, State: sim.StateQueued},
 	}
-	cs := NewClusterSimulator(cfg, reqs, nil)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(reqs), nil)
 
 	if err := cs.Run(); err != nil {
 		t.Fatalf("Run: %v", err)

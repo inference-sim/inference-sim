@@ -63,7 +63,7 @@ func TestTenantAdmission_OverBudgetSheddableShed(t *testing.T) {
 	// Run A: alice=0.1 (1 slot), bob=0.9 (9 slots) — alice is over-budget, sheds sheddable.
 	cfgA := newTenantConfig(2, map[string]float64{"alice": 0.1, "bob": 0.9})
 	cfgA.BatchConfig = sim.NewBatchConfig(5, 2048, 0) // totalCapacity=10; alice limit=1 slot
-	csA := NewClusterSimulator(cfgA, makeRequests(), nil)
+	csA := NewClusterSimulator(cfgA, NewSliceRequestSource(makeRequests()), nil)
 	mustRun(t, csA)
 
 	shedA := csA.ShedByTier()["sheddable"]
@@ -75,7 +75,7 @@ func TestTenantAdmission_OverBudgetSheddableShed(t *testing.T) {
 	// Now bob is over-budget; shed count should be non-zero regardless of which tenant is constrained.
 	cfgB := newTenantConfig(2, map[string]float64{"alice": 0.9, "bob": 0.1})
 	cfgB.BatchConfig = sim.NewBatchConfig(5, 2048, 0) // totalCapacity=10; bob limit=1 slot
-	csB := NewClusterSimulator(cfgB, makeRequests(), nil)
+	csB := NewClusterSimulator(cfgB, NewSliceRequestSource(makeRequests()), nil)
 	mustRun(t, csB)
 
 	shedB := csB.ShedByTier()["sheddable"]
@@ -103,7 +103,7 @@ func TestTenantAdmission_CriticalAndStandardProtectedFromBudgetShed(t *testing.T
 	cfg := newTenantConfig(2, map[string]float64{
 		"alice": 0.05, // only ~0.5 slots allowed
 	})
-	cs := NewClusterSimulator(cfg, requests, nil)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	// No critical requests should be shed by tenant budget enforcement
@@ -126,13 +126,13 @@ func TestTenantAdmission_NilBudgets_ZeroValueSafety(t *testing.T) {
 
 	// Run 1: no tenant budgets
 	cfg1 := newTestDeploymentConfig(2)
-	cs1 := NewClusterSimulator(cfg1, requests1, nil)
+	cs1 := NewClusterSimulator(cfg1, NewSliceRequestSource(requests1), nil)
 	mustRun(t, cs1)
 
 	// Run 2: explicit nil TenantBudgets (zero-value safe)
 	cfg2 := newTestDeploymentConfig(2)
 	cfg2.TenantBudgets = nil
-	cs2 := NewClusterSimulator(cfg2, requests2, nil)
+	cs2 := NewClusterSimulator(cfg2, NewSliceRequestSource(requests2), nil)
 	mustRun(t, cs2)
 
 	m1, _ := json.Marshal(cs1.AggregatedMetrics())
@@ -167,12 +167,12 @@ func TestTenantAdmission_INV6_Determinism(t *testing.T) {
 	cfg.BatchConfig = sim.NewBatchConfig(5, 2048, 0)
 
 	// Run 1
-	cs1 := NewClusterSimulator(cfg, makeReqs(), nil)
+	cs1 := NewClusterSimulator(cfg, NewSliceRequestSource(makeReqs()), nil)
 	mustRun(t, cs1)
 	m1, _ := json.Marshal(cs1.AggregatedMetrics())
 
 	// Run 2 — identical config and seed
-	cs2 := NewClusterSimulator(cfg, makeReqs(), nil)
+	cs2 := NewClusterSimulator(cfg, NewSliceRequestSource(makeReqs()), nil)
 	mustRun(t, cs2)
 	m2, _ := json.Marshal(cs2.AggregatedMetrics())
 
@@ -202,7 +202,7 @@ func TestTenantAdmission_INV1_BudgetShedConservation(t *testing.T) {
 	// alice budget=0.1 with totalCapacity=10 → 1 slot; dense arrivals guarantee budget enforcement fires.
 	cfg := newTenantConfig(2, map[string]float64{"alice": 0.1})
 	cfg.BatchConfig = sim.NewBatchConfig(5, 2048, 0) // totalCapacity=10; alice limit=1 slot
-	cs := NewClusterSimulator(cfg, requests, nil)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	// Verify budget enforcement actually fired (test setup check).
@@ -252,12 +252,12 @@ func TestTenantAdmission_INV9_DoesNotReadOutputTokens(t *testing.T) {
 	// Dense arrivals ensure the budget enforcement code path actually executes.
 	cfg1 := newTenantConfig(2, map[string]float64{"alice": 0.1})
 	cfg1.BatchConfig = sim.NewBatchConfig(5, 2048, 0)
-	cs1 := NewClusterSimulator(cfg1, makeReqs(true), nil)
+	cs1 := NewClusterSimulator(cfg1, NewSliceRequestSource(makeReqs(true)), nil)
 	mustRun(t, cs1)
 
 	cfg2 := newTenantConfig(2, map[string]float64{"alice": 0.1})
 	cfg2.BatchConfig = sim.NewBatchConfig(5, 2048, 0)
-	cs2 := NewClusterSimulator(cfg2, makeReqs(false), nil)
+	cs2 := NewClusterSimulator(cfg2, NewSliceRequestSource(makeReqs(false)), nil)
 	mustRun(t, cs2)
 
 	shed1 := cs1.ShedByTier()["sheddable"]
@@ -297,7 +297,7 @@ func TestTenantAdmission_PDMode_BudgetEnforced(t *testing.T) {
 	cfg.TenantBudgets = map[string]float64{"alice": 0.1}
 	cfg.BatchConfig = sim.NewBatchConfig(10, 2048, 0) // totalCapacity=40; alice limit=4 slots
 
-	cs := NewClusterSimulator(cfg, requests, nil)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(requests), nil)
 	mustRun(t, cs)
 
 	shed := cs.ShedByTier()["sheddable"]

@@ -28,7 +28,7 @@ func TestGatewayQueueTTL_ExpiresQueuedRequest(t *testing.T) {
 		{ID: "r2", ArrivalTime: 100, SLOClass: "batch",
 			InputTokens: make([]int, 10), OutputTokens: make([]int, 5), State: sim.StateQueued},
 	}
-	cs := NewClusterSimulator(cfg, reqs, nil)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(reqs), nil)
 	mustRun(t, cs)
 
 	if cs.GatewayExpired() != 1 {
@@ -44,7 +44,7 @@ func TestGatewayQueueTTL_NoOpWhenDispatched(t *testing.T) {
 	cfg := newFlowControlTTLConfig(1, 5000, "never")
 	cfg.Horizon = 100_000
 	reqs := newTestRequests(3)
-	cs := NewClusterSimulator(cfg, reqs, nil)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(reqs), nil)
 	mustRun(t, cs)
 
 	if cs.GatewayExpired() != 0 {
@@ -56,7 +56,7 @@ func TestGatewayQueueTTL_DisabledByDefault(t *testing.T) {
 	cfg := newFlowControlTTLConfig(1, 0, "never")
 	cfg.Horizon = 100_000
 	reqs := newTestRequests(5)
-	cs := NewClusterSimulator(cfg, reqs, nil)
+	cs := NewClusterSimulator(cfg, NewSliceRequestSource(reqs), nil)
 	mustRun(t, cs)
 
 	if cs.GatewayExpired() != 0 {

@@ -101,7 +101,7 @@ func TestPrefixAffinityRouting_LongPrefix_ConcentratesVsLoadOnly(t *testing.T) {
 		{Name: "prefix-affinity", Weight: 5.0},
 		{Name: "queue-depth", Weight: 1.0},
 	}
-	affinityCS := NewClusterSimulator(affinityConfig, copyRequests(requests), nil)
+	affinityCS := NewClusterSimulator(affinityConfig, NewSliceRequestSource(copyRequests(requests)), nil)
 	require.NoError(t, affinityCS.Run())
 	affinityDist := getRoutingDistribution(affinityCS)
 
@@ -111,14 +111,14 @@ func TestPrefixAffinityRouting_LongPrefix_ConcentratesVsLoadOnly(t *testing.T) {
 	loadConfig.RoutingScorerConfigs = []sim.ScorerConfig{
 		{Name: "queue-depth", Weight: 1.0},
 	}
-	loadCS := NewClusterSimulator(loadConfig, copyRequests(requests), nil)
+	loadCS := NewClusterSimulator(loadConfig, NewSliceRequestSource(copyRequests(requests)), nil)
 	require.NoError(t, loadCS.Run())
 	loadDist := getRoutingDistribution(loadCS)
 
 	// Experiment C: round-robin baseline
 	rrConfig := config
 	rrConfig.RoutingPolicy = "round-robin"
-	rrCS := NewClusterSimulator(rrConfig, copyRequests(requests), nil)
+	rrCS := NewClusterSimulator(rrConfig, NewSliceRequestSource(copyRequests(requests)), nil)
 	require.NoError(t, rrCS.Run())
 	rrDist := getRoutingDistribution(rrCS)
 
@@ -161,7 +161,7 @@ func TestPrefixAffinityRouting_ShortPrefix_NoAdvantage(t *testing.T) {
 		{Name: "prefix-affinity", Weight: 5.0},
 		{Name: "queue-depth", Weight: 1.0},
 	}
-	affinityCS := NewClusterSimulator(affinityConfig, copyRequests(requests), nil)
+	affinityCS := NewClusterSimulator(affinityConfig, NewSliceRequestSource(copyRequests(requests)), nil)
 	require.NoError(t, affinityCS.Run())
 	affinityDist := getRoutingDistribution(affinityCS)
 
@@ -171,7 +171,7 @@ func TestPrefixAffinityRouting_ShortPrefix_NoAdvantage(t *testing.T) {
 	loadConfig.RoutingScorerConfigs = []sim.ScorerConfig{
 		{Name: "queue-depth", Weight: 1.0},
 	}
-	loadCS := NewClusterSimulator(loadConfig, copyRequests(requests), nil)
+	loadCS := NewClusterSimulator(loadConfig, NewSliceRequestSource(copyRequests(requests)), nil)
 	require.NoError(t, loadCS.Run())
 	loadDist := getRoutingDistribution(loadCS)
 
@@ -296,7 +296,7 @@ func TestPrefixAffinityRouting_MultiTurn_SessionAffinity(t *testing.T) {
 		{Name: "prefix-affinity", Weight: 5.0},
 		{Name: "queue-depth", Weight: 1.0},
 	}
-	affinityCS := NewClusterSimulator(affinityConfig, copyRequests(requests), nil)
+	affinityCS := NewClusterSimulator(affinityConfig, NewSliceRequestSource(copyRequests(requests)), nil)
 	require.NoError(t, affinityCS.Run())
 	affinityAffinity := countSessionAffinity(affinityCS)
 
@@ -306,7 +306,7 @@ func TestPrefixAffinityRouting_MultiTurn_SessionAffinity(t *testing.T) {
 	loadConfig.RoutingScorerConfigs = []sim.ScorerConfig{
 		{Name: "queue-depth", Weight: 1.0},
 	}
-	loadCS := NewClusterSimulator(loadConfig, copyRequests(requests), nil)
+	loadCS := NewClusterSimulator(loadConfig, NewSliceRequestSource(copyRequests(requests)), nil)
 	require.NoError(t, loadCS.Run())
 	loadAffinity := countSessionAffinity(loadCS)
 

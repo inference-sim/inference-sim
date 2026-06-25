@@ -250,7 +250,7 @@ func TestNewClusterSimulator_PerPoolConfig_HeterogeneousTP(t *testing.T) {
 		DecodeOverrides:         PoolOverrides{TP: &decodeTP},
 	}
 
-	cs := NewClusterSimulator(config, nil, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(nil), nil)
 
 	if len(cs.Instances()) != 4 {
 		t.Errorf("instance count = %d, want 4", len(cs.Instances()))
@@ -301,7 +301,7 @@ func TestNewClusterSimulator_NoOverrides_BackwardCompat(t *testing.T) {
 		// No PrefillOverrides or DecodeOverrides — zero valued
 	}
 
-	cs := NewClusterSimulator(config, nil, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(nil), nil)
 	if len(cs.Instances()) != 4 {
 		t.Errorf("instance count = %d, want 4", len(cs.Instances()))
 	}
@@ -345,7 +345,7 @@ func TestINV_P2_1_PoolConfigConsistency(t *testing.T) {
 	}
 
 	requests := newTestRequests(5)
-	cs := NewClusterSimulator(config, requests, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 
 	// INV-P2-1 pre-check: verify per-pool KV capacity via observable FreeKVBlocks().
 	// Before simulation, FreeKVBlocks() == TotalCapacity (no requests allocated yet).
@@ -781,7 +781,7 @@ func TestNewClusterSimulator_PanicsOnInvalidPrefillOverrides(t *testing.T) {
 		}
 	}()
 
-	NewClusterSimulator(config, nil, nil)
+	NewClusterSimulator(config, NewSliceRequestSource(nil), nil)
 }
 
 // TestNewClusterSimulator_PureSharedCluster verifies issue #1276: a pure-shared
@@ -805,7 +805,7 @@ func TestNewClusterSimulator_PureSharedCluster(t *testing.T) {
 	}
 
 	// Must construct without panicking — the extended guard accepts pure-shared.
-	cs := NewClusterSimulator(config, nil, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(nil), nil)
 	if cs == nil {
 		t.Fatal("NewClusterSimulator returned nil for a valid pure-shared cluster")
 	}
@@ -841,7 +841,7 @@ func TestNewClusterSimulator_PureSharedWithTransferContention(t *testing.T) {
 		RoutingPolicy:        "round-robin",
 	}
 
-	cs := NewClusterSimulator(config, nil, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(nil), nil)
 	if cs == nil {
 		t.Fatal("NewClusterSimulator returned nil for pure-shared + PDTransferContention")
 	}
@@ -882,7 +882,7 @@ func TestNewClusterSimulator_PanicsOnInvalidDecodeOverrides(t *testing.T) {
 		}
 	}()
 
-	NewClusterSimulator(config, nil, nil)
+	NewClusterSimulator(config, NewSliceRequestSource(nil), nil)
 }
 
 // TestINV_P2_1_RequestConservation verifies INV-1 holds for a heterogeneous PD cluster:
@@ -919,7 +919,7 @@ func TestINV_P2_1_RequestConservation(t *testing.T) {
 		DecodeOverrides:         PoolOverrides{TotalKVBlocks: &decodeKV},
 	}
 
-	cs := NewClusterSimulator(config, requests, nil)
+	cs := NewClusterSimulator(config, NewSliceRequestSource(requests), nil)
 	if err := cs.Run(); err != nil {
 		t.Fatalf("Run() failed: %v", err)
 	}
