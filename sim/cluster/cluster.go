@@ -648,6 +648,9 @@ func (c *ClusterSimulator) Run() error {
 		if !ok {
 			break
 		}
+		if req == nil {
+			panic("ClusterSimulator: RequestSource.Next() returned (nil, true) — implementation contract violation (Next must never return ok=true with a nil request)")
+		}
 		c.pushArrival(req, req.ArrivalTime)
 		arrivalCount++
 	}

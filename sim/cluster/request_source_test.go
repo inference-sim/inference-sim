@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -103,6 +104,44 @@ func TestNewClusterSimulator_PanicsOnNilRequestSource(t *testing.T) {
 		}
 	}()
 	NewClusterSimulator(newTestDeploymentConfig(1), nil, nil)
+}
+
+// nilTrueRequestSource violates the RequestSource contract by returning
+// (nil, true) on the first call, then exhausting. Used to verify Run() fails
+// fast with an actionable message rather than producing an opaque nil-deref.
+type nilTrueRequestSource struct {
+	fired bool
+}
+
+func (n *nilTrueRequestSource) Next() (*sim.Request, bool) {
+	if n.fired {
+		return nil, false
+	}
+	n.fired = true
+	return nil, true
+}
+
+func TestClusterSimulator_PanicsOnNilTrueFromSource(t *testing.T) {
+	cs := NewClusterSimulator(newTestDeploymentConfig(1), &nilTrueRequestSource{}, nil)
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic on (nil, true) from RequestSource, got none")
+		}
+		msg, ok := r.(string)
+		if !ok {
+			t.Fatalf("expected string panic value, got %T: %v", r, r)
+		}
+		// The message should name the contract violation so future implementers
+		// can debug it without spelunking through Run().
+		if !strings.Contains(msg, "nil") {
+			t.Errorf("panic message should mention nil, got: %q", msg)
+		}
+		if !strings.Contains(msg, "contract") {
+			t.Errorf("panic message should mention contract violation, got: %q", msg)
+		}
+	}()
+	_ = cs.Run()
 }
 
 func TestSliceRequestSource_CountingWrapperIntegrates(t *testing.T) {
