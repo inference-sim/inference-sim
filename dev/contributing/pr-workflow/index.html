@@ -3793,8 +3793,7 @@
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">cd</span><span class="w"> </span>.worktrees/pr&lt;N&gt;-&lt;feature-name&gt;
 </code></pre></div>
 <p><strong>Why first?</strong> This ensures:
-- Main worktree stays clean (no uncommitted plans or code)
-- Plan document committed on feature branch (not main)
+- Main worktree stays clean (no uncommitted code)
 - Complete isolation for entire PR lifecycle (planning + implementation)
 - Ability to work on multiple PRs in parallel</p>
 <p>All remaining steps happen in the worktree.</p>
@@ -3896,7 +3895,6 @@
 - Deviations from source document not justified
 - Dead code or scaffolding</p>
 <p><strong>Outcome:</strong> ✅ Approve plan → proceed to Step 4 (implementation). ❌ Need revisions → iterate, re-review (Step 2.5), then approve.</p>
-<p><strong>Note:</strong> The plan will be committed together with the implementation in Step 5 (single commit for entire PR).</p>
 <hr />
 <h3 id="step-4-implement-the-plan">Step 4: Implement the Plan<a class="headerlink" href="#step-4-implement-the-plan" title="Permanent link">&para;</a></h3>
 <p>Implement the tasks from the approved plan using TDD:</p>
