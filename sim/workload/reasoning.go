@@ -57,7 +57,7 @@ func GenerateReasoningRequests(
 	// every round's Slice() result point into the SAME backing array. Even if
 	// the estimate is exceeded, Go's amortized-O(1) append keeps total memory
 	// O(R); the only cost is a one-time copy.
-	var buf *SessionTokenBuffer
+	var buf *sessionTokenBuffer
 	prefixLen := int64(len(prefix))
 
 	// Pre-sample round 0 to size the buffer; these values feed round 0 below.
@@ -66,12 +66,12 @@ func GenerateReasoningRequests(
 
 	if mt.ContextGrowth == "accumulate" {
 		estCap := prefixLen + int64(mt.MaxRounds)*int64(round0Input+round0Output)
-		buf = NewSessionTokenBufferWithCapacity(estCap)
+		buf = newSessionTokenBufferWithCapacity(estCap)
 		if prefixLen > 0 {
 			buf.Append(prefix)
 		}
 	} else {
-		buf = NewSessionTokenBuffer()
+		buf = newSessionTokenBuffer()
 	}
 
 	for round := 0; round < mt.MaxRounds; round++ {

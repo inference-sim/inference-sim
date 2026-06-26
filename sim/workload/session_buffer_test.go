@@ -6,7 +6,7 @@ import (
 )
 
 func TestSessionTokenBufferAppendAndSlice(t *testing.T) {
-	b := NewSessionTokenBuffer()
+	b := newSessionTokenBuffer()
 	if b.Len() != 0 {
 		t.Fatalf("empty Len = %d, want 0", b.Len())
 	}
@@ -32,7 +32,7 @@ func TestSessionTokenBufferLinearGrowth(t *testing.T) {
 	// Append N rounds, each of size K. Total appended = N*K. Verify cap stays
 	// within a small constant factor of total bytes (Go's append doubles
 	// capacity, so cap ≤ 2*Len after the last grow; we allow ≤3*Len slack).
-	b := NewSessionTokenBuffer()
+	b := newSessionTokenBuffer()
 	const rounds = 20
 	const perRound = 100
 	for i := 0; i < rounds; i++ {
@@ -46,13 +46,13 @@ func TestSessionTokenBufferLinearGrowth(t *testing.T) {
 	if b.Len() != totalLen {
 		t.Fatalf("Len after %d rounds = %d, want %d", rounds, b.Len(), totalLen)
 	}
-	if int64(b.cap_()) > totalLen*3 {
-		t.Fatalf("Cap = %d, want ≤ 3*Len = %d (linear growth bound)", b.cap_(), totalLen*3)
+	if b.bufCap() > totalLen*3 {
+		t.Fatalf("bufCap = %d, want ≤ 3*Len = %d (linear growth bound)", b.bufCap(), totalLen*3)
 	}
 }
 
 func TestSessionTokenBufferEmptyAppend(t *testing.T) {
-	b := NewSessionTokenBuffer()
+	b := newSessionTokenBuffer()
 	s, e := b.Append(nil)
 	if s != 0 || e != 0 {
 		t.Fatalf("Append(nil) range = (%d,%d), want (0,0)", s, e)
@@ -66,7 +66,7 @@ func TestSessionTokenBufferEmptyAppend(t *testing.T) {
 func TestSessionTokenBufferSliceIsView(t *testing.T) {
 	// Two slices spanning the same range MUST point at the same backing array —
 	// that's the storage-win guarantee.
-	b := NewSessionTokenBuffer()
+	b := newSessionTokenBuffer()
 	b.Append([]int{10, 20, 30, 40, 50})
 	a := b.Slice(0, 3)
 	c := b.Slice(0, 3)
@@ -79,9 +79,9 @@ func TestSessionTokenBufferSliceIsView(t *testing.T) {
 // invariant for the O(R) storage win: slices returned by Slice() before a
 // subsequent Append() remain aliases of the same backing array, AS LONG AS the
 // buffer has capacity for the append (no reallocation). We use
-// NewSessionTokenBufferWithCapacity to control this.
+// newSessionTokenBufferWithCapacity to control this.
 func TestSessionTokenBufferSliceAliasesAcrossAppends(t *testing.T) {
-	b := NewSessionTokenBufferWithCapacity(100)
+	b := newSessionTokenBufferWithCapacity(100)
 	b.Append([]int{1, 2, 3})
 	first := b.Slice(0, 3)
 	b.Append([]int{4, 5, 6})
@@ -103,13 +103,13 @@ func TestNewSessionTokenBufferWithCapacityRejectsNegative(t *testing.T) {
 			t.Fatalf("expected panic for negative capacity, got none")
 		}
 	}()
-	_ = NewSessionTokenBufferWithCapacity(-1)
+	_ = newSessionTokenBufferWithCapacity(-1)
 }
 
 // TestSessionTokenBufferSliceBounds asserts that out-of-bounds Slice() calls
 // panic with a decorated message (IMP-1, #1445).
 func TestSessionTokenBufferSliceBounds(t *testing.T) {
-	b := NewSessionTokenBuffer()
+	b := newSessionTokenBuffer()
 	b.Append([]int{1, 2, 3})
 	cases := []struct {
 		name       string

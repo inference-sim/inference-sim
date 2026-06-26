@@ -1,4 +1,4 @@
-// SessionTokenBuffer is a session-scoped growable token buffer shared by all
+// sessionTokenBuffer is a session-scoped growable token buffer shared by all
 // rounds of one multi-turn session. Each round's Request.InputTokens is a flat
 // sub-slice (view) into the buffer's underlying array. The buffer grows by
 // append, amortized O(1) per token; total per-session storage is O(R) where R
@@ -11,7 +11,7 @@ package workload
 
 import "fmt"
 
-// SessionTokenBuffer holds the growable backing array for a session's
+// sessionTokenBuffer holds the growable backing array for a session's
 // accumulated context plus prefix.
 //
 // # Reallocation hazard (intentional, bounded)
@@ -28,34 +28,34 @@ import "fmt"
 // policy (cap ≤ 2× current len), so peak per-session bytes remain O(R) as
 // asserted by the memory tests in session_buffer_mem_test.go. To eliminate
 // the orphaning entirely when R is known upfront (open-loop generation), use
-// NewSessionTokenBufferWithCapacity.
-type SessionTokenBuffer struct {
+// newSessionTokenBufferWithCapacity.
+type sessionTokenBuffer struct {
 	b []int
 }
 
-// NewSessionTokenBuffer creates an empty buffer. Capacity grows on demand via
+// newSessionTokenBuffer creates an empty buffer. Capacity grows on demand via
 // Go's amortized-O(1) append policy.
-func NewSessionTokenBuffer() *SessionTokenBuffer {
-	return &SessionTokenBuffer{}
+func newSessionTokenBuffer() *sessionTokenBuffer {
+	return &sessionTokenBuffer{}
 }
 
-// NewSessionTokenBufferWithCapacity pre-allocates the buffer to the given
+// newSessionTokenBufferWithCapacity pre-allocates the buffer to the given
 // capacity. Use this when the total session size is known (e.g., open-loop
 // reasoning generation) to avoid the reallocation hazard described on
-// SessionTokenBuffer — every Slice() result remains valid through all
+// sessionTokenBuffer — every Slice() result remains valid through all
 // subsequent appends. Panics on a negative capacity (R3: validate library
 // constructor parameters; a negative value indicates a caller calculation bug
 // that should surface immediately, not be silently clamped).
-func NewSessionTokenBufferWithCapacity(capacity int64) *SessionTokenBuffer {
+func newSessionTokenBufferWithCapacity(capacity int64) *sessionTokenBuffer {
 	if capacity < 0 {
-		panic(fmt.Sprintf("NewSessionTokenBufferWithCapacity: capacity must be non-negative, got %d", capacity))
+		panic(fmt.Sprintf("newSessionTokenBufferWithCapacity: capacity must be non-negative, got %d", capacity))
 	}
-	return &SessionTokenBuffer{b: make([]int, 0, capacity)}
+	return &sessionTokenBuffer{b: make([]int, 0, capacity)}
 }
 
 // Append copies the given tokens onto the end of the buffer and returns the
 // absolute [start, end) range they now occupy.
-func (s *SessionTokenBuffer) Append(toks []int) (start, end int64) {
+func (s *sessionTokenBuffer) Append(toks []int) (start, end int64) {
 	start = int64(len(s.b))
 	s.b = append(s.b, toks...)
 	end = int64(len(s.b))
@@ -65,21 +65,22 @@ func (s *SessionTokenBuffer) Append(toks []int) (start, end int64) {
 // Slice returns a flat view of the buffer over the given absolute range. The
 // returned slice aliases the buffer's underlying array; callers must not mutate.
 // Panics with a decorated message if [start, end) is out of bounds.
-func (s *SessionTokenBuffer) Slice(start, end int64) []int {
+func (s *sessionTokenBuffer) Slice(start, end int64) []int {
 	n := int64(len(s.b))
 	if start < 0 || end < start || end > n {
-		panic(fmt.Sprintf("SessionTokenBuffer.Slice: invalid range [%d, %d) for buf len=%d", start, end, n))
+		panic(fmt.Sprintf("sessionTokenBuffer.Slice: invalid range [%d, %d) for buf len=%d", start, end, n))
 	}
 	return s.b[start:end]
 }
 
 // Len returns the number of tokens currently in the buffer.
-func (s *SessionTokenBuffer) Len() int64 {
+func (s *sessionTokenBuffer) Len() int64 {
 	return int64(len(s.b))
 }
 
-// cap_ returns the capacity of the underlying array. Unexported: same-package
-// memory tests access it via white-box; production code has no need.
-func (s *SessionTokenBuffer) cap_() int {
-	return cap(s.b)
+// bufCap returns the capacity of the underlying array as int64 (matching the
+// type signature of Len/Slice/Append). Unexported: same-package memory tests
+// access it via white-box; production code has no need.
+func (s *sessionTokenBuffer) bufCap() int64 {
+	return int64(cap(s.b))
 }

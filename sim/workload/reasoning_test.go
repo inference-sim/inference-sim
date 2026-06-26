@@ -154,7 +154,7 @@ func TestGenerateReasoningRequests_Accumulate_SharesPrefixTokens(t *testing.T) {
 }
 
 // TestGenerateReasoningRequests_Accumulate_SharesBackingArray verifies that
-// with the SessionTokenBuffer representation, later rounds' InputTokens slices
+// with the sessionTokenBuffer representation, later rounds' InputTokens slices
 // are views into the same growable buffer (BC-1, #1445). After all appends are
 // done, the buffer's final array contains every round's tokens contiguously;
 // the LAST round's InputTokens (which spans [0, end_of_last_input)) and the
@@ -180,22 +180,23 @@ func TestGenerateReasoningRequests_Accumulate_SharesBackingArray(t *testing.T) {
 		t.Fatalf("expected ≥ 2 rounds, got %d", len(requests))
 	}
 
-	// The accumulate path with SessionTokenBuffer means each round's
+	// The accumulate path with sessionTokenBuffer means each round's
 	// InputTokens slice header points into the buffer's underlying array.
-	// At least one pair of (round_i, round_j) where i < j must share a
-	// backing array — that's the O(R) storage guarantee. We check the
-	// stronger property that ALL rounds share with at least one neighbor.
-	sharedSomewhere := false
+	// With reasoning.go's round-0-sized pre-allocation (#1445), every
+	// consecutive pair MUST share the same backing array — no reallocation
+	// can occur when round sizes are constant (sampler returns 50/30 every
+	// round, cap was sized for MaxRounds × (50+30) at start). Assert every
+	// pair, not just one, so a mid-loop reallocation that orphans later
+	// rounds is caught (MOD-R4-1, #1445).
 	for i := 0; i+1 < len(requests); i++ {
 		a := requests[i].InputTokens
 		b := requests[i+1].InputTokens
-		if len(a) > 0 && len(b) > 0 && &a[0] == &b[0] {
-			sharedSomewhere = true
-			break
+		if len(a) == 0 || len(b) == 0 {
+			continue
 		}
-	}
-	if !sharedSomewhere {
-		t.Errorf("no two consecutive rounds share a backing array — append reallocated for every round, defeating O(R) storage")
+		if &a[0] != &b[0] {
+			t.Errorf("round %d and round %d do NOT share a backing array — pre-allocated buffer reallocated mid-loop, defeating O(R) storage", i, i+1)
+		}
 	}
 }
 

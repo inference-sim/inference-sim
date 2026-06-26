@@ -176,7 +176,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				}
 				// Prefix is passed in so reasoning.go can seed the shared session
 				// buffer once at index 0 — eliminating the per-round prefix copy
-				// that would otherwise defeat the SessionTokenBuffer storage win
+				// that would otherwise defeat the sessionTokenBuffer storage win
 				// (#1445). reasoning.go sets req.PrefixLength accordingly.
 				reasoningReqs, err := GenerateReasoningRequests(
 					clientRNG, client.Reasoning,

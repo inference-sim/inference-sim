@@ -24,13 +24,15 @@ import (
 func TestReasoningAccumulate_PerSessionMemoryIsLinear(t *testing.T) {
 	// Use small per-round sizes so test is fast and the asymptotic shows up
 	// clearly. Test asserts a structural property, not absolute numbers, so
-	// this is faithful to the real-workload behavior.
+	// this is faithful to the real-workload behavior. Hard win-ratio
+	// thresholds are asserted per the PR description (MOD-R4-2, #1445).
 	cases := []struct {
 		name      string
 		maxRounds int
+		minWin    float64 // hard floor on legacy/new ratio
 	}{
-		{"R=15", 15},
-		{"R=50", 50},
+		{"R=15", 15, 5.0},
+		{"R=50", 50, 20.0},
 	}
 
 	for _, tc := range cases {
@@ -99,6 +101,9 @@ func TestReasoningAccumulate_PerSessionMemoryIsLinear(t *testing.T) {
 			ratio := float64(legacyTokens) / float64(newPeakCap)
 			t.Logf("%s: legacy O(R²) tokens = %d, new peak cap = %d, content = %d, win = %.1fx",
 				tc.name, legacyTokens, newPeakCap, contentTokens, ratio)
+			if ratio < tc.minWin {
+				t.Errorf("%s: win ratio %.2fx < minimum %.2fx — storage benefit regressed", tc.name, ratio, tc.minWin)
+			}
 		})
 	}
 }

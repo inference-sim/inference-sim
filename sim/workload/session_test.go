@@ -119,6 +119,99 @@ func TestSession_AccumulateContinuityGuard_RejectsMismatchedSlice(t *testing.T) 
 	sm.OnComplete(req1Bad, 10000)
 }
 
+// TestSession_AccumulateContinuityGuard_RejectsShortSlice exercises the
+// SHORT-slice direction of the `!=` continuity guard. Companion to
+// TestSession_AccumulateContinuityGuard_RejectsMismatchedSlice which exercises
+// the long-slice direction; together they protect against a regression from
+// `!=` back to `>` (which would miss the orphaned-too-short case) (IMP-R4-1,
+// #1445).
+func TestSession_AccumulateContinuityGuard_RejectsShortSlice(t *testing.T) {
+	bp := makeTestBlueprint("sess-cont-guard-short", 3, 1000, "accumulate", 1_000_000)
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "sess-cont-guard-short", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+	}
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up after round 0, got %d", len(follow))
+	}
+	// After round 0's OnComplete: buf contains 10 input + 5 output + 10 new = 25 tokens.
+	// Pass a SHORTER slice to round 1 (1 != 25): the `!=` guard must fire.
+	req1Short := &sim.Request{
+		ID: "r1", SessionID: "sess-cont-guard-short", RoundIndex: 1,
+		State: sim.StateCompleted, ProgressIndex: 6,
+		InputTokens:  make([]int, 1),
+		OutputTokens: make([]int, 5),
+	}
+	defer func() {
+		rec := recover()
+		if rec == nil {
+			t.Fatalf("expected panic for short-slice InputTokens, got none")
+		}
+		msg, ok := rec.(string)
+		if !ok {
+			t.Fatalf("panic value is %T, want string", rec)
+		}
+		if !strings.Contains(msg, "buffer continuity broken") {
+			t.Errorf("panic message %q does not mention buffer continuity", msg)
+		}
+	}()
+	sm.OnComplete(req1Short, 10000)
+}
+
+// TestSession_AccumulateOverCap_AppendsFull exercises the over-cap branch of
+// session.go's output accumulation: when actualOutputLen exceeds
+// len(req.OutputTokens), the code logs Error and falls through to appending
+// the full oracle output (IMP-R4-2, #1445).
+func TestSession_AccumulateOverCap_AppendsFull(t *testing.T) {
+	bp := makeTestBlueprint("sess-overcap", 3, 1000, "accumulate", 1_000_000)
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	// actualOutputLen = max(ProgressIndex - InputLen, 0) = max(20 - 10, 0) = 10
+	// OutputTokens has only 5 → triggers the over-cap case (10 > 5).
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "sess-overcap", RoundIndex: 0,
+		State:         sim.StateCompleted,
+		ProgressIndex: 20,
+		InputTokens:   make([]int, 10),
+		OutputTokens:  make([]int, 5),
+	}
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up after over-cap, got %d", len(follow))
+	}
+	// Round 1 input = [10 r0_input | 5 r0_oracle_output | 10 newInput] = 25
+	if len(follow[0].InputTokens) != 25 {
+		t.Fatalf("over-cap: follow-up InputLen = %d, want 25 (full oracle output appended)", len(follow[0].InputTokens))
+	}
+}
+
+// TestSession_AccumulateArrivalTime_INV10 anchors INV-10 (session causality)
+// under the accumulate path: round N+1's ArrivalTime is computed independently
+// of the buffer machinery and must equal `tick + thinkTime` exactly
+// (MOD-R4-6, #1445).
+func TestSession_AccumulateArrivalTime_INV10(t *testing.T) {
+	bp := makeTestBlueprint("sess-arrival-inv10", 3, 1000, "accumulate", 1_000_000)
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "sess-arrival-inv10", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+	}
+	follow := sm.OnComplete(req0, 7500)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+	// ThinkTimeUs=1000, tick=7500 → expected arrival 8500.
+	if follow[0].ArrivalTime != 8500 {
+		t.Errorf("INV-10: arrival = %d, want 8500 (tick 7500 + thinkTime 1000)", follow[0].ArrivalTime)
+	}
+}
+
 // TestSession_AccumulateDoesNotReseed verifies the `seeded` flag guard:
 // once a session has produced its first follow-up, a second OnComplete call
 // on a request with the same SessionID must NOT re-seed the buffer (which
@@ -178,7 +271,7 @@ func TestSession_AccumulateDoesNotReseed(t *testing.T) {
 }
 
 // TestSession_AccumulateSharesBackingArray verifies that closed-loop accumulate
-// rounds share a SessionTokenBuffer (BC-2, #1445). Specifically, round 1's
+// rounds share a sessionTokenBuffer (BC-2, #1445). Specifically, round 1's
 // InputTokens must be a slice header view into the same buffer as round 2's —
 // proving that no fresh copy of accumulated context is created per round.
 func TestSession_AccumulateSharesBackingArray(t *testing.T) {

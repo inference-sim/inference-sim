@@ -55,7 +55,7 @@ type activeSession struct {
 	// Each follow-up round's Request.InputTokens is a flat slice into this
 	// buffer's underlying array — replaces the legacy O(R²) eager copy (#1445).
 	// nil when ContextGrowth != "accumulate".
-	buf    *SessionTokenBuffer
+	buf    *sessionTokenBuffer
 	seeded bool // false until first OnComplete seeds prefix + round-0 conversation
 	state  sessionState
 }
@@ -79,9 +79,9 @@ func NewSessionManager(blueprints []SessionBlueprint) *SessionManager {
 		if bp.MaxRounds < 1 && !bp.UnlimitedRounds {
 			panic(fmt.Sprintf("NewSessionManager: session %s has MaxRounds=%d, must be >= 1", bp.SessionID, bp.MaxRounds))
 		}
-		var buf *SessionTokenBuffer
+		var buf *sessionTokenBuffer
 		if bp.ContextGrowth == "accumulate" {
-			buf = NewSessionTokenBuffer()
+			buf = newSessionTokenBuffer()
 		}
 		sm.sessions[bp.SessionID] = &activeSession{
 			blueprint: bp,
