@@ -676,7 +676,51 @@ func validateAndExpandSpec(spec *WorkloadSpec) error {
 	if len(sourceNames) > 1 {
 		return fmt.Errorf("workload sources {%s} are mutually exclusive; specify exactly one of: clients, servegen_data, inference_perf", strings.Join(sourceNames, ", "))
 	}
-	// Expand inference-perf spec if specified (populates spec.Clients)
+	if err := expandClientsAndCohorts(spec); err != nil {
+		return err
+	}
+	UpgradeV1ToV2(spec)
+	if err := spec.Validate(); err != nil {
+		return fmt.Errorf("invalid workload spec: %w", err)
+	}
+	return nil
+}
+
+// ExpandClientsAndCohorts performs only the spec-populating expansion
+// step shared by GenerateRequests and GenerateWorkloadLazy: inference-perf
+// expansion into spec.Clients and ServeGen data load into spec.Cohorts.
+//
+// Mutates spec in place. Idempotent: callers may invoke it before the
+// generators run (e.g., cmd/root.go pre-populates spec.Clients so that
+// applyTimeoutToSpec covers every client even when the original spec
+// only set InferencePerf — fixes the --lazy-generation + inference-perf
+// timeout divergence found in PR #1453 review).
+//
+// After expansion, the consumed marker (spec.InferencePerf or
+// spec.ServeGenData) is cleared so the generators' subsequent
+// validateAndExpandSpec call does not flag the (Clients > 0 + marker)
+// state as a mutual-exclusion violation. This is the canonical form:
+// after expansion, the workload is fully expressed through spec.Clients
+// and spec.Cohorts. Note: this clearing means downstream
+// spec.Validate() loses the inference-perf "slo_class skip" marker;
+// callers that need that semantic should not pre-expand.
+//
+// Does NOT run mutual-exclusion checks or spec.Validate(). The
+// generators run those themselves.
+func ExpandClientsAndCohorts(spec *WorkloadSpec) error {
+	if err := expandClientsAndCohorts(spec); err != nil {
+		return err
+	}
+	// Clear consumed markers — see godoc for rationale.
+	spec.InferencePerf = nil
+	spec.ServeGenData = nil
+	return nil
+}
+
+func expandClientsAndCohorts(spec *WorkloadSpec) error {
+	// Expand inference-perf spec if specified (populates spec.Clients).
+	// Idempotent: the len(spec.Clients) == 0 guard prevents re-expansion
+	// if a prior call already ran.
 	if spec.InferencePerf != nil && len(spec.Clients) == 0 {
 		expanded, err := ExpandInferencePerfSpec(spec.InferencePerf, spec.Seed)
 		if err != nil {
@@ -695,15 +739,12 @@ func validateAndExpandSpec(spec *WorkloadSpec) error {
 		}
 		spec.AggregateRate = expanded.AggregateRate
 	}
-	// Load ServeGen data if specified (populates spec.Cohorts)
+	// Load ServeGen data if specified (populates spec.Cohorts).
+	// Idempotent for the same reason as above.
 	if spec.ServeGenData != nil && len(spec.Clients) == 0 && len(spec.Cohorts) == 0 {
 		if err := loadServeGenData(spec); err != nil {
 			return fmt.Errorf("loading ServeGen data: %w", err)
 		}
-	}
-	UpgradeV1ToV2(spec)
-	if err := spec.Validate(); err != nil {
-		return fmt.Errorf("invalid workload spec: %w", err)
 	}
 	return nil
 }

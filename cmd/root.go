@@ -1439,6 +1439,20 @@ var runCmd = &cobra.Command{
 		if requestTimeoutSecs == 0 {
 			logrus.Fatalf("--timeout must be positive (seconds) or negative to disable; got 0")
 		}
+		// Pre-expand inference-perf / ServeGen specs so the timeout-
+		// application step below sees every client — including those
+		// populated by expansion. Without this, --lazy-generation +
+		// --workload-spec=inference_perf.yaml + an explicit --timeout
+		// would build streaming states from clients whose Timeout is nil
+		// (because expansion inside GenerateWorkloadLazy happens AFTER
+		// applyTimeoutToSpec runs), producing the default 300 s deadline
+		// instead of the user-requested value (PR #1453 self-review).
+		// ExpandClientsAndCohorts is idempotent — the generators'
+		// validateAndExpandSpec runs it again with no effect since both
+		// branches guard on len(spec.Clients) == 0. (#1441)
+		if err := workload.ExpandClientsAndCohorts(spec); err != nil {
+			logrus.Fatalf("Failed to expand workload spec: %v", err)
+		}
 		if workloadSpecPath == "" || cmd.Flags().Changed("timeout") {
 			applyTimeoutToSpec(spec, requestTimeoutSecs)
 		}

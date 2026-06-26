@@ -94,6 +94,20 @@ func assertRequestStreamsEqual(t *testing.T, eager, lazy []*sim.Request) {
 		if e.Streaming != l.Streaming {
 			t.Fatalf("request %d: Streaming eager=%v lazy=%v", i, e.Streaming, l.Streaming)
 		}
+		// Multimodal token counts (populated by produceNextSingleShot's
+		// multimodal branch; mirrored from the eager path).
+		if e.TextTokenCount != l.TextTokenCount {
+			t.Fatalf("request %d: TextTokenCount eager=%d lazy=%d", i, e.TextTokenCount, l.TextTokenCount)
+		}
+		if e.ImageTokenCount != l.ImageTokenCount {
+			t.Fatalf("request %d: ImageTokenCount eager=%d lazy=%d", i, e.ImageTokenCount, l.ImageTokenCount)
+		}
+		if e.AudioTokenCount != l.AudioTokenCount {
+			t.Fatalf("request %d: AudioTokenCount eager=%d lazy=%d", i, e.AudioTokenCount, l.AudioTokenCount)
+		}
+		if e.VideoTokenCount != l.VideoTokenCount {
+			t.Fatalf("request %d: VideoTokenCount eager=%d lazy=%d", i, e.VideoTokenCount, l.VideoTokenCount)
+		}
 	}
 }
 
@@ -248,15 +262,21 @@ func TestLazyRequestSource_IDsSequentialInArrivalOrder(t *testing.T) {
 // TestGenerateWorkloadLazy_StopsAtMaxRequests pins BC-6: lazy mode counts
 // emitted requests as it goes and stops at maxRequests (no per-client
 // 2*maxRequests safety cap applied — that exists only in eager mode).
+// The assertion is exact (== 7) so a regression that produces zero
+// requests (e.g., the horizon being misinterpreted) would also fail.
 func TestGenerateWorkloadLazy_StopsAtMaxRequests(t *testing.T) {
+	// 60s horizon × ~10 req/s mean rate → ~600 candidate IATs; with
+	// maxRequests=7 the source MUST stop exactly at 7. If the test ever
+	// emits fewer, the horizon is wrong, the cap is being applied at the
+	// wrong layer, or stream.go's Next() loop terminates early.
 	spec := singleClientChatbotSpec(13)
 	src, _, _, err := GenerateWorkloadLazy(spec, 60_000_000, 7)
 	if err != nil {
 		t.Fatalf("lazy: %v", err)
 	}
 	lazy := drainLazy(t, src)
-	if int64(len(lazy)) > 7 {
-		t.Fatalf("emitted %d requests; want <= 7", len(lazy))
+	if int64(len(lazy)) != 7 {
+		t.Fatalf("emitted %d requests; want exactly 7 (maxRequests cap should bind and horizon should not exhaust the source first)", len(lazy))
 	}
 }
 
@@ -426,6 +446,56 @@ func TestLazyRequestSource_Reasoning_SingleSession_MatchesEager(t *testing.T) {
 	}
 }
 
+// TestLazyRequestSource_Multimodal_MatchesEager pins BC-3 for the
+// multimodal branch of produceNextSingleShot: TextTokenCount,
+// ImageTokenCount, AudioTokenCount, and VideoTokenCount must be
+// populated identically to the eager generator (which calls
+// GenerateMultimodalTokens with the same RNG state).
+func TestLazyRequestSource_Multimodal_MatchesEager(t *testing.T) {
+	mk := func() *WorkloadSpec {
+		return &WorkloadSpec{
+			Version: "1", Seed: 99, Category: "language", AggregateRate: 5.0,
+			Clients: []ClientSpec{{
+				ID: "mm1", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 10, "max": 200}},
+				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 30}},
+				Multimodal: &MultimodalSpec{
+					TextDist:       DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 40, "std_dev": 5, "min": 10, "max": 100}},
+					ImageDist:      DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 20, "std_dev": 4, "min": 5, "max": 50}},
+					ImageCountDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 2, "std_dev": 1, "min": 1, "max": 3}},
+					AudioDist:      DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 15, "std_dev": 3, "min": 5, "max": 40}},
+					AudioCountDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 1, "std_dev": 1, "min": 0, "max": 2}},
+					VideoDist:      DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 25, "std_dev": 5, "min": 10, "max": 50}},
+					VideoCountDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 0, "std_dev": 1, "min": 0, "max": 1}},
+				},
+			}},
+		}
+	}
+	eager, err := GenerateRequests(mk(), 5_000_000, 12)
+	if err != nil {
+		t.Fatalf("eager: %v", err)
+	}
+	src, _, _, err := GenerateWorkloadLazy(mk(), 5_000_000, 12)
+	if err != nil {
+		t.Fatalf("lazy: %v", err)
+	}
+	lazy := drainLazy(t, src)
+	// At least one request must have a non-zero multimodal token count for
+	// the assertion-helper to actually exercise those fields.
+	var hasMM bool
+	for _, r := range lazy {
+		if r.TextTokenCount+r.ImageTokenCount+r.AudioTokenCount+r.VideoTokenCount > 0 {
+			hasMM = true
+			break
+		}
+	}
+	if !hasMM {
+		t.Fatal("multimodal spec produced zero counts across all token kinds — test would not exercise the new comparisons")
+	}
+	assertRequestStreamsEqual(t, eager, lazy)
+}
+
 // TestGenerateWorkloadLazy_FallsBackOnMultiSession pins the
 // SingleSession=false fallback: any reasoning client without
 // SingleSession=true forces the caller back to GenerateWorkload.
@@ -433,5 +503,106 @@ func TestGenerateWorkloadLazy_FallsBackOnMultiSession(t *testing.T) {
 	_, _, _, err := GenerateWorkloadLazy(reasoningMultiSessionSpec(7), 5_000_000, 20)
 	if !errors.Is(err, ErrLazyUnsupportedMultiSession) {
 		t.Fatalf("want ErrLazyUnsupportedMultiSession, got %v", err)
+	}
+}
+
+// TestExpandClientsAndCohorts_Idempotent_InferencePerf pins the contract
+// that lets cmd/root.go safely call ExpandClientsAndCohorts before the
+// generator runs (so applyTimeoutToSpec sees the expanded clients for
+// inference-perf specs under --lazy-generation, fixing the bug flagged
+// in PR #1453 self-review) — and have the generator's internal
+// validateAndExpandSpec call NOT re-expand. A second call MUST be a
+// no-op: spec.Clients must not be re-expanded, AggregateRate must not
+// be recomputed.
+func TestExpandClientsAndCohorts_Idempotent_InferencePerf(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 11, Category: "language",
+		InferencePerf: &InferencePerfSpec{
+			Stages: []StageSpec{{Rate: 4.0, Duration: 5}},
+			SharedPrefix: &SharedPrefixSpec{
+				NumUniqueSystemPrompts:  2,
+				NumUsersPerSystemPrompt: 2,
+				SystemPromptLen:         16,
+				QuestionLen:             32,
+				OutputLen:               16,
+			},
+		},
+	}
+	if err := ExpandClientsAndCohorts(spec); err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	firstLen := len(spec.Clients)
+	firstAgg := spec.AggregateRate
+	if firstLen == 0 {
+		t.Fatal("first call did not expand inference-perf into clients")
+	}
+	if err := ExpandClientsAndCohorts(spec); err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if got := len(spec.Clients); got != firstLen {
+		t.Errorf("second call re-expanded clients: %d → %d (must be idempotent)", firstLen, got)
+	}
+	if got := spec.AggregateRate; got != firstAgg {
+		t.Errorf("second call mutated AggregateRate: %v → %v (must be idempotent)", firstAgg, got)
+	}
+}
+
+// TestGenerateWorkloadLazy_InferencePerf_TimeoutAppliedAfterPreExpand
+// pins the cmd/root.go fix for the PR-review regression: when an
+// inference-perf spec is expanded by ExpandClientsAndCohorts BEFORE
+// applyTimeoutToSpec runs, the Timeout pointer is set on every
+// expanded client, so produceNextSingleShot's computeDeadline call
+// returns ArrivalTime + the user-requested timeout — not the
+// 300 s session-client default that would arise from a nil Timeout.
+//
+// We can't reach applyTimeoutToSpec from sim/workload (cyclic), so we
+// emulate it: pre-expand, then set every client's Timeout pointer to
+// a known non-default value, then build the lazy source and assert
+// the first request's Deadline matches our value.
+func TestGenerateWorkloadLazy_InferencePerf_TimeoutAppliedAfterPreExpand(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version: "2", Seed: 11, Category: "language",
+		InferencePerf: &InferencePerfSpec{
+			Stages: []StageSpec{{Rate: 4.0, Duration: 5}},
+			SharedPrefix: &SharedPrefixSpec{
+				NumUniqueSystemPrompts:  2,
+				NumUsersPerSystemPrompt: 2,
+				SystemPromptLen:         16,
+				QuestionLen:             32,
+				OutputLen:               16,
+			},
+		},
+	}
+	// Step 1: expand inference-perf so spec.Clients is populated.
+	if err := ExpandClientsAndCohorts(spec); err != nil {
+		t.Fatalf("expand: %v", err)
+	}
+	if len(spec.Clients) == 0 {
+		t.Fatal("inference-perf expansion produced 0 clients")
+	}
+	// Step 2: apply a non-default timeout (120 s = 120_000_000 µs) to every
+	// expanded client — mirroring what cmd/root.go's applyTimeoutToSpec does.
+	const wantTimeoutUs = int64(120_000_000)
+	t120 := wantTimeoutUs
+	for i := range spec.Clients {
+		spec.Clients[i].Timeout = &t120
+	}
+	// Step 3: build the lazy source (single-session inference-perf is supported).
+	src, _, _, err := GenerateWorkloadLazy(spec, 10_000_000, 1)
+	if err != nil {
+		t.Fatalf("lazy: %v", err)
+	}
+	r, ok := src.Next()
+	if !ok || r == nil {
+		t.Fatal("expected at least one request from inference-perf spec")
+	}
+	// The Deadline should be ArrivalTime + 120 s, NOT ArrivalTime + 300 s
+	// (the DefaultTimeoutUs fallback that would fire if Timeout were nil).
+	wantDeadline := r.ArrivalTime + wantTimeoutUs
+	if r.Deadline != wantDeadline {
+		t.Fatalf("Deadline=%d, want %d (arrival=%d + timeout=%d). "+
+			"A 300_000_000 timeout-µs value would indicate the inference-perf "+
+			"clients were built with nil Timeout — the bug fixed in PR #1453.",
+			r.Deadline, wantDeadline, r.ArrivalTime, wantTimeoutUs)
 	}
 }
