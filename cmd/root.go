@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -127,6 +128,7 @@ var (
 
 	// Workload spec config (PR10)
 	workloadSpecPath string // Path to YAML workload specification file
+	lazyGeneration   bool   // --lazy-generation: stream requests from generator (alpha, #1441)
 
 	// Tiered KV cache config (PR12)
 	kvCPUBlocks             int64
@@ -1452,13 +1454,41 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("Workload requires either num_requests or --horizon to bound generation")
 		}
 
-		wl, err := workload.GenerateWorkload(spec, simulationHorizon, maxRequests)
-		if err != nil {
-			logrus.Fatalf("Failed to generate workload: %v", err)
+		// Lazy generation path (#1441, alpha). Default off. When set, build
+		// a streaming workload source instead of materializing the full
+		// request slice. Falls back to eager (with a warning) for specs
+		// the streaming source cannot handle yet (time-varying parameters,
+		// concurrency clients, multi-session reasoning).
+		var wl *workload.GeneratedWorkload
+		var lazyRequestSource interface{ Next() (*sim.Request, bool) }
+		if lazyGeneration {
+			src, sessions, followUpBudget, lazyErr := workload.GenerateWorkloadLazy(spec, simulationHorizon, maxRequests)
+			switch {
+			case errors.Is(lazyErr, workload.ErrLazyUnsupportedTimeVarying):
+				logrus.Warnf("[workload] --lazy-generation ignored: workload has per-window parameters; using eager generator (issue #1441)")
+			case errors.Is(lazyErr, workload.ErrLazyUnsupportedConcurrency):
+				logrus.Warnf("[workload] --lazy-generation ignored: workload has concurrency clients; using eager generator (issue #1441)")
+			case errors.Is(lazyErr, workload.ErrLazyUnsupportedMultiSession):
+				logrus.Warnf("[workload] --lazy-generation ignored: workload has multi-session reasoning (SingleSession=false); using eager generator (issue #1441)")
+			case lazyErr != nil:
+				logrus.Fatalf("Failed to build lazy workload: %v", lazyErr)
+			default:
+				lazyRequestSource = src
+				wl = &workload.GeneratedWorkload{Sessions: sessions, FollowUpBudget: followUpBudget}
+			}
+		}
+		if wl == nil {
+			var err error
+			wl, err = workload.GenerateWorkload(spec, simulationHorizon, maxRequests)
+			if err != nil {
+				logrus.Fatalf("Failed to generate workload: %v", err)
+			}
 		}
 		// Re-apply timeout to generated requests and session blueprints.
 		// For inference_perf specs, spec.Clients was empty at applyTimeoutToSpec time
 		// and populated inside GenerateWorkload — deadlines need correction here.
+		// In lazy mode wl.Requests is nil (no-op for the request loop); session
+		// blueprint Timeout pointers still need refresh.
 		if workloadSpecPath == "" || cmd.Flags().Changed("timeout") {
 			applyTimeoutToRequests(wl, requestTimeoutSecs)
 		}
@@ -1468,7 +1498,13 @@ var runCmd = &cobra.Command{
 			if wl.FollowUpBudget >= 0 {
 				sessionMgr.SetFollowUpBudget(wl.FollowUpBudget)
 			}
-			logrus.Infof("Generated %d requests + %d session blueprints (closed-loop)", len(wl.Requests), len(wl.Sessions))
+			if lazyRequestSource != nil {
+				logrus.Infof("Generated streaming source + %d session blueprints (closed-loop, lazy)", len(wl.Sessions))
+			} else {
+				logrus.Infof("Generated %d requests + %d session blueprints (closed-loop)", len(wl.Requests), len(wl.Sessions))
+			}
+		} else if lazyRequestSource != nil {
+			logrus.Infof("Generated streaming workload source (lazy, #1441)")
 		} else {
 			logrus.Infof("Generated %d requests via unified workload pipeline", len(wl.Requests))
 		}
@@ -1770,7 +1806,16 @@ var runCmd = &cobra.Command{
 				return followUps
 			}
 		}
-		cs := cluster.NewClusterSimulator(config, cluster.NewSliceRequestSource(preGeneratedRequests), onRequestDone)
+		// RequestSource: streaming in lazy mode, eager-slice otherwise.
+		// The workload package's lazy source satisfies cluster.RequestSource
+		// via structural typing — both define the same Next() method.
+		var clusterRequestSource cluster.RequestSource
+		if lazyRequestSource != nil {
+			clusterRequestSource = lazyRequestSource
+		} else {
+			clusterRequestSource = cluster.NewSliceRequestSource(preGeneratedRequests)
+		}
+		cs := cluster.NewClusterSimulator(config, clusterRequestSource, onRequestDone)
 
 		// Arrival hook: capture trace-emission references at the cluster's
 		// single arrival boundary so the trace exporter no longer relies on
@@ -1790,8 +1835,15 @@ var runCmd = &cobra.Command{
 		// A nil traceArrivals at the export site below with traceOutput
 		// non-empty means the install branch was dropped — we fail loudly
 		// rather than write a silent empty trace (R1).
+		// The arrival hook captures fresh-arrival references at the single
+		// cluster boundary. It powers trace export (#1440) and, in lazy mode
+		// where preGeneratedRequests is nil, also feeds saturation analysis.
+		// In eager mode without --trace-output, the hook stays uninstalled
+		// (BC-1 zero overhead) and saturation falls back to the
+		// preGeneratedRequests + followUpRequests path.
 		var traceArrivals []*sim.Request
-		if traceOutput != "" {
+		arrivalHookNeeded := traceOutput != "" || (lazyRequestSource != nil && saturationReport != "")
+		if arrivalHookNeeded {
 			traceArrivals = make([]*sim.Request, 0)
 			cs.SetArrivalHook(func(req *sim.Request) {
 				traceArrivals = append(traceArrivals, req)
@@ -1821,15 +1873,28 @@ var runCmd = &cobra.Command{
 		// Trace export is now driven by the arrival hook above and no longer
 		// shares this slice (issue #1440). allRequests is nil when
 		// --saturation-report is not set.
+		//
+		// In lazy mode (#1441), preGeneratedRequests is nil — the arrival hook
+		// captures every fresh arrival in clock-monotonic order (already sorted
+		// by INV-3), so we use traceArrivals directly. In eager mode we keep
+		// the existing append+sort path for backward compatibility.
 		var allRequests []*sim.Request
 		if saturationReport != "" {
-			allRequests = make([]*sim.Request, 0, len(preGeneratedRequests)+len(followUpRequests))
-			allRequests = append(allRequests, preGeneratedRequests...)
-			allRequests = append(allRequests, followUpRequests...)
-			// Sort by arrival time so RequestIDs (array indices) are arrival-ordered
-			sort.SliceStable(allRequests, func(i, j int) bool {
-				return allRequests[i].ArrivalTime < allRequests[j].ArrivalTime
-			})
+			if lazyRequestSource != nil {
+				// traceArrivals already contains every fresh arrival in
+				// clock-monotonic order — no separate followUpRequests merge
+				// or post-sort required (the cluster delivers them in arrival
+				// order via the hook).
+				allRequests = traceArrivals
+			} else {
+				allRequests = make([]*sim.Request, 0, len(preGeneratedRequests)+len(followUpRequests))
+				allRequests = append(allRequests, preGeneratedRequests...)
+				allRequests = append(allRequests, followUpRequests...)
+				// Sort by arrival time so RequestIDs (array indices) are arrival-ordered
+				sort.SliceStable(allRequests, func(i, j int) bool {
+					return allRequests[i].ArrivalTime < allRequests[j].ArrivalTime
+				})
+			}
 		}
 
 		// Export trace if requested (BC-1, BC-7). Records are sourced from
@@ -2233,6 +2298,7 @@ func init() {
 	runCmd.Flags().IntVar(&outputTokensMin, "output-tokens-min", defaultOutputMin, "Min Output Token Count")
 	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", defaultOutputMax, "Max Output Token Count")
 	runCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "Path to YAML workload specification file (overrides --workload)")
+	runCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", false, "Alpha (#1441): stream requests from the workload generator instead of pre-generating the full slice. Default off. Falls back to eager mode (with a warning) for time-varying workloads, concurrency clients, and multi-session reasoning (SingleSession=false).")
 	runCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "Per-request deadline in seconds (default 300s matches the session-client default in computeDeadline). Negative = disabled; 0 is rejected. Consistent with blis observe: both commands reject 0.")
 	runCmd.Flags().StringVar(&goodputSLOTTFT, "slo-ttft", "", "Per-class TTFT goodput thresholds (e.g. \"critical=100ms,standard=500ms\"). Precedence: CLI > trace header > workload spec.")
 	runCmd.Flags().StringVar(&goodputSLOITL, "slo-itl", "", "Per-class mean ITL goodput thresholds (e.g. \"critical=50ms,standard=150ms\").")
