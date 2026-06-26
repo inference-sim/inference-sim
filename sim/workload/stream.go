@@ -617,13 +617,10 @@ func enumerateReasoningSessionIDs(p clientPrep, horizon int64) ([]string, error)
 	if err != nil {
 		return nil, err
 	}
-	// Force closed-loop filtering OFF for the enumeration pass — we want to
-	// see ALL rounds (to record their SessionID) and not skip the very
-	// session-bearing round-0 either, but disabling the closed-loop filter
-	// makes the loop yield rounds uniformly so we can just read the first
-	// round's SessionID per pending-session refill. Either approach works;
-	// we go with the simpler one: leave the filter on (so only round-0 is
-	// yielded per closed-loop session) and read SessionID from each yield.
+	// Keep isClosedLoop = true so only round 0 of each session is yielded
+	// (one per session). We read SessionID from each yielded round-0 to
+	// enumerate every session without retaining the full per-session
+	// request slice — pendingSession is overwritten on each refill.
 	state.isClosedLoop = true
 
 	var ids []string
