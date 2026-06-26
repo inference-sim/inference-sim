@@ -784,6 +784,12 @@ func init() {
 	replayCmd.Flags().StringVar(&goodputSLOTTFT, "slo-ttft", "", "Per-class TTFT goodput thresholds (e.g. \"critical=100ms,standard=500ms\"). Precedence: CLI > trace header > workload spec.")
 	replayCmd.Flags().StringVar(&goodputSLOITL, "slo-itl", "", "Per-class mean ITL goodput thresholds (e.g. \"critical=50ms,standard=150ms\").")
 	replayCmd.Flags().StringVar(&goodputSLOE2E, "slo-e2e", "", "Per-class E2E goodput thresholds (e.g. \"critical=5s,standard=30s\").")
+	// --lazy-generation: accepted for CLI symmetry with `blis run` (#1441),
+	// but ignored — replay reads requests from a captured trace and never
+	// invokes the workload generator. The flag binds to a throwaway local
+	// so no global state is mutated. BC-9.
+	var replayLazyGenerationIgnored bool
+	replayCmd.Flags().BoolVar(&replayLazyGenerationIgnored, "lazy-generation", false, "Accepted for symmetry with `blis run` (#1441); has no effect on replay.")
 	rootCmd.AddCommand(replayCmd)
 }
 
