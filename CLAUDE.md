@@ -114,6 +114,17 @@ go build -o blis main.go
 ./blis calibrate --trace-header t.yaml --trace-data d.csv --sim-results results.json \
   --slo-ttft "critical=100ms" --slo-e2e "critical=5s" --report calibration.json
 
+# Run with lazy request generation (alpha, #1441). Streams requests from the
+# workload generator into the cluster instead of pre-generating the full
+# slice — reduces peak memory from O(total_requests) to O(in_flight_requests).
+# Falls back to the eager generator with a one-line warning for:
+#   - workloads with per-window parameters (time-varying)
+#   - concurrency clients (Concurrency > 0)
+#   - reasoning clients with SingleSession=false (multi-session)
+# Supported: single-shot, single-session reasoning, prefix-group sharing,
+# multi-client / cohort workloads. Behavior with the flag off is unchanged.
+./blis run --model qwen/qwen3-14b --lazy-generation
+
 # Convert workload formats
 ./blis convert preset --name chatbot --rate 10 --num-requests 100
 ./blis convert servegen --path data/
