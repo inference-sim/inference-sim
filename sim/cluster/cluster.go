@@ -124,8 +124,9 @@ type ClusterSimulator struct {
 
 	// arrivalHook fires once per fresh arrival (initial workload and
 	// follow-ups from closed-loop sessions). It does NOT fire for requests
-	// re-injected by the REDIRECT drain policy — those are the same logical
-	// request already observed. Nil unless SetArrivalHook was called.
+	// re-injected by the REDIRECT drain policy — whether or not a prior
+	// ClusterArrivalEvent fired, emitting here would duplicate or create
+	// a spurious record. Nil unless SetArrivalHook was called.
 	//
 	// Contract:
 	//   - Fires at most once per (logical) request.
