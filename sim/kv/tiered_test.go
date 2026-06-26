@@ -17,9 +17,9 @@ func TestCpuTier_Store_EvictsOldestWhenFull(t *testing.T) {
 	cpu := newCpuTier(2, 4) // capacity=2, blockSize=4 tokens
 
 	// WHEN we store 3 blocks
-	cpu.store("hash-a", []int{1, 2, 3, 4})
-	cpu.store("hash-b", []int{5, 6, 7, 8})
-	cpu.store("hash-c", []int{9, 10, 11, 12})
+	cpu.store("hash-a", []sim.TokenID{1, 2, 3, 4})
+	cpu.store("hash-b", []sim.TokenID{5, 6, 7, 8})
+	cpu.store("hash-c", []sim.TokenID{9, 10, 11, 12})
 
 	// THEN oldest (hash-a) is evicted, newest two remain
 	assert.Nil(t, cpu.lookup("hash-a"), "oldest block should be evicted")
@@ -32,14 +32,14 @@ func TestCpuTier_Store_EvictsOldestWhenFull(t *testing.T) {
 func TestCpuTier_Touch_MovesToTail(t *testing.T) {
 	// BC-1 (touch): GIVEN CPU tier with 2 blocks
 	cpu := newCpuTier(2, 4)
-	cpu.store("hash-a", []int{1, 2, 3, 4})
-	cpu.store("hash-b", []int{5, 6, 7, 8})
+	cpu.store("hash-a", []sim.TokenID{1, 2, 3, 4})
+	cpu.store("hash-b", []sim.TokenID{5, 6, 7, 8})
 
 	// WHEN we touch hash-a (refreshes recency)
 	cpu.touch("hash-a")
 
 	// AND store a third block (triggers eviction)
-	cpu.store("hash-c", []int{9, 10, 11, 12})
+	cpu.store("hash-c", []sim.TokenID{9, 10, 11, 12})
 
 	// THEN hash-b is evicted (it's now oldest), hash-a survives (was touched)
 	assert.Nil(t, cpu.lookup("hash-b"), "untouched block should be evicted")
@@ -54,18 +54,18 @@ func TestCpuTier_Lookup_ReturnsNilForMissing(t *testing.T) {
 
 func TestCpuTier_Store_DuplicateHashIsNoOp(t *testing.T) {
 	cpu := newCpuTier(10, 2)
-	cpu.store("h1", []int{1, 2})
-	cpu.store("h1", []int{99, 99}) // duplicate — should not overwrite
+	cpu.store("h1", []sim.TokenID{1, 2})
+	cpu.store("h1", []sim.TokenID{99, 99}) // duplicate — should not overwrite
 
 	blk := cpu.lookup("h1")
 	assert.NotNil(t, blk)
-	assert.Equal(t, []int{1, 2}, blk.tokens, "original tokens preserved")
+	assert.Equal(t, []sim.TokenID{1, 2}, blk.tokens, "original tokens preserved")
 	assert.Equal(t, int64(1), cpu.used, "no duplicate storage")
 }
 
 func TestCpuTier_Touch_NoOpForMissing(t *testing.T) {
 	cpu := newCpuTier(10, 2)
-	cpu.store("h1", []int{1, 2})
+	cpu.store("h1", []sim.TokenID{1, 2})
 	cpu.touch("nonexistent") // should not panic
 	assert.Equal(t, int64(1), cpu.used)
 }
@@ -81,24 +81,24 @@ func TestCpuTier_TokenSlicePoolRecycling(t *testing.T) {
 	cpu := newCpuTier(2, 4)
 	assert.Equal(t, 2, len(cpu.freeTokenSlices), "pool should start with capacity slices")
 
-	cpu.store("h1", []int{1, 2, 3, 4}) // consumes 1 slice
+	cpu.store("h1", []sim.TokenID{1, 2, 3, 4}) // consumes 1 slice
 	assert.Equal(t, 1, len(cpu.freeTokenSlices))
 
-	cpu.store("h2", []int{5, 6, 7, 8}) // consumes last slice
+	cpu.store("h2", []sim.TokenID{5, 6, 7, 8}) // consumes last slice
 	assert.Equal(t, 0, len(cpu.freeTokenSlices))
 
 	// store("h3") evicts h1 (returns slice to pool), then immediately consumes
 	// that returned slice for h3. Net pool effect: 0 → 1 → 0.
-	cpu.store("h3", []int{9, 10, 11, 12})
+	cpu.store("h3", []sim.TokenID{9, 10, 11, 12})
 	assert.Equal(t, 0, len(cpu.freeTokenSlices), "evicted slice consumed by new block")
 
 	// Verify content — h3 reused h1's pre-allocated slice via copy
 	blk := cpu.lookup("h3")
 	assert.NotNil(t, blk)
-	assert.Equal(t, []int{9, 10, 11, 12}, blk.tokens)
+	assert.Equal(t, []sim.TokenID{9, 10, 11, 12}, blk.tokens)
 
 	// Now evict h2 by storing h4 — h2's slice returns to pool, h4 consumes it
-	cpu.store("h4", []int{13, 14, 15, 16})
+	cpu.store("h4", []sim.TokenID{13, 14, 15, 16})
 	assert.Equal(t, 0, len(cpu.freeTokenSlices))
 
 	// Release a block explicitly and verify pool grows
@@ -133,20 +133,20 @@ func TestTieredKVCache_TargetedReload_OnlyPrefixBlocks(t *testing.T) {
 	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 10)
 
 	// Step 1: Allocate 3-block prefix, mirror to CPU, release
-	prefixReq := &sim.Request{ID: "prefix", InputTokens: []int{1, 2, 3, 4, 5, 6}}
+	prefixReq := &sim.Request{ID: "prefix", InputTokens:  []sim.TokenID{1, 2, 3, 4, 5, 6}}
 	tiered.AllocateKVBlocks(prefixReq, 0, 6, []int64{})
 	h0 := gpu.Blocks[gpu.RequestMap["prefix"][0]].Hash
 	h1 := gpu.Blocks[gpu.RequestMap["prefix"][1]].Hash
 	h2 := gpu.Blocks[gpu.RequestMap["prefix"][2]].Hash
-	tiered.cpu.store(h0, []int{1, 2})
-	tiered.cpu.store(h1, []int{3, 4})
-	tiered.cpu.store(h2, []int{5, 6})
-	tiered.cpu.store("unrelated-hash", []int{99, 99})
+	tiered.cpu.store(h0, []sim.TokenID{1, 2})
+	tiered.cpu.store(h1, []sim.TokenID{3, 4})
+	tiered.cpu.store(h2, []sim.TokenID{5, 6})
+	tiered.cpu.store("unrelated-hash", []sim.TokenID{99, 99})
 	tiered.ReleaseKVBlocks(prefixReq)
 
 	// Step 2: Fill GPU completely (8 blocks) to evict prefix hashes
 	for i := 0; i < 8; i++ {
-		f := &sim.Request{ID: fmt.Sprintf("fill%d", i), InputTokens: []int{i*2 + 20, i*2 + 21}}
+		f := &sim.Request{ID: fmt.Sprintf("fill%d", i), InputTokens:  []sim.TokenID{sim.TokenID(i*2 + 20), sim.TokenID(i*2 + 21)}}
 		tiered.AllocateKVBlocks(f, 0, 2, []int64{})
 	}
 
@@ -156,18 +156,18 @@ func TestTieredKVCache_TargetedReload_OnlyPrefixBlocks(t *testing.T) {
 	tiered.ReleaseKVBlocks(&sim.Request{ID: "fill2"})
 
 	// Verify: prefix evicted from GPU
-	cached := tiered.GetCachedBlocks([]int{1, 2, 3, 4, 5, 6})
+	cached := tiered.GetCachedBlocks([]sim.TokenID{1, 2, 3, 4, 5, 6})
 	assert.Equal(t, 0, len(cached), "prefix should be evicted from GPU")
 
 	// WHEN: Request same prefix [1,2,3,4,5,6] → 3 blocks needed, 3 free.
 	// Fresh alloc would succeed (3 free >= 3 needed). But prefix is on CPU.
 	// GPU alloc succeeds as cache misses. To force reload, we need fresh alloc to fail.
 	// Fill one more to leave only 2 free (need 3).
-	fExtra := &sim.Request{ID: "fExtra", InputTokens: []int{80, 81}}
+	fExtra := &sim.Request{ID: "fExtra", InputTokens:  []sim.TokenID{80, 81}}
 	tiered.AllocateKVBlocks(fExtra, 0, 2, []int64{})
 	// GPU: 6 used, 2 free. Need 3 → fresh alloc fails → reload triggered.
 
-	newReq := &sim.Request{ID: "new", InputTokens: []int{1, 2, 3, 4, 5, 6}}
+	newReq := &sim.Request{ID: "new", InputTokens:  []sim.TokenID{1, 2, 3, 4, 5, 6}}
 	tiered.AllocateKVBlocks(newReq, 0, 6, []int64{}) // may or may not succeed
 
 	// The key test is that CPU hit count > 0 (reload was triggered and found blocks)
@@ -195,17 +195,17 @@ func TestTieredKVCache_TargetedReload_TransferLatency(t *testing.T) {
 	tiered := NewTieredKVCache(gpu, 10, 0.0, 2.0, 100) // bandwidth=2.0, baseLat=100
 
 	// Allocate, mirror, release
-	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	req := &sim.Request{ID: "r1", InputTokens:  []sim.TokenID{1, 2, 3, 4}}
 	tiered.AllocateKVBlocks(req, 0, 4, []int64{})
 	h0 := gpu.Blocks[gpu.RequestMap["r1"][0]].Hash
 	h1 := gpu.Blocks[gpu.RequestMap["r1"][1]].Hash
-	tiered.cpu.store(h0, []int{1, 2})
-	tiered.cpu.store(h1, []int{3, 4})
+	tiered.cpu.store(h0, []sim.TokenID{1, 2})
+	tiered.cpu.store(h1, []sim.TokenID{3, 4})
 	tiered.ReleaseKVBlocks(req)
 
 	// Fill GPU completely to evict prefix hashes
 	for i := 0; i < 6; i++ {
-		f := &sim.Request{ID: fmt.Sprintf("f%d", i), InputTokens: []int{i*2 + 20, i*2 + 21}}
+		f := &sim.Request{ID: fmt.Sprintf("f%d", i), InputTokens:  []sim.TokenID{sim.TokenID(i*2 + 20), sim.TokenID(i*2 + 21)}}
 		tiered.AllocateKVBlocks(f, 0, 2, []int64{})
 	}
 
@@ -213,7 +213,7 @@ func TestTieredKVCache_TargetedReload_TransferLatency(t *testing.T) {
 	tiered.ReleaseKVBlocks(&sim.Request{ID: "f0"})
 
 	// Trigger reload attempt
-	newReq := &sim.Request{ID: "new", InputTokens: []int{1, 2, 3, 4}}
+	newReq := &sim.Request{ID: "new", InputTokens:  []sim.TokenID{1, 2, 3, 4}}
 	tiered.AllocateKVBlocks(newReq, 0, 4, []int64{}) // may fail (1 free < 2 needed)
 
 	// THEN: Transfer latency accumulated for 1 reloaded block
@@ -229,15 +229,15 @@ func TestTieredKVCache_TargetedReload_MaxReloadsGuard(t *testing.T) {
 	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 0)
 
 	// Allocate prefix and capture hashes
-	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	req := &sim.Request{ID: "r1", InputTokens:  []sim.TokenID{1, 2, 3, 4}}
 	tiered.AllocateKVBlocks(req, 0, 4, []int64{})
 	h0 := gpu.Blocks[gpu.RequestMap["r1"][0]].Hash
 	h1 := gpu.Blocks[gpu.RequestMap["r1"][1]].Hash
 	tiered.ReleaseKVBlocks(req)
 
 	// Place both blocks on CPU
-	tiered.cpu.store(h0, []int{1, 2})
-	tiered.cpu.store(h1, []int{3, 4})
+	tiered.cpu.store(h0, []sim.TokenID{1, 2})
+	tiered.cpu.store(h1, []sim.TokenID{3, 4})
 
 	// Clear GPU hashes
 	for _, blk := range gpu.Blocks {
@@ -249,12 +249,12 @@ func TestTieredKVCache_TargetedReload_MaxReloadsGuard(t *testing.T) {
 	}
 
 	// Fill GPU: 2 used, 1 free (F=1, M=2)
-	filler := &sim.Request{ID: "f1", InputTokens: []int{10, 11, 12, 13}}
+	filler := &sim.Request{ID: "f1", InputTokens:  []sim.TokenID{10, 11, 12, 13}}
 	tiered.AllocateKVBlocks(filler, 0, 4, []int64{})
 	// GPU: 2 used, 1 free
 
 	// Attempt reload — should reload only 1 block (h0), not destroy it
-	newReq := &sim.Request{ID: "new", InputTokens: []int{1, 2, 3, 4}}
+	newReq := &sim.Request{ID: "new", InputTokens:  []sim.TokenID{1, 2, 3, 4}}
 	tiered.AllocateKVBlocks(newReq, 0, 4, []int64{})
 	// Allocation may fail (only 1 prefix block reloaded, need 2 total)
 	// but h0 should still be in GPU HashToBlock
@@ -269,15 +269,15 @@ func TestTieredKVCache_TargetedReload_TouchesCPUOnReload(t *testing.T) {
 	tiered := NewTieredKVCache(gpu, 3, 0.0, 1.0, 0) // small CPU: 3 blocks
 
 	// Place 3 blocks on CPU: older → h0, h1, h2 (newest)
-	tiered.cpu.store("h0", []int{1, 2})
-	tiered.cpu.store("h1", []int{3, 4})
-	tiered.cpu.store("h2", []int{5, 6})
+	tiered.cpu.store("h0", []sim.TokenID{1, 2})
+	tiered.cpu.store("h1", []sim.TokenID{3, 4})
+	tiered.cpu.store("h2", []sim.TokenID{5, 6})
 
 	// Simulate reload of h0 by calling touch directly (testing the touch effect)
 	tiered.cpu.touch("h0") // h0 moves to tail (newest)
 
 	// Store h3 — should evict h1 (oldest), not h0 (was touched)
-	tiered.cpu.store("h3", []int{7, 8})
+	tiered.cpu.store("h3", []sim.TokenID{7, 8})
 	assert.NotNil(t, tiered.cpu.lookup("h0"), "h0 should survive (was touched)")
 	assert.Nil(t, tiered.cpu.lookup("h1"), "h1 should be evicted (oldest)")
 	assert.NotNil(t, tiered.cpu.lookup("h2"), "h2 should survive")
@@ -293,7 +293,7 @@ func TestTieredKVCache_MirrorToCPU_StoresNewBlocks(t *testing.T) {
 	gpu := NewKVCacheState(10, 2)
 	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 0)
 
-	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	req := &sim.Request{ID: "r1", InputTokens:  []sim.TokenID{1, 2, 3, 4}}
 	tiered.AllocateKVBlocks(req, 0, 4, []int64{})
 
 	gpuHashesBefore := len(gpu.HashToBlock)
@@ -317,12 +317,12 @@ func TestTieredKVCache_MirrorToCPU_TouchesExistingBlocks(t *testing.T) {
 	tiered := NewTieredKVCache(gpu, 3, 0.0, 1.0, 0) // small CPU: 3 blocks
 
 	// Allocate and mirror r1 (2 blocks)
-	r1 := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	r1 := &sim.Request{ID: "r1", InputTokens:  []sim.TokenID{1, 2, 3, 4}}
 	tiered.AllocateKVBlocks(r1, 0, 4, []int64{})
 	tiered.MirrorToCPU([]*sim.Request{r1})
 
 	// Mirror r2 (1 block) — now CPU has 3 blocks, full
-	r2 := &sim.Request{ID: "r2", InputTokens: []int{10, 20}}
+	r2 := &sim.Request{ID: "r2", InputTokens:  []sim.TokenID{10, 20}}
 	tiered.AllocateKVBlocks(r2, 0, 2, []int64{})
 	tiered.MirrorToCPU([]*sim.Request{r2})
 	assert.Equal(t, int64(3), tiered.cpu.used)
@@ -331,7 +331,7 @@ func TestTieredKVCache_MirrorToCPU_TouchesExistingBlocks(t *testing.T) {
 	tiered.MirrorToCPU([]*sim.Request{r1})
 
 	// Now mirror r3 (1 block) — should evict r2's block (oldest untouched), not r1's
-	r3 := &sim.Request{ID: "r3", InputTokens: []int{30, 40}}
+	r3 := &sim.Request{ID: "r3", InputTokens:  []sim.TokenID{30, 40}}
 	tiered.AllocateKVBlocks(r3, 0, 2, []int64{})
 	tiered.MirrorToCPU([]*sim.Request{r3})
 
@@ -357,7 +357,7 @@ func TestTieredKVCache_MirrorToCPU_SkipsPartialAndUnhashedBlocks(t *testing.T) {
 	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 0)
 
 	// Allocate 3 tokens into a 4-token block → partial block (no hash)
-	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3}}
+	req := &sim.Request{ID: "r1", InputTokens:  []sim.TokenID{1, 2, 3}}
 	tiered.AllocateKVBlocks(req, 0, 3, []int64{})
 
 	tiered.MirrorToCPU([]*sim.Request{req})
@@ -374,7 +374,7 @@ func TestTieredKVCache_ReleaseKVBlocks_PreservesGPUHashes(t *testing.T) {
 	gpu := NewKVCacheState(10, 2)
 	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 0)
 
-	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	req := &sim.Request{ID: "r1", InputTokens:  []sim.TokenID{1, 2, 3, 4}}
 	tiered.AllocateKVBlocks(req, 0, 4, []int64{})
 
 	// Capture hashes before release
@@ -393,7 +393,7 @@ func TestTieredKVCache_ReleaseKVBlocks_PreservesGPUHashes(t *testing.T) {
 	assert.True(t, h1InGPU, "block 1 hash should remain on GPU after release")
 
 	// AND: GetCachedBlocks still finds the prefix
-	cached := tiered.GetCachedBlocks([]int{1, 2, 3, 4})
+	cached := tiered.GetCachedBlocks([]sim.TokenID{1, 2, 3, 4})
 	assert.Equal(t, 2, len(cached), "prefix should still be cached on GPU after release")
 }
 
@@ -412,14 +412,14 @@ func TestTieredKVCache_CPUExtendsGPUPrefixLifetime(t *testing.T) {
 	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 10) // baseLat=10
 
 	// Step 1: Allocate 3-block prefix, mirror to CPU, release
-	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4, 5, 6}}
+	req := &sim.Request{ID: "r1", InputTokens:  []sim.TokenID{1, 2, 3, 4, 5, 6}}
 	tiered.AllocateKVBlocks(req, 0, 6, []int64{})
 	tiered.MirrorToCPU([]*sim.Request{req})
 	tiered.ReleaseKVBlocks(req)
 
 	// Step 2: Fill GPU completely to evict prefix hashes
 	for i := 0; i < 6; i++ {
-		f := &sim.Request{ID: fmt.Sprintf("f%d", i), InputTokens: []int{i*2 + 20, i*2 + 21}}
+		f := &sim.Request{ID: fmt.Sprintf("f%d", i), InputTokens:  []sim.TokenID{sim.TokenID(i*2 + 20), sim.TokenID(i*2 + 21)}}
 		tiered.AllocateKVBlocks(f, 0, 2, []int64{})
 	}
 
@@ -428,7 +428,7 @@ func TestTieredKVCache_CPUExtendsGPUPrefixLifetime(t *testing.T) {
 	tiered.ReleaseKVBlocks(&sim.Request{ID: "f1"})
 
 	// Step 4: Re-request prefix — triggers targeted reload from CPU
-	newReq := &sim.Request{ID: "new", InputTokens: []int{1, 2, 3, 4, 5, 6}}
+	newReq := &sim.Request{ID: "new", InputTokens:  []sim.TokenID{1, 2, 3, 4, 5, 6}}
 	tiered.AllocateKVBlocks(newReq, 0, 6, []int64{}) // may partially succeed
 
 	// THEN: CPU hits > 0 (prefix blocks found on CPU after GPU eviction)
@@ -446,7 +446,7 @@ func TestTieredKVCache_KVThrashingRate_ReturnsCPUEvictionRate(t *testing.T) {
 	tiered := NewTieredKVCache(gpu, 2, 0.0, 1.0, 0) // tiny CPU: 2 blocks
 
 	// Mirror 3 blocks → 1 eviction
-	r1 := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4, 5, 6}}
+	r1 := &sim.Request{ID: "r1", InputTokens:  []sim.TokenID{1, 2, 3, 4, 5, 6}}
 	tiered.AllocateKVBlocks(r1, 0, 6, []int64{})
 	tiered.MirrorToCPU([]*sim.Request{r1})
 	// 3 blocks mirrored, CPU capacity=2, so 1 eviction
@@ -487,7 +487,7 @@ func TestTieredKVCache_Conservation_MirrorReloadCycle(t *testing.T) {
 	}
 
 	// Allocate, mirror, release — check INV-4 at every step
-	req := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	req := &sim.Request{ID: "r1", InputTokens:  []sim.TokenID{1, 2, 3, 4}}
 	tiered.AllocateKVBlocks(req, 0, 4, []int64{})
 	checkINV4("after alloc")
 	assert.Equal(t, int64(2), gpu.UsedBlocks())
@@ -503,7 +503,7 @@ func TestTieredKVCache_Conservation_MirrorReloadCycle(t *testing.T) {
 
 	// Fill and release to trigger reload path
 	for i := 0; i < 6; i++ {
-		f := &sim.Request{ID: fmt.Sprintf("f%d", i), InputTokens: []int{i*2 + 20, i*2 + 21}}
+		f := &sim.Request{ID: fmt.Sprintf("f%d", i), InputTokens:  []sim.TokenID{sim.TokenID(i*2 + 20), sim.TokenID(i*2 + 21)}}
 		tiered.AllocateKVBlocks(f, 0, 2, []int64{})
 	}
 	checkINV4("after fill")
@@ -512,7 +512,7 @@ func TestTieredKVCache_Conservation_MirrorReloadCycle(t *testing.T) {
 	checkINV4("after partial release")
 
 	// Trigger reload
-	newReq := &sim.Request{ID: "new", InputTokens: []int{1, 2, 3, 4}}
+	newReq := &sim.Request{ID: "new", InputTokens:  []sim.TokenID{1, 2, 3, 4}}
 	tiered.AllocateKVBlocks(newReq, 0, 4, []int64{})
 	checkINV4("after reload attempt")
 
@@ -554,9 +554,9 @@ func TestTieredKVCache_ReloadGuard_CommitsBlocksForRunningRequest(t *testing.T) 
 	tiered := NewTieredKVCache(gpu, cpuBlocks, 0, 1.0, 0)
 
 	// Create tokens for 4 blocks (16 tokens total)
-	tokens := make([]int, 4*blockSize)
+	tokens := make([]sim.TokenID, 4*blockSize)
 	for i := range tokens {
-		tokens[i] = i + 1
+		tokens[i] = sim.TokenID(i + 1)
 	}
 
 	// Seed request: allocate all 4 blocks, mirror to CPU, then release.
@@ -581,7 +581,7 @@ func TestTieredKVCache_ReloadGuard_CommitsBlocksForRunningRequest(t *testing.T) 
 	for gpu.countFreeBlocks() > 0 {
 		filler := &sim.Request{
 			ID:          fmt.Sprintf("filler-%d", fillerCount),
-			InputTokens: []int{800 + fillerCount*4, 801 + fillerCount*4, 802 + fillerCount*4, 803 + fillerCount*4},
+			InputTokens:  []sim.TokenID{sim.TokenID(800 + fillerCount*4), sim.TokenID(801 + fillerCount*4), sim.TokenID(802 + fillerCount*4), sim.TokenID(803 + fillerCount*4)},
 		}
 		if tiered.AllocateKVBlocks(filler, 0, blockSize, []int64{}) {
 			fillerCount++
@@ -630,9 +630,9 @@ func TestTieredKVCache_ReloadGuard_NonBlockAlignedStartIndex_NoDuplicates(t *tes
 	tiered := NewTieredKVCache(gpu, cpuBlocks, 0, 1.0, 0)
 
 	// Tokens for 4 blocks
-	tokens := make([]int, 4*blockSize)
+	tokens := make([]sim.TokenID, 4*blockSize)
 	for i := range tokens {
-		tokens[i] = i + 1
+		tokens[i] = sim.TokenID(i + 1)
 	}
 
 	// Seed: allocate, mirror to CPU, release
@@ -656,7 +656,7 @@ func TestTieredKVCache_ReloadGuard_NonBlockAlignedStartIndex_NoDuplicates(t *tes
 	for gpu.countFreeBlocks() > 0 {
 		filler := &sim.Request{
 			ID:          fmt.Sprintf("filler2-%d", fillerCount),
-			InputTokens: []int{700 + fillerCount*4, 701 + fillerCount*4, 702 + fillerCount*4, 703 + fillerCount*4},
+			InputTokens:  []sim.TokenID{sim.TokenID(700 + fillerCount*4), sim.TokenID(701 + fillerCount*4), sim.TokenID(702 + fillerCount*4), sim.TokenID(703 + fillerCount*4)},
 		}
 		if tiered.AllocateKVBlocks(filler, 0, blockSize, []int64{}) {
 			fillerCount++
@@ -705,9 +705,9 @@ func TestTieredKVCache_ReloadGuard_CommitsBlocksForNewRequest(t *testing.T) {
 	tiered := NewTieredKVCache(gpu, cpuBlocks, 0, 1.0, 0)
 
 	// Create tokens for 2 blocks
-	tokens := make([]int, 2*blockSize)
+	tokens := make([]sim.TokenID, 2*blockSize)
 	for i := range tokens {
-		tokens[i] = i + 1
+		tokens[i] = sim.TokenID(i + 1)
 	}
 
 	// Seed: allocate, mirror to CPU, release (leaves blocks on CPU + GPU free list hashes)
@@ -722,7 +722,7 @@ func TestTieredKVCache_ReloadGuard_CommitsBlocksForNewRequest(t *testing.T) {
 	for gpu.countFreeBlocks() > 0 {
 		filler := &sim.Request{
 			ID:          fmt.Sprintf("filler-bc1-%d", fillerCount),
-			InputTokens: []int{900 + fillerCount*4, 901 + fillerCount*4, 902 + fillerCount*4, 903 + fillerCount*4},
+			InputTokens:  []sim.TokenID{sim.TokenID(900 + fillerCount*4), sim.TokenID(901 + fillerCount*4), sim.TokenID(902 + fillerCount*4), sim.TokenID(903 + fillerCount*4)},
 		}
 		if tiered.AllocateKVBlocks(filler, 0, blockSize, []int64{}) {
 			fillerCount++
@@ -760,9 +760,9 @@ func TestPreemption_ClearsRequestMap_EnablesNewRequestPath(t *testing.T) {
 	gpuBlocks := int64(10)
 	gpu := NewKVCacheState(gpuBlocks, blockSize)
 
-	tokens := make([]int, 2*blockSize)
+	tokens := make([]sim.TokenID, 2*blockSize)
 	for i := range tokens {
-		tokens[i] = i + 1
+		tokens[i] = sim.TokenID(i + 1)
 	}
 	req := &sim.Request{
 		ID:            "req-preempt-bc5",
@@ -814,18 +814,18 @@ func TestTieredKVCache_PartialReload_RunningRequest_BlocksCommitted(t *testing.T
 	totalBlocks := int64(8)
 	gpu := NewKVCacheState(totalBlocks, blockSize)
 
-	tokens := make([]int, 20)
+	tokens := make([]sim.TokenID, 20)
 	for i := range tokens {
-		tokens[i] = i + 10 // distinct values
+		tokens[i] = sim.TokenID(i + 10) // distinct values
 	}
 
 	req1 := &sim.Request{ID: "req1", InputTokens: tokens}
 	require.True(t, gpu.AllocateKVBlocks(req1, 0, 8, nil)) // blocks [0,1]
 
-	req2 := &sim.Request{ID: "req2", InputTokens: make([]int, 8)}
+	req2 := &sim.Request{ID: "req2", InputTokens: make([]sim.TokenID, 8)}
 	require.True(t, gpu.AllocateKVBlocks(req2, 0, 8, nil)) // blocks [2,3]
 
-	req3 := &sim.Request{ID: "req3", InputTokens: make([]int, 8)}
+	req3 := &sim.Request{ID: "req3", InputTokens: make([]sim.TokenID, 8)}
 	require.True(t, gpu.AllocateKVBlocks(req3, 0, 8, nil)) // blocks [4,5]
 	// Free: [6,7]
 
@@ -885,15 +885,15 @@ func TestTieredKVCache_PartialReload_NewRequest_Revised(t *testing.T) {
 	totalBlocks := int64(7)
 	gpu := NewKVCacheState(totalBlocks, blockSize)
 
-	tokens := make([]int, 12)
+	tokens := make([]sim.TokenID, 12)
 	for i := range tokens {
-		tokens[i] = i + 100
+		tokens[i] = sim.TokenID(i + 100)
 	}
 
 	// Fill 5 blocks using two filler requests
-	f1 := &sim.Request{ID: "f1", InputTokens: make([]int, 12)}
+	f1 := &sim.Request{ID: "f1", InputTokens: make([]sim.TokenID, 12)}
 	require.True(t, gpu.AllocateKVBlocks(f1, 0, 12, nil)) // blocks [0,1,2]
-	f2 := &sim.Request{ID: "f2", InputTokens: make([]int, 8)}
+	f2 := &sim.Request{ID: "f2", InputTokens: make([]sim.TokenID, 8)}
 	require.True(t, gpu.AllocateKVBlocks(f2, 0, 8, nil)) // blocks [3,4]
 	// 2 free: [5,6]
 
@@ -935,7 +935,7 @@ func TestTieredKVCache_SnapshotCachedBlocksFn_FrozenView(t *testing.T) {
 	gpu := NewKVCacheState(100, 4)
 	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 10)
 
-	tokens := []int{1, 2, 3, 4, 5, 6, 7, 8} // 2 blocks
+	tokens := []sim.TokenID{1, 2, 3, 4, 5, 6, 7, 8} // 2 blocks
 	req := &sim.Request{ID: "r1", InputTokens: tokens}
 	tiered.AllocateKVBlocks(req, 0, 8, nil)
 
@@ -946,7 +946,7 @@ func TestTieredKVCache_SnapshotCachedBlocksFn_FrozenView(t *testing.T) {
 	assert.Equal(t, 2, snapshotFn(tokens), "snapshot should see 2 cached blocks")
 
 	// AND then allocate more blocks (extending the prefix)
-	tokens2 := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+	tokens2 := []sim.TokenID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 	req2 := &sim.Request{ID: "r2", InputTokens: tokens2}
 	cached := gpu.GetCachedBlocks(tokens2)
 	tiered.AllocateKVBlocks(req2, 8, 16, cached)
@@ -967,7 +967,7 @@ func TestTieredLazyHashDeletion_CPUReload(t *testing.T) {
 
 	reqA := &sim.Request{
 		ID:          "reqA",
-		InputTokens: []int{10, 20, 30, 40, 50, 60}, // 3 blocks (blockSize=2)
+		InputTokens:  []sim.TokenID{10, 20, 30, 40, 50, 60}, // 3 blocks (blockSize=2)
 	}
 
 	// Allocate Request A (3 blocks on GPU)
@@ -975,9 +975,9 @@ func TestTieredLazyHashDeletion_CPUReload(t *testing.T) {
 	require.True(t, ok, "Request A allocation should succeed")
 
 	// Compute expected hashes for Request A
-	h0_A := hash.HashBlock("", []int{10, 20})
-	h1_A := hash.HashBlock(h0_A, []int{30, 40})
-	h2_A := hash.HashBlock(h1_A, []int{50, 60})
+	h0_A := hash.HashBlock("", []sim.TokenID{10, 20})
+	h1_A := hash.HashBlock(h0_A, []sim.TokenID{30, 40})
+	h2_A := hash.HashBlock(h1_A, []sim.TokenID{50, 60})
 
 	_, foundH0A := gpu.HashToBlock[h0_A]
 	_, foundH2A := gpu.HashToBlock[h2_A]
@@ -996,7 +996,7 @@ func TestTieredLazyHashDeletion_CPUReload(t *testing.T) {
 
 	// Fill GPU completely with 6 filler blocks to evict all prefix hashes
 	for i := 0; i < 6; i++ {
-		f := &sim.Request{ID: fmt.Sprintf("fill%d", i), InputTokens: []int{i*2 + 200, i*2 + 201}}
+		f := &sim.Request{ID: fmt.Sprintf("fill%d", i), InputTokens:  []sim.TokenID{sim.TokenID(i*2 + 200), sim.TokenID(i*2 + 201)}}
 		tiered.AllocateKVBlocks(f, 0, 2, []int64{})
 	}
 	require.Equal(t, int64(0), gpu.countFreeBlocks(), "All GPU blocks used by fillers")

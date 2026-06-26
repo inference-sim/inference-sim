@@ -97,9 +97,9 @@ func TestSJFScheduler_SortsByInputTokensAscending(t *testing.T) {
 	// BC-4: shorter jobs first
 	sched := &SJFScheduler{}
 	reqs := []*Request{
-		{ID: "long", ArrivalTime: 100, InputTokens: make([]int, 500)},
-		{ID: "short", ArrivalTime: 200, InputTokens: make([]int, 50)},
-		{ID: "medium", ArrivalTime: 50, InputTokens: make([]int, 200)},
+		{ID: "long", ArrivalTime: 100, InputTokens: make([]TokenID, 500)},
+		{ID: "short", ArrivalTime: 200, InputTokens: make([]TokenID, 50)},
+		{ID: "medium", ArrivalTime: 50, InputTokens: make([]TokenID, 200)},
 	}
 	sched.OrderQueue(reqs, 0)
 
@@ -114,8 +114,8 @@ func TestSJFScheduler_TieBreakByArrivalTime(t *testing.T) {
 	// BC-4: same length → earlier arrival first
 	sched := &SJFScheduler{}
 	reqs := []*Request{
-		{ID: "late", ArrivalTime: 300, InputTokens: make([]int, 100)},
-		{ID: "early", ArrivalTime: 100, InputTokens: make([]int, 100)},
+		{ID: "late", ArrivalTime: 300, InputTokens: make([]TokenID, 100)},
+		{ID: "early", ArrivalTime: 100, InputTokens: make([]TokenID, 100)},
 	}
 	sched.OrderQueue(reqs, 0)
 
@@ -130,8 +130,8 @@ func TestSJFScheduler_TieBreakByID(t *testing.T) {
 	// BC-4 + BC-8: same length + same arrival → lexicographic ID
 	sched := &SJFScheduler{}
 	reqs := []*Request{
-		{ID: "bravo", ArrivalTime: 100, InputTokens: make([]int, 100)},
-		{ID: "alpha", ArrivalTime: 100, InputTokens: make([]int, 100)},
+		{ID: "bravo", ArrivalTime: 100, InputTokens: make([]TokenID, 100)},
+		{ID: "alpha", ArrivalTime: 100, InputTokens: make([]TokenID, 100)},
 	}
 	sched.OrderQueue(reqs, 0)
 
@@ -156,9 +156,9 @@ func TestScheduler_AnyPolicy_PreservesAllRequests(t *testing.T) {
 	for _, tc := range schedulers {
 		t.Run(tc.name, func(t *testing.T) {
 			reqs := []*Request{
-				{ID: "a", ArrivalTime: 100, Priority: 1.0, InputTokens: make([]int, 50)},
-				{ID: "b", ArrivalTime: 200, Priority: 2.0, InputTokens: make([]int, 100)},
-				{ID: "c", ArrivalTime: 300, Priority: 3.0, InputTokens: make([]int, 25)},
+				{ID: "a", ArrivalTime: 100, Priority: 1.0, InputTokens: make([]TokenID, 50)},
+				{ID: "b", ArrivalTime: 200, Priority: 2.0, InputTokens: make([]TokenID, 100)},
+				{ID: "c", ArrivalTime: 300, Priority: 3.0, InputTokens: make([]TokenID, 25)},
 			}
 			tc.sched.OrderQueue(reqs, 0)
 
@@ -185,9 +185,9 @@ func TestNewScheduler_ValidNames_ReturnsBehaviorallyCorrectScheduler(t *testing.
 	// BC-3: empty string and "fcfs" return a scheduler that preserves input order (FCFS)
 	reqs := func() []*Request {
 		return []*Request{
-			{ID: "c", ArrivalTime: 300, Priority: 1.0, InputTokens: make([]int, 50)},
-			{ID: "a", ArrivalTime: 100, Priority: 3.0, InputTokens: make([]int, 10)},
-			{ID: "b", ArrivalTime: 200, Priority: 2.0, InputTokens: make([]int, 30)},
+			{ID: "c", ArrivalTime: 300, Priority: 1.0, InputTokens: make([]TokenID, 50)},
+			{ID: "a", ArrivalTime: 100, Priority: 3.0, InputTokens: make([]TokenID, 10)},
+			{ID: "b", ArrivalTime: 200, Priority: 2.0, InputTokens: make([]TokenID, 30)},
 		}
 	}
 
@@ -254,16 +254,16 @@ func TestSimulator_PriorityFCFS_SchedulesHighPriorityFirst(t *testing.T) {
 	// Inject it first so FCFS would schedule it first — but priority should override.
 	reqNewer := &Request{
 		ID:           "req_newer",
-		InputTokens:  make([]int, 20),
-		OutputTokens: make([]int, 5),
+		InputTokens:  make([]TokenID, 20),
+		OutputTokens: make([]TokenID, 5),
 		ArrivalTime:  500000,
 		State:        StateQueued,
 	}
 	// reqOlder arrives earlier (higher age → higher priority)
 	reqOlder := &Request{
 		ID:           "req_older",
-		InputTokens:  make([]int, 20),
-		OutputTokens: make([]int, 5),
+		InputTokens:  make([]TokenID, 20),
+		OutputTokens: make([]TokenID, 5),
 		ArrivalTime:  0,
 		State:        StateQueued,
 	}
@@ -303,15 +303,15 @@ func TestSimulator_DefaultConfig_MatchesFCFS(t *testing.T) {
 	// Inject two requests with same arrival time; FCFS should schedule first-injected first
 	reqFirst := &Request{
 		ID:           "req_first",
-		InputTokens:  make([]int, 20),
-		OutputTokens: make([]int, 2),
+		InputTokens:  make([]TokenID, 20),
+		OutputTokens: make([]TokenID, 2),
 		ArrivalTime:  0,
 		State:        StateQueued,
 	}
 	reqSecond := &Request{
 		ID:           "req_second",
-		InputTokens:  make([]int, 20),
-		OutputTokens: make([]int, 2),
+		InputTokens:  make([]TokenID, 20),
+		OutputTokens: make([]TokenID, 2),
 		ArrivalTime:  0,
 		State:        StateQueued,
 	}
@@ -373,16 +373,16 @@ func TestSimulator_SJF_SchedulesShortJobFirst(t *testing.T) {
 	// Long request injected first — SJF should move it behind short
 	reqLong := &Request{
 		ID:           "req_long",
-		InputTokens:  make([]int, 200),
-		OutputTokens: make([]int, 2),
+		InputTokens:  make([]TokenID, 200),
+		OutputTokens: make([]TokenID, 2),
 		ArrivalTime:  0,
 		State:        StateQueued,
 	}
 	// Short request injected second — SJF should move it to front
 	reqShort := &Request{
 		ID:           "req_short",
-		InputTokens:  make([]int, 20),
-		OutputTokens: make([]int, 2),
+		InputTokens:  make([]TokenID, 20),
+		OutputTokens: make([]TokenID, 2),
 		ArrivalTime:  0,
 		State:        StateQueued,
 	}
@@ -426,16 +426,16 @@ func TestSimulator_PriorityFCFS_ArrivalTimeTiebreak_OlderFirst(t *testing.T) {
 	// Newer request injected first (arrives at t=500000)
 	reqNew := &Request{
 		ID:           "req_new",
-		InputTokens:  make([]int, 20),
-		OutputTokens: make([]int, 2),
+		InputTokens:  make([]TokenID, 20),
+		OutputTokens: make([]TokenID, 2),
 		ArrivalTime:  500000,
 		State:        StateQueued,
 	}
 	// Older request injected second (arrives at t=0)
 	reqOld := &Request{
 		ID:           "req_old",
-		InputTokens:  make([]int, 20),
-		OutputTokens: make([]int, 2),
+		InputTokens:  make([]TokenID, 20),
+		OutputTokens: make([]TokenID, 2),
 		ArrivalTime:  0,
 		State:        StateQueued,
 	}

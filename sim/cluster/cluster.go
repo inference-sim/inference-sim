@@ -106,7 +106,7 @@ type ClusterSimulator struct {
 	// cacheQueryFn maps instance IDs to KV cache query functions for precise
 	// prefix cache scoring. Built after instance construction; deferred instances
 	// are added in NodeReadyEvent.Execute. Nil when no instances exist yet.
-	cacheQueryFn map[string]func([]int) int
+	cacheQueryFn map[string]func([]sim.TokenID) int
 
 	// Cache block staleness is managed by CachedSnapshotProvider via
 	// ObservabilityConfig.CacheBlocks (unified in #1060).
@@ -605,13 +605,13 @@ func (cs *ClusterSimulator) registerInstanceCacheQueryFn(id InstanceID, inst *In
 		// to CacheQuery at call time, picking up refreshed snapshots automatically.
 		cs.snapshotProvider.AddCacheInstance(id, inst)
 		idStr := string(id)
-		cs.cacheQueryFn[idStr] = func(tokens []int) int {
+		cs.cacheQueryFn[idStr] = func(tokens []sim.TokenID) int {
 			return cs.snapshotProvider.CacheQuery(idStr, tokens)
 		}
 	} else {
 		// Oracle mode: closure captures inst directly for live-state queries.
 		idStr := string(id)
-		cs.cacheQueryFn[idStr] = func(tokens []int) int {
+		cs.cacheQueryFn[idStr] = func(tokens []sim.TokenID) int {
 			return inst.GetCachedBlockCount(tokens)
 		}
 	}

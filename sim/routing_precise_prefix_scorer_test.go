@@ -6,12 +6,12 @@ import "testing"
 // produces correct scores for varying cached block counts.
 func TestPrecisePrefixCache_MinMaxNormalization(t *testing.T) {
 	cacheQueryFn := cacheQueryFn{
-		"inst-0": func(tokens []int) int { return 5 },
-		"inst-1": func(tokens []int) int { return 3 },
-		"inst-2": func(tokens []int) int { return 0 },
+		"inst-0": func(tokens []TokenID) int { return 5 },
+		"inst-1": func(tokens []TokenID) int { return 3 },
+		"inst-2": func(tokens []TokenID) int { return 0 },
 	}
 	scorer, _ := newPrecisePrefixCacheScorer(cacheQueryFn)
-	req := &Request{ID: "r1", InputTokens: []int{1, 2, 3, 4, 5}}
+	req := &Request{ID: "r1", InputTokens:  []TokenID{1, 2, 3, 4, 5}}
 	snapshots := []RoutingSnapshot{
 		{ID: "inst-0"},
 		{ID: "inst-1"},
@@ -54,10 +54,10 @@ func TestPrecisePrefixCache_AllEqual(t *testing.T) {
 			ids := []string{"a", "b", "c"}
 			for _, id := range ids {
 				count := tt.counts[id]
-				cqf[id] = func(tokens []int) int { return count }
+				cqf[id] = func(tokens []TokenID) int { return count }
 			}
 			scorer, _ := newPrecisePrefixCacheScorer(cqf)
-			req := &Request{ID: "r1", InputTokens: []int{1}}
+			req := &Request{ID: "r1", InputTokens:  []TokenID{1}}
 			var snapshots []RoutingSnapshot
 			for _, id := range ids {
 				snapshots = append(snapshots, RoutingSnapshot{ID: id})
@@ -83,10 +83,10 @@ func TestPrecisePrefixCache_ObserverIsNil(t *testing.T) {
 // TestPrecisePrefixCache_SingleInstance verifies single instance scores 1.0.
 func TestPrecisePrefixCache_SingleInstance(t *testing.T) {
 	cacheQueryFn := cacheQueryFn{
-		"only": func(tokens []int) int { return 3 },
+		"only": func(tokens []TokenID) int { return 3 },
 	}
 	scorer, _ := newPrecisePrefixCacheScorer(cacheQueryFn)
-	scores := scorer(&Request{ID: "r1", InputTokens: []int{1}}, []RoutingSnapshot{{ID: "only"}})
+	scores := scorer(&Request{ID: "r1", InputTokens:  []TokenID{1}}, []RoutingSnapshot{{ID: "only"}})
 	if scores["only"] != 1.0 {
 		t.Errorf("single instance: got %.3f, want 1.0", scores["only"])
 	}
@@ -95,7 +95,7 @@ func TestPrecisePrefixCache_SingleInstance(t *testing.T) {
 // TestPrecisePrefixCache_NilCacheQueryFn verifies nil cacheQueryFn → all 1.0.
 func TestPrecisePrefixCache_NilCacheQueryFn(t *testing.T) {
 	scorer, _ := newPrecisePrefixCacheScorer(nil)
-	scores := scorer(&Request{ID: "r1", InputTokens: []int{1}}, []RoutingSnapshot{
+	scores := scorer(&Request{ID: "r1", InputTokens:  []TokenID{1}}, []RoutingSnapshot{
 		{ID: "a"}, {ID: "b"},
 	})
 	for id, score := range scores {
@@ -111,12 +111,12 @@ func TestPrecisePrefixCache_NilCacheQueryFn(t *testing.T) {
 func TestPrecisePrefixCache_MissingInstanceInCacheQueryFn(t *testing.T) {
 	// cacheQueryFn has "a" and "b" but NOT "c"
 	cqf := cacheQueryFn{
-		"a": func(tokens []int) int { return 5 },
-		"b": func(tokens []int) int { return 0 },
+		"a": func(tokens []TokenID) int { return 5 },
+		"b": func(tokens []TokenID) int { return 0 },
 	}
 	scorer, _ := newPrecisePrefixCacheScorer(cqf)
 	scores := scorer(
-		&Request{ID: "r1", InputTokens: []int{1}},
+		&Request{ID: "r1", InputTokens:  []TokenID{1}},
 		[]RoutingSnapshot{{ID: "a"}, {ID: "b"}, {ID: "c"}},
 	)
 	// "c" missing from cacheQueryFn → treated as 0 cached blocks (same as "b")

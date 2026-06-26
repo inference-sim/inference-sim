@@ -3039,7 +3039,7 @@ func TestGenerateRequestsForWindow_ReasoningWithPrefix(t *testing.T) {
 	// BC-2: Prefix prepending in time-varying reasoning
 	rng := rand.New(rand.NewSource(12345))
 
-	prefixTokens := []int{999, 888, 777} // 3-token shared prefix
+	prefixTokens := []sim.TokenID{999, 888, 777} // 3-token shared prefix
 
 	client := ClientSpec{
 		ID:           "reasoning-client-with-prefix",

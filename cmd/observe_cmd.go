@@ -1087,9 +1087,9 @@ func adaptForSessionManager(original *sim.Request, record *RequestRecord) *sim.R
 	adapted.ProgressIndex = int64(len(original.InputTokens) + outputCount)
 
 	if outputCount > 0 {
-		adapted.OutputTokens = make([]int, outputCount)
+		adapted.OutputTokens = make([]sim.TokenID, outputCount)
 		for i := range adapted.OutputTokens {
-			adapted.OutputTokens[i] = i + 1
+			adapted.OutputTokens[i] = sim.TokenID(i + 1)
 		}
 	}
 
@@ -1099,14 +1099,14 @@ func adaptForSessionManager(original *sim.Request, record *RequestRecord) *sim.R
 // tokensToPrompt converts token IDs into a diverse prompt string using
 // prefixVocabulary. Each token ID selects a vocabulary word via modular
 // indexing, ensuring different token arrays produce different prompts.
-func tokensToPrompt(tokens []int, wordCount int) string {
+func tokensToPrompt(tokens []sim.TokenID, wordCount int) string {
 	vocabLen := len(prefixVocabulary)
 	var b strings.Builder
 	b.Grow(wordCount * 8) // average word ~7 chars + space
 	for i := 0; i < wordCount; i++ {
 		var idx int
 		if i < len(tokens) {
-			idx = tokens[i]
+			idx = int(tokens[i])
 		} else {
 			idx = i
 		}

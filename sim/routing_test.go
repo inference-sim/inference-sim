@@ -13,7 +13,7 @@ func TestRoutingPolicy_Interface_Contract(t *testing.T) {
 	policy := NewRoutingPolicy("round-robin", nil, 16, nil)
 
 	// WHEN Route() is called with valid inputs
-	req := &Request{ID: "req1", InputTokens: []int{1, 2, 3}}
+	req := &Request{ID: "req1", InputTokens:  []TokenID{1, 2, 3}}
 	snapshots := []RoutingSnapshot{
 		{ID: "instance_0", QueueDepth: 5},
 		{ID: "instance_1", QueueDepth: 3},
@@ -409,7 +409,7 @@ func TestRoutingDecision_TargetSet(t *testing.T) {
 				Snapshots: []RoutingSnapshot{{ID: "instance_0", QueueDepth: 1}},
 				Clock:     1000,
 			}
-			req := &Request{ID: "req1", InputTokens: []int{1, 2, 3}}
+			req := &Request{ID: "req1", InputTokens:  []TokenID{1, 2, 3}}
 			decision := policy.Route(req, state)
 
 			if decision.TargetInstance == "" {
@@ -424,7 +424,7 @@ func TestRoutingDecision_TargetSet(t *testing.T) {
 // TestAlwaysBusiest_RouteToHighestLoad verifies BC-6.
 func TestAlwaysBusiest_RouteToHighestLoad(t *testing.T) {
 	policy := NewRoutingPolicy("always-busiest", nil, 16, nil)
-	req := &Request{ID: "r1", InputTokens: []int{1, 2}}
+	req := &Request{ID: "r1", InputTokens:  []TokenID{1, 2}}
 	snapshots := []RoutingSnapshot{
 		{ID: "instance_0", QueueDepth: 2, BatchSize: 1},
 		{ID: "instance_1", QueueDepth: 10, BatchSize: 5},

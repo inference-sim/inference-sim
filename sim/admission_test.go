@@ -13,9 +13,9 @@ func TestAlwaysAdmit_AdmitsAll(t *testing.T) {
 		req   *Request
 		clock int64
 	}{
-		{name: "empty request", req: &Request{ID: "r0", InputTokens: []int{}}, clock: 0},
-		{name: "small request", req: &Request{ID: "r1", InputTokens: make([]int, 10)}, clock: 1000},
-		{name: "large request", req: &Request{ID: "r2", InputTokens: make([]int, 10000)}, clock: 5_000_000},
+		{name: "empty request", req: &Request{ID: "r0", InputTokens: []TokenID{}}, clock: 0},
+		{name: "small request", req: &Request{ID: "r1", InputTokens: make([]TokenID, 10)}, clock: 1000},
+		{name: "large request", req: &Request{ID: "r2", InputTokens: make([]TokenID, 10000)}, clock: 5_000_000},
 	}
 
 	for _, tt := range tests {
@@ -36,7 +36,7 @@ func TestAlwaysAdmit_AdmitsAll(t *testing.T) {
 func TestTokenBucket_AdmitAndReject(t *testing.T) {
 	t.Run("admits when tokens available", func(t *testing.T) {
 		tb := NewTokenBucket(100, 10)
-		req := &Request{ID: "r0", InputTokens: make([]int, 50)}
+		req := &Request{ID: "r0", InputTokens: make([]TokenID, 50)}
 		admitted, reason := tb.Admit(req, &RouterState{Clock: 0})
 		if !admitted {
 			t.Fatal("expected admission with sufficient tokens")
@@ -49,7 +49,7 @@ func TestTokenBucket_AdmitAndReject(t *testing.T) {
 	t.Run("rejects when tokens exhausted", func(t *testing.T) {
 		// Use tiny refill rate so tokens don't replenish within the test window
 		tb := NewTokenBucket(10, 0.001)
-		req := &Request{ID: "r0", InputTokens: make([]int, 10)}
+		req := &Request{ID: "r0", InputTokens: make([]TokenID, 10)}
 
 		admitted, _ := tb.Admit(req, &RouterState{Clock: 0})
 		if !admitted {
@@ -67,7 +67,7 @@ func TestTokenBucket_AdmitAndReject(t *testing.T) {
 
 	t.Run("refill restores tokens over time", func(t *testing.T) {
 		tb := NewTokenBucket(100, 1_000_000)
-		req := &Request{ID: "r0", InputTokens: make([]int, 100)}
+		req := &Request{ID: "r0", InputTokens: make([]TokenID, 100)}
 
 		admitted, _ := tb.Admit(req, &RouterState{Clock: 0})
 		if !admitted {
@@ -89,7 +89,7 @@ func TestTokenBucket_AdmitAndReject(t *testing.T) {
 
 	t.Run("capacity caps refill", func(t *testing.T) {
 		tb := NewTokenBucket(10, 1_000_000)
-		req := &Request{ID: "r0", InputTokens: make([]int, 5)}
+		req := &Request{ID: "r0", InputTokens: make([]TokenID, 5)}
 
 		admitted, _ := tb.Admit(req, &RouterState{Clock: 0})
 		if !admitted {
@@ -116,7 +116,7 @@ func TestTokenBucket_AdmitAndReject(t *testing.T) {
 	t.Run("zero-cost request always admitted", func(t *testing.T) {
 		// Even with minimal capacity, a zero-cost request (0 input tokens) is admitted
 		tb := NewTokenBucket(1, 1)
-		req := &Request{ID: "r0", InputTokens: []int{}}
+		req := &Request{ID: "r0", InputTokens: []TokenID{}}
 
 		admitted, _ := tb.Admit(req, &RouterState{Clock: 0})
 		if !admitted {
@@ -145,7 +145,7 @@ func TestTokenBucket_AdmitAndReject(t *testing.T) {
 
 // TestNewAdmissionPolicy_ValidNames verifies the factory produces correct behavioral policies.
 func TestNewAdmissionPolicy_ValidNames(t *testing.T) {
-	req := &Request{ID: "r0", InputTokens: make([]int, 10)}
+	req := &Request{ID: "r0", InputTokens: make([]TokenID, 10)}
 	state := &RouterState{Clock: 0}
 
 	t.Run("always-admit admits all", func(t *testing.T) {
@@ -203,8 +203,8 @@ func TestRejectAll_RejectsAll(t *testing.T) {
 		name string
 		req  *Request
 	}{
-		{name: "empty request", req: &Request{ID: "r0", InputTokens: []int{}}},
-		{name: "normal request", req: &Request{ID: "r1", InputTokens: make([]int, 100)}},
+		{name: "empty request", req: &Request{ID: "r0", InputTokens: []TokenID{}}},
+		{name: "normal request", req: &Request{ID: "r1", InputTokens: make([]TokenID, 100)}},
 	}
 
 	for _, tt := range tests {

@@ -15,7 +15,7 @@ import (
 // Identified by content hash (not GPU block ID) for content-addressable reload.
 type cpuBlock struct {
 	hash   string    // prefix hash (map key, identifies content)
-	tokens []int     // token content (for GPU reload); pre-allocated slice, copy-into
+	tokens []sim.TokenID // token content (for GPU reload); pre-allocated slice, copy-into
 	prev   *cpuBlock // LRU doubly-linked list: older block
 	next   *cpuBlock // LRU doubly-linked list: newer block
 }
@@ -32,7 +32,7 @@ type cpuTier struct {
 
 	// Pre-allocated token slices for CPU blocks (eliminates per-mirror GC pressure).
 	// Pool of free slices returned on eviction, consumed on store.
-	freeTokenSlices [][]int
+	freeTokenSlices [][]sim.TokenID
 
 	evictionCount int64 // total CPU LRU evictions
 }
@@ -45,9 +45,9 @@ func newCpuTier(capacity int64, blockSize int64) *cpuTier {
 	if blockSize <= 0 {
 		panic(fmt.Sprintf("newCpuTier: blockSize must be > 0, got %d", blockSize))
 	}
-	slices := make([][]int, capacity)
+	slices := make([][]sim.TokenID, capacity)
 	for i := int64(0); i < capacity; i++ {
-		slices[i] = make([]int, blockSize)
+		slices[i] = make([]sim.TokenID, blockSize)
 	}
 	return &cpuTier{
 		blocks:          make(map[string]*cpuBlock),
@@ -59,7 +59,7 @@ func newCpuTier(capacity int64, blockSize int64) *cpuTier {
 
 // store adds a block to the CPU tier. If at capacity, evicts LRU-oldest first.
 // If the hash already exists, this is a no-op (use touch instead).
-func (c *cpuTier) store(hash string, tokens []int) {
+func (c *cpuTier) store(hash string, tokens []sim.TokenID) {
 	if _, exists := c.blocks[hash]; exists {
 		return // already present — caller should use touch
 	}
@@ -68,13 +68,13 @@ func (c *cpuTier) store(hash string, tokens []int) {
 		c.evictHead()
 	}
 	// Get a pre-allocated token slice from pool, or allocate as fallback
-	var tokSlice []int
+	var tokSlice []sim.TokenID
 	if len(c.freeTokenSlices) > 0 {
 		tokSlice = c.freeTokenSlices[len(c.freeTokenSlices)-1]
 		c.freeTokenSlices = c.freeTokenSlices[:len(c.freeTokenSlices)-1]
 		copy(tokSlice, tokens)
 	} else {
-		tokSlice = append([]int{}, tokens...) // fallback: allocate
+		tokSlice = append([]sim.TokenID{}, tokens...) // fallback: allocate
 	}
 	blk := &cpuBlock{hash: hash, tokens: tokSlice}
 	c.blocks[hash] = blk
@@ -265,7 +265,7 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 // The maxReloads guard ensures we never pop the same GPU free block twice —
 // each reload uses a distinct free block. Without this, pop+append creates
 // a cycle where block A's hash is destroyed on the second pop.
-func (t *TieredKVCache) reloadPrefixFromCPU(tokens []int) bool {
+func (t *TieredKVCache) reloadPrefixFromCPU(tokens []sim.TokenID) bool {
 	n := util.Len64(tokens) / t.gpu.BlockSize()
 	maxReloads := t.gpu.countFreeBlocks() // limit to distinct free blocks
 	prevHash := ""
@@ -332,13 +332,13 @@ func (t *TieredKVCache) reloadPrefixFromCPU(tokens []int) bool {
 	return reloaded
 }
 
-func (t *TieredKVCache) GetCachedBlocks(tokens []int) []int64 {
+func (t *TieredKVCache) GetCachedBlocks(tokens []sim.TokenID) []int64 {
 	return t.gpu.GetCachedBlocks(tokens)
 }
 
 // SnapshotCachedBlocksFn returns a snapshot query function for the GPU tier.
 // See KVCacheState.SnapshotCachedBlocksFn for details.
-func (t *TieredKVCache) SnapshotCachedBlocksFn() func([]int) int {
+func (t *TieredKVCache) SnapshotCachedBlocksFn() func([]sim.TokenID) int {
 	return t.gpu.SnapshotCachedBlocksFn()
 }
 

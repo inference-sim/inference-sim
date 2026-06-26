@@ -39,7 +39,7 @@ type SessionBlueprint struct {
 	OutputSampler    LengthSampler
 	RNG              *rand.Rand    // per-session, seeded deterministically from client RNG
 	ThinkTimeSampler LengthSampler // optional: per-round think time in µs; nil = use constant ThinkTimeUs
-	Prefix           []int         // shared system prompt tokens
+	Prefix           []sim.TokenID // shared system prompt tokens
 	TenantID         string
 	SLOClass         string
 	Model            string
@@ -50,7 +50,7 @@ type SessionBlueprint struct {
 type activeSession struct {
 	blueprint     *SessionBlueprint
 	currentRound  int
-	contextTokens []int // accumulated input + output from prior rounds
+	contextTokens []sim.TokenID // accumulated input + output from prior rounds
 	state         sessionState
 }
 
@@ -172,7 +172,7 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 	// For length-capped requests, ProgressIndex - len(InputTokens) gives actual output count.
 	actualOutputLen := max(int(req.ProgressIndex)-len(req.InputTokens), 0)
 
-	var inputTokens []int
+	var inputTokens []sim.TokenID
 	if bp.ContextGrowth == "accumulate" {
 		// contextTokens is prefix-free (invariant: GenerateReasoningRequests accumulates
 		// raw newInputTokens, never the prefix; generator.go warns about double-prepend).
@@ -202,14 +202,14 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 			}
 			sess.contextTokens = append(sess.contextTokens, outTokens...)
 		}
-		inputTokens = append(append([]int{}, sess.contextTokens...), newInputTokens...)
+		inputTokens = append(append([]sim.TokenID{}, sess.contextTokens...), newInputTokens...)
 	} else {
 		inputTokens = newInputTokens
 	}
 
 	// Prepend prefix
 	if len(bp.Prefix) > 0 {
-		inputTokens = append(append([]int{}, bp.Prefix...), inputTokens...)
+		inputTokens = append(append([]sim.TokenID{}, bp.Prefix...), inputTokens...)
 	}
 
 	sess.currentRound++

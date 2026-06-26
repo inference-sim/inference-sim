@@ -98,8 +98,8 @@ func windowsOverlap(a, b *LifecycleSpec) bool {
 // Clients in the same group get the same prefix tokens. The length is determined
 // by the first client in the group that specifies prefix_length; others in the
 // same group inherit it. If no client specifies prefix_length, defaultPrefixLength is used.
-func generatePrefixTokens(clients []ClientSpec, rng *rand.Rand) map[string][]int {
-	prefixes := make(map[string][]int)
+func generatePrefixTokens(clients []ClientSpec, rng *rand.Rand) map[string][]sim.TokenID {
+	prefixes := make(map[string][]sim.TokenID)
 	for i := range clients {
 		group := clients[i].PrefixGroup
 		if group == "" {

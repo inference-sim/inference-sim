@@ -1,9 +1,17 @@
 package hash
 
-import "testing"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"math"
+	"strconv"
+	"testing"
+
+	"github.com/inference-sim/inference-sim/sim/internal/tokenid"
+)
 
 func TestHashBlock_ChainsDeterministically(t *testing.T) {
-	tokens := []int{10, 20, 30}
+	tokens := []tokenid.TokenID{10, 20, 30}
 	h1 := HashBlock("", tokens)
 	h2 := HashBlock("", tokens)
 	if h1 != h2 {
@@ -17,7 +25,7 @@ func TestHashBlock_ChainsDeterministically(t *testing.T) {
 }
 
 func TestComputeBlockHashes_MatchesManualChaining(t *testing.T) {
-	tokens := []int{1, 2, 3, 4, 5, 6, 7, 8}
+	tokens := []tokenid.TokenID{1, 2, 3, 4, 5, 6, 7, 8}
 	blockSize := 4
 	hashes := ComputeBlockHashes(blockSize, tokens)
 	if len(hashes) != 2 {
@@ -36,7 +44,7 @@ func TestComputeBlockHashes_MatchesManualChaining(t *testing.T) {
 
 func TestComputeBlockHashes_PartialBlock(t *testing.T) {
 	// 5 tokens with block size 4 = 1 full block (partial block ignored)
-	tokens := []int{1, 2, 3, 4, 5}
+	tokens := []tokenid.TokenID{1, 2, 3, 4, 5}
 	hashes := ComputeBlockHashes(4, tokens)
 	if len(hashes) != 1 {
 		t.Fatalf("expected 1 block hash, got %d", len(hashes))
@@ -44,7 +52,7 @@ func TestComputeBlockHashes_PartialBlock(t *testing.T) {
 }
 
 func TestComputeBlockHashes_Empty(t *testing.T) {
-	hashes := ComputeBlockHashes(4, []int{1, 2})
+	hashes := ComputeBlockHashes(4, []tokenid.TokenID{1, 2})
 	if hashes != nil {
 		t.Errorf("expected nil for fewer tokens than block size, got %v", hashes)
 	}
@@ -54,7 +62,7 @@ func TestComputeBlockHashes_Empty(t *testing.T) {
 // equivalence with HashBlock across 4 blocks, catching any h.Reset()
 // placement bugs that could leak state across blocks.
 func TestComputeBlockHashes_FourBlocks_MatchesManualChaining(t *testing.T) {
-	tokens := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+	tokens := []tokenid.TokenID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 	blockSize := 4
 	hashes := ComputeBlockHashes(blockSize, tokens)
 	if len(hashes) != 4 {
@@ -79,11 +87,43 @@ func TestComputeBlockHashes_FourBlocks_MatchesManualChaining(t *testing.T) {
 	}
 }
 
+// TestHashBlock_ByteEquivalentToInt64String verifies BC-4: the hash digest
+// produced from a []tokenid.TokenID slice is byte-identical to the digest that
+// would be produced for the same numeric values via a manual reconstruction of
+// HashBlock's wire format (prevHash bytes, then for each token: decimal int64
+// representation + '|'). This is the proof that the type swap from []int to
+// []TokenID does not change KV cache hashes for any value that fits in int32
+// (i.e., every realistic LLM vocabulary): the implementation widens to int64
+// via strconv.AppendInt(buf, int64(t), 10) before stringification, so int vs
+// int32 with the same numeric value produce identical byte streams.
+//
+// Covers in-range max (math.MaxInt32), zero, mid-range (typical vocab IDs),
+// and the smallest positive values.
+func TestHashBlock_ByteEquivalentToInt64String(t *testing.T) {
+	tokens := []tokenid.TokenID{0, 1, 128000, math.MaxInt32 - 1, math.MaxInt32}
+
+	// Reconstruct the byte stream HashBlock writes for the same numeric values
+	// (with prevHash = "abc") via the same int64 widening path.
+	h := sha256.New()
+	prevHash := "abc"
+	h.Write([]byte(prevHash))
+	for _, v := range []int64{0, 1, 128000, math.MaxInt32 - 1, math.MaxInt32} {
+		h.Write([]byte(strconv.FormatInt(v, 10)))
+		h.Write([]byte{'|'})
+	}
+	want := hex.EncodeToString(h.Sum(nil))
+
+	got := HashBlock(prevHash, tokens)
+	if got != want {
+		t.Fatalf("HashBlock byte-equivalence failed\n  got:  %s\n  want: %s", got, want)
+	}
+}
+
 func BenchmarkHashBlock(b *testing.B) {
 	// Simulate a typical block: 16 tokens with values in [0, 128000]
-	tokens := make([]int, 16)
+	tokens := make([]tokenid.TokenID, 16)
 	for i := range tokens {
-		tokens[i] = i * 1000
+		tokens[i] = tokenid.TokenID(i * 1000)
 	}
 	prevHash := "abc123"
 	b.ResetTimer()
@@ -94,9 +134,9 @@ func BenchmarkHashBlock(b *testing.B) {
 
 func BenchmarkComputeBlockHashes(b *testing.B) {
 	// Simulate a reasoning workload: 2048 tokens, block size 16 = 128 blocks
-	tokens := make([]int, 2048)
+	tokens := make([]tokenid.TokenID, 2048)
 	for i := range tokens {
-		tokens[i] = i * 100
+		tokens[i] = tokenid.TokenID(i * 100)
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -106,9 +146,9 @@ func BenchmarkComputeBlockHashes(b *testing.B) {
 
 func BenchmarkComputeBlockHashes_LargeContext(b *testing.B) {
 	// Simulate a long reasoning context: 20480 tokens, block size 16 = 1280 blocks
-	tokens := make([]int, 20480)
+	tokens := make([]tokenid.TokenID, 20480)
 	for i := range tokens {
-		tokens[i] = i
+		tokens[i] = tokenid.TokenID(i)
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

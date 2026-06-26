@@ -4,7 +4,7 @@ package sim
 // kv.KVCacheState (single-tier GPU) and kv.TieredKVCache (GPU+CPU) both implement this.
 type KVStore interface {
 	AllocateKVBlocks(req *Request, startIndex, endIndex int64, cachedBlocks []int64) bool
-	GetCachedBlocks(tokens []int) []int64
+	GetCachedBlocks(tokens []TokenID) []int64
 	ReleaseKVBlocks(req *Request)
 	BlockSize() int64
 	UsedBlocks() int64

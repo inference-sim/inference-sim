@@ -423,7 +423,7 @@ func TestParseTraceRecord_NegativeDeadlineUs_ReturnsError(t *testing.T) {
 }
 
 // TestParseTraceRecord_NegativeInputTokens_ReturnsError verifies R3 for
-// input_tokens (prevents make([]int, negative) panic in replay).
+// input_tokens (prevents make([]sim.TokenID, negative) panic in replay).
 func TestParseTraceRecord_NegativeInputTokens_ReturnsError(t *testing.T) {
 	row := make([]string, 27)
 	for i := range row {
@@ -442,7 +442,7 @@ func TestParseTraceRecord_NegativeInputTokens_ReturnsError(t *testing.T) {
 }
 
 // TestParseTraceRecord_NegativeOutputTokens_ReturnsError verifies R3 for
-// output_tokens (prevents make([]int, negative) panic in replay).
+// output_tokens (prevents make([]sim.TokenID, negative) panic in replay).
 func TestParseTraceRecord_NegativeOutputTokens_ReturnsError(t *testing.T) {
 	row := make([]string, 27)
 	for i := range row {
@@ -618,8 +618,8 @@ func TestRequestMetadataFields(t *testing.T) {
 	req := &sim.Request{
 		ID:             "request_0",
 		State:          sim.StateCompleted,
-		InputTokens:    []int{1, 2, 3},
-		OutputTokens:   []int{4, 5},
+		InputTokens:  []sim.TokenID{1, 2, 3},
+		OutputTokens: []sim.TokenID{4, 5},
 		ArrivalTime:    1000,
 		TTFTSet:        true,
 		FirstTokenTime: 500,
@@ -669,8 +669,8 @@ func TestRequestsToTraceRecords_FieldMapping(t *testing.T) {
 	req := &sim.Request{
 		ID:              "request_0",
 		State:           sim.StateCompleted,
-		InputTokens:     make([]int, 512),
-		OutputTokens:    make([]int, 256),
+		InputTokens:     make([]sim.TokenID, 512),
+		OutputTokens:    make([]sim.TokenID, 256),
 		ProgressIndex:   512 + 256,
 		ArrivalTime:     10000,
 		TTFTSet:         true,
@@ -760,8 +760,8 @@ func TestRequestsToTraceRecords_StatusMapping(t *testing.T) {
 		req := &sim.Request{
 			ID:           "request_0",
 			State:        tc.state,
-			InputTokens:  []int{1},
-			OutputTokens: []int{2},
+			InputTokens:  []sim.TokenID{1},
+			OutputTokens: []sim.TokenID{2},
 		}
 		records := RequestsToTraceRecords([]*sim.Request{req})
 		if records[0].Status != tc.want {
@@ -774,8 +774,8 @@ func TestRequestsToTraceRecords_TimingCausality(t *testing.T) {
 	req := &sim.Request{
 		ID:             "request_0",
 		State:          sim.StateCompleted,
-		InputTokens:    make([]int, 100),
-		OutputTokens:   make([]int, 50),
+		InputTokens:    make([]sim.TokenID, 100),
+		OutputTokens:   make([]sim.TokenID, 50),
 		ArrivalTime:    5000,
 		TTFTSet:        true,
 		FirstTokenTime: 3000,
@@ -800,8 +800,8 @@ func TestRequestsToTraceRecords_PrefillTimeout(t *testing.T) {
 	req := &sim.Request{
 		ID:           "request_0",
 		State:        sim.StateTimedOut,
-		InputTokens:  make([]int, 100),
-		OutputTokens: make([]int, 50),
+		InputTokens:  make([]sim.TokenID, 100),
+		OutputTokens: make([]sim.TokenID, 50),
 		ArrivalTime:  5000,
 		TTFTSet:      false,
 	}
@@ -825,8 +825,8 @@ func TestRequestsToTraceRecords_RecordCount(t *testing.T) {
 		reqs[i] = &sim.Request{
 			ID:           "request_0",
 			State:        sim.StateCompleted,
-			InputTokens:  []int{1},
-			OutputTokens: []int{2},
+			InputTokens:  []sim.TokenID{1},
+			OutputTokens: []sim.TokenID{2},
 		}
 	}
 	records := RequestsToTraceRecords(reqs)
@@ -840,8 +840,8 @@ func TestRequestsToTraceRecords_RoundTrip(t *testing.T) {
 		{
 			ID:             "request_0",
 			State:          sim.StateCompleted,
-			InputTokens:    make([]int, 512),
-			OutputTokens:   make([]int, 128),
+			InputTokens:    make([]sim.TokenID, 512),
+			OutputTokens:   make([]sim.TokenID, 128),
 			ArrivalTime:    1000,
 			TTFTSet:        true,
 			FirstTokenTime: 500,
@@ -855,8 +855,8 @@ func TestRequestsToTraceRecords_RoundTrip(t *testing.T) {
 		{
 			ID:           "request_1",
 			State:        sim.StateTimedOut,
-			InputTokens:  make([]int, 256),
-			OutputTokens: make([]int, 64),
+			InputTokens:  make([]sim.TokenID, 256),
+			OutputTokens: make([]sim.TokenID, 64),
 			ArrivalTime:  2000,
 			TTFTSet:      false,
 			TenantID:     "t2",
@@ -937,24 +937,24 @@ func TestRequestsToTraceRecords_VLLMPriority_AlwaysZero(t *testing.T) {
 			ID:            "req1",
 			State:         sim.StateCompleted,
 			SLOClass:      "critical",
-			InputTokens:   make([]int, 10),
-			OutputTokens:  make([]int, 5),
+			InputTokens:   make([]sim.TokenID, 10),
+			OutputTokens:  make([]sim.TokenID, 5),
 			ProgressIndex: 15,
 		},
 		{
 			ID:            "req2",
 			State:         sim.StateCompleted,
 			SLOClass:      "batch",
-			InputTokens:   make([]int, 20),
-			OutputTokens:  make([]int, 10),
+			InputTokens:   make([]sim.TokenID, 20),
+			OutputTokens:  make([]sim.TokenID, 10),
 			ProgressIndex: 30,
 		},
 		{
 			ID:            "req3",
 			State:         sim.StateCompleted,
 			SLOClass:      "", // no SLO class
-			InputTokens:   make([]int, 5),
-			OutputTokens:  make([]int, 2),
+			InputTokens:   make([]sim.TokenID, 5),
+			OutputTokens:  make([]sim.TokenID, 2),
 			ProgressIndex: 7,
 		},
 	}

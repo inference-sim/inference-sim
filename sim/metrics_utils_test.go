@@ -14,8 +14,8 @@ func TestNewRequestMetrics_PropagatesAllFields(t *testing.T) {
 	req := &Request{
 		ID:               "test_req_1",
 		ArrivalTime:      2000000, // 2 seconds in ticks
-		InputTokens:      make([]int, 128),
-		OutputTokens:     make([]int, 64),
+		InputTokens:      make([]TokenID, 128),
+		OutputTokens:     make([]TokenID, 64),
 		SLOClass:         "critical",
 		TenantID:         "tenant_alpha",
 		AssignedInstance: "instance_3",
@@ -66,8 +66,8 @@ func TestNewRequestMetrics_ZeroValueFields_AreEmptyStrings(t *testing.T) {
 	req := &Request{
 		ID:           "csv_req_1",
 		ArrivalTime:  1000000,
-		InputTokens:  make([]int, 10),
-		OutputTokens: make([]int, 5),
+		InputTokens:  make([]TokenID, 10),
+		OutputTokens: make([]TokenID, 5),
 	}
 
 	// WHEN NewRequestMetrics is called
@@ -91,7 +91,7 @@ func TestNewRequestMetrics_ZeroValueFields_AreEmptyStrings(t *testing.T) {
 func TestNewRequestMetrics_GatewayQueueDelay(t *testing.T) {
 	req := &Request{
 		ID:                  "r1",
-		InputTokens:         make([]int, 10),
+		InputTokens:         make([]TokenID, 10),
 		GatewayEnqueueTime:  1000, // enqueued at 1ms
 		GatewayDispatchTime: 5000, // dispatched at 5ms
 	}
@@ -103,7 +103,7 @@ func TestNewRequestMetrics_GatewayQueueDelay(t *testing.T) {
 }
 
 func TestNewRequestMetrics_GatewayQueueDelay_ZeroWhenNotQueued(t *testing.T) {
-	req := &Request{ID: "r1", InputTokens: make([]int, 10)}
+	req := &Request{ID: "r1", InputTokens: make([]TokenID, 10)}
 	rm := NewRequestMetrics(req, 0.0)
 	if rm.GatewayQueueDelay != 0.0 {
 		t.Errorf("GatewayQueueDelay = %f, want 0.0 when not queued", rm.GatewayQueueDelay)
@@ -116,8 +116,8 @@ func TestNewRequestMetrics_SessionFields(t *testing.T) {
 		ID:               "req-1",
 		SessionID:        "sess-abc",
 		RoundIndex:       2,
-		InputTokens:      []int{1, 2, 3},
-		OutputTokens:     []int{4, 5},
+		InputTokens:  []TokenID{1, 2, 3},
+		OutputTokens: []TokenID{4, 5},
 		SLOClass:         "standard",
 		TenantID:         "tenant-x",
 		AssignedInstance: "inst-0",
@@ -132,7 +132,7 @@ func TestNewRequestMetrics_SessionFields(t *testing.T) {
 	}
 
 	// GIVEN a non-session request
-	req2 := &Request{ID: "req-2", InputTokens: []int{1}, OutputTokens: []int{2}}
+	req2 := &Request{ID: "req-2", InputTokens:  []TokenID{1}, OutputTokens: []TokenID{2}}
 	rm2 := NewRequestMetrics(req2, 500.0)
 	if rm2.SessionID != "" {
 		t.Errorf("non-session SessionID: got %q, want empty", rm2.SessionID)

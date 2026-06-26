@@ -295,7 +295,7 @@ func (i *InstanceSimulator) MaxBatchSize() int {
 
 // GetCachedBlockCount returns the number of consecutive cached prefix blocks
 // matching the given token sequence. Used by precise prefix cache scoring.
-func (i *InstanceSimulator) GetCachedBlockCount(tokens []int) int {
+func (i *InstanceSimulator) GetCachedBlockCount(tokens []sim.TokenID) int {
 	if i.sim == nil {
 		return 0
 	}
@@ -306,7 +306,7 @@ func (i *InstanceSimulator) GetCachedBlockCount(tokens []int) int {
 // a frozen snapshot query function. Both KVCacheState and TieredKVCache implement this.
 // Used for stale cache signal simulation (issue #919).
 type cacheSnapshotCapable interface {
-	SnapshotCachedBlocksFn() func([]int) int
+	SnapshotCachedBlocksFn() func([]sim.TokenID) int
 }
 
 // SnapshotCacheQueryFn returns a function that queries a frozen copy of this
@@ -314,9 +314,9 @@ type cacheSnapshotCapable interface {
 // the live cache state has changed — it always returns results as of snapshot time.
 // Returns a zero-returning function if the simulator is nil or the KV cache
 // does not support snapshotting.
-func (i *InstanceSimulator) SnapshotCacheQueryFn() func([]int) int {
+func (i *InstanceSimulator) SnapshotCacheQueryFn() func([]sim.TokenID) int {
 	if i.sim == nil {
-		return func([]int) int { return 0 }
+		return func([]sim.TokenID) int { return 0 }
 	}
 	if cs, ok := i.sim.KVCache.(cacheSnapshotCapable); ok {
 		return cs.SnapshotCachedBlocksFn()
@@ -324,7 +324,7 @@ func (i *InstanceSimulator) SnapshotCacheQueryFn() func([]int) int {
 	// Fallback: live query (for KVStore implementations without snapshot support).
 	// Callers (CachedSnapshotProvider) are responsible for warning about stale-cache
 	// semantics not being honored — this function is intentionally side-effect-free.
-	return func(tokens []int) int {
+	return func(tokens []sim.TokenID) int {
 		return i.GetCachedBlockCount(tokens)
 	}
 }

@@ -24,9 +24,9 @@ func TestGatewayQueueTTL_ExpiresQueuedRequest(t *testing.T) {
 	cfg.Horizon = 100_000
 	reqs := []*sim.Request{
 		{ID: "r1", ArrivalTime: 0, SLOClass: "standard",
-			InputTokens: make([]int, 10), OutputTokens: make([]int, 5), State: sim.StateQueued},
+			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5), State: sim.StateQueued},
 		{ID: "r2", ArrivalTime: 100, SLOClass: "batch",
-			InputTokens: make([]int, 10), OutputTokens: make([]int, 5), State: sim.StateQueued},
+			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5), State: sim.StateQueued},
 	}
 	cs := NewClusterSimulator(cfg, NewSliceRequestSource(reqs), nil)
 	mustRun(t, cs)
