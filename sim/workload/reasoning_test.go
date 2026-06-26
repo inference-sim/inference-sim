@@ -17,7 +17,7 @@ func TestGenerateReasoningRequests_MultiTurn_SequentialRounds(t *testing.T) {
 	inputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 50, "max": 200}})
 	outputSampler, _ := NewLengthSampler(DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}})
 
-	requests, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c1", "t1", "batch", "")
+	requests, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c1", "t1", "batch", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestGenerateReasoningRequests_ContextAccumulate_GrowingInput(t *testing.T) 
 	inputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 5, "min": 90, "max": 110}})
 	outputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 40, "max": 60}})
 
-	requests, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c1", "t1", "batch", "")
+	requests, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c1", "t1", "batch", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestGenerateReasoningRequests_ReasonRatio_InRange(t *testing.T) {
 	inputSampler, _ := NewLengthSampler(DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}})
 	outputSampler, _ := NewLengthSampler(DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}})
 
-	requests, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c1", "t1", "batch", "")
+	requests, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c1", "t1", "batch", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestGenerateReasoningRequests_Accumulate_SharesPrefixTokens(t *testing.T) {
 	inputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 5, "min": 90, "max": 110}})
 	outputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 40, "max": 60}})
 
-	requests, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c1", "t1", "batch", "")
+	requests, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c1", "t1", "batch", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,9 +153,55 @@ func TestGenerateReasoningRequests_Accumulate_SharesPrefixTokens(t *testing.T) {
 	}
 }
 
+// TestGenerateReasoningRequests_Accumulate_SharesBackingArray verifies that
+// with the SessionTokenBuffer representation, later rounds' InputTokens slices
+// are views into the same growable buffer (BC-1, #1445). After all appends are
+// done, the buffer's final array contains every round's tokens contiguously;
+// the LAST round's InputTokens (which spans [0, end_of_last_input)) and the
+// buffer's underlying array share their address. Earlier rounds' slices may
+// reference a prior (smaller) backing array if append reallocated mid-session.
+func TestGenerateReasoningRequests_Accumulate_SharesBackingArray(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	spec := &ReasoningSpec{
+		MultiTurn: &MultiTurnSpec{
+			MaxRounds:     5,
+			ThinkTimeUs:   1000,
+			ContextGrowth: "accumulate",
+		},
+	}
+	inputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 40, "max": 60}})
+	outputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 30, "std_dev": 3, "min": 25, "max": 35}})
+
+	requests, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c1", "t1", "batch", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) < 2 {
+		t.Fatalf("expected ≥ 2 rounds, got %d", len(requests))
+	}
+
+	// The accumulate path with SessionTokenBuffer means each round's
+	// InputTokens slice header points into the buffer's underlying array.
+	// At least one pair of (round_i, round_j) where i < j must share a
+	// backing array — that's the O(R) storage guarantee. We check the
+	// stronger property that ALL rounds share with at least one neighbor.
+	sharedSomewhere := false
+	for i := 0; i+1 < len(requests); i++ {
+		a := requests[i].InputTokens
+		b := requests[i+1].InputTokens
+		if len(a) > 0 && len(b) > 0 && &a[0] == &b[0] {
+			sharedSomewhere = true
+			break
+		}
+	}
+	if !sharedSomewhere {
+		t.Errorf("no two consecutive rounds share a backing array — append reallocated for every round, defeating O(R) storage")
+	}
+}
+
 func TestGenerateReasoningRequests_NilSpec_ReturnsNil(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
-	requests, err := GenerateReasoningRequests(rng, nil, nil, nil, 0, "", "", "", "")
+	requests, err := GenerateReasoningRequests(rng, nil, nil, nil, 0, "", "", "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,12 +11,19 @@ import (
 // GenerateReasoningRequests generates multi-turn conversation requests.
 // For each session: round 0 is a normal request; subsequent rounds have
 // increasing input lengths if context_growth == "accumulate".
+//
+// When prefix is non-empty it is prepended to every round's InputTokens
+// (req.PrefixLength is set to len(prefix)). Under accumulate, prefix becomes
+// the first chunk in the shared session buffer so all rounds share the same
+// prefix bytes — eliminating the legacy O(R) prefix-copy tax per round
+// (#1445).
 func GenerateReasoningRequests(
 	rng *rand.Rand,
 	spec *ReasoningSpec,
 	inputSampler, outputSampler LengthSampler,
 	startTime int64,
 	clientID, tenantID, sloClass, model string,
+	prefix []int,
 ) ([]*sim.Request, error) {
 	if spec == nil || spec.MultiTurn == nil {
 		return nil, nil
@@ -39,7 +46,15 @@ func GenerateReasoningRequests(
 	sessionID := fmt.Sprintf("sess_%d", rng.Int63())
 	var requests []*sim.Request
 	currentTime := startTime
-	var contextPrefix []int // accumulated context from prior rounds (actual tokens)
+	// Shared session token buffer (#1445). Replaces the prior O(R²) eager copy
+	// pattern. Each accumulate round's InputTokens is a flat sub-slice into
+	// buf's underlying array; buf grows by amortized-O(1) append, so total
+	// per-session memory is O(R) including the prefix (seeded once below).
+	buf := NewSessionTokenBuffer()
+	prefixLen := int64(len(prefix))
+	if prefixLen > 0 && mt.ContextGrowth == "accumulate" {
+		buf.Append(prefix)
+	}
 
 	for round := 0; round < mt.MaxRounds; round++ {
 		inputLen := inputSampler.Sample(rng)
@@ -49,10 +64,20 @@ func GenerateReasoningRequests(
 		newInputTokens := sim.GenerateRandomTokenIDs(rng, inputLen)
 		outputTokens := sim.GenerateRandomTokenIDs(rng, outputLen)
 
-		// Build input: prepend accumulated context if accumulating
+		// Build input.
+		// - Accumulate: route through the shared buffer (prefix already seeded
+		//   at index 0). Round N's InputTokens spans [0, end_of_rN_input).
+		// - Non-accumulate: each round is fresh; if prefix is set, prepend it
+		//   (one O(prefix+input) copy per round; O(R) total — not the
+		//   quadratic pattern we're eliminating).
 		var inputTokens []int
-		if mt.ContextGrowth == "accumulate" && round > 0 {
-			inputTokens = append(append([]int{}, contextPrefix...), newInputTokens...)
+		if mt.ContextGrowth == "accumulate" {
+			_, inputEnd := buf.Append(newInputTokens)
+			inputTokens = buf.Slice(0, inputEnd)
+		} else if prefixLen > 0 {
+			inputTokens = make([]int, 0, len(prefix)+inputLen)
+			inputTokens = append(inputTokens, prefix...)
+			inputTokens = append(inputTokens, newInputTokens...)
 		} else {
 			inputTokens = newInputTokens
 		}
@@ -79,14 +104,15 @@ func GenerateReasoningRequests(
 			SessionID:    sessionID,
 			RoundIndex:   round,
 			ReasonRatio:  reasonRatio,
+			PrefixLength: int(prefixLen),
 		}
 		requests = append(requests, req)
 
-		// Update accumulated context for next round: append this round's
-		// new input + output tokens so the next round sees the full history.
+		// Update accumulated context for next round: this round's input is
+		// already in the buffer; append its output so the next round sees
+		// the full history.
 		if mt.ContextGrowth == "accumulate" {
-			contextPrefix = append(contextPrefix, newInputTokens...)
-			contextPrefix = append(contextPrefix, outputTokens...)
+			buf.Append(outputTokens)
 		}
 
 		// Next round arrives after think time

@@ -417,8 +417,8 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 	}
 
 	// Auto-fill: if client didn't set a budget, cap at remaining context window.
-	if r.MaxOutputLen == 0 && sim.maxModelLen > 0 && int64(len(r.InputTokens)) < sim.maxModelLen {
-		r.MaxOutputLen = int(sim.maxModelLen) - len(r.InputTokens)
+	if r.MaxOutputLen == 0 && sim.maxModelLen > 0 && r.InputLen() < sim.maxModelLen {
+		r.MaxOutputLen = int(sim.maxModelLen) - int(r.InputLen())
 	}
 
 	// Guard 0: Negative MaxOutputLen check (R3)
@@ -438,9 +438,9 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 
 	// Guard 1: MaxModelLen check
 	if sim.maxModelLen > 0 {
-		if int64(len(r.InputTokens)) >= sim.maxModelLen {
+		if r.InputLen() >= sim.maxModelLen {
 			logrus.Warnf("dropping request %s: input length %d >= MaxModelLen %d (no room for output)",
-				r.ID, len(r.InputTokens), sim.maxModelLen)
+				r.ID, r.InputLen(), sim.maxModelLen)
 			sim.Metrics.DroppedUnservable++
 			delete(sim.Metrics.Requests, r.ID)
 			if sim.OnRequestDone != nil {
@@ -451,10 +451,10 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 			return
 		}
 		if r.MaxOutputLen > 0 {
-			totalSeqLen := int64(len(r.InputTokens)) + int64(r.MaxOutputLen)
+			totalSeqLen := r.InputLen() + int64(r.MaxOutputLen)
 			if totalSeqLen > sim.maxModelLen {
 				logrus.Warnf("dropping request %s: total sequence length %d (input=%d + budget=%d) exceeds MaxModelLen %d",
-					r.ID, totalSeqLen, len(r.InputTokens), r.MaxOutputLen, sim.maxModelLen)
+					r.ID, totalSeqLen, r.InputLen(), r.MaxOutputLen, sim.maxModelLen)
 				sim.Metrics.DroppedUnservable++
 				delete(sim.Metrics.Requests, r.ID)
 				if sim.OnRequestDone != nil {
@@ -468,7 +468,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 	}
 
 	// Guard 2: KV capacity check (defense-in-depth, always active)
-	blocksNeeded := (int64(len(r.InputTokens)) + sim.KVCache.BlockSize() - 1) / sim.KVCache.BlockSize()
+	blocksNeeded := (r.InputLen() + sim.KVCache.BlockSize() - 1) / sim.KVCache.BlockSize()
 	if blocksNeeded > sim.KVCache.TotalCapacity() {
 		logrus.Warnf("dropping request %s: input requires %d KV blocks but cache has only %d total",
 			r.ID, blocksNeeded, sim.KVCache.TotalCapacity())
@@ -483,7 +483,7 @@ func (sim *Simulator) EnqueueRequest(r *Request) {
 	}
 
 	// Input tokens counted BEFORE past-due check (request was received)
-	sim.Metrics.TotalInputTokens += len(r.InputTokens)
+	sim.Metrics.TotalInputTokens += int(r.InputLen())
 
 	// Past-due guard (EC-2): check BEFORE enqueue to avoid enqueue-then-remove.
 	// Request is counted as timed_out, not dropped_unservable.
@@ -600,7 +600,7 @@ func (sim *Simulator) recordRequestCompletion(req *Request) {
 	// of OutputLen. PD 1-output decode sub-requests are the exception: their PI_final
 	// lands at InputLen+1 (one step past the InputLen threshold), so decodeTokens==OutputLen
 	// already — the guard prevents double-counting in that case.
-	decodeTokens := int(req.ProgressIndex) - len(req.InputTokens)
+	decodeTokens := int(req.ProgressIndex) - int(req.InputLen())
 	if decodeTokens < len(req.OutputTokens) {
 		decodeTokens++ // prefill-generated first token (vLLM parity)
 	}
@@ -758,7 +758,7 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 	// completion time in recordRequestCompletion to avoid double-counting when a preempted
 	// request re-runs from ProgressIndex=0.
 	for _, req := range sim.RunningBatch.Requests {
-		if req.ProgressIndex < util.Len64(req.InputTokens) {
+		if req.ProgressIndex < req.InputLen() {
 			req.ProgressIndex = sim.reqNumComputedTokens[req.ID]
 			// ToDo: Go through the newly allocated blocks for this request;
 			// Make sure they are cached, if they're full
@@ -778,7 +778,7 @@ func (sim *Simulator) executeBatchStep(now int64) int64 {
 		// post-preemption TTFT. req.FirstTokenTime is a scalar assignment (not an
 		// accumulation), so overwriting it is safe. TTFTSum is not accumulated here;
 		// it is accumulated exactly once at completion time in recordRequestCompletion.
-		if req.ProgressIndex == util.Len64(req.InputTokens) && !req.TTFTSet {
+		if req.ProgressIndex == req.InputLen() && !req.TTFTSet {
 			req.TTFTSet = true
 			req.FirstTokenTime = now + currStepAdvance + sim.latencyModel.OutputTokenProcessingTime() - req.ArrivalTime
 			sim.Metrics.RequestTTFTs[req.ID] = float64(req.FirstTokenTime)
@@ -805,7 +805,7 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 	remaining := []*Request{}
 	for _, req := range sim.RunningBatch.Requests {
 		// in cases where there are 0 output tokens, set it to 1 manually to avoid errors
-		if req.ProgressIndex >= util.Len64(req.InputTokens)+max(util.Len64(req.OutputTokens), 1)-1 {
+		if req.ProgressIndex >= req.InputLen()+max(util.Len64(req.OutputTokens), 1)-1 {
 			// State transitions
 			req.State = StateCompleted
 			// Zero-output requests complete at prefill end with no decode phase.
@@ -823,7 +823,7 @@ func (sim *Simulator) processCompletions(now, currStepAdvance int64) []*Request 
 			// for the final token.
 			// ITL is NOT appended here — executeBatchStep already recorded it
 			// for this decode step (fix for #524 phantom ITL entry).
-			if len(req.OutputTokens) > 0 && req.ProgressIndex < util.Len64(req.InputTokens)+util.Len64(req.OutputTokens) {
+			if len(req.OutputTokens) > 0 && req.ProgressIndex < req.InputLen()+util.Len64(req.OutputTokens) {
 				ok := sim.KVCache.AllocateKVBlocks(req, req.ProgressIndex, req.ProgressIndex+1, []int64{})
 				if !ok {
 					logrus.Errorf("[tick %07d] KV allocation failed for completing request %s (request will still complete) — this indicates a cache accounting bug", now, req.ID)

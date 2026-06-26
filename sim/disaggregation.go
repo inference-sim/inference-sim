@@ -134,7 +134,7 @@ func NewPrefixThresholdDecider(threshold, blockSize int, cacheQuery map[string]f
 //   - cacheQuery is nil, or the selected instance is missing from the map,
 //     or its closure is nil (pod not yet registered / just removed)
 func (p *PrefixThresholdDecider) Decide(req *Request, state *RouterState) DisaggregationDecision {
-	if len(req.InputTokens) == 0 {
+	if req.InputLen() == 0 {
 		return DisaggregationDecision{Disaggregate: false}
 	}
 	if state == nil || state.SelectedInstance == "" || p.cacheQuery == nil {
@@ -144,8 +144,8 @@ func (p *PrefixThresholdDecider) Decide(req *Request, state *RouterState) Disagg
 	if !ok || fn == nil {
 		return DisaggregationDecision{Disaggregate: false}
 	}
-	cachedBlocks := fn(req.InputTokens)
-	nonCachedTokens := len(req.InputTokens) - cachedBlocks*p.blockSize
+	cachedBlocks := fn(req.FullInputTokens())
+	nonCachedTokens := int(req.InputLen()) - cachedBlocks*p.blockSize
 	return DisaggregationDecision{Disaggregate: nonCachedTokens > p.threshold}
 }
 

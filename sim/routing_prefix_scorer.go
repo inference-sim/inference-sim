@@ -33,7 +33,7 @@ func newPrefixAffinityScorer(blockSize int) (scorerFunc, observerFunc) {
 			return scores
 		}
 		// Compute block hashes once and cache for the observer
-		cachedHashes = idx.ComputeBlockHashes(req.InputTokens)
+		cachedHashes = idx.ComputeBlockHashes(req.FullInputTokens())
 		cachedReqID = req.ID
 		totalBlocks := len(cachedHashes)
 		for _, snap := range snapshots {
@@ -56,7 +56,7 @@ func newPrefixAffinityScorer(blockSize int) (scorerFunc, observerFunc) {
 		// cachedReqID is "" and req.ID is also "" (both zero-values).
 		hashes := cachedHashes
 		if req.ID != cachedReqID || cachedHashes == nil {
-			hashes = idx.ComputeBlockHashes(req.InputTokens)
+			hashes = idx.ComputeBlockHashes(req.FullInputTokens())
 		}
 		idx.RecordBlocks(hashes, targetInstance)
 	}

@@ -433,7 +433,7 @@ func (i *InstanceSimulator) TransitionTo(state sim.InstanceState) {
 // the decode instance becomes non-routable between KVTransferStartedEvent
 // and KVTransferCompletedEvent.
 func (i *InstanceSimulator) ReserveTransferredKV(req *sim.Request) bool {
-	inputLen := int64(len(req.InputTokens))
+	inputLen := req.InputLen()
 	if inputLen == 0 {
 		req.ProgressIndex = 0
 		return true

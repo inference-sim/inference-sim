@@ -48,10 +48,16 @@ type SessionBlueprint struct {
 
 // activeSession tracks mutable per-session lifecycle state.
 type activeSession struct {
-	blueprint     *SessionBlueprint
-	currentRound  int
-	contextTokens []int // accumulated input + output from prior rounds
-	state         sessionState
+	blueprint    *SessionBlueprint
+	currentRound int
+	// buf holds the session's growable shared token buffer for accumulate mode.
+	// Layout: [prefix | r0_conversation | r0_output | r1_conversation | r1_output | ... | rN_newInput].
+	// Each follow-up round's Request.InputTokens is a flat slice into this
+	// buffer's underlying array — replaces the legacy O(R²) eager copy (#1445).
+	// nil when ContextGrowth != "accumulate".
+	buf    *SessionTokenBuffer
+	seeded bool // false until first OnComplete seeds prefix + round-0 conversation
+	state  sessionState
 }
 
 // SessionManager tracks active sessions and generates follow-up rounds on completion.
@@ -73,8 +79,13 @@ func NewSessionManager(blueprints []SessionBlueprint) *SessionManager {
 		if bp.MaxRounds < 1 && !bp.UnlimitedRounds {
 			panic(fmt.Sprintf("NewSessionManager: session %s has MaxRounds=%d, must be >= 1", bp.SessionID, bp.MaxRounds))
 		}
+		var buf *SessionTokenBuffer
+		if bp.ContextGrowth == "accumulate" {
+			buf = NewSessionTokenBuffer()
+		}
 		sm.sessions[bp.SessionID] = &activeSession{
 			blueprint: bp,
+			buf:       buf,
 			state:     sessionActive,
 		}
 	}
@@ -170,46 +181,49 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 
 	// Context accumulation (BC-8): use ACTUAL generated output, not oracle OutputTokens.
 	// For length-capped requests, ProgressIndex - len(InputTokens) gives actual output count.
-	actualOutputLen := max(int(req.ProgressIndex)-len(req.InputTokens), 0)
+	actualOutputLen := max(int(req.ProgressIndex)-int(req.InputLen()), 0)
 
 	var inputTokens []int
 	if bp.ContextGrowth == "accumulate" {
-		// contextTokens is prefix-free (invariant: GenerateReasoningRequests accumulates
-		// raw newInputTokens, never the prefix; generator.go warns about double-prepend).
-		// req.InputTokens = [prefix... | conversation...], so
-		// strip the prefix before computing the new suffix to avoid double-counting
-		// the prefix block in contextTokens. When bp.Prefix is nil/empty, rawConversation
-		// equals req.InputTokens and behavior is identical to the no-prefix path.
+		// Shared-buffer accumulation (#1445). The buffer's layout is
+		// [prefix | r0_conversation | r0_output | r1_conversation | r1_output | ... | rN_newInput],
+		// observationally identical to the legacy [prefix | accumulated context | newInput]
+		// concatenation but stored as one growable slice instead of fresh copies per round.
 		//
-		// Only the NEW suffix is appended (req.InputTokens[len(contextTokens):] in the
-		// no-prefix case). Appending rawConversation in full would cause quadratic growth
-		// (~2× per round) because it re-includes the accumulated context.
-		//
-		// Guard: if req.InputTokens is shorter than bp.Prefix (defensive — e.g. malformed
-		// trace replay or zero-length sampler), treat the entire input as conversation
-		// to avoid a slice-bounds panic.
-		rawConversation := req.InputTokens
-		if len(bp.Prefix) <= len(req.InputTokens) {
-			rawConversation = req.InputTokens[len(bp.Prefix):]
+		// Seed on the first call: append prefix (if any), then the conversation
+		// portion of round 0's input. Mirrors the legacy guard at the strip site:
+		// if round 0's input is shorter than the prefix (defensive — e.g. malformed
+		// trace replay), treat the entire input as conversation to avoid a slice
+		// bounds panic.
+		if !sess.seeded {
+			if len(bp.Prefix) > 0 {
+				sess.buf.Append(bp.Prefix)
+			}
+			rawConversation := req.FullInputTokens()
+			if int64(len(bp.Prefix)) <= req.InputLen() {
+				rawConversation = req.InputTokenSlice(int64(len(bp.Prefix)), req.InputLen())
+			}
+			sess.buf.Append(rawConversation)
+			sess.seeded = true
 		}
-		if len(rawConversation) > len(sess.contextTokens) {
-			sess.contextTokens = append(sess.contextTokens, rawConversation[len(sess.contextTokens):]...)
-		}
+		// On subsequent calls, req.InputTokens for round N is sess.buf.Slice(0, end_of_rN_input)
+		// — buf already covers it. We append only the round's actual output and
+		// the new round's input.
 		if actualOutputLen > 0 && len(req.OutputTokens) > 0 {
 			outTokens := req.OutputTokens
 			if actualOutputLen < len(outTokens) {
 				outTokens = outTokens[:actualOutputLen]
 			}
-			sess.contextTokens = append(sess.contextTokens, outTokens...)
+			sess.buf.Append(outTokens)
 		}
-		inputTokens = append(append([]int{}, sess.contextTokens...), newInputTokens...)
+		_, inputEnd := sess.buf.Append(newInputTokens)
+		inputTokens = sess.buf.Slice(0, inputEnd)
 	} else {
 		inputTokens = newInputTokens
-	}
-
-	// Prepend prefix
-	if len(bp.Prefix) > 0 {
-		inputTokens = append(append([]int{}, bp.Prefix...), inputTokens...)
+		// Non-accumulate: prepend prefix freshly (no shared buffer in this mode).
+		if len(bp.Prefix) > 0 {
+			inputTokens = append(append([]int{}, bp.Prefix...), inputTokens...)
+		}
 	}
 
 	sess.currentRound++

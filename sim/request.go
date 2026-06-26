@@ -115,6 +115,29 @@ func (req *Request) IsMultimodal() bool {
 	return req.ImageTokenCount > 0 || req.AudioTokenCount > 0 || req.VideoTokenCount > 0
 }
 
+// InputLen returns the total number of input tokens without forcing materialization.
+// Canonical replacement for `len(req.InputTokens)` and `util.Len64(req.InputTokens)`
+// at call sites that need only the length (#1445).
+func (req *Request) InputLen() int64 {
+	return int64(len(req.InputTokens))
+}
+
+// FullInputTokens returns the full input-token sequence as a flat slice. The slice
+// is already flat today (a view into a session-scoped shared buffer when produced
+// by multi-turn workloads); the accessor exists as a forward-compatible migration
+// point and to mark intent at call sites that need the whole sequence (trace
+// export, scorers that hash the full prefix) (#1445).
+func (req *Request) FullInputTokens() []int {
+	return req.InputTokens
+}
+
+// InputTokenSlice returns the slice spanning the absolute index range [start, end).
+// Replaces direct `req.InputTokens[start:end]` reads — same view into the underlying
+// array, no copy (#1445).
+func (req *Request) InputTokenSlice(start, end int64) []int {
+	return req.InputTokens[start:end]
+}
+
 // GenerateRandomTokenIDs creates a slice of random token IDs in [0, MaxTokenID).
 // RNG calls: length × Intn(MaxTokenID).
 func GenerateRandomTokenIDs(rng *rand.Rand, length int) []int {

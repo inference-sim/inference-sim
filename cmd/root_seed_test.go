@@ -125,3 +125,81 @@ func TestSeedOverride_YAMLSeedPreserved_WhenCLINotSpecified(t *testing.T) {
 		}
 	}
 }
+
+// makeMultiTurnAccumulateSpec returns a WorkloadSpec exercising the multi-turn
+// accumulate path that PR #1445 changed (SessionTokenBuffer storage). Drives
+// the open-loop reasoning generator.
+func makeMultiTurnAccumulateSpec(seed int64) *workload.WorkloadSpec {
+	rr := 10.0
+	return &workload.WorkloadSpec{
+		Version: "2", Seed: seed, Category: "language", AggregateRate: rr,
+		Clients: []workload.ClientSpec{{
+			ID: "c1", TenantID: "t1", RateFraction: 1.0, SLOClass: "standard",
+			Arrival:    workload.ArrivalSpec{Process: "poisson"},
+			InputDist:  workload.DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 80, "std_dev": 10, "min": 50, "max": 150}},
+			OutputDist: workload.DistSpec{Type: "exponential", Params: map[string]float64{"mean": 40}},
+			Reasoning: &workload.ReasoningSpec{
+				MultiTurn: &workload.MultiTurnSpec{
+					MaxRounds:     5,
+					ThinkTimeUs:   1000,
+					ContextGrowth: "accumulate",
+				},
+			},
+		}},
+	}
+}
+
+// TestSeedDeterminism_MultiTurnAccumulate verifies INV-6 under the delta-encoded
+// multi-turn path introduced in PR #1445: same seed must produce byte-identical
+// per-request arrival times, input lengths, AND input token VALUES across runs.
+// The token-value check is the load-bearing one — it catches representation
+// changes (e.g. SessionTokenBuffer slicing) that fail to preserve content.
+func TestSeedDeterminism_MultiTurnAccumulate(t *testing.T) {
+	const seed = 7777
+	spec1 := makeMultiTurnAccumulateSpec(seed)
+	spec2 := makeMultiTurnAccumulateSpec(seed)
+
+	horizon := int64(1e7)
+	r1, err := workload.GenerateRequests(spec1, horizon, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2, err := workload.GenerateRequests(spec2, horizon, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(r1) != len(r2) {
+		t.Fatalf("INV-6: different request counts: %d vs %d", len(r1), len(r2))
+	}
+	if len(r1) == 0 {
+		t.Fatal("expected non-empty request set for multi-turn accumulate workload")
+	}
+	for i := range r1 {
+		if r1[i].ArrivalTime != r2[i].ArrivalTime {
+			t.Errorf("INV-6: request %d arrival diverged: %d vs %d", i, r1[i].ArrivalTime, r2[i].ArrivalTime)
+		}
+		if r1[i].InputLen() != r2[i].InputLen() {
+			t.Errorf("INV-6: request %d input length diverged: %d vs %d", i, r1[i].InputLen(), r2[i].InputLen())
+		}
+		// Spot-check token VALUES at three positions in each request — first,
+		// middle, last. A representation change that breaks determinism would
+		// surface as a value mismatch at one of these.
+		a := r1[i].FullInputTokens()
+		b := r2[i].FullInputTokens()
+		if len(a) != len(b) {
+			t.Errorf("INV-6: request %d FullInputTokens length diverged", i)
+			continue
+		}
+		positions := []int{0, len(a) / 2, len(a) - 1}
+		for _, p := range positions {
+			if p < 0 || p >= len(a) {
+				continue
+			}
+			if a[p] != b[p] {
+				t.Errorf("INV-6: request %d token[%d] diverged: %d vs %d", i, p, a[p], b[p])
+				break
+			}
+		}
+	}
+}

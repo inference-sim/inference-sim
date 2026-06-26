@@ -56,7 +56,7 @@ func NewParentRequest(req *sim.Request, blockSizeTokens int64) *ParentRequest {
 	if blockSizeTokens <= 0 {
 		panic("NewParentRequest: blockSizeTokens must be > 0")
 	}
-	inputLen := int64(len(req.InputTokens))
+	inputLen := req.InputLen()
 	numBlocks := (inputLen + blockSizeTokens - 1) / blockSizeTokens
 	return &ParentRequest{
 		ID:              req.ID,

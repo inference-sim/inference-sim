@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -41,5 +42,48 @@ func TestRequestIsMultimodal(t *testing.T) {
 				t.Errorf("IsMultimodal() = %v, want %v (req=%+v)", got, tc.want, tc.req)
 			}
 		})
+	}
+}
+
+// TestRequestInputLen verifies that InputLen returns int64(len(InputTokens))
+// for both empty and populated requests (BC-3, #1445).
+func TestRequestInputLenZero(t *testing.T) {
+	r := &Request{}
+	if got := r.InputLen(); got != 0 {
+		t.Fatalf("InputLen() on empty request = %d, want 0", got)
+	}
+}
+
+func TestRequestInputLenMatchesLen(t *testing.T) {
+	r := &Request{InputTokens: []int{1, 2, 3, 4, 5}}
+	if got, want := r.InputLen(), int64(5); got != want {
+		t.Fatalf("InputLen() = %d, want %d", got, want)
+	}
+}
+
+func TestRequestFullInputTokensMatchesField(t *testing.T) {
+	want := []int{7, 8, 9}
+	r := &Request{InputTokens: want}
+	got := r.FullInputTokens()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("FullInputTokens() = %v, want %v", got, want)
+	}
+}
+
+func TestRequestInputTokenSliceRange(t *testing.T) {
+	r := &Request{InputTokens: []int{10, 11, 12, 13, 14}}
+	got := r.InputTokenSlice(1, 4)
+	want := []int{11, 12, 13}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("InputTokenSlice(1,4) = %v, want %v", got, want)
+	}
+}
+
+func TestRequestInputTokenSliceFull(t *testing.T) {
+	r := &Request{InputTokens: []int{10, 11, 12}}
+	got := r.InputTokenSlice(0, 3)
+	want := []int{10, 11, 12}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("InputTokenSlice(0,3) = %v, want %v", got, want)
 	}
 }
