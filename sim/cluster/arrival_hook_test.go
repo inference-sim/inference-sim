@@ -1,9 +1,11 @@
 package cluster
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
 // TestArrivalHook_FiresOncePerInitialRequest verifies the hook is invoked
@@ -207,6 +209,87 @@ func TestArrivalHook_BeyondHorizonFollowUpsExcluded(t *testing.T) {
 	for _, req := range initial {
 		if seenIDs[req.ID] != 1 {
 			t.Fatalf("initial request %q: hook fired %d times, want 1", req.ID, seenIDs[req.ID])
+		}
+	}
+}
+
+// TestINV13_ArrivalHookRunReplayParity asserts the central INV-13 claim of
+// issue #1440: trace records captured via the arrival hook on a run, when
+// exported and replayed through a fresh ClusterSimulator with the same
+// config, produce identical per-request TTFT and E2E metrics. This closes
+// the gap noted in the round-3 review — previously only record count +
+// ArrivalTimeUs monotonicity were checked, not the full run→replay loop
+// for the hook-driven path.
+func TestINV13_ArrivalHookRunReplayParity(t *testing.T) {
+	const fixedSeed int64 = 1234
+	initial := newTestRequests(20)
+
+	cfg := newTestDeploymentConfig(1)
+	cfg.Seed = fixedSeed
+
+	// WHEN: direct run captures records via the arrival hook (the new path).
+	csRun := NewClusterSimulator(cfg, NewSliceRequestSource(initial), nil)
+	var traceArrivals []*sim.Request
+	csRun.SetArrivalHook(func(req *sim.Request) {
+		traceArrivals = append(traceArrivals, req)
+	})
+	mustRun(t, csRun)
+	runTTFTs := csRun.AggregatedMetrics().RequestTTFTs
+	runE2Es := csRun.AggregatedMetrics().RequestE2Es
+
+	if len(runTTFTs) == 0 {
+		t.Fatal("INV-13: direct run produced no completed requests — cannot verify parity")
+	}
+	if len(traceArrivals) != len(initial) {
+		t.Fatalf("hook captured %d requests, want %d (one per initial)", len(traceArrivals), len(initial))
+	}
+
+	// AND: export the hook-captured trace and reload it as replay would.
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "trace.yaml")
+	dataPath := filepath.Join(dir, "trace.csv")
+	records := workload.RequestsToTraceRecords(traceArrivals)
+	hdr := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	if err := workload.ExportTraceV2(hdr, records, headerPath, dataPath); err != nil {
+		t.Fatalf("ExportTraceV2: %v", err)
+	}
+	loaded, err := workload.LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatalf("LoadTraceV2: %v", err)
+	}
+	replayReqs, err := workload.LoadTraceV2Requests(loaded, fixedSeed)
+	if err != nil {
+		t.Fatalf("LoadTraceV2Requests: %v", err)
+	}
+
+	// WHEN: replay the trace through a fresh ClusterSimulator with the same config.
+	csReplay := NewClusterSimulator(cfg, NewSliceRequestSource(replayReqs), nil)
+	mustRun(t, csReplay)
+	replayTTFTs := csReplay.AggregatedMetrics().RequestTTFTs
+	replayE2Es := csReplay.AggregatedMetrics().RequestE2Es
+
+	// THEN: per-request TTFT and E2E are identical (INV-13).
+	if len(runTTFTs) != len(replayTTFTs) {
+		t.Fatalf("INV-13: completed-request count diverged: run=%d replay=%d", len(runTTFTs), len(replayTTFTs))
+	}
+	for id, ttft := range runTTFTs {
+		got, ok := replayTTFTs[id]
+		if !ok {
+			t.Errorf("INV-13: request %q present in run, missing from replay TTFTs", id)
+			continue
+		}
+		if got != ttft {
+			t.Errorf("INV-13: request %q TTFT mismatch: run=%v replay=%v", id, ttft, got)
+		}
+	}
+	for id, e2e := range runE2Es {
+		got, ok := replayE2Es[id]
+		if !ok {
+			t.Errorf("INV-13: request %q present in run, missing from replay E2Es", id)
+			continue
+		}
+		if got != e2e {
+			t.Errorf("INV-13: request %q E2E mismatch: run=%v replay=%v", id, e2e, got)
 		}
 	}
 }

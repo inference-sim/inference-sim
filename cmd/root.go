@@ -1784,8 +1784,15 @@ var runCmd = &cobra.Command{
 		// trace is disabled). Saturation analysis continues to use the
 		// preGeneratedRequests + followUpRequests path below — those slices
 		// remain populated for that purpose only.
+		//
+		// Install/export coupling: traceArrivals is declared nil here and
+		// assigned a non-nil empty slice ONLY inside the install branch.
+		// A nil traceArrivals at the export site below with traceOutput
+		// non-empty means the install branch was dropped — we fail loudly
+		// rather than write a silent empty trace (R1).
 		var traceArrivals []*sim.Request
 		if traceOutput != "" {
+			traceArrivals = make([]*sim.Request, 0)
 			cs.SetArrivalHook(func(req *sim.Request) {
 				traceArrivals = append(traceArrivals, req)
 			})
@@ -1829,6 +1836,13 @@ var runCmd = &cobra.Command{
 		// the arrival hook (issue #1440) — already in clock-monotonic order
 		// per INV-3, so no sort is required.
 		if traceOutput != "" {
+			// Install/export coupling guard (R1): traceArrivals is a non-nil
+			// empty slice when SetArrivalHook ran above. A nil here means
+			// the install branch was dropped or moved without updating this
+			// site — refuse to write a silent empty trace.
+			if traceArrivals == nil {
+				logrus.Fatalf("Trace export: arrival hook was not installed but --trace-output=%q is set — install/export branches diverged (issue #1440)", traceOutput)
+			}
 			records := workload.RequestsToTraceRecords(traceArrivals)
 			header := &workload.TraceHeader{
 				Version:           3,
