@@ -46,8 +46,8 @@ func TestSessionTokenBufferLinearGrowth(t *testing.T) {
 	if b.Len() != totalLen {
 		t.Fatalf("Len after %d rounds = %d, want %d", rounds, b.Len(), totalLen)
 	}
-	if int64(b.Cap()) > totalLen*3 {
-		t.Fatalf("Cap = %d, want ≤ 3*Len = %d (linear growth bound)", b.Cap(), totalLen*3)
+	if int64(b.cap_()) > totalLen*3 {
+		t.Fatalf("Cap = %d, want ≤ 3*Len = %d (linear growth bound)", b.cap_(), totalLen*3)
 	}
 }
 
@@ -92,6 +92,18 @@ func TestSessionTokenBufferSliceAliasesAcrossAppends(t *testing.T) {
 	if &first[0] != &second[0] {
 		t.Fatalf("Slice() returned distinct backing arrays after Append — pre-allocated capacity should prevent realloc")
 	}
+}
+
+// TestNewSessionTokenBufferWithCapacityRejectsNegative verifies R3 validation:
+// a negative capacity is a caller calculation bug and must panic, not be
+// silently clamped (NEW-MOD-4, #1445).
+func TestNewSessionTokenBufferWithCapacityRejectsNegative(t *testing.T) {
+	defer func() {
+		if rec := recover(); rec == nil {
+			t.Fatalf("expected panic for negative capacity, got none")
+		}
+	}()
+	_ = NewSessionTokenBufferWithCapacity(-1)
 }
 
 // TestSessionTokenBufferSliceBounds asserts that out-of-bounds Slice() calls

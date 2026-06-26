@@ -2,6 +2,7 @@ package workload
 
 import (
 	"math/rand"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -30,6 +31,93 @@ type constantSampler struct {
 }
 
 func (s *constantSampler) Sample(_ *rand.Rand) int { return s.value }
+
+// TestSession_AccumulateMalformedTrace_PrefixLongerThanInput exercises the
+// defensive fallback at session.go:198-213 where round 0's InputTokens is
+// shorter than bp.Prefix (e.g., malformed trace replay). Verifies that
+// (a) no panic occurs, (b) the follow-up is still generated with the same
+// byte content as the legacy session.go produced (NEW-MOD-1, #1445).
+func TestSession_AccumulateMalformedTrace_PrefixLongerThanInput(t *testing.T) {
+	bp := makeTestBlueprint("sess-malformed", 3, 1000, "accumulate", 1_000_000)
+	bp.Prefix = sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(20)), 10) // 10 prefix tokens
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	// Round 0: InputTokens shorter than prefix (3 tokens vs 10 expected).
+	inputR0 := []int{1, 2, 3}
+	outputR0 := []int{91, 92}
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "sess-malformed", RoundIndex: 0,
+		State:         sim.StateCompleted,
+		ProgressIndex: int64(len(inputR0) + len(outputR0)), // 3+2 = 5
+		InputTokens:   inputR0,
+		OutputTokens:  outputR0,
+	}
+
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up despite malformed input, got %d", len(follow))
+	}
+	r1 := follow[0]
+	// Legacy/new contract: round 1 = [prefix(10) | full_short_input(3) | output(2) | newInput(10)] = 25
+	wantLen := 10 + 3 + 2 + 10
+	if len(r1.InputTokens) != wantLen {
+		t.Fatalf("round 1 InputLen = %d, want %d (malformed-trace fallback byte-equivalent to legacy)", len(r1.InputTokens), wantLen)
+	}
+	// Verify the prefix appears at position 0
+	for i, tok := range bp.Prefix {
+		if r1.InputTokens[i] != tok {
+			t.Fatalf("token[%d] = %d, want prefix token %d", i, r1.InputTokens[i], tok)
+		}
+	}
+	// Verify the (malformed) round 0 input appears verbatim after the prefix
+	for i, tok := range inputR0 {
+		if r1.InputTokens[len(bp.Prefix)+i] != tok {
+			t.Fatalf("token[%d] = %d, want round 0 input %d", len(bp.Prefix)+i, r1.InputTokens[len(bp.Prefix)+i], tok)
+		}
+	}
+}
+
+// TestSession_AccumulateContinuityGuard_RejectsMismatchedSlice verifies the
+// session continuity panic guard (NEW-IMP-1, #1445): if a caller assigns a
+// req.InputTokens that does NOT alias buf[0:buf.Len()] before the second
+// OnComplete, the guard fires.
+func TestSession_AccumulateContinuityGuard_RejectsMismatchedSlice(t *testing.T) {
+	bp := makeTestBlueprint("sess-cont-guard", 3, 1000, "accumulate", 1_000_000)
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "sess-cont-guard", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+	}
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+
+	// Simulate a caller bug: pass a fresh, different-length slice for round 1's
+	// InputTokens. The guard must panic.
+	req1Bad := &sim.Request{
+		ID: "r1", SessionID: "sess-cont-guard", RoundIndex: 1,
+		State: sim.StateCompleted, ProgressIndex: 99,
+		InputTokens: make([]int, 99), // wrong length — doesn't match buf
+		OutputTokens: make([]int, 5),
+	}
+	defer func() {
+		rec := recover()
+		if rec == nil {
+			t.Fatalf("expected panic for mismatched req.InputTokens length")
+		}
+		msg, ok := rec.(string)
+		if !ok {
+			t.Fatalf("panic value is %T, want string", rec)
+		}
+		if !strings.Contains(msg, "buffer continuity broken") {
+			t.Errorf("panic message %q does not mention buffer continuity", msg)
+		}
+	}()
+	sm.OnComplete(req1Bad, 10000)
+}
 
 // TestSession_AccumulateDoesNotReseed verifies the `seeded` flag guard:
 // once a session has produced its first follow-up, a second OnComplete call

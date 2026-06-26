@@ -43,10 +43,12 @@ func NewSessionTokenBuffer() *SessionTokenBuffer {
 // capacity. Use this when the total session size is known (e.g., open-loop
 // reasoning generation) to avoid the reallocation hazard described on
 // SessionTokenBuffer — every Slice() result remains valid through all
-// subsequent appends.
+// subsequent appends. Panics on a negative capacity (R3: validate library
+// constructor parameters; a negative value indicates a caller calculation bug
+// that should surface immediately, not be silently clamped).
 func NewSessionTokenBufferWithCapacity(capacity int64) *SessionTokenBuffer {
 	if capacity < 0 {
-		capacity = 0
+		panic(fmt.Sprintf("NewSessionTokenBufferWithCapacity: capacity must be non-negative, got %d", capacity))
 	}
 	return &SessionTokenBuffer{b: make([]int, 0, capacity)}
 }
@@ -76,8 +78,8 @@ func (s *SessionTokenBuffer) Len() int64 {
 	return int64(len(s.b))
 }
 
-// Cap returns the capacity of the underlying array. Exposed for memory tests
-// that assert linear growth (session_buffer_mem_test.go).
-func (s *SessionTokenBuffer) Cap() int {
+// cap_ returns the capacity of the underlying array. Unexported: same-package
+// memory tests access it via white-box; production code has no need.
+func (s *SessionTokenBuffer) cap_() int {
 	return cap(s.b)
 }

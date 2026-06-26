@@ -207,27 +207,39 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 				// (malformed trace replay or pathological sampler). Match the
 				// legacy behavior — treat the entire input as conversation. This
 				// preserves byte-for-byte equivalence with the pre-PR session.go
-				// path. Warn so operators can spot malformed traces.
-				logrus.Warnf("SessionManager.OnComplete: session %s round 0 input length %d < prefix length %d (malformed trace?); treating full input as conversation",
+				// path. Error severity (not warn): the condition indicates
+				// upstream data corruption that operators must investigate.
+				logrus.Errorf("SessionManager.OnComplete: session %s round 0 input length %d < prefix length %d (malformed trace?); treating full input as conversation",
 					req.SessionID, req.InputLen(), len(bp.Prefix))
 			}
 			sess.buf.Append(rawConversation)
 			sess.seeded = true
-		} else if req.InputLen() > sess.buf.Len() {
+		} else if req.InputLen() != sess.buf.Len() {
 			// Subsequent call: the previous OnComplete returned this round's
-			// InputTokens as a flat slice into sess.buf, so req.InputTokens
-			// should span buf[0:buf.Len()]. If it is somehow LONGER than buf,
-			// a caller has assigned a fresh slice that the buffer has not
-			// observed — extending from buf.Len() would silently lose tokens.
-			// This is a programming error in any caller that bypasses
-			// OnComplete's contract.
-			panic(fmt.Sprintf("SessionManager.OnComplete: session %s req.InputLen=%d > buf.Len=%d — buffer continuity broken; req.InputTokens may have been reassigned outside session.go",
+			// InputTokens as a flat slice spanning buf[0:buf.Len()], so the
+			// contract is req.InputLen() == buf.Len() exactly. Any divergence
+			// (longer OR shorter) means a caller has reassigned
+			// req.InputTokens to a different slice — appending from buf.Len()
+			// in that case either loses tokens (too long) or seeds extra
+			// tokens that the request never carried (too short). Both
+			// directions are programming errors.
+			panic(fmt.Sprintf("SessionManager.OnComplete: session %s req.InputLen=%d != buf.Len=%d — buffer continuity broken; expected req.InputTokens to alias buf[0:buf.Len()]",
 				req.SessionID, req.InputLen(), sess.buf.Len()))
 		}
 		// Append the round's actual output and the new round's input.
 		if actualOutputLen > 0 && len(req.OutputTokens) > 0 {
 			outTokens := req.OutputTokens
-			if actualOutputLen < len(outTokens) {
+			switch {
+			case actualOutputLen > len(outTokens):
+				// Over-cap defense: ProgressIndex accounting should never produce
+				// an actualOutputLen exceeding the oracle output length. If it
+				// does, log loudly and fall through to appending the full
+				// oracle output — the upstream computation has drifted and the
+				// resulting metrics are suspect. (outTokens is already the full
+				// slice; no trim needed.)
+				logrus.Errorf("SessionManager.OnComplete: session %s round %d actualOutputLen=%d > len(OutputTokens)=%d — appending full oracle output; ProgressIndex accounting may be incorrect",
+					req.SessionID, req.RoundIndex, actualOutputLen, len(outTokens))
+			case actualOutputLen < len(outTokens):
 				outTokens = outTokens[:actualOutputLen]
 				logrus.Debugf("SessionManager.OnComplete: session %s round %d length-capped — accumulating %d/%d output tokens",
 					req.SessionID, req.RoundIndex, actualOutputLen, len(req.OutputTokens))
