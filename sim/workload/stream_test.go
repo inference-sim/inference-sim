@@ -496,6 +496,155 @@ func TestLazyRequestSource_Multimodal_MatchesEager(t *testing.T) {
 	assertRequestStreamsEqual(t, eager, lazy)
 }
 
+// TestLazyRequestSource_PoppedNotYielded_StopsAtPoppedCap pins the
+// stopping rule of lazyRequestSource.Next: the cap applies to `popped`
+// (total heap pops, including suppressed intermediate closed-loop
+// rounds), not to `yielded`. Regressions that change the stop condition
+// to `l.yielded >= l.maxRequests` would yield extra round-0 requests
+// past the eager truncation point and break parity.
+//
+// Construction: 2 closed-loop reasoning clients (NOT SingleSession), so
+// each session has rounds 0, 1, 2 — all popped, only round-0 yielded.
+// With maxRequests = 6, eager truncates to first 6 in arrival order
+// (a mix of round-0 and intermediate rounds). Lazy must stop at popped
+// = 6 and yield strictly fewer than 6 requests to the cluster.
+func TestLazyRequestSource_PoppedNotYielded_StopsAtPoppedCap(t *testing.T) {
+	mk := func() *WorkloadSpec {
+		mkClient := func(id string) ClientSpec {
+			return ClientSpec{
+				ID: id, TenantID: id + "-t", SLOClass: "batch",
+				RateFraction: 0.5,
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 60, "std_dev": 10, "min": 10, "max": 200}},
+				OutputDist:   DistSpec{Type: "exponential", Params: map[string]float64{"mean": 30}},
+				Reasoning: &ReasoningSpec{
+					MultiTurn: &MultiTurnSpec{
+						MaxRounds:     3,
+						ContextGrowth: "accumulate",
+						ThinkTimeUs:   100_000,
+						SingleSession: true, // need lazy-supported variant
+					},
+				},
+			}
+		}
+		return &WorkloadSpec{
+			Version: "1", Seed: 2027, Category: "language", AggregateRate: 4.0,
+			Clients: []ClientSpec{mkClient("r1"), mkClient("r2")},
+		}
+	}
+	const tightCap = int64(4)
+	wlEager, err := GenerateWorkload(mk(), 3_000_000, tightCap)
+	if err != nil {
+		t.Fatalf("eager: %v", err)
+	}
+	src, _, _, err := GenerateWorkloadLazy(mk(), 3_000_000, tightCap)
+	if err != nil {
+		t.Fatalf("lazy: %v", err)
+	}
+	lazyReqs := drainLazy(t, src)
+	// Lazy and eager must yield the same set of round-0 requests to the
+	// cluster, including the SAME truncation effect (fewer than maxRequests
+	// if intermediate rounds consumed some of the cap).
+	assertRequestStreamsEqual(t, wlEager.Requests, lazyReqs)
+	// Sanity: the test must actually exercise the popped > yielded case.
+	// If lazy yields >= maxRequests round-0s, the cap was applied at the
+	// wrong layer.
+	if int64(len(lazyReqs)) >= tightCap {
+		t.Fatalf("yielded %d requests under cap=%d — expected fewer (intermediate rounds should consume part of the cap)", len(lazyReqs), tightCap)
+	}
+}
+
+// TestLazyRequestSource_Reasoning_TightMaxRequests_BlueprintParity pins
+// the fix for PR #1453 self-review (IMPORTANT issue #1): when
+// maxRequests is small enough to drop a later session's round-0, the
+// blueprint pre-pass must produce the SAME set of SessionBlueprints
+// as the eager path — same count, same SessionIDs, same order, same
+// per-session RNG seeds.
+//
+// Eager constructs blueprints by scanning the truncated request slice.
+// Lazy's blueprint pre-pass must mirror that exactly, including the
+// truncation effect. A pre-pass that enumerates all sessions across
+// the horizon would consume extra blueprintRNG.Int63() draws,
+// shifting all subsequent blueprint RNG seeds and breaking byte-
+// identity (INV-6) + run/replay parity (INV-13).
+//
+// Construction: 8 single-session reasoning clients × MaxRounds=2 → 16
+// round-emissions total. maxRequests=10 → eager truncates to first 10
+// in arrival order. Most clients' round-0 survives but some don't.
+// Lazy must match the surviving subset exactly.
+func TestLazyRequestSource_Reasoning_TightMaxRequests_BlueprintParity(t *testing.T) {
+	mk := func() *WorkloadSpec {
+		mkClient := func(id string) ClientSpec {
+			return ClientSpec{
+				ID: id, TenantID: id + "-t", SLOClass: "batch",
+				RateFraction: 0.125, // 8 clients × 0.125 = 1.0
+				Arrival:      ArrivalSpec{Process: "poisson"},
+				InputDist:    DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 60, "std_dev": 10, "min": 10, "max": 200}},
+				OutputDist:   DistSpec{Type: "exponential", Params: map[string]float64{"mean": 30}},
+				Reasoning: &ReasoningSpec{
+					MultiTurn: &MultiTurnSpec{
+						MaxRounds:     2,
+						ContextGrowth: "accumulate",
+						ThinkTimeUs:   100_000,
+						SingleSession: true,
+					},
+				},
+			}
+		}
+		return &WorkloadSpec{
+			Version: "1", Seed: 2031, Category: "language", AggregateRate: 4.0,
+			Clients: []ClientSpec{
+				mkClient("r0"), mkClient("r1"), mkClient("r2"), mkClient("r3"),
+				mkClient("r4"), mkClient("r5"), mkClient("r6"), mkClient("r7"),
+			},
+		}
+	}
+	const tightCap = int64(10)
+	wlEager, err := GenerateWorkload(mk(), 5_000_000, tightCap)
+	if err != nil {
+		t.Fatalf("eager: %v", err)
+	}
+	src, lazySessions, _, err := GenerateWorkloadLazy(mk(), 5_000_000, tightCap)
+	if err != nil {
+		t.Fatalf("lazy: %v", err)
+	}
+	lazyReqs := drainLazy(t, src)
+	assertRequestStreamsEqual(t, wlEager.Requests, lazyReqs)
+
+	// The point of this test: blueprints must match in count AND order
+	// AND RNG-seed-derived state. If lazy enumerated all sessions across
+	// the horizon (ignoring the cap), it would have MORE blueprints than
+	// eager — and each surviving blueprint's RNG seed would be shifted.
+	if len(wlEager.Sessions) != len(lazySessions) {
+		t.Fatalf("session count under tight cap: eager=%d lazy=%d (the pre-pass must respect maxRequests)",
+			len(wlEager.Sessions), len(lazySessions))
+	}
+	for i := range wlEager.Sessions {
+		if wlEager.Sessions[i].SessionID != lazySessions[i].SessionID {
+			t.Fatalf("blueprint %d: SessionID eager=%q lazy=%q",
+				i, wlEager.Sessions[i].SessionID, lazySessions[i].SessionID)
+		}
+		if wlEager.Sessions[i].ClientID != lazySessions[i].ClientID {
+			t.Fatalf("blueprint %d: ClientID eager=%q lazy=%q",
+				i, wlEager.Sessions[i].ClientID, lazySessions[i].ClientID)
+		}
+		// RNG byte-identity: draw one Int63 from each and compare. If
+		// blueprint RNG seeds matched, these MUST match too.
+		eDraw := wlEager.Sessions[i].RNG.Int63()
+		lDraw := lazySessions[i].RNG.Int63()
+		if eDraw != lDraw {
+			t.Fatalf("blueprint %d (session %q): RNG draw diverged eager=%d lazy=%d — blueprintRNG seeds shifted",
+				i, wlEager.Sessions[i].SessionID, eDraw, lDraw)
+		}
+	}
+	// Sanity: confirm at least one client lost its session to the cap.
+	// Otherwise the test would pass even without the fix.
+	if len(wlEager.Sessions) >= 8 {
+		t.Fatalf("test setup ineffective: expected fewer than 8 sessions to survive cap=%d, got %d — adjust the setup so the cap actually binds",
+			tightCap, len(wlEager.Sessions))
+	}
+}
+
 // TestGenerateWorkloadLazy_FallsBackOnMultiSession pins the
 // SingleSession=false fallback: any reasoning client without
 // SingleSession=true forces the caller back to GenerateWorkload.
