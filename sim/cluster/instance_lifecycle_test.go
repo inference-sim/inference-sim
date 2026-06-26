@@ -151,6 +151,19 @@ func TestInstanceLifecycle_RedirectDrainPreservesConservation(t *testing.T) {
 	cs := NewClusterSimulator(cfg, NewSliceRequestSource([]*sim.Request{}), nil)
 	inst0 := cs.instances[0]
 
+	// Issue #1440 integration check: install an arrival hook and assert
+	// REDIRECT re-injections do NOT fire it. Seeded requests bypass
+	// admission/routing (no original ClusterArrivalEvent), so the only
+	// way the hook could fire is from the redirect path — which is
+	// suppressed by the req.Redirected flag set in
+	// infra_lifecycle_event.go. A non-zero count would indicate a
+	// regression in REDIRECT marking that would corrupt trace identity
+	// (the same logical request would emit two trace records).
+	hookCalls := 0
+	cs.SetArrivalHook(func(req *sim.Request) {
+		hookCalls++
+	})
+
 	// Seed requests directly into inst0's WaitQ (bypassing admission/routing),
 	// mirroring what RoutingDecisionEvent does, so they are present at drain time.
 	// EnqueueRequest puts the request in WaitQ immediately (unlike InjectArrivalAt
@@ -195,6 +208,14 @@ func TestInstanceLifecycle_RedirectDrainPreservesConservation(t *testing.T) {
 	}
 	if m.CompletedRequests != injected {
 		t.Errorf("expected all %d redirected requests to complete, got %d", injected, m.CompletedRequests)
+	}
+
+	// Issue #1440: REDIRECT re-injections must not fire the arrival hook.
+	// These requests bypassed the original arrival event (seeded directly
+	// into WaitQ), so the only candidate fire site is the redirect path —
+	// which is suppressed by req.Redirected. Zero is the expected count.
+	if hookCalls != 0 {
+		t.Errorf("arrival hook fired %d times for REDIRECT re-injections, want 0 (issue #1440: redirected requests must not duplicate trace records)", hookCalls)
 	}
 }
 
