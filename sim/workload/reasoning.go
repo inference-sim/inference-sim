@@ -50,15 +50,38 @@ func GenerateReasoningRequests(
 	// pattern. Each accumulate round's InputTokens is a flat sub-slice into
 	// buf's underlying array; buf grows by amortized-O(1) append, so total
 	// per-session memory is O(R) including the prefix (seeded once below).
-	buf := NewSessionTokenBuffer()
+	//
+	// We pre-allocate to a heuristic capacity based on the first round's
+	// sampled lengths × MaxRounds. This eliminates within-loop reallocation
+	// for typical workloads (input/output sampler variance is bounded), making
+	// every round's Slice() result point into the SAME backing array. Even if
+	// the estimate is exceeded, Go's amortized-O(1) append keeps total memory
+	// O(R); the only cost is a one-time copy.
+	var buf *SessionTokenBuffer
 	prefixLen := int64(len(prefix))
-	if prefixLen > 0 && mt.ContextGrowth == "accumulate" {
-		buf.Append(prefix)
+
+	// Pre-sample round 0 to size the buffer; these values feed round 0 below.
+	round0Input := inputSampler.Sample(rng)
+	round0Output := outputSampler.Sample(rng)
+
+	if mt.ContextGrowth == "accumulate" {
+		estCap := prefixLen + int64(mt.MaxRounds)*int64(round0Input+round0Output)
+		buf = NewSessionTokenBufferWithCapacity(estCap)
+		if prefixLen > 0 {
+			buf.Append(prefix)
+		}
+	} else {
+		buf = NewSessionTokenBuffer()
 	}
 
 	for round := 0; round < mt.MaxRounds; round++ {
-		inputLen := inputSampler.Sample(rng)
-		outputLen := outputSampler.Sample(rng)
+		var inputLen, outputLen int
+		if round == 0 {
+			inputLen, outputLen = round0Input, round0Output
+		} else {
+			inputLen = inputSampler.Sample(rng)
+			outputLen = outputSampler.Sample(rng)
+		}
 
 		// Generate this round's new tokens
 		newInputTokens := sim.GenerateRandomTokenIDs(rng, inputLen)
