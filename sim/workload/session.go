@@ -202,17 +202,35 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 			rawConversation := req.FullInputTokens()
 			if int64(len(bp.Prefix)) <= req.InputLen() {
 				rawConversation = req.InputTokenSlice(int64(len(bp.Prefix)), req.InputLen())
+			} else {
+				// Defensive fallback: round 0's input is shorter than the prefix
+				// (malformed trace replay or pathological sampler). Match the
+				// legacy behavior — treat the entire input as conversation. This
+				// preserves byte-for-byte equivalence with the pre-PR session.go
+				// path. Warn so operators can spot malformed traces.
+				logrus.Warnf("SessionManager.OnComplete: session %s round 0 input length %d < prefix length %d (malformed trace?); treating full input as conversation",
+					req.SessionID, req.InputLen(), len(bp.Prefix))
 			}
 			sess.buf.Append(rawConversation)
 			sess.seeded = true
+		} else if req.InputLen() > sess.buf.Len() {
+			// Subsequent call: the previous OnComplete returned this round's
+			// InputTokens as a flat slice into sess.buf, so req.InputTokens
+			// should span buf[0:buf.Len()]. If it is somehow LONGER than buf,
+			// a caller has assigned a fresh slice that the buffer has not
+			// observed — extending from buf.Len() would silently lose tokens.
+			// This is a programming error in any caller that bypasses
+			// OnComplete's contract.
+			panic(fmt.Sprintf("SessionManager.OnComplete: session %s req.InputLen=%d > buf.Len=%d — buffer continuity broken; req.InputTokens may have been reassigned outside session.go",
+				req.SessionID, req.InputLen(), sess.buf.Len()))
 		}
-		// On subsequent calls, req.InputTokens for round N is sess.buf.Slice(0, end_of_rN_input)
-		// — buf already covers it. We append only the round's actual output and
-		// the new round's input.
+		// Append the round's actual output and the new round's input.
 		if actualOutputLen > 0 && len(req.OutputTokens) > 0 {
 			outTokens := req.OutputTokens
 			if actualOutputLen < len(outTokens) {
 				outTokens = outTokens[:actualOutputLen]
+				logrus.Debugf("SessionManager.OnComplete: session %s round %d length-capped — accumulating %d/%d output tokens",
+					req.SessionID, req.RoundIndex, actualOutputLen, len(req.OutputTokens))
 			}
 			sess.buf.Append(outTokens)
 		}

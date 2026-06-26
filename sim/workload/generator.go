@@ -453,9 +453,9 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 			for _, req := range reqs {
 				if req.SessionID != "" && req.RoundIndex == 0 && req.ClientID == client.ID {
 					// The first PrefixLength tokens of InputTokens are the prefix
-					if len(req.InputTokens) >= client.PrefixLength {
+					if req.InputLen() >= int64(client.PrefixLength) {
 						prefixTokens = make([]int, client.PrefixLength)
-						copy(prefixTokens, req.InputTokens[:client.PrefixLength])
+						copy(prefixTokens, req.InputTokenSlice(0, int64(client.PrefixLength)))
 					}
 					break
 				}

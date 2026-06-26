@@ -9,15 +9,46 @@
 
 package workload
 
+import "fmt"
+
 // SessionTokenBuffer holds the growable backing array for a session's
 // accumulated context plus prefix.
+//
+// # Reallocation hazard (intentional, bounded)
+//
+// When Append exceeds the buffer's capacity, Go's append allocates a new
+// backing array and copies the data. Slices previously returned by Slice()
+// still point to the OLD array. They remain content-correct (the old array's
+// data is unchanged) but become orphaned views — extending them with append
+// would not be visible through new slices.
+//
+// In BLIS this is safe because: (a) the DES is single-threaded; (b) once
+// returned to a Request, a slice is read-only for the simulator (#1445 R5
+// mutation rules); (c) total memory is bounded by Go's amortized-O(1) append
+// policy (cap ≤ 2× current len), so peak per-session bytes remain O(R) as
+// asserted by the memory tests in session_buffer_mem_test.go. To eliminate
+// the orphaning entirely when R is known upfront (open-loop generation), use
+// NewSessionTokenBufferWithCapacity.
 type SessionTokenBuffer struct {
 	b []int
 }
 
-// NewSessionTokenBuffer creates an empty buffer.
+// NewSessionTokenBuffer creates an empty buffer. Capacity grows on demand via
+// Go's amortized-O(1) append policy.
 func NewSessionTokenBuffer() *SessionTokenBuffer {
 	return &SessionTokenBuffer{}
+}
+
+// NewSessionTokenBufferWithCapacity pre-allocates the buffer to the given
+// capacity. Use this when the total session size is known (e.g., open-loop
+// reasoning generation) to avoid the reallocation hazard described on
+// SessionTokenBuffer — every Slice() result remains valid through all
+// subsequent appends.
+func NewSessionTokenBufferWithCapacity(capacity int64) *SessionTokenBuffer {
+	if capacity < 0 {
+		capacity = 0
+	}
+	return &SessionTokenBuffer{b: make([]int, 0, capacity)}
 }
 
 // Append copies the given tokens onto the end of the buffer and returns the
@@ -31,7 +62,12 @@ func (s *SessionTokenBuffer) Append(toks []int) (start, end int64) {
 
 // Slice returns a flat view of the buffer over the given absolute range. The
 // returned slice aliases the buffer's underlying array; callers must not mutate.
+// Panics with a decorated message if [start, end) is out of bounds.
 func (s *SessionTokenBuffer) Slice(start, end int64) []int {
+	n := int64(len(s.b))
+	if start < 0 || end < start || end > n {
+		panic(fmt.Sprintf("SessionTokenBuffer.Slice: invalid range [%d, %d) for buf len=%d", start, end, n))
+	}
 	return s.b[start:end]
 }
 
@@ -40,7 +76,8 @@ func (s *SessionTokenBuffer) Len() int64 {
 	return int64(len(s.b))
 }
 
-// Cap returns the capacity of the underlying array. Exposed for memory tests.
+// Cap returns the capacity of the underlying array. Exposed for memory tests
+// that assert linear growth (session_buffer_mem_test.go).
 func (s *SessionTokenBuffer) Cap() int {
 	return cap(s.b)
 }

@@ -2,6 +2,7 @@ package sim
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -85,5 +86,40 @@ func TestRequestInputTokenSliceFull(t *testing.T) {
 	want := []int{10, 11, 12}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("InputTokenSlice(0,3) = %v, want %v", got, want)
+	}
+}
+
+// TestRequestInputTokenSliceBounds asserts that out-of-bounds ranges panic with
+// a decorated message that surfaces the request ID (CRIT-1, #1445). Without this
+// guard, a malformed call site would produce a bare Go runtime panic with no
+// simulation context.
+func TestRequestInputTokenSliceBounds(t *testing.T) {
+	r := &Request{ID: "test-req", InputTokens: []int{1, 2, 3, 4, 5}}
+	cases := []struct {
+		name       string
+		start, end int64
+	}{
+		{"end > len", 0, 6},
+		{"start > end", 3, 2},
+		{"negative start", -1, 3},
+		{"start > len", 10, 12},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				rec := recover()
+				if rec == nil {
+					t.Fatalf("expected panic for InputTokenSlice(%d, %d)", tc.start, tc.end)
+				}
+				msg, ok := rec.(string)
+				if !ok {
+					t.Fatalf("panic value is %T, want string", rec)
+				}
+				if !strings.Contains(msg, "test-req") {
+					t.Errorf("panic message %q does not contain request ID", msg)
+				}
+			}()
+			_ = r.InputTokenSlice(tc.start, tc.end)
+		})
 	}
 }

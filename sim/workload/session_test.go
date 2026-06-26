@@ -31,6 +31,64 @@ type constantSampler struct {
 
 func (s *constantSampler) Sample(_ *rand.Rand) int { return s.value }
 
+// TestSession_AccumulateDoesNotReseed verifies the `seeded` flag guard:
+// once a session has produced its first follow-up, a second OnComplete call
+// on a request with the same SessionID must NOT re-seed the buffer (which
+// would double-count the prefix and conversation). This catches a class of
+// caller bugs that could silently corrupt accumulated context (MOD-2, #1445).
+func TestSession_AccumulateDoesNotReseed(t *testing.T) {
+	bp := makeTestBlueprint("sess-no-reseed", 4, 1000, "accumulate", 1_000_000)
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	inputR0 := sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(1)), 10)
+	outputR0 := sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(2)), 5)
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "sess-no-reseed", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: inputR0, OutputTokens: outputR0,
+	}
+	follow1 := sm.OnComplete(req0, 5000)
+	if len(follow1) != 1 {
+		t.Fatalf("first OnComplete: expected 1 follow-up, got %d", len(follow1))
+	}
+	r1 := follow1[0]
+	// Round 1: 10 (r0 input) + 5 (r0 output) + 10 (new) = 25 tokens
+	if len(r1.InputTokens) != 25 {
+		t.Fatalf("first follow-up input length = %d, want 25", len(r1.InputTokens))
+	}
+	r1Cap := cap(r1.InputTokens)
+	r1Len := int64(len(r1.InputTokens))
+
+	// Simulate a caller bug: call OnComplete on round 1 normally — buffer
+	// should extend exactly once for output + new input, not re-seed.
+	req1 := &sim.Request{
+		ID: "r1", SessionID: "sess-no-reseed", RoundIndex: 1,
+		State: sim.StateCompleted,
+		ProgressIndex: int64(len(r1.InputTokens) + len(r1.OutputTokens)),
+		InputTokens: r1.InputTokens, OutputTokens: r1.OutputTokens,
+	}
+	follow2 := sm.OnComplete(req1, 10000)
+	if len(follow2) != 1 {
+		t.Fatalf("second OnComplete: expected 1 follow-up, got %d", len(follow2))
+	}
+	r2 := follow2[0]
+	// Round 2: prior 25 + 5 (r1 output) + 10 (new) = 40. If re-seeded, would be 50.
+	if len(r2.InputTokens) != 40 {
+		t.Fatalf("BC-9: second follow-up input length = %d, want 40 (re-seeded would be 50)", len(r2.InputTokens))
+	}
+	// Sanity: r1's slice must still be a valid prefix of r2's (no in-place
+	// mutation, buffer just extended).
+	for i := int64(0); i < r1Len; i++ {
+		if r2.InputTokens[i] != r1.InputTokens[i] {
+			t.Fatalf("token %d diverged between r1 and r2: %d vs %d — buffer was mutated", i, r1.InputTokens[i], r2.InputTokens[i])
+		}
+	}
+	// Capacity should have grown at most by Go's append doubling.
+	if cap(r2.InputTokens) > 4*r1Cap {
+		t.Errorf("cap grew from %d to %d (more than 4x) — non-amortized append", r1Cap, cap(r2.InputTokens))
+	}
+}
+
 // TestSession_AccumulateSharesBackingArray verifies that closed-loop accumulate
 // rounds share a SessionTokenBuffer (BC-2, #1445). Specifically, round 1's
 // InputTokens must be a slice header view into the same buffer as round 2's —

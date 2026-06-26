@@ -124,6 +124,10 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 	}
 	orig := e.parentReq.OriginalRequest
 
+	// InputTokens and OutputTokens are slice-header aliases of orig's fields
+	// (#1445) — the sub-request views the same underlying token buffer, no
+	// flatten. If Request.InputTokens ever becomes lazy/chained, this site must
+	// update.
 	decodeSubReq := &sim.Request{
 		ID:                 e.parentReq.DecodeSubReqID,
 		InputTokens:        orig.InputTokens,
@@ -167,7 +171,7 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 
 	if ok := decodeInst.ReserveTransferredKV(decodeSubReq); !ok {
 		logrus.Warnf("[cluster] decode instance %s: insufficient KV capacity for %s (%d input tokens) at transfer start",
-			decodeInstID, decodeSubReq.ID, len(decodeSubReq.InputTokens))
+			decodeInstID, decodeSubReq.ID, decodeSubReq.InputLen())
 		e.dropAtStart(cs)
 		return
 	}

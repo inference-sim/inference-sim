@@ -74,3 +74,47 @@ func TestSessionTokenBufferSliceIsView(t *testing.T) {
 		t.Fatalf("Slice(0,3) returned distinct backing arrays — buffer is copying, not aliasing")
 	}
 }
+
+// TestSessionTokenBufferSliceAliasesAcrossAppends asserts the load-bearing
+// invariant for the O(R) storage win: slices returned by Slice() before a
+// subsequent Append() remain aliases of the same backing array, AS LONG AS the
+// buffer has capacity for the append (no reallocation). We use
+// NewSessionTokenBufferWithCapacity to control this.
+func TestSessionTokenBufferSliceAliasesAcrossAppends(t *testing.T) {
+	b := NewSessionTokenBufferWithCapacity(100)
+	b.Append([]int{1, 2, 3})
+	first := b.Slice(0, 3)
+	b.Append([]int{4, 5, 6})
+	second := b.Slice(0, 6)
+	if len(first) == 0 || len(second) == 0 {
+		t.Fatal("empty slice — test invalid")
+	}
+	if &first[0] != &second[0] {
+		t.Fatalf("Slice() returned distinct backing arrays after Append — pre-allocated capacity should prevent realloc")
+	}
+}
+
+// TestSessionTokenBufferSliceBounds asserts that out-of-bounds Slice() calls
+// panic with a decorated message (IMP-1, #1445).
+func TestSessionTokenBufferSliceBounds(t *testing.T) {
+	b := NewSessionTokenBuffer()
+	b.Append([]int{1, 2, 3})
+	cases := []struct {
+		name       string
+		start, end int64
+	}{
+		{"end > len", 0, 5},
+		{"start > end", 2, 1},
+		{"negative start", -1, 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if rec := recover(); rec == nil {
+					t.Fatalf("expected panic for Slice(%d, %d)", tc.start, tc.end)
+				}
+			}()
+			_ = b.Slice(tc.start, tc.end)
+		})
+	}
+}

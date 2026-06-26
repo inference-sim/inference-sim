@@ -127,6 +127,10 @@ func (req *Request) InputLen() int64 {
 // by multi-turn workloads); the accessor exists as a forward-compatible migration
 // point and to mark intent at call sites that need the whole sequence (trace
 // export, scorers that hash the full prefix) (#1445).
+//
+// The returned slice MUST NOT be modified. When the request belongs to a
+// multi-turn accumulate session, it aliases a shared session token buffer and
+// mutation would silently corrupt every other round's view (#1445).
 func (req *Request) FullInputTokens() []int {
 	return req.InputTokens
 }
@@ -134,7 +138,19 @@ func (req *Request) FullInputTokens() []int {
 // InputTokenSlice returns the slice spanning the absolute index range [start, end).
 // Replaces direct `req.InputTokens[start:end]` reads — same view into the underlying
 // array, no copy (#1445).
+//
+// Panics with a decorated message if [start, end) is out of bounds. R6 prohibits
+// logrus.Fatalf in the sim/ package; the panic surfaces the request ID and length
+// so callers can debug from the stack trace.
+//
+// The returned slice MUST NOT be modified (same aliasing constraint as
+// FullInputTokens).
 func (req *Request) InputTokenSlice(start, end int64) []int {
+	n := int64(len(req.InputTokens))
+	if start < 0 || end < start || end > n {
+		panic(fmt.Sprintf("Request.InputTokenSlice: invalid range [%d, %d) for InputTokens len=%d (request %s)",
+			start, end, n, req.ID))
+	}
 	return req.InputTokens[start:end]
 }
 
