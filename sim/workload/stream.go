@@ -7,6 +7,8 @@ import (
 	"math/rand"
 	"sort"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -52,7 +54,8 @@ type clientStreamState struct {
 	isSingleSession bool
 	isClosedLoop    bool
 
-	// Single-shot mode: monotonic IAT accumulator (matches generator.go:281).
+	// Single-shot mode: monotonic IAT accumulator (matches the
+	// `currentTime` accumulator in GenerateRequests' non-reasoning loop).
 	currentTime int64
 
 	// Reasoning mode: pendingSession holds one session's pre-computed rounds.
@@ -100,7 +103,8 @@ func (s *clientStreamState) produceNextSingleShot() (*sim.Request, int64, bool) 
 		}
 		iat := s.arrivalSampler.SampleIAT(s.clientRNG)
 		if iat == 0 {
-			// Stateful sampler exhausted (matches eager generator.go:288).
+			// Stateful sampler exhausted (mirrors the `iat == 0 → break`
+			// guard in GenerateRequests' non-reasoning per-client loop).
 			s.exhausted = true
 			return nil, 0, false
 		}
@@ -109,7 +113,8 @@ func (s *clientStreamState) produceNextSingleShot() (*sim.Request, int64, bool) 
 			s.exhausted = true
 			return nil, 0, false
 		}
-		// Lifecycle window filtering (matches generator.go:299-304).
+		// Lifecycle window filtering (mirrors the lifecycle/lastWindowEnd
+		// check in GenerateRequests' non-reasoning loop).
 		if s.client.Lifecycle != nil && !isInActiveWindow(s.currentTime, s.client.Lifecycle) {
 			if s.currentTime >= lastWindowEndUs(s.client.Lifecycle) {
 				s.exhausted = true
@@ -118,18 +123,24 @@ func (s *clientStreamState) produceNextSingleShot() (*sim.Request, int64, bool) 
 			continue
 		}
 
-		// Token generation — must match generator.go:306-325 exactly,
-		// including the RNG-draw order for multimodal vs standard paths.
+		// Token generation — must match GenerateRequests' single-shot
+		// path exactly, including the RNG-draw order for multimodal vs
+		// standard paths (multimodal: tokens → outputLen → outputTokens;
+		// standard: inputLen → outputLen → input → output).
 		var inputTokens, outputTokens []int
 		var textCount, imageCount, audioCount, videoCount int
 		if s.client.Multimodal != nil {
 			var err error
 			inputTokens, textCount, imageCount, audioCount, videoCount, err = GenerateMultimodalTokens(s.clientRNG, s.client.Multimodal)
 			if err != nil {
-				// Multimodal validation runs at GenerateWorkloadLazy time, so this
-				// shouldn't happen for valid specs. Treat as terminal failure rather
-				// than panicking inside library code (R6); the resulting empty
-				// stream surfaces the issue via downstream "no requests" warning.
+				// spec.Validate() does NOT validate MultimodalSpec distribution
+				// fields, so this path IS reachable for invalid multimodal specs.
+				// R1: don't drop silently — log the failure (with client ID so
+				// the user can locate the bad spec) before exhausting the
+				// stream. Eager mode surfaces this via logrus.Fatalf in cmd;
+				// in lazy library code we log + sticky-exhaust so the
+				// simulation does not silently continue with reduced traffic.
+				logrus.Errorf("[workload] client %q: multimodal token generation failed (exhausting stream): %v", s.client.ID, err)
 				s.exhausted = true
 				return nil, 0, false
 			}
@@ -188,13 +199,15 @@ func (s *clientStreamState) produceNextReasoning() (*sim.Request, int64, bool) {
 			s.pendingSessionIdx++
 			if req.ArrivalTime >= s.horizon {
 				// Rounds are chronological; remaining are past horizon too.
-				// Matches generator.go:264 / generator.go:203 break.
+				// Mirrors the `break` in GenerateRequests' reasoning round
+				// loop on the first round that exceeds horizon.
 				s.pendingSession = nil
 				s.pendingSessionIdx = 0
 				break
 			}
 			if s.client.Lifecycle != nil && !isInActiveWindow(req.ArrivalTime, s.client.Lifecycle) {
-				// Skip rounds outside lifecycle windows (matches generator.go:268).
+				// Skip rounds outside lifecycle windows (mirrors the
+				// per-round `continue` in GenerateRequests' reasoning loop).
 				continue
 			}
 			s.perClientSeq++
@@ -243,7 +256,8 @@ func (s *clientStreamState) produceNextReasoning() (*sim.Request, int64, bool) {
 					s.exhausted = true
 					return nil, 0, false
 				}
-				continue // try next IAT (matches generator.go:233-238)
+				continue // try next IAT (mirrors the lifecycle-skip
+				// branch in GenerateRequests' multi-session reasoning loop)
 			}
 		}
 
@@ -255,17 +269,27 @@ func (s *clientStreamState) produceNextReasoning() (*sim.Request, int64, bool) {
 			s.client.ID, s.client.TenantID, s.client.SLOClass, s.client.Model,
 		)
 		if err != nil {
+			// spec.Validate() does NOT validate ReasoningSpec's distribution
+			// fields (e.g. ReasonRatioDist), so this path IS reachable. R1:
+			// log the failure with client ID before sticky-exhausting so the
+			// simulation does not silently continue with reduced traffic.
+			// Eager mode surfaces this via logrus.Fatalf in cmd.
+			logrus.Errorf("[workload] client %q: reasoning session generation failed at t=%d (exhausting stream): %v", s.client.ID, startTime, err)
 			s.exhausted = true
 			return nil, 0, false
 		}
-		// Prepend shared prefix (matches generator.go:191-196 / 248-254).
+		// Prepend shared prefix (mirrors the prefix-prepend loop applied
+		// to every reasoningReqs entry in GenerateRequests' reasoning
+		// path, single-session and multi-session branches).
 		if len(s.prefix) > 0 {
 			for _, req := range reasoningReqs {
 				req.InputTokens = append(append([]int{}, s.prefix...), req.InputTokens...)
 				req.PrefixLength = len(s.prefix)
 			}
 		}
-		// Set Deadline + SLOTargetUs on every round (matches generator.go:198-201 / 256-259).
+		// Set Deadline + SLOTargetUs on every round (mirrors the
+		// per-round Deadline/SLOTargetUs assignment in GenerateRequests'
+		// reasoning path).
 		for _, req := range reasoningReqs {
 			req.Deadline = computeDeadline(req.ArrivalTime, s.client.Timeout, true)
 			req.SLOTargetUs = derefInt64(s.client.SLOTargetUs)
@@ -335,7 +359,7 @@ type lazyRequestSource struct {
 //     push the new entry back onto the heap.
 //  3. If the popped request belongs to a closed-loop session AND its
 //     RoundIndex > 0, it is a non-emitted intermediate round (matches
-//     GenerateWorkload's round-0-only filter at generator.go:531-542).
+//     GenerateWorkload's round-0-only filter for closed-loop sessions).
 //     Such rounds DO count toward maxRequests (so the eager/lazy total
 //     budget matches) but are NOT yielded to the cluster — we loop and
 //     pop the next entry instead.
@@ -379,7 +403,9 @@ func (l *lazyRequestSource) Next() (*sim.Request, bool) {
 			continue
 		}
 		// Sequential IDs are assigned in yield order, matching
-		// GenerateWorkload's post-filter renumbering at generator.go:619-621.
+		// GenerateWorkload's post-filter sequential-ID renumbering pass
+		// (where it reassigns `req.ID = fmt.Sprintf("request_%d", i)`
+		// over the filtered + sorted slice).
 		e.req.ID = fmt.Sprintf("request_%d", l.yielded)
 		l.yielded++
 		return e.req, true
@@ -389,7 +415,9 @@ func (l *lazyRequestSource) Next() (*sim.Request, bool) {
 // clientPrep captures the per-client information collected during the
 // construction prelude of GenerateWorkloadLazy. clientSeed is drawn
 // from workloadRNG in allClients order before any client begins
-// producing requests — matching the eager generator (generator.go:119).
+// producing requests — matching the eager generator's
+// `clientSeed := workloadRNG.Int63()` draw at the top of its per-client
+// loop in GenerateRequests.
 type clientPrep struct {
 	idx        int
 	client     *ClientSpec
@@ -430,7 +458,9 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 		return nil, nil, 0, err
 	}
 
-	// Build working client list (matches generator.go:74-79).
+	// Build working client list (mirrors the same allClients assembly
+	// in GenerateRequests: copy spec.Clients, then append cohort-
+	// expanded clients).
 	allClients := append([]ClientSpec{}, spec.Clients...)
 	if len(spec.Cohorts) > 0 {
 		allClients = append(allClients, ExpandCohorts(spec.Cohorts, spec.Seed)...)
@@ -457,8 +487,9 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 	prefixes := generatePrefixTokens(allClients, workloadRNG)
 
 	// Phase 1: prelude — draw clientSeeds in allClients order, mirroring the
-	// eager loop's draw order (generator.go:114-120). Zero-rate clients are
-	// skipped BEFORE the draw, matching generator.go:114-116.
+	// eager loop's draw order in GenerateRequests' per-client loop.
+	// Zero-rate clients are skipped BEFORE the workloadRNG.Int63() draw,
+	// matching the eager loop's `if clientRate <= 0 { continue }` guard.
 	preps := make([]clientPrep, 0, len(allClients))
 	for i := range allClients {
 		if clientRates[i] <= 0 {
@@ -475,25 +506,43 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 	}
 
 	// Phase 2: blueprint pre-pass (closed-loop reasoning clients only).
-	// We replay each closed-loop client's RNG to enumerate session IDs
-	// without retaining any request slices (each session's slice is
-	// generated and discarded). This advances a temporary clientRNG; the
-	// real streaming pass below uses a *fresh* clientRNG seeded from the
-	// same clientSeed, so both passes see identical RNG streams.
+	//
+	// Mirrors GenerateWorkload's blueprint construction at
+	// GenerateWorkload's closed-loop blueprint construction loop — which scans the truncated `reqs` slice for
+	// round-0 SessionIDs per closed-loop client, sorts them, and draws
+	// one `blueprintRNG.Int63()` per surviving session.
+	//
+	// To match this RNG-draw budget exactly, the lazy pre-pass simulates
+	// the full streaming `Next()` loop with separate cloned per-client
+	// states (RNGs re-seeded from the same clientSeeds — same sequence)
+	// up to the same `maxRequests` cap that Phase 3 will impose. This
+	// way we discover the EXACT set of round-0 emissions that survive
+	// the cap, and only draw `blueprintRNG` for those sessions.
+	//
+	// Without `maxRequests` awareness, a binding cap that drops a later
+	// session's round-0 would still see that session enumerated here,
+	// consume an extra `blueprintRNG.Int63()`, and shift every
+	// subsequent blueprint RNG seed — breaking INV-6 byte-identity and
+	// INV-13 run/replay parity for closed-loop reasoning under a tight
+	// cap. (Bug found in PR #1453 self-review.)
+	survivingPerClient, err := enumerateSurvivingSessionsPerClient(preps, prefixes, horizon, maxRequests)
+	if err != nil {
+		return nil, nil, 0, err
+	}
 	blueprintRNG := rand.New(rand.NewSource(spec.Seed + 7919))
 	var sessions []SessionBlueprint
 	for _, p := range preps {
 		if !isClosedLoop(p.client) || p.client.Reasoning == nil || p.client.Reasoning.MultiTurn == nil {
 			continue
 		}
-		sessIDs, err := enumerateReasoningSessionIDs(p, horizon)
-		if err != nil {
-			return nil, nil, 0, fmt.Errorf("client %q: %w", p.client.ID, err)
+		sessIDs := survivingPerClient[p.idx]
+		if len(sessIDs) == 0 {
+			continue // no round-0 of this client's sessions survived the cap
 		}
 		// Sort session IDs to match GenerateWorkload's deterministic
-		// blueprint-construction order (generator.go:504-508).
+		// blueprint-construction order (sort.Strings on the map of seen IDs).
 		sort.Strings(sessIDs)
-		// Build samplers once per client (mirrors generator.go:447-455).
+		// Build samplers once per client (mirrors the eager blueprint loop).
 		inputSampler, err := NewLengthSampler(p.client.InputDist)
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("client %q input distribution for blueprint: %w", p.client.ID, err)
@@ -534,9 +583,11 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 	}
 
 	// Phase 3: build the streaming states with fresh RNGs seeded from the
-	// same clientSeeds. Seeded from scratch — `rand.New(rand.NewSource(s))`
-	// is deterministic, so the streaming RNG produces the same sequence as
-	// the pre-pass RNG that enumerated session IDs.
+	// same clientSeeds. The pre-pass RNGs ran to completion and are
+	// discarded; Phase 3's RNGs start anew but, because
+	// `rand.New(rand.NewSource(s))` is deterministic, both produce the
+	// SAME starting sequence — giving the streaming pass byte-identical
+	// emissions to what the pre-pass simulated.
 	h := &heapByArrival{}
 	heap.Init(h)
 	for _, p := range preps {
@@ -557,13 +608,16 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 
 	// FollowUpBudget: lazy mode rejects concurrency specs above, so the
 	// eager codepath's "totalConcurrencyUsers > 0" condition is always
-	// false — budget stays at -1 (no cap), matching GenerateWorkload:671.
+	// false — budget stays at -1 (no cap), matching the
+	// `followUpBudget := int64(-1)` initialization in GenerateWorkload.
 	return &lazyRequestSource{h: h, maxRequests: maxRequests}, sessions, int64(-1), nil
 }
 
 // buildClientStreamState constructs one client's streaming state. The
 // RNG is seeded from p.clientSeed; sampler construction mirrors the
-// eager generator (generator.go:122-143) including the CustomSamplerFactory
+// eager generator's per-client sampler construction (the block
+// immediately after `clientRNG := newRandFromSeed(clientSeed)` in
+// GenerateRequests), including the CustomSamplerFactory
 // sub-RNG draw.
 func buildClientStreamState(p clientPrep, horizon int64) (*clientStreamState, error) {
 	clientRNG := newRandFromSeed(p.clientSeed)
@@ -601,39 +655,93 @@ func buildClientStreamState(p clientPrep, horizon int64) (*clientStreamState, er
 	return state, nil
 }
 
-// enumerateReasoningSessionIDs replays a closed-loop reasoning client's
-// RNG to discover the SessionIDs it would produce, without retaining
-// session slices. Used by the blueprint pre-pass in GenerateWorkloadLazy.
+// enumerateSurvivingSessionsPerClient simulates the streaming source's
+// global heap-pop order up to maxRequests pops and returns, for each
+// closed-loop reasoning client (keyed by allClients index), the set of
+// SessionIDs whose round-0 emission survived the cap. This mirrors the
+// eager flow's "produce all rounds, sort+truncate to maxRequests, then
+// scan the truncated slice for SessionIDs per closed-loop client"
+// sequence (GenerateWorkload's closed-loop blueprint construction loop).
 //
-// Implementation strategy: build a temporary clientStreamState (with a
-// fresh RNG seeded from p.clientSeed) and call produceNext repeatedly,
-// discarding requests but recording the SessionID of each new session.
-// We detect "new session" by tracking SessionID transitions.
+// Uses CLONED per-client states with RNGs re-seeded from the same
+// clientSeeds, so the simulation does not advance the Phase 3
+// streaming-pass RNGs. The dry-run yields rounds and counts toward
+// the cap exactly as `lazyRequestSource.Next` will — including
+// intermediate closed-loop rounds (`RoundIndex > 0`), which pop and
+// count but do not yield to the cluster (and are not recorded here).
 //
-// Memory: bounded by the per-session slice held inside the state's
-// pendingSession field (one session at a time, ~MaxRounds requests).
-func enumerateReasoningSessionIDs(p clientPrep, horizon int64) ([]string, error) {
-	state, err := buildClientStreamState(p, horizon)
-	if err != nil {
-		return nil, err
+// Memory: bounded by the per-session pending slice inside each cloned
+// state (one session at a time, MaxRounds entries).
+func enumerateSurvivingSessionsPerClient(
+	preps []clientPrep,
+	prefixes map[string][]int,
+	horizon int64,
+	maxRequests int64,
+) (map[int][]string, error) {
+	// Clone per-client states (fresh RNGs from the same clientSeed).
+	cloneStates := make([]*clientStreamState, 0, len(preps))
+	for _, p := range preps {
+		// Mirror the prefix-binding rule of Phase 3 so the clone consumes
+		// identical RNG draws for prefix-prepending; p.prefix is already
+		// the per-prefix-group slice resolved in Phase 1.
+		state, err := buildClientStreamState(p, horizon)
+		if err != nil {
+			return nil, fmt.Errorf("client %q: %w", p.client.ID, err)
+		}
+		cloneStates = append(cloneStates, state)
 	}
-	// Keep isClosedLoop = true so only round 0 of each session is yielded
-	// (one per session). We read SessionID from each yielded round-0 to
-	// enumerate every session without retaining the full per-session
-	// request slice — pendingSession is overwritten on each refill.
-	state.isClosedLoop = true
-
-	var ids []string
-	seen := make(map[string]bool)
-	for {
-		req, _, ok := state.produceNext()
-		if !ok {
+	// Build the clone heap with each state's first candidate, matching
+	// Phase 3's heap construction.
+	h := &heapByArrival{}
+	heap.Init(h)
+	for _, state := range cloneStates {
+		if first, t, ok := state.produceNext(); ok {
+			heap.Push(h, heapEntry{
+				arrivalUs:    t,
+				clientIdx:    state.clientIdx,
+				perClientSeq: state.perClientSeq,
+				req:          first,
+				state:        state,
+			})
+		}
+	}
+	// Dry-run the streaming pop loop with the SAME stopping rule as
+	// lazyRequestSource.Next: stop at popped >= maxRequests (when > 0)
+	// or when the heap is empty.
+	surviving := make(map[int][]string)
+	seen := make(map[int]map[string]bool)
+	var popped int64
+	for h.Len() > 0 {
+		if maxRequests > 0 && popped >= maxRequests {
 			break
 		}
-		if req.SessionID != "" && !seen[req.SessionID] {
-			seen[req.SessionID] = true
-			ids = append(ids, req.SessionID)
+		e := heap.Pop(h).(heapEntry)
+		// Re-push state's next candidate, matching Next().
+		if nextReq, t, ok := e.state.produceNext(); ok {
+			heap.Push(h, heapEntry{
+				arrivalUs:    t,
+				clientIdx:    e.state.clientIdx,
+				perClientSeq: e.state.perClientSeq,
+				req:          nextReq,
+				state:        e.state,
+			})
+		}
+		popped++
+		// Only round-0 entries are observed by GenerateWorkload's
+		// blueprint-building loop (it filters round-0 only when keying
+		// the SessionID lookup). Intermediate rounds advance state and
+		// count toward the cap but produce no blueprint.
+		if e.req.RoundIndex != 0 || e.req.SessionID == "" {
+			continue
+		}
+		idx := e.state.clientIdx
+		if seen[idx] == nil {
+			seen[idx] = make(map[string]bool)
+		}
+		if !seen[idx][e.req.SessionID] {
+			seen[idx][e.req.SessionID] = true
+			surviving[idx] = append(surviving[idx], e.req.SessionID)
 		}
 	}
-	return ids, nil
+	return surviving, nil
 }
