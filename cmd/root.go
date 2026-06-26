@@ -1447,6 +1447,13 @@ var runCmd = &cobra.Command{
 		// (because expansion inside GenerateWorkloadLazy happens AFTER
 		// applyTimeoutToSpec runs), producing the default 300 s deadline
 		// instead of the user-requested value (PR #1453 self-review).
+		//
+		// REMOVING THIS CALL re-introduces that bug silently. The
+		// regression is covered by
+		// TestGenerateWorkloadLazy_InferencePerf_TimeoutAppliedAfterPreExpand
+		// at the library layer; the cmd-level smoke is covered by the
+		// inference-perf byte-identity check verified during PR review.
+		//
 		// ExpandClientsAndCohorts is idempotent — the generators'
 		// validateAndExpandSpec runs it again with no effect since both
 		// branches guard on len(spec.Clients) == 0. (#1441)
@@ -1899,6 +1906,13 @@ var runCmd = &cobra.Command{
 				// clock-monotonic order — no separate followUpRequests merge
 				// or post-sort required (the cluster delivers them in arrival
 				// order via the hook).
+				//
+				// SAFETY: allRequests aliases the same backing array as
+				// traceArrivals. Both downstream consumers (trace export
+				// below + saturation analysis) MUST be read-only of this
+				// slice — neither appends, reorders, nor mutates element
+				// contents. If a future consumer needs to mutate, copy
+				// first: `allRequests = append([]*sim.Request(nil), traceArrivals...)`.
 				allRequests = traceArrivals
 			} else {
 				allRequests = make([]*sim.Request, 0, len(preGeneratedRequests)+len(followUpRequests))

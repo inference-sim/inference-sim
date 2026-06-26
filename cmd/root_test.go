@@ -1570,3 +1570,87 @@ func TestRunCmd_LazyGeneration_SameSeed_Deterministic(t *testing.T) {
 	}
 }
 
+// TestRunCmd_LazyGeneration_ConcurrencyFallback_DoesNotFatal pins BC-8 at
+// the CLI seam (PR #1453 self-review minor #5): when --lazy-generation is
+// combined with a workload-spec containing a concurrency client (an
+// unsupported lazy shape), cmd/root.go MUST log a warning and fall back
+// to the eager GenerateWorkload rather than Fatalf-ing. The eager run
+// completes normally and produces a trace file. Regression coverage
+// against accidentally promoting the fallback warning to a fatal error.
+//
+// We use --workload-spec rather than --concurrency for control of the
+// per-flag interactions on the run command; the spec-based path is the
+// closest production path that exercises the concurrency-fallback.
+//
+// NOTE: Do NOT use t.Parallel() — mutates package-level vars.
+func TestRunCmd_LazyGeneration_ConcurrencyFallback_DoesNotFatal(t *testing.T) {
+	tmpDir := t.TempDir()
+	tracePrefix := filepath.Join(tmpDir, "trace")
+	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
+	// Write a minimal concurrency-mode workload spec.
+	specPath := filepath.Join(tmpDir, "concurrency.yaml")
+	specYAML := `version: "2"
+seed: 7
+category: language
+clients:
+  - id: c1
+    tenant_id: t1
+    slo_class: batch
+    concurrency: 3
+    think_time_us: 100000
+    arrival:
+      process: constant
+    input_distribution:
+      type: constant
+      params: { value: 32 }
+    output_distribution:
+      type: constant
+      params: { value: 16 }
+`
+	if err := os.WriteFile(specPath, []byte(specYAML), 0644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+
+	orig := captureCmdLevelVars()
+	defer orig.restore()
+
+	traceOutput = tracePrefix
+	workloadSpecPath = specPath
+	simulationHorizon = 2_000_000
+	seed = 2031
+	lazyGeneration = true
+
+	testCmd := &cobra.Command{}
+	registerSimConfigFlags(testCmd)
+	testCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "")
+	testCmd.Flags().StringVar(&traceOutput, "trace-output", "", "")
+	testCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", false, "")
+	args := []string{
+		"--model", "qwen/qwen3-14b",
+		"--latency-model", "trained-physics",
+		"--defaults-filepath", defaultsPath,
+		"--model-config-folder", mcFolder,
+		"--hardware-config", hwPath,
+		"--hardware", "H100",
+		"--tp", "1",
+		"--total-kv-blocks", "1000",
+		"--seed", strconv.FormatInt(seed, 10),
+		"--workload-spec", specPath,
+		"--horizon", "2000000",
+		"--trace-output", tracePrefix,
+		"--lazy-generation=true",
+	}
+	if err := testCmd.ParseFlags(args); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	// If the fallback path were promoted to logrus.Fatalf, the test
+	// process would exit here. A normal return = warning + eager fallback
+	// completed without aborting.
+	runCmd.Run(testCmd, nil)
+
+	if _, err := os.Stat(tracePrefix + ".csv"); err != nil {
+		t.Fatalf("expected trace CSV to be written by eager fallback, got: %v", err)
+	}
+}
+
