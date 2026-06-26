@@ -22,53 +22,8 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 	if maxRequests < 0 {
 		return nil, fmt.Errorf("maxRequests must be non-negative, got %d", maxRequests)
 	}
-	// Mutual exclusion: at most one primary workload source allowed (R1).
-	// Clients+Cohorts compose (cohorts expand into clients), but
-	// InferencePerf and ServeGenData are exclusive alternatives.
-	var sourceNames []string
-	if len(spec.Clients) > 0 {
-		sourceNames = append(sourceNames, "clients")
-	}
-	if spec.ServeGenData != nil {
-		sourceNames = append(sourceNames, "servegen_data")
-	}
-	if spec.InferencePerf != nil {
-		sourceNames = append(sourceNames, "inference_perf")
-	}
-	if len(sourceNames) > 1 {
-		return nil, fmt.Errorf("workload sources {%s} are mutually exclusive; specify exactly one of: clients, servegen_data, inference_perf", strings.Join(sourceNames, ", "))
-	}
-	// Expand inference-perf spec if specified (populates spec.Clients)
-	if spec.InferencePerf != nil && len(spec.Clients) == 0 {
-		expanded, err := ExpandInferencePerfSpec(spec.InferencePerf, spec.Seed)
-		if err != nil {
-			return nil, fmt.Errorf("expanding inference-perf spec: %w", err)
-		}
-		spec.Clients = expanded.Clients
-		if spec.Category == "" {
-			spec.Category = expanded.Category
-		}
-		// Always use the expanded aggregate rate — per-stage rates define the
-		// ground truth. A user-specified aggregate_rate would silently scale
-		// all per-stage rates by the wrong factor.
-		if spec.AggregateRate > 0 && spec.AggregateRate != expanded.AggregateRate {
-			logrus.Warnf("overriding aggregate_rate %.2f with sum of stage rates %.2f",
-				spec.AggregateRate, expanded.AggregateRate)
-		}
-		spec.AggregateRate = expanded.AggregateRate
-	}
-
-	// Load ServeGen data if specified (populates spec.Cohorts)
-	if spec.ServeGenData != nil && len(spec.Clients) == 0 && len(spec.Cohorts) == 0 {
-		if err := loadServeGenData(spec); err != nil {
-			return nil, fmt.Errorf("loading ServeGen data: %w", err)
-		}
-	}
-
-	UpgradeV1ToV2(spec)
-
-	if err := spec.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid workload spec: %w", err)
+	if err := validateAndExpandSpec(spec); err != nil {
+		return nil, err
 	}
 
 	// Build working client list without mutating spec.Clients (idempotency, INV-6).
@@ -705,6 +660,63 @@ func lastWindowEndUs(lifecycle *LifecycleSpec) int64 {
 // newRandFromSeed creates a new *rand.Rand from a seed (avoids importing math/rand in callers).
 func newRandFromSeed(seed int64) *rand.Rand {
 	return rand.New(rand.NewSource(seed))
+}
+
+// validateAndExpandSpec performs the spec-mutating prelude shared by
+// GenerateRequests and GenerateWorkloadLazy: mutual-exclusion check across
+// primary workload sources, inference-perf expansion, ServeGen data load,
+// v1→v2 upgrade, and final Validate.
+//
+// Mutates spec in place: spec.Clients may be populated by InferencePerf /
+// ServeGen expansion; spec.AggregateRate may be overridden by the
+// inference-perf expanded value.
+func validateAndExpandSpec(spec *WorkloadSpec) error {
+	// Mutual exclusion: at most one primary workload source allowed (R1).
+	// Clients+Cohorts compose (cohorts expand into clients), but
+	// InferencePerf and ServeGenData are exclusive alternatives.
+	var sourceNames []string
+	if len(spec.Clients) > 0 {
+		sourceNames = append(sourceNames, "clients")
+	}
+	if spec.ServeGenData != nil {
+		sourceNames = append(sourceNames, "servegen_data")
+	}
+	if spec.InferencePerf != nil {
+		sourceNames = append(sourceNames, "inference_perf")
+	}
+	if len(sourceNames) > 1 {
+		return fmt.Errorf("workload sources {%s} are mutually exclusive; specify exactly one of: clients, servegen_data, inference_perf", strings.Join(sourceNames, ", "))
+	}
+	// Expand inference-perf spec if specified (populates spec.Clients)
+	if spec.InferencePerf != nil && len(spec.Clients) == 0 {
+		expanded, err := ExpandInferencePerfSpec(spec.InferencePerf, spec.Seed)
+		if err != nil {
+			return fmt.Errorf("expanding inference-perf spec: %w", err)
+		}
+		spec.Clients = expanded.Clients
+		if spec.Category == "" {
+			spec.Category = expanded.Category
+		}
+		// Always use the expanded aggregate rate — per-stage rates define the
+		// ground truth. A user-specified aggregate_rate would silently scale
+		// all per-stage rates by the wrong factor.
+		if spec.AggregateRate > 0 && spec.AggregateRate != expanded.AggregateRate {
+			logrus.Warnf("overriding aggregate_rate %.2f with sum of stage rates %.2f",
+				spec.AggregateRate, expanded.AggregateRate)
+		}
+		spec.AggregateRate = expanded.AggregateRate
+	}
+	// Load ServeGen data if specified (populates spec.Cohorts)
+	if spec.ServeGenData != nil && len(spec.Clients) == 0 && len(spec.Cohorts) == 0 {
+		if err := loadServeGenData(spec); err != nil {
+			return fmt.Errorf("loading ServeGen data: %w", err)
+		}
+	}
+	UpgradeV1ToV2(spec)
+	if err := spec.Validate(); err != nil {
+		return fmt.Errorf("invalid workload spec: %w", err)
+	}
+	return nil
 }
 
 // DefaultTimeoutUs is the default per-request timeout (300s = 5 minutes).
