@@ -640,8 +640,11 @@ func (cs *ClusterSimulator) pushArrival(req *sim.Request, timeUs int64) {
 // traverse at their effective arrival time. Firing here — rather than at
 // pushArrival — gives the hook a clock-monotonic stream (INV-3), so trace
 // records emerge already in arrival order without a downstream sort.
-// REDIRECT re-injections are skipped: the same logical request was observed
-// on its original arrival, and its trace identity must not duplicate.
+// REDIRECT re-injections are skipped: req.Redirected=true marks requests
+// the drain policy is rerouting internally. Whether or not a prior
+// ClusterArrivalEvent fired for this request, emitting a trace record
+// here would either duplicate an existing record or create a spurious
+// one for internally-rerouted work.
 //
 // Horizon semantics: ClusterArrivalEvents whose timestamp exceeds
 // config.Horizon never execute (cluster.go event loop short-circuits past
