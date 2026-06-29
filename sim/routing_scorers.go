@@ -23,7 +23,7 @@ type scorerFunc func(req *Request, snapshots []RoutingSnapshot) map[string]float
 // cacheQueryFn maps instance IDs to functions that return the count of
 // consecutive cached prefix blocks for given tokens. Used by precise
 // prefix cache scoring. Nil for sim-level tests without cluster instances.
-type cacheQueryFn map[string]func([]int) int
+type cacheQueryFn map[string]func([]TokenID) int
 
 // scoreVLLMDP computes per-instance scores using vLLM's data-parallel formula.
 // Formula: raw = QueueDepth × 4 + BatchSize, then inverted min-max normalization.

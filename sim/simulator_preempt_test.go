@@ -22,8 +22,8 @@ func TestPreempt_EmptyBatch_ReturnsFalse(t *testing.T) {
 	// AND a request that needs far more blocks than available, in the wait queue
 	req := &Request{
 		ID:           "large-req",
-		InputTokens:  make([]int, 200), // needs ~13 blocks, only 2 available
-		OutputTokens: make([]int, 1),
+		InputTokens:  make([]TokenID, 200), // needs ~13 blocks, only 2 available
+		OutputTokens: make([]TokenID, 1),
 		State:        StateQueued,
 	}
 	wq := &WaitQueue{}
@@ -76,8 +76,8 @@ func TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse(t *testing.T) {
 	// AND one small request in the running batch with KV blocks allocated
 	existing := &Request{
 		ID:           "existing",
-		InputTokens:  make([]int, 10),
-		OutputTokens: make([]int, 1),
+		InputTokens:  make([]TokenID, 10),
+		OutputTokens: make([]TokenID, 1),
 		State:        StateRunning,
 	}
 	if ok := kvCache.AllocateKVBlocks(existing, 0, 10, []int64{}); !ok {
@@ -88,8 +88,8 @@ func TestPreempt_InsufficientBlocks_EvictsAllThenReturnsFalse(t *testing.T) {
 	// This forces Phase 1 to try allocating for huge, fail, and trigger preemption.
 	huge := &Request{
 		ID:           "huge-req",
-		InputTokens:  make([]int, 200), // needs 13 blocks, only 2 total
-		OutputTokens: make([]int, 1),
+		InputTokens:  make([]TokenID, 200), // needs 13 blocks, only 2 total
+		OutputTokens: make([]TokenID, 1),
 		State:        StateRunning,
 	}
 
@@ -151,28 +151,28 @@ func TestNewSimulator_CustomSLOPriorityMap_AffectsPreemption(t *testing.T) {
 
 	// Inject three running requests to saturate cache (9/10 blocks used).
 	// Distinct input tokens prevent prefix cache sharing across requests.
-	critTokens := make([]int, 48)
+	critTokens := make([]TokenID, 48)
 	for i := range critTokens {
-		critTokens[i] = i + 1
+		critTokens[i] = TokenID(i + 1)
 	}
-	batchTokens := make([]int, 48)
+	batchTokens := make([]TokenID, 48)
 	for i := range batchTokens {
-		batchTokens[i] = i + 101
+		batchTokens[i] = TokenID(i + 101)
 	}
-	bgTokens := make([]int, 48)
+	bgTokens := make([]TokenID, 48)
 	for i := range bgTokens {
-		bgTokens[i] = i + 201
+		bgTokens[i] = TokenID(i + 201)
 	}
 	// Compute vLLM-convention priorities using the override map (mirrors what EnqueueRequest does).
 	overrideMap := NewSLOPriorityMap(cfg.SLOPriorityOverrides)
 	critReq := &Request{ID: "crit", SLOClass: "critical", ArrivalTime: 100, State: StateRunning,
-		InputTokens: critTokens, OutputTokens: make([]int, 10),
+		InputTokens: critTokens, OutputTokens: make([]TokenID, 10),
 		Priority: float64(overrideMap.InvertForVLLM("critical"))}
 	batchReq := &Request{ID: "batch-req", SLOClass: "batch", ArrivalTime: 200, State: StateRunning,
-		InputTokens: batchTokens, OutputTokens: make([]int, 10),
+		InputTokens: batchTokens, OutputTokens: make([]TokenID, 10),
 		Priority: float64(overrideMap.InvertForVLLM("batch"))}
 	bgReq := &Request{ID: "bg-req", SLOClass: "background", ArrivalTime: 300, State: StateRunning,
-		InputTokens: bgTokens, OutputTokens: make([]int, 10),
+		InputTokens: bgTokens, OutputTokens: make([]TokenID, 10),
 		Priority: float64(overrideMap.InvertForVLLM("background"))}
 
 	for _, req := range []*Request{critReq, batchReq, bgReq} {
@@ -186,7 +186,7 @@ func TestNewSimulator_CustomSLOPriorityMap_AffectsPreemption(t *testing.T) {
 	//   index=2: empty (batch-req removed). Loop exits at len=2.
 	// Without override: victim = background(-3, GAIE default least urgent). bg-req evicted instead.
 	s.RunningBatch = &Batch{Requests: []*Request{critReq, bgReq, batchReq}}
-	s.WaitQ.Enqueue(&Request{ID: "new", InputTokens: make([]int, 16), OutputTokens: make([]int, 1), State: StateQueued})
+	s.WaitQ.Enqueue(&Request{ID: "new", InputTokens: make([]TokenID, 16), OutputTokens: make([]TokenID, 1), State: StateQueued})
 
 	result := s.batchFormation.FormBatch(BatchContext{
 		RunningBatch:       s.RunningBatch,

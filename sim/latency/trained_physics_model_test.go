@@ -176,8 +176,8 @@ func TestTrainedPhysicsModel_OverheadMethods(t *testing.T) {
 	m := newTestTrainedPhysicsModel(t, trainedPhysicsTestModelConfig(), testHardwareConfig(), testCoeffs())
 
 	t.Run("QueueingTime_is_constant", func(t *testing.T) {
-		req1 := &sim.Request{InputTokens: make([]int, 100)}
-		req2 := &sim.Request{InputTokens: make([]int, 500)}
+		req1 := &sim.Request{InputTokens: make([]sim.TokenID, 100)}
+		req2 := &sim.Request{InputTokens: make([]sim.TokenID, 500)}
 
 		time1 := m.QueueingTime(req1)
 		time2 := m.QueueingTime(req2)
@@ -378,10 +378,10 @@ func makePrefillBatch(count, tokens int) []*sim.Request {
 	batch := make([]*sim.Request, count)
 	for i := 0; i < count; i++ {
 		batch[i] = &sim.Request{
-			InputTokens:   make([]int, tokens),
+			InputTokens:   make([]sim.TokenID, tokens),
 			ProgressIndex: 0,
 			NumNewTokens:  tokens,
-			OutputTokens:  []int{},
+			OutputTokens:  []sim.TokenID{},
 		}
 	}
 	return batch
@@ -391,8 +391,8 @@ func makeDecodeBatch(count, seqLen int) []*sim.Request {
 	batch := make([]*sim.Request, count)
 	for i := 0; i < count; i++ {
 		batch[i] = &sim.Request{
-			InputTokens:   make([]int, seqLen),
-			OutputTokens:  make([]int, 10), // Generated so far
+			InputTokens:   make([]sim.TokenID, seqLen),
+			OutputTokens:  make([]sim.TokenID, 10), // Generated so far
 			ProgressIndex: int64(seqLen + 10),
 			NumNewTokens:  1, // Decode generates 1 token per step
 		}

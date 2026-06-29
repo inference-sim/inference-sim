@@ -9,7 +9,7 @@ import (
 // always returns Disaggregate=false regardless of input.
 func TestNeverDisaggregate_AlwaysReturnsFalse(t *testing.T) {
 	decider := &NeverDisaggregate{}
-	req := &Request{ID: "req-1", InputTokens: make([]int, 100)}
+	req := &Request{ID: "req-1", InputTokens: make([]TokenID, 100)}
 
 	decision := decider.Decide(req, (*RouterState)(nil))
 
@@ -22,7 +22,7 @@ func TestNeverDisaggregate_AlwaysReturnsFalse(t *testing.T) {
 // always returns Disaggregate=true regardless of input.
 func TestAlwaysDisaggregate_AlwaysReturnsTrue(t *testing.T) {
 	decider := &AlwaysDisaggregate{}
-	req := &Request{ID: "req-1", InputTokens: make([]int, 100)}
+	req := &Request{ID: "req-1", InputTokens: make([]TokenID, 100)}
 
 	decision := decider.Decide(req, (*RouterState)(nil))
 
@@ -41,7 +41,7 @@ func TestDisaggregationDecider_Interface(t *testing.T) {
 // TestNewDisaggregationDecider_Factory verifies factory dispatches correctly
 // by asserting observable behavior (Decide output), not concrete type names.
 func TestNewDisaggregationDecider_Factory(t *testing.T) {
-	req := &Request{ID: "req-1", InputTokens: make([]int, 10)}
+	req := &Request{ID: "req-1", InputTokens: make([]TokenID, 10)}
 	tests := []struct {
 		name             string
 		wantDisaggregate bool
@@ -139,13 +139,13 @@ func TestValidDisaggregationDeciderNames(t *testing.T) {
 // enforced by reading only InputTokens and MaxOutputLen. The test verifies the observable
 // behavior: decisions are the same regardless of OutputTokens content.
 func TestDisaggregationDecider_INV9_OracleBoundary(t *testing.T) {
-	req1 := &Request{ID: "req-1", InputTokens: make([]int, 100), OutputTokens: nil}
-	req2 := &Request{ID: "req-2", InputTokens: make([]int, 100), OutputTokens: make([]int, 9999)}
+	req1 := &Request{ID: "req-1", InputTokens: make([]TokenID, 100), OutputTokens: nil}
+	req2 := &Request{ID: "req-2", InputTokens: make([]TokenID, 100), OutputTokens: make([]TokenID, 9999)}
 
 	// Stub cacheQuery returning 0 blocks for any instance — exercises Decide's
 	// formula path without depending on real cluster state.
-	stubCache := map[string]func([]int) int{
-		"decode_0": func([]int) int { return 0 },
+	stubCache := map[string]func([]TokenID) int{
+		"decode_0": func([]TokenID) int { return 0 },
 	}
 	state := &RouterState{
 		Snapshots:        []RoutingSnapshot{{ID: "decode_0"}},
@@ -173,7 +173,7 @@ func TestDisaggregationDecider_INV9_OracleBoundary(t *testing.T) {
 // this list anymore: after GAP-3, its decision depends on state.SelectedInstance
 // and the cache query map; it has its own dedicated tests below.
 func TestDisaggregationDecider_StateAgnostic(t *testing.T) {
-	req := &Request{ID: "req-1", InputTokens: make([]int, 100)}
+	req := &Request{ID: "req-1", InputTokens: make([]TokenID, 100)}
 	nilState := (*RouterState)(nil)
 	populated := &RouterState{
 		Snapshots: []RoutingSnapshot{
@@ -205,9 +205,9 @@ func TestDisaggregationDecider_StateAgnostic(t *testing.T) {
 // here pins the contract: every built-in caller can safely ignore these fields,
 // and any regression that accidentally populates one will fail this test.
 func TestDisaggregationDecider_BuiltinsReturnNoOverrides(t *testing.T) {
-	req := &Request{ID: "req-1", InputTokens: make([]int, 100)}
-	stubCache := map[string]func([]int) int{
-		"decode_0": func([]int) int { return 0 },
+	req := &Request{ID: "req-1", InputTokens: make([]TokenID, 100)}
+	stubCache := map[string]func([]TokenID) int{
+		"decode_0": func([]TokenID) int { return 0 },
 	}
 	state := &RouterState{
 		Snapshots:        []RoutingSnapshot{{ID: "decode_0"}},
@@ -268,16 +268,16 @@ func coldState(selectedID string) *RouterState {
 // closure always returns 0 cached blocks. Pair with coldState(selectedID) to
 // exercise the decider's formula with cachedBlocks=0 — i.e. the selected pod
 // is known but has none of the input cached.
-func coldCache(selectedID string) map[string]func([]int) int {
-	return map[string]func([]int) int{
-		selectedID: func([]int) int { return 0 },
+func coldCache(selectedID string) map[string]func([]TokenID) int {
+	return map[string]func([]TokenID) int{
+		selectedID: func([]TokenID) int { return 0 },
 	}
 }
 
 // TestPrefixThresholdDecider_EmptyTokens verifies BC-3: empty input returns Disaggregate=false.
 func TestPrefixThresholdDecider_EmptyTokens(t *testing.T) {
 	decider := NewPrefixThresholdDecider(512, 16, coldCache("decode_0"))
-	req := &Request{ID: "req-empty", InputTokens: []int{}}
+	req := &Request{ID: "req-empty", InputTokens:  []TokenID{}}
 
 	decision := decider.Decide(req, coldState("decode_0"))
 
@@ -303,9 +303,9 @@ func TestPrefixThresholdDecider_AboveThreshold(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			tokens := make([]int, tc.tokens)
+			tokens := make([]TokenID, tc.tokens)
 			for i := range tokens {
-				tokens[i] = i + 1 // unique tokens
+				tokens[i] = TokenID(i + 1) // unique tokens
 			}
 			req := &Request{ID: fmt.Sprintf("req-%s", tc.name), InputTokens: tokens}
 
@@ -335,9 +335,9 @@ func TestPrefixThresholdDecider_BelowOrAtThreshold(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			tokens := make([]int, tc.tokens)
+			tokens := make([]TokenID, tc.tokens)
 			for i := range tokens {
-				tokens[i] = i + 1000 // unique tokens
+				tokens[i] = TokenID(i + 1000) // unique tokens
 			}
 			req := &Request{ID: fmt.Sprintf("req-%s", tc.name), InputTokens: tokens}
 
@@ -367,15 +367,15 @@ func TestPrefixThresholdDecider_BelowOrAtThreshold(t *testing.T) {
 func TestPrefixThresholdDecider_PerPodCacheQuery(t *testing.T) {
 	const blockSize = 16
 	const threshold = 512
-	cacheQuery := map[string]func([]int) int{
-		"decode_A": func([]int) int { return 40 },
-		"decode_B": func([]int) int { return 0 },
+	cacheQuery := map[string]func([]TokenID) int{
+		"decode_A": func([]TokenID) int { return 40 },
+		"decode_B": func([]TokenID) int { return 0 },
 	}
 	decider := NewPrefixThresholdDecider(threshold, blockSize, cacheQuery)
 
-	tokens := make([]int, 840)
+	tokens := make([]TokenID, 840)
 	for i := range tokens {
-		tokens[i] = i + 1
+		tokens[i] = TokenID(i + 1)
 	}
 	req := &Request{ID: "req-multi-pod", InputTokens: tokens}
 
@@ -419,15 +419,15 @@ func TestPrefixThresholdDecider_MissingSelection_ReturnsFalse(t *testing.T) {
 	// Request is large enough that if the selected-pod path were taken with a
 	// 0-blocks closure, the decision would be Disaggregate=true. So any test
 	// that observes Disaggregate=false proves the early-return fired.
-	tokens := make([]int, 400) // 400 > 100 threshold
+	tokens := make([]TokenID, 400) // 400 > 100 threshold
 	for i := range tokens {
-		tokens[i] = i + 1
+		tokens[i] = TokenID(i + 1)
 	}
 	req := &Request{ID: "req-missing", InputTokens: tokens}
 
 	tests := []struct {
 		name       string
-		cacheQuery map[string]func([]int) int
+		cacheQuery map[string]func([]TokenID) int
 		state      *RouterState
 	}{
 		{
@@ -447,7 +447,7 @@ func TestPrefixThresholdDecider_MissingSelection_ReturnsFalse(t *testing.T) {
 		},
 		{
 			name: "nil_closure_in_map",
-			cacheQuery: map[string]func([]int) int{
+			cacheQuery: map[string]func([]TokenID) int{
 				"decode_0": nil,
 			},
 			state: coldState("decode_0"),
@@ -477,9 +477,9 @@ func TestPrefixThresholdDecider_ZeroThreshold(t *testing.T) {
 
 	// Case 1: cold pod, any non-empty input → disaggregate.
 	decider := NewPrefixThresholdDecider(0, blockSize, coldCache("decode_0"))
-	tokens := make([]int, 100)
+	tokens := make([]TokenID, 100)
 	for i := range tokens {
-		tokens[i] = i + 1
+		tokens[i] = TokenID(i + 1)
 	}
 	req := &Request{ID: "req-zero-thresh-cold", InputTokens: tokens}
 	if !decider.Decide(req, coldState("decode_0")).Disaggregate {
@@ -491,13 +491,13 @@ func TestPrefixThresholdDecider_ZeroThreshold(t *testing.T) {
 	//
 	// This pins the strict > semantics at the boundary, guarding against an
 	// accidental >= flip in the formula.
-	fullCache := map[string]func([]int) int{
-		"decode_0": func(t []int) int { return len(t) / blockSize },
+	fullCache := map[string]func([]TokenID) int{
+		"decode_0": func(t []TokenID) int { return len(t) / blockSize },
 	}
 	fullyCachedDecider := NewPrefixThresholdDecider(0, blockSize, fullCache)
-	exactBlocks := make([]int, 64) // 64 tokens = 4 full blocks
+	exactBlocks := make([]TokenID, 64) // 64 tokens = 4 full blocks
 	for i := range exactBlocks {
-		exactBlocks[i] = i + 1
+		exactBlocks[i] = TokenID(i + 1)
 	}
 	reqFull := &Request{ID: "req-fully-cached", InputTokens: exactBlocks}
 	if fullyCachedDecider.Decide(reqFull, coldState("decode_0")).Disaggregate {
@@ -512,15 +512,15 @@ func TestPrefixThresholdDecider_ZeroThreshold(t *testing.T) {
 // rejected; we implement option (a) — query only the selected pod).
 func TestPrefixThresholdDecider_QueriesOnlySelectedPod(t *testing.T) {
 	var aCalls, bCalls int
-	cacheQuery := map[string]func([]int) int{
-		"decode_A": func([]int) int { aCalls++; return 0 },
-		"decode_B": func([]int) int { bCalls++; return 0 },
+	cacheQuery := map[string]func([]TokenID) int{
+		"decode_A": func([]TokenID) int { aCalls++; return 0 },
+		"decode_B": func([]TokenID) int { bCalls++; return 0 },
 	}
 	decider := NewPrefixThresholdDecider(512, 16, cacheQuery)
 
-	req := &Request{ID: "req-isolation", InputTokens: make([]int, 100)}
+	req := &Request{ID: "req-isolation", InputTokens: make([]TokenID, 100)}
 	for i := range req.InputTokens {
-		req.InputTokens[i] = i + 1
+		req.InputTokens[i] = TokenID(i + 1)
 	}
 	state := &RouterState{
 		Snapshots: []RoutingSnapshot{
@@ -548,7 +548,7 @@ func TestPrefixThresholdDecider_QueriesOnlySelectedPod(t *testing.T) {
 func TestAlwaysEncode(t *testing.T) {
 	d := &AlwaysEncode{}
 	cases := []*Request{
-		{ID: "text", InputTokens: make([]int, 32)},
+		{ID: "text", InputTokens: make([]TokenID, 32)},
 		{ID: "image", ImageTokenCount: 10},
 		{ID: "nil-tokens", OutputTokens: nil},
 	}
@@ -619,7 +619,7 @@ func TestMultimodalEncodeDecider_False(t *testing.T) {
 func TestMultimodalEncodeDecider_IgnoresOutputTokens(t *testing.T) {
 	d := &MultimodalEncodeDecider{}
 	reqNoOutput := &Request{ID: "oracle-probe-nil", ImageTokenCount: 5, OutputTokens: nil}
-	reqLargeOutput := &Request{ID: "oracle-probe-large", ImageTokenCount: 5, OutputTokens: make([]int, 9999)}
+	reqLargeOutput := &Request{ID: "oracle-probe-large", ImageTokenCount: 5, OutputTokens: make([]TokenID, 9999)}
 	decisionNil := d.ShouldEncode(reqNoOutput, "inst_0")
 	decisionLarge := d.ShouldEncode(reqLargeOutput, "inst_0")
 	if !decisionNil {

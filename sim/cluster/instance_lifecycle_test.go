@@ -20,20 +20,20 @@ func TestInstanceLifecycle_WarmUpTTFTPenalty(t *testing.T) {
 	requests := []*sim.Request{
 		{
 			ID:           "req1",
-			InputTokens:  make([]int, 10),
-			OutputTokens: make([]int, 5),
+			InputTokens:  make([]sim.TokenID, 10),
+			OutputTokens: make([]sim.TokenID, 5),
 			ArrivalTime:  0,
 		},
 		{
 			ID:           "req2",
-			InputTokens:  make([]int, 10),
-			OutputTokens: make([]int, 5),
+			InputTokens:  make([]sim.TokenID, 10),
+			OutputTokens: make([]sim.TokenID, 5),
 			ArrivalTime:  1000,
 		},
 		{
 			ID:           "req3",
-			InputTokens:  make([]int, 10),
-			OutputTokens: make([]int, 5),
+			InputTokens:  make([]sim.TokenID, 10),
+			OutputTokens: make([]sim.TokenID, 5),
 			ArrivalTime:  2000,
 		},
 	}

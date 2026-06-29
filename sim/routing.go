@@ -278,7 +278,7 @@ func NewRoutingPolicy(name string, scorerConfigs []ScorerConfig, blockSize int64
 // and no-hit-lru scorers. cacheFn maps instance ID to a function returning the count of
 // consecutive cached prefix blocks for given tokens; pass nil to disable those scorers
 // (equivalent to calling NewRoutingPolicy).
-func NewRoutingPolicyWithCache(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand, cacheFn map[string]func([]int) int) RoutingPolicy {
+func NewRoutingPolicyWithCache(name string, scorerConfigs []ScorerConfig, blockSize int64, rng *rand.Rand, cacheFn map[string]func([]TokenID) int) RoutingPolicy {
 	return newRoutingPolicyInternal(name, scorerConfigs, blockSize, rng, cacheQueryFn(cacheFn))
 }
 

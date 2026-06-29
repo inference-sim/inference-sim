@@ -136,8 +136,8 @@ func TestObserveOrchestrator_OpenLoop_ConservationAndConcurrency(t *testing.T) {
 		requests[i] = &sim.Request{
 			ID:           fmt.Sprintf("request_%d", i),
 			ArrivalTime:  int64(i) * 10000, // 10ms apart in microseconds
-			InputTokens:  make([]int, 100),
-			OutputTokens: make([]int, 50),
+			InputTokens:  make([]sim.TokenID, 100),
+			OutputTokens: make([]sim.TokenID, 50),
 			MaxOutputLen: 50,
 			State:        sim.StateQueued,
 		}
@@ -307,7 +307,7 @@ func TestObserveOrchestrator_WarmupExclusion(t *testing.T) {
 	for i := range requests {
 		requests[i] = &sim.Request{
 			ID: fmt.Sprintf("request_%d", i), ArrivalTime: int64(i) * 1000,
-			InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
 			MaxOutputLen: 5, State: sim.StateQueued,
 		}
 	}
@@ -335,7 +335,7 @@ func TestObserveOrchestrator_WarmupExceedsTotal(t *testing.T) {
 	for i := range requests {
 		requests[i] = &sim.Request{
 			ID: fmt.Sprintf("request_%d", i), ArrivalTime: 0,
-			InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
 			MaxOutputLen: 5, State: sim.StateQueued,
 		}
 	}
@@ -374,7 +374,7 @@ func TestObserveOrchestrator_RecordITL_CapturesChunkTimestamps(t *testing.T) {
 	requests := []*sim.Request{
 		{
 			ID: "request_0", ArrivalTime: 0,
-			InputTokens: make([]int, 10), OutputTokens: make([]int, 3),
+			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 3),
 			MaxOutputLen: 3, State: sim.StateQueued, Streaming: true,
 		},
 	}
@@ -416,7 +416,7 @@ func TestObserveOrchestrator_TimestampOrdering(t *testing.T) {
 
 	requests := []*sim.Request{{
 		ID: "request_0", ArrivalTime: 0,
-		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
 		MaxOutputLen: 5, State: sim.StateQueued,
 	}}
 
@@ -455,7 +455,7 @@ func TestObserveOrchestrator_TraceV2RoundTrip(t *testing.T) {
 	for i := range requests {
 		requests[i] = &sim.Request{
 			ID: fmt.Sprintf("request_%d", i), ArrivalTime: int64(i) * 100000,
-			InputTokens: make([]int, 100), OutputTokens: make([]int, 50),
+			InputTokens: make([]sim.TokenID, 100), OutputTokens: make([]sim.TokenID, 50),
 			MaxOutputLen: 50, State: sim.StateQueued, ClientID: "test-client",
 		}
 	}
@@ -510,7 +510,7 @@ func TestObserveOrchestrator_ErrorStormDrain(t *testing.T) {
 	for i := range requests {
 		requests[i] = &sim.Request{
 			ID: fmt.Sprintf("request_%d", i), ArrivalTime: int64(i) * 1000,
-			InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
 			MaxOutputLen: 5, State: sim.StateQueued,
 		}
 	}
@@ -551,7 +551,7 @@ func TestObserveOrchestrator_ContextCancellation(t *testing.T) {
 	for i := range requests {
 		requests[i] = &sim.Request{
 			ID: fmt.Sprintf("request_%d", i), ArrivalTime: 0,
-			InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
 			MaxOutputLen: 5, State: sim.StateQueued,
 		}
 	}
@@ -662,7 +662,7 @@ func TestRequestToPending_PrependsPrefixString(t *testing.T) {
 
 	req := &sim.Request{
 		ID:           "test",
-		InputTokens:  make([]int, 10),
+		InputTokens:  make([]sim.TokenID, 10),
 		PrefixGroup:  "shared",
 		PrefixLength: 64,
 	}
@@ -691,7 +691,7 @@ func TestRequestToPending_PrependsPrefixString(t *testing.T) {
 	// Without prefix group: no prefix
 	reqNoPrefix := &sim.Request{
 		ID:          "test2",
-		InputTokens: []int{5, 15, 25, 35, 45, 55, 65, 75, 85, 95},
+		InputTokens: []sim.TokenID{5, 15, 25, 35, 45, 55, 65, 75, 85, 95},
 	}
 	pendingNoPrefix := requestToPending(reqNoPrefix, 1, false, false, prefixes, prefixLengths, 1.0)
 	// Without prefix group, prompt should not start with the group prefix string
@@ -703,12 +703,12 @@ func TestRequestToPending_PrependsPrefixString(t *testing.T) {
 func TestRequestToPending_UsesPerRequestStreaming(t *testing.T) {
 	streamingReq := &sim.Request{
 		ID:          "stream-req",
-		InputTokens: make([]int, 5),
+		InputTokens: make([]sim.TokenID, 5),
 		Streaming:   true,
 	}
 	nonStreamingReq := &sim.Request{
 		ID:          "nostream-req",
-		InputTokens: make([]int, 5),
+		InputTokens: make([]sim.TokenID, 5),
 		Streaming:   false,
 	}
 
@@ -851,9 +851,9 @@ func TestRequestToPending_SuffixUsesTokenCountNotWordCount(t *testing.T) {
 		t.Fatalf("prefix word count = %d, want 50", len(prefixWords))
 	}
 
-	suffixTokens := make([]int, 200)
+	suffixTokens := make([]sim.TokenID, 200)
 	for i := range suffixTokens {
-		suffixTokens[i] = i * 3
+		suffixTokens[i] = sim.TokenID(i * 3)
 	}
 	req := &sim.Request{
 		ID:          "test",
@@ -875,11 +875,11 @@ func TestRequestToPending_NoPrefixDiversePrompt(t *testing.T) {
 	// Two requests with different random token IDs and no prefix group
 	req1 := &sim.Request{
 		ID:          "r1",
-		InputTokens: []int{10, 20, 30, 40, 50},
+		InputTokens: []sim.TokenID{10, 20, 30, 40, 50},
 	}
 	req2 := &sim.Request{
 		ID:          "r2",
-		InputTokens: []int{60, 70, 80, 90, 100},
+		InputTokens: []sim.TokenID{60, 70, 80, 90, 100},
 	}
 
 	// tokensPerWord=1.0 for direct word-to-token mapping
@@ -905,9 +905,9 @@ func TestRequestToPending_NoPrefixDiversePrompt(t *testing.T) {
 
 func TestRequestToPending_WordCountScaledByTokensPerWord(t *testing.T) {
 	// BC-5: with tokensPerWord=2.0, 100 tokens should produce 50 words
-	tokens := make([]int, 100)
+	tokens := make([]sim.TokenID, 100)
 	for i := range tokens {
-		tokens[i] = i * 7 // deterministic, diverse values
+		tokens[i] = sim.TokenID(i * 7) // deterministic, diverse values
 	}
 	req := &sim.Request{
 		ID:          "scaled",
@@ -929,7 +929,7 @@ func TestRequestToPending_UnknownPrefixGroupFallback(t *testing.T) {
 
 	req := &sim.Request{
 		ID:          "fallback",
-		InputTokens: []int{3, 17, 42, 88, 61},
+		InputTokens: []sim.TokenID{3, 17, 42, 88, 61},
 		PrefixGroup: "unknownGroup",
 	}
 	pending := requestToPending(req, 0, false, false, prefixes, prefixLengths, 1.0)
@@ -948,7 +948,7 @@ func TestRequestToPending_UnknownPrefixGroupFallback(t *testing.T) {
 }
 
 func TestTokensToPrompt_DiverseWords(t *testing.T) {
-	tokens := []int{0, 1, 50, 99, 100, 200}
+	tokens := []sim.TokenID{0, 1, 50, 99, 100, 200}
 	result := tokensToPrompt(tokens, 6)
 	words := strings.Fields(result)
 
@@ -996,7 +996,7 @@ func TestTokensToPrompt_EmptyTokens(t *testing.T) {
 
 func TestTokensToPrompt_NegativeTokenIDs(t *testing.T) {
 	// Negative token IDs should not panic (Go % preserves sign).
-	tokens := []int{-1, -100, -50, 7}
+	tokens := []sim.TokenID{-1, -100, -50, 7}
 	result := tokensToPrompt(tokens, 4)
 	words := strings.Fields(result)
 	if len(words) != 4 {
@@ -1017,7 +1017,7 @@ func TestRequestToPending_WordCountClampedToOne(t *testing.T) {
 	// 1 token with tokensPerWord=2.0 → round(0.5)=0 → clamped to 1
 	req := &sim.Request{
 		ID:          "tiny",
-		InputTokens: []int{42},
+		InputTokens: []sim.TokenID{42},
 	}
 	pending := requestToPending(req, 0, false, false, nil, nil, 2.0)
 	words := strings.Fields(pending.Prompt)
@@ -1072,7 +1072,7 @@ func TestRequestToPending_MinTokensPropagated(t *testing.T) {
 	// BC-1: MinTokens must equal MaxOutputLen per-request (not a global constant).
 	req := &sim.Request{
 		ID:           "per-req-min-tok",
-		InputTokens:  make([]int, 5),
+		InputTokens:  make([]sim.TokenID, 5),
 		MaxOutputLen: 128,
 	}
 	p := requestToPending(req, 0, false, false, nil, nil, 1.0)
@@ -1101,7 +1101,7 @@ func TestRequestToPending_MinTokensEqualsMaxOutputLen(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			req := &sim.Request{
 				ID:           "r",
-				InputTokens:  make([]int, 5),
+				InputTokens:  make([]sim.TokenID, 5),
 				MaxOutputLen: tc.maxOutputLen,
 			}
 			p := requestToPending(req, 0, false, tc.unconstrained, nil, nil, 1.0)

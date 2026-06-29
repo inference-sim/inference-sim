@@ -4,6 +4,7 @@ package sim
 import (
 	"container/heap"
 	"fmt"
+	"math"
 	"math/rand"
 
 	"github.com/sirupsen/logrus"
@@ -12,6 +13,13 @@ import (
 )
 
 const MaxTokenID = 128000 // Max token ID in request input/output
+
+// Compile-time guard: MaxTokenID must fit in TokenID's underlying int32 range.
+// If MaxTokenID is ever raised above math.MaxInt32 (~2.1B), the int→TokenID
+// cast in GenerateRandomTokenIDs would silently truncate. This expression
+// evaluates to a negative integer constant when MaxTokenID > MaxInt32, which
+// is not representable as uint and fails to compile.
+const _ = uint(math.MaxInt32 - MaxTokenID)
 
 // eventEntry wraps an Event with a sequence ID for deterministic ordering.
 // The EventQueue orders by (Timestamp, Priority, seqID), matching the

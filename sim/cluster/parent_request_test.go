@@ -26,7 +26,7 @@ func TestNewParentRequest_NumKVBlocks(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			req := &sim.Request{
 				ID:          "req-1",
-				InputTokens: make([]int, tc.inputLen),
+				InputTokens: make([]sim.TokenID, tc.inputLen),
 				ArrivalTime: 1000,
 			}
 			pr := NewParentRequest(req, tc.blockSize)
@@ -40,7 +40,7 @@ func TestNewParentRequest_NumKVBlocks(t *testing.T) {
 
 // TestNewParentRequest_SubRequestIDs verifies sub-request ID derivation convention.
 func TestNewParentRequest_SubRequestIDs(t *testing.T) {
-	req := &sim.Request{ID: "req-42", InputTokens: make([]int, 10), ArrivalTime: 500}
+	req := &sim.Request{ID: "req-42", InputTokens: make([]sim.TokenID, 10), ArrivalTime: 500}
 	pr := NewParentRequest(req, 16)
 
 	if pr.PrefillSubReqID != "req-42_prefill" {
@@ -53,7 +53,7 @@ func TestNewParentRequest_SubRequestIDs(t *testing.T) {
 
 // TestNewParentRequest_ArrivalTimePropagated verifies ArrivalTime is copied from original request.
 func TestNewParentRequest_ArrivalTimePropagated(t *testing.T) {
-	req := &sim.Request{ID: "req-1", InputTokens: make([]int, 10), ArrivalTime: 12345}
+	req := &sim.Request{ID: "req-1", InputTokens: make([]sim.TokenID, 10), ArrivalTime: 12345}
 	pr := NewParentRequest(req, 16)
 
 	if pr.ArrivalTime != 12345 {
@@ -63,7 +63,7 @@ func TestNewParentRequest_ArrivalTimePropagated(t *testing.T) {
 
 // TestNewParentRequest_OriginalRequestPreserved verifies the original request pointer is stored.
 func TestNewParentRequest_OriginalRequestPreserved(t *testing.T) {
-	req := &sim.Request{ID: "req-1", InputTokens: make([]int, 10), ArrivalTime: 100}
+	req := &sim.Request{ID: "req-1", InputTokens: make([]sim.TokenID, 10), ArrivalTime: 100}
 	pr := NewParentRequest(req, 16)
 
 	if pr.OriginalRequest != req {
@@ -81,7 +81,7 @@ func TestNewParentRequest_PanicOnZeroBlockSize(t *testing.T) {
 			t.Error("expected panic for blockSizeTokens == 0")
 		}
 	}()
-	req := &sim.Request{ID: "req-1", InputTokens: make([]int, 10)}
+	req := &sim.Request{ID: "req-1", InputTokens: make([]sim.TokenID, 10)}
 	NewParentRequest(req, 0)
 }
 
@@ -92,7 +92,7 @@ func TestNewParentRequest_PanicOnNegativeBlockSize(t *testing.T) {
 			t.Error("expected panic for blockSizeTokens < 0")
 		}
 	}()
-	req := &sim.Request{ID: "req-1", InputTokens: make([]int, 10)}
+	req := &sim.Request{ID: "req-1", InputTokens: make([]sim.TokenID, 10)}
 	NewParentRequest(req, -1)
 }
 
@@ -100,7 +100,7 @@ func TestNewParentRequest_PanicOnNegativeBlockSize(t *testing.T) {
 // constructor initializes EncodeInstanceID to the zero value (empty InstanceID),
 // indicating "encode did not fire for this parent" (GAP-4, issue #1264).
 func TestNewParentRequest_EncodeInstanceIDZero(t *testing.T) {
-	req := &sim.Request{ID: "req-enc-init", InputTokens: make([]int, 16)}
+	req := &sim.Request{ID: "req-enc-init", InputTokens: make([]sim.TokenID, 16)}
 	pr := NewParentRequest(req, 16)
 	if pr.EncodeInstanceID != "" {
 		t.Errorf("EncodeInstanceID = %q, want empty at construction", pr.EncodeInstanceID)

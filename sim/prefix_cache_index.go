@@ -57,7 +57,7 @@ func NewPrefixCacheIndex(blockSize int, lruCapacity int) *PrefixCacheIndex {
 // hashes: two requests sharing the first K blocks produce identical hashes for those K blocks.
 // Tokens shorter than one block produce an empty slice.
 // Delegates to hash.ComputeBlockHashes for the shared implementation (BC-3).
-func (idx *PrefixCacheIndex) ComputeBlockHashes(tokens []int) []string {
+func (idx *PrefixCacheIndex) ComputeBlockHashes(tokens []TokenID) []string {
 	return hash.ComputeBlockHashes(idx.blockSize, tokens)
 }
 

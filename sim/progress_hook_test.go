@@ -54,13 +54,13 @@ func newTestSimulatorForHook(t *testing.T) *Simulator {
 }
 
 func newTestRequest(id string, arrivalTime int64, inputLen, outputLen int) *Request {
-	input := make([]int, inputLen)
-	output := make([]int, outputLen)
+	input := make([]TokenID, inputLen)
+	output := make([]TokenID, outputLen)
 	for i := range input {
-		input[i] = i % MaxTokenID
+		input[i] = TokenID(i % MaxTokenID)
 	}
 	for i := range output {
-		output[i] = i % MaxTokenID
+		output[i] = TokenID(i % MaxTokenID)
 	}
 	return &Request{
 		ID:           id,

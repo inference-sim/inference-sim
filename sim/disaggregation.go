@@ -100,7 +100,7 @@ func NewDisaggregationDecider(name string) DisaggregationDecider {
 type PrefixThresholdDecider struct {
 	threshold  int
 	blockSize  int
-	cacheQuery map[string]func([]int) int
+	cacheQuery map[string]func([]TokenID) int
 }
 
 // NewPrefixThresholdDecider creates a PrefixThresholdDecider with the given
@@ -110,7 +110,7 @@ type PrefixThresholdDecider struct {
 // when state.SelectedInstance is missing from the map, Decide returns
 // Disaggregate=false (conservative fallback, consistent with llm-d's
 // nil-endpoint guard at prefix_based_pd_decider.go:108-111).
-func NewPrefixThresholdDecider(threshold, blockSize int, cacheQuery map[string]func([]int) int) *PrefixThresholdDecider {
+func NewPrefixThresholdDecider(threshold, blockSize int, cacheQuery map[string]func([]TokenID) int) *PrefixThresholdDecider {
 	if threshold < 0 {
 		panic(fmt.Sprintf("NewPrefixThresholdDecider: threshold must be >= 0, got %d", threshold))
 	}

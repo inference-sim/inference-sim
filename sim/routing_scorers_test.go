@@ -390,9 +390,9 @@ func TestAllScorers_ReturnScoreForEveryInstance(t *testing.T) {
 		{ID: "c", QueueDepth: 0, KVUtilization: 0.0},
 	}
 	cacheQueryFn := cacheQueryFn{
-		"a": func(tokens []int) int { return 2 },
-		"b": func(tokens []int) int { return 0 },
-		"c": func(tokens []int) int { return 1 },
+		"a": func(tokens []TokenID) int { return 2 },
+		"b": func(tokens []TokenID) int { return 0 },
+		"c": func(tokens []TokenID) int { return 1 },
 	}
 	precisePrefixScorer, _ := newPrecisePrefixCacheScorer(cacheQueryFn)
 	noHitLRUScorer, _ := newNoHitLRUScorer(cacheQueryFn)
@@ -410,7 +410,7 @@ func TestAllScorers_ReturnScoreForEveryInstance(t *testing.T) {
 		{"precise-prefix-cache", precisePrefixScorer},
 		{"no-hit-lru", noHitLRUScorer},
 	}
-	req := &Request{ID: "r1", InputTokens: []int{1, 2, 3}}
+	req := &Request{ID: "r1", InputTokens:  []TokenID{1, 2, 3}}
 	for _, sf := range scorerFns {
 		t.Run(sf.name, func(t *testing.T) {
 			scores := sf.fn(req, snapshots)
@@ -444,14 +444,14 @@ func TestAllScorers_ReturnScoreForEveryInstance(t *testing.T) {
 // correctly wires precise-prefix-cache and no-hit-lru scorers via NewRoutingPolicyWithCache.
 func TestNewScorerFactory_PrecisePrefixAndNoHitLRU(t *testing.T) {
 	cacheQueryFn := cacheQueryFn{
-		"a": func(tokens []int) int { return 5 },
-		"b": func(tokens []int) int { return 0 },
+		"a": func(tokens []TokenID) int { return 5 },
+		"b": func(tokens []TokenID) int { return 0 },
 	}
 	policy := NewRoutingPolicyWithCache("weighted", []ScorerConfig{
 		{Name: "precise-prefix-cache", Weight: 1.0},
 	}, 16, nil, cacheQueryFn)
 
-	req := &Request{ID: "r1", InputTokens: []int{1, 2, 3}}
+	req := &Request{ID: "r1", InputTokens:  []TokenID{1, 2, 3}}
 	state := &RouterState{
 		Snapshots: []RoutingSnapshot{{ID: "a"}, {ID: "b"}},
 		Clock:     1000,

@@ -131,8 +131,8 @@ func TestClusterSimulator_ProgressHook_ShedByTier(t *testing.T) {
 			ID:           fmt.Sprintf("req_sheddable_%d", i),
 			ArrivalTime:  int64(i) * 50_000, // spread over 2_000_000µs to trigger periodic snapshots
 			SLOClass:     "sheddable",
-			InputTokens:  make([]int, 50),
-			OutputTokens: make([]int, 20),
+			InputTokens:  make([]sim.TokenID, 50),
+			OutputTokens: make([]sim.TokenID, 20),
 			State:        sim.StateQueued,
 		})
 	}
@@ -237,8 +237,8 @@ func TestClusterSimulator_ProgressHook_ShedByTierDeterminism(t *testing.T) {
 				ID:           fmt.Sprintf("req_sheddable_%d", i),
 				ArrivalTime:  int64(i) * 50_000, // spread to trigger periodic snapshots
 				SLOClass:     "sheddable",
-				InputTokens:  make([]int, 50),
-				OutputTokens: make([]int, 20),
+				InputTokens:  make([]sim.TokenID, 50),
+				OutputTokens: make([]sim.TokenID, 20),
 				State:        sim.StateQueued,
 			})
 		}

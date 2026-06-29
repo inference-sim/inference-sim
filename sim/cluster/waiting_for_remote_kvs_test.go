@@ -163,12 +163,12 @@ func TestWaitingForRemoteKVs_ConcurrentReservationsDoNotStealBlocks(t *testing.T
 
 	reqA := &sim.Request{
 		ID:          "transferA_decode",
-		InputTokens: make([]int, 80), // exactly 5 blocks at blockSize=16
+		InputTokens: make([]sim.TokenID, 80), // exactly 5 blocks at blockSize=16
 		State:       sim.StateWaitingForRemoteKVs,
 	}
 	reqB := &sim.Request{
 		ID:          "transferB_decode",
-		InputTokens: make([]int, 16), // 1 block — minimum non-zero
+		InputTokens: make([]sim.TokenID, 16), // 1 block — minimum non-zero
 		State:       sim.StateWaitingForRemoteKVs,
 	}
 
@@ -214,7 +214,7 @@ func TestReserveTransferredKV_ReleaseFreesBlocks(t *testing.T) {
 
 	req := &sim.Request{
 		ID:          "reserved_req",
-		InputTokens: make([]int, 80), // 5 blocks
+		InputTokens: make([]sim.TokenID, 80), // 5 blocks
 		State:       sim.StateWaitingForRemoteKVs,
 	}
 

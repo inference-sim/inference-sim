@@ -137,8 +137,8 @@ func TestArrivalHook_FiresForSessionFollowUps(t *testing.T) {
 		return []*sim.Request{{
 			ID:           req.ID + "-followup",
 			ArrivalTime:  clock,
-			InputTokens:  []int{1, 2, 3},
-			OutputTokens: []int{4, 5},
+			InputTokens:  []sim.TokenID{1, 2, 3},
+			OutputTokens: []sim.TokenID{4, 5},
 			Model:        req.Model,
 		}}
 	}
@@ -188,8 +188,8 @@ func TestArrivalHook_BeyondHorizonFollowUpsExcluded(t *testing.T) {
 		return []*sim.Request{{
 			ID:           beyondHorizonID,
 			ArrivalTime:  clock + beyondHorizonOffsetUs,
-			InputTokens:  []int{1, 2, 3},
-			OutputTokens: []int{4, 5},
+			InputTokens:  []sim.TokenID{1, 2, 3},
+			OutputTokens: []sim.TokenID{4, 5},
 			Model:        req.Model,
 		}}
 	}

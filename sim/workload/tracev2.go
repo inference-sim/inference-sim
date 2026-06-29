@@ -614,7 +614,7 @@ func TraceRecordsToRequests(records []TraceRecord) []*sim.Request {
 	for _, rec := range records {
 		req := &sim.Request{
 			ArrivalTime:  rec.ArrivalTimeUs,
-			OutputTokens: []int{rec.OutputTokens},
+			OutputTokens: []sim.TokenID{sim.TokenID(rec.OutputTokens)},
 		}
 
 		// TTFTSet and FirstTokenTime

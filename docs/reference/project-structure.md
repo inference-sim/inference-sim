@@ -49,6 +49,7 @@ inference-sim/
 │   └── internal/              # Shared internal packages
 │       ├── hash/              # Block-level hashing for prefix cache
 │       ├── testutil/          # Shared test infrastructure (golden dataset loading)
+│       ├── tokenid/           # TokenID (int32) type — defined-type compact token ID shared with sim/internal/hash
 │       └── util/              # General utility functions
 ├── sim/kv/                    # KV cache implementations (PKG-1)
 │   ├── cache.go               # KVCacheState (single-tier GPU)

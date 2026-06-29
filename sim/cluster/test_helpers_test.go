@@ -32,7 +32,7 @@ func testGenerateRequests(seed, horizon int64, rate float64,
 	for currentTime < horizon && reqIdx < numReqs {
 		promptLen := generateLengthGauss(workloadRNG, pMean, pStd, pMin, pMax)
 		prompt := sim.GenerateRandomTokenIDs(workloadRNG, promptLen)
-		input := append(append([]int{}, prefixTokens...), prompt...)
+		input := append(append([]sim.TokenID{}, prefixTokens...), prompt...)
 
 		outputLen := generateLengthGauss(workloadRNG, oMean, oStd, oMin, oMax)
 		output := sim.GenerateRandomTokenIDs(workloadRNG, outputLen)

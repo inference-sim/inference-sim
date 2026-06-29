@@ -10,7 +10,7 @@ import (
 // GenerateMultimodalTokens generates input tokens for a multimodal request.
 // Returns the combined input tokens, per-modality counts, and any error.
 // Total input = text + image*imageCount + audio*audioCount + video*videoCount.
-func GenerateMultimodalTokens(rng *rand.Rand, mm *MultimodalSpec) ([]int, int, int, int, int, error) {
+func GenerateMultimodalTokens(rng *rand.Rand, mm *MultimodalSpec) ([]sim.TokenID, int, int, int, int, error) {
 	textLen := 0
 	imageLen := 0
 	audioLen := 0

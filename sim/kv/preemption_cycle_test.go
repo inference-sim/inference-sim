@@ -24,9 +24,9 @@ func TestPreemptionCycle_With16KPrefixes(t *testing.T) {
 	kvc := NewKVCacheState(totalBlocks, blockSize)
 
 	// Shared prefix (64 blocks = 1024 tokens)
-	sharedPrefix := make([]int, 1024) // 64 * 16
+	sharedPrefix := make([]sim.TokenID, 1024) // 64 * 16
 	for i := range sharedPrefix {
-		sharedPrefix[i] = i + 10000
+		sharedPrefix[i] = sim.TokenID(i + 10000)
 	}
 
 	// Create 3 requests with shared prefix + unique suffix
@@ -35,10 +35,10 @@ func TestPreemptionCycle_With16KPrefixes(t *testing.T) {
 		req := &sim.Request{
 			ID: fmt.Sprintf("request_%d", i),
 		}
-		req.InputTokens = append([]int{}, sharedPrefix...)
-		uniqueSuffix := make([]int, 1024) // 64 more blocks
+		req.InputTokens = append([]sim.TokenID{}, sharedPrefix...)
+		uniqueSuffix := make([]sim.TokenID, 1024) // 64 more blocks
 		for j := range uniqueSuffix {
-			uniqueSuffix[j] = (i+1)*100000 + j
+			uniqueSuffix[j] = sim.TokenID((i+1)*100000 + j)
 		}
 		req.InputTokens = append(req.InputTokens, uniqueSuffix...)
 		// Each request: 2048 tokens = 128 blocks

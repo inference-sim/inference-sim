@@ -6,7 +6,17 @@ package sim
 import (
 	"fmt"
 	"math/rand"
+
+	"github.com/inference-sim/inference-sim/sim/internal/tokenid"
 )
+
+// TokenID is the simulator's compact representation of a tokenizer ID.
+// Re-exported from sim/internal/tokenid as an alias at the package boundary,
+// so callers write sim.TokenID. The underlying type (tokenid.TokenID) is a
+// defined type (NOT a Go type alias of int32), so assignments from int still
+// require an explicit conversion — the compile-time mixed-arithmetic check
+// is the point.
+type TokenID = tokenid.TokenID
 
 // Request models a single request's lifecycle in the simulation.
 // Each request has:
@@ -30,8 +40,8 @@ const (
 type Request struct {
 	ID string // Unique identifier for the request
 
-	InputTokens  []int // Prompt tokens
-	OutputTokens []int // Pre-specified output tokens (already known for the simulation)
+	InputTokens  []TokenID // Prompt tokens
+	OutputTokens []TokenID // Pre-specified output tokens (already known for the simulation)
 	MaxOutputLen int   // Client output budget (vLLM max_tokens); 0 = no budget (input-only check, runtime stop enforces limit)
 
 	State         RequestState // queued, running, completed
@@ -117,10 +127,10 @@ func (req *Request) IsMultimodal() bool {
 
 // GenerateRandomTokenIDs creates a slice of random token IDs in [0, MaxTokenID).
 // RNG calls: length × Intn(MaxTokenID).
-func GenerateRandomTokenIDs(rng *rand.Rand, length int) []int {
-	tokens := make([]int, length)
+func GenerateRandomTokenIDs(rng *rand.Rand, length int) []TokenID {
+	tokens := make([]TokenID, length)
 	for i := range tokens {
-		tokens[i] = rng.Intn(MaxTokenID)
+		tokens[i] = TokenID(rng.Intn(MaxTokenID))
 	}
 	return tokens
 }
