@@ -101,7 +101,7 @@ func setupTieredWithLatency(t *testing.T) *TieredKVCache {
 	tiered := NewTieredKVCache(gpu, 10, 0.0, 1.0, 10)
 
 	// Step 1: Allocate r1 (2 blocks) and mirror to CPU
-	r1 := &sim.Request{ID: "r1", InputTokens: []int{1, 2, 3, 4}}
+	r1 := &sim.Request{ID: "r1", InputTokens:  []sim.TokenID{1, 2, 3, 4}}
 	assert.True(t, tiered.AllocateKVBlocks(r1, 0, 4, []int64{}), "r1 alloc")
 	tiered.MirrorToCPU([]*sim.Request{r1})
 
@@ -110,7 +110,7 @@ func setupTieredWithLatency(t *testing.T) *TieredKVCache {
 
 	// Step 3: Fill GPU completely to evict r1's hashes via popFreeBlock
 	for i := 0; i < 6; i++ {
-		f := &sim.Request{ID: fmt.Sprintf("f%d", i), InputTokens: []int{i*2 + 20, i*2 + 21}}
+		f := &sim.Request{ID: fmt.Sprintf("f%d", i), InputTokens:  []sim.TokenID{sim.TokenID(i*2 + 20), sim.TokenID(i*2 + 21)}}
 		assert.True(t, tiered.AllocateKVBlocks(f, 0, 2, []int64{}), fmt.Sprintf("f%d alloc", i))
 	}
 	// GPU: 6 used, 0 free. r1's hashes cleared by popFreeBlock.
@@ -121,7 +121,7 @@ func setupTieredWithLatency(t *testing.T) *TieredKVCache {
 	// Step 5: Request same prefix [1,2,3,4] → need 2 blocks, 1 free → fails → reload.
 	// Reload: 1 block from CPU (limited by maxReloads=1).
 	// pendingLatency = 1 × (10 + ceil(2/1.0)) = 12.
-	r2 := &sim.Request{ID: "r2", InputTokens: []int{1, 2, 3, 4}}
+	r2 := &sim.Request{ID: "r2", InputTokens:  []sim.TokenID{1, 2, 3, 4}}
 	tiered.AllocateKVBlocks(r2, 0, 4, []int64{}) // may not fully succeed
 
 	latency := tiered.PendingTransferLatency()

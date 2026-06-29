@@ -61,10 +61,10 @@ func msConfig(horizon int64) SimConfig {
 
 // msMakeTokens creates a token slice of the given length (values 1..n).
 // Named with ms prefix to avoid collision with routing_prefix_scorer_test.go.
-func msMakeTokens(n int) []int {
-	tokens := make([]int, n)
+func msMakeTokens(n int) []TokenID {
+	tokens := make([]TokenID, n)
 	for i := range tokens {
-		tokens[i] = i + 1
+		tokens[i] = TokenID(i + 1)
 	}
 	return tokens
 }
@@ -312,7 +312,7 @@ func TestMetrics_AllITLs_Sum_WithZeroOutputRequests(t *testing.T) {
 
 	// Mix of zero-output and normal requests
 	s.InjectArrival(&Request{
-		ID: "z0", InputTokens: msMakeTokens(32), OutputTokens: []int{},
+		ID: "z0", InputTokens: msMakeTokens(32), OutputTokens: []TokenID{},
 		ArrivalTime: 0, State: StateQueued,
 	})
 	s.InjectArrival(&Request{
@@ -479,9 +479,9 @@ func TestMetrics_ZeroOutput_ValidTTFTAndE2E(t *testing.T) {
 	// Test both empty slice and nil OutputTokens (Go zero-value).
 	for _, tc := range []struct {
 		name   string
-		output []int
+		output []TokenID
 	}{
-		{"empty-slice", []int{}},
+		{"empty-slice", []TokenID{}},
 		{"nil", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -529,7 +529,7 @@ func TestMetrics_ZeroOutput_DoesNotContaminateITL(t *testing.T) {
 	sMix.InjectArrival(&Request{
 		ID:           "mix-zero",
 		InputTokens:  msMakeTokens(32),
-		OutputTokens: []int{},
+		OutputTokens: []TokenID{},
 		ArrivalTime:  0,
 		State:        StateQueued,
 	})
@@ -703,9 +703,9 @@ func TestMetrics_TTFT_NonMonotonic_WithPrefixCaching(t *testing.T) {
 		ArrivalTime:  500000,
 		State:        StateQueued,
 	}
-	reqCTokens := make([]int, 64)
+	reqCTokens := make([]TokenID, 64)
 	for i := range reqCTokens {
-		reqCTokens[i] = 50000 + i // distinct tokens — no cache overlap
+		reqCTokens[i] = TokenID(50000 + i) // distinct tokens — no cache overlap
 	}
 	reqC := &Request{
 		ID:           "uncached",

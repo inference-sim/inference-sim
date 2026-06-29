@@ -88,9 +88,9 @@ func TestTransferContention_BCP25_SingleTransferIdentical(t *testing.T) {
 	requests2 := make([]*sim.Request, len(requests1))
 	for i, r := range requests1 {
 		cp := *r
-		cp.InputTokens = make([]int, len(r.InputTokens))
+		cp.InputTokens = make([]sim.TokenID, len(r.InputTokens))
 		copy(cp.InputTokens, r.InputTokens)
-		cp.OutputTokens = make([]int, len(r.OutputTokens))
+		cp.OutputTokens = make([]sim.TokenID, len(r.OutputTokens))
 		copy(cp.OutputTokens, r.OutputTokens)
 		requests2[i] = &cp
 	}
@@ -324,13 +324,13 @@ func TestTransferContention_HorizonCutoff_RunReturnsNil(t *testing.T) {
 // N>1 behavioral coverage is provided by TestTransferContention_BCP26_FairShareDivision.
 func TestTransferContention_INVP22_EffectiveBandwidthFormula(t *testing.T) {
 	// 160 tokens → ceil(160/16) = 10 KV blocks
-	inputTokens := make([]int, 160)
+	inputTokens := make([]sim.TokenID, 160)
 	for i := range inputTokens {
-		inputTokens[i] = i + 1
+		inputTokens[i] = sim.TokenID(i + 1)
 	}
-	outputTokens := make([]int, 10)
+	outputTokens := make([]sim.TokenID, 10)
 	for i := range outputTokens {
-		outputTokens[i] = i + 1
+		outputTokens[i] = sim.TokenID(i + 1)
 	}
 	req := &sim.Request{
 		ID:           "request_0",
@@ -611,8 +611,8 @@ func TestTransferContention_NegativeGuard_SetsCorruptionFlag(t *testing.T) {
 		ID: "test-parent",
 		OriginalRequest: &sim.Request{
 			ID:           "test-req",
-			InputTokens:  []int{1, 2, 3},
-			OutputTokens: []int{1},
+			InputTokens:  []sim.TokenID{1, 2, 3},
+			OutputTokens: []sim.TokenID{1},
 		},
 		// With #1343 WaitingForRemoteKVs parity, KVTransferCompletedEvent
 		// requires DecodeSubReq (attached at transfer start). A nil

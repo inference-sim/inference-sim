@@ -143,7 +143,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 		}
 
 		// Get prefix for this client's group
-		var prefix []int
+		var prefix []sim.TokenID
 		if client.PrefixGroup != "" {
 			prefix = prefixes[client.PrefixGroup]
 		}
@@ -292,8 +292,8 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				continue
 			}
 
-			var inputTokens []int
-			var outputTokens []int
+			var inputTokens []sim.TokenID
+			var outputTokens []sim.TokenID
 			var textCount, imageCount, audioCount, videoCount int
 
 			if client.Multimodal != nil {
@@ -315,7 +315,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 
 			var prefixLength int
 			if len(prefix) > 0 {
-				inputTokens = append(append([]int{}, prefix...), inputTokens...)
+				inputTokens = append(append([]sim.TokenID{}, prefix...), inputTokens...)
 				prefixLength = len(prefix)
 			}
 
@@ -448,13 +448,13 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 		// to pass to the SessionBlueprint for follow-up round generation.
 		// Match by ClientID to avoid conflating clients that share TenantID/SLOClass
 		// (e.g. all stages in a multi-stage workload share the same prefixGroup TenantID).
-		var prefixTokens []int
+		var prefixTokens []sim.TokenID
 		if client.PrefixGroup != "" && client.PrefixLength > 0 {
 			for _, req := range reqs {
 				if req.SessionID != "" && req.RoundIndex == 0 && req.ClientID == client.ID {
 					// The first PrefixLength tokens of InputTokens are the prefix
 					if req.InputLen() >= int64(client.PrefixLength) {
-						prefixTokens = make([]int, client.PrefixLength)
+						prefixTokens = make([]sim.TokenID, client.PrefixLength)
 						copy(prefixTokens, req.InputTokenSlice(0, int64(client.PrefixLength)))
 					}
 					break
@@ -565,7 +565,7 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 			return nil, fmt.Errorf("client %q output distribution: %w", client.ID, err)
 		}
 
-		var prefix []int
+		var prefix []sim.TokenID
 		if client.PrefixGroup != "" {
 			prefix = prefixes[client.PrefixGroup]
 		}
@@ -594,7 +594,7 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 
 			var prefixLength int
 			if len(prefix) > 0 {
-				inputTokens = append(append([]int{}, prefix...), inputTokens...)
+				inputTokens = append(append([]sim.TokenID{}, prefix...), inputTokens...)
 				prefixLength = len(prefix)
 			}
 
@@ -854,7 +854,7 @@ func generateRequestsForWindow(
 	allClients []ClientSpec,
 	aggregateRate float64,
 	rng *rand.Rand,
-	prefix []int,
+	prefix []sim.TokenID,
 ) ([]*sim.Request, error) {
 	// Step 1: Resolve parameters with fallback to client-level defaults.
 	arrival, inputDist, outputDist, _ := resolveWindowParameters(client, window)

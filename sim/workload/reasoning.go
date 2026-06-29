@@ -24,7 +24,7 @@ func GenerateReasoningRequests(
 	inputSampler, outputSampler LengthSampler,
 	startTime int64,
 	clientID, tenantID, sloClass, model string,
-	prefix []int,
+	prefix []sim.TokenID,
 ) ([]*sim.Request, error) {
 	if spec == nil || spec.MultiTurn == nil {
 		return nil, nil
@@ -94,12 +94,12 @@ func GenerateReasoningRequests(
 		// - Non-accumulate: each round is fresh; if prefix is set, prepend it
 		//   (one O(prefix+input) copy per round; O(R) total — not the
 		//   quadratic pattern we're eliminating).
-		var inputTokens []int
+		var inputTokens []sim.TokenID
 		if mt.ContextGrowth == "accumulate" {
 			_, inputEnd := buf.Append(newInputTokens)
 			inputTokens = buf.Slice(0, inputEnd)
 		} else if prefixLen > 0 {
-			inputTokens = make([]int, 0, len(prefix)+inputLen)
+			inputTokens = make([]sim.TokenID, 0, len(prefix)+inputLen)
 			inputTokens = append(inputTokens, prefix...)
 			inputTokens = append(inputTokens, newInputTokens...)
 		} else {

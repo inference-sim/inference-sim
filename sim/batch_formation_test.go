@@ -60,8 +60,8 @@ func TestVLLMBatchFormation_TokenBudgetEnforced(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		wq.Enqueue(&Request{
 			ID:           fmt.Sprintf("req-%d", i),
-			InputTokens:  make([]int, 30),
-			OutputTokens: make([]int, 5),
+			InputTokens:  make([]TokenID, 30),
+			OutputTokens: make([]TokenID, 5),
 			State:        StateQueued,
 		})
 	}
@@ -114,8 +114,8 @@ func TestVLLMBatchFormation_BatchSizeEnforced(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		wq.Enqueue(&Request{
 			ID:           fmt.Sprintf("req-%d", i),
-			InputTokens:  make([]int, 10),
-			OutputTokens: make([]int, 5),
+			InputTokens:  make([]TokenID, 10),
+			OutputTokens: make([]TokenID, 5),
 			State:        StateQueued,
 		})
 	}
@@ -168,8 +168,8 @@ func TestVLLMBatchFormation_PreemptionReleasesKV(t *testing.T) {
 	// GIVEN two running requests: victim occupies 2 blocks, needy needs 3 blocks for prefill
 	victim := &Request{
 		ID:           "victim",
-		InputTokens:  make([]int, 20), // ceil(20/16) = 2 blocks
-		OutputTokens: make([]int, 5),
+		InputTokens:  make([]TokenID, 20), // ceil(20/16) = 2 blocks
+		OutputTokens: make([]TokenID, 5),
 		State:        StateRunning,
 	}
 	if ok := kvCache.AllocateKVBlocks(victim, 0, 20, []int64{}); !ok {
@@ -179,8 +179,8 @@ func TestVLLMBatchFormation_PreemptionReleasesKV(t *testing.T) {
 
 	needy := &Request{
 		ID:           "needy",
-		InputTokens:  make([]int, 40), // ceil(40/16) = 3 blocks, but only 1 free
-		OutputTokens: make([]int, 5),
+		InputTokens:  make([]TokenID, 40), // ceil(40/16) = 3 blocks, but only 1 free
+		OutputTokens: make([]TokenID, 5),
 		State:        StateRunning,
 	}
 	// needy is in running batch with ProgressIndex=0, so Phase 1 prefill triggers preemptForTokens
@@ -233,8 +233,8 @@ func TestVLLMBatchFormation_PreemptionStopsDequeue(t *testing.T) {
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 
 	// GIVEN two running requests where req2's prefill will trigger preemption
-	req1 := &Request{ID: "r1", InputTokens: make([]int, 20), OutputTokens: make([]int, 5), State: StateRunning}
-	req2 := &Request{ID: "r2", InputTokens: make([]int, 20), OutputTokens: make([]int, 5), State: StateRunning}
+	req1 := &Request{ID: "r1", InputTokens: make([]TokenID, 20), OutputTokens: make([]TokenID, 5), State: StateRunning}
+	req2 := &Request{ID: "r2", InputTokens: make([]TokenID, 20), OutputTokens: make([]TokenID, 5), State: StateRunning}
 
 	// Allocate blocks for req1 (fills most of cache)
 	if ok := kvCache.AllocateKVBlocks(req1, 0, 20, []int64{}); !ok {
@@ -245,7 +245,7 @@ func TestVLLMBatchFormation_PreemptionStopsDequeue(t *testing.T) {
 	// req2 has ProgressIndex=0, so Phase 1 will try to allocate for its full prefill
 
 	// AND a waiting request that should NOT be dequeued after preemption
-	waitReq := &Request{ID: "wait", InputTokens: make([]int, 5), OutputTokens: make([]int, 2), State: StateQueued}
+	waitReq := &Request{ID: "wait", InputTokens: make([]TokenID, 5), OutputTokens: make([]TokenID, 2), State: StateQueued}
 	wq := &WaitQueue{}
 	wq.Enqueue(waitReq)
 
@@ -289,7 +289,7 @@ func TestVLLMBatchFormation_CircuitBreaker(t *testing.T) {
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 
 	// GIVEN a request needing more blocks than total capacity
-	huge := &Request{ID: "huge", InputTokens: make([]int, 200), OutputTokens: make([]int, 5), State: StateQueued}
+	huge := &Request{ID: "huge", InputTokens: make([]TokenID, 200), OutputTokens: make([]TokenID, 5), State: StateQueued}
 	wq := &WaitQueue{}
 	wq.Enqueue(huge)
 
@@ -335,9 +335,9 @@ func TestVLLMBatchFormation_KVAllocationFailure_StopsDequeue(t *testing.T) {
 	kvCache := MustNewKVCacheState(cfg.TotalKVBlocks, cfg.BlockSizeTokens)
 
 	// GIVEN: first request fits, second needs too many blocks, third is small but can't skip
-	req1 := &Request{ID: "small", InputTokens: make([]int, 16), OutputTokens: make([]int, 2), State: StateQueued}
-	req2 := &Request{ID: "big", InputTokens: make([]int, 100), OutputTokens: make([]int, 2), State: StateQueued}
-	req3 := &Request{ID: "also-small", InputTokens: make([]int, 10), OutputTokens: make([]int, 2), State: StateQueued}
+	req1 := &Request{ID: "small", InputTokens: make([]TokenID, 16), OutputTokens: make([]TokenID, 2), State: StateQueued}
+	req2 := &Request{ID: "big", InputTokens: make([]TokenID, 100), OutputTokens: make([]TokenID, 2), State: StateQueued}
+	req3 := &Request{ID: "also-small", InputTokens: make([]TokenID, 10), OutputTokens: make([]TokenID, 2), State: StateQueued}
 
 	wq := &WaitQueue{}
 	wq.Enqueue(req1)
@@ -393,8 +393,8 @@ func TestPreemptForTokens_CleansUpComputedTokens(t *testing.T) {
 	kv := MustNewKVCacheState(4, 4)
 	victim := &Request{
 		ID:           "victim",
-		InputTokens:  []int{1, 2, 3, 4, 5, 6, 7, 8},
-		OutputTokens: []int{100},
+		InputTokens:  []TokenID{1, 2, 3, 4, 5, 6, 7, 8},
+		OutputTokens: []TokenID{100},
 		State:        StateRunning,
 	}
 	kv.AllocateKVBlocks(victim, 0, 8, []int64{})
@@ -414,8 +414,8 @@ func TestPreemptForTokens_CleansUpComputedTokens(t *testing.T) {
 	// A new request that needs more tokens than available
 	newReq := &Request{
 		ID:           "newcomer",
-		InputTokens:  []int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160},
-		OutputTokens: []int{100},
+		InputTokens:  []TokenID{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160},
+		OutputTokens: []TokenID{100},
 	}
 	bf := &VLLMBatchFormation{preemptionPolicy: PreemptionFCFS}
 
@@ -451,9 +451,9 @@ func TestVLLMBatchFormation_Phase1_EvictedNotRevisited(t *testing.T) {
 	// Total: 6 blocks = full cache.
 	// r1's decode needs a NEW block (last block full) → triggers preemption of r3 (tail).
 	// r2's decode fills its partial block (15→16) → NO new block needed, r2 survives.
-	r1 := &Request{ID: "r1", InputTokens: make([]int, 48), OutputTokens: make([]int, 100), State: StateRunning}
-	r2 := &Request{ID: "r2", InputTokens: make([]int, 31), OutputTokens: make([]int, 100), State: StateRunning}
-	r3 := &Request{ID: "r3", InputTokens: make([]int, 16), OutputTokens: make([]int, 100), State: StateRunning}
+	r1 := &Request{ID: "r1", InputTokens: make([]TokenID, 48), OutputTokens: make([]TokenID, 100), State: StateRunning}
+	r2 := &Request{ID: "r2", InputTokens: make([]TokenID, 31), OutputTokens: make([]TokenID, 100), State: StateRunning}
+	r3 := &Request{ID: "r3", InputTokens: make([]TokenID, 16), OutputTokens: make([]TokenID, 100), State: StateRunning}
 
 	if ok := kvCache.AllocateKVBlocks(r1, 0, 48, []int64{}); !ok {
 		t.Fatal("setup: allocate r1")
@@ -573,8 +573,8 @@ func TestVLLMBatchFormation_LivelockResolution(t *testing.T) {
 		outputLen := 3200 + wlRng.Intn(397) // 3200-3596
 		req := &Request{
 			ID:           fmt.Sprintf("req_%d", i),
-			InputTokens:  make([]int, inputLen),
-			OutputTokens: make([]int, outputLen),
+			InputTokens:  make([]TokenID, inputLen),
+			OutputTokens: make([]TokenID, outputLen),
 			ArrivalTime:  arrivalTime,
 			State:        StateQueued,
 		}
@@ -619,8 +619,8 @@ func TestVLLMBatchFormation_MaxModelLen_ProactiveCap_Decode(t *testing.T) {
 	// so preemptForTokens is never called. The request stays in the batch with NumNewTokens=0.
 	req := &Request{
 		ID:            "near_cap",
-		InputTokens:   make([]int, 50),
-		OutputTokens:  make([]int, 200),
+		InputTokens:   make([]TokenID, 50),
+		OutputTokens:  make([]TokenID, 200),
 		State:         StateRunning,
 		ProgressIndex: 99,
 	}
@@ -654,8 +654,8 @@ func TestVLLMBatchFormation_MaxModelLen_ProactiveCap_Phase2(t *testing.T) {
 	// EnqueueRequest in production. Testing FormBatch cap in isolation.
 	req := &Request{
 		ID:           "new_req",
-		InputTokens:  make([]int, 80),
-		OutputTokens: make([]int, 50),
+		InputTokens:  make([]TokenID, 80),
+		OutputTokens: make([]TokenID, 50),
 		State:        StateQueued,
 	}
 	wq := &WaitQueue{}
@@ -688,8 +688,8 @@ func TestVLLMBatchFormation_MaxModelLen_Zero_NoClamp(t *testing.T) {
 
 	req := &Request{
 		ID:           "unlimited",
-		InputTokens:  make([]int, 500),
-		OutputTokens: make([]int, 500),
+		InputTokens:  make([]TokenID, 500),
+		OutputTokens: make([]TokenID, 500),
 		State:        StateQueued,
 	}
 	wq := &WaitQueue{}
@@ -729,7 +729,7 @@ func TestVLLMBatchFormation_ZeroInputRequest_SkipsDecodeOnlyPath(t *testing.T) {
 	req := &Request{
 		ID:           "zero-input",
 		InputTokens:  nil, // inputLen == 0
-		OutputTokens: make([]int, 5),
+		OutputTokens: make([]TokenID, 5),
 		State:        StateQueued,
 		// ProgressIndex defaults to 0
 	}
@@ -777,11 +777,11 @@ func TestPreemption_FCFS_EvictsTail(t *testing.T) {
 	kvCache := MustNewKVCacheState(10, 16)
 	running := []*Request{
 		{ID: "first", SLOClass: "critical", ArrivalTime: 100, State: StateRunning,
-			InputTokens: make([]int, 48), OutputTokens: make([]int, 10)},
+			InputTokens: make([]TokenID, 48), OutputTokens: make([]TokenID, 10)},
 		{ID: "second", SLOClass: "standard", ArrivalTime: 200, State: StateRunning,
-			InputTokens: make([]int, 48), OutputTokens: make([]int, 10)},
+			InputTokens: make([]TokenID, 48), OutputTokens: make([]TokenID, 10)},
 		{ID: "third", SLOClass: "background", ArrivalTime: 300, State: StateRunning,
-			InputTokens: make([]int, 48), OutputTokens: make([]int, 10)},
+			InputTokens: make([]TokenID, 48), OutputTokens: make([]TokenID, 10)},
 	}
 	for _, req := range running {
 		// AllocateKVBlocks uses ProgressIndex < len(InputTokens) for prefill path.
@@ -789,7 +789,7 @@ func TestPreemption_FCFS_EvictsTail(t *testing.T) {
 		kvCache.AllocateKVBlocks(req, 0, 48, nil)
 		req.ProgressIndex = 48
 	}
-	newReq := &Request{ID: "new", InputTokens: make([]int, 16), OutputTokens: make([]int, 1), State: StateQueued}
+	newReq := &Request{ID: "new", InputTokens: make([]TokenID, 16), OutputTokens: make([]TokenID, 1), State: StateQueued}
 	wq := &WaitQueue{}
 	wq.Enqueue(newReq)
 
@@ -824,8 +824,8 @@ func makeRunningRequest(id, sloClass string, arrival int64, inputLen int, kvCach
 		SLOClass:     sloClass,
 		ArrivalTime:  arrival,
 		State:        StateRunning,
-		InputTokens:  make([]int, inputLen),
-		OutputTokens: make([]int, 10),
+		InputTokens:  make([]TokenID, inputLen),
+		OutputTokens: make([]TokenID, 10),
 		// Set Priority in vLLM convention (lower = more urgent) to match what
 		// Simulator.EnqueueRequest pre-processor would set at runtime.
 		Priority: float64(DefaultSLOPriorityMap().InvertForVLLM(sloClass)),
@@ -871,7 +871,7 @@ func TestPreemption_Priority_EvictsLeastUrgent(t *testing.T) {
 			}
 
 			wq := &WaitQueue{}
-			wq.Enqueue(&Request{ID: "new", InputTokens: make([]int, 16), OutputTokens: make([]int, 1), State: StateQueued})
+			wq.Enqueue(&Request{ID: "new", InputTokens: make([]TokenID, 16), OutputTokens: make([]TokenID, 1), State: StateQueued})
 
 			bf := NewBatchFormation("priority")
 			ctx := BatchContext{
@@ -912,7 +912,7 @@ func TestPreemption_Priority_SelfPreemption(t *testing.T) {
 	dummy := makeRunningRequest("dummy", "standard", 300, 48, kvCache) // 3 blocks → total 10
 
 	wq := &WaitQueue{}
-	wq.Enqueue(&Request{ID: "new", InputTokens: make([]int, 16), OutputTokens: make([]int, 1), State: StateQueued})
+	wq.Enqueue(&Request{ID: "new", InputTokens: make([]TokenID, 16), OutputTokens: make([]TokenID, 1), State: StateQueued})
 
 	bf := NewBatchFormation("priority")
 	ctx := BatchContext{
@@ -960,7 +960,7 @@ func TestPreemption_Priority_TiebreakByLatestArrival(t *testing.T) {
 	new_ := makeRunningRequest("new", "standard", 300, 48, kvCache) // 3 blocks → 9 used, 1 free
 
 	wq := &WaitQueue{}
-	wq.Enqueue(&Request{ID: "trigger", InputTokens: make([]int, 16), OutputTokens: make([]int, 1), State: StateQueued})
+	wq.Enqueue(&Request{ID: "trigger", InputTokens: make([]TokenID, 16), OutputTokens: make([]TokenID, 1), State: StateQueued})
 
 	bf := NewBatchFormation("priority")
 	ctx := BatchContext{
@@ -998,7 +998,7 @@ func TestPreemption_Priority_KVConservation(t *testing.T) {
 	usedBefore := kvCache.UsedBlocks()
 
 	wq := &WaitQueue{}
-	wq.Enqueue(&Request{ID: "new", InputTokens: make([]int, 48), OutputTokens: make([]int, 1), State: StateQueued})
+	wq.Enqueue(&Request{ID: "new", InputTokens: make([]TokenID, 48), OutputTokens: make([]TokenID, 1), State: StateQueued})
 
 	bf := NewBatchFormation("priority")
 	ctx := BatchContext{
@@ -1031,7 +1031,7 @@ func TestPreemption_Priority_EmptyBatch_NoPanic(t *testing.T) {
 	// Circuit breaker at batch_formation.go returns (false, 0) immediately.
 	kvCache := MustNewKVCacheState(2, 16)
 	wq := &WaitQueue{}
-	wq.Enqueue(&Request{ID: "large", InputTokens: make([]int, 200), OutputTokens: make([]int, 1), State: StateQueued})
+	wq.Enqueue(&Request{ID: "large", InputTokens: make([]TokenID, 200), OutputTokens: make([]TokenID, 1), State: StateQueued})
 
 	bf := NewBatchFormation("priority")
 	ctx := BatchContext{
@@ -1080,7 +1080,7 @@ func TestPreemption_Priority_Phase1Completeness(t *testing.T) {
 	std := makeRunningRequest("std", "standard", 300, 48, kvCache)   // 3 blocks → 9 used, 1 free
 
 	wq := &WaitQueue{}
-	wq.Enqueue(&Request{ID: "new", InputTokens: make([]int, 16), OutputTokens: make([]int, 1), State: StateQueued})
+	wq.Enqueue(&Request{ID: "new", InputTokens: make([]TokenID, 16), OutputTokens: make([]TokenID, 1), State: StateQueued})
 
 	bf := NewBatchFormation("priority")
 	ctx := BatchContext{
@@ -1143,12 +1143,12 @@ func TestPreemption_Priority_MultiEvictionOrdering(t *testing.T) {
 	// crit is still in prefill: ProgressIndex=0, needs all 64 tokens allocated
 	crit := &Request{
 		ID: "crit", SLOClass: "critical", ArrivalTime: 300, State: StateRunning,
-		InputTokens: make([]int, 64), OutputTokens: make([]int, 10),
+		InputTokens: make([]TokenID, 64), OutputTokens: make([]TokenID, 10),
 		ProgressIndex: 0, // still prefilling
 	}
 
 	wq := &WaitQueue{}
-	wq.Enqueue(&Request{ID: "new", InputTokens: make([]int, 16), OutputTokens: make([]int, 1), State: StateQueued})
+	wq.Enqueue(&Request{ID: "new", InputTokens: make([]TokenID, 16), OutputTokens: make([]TokenID, 1), State: StateQueued})
 
 	bf := NewBatchFormation("priority")
 	ctx := BatchContext{

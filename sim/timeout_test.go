@@ -78,8 +78,8 @@ func TestTimeout_QueuedRequest_TimesOut(t *testing.T) {
 	sim := mustNewSimulator(t, cfg)
 
 	// Two requests: r1 arrives at 0 (will run), r2 arrives at 0 with short deadline (will timeout while queued)
-	r1 := &Request{ID: "r1", ArrivalTime: 0, InputTokens: make([]int, 10), OutputTokens: make([]int, 100), State: StateQueued, MaxOutputLen: 100}
-	r2 := &Request{ID: "r2", ArrivalTime: 0, InputTokens: make([]int, 10), OutputTokens: make([]int, 100), State: StateQueued, MaxOutputLen: 100, Deadline: 5000} // timeout at tick 5000
+	r1 := &Request{ID: "r1", ArrivalTime: 0, InputTokens: make([]TokenID, 10), OutputTokens: make([]TokenID, 100), State: StateQueued, MaxOutputLen: 100}
+	r2 := &Request{ID: "r2", ArrivalTime: 0, InputTokens: make([]TokenID, 10), OutputTokens: make([]TokenID, 100), State: StateQueued, MaxOutputLen: 100, Deadline: 5000} // timeout at tick 5000
 
 	sim.InjectArrival(r1)
 	sim.InjectArrival(r2)
@@ -112,7 +112,7 @@ func TestTimeout_CompletedRequest_NoOp(t *testing.T) {
 	sim := mustNewSimulator(t, cfg)
 
 	// One request with a deadline far in the future — will complete normally
-	r1 := &Request{ID: "r1", ArrivalTime: 0, InputTokens: make([]int, 10), OutputTokens: make([]int, 5), State: StateQueued, MaxOutputLen: 5, Deadline: 999_999}
+	r1 := &Request{ID: "r1", ArrivalTime: 0, InputTokens: make([]TokenID, 10), OutputTokens: make([]TokenID, 5), State: StateQueued, MaxOutputLen: 5, Deadline: 999_999}
 
 	sim.InjectArrival(r1)
 	sim.Run()
@@ -145,7 +145,7 @@ func TestTimeout_CompletionWinsAtEqualTimestamp(t *testing.T) {
 	// Request with 1 input token, 1 output token. Step time = 1000µs.
 	// Prefill step at t=0 completes at t=1000. Decode step at t=1000 completes at t=2000.
 	// Set deadline = 2000 (same tick as completion).
-	r1 := &Request{ID: "r1", ArrivalTime: 0, InputTokens: make([]int, 1), OutputTokens: make([]int, 1), State: StateQueued, MaxOutputLen: 1, Deadline: 2000}
+	r1 := &Request{ID: "r1", ArrivalTime: 0, InputTokens: make([]TokenID, 1), OutputTokens: make([]TokenID, 1), State: StateQueued, MaxOutputLen: 1, Deadline: 2000}
 
 	sim.InjectArrival(r1)
 	sim.Run()
@@ -213,7 +213,7 @@ func TestTimeout_RunningRequest_StateAndBatchCleanup(t *testing.T) {
 	// Single request: will start running, then timeout before completing
 	r1 := &Request{
 		ID: "r1", ArrivalTime: 0,
-		InputTokens: make([]int, 50), OutputTokens: make([]int, 100),
+		InputTokens: make([]TokenID, 50), OutputTokens: make([]TokenID, 100),
 		MaxOutputLen: 100, State: StateQueued,
 		Deadline: 15000, // times out at 15ms — only ~2 decode steps complete
 	}
@@ -252,14 +252,14 @@ func TestTimeout_PreemptThenTimeout_SafeNoOp(t *testing.T) {
 	// r1: large request that will cause KV pressure and preempt r2
 	r1 := &Request{
 		ID: "r1", ArrivalTime: 0,
-		InputTokens: make([]int, 60), OutputTokens: make([]int, 10),
+		InputTokens: make([]TokenID, 60), OutputTokens: make([]TokenID, 10),
 		MaxOutputLen: 10, State: StateQueued,
 	}
 	// r2: small request with short deadline — will be preempted by r1's KV demand,
 	// then timeout while back in queue
 	r2 := &Request{
 		ID: "r2", ArrivalTime: 0,
-		InputTokens: make([]int, 30), OutputTokens: make([]int, 5),
+		InputTokens: make([]TokenID, 30), OutputTokens: make([]TokenID, 5),
 		MaxOutputLen: 5, State: StateQueued,
 		Deadline: 10000, // short deadline
 	}
@@ -309,7 +309,7 @@ func TestTimeout_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.T) {
 
 	r1 := &Request{
 		ID: "r1", ArrivalTime: 0,
-		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+		InputTokens: make([]TokenID, 10), OutputTokens: make([]TokenID, 5),
 		State: StateQueued, MaxOutputLen: 5,
 		Deadline: testDefaultTimeoutUs,
 	}
@@ -370,8 +370,8 @@ func TestTimeout_OrphanedTimeout_MultipleOrphans_NoneInflateClock(t *testing.T) 
 		requests[i] = &Request{
 			ID:           fmt.Sprintf("r%d", i),
 			ArrivalTime:  arrivalTime,
-			InputTokens:  make([]int, 10),
-			OutputTokens: make([]int, 5),
+			InputTokens:  make([]TokenID, 10),
+			OutputTokens: make([]TokenID, 5),
 			State:        StateQueued,
 			MaxOutputLen: 5,
 			Deadline:     arrivalTime + testDefaultTimeoutUs,
@@ -465,8 +465,8 @@ func TestTimeout_CascadeDoesNotCreateOrphanedStepEvents(t *testing.T) {
 		sim.InjectArrival(&Request{
 			ID:           fmt.Sprintf("r%d", i),
 			ArrivalTime:  0,
-			InputTokens:  make([]int, inputLen),
-			OutputTokens: make([]int, outputLen),
+			InputTokens:  make([]TokenID, inputLen),
+			OutputTokens: make([]TokenID, outputLen),
 			MaxOutputLen: outputLen,
 			State:        StateQueued,
 			Deadline:     deadline,

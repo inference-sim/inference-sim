@@ -16,31 +16,31 @@ func makeSharedPrefixRequests(numRequests int, sharedFraction float64,
 	prefixLen, suffixLen, outputLen int, interarrivalUs int64) []*sim.Request {
 
 	// Create the shared prefix
-	sharedPrefix := make([]int, prefixLen)
+	sharedPrefix := make([]sim.TokenID, prefixLen)
 	for i := range sharedPrefix {
-		sharedPrefix[i] = 1000 + i
+		sharedPrefix[i] = sim.TokenID(1000 + i)
 	}
 
 	sharedCount := int(float64(numRequests) * sharedFraction)
 	var requests []*sim.Request
 	for i := 0; i < numRequests; i++ {
-		var inputTokens []int
+		var inputTokens []sim.TokenID
 		if i < sharedCount {
 			// Shared prefix + unique suffix
-			inputTokens = append([]int{}, sharedPrefix...)
+			inputTokens = append([]sim.TokenID{}, sharedPrefix...)
 			for j := 0; j < suffixLen; j++ {
-				inputTokens = append(inputTokens, 50000+i*1000+j)
+				inputTokens = append(inputTokens, sim.TokenID(50000+i*1000+j))
 			}
 		} else {
 			// Completely unique tokens
-			inputTokens = make([]int, prefixLen+suffixLen)
+			inputTokens = make([]sim.TokenID, prefixLen+suffixLen)
 			for j := range inputTokens {
-				inputTokens[j] = 90000 + i*1000 + j
+				inputTokens[j] = sim.TokenID(90000 + i*1000 + j)
 			}
 		}
-		outputTokens := make([]int, outputLen)
+		outputTokens := make([]sim.TokenID, outputLen)
 		for j := range outputTokens {
-			outputTokens[j] = j
+			outputTokens[j] = sim.TokenID(j)
 		}
 		requests = append(requests, &sim.Request{
 			ID:           fmt.Sprintf("request_%d", i),
@@ -202,29 +202,29 @@ func TestPrefixAffinityRouting_MultiTurn_SessionAffinity(t *testing.T) {
 		sessionID := fmt.Sprintf("session_%d", s)
 
 		// Generate the session's base prefix (unique per session)
-		prefix := make([]int, 128) // 128 tokens = 8 blocks
+		prefix := make([]sim.TokenID, 128) // 128 tokens = 8 blocks
 		for i := range prefix {
-			prefix[i] = s*10000 + i
+			prefix[i] = sim.TokenID(s*10000 + i)
 		}
 
-		var contextPrefix []int
+		var contextPrefix []sim.TokenID
 		for r := 0; r < roundsPerSession; r++ {
 			// Build input: context prefix + new tokens for this round
-			newTokens := make([]int, 64) // 64 new tokens per round = 4 blocks
+			newTokens := make([]sim.TokenID, 64) // 64 new tokens per round = 4 blocks
 			for i := range newTokens {
-				newTokens[i] = s*10000 + r*1000 + 5000 + i
+				newTokens[i] = sim.TokenID(s*10000 + r*1000 + 5000 + i)
 			}
-			var inputTokens []int
+			var inputTokens []sim.TokenID
 			if r == 0 {
-				inputTokens = append([]int{}, prefix...)
+				inputTokens = append([]sim.TokenID{}, prefix...)
 				inputTokens = append(inputTokens, newTokens...)
 			} else {
-				inputTokens = append(append([]int{}, contextPrefix...), newTokens...)
+				inputTokens = append(append([]sim.TokenID{}, contextPrefix...), newTokens...)
 			}
 
-			outputTokens := make([]int, 32)
+			outputTokens := make([]sim.TokenID, 32)
 			for i := range outputTokens {
-				outputTokens[i] = i
+				outputTokens[i] = sim.TokenID(i)
 			}
 
 			requests = append(requests, &sim.Request{
@@ -240,7 +240,7 @@ func TestPrefixAffinityRouting_MultiTurn_SessionAffinity(t *testing.T) {
 
 			// Accumulate context for next round
 			if r == 0 {
-				contextPrefix = append(append([]int{}, prefix...), newTokens...)
+				contextPrefix = append(append([]sim.TokenID{}, prefix...), newTokens...)
 			} else {
 				contextPrefix = append(contextPrefix, newTokens...)
 			}
@@ -324,8 +324,8 @@ func copyRequests(reqs []*sim.Request) []*sim.Request {
 	out := make([]*sim.Request, len(reqs))
 	for i, r := range reqs {
 		cp := *r
-		cp.InputTokens = append([]int{}, r.InputTokens...)
-		cp.OutputTokens = append([]int{}, r.OutputTokens...)
+		cp.InputTokens = append([]sim.TokenID{}, r.InputTokens...)
+		cp.OutputTokens = append([]sim.TokenID{}, r.OutputTokens...)
 		out[i] = &cp
 	}
 	return out

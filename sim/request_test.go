@@ -56,14 +56,14 @@ func TestRequestInputLenZero(t *testing.T) {
 }
 
 func TestRequestInputLenMatchesLen(t *testing.T) {
-	r := &Request{InputTokens: []int{1, 2, 3, 4, 5}}
+	r := &Request{InputTokens: []TokenID{1, 2, 3, 4, 5}}
 	if got, want := r.InputLen(), int64(5); got != want {
 		t.Fatalf("InputLen() = %d, want %d", got, want)
 	}
 }
 
 func TestRequestFullInputTokensMatchesField(t *testing.T) {
-	want := []int{7, 8, 9}
+	want := []TokenID{7, 8, 9}
 	r := &Request{InputTokens: want}
 	got := r.FullInputTokens()
 	if !reflect.DeepEqual(got, want) {
@@ -72,18 +72,18 @@ func TestRequestFullInputTokensMatchesField(t *testing.T) {
 }
 
 func TestRequestInputTokenSliceRange(t *testing.T) {
-	r := &Request{InputTokens: []int{10, 11, 12, 13, 14}}
+	r := &Request{InputTokens: []TokenID{10, 11, 12, 13, 14}}
 	got := r.InputTokenSlice(1, 4)
-	want := []int{11, 12, 13}
+	want := []TokenID{11, 12, 13}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("InputTokenSlice(1,4) = %v, want %v", got, want)
 	}
 }
 
 func TestRequestInputTokenSliceFull(t *testing.T) {
-	r := &Request{InputTokens: []int{10, 11, 12}}
+	r := &Request{InputTokens: []TokenID{10, 11, 12}}
 	got := r.InputTokenSlice(0, 3)
-	want := []int{10, 11, 12}
+	want := []TokenID{10, 11, 12}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("InputTokenSlice(0,3) = %v, want %v", got, want)
 	}
@@ -94,7 +94,7 @@ func TestRequestInputTokenSliceFull(t *testing.T) {
 // guard, a malformed call site would produce a bare Go runtime panic with no
 // simulation context.
 func TestRequestInputTokenSliceBounds(t *testing.T) {
-	r := &Request{ID: "test-req", InputTokens: []int{1, 2, 3, 4, 5}}
+	r := &Request{ID: "test-req", InputTokens: []TokenID{1, 2, 3, 4, 5}}
 	cases := []struct {
 		name       string
 		start, end int64

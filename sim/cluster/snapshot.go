@@ -81,7 +81,7 @@ type fieldTimestamps struct {
 // cacheEntry holds a live instance reference and its current stale snapshot closure.
 type cacheEntry struct {
 	inst    *InstanceSimulator
-	staleFn func([]int) int
+	staleFn func([]sim.TokenID) int
 }
 
 // CachedSnapshotProvider implements SnapshotProvider with configurable caching.
@@ -231,7 +231,7 @@ func (p *CachedSnapshotProvider) RefreshCacheIfNeeded(clock int64) {
 // When CacheBlocks.Mode == Periodic, returns stale snapshot data.
 // When CacheBlocks.Mode == Immediate, queries live instance state.
 // Returns 0 if the instance is unknown.
-func (p *CachedSnapshotProvider) CacheQuery(instanceID string, tokens []int) int {
+func (p *CachedSnapshotProvider) CacheQuery(instanceID string, tokens []sim.TokenID) int {
 	id := InstanceID(instanceID)
 	if p.config.CacheBlocks.Mode == Periodic {
 		if e, ok := p.cacheEntries[id]; ok {
@@ -249,7 +249,7 @@ func (p *CachedSnapshotProvider) CacheQuery(instanceID string, tokens []int) int
 
 // BuildCacheQueryFn returns a cacheQueryFn map where each closure delegates to
 // CacheQuery. The returned closures use the latest snapshot after RefreshCacheIfNeeded.
-func (p *CachedSnapshotProvider) BuildCacheQueryFn() map[string]func([]int) int {
+func (p *CachedSnapshotProvider) BuildCacheQueryFn() map[string]func([]sim.TokenID) int {
 	var ids []InstanceID
 	if p.config.CacheBlocks.Mode == Periodic {
 		ids = make([]InstanceID, 0, len(p.cacheEntries))
@@ -262,10 +262,10 @@ func (p *CachedSnapshotProvider) BuildCacheQueryFn() map[string]func([]int) int 
 			ids = append(ids, id)
 		}
 	}
-	result := make(map[string]func([]int) int, len(ids))
+	result := make(map[string]func([]sim.TokenID) int, len(ids))
 	for _, id := range ids {
 		idStr := string(id)
-		result[idStr] = func(tokens []int) int {
+		result[idStr] = func(tokens []sim.TokenID) int {
 			return p.CacheQuery(idStr, tokens)
 		}
 	}

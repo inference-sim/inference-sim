@@ -534,8 +534,8 @@ func TestInstanceSimulator_InjectAfterRun_Panics(t *testing.T) {
 		}
 	}()
 	inst.InjectRequest(&sim.Request{
-		ID: "req", ArrivalTime: 0, InputTokens: make([]int, 5),
-		OutputTokens: make([]int, 3), State: sim.StateQueued,
+		ID: "req", ArrivalTime: 0, InputTokens: make([]sim.TokenID, 5),
+		OutputTokens: make([]sim.TokenID, 3), State: sim.StateQueued,
 	})
 }
 
@@ -1684,9 +1684,9 @@ func TestClusterSimulator_FlowControl_NeverSaturated_PassThrough(t *testing.T) {
 	requestsCopy := make([]*sim.Request, len(requests))
 	for i, r := range requests {
 		cp := *r
-		cp.InputTokens = make([]int, len(r.InputTokens))
+		cp.InputTokens = make([]sim.TokenID, len(r.InputTokens))
 		copy(cp.InputTokens, r.InputTokens)
-		cp.OutputTokens = make([]int, len(r.OutputTokens))
+		cp.OutputTokens = make([]sim.TokenID, len(r.OutputTokens))
 		copy(cp.OutputTokens, r.OutputTokens)
 		requestsCopy[i] = &cp
 	}
@@ -1982,8 +1982,8 @@ func TestNewClusterSimulator_RooflineUsesPoolHWConfig(t *testing.T) {
 			reqs[i] = &sim.Request{
 				ID:           fmt.Sprintf("req_%d", i),
 				ArrivalTime:  int64(i) * 100,
-				InputTokens:  make([]int, 50),
-				OutputTokens: make([]int, 20),
+				InputTokens:  make([]sim.TokenID, 50),
+				OutputTokens: make([]sim.TokenID, 20),
 				State:        sim.StateQueued,
 			}
 		}
@@ -2051,8 +2051,8 @@ func TestNodeReadyEvent_RooflineUsesPoolHWConfig(t *testing.T) {
 			reqs[i] = &sim.Request{
 				ID:           fmt.Sprintf("req_%d", i),
 				ArrivalTime:  int64(i)*100 + 200, // arrive after node is ready (T=0)
-				InputTokens:  make([]int, 50),
-				OutputTokens: make([]int, 20),
+				InputTokens:  make([]sim.TokenID, 50),
+				OutputTokens: make([]sim.TokenID, 20),
 				State:        sim.StateQueued,
 			}
 		}
@@ -2310,8 +2310,8 @@ func TestClusterSimulator_SessionTerminalStateCompleteness(t *testing.T) {
 		seeds[i] = &sim.Request{
 			ID:           fmt.Sprintf("t21_sess_%d_r0", i),
 			ArrivalTime:  int64(i * 1_000_000),
-			InputTokens:  make([]int, 20),
-			OutputTokens: make([]int, 10),
+			InputTokens:  make([]sim.TokenID, 20),
+			OutputTokens: make([]sim.TokenID, 10),
 			MaxOutputLen: 10,
 			State:        sim.StateQueued,
 			SessionID:    sessID,
@@ -2390,8 +2390,8 @@ func TestClusterSimulator_SessionFollowUpCausality(t *testing.T) {
 		seeds[i] = &sim.Request{
 			ID:           fmt.Sprintf("t22_sess_%d_r0", i),
 			ArrivalTime:  int64(i * 2_000_000),
-			InputTokens:  make([]int, 20),
-			OutputTokens: make([]int, 10),
+			InputTokens:  make([]sim.TokenID, 20),
+			OutputTokens: make([]sim.TokenID, 10),
 			MaxOutputLen: 10,
 			State:        sim.StateQueued,
 			SessionID:    sessID,
@@ -2503,8 +2503,8 @@ func TestClusterSimulator_MultiTurnSession_EndToEnd(t *testing.T) {
 		seeds[i] = &sim.Request{
 			ID:           fmt.Sprintf("t23_sess_%d_r0", i),
 			ArrivalTime:  int64(i * 1_000_000),
-			InputTokens:  make([]int, 20),
-			OutputTokens: make([]int, 10),
+			InputTokens:  make([]sim.TokenID, 20),
+			OutputTokens: make([]sim.TokenID, 10),
 			MaxOutputLen: 10,
 			State:        sim.StateQueued,
 			SessionID:    sessID,
@@ -2659,8 +2659,8 @@ func TestPushArrival_CoInvariant_SessionFollowUpsProcessed(t *testing.T) {
 		return []*sim.Request{{
 			ID:           fmt.Sprintf("followup-%d", followUpsIssued),
 			ArrivalTime:  tick,
-			InputTokens:  make([]int, 50),
-			OutputTokens: make([]int, 20),
+			InputTokens:  make([]sim.TokenID, 50),
+			OutputTokens: make([]sim.TokenID, 20),
 			MaxOutputLen: 20,
 			State:        sim.StateQueued,
 		}}
@@ -2696,8 +2696,8 @@ func newBatchTestRequests(n int, sloClass string) []*sim.Request {
 			ID:           fmt.Sprintf("req_%s_%d", sloClass, i),
 			ArrivalTime:  int64(i) * 10,
 			SLOClass:     sloClass,
-			InputTokens:  make([]int, 50),
-			OutputTokens: make([]int, 20),
+			InputTokens:  make([]sim.TokenID, 50),
+			OutputTokens: make([]sim.TokenID, 20),
 			State:        sim.StateQueued,
 		}
 	}
@@ -2832,19 +2832,19 @@ func TestClusterSimulator_MixedOrphanedAndGenuineTimeout_CorrectMetrics(t *testi
 	requests := []*sim.Request{
 		{
 			ID: "r0", ArrivalTime: 0,
-			InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
 			State: sim.StateQueued, MaxOutputLen: 5,
 			Deadline: workload.DefaultTimeoutUs,
 		},
 		{
 			ID: "r1", ArrivalTime: 0,
-			InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
 			State: sim.StateQueued, MaxOutputLen: 5,
 			Deadline: workload.DefaultTimeoutUs,
 		},
 		{
 			ID: "r2", ArrivalTime: 0,
-			InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
 			State: sim.StateQueued, MaxOutputLen: 5,
 			Deadline: 5_000, // 5ms — r0 takes ~6ms, so r2 times out while queued
 		},
@@ -3007,18 +3007,18 @@ func TestClusterSimulator_FlowControl_Eviction_Conservation(t *testing.T) {
 	// then critical arrive and trigger eviction.
 	requests := make([]*sim.Request, 0, 10)
 	// Sheddable requests with long output (occupy instance for a long time)
-	longOutput := make([]int, 200)
+	longOutput := make([]sim.TokenID, 200)
 	for j := range longOutput {
-		longOutput[j] = j + 1
+		longOutput[j] = sim.TokenID(j + 1)
 	}
 	for i := 0; i < 3; i++ {
-		out := make([]int, len(longOutput))
+		out := make([]sim.TokenID, len(longOutput))
 		copy(out, longOutput)
 		r := &sim.Request{
 			ID:           fmt.Sprintf("shed-%d", i),
 			ArrivalTime:  int64(i * 1000), // arrive close together
 			SLOClass:     "sheddable",
-			InputTokens:  []int{1, 2, 3, 4, 5},
+			InputTokens:  []sim.TokenID{1, 2, 3, 4, 5},
 			OutputTokens: out,
 		}
 		requests = append(requests, r)
@@ -3029,8 +3029,8 @@ func TestClusterSimulator_FlowControl_Eviction_Conservation(t *testing.T) {
 			ID:           fmt.Sprintf("crit-%d", i),
 			ArrivalTime:  int64(50000 + i*1000), // arrive after sheddables are running
 			SLOClass:     "critical",
-			InputTokens:  []int{1, 2, 3},
-			OutputTokens: []int{1, 2, 3},
+			InputTokens:  []sim.TokenID{1, 2, 3},
+			OutputTokens: []sim.TokenID{1, 2, 3},
 		}
 		requests = append(requests, r)
 	}
@@ -3096,18 +3096,18 @@ func TestClusterSimulator_FlowControl_NoEviction_Default(t *testing.T) {
 	// FlowControlInFlightEviction defaults to false
 
 	requests := make([]*sim.Request, 0, 6)
-	longOutput := make([]int, 200)
+	longOutput := make([]sim.TokenID, 200)
 	for j := range longOutput {
-		longOutput[j] = j + 1
+		longOutput[j] = sim.TokenID(j + 1)
 	}
 	for i := 0; i < 3; i++ {
-		out := make([]int, len(longOutput))
+		out := make([]sim.TokenID, len(longOutput))
 		copy(out, longOutput)
 		requests = append(requests, &sim.Request{
 			ID:           fmt.Sprintf("shed-%d", i),
 			ArrivalTime:  int64(i * 1000),
 			SLOClass:     "sheddable",
-			InputTokens:  []int{1, 2, 3, 4, 5},
+			InputTokens:  []sim.TokenID{1, 2, 3, 4, 5},
 			OutputTokens: out,
 		})
 	}
@@ -3116,8 +3116,8 @@ func TestClusterSimulator_FlowControl_NoEviction_Default(t *testing.T) {
 			ID:           fmt.Sprintf("crit-%d", i),
 			ArrivalTime:  int64(50000 + i*1000),
 			SLOClass:     "critical",
-			InputTokens:  []int{1, 2, 3},
-			OutputTokens: []int{1, 2, 3},
+			InputTokens:  []sim.TokenID{1, 2, 3},
+			OutputTokens: []sim.TokenID{1, 2, 3},
 		})
 	}
 
@@ -3160,21 +3160,21 @@ func TestClusterSimulator_FlowControl_Eviction_PD(t *testing.T) {
 	config.FlowControlInFlightEviction = true
 	config.PDDecider = "never" // non-disaggregated: requests go directly to decode pod
 
-	longOutput := make([]int, 200)
+	longOutput := make([]sim.TokenID, 200)
 	for j := range longOutput {
-		longOutput[j] = j + 1
+		longOutput[j] = sim.TokenID(j + 1)
 	}
 
 	// Need enough sheddable to saturate: 2 instances × maxConcurrency=1 → saturates at 2 in-flight
 	requests := make([]*sim.Request, 0, 8)
 	for i := 0; i < 4; i++ {
-		out := make([]int, len(longOutput))
+		out := make([]sim.TokenID, len(longOutput))
 		copy(out, longOutput)
 		requests = append(requests, &sim.Request{
 			ID:           fmt.Sprintf("pd-shed-%d", i),
 			ArrivalTime:  int64(i * 1000),
 			SLOClass:     "sheddable",
-			InputTokens:  []int{1, 2, 3, 4, 5},
+			InputTokens:  []sim.TokenID{1, 2, 3, 4, 5},
 			OutputTokens: out,
 		})
 	}
@@ -3183,8 +3183,8 @@ func TestClusterSimulator_FlowControl_Eviction_PD(t *testing.T) {
 			ID:           fmt.Sprintf("pd-crit-%d", i),
 			ArrivalTime:  int64(50000 + i*1000),
 			SLOClass:     "critical",
-			InputTokens:  []int{1, 2, 3},
-			OutputTokens: []int{1, 2, 3},
+			InputTokens:  []sim.TokenID{1, 2, 3},
+			OutputTokens: []sim.TokenID{1, 2, 3},
 		})
 	}
 

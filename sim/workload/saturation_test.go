@@ -778,8 +778,8 @@ func generateSyntheticRequestsWithHorizon(arrivalRate float64, numRequests int) 
 			TTFTSet:        state == sim.StateCompleted,
 			ITL:            itl,
 			State:          state,
-			InputTokens:    make([]int, 100),
-			OutputTokens:   make([]int, 50),
+			InputTokens:    make([]sim.TokenID, 100),
+			OutputTokens:   make([]sim.TokenID, 50),
 		}
 		requests[i] = req
 	}
@@ -854,8 +854,8 @@ func TestSaturationClassification_ManualScenarios(t *testing.T) {
 				TTFTSet:        true,
 				ITL:            []int64{(completionUs - arrivalUs) / 2},
 				State:          sim.StateCompleted,
-				InputTokens:    []int{0},
-				OutputTokens:   []int{0},
+				InputTokens:    []sim.TokenID{0},
+				OutputTokens:   []sim.TokenID{0},
 			})
 		}
 
@@ -913,8 +913,8 @@ func TestSaturationClassification_ManualScenarios(t *testing.T) {
 				TTFTSet:        ttftSet,
 				ITL:            itl,
 				State:          state,
-				InputTokens:    []int{0},
-				OutputTokens:   []int{0},
+				InputTokens:    []sim.TokenID{0},
+				OutputTokens:   []sim.TokenID{0},
 			})
 		}
 
@@ -944,8 +944,8 @@ func createManualRequests(timings []requestTiming) []*sim.Request {
 			TTFTSet:        true,
 			ITL:            []int64{ttft / 2},
 			State:          sim.StateCompleted,
-			InputTokens:    []int{0},
-			OutputTokens:   []int{0},
+			InputTokens:    []sim.TokenID{0},
+			OutputTokens:   []sim.TokenID{0},
 		}
 	}
 	return requests
@@ -1110,8 +1110,8 @@ func generateTestWorkload(rate float64, numRequests int, horizonUs int64) []*sim
 			TTFTSet:        ttftSet,
 			ITL:            itl,
 			State:          state,
-			InputTokens:    make([]int, 100),
-			OutputTokens:   make([]int, 50),
+			InputTokens:    make([]sim.TokenID, 100),
+			OutputTokens:   make([]sim.TokenID, 50),
 		})
 	}
 

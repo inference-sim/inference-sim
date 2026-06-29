@@ -299,7 +299,7 @@ func TestSaveResults_PerRequestITL_InMilliseconds(t *testing.T) {
 	m.SimEndedTime = 1e6 // 1 second in ticks (prevents division by zero in ResponsesPerSec)
 	m.TotalOutputTokens = 10
 	m.Requests["r1"] = NewRequestMetrics(
-		&Request{ID: "r1", InputTokens: make([]int, 5), OutputTokens: make([]int, 10)},
+		&Request{ID: "r1", InputTokens: make([]TokenID, 5), OutputTokens: make([]TokenID, 10)},
 		0,
 	)
 	m.RequestTTFTs["r1"] = 10000.0  // 10000 ticks = 10 ms
@@ -341,7 +341,7 @@ func TestSaveResults_ZeroRuntime_NoInfinity(t *testing.T) {
 	m.RequestITLs["r1"] = 50.0
 	m.AllITLs = []int64{50}
 	m.RequestSchedulingDelays["r1"] = 100
-	m.Requests["r1"] = NewRequestMetrics(&Request{ID: "r1", InputTokens: make([]int, 10), OutputTokens: make([]int, 5)}, 0)
+	m.Requests["r1"] = NewRequestMetrics(&Request{ID: "r1", InputTokens: make([]TokenID, 10), OutputTokens: make([]TokenID, 5)}, 0)
 
 	err := m.SaveResults("test", 1000000, 100, "", nil)
 	if err != nil {

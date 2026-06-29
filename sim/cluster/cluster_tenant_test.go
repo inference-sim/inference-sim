@@ -16,8 +16,8 @@ func newTenantRequest(id string, arrivalTime int64, tenantID, sloClass string) *
 		ArrivalTime:  arrivalTime,
 		TenantID:     tenantID,
 		SLOClass:     sloClass,
-		InputTokens:  make([]int, 50),
-		OutputTokens: make([]int, 20),
+		InputTokens:  make([]sim.TokenID, 50),
+		OutputTokens: make([]sim.TokenID, 20),
 		State:        sim.StateQueued,
 	}
 }
@@ -229,10 +229,10 @@ func TestTenantAdmission_INV9_DoesNotReadOutputTokens(t *testing.T) {
 	makeReqs := func(zeroOutput bool) []*sim.Request {
 		reqs := make([]*sim.Request, 20)
 		for i := range reqs {
-			out := make([]int, 20)
+			out := make([]sim.TokenID, 20)
 			if !zeroOutput {
 				for j := range out {
-					out[j] = j + 1
+					out[j] = sim.TokenID(j + 1)
 				}
 			}
 			reqs[i] = &sim.Request{
@@ -240,7 +240,7 @@ func TestTenantAdmission_INV9_DoesNotReadOutputTokens(t *testing.T) {
 				ArrivalTime:  int64(i) * 5,
 				TenantID:     "alice",
 				SLOClass:     "sheddable",
-				InputTokens:  make([]int, 50),
+				InputTokens:  make([]sim.TokenID, 50),
 				OutputTokens: out,
 				State:        sim.StateQueued,
 			}

@@ -19,8 +19,8 @@ func newTierTestRequests(n int, sloClass string) []*sim.Request {
 			ID:          fmt.Sprintf("req_%s_%d", sloClass, i),
 			ArrivalTime: int64(i) * 100,
 			SLOClass:    sloClass,
-			InputTokens: make([]int, 50),
-			OutputTokens: make([]int, 20),
+			InputTokens: make([]sim.TokenID, 50),
+			OutputTokens: make([]sim.TokenID, 20),
 			State:       sim.StateQueued,
 		}
 	}
@@ -50,8 +50,8 @@ func TestTierShed_MonotonicSheddingOrder(t *testing.T) {
 				ID:           fmt.Sprintf("req_%s_%d", class, j),
 				ArrivalTime:  int64(i*nPerTier+j) * 10, // dense arrivals to force overload
 				SLOClass:     class,
-				InputTokens:  make([]int, 50),
-				OutputTokens: make([]int, 20),
+				InputTokens:  make([]sim.TokenID, 50),
+				OutputTokens: make([]sim.TokenID, 20),
 				State:        sim.StateQueued,
 			})
 		}
@@ -125,8 +125,8 @@ func TestTierShed_BatchBackgroundShedUnderOverload(t *testing.T) {
 				ID:           fmt.Sprintf("req_%s_%d", class, i),
 				ArrivalTime:  int64(i) * 5, // very dense
 				SLOClass:     class,
-				InputTokens:  make([]int, 100),
-				OutputTokens: make([]int, 50),
+				InputTokens:  make([]sim.TokenID, 100),
+				OutputTokens: make([]sim.TokenID, 50),
 				State:        sim.StateQueued,
 			})
 		}
@@ -177,8 +177,8 @@ func TestGAIELegacy_INV1_Conservation(t *testing.T) {
 				ID:           fmt.Sprintf("req_%s_%d", class, i),
 				ArrivalTime:  int64(i) * 10, // dense arrivals
 				SLOClass:     class,
-				InputTokens:  make([]int, 100),
-				OutputTokens: make([]int, 50),
+				InputTokens:  make([]sim.TokenID, 100),
+				OutputTokens: make([]sim.TokenID, 50),
 				State:        sim.StateQueued,
 			})
 		}
@@ -245,9 +245,9 @@ func TestGAIELegacy_LightLoadAdmitsAll(t *testing.T) {
 // so every request's SLO class should appear in the per-tier counter).
 func TestShedByTier_RejectAll_PopulatesTierCounts(t *testing.T) {
 	requests := []*sim.Request{
-		{ID: "r1", ArrivalTime: 0, SLOClass: "critical", InputTokens: make([]int, 10), OutputTokens: make([]int, 5), State: sim.StateQueued},
-		{ID: "r2", ArrivalTime: 10, SLOClass: "standard", InputTokens: make([]int, 10), OutputTokens: make([]int, 5), State: sim.StateQueued},
-		{ID: "r3", ArrivalTime: 20, SLOClass: "batch", InputTokens: make([]int, 10), OutputTokens: make([]int, 5), State: sim.StateQueued},
+		{ID: "r1", ArrivalTime: 0, SLOClass: "critical", InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5), State: sim.StateQueued},
+		{ID: "r2", ArrivalTime: 10, SLOClass: "standard", InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5), State: sim.StateQueued},
+		{ID: "r3", ArrivalTime: 20, SLOClass: "batch", InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5), State: sim.StateQueued},
 	}
 	cfg := newTestDeploymentConfig(2)
 	cfg.AdmissionPolicy = "reject-all"

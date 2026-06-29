@@ -20,8 +20,8 @@ func TestSimulator_DecodePhase_RequestCompletesSuccessfully(t *testing.T) {
 	// Create a request with known input/output that exercises decode phase
 	req := &Request{
 		ID:           "decode_test",
-		InputTokens:  []int{1, 2, 3, 4, 5, 6, 7, 8},
-		OutputTokens: []int{100, 200, 300},
+		InputTokens:  []TokenID{1, 2, 3, 4, 5, 6, 7, 8},
+		OutputTokens: []TokenID{100, 200, 300},
 		ArrivalTime:  0,
 		State:        StateQueued,
 	}

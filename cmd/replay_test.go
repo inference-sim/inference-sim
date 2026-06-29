@@ -1994,13 +1994,13 @@ func makeMinimalPDRequests(t *testing.T) []*sim.Request {
 	t.Helper()
 	reqs := make([]*sim.Request, 3)
 	for i := range reqs {
-		inputToks := make([]int, 10)
+		inputToks := make([]sim.TokenID, 10)
 		for j := range inputToks {
-			inputToks[j] = 100 + i*10 + j
+			inputToks[j] = sim.TokenID(100 + i*10 + j)
 		}
-		outputToks := make([]int, 5)
+		outputToks := make([]sim.TokenID, 5)
 		for j := range outputToks {
-			outputToks[j] = 200 + j
+			outputToks[j] = sim.TokenID(200 + j)
 		}
 		reqs[i] = &sim.Request{
 			ID:           fmt.Sprintf("request_%d", i),

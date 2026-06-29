@@ -9,7 +9,11 @@
 
 package workload
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/inference-sim/inference-sim/sim"
+)
 
 // sessionTokenBuffer holds the growable backing array for a session's
 // accumulated context plus prefix.
@@ -31,7 +35,7 @@ import "fmt"
 // when R is known upfront (open-loop generation), use
 // newSessionTokenBufferWithCapacity.
 type sessionTokenBuffer struct {
-	b []int
+	b []sim.TokenID
 }
 
 // newSessionTokenBuffer creates an empty buffer. Capacity grows on demand via
@@ -53,12 +57,12 @@ func newSessionTokenBufferWithCapacity(capacity int64) *sessionTokenBuffer {
 	if capacity < 0 {
 		panic(fmt.Sprintf("newSessionTokenBufferWithCapacity: capacity must be non-negative, got %d", capacity))
 	}
-	return &sessionTokenBuffer{b: make([]int, 0, capacity)}
+	return &sessionTokenBuffer{b: make([]sim.TokenID, 0, capacity)}
 }
 
 // Append copies the given tokens onto the end of the buffer and returns the
 // absolute [start, end) range they now occupy.
-func (s *sessionTokenBuffer) Append(toks []int) (start, end int64) {
+func (s *sessionTokenBuffer) Append(toks []sim.TokenID) (start, end int64) {
 	start = int64(len(s.b))
 	s.b = append(s.b, toks...)
 	end = int64(len(s.b))
@@ -76,7 +80,7 @@ func (s *sessionTokenBuffer) Append(toks []int) (start, end int64) {
 // prevent stray appends from overwriting the shared buffer. The buffer's
 // own Slice() therefore keeps the full backing-array capacity so memory
 // tests can measure peak per-session bytes via cap(req.InputTokens).
-func (s *sessionTokenBuffer) Slice(start, end int64) []int {
+func (s *sessionTokenBuffer) Slice(start, end int64) []sim.TokenID {
 	n := int64(len(s.b))
 	if start < 0 || end < start || end > n {
 		panic(fmt.Sprintf("sessionTokenBuffer.Slice: invalid range [%d, %d) for buf len=%d", start, end, n))

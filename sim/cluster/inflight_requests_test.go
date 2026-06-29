@@ -42,8 +42,8 @@ func TestClusterSimulator_InFlightRequests_VisibleInRoutingState(t *testing.T) {
 		reqs[i] = &sim.Request{
 			ID:           "vis_req_" + string(rune('a'+i)),
 			ArrivalTime:  0, // All arrive at t=0
-			InputTokens:  make([]int, 16),
-			OutputTokens: make([]int, 8),
+			InputTokens:  make([]sim.TokenID, 16),
+			OutputTokens: make([]sim.TokenID, 8),
 			State:        sim.StateQueued,
 		}
 	}
@@ -110,8 +110,8 @@ func TestClusterSimulator_InFlightRequests_CounterfactualIncludesInFlight(t *tes
 		reqs[i] = &sim.Request{
 			ID:           "cf_req_" + string(rune('a'+i)),
 			ArrivalTime:  0,
-			InputTokens:  make([]int, 16),
-			OutputTokens: make([]int, 8),
+			InputTokens:  make([]sim.TokenID, 16),
+			OutputTokens: make([]sim.TokenID, 8),
 			State:        sim.StateQueued,
 		}
 	}
@@ -204,8 +204,8 @@ func TestClusterSimulator_InFlightRequests_DroppedUnservable_Decrements(t *testi
 		reqs[i] = &sim.Request{
 			ID:           fmt.Sprintf("drop_req_%d", i),
 			ArrivalTime:  int64(i * 1000),
-			InputTokens:  make([]int, 200), // 200 tokens / 16 block_size = 13 blocks > 5 total
-			OutputTokens: make([]int, 8),
+			InputTokens:  make([]sim.TokenID, 200), // 200 tokens / 16 block_size = 13 blocks > 5 total
+			OutputTokens: make([]sim.TokenID, 8),
 			State:        sim.StateQueued,
 		}
 	}
@@ -256,8 +256,8 @@ func TestClusterSimulator_InFlightRequests_CompletionBasedDecrement(t *testing.T
 		reqs[i] = &sim.Request{
 			ID:           fmt.Sprintf("causal_req_%d", i),
 			ArrivalTime:  0,
-			InputTokens:  make([]int, 16),
-			OutputTokens: make([]int, 8),
+			InputTokens:  make([]sim.TokenID, 16),
+			OutputTokens: make([]sim.TokenID, 8),
 			State:        sim.StateQueued,
 		}
 	}

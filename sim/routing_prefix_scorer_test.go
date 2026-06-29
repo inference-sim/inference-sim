@@ -10,10 +10,10 @@ import (
 )
 
 // makeTokens creates a sequential token slice of the given length.
-func makeTokens(n int) []int {
-	tokens := make([]int, n)
+func makeTokens(n int) []TokenID {
+	tokens := make([]TokenID, n)
 	for i := range tokens {
-		tokens[i] = i + 1
+		tokens[i] = TokenID(i + 1)
 	}
 	return tokens
 }
@@ -88,10 +88,10 @@ func TestPrefixAffinityScorer_ProportionalScoring(t *testing.T) {
 	policy.Route(req1, &RouterState{Snapshots: snapshots, Clock: 1000})
 
 	// Route partial-match request to inst_1 (shares first 16 tokens, rest different)
-	partialTokens := make([]int, 64)
+	partialTokens := make([]TokenID, 64)
 	copy(partialTokens[:16], fullTokens[:16]) // same first block
 	for i := 16; i < 64; i++ {
-		partialTokens[i] = 9000 + i // different remaining blocks
+		partialTokens[i] = TokenID(9000 + i) // different remaining blocks
 	}
 	req2 := &Request{ID: "r2", InputTokens: partialTokens}
 	// Force route to inst_1 by giving inst_0 high load
@@ -124,7 +124,7 @@ func TestPrefixAffinityScorer_ShortPrefix_ZeroScore(t *testing.T) {
 	policy.Route(longReq, &RouterState{Snapshots: snapshots, Clock: 1000})
 
 	// WHEN routing a short request (< 1 block)
-	shortReq := &Request{ID: "r2", InputTokens: []int{1, 2, 3}}
+	shortReq := &Request{ID: "r2", InputTokens:  []TokenID{1, 2, 3}}
 	d := policy.Route(shortReq, &RouterState{Snapshots: snapshots, Clock: 2000})
 
 	// THEN all scores are 0 (no blocks to match)
@@ -207,10 +207,10 @@ func TestPrefixAffinityScorer_WeightSensitivity_ConcentratesRouting(t *testing.T
 	buildWorkload := func() []*Request {
 		var reqs []*Request
 		for i := 0; i < numRequests; i++ {
-			tokens := append([]int{}, sharedPrefix...)
+			tokens := append([]TokenID{}, sharedPrefix...)
 			// Add unique suffix (1 block = 16 tokens)
 			for j := 0; j < 16; j++ {
-				tokens = append(tokens, i*100+j)
+				tokens = append(tokens, TokenID(i*100+j))
 			}
 			reqs = append(reqs, &Request{ID: fmt.Sprintf("r%d", i), InputTokens: tokens})
 		}
@@ -321,16 +321,16 @@ func TestPrefixAffinityScorer_ObserverFallback_RecomputesHashes(t *testing.T) {
 	snapshots := []RoutingSnapshot{{ID: "inst_0"}, {ID: "inst_1"}}
 
 	// GIVEN: scorer called for request A (caches A's hashes)
-	reqA := &Request{ID: "rA", InputTokens: []int{1, 2, 3, 4, 5, 6, 7, 8}}
+	reqA := &Request{ID: "rA", InputTokens:  []TokenID{1, 2, 3, 4, 5, 6, 7, 8}}
 	scorer(reqA, snapshots)
 
 	// WHEN: observer called for a DIFFERENT request B (triggers fallback recompute)
-	reqB := &Request{ID: "rB", InputTokens: []int{10, 20, 30, 40}}
+	reqB := &Request{ID: "rB", InputTokens:  []TokenID{10, 20, 30, 40}}
 	observer(reqB, "inst_1")
 
 	// THEN: inst_1 should have reqB's blocks, not reqA's blocks
 	// Verify by scoring a new request with reqB's prefix — inst_1 should match
-	reqB2 := &Request{ID: "rB2", InputTokens: []int{10, 20, 30, 40}}
+	reqB2 := &Request{ID: "rB2", InputTokens:  []TokenID{10, 20, 30, 40}}
 	scores := scorer(reqB2, snapshots)
 	assert.Equal(t, 1.0, scores["inst_1"], "inst_1 should have reqB's prefix cached (observer recomputed)")
 	assert.Equal(t, 0.0, scores["inst_0"], "inst_0 should not have reqB's prefix")
@@ -347,7 +347,7 @@ func TestPrefixAffinityScorer_NonWeightedPolicies_Unchanged(t *testing.T) {
 	for _, name := range policies {
 		t.Run(name, func(t *testing.T) {
 			policy := NewRoutingPolicy(name, nil, 16, nil)
-			req := &Request{ID: "r1", InputTokens: []int{1, 2, 3}}
+			req := &Request{ID: "r1", InputTokens:  []TokenID{1, 2, 3}}
 			d := policy.Route(req, &RouterState{Snapshots: snapshots, Clock: 1000})
 			// Just verify it doesn't panic and returns valid target
 			assert.Contains(t, []string{"inst_0", "inst_1"}, d.TargetInstance)

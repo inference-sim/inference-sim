@@ -26,7 +26,7 @@ type KVBlock struct {
 	RefCount int      // Number of active requests referencing this block
 	InUse    bool     // Whether the block is currently in use by an active (batched) request
 	Hash     string   // Prefix hash identifying this block's content and its lineage (if full)
-	Tokens   []int    // Actual tokens stored in this block; full if len(Tokens) == BlockSizeTokens
+	Tokens   []sim.TokenID // Actual tokens stored in this block; full if len(Tokens) == BlockSizeTokens
 	PrevFree *KVBlock // LRU doubly linked list: previous free block
 	NextFree *KVBlock // LRU doubly linked list: next free block
 }
@@ -123,7 +123,7 @@ func (kvc *KVCacheState) removeFromFreeList(block *KVBlock) {
 // CO-CHANGE: SnapshotCachedBlocksFn (same file) replicates this algorithm on a
 // frozen map[string]int64 snapshot. If this loop, the hash chain logic, or the
 // break condition changes, update SnapshotCachedBlocksFn to match.
-func (kvc *KVCacheState) GetCachedBlocks(tokens []int) (blockIDs []int64) {
+func (kvc *KVCacheState) GetCachedBlocks(tokens []sim.TokenID) (blockIDs []int64) {
 	n := util.Len64(tokens) / kvc.BlockSizeTokens
 	prevHash := ""
 	for i := int64(0); i < n; i++ {
@@ -151,13 +151,13 @@ func (kvc *KVCacheState) GetCachedBlocks(tokens []int) (blockIDs []int64) {
 // CO-CHANGE: GetCachedBlocks (same file) implements the same algorithm on live
 // HashToBlock state. If this loop, the hash chain logic, or the break condition
 // changes, update GetCachedBlocks to match.
-func (kvc *KVCacheState) SnapshotCachedBlocksFn() func([]int) int {
+func (kvc *KVCacheState) SnapshotCachedBlocksFn() func([]sim.TokenID) int {
 	snapshot := make(map[string]int64, len(kvc.HashToBlock))
 	for k, v := range kvc.HashToBlock {
 		snapshot[k] = v
 	}
 	blockSize := kvc.BlockSizeTokens
-	return func(tokens []int) int {
+	return func(tokens []sim.TokenID) int {
 		n := int64(len(tokens)) / blockSize
 		prevHash := ""
 		count := 0
@@ -183,7 +183,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 	reqID := req.ID
 	logrus.Debugf("AllocateBlock for ReqID: %s, Num Inputs: %d, startIndex = %d, endIndex = %d", req.ID, req.InputLen(), startIndex, endIndex)
 
-	var newTokens []int
+	var newTokens []sim.TokenID
 	var numNewBlocks int64
 	if req.ProgressIndex < req.InputLen() {
 		// request is in prefill (could be chunked)
@@ -344,7 +344,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 					end = util.Len64(newTokens)
 				}
 				tok := newTokens[start:end]
-				blk.Tokens = append([]int{}, tok...) // copy tokens
+				blk.Tokens = append([]sim.TokenID{}, tok...) // copy tokens
 				blk.RefCount = 1
 				blk.InUse = true
 				kvc.CacheMisses++

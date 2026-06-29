@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strconv"
+
+	"github.com/inference-sim/inference-sim/sim/internal/tokenid"
 )
 
 // HashBlock computes a SHA256 hash of a token block chained with the previous block's hash.
@@ -15,7 +17,7 @@ import (
 // This creates hierarchical block hashes for prefix caching.
 // Also inlined in ComputeBlockHashes for hasher reuse.
 // TestComputeBlockHashes_MatchesManualChaining guards consistency between the two paths.
-func HashBlock(prevHash string, tokens []int) string {
+func HashBlock(prevHash string, tokens []tokenid.TokenID) string {
 	h := sha256.New()
 	h.Write([]byte(prevHash))
 	var buf [20]byte // stack buffer: max int64 (19 digits) + pipe
@@ -33,7 +35,7 @@ func HashBlock(prevHash string, tokens []int) string {
 // Produces the same output as calling HashBlock sequentially, but reuses a
 // single SHA256 hasher instance across blocks to reduce allocations.
 // Output equivalence is enforced by TestComputeBlockHashes_MatchesManualChaining.
-func ComputeBlockHashes(blockSize int, tokens []int) []string {
+func ComputeBlockHashes(blockSize int, tokens []tokenid.TokenID) []string {
 	if blockSize <= 0 {
 		panic(fmt.Sprintf("ComputeBlockHashes: blockSize must be > 0, got %d", blockSize))
 	}

@@ -28,8 +28,8 @@ func newModelRequest(id, model string, arrivalTime int64) *sim.Request {
 		ID:           id,
 		Model:        model,
 		ArrivalTime:  arrivalTime,
-		InputTokens:  []int{1, 2, 3, 4, 5},
-		OutputTokens: []int{1, 2, 3},
+		InputTokens:  []sim.TokenID{1, 2, 3, 4, 5},
+		OutputTokens: []sim.TokenID{1, 2, 3},
 		State:        sim.StateQueued,
 	}
 }

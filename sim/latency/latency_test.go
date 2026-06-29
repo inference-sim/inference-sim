@@ -23,14 +23,14 @@ func TestRooflineLatencyModel_StepTime_PositiveAndMonotonic(t *testing.T) {
 
 	smallBatch := []*sim.Request{
 		{
-			InputTokens:   make([]int, 100),
+			InputTokens:   make([]sim.TokenID, 100),
 			ProgressIndex: 0,
 			NumNewTokens:  100,
 		},
 	}
 	largeBatch := []*sim.Request{
 		{
-			InputTokens:   make([]int, 1000),
+			InputTokens:   make([]sim.TokenID, 1000),
 			ProgressIndex: 0,
 			NumNewTokens:  1000,
 		},
@@ -71,7 +71,7 @@ func TestRooflineLatencyModel_StepTime_EmptyBatch(t *testing.T) {
 	// AND a non-empty batch must produce a longer step time
 	nonEmptyBatch := []*sim.Request{
 		{
-			InputTokens:   make([]int, 100),
+			InputTokens:   make([]sim.TokenID, 100),
 			ProgressIndex: 0,
 			NumNewTokens:  100,
 		},
@@ -95,7 +95,7 @@ func TestRooflineLatencyModel_QueueingTime_Positive(t *testing.T) {
 		alphaCoeffs: []float64{100, 1, 100},
 	}
 
-	req := &sim.Request{InputTokens: make([]int, 50)}
+	req := &sim.Request{InputTokens: make([]sim.TokenID, 50)}
 	result := model.QueueingTime(req)
 
 	if result <= 0 {
@@ -118,7 +118,7 @@ func TestNewLatencyModel_RooflineMode(t *testing.T) {
 	// THEN the model must produce positive results for a non-empty batch
 	batch := []*sim.Request{
 		{
-			InputTokens:   make([]int, 100),
+			InputTokens:   make([]sim.TokenID, 100),
 			ProgressIndex: 0,
 			NumNewTokens:  100,
 		},
@@ -144,7 +144,7 @@ func TestNewLatencyModel_EmptyBackendDefaultsToRoofline(t *testing.T) {
 	// Verify it behaves as roofline (produces positive step time from FLOPs/bandwidth)
 	batch := []*sim.Request{
 		{
-			InputTokens:   make([]int, 100),
+			InputTokens:   make([]sim.TokenID, 100),
 			ProgressIndex: 0,
 			NumNewTokens:  100,
 		},
@@ -240,8 +240,8 @@ func TestNewLatencyModel_NegativeCoefficients_ReturnsError(t *testing.T) {
 func TestRoofline_ZeroOutputTokens_ConsistentClassification(t *testing.T) {
 	// GIVEN a request past prefill with 0 output tokens (edge case)
 	req := &sim.Request{
-		InputTokens:   []int{1, 2, 3},
-		OutputTokens:  []int{},
+		InputTokens:   []sim.TokenID{1, 2, 3},
+		OutputTokens:  []sim.TokenID{},
 		ProgressIndex: 3,
 		NumNewTokens:  0,
 	}
@@ -432,7 +432,7 @@ func TestNewLatencyModel_RemainingBackendsWork(t *testing.T) {
 			// AND the model must compute positive step time
 			batch := []*sim.Request{
 				{
-					InputTokens:   make([]int, 100),
+					InputTokens:   make([]sim.TokenID, 100),
 					ProgressIndex: 0,
 					NumNewTokens:  10,
 				},

@@ -132,6 +132,10 @@ func (e *ClusterArrivalEvent) Execute(cs *ClusterSimulator) {
 	cs.pendingArrivals--
 	cs.injectedByClass[e.request.SLOClass]++
 	logrus.Debugf("[cluster] req %s arrived at tick %d", e.request.ID, e.time)
+	// Fire the arrival hook (issue #1440): trace exporters see each fresh
+	// arrival exactly once, in clock-monotonic order (INV-3). REDIRECT
+	// re-injections are filtered inside fireArrivalHook.
+	cs.fireArrivalHook(e.request, e.time)
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &AdmissionDecisionEvent{
 			time:    e.time + cs.admissionLatency,

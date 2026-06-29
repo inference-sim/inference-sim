@@ -12,20 +12,20 @@ func TestSessionTokenBufferAppendAndSlice(t *testing.T) {
 	if b.Len() != 0 {
 		t.Fatalf("empty Len = %d, want 0", b.Len())
 	}
-	s1, e1 := b.Append([]int{1, 2, 3})
+	s1, e1 := b.Append([]sim.TokenID{1, 2, 3})
 	if s1 != 0 || e1 != 3 {
 		t.Fatalf("Append #1 range = (%d,%d), want (0,3)", s1, e1)
 	}
-	s2, e2 := b.Append([]int{4, 5})
+	s2, e2 := b.Append([]sim.TokenID{4, 5})
 	if s2 != 3 || e2 != 5 {
 		t.Fatalf("Append #2 range = (%d,%d), want (3,5)", s2, e2)
 	}
 	got := b.Slice(0, 5)
-	want := []int{1, 2, 3, 4, 5}
+	want := []sim.TokenID{1, 2, 3, 4, 5}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Slice(0,5) = %v, want %v", got, want)
 	}
-	if got := b.Slice(2, 4); !reflect.DeepEqual(got, []int{3, 4}) {
+	if got := b.Slice(2, 4); !reflect.DeepEqual(got, []sim.TokenID{3, 4}) {
 		t.Fatalf("Slice(2,4) = %v, want [3 4]", got)
 	}
 }
@@ -38,9 +38,9 @@ func TestSessionTokenBufferLinearGrowth(t *testing.T) {
 	const rounds = 20
 	const perRound = 100
 	for i := 0; i < rounds; i++ {
-		chunk := make([]int, perRound)
+		chunk := make([]sim.TokenID, perRound)
 		for j := range chunk {
-			chunk[j] = i*perRound + j
+			chunk[j] = sim.TokenID(i*perRound + j)
 		}
 		b.Append(chunk)
 	}
@@ -59,9 +59,9 @@ func TestSessionTokenBufferEmptyAppend(t *testing.T) {
 	if s != 0 || e != 0 {
 		t.Fatalf("Append(nil) range = (%d,%d), want (0,0)", s, e)
 	}
-	s, e = b.Append([]int{})
+	s, e = b.Append([]sim.TokenID{})
 	if s != 0 || e != 0 {
-		t.Fatalf("Append([]int{}) range = (%d,%d), want (0,0)", s, e)
+		t.Fatalf("Append([]sim.TokenID{}) range = (%d,%d), want (0,0)", s, e)
 	}
 }
 
@@ -69,7 +69,7 @@ func TestSessionTokenBufferSliceIsView(t *testing.T) {
 	// Two slices spanning the same range MUST point at the same backing array —
 	// that's the storage-win guarantee.
 	b := newSessionTokenBuffer()
-	b.Append([]int{10, 20, 30, 40, 50})
+	b.Append([]sim.TokenID{10, 20, 30, 40, 50})
 	a := b.Slice(0, 3)
 	c := b.Slice(0, 3)
 	if len(a) > 0 && &a[0] != &c[0] {
@@ -84,9 +84,9 @@ func TestSessionTokenBufferSliceIsView(t *testing.T) {
 // newSessionTokenBufferWithCapacity to control this.
 func TestSessionTokenBufferSliceAliasesAcrossAppends(t *testing.T) {
 	b := newSessionTokenBufferWithCapacity(100)
-	b.Append([]int{1, 2, 3})
+	b.Append([]sim.TokenID{1, 2, 3})
 	first := b.Slice(0, 3)
-	b.Append([]int{4, 5, 6})
+	b.Append([]sim.TokenID{4, 5, 6})
 	second := b.Slice(0, 6)
 	if len(first) == 0 || len(second) == 0 {
 		t.Fatal("empty slice — test invalid")
@@ -119,13 +119,13 @@ func TestNewSessionTokenBufferWithCapacityRejectsNegative(t *testing.T) {
 func TestSessionTokenBufferForcedReallocOrphanContentCorrect(t *testing.T) {
 	// Start with cap=4. The first Slice() returns a view of [1,2,3,4].
 	b := newSessionTokenBufferWithCapacity(4)
-	b.Append([]int{1, 2, 3, 4})
+	b.Append([]sim.TokenID{1, 2, 3, 4})
 	orphanCandidate := b.Slice(0, 4)
 	orphanFirstAddr := &orphanCandidate[0]
 
 	// Force reallocation: append more than the remaining capacity. After this,
 	// the buffer's backing array has changed.
-	b.Append([]int{5, 6, 7, 8, 9, 10})
+	b.Append([]sim.TokenID{5, 6, 7, 8, 9, 10})
 	newView := b.Slice(0, 10)
 
 	// New view points to a different backing array (reallocation happened).
@@ -134,13 +134,13 @@ func TestSessionTokenBufferForcedReallocOrphanContentCorrect(t *testing.T) {
 	}
 
 	// Orphan slice remains content-correct: still spans [1,2,3,4].
-	want := []int{1, 2, 3, 4}
+	want := []sim.TokenID{1, 2, 3, 4}
 	if !reflect.DeepEqual(orphanCandidate, want) {
 		t.Fatalf("orphan slice content drifted: got %v, want %v", orphanCandidate, want)
 	}
 
 	// New view also content-correct.
-	wantNew := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	wantNew := []sim.TokenID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	if !reflect.DeepEqual(newView, wantNew) {
 		t.Fatalf("new slice content: got %v, want %v", newView, wantNew)
 	}
@@ -154,7 +154,7 @@ func TestSessionTokenBufferForcedReallocOrphanContentCorrect(t *testing.T) {
 // (susiejojo human review, #1445).
 func TestRequestInputTokenSliceCappedCapacity(t *testing.T) {
 	b := newSessionTokenBufferWithCapacity(100)
-	b.Append([]int{10, 20, 30})
+	b.Append([]sim.TokenID{10, 20, 30})
 	// Mimic how reasoning.go/session.go wire the buffer view onto a Request.
 	req := &sim.Request{ID: "req1", InputTokens: b.Slice(0, 3)}
 
@@ -167,9 +167,9 @@ func TestRequestInputTokenSliceCappedCapacity(t *testing.T) {
 		t.Fatalf("Request.FullInputTokens cap = %d, want 3", cap(full))
 	}
 	// Append to the user-facing view — must reallocate, not overwrite the buffer.
-	_ = append(view, 999)
+	_ = append(view, sim.TokenID(999))
 	// Appending to the buffer via the proper API must yield 50, not 999.
-	b.Append([]int{50})
+	b.Append([]sim.TokenID{50})
 	if got := b.Slice(3, 4)[0]; got != 50 {
 		t.Fatalf("after legitimate Append: buf[3] = %d, want 50 (three-index Request accessor should have prevented overwrite)", got)
 	}
@@ -180,7 +180,7 @@ func TestRequestInputTokenSliceCappedCapacity(t *testing.T) {
 // of a non-empty buffer) return empty slices without panic (MIN-R5-2, #1445).
 func TestSessionTokenBufferSliceValidBoundaries(t *testing.T) {
 	b := newSessionTokenBuffer()
-	b.Append([]int{1, 2, 3})
+	b.Append([]sim.TokenID{1, 2, 3})
 	// Empty range at the current end (start == end == buf.Len()).
 	got := b.Slice(3, 3)
 	if len(got) != 0 {
@@ -197,7 +197,7 @@ func TestSessionTokenBufferSliceValidBoundaries(t *testing.T) {
 // panic with a decorated message (IMP-1, #1445).
 func TestSessionTokenBufferSliceBounds(t *testing.T) {
 	b := newSessionTokenBuffer()
-	b.Append([]int{1, 2, 3})
+	b.Append([]sim.TokenID{1, 2, 3})
 	cases := []struct {
 		name       string
 		start, end int64

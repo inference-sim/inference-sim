@@ -161,20 +161,20 @@ func TestClusterMetrics_ZeroOutput_NoPollution(t *testing.T) {
 	cfg := msClusterConfig(2)
 
 	// Inject a mix of zero-output and normal requests directly
-	makeTokens := func(n int) []int {
-		t := make([]int, n)
+	makeTokens := func(n int) []sim.TokenID {
+		t := make([]sim.TokenID, n)
 		for i := range t {
-			t[i] = i + 1
+			t[i] = sim.TokenID(i + 1)
 		}
 		return t
 	}
 	reqs := []*sim.Request{
-		{ID: "z0", InputTokens: makeTokens(32), OutputTokens: []int{}, ArrivalTime: 0, State: sim.StateQueued},
+		{ID: "z0", InputTokens: makeTokens(32), OutputTokens: []sim.TokenID{}, ArrivalTime: 0, State: sim.StateQueued},
 		{ID: "n1", InputTokens: makeTokens(32), OutputTokens: makeTokens(4), ArrivalTime: 100000, State: sim.StateQueued},
 		{ID: "z2", InputTokens: makeTokens(48), OutputTokens: nil, ArrivalTime: 200000, State: sim.StateQueued},
 		{ID: "n3", InputTokens: makeTokens(16), OutputTokens: makeTokens(3), ArrivalTime: 300000, State: sim.StateQueued},
 		{ID: "n4", InputTokens: makeTokens(32), OutputTokens: makeTokens(5), ArrivalTime: 400000, State: sim.StateQueued},
-		{ID: "z5", InputTokens: makeTokens(16), OutputTokens: []int{}, ArrivalTime: 500000, State: sim.StateQueued},
+		{ID: "z5", InputTokens: makeTokens(16), OutputTokens: []sim.TokenID{}, ArrivalTime: 500000, State: sim.StateQueued},
 	}
 	cs := NewClusterSimulator(cfg, NewSliceRequestSource(reqs), nil)
 

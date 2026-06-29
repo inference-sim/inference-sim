@@ -39,7 +39,7 @@ type SessionBlueprint struct {
 	OutputSampler    LengthSampler
 	RNG              *rand.Rand    // per-session, seeded deterministically from client RNG
 	ThinkTimeSampler LengthSampler // optional: per-round think time in µs; nil = use constant ThinkTimeUs
-	Prefix           []int         // shared system prompt tokens
+	Prefix           []sim.TokenID // shared system prompt tokens
 	TenantID         string
 	SLOClass         string
 	Model            string
@@ -194,7 +194,7 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 	}
 	actualOutputLen := max(rawOutputLen, 0)
 
-	var inputTokens []int
+	var inputTokens []sim.TokenID
 	if bp.ContextGrowth == "accumulate" {
 		// Shared-buffer accumulation (#1445). The buffer's layout is
 		// [prefix | r0_conversation | r0_output | r1_conversation | r1_output | ... | rN_newInput],
@@ -265,7 +265,7 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 		inputTokens = newInputTokens
 		// Non-accumulate: prepend prefix freshly (no shared buffer in this mode).
 		if len(bp.Prefix) > 0 {
-			inputTokens = append(append([]int{}, bp.Prefix...), inputTokens...)
+			inputTokens = append(append([]sim.TokenID{}, bp.Prefix...), inputTokens...)
 		}
 	}
 

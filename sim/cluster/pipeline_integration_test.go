@@ -27,16 +27,16 @@ func TestFullPipelineEndToEnd(t *testing.T) {
 			ID:           fmt.Sprintf("req-%d", i),
 			Model:        "test-model",
 			ArrivalTime:  int64(i) * 1_000_000, // 1s apart
-			InputTokens:  make([]int, 100),      // 100 input tokens
-			OutputTokens: make([]int, 50),        // 50 output tokens
+			InputTokens:  make([]sim.TokenID, 100),      // 100 input tokens
+			OutputTokens: make([]sim.TokenID, 50),        // 50 output tokens
 			State:        sim.StateQueued,
 		}
 		// Fill with dummy token IDs
 		for j := range requests[i].InputTokens {
-			requests[i].InputTokens[j] = j + 1
+			requests[i].InputTokens[j] = sim.TokenID(j + 1)
 		}
 		for j := range requests[i].OutputTokens {
-			requests[i].OutputTokens[j] = j + 1
+			requests[i].OutputTokens[j] = sim.TokenID(j + 1)
 		}
 	}
 
