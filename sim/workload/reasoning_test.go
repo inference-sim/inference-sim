@@ -169,8 +169,12 @@ func TestGenerateReasoningRequests_Accumulate_SharesBackingArray(t *testing.T) {
 			ContextGrowth: "accumulate",
 		},
 	}
-	inputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 40, "max": 60}})
-	outputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 30, "std_dev": 3, "min": 25, "max": 35}})
+	// Use constant samplers (std_dev: 0) so the pre-allocation in reasoning.go
+	// is exact: round 0 samples are identical to all later rounds' samples,
+	// so the buffer never needs to reallocate. This makes the aliasing
+	// assertion below deterministic and not seed-dependent (MOD-R5-1, #1445).
+	inputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 0, "min": 50, "max": 50}})
+	outputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 30, "std_dev": 0, "min": 30, "max": 30}})
 
 	requests, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c1", "t1", "batch", "", nil)
 	if err != nil {
@@ -182,12 +186,11 @@ func TestGenerateReasoningRequests_Accumulate_SharesBackingArray(t *testing.T) {
 
 	// The accumulate path with sessionTokenBuffer means each round's
 	// InputTokens slice header points into the buffer's underlying array.
-	// With reasoning.go's round-0-sized pre-allocation (#1445), every
-	// consecutive pair MUST share the same backing array — no reallocation
-	// can occur when round sizes are constant (sampler returns 50/30 every
-	// round, cap was sized for MaxRounds × (50+30) at start). Assert every
-	// pair, not just one, so a mid-loop reallocation that orphans later
-	// rounds is caught (MOD-R4-1, #1445).
+	// With reasoning.go's round-0-sized pre-allocation (#1445) and constant
+	// samplers, every consecutive pair MUST share the same backing array —
+	// no reallocation can occur. Assert every pair, not just one, so a
+	// mid-loop reallocation that orphans later rounds is caught
+	// (MOD-R4-1, #1445).
 	for i := 0; i+1 < len(requests); i++ {
 		a := requests[i].InputTokens
 		b := requests[i+1].InputTokens

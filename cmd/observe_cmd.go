@@ -1084,7 +1084,7 @@ func adaptForSessionManager(original *sim.Request, record *RequestRecord) *sim.R
 	}
 
 	outputCount := record.OutputTokens
-	adapted.ProgressIndex = int64(len(original.InputTokens) + outputCount)
+	adapted.ProgressIndex = original.InputLen() + int64(outputCount)
 
 	if outputCount > 0 {
 		adapted.OutputTokens = make([]int, outputCount)

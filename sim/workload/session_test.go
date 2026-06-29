@@ -212,6 +212,90 @@ func TestSession_AccumulateArrivalTime_INV10(t *testing.T) {
 	}
 }
 
+// TestSession_NonAccumulate_WithPrefix verifies the closed-loop non-accumulate
+// path with a non-empty prefix: each follow-up round's InputTokens must be
+// [bp.Prefix | newInputTokens] (the prefix is prepended fresh per round; no
+// shared buffer in this mode). Closes the test gap that would let a
+// regression strip the append(bp.Prefix, ...) silently (MOD-R5-2, #1445).
+func TestSession_NonAccumulate_WithPrefix(t *testing.T) {
+	bp := makeTestBlueprint("sess-noaccum-prefix", 3, 1000, "", 1_000_000)
+	bp.Prefix = []int{91, 92, 93}
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	inputR0 := []int{1, 2, 3, 4, 5}
+	outputR0 := []int{50, 51}
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "sess-noaccum-prefix", RoundIndex: 0,
+		State:         sim.StateCompleted,
+		ProgressIndex: int64(len(inputR0) + len(outputR0)),
+		InputTokens:   inputR0,
+		OutputTokens:  outputR0,
+	}
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+	r1 := follow[0]
+	// constantSampler returns 10 input tokens; expected InputLen = 3 (prefix) + 10 (new) = 13.
+	wantLen := len(bp.Prefix) + 10
+	if len(r1.InputTokens) != wantLen {
+		t.Fatalf("non-accumulate + prefix: InputLen = %d, want %d", len(r1.InputTokens), wantLen)
+	}
+	// Verify prefix appears at the front.
+	for i, tok := range bp.Prefix {
+		if r1.InputTokens[i] != tok {
+			t.Fatalf("token[%d] = %d, want prefix token %d", i, r1.InputTokens[i], tok)
+		}
+	}
+}
+
+// TestSession_AccumulateZeroOutput_SeededRound verifies the
+// `actualOutputLen == 0` guard at session.go:230 in a SEEDED accumulate round
+// (i.e., round ≥ 1). An existing test covers this in round 0 (unseeded);
+// this test adds coverage for the post-seed path where the buffer is
+// already populated and the guard skips the output-append (MOD-R5-3, #1445).
+func TestSession_AccumulateZeroOutput_SeededRound(t *testing.T) {
+	bp := makeTestBlueprint("sess-zero-out-seeded", 3, 1000, "accumulate", 1_000_000)
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	// Round 0: 10 input, 5 actual output (ProgressIndex = 15).
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "sess-zero-out-seeded", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+	}
+	follow1 := sm.OnComplete(req0, 5000)
+	if len(follow1) != 1 {
+		t.Fatalf("round 0: expected 1 follow-up, got %d", len(follow1))
+	}
+	r1 := follow1[0]
+	if len(r1.InputTokens) != 25 {
+		t.Fatalf("round 1 InputLen = %d, want 25 (10 in + 5 out + 10 new)", len(r1.InputTokens))
+	}
+
+	// Round 1: present as a length-capped result with ZERO actual output
+	// (ProgressIndex == InputLen → actualOutputLen = max(0, 0) = 0). The
+	// guard `actualOutputLen > 0 && ...` must skip the output-append; only
+	// the new round's input gets appended.
+	req1 := &sim.Request{
+		ID: "r1", SessionID: "sess-zero-out-seeded", RoundIndex: 1,
+		State:         sim.StateCompleted,
+		ProgressIndex: int64(len(r1.InputTokens)), // zero actual output
+		InputTokens:   r1.InputTokens,
+		OutputTokens:  r1.OutputTokens,
+	}
+	follow2 := sm.OnComplete(req1, 10000)
+	if len(follow2) != 1 {
+		t.Fatalf("round 1 zero-output: expected 1 follow-up, got %d", len(follow2))
+	}
+	r2 := follow2[0]
+	// Buffer state coming in: 25 tokens. No output appended (zero actual).
+	// New input is 10 tokens. Round 2 InputLen = 25 + 0 + 10 = 35.
+	if len(r2.InputTokens) != 35 {
+		t.Fatalf("round 2 InputLen = %d, want 35 (25 buf + 0 out + 10 new)", len(r2.InputTokens))
+	}
+}
+
 // TestSession_AccumulateDoesNotReseed verifies the `seeded` flag guard:
 // once a session has produced its first follow-up, a second OnComplete call
 // on a request with the same SessionID must NOT re-seed the buffer (which

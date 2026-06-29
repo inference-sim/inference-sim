@@ -106,6 +106,24 @@ func TestNewSessionTokenBufferWithCapacityRejectsNegative(t *testing.T) {
 	_ = newSessionTokenBufferWithCapacity(-1)
 }
 
+// TestSessionTokenBufferSliceValidBoundaries asserts that valid degenerate
+// ranges (empty range at the end of the buffer; empty range at the start
+// of a non-empty buffer) return empty slices without panic (MIN-R5-2, #1445).
+func TestSessionTokenBufferSliceValidBoundaries(t *testing.T) {
+	b := newSessionTokenBuffer()
+	b.Append([]int{1, 2, 3})
+	// Empty range at the current end (start == end == buf.Len()).
+	got := b.Slice(3, 3)
+	if len(got) != 0 {
+		t.Fatalf("Slice(3, 3) returned len=%d, want 0", len(got))
+	}
+	// Empty range at the start of a non-empty buffer.
+	got = b.Slice(0, 0)
+	if len(got) != 0 {
+		t.Fatalf("Slice(0, 0) returned len=%d, want 0", len(got))
+	}
+}
+
 // TestSessionTokenBufferSliceBounds asserts that out-of-bounds Slice() calls
 // panic with a decorated message (IMP-1, #1445).
 func TestSessionTokenBufferSliceBounds(t *testing.T) {
