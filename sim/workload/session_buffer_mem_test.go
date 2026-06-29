@@ -235,14 +235,23 @@ func TestReasoningAccumulate_WithPrefix_MemoryIsLinear(t *testing.T) {
 		R, prefixLen, legacy, finalCap, content, float64(legacy)/float64(finalCap))
 }
 
-// recordMemoryWin captures the win factor for the PR description.
-// Run with -v to see the numbers.
+// TestReportMemoryWinForPR captures the win factor under a realistic workload
+// shape for the PR description (R=15 / R=50 with input=1500 output=425 — the
+// shape from the parent issue #1438). Asserts hard floor win ratios so the
+// test fails on regression (susiejojo human review, #1445).
 func TestReportMemoryWinForPR(t *testing.T) {
-	for _, R := range []int{15, 50} {
+	cases := []struct {
+		R      int
+		minWin float64
+	}{
+		{15, 5.0},
+		{50, 20.0},
+	}
+	for _, tc := range cases {
 		rng := rand.New(rand.NewSource(42))
 		spec := &ReasoningSpec{
 			MultiTurn: &MultiTurnSpec{
-				MaxRounds:     R,
+				MaxRounds:     tc.R,
 				ThinkTimeUs:   1000,
 				ContextGrowth: "accumulate",
 			},
@@ -256,11 +265,15 @@ func TestReportMemoryWinForPR(t *testing.T) {
 		}
 		newPeak := cap(reqs[len(reqs)-1].InputTokens)
 		legacy := 0
-		for n := 0; n < R; n++ {
+		for n := 0; n < tc.R; n++ {
 			legacy += 1500 + n*(1500+425)
 		}
-		content := R * (1500 + 425)
+		content := tc.R * (1500 + 425)
+		ratio := float64(legacy) / float64(newPeak)
 		t.Logf("PR-MEM open-loop R=%d input=1500 output=425: legacy=%d toks, new=%d toks, content=%d toks, win=%.1fx, peak-bytes=%.1fKB (int=8B)",
-			R, legacy, newPeak, content, float64(legacy)/float64(newPeak), float64(newPeak*8)/1024)
+			tc.R, legacy, newPeak, content, ratio, float64(newPeak*8)/1024)
+		if ratio < tc.minWin {
+			t.Errorf("R=%d: win ratio %.2fx < minimum %.2fx — storage benefit regressed", tc.R, ratio, tc.minWin)
+		}
 	}
 }

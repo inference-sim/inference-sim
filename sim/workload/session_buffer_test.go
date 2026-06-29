@@ -3,6 +3,8 @@ package workload
 import (
 	"reflect"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 func TestSessionTokenBufferAppendAndSlice(t *testing.T) {
@@ -104,6 +106,73 @@ func TestNewSessionTokenBufferWithCapacityRejectsNegative(t *testing.T) {
 		}
 	}()
 	_ = newSessionTokenBufferWithCapacity(-1)
+}
+
+// TestSessionTokenBufferForcedReallocOrphanContentCorrect documents the
+// reallocation hazard described on sessionTokenBuffer: when Append exceeds
+// capacity, Go reallocates the backing array and previously-returned
+// Slice() results become orphaned views of the OLD array. The orphaned
+// slices must remain CONTENT-CORRECT — the data they reference is
+// unchanged, even though further appends are no longer visible through
+// them. This locks in the "intentional, bounded" hazard documented in
+// session_buffer.go (susiejojo human review, #1445).
+func TestSessionTokenBufferForcedReallocOrphanContentCorrect(t *testing.T) {
+	// Start with cap=4. The first Slice() returns a view of [1,2,3,4].
+	b := newSessionTokenBufferWithCapacity(4)
+	b.Append([]int{1, 2, 3, 4})
+	orphanCandidate := b.Slice(0, 4)
+	orphanFirstAddr := &orphanCandidate[0]
+
+	// Force reallocation: append more than the remaining capacity. After this,
+	// the buffer's backing array has changed.
+	b.Append([]int{5, 6, 7, 8, 9, 10})
+	newView := b.Slice(0, 10)
+
+	// New view points to a different backing array (reallocation happened).
+	if len(newView) > 0 && &newView[0] == orphanFirstAddr {
+		t.Fatalf("expected reallocation after exceeding capacity, but new slice still aliases orphan")
+	}
+
+	// Orphan slice remains content-correct: still spans [1,2,3,4].
+	want := []int{1, 2, 3, 4}
+	if !reflect.DeepEqual(orphanCandidate, want) {
+		t.Fatalf("orphan slice content drifted: got %v, want %v", orphanCandidate, want)
+	}
+
+	// New view also content-correct.
+	wantNew := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	if !reflect.DeepEqual(newView, wantNew) {
+		t.Fatalf("new slice content: got %v, want %v", newView, wantNew)
+	}
+}
+
+// TestRequestInputTokenSliceCappedCapacity verifies the three-index slice
+// guarantee at the user-facing accessor layer: appending to a slice returned
+// by Request.InputTokenSlice() allocates a fresh backing array instead of
+// overwriting the buffer's contents. The buffer's own internal Slice() keeps
+// full capacity for memory measurement; the user-facing accessor caps it
+// (susiejojo human review, #1445).
+func TestRequestInputTokenSliceCappedCapacity(t *testing.T) {
+	b := newSessionTokenBufferWithCapacity(100)
+	b.Append([]int{10, 20, 30})
+	// Mimic how reasoning.go/session.go wire the buffer view onto a Request.
+	req := &sim.Request{ID: "req1", InputTokens: b.Slice(0, 3)}
+
+	view := req.InputTokenSlice(0, 3)
+	if cap(view) != 3 {
+		t.Fatalf("Request.InputTokenSlice cap = %d, want 3 (three-index slice should cap at len)", cap(view))
+	}
+	full := req.FullInputTokens()
+	if cap(full) != 3 {
+		t.Fatalf("Request.FullInputTokens cap = %d, want 3", cap(full))
+	}
+	// Append to the user-facing view — must reallocate, not overwrite the buffer.
+	_ = append(view, 999)
+	// Appending to the buffer via the proper API must yield 50, not 999.
+	b.Append([]int{50})
+	if got := b.Slice(3, 4)[0]; got != 50 {
+		t.Fatalf("after legitimate Append: buf[3] = %d, want 50 (three-index Request accessor should have prevented overwrite)", got)
+	}
 }
 
 // TestSessionTokenBufferSliceValidBoundaries asserts that valid degenerate

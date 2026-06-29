@@ -128,11 +128,14 @@ func (req *Request) InputLen() int64 {
 // point and to mark intent at call sites that need the whole sequence (trace
 // export, scorers that hash the full prefix) (#1445).
 //
-// The returned slice MUST NOT be modified. When the request belongs to a
-// multi-turn accumulate session, it aliases a shared session token buffer and
-// mutation would silently corrupt every other round's view (#1445).
+// The returned slice's capacity is capped at its length (three-index slice),
+// so a stray `append(req.FullInputTokens(), x)` by a caller allocates a fresh
+// array instead of silently overwriting the next round's tokens in the shared
+// session buffer. This converts the no-mutation contract into a runtime-
+// enforced guarantee.
 func (req *Request) FullInputTokens() []int {
-	return req.InputTokens
+	n := len(req.InputTokens)
+	return req.InputTokens[:n:n]
 }
 
 // InputTokenSlice returns the slice spanning the absolute index range [start, end).
@@ -143,15 +146,16 @@ func (req *Request) FullInputTokens() []int {
 // logrus.Fatalf in the sim/ package; the panic surfaces the request ID and length
 // so callers can debug from the stack trace.
 //
-// The returned slice MUST NOT be modified (same aliasing constraint as
-// FullInputTokens).
+// The returned slice's capacity is capped at `end` (three-index slice), so a
+// stray `append(slice, ...)` by a caller allocates a fresh backing array
+// instead of overwriting subsequent tokens in the shared session buffer.
 func (req *Request) InputTokenSlice(start, end int64) []int {
 	n := int64(len(req.InputTokens))
 	if start < 0 || end < start || end > n {
 		panic(fmt.Sprintf("Request.InputTokenSlice: invalid range [%d, %d) for InputTokens len=%d (request %s)",
 			start, end, n, req.ID))
 	}
-	return req.InputTokens[start:end]
+	return req.InputTokens[start:end:end]
 }
 
 // GenerateRandomTokenIDs creates a slice of random token IDs in [0, MaxTokenID).

@@ -15,7 +15,8 @@ import (
 // When prefix is non-empty it is prepended to every round's InputTokens
 // (req.PrefixLength is set to len(prefix)). Under accumulate, prefix becomes
 // the first chunk in the shared session buffer so all rounds share the same
-// prefix bytes — eliminating the legacy O(R) prefix-copy tax per round
+// prefix bytes — eliminating the legacy O(P) prefix-copy per round
+// (O(R·P) total) on top of the dominant O(R²) accumulated-context copy
 // (#1445).
 func GenerateReasoningRequests(
 	rng *rand.Rand,
@@ -57,6 +58,8 @@ func GenerateReasoningRequests(
 	// every round's Slice() result point into the SAME backing array. Even if
 	// the estimate is exceeded, Go's amortized-O(1) append keeps total memory
 	// O(R); the only cost is a one-time copy.
+	// buf is only allocated for the accumulate path; non-accumulate rounds
+	// build a fresh slice per round and never touch buf.
 	var buf *sessionTokenBuffer
 	prefixLen := int64(len(prefix))
 
@@ -70,8 +73,6 @@ func GenerateReasoningRequests(
 		if prefixLen > 0 {
 			buf.Append(prefix)
 		}
-	} else {
-		buf = newSessionTokenBuffer()
 	}
 
 	for round := 0; round < mt.MaxRounds; round++ {

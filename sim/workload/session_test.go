@@ -162,11 +162,13 @@ func TestSession_AccumulateContinuityGuard_RejectsShortSlice(t *testing.T) {
 	sm.OnComplete(req1Short, 10000)
 }
 
-// TestSession_AccumulateOverCap_AppendsFull exercises the over-cap branch of
-// session.go's output accumulation: when actualOutputLen exceeds
-// len(req.OutputTokens), the code logs Error and falls through to appending
-// the full oracle output (IMP-R4-2, #1445).
-func TestSession_AccumulateOverCap_AppendsFull(t *testing.T) {
+// TestSession_AccumulateOverCap_CancelsSession exercises the over-cap branch
+// of session.go's output accumulation: when actualOutputLen exceeds
+// len(req.OutputTokens), the upstream ProgressIndex accounting has drifted.
+// The branch logs Error and cancels the session to contain the corruption
+// (susiejojo human review, #1445). A second OnComplete call confirms the
+// session is terminal — no further follow-ups are generated.
+func TestSession_AccumulateOverCap_CancelsSession(t *testing.T) {
 	bp := makeTestBlueprint("sess-overcap", 3, 1000, "accumulate", 1_000_000)
 	sm := NewSessionManager([]SessionBlueprint{bp})
 
@@ -180,12 +182,19 @@ func TestSession_AccumulateOverCap_AppendsFull(t *testing.T) {
 		OutputTokens:  make([]int, 5),
 	}
 	follow := sm.OnComplete(req0, 5000)
-	if len(follow) != 1 {
-		t.Fatalf("expected 1 follow-up after over-cap, got %d", len(follow))
+	if follow != nil {
+		t.Fatalf("over-cap: expected nil follow-up (session cancelled), got %d requests", len(follow))
 	}
-	// Round 1 input = [10 r0_input | 5 r0_oracle_output | 10 newInput] = 25
-	if len(follow[0].InputTokens) != 25 {
-		t.Fatalf("over-cap: follow-up InputLen = %d, want 25 (full oracle output appended)", len(follow[0].InputTokens))
+
+	// Confirm session is in terminal state: a second well-formed OnComplete
+	// call must also return nil.
+	req0Again := &sim.Request{
+		ID: "r0b", SessionID: "sess-overcap", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]int, 10), OutputTokens: make([]int, 5),
+	}
+	if follow := sm.OnComplete(req0Again, 6000); follow != nil {
+		t.Errorf("expected nil after session cancelled, got %d requests", len(follow))
 	}
 }
 

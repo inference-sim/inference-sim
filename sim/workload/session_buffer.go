@@ -25,9 +25,10 @@ import "fmt"
 // In BLIS this is safe because: (a) the DES is single-threaded; (b) once
 // returned to a Request, a slice is read-only for the simulator (#1445 R5
 // mutation rules); (c) total memory is bounded by Go's amortized-O(1) append
-// policy (cap ≤ 2× current len), so peak per-session bytes remain O(R) as
-// asserted by the memory tests in session_buffer_mem_test.go. To eliminate
-// the orphaning entirely when R is known upfront (open-loop generation), use
+// policy (cap ≤ ~2× len for small buffers, ~1.25× for large; the
+// session_buffer_mem_test.go bound of 3× is the operational ceiling), so
+// peak per-session bytes remain O(R). To eliminate the orphaning entirely
+// when R is known upfront (open-loop generation), use
 // newSessionTokenBufferWithCapacity.
 type sessionTokenBuffer struct {
 	b []int
@@ -43,9 +44,11 @@ func newSessionTokenBuffer() *sessionTokenBuffer {
 // capacity. Use this when the total session size is known (e.g., open-loop
 // reasoning generation) to avoid the reallocation hazard described on
 // sessionTokenBuffer — every Slice() result remains valid through all
-// subsequent appends. Panics on a negative capacity (R3: validate library
-// constructor parameters; a negative value indicates a caller calculation bug
-// that should surface immediately, not be silently clamped).
+// subsequent appends within the pre-allocated capacity (if the appended
+// size exceeds capacity, the reallocation hazard reappears). Panics on a
+// negative capacity (R3: validate library constructor parameters; a
+// negative value indicates a caller calculation bug that should surface
+// immediately, not be silently clamped).
 func newSessionTokenBufferWithCapacity(capacity int64) *sessionTokenBuffer {
 	if capacity < 0 {
 		panic(fmt.Sprintf("newSessionTokenBufferWithCapacity: capacity must be non-negative, got %d", capacity))
@@ -65,6 +68,14 @@ func (s *sessionTokenBuffer) Append(toks []int) (start, end int64) {
 // Slice returns a flat view of the buffer over the given absolute range. The
 // returned slice aliases the buffer's underlying array; callers must not mutate.
 // Panics with a decorated message if [start, end) is out of bounds.
+//
+// This is package-internal; the only production callers (reasoning.go,
+// session.go) assign the result to req.InputTokens which is then exposed to
+// the rest of the simulator exclusively via Request.FullInputTokens /
+// Request.InputTokenSlice — both of which return three-index slices that
+// prevent stray appends from overwriting the shared buffer. The buffer's
+// own Slice() therefore keeps the full backing-array capacity so memory
+// tests can measure peak per-session bytes via cap(req.InputTokens).
 func (s *sessionTokenBuffer) Slice(start, end int64) []int {
 	n := int64(len(s.b))
 	if start < 0 || end < start || end > n {

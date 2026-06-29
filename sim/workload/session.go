@@ -113,7 +113,10 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 	}
 	sess, ok := sm.sessions[req.SessionID]
 	if !ok {
-		logrus.Warnf("SessionManager.OnComplete: request %s has SessionID %q not found in sessions — possible blueprint mismatch",
+		// Error severity: this signals a blueprint/trace mismatch (a
+		// "should never happen" condition), not a normal occurrence;
+		// Warn was easy to suppress in automated pipelines.
+		logrus.Errorf("SessionManager.OnComplete: request %s has SessionID %q not found in sessions — possible blueprint mismatch",
 			req.ID, req.SessionID)
 		return nil
 	}
@@ -181,7 +184,15 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 
 	// Context accumulation (BC-8): use ACTUAL generated output, not oracle OutputTokens.
 	// For length-capped requests, ProgressIndex - len(InputTokens) gives actual output count.
-	actualOutputLen := max(int(req.ProgressIndex)-int(req.InputLen()), 0)
+	// A negative value is unreachable in normal flow (ProgressIndex always >= InputLen
+	// once prefill completes) but worth logging if it ever happens — it would indicate
+	// upstream accounting drift.
+	rawOutputLen := int(req.ProgressIndex) - int(req.InputLen())
+	if rawOutputLen < 0 {
+		logrus.Errorf("SessionManager.OnComplete: session %s round %d ProgressIndex=%d < InputLen=%d — clamping actualOutputLen to 0; upstream accounting drift",
+			req.SessionID, req.RoundIndex, req.ProgressIndex, req.InputLen())
+	}
+	actualOutputLen := max(rawOutputLen, 0)
 
 	var inputTokens []int
 	if bp.ContextGrowth == "accumulate" {
@@ -233,12 +244,14 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 			case actualOutputLen > len(outTokens):
 				// Over-cap defense: ProgressIndex accounting should never produce
 				// an actualOutputLen exceeding the oracle output length. If it
-				// does, log loudly and fall through to appending the full
-				// oracle output — the upstream computation has drifted and the
-				// resulting metrics are suspect. (outTokens is already the full
-				// slice; no trim needed.)
-				logrus.Errorf("SessionManager.OnComplete: session %s round %d actualOutputLen=%d > len(OutputTokens)=%d — appending full oracle output; ProgressIndex accounting may be incorrect",
+				// does, cancel the session — the upstream computation has
+				// drifted and continuing would propagate the corruption to every
+				// subsequent round. Better to terminate one session loudly than
+				// silently corrupt many.
+				logrus.Errorf("SessionManager.OnComplete: session %s round %d actualOutputLen=%d > len(OutputTokens)=%d — cancelling session to contain corruption (ProgressIndex accounting drift)",
 					req.SessionID, req.RoundIndex, actualOutputLen, len(outTokens))
+				sess.state = sessionCancelled
+				return nil
 			case actualOutputLen < len(outTokens):
 				outTokens = outTokens[:actualOutputLen]
 				logrus.Debugf("SessionManager.OnComplete: session %s round %d length-capped — accumulating %d/%d output tokens",
