@@ -45,7 +45,7 @@ func newNoHitLRUScorer(cacheFn cacheQueryFn) (scorerFunc, observerFunc) {
 		lastReqID = req.ID
 		for _, snap := range snapshots {
 			if fn, ok := cacheFn[snap.ID]; ok && fn != nil {
-				if fn(req.InputTokens) > 0 {
+				if fn(req.FullInputTokens()) > 0 {
 					lastWarm = true
 					break
 				}

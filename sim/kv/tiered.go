@@ -198,10 +198,10 @@ func (t *TieredKVCache) AllocateKVBlocks(req *sim.Request, startIndex, endIndex 
 		return true
 	}
 	// GPU allocation failed — try targeted CPU reload for this request's prefix.
-	reloaded := t.reloadPrefixFromCPU(req.InputTokens)
+	reloaded := t.reloadPrefixFromCPU(req.FullInputTokens())
 	if reloaded {
 		// Re-compute cached blocks now that CPU content is back on GPU
-		newCached := t.gpu.GetCachedBlocks(req.InputTokens)
+		newCached := t.gpu.GetCachedBlocks(req.FullInputTokens())
 		newStart := int64(len(newCached)) * t.gpu.BlockSize()
 		if newStart > startIndex {
 			if newStart >= endIndex {

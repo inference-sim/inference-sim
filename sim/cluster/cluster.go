@@ -2088,6 +2088,9 @@ func (cs *ClusterSimulator) executeDisaggregatedRouting(req *sim.Request, time i
 	cs.parentRequests[parent.ID] = parent
 
 	// Create prefill sub-request: same input, no output (completes after prefill).
+	// InputTokens is a slice-header alias of req.InputTokens (#1445) — the
+	// sub-request views the same underlying token buffer, no flatten. If
+	// Request.InputTokens ever becomes lazy/chained, this site must update.
 	prefillSubReq := &sim.Request{
 		ID:           parent.PrefillSubReqID,
 		InputTokens:  req.InputTokens,

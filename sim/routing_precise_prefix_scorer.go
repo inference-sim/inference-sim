@@ -30,7 +30,7 @@ func newPrecisePrefixCacheScorer(cacheFn cacheQueryFn) (scorerFunc, observerFunc
 		for _, snap := range snapshots {
 			count := 0
 			if fn, ok := cacheFn[snap.ID]; ok && fn != nil {
-				count = fn(req.InputTokens)
+				count = fn(req.FullInputTokens())
 			}
 			raw[snap.ID] = count
 			if count < minRaw {

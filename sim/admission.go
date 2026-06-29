@@ -52,7 +52,7 @@ func (tb *TokenBucket) Admit(req *Request, state *RouterState) (bool, string) {
 		tb.currentTokens = min(tb.capacity, tb.currentTokens+refill)
 		tb.lastRefill = clock
 	}
-	cost := float64(len(req.InputTokens))
+	cost := float64(req.InputLen())
 	if tb.currentTokens >= cost {
 		tb.currentTokens -= cost
 		return true, ""

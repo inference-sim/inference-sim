@@ -36,7 +36,7 @@ func NewRequestMetrics(req *Request, arrivedAt float64) RequestMetrics {
 	rm := RequestMetrics{
 		ID:               req.ID,
 		ArrivedAt:        arrivedAt,
-		NumPrefillTokens: len(req.InputTokens),
+		NumPrefillTokens: int(req.InputLen()),
 		NumDecodeTokens:  len(req.OutputTokens),
 		SLOClass:         req.SLOClass,
 		TenantID:         req.TenantID,

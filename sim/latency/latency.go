@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/internal/util"
 )
 
 // clampToInt64 converts a float64 to int64, clamping values that would cause
@@ -42,7 +41,7 @@ func (m *RooflineLatencyModel) StepTime(batch []*sim.Request) int64 {
 		DecodeRequests:  make([]DecodeRequestConfig, 0, len(batch)),
 	}
 	for _, req := range batch {
-		if req.ProgressIndex < util.Len64(req.InputTokens) {
+		if req.ProgressIndex < req.InputLen() {
 			stepConfig.PrefillRequests = append(stepConfig.PrefillRequests, PrefillRequestConfig{
 				ProgressIndex:       req.ProgressIndex,
 				NumNewPrefillTokens: req.NumNewTokens,
@@ -60,7 +59,7 @@ func (m *RooflineLatencyModel) StepTime(batch []*sim.Request) int64 {
 func (m *RooflineLatencyModel) QueueingTime(req *sim.Request) int64 {
 	var totalProcessingTime float64
 	totalProcessingTime += m.alphaCoeffs[0]
-	totalProcessingTime += m.alphaCoeffs[1] * float64(len(req.InputTokens))
+	totalProcessingTime += m.alphaCoeffs[1] * float64(req.InputLen())
 	return clampToInt64(totalProcessingTime)
 }
 

@@ -46,7 +46,7 @@ type SJFScheduler struct{}
 
 func (s *SJFScheduler) OrderQueue(reqs []*Request, _ int64) {
 	sort.SliceStable(reqs, func(i, j int) bool {
-		li, lj := len(reqs[i].InputTokens), len(reqs[j].InputTokens)
+		li, lj := reqs[i].InputLen(), reqs[j].InputLen()
 		if li != lj {
 			return li < lj
 		}

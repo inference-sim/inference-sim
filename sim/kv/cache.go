@@ -181,13 +181,13 @@ func (kvc *KVCacheState) SnapshotCachedBlocksFn() func([]sim.TokenID) int {
 // endIndex is non-inclusive
 func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, endIndex int64, cachedBlocks []int64) bool {
 	reqID := req.ID
-	logrus.Debugf("AllocateBlock for ReqID: %s, Num Inputs: %d, startIndex = %d, endIndex = %d", req.ID, len(req.InputTokens), startIndex, endIndex)
+	logrus.Debugf("AllocateBlock for ReqID: %s, Num Inputs: %d, startIndex = %d, endIndex = %d", req.ID, req.InputLen(), startIndex, endIndex)
 
 	var newTokens []sim.TokenID
 	var numNewBlocks int64
-	if req.ProgressIndex < util.Len64(req.InputTokens) {
+	if req.ProgressIndex < req.InputLen() {
 		// request is in prefill (could be chunked)
-		newTokens = req.InputTokens[startIndex:endIndex]
+		newTokens = req.InputTokenSlice(startIndex, endIndex)
 
 		// Compute blocks needed, accounting for tokens that will be absorbed
 		// into the request's existing partially-filled last block. Without this,
@@ -226,7 +226,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 		}
 	} else {
 		// request is in decode
-		newTokens = append(newTokens, req.OutputTokens[startIndex-util.Len64(req.InputTokens)])
+		newTokens = append(newTokens, req.OutputTokens[startIndex-req.InputLen()])
 
 		// Decode pre-check: if the last block is full and no free blocks exist,
 		// fail fast without any state mutation. Mirrors vLLM's universal pre-check
@@ -349,7 +349,7 @@ func (kvc *KVCacheState) AllocateKVBlocks(req *sim.Request, startIndex int64, en
 				blk.InUse = true
 				kvc.CacheMisses++
 
-				if util.Len64(blk.Tokens) == kvc.BlockSizeTokens && req.ProgressIndex < util.Len64(req.InputTokens) {
+				if util.Len64(blk.Tokens) == kvc.BlockSizeTokens && req.ProgressIndex < req.InputLen() {
 					// Only compute prefix hash during prefill (not decode).
 					// During decode, blocks hold output tokens that should not
 					// participate in prefix caching (input sequences only).

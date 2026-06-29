@@ -5,7 +5,6 @@ import (
 	"math"
 
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/internal/util"
 )
 
 // TrainedPhysicsModel implements a physics-informed latency model that combines
@@ -216,10 +215,10 @@ func (m *TrainedPhysicsModel) StepTime(batch []*sim.Request) int64 {
 	tpdp := tp * dpf
 
 	for _, req := range batch {
-		if req.ProgressIndex < util.Len64(req.InputTokens) {
+		if req.ProgressIndex < req.InputLen() {
 			// Prefill
 			ti := float64(req.NumNewTokens)
-			si := float64(len(req.InputTokens))
+			si := float64(req.InputLen())
 			totalPrefillTokens += ti
 			prefillAttnFlops += 4 * hPerGPU * ti * (si + ti/2) * dH
 		} else if len(req.OutputTokens) > 0 {

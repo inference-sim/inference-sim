@@ -102,7 +102,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 		}
 		req := result.RunningBatch.Requests[reqIndex]
 
-		numNewTokens := util.Len64(req.InputTokens) - req.ProgressIndex
+		numNewTokens := req.InputLen() - req.ProgressIndex
 		// Chunked prefill for running requests
 		if numNewTokens > 0 {
 			if 0 < ctx.PrefillTokenThreshold && ctx.PrefillTokenThreshold < numNewTokens {
@@ -129,7 +129,7 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			ctx.ComputedTokens[req.ID] += numNewTokens
 		}
 		// Decode phase: allocate 1 token
-		if req.ProgressIndex >= util.Len64(req.InputTokens) && len(req.OutputTokens) > 0 {
+		if req.ProgressIndex >= req.InputLen() && len(req.OutputTokens) > 0 {
 			decodeTokens := int64(1)
 			// Proactive MaxModelLen cap (BC-1): skip decode at boundary.
 			// Equivalent to max(0, maxModelLen-1-PI) < 1, specialized for single-token decode.
@@ -179,8 +179,8 @@ func (v *VLLMBatchFormation) FormBatch(ctx BatchContext) BatchResult {
 			continue
 		}
 
-		cachedBlocks := ctx.KVCache.GetCachedBlocks(next.InputTokens)
-		numNewTokens := util.Len64(next.InputTokens) - util.Len64(cachedBlocks)*ctx.KVCache.BlockSize()
+		cachedBlocks := ctx.KVCache.GetCachedBlocks(next.FullInputTokens())
+		numNewTokens := next.InputLen() - util.Len64(cachedBlocks)*ctx.KVCache.BlockSize()
 
 		if 0 < ctx.PrefillTokenThreshold && ctx.PrefillTokenThreshold < numNewTokens {
 			numNewTokens = ctx.PrefillTokenThreshold

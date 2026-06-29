@@ -1084,7 +1084,7 @@ func adaptForSessionManager(original *sim.Request, record *RequestRecord) *sim.R
 	}
 
 	outputCount := record.OutputTokens
-	adapted.ProgressIndex = int64(len(original.InputTokens) + outputCount)
+	adapted.ProgressIndex = original.InputLen() + int64(outputCount)
 
 	if outputCount > 0 {
 		adapted.OutputTokens = make([]sim.TokenID, outputCount)
@@ -1127,7 +1127,8 @@ func requestToPending(req *sim.Request, reqIndex int, noStreaming, unconstrained
 	if tokensPerWord <= 0 {
 		tokensPerWord = 1.0
 	}
-	wordCount := int(math.Round(float64(len(req.InputTokens)) / tokensPerWord))
+	inputLen := int(req.InputLen())
+	wordCount := int(math.Round(float64(inputLen) / tokensPerWord))
 	if wordCount <= 0 {
 		wordCount = 1
 	}
@@ -1136,7 +1137,7 @@ func requestToPending(req *sim.Request, reqIndex int, noStreaming, unconstrained
 	if req.PrefixGroup != "" && prefixes != nil {
 		if prefix, ok := prefixes[req.PrefixGroup]; ok {
 			prefixLen := prefixLengths[req.PrefixGroup]
-			suffixTokens := len(req.InputTokens) - prefixLen
+			suffixTokens := inputLen - prefixLen
 			if suffixTokens < 1 {
 				suffixTokens = 1
 			}
@@ -1144,19 +1145,19 @@ func requestToPending(req *sim.Request, reqIndex int, noStreaming, unconstrained
 			if suffixWords < 1 {
 				suffixWords = 1
 			}
-			suffixStart := len(req.InputTokens) - suffixTokens
+			suffixStart := inputLen - suffixTokens
 			if suffixStart < 0 {
 				suffixStart = 0
 			}
-			if suffixStart > len(req.InputTokens) {
-				suffixStart = len(req.InputTokens)
+			if suffixStart > inputLen {
+				suffixStart = inputLen
 			}
-			prompt = prefix + tokensToPrompt(req.InputTokens[suffixStart:], suffixWords)
+			prompt = prefix + tokensToPrompt(req.InputTokenSlice(int64(suffixStart), int64(inputLen)), suffixWords)
 		} else {
-			prompt = tokensToPrompt(req.InputTokens, wordCount)
+			prompt = tokensToPrompt(req.FullInputTokens(), wordCount)
 		}
 	} else {
-		prompt = tokensToPrompt(req.InputTokens, wordCount)
+		prompt = tokensToPrompt(req.FullInputTokens(), wordCount)
 	}
 
 	// Set min_tokens = max_tokens per-request so the server generates exactly MaxOutputLen
@@ -1169,7 +1170,7 @@ func requestToPending(req *sim.Request, reqIndex int, noStreaming, unconstrained
 
 	return &PendingRequest{
 		RequestID:       reqIndex,
-		InputTokens:     len(req.InputTokens),
+		InputTokens:     int(req.InputLen()),
 		MaxOutputTokens: req.MaxOutputLen,
 		Model:           req.Model,
 		Streaming:       req.Streaming && !noStreaming,
