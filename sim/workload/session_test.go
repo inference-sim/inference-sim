@@ -2,6 +2,7 @@ package workload
 
 import (
 	"math/rand"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -195,6 +196,91 @@ func TestSession_AccumulateOverCap_CancelsSession(t *testing.T) {
 	}
 	if follow := sm.OnComplete(req0Again, 6000); follow != nil {
 		t.Errorf("expected nil after session cancelled, got %d requests", len(follow))
+	}
+}
+
+// TestSession_AccumulateDeterminism_ClosedLoop anchors INV-6 (determinism)
+// for the closed-loop accumulate path through SessionManager.OnComplete.
+// Two SessionManagers seeded identically and driven through the same
+// (req0 → ... → reqN) sequence must produce byte-identical follow-up
+// requests at every round — same token VALUES at every position, same
+// arrival times, same lengths (Rec 3b from PR #1452 review, #1445).
+//
+// The open-loop counterpart is TestSeedDeterminism_MultiTurnAccumulate in
+// cmd/root_seed_test.go; this test closes the closed-loop gap that the
+// reviewer flagged as belt-and-suspenders.
+func TestSession_AccumulateDeterminism_ClosedLoop(t *testing.T) {
+	const (
+		seed   = 31415
+		rounds = 5
+	)
+
+	// Drive a single closed-loop session through `rounds` OnComplete calls
+	// and return the input/output token sequence for every follow-up round.
+	driveSession := func() (inputs, outputs [][]sim.TokenID, arrivals []int64) {
+		bp := makeTestBlueprint("sess-determinism", rounds+1, 1000, "accumulate", 1_000_000)
+		bp.RNG = rand.New(rand.NewSource(seed))
+		sm := NewSessionManager([]SessionBlueprint{bp})
+
+		// Round 0: seeded externally. Use a fixed RNG for inputR0/outputR0 so
+		// both runs start from byte-identical round-0 content.
+		seedR0 := rand.New(rand.NewSource(seed + 1))
+		req := &sim.Request{
+			ID: "r0", SessionID: "sess-determinism", RoundIndex: 0,
+			State:         sim.StateCompleted,
+			InputTokens:   sim.GenerateRandomTokenIDs(seedR0, 8),
+			OutputTokens:  sim.GenerateRandomTokenIDs(seedR0, 4),
+			ProgressIndex: 12,
+		}
+
+		for i := 0; i < rounds; i++ {
+			follow := sm.OnComplete(req, int64(1000*(i+1)))
+			if len(follow) != 1 {
+				t.Fatalf("round %d: expected 1 follow-up, got %d", i, len(follow))
+			}
+			nextReq := follow[0]
+			// Snapshot the returned content into independent copies so subsequent
+			// buffer growth cannot retroactively change what we recorded.
+			inCopy := append([]sim.TokenID(nil), nextReq.InputTokens...)
+			outCopy := append([]sim.TokenID(nil), nextReq.OutputTokens...)
+			inputs = append(inputs, inCopy)
+			outputs = append(outputs, outCopy)
+			arrivals = append(arrivals, nextReq.ArrivalTime)
+
+			// Prepare nextReq for its own OnComplete in the next iteration.
+			nextReq.State = sim.StateCompleted
+			nextReq.ProgressIndex = int64(len(nextReq.InputTokens) + len(nextReq.OutputTokens))
+			req = nextReq
+		}
+		return
+	}
+
+	inputsA, outputsA, arrivalsA := driveSession()
+	inputsB, outputsB, arrivalsB := driveSession()
+
+	if len(inputsA) != rounds || len(inputsB) != rounds {
+		t.Fatalf("expected %d follow-ups per run, got A=%d B=%d", rounds, len(inputsA), len(inputsB))
+	}
+
+	for i := 0; i < rounds; i++ {
+		if !reflect.DeepEqual(inputsA[i], inputsB[i]) {
+			// Find the first divergence for actionable error output.
+			for j := 0; j < len(inputsA[i]) && j < len(inputsB[i]); j++ {
+				if inputsA[i][j] != inputsB[i][j] {
+					t.Errorf("INV-6 closed-loop: round %d input token[%d] diverged: A=%d B=%d", i, j, inputsA[i][j], inputsB[i][j])
+					break
+				}
+			}
+			if len(inputsA[i]) != len(inputsB[i]) {
+				t.Errorf("INV-6 closed-loop: round %d input length diverged: A=%d B=%d", i, len(inputsA[i]), len(inputsB[i]))
+			}
+		}
+		if !reflect.DeepEqual(outputsA[i], outputsB[i]) {
+			t.Errorf("INV-6 closed-loop: round %d output diverged", i)
+		}
+		if arrivalsA[i] != arrivalsB[i] {
+			t.Errorf("INV-6 closed-loop: round %d arrival time diverged: A=%d B=%d", i, arrivalsA[i], arrivalsB[i])
+		}
 	}
 }
 
