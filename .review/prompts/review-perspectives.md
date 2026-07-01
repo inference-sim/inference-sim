@@ -1,6 +1,6 @@
 # Review Perspective Prompts for Quick-Review Command
 
-This file contains all 43 perspective prompts used by the `/quick-review` Bob command. These prompts are organized by gate type and are executed sequentially during reviews.
+This file contains all 43 perspective prompts used by the `/quick-review` command. These prompts are organized by gate type and are executed sequentially during reviews.
 
 ---
 
@@ -96,7 +96,7 @@ Report: (1) numbered list of findings with severity and location, (2) total CRIT
 
 ### PP-5: Structural Validation
 
-**Note:** This perspective should be performed directly by Bob, not delegated to a sub-agent.
+**Note:** This perspective should be performed directly by the reviewer, not delegated to a sub-agent.
 
 Perform these 4 checks:
 

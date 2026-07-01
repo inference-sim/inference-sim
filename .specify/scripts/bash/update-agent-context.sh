@@ -35,7 +35,7 @@
 #    - Creates default Claude file if no agent files exist
 #
 # Usage: ./update-agent-context.sh [agent_type]
-# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|generic
+# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|ide-assistant|vibe|qodercli|kimi|generic
 # Leave empty to update all existing agent files
 
 set -e
@@ -76,7 +76,7 @@ SHAI_FILE="$REPO_ROOT/SHAI.md"
 TABNINE_FILE="$REPO_ROOT/TABNINE.md"
 KIRO_FILE="$REPO_ROOT/AGENTS.md"
 AGY_FILE="$REPO_ROOT/.agent/rules/specify-rules.md"
-BOB_FILE="$REPO_ROOT/AGENTS.md"
+IDE_ASSISTANT_FILE="$REPO_ROOT/AGENTS.md"
 VIBE_FILE="$REPO_ROOT/.vibe/agents/specify-agents.md"
 KIMI_FILE="$REPO_ROOT/KIMI.md"
 
@@ -680,8 +680,8 @@ update_specific_agent() {
         agy)
             update_agent_file "$AGY_FILE" "Antigravity"
             ;;
-        bob)
-            update_agent_file "$BOB_FILE" "IBM Bob"
+        ide-assistant)
+            update_agent_file "$IDE_ASSISTANT_FILE" "IDE Assistant"
             ;;
         vibe)
             update_agent_file "$VIBE_FILE" "Mistral Vibe"
@@ -694,7 +694,7 @@ update_specific_agent() {
             ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|generic"
+            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|ide-assistant|vibe|qodercli|kimi|generic"
             exit 1
             ;;
     esac
@@ -703,7 +703,7 @@ update_specific_agent() {
 update_all_existing_agents() {
     local found_agent=false
     # Track processed paths to avoid updating the same file multiple times
-    # (several agent vars share the same path, e.g. AGENTS_FILE/KIRO_FILE/BOB_FILE → AGENTS.md)
+    # (several agent vars share the same path, e.g. AGENTS_FILE/KIRO_FILE/IDE_ASSISTANT_FILE → AGENTS.md)
     local _seen_paths=()
     _update_agent_once() {
         local file="$1" label="$2"
@@ -790,7 +790,7 @@ update_all_existing_agents() {
         update_agent_file "$AGY_FILE" "Antigravity"
         found_agent=true
     fi
-    _update_agent_once "$BOB_FILE" "IBM Bob"
+    _update_agent_once "$IDE_ASSISTANT_FILE" "IDE Assistant"
 
     if [[ -f "$VIBE_FILE" ]]; then
         update_agent_file "$VIBE_FILE" "Mistral Vibe"
@@ -825,7 +825,7 @@ print_summary() {
     fi
     
     echo
-    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|bob|vibe|qodercli|kimi|generic]"
+    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|ide-assistant|vibe|qodercli|kimi|generic]"
 }
 
 #==============================================================================

@@ -2,7 +2,7 @@
 
 **Status:** Active (v1.0 — created 2026-03-19)
 
-This document provides implementation details for the `/quick-review` Bob command, including perspective mappings, execution algorithms, and usage examples.
+This document provides implementation details for the `/quick-review` command, including perspective mappings, execution algorithms, and usage examples.
 
 ---
 
@@ -14,11 +14,11 @@ The `/quick-review` command provides multi-perspective code reviews using the sa
 
 | Feature | `/review` | `/quick-review` | `/convergence-review` |
 |---------|-----------|----------------|----------------------|
-| Tool | Bob command | Bob command | Claude Code skill |
+| Tool | IDE command | IDE command | Claude Code skill |
 | Perspectives | 4 general | 5-10 domain-specific | 5-10 domain-specific |
 | Execution | Single session | Single session | Parallel agents |
 | Loop | No | No | Yes (Phase A/B) |
-| Output | Bob Findings | Bob Findings | Conversation + state file |
+| Output | IDE findings | IDE findings | Conversation + state file |
 | Token cost | Low | Medium | High |
 | Defaults | No | Yes | No |
 | Aliases | No | Yes | No |
@@ -27,9 +27,9 @@ The `/quick-review` command provides multi-perspective code reviews using the sa
 
 ---
 
-## Bob Command Format
+## Command Format
 
-The command is defined in `.bob/commands/quick-review.md` with two main sections:
+The command is defined in `.review/commands/quick-review.md` with two main sections:
 
 ### Frontmatter (YAML)
 
@@ -41,16 +41,16 @@ argument-hint: <gate-type> [artifact-path]
 ```
 
 **Fields:**
-- `description`: Brief description shown in Bob's command menu
+- `description`: Brief description shown in the command menu
 - `argument-hint`: Shows expected arguments (displayed in gray in command menu)
 
 ### Command Prompt
 
-The command prompt contains instructions for Bob to execute the workflow:
+The command prompt contains instructions for the assistant to execute the workflow:
 1. Parse arguments (`$1` for gate-type, `$2` for artifact-path)
 2. Normalize gate type (aliases + fuzzy matching)
 3. Load artifact (with default search if path not provided)
-4. Read perspective prompts from `.bob/prompts/review-perspectives.md`
+4. Read perspective prompts from `.review/prompts/review-perspectives.md`
 5. Execute each perspective sequentially
 6. Extract and accumulate findings
 7. Report via `submit_review_findings`
@@ -76,7 +76,7 @@ The command prompt contains instructions for Bob to execute the workflow:
 
 ### PR Plan Review (10 perspectives)
 
-**Source:** `.bob/prompts/review-perspectives.md` (Section: PR Plan Review Perspectives)
+**Source:** `.review/prompts/review-perspectives.md` (Section: PR Plan Review Perspectives)
 
 | ID | Perspective | Focus |
 |----|------------|-------|
@@ -93,7 +93,7 @@ The command prompt contains instructions for Bob to execute the workflow:
 
 ### PR Code Review (10 perspectives)
 
-**Source:** `.bob/prompts/review-perspectives.md` (Section: PR Code Review Perspectives)
+**Source:** `.review/prompts/review-perspectives.md` (Section: PR Code Review Perspectives)
 
 | ID | Perspective | Focus |
 |----|------------|-------|
@@ -110,7 +110,7 @@ The command prompt contains instructions for Bob to execute the workflow:
 
 ### Design Review (8 perspectives)
 
-**Source:** `.bob/prompts/review-perspectives.md` (Section: Design Review Perspectives)
+**Source:** `.review/prompts/review-perspectives.md` (Section: Design Review Perspectives)
 
 | ID | Perspective | Focus |
 |----|------------|-------|
@@ -125,7 +125,7 @@ The command prompt contains instructions for Bob to execute the workflow:
 
 ### Macro Plan Review (8 perspectives)
 
-**Source:** `.bob/prompts/review-perspectives.md` (Section: Macro Plan Review Perspectives)
+**Source:** `.review/prompts/review-perspectives.md` (Section: Macro Plan Review Perspectives)
 
 | ID | Perspective | Focus |
 |----|------------|-------|
@@ -140,7 +140,7 @@ The command prompt contains instructions for Bob to execute the workflow:
 
 ### Hypothesis Design Review (5 perspectives)
 
-**Source:** `.bob/prompts/review-perspectives.md` (Section: Hypothesis Design Review Perspectives)
+**Source:** `.review/prompts/review-perspectives.md` (Section: Hypothesis Design Review Perspectives)
 
 | ID | Perspective | Focus |
 |----|------------|-------|
@@ -152,7 +152,7 @@ The command prompt contains instructions for Bob to execute the workflow:
 
 ### Hypothesis Code Review (5 perspectives)
 
-**Source:** `.bob/prompts/review-perspectives.md` (Section: Hypothesis Code Review Perspectives)
+**Source:** `.review/prompts/review-perspectives.md` (Section: Hypothesis Code Review Perspectives)
 
 | ID | Perspective | Focus |
 |----|------------|-------|
@@ -164,7 +164,7 @@ The command prompt contains instructions for Bob to execute the workflow:
 
 ### Hypothesis Findings Review (10 perspectives)
 
-**Source:** `.bob/prompts/review-perspectives.md` (Section: Hypothesis Findings Review Perspectives)
+**Source:** `.review/prompts/review-perspectives.md` (Section: Hypothesis Findings Review Perspectives)
 
 | ID | Perspective | Focus |
 |----|------------|-------|
@@ -292,7 +292,7 @@ function read_perspective_prompts(gate):
     }
     
     file, section = source_map[gate]
-    content = read_file(".bob/prompts/review-perspectives.md")
+    content = read_file(".review/prompts/review-perspectives.md")
     
     # Extract prompts from markdown code blocks
     prompts = []
@@ -440,7 +440,7 @@ Optional fields:
 - You need guaranteed convergence (0 CRITICAL + 0 IMPORTANT)
 - You want automatic fix-and-rerun loop
 - Token cost is not a concern
-- You're using Claude Code (not Bob)
+- You're using Claude Code (not the IDE assistant)
 
 ---
 
@@ -502,16 +502,16 @@ def extract_prompts(file_content):
 
 To add a new perspective to an existing gate:
 
-1. Add the perspective prompt to `.bob/prompts/review-perspectives.md` in the appropriate section
+1. Add the perspective prompt to `.review/prompts/review-perspectives.md` in the appropriate section
 2. Update the perspective count in this document
-3. No changes needed to the Bob command file (it reads prompts dynamically)
+3. No changes needed to the command file (it reads prompts dynamically)
 
 ### Adding New Gate Types
 
 To add a new gate type:
 
 1. Add perspective prompts to appropriate source file
-2. Update the Bob command file (`.bob/commands/quick-review.md`):
+2. Update the command file (`.review/commands/quick-review.md`):
    - Add to canonical names list
    - Add to gate type table
    - Add artifact loading logic
@@ -527,5 +527,4 @@ To add a new gate type:
 
 - [PR Workflow](../contributing/pr-workflow.md) - Full PR development process
 - [Convergence Protocol](../contributing/convergence.md) - Convergence rules and invariants
-- Convergence Review Skill - Original source of perspective prompts (now self-contained in `.bob/prompts/review-perspectives.md`)
-- [Bob Command Documentation](https://internal.bob.ibm.com/docs/ide/basic-usage/slash-commands) - Bob's command system
+- Convergence Review Skill - Original source of perspective prompts (now self-contained in `.review/prompts/review-perspectives.md`)

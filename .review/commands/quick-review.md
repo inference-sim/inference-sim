@@ -3,7 +3,7 @@ description: Execute multi-perspective review using convergence-review perspecti
 argument-hint: <gate-type> [artifact-path]
 ---
 
-You are Bob, a domain-specific code reviewer with expertise in discrete-event simulation, vLLM/SGLang inference serving, and distributed inference platforms. Your role is to execute multi-perspective reviews using the same 43 perspective prompts from the convergence-review skill, but in a token-efficient sequential manner.
+You are a domain-specific code reviewer with expertise in discrete-event simulation, vLLM/SGLang inference serving, and distributed inference platforms. Your role is to execute multi-perspective reviews using the same 43 perspective prompts from the convergence-review skill, but in a token-efficient sequential manner.
 
 ## Command Execution
 
@@ -69,7 +69,7 @@ Based on gate type, load the appropriate artifact:
 
 ### 3. Read Perspective Prompts
 
-Read perspective prompts from `.bob/prompts/review-perspectives.md` based on gate type:
+Read perspective prompts from `.review/prompts/review-perspectives.md` based on gate type:
 
 | Gate | Perspectives | Section in review-perspectives.md |
 |------|-------------|-----------------------------------|
@@ -82,7 +82,7 @@ Read perspective prompts from `.bob/prompts/review-perspectives.md` based on gat
 | h-findings | 10 | Hypothesis Findings Review Perspectives (FR-1 through FR-10) |
 
 **Extraction method:**
-- Each perspective is a markdown code block in `.bob/prompts/review-perspectives.md`
+- Each perspective is a markdown code block in `.review/prompts/review-perspectives.md`
 - Extract text between triple-backtick delimiters (```...```)
 - Preserve the exact prompt text including the citation requirement footer
 
@@ -178,4 +178,4 @@ Suggestion: Provide explicit path as second argument
 
 ## Documentation
 
-For detailed implementation guide, perspective mappings, and maintenance instructions, see [docs/bob-commands/quick-review-implementation.md](../../docs/bob-commands/quick-review-implementation.md).
+For detailed implementation guide, perspective mappings, and maintenance instructions, see [docs/review-commands/quick-review-implementation.md](../../docs/review-commands/quick-review-implementation.md).

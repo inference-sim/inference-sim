@@ -104,8 +104,8 @@ actions-runner/
 # Superpowers specs/plans (agent-local, not committed)
 docs/superpowers/
 
-# Bob-Shell notes (session-local, not committed)
-.bob/notes
+# Review-tool notes (session-local, not committed)
+.review/notes
 
 # Agent instruction files (generated, not committed)
 AGENTS.md
