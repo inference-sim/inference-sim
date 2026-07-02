@@ -88,8 +88,9 @@ func TestBalancedPlacement_Resolve(t *testing.T) {
 // balanced strategy every GPU carries an equal share, so
 // PerGPUComputeTokens · moeGroupSize == globalTokens · kEff exactly.
 //
-// This is the companion invariant test to the golden table above (CLAUDE.md
-// BDD/TDD rule 4): it validates the formula from first principles rather than
+// This is the companion invariant test to the golden table above (BDD/TDD
+// rule 4, docs/contributing/standards/principles.md): it validates the formula
+// from first principles rather than
 // re-encoding the same arithmetic.
 func TestBalancedPlacement_ComputeConservationLaw(t *testing.T) {
 	cases := []struct {
@@ -116,7 +117,7 @@ func TestBalancedPlacement_ComputeConservationLaw(t *testing.T) {
 }
 
 // TestBalancedPlacement_CommConservationLaw is the comm-term companion to the
-// compute conservation law (CLAUDE.md BDD/TDD rule 4): it validates the dp and
+// compute conservation law (BDD/TDD rule 4, docs/contributing/standards/principles.md): it validates the dp and
 // moeGroupSize scaling of PerGPUCommTokens from first principles rather than
 // re-encoding the golden-table arithmetic.
 //

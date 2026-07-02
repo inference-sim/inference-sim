@@ -60,7 +60,7 @@ For each perspective, check every item. Classify findings as CRITICAL / IMPORTAN
 **Perspective 6 — Cross-Cutting Infrastructure:**
 - Are test infrastructure, documentation, and CI changes each assigned to a specific PR?
 - Is the interface freeze schedule documented (which PR freezes which interface)?
-- Is CLAUDE.md update ownership clear (the PR that causes the change updates it)?
+- Is documentation update ownership clear (the PR that causes the change updates project documentation)?
 - Are no items left as "address when needed"?
 
 **Perspective 7 — Extension Friction:**
@@ -70,7 +70,7 @@ For each perspective, check every item. Classify findings as CRITICAL / IMPORTAN
 
 **Perspective 8 — Design Bug Prevention:**
 - Is scaffolding creep prevented (every struct/method/flag exercised by end of introducing PR)?
-- Is documentation drift prevented (CLAUDE.md updated in the same PR that causes the change)?
+- Is documentation drift prevented (project documentation updated in the same PR that causes the change)?
 - Is test infrastructure duplication prevented (shared packages created early)?
 - Is golden dataset staleness prevented (regeneration steps included)?
 - Are DES-specific anti-patterns addressed (type catalog, fidelity for its own sake, golden without invariant)?
@@ -82,9 +82,6 @@ For each perspective, check every item. Classify findings as CRITICAL / IMPORTAN
 - [ ] Module contracts are testable with mocks (parallel development enabled)
 - [ ] No Go struct definitions or method implementations (those belong in micro plans)
 - [ ] Extension friction assessed for each new module boundary
-
-!!! tip "Automation"
-    `/convergence-review macro-plan <plan-path>` dispatches all 8 perspectives and enforces convergence automatically. See [Skills & Plugins](../guide/skills-and-plugins.md).
 
 ## References
 

@@ -7,7 +7,7 @@ import (
 )
 
 // TestNewRequestMetrics_PropagatesAllFields is intentionally a construction-site guard test
-// (CLAUDE.md antipattern #4). It verifies the canonical constructor propagates all fields,
+// (antipattern #4, docs/contributing/standards/rules.md). It verifies the canonical constructor propagates all fields,
 // preventing silent field-zero bugs when new fields are added to RequestMetrics.
 func TestNewRequestMetrics_PropagatesAllFields(t *testing.T) {
 	// GIVEN a request with all metadata fields populated

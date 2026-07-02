@@ -2,7 +2,7 @@
 
 **Status:** Active (v4.2 — updated 2026-03-17)
 
-This document describes the complete workflow for implementing a PR from any source: a macro plan section, GitHub issues, a design document, or a feature request. The same steps apply whether you use Claude Code or standard git tools.
+This document describes the complete workflow for implementing a PR from any source: a macro plan section, GitHub issues, a design document, or a feature request. The same steps apply whether you use an AI coding assistant or standard git tools.
 
 ---
 
@@ -59,9 +59,6 @@ cd .worktrees/pr<N>-<feature-name>
 
 All remaining steps happen in the worktree.
 
-!!! tip "Automation"
-    `/superpowers:using-git-worktrees pr<N>-<feature-name>` creates the worktree and switches your shell into it. Optional pre-cleanup: `/commit-commands:clean_gone` removes stale branches. See [Skills & Plugins](../guide/skills-and-plugins.md).
-
 ---
 
 ### Step 1.5: Audit the Source Document
@@ -92,9 +89,6 @@ Save the plan to `docs/plans/<feature-name>-plan.md`.
 
 The source of work can be a macro plan section, a design document, one or more GitHub issues, or a feature request.
 
-!!! tip "Automation"
-    `/superpowers:writing-plans for <work-item> in @docs/plans/<name>-plan.md using @docs/contributing/templates/micro-plan-prompt.md and @<source-document>` generates the plan automatically. The skill reads the source document and the template, inspects the codebase, and produces behavioral contracts with executable tasks.
-
 ---
 
 ### Step 2.5: Review the Plan
@@ -105,9 +99,6 @@ Review the plan from 10 targeted perspectives, applying the [convergence protoco
 
 1. **Holistic pre-pass (Medium/Large only):** Do a single deep review to catch cross-cutting issues before the formal convergence protocol.
 2. **Formal convergence:** Run all 10 perspectives below in parallel.
-
-!!! tip "Automation"
-    Stage 1: `/pr-review-toolkit:review-pr`. Stage 2: `/convergence-review pr-plan docs/plans/<name>-plan.md`. See [Skills & Plugins](../guide/skills-and-plugins.md).
 
 **Why two stages?** The holistic sweep catches emergent cross-cutting issues (the kind a human reviewer would spot). Fixing those first means the convergence review starts from a cleaner baseline — fewer rounds needed because obvious issues are already addressed. Small PRs skip the pre-pass because cross-cutting issues are unlikely with ≤3 files; perspectives 1 (Substance) and 2 (Cross-doc) cover the same ground.
 
@@ -223,9 +214,6 @@ For each task:
 
 Execute all tasks sequentially. Stop only on test failure, lint failure, or build error.
 
-!!! tip "Automation"
-    `/superpowers:executing-plans @docs/plans/<name>-plan.md` executes all tasks continuously without pausing. On failure, use `/superpowers:systematic-debugging` for structured root-cause analysis.
-
 ---
 
 ### Step 4.5: Review the Code
@@ -236,9 +224,6 @@ Review the implementation from 10 targeted perspectives, applying the [convergen
 
 1. **Holistic pre-pass (Medium/Large only):** Single deep review to catch cross-cutting issues.
 2. **Formal convergence:** Run all 10 perspectives below in parallel.
-
-!!! tip "Automation"
-    Stage 1: `/pr-review-toolkit:review-pr`. Stage 2: `/convergence-review pr-code`. See [Skills & Plugins](../guide/skills-and-plugins.md).
 
 **Why two stages?** The holistic sweep catches emergent cross-cutting issues. In past PRs, this pre-pass found issues (runtime-breaking regressions, stale panic message prefixes) that individual targeted perspectives missed because they were each focused on their narrow lens. Fixing those first reduces convergence rounds. Small PRs skip the pre-pass for the same reason as Step 2.5.
 
@@ -262,9 +247,9 @@ Check for:
 (7) Any division where the denominator derives from runtime state without a zero guard?
 (8) Any new interface with methods only meaningful for one implementation?
 (9) Any method >50 lines spanning multiple concerns (scheduling + latency + metrics)?
-(10) Any changes to `docs/contributing/standards/` files — are CLAUDE.md working copies updated to match?
+(10) Any changes to `docs/contributing/standards/` files — are downstream documentation working copies updated to match?
 
-**Catches:** Logic errors, nil pointer risks, silent failures (discarded return values), panic paths reachable from user input, CLAUDE.md convention violations, dead code, silent `continue` data loss, non-deterministic map iteration, construction site drift, library code calling `os.Exit`, exported mutable maps, YAML zero-value ambiguity, division by zero in runtime computation, leaky interfaces, monolith methods, documentation drift.
+**Catches:** Logic errors, nil pointer risks, silent failures (discarded return values), panic paths reachable from user input, documentation convention violations, dead code, silent `continue` data loss, non-deterministic map iteration, construction site drift, library code calling `os.Exit`, exported mutable maps, YAML zero-value ambiguity, division by zero in runtime computation, leaky interfaces, monolith methods, documentation drift.
 
 #### Perspective 3: Test Behavioral Quality
 
@@ -280,7 +265,7 @@ Check for: Simulate the journey of (1) a user doing capacity planning with the C
 
 #### Perspective 5: Automated Reviewer Simulation
 
-Check for: What GitHub Copilot, Claude, and Codex would flag. Exported mutable globals, user-controlled panic paths, YAML typo acceptance, NaN/Inf validation gaps, redundant code, style nits.
+Check for: What automated code review tools would flag. Exported mutable globals, user-controlled panic paths, YAML typo acceptance, NaN/Inf validation gaps, redundant code, style nits.
 
 **Catches:** Exported mutable globals, user-controlled panic paths, YAML typo acceptance, NaN/Inf validation gaps, redundant code, style nits.
 
@@ -348,9 +333,6 @@ Report: build exit code, test pass/fail counts, lint issue count, working tree s
 
 **Why a gate instead of informal checking?** In PR9, the manual "run these commands" instruction was easy to skip or half-execute. Making verification a formal gate with expected output makes it non-optional and evidence-based.
 
-!!! tip "Automation"
-    `/superpowers:verification-before-completion` enforces running these commands and confirming output before making any success claims.
-
 ---
 
 ### Step 4.75: Pre-Commit Self-Audit
@@ -359,7 +341,7 @@ Stop, think critically, and answer each question below from your own reasoning. 
 
 > **Express Lane PRs:** Check only dimensions 1 (logic bugs), 3 (determinism), and 4 (consistency). The full 10-dimension audit applies to Small and above.
 
-**Why this step exists:** In PR9, the 4-perspective automated code review (Step 4.5) found 0 new issues in the final perspective. Then the user asked "are you confident?" and Claude found 3 real bugs by thinking critically: a wrong reference scale for token throughput normalization, non-deterministic map iteration in output, and inconsistent comment patterns. Automated review perspectives check structure; this step checks substance.
+**Why this step exists:** In PR9, the 4-perspective automated code review (Step 4.5) found 0 new issues in the final perspective. Then the user asked "are you confident?" and critical thinking revealed 3 real bugs: a wrong reference scale for token throughput normalization, non-deterministic map iteration in output, and inconsistent comment patterns. Automated review perspectives check structure; this step checks substance.
 
 **Self-audit dimensions — think through each one:**
 
@@ -367,7 +349,7 @@ Stop, think critically, and answer each question below from your own reasoning. 
 2. **Design bugs:** Does the design actually achieve what the contracts promise? Would a user get the expected behavior? Are there scale mismatches, unit confusions, or semantic errors?
 3. **Determinism (R2, INV-6):** Is all output deterministic? Any map iteration used for ordered output? Any floating-point accumulation order dependencies?
 4. **Consistency:** Are naming patterns consistent across all changed files? Do comments match code? Do doc strings match implementations? Are there stale references?
-5. **Documentation:** Would a new user find everything they need? Would a contributor know how to extend this? Are CLI flags documented everywhere (CLAUDE.md, README, `--help`)?
+5. **Documentation:** Would a new user find everything they need? Would a contributor know how to extend this? Are CLI flags documented everywhere (project documentation, README, `--help`)?
 6. **Defensive edge cases:** What happens with zero input? Empty collections? Maximum values? What if the user passes unusual but valid flag combinations?
 7. **Test epistemology (R7, R12):** For every test that compares against a golden value, ask: "How do I know this expected value is correct?" If the answer is "because the code produced it," that test catches regressions but not pre-existing bugs. Verify a corresponding invariant test validates the result from first principles. (See issue #183: a golden test perpetuated a silently-dropped request for months.)
 8. **Construction site uniqueness (R4):** Does this PR add fields to existing structs? If so, are ALL construction sites updated? Grep for `StructName{` across the codebase. Are there canonical constructors, or are structs built inline in multiple places?
@@ -389,17 +371,12 @@ git add <files>
 git commit -m "feat(scope): <description>
 
 - Implement BC-1: <brief description>
-- Implement BC-2: <brief description>
-
-Co-Authored-By: Claude <noreply@anthropic.com>"
+- Implement BC-2: <brief description>"
 git push -u origin <branch-name>
 gh pr create --title "<title>" --body "<description with behavioral contracts>"
 ```
 
 The PR description should include a summary, behavioral contracts (GIVEN/WHEN/THEN), testing verification, and GitHub closing keywords from the plan's `Closes:` field (e.g., `Fixes #183, fixes #189`).
-
-!!! tip "Automation"
-    `/commit-commands:commit-push-pr` handles staging, committing, pushing, and PR creation in one command. It analyzes current git state, creates an appropriate commit message referencing behavioral contracts, and opens the PR.
 
 ---
 
@@ -409,10 +386,7 @@ The PR description should include a summary, behavioral contracts (GIVEN/WHEN/TH
 
 Alternative to Step 4 for simpler PRs where you want tighter iteration. Executes in the current session with a fresh subagent per task and immediate code review after each task.
 
-**Trade-offs:** ✅ Faster for simple PRs (no session switching), better for iterative refinement. ⚠️ Uses current session's context (can grow large), review after every task (vs continuous execution).
-
-!!! tip "Automation"
-    Use the `superpowers:subagent-driven-development` skill to implement the plan with fresh subagent per task.
+**Trade-offs:** Faster for simple PRs (no session switching), better for iterative refinement. Uses current session's context (can grow large), review after every task (vs continuous execution).
 
 ### PR Size Tiers
 
@@ -463,17 +437,17 @@ The workflow is the same regardless of source (macro plan, design doc, GitHub is
 4. **Use worktrees for complex PRs** — avoid disrupting main workspace
 5. **Review after execution** — use automated code review (Step 4.5) after all tasks complete
 6. **Reference contracts in commits** — makes review easier and more traceable
-7. **Update CLAUDE.md immediately** — don't defer documentation
+7. **Update project documentation immediately** — don't defer documentation
 8. **Keep source documents updated** — mark PRs as completed in macro plan; close resolved issues
 9. **Don't trust automated passes alone** — the self-audit (Step 4.75) catches substance bugs that pattern-matching agents miss. In PR9, 3 real bugs were found by critical thinking after 4 automated passes found 0 issues.
-10. **Checkpoint long sessions** — for PRs with 8+ tasks or multi-round reviews, write a checkpoint summary to `.claude/checkpoint.md` after each major phase. If you hit context limits, read the checkpoint first.
+10. **Checkpoint long sessions** — for PRs with 8+ tasks or multi-round reviews, write a checkpoint summary after each major phase. If you hit context limits, read the checkpoint first.
 
 ### Headless Mode for Reviews (Context Overflow Workaround)
 
 If multi-agent review passes hit context overflow during consolidation, run each review as an isolated invocation that writes findings to a file, then consolidate in a lightweight final pass.
 
-!!! tip "Requires Claude Code"
-    This workaround uses the `claude` CLI tool. Contributors without Claude Code can run reviews manually using the perspective checklists in Steps 2.5 and 4.5.
+!!! tip "For AI-assisted workflows"
+    This workaround uses an AI coding assistant CLI tool. Contributors without such tooling can run reviews manually using the perspective checklists in Steps 2.5 and 4.5.
 
 ```bash
 #!/bin/bash
@@ -482,16 +456,16 @@ BRANCH=$(git branch --show-current)
 mkdir -p .review
 
 # Run each pass in its own context (no overflow)
-claude -p "Pass 1: Code quality review of branch $BRANCH. Write findings to .review/01-code-quality.md" \
+ai-assistant -p "Pass 1: Code quality review of branch $BRANCH. Write findings to .review/01-code-quality.md" \
   --allowedTools "Read,Grep,Glob,Bash" &
-claude -p "Pass 2: Test behavioral quality review. Write findings to .review/02-test-quality.md" \
+ai-assistant -p "Pass 2: Test behavioral quality review. Write findings to .review/02-test-quality.md" \
   --allowedTools "Read,Grep,Glob,Bash" &
-claude -p "Pass 3: Getting-started review. Write findings to .review/03-getting-started.md" \
+ai-assistant -p "Pass 3: Getting-started review. Write findings to .review/03-getting-started.md" \
   --allowedTools "Read,Grep,Glob,Bash" &
 wait
 
 # Lightweight consolidation
-claude -p "Read .review/*.md files. Produce a consolidated summary sorted by severity." \
+ai-assistant -p "Read .review/*.md files. Produce a consolidated summary sorted by severity." \
   --allowedTools "Read,Glob"
 ```
 
@@ -503,7 +477,7 @@ When to use: When Step 2.5 or Step 4.5 hits context limits. Not needed for most 
 
 ### Issue: Plan too generic, agents ask clarifying questions
 
-**Solution:** Add specific guidance in the invocation. Claude reads the full source document and extracts context automatically. If still too generic, add explicit notes about integration points.
+**Solution:** Add specific guidance in the invocation. The AI assistant reads the full source document and extracts context automatically. If still too generic, add explicit notes about integration points.
 
 ### Issue: Tasks miss behavioral contracts during execution
 
@@ -523,7 +497,7 @@ When to use: When Step 2.5 or Step 4.5 hits context limits. Not needed for most 
 
 ### Issue: Uncertain if review findings are valid
 
-**Solution:** Review agents provide file:line references. Check the specific code location. If uncertain, ask Claude to explain. If agent is wrong, document why and proceed.
+**Solution:** Review agents provide file:line references. Check the specific code location. If uncertain, ask the agent to explain. If agent is wrong, document why and proceed.
 
 ---
 

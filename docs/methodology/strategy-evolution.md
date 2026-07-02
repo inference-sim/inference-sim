@@ -57,12 +57,12 @@ Generate 2–3 candidate strategies. Each must be:
 
 1. **A parameterized template** — the mechanism defines *what* the strategy does; tunable parameters control *how aggressively*
 2. **Self-critiqued** — identify weaknesses before external review
-3. **Reviewed by multiple independent judges** — we used Claude Opus, GPT-4o, and Gemini 2.5 Flash
+3. **Reviewed by multiple independent judges** — we used three independent frontier LLM judges
 
 ```mermaid
 sequenceDiagram
     participant A as Author
-    participant J1 as Judge 1 (Claude)
+    participant J1 as Judge 1
     participant J2 as Judge 2 (GPT-4o)
     participant J3 as Judge 3 (Gemini)
 
@@ -79,7 +79,7 @@ sequenceDiagram
 ```
 
 !!! example "Multi-Judge Catches Real Design Flaws"
-    - **Claude Opus** identified that a proposed cache score (`1 - KVUtilization`) was a free-capacity signal, not a cache-affinity signal — a subtle conflation that would have wasted an entire iteration
+    - **One judge** identified that a proposed cache score (`1 - KVUtilization`) was a free-capacity signal, not a cache-affinity signal — a subtle conflation that would have wasted an entire iteration
     - **GPT-4o** caught a bang-bang oscillation problem in an online learning controller
     - **Gemini** caught a numerical instability in hyperbolic starvation protection
 
@@ -357,14 +357,6 @@ The number of hypothesis arms scales with strategy complexity (see the [Bundle S
 | `/verification-before-completion` | 3h | Confirm results before claiming success |
 | `/dispatching-parallel-agents` | 3d | Parallel hypothesis arm execution |
 | `/commit-push-pr` | 5 | Clean git integration after validation |
-
-!!! info "Where to Get These Skills"
-    These skills are [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugins. To install them:
-
-    - **`/brainstorming`, `/test-driven-development`, `/verification-before-completion`, `/dispatching-parallel-agents`, `/commit-push-pr`**: Install the [superpowers](https://github.com/anthropics/claude-code-plugins) plugin — `claude plugins add superpowers`
-    - **`/convergence-review`, `/hypothesis-experiment`**: Project-local skills defined in this repository's `.claude/skills/` directory. Available automatically when Claude Code is run from the repo root.
-    - **`/hypothesis-test`**: Install the [sdlc-plugins](https://github.com/inference-sim/sdlc-plugins) plugin — `claude plugins add sdlc-plugins`
-    - **`/research-ideas`, `/review-plan`**: Install the [research-ideas](https://github.com/anthropics/claude-code-plugins) plugin — `claude plugins add research-ideas`
 
 **Non-skill tools:**
 

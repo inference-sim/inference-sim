@@ -54,4 +54,4 @@ See [CONTRIBUTING.md](https://github.com/inference-sim/inference-sim/blob/main/C
 | [Micro Plan](templates/micro-plan.md) | Single-PR implementation with TDD tasks | [`micro-plan-prompt.md`](templates/micro-plan-prompt.md) |
 | [Hypothesis](templates/hypothesis.md) | Experiment FINDINGS.md structure | N/A (template is audience-neutral) |
 
-Templates describe the output format (what sections to include and why). Agent prompts contain LLM-specific instructions for generating those artifacts. Claude Code skills reference the prompt files automatically.
+Templates describe the output format (what sections to include and why). Agent prompts contain LLM-specific instructions for generating those artifacts. AI coding assistant skills reference the prompt files automatically.

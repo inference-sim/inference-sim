@@ -2,7 +2,7 @@
 
 This template defines the output format for a macro-level implementation plan. Use this when a feature spans 2+ PRs and requires a dependency DAG between them.
 
-!!! note "For Claude Code users"
+!!! note "For AI-assisted workflows"
     The `writing-plans` skill generates plans from this template automatically.
     The agent prompt version is at [`macro-plan-prompt.md`](macro-plan-prompt.md).
 
@@ -93,7 +93,7 @@ For each non-obvious architectural decision:
 
 ### I) Cross-Cutting Infrastructure
 
-Test infrastructure, documentation, and CI changes — each assigned to a specific PR. CLAUDE.md update ownership: the PR that causes the change updates it.
+Test infrastructure, documentation, and CI changes — each assigned to a specific PR. Project documentation update ownership: the PR that causes the change updates it.
 
 ### J) Extension Friction Assessment
 
@@ -104,7 +104,7 @@ For each new module boundary: how many files must change to add one more variant
 Checklist to prevent common macro-plan anti-patterns:
 
 - [ ] No scaffolding creep (every struct/method/flag exercised by end of introducing PR)
-- [ ] No documentation drift (CLAUDE.md updated in same PR that causes the change)
+- [ ] No documentation drift (project documentation updated in same PR that causes the change)
 - [ ] No test infrastructure duplication (shared packages created early)
 - [ ] No golden dataset staleness (regeneration steps included)
 - [ ] No DES-specific anti-patterns: Type Catalog trap, fidelity for its own sake, golden without invariant, mixing exogenous and endogenous events

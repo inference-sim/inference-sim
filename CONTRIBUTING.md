@@ -134,13 +134,13 @@ gh pr create --title "feat: add counting-admit admission policy" --body "My firs
 
 > **Important:** This example is for learning only. Do **not** submit this as a real PR — `CountingAdmit` is a toy policy with no practical use. For your actual first contribution, check [open issues](https://github.com/inference-sim/inference-sim/issues) for tasks labeled `good first issue`.
 
-## Contributing with Claude Code
+## Contributing with an AI Coding Assistant
 
 > **Canonical source:** [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md). If this section diverges, pr-workflow.md is authoritative.
 
-BLIS development workflows are orchestrated through [Claude Code](https://claude.ai/code) skills — structured sequences that handle worktree creation, plan generation, multi-perspective review with convergence enforcement, and PR creation. Contributors with Claude Code get the full automated pipeline. Contributors without it follow the manual path below and still go through the same quality gates (maintainers run the automated reviews on submitted PRs).
+BLIS development workflows are orchestrated through AI coding assistant skills — structured sequences that handle worktree creation, plan generation, multi-perspective review with convergence enforcement, and PR creation. Contributors with a compatible AI coding assistant get the full automated pipeline. Contributors without it follow the manual path below and still go through the same quality gates (maintainers run the automated reviews on submitted PRs).
 
-**Prerequisites:** Claude Code installed with project skills available (`convergence-review`, `hypothesis-experiment`) and general Claude Code skills (`writing-plans`, `executing-plans`, `commit-push-pr`). See [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md) for the full skill table. Before your first contribution, read [`docs/contributing/templates/design-guidelines.md`](docs/contributing/templates/design-guidelines.md) — it covers module architecture, extension types, and DES foundations.
+**Prerequisites:** An AI coding assistant with project skills available (`convergence-review`, `hypothesis-experiment`) and general workflow skills (`writing-plans`, `executing-plans`, `commit-push-pr`). See [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md) for the full skill table. Before your first contribution, read [`docs/contributing/templates/design-guidelines.md`](docs/contributing/templates/design-guidelines.md) — it covers module architecture, extension types, and DES foundations.
 
 ### Choosing Your Journey
 
@@ -151,7 +151,7 @@ BLIS development workflows are orchestrated through [Claude Code](https://claude
 | Build a new feature or subsystem | [New Feature (Idea to PR)](#new-feature-idea-to-pr) | An idea or requirement |
 | Validate simulator behavior | [Hypothesis Experiment](#running-or-contributing-hypothesis-experiments) | A behavioral prediction |
 
-For hypothesis experiments, see [Running or Contributing Hypothesis Experiments](#running-or-contributing-hypothesis-experiments) below. With Claude Code, the `hypothesis-experiment` skill orchestrates the full Steps 0–10 workflow.
+For hypothesis experiments, see [Running or Contributing Hypothesis Experiments](#running-or-contributing-hypothesis-experiments) below. With an AI coding assistant, the `hypothesis-experiment` skill orchestrates the full Steps 0–10 workflow.
 
 ### Bug Fix / Small Change
 
@@ -165,8 +165,6 @@ The lightest path. For bug fixes, docs updates, and single-PR changes that don't
 6. **Review code** — review from 10 perspectives using the convergence protocol
 7. **Self-audit + commit** — deliberate critical thinking, then commit and push
 
-> **Automation:** With Claude Code, use `/superpowers:using-git-worktrees`, `/superpowers:writing-plans` (with `@docs/contributing/templates/micro-plan-prompt.md`), `/convergence-review pr-plan`, `/superpowers:executing-plans`, `/convergence-review pr-code`, and `/commit-commands:commit-push-pr`. See [Skills & Plugins](docs/guide/skills-and-plugins.md).
-
 Full process: [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md)
 
 ### New Policy or Extension
@@ -177,8 +175,6 @@ For adding a routing policy, admission policy, scorer, scheduler, priority polic
 2. **Create worktree** — `git worktree add .worktrees/<extension-name> -b <extension-name>`
 3. **Write micro plan** — follow [`docs/contributing/templates/micro-plan.md`](docs/contributing/templates/micro-plan.md) and [`docs/contributing/extension-recipes.md`](docs/contributing/extension-recipes.md)
 4. **Follow steps 3–7 from Bug Fix** (review → approve → implement → review → commit)
-
-> **Automation:** With Claude Code, use `/superpowers:writing-plans` (with `@docs/contributing/templates/micro-plan-prompt.md` and `@docs/contributing/extension-recipes.md`).
 
 No design doc needed for policy templates. For tier compositions, a design doc is recommended — see the extension type table in [Adding New Components](#adding-new-components). Full process: [`docs/contributing/pr-workflow.md`](docs/contributing/pr-workflow.md)
 
@@ -208,9 +204,9 @@ Full process: [`docs/contributing/macro-planning.md`](docs/contributing/macro-pl
 
 Each phase produces an artifact that feeds the next. Human approval gates between phases prevent wasted work.
 
-### Without Claude Code
+### Without an AI Coding Assistant
 
-If you are not using Claude Code, here is the simplified workflow:
+If you are not using an AI coding assistant, here is the simplified workflow:
 
 1. **Branch** — `git checkout -b feature/my-change`
 2. **Plan** — write an implementation plan following `docs/contributing/templates/micro-plan.md`. Include behavioral contracts (GIVEN/WHEN/THEN) and a task breakdown. Post the plan as a PR draft or issue comment for review.
@@ -218,7 +214,7 @@ If you are not using Claude Code, here is the simplified workflow:
 4. **Self-review** — check the [Antipattern Checklist](#antipattern-checklist) below. Run `go build ./... && go test ./... && golangci-lint run ./...` one final time.
 5. **PR** — push your branch and open a PR. Maintainers will run the automated review protocols (convergence-review with 10 perspectives).
 
-The automated review tools (convergence-review, pr-review-toolkit) are run by maintainers — you do not need Claude Code installed. Your PR will go through the same quality gates regardless of tooling.
+The automated review tools (convergence-review, pr-review-toolkit) are run by maintainers — you do not need an AI assistant installed. Your PR will go through the same quality gates regardless of tooling.
 
 For design docs and macro plans: follow the same templates ([`docs/contributing/templates/design-guidelines.md`](docs/contributing/templates/design-guidelines.md), [`docs/contributing/templates/macro-plan.md`](docs/contributing/templates/macro-plan.md)) and submit for review. Maintainers will run convergence review.
 
@@ -288,7 +284,7 @@ When adding a new model configuration:
 2. Register in `sim/bundle.go` (valid names map + `IsValid*` function)
 3. Add `case` to factory function
 4. Add behavioral tests (`TestMyPolicy_Scenario_Behavior`)
-5. Update CLAUDE.md and README
+5. Update project documentation and README
 
 ### Subsystem Module (heaviest — new interface + integration)
 
@@ -300,7 +296,7 @@ Requires a design doc defining the module contract (observes / controls / owns /
 4. Integrate into cluster event pipeline
 5. Add CLI flags with full validation
 6. Add behavioral tests + invariant tests
-7. Update CLAUDE.md, README, and design guidelines module map if needed
+7. Update project documentation, README, and design guidelines module map if needed
 
 ### Backend Swap (two phases — extract interface, then add alternative)
 
@@ -370,7 +366,7 @@ Follow `docs/contributing/hypothesis.md` for the full process (Steps 0-10). Key 
 
 | Document | What It Covers | When to Read |
 |---|---|---|
-| `CLAUDE.md` | Code architecture, file organization, CLI flags, compact rule/invariant tables | Always — authoritative for current codebase state |
+| `docs/reference/project-structure.md` | Code architecture, file organization, module descriptions | Always — authoritative for current codebase state |
 | `docs/contributing/standards/rules.md` | 23 antipattern rules with evidence, checks, enforcement | When reviewing or writing code |
 | `docs/contributing/standards/invariants.md` | 13 system invariants (INV-1 through INV-13), plus PD disaggregation (INV-PD-*) and pool/transfer (INV-P2-*) invariants, with verification strategies | When touching request lifecycle, KV cache, or metrics |
 | `docs/contributing/standards/experiments.md` | Experiment taxonomy, rigor requirements, findings classification | When running hypothesis experiments |

@@ -80,9 +80,6 @@ cd .worktrees/h-<hypothesis-name>
 
 This creates `.worktrees/h-<name>/` with a new branch. All subsequent steps happen in the worktree.
 
-!!! tip "Automation"
-    `/superpowers:using-git-worktrees h-<name>` creates the worktree and switches your shell into it. See [Skills & Plugins](../guide/skills-and-plugins.md).
-
 ---
 
 ### Step 1: Select and Classify Hypothesis
@@ -114,9 +111,6 @@ The family determines design rules; the VV&UQ category determines evidence requi
 - ED-6: Config diff against referenced experiments
 
 Then run the **5-perspective Design Review** using the [universal convergence protocol](#universal-convergence-protocol). Review from each perspective below (in parallel or sequentially), then apply the convergence protocol.
-
-!!! tip "Automation"
-    `/convergence-review h-design` dispatches all 5 perspectives and enforces convergence. See [Skills & Plugins](../guide/skills-and-plugins.md).
 
 #### Design Review Perspectives
 
@@ -206,9 +200,6 @@ Then verify the harness output format matches the current CLI before use — the
 
 Run the **5-perspective Code Review** using the [universal convergence protocol](#universal-convergence-protocol). Review from each perspective below (in parallel or sequentially), then apply the convergence protocol.
 
-!!! tip "Automation"
-    `/convergence-review h-code hypotheses/<name>/` dispatches all 5 perspectives and enforces convergence. See [Skills & Plugins](../guide/skills-and-plugins.md).
-
 #### Code Review Perspectives
 
 **Perspective 1 — Parser–Output Format Agreement:**
@@ -274,9 +265,6 @@ Execute experiments across required seeds:
 **Context:** Worktree (after FINDINGS.md documented)
 
 Run the **10-perspective FINDINGS Review** using the [universal convergence protocol](#universal-convergence-protocol). Review from each perspective below (in parallel or sequentially), then apply the convergence protocol.
-
-!!! tip "Automation"
-    `/convergence-review h-findings hypotheses/<name>/FINDINGS.md` dispatches all 10 perspectives and enforces convergence. See [Skills & Plugins](../guide/skills-and-plugins.md).
 
 **Cross-gate regression:** If this gate discovers a design-level flaw (e.g., confounding variable not identified in design), loop back to [Step 2](#step-2-design-experiment--design-review) for re-design, re-convergence, and re-approval. Maximum 2 cross-gate regressions per experiment (across all gates combined) — if the design still has fundamental issues after 2 regressions, suspend the experiment and escalate for a re-scoping decision.
 
@@ -402,9 +390,6 @@ The PR description should include:
 - Key findings (1-3 bullet points)
 - `Fixes #NNN` for any issues this experiment addresses
 
-!!! tip "Automation"
-    `/commit-commands:commit-push-pr` handles staging, committing, pushing, and PR creation in one command.
-
 **Post-PR issue filing:** See [Two-Track Issue Filing](#two-track-issue-filing) below.
 
 ---
@@ -414,9 +399,6 @@ The PR description should include:
 > **Canonical source:** [`docs/contributing/convergence.md`](convergence.md). If this section diverges, convergence.md is authoritative.
 
 All three review gates (Design Review, Code Review, FINDINGS Review) use the same convergence protocol: run all N perspectives in parallel, fix any CRITICAL/IMPORTANT findings, re-run until zero CRITICAL and zero IMPORTANT in a round. Max 10 rounds per gate. See [`docs/contributing/convergence.md`](convergence.md) for the full protocol, severity definitions, agent failure handling, and expected convergence rates.
-
-!!! tip "Automation"
-    The `convergence-review` skill automates this protocol: `/convergence-review <gate-type> [artifact-path]`. See [Skills & Plugins](../guide/skills-and-plugins.md).
 
 ---
 
@@ -713,5 +695,5 @@ When prior findings are known to be affected by a later change, an erratum is ad
 
 **v1.0 (PR #310):** Three external LLM reviews per round, no design gate, no code review gate, ad-hoc git commands.
 **v2.0 (2026-02-23, #392):** Three review gates (Design 5, Code 5, FINDINGS 10) with universal convergence protocol, human approval gate, self-audit, verification gate, parallel execution, two-track issue filing, explicit worktree/commit skill integration. Structural alignment with PR workflow v3.0.
-**v2.1 (2026-02-27, #464):** Human-first rewrite. Manual steps primary; skills in admonition callouts. Prerequisites table removed (skills referenced inline per step). "For Claude" directives rewritten as universal process guidance.
+**v2.1 (2026-02-27, #464):** Human-first rewrite. Manual steps primary; skills in admonition callouts. Prerequisites table removed (skills referenced inline per step). Agent-specific directives rewritten as universal process guidance.
 **v2.2 (2026-03-20, #773):** Full separation — no hypothesis artifacts merge to `main`. All completed artifacts (`run.sh`, `analyze.py`, `FINDINGS.md`, `hypotheses/lib/`, `docs/plans/research.md`) archived to `hypothesis-archive` branch at `cad4191`. Experiment feature branches are the permanent record; the branch content (scripts, findings) does not merge to `main` — the PR itself is the permanent, reviewable artifact.

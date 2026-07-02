@@ -2,7 +2,7 @@
 
 This template defines the output format for a single-PR implementation plan. Use this when planning any PR — from bug fixes to new features.
 
-!!! note "For Claude Code users"
+!!! note "For AI-assisted workflows"
     The `writing-plans` skill generates plans from this template automatically.
     The agent prompt version is at [`micro-plan-prompt.md`](micro-plan-prompt.md).
 
@@ -215,9 +215,9 @@ Before implementation, verify:
 - [ ] No hidden global state impact.
 - [ ] All new code will pass golangci-lint.
 - [ ] Shared test helpers used from existing shared test package (not duplicated locally).
-- [ ] CLAUDE.md updated if: new files/packages added, file organization changed, plan milestone completed, new CLI flags added.
-- [ ] No stale references left in CLAUDE.md.
-- [ ] Documentation DRY: If this PR modifies a canonical source (docs/contributing/standards/rules.md, docs/contributing/standards/invariants.md, docs/contributing/standards/principles.md, docs/contributing/extension-recipes.md), all working copies in the source-of-truth map are updated. If a new file is added, it appears in the CLAUDE.md File Organization tree.
+- [ ] Project documentation updated if: new files/packages added, file organization changed, plan milestone completed, new CLI flags added.
+- [ ] No stale references left in project documentation.
+- [ ] Documentation DRY: If this PR modifies a canonical source (docs/contributing/standards/rules.md, docs/contributing/standards/invariants.md, docs/contributing/standards/principles.md, docs/contributing/extension-recipes.md), all working copies in the source-of-truth map are updated. If a new file is added, it appears in the project-structure reference.
 - [ ] Deviation log reviewed — no unresolved deviations.
 - [ ] Each task produces working, testable code (no scaffolding).
 - [ ] Task dependencies are correctly ordered.

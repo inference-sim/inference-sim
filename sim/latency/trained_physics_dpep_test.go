@@ -386,7 +386,7 @@ func TestINVBCDP1_DenseStepTimeByteIdentical(t *testing.T) {
 }
 
 // TestINVBCDP1_DenseDP1Determinism is the companion invariant to the golden above
-// (CLAUDE.md BDD rule 4): rather than re-encoding the golden numbers, it asserts the
+// (BDD rule 4, docs/contributing/standards/principles.md): rather than re-encoding the golden numbers, it asserts the
 // law that makes the split safe — for a dense model the step time is invariant to the
 // EnableExpertParallel flag and to the MoE comm backend (both are no-ops for dense),
 // and identical across repeated calls (determinism, INV-6). This would survive a full

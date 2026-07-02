@@ -22,7 +22,7 @@ Reference specific issues, audit findings, or design doc sections.
 - [ ] None (pure refactoring)
 
 **Proposed fix**
-Describe the approach. Reference the relevant section in CLAUDE.md Engineering Principles or Antipattern Prevention if applicable.
+Describe the approach. Reference the relevant section in `docs/contributing/standards/principles.md` (Engineering Principles) or `docs/contributing/standards/rules.md` (Antipattern Prevention) if applicable.
 
 **Files affected**
 List the files that need changes. Flag any with multiple construction sites.

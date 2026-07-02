@@ -30,12 +30,12 @@
 #
 # 5. Multi-Agent Support
 #    - Handles agent-specific file paths and naming conventions
-#    - Supports: Claude, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, Tabnine CLI, Kiro CLI, Mistral Vibe, Kimi Code, Antigravity or Generic
+#    - Supports: AI Assistant, Gemini, Copilot, Cursor, Qwen, opencode, Codex, Windsurf, Kilo Code, Auggie CLI, Roo Code, CodeBuddy CLI, Qoder CLI, Amp, SHAI, Tabnine CLI, Kiro CLI, Mistral Vibe, Kimi Code, Antigravity or Generic
 #    - Can update single agents or all existing agent files
-#    - Creates default Claude file if no agent files exist
+#    - Creates default AI Assistant file if no agent files exist
 #
 # Usage: ./update-agent-context.sh [agent_type]
-# Agent types: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|ide-assistant|vibe|qodercli|kimi|generic
+# Agent types: ai-assistant|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|ide-assistant|vibe|qodercli|kimi|generic
 # Leave empty to update all existing agent files
 
 set -e
@@ -59,7 +59,7 @@ NEW_PLAN="$IMPL_PLAN"  # Alias for compatibility with existing code
 AGENT_TYPE="${1:-}"
 
 # Agent-specific file paths  
-CLAUDE_FILE="$REPO_ROOT/CLAUDE.md"
+AI_ASSISTANT_FILE="$REPO_ROOT/AGENTS.md"
 GEMINI_FILE="$REPO_ROOT/GEMINI.md"
 COPILOT_FILE="$REPO_ROOT/.github/agents/copilot-instructions.md"
 CURSOR_FILE="$REPO_ROOT/.cursor/rules/specify-rules.mdc"
@@ -390,7 +390,7 @@ update_existing_agent_file() {
     local current_date="$2"
 
     # Guard: skip files not created by speckit to avoid corrupting
-    # hand-maintained agent context files (e.g., a project's existing CLAUDE.md).
+    # hand-maintained agent context files (e.g., a project's existing AGENTS.md).
     # Speckit-created files contain the template marker comment.
     if ! grep -q '<!-- MANUAL ADDITIONS START -->' "$target_file" 2>/dev/null; then
         log_warning "Skipping $target_file — file was not created by speckit (missing template markers)"
@@ -626,8 +626,8 @@ update_specific_agent() {
     local agent_type="$1"
     
     case "$agent_type" in
-        claude)
-            update_agent_file "$CLAUDE_FILE" "Claude Code"
+        ai-assistant)
+            update_agent_file "$AI_ASSISTANT_FILE" "AI Assistant"
             ;;
         gemini)
             update_agent_file "$GEMINI_FILE" "Gemini CLI"
@@ -694,7 +694,7 @@ update_specific_agent() {
             ;;
         *)
             log_error "Unknown agent type '$agent_type'"
-            log_error "Expected: claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|ide-assistant|vibe|qodercli|kimi|generic"
+            log_error "Expected: ai-assistant|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|ide-assistant|vibe|qodercli|kimi|generic"
             exit 1
             ;;
     esac
@@ -717,11 +717,8 @@ update_all_existing_agents() {
     }
 
     # Check each possible agent file and update if it exists
-    if [[ -f "$CLAUDE_FILE" ]]; then
-        update_agent_file "$CLAUDE_FILE" "Claude Code"
-        found_agent=true
-    fi
-    
+    _update_agent_once "$AI_ASSISTANT_FILE" "AI Assistant"
+
     if [[ -f "$GEMINI_FILE" ]]; then
         update_agent_file "$GEMINI_FILE" "Gemini CLI"
         found_agent=true
@@ -802,10 +799,10 @@ update_all_existing_agents() {
         found_agent=true
     fi
     
-    # If no agent files exist, create a default Claude file
+    # If no agent files exist, create a default AI Assistant file
     if [[ "$found_agent" == false ]]; then
-        log_info "No existing agent files found, creating default Claude file..."
-        update_agent_file "$CLAUDE_FILE" "Claude Code"
+        log_info "No existing agent files found, creating default AI Assistant file..."
+        update_agent_file "$AI_ASSISTANT_FILE" "AI Assistant"
     fi
 }
 print_summary() {
@@ -825,7 +822,7 @@ print_summary() {
     fi
     
     echo
-    log_info "Usage: $0 [claude|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|ide-assistant|vibe|qodercli|kimi|generic]"
+    log_info "Usage: $0 [ai-assistant|gemini|copilot|cursor-agent|qwen|opencode|codex|windsurf|kilocode|auggie|roo|codebuddy|amp|shai|tabnine|kiro-cli|agy|ide-assistant|vibe|qodercli|kimi|generic]"
 }
 
 #==============================================================================

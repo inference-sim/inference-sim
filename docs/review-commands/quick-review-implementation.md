@@ -14,7 +14,7 @@ The `/quick-review` command provides multi-perspective code reviews using the sa
 
 | Feature | `/review` | `/quick-review` | `/convergence-review` |
 |---------|-----------|----------------|----------------------|
-| Tool | IDE command | IDE command | Claude Code skill |
+| Tool | IDE command | IDE command | AI assistant skill |
 | Perspectives | 4 general | 5-10 domain-specific | 5-10 domain-specific |
 | Execution | Single session | Single session | Parallel agents |
 | Loop | No | No | Yes (Phase A/B) |
@@ -435,12 +435,12 @@ Optional fields:
 - You want convergence-review quality without the convergence loop
 - You can tolerate medium token cost for better quality
 
-**Use `/convergence-review`** (Claude Code) when:
+**Use `/convergence-review`** (AI assistant) when:
 - You're at a formal gate (Step 2.5 or 4.5 in PR workflow)
 - You need guaranteed convergence (0 CRITICAL + 0 IMPORTANT)
 - You want automatic fix-and-rerun loop
 - Token cost is not a concern
-- You're using Claude Code (not the IDE assistant)
+- You're using the AI assistant (not the IDE command)
 
 ---
 

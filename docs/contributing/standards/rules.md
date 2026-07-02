@@ -163,7 +163,7 @@ Any division where the denominator derives from runtime state (batch size, block
 
 When a PR changes output format, metrics, or default behavior, the golden dataset must be regenerated and the regeneration command documented. Golden tests that pass with stale expected values provide false confidence.
 
-**Evidence:** Present in CONTRIBUTING.md and PR template but not in CLAUDE.md's numbered rules — an inconsistency this consolidation resolves.
+**Evidence:** Present in CONTRIBUTING.md and the PR template but not previously captured as a numbered rule — an inconsistency this consolidation resolves.
 
 **Check:** If `go test ./sim/... -run Golden` fails after your changes, regenerate and document the command.
 
@@ -181,7 +181,7 @@ New interfaces must accommodate at least two implementations (even if only one e
 
 **Enforced:** Micro-plan Phase 8.
 
-*Previously: principle in CLAUDE.md "Interface design" section. Promoted to numbered rule for checkability.*
+*Previously: principle in the engineering-principles doc's "Interface design" section. Promoted to numbered rule for checkability.*
 
 ---
 
@@ -195,7 +195,7 @@ No method should span multiple module responsibilities (scheduling + latency est
 
 **Enforced:** Micro-plan Phase 8.
 
-*Previously: principle in CLAUDE.md "Interface design" section. Promoted to numbered rule for checkability.*
+*Previously: principle in the engineering-principles doc's "Interface design" section. Promoted to numbered rule for checkability.*
 
 ---
 
@@ -221,7 +221,7 @@ Configuration parameters must be grouped by module — not added to a monolithic
 
 **Enforced:** Micro-plan Phase 8.
 
-*Previously: principle in CLAUDE.md "Configuration design" section. Promoted to numbered rule for checkability.*
+*Previously: principle in the engineering-principles doc's "Configuration design" section. Promoted to numbered rule for checkability.*
 
 ---
 

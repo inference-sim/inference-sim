@@ -26,7 +26,7 @@ Every plan MUST start with this exact header format:
 ```markdown
 # [PR Title] Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **For AI assistants:** Use the executing-plans workflow to implement this plan task-by-task.
 
 **Goal:** [One sentence a non-contributor could understand — what capability does this PR add? Avoid type names, package paths, or implementation jargon.]
 
@@ -343,9 +343,7 @@ git commit -m "feat(package): implement Component.Method (BC-X, BC-Y)
 
 - Add Component type with Method
 - Implement contract BC-X: [brief description]
-- Implement contract BC-Y: [brief description]
-
-Co-Authored-By: Claude <noreply@anthropic.com>"
+- Implement contract BC-Y: [brief description]"
 ```
 
 ---
@@ -477,7 +475,7 @@ Additional requirements:
    (not from running the code). Invariant tests answer "is the code correct?"
    while golden tests answer "did the code change?"
 
-   Key invariants for this simulator (derived from CLAUDE.md):
+   Key invariants for this simulator (see docs/contributing/standards/invariants.md):
    - **Request conservation (INV-1):** completed + still_queued + still_running + dropped_unservable + timed_out = injected (cluster runs add gateway/routing/encode buckets — see canonical INV-1)
    - **KV block conservation:** allocated_blocks + free_blocks = total_blocks
    - **Clock monotonicity:** simulation clock never decreases
@@ -529,10 +527,10 @@ Before implementation, verify:
 - [ ] No hidden global state impact.
 - [ ] All new code will pass golangci-lint.
 - [ ] Shared test helpers used from existing shared test package (not duplicated locally).
-- [ ] CLAUDE.md updated if: new files/packages added, file organization
+- [ ] Project documentation updated if: new files/packages added, file organization
       changed, plan milestone completed, new CLI flags added.
-- [ ] No stale references left in CLAUDE.md.
-- [ ] Documentation DRY: If this PR modifies a canonical source (docs/contributing/standards/rules.md, docs/contributing/standards/invariants.md, docs/contributing/standards/principles.md, docs/contributing/extension-recipes.md), all working copies in the source-of-truth map are updated. If a new file is added, it appears in the CLAUDE.md File Organization tree.
+- [ ] No stale references left in project documentation.
+- [ ] Documentation DRY: If this PR modifies a canonical source (docs/contributing/standards/rules.md, docs/contributing/standards/invariants.md, docs/contributing/standards/principles.md, docs/contributing/extension-recipes.md), all working copies in the source-of-truth map are updated. If a new file is added, it appears in the project-structure reference.
 - [ ] Deviation log reviewed — no unresolved deviations.
 - [ ] Each task produces working, testable code (no scaffolding).
 - [ ] Task dependencies are correctly ordered.

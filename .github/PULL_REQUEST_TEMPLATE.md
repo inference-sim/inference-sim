@@ -71,6 +71,6 @@ Fixes #
 
 ## Documentation
 
-- [ ] CLAUDE.md updated (if new files, packages, CLI flags, or invariants added)
+- [ ] Project docs updated (if new files, packages, CLI flags, or invariants added)
 - [ ] README updated (if user-facing behavior changed)
 - [ ] CONTRIBUTING.md reviewed (if extension patterns changed)

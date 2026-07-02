@@ -1,7 +1,7 @@
 site_name: BLIS — Blackbox Inference Simulator
 site_description: A discrete-event simulator for LLM inference serving systems
-repo_url: https://github.com/inference-sim/inference-sim
-repo_name: inference-sim/inference-sim
+repo_url: https://github.com/anonymous/anonymous
+repo_name: anonymous/anonymous
 
 # MkDocs default exclusion /templates/ only applies to top-level templates/.
 # Since templates moved to contributing/templates/ (nested), the default no longer
@@ -105,7 +105,6 @@ nav:
       - Metrics & Results: guide/results.md
       - Observe / Replay / Calibrate: guide/observe-replay-calibrate.md
       - Hypothesis Experimentation: guide/experimentation.md
-      - Skills & Plugins: guide/skills-and-plugins.md
   - Reference:
       - reference/index.md
       - Project Structure: reference/project-structure.md

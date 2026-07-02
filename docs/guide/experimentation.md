@@ -37,15 +37,9 @@ The most common experiment workflow for platform engineers:
   --routing-policy weighted --seed 42
 ```
 
-## The `/hypothesis-experiment` Skill
+## The Guided Experiment Workflow
 
-For structured hypothesis-driven research, BLIS includes a guided experimentation workflow via the `/hypothesis-experiment` Claude Code skill:
-
-```
-/hypothesis-experiment
-```
-
-This skill guides you through:
+For structured hypothesis-driven research, BLIS provides a guided experimentation workflow that takes you through:
 
 1. **Formulate** — state a testable prediction (e.g., "chunked prefill reduces short-request TTFT p99 by > 30%")
 2. **Classify** — identify the hypothesis family (scheduler invariants, performance-regime, etc.)
@@ -101,7 +95,7 @@ Experiments go through a multi-perspective review process to ensure rigor:
 2. **Code Review** (5 perspectives) — checks run.sh/analyze.py for correctness
 3. **FINDINGS Review** (10 perspectives) — validates conclusions against evidence
 
-The `/convergence-review` skill automates this process. Zero CRITICAL + zero IMPORTANT findings = converged.
+The multi-perspective review process is applied at each gate. Zero CRITICAL + zero IMPORTANT findings = converged.
 
 ## Further Reading
 

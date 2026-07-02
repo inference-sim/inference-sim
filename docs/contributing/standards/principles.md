@@ -89,16 +89,16 @@ Every piece of documentation lives in exactly one canonical location. Other file
 
 | Content | Canonical Source | Working Copies |
 |---------|-----------------|----------------|
-| Antipattern rules (R1-R23) | `docs/contributing/standards/rules.md` | CLAUDE.md (pointer), CONTRIBUTING.md (checklist), `.github/PULL_REQUEST_TEMPLATE.md` (PR checklist), `docs/contributing/templates/micro-plan-prompt.md` (Phase 8 checklist), `docs/contributing/templates/micro-plan.md` (Phase 8 checklist), `docs/contributing/index.md` (landing page table), `docs/guide/skills-and-plugins.md` (rules count) |
-| System invariants (INV-1–INV-13, plus INV-PD-* and INV-P2-*) | `docs/contributing/standards/invariants.md` | CLAUDE.md (summary), `docs/concepts/core-engine.md` (formulas), `docs/concepts/architecture.md` (signal freshness), CONTRIBUTING.md (count), `docs/contributing/index.md` (landing page table), `mkdocs.yml` (nav label), `docs/guide/skills-and-plugins.md` (count), `.specify/memory/constitution.md` (table), `.github/PULL_REQUEST_TEMPLATE.md` (INV-1 checklist), `.github/ISSUE_TEMPLATE/bug_report.md` (INV-1 formula), `docs/contributing/templates/micro-plan.md` and `micro-plan-prompt.md` (INV-1 formula), `docs/contributing/hypothesis.md` (INV-1 formula), `.claude/skills/hypothesis-experiment/SKILL.md` (INV-1 formula), `.claude/skills/implement-issue/SKILL.md` (count), `.claude/skills/convergence-review/design-prompts.md` (count) |
-| Engineering principles | `docs/contributing/standards/principles.md` | CLAUDE.md (summary) |
-| Agent trust boundaries | `docs/contributing/standards/agent-trust.md` | CLAUDE.md (pointer), `docs/contributing/index.md` (landing page table) |
+| Antipattern rules (R1-R23) | `docs/contributing/standards/rules.md` | CONTRIBUTING.md (checklist), `.github/PULL_REQUEST_TEMPLATE.md` (PR checklist), `docs/contributing/templates/micro-plan-prompt.md` (Phase 8 checklist), `docs/contributing/templates/micro-plan.md` (Phase 8 checklist), `docs/contributing/index.md` (landing page table) |
+| System invariants (INV-1–INV-13, plus INV-PD-* and INV-P2-*) | `docs/contributing/standards/invariants.md` | `docs/concepts/core-engine.md` (formulas), `docs/concepts/architecture.md` (signal freshness), CONTRIBUTING.md (count), `docs/contributing/index.md` (landing page table), `mkdocs.yml` (nav label), `.specify/memory/constitution.md` (table), `.github/PULL_REQUEST_TEMPLATE.md` (INV-1 checklist), `.github/ISSUE_TEMPLATE/bug_report.md` (INV-1 formula), `docs/contributing/templates/micro-plan.md` and `micro-plan-prompt.md` (INV-1 formula), `docs/contributing/hypothesis.md` (INV-1 formula) |
+| Engineering principles | `docs/contributing/standards/principles.md` | — |
+| Agent trust boundaries | `docs/contributing/standards/agent-trust.md` | `docs/contributing/index.md` (landing page table) |
 | Extension recipes (policies, scorers, KV tiers) | `docs/contributing/extension-recipes.md` | — |
 | Design process | `docs/contributing/design-process.md` | CONTRIBUTING.md (summary) |
 | Macro-plan process | `docs/contributing/macro-planning.md` | CONTRIBUTING.md (summary) |
-| File organization and architecture | `docs/reference/project-structure.md` | CLAUDE.md (pointer), README.md (Project Structure tree) |
+| File organization and architecture | `docs/reference/project-structure.md` | README.md (Project Structure tree) |
 | Completed experiments and coverage catalog | [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) | — (not on `main`) |
 | Experiment standards | `docs/contributing/standards/experiments.md` | — (note: review protocol subsection references `docs/contributing/convergence.md` as canonical) |
-| Convergence protocol | `docs/contributing/convergence.md` | `docs/contributing/hypothesis.md` (summary), `docs/contributing/pr-workflow.md` (summary), `docs/contributing/standards/experiments.md` (review protocol summary), `.claude/skills/convergence-review/SKILL.md` (protocol copy) |
-| Hypothesis experiment workflow | `docs/contributing/hypothesis.md` | CONTRIBUTING.md (summary), `.claude/skills/hypothesis-experiment/SKILL.md` (workflow steps), `.claude/skills/hypothesis-experiment/review-prompts.md` (perspective prompts) |
-| PR workflow | `docs/contributing/pr-workflow.md` | CONTRIBUTING.md (summary), `.claude/skills/convergence-review/pr-prompts.md` (perspective prompts) |
+| Convergence protocol | `docs/contributing/convergence.md` | `docs/contributing/hypothesis.md` (summary), `docs/contributing/pr-workflow.md` (summary), `docs/contributing/standards/experiments.md` (review protocol summary) |
+| Hypothesis experiment workflow | `docs/contributing/hypothesis.md` | CONTRIBUTING.md (summary) |
+| PR workflow | `docs/contributing/pr-workflow.md` | CONTRIBUTING.md (summary) |

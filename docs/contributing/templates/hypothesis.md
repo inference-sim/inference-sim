@@ -1,6 +1,6 @@
 # Hypothesis Experiment Template
 
-> **For Claude:** Use this template when creating a new hypothesis experiment in `hypotheses/<name>/`.
+> **For AI assistants:** Use this template when creating a new hypothesis experiment in `hypotheses/<name>/`.
 
 ## FINDINGS.md Structure
 

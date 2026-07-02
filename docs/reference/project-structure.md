@@ -4,7 +4,6 @@ The simulator uses a discrete-event architecture with a min-heap event queue.
 
 ```
 inference-sim/
-├── .claude/commands/          # Claude Code slash commands (speckit.specify, speckit.plan, speckit.tasks, speckit.implement, speckit.clarify, speckit.checklist, speckit.analyze, speckit.constitution, speckit.taskstoissues)
 ├── .specify/                  # Speckit feature-development toolkit
 │   ├── memory/constitution.md # BLIS project constitution (principles, invariants, rules)
 │   ├── templates/             # Spec, plan, tasks, checklist, agent-file templates
@@ -115,8 +114,7 @@ inference-sim/
 │   │   ├── workloads.md       # Workload specifications
 │   │   ├── cluster.md         # Cluster simulation
 │   │   ├── results.md         # Metrics & results
-│   │   ├── experimentation.md # Hypothesis-driven experimentation
-│   │   └── skills-and-plugins.md # Claude Code skills & plugins
+│   │   └── experimentation.md # Hypothesis-driven experimentation
 │   ├── concepts/              # Architecture and design documentation
 │   │   ├── index.md           # Concepts overview
 │   │   ├── glossary.md        # Concepts glossary

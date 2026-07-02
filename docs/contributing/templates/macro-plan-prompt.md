@@ -288,9 +288,9 @@ assign cross-cutting items, then finalize both.
      (Golden tests alone are insufficient — see design guidelines 6.3)
 
 2) Documentation Maintenance
-   - CLAUDE.md update triggers: new packages, new files, changed file
-     organization, completed plan milestones, new CLI flags
-   - Who updates CLAUDE.md? (The PR that causes the change.)
+   - Project documentation update triggers: new packages, new files, changed
+     file organization, completed plan milestones, new CLI flags
+   - Who updates project documentation? (The PR that causes the change.)
    - README update triggers and ownership
    - Design guidelines compliance: does this feature expansion require
      updating the target module map in the design guidelines?
@@ -347,7 +347,7 @@ For EACH PR, provide TWO TIERS:
   for latency estimation, replacing hardcoded Step() logic")
 - CLI Changes (new flags, changed behavior)
 - Test Categories (unit, integration, regression, golden, invariant)
-- Documentation Updates (CLAUDE.md, README, design guidelines if needed)
+- Documentation Updates (README, standards docs, design guidelines if needed)
 - Extension Friction: how many files to add one more variant of the
   new type/interface? Compare against reference targets (guidelines 4.5)
 - Parallel Development: after this PR merges, what can proceed
@@ -403,9 +403,9 @@ Common architectural failure modes and how this plan prevents them:
   - Scaffolding creep (dead code introduced "for later").
     Prevention: every struct field, method, and flag must be exercised
     by the end of the PR that introduces it.
-  - Documentation drift (CLAUDE.md diverges from reality).
-    Prevention: the PR that causes the change updates CLAUDE.md in the
-    same commit. No deferred documentation.
+  - Documentation drift (project documentation diverges from reality).
+    Prevention: the PR that causes the change updates project documentation
+    in the same commit. No deferred documentation.
   - Test infrastructure duplication (helpers copied across packages).
     Prevention: shared test packages created in an early PR, consumed
     by all subsequent PRs (specified in Phase 5, item 1).

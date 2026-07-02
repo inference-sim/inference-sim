@@ -274,7 +274,7 @@ Review this diff for code quality. Check all of these:
 (7) Any division where the denominator derives from runtime state without a zero guard? (R11)
 (8) Any new interface with methods only meaningful for one implementation? (R13)
 (9) Any method >50 lines spanning multiple concerns (scheduling + latency + metrics)? (R14)
-(10) Any changes to docs/contributing/standards/ files — are CLAUDE.md working copies updated? (DRY)
+(10) Any changes to docs/contributing/standards/ files — are downstream working copies updated? (DRY)
 
 DIFF:
 <paste git diff output>
@@ -348,7 +348,7 @@ Report: (1) numbered list of findings with severity and location, (2) total CRIT
 ### PC-5: Automated Reviewer Simulation
 
 ```
-The upstream community uses GitHub Copilot, Claude, and Codex to review PRs. Do a rigorous check so this will pass their review. Look for:
+The upstream community uses automated code review tools to review PRs. Do a rigorous check so this will pass their review. Look for:
 - Exported mutable globals
 - User-controlled panic paths
 - YAML typo acceptance (should use KnownFields(true))

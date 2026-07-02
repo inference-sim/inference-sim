@@ -79,9 +79,6 @@ For each perspective, check every item. Classify findings as CRITICAL / IMPORTAN
 - [ ] Every non-obvious decision has alternatives listed with rationale
 - [ ] Validation strategy specified (which invariants? against what real-system data?)
 
-!!! tip "Automation"
-    `/convergence-review design <design-doc-path>` dispatches all 8 perspectives and enforces convergence automatically. See [Skills & Plugins](../guide/skills-and-plugins.md).
-
 ## References
 
 - Template: [docs/contributing/templates/design-guidelines.md](templates/design-guidelines.md)
