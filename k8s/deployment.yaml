@@ -87,7 +87,7 @@ spec:
           exec ./bin/Runner.Listener run
         env:
         - name: GITHUB_REPO
-          value: "inference-sim/inference-sim"
+          value: "anonymous/anonymous"
         - name: REPO_URL
           value: "https://github.com/$(GITHUB_REPO)"
         - name: ACCESS_TOKEN

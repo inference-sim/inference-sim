@@ -3,7 +3,7 @@ package cmd
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/workload"
+	"blis/sim/workload"
 )
 
 // TestConvertServeGenCmd_NewFlagsRegistered verifies BC-12: new flags

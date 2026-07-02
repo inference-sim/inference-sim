@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/internal/testutil"
+	"blis/sim/internal/testutil"
 )
 
 // fixedOverheadModel is a test-only LatencyModel stub with configurable PostDecodeFixedOverhead.
@@ -593,7 +593,7 @@ func TestMustNewKVCacheState_NilFunc_Panics(t *testing.T) {
 			t.Fatalf("expected string panic, got %T: %v", r, r)
 		}
 		expected := "NewKVCacheStateFunc not registered: import sim/kv to register it " +
-			"(add: import _ \"github.com/inference-sim/inference-sim/sim/kv\")"
+			"(add: import _ \"blis/sim/kv\")"
 		if msg != expected {
 			t.Errorf("panic message:\n  got:  %q\n  want: %q", msg, expected)
 		}
@@ -617,7 +617,7 @@ func TestMustNewLatencyModel_NilFunc_Panics(t *testing.T) {
 			t.Fatalf("expected string panic, got %T: %v", r, r)
 		}
 		expected := "NewLatencyModelFunc not registered: import sim/latency to register it " +
-			"(add: import _ \"github.com/inference-sim/inference-sim/sim/latency\")"
+			"(add: import _ \"blis/sim/latency\")"
 		if msg != expected {
 			t.Errorf("panic message:\n  got:  %q\n  want: %q", msg, expected)
 		}

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 func TestResolvePoolConfig_NoOverrides_ReturnsGlobalUnchanged(t *testing.T) {

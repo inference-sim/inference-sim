@@ -3,7 +3,7 @@ package cluster
 import (
 	"time"
 
-	"github.com/inference-sim/inference-sim/sim/trace"
+	"blis/sim/trace"
 )
 
 // EvaluationResult bundles all outputs from a cluster simulation run.

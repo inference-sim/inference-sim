@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 func TestCalculateMemoryAccessBytes_Deterministic(t *testing.T) {

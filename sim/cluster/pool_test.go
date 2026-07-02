@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // TestValidatePoolTopology verifies BC-PD-2 (invalid pool configs return errors)

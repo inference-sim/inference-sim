@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	sim "github.com/inference-sim/inference-sim/sim"
+	sim "blis/sim"
 	"github.com/sirupsen/logrus"
 	"gonum.org/v1/gonum/stat/distuv"
 )

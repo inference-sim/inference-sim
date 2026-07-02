@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // TrainedPhysicsModel implements a physics-informed latency model that combines

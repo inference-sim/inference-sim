@@ -1,6 +1,6 @@
 package cluster
 
-import "github.com/inference-sim/inference-sim/sim"
+import "blis/sim"
 
 // ParentRequest tracks the disaggregated lifecycle of a request that was split
 // into prefill and decode sub-requests. Owned by ClusterSimulator.

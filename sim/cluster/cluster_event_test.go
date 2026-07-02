@@ -4,7 +4,7 @@ import (
 	"container/heap"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // TestClusterEventQueue_Ordering verifies BC-4:

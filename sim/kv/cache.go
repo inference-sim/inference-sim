@@ -9,9 +9,9 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/internal/hash"
-	"github.com/inference-sim/inference-sim/sim/internal/util"
+	"blis/sim"
+	"blis/sim/internal/hash"
+	"blis/sim/internal/util"
 )
 
 // ToDo: Multi-modality is not yet supported

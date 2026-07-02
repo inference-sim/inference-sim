@@ -7,7 +7,7 @@ import (
 	"math/rand"
 	"sort"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // PlacementManager manages node/GPU inventory and instance placement decisions.

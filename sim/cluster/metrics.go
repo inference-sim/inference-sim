@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/workload"
+	"blis/sim"
+	"blis/sim/workload"
 	"github.com/sirupsen/logrus"
 )
 

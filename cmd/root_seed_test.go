@@ -3,7 +3,7 @@ package cmd
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/workload"
+	"blis/sim/workload"
 )
 
 // makeTestSpec returns a minimal WorkloadSpec for seed tests.

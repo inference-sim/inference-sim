@@ -4,7 +4,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // TestReasoningAccumulate_PerSessionMemoryIsLinear demonstrates BC-7/BC-8/BC-9:

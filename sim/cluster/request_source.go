@@ -1,6 +1,6 @@
 package cluster
 
-import "github.com/inference-sim/inference-sim/sim"
+import "blis/sim"
 
 // RequestSource is a pull-style stream of *sim.Request values for the cluster
 // arrival pump.

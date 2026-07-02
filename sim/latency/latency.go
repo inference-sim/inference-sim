@@ -9,7 +9,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // clampToInt64 converts a float64 to int64, clamping values that would cause

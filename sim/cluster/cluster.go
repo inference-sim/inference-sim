@@ -7,9 +7,9 @@ import (
 	"reflect"
 	"sort"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/latency"
-	"github.com/inference-sim/inference-sim/sim/trace"
+	"blis/sim"
+	"blis/sim/latency"
+	"blis/sim/trace"
 	"github.com/sirupsen/logrus"
 )
 

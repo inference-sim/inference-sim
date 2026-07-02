@@ -3,7 +3,7 @@ package cluster
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 func TestCollectRawMetrics_IncludesPreemptionRate(t *testing.T) {

@@ -3,7 +3,7 @@ package cluster
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 func newFlowControlTTLConfig(numInstances int, ttlUs int64, detector string) DeploymentConfig {

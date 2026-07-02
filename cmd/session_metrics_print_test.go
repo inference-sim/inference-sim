@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/cluster"
+	"blis/sim/cluster"
 )
 
 func TestPrintSessionMetrics_Nil_NoOutput(t *testing.T) {

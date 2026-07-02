@@ -97,7 +97,7 @@ Every piece of documentation lives in exactly one canonical location. Other file
 | Design process | `docs/contributing/design-process.md` | CONTRIBUTING.md (summary) |
 | Macro-plan process | `docs/contributing/macro-planning.md` | CONTRIBUTING.md (summary) |
 | File organization and architecture | `docs/reference/project-structure.md` | README.md (Project Structure tree) |
-| Completed experiments and coverage catalog | [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) | — (not on `main`) |
+| Completed experiments and coverage catalog | `hypothesis-archive` branch | — (not on `main`) |
 | Experiment standards | `docs/contributing/standards/experiments.md` | — (note: review protocol subsection references `docs/contributing/convergence.md` as canonical) |
 | Convergence protocol | `docs/contributing/convergence.md` | `docs/contributing/hypothesis.md` (summary), `docs/contributing/pr-workflow.md` (summary), `docs/contributing/standards/experiments.md` (review protocol summary) |
 | Hypothesis experiment workflow | `docs/contributing/hypothesis.md` | CONTRIBUTING.md (summary) |

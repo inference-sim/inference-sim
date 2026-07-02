@@ -28,7 +28,7 @@ import (
 	"testing"
 	"time"
 
-	sim "github.com/inference-sim/inference-sim/sim"
+	sim "blis/sim"
 )
 
 // ────────────────────────────────────────────────────────────────────────────

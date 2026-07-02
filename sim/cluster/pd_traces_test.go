@@ -3,8 +3,8 @@ package cluster
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/trace"
+	"blis/sim"
+	"blis/sim/trace"
 )
 
 // TestPDTrace_NonDisaggMode_NoDisaggRecords verifies BC-PD-18:

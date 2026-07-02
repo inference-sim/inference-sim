@@ -7,8 +7,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/saturation"
+	"blis/sim"
+	"blis/sim/saturation"
 )
 
 

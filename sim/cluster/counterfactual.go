@@ -3,8 +3,8 @@ package cluster
 import (
 	"sort"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/trace"
+	"blis/sim"
+	"blis/sim/trace"
 )
 
 // copyScores returns a shallow copy of the scores map.

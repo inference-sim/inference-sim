@@ -3,7 +3,7 @@ package cluster
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // TestNewParentRequest_NumKVBlocks verifies ceiling-division math for KV block computation.

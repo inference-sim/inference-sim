@@ -5,7 +5,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // newTestDeploymentConfigWithModel creates a test DeploymentConfig using the specified model.

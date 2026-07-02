@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/inference-sim/sim/workload"
+	"blis/sim/workload"
 )
 
 var convertCmd = &cobra.Command{

@@ -14,7 +14,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // msClusterConfig returns a DeploymentConfig for metrics substrate cluster tests.

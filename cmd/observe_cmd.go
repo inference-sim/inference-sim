@@ -18,9 +18,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/saturation"
-	"github.com/inference-sim/inference-sim/sim/workload"
+	"blis/sim"
+	"blis/sim/saturation"
+	"blis/sim/workload"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )

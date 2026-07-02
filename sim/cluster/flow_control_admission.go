@@ -3,7 +3,7 @@ package cluster
 import (
 	"fmt"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // FlowControlAdmission implements sim.AdmissionPolicy by delegating to a

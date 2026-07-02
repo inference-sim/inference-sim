@@ -3,7 +3,7 @@ package latency
 import (
 	"math"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // transformerFlops holds the results of calculateTransformerFlops.

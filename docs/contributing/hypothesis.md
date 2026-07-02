@@ -2,10 +2,10 @@
 
 **Status:** Active (v2.2 — updated 2026-03-20)
 
-This document describes the end-to-end process for running a hypothesis-driven experiment in BLIS. For experiment standards (rigor, classification, analysis), see [docs/contributing/standards/experiments.md](standards/experiments.md). For the FINDINGS.md template, see [docs/contributing/templates/hypothesis.md](templates/hypothesis.md). For completed experiment status and coverage gaps, see the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive).
+This document describes the end-to-end process for running a hypothesis-driven experiment in BLIS. For experiment standards (rigor, classification, analysis), see [docs/contributing/standards/experiments.md](standards/experiments.md). For the FINDINGS.md template, see [docs/contributing/templates/hypothesis.md](templates/hypothesis.md). For completed experiment status and coverage gaps, see the `hypothesis-archive` branch.
 
 !!! note "Experiment archive"
-    All completed experiment artifacts (`run.sh`, `analyze.py`, `FINDINGS.md`, `hypotheses/lib/`) and the research catalog (`docs/plans/research.md`) are preserved in the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) at commit `cad4191` (the last `main` commit before this separation). None of these are kept on `main` — CLI output format changes can silently break analysis scripts, and a single findings catalog on `main` would drift out of sync with experiments that live in feature branches. New experiment branches are created from `main` per Step 0; all experiment artifacts stay in the feature branch and are not merged back.
+    All completed experiment artifacts (`run.sh`, `analyze.py`, `FINDINGS.md`, `hypotheses/lib/`) and the research catalog (`docs/plans/research.md`) are preserved in the `hypothesis-archive` branch at commit `cad4191` (the last `main` commit before this separation). None of these are kept on `main` — CLI output format changes can silently break analysis scripts, and a single findings catalog on `main` would drift out of sync with experiments that live in feature branches. New experiment branches are created from `main` per Step 0; all experiment artifacts stay in the feature branch and are not merged back.
 
 **For external contributors:** Submit your `FINDINGS.md` via PR from your feature branch — keep experiment scripts (`run.sh`, `analyze.py`) in that same branch. Maintainers will review the scripts there and run the review protocols on your behalf. You can also conduct reviews manually using the perspective checklists documented in each gate.
 
@@ -86,7 +86,7 @@ This creates `.worktrees/h-<name>/` with a new branch. All subsequent steps happ
 
 **Context:** Worktree
 
-1. **Select hypothesis** — from coverage gaps documented in the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) research catalog, or a new observation from simulator behavior
+1. **Select hypothesis** — from coverage gaps documented in the `hypothesis-archive` branch research catalog, or a new observation from simulator behavior
 2. **Classify:**
    - (a) Which **family**? (See [experiments.md](standards/experiments.md) for the 6 families and sentence patterns)
    - (b) **Verification**, **Validation**, or **UQ**? (Determines evidence requirements)
@@ -459,7 +459,7 @@ See [Issue Taxonomy](#issue-taxonomy-after-convergence) for the complete filing 
 
 ### Pre-Execution Gates (check BEFORE running experiments — Step 5)
 
-Note: `hypotheses/lib/harness.sh` and `analyze_helpers.py` are not on `main`. Obtain them from the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive/hypotheses/lib) per Step 4. Verify the harness functions produce output that matches the current CLI format before use — the archive is pinned at `cad4191` and the harness may need adaptation for newer CLI output.
+Note: `hypotheses/lib/harness.sh` and `analyze_helpers.py` are not on `main`. Obtain them from the `hypothesis-archive` branch per Step 4. Verify the harness functions produce output that matches the current CLI format before use — the archive is pinned at `cad4191` and the harness may need adaptation for newer CLI output.
 
 - [ ] `run.sh` sources `hypotheses/lib/harness.sh` and uses `blis_run` for every simulation call
 - [ ] Every `blis_run` call has an appropriate timeout tier (`TIMEOUT_QUICK`/`TIMEOUT_STANDARD`/`TIMEOUT_EXTENDED`)
@@ -504,7 +504,7 @@ Note: `hypotheses/lib/harness.sh` and `analyze_helpers.py` are not on `main`. Ob
 - Testing intuitive claims about system behavior
 - Investigating unexpected behavior observed during development
 - Exploring design tradeoffs between configurations
-- Filling coverage gaps identified in the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive)
+- Filling coverage gaps identified in the `hypothesis-archive` branch
 
 ---
 
@@ -517,7 +517,7 @@ Hypotheses can come from **internal** sources (your own experiments and developm
 | Source | How it works | Example |
 |--------|-------------|---------|
 | **User intuition** | "I think X should be better than Y because of Z" | "SJF should reduce TTFT for mixed workloads because short jobs finish first" |
-| **Coverage gaps** | Check the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) for untested families | Workload/arrival family has 0 experiments → "Gamma sampler should match theoretical CV" |
+| **Coverage gaps** | Check the `hypothesis-archive` branch for untested families | Workload/arrival family has 0 experiments → "Gamma sampler should match theoretical CV" |
 | **Experiment findings** | Surprises and open questions from completed experiments spawn follow-up hypotheses | H10's maybeOffload finding → "test at GPU=1500 for preemption-path offload" |
 | **Bug reports** | "This behavior seems wrong" → formalize as a testable claim | H12: preemption panic → "conservation should hold even under preemption pressure" |
 | **Analytical models** | Divergence between theory and simulation → "does the DES match M/M/k under matching assumptions?" | "Under Poisson arrivals, queue length should match M/M/k within 5%" |
@@ -549,12 +549,12 @@ A good hypothesis is **behavioral** (about observable system behavior), **testab
 
 ### How to propose a new hypothesis
 
-1. **Check coverage**: Browse the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive). Prioritize families with low coverage.
+1. **Check coverage**: Browse the `hypothesis-archive` branch. Prioritize families with low coverage.
 2. **Choose a family**: Which domain does your claim target? (See [experiments.md](standards/experiments.md) for the 6 families.)
 3. **Write the sentence**: Use the family-specific pattern from experiments.md.
 4. **Add the diagnostic clause**: "If this fails, it would indicate..."
-5. **Check for redundancy**: Browse existing experiments in the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive/hypotheses) and on GitHub: [issues labeled `hypothesis`](https://github.com/inference-sim/inference-sim/labels/hypothesis).
-6. **File as a GitHub issue**: Use the [Hypothesis Proposal issue template](https://github.com/inference-sim/inference-sim/issues/new?template=hypothesis.md) on GitHub (click "New Issue" → "Hypothesis Proposal"). This template has fields for family, VV&UQ category, diagnostic value, and experiment design.
+5. **Check for redundancy**: Browse existing experiments in the `hypothesis-archive` branch and on GitHub: issues labeled `hypothesis`.
+6. **File as a GitHub issue**: Use the Hypothesis Proposal issue template on GitHub (click "New Issue" → "Hypothesis Proposal"). This template has fields for family, VV&UQ category, diagnostic value, and experiment design.
 
 External contributors should file a GitHub issue using the Hypothesis Proposal template. Maintainers will triage, prioritize, and run the review protocol.
 
@@ -686,7 +686,7 @@ When prior findings are known to be affected by a later change, an erratum is ad
 
 - Standards: [docs/contributing/standards/experiments.md](standards/experiments.md)
 - Template: [docs/contributing/templates/hypothesis.md](templates/hypothesis.md)
-- Completed experiments and coverage catalog: [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) at `cad4191`
+- Completed experiments and coverage catalog: `hypothesis-archive` branch at `cad4191`
 - PR workflow (structural inspiration): [docs/contributing/pr-workflow.md](pr-workflow.md)
 
 ---

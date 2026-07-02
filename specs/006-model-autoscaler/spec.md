@@ -3,7 +3,7 @@
 **Feature Branch**: `006-model-autoscaler`  
 **Created**: 2026-04-01  
 **Status**: Draft  
-**Tracking Issue**: [#696](https://github.com/inference-sim/inference-sim/issues/696)  
+**Tracking Issue**: #696  
 **Design Document**: `docs/plans/2026-04-01-phase1c-autoscaling-design.md`
 
 ## User Scenarios & Testing *(mandatory)*

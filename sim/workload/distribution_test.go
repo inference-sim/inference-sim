@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 func TestGaussianSampler_MeanMatchesParam(t *testing.T) {

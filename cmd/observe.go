@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/workload"
+	"blis/sim"
+	"blis/sim/workload"
 	"github.com/sirupsen/logrus"
 )
 

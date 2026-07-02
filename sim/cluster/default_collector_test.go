@@ -3,7 +3,7 @@ package cluster
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // NOTE: After #1382, latency fields in RoutingSnapshot are always zero in production

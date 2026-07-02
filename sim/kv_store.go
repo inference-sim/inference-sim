@@ -32,7 +32,7 @@ var NewKVCacheStateFunc func(totalBlocks, blockSizeTokens int64) KVStore
 func MustNewKVCacheState(totalBlocks, blockSizeTokens int64) KVStore {
 	if NewKVCacheStateFunc == nil {
 		panic("NewKVCacheStateFunc not registered: import sim/kv to register it " +
-			"(add: import _ \"github.com/inference-sim/inference-sim/sim/kv\")")
+			"(add: import _ \"blis/sim/kv\")")
 	}
 	return NewKVCacheStateFunc(totalBlocks, blockSizeTokens)
 }
@@ -47,7 +47,7 @@ var NewKVStoreFromConfig func(cfg KVCacheConfig) KVStore
 func MustNewKVStoreFromConfig(cfg KVCacheConfig) KVStore {
 	if NewKVStoreFromConfig == nil {
 		panic("NewKVStoreFromConfig not registered: import sim/kv to register it " +
-			"(add: import _ \"github.com/inference-sim/inference-sim/sim/kv\")")
+			"(add: import _ \"blis/sim/kv\")")
 	}
 	return NewKVStoreFromConfig(cfg)
 }

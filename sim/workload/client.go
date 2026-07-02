@@ -3,7 +3,7 @@ package workload
 import (
 	"math/rand"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // defaultPrefixLength is the number of shared prefix tokens for prefix groups.

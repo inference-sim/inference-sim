@@ -41,8 +41,8 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 **Build the binary:**
 
 ```bash
-git clone https://github.com/inference-sim/inference-sim.git
-cd inference-sim
+git clone <REPOSITORY_URL>
+cd blis
 go build -o blis main.go
 ```
 

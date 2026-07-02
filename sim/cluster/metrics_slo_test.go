@@ -5,8 +5,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/workload"
+	"blis/sim"
+	"blis/sim/workload"
 )
 
 func TestComputePerSLODistributions_SegregatesCorrectly(t *testing.T) {

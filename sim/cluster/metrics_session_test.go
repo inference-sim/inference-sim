@@ -3,7 +3,7 @@ package cluster
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // buildSessionTestMetrics is a test helper that builds a minimal *sim.Metrics

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	sim "github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/workload"
+	sim "blis/sim"
+	"blis/sim/workload"
 )
 
 // TestParseSLODurationFlag_HappyPath verifies BC-8: comma-separated key=duration pairs parse correctly.

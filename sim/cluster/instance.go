@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/kv"
-	"github.com/inference-sim/inference-sim/sim/latency"
+	"blis/sim"
+	"blis/sim/kv"
+	"blis/sim/latency"
 )
 
 // InstanceID uniquely identifies a simulator instance within a cluster.

@@ -7,7 +7,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/workload"
+	"blis/sim/workload"
 )
 
 // Shared golden test helpers used by both roofline_golden_test.go and

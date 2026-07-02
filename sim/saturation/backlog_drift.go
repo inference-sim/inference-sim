@@ -2,8 +2,8 @@
 package saturation
 
 import (
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/workload"
+	"blis/sim"
+	"blis/sim/workload"
 )
 
 // BacklogDriftDetector wraps the workload.AnalyzeBacklogDriftWithClassifier logic

@@ -3,7 +3,7 @@ package cluster
 import (
 	"container/heap"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // evictionEntry represents a routed sheddable request eligible for eviction.

@@ -1,6 +1,6 @@
 package cluster
 
-import "github.com/inference-sim/inference-sim/sim"
+import "blis/sim"
 
 // DefaultCacheSignalDelay is the default propagation delay for prefix cache
 // signals in microseconds (50ms). Only affects precise-prefix-cache and

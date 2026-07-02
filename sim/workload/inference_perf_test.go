@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 func TestValidateInferencePerfSpec_ValidSpec_NoError(t *testing.T) {

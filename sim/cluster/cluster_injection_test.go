@@ -3,7 +3,7 @@ package cluster
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // TestClusterArrivalEvent_IncrementsInjectedByClass verifies BC-5: every cluster

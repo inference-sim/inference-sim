@@ -4,7 +4,7 @@ package saturation
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // TestBacklogDriftDetector_Stable verifies UNSATURATED classification

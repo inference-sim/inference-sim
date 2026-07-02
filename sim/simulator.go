@@ -8,7 +8,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/inference-sim/inference-sim/sim/internal/util"
+	"blis/sim/internal/util"
 )
 
 const MaxTokenID = 128000 // Max token ID in request input/output

@@ -7,7 +7,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // TestFullPipelineEndToEnd verifies the complete autoscaler pipeline fires under load

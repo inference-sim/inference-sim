@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // GenerateMultimodalTokens generates input tokens for a multimodal request.

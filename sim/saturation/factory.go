@@ -3,7 +3,7 @@ package saturation
 import (
 	"fmt"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 type DetectorOpts struct {

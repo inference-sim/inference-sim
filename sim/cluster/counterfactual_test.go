@@ -3,7 +3,7 @@ package cluster
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 func TestComputeCounterfactual_WithScores_TopKSortedByScore(t *testing.T) {

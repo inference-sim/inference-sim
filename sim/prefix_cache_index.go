@@ -3,7 +3,7 @@ package sim
 import (
 	"fmt"
 
-	"github.com/inference-sim/inference-sim/sim/internal/hash"
+	"blis/sim/internal/hash"
 )
 
 // PrefixCacheIndex maintains a router-side approximate prefix cache,

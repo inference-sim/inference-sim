@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/internal/hash"
+	"blis/sim"
+	"blis/sim/internal/hash"
 )
 
 // assertBlockConservation verifies the KV block conservation invariant (INV-4)

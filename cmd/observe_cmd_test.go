@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/workload"
+	"blis/sim"
+	"blis/sim/workload"
 )
 
 func TestObserveCmd_MissingRequiredFlags_Errors(t *testing.T) {

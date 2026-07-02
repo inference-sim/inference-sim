@@ -8,7 +8,7 @@ Edit `deployment.yaml` env vars to point at your repo:
 
 | Env var | Default | Description |
 |---------|---------|-------------|
-| `GITHUB_REPO` | `inference-sim/inference-sim` | `owner/repo` for registration and repo URL |
+| `GITHUB_REPO` | `anonymous/anonymous` | `owner/repo` for registration and repo URL |
 | `RUNNER_NAME` | `k8s-runner` | Name shown in GitHub runner settings |
 | `LABELS` | `self-hosted` | Runner labels for workflow targeting |
 | `namespace` | `blis` | Kubernetes namespace (also update in kubectl commands below) |

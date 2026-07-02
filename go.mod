@@ -1,4 +1,4 @@
-module github.com/inference-sim/inference-sim
+module blis
 
 go 1.24.0
 

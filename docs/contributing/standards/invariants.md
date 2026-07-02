@@ -95,7 +95,7 @@ Invariants are properties that must hold at all times during and after simulatio
 
 `EffectiveLoad()` = `QueueDepth + BatchSize + InFlightRequests`. The synchronous `InFlightRequests` term compensates for Periodic staleness in the other two terms. The `queue-depth` scorer reads `QueueDepth` only (GIE parity); `EffectiveLoad()` is used by `load-balance`, `least-loaded`, `always-busiest`, and admission policies. The `active-requests` scorer reads `InFlightRequests` only (synchronous). The `running-requests` scorer reads `BatchSize` (Periodic/Immediate). The `load-aware` scorer reads `QueueDepth` only (Periodic/Immediate), with a linear threshold at 128.
 
-**Verification:** H3 hypothesis experiment, H29 snapshot-staleness experiment (see [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive/hypotheses)).
+**Verification:** H3 hypothesis experiment, H29 snapshot-staleness experiment (see `hypothesis-archive` branch).
 
 **Evidence:** Issues #282, #283. At rate=5000, kv-utilization-only routing produces 200x worse distribution uniformity than queue-depth. Issue #463: unified Prometheus staleness model.
 

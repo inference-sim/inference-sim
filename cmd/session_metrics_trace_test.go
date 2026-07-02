@@ -3,7 +3,7 @@ package cmd
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/workload"
+	"blis/sim/workload"
 )
 
 // traceEntry is a compact helper for building TraceRecord test fixtures.

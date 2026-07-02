@@ -9,8 +9,8 @@ The simulator is CPU-only, deterministic, and designed for **capacity planning**
 ## Quick Start
 
 ```bash
-git clone https://github.com/inference-sim/inference-sim.git
-cd inference-sim
+git clone <REPOSITORY_URL>
+cd blis
 go build -o blis main.go
 ./blis run --model qwen/qwen3-14b
 ```
@@ -68,4 +68,4 @@ Admission and Routing apply in cluster mode (multi-instance). Single-instance mo
 
 ## License
 
-This project is licensed under the Apache License, Version 2.0. See [LICENSE](https://github.com/inference-sim/inference-sim/blob/main/LICENSE) for details.
+This project is licensed under the Apache License, Version 2.0. See the `LICENSE` file for details.

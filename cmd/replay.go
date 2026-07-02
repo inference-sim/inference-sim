@@ -14,12 +14,12 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	sim "github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/cluster"
-	"github.com/inference-sim/inference-sim/sim/latency"
-	"github.com/inference-sim/inference-sim/sim/saturation"
-	"github.com/inference-sim/inference-sim/sim/trace"
-	"github.com/inference-sim/inference-sim/sim/workload"
+	sim "blis/sim"
+	"blis/sim/cluster"
+	"blis/sim/latency"
+	"blis/sim/saturation"
+	"blis/sim/trace"
+	"blis/sim/workload"
 )
 
 var (

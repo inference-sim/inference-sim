@@ -3,7 +3,7 @@ package workload
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 func TestTraceRecordsToRequests_BasicConversion(t *testing.T) {

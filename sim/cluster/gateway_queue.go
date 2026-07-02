@@ -5,7 +5,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // FlowKey identifies a per-tenant, per-priority flow queue within the gateway queue.

@@ -4,7 +4,7 @@ package cluster
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // ─── US2: Place Instances onto Nodes Using Bin-Packing ──────────────────────

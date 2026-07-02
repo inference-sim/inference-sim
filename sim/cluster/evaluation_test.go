@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/trace"
+	"blis/sim"
+	"blis/sim/trace"
 )
 
 func TestNewEvaluationResult_WithTraceAndSummary_SummaryAccessible(t *testing.T) {

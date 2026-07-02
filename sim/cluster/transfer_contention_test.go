@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // testModelHardwareConfig returns a ModelHardwareConfig that produces 512 KV bytes/token/GPU

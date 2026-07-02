@@ -7,7 +7,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // newTierTestRequests creates n requests all with the given SLOClass,

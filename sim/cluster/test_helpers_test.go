@@ -5,7 +5,7 @@ import (
 	"math"
 	"math/rand"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // testGenerateRequests replicates the exact algorithm from the old

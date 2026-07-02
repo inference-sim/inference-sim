@@ -3,7 +3,7 @@
 **Feature Branch**: `001-infra-nodes-gpus-instances`
 **Created**: 2026-03-13
 **Status**: Draft
-**Source**: [Discussion #402 comment v4 (I-1–I-5)](https://github.com/inference-sim/inference-sim/discussions/402#discussioncomment-15901661)
+**Source**: Discussion #402 comment v4 (I-1–I-5)
 
 ## User Scenarios & Testing *(mandatory)*
 

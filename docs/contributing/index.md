@@ -19,7 +19,7 @@ All three must pass before submitting a PR. CI runs on every PR (see `.github/wo
 
 ## Your First Contribution
 
-See [CONTRIBUTING.md](https://github.com/inference-sim/inference-sim/blob/main/CONTRIBUTING.md) for a step-by-step walkthrough that adds a trivial admission policy — the lightest extension type (~3 files).
+See `CONTRIBUTING.md` for a step-by-step walkthrough that adds a trivial admission policy — the lightest extension type (~3 files).
 
 ## Development Workflows
 

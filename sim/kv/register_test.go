@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 func TestNewKVStore_TieredMode_ThresholdOutOfRange_Panics(t *testing.T) {

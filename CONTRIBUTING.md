@@ -132,7 +132,7 @@ gh pr create --title "feat: add counting-admit admission policy" --body "My firs
 
 **That's it!** You've added a complete, tested, registered policy. Real contributions follow the same pattern — just with more contracts and a formal implementation plan.
 
-> **Important:** This example is for learning only. Do **not** submit this as a real PR — `CountingAdmit` is a toy policy with no practical use. For your actual first contribution, check [open issues](https://github.com/inference-sim/inference-sim/issues) for tasks labeled `good first issue`.
+> **Important:** This example is for learning only. Do **not** submit this as a real PR — `CountingAdmit` is a toy policy with no practical use. For your actual first contribution, check open issues for tasks labeled `good first issue`.
 
 ## Contributing with an AI Coding Assistant
 
@@ -329,7 +329,7 @@ See design guidelines Section 5.4 for the full two-phase recipe.
 
 BLIS uses hypothesis-driven experimentation to validate system behavior, surface bugs, and document design tradeoffs. Experiments are organized into 6 families (workload/arrival, scheduler invariants, performance-regime, structural model, robustness, cross-policy comparative).
 
-**To run existing experiments:** Experiment scripts (`run.sh`, `analyze.py`) are not on `main` — they live in experiment feature branches and are archived in the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) at commit `cad4191`. Check out the relevant branch and run `./run.sh` from the experiment directory.
+**To run existing experiments:** Experiment scripts (`run.sh`, `analyze.py`) are not on `main` — they live in experiment feature branches and are archived in the `hypothesis-archive` branch at commit `cad4191`. Check out the relevant branch and run `./run.sh` from the experiment directory.
 
 **To propose a new hypothesis:**
 File a GitHub issue using the "Hypothesis Proposal" template. Include: the hypothesis sentence, family, diagnostic value, and rough experiment design.
@@ -348,7 +348,7 @@ Follow `docs/contributing/hypothesis.md` for the full process (Steps 0-10). Key 
 
 | Document | Purpose |
 |---|---|
-| [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive) | Completed experiments, FINDINGS.md catalog, coverage gaps |
+| `hypothesis-archive` branch | Completed experiments, FINDINGS.md catalog, coverage gaps |
 | `docs/contributing/hypothesis.md` | Full process (Steps 0-10, three review gates) |
 | `docs/contributing/convergence.md` | Universal Convergence Protocol (used by all review gates) |
 | `docs/contributing/standards/experiments.md` | Rigor requirements (families, types, VV&UQ, RCV rules) |

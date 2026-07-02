@@ -6,7 +6,7 @@ import (
 	"math/rand"
 	"sort"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // effectiveInputTokenCount returns the token count to use for generating synthetic

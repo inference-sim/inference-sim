@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/internal/hash"
+	"blis/sim"
+	"blis/sim/internal/hash"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

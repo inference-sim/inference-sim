@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/latency"
+	"blis/sim"
+	"blis/sim/latency"
 )
 
 // TestDPEPConfig_RealFixtures is the #1417 acceptance test: it parses the four

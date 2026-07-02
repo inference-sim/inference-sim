@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // KVCapacityParams holds model-architecture parameters that are not part of

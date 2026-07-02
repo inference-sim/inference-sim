@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/workload"
+	"blis/sim/workload"
 )
 
 func TestITL_ExportLoad_RoundTrip(t *testing.T) {

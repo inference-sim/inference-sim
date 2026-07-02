@@ -5,7 +5,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // CompositeDetector combines rate deficit and latency trend signals using max() composition

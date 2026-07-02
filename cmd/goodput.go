@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	sim "github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/cluster"
-	"github.com/inference-sim/inference-sim/sim/workload"
+	sim "blis/sim"
+	"blis/sim/cluster"
+	"blis/sim/workload"
 )
 
 // parseSLODurationFlag parses comma-separated key=duration pairs (e.g.

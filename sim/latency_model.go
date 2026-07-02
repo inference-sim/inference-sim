@@ -37,7 +37,7 @@ var NewLatencyModelFunc func(coeffs LatencyCoeffs, hw ModelHardwareConfig) (Late
 func MustNewLatencyModel(coeffs LatencyCoeffs, hw ModelHardwareConfig) (LatencyModel, error) {
 	if NewLatencyModelFunc == nil {
 		panic("NewLatencyModelFunc not registered: import sim/latency to register it " +
-			"(add: import _ \"github.com/inference-sim/inference-sim/sim/latency\")")
+			"(add: import _ \"blis/sim/latency\")")
 	}
 	return NewLatencyModelFunc(coeffs, hw)
 }

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	sim "github.com/inference-sim/inference-sim/sim"
+	sim "blis/sim"
 )
 
 func TestBacklogDriftConfig_Validation_ZeroWindow(t *testing.T) {

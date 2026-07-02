@@ -3,7 +3,7 @@ package sim
 import (
 	"github.com/sirupsen/logrus"
 
-	"github.com/inference-sim/inference-sim/sim/internal/util"
+	"blis/sim/internal/util"
 )
 
 // BatchFormation encapsulates the batch composition strategy for a simulation step.

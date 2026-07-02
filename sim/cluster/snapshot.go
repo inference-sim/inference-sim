@@ -5,7 +5,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // UpdateMode controls when a snapshot field is refreshed.

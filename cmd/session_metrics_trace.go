@@ -3,8 +3,8 @@ package cmd
 import (
 	"sort"
 
-	"github.com/inference-sim/inference-sim/sim/cluster"
-	"github.com/inference-sim/inference-sim/sim/workload"
+	"blis/sim/cluster"
+	"blis/sim/workload"
 )
 
 // computeSessionMetricsFromTrace computes session-level metrics from TraceV2 records

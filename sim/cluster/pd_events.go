@@ -7,9 +7,9 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/latency"
-	"github.com/inference-sim/inference-sim/sim/trace"
+	"blis/sim"
+	"blis/sim/latency"
+	"blis/sim/trace"
 )
 
 // PrefillRoutingEvent routes a prefill sub-request to a prefill pool instance.

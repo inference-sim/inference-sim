@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/cluster"
+	"blis/sim/cluster"
 	"github.com/stretchr/testify/assert"
 )
 

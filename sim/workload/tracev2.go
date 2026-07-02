@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 	"gopkg.in/yaml.v3"
 )
 

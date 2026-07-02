@@ -3,7 +3,7 @@ package cluster
 import (
 	"fmt"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // PoolRole identifies which PD-disaggregation stages an instance serves.

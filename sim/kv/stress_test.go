@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // assertFullConservation verifies INV-4 via independent free-list walk + InUse scan.

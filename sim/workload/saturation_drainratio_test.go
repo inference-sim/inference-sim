@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	sim "github.com/inference-sim/inference-sim/sim"
+	sim "blis/sim"
 )
 
 // makeWindow constructs a WindowMetrics with the given counts and a non-NaN DrainRatio.

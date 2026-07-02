@@ -5,7 +5,7 @@
 // test code in package sim uses latency_import_test.go for the blank import.
 package latency
 
-import "github.com/inference-sim/inference-sim/sim"
+import "blis/sim"
 
 func init() {
 	sim.NewLatencyModelFunc = NewLatencyModel

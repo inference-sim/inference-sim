@@ -4,7 +4,7 @@ package saturation
 import (
 	"math"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // ThresholdDetector uses a simple mean E2E latency threshold.

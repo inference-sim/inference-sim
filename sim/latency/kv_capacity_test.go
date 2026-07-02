@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/latency"
+	"blis/sim"
+	"blis/sim/latency"
 )
 
 // --- Test helpers ---

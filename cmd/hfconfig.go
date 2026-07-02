@@ -13,8 +13,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	sim "github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/latency"
+	sim "blis/sim"
+	"blis/sim/latency"
 )
 
 // validHFRepoPattern matches valid HuggingFace repo paths (e.g., "meta-llama/Llama-3.1-8B-Instruct").

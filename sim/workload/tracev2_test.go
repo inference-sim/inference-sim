@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 func TestTraceV2_RoundTrip_PreservesAllFields(t *testing.T) {

@@ -2,7 +2,7 @@
 
 **Branch**: `006-model-autoscaler` | **Date**: 2026-04-01 | **Spec**: [spec.md](./spec.md)  
 **Design Doc**: [docs/plans/2026-04-01-phase1c-autoscaling-design.md](../../docs/plans/2026-04-01-phase1c-autoscaling-design.md)  
-**Tracking Issue**: [#696](https://github.com/inference-sim/inference-sim/issues/696)
+**Tracking Issue**: #696
 
 ## Summary
 

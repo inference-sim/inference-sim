@@ -3,7 +3,7 @@
 package main
 
 import (
-	"github.com/inference-sim/inference-sim/cmd"
+	"blis/cmd"
 )
 
 func main() {

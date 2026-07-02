@@ -3,7 +3,7 @@
 **Feature Branch**: `002-tier-tenant-fairness`
 **Created**: 2026-03-23
 **Status**: Draft
-**Source**: [Discussion #402 comment v4 (T-1, T-2)](https://github.com/inference-sim/inference-sim/discussions/402#discussioncomment-15901661), tracking issue [#696](https://github.com/inference-sim/inference-sim/issues/696), sub-issues [#691](https://github.com/inference-sim/inference-sim/issues/691) and [#739](https://github.com/inference-sim/inference-sim/issues/739)
+**Source**: Discussion #402 comment v4 (T-1, T-2), tracking issue #696, sub-issues #691 and #739
 
 ---
 

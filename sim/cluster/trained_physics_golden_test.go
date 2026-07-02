@@ -10,10 +10,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/internal/testutil"
-	"github.com/inference-sim/inference-sim/sim/latency"
-	"github.com/inference-sim/inference-sim/sim/workload"
+	"blis/sim"
+	"blis/sim/internal/testutil"
+	"blis/sim/latency"
+	"blis/sim/workload"
 	"gopkg.in/yaml.v3"
 )
 

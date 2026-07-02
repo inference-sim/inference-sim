@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 func makeTestBlueprint(sessionID string, maxRounds int, thinkTime int64, contextGrowth string, horizon int64) SessionBlueprint {

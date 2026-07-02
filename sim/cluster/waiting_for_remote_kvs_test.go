@@ -3,7 +3,7 @@ package cluster
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // Tests for vLLM WAITING_FOR_REMOTE_KVS parity (issue #1343).

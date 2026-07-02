@@ -51,7 +51,7 @@ For structured hypothesis-driven research, BLIS provides a guided experimentatio
 
 ## The Experiment Harness
 
-All experiments use a shared harness for consistency. The harness lives in the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive/hypotheses/lib) — copy it into your experiment branch at Step 4:
+All experiments use a shared harness for consistency. The harness lives in the `hypothesis-archive` branch — copy it into your experiment branch at Step 4:
 
 ```bash
 # Copy harness from archive branch into your experiment branch
@@ -85,7 +85,7 @@ Completed experiments demonstrate the power of hypothesis-driven analysis:
 | **H29 (Snapshot Staleness)** | `--snapshot-refresh-interval` 100ms degrades TTFT p99 by +354% for kv-utilization scorer | Safe zone < 5ms; composite scorer mitigates ~99% |
 | **H20 (Heavy-Tailed)** | ParetoLogNormal produces fewer preemptions than Gaussian despite similar means | Distribution median, not mean, drives KV pressure |
 
-All findings are documented in `hypotheses/*/FINDINGS.md` in their respective experiment branches. Completed experiments are also collected in the [`hypothesis-archive` branch](https://github.com/inference-sim/inference-sim/tree/hypothesis-archive/hypotheses).
+All findings are documented in `hypotheses/*/FINDINGS.md` in their respective experiment branches. Completed experiments are also collected in the `hypothesis-archive` branch.
 
 ## Convergence Review
 

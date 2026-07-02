@@ -5,7 +5,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // PDMetrics captures disaggregation-specific metrics collected after simulation ends.

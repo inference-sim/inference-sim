@@ -5,10 +5,10 @@
 //   - sim.SaturationDetector: real-time signal (float64) for admission control
 //   - saturation.Detector: post-hoc classification (Result) for trace analysis
 //
-// Import as "github.com/inference-sim/inference-sim/sim/saturation" to disambiguate.
+// Import as "blis/sim/saturation" to disambiguate.
 package saturation
 
-import "github.com/inference-sim/inference-sim/sim"
+import "blis/sim"
 
 type EventType int
 

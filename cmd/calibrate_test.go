@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim/workload"
+	"blis/sim/workload"
 	"github.com/sirupsen/logrus"
 )
 

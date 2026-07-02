@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 func init() {

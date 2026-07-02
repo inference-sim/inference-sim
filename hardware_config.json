@@ -1,6 +1,6 @@
 {
 	"H100": {
-		"_comment":    "MFU values calibrated per Discussion #589: https://github.com/inference-sim/inference-sim/discussions/589",
+		"_comment":    "MFU values calibrated per Discussion #589",
 		"TFlopsPeak":  989.5,
 		"TFlopsFP8":   1979.0,
 		"BwPeakTBs":   3.35,
@@ -9,7 +9,7 @@
 		"MemoryGiB":   80.0
 	},
 	"A100-SXM": {
-		"_comment":    "MFU values calibrated per Discussion #589: https://github.com/inference-sim/inference-sim/discussions/589",
+		"_comment":    "MFU values calibrated per Discussion #589",
 		"TFlopsPeak":  312,
 		"TFlopsFP8":   0,
 		"BwPeakTBs":   2.039,
@@ -18,7 +18,7 @@
 		"MemoryGiB":   80.0
 	},
 	"A100-80": {
-		"_comment":    "Alias for A100-SXM — defaults.yaml uses A100-80 for all A100 model entries (BC-14). MFU values calibrated per Discussion #589: https://github.com/inference-sim/inference-sim/discussions/589",
+		"_comment":    "Alias for A100-SXM — defaults.yaml uses A100-80 for all A100 model entries (BC-14). MFU values calibrated per Discussion #589",
 		"TFlopsPeak":  312,
 		"TFlopsFP8":   0,
 		"BwPeakTBs":   2.039,
@@ -27,7 +27,7 @@
 		"MemoryGiB":   80.0
 	},
 	"L40S": {
-		"_comment":    "MFU values calibrated per Discussion #589: https://github.com/inference-sim/inference-sim/discussions/589",
+		"_comment":    "MFU values calibrated per Discussion #589",
 		"TFlopsPeak":  362.05,
 		"TFlopsFP8":   1466.0,
 		"BwPeakTBs":   0.864,

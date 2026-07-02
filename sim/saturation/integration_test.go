@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/saturation"
+	"blis/sim"
+	"blis/sim/saturation"
 )
 
 // TestMetricsOutput_SaturationField verifies BC-8: MetricsOutput.Saturation field exists and serializes

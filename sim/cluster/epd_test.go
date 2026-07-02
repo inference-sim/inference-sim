@@ -3,8 +3,8 @@ package cluster
 import (
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/trace"
+	"blis/sim"
+	"blis/sim/trace"
 )
 
 // newTestEPDDeploymentConfig is an E/P/D test harness layered on top of

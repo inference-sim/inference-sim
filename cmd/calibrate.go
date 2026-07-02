@@ -6,7 +6,7 @@ import (
 	"os"
 	"sort"
 
-	"github.com/inference-sim/inference-sim/sim/workload"
+	"blis/sim/workload"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )

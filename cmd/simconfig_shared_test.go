@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	sim "github.com/inference-sim/inference-sim/sim"
+	sim "blis/sim"
 	"github.com/stretchr/testify/assert"
 )
 

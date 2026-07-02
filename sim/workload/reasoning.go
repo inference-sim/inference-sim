@@ -5,7 +5,7 @@ import (
 	"math"
 	"math/rand"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // GenerateReasoningRequests generates multi-turn conversation requests.

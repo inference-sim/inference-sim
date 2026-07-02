@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // buildAggregatedWithTTFTs creates a sim.Metrics stub with given TTFT map and SimEndedTime.

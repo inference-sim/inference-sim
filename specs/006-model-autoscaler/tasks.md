@@ -2,7 +2,7 @@
 
 **Branch**: `006-model-autoscaler`  
 **Spec**: [spec.md](./spec.md) | **Plan**: [plan.md](./plan.md) | **Data model**: [data-model.md](./data-model.md) | **Contracts**: [contracts/autoscaler-interfaces.md](./contracts/autoscaler-interfaces.md)  
-**Issues**: [#905](https://github.com/inference-sim/inference-sim/issues/905) (1C-1b) · [#918](https://github.com/inference-sim/inference-sim/issues/918) (1C-1d) · [#954](https://github.com/inference-sim/inference-sim/issues/954) (QueueingModelAnalyzer, future)
+**Issues**: #905 (1C-1b) · #918 (1C-1d) · #954 (QueueingModelAnalyzer, future)
 
 **Format**: `[ID] [P?] [Story?] Description — file path`  
 - **[P]**: parallelizable (touches a different file, no dependency on an incomplete task)  

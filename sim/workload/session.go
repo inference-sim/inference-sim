@@ -10,7 +10,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // sessionState tracks a session's lifecycle.

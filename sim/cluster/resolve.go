@@ -3,7 +3,7 @@ package cluster
 import (
 	"fmt"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 )
 
 // PoolOverrides holds optional per-pool hardware overrides for PD disaggregation.

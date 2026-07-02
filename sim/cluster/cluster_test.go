@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/internal/testutil"
-	"github.com/inference-sim/inference-sim/sim/workload"
+	"blis/sim"
+	"blis/sim/internal/testutil"
+	"blis/sim/workload"
 )
 
 // newTestDeploymentConfig creates a DeploymentConfig suitable for testing.

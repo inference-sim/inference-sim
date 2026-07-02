@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/inference-sim/inference-sim/sim"
+	"blis/sim"
 	"github.com/sirupsen/logrus"
 )
 
