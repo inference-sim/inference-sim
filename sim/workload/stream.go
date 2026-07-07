@@ -42,13 +42,13 @@ var ErrLazyUnsupportedMultiSession = errors.New("lazy generation: reasoning clie
 // it is the priority-queue tie-break for identical arrival times, and it
 // determines blueprint enumeration order — see GenerateWorkloadLazy).
 type clientStreamState struct {
-	clientIdx       int          // position in original allClients slice
-	client          *ClientSpec  // pointer for field access; never mutated
+	clientIdx       int         // position in original allClients slice
+	client          *ClientSpec // pointer for field access; never mutated
 	arrivalSampler  ArrivalSampler
 	inputSampler    LengthSampler
 	outputSampler   LengthSampler
 	clientRNG       *rand.Rand
-	prefix          []int
+	prefix          []sim.TokenID
 	horizon         int64
 	isReasoning     bool
 	isSingleSession bool
@@ -76,6 +76,23 @@ type clientStreamState struct {
 	// exhausted is sticky — once true, produceNext returns (nil, 0, false)
 	// forever. Matches the cluster's RequestSource exhaustion contract.
 	exhausted bool
+
+	// lastErr captures the terminal error from a failed sampler /
+	// generator call (multimodal token generation, reasoning session
+	// generation). Set alongside `exhausted = true` on the failure
+	// path. Surfaced up via lazyRequestSource.Err() so cmd/root.go
+	// can Fatalf and match the eager path's abort-on-invalid-spec
+	// behavior — instead of silently reducing traffic and exiting 0
+	// with misleading capacity numbers (#1453 self-review round 3).
+	lastErr error
+
+	// dryRun disables user-facing logs on sampler errors — set true by
+	// the blueprint pre-pass in enumerateSurvivingSessionsPerClient so
+	// the same error is not double-logged (once in the pre-pass, once
+	// in Phase 3 streaming). The Phase 3 pass is authoritative for
+	// user feedback; the pre-pass's copy-of-the-state runs the same
+	// samplers and would surface the same error immediately after.
+	dryRun bool
 }
 
 // produceNext returns the next request this client would emit (if any),
@@ -127,7 +144,7 @@ func (s *clientStreamState) produceNextSingleShot() (*sim.Request, int64, bool) 
 		// path exactly, including the RNG-draw order for multimodal vs
 		// standard paths (multimodal: tokens → outputLen → outputTokens;
 		// standard: inputLen → outputLen → input → output).
-		var inputTokens, outputTokens []int
+		var inputTokens, outputTokens []sim.TokenID
 		var textCount, imageCount, audioCount, videoCount int
 		if s.client.Multimodal != nil {
 			var err error
@@ -135,13 +152,12 @@ func (s *clientStreamState) produceNextSingleShot() (*sim.Request, int64, bool) 
 			if err != nil {
 				// spec.Validate() does NOT validate MultimodalSpec distribution
 				// fields, so this path IS reachable for invalid multimodal specs.
-				// R1: don't drop silently — log the failure (with client ID so
-				// the user can locate the bad spec) before exhausting the
-				// stream. Eager mode surfaces this via logrus.Fatalf in cmd;
-				// in lazy library code we log + sticky-exhaust so the
-				// simulation does not silently continue with reduced traffic.
-				logrus.Errorf("[workload] client %q: multimodal token generation failed (exhausting stream): %v", s.client.ID, err)
-				s.exhausted = true
+				// Record the error on the state and sticky-exhaust; the
+				// user-facing log happens on the Phase 3 pass only (skipped
+				// during the blueprint pre-pass to avoid double-logging).
+				// lazyRequestSource.Err() surfaces this to cmd/root.go so it
+				// can Fatalf and match the eager path's abort-on-invalid-spec.
+				s.recordError(fmt.Errorf("multimodal token generation: %w", err))
 				return nil, 0, false
 			}
 			outputLen := s.outputSampler.Sample(s.clientRNG)
@@ -154,7 +170,7 @@ func (s *clientStreamState) produceNextSingleShot() (*sim.Request, int64, bool) 
 		}
 		var prefixLength int
 		if len(s.prefix) > 0 {
-			inputTokens = append(append([]int{}, s.prefix...), inputTokens...)
+			inputTokens = append(append([]sim.TokenID{}, s.prefix...), inputTokens...)
 			prefixLength = len(s.prefix)
 		}
 		req := &sim.Request{
@@ -261,31 +277,26 @@ func (s *clientStreamState) produceNextReasoning() (*sim.Request, int64, bool) {
 			}
 		}
 
-		// Build this session.
+		// Build this session. GenerateReasoningRequests takes the prefix
+		// and seeds it into the shared session buffer / prepends per-round
+		// as needed (#1445); we no longer prepend ourselves.
 		reasoningReqs, err := GenerateReasoningRequests(
 			s.clientRNG, s.client.Reasoning,
 			s.inputSampler, s.outputSampler,
 			startTime,
 			s.client.ID, s.client.TenantID, s.client.SLOClass, s.client.Model,
+			s.prefix,
 		)
 		if err != nil {
 			// spec.Validate() does NOT validate ReasoningSpec's distribution
-			// fields (e.g. ReasonRatioDist), so this path IS reachable. R1:
-			// log the failure with client ID before sticky-exhausting so the
-			// simulation does not silently continue with reduced traffic.
-			// Eager mode surfaces this via logrus.Fatalf in cmd.
-			logrus.Errorf("[workload] client %q: reasoning session generation failed at t=%d (exhausting stream): %v", s.client.ID, startTime, err)
-			s.exhausted = true
+			// fields (e.g. ReasonRatioDist), so this path IS reachable.
+			// Record the error on the state and sticky-exhaust; the
+			// user-facing log happens on the Phase 3 pass only (skipped
+			// during the blueprint pre-pass to avoid double-logging).
+			// lazyRequestSource.Err() surfaces this to cmd/root.go so it
+			// can Fatalf and match the eager path's abort-on-invalid-spec.
+			s.recordError(fmt.Errorf("reasoning session generation at t=%d: %w", startTime, err))
 			return nil, 0, false
-		}
-		// Prepend shared prefix (mirrors the prefix-prepend loop applied
-		// to every reasoningReqs entry in GenerateRequests' reasoning
-		// path, single-session and multi-session branches).
-		if len(s.prefix) > 0 {
-			for _, req := range reasoningReqs {
-				req.InputTokens = append(append([]int{}, s.prefix...), req.InputTokens...)
-				req.PrefixLength = len(s.prefix)
-			}
 		}
 		// Set Deadline + SLOTargetUs on every round (mirrors the
 		// per-round Deadline/SLOTargetUs assignment in GenerateRequests'
@@ -297,6 +308,20 @@ func (s *clientStreamState) produceNextReasoning() (*sim.Request, int64, bool) {
 		s.pendingSession = reasoningReqs
 		s.pendingSessionIdx = 0
 		// Loop back to yield the first round.
+	}
+}
+
+// recordError marks the state as exhausted with a terminal error,
+// logging it at the Errorf level (client-scoped) unless the state is
+// running in dryRun mode — the blueprint pre-pass runs the same
+// samplers as Phase 3 and would double-log the same error otherwise.
+// lazyRequestSource.Err() aggregates these errors across states so
+// cmd/root.go can Fatalf on invalid-spec failures (matching eager).
+func (s *clientStreamState) recordError(err error) {
+	s.exhausted = true
+	s.lastErr = err
+	if !s.dryRun {
+		logrus.Errorf("[workload] client %q: %v (stream exhausted)", s.client.ID, err)
 	}
 }
 
@@ -347,6 +372,31 @@ type lazyRequestSource struct {
 	popped      int64 // total heap pops (counts toward maxRequests cap, including suppressed intermediate closed-loop rounds)
 	yielded     int64 // requests actually returned from Next; used for sequential ID assignment
 	maxRequests int64
+	// states retains a reference to every per-client streaming state
+	// (populated at construction) so Err() can surface a sampler failure
+	// that terminated a state after it stopped being on the heap. Without
+	// this, once a state exhausted its heap entry got dropped and the
+	// error would be unreachable from cmd.
+	states []*clientStreamState
+}
+
+// Err returns the first terminal sampler / generator error recorded on any
+// per-client state after the cluster has finished draining the source
+// (i.e. after cluster.Run returns). Callers MUST invoke Err() post-Run
+// and Fatalf on a non-nil value to match the eager path's
+// abort-on-invalid-spec behavior (issue #1441, PR #1453 review round 3).
+// Returns nil when every state exhausted cleanly.
+//
+// Scan order is per-client-index so the surfaced error is deterministic
+// across runs (any parallel drainers would still see the first client's
+// error first).
+func (l *lazyRequestSource) Err() error {
+	for _, s := range l.states {
+		if s.lastErr != nil {
+			return fmt.Errorf("client %q: %w", s.client.ID, s.lastErr)
+		}
+	}
+	return nil
 }
 
 // Next returns the next request and true, or (nil, false) when exhausted.
@@ -423,7 +473,7 @@ type clientPrep struct {
 	client     *ClientSpec
 	clientSeed int64
 	rate       float64
-	prefix     []int
+	prefix     []sim.TokenID
 }
 
 // GenerateWorkloadLazy mirrors GenerateWorkload's setup but returns a
@@ -555,7 +605,7 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 		// but the value is exactly prefixes[client.PrefixGroup] (eager prepends
 		// it in the same way before populating req.InputTokens). We use it
 		// directly to avoid materializing requests just to read them back.
-		var prefixTokens []int
+		var prefixTokens []sim.TokenID
 		if p.client.PrefixGroup != "" {
 			prefixTokens = prefixes[p.client.PrefixGroup]
 		}
@@ -590,11 +640,13 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 	// emissions to what the pre-pass simulated.
 	h := &heapByArrival{}
 	heap.Init(h)
+	states := make([]*clientStreamState, 0, len(preps))
 	for _, p := range preps {
 		state, err := buildClientStreamState(p, horizon)
 		if err != nil {
 			return nil, nil, 0, err
 		}
+		states = append(states, state)
 		if firstReq, t, ok := state.produceNext(); ok {
 			heap.Push(h, heapEntry{
 				arrivalUs:    t,
@@ -610,7 +662,7 @@ func GenerateWorkloadLazy(spec *WorkloadSpec, horizon int64, maxRequests int64) 
 	// eager codepath's "totalConcurrencyUsers > 0" condition is always
 	// false — budget stays at -1 (no cap), matching the
 	// `followUpBudget := int64(-1)` initialization in GenerateWorkload.
-	return &lazyRequestSource{h: h, maxRequests: maxRequests}, sessions, int64(-1), nil
+	return &lazyRequestSource{h: h, maxRequests: maxRequests, states: states}, sessions, int64(-1), nil
 }
 
 // buildClientStreamState constructs one client's streaming state. The
@@ -674,11 +726,13 @@ func buildClientStreamState(p clientPrep, horizon int64) (*clientStreamState, er
 // state (one session at a time, MaxRounds entries).
 func enumerateSurvivingSessionsPerClient(
 	preps []clientPrep,
-	prefixes map[string][]int,
+	prefixes map[string][]sim.TokenID,
 	horizon int64,
 	maxRequests int64,
 ) (map[int][]string, error) {
 	// Clone per-client states (fresh RNGs from the same clientSeed).
+	// dryRun=true so sampler-error paths don't user-log twice (the Phase 3
+	// pass runs the same samplers and is authoritative for user feedback).
 	cloneStates := make([]*clientStreamState, 0, len(preps))
 	for _, p := range preps {
 		// Mirror the prefix-binding rule of Phase 3 so the clone consumes
@@ -688,6 +742,7 @@ func enumerateSurvivingSessionsPerClient(
 		if err != nil {
 			return nil, fmt.Errorf("client %q: %w", p.client.ID, err)
 		}
+		state.dryRun = true
 		cloneStates = append(cloneStates, state)
 	}
 	// Build the clone heap with each state's first candidate, matching

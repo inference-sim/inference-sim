@@ -3,6 +3,7 @@ package workload
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -446,6 +447,60 @@ func TestLazyRequestSource_Reasoning_SingleSession_MatchesEager(t *testing.T) {
 	}
 }
 
+// TestLazyRequestSource_SamplerError_SurfacedViaErr pins the fix for
+// PR #1453 review round 3 (IMPORTANT): a sampler failure inside the
+// streaming source MUST be surfaced via lazyRequestSource.Err() so
+// cmd/root.go can Fatalf after cluster.Run — matching eager mode's
+// abort-on-invalid-spec behavior. Regressions that swallow the error
+// (or return nil after logging) would silently reduce traffic and
+// yield misleading capacity numbers.
+//
+// spec.Validate() does NOT validate MultimodalSpec's sub-distribution
+// types, so an unknown TextDist type passes construction but fails
+// deterministically inside GenerateMultimodalTokens. Drain the source
+// once; assert Err() returns a wrapped error that names the client
+// and includes the "unknown distribution type" phrase.
+func TestLazyRequestSource_SamplerError_SurfacedViaErr(t *testing.T) {
+	spec := &WorkloadSpec{
+		Version: "1", Seed: 42, Category: "language", AggregateRate: 5.0,
+		Clients: []ClientSpec{{
+			ID: "mm-bad", TenantID: "t1", SLOClass: "batch", RateFraction: 1.0,
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 10, "max": 200}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 30}},
+			Multimodal: &MultimodalSpec{
+				// TextDist.Type is not a valid distribution; NewLengthSampler
+				// will error. spec.Validate() does NOT catch this because
+				// Multimodal sub-fields are not validated in advance.
+				TextDist: DistSpec{Type: "not-a-real-dist", Params: map[string]float64{"mean": 10}},
+			},
+		}},
+	}
+	src, _, _, err := GenerateWorkloadLazy(spec, 5_000_000, 5)
+	if err != nil {
+		t.Fatalf("construction: %v", err)
+	}
+	// Drain — first Next() should trigger GenerateMultimodalTokens and
+	// record the error on the state, which will then exhaust.
+	for {
+		if _, ok := src.Next(); !ok {
+			break
+		}
+	}
+	got := src.Err()
+	if got == nil {
+		t.Fatal("Err() returned nil after sampler failure; must surface the error so cmd can Fatalf")
+	}
+	// Sanity-check the error mentions the offending client + the underlying cause.
+	msg := got.Error()
+	if !strings.Contains(msg, "mm-bad") {
+		t.Errorf("Err() = %q; expected mention of client ID 'mm-bad'", msg)
+	}
+	if !strings.Contains(msg, "unknown distribution type") {
+		t.Errorf("Err() = %q; expected underlying 'unknown distribution type' wrapped in message", msg)
+	}
+}
+
 // TestLazyRequestSource_Multimodal_MatchesEager pins BC-3 for the
 // multimodal branch of produceNextSingleShot: TextTokenCount,
 // ImageTokenCount, AudioTokenCount, and VideoTokenCount must be
@@ -503,11 +558,14 @@ func TestLazyRequestSource_Multimodal_MatchesEager(t *testing.T) {
 // to `l.yielded >= l.maxRequests` would yield extra round-0 requests
 // past the eager truncation point and break parity.
 //
-// Construction: 2 closed-loop reasoning clients (NOT SingleSession), so
-// each session has rounds 0, 1, 2 — all popped, only round-0 yielded.
-// With maxRequests = 6, eager truncates to first 6 in arrival order
-// (a mix of round-0 and intermediate rounds). Lazy must stop at popped
-// = 6 and yield strictly fewer than 6 requests to the cluster.
+// Construction: 2 closed-loop SingleSession=true reasoning clients
+// (SingleSession is a lazy-supported shape; multi-session would trip
+// ErrLazyUnsupportedMultiSession before reaching the streaming path).
+// Each client's one session has rounds 0, 1, 2 — all popped, only
+// round-0 yielded. With maxRequests = 4, eager truncates to first 4 in
+// arrival order (a mix of round-0 and intermediate rounds). Lazy must
+// stop at popped = 4 and yield strictly fewer than 4 requests to the
+// cluster.
 func TestLazyRequestSource_PoppedNotYielded_StopsAtPoppedCap(t *testing.T) {
 	mk := func() *WorkloadSpec {
 		mkClient := func(id string) ClientSpec {
