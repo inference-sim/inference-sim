@@ -1439,17 +1439,28 @@ var runCmd = &cobra.Command{
 		if requestTimeoutSecs == 0 {
 			logrus.Fatalf("--timeout must be positive (seconds) or negative to disable; got 0")
 		}
-		// Pre-expand inference-perf / ServeGen specs so the timeout-
-		// application step below sees every client — including those
-		// populated by expansion. Without this, --lazy-generation +
+		// Pre-expand inference-perf / ServeGen specs (LAZY MODE ONLY) so
+		// the timeout-application step below sees every client — including
+		// those populated by expansion. Without this, --lazy-generation +
 		// --workload-spec=inference_perf.yaml + an explicit --timeout
 		// would build streaming states from clients whose Timeout is nil
 		// (because expansion inside GenerateWorkloadLazy happens AFTER
 		// applyTimeoutToSpec runs), producing the default 300 s deadline
 		// instead of the user-requested value (PR #1453 self-review).
 		//
-		// REMOVING THIS CALL re-introduces that bug silently. The
-		// regression is covered by
+		// Scoped to `lazyGeneration` so it does not run for eager-only
+		// invocations. Running it unconditionally would clear the
+		// spec.InferencePerf marker before GenerateWorkload's Validate,
+		// which suppresses the mixed-slo_class check via
+		// `s.InferencePerf == nil && s.ServeGenData == nil` in spec.go.
+		// Today all inference-perf-expanded clients carry SLOClass="standard"
+		// (uniform → check can't fire), so eager was accidentally safe.
+		// But scoping here defends against a future ExpandInferencePerfSpec
+		// change that emits mixed/empty slo_class from silently failing
+		// eager runs that previously validated (PR #1453 review round 3).
+		//
+		// REMOVING THIS CALL re-introduces the lazy timeout bug silently.
+		// The regression is covered by
 		// TestGenerateWorkloadLazy_InferencePerf_TimeoutAppliedAfterPreExpand
 		// at the library layer; the cmd-level smoke is covered by the
 		// inference-perf byte-identity check verified during PR review.
@@ -1457,8 +1468,10 @@ var runCmd = &cobra.Command{
 		// ExpandClientsAndCohorts is idempotent — the generators'
 		// validateAndExpandSpec runs it again with no effect since both
 		// branches guard on len(spec.Clients) == 0. (#1441)
-		if err := workload.ExpandClientsAndCohorts(spec); err != nil {
-			logrus.Fatalf("Failed to expand workload spec: %v", err)
+		if lazyGeneration {
+			if err := workload.ExpandClientsAndCohorts(spec); err != nil {
+				logrus.Fatalf("Failed to expand workload spec: %v", err)
+			}
 		}
 		if workloadSpecPath == "" || cmd.Flags().Changed("timeout") {
 			applyTimeoutToSpec(spec, requestTimeoutSecs)
@@ -1481,7 +1494,16 @@ var runCmd = &cobra.Command{
 		// the streaming source cannot handle yet (time-varying parameters,
 		// concurrency clients, multi-session reasoning).
 		var wl *workload.GeneratedWorkload
-		var lazyRequestSource interface{ Next() (*sim.Request, bool) }
+		// lazyRequestSource is typed as the interface satisfied by
+		// *workload.lazyRequestSource: Next() delivers requests to the
+		// cluster; Err() surfaces any terminal sampler/generator error
+		// recorded on a per-client state after the run completes, so
+		// cmd can Fatalf and match the eager path's abort-on-invalid-spec
+		// behavior (PR #1453 review round 3).
+		var lazyRequestSource interface {
+			Next() (*sim.Request, bool)
+			Err() error
+		}
 		if lazyGeneration {
 			src, sessions, followUpBudget, lazyErr := workload.GenerateWorkloadLazy(spec, simulationHorizon, maxRequests)
 			switch {
@@ -1872,6 +1894,17 @@ var runCmd = &cobra.Command{
 		}
 		if err := cs.Run(); err != nil {
 			logrus.Fatalf("Simulation failed: %v", err)
+		}
+
+		// Surface any terminal sampler / generator error the lazy source
+		// recorded on a per-client state during the run. Eager mode would
+		// have hit logrus.Fatalf inside cmd on the same invalid spec;
+		// without this check, lazy mode would exit 0 with reduced traffic
+		// and misleading capacity numbers (PR #1453 review round 3).
+		if lazyRequestSource != nil {
+			if err := lazyRequestSource.Err(); err != nil {
+				logrus.Fatalf("Lazy workload sampler failure: %v", err)
+			}
 		}
 
 		// Wall-clock timing on stderr (BC-6); stdout remains deterministic (BC-7)
