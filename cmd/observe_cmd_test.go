@@ -1049,6 +1049,18 @@ func TestObserveCmd_RttMsFlag_Exists(t *testing.T) {
 	}
 }
 
+// TestObserveCmd_LazyGenerationFlag_Exists verifies observe exposes the same
+// --lazy-generation alpha switch as run/replay, defaulting off (#1443).
+func TestObserveCmd_LazyGenerationFlag_Exists(t *testing.T) {
+	f := observeCmd.Flags().Lookup("lazy-generation")
+	if f == nil {
+		t.Fatal("missing expected flag --lazy-generation")
+	}
+	if f.DefValue != "false" {
+		t.Errorf("--lazy-generation default: got %q, want %q", f.DefValue, "false")
+	}
+}
+
 func TestObserveCmd_APIFormatFlag_Exists(t *testing.T) {
 	f := observeCmd.Flags().Lookup("api-format")
 	if f == nil {

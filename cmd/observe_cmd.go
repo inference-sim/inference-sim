@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -64,6 +65,7 @@ var (
 	observeITLOutput           string
 	observeTimeout             int
 	observePrewarmDuration     time.Duration
+	observeLazyGeneration      bool // --lazy-generation: stream requests from generator (alpha, #1441/#1443)
 	// saturationReport is declared in root.go and shared across run, replay, observe
 )
 
@@ -124,6 +126,10 @@ func init() {
 	observeCmd.Flags().StringVar(&observeWorkload, "workload", "", "Workload preset name (chatbot, summarization, contentgen, multidoc); requires --rate")
 	observeCmd.Flags().StringVar(&observeDefaultsFilePath, "defaults-filepath", "defaults.yaml", "Path to defaults.yaml (for preset workload definitions)")
 	observeCmd.Flags().Float64Var(&observeRate, "rate", 0, "Requests per second for distribution synthesis")
+	observeCmd.Flags().BoolVar(&observeLazyGeneration, "lazy-generation", false,
+		"Alpha (#1441): stream requests from the workload generator instead of pre-generating "+
+			"the full slice. Default off. Falls back to eager mode (with a warning) for time-varying "+
+			"workloads, concurrency clients, and multi-session reasoning (SingleSession=false).")
 
 	// Optional
 	observeCmd.Flags().StringVar(&observeAPIKey, "api-key", "", "Bearer token for server authentication")
@@ -383,13 +389,57 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		logrus.Fatalf("Workload requires either num_requests, --num-requests, or --horizon to bound generation")
 	}
 
-	// Generate requests and session blueprints (BC-1, BC-2, D1)
-	wl, err := workload.GenerateWorkload(spec, horizon, maxRequests)
-	if err != nil {
-		logrus.Fatalf("Failed to generate workload: %v", err)
+	// Generate requests and session blueprints (BC-1, BC-2, D1).
+	//
+	// Lazy generation path (#1441/#1443, alpha, default off). When set, build a
+	// streaming request source instead of materializing the full slice, mirroring
+	// blis run (cmd/root.go). Falls back to the eager generator (with a one-line
+	// warning) for specs the streaming source cannot handle yet (time-varying
+	// parameters, concurrency clients, multi-session reasoning).
+	//
+	// No spec pre-expand is needed here (unlike run): observe has no
+	// pre-generation applyTimeoutToSpec step, and both generators expand
+	// spec.Clients in place before the (post-generation) prefix-string loop
+	// reads it. Skipping run's ExpandClientsAndCohorts pre-expand keeps the
+	// eager-fallback path identical to eager-direct (that helper clears the
+	// inference-perf/servegen markers, which would perturb spec.Validate()).
+	var wl *workload.GeneratedWorkload
+	// lazySource is typed as the interface satisfied by *workload.lazyRequestSource:
+	// Next() feeds the orchestrator, Err() surfaces a terminal per-client sampler
+	// failure after dispatch so we can Fatalf (matching eager's abort-on-invalid-spec).
+	var lazySource interface {
+		Next() (*sim.Request, bool)
+		Err() error
+	}
+	if observeLazyGeneration {
+		src, sessions, followUpBudget, lazyErr := workload.GenerateWorkloadLazy(spec, horizon, maxRequests)
+		switch {
+		case errors.Is(lazyErr, workload.ErrLazyUnsupportedTimeVarying):
+			logrus.Warnf("[workload] --lazy-generation ignored: workload has per-window parameters; using eager generator (issue #1441)")
+		case errors.Is(lazyErr, workload.ErrLazyUnsupportedConcurrency):
+			logrus.Warnf("[workload] --lazy-generation ignored: workload has concurrency clients; using eager generator (issue #1441)")
+		case errors.Is(lazyErr, workload.ErrLazyUnsupportedMultiSession):
+			logrus.Warnf("[workload] --lazy-generation ignored: workload has multi-session reasoning (SingleSession=false); using eager generator (issue #1441)")
+		case lazyErr != nil:
+			logrus.Fatalf("Failed to build lazy workload: %v", lazyErr)
+		default:
+			lazySource = src
+			wl = &workload.GeneratedWorkload{Sessions: sessions, FollowUpBudget: followUpBudget}
+		}
+	}
+	if wl == nil {
+		var err error
+		wl, err = workload.GenerateWorkload(spec, horizon, maxRequests)
+		if err != nil {
+			logrus.Fatalf("Failed to generate workload: %v", err)
+		}
 	}
 
-	logrus.Infof("Generated %d requests", len(wl.Requests))
+	if lazySource != nil {
+		logrus.Infof("Generated streaming workload source (lazy, #1441)")
+	} else {
+		logrus.Infof("Generated %d requests", len(wl.Requests))
+	}
 	if len(wl.Sessions) > 0 {
 		logrus.Infof("Generated %d session blueprints (closed-loop)", len(wl.Sessions))
 	}
@@ -397,26 +447,15 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	// Apply --think-time-dist sampler to all session blueprints (overrides constant ThinkTimeUs).
 	applyThinkTimeSampler(wl.Sessions, observeThinkTimeSampler)
 
-	if len(wl.Requests) == 0 {
+	// wl.Requests is nil in lazy mode; the empty-trace warning only applies to eager.
+	if lazySource == nil && len(wl.Requests) == 0 {
 		logrus.Warn("No requests generated — writing empty trace")
 	}
 
-	// Enable streaming on all requests when --record-itl is set (BC-6).
-	// ITL recording requires streaming responses to capture per-chunk timestamps.
-	// The inference-perf format defaults to non-streaming for parity with the real tool,
-	// so we override it here when the user explicitly opts in to ITL recording.
-	if observeRecordITL {
-		streamingCount := 0
-		for i := range wl.Requests {
-			if !wl.Requests[i].Streaming {
-				wl.Requests[i].Streaming = true
-				streamingCount++
-			}
-		}
-		if streamingCount > 0 {
-			logrus.Infof("Enabled streaming on %d requests for ITL recording", streamingCount)
-		}
-	}
+	// NOTE: the former eager ITL streaming-on pre-pass over wl.Requests is
+	// removed; runObserveOrchestrator now enables streaming per emitted request
+	// when --record-itl is set (works for both the eager slice and the lazy
+	// source, and covers session follow-ups). See BC-6 (#1443).
 
 	// Setup
 	client := NewRealClient(observeServerURL, observeAPIKey, observeModel, observeServerType,
@@ -481,10 +520,31 @@ func runObserve(cmd *cobra.Command, _ []string) {
 		runPrewarm(ctx, client, observePrewarmDuration)
 	}
 
+	// RequestSource: streaming in lazy mode, eager-slice adapter otherwise.
+	// The workload package's lazy source satisfies cluster.RequestSource via
+	// structural typing (same Next() method), mirroring blis run.
+	var observeSource cluster.RequestSource
+	if lazySource != nil {
+		observeSource = lazySource
+	} else {
+		observeSource = cluster.NewSliceRequestSource(wl.Requests)
+	}
+
 	// Run orchestrator
 	startTime := time.Now()
-	runObserveOrchestrator(ctx, client, recorder, sessionMgr, cluster.NewSliceRequestSource(wl.Requests), observeNoStreaming, observeMaxConcur, observeWarmup, prefixes, prefixLengths, observeUnconstrainedOutput, observeRecordITL, tokensPerWord)
+	runObserveOrchestrator(ctx, client, recorder, sessionMgr, observeSource, observeNoStreaming, observeMaxConcur, observeWarmup, prefixes, prefixLengths, observeUnconstrainedOutput, observeRecordITL, tokensPerWord)
 	logrus.Infof("Observation wall-clock time: %.3fs", time.Since(startTime).Seconds())
+
+	// Surface any terminal sampler/generator error the lazy source recorded on a
+	// per-client state during dispatch. Eager mode would have hit Fatalf at
+	// generation on the same invalid spec; without this, lazy mode would exit 0
+	// with reduced traffic and misleading metrics (BC-9, mirrors run at
+	// cmd/root.go). Checked after dispatch so partial results are still recorded.
+	if lazySource != nil {
+		if err := lazySource.Err(); err != nil {
+			logrus.Fatalf("Lazy workload sampler failure: %v", err)
+		}
+	}
 
 	// Resolve goodput SLO targets (#1413, BC-1, BC-7). Observe has no trace
 	// header at invocation; precedence is CLI > workload spec.
