@@ -584,6 +584,160 @@ func TestObserveOrchestrator_MergeOrder_OpenLoopExactSequence(t *testing.T) {
 	}
 }
 
+// TestObserveOrchestrator_EagerLazyParity_SameDispatchSequence proves eager and
+// lazy generation produce the same observe dispatch for a supported spec at a
+// fixed seed (BC-1, BC-3, INV-6). Runs a closed-loop single-session spec through
+// the orchestrator once per mode at maxConcurrency=1, then compares the recorded
+// requests on the deterministic TraceRecord surface, grouped by
+// (SessionID, RoundIndex).
+//
+// Wall-clock-derived fields are excluded per the determinism surface: follow-up
+// (RoundIndex>0) ArrivalTimeUs is time.Since(startWall)+thinkTime and RequestID
+// is the dispatch index, both non-deterministic; XRequestID is a random UUID.
+// ArrivalTimeUs/RequestID are compared only for RoundIndex==0.
+func TestObserveOrchestrator_EagerLazyParity_SameDispatchSequence(t *testing.T) {
+	newStub := func() *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []map[string]any{{"text": "response"}},
+				"usage":   map[string]any{"prompt_tokens": 100, "completion_tokens": 50},
+			})
+		}))
+	}
+
+	// Supported shape: single-client, single-session multi-turn reasoning
+	// (no concurrency, no per-window params) — the lazy source handles it.
+	newSpec := func() *workload.WorkloadSpec {
+		return &workload.WorkloadSpec{
+			Version:       "2",
+			Seed:          42,
+			AggregateRate: 10.0,
+			Clients: []workload.ClientSpec{
+				{
+					ID:           "session-client",
+					RateFraction: 1.0,
+					Arrival:      workload.ArrivalSpec{Process: "constant"},
+					InputDist:    workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+					OutputDist:   workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+					Reasoning: &workload.ReasoningSpec{
+						MultiTurn: &workload.MultiTurnSpec{
+							MaxRounds:     2,
+							ThinkTimeUs:   10000,
+							ContextGrowth: "accumulate",
+							SingleSession: true,
+						},
+					},
+				},
+			},
+		}
+	}
+
+	// Eager run.
+	eagerServer := newStub()
+	defer eagerServer.Close()
+	eagerWL, err := workload.GenerateWorkload(newSpec(), 1_000_000, 3)
+	if err != nil {
+		t.Fatalf("GenerateWorkload (eager): %v", err)
+	}
+	if len(eagerWL.Sessions) == 0 {
+		t.Fatal("eager spec produced no sessions — cannot exercise BC-5 merge path")
+	}
+	eagerRec := &Recorder{}
+	runObserveOrchestrator(context.Background(),
+		NewRealClient(eagerServer.URL, "", "test-model", "vllm"),
+		eagerRec, workload.NewSessionManager(eagerWL.Sessions),
+		cluster.NewSliceRequestSource(eagerWL.Requests),
+		false, 1, 0, nil, nil, false, false, 1.0)
+
+	// Lazy run — same spec/seed.
+	lazyServer := newStub()
+	defer lazyServer.Close()
+	lazySrc, lazySessions, lazyBudget, lazyErr := workload.GenerateWorkloadLazy(newSpec(), 1_000_000, 3)
+	if lazyErr != nil {
+		t.Fatalf("GenerateWorkloadLazy returned error (spec should be supported): %v", lazyErr)
+	}
+	lazyMgr := workload.NewSessionManager(lazySessions)
+	if lazyBudget >= 0 {
+		lazyMgr.SetFollowUpBudget(lazyBudget)
+	}
+	lazyRec := &Recorder{}
+	runObserveOrchestrator(context.Background(),
+		NewRealClient(lazyServer.URL, "", "test-model", "vllm"),
+		lazyRec, lazyMgr, lazySrc,
+		false, 1, 0, nil, nil, false, false, 1.0)
+
+	// Group by (SessionID, RoundIndex) — the stable deterministic key —
+	// so the comparison does not depend on record-append order.
+	type key struct {
+		sid   string
+		round int
+	}
+	index := func(recs []workload.TraceRecord) map[key]workload.TraceRecord {
+		m := make(map[key]workload.TraceRecord, len(recs))
+		for _, r := range recs {
+			m[key{r.SessionID, r.RoundIndex}] = r
+		}
+		return m
+	}
+	eagerIdx := index(eagerRec.Records())
+	lazyIdx := index(lazyRec.Records())
+
+	if len(eagerIdx) == 0 {
+		t.Fatal("no records recorded in eager mode")
+	}
+	if len(eagerIdx) != len(lazyIdx) {
+		t.Fatalf("record-key count mismatch: eager %d, lazy %d", len(eagerIdx), len(lazyIdx))
+	}
+	// Ensure the session follow-up (merge) path was actually exercised in both
+	// modes — a round-1 record must exist, else the parity check is trivial.
+	hasRound := func(idx map[key]workload.TraceRecord, round int) bool {
+		for k := range idx {
+			if k.round == round {
+				return true
+			}
+		}
+		return false
+	}
+	if !hasRound(eagerIdx, 1) || !hasRound(lazyIdx, 1) {
+		t.Fatalf("expected a round-1 follow-up in both modes (eager r1=%v, lazy r1=%v) — merge path not exercised",
+			hasRound(eagerIdx, 1), hasRound(lazyIdx, 1))
+	}
+	for k, e := range eagerIdx {
+		l, ok := lazyIdx[k]
+		if !ok {
+			t.Errorf("key %+v present in eager but missing in lazy", k)
+			continue
+		}
+		// Always-deterministic surface (all real workload.TraceRecord fields).
+		if e.InputTokens != l.InputTokens {
+			t.Errorf("key %+v: InputTokens eager=%d lazy=%d", k, e.InputTokens, l.InputTokens)
+		}
+		if e.OutputTokens != l.OutputTokens {
+			t.Errorf("key %+v: OutputTokens eager=%d lazy=%d", k, e.OutputTokens, l.OutputTokens)
+		}
+		if e.Model != l.Model {
+			t.Errorf("key %+v: Model eager=%q lazy=%q", k, e.Model, l.Model)
+		}
+		if e.ClientID != l.ClientID {
+			t.Errorf("key %+v: ClientID eager=%q lazy=%q", k, e.ClientID, l.ClientID)
+		}
+		if e.Streaming != l.Streaming {
+			t.Errorf("key %+v: Streaming eager=%v lazy=%v", k, e.Streaming, l.Streaming)
+		}
+		// Arrival time and request id are deterministic only for round-0
+		// (pre-generated) records; follow-up rounds are wall-clock-derived.
+		if k.round == 0 {
+			if e.ArrivalTimeUs != l.ArrivalTimeUs {
+				t.Errorf("key %+v: round-0 ArrivalTimeUs eager=%d lazy=%d", k, e.ArrivalTimeUs, l.ArrivalTimeUs)
+			}
+			if e.RequestID != l.RequestID {
+				t.Errorf("key %+v: round-0 RequestID eager=%d lazy=%d", k, e.RequestID, l.RequestID)
+			}
+		}
+	}
+}
+
 // Task 7: Error storm drain and context cancellation (BC-10, BC-12)
 
 func TestObserveOrchestrator_ErrorStormDrain(t *testing.T) {
