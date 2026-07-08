@@ -960,7 +960,6 @@ func runObserveOrchestrator(
 	recordITL bool,
 	tokensPerWord float64,
 ) {
-
 	semaphore := make(chan struct{}, maxConcurrency)
 	var wg sync.WaitGroup
 	startWall := time.Now()

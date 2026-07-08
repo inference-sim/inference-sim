@@ -109,6 +109,7 @@ Four input modes are available. At least one must be provided per invocation:
 | `--defaults-filepath` | `string` | `"defaults.yaml"` | Path to `defaults.yaml` containing preset definitions (preset mode only) |
 | `--record-itl` | `bool` | `false` | Record per-chunk timestamps for ITL calibration (streaming only; use with `--itl-output`) |
 | `--itl-output` | `string` | `""` | Output path for ITL CSV file (default: `<trace-data>.itl.csv` when `--record-itl` is set) |
+| `--lazy-generation` | `bool` | `false` | Alpha (#1441/#1443): stream requests from the generator instead of pre-generating the full slice (same flag/semantics as `blis run`). Falls back to eager mode with a warning for time-varying, concurrency, or multi-session (`SingleSession=false`) workloads. Default (off) dispatch behavior is unchanged |
 
 ### Distribution Synthesis Flags
 
