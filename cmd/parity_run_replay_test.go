@@ -409,6 +409,8 @@ func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []work
 	origThinkMs := replayThinkTimeMs
 	origThinkDist := replayThinkTimeDist
 	origReplayTraceOut := replayTraceOutput
+	origCacheSignalDelay := cacheSignalDelay
+	origFlowControlEnabled := flowControlEnabled
 	defer func() {
 		traceHeaderPath = origTraceHeader
 		traceDataPath = origTraceData
@@ -416,6 +418,8 @@ func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []work
 		replayThinkTimeMs = origThinkMs
 		replayThinkTimeDist = origThinkDist
 		replayTraceOutput = origReplayTraceOut
+		cacheSignalDelay = origCacheSignalDelay
+		flowControlEnabled = origFlowControlEnabled
 	}()
 
 	model = "qwen/qwen3-14b"
