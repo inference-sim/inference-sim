@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/saturation"
 	"github.com/inference-sim/inference-sim/sim/workload"
 	"github.com/sirupsen/logrus"
@@ -482,7 +483,7 @@ func runObserve(cmd *cobra.Command, _ []string) {
 
 	// Run orchestrator
 	startTime := time.Now()
-	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, observeNoStreaming, observeMaxConcur, observeWarmup, prefixes, prefixLengths, observeUnconstrainedOutput, observeRecordITL, tokensPerWord)
+	runObserveOrchestrator(ctx, client, recorder, sessionMgr, cluster.NewSliceRequestSource(wl.Requests), observeNoStreaming, observeMaxConcur, observeWarmup, prefixes, prefixLengths, observeUnconstrainedOutput, observeRecordITL, tokensPerWord)
 	logrus.Infof("Observation wall-clock time: %.3fs", time.Since(startTime).Seconds())
 
 	// Resolve goodput SLO targets (#1413, BC-1, BC-7). Observe has no trace
@@ -865,14 +866,30 @@ func runPrewarm(ctx context.Context, client *RealClient, duration time.Duration)
 	}
 }
 
+// preferFollowUp reports whether the pending session follow-up should dispatch
+// before the buffered pre-generated request. Ties go to the follow-up (<=),
+// preserving the pre-lazy merge order (former index-based merge in
+// runObserveOrchestrator). Extracted as a pure function so the tie-break is
+// unit-testable — a live orchestrator run cannot construct a deterministic tie
+// because follow-up arrival times are wall-clock-derived (session.go). (#1443)
+func preferFollowUp(followUp, preGen *sim.Request) bool {
+	return followUp.ArrivalTime <= preGen.ArrivalTime
+}
+
 // runObserveOrchestrator implements the dispatch loop with session support.
 // This is the core orchestration function, extracted for testability.
+//
+// Requests are pulled from source (a cluster.RequestSource — eager slice adapter
+// or lazy streaming generator, selected by --lazy-generation) one at a time via
+// Next(), and merged against in-flight session follow-ups by arrival time using a
+// one-slot lookahead buffer (nextPreGen). This preserves the O(in-flight) memory
+// property of lazy generation on the request stream (#1443, #1438 Change A5).
 func runObserveOrchestrator(
 	ctx context.Context,
 	client *RealClient,
 	recorder *Recorder,
 	sessionMgr *workload.SessionManager,
-	requests []*sim.Request,
+	source cluster.RequestSource,
 	noStreaming bool,
 	maxConcurrency int,
 	warmupCount int,
@@ -882,9 +899,6 @@ func runObserveOrchestrator(
 	recordITL bool,
 	tokensPerWord float64,
 ) {
-	if len(requests) == 0 {
-		return
-	}
 
 	semaphore := make(chan struct{}, maxConcurrency)
 	var wg sync.WaitGroup
@@ -897,16 +911,17 @@ func runObserveOrchestrator(
 	// Completion channel for session serialization (BC-8, D7)
 	completionCh := make(chan completionEvent, maxConcurrency)
 
-	// Active session tracking for drain (count unique session IDs)
+	// Active session tracking for drain. Counting is folded into the dispatch
+	// loop (incremented on the first sighting of each SessionID among the
+	// pre-generated requests) rather than pre-scanned, so the lazy source is
+	// never fully materialized up front (#1443). seenSessions dedups so a
+	// session is counted exactly once; follow-ups reuse an existing SessionID
+	// and arrive via followUpCh (never through the pre-gen selection site), so
+	// they cannot double-count.
 	activeSessionCount := int64(0)
+	var seenSessions map[string]bool
 	if sessionMgr != nil {
-		sessionIDs := make(map[string]bool)
-		for _, req := range requests {
-			if req.SessionID != "" && !sessionIDs[req.SessionID] {
-				sessionIDs[req.SessionID] = true
-				activeSessionCount++
-			}
-		}
+		seenSessions = make(map[string]bool)
 	}
 
 	// Session serializer goroutine (BC-8: single-threaded OnComplete)
@@ -967,10 +982,37 @@ func runObserveOrchestrator(
 	}
 
 	// Merge pre-generated requests and follow-ups, dispatch in arrival order.
-	// Follow-ups are buffered in a local slice and merged by arrival time
-	// with pre-generated requests (deterministic, no select/default race).
-	preGenIdx := 0
+	// Pre-generated requests are pulled from the source one at a time through a
+	// one-slot lookahead buffer (nextPreGen); follow-ups are buffered in a local
+	// slice and merged by arrival time (deterministic, no select/default race).
 	var pendingFollowUps []*sim.Request
+
+	// nextPreGen holds the next pre-generated request pulled from source (the
+	// one-slot lookahead that replaces the former requests[preGenIdx] random
+	// access). nil once the source is exhausted.
+	var nextPreGen *sim.Request
+	if r, ok := source.Next(); ok { // prime the lookahead
+		nextPreGen = r
+	}
+
+	// takePreGen returns the buffered pre-generated request and refills the
+	// lookahead from source. It also folds active-session counting into the
+	// loop: the first time a session's (round-0) request is selected, the
+	// session is counted. Both pre-gen consumption branches route through this
+	// single helper so the counting cannot diverge between them.
+	takePreGen := func() *sim.Request {
+		req := nextPreGen
+		if sessionMgr != nil && req.SessionID != "" && !seenSessions[req.SessionID] {
+			seenSessions[req.SessionID] = true
+			atomic.AddInt64(&activeSessionCount, 1)
+		}
+		if r, ok := source.Next(); ok {
+			nextPreGen = r
+		} else {
+			nextPreGen = nil // exhausted; req above already captured, not dropped
+		}
+		return req
+	}
 
 	drainFollowUps := func() {
 		for {
@@ -993,21 +1035,19 @@ func runObserveOrchestrator(
 		// pre-generated and pending follow-ups
 		var nextReq *sim.Request
 
-		hasPreGen := preGenIdx < len(requests)
+		hasPreGen := nextPreGen != nil
 		hasFollowUp := len(pendingFollowUps) > 0
 
 		if hasPreGen && hasFollowUp {
-			if pendingFollowUps[0].ArrivalTime <= requests[preGenIdx].ArrivalTime {
+			if preferFollowUp(pendingFollowUps[0], nextPreGen) {
 				nextReq = pendingFollowUps[0]
 				pendingFollowUps = pendingFollowUps[1:]
 
 			} else {
-				nextReq = requests[preGenIdx]
-				preGenIdx++
+				nextReq = takePreGen()
 			}
 		} else if hasPreGen {
-			nextReq = requests[preGenIdx]
-			preGenIdx++
+			nextReq = takePreGen()
 		} else if hasFollowUp {
 			nextReq = pendingFollowUps[0]
 			pendingFollowUps = pendingFollowUps[1:]
@@ -1030,6 +1070,15 @@ func runObserveOrchestrator(
 
 		if nextReq == nil {
 			continue
+		}
+
+		// Enable streaming per-request when --record-itl is set (BC-6). ITL
+		// recording needs streaming responses to capture per-chunk timestamps.
+		// Applied here (as each request is emitted) rather than in a pre-pass
+		// over a materialized slice, so it works for the lazy source too and
+		// covers both pre-generated and session follow-up requests. (#1443)
+		if recordITL && !nextReq.Streaming {
+			nextReq.Streaming = true
 		}
 
 		// Rate-pace: sleep until target wall-clock time

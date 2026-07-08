@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -148,7 +149,7 @@ func TestObserveOrchestrator_OpenLoop_ConservationAndConcurrency(t *testing.T) {
 
 	// WHEN dispatching with max-concurrency 2 and 0 warmup
 	ctx := context.Background()
-	runObserveOrchestrator(ctx, client, recorder, nil, requests, false, 2, 0, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(ctx, client, recorder, nil, cluster.NewSliceRequestSource(requests), false, 2, 0, nil, nil, false, false, 1.0)
 
 	// THEN: BC-6 conservation: all 5 requests recorded
 	records := recorder.Records()
@@ -215,7 +216,7 @@ func TestObserveOrchestrator_SessionFollowUp_GeneratesRound2(t *testing.T) {
 	sessionMgr := workload.NewSessionManager(wl.Sessions)
 
 	ctx := context.Background()
-	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, false, 10, 0, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(ctx, client, recorder, sessionMgr, cluster.NewSliceRequestSource(wl.Requests), false, 10, 0, nil, nil, false, false, 1.0)
 
 	records := recorder.Records()
 	if len(records) < 2 {
@@ -282,7 +283,7 @@ func TestObserveOrchestrator_SessionError_CancelsSession(t *testing.T) {
 	sessionMgr := workload.NewSessionManager(wl.Sessions)
 
 	ctx := context.Background()
-	runObserveOrchestrator(ctx, client, recorder, sessionMgr, wl.Requests, false, 10, 0, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(ctx, client, recorder, sessionMgr, cluster.NewSliceRequestSource(wl.Requests), false, 10, 0, nil, nil, false, false, 1.0)
 
 	records := recorder.Records()
 	for _, r := range records {
@@ -314,7 +315,7 @@ func TestObserveOrchestrator_WarmupExclusion(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 2, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, cluster.NewSliceRequestSource(requests), false, 10, 2, nil, nil, false, false, 1.0)
 
 	records := recorder.Records()
 	if len(records) != 3 {
@@ -342,7 +343,7 @@ func TestObserveOrchestrator_WarmupExceedsTotal(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 5, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, cluster.NewSliceRequestSource(requests), false, 10, 5, nil, nil, false, false, 1.0)
 
 	records := recorder.Records()
 	if len(records) != 0 {
@@ -381,7 +382,7 @@ func TestObserveOrchestrator_RecordITL_CapturesChunkTimestamps(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0, nil, nil, false, true, 1.0)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, cluster.NewSliceRequestSource(requests), false, 10, 0, nil, nil, false, true, 1.0)
 
 	// THEN ITL records are captured
 	itlRecords := recorder.ITLRecords()
@@ -422,7 +423,7 @@ func TestObserveOrchestrator_TimestampOrdering(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, cluster.NewSliceRequestSource(requests), false, 10, 0, nil, nil, false, false, 1.0)
 
 	records := recorder.Records()
 	if len(records) != 1 {
@@ -462,7 +463,7 @@ func TestObserveOrchestrator_TraceV2RoundTrip(t *testing.T) {
 
 	client := NewRealClient(server.URL, "", "test-model", "vllm")
 	recorder := &Recorder{}
-	runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 10, 0, nil, nil, false, false, 1.0)
+	runObserveOrchestrator(context.Background(), client, recorder, nil, cluster.NewSliceRequestSource(requests), false, 10, 0, nil, nil, false, false, 1.0)
 
 	headerPath := filepath.Join(t.TempDir(), "header.yaml")
 	dataPath := filepath.Join(t.TempDir(), "data.csv")
@@ -520,7 +521,7 @@ func TestObserveOrchestrator_ErrorStormDrain(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		runObserveOrchestrator(context.Background(), client, recorder, nil, requests, false, 5, 0, nil, nil, false, false, 1.0)
+		runObserveOrchestrator(context.Background(), client, recorder, nil, cluster.NewSliceRequestSource(requests), false, 5, 0, nil, nil, false, false, 1.0)
 		close(done)
 	}()
 
@@ -564,7 +565,7 @@ func TestObserveOrchestrator_ContextCancellation(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		runObserveOrchestrator(ctx, client, recorder, nil, requests, false, 2, 0, nil, nil, false, false, 1.0)
+		runObserveOrchestrator(ctx, client, recorder, nil, cluster.NewSliceRequestSource(requests), false, 2, 0, nil, nil, false, false, 1.0)
 		close(done)
 	}()
 
