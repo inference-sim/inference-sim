@@ -166,7 +166,7 @@ func init() {
 	observeCmd.Flags().IntVar(&observeTimeout, "timeout", defaultHTTPTimeoutSeconds, "HTTP request timeout in seconds (per request)")
 
 	// ITL recording (opt-in; requires streaming)
-	observeCmd.Flags().BoolVar(&observeRecordITL, "record-itl", false, "Record per-chunk timestamps for ITL calibration (streaming only; forces streaming on non-streaming workloads)")
+	observeCmd.Flags().BoolVar(&observeRecordITL, "record-itl", false, "Record per-chunk timestamps for ITL calibration (forces streaming per request; mutually exclusive with --no-streaming)")
 	observeCmd.Flags().StringVar(&observeITLOutput, "itl-output", "", "Output path for ITL CSV file (default: <trace-data>.itl.csv if --record-itl is set)")
 
 	// Saturation analysis (optional, run/replay parity)
@@ -206,6 +206,21 @@ func validateObserveWorkloadFlags(preset, workloadSpec string, rateChanged bool,
 	}
 	if !rateChanged {
 		return fmt.Sprintf("--workload %q requires --rate (preset synthesis needs a request rate)", preset)
+	}
+	return ""
+}
+
+// validateITLStreamingFlags rejects the incoherent --record-itl + --no-streaming
+// combination. ITL recording captures per-chunk timestamps, which only exist for
+// streaming responses; with --no-streaming the per-request streaming override in
+// runObserveOrchestrator is defeated by requestToPending's `Streaming && !noStreaming`,
+// so no ITL is ever recorded. Fail fast with a clear message instead of emitting a
+// per-request "non-streaming" warning hundreds of times (PR #1457 review).
+// Returns a non-empty error string if the combination is invalid, empty otherwise.
+// Extracted for unit testability (R14).
+func validateITLStreamingFlags(recordITL, noStreaming bool) string {
+	if recordITL && noStreaming {
+		return "--record-itl and --no-streaming are mutually exclusive; ITL recording requires streaming responses"
 	}
 	return ""
 }
@@ -258,6 +273,11 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	// Warn if --itl-output is set without --record-itl (no ITL data will be written)
 	if observeITLOutput != "" && !observeRecordITL {
 		logrus.Warnf("--itl-output is set but --record-itl is not enabled; no ITL data will be written")
+	}
+	// --record-itl requires streaming; reject --no-streaming upfront rather than
+	// silently no-opping the per-request streaming override (PR #1457 review).
+	if msg := validateITLStreamingFlags(observeRecordITL, observeNoStreaming); msg != "" {
+		logrus.Fatalf("%s", msg)
 	}
 	// BC-7: at least one workload input mode must be provided
 	if observeWorkload == "" && observeWorkloadSpec == "" && !cmd.Flags().Changed("rate") && observeConcurrency <= 0 {

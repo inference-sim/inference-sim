@@ -1477,6 +1477,35 @@ func TestObserveCmd_LazyGenerationFlag_Exists(t *testing.T) {
 	}
 }
 
+// TestValidateITLStreamingFlags covers the mutual-exclusion guard for
+// --record-itl + --no-streaming: ITL recording needs streaming, so the
+// combination is incoherent and must be rejected upfront rather than silently
+// no-opping with a per-request warning (PR #1457 review).
+func TestValidateITLStreamingFlags(t *testing.T) {
+	tests := []struct {
+		name        string
+		recordITL   bool
+		noStreaming bool
+		wantErr     bool
+	}{
+		{"neither set", false, false, false},
+		{"itl only", true, false, false},
+		{"no-streaming only", false, true, false},
+		{"both set -> error", true, true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := validateITLStreamingFlags(tt.recordITL, tt.noStreaming)
+			if tt.wantErr && msg == "" {
+				t.Errorf("recordITL=%v noStreaming=%v: expected an error message, got empty", tt.recordITL, tt.noStreaming)
+			}
+			if !tt.wantErr && msg != "" {
+				t.Errorf("recordITL=%v noStreaming=%v: expected no error, got %q", tt.recordITL, tt.noStreaming, msg)
+			}
+		})
+	}
+}
+
 func TestObserveCmd_APIFormatFlag_Exists(t *testing.T) {
 	f := observeCmd.Flags().Lookup("api-format")
 	if f == nil {
