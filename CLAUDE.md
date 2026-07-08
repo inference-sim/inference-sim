@@ -129,6 +129,17 @@ go build -o blis main.go
 # multi-client / cohort workloads. Behavior with the flag off is unchanged.
 ./blis run --model qwen/qwen3-14b --lazy-generation
 
+# Observe with lazy request generation (alpha, #1443). Same flag, default, and
+# semantics as `blis run` — streams requests from the generator into the observe
+# dispatch loop instead of pre-generating the full slice, with the same eager
+# fallback (time-varying / concurrency / multi-session). Observe already paces
+# itself against the real server, so the memory win is smaller than run's; the
+# flag mainly makes run and observe share one generation pipeline (#1438). Default
+# (flag off) dispatch behavior is unchanged.
+./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
+  --workload chatbot --rate 10 --num-requests 100 --lazy-generation \
+  --trace-header trace.yaml --trace-data trace.csv
+
 # Convert workload formats
 ./blis convert preset --name chatbot --rate 10 --num-requests 100
 ./blis convert servegen --path data/

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -735,6 +736,58 @@ func TestObserveOrchestrator_EagerLazyParity_SameDispatchSequence(t *testing.T) 
 				t.Errorf("key %+v: round-0 RequestID eager=%d lazy=%d", k, e.RequestID, l.RequestID)
 			}
 		}
+	}
+}
+
+// TestObserveLazyFallback_UnsupportedSpecSentinels pins the sentinel contract
+// observe relies on to fall back to the eager generator (BC-4). observe matches
+// these via errors.Is exactly as blis run does; if GenerateWorkloadLazy stopped
+// returning them for these shapes, observe's fallback (and this PR's warning
+// path) would silently break.
+func TestObserveLazyFallback_UnsupportedSpecSentinels(t *testing.T) {
+	// Concurrency client → ErrLazyUnsupportedConcurrency.
+	concurrencySpec := &workload.WorkloadSpec{
+		Version:       "2",
+		Seed:          42,
+		AggregateRate: 10.0,
+		Clients: []workload.ClientSpec{
+			{
+				ID:          "concurrency-client",
+				Concurrency: 4,
+				InputDist:   workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				OutputDist:  workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+			},
+		},
+	}
+	if _, _, _, err := workload.GenerateWorkloadLazy(concurrencySpec, 1_000_000, 10); !errors.Is(err, workload.ErrLazyUnsupportedConcurrency) {
+		t.Errorf("concurrency spec: got err %v, want ErrLazyUnsupportedConcurrency", err)
+	}
+
+	// Multi-session reasoning (SingleSession=false) → ErrLazyUnsupportedMultiSession.
+	multiSessionSpec := &workload.WorkloadSpec{
+		Version:       "2",
+		Seed:          42,
+		AggregateRate: 10.0,
+		Clients: []workload.ClientSpec{
+			{
+				ID:           "multi-session-client",
+				RateFraction: 1.0,
+				Arrival:      workload.ArrivalSpec{Process: "constant"},
+				InputDist:    workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				OutputDist:   workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+				Reasoning: &workload.ReasoningSpec{
+					MultiTurn: &workload.MultiTurnSpec{
+						MaxRounds:     3,
+						ThinkTimeUs:   1000,
+						ContextGrowth: "accumulate",
+						SingleSession: false,
+					},
+				},
+			},
+		},
+	}
+	if _, _, _, err := workload.GenerateWorkloadLazy(multiSessionSpec, 1_000_000, 10); !errors.Is(err, workload.ErrLazyUnsupportedMultiSession) {
+		t.Errorf("multi-session spec: got err %v, want ErrLazyUnsupportedMultiSession", err)
 	}
 }
 
