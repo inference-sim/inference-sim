@@ -539,7 +539,8 @@ func runObserve(cmd *cobra.Command, _ []string) {
 	// per-client state during dispatch. Eager mode would have hit Fatalf at
 	// generation on the same invalid spec; without this, lazy mode would exit 0
 	// with reduced traffic and misleading metrics (BC-9, mirrors run at
-	// cmd/root.go). Checked after dispatch so partial results are still recorded.
+	// cmd/root.go). A non-nil Err() aborts before the trace is exported below —
+	// an invalid-spec run produces no trace, matching eager's abort-at-generation.
 	if lazySource != nil {
 		if err := lazySource.Err(); err != nil {
 			logrus.Fatalf("Lazy workload sampler failure: %v", err)
@@ -1060,6 +1061,9 @@ func runObserveOrchestrator(
 	// loop: the first time a session's (round-0) request is selected, the
 	// session is counted. Both pre-gen consumption branches route through this
 	// single helper so the counting cannot diverge between them.
+	//
+	// PRECONDITION: callers MUST guard with hasPreGen (nextPreGen != nil) — the
+	// deref of req.SessionID below assumes a buffered request is present.
 	takePreGen := func() *sim.Request {
 		req := nextPreGen
 		if sessionMgr != nil && req.SessionID != "" && !seenSessions[req.SessionID] {

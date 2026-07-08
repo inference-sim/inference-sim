@@ -404,6 +404,104 @@ func TestObserveOrchestrator_RecordITL_CapturesChunkTimestamps(t *testing.T) {
 	}
 }
 
+// TestObserveOrchestrator_RecordITL_CoversSessionFollowUps verifies that
+// --record-itl enables streaming (and thus ITL capture) for session follow-up
+// rounds, not just round-0 (#1443, BC-6). Follow-ups are created by
+// SessionManager with Streaming=false; the pre-#1443 slice pre-pass only
+// touched round-0 requests, so follow-up ITL was silently dropped. Moving the
+// streaming-on override into per-request dispatch fixes this. This test pins the
+// corrected behavior: at least one round>0 request must appear in the ITL data.
+func TestObserveOrchestrator_RecordITL_CoversSessionFollowUps(t *testing.T) {
+	// Streaming SSE server that returns 3 chunks with usage — same shape as the
+	// round-0 ITL test, so every dispatched request yields ITL records.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"a"}}]}`)
+		flusher.Flush()
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"b"}}]}`)
+		flusher.Flush()
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"c"},"finish_reason":"stop"}],"usage":{"prompt_tokens":50,"completion_tokens":3}}`)
+		flusher.Flush()
+		_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	// Single-session multi-turn spec — round-0 is pre-generated (non-streaming),
+	// round-1 is a SessionManager follow-up (also non-streaming at creation).
+	spec := &workload.WorkloadSpec{
+		Version:       "2",
+		Seed:          42,
+		AggregateRate: 10.0,
+		Clients: []workload.ClientSpec{
+			{
+				ID:           "session-client",
+				RateFraction: 1.0,
+				Arrival:      workload.ArrivalSpec{Process: "constant"},
+				InputDist:    workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				OutputDist:   workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+				Reasoning: &workload.ReasoningSpec{
+					MultiTurn: &workload.MultiTurnSpec{
+						MaxRounds:     2,
+						ThinkTimeUs:   10000,
+						ContextGrowth: "accumulate",
+						SingleSession: true,
+					},
+				},
+			},
+		},
+	}
+	wl, err := workload.GenerateWorkload(spec, 1_000_000, 1)
+	if err != nil {
+		t.Fatalf("GenerateWorkload: %v", err)
+	}
+	if len(wl.Sessions) == 0 {
+		t.Skip("spec did not produce sessions")
+	}
+	// Sanity: the pre-generated round-0 request is non-streaming, so if ITL is
+	// captured it must be because the orchestrator turned streaming on.
+	for _, r := range wl.Requests {
+		if r.Streaming {
+			t.Fatal("precondition: pre-generated request unexpectedly streaming; test would not prove the override")
+		}
+	}
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	recorder := &Recorder{}
+	sessionMgr := workload.NewSessionManager(wl.Sessions)
+	// recordITL=true (last-but-one arg), noStreaming=false.
+	runObserveOrchestrator(context.Background(), client, recorder, sessionMgr,
+		cluster.NewSliceRequestSource(wl.Requests), false, 1, 0, nil, nil, false, true, 1.0)
+
+	// A round-1 follow-up must exist and must have captured ITL (per-chunk
+	// timestamps), proving streaming-on was applied to the follow-up too.
+	records := recorder.Records()
+	var followUpReqID = -1
+	for _, r := range records {
+		if r.RoundIndex > 0 {
+			if r.NumChunks < 2 {
+				t.Errorf("follow-up round %d recorded NumChunks=%d, want >=2 (streaming not enabled)", r.RoundIndex, r.NumChunks)
+			}
+			followUpReqID = r.RequestID
+		}
+	}
+	if followUpReqID < 0 {
+		t.Fatal("no round>0 follow-up record found — merge path not exercised")
+	}
+	itl := recorder.ITLRecords()
+	hasFollowUpITL := false
+	for _, rec := range itl {
+		if rec.RequestID == followUpReqID {
+			hasFollowUpITL = true
+			break
+		}
+	}
+	if !hasFollowUpITL {
+		t.Errorf("no ITL records for follow-up request %d — streaming-on override did not reach session follow-ups", followUpReqID)
+	}
+}
+
 // Task 6: Timestamp ordering and TraceV2 round-trip (OBS-INV-5, BC-5)
 
 func TestObserveOrchestrator_TimestampOrdering(t *testing.T) {
@@ -788,6 +886,31 @@ func TestObserveLazyFallback_UnsupportedSpecSentinels(t *testing.T) {
 	}
 	if _, _, _, err := workload.GenerateWorkloadLazy(multiSessionSpec, 1_000_000, 10); !errors.Is(err, workload.ErrLazyUnsupportedMultiSession) {
 		t.Errorf("multi-session spec: got err %v, want ErrLazyUnsupportedMultiSession", err)
+	}
+
+	// Per-window (time-varying) parameters → ErrLazyUnsupportedTimeVarying.
+	perWindowRate := 5.0
+	timeVaryingSpec := &workload.WorkloadSpec{
+		Version:       "2",
+		Seed:          42,
+		AggregateRate: 10.0,
+		Clients: []workload.ClientSpec{
+			{
+				ID:           "time-varying-client",
+				RateFraction: 1.0,
+				Arrival:      workload.ArrivalSpec{Process: "constant"},
+				InputDist:    workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				OutputDist:   workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 25}},
+				Lifecycle: &workload.LifecycleSpec{
+					Windows: []workload.ActiveWindow{
+						{StartUs: 0, EndUs: 500_000, TraceRate: &perWindowRate},
+					},
+				},
+			},
+		},
+	}
+	if _, _, _, err := workload.GenerateWorkloadLazy(timeVaryingSpec, 1_000_000, 10); !errors.Is(err, workload.ErrLazyUnsupportedTimeVarying) {
+		t.Errorf("time-varying spec: got err %v, want ErrLazyUnsupportedTimeVarying", err)
 	}
 }
 
@@ -1971,4 +2094,3 @@ func TestApplyThinkTimeSampler_NilSamplerIsNoOp(t *testing.T) {
 		}
 	}
 }
-
