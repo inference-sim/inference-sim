@@ -498,6 +498,92 @@ func TestObserveOrchestrator_TraceV2RoundTrip(t *testing.T) {
 	}
 }
 
+// A5 merge-rewrite guards (#1443, BC-2).
+
+// TestPreferFollowUp_TieGoesToFollowUp pins the tie-break operator that the
+// lazy-generation merge rewrite extracted into a pure function. A live
+// orchestrator run cannot construct a deterministic arrival tie between a
+// follow-up and a pre-gen request (follow-up arrivals are wall-clock-derived),
+// so this pure unit test is the only guard against inverting <= to <. Ties MUST
+// go to the follow-up, preserving the pre-lazy dispatch order.
+func TestPreferFollowUp_TieGoesToFollowUp(t *testing.T) {
+	tests := []struct {
+		name       string
+		followUpAt int64
+		preGenAt   int64
+		want       bool
+	}{
+		{"followup earlier", 1000, 2000, true},
+		{"equal arrival -> followup wins", 5000, 5000, true},
+		{"followup later", 3000, 1000, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			followUp := &sim.Request{ArrivalTime: tt.followUpAt}
+			preGen := &sim.Request{ArrivalTime: tt.preGenAt}
+			if got := preferFollowUp(followUp, preGen); got != tt.want {
+				t.Errorf("preferFollowUp(fu=%d, pg=%d) = %v, want %v",
+					tt.followUpAt, tt.preGenAt, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestObserveOrchestrator_MergeOrder_OpenLoopExactSequence is an absolute guard
+// on the one-slot lookahead buffer: it asserts the exact dispatch sequence
+// against a hand-written expectation, so it fails if the buffer drops,
+// duplicates, or reorders a pre-generated request. A cross-mode parity test
+// cannot catch such a bug (both modes share the merge code); this can. Uses an
+// open-loop (nil sessionMgr) stream at maxConcurrency=1 so dispatch order equals
+// record-append order and every recorded field is fully deterministic.
+func TestObserveOrchestrator_MergeOrder_OpenLoopExactSequence(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"text": "x"}},
+			"usage":   map[string]any{"prompt_tokens": 10, "completion_tokens": 5},
+		})
+	}))
+	defer server.Close()
+
+	// Arrivals include a tie (5000, 5000) to pin stable same-arrival ordering.
+	// Distinct InputTokens lengths make each request individually identifiable.
+	arrivals := []int64{0, 5000, 5000, 10000, 20000}
+	inputLens := []int{11, 22, 33, 44, 55}
+	requests := make([]*sim.Request, len(arrivals))
+	for i := range requests {
+		requests[i] = &sim.Request{
+			ID:           fmt.Sprintf("request_%d", i),
+			ArrivalTime:  arrivals[i],
+			InputTokens:  make([]sim.TokenID, inputLens[i]),
+			OutputTokens: make([]sim.TokenID, 5),
+			MaxOutputLen: 5,
+			State:        sim.StateQueued,
+		}
+	}
+
+	client := NewRealClient(server.URL, "", "test-model", "vllm")
+	recorder := &Recorder{}
+	runObserveOrchestrator(context.Background(), client, recorder, nil,
+		cluster.NewSliceRequestSource(requests), false, 1, 0, nil, nil, false, false, 1.0)
+
+	records := recorder.Records()
+	if len(records) != len(requests) {
+		t.Fatalf("expected %d records, got %d", len(requests), len(records))
+	}
+	for i, rec := range records {
+		if rec.RequestID != i {
+			t.Errorf("record %d: RequestID = %d, want %d (dispatch order broken)", i, rec.RequestID, i)
+		}
+		if rec.ArrivalTimeUs != arrivals[i] {
+			t.Errorf("record %d: ArrivalTimeUs = %d, want %d (merge reordered)", i, rec.ArrivalTimeUs, arrivals[i])
+		}
+		if rec.InputTokens != inputLens[i] {
+			t.Errorf("record %d: InputTokens = %d, want %d (wrong request at this position)", i, rec.InputTokens, inputLens[i])
+		}
+	}
+}
+
 // Task 7: Error storm drain and context cancellation (BC-10, BC-12)
 
 func TestObserveOrchestrator_ErrorStormDrain(t *testing.T) {
