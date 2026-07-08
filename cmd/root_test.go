@@ -1432,6 +1432,7 @@ func runRunCmdAndCaptureTraces(t *testing.T, seedVal int64, numReq int, lazyFlag
 // helper to keep the lazy-generation tests short.
 type origCmdLevelVars struct {
 	metrics, model, backend, results, policyConfig, traceOut, logLvl, mcFolder, hwCfg, gpuVal string
+	defaultsFile                                                                               string
 	beta, alpha                                                                                []float64
 	totalKV, blockSize, maxRunning, maxSched, simHorizon, snapRefresh, kvCPU, baseLatency      int64
 	threshold, maxModelLen                                                                     int64
@@ -1466,7 +1467,7 @@ func captureCmdLevelVars() origCmdLevelVars {
 		workloadSpec: workloadSpecPath, requestTimeout: requestTimeoutSecs,
 		traceOut: traceOutput, logLvl: logLevel, mcFolder: modelConfigFolder,
 		hwCfg: hwConfigPath, gpuVal: gpu, tp: tensorParallelism,
-		lazy: lazyGeneration,
+		lazy: lazyGeneration, defaultsFile: defaultsFilePath,
 	}
 }
 
@@ -1520,6 +1521,7 @@ func (o origCmdLevelVars) restore() {
 	gpu = o.gpuVal
 	tensorParallelism = o.tp
 	lazyGeneration = o.lazy
+	defaultsFilePath = o.defaultsFile
 }
 
 // TestRunCmd_LazyGeneration_FlagRegistered verifies the --lazy-generation
