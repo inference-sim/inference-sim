@@ -39,6 +39,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -282,6 +283,110 @@ func TestParity_RunReplay_TraceByteIdentity_Matrix(t *testing.T) {
 // carries request records, not just the header row).
 func lineCount(b []byte) int {
 	return bytes.Count(b, []byte("\n"))
+}
+
+// runSpecAndCaptureStdout drives runCmd.Run with a --workload-spec file and
+// captures everything written to os.Stdout (the deterministic results channel
+// per INV-6; diagnostics go to stderr via logrus and are not captured). No
+// trace is exported. Used to assert stdout-level determinism and eager≡lazy
+// stdout parity — the literal INV-6 statement ("same seed → byte-identical
+// stdout"), complementing the trace byte-identity above.
+//
+// NOTE: mutates package-level CLI vars and os.Stdout; caller must not run in
+// parallel. Restores both.
+func runSpecAndCaptureStdout(t *testing.T, specYAML string, seedVal, horizon int64, lazyFlag bool) []byte {
+	t.Helper()
+	tmpDir := t.TempDir()
+	specPath := filepath.Join(tmpDir, "workload.yaml")
+	if err := os.WriteFile(specPath, []byte(specYAML), 0644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	mcFolder, hwPath, defaultsPath := setupTrainedPhysicsTestFixturesWithDefaults(t)
+
+	orig := captureCmdLevelVars()
+	defer orig.restore()
+
+	traceOutput = ""
+	workloadSpecPath = specPath
+	workloadType = ""
+	simulationHorizon = horizon
+	seed = seedVal
+	lazyGeneration = lazyFlag
+	requestTimeoutSecs = 300
+
+	testCmd := &cobra.Command{}
+	registerSimConfigFlags(testCmd)
+	testCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "")
+	testCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", false, "")
+	testCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "")
+	args := []string{
+		"--model", "qwen/qwen3-14b",
+		"--latency-model", "trained-physics",
+		"--defaults-filepath", defaultsPath,
+		"--model-config-folder", mcFolder,
+		"--hardware-config", hwPath,
+		"--hardware", "H100",
+		"--tp", "1",
+		"--total-kv-blocks", "1000",
+		"--seed", strconv.FormatInt(seedVal, 10),
+		"--workload-spec", specPath,
+		"--horizon", strconv.FormatInt(horizon, 10),
+	}
+	if lazyFlag {
+		args = append(args, "--lazy-generation=true")
+	}
+	if err := testCmd.ParseFlags(args); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+
+	// Capture os.Stdout across runCmd.Run. A pipe's buffer is bounded, so
+	// drain it in a goroutine to avoid deadlock if the output is large.
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+	done := make(chan []byte, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		done <- buf.Bytes()
+	}()
+
+	runCmd.Run(testCmd, nil)
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+	return <-done
+}
+
+// TestParity_RunStdout_DeterministicAndEagerLazyIdentical pins the literal
+// INV-6 statement for lazy mode: same seed → byte-identical stdout, and eager
+// and lazy modes produce identical stdout. This is the stdout-channel companion
+// to the trace byte-identity matrix (stdout is the canonical deterministic
+// results channel; trace is a file artifact). Uses the chatbot shape.
+//
+// NOTE: Do NOT use t.Parallel() — mutates package-level vars and os.Stdout.
+func TestParity_RunStdout_DeterministicAndEagerLazyIdentical(t *testing.T) {
+	const seed int64 = 20260708
+	shape := paritySpecShapes()[0] // chatbot
+
+	eager := runSpecAndCaptureStdout(t, shape.yaml, seed, shape.horizon, false)
+	lazy := runSpecAndCaptureStdout(t, shape.yaml, seed, shape.horizon, true)
+	lazy2 := runSpecAndCaptureStdout(t, shape.yaml, seed, shape.horizon, true)
+
+	if len(eager) == 0 {
+		t.Fatal("run produced empty stdout; test is vacuous")
+	}
+	// INV-6 (determinism): two lazy runs at the same seed match.
+	if !bytes.Equal(lazy, lazy2) {
+		t.Fatalf("lazy stdout non-deterministic across two runs at seed %d", seed)
+	}
+	// eager ≡ lazy at the stdout level.
+	if !bytes.Equal(eager, lazy) {
+		t.Fatalf("stdout diverged between eager and lazy modes\nEAGER:\n%s\nLAZY:\n%s", eager, lazy)
+	}
 }
 
 // replaySpecTrace replays a previously-exported trace through replayCmd.Run
